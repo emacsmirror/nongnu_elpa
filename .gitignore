@@ -1,0 +1,10 @@
+/*.elc
+/.sandbox/
+/.dir-locals-2.el
+*.elc
+/worktrees/
+/hyperdrive-autoloads.el
+/hyperdrive-pkg.el
+/dir
+/doc/hyperdrive.info
+/hyperdrive.info

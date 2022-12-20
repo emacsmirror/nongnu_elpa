@@ -1,0 +1,12 @@
+image: archlinux
+oauth: git.sr.ht/REPOSITORIES:RW git.sr.ht/PROFILE:RO
+packages:
+  - hut
+  - emacs-nox
+sources:
+  - https://git.sr.ht/~ushin/hyperdrive-org-transclusion
+tasks:
+  - update-readme: |
+      cd hyperdrive-org-transclusion
+      emacs -Q --script build-readme.el
+      hut git update --readme README.html

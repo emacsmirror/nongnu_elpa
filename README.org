@@ -1,0 +1,29 @@
+#+options: num:nil toc:nil author:nil html-postamble:nil
+# Sourcehut HTML renderer will render <style>: remove it
+#+options: html-style:nil
+
+#+title: hyperdrive-org-transclusion
+
+~hyperdrive-org-transclusion~ is an extension for [[https://nobiot.github.io/org-transclusion/][org-transclusion]] which
+lets you transclude hyperdrive content with [[https://ushin.org/hyperdrive/hyperdrive-manual.html][hyperdrive.el]].
+
+* Installation
+
+See [[https://ushin.org/hyperdrive/hyperdrive-manual.html#Installation][the manual]] for installation instructions.
+
+* Manual
+
+For more information, please see the [[https://ushin.org/hyperdrive/hyperdrive-manual.html][manual]].  For recent changes, see
+the [[file:CHANGELOG.org][changelog]].
+
+* Bugs and Patches
+
+Bugs can be submitted to the [[https://todo.sr.ht/~ushin/ushin][ushin issue tracker]]. Patches, comments or
+questions can be submitted to the [[https://lists.sr.ht/~ushin/ushin][ushin public inbox]].
+
+* Chat Room
+
+You're welcome to join our public XMPP chat room!
+
+- ~xmpp:discuss@conference.ushin.org~ ([[https://anonymous.cheogram.com/discuss@conference.ushin.org][Join anonymously from your browser]])
+- ~#_bifrost_discuss_conference.ushin.org:aria-net.org~ (Matrix bridge)
