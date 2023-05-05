@@ -990,11 +990,14 @@ NOTE means to include a profile note."
 (defun mastodon-notifications-update-check ()
   "Function called by `mastodon-notifications-update-with-timer'.
 Calls `mastodon-tl--update'."
-  (when (mastodon-tl--buffer-type-eq 'notifications)
-    ;; run updates if in notifs buffer:
-    (mastodon-tl--update))
-  ;; set new timer:
-  (mastodon-notifications-update-with-timer))
+  (let ((count (mastodon-notifications--get-unread-count)))
+    (when (> 0 count)
+      (if (mastodon-tl--buffer-type-eq 'notifications)
+          ;; run updates if in notifs buffer:
+          (mastodon-tl--update)
+        (message "New mastodon.el notification(s)"))
+      ;; set new timer:
+      (mastodon-notifications-update-with-timer))))
 
 (add-hook 'mastodon-mode-hook
           #'mastodon-notifications-update-with-timer)
