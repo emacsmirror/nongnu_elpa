@@ -40,6 +40,8 @@
 (autoload 'mastodon-http--post "mastodon-http")
 (autoload 'mastodon-http--triage "mastodon-http")
 (autoload 'mastodon-media--inline-images "mastodon-media")
+(autoload 'mastodon-notifications-get "mastodon")
+(autoload 'mastodon-tl--buffer-type-eq "mastodon-tl")
 (autoload 'mastodon-tl--byline "mastodon-tl")
 (autoload 'mastodon-tl--byline-author "mastodon-tl")
 (autoload 'mastodon-tl--clean-tabs-and-nl "mastodon-tl")
@@ -970,6 +972,32 @@ NOTE means to include a profile note."
         (mastodon-tl--render-text .account.note .account))
       "\n")
      'item-json req)))
+
+;;; UPDATES TIMER
+;; TODO: make this a customize, with option to set timer period.
+(defvar mastodon-notifications-timer nil
+  "Timer to update the notifs buffer.")
+
+(defun mastodon-notifications-update-with-timer ()
+  "Run a timer to update notifications. Added to `mastodon-mode-hook'."
+  ;; cancel existing timer:
+  (when mastodon-notifications-timer
+    (cancel-timer mastodon-notifications-timer))
+  ;; set new timer:
+  (setq mastodon-notifications-timer
+        (run-at-time 60 nil #'mastodon-notifications-update-check)))
+
+(defun mastodon-notifications-update-check ()
+  "Function called by `mastodon-notifications-update-with-timer'.
+Calls `mastodon-tl--update'."
+  (when (mastodon-tl--buffer-type-eq 'notifications)
+    ;; run updates if in notifs buffer:
+    (mastodon-tl--update))
+  ;; set new timer:
+  (mastodon-notifications-update-with-timer))
+
+(add-hook 'mastodon-mode-hook
+          #'mastodon-notifications-update-with-timer)
 
 (provide 'mastodon-notifications)
 ;;; mastodon-notifications.el ends here
