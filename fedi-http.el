@@ -1,0 +1,368 @@
+;;; fedi-http.el --- HTTP request/response functions  -*- lexical-binding: t -*-
+
+;; Copyright (C) 2020-2022 Marty Hiatt
+;; Author: Marty Hiatt <martianhiatus@riseup.net>
+;; Version: 0.0.1
+;; Package-Requires: ((emacs "27.1"))
+;; Homepage: https://codeberg.org/martianh/fedi.el
+
+;; This file is not part of GNU Emacs.
+
+;; fedi-http.el is free software: you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
+
+;; fedi.el is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+
+;; You should have received a copy of the GNU General Public License
+;; along with fedi.el.  If not, see <http://www.gnu.org/licenses/>.
+
+;;; Commentary:
+
+;; fed-http.el provides HTTP request/response functions. Code from
+;; mastodon-http.el, see its boilerplate for authorship, etc.
+
+;;; Code:
+
+(require 'json)
+;; (require 'request) ; for attachments upload
+(require 'url)
+
+(defvar fedi-instance-url)
+(defvar fedi-toot--media-attachment-ids)
+(defvar fedi-toot--media-attachment-filenames)
+
+(autoload 'shr-render-buffer "shr")
+(autoload 'fedi-auth--access-token "fedi-auth")
+(autoload 'fedi-toot--update-status-fields "fedi-toot")
+
+(defvar fedi-http--api-version "v3")
+
+(defconst fedi-http--timeout 15
+  "HTTP request timeout, in seconds.  Has no effect on Emacs < 26.1.")
+
+(defun fedi-http--api (endpoint)
+  "Return Fedi API URL for ENDPOINT."
+  (concat fedi-instance-url "/api/"
+          fedi-http--api-version "/" endpoint))
+
+(defun fedi-http--response ()
+  "Capture response buffer content as string."
+  (with-current-buffer (current-buffer)
+    (buffer-substring-no-properties (point-min) (point-max))))
+
+(defun fedi-http--response-body (pattern)
+  "Return substring matching PATTERN from `fedi-http--response'."
+  (let ((resp (fedi-http--response)))
+    (string-match pattern resp)
+    (match-string 0 resp)))
+
+(defun fedi-http--status ()
+  "Return HTTP Response Status Code from `fedi-http--response'."
+  (let* ((status-line (fedi-http--response-body "^HTTP/1.*$")))
+    (string-match "[0-9][0-9][0-9]" status-line)
+    (match-string 0 status-line)))
+
+(defun fedi-http--url-retrieve-synchronously (url &optional silent)
+  "Retrieve URL asynchronously.
+This is a thin abstraction over the system
+`url-retrieve-synchronously'.  Depending on which version of this
+is available we will call it with or without a timeout.
+SILENT means don't message."
+  (if (< (cdr (func-arity 'url-retrieve-synchronously)) 4)
+      (url-retrieve-synchronously url)
+    (url-retrieve-synchronously url (or silent nil) nil fedi-http--timeout)))
+
+(defun fedi-http--triage (response success)
+  "Determine if RESPONSE was successful.
+Call SUCCESS if successful. Message status and JSON error from
+RESPONSE if unsuccessful."
+  (let ((status (with-current-buffer response
+                  (fedi-http--status))))
+    (if (string-prefix-p "2" status)
+        (funcall success)
+      (if (string-prefix-p "404" status)
+          (message "Error %s: page not found" status)
+        (let ((json-response (with-current-buffer response
+                               (fedi-http--process-json))))
+          (message "Error %s: %s" status (alist-get 'error json-response)))))))
+
+(defun fedi-http--read-file-as-string (filename)
+  "Read a file FILENAME as a string. Used to generate image preview."
+  (with-temp-buffer
+    (insert-file-contents filename)
+    (string-to-unibyte (buffer-string))))
+
+(defmacro fedi-http--authorized-request (method body &optional unauthenticated-p)
+  "Make a METHOD type request using BODY, with Fedi authorization.
+Unless UNAUTHENTICATED-P is non-nil."
+  (declare (debug 'body)
+           (indent 1))
+  `(let ((url-request-method ,method)
+         (url-request-extra-headers
+          (unless ,unauthenticated-p
+            (list (cons "Authorization"
+                        (concat "Bearer " (fedi-auth--access-token)))))))
+     ,body))
+
+(defun fedi-http--build-params-string (params)
+  "Build a request parameters string from parameters alist PARAMS."
+  ;; (url-build-query-string args nil))
+  ;; url-build-query-string adds 'nil' for empty params so lets stick with our
+  ;; own:
+  (mapconcat (lambda (p)
+               (concat (url-hexify-string (car p))
+                       "=" (url-hexify-string (cdr p))))
+             params "&"))
+
+(defun fedi-http--build-array-params-alist (param-str array)
+  "Return parameters alist using PARAM-STR and ARRAY param values.
+Used for API form data parameters that take an array."
+  (cl-loop for x in array
+           collect (cons param-str x)))
+
+(defun fedi-http--post (url &optional params headers unauthenticated-p)
+  "POST synchronously to URL, optionally with PARAMS and HEADERS.
+Authorization header is included by default unless UNAUTHENTICATED-P is non-nil."
+  (fedi-http--authorized-request "POST"
+    (let ((url-request-data (when params
+                              (fedi-http--build-params-string params)))
+          (url-request-extra-headers
+           (append url-request-extra-headers ; auth set in macro
+                   (unless (assoc "Content-Type" headers) ; pleroma compat:
+                     '(("Content-Type" . "application/x-www-form-urlencoded")))
+                   headers)))
+      (with-temp-buffer
+        (fedi-http--url-retrieve-synchronously url)))
+    unauthenticated-p))
+
+(defun fedi-http--concat-params-to-url (url params)
+  "Build a query string with PARAMS and concat to URL."
+  (if params
+      (concat url "?"
+              (fedi-http--build-params-string params))
+    url))
+
+(defun fedi-http--get (url &optional params silent)
+  "Make synchronous GET request to URL.
+PARAMS is an alist of any extra parameters to send with the request.
+SILENT means don't message."
+  (fedi-http--authorized-request "GET"
+    ;; url-request-data doesn't seem to work with GET requests?:
+    (let ((url (fedi-http--concat-params-to-url url params)))
+      (fedi-http--url-retrieve-synchronously url silent))
+    t))
+
+(defun fedi-http--get-response (url &optional params no-headers silent vector)
+  "Make synchronous GET request to URL. Return JSON and response headers.
+PARAMS is an alist of any extra parameters to send with the request.
+SILENT means don't message.
+NO-HEADERS means don't collect http response headers.
+VECTOR means return json arrays as vectors."
+  (with-current-buffer (fedi-http--get url params silent)
+    (fedi-http--process-response no-headers vector)))
+
+(defun fedi-http--get-json (url &optional params silent vector)
+  "Return only JSON data from URL request.
+PARAMS is an alist of any extra parameters to send with the request.
+SILENT means don't message.
+VECTOR means return json arrays as vectors."
+  (car (fedi-http--get-response url params :no-headers silent vector)))
+
+(defun fedi-http--process-json ()
+  "Return only JSON data from async URL request.
+Callback to `fedi-http--get-json-async', usually
+`fedi-tl--init*', is run on the result."
+  (car (fedi-http--process-response :no-headers)))
+
+(defun fedi-http--render-html-err (string)
+  "Render STRING as HTML in a temp buffer.
+STRING should be a HTML for a 404 errror."
+  (with-temp-buffer
+    (insert string)
+    (shr-render-buffer (current-buffer))
+    (view-mode) ; for 'q' to kill buffer and window
+    (error ""))) ; stop subsequent processing
+
+(defun fedi-http--process-response (&optional no-headers vector)
+  "Process http response.
+Return a cons of JSON list and http response headers.
+If NO-HEADERS is non-nil, just return the JSON.
+VECTOR means return json arrays as vectors.
+Callback to `fedi-http--get-response-async', usually
+`fedi-tl--init*', is run on the result."
+  ;; view raw response:
+  ;; (switch-to-buffer (current-buffer))
+  (let ((headers (unless no-headers
+                   (fedi-http--process-headers))))
+    (goto-char (point-min))
+    (re-search-forward "^$" nil 'move)
+    (let ((json-array-type (if vector 'vector 'list))
+          (json-string (decode-coding-string
+                        (buffer-substring-no-properties (point) (point-max))
+                        'utf-8)))
+      (kill-buffer)
+      (cond ((or (string-empty-p json-string) (null json-string))
+             nil)
+            ;; if we get html, just render it and error:
+            ;; ideally we should handle the status code in here rather than
+            ;; this crappy hack?
+            ((string-prefix-p "\n<!" json-string) ; html hack
+             (fedi-http--render-html-err json-string))
+            ;; if no json or html, maybe we have a plain string error message
+            ;; (misskey does this, but there are probably better ways to do
+            ;; this):
+            ((not (or (string-prefix-p "\n{" json-string)
+                      (string-prefix-p "\n[" json-string)))
+             (error "%s" json-string))
+            (t
+             `(,(json-read-from-string json-string) . ,headers))))))
+
+(defun fedi-http--process-headers ()
+  "Return an alist of http response headers."
+  (switch-to-buffer (current-buffer))
+  (goto-char (point-min))
+  (let* ((head-str (buffer-substring-no-properties
+                    (point-min)
+                    (re-search-forward "^$" nil 'move)))
+         (head-list (split-string head-str "\n")))
+    (mapcar (lambda (x)
+              (let ((list (split-string x ": ")))
+                (cons (car list) (cadr list))))
+            head-list)))
+
+(defun fedi-http--delete (url &optional params)
+  "Make DELETE request to URL.
+PARAMS is an alist of any extra parameters to send with the request."
+  ;; url-request-data only works with POST requests?
+  (let ((url (fedi-http--concat-params-to-url url params)))
+    (fedi-http--authorized-request "DELETE"
+      (with-temp-buffer
+        (fedi-http--url-retrieve-synchronously url)))))
+
+(defun fedi-http--put (url &optional params headers)
+  "Make PUT request to URL.
+PARAMS is an alist of any extra parameters to send with the request.
+HEADERS is an alist of any extra headers to send with the request."
+  (fedi-http--authorized-request "PUT"
+    (let ((url-request-data
+           (when params (fedi-http--build-params-string params)))
+          (url-request-extra-headers
+           (append url-request-extra-headers ; auth set in macro
+                   (unless (assoc "Content-Type" headers) ; pleroma compat:
+                     '(("Content-Type" . "application/x-www-form-urlencoded")))
+                   headers)))
+      (with-temp-buffer (fedi-http--url-retrieve-synchronously url)))))
+
+;; profile update functions
+
+(defun fedi-http--patch-json (url &optional params)
+  "Make synchronous PATCH request to URL. Return JSON response.
+Optionally specify the PARAMS to send."
+  (with-current-buffer (fedi-http--patch url params)
+    (fedi-http--process-json)))
+
+(defun fedi-http--patch (base-url &optional params)
+  "Make synchronous PATCH request to BASE-URL.
+Optionally specify the PARAMS to send."
+  (fedi-http--authorized-request "PATCH"
+    (let ((url (fedi-http--concat-params-to-url base-url params)))
+      (fedi-http--url-retrieve-synchronously url))))
+
+ ;; Asynchronous functions
+
+(defun fedi-http--get-async (url &optional params callback &rest cbargs)
+  "Make GET request to URL.
+Pass response buffer to CALLBACK function with args CBARGS.
+PARAMS is an alist of any extra parameters to send with the request."
+  (let ((url (fedi-http--concat-params-to-url url params)))
+    (fedi-http--authorized-request "GET"
+      (url-retrieve url callback cbargs))))
+
+(defun fedi-http--get-response-async (url &optional params callback &rest cbargs)
+  "Make GET request to URL. Call CALLBACK with http response and CBARGS.
+PARAMS is an alist of any extra parameters to send with the request."
+  (fedi-http--get-async
+   url
+   params
+   (lambda (status)
+     (when status ; for flakey servers
+       (apply callback (fedi-http--process-response) cbargs)))))
+
+(defun fedi-http--get-json-async (url &optional params callback &rest cbargs)
+  "Make GET request to URL. Call CALLBACK with json-list and CBARGS.
+PARAMS is an alist of any extra parameters to send with the request."
+  (fedi-http--get-async
+   url
+   params
+   (lambda (status)
+     (when status ;; only when we actually get sth?
+       (apply callback (fedi-http--process-json) cbargs)))))
+
+(defun fedi-http--post-async (url params _headers &optional callback &rest cbargs)
+  "POST asynchronously to URL with PARAMS and HEADERS.
+Then run function CALLBACK with arguements CBARGS.
+Authorization header is included by default unless UNAUTHENTICED-P is non-nil."
+  (fedi-http--authorized-request "POST"
+    (let ((request-timeout 5)
+          (url-request-data (when params
+                              (fedi-http--build-params-string params))))
+      (with-temp-buffer
+        (url-retrieve url callback cbargs)))))
+
+;; ;; TODO: test for curl first?
+;; (defun fedi-http--post-media-attachment (url filename caption)
+;;   "Make POST request to upload FILENAME with CAPTION to the server's media URL.
+;; The upload is asynchronous. On succeeding,
+;; `fedi-toot--media-attachment-ids' is set to the id(s) of the
+;; item uploaded, and `fedi-toot--update-status-fields' is run."
+;;   (let* ((file (file-name-nondirectory filename))
+;;          (request-backend 'curl))
+;;     (request
+;;       url
+;;       :type "POST"
+;;       :params `(("description" . ,caption))
+;;       :files `(("file" . (,file :file ,filename
+;;                                 :mime-type "multipart/form-data")))
+;;       :parser 'json-read
+;;       :headers `(("Authorization" . ,(concat "Bearer "
+;;                                              (fedi-auth--access-token))))
+;;       :sync nil
+;;       :success (cl-function
+;;                 (lambda (&key data &allow-other-keys)
+;;                   (when data
+;;                     (push (alist-get 'id data)
+;;                           fedi-toot--media-attachment-ids) ; add ID to list
+;;                     (message "%s file %s with id %S and caption '%s' uploaded!"
+;;                              (capitalize (alist-get 'type data))
+;;                              file
+;;                              (alist-get 'id data)
+;;                              (alist-get 'description data))
+;;                     (fedi-toot--update-status-fields))))
+;;       :error (cl-function
+;;               (lambda (&key error-thrown &allow-other-keys)
+;;                 (cond
+;;                  ;; handle curl errors first (eg 26, can't read file/path)
+;;                  ;; because the '=' test below fails for them
+;;                  ;; they have the form (error . error message 24)
+;;                  ((not (proper-list-p error-thrown)) ; not dotted list
+;; 		  (message "Got error: %s. Shit went south." (cdr error-thrown)))
+;;                  ;; handle fedi api errors
+;;                  ;; they have the form (error http 401)
+;; 		 ((= (car (last error-thrown)) 401)
+;;                   (message "Got error: %s Unauthorized: The access token is invalid"
+;;                            error-thrown))
+;;                  ((= (car (last error-thrown)) 422)
+;;                   (message "Got error: %s Unprocessable entity: file or file\
+;;  type is unsupported or invalid"
+;;                            error-thrown))
+;;                  (t
+;;                   (message "Got error: %s Shit went south"
+;;                            error-thrown))))))))
+
+(provide 'fedi-http)
+;;; fedi-http.el ends here
