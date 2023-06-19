@@ -41,7 +41,9 @@ construct function names in `fedi-request'.")
 ;; `mastodon-http--authorized-request' for examples of how to handle this.
 
 ;; maybe if you add extra-headers, extra-params args here, you can handle
-;; various auth types?
+;; various auth types. you cd wrap it with a library specific macro to
+;; abstract out the auth stuff from all your functions.
+
 ;; e.g. masto:
 ;; (let (((url-request-extra-headers
 ;;         (unless ,unauthenticated-p
@@ -55,31 +57,41 @@ construct function names in `fedi-request'.")
 
 ;; and then you can remove  `mastodon-http--authorized-request'
 
-(defmacro fedi-request (method name endpoint &optional args params json)
+(defmacro fedi-request
+    (method name endpoint &optional args params auth-param json headers)
   "Create http request function NAME, using http METHOD, for ENDPOINT.
-ARGS are for the function, PARAMS is an alist of form parameters.
-JSON means to send params as a JSON payload.
-Before calling this, set `fedi-package-prefix' to the name of your package."
+ARGS are for the function.
+PARAMS is an alist of form parameters to send with the request.
+AUTH-PARAM is a single-item alist, to append to params. It is a
+separate arg so that this macro can be wrapped with another one
+handling auth for all functions that need it.
+JSON means to encode params as a JSON payload.
+HEADERS is an alist that will be bound as `url-request-extra-headers'.
+To use this macro, you first need to set `fedi-package-prefix' to
+the name of your package."
   (declare (debug t)
            (indent 1))
   (let ((req-fun (intern (concat "fedi-http--" method))))
     `(defun ,(intern (concat fedi-package-prefix "-" name)) ,args
        (let* ((url (fedi-http--api ,endpoint))
+              (url-request-method ,(upcase method))
+              (url-request-extra-headers ,headers)
+              (params (if ,auth-param
+                          (append ,auth-param ,params)
+                        ,params))
               (response
                (cond ((or (equal ,method "post")
                           (equal ,method "put"))
-                      (funcall #',req-fun url ,params nil :unauthed ,json))
+                      (funcall #',req-fun url params nil ,json))
                      ((equal ,method "get")
-                      (funcall #',req-fun url ,params)))))
-         ;; FIXME: ideally here we would handle 404/500 responses as html, as
-         ;; in `fedi-http--process-response'. perhaps its code needs to move
-         ;; io to `fedi-http--triage'? or it's just that lemmy, my testing
-         ;; ground, has no html for 404 responses like some masto servers do
+                      (funcall #',req-fun url params)))))
+         ;; FIXME: ideally here we would handle 404/500 responses as html if
+         ;; its returned
          (fedi-http--triage response
                             (lambda ()
                               (with-current-buffer response
-                                (fedi-http--process-json))))))))
-
+                                ;; (fedi-http--process-json)
+                                (fedi-http--process-response :no-headers))))))))
 
 (provide 'fedi)
 ;;; fedi.el ends here
