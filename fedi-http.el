@@ -134,9 +134,7 @@ JSON means we are posting a JSON payload, so we add headers and json-string PARA
                             '(("Content-Type" . "application/json")
                               ("Accept" . "application/json")))))
          (url-request-extra-headers
-          (append url-request-extra-headers ; auth set in macro
-                  (unless (assoc "Content-Type" headers) ; pleroma compat:
-                    '(("Content-Type" . "application/x-www-form-urlencoded")))
+          (append url-request-extra-headers ; set in macro
                   headers)))
     (with-temp-buffer
       (fedi-http--url-retrieve-synchronously url))))
@@ -257,10 +255,9 @@ HEADERS is an alist of any extra headers to send with the request."
                               ("Accept" . "application/json")))))
          (url-request-extra-headers
           (append url-request-extra-headers ; auth set in macro
-                  (unless (assoc "Content-Type" headers) ; pleroma compat:
-                    '(("Content-Type" . "application/x-www-form-urlencoded")))
                   headers)))
-    (with-temp-buffer (fedi-http--url-retrieve-synchronously url))))
+    (with-temp-buffer
+      (fedi-http--url-retrieve-synchronously url))))
 
 (defun fedi-http--patch-json (url &optional params)
   "Make synchronous PATCH request to URL. Return JSON response.
