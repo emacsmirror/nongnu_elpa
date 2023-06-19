@@ -190,6 +190,7 @@ STRING should be a HTML for a 404 errror."
 (defun fedi-http--process-response (&optional no-headers vector)
   "Process http response.
 Return a cons of JSON list and http response headers.
+If response is HTML, it's likely an error so render it with shr.
 If NO-HEADERS is non-nil, just return the JSON.
 VECTOR means return json arrays as vectors.
 Callback to `fedi-http--get-response-async'."
@@ -209,7 +210,7 @@ Callback to `fedi-http--get-response-async'."
             ;; if we get html, just render it and error:
             ;; ideally we should handle the status code in here rather than
             ;; this crappy hack?
-            ((string-prefix-p "\n<!" json-string) ; html hack
+            ((string-prefix-p "\n<" json-string) ; html hack
              (fedi-http--render-html-err json-string))
             ;; if no json or html, maybe we have a plain string error message
             ;; (misskey does this, but there are probably better ways to do
