@@ -51,7 +51,7 @@ HEADERS is an alist that will be bound as `url-request-extra-headers'.
 To use this macro, you first need to set `fedi-package-prefix' to
 the name of your package."
   (declare (debug t)
-           (indent 1))
+           (indent 2))
   (let ((req-fun (intern (concat "fedi-http--" method))))
     `(defun ,(intern (concat fedi-package-prefix "-" name)) ,args
        (let* ((url (fedi-http--api ,endpoint))
