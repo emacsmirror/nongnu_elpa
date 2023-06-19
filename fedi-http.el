@@ -1,12 +1,13 @@
 ;;; fedi-http.el --- HTTP request/response functions  -*- lexical-binding: t -*-
 
-;; Copyright (C) 2020-2022 Marty Hiatt
+;; Copyright (C) 2020-2022 Marty Hiatt and mastodon.el authors
 ;; Author: Marty Hiatt <martianhiatus@riseup.net>
-;; Version: 0.0.1
-;; Package-Requires: ((emacs "27.1"))
+;; Version: 0.0.2
 ;; Homepage: https://codeberg.org/martianh/fedi.el
 
 ;; This file is not part of GNU Emacs.
+
+;; This file is part of fedi.el
 
 ;; fedi-http.el is free software: you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by

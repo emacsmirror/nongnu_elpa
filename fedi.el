@@ -1,8 +1,8 @@
-;;; fedi.el --- helper functions for fediverse clients  -*- lexical-binding: t -*-
+;;; fedi.el --- Helper functions for fediverse clients  -*- lexical-binding: t -*-
 
-;; Copyright (C) 2020-2022 Marty Hiatt
+;; Copyright (C) 2020-2022 Marty Hiatt and mastodon.el authors
 ;; Author: Marty Hiatt <martianhiatus@riseup.net>
-;; Version: 0.0.1
+;; Version: 0.0.2
 ;; Package-Requires: ((emacs "27.1"))
 ;; Homepage: https://codeberg.org/martianh/fedi.el
 
@@ -47,8 +47,8 @@
   "The URL of the instance to connect to.")
 
 (defvar fedi-package-prefix nil
-  "The name of your package, without following dash. Used to
-construct function names in `fedi-request'.")
+  "The name of your package, without following dash.
+Used to construct function names in `fedi-request'.")
 
 (defmacro fedi-request
     (method name endpoint &optional args params auth-param json headers)
@@ -69,16 +69,16 @@ name of your package, and set `fedi-instance-url' to the URL of
 an instance of your fedi service.
 
 The name of functions generated with this will be the result of:
-(concat fedi-package-prefix \"-\" name).
+\(concat fedi-package-prefix \"-\" name).
 
 The full URL for the endpoint is constructed by `fedi-http--api',
 which see. ENDPOINT does not require a preceding slash.
 
 For example, to make a GET request, called PKG-search to endpoint /search:
 
-(fedi-request \"get\" \"search\"
+\(fedi-request \"get\" \"search\"
   \"search\" (query)
-  `((\"q\" . ,query)))
+  \\=`((\"q\" . ,query)))
 
 This macro doesn't handle authenticated requests, as these differ
 between services. But you can easily wrap it in another macro
