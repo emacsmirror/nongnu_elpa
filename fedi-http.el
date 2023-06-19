@@ -122,8 +122,10 @@ Used for API form data parameters that take an array."
 
 (defun fedi-http--post (url &optional params headers json)
   "POST synchronously to URL, optionally with PARAMS and HEADERS.
-Authorization header is included by default unless UNAUTHENTICATED-P is non-nil.
-JSON means we are posting a JSON payload, so we add headers and json-string PARAMS."
+Authorization header is included by default unless
+UNAUTHENTICATED-P is non-nil.
+JSON means we are posting a JSON payload, so we add headers and
+json-string PARAMS."
   (let* ((url-request-data
           (when params
             (if json
@@ -178,7 +180,7 @@ Callback to `fedi-http--get-json-async', usually
 
 (defun fedi-http--render-html-err (string)
   "Render STRING as HTML in a temp buffer.
-STRING should be a HTML for a 404 errror."
+STRING should be HTML for a 404 errror."
   (with-temp-buffer
     (insert string)
     (shr-render-buffer (current-buffer))

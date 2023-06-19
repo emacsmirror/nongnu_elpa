@@ -23,24 +23,32 @@
 
 ;;; Commentary:
 
-;; fedi.el
+;; fedi.el adapts mastodon-http.el from
+;; <https://codeberg.org/martianh/mastodon.el> to make it easy to write
+;; endpoint-hitting functions for JSON APIs.
+
+;; It provides `fedi-request' to generate the functions, handles constructing
+;; form data parameters and JSON payloads (for POST/PUT, etc.).
+
+;; Responses are checked with `fedi-http--triage', and processed with
+;; `fedi-http--process-response'. If a response returns HTML, it is rendered
+;; with `shr'.
+
+;; Because of mastodon.el works, there is also code for handling link headers
+;; in responses. Mastodon uses these for pagination in some cases. If your
+;; service also des, you can handle them too.
 
 ;;; Code:
 
 (require 'fedi-http)
 
-;;; MACRO
 (defvar fedi-package-prefix nil
   "The name of your package, without following dash. Used to
 construct function names in `fedi-request'.")
 
-;; this macro can be used for quickly creating request commands to endpoints.
-;; see the examples in lem.el. it doesn't handle authenticated requests, as
-;; these differ highly between services. but you can easily wrap it in a
-;; package macro. see `lem-request' in lem.el for an example.
 (defmacro fedi-request
     (method name endpoint &optional args params auth-param json headers)
-  "Create http request function NAME, using http METHOD, for ENDPOINT.
+  "Create a http request function NAME, using http METHOD, for ENDPOINT.
 ARGS are for the function.
 PARAMS is an alist of form parameters to send with the request.
 AUTH-PARAM is a single-item alist, to append to params. It is a
@@ -48,8 +56,28 @@ separate arg so that this macro can be wrapped with another one
 handling auth for all functions that need it.
 JSON means to encode params as a JSON payload.
 HEADERS is an alist that will be bound as `url-request-extra-headers'.
-To use this macro, you first need to set `fedi-package-prefix' to
-the name of your package."
+
+This macro is designed to generate functions for fetching data
+from JSON APIs.
+
+To use it, you first need to set `fedi-package-prefix' to the
+name of your package.
+
+The name of functions generated with this will be the result of:
+(concat fedi-package-prefix \"-\" name).
+
+The full URL for the endpoint is constructed by `fedi-http--api',
+which see. ENDPOINT does not require a preceding slash.
+
+For example, to make a GET request, called PKG-search to endpoint /search:
+
+(fedi-request \"get\" \"search\"
+  \"search\" (query)
+  `((\"q\" . ,query)))
+
+This macro doesn't handle authenticated requests, as these differ
+between services. But you can easily wrap it in another macro
+that handles auth by providing info using HEADERS or AUTH-PARAM."
   (declare (debug t)
            (indent 2))
   (let ((req-fun (intern (concat "fedi-http--" method))))
