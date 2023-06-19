@@ -39,6 +39,22 @@ construct function names in `fedi-request'.")
 ;; these differ highly between services. but you can easily modify it to
 ;; incorporate auth tokens. see `lem-request' in lem.el, or
 ;; `mastodon-http--authorized-request' for examples of how to handle this.
+
+;; maybe if you add extra-headers, extra-params args here, you can handle
+;; various auth types?
+;; e.g. masto:
+;; (let (((url-request-extra-headers
+;;         (unless ,unauthenticated-p
+;;           (list (cons "Authorization"
+;;                       (concat "Bearer " (mastodon-auth--access-token)))))))))
+
+;; eg lem:
+;; (params (unless ,no-auth
+;;           (append `(("auth" . ,lem-auth-token))
+;;                   ,params)))
+
+;; and then you can remove  `mastodon-http--authorized-request'
+
 (defmacro fedi-request (method name endpoint &optional args params json)
   "Create http request function NAME, using http METHOD, for ENDPOINT.
 ARGS are for the function, PARAMS is an alist of form parameters.
