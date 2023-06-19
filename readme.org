@@ -1,0 +1,11 @@
+* fedi.el
+
+A library to make writing clients for APIs easier.
+
+This is a WIP mess, with code taken from mastodon.el. It will be cleaned up, and made less convoluted, but it's already useable.
+
+The macro =fedi-request= allows you to quickly create HTTP request commands to endpoints provided, with parameters sent as form data or JSON payloads (for POST, PUT, probably PATCH).
+
+If you want to incorporate your service's authentication methods, you may find it easier to copy the macro and incorporate the auth work into it, so you don't need to include it in every request.
+
+For an example of using this library, see my [[https://codeberg.org/martianh/lem][lem]] repo.
