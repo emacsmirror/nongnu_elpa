@@ -66,12 +66,9 @@ the name of your package."
                       (funcall #',req-fun url params nil ,json))
                      ((equal ,method "get")
                       (funcall #',req-fun url params)))))
-         ;; FIXME: ideally here we would handle 404/500 responses as html if
-         ;; its returned
          (fedi-http--triage response
                             (lambda ()
                               (with-current-buffer response
-                                ;; (fedi-http--process-json)
                                 (fedi-http--process-response :no-headers))))))))
 
 (provide 'fedi)
