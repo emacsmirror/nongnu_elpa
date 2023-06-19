@@ -131,6 +131,8 @@ json-string PARAMS."
             (if json
                 (json-encode params)
               (fedi-http--build-params-string params))))
+         ;; TODO: perhaps leave these headers to the package now that
+         ;; `fedi-request' takes header args?
          (headers (when json
                     (append headers
                             '(("Content-Type" . "application/json")
