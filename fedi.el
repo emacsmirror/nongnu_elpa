@@ -51,7 +51,7 @@
 Used to construct function names in `fedi-request'.")
 
 (defmacro fedi-request
-    (method name endpoint &optional args params auth-param json headers)
+    (method name endpoint &optional args docstring params auth-param json headers)
   "Create a http request function NAME, using http METHOD, for ENDPOINT.
 ARGS are for the function.
 PARAMS is an alist of form parameters to send with the request.
@@ -87,6 +87,7 @@ that handles auth by providing info using HEADERS or AUTH-PARAM."
            (indent 2))
   (let ((req-fun (intern (concat "fedi-http--" method))))
     `(defun ,(intern (concat fedi-package-prefix "-" name)) ,args
+       ,docstring
        (let* ((url (fedi-http--api ,endpoint))
               (url-request-method ,(upcase method))
               (url-request-extra-headers ,headers)
