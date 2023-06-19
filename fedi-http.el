@@ -3,6 +3,7 @@
 ;; Copyright (C) 2020-2022 Marty Hiatt and mastodon.el authors
 ;; Author: Marty Hiatt <martianhiatus@riseup.net>
 ;; Version: 0.0.2
+;; Package-Requires: ((emacs "27.1"))
 ;; Homepage: https://codeberg.org/martianh/fedi.el
 
 ;; This file is not part of GNU Emacs.
@@ -47,6 +48,7 @@
 ;; (defvar fedi-toot--media-attachment-ids)
 ;; (defvar fedi-toot--media-attachment-filenames)
 
+(defvar fedi-instance-url)
 (defvar fedi-http--api-version "v3")
 
 (defconst fedi-http--timeout 15
@@ -122,8 +124,6 @@ Used for API form data parameters that take an array."
 
 (defun fedi-http--post (url &optional params headers json)
   "POST synchronously to URL, optionally with PARAMS and HEADERS.
-Authorization header is included by default unless
-UNAUTHENTICATED-P is non-nil.
 JSON means we are posting a JSON payload, so we add headers and
 json-string PARAMS."
   (let* ((url-request-data
@@ -244,10 +244,11 @@ PARAMS is an alist of any extra parameters to send with the request."
     (with-temp-buffer
       (fedi-http--url-retrieve-synchronously url))))
 
-(defun fedi-http--put (url &optional params headers unauthenticated-p json)
+(defun fedi-http--put (url &optional params headers json)
   "Make PUT request to URL.
 PARAMS is an alist of any extra parameters to send with the request.
-HEADERS is an alist of any extra headers to send with the request."
+HEADERS is an alist of any extra headers to send with the request.
+If JSON, encode params as JSON."
   (let* ((url-request-data
           (when params
             (if json
@@ -304,10 +305,10 @@ PARAMS is an alist of any extra parameters to send with the request."
      (when status ;; only when we actually get sth?
        (apply callback (fedi-http--process-json) cbargs)))))
 
-(defun fedi-http--post-async (url params _headers &optional callback &rest cbargs)
+(defun fedi-http--post-async (url params _headers
+                                  &optional callback &rest cbargs)
   "POST asynchronously to URL with PARAMS and HEADERS.
-Then run function CALLBACK with arguements CBARGS.
-Authorization header is included by default unless UNAUTHENTICED-P is non-nil."
+Then run function CALLBACK with arguements CBARGS."
   (let ((request-timeout 5)
         (url-request-data (when params
                             (fedi-http--build-params-string params))))
