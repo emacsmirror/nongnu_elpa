@@ -36,27 +36,8 @@ construct function names in `fedi-request'.")
 
 ;; this macro can be used for quickly creating request commands to endpoints.
 ;; see the examples in lem.el. it doesn't handle authenticated requests, as
-;; these differ highly between services. but you can easily modify it to
-;; incorporate auth tokens. see `lem-request' in lem.el, or
-;; `mastodon-http--authorized-request' for examples of how to handle this.
-
-;; maybe if you add extra-headers, extra-params args here, you can handle
-;; various auth types. you cd wrap it with a library specific macro to
-;; abstract out the auth stuff from all your functions.
-
-;; e.g. masto:
-;; (let (((url-request-extra-headers
-;;         (unless ,unauthenticated-p
-;;           (list (cons "Authorization"
-;;                       (concat "Bearer " (mastodon-auth--access-token)))))))))
-
-;; eg lem:
-;; (params (unless ,no-auth
-;;           (append `(("auth" . ,lem-auth-token))
-;;                   ,params)))
-
-;; and then you can remove  `mastodon-http--authorized-request'
-
+;; these differ highly between services. but you can easily wrap it in a
+;; package macro. see `lem-request' in lem.el for an example.
 (defmacro fedi-request
     (method name endpoint &optional args params auth-param json headers)
   "Create http request function NAME, using http METHOD, for ENDPOINT.
