@@ -39,13 +39,12 @@
 ;; (require 'request) ; for attachments upload
 (require 'url)
 
-(defvar fedi-instance-url)
-(defvar fedi-toot--media-attachment-ids)
-(defvar fedi-toot--media-attachment-filenames)
-
 (autoload 'shr-render-buffer "shr")
 (autoload 'fedi-auth--access-token "fedi-auth")
 (autoload 'fedi-toot--update-status-fields "fedi-toot")
+
+;; (defvar fedi-toot--media-attachment-ids)
+;; (defvar fedi-toot--media-attachment-filenames)
 
 (defvar fedi-http--api-version "v3")
 

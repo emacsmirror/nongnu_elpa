@@ -43,6 +43,9 @@
 
 (require 'fedi-http)
 
+(defvar fedi-instance-url nil
+  "The URL of the instance to connect to.")
+
 (defvar fedi-package-prefix nil
   "The name of your package, without following dash. Used to
 construct function names in `fedi-request'.")
@@ -62,7 +65,8 @@ This macro is designed to generate functions for fetching data
 from JSON APIs.
 
 To use it, you first need to set `fedi-package-prefix' to the
-name of your package.
+name of your package, and set `fedi-instance-url' to the URL of
+an instance of your fedi service.
 
 The name of functions generated with this will be the result of:
 (concat fedi-package-prefix \"-\" name).
