@@ -23,8 +23,15 @@
 
 ;;; Commentary:
 
-;; fed-http.el provides HTTP request/response functions. Code from
-;; mastodon-http.el, see its boilerplate for authorship, etc.
+;; fed-http.el provides HTTP request/response convenience functions.
+
+;; All request functions aim to have regular arguments: a URL, a parameters
+;; alist, optional headers if appropriate, callback if async, etc.
+
+;; There are also helpfer functions for constructing query parameters and
+;; array parameter lists.
+
+;; Code from mastodon-http.el, see its boilerplate for authorship, etc.
 
 ;;; Code:
 
@@ -97,6 +104,10 @@ RESPONSE if unsuccessful."
     (insert-file-contents filename)
     (string-to-unibyte (buffer-string))))
 
+;; this is only useful if services other than Mastodon use the same headers
+;; lemmy does not. an option could be to handle various services' auth types
+;; here but maybe best they each do it themselves, in which case we remove or
+;; simplify this.
 (defmacro fedi-http--authorized-request (method body &optional unauthenticated-p)
   "Make a METHOD type request using BODY, with Fedi authorization.
 Unless UNAUTHENTICATED-P is non-nil."
@@ -201,8 +212,7 @@ STRING should be a HTML for a 404 errror."
 Return a cons of JSON list and http response headers.
 If NO-HEADERS is non-nil, just return the JSON.
 VECTOR means return json arrays as vectors.
-Callback to `fedi-http--get-response-async', usually
-`fedi-tl--init*', is run on the result."
+Callback to `fedi-http--get-response-async'."
   ;; view raw response:
   ;; (switch-to-buffer (current-buffer))
   (let ((headers (unless no-headers
