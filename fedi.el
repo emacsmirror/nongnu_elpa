@@ -91,8 +91,9 @@ that handles auth by providing info using HEADERS or AUTH-PARAM."
               (response
                (cond ((or (equal ,method "post")
                           (equal ,method "put"))
+                      ;; FIXME: deal with headers nil arg here:
                       (funcall #',req-fun url params nil ,json))
-                     ((equal ,method "get")
+                     (t
                       (funcall #',req-fun url params)))))
          (fedi-http--triage response
                             (lambda ()
