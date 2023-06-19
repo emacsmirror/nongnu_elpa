@@ -252,21 +252,27 @@ PARAMS is an alist of any extra parameters to send with the request."
       (with-temp-buffer
         (fedi-http--url-retrieve-synchronously url)))))
 
-(defun fedi-http--put (url &optional params headers)
+(defun fedi-http--put (url &optional params headers unauthenticated-p json)
   "Make PUT request to URL.
 PARAMS is an alist of any extra parameters to send with the request.
 HEADERS is an alist of any extra headers to send with the request."
   (fedi-http--authorized-request "PUT"
-    (let ((url-request-data
-           (when params (fedi-http--build-params-string params)))
-          (url-request-extra-headers
-           (append url-request-extra-headers ; auth set in macro
-                   (unless (assoc "Content-Type" headers) ; pleroma compat:
-                     '(("Content-Type" . "application/x-www-form-urlencoded")))
-                   headers)))
-      (with-temp-buffer (fedi-http--url-retrieve-synchronously url)))))
-
-;; profile update functions
+    (let* ((url-request-data
+            (when params
+              (if json
+                  (json-encode params)
+                (fedi-http--build-params-string params))))
+           (headers (when json
+                      (append headers
+                              '(("Content-Type" . "application/json")
+                                ("Accept" . "application/json")))))
+           (url-request-extra-headers
+            (append url-request-extra-headers ; auth set in macro
+                    (unless (assoc "Content-Type" headers) ; pleroma compat:
+                      '(("Content-Type" . "application/x-www-form-urlencoded")))
+                    headers)))
+      (with-temp-buffer (fedi-http--url-retrieve-synchronously url)))
+    unauthenticated-p))
 
 (defun fedi-http--patch-json (url &optional params)
   "Make synchronous PATCH request to URL. Return JSON response.
