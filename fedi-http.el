@@ -104,22 +104,6 @@ RESPONSE if unsuccessful."
     (insert-file-contents filename)
     (string-to-unibyte (buffer-string))))
 
-;; this is only useful if services other than Mastodon use the same headers
-;; lemmy does not. an option could be to handle various services' auth types
-;; here but maybe best they each do it themselves, in which case we remove or
-;; simplify this.
-(defmacro fedi-http--authorized-request (method body &optional unauthenticated-p)
-  "Make a METHOD type request using BODY, with Fedi authorization.
-Unless UNAUTHENTICATED-P is non-nil."
-  (declare (debug 'body)
-           (indent 1))
-  `(let ((url-request-method ,method)
-         (url-request-extra-headers
-          (unless ,unauthenticated-p
-            (list (cons "Authorization"
-                        (concat "Bearer " (fedi-auth--access-token)))))))
-     ,body))
-
 (defun fedi-http--build-params-string (params)
   "Build a request parameters string from parameters alist PARAMS."
   ;; (url-build-query-string args nil))
@@ -136,28 +120,26 @@ Used for API form data parameters that take an array."
   (cl-loop for x in array
            collect (cons param-str x)))
 
-(defun fedi-http--post (url &optional params headers unauthenticated-p json)
+(defun fedi-http--post (url &optional params headers json)
   "POST synchronously to URL, optionally with PARAMS and HEADERS.
 Authorization header is included by default unless UNAUTHENTICATED-P is non-nil.
 JSON means we are posting a JSON payload, so we add headers and json-string PARAMS."
-  (fedi-http--authorized-request "POST"
-    (let* ((url-request-data
-            (when params
-              (if json
-                  (json-encode params)
-                (fedi-http--build-params-string params))))
-           (headers (when json
-                      (append headers
-                              '(("Content-Type" . "application/json")
-                                ("Accept" . "application/json")))))
-           (url-request-extra-headers
-            (append url-request-extra-headers ; auth set in macro
-                    (unless (assoc "Content-Type" headers) ; pleroma compat:
-                      '(("Content-Type" . "application/x-www-form-urlencoded")))
-                    headers)))
-      (with-temp-buffer
-        (fedi-http--url-retrieve-synchronously url)))
-    unauthenticated-p))
+  (let* ((url-request-data
+          (when params
+            (if json
+                (json-encode params)
+              (fedi-http--build-params-string params))))
+         (headers (when json
+                    (append headers
+                            '(("Content-Type" . "application/json")
+                              ("Accept" . "application/json")))))
+         (url-request-extra-headers
+          (append url-request-extra-headers ; auth set in macro
+                  (unless (assoc "Content-Type" headers) ; pleroma compat:
+                    '(("Content-Type" . "application/x-www-form-urlencoded")))
+                  headers)))
+    (with-temp-buffer
+      (fedi-http--url-retrieve-synchronously url))))
 
 (defun fedi-http--concat-params-to-url (url params)
   "Build a query string with PARAMS and concat to URL."
@@ -170,11 +152,9 @@ JSON means we are posting a JSON payload, so we add headers and json-string PARA
   "Make synchronous GET request to URL.
 PARAMS is an alist of any extra parameters to send with the request.
 SILENT means don't message."
-  (fedi-http--authorized-request "GET"
-    ;; url-request-data doesn't seem to work with GET requests?:
-    (let ((url (fedi-http--concat-params-to-url url params)))
-      (fedi-http--url-retrieve-synchronously url silent))
-    t))
+  ;; url-request-data doesn't seem to work with GET requests?:
+  (let ((url (fedi-http--concat-params-to-url url params)))
+    (fedi-http--url-retrieve-synchronously url silent)))
 
 (defun fedi-http--get-response (url &optional params no-headers silent vector)
   "Make synchronous GET request to URL. Return JSON and response headers.
@@ -258,31 +238,28 @@ Callback to `fedi-http--get-response-async'."
 PARAMS is an alist of any extra parameters to send with the request."
   ;; url-request-data only works with POST requests?
   (let ((url (fedi-http--concat-params-to-url url params)))
-    (fedi-http--authorized-request "DELETE"
-      (with-temp-buffer
-        (fedi-http--url-retrieve-synchronously url)))))
+    (with-temp-buffer
+      (fedi-http--url-retrieve-synchronously url))))
 
 (defun fedi-http--put (url &optional params headers unauthenticated-p json)
   "Make PUT request to URL.
 PARAMS is an alist of any extra parameters to send with the request.
 HEADERS is an alist of any extra headers to send with the request."
-  (fedi-http--authorized-request "PUT"
-    (let* ((url-request-data
-            (when params
-              (if json
-                  (json-encode params)
-                (fedi-http--build-params-string params))))
-           (headers (when json
-                      (append headers
-                              '(("Content-Type" . "application/json")
-                                ("Accept" . "application/json")))))
-           (url-request-extra-headers
-            (append url-request-extra-headers ; auth set in macro
-                    (unless (assoc "Content-Type" headers) ; pleroma compat:
-                      '(("Content-Type" . "application/x-www-form-urlencoded")))
-                    headers)))
-      (with-temp-buffer (fedi-http--url-retrieve-synchronously url)))
-    unauthenticated-p))
+  (let* ((url-request-data
+          (when params
+            (if json
+                (json-encode params)
+              (fedi-http--build-params-string params))))
+         (headers (when json
+                    (append headers
+                            '(("Content-Type" . "application/json")
+                              ("Accept" . "application/json")))))
+         (url-request-extra-headers
+          (append url-request-extra-headers ; auth set in macro
+                  (unless (assoc "Content-Type" headers) ; pleroma compat:
+                    '(("Content-Type" . "application/x-www-form-urlencoded")))
+                  headers)))
+    (with-temp-buffer (fedi-http--url-retrieve-synchronously url))))
 
 (defun fedi-http--patch-json (url &optional params)
   "Make synchronous PATCH request to URL. Return JSON response.
@@ -293,9 +270,8 @@ Optionally specify the PARAMS to send."
 (defun fedi-http--patch (base-url &optional params)
   "Make synchronous PATCH request to BASE-URL.
 Optionally specify the PARAMS to send."
-  (fedi-http--authorized-request "PATCH"
-    (let ((url (fedi-http--concat-params-to-url base-url params)))
-      (fedi-http--url-retrieve-synchronously url))))
+  (let ((url (fedi-http--concat-params-to-url base-url params)))
+    (fedi-http--url-retrieve-synchronously url)))
 
  ;; Asynchronous functions
 
@@ -304,8 +280,7 @@ Optionally specify the PARAMS to send."
 Pass response buffer to CALLBACK function with args CBARGS.
 PARAMS is an alist of any extra parameters to send with the request."
   (let ((url (fedi-http--concat-params-to-url url params)))
-    (fedi-http--authorized-request "GET"
-      (url-retrieve url callback cbargs))))
+    (url-retrieve url callback cbargs)))
 
 (defun fedi-http--get-response-async (url &optional params callback &rest cbargs)
   "Make GET request to URL. Call CALLBACK with http response and CBARGS.
@@ -331,12 +306,11 @@ PARAMS is an alist of any extra parameters to send with the request."
   "POST asynchronously to URL with PARAMS and HEADERS.
 Then run function CALLBACK with arguements CBARGS.
 Authorization header is included by default unless UNAUTHENTICED-P is non-nil."
-  (fedi-http--authorized-request "POST"
-    (let ((request-timeout 5)
-          (url-request-data (when params
-                              (fedi-http--build-params-string params))))
-      (with-temp-buffer
-        (url-retrieve url callback cbargs)))))
+  (let ((request-timeout 5)
+        (url-request-data (when params
+                            (fedi-http--build-params-string params))))
+    (with-temp-buffer
+      (url-retrieve url callback cbargs))))
 
 ;; ;; TODO: test for curl first?
 ;; (defun fedi-http--post-media-attachment (url filename caption)
