@@ -104,7 +104,7 @@ that handles auth by providing info using HEADERS or AUTH-PARAM."
          (fedi-http--triage response
                             (lambda ()
                               (with-current-buffer response
-                                (fedi-http--process-response :no-headers))))))))
+                                (fedi-http--process-json))))))))
 
 (provide 'fedi)
 ;;; fedi.el ends here
