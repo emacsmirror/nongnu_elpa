@@ -88,7 +88,7 @@ that handles auth by providing info using HEADERS or AUTH-PARAM."
   (let ((req-fun (intern (concat "fedi-http--" method))))
     `(defun ,(intern (concat fedi-package-prefix "-" name)) ,args
        ,docstring
-       (let* ((url (fedi-http--api ,endpoint))
+       (let* ((req-url (fedi-http--api ,endpoint))
               (url-request-method ,(upcase method))
               (url-request-extra-headers ,headers)
               (params (if ,auth-param
@@ -98,9 +98,9 @@ that handles auth by providing info using HEADERS or AUTH-PARAM."
                (cond ((or (equal ,method "post")
                           (equal ,method "put"))
                       ;; FIXME: deal with headers nil arg here:
-                      (funcall #',req-fun url params nil ,json))
+                      (funcall #',req-fun req-url params nil ,json))
                      (t
-                      (funcall #',req-fun url params)))))
+                      (funcall #',req-fun req-url params)))))
          (fedi-http--triage response
                             (lambda ()
                               (with-current-buffer response
