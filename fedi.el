@@ -76,15 +76,15 @@ which see. ENDPOINT does not require a preceding slash.
 
 For example, to make a GET request, called PKG-search to endpoint /search:
 
-\(fedi-request \"get\" \"search\"
-  \"search\" (query)
+\(fedi-request \"get\" \"search\" \"search\"
+  (query)
   \\=`((\"q\" . ,query)))
 
 This macro doesn't handle authenticated requests, as these differ
 between services. But you can easily wrap it in another macro
 that handles auth by providing info using HEADERS or AUTH-PARAM."
   (declare (debug t)
-           (indent 2))
+           (indent 3))
   (let ((req-fun (intern (concat "fedi-http--" method))))
     `(defun ,(intern (concat fedi-package-prefix "-" name)) ,args
        ,docstring
