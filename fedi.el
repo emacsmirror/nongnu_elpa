@@ -96,7 +96,7 @@ that handles auth by providing info using HEADERS or AUTH-PARAM."
               (params-alist (remove nil
                                     (list ,@(fedi-make-params-alist params))))
               (params (if ',man-params
-                          (append ,man-params params-alist)
+                          (append ',man-params params-alist)
                         params-alist))
               (response
                (cond ((or (equal ,method "post")
