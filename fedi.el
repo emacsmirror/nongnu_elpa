@@ -76,9 +76,11 @@ which see. ENDPOINT does not require a preceding slash.
 
 For example, to make a GET request, called PKG-search to endpoint /search:
 
-\(fedi-request \"get\" \"search\"
-  \"search\" (query)
-  \\=`((\"q\" . ,query)))
+\(fedi-request \"get\" \"search\" \"search\"
+  (q)
+  \"Make a GET request.
+Q is the search query.\"
+  \\=(q))
 
 This macro doesn't handle authenticated requests, as these differ
 between services. But you can easily wrap it in another macro
