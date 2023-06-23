@@ -3,7 +3,7 @@
 ;; Copyright (C) 2020-2022 Marty Hiatt and mastodon.el authors
 ;; Author: Marty Hiatt <martianhiatus@riseup.net>
 ;; Version: 0.0.2
-;; Package-Requires: ((emacs "27.1"))
+;; Package-Requires: ((emacs "28.1"))
 ;; Homepage: https://codeberg.org/martianh/fedi.el
 
 ;; This file is not part of GNU Emacs.
@@ -111,19 +111,20 @@ that handles auth by providing info using HEADERS or AUTH-PARAM."
                                 (fedi-http--process-json))))))))
 
 (defun fedi-arg-when-expr (arg)
+  "Return a cons of a string and a symbol type of ARG.
+Also replace _ with - (for Lemmy's type_ param)."
   (let ((str
          (string-replace "-" "_" ; for "type_"
                          (symbol-name arg))))
-    ;; FIXME: when the when test fails, it adds nil to the list in the expansion.
-    ;; so we have to call (remove nil) on the result.
+    ;; FIXME: when the when test fails, it adds nil to the list in the
+    ;; expansion, so we have to call (remove nil) on the result.
     `(when ,arg
-       (cons ,str
-             ;;(symbol-name arg)
-             ,arg))))
+       (cons ,str ,arg))))
 
 ;; (fedi-arg-when-expr 'sort)
 
 (defun fedi-make-params-alist (args)
+  "Call `fedi-arg-when-expr' on ARGS."
   (cl-loop while args
            collecting (fedi-arg-when-expr (pop args))))
 
