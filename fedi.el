@@ -91,9 +91,10 @@ that handles auth by providing info using HEADERS or AUTH-PARAM."
        (let* ((req-url (fedi-http--api ,endpoint))
               (url-request-method ,(upcase method))
               (url-request-extra-headers ,headers)
+              (params-alist (list ,@(fedi-make-params-alist params)))
               (params (if ,auth-param
-                          (append ,auth-param ,params)
-                        ,params))
+                          (append ,auth-param params-alist)
+                        params-alist))
               (response
                (cond ((or (equal ,method "post")
                           (equal ,method "put"))
@@ -105,6 +106,23 @@ that handles auth by providing info using HEADERS or AUTH-PARAM."
                             (lambda ()
                               (with-current-buffer response
                                 (fedi-http--process-json))))))))
+
+(defun fedi-arg-when-expr (arg)
+  (let ((str
+         (string-replace "-" "_" ; for "type_"
+                         (symbol-name arg))))
+    `(when ,arg
+       (cons ,str
+             ;;(symbol-name arg)
+             ,arg))))
+
+;; (fedi-arg-when-expr 'sort)
+
+(defun fedi-make-params-alist (args)
+  (cl-loop while args
+           collecting (fedi-arg-when-expr (pop args))))
+
+;; (fedi-make-params-alist '(sort type))
 
 (provide 'fedi)
 ;;; fedi.el ends here
