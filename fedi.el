@@ -110,6 +110,10 @@ that handles auth by providing info using HEADERS or AUTH-PARAM."
                               (with-current-buffer response
                                 (fedi-http--process-json))))))))
 
+;; This trick doesn't actually do what we want, as our macro is called
+;; to define functions, so must be called with all possible arguments, rather
+;; than only those of a given function call.
+;; Still, it solves the problem of the server rejecting nil param values.
 (defun fedi-arg-when-expr (arg)
   "Return a cons of a string and a symbol type of ARG.
 Also replace _ with - (for Lemmy's type_ param)."
