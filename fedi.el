@@ -3,7 +3,7 @@
 ;; Copyright (C) 2020-2022 Marty Hiatt and mastodon.el authors
 ;; Author: Marty Hiatt <martianhiatus@riseup.net>
 ;; Version: 0.0.2
-;; Package-Requires: ((emacs "27.1"))
+;; Package-Requires: ((emacs "28.1"))
 ;; Homepage: https://codeberg.org/martianh/fedi.el
 
 ;; This file is not part of GNU Emacs.
@@ -51,13 +51,13 @@
 Used to construct function names in `fedi-request'.")
 
 (defmacro fedi-request
-    (method name endpoint &optional args docstring params auth-param json headers)
+    (method name endpoint
+            &optional args docstring params man-params json headers)
   "Create a http request function NAME, using http METHOD, for ENDPOINT.
 ARGS are for the function.
-PARAMS is an alist of form parameters to send with the request.
-AUTH-PARAM is a single-item alist, to append to params. It is a
-separate arg so that this macro can be wrapped with another one
-handling auth for all functions that need it.
+PARAMS is an list of elements from which to build an alist of
+form parameters to send with the request.
+MAN-PARAMS is an alist, to append to the one created from PARAMS.
 JSON means to encode params as a JSON payload.
 HEADERS is an alist that will be bound as `url-request-extra-headers'.
 
@@ -77,8 +77,10 @@ which see. ENDPOINT does not require a preceding slash.
 For example, to make a GET request, called PKG-search to endpoint /search:
 
 \(fedi-request \"get\" \"search\" \"search\"
-  (query)
-  \\=`((\"q\" . ,query)))
+  (q)
+  \"Make a GET request.
+Q is the search query.\"
+  \\=(q))
 
 This macro doesn't handle authenticated requests, as these differ
 between services. But you can easily wrap it in another macro
@@ -91,9 +93,11 @@ that handles auth by providing info using HEADERS or AUTH-PARAM."
        (let* ((req-url (fedi-http--api ,endpoint))
               (url-request-method ,(upcase method))
               (url-request-extra-headers ,headers)
-              (params (if ,auth-param
-                          (append ,auth-param ,params)
-                        ,params))
+              (params-alist (remove nil
+                                    (list ,@(fedi-make-params-alist params))))
+              (params (if ',man-params
+                          (append ',man-params params-alist)
+                        params-alist))
               (response
                (cond ((or (equal ,method "post")
                           (equal ,method "put"))
@@ -105,6 +109,30 @@ that handles auth by providing info using HEADERS or AUTH-PARAM."
                             (lambda ()
                               (with-current-buffer response
                                 (fedi-http--process-json))))))))
+
+;; This trick doesn't actually do what we want, as our macro is called
+;; to define functions, so must be called with all possible arguments, rather
+;; than only those of a given function call.
+;; Still, it solves the problem of the server rejecting nil param values.
+(defun fedi-arg-when-expr (arg)
+  "Return a cons of a string and a symbol type of ARG.
+Also replace _ with - (for Lemmy's type_ param)."
+  (let ((str
+         (string-replace "-" "_" ; for "type_"
+                         (symbol-name arg))))
+    ;; FIXME: when the when test fails, it adds nil to the list in the
+    ;; expansion, so we have to call (remove nil) on the result.
+    `(when ,arg
+       (cons ,str ,arg))))
+
+;; (fedi-arg-when-expr 'sort)
+
+(defun fedi-make-params-alist (args)
+  "Call `fedi-arg-when-expr' on ARGS."
+  (cl-loop while args
+           collecting (fedi-arg-when-expr (pop args))))
+
+;; (fedi-make-params-alist '(sort type))
 
 (provide 'fedi)
 ;;; fedi.el ends here
