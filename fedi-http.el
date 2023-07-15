@@ -154,7 +154,6 @@ json-string PARAMS."
   "Make synchronous GET request to URL.
 PARAMS is an alist of any extra parameters to send with the request.
 SILENT means don't message."
-  ;; url-request-data doesn't seem to work with GET requests?:
   (let ((url (fedi-http--concat-params-to-url url params)))
     (fedi-http--url-retrieve-synchronously url silent)))
 

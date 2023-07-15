@@ -50,6 +50,13 @@
   "The name of your package, without following dash.
 Used to construct function names in `fedi-request'.")
 
+
+;;; REQUEST MACRO
+;; this is an example of a request macro for defining request functions.
+;; `lem.el' now defines its own rather than wrapping around this, for
+;; simplicity, and you probably don't want to use it either, but you can still
+;; use it as a guide to writing your own. see also `lem-define-request' in
+;; `lem.el'.
 (defmacro fedi-request
     (method name endpoint
             &optional args docstring params man-params opt-bools json headers)
@@ -133,18 +140,156 @@ Also replace _ with - (for Lemmy's type_ param)."
 ;; (fedi-arg-when-expr 'sort)
 
 (defun fedi-make-params-alist (args fun)
-  "Call `fedi-arg-when-expr' on ARGS."
+  "Call FUN on each of ARGS."
   (cl-loop while args
            collecting (funcall fun (pop args))))
 
 ;; (fedi-make-params-alist '(sort type))
 
 (defun fedi-arg-when-boolean (arg)
-  ""
+  "ARG."
   (let ((str
          (string-replace "-" "_"
                          (symbol-name arg))))
     `(when ,arg (cons ,str "true"))))
+
+
+;;; BUFFER MACRO
+
+(defmacro fedi-with-buffer (buffer mode-fun other-window &rest body)
+  "Evaluate BODY in a new or existing buffer called BUFFER.
+MODE-FUN is called to set the major mode.
+OTHER-WINDOW means call `switch-to-buffer-other-window' rather
+than `switch-to-buffer'."
+  (declare (debug t)
+           (indent 3))
+  `(with-current-buffer (get-buffer-create ,buffer)
+     (let ((inhibit-read-only t))
+       (erase-buffer)
+       (funcall ,mode-fun)
+       (if ,other-window
+           (switch-to-buffer-other-window ,buffer)
+         (switch-to-buffer ,buffer))
+       ,@body
+       (goto-char (point-min)))))
+
+;;; NAV
+
+(defun fedi--goto-pos (fun &optional refresh pos)
+  "Search for item with FUN.
+If search returns nil, execute REFRESH function.
+Optionally start from POS."
+  (let* ((npos (funcall fun
+                        (or pos (point))
+                        'byline-top
+                        (current-buffer))))
+    (if npos
+        (if (not (get-text-property npos 'byline-top))
+            (fedi--goto-pos fun refresh npos)
+          (goto-char npos))
+      (funcall refresh))))
+
+(defun fedi-next-item ()
+  "Move to next item."
+  (interactive)
+  (fedi--goto-pos #'next-single-property-change #'fedi-ui-more))
+
+(defun fedi-prev-item ()
+  "Move to prev item."
+  (interactive)
+  (fedi--goto-pos #'previous-single-property-change))
+
+;;; HEADINGS
+
+(defvar fedi-horiz-bar
+  (if (char-displayable-p ?―)
+      (make-string 12 ?―)
+    (make-string 12 ?-)))
+
+(defun fedi-format-heading (name)
+  "Format a heading for NAME, a string."
+  (propertize
+   (concat " " fedi-horiz-bar "\n "
+           (upcase name)
+           "\n " fedi-horiz-bar "\n")
+   'face 'success))
+
+(defun fedi-insert-heading (name)
+  "Insert heading for NAME, a string."
+  (insert (fedi-format-heading name)))
+
+;;; SYMBOLS
+
+(defcustom fedi-symbols
+  '((reply     . ("💬" . "R"))
+    (boost     . ("🔁" . "B"))
+    (favourite . ("⭐" . "F"))
+    (bookmark  . ("🔖" . "K"))
+    (media     . ("📹" . "[media]"))
+    (verified  . ("" . "V"))
+    (locked    . ("🔒" . "[locked]"))
+    (private   . ("🔒" . "[followers]"))
+    (direct    . ("✉" . "[direct]"))
+    (edited    . ("✍" . "[edited]"))
+    (upvote    . ("⬆" . "[upvotes]"))
+    (person    . ("👤" . "[people]"))
+    (pinned    . ("📌" . "[pinned]"))
+    (replied   . ("⬇" . "↓"))
+    (community . ("👪" . "[community]"))
+    (reply-bar . ("┃" . "|")))
+  "A set of symbols (and fallback strings) to be used in timeline.
+If a symbol does not look right (tofu), it means your
+font settings do not support it."
+  :type '(alist :key-type symbol :value-type string)
+  :group 'fedi)
+
+(defun fedi-symbol (name)
+  "Return the unicode symbol (as a string) corresponding to NAME.
+If symbol is not displayable, an ASCII equivalent is returned. If
+NAME is not part of the symbol table, '?' is returned."
+  (if-let* ((symbol (alist-get name fedi-symbols)))
+      (if (char-displayable-p (string-to-char (car symbol)))
+          (car symbol)
+        (cdr symbol))
+    "?"))
+
+(defun fedi-font-lock-comment (&rest strs)
+  "Font lock comment face STRS."
+  (propertize (mapconcat #'identity strs "")
+              'face font-lock-comment-face))
+
+(defun fedi-thing-json ()
+  "Get json of thing at point, comment, post, community or user."
+  (get-text-property (point) 'json))
+
+(defun fedi--property (prop)
+  "Get text property PROP from item at point."
+  (get-text-property (point) prop))
+
+;;; FEDI-URL-P
+
+(defun fedi-fedilike-url-p (query)
+  "Return non-nil if QUERY resembles a fediverse URL."
+  ;; calqued off https://github.com/tuskyapp/Tusky/blob/c8fc2418b8f5458a817bba221d025b822225e130/app/src/main/java/com/keylesspalace/tusky/BottomSheetActivity.kt
+  ;; thx to Conny Duck!
+  (let* ((uri-parsed (url-generic-parse-url query))
+         (query (url-filename uri-parsed)))
+    (save-match-data
+      (or (string-match "^/@[^/]+$" query)
+          (string-match "^/@[^/]+/[[:digit:]]+$" query)
+          (string-match "^/user[s]?/[[:alnum:]]+$" query)
+          (string-match "^/notice/[[:alnum:]]+$" query)
+          (string-match "^/objects/[-a-f0-9]+$" query)
+          (string-match "^/notes/[a-z0-9]+$" query)
+          (string-match "^/display/[-a-f0-9]+$" query)
+          (string-match "^/profile/[[:alpha:]]+$" query)
+          (string-match "^/p/[[:alpha:]]+/[[:digit:]]+$" query)
+          (string-match "^/[[:alpha:]]+$" query)
+          (string-match "^/u/[_[:alpha:]]+$" query)
+          (string-match "^/c/[_[:alnum:]]+$" query)
+          (string-match "^/post/[[:digit:]]+$" query)
+          (string-match "^/comment/[[:digit:]]+$" query)))))
+
 
 (provide 'fedi)
 ;;; fedi.el ends here
