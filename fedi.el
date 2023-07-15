@@ -52,7 +52,7 @@ Used to construct function names in `fedi-request'.")
 
 (defmacro fedi-request
     (method name endpoint
-            &optional args docstring params man-params json headers)
+            &optional args docstring params man-params opt-bools json headers)
   "Create a http request function NAME, using http METHOD, for ENDPOINT.
 ARGS are for the function.
 PARAMS is an list of elements from which to build an alist of
@@ -93,11 +93,16 @@ that handles auth by providing info using HEADERS or AUTH-PARAM."
        (let* ((req-url (fedi-http--api ,endpoint))
               (url-request-method ,(upcase method))
               (url-request-extra-headers ,headers)
+              (bools (remove nil
+                             (list ,@(fedi-make-params-alist
+                                      opt-bools #'fedi-arg-when-boolean))))
               (params-alist (remove nil
-                                    (list ,@(fedi-make-params-alist params))))
+                                    (list ,@(fedi-make-params-alist
+                                             params #'fedi-arg-when-expr))))
               (params (if ',man-params
-                          (append ',man-params params-alist)
+                          (append ,man-params params-alist)
                         params-alist))
+              (params (append params bools))
               (response
                (cond ((or (equal ,method "post")
                           (equal ,method "put"))
@@ -118,7 +123,7 @@ that handles auth by providing info using HEADERS or AUTH-PARAM."
   "Return a cons of a string and a symbol type of ARG.
 Also replace _ with - (for Lemmy's type_ param)."
   (let ((str
-         (string-replace "-" "_" ; for "type_"
+         (string-replace "-" "_" ; for "type_" etc.
                          (symbol-name arg))))
     ;; FIXME: when the when test fails, it adds nil to the list in the
     ;; expansion, so we have to call (remove nil) on the result.
@@ -127,12 +132,19 @@ Also replace _ with - (for Lemmy's type_ param)."
 
 ;; (fedi-arg-when-expr 'sort)
 
-(defun fedi-make-params-alist (args)
+(defun fedi-make-params-alist (args fun)
   "Call `fedi-arg-when-expr' on ARGS."
   (cl-loop while args
-           collecting (fedi-arg-when-expr (pop args))))
+           collecting (funcall fun (pop args))))
 
 ;; (fedi-make-params-alist '(sort type))
+
+(defun fedi-arg-when-boolean (arg)
+  ""
+  (let ((str
+         (string-replace "-" "_"
+                         (symbol-name arg))))
+    `(when ,arg (cons ,str "true"))))
 
 (provide 'fedi)
 ;;; fedi.el ends here
