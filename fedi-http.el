@@ -309,7 +309,7 @@ PARAMS is an alist of any extra parameters to send with the request."
                                   &optional callback &rest cbargs)
   "POST asynchronously to URL with PARAMS and HEADERS.
 Then run function CALLBACK with arguements CBARGS."
-  (let ((request-timeout 5)
+  (let (;(request-timeout 5)
         (url-request-data (when params
                             (fedi-http--build-params-string params))))
     (with-temp-buffer
