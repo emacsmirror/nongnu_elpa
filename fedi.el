@@ -192,7 +192,7 @@ Optionally start from POS."
 (defun fedi-next-item ()
   "Move to next item."
   (interactive)
-  (fedi--goto-pos #'next-single-property-change #'fedi-ui-more))
+  (fedi--goto-pos #'next-single-property-change)) ;#'fedi-ui-more))
 
 (defun fedi-prev-item ()
   "Move to prev item."
