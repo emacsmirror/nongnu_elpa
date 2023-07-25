@@ -54,9 +54,9 @@
 (defconst fedi-http--timeout 15
   "HTTP request timeout, in seconds.  Has no effect on Emacs < 26.1.")
 
-(defun fedi-http--api (endpoint)
+(defun fedi-http--api (endpoint &optional url)
   "Return Fedi API URL for ENDPOINT."
-  (concat fedi-instance-url "/api/"
+  (concat (or url fedi-instance-url) "/api/"
           fedi-http--api-version "/" endpoint))
 
 (defun fedi-http--response ()
