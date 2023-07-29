@@ -50,13 +50,17 @@
   "The name of your package, without following dash.
 Used to construct function names in `fedi-request'.")
 
+(defgroup fedi nil
+  "Fedi."
+  :prefix "fedi-"
+  :group 'external)
 
 ;;; REQUEST MACRO
 ;; this is an example of a request macro for defining request functions.
 ;; `lem.el' now defines its own rather than wrapping around this, for
 ;; simplicity, and you probably don't want to use it either, but you can still
-;; use it as a guide to writing your own. see also `lem-define-request' in
-;; `lem.el'.
+;; use it as a guide to writing your own. see also `lem-def-request' in
+;; `lem-api.el'.
 (defmacro fedi-request
     (method name endpoint
             &optional args docstring params man-params opt-bools json headers)
