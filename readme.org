@@ -5,6 +5,8 @@ A library to make writing clients for APIs easier.
 It uses code from my [[https://codeberg.org/martianh/mastodon.el][mastodon.el]] to make it easy to write endpoint-hitting
 functions for JSON APIs.
 
+* http layer
+
 The example macro =fedi-request= allows you to quickly create HTTP request
 commands to API endpoints, with parameters automatically constructed and sent
 as form data or JSON payloads (for POST, PUT, DELETE, and probably PATCH). You should write your own similar macro in your package. See my =lem.el= for an working example. That way you can handle package-specific parameters such as authentication.
@@ -18,3 +20,7 @@ in responses. Mastodon uses these for pagination in some cases. If your
 service also does, you can handle them too.
 
 For an example of using this library, see my [[https://codeberg.org/martianh/lem][lem]] repo.
+
+* utilities
+
+=fedi.el= contains some utility functions for setting up a new client buffer, navigating between items, displaying icons, webfinger lookup of URLs, and live-updating timestamps. More will be added as they are ported from =mastodon.el=.
