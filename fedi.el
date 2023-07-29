@@ -294,6 +294,218 @@ NAME is not part of the symbol table, '?' is returned."
           (string-match "^/post/[[:digit:]]+$" query)
           (string-match "^/comment/[[:digit:]]+$" query)))))
 
+;;; TIMESTAMPS
+
+(defvar-local fedi-timestamp-next-update nil
+  "The timestamp when the buffer should next be scanned to update the timestamps.")
+
+(defvar-local fedi-timestamp-update-timer nil
+  "The timer that, when set will scan the buffer to update the timestamps.")
+
+(defcustom fedi-enable-relative-timestamps t
+  "Whether to show relative (to the current time) timestamps.
+This will require periodic updates of a timeline buffer to
+keep the timestamps current as time progresses."
+  :type '(boolean :tag "Enable relative timestamps and background updater task"))
+
+(defun fedi--find-property-range (property start-point
+                                           &optional search-backwards)
+  "Return nil if no such range is found.
+If PROPERTY is set at START-POINT returns a range around
+START-POINT otherwise before/after START-POINT.
+SEARCH-BACKWARDS determines whether we pick point
+before (non-nil) or after (nil)"
+  (if (get-text-property start-point property)
+      ;; We are within a range, so look backwards for the start:
+      (cons (previous-single-property-change
+             (if (equal start-point (point-max)) start-point (1+ start-point))
+             property nil (point-min))
+            (next-single-property-change start-point property nil (point-max)))
+    (if search-backwards
+        (let* ((end (or (previous-single-property-change
+                         (if (equal start-point (point-max))
+                             start-point (1+ start-point))
+                         property)
+                        ;; we may either be just before the range or there
+                        ;; is nothing at all
+                        (and (not (equal start-point (point-min)))
+                             (get-text-property (1- start-point) property)
+                             start-point)))
+               (start (and end (previous-single-property-change
+                                end property nil (point-min)))))
+          (when end
+            (cons start end)))
+      (let* ((start (next-single-property-change start-point property))
+             (end (and start (next-single-property-change
+                              start property nil (point-max)))))
+        (when start
+          (cons start end))))))
+
+(defun fedi--find-next-or-previous-property-range
+    (property start-point search-backwards)
+  "Find (start . end) property range after/before START-POINT.
+Does so while PROPERTY is set to a consistent value (different
+from the value at START-POINT if that is set).
+Return nil if no such range exists.
+If SEARCH-BACKWARDS is non-nil it find a region before
+START-POINT otherwise after START-POINT."
+  (if (get-text-property start-point property)
+      ;; We are within a range, we need to start the search from
+      ;; before/after this range:
+      (let ((current-range (fedi--find-property-range property start-point)))
+        (if search-backwards
+            (unless (equal (car current-range) (point-min))
+              (fedi--find-property-range
+               property (1- (car current-range)) search-backwards))
+          (unless (equal (cdr current-range) (point-max))
+            (fedi--find-property-range
+             property (1+ (cdr current-range)) search-backwards))))
+    ;; If we are not within a range, we can just defer to
+    ;; fedi--find-property-range directly.
+    (fedi--find-property-range property start-point search-backwards)))
+
+(defun fedi--consider-timestamp-for-updates (timestamp)
+  "Take note that TIMESTAMP is used in buffer and ajust timers as needed.
+This calculates the next time the text for TIMESTAMP will change
+and may adjust existing or future timer runs should that time
+before current plans to run the update function.
+The adjustment is only made if it is significantly (a few
+seconds) before the currently scheduled time. This helps reduce
+the number of occasions where we schedule an update only to
+schedule the next one on completion to be within a few seconds.
+If relative timestamps are disabled (i.e. if
+`mastodon-tl--enable-relative-timestamps' is nil), this is a
+no-op."
+  (when fedi-enable-relative-timestamps
+    (let ((this-update (cdr (fedi--relative-time-details timestamp))))
+      (when (time-less-p this-update
+                         (time-subtract fedi-timestamp-next-update
+                                        (seconds-to-time 10)))
+        (setq fedi-timestamp-next-update this-update)
+        (when fedi-timestamp-update-timer
+          ;; We need to re-schedule for an earlier time
+          (cancel-timer fedi-timestamp-update-timer)
+          (setq fedi-timestamp-update-timer
+                (run-at-time (time-to-seconds (time-subtract this-update
+                                                             (current-time)))
+                             nil ;; don't repeat
+                             #'fedi--update-timestamps-callback
+                             (current-buffer) nil)))))))
+
+(defun fedi--update-timestamps-callback (buffer previous-marker)
+  "Update the next few timestamp displays in BUFFER.
+Start searching for more timestamps from PREVIOUS-MARKER or
+from the start if it is nil."
+  ;; only do things if the buffer hasn't been killed in the meantime
+  (when (and fedi-enable-relative-timestamps ; just in case
+             (buffer-live-p buffer))
+    (save-excursion
+      (with-current-buffer buffer
+        (let ((previous-timestamp (if previous-marker
+                                      (marker-position previous-marker)
+                                    (point-min)))
+              (iteration 0)
+              next-timestamp-range)
+          (if previous-marker
+              ;; a follow-up call to process the next batch of timestamps.
+              ;; Release the marker to not slow things down.
+              (set-marker previous-marker nil)
+            ;; Otherwise this is a rew run, so let's initialize the next-run time.
+            (setq fedi-timestamp-next-update (time-add (current-time)
+                                                       (seconds-to-time 300))
+                  fedi-timestamp-update-timer nil))
+          (while (and (< iteration 5)
+                      (setq next-timestamp-range
+                            (fedi--find-property-range 'timestamp
+                                                       previous-timestamp)))
+            (let* ((start (car next-timestamp-range))
+                   (end (cdr next-timestamp-range))
+                   (timestamp (get-text-property start 'timestamp))
+                   (current-display (get-text-property start 'display))
+                   (new-display (fedi--relative-time-description timestamp)))
+              (unless (string= current-display new-display)
+                (let ((inhibit-read-only t))
+                  (add-text-properties
+                   start end
+                   (list 'display
+                         (fedi--relative-time-description timestamp)))))
+              (fedi--consider-timestamp-for-updates timestamp)
+              (setq iteration (1+ iteration)
+                    previous-timestamp (1+ (cdr next-timestamp-range)))))
+          (if next-timestamp-range
+              ;; schedule the next batch from the previous location to
+              ;; start very soon in the future:
+              (run-at-time 0.1 nil #'fedi--update-timestamps-callback buffer
+                           (copy-marker previous-timestamp))
+            ;; otherwise we are done for now; schedule a new run for when needed
+            (setq fedi-timestamp-update-timer
+                  (run-at-time (time-to-seconds
+                                (time-subtract fedi-timestamp-next-update
+                                               (current-time)))
+                               nil ;; don't repeat
+                               #'fedi--update-timestamps-callback
+                               buffer nil))))))))
+
+(defun fedi--relative-time-details (timestamp &optional current-time)
+  "Return cons of (descriptive string . next change) for the TIMESTAMP.
+Use the optional CURRENT-TIME as the current time (only used for
+reliable testing).
+The descriptive string is a human readable version relative to
+the current time while the next change timestamp give the first
+time that this description will change in the future.
+TIMESTAMP is assumed to be in the past."
+  (let* ((now (or current-time (current-time)))
+         (time-difference (time-subtract now timestamp))
+         (seconds-difference (float-time time-difference))
+         (regular-response
+          (lambda (seconds-difference multiplier unit-name)
+            (let ((n (floor (+ 0.5 (/ seconds-difference multiplier)))))
+              (cons (format "%d %ss ago" n unit-name)
+                    (* (+ 0.5 n) multiplier)))))
+         (relative-result
+          (cond
+           ((< seconds-difference 60)
+            (cons "just now"
+                  60))
+           ((< seconds-difference (* 1.5 60))
+            (cons "1 minute ago"
+                  90)) ;; at 90 secs
+           ((< seconds-difference (* 60 59.5))
+            (funcall regular-response seconds-difference 60 "minute"))
+           ((< seconds-difference (* 1.5 60 60))
+            (cons "1 hour ago"
+                  (* 60 90))) ;; at 90 minutes
+           ((< seconds-difference (* 60 60 23.5))
+            (funcall regular-response seconds-difference (* 60 60) "hour"))
+           ((< seconds-difference (* 1.5 60 60 24))
+            (cons "1 day ago"
+                  (* 1.5 60 60 24))) ;; at a day and a half
+           ((< seconds-difference (* 60 60 24 6.5))
+            (funcall regular-response seconds-difference (* 60 60 24) "day"))
+           ((< seconds-difference (* 1.5 60 60 24 7))
+            (cons "1 week ago"
+                  (* 1.5 60 60 24 7))) ;; a week and a half
+           ((< seconds-difference (* 60 60 24 7 52))
+            (if (= 52 (floor (+ 0.5 (/ seconds-difference 60 60 24 7))))
+                (cons "52 weeks ago"
+                      (* 60 60 24 7 52))
+              (funcall regular-response seconds-difference (* 60 60 24 7) "week")))
+           ((< seconds-difference (* 1.5 60 60 24 365))
+            (cons "1 year ago"
+                  (* 60 60 24 365 1.5))) ;; a year and a half
+           (t
+            (funcall regular-response seconds-difference (* 60 60 24 365.25) "year")))))
+    (cons (car relative-result)
+          (time-add timestamp (seconds-to-time (cdr relative-result))))))
+
+(defun fedi--relative-time-description (timestamp &optional current-time)
+  "Return a string with a human readable TIMESTAMP relative to the current time.
+Use the optional CURRENT-TIME as the current time (only used for
+reliable testing).
+E.g. this could return something like \"1 min ago\", \"yesterday\", etc.
+TIME-STAMP is assumed to be in the past."
+  (car (fedi--relative-time-details timestamp current-time)))
+
 
 (provide 'fedi)
 ;;; fedi.el ends here
