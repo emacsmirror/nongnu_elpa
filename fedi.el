@@ -203,6 +203,43 @@ Optionally start from POS."
   (interactive)
   (fedi--goto-pos #'previous-single-property-change))
 
+(defun fedi--property (prop)
+  "Get text property PROP from item at point."
+  (get-text-property (point) prop))
+
+(defun fedi-next-tab-item (&optional previous prop)
+  "Move to the next interesting item.
+This could be the next toot, link, or image; whichever comes first.
+Don't move if nothing else to move to is found, i.e. near the end of the buffer.
+This also skips tab items in invisible text, i.e. hidden spoiler text.
+PREVIOUS means move to previous item."
+  (interactive)
+  (let (next-range
+        (search-pos (point)))
+    (while (and (setq next-range
+                      (fedi--find-next-or-previous-property-range
+                       prop search-pos previous))
+                (get-text-property (car next-range) 'invisible)
+                (setq search-pos (if previous
+                                     (1- (car next-range))
+                                   (1+ (cdr next-range)))))
+      ;; do nothing, all the action is in the while condition
+      )
+    (if (null next-range)
+        (message "Nothing else here.")
+      (goto-char (car next-range))
+      (if-let ((hecho (fedi--property 'help-echo)))
+          (message "%s" hecho)))))
+
+(defun fedi-previous-tab-item ()
+  "Move to the previous interesting item.
+This could be the previous toot, link, or image; whichever comes
+first. Don't move if nothing else to move to is found, i.e. near
+the start of the buffer. This also skips tab items in invisible
+text, i.e. hidden spoiler text."
+  (interactive)
+  (fedi-next-tab-item :previous))
+
 ;;; HEADINGS
 
 (defvar fedi-horiz-bar
