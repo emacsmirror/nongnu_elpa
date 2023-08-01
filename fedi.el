@@ -61,70 +61,70 @@ Used to construct function names in `fedi-request'.")
 ;; simplicity, and you probably don't want to use it either, but you can still
 ;; use it as a guide to writing your own. see also `lem-def-request' in
 ;; `lem-api.el'.
-(defmacro fedi-request
-    (method name endpoint
-            &optional args docstring params man-params opt-bools json headers)
-  "Create a http request function NAME, using http METHOD, for ENDPOINT.
-ARGS are for the function.
-PARAMS is an list of elements from which to build an alist of
-form parameters to send with the request.
-MAN-PARAMS is an alist, to append to the one created from PARAMS.
-JSON means to encode params as a JSON payload.
-HEADERS is an alist that will be bound as `url-request-extra-headers'.
+;; (defmacro fedi-request
+;;     (method name endpoint
+;;             &optional args docstring params man-params opt-bools json headers)
+;;   "Create a http request function NAME, using http METHOD, for ENDPOINT.
+;; ARGS are for the function.
+;; PARAMS is an list of elements from which to build an alist of
+;; form parameters to send with the request.
+;; MAN-PARAMS is an alist, to append to the one created from PARAMS.
+;; JSON means to encode params as a JSON payload.
+;; HEADERS is an alist that will be bound as `url-request-extra-headers'.
 
-This macro is designed to generate functions for fetching data
-from JSON APIs.
+;; This macro is designed to generate functions for fetching data
+;; from JSON APIs.
 
-To use it, you first need to set `fedi-package-prefix' to the
-name of your package, and set `fedi-instance-url' to the URL of
-an instance of your fedi service.
+;; To use it, you first need to set `fedi-package-prefix' to the
+;; name of your package, and set `fedi-instance-url' to the URL of
+;; an instance of your fedi service.
 
-The name of functions generated with this will be the result of:
-\(concat fedi-package-prefix \"-\" name).
+;; The name of functions generated with this will be the result of:
+;; \(concat fedi-package-prefix \"-\" name).
 
-The full URL for the endpoint is constructed by `fedi-http--api',
-which see. ENDPOINT does not require a preceding slash.
+;; The full URL for the endpoint is constructed by `fedi-http--api',
+;; which see. ENDPOINT does not require a preceding slash.
 
-For example, to make a GET request, called PKG-search to endpoint /search:
+;; For example, to make a GET request, called PKG-search to endpoint /search:
 
-\(fedi-request \"get\" \"search\" \"search\"
-  (q)
-  \"Make a GET request.
-Q is the search query.\"
-  \\=(q))
+;; \(fedi-request \"get\" \"search\" \"search\"
+;;   (q)
+;;   \"Make a GET request.
+;; Q is the search query.\"
+;;   \\=(q))
 
-This macro doesn't handle authenticated requests, as these differ
-between services. But you can easily wrap it in another macro
-that handles auth by providing info using HEADERS or AUTH-PARAM."
-  (declare (debug t)
-           (indent 3))
-  (let ((req-fun (intern (concat "fedi-http--" method))))
-    `(defun ,(intern (concat fedi-package-prefix "-" name)) ,args
-       ,docstring
-       (let* ((req-url (fedi-http--api ,endpoint))
-              (url-request-method ,(upcase method))
-              (url-request-extra-headers ,headers)
-              (bools (remove nil
-                             (list ,@(fedi-make-params-alist
-                                      opt-bools #'fedi-arg-when-boolean))))
-              (params-alist (remove nil
-                                    (list ,@(fedi-make-params-alist
-                                             params #'fedi-arg-when-expr))))
-              (params (if ',man-params
-                          (append ,man-params params-alist)
-                        params-alist))
-              (params (append params bools))
-              (response
-               (cond ((or (equal ,method "post")
-                          (equal ,method "put"))
-                      ;; FIXME: deal with headers nil arg here:
-                      (funcall #',req-fun req-url params nil ,json))
-                     (t
-                      (funcall #',req-fun req-url params)))))
-         (fedi-http--triage response
-                            (lambda ()
-                              (with-current-buffer response
-                                (fedi-http--process-json))))))))
+;; This macro doesn't handle authenticated requests, as these differ
+;; between services. But you can easily wrap it in another macro
+;; that handles auth by providing info using HEADERS or AUTH-PARAM."
+;;   (declare (debug t)
+;;            (indent 3))
+;;   (let ((req-fun (intern (concat "fedi-http--" method))))
+;;     `(defun ,(intern (concat fedi-package-prefix "-" name)) ,args
+;;        ,docstring
+;;        (let* ((req-url (fedi-http--api ,endpoint))
+;;               (url-request-method ,(upcase method))
+;;               (url-request-extra-headers ,headers)
+;;               (bools (remove nil
+;;                              (list ,@(fedi-make-params-alist
+;;                                       opt-bools #'fedi-arg-when-boolean))))
+;;               (params-alist (remove nil
+;;                                     (list ,@(fedi-make-params-alist
+;;                                              params #'fedi-arg-when-expr))))
+;;               (params (if ',man-params
+;;                           (append ,man-params params-alist)
+;;                         params-alist))
+;;               (params (append params bools))
+;;               (response
+;;                (cond ((or (equal ,method "post")
+;;                           (equal ,method "put"))
+;;                       ;; FIXME: deal with headers nil arg here:
+;;                       (funcall #',req-fun req-url params nil ,json))
+;;                      (t
+;;                       (funcall #',req-fun req-url params)))))
+;;          (fedi-http--triage response
+;;                             (lambda ()
+;;                               (with-current-buffer response
+;;                                 (fedi-http--process-json))))))))
 
 ;; This trick doesn't actually do what we want, as our macro is called
 ;; to define functions, so must be called with all possible arguments, rather
@@ -150,12 +150,12 @@ Also replace _ with - (for Lemmy's type_ param)."
 
 ;; (fedi-make-params-alist '(sort type))
 
-(defun fedi-arg-when-boolean (arg)
-  "ARG."
-  (let ((str
-         (string-replace "-" "_"
-                         (symbol-name arg))))
-    `(when ,arg (cons ,str "true"))))
+;; (defun fedi-arg-when-boolean (arg)
+;;   "ARG."
+;;   (let ((str
+;;          (string-replace "-" "_"
+;;                          (symbol-name arg))))
+;;     `(when ,arg (cons ,str "true"))))
 
 
 ;;; BUFFER MACRO
