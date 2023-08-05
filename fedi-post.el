@@ -484,9 +484,9 @@ Return its two letter ISO 639 1 code."
 
 ;;; DISPLAY KEYBINDINGS
 
-(defun fedi-post--get-mode-kbinds ()
+(defun fedi-post--get-mode-kbinds (&optional mode-map)
   "Get a list of the keybindings in the fedi-post-mode."
-  (let* ((binds (copy-tree fedi-post-mode-map))
+  (let* ((binds (copy-tree (or mode-map fedi-post-mode-map)))
          (prefix (car (cadr binds)))
          (bindings (remove nil (mapcar (lambda (i)
                                          (when (listp i) i))
@@ -496,25 +496,28 @@ Return its two letter ISO 639 1 code."
               b)
             bindings)))
 
-(defun fedi-post--format-kbind-command (cmd)
+(defun fedi-post--format-kbind-command (cmd &optional prefix)
   "Format CMD to be more readable.
 e.g. fedi-post-send -> Send."
   (let* ((str (symbol-name cmd))
-         (re "-\\(.*\\)$")
+         (re (concat prefix
+                     "-\\(.*\\)$"))
          (str2 (save-match-data
                  (string-match re str)
                  (match-string 1 str))))
     (capitalize (replace-regexp-in-string "-" " " str2))))
 
-(defun fedi-post--format-kbind (kbind)
+(defun fedi-post--format-kbind (kbind &optional prefix)
   "Format a single keybinding, KBIND, for display in documentation."
   (let ((key (help-key-description (car kbind) nil))
-        (command (fedi-post--format-kbind-command (cdr kbind))))
+        (command (fedi-post--format-kbind-command (cdr kbind) prefix)))
     (format "    %s - %s" key command)))
 
-(defun fedi-post--format-kbinds (kbinds)
+(defun fedi-post--format-kbinds (kbinds &optional prefix)
   "Format a list of keybindings, KBINDS, for display in documentation."
-  (mapcar #'fedi-post--format-kbind kbinds))
+  (mapcar (lambda (kb)
+            (fedi-post--format-kbind kb prefix))
+          kbinds))
 
 (defvar-local fedi-post--kbinds-pairs nil
   "Contains a list of paired post compose buffer keybindings for inserting.")
@@ -541,20 +544,20 @@ LONGEST is the length of the longest binding."
 
 ;;; DISPLAY DOCS
 
-(defun fedi-post--make-mode-docs ()
+(defun fedi-post--make-mode-docs (&optional mode-map prefix)
   "Create formatted documentation text for the fedi-post-mode."
-  (let* ((kbinds (fedi-post--get-mode-kbinds))
+  (let* ((kbinds (fedi-post--get-mode-kbinds mode-map))
          (longest-kbind (fedi-post--formatted-kbinds-longest
-                         (fedi-post--format-kbinds kbinds))))
+                         (fedi-post--format-kbinds kbinds prefix))))
     (concat
      " Compose a new post here. The following keybindings are available:"
      (mapconcat #'identity
                 (fedi-post--formatted-kbinds-pairs
-                 (fedi-post--format-kbinds kbinds)
+                 (fedi-post--format-kbinds kbinds prefix)
                  longest-kbind)
                 nil))))
 
-(defun fedi-post--display-docs-and-status-fields ()
+(defun fedi-post--display-docs-and-status-fields (&optional mode-map prefix)
   "Insert propertized text with documentation about `fedi-post-mode'.
 Also includes and the status fields which will get updated based
 on the status of NSFW, content warning flags, media attachments, etc."
@@ -563,7 +566,7 @@ on the status of NSFW, content warning flags, media attachments, etc."
     (insert
      (propertize
       (concat
-       (fedi-post--make-mode-docs) "\n"
+       (fedi-post--make-mode-docs mode-map prefix) "\n"
        divider "\n"
        " "
        (propertize "Count"
@@ -689,7 +692,7 @@ Added to `after-change-functions'."
 ;;; COMPOSE BUFFER FUNCTION
 
 (defun fedi-post--compose-buffer
-    (&optional reply-to-user reply-to-id reply-json initial-text edit mode)
+    (&optional reply-to-user reply-to-id reply-json initial-text edit mode mode-map)
   "Create a new buffer to capture text for a new post.
 If REPLY-TO-USER is provided, inject their handle into the message.
 If REPLY-TO-ID is provided, set the `fedi-post--reply-to-id' var.
@@ -705,13 +708,15 @@ EDIT means we are editing an existing post, not composing a new one."
                                 (or (alist-get 'reblog reply-json)
                                     reply-json)))
          (previous-window-config (list (current-window-configuration)
-                                       (point-marker))))
+                                       (point-marker)))
+         (prefix (string-remove-suffix "-mode"
+                                       (symbol-name mode))))
     (switch-to-buffer-other-window buffer)
     (text-mode)
     (or (funcall mode)
         (fedi-post-mode t))
     (unless buffer-exists
-      (fedi-post--display-docs-and-status-fields))
+      (fedi-post--display-docs-and-status-fields mode-map prefix))
     ;; set up completion:
     (when fedi-post--enable-completion
       (set (make-local-variable 'completion-at-point-functions)
