@@ -485,7 +485,7 @@ Return its two letter ISO 639 1 code."
 ;;; DISPLAY KEYBINDINGS
 
 (defun fedi-post--get-mode-kbinds (&optional mode-map)
-  "Get a list of the keybindings in the fedi-post-mode."
+  "Get a list of the keybindings in MODE-MAP or `fedi-post-mode.'"
   (let* ((binds (copy-tree (or mode-map fedi-post-mode-map)))
          (prefix (car (cadr binds)))
          (bindings (remove nil (mapcar (lambda (i)
@@ -544,9 +544,12 @@ LONGEST is the length of the longest binding."
 
 ;;; DISPLAY DOCS
 
-(defun fedi-post--make-mode-docs (&optional mode-map prefix)
+(defun fedi-post--make-mode-docs (&optional mode)
   "Create formatted documentation text for the fedi-post-mode."
-  (let* ((kbinds (fedi-post--get-mode-kbinds mode-map))
+  (let* ((mode-map (alist-get mode minor-mode-map-alist))
+         (prefix (string-remove-suffix "-mode"
+                                       (symbol-name mode)))
+         (kbinds (fedi-post--get-mode-kbinds mode-map))
          (longest-kbind (fedi-post--formatted-kbinds-longest
                          (fedi-post--format-kbinds kbinds prefix))))
     (concat
@@ -557,7 +560,7 @@ LONGEST is the length of the longest binding."
                  longest-kbind)
                 nil))))
 
-(defun fedi-post--display-docs-and-status-fields (&optional mode-map prefix)
+(defun fedi-post--display-docs-and-status-fields (&optional mode)
   "Insert propertized text with documentation about `fedi-post-mode'.
 Also includes and the status fields which will get updated based
 on the status of NSFW, content warning flags, media attachments, etc."
@@ -566,7 +569,7 @@ on the status of NSFW, content warning flags, media attachments, etc."
     (insert
      (propertize
       (concat
-       (fedi-post--make-mode-docs mode-map prefix) "\n"
+       (fedi-post--make-mode-docs mode) "\n"
        divider "\n"
        " "
        (propertize "Count"
@@ -692,7 +695,7 @@ Added to `after-change-functions'."
 ;;; COMPOSE BUFFER FUNCTION
 
 (defun fedi-post--compose-buffer
-    (&optional reply-to-user reply-to-id reply-json initial-text edit mode mode-map)
+    (&optional reply-to-user reply-to-id reply-json initial-text edit mode)
   "Create a new buffer to capture text for a new post.
 If REPLY-TO-USER is provided, inject their handle into the message.
 If REPLY-TO-ID is provided, set the `fedi-post--reply-to-id' var.
@@ -716,7 +719,7 @@ EDIT means we are editing an existing post, not composing a new one."
     (or (funcall mode)
         (fedi-post-mode t))
     (unless buffer-exists
-      (fedi-post--display-docs-and-status-fields mode-map prefix))
+      (fedi-post--display-docs-and-status-fields mode))
     ;; set up completion:
     (when fedi-post--enable-completion
       (set (make-local-variable 'completion-at-point-functions)
