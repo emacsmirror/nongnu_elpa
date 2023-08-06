@@ -544,11 +544,11 @@ LONGEST is the length of the longest binding."
 
 ;;; DISPLAY DOCS
 
-(defun fedi-post--make-mode-docs (&optional mode)
+(defun fedi-post--make-mode-docs (&optional mode prefix)
   "Create formatted documentation text for the fedi-post-mode."
   (let* ((mode-map (alist-get mode minor-mode-map-alist))
-         (prefix (string-remove-suffix "-mode"
-                                       (symbol-name mode)))
+         (prefix (or prefix (string-remove-suffix "-mode"
+                                                  (symbol-name mode))))
          (kbinds (fedi-post--get-mode-kbinds mode-map))
          (longest-kbind (fedi-post--formatted-kbinds-longest
                          (fedi-post--format-kbinds kbinds prefix))))
@@ -560,7 +560,7 @@ LONGEST is the length of the longest binding."
                  longest-kbind)
                 nil))))
 
-(defun fedi-post--display-docs-and-status-fields (&optional mode)
+(defun fedi-post--display-docs-and-status-fields (&optional mode prefix)
   "Insert propertized text with documentation about MODE or `fedi-post-mode'.
 Also includes and the status fields which will get updated based
 on the status of NSFW, content warning flags, media attachments, etc."
@@ -569,7 +569,7 @@ on the status of NSFW, content warning flags, media attachments, etc."
     (insert
      (propertize
       (concat
-       (fedi-post--make-mode-docs mode) "\n"
+       (fedi-post--make-mode-docs mode prefix) "\n"
        divider "\n"
        " "
        (propertize "Count"
@@ -694,7 +694,7 @@ Added to `after-change-functions'."
 
 ;;; COMPOSE BUFFER FUNCTION
 
-(defun fedi-post--compose-buffer (&optional edit mode)
+(defun fedi-post--compose-buffer (&optional edit mode prefix)
   "Create a new buffer to capture text for a new post.
 EDIT means we are editing an existing post, not composing a new one.
 MODE is the minor-mode to enable in the buffer."
@@ -706,15 +706,13 @@ MODE is the minor-mode to enable in the buffer."
          ;;                        (or (alist-get 'reblog reply-json)
          ;;                            reply-json)))
          (previous-window-config (list (current-window-configuration)
-                                       (point-marker)))
-         (prefix (string-remove-suffix "-mode"
-                                       (symbol-name mode))))
+                                       (point-marker))))
     (switch-to-buffer-other-window buffer)
     (text-mode)
     (or (funcall mode)
         (fedi-post-mode t))
     (unless buffer-exists
-      (fedi-post--display-docs-and-status-fields mode))
+      (fedi-post--display-docs-and-status-fields mode prefix))
     ;; set up completion:
     (when fedi-post--enable-completion
       (set (make-local-variable 'completion-at-point-functions)
