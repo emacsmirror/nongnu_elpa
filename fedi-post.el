@@ -561,7 +561,7 @@ LONGEST is the length of the longest binding."
                 nil))))
 
 (defun fedi-post--display-docs-and-status-fields (&optional mode)
-  "Insert propertized text with documentation about `fedi-post-mode'.
+  "Insert propertized text with documentation about MODE or `fedi-post-mode'.
 Also includes and the status fields which will get updated based
 on the status of NSFW, content warning flags, media attachments, etc."
   (let ((divider
@@ -694,22 +694,17 @@ Added to `after-change-functions'."
 
 ;;; COMPOSE BUFFER FUNCTION
 
-(defun fedi-post--compose-buffer
-    (&optional reply-to-user reply-to-id reply-json initial-text edit mode)
+(defun fedi-post--compose-buffer (&optional edit mode)
   "Create a new buffer to capture text for a new post.
-If REPLY-TO-USER is provided, inject their handle into the message.
-If REPLY-TO-ID is provided, set the `fedi-post--reply-to-id' var.
-REPLY-JSON is the full JSON of the post being replied to.
-INITIAL-TEXT is used by `fedi-post-insert-draft-post' to add
-a draft into the buffer.
-EDIT means we are editing an existing post, not composing a new one."
+EDIT means we are editing an existing post, not composing a new one.
+MODE is the minor-mode to enable in the buffer."
   (let* ((buffer-name (if edit "*edit post*" "*new post*"))
          (buffer-exists (get-buffer buffer-name))
          (buffer (or buffer-exists (get-buffer-create buffer-name)))
          (inhibit-read-only t)
-         (reply-text (alist-get 'content
-                                (or (alist-get 'reblog reply-json)
-                                    reply-json)))
+         ;; (reply-text (alist-get 'content
+         ;;                        (or (alist-get 'reblog reply-json)
+         ;;                            reply-json)))
          (previous-window-config (list (current-window-configuration)
                                        (point-marker)))
          (prefix (string-remove-suffix "-mode"
@@ -745,8 +740,9 @@ EDIT means we are editing an existing post, not composing a new one."
     (setq fedi-post-current-post-text nil)
     ;; if we set this before changing modes, it gets nuked:
     (setq fedi-post-previous-window-config previous-window-config)
-    (when initial-text
-      (insert initial-text))))
+    ;; (when initial-text
+    ;;   (insert initial-text))
+    ))
 
 ;; flyspell ignore masto post regexes:
 (defvar flyspell-generic-check-word-predicate)
