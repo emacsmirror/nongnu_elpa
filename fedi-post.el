@@ -698,7 +698,7 @@ MODE is the minor-mode to enable in the buffer."
       (set (make-local-variable 'completion-at-point-functions)
            (cl-loop for f in capf-funs
                     do (cl-pushnew f completion-at-point-functions)
-                    return completion-at-point-functions))
+                    finally return completion-at-point-functions))
       ;; company
       (when (and fedi-post--use-company-for-completion
                  (require 'company nil :no-error))
