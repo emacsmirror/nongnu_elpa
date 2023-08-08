@@ -647,8 +647,10 @@ Added to `after-change-functions'."
 
 (defun fedi-post--compose-buffer-p ()
   "Return t if compose buffer is current."
-  (or (mastodon-tl--buffer-type-eq 'edit-post)
-      (mastodon-tl--buffer-type-eq 'new-post)))
+  (let ((buf (buffer-name (current-buffer))))
+    ;; TODO: generalize:
+    (or (equal "*new post*" buf)
+        (equal "*edit post*" buf))))
 
 (defun fedi-post--fill-reply-in-compose ()
   "Fill reply text in compose buffer to the width of the divider."
