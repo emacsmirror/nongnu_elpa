@@ -674,8 +674,7 @@ Added to `after-change-functions'."
 
 ;;; COMPOSE BUFFER FUNCTION
 
-(defun fedi-post--compose-buffer (&optional edit mode prefix
-                                            capf-funs)
+(defun fedi-post--compose-buffer (&optional edit major minor prefix capf-funs)
   "Create a new buffer to capture text for a new post.
 EDIT means we are editing an existing post, not composing a new one.
 MODE is the minor-mode to enable in the buffer."
@@ -689,11 +688,11 @@ MODE is the minor-mode to enable in the buffer."
          (previous-window-config (list (current-window-configuration)
                                        (point-marker))))
     (switch-to-buffer-other-window buffer)
-    (text-mode)
-    (or (funcall mode)
+    (if major (funcall major) (text-mode))
+    (or (funcall minor)
         (fedi-post-mode t))
     (unless buffer-exists
-      (fedi-post--display-docs-and-status-fields mode prefix))
+      (fedi-post--display-docs-and-status-fields minor prefix))
     ;; set up completion:
     (when fedi-post--enable-completion
       (set (make-local-variable 'completion-at-point-functions)
