@@ -620,8 +620,9 @@ Added to `after-change-functions'."
   (when (fedi-post--compose-buffer-p)
     (let ((header-region (fedi--find-property-range 'post-post-header
                                                     (point-min)))
-          (face (when fedi-post--proportional-fonts-compose
-                  'variable-pitch)))
+          (face nil))
+      ;; (face (when fedi-post--proportional-fonts-compose
+      ;;         'variable-pitch)))
       ;; cull any prev props:
       ;; stops all text after a handle or mention being propertized:
       (set-text-properties (cdr header-region) (point-max) `(face ,face))
