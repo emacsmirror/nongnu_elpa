@@ -327,7 +327,7 @@ Federated user: `username@host.co`."
     (mastodon-tl--map-alist 'acct (reverse mentions))))
 
 (defun fedi-post--get-bounds (regex)
-  "Get bounds of tag or handle before point using REGEX."
+  "Get bounds of item before point using REGEX."
   ;; # and @ are not part of any existing thing at point
   (save-match-data
     (save-excursion
@@ -340,25 +340,14 @@ Federated user: `username@host.co`."
         (cons (match-beginning 2)
               (match-end 2))))))
 
-(defun fedi-post--fetch-completion-candidates (start end &optional tags)
-  "Search for a completion prefix from buffer positions START to END.
-Return a list of candidates.
-If TAGS, we search for tags, else we search for handles."
-  ;; we can't save the first two-letter search then only filter the
-  ;; resulting list, as max results returned is 40.
-  (setq fedi-post-completions
-        (if tags
-            (let ((tags-list (mastodon-search--search-tags-query
-                              (buffer-substring-no-properties start end))))
-              (cl-loop for tag in tags-list
-                       collect (cons (concat "#" (car tag))
-                                     (cdr tag))))
-          (mastodon-search--search-accounts-query
-           (buffer-substring-no-properties start end)))))
-
-(defun fedi-post--mentions-capf ()
-  "Build a mentions completion backend for `completion-at-point-functions'."
-  (let* ((bounds (fedi-post--get-bounds fedi-post-handle-regex))
+(defun fedi-post--return-capf (regex completion-fun annot-fun)
+  "Return a completion at point function.
+REGEX is used to get the item before point.
+COMPLETION-FUN takes two args, start and end bounds of item
+before point, and returns a completion table.
+ANNOT-FUN takes one arg, a candidate, and returns an annotation
+for it."
+  (let* ((bounds (fedi-post--get-bounds regex))
          (start (car bounds))
          (end (cdr bounds)))
     (when bounds
@@ -369,41 +358,20 @@ If TAGS, we search for tags, else we search for handles."
                ;; Interruptible candidate computation, from minad/d mendler, thanks!
                (let ((result
                       (while-no-input
-                        (fedi-post--fetch-completion-candidates start end))))
+                        (setq fedi-post-completions
+                              (funcall completion-fun start end)))))
                  (and (consp result) result))))
             :exclusive 'no
             :annotation-function
             (lambda (cand)
-              (concat " " (fedi-post--mentions-annotation-fun cand)))))))
-
-(defun fedi-post--tags-capf ()
-  "Build a tags completion backend for `completion-at-point-functions'."
-  (let* ((bounds (fedi-post--get-bounds fedi-post-tag-regex))
-         (start (car bounds))
-         (end (cdr bounds)))
-    (when bounds
-      (list start
-            end
-            (completion-table-dynamic ; only search when necessary:
-             (lambda (_)
-               ;; Interruptible candidate computation, from minad/d mendler, thanks!
-               (let ((result
-                      (while-no-input
-                        (fedi-post--fetch-completion-candidates start end :tags))))
-                 (and (consp result) result))))
-            :exclusive 'no
-            :annotation-function
-            (lambda (cand)
-              (concat " " (fedi-post--tags-annotation-fun cand)))))))
+              (concat " " (funcall annot-fun cand)))))))
 
 (defun fedi-post--mentions-annotation-fun (candidate)
   "Given a handle completion CANDIDATE, return its annotation string, a username."
-  (caddr (assoc candidate fedi-post-completions)))
+  (cdr (assoc candidate fedi-post-completions)))
 
 (defun fedi-post--tags-annotation-fun (candidate)
   "Given a tag string CANDIDATE, return an annotation, the tag's URL."
-  ;; TODO: check the list returned here? should be cadr
-  ;; or make it an alist and use cdr
   (cadr (assoc candidate fedi-post-completions)))
 
 
@@ -694,7 +662,8 @@ Added to `after-change-functions'."
 
 ;;; COMPOSE BUFFER FUNCTION
 
-(defun fedi-post--compose-buffer (&optional edit mode prefix)
+(defun fedi-post--compose-buffer (&optional edit mode prefix
+                                            capf-funs)
   "Create a new buffer to capture text for a new post.
 EDIT means we are editing an existing post, not composing a new one.
 MODE is the minor-mode to enable in the buffer."
@@ -716,10 +685,13 @@ MODE is the minor-mode to enable in the buffer."
     ;; set up completion:
     (when fedi-post--enable-completion
       (set (make-local-variable 'completion-at-point-functions)
-           (add-to-list 'completion-at-point-functions
-                        #'fedi-post--mentions-capf))
-      (add-to-list 'completion-at-point-functions
-                   #'fedi-post--tags-capf)
+           (cl-loop for f in capf-funs
+                    do (cl-pushnew f completion-at-point-functions)
+                    return completion-at-point-functions))
+      ;; (add-to-list 'completion-at-point-functions
+      ;;              #'fedi-post--mentions-capf)
+      ;; (add-to-list 'completion-at-point-functions
+      ;;              #'fedi-post--tags-capf)
       ;; company
       (when (and fedi-post--use-company-for-completion
                  (require 'company nil :no-error))
