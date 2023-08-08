@@ -340,7 +340,8 @@ Federated user: `username@host.co`."
         (cons (match-beginning 2)
               (match-end 2))))))
 
-(defun fedi-post--return-capf (regex completion-fun annot-fun)
+(defun fedi-post--return-capf (regex completion-fun &optional
+                                     annot-fun affix-fun exit-fun)
   "Return a completion at point function.
 REGEX is used to get the item before point.
 COMPLETION-FUN takes two args, start and end bounds of item
@@ -362,6 +363,14 @@ for it."
                               (funcall completion-fun start end)))))
                  (and (consp result) result))))
             :exclusive 'no
+            ;; :affixation-function
+            ;; (lambda (cands)
+            ;; (funcall affix-fun cands))
+            ;; FIXME: we "should" use :affixation-function for this but i
+            ;; can't get it to work so use an exit-fun hack:
+            :exit-function
+            (lambda (str status)
+              (funcall exit-fun str status))
             :annotation-function
             (lambda (cand)
               (concat " " (funcall annot-fun cand)))))))
