@@ -691,6 +691,10 @@ MODE is the minor-mode to enable in the buffer."
     (if major (funcall major) (text-mode))
     (or (funcall minor)
         (fedi-post-mode t))
+    ;; disable fontifying if markdown mode as it breaks our docs display:
+    ;; (we fontify by region below)
+    (when (eq major 'markdown-mode)
+      (font-lock-mode -1))
     (unless buffer-exists
       (fedi-post--display-docs-and-status-fields minor prefix))
     ;; set up completion:
@@ -711,15 +715,29 @@ MODE is the minor-mode to enable in the buffer."
     ;; (cl-pushnew #'fedi-post--save-post-text after-change-functions)
     (cl-pushnew #'fedi-post--update-status-fields after-change-functions)
     (fedi-post--update-status-fields)
-    (cl-pushnew #'fedi-post--propertize-tags-and-handles after-change-functions)
-    (fedi-post--propertize-tags-and-handles)
+    ;; disable for markdown-mode:
+    (unless (eq major 'markdown-mode)
+      (cl-pushnew #'fedi-post--propertize-tags-and-handles after-change-functions)
+      (fedi-post--propertize-tags-and-handles))
     ;; draft post text saving:
     (setq fedi-post-current-post-text nil)
     ;; if we set this before changing modes, it gets nuked:
     (setq fedi-post-previous-window-config previous-window-config)
     ;; (when initial-text
     ;;   (insert initial-text))
+    ;; markdown fontify region:
+    ;; FIXME: this is incompat with propertize-tags-and-handles
+    ;; we would need to add our own propertizing to md-mode font-locking
+    (when (eq major 'markdown-mode)
+      (cl-pushnew #'fedi-post-fontify-body-region after-change-functions))
     ))
+
+(defun fedi-post-fontify-body-region (&rest _args)
+  ""
+  (save-excursion
+    (let ((end-of-docs (cdr (fedi--find-property-range 'post-post-header
+                                                       (point-min)))))
+      (font-lock-fontify-region end-of-docs (point-max)))))
 
 ;; flyspell ignore masto post regexes:
 (defvar flyspell-generic-check-word-predicate)
