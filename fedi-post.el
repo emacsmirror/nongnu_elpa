@@ -41,6 +41,7 @@
 (require 'mastodon-iso)
 (require 'facemenu)
 (require 'text-property-search)
+(require 'markdown-mode)
 
 (eval-when-compile
   (require 'mastodon-tl))
@@ -677,24 +678,29 @@ Added to `after-change-functions'."
 (defun fedi-post--compose-buffer (&optional edit major minor prefix capf-funs)
   "Create a new buffer to capture text for a new post.
 EDIT means we are editing an existing post, not composing a new one.
-MODE is the minor-mode to enable in the buffer."
+MAJOR is the major mode to enable.
+MINOR is the minor mode to enable.
+PREFIX is a string corresponding to the prefix of the library
+that contains the compose buffer's functions. It is only required
+if this differs from the minor mode.
+CAPF-FUNS is a list of functions to enable."
   (let* ((buffer-name (if edit "*edit post*" "*new post*"))
          (buffer-exists (get-buffer buffer-name))
          (buffer (or buffer-exists (get-buffer-create buffer-name)))
          (inhibit-read-only t)
-         ;; (reply-text (alist-get 'content
-         ;;                        (or (alist-get 'reblog reply-json)
-         ;;                            reply-json)))
          (previous-window-config (list (current-window-configuration)
                                        (point-marker))))
     (switch-to-buffer-other-window buffer)
     (if major (funcall major) (text-mode))
     (or (funcall minor)
         (fedi-post-mode t))
-    ;; disable fontifying if markdown mode as it breaks our docs display:
-    ;; (we fontify by region below)
     (when (eq major 'markdown-mode)
-      (font-lock-mode -1))
+      ;; disable fontifying as it breaks our docs (we fontify by region below)
+      (font-lock-mode -1)
+      (when (member 'variable-pitch-mode markdown-mode-hook)
+        ;; (make-local-variable 'markdown-mode-hook) ; unneeded if we always disable?
+        ;; (setq markdown-mode-hook (delete 'variable-pitch-mode markdown-mode-hook))
+        (variable-pitch-mode -1)))
     (unless buffer-exists
       (fedi-post--display-docs-and-status-fields minor prefix))
     ;; set up completion:
@@ -723,17 +729,16 @@ MODE is the minor-mode to enable in the buffer."
     (setq fedi-post-current-post-text nil)
     ;; if we set this before changing modes, it gets nuked:
     (setq fedi-post-previous-window-config previous-window-config)
-    ;; (when initial-text
-    ;;   (insert initial-text))
     ;; markdown fontify region:
     ;; FIXME: this is incompat with propertize-tags-and-handles
     ;; we would need to add our own propertizing to md-mode font-locking
     (when (eq major 'markdown-mode)
-      (cl-pushnew #'fedi-post-fontify-body-region after-change-functions))
-    ))
+      (cl-pushnew #'fedi-post-fontify-body-region after-change-functions))))
 
 (defun fedi-post-fontify-body-region (&rest _args)
-  ""
+  "Call `font-lock-fontify-region' on post body.
+Added to `after-change-functions' as we disable markdown-mode's
+font locking to not ruin our docs header."
   (save-excursion
     (let ((end-of-docs (cdr (fedi--find-property-range 'post-post-header
                                                        (point-min)))))
@@ -757,10 +762,6 @@ Only text that is not one of these faces will be spell-checked."
     	  (lambda ()
             (setq flyspell-generic-check-word-predicate
                   'fedi-post-mode-flyspell-verify)))
-
-;;;###autoload
-;; (add-hook 'fedi-post-mode-hook
-;;           #'mastodon-profile--fetch-server-account-settings-maybe)
 
 ;; disable auto-fill-mode:
 (add-hook 'fedi-post-mode-hook
