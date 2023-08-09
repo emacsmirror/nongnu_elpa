@@ -51,45 +51,10 @@
 (defvar mastodon-tl--enable-proportional-fonts)
 (defvar mastodon-profile-account-settings)
 
-;; (autoload 'iso8601-parse "iso8601")
-;; (autoload 'mastodon-auth--user-acct "mastodon-auth")
-;; (autoload 'mastodon-http--api "mastodon-http")
-;; (autoload 'mastodon-http--build-array-params-alist "mastodon-http")
-;; (autoload 'mastodon-http--delete "mastodon-http")
-;; (autoload 'mastodon-http--get-json "mastodon-http")
-;; (autoload 'mastodon-http--get-json-async "mastodon-http")
-;; (autoload 'mastodon-http--post "mastodon-http")
-;; (autoload 'mastodon-http--post-media-attachment "mastodon-http")
-;; (autoload 'mastodon-http--process-json "mastodon-http")
-;; (autoload 'mastodon-http--put "mastodon-http")
-;; (autoload 'mastodon-http--read-file-as-string "mastodon-http")
-;; (autoload 'mastodon-http--triage "mastodon-http")
-;; (autoload 'mastodon-profile--fetch-server-account-settings "mastodon-profile")
-;; (autoload 'mastodon-profile--fetch-server-account-settings-maybe "mastodon-profile")
-;; (autoload 'mastodon-profile--get-source-pref "mastodon-profile")
-;; (autoload 'mastodon-profile--show-user "mastodon-profile")
-;; (autoload 'mastodon-profile--update-preference "mastodon-profile")
-;; (autoload 'mastodon-search--search-accounts-query "mastodon-search")
-;; (autoload 'mastodon-search--search-tags-query "mastodon-search")
-;; (autoload 'mastodon-tl--as-string "mastodon-tl")
-;; (autoload 'mastodon-tl--buffer-type-eq "mastodon-tl")
-;; (autoload 'mastodon-tl--clean-tabs-and-nl "mastodon-tl")
-;; (autoload 'mastodon-tl--do-if-toot-strict "mastodon-tl")
-;; (autoload 'mastodon-tl--field "mastodon-tl")
+(autoload 'iso8601-parse "iso8601")
 (autoload 'fedi--find-property-range "fedi")
 (autoload 'fedi--find-property-range "fedi")
-;; (autoload 'mastodon-tl--goto-next-toot "mastodon-tl")
-;; (autoload 'mastodon-tl--map-alist "mastodon-tl")
-;; (autoload 'fedi--property "mastodon-tl")
-;; (autoload 'mastodon-tl--reload-timeline-or-profile "mastodon-tl")
-;; (autoload 'mastodon-tl--render-text "mastodon-tl")
-;; (autoload 'mastodon-tl--set-buffer-spec "mastodon-tl")
-;; (autoload 'mastodon-tl--symbol "mastodon-tl")
-;; (autoload 'mastodon-tl--toot-id "mastodon-tl")
-;; (autoload 'fedi-post "mastodon")
-;; (autoload 'mastodon-views--cancel-scheduled-toot "mastodon-views")
-;; (autoload 'mastodon-views--view-scheduled-toots "mastodon-views")
-;; (autoload 'org-read-date "org")
+(autoload 'org-read-date "org")
 
 (defface fedi-post-docs-face
   `((t :inherit font-lock-comment-face))
@@ -144,7 +109,7 @@ Takes its form from `window-configuration-to-register'.")
 (persist-defvar fedi-post-draft-posts-list nil
                 "A list of posts that have been saved as drafts.
 For the moment we just put all composed posts in here, as we want
-to also capture posts that are 'sent' but that don't successfully
+to also capture posts that are `sent' but that don't successfully
 send.")
 
 
@@ -162,7 +127,7 @@ send.")
       (| "'" word-boundary))) ; boundary or possessive
 
 (defvar fedi-post-url-regex
-  ;; adapted from ffap-url-regexp
+  ;; adapted from `ffap-url-regexp'
   (concat
    "\\(?2:\\(news\\(post\\)?:\\|mailto:\\|file:\\|\\(ftp\\|https?\\|telnet\\|gopher\\|www\\|wais\\)://\\)" ; uri prefix
    "[^ \n\t]*\\)" ; any old thing, that is, i.e. we allow invalid/unwise chars
@@ -176,8 +141,8 @@ send.")
     ;; (define-key map (kbd "C-c C-c") #'fedi-post-send)
     (define-key map (kbd "C-c C-k") #'fedi-post-cancel)
     (define-key map (kbd "C-c C-n") #'fedi-post-toggle-nsfw)
-    (when (require 'emojify nil :noerror)
-      (define-key map (kbd "C-c C-e") #'fedi-post-insert-emoji))
+    ;; (when (require 'emojify nil :noerror)
+    ;; (define-key map (kbd "C-c C-e") #'fedi-post-insert-emoji))
     (define-key map (kbd "C-c C-l") #'fedi-post-set-post-language)
     map)
   "Keymap for `fedi-post'.")
@@ -205,10 +170,13 @@ If post is not empty, prompt to save text as a draft."
       (fedi-post--save-draft))
     (fedi-post-kill)))
 
-(defun fedi-post--empty-p (&optional text-only)
-  "Return t if post has no text, attachments, or polls.
-TEXT-ONLY means don't check for attachments or polls."
-  (string-empty-p (mastodon-tl--clean-tabs-and-nl
+(defun fedi-post--clean-tabs-and-nl (string)
+  "Remove tabs and newlines from STRING."
+  (replace-regexp-in-string "[\t\n ]*\\'" "" string))
+
+(defun fedi-post--empty-p ()
+  "Return t if post has no text, attachments, or polls."
+  (string-empty-p (fedi-post--clean-tabs-and-nl
                    (fedi-post--remove-docs))))
 
 
@@ -218,114 +186,14 @@ TEXT-ONLY means don't check for attachments or polls."
                                                   (point-min))))
     (buffer-substring (cdr header-region) (point-max))))
 
-
-;;; SEND POST FUNCTION
-
-;; (defun fedi-post-send ()
-;;   "POST contents of new-post buffer to Mastodon instance and kill buffer.
-;; If media items have been attached and uploaded with
-;; `fedi-post--attach-media', they are attached to the post.
-;; If `fedi-post--edit-post-id' is non-nil, PUT contents to
-;; instance to edit a post."
-;;   (interactive)
-;;   (let* ((post (fedi-post--remove-docs))
-;;          (endpoint (if edit-id ; we are sending an edit:
-;;                        (mastodon-http--api (format "statuses/%s" edit-id))
-;;                      (mastodon-http--api "statuses")))
-;;          (args-no-media (append `(("status" . ,post)
-;;                                   ("in_reply_to_id" . ,fedi-post--reply-to-id)
-;;                                   ("visibility" . ,fedi-post--visibility)
-;;                                   ("sensitive" . ,(when fedi-post-content-nsfw
-;;                                                     (symbol-name t)))
-;;                                   ("spoiler_text" . ,cw)
-;;                                   ("language" . ,fedi-post-language))
-;;                                 ;; Pleroma instances can't handle null-valued
-;;                                 ;; scheduled_at args, so only add if non-nil
-;;                                 (when scheduled `(("scheduled_at" . ,scheduled)))))
-;;          (args-media (when fedi-post--media-attachments
-;;                        (mastodon-http--build-array-params-alist
-;;                         "media_ids[]"
-;;                         fedi-post--media-attachment-ids)))
-;;          (args-poll (when fedi-post-poll
-;;                       (fedi-post--build-poll-params)))
-;;          ;; media || polls:
-;;          (args (if fedi-post--media-attachments
-;;                    (append args-media args-no-media)
-;;                  (if fedi-post-poll
-;;                      (append args-no-media args-poll)
-;;                    args-no-media)))
-;;          (prev-window-config fedi-post-previous-window-config))
-;;     (cond ((and fedi-post--media-attachments
-;;                 ;; make sure we have media args
-;;                 ;; and the same num of ids as attachments
-;;                 (or (not args-media)
-;;                     (not (= (length fedi-post--media-attachments)
-;;                             (length fedi-post--media-attachment-ids)))))
-;;            (message "Something is wrong with your uploads. Wait for them to complete or try again."))
-;;           ((and fedi-post--max-chars
-;;                 (> (fedi-post--count-post-chars post cw) fedi-post--max-chars))
-;;            (message "Looks like your post (inc. CW) is longer than that maximum allowed length."))
-;;           ((fedi-post--empty-p)
-;;            (message "Empty post. Cowardly refusing to post this."))
-;;           (t
-;;            (let ((response (if edit-id ; we are sending an edit:
-;;                                (mastodon-http--put endpoint args)
-;;                              (mastodon-http--post endpoint args))))
-;;              (mastodon-http--triage
-;;               response
-;;               (lambda ()
-;;                 (fedi-post-kill)
-;;                 (if scheduled
-;;                     (message "Post scheduled!")
-;;                   (message "Post post!"))
-;;                 ;; cancel scheduled post if we were editing it:
-;;                 (when scheduled-id
-;;                   (mastodon-views--cancel-scheduled-post
-;;                    scheduled-id :no-confirm))
-;;                 (fedi-post--restore-previous-window-config prev-window-config)
-;;                 (when edit-id
-;;                   (let ((pos (marker-position (cadr prev-window-config))))
-;;                     (mastodon-tl--reload-timeline-or-profile pos))))))))))
-
 (defun fedi-post--restore-previous-window-config (config)
   "Restore the window CONFIG after killing the post compose buffer.
 Buffer-local variable `fedi-post-previous-window-config' holds the config."
   (set-window-configuration (car config))
   (goto-char (cadr config)))
 
-(defun fedi-post--mentions-to-string (mentions)
-  "Apply `fedi-post--process-local' function to each mention in MENTIONS.
-Remove empty string (self) from result and joins the sequence with whitespace."
-  (mapconcat (lambda (mention) mention)
-	         (remove "" (mapcar #'fedi-post--process-local mentions))
-             " "))
-
-(defun fedi-post--process-local (acct)
-  "Add domain to local ACCT and replace the curent user name with \"\".
-Mastodon requires the full @user@domain, even in the case of local accts.
-eg. \"user\" -> \"@user@local.social\" (when local.social is the domain of the
-mastodon-instance-url).
-eg. \"yourusername\" -> \"\"
-eg. \"feduser@fed.social\" -> \"@feduser@fed.social\"."
-  (cond ((string-match-p "@" acct) (concat "@" acct)) ; federated acct
-        ((string= (mastodon-auth--user-acct) acct) "") ; your acct
-        (t (concat "@" acct "@" ; local acct
-                   (cadr (split-string mastodon-instance-url "/" t))))))
-
 
 ;;; COMPLETION (TAGS, MENTIONS)
-
-(defun fedi-post--mentions (status)
-  "Extract mentions (not the reply-to author or booster) from STATUS.
-The mentioned users look like this:
-Local user (including the logged in): `username`.
-Federated user: `username@host.co`."
-  (let* ((boosted (mastodon-tl--field 'reblog status))
-         (mentions (if boosted
-	               (alist-get 'mentions (alist-get 'reblog status))
-	             (alist-get 'mentions status))))
-    ;; reverse does not work on vectors in 24.5
-    (mastodon-tl--map-alist 'acct (reverse mentions))))
 
 (defun fedi-post--get-bounds (regex)
   "Get bounds of item before point using REGEX."
@@ -342,13 +210,16 @@ Federated user: `username@host.co`."
               (match-end 2))))))
 
 (defun fedi-post--return-capf (regex completion-fun &optional
-                                     annot-fun affix-fun exit-fun)
+                                     annot-fun _affix-fun exit-fun)
   "Return a completion at point function.
 REGEX is used to get the item before point.
 COMPLETION-FUN takes two args, start and end bounds of item
 before point, and returns a completion table.
 ANNOT-FUN takes one arg, a candidate, and returns an annotation
-for it."
+for it.
+AFFIX-FUN is currently unused, it would be :affixation-function.
+EXIT-FUN is :exit-function for capfs, it takes two args: a string
+and a status."
   (let* ((bounds (fedi-post--get-bounds regex))
          (start (car bounds))
          (end (cdr bounds)))
@@ -385,48 +256,6 @@ for it."
   (cadr (assoc candidate fedi-post-completions)))
 
 
-;;; REPLY
-
-;; (defun fedi-post--reply ()
-;;   "Reply to post at `point'.
-;; Customize `fedi-post-display-orig-in-reply-buffer' to display
-;; text of the post being replied to in the compose buffer."
-;;   (interactive)
-;;   (mastodon-tl--do-if-post-strict
-;;    (let* ((post (fedi--property 'post-json))
-;;           ;; no-move arg for base post: don't try next post
-;;           (base-post (fedi--property 'base-post)) ; for new notifs handling
-;;           (id (mastodon-tl--as-string (mastodon-tl--field 'id (or base-post post))))
-;;           (account (mastodon-tl--field 'account post))
-;;           (user (alist-get 'acct account))
-;;           (mentions (fedi-post--mentions (or base-post post)))
-;;           (boosted (mastodon-tl--field 'reblog (or base-post post)))
-;;           (booster (when boosted
-;;                      (alist-get 'acct
-;;                                 (alist-get 'account post)))))
-;;      (fedi-post
-;;       (when user
-;;         (if booster
-;;             (if (and (not (equal user booster))
-;;                      (not (member booster mentions)))
-;;                 ;; different booster, user and mentions:
-;; 		(fedi-post--mentions-to-string (append (list user booster) mentions nil))
-;;               ;; booster is either user or in mentions:
-;;               (if (not (member user mentions))
-;;                   ;; user not already in mentions:
-;; 		  (fedi-post--mentions-to-string (append (list user) mentions nil))
-;;                 ;; user already in mentions:
-;;                 (fedi-post--mentions-to-string (copy-sequence mentions))))
-;;           ;; ELSE no booster:
-;;           (if (not (member user mentions))
-;;               ;; user not in mentions:
-;; 	      (fedi-post--mentions-to-string (append (list user) mentions nil))
-;;             ;; user in mentions already:
-;;             (fedi-post--mentions-to-string (copy-sequence mentions)))))
-;;       id
-;;       (or base-post post)))))
-
-
 ;;; COMPOSE POST SETTINGS
 
 (defun fedi-post-toggle-nsfw ()
@@ -448,22 +277,22 @@ Return its two letter ISO 639 1 code."
     (message "Language set to %s" choice)
     (fedi-post--update-status-fields)))
 
-(defun fedi-post--iso-to-human (ts)
-  "Format an ISO8601 timestamp TS to be more human-readable."
-  (let* ((decoded (iso8601-parse ts))
-         (encoded (encode-time decoded)))
-    (format-time-string "%d-%m-%y, %H:%M[%z]" encoded)))
+;; (defun fedi-post--iso-to-human (ts)
+;;   "Format an ISO8601 timestamp TS to be more human-readable."
+;;   (let* ((decoded (iso8601-parse ts))
+;;          (encoded (encode-time decoded)))
+;;     (format-time-string "%d-%m-%y, %H:%M[%z]" encoded)))
 
-(defun fedi-post--iso-to-org (ts)
-  "Convert ISO8601 timestamp TS to something `org-read-date' can handle."
-  (when ts (let* ((decoded (iso8601-parse ts)))
-             (encode-time decoded))))
+;; (defun fedi-post--iso-to-org (ts)
+;;   "Convert ISO8601 timestamp TS to something `org-read-date' can handle."
+;;   (when ts (let* ((decoded (iso8601-parse ts)))
+;;              (encode-time decoded))))
 
 
 ;;; DISPLAY KEYBINDINGS
 
 (defun fedi-post--get-mode-kbinds (&optional mode-map)
-  "Get a list of the keybindings in MODE-MAP or `fedi-post-mode.'"
+  "Get a list of the keybindings in MODE-MAP or `fedi-post-mode'."
   (let* ((binds (copy-tree (or mode-map fedi-post-mode-map)))
          (prefix (car (cadr binds)))
          (bindings (remove nil (mapcar (lambda (i)
@@ -476,7 +305,9 @@ Return its two letter ISO 639 1 code."
 
 (defun fedi-post--format-kbind-command (cmd &optional prefix)
   "Format CMD to be more readable.
-e.g. fedi-post-send -> Send."
+e.g. fedi-post-send -> Send.
+PREFIX is a string corresponding to the prefix of the minor mode
+enabled."
   (let* ((str (symbol-name cmd))
          (re (concat prefix
                      "-\\(.*\\)$"))
@@ -486,13 +317,19 @@ e.g. fedi-post-send -> Send."
     (capitalize (replace-regexp-in-string "-" " " str2))))
 
 (defun fedi-post--format-kbind (kbind &optional prefix)
-  "Format a single keybinding, KBIND, for display in documentation."
+  "Format a single keybinding, KBIND, for display in documentation.
+PREFIX is a string corresponding to the prefix of the minor mode
+enabled. It is used for constructing clean keybinding
+descriptions."
   (let ((key (help-key-description (car kbind) nil))
         (command (fedi-post--format-kbind-command (cdr kbind) prefix)))
     (format "    %s - %s" key command)))
 
 (defun fedi-post--format-kbinds (kbinds &optional prefix)
-  "Format a list of keybindings, KBINDS, for display in documentation."
+  "Format a list of keybindings, KBINDS, for display in documentation.
+PREFIX is a string corresponding to the prefix of the minor mode
+enabled. It is used for constructing clean keybinding
+descriptions."
   (mapcar (lambda (kb)
             (fedi-post--format-kbind kb prefix))
           kbinds))
@@ -523,7 +360,10 @@ LONGEST is the length of the longest binding."
 ;;; DISPLAY DOCS
 
 (defun fedi-post--make-mode-docs (&optional mode prefix)
-  "Create formatted documentation text for the fedi-post-mode."
+  "Create formatted documentation text for MODE or fedi-post-mode.
+PREFIX is a string corresponding to the prefix of the minor mode
+enabled. It is used for constructing clean keybinding
+descriptions."
   (let* ((mode-map (alist-get mode minor-mode-map-alist))
          (prefix (or prefix (string-remove-suffix "-mode"
                                                   (symbol-name mode))))
@@ -541,7 +381,10 @@ LONGEST is the length of the longest binding."
 (defun fedi-post--display-docs-and-status-fields (&optional mode prefix)
   "Insert propertized text with documentation about MODE or `fedi-post-mode'.
 Also includes and the status fields which will get updated based
-on the status of NSFW, content warning flags, media attachments, etc."
+on the status of NSFW, language, media attachments, etc.
+PREFIX is a string corresponding to the prefix of the minor mode
+enabled. It is used for constructing clean keybinding
+descriptions."
   (let ((divider
          "|=================================================================|"))
     (insert
@@ -550,9 +393,9 @@ on the status of NSFW, content warning flags, media attachments, etc."
        (fedi-post--make-mode-docs mode prefix) "\n"
        divider "\n"
        " "
-       (propertize "Count"
-                   'post-post-counter t)
-       " ⋅ "
+       ;; (propertize "Count"
+       ;; 'post-post-counter t)
+       ;; " ⋅ "
        (propertize "Language"
                    'post-post-language t)
        " "
@@ -574,31 +417,22 @@ This is how mastodon does it."
     (switch-to-buffer (current-buffer))
     (insert post-string)
     (goto-char (point-min))
-    ;; handle URLs
-    ;; (while (search-forward-regexp mastodon-post-url-regex nil t)
-    ;;                                     ; "\\w+://[^ \n]*" old regex
-    ;;   (replace-match "xxxxxxxxxxxxxxxxxxxxxxx")) ; 23 x's
-    ;; handle @handles
-    ;; (goto-char (point-min))
-    ;; (while (search-forward-regexp mastodon-post-handle-regex nil t)
-    ;;   (replace-match (match-string 2))) ; replace with handle only
-    ;; (+ (length cw)
     (length (buffer-substring (point-min) (point-max)))))
 
 (defun fedi-post--update-status-fields (&rest _args)
   "Update the status fields in the header based on the current state."
-  (ignore-errors  ;; called from after-change-functions so let's not leak errors
+  (ignore-errors  ; called from `after-change-functions' so let's not leak errors
     (let* ((inhibit-read-only t)
            (header-region (fedi--find-property-range 'post-post-header
                                                      (point-min)))
-           (count-region (fedi--find-property-range 'post-post-counter
-                                                    (point-min)))
+           ;; (count-region (fedi--find-property-range 'post-post-counter
+           ;;                                          (point-min)))
            (nsfw-region (fedi--find-property-range 'post-post-nsfw-flag
                                                    (point-min)))
            (lang-region (fedi--find-property-range 'post-post-language
                                                    (point-min)))
-           (post-string (buffer-substring-no-properties (cdr header-region)
-                                                        (point-max))))
+           ;; (post-string (buffer-substring-no-properties (cdr header-region)
+           ;;                                              (point-max))))
       ;; (add-text-properties (car count-region) (cdr count-region)
       ;;                      (list 'display
       ;;                            (format "%s/%s chars"
@@ -616,9 +450,6 @@ This is how mastodon does it."
                                      "NSFW"
                                    "")
                                  'face 'mastodon-cw-face)))))
-      ;; (add-text-properties (car cw-region) (cdr cw-region)
-      ;;                      (list 'invisible (not fedi-post--content-warning)
-      ;;                            'face 'mastodon-cw-face)))))
 
 
 
