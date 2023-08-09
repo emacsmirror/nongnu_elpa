@@ -27,12 +27,19 @@ For an example of using this library, see my [[https://codeberg.org/martianh/lem
 * utilities
 
 =fedi.el= contains some utility functions for setting up a new client buffer,
-navigating between items, displaying icons, webfinger lookup of URLs, and
-live-updating timestamps. More will be added as they are ported from
-=mastodon.el=.
+navigating between items, displaying icons, formatting headings, webfinger
+lookup of URLs, and live-updating timestamps. More will be added as they are
+ported from =mastodon.el=.
 
 * posting
 
 =fedi-post.el= contains functions for rich composing of posts. It supports
-pretty display of available bindings, toggling post flags like NSWF, and
+pretty display of available bindings, toggling post flags like NSFW, and
 completion of items like handles and tags.
+
+* contributing
+
+If you're making an Emacs to a fediverse (or similar) service and interested
+in using this library, don't hesitate to get in touch. The library was only
+created to port code from =mastodon.el= to =lem.el=, but could happily be further
+adapted to accommodate other projects.
