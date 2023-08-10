@@ -179,7 +179,6 @@ If post is not empty, prompt to save text as a draft."
   (string-empty-p (fedi-post--clean-tabs-and-nl
                    (fedi-post--remove-docs))))
 
-
 (defun fedi-post--remove-docs ()
   "Get the body of a post from the current compose buffer."
   (let ((header-region (fedi--find-property-range 'post-post-header
@@ -430,9 +429,9 @@ This is how mastodon does it."
            (nsfw-region (fedi--find-property-range 'post-post-nsfw-flag
                                                    (point-min)))
            (lang-region (fedi--find-property-range 'post-post-language
-                                                   (point-min)))
-           ;; (post-string (buffer-substring-no-properties (cdr header-region)
-           ;;                                              (point-max))))
+                                                   (point-min))))
+      ;; (post-string (buffer-substring-no-properties (cdr header-region)
+      ;;                                              (point-max))))
       ;; (add-text-properties (car count-region) (cdr count-region)
       ;;                      (list 'display
       ;;                            (format "%s/%s chars"
