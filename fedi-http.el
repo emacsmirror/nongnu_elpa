@@ -185,9 +185,9 @@ STRING should be HTML for a 404 errror."
   (with-temp-buffer
     (insert string)
     (shr-render-buffer (current-buffer))
-    (view-mode) ; for 'q' to kill buffer and window
-    ;; FIXME: this is awful, it pops up also:
-    (error ""))) ; stop subsequent processing
+    (view-mode))) ; for 'q' to kill buffer and window
+;; FIXME: this is awful, it pops up also:
+;; (error ""))) ; stop subsequent processing
 
 (defun fedi-http--process-response (&optional no-headers vector)
   "Process http response.
