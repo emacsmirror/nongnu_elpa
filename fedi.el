@@ -130,7 +130,7 @@ Used to construct function names in `fedi-request'.")
 ;; to define functions, so must be called with all possible arguments, rather
 ;; than only those of a given function call.
 ;; Still, it solves the problem of the server rejecting nil param values.
-(defun fedi-arg-when-expr (arg)
+(defun fedi-arg-when-expr (arg &optional coerce)
   "Return a cons of a string and a symbol type of ARG.
 Also replace _ with - (for Lemmy's type_ param)."
   (let ((str
@@ -138,15 +138,20 @@ Also replace _ with - (for Lemmy's type_ param)."
                          (symbol-name arg))))
     ;; FIXME: when the when test fails, it adds nil to the list in the
     ;; expansion, so we have to call (remove nil) on the result.
-    `(when ,arg
-       (cons ,str ,arg))))
+    (if coerce
+        `(when ,arg
+           (cons ,str (if (numberp ,arg)
+                          (number-to-string ,arg)
+                        ,arg)))
+      `(when ,arg
+         (cons ,str ,arg)))))
 
 ;; (fedi-arg-when-expr 'sort)
 
-(defun fedi-make-params-alist (args fun)
+(defun fedi-make-params-alist (args fun &optional coerce)
   "Call FUN on each of ARGS."
   (cl-loop while args
-           collecting (funcall fun (pop args))))
+           collecting (funcall fun (pop args) coerce)))
 
 ;; (fedi-make-params-alist '(sort type))
 
