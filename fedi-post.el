@@ -37,7 +37,7 @@
 (defvar emojify-user-emojis)
 
 (require 'cl-lib)
-(require 'persist)
+;; (require 'persist)
 (require 'mastodon-iso)
 (require 'facemenu)
 (require 'text-property-search)
@@ -106,8 +106,8 @@ Takes its form from `window-configuration-to-register'.")
 (defvar fedi-post-current-post-text nil
   "The text of the post being composed.")
 
-(persist-defvar fedi-post-draft-posts-list nil
-                "A list of posts that have been saved as drafts.
+(defvar fedi-post-draft-posts-list nil
+  "A list of posts that have been saved as drafts.
 For the moment we just put all composed posts in here, as we want
 to also capture posts that are `sent' but that don't successfully
 send.")
@@ -166,8 +166,8 @@ If post is not empty, prompt to save text as a draft."
   (interactive)
   (if (fedi-post--empty-p)
       (fedi-post-kill)
-    (when (y-or-n-p "Save draft post?")
-      (fedi-post--save-draft))
+    ;; (when (y-or-n-p "Save draft post?")
+    ;; (fedi-post--save-draft))
     (fedi-post-kill)))
 
 (defun fedi-post--clean-tabs-and-nl (string)
@@ -422,8 +422,8 @@ This is how mastodon does it."
   "Update the status fields in the header based on the current state."
   (ignore-errors  ; called from `after-change-functions' so let's not leak errors
     (let* ((inhibit-read-only t)
-           (header-region (fedi--find-property-range 'post-post-header
-                                                     (point-min)))
+           ;; (header-region (fedi--find-property-range 'post-post-header
+           ;;                                           (point-min)))
            ;; (count-region (fedi--find-property-range 'post-post-counter
            ;;                                          (point-min)))
            (nsfw-region (fedi--find-property-range 'post-post-nsfw-flag
