@@ -38,18 +38,9 @@
 
 (require 'cl-lib)
 ;; (require 'persist)
-(require 'mastodon-iso)
 (require 'facemenu)
 (require 'text-property-search)
 (require 'markdown-mode)
-
-(eval-when-compile
-  (require 'mastodon-tl))
-
-(defvar mastodon-instance-url)
-(defvar mastodon-tl--buffer-spec)
-(defvar mastodon-tl--enable-proportional-fonts)
-(defvar mastodon-profile-account-settings)
 
 (autoload 'iso8601-parse "iso8601")
 (autoload 'fedi--find-property-range "fedi")
