@@ -448,6 +448,26 @@ This is how mastodon does it."
                                    "")
                                  'face 'mastodon-cw-face)))))
 
+(defun fedi-post--update-status-fields-list (&rest items)
+  "Update the status fields in the header based on the current state.
+ITEMS is a list of alists, each containing name, prop, item-var, item-face, f-str."
+  ;; e.g.
+  ;; (fedi-post--update-status-fields-list `((name . "community")
+  ;;                                         (prop . post-community)
+  ;;                                         (item-var . lem-post-community-name)
+  ;;                                         (item-face . nil)
+  ;;                                         (f-str . "To: %s")))
+  (ignore-errors
+    (let* ((inhibit-read-only t))
+      (cl-loop for item in items
+               do (let-alist item
+                    (let ((region (fedi--find-property-range .prop (point-min))))
+                      (add-text-properties (car region) (cdr region)
+                                           (list 'display
+                                                 (if .item-var
+                                                     (format .f-str (eval .item-var))
+                                                   ""
+                                                   'face .item-face)))))))))
 
 
 ;;; PROPERTIZE TAGS AND HANDLES
