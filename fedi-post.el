@@ -433,12 +433,19 @@ This is how mastodon does it."
       (add-text-properties (car region) (cdr region)
                            (list 'display
                                  (if (eval .item-var)
-                                     (format (concat (capitalize .name)
-                                                     ": %s ⋅ ")
-                                             (eval .item-var))
+                                     (format
+                                      (if .no-label
+                                          (concat
+                                           (propertize "%s"
+                                                       'face .face)
+                                           " ⋅ ")
+                                        (concat (capitalize .name)
+                                                ": "
+                                                (propertize "%s"
+                                                            'face .face)))
+                                      (eval .item-var))
                                    "")
-                                 'face (or .item-face
-                                           'fedi-post-docs-face))))))
+                                 'face 'fedi-post-docs-face)))))
 
 (defun fedi-post--update-status-fields (&rest _args)
   "Update the status fields in the header based on the current state."
