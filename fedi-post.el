@@ -368,7 +368,8 @@ descriptions."
                  longest-kbind)
                 nil))))
 
-(defun fedi-post--display-docs-and-status-fields (&optional mode prefix)
+(defun fedi-post--display-docs-and-status-fields (&optional mode prefix
+                                                            fields)
   "Insert propertized text with documentation about MODE or `fedi-post-mode'.
 Also includes and the status fields which will get updated based
 on the status of NSFW, language, media attachments, etc.
@@ -387,10 +388,16 @@ descriptions."
        ;; 'post-post-counter t)
        ;; " ⋅ "
        (propertize "Language"
-                   'post-post-language t)
+                   'post-language t)
        " "
        (propertize "NSFW"
-                   'post-post-nsfw-flag t)
+                   'post-nsfw t)
+       " "
+       (cl-loop for field in fields
+                concat (propertize (capitalize field)
+                                   (intern
+                                    (concat "post-" field))
+                                   t))
        "\n"
        divider
        "\n")
