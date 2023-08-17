@@ -53,8 +53,12 @@
 If `mastodon-tl--enable-proportional-fonts' is changed,
 mastodon.el needs to be re-loaded for this to be correctly set.")
 
+(defface fedi-post-success-face
+  `((t :inherit success))
+  "Face used for some status fields in post compose buffer.")
+
 (defgroup fedi-post nil
-  "Posting in Mastodon."
+  "Posting options for fedi.el."
   :prefix "fedi-post-"
   :group 'mastodon)
 
@@ -475,8 +479,8 @@ This is how mastodon does it."
                                  (if fedi-post-content-nsfw
                                      "NSFW"
                                    "")
-                                 'face 'mastodon-cw-face))
-      (cl-loop for item in fedi-status-fields-items
+                                 'face 'fedi-post-success-face))
+      (cl-loop for item in fedi-post-status-fields-items
                do (fedi-post--update-status-field item)))))
 
 
