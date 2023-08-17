@@ -582,7 +582,7 @@ CAPF-FUNS is a list of functions to enable."
     (make-local-variable 'after-change-functions)
     ;; (cl-pushnew #'fedi-post--save-post-text after-change-functions)
     (cl-pushnew #'fedi-post--update-status-fields after-change-functions)
-    (setq fedi-status-fields-items fields-alist)
+    (setq fedi-post-status-fields-items fields-alist)
     (fedi-post--update-status-fields)
     ;; disable for markdown-mode:
     (unless (eq major 'markdown-mode)
