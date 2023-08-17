@@ -103,6 +103,10 @@ For the moment we just put all composed posts in here, as we want
 to also capture posts that are `sent' but that don't successfully
 send.")
 
+(defvar-local fedi-status-fields-items nil
+  "A list of alists containing information about each status field
+to be updated.")
+
 
 ;;; REGEXES
 
@@ -172,7 +176,7 @@ If post is not empty, prompt to save text as a draft."
 
 (defun fedi-post--remove-docs ()
   "Get the body of a post from the current compose buffer."
-  (let ((header-region (fedi--find-property-range 'post-post-header
+  (let ((header-region (fedi--find-property-range 'post-header
                                                   (point-min))))
     (buffer-substring (cdr header-region) (point-max))))
 
@@ -368,8 +372,17 @@ descriptions."
                  longest-kbind)
                 nil))))
 
+(defun fedi-post--concat-fields (fields-alist)
+  ""
+  (cl-loop for item in fields-alist
+           for field = (alist-get 'name item)
+           concat (propertize (capitalize field)
+                              (intern
+                               (concat "post-" (downcase field)))
+                              t)))
+
 (defun fedi-post--display-docs-and-status-fields (&optional mode prefix
-                                                            fields)
+                                                            fields-alist)
   "Insert propertized text with documentation about MODE or `fedi-post-mode'.
 Also includes and the status fields which will get updated based
 on the status of NSFW, language, media attachments, etc.
@@ -387,24 +400,20 @@ descriptions."
        ;; (propertize "Count"
        ;; 'post-post-counter t)
        ;; " ⋅ "
+       (fedi-post--concat-fields fields-alist)
+       "\n "
        (propertize "Language"
                    'post-language t)
        " "
        (propertize "NSFW"
                    'post-nsfw t)
-       " "
-       (cl-loop for field in fields
-                concat (propertize (capitalize field)
-                                   (intern
-                                    (concat "post-" field))
-                                   t))
        "\n"
        divider
        "\n")
       'rear-nonsticky t
       'face 'fedi-post-docs-face
       'read-only "Edit your message below."
-      'post-post-header t))))
+      'post-header t))))
 
 (defun fedi-post--count-post-chars (post-string)
   "Count the characters in POST-STRING.
@@ -416,17 +425,29 @@ This is how mastodon does it."
     (goto-char (point-min))
     (length (buffer-substring (point-min) (point-max)))))
 
+(defun fedi-post--update-status-field (item)
+  "ITEM."
+  (let-alist item
+    (let ((region (fedi--find-property-range .prop (point-min))))
+      (add-text-properties (car region) (cdr region)
+                           (list 'display
+                                 (if (eval .item-var)
+                                     (format (concat (capitalize .name)
+                                                     ": %s ⋅ ")
+                                             (eval .item-var))
+                                   "")
+                                 'face (or .item-face
+                                           'fedi-post-docs-face))))))
+
 (defun fedi-post--update-status-fields (&rest _args)
   "Update the status fields in the header based on the current state."
-  (ignore-errors  ; called from `after-change-functions' so let's not leak errors
+  (ignore-errors ; called from `after-change-functions' so let's not leak errors
     (let* ((inhibit-read-only t)
-           ;; (header-region (fedi--find-property-range 'post-post-header
+           ;; (header-region (fedi--find-property-range 'post-header
            ;;                                           (point-min)))
-           ;; (count-region (fedi--find-property-range 'post-post-counter
-           ;;                                          (point-min)))
-           (nsfw-region (fedi--find-property-range 'post-post-nsfw-flag
+           (nsfw-region (fedi--find-property-range 'post-nsfw
                                                    (point-min)))
-           (lang-region (fedi--find-property-range 'post-post-language
+           (lang-region (fedi--find-property-range 'post-language
                                                    (point-min))))
       ;; (post-string (buffer-substring-no-properties (cdr header-region)
       ;;                                              (point-max))))
@@ -446,28 +467,9 @@ This is how mastodon does it."
                                  (if fedi-post-content-nsfw
                                      "NSFW"
                                    "")
-                                 'face 'mastodon-cw-face)))))
-
-(defun fedi-post--update-status-fields-list (&rest items)
-  "Update the status fields in the header based on the current state.
-ITEMS is a list of alists, each containing name, prop, item-var, item-face, f-str."
-  ;; e.g.
-  ;; (fedi-post--update-status-fields-list `((name . "community")
-  ;;                                         (prop . post-community)
-  ;;                                         (item-var . lem-post-community-name)
-  ;;                                         (item-face . nil)
-  ;;                                         (f-str . "To: %s")))
-  (ignore-errors
-    (let* ((inhibit-read-only t))
-      (cl-loop for item in items
-               do (let-alist item
-                    (let ((region (fedi--find-property-range .prop (point-min))))
-                      (add-text-properties (car region) (cdr region)
-                                           (list 'display
-                                                 (if .item-var
-                                                     (format .f-str (eval .item-var))
-                                                   ""
-                                                   'face .item-face)))))))))
+                                 'face 'mastodon-cw-face))
+      (cl-loop for item in fedi-status-fields-items
+               do (fedi-post--update-status-field item)))))
 
 
 ;;; PROPERTIZE TAGS AND HANDLES
@@ -476,7 +478,7 @@ ITEMS is a list of alists, each containing name, prop, item-var, item-face, f-st
   "Propertize tags and handles in post compose buffer.
 Added to `after-change-functions'."
   (when (fedi-post--compose-buffer-p)
-    (let ((header-region (fedi--find-property-range 'post-post-header
+    (let ((header-region (fedi--find-property-range 'post-header
                                                     (point-min)))
           (face nil))
       ;; (face (when fedi-post--proportional-fonts-compose
@@ -523,7 +525,8 @@ Added to `after-change-functions'."
 
 ;;; COMPOSE BUFFER FUNCTION
 
-(defun fedi-post--compose-buffer (&optional edit major minor prefix capf-funs)
+(defun fedi-post--compose-buffer
+    (&optional edit major minor prefix capf-funs &rest fields-alist)
   "Create a new buffer to capture text for a new post.
 EDIT means we are editing an existing post, not composing a new one.
 MAJOR is the major mode to enable.
@@ -550,7 +553,7 @@ CAPF-FUNS is a list of functions to enable."
         ;; (setq markdown-mode-hook (delete 'variable-pitch-mode markdown-mode-hook))
         (variable-pitch-mode -1)))
     (unless buffer-exists
-      (fedi-post--display-docs-and-status-fields minor prefix))
+      (fedi-post--display-docs-and-status-fields minor prefix fields-alist))
     ;; set up completion:
     (when fedi-post--enable-completion
       (set (make-local-variable 'completion-at-point-functions)
@@ -568,6 +571,7 @@ CAPF-FUNS is a list of functions to enable."
     (make-local-variable 'after-change-functions)
     ;; (cl-pushnew #'fedi-post--save-post-text after-change-functions)
     (cl-pushnew #'fedi-post--update-status-fields after-change-functions)
+    (setq fedi-status-fields-items fields-alist)
     (fedi-post--update-status-fields)
     ;; disable for markdown-mode:
     (unless (eq major 'markdown-mode)
@@ -588,7 +592,7 @@ CAPF-FUNS is a list of functions to enable."
 Added to `after-change-functions' as we disable markdown-mode's
 font locking to not ruin our docs header."
   (save-excursion
-    (let ((end-of-docs (cdr (fedi--find-property-range 'post-post-header
+    (let ((end-of-docs (cdr (fedi--find-property-range 'post-header
                                                        (point-min)))))
       (font-lock-fontify-region end-of-docs (point-max)))))
 
