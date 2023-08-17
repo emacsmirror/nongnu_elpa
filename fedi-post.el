@@ -103,9 +103,10 @@ For the moment we just put all composed posts in here, as we want
 to also capture posts that are `sent' but that don't successfully
 send.")
 
-(defvar-local fedi-status-fields-items nil
-  "A list of alists containing information about each status field
-to be updated.")
+(defvar-local fedi-post-status-fields-items nil
+  "A list of alists of information about each status field to be updated.
+Each alist should contain the keys name, item-var, prop, and
+face. no-label is optional.")
 
 
 ;;; REGEXES
