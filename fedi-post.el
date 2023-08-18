@@ -42,6 +42,8 @@
 (require 'text-property-search)
 (require 'markdown-mode)
 
+(require 'fedi-iso)
+
 (autoload 'iso8601-parse "iso8601")
 (autoload 'fedi--find-property-range "fedi")
 (autoload 'fedi--find-property-range "fedi")
@@ -267,9 +269,9 @@ and a status."
 Return its two letter ISO 639 1 code."
   (interactive)
   (let* ((choice (completing-read "Language for this post: "
-                                  mastodon-iso-639-1)))
+                                  fedi-iso-639-1)))
     (setq fedi-post-language
-          (alist-get choice mastodon-iso-639-1 nil nil 'equal))
+          (alist-get choice fedi-iso-639-1 nil nil 'equal))
     (message "Language set to %s" choice)
     (fedi-post--update-status-fields)))
 
