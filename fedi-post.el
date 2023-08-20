@@ -10,18 +10,18 @@
 
 ;; This file is part of fedi.el.
 
-;; mastodon.el is free software: you can redistribute it and/or modify
+;; fedi.el is free software: you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
 ;; the Free Software Foundation, either version 3 of the License, or
 ;; (at your option) any later version.
 
-;; mastodon.el is distributed in the hope that it will be useful,
+;; fedi.el is distributed in the hope that it will be useful,
 ;; but WITHOUT ANY WARRANTY; without even the implied warranty of
 ;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 ;; GNU General Public License for more details.
 
 ;; You should have received a copy of the GNU General Public License
-;; along with mastodon.el.  If not, see <http://www.gnu.org/licenses/>.
+;; along with fedi.el.  If not, see <http://www.gnu.org/licenses/>.
 
 ;;; Commentary:
 
@@ -42,6 +42,8 @@
 (require 'text-property-search)
 (require 'markdown-mode)
 
+(require 'fedi-iso)
+
 (autoload 'iso8601-parse "iso8601")
 (autoload 'fedi--find-property-range "fedi")
 (autoload 'fedi--find-property-range "fedi")
@@ -49,9 +51,7 @@
 
 (defface fedi-post-docs-face
   `((t :inherit font-lock-comment-face))
-  "Face used for documentation in post compose buffer.
-If `mastodon-tl--enable-proportional-fonts' is changed,
-mastodon.el needs to be re-loaded for this to be correctly set.")
+  "Face used for documentation in post compose buffer.")
 
 (defface fedi-post-success-face
   `((t :inherit success))
@@ -60,7 +60,7 @@ mastodon.el needs to be re-loaded for this to be correctly set.")
 (defgroup fedi-post nil
   "Posting options for fedi.el."
   :prefix "fedi-post-"
-  :group 'mastodon)
+  :group 'fedi)
 
 (defcustom fedi-post--enable-completion t
   "Whether to enable completion of mentions and hashtags.
@@ -70,9 +70,8 @@ Used for completion in post compose buffer."
 (defcustom fedi-post--use-company-for-completion nil
   "Whether to enable company for completion.
 When non-nil, `company-mode' is enabled in the post compose
-buffer, and mastodon completion backends are added to
+buffer, and fedi or your package's completion backends are added to
 `company-capf'.
-
 You need to install company yourself to use this."
   :type 'boolean)
 
@@ -161,7 +160,7 @@ CANCEL means the post was not sent, so we save the post text as a draft."
     (fedi-post--restore-previous-window-config prev-window-config)))
 
 (defun fedi-post-cancel ()
-  "Kill new-post buffer/window. Does not POST content to Mastodon.
+  "Kill new-post buffer/window. Does not POST content.
 If post is not empty, prompt to save text as a draft."
   (interactive)
   (if (fedi-post--empty-p)
@@ -270,9 +269,9 @@ and a status."
 Return its two letter ISO 639 1 code."
   (interactive)
   (let* ((choice (completing-read "Language for this post: "
-                                  mastodon-iso-639-1)))
+                                  fedi-iso-639-1)))
     (setq fedi-post-language
-          (alist-get choice mastodon-iso-639-1 nil nil 'equal))
+          (alist-get choice fedi-iso-639-1 nil nil 'equal))
     (message "Language set to %s" choice)
     (fedi-post--update-status-fields)))
 
@@ -421,9 +420,9 @@ descriptions."
       'post-header t))))
 
 (defun fedi-post--count-post-chars (post-string)
-  "Count the characters in POST-STRING.
-URLs always = 23, and domain names of handles are not counted.
-This is how mastodon does it."
+  "Count the characters in POST-STRING."
+  ;; URLs always = 23, and domain names of handles are not counted.
+  ;; This is how mastodon does it."
   (with-temp-buffer
     (switch-to-buffer (current-buffer))
     (insert post-string)
@@ -501,7 +500,7 @@ Added to `after-change-functions'."
                                   'success
                                   (cdr header-region))
       (fedi-post--propertize-item fedi-post-handle-regex
-                                  'mastodon-display-name-face
+                                  'warning
                                   (cdr header-region))
       (fedi-post--propertize-item fedi-post-url-regex
                                   'link
@@ -537,7 +536,7 @@ Added to `after-change-functions'."
 ;;; COMPOSE BUFFER FUNCTION
 
 (defun fedi-post--compose-buffer
-    (&optional edit major minor prefix capf-funs &rest fields-alist)
+    (&optional edit major minor prefix type capf-funs &rest fields-alist)
   "Create a new buffer to capture text for a new post.
 EDIT means we are editing an existing post, not composing a new one.
 MAJOR is the major mode to enable.
@@ -546,7 +545,9 @@ PREFIX is a string corresponding to the prefix of the library
 that contains the compose buffer's functions. It is only required
 if this differs from the minor mode.
 CAPF-FUNS is a list of functions to enable."
-  (let* ((buffer-name (if edit "*edit post*" "*new post*"))
+  (let* ((buffer-name (if edit
+                          (format "*edit %s*" type)
+                        (format "*new %s*" type)))
          (buffer-exists (get-buffer buffer-name))
          (buffer (or buffer-exists (get-buffer-create buffer-name)))
          (inhibit-read-only t)
@@ -607,13 +608,13 @@ font locking to not ruin our docs header."
                                                        (point-min)))))
       (font-lock-fontify-region end-of-docs (point-max)))))
 
-;; flyspell ignore masto post regexes:
+;; flyspell ignore our post regexes:
 (defvar flyspell-generic-check-word-predicate)
 
 (defun fedi-post-mode-flyspell-verify ()
   "A predicate function for `flyspell'.
 Only text that is not one of these faces will be spell-checked."
-  (let ((faces '(mastodon-display-name-face
+  (let ((faces '(warning
                  fedi-post-docs-face font-lock-comment-face
                  success link)))
     (unless (eql (point) (point-min))
