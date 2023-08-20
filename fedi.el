@@ -545,6 +545,28 @@ E.g. this could return something like \"1 min ago\", \"yesterday\", etc.
 TIME-STAMP is assumed to be in the past."
   (car (fedi--relative-time-details timestamp current-time)))
 
+;;; LIVE BUFFERS
+
+(defun fedi-live-buffers (prefix)
+  "Return a list of all live buffers with PREFIX in their name."
+  (cl-loop for b in (buffer-list)
+           when (string-prefix-p prefix (buffer-name b))
+           collect (get-buffer b)))
+
+(defun fedi-kill-all-buffers (prefix)
+  "Kill any and all open fedi buffers, hopefully."
+  (let ((fedi-buffers (fedi-live-buffers prefix)))
+    (cl-loop for x in fedi-buffers
+             do (kill-buffer x))))
+
+(defun fedi-switch-to-buffer (prefix)
+  "Switch to a live fedi buffer."
+  (let* ((bufs (fedi-live-buffers prefix))
+         (buf-names (mapcar #'buffer-name bufs))
+         (choice (completing-read "Switch to buffer: "
+                                  buf-names)))
+    (switch-to-buffer choice)))
+
 
 (provide 'fedi)
 ;;; fedi.el ends here
