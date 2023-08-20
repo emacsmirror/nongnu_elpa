@@ -536,7 +536,7 @@ Added to `after-change-functions'."
 ;;; COMPOSE BUFFER FUNCTION
 
 (defun fedi-post--compose-buffer
-    (&optional edit major minor prefix capf-funs &rest fields-alist)
+    (&optional edit major minor prefix type capf-funs &rest fields-alist)
   "Create a new buffer to capture text for a new post.
 EDIT means we are editing an existing post, not composing a new one.
 MAJOR is the major mode to enable.
@@ -545,7 +545,9 @@ PREFIX is a string corresponding to the prefix of the library
 that contains the compose buffer's functions. It is only required
 if this differs from the minor mode.
 CAPF-FUNS is a list of functions to enable."
-  (let* ((buffer-name (if edit "*edit post*" "*new post*"))
+  (let* ((buffer-name (if edit
+                          (format "*edit %s*" type)
+                        (format "*new %s*" type)))
          (buffer-exists (get-buffer buffer-name))
          (buffer (or buffer-exists (get-buffer-create buffer-name)))
          (inhibit-read-only t)
