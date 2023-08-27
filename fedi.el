@@ -184,19 +184,21 @@ than `switch-to-buffer'."
 
 ;;; NAV
 
-(defun fedi--goto-pos (fun &optional refresh pos)
+(defun fedi--goto-pos (fun prop &optional refresh pos)
   "Search for item with FUN.
 If search returns nil, execute REFRESH function.
 Optionally start from POS."
   (let* ((npos (funcall fun
                         (or pos (point))
-                        'byline-top
+                        prop
                         (current-buffer))))
     (if npos
-        (if (not (get-text-property npos 'byline-top))
-            (fedi--goto-pos fun refresh npos)
+        (if (not (get-text-property npos prop))
+            (fedi--goto-pos fun prop refresh npos)
           (goto-char npos))
-      (funcall refresh))))
+      (if refresh
+          (funcall refresh)
+        (message "Nothing further")))))
 
 (defun fedi-next-item ()
   "Move to next item."
