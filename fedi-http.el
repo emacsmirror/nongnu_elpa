@@ -3,7 +3,6 @@
 ;; Copyright (C) 2020-2022 Marty Hiatt and mastodon.el authors
 ;; Author: Marty Hiatt <martianhiatus@riseup.net>
 ;; Version: 0.0.2
-;; Package-Requires: ((emacs "27.1"))
 ;; Homepage: https://codeberg.org/martianh/fedi.el
 
 ;; This file is not part of GNU Emacs.
@@ -49,15 +48,16 @@
 ;; (defvar fedi-toot--media-attachment-filenames)
 
 (defvar fedi-instance-url)
-(defvar fedi-http--api-version "v3")
+(defvar fedi-http--api-version)
 
 (defconst fedi-http--timeout 15
   "HTTP request timeout, in seconds.  Has no effect on Emacs < 26.1.")
 
-(defun fedi-http--api (endpoint &optional url)
+(defun fedi-http--api (endpoint &optional url ver-str)
   "Return Fedi API URL for ENDPOINT."
   (concat (or url fedi-instance-url) "/api/"
-          fedi-http--api-version "/" endpoint))
+          (or ver-str fedi-http--api-version)
+          "/" endpoint))
 
 (defun fedi-http--response ()
   "Capture response buffer content as string."
