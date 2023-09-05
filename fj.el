@@ -145,5 +145,18 @@ ISSUE is a number"
                            fj-user repo index)))
     (fj-get endpoint)))
 
+(defun fj-issue-reply (&optional repo issue)
+  ""
+  (interactive)
+  (let* ((repo (or repo (fj-read-user-repo)))
+         (issue (or issue (fj-read-repo-issue repo)))
+         (url (format "repos/%s/%s/issues/%s/comments" fj-user repo issue))
+         (body (read-string "Comment: "))
+         (params `(("body" . ,body)))
+         (response (fj-post url params)))
+    (fedi-http--triage response
+                       (lambda ()
+                         (message "comment created!")))))
+
 (provide 'fj)
 ;;; fj.el ends here
