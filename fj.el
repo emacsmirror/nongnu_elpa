@@ -65,6 +65,22 @@ PARAMS."
     (fj-authorized-request "POST"
       (fedi-http--post url params nil :json))))
 
+(defun fj-patch (endpoint &optional params json)
+  "Make a PATCH request to ENDPOINT.
+PARAMS.
+JSON."
+  (let ((url (fj-api endpoint)))
+    (fj-authorized-request "PATCH"
+      (fedi-http--patch-json url params json))))
+
+(defun fj-delete (endpoint)
+  "Make a DELETE request to ENDPOINT."
+  (let ((url (fj-api endpoint)))
+    (fj-authorized-request "DELETE"
+      (fedi-http--delete url))))
+
+;;; USER
+
 (defun fj-get-user ()
   "Return the data for the current user."
   (fj-get "user"))
@@ -101,7 +117,7 @@ PARAMS."
 (defun fj-read-repo-issue (repo)
   "Given REPO, read an issue in the minibuffer.
 Return the issue number."
-  (let* ((issues (fj-get-repo-issues repo))
+  (let* ((issues (fj-repo-get-issues repo))
          (cands (fj-get-issue-candidates issues))
          (choice (completing-read "Issue:" cands))
          (item
@@ -111,24 +127,26 @@ Return the issue number."
                          cands))))
     (cadr item)))
 
-(defun fj-get-repo-issues (&optional repo)
+(defun fj-repo-get-issues (&optional repo)
   "Return issues for REPO."
   (let* ((repo (or repo (fj-read-user-repo)))
          (endpoint (format "repos/%s/%s/issues" fj-user repo)))
     (fj-get endpoint)))
 
-(defun fj-get-issue (&optional issue repo)
+(defun fj-get-issue (&optional repo issue)
   "GET ISSUE in REPO.
 ISSUE is a number"
+  ;; (fj-with-repo nil nil
   (let* ((repo (or repo (fj-read-user-repo)))
          (issue (or issue (fj-read-repo-issue repo)))
          (endpoint (format "repos/%s/%s/issues/%s" fj-user repo issue)))
     (fj-get endpoint)))
 
-(defun fj-create-issue (repo)
+(defun fj-issue-create (&optional repo)
   "Create an issue in REPO."
   (interactive)
-  (let* ((url (format "repos/%s/%s/issues" fj-user repo))
+  (let* ((repo (or repo (fj-read-user-repo)))
+         (url (format "repos/%s/%s/issues" fj-user repo))
          (title (read-string "Title: "))
          (body (read-string "Body: "))
          (params `(("body" . ,body)
@@ -138,7 +156,43 @@ ISSUE is a number"
                        (lambda ()
                          (message "issue %s created!" title)))))
 
-(defun fj-get-issue-comments (repo issue)
+(defun fj-issue-patch (&optional repo issue params)
+  "Edit ISSUE in REPO.
+PARAMS."
+  (let* ((repo (or repo (fj-read-user-repo)))
+         (issue (or issue (fj-read-repo-issue repo)))
+         (endpoint (format "repos/%s/%s/issues/%s" fj-user repo issue)))
+    (fj-patch endpoint params :json)))
+
+(defun fj-issue-edit (&optional repo issue)
+  "REPO ISSUE."
+  (let* ((repo (or repo (fj-read-user-repo)))
+         (issue (or issue (fj-read-repo-issue repo)))
+         (data (fj-get-issue repo issue))
+         (old-body (alist-get 'body data))
+         (new-body (read-string "Edit issue: " old-body)))
+    (fj-issue-patch nil nil `(("body" . ,new-body)))))
+
+(defun fj-issue-close ()
+  "Close issue."
+  (interactive)
+  (fj-issue-patch nil nil `(("state" . "closed"))))
+
+
+(defun fj-issue-delete (&optional repo issue)
+  "Delete ISSUE in REPO."
+  (interactive)
+  (let* ((repo (or repo (fj-read-user-repo)))
+         (issue (or issue (fj-read-repo-issue repo)))
+         (url (format "repos/%s/%s/issues/%s" fj-user repo issue))
+         (response (fj-delete url)))
+    (fedi-http--triage response
+                       (lambda ()
+                         (message "issue deleted!")))))
+
+;;; COMMENTS
+
+(defun fj-issue-get-comments (repo issue)
   "Return comments for ISSUE in REPO."
   (let* ((index (alist-get 'number issue))
          (endpoint (format "/repos/%s/%s/issues/%s/comments"
@@ -146,7 +200,7 @@ ISSUE is a number"
     (fj-get endpoint)))
 
 (defun fj-issue-reply (&optional repo issue)
-  ""
+  "REPLY to ISSUE in REPO."
   (interactive)
   (let* ((repo (or repo (fj-read-user-repo)))
          (issue (or issue (fj-read-repo-issue repo)))
