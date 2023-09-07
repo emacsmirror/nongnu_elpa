@@ -192,15 +192,43 @@ PARAMS."
 
 ;;; COMMENTS
 
+(defun fj-get-comment-candidates (comments)
+  "Return a list of COMMENTS as completion candidates."
+  (cl-loop for c in comments
+           collect `(,(alist-get 'body c)
+                     ,(alist-get 'id c))))
+
+(defun fj-read-issue-comment (repo issue)
+  "Given ISSUE in REPO, read a comment in the minibuffer.
+Return the comment number."
+  (let* ((comments (fj-issue-get-comments repo issue))
+         (cands (fj-get-comment-candidates comments))
+         (choice (completing-read "Comment:" cands))
+         (item
+          (car
+           (cl-member-if (lambda (c)
+                           (string= (car c) choice))
+                         cands))))
+    (cadr item)))
+
 (defun fj-issue-get-comments (repo issue)
   "Return comments for ISSUE in REPO."
-  (let* ((index (alist-get 'number issue))
-         (endpoint (format "/repos/%s/%s/issues/%s/comments"
-                           fj-user repo index)))
+  (let* ((endpoint (format "/repos/%s/%s/issues/%s/comments"
+                           fj-user repo issue)))
     (fj-get endpoint)))
 
-(defun fj-issue-reply (&optional repo issue)
-  "REPLY to ISSUE in REPO."
+(defun fj-get-comment (&optional repo issue comment)
+  "GET COMMENT in REPO.
+ISSUE.
+COMMENT is a number."
+  (let* ((repo (or repo (fj-read-user-repo)))
+         (issue (or issue (fj-read-repo-issue repo)))
+         (comment (or comment (fj-read-issue-comment repo issue)))
+         (endpoint (format "repos/%s/%s/issues/comments/%s" fj-user repo comment)))
+    (fj-get endpoint)))
+
+(defun fj-issue-comment (&optional repo issue)
+  "Add comment to ISSUE in REPO."
   (interactive)
   (let* ((repo (or repo (fj-read-user-repo)))
          (issue (or issue (fj-read-repo-issue repo)))
@@ -211,6 +239,24 @@ PARAMS."
     (fedi-http--triage response
                        (lambda ()
                          (message "comment created!")))))
+
+(defun fj-comment-patch (&optional repo issue params)
+  "Edit ISSUE in REPO.
+PARAMS."
+  (let* ((repo (or repo (fj-read-user-repo)))
+         (issue (or issue (fj-read-repo-issue repo)))
+         (comment (fj-read-issue-comment repo issue))
+         (endpoint (format "repos/%s/%s/issues/comments/%s" fj-user repo comment)))
+    (fj-patch endpoint params :json)))
+
+(defun fj-comment-edit (&optional repo issue)
+  "REPO ISSUE."
+  (let* ((repo (or repo (fj-read-user-repo)))
+         (issue (or issue (fj-read-repo-issue repo)))
+         (data (fj-get-comment repo issue))
+         (old-body (alist-get 'body data))
+         (new-body (read-string "Edit issue: " old-body)))
+    (fj-issue-patch nil nil `(("body" . ,new-body)))))
 
 (provide 'fj)
 ;;; fj.el ends here
