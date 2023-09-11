@@ -92,6 +92,13 @@ JSON."
 
 ;;; REPOS
 
+(defun fj-current-dir-repo ()
+  "If we are in a repository, return its name."
+  (when (magit-git-repo-p default-directory)
+    (let* ((split (file-name-split default-directory))
+           (trim-last (nbutlast split 1)))
+      (car (last trim-last)))))
+
 (defun fj-get-repos ()
   "Return the user's repos."
   (let ((endpoint "user/repos"))
@@ -104,11 +111,17 @@ JSON."
                      ,(alist-get 'id r)
                      ,(alist-get 'description r))))
 
-(defun fj-read-user-repo ()
-  "Read a repo in the minibuffer."
-  (let* ((repos (fj-get-repos))
-         (cands (fj-get-repo-candidates repos)))
-    (completing-read "Repo:" cands)))
+(defun fj-read-user-repo (&optional force)
+  "Read a repo in the minibuffer.
+
+If we are in a repo, return it instead, unless FORCE."
+  (let ((current (fj-current-dir-repo)))
+    (if (and (not force)
+             current)
+        current
+      (let* ((repos (fj-get-repos))
+             (cands (fj-get-repo-candidates repos)))
+        (completing-read "Repo: " cands)))))
 
 (defun fj-create-repo ()
   "Create a new repo."
