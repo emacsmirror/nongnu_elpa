@@ -149,7 +149,7 @@ If we are in a repo, return it instead, unless FORCE."
 Return the issue number."
   (let* ((issues (fj-repo-get-issues repo))
          (cands (fj-get-issue-candidates issues))
-         (choice (completing-read "Issue:" cands))
+         (choice (completing-read "Issue: " cands))
          (item
           (car
            (cl-member-if (lambda (c)
@@ -238,7 +238,7 @@ With PARAMS."
 Return the comment number."
   (let* ((comments (fj-issue-get-comments repo issue))
          (cands (fj-get-comment-candidates comments))
-         (choice (completing-read "Comment:" cands))
+         (choice (completing-read "Comment: " cands))
          (item
           (car
            (cl-member-if (lambda (c)
