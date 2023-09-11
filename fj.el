@@ -156,39 +156,44 @@ ISSUE is a number"
                        (lambda ()
                          (message "issue %s created!" title)))))
 
-(defun fj-issue-patch (&optional repo issue params)
-  "Edit ISSUE in REPO.
-PARAMS."
-  (let* ((repo (or repo (fj-read-user-repo)))
-         (issue (or issue (fj-read-repo-issue repo)))
-         (endpoint (format "repos/%s/%s/issues/%s" fj-user repo issue)))
+(defun fj-issue-patch (repo issue params)
+  "PATCH/Edit ISSUE in REPO.
+With PARAMS."
+  (let* ((endpoint (format "repos/%s/%s/issues/%s" fj-user repo issue)))
     (fj-patch endpoint params :json)))
 
 (defun fj-issue-edit (&optional repo issue)
-  "REPO ISSUE."
+  "Edit ISSUE body in repo."
   (let* ((repo (or repo (fj-read-user-repo)))
          (issue (or issue (fj-read-repo-issue repo)))
          (data (fj-get-issue repo issue))
          (old-body (alist-get 'body data))
          (new-body (read-string "Edit issue: " old-body)))
-    (fj-issue-patch nil nil `(("body" . ,new-body)))))
+    (fj-issue-patch repo issue `(("body" . ,new-body)))))
 
-(defun fj-issue-close ()
-  "Close issue."
+(defun fj-issue-close (&optional repo issue)
+  "Close ISSUE in REPO."
   (interactive)
-  (fj-issue-patch nil nil `(("state" . "closed"))))
-
+  (let* ((repo (or repo (fj-read-user-repo)))
+         (issue (or issue (fj-read-repo-issue repo))))
+    (when (y-or-n-p "Close issue?")
+      (let ((response (fj-issue-patch repo issue
+                                      `(("state" . "closed")))))
+        (fedi-http--triage response
+                           (lambda ()
+                             (message "issue closed!")))))))
 
 (defun fj-issue-delete (&optional repo issue)
   "Delete ISSUE in REPO."
   (interactive)
   (let* ((repo (or repo (fj-read-user-repo)))
-         (issue (or issue (fj-read-repo-issue repo)))
-         (url (format "repos/%s/%s/issues/%s" fj-user repo issue))
-         (response (fj-delete url)))
-    (fedi-http--triage response
-                       (lambda ()
-                         (message "issue deleted!")))))
+         (issue (or issue (fj-read-repo-issue repo))))
+    (when (y-or-n-p "Delete issue?")
+      (let ((url (format "repos/%s/%s/issues/%s" fj-user repo issue))
+            (response (fj-delete url)))
+        (fedi-http--triage response
+                           (lambda ()
+                             (message "issue deleted!")))))))
 
 ;;; COMMENTS
 
