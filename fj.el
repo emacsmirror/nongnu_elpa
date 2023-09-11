@@ -20,13 +20,16 @@
 
 ;;; Commentary:
 
-;; 
+;; To use these functions, first set `fj-token' and `fj-user', and `fj-host'.
 
 ;;; Code:
 
 (require 'fedi)
 
+;;; VARIABLES
+
 (defvar fj-token nil)
+
 (defvar fj-user nil)
 
 (defvar fj-host "https://codeberg.org")
@@ -34,6 +37,8 @@
 (defun fj-api (endpoint)
   "Return a URL for ENDPOINT."
   (fedi-http--api endpoint fj-host "v1"))
+
+;;; REQUESTS
 
 (defmacro fj-authorized-request (method body &optional unauthenticated-p)
   "Make a METHOD type request using BODY, with token authorization.
@@ -175,7 +180,7 @@ With PARAMS."
     (fj-patch endpoint params :json)))
 
 (defun fj-issue-edit (&optional repo issue)
-  "Edit ISSUE body in repo."
+  "Edit ISSUE body in REPO."
   (let* ((repo (or repo (fj-read-user-repo)))
          (issue (or issue (fj-read-repo-issue repo)))
          (data (fj-get-issue repo issue))
@@ -201,8 +206,8 @@ With PARAMS."
   (let* ((repo (or repo (fj-read-user-repo)))
          (issue (or issue (fj-read-repo-issue repo))))
     (when (y-or-n-p "Delete issue?")
-      (let ((url (format "repos/%s/%s/issues/%s" fj-user repo issue))
-            (response (fj-delete url)))
+      (let* ((url (format "repos/%s/%s/issues/%s" fj-user repo issue))
+             (response (fj-delete url)))
         (fedi-http--triage response
                            (lambda ()
                              (message "issue deleted!")))))))
