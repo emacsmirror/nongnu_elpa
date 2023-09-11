@@ -1,9 +1,13 @@
-;;; fj.el --- client for forgejo instances      -*- lexical-binding: t; -*-
+;;; fj.el --- Client for forgejo instances -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2023  martian hiatus
-
-;; Author: martian hiatus <martianhiatus [a t] riseup [d o t] net>
-;; Keywords: convenience
+;; Author: Marty Hiatt <martianhiatus AT riseup.net>
+;; Copyright (C) 2023 Marty Hiatt <martianhiatus AT riseup.net>
+;;
+;; Package-Requires: ((emacs "28.1") (fedi "0.1"))
+;; Keywords: git, convenience
+;; URL: https://codeberg.org/martianh/fj.el
+;; Version: 0.1
+;; Separator: -
 
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -19,6 +23,8 @@
 ;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
+
+;; Some bare-bones commands for interacting with Forgejo instances.
 
 ;; To use these functions, first set `fj-token' and `fj-user', and `fj-host'.
 
