@@ -25,6 +25,7 @@
 ;;; Code:
 
 (require 'fedi)
+(require 'magit-git)
 
 ;;; VARIABLES
 
