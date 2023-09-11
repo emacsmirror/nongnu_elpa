@@ -1,6 +1,6 @@
 ;;; fedi-post.el --- Minor mode for posting to fediverse services  -*- lexical-binding: t -*-
 
-;; Copyright (C) 2020-2022 Marty Hiatt
+;; Copyright (C) 2020-2023 Marty Hiatt
 ;; Author: Marty Hiatt <martianhiatus@riseup.net> and mastodon.el authors
 ;; Package-Requires: ((emacs "28.1"))
 ;; Version: 1.0.0
