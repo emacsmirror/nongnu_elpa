@@ -105,6 +105,18 @@ JSON."
          (cands (fj-get-repo-candidates repos)))
     (completing-read "Repo:" cands)))
 
+(defun fj-create-repo ()
+  "Create a new repo."
+  (interactive)
+  (let* ((name (read-string "Repo name: "))
+         (desc (read-string "Repo description: "))
+         (params `(("name" . ,name)
+                   ("description" . ,desc)))
+         (response (fj-post "user/repos" params)))
+    (fedi-http--triage response
+                       (lambda ()
+                         (message "Repo %s created!" name)))))
+
 ;;; ISSUES
 
 (defun fj-get-issue-candidates (issues)
