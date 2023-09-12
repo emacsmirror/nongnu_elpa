@@ -200,6 +200,7 @@ With PARAMS."
 
 (defun fj-issue-edit (&optional repo issue)
   "Edit ISSUE body in REPO."
+  (interactive)
   (let* ((repo (or repo (fj-read-user-repo)))
          (issue (or issue (fj-read-repo-issue repo)))
          (data (fj-get-issue repo issue))
@@ -291,7 +292,8 @@ PARAMS."
     (fj-patch endpoint params :json)))
 
 (defun fj-comment-edit (&optional repo issue)
-  "REPO ISSUE."
+  "Edit comment on ISSUE in REPO."
+  (interactive)
   (let* ((repo (or repo (fj-read-user-repo)))
          (issue (or issue (fj-read-repo-issue repo)))
          (data (fj-get-comment repo issue))
