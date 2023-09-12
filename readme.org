@@ -1,0 +1,49 @@
+* fj.el
+
+This repo contains some extremely basic functions for interacting with a Forgejo instance (such as https://codeberg.org) from within Emacs.
+
+It doesn't interact with =forge= / =magit=, which don't implement Gitea/Forgejo support and likely never will. Nor does it attempt to follow their wonderful design (for now).
+
+It just aims to cover a few of the bread and butter functions that will save you switching to the browser 80% of the time.
+
+* commands index
+
+#+BEGIN_SRC emacs-lisp :results table :colnames '("Binding" "Command" "Description") :exports results
+  (let ((rows))
+    (mapatoms
+     (lambda (symbol)
+       (when (and (string-match "^fj"
+                                (symbol-name symbol))
+                  (commandp symbol))
+         (let* ((doc (car
+                      (split-string
+                       (or (documentation symbol t) "")
+                       "\n")))
+                ;; add more keymaps here
+                ;; some keys are in sub 'keymap keys inside a map
+                (maps) ; fj-mode-map))
+                (binding-code
+                 (let ((keys (where-is-internal symbol maps nil nil (command-remapping symbol))))
+                   ;; just take first 2 bindings:
+                   (if (> (length keys) 2)
+                       (list (car keys) (cadr keys))
+                     keys)))
+                (binding-str (if binding-code
+                                 (mapconcat #'help--key-description-fontified
+                                            binding-code ", ")
+                               "")))
+           (push `(,binding-str ,symbol ,doc) rows)
+           rows))))
+    (sort rows (lambda (x y) (string-lessp (cadr x) (cadr y)))))
+#+END_SRC
+
+#+RESULTS:
+| Binding | Command          | Description                    |
+|---------+------------------+--------------------------------|
+|         | fj-comment-edit  | Edit comment on ISSUE in REPO. |
+|         | fj-create-repo   | Create a new repo.             |
+|         | fj-issue-close   | Close ISSUE in REPO.           |
+|         | fj-issue-comment | Add comment to ISSUE in REPO.  |
+|         | fj-issue-create  | Create an issue in REPO.       |
+|         | fj-issue-delete  | Delete ISSUE in REPO.          |
+|         | fj-issue-edit    | Edit ISSUE body in REPO.       |
