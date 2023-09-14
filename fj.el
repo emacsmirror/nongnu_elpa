@@ -207,8 +207,11 @@ With PARAMS."
          (issue (or issue (fj-read-repo-issue repo)))
          (data (fj-get-issue repo issue))
          (old-body (alist-get 'body data))
-         (new-body (read-string "Edit issue: " old-body)))
-    (fj-issue-patch repo issue `(("body" . ,new-body)))))
+         (new-body (read-string "Edit issue body: " old-body))
+         (response (fj-issue-patch repo issue `(("body" . ,new-body)))))
+    (fedi-http--triage response
+                       (lambda ()
+                         (message "issue edited!")))))
 
 (defun fj-issue-close (&optional repo issue)
   "Close ISSUE in REPO."
@@ -304,8 +307,11 @@ PARAMS."
          (issue (or issue (fj-read-repo-issue repo)))
          (data (fj-get-comment repo issue))
          (old-body (alist-get 'body data))
-         (new-body (read-string "Edit issue: " old-body)))
-    (fj-issue-patch nil nil `(("body" . ,new-body)))))
+         (new-body (read-string "Edit comment: " old-body))
+         (response (fj-issue-patch nil nil `(("body" . ,new-body)))))
+    (fedi-http--triage response
+                       (lambda ()
+                         (message "comment created!")))))
 
 ;;; tl modes
 
