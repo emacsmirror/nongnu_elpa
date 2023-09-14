@@ -202,7 +202,8 @@ With PARAMS."
 (defun fj-issue-edit (&optional repo issue)
   "Edit ISSUE body in REPO."
   (interactive)
-  (let* ((repo (or repo (fj-read-user-repo)))
+  (let* ((repo (or repo (fj-read-user-repo
+                         (when current-prefix-arg :force))))
          (issue (or issue (fj-read-repo-issue repo)))
          (data (fj-get-issue repo issue))
          (old-body (alist-get 'body data))
@@ -212,7 +213,8 @@ With PARAMS."
 (defun fj-issue-close (&optional repo issue)
   "Close ISSUE in REPO."
   (interactive)
-  (let* ((repo (or repo (fj-read-user-repo)))
+  (let* ((repo (or repo (fj-read-user-repo
+                         (when current-prefix-arg :force))))
          (issue (or issue (fj-read-repo-issue repo))))
     (when (y-or-n-p "Close issue?")
       (let ((response (fj-issue-patch repo issue
@@ -224,7 +226,8 @@ With PARAMS."
 (defun fj-issue-delete (&optional repo issue)
   "Delete ISSUE in REPO."
   (interactive)
-  (let* ((repo (or repo (fj-read-user-repo)))
+  (let* ((repo (or repo (fj-read-user-repo
+                         (when current-prefix-arg :force))))
          (issue (or issue (fj-read-repo-issue repo))))
     (when (y-or-n-p "Delete issue?")
       (let* ((url (format "repos/%s/%s/issues/%s" fj-user repo issue))
@@ -273,7 +276,8 @@ COMMENT is a number."
 (defun fj-issue-comment (&optional repo issue)
   "Add comment to ISSUE in REPO."
   (interactive)
-  (let* ((repo (or repo (fj-read-user-repo)))
+  (let* ((repo (or repo (fj-read-user-repo
+                         (when current-prefix-arg :force))))
          (issue (or issue (fj-read-repo-issue repo)))
          (url (format "repos/%s/%s/issues/%s/comments" fj-user repo issue))
          (body (read-string "Comment: "))
@@ -295,7 +299,8 @@ PARAMS."
 (defun fj-comment-edit (&optional repo issue)
   "Edit comment on ISSUE in REPO."
   (interactive)
-  (let* ((repo (or repo (fj-read-user-repo)))
+  (let* ((repo (or repo (fj-read-user-repo
+                         (when current-prefix-arg :force))))
          (issue (or issue (fj-read-repo-issue repo)))
          (data (fj-get-comment repo issue))
          (old-body (alist-get 'body data))
