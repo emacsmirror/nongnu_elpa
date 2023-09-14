@@ -181,7 +181,8 @@ ISSUE is a number"
 (defun fj-issue-create (&optional repo)
   "Create an issue in REPO."
   (interactive)
-  (let* ((repo (or repo (fj-read-user-repo)))
+  (let* ((repo (or repo (fj-read-user-repo
+                         (when current-prefix-arg :force))))
          (url (format "repos/%s/%s/issues" fj-user repo))
          (title (read-string "Title: "))
          (body (read-string "Body: "))
