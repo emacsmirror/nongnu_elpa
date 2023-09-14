@@ -320,7 +320,7 @@ PARAMS."
                      for id = (alist-get 'number issue)
                      for name = (alist-get 'title issue)
                      collect `(nil [,(number-to-string id)
-                                    (,name 'face 'link)])))
+                                    (,name face link)])))
       (fj-list-issue-mode)
       (tabulated-list-init-header)
       (tabulated-list-print)
