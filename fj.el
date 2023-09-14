@@ -301,5 +301,30 @@ PARAMS."
          (new-body (read-string "Edit issue: " old-body)))
     (fj-issue-patch nil nil `(("body" . ,new-body)))))
 
+;;; tl modes
+
+(define-derived-mode fj-list-issue-mode tabulated-list-mode
+  "Issues"
+  "Major mode for browsing a list of issues."
+  (setq tabulated-list-padding 2)
+  (setq tabulated-list-format (vector (list "#" 3 t) (list "Issue" 2 t))))
+
+(defun fj-list-issues-list (&optional repo)
+  "List issues for current repo, or for REPO."
+  (interactive)
+  (let* ((repo (or repo (fj-current-dir-repo)))
+         (issues (fj-repo-get-issues repo)))
+    (with-current-buffer (get-buffer-create (format "*%s-issues*" repo))
+      (setq tabulated-list-entries
+            (cl-loop for issue in issues
+                     for id = (alist-get 'number issue)
+                     for name = (alist-get 'title issue)
+                     collect `(nil [,(number-to-string id)
+                                    (,name 'face 'link)])))
+      (fj-list-issue-mode)
+      (tabulated-list-init-header)
+      (tabulated-list-print)
+      (switch-to-buffer-other-window (current-buffer)))))
+
 (provide 'fj)
 ;;; fj.el ends here
