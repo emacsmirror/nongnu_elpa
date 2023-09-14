@@ -171,7 +171,7 @@ Return the issue number."
 
 (defun fj-get-issue (&optional repo issue)
   "GET ISSUE in REPO.
-ISSUE is a number"
+ISSUE is a number."
   ;; (fj-with-repo nil nil
   (let* ((repo (or repo (fj-read-user-repo)))
          (issue (or issue (fj-read-repo-issue repo)))
