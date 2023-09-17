@@ -42,6 +42,8 @@
 
 (defvar fj-host "https://codeberg.org")
 
+(defvar-local fj-current-repo nil)
+
 (defun fj-api (endpoint)
   "Return a URL for ENDPOINT."
   (fedi-http--api endpoint fj-host "v1"))
@@ -323,6 +325,11 @@ PARAMS."
   (setq tabulated-list-padding 2)
   (setq tabulated-list-format (vector (list "#" 3 t) (list "Issue" 2 t))))
 
+(define-button-type 'fj-button
+  'follow-link t
+  'action 'fj-issues-view-current-issue
+  'help-echo "RET: View this issue.")
+
 (defun fj-list-issues-list (&optional repo)
   "List issues for current repo, or for REPO."
   (interactive)
@@ -334,8 +341,11 @@ PARAMS."
                      for id = (alist-get 'number issue)
                      for name = (alist-get 'title issue)
                      collect `(nil [(,(number-to-string id)
-                                     id id)
-                                    (,name face link)])))
+                                     id ,id
+                                     type fj-button)
+                                    (,name face link
+                                           id ,id
+                                           type fj-button)])))
       (fj-list-issue-mode)
       (tabulated-list-init-header)
       (tabulated-list-print)
@@ -349,10 +359,8 @@ PARAMS."
   "Major mode for viewing an issue."
   :group "fj")
 
-(defvar-local fj-current-repo nil)
-
 (defun fj-issues-view-current-issue ()
-  ""
+  "View current issue from tabulated issues listing."
   (interactive)
   (let* ((item (tabulated-list-get-entry))
          (number (car (seq-first item))))
