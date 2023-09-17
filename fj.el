@@ -103,8 +103,8 @@ JSON."
   "If we are in a repository, return its name."
   (if (magit-git-repo-p default-directory)
       (file-name-nondirectory
-       (directory-file-name default-directory))
-    (fj-read-user-repo)))
+       (directory-file-name default-directory))))
+    ;; (fj-read-user-repo)))
 
 (defun fj-get-repos ()
   "Return the user's repos."
@@ -120,10 +120,10 @@ JSON."
 
 (defun fj-read-user-repo (&optional force)
   "Read a repo in the minibuffer.
-
 If we are in a repo, return it instead, unless FORCE."
   (let ((current (fj-current-dir-repo)))
     (if (and (not force)
+             (not current-prefix-arg)
              current)
         current
       (let* ((repos (fj-get-repos))
@@ -325,14 +325,15 @@ PARAMS."
 (defun fj-list-issues-list (&optional repo)
   "List issues for current repo, or for REPO."
   (interactive)
-  (let* ((repo (or repo (fj-current-dir-repo)))
+  (let* ((repo (or repo (fj-read-user-repo)))
          (issues (fj-repo-get-issues repo)))
     (with-current-buffer (get-buffer-create (format "*%s-issues*" repo))
       (setq tabulated-list-entries
             (cl-loop for issue in issues
                      for id = (alist-get 'number issue)
                      for name = (alist-get 'title issue)
-                     collect `(nil [,(number-to-string id)
+                     collect `(nil [(,(number-to-string id)
+                                     id id)
                                     (,name face link)])))
       (fj-list-issue-mode)
       (tabulated-list-init-header)
@@ -348,7 +349,7 @@ PARAMS."
 (defun fj-view-issue (&optional repo number)
   "View issue number NUMBER from REPO."
   (interactive)
-  (let* ((repo (or repo (fj-current-dir-repo)))
+  (let* ((repo (or repo (fj-read-user-repo)))
          (issue (fj-get-issue repo number))
          (number (alist-get 'number issue))
          (comments (fj-issue-get-comments repo number)))
