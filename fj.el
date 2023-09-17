@@ -339,6 +339,7 @@ PARAMS."
       (fj-list-issue-mode)
       (tabulated-list-init-header)
       (tabulated-list-print)
+      (setq fj-current-repo repo)
       (switch-to-buffer-other-window (current-buffer)))))
 
 (define-derived-mode fj-issue-post-mode fedi-post-mode
@@ -347,6 +348,15 @@ PARAMS."
 (define-derived-mode fj-issue-view-mode special-mode "fj-issue"
   "Major mode for viewing an issue."
   :group "fj")
+
+(defvar-local fj-current-repo nil)
+
+(defun fj-issues-view-current-issue ()
+  ""
+  (interactive)
+  (let* ((item (tabulated-list-get-entry))
+         (number (car (seq-first item))))
+    (fj-view-issue fj-current-repo number)))
 
 (defun fj-view-issue (&optional repo number)
   "View issue number NUMBER from REPO."
