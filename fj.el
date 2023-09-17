@@ -316,7 +316,7 @@ PARAMS."
 ;;; tl modes
 
 (define-derived-mode fj-list-issue-mode tabulated-list-mode
-  "Issues"
+  "fj-issues"
   "Major mode for browsing a list of issues."
   (setq tabulated-list-padding 2)
   (setq tabulated-list-format (vector (list "#" 3 t) (list "Issue" 2 t))))
@@ -337,6 +337,36 @@ PARAMS."
       (tabulated-list-init-header)
       (tabulated-list-print)
       (switch-to-buffer-other-window (current-buffer)))))
+
+(define-derived-mode fk-issue-post-mode fedi-post-mode)
+
+(define-derived-mode fj-issue-view-mode special-mode "fj-issue"
+  "Major mode for viewing an issue."
+  :group "fj")
+
+(defun fj-view-issue (&optional repo number)
+  "View issue number NUMBER from REPO."
+  (interactive)
+  (let* ((repo (or repo (fj-current-dir-repo)))
+         (issue (fj-get-issue repo number))
+         (number (alist-get 'number issue))
+         (comments (fj-issue-get-comments repo number)))
+    (fedi-with-buffer (format "*fj-issue-%s" number) 'fj-issue-view-mode t
+      (let-alist issue
+        (insert .title "\n"
+                .user.login "\n\n"
+                .body "\n"
+                fedi-horiz-bar "\n\n")
+        (fj-render-comments comments)))))
+
+(defun fj-render-comments (comments)
+  "Render a list of COMMENTS."
+  (insert
+   (cl-loop for c in comments
+            concat (let-alist c
+                     (concat
+                      .body "\n" .user.login "\n\n"
+                      fedi-horiz-bar "\n\n")))))
 
 (provide 'fj)
 ;;; fj.el ends here
