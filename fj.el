@@ -31,6 +31,7 @@
 ;;; Code:
 
 (require 'fedi)
+(require 'fedi-post)
 (require 'magit-git)
 
 ;;; VARIABLES
@@ -340,7 +341,8 @@ PARAMS."
       (tabulated-list-print)
       (switch-to-buffer-other-window (current-buffer)))))
 
-(define-derived-mode fk-issue-post-mode fedi-post-mode)
+(define-derived-mode fj-issue-post-mode fedi-post-mode
+  "fj-post")
 
 (define-derived-mode fj-issue-view-mode special-mode "fj-issue"
   "Major mode for viewing an issue."
