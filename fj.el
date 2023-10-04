@@ -133,7 +133,7 @@ If we are in a repo, return it instead, unless FORCE."
              (cands (fj-get-repo-candidates repos)))
         (completing-read "Repo: " cands)))))
 
-(defun fj-create-repo ()
+(defun fj-repo-create ()
   "Create a new repo."
   (interactive)
   (let* ((name (read-string "Repo name: "))
@@ -366,7 +366,7 @@ PARAMS."
          (number (car (seq-first item))))
     (fj-view-issue fj-current-repo number)))
 
-(defun fj-view-issue (&optional repo number)
+(defun fj-issue-view (&optional repo number)
   "View issue number NUMBER from REPO."
   (interactive)
   (let* ((repo (or repo (fj-read-user-repo)))
