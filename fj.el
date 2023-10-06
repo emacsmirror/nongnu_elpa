@@ -147,9 +147,10 @@ If we are in a repo, return it instead, unless FORCE."
 
 ;;; ISSUES
 
-(defun fj-get-issue-candidates (issues)
-  "Return a list of ISSUES as completion candidates."
-  (cl-loop for i in issues
+(defun fj-get-item-candidates (items)
+  "Return a list of ITEMS as completion candidates.
+ITEMS may be issues or pull requests."
+  (cl-loop for i in items
            collect `(,(alist-get 'title i)
                      ,(alist-get 'number i)
                      ,(alist-get 'id i))))
@@ -158,7 +159,7 @@ If we are in a repo, return it instead, unless FORCE."
   "Given REPO, read an issue in the minibuffer.
 Return the issue number."
   (let* ((issues (fj-repo-get-issues repo))
-         (cands (fj-get-issue-candidates issues))
+         (cands (fj-get-item-candidates issues))
          (choice (completing-read "Issue: " cands))
          (item
           (car
@@ -243,6 +244,43 @@ With PARAMS."
                            (lambda ()
                              (message "issue deleted!")))))))
 
+;;; PULL REQUESTS
+
+(defun fj-read-repo-pull-req (repo)
+  "Given REPO, read an pull request in the minibuffer.
+Return its number."
+  (let* ((issues (fj-repo-get-pull-reqs repo))
+         (cands (fj-get-item-candidates issues))
+         (choice (completing-read "Pull request: " cands))
+         (item
+          (car
+           (cl-member-if (lambda (c)
+                           (string= (car c) choice))
+                         cands))))
+    (cadr item)))
+
+(defun fj-repo-get-pull-reqs (&optional repo)
+  "Return issues for REPO."
+  (let* ((repo (or repo (fj-read-user-repo)))
+         (endpoint (format "repos/%s/%s/pulls" fj-user repo)))
+    (fj-get endpoint)))
+
+(defun fj-pull-req-comment (&optional repo pull)
+  "Add comment to PULL in REPO."
+  (interactive)
+  (let* ((repo (or repo (fj-read-user-repo
+                         (when current-prefix-arg :force))))
+         (pull (or pull (fj-read-repo-pull-req repo))))
+    (fj-issue-comment repo pull)))
+
+(defun fj-pull-req-comment-edit (&optional repo pull)
+  "Edit a comment on PULL in REPO."
+  (interactive)
+  (let* ((repo (or repo (fj-read-user-repo
+                         (when current-prefix-arg :force))))
+         (pull (or pull (fj-read-repo-pull-req repo))))
+    (fj-issue-comment-edit repo pull)))
+
 ;;; COMMENTS
 
 (defun fj-get-comment-candidates (comments)
@@ -251,32 +289,31 @@ With PARAMS."
            collect `(,(alist-get 'body c)
                      ,(alist-get 'id c))))
 
-(defun fj-read-issue-comment (repo issue)
-  "Given ISSUE in REPO, read a comment in the minibuffer.
+(defun fj-read-item-comment (repo item)
+  "Given ITEM in REPO, read a comment in the minibuffer.
 Return the comment number."
-  (let* ((comments (fj-issue-get-comments repo issue))
+  (let* ((comments (fj-issue-get-comments repo item))
          (cands (fj-get-comment-candidates comments))
          (choice (completing-read "Comment: " cands))
-         (item
+         (comm
           (car
            (cl-member-if (lambda (c)
                            (string= (car c) choice))
                          cands))))
-    (cadr item)))
+    (cadr comm)))
 
 (defun fj-issue-get-comments (repo issue)
   "Return comments for ISSUE in REPO."
-  (let* ((endpoint (format "/repos/%s/%s/issues/%s/comments"
+  (let* ((endpoint (format "repos/%s/%s/issues/%s/comments"
                            fj-user repo issue)))
     (fj-get endpoint)))
 
 (defun fj-get-comment (&optional repo issue comment)
-  "GET COMMENT in REPO.
-ISSUE.
+  "GET data for COMMENT of ISSUE in REPO.
 COMMENT is a number."
   (let* ((repo (or repo (fj-read-user-repo)))
          (issue (or issue (fj-read-repo-issue repo)))
-         (comment (or comment (fj-read-issue-comment repo issue)))
+         (comment (or comment (fj-read-item-comment repo issue)))
          (endpoint (format "repos/%s/%s/issues/comments/%s" fj-user repo comment)))
     (fj-get endpoint)))
 
@@ -294,28 +331,30 @@ COMMENT is a number."
                        (lambda ()
                          (message "comment created!")))))
 
-(defun fj-comment-patch (&optional repo issue params)
+(defun fj-comment-patch (&optional repo issue comment params)
   "Edit ISSUE in REPO.
 PARAMS."
   (let* ((repo (or repo (fj-read-user-repo)))
          (issue (or issue (fj-read-repo-issue repo)))
-         (comment (fj-read-issue-comment repo issue))
+         (comment (or comment (fj-read-item-comment repo issue)))
          (endpoint (format "repos/%s/%s/issues/comments/%s" fj-user repo comment)))
     (fj-patch endpoint params :json)))
 
-(defun fj-comment-edit (&optional repo issue)
+(defun fj-issue-comment-edit (&optional repo issue)
   "Edit comment on ISSUE in REPO."
   (interactive)
   (let* ((repo (or repo (fj-read-user-repo
                          (when current-prefix-arg :force))))
          (issue (or issue (fj-read-repo-issue repo)))
          (data (fj-get-comment repo issue))
+         (comment (alist-get 'id data))
          (old-body (alist-get 'body data))
          (new-body (read-string "Edit comment: " old-body))
-         (response (fj-issue-patch nil nil `(("body" . ,new-body)))))
+         (response (fj-comment-patch repo issue comment
+                                     `(("body" . ,new-body)))))
     (fedi-http--triage response
                        (lambda ()
-                         (message "comment created!")))))
+                         (message "comment edited!")))))
 
 ;;; tl modes
 
@@ -364,7 +403,7 @@ PARAMS."
   (interactive)
   (let* ((item (tabulated-list-get-entry))
          (number (car (seq-first item))))
-    (fj-view-issue fj-current-repo number)))
+    (fj-issue-view fj-current-repo number)))
 
 (defun fj-issue-view (&optional repo number)
   "View issue number NUMBER from REPO."
