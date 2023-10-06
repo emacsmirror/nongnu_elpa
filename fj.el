@@ -286,7 +286,10 @@ Return its number."
 (defun fj-get-comment-candidates (comments)
   "Return a list of COMMENTS as completion candidates."
   (cl-loop for c in comments
-           collect `(,(alist-get 'body c)
+           for body = (alist-get 'body c)
+           for trim = (string-clean-whitespace
+                       (substring body nil 70))
+           collect `(,trim
                      ,(alist-get 'id c))))
 
 (defun fj-read-item-comment (repo item)
