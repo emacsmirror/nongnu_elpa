@@ -86,7 +86,7 @@ PARAMS.
 JSON."
   (let ((url (fj-api endpoint)))
     (fj-authorized-request "PATCH"
-      (fedi-http--patch-json url params json))))
+      (fedi-http--patch url params json))))
 
 (defun fj-delete (endpoint)
   "Make a DELETE request to ENDPOINT."
