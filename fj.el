@@ -334,6 +334,13 @@ COMMENT is a number."
                        (lambda ()
                          (message "comment created!")))))
 
+(defun fj-issue-comment-current ()
+  "Comment on the issue currently being displayed."
+  (interactive)
+  (let ((repo (get-text-property (point) 'fj-repo))
+        (number (get-text-property (point) 'fj-issue)))
+    (fj-issue-comment repo number)))
+
 (defun fj-comment-patch (&optional repo issue comment params)
   "Edit ISSUE in REPO.
 PARAMS."
