@@ -417,20 +417,31 @@ PARAMS."
          (comments (fj-issue-get-comments repo number)))
     (fedi-with-buffer (format "*fj-issue-%s" number) 'fj-issue-view-mode t
       (let-alist issue
-        (insert .title "\n"
-                .user.login "\n\n"
-                .body "\n"
-                fedi-horiz-bar "\n\n")
-        (fj-render-comments comments)))))
+        (insert
+         (propertize
+          (concat
+           (propertize .title
+                       'face '(t :weight bold))
+           "\n"
+           (propertize .user.login
+                       'face '(t :underline t))
+           "\n\n"
+           .body "\n"
+           fedi-horiz-bar "\n\n"
+           (fj-render-comments comments))
+          'fj-issue number
+          'fj-repo repo))))))
 
 (defun fj-render-comments (comments)
   "Render a list of COMMENTS."
-  (insert
-   (cl-loop for c in comments
-            concat (let-alist c
-                     (concat
-                      .body "\n" .user.login "\n\n"
-                      fedi-horiz-bar "\n\n")))))
+  (cl-loop for c in comments
+           concat (let-alist c
+                    (concat
+                     .body "\n"
+                     (propertize .user.login
+                                 'face '(t :underline t))
+                     "\n\n"
+                     fedi-horiz-bar "\n\n"))))
 
 (provide 'fj)
 ;;; fj.el ends here
