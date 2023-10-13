@@ -450,5 +450,13 @@ PARAMS."
                      "\n\n"
                      fedi-horiz-bar "\n\n"))))
 
+(defun fj-issue-edit-current ()
+  "Edit the issue currently being displayed."
+  (interactive)
+  (goto-char (point-min))
+  (let ((repo (get-text-property (point) 'fj-repo))
+        (number (get-text-property (point) 'fj-issue)))
+    (fj-issue-edit repo number)))
+
 (provide 'fj)
 ;;; fj.el ends here
