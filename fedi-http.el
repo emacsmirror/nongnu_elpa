@@ -282,16 +282,26 @@ If JSON, encode params as JSON."
     (with-temp-buffer
       (fedi-http--url-retrieve-synchronously url))))
 
-(defun fedi-http--patch-json (url &optional params)
+(defun fedi-http--patch-json (url &optional params json)
   "Make synchronous PATCH request to URL. Return JSON response.
 Optionally specify the PARAMS to send."
-  (with-current-buffer (fedi-http--patch url params)
+  (with-current-buffer (fedi-http--patch url params json)
     (fedi-http--process-json)))
 
-(defun fedi-http--patch (base-url &optional params)
+(defun fedi-http--patch (url &optional params json)
   "Make synchronous PATCH request to BASE-URL.
 Optionally specify the PARAMS to send."
-  (let ((url (fedi-http--concat-params-to-url base-url params)))
+  (let* ((url-request-data
+          (when params
+            (if json
+                (json-encode params)
+              (fedi-http--build-params-string params))))
+         ;; (url (fedi-http--concat-params-to-url base-url params)))))
+         (headers (when json
+                    '(("Content-Type" . "application/json")
+                      ("Accept" . "application/json"))))
+         (url-request-extra-headers
+          (append url-request-extra-headers headers)))
     (fedi-http--url-retrieve-synchronously url)))
 
  ;; Asynchronous functions
