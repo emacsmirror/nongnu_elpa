@@ -110,13 +110,15 @@ Call SUCCESS if successful. Message status and JSON error from
 RESPONSE if unsuccessful."
   (let ((status (with-current-buffer response
                   (fedi-http--status))))
-    (if (string-prefix-p "2" status)
-        (funcall success)
-      (if (string-prefix-p "404" status)
-          (message "Error %s: page not found" status)
-        (let ((json-response (with-current-buffer response
-                               (fedi-http--process-json))))
-          (message "Error %s: %s" status (alist-get 'error json-response)))))))
+    (cond ((string-prefix-p "2" status)
+           (funcall success))
+          ((string-prefix-p "404" status)
+           (message "Error %s: page not found" status))
+          (t
+           (let ((json-response (with-current-buffer response
+                                  (fedi-http--process-json))))
+             (user-error "Error %s: %s" status
+                         (alist-get 'error json-response)))))))
 
 (defun fedi-http--read-file-as-string (filename)
   "Read a file FILENAME as a string. Used to generate image preview."
