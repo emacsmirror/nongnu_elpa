@@ -408,7 +408,8 @@ PARAMS."
   "Major mode for viewing an issue."
   :group "fj")
 
-(defun fj-issues-view-current-issue ()
+;; arg fj-button in tl view:
+(defun fj-issues-view-current-issue (&optional _)
   "View current issue from tabulated issues listing."
   (interactive)
   (let* ((item (tabulated-list-get-entry))
