@@ -44,6 +44,10 @@
 
 (defvar-local fj-current-repo nil)
 
+(defvar-local fj-issue-spec nil
+  "A plist holding some basic info about the issue currently displayed.
+Repo, issue number, url.")
+
 (defun fj-api (endpoint)
   "Return a URL for ENDPOINT."
   (fedi-http--api endpoint fj-host "v1"))
@@ -445,7 +449,9 @@ PARAMS."
            fedi-horiz-bar "\n\n"
            (fj-render-comments comments))
           'fj-issue number
-          'fj-repo repo))))))
+          'fj-repo repo))
+        (setq fj-issue-spec
+              `((:repo ,repo :issue ,number :url ,.url)))))))
 
 (defun fj-render-comments (comments)
   "Render a list of COMMENTS."
