@@ -224,12 +224,19 @@ With PARAMS."
   (let* ((repo (or repo (fj-read-user-repo
                          (when current-prefix-arg :force))))
          (issue (or issue (fj-read-repo-issue repo))))
-    (when (y-or-n-p "Close issue?")
+    (when (y-or-n-p (format "Close issue #%s?" issue))
       (let ((response (fj-issue-patch repo issue
                                       `(("state" . "closed")))))
         (fedi-http--triage response
                            (lambda ()
                              (message "issue closed!")))))))
+
+(defun fj-issues-close-current-issue (&optional _)
+  "Close current issue from tabulated issues listing."
+  (interactive)
+  (let* ((item (tabulated-list-get-entry))
+         (number (car (seq-first item))))
+    (fj-issue-close fj-current-repo number)))
 
 (defun fj-issue-delete (&optional repo issue)
   "Delete ISSUE in REPO."
