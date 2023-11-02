@@ -436,10 +436,10 @@ PARAMS."
          (propertize
           (concat
            (propertize .title
-                       'face '(t :weight bold))
+                       'face '(:weight bold))
            "\n"
            (propertize .user.login
-                       'face '(t :underline t))
+                       'face '(:underline t))
            "\n\n"
            .body "\n"
            fedi-horiz-bar "\n\n"
@@ -454,7 +454,7 @@ PARAMS."
                     (concat
                      .body "\n"
                      (propertize .user.login
-                                 'face '(t :underline t))
+                                 'face '(:underline t))
                      "\n\n"
                      fedi-horiz-bar "\n\n"))))
 
