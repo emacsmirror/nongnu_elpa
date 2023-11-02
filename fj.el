@@ -71,11 +71,12 @@ Requires `fj-token' to be set."
 
 ;; (setq fj-user (alist-get 'login fj-user-data))
 
-(defun fj-get (endpoint)
-  "Make a GET request to ENDPOINT."
+(defun fj-get (endpoint &optional params)
+  "Make a GET request to ENDPOINT.
+PARAMS is any parameters to send with the request."
   (let ((url (fj-api endpoint)))
     (fj-authorized-request "GET"
-      (fedi-http--get-json url))))
+      (fedi-http--get-json url params))))
 
 (defun fj-post (endpoint params)
   "Make a POST request to ENDPOINT.
@@ -270,11 +271,13 @@ Return its number."
                          cands))))
     (cadr item)))
 
-(defun fj-repo-get-pull-reqs (&optional repo)
-  "Return issues for REPO."
+(defun fj-repo-get-pull-reqs (&optional repo state)
+  "Return pull requests for REPO.
+STATE should be \"open\", \"closed\", or \"all\"."
   (let* ((repo (or repo (fj-read-user-repo)))
-         (endpoint (format "repos/%s/%s/pulls" fj-user repo)))
-    (fj-get endpoint)))
+         (endpoint (format "repos/%s/%s/pulls" fj-user repo))
+         (params `(("state" . ,(or state "open")))))
+    (fj-get endpoint params)))
 
 (defun fj-pull-req-comment (&optional repo pull)
   "Add comment to PULL in REPO."
@@ -390,11 +393,11 @@ PARAMS."
   'action 'fj-issues-view-current-issue
   'help-echo "RET: View this issue.")
 
-(defun fj-list-issues-list (&optional repo)
-  "List issues for current repo, or for REPO."
+(defun fj-list-issues-list (&optional repo issues)
+  "List ISSUES for current repo, or for REPO."
   (interactive)
   (let* ((repo (or repo (fj-read-user-repo)))
-         (issues (fj-repo-get-issues repo)))
+         (issues (or issues (fj-repo-get-issues repo))))
     (with-current-buffer (get-buffer-create (format "*%s-issues*" repo))
       (setq tabulated-list-entries
             (cl-loop for issue in issues
@@ -411,6 +414,13 @@ PARAMS."
       (tabulated-list-print)
       (setq fj-current-repo repo)
       (switch-to-buffer-other-window (current-buffer)))))
+
+(defun fj-list-pull-reqs (&optional repo)
+  "List pull requests for REPO."
+  (interactive)
+  (let ((repo (or repo (fj-read-user-repo)))
+        (prs (fj-repo-get-pull-reqs repo)))
+    (fj-list-issues-list repo prs)))
 
 (define-derived-mode fj-issue-post-mode fedi-post-mode
   "fj-post")
