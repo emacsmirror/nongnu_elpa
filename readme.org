@@ -38,18 +38,24 @@ It just aims to cover a few of the bread and butter functions that will save you
 #+END_SRC
 
 #+RESULTS:
-| Binding | Command                      | Description                                                        |
-|---------+------------------------------+--------------------------------------------------------------------|
-|         | fj-comment-edit              | Edit comment on ISSUE in REPO.                                     |
-|         | fj-create-repo               | Create a new repo.                                                 |
-|         | fj-issue-close               | Close ISSUE in REPO.                                               |
-|         | fj-issue-comment             | Add comment to ISSUE in REPO.                                      |
-|         | fj-issue-create              | Create an issue in REPO.                                           |
-|         | fj-issue-delete              | Delete ISSUE in REPO.                                              |
-|         | fj-issue-edit                | Edit ISSUE body in REPO.                                           |
-|         | fj-issue-post-mode           | Major mode derived from `fedi-post-mode' by `define-derived-mode'. |
-|         | fj-issue-view-mode           | Major mode for viewing an issue.                                   |
-|         | fj-issues-view-current-issue | View current issue from tabulated issues listing.                  |
-|         | fj-list-issue-mode           | Major mode for browsing a list of issues.                          |
-|         | fj-list-issues-list          | List issues for current repo, or for REPO.                         |
-|         | fj-view-issue                | View issue number NUMBER from REPO.                                |
+| Binding | Command                       | Description                                                        |
+|---------+-------------------------------+--------------------------------------------------------------------|
+|         | fj-issue-close                | Close ISSUE in REPO.                                               |
+|         | fj-issue-comment              | Add comment to ISSUE in REPO.                                      |
+|         | fj-issue-comment-current      | Comment on the issue currently being displayed.                    |
+|         | fj-issue-comment-edit         | Edit comment on ISSUE in REPO.                                     |
+|         | fj-issue-create               | Create an issue in REPO.                                           |
+|         | fj-issue-delete               | Delete ISSUE in REPO.                                              |
+|         | fj-issue-edit                 | Edit ISSUE body in REPO.                                           |
+|         | fj-issue-edit-current         | Edit the issue currently being displayed.                          |
+|         | fj-issue-post-mode            | Major mode derived from `fedi-post-mode' by `define-derived-mode'. |
+|         | fj-issue-view                 | View issue number NUMBER from REPO.                                |
+|         | fj-issue-view-mode            | Major mode for viewing an issue.                                   |
+|         | fj-issues-close-current-issue | Close current issue from tabulated issues listing.                 |
+|         | fj-issues-view-current-issue  | View current issue from tabulated issues listing.                  |
+|         | fj-list-issue-mode            | Major mode for browsing a list of issues.                          |
+|         | fj-list-issues-list           | List ISSUES for current repo, or for REPO.                         |
+|         | fj-list-pull-reqs             | List pull requests for REPO.                                       |
+|         | fj-pull-req-comment           | Add comment to PULL in REPO.                                       |
+|         | fj-pull-req-comment-edit      | Edit a comment on PULL in REPO.                                    |
+|         | fj-repo-create                | Create a new repo.                                                 |
