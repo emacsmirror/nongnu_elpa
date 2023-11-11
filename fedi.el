@@ -3,7 +3,7 @@
 ;; Copyright (C) 2020-2023 Marty Hiatt and mastodon.el authors
 ;; Author: Marty Hiatt <martianhiatus@riseup.net>
 ;; Version: 0.0.2
-;; Package-Requires: ((emacs "28.1"))
+;; Package-Requires: ((emacs "28.1") (markdown-mode "2.7-alpha"))
 ;; Homepage: https://codeberg.org/martianh/fedi.el
 
 ;; This file is not part of GNU Emacs.
