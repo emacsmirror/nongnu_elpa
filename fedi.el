@@ -200,15 +200,15 @@ Optionally start from POS."
           (funcall refresh)
         (message "Nothing further")))))
 
-(defun fedi-next-item ()
-  "Move to next item."
-  (interactive)
-  (fedi--goto-pos #'next-single-property-change)) ;#'fedi-ui-more))
+;; (defun fedi-next-item ()
+;;   "Move to next item."
+;;   (interactive)
+;;   (fedi--goto-pos #'next-single-property-change)) ;#'fedi-ui-more))
 
-(defun fedi-prev-item ()
-  "Move to prev item."
-  (interactive)
-  (fedi--goto-pos #'previous-single-property-change))
+;; (defun fedi-prev-item ()
+;;   "Move to prev item."
+;;   (interactive)
+;;   (fedi--goto-pos #'previous-single-property-change))
 
 (defun fedi-next-tab-item (&optional previous prop)
   "Move to the next interesting item.
