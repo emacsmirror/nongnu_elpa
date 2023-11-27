@@ -83,15 +83,6 @@
       (pop mcqs))
     (reverse mcqs)))
 
-
-(defun qbank-create-mcq-question ()
-  "Create question as MCQ type."
-  (interactive)
-  (let ((question (read-string "Question: "))
-	(choices (unless (equal choices "q")
-		   (read-string "Choices: ")))))
-  (qbank--insert-into '))
-
 (cl-defun qbank-create-mcq-question (&key question choices correct-answer)
   "Create a QUESTION with a list of multiple CHOICES and one CORRECT-ANSWER.
 
@@ -106,6 +97,15 @@ use it like this:
          :choices (qbank-input-questions)
          :correct-answer (string-to-number (read-string "Which is the correct answer?"))))
   (qbank--insert-into 'qbank1 `([nil ,question ,choices ,correct-answer])))
+
+(defun qbank-create-question (type)
+  "Create question as TYPE."
+  (interactive (list (completing-read "Type: " '(MCQ Cloze Basic))))
+  (pcase type
+    ("MCQ" (call-interactively 'qbank-create-mcq-question))
+    ("Cloze" (message "Not ready yet."))
+    ("Basic" (message "Not ready yet."))
+    (_ (message "No such type."))))
 
 ;; Fix: review for seperate question types.
 (defun qbank-review (id)
@@ -124,3 +124,5 @@ use it like this:
       (switch-to-buffer (get-buffer-create "*qbank*"))
     (qbank--display-question 13)
     (qbank-review 13)))
+
+;;; qbank.el ends here
