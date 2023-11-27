@@ -1,10 +1,10 @@
-;;; qbank.el --- Learning tool for GNU Emacs  -*- lexical-binding: t; -*-
+;;; gnosis.el --- Learning tool for GNU Emacs  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2023  Thanos Apollo
 
 ;; Author: Thanos Apollo <public@thanosapollo.org>
 ;; Keywords: extensions
-;; URL: https://git.thanosapollo.org/qbank
+;; URL: https://git.thanosapollo.org/gnosis
 ;; Version: 0.0.1
 
 ;; Package-Requires: ((emacs "27.2") (compat "29.1.4.2"))
@@ -36,45 +36,45 @@
 (require 'cl-lib)
 (require 'animate)
 
-(cl-defun qbank--select (table values &optional (restrictions '1=1))
+(cl-defun gnosis--select (table values &optional (restrictions '1=1))
   "Select VALUES from TABLE, optionally with RESTRICTIONS."
   (emacsql-with-connection (db (emacsql-sqlite "test2.db"))
     (emacsql db `[:select ,values :from ,table :where ,restrictions])))
 
-(cl-defun qbank--create-table (table-name &optional values)
+(cl-defun gnosis--create-table (table-name &optional values)
   "Create TABLE-NAME for VALUES."
   (emacsql-with-connection (db (emacsql-sqlite "test2.db"))
     (emacsql db `[:create-table ,table-name ,values])))
 
-(cl-defun qbank--insert-into (table-name values)
+(cl-defun gnosis--insert-into (table-name values)
   "Insert VALUES to TABLE-NAME."
   (emacsql-with-connection (db (emacsql-sqlite "test2.db"))
     (emacsql db `[:insert :into ,table-name :values ,values])))
 
-(defun qbank--get-question (id)
+(defun gnosis--get-question (id)
   "Get question row for question ID."
-  (caar (qbank--select 'qbank1 'question `(= question_id ,id))))
+  (caar (gnosis--select 'gnosis1 'question `(= question_id ,id))))
 
-(defun qbank--get-correct-answer (id)
+(defun gnosis--get-correct-answer (id)
   "Get correct answer for question ID."
-  (caar (qbank--select 'qbank1 'answer `(= question_id ,id))))
+  (caar (gnosis--select 'gnosis1 'answer `(= question_id ,id))))
 
-(defun qbank--get-mcanswers (id)
+(defun gnosis--get-mcanswers (id)
   "Get multiple choices for question ID."
-  (caar (qbank--select 'qbank1 'mchoices `(= question_id ,id))))
+  (caar (gnosis--select 'gnosis1 'mchoices `(= question_id ,id))))
 
-(defun qbank--display-question (id)
+(defun gnosis--display-question (id)
   "Display question for question ID."
-  (let ((question (qbank--get-question id)))
+  (let ((question (gnosis--get-question id)))
     ;; Animate.el is used only for testing purposes.
     (animate-string question 5)))
 
-(defun qbank--mcanswers-choice (id)
+(defun gnosis--mcanswers-choice (id)
   "Display multiple choice answers for question ID."
-  (let ((mcanswers (qbank--get-mcanswers id)))
+  (let ((mcanswers (gnosis--get-mcanswers id)))
     (completing-read "Answer: " mcanswers)))
 
-(defun qbank--input-mcanswers ()
+(defun gnosis--input-mcanswers ()
   "Prompt user for multiple choice answers."
   (let ((mcqs nil))
     (while (not (equal (car mcqs) "q"))
@@ -83,46 +83,46 @@
       (pop mcqs))
     (reverse mcqs)))
 
-(cl-defun qbank-create-mcq-question (&key question choices correct-answer)
+(cl-defun gnosis-create-mcq-question (&key question choices correct-answer)
   "Create a QUESTION with a list of multiple CHOICES and one CORRECT-ANSWER.
 
 This function can be used interactively, or if you prefer you may also
 use it like this:
- (qbank-create-mcq-question
+ (gnosis-create-mcq-question
   :question \"Which one is the greatest editor?\"
   :choices (list \"Emacs\" \"Vim\" \"VSCode\" \"Ed\")
   :correct-answer 1)"
   (interactive
    (list :question (read-string "Question: ")
-         :choices (qbank-input-questions)
-         :correct-answer (string-to-number (read-string "Which is the correct answer?"))))
-  (qbank--insert-into 'qbank1 `([nil ,question ,choices ,correct-answer])))
+         :choices (gnosis--input-mcanswers)
+         :correct-answer (string-to-number (read-string "Which is the correct answer? "))))
+  (gnosis--insert-into 'qbank1 `([nil ,question ,choices ,correct-answer])))
 
-(defun qbank-create-question (type)
+(defun gnosis-create-question (type)
   "Create question as TYPE."
   (interactive (list (completing-read "Type: " '(MCQ Cloze Basic))))
   (pcase type
-    ("MCQ" (call-interactively 'qbank-create-mcq-question))
+    ("MCQ" (call-interactively 'gnosis-create-mcq-question))
     ("Cloze" (message "Not ready yet."))
     ("Basic" (message "Not ready yet."))
     (_ (message "No such type."))))
 
 ;; Fix: review for seperate question types.
-(defun qbank-review (id)
+(defun gnosis-review (id)
   "Start review for question ID."
-  (let ((canswer (qbank--get-correct-answer id))
-	(choices (qbank--get-mcanswers id))
-	(user-choice (qbank--mcanswers-choice id)))
+  (let ((canswer (gnosis--get-correct-answer id))
+	(choices (gnosis--get-mcanswers id))
+	(user-choice (gnosis--mcanswers-choice id)))
     (if (equal (nth (- canswer 1) choices) user-choice)
 	(message "Correct!")
       (message "False"))))
 
-(defun qbank-test-buffer ()
+(defun gnosis-test-buffer ()
   "Create testing buffer."
   (interactive)
   (with-current-buffer
-      (switch-to-buffer (get-buffer-create "*qbank*"))
-    (qbank--display-question 13)
-    (qbank-review 13)))
+      (switch-to-buffer (get-buffer-create "*gnosis*"))
+    (gnosis--display-question 13)
+    (gnosis-review 13)))
 
-;;; qbank.el ends here
+;;; gnosis.el ends here
