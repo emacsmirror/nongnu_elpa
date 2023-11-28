@@ -36,32 +36,31 @@
 (require 'cl-lib)
 (require 'animate)
 
+(defvar gnosis-db (emacsql-sqlite (concat user-emacs-directory "gnosis.db")))
+
 (cl-defun gnosis--select (table values &optional (restrictions '1=1))
   "Select VALUES from TABLE, optionally with RESTRICTIONS."
-  (emacsql-with-connection (db (emacsql-sqlite "test2.db"))
-    (emacsql db `[:select ,values :from ,table :where ,restrictions])))
+  (emacsql gnosis-db `[:select ,values :from ,table :where ,restrictions]))
 
 (cl-defun gnosis--create-table (table-name &optional values)
   "Create TABLE-NAME for VALUES."
-  (emacsql-with-connection (db (emacsql-sqlite "test2.db"))
-    (emacsql db `[:create-table ,table-name ,values])))
+  (emacsql gnosis-db `[:create-table ,table-name ,values]))
 
 (cl-defun gnosis--insert-into (table-name values)
   "Insert VALUES to TABLE-NAME."
-  (emacsql-with-connection (db (emacsql-sqlite "test2.db"))
-    (emacsql db `[:insert :into ,table-name :values ,values])))
+  (emacsql gnosis-db `[:insert :into ,table-name :values ,values]))
 
 (defun gnosis--get-question (id)
   "Get question row for question ID."
-  (caar (gnosis--select 'gnosis1 'question `(= question_id ,id))))
+  (caar (gnosis--select 'notes 'question `(= question_id ,id))))
 
 (defun gnosis--get-correct-answer (id)
   "Get correct answer for question ID."
-  (caar (gnosis--select 'gnosis1 'answer `(= question_id ,id))))
+  (caar (gnosis--select 'notes 'answer `(= question_id ,id))))
 
 (defun gnosis--get-mcanswers (id)
   "Get multiple choices for question ID."
-  (caar (gnosis--select 'gnosis1 'mchoices `(= question_id ,id))))
+  (caar (gnosis--select 'notes 'choices `(= question_id ,id))))
 
 (defun gnosis--display-question (id)
   "Display question for question ID."
