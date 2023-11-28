@@ -123,5 +123,9 @@ use it like this:
       (switch-to-buffer (get-buffer-create "*gnosis*"))
     (gnosis--display-question 13)
     (gnosis-review 13)))
+    (setq-local minibuffer-history nil)
+    (gnosis--display-question 1)
+    (gnosis-review 1)
+    (gnosis-mode)))
 
 ;;; gnosis.el ends here
