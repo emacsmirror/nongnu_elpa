@@ -128,4 +128,14 @@ use it like this:
     (gnosis-review 1)
     (gnosis-mode)))
 
+(defun gnosis-init ()
+  "Create notes content table."
+  (gnosis--create-table 'notes '([(question_id integer :primary-key)
+				  type
+				  question
+				  choices
+				  answer
+				  rev_log
+				  rev_score])))
+
 ;;; gnosis.el ends here
