@@ -140,6 +140,7 @@ use it like this:
 				  question
 				  choices
 				  answer
+				  tags
 				  rev_log
 				  rev_score])))
 
