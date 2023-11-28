@@ -68,34 +68,40 @@
     ;; Animate.el is used only for testing purposes.
     (animate-string question 5)))
 
-(defun gnosis--mcanswers-choice (id)
-  "Display multiple choice answers for question ID."
-  (let ((mcanswers (gnosis--get-mcanswers id)))
-    (completing-read "Answer: " mcanswers)))
+(defun gnosis--ask-input (prompt)
+  "PROMPT user for input until `q' is given.
 
-(defun gnosis--input-mcanswers ()
-  "Prompt user for multiple choice answers."
-  (let ((mcqs nil))
-    (while (not (equal (car mcqs) "q"))
-      (add-to-list 'mcqs (read-string "Choices (q for quit): ")))
-    (when (equal (car mcqs) "q")
-      (pop mcqs))
-    (reverse mcqs)))
+The user is prompted to provide input for the 'PROMPT' message, and
+the returns the list of inputs in reverse order."
+  (let ((input nil))
+    (while (not (equal (car input) "q"))
+      (add-to-list 'input (read-string (concat prompt " (q for quit): "))))
+    (when (equal (car input) "q")
+      (pop input))
+    (reverse input)))
 
-(cl-defun gnosis-create-mcq-question (&key question choices correct-answer)
-  "Create a QUESTION with a list of multiple CHOICES and one CORRECT-ANSWER.
+(cl-defun gnosis-create-mcq-question (&key question choices correct-answer tags)
+  "Create a QUESTION with a list of multiple CHOICES.
+
+MCQ type questions consist of a main `QUESTION', which is displayed &
+the user will be prompted to find the `CORRECT-ANSWER', which is the
+correct number choice of `CHOICES'.
+
+TAGS are used to organize questions.
 
 This function can be used interactively, or if you prefer you may also
 use it like this:
  (gnosis-create-mcq-question
   :question \"Which one is the greatest editor?\"
   :choices (list \"Emacs\" \"Vim\" \"VSCode\" \"Ed\")
-  :correct-answer 1)"
+  :correct-answer 1
+  :tags (list \"emacs\" \"editors\"))"
   (interactive
    (list :question (read-string "Question: ")
-         :choices (gnosis--input-mcanswers)
-         :correct-answer (string-to-number (read-string "Which is the correct answer? "))))
-  (gnosis--insert-into 'notes `([nil "mcq" ,question ,choices ,correct-answer 0 0])))
+         :choices (gnosis--ask-input "Choices")
+         :correct-answer (string-to-number (read-string "Which is the correct answer (number)? "))
+	 :tags (gnosis--ask-input "Tags")))
+  (gnosis--insert-into 'notes `([nil "mcq" ,question ,choices ,correct-answer 0 0 ,tags])))
 
 (defun gnosis-create-question (type)
   "Create question as TYPE."
