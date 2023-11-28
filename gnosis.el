@@ -95,7 +95,7 @@ use it like this:
    (list :question (read-string "Question: ")
          :choices (gnosis--input-mcanswers)
          :correct-answer (string-to-number (read-string "Which is the correct answer? "))))
-  (gnosis--insert-into 'qbank1 `([nil ,question ,choices ,correct-answer])))
+  (gnosis--insert-into 'notes `([nil "mcq" ,question ,choices ,correct-answer 0 0])))
 
 (defun gnosis-create-question (type)
   "Create question as TYPE."
@@ -116,13 +116,12 @@ use it like this:
 	(message "Correct!")
       (message "False"))))
 
+;; testing
 (defun gnosis-test-buffer ()
   "Create testing buffer."
   (interactive)
   (with-current-buffer
       (switch-to-buffer (get-buffer-create "*gnosis*"))
-    (gnosis--display-question 13)
-    (gnosis-review 13)))
     (setq-local minibuffer-history nil)
     (gnosis--display-question 1)
     (gnosis-review 1)
@@ -137,5 +136,12 @@ use it like this:
 				  answer
 				  rev_log
 				  rev_score])))
+
+;; Gnosis mode
+(define-derived-mode gnosis-mode special-mode "Gnosis"
+  "Gnosis Mode."
+  :interactive t
+  (display-line-numbers-mode 0)
+  :lighter " gnosis-mode")
 
 ;;; gnosis.el ends here
