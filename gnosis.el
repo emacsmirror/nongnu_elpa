@@ -54,21 +54,13 @@
   "Insert VALUES to TABLE-NAME."
   (emacsql gnosis-db `[:insert :into ,table-name :values ,values]))
 
-(defun gnosis--get-question (id)
-  "Get question row for question ID."
-  (caar (gnosis--select 'notes 'question `(= question_id ,id))))
-
-(defun gnosis--get-correct-answer (id)
-  "Get correct answer for question ID."
-  (caar (gnosis--select 'notes 'answer `(= question_id ,id))))
-
-(defun gnosis--get-mcanswers (id)
-  "Get multiple choices for question ID."
-  (caar (gnosis--select 'notes 'choices `(= question_id ,id))))
+(defun gnosis--get (table value id)
+  "Get VALUE for question ID from TABLE."
+  (caar (gnosis--select table value `(= id ,id))))
 
 (defun gnosis--display-question (id)
-  "Display question for question ID."
-  (let ((question (gnosis--get-question id)))
+  "Display main row for question ID."
+  (let ((question (gnosis--get 'notes 'main id)))
     ;; Animate.el is used only for testing purposes.
     (animate-string question 5)))
 
