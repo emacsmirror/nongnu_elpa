@@ -137,17 +137,22 @@ use it like this:
   (interactive)
   (with-current-buffer
       (switch-to-buffer (get-buffer-create "*gnosis*"))
-    (setq-local minibuffer-history nil)
+    (read-only-mode 0)
+    (erase-buffer)
     (gnosis--display-question 1)
     (gnosis-review 1)
     (gnosis-mode)))
 
 (defun gnosis-init ()
   "Create notes content table."
-  (gnosis--create-table 'notes '([(question_id integer :primary-key)
-				  type
-				  question
-				  choices
+  (interactive)
+  (condition-case nil
+      (gnosis--drop-table 'notes)
+    (error (message "No NOTES table to drop, recreating new one.")))
+  (gnosis--create-table 'notes '([(id integer :primary-key)
+				  (type text)
+				  (main text)
+				  options
 				  answer
 				  tags
 				  rev_log
