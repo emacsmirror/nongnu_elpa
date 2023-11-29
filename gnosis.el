@@ -108,15 +108,28 @@ use it like this:
     ("Basic" (message "Not ready yet."))
     (_ (message "No such type."))))
 
-;; Fix: review for seperate question types.
-(defun gnosis-review (id)
-  "Start review for question ID."
-  (let ((canswer (gnosis--get-correct-answer id))
-	(choices (gnosis--get-mcanswers id))
-	(user-choice (gnosis--mcanswers-choice id)))
+(defun gnosis-mcq-answer (id)
+  "Choose the correct answer, from mcq choices for question ID."
+  (let ((choices (gnosis--get 'notes 'options id))
+	(history-add-new-input nil)) ;; Disable history
+    (completing-read "Answer: " choices)))
+
+(defun gnosis-review-mcq-choices (id)
+  "Display multiple choice answers for question ID."
+  (let ((canswer (gnosis--get 'notes 'answer id))
+	(choices (gnosis--get 'notes 'options id))
+	(user-choice (gnosis-mcq-answer id)))
     (if (equal (nth (- canswer 1) choices) user-choice)
 	(message "Correct!")
       (message "False"))))
+
+(defun gnosis-review (id)
+  "Start review for question ID."
+  (let ((type (gnosis--get 'notes 'type id)))
+    (pcase type
+      ("mcq" (gnosis-review-mcq-choices id))
+      ("basic" (message "Not Ready yet."))
+      ("cloze" (message "Not Ready yet.")))))
 
 ;; testing
 (defun gnosis-test-buffer ()
