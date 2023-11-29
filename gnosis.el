@@ -46,6 +46,10 @@
   "Create TABLE-NAME for VALUES."
   (emacsql gnosis-db `[:create-table ,table-name ,values]))
 
+(cl-defun gnosis--drop-table (table)
+  "Drop TABLE from gnosis-db."
+  (emacsql gnosis-db `[:drop-table ,table]))
+
 (cl-defun gnosis--insert-into (table-name values)
   "Insert VALUES to TABLE-NAME."
   (emacsql gnosis-db `[:insert :into ,table-name :values ,values]))
