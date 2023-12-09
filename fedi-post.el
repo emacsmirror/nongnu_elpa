@@ -2,7 +2,6 @@
 
 ;; Copyright (C) 2020-2023 Marty Hiatt
 ;; Author: Marty Hiatt <martianhiatus@riseup.net> and mastodon.el authors
-;; Package-Requires: ((emacs "28.1"))
 ;; Version: 1.0.0
 ;; Homepage: https://codeberg.org/martianh/fedi.el
 
@@ -322,7 +321,7 @@ descriptions."
   (let ((key (concat "\\`"
                      (help-key-description (car kbind) nil)
                      "'"))
-        (command (fedi-post--format-kbind-command (cdr kbind) "lem-post")))
+        (command (fedi-post--format-kbind-command (cdr kbind) prefix)))
     (substitute-command-keys
      (format
       (concat (fedi-post-comment "    ")
@@ -389,7 +388,7 @@ descriptions."
                 nil))))
 
 (defun fedi-post--concat-fields (fields-alist)
-  ""
+  "Concat FIELDS-ALIST for compose buffer docs."
   (cl-loop for item in fields-alist
            for field = (alist-get 'name item)
            concat (propertize (capitalize field)
@@ -404,7 +403,8 @@ Also includes and the status fields which will get updated based
 on the status of NSFW, language, media attachments, etc.
 PREFIX is a string corresponding to the prefix of the minor mode
 enabled. It is used for constructing clean keybinding
-descriptions."
+descriptions.
+FIELDS-ALIST is an alist of fields to add, using `fedi-post--concat-fields'."
   (let ((divider
          "|=================================================================|"))
     (insert
@@ -557,7 +557,8 @@ MINOR is the minor mode to enable.
 PREFIX is a string corresponding to the prefix of the library
 that contains the compose buffer's functions. It is only required
 if this differs from the minor mode.
-CAPF-FUNS is a list of functions to enable."
+CAPF-FUNS is a list of functions to enable.
+TYPE is a string for the buffer name."
   (let* ((buffer-name (if edit
                           (format "*edit %s*" type)
                         (format "*new %s*" type)))
