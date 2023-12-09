@@ -319,9 +319,16 @@ enabled."
 PREFIX is a string corresponding to the prefix of the minor mode
 enabled. It is used for constructing clean keybinding
 descriptions."
-  (let ((key (help-key-description (car kbind) nil))
-        (command (fedi-post--format-kbind-command (cdr kbind) prefix)))
-    (format "    %s - %s" key command)))
+  (let ((key (concat "\\`"
+                     (help-key-description (car kbind) nil)
+                     "'"))
+        (command (fedi-post--format-kbind-command (cdr kbind) "lem-post")))
+    (substitute-command-keys
+     (format
+      (concat (fedi-post-comment "    ")
+              "%s"
+              (fedi-post-comment " - %s"))
+      key command))))
 
 (defun fedi-post--format-kbinds (kbinds &optional prefix)
   "Format a list of keybindings, KBINDS, for display in documentation.
@@ -357,6 +364,11 @@ LONGEST is the length of the longest binding."
 
 ;;; DISPLAY DOCS
 
+(defun fedi-post-comment (str)
+  "Propertize STR with `fedi-post-docs-face'."
+  (propertize str
+              'face 'fedi-post-docs-face))
+
 (defun fedi-post--make-mode-docs (&optional mode prefix)
   "Create formatted documentation text for MODE or fedi-post-mode.
 PREFIX is a string corresponding to the prefix of the minor mode
@@ -369,7 +381,7 @@ descriptions."
          (longest-kbind (fedi-post--formatted-kbinds-longest
                          (fedi-post--format-kbinds kbinds prefix))))
     (concat
-     " Compose a new post here. The following keybindings are available:"
+     (fedi-post-comment " Compose a new post here. The following keybindings are available:")
      (mapconcat #'identity
                 (fedi-post--formatted-kbinds-pairs
                  (fedi-post--format-kbinds kbinds prefix)
@@ -396,28 +408,29 @@ descriptions."
   (let ((divider
          "|=================================================================|"))
     (insert
-     (propertize
-      (concat
-       (fedi-post--make-mode-docs mode prefix) "\n"
-       divider "\n"
-       " "
-       ;; (propertize "Count"
-       ;; 'post-post-counter t)
-       ;; " ⋅ "
-       (fedi-post--concat-fields fields-alist)
-       "\n "
-       (propertize "Language"
-                   'post-language t)
-       " "
-       (propertize "NSFW"
-                   'post-nsfw t)
-       "\n"
-       divider
-       "\n")
-      'rear-nonsticky t
-      'face 'fedi-post-docs-face
-      'read-only "Edit your message below."
-      'post-header t))))
+     (concat
+      (fedi-post--make-mode-docs mode prefix) "\n"
+      (fedi-post-comment divider) "\n"
+      (propertize
+       (concat
+        " "
+        ;; (propertize "Count"
+        ;; 'post-post-counter t)
+        ;; " ⋅ "
+        (fedi-post--concat-fields fields-alist)
+        "\n "
+        (propertize "Language"
+                    'post-language t)
+        " "
+        (propertize "NSFW"
+                    'post-nsfw t)
+        "\n"
+        divider
+        "\n")
+       'rear-nonsticky t
+       'face 'fedi-post-docs-face
+       'read-only "Edit your message below."
+       'post-header t)))))
 
 (defun fedi-post--count-post-chars (post-string)
   "Count the characters in POST-STRING."
