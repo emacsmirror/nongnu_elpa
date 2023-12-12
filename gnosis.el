@@ -62,6 +62,9 @@
 (defun gnosis--get-id (table value id)
   "Get VALUE for question ID from TABLE."
   (caar (gnosis--select table value `(= id ,id))))
+(defun gnosis--get-name (table value name)
+  "From TABLE get VALUE for NAME."
+  (caar (gnosis--select table value `(= name ,name))))
 
 (defun gnosis--display-question (id)
   "Display main row for question ID."
