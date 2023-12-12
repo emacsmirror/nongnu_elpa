@@ -43,29 +43,29 @@
 
 (defvar gnosis-db (emacsql-sqlite (concat user-emacs-directory "gnosis.db")))
 
-(cl-defun gnosis--select (table values &optional (restrictions '1=1))
-  "Select VALUES from TABLE, optionally with RESTRICTIONS."
-  (emacsql gnosis-db `[:select ,values :from ,table :where ,restrictions]))
+(cl-defun gnosis--select (value table &optional (restrictions '1=1))
+  "Select VALUE from TABLE, optionally with RESTRICTIONS."
+  (emacsql gnosis-db `[:select ,value :from ,table :where ,restrictions]))
 
-(cl-defun gnosis--create-table (table-name &optional values)
-  "Create TABLE-NAME for VALUES."
-  (emacsql gnosis-db `[:create-table ,table-name ,values]))
+(cl-defun gnosis--create-table (table &optional values)
+  "Create TABLE for VALUES."
+  (emacsql gnosis-db `[:create-table ,table ,values]))
 
 (cl-defun gnosis--drop-table (table)
   "Drop TABLE from gnosis-db."
   (emacsql gnosis-db `[:drop-table ,table]))
 
-(cl-defun gnosis--insert-into (table-name values)
-  "Insert VALUES to TABLE-NAME."
-  (emacsql gnosis-db `[:insert :into ,table-name :values ,values]))
+(cl-defun gnosis--insert-into (table values)
+  "Insert VALUES to TABLE."
+  (emacsql gnosis-db `[:insert :into ,table :values ,values]))
 
 (defun gnosis--get-id (table value)
   "From TABLE get VALUE for id."
-  (caar (gnosis--select table value nil)))
+  (caar (gnosis--select value table)))
 
 (defun gnosis--get-name (table value name)
   "From TABLE get VALUE for NAME."
-  (caar (gnosis--select table value `(= name ,name))))
+  (caar (gnosis--select value table `(= name ,name))))
 
 (defun gnosis--delete (table value)
   "From TABLE use where to delete VALUE."
@@ -96,14 +96,14 @@ the returns the list of inputs in reverse order."
 
 (defun gnosis--get-deck-name ()
   "Get name from table DECKS."
-  (when (equal (gnosis--select 'decks 'name) nil)
+  (when (equal (gnosis--select 'name 'decks) nil)
     (error "No decks found"))
-  (completing-read "Deck: " (gnosis--select 'decks 'name)))
+  (completing-read "Deck: " (gnosis--select 'name 'decks)))
 
 (defun gnosis--get-deck-id ()
   "Select id for deck name."
   (let ((deck (gnosis--get-deck-name)))
-    (caar (gnosis--select 'decks 'id `(= name ,deck)))))
+    (caar (gnosis--select 'id 'decks `(= name ,deck)))))
 
 (defun gnosis-delete-deck (id)
   "Delete deck with id value of ID."
@@ -184,7 +184,7 @@ TAGS are used to organize questions."
     (error (message "No DECKS table to drop.")))
   ;; Enable foreign_keys
   (emacsql gnosis-db "PRAGMA foreign_keys = ON")
-  ;; Create decks table  
+  ;; Create decks table
   (gnosis--create-table 'decks '([(id integer :primary-key :autoincrement)
 				  (name text :not-null)]))
   ;; Create notes table
