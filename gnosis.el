@@ -151,17 +151,19 @@ use it like this:
 (defun gnosis-init ()
   "Create notes content table."
   (interactive)
+  ;;(make-directory (concat user-emacs-directory "gnosis"))
   (condition-case nil
       (gnosis--drop-table 'notes)
-    (error (message "No NOTES table to drop, recreating new one.")))
+    (error (message "No NOTES table to drop.")))
   (gnosis--create-table 'notes '([(id integer :primary-key)
 				  (type text)
 				  (main text)
 				  options
 				  answer
 				  tags
-				  rev_log
-				  rev_score])))
+				  (ef integer :default 1.3)
+				  (rev_times integer :default 0)
+				  (rev_interval integer :default 0)])))
 
 ;; Gnosis mode ;;
 ;;;;;;;;;;;;;;;;;
