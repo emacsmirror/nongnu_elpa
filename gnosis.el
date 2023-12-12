@@ -102,7 +102,9 @@ use it like this:
          :choices (gnosis--ask-input "Choices")
          :correct-answer (string-to-number (read-string "Which is the correct answer (number)? "))
 	 :tags (gnosis--ask-input "Tags")))
-  (gnosis--insert-into 'notes `([nil "mcq" ,question ,choices ,correct-answer 0 0 ,tags])))
+  (when (equal (numberp correct-answer))
+    (error "The correct answer must be the number of the correct answer"))
+  (gnosis--insert-into 'notes `([nil "mcq" ,question ,choices ,correct-answer ,tags, nil, nil nil])))
 
 (defun gnosis-create-question (type)
   "Create question as TYPE."
