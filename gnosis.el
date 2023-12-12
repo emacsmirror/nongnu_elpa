@@ -163,11 +163,92 @@ use it like this:
 				  rev_log
 				  rev_score])))
 
-;; Gnosis mode
+;; Gnosis mode ;;
+;;;;;;;;;;;;;;;;;
+
 (define-derived-mode gnosis-mode special-mode "Gnosis"
   "Gnosis Mode."
   :interactive t
   (display-line-numbers-mode 0)
   :lighter " gnosis-mode")
 
+;; Gnosis Algorithm ;;
+;;;;;;;;;;;;;;;;;;;;;;
+
+(defcustom gnosis-interval '(1 3)
+  "Gnosis algorithm interval.
+- Interval by which a new question is displayed or when it's ef is at 1.3.
+First item: First interval
+Second item: Second interval.
+
+e.g if you use:
+ (setq gnosis-interval '(2 4))
+Upon successfully recalling a question, it's next interval will be in
+2 days. Recalling the same question successfully in 2 days, will put
+it's interval at 4 days, afterwards it's next interval will be calculated using `gnosis-ef'."
+  :group 'gnosis
+  :type 'list)
+
+(defcustom gnosis-ef '(0.2 0.2)
+  "Gnosis easiness factor.
+
+First item : Increase factor
+Second item: Decrease factor"
+  :group 'gnosis
+  :type 'list)
+
+(defcustom gnosis-ff 0.5
+  "Gnosis forgetting factor.
+
+Used to calcuate new interval for failed questions."
+  :group 'gnosis
+  :type 'float)
+
+(defun gnosis-calculate-e-factor (ef quality)
+  "Calculate new e-factor given existing EF and binary QUALITY, 0 or 1."
+  (cond
+   ((not (numberp quality))
+    (error "Invalid argument passed to gnosis-calculate-e-factor"))
+   ((= quality 0) ;; If the quality score is 0 (fail), decrease the ef by a small penalty
+    (max 1.3 (- ef (cadr gnosis-ef))))
+   ((= quality 1) ;; If the quality score is 1 (pass), increase the ef by a small reward
+    (+ ef (car gnosis-ef)))
+   (t (error "Invalid quality score passed to gnosis-calculate-e-factor"))))
+
+(defun gnosis-calculate-next-interval (last-interval n ef success ff)
+  "Calculate next interval.
+- LAST-INTERVAL : The number of days since the item was last reviewed.
+- N : Number of times the item has been reviewed.
+- EF : The 'easiness factor'.
+- SUCCESS : Success of the recall, ranges from 0 (unsuccessful) to 1
+  (successful).
+- FF: Failure factor
+
+Returns a tuple: (INTERVAL N EF) where,
+- INTERVAL : The number of days until the item should next be reviewed.
+- N : Incremented by 1.
+- EF : Modified based on the recall success for the item."
+  ;; Ensure valid parameters.
+  ;; (cl-assert (> n 0))
+  (cl-assert (and (>= success 0)
+		  (<= success 1)))
+  ;; Calculate the next easiness factor.
+  (let* ((next-ef (gnosis-calculate-e-factor ef success))
+         ;; Calculate the next interval.
+         (interval
+          (cond
+	   ;; If ef is 1.3, repeat question in the same day.
+	   ((= ef 1.3) 0)
+           ;; Immediately next day if it's the first time review.
+           ((<= n 1) (car gnosis-interval))
+           ;; After 3 days if it's second review.
+           ((= n 2) (cadr gnosis-interval))
+           ;; Increase last interval by 1 if recall was successful. Keep last interval if unsuccessful.
+           (t (if (= success 1)
+                  (* ef last-interval)
+                (* ff last-interval))))))
+    (list (round interval) (1+ n) next-ef)))
+
+
+(provide 'gnosis)
 ;;; gnosis.el ends here
