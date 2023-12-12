@@ -59,13 +59,13 @@
   "Insert VALUES to TABLE-NAME."
   (emacsql gnosis-db `[:insert :into ,table-name :values ,values]))
 
-(defun gnosis--get (table value id)
+(defun gnosis--get-id (table value id)
   "Get VALUE for question ID from TABLE."
   (caar (gnosis--select table value `(= id ,id))))
 
 (defun gnosis--display-question (id)
   "Display main row for question ID."
-  (let ((question (gnosis--get 'notes 'main id)))
+  (let ((question (gnosist--get-id 'notes 'main id)))
     ;; Animate.el is used only for testing purposes.
     (animate-string question 5)))
 
@@ -117,14 +117,14 @@ use it like this:
 
 (defun gnosis-mcq-answer (id)
   "Choose the correct answer, from mcq choices for question ID."
-  (let ((choices (gnosis--get 'notes 'options id))
+  (let ((choices (gnosist--get-id 'notes 'options id))
 	(history-add-new-input nil)) ;; Disable history
     (completing-read "Answer: " choices)))
 
 (defun gnosis-review-mcq-choices (id)
   "Display multiple choice answers for question ID."
-  (let ((canswer (gnosis--get 'notes 'answer id))
-	(choices (gnosis--get 'notes 'options id))
+  (let ((canswer (gnosist--get-id 'notes 'answer id))
+	(choices (gnosist--get-id 'notes 'options id))
 	(user-choice (gnosis-mcq-answer id)))
     (if (equal (nth (- canswer 1) choices) user-choice)
 	(message "Correct!")
@@ -132,7 +132,7 @@ use it like this:
 
 (defun gnosis-review (id)
   "Start review for question ID."
-  (let ((type (gnosis--get 'notes 'type id)))
+  (let ((type (gnosist--get-id 'notes 'type id)))
     (pcase type
       ("mcq" (gnosis-review-mcq-choices id))
       ("basic" (message "Not Ready yet."))
