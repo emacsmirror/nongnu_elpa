@@ -59,16 +59,21 @@
   "Insert VALUES to TABLE-NAME."
   (emacsql gnosis-db `[:insert :into ,table-name :values ,values]))
 
-(defun gnosis--get-id (table value id)
-  "Get VALUE for question ID from TABLE."
-  (caar (gnosis--select table value `(= id ,id))))
+(defun gnosis--get-id (table value)
+  "From TABLE get VALUE for id."
+  (caar (gnosis--select table value nil)))
+
 (defun gnosis--get-name (table value name)
   "From TABLE get VALUE for NAME."
   (caar (gnosis--select table value `(= name ,name))))
 
+(defun gnosis--delete (table value)
+  "From TABLE use where to delete VALUE."
+  (emacsql gnosis-db `[:delete :from ,table :where ,value]))
+
 (defun gnosis--display-question (id)
   "Display main row for question ID."
-  (let ((question (gnosist--get-id 'notes 'main id)))
+  (let ((question (gnosis--get-id 'notes 'main id)))
     ;; Animate.el is used only for testing purposes.
     (animate-string question 5)))
 
@@ -134,14 +139,14 @@ TAGS are used to organize questions."
 
 (defun gnosis-mcq-answer (id)
   "Choose the correct answer, from mcq choices for question ID."
-  (let ((choices (gnosist--get-id 'notes 'options id))
+  (let ((choices (gnosis--get-id 'notes 'options id))
 	(history-add-new-input nil)) ;; Disable history
     (completing-read "Answer: " choices)))
 
 (defun gnosis-review-mcq-choices (id)
   "Display multiple choice answers for question ID."
-  (let ((canswer (gnosist--get-id 'notes 'answer id))
-	(choices (gnosist--get-id 'notes 'options id))
+  (let ((canswer (gnosis--get-id 'notes 'answer id))
+	(choices (gnosis--get-id 'notes 'options id))
 	(user-choice (gnosis-mcq-answer id)))
     (if (equal (nth (- canswer 1) choices) user-choice)
 	(message "Correct!")
@@ -149,7 +154,7 @@ TAGS are used to organize questions."
 
 (defun gnosis-review (id)
   "Start review for question ID."
-  (let ((type (gnosist--get-id 'notes 'type id)))
+  (let ((type (gnosis--get-id 'notes 'type id)))
     (pcase type
       ("mcq" (gnosis-review-mcq-choices id))
       ("basic" (message "Not Ready yet."))
@@ -174,15 +179,28 @@ TAGS are used to organize questions."
   (condition-case nil
       (gnosis--drop-table 'notes)
     (error (message "No NOTES table to drop.")))
-  (gnosis--create-table 'notes '([(id integer :primary-key)
-				  (type text)
-				  (main text)
-				  options
-				  answer
-				  tags
+  (condition-case nil
+      (gnosis--drop-table 'decks)
+    (error (message "No DECKS table to drop.")))
+  ;; Enable foreign_keys
+  (emacsql gnosis-db "PRAGMA foreign_keys = ON")
+  ;; Create decks table  
+  (gnosis--create-table 'decks '([(id integer :primary-key :autoincrement)
+				  (name text :not-null)]))
+  ;; Create notes table
+  (gnosis--create-table 'notes '([(id integer :primary-key :autoincrement)
+				  (type text :not-null)
+				  (main text :not-null)
+				  (options text :not-null)
+				  (answer text :not-null)
+				  (tags text :default untagged)
 				  (ef integer :default 1.3)
 				  (rev_times integer :default 0)
-				  (rev_interval integer :default 0)])))
+				  (rev_interval integer :default 0)
+				  (deck-id integer)]
+				 (:foreign-key [deck-id] :references decks [id]
+					       :on-delete :cascade)))
+  (gnosis-create-deck "Anatomy"))
 
 ;; Gnosis mode ;;
 ;;;;;;;;;;;;;;;;;
