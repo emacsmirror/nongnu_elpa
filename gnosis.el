@@ -36,6 +36,11 @@
 (require 'cl-lib)
 (require 'animate)
 
+(defgroup gnosis nil
+  "Spaced repetition learning tool."
+  :group 'external
+  :prefix "gnosis-")
+
 (defvar gnosis-db (emacsql-sqlite (concat user-emacs-directory "gnosis.db")))
 
 (cl-defun gnosis--select (table values &optional (restrictions '1=1))
