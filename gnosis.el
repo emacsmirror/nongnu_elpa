@@ -84,30 +84,44 @@ the returns the list of inputs in reverse order."
       (pop input))
     (reverse input)))
 
-(cl-defun gnosis-create-mcq-question (&key question choices correct-answer tags)
-  "Create a QUESTION with a list of multiple CHOICES.
+(defun gnosis-create-deck (name)
+  "Create deck with NAME."
+  (interactive (list (read-string "Deck Name: ")))
+  (gnosis--insert-into 'decks `([nil ,name])))
+
+(defun gnosis--get-deck-name ()
+  "Get name from table DECKS."
+  (when (equal (gnosis--select 'decks 'name) nil)
+    (error "No decks found"))
+  (completing-read "Deck: " (gnosis--select 'decks 'name)))
+
+(defun gnosis--get-deck-id ()
+  "Select id for deck name."
+  (let ((deck (gnosis--get-deck-name)))
+    (caar (gnosis--select 'decks 'id `(= name ,deck)))))
+
+(defun gnosis-delete-deck (id)
+  "Delete deck with id value of ID."
+  (interactive (list (gnosis--get-deck-id)))
+  (gnosis--delete 'decks `(= id ,id)))
+
+(cl-defun gnosis-create-mcq-question (&key deck question choices correct-answer tags)
+  "Create a QUESTION with a list of multiple CHOICES,,, DECK.
 
 MCQ type questions consist of a main `QUESTION', which is displayed &
 the user will be prompted to find the `CORRECT-ANSWER', which is the
 correct number choice of `CHOICES'.
 
-TAGS are used to organize questions.
-
-This function can be used interactively, or if you prefer you may also
-use it like this:
- (gnosis-create-mcq-question
-  :question \"Which one is the greatest editor?\"
-  :choices (list \"Emacs\" \"Vim\" \"VSCode\" \"Ed\")
-  :correct-answer 1
-  :tags (list \"emacs\" \"editors\"))"
+TAGS are used to organize questions."
   (interactive
-   (list :question (read-string "Question: ")
+   (list :deck (gnosis--get-deck-id)
+	 :question (read-string "Question: ")
          :choices (gnosis--ask-input "Choices")
          :correct-answer (string-to-number (read-string "Which is the correct answer (number)? "))
 	 :tags (gnosis--ask-input "Tags")))
-  (when (equal (numberp correct-answer))
+  (when (equal (numberp correct-answer) nil)
     (error "The correct answer must be the number of the correct answer"))
-  (gnosis--insert-into 'notes `([nil "mcq" ,question ,choices ,correct-answer ,tags, nil, nil nil])))
+  (gnosis--insert-into 'notes `([nil "mcq" ,question ,choices ,correct-answer ,tags, nil nil nil ,deck])))
 
 (defun gnosis-create-question (type)
   "Create question as TYPE."
