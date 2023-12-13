@@ -59,13 +59,6 @@
   "Insert VALUES to TABLE."
   (emacsql gnosis-db `[:insert :into ,table :values ,values]))
 
-(defun gnosis--get-id (table value)
-  "From TABLE get VALUE for id."
-  (caar (gnosis--select value table)))
-
-(defun gnosis--get-name (table value name)
-  "From TABLE get VALUE for NAME."
-  (caar (gnosis--select value table `(= name ,name))))
 
 (defun gnosis--delete (table value)
   "From TABLE use where to delete VALUE."
