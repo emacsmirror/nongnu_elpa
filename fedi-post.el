@@ -568,12 +568,16 @@ TYPE is a string for the buffer name."
          (previous-window-config (list (current-window-configuration)
                                        (point-marker))))
     (switch-to-buffer-other-window buffer)
-    (if major (funcall major) (text-mode))
+    ;; `markdown-mode' here breaks any existing docs display:
+    (if major
+        (unless (eq major major-mode)
+          (funcall major))
+      (text-mode))
     (or (funcall minor)
         (fedi-post-mode t))
     (when (eq major 'markdown-mode)
       ;; disable fontifying as it breaks our docs (we fontify by region below)
-      (font-lock-mode -1)
+      (unless buffer-exists (font-lock-mode -1))
       (when (member 'variable-pitch-mode markdown-mode-hook)
         ;; (make-local-variable 'markdown-mode-hook) ; unneeded if we always disable?
         ;; (setq markdown-mode-hook (delete 'variable-pitch-mode markdown-mode-hook))
