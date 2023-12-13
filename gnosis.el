@@ -228,7 +228,7 @@ it's interval at 4 days, afterwards it's next interval will be calculated using 
   :group 'gnosis
   :type 'list)
 
-(defcustom gnosis-ef '(0.2 0.2)
+(defcustom gnosis-ef '(0.3 0.3)
   "Gnosis easiness factor.
 
 First item : Increase factor
