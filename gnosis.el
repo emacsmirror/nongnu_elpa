@@ -59,6 +59,9 @@
   "Insert VALUES to TABLE."
   (emacsql gnosis-db `[:insert :into ,table :values ,values]))
 
+(defun gnosis-get (value table &optional restrictions)
+  "Get VALUE from TABLE, optionally with where RESTRICTIONS."
+  (caar (gnosis--select value table restrictions)))
 
 (defun gnosis--delete (table value)
   "From TABLE use where to delete VALUE."
@@ -66,7 +69,7 @@
 
 (defun gnosis--display-question (id)
   "Display main row for question ID."
-  (let ((question (caar (gnosis--select 'main 'notes `(= id ,id)))))
+  (let ((question (gnosis-get 'main 'notes `(= id ,id))))
     ;; Animate.el is used only for testing purposes.
     (animate-string question 1)))
 
@@ -96,7 +99,7 @@ the returns the list of inputs in reverse order."
 (defun gnosis--get-deck-id ()
   "Select id for deck name."
   (let ((deck (gnosis--get-deck-name)))
-    (caar (gnosis--select 'id 'decks `(= name ,deck)))))
+    (gnosis-get 'id 'decks `(= name ,deck))))
 
 (defun gnosis-delete-deck (id)
   "Delete deck with id value of ID."
@@ -132,26 +135,27 @@ TAGS are used to organize questions."
 
 (defun gnosis-mcq-answer (id)
   "Choose the correct answer, from mcq choices for question ID."
-  (let ((choices (gnosis--select 'options 'notes `(= id ,id)))
+  (let ((choices (gnosis-get 'options 'notes `(= id ,id)))
 	(history-add-new-input nil)) ;; Disable history
     (completing-read "Answer: " choices)))
 
 (defun gnosis-review-mcq-choices (id)
   "Display multiple choice answers for question ID."
-  (let ((canswer (gnosis--select 'answer 'notes `(= id ,id)))
-	(choices (gnosis--select 'answer 'notes `(= id ,id)))
+  (let ((answer (gnosis-get 'answer 'notes `(= id ,id)))
+	(choices (gnosis-get 'options 'notes `(= id ,id)))
 	(user-choice (gnosis-mcq-answer id)))
-    (if (equal (nth (- canswer 1) choices) user-choice)
+    (if (equal (nth (- answer 1) choices) user-choice)
 	(message "Correct!")
       (message "False"))))
 
 (defun gnosis-review (id)
   "Start review for question ID."
-  (let ((type (gnosis--get-id 'notes 'type id)))
+  (let ((type (gnosis-get 'type 'notes `(= id id))))
     (pcase type
       ("mcq" (gnosis-review-mcq-choices id))
       ("basic" (message "Not Ready yet."))
-      ("cloze" (message "Not Ready yet.")))))
+      ("cloze" (message "Not Ready yet."))
+      (_ (error "Malformed note type")))))
 
 ;; testing
 (defun gnosis-test-buffer ()
