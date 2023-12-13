@@ -75,7 +75,7 @@
   "Display main row for question ID."
   (let ((question (caar (gnosis--select 'main 'notes `(= id ,id)))))
     ;; Animate.el is used only for testing purposes.
-    (animate-string question 5)))
+    (animate-string question 1)))
 
 (defun gnosis--ask-input (prompt)
   "PROMPT user for input until `q' is given.
@@ -168,8 +168,8 @@ TAGS are used to organize questions."
       (switch-to-buffer (get-buffer-create "*gnosis*"))
     (read-only-mode 0)
     (erase-buffer)
-    (gnosis--display-question 1)
-    (gnosis-review 1)
+    (gnosis--display-question 4)
+    (gnosis-review 4)
     (gnosis-mode)))
 
 (defun gnosis-init ()
