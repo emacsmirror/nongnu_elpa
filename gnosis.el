@@ -215,16 +215,12 @@ TAGS are used to organize questions."
 ;;;;;;;;;;;;;;;;;;;;;;
 
 (defcustom gnosis-interval '(1 3)
-  "Gnosis algorithm interval.
-- Interval by which a new question is displayed or when it's ef is at 1.3.
-First item: First interval
-Second item: Second interval.
+  "Gnosis initial interval.
 
-e.g if you use:
- (setq gnosis-interval '(2 4))
-Upon successfully recalling a question, it's next interval will be in
-2 days. Recalling the same question successfully in 2 days, will put
-it's interval at 4 days, afterwards it's next interval will be calculated using `gnosis-ef'."
+Interval by which a new question is displayed or when it's ef is at 1.3.
+
+First item: First interval
+Second item: Second interval."
   :group 'gnosis
   :type 'list)
 
@@ -267,8 +263,6 @@ Returns a tuple: (INTERVAL N EF) where,
 - INTERVAL : The number of days until the item should next be reviewed.
 - N : Incremented by 1.
 - EF : Modified based on the recall success for the item."
-  ;; Ensure valid parameters.
-  ;; (cl-assert (> n 0))
   (cl-assert (and (>= success 0)
 		  (<= success 1)))
   ;; Calculate the next easiness factor.
@@ -276,8 +270,8 @@ Returns a tuple: (INTERVAL N EF) where,
          ;; Calculate the next interval.
          (interval
           (cond
-	   ;; If ef is 1.3, repeat question in the same day.
-	   ((= ef 1.3) 0)
+	   ;; Show item same day on the first review
+	   ((= n 0) 0)
            ;; Immediately next day if it's the first time review.
            ((<= n 1) (car gnosis-interval))
            ;; After 3 days if it's second review.
