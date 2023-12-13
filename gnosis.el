@@ -73,7 +73,7 @@
 
 (defun gnosis--display-question (id)
   "Display main row for question ID."
-  (let ((question (gnosis--get-id 'notes 'main id)))
+  (let ((question (caar (gnosis--select 'main 'notes `(= id ,id)))))
     ;; Animate.el is used only for testing purposes.
     (animate-string question 5)))
 
@@ -139,14 +139,14 @@ TAGS are used to organize questions."
 
 (defun gnosis-mcq-answer (id)
   "Choose the correct answer, from mcq choices for question ID."
-  (let ((choices (gnosis--get-id 'notes 'options id))
+  (let ((choices (gnosis--select 'options 'notes `(= id ,id)))
 	(history-add-new-input nil)) ;; Disable history
     (completing-read "Answer: " choices)))
 
 (defun gnosis-review-mcq-choices (id)
   "Display multiple choice answers for question ID."
-  (let ((canswer (gnosis--get-id 'notes 'answer id))
-	(choices (gnosis--get-id 'notes 'options id))
+  (let ((canswer (gnosis--select 'answer 'notes `(= id ,id)))
+	(choices (gnosis--select 'answer 'notes `(= id ,id)))
 	(user-choice (gnosis-mcq-answer id)))
     (if (equal (nth (- canswer 1) choices) user-choice)
 	(message "Correct!")
