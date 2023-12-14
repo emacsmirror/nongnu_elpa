@@ -106,29 +106,32 @@ the returns the list of inputs in reverse order."
   (interactive (list (gnosis--get-deck-id)))
   (gnosis--delete 'decks `(= id ,id)))
 
-(cl-defun gnosis-create-mcq-question (&key deck question choices correct-answer tags)
-  "Create a QUESTION with a list of multiple CHOICES,,, DECK.
+(cl-defun gnosis-add-note-mcq (&key deck question choices correct-answer tags)
+  "Create a NOTE with a list of multiple CHOICES.
 
-MCQ type questions consist of a main `QUESTION', which is displayed &
-the user will be prompted to find the `CORRECT-ANSWER', which is the
-correct number choice of `CHOICES'.
-
+MCQ type consists of a main `QUESTION' that is displayed to the user.
+The user will be prompted to select the correct answer from a list of
+`CHOICES'. The `CORRECT-ANSWER' should be the index of the correct
+choice in the `CHOICES' list. Each note must correspond to one `DECK'.
 TAGS are used to organize questions."
   (interactive
    (list :deck (gnosis--get-deck-id)
 	 :question (read-string "Question: ")
          :choices (gnosis--ask-input "Choices")
          :correct-answer (string-to-number (read-string "Which is the correct answer (number)? "))
-	 :tags (gnosis--ask-input "Tags")))
+	 :tags (when (equal (gnosis--ask-input "Tags") nil) 'untagged)))
   (when (equal (numberp correct-answer) nil)
     (error "The correct answer must be the number of the correct answer"))
-  (gnosis--insert-into 'notes `([nil "mcq" ,question ,choices ,correct-answer ,tags, nil nil nil ,deck])))
+  (gnosis--insert-into 'notes `([nil "mcq" ,question ,choices ,correct-answer ,tags ,deck]))
+  ;; Get last inserted note-id
+  (let ((note-id (caar (last (gnosis--select 'id 'notes)))))
+    (gnosis--insert-into 'review `([,note-id ,gnosis-ef ,gnosis-ff 0 0 0]))))
 
 (defun gnosis-add-note (type)
   "Create note as TYPE."
   (interactive (list (completing-read "Type: " '(MCQ Cloze Basic))))
   (pcase type
-    ("MCQ" (call-interactively 'gnosis-add-mcq-question))
+    ("MCQ" (call-interactively 'gnosis-add-note-mcq))
     ("Cloze" (message "Not ready yet."))
     ("Basic" (message "Not ready yet."))
     (_ (message "No such type."))))
