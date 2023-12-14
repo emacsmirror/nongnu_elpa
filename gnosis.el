@@ -85,7 +85,7 @@ the returns the list of inputs in reverse order."
       (pop input))
     (reverse input)))
 
-(defun gnosis-create-deck (name)
+(defun gnosis-add-deck (name)
   "Create deck with NAME."
   (interactive (list (read-string "Deck Name: ")))
   (gnosis--insert-into 'decks `([nil ,name])))
@@ -197,7 +197,7 @@ TAGS are used to organize questions."
 				  (deck-id integer)]
 				 (:foreign-key [deck-id] :references decks [id]
 					       :on-delete :cascade)))
-  (gnosis-create-deck "Anatomy"))
+  (gnosis-add-deck "Anatomy"))
 
 ;; Gnosis mode ;;
 ;;;;;;;;;;;;;;;;;
