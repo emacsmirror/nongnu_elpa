@@ -41,6 +41,31 @@
   :group 'external
   :prefix "gnosis-")
 
+(defcustom gnosis-interval '(1 3)
+  "Gnosis initial interval.
+
+Interval by which a new question is displayed or when it's ef is at 1.3.
+
+First item: First interval
+Second item: Second interval."
+  :group 'gnosis
+  :type 'list)
+
+(defcustom gnosis-ef '(0.3 0.3)
+  "Gnosis easiness factor.
+
+First item : Increase factor
+Second item: Decrease factor"
+  :group 'gnosis
+  :type 'list)
+
+(defcustom gnosis-ff 0.5
+  "Gnosis forgetting factor.
+
+Used to calcuate new interval for failed questions."
+  :group 'gnosis
+  :type 'float)
+
 (defvar gnosis-db (emacsql-sqlite (concat user-emacs-directory "gnosis.db")))
 
 (cl-defun gnosis--select (value table &optional (restrictions '1=1))
@@ -230,31 +255,6 @@ TAGS are used to organize questions."
 
 ;; Gnosis Algorithm ;;
 ;;;;;;;;;;;;;;;;;;;;;;
-
-(defcustom gnosis-interval '(1 3)
-  "Gnosis initial interval.
-
-Interval by which a new question is displayed or when it's ef is at 1.3.
-
-First item: First interval
-Second item: Second interval."
-  :group 'gnosis
-  :type 'list)
-
-(defcustom gnosis-ef '(0.3 0.3)
-  "Gnosis easiness factor.
-
-First item : Increase factor
-Second item: Decrease factor"
-  :group 'gnosis
-  :type 'list)
-
-(defcustom gnosis-ff 0.5
-  "Gnosis forgetting factor.
-
-Used to calcuate new interval for failed questions."
-  :group 'gnosis
-  :type 'float)
 
 (defun gnosis-current-date (&optional offset)
   "Return the current date in a list (year month day).
