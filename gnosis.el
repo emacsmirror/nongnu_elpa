@@ -171,13 +171,15 @@ TAGS are used to organize questions."
 				 (:foreign-key [deck-id] :references decks [id]
 					       :on-delete :cascade)))
 
-(defvar gnosis-db-review-schema '([(note-id integer)
-				   (ef integer :default 1.3)
-				   (ff integer :default 0.5)
-				   (n integer :default 0)
-				   (interval integer :default 0)]
-				  (:foreign-key [note-id] :references notes [id]
+(defvar gnosis-db-review-schema '([(id integer :not-null) ;; note-id
+				   (ef integer :not-null) ;; Easiness factor
+				   (ff integer :not-null) ;; Forgetting factor
+				   (n integer :not-null) ;; Number of reviews
+				   (failures integer :not-null) ;; Number of consecutive review failures
+				   (interval integer :not-null)] ;; Interval
+				  (:foreign-key [id] :references notes [id]
 						:on-delete :cascade)))
+
 
 ;; testing
 (defun gnosis-test-buffer ()
@@ -200,25 +202,18 @@ TAGS are used to organize questions."
     (error (message "No NOTES table to drop.")))
   (condition-case nil
       (gnosis--drop-table 'decks)
-    (error (message "No DECKS table to drop.")))
+    (error (message "No NOTES table to drop.")))
+  (condition-case nil
+      (gnosis--drop-table 'review)
+    (error (message "No REVIEW table to drop.")))
   ;; Enable foreign_keys
   (emacsql gnosis-db "PRAGMA foreign_keys = ON")
   ;; Create decks table
-  (gnosis--create-table 'decks '([(id integer :primary-key :autoincrement)
-				  (name text :not-null)]))
+  (gnosis--create-table 'decks gnosis-db-decks-schema)
   ;; Create notes table
-  (gnosis--create-table 'notes '([(id integer :primary-key :autoincrement)
-				  (type text :not-null)
-				  (main text :not-null)
-				  (options text :not-null)
-				  (answer text :not-null)
-				  (tags text :default untagged)
-				  (ef integer :default 1.3)
-				  (rev_times integer :default 0)
-				  (rev_interval integer :default 0)
-				  (deck-id integer)]
-				 (:foreign-key [deck-id] :references decks [id]
-					       :on-delete :cascade)))
+  (gnosis--create-table 'notes gnosis-db-notes-schema)
+  ;; Create review table
+  (gnosis--create-table 'review gnosis-db-review-schema)
   (gnosis-add-deck "Anatomy"))
 
 ;; Gnosis mode ;;
