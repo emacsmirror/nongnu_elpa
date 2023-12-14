@@ -101,20 +101,23 @@ Example:
 (defun gnosis--display-question (id)
   "Display main row for question ID."
   (let ((question (gnosis-get 'main 'notes `(= id ,id))))
-    ;; Animate.el is used only for testing purposes.
-    (animate-string question 1)))
+    (erase-buffer)
+    (insert question 1)
+    (sit-for 0.5)))
 
 (defun gnosis--ask-input (prompt)
   "PROMPT user for input until `q' is given.
-
-The user is prompted to provide input for the 'PROMPT' message, and
-the returns the list of inputs in reverse order."
-  (let ((input nil))
-    (while (not (equal (car input) "q"))
-      (add-to-list 'input (read-string (concat prompt " (q for quit): "))))
-    (when (equal (car input) "q")
-      (pop input))
-    (reverse input)))
+  
+  The user is prompted to provide input for the 'PROMPT' message, and
+  the returns the list of inputs in reverse order."
+  (let ((input-list nil)
+        (input ""))
+    (while (not (string= input "q"))
+      (setq input (read-string (concat prompt " (q for quit): ")))
+      (push input input-list))
+    (when (string= (car input-list) "q")
+      (pop input-list))
+    (nreverse input-list)))
 
 (defun gnosis-add-deck (name)
   "Create deck with NAME."
