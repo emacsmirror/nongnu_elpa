@@ -240,15 +240,10 @@ TAGS are used to organize questions."
   "Create notes content table."
   (interactive)
   ;;(make-directory (concat user-emacs-directory "gnosis"))
-  (condition-case nil
-      (gnosis--drop-table 'notes)
-    (error (message "No NOTES table to drop.")))
-  (condition-case nil
-      (gnosis--drop-table 'decks)
-    (error (message "No DECKS table to drop.")))
-  (condition-case nil
-      (gnosis--drop-table 'review)
-    (error (message "No REVIEW table to drop.")))
+  (dolist (table '(notes decks review review-log))
+    (condition-case nil
+	(gnosis--drop-table table)
+      (error (message "No %s table to drop." table))))
   ;; Enable foreign_keys
   (emacsql gnosis-db "PRAGMA foreign_keys = ON")
   ;; Create decks table
@@ -273,7 +268,7 @@ TAGS are used to organize questions."
 ;; Gnosis Algorithm ;;
 ;;;;;;;;;;;;;;;;;;;;;;
 
-(defun gnosis-current-date (&optional offset)
+(defun gnosis-date-current (&optional offset)
   "Return the current date in a list (year month day).
 Optional integer OFFSET is a number of days from the current date."
   (let* ((now (decode-time))
