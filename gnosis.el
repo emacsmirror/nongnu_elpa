@@ -124,11 +124,11 @@ TAGS are used to organize questions."
     (error "The correct answer must be the number of the correct answer"))
   (gnosis--insert-into 'notes `([nil "mcq" ,question ,choices ,correct-answer ,tags, nil nil nil ,deck])))
 
-(defun gnosis-create-question (type)
-  "Create question as TYPE."
+(defun gnosis-add-note (type)
+  "Create note as TYPE."
   (interactive (list (completing-read "Type: " '(MCQ Cloze Basic))))
   (pcase type
-    ("MCQ" (call-interactively 'gnosis-create-mcq-question))
+    ("MCQ" (call-interactively 'gnosis-add-mcq-question))
     ("Cloze" (message "Not ready yet."))
     ("Basic" (message "Not ready yet."))
     (_ (message "No such type."))))
