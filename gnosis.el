@@ -157,6 +157,28 @@ TAGS are used to organize questions."
       ("cloze" (message "Not Ready yet."))
       (_ (error "Malformed note type")))))
 
+;; Database Schemas
+(defvar gnosis-db-decks-schema '([(id integer :primary-key :autoincrement)
+				  (name text :not-null)]))
+
+(defvar gnosis-db-notes-schema '([(id integer :primary-key :autoincrement)
+				  (type text :not-null)
+				  (main text :not-null)
+				  (options text :not-null)
+				  (answer text :not-null)
+				  (tags text :default untagged)
+				  (deck-id integer)]
+				 (:foreign-key [deck-id] :references decks [id]
+					       :on-delete :cascade)))
+
+(defvar gnosis-db-review-schema '([(note-id integer)
+				   (ef integer :default 1.3)
+				   (ff integer :default 0.5)
+				   (n integer :default 0)
+				   (interval integer :default 0)]
+				  (:foreign-key [note-id] :references notes [id]
+						:on-delete :cascade)))
+
 ;; testing
 (defun gnosis-test-buffer ()
   "Create testing buffer."
