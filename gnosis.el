@@ -90,7 +90,7 @@ Example:
  (gnosis-update 'notes '(= main \"NEW VALUE\") '(= id 12))"
   (emacsql gnosis-db `[:update ,table :set ,value :where ,where]))
 
-(defun gnosis-get (value table &optional restrictions)
+(cl-defun gnosis-get (value table &optional (restrictions '1=1))
   "Get VALUE from TABLE, optionally with where RESTRICTIONS."
   (caar (gnosis--select value table restrictions)))
 
