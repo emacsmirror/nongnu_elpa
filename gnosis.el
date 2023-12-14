@@ -158,8 +158,10 @@ TAGS are used to organize questions."
     (error "The correct answer must be the number of the correct answer"))
   (gnosis--insert-into 'notes `([nil "mcq" ,question ,choices ,correct-answer ,tags ,deck]))
   ;; Get last inserted note-id
-  (let ((note-id (caar (last (gnosis--select 'id 'notes)))))
-    (gnosis--insert-into 'review `([,note-id ,gnosis-ef ,gnosis-ff 0 0 0]))))
+  (let* ((note-id (caar (last (gnosis--select 'id 'notes))))
+	 (date (gnosis-current-date)))
+    (gnosis--insert-into 'review `([,note-id ,gnosis-ef ,gnosis-ff 0 0]))
+    (gnosis--insert-into 'review-log `([,note-id 0 ,date 0]))))
 
 (defun gnosis-add-note (type)
   "Create note as TYPE."
