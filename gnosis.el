@@ -236,6 +236,19 @@ Used to calcuate new interval for failed questions."
   :group 'gnosis
   :type 'float)
 
+(defun gnosis-current-date (&optional offset)
+  "Return the current date in a list (year month day).
+Optional integer OFFSET is a number of days from the current date."
+  (let* ((now (decode-time))
+         (now (list (decoded-time-month now)
+                    (decoded-time-day now)
+                    (decoded-time-year now))))
+    (let ((date (if (zerop (or offset 0))
+                    now
+                  (calendar-gregorian-from-absolute
+                   (+ offset (calendar-absolute-from-gregorian now))))))
+      (list (nth 2 date) (nth 0 date) (nth 1 date)))))
+
 (defun gnosis-calculate-e-factor (ef quality)
   "Calculate new e-factor given existing EF and binary QUALITY, 0 or 1."
   (cond
