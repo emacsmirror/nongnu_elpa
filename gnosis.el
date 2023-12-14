@@ -209,10 +209,16 @@ TAGS are used to organize questions."
 				   (ef integer :not-null) ;; Easiness factor
 				   (ff integer :not-null) ;; Forgetting factor
 				   (n integer :not-null) ;; Number of reviews
-				   (failures integer :not-null) ;; Number of consecutive review failures
 				   (interval integer :not-null)] ;; Interval
 				  (:foreign-key [id] :references notes [id]
 						:on-delete :cascade)))
+
+(defvar gnosis-db-review-log-schema '([(id integer :not-null) ;; note-id
+				       (last-rev integer :not-null) ;; Last review date
+				       (next-rev integer :not-null) ;; Next review date
+				       (failures integer :not-null)] ;; Number of consecutive review failures
+				      (:foreign-key [id] :references notes [id]
+						    :on-delete :cascade)))
 
 
 ;; testing
@@ -248,6 +254,8 @@ TAGS are used to organize questions."
   (gnosis--create-table 'notes gnosis-db-notes-schema)
   ;; Create review table
   (gnosis--create-table 'review gnosis-db-review-schema)
+  ;; Create review-log table
+  (gnosis--create-table 'review-log gnosis-db-review-log-schema)
   (gnosis-add-deck "Anatomy"))
 
 ;; Gnosis mode ;;
