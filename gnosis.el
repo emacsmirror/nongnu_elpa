@@ -286,6 +286,15 @@ Optional integer OFFSET is a number of days from the current date."
                    (+ offset (calendar-absolute-from-gregorian now))))))
       (list (nth 2 date) (nth 0 date) (nth 1 date)))))
 
+(defun gnosis-date-difference (year month day)
+  "Find the difference between the current date and the given date.
+
+The structure of the given date is (YEAR MONTH DAY)."
+  (let ((current-date (gnosis-date-current))
+	(given-date (encode-time 0 0 0 day month year)))
+    (- (time-to-days (current-time))
+       (time-to-days given-date))))
+
 (defun gnosis-calculate-e-factor (ef quality)
   "Calculate new e-factor given existing EF and binary QUALITY, 0 or 1."
   (cond
