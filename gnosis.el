@@ -84,6 +84,12 @@ Used to calcuate new interval for failed questions."
   "Insert VALUES to TABLE."
   (emacsql gnosis-db `[:insert :into ,table :values ,values]))
 
+(cl-defun gnosis-update (table value where)
+  "Update records in TABLE with to new VALUE based on the given WHERE condition.
+Example:
+ (gnosis-update 'notes '(= main \"NEW VALUE\") '(= id 12))"
+  (emacsql gnosis-db `[:update ,table :set ,value :where ,where]))
+
 (defun gnosis-get (value table &optional restrictions)
   "Get VALUE from TABLE, optionally with where RESTRICTIONS."
   (caar (gnosis--select value table restrictions)))
@@ -230,7 +236,7 @@ TAGS are used to organize questions."
     (error (message "No NOTES table to drop.")))
   (condition-case nil
       (gnosis--drop-table 'decks)
-    (error (message "No NOTES table to drop.")))
+    (error (message "No DECKS table to drop.")))
   (condition-case nil
       (gnosis--drop-table 'review)
     (error (message "No REVIEW table to drop.")))
