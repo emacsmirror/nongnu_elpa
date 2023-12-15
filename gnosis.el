@@ -150,16 +150,19 @@ TAGS are used to organize questions."
    (list :deck (gnosis--get-deck-id)
 	 :question (read-string "Question: ")
          :choices (gnosis--ask-input "Choices")
+	 ;; NOTE: string-to-number transforms non-number strings to 0
          :correct-answer (string-to-number (read-string "Which is the correct answer (number)? "))
-	 :tags (when (equal (gnosis--ask-input "Tags") nil) 'untagged)))
-  (when (equal (numberp correct-answer) nil)
-    (error "The correct answer must be the number of the correct answer"))
+	 :tags (gnosis--ask-input "Tags")))
+  (cond ((or (not (numberp correct-answer)) (equal correct-answer 0))
+	 (error "Correct answer value must be the index number of the correct answer"))
+	((null tags)
+	 (setq tags 'untagged)))
   (gnosis--insert-into 'notes `([nil "mcq" ,question ,choices ,correct-answer ,tags ,deck]))
   ;; Get last inserted note-id
-  (let* ((note-id (caar (last (gnosis--select 'id 'notes))))
-	 (date (gnosis-current-date)))
+  (let ((note-id (caar (last (gnosis--select 'id 'notes))))
+	(date (gnosis-date-current)))
     (gnosis--insert-into 'review `([,note-id ,gnosis-ef ,gnosis-ff 0 0]))
-    (gnosis--insert-into 'review-log `([,note-id 0 ,date 0]))))
+    (gnosis--insert-into 'review-log `([,note-id 0 ,date 0 0]))))
 
 (defun gnosis-add-note (type)
   "Create note as TYPE."
