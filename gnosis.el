@@ -107,17 +107,15 @@ Example:
 
 (defun gnosis--ask-input (prompt)
   "PROMPT user for input until `q' is given.
-  
-  The user is prompted to provide input for the 'PROMPT' message, and
-  the returns the list of inputs in reverse order."
-  (let ((input-list nil)
-        (input ""))
-    (while (not (string= input "q"))
-      (setq input (read-string (concat prompt " (q for quit): ")))
-      (push input input-list))
-    (when (string= (car input-list) "q")
-      (pop input-list))
-    (nreverse input-list)))
+
+The user is prompted to provide input for the 'PROMPT' message, and
+the returns the list of inputs in reverse order."
+  (let ((input nil))
+    (while (not (equal (car input) "q"))
+      (push (read-string (concat prompt " (q for quit): ")) input))
+    (when (equal (car input) "q")
+      (pop input))
+    (reverse input)))
 
 (defun gnosis-add-deck (name)
   "Create deck with NAME."
