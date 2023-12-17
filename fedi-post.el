@@ -389,7 +389,8 @@ descriptions."
          (longest-kbind (fedi-post--formatted-kbinds-longest
                          (fedi-post--format-kbinds kbinds prefix))))
     (concat
-     (fedi-post-comment " Compose a new post here. The following keybindings are available:")
+     (fedi-post-comment
+      " Compose a new post here. The following keybindings are available:")
      (mapconcat #'identity
                 (fedi-post--formatted-kbinds-pairs
                  (fedi-post--format-kbinds kbinds prefix)
@@ -614,7 +615,8 @@ TYPE is a string for the buffer name."
     (fedi-post--update-status-fields)
     ;; disable for markdown-mode:
     (unless (eq major 'markdown-mode)
-      (cl-pushnew #'fedi-post--propertize-tags-and-handles after-change-functions)
+      (cl-pushnew #'fedi-post--propertize-tags-and-handles
+                  after-change-functions)
       (fedi-post--propertize-tags-and-handles))
     ;; draft post text saving:
     (setq fedi-post-current-post-text nil)
