@@ -2,7 +2,6 @@
 
 ;; Copyright (C) 2020-2023 Marty Hiatt
 ;; Author: Marty Hiatt <martianhiatus@riseup.net> and mastodon.el authors
-;; Package-Requires: ((emacs "28.1"))
 ;; Version: 1.0.0
 ;; Homepage: https://codeberg.org/martianh/fedi.el
 
@@ -116,21 +115,30 @@ face. no-label is optional.")
 
 (defvar fedi-post-handle-regex
   (rx (| (any ?\( "\n" "\t "" ") bol) ; preceding things
-      (group-n 2 (+ ?@ (* (any ?- ?_ ?. "A-Z" "a-z" "0-9" ))) ; handle
-               (? ?@ (* (not (any "\n" "\t" " "))))) ; optional domain
+      (group-n 1 ; = handle with @
+        ;; (+ ; breaks groups with instance handles!
+        ?@
+        (group-n 2 ; = username only
+          (* (any ?- ?_ ?. "A-Z" "a-z" "0-9" )))
+        (? ?@
+           (group-n 3 ; = optional domain
+             (* (not (any "\n" "\t" " "))))))
       (| "'" word-boundary))) ; boundary or possessive
 
 (defvar fedi-post-tag-regex
   (rx (| (any ?\( "\n" "\t" " ") bol)
       (group-n 2 ?# (+ (any "A-Z" "a-z" "0-9")))
-      (| "'" word-boundary))) ; boundary or possessive
+      (| "'" word-boundary)))
+                                        ; boundary or possessive
 
 (defvar fedi-post-url-regex
   ;; adapted from `ffap-url-regexp'
   (concat
-   "\\(?2:\\(news\\(post\\)?:\\|mailto:\\|file:\\|\\(ftp\\|https?\\|telnet\\|gopher\\|www\\|wais\\)://\\)" ; uri prefix
+   "\\(?2:\\(news\\(post\\)?:\\|mailto:\\|file:\\|\\(ftp\\|https?\\|telnet\\|gopher\\|www\\|wais\\)://\\)"
+                                        ; uri prefix
    "[^ \n\t]*\\)" ; any old thing, that is, i.e. we allow invalid/unwise chars
-   "\\b")) ; boundary
+   "\\b"))
+                                        ; boundary
 
 
 ;;; MODE MAP
@@ -319,9 +327,16 @@ enabled."
 PREFIX is a string corresponding to the prefix of the minor mode
 enabled. It is used for constructing clean keybinding
 descriptions."
-  (let ((key (help-key-description (car kbind) nil))
+  (let ((key (concat "\\`"
+                     (help-key-description (car kbind) nil)
+                     "'"))
         (command (fedi-post--format-kbind-command (cdr kbind) prefix)))
-    (format "    %s - %s" key command)))
+    (substitute-command-keys
+     (format
+      (concat (fedi-post-comment "    ")
+              "%s"
+              (fedi-post-comment " - %s"))
+      key command))))
 
 (defun fedi-post--format-kbinds (kbinds &optional prefix)
   "Format a list of keybindings, KBINDS, for display in documentation.
@@ -357,6 +372,11 @@ LONGEST is the length of the longest binding."
 
 ;;; DISPLAY DOCS
 
+(defun fedi-post-comment (str)
+  "Propertize STR with `fedi-post-docs-face'."
+  (propertize str
+              'face 'fedi-post-docs-face))
+
 (defun fedi-post--make-mode-docs (&optional mode prefix)
   "Create formatted documentation text for MODE or fedi-post-mode.
 PREFIX is a string corresponding to the prefix of the minor mode
@@ -369,7 +389,8 @@ descriptions."
          (longest-kbind (fedi-post--formatted-kbinds-longest
                          (fedi-post--format-kbinds kbinds prefix))))
     (concat
-     " Compose a new post here. The following keybindings are available:"
+     (fedi-post-comment
+      " Compose a new post here. The following keybindings are available:")
      (mapconcat #'identity
                 (fedi-post--formatted-kbinds-pairs
                  (fedi-post--format-kbinds kbinds prefix)
@@ -377,7 +398,7 @@ descriptions."
                 nil))))
 
 (defun fedi-post--concat-fields (fields-alist)
-  ""
+  "Concat FIELDS-ALIST for compose buffer docs."
   (cl-loop for item in fields-alist
            for field = (alist-get 'name item)
            concat (propertize (capitalize field)
@@ -392,32 +413,34 @@ Also includes and the status fields which will get updated based
 on the status of NSFW, language, media attachments, etc.
 PREFIX is a string corresponding to the prefix of the minor mode
 enabled. It is used for constructing clean keybinding
-descriptions."
+descriptions.
+FIELDS-ALIST is an alist of fields to add, using `fedi-post--concat-fields'."
   (let ((divider
          "|=================================================================|"))
     (insert
-     (propertize
-      (concat
-       (fedi-post--make-mode-docs mode prefix) "\n"
-       divider "\n"
-       " "
-       ;; (propertize "Count"
-       ;; 'post-post-counter t)
-       ;; " ⋅ "
-       (fedi-post--concat-fields fields-alist)
-       "\n "
-       (propertize "Language"
-                   'post-language t)
-       " "
-       (propertize "NSFW"
-                   'post-nsfw t)
-       "\n"
-       divider
-       "\n")
-      'rear-nonsticky t
-      'face 'fedi-post-docs-face
-      'read-only "Edit your message below."
-      'post-header t))))
+     (concat
+      (fedi-post--make-mode-docs mode prefix) "\n"
+      (fedi-post-comment divider) "\n"
+      (propertize
+       (concat
+        " "
+        ;; (propertize "Count"
+        ;; 'post-post-counter t)
+        ;; " ⋅ "
+        (fedi-post--concat-fields fields-alist)
+        "\n "
+        (propertize "Language"
+                    'post-language t)
+        " "
+        (propertize "NSFW"
+                    'post-nsfw t)
+        "\n"
+        divider
+        "\n")
+       'rear-nonsticky t
+       'face 'fedi-post-docs-face
+       'read-only "Edit your message below."
+       'post-header t)))))
 
 (defun fedi-post--count-post-chars (post-string)
   "Count the characters in POST-STRING."
@@ -544,7 +567,8 @@ MINOR is the minor mode to enable.
 PREFIX is a string corresponding to the prefix of the library
 that contains the compose buffer's functions. It is only required
 if this differs from the minor mode.
-CAPF-FUNS is a list of functions to enable."
+CAPF-FUNS is a list of functions to enable.
+TYPE is a string for the buffer name."
   (let* ((buffer-name (if edit
                           (format "*edit %s*" type)
                         (format "*new %s*" type)))
@@ -554,12 +578,16 @@ CAPF-FUNS is a list of functions to enable."
          (previous-window-config (list (current-window-configuration)
                                        (point-marker))))
     (switch-to-buffer-other-window buffer)
-    (if major (funcall major) (text-mode))
+    ;; `markdown-mode' here breaks any existing docs display:
+    (if major
+        (unless (eq major major-mode)
+          (funcall major))
+      (text-mode))
     (or (funcall minor)
         (fedi-post-mode t))
     (when (eq major 'markdown-mode)
       ;; disable fontifying as it breaks our docs (we fontify by region below)
-      (font-lock-mode -1)
+      (unless buffer-exists (font-lock-mode -1))
       (when (member 'variable-pitch-mode markdown-mode-hook)
         ;; (make-local-variable 'markdown-mode-hook) ; unneeded if we always disable?
         ;; (setq markdown-mode-hook (delete 'variable-pitch-mode markdown-mode-hook))
@@ -587,7 +615,8 @@ CAPF-FUNS is a list of functions to enable."
     (fedi-post--update-status-fields)
     ;; disable for markdown-mode:
     (unless (eq major 'markdown-mode)
-      (cl-pushnew #'fedi-post--propertize-tags-and-handles after-change-functions)
+      (cl-pushnew #'fedi-post--propertize-tags-and-handles
+                  after-change-functions)
       (fedi-post--propertize-tags-and-handles))
     ;; draft post text saving:
     (setq fedi-post-current-post-text nil)

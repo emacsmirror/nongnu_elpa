@@ -108,8 +108,11 @@ SILENT means don't message."
   "Determine if RESPONSE was successful.
 Call SUCCESS if successful. Message status and JSON error from
 RESPONSE if unsuccessful."
-  (let ((status (with-current-buffer response
-                  (fedi-http--status))))
+  (let ((status (condition-case err
+                    (with-current-buffer response
+                      (fedi-http--status))
+                  (wrong-type-argument
+                   "Looks like we got no response from the server."))))
     (cond ((string-prefix-p "2" status)
            (funcall success))
           ((string-prefix-p "404" status)
