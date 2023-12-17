@@ -116,25 +116,28 @@ face. no-label is optional.")
 (defvar fedi-post-handle-regex
   (rx (| (any ?\( "\n" "\t "" ") bol) ; preceding things
       (group-n 1 ; = handle with @
-        ;; (+ ; breaks groups with instance handles!
-        ?@
-        (group-n 2 ; = username only
-          (* (any ?- ?_ ?. "A-Z" "a-z" "0-9" )))
-        (? ?@
-           (group-n 3 ; = optional domain
-             (* (not (any "\n" "\t" " "))))))
-      (| "'" word-boundary))) ; boundary or possessive
+        (+ ; breaks groups with instance handles!
+         ?@
+         (group-n 2 ; = username only
+           (* (any ?- ?_ ?. "A-Z" "a-z" "0-9" )))
+         (? ?@
+            (group-n 3 ; = optional domain
+              (* (not (any "\n" "\t" " ")))))))
+      (| "'" word-boundary)) ; boundary or possessive
+  "Regex for a handle, e.g. @user@instance.com.
+Group 1 is for completion at point functions. Group 2 and 3 are
+for forming a URL.")
 
 (defvar fedi-post-tag-regex
   (rx (| (any ?\( "\n" "\t" " ") bol)
-      (group-n 2 ?# (+ (any "A-Z" "a-z" "0-9")))
-      (| "'" word-boundary)))
-                                        ; boundary or possessive
+      (group-n 1 ?# (+ (any "A-Z" "a-z" "0-9")))
+      (| "'" word-boundary)) ; boundary or possessive
+  "Regex for a tag. Group 1 is for completion at point functions.")
 
 (defvar fedi-post-url-regex
   ;; adapted from `ffap-url-regexp'
   (concat
-   "\\(?2:\\(news\\(post\\)?:\\|mailto:\\|file:\\|\\(ftp\\|https?\\|telnet\\|gopher\\|www\\|wais\\)://\\)"
+   "\\(?1:\\(news\\(post\\)?:\\|mailto:\\|file:\\|\\(ftp\\|https?\\|telnet\\|gopher\\|www\\|wais\\)://\\)"
                                         ; uri prefix
    "[^ \n\t]*\\)" ; any old thing, that is, i.e. we allow invalid/unwise chars
    "\\b"))
@@ -207,13 +210,13 @@ Buffer-local variable `fedi-post-previous-window-config' holds the config."
   (save-match-data
     (save-excursion
       ;; match full handle inc. domain, or tag including #
-      ;; (see the regexes for subexp 2)
+      ;; (see the regexes for subexp 1)
       (when (re-search-backward regex
                                 (save-excursion (forward-whitespace -1)
                                                 (point))
                                 :no-error)
-        (cons (match-beginning 2)
-              (match-end 2))))))
+        (cons (match-beginning 1)
+              (match-end 1))))))
 
 (defun fedi-post--return-capf (regex completion-fun &optional
                                      annot-fun _affix-fun exit-fun)
@@ -534,8 +537,8 @@ Added to `after-change-functions'."
   (save-excursion
     (goto-char start)
     (cl-loop while (search-forward-regexp regex nil :noerror)
-             do (add-text-properties (match-beginning 2)
-                                     (match-end 2)
+             do (add-text-properties (match-beginning 1)
+                                     (match-end 1)
                                      `(face ,face)))))
 
 (defun fedi-post--compose-buffer-p ()
