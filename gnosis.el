@@ -166,22 +166,34 @@ TAGS are used to organize questions."
 	(user-choice (gnosis-mcq-answer id)))
     (if (equal (nth (- answer 1) choices) user-choice)
 	(message "Correct!")
-      (message "False"))))
+      (message "False")))
+  (sit-for 0.5))
 
-(defun gnosis-review (id)
-  "Start review for question ID."
+(defun gnosis-review-note (id)
+  "Start review for note with value of id ID."
   (let ((type (gnosis-get 'type 'notes `(= id id))))
+    (gnosis--display-question id)
     (pcase type
       ("mcq" (gnosis-review-mcq-choices id))
       ("basic" (message "Not Ready yet."))
       ("cloze" (message "Not Ready yet."))
       (_ (error "Malformed note type")))))
 
+(defun gnosis-review ()
+  "Start gnosis session."
+  (interactive)
+  (let ((due-notes (gnosis-review--get-due-notes)))
+    (if (null due-notes)
+	(message "No due notes.")
+      (cl-loop for note in due-notes
+	       do (gnosis-review-note (car note)))))
+  (message "Review session finished."))
+
 ;; Database Schemas
-(defvar gnosis-db-decks-schema '([(id integer :primary-key :autoincrement)
+(defvar gnosis-db-schema-decks '([(id integer :primary-key :autoincrement)
 				  (name text :not-null)]))
 
-(defvar gnosis-db-notes-schema '([(id integer :primary-key :autoincrement)
+(defvar gnosis-db-schema-notes '([(id integer :primary-key :autoincrement)
 				  (type text :not-null)
 				  (main text :not-null)
 				  (options text :not-null)
@@ -191,7 +203,7 @@ TAGS are used to organize questions."
 				 (:foreign-key [deck-id] :references decks [id]
 					       :on-delete :cascade)))
 
-(defvar gnosis-db-review-schema '([(id integer :not-null) ;; note-id
+(defvar gnosis-db-schema-review '([(id integer :not-null) ;; note-id
 				   (ef integer :not-null) ;; Easiness factor
 				   (ff integer :not-null) ;; Forgetting factor
 				   (n integer :not-null) ;; Number of reviews
@@ -199,13 +211,25 @@ TAGS are used to organize questions."
 				  (:foreign-key [id] :references notes [id]
 						:on-delete :cascade)))
 
-(defvar gnosis-db-review-log-schema '([(id integer :not-null) ;; note-id
+(defvar gnosis-db-schema-review-log '([(id integer :not-null) ;; note-id
 				       (last-rev integer :not-null) ;; Last review date
 				       (next-rev integer :not-null) ;; Next review date
-				       (failures integer :not-null)] ;; Number of consecutive review failures
+				       (failures integer :not-null) ;; Number of consecutive review failures
+				       (suspend  integer :not-null)];; binary value, 1 = suspend note
 				      (:foreign-key [id] :references notes [id]
 						    :on-delete :cascade)))
 
+(defvar gnosis-db-schema-tags '([(id integer :primary-key :autoincrement)
+				 (name text :not-null)]))
+
+(defvar gnosis-db-schema-tags-notes '([(tag-id integer :not-null)
+				       (note-id integer :not-null)]
+				      (:foreign-key [tag-id] :references tags [id]
+						    :on-delete :cascade)
+				      (:foreign-key [note-id] :references notes [id]
+						    :on-delete :cascade)))
+;; Enable foreign_keys
+(emacsql gnosis-db "PRAGMA foreign_keys = ON")
 
 ;; testing
 (defun gnosis-test-buffer ()
