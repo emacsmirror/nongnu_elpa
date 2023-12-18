@@ -155,6 +155,10 @@ TAGS are used to organize questions."
 	(history-add-new-input nil)) ;; Disable history
     (completing-read "Answer: " choices)))
 
+(defun gnosis-review--get-due-notes ()
+  "Get due notes for current date."
+  (gnosis--select 'id 'review-log `(<= next-rev ',(gnosis-algorithm-date))))
+
 (defun gnosis-review-mcq-choices (id)
   "Display multiple choice answers for question ID."
   (let ((answer (gnosis-get 'answer 'notes `(= id ,id)))
