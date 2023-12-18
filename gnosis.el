@@ -1,4 +1,4 @@
-;;; gnosis.el --- Learning tool for GNU Emacs  -*- lexical-binding: t; -*-
+;;; gnosis.el --- Spaced Repetition Learning Tool  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2023  Thanos Apollo
 
@@ -34,6 +34,7 @@
 
 (require 'emacsql)
 (require 'cl-lib)
+(require 'gnosis-algorithm)
 (require 'animate)
 
 (defgroup gnosis nil
