@@ -158,6 +158,20 @@ TAGS are used to organize questions."
 	(history-add-new-input nil)) ;; Disable history
     (completing-read "Answer: " choices)))
 
+;; Review
+(defun gnosis-review--algorithm (id success)
+  "Get next review date & ef for note with value of id ID.
+
+SUCCESS is a binary value, 1 = success, 0 = failure.
+Returns a list of the form ((yyyy mm dd) ef)."
+  (let ((ff gnosis-algorithm-ff)
+	(ef (nth 2 (gnosis-get 'ef 'review `(= id 1)))))
+    (gnosis-algorithm-next-interval (gnosis-review--get-offset id)
+				    (gnosis-get 'n 'review-log `(= id ,id))
+				    ef
+				    success
+				    ff)))
+
 (defun gnosis-review--get-due-notes ()
   "Get due notes for current date."
   (gnosis--select 'id 'review-log `(<= next-rev ',(gnosis-algorithm-date))))
