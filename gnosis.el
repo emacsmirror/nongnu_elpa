@@ -176,6 +176,11 @@ Returns a list of the form ((yyyy mm dd) ef)."
   "Get due notes for current date."
   (gnosis--select 'id 'review-log `(<= next-rev ',(gnosis-algorithm-date))))
 
+(defun gnosis-review--get-offset (id)
+  "Get offset for note with value of id ID."
+  (let ((last-rev (gnosis-get 'last-rev 'review-log `(= id ,id))))
+    (gnosis-algorithm-date-diff last-rev)))
+
 (defun gnosis-review-mcq-choices (id)
   "Display multiple choice answers for question ID."
   (let ((answer (gnosis-get 'answer 'notes `(= id ,id)))
