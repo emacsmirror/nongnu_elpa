@@ -77,9 +77,12 @@ Example:
 (defun gnosis--display-question (id)
   "Display main row for question ID."
   (let ((question (gnosis-get 'main 'notes `(= id ,id))))
-    (erase-buffer)
-    (insert question 1)
-    (sit-for 0.5)))
+    (with-current-buffer
+	(switch-to-buffer
+	 (get-buffer-create "*gnosis*"))
+      (erase-buffer)
+      (insert question)
+      (sit-for 0.5))))
 
 (defun gnosis--ask-input (prompt)
   "PROMPT user for input until `q' is given.
