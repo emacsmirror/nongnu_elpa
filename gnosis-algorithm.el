@@ -117,7 +117,7 @@ Returns a tuple: (INTERVAL N EF) where,
            (t (if (= success 1)
                   (* ef last-interval)
                 (* ff last-interval))))))
-    (list (round interval) (1+ n) next-ef)))
+    (list (gnosis-algorithm-date (round interval)) (1+ n) next-ef)))
 
 (provide 'gnosis-algorithm)
 ;;; gnosis-algorithm.el ends here
