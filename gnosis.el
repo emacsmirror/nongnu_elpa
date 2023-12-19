@@ -189,7 +189,12 @@ TAGS are used to organize questions."
 	       do (gnosis-review-note (car note)))))
   (message "Review session finished."))
 
-;; Database Schemas
+;;; Database Schemas
+;; Enable foreign_keys
+;; TODO: Redo when eval
+(emacsql gnosis-db "PRAGMA foreign_keys = ON")
+
+
 (defvar gnosis-db-schema-decks '([(id integer :primary-key :autoincrement)
 				  (name text :not-null)]))
 
@@ -206,30 +211,18 @@ TAGS are used to organize questions."
 (defvar gnosis-db-schema-review '([(id integer :not-null) ;; note-id
 				   (ef integer :not-null) ;; Easiness factor
 				   (ff integer :not-null) ;; Forgetting factor
-				   (n integer :not-null) ;; Number of reviews
 				   (interval integer :not-null)] ;; Interval
 				  (:foreign-key [id] :references notes [id]
 						:on-delete :cascade)))
 
-(defvar gnosis-db-schema-review-log '([(id integer :not-null) ;; note-id
+(defvar gnosis-db-schema-review-log '([(id integer :not-null)       ;; note-id
 				       (last-rev integer :not-null) ;; Last review date
 				       (next-rev integer :not-null) ;; Next review date
 				       (failures integer :not-null) ;; Number of consecutive review failures
-				       (suspend  integer :not-null)];; binary value, 1 = suspend note
+				       (suspend  integer :not-null) ;; binary value, 1 = suspend note
+				       (n integer :not-null)]       ;; Number of reviews
 				      (:foreign-key [id] :references notes [id]
 						    :on-delete :cascade)))
-
-(defvar gnosis-db-schema-tags '([(id integer :primary-key :autoincrement)
-				 (name text :not-null)]))
-
-(defvar gnosis-db-schema-tags-notes '([(tag-id integer :not-null)
-				       (note-id integer :not-null)]
-				      (:foreign-key [tag-id] :references tags [id]
-						    :on-delete :cascade)
-				      (:foreign-key [note-id] :references notes [id]
-						    :on-delete :cascade)))
-;; Enable foreign_keys
-(emacsql gnosis-db "PRAGMA foreign_keys = ON")
 
 ;; testing
 (defun gnosis-test-buffer ()
@@ -254,13 +247,13 @@ TAGS are used to organize questions."
   ;; Enable foreign_keys
   (emacsql gnosis-db "PRAGMA foreign_keys = ON")
   ;; Create decks table
-  (gnosis--create-table 'decks gnosis-db-decks-schema)
+  (gnosis--create-table 'decks gnosis-db-schema-decks)
   ;; Create notes table
-  (gnosis--create-table 'notes gnosis-db-notes-schema)
+  (gnosis--create-table 'notes gnosis-db-schema-notes)
   ;; Create review table
-  (gnosis--create-table 'review gnosis-db-review-schema)
+  (gnosis--create-table 'review gnosis-db-schema-review)
   ;; Create review-log table
-  (gnosis--create-table 'review-log gnosis-db-review-log-schema)
+  (gnosis--create-table 'review-log gnosis-db-schema-review-log)
   (gnosis-add-deck "Anatomy"))
 
 ;; Gnosis mode ;;
