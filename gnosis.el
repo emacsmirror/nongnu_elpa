@@ -190,6 +190,14 @@ SUCCESS is a binary value, 1 = success, 0 = failure."
     (if (equal success 1)
 	(nth 0 ef)
       (nth 1 ef))))
+
+(defun gnosis-review--success (id)
+  "Update review-log for note with value of id ID."
+  (let ((ef (gnosis-review--new-ef id 1)))
+    ;; (gnosis-update 'review-log `(= last-rev ',(gnosis-algorithm-date)) `(= id ,id))
+    (gnosis-update 'review-log `(= next-rev ',(car (gnosis-review--algorithm id 1))) `(= id ,id))
+    (gnosis-update 'review `(= ef ,ef) `(= id ,id))))
+
 (defun gnosis-review-mcq-choices (id)
   "Display multiple choice answers for question ID."
   (let ((answer (gnosis-get 'answer 'notes `(= id ,id)))
