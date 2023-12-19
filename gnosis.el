@@ -139,13 +139,13 @@ TAGS are used to organize questions."
   (gnosis--insert-into 'notes `([nil "mcq" ,question ,choices ,correct-answer ,tags ,deck]))
   ;; Get last inserted note-id
   (let ((note-id (caar (last (gnosis--select 'id 'notes))))
-	(date (gnosis-date-current)))
-    (gnosis--insert-into 'review `([,note-id ,gnosis-ef ,gnosis-ff 0 0]))
-    (gnosis--insert-into 'review-log `([,note-id 0 ,date 0 0]))))
+	(date (gnosis-algorithm-date)))
+    (gnosis--insert-into 'review `([,note-id ,gnosis-algorithm-ef ,gnosis-algorithm-ff ,gnosis-algorithm-interval]))
+    (gnosis--insert-into 'review-log `([,note-id ,date ,date 0 0 0]))))
 
 (defun gnosis-add-note (type)
   "Create note as TYPE."
-  (interactive (list (completing-read "Type: " '(MCQ Cloze Basic))))
+  (interactive (list (completing-read "Type: " '(MCQ Cloze Basic) nil t)))
   (pcase type
     ("MCQ" (call-interactively 'gnosis-add-note-mcq))
     ("Cloze" (message "Not ready yet."))
