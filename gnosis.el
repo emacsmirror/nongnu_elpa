@@ -181,6 +181,15 @@ Returns a list of the form ((yyyy mm dd) ef)."
   (let ((last-rev (gnosis-get 'last-rev 'review-log `(= id ,id))))
     (gnosis-algorithm-date-diff last-rev)))
 
+(defun gnosis-review--new-ef (id success)
+  "Update ef for note with value of id ID.
+
+SUCCESS is a binary value, 1 = success, 0 = failure."
+  (cl-assert (or (equal success 1) (equal success 0)))
+  (let ((ef (gnosis-review--algorithm id success)))
+    (if (equal success 1)
+	(nth 0 ef)
+      (nth 1 ef))))
 (defun gnosis-review-mcq-choices (id)
   "Display multiple choice answers for question ID."
   (let ((answer (gnosis-get 'answer 'notes `(= id ,id)))
