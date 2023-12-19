@@ -31,7 +31,7 @@
 (require 'cl-lib)
 (require 'calendar)
 
-(defcustom gnosis-interval '(1 3)
+(defcustom gnosis-algorithm-interval '(1 3)
   "Gnosis initial interval.
 
 Interval by which a new question is displayed or when it's ef is at 1.3.
@@ -70,13 +70,11 @@ Optional integer OFFSET is a number of days from the current date."
                    (+ offset (calendar-absolute-from-gregorian now))))))
       (list (nth 2 date) (nth 0 date) (nth 1 date)))))
 
-
 (defun gnosis-algorithm-date-diff (year month day)
   "Find the difference between the current date and the given date.
 
 The structure of the given date is (YEAR MONTH DAY)."
-  (let ((current-date (gnosis-algorithm-date))
-	(given-date (encode-time 0 0 0 day month year)))
+  (let ((given-date (encode-time 0 0 0 day month year)))
     (- (time-to-days (current-time))
        (time-to-days given-date))))
 
@@ -86,9 +84,9 @@ The structure of the given date is (YEAR MONTH DAY)."
    ((not (numberp quality))
     (error "Invalid argument passed to gnosis-algorithm-e-factor"))
    ((= quality 0) ;; If the quality score is 0 (fail), decrease the ef by a small penalty
-    (max 1.3 (- ef (cadr gnosis-ef))))
+    (max 1.3 (- ef (cadr gnosis-algorithm-ef))))
    ((= quality 1) ;; If the quality score is 1 (pass), increase the ef by a small reward
-    (+ ef (car gnosis-ef)))
+    (+ ef (car gnosis-algorithm-ef)))
    (t (error "Invalid quality score passed to gnosis-algorithm-e-factor"))))
 
 (defun gnosis-algorithm-next-interval (last-interval n ef success ff)
@@ -101,7 +99,7 @@ The structure of the given date is (YEAR MONTH DAY)."
 - FF: Failure factor
 
 Returns a tuple: (INTERVAL N EF) where,
-- INTERVAL : The number of days until the item should next be reviewed.
+- Next review date in (year month day) format.
 - N : Incremented by 1.
 - EF : Modified based on the recall success for the item."
   (cl-assert (and (>= success 0)
@@ -111,12 +109,10 @@ Returns a tuple: (INTERVAL N EF) where,
          ;; Calculate the next interval.
          (interval
           (cond
-	   ;; Show item same day on the first review
-	   ((= n 0) 0)
            ;; Immediately next day if it's the first time review.
-           ((<= n 1) (car gnosis-interval))
+           ((<= n 1) (car gnosis-algorithm-interval))
            ;; After 3 days if it's second review.
-           ((= n 2) (cadr gnosis-interval))
+           ((= n 2) (cadr gnosis-algorithm-interval))
            ;; Increase last interval by 1 if recall was successful. Keep last interval if unsuccessful.
            (t (if (= success 1)
                   (* ef last-interval)
