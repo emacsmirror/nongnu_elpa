@@ -33,9 +33,9 @@
 
 
 (require 'emacsql)
+(require 'emacsql-sqlite)
 (require 'cl-lib)
 (require 'gnosis-algorithm)
-(require 'animate)
 
 (defgroup gnosis nil
   "Spaced repetition learning tool."
