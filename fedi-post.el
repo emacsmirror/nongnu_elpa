@@ -400,24 +400,23 @@ descriptions."
                  longest-kbind)
                 nil))))
 
-(defun fedi-post--concat-fields (fields-alist)
-  "Concat FIELDS-ALIST for compose buffer docs."
-  (cl-loop for item in fields-alist
+(defun fedi-post--concat-fields (fields)
+  "Concat FIELDS for compose buffer docs."
+  (cl-loop for item in fields
            for field = (alist-get 'name item)
            concat (propertize (capitalize field)
                               (intern
                                (concat "post-" (downcase field)))
                               t)))
 
-(defun fedi-post--display-docs-and-status-fields (&optional mode prefix
-                                                            fields-alist)
+(defun fedi-post--display-docs-and-status-fields (&optional mode prefix fields)
   "Insert propertized text with documentation about MODE or `fedi-post-mode'.
 Also includes and the status fields which will get updated based
 on the status of NSFW, language, media attachments, etc.
 PREFIX is a string corresponding to the prefix of the minor mode
 enabled. It is used for constructing clean keybinding
 descriptions.
-FIELDS-ALIST is an alist of fields to add, using `fedi-post--concat-fields'."
+FIELDS is a list of alists of fields to add, using `fedi-post--concat-fields'."
   (let ((divider
          "|=================================================================|"))
     (insert
@@ -430,8 +429,10 @@ FIELDS-ALIST is an alist of fields to add, using `fedi-post--concat-fields'."
         ;; (propertize "Count"
         ;; 'post-post-counter t)
         ;; " ⋅ "
-        (fedi-post--concat-fields fields-alist)
-        "\n "
+        (if fields
+            (concat (fedi-post--concat-fields fields)
+                    "\n ")
+          "")
         (propertize "Language"
                     'post-language t)
         " "
@@ -558,11 +559,12 @@ Added to `after-change-functions'."
           (fill-region (prop-match-beginning prop)
                        (point)))))))
 
+
 
 ;;; COMPOSE BUFFER FUNCTION
 
 (defun fedi-post--compose-buffer
-    (&optional edit major minor prefix type capf-funs &rest fields-alist)
+    (&optional edit major minor prefix type capf-funs fields)
   "Create a new buffer to capture text for a new post.
 EDIT means we are editing an existing post, not composing a new one.
 MAJOR is the major mode to enable.
@@ -571,7 +573,9 @@ PREFIX is a string corresponding to the prefix of the library
 that contains the compose buffer's functions. It is only required
 if this differs from the minor mode.
 CAPF-FUNS is a list of functions to enable.
-TYPE is a string for the buffer name."
+TYPE is a string for the buffer name.
+FIELDS is a list of alists containing status fields for bindings
+and options display."
   (let* ((buffer-name (if edit
                           (format "*edit %s*" type)
                         (format "*new %s*" type)))
@@ -596,7 +600,7 @@ TYPE is a string for the buffer name."
         ;; (setq markdown-mode-hook (delete 'variable-pitch-mode markdown-mode-hook))
         (variable-pitch-mode -1)))
     (unless buffer-exists
-      (fedi-post--display-docs-and-status-fields minor prefix fields-alist))
+      (fedi-post--display-docs-and-status-fields minor prefix fields))
     ;; set up completion:
     (when fedi-post--enable-completion
       (set (make-local-variable 'completion-at-point-functions)
@@ -614,7 +618,8 @@ TYPE is a string for the buffer name."
     (make-local-variable 'after-change-functions)
     ;; (cl-pushnew #'fedi-post--save-post-text after-change-functions)
     (cl-pushnew #'fedi-post--update-status-fields after-change-functions)
-    (setq fedi-post-status-fields-items fields-alist)
+    (when fields
+      (setq fedi-post-status-fields-items fields))
     (fedi-post--update-status-fields)
     ;; disable for markdown-mode:
     (unless (eq major 'markdown-mode)
