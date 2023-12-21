@@ -41,11 +41,12 @@ Second item: Second interval."
   :group 'gnosis
   :type 'list)
 
-(defcustom gnosis-algorithm-ef '(0.3 0.3)
+(defcustom gnosis-algorithm-ef '(0.3 0.3 1.3)
   "Gnosis easiness factor.
 
 First item : Increase factor
-Second item: Decrease factor"
+Second item: Decrease factor
+Third item : Starting ef"
   :group 'gnosis
   :type 'list)
 
