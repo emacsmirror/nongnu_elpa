@@ -71,11 +71,12 @@ Optional integer OFFSET is a number of days from the current date."
                    (+ offset (calendar-absolute-from-gregorian now))))))
       (list (nth 2 date) (nth 0 date) (nth 1 date)))))
 
-(defun gnosis-algorithm-date-diff (year month day)
-  "Find the difference between the current date and the given date.
+(defun gnosis-algorithm-date-diff (date)
+  "Find the difference between the current date and the given DATE.
 
+DATE format must be given as (yyyy mm dd)
 The structure of the given date is (YEAR MONTH DAY)."
-  (let ((given-date (encode-time 0 0 0 day month year)))
+  (let ((given-date (encode-time 0 0 0 (caddr date) (cadr date) (car date))))
     (- (time-to-days (current-time))
        (time-to-days given-date))))
 
@@ -118,7 +119,7 @@ Returns a tuple: (INTERVAL N EF) where,
            (t (if (= success 1)
                   (* ef last-interval)
                 (* ff last-interval))))))
-    (list (gnosis-algorithm-date (round interval)) (1+ n) next-ef)))
+    (list (gnosis-algorithm-date (round interval)) next-ef)))
 
 (provide 'gnosis-algorithm)
 ;;; gnosis-algorithm.el ends here
