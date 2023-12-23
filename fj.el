@@ -385,7 +385,7 @@ PARAMS."
 (define-derived-mode fj-list-issue-mode tabulated-list-mode
   "fj-issues"
   "Major mode for browsing a list of issues."
-  (setq tabulated-list-padding 2)
+  (setq tabulated-list-padding 0) ;2) ; point directly on issue
   (setq tabulated-list-format (vector (list "#" 3 t) (list "Issue" 2 t))))
 
 (define-button-type 'fj-button
