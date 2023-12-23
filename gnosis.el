@@ -181,15 +181,13 @@ Returns a list of the form ((yyyy mm dd) ef)."
   (let ((last-rev (gnosis-get 'last-rev 'review-log `(= id ,id))))
     (gnosis-algorithm-date-diff last-rev)))
 
-(defun gnosis-review--new-ef (id success)
-  "Update ef for note with value of id ID.
+(defun gnosis-review-round (num)
+  "Round NUM to 1 decimal.
 
-SUCCESS is a binary value, 1 = success, 0 = failure."
-  (cl-assert (or (equal success 1) (equal success 0)))
-  (let ((ef (gnosis-review--algorithm id success)))
-    (if (equal success 1)
-	(nth 0 ef)
-      (nth 1 ef))))
+This function is used to round floating point numbers to 1 decimal,
+such as the easiness factor (ef)."
+  (/ (round (* num 100.00)) 100.00))
+
 
 (defun gnosis-review--success (id)
   "Update review-log for note with value of id ID."
