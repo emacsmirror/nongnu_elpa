@@ -172,7 +172,7 @@ Returns a list of the form ((yyyy mm dd) ef)."
 				    success
 				    ff)))
 
-(defun gnosis-review--get-due-notes ()
+(defun gnosis-review-get-due-notes ()
   "Get due notes for current date."
   (gnosis--select 'id 'review-log `(<= next-rev ',(gnosis-algorithm-date))))
 
@@ -193,10 +193,13 @@ SUCCESS is a binary value, 1 = success, 0 = failure."
 
 (defun gnosis-review--success (id)
   "Update review-log for note with value of id ID."
-  (let ((ef (gnosis-review--new-ef id 1)))
-    ;; (gnosis-update 'review-log `(= last-rev ',(gnosis-algorithm-date)) `(= id ,id))
+  (let ((ef (gnosis-review-new-ef id 1)))
+    ;; Update review-log
+    (gnosis-update 'review-log `(= last-rev ',(gnosis-algorithm-date)) `(= id ,id))
     (gnosis-update 'review-log `(= next-rev ',(car (gnosis-review--algorithm id 1))) `(= id ,id))
-    (gnosis-update 'review `(= ef ,ef) `(= id ,id))))
+    (gnosis-update 'review-log `(= n (+ 1 ,(gnosis-get 'n 'review-log `(= id ,id)))) `(= id ,id))
+    ;; Update review
+    (gnosis-update 'review `(= ef ',ef) `(= id ,id))))
 
 (cl-defun gnosis-review-update--last-rev (id)
   "Update last-rev, from review-log, for note with value of id ID.
@@ -228,7 +231,8 @@ Change last-rev to current date."
 (defun gnosis-review ()
   "Start gnosis session."
   (interactive)
-  (let ((due-notes (gnosis-review--get-due-notes)))
+  (let ((due-notes (gnosis-review-get-due-notes))
+	(note-count 0))
     (if (null due-notes)
 	(message "No due notes.")
       (cl-loop for note in due-notes
