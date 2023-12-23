@@ -165,7 +165,7 @@ TAGS are used to organize questions."
 SUCCESS is a binary value, 1 = success, 0 = failure.
 Returns a list of the form ((yyyy mm dd) ef)."
   (let ((ff gnosis-algorithm-ff)
-	(ef (nth 2 (gnosis-get 'ef 'review `(= id 1)))))
+	(ef (nth 2 (gnosis-get 'ef 'review `(= id ,id)))))
     (gnosis-algorithm-next-interval (gnosis-review--get-offset id)
 				    (gnosis-get 'n 'review-log `(= id ,id))
 				    ef
