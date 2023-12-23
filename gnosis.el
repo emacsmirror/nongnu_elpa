@@ -275,17 +275,6 @@ Returns a list of the form (ef-increase ef-decrease ef)."
 				      (:foreign-key [id] :references notes [id]
 						    :on-delete :cascade)))
 
-;; testing
-(defun gnosis-test-buffer ()
-  "Create testing buffer."
-  (interactive)
-  (with-current-buffer
-      (switch-to-buffer (get-buffer-create "*gnosis*"))
-    (read-only-mode 0)
-    (erase-buffer)
-    (gnosis--display-question 4)
-    (gnosis-review 4)
-    (gnosis-mode)))
 
 (defun gnosis-init ()
   "Create notes content table."
