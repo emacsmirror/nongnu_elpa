@@ -207,13 +207,6 @@ Returns a list of the form (ef-increase ef-decrease ef)."
     ;; Update review
     (gnosis-update 'review `(= ef ',ef) `(= id ,id))))
 
-(cl-defun gnosis-review-update--last-rev (id)
-  "Update last-rev, from review-log, for note with value of id ID.
-
-Change last-rev to current date."
-  (let ((date (gnosis-algorithm-date)))
-    (gnosis-update 'review-log `(= last-rev ',date) `(= id ,id))))
-
 (defun gnosis-review-mcq (id)
   "Display multiple choice answers for question ID."
   (let ((answer (gnosis-get 'answer 'notes `(= id ,id)))
