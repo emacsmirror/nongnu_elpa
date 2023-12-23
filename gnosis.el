@@ -214,13 +214,14 @@ Change last-rev to current date."
   (let ((date (gnosis-algorithm-date)))
     (gnosis-update 'review-log `(= last-rev ',date) `(= id ,id))))
 
-(defun gnosis-review-mcq-choices (id)
+(defun gnosis-review-mcq (id)
   "Display multiple choice answers for question ID."
   (let ((answer (gnosis-get 'answer 'notes `(= id ,id)))
 	(choices (gnosis-get 'options 'notes `(= id ,id)))
 	(user-choice (gnosis-mcq-answer id)))
     (if (equal (nth (- answer 1) choices) user-choice)
-	(message "Correct!")
+        (progn (gnosis-review--success id)
+	       (message "Correct!"))
       (message "False")))
   (sit-for 0.5))
 
@@ -229,7 +230,7 @@ Change last-rev to current date."
   (let ((type (gnosis-get 'type 'notes `(= id id))))
     (gnosis--display-question id)
     (pcase type
-      ("mcq" (gnosis-review-mcq-choices id))
+      ("mcq" (gnosis-review-mcq id))
       ("basic" (message "Not Ready yet."))
       ("cloze" (message "Not Ready yet."))
       (_ (error "Malformed note type")))))
@@ -242,8 +243,9 @@ Change last-rev to current date."
     (if (null due-notes)
 	(message "No due notes.")
       (cl-loop for note in due-notes
-	       do (gnosis-review-note (car note)))))
-  (message "Review session finished."))
+	       do (progn (gnosis-review-note (car note))
+			 (setf note-count (+ note-count 1)))
+	       finally (message "Review session finished. %d note(s) reviewed." note-count)))))
 
 ;;; Database Schemas
 ;; Enable foreign_keys
