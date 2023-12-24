@@ -109,10 +109,10 @@ JSON."
 
 (defun fj-current-dir-repo ()
   "If we are in a repository, return its name."
-  (if (magit-git-repo-p default-directory)
+  (if (magit-inside-worktree-p)
       (file-name-nondirectory
-       (directory-file-name default-directory))))
-    ;; (fj-read-user-repo)))
+       (directory-file-name
+        (magit-toplevel)))))
 
 (defun fj-get-repos ()
   "Return the user's repos."
