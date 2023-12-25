@@ -257,7 +257,7 @@ Returns a list of the form (ef-increase ef-decrease ef)."
 				  (options text :not-null)
 				  (answer text :not-null)
 				  (tags text :default untagged)
-				  (deck-id integer)]
+				  (deck-id integer :not-null)]
 				 (:foreign-key [deck-id] :references decks [id]
 					       :on-delete :cascade)))
 
