@@ -130,7 +130,7 @@ Set SPLIT to t to split all input given."
   (gnosis--delete 'decks `(= name ,deck))
   (message "Deleted deck %s" deck))
 
-(cl-defun gnosis-add-note-mcq (&key deck question choices correct-answer extra tags)
+(cl-defun gnosis-add-note-mcq (&key deck question choices correct-answer extra tags (suspend 0))
   "Create a NOTE with a list of multiple CHOICES.
 
 MCQ type consists of a main `QUESTION' that is displayed to the user.
@@ -138,8 +138,9 @@ The user will be prompted to select the correct answer from a list of
 `CHOICES'. The `CORRECT-ANSWER' should be the index of the correct
 choice in the `CHOICES' list. Each note must correspond to one `DECK'.
 
-EXTRA are extra information displayed after an answer is given.
-TAGS are used to organize questions."
+`EXTRA' are extra information displayed after an answer is given.
+`TAGS' are used to organize questions.
+`SUSPEND' is a binary value, where 1 is for suspend."
   (interactive
    (list :deck (gnosis--get-deck-name)
 	 :question (read-string "Question: ")
@@ -154,7 +155,7 @@ TAGS are used to organize questions."
 	 (setq tags 'untagged)))
   (gnosis--insert-into 'notes `([nil "mcq" ,question ,choices ,correct-answer ,tags ,(gnosis--get-deck-id deck)]))
   (gnosis--insert-into 'review `([nil ,gnosis-algorithm-ef ,gnosis-algorithm-ff ,gnosis-algorithm-interval]))
-  (gnosis--insert-into 'review-log `([nil ,(gnosis-algorithm-date) ,(gnosis-algorithm-date) 0 0 0]))
+  (gnosis--insert-into 'review-log `([nil ,(gnosis-algorithm-date) ,(gnosis-algorithm-date) 0 ,suspend 0]))
   (gnosis--insert-into 'extras `([nil ,extra nil])))
 
 (defun gnosis-add-note (type)
