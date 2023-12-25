@@ -36,6 +36,7 @@
 (require 'emacsql-sqlite)
 (require 'cl-lib)
 (require 'gnosis-algorithm)
+(require 'gnosis-faces)
 
 (defgroup gnosis nil
   "Spaced repetition learning tool."
@@ -81,13 +82,14 @@ Example:
 	(switch-to-buffer
 	 (get-buffer-create "*gnosis*"))
       (erase-buffer)
-      (fill-paragraph (insert question)))))
+      (fill-paragraph (insert (propertize question 'face 'gnosis-face-main))))))
 
 (defun gnosis-display--extra (id)
   "Display extra information for note ID."
   (let ((extras (gnosis-get 'extra-notes 'extras `(= id ,id))))
     (with-current-buffer (switch-to-buffer (get-buffer-create "*gnosis*"))
-      (fill-paragraph (insert (concat "\n\n" extras))))))
+      (insert (propertize "\n\n-----\n" 'face 'gnosis-face-seperator))
+      (fill-paragraph (insert (concat "\n" (propertize extras 'face 'gnosis-face-extra)))))))
 
 (cl-defun gnosis--prompt (prompt &optional (downcase nil) (split nil))
   "PROMPT user for input until `q' is given.
