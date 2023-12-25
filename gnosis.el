@@ -277,12 +277,18 @@ Returns a list of the form (ef-increase ef-decrease ef)."
 				      (:foreign-key [id] :references notes [id]
 						    :on-delete :cascade)))
 
+(defvar gnosis-db-schema-extras '([(id integer :primary-key :not-null)
+				   (extra-notes string)
+				   (images string)]
+				  (:foreign-key [id] :references notes [id]
+						:on-delete :cascade)))
+
 
 (defun gnosis-init ()
   "Create notes content table."
   (interactive)
   ;;(make-directory (concat user-emacs-directory "gnosis"))
-  (dolist (table '(notes decks review review-log))
+  (dolist (table '(notes decks review review-log extras))
     (condition-case nil
 	(gnosis--drop-table table)
       (error (message "No %s table to drop." table))))
@@ -296,6 +302,8 @@ Returns a list of the form (ef-increase ef-decrease ef)."
   (gnosis--create-table 'review gnosis-db-schema-review)
   ;; Create review-log table
   (gnosis--create-table 'review-log gnosis-db-schema-review-log)
+  ;; Create extras table
+  (gnosis--create-table 'extras gnosis-db-schema-extras)
   (gnosis-add-deck "Anatomy"))
 
 ;; Gnosis mode ;;
