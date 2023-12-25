@@ -239,14 +239,19 @@ Returns a list of the form (ef-increase ef-decrease ef)."
 (defun gnosis-review ()
   "Start gnosis session."
   (interactive)
-  (let ((due-notes (gnosis-review-get-due-notes))
-	(note-count 0))
+  (let* ((due-notes (gnosis-review-get-due-notes))
+         (note-count 0)
+         (total-notes (length due-notes)))
     (if (null due-notes)
-	(message "No due notes.")
+        (message "No due notes.")
       (cl-loop for note in due-notes
-	       do (progn (gnosis-review-note (car note))
-			 (setf note-count (+ note-count 1)))
-	       finally (message "Review session finished. %d note(s) reviewed." note-count)))))
+               do (progn
+                    (gnosis-review-note (car note))
+                    (setf note-count (+ note-count 1))
+                    (when (and (< note-count total-notes)
+                               (not (y-or-n-p "Review next note?")))
+                      (cl-return)))
+               finally (message "Review session finished. %d note(s) reviewed." note-count)))))
 
 ;;; Database Schemas
 ;; Enable foreign_keys
