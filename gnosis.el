@@ -261,14 +261,14 @@ Returns a list of the form (ef-increase ef-decrease ef)."
 				 (:foreign-key [deck-id] :references decks [id]
 					       :on-delete :cascade)))
 
-(defvar gnosis-db-schema-review '([(id integer :not-null) ;; note-id
+(defvar gnosis-db-schema-review '([(id integer :primary-key :not-null) ;; note-id
 				   (ef integer :not-null) ;; Easiness factor
 				   (ff integer :not-null) ;; Forgetting factor
 				   (interval integer :not-null)] ;; Interval
 				  (:foreign-key [id] :references notes [id]
 						:on-delete :cascade)))
 
-(defvar gnosis-db-schema-review-log '([(id integer :not-null)       ;; note-id
+(defvar gnosis-db-schema-review-log '([(id integer :primary-key :not-null) ;; note-id
 				       (last-rev integer :not-null) ;; Last review date
 				       (next-rev integer :not-null) ;; Next review date
 				       (failures integer :not-null) ;; Number of consecutive review failures
