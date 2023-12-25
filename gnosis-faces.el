@@ -46,10 +46,14 @@
   :group 'gnosis-face-faces)
 
 (defface gnosis-face-seperator
-  '((t :inherit homoglyph))
+  '((t :inherit warning))
   "Face for section seperator."
   :group 'gnosis-face)
 
+(defface gnosis-face-correct-answer
+  '((t :inherit info-xref))
+  "Face for section seperator."
+  :group 'gnosis-face)
 
 (provide 'gnosis-faces)
 ;;; gnosis-faces.el ends here
