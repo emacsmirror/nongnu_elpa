@@ -240,9 +240,10 @@ Returns a list of the form (ef-increase ef-decrease ef)."
     (if (equal (nth (- answer 1) choices) user-choice)
         (progn (gnosis-review--success id)
 	       (message "Correct!"))
-      (message "False")))
-  (gnosis-display--correct-answer-mcq id)
-  (gnosis-display--extra id))
+      (message "False"))
+    (sit-for 0.5)
+    (gnosis-display--correct-answer-mcq id user-choice)
+    (gnosis-display--extra id)))
 
 (defun gnosis-review-note (id)
   "Start review for note with value of id ID."
