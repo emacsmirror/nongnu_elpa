@@ -55,6 +55,11 @@
   "Face for section seperator."
   :group 'gnosis-face)
 
+(defface gnosis-face-user-choice
+  '((t :inherit underline))
+  "Face for user choice."
+  :group 'gnosis-face)
+
 (provide 'gnosis-faces)
 ;;; gnosis-faces.el ends here
 
