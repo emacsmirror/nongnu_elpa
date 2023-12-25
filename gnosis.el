@@ -225,8 +225,13 @@ Returns a list of the form ((yyyy mm dd) ef)."
 				    ff)))
 
 (defun gnosis-review-get-due-notes ()
-  "Get due notes for current date."
-  (gnosis--select 'id 'review-log `(<= next-rev ',(gnosis-algorithm-date))))
+  "Get due notes id for current date.
+
+Select notes where:
+ - Next review schedulated date <= current date
+ - Not suspended."
+  (emacsql gnosis-db [:select [id] :from review-log :where (and (<= next-rev ',(gnosis-algorithm-date))
+								(not suspend))]))
 
 (defun gnosis-review--get-offset (id)
   "Get offset for note with value of id ID."
