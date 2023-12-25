@@ -119,13 +119,15 @@ the returns the list of inputs in reverse order."
   (gnosis--delete 'decks `(= name ,deck))
   (message "Deleted deck %s" deck))
 
-(cl-defun gnosis-add-note-mcq (&key deck question choices correct-answer tags)
+(cl-defun gnosis-add-note-mcq (&key deck question choices correct-answer extra tags)
   "Create a NOTE with a list of multiple CHOICES.
 
 MCQ type consists of a main `QUESTION' that is displayed to the user.
 The user will be prompted to select the correct answer from a list of
 `CHOICES'. The `CORRECT-ANSWER' should be the index of the correct
 choice in the `CHOICES' list. Each note must correspond to one `DECK'.
+
+EXTRA are extra information displayed after an answer is given.
 TAGS are used to organize questions."
   (interactive
    (list :deck (gnosis--get-deck-id)
@@ -133,17 +135,16 @@ TAGS are used to organize questions."
          :choices (gnosis--ask-input "Choices")
 	 ;; NOTE: string-to-number transforms non-number strings to 0
          :correct-answer (string-to-number (read-string "Which is the correct answer (number)? "))
+	 :extra (read-string "Extra: ")
 	 :tags (gnosis--ask-input "Tags")))
   (cond ((or (not (numberp correct-answer)) (equal correct-answer 0))
 	 (error "Correct answer value must be the index number of the correct answer"))
 	((null tags)
 	 (setq tags 'untagged)))
   (gnosis--insert-into 'notes `([nil "mcq" ,question ,choices ,correct-answer ,tags ,deck]))
-  ;; Get last inserted note-id
-  (let ((note-id (caar (last (gnosis--select 'id 'notes))))
-	(date (gnosis-algorithm-date)))
-    (gnosis--insert-into 'review `([,note-id ,gnosis-algorithm-ef ,gnosis-algorithm-ff ,gnosis-algorithm-interval]))
-    (gnosis--insert-into 'review-log `([,note-id ,date ,date 0 0 0]))))
+  (gnosis--insert-into 'review `([nil ,gnosis-algorithm-ef ,gnosis-algorithm-ff ,gnosis-algorithm-interval]))
+  (gnosis--insert-into 'review-log `([nil ,(gnosis-algorithm-date) ,(gnosis-algorithm-date) 0 0 0]))
+  (gnosis--insert-into 'extras `([nil ,extra nil])))
 
 (defun gnosis-add-note (type)
   "Create note as TYPE."
