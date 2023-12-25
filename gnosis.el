@@ -101,6 +101,16 @@ Example:
       (insert (propertize "\n\n-----\n" 'face 'gnosis-face-seperator))
       (fill-paragraph (insert (concat "\n" (propertize extras 'face 'gnosis-face-extra)))))))
 
+(defun gnosis-display--image (id)
+  "Display image for note ID."
+  (let* ((img (gnosis-get 'images 'extras `(= id ,id)))
+	 (path-to-image (concat gnosis-images-dir "/" img))
+	 (image (create-image path-to-image 'png nil :width 500 :height 300)))
+    (when img
+      (with-current-buffer (switch-to-buffer (get-buffer-create "*gnosis*"))
+	(insert "\n\n")
+	(insert-image image)))))
+
 (cl-defun gnosis--prompt (prompt &optional (downcase nil) (split nil))
   "PROMPT user for input until `q' is given.
 
@@ -234,6 +244,7 @@ Returns a list of the form (ef-increase ef-decrease ef)."
 
 (defun gnosis-review-mcq (id)
   "Display multiple choice answers for question ID."
+  (gnosis-display--image id)
   (let ((answer (gnosis-get 'answer 'notes `(= id ,id)))
 	(choices (gnosis-get 'options 'notes `(= id ,id)))
 	(user-choice (gnosis-mcq-answer id)))
