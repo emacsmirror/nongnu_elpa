@@ -81,8 +81,13 @@ Example:
 	(switch-to-buffer
 	 (get-buffer-create "*gnosis*"))
       (erase-buffer)
-      (fill-paragraph (insert question))
-      (sit-for 0.3))))
+      (fill-paragraph (insert question)))))
+
+(defun gnosis-display--extra (id)
+  "Display extra information for note ID."
+  (let ((extras (gnosis-get 'extra-notes 'extras `(= id ,id))))
+    (with-current-buffer (switch-to-buffer (get-buffer-create "*gnosis*"))
+      (fill-paragraph (insert (concat "\n\n" extras))))))
 
 (cl-defun gnosis--prompt (prompt &optional (downcase nil) (split nil))
   "PROMPT user for input until `q' is given.
@@ -223,12 +228,13 @@ Returns a list of the form (ef-increase ef-decrease ef)."
         (progn (gnosis-review--success id)
 	       (message "Correct!"))
       (message "False")))
+  (gnosis-display--extra id)
   (sit-for 0.5))
 
 (defun gnosis-review-note (id)
   "Start review for note with value of id ID."
   (let ((type (gnosis-get 'type 'notes `(= id id))))
-    (gnosis--display-question id)
+    (gnosis-display--question id)
     (pcase type
       ("mcq" (gnosis-review-mcq id))
       ("basic" (message "Not Ready yet."))
