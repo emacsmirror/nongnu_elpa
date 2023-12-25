@@ -43,7 +43,21 @@
   :group 'external
   :prefix "gnosis-")
 
-(defvar gnosis-db (emacsql-sqlite (concat user-emacs-directory "gnosis.db")))
+(defcustom gnosis-dir (concat user-emacs-directory "gnosis")
+  "Gnosis directory."
+  :type 'directory
+  :group 'gnosis)
+
+
+(defvar gnosis-images-dir (concat gnosis-dir "/" "images")
+  "Gnosis images directory.")
+
+(unless (file-exists-p gnosis-images-dir)
+  (make-directory gnosis-dir)
+  (make-directory gnosis-images-dir))
+
+(defvar gnosis-db (emacsql-sqlite (concat gnosis-dir "/" "gnosis.db"))
+  "Gnosis database.")
 
 (cl-defun gnosis--select (value table &optional (restrictions '1=1))
   "Select VALUE from TABLE, optionally with RESTRICTIONS."
