@@ -99,7 +99,8 @@ the returns the list of inputs in reverse order."
 (defun gnosis-add-deck (name)
   "Create deck with NAME."
   (interactive (list (read-string "Deck Name: ")))
-  (gnosis--insert-into 'decks `([nil ,name])))
+  (gnosis--insert-into 'decks `([nil ,name]))
+  (message "Created deck '%s'" name))
 
 (defun gnosis--get-deck-name ()
   "Get name from table DECKS."
@@ -112,10 +113,11 @@ the returns the list of inputs in reverse order."
   (let ((deck (gnosis--get-deck-name)))
     (gnosis-get 'id 'decks `(= name ,deck))))
 
-(defun gnosis-delete-deck (id)
-  "Delete deck with id value of ID."
-  (interactive (list (gnosis--get-deck-id)))
-  (gnosis--delete 'decks `(= id ,id)))
+(defun gnosis-delete-deck (deck)
+  "Delete DECK."
+  (interactive (list (gnosis--get-deck-name)))
+  (gnosis--delete 'decks `(= name ,deck))
+  (message "Deleted deck %s" deck))
 
 (cl-defun gnosis-add-note-mcq (&key deck question choices correct-answer tags)
   "Create a NOTE with a list of multiple CHOICES.
