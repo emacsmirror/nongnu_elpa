@@ -84,15 +84,18 @@ Example:
       (erase-buffer)
       (fill-paragraph (insert (propertize question 'face 'gnosis-face-main))))))
 
-(defun gnosis-display--correct-answer-mcq (id)
-  "Display correct answer for MCQ note type with ID."
+(defun gnosis-display--correct-answer-mcq (id user-choice)
+  "Display correct answer & USER-CHOICE for MCQ note type with ID."
   (let* ((correct-answer (gnosis-get 'answer 'notes `(= id ,id)))
 	 (options (gnosis-get 'options 'notes `(= id ,id)))
 	 (answer (nth correct-answer options)))
     (with-current-buffer
 	(switch-to-buffer
 	 (get-buffer-create "*gnosis*"))
-      (insert (concat "\n\nCorrect answer: " (propertize answer 'face 'gnosis-face-correct-answer))))))
+      (insert (concat "\n\nCorrect answer: "
+		      (propertize answer 'face 'gnosis-face-correct-answer)
+		      "\nYour answer: "
+		      (propertize user-choice 'face 'gnosis-face-user-choice))))))
 
 (defun gnosis-display--extra (id)
   "Display extra information for note ID."
