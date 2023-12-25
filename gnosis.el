@@ -111,7 +111,7 @@ Set DOWNCASE to t to downcase all input given.
 Set SPLIT to t to split all input given."
   (cl-loop with input = nil
            for response = (read-string (concat prompt " (q for quit): "))
-	   do (if downcase (setq response (downcase response)))
+	   do (if downcase (setf response (downcase response)))
            for response-parts = (if split (split-string response " ") (list response))
            if (member "q" response-parts) return (nreverse input)
            do (cl-loop for part in response-parts
@@ -162,7 +162,7 @@ choice in the `CHOICES' list. Each note must correspond to one `DECK'.
   (cond ((or (not (numberp correct-answer)) (equal correct-answer 0))
 	 (error "Correct answer value must be the index number of the correct answer"))
 	((null tags)
-	 (setq tags 'untagged)))
+	 (setf tags 'untagged)))
   (gnosis--insert-into 'notes `([nil "mcq" ,question ,choices ,correct-answer ,tags ,(gnosis--get-deck-id deck)]))
   (gnosis--insert-into 'review `([nil ,gnosis-algorithm-ef ,gnosis-algorithm-ff ,gnosis-algorithm-interval]))
   (gnosis--insert-into 'review-log `([nil ,(gnosis-algorithm-date) ,(gnosis-algorithm-date) 0 ,suspend 0]))
@@ -241,8 +241,8 @@ Returns a list of the form (ef-increase ef-decrease ef)."
         (progn (gnosis-review--success id)
 	       (message "Correct!"))
       (message "False")))
-  (gnosis-display--extra id)
-  (sit-for 0.5))
+  (gnosis-display--correct-answer-mcq id)
+  (gnosis-display--extra id))
 
 (defun gnosis-review-note (id)
   "Start review for note with value of id ID."
