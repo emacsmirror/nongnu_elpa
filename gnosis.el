@@ -84,17 +84,22 @@ Example:
       (insert question)
       (sit-for 0.5))))
 
-(defun gnosis--ask-input (prompt)
+(cl-defun gnosis--prompt (prompt &optional (downcase nil) (split nil))
   "PROMPT user for input until `q' is given.
 
-The user is prompted to provide input for the 'PROMPT' message, and
-the returns the list of inputs in reverse order."
-  (let ((input nil))
-    (while (not (equal (car input) "q"))
-      (push (read-string (concat prompt " (q for quit): ")) input))
-    (when (equal (car input) "q")
-      (pop input))
-    (reverse input)))
+The user is prompted to provide input for the 'PROMPT' message.
+Returns the list of non-'q' inputs in reverse order of their entry.
+
+Set DOWNCASE to t to downcase all input given.
+Set SPLIT to t to split all input given."
+  (cl-loop with input = nil
+           for response = (read-string (concat prompt " (q for quit): "))
+	   do (if downcase (setq response (downcase response)))
+           for response-parts = (if split (split-string response " ") (list response))
+           if (member "q" response-parts) return (nreverse input)
+           do (cl-loop for part in response-parts
+	               unless (string-empty-p part)
+                       do (push part input))))
 
 (defun gnosis-add-deck (name)
   "Create deck with NAME."
@@ -132,11 +137,11 @@ TAGS are used to organize questions."
   (interactive
    (list :deck (gnosis--get-deck-id)
 	 :question (read-string "Question: ")
-         :choices (gnosis--ask-input "Choices")
+         :choices (gnosis--prompt "Choices")
 	 ;; NOTE: string-to-number transforms non-number strings to 0
          :correct-answer (string-to-number (read-string "Which is the correct answer (number)? "))
 	 :extra (read-string "Extra: ")
-	 :tags (gnosis--ask-input "Tags")))
+	 :tags (gnosis--prompt "Tags" t t)))
   (cond ((or (not (numberp correct-answer)) (equal correct-answer 0))
 	 (error "Correct answer value must be the index number of the correct answer"))
 	((null tags)
