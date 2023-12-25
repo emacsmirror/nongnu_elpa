@@ -74,15 +74,15 @@ Example:
   "From TABLE use where to delete VALUE."
   (emacsql gnosis-db `[:delete :from ,table :where ,value]))
 
-(defun gnosis--display-question (id)
-  "Display main row for question ID."
+(defun gnosis-display--question (id)
+  "Display main row for note ID."
   (let ((question (gnosis-get 'main 'notes `(= id ,id))))
     (with-current-buffer
 	(switch-to-buffer
 	 (get-buffer-create "*gnosis*"))
       (erase-buffer)
-      (insert question)
-      (sit-for 0.5))))
+      (fill-paragraph (insert question))
+      (sit-for 0.3))))
 
 (cl-defun gnosis--prompt (prompt &optional (downcase nil) (split nil))
   "PROMPT user for input until `q' is given.
