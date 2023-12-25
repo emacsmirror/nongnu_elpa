@@ -167,7 +167,7 @@ Set SPLIT to t to split all input given."
   (gnosis--delete 'decks `(= name ,deck))
   (message "Deleted deck %s" deck))
 
-(cl-defun gnosis-add-note-mcq (&key deck question choices correct-answer extra (image nil) tags (suspend 0))
+(cl-defun gnosis-add-note-mcq (&key deck question choices correct-answer extra (image nil) tags (suspend nil))
   "Create a NOTE with a list of multiple CHOICES.
 
 MCQ type consists of a main `QUESTION' that is displayed to the user.
@@ -330,7 +330,7 @@ Returns a list of the form (ef-increase ef-decrease ef)."
 				       (last-rev integer :not-null) ;; Last review date
 				       (next-rev integer :not-null) ;; Next review date
 				       (failures integer :not-null) ;; Number of consecutive review failures
-				       (suspend  integer :not-null) ;; binary value, 1 = suspend note
+				       (suspend  integer)
 				       (n integer :not-null)]       ;; Number of reviews
 				      (:foreign-key [id] :references notes [id]
 						    :on-delete :cascade)))
