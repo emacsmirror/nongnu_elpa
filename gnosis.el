@@ -140,7 +140,7 @@ Set SPLIT to t to split all input given."
   (gnosis--delete 'decks `(= name ,deck))
   (message "Deleted deck %s" deck))
 
-(cl-defun gnosis-add-note-mcq (&key deck question choices correct-answer extra tags (suspend 0))
+(cl-defun gnosis-add-note-mcq (&key deck question choices correct-answer extra (image nil) tags (suspend 0))
   "Create a NOTE with a list of multiple CHOICES.
 
 MCQ type consists of a main `QUESTION' that is displayed to the user.
@@ -166,7 +166,7 @@ choice in the `CHOICES' list. Each note must correspond to one `DECK'.
   (gnosis--insert-into 'notes `([nil "mcq" ,question ,choices ,correct-answer ,tags ,(gnosis--get-deck-id deck)]))
   (gnosis--insert-into 'review `([nil ,gnosis-algorithm-ef ,gnosis-algorithm-ff ,gnosis-algorithm-interval]))
   (gnosis--insert-into 'review-log `([nil ,(gnosis-algorithm-date) ,(gnosis-algorithm-date) 0 ,suspend 0]))
-  (gnosis--insert-into 'extras `([nil ,extra nil])))
+  (gnosis--insert-into 'extras `([nil ,extra ,image])))
 
 (defun gnosis-add-note (type)
   "Create note as TYPE."
