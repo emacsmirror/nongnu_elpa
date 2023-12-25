@@ -113,10 +113,9 @@ Set SPLIT to t to split all input given."
     (error "No decks found"))
   (completing-read "Deck: " (gnosis--select 'name 'decks)))
 
-(defun gnosis--get-deck-id ()
-  "Select id for deck name."
-  (let ((deck (gnosis--get-deck-name)))
-    (gnosis-get 'id 'decks `(= name ,deck))))
+(cl-defun gnosis--get-deck-id (&optional (deck (gnosis--get-deck-name)))
+  "Get id for DECK name."
+  (gnosis-get 'id 'decks `(= name ,deck)))
 
 (defun gnosis-delete-deck (deck)
   "Delete DECK."
@@ -135,7 +134,7 @@ choice in the `CHOICES' list. Each note must correspond to one `DECK'.
 EXTRA are extra information displayed after an answer is given.
 TAGS are used to organize questions."
   (interactive
-   (list :deck (gnosis--get-deck-id)
+   (list :deck (gnosis--get-deck-name)
 	 :question (read-string "Question: ")
          :choices (gnosis--prompt "Choices")
 	 ;; NOTE: string-to-number transforms non-number strings to 0
@@ -146,7 +145,7 @@ TAGS are used to organize questions."
 	 (error "Correct answer value must be the index number of the correct answer"))
 	((null tags)
 	 (setq tags 'untagged)))
-  (gnosis--insert-into 'notes `([nil "mcq" ,question ,choices ,correct-answer ,tags ,deck]))
+  (gnosis--insert-into 'notes `([nil "mcq" ,question ,choices ,correct-answer ,tags ,(gnosis--get-deck-id deck)]))
   (gnosis--insert-into 'review `([nil ,gnosis-algorithm-ef ,gnosis-algorithm-ff ,gnosis-algorithm-interval]))
   (gnosis--insert-into 'review-log `([nil ,(gnosis-algorithm-date) ,(gnosis-algorithm-date) 0 0 0]))
   (gnosis--insert-into 'extras `([nil ,extra nil])))
