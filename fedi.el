@@ -629,5 +629,38 @@ even though the request may have succeeded."
           (t
            (error "Error handling response data, but request succeeded")))))
 
+;;; UPDATING ITEMS
+
+(defun fedi-update-item-from-json (prop replace-fun)
+  "Update display of current item using its updated json property.
+PROP is a text property used to find the part of the item to update.
+Examples are byline-top, byline-bottom, and body.
+REPLACE-FUN is a function sent to
+`fedi--replace-region-contents' to do the replacement. It
+should be called with at least 1 arg: the item's json."
+  (let ((json (fedi--property 'json)))
+    (let ((inhibit-read-only t)
+          (byline
+           (fedi--find-property-range prop (point)
+                                      (when (fedi--property prop)
+                                        :backwards))))
+      (fedi--replace-region-contents
+       (car byline) (cdr byline)
+       replace-fun))))
+
+(defun fedi--replace-region-contents (beg end replace-fun)
+  "Replace buffer contents from BEG to END with REPLACE-FUN.
+We roll our own `replace-region-contents' because it is as
+non-destructive as possible, whereas we need to always replace
+the whole likes count in order to propertize it fully."
+  (let ((json (fedi--property 'json)))
+    (save-excursion
+      (save-restriction
+        (narrow-to-region beg end)
+        (goto-char (point-min))
+        (delete-region (point-min) (point-max))
+        (insert
+         (funcall replace-fun json))))))
+
 (provide 'fedi)
 ;;; fedi.el ends here
