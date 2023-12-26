@@ -167,7 +167,7 @@ Set SPLIT to t to split all input given."
   (gnosis--delete 'decks `(= name ,deck))
   (message "Deleted deck %s" deck))
 
-(cl-defun gnosis-add-note-mcq (&key deck question choices correct-answer extra (image nil) tags (suspend nil))
+(cl-defun gnosis-add-note-mcq (&key deck question choices correct-answer extra (image nil) tags (suspend 0))
   "Create a NOTE with a list of multiple CHOICES.
 
 MCQ type consists of a main `QUESTION' that is displayed to the user.
@@ -228,7 +228,7 @@ Returns a list of the form ((yyyy mm dd) ef)."
   "Get due notes id for current date.
 
 Select notes where:
- - Next review schedulated date <= current date
+ - Next review date <= current date
  - Not suspended."
   (emacsql gnosis-db [:select [id] :from review-log :where (and (<= next-rev ',(gnosis-algorithm-date))
 								(not suspend))]))
@@ -270,7 +270,7 @@ Returns a list of the form (ef-increase ef-decrease ef)."
   (let ((answer (gnosis-get 'answer 'notes `(= id ,id)))
 	(choices (gnosis-get 'options 'notes `(= id ,id)))
 	(user-choice (gnosis-mcq-answer id)))
-    (if (equal (nth (- answer 1) choices) user-choice)
+    (if (equal (nth answer choices) user-choice)
         (progn (gnosis-review--success id)
 	       (message "Correct!"))
       (message "False"))
@@ -335,7 +335,7 @@ Returns a list of the form (ef-increase ef-decrease ef)."
 				       (last-rev integer :not-null) ;; Last review date
 				       (next-rev integer :not-null) ;; Next review date
 				       (failures integer :not-null) ;; Number of consecutive review failures
-				       (suspend  integer)
+				       (suspend integer :not-null)  ;; Binary value, 1=suspended
 				       (n integer :not-null)]       ;; Number of reviews
 				      (:foreign-key [id] :references notes [id]
 						    :on-delete :cascade)))
