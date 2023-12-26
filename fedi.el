@@ -271,7 +271,7 @@ text, i.e. hidden spoiler text."
     (favourite . ("⭐" . "F"))
     (bookmark  . ("🔖" . "K"))
     (media     . ("📹" . "[media]"))
-    (verified  . ("" . "V"))
+    (verified  . ("✓" . "V"))
     (locked    . ("🔒" . "[locked]"))
     (private   . ("🔒" . "[followers]"))
     (direct    . ("✉" . "[direct]"))
@@ -281,7 +281,8 @@ text, i.e. hidden spoiler text."
     (pinned    . ("📌" . "[pinned]"))
     (replied   . ("⬇" . "↓"))
     (community . ("👪" . "[community]"))
-    (reply-bar . ("┃" . "|")))
+    (reply-bar . ("│" . "|")) ;┃
+    (deleted   . ("🗑" . "[deleted]")))
   "A set of symbols (and fallback strings) to be used in timeline.
 If a symbol does not look right (tofu), it means your
 font settings do not support it."
