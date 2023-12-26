@@ -7,7 +7,7 @@
 ;; URL: https://git.thanosapollo.org/gnosis
 ;; Version: 0.0.1
 
-;; Package-Requires: ((emacs "27.2") (compat "29.1.4.2"))
+;; Package-Requires: ((emacs "27.2") (compat "29.1.4.2") (emacsql "20230228"))
 
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -56,7 +56,7 @@
   (make-directory gnosis-dir)
   (make-directory gnosis-images-dir))
 
-(defvar gnosis-db (emacsql-sqlite (concat gnosis-dir "/" "gnosis.db"))
+(defvar gnosis-db (emacsql-sqlite-open (concat gnosis-dir "/" "gnosis.db"))
   "Gnosis database.")
 
 (cl-defun gnosis--select (value table &optional (restrictions '1=1))
