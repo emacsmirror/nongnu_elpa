@@ -26,10 +26,17 @@ For an example of using this library, see my [[https://codeberg.org/martianh/lem
 
 * utilities
 
-=fedi.el= contains some utility functions for setting up a new client buffer,
-navigating between items, displaying icons, formatting headings, webfinger
-lookup of URLs, and live-updating timestamps. More will be added as they are
-ported from =mastodon.el=.
+=fedi.el= contains functions for:
+
+- setting up a new client buffer
+- navigating between items
+- displaying icons
+- completing-read action functions
+- handling action responses
+- updating item display after action
+- formatting headings
+- webfinger lookup of URLs
+- and live-updating timestamps.
 
 * posting
 
