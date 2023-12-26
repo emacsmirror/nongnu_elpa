@@ -253,11 +253,15 @@ text, i.e. hidden spoiler text."
 
 (defun fedi-format-heading (name)
   "Format a heading for NAME, a string."
-  (propertize
-   (concat " " fedi-horiz-bar "\n "
-           (upcase name)
-           "\n " fedi-horiz-bar "\n")
-   'face 'success))
+  (let* ((name (if (symbolp name)
+                   (symbol-name name)
+                 name))
+         (name (string-replace "-" " " name)))
+    (propertize
+     (concat " " lem-ui-horiz-bar "\n "
+             (upcase name)
+             "\n " lem-ui-horiz-bar "\n")
+     'face 'success)))
 
 (defun fedi-insert-heading (name)
   "Insert heading for NAME, a string."
@@ -570,6 +574,60 @@ TIME-STAMP is assumed to be in the past."
                                   buf-names)))
     (switch-to-buffer choice)))
 
+;; ACTION/RESPONSE
+
+(defun fedi-do-item-completing (fetch-fun list-fun prompt action-fun)
+  "Fetch items, choose one, and do an action.
+FETCH-FUN is the function to fetch data.
+LIST-FUN is called on the data to return a collection for
+`completing-read'. It should return a string (name, handle) as
+its first element, and an id as second element. A third element
+will be used as an annotation.
+PROMPT is for the same.
+ACTION-FUN is called with 2 args: the chosen item's id and the
+candidate's car, a string, usually its name or a handle."
+  (let* ((data (funcall fetch-fun))
+         (list (funcall list-fun data))
+         (completion-extra-properties
+          (when list
+            (list :annotation-function
+                  (lambda (i)
+                    (let ((annot (nth 2 (assoc i list #'equal))))
+                      (concat
+                       (propertize " " 'display
+                                   '(space :align-to (- right-margin 51)))
+                       (string-limit (car (string-lines annot)) 50)))))))
+         (choice (when list (completing-read prompt list)))
+         (id (when list (nth 1 (assoc choice list #'equal)))))
+    (if (not list)
+        (user-error "No items returned")
+      (funcall action-fun id choice))))
+
+(defun fedi-response-msg (response &optional key value format-str)
+  "Check RESPONSE, JSON from the server, and message on success.
+Used to handle server responses after the user
+does some action, such as subscribing, blocking, etc.
+KEY returns the value of a field from RESPONSE, using `alist-get'.
+VALUE specifies how to check the value: possible values are
+:non-nil, :json-false and t.
+FORMAT-STR is passed to message if the value check passes.
+If the check doesn't pass, error.
+Currently we error if we receive incorrect KEY or CHECK args,
+even though the request may have succeeded."
+  (if (stringp response) ; a string is an error
+      (error "Error: %s" response))
+  (let ((field (alist-get key response)))
+    (cond ((eq value :non-nil) ; value json exists
+           (if field
+               (message format-str)
+             (error "Error")))
+          ((or (eq value t) ; json val t or :json-false
+               (eq value :json-false))
+           (if (eq field value)
+               (message format-str)
+             (error "Error")))
+          (t
+           (error "Error handling response data, but request succeeded")))))
 
 (provide 'fedi)
 ;;; fedi.el ends here
