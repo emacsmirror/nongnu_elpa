@@ -303,8 +303,8 @@ choice in the `CHOICES' list. Each note must correspond to one `DECK'.
   "Replace cx-tags in STRING.
 
 Works both with {} and {{}} to make easier to import anki notes."
-  (let* ((regex "{\\{1,2\\}c[0-9]+::\\([^}]*\\)}\\{1,2\\}")
-         (result (replace-regexp-in-string regex "\\1" string)))
+  (let* ((regex "{\\{1,2\\}c\\([0-9]+\\)::?\\(.*?\\)}\\{1,2\\}")
+         (result (replace-regexp-in-string regex "\\2" string)))
     result))
 
 (defun gnosis-cloze-replace-words (string words new)
