@@ -89,41 +89,38 @@ Example:
   "From TABLE use where to delete VALUE."
   (emacsql gnosis-db `[:delete :from ,table :where ,value]))
 
+(defmacro with-gnosis-buffer (&rest body)
+  "Execute BODY in gnosis buffer."
+  `(with-current-buffer (switch-to-buffer (get-buffer-create "*gnosis*"))
+    ,@body))
+
 (defun gnosis-display--question (id)
   "Display main row for note ID."
   (let ((question (gnosis-get 'main 'notes `(= id ,id))))
-    (with-current-buffer
-	(switch-to-buffer
-	 (get-buffer-create "*gnosis*"))
+    (with-gnosis-buffer
       (erase-buffer)
       (fill-paragraph (insert (propertize question 'face 'gnosis-face-main))))))
 
-(defun gnosis-display--correct-answer-mcq (id user-choice)
-  "Display correct answer & USER-CHOICE for MCQ note type with ID."
-  (let* ((correct-answer (gnosis-get 'answer 'notes `(= id ,id)))
-	 (options (gnosis-get 'options 'notes `(= id ,id)))
-	 (answer (nth correct-answer options)))
-    (with-current-buffer
-	(switch-to-buffer
-	 (get-buffer-create "*gnosis*"))
-      (insert (concat "\n\nCorrect answer: "
-		      (propertize answer 'face 'gnosis-face-correct-answer)
-		      "\nYour answer: "
-		      (propertize user-choice 'face 'gnosis-face-user-choice))))))
+(defun gnosis-display--cloze-sentence (sentence clozes)
+  "Display cloze sentence for SENTENCE with CLOZES."
+  (with-gnosis-buffer
+   (erase-buffer)
+   (fill-paragraph (insert
+		    (gnosis-cloze-replace-words sentence clozes gnosis-cloze-char)))))
+
 (defun gnosis-display--correct-answer-mcq (answer user-choice)
   "Display correct ANSWER & USER-CHOICE for MCQ note."
-  (with-current-buffer
-      (switch-to-buffer
-       (get-buffer-create "*gnosis*"))
-    (insert (concat "\n\nCorrect answer: "
-		    (propertize answer 'face 'gnosis-face-correct-answer)
-		    "\nYour answer: "
-		    (propertize user-choice 'face 'gnosis-face-user-choice)))))
+  (with-gnosis-buffer
+   (insert (concat "\n\nCorrect answer: "
+		   (propertize answer 'face 'gnosis-face-correct-answer)
+		   "\nYour answer: "
+		   (propertize user-choice 'face 'gnosis-face-user-choice)))))
 
 (defun gnosis-display--extra (id)
   "Display extra information for note ID."
   (let ((extras (gnosis-get 'extra-notes 'extras `(= id ,id))))
-    (with-current-buffer (switch-to-buffer (get-buffer-create "*gnosis*"))
+    (with-gnosis-buffer
+      (goto-char (point-max))
       (insert (propertize "\n\n-----\n" 'face 'gnosis-face-seperator))
       (fill-paragraph (insert (concat "\n" (propertize extras 'face 'gnosis-face-extra)))))))
 
@@ -133,7 +130,7 @@ Example:
 	 (path-to-image (concat gnosis-images-dir "/" img))
 	 (image (create-image path-to-image 'png nil :width 500 :height 300)))
     (when img
-      (with-current-buffer (switch-to-buffer (get-buffer-create "*gnosis*"))
+      (with-gnosis-buffer
 	(insert "\n\n")
 	(insert-image image)))))
 
