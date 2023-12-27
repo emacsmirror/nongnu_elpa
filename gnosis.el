@@ -110,6 +110,15 @@ Example:
 		      (propertize answer 'face 'gnosis-face-correct-answer)
 		      "\nYour answer: "
 		      (propertize user-choice 'face 'gnosis-face-user-choice))))))
+(defun gnosis-display--correct-answer-mcq (answer user-choice)
+  "Display correct ANSWER & USER-CHOICE for MCQ note."
+  (with-current-buffer
+      (switch-to-buffer
+       (get-buffer-create "*gnosis*"))
+    (insert (concat "\n\nCorrect answer: "
+		    (propertize answer 'face 'gnosis-face-correct-answer)
+		    "\nYour answer: "
+		    (propertize user-choice 'face 'gnosis-face-user-choice)))))
 
 (defun gnosis-display--extra (id)
   "Display extra information for note ID."
