@@ -48,6 +48,11 @@
   :type 'directory
   :group 'gnosis)
 
+(defcustom gnosis-cloze-char "__"
+  "Gnosis cloze character."
+  :type 'string
+  :group 'gnosis)
+
 
 (defvar gnosis-images-dir (concat gnosis-dir "/" "images")
   "Gnosis images directory.")
