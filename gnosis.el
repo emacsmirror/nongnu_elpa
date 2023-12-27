@@ -125,6 +125,13 @@ else use `gnosis-face-false'"
 							'gnosis-face-correct
 						      'gnosis-face-false))))))
 
+(defun gnosis-display--hint (hint)
+  "Display HINT."
+  (with-gnosis-buffer
+   (goto-char (point-max))
+   (insert (concat "\n\nHint: "
+		   (propertize hint 'face 'gnosis-face-hint)))))
+
 (defun gnosis-display--cloze-correct (cloze-chars correct)
   "Replace CLOZE-CHARS with CORRECT."
   (with-gnosis-buffer
