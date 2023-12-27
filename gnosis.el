@@ -113,6 +113,12 @@ Example:
    (fill-paragraph (insert
 		    (gnosis-cloze-replace-words sentence clozes gnosis-cloze-char)))))
 
+(defun gnosis-display--cloze-correct (cloze-chars correct)
+  "Replace CLOZE-CHARS with CORRECT."
+  (with-gnosis-buffer
+   (goto-char (point-min))
+   (search-forward cloze-chars nil t)
+   (replace-match (propertize correct 'face 'gnosis-face-cloze-correct))))
 (defun gnosis-display--correct-answer-mcq (answer user-choice)
   "Display correct ANSWER & USER-CHOICE for MCQ note."
   (with-gnosis-buffer
@@ -362,7 +368,7 @@ SUCCESS is a binary value, 1 is for successful review."
 	       (message "Correct!"))
       (gnosis-review--update id 0)
       (message "False"))
-    (sit-for 0.5)
+    (sit-for 0.3)
     (gnosis-display--correct-answer-mcq answer user-choice)
     (gnosis-display--extra id)))
 
