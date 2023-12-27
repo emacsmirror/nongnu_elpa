@@ -349,16 +349,14 @@ SUCCESS is a binary value, 1 is for successful review."
     (gnosis-display--correct-answer-mcq answer user-choice)
     (gnosis-display--extra id)))
 
-(defun gnosis-review-cloze--input (id answer)
+(defun gnosis-review-cloze--input (cloze)
   "Prompt for user input during cloze review.
 
-If user-input is equal to ANSWER, update card ID for successful review."
-  (let ((user-input (downcase (read-string "Answer: "))))
-    (if (string= user-input (downcase answer))
-	(progn (gnosis-review--update id 1)
-	       (message "Correct!"))
-      (gnosis-review--update id 0)
-      (message "Fail"))))
+If user-input is equal to CLOZE, return t."
+  (let ((user-input (read-string "Cloze: ")))
+    (if (string= user-input cloze)
+        t
+      nil)))
 
 (defun gnosis-review-cloze (id)
   "Review cloze type note for ID."
