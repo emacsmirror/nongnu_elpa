@@ -359,11 +359,14 @@ Returns a list of the form (ef-increase ef-decrease ef)."
 						:on-delete :cascade)))
 
 (defvar gnosis-db-schema-review-log '([(id integer :primary-key :not-null) ;; note-id
-				       (last-rev integer :not-null) ;; Last review date
-				       (next-rev integer :not-null) ;; Next review date
-				       (failures integer :not-null) ;; Number of consecutive review failures
-				       (suspend integer :not-null)  ;; Binary value, 1=suspended
-				       (n integer :not-null)]       ;; Number of reviews
+				       (last-rev integer :not-null)  ;; Last review date
+				       (next-rev integer :not-null)  ;; Next review date
+				       (c-success integer :not-null) ;; number of consecutive successful reviews
+				       (t-success integer :not-null) ;; Number of total successful reviews
+				       (c-fails integer :not-null)   ;; Number of consecutive failed reviewss
+				       (t-fails integer :not-null)   ;; Number of total failed reviews
+				       (suspend integer :not-null)   ;; Binary value, 1=suspended
+				       (n integer :not-null)]        ;; Number of reviews
 				      (:foreign-key [id] :references notes [id]
 						    :on-delete :cascade)))
 
