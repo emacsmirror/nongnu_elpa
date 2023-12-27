@@ -250,13 +250,17 @@ choice in the `CHOICES' list. Each note must correspond to one `DECK'.
   (gnosis-add-note-fields deck "basic" question hint answer extra tags suspend image))
 
 (cl-defun gnosis-add-note-cloze (&key deck note tags (suspend 0) extra (image nil))
-  "Add cloze type note."
+  "Add cloze type note.
+
+`EXTRA' are extra information displayed after an answer is given.
+`TAGS' are used to organize questions.
+`SUSPEND' is a binary value, where 1 is for suspend."
   (interactive (list :deck (gnosis--get-deck-name)
 		     :note (read-string "Cloze note: ")
 		     :extra (read-string "Extra: ")
 		     :tags (gnosis--prompt "Tags" t t)))
   (let ((notags-note (gnosis-cloze-remove-tags note))
-	(clozes (gnosis-cloze-get-clozes note)))
+	(clozes (gnosis-cloze-extract-answers note)))
     (cl-loop for cloze in clozes
 	     ;; TODO: OPTIONS need to be hints
 	     do (gnosis-add-note-fields deck "cloze" notags-note "" cloze extra tags suspend image))))
@@ -394,11 +398,23 @@ SUCCESS is a binary value, 1 is for successful review."
     (gnosis-display--correct-answer-mcq answer user-choice)
     (gnosis-display--extra id)))
 
+(defun gnosis-review-basic (id)
+  "Review basic type note for ID."
+  (gnosis-display--image id)
+  (gnosis-display--question id)
+  (gnosis-display--hint (gnosis-get 'options 'notes `(= id ,id)))
+  (let* ((answer (gnosis-get 'answer 'notes `(= id ,id)))
+	 (user-input (read-string "Answer: "))
+	 (success (string= answer user-input)))
+    (gnosis-display--basic-answer answer success)
+    (gnosis-display--extra id)
+    (gnosis-review--update id (if success 1 0))))
+
 (defun gnosis-review-cloze--input (cloze)
   "Prompt for user input during cloze review.
 
 If user-input is equal to CLOZE, return t."
-  (let ((user-input (read-string "Cloze: ")))
+  (let ((user-input (read-string "Answer: ")))
     (cons (string= (downcase user-input) (downcase cloze)) user-input)))
 
 (defun gnosis-review-cloze--reveal (clozes)
@@ -427,7 +443,7 @@ If user-input is equal to CLOZE, return t."
   (let ((type (gnosis-get 'type 'notes `(= id ,id))))
     (pcase type
       ("mcq" (gnosis-review-mcq id))
-      ("basic" (message "Not Ready yet."))
+      ("basic" (gnosis-review-basic id))
       ("cloze" (gnosis-review-cloze id))
       (_ (error "Malformed note type")))))
 
