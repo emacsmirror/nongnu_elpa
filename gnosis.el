@@ -176,6 +176,24 @@ Set SPLIT to t to split all input given."
   (gnosis--delete 'decks `(= name ,deck))
   (message "Deleted deck %s" deck))
 
+(defun gnosis-add-note-fields (deck type main options answer extra tags suspend image)
+  "Add fields for new note.
+
+DECK: Deck name for new note
+TYPE: New note type (mcq,cloze,basic)
+MAIN: Note's main part
+OPTIONS: Note's options (optional, used for MCQ type)
+ANSWER: Correct answer for note, for MCQ is an integer while for
+cloze/basic a string/list of the right answer(s)
+EXTRA: Extra information to display after answering note
+TAGS: Tags to organize notes
+SUSPEND: Integer value of 1 or 0, where 1 suspends the card
+IMAGE: Image to display during review."
+  (gnosis--insert-into 'notes `([nil ,type ,main ,options ,answer ,tags ,(gnosis--get-deck-id deck)]))
+  (gnosis--insert-into 'review `([nil ,gnosis-algorithm-ef ,gnosis-algorithm-ff ,gnosis-algorithm-interval]))
+  (gnosis--insert-into 'review-log `([nil ,(gnosis-algorithm-date) ,(gnosis-algorithm-date) 0 0 0 0 ,suspend 0]))
+  (gnosis--insert-into 'extras `([nil ,extra ,image])))
+
 (cl-defun gnosis-add-note-mcq (&key deck question choices correct-answer extra (image nil) tags (suspend 0))
   "Create a NOTE with a list of multiple CHOICES.
 
