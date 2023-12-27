@@ -371,17 +371,27 @@ SUCCESS is a binary value, 1 is for successful review."
 
 If user-input is equal to CLOZE, return t."
   (let ((user-input (read-string "Cloze: ")))
-    (if (string= user-input cloze)
-        t
-      nil)))
+    (cons (string= (downcase user-input) (downcase cloze)) user-input)))
+
+(defun gnosis-review-cloze--reveal (clozes)
+  "Reveal CLOZES."
+  (cl-loop for cloze in clozes do (gnosis-display--cloze-correct gnosis-cloze-char cloze)))
 
 (defun gnosis-review-cloze (id)
   "Review cloze type note for ID."
-  (gnosis-display--image id)
   (let* ((main (gnosis-get 'main 'notes `(= id ,id)))
 	 (clozes (gnosis-get 'answer 'notes `(= id ,id))))
-    ())
-  (gnosis-display--question 1)
+    (gnosis-display--image id)
+    (gnosis-display--cloze-sentence main clozes)
+    (cl-loop for cloze in clozes
+	     do (let ((input (gnosis-review-cloze--input cloze)))
+		  (when (equal (car input) nil)
+		    (gnosis-review-cloze--reveal clozes)
+		    (gnosis-display--cloze-user-answer (cdr input) t)
+		    (gnosis-review--update id 0)
+		    (cl-return)))
+	     finally (progn (gnosis-review-cloze--reveal clozes)
+			    (gnosis-review--update id 1))))
   (gnosis-display--extra id))
 
 (defun gnosis-review-note (id)
