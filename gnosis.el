@@ -217,17 +217,26 @@ choice in the `CHOICES' list. Each note must correspond to one `DECK'.
 	 (error "Correct answer value must be the index number of the correct answer"))
 	((null tags)
 	 (setf tags 'untagged)))
-  (gnosis--insert-into 'notes `([nil "mcq" ,question ,choices ,correct-answer ,tags ,(gnosis--get-deck-id deck)]))
-  (gnosis--insert-into 'review `([nil ,gnosis-algorithm-ef ,gnosis-algorithm-ff ,gnosis-algorithm-interval]))
-  (gnosis--insert-into 'review-log `([nil ,(gnosis-algorithm-date) ,(gnosis-algorithm-date) 0 ,suspend 0]))
-  (gnosis--insert-into 'extras `([nil ,extra ,image])))
+  (gnosis-add-note-fields deck "mcq" question choices correct-answer extra tags suspend image))
+
+(cl-defun gnosis-add-note-cloze (&key deck note tags (suspend 0) extra (image nil))
+  "Add cloze type note."
+  (interactive (list :deck (gnosis--get-deck-name)
+		     :note (read-string "Cloze note: ")
+		     :extra (read-string "Extra: ")
+		     :tags (gnosis--prompt "Tags" t t)))
+  (let ((notags-note (gnosis-cloze-remove-tags note))
+	(clozes (gnosis-cloze-get-clozes note)))
+    (cl-loop for cloze in clozes
+	     ;; TODO: OPTIONS need to be hints
+	     do (gnosis-add-note-fields deck "cloze" notags-note "" cloze extra tags suspend image))))
 
 (defun gnosis-add-note (type)
   "Create note as TYPE."
   (interactive (list (completing-read "Type: " '(MCQ Cloze Basic) nil t)))
   (pcase type
     ("MCQ" (call-interactively 'gnosis-add-note-mcq))
-    ("Cloze" (message "Not ready yet."))
+    ("Cloze" (call-interactively 'gnosis-add-note-cloze))
     ("Basic" (message "Not ready yet."))
     (_ (message "No such type."))))
 
