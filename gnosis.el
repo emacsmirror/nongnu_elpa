@@ -314,15 +314,24 @@ Returns a list of the form (ef-increase ef-decrease ef)."
 	(old-ef (gnosis-get 'ef 'review `(= id ,id))))
     (cl-substitute (gnosis-review-round ef) (nth 2 old-ef) old-ef)))
 
-(defun gnosis-review--success (id)
-  "Update review-log for note with value of id ID."
+(defun gnosis-review--update (id success)
+  "Update review-log for note with value of id ID.
+
+SUCCESS is a binary value, 1 is for successful review."
   (let ((ef (gnosis-review-new-ef id 1)))
     ;; Update review-log
     (gnosis-update 'review-log `(= last-rev ',(gnosis-algorithm-date)) `(= id ,id))
-    (gnosis-update 'review-log `(= next-rev ',(car (gnosis-review--algorithm id 1))) `(= id ,id))
+    (gnosis-update 'review-log `(= next-rev ',(car (gnosis-review--algorithm id success))) `(= id ,id))
     (gnosis-update 'review-log `(= n (+ 1 ,(gnosis-get 'n 'review-log `(= id ,id)))) `(= id ,id))
     ;; Update review
-    (gnosis-update 'review `(= ef ',ef) `(= id ,id))))
+    (gnosis-update 'review `(= ef ',ef) `(= id ,id))
+    (if (= success 1)
+	(progn (gnosis-update 'review-log `(= c-success ,(1+ (gnosis-get 'c-success 'review-log `(= id ,id)))) `(= id ,id))
+	       (gnosis-update 'review-log `(= t-success ,(1+ (gnosis-get 't-success 'review-log `(= id ,id)))) `(= id ,id))
+	       (gnosis-update 'review-log `(= c-fails 0) `(= id ,id)))
+      (gnosis-update 'review-log `(= c-fails ,(1+ (gnosis-get 'c-fails 'review-log `(= id ,id)))) `(= id ,id))
+      (gnosis-update 'review-log `(= t-fails ,(1+ (gnosis-get 't-fails 'review-log `(= id ,id)))) `(= id ,id))
+      (gnosis-update 'review-log `(= c-success 0) `(= id ,id)))))
 
 (defun gnosis-review-mcq (id)
   "Display multiple choice answers for question ID."
