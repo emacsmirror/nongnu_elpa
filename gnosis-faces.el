@@ -60,12 +60,12 @@
   "Face for user choice."
   :group 'gnosis-face)
 
-(defface gnosis-face-cloze-correct
+(defface gnosis-face-correct
   '((t :inherit homoglyph))
   "Face for user choice."
   :group 'gnosis-face)
 
-(defface gnosis-face-cloze-false
+(defface gnosis-face-false
   '((t :inherit error))
   "Face for user choice."
   :group 'gnosis-face)

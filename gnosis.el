@@ -118,17 +118,17 @@ Example:
   (with-gnosis-buffer
    (goto-char (point-min))
    (search-forward cloze-chars nil t)
-   (replace-match (propertize correct 'face 'gnosis-face-cloze-correct))))
+   (replace-match (propertize correct 'face 'gnosis-face-correct))))
 
 (cl-defun gnosis-display--cloze-user-answer (user-input &optional (false nil))
   "Display USER-INPUT answer for cloze note.
 
-If FALSE t, use gnosis-face-cloze-false face"
+If FALSE t, use gnosis-face-false face"
   (with-gnosis-buffer
    (goto-char (point-max))
    (insert (concat "\nYour answer: " (propertize user-input 'face (if false
-								      'gnosis-face-cloze-false
-								    'gnosis-face-cloze-correct))))))
+								      'gnosis-face-false
+								    'gnosis-face-correct))))))
 
 (defun gnosis-display--correct-answer-mcq (answer user-choice)
   "Display correct ANSWER & USER-CHOICE for MCQ note."
