@@ -336,27 +336,49 @@ SUCCESS is a binary value, 1 is for successful review."
 (defun gnosis-review-mcq (id)
   "Display multiple choice answers for question ID."
   (gnosis-display--image id)
-  (let ((answer (gnosis-get 'answer 'notes `(= id ,id)))
-	(choices (gnosis-get 'options 'notes `(= id ,id)))
-	(user-choice (gnosis-mcq-answer id)))
-    (if (equal (nth answer choices) user-choice)
-        (progn (gnosis-review--success id)
+  (gnosis-display--question id)
+  (let* ((choices (gnosis-get 'options 'notes `(= id ,id)))
+	 (answer (nth (- (gnosis-get 'answer 'notes `(= id ,id)) 1) choices))
+	 (user-choice (gnosis-mcq-answer id)))
+    (if (string= answer user-choice)
+        (progn (gnosis-review--update id 1)
 	       (message "Correct!"))
+      (gnosis-review--update id 0)
       (message "False"))
     (sit-for 0.5)
-    (gnosis-display--correct-answer-mcq id user-choice)
+    (gnosis-display--correct-answer-mcq answer user-choice)
     (gnosis-display--extra id)))
+
+(defun gnosis-review-cloze--input (id answer)
+  "Prompt for user input during cloze review.
+
+If user-input is equal to ANSWER, update card ID for successful review."
+  (let ((user-input (downcase (read-string "Answer: "))))
+    (if (string= user-input (downcase answer))
+	(progn (gnosis-review--update id 1)
+	       (message "Correct!"))
+      (gnosis-review--update id 0)
+      (message "Fail"))))
+
+(defun gnosis-review-cloze (id)
+  "Review cloze type note for ID."
+  (gnosis-display--image id)
+  (let* ((main (gnosis-get 'main 'notes `(= id ,id)))
+	 (clozes (gnosis-get 'answer 'notes `(= id ,id))))
+    ())
+  (gnosis-display--question 1)
+  (gnosis-display--extra id))
 
 (defun gnosis-review-note (id)
   "Start review for note with value of id ID."
-  (let ((type (gnosis-get 'type 'notes `(= id id))))
-    (gnosis-display--question id)
+  (let ((type (gnosis-get 'type 'notes `(= id ,id))))
     (pcase type
       ("mcq" (gnosis-review-mcq id))
       ("basic" (message "Not Ready yet."))
-      ("cloze" (message "Not Ready yet."))
+      ("cloze" (gnosis-review-cloze id))
       (_ (error "Malformed note type")))))
 
+;;;###autoload
 (defun gnosis-review ()
   "Start gnosis session."
   (interactive)
