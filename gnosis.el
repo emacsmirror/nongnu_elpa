@@ -129,7 +129,7 @@ else use `gnosis-face-false'"
   "Display HINT."
   (with-gnosis-buffer
    (goto-char (point-max))
-   (insert (concat "\n\nHint: "
+   (insert (concat "\n"
 		   (propertize hint 'face 'gnosis-face-hint)))))
 
 (defun gnosis-display--cloze-correct (cloze-chars correct)
@@ -145,17 +145,24 @@ else use `gnosis-face-false'"
 If FALSE t, use gnosis-face-false face"
   (with-gnosis-buffer
    (goto-char (point-max))
-   (insert (concat "\nYour answer: " (propertize user-input 'face (if false
-								      'gnosis-face-false
-								    'gnosis-face-correct))))))
+   (insert (concat "\n\n"
+		   (propertize "Your answer:" 'face 'gnosis-face-directions)
+		   " "
+		   (propertize user-input 'face (if false 'gnosis-face-false 'gnosis-face-correct))))))
 
 (defun gnosis-display--correct-answer-mcq (answer user-choice)
   "Display correct ANSWER & USER-CHOICE for MCQ note."
   (with-gnosis-buffer
-   (insert (concat "\n\nCorrect answer: "
-		   (propertize answer 'face 'gnosis-face-correct-answer)
-		   "\nYour answer: "
-		   (propertize user-choice 'face 'gnosis-face-user-choice)))))
+   (insert (concat "\n\n"
+		   (propertize "Correct Answer:" 'face 'gnosis-face-directions)
+		   " "
+		   (propertize answer 'face 'gnosis-face-correct)
+		   "\n"
+		   (propertize "Your answer:" 'face 'gnosis-face-directions)
+		   " "
+		   (propertize user-choice 'face (if (string= answer user-choice)
+						     'gnosis-face-correct
+						   'gnosis-face-false))))))
 
 (defun gnosis-display--extra (id)
   "Display extra information for note ID."
