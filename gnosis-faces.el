@@ -70,6 +70,11 @@
   "Face for user choice."
   :group 'gnosis-face)
 
+(defface gnosis-face-hint
+  '((t :inherit warning))
+  "Face for user choice."
+  :group 'gnosis-face)
+
 (provide 'gnosis-faces)
 ;;; gnosis-faces.el ends here
 
