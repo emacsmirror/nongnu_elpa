@@ -91,7 +91,7 @@ The structure of the given date is (YEAR MONTH DAY)."
     (+ ef (car gnosis-algorithm-ef)))
    (t (error "Invalid quality score passed to gnosis-algorithm-e-factor"))))
 
-(defun gnosis-algorithm-next-interval (last-interval n ef success ff)
+(defun gnosis-algorithm-next-interval (last-interval n ef success ff successful-reviews)
   "Calculate next interval.
 - LAST-INTERVAL : The number of days since the item was last reviewed.
 - N : Number of times the item has been reviewed.
@@ -111,11 +111,18 @@ Returns a tuple: (INTERVAL N EF) where,
          ;; Calculate the next interval.
          (interval
           (cond
-           ;; Immediately next day if it's the first time review.
-           ((<= n 1) (car gnosis-algorithm-interval))
-           ;; After 3 days if it's second review.
-           ((= n 2) (cadr gnosis-algorithm-interval))
-           ;; Increase last interval by 1 if recall was successful. Keep last interval if unsuccessful.
+           ;; First successful review -> first interval
+           ((and (= successful-reviews 0)
+		 (= success 1))
+	    (car gnosis-algorithm-interval))
+           ;; Second successful review -> second interval
+           ((and (= successful-reviews 1)
+		 (= success 1))
+	    (cadr gnosis-algorithm-interval))
+           ;; TESTING
+	   ((and (= last-interval 0)
+		 (= success 1))
+	    (* ef 1))
            (t (if (= success 1)
                   (* ef last-interval)
                 (* ff last-interval))))))

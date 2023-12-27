@@ -271,18 +271,18 @@ choice in the `CHOICES' list. Each note must correspond to one `DECK'.
 						     new string)))
   string)
 ;; Review
+;;;;;;;;;;
 (defun gnosis-review--algorithm (id success)
   "Get next review date & ef for note with value of id ID.
 
 SUCCESS is a binary value, 1 = success, 0 = failure.
 Returns a list of the form ((yyyy mm dd) ef)."
   (let ((ff gnosis-algorithm-ff)
-	(ef (nth 2 (gnosis-get 'ef 'review `(= id ,id)))))
+	(ef (nth 2 (gnosis-get 'ef 'review `(= id ,id))))
+	(c-success (gnosis-get 'c-success 'review-log `(= id ,id))))
     (gnosis-algorithm-next-interval (gnosis-review--get-offset id)
 				    (gnosis-get 'n 'review-log `(= id ,id))
-				    ef
-				    success
-				    ff)))
+				    ef success ff c-success)))
 
 (defun gnosis-review-get-due-notes ()
   "Get due notes id for current date.
