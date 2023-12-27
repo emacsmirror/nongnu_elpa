@@ -248,6 +248,14 @@ choice in the `CHOICES' list. Each note must correspond to one `DECK'.
 	(history-add-new-input nil)) ;; Disable history
     (completing-read "Answer: " choices)))
 
+(defun gnosis-cloze-remove-tags (string)
+  "Replace cx-tags in STRING.
+
+Works both with {} and {{}} to make easier to import anki notes."
+  (let* ((regex "{\\{1,2\\}c[0-9]+::\\([^}]*\\)}\\{1,2\\}")
+         (result (replace-regexp-in-string regex "\\1" string)))
+    result))
+
 (defun gnosis-cloze-replace-words (string words new)
   "In STRING replace WORDS with NEW."
   (cl-assert (listp words))
