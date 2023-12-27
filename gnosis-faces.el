@@ -50,14 +50,9 @@
   "Face for section seperator."
   :group 'gnosis-face)
 
-(defface gnosis-face-correct-answer
-  '((t :inherit info-xref))
-  "Face for section seperator."
-  :group 'gnosis-face)
-
-(defface gnosis-face-user-choice
+(defface gnosis-face-directions
   '((t :inherit underline))
-  "Face for user choice."
+  "Face for gnosis directions."
   :group 'gnosis-face)
 
 (defface gnosis-face-correct
