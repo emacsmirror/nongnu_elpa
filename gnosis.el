@@ -266,8 +266,8 @@ Returns a list of the form ((yyyy mm dd) ef)."
 Select notes where:
  - Next review date <= current date
  - Not suspended."
-  (emacsql gnosis-db [:select [id] :from review-log :where (and (<= next-rev ',(gnosis-algorithm-date))
-								(not suspend))]))
+  (emacsql gnosis-db `[:select [id] :from review-log :where (and (<= next-rev ',(gnosis-algorithm-date))
+								 (= suspend 0))]))
 
 (defun gnosis-review--get-offset (id)
   "Get offset for note with value of id ID."
