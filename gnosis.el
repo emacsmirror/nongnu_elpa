@@ -113,6 +113,18 @@ Example:
    (fill-paragraph (insert
 		    (gnosis-cloze-replace-words sentence clozes gnosis-cloze-char)))))
 
+(defun gnosis-display--basic-answer (answer success)
+  "Display ANSWER.
+
+Depending on the value of SUCCESS, display it using different faces.
+If success t, use `gnsois-face-correct'
+else use `gnosis-face-false'"
+  (with-gnosis-buffer
+   (insert
+    (concat "\n\nAnswer: " (propertize answer 'face (if success
+							'gnosis-face-correct
+						      'gnosis-face-false))))))
+
 (defun gnosis-display--cloze-correct (cloze-chars correct)
   "Replace CLOZE-CHARS with CORRECT."
   (with-gnosis-buffer
