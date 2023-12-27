@@ -262,6 +262,14 @@ choice in the `CHOICES' list. Each note must correspond to one `DECK'.
     ;; As our push/assoc approach prepends elements, not appends them
     ;; (mapcar (lambda (x) (cons (car x) (cdr x))) (nreverse res)) ;; check for cl-rest
     (mapcar (lambda (x) (cdr x)) (nreverse res))))
+(defun gnosis-cloze-replace-words (string words new)
+  "In STRING replace WORDS with NEW."
+  (cl-assert (listp words))
+  (cl-loop for word
+	   in words
+	   do (setf string (replace-regexp-in-string (concat "\\<" word "\\>") ;; use word boundary indentifiers
+						     new string)))
+  string)
 ;; Review
 (defun gnosis-review--algorithm (id success)
   "Get next review date & ef for note with value of id ID.
