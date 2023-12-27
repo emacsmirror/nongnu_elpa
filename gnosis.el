@@ -238,6 +238,17 @@ choice in the `CHOICES' list. Each note must correspond to one `DECK'.
 	 (setf tags 'untagged)))
   (gnosis-add-note-fields deck "mcq" question choices correct-answer extra tags suspend image))
 
+(cl-defun gnosis-add-note-basic (&key deck question hint answer extra (image nil) tags (suspend 0))
+  "Add basic type note."
+  (interactive
+   (list :deck (gnosis--get-deck-name)
+	 :question (read-string "Question: ")
+	 :hint (read-string "Hint: ")
+	 :answer (read-string "Answer: ")
+	 :extra (read-string "Extra: ")
+	 :tags (gnosis--prompt "Tags" t t)))
+  (gnosis-add-note-fields deck "basic" question hint answer extra tags suspend image))
+
 (cl-defun gnosis-add-note-cloze (&key deck note tags (suspend 0) extra (image nil))
   "Add cloze type note."
   (interactive (list :deck (gnosis--get-deck-name)
@@ -256,7 +267,7 @@ choice in the `CHOICES' list. Each note must correspond to one `DECK'.
   (pcase type
     ("MCQ" (while (y-or-n-p "Add MCQ note? ") (call-interactively 'gnosis-add-note-mcq)))
     ("Cloze" (while (y-or-n-p "Add cloze note? ") (call-interactively 'gnosis-add-note-cloze)))
-    ("Basic" (message "Not ready yet."))
+    ("Basic" (while (y-or-n-p "Add basic-note? ") (call-interactively 'gnosis-add-note-basic)))
     (_ (message "No such type."))))
 
 (defun gnosis-mcq-answer (id)
