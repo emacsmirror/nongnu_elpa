@@ -246,6 +246,22 @@ choice in the `CHOICES' list. Each note must correspond to one `DECK'.
 	(history-add-new-input nil)) ;; Disable history
     (completing-read "Answer: " choices)))
 
+(defun gnosis-cloze-extract-answers (string)
+  "Extract items from a STRING, and group them based on the cx tag."
+  (let ((res '())
+        (pos 0))
+    (while (string-match "{\\{1,2\\}\\(c[0-9]+\\)::\\([^}]*\\)}\\{1,2\\}" string pos)
+      (let* ((tag (match-string 1 string))
+            (text (match-string 2 string))
+            (pair (assoc tag res)))
+        (if pair
+            (setcdr pair (append (cdr pair) (list text)))
+          (push (list tag text) res)))
+      (setf pos (match-end 0)))
+    ;; Reverse the final result and each sublist to maintain original order
+    ;; As our push/assoc approach prepends elements, not appends them
+    ;; (mapcar (lambda (x) (cons (car x) (cdr x))) (nreverse res)) ;; check for cl-rest
+    (mapcar (lambda (x) (cdr x)) (nreverse res))))
 ;; Review
 (defun gnosis-review--algorithm (id success)
   "Get next review date & ef for note with value of id ID.
