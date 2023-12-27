@@ -237,8 +237,8 @@ choice in the `CHOICES' list. Each note must correspond to one `DECK'.
   "Create note as TYPE."
   (interactive (list (completing-read "Type: " '(MCQ Cloze Basic) nil t)))
   (pcase type
-    ("MCQ" (call-interactively 'gnosis-add-note-mcq))
-    ("Cloze" (call-interactively 'gnosis-add-note-cloze))
+    ("MCQ" (while (y-or-n-p "Add MCQ note? ") (call-interactively 'gnosis-add-note-mcq)))
+    ("Cloze" (while (y-or-n-p "Add cloze note? ") (call-interactively 'gnosis-add-note-cloze)))
     ("Basic" (message "Not ready yet."))
     (_ (message "No such type."))))
 
