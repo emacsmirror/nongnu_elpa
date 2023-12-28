@@ -99,6 +99,27 @@ Example:
   "Execute BODY in gnosis buffer."
   `(with-current-buffer (switch-to-buffer (get-buffer-create "*gnosis*"))
     ,@body))
+;; TODO: Use gnosis-completing-read to display total notes for review
+;; option
+(defun gnosis-completing-read (prompt candidates)
+  "Gnosis `completing-read' alternative.
+
+`PROMPT' for choice between `CANDIDATES'.
+CANDIDATES need to be in a format of ((\"Option1\" \"Additional Info\")).
+
+WARNING: This function is still under development, DO NOT use this as is now."
+  (let* ((collection (lambda (str pred action)
+                       (if (eq action 'metadata)
+                           `(metadata
+                             (affixation-function . ,(lambda (cands)
+                                                       (mapcar
+							(lambda (cand)
+                                                          (list cand "" (format "  %s"
+										(or (cdr (assoc cand candidates)) ""))))
+							cands))))
+                         (complete-with-action action candidates str pred))))
+         (choice (completing-read prompt collection)))
+    choice))
 
 (defun gnosis-display--question (id)
   "Display main row for note ID."
