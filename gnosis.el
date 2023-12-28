@@ -98,7 +98,9 @@ Example:
 (defmacro with-gnosis-buffer (&rest body)
   "Execute BODY in gnosis buffer."
   `(with-current-buffer (switch-to-buffer (get-buffer-create "*gnosis*"))
-    ,@body))
+     (gnosis-mode)
+     ,@body))
+
 ;; TODO: Use gnosis-completing-read to display total notes for review
 ;; option
 (defun gnosis-completing-read (prompt candidates)
