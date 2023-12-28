@@ -30,7 +30,7 @@ Hypothermia is protective. There is a decrease in creatinine
 clearance. Vasopressors aggravate the deleterious effects of shock."
 		     :image "2023.png"
 		     :tags "surgery renal kidneys")
-;; 
+;;
 (gnosis-add-note-mcq :deck "Anatomy"
 		     :question "A 37-year-old man is admitted to the
 emergency department after a severe car crash. After examining the
@@ -45,4 +45,4 @@ deltoid, the spinal accessory nerve innervates the sternocleidomastoid
 and trapezius, the dorsal scapular nerve supplies the rhomboid muscles
 and levator scapulae, and the latissimus dorsi is the muscle supplied
 by the thoracodorsal nerve."
-		     :tags "anatomy thoracic serratus-anterior")
+		     :tags '("anatomy" "thoracic" "serratus-anterior"))
