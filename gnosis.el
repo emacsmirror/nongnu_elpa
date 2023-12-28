@@ -391,6 +391,8 @@ Compare 2 strings, ignoring case and whitespace."
 
 (defun gnosis-select-by-tag (input-tags)
   "Return note id for every note with INPUT-TAGS."
+  (unless (listp input-tags)
+    (error "`input-tags' need to be a list"))
   (cl-loop for (id tags) in (emacsql gnosis-db [:select [id tags] :from notes])
            when (cl-every (lambda (tag) (member tag tags)) input-tags)
            collect id))
