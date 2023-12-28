@@ -262,7 +262,7 @@ choice in the `CHOICES' list. Each note must correspond to one `DECK'.
 	 ;; NOTE: string-to-number transforms non-number strings to 0
          :correct-answer (string-to-number (read-string "Which is the correct answer (number)? "))
 	 :extra (read-string "Extra: ")
-	 :tags (gnosis--prompt "Tags" t t)))
+	 :tags (gnosis-prompt-tag)))
   (cond ((or (not (numberp correct-answer)) (equal correct-answer 0))
 	 (error "Correct answer value must be the index number of the correct answer"))
 	((null tags)
@@ -277,10 +277,10 @@ choice in the `CHOICES' list. Each note must correspond to one `DECK'.
 	 :hint (read-string "Hint: ")
 	 :answer (read-string "Answer: ")
 	 :extra (read-string "Extra: ")
-	 :tags (gnosis--prompt "Tags" t t)))
+	 :tags (gnosis-prompt-tag)))
   (gnosis-add-note-fields deck "basic" question hint answer extra tags suspend image))
 
-(cl-defun gnosis-add-note-cloze (&key deck note tags (suspend 0) extra (image nil))
+(cl-defun gnosis-add-note-cloze (&key deck note hint tags (suspend 0) extra (image nil))
   "Add cloze type note.
 
 `EXTRA' are extra information displayed after an answer is given.
@@ -289,7 +289,7 @@ choice in the `CHOICES' list. Each note must correspond to one `DECK'.
   (interactive (list :deck (gnosis--get-deck-name)
 		     :note (read-string "Cloze note: ")
 		     :extra (read-string "Extra: ")
-		     :tags (gnosis--prompt "Tags" t t)))
+		     :tags (gnosis-prompt-tag)))
   (let ((notags-note (gnosis-cloze-remove-tags note))
 	(clozes (gnosis-cloze-extract-answers note)))
     (cl-loop for cloze in clozes
