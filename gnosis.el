@@ -28,9 +28,6 @@
 
 ;;; Code:
 
-;; TODO: Create cloze question type & make it easily extensible for
-;; other types
-
 
 (require 'emacsql)
 (require 'emacsql-sqlite)
@@ -244,7 +241,15 @@ IMAGE: Image to display during review."
   (gnosis--insert-into 'review-log `([nil ,(gnosis-algorithm-date) ,(gnosis-algorithm-date) 0 0 0 0 ,suspend 0]))
   (gnosis--insert-into 'extras `([nil ,extra ,image])))
 
-(cl-defun gnosis-add-note-mcq (&key deck question choices correct-answer extra (image nil) tags (suspend 0))
+
+;; Adding note(s) consists firstly of a hidden 'gnosis-add-note--TYPE'
+;; function that does the computation & error checking to generate a
+;; note from given input. Secondly, 'gnosis-add-note-TYPE' normal
+;; function, which prompts for user input and passes it to the hidden
+;; function.
+
+
+(cl-defun gnosis-add-note--mcq (&key deck question choices correct-answer extra (image nil) tags (suspend 0))
   "Create a NOTE with a list of multiple CHOICES.
 
 MCQ type consists of a main `QUESTION' that is displayed to the user.
@@ -255,54 +260,70 @@ choice in the `CHOICES' list. Each note must correspond to one `DECK'.
 `EXTRA' are extra information displayed after an answer is given.
 `TAGS' are used to organize questions.
 `SUSPEND' is a binary value, where 1 is for suspend."
-  (interactive
-   (list :deck (gnosis--get-deck-name)
-	 :question (read-string "Question: ")
-         :choices (gnosis--prompt "Choices")
-	 ;; NOTE: string-to-number transforms non-number strings to 0
-         :correct-answer (string-to-number (read-string "Which is the correct answer (number)? "))
-	 :extra (read-string "Extra: ")
-	 :tags (gnosis-prompt-tag)))
   (cond ((or (not (numberp correct-answer)) (equal correct-answer 0))
 	 (error "Correct answer value must be the index number of the correct answer"))
 	((null tags)
 	 (setf tags 'untagged)))
   (gnosis-add-note-fields deck "mcq" question choices correct-answer extra tags suspend image))
 
-(cl-defun gnosis-add-note-basic (&key deck question hint answer extra (image nil) tags (suspend 0))
-  "Add basic type note."
-  (interactive
-   (list :deck (gnosis--get-deck-name)
-	 :question (read-string "Question: ")
-	 :hint (read-string "Hint: ")
-	 :answer (read-string "Answer: ")
-	 :extra (read-string "Extra: ")
-	 :tags (gnosis-prompt-tag)))
+(defun gnosis-add-note-mcq ()
+  "Add note(s) of type `MCQ' interactively to selected deck."
+  (let ((deck (gnosis--get-deck-name)))
+    (while (y-or-n-p (format "Add note of type `MCQ' to `%s' deck? " deck))
+      (gnosis-add-note--mcq :deck deck
+			    :question (read-string "Question: ")
+			    :choices (gnosis--prompt "Choices")
+			    :correct-answer (string-to-number (read-string "Which is the correct answer (number)? "))
+			    :extra (read-string "Extra: ")
+			    :tags (gnosis-prompt-tag)))))
+
+(cl-defun gnosis-add-note--basic (&key deck question hint answer extra (image nil) tags (suspend 0))
+  "Add Basic type note."
   (gnosis-add-note-fields deck "basic" question hint answer extra tags suspend image))
 
-(cl-defun gnosis-add-note-cloze (&key deck note hint tags (suspend 0) extra (image nil))
+(defun gnosis-add-note-basic ()
+  "Add note(s) of type `Basic' interactively to selected deck."
+  (interactive)
+  (let ((deck (gnosis--get-deck-name)))
+    (while (y-or-n-p (format "Add note of type `basic' to `%s' deck? " deck))
+      (gnosis-add-note--basic :deck deck
+			      :question (read-string "Question: ")
+			      :answer (read-string "Answer: ")
+			      :hint (read-string "Hint: ")
+			      :extra (read-string "Extra: ")
+			      :tags (gnosis-prompt-tag)))))
+
+(cl-defun gnosis-add-note--cloze (&key deck note hint tags (suspend 0) extra (image nil))
   "Add cloze type note.
 
 `EXTRA' are extra information displayed after an answer is given.
 `TAGS' are used to organize questions.
 `SUSPEND' is a binary value, where 1 is for suspend."
-  (interactive (list :deck (gnosis--get-deck-name)
-		     :note (read-string "Cloze note: ")
-		     :hint (read-string "Hint: ")
-		     :extra (read-string "Extra: ")
-		     :tags (gnosis-prompt-tag)))
   (let ((notags-note (gnosis-cloze-remove-tags note))
 	(clozes (gnosis-cloze-extract-answers note)))
     (cl-loop for cloze in clozes
 	     do (gnosis-add-note-fields deck "cloze" notags-note hint cloze extra tags suspend image))))
 
+(defun gnosis-add-note-cloze ()
+  "Add note(s) of type cloze interactively to selected deck."
+  (interactive)
+  (let ((deck (gnosis--get-deck-name)))
+    (while (y-or-n-p (format "Add note of type `basic' to `%s' deck? " deck))
+      (gnosis-add-note--cloze :deck deck
+			      :note (read-string "Question: ")
+			      :hint (read-string "Hint: ")
+			      :extra (read-string "Extra: ")
+			      :tags (gnosis-prompt-tag)))))
+
+
+;;;###autoload
 (defun gnosis-add-note (type)
-  "Create note as TYPE."
+  "Create note(s) as TYPE interactively."
   (interactive (list (completing-read "Type: " '(MCQ Cloze Basic) nil t)))
   (pcase type
-    ("MCQ" (while (y-or-n-p "Add MCQ note? ") (call-interactively 'gnosis-add-note-mcq)))
-    ("Cloze" (while (y-or-n-p "Add cloze note? ") (call-interactively 'gnosis-add-note-cloze)))
-    ("Basic" (while (y-or-n-p "Add basic-note? ") (call-interactively 'gnosis-add-note-basic)))
+    ("MCQ" (gnosis-add-note-mcq))
+    ("Cloze" (gnosis-add-note-cloze))
+    ("Basic" (gnosis-add-note-basic))
     (_ (message "No such type."))))
 
 (defun gnosis-mcq-answer (id)
