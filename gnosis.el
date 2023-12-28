@@ -363,6 +363,12 @@ Compare 2 strings, ignoring case and whitespace."
   (cl-loop for tags in (emacsql gnosis-db [:select tags :from notes])
            nconc tags into all-tags
            finally return (delete-dups all-tags)))
+
+(defun gnosis-select-by-tag (input-tags)
+  "Return note id for every note with INPUT-TAGS."
+  (cl-loop for (id tags) in (emacsql gnosis-db [:select [id tags] :from notes])
+           when (cl-every (lambda (tag) (member tag tags)) input-tags)
+           collect id))
 ;; Review
 ;;;;;;;;;;
 (defun gnosis-review--algorithm (id success)
