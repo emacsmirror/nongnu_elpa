@@ -565,13 +565,17 @@ If user-input is equal to CLOZE, return t."
   "Review cloze type note for ID."
   (let* ((main (gnosis-get 'main 'notes `(= id ,id)))
 	 (clozes (gnosis-get 'answer 'notes `(= id ,id)))
+	 (clozes-num (length clozes))
+	 (num 0)
 	 (hint (gnosis-get 'options 'notes `(= id ,id))))
     (gnosis-display--image id)
     (gnosis-display--cloze-sentence main clozes)
     (gnosis-display--hint hint)
     (cl-loop for cloze in clozes
 	     do (let ((input (gnosis-review-cloze--input cloze)))
-		  (when (equal (car input) nil)
+		  (if (equal (car input) t)
+		      (progn (gnosis-review-cloze--reveal (list (nth num clozes)))
+			     (setf num (1+ num)))
 		    (gnosis-review-cloze--reveal clozes)
 		    (gnosis-display--cloze-user-answer (cdr input) t)
 		    (gnosis-review--update id 0)
