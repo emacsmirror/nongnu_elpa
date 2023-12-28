@@ -413,7 +413,7 @@ Compare 2 strings, ignoring case and whitespace."
 
 (defun gnosis-unique-tags ()
   "Return a list of unique strings for tags in gnosis-db."
-  (cl-loop for tags in (emacsql gnosis-db [:select tags :from notes])
+  (cl-loop for tags in (gnosis-select 'tags 'notes)
            nconc tags into all-tags
            finally return (delete-dups all-tags)))
 
@@ -424,6 +424,12 @@ Compare 2 strings, ignoring case and whitespace."
   (cl-loop for (id tags) in (emacsql gnosis-db [:select [id tags] :from notes])
            when (cl-every (lambda (tag) (member tag tags)) input-tags)
            collect id))
+
+(defun gnosis-suspended-p (id)
+  "Return t if note with ID is suspended."
+  (if (= (gnosis-get 'suspend 'review-log `(= id ,id)) 1)
+      t
+    nil))
 
 (defun gnosis-prompt-tag ()
   "Prompt user to enter tags, until they enter `q'.
