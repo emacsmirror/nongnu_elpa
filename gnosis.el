@@ -165,12 +165,14 @@ When SUCCESS nil, display USER-INPUT as well"
 	    (propertize "\n\n-----\n" 'face 'gnosis-face-seperator)
 	    (propertize hint 'face 'gnosis-face-hint)))))
 
-(defun gnosis-display--cloze-correct (cloze-chars correct)
-  "Replace CLOZE-CHARS with CORRECT."
+(defun gnosis-display--cloze-reveal (cloze-chars replace success)
+  "Replace CLOZE-CHARS with REPLACE.
+
+If SUCCESS t"
   (with-gnosis-buffer
    (goto-char (point-min))
    (search-forward cloze-chars nil t)
-   (replace-match (propertize correct 'face 'gnosis-face-correct))))
+   (replace-match (propertize replace 'face (if success 'gnosis-face-correct 'gnosis-face-false)))))
 
 (cl-defun gnosis-display--cloze-user-answer (user-input &optional (false nil))
   "Display USER-INPUT answer for cloze note.
@@ -201,9 +203,9 @@ If FALSE t, use gnosis-face-false face"
   "Display extra information for note ID."
   (let ((extras (gnosis-get 'extra-notes 'extras `(= id ,id))))
     (with-gnosis-buffer
-      (goto-char (point-max))
-      (insert (propertize "\n\n-----\n" 'face 'gnosis-face-seperator))
-      (fill-paragraph (insert (concat "\n" (propertize extras 'face 'gnosis-face-extra)))))))
+     (goto-char (point-max))
+     (insert (propertize "\n\n-----\n" 'face 'gnosis-face-seperator))
+     (fill-paragraph (insert (concat "\n" (propertize extras 'face 'gnosis-face-extra)))))))
 
 (defun gnosis-display--image (id)
   "Display image for note ID."
@@ -212,8 +214,8 @@ If FALSE t, use gnosis-face-false face"
 	 (image (create-image path-to-image 'png nil :width 500 :height 300)))
     (when img
       (with-gnosis-buffer
-	(insert "\n\n")
-	(insert-image image)))))
+       (insert "\n\n")
+       (insert-image image)))))
 
 (cl-defun gnosis--prompt (prompt &optional (downcase nil) (split nil))
   "PROMPT user for input until `q' is given.
@@ -583,15 +585,14 @@ If user-input is equal to CLOZE, return t."
   (let ((user-input (read-string "Answer: ")))
     (cons (gnosis-compare-strings user-input cloze) user-input)))
 
-(defun gnosis-review-cloze--reveal (clozes)
+(defun gnosis-review-cloze--reveal (clozes success)
   "Reveal CLOZES."
-  (cl-loop for cloze in clozes do (gnosis-display--cloze-correct gnosis-cloze-char cloze)))
+  (cl-loop for cloze in clozes do (gnosis-display--cloze-reveal gnosis-cloze-char cloze success)))
 
 (defun gnosis-review-cloze (id)
   "Review cloze type note for ID."
   (let* ((main (gnosis-get 'main 'notes `(= id ,id)))
 	 (clozes (gnosis-get 'answer 'notes `(= id ,id)))
-	 (clozes-num (length clozes))
 	 (num 0)
 	 (hint (gnosis-get 'options 'notes `(= id ,id))))
     (gnosis-display--image id)
@@ -600,13 +601,13 @@ If user-input is equal to CLOZE, return t."
     (cl-loop for cloze in clozes
 	     do (let ((input (gnosis-review-cloze--input cloze)))
 		  (if (equal (car input) t)
-		      (progn (gnosis-review-cloze--reveal (list (nth num clozes)))
+		      (progn (gnosis-review-cloze--reveal (list (nth num clozes)) t)
 			     (setf num (1+ num)))
-		    (gnosis-review-cloze--reveal clozes)
+		    (gnosis-review-cloze--reveal clozes nil)
 		    (gnosis-display--cloze-user-answer (cdr input) t)
 		    (gnosis-review--update id 0)
 		    (cl-return)))
-	     finally (progn (gnosis-review-cloze--reveal clozes)
+	     finally (progn (gnosis-review-cloze--reveal clozes t)
 			    (gnosis-review--update id 1))))
   (gnosis-display--extra id))
 
