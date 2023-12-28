@@ -631,6 +631,13 @@ even though the request may have succeeded."
 
 ;;; UPDATING ITEMS
 
+(defun fedi--update-item-json (new-json)
+  "Replace the json property of item at point with NEW-JSON."
+  (let ((inhibit-read-only t)
+        (region (fedi--find-property-range 'json (point) :backwards)))
+    (add-text-properties (car region) (cdr region)
+                         `(json ,new-json))))
+
 (defun fedi-update-item-from-json (prop replace-fun)
   "Update display of current item using its updated json property.
 PROP is a text property used to find the part of the item to update.
