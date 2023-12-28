@@ -394,6 +394,14 @@ Returns a list of the form (ef-increase ef-decrease ef)."
 	(old-ef (gnosis-get 'ef 'review `(= id ,id))))
     (cl-substitute (gnosis-review-round ef) (nth 2 old-ef) old-ef)))
 
+(defun gnosis-compare-strings (str1 str2)
+  "Compare STR1 and STR2.
+
+Compare 2 strings, ignoring case and whitespace."
+  (let ((modified-str1 (downcase (replace-regexp-in-string "\\s-" "" str1)))
+        (modified-str2 (downcase (replace-regexp-in-string "\\s-" "" str2))))
+    (string= modified-str1 modified-str2)))
+
 (defun gnosis-review--update (id success)
   "Update review-log for note with value of id ID.
 
@@ -436,8 +444,8 @@ SUCCESS is a binary value, 1 is for successful review."
   (gnosis-display--hint (gnosis-get 'options 'notes `(= id ,id)))
   (let* ((answer (gnosis-get 'answer 'notes `(= id ,id)))
 	 (user-input (read-string "Answer: "))
-	 (success (string= answer user-input)))
-    (gnosis-display--basic-answer answer success)
+	 (success (gnosis-compare-strings answer user-input)))
+    (gnosis-display--basic-answer answer success user-input)
     (gnosis-display--extra id)
     (gnosis-review--update id (if success 1 0))))
 
@@ -446,7 +454,7 @@ SUCCESS is a binary value, 1 is for successful review."
 
 If user-input is equal to CLOZE, return t."
   (let ((user-input (read-string "Answer: ")))
-    (cons (string= (downcase user-input) (downcase cloze)) user-input)))
+    (cons (gnosis-compare-strings user-input cloze) user-input)))
 
 (defun gnosis-review-cloze--reveal (clozes)
   "Reveal CLOZES."
