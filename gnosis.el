@@ -553,10 +553,14 @@ If user-input is equal to CLOZE, return t."
       ("cloze" (gnosis-review-cloze id))
       (_ (error "Malformed note type")))))
 
-;;;###autoload
-(defun gnosis-review ()
-  "Start gnosis session."
-  (interactive)
+(defun gnosis-review-all-with-tags ()
+  "Review all note(s) with specified tag(s)."
+  (let ((notes (gnosis-select-by-tag (gnosis-prompt-tag))))
+    (cl-loop for note in notes
+	     do (progn (gnosis-review-note note)
+		       (while (y-or-n-p "Review next note?")
+			 (gnosis-review-note note)))
+	     finally (message "Review session finished"))))
   (let* ((due-notes (gnosis-review-get-due-notes))
          (note-count 0)
          (total-notes (length due-notes)))
