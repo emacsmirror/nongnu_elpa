@@ -561,19 +561,21 @@ If user-input is equal to CLOZE, return t."
 		       (while (y-or-n-p "Review next note?")
 			 (gnosis-review-note note)))
 	     finally (message "Review session finished"))))
+(defun gnosis-review-all-due-notes ()
+  "Review all due notes."
   (let* ((due-notes (gnosis-review-get-due-notes))
          (note-count 0)
          (total-notes (length due-notes)))
     (if (null due-notes)
         (message "No due notes.")
-      (cl-loop for note in due-notes
-               do (progn
-                    (gnosis-review-note (car note))
-                    (setf note-count (+ note-count 1))
-                    (when (and (< note-count total-notes)
-                               (not (y-or-n-p "Review next note?")))
-                      (cl-return)))
-               finally (message "Review session finished. %d note(s) reviewed." note-count)))))
+      (when (y-or-n-p (format "You have %s total notes for review, start session?" total-notes))
+	(cl-loop for note in due-notes
+		 do (progn
+                      (gnosis-review-note (car note))
+                      (setf note-count (+ note-count 1))
+                      (when (not (y-or-n-p "Review next note?"))
+			(cl-return)))
+		 finally (message "Review session finished. %d note(s) reviewed." note-count))))))
 
 ;;; Database Schemas
 ;; Enable foreign_keys
