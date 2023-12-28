@@ -288,13 +288,13 @@ choice in the `CHOICES' list. Each note must correspond to one `DECK'.
 `SUSPEND' is a binary value, where 1 is for suspend."
   (interactive (list :deck (gnosis--get-deck-name)
 		     :note (read-string "Cloze note: ")
+		     :hint (read-string "Hint: ")
 		     :extra (read-string "Extra: ")
 		     :tags (gnosis-prompt-tag)))
   (let ((notags-note (gnosis-cloze-remove-tags note))
 	(clozes (gnosis-cloze-extract-answers note)))
     (cl-loop for cloze in clozes
-	     ;; TODO: OPTIONS need to be hints
-	     do (gnosis-add-note-fields deck "cloze" notags-note "" cloze extra tags suspend image))))
+	     do (gnosis-add-note-fields deck "cloze" notags-note hint cloze extra tags suspend image))))
 
 (defun gnosis-add-note (type)
   "Create note as TYPE."
@@ -488,9 +488,11 @@ If user-input is equal to CLOZE, return t."
 (defun gnosis-review-cloze (id)
   "Review cloze type note for ID."
   (let* ((main (gnosis-get 'main 'notes `(= id ,id)))
-	 (clozes (gnosis-get 'answer 'notes `(= id ,id))))
+	 (clozes (gnosis-get 'answer 'notes `(= id ,id)))
+	 (hint (gnosis-get 'options 'notes `(= id ,id))))
     (gnosis-display--image id)
     (gnosis-display--cloze-sentence main clozes)
+    (gnosis-display--hint hint)
     (cl-loop for cloze in clozes
 	     do (let ((input (gnosis-review-cloze--input cloze)))
 		  (when (equal (car input) nil)
