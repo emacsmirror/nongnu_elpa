@@ -60,6 +60,11 @@
   "Face for user choice."
   :group 'gnosis-face)
 
+(defface gnosis-face-cloze
+  '((t :inherit cursor))
+  "Face for clozes."
+  :group 'gnosis-face)
+
 (defface gnosis-face-false
   '((t :inherit error))
   "Face for user choice."
