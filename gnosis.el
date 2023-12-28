@@ -61,7 +61,7 @@
 (defvar gnosis-db (emacsql-sqlite-open (concat gnosis-dir "/" "gnosis.db"))
   "Gnosis database.")
 
-(cl-defun gnosis--select (value table &optional (restrictions '1=1))
+(cl-defun gnosis-select (value table &optional (restrictions '1=1))
   "Select VALUE from TABLE, optionally with RESTRICTIONS."
   (emacsql gnosis-db `[:select ,value :from ,table :where ,restrictions]))
 
@@ -85,7 +85,7 @@ Example:
 
 (cl-defun gnosis-get (value table &optional (restrictions '1=1))
   "Get VALUE from TABLE, optionally with where RESTRICTIONS."
-  (caar (gnosis--select value table restrictions)))
+  (caar (gnosis-select value table restrictions)))
 
 (defun gnosis-get-note-tags (id)
   "Return tags for note ID."
@@ -213,9 +213,9 @@ Set SPLIT to t to split all input given."
 
 (defun gnosis--get-deck-name ()
   "Get name from table DECKS."
-  (when (equal (gnosis--select 'name 'decks) nil)
+  (when (equal (gnosis-select 'name 'decks) nil)
     (error "No decks found"))
-  (completing-read "Deck: " (gnosis--select 'name 'decks)))
+  (completing-read "Deck: " (gnosis-select 'name 'decks)))
 
 (cl-defun gnosis--get-deck-id (&optional (deck (gnosis--get-deck-name)))
   "Get id for DECK name."
