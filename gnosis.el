@@ -350,6 +350,14 @@ Valid cloze formats include:
     (mapcar (lambda (tag-group) (nreverse (cdr tag-group)))
 	    (nreverse result-alist))))
 
+(defun gnosis-compare-strings (str1 str2)
+  "Compare STR1 and STR2.
+
+Compare 2 strings, ignoring case and whitespace."
+  (let ((modified-str1 (downcase (replace-regexp-in-string "\\s-" "" str1)))
+        (modified-str2 (downcase (replace-regexp-in-string "\\s-" "" str2))))
+    (string= modified-str1 modified-str2)))
+
 ;; Review
 ;;;;;;;;;;
 (defun gnosis-review--algorithm (id success)
@@ -393,14 +401,6 @@ Returns a list of the form (ef-increase ef-decrease ef)."
   (let ((ef (nth 1 (gnosis-review--algorithm id success)))
 	(old-ef (gnosis-get 'ef 'review `(= id ,id))))
     (cl-substitute (gnosis-review-round ef) (nth 2 old-ef) old-ef)))
-
-(defun gnosis-compare-strings (str1 str2)
-  "Compare STR1 and STR2.
-
-Compare 2 strings, ignoring case and whitespace."
-  (let ((modified-str1 (downcase (replace-regexp-in-string "\\s-" "" str1)))
-        (modified-str2 (downcase (replace-regexp-in-string "\\s-" "" str2))))
-    (string= modified-str1 modified-str2)))
 
 (defun gnosis-review--update (id success)
   "Update review-log for note with value of id ID.
