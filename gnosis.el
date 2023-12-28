@@ -561,6 +561,13 @@ If user-input is equal to CLOZE, return t."
 		       (while (y-or-n-p "Review next note?")
 			 (gnosis-review-note note)))
 	     finally (message "Review session finished"))))
+
+(defun gnosis-review-due-tags ()
+  "Review due notes, with specified tag."
+  (let ((notes (gnosis-select-by-tag
+		(list (completing-read "Start session for tag: " (gnosis-review-due-notes--with-tags))))))
+    (cl-loop for note in notes do (gnosis-review-note note))))
+
 (defun gnosis-review-all-due-notes ()
   "Review all due notes."
   (let* ((due-notes (gnosis-review-get-due-notes))
