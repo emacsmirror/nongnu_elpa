@@ -583,6 +583,17 @@ If user-input is equal to CLOZE, return t."
                       (when (not (y-or-n-p "Review next note?"))
 			(cl-return)))
 		 finally (message "Review session finished. %d note(s) reviewed." note-count))))))
+;;;###autoload
+(defun gnosis-review ()
+  "Start gnosis review session."
+  (interactive)
+  (let ((review-type (completing-read "Review: " '("All due notes"
+						   "All due notes for tag(s)"
+						   "All notes for tag(s)"))))
+    (pcase review-type
+      ("All due notes" (gnosis-review-all-due-notes))
+      ("All due notes with tag(s)" (gnosis-review-due-tags))
+      ("All notes for tag(s)" (gnosis-review-all-with-tags)))))
 
 ;;; Database Schemas
 ;; Enable foreign_keys
