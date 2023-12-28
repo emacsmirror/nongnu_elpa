@@ -598,18 +598,28 @@ If user-input is equal to CLOZE, return t."
 
 (defun gnosis-review-all-with-tags ()
   "Review all note(s) with specified tag(s)."
-  (let ((notes (gnosis-select-by-tag (gnosis-prompt-tag))))
+  (let ((notes (gnosis-select-by-tag (gnosis-prompt-tag)))
+	(note-count 0))
     (cl-loop for note in notes
 	     do (progn (gnosis-review-note note)
-		       (while (y-or-n-p "Review next note?")
-			 (gnosis-review-note note)))
-	     finally (message "Review session finished"))))
+		       (setf note-count (1+ note-count))
+		       (when (not (y-or-n-p "Review next?"))
+			 (message "Review session finished. %d note(s) reviewed." note-count)
+			 (cl-return)))
+	     finally (message "Review session finished. %d note(s) reviewed." note-count))))
 
 (defun gnosis-review-due-tags ()
   "Review due notes, with specified tag."
   (let ((notes (gnosis-select-by-tag
-		(list (completing-read "Start session for tag: " (gnosis-review-due-notes--with-tags))))))
-    (cl-loop for note in notes do (gnosis-review-note note))))
+		(list (completing-read "Start session for tag: " (gnosis-review-due-notes--with-tags)))))
+	(note-count 0))
+    (cl-loop for note
+	     in notes do (progn (gnosis-review-note note)
+				(setf note-count (1+ note-count ))
+				(when (not (y-or-n-p "Review next note?"))
+				  (message "Review session finished. %d note(s) reviewed." note-count)
+				  (cl-return)))
+	     finally (message "Review session finished. %d note(s) reviewed." note-count))))
 
 (defun gnosis-review-all-due-notes ()
   "Review all due notes."
@@ -620,23 +630,23 @@ If user-input is equal to CLOZE, return t."
         (message "No due notes.")
       (when (y-or-n-p (format "You have %s total notes for review, start session?" total-notes))
 	(cl-loop for note in due-notes
-		 do (progn
-                      (gnosis-review-note (car note))
-                      (setf note-count (+ note-count 1))
-                      (when (not (y-or-n-p "Review next note?"))
-			(cl-return)))
+		 do (progn (gnosis-review-note (car note))
+			   (setf note-count (+ note-count 1))
+			   (when (not (y-or-n-p "Review next note?"))
+			     (message "Review session finished. %d note(s) reviewed." note-count)
+			     (cl-return)))
 		 finally (message "Review session finished. %d note(s) reviewed." note-count))))))
 ;;;###autoload
 (defun gnosis-review ()
   "Start gnosis review session."
   (interactive)
-  (let ((review-type (completing-read "Review: " '("All due notes"
-						   "All due notes for tag(s)"
-						   "All notes for tag(s)"))))
+  (let ((review-type (completing-read "Review: " '("Due notes"
+						   "Due notes of specified tag(s)"
+						   "Notes with tag(s)"))))
     (pcase review-type
-      ("All due notes" (gnosis-review-all-due-notes))
-      ("All due notes with tag(s)" (gnosis-review-due-tags))
-      ("All notes for tag(s)" (gnosis-review-all-with-tags)))))
+      ("Due notes" (gnosis-review-all-due-notes))
+      ("Due notes of specified tag(s)" (gnosis-review-due-tags))
+      ("Notes with tag(s)" (gnosis-review-all-with-tags)))))
 
 ;;; Database Schemas
 ;; Enable foreign_keys
