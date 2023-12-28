@@ -113,7 +113,7 @@ Example:
    (fill-paragraph (insert
 		    (gnosis-cloze-replace-words sentence clozes gnosis-cloze-char)))))
 
-(defun gnosis-display--basic-answer (answer success)
+(defun gnosis-display--basic-answer (answer success user-input)
   "Display ANSWER.
 
 Depending on the value of SUCCESS, display it using different faces.
@@ -121,16 +121,21 @@ If success t, use `gnsois-face-correct'
 else use `gnosis-face-false'"
   (with-gnosis-buffer
    (insert
-    (concat "\n\nAnswer: " (propertize answer 'face (if success
-							'gnosis-face-correct
-						      'gnosis-face-false))))))
+    (concat "\n\nAnswer: " (propertize answer 'face (if success 'gnosis-face-correct 'gnosis-face-false))))
+   ;; Insert user wrong answer
+   (when (not success)
+     (insert (concat "\n"
+		     (propertize "Your answer:" 'face 'gnosis-face-directions)
+		     " "
+		     (propertize user-input 'face 'gnosis-face-false))))))
 
 (defun gnosis-display--hint (hint)
   "Display HINT."
   (with-gnosis-buffer
    (goto-char (point-max))
-   (insert (concat "\n"
-		   (propertize hint 'face 'gnosis-face-hint)))))
+   (insert (concat
+	    (propertize "\n\n-----\n" 'face 'gnosis-face-seperator)
+	    (propertize hint 'face 'gnosis-face-hint)))))
 
 (defun gnosis-display--cloze-correct (cloze-chars correct)
   "Replace CLOZE-CHARS with CORRECT."
