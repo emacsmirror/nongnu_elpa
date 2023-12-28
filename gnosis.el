@@ -437,6 +437,15 @@ Select notes where:
   (emacsql gnosis-db `[:select [id] :from review-log :where (and (<= next-rev ',(gnosis-algorithm-date))
 								 (= suspend 0))]))
 
+(defun gnosis-review-due-notes--with-tags ()
+  "Return a list of due note tags."
+  (let ((due-notes (gnosis-review-get-due-notes)))
+    (cl-remove-duplicates
+     (cl-mapcan (lambda (note-id)
+                  (gnosis-get-note-tags (car note-id)))
+	        due-notes)
+     :test 'equal)))
+
 (defun gnosis-review--get-offset (id)
   "Get offset for note with value of id ID."
   (let ((last-rev (gnosis-get 'last-rev 'review-log `(= id ,id))))
