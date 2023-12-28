@@ -574,13 +574,16 @@ If user-input is equal to CLOZE, return t."
   (gnosis-display--extra id))
 
 (defun gnosis-review-note (id)
-  "Start review for note with value of id ID."
-  (let ((type (gnosis-get 'type 'notes `(= id ,id))))
-    (pcase type
-      ("mcq" (gnosis-review-mcq id))
-      ("basic" (gnosis-review-basic id))
-      ("cloze" (gnosis-review-cloze id))
-      (_ (error "Malformed note type")))))
+  "Start review for note with value of id ID, if note is unsuspended."
+  (cond ((gnosis-suspended-p id)
+         (message "Note is suspended."))
+        (t
+         (let ((type (gnosis-get 'type 'notes `(= id ,id))))
+           (pcase type
+             ("mcq" (gnosis-review-mcq id))
+             ("basic" (gnosis-review-basic id))
+             ("cloze" (gnosis-review-cloze id))
+             (_ (error "Malformed note type")))))))
 
 (defun gnosis-review-all-with-tags ()
   "Review all note(s) with specified tag(s)."
