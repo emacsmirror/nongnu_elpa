@@ -227,6 +227,15 @@ Set SPLIT to t to split all input given."
   (gnosis--delete 'decks `(= name ,deck))
   (message "Deleted deck %s" deck))
 
+(defun gnosis-suspend-deck (&optional deck)
+  "Suspend all note(s) with DECK id.
+
+When called with a prefix, unsuspends all notes in deck."
+  (unless deck (setf deck (gnosis--get-deck-id)))
+  (let ((notes (gnosis-select 'id 'notes `(= deck-id ,deck)))
+	(suspend (if current-prefix-arg 0 1)))
+    (cl-loop for note in notes
+	     do (gnosis-update 'review-log `(= suspend ,suspend) `(= id ,(car note))))))
 (defun gnosis-add-note-fields (deck type main options answer extra tags suspend image)
   "Add fields for new note.
 
