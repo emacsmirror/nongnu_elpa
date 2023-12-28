@@ -111,8 +111,9 @@ Example:
   "Display cloze sentence for SENTENCE with CLOZES."
   (with-gnosis-buffer
    (erase-buffer)
-   (fill-paragraph (insert
-		    (gnosis-cloze-replace-words sentence clozes gnosis-cloze-char)))))
+   (fill-paragraph
+    (insert
+     (gnosis-cloze-replace-words sentence clozes (propertize gnosis-cloze-char 'face 'gnosis-face-cloze))))))
 
 (defun gnosis-display--basic-answer (answer success user-input)
   "Display ANSWER.
