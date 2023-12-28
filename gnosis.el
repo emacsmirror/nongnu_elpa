@@ -748,6 +748,7 @@ If user-input is equal to CLOZE, return t."
 (define-derived-mode gnosis-mode special-mode "Gnosis"
   "Gnosis Mode."
   :interactive t
+  (read-only-mode 0)
   (display-line-numbers-mode 0)
   :lighter " gnosis-mode")
 
