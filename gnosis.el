@@ -369,6 +369,20 @@ Compare 2 strings, ignoring case and whitespace."
   (cl-loop for (id tags) in (emacsql gnosis-db [:select [id tags] :from notes])
            when (cl-every (lambda (tag) (member tag tags)) input-tags)
            collect id))
+
+(defun gnosis-prompt-tag ()
+  "Prompt user to enter tags, until they enter `q'.
+
+Returns a list of unique entered tags."
+  (interactive)
+  (let ((tags '())
+        (tag ""))
+    (while (not (string= tag "q"))
+      (setf tag (completing-read "Add tag (q for quit): " (gnosis-unique-tags) nil nil))
+      (unless (or (string= tag "q") (member tag tags))
+        (push tag tags)))
+    (reverse tags)))
+
 ;; Review
 ;;;;;;;;;;
 (defun gnosis-review--algorithm (id success)
