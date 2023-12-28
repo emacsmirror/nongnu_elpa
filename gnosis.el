@@ -87,6 +87,10 @@ Example:
   "Get VALUE from TABLE, optionally with where RESTRICTIONS."
   (caar (gnosis--select value table restrictions)))
 
+(defun gnosis-get-note-tags (id)
+  "Return tags for note ID."
+  (gnosis-get 'tags 'notes `(= id ,id)))
+
 (defun gnosis--delete (table value)
   "From TABLE use where to delete VALUE."
   (emacsql gnosis-db `[:delete :from ,table :where ,value]))
