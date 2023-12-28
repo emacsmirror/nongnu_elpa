@@ -127,8 +127,9 @@ WARNING: This function is still under development, DO NOT use this as is now."
   "Display main row for note ID."
   (let ((question (gnosis-get 'main 'notes `(= id ,id))))
     (with-gnosis-buffer
-      (erase-buffer)
-      (fill-paragraph (insert (propertize question 'face 'gnosis-face-main))))))
+     (erase-buffer)
+     (fill-paragraph (insert (concat "\n"
+				     (propertize question 'face 'gnosis-face-main)))))))
 
 (defun gnosis-display--cloze-sentence (sentence clozes)
   "Display cloze sentence for SENTENCE with CLOZES."
@@ -136,7 +137,8 @@ WARNING: This function is still under development, DO NOT use this as is now."
    (erase-buffer)
    (fill-paragraph
     (insert
-     (gnosis-cloze-replace-words sentence clozes (propertize gnosis-cloze-char 'face 'gnosis-face-cloze))))))
+     (concat "\n"
+	     (gnosis-cloze-replace-words sentence clozes (propertize gnosis-cloze-char 'face 'gnosis-face-cloze)))))))
 
 (defun gnosis-display--basic-answer (answer success user-input)
   "Display ANSWER.
