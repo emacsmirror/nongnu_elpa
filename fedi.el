@@ -655,12 +655,10 @@ non-destructive as possible, whereas we need to always replace
 the whole likes count in order to propertize it fully."
   (let ((json (fedi--property 'json)))
     (save-excursion
-      (save-restriction
-        (narrow-to-region beg end)
-        (goto-char (point-min))
-        (delete-region (point-min) (point-max))
-        (insert
-         (funcall replace-fun json))))))
+      (goto-char beg)
+      (delete-region beg end)
+      (insert
+       (funcall replace-fun json)))))
 
 (provide 'fedi)
 ;;; fedi.el ends here
