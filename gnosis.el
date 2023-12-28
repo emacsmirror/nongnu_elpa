@@ -236,6 +236,17 @@ When called with a prefix, unsuspends all notes in deck."
 	(suspend (if current-prefix-arg 0 1)))
     (cl-loop for note in notes
 	     do (gnosis-update 'review-log `(= suspend ,suspend) `(= id ,(car note))))))
+
+(defun gnosis-suspend ()
+  "Suspend note(s) with specified values."
+  (interactive)
+  (let ((item (completing-read "Suspend by: " '("Deck" "Tag"))))
+    (pcase item
+      ("Deck" (gnosis-suspend-deck))
+      ("Tag" (message "Not ready yet."))
+      (_ (message "Not ready yet.")))))
+
+
 (defun gnosis-add-note-fields (deck type main options answer extra tags suspend image)
   "Add fields for new note.
 
