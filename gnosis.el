@@ -422,6 +422,12 @@ Returns a list of the form ((yyyy mm dd) ef)."
 				    (gnosis-get 'n 'review-log `(= id ,id))
 				    ef success ff c-success)))
 
+(defun gnosis-review-is-due-p (note-id)
+  "Return t if unsuspended note with NOTE-ID is due today."
+  (emacsql gnosis-db `[:select [id] :from review-log :where (and (<= next-rev ',(gnosis-algorithm-date))
+								 (= suspend 0)
+								 (= id ,note-id))]))
+
 (defun gnosis-review-get-due-notes ()
   "Get due notes id for current date.
 
