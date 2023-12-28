@@ -118,12 +118,13 @@ Example:
 (defun gnosis-display--basic-answer (answer success user-input)
   "Display ANSWER.
 
-Depending on the value of SUCCESS, display it using different faces.
-If success t, use `gnsois-face-correct'
-else use `gnosis-face-false'"
+When SUCCESS nil, display USER-INPUT as well"
   (with-gnosis-buffer
    (insert
-    (concat "\n\nAnswer: " (propertize answer 'face (if success 'gnosis-face-correct 'gnosis-face-false))))
+    (concat "\n\n"
+	    (propertize "Answer:" 'face 'gnosis-face-directions)
+	    " "
+	    (propertize answer 'face 'gnosis-face-correct)))
    ;; Insert user wrong answer
    (when (not success)
      (insert (concat "\n"
