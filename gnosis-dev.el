@@ -5,6 +5,21 @@
 
 (require 'gnosis)
 
+(defvar gnosis-dev-tags '("anatomy" "thoracic" "serratus-anterior"
+			  "biochemistry" "informatics" "amino-acids"
+			  "microbiology" "gram-positive" "gram-negative"
+			  "fungi" "parasites"))
+
+(defun gnosis-dev-random-items (list x)
+  "Select X random items from LIST."
+  (let ((shuffled-list (copy-sequence list))
+        selected-items)
+    (dotimes (_ x)
+      (let* ((index (random (length shuffled-list)))
+             (item (nth index shuffled-list)))
+        (setq selected-items (cons item selected-items))
+        (setq shuffled-list (append (butlast shuffled-list index) (nthcdr (1+ index) shuffled-list)))))
+    selected-items))
 (defun gnosis-dev-test ()
   "Start testing env."
   (interactive)
