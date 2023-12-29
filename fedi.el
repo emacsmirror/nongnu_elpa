@@ -647,12 +647,12 @@ REPLACE-FUN is a function sent to
 should be called with at least 1 arg: the item's json."
   (let ((json (fedi--property 'json)))
     (let ((inhibit-read-only t)
-          (byline
+          (region
            (fedi--find-property-range prop (point)
                                       (when (fedi--property prop)
                                         :backwards))))
       (fedi--replace-region-contents
-       (car byline) (cdr byline)
+       (car region) (cdr region)
        replace-fun))))
 
 (defun fedi--replace-region-contents (beg end replace-fun)
