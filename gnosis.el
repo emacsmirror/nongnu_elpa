@@ -587,9 +587,12 @@ If user-input is equal to CLOZE, return t."
   (let ((user-input (read-string "Answer: ")))
     (cons (gnosis-compare-strings user-input cloze) user-input)))
 
-(defun gnosis-review-cloze--reveal (clozes success)
-  "Reveal CLOZES."
-  (cl-loop for cloze in clozes do (gnosis-display--cloze-reveal gnosis-cloze-char cloze success)))
+(defun gnosis-review-cloze-reveal-unaswered (clozes)
+  "Reveal CLOZES.
+
+Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
+  (cl-loop for cloze in clozes do (gnosis-display-cloze-reveal :replace cloze
+							       :face 'gnosis-face-cloze-unanswered)))
 
 (defun gnosis-review-cloze (id)
   "Review cloze type note for ID."
