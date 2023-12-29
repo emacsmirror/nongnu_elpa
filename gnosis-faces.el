@@ -56,7 +56,7 @@
   :group 'gnosis-face)
 
 (defface gnosis-face-correct
-  '((t :inherit homoglyph))
+  '((t :inherit match))
   "Face for user choice."
   :group 'gnosis-face)
 
