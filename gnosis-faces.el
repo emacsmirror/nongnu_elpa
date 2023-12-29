@@ -75,6 +75,12 @@
   "Face for user choice."
   :group 'gnosis-face)
 
+(defface gnosis-face-cloze-unanswered
+  '((t :inherit underline))
+  "Face for user choice."
+  :group 'gnosis-face)
+
+
 (provide 'gnosis-faces)
 ;;; gnosis-faces.el ends here
 
