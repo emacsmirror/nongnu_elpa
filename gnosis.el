@@ -164,14 +164,17 @@ When SUCCESS nil, display USER-INPUT as well"
 	    (propertize "\n\n-----\n" 'face 'gnosis-face-seperator)
 	    (propertize hint 'face 'gnosis-face-hint)))))
 
-(defun gnosis-display--cloze-reveal (cloze-chars replace success)
-  "Replace CLOZE-CHARS with REPLACE.
+(cl-defun gnosis-display-cloze-reveal (&key (cloze-char gnosis-cloze-char) replace (success t) (face nil))
+  "Replace CLOZE-CHAR with REPLACE.
 
-If SUCCESS t"
+If FACE nil, propertize replace using `gnosis-face-correct', or
+`gnosis-face-false' when (not SUCCESS). Else use FACE value."
   (with-gnosis-buffer
    (goto-char (point-min))
-   (search-forward cloze-chars nil t)
-   (replace-match (propertize replace 'face (if success 'gnosis-face-correct 'gnosis-face-false)))))
+   (search-forward cloze-char nil t)
+   (replace-match (propertize replace 'face (if (not face)
+						(if success 'gnosis-face-correct 'gnosis-face-false)
+					      face)))))
 
 (cl-defun gnosis-display--cloze-user-answer (user-input &optional (false nil))
   "Display USER-INPUT answer for cloze note.
