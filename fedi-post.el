@@ -167,7 +167,8 @@ CANCEL means the post was not sent, so we save the post text as a draft."
                     fedi-post-draft-posts-list :test 'equal)))
     ;; prevent some weird bug when cancelling a non-empty post:
     ;; (delete #'fedi-post--save-post-text after-change-functions)
-    (kill-buffer-and-window)
+    ;; (kill-buffer-and-window)
+    (quit-window 'kill)
     (fedi-post--restore-previous-window-config prev-window-config)))
 
 (defun fedi-post-cancel ()
