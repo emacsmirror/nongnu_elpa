@@ -105,6 +105,8 @@ Example:
   "A version of `completing-read' with text properties, padding & choosable face.
 Returns selected option from OPTIONS.
 
+WARNING: Do NOT use htis functions as is now!
+
 PROMPT is a string to prompt with; normally it ends in a colon and a space.
 OPTIONS is a list of strings.
 INFO is a list of strings, which will be displayed as additional info for option

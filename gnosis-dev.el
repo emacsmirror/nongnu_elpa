@@ -23,29 +23,45 @@
 
 (defun gnosis-dev-add-fields ()
   "Add random inputs to test."
-  (dotimes (_ 500)
-    (gnosis-add-note-mcq :deck "Anatomy"
-			 :question "A 37-year-old man is admitted to the
+  (when (y-or-n-p "Add MCQ type?")
+    (dotimes (_ 3)
+      (gnosis-add-note--mcq :deck "Anatomy"
+			    :question "A 37-year-old man is admitted to the
 emergency department after a severe car crash. After examining the
 patient the emergency medicine physician concludes that the serratus
 anterior muscle is damaged. Which of the following nerves innervates
 the serratus anterior muscle?"
-			 :choices '("Long thoracic" "Axillary" "Spinal accessory" "Dorsal scapular" "Thoracodorsal")
-			 :correct-answer 1
-			 :extra "The long thoracic is the only nerve that
+			    :choices '("Long thoracic" "Axillary" "Spinal accessory" "Dorsal scapular" "Thoracodorsal")
+			    :correct-answer 1
+			    :extra "The long thoracic is the only nerve that
 innervates the serratus anterior. The axillary nerve innervates the
 deltoid, the spinal accessory nerve innervates the sternocleidomastoid
 and trapezius, the dorsal scapular nerve supplies the rhomboid muscles
 and levator scapulae, and the latissimus dorsi is the muscle supplied
 by the thoracodorsal nerve."
-			 :tags (gnosis-dev-random-items gnosis-dev-tags 2)))
-  (dotimes (_ 500)
-    (gnosis-add-note-basic :deck "Anatomy"
-			   :question "A question"
-			   :hint "hint"
-			   :answer "answer"
-			   :extra "extra"
-			   :tags (gnosis-dev-random-items gnosis-dev-tags 2))))
+			    :tags (gnosis-dev-random-items gnosis-dev-tags 2))))
+  (when (y-or-n-p "Add Basic type questions?")
+    (dotimes (_ 3)
+      (gnosis-add-note--basic :deck "Anatomy"
+			      :question "A question"
+			      :hint "hint"
+			      :answer "answer"
+			      :extra "extra"
+			      :tags (gnosis-dev-random-items gnosis-dev-tags 2))))
+  (when (y-or-n-p "Add single cloze type?")
+    (dotimes (_ 3)
+      (gnosis-add-note--cloze :deck "Anatomy"
+			      :note "this is a {c1:note}"
+			      :hint "note"
+			      :tags (gnosis-dev-random-items gnosis-dev-tags 2)
+			      :extra "extra")))
+  (when (y-or-n-p "Add mulit cloze type?")
+    (dotimes (_ 3)
+      (gnosis-add-note--cloze :deck "Anatomy"
+			      :note "this is a {c1:note} with multiple {c1:clozes}"
+			      :hint "note"
+			      :tags (gnosis-dev-random-items gnosis-dev-tags 2)
+			      :extra "extra"))))
 
 (defun gnosis-dev-test ()
   "Start testing env."
