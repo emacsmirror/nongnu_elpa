@@ -176,8 +176,8 @@ If FACE nil, propertize replace using `gnosis-face-correct', or
 						(if success 'gnosis-face-correct 'gnosis-face-false)
 					      face)))))
 
-(cl-defun gnosis-display--cloze-user-answer (user-input &optional (false nil))
-  "Display USER-INPUT answer for cloze note.
+(cl-defun gnosis-display-cloze-user-answer (user-input &optional (false t))
+  "Display USER-INPUT answer for cloze note upon failed review.
 
 If FALSE t, use gnosis-face-false face"
   (with-gnosis-buffer
@@ -564,7 +564,6 @@ SUCCESS is a binary value, 1 is for successful review."
 	       (message "Correct!"))
       (gnosis-review--update id 0)
       (message "False"))
-    (sit-for 0.3)
     (gnosis-display--correct-answer-mcq answer user-choice)
     (gnosis-display--extra id)))
 
@@ -598,7 +597,8 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
   "Review cloze type note for ID."
   (let* ((main (gnosis-get 'main 'notes `(= id ,id)))
 	 (clozes (gnosis-get 'answer 'notes `(= id ,id)))
-	 (num 0)
+	 (num 1)
+	 (clozes-num (length clozes))
 	 (hint (gnosis-get 'options 'notes `(= id ,id))))
     (gnosis-display--image id)
     (gnosis-display--cloze-sentence main clozes)
@@ -606,14 +606,19 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
     (cl-loop for cloze in clozes
 	     do (let ((input (gnosis-review-cloze--input cloze)))
 		  (if (equal (car input) t)
-		      (progn (gnosis-review-cloze--reveal (list (nth num clozes)) t)
+		      ;; Reveal only one cloze
+		      (progn (gnosis-display-cloze-reveal :replace cloze)
 			     (setf num (1+ num)))
-		    (gnosis-review-cloze--reveal clozes nil)
-		    (gnosis-display--cloze-user-answer (cdr input) t)
+		    ;; Reveal cloze for wrong input, with `gnosis-face-false'
+		    (gnosis-display-cloze-reveal :replace cloze :success nil)
+		    ;; Do NOT remove the _when_ statement, unexpected
+		    ;; bugs occur if so depending on the number of
+		    ;; clozes.
+		    (when (< num clozes-num) (gnosis-review-cloze-reveal-unaswered clozes))
+		    (gnosis-display-cloze-user-answer (cdr input))
 		    (gnosis-review--update id 0)
 		    (cl-return)))
-	     finally (progn (gnosis-review-cloze--reveal clozes t)
-			    (gnosis-review--update id 1))))
+	     finally (gnosis-review--update id 1)))
   (gnosis-display--extra id))
 
 (defun gnosis-review-note (id)
