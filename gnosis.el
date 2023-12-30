@@ -294,23 +294,24 @@ When called with a prefix, unsuspends all notes in deck."
       (_ (message "Not ready yet.")))))
 
 
-(defun gnosis-add-note-fields (deck type main options answer extra tags suspend image)
+(defun gnosis-add-note-fields (deck type main options answer extra tags suspend image second-image)
   "Add fields for new note.
 
-DECK: Deck name for new note
-TYPE: New note type (mcq,cloze,basic)
+DECK: Deck for new note.
+TYPE: Note type (mcq,cloze,basic)
 MAIN: Note's main part
-OPTIONS: Note's options (optional, used for MCQ type)
+OPTIONS: Note's options, e.g choices for mcq for  or clozes for cloze type
 ANSWER: Correct answer for note, for MCQ is an integer while for
 cloze/basic a string/list of the right answer(s)
 EXTRA: Extra information to display after answering note
 TAGS: Tags to organize notes
 SUSPEND: Integer value of 1 or 0, where 1 suspends the card
-IMAGE: Image to display during review."
+IMAGE: Image to display during review.
+SECOND-IMAGE: Image to display after user-input."
   (gnosis--insert-into 'notes `([nil ,type ,main ,options ,answer ,tags ,(gnosis--get-deck-id deck)]))
   (gnosis--insert-into 'review `([nil ,gnosis-algorithm-ef ,gnosis-algorithm-ff ,gnosis-algorithm-interval]))
   (gnosis--insert-into 'review-log `([nil ,(gnosis-algorithm-date) ,(gnosis-algorithm-date) 0 0 0 0 ,suspend 0]))
-  (gnosis--insert-into 'extras `([nil ,extra ,image])))
+  (gnosis--insert-into 'extras `([nil ,extra ,image ,second-image])))
 
 
 ;; Adding note(s) consists firstly of a hidden 'gnosis-add-note--TYPE'
@@ -320,7 +321,8 @@ IMAGE: Image to display during review."
 ;; function.
 
 
-(cl-defun gnosis-add-note--mcq (&key deck question choices correct-answer extra (image nil) tags (suspend 0))
+(cl-defun gnosis-add-note--mcq (&key deck question choices correct-answer
+				     extra (image nil) tags (suspend 0) (second-image nil))
   "Create a NOTE with a list of multiple CHOICES.
 
 MCQ type consists of a main `QUESTION' that is displayed to the user.
@@ -335,7 +337,7 @@ choice in the `CHOICES' list. Each note must correspond to one `DECK'.
 	 (error "Correct answer value must be the index number of the correct answer"))
 	((null tags)
 	 (setf tags 'untagged)))
-  (gnosis-add-note-fields deck "mcq" question choices correct-answer extra tags suspend image))
+  (gnosis-add-note-fields deck "mcq" question choices correct-answer extra tags suspend image ,second-image))
 
 (defun gnosis-add-note-mcq ()
   "Add note(s) of type `MCQ' interactively to selected deck."
@@ -348,13 +350,13 @@ choice in the `CHOICES' list. Each note must correspond to one `DECK'.
 			    :extra (read-string "Extra: ")
 			    :tags (gnosis-tag-prompt)))))
 
-(cl-defun gnosis-add-note--basic (&key deck question hint answer extra (image nil) tags (suspend 0))
+(cl-defun gnosis-add-note--basic (&key deck question hint answer
+				       extra (image nil) tags (suspend 0) (second-image nil))
   "Add Basic type note."
-  (gnosis-add-note-fields deck "basic" question hint answer extra tags suspend image))
+  (gnosis-add-note-fields deck "basic" question hint answer extra tags suspend image second-image))
 
 (defun gnosis-add-note-basic ()
   "Add note(s) of type `Basic' interactively to selected deck."
-  (interactive)
   (let ((deck (gnosis--get-deck-name)))
     (while (y-or-n-p (format "Add note of type `basic' to `%s' deck? " deck))
       (gnosis-add-note--basic :deck deck
@@ -364,7 +366,6 @@ choice in the `CHOICES' list. Each note must correspond to one `DECK'.
 			      :extra (read-string "Extra: ")
 			      :tags (gnosis-tag-prompt)))))
 
-(cl-defun gnosis-add-note--cloze (&key deck note hint tags (suspend 0) extra (image nil))
   "Add cloze type note.
 
 `EXTRA' are extra information displayed after an answer is given.
@@ -373,7 +374,7 @@ choice in the `CHOICES' list. Each note must correspond to one `DECK'.
   (let ((notags-note (gnosis-cloze-remove-tags note))
 	(clozes (gnosis-cloze-extract-answers note)))
     (cl-loop for cloze in clozes
-	     do (gnosis-add-note-fields deck "cloze" notags-note hint cloze extra tags suspend image))))
+	     do (gnosis-add-note-fields deck "cloze" notags-note hint cloze extra tags suspend image second-image))))
 
 (defun gnosis-add-note-cloze ()
   "Add note(s) of type cloze interactively to selected deck."
@@ -767,7 +768,8 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
 
 (defvar gnosis-db-schema-extras '([(id integer :primary-key :not-null)
 				   (extra-notes string)
-				   (images string)]
+				   (images string)
+				   (extra-image string)]
 				  (:foreign-key [id] :references notes [id]
 						:on-delete :cascade)))
 
