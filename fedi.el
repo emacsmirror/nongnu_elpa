@@ -638,7 +638,8 @@ even though the request may have succeeded."
 ;; property, then to update the item based on that data. This separation is
 ;; because we always want to update the json property for the entire item, but
 ;; we don't always then want to update display of the entire item, but only
-;; part of it (a byline/status line, etc.). See lem-ui.el for examples of using these update functions.
+;; part of it (a byline/status line, etc.). See lem-ui.el for examples of
+;; using these update functions.
 
 (defun fedi--update-item-json (new-json)
   "Replace the json property of item at point with NEW-JSON."
