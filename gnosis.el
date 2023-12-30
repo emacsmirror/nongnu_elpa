@@ -53,9 +53,11 @@
 (defvar gnosis-images-dir (concat gnosis-dir "/" "images")
   "Gnosis images directory.")
 
+(defvar gnosis-db (emacsql-sqlite (concat gnosis-dir "/" "gnosis.db"))
+  "Gnosis database file.
 
-(defvar gnosis-db (emacsql-sqlite-open (concat gnosis-dir "/" "gnosis.db"))
-  "Gnosis database.")
+WARNING: Do not change this value!")
+
 
 (cl-defun gnosis-select (value table &optional (restrictions '1=1))
   "Select VALUE from TABLE, optionally with RESTRICTIONS."
