@@ -474,6 +474,15 @@ By default, DIR value is `gnosis-images-dir' & REGEX value is \"^[^.]\""
                                     (gnosis-directory-files path regex))
                     else if (string-match-p regex (file-name-nondirectory path))
                     collect (list (file-relative-name path dir))))))
+
+(defun gnosis-select-image (&optional prompt)
+  "Return PATH for file in `gnosis-images-dir'.
+
+Optionally, add cusotm PROMPT."
+  (let* ((prompt (or prompt "Select image: "))
+	 (image (completing-read prompt (gnosis-directory-files gnosis-images-dir))))
+    image))
+
 (defun gnosis-get-tags--unique ()
   "Return a list of unique strings for tags in gnosis-db."
   (cl-loop for tags in (gnosis-select 'tags 'notes)
