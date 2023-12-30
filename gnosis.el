@@ -50,13 +50,9 @@
   :type 'string
   :group 'gnosis)
 
-
 (defvar gnosis-images-dir (concat gnosis-dir "/" "images")
   "Gnosis images directory.")
 
-(unless (file-exists-p gnosis-images-dir)
-  (make-directory gnosis-dir)
-  (make-directory gnosis-images-dir))
 
 (defvar gnosis-db (emacsql-sqlite-open (concat gnosis-dir "/" "gnosis.db"))
   "Gnosis database.")
@@ -690,8 +686,6 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
 ;;; Database Schemas
 ;; Enable foreign_keys
 ;; TODO: Redo when eval
-(emacsql gnosis-db "PRAGMA foreign_keys = ON")
-
 
 (defvar gnosis-db-schema-decks '([(id integer :primary-key :autoincrement)
 				  (name text :not-null)]))
@@ -731,28 +725,35 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
 				  (:foreign-key [id] :references notes [id]
 						:on-delete :cascade)))
 
-
-(defun gnosis-init ()
-  "Create notes content table."
-  (interactive)
-  ;;(make-directory (concat user-emacs-directory "gnosis"))
-  (dolist (table '(notes decks review review-log extras))
-    (condition-case nil
-	(gnosis--drop-table table)
-      (error (message "No %s table to drop." table))))
-  ;; Enable foreign_keys
-  (emacsql gnosis-db "PRAGMA foreign_keys = ON")
-  ;; Create decks table
-  (gnosis--create-table 'decks gnosis-db-schema-decks)
-  ;; Create notes table
-  (gnosis--create-table 'notes gnosis-db-schema-notes)
-  ;; Create review table
-  (gnosis--create-table 'review gnosis-db-schema-review)
-  ;; Create review-log table
-  (gnosis--create-table 'review-log gnosis-db-schema-review-log)
-  ;; Create extras table
-  (gnosis--create-table 'extras gnosis-db-schema-extras)
-  (gnosis-add-deck "Anatomy"))
+(defun gnosis-db-init ()
+  "Create gnosis database."
+  (cond
+   ;; if gnosis-dir does not exist, create it
+   ((not (file-directory-p gnosis-dir))
+    (make-directory gnosis-dir))
+   ;; if gnosis-images-dir does not exist, create it
+   ((not (and gnosis-images-dir (file-directory-p gnosis-images-dir)))
+    (make-directory gnosis-images-dir)))
+  ;; Create gnosis-dir
+  (unless (file-exists-p gnosis-dir)
+    (make-directory gnosis-dir)
+    (make-directory gnosis-images-dir)
+    ;; Make sure gnosis-db is initialized
+    (setf gnosis-db (emacsql-sqlite (concat gnosis-dir "/" "gnosis.db"))))
+  ;; Create database tables
+  (unless (length= (emacsql gnosis-db [:select name :from sqlite-master :where (= type table)]) 6)
+    ;; Enable foreign keys
+    (emacsql gnosis-db "PRAGMA foreign_keys = ON")
+    ;; Create decks table
+    (gnosis--create-table 'decks gnosis-db-schema-decks)
+    ;; Create notes table
+    (gnosis--create-table 'notes gnosis-db-schema-notes)
+    ;; Create review table
+    (gnosis--create-table 'review gnosis-db-schema-review)
+    ;; Create review-log table
+    (gnosis--create-table 'review-log gnosis-db-schema-review-log)
+    ;; Create extras table
+    (gnosis--create-table 'extras gnosis-db-schema-extras)))
 
 ;; Gnosis mode ;;
 ;;;;;;;;;;;;;;;;;
