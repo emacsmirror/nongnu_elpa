@@ -277,7 +277,7 @@ When called with a prefix, unsuspends all notes in deck."
 
 (defun gnosis-suspend-tag ()
   "Suspend all note(s) with tag."
-  (let ((notes (gnosis-select-by-tag (gnosis-prompt-tag)))
+  (let ((notes (gnosis-select-by-tag (gnosis-tag-prompt)))
 	(suspend (if current-prefix-arg 0 1)))
     (cl-loop for note in notes
 	     do (gnosis-update 'review-log `(= suspend ,suspend) `(= id ,note)))))
@@ -344,7 +344,7 @@ choice in the `CHOICES' list. Each note must correspond to one `DECK'.
 			    :choices (gnosis--prompt "Choices")
 			    :correct-answer (string-to-number (read-string "Which is the correct answer (number)? "))
 			    :extra (read-string "Extra: ")
-			    :tags (gnosis-prompt-tag)))))
+			    :tags (gnosis-tag-prompt)))))
 
 (cl-defun gnosis-add-note--basic (&key deck question hint answer extra (image nil) tags (suspend 0))
   "Add Basic type note."
@@ -360,7 +360,7 @@ choice in the `CHOICES' list. Each note must correspond to one `DECK'.
 			      :answer (read-string "Answer: ")
 			      :hint (read-string "Hint: ")
 			      :extra (read-string "Extra: ")
-			      :tags (gnosis-prompt-tag)))))
+			      :tags (gnosis-tag-prompt)))))
 
 (cl-defun gnosis-add-note--cloze (&key deck note hint tags (suspend 0) extra (image nil))
   "Add cloze type note.
@@ -377,12 +377,12 @@ choice in the `CHOICES' list. Each note must correspond to one `DECK'.
   "Add note(s) of type cloze interactively to selected deck."
   (interactive)
   (let ((deck (gnosis--get-deck-name)))
-    (while (y-or-n-p (format "Add note of type `basic' to `%s' deck? " deck))
+    (while (y-or-n-p (format "Add note of type `cloze' to `%s' deck? " deck))
       (gnosis-add-note--cloze :deck deck
 			      :note (read-string "Question: ")
 			      :hint (read-string "Hint: ")
 			      :extra (read-string "Extra: ")
-			      :tags (gnosis-prompt-tag)))))
+			      :tags (gnosis-tag-prompt)))))
 
 
 ;;;###autoload
