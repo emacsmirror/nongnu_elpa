@@ -244,7 +244,7 @@ Set SPLIT to t to split all input given."
   "Create deck with NAME."
   (interactive (list (read-string "Deck Name: ")))
   (unless gnosis-testing
-    (when (y-or-n-p "You are using a testing environment! Continue?")
+    (unless (y-or-n-p "You are using a testing environment! Continue?")
       (error "Aborted")))
   (if (gnosis-get 'name 'decks `(= name ,name))
       (error "Deck `%s' already exists" name)
@@ -337,7 +337,7 @@ choice in the `CHOICES' list. Each note must correspond to one `DECK'.
 	 (error "Correct answer value must be the index number of the correct answer"))
 	((null tags)
 	 (setf tags 'untagged)))
-  (gnosis-add-note-fields deck "mcq" question choices correct-answer extra tags suspend image ,second-image))
+  (gnosis-add-note-fields deck "mcq" question choices correct-answer extra tags suspend image second-image))
 
 (defun gnosis-add-note-mcq ()
   "Add note(s) of type `MCQ' interactively to selected deck."
@@ -366,6 +366,37 @@ choice in the `CHOICES' list. Each note must correspond to one `DECK'.
 			      :extra (read-string "Extra: ")
 			      :tags (gnosis-tag-prompt)))))
 
+(cl-defun gnosis-add-note--double (&key deck question hint answer extra (image nil) tags (suspend 0) (second-image nil))
+  "Add Double type note.
+
+Essentially, a note that creates 2 basic notes. The second one
+reverses question/answer.
+
+DECK: Deck name for note.
+QUESTION: Quesiton to display for note.
+ANSWER: Answer for QUESTION, which user will be prompted to type
+HINT: Hint to display during review, before user-input.
+EXTRA: Extra information to display after user-input/giving an answer.
+IMAGE: Image to display before user-input.
+TAGS: Tags used to organize notes
+SUSPEND: When t, note will be ignored for reviews."
+  (gnosis-add-note-fields deck "basic" question hint answer extra tags suspend image second-image)
+  (gnosis-add-note-fields deck "basic" answer hint question extra tags suspend image second-image))
+
+(defun gnosis-add-note-double ()
+  "Add note(s) of type double interactively to selected deck."
+  (let ((deck (gnosis--get-deck-name)))
+    (while (y-or-n-p (format "Add note of type `double' to `%s' deck? " deck))
+      (gnosis-add-note--double :deck deck
+			       :question (read-string "Question: ")
+			       :answer (read-string "Answer: ")
+			       :image (when (y-or-n-p "Add image to display during review?")
+					       (completing-(gnosis-directory-files)))
+			       :hint (read-string "Hint: ")
+			       :extra (read-string "Extra: ")
+			       :tags (gnosis-tag-prompt)))))
+
+(cl-defun gnosis-add-note--cloze (&key deck note hint tags (suspend 0) extra (image nil) (second-image nil))
   "Add cloze type note.
 
 `EXTRA' are extra information displayed after an answer is given.
@@ -378,7 +409,6 @@ choice in the `CHOICES' list. Each note must correspond to one `DECK'.
 
 (defun gnosis-add-note-cloze ()
   "Add note(s) of type cloze interactively to selected deck."
-  (interactive)
   (let ((deck (gnosis--get-deck-name)))
     (while (y-or-n-p (format "Add note of type `cloze' to `%s' deck? " deck))
       (gnosis-add-note--cloze :deck deck
@@ -387,18 +417,18 @@ choice in the `CHOICES' list. Each note must correspond to one `DECK'.
 			      :extra (read-string "Extra: ")
 			      :tags (gnosis-tag-prompt)))))
 
-
 ;;;###autoload
 (defun gnosis-add-note (type)
   "Create note(s) as TYPE interactively."
-  (interactive (list (completing-read "Type: " '(MCQ Cloze Basic) nil t)))
+  (interactive (list (completing-read "Type: " '(MCQ Cloze Basic Double) nil t)))
   (unless gnosis-testing
-    (when (y-or-n-p "You are using a testing environment! Continue?")
+    (unless (y-or-n-p "You are using a testing environment! Continue?")
       (error "Aborted")))
   (pcase type
     ("MCQ" (gnosis-add-note-mcq))
     ("Cloze" (gnosis-add-note-cloze))
     ("Basic" (gnosis-add-note-basic))
+    ("Double" (gnosis-add-note-double))
     (_ (message "No such type."))))
 
 (defun gnosis-mcq-answer (id)
