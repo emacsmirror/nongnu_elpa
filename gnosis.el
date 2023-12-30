@@ -461,15 +461,17 @@ Compare 2 strings, ignoring case and whitespace."
       t
     nil))
 
-(defun gnosis-prompt-tag ()
-  "Prompt user to enter tags, until they enter `q'.
+(defun gnosis-tag-prompt (&optional prompt)
+  "PROMPT user to select tags, or add new, until they enter `q'.
 
 Returns a list of unique entered tags."
   (interactive)
-  (let ((tags '())
-        (tag ""))
+  (let* ((tags '())
+         (tag "")
+	 (prompt (or (concat prompt " (q for quit): ")
+		     (format "Select tags [%s] (q for quit): " tags))))
     (while (not (string= tag "q"))
-      (setf tag (completing-read "Add tag (q for quit): " (gnosis-unique-tags) nil nil))
+      (setf tag (completing-read prompt (gnosis-get-tags--unique) nil nil))
       (unless (or (string= tag "q") (member tag tags))
         (push tag tags)))
     (reverse tags)))
@@ -635,7 +637,7 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
 
 (defun gnosis-review-all-with-tags ()
   "Review all note(s) with specified tag(s)."
-  (let ((notes (gnosis-select-by-tag (gnosis-prompt-tag)))
+  (let ((notes (gnosis-select-by-tag (gnosis-tag-prompt)))
 	(note-count 0))
     (cl-loop for note in notes
 	     do (progn (gnosis-review-note note)
