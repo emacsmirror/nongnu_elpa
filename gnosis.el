@@ -279,7 +279,7 @@ When called with a prefix, unsuspends all notes in deck."
 
 (defun gnosis-suspend-tag ()
   "Suspend all note(s) with tag."
-  (let ((notes (gnosis-select-by-tag (gnosis-tag-prompt)))
+  (let ((notes (gnosis-select-by-tag (gnosis-tag-prompt nil t)))
 	(suspend (if current-prefix-arg 0 1)))
     (cl-loop for note in notes
 	     do (gnosis-update 'review-log `(= suspend ,suspend) `(= id ,note)))))
@@ -504,17 +504,21 @@ Optionally, add cusotm PROMPT."
       t
     nil))
 
-(defun gnosis-tag-prompt (&optional prompt)
-  "PROMPT user to select tags, or add new, until they enter `q'.
+(defun gnosis-tag-prompt (&optional prompt match)
+  "PROMPT user to select tags, until they enter `q'.
+Prompt user to select tags, generated from `gnosis-get-tags--unique'.
 
-Returns a list of unique entered tags."
-  (interactive)
+PROMPT: Prompt string value
+MATCH: Require match, t or nil value
+
+Returns a list of unique tags."
   (let* ((tags '())
          (tag "")
-	 (prompt (or (concat prompt " (q for quit): ")
-		     (format "Select tags [%s] (q for quit): " tags))))
+	 (prompt (or prompt "Selected tags"))
+	 (match (or match nil)))
     (while (not (string= tag "q"))
-      (setf tag (completing-read prompt (gnosis-get-tags--unique) nil nil))
+      (setf tag (completing-read (concat prompt (format " %s (q for quit): " tags))
+				 (gnosis-get-tags--unique) nil match))
       (unless (or (string= tag "q") (member tag tags))
         (push tag tags)))
     (reverse tags)))
@@ -680,7 +684,7 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
 
 (defun gnosis-review-all-with-tags ()
   "Review all note(s) with specified tag(s)."
-  (let ((notes (gnosis-select-by-tag (gnosis-tag-prompt)))
+  (let ((notes (gnosis-select-by-tag (gnosis-tag-prompt nil t)))
 	(note-count 0))
     (cl-loop for note in notes
 	     do (progn (gnosis-review-note note)
