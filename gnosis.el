@@ -441,7 +441,7 @@ Compare 2 strings, ignoring case and whitespace."
         (modified-str2 (downcase (replace-regexp-in-string "\\s-" "" str2))))
     (string= modified-str1 modified-str2)))
 
-(defun gnosis-unique-tags ()
+(defun gnosis-get-tags--unique ()
   "Return a list of unique strings for tags in gnosis-db."
   (cl-loop for tags in (gnosis-select 'tags 'notes)
            nconc tags into all-tags
