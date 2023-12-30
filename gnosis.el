@@ -63,6 +63,7 @@ WARNING: Do not change this value!")
 
 (cl-defun gnosis-select (value table &optional (restrictions '1=1))
   "Select VALUE from TABLE, optionally with RESTRICTIONS."
+  (gnosis-db-init)
   (emacsql gnosis-db `[:select ,value :from ,table :where ,restrictions]))
 
 (cl-defun gnosis--create-table (table &optional values)
@@ -75,6 +76,7 @@ WARNING: Do not change this value!")
 
 (cl-defun gnosis--insert-into (table values)
   "Insert VALUES to TABLE."
+  (gnosis-db-init)
   (emacsql gnosis-db `[:insert :into ,table :values ,values]))
 
 (cl-defun gnosis-update (table value where)
