@@ -58,6 +58,8 @@
 
 WARNING: Do not change this value!")
 
+(defvar gnosis-testing nil
+  "When t, warn user he is in a testing environment.")
 
 (cl-defun gnosis-select (value table &optional (restrictions '1=1))
   "Select VALUE from TABLE, optionally with RESTRICTIONS."
@@ -239,8 +241,13 @@ Set SPLIT to t to split all input given."
 (defun gnosis-add-deck (name)
   "Create deck with NAME."
   (interactive (list (read-string "Deck Name: ")))
-  (gnosis--insert-into 'decks `([nil ,name]))
-  (message "Created deck '%s'" name))
+  (unless gnosis-testing
+    (when (y-or-n-p "You are using a testing environment! Continue?")
+      (error "Aborted")))
+  (if (gnosis-get 'name 'decks `(= name ,name))
+      (error "Deck `%s' already exists" name)
+    (gnosis--insert-into 'decks `([nil ,name]))
+    (message "Created deck '%s'" name)))
 
 (defun gnosis--get-deck-name ()
   "Get name from table DECKS."
@@ -382,6 +389,9 @@ choice in the `CHOICES' list. Each note must correspond to one `DECK'.
 (defun gnosis-add-note (type)
   "Create note(s) as TYPE interactively."
   (interactive (list (completing-read "Type: " '(MCQ Cloze Basic) nil t)))
+  (unless gnosis-testing
+    (when (y-or-n-p "You are using a testing environment! Continue?")
+      (error "Aborted")))
   (pcase type
     ("MCQ" (gnosis-add-note-mcq))
     ("Cloze" (gnosis-add-note-cloze))
