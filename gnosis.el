@@ -453,6 +453,27 @@ Compare 2 strings, ignoring case and whitespace."
         (modified-str2 (downcase (replace-regexp-in-string "\\s-" "" str2))))
     (string= modified-str1 modified-str2)))
 
+(defun gnosis-directory-files (&optional dir regex)
+  "Return a list of file paths, relative to DIR directory.
+
+DIR is the base directory path from which to start the recursive search.
+REGEX is the regular expression pattern to match the file names against.
+
+This function traverses the subdirectories of DIR recursively,
+collecting file paths that match the regular expression. The file
+paths are returned as a list of strings, with each string representing
+a relative file path to DIR.
+
+By default, DIR value is `gnosis-images-dir' & REGEX value is \"^[^.]\""
+  (let ((dir (or dir gnosis-images-dir))
+	(regex (or regex "^[^.]")))
+    (apply #'append
+           (cl-loop for path in (directory-files dir t directory-files-no-dot-files-regexp)
+                    if (file-directory-p path)
+                    collect (mapcar (lambda (file) (concat (file-relative-name path dir) "/" file))
+                                    (gnosis-directory-files path regex))
+                    else if (string-match-p regex (file-name-nondirectory path))
+                    collect (list (file-relative-name path dir))))))
 (defun gnosis-get-tags--unique ()
   "Return a list of unique strings for tags in gnosis-db."
   (cl-loop for tags in (gnosis-select 'tags 'notes)
