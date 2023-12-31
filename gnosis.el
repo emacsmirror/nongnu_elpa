@@ -822,6 +822,7 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
   (unless (length= (emacsql gnosis-db [:select name :from sqlite-master :where (= type table)]) 6)
     ;; Enable foreign keys
     (emacsql gnosis-db "PRAGMA foreign_keys = ON")
+    ;; Gnosis version
     (emacsql gnosis-db (format "PRAGMA user_version = %s" gnosis-db-version))
     ;; Create decks table
     (gnosis--create-table 'decks gnosis-db-schema-decks)
