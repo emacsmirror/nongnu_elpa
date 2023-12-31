@@ -61,6 +61,9 @@ WARNING: Do not change this value!")
 (defvar gnosis-testing nil
   "When t, warn user he is in a testing environment.")
 
+(defconst gnosis-db-version 1
+  "Gnosis database version.")
+
 (cl-defun gnosis-select (value table &optional (restrictions '1=1))
   "Select VALUE from TABLE, optionally with RESTRICTIONS."
   (gnosis-db-init)
@@ -808,14 +811,7 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
 						:on-delete :cascade)))
 
 (defun gnosis-db-init ()
-  "Create gnosis database."
-  (cond
-   ;; if gnosis-dir does not exist, create it
-   ((not (file-directory-p gnosis-dir))
-    (make-directory gnosis-dir))
-   ;; if gnosis-images-dir does not exist, create it
-   ((not (and gnosis-images-dir (file-directory-p gnosis-images-dir)))
-    (make-directory gnosis-images-dir)))
+  "Create gnosis essential directories & database."
   ;; Create gnosis-dir
   (unless (file-exists-p gnosis-dir)
     (make-directory gnosis-dir)
@@ -826,6 +822,7 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
   (unless (length= (emacsql gnosis-db [:select name :from sqlite-master :where (= type table)]) 6)
     ;; Enable foreign keys
     (emacsql gnosis-db "PRAGMA foreign_keys = ON")
+    (emacsql gnosis-db (format "PRAGMA user_version = %s" gnosis-db-version))
     ;; Create decks table
     (gnosis--create-table 'decks gnosis-db-schema-decks)
     ;; Create notes table
