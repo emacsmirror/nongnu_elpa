@@ -743,47 +743,23 @@ NOTE-NUM: The number of notes reviewed in the session."
 			   (shell-quote-argument (concat (format "Review type: %s | Notes: %d " type note-num)))))
     (message "Review session finished. %d notes reviewed." note-num)))
 
-(defun gnosis-review-all-with-tags ()
-  "Review all note(s) with specified tag(s)."
-  (let ((notes (gnosis-select-by-tag (gnosis-tag-prompt nil t)))
-	(note-count 0))
-    (cl-loop for note in notes
-	     do (progn (gnosis-review-note note)
-		       (setf note-count (1+ note-count))
-		       (when (not (y-or-n-p "Review next?"))
-			 (gnosis-review-commit "All with tags" note-count)
-			 (cl-return)))
-	     finally (gnosis-review-commit "Specified tags" note-count))))
+(defun gnosis-review--session (notes)
+  "Start review session for NOTES."
+  (when (null notes)
+    (message "No due notes."))
+  (let ((note-count 0))
+    (when (y-or-n-p (format "You have %s total notes for review, start session?" (length notes)))
+      (cl-loop for note in notes
+	       do (progn (gnosis-review-note note)
+			 (setf note-count (1+ note-count))
+			 (pcase (completing-read "Note Action: " '(next suspend quit))
+			   ("next" nil)
+			   ("suspend" (gnosis-suspend-note note))
+			   ("quit" (progn (gnosis-review-commit note-count)
+					  (cl-return)))))
+	       finally (gnosis-review-commit note-count)))))
 
-(defun gnosis-review-due-tags ()
-  "Review due notes, with specified tag."
-  (let ((notes (gnosis-select-by-tag
-		(list (completing-read "Start session for tag: " (gnosis-review-due-notes--with-tags)))))
-	(note-count 0))
-    (cl-loop for note
-	     in notes do (progn (gnosis-review-note note)
-				(setf note-count (1+ note-count ))
-				(when (not (y-or-n-p "Review next note?"))
-				  (gnosis-review-commit "Due specified tags" note-count)
-				  (cl-return)))
-	     finally (gnosis-review-commit "Due specified tags" note-count))))
 
-(defun gnosis-review-all-due-notes ()
-  "Review all due notes."
-  (let* ((due-notes (gnosis-review-get-due-notes))
-         (note-count 0)
-         (total-notes (length due-notes)))
-    (if (null due-notes)
-        (message "No due notes.")
-      (when (y-or-n-p (format "You have %s total notes for review, start session?" total-notes))
-	(cl-loop for note in due-notes
-		 do (progn (gnosis-review-note (car note))
-			   (setf note-count (+ note-count 1))
-			   (when (not (y-or-n-p "Review next note?"))
-			     (gnosis-review-commit "Due notes" note-count)
-			     (cl-return)))
-		 finally (progn (gnosis-review-commit "Due notes" note-count)
-				(message "Review session finished. %d note(s) reviewed." note-count)))))))
 ;;;###autoload
 (defun gnosis-review ()
   "Start gnosis review session."
@@ -793,9 +769,12 @@ NOTE-NUM: The number of notes reviewed in the session."
 						   "Due notes of specified tag(s)"
 						   "Notes with tag(s)"))))
     (pcase review-type
-      ("Due notes" (gnosis-review-all-due-notes))
-      ("Due notes of specified tag(s)" (gnosis-review-due-tags))
-      ("Notes with tag(s)" (gnosis-review-all-with-tags)))))
+      ("Due notes" (gnosis-review--session (gnosis-review-get-due-notes)))
+      ("Due notes of specified tag(s)" (gnosis-review--session
+					(gnosis-select-by-tag
+					 (list (completing-read "Start session for tag: "
+								(gnosis-review-due-notes--with-tags))))))
+      ("Notes with tag(s)" (gnosis-review--session (gnosis-select-by-tag (gnosis-tag-prompt nil t)))))))
 
 ;;; Database Schemas
 ;; Enable foreign_keys
