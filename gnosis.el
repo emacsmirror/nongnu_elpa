@@ -722,7 +722,7 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
              ("cloze" (gnosis-review-cloze id))
              (_ (error "Malformed note type")))))))
 
-(defun gnosis-review-commit (type note-num)
+(defun gnosis-review-commit (note-num)
   "Commit review session on git repository.
 
 This function initializes the `gnosis-dir' as a Git repository if it is not
@@ -740,7 +740,7 @@ NOTE-NUM: The number of notes reviewed in the session."
     (sit-for 0.2)
     (shell-command (concat git " add " (shell-quote-argument "gnosis.db")))
     (shell-command (concat git " commit -m "
-			   (shell-quote-argument (concat (format "Review type: %s | Notes: %d " type note-num)))))
+			   (shell-quote-argument (concat (format "Total notes for session: %d " note-num)))))
     (message "Review session finished. %d notes reviewed." note-num)))
 
 (defun gnosis-review--session (notes)
