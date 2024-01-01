@@ -557,7 +557,7 @@ Returns a list of unique tags."
 	 (match (or match nil)))
     (while (not (string= tag "q"))
       (setf tag (completing-read (concat prompt (format " %s (q for quit): " tags))
-				 (gnosis-get-tags--unique) nil match))
+				 (cons "q" (gnosis-get-tags--unique)) nil match))
       (unless (or (string= tag "q") (member tag tags))
         (push tag tags)))
     (reverse tags)))
