@@ -533,7 +533,8 @@ Optionally, add cusotm PROMPT."
   (unless (listp input-tags)
     (error "`input-tags' need to be a list"))
   (cl-loop for (id tags) in (emacsql gnosis-db [:select [id tags] :from notes])
-           when (cl-every (lambda (tag) (member tag tags)) input-tags)
+           when (and (cl-every (lambda (tag) (member tag tags)) input-tags)
+		     (not (gnosis-suspended-p id)))
            collect id))
 
 (defun gnosis-suspended-p (id)
