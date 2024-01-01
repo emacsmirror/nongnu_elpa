@@ -273,7 +273,7 @@ Set SPLIT to t to split all input given."
 
 (defun gnosis-suspend-note (id)
   "Suspend note with ID."
-  (gnosis-update 'review-log `(= suspend 1) `(= id ,id)))
+  (gnosis-update 'review-log '(= suspend 1) `(= id ,id)))
 
 (defun gnosis-suspend-deck (&optional deck)
   "Suspend all note(s) with DECK id.
@@ -399,7 +399,7 @@ SUSPEND: When t, note will be ignored for reviews."
 			       :question (read-string "Question: ")
 			       :answer (read-string "Answer: ")
 			       :image (when (y-or-n-p "Add image to display during review?")
-					       (completing-read "Select image: " (gnosis-directory-files)))
+					(completing-read "Select image: " (gnosis-directory-files)))
 			       :hint (read-string "Hint: ")
 			       :extra (read-string "Extra: ")
 			       :tags (gnosis-tag-prompt)))))
