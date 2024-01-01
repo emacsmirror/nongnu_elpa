@@ -50,10 +50,11 @@
   :type 'string
   :group 'gnosis)
 
-(defvar gnosis-images-dir (concat gnosis-dir "/" "images")
+
+(defvar gnosis-images-dir (concat (file-name-as-directory gnosis-dir) "images")
   "Gnosis images directory.")
 
-(defvar gnosis-db (emacsql-sqlite (concat gnosis-dir "/" "gnosis.db"))
+(defvar gnosis-db (emacsql-sqlite (concat (file-name-as-directory gnosis-dir) "gnosis.db"))
   "Gnosis database file.
 
 WARNING: Do not change this value!")
@@ -219,7 +220,7 @@ If FALSE t, use gnosis-face-false face"
 (defun gnosis-display--image (id)
   "Display image for note ID."
   (let* ((img (gnosis-get 'images 'extras `(= id ,id)))
-	 (path-to-image (concat gnosis-images-dir "/" img))
+	 (path-to-image (concat (file-name-as-directory gnosis-images-dir) img))
 	 (image (create-image path-to-image 'png nil :width 500 :height 300)))
     (when img
       (with-gnosis-buffer
@@ -246,7 +247,7 @@ Set SPLIT to t to split all input given."
 (defun gnosis-add-deck (name)
   "Create deck with NAME."
   (interactive (list (read-string "Deck Name: ")))
-  (unless gnosis-testing
+  (when gnosis-testing
     (unless (y-or-n-p "You are using a testing environment! Continue?")
       (error "Aborted")))
   (if (gnosis-get 'name 'decks `(= name ,name))
@@ -301,7 +302,7 @@ When called with a prefix, unsuspends all notes in deck."
   "Add fields for new note.
 
 DECK: Deck for new note.
-TYPE: Note type (mcq,cloze,basic)
+TYPE: Note type e.g \"mcq\"
 MAIN: Note's main part
 OPTIONS: Note's options, e.g choices for mcq for  or clozes for cloze type
 ANSWER: Correct answer for note, for MCQ is an integer while for
@@ -394,7 +395,7 @@ SUSPEND: When t, note will be ignored for reviews."
 			       :question (read-string "Question: ")
 			       :answer (read-string "Answer: ")
 			       :image (when (y-or-n-p "Add image to display during review?")
-					       (completing-(gnosis-directory-files)))
+					       (completing-read "Select image: " (gnosis-directory-files)))
 			       :hint (read-string "Hint: ")
 			       :extra (read-string "Extra: ")
 			       :tags (gnosis-tag-prompt)))))
@@ -424,7 +425,7 @@ SUSPEND: When t, note will be ignored for reviews."
 (defun gnosis-add-note (type)
   "Create note(s) as TYPE interactively."
   (interactive (list (completing-read "Type: " '(MCQ Cloze Basic Double) nil t)))
-  (unless gnosis-testing
+  (when gnosis-testing
     (unless (y-or-n-p "You are using a testing environment! Continue?")
       (error "Aborted")))
   (pcase type
@@ -817,7 +818,7 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
     (make-directory gnosis-dir)
     (make-directory gnosis-images-dir)
     ;; Make sure gnosis-db is initialized
-    (setf gnosis-db (emacsql-sqlite (concat gnosis-dir "/" "gnosis.db"))))
+    (setf gnosis-db (emacsql-sqlite (concat (file-name-as-directory gnosis-dir) "gnosis.db"))))
   ;; Create database tables
   (unless (length= (emacsql gnosis-db [:select name :from sqlite-master :where (= type table)]) 6)
     ;; Enable foreign keys

@@ -82,7 +82,7 @@ If ask nil, leave development env"
 	       (gnosis-dev-add-fields)
 	       (message "Adding testing values...")
 	       (message "Development env is ready for testing."))
-      (setf gnosis-db (emacsql-sqlite-open (concat gnosis-dir "/" "gnosis.db")))
+      (setf gnosis-db (emacsql-sqlite (concat (file-name-as-directory gnosis-dir) "gnosis.db")))
       (setf gnosis-testing nil)
       (message "Exited development env."))))
 
