@@ -583,20 +583,21 @@ Returns a list of the form ((yyyy mm dd) ef)."
 								 (= id ,note-id))]))
 
 (defun gnosis-review-get-due-notes ()
-  "Get due notes id for current date.
+  "Return a list due notes id for current date.
 
 Select notes where:
  - Next review date <= current date
  - Not suspended."
-  (emacsql gnosis-db `[:select [id] :from review-log :where (and (<= next-rev ',(gnosis-algorithm-date))
-								 (= suspend 0))]))
+  (apply #'append
+	 (emacsql gnosis-db `[:select [id] :from review-log :where (and (<= next-rev ',(gnosis-algorithm-date))
+								 (= suspend 0))])))
 
 (defun gnosis-review-due-notes--with-tags ()
   "Return a list of due note tags."
   (let ((due-notes (gnosis-review-get-due-notes)))
     (cl-remove-duplicates
      (cl-mapcan (lambda (note-id)
-                  (gnosis-get-note-tags (car note-id)))
+                  (gnosis-get-note-tags note-id))
 	        due-notes)
      :test 'equal)))
 
