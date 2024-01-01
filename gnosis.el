@@ -716,6 +716,27 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
              ("cloze" (gnosis-review-cloze id))
              (_ (error "Malformed note type")))))))
 
+(defun gnosis-review-commit (type note-num)
+  "Commit review session on git repository.
+
+This function initializes the `gnosis-dir' as a Git repository if it is not
+already one. It then adds the gnosis.db file to the repository and commits
+the changes with a message containing the review type and the number of notes.
+
+TYPE: The type of the review session.
+NOTE-NUM: The number of notes reviewed in the session."
+  (let ((git (executable-find "git"))
+	(default-directory gnosis-dir))
+    (unless git
+      (error "Git not found, please install git"))
+    (unless (file-exists-p (concat (file-name-as-directory gnosis-dir) ".git"))
+      (shell-command "git init"))
+    (sit-for 0.2)
+    (shell-command (concat git " add " (shell-quote-argument "gnosis.db")))
+    (shell-command (concat git " commit -m "
+			   (shell-quote-argument (concat (format "Review type: %s | Notes: %d " type note-num)))))
+    (message "Review session finished. %d notes reviewed." note-num)))
+
 (defun gnosis-review-all-with-tags ()
   "Review all note(s) with specified tag(s)."
   (let ((notes (gnosis-select-by-tag (gnosis-tag-prompt nil t)))
@@ -724,9 +745,9 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
 	     do (progn (gnosis-review-note note)
 		       (setf note-count (1+ note-count))
 		       (when (not (y-or-n-p "Review next?"))
-			 (message "Review session finished. %d note(s) reviewed." note-count)
+			 (gnosis-review-commit "All with tags" note-count)
 			 (cl-return)))
-	     finally (message "Review session finished. %d note(s) reviewed." note-count))))
+	     finally (gnosis-review-commit "Specified tags" note-count))))
 
 (defun gnosis-review-due-tags ()
   "Review due notes, with specified tag."
@@ -737,9 +758,9 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
 	     in notes do (progn (gnosis-review-note note)
 				(setf note-count (1+ note-count ))
 				(when (not (y-or-n-p "Review next note?"))
-				  (message "Review session finished. %d note(s) reviewed." note-count)
+				  (gnosis-review-commit "Due specified tags" note-count)
 				  (cl-return)))
-	     finally (message "Review session finished. %d note(s) reviewed." note-count))))
+	     finally (gnosis-review-commit "Due specified tags" note-count))))
 
 (defun gnosis-review-all-due-notes ()
   "Review all due notes."
@@ -753,13 +774,15 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
 		 do (progn (gnosis-review-note (car note))
 			   (setf note-count (+ note-count 1))
 			   (when (not (y-or-n-p "Review next note?"))
-			     (message "Review session finished. %d note(s) reviewed." note-count)
+			     (gnosis-review-commit "Due notes" note-count)
 			     (cl-return)))
-		 finally (message "Review session finished. %d note(s) reviewed." note-count))))))
+		 finally (progn (gnosis-review-commit "Due notes" note-count)
+				(message "Review session finished. %d note(s) reviewed." note-count)))))))
 ;;;###autoload
 (defun gnosis-review ()
   "Start gnosis review session."
   (interactive)
+  (gnosis-db-init)
   (let ((review-type (completing-read "Review: " '("Due notes"
 						   "Due notes of specified tag(s)"
 						   "Notes with tag(s)"))))
