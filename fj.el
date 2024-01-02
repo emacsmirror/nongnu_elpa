@@ -129,7 +129,8 @@ JSON."
 (defun fj-read-user-repo (&optional force)
   "Read a repo in the minibuffer.
 If we are in a repo, return it instead, unless FORCE."
-  (let ((current (fj-current-dir-repo)))
+  (let ((current (ignore-errors
+                   (fj-current-dir-repo))))
     (if (and (not force)
              (not current-prefix-arg)
              current)
