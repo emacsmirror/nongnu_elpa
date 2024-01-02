@@ -223,6 +223,27 @@ With PARAMS."
                        (lambda ()
                          (message "issue edited!")))))
 
+(defun fj-issue-edit-title (&optional repo issue)
+  "Edit ISSUE title in REPO."
+  (interactive)
+  (let* ((repo (or repo (fj-read-user-repo
+                         (when current-prefix-arg :force))))
+         (issue (or issue (fj-read-repo-issue repo)))
+         (data (fj-get-issue repo issue))
+         (old-title (alist-get 'title data))
+         (new-title (read-string "Edit issue title: " old-title))
+         (response (fj-issue-patch repo issue `(("title" . ,new-title)))))
+    (fedi-http--triage response
+                       (lambda ()
+                         (message "issue title edited!")))))
+
+(defun fj-issue-edit-title-current ()
+  "Edit title of issue at point."
+  (interactive)
+  (let* ((item (tabulated-list-get-entry))
+         (number (car (seq-first item))))
+    (fj-issue-edit-title fj-current-repo number)))
+
 (defun fj-issue-close (&optional repo issue)
   "Close ISSUE in REPO."
   (interactive)
