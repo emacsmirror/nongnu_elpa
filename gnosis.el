@@ -275,15 +275,19 @@ Set SPLIT to t to split all input given."
   "Suspend note with ID."
   (gnosis-update 'review-log '(= suspend 1) `(= id ,id)))
 
-(defun gnosis-suspend-deck (&optional deck)
+(cl-defun gnosis-suspend-deck (&optional (deck (gnosis--get-deck-id)))
   "Suspend all note(s) with DECK id.
 
 When called with a prefix, unsuspends all notes in deck."
-  (unless deck (setf deck (gnosis--get-deck-id)))
   (let ((notes (gnosis-select 'id 'notes `(= deck-id ,deck)))
-	(suspend (if current-prefix-arg 0 1)))
+	(suspend (if current-prefix-arg 0 1))
+	(note-count 0))
     (cl-loop for note in notes
-	     do (gnosis-update 'review-log `(= suspend ,suspend) `(= id ,(car note))))))
+	     do (progn (gnosis-update 'review-log `(= suspend ,suspend) `(= id ,(car note)))
+		       (setq note-count (1+ note-count)))
+	     finally (if (equal suspend 0)
+			 (message "Unsuspended %s notes" note-count)
+		       (message "Suspended %s notes" note-count)))))
 
 (defun gnosis-suspend-tag ()
   "Suspend all note(s) with tag.
