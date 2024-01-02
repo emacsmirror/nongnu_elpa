@@ -90,7 +90,7 @@ Example:
   (emacsql gnosis-db `[:update ,table :set ,value :where ,where]))
 
 (cl-defun gnosis-get (value table &optional (restrictions '1=1))
-  "Get VALUE from TABLE, optionally with where RESTRICTIONS."
+  "Return VALUE from TABLE, optionally with where RESTRICTIONS."
   (caar (gnosis-select value table restrictions)))
 
 (defun gnosis-get-note-tags (id)
@@ -256,13 +256,13 @@ Set SPLIT to t to split all input given."
     (message "Created deck '%s'" name)))
 
 (defun gnosis--get-deck-name ()
-  "Get name from table DECKS."
+  "Return name from table DECKS."
   (when (equal (gnosis-select 'name 'decks) nil)
     (error "No decks found"))
   (completing-read "Deck: " (gnosis-select 'name 'decks)))
 
 (cl-defun gnosis--get-deck-id (&optional (deck (gnosis--get-deck-name)))
-  "Get id for DECK name."
+  "Return id for DECK name."
   (gnosis-get 'id 'decks `(= name ,deck)))
 
 (defun gnosis-delete-deck (deck)
@@ -286,7 +286,9 @@ When called with a prefix, unsuspends all notes in deck."
 	     do (gnosis-update 'review-log `(= suspend ,suspend) `(= id ,(car note))))))
 
 (defun gnosis-suspend-tag ()
-  "Suspend all note(s) with tag."
+  "Suspend all note(s) with tag.
+
+When called with a prefix, unsuspends all notes for tag."
   (let ((notes (gnosis-select-by-tag (gnosis-tag-prompt nil t)))
 	(suspend (if current-prefix-arg 0 1)))
     (cl-loop for note in notes
@@ -308,7 +310,8 @@ When called with a prefix, unsuspends all notes in deck."
 DECK: Deck for new note.
 TYPE: Note type e.g \"mcq\"
 MAIN: Note's main part
-OPTIONS: Note's options, e.g choices for mcq for  or clozes for cloze type
+OPTIONS: Note's options, e.g choices for mcq for OR hints for
+cloze/basic type
 ANSWER: Correct answer for note, for MCQ is an integer while for
 cloze/basic a string/list of the right answer(s)
 EXTRA: Extra information to display after answering note
@@ -328,7 +331,6 @@ SECOND-IMAGE: Image to display after user-input."
 ;; function, which prompts for user input and passes it to the hidden
 ;; function.
 
-
 (cl-defun gnosis-add-note--mcq (&key deck question choices correct-answer
 				     extra (image nil) tags (suspend 0) (second-image nil))
   "Create a NOTE with a list of multiple CHOICES.
@@ -338,6 +340,8 @@ The user will be prompted to select the correct answer from a list of
 `CHOICES'. The `CORRECT-ANSWER' should be the index of the correct
 choice in the `CHOICES' list. Each note must correspond to one `DECK'.
 
+`IMAGE' Image to display before user-input
+`SECOND-IMAGE' Image to display after user-input
 `EXTRA' are extra information displayed after an answer is given.
 `TAGS' are used to organize questions.
 `SUSPEND' is a binary value, where 1 is for suspend."
@@ -348,7 +352,16 @@ choice in the `CHOICES' list. Each note must correspond to one `DECK'.
   (gnosis-add-note-fields deck "mcq" question choices correct-answer extra tags suspend image second-image))
 
 (defun gnosis-add-note-mcq ()
-  "Add note(s) of type `MCQ' interactively to selected deck."
+  "Add note(s) of type `MCQ' interactively to selected deck.
+
+Create a note type MCQ for specified deck, that consists of:
+STEM: The question or problem statement
+OPTIONS: Options for the user to select
+ANSWER: Answer is the NUMBER of the correct answer of OPTIONS.
+EXTRA: Information to display after user-input
+TAGS: Used to organize notes
+
+Refer to `gnosis-add-note--mcq' for more."
   (let ((deck (gnosis--get-deck-name)))
     (while (y-or-n-p (format "Add note of type `MCQ' to `%s' deck? " deck))
       (gnosis-add-note--mcq :deck deck
@@ -360,11 +373,26 @@ choice in the `CHOICES' list. Each note must correspond to one `DECK'.
 
 (cl-defun gnosis-add-note--basic (&key deck question hint answer
 				       extra (image nil) tags (suspend 0) (second-image nil))
-  "Add Basic type note."
+  "Add Basic type note.
+
+DECK: Deck name for note.
+QUESTION: Quesiton to display for note.
+ANSWER: Answer for QUESTION, which user will be prompted to type
+HINT: Hint to display during review, before user-input.
+EXTRA: Extra information to display after user-input/giving an answer.
+IMAGE: Image to display before user-input.
+TAGS: Tags used to organize notes
+SUSPEND: Binary value of 0 & 1, when 1 note will be ignored."
   (gnosis-add-note-fields deck "basic" question hint answer extra tags suspend image second-image))
 
 (defun gnosis-add-note-basic ()
-  "Add note(s) of type `Basic' interactively to selected deck."
+  "Add note(s) of type `Basic' interactively to selected deck.
+
+Basic note type is a flashcard-like note, where user first sees a
+\"main\" part, which is usually a question, and he is prompted to
+input the answer.
+
+Refer to `gnosis-add-note--basic' for more."
   (let ((deck (gnosis--get-deck-name)))
     (while (y-or-n-p (format "Add note of type `basic' to `%s' deck? " deck))
       (gnosis-add-note--basic :deck deck
@@ -377,7 +405,7 @@ choice in the `CHOICES' list. Each note must correspond to one `DECK'.
 (cl-defun gnosis-add-note--double (&key deck question hint answer extra (image nil) tags (suspend 0) (second-image nil))
   "Add Double type note.
 
-Essentially, a note that creates 2 basic notes. The second one
+Essentially, a \"note\" that generates 2 basic notes. The second one
 reverses question/answer.
 
 DECK: Deck name for note.
@@ -387,12 +415,17 @@ HINT: Hint to display during review, before user-input.
 EXTRA: Extra information to display after user-input/giving an answer.
 IMAGE: Image to display before user-input.
 TAGS: Tags used to organize notes
-SUSPEND: When t, note will be ignored for reviews."
+SUSPEND: Binary value of 0 & 1, when 1 note will be ignored."
   (gnosis-add-note-fields deck "basic" question hint answer extra tags suspend image second-image)
   (gnosis-add-note-fields deck "basic" answer hint question extra tags suspend image second-image))
 
 (defun gnosis-add-note-double ()
-  "Add note(s) of type double interactively to selected deck."
+  "Add note(s) of type double interactively to selected deck.
+
+Essentially, a \"note\" that generates 2 basic notes. The second one
+reverses question/answer.
+
+Refer to `gnosis-add-note--double' for more."
   (let ((deck (gnosis--get-deck-name)))
     (while (y-or-n-p (format "Add note of type `double' to `%s' deck? " deck))
       (gnosis-add-note--double :deck deck
@@ -407,16 +440,65 @@ SUSPEND: When t, note will be ignored for reviews."
 (cl-defun gnosis-add-note--cloze (&key deck note hint tags (suspend 0) extra (image nil) (second-image nil))
   "Add cloze type note.
 
-`EXTRA' are extra information displayed after an answer is given.
-`TAGS' are used to organize questions.
-`SUSPEND' is a binary value, where 1 is for suspend."
+DECK: Deck name for note.
+NOTE: Note with clozes, format for clozes is as follows:
+      This is a {c1:cloze} note type.
+      This is a {{c1::cloze}} note type.
+
+Anki like syntax is supported with double brackes and colon, as well
+as single brackets({}) and colon(:), or even a mix.
+
+For each cX: tag, there will be gerenated a cloze note type.
+Example:
+      {c1:Preformed enterotoxins} from
+      {c2:Staphylococcus aureus} causes {c3:rapid} onset
+      food poisoning
+
+Generates 3 cloze note types. Where the \"main\" part of the note is the full
+note, with the cloze(s) extracted & used as the \"answer\".
+
+One cloze note may have multiple clozes
+Example:
+      {c1:Streptococcus agalactiae (GBS)} and {c1:Listeria
+      monocytogenes} are CAMP test positive
+   
+HINT: Hint to display during review, before user-input.
+   NOTE! In gnosis-db, hint is referred to as `options', same column options used in mcq.
+IMAGE: Image to display before user-input.
+TAGS: Tags used to organize notes
+SUSPEND: When t, note will be ignored.
+EXTRA: Extra information displayed after user-input.
+SECOND-IMAGE: Image to display after user-input."
   (let ((notags-note (gnosis-cloze-remove-tags note))
 	(clozes (gnosis-cloze-extract-answers note)))
     (cl-loop for cloze in clozes
 	     do (gnosis-add-note-fields deck "cloze" notags-note hint cloze extra tags suspend image second-image))))
 
 (defun gnosis-add-note-cloze ()
-  "Add note(s) of type cloze interactively to selected deck."
+  "Add note(s) of type cloze interactively to selected deck.
+
+Note with clozes, format for clozes is as follows:
+      This is a {c1:cloze} note type.
+      This is a {{c1::cloze}} note type.
+
+Anki like syntax is supported with double brackes and colon, as well
+as single brackets({}) and colon(:), or even a mix.
+
+One cloze note may have multiple clozes
+Example:
+      {c1:Streptococcus agalactiae (GBS)} and {c1:Listeria
+      monocytogenes} are CAMP test positive
+
+For each cX: tag, there will be gerenated a cloze note type.
+Example:
+      {c1:Preformed enterotoxins} from
+      {c2:Staphylococcus aureus} causes {c3:rapid} onset
+      food poisoning
+
+Generates 3 cloze note types. Where the \"main\" part of the note is
+the full note, with the cloze(s) extracted & used as the \"answer\".
+
+See `gnosis-add-note--cloze' for more reference."
   (let ((deck (gnosis--get-deck-name)))
     (while (y-or-n-p (format "Add note of type `cloze' to `%s' deck? " deck))
       (gnosis-add-note--cloze :deck deck
@@ -438,6 +520,19 @@ SUSPEND: When t, note will be ignored for reviews."
     ("Basic" (gnosis-add-note-basic))
     ("Double" (gnosis-add-note-double))
     (_ (message "No such type."))))
+
+(defun gnosis-export-deck (deck filename)
+  "Export DECK as FILENAME.
+
+Export all notes for DECK, in a file as FILENAME."
+  (interactive (list (gnosis--get-deck-id)
+		     (read-string "Name for exported file: ")))
+  (let ((notes (gnosis-select '[type main options answer tags] 'notes `(= deck-id ,deck)))
+	(default-directory gnosis-dir))
+    (with-temp-file (concat filename ".el")
+      (insert "(" (concat "gnosis-define-deck " "'" filename "\n"))
+      (insert (pp-to-string notes) "\n")
+      (insert ")" ))))
 
 (defun gnosis-mcq-answer (id)
   "Choose the correct answer, from mcq choices for question ID."
@@ -565,7 +660,7 @@ Returns a list of unique tags."
 ;; Review
 ;;;;;;;;;;
 (defun gnosis-review--algorithm (id success)
-  "Get next review date & ef for note with value of id ID.
+  "Return next review date & ef for note with value of id ID.
 
 SUCCESS is a binary value, 1 = success, 0 = failure.
 Returns a list of the form ((yyyy mm dd) ef)."
@@ -602,7 +697,7 @@ Select notes where:
      :test 'equal)))
 
 (defun gnosis-review--get-offset (id)
-  "Get offset for note with value of id ID."
+  "Return offset for note with value of id ID."
   (let ((last-rev (gnosis-get 'last-rev 'review-log `(= id ,id))))
     (gnosis-algorithm-date-diff last-rev)))
 
@@ -614,7 +709,7 @@ such as the easiness factor (ef)."
   (/ (round (* num 100.00)) 100.00))
 
 (defun gnosis-review-new-ef (id success)
-  "Get new ef for note with value of id ID.
+  "Return new ef for note with value of id ID.
 
 SUCCESS is a binary value, 1 = success, 0 = failure.
 Returns a list of the form (ef-increase ef-decrease ef)."
@@ -777,9 +872,6 @@ NOTE-NUM: The number of notes reviewed in the session."
       ("Notes with tag(s)" (gnosis-review--session (gnosis-select-by-tag (gnosis-tag-prompt nil t)))))))
 
 ;;; Database Schemas
-;; Enable foreign_keys
-;; TODO: Redo when eval
-
 (defvar gnosis-db-schema-decks '([(id integer :primary-key :autoincrement)
 				  (name text :not-null)]))
 
