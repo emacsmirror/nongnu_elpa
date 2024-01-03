@@ -87,14 +87,15 @@ If ask nil, leave development env"
       (setf gnosis-testing nil)
       (message "Exited development env."))))
 
-(defun gnosis-dev-reinit ()
+(defun gnosis-dev-retest ()
   "Redo database."
   (interactive)
   (dolist (table '(notes decks review review-log extras))
     (condition-case nil
 	(gnosis--drop-table table)
       (error (message "No %s table to drop." table))))
-  (gnosis-db-init))
+  (gnosis-db-init)
+  (gnosis-dev-test))
 
 (provide 'gnosis-dev)
 ;;; gnosis-dev.el ends here
