@@ -951,6 +951,38 @@ changes."
       (insert ")")
       (insert "\n;; After finishing editing, evaluate expression with `C-x C-e'.")
       (indent-region (point-min) (point-max)))))
+
+
+(cl-defun gnosis-edit-update-note (&key id main options answer tags (extra-notes nil) (image nil) (second-image nil))
+  "Update note with id value of ID.
+
+ID: Note id
+MAIN: Main part of note, the stem part of MCQ, question for basic, etc.
+OPTIONS: Options for mcq type notes/Hint for basic & cloze type notes
+ANSWER: Answer for MAIN, user is asked for input, if equal user-input
+= answer review is marked as successfull
+TAGS: Tags for note, used to organize & differentiate between notes
+EXTRA-NOTES: Notes to display after user-input
+IMAGE: Image to display before user-input
+SECOND-IMAGE: Image to display after user-input"
+  ;; Construct the update clause for the emacsql update statement.
+  (cl-loop for (field . value) in
+           `((main . ,main)
+             (options . ,options)
+             (answer . ,answer)
+             (tags . ,tags)
+             (extra-notes . ,extra-notes)
+             (image . ,image)
+             (second-image . ,second-image))
+           when value
+           do (cond ((member field '(extra-notes image second-image))
+		     (gnosis-update 'extras `(= ,field ,value) `(= id ,id)))
+		    ((listp value)
+		     (gnosis-update 'notes `(= ,field ',value) `(= id ,id)))
+		    (t (gnosis-update 'notes `(= ,field ,value) `(= id ,id)))))
+  (throw 'exit nil))
+
+
 ;;;###autoload
 (defun gnosis-review ()
   "Start gnosis review session."
