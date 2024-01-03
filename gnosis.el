@@ -32,8 +32,10 @@
 (require 'emacsql)
 (require 'emacsql-sqlite)
 (require 'cl-lib)
+
 (require 'gnosis-algorithm)
 (require 'gnosis-faces)
+
 
 (defgroup gnosis nil
   "Spaced repetition learning tool."
@@ -456,8 +458,8 @@ NOTE: Note with clozes, format for clozes is as follows:
       This is a {c1:cloze} note type.
       This is a {{c1::cloze}} note type.
 
-Anki like syntax is supported with double brackes and colon, as well
-as single brackets({}) and colon(:), or even a mix.
+Anki like syntax is supported with double brackets & double colon, as
+well as single brackets({}) and colon(:), or even a mix.
 
 For each cX: tag, there will be gerenated a cloze note type.
 Example:
@@ -474,7 +476,8 @@ Example:
       monocytogenes} are CAMP test positive
    
 HINT: Hint to display during review, before user-input.
-   NOTE! In gnosis-db, hint is referred to as `options', same column options used in mcq.
+   NOTE! In gnosis-db, hint is referred to as `options', same column
+   options used in mcq.
 IMAGE: Image to display before user-input.
 TAGS: Tags used to organize notes
 SUSPEND: When t, note will be ignored.
