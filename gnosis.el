@@ -866,6 +866,25 @@ NOTE-NUM: The number of notes reviewed in the session."
 	       finally (gnosis-review-commit note-count)))))
 
 
+;; Change values
+
+(defun gnosis-edit-ef (id)
+  "Edit easiness factor values for note with id value ID."
+  (let ((ef-full (caar (gnosis-select 'ef 'review `(= id ,id))))
+	(old-value-index (pcase (completing-read "Change Factor: " '("Increase" "Decrease" "Total"))
+			   ("Total" 2)
+			   ("Decrease" 1)
+			   ("Increase" 0)))
+	(new-value (float (string-to-number (read-string "New value: ")))))
+    ;; error checking.
+    (cond ((>= 0 new-value) (error "New value needs to be a number & higher than `0'"))
+	  ;; Check if when total-ef is selected, new value is higher than 1.3
+	  ((and (>= 1.3 new-value) (= old-value-index 2) (error "New total ef needs to be higher than `1.3'"))))
+    ;; Use `gnosis-replace-item-at-index' to generate new list with
+    ;; new ef value. Change ef value at gnosis-db using
+    ;; `gnosis-update'
+    (gnosis-update 'review `(= ef ',(gnosis-replace-item-at-index old-value-index new-value ef-full)) `(= id ,id))))
+
 ;;;###autoload
 (defun gnosis-review ()
   "Start gnosis review session."
