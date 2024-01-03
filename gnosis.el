@@ -894,6 +894,63 @@ NOTE-NUM: The number of notes reviewed in the session."
     ;; `gnosis-update'
     (gnosis-update 'review `(= ef ',(gnosis-replace-item-at-index old-value-index new-value ef-full)) `(= id ,id))))
 
+(defun gnosis-edit-note-contents (id)
+  "Edit the contents of a note with the given ID.
+
+This function creates an Emacs Lisp buffer named *gnosis-edit* and populates it
+with the values of the note identified by the specified ID. The note values are
+inserted as keywords for the `gnosis-edit-update-note' function.
+
+To make changes, edit the values in the buffer, and then evaluate the
+`gnosis-edit-update-note' expression to save the changes.
+
+The note fields that will be shown in the buffer are:
+   - ID: The identifier of the note.
+   - MAIN: The main content of the note.
+   - OPTIONS: Additional options related to the note.
+   - ANSWER: The answer associated with the note.
+   - TAGS: The tags assigned to the note.
+   - EXTRA-NOTES: Any extra notes for the note.
+   - IMAGE: An image associated with the note.
+   - SECOND-IMAGE: Another image associated with the note.
+
+The buffer automatically indents the expressions for readability.
+After finishing editing, evaluate the entire expression to apply the
+changes."
+  (let ((id (gnosis-get 'id 'notes `(= id ,id)))
+	(main (gnosis-get 'main 'notes `(= id ,id)))
+	(options (gnosis-get 'options 'notes `(= id ,id)))
+	(answer (gnosis-get 'answer 'notes `(= id ,id)))
+	(tags (gnosis-get 'tags 'notes `(= id ,id)))
+	(extra-notes (gnosis-get 'extra-notes 'extras `(= id ,id)))
+	(image (gnosis-get 'images 'extras `(= id ,id)))
+	(second-image (gnosis-get 'extra-image 'extras `(= id ,id))))
+    (with-current-buffer (switch-to-buffer (get-buffer-create "*gnosis-edit*"))
+      (erase-buffer)
+      (emacs-lisp-mode)
+      (insert ";;\n;; You are editing a gnosis note. DO NOT change the value of id.\n\n")
+      (insert "(gnosis-edit-update-note ")
+      (cl-loop for (field value) in `((id ,id)
+				      (main ,main)
+				      (options ,options)
+				      (answer ,answer)
+				      (tags ,tags)
+				      (extra-notes ,extra-notes)
+				      (image ,image)
+				      (second-image ,second-image))
+	       do (cond ((numberp value)
+			 (insert (format ":%s %s\n" field value)))
+			((and (listp value)
+			      (not (equal value nil)))
+			 (insert (format ":%s '%s\n" field (format "%s" (cl-loop for item in value
+										collect (format "\"%s\"" item))))))
+			((equal value nil)
+			 (insert (format ":%s %s\n" field 'nil)))
+			(t (insert (format ":%s \"%s\"\n" field value)))))
+      (delete-char -1) ;; delete extra line
+      (insert ")")
+      (insert "\n;; After finishing editing, evaluate expression with `C-x C-e'.")
+      (indent-region (point-min) (point-max)))))
 ;;;###autoload
 (defun gnosis-review ()
   "Start gnosis review session."
