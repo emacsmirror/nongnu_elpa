@@ -652,6 +652,16 @@ Optionally, add cusotm PROMPT."
       t
     nil))
 
+(defun gnosis-get-deck-due-notes (&optional deck-id)
+  "Return due notes for deck, with value of DECK-ID.
+
+if DUE is t, return only due notes"
+  (let* ((deck (or deck-id (gnosis--get-deck-id)))
+	 (notes (gnosis-select 'id 'notes `(= deck-id ,deck))))
+    (cl-loop for note in (apply #'append notes)
+	     when (not (gnosis-suspended-p note))
+	     collect note)))
+
 (defun gnosis-tag-prompt (&optional prompt match)
   "PROMPT user to select tags, until they enter `q'.
 Prompt user to select tags, generated from `gnosis-get-tags--unique'.
@@ -1000,7 +1010,7 @@ SECOND-IMAGE: Image to display after user-input"
 					(gnosis-select-by-tag
 					 (list (completing-read "Start session for tag: "
 								(gnosis-review-due-notes--with-tags))))))
-      ("Notes with tag(s)" (gnosis-review--session (gnosis-select-by-tag (gnosis-tag-prompt nil t)))))))
+      ("All notes of tag(s)" (gnosis-review--session (gnosis-select-by-tag (gnosis-tag-prompt nil t)))))))
 
 ;;; Database Schemas
 (defvar gnosis-db-schema-decks '([(id integer :primary-key :autoincrement)
