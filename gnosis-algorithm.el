@@ -46,7 +46,10 @@ Second item: Second interval."
 
 First item : Increase factor
 Second item: Decrease factor
-Third item : Starting ef"
+Third item : Starting ef
+
+WARNING! Starting ef should not be above 2.5, it's recommended to keep
+it below 2.0"
   :group 'gnosis
   :type 'list)
 
@@ -109,20 +112,24 @@ Returns a tuple: (INTERVAL N EF) where,
   ;; Calculate the next easiness factor.
   (let* ((next-ef (gnosis-algorithm-e-factor ef success))
          ;; Calculate the next interval.
+	 ;; ef should not be > 3.0 unless the card is imported/edited,
+	 ;; thus ignore initial intervals
          (interval
           (cond
            ;; First successful review -> first interval
            ((and (= successful-reviews 0)
-		 (= success 1))
+		 (= success 1)
+		 (< ef 3.0))
 	    (car gnosis-algorithm-interval))
            ;; Second successful review -> second interval
            ((and (= successful-reviews 1)
-		 (= success 1))
+		 (= success 1)
+		 (< ef 3.0))
 	    (cadr gnosis-algorithm-interval))
            ;; TESTING
-	   ((and (= last-interval 0)
-		 (= success 1))
-	    (* ef 1))
+	   ;; ((and (= last-interval 0)
+	   ;; 	 (= success 1))
+	   ;;  (* ef 1))
            (t (if (= success 1)
                   (* ef last-interval)
                 (* ff last-interval))))))
