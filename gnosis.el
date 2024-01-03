@@ -858,15 +858,24 @@ NOTE-NUM: The number of notes reviewed in the session."
       (cl-loop for note in notes
 	       do (progn (gnosis-review-note note)
 			 (setf note-count (1+ note-count))
-			 (pcase (read-char-choice "Note Action: [n]ext, [s]uspend, [q]uit: " '(?n ?s ?q))
+			 (pcase (read-char-choice "Note Action: [n]ext, [s]uspend, [e]dit, [q]uit: " '(?n ?s ?e ?q))
 			   (?n nil)
 			   (?s (gnosis-suspend-note note))
+			   (?e (progn (gnosis-edit-note note)
+				      (recursive-edit)))
 			   (?q (progn (gnosis-review-commit note-count)
-					  (cl-return)))))
+				      (cl-return)))))
 	       finally (gnosis-review-commit note-count)))))
 
 
-;; Change values
+;; Editing notes
+
+(defun gnosis-edit-note (id)
+  "Edit note with value of id ID."
+  (pcase (completing-read "Edit: " '(contents ef) nil t)
+    ("contents" (gnosis-edit-note-contents id))
+    ("ef" (gnosis-edit-ef id))
+    (_ (message "No such value."))))
 
 (defun gnosis-edit-ef (id)
   "Edit easiness factor values for note with id value ID."
