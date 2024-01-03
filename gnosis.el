@@ -85,8 +85,9 @@ WARNING: Do not change this value!")
 
 (cl-defun gnosis-update (table value where)
   "Update records in TABLE with to new VALUE based on the given WHERE condition.
+
 Example:
- (gnosis-update `''notes `''(= main \"NEW VALUE\") `''(= id 12))"
+ (gnosis-update ='notes ='(= main \"NEW VALUE\") ='(= id 12))"
   (emacsql gnosis-db `[:update ,table :set ,value :where ,where]))
 
 (cl-defun gnosis-get (value table &optional (restrictions '1=1))
@@ -129,6 +130,12 @@ FACE-FOR-INFO is the face used to display info for option."
                   choices)))
     (cdr (assoc (completing-read prompt formatted-choices nil t)
 		formatted-choices))))
+
+(defun gnosis-replace-item-at-index (index new-item list)
+  "Replace item at INDEX in LIST with NEW-ITEM."
+  (cl-loop for i from 0 for item in list
+           if (= i index) collect new-item
+           else collect item))
 
 (defun gnosis-display--question (id)
   "Display main row for note ID."
