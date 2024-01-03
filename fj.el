@@ -263,7 +263,8 @@ With PARAMS."
   (interactive)
   (let* ((item (tabulated-list-get-entry))
          (number (car (seq-first item))))
-    (fj-issue-close fj-current-repo number)))
+    (fj-issue-close fj-current-repo number)
+    (fj-list-issues-list)))
 
 (defun fj-issue-delete (&optional repo issue)
   "Delete ISSUE in REPO."
