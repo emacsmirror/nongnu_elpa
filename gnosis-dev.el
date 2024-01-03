@@ -25,7 +25,8 @@
   "Add random inputs to test."
   (let ((num (or num (string-to-number (read-string "Number of random inputs: "))))
 	(testing-deck (or deck "testing")))
-    (gnosis-add-deck testing-deck)
+    (unless (gnosis-get 'name 'decks `(= name ,testing-deck))
+      (gnosis-add-deck testing-deck))
     (when (y-or-n-p "Add MCQ type?")
       (dotimes (_ num)
 	(gnosis-add-note--mcq :deck testing-deck
