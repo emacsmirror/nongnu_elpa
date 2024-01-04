@@ -1186,10 +1186,12 @@ review."
   (interactive)
   (gnosis-db-init)
   (let ((review-type (completing-read "Review: " '("Due notes"
+						   "Due notes of deck"
 						   "Due notes of specified tag(s)"
 						   "Notes with tag(s)"))))
     (pcase review-type
       ("Due notes" (gnosis-review--session (gnosis-review-get-due-notes)))
+      ("Due notes of deck" (gnosis-review--session (gnosis-get-deck-due-notes)))
       ("Due notes of specified tag(s)" (gnosis-review--session
 					(gnosis-select-by-tag
 					 (list (completing-read "Start session for tag: "
