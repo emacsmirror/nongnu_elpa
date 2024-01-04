@@ -54,10 +54,11 @@
 (defvar gnosis-images-dir (concat (file-name-as-directory gnosis-dir) "images")
   "Gnosis images directory.")
 
-(defvar gnosis-db (emacsql-sqlite (concat (file-name-as-directory gnosis-dir) "gnosis.db"))
-  "Gnosis database file.
-
-WARNING: Do not change this value!")
+(defconst gnosis-db
+  (if (not (file-directory-p gnosis-dir))
+      (gnosis-db-init)
+    (emacsql-sqlite (concat (file-name-as-directory gnosis-dir) "gnosis.db")))
+  "Gnosis database file. WARNING: Do not change this value!")
 
 (defvar gnosis-testing nil
   "When t, warn user he is in a testing environment.")
@@ -1175,7 +1176,7 @@ review."
 				      (plist-get note :answer)
 				      (plist-get note :extra-notes)
 				      (plist-get note :tags)
-				      0
+				      suspended
 				      (plist-get note :image)
 				      (plist-get note :second-image)))))
 
@@ -1188,7 +1189,7 @@ review."
   (let ((review-type (completing-read "Review: " '("Due notes"
 						   "Due notes of deck"
 						   "Due notes of specified tag(s)"
-						   "Notes with tag(s)"))))
+						   "All notes of tag(s)"))))
     (pcase review-type
       ("Due notes" (gnosis-review--session (gnosis-review-get-due-notes)))
       ("Due notes of deck" (gnosis-review--session (gnosis-get-deck-due-notes)))
