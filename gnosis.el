@@ -371,9 +371,9 @@ When called with a prefix, unsuspends all notes for tag."
 
 
 (defun gnosis-add-note-fields (deck type main options answer extra tags suspend image second-image)
-  "Add fields for new note.
+  "Insert fields for new note.
 
-DECK: Deck for new note.
+DECK: Deck NAME, as a string, for new note.
 TYPE: Note type e.g \"mcq\"
 MAIN: Note's main part
 OPTIONS: Note's options, e.g choices for mcq for OR hints for
@@ -384,11 +384,18 @@ EXTRA: Extra information to display after answering note
 TAGS: Tags to organize notes
 SUSPEND: Integer value of 1 or 0, where 1 suspends the card
 IMAGE: Image to display during review.
-SECOND-IMAGE: Image to display after user-input."
-  (gnosis--insert-into 'notes `([nil ,type ,main ,options ,answer ,tags ,(gnosis--get-deck-id deck)]))
-  (gnosis--insert-into 'review `([nil ,gnosis-algorithm-ef ,gnosis-algorithm-ff ,gnosis-algorithm-interval]))
-  (gnosis--insert-into 'review-log `([nil ,(gnosis-algorithm-date) ,(gnosis-algorithm-date) 0 0 0 0 ,suspend 0]))
-  (gnosis--insert-into 'extras `([nil ,extra ,image ,second-image])))
+SECOND-IMAGE: Image to display after user-input.
+
+NOTE: If a gnosis--insert-into fails, the whole transaction will be
+ (or at least it should). Else there will be an error for foreign key
+ constraint."
+  (condition-case nil
+      (progn
+        (gnosis--insert-into 'notes   `([nil ,type ,main ,options ,answer ,tags ,(gnosis--get-deck-id deck)]))
+        (gnosis--insert-into 'review  `([nil ,gnosis-algorithm-ef ,gnosis-algorithm-ff ,gnosis-algorithm-interval]))
+        (gnosis--insert-into 'review-log `([nil ,(gnosis-algorithm-date) ,(gnosis-algorithm-date) 0 0 0 0 ,suspend 0]))
+        (gnosis--insert-into 'extras `([nil ,extra ,image ,second-image])))
+    (error (message "An error occurred during insertion"))))
 
 
 ;; Adding note(s) consists firstly of a hidden 'gnosis-add-note--TYPE'
