@@ -1133,6 +1133,53 @@ name and all notes formatted as nested lists"
       (cl-loop for note in notes
 	       do (progn (insert "(") (gnosis-export-note note) (insert ")" "\n"))
 	       finally (insert "))")))))
+
+(cl-defun gnosis-define-deck (deck notes &optional (suspended 0))
+  "Define DECK consisting of NOTES, optionally add them as SUSPENDED.
+
+The `gnosis-define-deck` function adds a new deck with the specified
+name to `gnosis-db'. It also adds each note from the given list
+of `notes` to the deck. The function takes three optional arguments:
+`deck`, `notes`, and `suspended`.
+
+- `deck`: The name of the deck to be added. It should be provided as a
+          symbol.
+
+- `notes`: A list containing the notes to be added to the deck. Each
+           note should be represented as a property list with the
+           following keys: `:type`, `:main`, `:options`, `:answer`
+
+- extras include :`:extra-notes`, `:tags`, `:image`, and `:second-image`.
+
+- `suspended`: An optional argument specifying whether the deck should
+               be created in a suspended state. A non-zero value
+               suspends the deck, while a value of 0 (default) creates
+               the deck in an active state.
+
+When calling `gnosis-define-deck`, the deck is added to the Gnosis
+system by calling `gnosis-add-deck`. Each note is added to the deck
+using `gnosis-add-note-fields`. The function iterates over the list of
+`notes` and extracts the necessary fields from each note's property
+list before adding them to the deck.
+
+The purpose of this function is to create a full deck with its
+associated notes in `gnosis-db', ready for further processing or
+review."
+  (gnosis-add-deck (symbol-name deck))
+  (sit-for 0.1) ;; wait for low-spec computers to create deck
+  (cl-loop for note in notes
+	   do (progn (gnosis-add-note-fields (symbol-name deck)
+				      (plist-get note :type)
+				      (plist-get note :main)
+				      (plist-get note :options)
+				      (plist-get note :answer)
+				      (plist-get note :extra-notes)
+				      (plist-get note :tags)
+				      0
+				      (plist-get note :image)
+				      (plist-get note :second-image)))))
+
+
 ;;;###autoload
 (defun gnosis-review ()
   "Start gnosis review session."
