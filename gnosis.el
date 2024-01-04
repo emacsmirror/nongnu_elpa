@@ -34,8 +34,6 @@
 (require 'cl-lib)
 
 (require 'gnosis-algorithm)
-(require 'gnosis-faces)
-
 
 (defgroup gnosis nil
   "Spaced repetition learning tool."
@@ -66,6 +64,61 @@ WARNING: Do not change this value!")
 
 (defconst gnosis-db-version 1
   "Gnosis database version.")
+
+;;; Faces
+
+(defgroup gnosis-faces nil
+  "Faces used by gnosis."
+  :group 'gnosis
+  :tag "Gnosis Faces"
+  :prefix 'gnosis-face)
+
+(defface gnosis-face-extra
+  '((t :inherit markdown-italic-face))
+  "Face for extra-notes from note."
+  :group 'gnosis-faces)
+
+(defface gnosis-face-main
+  '((t :inherit default))
+  "Face for main section from note."
+  :group 'gnosis-face-faces)
+
+(defface gnosis-face-seperator
+  '((t :inherit warning))
+  "Face for section seperator."
+  :group 'gnosis-face)
+
+(defface gnosis-face-directions
+  '((t :inherit underline))
+  "Face for gnosis directions."
+  :group 'gnosis-face)
+
+(defface gnosis-face-correct
+  '((t :inherit match))
+  "Face for user choice."
+  :group 'gnosis-face)
+
+(defface gnosis-face-cloze
+  '((t :inherit cursor))
+  "Face for clozes."
+  :group 'gnosis-face)
+
+(defface gnosis-face-false
+  '((t :inherit error))
+  "Face for user choice."
+  :group 'gnosis-face)
+
+(defface gnosis-face-hint
+  '((t :inherit warning))
+  "Face for user choice."
+  :group 'gnosis-face)
+
+(defface gnosis-face-cloze-unanswered
+  '((t :inherit underline))
+  "Face for user choice."
+  :group 'gnosis-face)
+
+
 
 (cl-defun gnosis-select (value table &optional (restrictions '1=1))
   "Select VALUE from TABLE, optionally with RESTRICTIONS."
