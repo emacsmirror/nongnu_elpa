@@ -595,19 +595,6 @@ See `gnosis-add-note--cloze' for more reference."
     ("Double" (gnosis-add-note-double))
     (_ (message "No such type."))))
 
-(defun gnosis-export-deck (deck filename)
-  "Export DECK as FILENAME.
-
-Export all notes for DECK, in a file as FILENAME."
-  (interactive (list (gnosis--get-deck-id)
-		     (read-string "Name for exported file: ")))
-  (let ((notes (gnosis-select '[type main options answer tags] 'notes `(= deck-id ,deck)))
-	(default-directory gnosis-dir))
-    (with-temp-file (concat filename ".el")
-      (insert "(" (concat "gnosis-define-deck " "'" filename "\n"))
-      (insert (pp-to-string notes) "\n")
-      (insert ")" ))))
-
 (defun gnosis-mcq-answer (id)
   "Choose the correct answer, from mcq choices for question ID."
   (let ((choices (gnosis-get 'options 'notes `(= id ,id)))
@@ -1063,6 +1050,9 @@ SECOND-IMAGE: Image to display after user-input"
 		     (gnosis-update 'notes `(= ,field ',value) `(= id ,id)))
 		    (t (gnosis-update 'notes `(= ,field ,value) `(= id ,id))))))
 
+(cl-defun gnosis-get-notes-for-deck (&optional (deck (gnosis--get-deck-id)))
+  "Return a list of ID vlaues for each note with value of deck-id DECK."
+  (apply #'append (gnosis-select 'id 'notes `(= deck-id ,deck))))
 
 ;;;###autoload
 (defun gnosis-review ()
