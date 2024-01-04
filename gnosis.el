@@ -681,12 +681,12 @@ Optionally, add cusotm PROMPT."
 
 (defun gnosis-get-tags--unique ()
   "Return a list of unique strings for tags in gnosis-db."
-  (cl-loop for tags in (gnosis-select 'tags 'notes)
+  (cl-loop for tags in (apply #'append (gnosis-select 'tags 'notes))
            nconc tags into all-tags
            finally return (delete-dups all-tags)))
 
 (defun gnosis-select-by-tag (input-tags)
-  "Return note id for every note with INPUT-TAGS."
+  "Return note ID's for every note with INPUT-TAGS."
   (unless (listp input-tags)
     (error "`input-tags' need to be a list"))
   (cl-loop for (id tags) in (emacsql gnosis-db [:select [id tags] :from notes])
@@ -1202,7 +1202,7 @@ review."
     (pcase review-type
       ("Due notes" (gnosis-review--session (gnosis-review-get-due-notes)))
       ("Due notes of deck" (gnosis-review--session (gnosis-get-deck-due-notes)))
-      ("Due notes of specified tag(s)" (gnosis-review--session (gnosis-tag-prompt :match t :due t)))
+      ("Due notes of specified tag(s)" (gnosis-review--session (gnosis-select-by-tag (gnosis-tag-prompt :match t :due t))))
       ("All notes of tag(s)" (gnosis-review--session (gnosis-select-by-tag (gnosis-tag-prompt :match t)))))))
 
 ;;; Database Schemas
