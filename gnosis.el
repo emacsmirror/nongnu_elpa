@@ -1202,11 +1202,8 @@ review."
     (pcase review-type
       ("Due notes" (gnosis-review--session (gnosis-review-get-due-notes)))
       ("Due notes of deck" (gnosis-review--session (gnosis-get-deck-due-notes)))
-      ("Due notes of specified tag(s)" (gnosis-review--session
-					(gnosis-select-by-tag
-					 (list (completing-read "Start session for tag: "
-								(gnosis-review-due-notes--with-tags))))))
-      ("All notes of tag(s)" (gnosis-review--session (gnosis-select-by-tag (gnosis-tag-prompt nil t)))))))
+      ("Due notes of specified tag(s)" (gnosis-review--session (gnosis-tag-prompt :match t :due t)))
+      ("All notes of tag(s)" (gnosis-review--session (gnosis-select-by-tag (gnosis-tag-prompt :match t)))))))
 
 ;;; Database Schemas
 (defvar gnosis-db-schema-decks '([(id integer :primary-key :autoincrement)
