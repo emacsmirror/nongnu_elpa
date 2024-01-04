@@ -1106,6 +1106,33 @@ to improve readability."
 		       (insert (format ":%s %s\n" field 'nil)))
 		      (t (insert (format ":%s \"%s\"\n" field value))
 			 (indent-region (point-min) (point-max)))))))
+
+(defun gnosis-export-deck (filename)
+  "Export notes for deck in FILENAME.
+
+FILENAME: The name of the file to save the exported deck.
+
+This function prompts the user to provide a deck name and allows the
+user to specify a filename for exporting notes belonging to that deck.
+It then retrieves all the notes associated with the deck and exports
+them.
+
+The exported notes are formatted as an Emacs Lisp code block that can
+be evaluated to recreate the deck with its associated notes. The
+resulting code is saved to a file with the provided FILENAME and a
+'.el' extension is added automatically.
+
+Each note is exported using the `gnosis-export-note` function. The
+generated code includes a call to `gnosis-define-deck` with the deck
+name and all notes formatted as nested lists"
+  (interactive (list (read-string "Filename: ")))
+  (let ((notes (gnosis-get-notes-for-deck))
+	(deck-name (read-string "Export deck as (name): ")))
+    (with-temp-file (concat filename ".el")
+      (insert "(gnosis-define-deck " "'" deck-name " '(")
+      (cl-loop for note in notes
+	       do (progn (insert "(") (gnosis-export-note note) (insert ")" "\n"))
+	       finally (insert "))")))))
 ;;;###autoload
 (defun gnosis-review ()
   "Start gnosis review session."
