@@ -846,9 +846,8 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
 
 This function initializes the `gnosis-dir' as a Git repository if it is not
 already one. It then adds the gnosis.db file to the repository and commits
-the changes with a message containing the review type and the number of notes.
+the changes with a message containing the reviewed number of notes.
 
-TYPE: The type of the review session.
 NOTE-NUM: The number of notes reviewed in the session."
   (let ((git (executable-find "git"))
 	(default-directory gnosis-dir))
@@ -856,7 +855,7 @@ NOTE-NUM: The number of notes reviewed in the session."
       (error "Git not found, please install git"))
     (unless (file-exists-p (concat (file-name-as-directory gnosis-dir) ".git"))
       (shell-command "git init"))
-    (sit-for 0.2)
+    (sit-for 0.2) ;; wait for shell command to finish
     (shell-command (concat git " add " (shell-quote-argument "gnosis.db")))
     (shell-command (concat git " commit -m "
 			   (shell-quote-argument (concat (format "Total notes for session: %d " note-num)))))
@@ -939,8 +938,8 @@ changes."
 	(image (gnosis-get 'images 'extras `(= id ,id)))
 	(second-image (gnosis-get 'extra-image 'extras `(= id ,id))))
     (with-current-buffer (switch-to-buffer (get-buffer-create "*gnosis-edit*"))
+      (gnosis-edit-mode)
       (erase-buffer)
-      (emacs-lisp-mode)
       (insert ";;\n;; You are editing a gnosis note. DO NOT change the value of id.\n\n")
       (insert "(gnosis-edit-update-note ")
       (cl-loop for (field value) in `((id ,id)
@@ -962,8 +961,18 @@ changes."
 			(t (insert (format ":%s \"%s\"\n" field value)))))
       (delete-char -1) ;; delete extra line
       (insert ")")
-      (insert "\n;; After finishing editing, evaluate expression with `C-x C-e'.")
+      (insert "\n;; After finishing editing, save changes with `<C-c> <C-c>'\n;; Do NOT exit without saving.")
       (indent-region (point-min) (point-max)))))
+
+(define-derived-mode gnosis-edit-mode emacs-lisp-mode "Gnosis EDIT"
+  "Gnosis Edit Mode."
+  :interactive t
+  :lighter " gnosis-edit-mode"
+  :keymap gnosis-edit-mode-map)
+
+(defvar-keymap gnosis-edit-mode-map
+  :doc "gnosis-edit keymap"
+  "C-c C-c" #'(lambda () (interactive) (eval-buffer) (kill-buffer) (throw 'exit nil)))
 
 
 (cl-defun gnosis-edit-update-note (&key id main options answer tags (extra-notes nil) (image nil) (second-image nil))
@@ -992,8 +1001,7 @@ SECOND-IMAGE: Image to display after user-input"
 		     (gnosis-update 'extras `(= ,field ,value) `(= id ,id)))
 		    ((listp value)
 		     (gnosis-update 'notes `(= ,field ',value) `(= id ,id)))
-		    (t (gnosis-update 'notes `(= ,field ,value) `(= id ,id)))))
-  (throw 'exit nil))
+		    (t (gnosis-update 'notes `(= ,field ,value) `(= id ,id))))))
 
 
 ;;;###autoload
