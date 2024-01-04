@@ -719,20 +719,21 @@ if DUE is t, return only due notes"
 	        due-notes)
      :test 'equal)))
 
+(cl-defun gnosis-tag-prompt (&key (prompt "Selected tags") (match nil) (due nil))
   "PROMPT user to select tags, until they enter `q'.
 Prompt user to select tags, generated from `gnosis-get-tags--unique'.
 
 PROMPT: Prompt string value
 MATCH: Require match, t or nil value
-
+DUE: if t, return tags for due notes from `gnosis-due-tags'.
 Returns a list of unique tags."
   (let* ((tags '())
-         (tag "")
-	 (prompt (or prompt "Selected tags"))
-	 (match (or match nil)))
+         (tag ""))
     (while (not (string= tag "q"))
       (setf tag (completing-read (concat prompt (format " %s (q for quit): " tags))
-				 (cons "q" (gnosis-get-tags--unique)) nil match))
+				 (cons "q" (if due (gnosis-due-tags)
+					     (gnosis-get-tags--unique)))
+				 nil match))
       (unless (or (string= tag "q") (member tag tags))
         (push tag tags)))
     (reverse tags)))
