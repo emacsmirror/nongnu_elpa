@@ -710,7 +710,15 @@ if DUE is t, return only due notes"
 	     when (not (gnosis-suspended-p note))
 	     collect note)))
 
-(defun gnosis-tag-prompt (&optional prompt match)
+(defun gnosis-due-tags ()
+  "Return a list of due note tags."
+  (let ((due-notes (gnosis-review-get-due-notes)))
+    (cl-remove-duplicates
+     (cl-mapcan (lambda (note-id)
+                  (gnosis-get-note-tags note-id))
+	        due-notes)
+     :test 'equal)))
+
   "PROMPT user to select tags, until they enter `q'.
 Prompt user to select tags, generated from `gnosis-get-tags--unique'.
 
