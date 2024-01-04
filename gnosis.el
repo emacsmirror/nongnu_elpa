@@ -756,7 +756,7 @@ Select notes where:
  - Not suspended."
   (apply #'append
 	 (emacsql gnosis-db `[:select [id] :from review-log :where (and (<= next-rev ',(gnosis-algorithm-date))
-								 (= suspend 0))])))
+									(= suspend 0))])))
 
 (defun gnosis-review-due-notes--with-tags ()
   "Return a list of due note tags."
@@ -1054,6 +1054,58 @@ SECOND-IMAGE: Image to display after user-input"
   "Return a list of ID vlaues for each note with value of deck-id DECK."
   (apply #'append (gnosis-select 'id 'notes `(= deck-id ,deck))))
 
+(defun gnosis-export-note (id)
+  "Export fields for note with value of id ID.
+
+ID: Identifier of the note to export.
+
+This function retrieves the fields of a note with the given ID and
+inserts them into the current buffer. Each field is represented as a
+property list entry. The following fields are exported: type, main,
+options, answer, tags, extra-notes, image, and second-image.
+
+The exported fields are formatted as key-value pairs with a colon,
+e.g., :field value. The fields are inserted sequentially into the
+buffer. For certain field values, like lists or nil, special
+formatting is applied.
+
+If the value is a list, the elements are formatted as strings and
+enclosed in double quotes.
+
+If the value is nil, the field is exported as :field nil.
+
+All other values are treated as strings and exported with double
+quotes.
+
+The final exported note is indented using the `indent-region' function
+to improve readability."
+  (let ((type (gnosis-get 'type 'notes `(= id ,id)))
+	(main (gnosis-get 'main 'notes `(= id ,id)))
+	(options (gnosis-get 'options 'notes `(= id ,id)))
+	(answer (gnosis-get 'answer 'notes `(= id ,id)))
+	(tags (gnosis-get 'tags 'notes `(= id ,id)))
+	(extra-notes (gnosis-get 'extra-notes 'extras `(= id ,id)))
+	(image (gnosis-get 'images 'extras `(= id ,id)))
+	(second-image (gnosis-get 'extra-image 'extras `(= id ,id))))
+    (cl-loop for (field . value) in `((type . ,type)
+				      (main . ,main)
+				      (options . ,options)
+				      (answer . ,answer)
+				      (tags . ,tags)
+				      (extra-notes . ,extra-notes)
+				      (image . ,image)
+				      (second-image . ,second-image))
+	     do (cond ((member field '(extra-notes image second-image))
+		       (insert (format ":%s \"%s\"\n" field value)))
+		      ((numberp value)
+		       (insert (format ":%s %s\n" field value)))
+		      ((listp value)
+		       (insert (format ":%s %s\n" field (format "%s" (cl-loop for item in value
+									       collect (format "\"%s\"" item))))))
+		      ((equal value nil)
+		       (insert (format ":%s %s\n" field 'nil)))
+		      (t (insert (format ":%s \"%s\"\n" field value))
+			 (indent-region (point-min) (point-max)))))))
 ;;;###autoload
 (defun gnosis-review ()
   "Start gnosis review session."
