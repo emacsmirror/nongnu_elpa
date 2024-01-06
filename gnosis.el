@@ -1202,7 +1202,7 @@ review."
     (pcase review-type
       ("Due notes" (gnosis-review--session (gnosis-review-get-due-notes)))
       ("Due notes of deck" (gnosis-review--session (gnosis-get-deck-due-notes)))
-      ("Due notes of specified tag(s)" (gnosis-review--session (gnosis-tag-prompt :match t :due t)))
+      ("Due notes of specified tag(s)" (gnosis-review--session (gnosis-select-by-tag (gnosis-tag-prompt :match t :due t))))
       ("All notes of tag(s)" (gnosis-review--session (gnosis-select-by-tag (gnosis-tag-prompt :match t)))))))
 
 ;;; Database Schemas
