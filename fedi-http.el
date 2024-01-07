@@ -248,7 +248,7 @@ Callback to `fedi-http--get-response-async'."
 
 (defun fedi-http--process-headers ()
   "Return an alist of http response headers."
-  (switch-to-buffer (current-buffer))
+  ;; (switch-to-buffer (current-buffer))
   (goto-char (point-min))
   (let* ((head-str (buffer-substring-no-properties
                     (point-min)

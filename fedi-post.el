@@ -452,7 +452,7 @@ FIELDS is a list of alists of fields to add, using `fedi-post--concat-fields'."
   ;; URLs always = 23, and domain names of handles are not counted.
   ;; This is how mastodon does it."
   (with-temp-buffer
-    (switch-to-buffer (current-buffer))
+    ;; (switch-to-buffer (current-buffer))
     (insert post-string)
     (goto-char (point-min))
     (length (buffer-substring (point-min) (point-max)))))

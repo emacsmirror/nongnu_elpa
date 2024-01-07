@@ -178,7 +178,8 @@ than `switch-to-buffer'."
        (funcall ,mode-fun)
        (if ,other-window
            (switch-to-buffer-other-window ,buffer)
-         (switch-to-buffer ,buffer))
+         ;; (switch-to-buffer ,buffer))
+         (pop-to-buffer ,buffer '(display-buffer-same-window)))
        ,@body
        (goto-char (point-min)))))
 
@@ -568,6 +569,7 @@ TIME-STAMP is assumed to be in the past."
 
 (defun fedi-switch-to-buffer (prefix)
   "Switch to a live fedi buffer."
+  (interactive)
   (let* ((bufs (fedi-live-buffers prefix))
          (buf-names (mapcar #'buffer-name bufs))
          (choice (completing-read "Switch to buffer: "
