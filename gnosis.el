@@ -719,6 +719,7 @@ if DUE is t, return only due notes"
 	        due-notes)
      :test 'equal)))
 
+
 (cl-defun gnosis-tag-prompt (&key (prompt "Selected tags") (match nil) (due nil))
   "PROMPT user to select tags, until they enter `q'.
 Prompt user to select tags, generated from `gnosis-get-tags--unique'.
@@ -1144,6 +1145,8 @@ name and all notes formatted as nested lists"
 	       do (progn (insert "(") (gnosis-export-note note) (insert ")" "\n"))
 	       finally (insert "))")))))
 
+;; TODO: Add defcustom to have suspended as 0 or 1 depending on
+;; gnosis-add-decks-suspended t or nil
 (cl-defun gnosis-define-deck (deck notes &optional (suspended 0))
   "Define DECK consisting of NOTES, optionally add them as SUSPENDED.
 
@@ -1178,7 +1181,7 @@ review."
   (gnosis-add-deck (symbol-name deck))
   (sit-for 0.1) ;; wait for low-spec computers to create deck
   (cl-loop for note in notes
-	   do (progn (gnosis-add-note-fields (symbol-name deck)
+	   do (gnosis-add-note-fields (symbol-name deck)
 				      (plist-get note :type)
 				      (plist-get note :main)
 				      (plist-get note :options)
@@ -1187,7 +1190,7 @@ review."
 				      (plist-get note :tags)
 				      suspended
 				      (plist-get note :image)
-				      (plist-get note :second-image)))))
+				      (plist-get note :second-image))))
 
 
 ;;;###autoload
