@@ -920,21 +920,21 @@ NOTE-NUM: The number of notes reviewed in the session."
 
 (defun gnosis-review--session (notes)
   "Start review session for NOTES."
-  (when (null notes)
-    (message "No due notes."))
   (let ((note-count 0))
-    (when (y-or-n-p (format "You have %s total notes for review, start session?" (length notes)))
-      (cl-loop for note in notes
-	       do (progn (gnosis-review-note note)
-			 (setf note-count (1+ note-count))
-			 (pcase (read-char-choice "Note Action: [n]ext, [s]uspend, [e]dit, [q]uit: " '(?n ?s ?e ?q))
-			   (?n nil)
-			   (?s (gnosis-suspend-note note))
-			   (?e (progn (gnosis-edit-note note)
-				      (recursive-edit)))
-			   (?q (progn (gnosis-review-commit note-count)
-				      (cl-return)))))
-	       finally (gnosis-review-commit note-count)))))
+    (if (null notes)
+	(message "No notes for review.")
+      (when (y-or-n-p (format "You have %s total notes for review, start session?" (length notes)))
+	(cl-loop for note in notes
+		 do (progn (gnosis-review-note note)
+			   (setf note-count (1+ note-count))
+			   (pcase (read-char-choice "Note Action: [n]ext, [s]uspend, [e]dit, [q]uit: " '(?n ?s ?e ?q))
+			     (?n nil)
+			     (?s (gnosis-suspend-note note))
+			     (?e (progn (gnosis-edit-note note)
+					(recursive-edit)))
+			     (?q (progn (gnosis-review-commit note-count)
+					(cl-return)))))
+		 finally (gnosis-review-commit note-count))))))
 
 
 ;; Editing notes
