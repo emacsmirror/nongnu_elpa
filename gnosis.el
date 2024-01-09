@@ -392,6 +392,7 @@ NOTE: If a gnosis--insert-into fails, the whole transaction will be
  constraint."
   (condition-case nil
       (progn
+	;; Refer to `gnosis-db-schema-SCHEMA' e.g `gnosis-db-schema-review-log'
         (gnosis--insert-into 'notes   `([nil ,type ,main ,options ,answer ,tags ,(gnosis--get-deck-id deck)]))
         (gnosis--insert-into 'review  `([nil ,gnosis-algorithm-ef ,gnosis-algorithm-ff ,gnosis-algorithm-interval]))
         (gnosis--insert-into 'review-log `([nil ,(gnosis-algorithm-date) ,(gnosis-algorithm-date) 0 0 0 0 ,suspend 0]))
@@ -710,6 +711,15 @@ if DUE is t, return only due notes"
 	     when (not (gnosis-suspended-p note))
 	     collect note)))
 
+(defun gnosis-past-or-present-p (date)
+  "Compare the input DATE with the current date.
+Return t if DATE is today or in the past, nil if it's in the future.
+DATE is a list of the form (year month day)."
+  (let* ((now (gnosis-algorithm-date))
+         (time-now (encode-time 0 0 0 (nth 2 now) (nth 1 now) (nth 0 now)))
+         (time-date (encode-time 0 0 0 (nth 2 date) (nth 1 date) (nth 0 date))))
+    (not (time-less-p time-now time-date))))
+
 (defun gnosis-due-tags ()
   "Return a list of due note tags."
   (let ((due-notes (gnosis-review-get-due-notes)))
@@ -741,6 +751,31 @@ Returns a list of unique tags."
 
 ;; Review
 ;;;;;;;;;;
+(defun gnosis-review-is-due-p (note-id)
+  "Check if note with value of NOTE-ID for id is due for review.
+
+Check if it's suspended, and if it's due today."
+  (if (and (not (gnosis-suspended-p note-id))
+	   (gnosis-review-is-due-today-p note-id))
+      t
+    nil))
+
+(defun gnosis-review-is-due-today-p (id)
+  "Return t if note with ID is due today.
+
+This function ignores if note is suspended. Refer to
+`gnosis-review-is-due-p' if you need to check for suspended value as
+well."
+  (let ((next-rev (gnosis-get 'next-rev 'review-log `(= id ,id))))
+    (gnosis-past-or-present-p next-rev)))
+
+(defun gnosis-review-get-due-notes ()
+  "Return a list due notes id for current date."
+  (let ((notes (gnosis-select 'id 'notes)))
+    (cl-loop for note in (apply #'append notes)
+	     when (gnosis-review-is-due-p note)
+	     collect note)))
+
 (defun gnosis-review--algorithm (id success)
   "Return next review date & ef for note with value of id ID.
 
@@ -752,22 +787,6 @@ Returns a list of the form ((yyyy mm dd) ef)."
     (gnosis-algorithm-next-interval (gnosis-review--get-offset id)
 				    (gnosis-get 'n 'review-log `(= id ,id))
 				    ef success ff c-success)))
-
-(defun gnosis-review-is-due-p (note-id)
-  "Return t if unsuspended note with NOTE-ID is due today."
-  (emacsql gnosis-db `[:select [id] :from review-log :where (and (<= next-rev ',(gnosis-algorithm-date))
-								 (= suspend 0)
-								 (= id ,note-id))]))
-
-(defun gnosis-review-get-due-notes ()
-  "Return a list due notes id for current date.
-
-Select notes where:
- - Next review date <= current date
- - Not suspended."
-  (apply #'append
-	 (emacsql gnosis-db `[:select [id] :from review-log :where (and (<= next-rev ',(gnosis-algorithm-date))
-									(= suspend 0))])))
 
 (defun gnosis-review-due-notes--with-tags ()
   "Return a list of due note tags."
