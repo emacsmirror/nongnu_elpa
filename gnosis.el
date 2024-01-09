@@ -392,6 +392,7 @@ NOTE: If a gnosis--insert-into fails, the whole transaction will be
  constraint."
   (condition-case nil
       (progn
+	;; Refer to `gnosis-db-schema-SCHEMA' e.g `gnosis-db-schema-review-log'
         (gnosis--insert-into 'notes   `([nil ,type ,main ,options ,answer ,tags ,(gnosis--get-deck-id deck)]))
         (gnosis--insert-into 'review  `([nil ,gnosis-algorithm-ef ,gnosis-algorithm-ff ,gnosis-algorithm-interval]))
         (gnosis--insert-into 'review-log `([nil ,(gnosis-algorithm-date) ,(gnosis-algorithm-date) 0 0 0 0 ,suspend 0]))
@@ -766,6 +767,14 @@ This function ignores if note is suspended. Refer to
 well."
   (let ((next-rev (gnosis-get 'next-rev 'review-log `(= id ,id))))
     (gnosis-past-or-present-p next-rev)))
+
+(defun gnosis-review-get-due-notes ()
+  "Return a list due notes id for current date."
+  (let ((notes (gnosis-select 'id 'notes)))
+    (cl-loop for note in (apply #'append notes)
+	     when (gnosis-review-is-due-p note)
+	     collect note)))
+
 (defun gnosis-review--algorithm (id success)
   "Return next review date & ef for note with value of id ID.
 
@@ -777,17 +786,6 @@ Returns a list of the form ((yyyy mm dd) ef)."
     (gnosis-algorithm-next-interval (gnosis-review--get-offset id)
 				    (gnosis-get 'n 'review-log `(= id ,id))
 				    ef success ff c-success)))
-
-
-(defun gnosis-review-get-due-notes ()
-  "Return a list due notes id for current date.
-
-Select notes where:
- - Next review date <= current date
- - Not suspended."
-  (apply #'append
-	 (emacsql gnosis-db `[:select [id] :from review-log :where (and (<= next-rev ',(gnosis-algorithm-date))
-									(= suspend 0))])))
 
 (defun gnosis-review-due-notes--with-tags ()
   "Return a list of due note tags."
