@@ -757,6 +757,15 @@ Check if it's suspended, and if it's due today."
 	   (gnosis-review-is-due-today-p note-id))
       t
     nil))
+
+(defun gnosis-review-is-due-today-p (id)
+  "Return t if note with ID is due today.
+
+This function ignores if note is suspended. Refer to
+`gnosis-review-is-due-p' if you need to check for suspended value as
+well."
+  (let ((next-rev (gnosis-get 'next-rev 'review-log `(= id ,id))))
+    (gnosis-past-or-present-p next-rev)))
 (defun gnosis-review--algorithm (id success)
   "Return next review date & ef for note with value of id ID.
 
