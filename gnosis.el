@@ -710,6 +710,15 @@ if DUE is t, return only due notes"
 	     when (not (gnosis-suspended-p note))
 	     collect note)))
 
+(defun gnosis-past-or-present-p (date)
+  "Compare the input DATE with the current date.
+Return t if DATE is today or in the past, nil if it's in the future.
+DATE is a list of the form (year month day)."
+  (let* ((now (gnosis-algorithm-date))
+         (time-now (encode-time 0 0 0 (nth 2 now) (nth 1 now) (nth 0 now)))
+         (time-date (encode-time 0 0 0 (nth 2 date) (nth 1 date) (nth 0 date))))
+    (not (time-less-p time-now time-date))))
+
 (defun gnosis-due-tags ()
   "Return a list of due note tags."
   (let ((due-notes (gnosis-review-get-due-notes)))
