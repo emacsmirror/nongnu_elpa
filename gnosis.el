@@ -749,6 +749,14 @@ Returns a list of unique tags."
 
 ;; Review
 ;;;;;;;;;;
+(defun gnosis-review-is-due-p (note-id)
+  "Check if note with value of NOTE-ID for id is due for review.
+
+Check if it's suspended, and if it's due today."
+  (if (and (not (gnosis-suspended-p note-id))
+	   (gnosis-review-is-due-today-p note-id))
+      t
+    nil))
 (defun gnosis-review--algorithm (id success)
   "Return next review date & ef for note with value of id ID.
 
@@ -761,11 +769,6 @@ Returns a list of the form ((yyyy mm dd) ef)."
 				    (gnosis-get 'n 'review-log `(= id ,id))
 				    ef success ff c-success)))
 
-(defun gnosis-review-is-due-p (note-id)
-  "Return t if unsuspended note with NOTE-ID is due today."
-  (emacsql gnosis-db `[:select [id] :from review-log :where (and (<= next-rev ',(gnosis-algorithm-date))
-								 (= suspend 0)
-								 (= id ,note-id))]))
 
 (defun gnosis-review-get-due-notes ()
   "Return a list due notes id for current date.
