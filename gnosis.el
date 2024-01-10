@@ -649,9 +649,8 @@ Valid cloze formats include:
   "Compare STR1 and STR2.
 
 Compare 2 strings, ignoring case and whitespace."
-  (let ((modified-str1 (downcase (replace-regexp-in-string "\\s-" "" str1)))
-        (modified-str2 (downcase (replace-regexp-in-string "\\s-" "" str2))))
-    (string= modified-str1 modified-str2)))
+  (string= (downcase (replace-regexp-in-string "\\s-" "" str1))
+	   (downcase (replace-regexp-in-string "\\s-" "" str2))))
 
 (defun gnosis-directory-files (&optional dir regex)
   "Return a list of file paths, relative to DIR directory.
