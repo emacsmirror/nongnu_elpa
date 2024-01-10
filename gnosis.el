@@ -334,9 +334,12 @@ Set SPLIT to t to split all input given."
   (gnosis--delete 'decks `(= name ,deck))
   (message "Deleted deck %s" deck))
 
-(defun gnosis-suspend-note (id)
-  "Suspend note with ID."
-  (gnosis-update 'review-log '(= suspend 1) `(= id ,id)))
+;; TODO: Redo this as a single function
+(cl-defun gnosis-suspend-note (id &optional (suspend 1))
+  "Suspend note with ID.
+
+SUSPEND: 1 to suspend, 0 to unsuspend."
+  (gnosis-update 'review-log `(= suspend ,suspend) `(= id ,id)))
 
 (cl-defun gnosis-suspend-deck (&optional (deck (gnosis--get-deck-id)))
   "Suspend all note(s) with DECK id.
