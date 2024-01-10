@@ -1049,7 +1049,7 @@ changes."
 
 (defvar-keymap gnosis-edit-mode-map
   :doc "gnosis-edit keymap"
-  "C-c C-c" #'(lambda () (interactive) (eval-buffer) (kill-buffer) (throw 'exit nil)))
+  "C-c C-c" #'(lambda () (interactive) (eval-buffer) (kill-buffer) (exit-recursive-edit)))
 
 
 (cl-defun gnosis-edit-update-note (&key id main options answer tags (extra-notes nil) (image nil) (second-image nil))
