@@ -75,7 +75,8 @@
   :prefix 'gnosis-face)
 
 (defface gnosis-face-extra
-  '((t :inherit markdown-italic-face))
+  '((t :inherit italic
+       :foreground "#9C91E4"))
   "Face for extra-notes from note."
   :group 'gnosis-faces)
 
