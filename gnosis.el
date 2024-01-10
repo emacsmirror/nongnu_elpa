@@ -122,7 +122,9 @@
 
 
 (cl-defun gnosis-select (value table &optional (restrictions '1=1))
-  "Select VALUE from TABLE, optionally with RESTRICTIONS."
+  "Select VALUE from TABLE, optionally with RESTRICTIONS.
+
+Use `gnosis-db-init' to initialize `gnosis-db' and create essential directories."
   (gnosis-db-init)
   (emacsql gnosis-db `[:select ,value :from ,table :where ,restrictions]))
 
@@ -135,7 +137,9 @@
   (emacsql gnosis-db `[:drop-table ,table]))
 
 (cl-defun gnosis--insert-into (table values)
-  "Insert VALUES to TABLE."
+  "Insert VALUES to TABLE.
+
+Use `gnosis-db-init' to initialize `gnosis-db' and create essential directories."
   (gnosis-db-init)
   (emacsql gnosis-db `[:insert :into ,table :values ,values]))
 
