@@ -75,27 +75,23 @@ If ask nil, leave development env"
   (let ((ask (y-or-n-p "Start development env?"))
 	(testing-dir (concat gnosis-dir "/testing")))
     (if ask
-	(progn (unless (file-exists-p testing-dir)
-		 (make-directory testing-dir))
-	       (setf gnosis-db (emacsql-sqlite (concat testing-dir "/testing.db")))
-	       (setf gnosis-testing t)
-	       (gnosis-db-init)
-	       (gnosis-dev-add-fields)
-	       (message "Adding testing values...")
-	       (message "Development env is ready for testing."))
+	(progn
+	  (unless (file-exists-p testing-dir)
+	    (make-directory testing-dir))
+	  (setf gnosis-db (emacsql-sqlite (concat testing-dir "/testing.db")))
+	  (setf gnosis-testing t)
+	  (dolist (table '(notes decks review review-log extras))
+	    (condition-case nil
+		(gnosis--drop-table table)
+	      (error (message "No %s table to drop." table))))
+	  (gnosis-db-init)
+	  (gnosis-dev-add-fields)
+	  (message "Adding testing values...")
+	  (message "Development env is ready for testing."))
       (setf gnosis-db (emacsql-sqlite (concat (file-name-as-directory gnosis-dir) "gnosis.db")))
       (setf gnosis-testing nil)
       (message "Exited development env."))))
 
-(defun gnosis-dev-retest ()
-  "Redo database."
-  (interactive)
-  (dolist (table '(notes decks review review-log extras))
-    (condition-case nil
-	(gnosis--drop-table table)
-      (error (message "No %s table to drop." table))))
-  (gnosis-db-init)
-  (gnosis-dev-test))
 
 (provide 'gnosis-dev)
 ;;; gnosis-dev.el ends here
