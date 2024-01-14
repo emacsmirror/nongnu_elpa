@@ -32,12 +32,14 @@
 (require 'calendar)
 
 (defcustom gnosis-algorithm-interval '(1 3)
-  "Gnosis initial interval.
+  "Gnosis initial interval for successful reviews.
 
-Interval by which a new question is displayed or when it's ef is at 1.3.
+First item: First interval,
+Second item: Second interval.
 
-First item: First interval
-Second item: Second interval."
+Note: gnosis-algorithm-interval is ignored after 10 TOTAL reviews or
+when ef is above > 3.0, which should only be the case for customized
+notes/review sessions."
   :group 'gnosis
   :type 'list)
 
