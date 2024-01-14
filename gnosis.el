@@ -77,12 +77,12 @@
 (defface gnosis-face-extra
   '((t :inherit italic
        :foreground "#9C91E4"))
-  "Face for extra-notes from note."
+  "Face for extra-notes."
   :group 'gnosis-faces)
 
 (defface gnosis-face-main
   '((t :inherit default))
-  "Face for main section from note."
+  "Face for the main section from note."
   :group 'gnosis-face-faces)
 
 (defface gnosis-face-seperator
@@ -118,6 +118,11 @@
 (defface gnosis-face-cloze-unanswered
   '((t :inherit underline))
   "Face for user choice."
+  :group 'gnosis-face)
+
+(defface gnosis-face-next-review
+  '((t :inherit bold))
+  "Face for next review."
   :group 'gnosis-face)
 
 
