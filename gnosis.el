@@ -535,6 +535,35 @@ Refer to `gnosis-add-note--double' for more."
 			       :extra (read-string "Extra: ")
 			       :tags (gnosis-tag-prompt)))))
 
+(cl-defun gnosis-add-note--y-or-n (&key deck question hint answer extra (image nil) tags (suspend 0) (second-image nil))
+  "Add y-or-n type note.
+
+DECK: Deck name for note.
+QUESTION: Quesiton to display for note.
+ANSWER: Answer for QUESTION, either `121' (char value for yes) or `110'
+        (char value for no).
+HINT: Hint to display during review, before user-input.
+EXTRA: Extra information to display after user-input/giving an answer.
+IMAGE: Image to display before user-input.
+TAGS: Tags used to organize notes
+SUSSPEND: Binary value of 0 & 1, when 1 note will be ignored.
+SECOND-IMAGE: Image to display after user-input."
+  (gnosis-add-note-fields deck "y-or-n" question hint answer extra tags suspend image second-image))
+
+(defun gnosis-add-note-y-or-n ()
+  "Add note(s) of type `y-or-n' interactively to selected deck.
+
+refer to `gnosis-add-note--y-or-n' for more information about keyword values."
+  (let ((deck (gnosis--get-deck-name)))
+    (while (y-or-n-p (format "Add note of type `y-or-n-p' to `%s' deck? " deck))
+      (gnosis-add-note--y-or-n :deck deck
+			       :question (read-string "Question: ")
+                               :answer (read-char-choice "Answer: [y] or [n]? " '(?y ?n))
+			       :hint (read-string "Hint: ")
+			       :extra (read-string "Extra: ")
+			       :tags (gnosis-tag-prompt)))))
+
+
 (cl-defun gnosis-add-note--cloze (&key deck note hint tags (suspend 0) extra (image nil) (second-image nil))
   "Add cloze type note.
 
