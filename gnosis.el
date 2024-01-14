@@ -295,6 +295,16 @@ If FALSE t, use gnosis-face-false face"
        (insert "\n\n")
        (insert-image image)))))
 
+(defun gnosis-display--next-review (id)
+  "Display next interval for note ID."
+  (let ((interval (gnosis-get 'next-rev 'review-log `(= id ,id))))
+    (with-gnosis-buffer
+     (goto-char (point-max))
+     (insert (concat "\n\n"
+		     (propertize "Next review:" 'face 'gnosis-face-directions)
+		     " "
+		     (propertize (format "%s" interval) 'face 'gnosis-face-next-review))))))
+
 (cl-defun gnosis--prompt (prompt &optional (downcase nil) (split nil))
   "PROMPT user for input until `q' is given.
 
@@ -829,7 +839,7 @@ Returns a list of the form (ef-increase ef-decrease ef)."
   "Update review-log for note with value of id ID.
 
 SUCCESS is a binary value, 1 is for successful review."
-  (let ((ef (gnosis-review-new-ef id 1)))
+  (let ((ef (gnosis-review-new-ef id success)))
     ;; Update review-log
     (gnosis-update 'review-log `(= last-rev ',(gnosis-algorithm-date)) `(= id ,id))
     (gnosis-update 'review-log `(= next-rev ',(car (gnosis-review--algorithm id success))) `(= id ,id))
@@ -857,7 +867,8 @@ SUCCESS is a binary value, 1 is for successful review."
       (gnosis-review--update id 0)
       (message "False"))
     (gnosis-display--correct-answer-mcq answer user-choice)
-    (gnosis-display--extra id)))
+    (gnosis-display--extra id)
+    (gnosis-display--next-review id)))
 
 (defun gnosis-review-basic (id)
   "Review basic type note for ID."
@@ -869,7 +880,8 @@ SUCCESS is a binary value, 1 is for successful review."
 	 (success (gnosis-compare-strings answer user-input)))
     (gnosis-display--basic-answer answer success user-input)
     (gnosis-display--extra id)
-    (gnosis-review--update id (if success 1 0))))
+    (gnosis-review--update id (if success 1 0))
+    (gnosis-display--next-review id)))
 
 (defun gnosis-review-cloze--input (cloze)
   "Prompt for user input during cloze review.
@@ -912,6 +924,8 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
 		    (cl-return)))
 	     finally (gnosis-review--update id 1)))
   (gnosis-display--extra id))
+  (gnosis-display--extra id)
+  (gnosis-display--next-review id))
 
 (defun gnosis-review-note (id)
   "Start review for note with value of id ID, if note is unsuspended."
