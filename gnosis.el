@@ -570,7 +570,7 @@ SECOND-IMAGE: Image to display after user-input."
 
 refer to `gnosis-add-note--y-or-n' for more information about keyword values."
   (let ((deck (gnosis--get-deck-name)))
-    (while (y-or-n-p (format "Add note of type `y-or-n-p' to `%s' deck? " deck))
+    (while (y-or-n-p (format "Add note of type `y-or-n' to `%s' deck? " deck))
       (gnosis-add-note--y-or-n :deck deck
 			       :question (read-string "Question: ")
                                :answer (read-char-choice "Answer: [y] or [n]? " '(?y ?n))
@@ -653,7 +653,7 @@ See `gnosis-add-note--cloze' for more reference."
 ;;;###autoload
 (defun gnosis-add-note (type)
   "Create note(s) as TYPE interactively."
-  (interactive (list (completing-read "Type: " '(MCQ Cloze Basic Double) nil t)))
+  (interactive (list (completing-read "Type: " '(MCQ Cloze Basic Double y-or-n) nil t)))
   (when gnosis-testing
     (unless (y-or-n-p "You are using a testing environment! Continue?")
       (error "Aborted")))
@@ -662,6 +662,7 @@ See `gnosis-add-note--cloze' for more reference."
     ("Cloze" (gnosis-add-note-cloze))
     ("Basic" (gnosis-add-note-basic))
     ("Double" (gnosis-add-note-double))
+    ("y-or-n" (gnosis-add-note-y-or-n))
     (_ (message "No such type."))))
 
 (defun gnosis-mcq-answer (id)
@@ -932,6 +933,19 @@ SUCCESS is a binary value, 1 is for successful review."
     (gnosis-review--update id (if success 1 0))
     (gnosis-display--next-review id)))
 
+(defun gnosis-review-y-or-p (id)
+  "Review y-or-n type note for ID."
+  (gnosis-display--image id)
+  (gnosis-display--question id)
+  (gnosis-display--hint (gnosis-get 'options 'notes `(= id ,id)))
+  (let* ((answer (gnosis-get 'answer 'notes `(= id ,id)))
+	 (user-input (read-char-choice "[y]es or [n]o: " '(?y ?n)))
+	 (success (equal answer user-input)))
+    (gnosis-display-y-or-n-answer :answer answer :success success :user-input user-input)
+    (gnosis-display--extra id)
+    (gnosis-review--update id (if success 1 0))
+    (gnosis-display--next-review id)))
+
 (defun gnosis-review-cloze--input (cloze)
   "Prompt for user input during cloze review.
 
@@ -985,6 +999,7 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
              ("mcq" (gnosis-review-mcq id))
              ("basic" (gnosis-review-basic id))
              ("cloze" (gnosis-review-cloze id))
+	     ("y-or-n" (gnosis-review-y-or-p id))
              (_ (error "Malformed note type")))))))
 
 (defun gnosis-review-commit (note-num)
