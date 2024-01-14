@@ -32,12 +32,14 @@
 (require 'calendar)
 
 (defcustom gnosis-algorithm-interval '(1 3)
-  "Gnosis initial interval.
+  "Gnosis initial interval for successful reviews.
 
-Interval by which a new question is displayed or when it's ef is at 1.3.
+First item: First interval,
+Second item: Second interval.
 
-First item: First interval
-Second item: Second interval."
+Note: gnosis-algorithm-interval is ignored after 10 TOTAL reviews or
+when ef is above > 3.0, which should only be the case for customized
+notes/review sessions."
   :group 'gnosis
   :type 'list)
 
@@ -94,6 +96,9 @@ The structure of the given date is (YEAR MONTH DAY)."
     (+ ef (car gnosis-algorithm-ef)))
    (t (error "Invalid quality score passed to gnosis-algorithm-e-factor"))))
 
+;; This should be further tested for notes with last-interval of 0 when success 0
+;; For future versions of this algorithm, we should also calculate
+;; failures in row to have "leech" like notes as well.
 (defun gnosis-algorithm-next-interval (last-interval n ef success ff successful-reviews)
   "Calculate next interval.
 - LAST-INTERVAL : The number of days since the item was last reviewed.
@@ -102,6 +107,7 @@ The structure of the given date is (YEAR MONTH DAY)."
 - SUCCESS : Success of the recall, ranges from 0 (unsuccessful) to 1
   (successful).
 - FF: Failure factor
+- SUCCESSFUL-REVIEWS : Number of successful reviews in a row.
 
 Returns a tuple: (INTERVAL N EF) where,
 - Next review date in (year month day) format.
@@ -117,19 +123,21 @@ Returns a tuple: (INTERVAL N EF) where,
          (interval
           (cond
            ;; First successful review -> first interval
-           ((and (= successful-reviews 0)
+           ((and (= successful-reviews 1)
 		 (= success 1)
+		 (< n 10)
 		 (< ef 3.0))
 	    (car gnosis-algorithm-interval))
            ;; Second successful review -> second interval
-           ((and (= successful-reviews 1)
+           ((and (= successful-reviews 2)
+		 (< n 10)
 		 (= success 1)
 		 (< ef 3.0))
 	    (cadr gnosis-algorithm-interval))
-           ;; TESTING
-	   ;; ((and (= last-interval 0)
-	   ;; 	 (= success 1))
-	   ;;  (* ef 1))
+	   ;; For custom review sessions.
+	   ((and (= last-interval 0)
+		 (= success 1))
+	    (* ef 1))
            (t (if (= success 1)
                   (* ef last-interval)
                 (* ff last-interval))))))

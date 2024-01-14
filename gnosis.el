@@ -75,13 +75,14 @@
   :prefix 'gnosis-face)
 
 (defface gnosis-face-extra
-  '((t :inherit markdown-italic-face))
-  "Face for extra-notes from note."
+  '((t :inherit italic
+       :foreground "#9C91E4"))
+  "Face for extra-notes."
   :group 'gnosis-faces)
 
 (defface gnosis-face-main
   '((t :inherit default))
-  "Face for main section from note."
+  "Face for the main section from note."
   :group 'gnosis-face-faces)
 
 (defface gnosis-face-seperator
@@ -117,6 +118,11 @@
 (defface gnosis-face-cloze-unanswered
   '((t :inherit underline))
   "Face for user choice."
+  :group 'gnosis-face)
+
+(defface gnosis-face-next-review
+  '((t :inherit bold))
+  "Face for next review."
   :group 'gnosis-face)
 
 
@@ -231,6 +237,21 @@ When SUCCESS nil, display USER-INPUT as well"
 		     " "
 		     (propertize user-input 'face 'gnosis-face-false))))))
 
+(cl-defun gnosis-display-y-or-n-answer (&key answer success)
+  "Display y-or-n answer for note ID.
+
+ANSWER is the correct answer, either y or n. Answer is either 121 or
+110, which are the char values for y & n respectively
+SUCCESS is t when user-input is correct, else nil"
+  (let ((answer (if (equal answer 121) "y" "n")))
+    (with-gnosis-buffer
+     (insert
+      (concat "\n\n"
+	      (propertize "Answer:" 'face 'gnosis-face-directions)
+	      " "
+	      (propertize answer 'face (if success 'gnosis-face-correct 'gnosis-face-false)))))))
+
+
 (defun gnosis-display--hint (hint)
   "Display HINT."
   (with-gnosis-buffer
@@ -293,6 +314,16 @@ If FALSE t, use gnosis-face-false face"
       (with-gnosis-buffer
        (insert "\n\n")
        (insert-image image)))))
+
+(defun gnosis-display--next-review (id)
+  "Display next interval for note ID."
+  (let ((interval (gnosis-get 'next-rev 'review-log `(= id ,id))))
+    (with-gnosis-buffer
+     (goto-char (point-max))
+     (insert (concat "\n\n"
+		     (propertize "Next review:" 'face 'gnosis-face-directions)
+		     " "
+		     (propertize (format "%s" interval) 'face 'gnosis-face-next-review))))))
 
 (cl-defun gnosis--prompt (prompt &optional (downcase nil) (split nil))
   "PROMPT user for input until `q' is given.
@@ -519,6 +550,35 @@ Refer to `gnosis-add-note--double' for more."
 			       :extra (read-string "Extra: ")
 			       :tags (gnosis-tag-prompt)))))
 
+(cl-defun gnosis-add-note--y-or-n (&key deck question hint answer extra (image nil) tags (suspend 0) (second-image nil))
+  "Add y-or-n type note.
+
+DECK: Deck name for note.
+QUESTION: Quesiton to display for note.
+ANSWER: Answer for QUESTION, either `121' (char value for yes) or `110'
+        (char value for no).
+HINT: Hint to display during review, before user-input.
+EXTRA: Extra information to display after user-input/giving an answer.
+IMAGE: Image to display before user-input.
+TAGS: Tags used to organize notes
+SUSSPEND: Binary value of 0 & 1, when 1 note will be ignored.
+SECOND-IMAGE: Image to display after user-input."
+  (gnosis-add-note-fields deck "y-or-n" question hint answer extra tags suspend image second-image))
+
+(defun gnosis-add-note-y-or-n ()
+  "Add note(s) of type `y-or-n' interactively to selected deck.
+
+refer to `gnosis-add-note--y-or-n' for more information about keyword values."
+  (let ((deck (gnosis--get-deck-name)))
+    (while (y-or-n-p (format "Add note of type `y-or-n' to `%s' deck? " deck))
+      (gnosis-add-note--y-or-n :deck deck
+			       :question (read-string "Question: ")
+                               :answer (read-char-choice "Answer: [y] or [n]? " '(?y ?n))
+			       :hint (read-string "Hint: ")
+			       :extra (read-string "Extra: ")
+			       :tags (gnosis-tag-prompt)))))
+
+
 (cl-defun gnosis-add-note--cloze (&key deck note hint tags (suspend 0) extra (image nil) (second-image nil))
   "Add cloze type note.
 
@@ -593,7 +653,7 @@ See `gnosis-add-note--cloze' for more reference."
 ;;;###autoload
 (defun gnosis-add-note (type)
   "Create note(s) as TYPE interactively."
-  (interactive (list (completing-read "Type: " '(MCQ Cloze Basic Double) nil t)))
+  (interactive (list (completing-read "Type: " '(MCQ Cloze Basic Double y-or-n) nil t)))
   (when gnosis-testing
     (unless (y-or-n-p "You are using a testing environment! Continue?")
       (error "Aborted")))
@@ -602,6 +662,7 @@ See `gnosis-add-note--cloze' for more reference."
     ("Cloze" (gnosis-add-note-cloze))
     ("Basic" (gnosis-add-note-basic))
     ("Double" (gnosis-add-note-double))
+    ("y-or-n" (gnosis-add-note-y-or-n))
     (_ (message "No such type."))))
 
 (defun gnosis-mcq-answer (id)
@@ -828,7 +889,7 @@ Returns a list of the form (ef-increase ef-decrease ef)."
   "Update review-log for note with value of id ID.
 
 SUCCESS is a binary value, 1 is for successful review."
-  (let ((ef (gnosis-review-new-ef id 1)))
+  (let ((ef (gnosis-review-new-ef id success)))
     ;; Update review-log
     (gnosis-update 'review-log `(= last-rev ',(gnosis-algorithm-date)) `(= id ,id))
     (gnosis-update 'review-log `(= next-rev ',(car (gnosis-review--algorithm id success))) `(= id ,id))
@@ -856,7 +917,8 @@ SUCCESS is a binary value, 1 is for successful review."
       (gnosis-review--update id 0)
       (message "False"))
     (gnosis-display--correct-answer-mcq answer user-choice)
-    (gnosis-display--extra id)))
+    (gnosis-display--extra id)
+    (gnosis-display--next-review id)))
 
 (defun gnosis-review-basic (id)
   "Review basic type note for ID."
@@ -868,7 +930,21 @@ SUCCESS is a binary value, 1 is for successful review."
 	 (success (gnosis-compare-strings answer user-input)))
     (gnosis-display--basic-answer answer success user-input)
     (gnosis-display--extra id)
-    (gnosis-review--update id (if success 1 0))))
+    (gnosis-review--update id (if success 1 0))
+    (gnosis-display--next-review id)))
+
+(defun gnosis-review-y-or-p (id)
+  "Review y-or-n type note for ID."
+  (gnosis-display--image id)
+  (gnosis-display--question id)
+  (gnosis-display--hint (gnosis-get 'options 'notes `(= id ,id)))
+  (let* ((answer (gnosis-get 'answer 'notes `(= id ,id)))
+	 (user-input (read-char-choice "[y]es or [n]o: " '(?y ?n)))
+	 (success (equal answer user-input)))
+    (gnosis-display-y-or-n-answer :answer answer :success success :user-input user-input)
+    (gnosis-display--extra id)
+    (gnosis-review--update id (if success 1 0))
+    (gnosis-display--next-review id)))
 
 (defun gnosis-review-cloze--input (cloze)
   "Prompt for user input during cloze review.
@@ -899,6 +975,7 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
 		  (if (equal (car input) t)
 		      ;; Reveal only one cloze
 		      (progn (gnosis-display-cloze-reveal :replace cloze)
+			     (gnosis-review--update id 1)
 			     (setf num (1+ num)))
 		    ;; Reveal cloze for wrong input, with `gnosis-face-false'
 		    (gnosis-display-cloze-reveal :replace cloze :success nil)
@@ -908,9 +985,9 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
 		    (when (< num clozes-num) (gnosis-review-cloze-reveal-unaswered clozes))
 		    (gnosis-display-cloze-user-answer (cdr input))
 		    (gnosis-review--update id 0)
-		    (cl-return)))
-	     finally (gnosis-review--update id 1)))
-  (gnosis-display--extra id))
+		    (cl-return)))))
+  (gnosis-display--extra id)
+  (gnosis-display--next-review id))
 
 (defun gnosis-review-note (id)
   "Start review for note with value of id ID, if note is unsuspended."
@@ -922,6 +999,7 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
              ("mcq" (gnosis-review-mcq id))
              ("basic" (gnosis-review-basic id))
              ("cloze" (gnosis-review-cloze id))
+	     ("y-or-n" (gnosis-review-y-or-p id))
              (_ (error "Malformed note type")))))))
 
 (defun gnosis-review-commit (note-num)
@@ -1038,7 +1116,7 @@ changes."
 			((and (listp value)
 			      (not (equal value nil)))
 			 (insert (format ":%s '%s\n" field (format "%s" (cl-loop for item in value
-										collect (format "\"%s\"" item))))))
+										 collect (format "\"%s\"" item))))))
 			((equal value nil)
 			 (insert (format ":%s %s\n" field 'nil)))
 			(t (insert (format ":%s \"%s\"\n" field value)))))
@@ -1047,15 +1125,22 @@ changes."
       (insert "\n;; After finishing editing, save changes with `<C-c> <C-c>'\n;; Do NOT exit without saving.")
       (indent-region (point-min) (point-max)))))
 
+(defun gnosis-edit-save-exit ()
+  "Save edits and exit."
+  (interactive)
+  (eval-buffer)
+  (kill-buffer)
+  (exit-recursive-edit))
+
+(defvar-keymap gnosis-edit-mode-map
+  :doc "gnosis-edit keymap"
+  "C-c C-c" #'gnosis-edit-save-exit)
+
 (define-derived-mode gnosis-edit-mode emacs-lisp-mode "Gnosis EDIT"
   "Gnosis Edit Mode."
   :interactive t
   :lighter " gnosis-edit-mode"
   :keymap gnosis-edit-mode-map)
-
-(defvar-keymap gnosis-edit-mode-map
-  :doc "gnosis-edit keymap"
-  "C-c C-c" #'(lambda () (interactive) (eval-buffer) (kill-buffer) (exit-recursive-edit)))
 
 
 (cl-defun gnosis-edit-update-note (&key id main options answer tags (extra-notes nil) (image nil) (second-image nil))
