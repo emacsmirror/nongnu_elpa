@@ -65,7 +65,15 @@ by the thoracodorsal nerve."
 				:note "this is a {c1:note} with multiple {c1:clozes}"
 				:hint "note"
 				:tags (gnosis-dev-random-items gnosis-dev-tags 2)
-				:extra "extra")))))
+				:extra "extra")))
+    (when (y-or-n-p "Add note type y-or-n?")
+      (dotimes (_ num)
+	(gnosis-add-note--y-or-n :deck testing-deck
+				 :question "Is Codeine recommended in breastfeeding mothers?"
+				 :hint "hint"
+				 :answer 110
+				 :extra "extra"
+				 :tags (gnosis-dev-random-items gnosis-dev-tags 2))))))
 
 (defun gnosis-dev-test ()
   "Begin/End testing env.
