@@ -237,6 +237,21 @@ When SUCCESS nil, display USER-INPUT as well"
 		     " "
 		     (propertize user-input 'face 'gnosis-face-false))))))
 
+(cl-defun gnosis-display-y-or-n-answer (&key answer success)
+  "Display y-or-n answer for note ID.
+
+ANSWER is the correct answer, either y or n. Answer is either 121 or
+110, which are the char values for y & n respectively
+SUCCESS is t when user-input is correct, else nil"
+  (let ((answer (if (equal answer 121) "y" "n")))
+    (with-gnosis-buffer
+     (insert
+      (concat "\n\n"
+	      (propertize "Answer:" 'face 'gnosis-face-directions)
+	      " "
+	      (propertize answer 'face (if success 'gnosis-face-correct 'gnosis-face-false)))))))
+
+
 (defun gnosis-display--hint (hint)
   "Display HINT."
   (with-gnosis-buffer
