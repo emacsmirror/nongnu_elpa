@@ -1048,6 +1048,14 @@ changes."
       (insert "\n;; After finishing editing, save changes with `<C-c> <C-c>'\n;; Do NOT exit without saving.")
       (indent-region (point-min) (point-max)))))
 
+(defun gnosis-edit-save-exit ()
+  "Save edits and exit."
+  (interactive)
+  (eval-buffer)
+  (kill-buffer)
+  (exit-recursive-edit))
+
+
 (define-derived-mode gnosis-edit-mode emacs-lisp-mode "Gnosis EDIT"
   "Gnosis Edit Mode."
   :interactive t
@@ -1056,7 +1064,7 @@ changes."
 
 (defvar-keymap gnosis-edit-mode-map
   :doc "gnosis-edit keymap"
-  "C-c C-c" #'(lambda () (interactive) (eval-buffer) (kill-buffer) (exit-recursive-edit)))
+  "C-c C-c" #'gnosis-edit-save-exit)
 
 
 (cl-defun gnosis-edit-update-note (&key id main options answer tags (extra-notes nil) (image nil) (second-image nil))
