@@ -1132,16 +1132,15 @@ changes."
   (kill-buffer)
   (exit-recursive-edit))
 
+(defvar-keymap gnosis-edit-mode-map
+  :doc "gnosis-edit keymap"
+  "C-c C-c" #'gnosis-edit-save-exit)
 
 (define-derived-mode gnosis-edit-mode emacs-lisp-mode "Gnosis EDIT"
   "Gnosis Edit Mode."
   :interactive t
   :lighter " gnosis-edit-mode"
   :keymap gnosis-edit-mode-map)
-
-(defvar-keymap gnosis-edit-mode-map
-  :doc "gnosis-edit keymap"
-  "C-c C-c" #'gnosis-edit-save-exit)
 
 
 (cl-defun gnosis-edit-update-note (&key id main options answer tags (extra-notes nil) (image nil) (second-image nil))
