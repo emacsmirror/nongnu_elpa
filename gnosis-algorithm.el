@@ -58,7 +58,9 @@ it below 2.0"
 (defcustom gnosis-algorithm-ff 0.5
   "Gnosis forgetting factor.
 
-Used to calcuate new interval for failed questions."
+Used to calcuate new interval for failed questions.
+
+NOTE: Do not change this value above 1"
   :group 'gnosis
   :type 'float)
 
@@ -115,6 +117,11 @@ Returns a tuple: (INTERVAL N EF) where,
 - EF : Modified based on the recall success for the item."
   (cl-assert (and (>= success 0)
 		  (<= success 1)))
+  ;; Check if gnosis-algorithm-ff is lower than 1 & is total-ef above 1.3
+  (cond ((>= gnosis-algorithm-ff 1)
+	 (error "Value of `gnosis-algorithm-ff' must be lower than 1"))
+	((< (nth 2 gnosis-algorithm-ef) 1.3)
+	 (error "Value of total-ef from `gnosis-algorithm-ef' must be above 1.3")))
   ;; Calculate the next easiness factor.
   (let* ((next-ef (gnosis-algorithm-e-factor ef success))
          ;; Calculate the next interval.
@@ -138,6 +145,7 @@ Returns a tuple: (INTERVAL N EF) where,
 	   ((and (= last-interval 0)
 		 (= success 1))
 	    (* ef 1))
+	   ;; For everything else
            (t (if (= success 1)
                   (* ef last-interval)
                 (* ff last-interval))))))
