@@ -123,13 +123,13 @@ Returns a tuple: (INTERVAL N EF) where,
          (interval
           (cond
            ;; First successful review -> first interval
-           ((and (= successful-reviews 1)
+           ((and (= successful-reviews 0)
 		 (= success 1)
 		 (< n 10)
 		 (< ef 3.0))
 	    (car gnosis-algorithm-interval))
            ;; Second successful review -> second interval
-           ((and (= successful-reviews 2)
+           ((and (= successful-reviews 1)
 		 (< n 10)
 		 (= success 1)
 		 (< ef 3.0))
