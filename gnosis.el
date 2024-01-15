@@ -975,7 +975,6 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
 		  (if (equal (car input) t)
 		      ;; Reveal only one cloze
 		      (progn (gnosis-display-cloze-reveal :replace cloze)
-			     (gnosis-review--update id 1)
 			     (setf num (1+ num)))
 		    ;; Reveal cloze for wrong input, with `gnosis-face-false'
 		    (gnosis-display-cloze-reveal :replace cloze :success nil)
@@ -985,7 +984,9 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
 		    (when (< num clozes-num) (gnosis-review-cloze-reveal-unaswered clozes))
 		    (gnosis-display-cloze-user-answer (cdr input))
 		    (gnosis-review--update id 0)
-		    (cl-return)))))
+		    (cl-return)))
+	     ;; Update note after all clozes are revealed successfully
+	     finally (gnosis-review--update id 1)))
   (gnosis-display--extra id)
   (gnosis-display--next-review id))
 
