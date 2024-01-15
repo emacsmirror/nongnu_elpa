@@ -850,10 +850,10 @@ SUCCESS is a binary value, 1 = success, 0 = failure.
 Returns a list of the form ((yyyy mm dd) ef)."
   (let ((ff gnosis-algorithm-ff)
 	(ef (nth 2 (gnosis-get 'ef 'review `(= id ,id))))
-	(c-success (gnosis-get 'c-success 'review-log `(= id ,id))))
+	(t-success (gnosis-get 't-success 'review-log `(= id ,id))))
     (gnosis-algorithm-next-interval (gnosis-review--get-offset id)
 				    (gnosis-get 'n 'review-log `(= id ,id))
-				    ef success ff c-success)))
+				    ef success ff t-success)))
 
 (defun gnosis-review-due-notes--with-tags ()
   "Return a list of due note tags."
