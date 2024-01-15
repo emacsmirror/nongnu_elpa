@@ -933,7 +933,7 @@ SUCCESS is a binary value, 1 is for successful review."
     (gnosis-review--update id (if success 1 0))
     (gnosis-display--next-review id)))
 
-(defun gnosis-review-y-or-p (id)
+(defun gnosis-review-y-or-n (id)
   "Review y-or-n type note for ID."
   (gnosis-display--image id)
   (gnosis-display--question id)
@@ -941,7 +941,7 @@ SUCCESS is a binary value, 1 is for successful review."
   (let* ((answer (gnosis-get 'answer 'notes `(= id ,id)))
 	 (user-input (read-char-choice "[y]es or [n]o: " '(?y ?n)))
 	 (success (equal answer user-input)))
-    (gnosis-display-y-or-n-answer :answer answer :success success :user-input user-input)
+    (gnosis-display-y-or-n-answer :answer answer :success success)
     (gnosis-display--extra id)
     (gnosis-review--update id (if success 1 0))
     (gnosis-display--next-review id)))
@@ -999,7 +999,7 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
              ("mcq" (gnosis-review-mcq id))
              ("basic" (gnosis-review-basic id))
              ("cloze" (gnosis-review-cloze id))
-	     ("y-or-n" (gnosis-review-y-or-p id))
+	     ("y-or-n" (gnosis-review-y-or-n id))
              (_ (error "Malformed note type")))))))
 
 (defun gnosis-review-commit (note-num)
