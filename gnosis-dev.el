@@ -1,5 +1,32 @@
+;;; gnosis-algorithm.el --- Gnosis development tools  -*- lexical-binding: t; -*-
+
+;; Copyright (C) 2023  Thanos Apollo
+
+;; Author: Thanos Apollo <public@thanosapollo.org>
+;; Keywords: extensions
+;; URL: https://git.thanosapollo.org/gnosis
+;; Version: 0.0.1
+
+;; Package-Requires: ((emacs "27.2") (compat "29.1.4.2"))
+
+;; This program is free software; you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
+
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+
+;; You should have received a copy of the GNU General Public License
+;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 ;; Random functions to make development/testing of gnosis.el easier
+
+;;; Commentary:
+
+;; Development tools used for gnosis
 
 ;;; Code:
 
@@ -22,7 +49,10 @@
     selected-items))
 
 (defun gnosis-dev-add-fields (&optional num deck)
-  "Add random inputs to test."
+  "Add random inputs to test.
+
+NUM: Number of random inputs to add.
+DECK: Deck to add the inputs to."
   (let ((num (or num (string-to-number (read-string "Number of random inputs: "))))
 	(testing-deck (or deck "testing")))
     (unless (gnosis-get 'name 'decks `(= name ,testing-deck))
