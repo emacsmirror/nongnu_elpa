@@ -1,4 +1,4 @@
-;;; gnosis.el --- Spaced Repetition Learning Tool  -*- lexical-binding: t; -*-
+;;; gnosis.el --- Spaced Repetition System  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2023  Thanos Apollo
 
@@ -24,10 +24,21 @@
 
 ;;; Commentary:
 
-;; Work in progress
+;; Gnosis (γνῶσις), pronounced "noh-sis", meaning knowledge in Greek, is
+;; a Spaced Repetition System <https://en.wikipedia.org/wiki/Spaced_repetition>
+;; for GNU Emacs.
+;;
+;; Gnosis does not implement flashcard type review sessions where the
+;; user rates his own answer on an arbitrary scale. Instead implements
+;; "note" types that require user input. Some of these note types, like
+;; the MCQ, multiple choice question, even allow for simulating
+;; real-life exams.
+;; 
+;; Unlike other SRS implementations for GNU Emacs, gnosis not rely on
+;; org-mode. Instead utilizes an sqlite database & git, enabling
+;; efficient data management, manipulation and data integrity.
 
 ;;; Code:
-
 
 (require 'emacsql)
 (require 'emacsql-sqlite)
