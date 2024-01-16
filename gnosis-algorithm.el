@@ -109,10 +109,10 @@ The structure of the given date is (YEAR MONTH DAY)."
 - SUCCESS : Success of the recall, ranges from 0 (unsuccessful) to 1
   (successful).
 - FF: Failure factor
-- SUCCESSFUL-REVIEWS : Number of successful reviews in a row.
+- SUCCESSFUL-REVIEWS : Number of successful reviews.
 
-Returns a tuple: (INTERVAL N EF) where,
-- Next review date in (year month day) format.
+Returns a list of: (INTERVAL N EF) where,
+- Next review date in (yyyy mm dd) format.
 - N : Incremented by 1.
 - EF : Modified based on the recall success for the item."
   (cl-assert (and (>= success 0)
