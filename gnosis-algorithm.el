@@ -37,7 +37,7 @@
 First item: First interval,
 Second item: Second interval.
 
-Note: gnosis-algorithm-interval is ignored after 10 TOTAL reviews or
+Note: `gnosis-algorithm-interval' is ignored after 10 TOTAL reviews or
 when ef is above > 3.0, which should only be the case for customized
 notes/review sessions."
   :group 'gnosis
@@ -48,10 +48,9 @@ notes/review sessions."
 
 First item : Increase factor
 Second item: Decrease factor
-Third item : Starting ef
+Third item : Starting total ef
 
-WARNING! Starting ef should not be above 2.5, it's recommended to keep
-it below 2.0"
+Note: Starting total ef should not be above 3.0"
   :group 'gnosis
   :type 'list)
 
@@ -101,6 +100,7 @@ The structure of the given date is (YEAR MONTH DAY)."
 ;; This should be further tested for notes with last-interval of 0 when success 0
 ;; For future versions of this algorithm, we should also calculate
 ;; failures in row to have "leech" like notes as well.
+;; TODO: Use initial-interval value instead gnosis-algorithm-interval
 (defun gnosis-algorithm-next-interval (last-interval n ef success ff successful-reviews)
   "Calculate next interval.
 - LAST-INTERVAL : The number of days since the item was last reviewed.
