@@ -150,7 +150,7 @@ Use `gnosis-db-init' to initialize `gnosis-db' and create essential directories.
   (emacsql gnosis-db `[:create-table ,table ,values]))
 
 (cl-defun gnosis--drop-table (table)
-  "Drop TABLE from gnosis-db."
+  "Drop TABLE from `gnosis-db'."
   (emacsql gnosis-db `[:drop-table ,table]))
 
 (cl-defun gnosis--insert-into (table values)
@@ -759,7 +759,7 @@ Optionally, add cusotm PROMPT."
     image))
 
 (defun gnosis-get-tags--unique ()
-  "Return a list of unique strings for tags in gnosis-db."
+  "Return a list of unique strings for tags in `gnosis-db'."
   (cl-loop for tags in (apply #'append (gnosis-select 'tags 'notes))
            nconc tags into all-tags
            finally return (delete-dups all-tags)))
@@ -1347,7 +1347,7 @@ review."
 (defvar gnosis-db-schema-review '([(id integer :primary-key :not-null) ;; note-id
 				   (ef integer :not-null) ;; Easiness factor
 				   (ff integer :not-null) ;; Forgetting factor
-				   (interval integer :not-null)] ;; Interval
+				   (interval integer :not-null)] ;; Initial Interval
 				  (:foreign-key [id] :references notes [id]
 						:on-delete :cascade)))
 
