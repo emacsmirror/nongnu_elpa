@@ -152,8 +152,10 @@ Returns a list of: (INTERVAL N EF) where,
 		 (> fails-c 3))
 	    ;; When fails-c is above 3, use 150% or 180% of
 	    ;; failure-factor depending on the value of total failed
-	    ;; reviews
-	    (* (* failure-factor (if (>= fails-t 10) 1.8 1.5)) last-interval))
+	    ;; reviews. It should not be above 0.8
+	    (* (max (min 0.8 (* failure-factor (if (>= fails-t 10) 1.8 1.5)))
+		    failure-factor)
+	       last-interval))
 	   ;; For custom review sessions.
 	   ;; When successful-reviews-c is above 0, multiply its value
 	   ;; with ef
