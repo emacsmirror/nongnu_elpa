@@ -339,8 +339,8 @@ If FALSE t, use gnosis-face-false face"
 (cl-defun gnosis--prompt (prompt &optional (downcase nil) (split nil))
   "PROMPT user for input until `q' is given.
 
-The user is prompted to provide input for the 'PROMPT' message.
-Returns the list of non-'q' inputs in reverse order of their entry.
+The user is prompted to provide input for the PROMPT message.
+Returns the list of non-q inputs in reverse order of their entry.
 
 Set DOWNCASE to t to downcase all input given.
 Set SPLIT to t to split all input given."
