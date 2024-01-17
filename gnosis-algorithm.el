@@ -97,23 +97,24 @@ The structure of the given date is (YEAR MONTH DAY)."
     (+ ef (car gnosis-algorithm-ef)))
    (t (error "Invalid quality score passed to gnosis-algorithm-e-factor"))))
 
-;; This should be further tested for notes with last-interval of 0 when success 0
-;; For future versions of this algorithm, we should also calculate
-;; failures in row to have "leech" like notes as well.
-;; TODO: Use initial-interval value instead gnosis-algorithm-interval
-(defun gnosis-algorithm-next-interval (last-interval n ef success ff successful-reviews)
+
+(cl-defun gnosis-algorithm-next-interval (&key last-interval review-num ef success failure-factor successful-reviews successful-reviews-c fails-c fails-t initial-interval)
   "Calculate next interval.
 - LAST-INTERVAL : The number of days since the item was last reviewed.
-- N : Number of times the item has been reviewed.
+-review-num: Number of times the item has been reviewed.
 - EF : Easiness Factor.
 - SUCCESS : Success of the recall, ranges from 0 (unsuccessful) to 1
   (successful).
 - FF: Failure factor
 - SUCCESSFUL-REVIEWS : Number of successful reviews.
+- SUCCESSFULL-REVIEWS-C: Successful reviews in a row.
+- FAILS-C: Failed reviews in a row.
+- FAILS-T: Total failed reviews.
+- INITIAL-INTERVAL: Initial intervals for successful reviews.
 
 Returns a list of: (INTERVAL N EF) where,
 - Next review date in (yyyy mm dd) format.
-- N : Incremented by 1.
+- REVIEW-NUM: Incremented by 1.
 - EF : Modified based on the recall success for the item."
   (cl-assert (and (>= success 0)
 		  (<= success 1)))
@@ -132,23 +133,39 @@ Returns a list of: (INTERVAL N EF) where,
            ;; First successful review -> first interval
            ((and (= successful-reviews 0)
 		 (= success 1)
-		 (< n 10)
+		 (< review-num 10)
 		 (< ef 3.0))
-	    (car gnosis-algorithm-interval))
+	    (car initial-interval))
            ;; Second successful review -> second interval
            ((and (= successful-reviews 1)
-		 (< n 10)
+		 (< review-num 10)
 		 (= success 1)
-		 (< ef 3.0))
-	    (cadr gnosis-algorithm-interval))
+		 (< ef 3.0)
+		 (= fails-c 0)
+	    (cadr initial-interval)))
+	   ;; When successful-reviews-c is above 3, use 150% or 180%
+	   ;; of ef depending on the value of successful-reviews
+	   ((and (= success 1)
+		 (>= successful-reviews-c 3))
+	    (* (* ef (if (>= successful-reviews 10) 1.8 1.5)) last-interval))
+	   ((and (= success 0)
+		 (> fails-c 3))
+	    ;; When fails-c is above 3, use 150% or 180% of
+	    ;; failure-factor depending on the value of total failed
+	    ;; reviews
+	    (* (* failure-factor (if (>= fails-t 10) 1.8 1.5)) last-interval))
 	   ;; For custom review sessions.
+	   ;; When successful-reviews-c is above 0, multiply its value
+	   ;; with ef
 	   ((and (= last-interval 0)
 		 (= success 1))
-	    (* ef 1))
+	    (* ef (if (> successful-reviews-c 0)
+		      successful-reviews-c
+		    1)))
 	   ;; For everything else
            (t (if (= success 1)
                   (* ef last-interval)
-                (* ff last-interval))))))
+                (* failure-factor last-interval))))))
     (list (gnosis-algorithm-date (round interval)) next-ef)))
 
 (provide 'gnosis-algorithm)
