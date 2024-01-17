@@ -395,8 +395,8 @@ When called with a prefix, unsuspends all notes in deck."
 	(suspend (if current-prefix-arg 0 1))
 	(note-count 0))
     (cl-loop for note in notes
-	     do (progn (gnosis-update 'review-log `(= suspend ,suspend) `(= id ,(car note)))
-		       (setq note-count (1+ note-count)))
+	     do (gnosis-update 'review-log `(= suspend ,suspend) `(= id ,(car note)))
+	     (setq note-count (1+ note-count))
 	     finally (if (equal suspend 0)
 			 (message "Unsuspended %s notes" note-count)
 		       (message "Suspended %s notes" note-count)))))
@@ -1052,15 +1052,15 @@ NOTE-NUM: The number of notes reviewed in the session."
 	(message "No notes for review.")
       (when (y-or-n-p (format "You have %s total notes for review, start session?" (length notes)))
 	(cl-loop for note in notes
-		 do (progn (gnosis-review-note note)
-			   (setf note-count (1+ note-count))
-			   (pcase (read-char-choice "Note Action: [n]ext, [s]uspend, [e]dit, [q]uit: " '(?n ?s ?e ?q))
-			     (?n nil)
-			     (?s (gnosis-suspend-note note))
-			     (?e (progn (gnosis-edit-note note)
-					(recursive-edit)))
-			     (?q (progn (gnosis-review-commit note-count)
-					(cl-return)))))
+		 do (gnosis-review-note note)
+		 (setf note-count (1+ note-count))
+		 (pcase (read-char-choice "Note Action: [n]ext, [s]uspend, [e]dit, [q]uit: " '(?n ?s ?e ?q))
+		   (?n nil)
+		   (?s (gnosis-suspend-note note))
+		   (?e (progn (gnosis-edit-note note)
+			      (recursive-edit)))
+		   (?q (progn (gnosis-review-commit note-count)
+			      (cl-return))))
 		 finally (gnosis-review-commit note-count))))))
 
 
@@ -1275,7 +1275,7 @@ name and all notes formatted as nested lists"
     (with-temp-file (concat filename ".el")
       (insert "(gnosis-define-deck " "'" deck-name " '(")
       (cl-loop for note in notes
-	       do (progn (insert "(") (gnosis-export-note note) (insert ")" "\n"))
+	       do (insert "(") (gnosis-export-note note) (insert ")" "\n")
 	       finally (insert "))")))))
 
 ;; TODO: Add defcustom to have suspended as 0 or 1 depending on
