@@ -69,7 +69,7 @@
   (if (not (file-directory-p gnosis-dir))
       (gnosis-db-init)
     (emacsql-sqlite (concat (file-name-as-directory gnosis-dir) "gnosis.db")))
-  "Gnosis database file. WARNING: Do not change this value!")
+  "Gnosis database file.")
 
 (defvar gnosis-testing nil
   "When t, warn user he is in a testing environment.")
