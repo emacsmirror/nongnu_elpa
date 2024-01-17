@@ -56,7 +56,7 @@
   :type 'directory
   :group 'gnosis)
 
-(defcustom gnosis-cloze-char "__"
+(defcustom gnosis-cloze-string "__"
   "Gnosis cloze character."
   :type 'string
   :group 'gnosis)
@@ -229,7 +229,7 @@ FACE-FOR-INFO is the face used to display info for option."
    (fill-paragraph
     (insert
      (concat "\n"
-	     (gnosis-cloze-replace-words sentence clozes (propertize gnosis-cloze-char 'face 'gnosis-face-cloze)))))))
+	     (gnosis-cloze-replace-words sentence clozes (propertize gnosis-cloze-string 'face 'gnosis-face-cloze)))))))
 
 (defun gnosis-display--basic-answer (answer success user-input)
   "Display ANSWER.
@@ -271,7 +271,7 @@ SUCCESS is t when user-input is correct, else nil"
 	    (propertize "\n\n-----\n" 'face 'gnosis-face-seperator)
 	    (propertize hint 'face 'gnosis-face-hint)))))
 
-(cl-defun gnosis-display-cloze-reveal (&key (cloze-char gnosis-cloze-char) replace (success t) (face nil))
+(cl-defun gnosis-display-cloze-reveal (&key (cloze-char gnosis-cloze-string) replace (success t) (face nil))
   "Replace CLOZE-CHAR with REPLACE.
 
 If FACE nil, propertize replace using `gnosis-face-correct', or
