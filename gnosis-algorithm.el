@@ -41,7 +41,7 @@ Note: `gnosis-algorithm-interval' is ignored after 10 TOTAL reviews or
 when ef is above > 3.0, which should only be the case for customized
 notes/review sessions."
   :group 'gnosis
-  :type 'list)
+  :type '(list integer))
 
 (defcustom gnosis-algorithm-ef '(0.3 0.3 1.3)
   "Gnosis easiness factor.
@@ -52,7 +52,7 @@ Third item : Starting total ef
 
 Note: Starting total ef should not be above 3.0"
   :group 'gnosis
-  :type 'list)
+  :type '(list float))
 
 (defcustom gnosis-algorithm-ff 0.5
   "Gnosis forgetting factor.
