@@ -1034,13 +1034,18 @@ NOTE-NUM: The number of notes reviewed in the session."
 	(cl-loop for note in notes
 		 do (gnosis-review-note note)
 		 (setf note-count (1+ note-count))
-		 (pcase (read-char-choice "Note Action: [n]ext, [s]uspend, [e]dit, [q]uit: " '(?n ?s ?e ?q))
+		 (pcase (car (read-multiple-choice
+			      "Note actions"
+			      '((?n "next")
+				(?s "suspend")
+				(?e "edit")
+				(?q "quit"))))
 		   (?n nil)
 		   (?s (gnosis-suspend-note note))
-		   (?e (progn (gnosis-edit-note note)
-			      (recursive-edit)))
-		   (?q (progn (gnosis-review-commit note-count)
-			      (cl-return))))
+		   (?e (gnosis-edit-note note)
+		       (recursive-edit))
+		   (?q (gnosis-review-commit note-count)
+		       (cl-return)))
 		 finally (gnosis-review-commit note-count))))))
 
 
