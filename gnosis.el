@@ -77,6 +77,9 @@
 (defconst gnosis-db-version 1
   "Gnosis database version.")
 
+(defvar gnosis-note-types '(MCQ Cloze Basic Double y-or-n)
+  "Gnosis available note types.")
+
 ;;; Faces
 
 (defgroup gnosis-faces nil
@@ -135,8 +138,6 @@
   '((t :inherit bold))
   "Face for next review."
   :group 'gnosis-face)
-
-
 
 (cl-defun gnosis-select (value table &optional (restrictions '1=1))
   "Select VALUE from TABLE, optionally with RESTRICTIONS.
@@ -647,17 +648,14 @@ See `gnosis-add-note--cloze' for more reference."
 ;;;###autoload
 (defun gnosis-add-note (type)
   "Create note(s) as TYPE interactively."
-  (interactive (list (completing-read "Type: " '(MCQ Cloze Basic Double y-or-n) nil t)))
+  (interactive (list (completing-read "Type: " gnosis-note-types nil t)))
   (when gnosis-testing
     (unless (y-or-n-p "You are using a testing environment! Continue?")
       (error "Aborted")))
-  (pcase type
-    ("MCQ" (gnosis-add-note-mcq))
-    ("Cloze" (gnosis-add-note-cloze))
-    ("Basic" (gnosis-add-note-basic))
-    ("Double" (gnosis-add-note-double))
-    ("y-or-n" (gnosis-add-note-y-or-n))
-    (_ (message "No such type."))))
+  (let ((func-name (intern (format "gnosis-add-note-%s" (downcase type)))))
+    (if (fboundp func-name)
+        (funcall func-name)
+      (message "No such type."))))
 
 (defun gnosis-mcq-answer (id)
   "Choose the correct answer, from mcq choices for question ID."
