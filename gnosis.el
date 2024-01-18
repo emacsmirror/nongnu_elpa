@@ -812,10 +812,8 @@ Returns a list of unique tags."
   "Check if note with value of NOTE-ID for id is due for review.
 
 Check if it's suspended, and if it's due today."
-  (if (and (not (gnosis-suspended-p note-id))
-	   (gnosis-review-is-due-today-p note-id))
-      t
-    nil))
+  (and (not (gnosis-suspended-p note-id))
+       (gnosis-review-is-due-today-p note-id)))
 
 (defun gnosis-review-is-due-today-p (id)
   "Return t if note with ID is due today.
