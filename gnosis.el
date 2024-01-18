@@ -1377,7 +1377,7 @@ review."
     ;; Make sure gnosis-db is initialized
     (setf gnosis-db (emacsql-sqlite (concat (file-name-as-directory gnosis-dir) "gnosis.db"))))
   ;; Create database tables
-  (unless (= (length (emacsql gnosis-db [:select name :from sqlite-master :where (= type table)])) 6)
+  (unless (length= (emacsql gnosis-db [:select name :from sqlite-master :where (= type table)]) 6)
     ;; Enable foreign keys
     (emacsql gnosis-db "PRAGMA foreign_keys = ON")
     ;; Gnosis version
