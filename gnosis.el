@@ -57,7 +57,7 @@
   :group 'gnosis)
 
 (defcustom gnosis-cloze-string "__"
-  "Gnosis cloze character."
+  "Gnosis string to represent a cloze."
   :type 'string
   :group 'gnosis)
 
@@ -464,7 +464,7 @@ choice in the `CHOICES' list. Each note must correspond to one `DECK'.
 Create a note type MCQ for specified deck, that consists of:
 STEM: The question or problem statement
 OPTIONS: Options for the user to select
-ANSWER: Answer is the NUMBER of the correct answer of OPTIONS.
+ANSWER: Answer is the index NUMBER of the correct answer from OPTIONS.
 EXTRA: Information to display after user-input
 TAGS: Used to organize notes
 
@@ -495,9 +495,9 @@ SUSPEND: Binary value of 0 & 1, when 1 note will be ignored."
 (defun gnosis-add-note-basic ()
   "Add note(s) of type `Basic' interactively to selected deck.
 
-Basic note type is a flashcard-like note, where user first sees a
-\"main\" part, which is usually a question, and he is prompted to
-input the answer.
+Basic note type is a simple question/answer note, where user first
+sees a \"main\" part, which is usually a question, and he is prompted
+to input the answer.
 
 Refer to `gnosis-add-note--basic' for more."
   (let ((deck (gnosis--get-deck-name)))
@@ -560,7 +560,7 @@ SECOND-IMAGE: Image to display after user-input."
   (gnosis-add-note-fields deck "y-or-n" question hint answer extra tags suspend image second-image))
 
 (defun gnosis-add-note-y-or-n ()
-  "Add note(s) of type `y-or-n' interactively to selected deck.
+  "Add note(s) of type `y-or-n'.
 
 refer to `gnosis-add-note--y-or-n' for more information about keyword values."
   (let ((deck (gnosis--get-deck-name)))
