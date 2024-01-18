@@ -849,7 +849,7 @@ Returns a list of the form ((yyyy mm dd) ef)."
 	(c-fails (gnosis-get 'c-fails 'review-log `(= id ,id)))
 	(t-fails (gnosis-get 't-fails 'review-log `(= id ,id)))
 	(initial-interval (gnosis-get 'interval 'review `(= id ,id))))
-    (gnosis-algorithm-next-interval :last-interval (gnosis-review--get-offset id)
+    (gnosis-algorithm-next-interval :last-interval (max (gnosis-review--get-offset id) 1) ;; last-interv always >=1
 				    :review-num (gnosis-get 'n 'review-log `(= id ,id))
 				    :ef ef
 				    :success success
