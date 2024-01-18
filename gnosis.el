@@ -756,9 +756,7 @@ Optionally, add cusotm PROMPT."
 
 (defun gnosis-suspended-p (id)
   "Return t if note with ID is suspended."
-  (if (= (gnosis-get 'suspend 'review-log `(= id ,id)) 1)
-      t
-    nil))
+  (= (gnosis-get 'suspend 'review-log `(= id ,id)) 1))
 
 (defun gnosis-get-deck-due-notes (&optional deck-id)
   "Return due notes for deck, with value of DECK-ID.
