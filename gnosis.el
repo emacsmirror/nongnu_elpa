@@ -1149,7 +1149,7 @@ changes."
 (define-derived-mode gnosis-edit-mode emacs-lisp-mode "Gnosis EDIT"
   "Gnosis Edit Mode."
   :interactive t
-  :lighter " gnosis-edit-mode"
+  :lighter " Gnosis Edit"
   :keymap gnosis-edit-mode-map)
 
 
