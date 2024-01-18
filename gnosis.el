@@ -51,7 +51,7 @@
   :group 'external
   :prefix "gnosis-")
 
-(defcustom gnosis-dir (concat user-emacs-directory "gnosis")
+(defcustom gnosis-dir (locate-user-emacs-file "gnosis")
   "Gnosis directory."
   :type 'directory
   :group 'gnosis)
@@ -62,13 +62,13 @@
   :group 'gnosis)
 
 
-(defvar gnosis-images-dir (concat (file-name-as-directory gnosis-dir) "images")
+(defvar gnosis-images-dir (expand-file-name "images" gnosis-dir)
   "Gnosis images directory.")
 
 (defconst gnosis-db
   (if (not (file-directory-p gnosis-dir))
       (gnosis-db-init)
-    (emacsql-sqlite (concat (file-name-as-directory gnosis-dir) "gnosis.db")))
+    (emacsql-sqlite (expand-file-name "gnosis.db" gnosis-dir)))
   "Gnosis database file.")
 
 (defvar gnosis-testing nil
