@@ -1175,7 +1175,7 @@ SECOND-IMAGE: Image to display after user-input"
              (image . ,image)
              (second-image . ,second-image))
            when value
-           do (cond ((member field '(extra-notes image second-image))
+           do (cond ((memq field '(extra-notes image second-image))
 		     (gnosis-update 'extras `(= ,field ,value) `(= id ,id)))
 		    ((listp value)
 		     (gnosis-update 'notes `(= ,field ',value) `(= id ,id)))
