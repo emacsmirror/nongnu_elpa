@@ -784,7 +784,7 @@ DATE is a list of the form (year month day)."
      (cl-mapcan (lambda (note-id)
                   (gnosis-get-note-tags note-id))
 	        due-notes)
-     :test 'equal)))
+     :test #'equal)))
 
 
 (cl-defun gnosis-tag-prompt (&key (prompt "Selected tags") (match nil) (due nil))
@@ -863,7 +863,7 @@ Returns a list of the form ((yyyy mm dd) ef)."
      (cl-mapcan (lambda (note-id)
                   (gnosis-get-note-tags note-id))
 	        due-notes)
-     :test 'equal)))
+     :test #'equal)))
 
 (defun gnosis-review--get-offset (id)
   "Return offset for note with value of id ID."
@@ -871,9 +871,9 @@ Returns a list of the form ((yyyy mm dd) ef)."
     (gnosis-algorithm-date-diff last-rev)))
 
 (defun gnosis-review-round (num)
-  "Round NUM to 1 decimal.
+  "Round NUM to 2 decimals.
 
-This function is used to round floating point numbers to 1 decimal,
+This function is used to round floating point numbers to 2 decimals,
 such as the easiness factor (ef)."
   (/ (round (* num 100.00)) 100.00))
 
@@ -913,8 +913,9 @@ SUCCESS is a binary value, 1 is for successful review."
 	   (answer (nth (- (gnosis-get 'answer 'notes `(= id ,id)) 1) choices))
 	   (user-choice (gnosis-mcq-answer id)))
       (if (string= answer user-choice)
-          (progn (gnosis-review--update id 1)
-		 (message "Correct!"))
+          (progn
+	    (gnosis-review--update id 1)
+	    (message "Correct!"))
 	(gnosis-review--update id 0)
 	(message "False"))
       (gnosis-display-correct-answer-mcq answer user-choice)
