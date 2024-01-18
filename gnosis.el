@@ -1119,7 +1119,7 @@ changes."
 				      (extra-notes ,extra-notes)
 				      (image ,image)
 				      (second-image ,second-image))
-	       do (cond ((equal field 'id)
+	       do (cond ((eq field 'id)
 			 (insert (format (concat ":%s " (propertize "%s" 'read-only t) "\n") field value)))
 			((numberp value)
 			 (insert (format ":%s %s\n" field value)))
@@ -1127,7 +1127,7 @@ changes."
 			      (not (equal value nil)))
 			 (insert (format ":%s '%s\n" field (format "%s" (cl-loop for item in value
 										 collect (format "\"%s\"" item))))))
-			((equal value nil)
+			((null value)
 			 (insert (format ":%s %s\n" field 'nil)))
 			(t (insert (format ":%s \"%s\"\n" field value)))))
       (delete-char -1) ;; delete extra line
