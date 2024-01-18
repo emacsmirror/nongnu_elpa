@@ -148,7 +148,7 @@ must a string, the path of an image, from inside ‘gnosis-images-dir’.
 interactively & a "hidden function" ‘gnosis-add-note--TYPE’ that handles
 all the logic.
 
-   Every note type has this values in common:
+   Every note type has these values in common:
 
    • ‘extra’ string value, extra information/explanation displayed after
      user-input
@@ -313,13 +313,14 @@ File: gnosis.info,  Node: Gnosis Algorithm Forgetting Factor,  Prev: Gnosis Algo
 ‘gnosis-algorithm-ff’ is a floating number below 1.
 
    It's used to calculate the next interval upon an unsuccessful review,
-by being multiplied with last interval, if for a note with a value of
-last-interval of 6 days and a ff of 0.5, upon an unsuccessful review the
-next interval will be 6 * 0.5
+by being multiplied with last interval.
 
-   For example:
+   Example:
 
      (setq gnosis-algorithm-ff 0.5)
+
+   For a note with a value of last-interval of 6 days and a ff of 0.5,
+upon an unsuccessful review the next interval will be 6 * 0.5
 
 
 
@@ -330,16 +331,16 @@ Node: Installation1729
 Node: Using straightel2098
 Node: Installing manually from source2614
 Node: Adding notes3303
-Node: Note Types4728
-Node: Cloze4940
-Node: Basic Type5913
-Node: Double6191
-Node: MCQ (Multiple Choice Question)6537
-Node: y-or-n6946
-Node: Customization7372
-Node: Gnosis Algorithm Initial Interval7601
-Node: Gnosis Algorithm Easiness Factor8173
-Node: Gnosis Algorithm Forgetting Factor9158
+Node: Note Types4729
+Node: Cloze4941
+Node: Basic Type5914
+Node: Double6192
+Node: MCQ (Multiple Choice Question)6538
+Node: y-or-n6947
+Node: Customization7373
+Node: Gnosis Algorithm Initial Interval7602
+Node: Gnosis Algorithm Easiness Factor8174
+Node: Gnosis Algorithm Forgetting Factor9159
 
 End Tag Table
 

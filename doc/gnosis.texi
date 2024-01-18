@@ -175,7 +175,7 @@ Each note type has a @samp{gnosis-add-note-TYPE} that is used
 interactively & a ``hidden function'' @samp{gnosis-add-note--TYPE} that handles
 all the logic.
 
-Every note type has this values in common:
+Every note type has these values in common:
 
 @itemize
 @item
@@ -308,14 +308,17 @@ Example:
 @samp{gnosis-algorithm-ff} is a floating number below 1.
 
 It's used to calculate the next interval upon an unsuccessful review,
-by being multiplied with last interval, if for a note with a value of
-last-interval of 6 days and a ff of 0.5, upon an unsuccessful review
-the next interval will be 6 * 0.5
+by being multiplied with last interval.
 
-For example:
+
+
+Example:
 
 @lisp
 (setq gnosis-algorithm-ff 0.5)
 @end lisp
+
+For a note with a value of last-interval of 6 days and a ff of 0.5,
+upon an unsuccessful review the next interval will be 6 * 0.5
 
 @bye
