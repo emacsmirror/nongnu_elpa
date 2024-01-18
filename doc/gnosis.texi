@@ -1,0 +1,324 @@
+\input texinfo    @c -*- texinfo -*-
+@c %**start of header
+@setfilename gnosis.info
+@settitle Gnosis User Manual
+@documentencoding UTF-8
+@documentlanguage en
+@set MAINTAINERSITE @uref{https://thanosapollo.org,maintainer webpage}
+@set MAINTAINER Thanos Apollo
+@set MAINTAINEREMAIL @email{public@thanosapollo.org}
+@set MAINTAINERCONTACT @uref{mailto:public@thanosapollo.org,contact the maintainer}
+@c %**end of header
+
+@dircategory Emacs misc features
+@direntry
+* Gnosis (γνῶσις): (gnosis). Spaced Repetition System For Note Taking And Self-Testing.
+@end direntry
+
+@finalout
+@titlepage
+@title Gnosis User Manual
+@author Thanos Apollo (@email{public@@thanosapollo.org})
+@end titlepage
+
+@ifnottex
+@node Top
+@top Gnosis User Manual
+
+Gnosis (γνῶσις), pronounced ``noh-sis'', @emph{meaning knowledge in Greek}, is
+a spaced repetition system implementation for note taking and self
+testing.
+
+@noindent
+This manual is written for Gnosis version 0.1.3, released on 2023-01-18.
+
+@itemize
+@item
+Official manual: @uref{https://thanosapollo.org/user-manual/gnosis}
+@item
+Git repositories:
+@itemize
+@item
+main:               @uref{https://git.thanosapollo.org/gnosis}
+@item
+sourcehut (mirror): @uref{https://git.sr.ht/~thanosapollo/gnosis}
+@end itemize
+@end itemize
+
+@insertcopying
+
+@end ifnottex
+
+@menu
+* Introduction::
+* Installation::
+* Adding notes::
+* Note Types::
+* Customization::
+
+@detailmenu
+--- The Detailed Node Listing ---
+
+Installation
+
+* Using straight.el: Using straightel. 
+* Installing manually from source::
+
+Note Types
+
+* Cloze::
+* Basic Type::
+* Double::
+* MCQ (Multiple Choice Question)::
+* y-or-n::
+
+Customization
+
+* Gnosis Algorithm Initial Interval::
+* Gnosis Algorithm Easiness Factor::
+* Gnosis Algorithm Forgetting Factor::
+
+@end detailmenu
+@end menu
+
+@node Introduction
+@chapter Introduction
+
+Gnosis is a spaced repetition note taking and self testing system,
+where notes are taken in a Question/Answer/Explanation-like format &
+reviewed in spaced intervals.
+
+Gnosis can help you better understand and retain the material by
+encouraging active engagement. It also provides a clear structure for
+your notes & review sessions, making it easier to study.
+
+@node Installation
+@chapter Installation
+
+Gnosis is not currently available in any ELPA, the recommended way to
+install gnosis is via straight.el:
+
+@uref{https://github.com/radian-software/straight.el}
+
+@menu
+* Using straight.el: Using straightel. 
+* Installing manually from source::
+@end menu
+
+@node Using straightel
+@section Using straight.el
+
+If you have not installed straight.el, follow the instructions here:
+
+@uref{https://github.com/radian-software/straight.el}
+
+Once you have installed straight.el, you can install gnosis using the
+following emacs lisp snippet:
+
+@lisp
+(straight-use-package 
+ '(gnosis :type git
+          :host nil
+          :repo "https://git.thanosapollo.org/gnosis"))
+@end lisp
+
+@node Installing manually from source
+@section Installing manually from source
+
+Gnosis depends on the @code{compat} & @code{emacsql} libraries which are available
+from MELPA@. Install them using @code{M-x package-install RET <package> RET}
+or you may also install them manually from their repository.
+
+@itemize
+@item
+Clone gnosis repository
+
+@example
+$ git clone https://git.thanosapollo.org/gnosis ~/.emacs.d/site-lisp/gnosis
+@end example
+
+@item
+Add this to your emacs configuration
+
+@lisp
+(add-to-list 'load-path "~/.emacs.d/site-lisp/gnosis")
+(load-file "~/.emacs.d/site-lisp/gnosis/gnosis.el")
+@end lisp
+@end itemize
+
+@node Adding notes
+@chapter Adding notes
+
+Creating notes for gnosis can be done interactively with:
+  @samp{M-x gnosis-add-note}
+
+
+Advanced/Power users may prefer to use @samp{gnosis-add-note--TYPE}
+
+Example: 
+
+@lisp
+(gnosis-add-note--basic :deck "DECK-NAME"
+                        :question "Your Question"
+                        :answer "Answer"
+                        :hint "hint"
+                        :extra "Explanation"
+                        :image "Image displayed before user-input" ;; Optional
+                        :second-image "Image displayed after user-input" ;; Optional
+                        :tags '("tag1" "tag2"))
+@end lisp
+
+By default, the value of image and second image is nil. Their value
+must a string, the path of an image, from inside @code{gnosis-images-dir}.
+
+Each note type has a @samp{gnosis-add-note-TYPE} that is used
+interactively & a ``hidden function'' @samp{gnosis-add-note--TYPE} that handles
+all the logic.
+
+Every note type has these values in common:
+
+@itemize
+@item
+@code{extra} string value, extra information/explanation displayed after user-input
+@item
+@code{image} Image displayed @emph{before} user input
+@item
+@code{second-image} Image displayed @emph{after} user input
+@end itemize
+
+The following sections will cover the important differences you have
+to know when creating notes.
+
+@node Note Types
+@chapter Note Types
+
+@node Cloze
+@section Cloze
+
+A cloze note type is a format where you create sentences or paragraphs
+with ``missing'' words. Almost all note types can be written as a cloze
+type in a way. Ideal type for memorizing definitions.
+
+To get the most out of gnosis, you have to become familiar with cloze type notes.
+
+You can create a cloze note type using @samp{M-x gnosis-add-note} and
+selecting @code{Cloze}, the question should be formatted like this:
+
+@quotation
+@{c1:Cyproheptadine@} is a(n) @{c2:5-HT2@} receptor antagonist used to treat @{c2:serotonin syndrome@}
+
+@end quotation
+
+You can also format clozes like Anki if you prefer; e.g @code{@{@{c1::Cyproheptadine@}@}}
+
+@itemize
+@item
+For each `cX`-tag there will be created a cloze type note, the above
+example creates 2 cloze type notes.
+
+@item
+Each `cX` tag can have multiple clozes, but each cloze must be a
+@strong{UNIQUE} word (or a unique combination of words) in given note.
+@end itemize
+
+@node Basic Type
+@section Basic Type
+
+Basic note type is a simple question/answer note, where the user first
+sees a ``main'' part, which is usually a question, and he is prompted to
+input the answer.
+
+@node Double
+@section Double
+
+Double note type, is essentially a note that generates 2 basic notes.
+The second one reverses question/answer.
+
+Ideal for vocabulary acquisition, creating vocabulary/translation
+notes for a foreign language.
+
+@node MCQ (Multiple Choice Question)
+@section MCQ (Multiple Choice Question)
+
+MCQ note type, consists of a ``stem'' part that is displayed, and
+``options'' for the user to select the right one.
+
+Answer must be the index NUMBER of the correct answer from OPTIONS@.
+
+Ideal for self testing & simulating exams
+
+@node y-or-n
+@section y-or-n
+
+y-or-n (yes or no) note type, user is presented with a question and
+prompted to enter character ``y'' or ``n''.
+
+When using the hidden function @samp{gnosis-add-note--y-or-n}, note that the
+ANSWER must be either 121 (@code{y}) or 110 (@code{n}), as those correspond to the
+character values used to represent them.
+
+@node Customization
+@chapter Customization
+
+@node Gnosis Algorithm Initial Interval
+@section Gnosis Algorithm Initial Interval
+
+@samp{gnosis-algorithm-interval} is a list of 2 numbers, representing the
+first two initial intervals for successful reviews.
+
+Example:
+
+@lisp
+(setq gnosis-algorithm-interval '(1 3))
+@end lisp
+
+Using the above example, after first successfully reviewing a note,
+you will see it again tomorrow, if you successfully review said note
+again, the next review will be after 3 days.
+
+@node Gnosis Algorithm Easiness Factor
+@section Gnosis Algorithm Easiness Factor
+
+@samp{gnosis-algorithm-ef} is a list that consists of 3 items.
+
+The first item is the increase factor, used to increase the easiness
+factor upon successful review.
+
+Second item refers to the decrease factor, used to
+decrease the easiness factor upon an unsuccessful review.
+
+The third item is the initial total easiness factor, used to calculate
+the next interval.
+
+The basic's of how this is used is that it's being multiplied with the
+last interval upon a successful review, e.g if you last reviewed a
+note 6 days ago, and the easiness factor of this note is 2.0, your
+next interval would be 6 * 2.0 & the total easiness factor would be
+2.0 + increase-factor as well.
+
+Example:
+
+@lisp
+(setq gnosis-algorithm-ef '(0.3 0.3 1.3))
+@end lisp
+
+@node Gnosis Algorithm Forgetting Factor
+@section Gnosis Algorithm Forgetting Factor
+
+@samp{gnosis-algorithm-ff} is a floating number below 1.
+
+It's used to calculate the next interval upon an unsuccessful review,
+by being multiplied with last interval.
+
+
+
+Example:
+
+@lisp
+(setq gnosis-algorithm-ff 0.5)
+@end lisp
+
+For a note with a value of last-interval of 6 days and a ff of 0.5,
+upon an unsuccessful review the next interval will be 6 * 0.5
+
+@bye

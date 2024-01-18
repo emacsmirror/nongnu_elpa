@@ -56,8 +56,8 @@
   :type 'directory
   :group 'gnosis)
 
-(defcustom gnosis-cloze-char "__"
-  "Gnosis cloze character."
+(defcustom gnosis-cloze-string "__"
+  "Gnosis string to represent a cloze."
   :type 'string
   :group 'gnosis)
 
@@ -69,7 +69,7 @@
   (if (not (file-directory-p gnosis-dir))
       (gnosis-db-init)
     (emacsql-sqlite (concat (file-name-as-directory gnosis-dir) "gnosis.db")))
-  "Gnosis database file. WARNING: Do not change this value!")
+  "Gnosis database file.")
 
 (defvar gnosis-testing nil
   "When t, warn user he is in a testing environment.")
@@ -179,12 +179,6 @@ Example:
   "From TABLE use where to delete VALUE."
   (emacsql gnosis-db `[:delete :from ,table :where ,value]))
 
-(defmacro with-gnosis-buffer (&rest body)
-  "Execute BODY in gnosis buffer."
-  `(with-current-buffer (switch-to-buffer (get-buffer-create "*gnosis*"))
-     (gnosis-mode)
-     ,@body))
-
 (cl-defun gnosis-completing-read (prompt options info &optional (face-for-info 'font-lock-doc-face))
   "A version of `completing-read' with text properties, padding & choosable face.
 Returns selected option from OPTIONS.
@@ -214,28 +208,25 @@ FACE-FOR-INFO is the face used to display info for option."
            if (= i index) collect new-item
            else collect item))
 
-(defun gnosis-display--question (id)
+(defun gnosis-display-question (id)
   "Display main row for note ID."
   (let ((question (gnosis-get 'main 'notes `(= id ,id))))
-    (with-gnosis-buffer
      (erase-buffer)
      (fill-paragraph (insert (concat "\n"
-				     (propertize question 'face 'gnosis-face-main)))))))
+				     (propertize question 'face 'gnosis-face-main))))))
 
-(defun gnosis-display--cloze-sentence (sentence clozes)
+(defun gnosis-display-cloze-sentence (sentence clozes)
   "Display cloze sentence for SENTENCE with CLOZES."
-  (with-gnosis-buffer
-   (erase-buffer)
-   (fill-paragraph
-    (insert
-     (concat "\n"
-	     (gnosis-cloze-replace-words sentence clozes (propertize gnosis-cloze-char 'face 'gnosis-face-cloze)))))))
+  (erase-buffer)
+  (fill-paragraph
+   (insert
+    (concat "\n"
+	    (gnosis-cloze-replace-words sentence clozes (propertize gnosis-cloze-string 'face 'gnosis-face-cloze))))))
 
-(defun gnosis-display--basic-answer (answer success user-input)
+(defun gnosis-display-basic-answer (answer success user-input)
   "Display ANSWER.
 
 When SUCCESS nil, display USER-INPUT as well"
-  (with-gnosis-buffer
    (insert
     (concat "\n\n"
 	    (propertize "Answer:" 'face 'gnosis-face-directions)
@@ -246,7 +237,7 @@ When SUCCESS nil, display USER-INPUT as well"
      (insert (concat "\n"
 		     (propertize "Your answer:" 'face 'gnosis-face-directions)
 		     " "
-		     (propertize user-input 'face 'gnosis-face-false))))))
+		     (propertize user-input 'face 'gnosis-face-false)))))
 
 (cl-defun gnosis-display-y-or-n-answer (&key answer success)
   "Display y-or-n answer for note ID.
@@ -255,48 +246,43 @@ ANSWER is the correct answer, either y or n. Answer is either 121 or
 110, which are the char values for y & n respectively
 SUCCESS is t when user-input is correct, else nil"
   (let ((answer (if (equal answer 121) "y" "n")))
-    (with-gnosis-buffer
      (insert
       (concat "\n\n"
 	      (propertize "Answer:" 'face 'gnosis-face-directions)
 	      " "
-	      (propertize answer 'face (if success 'gnosis-face-correct 'gnosis-face-false)))))))
+	      (propertize answer 'face (if success 'gnosis-face-correct 'gnosis-face-false))))))
 
 
-(defun gnosis-display--hint (hint)
+(defun gnosis-display-hint (hint)
   "Display HINT."
-  (with-gnosis-buffer
    (goto-char (point-max))
    (insert (concat
 	    (propertize "\n\n-----\n" 'face 'gnosis-face-seperator)
-	    (propertize hint 'face 'gnosis-face-hint)))))
+	    (propertize hint 'face 'gnosis-face-hint))))
 
-(cl-defun gnosis-display-cloze-reveal (&key (cloze-char gnosis-cloze-char) replace (success t) (face nil))
+(cl-defun gnosis-display-cloze-reveal (&key (cloze-char gnosis-cloze-string) replace (success t) (face nil))
   "Replace CLOZE-CHAR with REPLACE.
 
 If FACE nil, propertize replace using `gnosis-face-correct', or
 `gnosis-face-false' when (not SUCCESS). Else use FACE value."
-  (with-gnosis-buffer
    (goto-char (point-min))
    (search-forward cloze-char nil t)
    (replace-match (propertize replace 'face (if (not face)
 						(if success 'gnosis-face-correct 'gnosis-face-false)
-					      face)))))
+					      face))))
 
 (cl-defun gnosis-display-cloze-user-answer (user-input &optional (false t))
   "Display USER-INPUT answer for cloze note upon failed review.
 
 If FALSE t, use gnosis-face-false face"
-  (with-gnosis-buffer
    (goto-char (point-max))
    (insert (concat "\n\n"
 		   (propertize "Your answer:" 'face 'gnosis-face-directions)
 		   " "
-		   (propertize user-input 'face (if false 'gnosis-face-false 'gnosis-face-correct))))))
+		   (propertize user-input 'face (if false 'gnosis-face-false 'gnosis-face-correct)))))
 
-(defun gnosis-display--correct-answer-mcq (answer user-choice)
+(defun gnosis-display-correct-answer-mcq (answer user-choice)
   "Display correct ANSWER & USER-CHOICE for MCQ note."
-  (with-gnosis-buffer
    (insert (concat "\n\n"
 		   (propertize "Correct Answer:" 'face 'gnosis-face-directions)
 		   " "
@@ -306,41 +292,38 @@ If FALSE t, use gnosis-face-false face"
 		   " "
 		   (propertize user-choice 'face (if (string= answer user-choice)
 						     'gnosis-face-correct
-						   'gnosis-face-false))))))
+						   'gnosis-face-false)))))
 
-(defun gnosis-display--extra (id)
+(defun gnosis-display-extra (id)
   "Display extra information for note ID."
   (let ((extras (gnosis-get 'extra-notes 'extras `(= id ,id))))
-    (with-gnosis-buffer
-     (goto-char (point-max))
-     (insert (propertize "\n\n-----\n" 'face 'gnosis-face-seperator))
-     (fill-paragraph (insert (concat "\n" (propertize extras 'face 'gnosis-face-extra)))))))
+    (goto-char (point-max))
+    (insert (propertize "\n\n-----\n" 'face 'gnosis-face-seperator))
+    (fill-paragraph (insert (concat "\n" (propertize extras 'face 'gnosis-face-extra))))))
 
-(defun gnosis-display--image (id)
+(defun gnosis-display-image (id)
   "Display image for note ID."
   (let* ((img (gnosis-get 'images 'extras `(= id ,id)))
 	 (path-to-image (concat (file-name-as-directory gnosis-images-dir) img))
 	 (image (create-image path-to-image 'png nil :width 500 :height 300)))
     (when img
-      (with-gnosis-buffer
-       (insert "\n\n")
-       (insert-image image)))))
+      (insert "\n\n")
+      (insert-image image))))
 
-(defun gnosis-display--next-review (id)
+(defun gnosis-display-next-review (id)
   "Display next interval for note ID."
   (let ((interval (gnosis-get 'next-rev 'review-log `(= id ,id))))
-    (with-gnosis-buffer
-     (goto-char (point-max))
-     (insert (concat "\n\n"
-		     (propertize "Next review:" 'face 'gnosis-face-directions)
-		     " "
-		     (propertize (format "%s" interval) 'face 'gnosis-face-next-review))))))
+    (goto-char (point-max))
+    (insert (concat "\n\n"
+		    (propertize "Next review:" 'face 'gnosis-face-directions)
+		    " "
+		    (propertize (format "%s" interval) 'face 'gnosis-face-next-review)))))
 
 (cl-defun gnosis--prompt (prompt &optional (downcase nil) (split nil))
   "PROMPT user for input until `q' is given.
 
-The user is prompted to provide input for the 'PROMPT' message.
-Returns the list of non-'q' inputs in reverse order of their entry.
+The user is prompted to provide input for the PROMPT message.
+Returns the list of non-q inputs in reverse order of their entry.
 
 Set DOWNCASE to t to downcase all input given.
 Set SPLIT to t to split all input given."
@@ -395,8 +378,8 @@ When called with a prefix, unsuspends all notes in deck."
 	(suspend (if current-prefix-arg 0 1))
 	(note-count 0))
     (cl-loop for note in notes
-	     do (progn (gnosis-update 'review-log `(= suspend ,suspend) `(= id ,(car note)))
-		       (setq note-count (1+ note-count)))
+	     do (gnosis-update 'review-log `(= suspend ,suspend) `(= id ,(car note)))
+	     (setq note-count (1+ note-count))
 	     finally (if (equal suspend 0)
 			 (message "Unsuspended %s notes" note-count)
 		       (message "Suspended %s notes" note-count)))))
@@ -481,7 +464,7 @@ choice in the `CHOICES' list. Each note must correspond to one `DECK'.
 Create a note type MCQ for specified deck, that consists of:
 STEM: The question or problem statement
 OPTIONS: Options for the user to select
-ANSWER: Answer is the NUMBER of the correct answer of OPTIONS.
+ANSWER: Answer is the index NUMBER of the correct answer from OPTIONS.
 EXTRA: Information to display after user-input
 TAGS: Used to organize notes
 
@@ -512,9 +495,9 @@ SUSPEND: Binary value of 0 & 1, when 1 note will be ignored."
 (defun gnosis-add-note-basic ()
   "Add note(s) of type `Basic' interactively to selected deck.
 
-Basic note type is a flashcard-like note, where user first sees a
-\"main\" part, which is usually a question, and he is prompted to
-input the answer.
+Basic note type is a simple question/answer note, where user first
+sees a \"main\" part, which is usually a question, and he is prompted
+to input the answer.
 
 Refer to `gnosis-add-note--basic' for more."
   (let ((deck (gnosis--get-deck-name)))
@@ -577,7 +560,7 @@ SECOND-IMAGE: Image to display after user-input."
   (gnosis-add-note-fields deck "y-or-n" question hint answer extra tags suspend image second-image))
 
 (defun gnosis-add-note-y-or-n ()
-  "Add note(s) of type `y-or-n' interactively to selected deck.
+  "Add note(s) of type `y-or-n'.
 
 refer to `gnosis-add-note--y-or-n' for more information about keyword values."
   (let ((deck (gnosis--get-deck-name)))
@@ -861,10 +844,21 @@ SUCCESS is a binary value, 1 = success, 0 = failure.
 Returns a list of the form ((yyyy mm dd) ef)."
   (let ((ff gnosis-algorithm-ff)
 	(ef (nth 2 (gnosis-get 'ef 'review `(= id ,id))))
-	(t-success (gnosis-get 't-success 'review-log `(= id ,id))))
-    (gnosis-algorithm-next-interval (gnosis-review--get-offset id)
-				    (gnosis-get 'n 'review-log `(= id ,id))
-				    ef success ff t-success)))
+	(t-success (gnosis-get 't-success 'review-log `(= id ,id)))
+	(c-success (gnosis-get 'c-success 'review-log `(= id ,id)))
+	(c-fails (gnosis-get 'c-fails 'review-log `(= id ,id)))
+	(t-fails (gnosis-get 't-fails 'review-log `(= id ,id)))
+	(initial-interval (gnosis-get 'interval 'review `(= id ,id))))
+    (gnosis-algorithm-next-interval :last-interval (max (gnosis-review--get-offset id) 1) ;; last-interv always >=1
+				    :review-num (gnosis-get 'n 'review-log `(= id ,id))
+				    :ef ef
+				    :success success
+				    :failure-factor ff
+				    :successful-reviews t-success
+				    :successful-reviews-c  c-success
+				    :fails-c c-fails
+				    :fails-t t-fails
+				    :initial-interval initial-interval)))
 
 (defun gnosis-review-due-notes--with-tags ()
   "Return a list of due note tags."
@@ -917,45 +911,45 @@ SUCCESS is a binary value, 1 is for successful review."
 
 (defun gnosis-review-mcq (id)
   "Display multiple choice answers for question ID."
-  (gnosis-display--image id)
-  (gnosis-display--question id)
-  (let* ((choices (gnosis-get 'options 'notes `(= id ,id)))
-	 (answer (nth (- (gnosis-get 'answer 'notes `(= id ,id)) 1) choices))
-	 (user-choice (gnosis-mcq-answer id)))
-    (if (string= answer user-choice)
-        (progn (gnosis-review--update id 1)
-	       (message "Correct!"))
-      (gnosis-review--update id 0)
-      (message "False"))
-    (gnosis-display--correct-answer-mcq answer user-choice)
-    (gnosis-display--extra id)
-    (gnosis-display--next-review id)))
+    (gnosis-display-image id)
+    (gnosis-display-question id)
+    (let* ((choices (gnosis-get 'options 'notes `(= id ,id)))
+	   (answer (nth (- (gnosis-get 'answer 'notes `(= id ,id)) 1) choices))
+	   (user-choice (gnosis-mcq-answer id)))
+      (if (string= answer user-choice)
+          (progn (gnosis-review--update id 1)
+		 (message "Correct!"))
+	(gnosis-review--update id 0)
+	(message "False"))
+      (gnosis-display-correct-answer-mcq answer user-choice)
+      (gnosis-display-extra id)
+      (gnosis-display-next-review id)))
 
 (defun gnosis-review-basic (id)
   "Review basic type note for ID."
-  (gnosis-display--image id)
-  (gnosis-display--question id)
-  (gnosis-display--hint (gnosis-get 'options 'notes `(= id ,id)))
+  (gnosis-display-image id)
+  (gnosis-display-question id)
+  (gnosis-display-hint (gnosis-get 'options 'notes `(= id ,id)))
   (let* ((answer (gnosis-get 'answer 'notes `(= id ,id)))
 	 (user-input (read-string "Answer: "))
 	 (success (gnosis-compare-strings answer user-input)))
-    (gnosis-display--basic-answer answer success user-input)
-    (gnosis-display--extra id)
+    (gnosis-display-basic-answer answer success user-input)
+    (gnosis-display-extra id)
     (gnosis-review--update id (if success 1 0))
-    (gnosis-display--next-review id)))
+    (gnosis-display-next-review id)))
 
 (defun gnosis-review-y-or-n (id)
   "Review y-or-n type note for ID."
-  (gnosis-display--image id)
-  (gnosis-display--question id)
-  (gnosis-display--hint (gnosis-get 'options 'notes `(= id ,id)))
-  (let* ((answer (gnosis-get 'answer 'notes `(= id ,id)))
-	 (user-input (read-char-choice "[y]es or [n]o: " '(?y ?n)))
-	 (success (equal answer user-input)))
-    (gnosis-display-y-or-n-answer :answer answer :success success)
-    (gnosis-display--extra id)
-    (gnosis-review--update id (if success 1 0))
-    (gnosis-display--next-review id)))
+    (gnosis-display-image id)
+    (gnosis-display-question id)
+    (gnosis-display-hint (gnosis-get 'options 'notes `(= id ,id)))
+    (let* ((answer (gnosis-get 'answer 'notes `(= id ,id)))
+	   (user-input (read-char-choice "[y]es or [n]o: " '(?y ?n)))
+	   (success (equal answer user-input)))
+      (gnosis-display-y-or-n-answer :answer answer :success success)
+      (gnosis-display-extra id)
+      (gnosis-review--update id (if success 1 0))
+      (gnosis-display-next-review id)))
 
 (defun gnosis-review-cloze--input (cloze)
   "Prompt for user input during cloze review.
@@ -978,9 +972,9 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
 	 (num 1)
 	 (clozes-num (length clozes))
 	 (hint (gnosis-get 'options 'notes `(= id ,id))))
-    (gnosis-display--image id)
-    (gnosis-display--cloze-sentence main clozes)
-    (gnosis-display--hint hint)
+    (gnosis-display-image id)
+    (gnosis-display-cloze-sentence main clozes)
+    (gnosis-display-hint hint)
     (cl-loop for cloze in clozes
 	     do (let ((input (gnosis-review-cloze--input cloze)))
 		  (if (equal (car input) t)
@@ -998,21 +992,23 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
 		    (cl-return)))
 	     ;; Update note after all clozes are revealed successfully
 	     finally (gnosis-review--update id 1)))
-  (gnosis-display--extra id)
-  (gnosis-display--next-review id))
+  (gnosis-display-extra id)
+  (gnosis-display-next-review id))
 
 (defun gnosis-review-note (id)
   "Start review for note with value of id ID, if note is unsuspended."
   (cond ((gnosis-suspended-p id)
          (message "Note is suspended."))
         (t
-         (let ((type (gnosis-get 'type 'notes `(= id ,id))))
-           (pcase type
-             ("mcq" (gnosis-review-mcq id))
-             ("basic" (gnosis-review-basic id))
-             ("cloze" (gnosis-review-cloze id))
-	     ("y-or-n" (gnosis-review-y-or-n id))
-             (_ (error "Malformed note type")))))))
+	 (with-current-buffer (switch-to-buffer (get-buffer-create "*gnosis*"))
+           (let ((type (gnosis-get 'type 'notes `(= id ,id))))
+	     (gnosis-mode)
+	     (pcase type
+	       ("mcq" (gnosis-review-mcq id))
+	       ("basic" (gnosis-review-basic id))
+	       ("cloze" (gnosis-review-cloze id))
+	       ("y-or-n" (gnosis-review-y-or-n id))
+	       (_ (error "Malformed note type"))))))))
 
 (defun gnosis-review-commit (note-num)
   "Commit review session on git repository.
@@ -1041,15 +1037,15 @@ NOTE-NUM: The number of notes reviewed in the session."
 	(message "No notes for review.")
       (when (y-or-n-p (format "You have %s total notes for review, start session?" (length notes)))
 	(cl-loop for note in notes
-		 do (progn (gnosis-review-note note)
-			   (setf note-count (1+ note-count))
-			   (pcase (read-char-choice "Note Action: [n]ext, [s]uspend, [e]dit, [q]uit: " '(?n ?s ?e ?q))
-			     (?n nil)
-			     (?s (gnosis-suspend-note note))
-			     (?e (progn (gnosis-edit-note note)
-					(recursive-edit)))
-			     (?q (progn (gnosis-review-commit note-count)
-					(cl-return)))))
+		 do (gnosis-review-note note)
+		 (setf note-count (1+ note-count))
+		 (pcase (read-char-choice "Note Action: [n]ext, [s]uspend, [e]dit, [q]uit: " '(?n ?s ?e ?q))
+		   (?n nil)
+		   (?s (gnosis-suspend-note note))
+		   (?e (progn (gnosis-edit-note note)
+			      (recursive-edit)))
+		   (?q (progn (gnosis-review-commit note-count)
+			      (cl-return))))
 		 finally (gnosis-review-commit note-count))))))
 
 
@@ -1123,7 +1119,9 @@ changes."
 				      (extra-notes ,extra-notes)
 				      (image ,image)
 				      (second-image ,second-image))
-	       do (cond ((numberp value)
+	       do (cond ((equal field 'id)
+			 (insert (format (concat ":%s " (propertize "%s" 'read-only t) "\n") field value)))
+			((numberp value)
 			 (insert (format ":%s %s\n" field value)))
 			((and (listp value)
 			      (not (equal value nil)))
@@ -1264,7 +1262,7 @@ name and all notes formatted as nested lists"
     (with-temp-file (concat filename ".el")
       (insert "(gnosis-define-deck " "'" deck-name " '(")
       (cl-loop for note in notes
-	       do (progn (insert "(") (gnosis-export-note note) (insert ")" "\n"))
+	       do (insert "(") (gnosis-export-note note) (insert ")" "\n")
 	       finally (insert "))")))))
 
 ;; TODO: Add defcustom to have suspended as 0 or 1 depending on
@@ -1379,7 +1377,7 @@ review."
     ;; Make sure gnosis-db is initialized
     (setf gnosis-db (emacsql-sqlite (concat (file-name-as-directory gnosis-dir) "gnosis.db"))))
   ;; Create database tables
-  (unless (length= (emacsql gnosis-db [:select name :from sqlite-master :where (= type table)]) 6)
+  (unless (= (length (emacsql gnosis-db [:select name :from sqlite-master :where (= type table)])) 6)
     ;; Enable foreign keys
     (emacsql gnosis-db "PRAGMA foreign_keys = ON")
     ;; Gnosis version
