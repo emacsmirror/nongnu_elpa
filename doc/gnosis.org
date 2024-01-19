@@ -4,8 +4,8 @@
 #+language: en
 #+options: ':t toc:nil author:t email:t num:t
 #+startup: content
-#+macro: stable-version 0.1.3
-#+macro: release-date 2023-01-18
+#+macro: stable-version 0.1.4
+#+macro: release-date 2023-01-19
 #+macro: development-version 0.1.4-dev
 #+macro: file @@texinfo:@file{@@$1@@texinfo:}@@
 #+macro: space @@texinfo:@: @@
@@ -120,7 +120,7 @@ Every note type has these values in common:
  + ~second-image~ Image displayed /after/ user input
 
 The following sections will cover the important differences you have
-to know when creating notes.  
+to know when creating new notes.
 
 * Note Types
 ** Cloze
@@ -175,8 +175,48 @@ When using the hidden function =gnosis-add-note--y-or-n=, note that the
 ANSWER must be either 121 (~y~) or 110 (~n~), as those correspond to the
 character values used to represent them.
 
-* Customization
-** Gnosis Algorithm Initial Interval
+* Customization & Development
+
+To make development and customization easier, gnosis comes with
+=gnosis-dev= module, that should be used to create a custom database for
+testing.
+
+To use =gnosis-dev=, first you have to =(require 'gnosis-dev)= & run =M-x
+gnosis-dev-test=. This will create a new directory 'testing' with a new
+database.
+
+To exit the testing environment, rerun =M-x gnosis-dev-test= and then
+enter =n= (no) at the prompt "Start development env?"
+
+** Creating Custom Note Types
+Creating custom note types for gnosis is a fairly simple thing to do
+
++ First add your NEW-TYPE to =gnosis-note-types=
+
+    #+begin_src emacs-lisp
+    (add-to-list 'gnosis-note-types 'new-type)
+  #+end_src
+
++ Create 2 functions; =gnosis-add-note-TYPE= & =gnosis-add-note--TYPE=
+
+Each note type has a =gnosis-add-note-TYPE= that is used
+interactively & a "hidden function" =gnosis-add-note--TYPE= that handles
+all the logic.
+
+Refer to =gnosis-add-note-basic= & =gnosis-add-note--basic= for a simple
+example of how this is done.
+
++ Create =gnosis-review-TYPE=
+
+This function should handle the review process, displaying it's
+contents and updating the database depending on the result of the
+review (fail/pass). Refer to =gnosis-review-basic= for an example of how
+this should be done.
+
++ Optionally, you might want to create your own custom =gnosis-display= functions
+
+** Customizing Gnosis Algorithm
+*** Gnosis Algorithm Initial Interval
 
 =gnosis-algorithm-interval= is a list of 2 numbers, representing the
 first two initial intervals for successful reviews.
@@ -191,7 +231,7 @@ Using the above example, after first successfully reviewing a note,
 you will see it again tomorrow, if you successfully review said note
 again, the next review will be after 3 days.
 
-** Gnosis Algorithm Easiness Factor
+*** Gnosis Algorithm Easiness Factor
 
 =gnosis-algorithm-ef= is a list that consists of 3 items.
 
@@ -216,7 +256,7 @@ Example:
   (setq gnosis-algorithm-ef '(0.3 0.3 1.3))
 #+end_src
 
-** Gnosis Algorithm Forgetting Factor
+*** Gnosis Algorithm Forgetting Factor
 
 =gnosis-algorithm-ff= is a floating number below 1.
 

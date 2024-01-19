@@ -22,11 +22,10 @@
 ;; You should have received a copy of the GNU General Public License
 ;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-;; Random functions to make development/testing of gnosis.el easier
-
 ;;; Commentary:
 
-;; Development tools used for gnosis
+;; Development module for gnosis, to make development of gnosis.el
+;; easier by creating a testing environment with random inputs.
 
 ;;; Code:
 
@@ -110,7 +109,7 @@ by the thoracodorsal nerve."
 
 If ask nil, leave development env"
   (interactive)
-  (let ((ask (y-or-n-p "Start development env?"))
+  (let ((ask (y-or-n-p "Start development env (n for exit)?"))
 	(testing-dir (concat gnosis-dir "/testing")))
     (if ask
 	(progn

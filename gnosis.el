@@ -1,4 +1,4 @@
-;;; gnosis.el --- Spaced Repetition System  -*- lexical-binding: t; -*-
+;;; gnosis.el --- Spaced Repetition System For Note Taking & Self Testing  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2023  Thanos Apollo
 
@@ -24,9 +24,9 @@
 
 ;;; Commentary:
 
-;; Gnosis (γνῶσις), pronounced "noh-sis", meaning knowledge in Greek, is
-;; a Spaced Repetition System <https://en.wikipedia.org/wiki/Spaced_repetition>
-;; for GNU Emacs.
+;; Gnosis is a spaced repetition system for note taking & self testing,
+;; where notes are taken in a Question/Answer/Explanation-like format
+;; & reviewed in spaced intervals.
 ;;
 ;; Gnosis does not implement flashcard type review sessions where the
 ;; user rates his own answer on an arbitrary scale. Instead implements
@@ -34,9 +34,14 @@
 ;; the MCQ, multiple choice question, even allow for simulating
 ;; real-life exams.
 ;; 
-;; Unlike other SRS implementations for GNU Emacs, gnosis not rely on
-;; org-mode. Instead utilizes an sqlite database & git, enabling
-;; efficient data management, manipulation and data integrity.
+;; Gnosis can help you better understand and retain the material by
+;; encouraging active engagement. It also provides a clear structure for
+;; your notes & review sessions, making it easier to study.
+;;
+;; Unlike other SRS implementations for GNU Emacs, gnosis does not
+;; rely on org-mode. Instead utilizes an sqlite database & git,
+;; enabling efficient data management, manipulation and data
+;; integrity.
 
 ;;; Code:
 
@@ -45,13 +50,14 @@
 (require 'cl-lib)
 
 (require 'gnosis-algorithm)
+(require 'vc)
 
 (defgroup gnosis nil
-  "Spaced repetition learning tool."
+  "Spaced Repetition System For Note Taking & Self Testing."
   :group 'external
   :prefix "gnosis-")
 
-(defcustom gnosis-dir (concat user-emacs-directory "gnosis")
+(defcustom gnosis-dir (locate-user-emacs-file "gnosis")
   "Gnosis directory."
   :type 'directory
   :group 'gnosis)
@@ -62,13 +68,13 @@
   :group 'gnosis)
 
 
-(defvar gnosis-images-dir (concat (file-name-as-directory gnosis-dir) "images")
+(defvar gnosis-images-dir (expand-file-name "images" gnosis-dir)
   "Gnosis images directory.")
 
 (defconst gnosis-db
   (if (not (file-directory-p gnosis-dir))
       (gnosis-db-init)
-    (emacsql-sqlite (concat (file-name-as-directory gnosis-dir) "gnosis.db")))
+    (emacsql-sqlite (expand-file-name "gnosis.db" gnosis-dir)))
   "Gnosis database file.")
 
 (defvar gnosis-testing nil
@@ -76,6 +82,9 @@
 
 (defconst gnosis-db-version 1
   "Gnosis database version.")
+
+(defvar gnosis-note-types '(MCQ Cloze Basic Double y-or-n)
+  "Gnosis available note types.")
 
 ;;; Faces
 
@@ -135,8 +144,6 @@
   '((t :inherit bold))
   "Face for next review."
   :group 'gnosis-face)
-
-
 
 (cl-defun gnosis-select (value table &optional (restrictions '1=1))
   "Select VALUE from TABLE, optionally with RESTRICTIONS.
@@ -647,17 +654,14 @@ See `gnosis-add-note--cloze' for more reference."
 ;;;###autoload
 (defun gnosis-add-note (type)
   "Create note(s) as TYPE interactively."
-  (interactive (list (completing-read "Type: " '(MCQ Cloze Basic Double y-or-n) nil t)))
+  (interactive (list (completing-read "Type: " gnosis-note-types nil t)))
   (when gnosis-testing
     (unless (y-or-n-p "You are using a testing environment! Continue?")
       (error "Aborted")))
-  (pcase type
-    ("MCQ" (gnosis-add-note-mcq))
-    ("Cloze" (gnosis-add-note-cloze))
-    ("Basic" (gnosis-add-note-basic))
-    ("Double" (gnosis-add-note-double))
-    ("y-or-n" (gnosis-add-note-y-or-n))
-    (_ (message "No such type."))))
+  (let ((func-name (intern (format "gnosis-add-note-%s" (downcase type)))))
+    (if (fboundp func-name)
+        (funcall func-name)
+      (message "No such type."))))
 
 (defun gnosis-mcq-answer (id)
   "Choose the correct answer, from mcq choices for question ID."
@@ -758,9 +762,7 @@ Optionally, add cusotm PROMPT."
 
 (defun gnosis-suspended-p (id)
   "Return t if note with ID is suspended."
-  (if (= (gnosis-get 'suspend 'review-log `(= id ,id)) 1)
-      t
-    nil))
+  (= (gnosis-get 'suspend 'review-log `(= id ,id)) 1))
 
 (defun gnosis-get-deck-due-notes (&optional deck-id)
   "Return due notes for deck, with value of DECK-ID.
@@ -788,7 +790,7 @@ DATE is a list of the form (year month day)."
      (cl-mapcan (lambda (note-id)
                   (gnosis-get-note-tags note-id))
 	        due-notes)
-     :test 'equal)))
+     :test #'equal)))
 
 
 (cl-defun gnosis-tag-prompt (&key (prompt "Selected tags") (match nil) (due nil))
@@ -816,10 +818,8 @@ Returns a list of unique tags."
   "Check if note with value of NOTE-ID for id is due for review.
 
 Check if it's suspended, and if it's due today."
-  (if (and (not (gnosis-suspended-p note-id))
-	   (gnosis-review-is-due-today-p note-id))
-      t
-    nil))
+  (and (not (gnosis-suspended-p note-id))
+       (gnosis-review-is-due-today-p note-id)))
 
 (defun gnosis-review-is-due-today-p (id)
   "Return t if note with ID is due today.
@@ -867,7 +867,7 @@ Returns a list of the form ((yyyy mm dd) ef)."
      (cl-mapcan (lambda (note-id)
                   (gnosis-get-note-tags note-id))
 	        due-notes)
-     :test 'equal)))
+     :test #'equal)))
 
 (defun gnosis-review--get-offset (id)
   "Return offset for note with value of id ID."
@@ -875,9 +875,9 @@ Returns a list of the form ((yyyy mm dd) ef)."
     (gnosis-algorithm-date-diff last-rev)))
 
 (defun gnosis-review-round (num)
-  "Round NUM to 1 decimal.
+  "Round NUM to 2 decimals.
 
-This function is used to round floating point numbers to 1 decimal,
+This function is used to round floating point numbers to 2 decimals,
 such as the easiness factor (ef)."
   (/ (round (* num 100.00)) 100.00))
 
@@ -917,8 +917,9 @@ SUCCESS is a binary value, 1 is for successful review."
 	   (answer (nth (- (gnosis-get 'answer 'notes `(= id ,id)) 1) choices))
 	   (user-choice (gnosis-mcq-answer id)))
       (if (string= answer user-choice)
-          (progn (gnosis-review--update id 1)
-		 (message "Correct!"))
+          (progn
+	    (gnosis-review--update id 1)
+	    (message "Correct!"))
 	(gnosis-review--update id 0)
 	(message "False"))
       (gnosis-display-correct-answer-mcq answer user-choice)
@@ -997,18 +998,17 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
 
 (defun gnosis-review-note (id)
   "Start review for note with value of id ID, if note is unsuspended."
-  (cond ((gnosis-suspended-p id)
-         (message "Note is suspended."))
-        (t
-	 (with-current-buffer (switch-to-buffer (get-buffer-create "*gnosis*"))
-           (let ((type (gnosis-get 'type 'notes `(= id ,id))))
-	     (gnosis-mode)
-	     (pcase type
-	       ("mcq" (gnosis-review-mcq id))
-	       ("basic" (gnosis-review-basic id))
-	       ("cloze" (gnosis-review-cloze id))
-	       ("y-or-n" (gnosis-review-y-or-n id))
-	       (_ (error "Malformed note type"))))))))
+  (when (gnosis-suspended-p id)
+    (message "Suspended note with id: %s" id)
+    (sit-for 0.3)) ;; this should only occur in testing/dev cases
+  (let* ((type (gnosis-get 'type 'notes `(= id ,id)))
+         (func-name (intern (format "gnosis-review-%s" (downcase type)))))
+    (if (fboundp func-name)
+        (progn
+          (with-current-buffer (switch-to-buffer (get-buffer-create "*gnosis*"))
+            (gnosis-mode)
+            (funcall func-name id)))
+      (error "Malformed note type: '%s'" type))))
 
 (defun gnosis-review-commit (note-num)
   "Commit review session on git repository.
@@ -1022,9 +1022,9 @@ NOTE-NUM: The number of notes reviewed in the session."
 	(default-directory gnosis-dir))
     (unless git
       (error "Git not found, please install git"))
-    (unless (file-exists-p (concat (file-name-as-directory gnosis-dir) ".git"))
-      (shell-command "git init"))
-    (sit-for 0.2) ;; wait for shell command to finish
+    (unless (file-exists-p (expand-file-name ".git" gnosis-dir))
+      (vc-create-repo 'Git))
+    ;; TODO: Redo this using vc
     (shell-command (concat git " add " (shell-quote-argument "gnosis.db")))
     (shell-command (concat git " commit -m "
 			   (shell-quote-argument (concat (format "Total notes for session: %d " note-num)))))
@@ -1039,13 +1039,18 @@ NOTE-NUM: The number of notes reviewed in the session."
 	(cl-loop for note in notes
 		 do (gnosis-review-note note)
 		 (setf note-count (1+ note-count))
-		 (pcase (read-char-choice "Note Action: [n]ext, [s]uspend, [e]dit, [q]uit: " '(?n ?s ?e ?q))
+		 (pcase (car (read-multiple-choice
+			      "Note actions"
+			      '((?n "next")
+				(?s "suspend")
+				(?e "edit")
+				(?q "quit"))))
 		   (?n nil)
 		   (?s (gnosis-suspend-note note))
-		   (?e (progn (gnosis-edit-note note)
-			      (recursive-edit)))
-		   (?q (progn (gnosis-review-commit note-count)
-			      (cl-return))))
+		   (?e (gnosis-edit-note note)
+		       (recursive-edit))
+		   (?q (gnosis-review-commit note-count)
+		       (cl-return)))
 		 finally (gnosis-review-commit note-count))))))
 
 
@@ -1119,7 +1124,7 @@ changes."
 				      (extra-notes ,extra-notes)
 				      (image ,image)
 				      (second-image ,second-image))
-	       do (cond ((equal field 'id)
+	       do (cond ((eq field 'id)
 			 (insert (format (concat ":%s " (propertize "%s" 'read-only t) "\n") field value)))
 			((numberp value)
 			 (insert (format ":%s %s\n" field value)))
@@ -1127,7 +1132,7 @@ changes."
 			      (not (equal value nil)))
 			 (insert (format ":%s '%s\n" field (format "%s" (cl-loop for item in value
 										 collect (format "\"%s\"" item))))))
-			((equal value nil)
+			((null value)
 			 (insert (format ":%s %s\n" field 'nil)))
 			(t (insert (format ":%s \"%s\"\n" field value)))))
       (delete-char -1) ;; delete extra line
@@ -1149,7 +1154,7 @@ changes."
 (define-derived-mode gnosis-edit-mode emacs-lisp-mode "Gnosis EDIT"
   "Gnosis Edit Mode."
   :interactive t
-  :lighter " gnosis-edit-mode"
+  :lighter " Gnosis Edit"
   :keymap gnosis-edit-mode-map)
 
 
@@ -1175,7 +1180,7 @@ SECOND-IMAGE: Image to display after user-input"
              (image . ,image)
              (second-image . ,second-image))
            when value
-           do (cond ((member field '(extra-notes image second-image))
+           do (cond ((memq field '(extra-notes image second-image))
 		     (gnosis-update 'extras `(= ,field ,value) `(= id ,id)))
 		    ((listp value)
 		     (gnosis-update 'notes `(= ,field ',value) `(= id ,id)))
@@ -1377,7 +1382,7 @@ review."
     ;; Make sure gnosis-db is initialized
     (setf gnosis-db (emacsql-sqlite (concat (file-name-as-directory gnosis-dir) "gnosis.db"))))
   ;; Create database tables
-  (unless (= (length (emacsql gnosis-db [:select name :from sqlite-master :where (= type table)])) 6)
+  (unless (length= (emacsql gnosis-db [:select name :from sqlite-master :where (= type table)]) 6)
     ;; Enable foreign keys
     (emacsql gnosis-db "PRAGMA foreign_keys = ON")
     ;; Gnosis version
