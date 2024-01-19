@@ -15,7 +15,7 @@ Gnosis (γνῶσις), pronounced "noh-sis", _meaning knowledge in Greek_, is
 a spaced repetition system implementation for note taking and self
 testing.
 
-This manual is written for Gnosis version 0.1.3, released on 2023-01-18.
+This manual is written for Gnosis version 0.1.4, released on 2023-01-19.
 
    • Official manual: <https://thanosapollo.org/user-manual/gnosis>
    • Git repositories:
@@ -28,7 +28,7 @@ This manual is written for Gnosis version 0.1.3, released on 2023-01-18.
 * Installation::
 * Adding notes::
 * Note Types::
-* Customization::
+* Customization & Development::
 
 -- The Detailed Node Listing --
 
@@ -45,7 +45,12 @@ Note Types
 * MCQ (Multiple Choice Question)::
 * y-or-n::
 
-Customization
+Customization & Development
+
+* Creating Custom Note Types::
+* Customizing Gnosis Algorithm::
+
+Customizing Gnosis Algorithm
 
 * Gnosis Algorithm Initial Interval::
 * Gnosis Algorithm Easiness Factor::
@@ -156,10 +161,10 @@ all the logic.
    • ‘second-image’ Image displayed _after_ user input
 
    The following sections will cover the important differences you have
-to know when creating notes.
+to know when creating new notes.
 
 
-File: gnosis.info,  Node: Note Types,  Next: Customization,  Prev: Adding notes,  Up: Top
+File: gnosis.info,  Node: Note Types,  Next: Customization & Development,  Prev: Adding notes,  Up: Top
 
 4 Note Types
 ************
@@ -249,10 +254,64 @@ the ANSWER must be either 121 (‘y’) or 110 (‘n’), as those correspond to
 the character values used to represent them.
 
 
-File: gnosis.info,  Node: Customization,  Prev: Note Types,  Up: Top
+File: gnosis.info,  Node: Customization & Development,  Prev: Note Types,  Up: Top
 
-5 Customization
-***************
+5 Customization & Development
+*****************************
+
+To make development and customization easier, gnosis comes with
+‘gnosis-dev’ module, that should be used to create a custom database for
+testing.
+
+   To use ‘gnosis-dev’, first you have to ‘(require 'gnosis-dev)’ & run
+‘M-x gnosis-dev-test’.  This will create a new directory 'testing' with
+a new database.
+
+   To exit the testing environment, rerun ‘M-x gnosis-dev-test’ and then
+enter ‘n’ (no) at the prompt "Start development env?"
+
+* Menu:
+
+* Creating Custom Note Types::
+* Customizing Gnosis Algorithm::
+
+
+File: gnosis.info,  Node: Creating Custom Note Types,  Next: Customizing Gnosis Algorithm,  Up: Customization & Development
+
+5.1 Creating Custom Note Types
+==============================
+
+Creating custom note types for gnosis is a fairly simple thing to do
+
+   • First add your NEW-TYPE to ‘gnosis-note-types’
+
+          (add-to-list 'gnosis-note-types 'new-type)
+
+   • Create 2 functions; ‘gnosis-add-note-TYPE’ &
+     ‘gnosis-add-note--TYPE’
+
+   Each note type has a ‘gnosis-add-note-TYPE’ that is used
+interactively & a "hidden function" ‘gnosis-add-note--TYPE’ that handles
+all the logic.
+
+   Refer to ‘gnosis-add-note-basic’ & ‘gnosis-add-note--basic’ for a
+simple example of how this is done.
+
+   • Create ‘gnosis-review-TYPE’
+
+   This function should handle the review process, displaying it's
+contents and updating the database depending on the result of the review
+(fail/pass).  Refer to ‘gnosis-review-basic’ for an example of how this
+should be done.
+
+   • Optionally, you might want to create your own custom
+     ‘gnosis-display’ functions
+
+
+File: gnosis.info,  Node: Customizing Gnosis Algorithm,  Prev: Creating Custom Note Types,  Up: Customization & Development
+
+5.2 Customizing Gnosis Algorithm
+================================
 
 * Menu:
 
@@ -261,10 +320,10 @@ File: gnosis.info,  Node: Customization,  Prev: Note Types,  Up: Top
 * Gnosis Algorithm Forgetting Factor::
 
 
-File: gnosis.info,  Node: Gnosis Algorithm Initial Interval,  Next: Gnosis Algorithm Easiness Factor,  Up: Customization
+File: gnosis.info,  Node: Gnosis Algorithm Initial Interval,  Next: Gnosis Algorithm Easiness Factor,  Up: Customizing Gnosis Algorithm
 
-5.1 Gnosis Algorithm Initial Interval
-=====================================
+5.2.1 Gnosis Algorithm Initial Interval
+---------------------------------------
 
 ‘gnosis-algorithm-interval’ is a list of 2 numbers, representing the
 first two initial intervals for successful reviews.
@@ -278,10 +337,10 @@ you will see it again tomorrow, if you successfully review said note
 again, the next review will be after 3 days.
 
 
-File: gnosis.info,  Node: Gnosis Algorithm Easiness Factor,  Next: Gnosis Algorithm Forgetting Factor,  Prev: Gnosis Algorithm Initial Interval,  Up: Customization
+File: gnosis.info,  Node: Gnosis Algorithm Easiness Factor,  Next: Gnosis Algorithm Forgetting Factor,  Prev: Gnosis Algorithm Initial Interval,  Up: Customizing Gnosis Algorithm
 
-5.2 Gnosis Algorithm Easiness Factor
-====================================
+5.2.2 Gnosis Algorithm Easiness Factor
+--------------------------------------
 
 ‘gnosis-algorithm-ef’ is a list that consists of 3 items.
 
@@ -305,10 +364,10 @@ increase-factor as well.
      (setq gnosis-algorithm-ef '(0.3 0.3 1.3))
 
 
-File: gnosis.info,  Node: Gnosis Algorithm Forgetting Factor,  Prev: Gnosis Algorithm Easiness Factor,  Up: Customization
+File: gnosis.info,  Node: Gnosis Algorithm Forgetting Factor,  Prev: Gnosis Algorithm Easiness Factor,  Up: Customizing Gnosis Algorithm
 
-5.3 Gnosis Algorithm Forgetting Factor
-======================================
+5.2.3 Gnosis Algorithm Forgetting Factor
+----------------------------------------
 
 ‘gnosis-algorithm-ff’ is a floating number below 1.
 
@@ -326,21 +385,23 @@ upon an unsuccessful review the next interval will be 6 * 0.5
 
 Tag Table:
 Node: Top246
-Node: Introduction1249
-Node: Installation1729
-Node: Using straightel2098
-Node: Installing manually from source2614
-Node: Adding notes3303
-Node: Note Types4729
-Node: Cloze4941
-Node: Basic Type5914
-Node: Double6192
-Node: MCQ (Multiple Choice Question)6538
-Node: y-or-n6947
-Node: Customization7373
-Node: Gnosis Algorithm Initial Interval7602
-Node: Gnosis Algorithm Easiness Factor8174
-Node: Gnosis Algorithm Forgetting Factor9159
+Node: Introduction1372
+Node: Installation1852
+Node: Using straightel2221
+Node: Installing manually from source2737
+Node: Adding notes3426
+Node: Note Types4856
+Node: Cloze5082
+Node: Basic Type6055
+Node: Double6333
+Node: MCQ (Multiple Choice Question)6679
+Node: y-or-n7088
+Node: Customization & Development7514
+Node: Creating Custom Note Types8195
+Node: Customizing Gnosis Algorithm9299
+Node: Gnosis Algorithm Initial Interval9617
+Node: Gnosis Algorithm Easiness Factor10208
+Node: Gnosis Algorithm Forgetting Factor11212
 
 End Tag Table
 
