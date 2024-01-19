@@ -998,18 +998,17 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
 
 (defun gnosis-review-note (id)
   "Start review for note with value of id ID, if note is unsuspended."
-  (cond ((gnosis-suspended-p id)
-         (message "Note is suspended."))
-        (t
-	 (with-current-buffer (switch-to-buffer (get-buffer-create "*gnosis*"))
-           (let ((type (gnosis-get 'type 'notes `(= id ,id))))
-	     (gnosis-mode)
-	     (pcase type
-	       ("mcq" (gnosis-review-mcq id))
-	       ("basic" (gnosis-review-basic id))
-	       ("cloze" (gnosis-review-cloze id))
-	       ("y-or-n" (gnosis-review-y-or-n id))
-	       (_ (error "Malformed note type"))))))))
+  (when (gnosis-suspended-p id)
+    (message "Suspended note with id: %s" id)
+    (sit-for 0.3)) ;; this should only occur in testing/dev cases
+  (let* ((type (gnosis-get 'type 'notes `(= id ,id)))
+         (func-name (intern (format "gnosis-review-%s" (downcase type)))))
+    (if (fboundp func-name)
+        (progn
+          (with-current-buffer (switch-to-buffer (get-buffer-create "*gnosis*"))
+            (gnosis-mode)
+            (funcall func-name id)))
+      (error "Malformed note type: '%s'" type))))
 
 (defun gnosis-review-commit (note-num)
   "Commit review session on git repository.
