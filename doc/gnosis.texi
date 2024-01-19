@@ -30,7 +30,7 @@ a spaced repetition system implementation for note taking and self
 testing.
 
 @noindent
-This manual is written for Gnosis version 0.1.3, released on 2023-01-18.
+This manual is written for Gnosis version 0.1.4, released on 2023-01-19.
 
 @itemize
 @item
@@ -54,7 +54,7 @@ sourcehut (mirror): @uref{https://git.sr.ht/~thanosapollo/gnosis}
 * Installation::
 * Adding notes::
 * Note Types::
-* Customization::
+* Customization & Development::
 
 @detailmenu
 --- The Detailed Node Listing ---
@@ -72,7 +72,12 @@ Note Types
 * MCQ (Multiple Choice Question)::
 * y-or-n::
 
-Customization
+Customization & Development
+
+* Creating Custom Note Types::
+* Customizing Gnosis Algorithm::
+
+Customizing Gnosis Algorithm
 
 * Gnosis Algorithm Initial Interval::
 * Gnosis Algorithm Easiness Factor::
@@ -187,10 +192,18 @@ Every note type has these values in common:
 @end itemize
 
 The following sections will cover the important differences you have
-to know when creating notes.
+to know when creating new notes.
 
 @node Note Types
 @chapter Note Types
+
+@menu
+* Cloze::
+* Basic Type::
+* Double::
+* MCQ (Multiple Choice Question)::
+* y-or-n::
+@end menu
 
 @node Cloze
 @section Cloze
@@ -257,11 +270,75 @@ When using the hidden function @samp{gnosis-add-note--y-or-n}, note that the
 ANSWER must be either 121 (@code{y}) or 110 (@code{n}), as those correspond to the
 character values used to represent them.
 
-@node Customization
-@chapter Customization
+@node Customization & Development
+@chapter Customization & Development
+
+To make development and customization easier, gnosis comes with
+@samp{gnosis-dev} module, that should be used to create a custom database for
+testing.
+
+To use @samp{gnosis-dev}, first you have to @samp{(require 'gnosis-dev)} & run @samp{M-x
+gnosis-dev-test}. This will create a new directory 'testing' with a new
+database.
+
+To exit the testing environment, rerun @samp{M-x gnosis-dev-test} and then
+enter @samp{n} (no) at the prompt ``Start development env?''
+
+@menu
+* Creating Custom Note Types::
+* Customizing Gnosis Algorithm::
+@end menu
+
+@node Creating Custom Note Types
+@section Creating Custom Note Types
+
+Creating custom note types for gnosis is a fairly simple thing to do
+
+@itemize
+@item
+First add your NEW-TYPE to @samp{gnosis-note-types}
+
+@lisp
+(add-to-list 'gnosis-note-types 'new-type)
+@end lisp
+
+@item
+Create 2 functions; @samp{gnosis-add-note-TYPE} & @samp{gnosis-add-note--TYPE}
+@end itemize
+
+Each note type has a @samp{gnosis-add-note-TYPE} that is used
+interactively & a ``hidden function'' @samp{gnosis-add-note--TYPE} that handles
+all the logic.
+
+Refer to @samp{gnosis-add-note-basic} & @samp{gnosis-add-note--basic} for a simple
+example of how this is done.
+
+@itemize
+@item
+Create @samp{gnosis-review-TYPE}
+@end itemize
+
+This function should handle the review process, displaying it's
+contents and updating the database depending on the result of the
+review (fail/pass). Refer to @samp{gnosis-review-basic} for an example of how
+this should be done.
+
+@itemize
+@item
+Optionally, you might want to create your own custom @samp{gnosis-display} functions
+@end itemize
+
+@node Customizing Gnosis Algorithm
+@section Customizing Gnosis Algorithm
+
+@menu
+* Gnosis Algorithm Initial Interval::
+* Gnosis Algorithm Easiness Factor::
+* Gnosis Algorithm Forgetting Factor::
+@end menu
 
 @node Gnosis Algorithm Initial Interval
-@section Gnosis Algorithm Initial Interval
+@subsection Gnosis Algorithm Initial Interval
 
 @samp{gnosis-algorithm-interval} is a list of 2 numbers, representing the
 first two initial intervals for successful reviews.
@@ -277,7 +354,7 @@ you will see it again tomorrow, if you successfully review said note
 again, the next review will be after 3 days.
 
 @node Gnosis Algorithm Easiness Factor
-@section Gnosis Algorithm Easiness Factor
+@subsection Gnosis Algorithm Easiness Factor
 
 @samp{gnosis-algorithm-ef} is a list that consists of 3 items.
 
@@ -303,7 +380,7 @@ Example:
 @end lisp
 
 @node Gnosis Algorithm Forgetting Factor
-@section Gnosis Algorithm Forgetting Factor
+@subsection Gnosis Algorithm Forgetting Factor
 
 @samp{gnosis-algorithm-ff} is a floating number below 1.
 
