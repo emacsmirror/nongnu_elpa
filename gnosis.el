@@ -50,6 +50,7 @@
 (require 'cl-lib)
 
 (require 'gnosis-algorithm)
+(require 'vc)
 
 (defgroup gnosis nil
   "Spaced Repetition System For Note Taking & Self Testing."
@@ -1022,9 +1023,9 @@ NOTE-NUM: The number of notes reviewed in the session."
 	(default-directory gnosis-dir))
     (unless git
       (error "Git not found, please install git"))
-    (unless (file-exists-p (concat (file-name-as-directory gnosis-dir) ".git"))
-      (shell-command "git init"))
-    (sit-for 0.2) ;; wait for shell command to finish
+    (unless (file-exists-p (expand-file-name ".git" gnosis-dir))
+      (vc-create-repo 'Git))
+    ;; TODO: Redo this using vc
     (shell-command (concat git " add " (shell-quote-argument "gnosis.db")))
     (shell-command (concat git " commit -m "
 			   (shell-quote-argument (concat (format "Total notes for session: %d " note-num)))))
