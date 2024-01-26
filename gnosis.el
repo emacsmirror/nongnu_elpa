@@ -744,7 +744,7 @@ Optionally, add cusotm PROMPT."
 
 (defun gnosis-get-tags--unique ()
   "Return a list of unique strings for tags in `gnosis-db'."
-  (cl-loop for tags in (apply #'append (gnosis-select 'tags 'notes))
+  (cl-loop for tags in (gnosis-select 'tags 'notes '1=1 t)
            nconc tags into all-tags
            finally return (delete-dups all-tags)))
 
