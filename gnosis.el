@@ -147,10 +147,7 @@
   :group 'gnosis-face)
 
 (cl-defun gnosis-select (value table &optional (restrictions '1=1))
-  "Select VALUE from TABLE, optionally with RESTRICTIONS.
-
-Use `gnosis-db-init' to initialize `gnosis-db' and create essential directories."
-  (gnosis-db-init)
+  "Select VALUE from TABLE, optionally with RESTRICTIONS."
   (emacsql gnosis-db `[:select ,value :from ,table :where ,restrictions]))
 
 (cl-defun gnosis--create-table (table &optional values)
@@ -162,10 +159,7 @@ Use `gnosis-db-init' to initialize `gnosis-db' and create essential directories.
   (emacsql gnosis-db `[:drop-table ,table]))
 
 (cl-defun gnosis--insert-into (table values)
-  "Insert VALUES to TABLE.
-
-Use `gnosis-db-init' to initialize `gnosis-db' and create essential directories."
-  (gnosis-db-init)
+  "Insert VALUES to TABLE."
   (emacsql gnosis-db `[:insert :into ,table :values ,values]))
 
 (cl-defun gnosis-update (table value where)
@@ -1323,7 +1317,6 @@ review."
 (defun gnosis-review ()
   "Start gnosis review session."
   (interactive)
-  (gnosis-db-init)
   (let ((review-type (completing-read "Review: " '("Due notes"
 						   "Due notes of deck"
 						   "Due notes of specified tag(s)"
@@ -1392,6 +1385,8 @@ review."
     ;; Create extras table
     (gnosis--create-table 'extras gnosis-db-schema-extras)))
 
+(gnosis-db-init)
+
 ;; Gnosis mode ;;
 ;;;;;;;;;;;;;;;;;
 
@@ -1401,8 +1396,6 @@ review."
   (read-only-mode 0)
   (display-line-numbers-mode 0)
   :lighter " gnosis-mode")
-
-(gnosis-db-init)
 
 (provide 'gnosis)
 ;;; gnosis.el ends here
