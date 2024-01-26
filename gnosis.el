@@ -5,7 +5,7 @@
 ;; Author: Thanos Apollo <public@thanosapollo.org>
 ;; Keywords: extensions
 ;; URL: https://git.thanosapollo.org/gnosis
-;; Version: 0.0.1
+;; Version: 0.1.0-alpha
 
 ;; Package-Requires: ((emacs "27.2") (compat "29.1.4.2") (emacsql "20230228"))
 
@@ -67,14 +67,15 @@
   :type 'string
   :group 'gnosis)
 
-
 (defvar gnosis-images-dir (expand-file-name "images" gnosis-dir)
   "Gnosis images directory.")
 
+(unless (file-directory-p gnosis-dir)
+  (make-directory gnosis-dir)
+  (make-directory gnosis-images-dir))
+
 (defconst gnosis-db
-  (if (not (file-directory-p gnosis-dir))
-      (gnosis-db-init)
-    (emacsql-sqlite (expand-file-name "gnosis.db" gnosis-dir)))
+  (emacsql-sqlite (expand-file-name "gnosis.db" gnosis-dir))
   "Gnosis database file.")
 
 (defvar gnosis-testing nil
@@ -1375,13 +1376,6 @@ review."
 
 (defun gnosis-db-init ()
   "Create gnosis essential directories & database."
-  ;; Create gnosis-dir
-  (unless (file-exists-p gnosis-dir)
-    (make-directory gnosis-dir)
-    (make-directory gnosis-images-dir)
-    ;; Make sure gnosis-db is initialized
-    (setf gnosis-db (emacsql-sqlite (concat (file-name-as-directory gnosis-dir) "gnosis.db"))))
-  ;; Create database tables
   (unless (length= (emacsql gnosis-db [:select name :from sqlite-master :where (= type table)]) 6)
     ;; Enable foreign keys
     (emacsql gnosis-db "PRAGMA foreign_keys = ON")
@@ -1408,6 +1402,7 @@ review."
   (display-line-numbers-mode 0)
   :lighter " gnosis-mode")
 
+(gnosis-db-init)
 
 (provide 'gnosis)
 ;;; gnosis.el ends here
