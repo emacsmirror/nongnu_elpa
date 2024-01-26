@@ -1,8 +1,14 @@
 ;;; hyperdrive-org.el --- Org-transclusion-related functionality  -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2023, 2024  USHIN, Inc.
+;; Copyright (C) 2024  USHIN, Inc.
 
 ;; Author: Joseph Turner <joseph@ushin.org>
+;; Author: Adam Porter <adam@alphapapa.net>
+;; Maintainer: Joseph Turner <~ushin/ushin@lists.sr.ht>
+;; Created: 2024
+;; Version: 0.1-pre
+;; Package-Requires: ((emacs "28.1") (hyperdrive "0.4") (org-transclusion "1.4.0"))
+;; Homepage: https://git.sr.ht/~ushin/hyperdrive-org-transclusion
 
 ;; This program is free software; you can redistribute it and/or
 ;; modify it under the terms of the GNU Affero General Public License
