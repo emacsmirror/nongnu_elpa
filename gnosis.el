@@ -146,7 +146,9 @@
   :group 'gnosis-face)
 
 (cl-defun gnosis-select (value table &optional (restrictions '1=1) (flatten nil))
-  "Select VALUE from TABLE, optionally with RESTRICTIONS."
+  "Select VALUE from TABLE, optionally with RESTRICTIONS.
+
+Optional argument FLATTEN, when non-nil, flattens the result."
   (let ((output (emacsql gnosis-db `[:select ,value :from ,table :where ,restrictions])))
     (if flatten
 	(apply #'append output)
