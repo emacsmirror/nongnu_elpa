@@ -766,9 +766,10 @@ Optionally, add cusotm PROMPT."
 
 if DUE is t, return only due notes"
   (let* ((deck (or deck-id (gnosis--get-deck-id)))
-	 (notes (gnosis-select 'id 'notes `(= deck-id ,deck))))
-    (cl-loop for note in (apply #'append notes)
-	     when (not (gnosis-suspended-p note))
+	 (notes (gnosis-select 'id 'notes `(= deck-id ,deck) t)))
+    (cl-loop for note in notes
+	     when (and (not (gnosis-suspended-p note))
+		       (gnosis-review-is-due-p note))
 	     collect note)))
 
 (defun gnosis-past-or-present-p (date)
