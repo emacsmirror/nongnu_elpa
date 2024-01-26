@@ -783,15 +783,6 @@ DATE is a list of the form (year month day)."
          (time-date (encode-time 0 0 0 (nth 2 date) (nth 1 date) (nth 0 date))))
     (not (time-less-p time-now time-date))))
 
-(defun gnosis-due-tags ()
-  "Return a list of due note tags."
-  (let ((due-notes (gnosis-review-get-due-notes)))
-    (cl-remove-duplicates
-     (cl-mapcan (lambda (note-id)
-                  (gnosis-get-note-tags note-id))
-	        due-notes)
-     :test #'equal)))
-
 
 (cl-defun gnosis-tag-prompt (&key (prompt "Selected tags") (match nil) (due nil))
   "PROMPT user to select tags, until they enter `q'.
@@ -805,7 +796,7 @@ Returns a list of unique tags."
          (tag ""))
     (while (not (string= tag "q"))
       (setf tag (completing-read (concat prompt (format " %s (q for quit): " tags))
-				 (cons "q" (if due (gnosis-due-tags)
+				 (cons "q" (if due (gnosis-review-get-due-tags)
 					     (gnosis-get-tags--unique)))
 				 nil match))
       (unless (or (string= tag "q") (member tag tags))
@@ -837,6 +828,15 @@ well."
 	     when (gnosis-review-is-due-p note)
 	     collect note)))
 
+(defun gnosis-review-get-due-tags ()
+  "Return a list of due note tags."
+  (let ((due-notes (gnosis-review-get-due-notes)))
+    (cl-remove-duplicates
+     (cl-mapcan (lambda (note-id)
+                  (gnosis-get-note-tags note-id))
+	        due-notes)
+     :test #'equal)))
+
 (defun gnosis-review--algorithm (id success)
   "Return next review date & ef for note with value of id ID.
 
@@ -859,15 +859,6 @@ Returns a list of the form ((yyyy mm dd) ef)."
 				    :fails-c c-fails
 				    :fails-t t-fails
 				    :initial-interval initial-interval)))
-
-(defun gnosis-review-due-notes--with-tags ()
-  "Return a list of due note tags."
-  (let ((due-notes (gnosis-review-get-due-notes)))
-    (cl-remove-duplicates
-     (cl-mapcan (lambda (note-id)
-                  (gnosis-get-note-tags note-id))
-	        due-notes)
-     :test #'equal)))
 
 (defun gnosis-review--get-offset (id)
   "Return offset for note with value of id ID."
@@ -1304,7 +1295,7 @@ The purpose of this function is to create a full deck with its
 associated notes in `gnosis-db', ready for further processing or
 review."
   (gnosis-add-deck (symbol-name deck))
-  (sit-for 0.1) ;; wait for low-spec computers to create deck
+  (sit-for 0.1) ;;
   (cl-loop for note in notes
 	   do (gnosis-add-note-fields (symbol-name deck)
 				      (plist-get note :type)
