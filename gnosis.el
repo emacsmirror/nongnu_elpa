@@ -45,7 +45,6 @@
 
 ;;; Code:
 
-(require 'emacsql)
 (require 'emacsql-sqlite)
 (require 'cl-lib)
 
@@ -146,9 +145,12 @@
   "Face for next review."
   :group 'gnosis-face)
 
-(cl-defun gnosis-select (value table &optional (restrictions '1=1))
+(cl-defun gnosis-select (value table &optional (restrictions '1=1) (flatten nil))
   "Select VALUE from TABLE, optionally with RESTRICTIONS."
-  (emacsql gnosis-db `[:select ,value :from ,table :where ,restrictions]))
+  (let ((output (emacsql gnosis-db `[:select ,value :from ,table :where ,restrictions])))
+    (if flatten
+	(apply #'append output)
+      output)))
 
 (cl-defun gnosis--create-table (table &optional values)
   "Create TABLE for VALUES."
