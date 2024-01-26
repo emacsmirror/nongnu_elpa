@@ -830,8 +830,8 @@ well."
 
 (defun gnosis-review-get-due-notes ()
   "Return a list due notes id for current date."
-  (let ((notes (gnosis-select 'id 'notes)))
-    (cl-loop for note in (apply #'append notes)
+  (let ((notes (gnosis-select 'id 'notes '1=1 t)))
+    (cl-loop for note in notes
 	     when (gnosis-review-is-due-p note)
 	     collect note)))
 
