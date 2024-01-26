@@ -146,13 +146,15 @@ Returns a list of: (INTERVAL N EF) where,
 	   ;; When successful-reviews-c is above 3, use 150% or 180%
 	   ;; of ef depending on the value of successful-reviews
 	   ((and (= success 1)
-		 (>= successful-reviews-c 3))
+		 (>= successful-reviews-c 3)
+		 (> last-interval 1))
 	    (* (* ef (if (>= successful-reviews 10) 1.8 1.5)) last-interval))
 	   ((and (= success 0)
-		 (> fails-c 3))
+		 (> fails-c 3)
+		 (> last-interval 1))
 	    ;; When fails-c is above 3, use 150% or 180% of
 	    ;; failure-factor depending on the value of total failed
-	    ;; reviews. It should not be above 0.8
+	    ;; reviews.
 	    (* (max (min 0.8 (* failure-factor (if (>= fails-t 10) 1.8 1.5)))
 		    failure-factor)
 	       last-interval))
