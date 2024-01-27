@@ -721,8 +721,9 @@ Valid cloze formats include:
   "Compare STR1 and STR2.
 
 Compare 2 strings, ignoring case and whitespace."
-  (string= (downcase (replace-regexp-in-string "\\s-" "" str1))
-	   (downcase (replace-regexp-in-string "\\s-" "" str2))))
+  (<= (string-distance (downcase (replace-regexp-in-string "\\s-" "" str1))
+		       (downcase (replace-regexp-in-string "\\s-" "" str2)))
+      gnosis-string-difference))
 
 (defun gnosis-directory-files (&optional dir regex)
   "Return a list of file paths, relative to DIR directory.
