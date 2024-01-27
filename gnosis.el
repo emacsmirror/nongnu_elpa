@@ -725,6 +725,7 @@ Compare 2 strings, ignoring case and whitespace."
 		       (downcase (replace-regexp-in-string "\\s-" "" str2)))
       gnosis-string-difference))
 
+
 (defun gnosis-directory-files (&optional dir regex)
   "Return a list of file paths, relative to DIR directory.
 

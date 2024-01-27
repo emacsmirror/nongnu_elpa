@@ -110,12 +110,12 @@ by the thoracodorsal nerve."
 If ask nil, leave development env"
   (interactive)
   (let ((ask (y-or-n-p "Start development env (n for exit)?"))
-	(testing-dir (concat gnosis-dir "/testing")))
+	(testing-dir (concat gnosis-dir "testing")))
     (if ask
 	(progn
 	  (unless (file-exists-p testing-dir)
 	    (make-directory testing-dir))
-	  (setf gnosis-db (emacsql-sqlite (concat testing-dir "/testing.db")))
+	  (setf gnosis-db (emacsql-sqlite-open (expand-file-name "testing.db" testing-dir)))
 	  (setf gnosis-testing t)
 	  (dolist (table '(notes decks review review-log extras))
 	    (condition-case nil
@@ -125,7 +125,7 @@ If ask nil, leave development env"
 	  (gnosis-dev-add-fields)
 	  (message "Adding testing values...")
 	  (message "Development env is ready for testing."))
-      (setf gnosis-db (emacsql-sqlite (concat (file-name-as-directory gnosis-dir) "gnosis.db")))
+      (setf gnosis-db (emacsql-sqlite-open (expand-file-name "gnosis.db" gnosis-dir)))
       (setf gnosis-testing nil)
       (message "Exited development env."))))
 
