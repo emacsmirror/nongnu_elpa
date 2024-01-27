@@ -342,6 +342,7 @@ Set SPLIT to t to split all input given."
 	               unless (string-empty-p part)
                        do (push part input))))
 
+;;;###autoload
 (defun gnosis-add-deck (name)
   "Create deck with NAME."
   (interactive (list (read-string "Deck Name: ")))
@@ -363,6 +364,7 @@ Set SPLIT to t to split all input given."
   "Return id for DECK name."
   (gnosis-get 'id 'decks `(= name ,deck)))
 
+;;;###autoload
 (defun gnosis-delete-deck (deck)
   "Delete DECK."
   (interactive (list (gnosis--get-deck-name)))
