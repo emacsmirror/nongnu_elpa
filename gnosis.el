@@ -182,7 +182,7 @@ Example:
   (emacsql gnosis-db `[:update ,table :set ,value :where ,where]))
 
 (cl-defun gnosis-get (value table &optional (restrictions '1=1))
-  "Return VALUE from TABLE, optionally with where RESTRICTIONS."
+  "Return caar of VALUE from TABLE, optionally with where RESTRICTIONS."
   (caar (gnosis-select value table restrictions)))
 
 (defun gnosis-get-note-tags (id)
@@ -1033,7 +1033,9 @@ NOTE-NUM: The number of notes reviewed in the session."
     (message "Review session finished. %d notes reviewed." note-num)))
 
 (defun gnosis-review--session (notes)
-  "Start review session for NOTES."
+  "Start review session for NOTES.
+
+NOTES: List of note ids"
   (let ((note-count 0))
     (if (null notes)
 	(message "No notes for review.")
@@ -1331,7 +1333,8 @@ review."
     (pcase review-type
       ("Due notes" (gnosis-review--session (gnosis-review-get-due-notes)))
       ("Due notes of deck" (gnosis-review--session (gnosis-get-deck-due-notes)))
-      ("Due notes of specified tag(s)" (gnosis-review--session (gnosis-select-by-tag (gnosis-tag-prompt :match t :due t))))
+      ("Due notes of specified tag(s)" (gnosis-review--session
+					(gnosis-select-by-tag (gnosis-tag-prompt :match t :due t))))
       ("All notes of tag(s)" (gnosis-review--session (gnosis-select-by-tag (gnosis-tag-prompt :match t)))))))
 
 ;;; Database Schemas
