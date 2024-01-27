@@ -66,6 +66,14 @@
   :type 'string
   :group 'gnosis)
 
+(defcustom gnosis-string-difference 1
+  "Threshold value for string comparison in Gnosis.
+
+This variable determines the maximum acceptable Levenshtein distance
+between two strings to consider them as similar."
+  :type 'integer
+  :group 'gnosis)
+
 (defvar gnosis-images-dir (expand-file-name "images" gnosis-dir)
   "Gnosis images directory.")
 
