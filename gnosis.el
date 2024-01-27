@@ -74,7 +74,7 @@
   (make-directory gnosis-images-dir))
 
 (defconst gnosis-db
-  (emacsql-sqlite (expand-file-name "gnosis.db" gnosis-dir))
+  (emacsql-sqlite-open (expand-file-name "gnosis.db" gnosis-dir))
   "Gnosis database file.")
 
 (defvar gnosis-testing nil
