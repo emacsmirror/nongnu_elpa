@@ -5,7 +5,7 @@
 ;; Author: Thanos Apollo <public@thanosapollo.org>
 ;; Keywords: extensions
 ;; URL: https://git.thanosapollo.org/gnosis
-;; Version: 0.1.0-alpha
+;; Version: 0.1.5
 
 ;; Package-Requires: ((emacs "27.2") (compat "29.1.4.2") (emacsql "20230228"))
 
@@ -66,6 +66,14 @@
   :type 'string
   :group 'gnosis)
 
+(defcustom gnosis-string-difference 1
+  "Threshold value for string comparison in Gnosis.
+
+This variable determines the maximum acceptable Levenshtein distance
+between two strings to consider them as similar."
+  :type 'integer
+  :group 'gnosis)
+
 (defvar gnosis-images-dir (expand-file-name "images" gnosis-dir)
   "Gnosis images directory.")
 
@@ -74,7 +82,7 @@
   (make-directory gnosis-images-dir))
 
 (defconst gnosis-db
-  (emacsql-sqlite (expand-file-name "gnosis.db" gnosis-dir))
+  (emacsql-sqlite-open (expand-file-name "gnosis.db" gnosis-dir))
   "Gnosis database file.")
 
 (defvar gnosis-testing nil
@@ -174,7 +182,7 @@ Example:
   (emacsql gnosis-db `[:update ,table :set ,value :where ,where]))
 
 (cl-defun gnosis-get (value table &optional (restrictions '1=1))
-  "Return VALUE from TABLE, optionally with where RESTRICTIONS."
+  "Return caar of VALUE from TABLE, optionally with where RESTRICTIONS."
   (caar (gnosis-select value table restrictions)))
 
 (defun gnosis-get-note-tags (id)
@@ -196,7 +204,7 @@ OPTIONS is a list of strings.
 INFO is a list of strings, which will be displayed as additional info for option
 FACE-FOR-INFO is the face used to display info for option."
   (let* ((choices (cl-mapcar 'cons options info))
-         (max-choice-length (apply 'max (mapcar 'length options)))
+         (max-choice-length (apply #'max (mapcar #'length options)))
          (formatted-choices
           (mapcar (lambda (choice)
                     (cons (concat (format "%s" (car choice))
@@ -217,33 +225,30 @@ FACE-FOR-INFO is the face used to display info for option."
 (defun gnosis-display-question (id)
   "Display main row for note ID."
   (let ((question (gnosis-get 'main 'notes `(= id ,id))))
-     (erase-buffer)
-     (fill-paragraph (insert (concat "\n"
-				     (propertize question 'face 'gnosis-face-main))))))
+    (erase-buffer)
+    (fill-paragraph (insert "\n"  (propertize question 'face 'gnosis-face-main)))))
 
 (defun gnosis-display-cloze-sentence (sentence clozes)
   "Display cloze sentence for SENTENCE with CLOZES."
   (erase-buffer)
   (fill-paragraph
-   (insert
-    (concat "\n"
-	    (gnosis-cloze-replace-words sentence clozes (propertize gnosis-cloze-string 'face 'gnosis-face-cloze))))))
+   (insert "\n"
+	   (gnosis-cloze-replace-words sentence clozes (propertize gnosis-cloze-string 'face 'gnosis-face-cloze)))))
 
 (defun gnosis-display-basic-answer (answer success user-input)
   "Display ANSWER.
 
 When SUCCESS nil, display USER-INPUT as well"
-   (insert
-    (concat "\n\n"
-	    (propertize "Answer:" 'face 'gnosis-face-directions)
+  (insert "\n\n"
+	  (propertize "Answer:" 'face 'gnosis-face-directions)
+	  " "
+	  (propertize answer 'face 'gnosis-face-correct))
+  ;; Insert user wrong answer
+  (when (not success)
+    (insert "\n"
+	    (propertize "Your answer:" 'face 'gnosis-face-directions)
 	    " "
-	    (propertize answer 'face 'gnosis-face-correct)))
-   ;; Insert user wrong answer
-   (when (not success)
-     (insert (concat "\n"
-		     (propertize "Your answer:" 'face 'gnosis-face-directions)
-		     " "
-		     (propertize user-input 'face 'gnosis-face-false)))))
+	    (propertize user-input 'face 'gnosis-face-false))))
 
 (cl-defun gnosis-display-y-or-n-answer (&key answer success)
   "Display y-or-n answer for note ID.
@@ -252,60 +257,60 @@ ANSWER is the correct answer, either y or n. Answer is either 121 or
 110, which are the char values for y & n respectively
 SUCCESS is t when user-input is correct, else nil"
   (let ((answer (if (equal answer 121) "y" "n")))
-     (insert
-      (concat "\n\n"
-	      (propertize "Answer:" 'face 'gnosis-face-directions)
-	      " "
-	      (propertize answer 'face (if success 'gnosis-face-correct 'gnosis-face-false))))))
+    (insert
+     "\n\n"
+     (propertize "Answer:" 'face 'gnosis-face-directions)
+     " "
+     (propertize answer 'face (if success 'gnosis-face-correct 'gnosis-face-false)))))
 
 
 (defun gnosis-display-hint (hint)
   "Display HINT."
-   (goto-char (point-max))
-   (insert (concat
-	    (propertize "\n\n-----\n" 'face 'gnosis-face-seperator)
-	    (propertize hint 'face 'gnosis-face-hint))))
+  (goto-char (point-max))
+  (insert
+   (propertize "\n\n-----\n" 'face 'gnosis-face-seperator)
+   (propertize hint 'face 'gnosis-face-hint)))
 
 (cl-defun gnosis-display-cloze-reveal (&key (cloze-char gnosis-cloze-string) replace (success t) (face nil))
   "Replace CLOZE-CHAR with REPLACE.
 
 If FACE nil, propertize replace using `gnosis-face-correct', or
 `gnosis-face-false' when (not SUCCESS). Else use FACE value."
-   (goto-char (point-min))
-   (search-forward cloze-char nil t)
-   (replace-match (propertize replace 'face (if (not face)
-						(if success 'gnosis-face-correct 'gnosis-face-false)
-					      face))))
+  (goto-char (point-min))
+  (search-forward cloze-char nil t)
+  (replace-match (propertize replace 'face (if (not face)
+					       (if success 'gnosis-face-correct 'gnosis-face-false)
+					     face))))
 
 (cl-defun gnosis-display-cloze-user-answer (user-input &optional (false t))
   "Display USER-INPUT answer for cloze note upon failed review.
 
 If FALSE t, use gnosis-face-false face"
-   (goto-char (point-max))
-   (insert (concat "\n\n"
-		   (propertize "Your answer:" 'face 'gnosis-face-directions)
-		   " "
-		   (propertize user-input 'face (if false 'gnosis-face-false 'gnosis-face-correct)))))
+  (goto-char (point-max))
+  (insert "\n\n"
+	  (propertize "Your answer:" 'face 'gnosis-face-directions)
+	  " "
+	  (propertize user-input 'face (if false 'gnosis-face-false 'gnosis-face-correct))))
 
 (defun gnosis-display-correct-answer-mcq (answer user-choice)
   "Display correct ANSWER & USER-CHOICE for MCQ note."
-   (insert (concat "\n\n"
-		   (propertize "Correct Answer:" 'face 'gnosis-face-directions)
-		   " "
-		   (propertize answer 'face 'gnosis-face-correct)
-		   "\n"
-		   (propertize "Your answer:" 'face 'gnosis-face-directions)
-		   " "
-		   (propertize user-choice 'face (if (string= answer user-choice)
-						     'gnosis-face-correct
-						   'gnosis-face-false)))))
+  (insert  "\n\n"
+	   (propertize "Correct Answer:" 'face 'gnosis-face-directions)
+	   " "
+	   (propertize answer 'face 'gnosis-face-correct)
+	   "\n"
+	   (propertize "Your answer:" 'face 'gnosis-face-directions)
+	   " "
+	   (propertize user-choice 'face (if (string= answer user-choice)
+					     'gnosis-face-correct
+					   'gnosis-face-false))))
 
 (defun gnosis-display-extra (id)
   "Display extra information for note ID."
   (let ((extras (gnosis-get 'extra-notes 'extras `(= id ,id))))
     (goto-char (point-max))
     (insert (propertize "\n\n-----\n" 'face 'gnosis-face-seperator))
-    (fill-paragraph (insert (concat "\n" (propertize extras 'face 'gnosis-face-extra))))))
+    (fill-paragraph (insert "\n" (propertize extras 'face 'gnosis-face-extra)))))
 
 (defun gnosis-display-image (id)
   "Display image for note ID."
@@ -320,10 +325,10 @@ If FALSE t, use gnosis-face-false face"
   "Display next interval for note ID."
   (let ((interval (gnosis-get 'next-rev 'review-log `(= id ,id))))
     (goto-char (point-max))
-    (insert (concat "\n\n"
-		    (propertize "Next review:" 'face 'gnosis-face-directions)
-		    " "
-		    (propertize (format "%s" interval) 'face 'gnosis-face-next-review)))))
+    (insert "\n\n"
+	    (propertize "Next review:" 'face 'gnosis-face-directions)
+	    " "
+	    (propertize (format "%s" interval) 'face 'gnosis-face-next-review))))
 
 (cl-defun gnosis--prompt (prompt &optional (downcase nil) (split nil))
   "PROMPT user for input until `q' is given.
@@ -713,8 +718,10 @@ Valid cloze formats include:
   "Compare STR1 and STR2.
 
 Compare 2 strings, ignoring case and whitespace."
-  (string= (downcase (replace-regexp-in-string "\\s-" "" str1))
-	   (downcase (replace-regexp-in-string "\\s-" "" str2))))
+  (<= (string-distance (downcase (replace-regexp-in-string "\\s-" "" str1))
+		       (downcase (replace-regexp-in-string "\\s-" "" str2)))
+      gnosis-string-difference))
+
 
 (defun gnosis-directory-files (&optional dir regex)
   "Return a list of file paths, relative to DIR directory.
@@ -904,20 +911,20 @@ SUCCESS is a binary value, 1 is for successful review."
 
 (defun gnosis-review-mcq (id)
   "Display multiple choice answers for question ID."
-    (gnosis-display-image id)
-    (gnosis-display-question id)
-    (let* ((choices (gnosis-get 'options 'notes `(= id ,id)))
-	   (answer (nth (- (gnosis-get 'answer 'notes `(= id ,id)) 1) choices))
-	   (user-choice (gnosis-mcq-answer id)))
-      (if (string= answer user-choice)
-          (progn
-	    (gnosis-review--update id 1)
-	    (message "Correct!"))
-	(gnosis-review--update id 0)
-	(message "False"))
-      (gnosis-display-correct-answer-mcq answer user-choice)
-      (gnosis-display-extra id)
-      (gnosis-display-next-review id)))
+  (gnosis-display-image id)
+  (gnosis-display-question id)
+  (let* ((choices (gnosis-get 'options 'notes `(= id ,id)))
+	 (answer (nth (- (gnosis-get 'answer 'notes `(= id ,id)) 1) choices))
+	 (user-choice (gnosis-mcq-answer id)))
+    (if (string= answer user-choice)
+        (progn
+	  (gnosis-review--update id 1)
+	  (message "Correct!"))
+      (gnosis-review--update id 0)
+      (message "False"))
+    (gnosis-display-correct-answer-mcq answer user-choice)
+    (gnosis-display-extra id)
+    (gnosis-display-next-review id)))
 
 (defun gnosis-review-basic (id)
   "Review basic type note for ID."
@@ -934,16 +941,16 @@ SUCCESS is a binary value, 1 is for successful review."
 
 (defun gnosis-review-y-or-n (id)
   "Review y-or-n type note for ID."
-    (gnosis-display-image id)
-    (gnosis-display-question id)
-    (gnosis-display-hint (gnosis-get 'options 'notes `(= id ,id)))
-    (let* ((answer (gnosis-get 'answer 'notes `(= id ,id)))
-	   (user-input (read-char-choice "[y]es or [n]o: " '(?y ?n)))
-	   (success (equal answer user-input)))
-      (gnosis-display-y-or-n-answer :answer answer :success success)
-      (gnosis-display-extra id)
-      (gnosis-review--update id (if success 1 0))
-      (gnosis-display-next-review id)))
+  (gnosis-display-image id)
+  (gnosis-display-question id)
+  (gnosis-display-hint (gnosis-get 'options 'notes `(= id ,id)))
+  (let* ((answer (gnosis-get 'answer 'notes `(= id ,id)))
+	 (user-input (read-char-choice "[y]es or [n]o: " '(?y ?n)))
+	 (success (equal answer user-input)))
+    (gnosis-display-y-or-n-answer :answer answer :success success)
+    (gnosis-display-extra id)
+    (gnosis-review--update id (if success 1 0))
+    (gnosis-display-next-review id)))
 
 (defun gnosis-review-cloze--input (cloze)
   "Prompt for user input during cloze review.
@@ -1024,7 +1031,9 @@ NOTE-NUM: The number of notes reviewed in the session."
     (message "Review session finished. %d notes reviewed." note-num)))
 
 (defun gnosis-review--session (notes)
-  "Start review session for NOTES."
+  "Start review session for NOTES.
+
+NOTES: List of note ids"
   (let ((note-count 0))
     (if (null notes)
 	(message "No notes for review.")
@@ -1118,7 +1127,7 @@ changes."
 				      (image ,image)
 				      (second-image ,second-image))
 	       do (cond ((eq field 'id)
-			 (insert (format (concat ":%s " (propertize "%s" 'read-only t) "\n") field value)))
+			 (insert (format ":id %s \n" (propertize (number-to-string value) 'read-only t))))
 			((numberp value)
 			 (insert (format ":%s %s\n" field value)))
 			((and (listp value)
@@ -1230,7 +1239,7 @@ to improve readability."
 		       (insert (format ":%s %s\n" field value)))
 		      ((listp value)
 		       (insert (format ":%s %s\n" field (format "%s" (cl-loop for item in value
-									       collect (format "\"%s\"" item))))))
+									      collect (format "\"%s\"" item))))))
 		      ((equal value nil)
 		       (insert (format ":%s %s\n" field 'nil)))
 		      (t (insert (format ":%s \"%s\"\n" field value))
@@ -1322,7 +1331,8 @@ review."
     (pcase review-type
       ("Due notes" (gnosis-review--session (gnosis-review-get-due-notes)))
       ("Due notes of deck" (gnosis-review--session (gnosis-get-deck-due-notes)))
-      ("Due notes of specified tag(s)" (gnosis-review--session (gnosis-select-by-tag (gnosis-tag-prompt :match t :due t))))
+      ("Due notes of specified tag(s)" (gnosis-review--session
+					(gnosis-select-by-tag (gnosis-tag-prompt :match t :due t))))
       ("All notes of tag(s)" (gnosis-review--session (gnosis-select-by-tag (gnosis-tag-prompt :match t)))))))
 
 ;;; Database Schemas

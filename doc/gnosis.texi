@@ -30,7 +30,7 @@ a spaced repetition system implementation for note taking and self
 testing.
 
 @noindent
-This manual is written for Gnosis version 0.1.4, released on 2023-01-19.
+This manual is written for Gnosis version 0.1.5, released on 2023-01-29.
 
 @itemize
 @item
@@ -46,7 +46,6 @@ sourcehut (mirror): @uref{https://git.sr.ht/~thanosapollo/gnosis}
 @end itemize
 
 @insertcopying
-
 @end ifnottex
 
 @menu
@@ -54,7 +53,7 @@ sourcehut (mirror): @uref{https://git.sr.ht/~thanosapollo/gnosis}
 * Installation::
 * Adding notes::
 * Note Types::
-* Customization & Development::
+* Customization & Extension::
 
 @detailmenu
 --- The Detailed Node Listing ---
@@ -72,8 +71,9 @@ Note Types
 * MCQ (Multiple Choice Question)::
 * y-or-n::
 
-Customization & Development
+Customization & Extension
 
+* Adjust string comparison::
 * Creating Custom Note Types::
 * Customizing Gnosis Algorithm::
 
@@ -123,8 +123,8 @@ following emacs lisp snippet:
 @lisp
 (straight-use-package 
  '(gnosis :type git
-          :host nil
-          :repo "https://git.thanosapollo.org/gnosis"))
+        :host nil
+        :repo "https://git.thanosapollo.org/gnosis"))
 @end lisp
 
 @node Installing manually from source
@@ -164,13 +164,13 @@ Example:
 
 @lisp
 (gnosis-add-note--basic :deck "DECK-NAME"
-                        :question "Your Question"
-                        :answer "Answer"
-                        :hint "hint"
-                        :extra "Explanation"
-                        :image "Image displayed before user-input" ;; Optional
-                        :second-image "Image displayed after user-input" ;; Optional
-                        :tags '("tag1" "tag2"))
+                      :question "Your Question"
+                      :answer "Answer"
+                      :hint "hint"
+                      :extra "Explanation"
+                      :image "Image displayed before user-input" ;; Optional
+                      :second-image "Image displayed after user-input" ;; Optional
+                      :tags '("tag1" "tag2"))
 @end lisp
 
 By default, the value of image and second image is nil. Their value
@@ -270,8 +270,8 @@ When using the hidden function @samp{gnosis-add-note--y-or-n}, note that the
 ANSWER must be either 121 (@code{y}) or 110 (@code{n}), as those correspond to the
 character values used to represent them.
 
-@node Customization & Development
-@chapter Customization & Development
+@node Customization & Extension
+@chapter Customization & Extension
 
 To make development and customization easier, gnosis comes with
 @samp{gnosis-dev} module, that should be used to create a custom database for
@@ -285,9 +285,31 @@ To exit the testing environment, rerun @samp{M-x gnosis-dev-test} and then
 enter @samp{n} (no) at the prompt ``Start development env?''
 
 @menu
+* Adjust string comparison::
 * Creating Custom Note Types::
 * Customizing Gnosis Algorithm::
 @end menu
+
+@node Adjust string comparison
+@section Adjust string comparison
+
+You may adjust @samp{gnosis-string-difference}, this is a threshold value
+for string comparison that determines the maximum acceptable
+Levenshtein distance between two strings, which identifies their
+similarity
+
+Let's illustrate with an example:
+@lisp
+(setf gnosis-string-difference 1)
+@end lisp
+
+In this scenario, we set `gnosis-string-difference` to 1. This implies
+that two strings will be recognized as similar if they exhibit a
+difference of at most one character edit.
+
+To demonstrate, 'example' and 'examples' will be recognized as
+similar, considering that the latter involves just one additional
+character.``
 
 @node Creating Custom Note Types
 @section Creating Custom Note Types

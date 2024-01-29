@@ -15,7 +15,7 @@ Gnosis (γνῶσις), pronounced "noh-sis", _meaning knowledge in Greek_, is
 a spaced repetition system implementation for note taking and self
 testing.
 
-This manual is written for Gnosis version 0.1.4, released on 2023-01-19.
+This manual is written for Gnosis version 0.1.5, released on 2023-01-29.
 
    • Official manual: <https://thanosapollo.org/user-manual/gnosis>
    • Git repositories:
@@ -28,7 +28,7 @@ This manual is written for Gnosis version 0.1.4, released on 2023-01-19.
 * Installation::
 * Adding notes::
 * Note Types::
-* Customization & Development::
+* Customization & Extension::
 
 -- The Detailed Node Listing --
 
@@ -45,8 +45,9 @@ Note Types
 * MCQ (Multiple Choice Question)::
 * y-or-n::
 
-Customization & Development
+Customization & Extension
 
+* Adjust string comparison::
 * Creating Custom Note Types::
 * Customizing Gnosis Algorithm::
 
@@ -102,8 +103,8 @@ following emacs lisp snippet:
 
      (straight-use-package
       '(gnosis :type git
-               :host nil
-               :repo "https://git.thanosapollo.org/gnosis"))
+             :host nil
+             :repo "https://git.thanosapollo.org/gnosis"))
 
 
 File: gnosis.info,  Node: Installing manually from source,  Prev: Using straightel,  Up: Installation
@@ -138,13 +139,13 @@ gnosis-add-note’
    Example:
 
      (gnosis-add-note--basic :deck "DECK-NAME"
-                             :question "Your Question"
-                             :answer "Answer"
-                             :hint "hint"
-                             :extra "Explanation"
-                             :image "Image displayed before user-input" ;; Optional
-                             :second-image "Image displayed after user-input" ;; Optional
-                             :tags '("tag1" "tag2"))
+                           :question "Your Question"
+                           :answer "Answer"
+                           :hint "hint"
+                           :extra "Explanation"
+                           :image "Image displayed before user-input" ;; Optional
+                           :second-image "Image displayed after user-input" ;; Optional
+                           :tags '("tag1" "tag2"))
 
    By default, the value of image and second image is nil.  Their value
 must a string, the path of an image, from inside ‘gnosis-images-dir’.
@@ -164,7 +165,7 @@ all the logic.
 to know when creating new notes.
 
 
-File: gnosis.info,  Node: Note Types,  Next: Customization & Development,  Prev: Adding notes,  Up: Top
+File: gnosis.info,  Node: Note Types,  Next: Customization & Extension,  Prev: Adding notes,  Up: Top
 
 4 Note Types
 ************
@@ -254,10 +255,10 @@ the ANSWER must be either 121 (‘y’) or 110 (‘n’), as those correspond to
 the character values used to represent them.
 
 
-File: gnosis.info,  Node: Customization & Development,  Prev: Note Types,  Up: Top
+File: gnosis.info,  Node: Customization & Extension,  Prev: Note Types,  Up: Top
 
-5 Customization & Development
-*****************************
+5 Customization & Extension
+***************************
 
 To make development and customization easier, gnosis comes with
 ‘gnosis-dev’ module, that should be used to create a custom database for
@@ -272,13 +273,35 @@ enter ‘n’ (no) at the prompt "Start development env?"
 
 * Menu:
 
+* Adjust string comparison::
 * Creating Custom Note Types::
 * Customizing Gnosis Algorithm::
 
 
-File: gnosis.info,  Node: Creating Custom Note Types,  Next: Customizing Gnosis Algorithm,  Up: Customization & Development
+File: gnosis.info,  Node: Adjust string comparison,  Next: Creating Custom Note Types,  Up: Customization & Extension
 
-5.1 Creating Custom Note Types
+5.1 Adjust string comparison
+============================
+
+You may adjust ‘gnosis-string-difference’, this is a threshold value for
+string comparison that determines the maximum acceptable Levenshtein
+distance between two strings, which identifies their similarity
+
+   Let's illustrate with an example:
+     (setf gnosis-string-difference 1)
+
+   In this scenario, we set 'gnosis-string-difference' to 1.  This
+implies that two strings will be recognized as similar if they exhibit a
+difference of at most one character edit.
+
+   To demonstrate, 'example' and 'examples' will be recognized as
+similar, considering that the latter involves just one additional
+character."
+
+
+File: gnosis.info,  Node: Creating Custom Note Types,  Next: Customizing Gnosis Algorithm,  Prev: Adjust string comparison,  Up: Customization & Extension
+
+5.2 Creating Custom Note Types
 ==============================
 
 Creating custom note types for gnosis is a fairly simple thing to do
@@ -308,9 +331,9 @@ should be done.
      ‘gnosis-display’ functions
 
 
-File: gnosis.info,  Node: Customizing Gnosis Algorithm,  Prev: Creating Custom Note Types,  Up: Customization & Development
+File: gnosis.info,  Node: Customizing Gnosis Algorithm,  Prev: Creating Custom Note Types,  Up: Customization & Extension
 
-5.2 Customizing Gnosis Algorithm
+5.3 Customizing Gnosis Algorithm
 ================================
 
 * Menu:
@@ -322,7 +345,7 @@ File: gnosis.info,  Node: Customizing Gnosis Algorithm,  Prev: Creating Custom N
 
 File: gnosis.info,  Node: Gnosis Algorithm Initial Interval,  Next: Gnosis Algorithm Easiness Factor,  Up: Customizing Gnosis Algorithm
 
-5.2.1 Gnosis Algorithm Initial Interval
+5.3.1 Gnosis Algorithm Initial Interval
 ---------------------------------------
 
 ‘gnosis-algorithm-interval’ is a list of 2 numbers, representing the
@@ -339,7 +362,7 @@ again, the next review will be after 3 days.
 
 File: gnosis.info,  Node: Gnosis Algorithm Easiness Factor,  Next: Gnosis Algorithm Forgetting Factor,  Prev: Gnosis Algorithm Initial Interval,  Up: Customizing Gnosis Algorithm
 
-5.2.2 Gnosis Algorithm Easiness Factor
+5.3.2 Gnosis Algorithm Easiness Factor
 --------------------------------------
 
 ‘gnosis-algorithm-ef’ is a list that consists of 3 items.
@@ -366,7 +389,7 @@ increase-factor as well.
 
 File: gnosis.info,  Node: Gnosis Algorithm Forgetting Factor,  Prev: Gnosis Algorithm Easiness Factor,  Up: Customizing Gnosis Algorithm
 
-5.2.3 Gnosis Algorithm Forgetting Factor
+5.3.3 Gnosis Algorithm Forgetting Factor
 ----------------------------------------
 
 ‘gnosis-algorithm-ff’ is a floating number below 1.
@@ -385,23 +408,24 @@ upon an unsuccessful review the next interval will be 6 * 0.5
 
 Tag Table:
 Node: Top246
-Node: Introduction1372
-Node: Installation1852
-Node: Using straightel2221
-Node: Installing manually from source2737
-Node: Adding notes3426
-Node: Note Types4856
-Node: Cloze5082
-Node: Basic Type6055
-Node: Double6333
-Node: MCQ (Multiple Choice Question)6679
-Node: y-or-n7088
-Node: Customization & Development7514
-Node: Creating Custom Note Types8195
-Node: Customizing Gnosis Algorithm9299
-Node: Gnosis Algorithm Initial Interval9617
-Node: Gnosis Algorithm Easiness Factor10208
-Node: Gnosis Algorithm Forgetting Factor11212
+Node: Introduction1397
+Node: Installation1877
+Node: Using straightel2246
+Node: Installing manually from source2758
+Node: Adding notes3447
+Node: Note Types4863
+Node: Cloze5087
+Node: Basic Type6060
+Node: Double6338
+Node: MCQ (Multiple Choice Question)6684
+Node: y-or-n7093
+Node: Customization & Extension7519
+Node: Adjust string comparison8223
+Node: Creating Custom Note Types9019
+Node: Customizing Gnosis Algorithm10154
+Node: Gnosis Algorithm Initial Interval10470
+Node: Gnosis Algorithm Easiness Factor11061
+Node: Gnosis Algorithm Forgetting Factor12065
 
 End Tag Table
 
