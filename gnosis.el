@@ -204,7 +204,7 @@ OPTIONS is a list of strings.
 INFO is a list of strings, which will be displayed as additional info for option
 FACE-FOR-INFO is the face used to display info for option."
   (let* ((choices (cl-mapcar 'cons options info))
-         (max-choice-length (apply 'max (mapcar 'length options)))
+         (max-choice-length (apply #'max (mapcar #'length options)))
          (formatted-choices
           (mapcar (lambda (choice)
                     (cons (concat (format "%s" (car choice))
