@@ -225,8 +225,8 @@ FACE-FOR-INFO is the face used to display info for option."
 (defun gnosis-display-question (id)
   "Display main row for note ID."
   (let ((question (gnosis-get 'main 'notes `(= id ,id))))
-     (erase-buffer)
-     (fill-paragraph (insert "\n"  (propertize question 'face 'gnosis-face-main)))))
+    (erase-buffer)
+    (fill-paragraph (insert "\n"  (propertize question 'face 'gnosis-face-main)))))
 
 (defun gnosis-display-cloze-sentence (sentence clozes)
   "Display cloze sentence for SENTENCE with CLOZES."
@@ -267,7 +267,7 @@ SUCCESS is t when user-input is correct, else nil"
 (defun gnosis-display-hint (hint)
   "Display HINT."
   (goto-char (point-max))
-  (insert 
+  (insert
    (propertize "\n\n-----\n" 'face 'gnosis-face-seperator)
    (propertize hint 'face 'gnosis-face-hint)))
 
@@ -911,20 +911,20 @@ SUCCESS is a binary value, 1 is for successful review."
 
 (defun gnosis-review-mcq (id)
   "Display multiple choice answers for question ID."
-    (gnosis-display-image id)
-    (gnosis-display-question id)
-    (let* ((choices (gnosis-get 'options 'notes `(= id ,id)))
-	   (answer (nth (- (gnosis-get 'answer 'notes `(= id ,id)) 1) choices))
-	   (user-choice (gnosis-mcq-answer id)))
-      (if (string= answer user-choice)
-          (progn
-	    (gnosis-review--update id 1)
-	    (message "Correct!"))
-	(gnosis-review--update id 0)
-	(message "False"))
-      (gnosis-display-correct-answer-mcq answer user-choice)
-      (gnosis-display-extra id)
-      (gnosis-display-next-review id)))
+  (gnosis-display-image id)
+  (gnosis-display-question id)
+  (let* ((choices (gnosis-get 'options 'notes `(= id ,id)))
+	 (answer (nth (- (gnosis-get 'answer 'notes `(= id ,id)) 1) choices))
+	 (user-choice (gnosis-mcq-answer id)))
+    (if (string= answer user-choice)
+        (progn
+	  (gnosis-review--update id 1)
+	  (message "Correct!"))
+      (gnosis-review--update id 0)
+      (message "False"))
+    (gnosis-display-correct-answer-mcq answer user-choice)
+    (gnosis-display-extra id)
+    (gnosis-display-next-review id)))
 
 (defun gnosis-review-basic (id)
   "Review basic type note for ID."
@@ -941,16 +941,16 @@ SUCCESS is a binary value, 1 is for successful review."
 
 (defun gnosis-review-y-or-n (id)
   "Review y-or-n type note for ID."
-    (gnosis-display-image id)
-    (gnosis-display-question id)
-    (gnosis-display-hint (gnosis-get 'options 'notes `(= id ,id)))
-    (let* ((answer (gnosis-get 'answer 'notes `(= id ,id)))
-	   (user-input (read-char-choice "[y]es or [n]o: " '(?y ?n)))
-	   (success (equal answer user-input)))
-      (gnosis-display-y-or-n-answer :answer answer :success success)
-      (gnosis-display-extra id)
-      (gnosis-review--update id (if success 1 0))
-      (gnosis-display-next-review id)))
+  (gnosis-display-image id)
+  (gnosis-display-question id)
+  (gnosis-display-hint (gnosis-get 'options 'notes `(= id ,id)))
+  (let* ((answer (gnosis-get 'answer 'notes `(= id ,id)))
+	 (user-input (read-char-choice "[y]es or [n]o: " '(?y ?n)))
+	 (success (equal answer user-input)))
+    (gnosis-display-y-or-n-answer :answer answer :success success)
+    (gnosis-display-extra id)
+    (gnosis-review--update id (if success 1 0))
+    (gnosis-display-next-review id)))
 
 (defun gnosis-review-cloze--input (cloze)
   "Prompt for user input during cloze review.
@@ -1239,7 +1239,7 @@ to improve readability."
 		       (insert (format ":%s %s\n" field value)))
 		      ((listp value)
 		       (insert (format ":%s %s\n" field (format "%s" (cl-loop for item in value
-									       collect (format "\"%s\"" item))))))
+									      collect (format "\"%s\"" item))))))
 		      ((equal value nil)
 		       (insert (format ":%s %s\n" field 'nil)))
 		      (t (insert (format ":%s \"%s\"\n" field value))
