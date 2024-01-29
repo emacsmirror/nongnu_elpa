@@ -4,9 +4,9 @@
 #+language: en
 #+options: ':t toc:nil author:t email:t num:t
 #+startup: content
-#+macro: stable-version 0.1.4
-#+macro: release-date 2023-01-19
-#+macro: development-version 0.1.4-dev
+#+macro: stable-version 0.1.5
+#+macro: release-date 2023-01-29
+#+macro: development-version 0.1.6-dev
 #+macro: file @@texinfo:@file{@@$1@@texinfo:}@@
 #+macro: space @@texinfo:@: @@
 #+macro: kbd @@texinfo:@kbd{@@$1@@texinfo:}@@
@@ -175,7 +175,7 @@ When using the hidden function =gnosis-add-note--y-or-n=, note that the
 ANSWER must be either 121 (~y~) or 110 (~n~), as those correspond to the
 character values used to represent them.
 
-* Customization & Development
+* Customization & Extension
 
 To make development and customization easier, gnosis comes with
 =gnosis-dev= module, that should be used to create a custom database for
@@ -187,6 +187,24 @@ database.
 
 To exit the testing environment, rerun =M-x gnosis-dev-test= and then
 enter =n= (no) at the prompt "Start development env?"
+** Adjust string comparison
+You may adjust =gnosis-string-difference=, this is a threshold value
+for string comparison that determines the maximum acceptable
+Levenshtein distance between two strings, which identifies their
+similarity
+
+Let's illustrate with an example:
+#+begin_src emacs-lisp
+(setf gnosis-string-difference 1)
+#+end_src
+
+In this scenario, we set `gnosis-string-difference` to 1. This implies
+that two strings will be recognized as similar if they exhibit a
+difference of at most one character edit.
+
+To demonstrate, 'example' and 'examples' will be recognized as
+similar, considering that the latter involves just one additional
+character."
 
 ** Creating Custom Note Types
 Creating custom note types for gnosis is a fairly simple thing to do
