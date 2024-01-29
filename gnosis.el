@@ -226,32 +226,29 @@ FACE-FOR-INFO is the face used to display info for option."
   "Display main row for note ID."
   (let ((question (gnosis-get 'main 'notes `(= id ,id))))
      (erase-buffer)
-     (fill-paragraph (insert (concat "\n"
-				     (propertize question 'face 'gnosis-face-main))))))
+     (fill-paragraph (insert "\n"  (propertize question 'face 'gnosis-face-main)))))
 
 (defun gnosis-display-cloze-sentence (sentence clozes)
   "Display cloze sentence for SENTENCE with CLOZES."
   (erase-buffer)
   (fill-paragraph
-   (insert
-    (concat "\n"
-	    (gnosis-cloze-replace-words sentence clozes (propertize gnosis-cloze-string 'face 'gnosis-face-cloze))))))
+   (insert "\n"
+	   (gnosis-cloze-replace-words sentence clozes (propertize gnosis-cloze-string 'face 'gnosis-face-cloze)))))
 
 (defun gnosis-display-basic-answer (answer success user-input)
   "Display ANSWER.
 
 When SUCCESS nil, display USER-INPUT as well"
-   (insert
-    (concat "\n\n"
-	    (propertize "Answer:" 'face 'gnosis-face-directions)
+  (insert "\n\n"
+	  (propertize "Answer:" 'face 'gnosis-face-directions)
+	  " "
+	  (propertize answer 'face 'gnosis-face-correct))
+  ;; Insert user wrong answer
+  (when (not success)
+    (insert "\n"
+	    (propertize "Your answer:" 'face 'gnosis-face-directions)
 	    " "
-	    (propertize answer 'face 'gnosis-face-correct)))
-   ;; Insert user wrong answer
-   (when (not success)
-     (insert (concat "\n"
-		     (propertize "Your answer:" 'face 'gnosis-face-directions)
-		     " "
-		     (propertize user-input 'face 'gnosis-face-false)))))
+	    (propertize user-input 'face 'gnosis-face-false))))
 
 (cl-defun gnosis-display-y-or-n-answer (&key answer success)
   "Display y-or-n answer for note ID.
@@ -260,60 +257,60 @@ ANSWER is the correct answer, either y or n. Answer is either 121 or
 110, which are the char values for y & n respectively
 SUCCESS is t when user-input is correct, else nil"
   (let ((answer (if (equal answer 121) "y" "n")))
-     (insert
-      (concat "\n\n"
-	      (propertize "Answer:" 'face 'gnosis-face-directions)
-	      " "
-	      (propertize answer 'face (if success 'gnosis-face-correct 'gnosis-face-false))))))
+    (insert
+     "\n\n"
+     (propertize "Answer:" 'face 'gnosis-face-directions)
+     " "
+     (propertize answer 'face (if success 'gnosis-face-correct 'gnosis-face-false)))))
 
 
 (defun gnosis-display-hint (hint)
   "Display HINT."
-   (goto-char (point-max))
-   (insert (concat
-	    (propertize "\n\n-----\n" 'face 'gnosis-face-seperator)
-	    (propertize hint 'face 'gnosis-face-hint))))
+  (goto-char (point-max))
+  (insert 
+   (propertize "\n\n-----\n" 'face 'gnosis-face-seperator)
+   (propertize hint 'face 'gnosis-face-hint)))
 
 (cl-defun gnosis-display-cloze-reveal (&key (cloze-char gnosis-cloze-string) replace (success t) (face nil))
   "Replace CLOZE-CHAR with REPLACE.
 
 If FACE nil, propertize replace using `gnosis-face-correct', or
 `gnosis-face-false' when (not SUCCESS). Else use FACE value."
-   (goto-char (point-min))
-   (search-forward cloze-char nil t)
-   (replace-match (propertize replace 'face (if (not face)
-						(if success 'gnosis-face-correct 'gnosis-face-false)
-					      face))))
+  (goto-char (point-min))
+  (search-forward cloze-char nil t)
+  (replace-match (propertize replace 'face (if (not face)
+					       (if success 'gnosis-face-correct 'gnosis-face-false)
+					     face))))
 
 (cl-defun gnosis-display-cloze-user-answer (user-input &optional (false t))
   "Display USER-INPUT answer for cloze note upon failed review.
 
 If FALSE t, use gnosis-face-false face"
-   (goto-char (point-max))
-   (insert (concat "\n\n"
-		   (propertize "Your answer:" 'face 'gnosis-face-directions)
-		   " "
-		   (propertize user-input 'face (if false 'gnosis-face-false 'gnosis-face-correct)))))
+  (goto-char (point-max))
+  (insert "\n\n"
+	  (propertize "Your answer:" 'face 'gnosis-face-directions)
+	  " "
+	  (propertize user-input 'face (if false 'gnosis-face-false 'gnosis-face-correct))))
 
 (defun gnosis-display-correct-answer-mcq (answer user-choice)
   "Display correct ANSWER & USER-CHOICE for MCQ note."
-   (insert (concat "\n\n"
-		   (propertize "Correct Answer:" 'face 'gnosis-face-directions)
-		   " "
-		   (propertize answer 'face 'gnosis-face-correct)
-		   "\n"
-		   (propertize "Your answer:" 'face 'gnosis-face-directions)
-		   " "
-		   (propertize user-choice 'face (if (string= answer user-choice)
-						     'gnosis-face-correct
-						   'gnosis-face-false)))))
+  (insert  "\n\n"
+	   (propertize "Correct Answer:" 'face 'gnosis-face-directions)
+	   " "
+	   (propertize answer 'face 'gnosis-face-correct)
+	   "\n"
+	   (propertize "Your answer:" 'face 'gnosis-face-directions)
+	   " "
+	   (propertize user-choice 'face (if (string= answer user-choice)
+					     'gnosis-face-correct
+					   'gnosis-face-false))))
 
 (defun gnosis-display-extra (id)
   "Display extra information for note ID."
   (let ((extras (gnosis-get 'extra-notes 'extras `(= id ,id))))
     (goto-char (point-max))
     (insert (propertize "\n\n-----\n" 'face 'gnosis-face-seperator))
-    (fill-paragraph (insert (concat "\n" (propertize extras 'face 'gnosis-face-extra))))))
+    (fill-paragraph (insert "\n" (propertize extras 'face 'gnosis-face-extra)))))
 
 (defun gnosis-display-image (id)
   "Display image for note ID."
@@ -328,10 +325,10 @@ If FALSE t, use gnosis-face-false face"
   "Display next interval for note ID."
   (let ((interval (gnosis-get 'next-rev 'review-log `(= id ,id))))
     (goto-char (point-max))
-    (insert (concat "\n\n"
-		    (propertize "Next review:" 'face 'gnosis-face-directions)
-		    " "
-		    (propertize (format "%s" interval) 'face 'gnosis-face-next-review)))))
+    (insert "\n\n"
+	    (propertize "Next review:" 'face 'gnosis-face-directions)
+	    " "
+	    (propertize (format "%s" interval) 'face 'gnosis-face-next-review))))
 
 (cl-defun gnosis--prompt (prompt &optional (downcase nil) (split nil))
   "PROMPT user for input until `q' is given.
@@ -1130,7 +1127,7 @@ changes."
 				      (image ,image)
 				      (second-image ,second-image))
 	       do (cond ((eq field 'id)
-			 (insert (format (concat ":%s " (propertize "%s" 'read-only t) "\n") field value)))
+			 (insert (format ":id %s \n" (propertize (number-to-string value) 'read-only t))))
 			((numberp value)
 			 (insert (format ":%s %s\n" field value)))
 			((and (listp value)
