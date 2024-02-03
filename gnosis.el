@@ -307,7 +307,7 @@ If FALSE t, use gnosis-face-false face"
 
 (defun gnosis-display-extra (id)
   "Display extra information for note ID."
-  (let ((extras (gnosis-get 'extra-notes 'extras `(= id ,id))))
+  (let ((extras (or (gnosis-get 'extra-notes 'extras `(= id ,id)) "")))
     (goto-char (point-max))
     (insert (propertize "\n\n-----\n" 'face 'gnosis-face-seperator))
     (fill-paragraph (insert "\n" (propertize extras 'face 'gnosis-face-extra)))))
