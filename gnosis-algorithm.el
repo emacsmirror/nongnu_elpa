@@ -41,7 +41,7 @@ notes/review sessions."
   :group 'gnosis
   :type '(list integer))
 
-(defcustom gnosis-algorithm-ef '(0.3 0.3 1.3)
+(defcustom gnosis-algorithm-ef '(0.45 0.35 1.3)
   "Gnosis easiness factor.
 
 First item : Increase factor
