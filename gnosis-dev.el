@@ -110,7 +110,7 @@ by the thoracodorsal nerve."
 If ask nil, leave development env"
   (interactive)
   (let ((ask (y-or-n-p "Start development env (n for exit)?"))
-	(testing-dir (concat gnosis-dir "testing")))
+	(testing-dir (expand-file-name gnosis-dir "testing")))
     (if ask
 	(progn
 	  (unless (file-exists-p testing-dir)
