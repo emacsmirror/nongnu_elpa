@@ -130,5 +130,5 @@ If ask nil, leave development env"
       (message "Exited development env."))))
 
 
-(provide 'gnosis-dev)
+(provide 'gnosis-test)
 ;;; gnosis-dev.el ends here
