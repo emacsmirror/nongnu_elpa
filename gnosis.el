@@ -24,24 +24,14 @@
 
 ;;; Commentary:
 
-;; Gnosis is a spaced repetition system for note taking & self testing,
-;; where notes are taken in a Question/Answer/Explanation-like format
-;; & reviewed in spaced intervals.
-;;
-;; Gnosis does not implement flashcard type review sessions where the
-;; user rates his own answer on an arbitrary scale. Instead implements
-;; "note" types that require user input. Some of these note types, like
-;; the MCQ, multiple choice question, even allow for simulating
-;; real-life exams.
+;; Gnosis, pronounced "noh-sis", is a spaced repetition system for
+;; note taking & self testing, where notes are taken in a
+;; Question/Answer/Explanation format & reviewed in spaced
+;; intervals.
 ;; 
 ;; Gnosis can help you better understand and retain the material by
 ;; encouraging active engagement. It also provides a clear structure for
 ;; your notes & review sessions, making it easier to study.
-;;
-;; Unlike other SRS implementations for GNU Emacs, gnosis does not
-;; rely on org-mode. Instead utilizes an sqlite database & git,
-;; enabling efficient data management, manipulation and data
-;; integrity.
 
 ;;; Code:
 
