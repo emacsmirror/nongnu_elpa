@@ -74,6 +74,11 @@ between two strings to consider them as similar."
   :type 'integer
   :group 'gnosis)
 
+(defcustom gnosis-push-command nil
+  "Command to run to push "
+  :type 'string
+  group 'gnosis)
+
 (defvar gnosis-images-dir (expand-file-name "images" gnosis-dir)
   "Gnosis images directory.")
 
