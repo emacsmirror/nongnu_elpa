@@ -114,8 +114,8 @@ Returns a list of: (INTERVAL N EF) where,
 - Next review date in (yyyy mm dd) format.
 - REVIEW-NUM: Incremented by 1.
 - EF : Modified based on the recall success for the item."
-  (cl-assert (and (>= success 0)
-		  (<= success 1)))
+  (cl-assert (or (= success 0)
+		 (= success 1)))
   ;; Check if gnosis-algorithm-ff is lower than 1 & is total-ef above 1.3
   (cond ((>= gnosis-algorithm-ff 1)
 	 (error "Value of `gnosis-algorithm-ff' must be lower than 1"))
@@ -134,8 +134,7 @@ Returns a list of: (INTERVAL N EF) where,
 	    (car initial-interval))
            ;; Second successful review -> second interval
            ((and (= successful-reviews 1)
-		 (= success 1)
-		 (= fails-c 0))
+		 (= success 1))
 	    (cadr initial-interval))
 	   ;; When successful-reviews-c is above 3, use 150% or 180%
 	   ;; of ef depending on the value of successful-reviews
