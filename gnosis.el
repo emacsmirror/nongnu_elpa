@@ -7,7 +7,7 @@
 ;; URL: https://git.thanosapollo.org/gnosis
 ;; Version: 0.1.5
 
-;; Package-Requires: ((emacs "27.2") (compat "29.1.4.2") (emacsql "20230228"))
+;; Package-Requires: ((emacs "27.2") (compat "29.1.4.2") (emacsql "20240124"))
 
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
