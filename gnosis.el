@@ -266,10 +266,11 @@ SUCCESS is t when user-input is correct, else nil"
 
 (defun gnosis-display-hint (hint)
   "Display HINT."
-  (goto-char (point-max))
-  (insert
-   (propertize "\n\n-----\n" 'face 'gnosis-face-seperator)
-   (propertize hint 'face 'gnosis-face-hint)))
+  (let ((hint (or hint "")))
+    (goto-char (point-max))
+    (insert
+     (propertize "\n\n-----\n" 'face 'gnosis-face-seperator)
+     (propertize hint 'face 'gnosis-face-hint))))
 
 (cl-defun gnosis-display-cloze-reveal (&key (cloze-char gnosis-cloze-string) replace (success t) (face nil))
   "Replace CLOZE-CHAR with REPLACE.
