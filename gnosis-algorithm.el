@@ -130,25 +130,23 @@ Returns a list of: (INTERVAL N EF) where,
           (cond
            ;; First successful review -> first interval
            ((and (= successful-reviews 0)
-		 (= success 1)
-		 (< review-num 10)
-		 (< ef 3.0))
+		 (= success 1))
 	    (car initial-interval))
            ;; Second successful review -> second interval
            ((and (= successful-reviews 1)
-		 (< review-num 10)
 		 (= success 1)
-		 (< ef 3.0)
-		 (= fails-c 0)
-	    (cadr initial-interval)))
+		 (= fails-c 0))
+	    (cadr initial-interval))
 	   ;; When successful-reviews-c is above 3, use 150% or 180%
 	   ;; of ef depending on the value of successful-reviews
 	   ((and (= success 1)
 		 (>= successful-reviews-c 3)
+		 (>= review-num 5)
 		 (> last-interval 1))
 	    (* (* ef (if (>= successful-reviews 10) 1.8 1.5)) last-interval))
 	   ((and (= success 0)
 		 (> fails-c 3)
+		 (>= review-num 5)
 		 (> last-interval 1))
 	    ;; When fails-c is above 3, use 150% or 180% of
 	    ;; failure-factor depending on the value of total failed
@@ -156,14 +154,6 @@ Returns a list of: (INTERVAL N EF) where,
 	    (* (max (min 0.8 (* failure-factor (if (>= fails-t 10) 1.8 1.5)))
 		    failure-factor)
 	       last-interval))
-	   ;; For custom review sessions.
-	   ;; When successful-reviews-c is above 0, multiply its value
-	   ;; with ef
-	   ((and (= last-interval 0)
-		 (= success 1))
-	    (* ef (if (> successful-reviews-c 0)
-		      successful-reviews-c
-		    1)))
 	   ;; For everything else
            (t (if (= success 1)
                   (* ef last-interval)
