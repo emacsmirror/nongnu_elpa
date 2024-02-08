@@ -900,15 +900,16 @@ SUCCESS is a boolean value, t for success, nil for failure."
 (defun gnosis-review--update (id success)
   "Update review-log for note with value of id ID.
 
-SUCCESS is a binary value, 1 is for successful review."
-  (let ((ef (gnosis-review-new-ef id success)))
+SUCCESS is a boolean value, t for success, nil for failure."
+  (let ((ef (gnosis-review-new-ef id success))
+	(next-rev (car (gnosis-review--algorithm id success))))
     ;; Update review-log
     (gnosis-update 'review-log `(= last-rev ',(gnosis-algorithm-date)) `(= id ,id))
-    (gnosis-update 'review-log `(= next-rev ',(car (gnosis-review--algorithm id success))) `(= id ,id))
+    (gnosis-update 'review-log `(= next-rev ',next-rev) `(= id ,id))
     (gnosis-update 'review-log `(= n (+ 1 ,(gnosis-get 'n 'review-log `(= id ,id)))) `(= id ,id))
     ;; Update review
     (gnosis-update 'review `(= ef ',ef) `(= id ,id))
-    (if (= success 1)
+    (if success
 	(progn (gnosis-update 'review-log `(= c-success ,(1+ (gnosis-get 'c-success 'review-log `(= id ,id)))) `(= id ,id))
 	       (gnosis-update 'review-log `(= t-success ,(1+ (gnosis-get 't-success 'review-log `(= id ,id)))) `(= id ,id))
 	       (gnosis-update 'review-log `(= c-fails 0) `(= id ,id)))
