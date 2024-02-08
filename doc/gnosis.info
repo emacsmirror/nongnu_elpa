@@ -50,6 +50,7 @@ Customization & Extension
 * Adjust string comparison::
 * Creating Custom Note Types::
 * Customizing Gnosis Algorithm::
+* Auto push changes::
 
 Customizing Gnosis Algorithm
 
@@ -276,6 +277,7 @@ enter ‘n’ (no) at the prompt "Start development env?"
 * Adjust string comparison::
 * Creating Custom Note Types::
 * Customizing Gnosis Algorithm::
+* Auto push changes::
 
 
 File: gnosis.info,  Node: Adjust string comparison,  Next: Creating Custom Note Types,  Up: Customization & Extension
@@ -331,7 +333,7 @@ should be done.
      ‘gnosis-display’ functions
 
 
-File: gnosis.info,  Node: Customizing Gnosis Algorithm,  Prev: Creating Custom Note Types,  Up: Customization & Extension
+File: gnosis.info,  Node: Customizing Gnosis Algorithm,  Next: Auto push changes,  Prev: Creating Custom Note Types,  Up: Customization & Extension
 
 5.3 Customizing Gnosis Algorithm
 ================================
@@ -404,28 +406,41 @@ by being multiplied with last interval.
    For a note with a value of last-interval of 6 days and a ff of 0.5,
 upon an unsuccessful review the next interval will be 6 * 0.5
 
+
+File: gnosis.info,  Node: Auto push changes,  Prev: Customizing Gnosis Algorithm,  Up: Customization & Extension
+
+5.4 Auto push changes
+=====================
+
+When setting ‘gnosis-auto-push’ to ‘t’, at the end of every review
+session the changes to ‘gnosis-db’ will be pushed to the pre-configured
+push remote.  You have to set your push remote manually.
+
+     (setf gnosis-auto-push t)
+
 
 
 Tag Table:
 Node: Top246
-Node: Introduction1397
-Node: Installation1877
-Node: Using straightel2246
-Node: Installing manually from source2758
-Node: Adding notes3447
-Node: Note Types4863
-Node: Cloze5087
-Node: Basic Type6060
-Node: Double6338
-Node: MCQ (Multiple Choice Question)6684
-Node: y-or-n7093
-Node: Customization & Extension7519
-Node: Adjust string comparison8223
-Node: Creating Custom Note Types9019
-Node: Customizing Gnosis Algorithm10154
-Node: Gnosis Algorithm Initial Interval10470
-Node: Gnosis Algorithm Easiness Factor11061
-Node: Gnosis Algorithm Forgetting Factor12065
+Node: Introduction1419
+Node: Installation1899
+Node: Using straightel2268
+Node: Installing manually from source2780
+Node: Adding notes3469
+Node: Note Types4885
+Node: Cloze5109
+Node: Basic Type6082
+Node: Double6360
+Node: MCQ (Multiple Choice Question)6706
+Node: y-or-n7115
+Node: Customization & Extension7541
+Node: Adjust string comparison8267
+Node: Creating Custom Note Types9063
+Node: Customizing Gnosis Algorithm10198
+Node: Gnosis Algorithm Initial Interval10540
+Node: Gnosis Algorithm Easiness Factor11131
+Node: Gnosis Algorithm Forgetting Factor12135
+Node: Auto push changes12713
 
 End Tag Table
 

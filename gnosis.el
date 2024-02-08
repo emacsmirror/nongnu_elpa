@@ -5,7 +5,7 @@
 ;; Author: Thanos Apollo <public@thanosapollo.org>
 ;; Keywords: extensions
 ;; URL: https://git.thanosapollo.org/gnosis
-;; Version: 0.1.5
+;; Version: 0.1.6
 
 ;; Package-Requires: ((emacs "27.2") (compat "29.1.4.2") (emacsql "20240124"))
 
@@ -62,6 +62,11 @@
 This variable determines the maximum acceptable Levenshtein distance
 between two strings to consider them as similar."
   :type 'integer
+  :group 'gnosis)
+
+(defcustom gnosis-auto-push nil
+  "Automatically run `git push' at the end of every review session."
+  :type 'boolean
   :group 'gnosis)
 
 (defvar gnosis-images-dir (expand-file-name "images" gnosis-dir)
@@ -840,7 +845,8 @@ well."
 (defun gnosis-review--algorithm (id success)
   "Return next review date & ef for note with value of id ID.
 
-SUCCESS is a binary value, 1 = success, 0 = failure.
+SUCCESS is a boolean value, t for success, nil for failure.
+
 Returns a list of the form ((yyyy mm dd) ef)."
   (let ((ff gnosis-algorithm-ff)
 	(ef (nth 2 (gnosis-get 'ef 'review `(= id ,id))))
@@ -875,8 +881,8 @@ such as the easiness factor (ef)."
 (defun gnosis-review-new-ef (id success)
   "Return new ef for note with value of id ID.
 
-SUCCESS is a binary value, 1 = success, 0 = failure.
-Returns a list of the form (ef-increase ef-decrease ef)."
+Returns a list of the form (ef-increase ef-decrease ef).
+SUCCESS is a boolean value, t for success, nil for failure."
   (let ((ef (nth 1 (gnosis-review--algorithm id success)))
 	(old-ef (gnosis-get 'ef 'review `(= id ,id))))
     (cl-substitute (gnosis-review-round ef) (nth 2 old-ef) old-ef)))
@@ -884,15 +890,16 @@ Returns a list of the form (ef-increase ef-decrease ef)."
 (defun gnosis-review--update (id success)
   "Update review-log for note with value of id ID.
 
-SUCCESS is a binary value, 1 is for successful review."
-  (let ((ef (gnosis-review-new-ef id success)))
+SUCCESS is a boolean value, t for success, nil for failure."
+  (let ((ef (gnosis-review-new-ef id success))
+	(next-rev (car (gnosis-review--algorithm id success))))
     ;; Update review-log
     (gnosis-update 'review-log `(= last-rev ',(gnosis-algorithm-date)) `(= id ,id))
-    (gnosis-update 'review-log `(= next-rev ',(car (gnosis-review--algorithm id success))) `(= id ,id))
+    (gnosis-update 'review-log `(= next-rev ',next-rev) `(= id ,id))
     (gnosis-update 'review-log `(= n (+ 1 ,(gnosis-get 'n 'review-log `(= id ,id)))) `(= id ,id))
     ;; Update review
     (gnosis-update 'review `(= ef ',ef) `(= id ,id))
-    (if (= success 1)
+    (if success
 	(progn (gnosis-update 'review-log `(= c-success ,(1+ (gnosis-get 'c-success 'review-log `(= id ,id)))) `(= id ,id))
 	       (gnosis-update 'review-log `(= t-success ,(1+ (gnosis-get 't-success 'review-log `(= id ,id)))) `(= id ,id))
 	       (gnosis-update 'review-log `(= c-fails 0) `(= id ,id)))
@@ -909,9 +916,9 @@ SUCCESS is a binary value, 1 is for successful review."
 	 (user-choice (gnosis-mcq-answer id)))
     (if (string= answer user-choice)
         (progn
-	  (gnosis-review--update id 1)
+	  (gnosis-review--update id t)
 	  (message "Correct!"))
-      (gnosis-review--update id 0)
+      (gnosis-review--update id nil)
       (message "False"))
     (gnosis-display-correct-answer-mcq answer user-choice)
     (gnosis-display-extra id)
@@ -927,7 +934,7 @@ SUCCESS is a binary value, 1 is for successful review."
 	 (success (gnosis-compare-strings answer user-input)))
     (gnosis-display-basic-answer answer success user-input)
     (gnosis-display-extra id)
-    (gnosis-review--update id (if success 1 0))
+    (gnosis-review--update id success)
     (gnosis-display-next-review id)))
 
 (defun gnosis-review-y-or-n (id)
@@ -940,7 +947,7 @@ SUCCESS is a binary value, 1 is for successful review."
 	 (success (equal answer user-input)))
     (gnosis-display-y-or-n-answer :answer answer :success success)
     (gnosis-display-extra id)
-    (gnosis-review--update id (if success 1 0))
+    (gnosis-review--update id success)
     (gnosis-display-next-review id)))
 
 (defun gnosis-review-cloze--input (cloze)
@@ -980,10 +987,10 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
 		    ;; clozes.
 		    (when (< num clozes-num) (gnosis-review-cloze-reveal-unaswered clozes))
 		    (gnosis-display-cloze-user-answer (cdr input))
-		    (gnosis-review--update id 0)
+		    (gnosis-review--update id nil)
 		    (cl-return)))
 	     ;; Update note after all clozes are revealed successfully
-	     finally (gnosis-review--update id 1)))
+	     finally (gnosis-review--update id t)))
   (gnosis-display-extra id)
   (gnosis-display-next-review id))
 
@@ -1019,6 +1026,8 @@ NOTE-NUM: The number of notes reviewed in the session."
     (shell-command (concat git " add " (shell-quote-argument "gnosis.db")))
     (shell-command (concat git " commit -m "
 			   (shell-quote-argument (concat (format "Total notes for session: %d " note-num)))))
+    (when gnosis-auto-push
+      (shell-command (concat git " push")))
     (message "Review session finished. %d notes reviewed." note-num)))
 
 (defun gnosis-review--session (notes)

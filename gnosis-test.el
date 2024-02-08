@@ -1,4 +1,4 @@
-;;; gnosis-algorithm.el --- Gnosis development tools  -*- lexical-binding: t; -*-
+;;; gnosis-algorithm.el --- Gnosis testing module  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2023  Thanos Apollo
 
@@ -24,19 +24,19 @@
 
 ;;; Commentary:
 
-;; Development module for gnosis, to make development of gnosis.el
+;; Development module for gnosis, make testing of gnosis
 ;; easier by creating a testing environment with random inputs.
 
 ;;; Code:
 
 (require 'gnosis)
 
-(defvar gnosis-dev-tags '("anatomy" "thoracic" "serratus-anterior"
+(defvar gnosis-test-tags '("anatomy" "thoracic" "serratus-anterior"
 			  "biochemistry" "informatics" "amino-acids"
 			  "microbiology" "gram-positive" "gram-negative"
 			  "fungi" "parasites"))
 
-(defun gnosis-dev-random-items (list x)
+(defun gnosis-test-random-items (list x)
   "Select X random items from LIST."
   (let ((shuffled-list (copy-sequence list))
         selected-items)
@@ -47,7 +47,7 @@
         (setq shuffled-list (append (butlast shuffled-list index) (nthcdr (1+ index) shuffled-list)))))
     selected-items))
 
-(defun gnosis-dev-add-fields (&optional num deck)
+(defun gnosis-test-add-fields (&optional num deck)
   "Add random inputs to test.
 
 NUM: Number of random inputs to add.
@@ -72,7 +72,7 @@ deltoid, the spinal accessory nerve innervates the sternocleidomastoid
 and trapezius, the dorsal scapular nerve supplies the rhomboid muscles
 and levator scapulae, and the latissimus dorsi is the muscle supplied
 by the thoracodorsal nerve."
-			      :tags (gnosis-dev-random-items gnosis-dev-tags 2))))
+			      :tags (gnosis-test-random-items gnosis-test-tags 2))))
     (when (y-or-n-p "Add Basic type questions?")
       (dotimes (_ num)
 	(gnosis-add-note--basic :deck testing-deck
@@ -80,20 +80,20 @@ by the thoracodorsal nerve."
 				:hint "hint"
 				:answer "answer"
 				:extra "extra"
-				:tags (gnosis-dev-random-items gnosis-dev-tags 2))))
+				:tags (gnosis-test-random-items gnosis-test-tags 2))))
     (when (y-or-n-p "Add single cloze type?")
       (dotimes (_ num)
 	(gnosis-add-note--cloze :deck testing-deck
 				:note "this is a {c1:note}"
 				:hint "note"
-				:tags (gnosis-dev-random-items gnosis-dev-tags 2)
+				:tags (gnosis-test-random-items gnosis-test-tags 2)
 				:extra "extra")))
     (when (y-or-n-p "Add note with multiple clozes?")
       (dotimes (_ num)
 	(gnosis-add-note--cloze :deck testing-deck
 				:note "this is a {c1:note} with multiple {c1:clozes}"
 				:hint "note"
-				:tags (gnosis-dev-random-items gnosis-dev-tags 2)
+				:tags (gnosis-test-random-items gnosis-test-tags 2)
 				:extra "extra")))
     (when (y-or-n-p "Add note type y-or-n?")
       (dotimes (_ num)
@@ -102,12 +102,12 @@ by the thoracodorsal nerve."
 				 :hint "hint"
 				 :answer 110
 				 :extra "extra"
-				 :tags (gnosis-dev-random-items gnosis-dev-tags 2))))))
+				 :tags (gnosis-test-random-items gnosis-test-tags 2))))))
 
-(defun gnosis-dev-test ()
+(defun gnosis-test-start ()
   "Begin/End testing env.
 
-If ask nil, leave development env"
+If ask nil, leave testing env"
   (interactive)
   (let ((ask (y-or-n-p "Start development env (n for exit)?"))
 	(testing-dir (expand-file-name gnosis-dir "testing")))
@@ -122,7 +122,7 @@ If ask nil, leave development env"
 		(gnosis--drop-table table)
 	      (error (message "No %s table to drop." table))))
 	  (gnosis-db-init)
-	  (gnosis-dev-add-fields)
+	  (gnosis-test-add-fields)
 	  (message "Adding testing values...")
 	  (message "Development env is ready for testing."))
       (setf gnosis-db (emacsql-sqlite-open (expand-file-name "gnosis.db" gnosis-dir)))
@@ -130,5 +130,5 @@ If ask nil, leave development env"
       (message "Exited development env."))))
 
 
-(provide 'gnosis-dev)
-;;; gnosis-dev.el ends here
+(provide 'gnosis-test)
+;;; gnosis-test.el ends here

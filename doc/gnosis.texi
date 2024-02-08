@@ -76,6 +76,7 @@ Customization & Extension
 * Adjust string comparison::
 * Creating Custom Note Types::
 * Customizing Gnosis Algorithm::
+* Auto push changes::
 
 Customizing Gnosis Algorithm
 
@@ -288,6 +289,7 @@ enter @samp{n} (no) at the prompt ``Start development env?''
 * Adjust string comparison::
 * Creating Custom Note Types::
 * Customizing Gnosis Algorithm::
+* Auto push changes::
 @end menu
 
 @node Adjust string comparison
@@ -419,5 +421,16 @@ Example:
 
 For a note with a value of last-interval of 6 days and a ff of 0.5,
 upon an unsuccessful review the next interval will be 6 * 0.5
+
+@node Auto push changes
+@section Auto push changes
+
+When setting @samp{gnosis-auto-push} to @samp{t}, at the end of every review
+session the changes to @code{gnosis-db} will be pushed to the pre-configured
+push remote. You have to set your push remote manually.
+
+@lisp
+(setf gnosis-auto-push t)
+@end lisp
 
 @bye
