@@ -74,10 +74,10 @@ between two strings to consider them as similar."
   :type 'integer
   :group 'gnosis)
 
-(defcustom gnosis-push-command nil
-  "Command to run to push "
-  :type 'string
-  group 'gnosis)
+(defcustom gnosis-auto-push nil
+  "Automatically run `git push' at the end of every review session."
+  :type 'boolean
+  :group 'gnosis)
 
 (defvar gnosis-images-dir (expand-file-name "images" gnosis-dir)
   "Gnosis images directory.")
@@ -1036,6 +1036,8 @@ NOTE-NUM: The number of notes reviewed in the session."
     (shell-command (concat git " add " (shell-quote-argument "gnosis.db")))
     (shell-command (concat git " commit -m "
 			   (shell-quote-argument (concat (format "Total notes for session: %d " note-num)))))
+    (when gnosis-auto-push
+      (shell-command (concat git " push")))
     (message "Review session finished. %d notes reviewed." note-num)))
 
 (defun gnosis-review--session (notes)
