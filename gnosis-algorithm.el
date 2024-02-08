@@ -84,16 +84,12 @@ The structure of the given date is (YEAR MONTH DAY)."
     (- (time-to-days (current-time))
        (time-to-days given-date))))
 
-(defun gnosis-algorithm-e-factor (ef quality)
-  "Calculate new e-factor given existing EF and binary QUALITY, 0 or 1."
-  (cond
-   ((not (numberp quality))
-    (error "Invalid argument passed to gnosis-algorithm-e-factor"))
-   ((= quality 0) ;; If the quality score is 0 (fail), decrease the ef by a small penalty
-    (max 1.3 (- ef (cadr gnosis-algorithm-ef))))
-   ((= quality 1) ;; If the quality score is 1 (pass), increase the ef by a small reward
-    (+ ef (car gnosis-algorithm-ef)))
-   (t (error "Invalid quality score passed to gnosis-algorithm-e-factor"))))
+
+(defun gnosis-algorithm-e-factor (ef success)
+  "Calculate the new e-factor given existing EF and SUCCESS, either t or nil."
+  (pcase success
+    (`t (+ ef (car gnosis-algorithm-ef)))
+    (`nil (max 1.3 (- ef (cadr gnosis-algorithm-ef))))))
 
 
 (cl-defun gnosis-algorithm-next-interval (&key last-interval review-num ef success failure-factor successful-reviews successful-reviews-c fails-c fails-t initial-interval)
