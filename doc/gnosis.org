@@ -291,3 +291,14 @@ Example:
 
 For a note with a value of last-interval of 6 days and a ff of 0.5,
 upon an unsuccessful review the next interval will be 6 * 0.5
+
+
+** Auto push changes
+When setting =gnosis-auto-push= to =t=, at the end of every review
+session the changes to ~gnosis-db~ will be pushed to the pre-configured
+push remote. You have to set your push remote manually.
+
+#+begin_src emacs-lisp
+(setf gnosis-auto-push t)
+#+end_src
+
