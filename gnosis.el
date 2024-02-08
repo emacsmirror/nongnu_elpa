@@ -855,7 +855,8 @@ well."
 (defun gnosis-review--algorithm (id success)
   "Return next review date & ef for note with value of id ID.
 
-SUCCESS is a binary value, 1 = success, 0 = failure.
+SUCCESS is a boolean value, t for success, nil for failure.
+
 Returns a list of the form ((yyyy mm dd) ef)."
   (let ((ff gnosis-algorithm-ff)
 	(ef (nth 2 (gnosis-get 'ef 'review `(= id ,id))))
@@ -890,8 +891,8 @@ such as the easiness factor (ef)."
 (defun gnosis-review-new-ef (id success)
   "Return new ef for note with value of id ID.
 
-SUCCESS is a binary value, 1 = success, 0 = failure.
-Returns a list of the form (ef-increase ef-decrease ef)."
+Returns a list of the form (ef-increase ef-decrease ef).
+SUCCESS is a boolean value, t for success, nil for failure."
   (let ((ef (nth 1 (gnosis-review--algorithm id success)))
 	(old-ef (gnosis-get 'ef 'review `(= id ,id))))
     (cl-substitute (gnosis-review-round ef) (nth 2 old-ef) old-ef)))
@@ -924,9 +925,9 @@ SUCCESS is a binary value, 1 is for successful review."
 	 (user-choice (gnosis-mcq-answer id)))
     (if (string= answer user-choice)
         (progn
-	  (gnosis-review--update id 1)
+	  (gnosis-review--update id t)
 	  (message "Correct!"))
-      (gnosis-review--update id 0)
+      (gnosis-review--update id nil)
       (message "False"))
     (gnosis-display-correct-answer-mcq answer user-choice)
     (gnosis-display-extra id)
@@ -942,7 +943,7 @@ SUCCESS is a binary value, 1 is for successful review."
 	 (success (gnosis-compare-strings answer user-input)))
     (gnosis-display-basic-answer answer success user-input)
     (gnosis-display-extra id)
-    (gnosis-review--update id (if success 1 0))
+    (gnosis-review--update id success)
     (gnosis-display-next-review id)))
 
 (defun gnosis-review-y-or-n (id)
@@ -955,7 +956,7 @@ SUCCESS is a binary value, 1 is for successful review."
 	 (success (equal answer user-input)))
     (gnosis-display-y-or-n-answer :answer answer :success success)
     (gnosis-display-extra id)
-    (gnosis-review--update id (if success 1 0))
+    (gnosis-review--update id success)
     (gnosis-display-next-review id)))
 
 (defun gnosis-review-cloze--input (cloze)
@@ -995,10 +996,10 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
 		    ;; clozes.
 		    (when (< num clozes-num) (gnosis-review-cloze-reveal-unaswered clozes))
 		    (gnosis-display-cloze-user-answer (cdr input))
-		    (gnosis-review--update id 0)
+		    (gnosis-review--update id nil)
 		    (cl-return)))
 	     ;; Update note after all clozes are revealed successfully
-	     finally (gnosis-review--update id 1)))
+	     finally (gnosis-review--update id t)))
   (gnosis-display-extra id)
   (gnosis-display-next-review id))
 
