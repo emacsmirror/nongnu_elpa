@@ -110,8 +110,6 @@ Returns a list of: (INTERVAL N EF) where,
 - Next review date in (yyyy mm dd) format.
 - REVIEW-NUM: Incremented by 1.
 - EF : Modified based on the recall success for the item."
-  (cl-assert (or (= success 0)
-		 (= success 1)))
   ;; Check if gnosis-algorithm-ff is lower than 1 & is total-ef above 1.3
   (cond ((>= gnosis-algorithm-ff 1)
 	 (error "Value of `gnosis-algorithm-ff' must be lower than 1"))
@@ -124,22 +122,21 @@ Returns a list of: (INTERVAL N EF) where,
 	 ;; thus ignore initial intervals
          (interval
           (cond
+	   ;; TODO: Rewrite this!
            ;; First successful review -> first interval
-           ((and (= successful-reviews 0)
-		 (= success 1))
-	    (car initial-interval))
+           ((and (= successful-reviews 0) success
+		 (car initial-interval)))
            ;; Second successful review -> second interval
-           ((and (= successful-reviews 1)
-		 (= success 1))
+           ((and (= successful-reviews 1) success)
 	    (cadr initial-interval))
 	   ;; When successful-reviews-c is above 3, use 150% or 180%
 	   ;; of ef depending on the value of successful-reviews
-	   ((and (= success 1)
+	   ((and success
 		 (>= successful-reviews-c 3)
 		 (>= review-num 5)
 		 (> last-interval 1))
 	    (* (* ef (if (>= successful-reviews 10) 1.8 1.5)) last-interval))
-	   ((and (= success 0)
+	   ((and (equal success nil)
 		 (> fails-c 3)
 		 (>= review-num 5)
 		 (> last-interval 1))
@@ -147,10 +144,10 @@ Returns a list of: (INTERVAL N EF) where,
 	    ;; failure-factor depending on the value of total failed
 	    ;; reviews.
 	    (* (max (min 0.8 (* failure-factor (if (>= fails-t 10) 1.8 1.5)))
-		    failure-factor)
-	       last-interval))
+		     failure-factor)
+		last-interval))
 	   ;; For everything else
-           (t (if (= success 1)
+           (t (if success
                   (* ef last-interval)
                 (* failure-factor last-interval))))))
     (list (gnosis-algorithm-date (round interval)) next-ef)))
