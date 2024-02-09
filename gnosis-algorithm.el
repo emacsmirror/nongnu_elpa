@@ -33,11 +33,7 @@
   "Gnosis initial interval for successful reviews.
 
 First item: First interval,
-Second item: Second interval.
-
-Note: `gnosis-algorithm-interval' is ignored after 10 TOTAL reviews or
-when ef is above > 3.0, which should only be the case for customized
-notes/review sessions."
+Second item: Second interval."
   :group 'gnosis
   :type '(list integer))
 
