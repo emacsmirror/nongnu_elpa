@@ -65,8 +65,19 @@ between two strings to consider them as similar."
   :group 'gnosis)
 
 (defcustom gnosis-auto-push nil
-  "Automatically run `git push' at the end of every review session."
+  "Automatically run `gnosis-auto-push-command' at the end of every review session."
   :type 'boolean
+  :group 'gnosis)
+
+(defcustom gnosis-auto-push-command "push"
+  "Git shell command to run at the end of a review session.
+
+Command specified will be executed when `gnosis-auto-push' is enabled.
+
+It should be provided as a string without the `git' prefix, assuming
+that git is available in the system's PATH. For example, setting it
+to \"push\" will execute the command 'git push'."
+  :type 'string
   :group 'gnosis)
 
 (defvar gnosis-images-dir (expand-file-name "images" gnosis-dir)
@@ -1027,7 +1038,7 @@ NOTE-NUM: The number of notes reviewed in the session."
     (shell-command (concat git " commit -m "
 			   (shell-quote-argument (concat (format "Total notes for session: %d " note-num)))))
     (when gnosis-auto-push
-      (shell-command (concat git " push")))
+      (shell-command (concat git " " gnosis-auto-push-command)))
     (message "Review session finished. %d notes reviewed." note-num)))
 
 (defun gnosis-review--session (notes)
