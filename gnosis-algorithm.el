@@ -37,7 +37,7 @@ Second item: Second interval."
   :group 'gnosis
   :type '(list integer))
 
-(defcustom gnosis-algorithm-ef '(0.45 0.35 1.3)
+(defcustom gnosis-algorithm-ef '(0.35 0.30 1.3)
   "Gnosis easiness factor.
 
 First item : Increase factor
