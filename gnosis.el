@@ -691,12 +691,11 @@ Works both with {} and {{}} to make easier to import anki notes."
     result))
 
 (defun gnosis-cloze-replace-words (string words new)
-  "In STRING replace WORDS with NEW."
+  "In STRING replace only the first occurrence of each word in WORDS with NEW."
   (cl-assert (listp words))
-  (cl-loop for word
-	   in words
-	   do (setf string (replace-regexp-in-string (concat "\\<" word "\\>") ;; use word boundary indentifiers
-						     new string)))
+  (cl-loop for word in words
+           do (when (string-match (concat "\\<" word "\\>") string)
+                (setq string (replace-match new t t string))))
   string)
 
 (defun gnosis-cloze-extract-answers (str)
