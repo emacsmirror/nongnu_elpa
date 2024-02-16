@@ -113,9 +113,6 @@ Returns a list of: (INTERVAL N EF) where,
 	 (error "Value of total-ef from `gnosis-algorithm-ef' must be above 1.3")))
   ;; Calculate the next easiness factor.
   (let* ((next-ef (gnosis-algorithm-e-factor ef success))
-         ;; Calculate the next interval.
-	 ;; ef should not be > 3.0 unless the card is imported/edited,
-	 ;; thus ignore initial intervals
          (interval
           (cond
 	   ;; TODO: Rewrite this!
