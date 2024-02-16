@@ -69,6 +69,15 @@ between two strings to consider them as similar."
   :type 'boolean
   :group 'gnosis)
 
+(defcustom gnosis-mcq-display-choices t
+  "When t, display choices for mcq notes during review.
+
+Users that use a completion framework like ivy/helm/vertico may want
+to set this to nil, as the choices will be displayed in the completion
+framework's minibuffer."
+  :type 'boolean
+  :group 'gnosis)
+
 (defcustom gnosis-auto-push-command "push"
   "Git shell command to run at the end of a review session.
 
@@ -930,6 +939,8 @@ SUCCESS is a boolean value, t for success, nil for failure."
   "Display multiple choice answers for question ID."
   (gnosis-display-image id)
   (gnosis-display-question id)
+  (when gnosis-mcq-display-choices
+    (gnosis-display-mcq-options id))
   (let* ((choices (gnosis-get 'options 'notes `(= id ,id)))
 	 (answer (nth (- (gnosis-get 'answer 'notes `(= id ,id)) 1) choices))
 	 (user-choice (gnosis-mcq-answer id)))
