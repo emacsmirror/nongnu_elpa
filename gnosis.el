@@ -89,6 +89,16 @@ to \"push\" will execute the command 'git push'."
   :type 'string
   :group 'gnosis)
 
+(defcustom gnosis-completing-read-function
+  (cond ((or (bound-and-true-p ivy-mode)
+	     (bound-and-true-p helm-mode)
+	     (bound-and-true-p vertico-mode))
+	 #'completing-read)
+	(t #'ido-completing-read))
+  "Function to use for completing-read."
+  :type 'function
+  :group 'gnosis)
+
 (defvar gnosis-images-dir (expand-file-name "images" gnosis-dir)
   "Gnosis images directory.")
 
@@ -207,29 +217,6 @@ Example:
 (defun gnosis--delete (table value)
   "From TABLE use where to delete VALUE."
   (emacsql gnosis-db `[:delete :from ,table :where ,value]))
-
-(cl-defun gnosis-completing-read (prompt options info &optional (face-for-info 'font-lock-doc-face))
-  "A version of `completing-read' with text properties, padding & choosable face.
-Returns selected option from OPTIONS.
-
-WARNING: Do NOT use htis functions as is now!
-
-PROMPT is a string to prompt with; normally it ends in a colon and a space.
-OPTIONS is a list of strings.
-INFO is a list of strings, which will be displayed as additional info for option
-FACE-FOR-INFO is the face used to display info for option."
-  (let* ((choices (cl-mapcar 'cons options info))
-         (max-choice-length (apply #'max (mapcar #'length options)))
-         (formatted-choices
-          (mapcar (lambda (choice)
-                    (cons (concat (format "%s" (car choice))
-                                  (make-string (- max-choice-length (length (car choice))) ? )
-                                  "      "
-                                  (propertize (format "%s" (cdr choice)) 'face face-for-info))
-                          (car choice)))
-                  choices)))
-    (cdr (assoc (completing-read prompt formatted-choices nil t)
-		formatted-choices))))
 
 (defun gnosis-replace-item-at-index (index new-item list)
   "Replace item at INDEX in LIST with NEW-ITEM."
@@ -388,7 +375,7 @@ Set SPLIT to t to split all input given."
   "Return name from table DECKS."
   (when (equal (gnosis-select 'name 'decks) nil)
     (error "No decks found"))
-  (completing-read "Deck: " (gnosis-select 'name 'decks)))
+  (funcall gnosis-completing-read-function "Deck: " (gnosis-select 'name 'decks)))
 
 (cl-defun gnosis--get-deck-id (&optional (deck (gnosis--get-deck-name)))
   "Return id for DECK name."
@@ -434,7 +421,7 @@ When called with a prefix, unsuspends all notes for tag."
 (defun gnosis-suspend ()
   "Suspend note(s) with specified values."
   (interactive)
-  (let ((item (completing-read "Suspend by: " '("Deck" "Tag"))))
+  (let ((item (funcall gnosis-completing-read-function "Suspend by: " '("Deck" "Tag"))))
     (pcase item
       ("Deck" (gnosis-suspend-deck))
       ("Tag" (gnosis-suspend-tag))
@@ -577,7 +564,8 @@ Refer to `gnosis-add-note--double' for more."
 			       :question (read-string "Question: ")
 			       :answer (read-string "Answer: ")
 			       :image (when (y-or-n-p "Add image to display during review?")
-					(completing-read "Select image: " (gnosis-directory-files)))
+					(funcall gnosis-completing-read-function "Select image: "
+						 (gnosis-directory-files)))
 			       :hint (read-string "Hint: ")
 			       :extra (read-string "Extra: ")
 			       :tags (gnosis-tag-prompt)))))
@@ -685,7 +673,7 @@ See `gnosis-add-note--cloze' for more reference."
 ;;;###autoload
 (defun gnosis-add-note (type)
   "Create note(s) as TYPE interactively."
-  (interactive (list (completing-read "Type: " gnosis-note-types nil t)))
+  (interactive (list (funcall gnosis-completing-read-function "Type: " gnosis-note-types nil t)))
   (when gnosis-testing
     (unless (y-or-n-p "You are using a testing environment! Continue?")
       (error "Aborted")))
@@ -698,7 +686,7 @@ See `gnosis-add-note--cloze' for more reference."
   "Choose the correct answer, from mcq choices for question ID."
   (let ((choices (gnosis-get 'options 'notes `(= id ,id)))
 	(history-add-new-input nil)) ;; Disable history
-    (completing-read "Answer: " choices)))
+    (funcall gnosis-completing-read-function "Answer: " choices)))
 
 (defun gnosis-cloze-remove-tags (string)
   "Replace cx-tags in STRING.
@@ -774,7 +762,7 @@ By default, DIR value is `gnosis-images-dir' & REGEX value is \"^[^.]\""
 
 Optionally, add cusotm PROMPT."
   (let* ((prompt (or prompt "Select image: "))
-	 (image (completing-read prompt (gnosis-directory-files gnosis-images-dir))))
+	 (image (funcall gnosis-completing-read-function prompt (gnosis-directory-files gnosis-images-dir))))
     image))
 
 (defun gnosis-get-tags--unique ()
@@ -828,10 +816,10 @@ Returns a list of unique tags."
   (let* ((tags '())
          (tag ""))
     (while (not (string= tag "q"))
-      (setf tag (completing-read (concat prompt (format " %s (q for quit): " tags))
-				 (cons "q" (if due (gnosis-review-get-due-tags)
-					     (gnosis-get-tags--unique)))
-				 nil match))
+      (setf tag (funcall gnosis-completing-read-function (concat prompt (format " %s (q for quit): " tags))
+			 (cons "q" (if due (gnosis-review-get-due-tags)
+				     (gnosis-get-tags--unique)))
+			 nil match))
       (unless (or (string= tag "q") (member tag tags))
         (push tag tags)))
     (reverse tags)))
@@ -1092,7 +1080,7 @@ NOTES: List of note ids"
 
 (defun gnosis-edit-note (id)
   "Edit note with value of id ID."
-  (pcase (completing-read "Edit: " '(contents ef) nil t)
+  (pcase (funcall gnosis-completing-read-function "Edit: " '(contents ef) nil t)
     ("contents" (gnosis-edit-note-contents id))
     ("ef" (gnosis-edit-ef id))
     (_ (message "No such value."))))
@@ -1100,7 +1088,8 @@ NOTES: List of note ids"
 (defun gnosis-edit-ef (id)
   "Edit easiness factor values for note with id value ID."
   (let ((ef-full (caar (gnosis-select 'ef 'review `(= id ,id))))
-	(old-value-index (pcase (completing-read "Change Factor: " '("Increase" "Decrease" "Total"))
+	(old-value-index (pcase (funcall gnosis-completing-read-function "Change Factor: "
+					 '("Increase" "Decrease" "Total"))
 			   ("Total" 2)
 			   ("Decrease" 1)
 			   ("Increase" 0)))
@@ -1356,10 +1345,10 @@ review."
 (defun gnosis-review ()
   "Start gnosis review session."
   (interactive)
-  (let ((review-type (completing-read "Review: " '("Due notes"
-						   "Due notes of deck"
-						   "Due notes of specified tag(s)"
-						   "All notes of tag(s)"))))
+  (let ((review-type (funcall gnosis-completing-read-function "Review: " '("Due notes"
+									   "Due notes of deck"
+									   "Due notes of specified tag(s)"
+									   "All notes of tag(s)"))))
     (pcase review-type
       ("Due notes" (gnosis-review--session (gnosis-review-get-due-notes)))
       ("Due notes of deck" (gnosis-review--session (gnosis-get-deck-due-notes)))
