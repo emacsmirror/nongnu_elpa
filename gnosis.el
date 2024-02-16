@@ -234,6 +234,15 @@ FACE-FOR-INFO is the face used to display info for option."
     (erase-buffer)
     (fill-paragraph (insert "\n"  (propertize question 'face 'gnosis-face-main)))))
 
+(defun gnosis-display-mcq-options (id)
+  "Display answer options for mcq note ID."
+  (let ((options (apply #'append (gnosis-select 'options 'notes `(= id 1) t)))
+	(option-num 1))
+    (insert "\n\n" (propertize "Options:" 'face 'gnosis-face-directions))
+    (cl-loop for option in options
+	     do (insert (format "\n%s. %s" option-num option))
+	     (setf option-num (1+ option-num)))))
+
 (defun gnosis-display-cloze-sentence (sentence clozes)
   "Display cloze sentence for SENTENCE with CLOZES."
   (erase-buffer)
