@@ -928,8 +928,10 @@ SUCCESS is a boolean value, t for success, nil for failure."
     ;; Update review
     (gnosis-update 'review `(= ef ',ef) `(= id ,id))
     (if success
-	(progn (gnosis-update 'review-log `(= c-success ,(1+ (gnosis-get 'c-success 'review-log `(= id ,id)))) `(= id ,id))
-	       (gnosis-update 'review-log `(= t-success ,(1+ (gnosis-get 't-success 'review-log `(= id ,id)))) `(= id ,id))
+	(progn (gnosis-update 'review-log
+			      `(= c-success ,(1+ (gnosis-get 'c-success 'review-log `(= id ,id)))) `(= id ,id))
+	       (gnosis-update 'review-log `(= t-success ,(1+ (gnosis-get 't-success 'review-log `(= id ,id))))
+			      `(= id ,id))
 	       (gnosis-update 'review-log `(= c-fails 0) `(= id ,id)))
       (gnosis-update 'review-log `(= c-fails ,(1+ (gnosis-get 'c-fails 'review-log `(= id ,id)))) `(= id ,id))
       (gnosis-update 'review-log `(= t-fails ,(1+ (gnosis-get 't-fails 'review-log `(= id ,id)))) `(= id ,id))
