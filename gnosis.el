@@ -116,7 +116,7 @@ to \"push\" will execute the command 'git push'."
 (defconst gnosis-db-version 1
   "Gnosis database version.")
 
-(defvar gnosis-note-types '(MCQ Cloze Basic Double y-or-n)
+(defvar gnosis-note-types '("MCQ" "Cloze" "Basic" "Double" "y-or-n")
   "Gnosis available note types.")
 
 ;;; Faces
@@ -1080,7 +1080,7 @@ NOTES: List of note ids"
 
 (defun gnosis-edit-note (id)
   "Edit note with value of id ID."
-  (pcase (funcall gnosis-completing-read-function "Edit: " '(contents ef) nil t)
+  (pcase (funcall gnosis-completing-read-function "Edit: " '("contents" "ef") nil t)
     ("contents" (gnosis-edit-note-contents id))
     ("ef" (gnosis-edit-ef id))
     (_ (message "No such value."))))
