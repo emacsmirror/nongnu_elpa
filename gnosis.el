@@ -119,6 +119,9 @@ to \"push\" will execute the command 'git push'."
 (defvar gnosis-note-types '("MCQ" "Cloze" "Basic" "Double" "y-or-n")
   "Gnosis available note types.")
 
+(defvar gnosis-previous-note-tags '()
+  "Tags input from previously added note.")
+
 ;;; Faces
 
 (defgroup gnosis-faces nil
@@ -814,14 +817,19 @@ MATCH: Require match, t or nil value
 DUE: if t, return tags for due notes from `gnosis-due-tags'.
 Returns a list of unique tags."
   (let* ((tags '())
-         (tag ""))
-    (while (not (string= tag "q"))
-      (setf tag (funcall gnosis-completing-read-function (concat prompt (format " %s (q for quit): " tags))
-			 (cons "q" (if due (gnosis-review-get-due-tags)
-				     (gnosis-get-tags--unique)))
-			 nil match))
-      (unless (or (string= tag "q") (member tag tags))
-        (push tag tags)))
+         (tag "")
+	 (use-prev (when gnosis-previous-note-tags
+		     (y-or-n-p (format "Use tags from previous note? %s" gnosis-previous-note-tags)))))
+    (if use-prev
+	(setq tags gnosis-previous-note-tags)
+      (while (not (string= tag "q"))
+	(setf tag (funcall gnosis-completing-read-function (concat prompt (format " %s (q for quit): " tags))
+			   (cons "q" (if due (gnosis-review-get-due-tags)
+				       (gnosis-get-tags--unique)))
+			   nil match))
+	(unless (or (string= tag "q") (member tag tags))
+          (push tag tags))))
+    (setf gnosis-previous-note-tags (if use-prev tags (reverse tags)))
     (reverse tags)))
 
 ;; Review
