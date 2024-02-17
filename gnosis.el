@@ -1045,6 +1045,13 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
   (let ((default-directory dir))
     (gnosis-git--process "push")))
 
+;;;###autoload
+(cl-defun gnosis-git-pull (&optional (dir gnosis-dir))
+  "Pull change from git repository in DIR."
+  (interactive)
+  (let ((default-directory dir))
+    (gnosis-git--process "pull")))
+
 (defun gnosis-review-commit (note-num)
   "Commit review session on git repository.
 
