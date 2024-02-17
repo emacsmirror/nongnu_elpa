@@ -1025,6 +1025,18 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
             (funcall func-name id)))
       (error "Malformed note type: '%s'" type))))
 
+(defun gnosis-git--process (command)
+  "Start a git process with COMMAND."
+  (let ((proc (start-process "*git-gnosis*" nil "git" command)))
+    ;; Filter for password prompt
+    (set-process-filter proc (lambda (proc string)
+			       (when (string-match "Password\\|password\\|passphrase" string)
+				 (process-send-string proc (read-passwd "Password: ")))))
+    ;; Set sentinel to delete process when done
+    (set-process-sentinel proc (lambda (proc event)
+				 (when (eq 'exit (process-status proc))
+				   (unless (process-live-p proc)
+				     (delete-process proc)))))))
 (defun gnosis-review-commit (note-num)
   "Commit review session on git repository.
 
