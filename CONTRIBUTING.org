@@ -32,13 +32,26 @@ $ git format-patch HEAD^1
 ** TODO Algorithm: changes for ef increase/decrease factors
 + After 3 successful in a row reviews increase ef increase factor by 5% & vice versa
 
-** TODO Refactor =completing-read= UI choices
+** DONE Refactor =completing-read= UI choices
+CLOSED: [2024-02-17 Sat 21:59]
+/DONE on version 0.1.7/
+
 =completing-read= is not an ideal solution as a UI. If user has not
 enabled a completion system, such as vertico, this would make gnosis
 unusable.
 
-One possible solution is to create defcustom =gnosis-completing-read=
+One possible solution is to create defcustom =gnosis-completing-read-function=
 that has ido-completing-read by default if vertico/ivy/helm is not
 enabled
 
-** TODO Use vc instead git shell commands
+*** Fix
+
+Implemented =gnosis-completing-read-function=
+
+** DONE Use vc instead git shell commands
+CLOSED: [2024-02-17 Sat 21:59]
+
+/DONE on version 0.1.7/
+
+Implemented =gnosis-git-*= functions to handle git commands.
+
