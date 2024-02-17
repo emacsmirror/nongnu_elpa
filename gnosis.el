@@ -95,7 +95,7 @@ to \"push\" will execute the command 'git push'."
 	     (bound-and-true-p vertico-mode))
 	 #'completing-read)
 	(t #'ido-completing-read))
-  "Function to use for completing-read."
+  "Function to use for `completing-read'."
   :type 'function
   :group 'gnosis)
 
@@ -819,9 +819,9 @@ Returns a list of unique tags."
   (let* ((tags '())
          (tag "")
 	 (use-prev (when gnosis-previous-note-tags
-		     (y-or-n-p (format "Use tags from previous note? %s" gnosis-previous-note-tags)))))
+		     (y-or-n-p (format "Use tags from previous note %s?" gnosis-previous-note-tags)))))
     (if use-prev
-	(setq tags gnosis-previous-note-tags)
+	(setf tags gnosis-previous-note-tags)
       (while (not (string= tag "q"))
 	(setf tag (funcall gnosis-completing-read-function (concat prompt (format " %s (q for quit): " tags))
 			   (cons "q" (if due (gnosis-review-get-due-tags)
@@ -1053,7 +1053,7 @@ NOTE-NUM: The number of notes reviewed in the session."
     ;; TODO: Redo this using vc
     (shell-command (concat git " add " (shell-quote-argument "gnosis.db")))
     (shell-command (concat git " commit -m "
-			   (shell-quote-argument (concat (format "Total notes for session: %d " note-num)))))
+			   (shell-quote-argument (format "Total notes for session: %d " note-num))))
     (when gnosis-auto-push
       (shell-command (concat git " " gnosis-auto-push-command)))
     (message "Review session finished. %d notes reviewed." note-num)))
