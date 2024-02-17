@@ -1037,6 +1037,14 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
 				 (when (eq 'exit (process-status proc))
 				   (unless (process-live-p proc)
 				     (delete-process proc)))))))
+
+;;;###autoload
+(cl-defun gnosis-git-push (&optional (dir gnosis-dir))
+  "Push change to git repository in DIR."
+  (interactive)
+  (let ((default-directory dir))
+    (gnosis-git--process "push")))
+
 (defun gnosis-review-commit (note-num)
   "Commit review session on git repository.
 
