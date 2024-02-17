@@ -1067,11 +1067,11 @@ NOTE-NUM: The number of notes reviewed in the session."
     (unless (file-exists-p (expand-file-name ".git" gnosis-dir))
       (vc-create-repo 'Git))
     ;; TODO: Redo this using vc
-    (shell-command (concat git " add " (shell-quote-argument "gnosis.db")))
-    (shell-command (concat git " commit -m "
-			   (shell-quote-argument (format "Total notes for session: %d " note-num))))
+    (shell-command (format "%s %s %s" git "add" (shell-quote-argument "gnosis.db")))
+    (shell-command (format "%s %s %s" git "commit -m"
+			   (shell-quote-argument (format "Total notes for session: %d" note-num))))
     (when gnosis-auto-push
-      (shell-command (concat git " " gnosis-auto-push-command)))
+      (gnosis-git-push gnosis-dir))
     (message "Review session finished. %d notes reviewed." note-num)))
 
 (defun gnosis-review--session (notes)
