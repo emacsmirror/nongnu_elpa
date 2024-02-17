@@ -65,7 +65,7 @@ between two strings to consider them as similar."
   :group 'gnosis)
 
 (defcustom gnosis-auto-push nil
-  "Automatically run `gnosis-auto-push-command' at the end of every review session."
+  "Run `git push' at the end of every review session."
   :type 'boolean
   :group 'gnosis)
 
@@ -76,17 +76,6 @@ Users that use a completion framework like ivy/helm/vertico may want
 to set this to nil, as the choices will be displayed in the completion
 framework's minibuffer."
   :type 'boolean
-  :group 'gnosis)
-
-(defcustom gnosis-auto-push-command "push"
-  "Git shell command to run at the end of a review session.
-
-Command specified will be executed when `gnosis-auto-push' is enabled.
-
-It should be provided as a string without the `git' prefix, assuming
-that git is available in the system's PATH. For example, setting it
-to \"push\" will execute the command 'git push'."
-  :type 'string
   :group 'gnosis)
 
 (defcustom gnosis-completing-read-function
