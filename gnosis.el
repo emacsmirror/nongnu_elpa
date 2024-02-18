@@ -64,7 +64,7 @@ between two strings to consider them as similar."
   :type 'integer
   :group 'gnosis)
 
-(defcustom gnosis-auto-vc-push nil
+(defcustom gnosis-vc-auto-push nil
   "Run `vc-push' at the end of every review session."
   :type 'boolean
   :group 'gnosis)
@@ -1058,7 +1058,7 @@ NOTE-NUM: The number of notes reviewed in the session."
     (shell-command (format "%s %s %s" git "add" (shell-quote-argument "gnosis.db")))
     (shell-command (format "%s %s %s" git "commit -m"
 			   (shell-quote-argument (format "Total notes for session: %d" note-num))))
-    (when gnosis-auto-vc-push
+    (when gnosis-vc-auto-push
       (gnosis-vc-push))
     (message "Review session finished. %d notes reviewed." note-num)))
 
