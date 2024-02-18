@@ -53,6 +53,7 @@ Git repositories:
 * Note Types::
 * Customization & Extension::
 * Gnosis Algorithm::
+* Sync between devices::
 
 @detailmenu
 --- The Detailed Node Listing ---
@@ -80,7 +81,6 @@ Gnosis Algorithm
 * Initial Interval::
 * Easiness Factor::
 * Forgetting Factor::
-* Auto push changes::
 
 @end detailmenu
 @end menu
@@ -356,7 +356,6 @@ Optionally, you might want to create your own custom @samp{gnosis-display} funct
 * Initial Interval::
 * Easiness Factor::
 * Forgetting Factor::
-* Auto push changes::
 @end menu
 
 @node Initial Interval
@@ -427,20 +426,37 @@ Example configuration:
 (setq gnosis-algorithm-ff 0.5)
 @end lisp
 
-@node Auto push changes
-@section Auto push changes
+@node Sync between devices
+@chapter Sync between devices
 
-You can interactively use @samp{gnosis-vc-push} & @samp{gnosis-vc-pull}.
+Gnosis uses git to maintain data integrity and facilitate
+synchronization across devices.
 
-As the name suggests, they rely on @samp{vc} to work properly.
+You will need to configure your remote manually.
 
-Make sure you have setup a git remote for gnosis.
+Example:
+
 @example
-cd ~/<your-emacs-directory>/gnosis # default location for gnosis
-git remote add <remote_name> <remote_url> # 
+cd ~/.emacs.d/gnosis # default location for gnosis
+git init # After completing your first review session, a git repo should have been initialized automatically.
+git remote add <remote_name> <remote_url>
+git push --set-upstream origin master
 @end example
+
+
+You can interactively use @samp{gnosis-vc-push} & @samp{gnosis-vc-pull}. As the
+name suggests, they rely on @samp{vc} to work properly.
 
 Depending on your setup, @samp{vc} might require an external package for
 the ssh passphrase dialog, such as @code{x11-ssh-askpass}.
+
+
+To automatically push changes after a review session, add this to your configuration:
+@lisp
+(setf gnosis-vc-auto-push t)
+(gnosis-vc-pull) ;; Run vc-pull for gnosis on startup
+@end lisp
+
+You might as well add
 
 @bye

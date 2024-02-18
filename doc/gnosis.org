@@ -292,17 +292,34 @@ Example configuration:
   (setq gnosis-algorithm-ff 0.5)
 #+end_src
 
-** Auto push changes
+* Sync between devices
 
-You can interactively use =gnosis-vc-push= & =gnosis-vc-pull=.
+Gnosis uses git to maintain data integrity and facilitate
+synchronization across devices.
 
-As the name suggests, they rely on =vc= to work properly.
+You will need to configure your remote manually.
 
-Make sure you have setup a git remote for gnosis.
+Example:
+
 #+begin_src bash
- cd ~/<your-emacs-directory>/gnosis # default location for gnosis
- git remote add <remote_name> <remote_url> # 
+ cd ~/.emacs.d/gnosis # default location for gnosis
+ git init # After completing your first review session, a git repo should have been initialized automatically.
+ git remote add <remote_name> <remote_url>
+ git push --set-upstream origin master
 #+end_src
+
+
+You can interactively use =gnosis-vc-push= & =gnosis-vc-pull=. As the
+name suggests, they rely on =vc= to work properly.
 
 Depending on your setup, =vc= might require an external package for
 the ssh passphrase dialog, such as ~x11-ssh-askpass~.
+
+
+To automatically push changes after a review session, add this to your configuration:
+#+begin_src emacs-lisp
+(setf gnosis-vc-auto-push t)
+(gnosis-vc-pull) ;; Run vc-pull for gnosis on startup
+#+end_src
+
+You might as well add

@@ -29,6 +29,7 @@ This manual is written for Gnosis version 0.1.7, released on 2023-02-18.
 * Note Types::
 * Customization & Extension::
 * Gnosis Algorithm::
+* Sync between devices::
 
 -- The Detailed Node Listing --
 
@@ -55,7 +56,6 @@ Gnosis Algorithm
 * Initial Interval::
 * Easiness Factor::
 * Forgetting Factor::
-* Auto push changes::
 
 
 
@@ -328,7 +328,7 @@ should be done.
      ‘gnosis-display’ functions
 
 
-File: gnosis.info,  Node: Gnosis Algorithm,  Prev: Customization & Extension,  Up: Top
+File: gnosis.info,  Node: Gnosis Algorithm,  Next: Sync between devices,  Prev: Customization & Extension,  Up: Top
 
 6 Gnosis Algorithm
 ******************
@@ -338,7 +338,6 @@ File: gnosis.info,  Node: Gnosis Algorithm,  Prev: Customization & Extension,  U
 * Initial Interval::
 * Easiness Factor::
 * Forgetting Factor::
-* Auto push changes::
 
 
 File: gnosis.info,  Node: Initial Interval,  Next: Easiness Factor,  Up: Gnosis Algorithm
@@ -387,7 +386,7 @@ total easiness factor would be updated by adding the increase factor.
      (setq gnosis-algorithm-ef '(0.30 0.25 1.3))
 
 
-File: gnosis.info,  Node: Forgetting Factor,  Next: Auto push changes,  Prev: Easiness Factor,  Up: Gnosis Algorithm
+File: gnosis.info,  Node: Forgetting Factor,  Prev: Easiness Factor,  Up: Gnosis Algorithm
 
 6.3 Forgetting Factor
 =====================
@@ -405,45 +404,59 @@ interval was 6 days, the next interval will be 6 * 0.5 = 3 days.
      (setq gnosis-algorithm-ff 0.5)
 
 
-File: gnosis.info,  Node: Auto push changes,  Prev: Forgetting Factor,  Up: Gnosis Algorithm
+File: gnosis.info,  Node: Sync between devices,  Prev: Gnosis Algorithm,  Up: Top
 
-6.4 Auto push changes
-=====================
+7 Sync between devices
+**********************
 
-You can interactively use ‘gnosis-vc-push’ & ‘gnosis-vc-pull’.
+Gnosis uses git to maintain data integrity and facilitate
+synchronization across devices.
 
-   As the name suggests, they rely on ‘vc’ to work properly.
+   You will need to configure your remote manually.
 
-   Make sure you have setup a git remote for gnosis.
-     cd ~/<your-emacs-directory>/gnosis # default location for gnosis
-     git remote add <remote_name> <remote_url> #
+   Example:
+
+     cd ~/.emacs.d/gnosis # default location for gnosis
+     git init # After completing your first review session, a git repo should have been initialized automatically.
+     git remote add <remote_name> <remote_url>
+     git push --set-upstream origin master
+
+   You can interactively use ‘gnosis-vc-push’ & ‘gnosis-vc-pull’.  As
+the name suggests, they rely on ‘vc’ to work properly.
 
    Depending on your setup, ‘vc’ might require an external package for
 the ssh passphrase dialog, such as ‘x11-ssh-askpass’.
+
+   To automatically push changes after a review session, add this to
+your configuration:
+     (setf gnosis-vc-auto-push t)
+     (gnosis-vc-pull) ;; Run vc-pull for gnosis on startup
+
+   You might as well add
 
 
 
 Tag Table:
 Node: Top246
-Node: Introduction1277
-Node: Installation1757
-Node: Using straightel2034
-Node: Installing manually from source2546
-Node: Adding notes3235
-Node: Note Types4651
-Node: Cloze4875
-Node: Basic Type5848
-Node: Double6126
-Node: MCQ (Multiple Choice Question)6472
-Node: y-or-n6881
-Node: Customization & Extension7307
-Node: Adjust for typos | String Comparison8020
-Node: Creating Custom Note Types8856
-Node: Gnosis Algorithm9966
-Node: Initial Interval10190
-Node: Easiness Factor10697
-Node: Forgetting Factor11602
-Node: Auto push changes12162
+Node: Introduction1280
+Node: Installation1760
+Node: Using straightel2037
+Node: Installing manually from source2549
+Node: Adding notes3238
+Node: Note Types4654
+Node: Cloze4878
+Node: Basic Type5851
+Node: Double6129
+Node: MCQ (Multiple Choice Question)6475
+Node: y-or-n6884
+Node: Customization & Extension7310
+Node: Adjust for typos | String Comparison8023
+Node: Creating Custom Note Types8859
+Node: Gnosis Algorithm9969
+Node: Initial Interval10200
+Node: Easiness Factor10707
+Node: Forgetting Factor11612
+Node: Sync between devices12146
 
 End Tag Table
 
