@@ -30,7 +30,7 @@ a spaced repetition system implementation for note taking and self
 testing.
 
 @noindent
-This manual is written for Gnosis version 0.1.5, released on 2023-01-29.
+This manual is written for Gnosis version 0.1.7, released on 2023-02-18.
 
 @itemize
 @item
@@ -39,9 +39,7 @@ Official manual: @uref{https://thanosapollo.org/user-manual/gnosis}
 Git repositories:
 @itemize
 @item
-main:               @uref{https://git.thanosapollo.org/gnosis}
-@item
-sourcehut (mirror): @uref{https://git.sr.ht/~thanosapollo/gnosis}
+@uref{https://git.thanosapollo.org/gnosis}
 @end itemize
 @end itemize
 
@@ -54,6 +52,7 @@ sourcehut (mirror): @uref{https://git.sr.ht/~thanosapollo/gnosis}
 * Adding notes::
 * Note Types::
 * Customization & Extension::
+* Gnosis Algorithm::
 
 @detailmenu
 --- The Detailed Node Listing ---
@@ -73,16 +72,15 @@ Note Types
 
 Customization & Extension
 
-* Adjust string comparison::
+* Adjust for typos | String Comparison::
 * Creating Custom Note Types::
-* Customizing Gnosis Algorithm::
+
+Gnosis Algorithm
+
+* Initial Interval::
+* Easiness Factor::
+* Forgetting Factor::
 * Auto push changes::
-
-Customizing Gnosis Algorithm
-
-* Gnosis Algorithm Initial Interval::
-* Gnosis Algorithm Easiness Factor::
-* Gnosis Algorithm Forgetting Factor::
 
 @end detailmenu
 @end menu
@@ -101,10 +99,11 @@ your notes & review sessions, making it easier to study.
 @node Installation
 @chapter Installation
 
-Gnosis is not currently available in any ELPA, the recommended way to
-install gnosis is via straight.el:
-
-@uref{https://github.com/radian-software/straight.el}
+Gnosis is available via MELPA
+@itemize
+@item
+@uref{https://melpa.org/#/gnosis}
+@end itemize
 
 @menu
 * Using straight.el: Using straightel. 
@@ -275,27 +274,25 @@ character values used to represent them.
 @chapter Customization & Extension
 
 To make development and customization easier, gnosis comes with
-@samp{gnosis-dev} module, that should be used to create a custom database for
+@samp{gnosis-test} module, that should be used to create a custom database for
 testing.
 
-To use @samp{gnosis-dev}, first you have to @samp{(require 'gnosis-dev)} & run @samp{M-x
-gnosis-dev-test}. This will create a new directory 'testing' with a new
-database.
+To use @samp{gnosis-test}, first you have to @samp{(require 'gnosis-test)} & run
+@samp{M-x gnosis-test-start}. This will create a new database 'testing'
+with random inputs.
 
-To exit the testing environment, rerun @samp{M-x gnosis-dev-test} and then
-enter @samp{n} (no) at the prompt ``Start development env?''
+To exit the testing environment, rerun @samp{M-x gnosis-test-start} and
+then enter @samp{n} (no) at the prompt ``Start development env?''
 
 @menu
-* Adjust string comparison::
+* Adjust for typos | String Comparison::
 * Creating Custom Note Types::
-* Customizing Gnosis Algorithm::
-* Auto push changes::
 @end menu
 
-@node Adjust string comparison
-@section Adjust string comparison
+@node Adjust for typos | String Comparison
+@section Adjust for typos | String Comparison
 
-You may adjust @samp{gnosis-string-difference}, this is a threshold value
+You can adjust @samp{gnosis-string-difference}, this is a threshold value
 for string comparison that determines the maximum acceptable
 Levenshtein distance between two strings, which identifies their
 similarity
@@ -305,7 +302,7 @@ Let's illustrate with an example:
 (setf gnosis-string-difference 1)
 @end lisp
 
-In this scenario, we set `gnosis-string-difference` to 1. This implies
+In this scenario, we set @samp{gnosis-string-difference} to 1. This implies
 that two strings will be recognized as similar if they exhibit a
 difference of at most one character edit.
 
@@ -352,17 +349,18 @@ this should be done.
 Optionally, you might want to create your own custom @samp{gnosis-display} functions
 @end itemize
 
-@node Customizing Gnosis Algorithm
-@section Customizing Gnosis Algorithm
+@node Gnosis Algorithm
+@chapter Gnosis Algorithm
 
 @menu
-* Gnosis Algorithm Initial Interval::
-* Gnosis Algorithm Easiness Factor::
-* Gnosis Algorithm Forgetting Factor::
+* Initial Interval::
+* Easiness Factor::
+* Forgetting Factor::
+* Auto push changes::
 @end menu
 
-@node Gnosis Algorithm Initial Interval
-@subsection Gnosis Algorithm Initial Interval
+@node Initial Interval
+@section Initial Interval
 
 @samp{gnosis-algorithm-interval} is a list of 2 numbers, representing the
 first two initial intervals for successful reviews.
@@ -377,60 +375,72 @@ Using the above example, after first successfully reviewing a note,
 you will see it again tomorrow, if you successfully review said note
 again, the next review will be after 3 days.
 
-@node Gnosis Algorithm Easiness Factor
-@subsection Gnosis Algorithm Easiness Factor
+@node Easiness Factor
+@section Easiness Factor
 
-@samp{gnosis-algorithm-ef} is a list that consists of 3 items.
+The @samp{gnosis-algorithm-ef} is a list that consists of three items:
 
-The first item is the increase factor, used to increase the easiness
-factor upon successful review.
+@enumerate
+@item
+Easiness factor increase value: Added to the easiness factor upon a
+successful review.
 
-Second item refers to the decrease factor, used to
-decrease the easiness factor upon an unsuccessful review.
+@item
+Easiness factor decrease value: Subtracted from the total easiness
+factor upon a failed review.
 
-The third item is the initial total easiness factor, used to calculate
-the next interval.
+@item
+Initial total easiness factor: Used to calculate the next interval.
 
-The basic's of how this is used is that it's being multiplied with the
-last interval upon a successful review, e.g if you last reviewed a
-note 6 days ago, and the easiness factor of this note is 2.0, your
-next interval would be 6 * 2.0 & the total easiness factor would be
-2.0 + increase-factor as well.
+@item
+How this is used:
+@end enumerate
 
-Example:
+Multiplies the last interval by the easiness factor after a successful
+review.
+
+For example, if the last review was 6 days ago with an easiness factor
+of 2.0, the next interval would be calculated as 6 * 2.0, and the
+total easiness factor would be updated by adding the increase factor.
+
+Configuration example:
 
 @lisp
-(setq gnosis-algorithm-ef '(0.3 0.3 1.3))
+(setq gnosis-algorithm-ef '(0.30 0.25 1.3))
 @end lisp
 
-@node Gnosis Algorithm Forgetting Factor
-@subsection Gnosis Algorithm Forgetting Factor
+@node Forgetting Factor
+@section Forgetting Factor
 
 @samp{gnosis-algorithm-ff} is a floating number below 1.
 
-It's used to calculate the next interval upon an unsuccessful review,
-by being multiplied with last interval.
+Used to determine the next interval after an unsuccessful review.
+
+Multiplied with the last interval to calculate the next interval. For
+example, if @samp{gnosis-algorithm-ff} is set to 0.5 and the last interval
+was 6 days, the next interval will be 6 * 0.5 = 3 days.
 
 
-
-Example:
+Example configuration:
 
 @lisp
 (setq gnosis-algorithm-ff 0.5)
 @end lisp
 
-For a note with a value of last-interval of 6 days and a ff of 0.5,
-upon an unsuccessful review the next interval will be 6 * 0.5
-
 @node Auto push changes
 @section Auto push changes
 
-When setting @samp{gnosis-auto-push} to @samp{t}, at the end of every review
-session the changes to @code{gnosis-db} will be pushed to the pre-configured
-push remote. You have to set your push remote manually.
+You can interactively use @samp{gnosis-vc-push} & @samp{gnosis-vc-pull}.
 
-@lisp
-(setf gnosis-auto-push t)
-@end lisp
+As the name suggests, they rely on @samp{vc} to work properly.
+
+Make sure you have setup a git remote for gnosis.
+@example
+cd ~/<your-emacs-directory>/gnosis # default location for gnosis
+git remote add <remote_name> <remote_url> # 
+@end example
+
+Depending on your setup, @samp{vc} might require an external package for
+the ssh passphrase dialog, such as @code{x11-ssh-askpass}.
 
 @bye

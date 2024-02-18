@@ -64,20 +64,28 @@ between two strings to consider them as similar."
   :type 'integer
   :group 'gnosis)
 
-(defcustom gnosis-auto-push nil
-  "Automatically run `gnosis-auto-push-command' at the end of every review session."
+(defcustom gnosis-auto-vc-push nil
+  "Run `vc-push' at the end of every review session."
   :type 'boolean
   :group 'gnosis)
 
-(defcustom gnosis-auto-push-command "push"
-  "Git shell command to run at the end of a review session.
+(defcustom gnosis-mcq-display-choices t
+  "When t, display choices for mcq notes during review.
 
-Command specified will be executed when `gnosis-auto-push' is enabled.
+Users that use a completion framework like ivy/helm/vertico may want
+to set this to nil, as the choices will be displayed in the completion
+framework's minibuffer."
+  :type 'boolean
+  :group 'gnosis)
 
-It should be provided as a string without the `git' prefix, assuming
-that git is available in the system's PATH. For example, setting it
-to \"push\" will execute the command 'git push'."
-  :type 'string
+(defcustom gnosis-completing-read-function
+  (cond ((or (bound-and-true-p ivy-mode)
+	     (bound-and-true-p helm-mode)
+	     (bound-and-true-p vertico-mode))
+	 #'completing-read)
+	(t #'ido-completing-read))
+  "Function to use for `completing-read'."
+  :type 'function
   :group 'gnosis)
 
 (defvar gnosis-images-dir (expand-file-name "images" gnosis-dir)
@@ -97,8 +105,11 @@ to \"push\" will execute the command 'git push'."
 (defconst gnosis-db-version 1
   "Gnosis database version.")
 
-(defvar gnosis-note-types '(MCQ Cloze Basic Double y-or-n)
+(defvar gnosis-note-types '("MCQ" "Cloze" "Basic" "Double" "y-or-n")
   "Gnosis available note types.")
+
+(defvar gnosis-previous-note-tags '()
+  "Tags input from previously added note.")
 
 ;;; Faces
 
@@ -199,29 +210,6 @@ Example:
   "From TABLE use where to delete VALUE."
   (emacsql gnosis-db `[:delete :from ,table :where ,value]))
 
-(cl-defun gnosis-completing-read (prompt options info &optional (face-for-info 'font-lock-doc-face))
-  "A version of `completing-read' with text properties, padding & choosable face.
-Returns selected option from OPTIONS.
-
-WARNING: Do NOT use htis functions as is now!
-
-PROMPT is a string to prompt with; normally it ends in a colon and a space.
-OPTIONS is a list of strings.
-INFO is a list of strings, which will be displayed as additional info for option
-FACE-FOR-INFO is the face used to display info for option."
-  (let* ((choices (cl-mapcar 'cons options info))
-         (max-choice-length (apply #'max (mapcar #'length options)))
-         (formatted-choices
-          (mapcar (lambda (choice)
-                    (cons (concat (format "%s" (car choice))
-                                  (make-string (- max-choice-length (length (car choice))) ? )
-                                  "      "
-                                  (propertize (format "%s" (cdr choice)) 'face face-for-info))
-                          (car choice)))
-                  choices)))
-    (cdr (assoc (completing-read prompt formatted-choices nil t)
-		formatted-choices))))
-
 (defun gnosis-replace-item-at-index (index new-item list)
   "Replace item at INDEX in LIST with NEW-ITEM."
   (cl-loop for i from 0 for item in list
@@ -233,6 +221,15 @@ FACE-FOR-INFO is the face used to display info for option."
   (let ((question (gnosis-get 'main 'notes `(= id ,id))))
     (erase-buffer)
     (fill-paragraph (insert "\n"  (propertize question 'face 'gnosis-face-main)))))
+
+(defun gnosis-display-mcq-options (id)
+  "Display answer options for mcq note ID."
+  (let ((options (apply #'append (gnosis-select 'options 'notes `(= id 1) t)))
+	(option-num 1))
+    (insert "\n\n" (propertize "Options:" 'face 'gnosis-face-directions))
+    (cl-loop for option in options
+	     do (insert (format "\n%s. %s" option-num option))
+	     (setf option-num (1+ option-num)))))
 
 (defun gnosis-display-cloze-sentence (sentence clozes)
   "Display cloze sentence for SENTENCE with CLOZES."
@@ -370,7 +367,7 @@ Set SPLIT to t to split all input given."
   "Return name from table DECKS."
   (when (equal (gnosis-select 'name 'decks) nil)
     (error "No decks found"))
-  (completing-read "Deck: " (gnosis-select 'name 'decks)))
+  (funcall gnosis-completing-read-function "Deck: " (gnosis-select 'name 'decks)))
 
 (cl-defun gnosis--get-deck-id (&optional (deck (gnosis--get-deck-name)))
   "Return id for DECK name."
@@ -416,7 +413,7 @@ When called with a prefix, unsuspends all notes for tag."
 (defun gnosis-suspend ()
   "Suspend note(s) with specified values."
   (interactive)
-  (let ((item (completing-read "Suspend by: " '("Deck" "Tag"))))
+  (let ((item (funcall gnosis-completing-read-function "Suspend by: " '("Deck" "Tag"))))
     (pcase item
       ("Deck" (gnosis-suspend-deck))
       ("Tag" (gnosis-suspend-tag))
@@ -559,7 +556,8 @@ Refer to `gnosis-add-note--double' for more."
 			       :question (read-string "Question: ")
 			       :answer (read-string "Answer: ")
 			       :image (when (y-or-n-p "Add image to display during review?")
-					(completing-read "Select image: " (gnosis-directory-files)))
+					(funcall gnosis-completing-read-function "Select image: "
+						 (gnosis-directory-files)))
 			       :hint (read-string "Hint: ")
 			       :extra (read-string "Extra: ")
 			       :tags (gnosis-tag-prompt)))))
@@ -667,7 +665,7 @@ See `gnosis-add-note--cloze' for more reference."
 ;;;###autoload
 (defun gnosis-add-note (type)
   "Create note(s) as TYPE interactively."
-  (interactive (list (completing-read "Type: " gnosis-note-types nil t)))
+  (interactive (list (funcall gnosis-completing-read-function "Type: " gnosis-note-types nil t)))
   (when gnosis-testing
     (unless (y-or-n-p "You are using a testing environment! Continue?")
       (error "Aborted")))
@@ -680,7 +678,7 @@ See `gnosis-add-note--cloze' for more reference."
   "Choose the correct answer, from mcq choices for question ID."
   (let ((choices (gnosis-get 'options 'notes `(= id ,id)))
 	(history-add-new-input nil)) ;; Disable history
-    (completing-read "Answer: " choices)))
+    (funcall gnosis-completing-read-function "Answer: " choices)))
 
 (defun gnosis-cloze-remove-tags (string)
   "Replace cx-tags in STRING.
@@ -756,7 +754,7 @@ By default, DIR value is `gnosis-images-dir' & REGEX value is \"^[^.]\""
 
 Optionally, add cusotm PROMPT."
   (let* ((prompt (or prompt "Select image: "))
-	 (image (completing-read prompt (gnosis-directory-files gnosis-images-dir))))
+	 (image (funcall gnosis-completing-read-function prompt (gnosis-directory-files gnosis-images-dir))))
     image))
 
 (defun gnosis-get-tags--unique ()
@@ -808,14 +806,19 @@ MATCH: Require match, t or nil value
 DUE: if t, return tags for due notes from `gnosis-due-tags'.
 Returns a list of unique tags."
   (let* ((tags '())
-         (tag ""))
-    (while (not (string= tag "q"))
-      (setf tag (completing-read (concat prompt (format " %s (q for quit): " tags))
-				 (cons "q" (if due (gnosis-review-get-due-tags)
-					     (gnosis-get-tags--unique)))
-				 nil match))
-      (unless (or (string= tag "q") (member tag tags))
-        (push tag tags)))
+         (tag "")
+	 (use-prev (when gnosis-previous-note-tags
+		     (y-or-n-p (format "Use tags from previous note %s?" gnosis-previous-note-tags)))))
+    (if use-prev
+	(setf tags gnosis-previous-note-tags)
+      (while (not (string= tag "q"))
+	(setf tag (funcall gnosis-completing-read-function (concat prompt (format " %s (q for quit): " tags))
+			   (cons "q" (if due (gnosis-review-get-due-tags)
+				       (gnosis-get-tags--unique)))
+			   nil match))
+	(unless (or (string= tag "q") (member tag tags))
+          (push tag tags))))
+    (setf gnosis-previous-note-tags (if use-prev tags (reverse tags)))
     (reverse tags)))
 
 ;; Review
@@ -910,8 +913,10 @@ SUCCESS is a boolean value, t for success, nil for failure."
     ;; Update review
     (gnosis-update 'review `(= ef ',ef) `(= id ,id))
     (if success
-	(progn (gnosis-update 'review-log `(= c-success ,(1+ (gnosis-get 'c-success 'review-log `(= id ,id)))) `(= id ,id))
-	       (gnosis-update 'review-log `(= t-success ,(1+ (gnosis-get 't-success 'review-log `(= id ,id)))) `(= id ,id))
+	(progn (gnosis-update 'review-log
+			      `(= c-success ,(1+ (gnosis-get 'c-success 'review-log `(= id ,id)))) `(= id ,id))
+	       (gnosis-update 'review-log `(= t-success ,(1+ (gnosis-get 't-success 'review-log `(= id ,id))))
+			      `(= id ,id))
 	       (gnosis-update 'review-log `(= c-fails 0) `(= id ,id)))
       (gnosis-update 'review-log `(= c-fails ,(1+ (gnosis-get 'c-fails 'review-log `(= id ,id)))) `(= id ,id))
       (gnosis-update 'review-log `(= t-fails ,(1+ (gnosis-get 't-fails 'review-log `(= id ,id)))) `(= id ,id))
@@ -921,6 +926,8 @@ SUCCESS is a boolean value, t for success, nil for failure."
   "Display multiple choice answers for question ID."
   (gnosis-display-image id)
   (gnosis-display-question id)
+  (when gnosis-mcq-display-choices
+    (gnosis-display-mcq-options id))
   (let* ((choices (gnosis-get 'options 'notes `(= id ,id)))
 	 (answer (nth (- (gnosis-get 'answer 'notes `(= id ,id)) 1) choices))
 	 (user-choice (gnosis-mcq-answer id)))
@@ -1018,6 +1025,21 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
             (funcall func-name id)))
       (error "Malformed note type: '%s'" type))))
 
+
+;;;###autoload
+(cl-defun gnosis-vc-push (&optional (dir gnosis-dir))
+  "Run `vc-push' in DIR."
+  (interactive)
+  (let ((default-directory dir))
+    (vc-push)))
+
+;;;###autoload
+(cl-defun gnosis-vc-pull (&optional (dir gnosis-dir))
+  "Run `vc-pull' in DIR."
+  (interactive)
+  (let ((default-directory dir))
+    (vc-pull)))
+
 (defun gnosis-review-commit (note-num)
   "Commit review session on git repository.
 
@@ -1033,11 +1055,11 @@ NOTE-NUM: The number of notes reviewed in the session."
     (unless (file-exists-p (expand-file-name ".git" gnosis-dir))
       (vc-create-repo 'Git))
     ;; TODO: Redo this using vc
-    (shell-command (concat git " add " (shell-quote-argument "gnosis.db")))
-    (shell-command (concat git " commit -m "
-			   (shell-quote-argument (concat (format "Total notes for session: %d " note-num)))))
-    (when gnosis-auto-push
-      (shell-command (concat git " " gnosis-auto-push-command)))
+    (shell-command (format "%s %s %s" git "add" (shell-quote-argument "gnosis.db")))
+    (shell-command (format "%s %s %s" git "commit -m"
+			   (shell-quote-argument (format "Total notes for session: %d" note-num))))
+    (when gnosis-auto-vc-push
+      (gnosis-vc-push))
     (message "Review session finished. %d notes reviewed." note-num)))
 
 (defun gnosis-review--session (notes)
@@ -1070,7 +1092,7 @@ NOTES: List of note ids"
 
 (defun gnosis-edit-note (id)
   "Edit note with value of id ID."
-  (pcase (completing-read "Edit: " '(contents ef) nil t)
+  (pcase (funcall gnosis-completing-read-function "Edit: " '("contents" "ef") nil t)
     ("contents" (gnosis-edit-note-contents id))
     ("ef" (gnosis-edit-ef id))
     (_ (message "No such value."))))
@@ -1078,7 +1100,8 @@ NOTES: List of note ids"
 (defun gnosis-edit-ef (id)
   "Edit easiness factor values for note with id value ID."
   (let ((ef-full (caar (gnosis-select 'ef 'review `(= id ,id))))
-	(old-value-index (pcase (completing-read "Change Factor: " '("Increase" "Decrease" "Total"))
+	(old-value-index (pcase (funcall gnosis-completing-read-function "Change Factor: "
+					 '("Increase" "Decrease" "Total"))
 			   ("Total" 2)
 			   ("Decrease" 1)
 			   ("Increase" 0)))
@@ -1334,10 +1357,10 @@ review."
 (defun gnosis-review ()
   "Start gnosis review session."
   (interactive)
-  (let ((review-type (completing-read "Review: " '("Due notes"
-						   "Due notes of deck"
-						   "Due notes of specified tag(s)"
-						   "All notes of tag(s)"))))
+  (let ((review-type (funcall gnosis-completing-read-function "Review: " '("Due notes"
+									   "Due notes of deck"
+									   "Due notes of specified tag(s)"
+									   "All notes of tag(s)"))))
     (pcase review-type
       ("Due notes" (gnosis-review--session (gnosis-review-get-due-notes)))
       ("Due notes of deck" (gnosis-review--session (gnosis-get-deck-due-notes)))
