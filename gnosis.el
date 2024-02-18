@@ -1050,7 +1050,9 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
   "Pull change from git repository in DIR."
   (interactive)
   (let ((default-directory dir))
-    (gnosis-git--process "pull")))
+    (gnosis-git--process "pull")
+    ;; Refresh gnosis-db after pull
+    (setf gnosis-db (emacsql-sqlite-open (expand-file-name "gnosis.db" gnosis-dir)))))
 
 (defun gnosis-review-commit (note-num)
   "Commit review session on git repository.
