@@ -64,8 +64,8 @@ between two strings to consider them as similar."
   :type 'integer
   :group 'gnosis)
 
-(defcustom gnosis-auto-push nil
-  "Run `git push' at the end of every review session."
+(defcustom gnosis-auto-vc-push nil
+  "Run `vc-push' at the end of every review session."
   :type 'boolean
   :group 'gnosis)
 
@@ -1025,34 +1025,20 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
             (funcall func-name id)))
       (error "Malformed note type: '%s'" type))))
 
-(defun gnosis-git--process (command)
-  "Start a git process with COMMAND."
-  (let ((proc (start-process "*git-gnosis*" "*git-gnosis*" "git" command)))
-    ;; Filter for password prompt
-    (set-process-filter proc (lambda (proc string)
-			       (when (string-match "Password\\|password\\|passphrase" string)
-				 (process-send-string proc (read-passwd "Password: ")))))
-    ;; FIXME: Set sentinel to delete process when done
-    (set-process-sentinel proc (lambda (proc event)
-				 (when (eq 'exit (process-status proc))
-				   (unless (process-live-p proc)
-				     (delete-process proc)))))))
 
 ;;;###autoload
-(cl-defun gnosis-git-push (&optional (dir gnosis-dir))
-  "Push change to git repository in DIR."
+(cl-defun gnosis-vc-push (&optional (dir gnosis-dir))
+  "Run `vc-push' in DIR."
   (interactive)
   (let ((default-directory dir))
-    (gnosis-git--process "push")))
+    (vc-push)))
 
 ;;;###autoload
-(cl-defun gnosis-git-pull (&optional (dir gnosis-dir))
-  "Pull change from git repository in DIR."
+(cl-defun gnosis-vc-pull (&optional (dir gnosis-dir))
+  "Run `vc-pull' in DIR."
   (interactive)
   (let ((default-directory dir))
-    (gnosis-git--process "pull")
-    ;; Refresh gnosis-db after pull
-    (setf gnosis-db (emacsql-sqlite-open (expand-file-name "gnosis.db" gnosis-dir)))))
+    (vc-pull)))
 
 (defun gnosis-review-commit (note-num)
   "Commit review session on git repository.
@@ -1072,8 +1058,8 @@ NOTE-NUM: The number of notes reviewed in the session."
     (shell-command (format "%s %s %s" git "add" (shell-quote-argument "gnosis.db")))
     (shell-command (format "%s %s %s" git "commit -m"
 			   (shell-quote-argument (format "Total notes for session: %d" note-num))))
-    (when gnosis-auto-push
-      (gnosis-git-push gnosis-dir))
+    (when gnosis-auto-vc-push
+      (gnosis-vc-push))
     (message "Review session finished. %d notes reviewed." note-num)))
 
 (defun gnosis-review--session (notes)
