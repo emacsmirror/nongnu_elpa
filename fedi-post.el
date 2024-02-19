@@ -576,7 +576,9 @@ if this differs from the minor mode.
 CAPF-FUNS is a list of functions to enable.
 TYPE is a string for the buffer name.
 FIELDS is a list of alists containing status fields for bindings
-and options display."
+and options display. Each alist should have a name, prop,
+item-var and face elements. Element name should be a hyphen-separated
+string, the other elements should be symbols."
   (let* ((buffer-name (if edit
                           (format "*edit %s*" type)
                         (format "*new %s*" type)))
