@@ -1143,9 +1143,8 @@ changes."
   :lighter " Gnosis Edit"
   :keymap gnosis-edit-mode-map)
 
-
 (cl-defun gnosis-edit-update-note (&key id main options answer tags (extra-notes nil) (image nil) (second-image nil)
-					ef ff)
+					ef ff suspend)
   "Update note with id value of ID.
 
 ID: Note id
@@ -1167,12 +1166,15 @@ SECOND-IMAGE: Image to display after user-input"
              (image . ,image)
              (second-image . ,second-image)
 	     (ef . ',ef)
-	     (ff . ,ff))
+	     (ff . ,ff)
+	     (suspend . ,suspend))
            when value
            do (cond ((memq field '(extra-notes image second-image))
 		     (gnosis-update 'extras `(= ,field ,value) `(= id ,id)))
 		    ((memq field '(ef ff))
 		     (gnosis-update 'review `(= ,field ,value) `(= id ,id)))
+		    ((eq field 'suspend)
+		     (gnosis-update 'review-log `(= ,field ,value) `(= id ,id)))
 		    ((listp value)
 		     (gnosis-update 'notes `(= ,field ',value) `(= id ,id)))
 		    (t (gnosis-update 'notes `(= ,field ,value) `(= id ,id))))))
