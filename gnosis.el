@@ -1399,6 +1399,16 @@ review."
 	tabulated-list-sort-key nil)
   (tabulated-list-init-header))
 
+;;;###autoload
+(defun gnosis-dashboard ()
+  "Display gnosis dashboard."
+  (interactive)
+  (pop-to-buffer "*gnosis-dashboard*" nil)
+  (gnosis-dashboard-mode)
+  (setq tabulated-list-entries
+	(gnosis-dashboard-output-notes))
+  (tabulated-list-print t))
+
 (defun gnosis-db-init ()
   "Create gnosis essential directories & database."
   (unless (length= (emacsql gnosis-db [:select name :from sqlite-master :where (= type table)]) 6)
