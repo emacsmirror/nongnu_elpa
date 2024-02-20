@@ -1128,7 +1128,10 @@ changes."
   (interactive)
   (eval-buffer)
   (kill-buffer)
-  (exit-recursive-edit))
+  ;; exit recursive edit if we are in one
+  (if (>= (recursion-depth) 1)
+      (exit-recursive-edit)
+    (gnosis-dashboard)))
 
 (defvar-keymap gnosis-edit-mode-map
   :doc "gnosis-edit keymap"
