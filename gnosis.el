@@ -493,6 +493,7 @@ Refer to `gnosis-add-note--mcq' for more."
 			    :choices (gnosis--prompt "Choices")
 			    :correct-answer (string-to-number (read-string "Which is the correct answer (number)? "))
 			    :extra (read-string "Extra: ")
+			    :image (gnosis-select-image)
 			    :tags (gnosis-tag-prompt)))))
 
 (cl-defun gnosis-add-note--basic (&key deck question hint answer
@@ -524,6 +525,7 @@ Refer to `gnosis-add-note--basic' for more."
 			      :answer (read-string "Answer: ")
 			      :hint (read-string "Hint: ")
 			      :extra (read-string "Extra: ")
+			      :image (gnosis-select-image)
 			      :tags (gnosis-tag-prompt)))))
 
 (cl-defun gnosis-add-note--double (&key deck question hint answer extra (image nil) tags (suspend 0) (second-image nil))
@@ -560,6 +562,7 @@ Refer to `gnosis-add-note--double' for more."
 						 (gnosis-directory-files)))
 			       :hint (read-string "Hint: ")
 			       :extra (read-string "Extra: ")
+			       :image (gnosis-select-image)
 			       :tags (gnosis-tag-prompt)))))
 
 (cl-defun gnosis-add-note--y-or-n (&key deck question hint answer extra (image nil) tags (suspend 0) (second-image nil))
@@ -588,6 +591,7 @@ refer to `gnosis-add-note--y-or-n' for more information about keyword values."
                                :answer (read-char-choice "Answer: [y] or [n]? " '(?y ?n))
 			       :hint (read-string "Hint: ")
 			       :extra (read-string "Extra: ")
+			       :image (gnosis-select-image)
 			       :tags (gnosis-tag-prompt)))))
 
 
@@ -660,6 +664,7 @@ See `gnosis-add-note--cloze' for more reference."
 			      :note (read-string "Question: ")
 			      :hint (read-string "Hint: ")
 			      :extra (read-string "Extra: ")
+			      :image (gnosis-select-image)
 			      :tags (gnosis-tag-prompt)))))
 
 ;;;###autoload
@@ -753,9 +758,12 @@ By default, DIR value is `gnosis-images-dir' & REGEX value is \"^[^.]\""
   "Return PATH for file in `gnosis-images-dir'.
 
 Optionally, add cusotm PROMPT."
-  (let* ((prompt (or prompt "Select image: "))
-	 (image (funcall gnosis-completing-read-function prompt (gnosis-directory-files gnosis-images-dir))))
-    image))
+  (if (y-or-n-p "Add image?")
+      (let* ((prompt (or prompt "Select image: "))
+	     (image (funcall gnosis-completing-read-function prompt
+			     (cons nil (gnosis-directory-files gnosis-images-dir)))))
+	(if (string= image "nil") nil image))
+    nil))
 
 (defun gnosis-get-tags--unique ()
   "Return a list of unique strings for tags in `gnosis-db'."
