@@ -1373,6 +1373,13 @@ review."
     (cl-loop for id from 1 to max-id collect
 	     (list (number-to-string id) (vconcat (gnosis-dashboard-output-note id))))))
 
+(defun gnosis-dashboard-edit-note ()
+  "Get note id from tabulated list and edit it."
+  (interactive)
+  (let ((id (tabulated-list-get-id)))
+    (gnosis-edit-note (string-to-number id))
+    (message "Editing note with id: %s" id)))
+
 (defun gnosis-db-init ()
   "Create gnosis essential directories & database."
   (unless (length= (emacsql gnosis-db [:select name :from sqlite-master :where (= type table)]) 6)
