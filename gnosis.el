@@ -1385,6 +1385,20 @@ review."
   "e" #'gnosis-dashboard-edit-note
   "q" #'quit-window)
 
+(define-derived-mode gnosis-dashboard-mode tabulated-list-mode "Gnosis Dashboard"
+  "Major mode for displaying Gnosis dashboard."
+  :keymap gnosis-dashboard-mode-map
+  (interactive)
+  (display-line-numbers-mode 0)
+  (setq tabulated-list-format [("Main" 30 t)
+			       ("Options" 20 t)
+			       ("Answer" 25 t)
+			       ("Tags" 25 t)
+			       ("Suspend" 5 t)])
+  (setq tabulated-list-padding 2
+	tabulated-list-sort-key nil)
+  (tabulated-list-init-header))
+
 (defun gnosis-db-init ()
   "Create gnosis essential directories & database."
   (unless (length= (emacsql gnosis-db [:select name :from sqlite-master :where (= type table)]) 6)
