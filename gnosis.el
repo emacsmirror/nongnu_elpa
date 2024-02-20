@@ -1357,6 +1357,16 @@ review."
 				  (:foreign-key [id] :references notes [id]
 						:on-delete :cascade)))
 
+;; Dashboard
+(defun gnosis-dashboard-output-note (id)
+  "Output note contents formatted for gnosis dashboard."
+  (cl-loop for item in (append (gnosis-select '[main options answer tags] 'notes `(= id ,id) t)
+			       (gnosis-select 'suspend 'review-log `(= id ,id) t))
+           if (listp item)
+           collect (mapconcat #'identity item ", ")
+           else
+           collect (prin1-to-string item)))
+
 (defun gnosis-db-init ()
   "Create gnosis essential directories & database."
   (unless (length= (emacsql gnosis-db [:select name :from sqlite-master :where (= type table)]) 6)
