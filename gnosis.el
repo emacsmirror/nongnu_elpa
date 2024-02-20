@@ -5,7 +5,7 @@
 ;; Author: Thanos Apollo <public@thanosapollo.org>
 ;; Keywords: extensions
 ;; URL: https://thanosapollo.org/projects/gnosis
-;; Version: 0.1.8-dev
+;; Version: 0.1.8
 
 ;; Package-Requires: ((emacs "27.2") (compat "29.1.4.2") (emacsql "20240124"))
 
@@ -1245,61 +1245,38 @@ resulting code is saved to a file with the provided FILENAME and a
 Each note is exported using the `gnosis-export-note` function. The
 generated code includes a call to `gnosis-define-deck` with the deck
 name and all notes formatted as nested lists"
-  (interactive (list (read-string "Filename: ")))
-  (let ((notes (gnosis-get-notes-for-deck))
-	(deck-name (read-string "Export deck as (name): ")))
-    (with-temp-file (concat filename ".el")
-      (insert "(gnosis-define-deck " "'" deck-name " '(")
-      (cl-loop for note in notes
-	       do (insert "(") (gnosis-export-note note) (insert ")" "\n")
-	       finally (insert "))")))))
+  ;; (interactive (list (gnosis-get-notes-for-deck)
+  ;; 		     (read-string "Export deck as (name): ")
+  ;; 		     (read-string "Filename: ")))
+  (with-temp-file (concat filename ".el")
+    (insert "(gnosis-define-deck " "'" export-deck-name " '(")
+    (cl-loop for note in deck
+	     do (insert "(") (gnosis-export-note note t) (insert ")" "\n")
+	     finally (insert "))"))))
 
 ;; TODO: Add defcustom to have suspended as 0 or 1 depending on
 ;; gnosis-add-decks-suspended t or nil
 (cl-defun gnosis-define-deck (deck notes &optional (suspended 0))
-  "Define DECK consisting of NOTES, optionally add them as SUSPENDED.
-
-The `gnosis-define-deck` function adds a new deck with the specified
-name to `gnosis-db'. It also adds each note from the given list
-of `notes` to the deck. The function takes three optional arguments:
-`deck`, `notes`, and `suspended`.
-
-- `deck`: The name of the deck to be added. It should be provided as a
-          symbol.
-
-- `notes`: A list containing the notes to be added to the deck. Each
-           note should be represented as a property list with the
-           following keys: `:type`, `:main`, `:options`, `:answer`
-
-- extras include :`:extra-notes`, `:tags`, `:image`, and `:second-image`.
-
-- `suspended`: An optional argument specifying whether the deck should
-               be created in a suspended state. A non-zero value
-               suspends the deck, while a value of 0 (default) creates
-               the deck in an active state.
-
-When calling `gnosis-define-deck`, the deck is added to the Gnosis
-system by calling `gnosis-add-deck`. Each note is added to the deck
-using `gnosis-add-note-fields`. The function iterates over the list of
-`notes` and extracts the necessary fields from each note's property
-list before adding them to the deck.
-
-The purpose of this function is to create a full deck with its
-associated notes in `gnosis-db', ready for further processing or
-review."
+  "Define DECK consisting of NOTES, optionally add them as SUSPENDED."
   (gnosis-add-deck (symbol-name deck))
-  (sit-for 0.1) ;;
+  (sit-for 0.1)
   (cl-loop for note in notes
-	   do (gnosis-add-note-fields (symbol-name deck)
-				      (plist-get note :type)
-				      (plist-get note :main)
-				      (plist-get note :options)
-				      (plist-get note :answer)
-				      (plist-get note :extra-notes)
-				      (plist-get note :tags)
-				      suspended
-				      (plist-get note :image)
-				      (plist-get note :second-image))))
+           do (let ((type (plist-get note :type))
+                    (main (plist-get note :main))
+                    (options (plist-get note :options))
+                    (answer (plist-get note :answer))
+                    (extra-notes (plist-get note :extra-notes))
+                    (tags (plist-get note :tags))
+                    (suspend (plist-get note :suspend))
+                    (image (plist-get note :image))
+                    (second-image (plist-get note :second-image)))
+                (gnosis-add-note-fields deck type main options answer extra-notes tags suspend image second-image))
+           collect note))
+
+;; Rewrite this similarly to gnosis
+(cl-defun gnosis-define-deck--note (&keys deck type main options answer extra-notes tags image second-image)
+  "Define a note for DECK."
+  (gnosis-add-note-fields deck type main options answer extra-notes tags 0 image second-image))
 
 
 ;;;###autoload
