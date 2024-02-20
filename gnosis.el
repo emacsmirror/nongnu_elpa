@@ -1210,17 +1210,25 @@ The final exported note is indented using the `indent-region' function
 to improve readability."
   (let ((values (append (gnosis-select '[id main options answer tags] 'notes `(= id ,id) t)
 			(gnosis-select '[extra-notes images extra-image] 'extras `(= id ,id) t)
-			(gnosis-select '[ef ff] 'review `(= id ,id) t)))
-	(fields '(:id :main :options :answer :tags :extra-notes :image :second-image :ef :ff)))
+			(gnosis-select '[ef ff] 'review `(= id ,id) t)
+			(gnosis-select 'suspend 'review-log `(= id ,id) t)))
+	(fields '(:id :main :options :answer :tags :extra-notes :image :second-image :ef :ff :suspend)))
+    (when export-for-deck
+      (setf values (append (gnosis-select 'type 'notes `(= id ,id) t)
+			   (butlast (cdr values) 3)))
+      (setf fields (append '(:type) (butlast (cdr fields) 3))))
     (cl-loop for value in values
              for field in fields
              do (insert
-		 (if (listp value)
-		     (format "\n%s '%s" (symbol-name field) (prin1-to-string value))
-		   (format "\n%s %s" (symbol-name field) (prin1-to-string value)))))))
+		 (cond ((listp value)
+			(format "\n%s '%s" (symbol-name field) (prin1-to-string value)))
+		       (t (format "\n%s %s" (symbol-name field) (prin1-to-string value))))))))
 
-(defun gnosis-export-deck (filename)
+;; TODO: Fix export of deck!
+(defun gnosis-export-deck (deck export-deck-name filename)
   "Export notes for deck in FILENAME.
+
+WARNING: This function is not yet implemented.
 
 FILENAME: The name of the file to save the exported deck.
 
