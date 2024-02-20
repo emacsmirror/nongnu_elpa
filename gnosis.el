@@ -1141,7 +1141,8 @@ changes."
   :keymap gnosis-edit-mode-map)
 
 
-(cl-defun gnosis-edit-update-note (&key id main options answer tags (extra-notes nil) (image nil) (second-image nil))
+(cl-defun gnosis-edit-update-note (&key id main options answer tags (extra-notes nil) (image nil) (second-image nil)
+					ef ff)
   "Update note with id value of ID.
 
 ID: Note id
@@ -1161,10 +1162,14 @@ SECOND-IMAGE: Image to display after user-input"
              (tags . ,tags)
              (extra-notes . ,extra-notes)
              (image . ,image)
-             (second-image . ,second-image))
+             (second-image . ,second-image)
+	     (ef . ',ef)
+	     (ff . ,ff))
            when value
            do (cond ((memq field '(extra-notes image second-image))
 		     (gnosis-update 'extras `(= ,field ,value) `(= id ,id)))
+		    ((memq field '(ef ff))
+		     (gnosis-update 'review `(= ,field ,value) `(= id ,id)))
 		    ((listp value)
 		     (gnosis-update 'notes `(= ,field ',value) `(= id ,id)))
 		    (t (gnosis-update 'notes `(= ,field ,value) `(= id ,id))))))
