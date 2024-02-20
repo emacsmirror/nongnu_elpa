@@ -1380,6 +1380,11 @@ review."
     (gnosis-edit-note (string-to-number id))
     (message "Editing note with id: %s" id)))
 
+(defvar-keymap gnosis-dashboard-mode-map
+  :doc "gnosis-dashboard keymap"
+  "e" #'gnosis-dashboard-edit-note
+  "q" #'quit-window)
+
 (defun gnosis-db-init ()
   "Create gnosis essential directories & database."
   (unless (length= (emacsql gnosis-db [:select name :from sqlite-master :where (= type table)]) 6)
