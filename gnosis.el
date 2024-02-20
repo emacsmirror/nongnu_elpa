@@ -1091,31 +1091,6 @@ NOTES: List of note ids"
 ;; Editing notes
 
 (defun gnosis-edit-note (id)
-  "Edit note with value of id ID."
-  (pcase (funcall gnosis-completing-read-function "Edit: " '("contents" "ef") nil t)
-    ("contents" (gnosis-edit-note-contents id))
-    ("ef" (gnosis-edit-ef id))
-    (_ (message "No such value."))))
-
-(defun gnosis-edit-ef (id)
-  "Edit easiness factor values for note with id value ID."
-  (let ((ef-full (caar (gnosis-select 'ef 'review `(= id ,id))))
-	(old-value-index (pcase (funcall gnosis-completing-read-function "Change Factor: "
-					 '("Increase" "Decrease" "Total"))
-			   ("Total" 2)
-			   ("Decrease" 1)
-			   ("Increase" 0)))
-	(new-value (float (string-to-number (read-string "New value: ")))))
-    ;; error checking.
-    (cond ((>= 0 new-value) (error "New value needs to be a number & higher than `0'"))
-	  ;; Check if when total-ef is selected, new value is higher than 1.3
-	  ((and (>= 1.3 new-value) (= old-value-index 2) (error "New total ef needs to be higher than `1.3'"))))
-    ;; Use `gnosis-replace-item-at-index' to generate new list with
-    ;; new ef value. Change ef value at gnosis-db using
-    ;; `gnosis-update'
-    (gnosis-update 'review `(= ef ',(gnosis-replace-item-at-index old-value-index new-value ef-full)) `(= id ,id))))
-
-(defun gnosis-edit-note-contents (id)
   "Edit the contents of a note with the given ID.
 
 This function creates an Emacs Lisp buffer named *gnosis-edit* and populates it
@@ -1138,42 +1113,15 @@ The note fields that will be shown in the buffer are:
 The buffer automatically indents the expressions for readability.
 After finishing editing, evaluate the entire expression to apply the
 changes."
-  (let ((id (gnosis-get 'id 'notes `(= id ,id)))
-	(main (gnosis-get 'main 'notes `(= id ,id)))
-	(options (gnosis-get 'options 'notes `(= id ,id)))
-	(answer (gnosis-get 'answer 'notes `(= id ,id)))
-	(tags (gnosis-get 'tags 'notes `(= id ,id)))
-	(extra-notes (gnosis-get 'extra-notes 'extras `(= id ,id)))
-	(image (gnosis-get 'images 'extras `(= id ,id)))
-	(second-image (gnosis-get 'extra-image 'extras `(= id ,id))))
-    (with-current-buffer (switch-to-buffer (get-buffer-create "*gnosis-edit*"))
-      (gnosis-edit-mode)
-      (erase-buffer)
-      (insert ";;\n;; You are editing a gnosis note. DO NOT change the value of id.\n\n")
-      (insert "(gnosis-edit-update-note ")
-      (cl-loop for (field value) in `((id ,id)
-				      (main ,main)
-				      (options ,options)
-				      (answer ,answer)
-				      (tags ,tags)
-				      (extra-notes ,extra-notes)
-				      (image ,image)
-				      (second-image ,second-image))
-	       do (cond ((eq field 'id)
-			 (insert (format ":id %s \n" (propertize (number-to-string value) 'read-only t))))
-			((numberp value)
-			 (insert (format ":%s %s\n" field value)))
-			((and (listp value)
-			      (not (equal value nil)))
-			 (insert (format ":%s '%s\n" field (format "%s" (cl-loop for item in value
-										 collect (format "\"%s\"" item))))))
-			((null value)
-			 (insert (format ":%s %s\n" field 'nil)))
-			(t (insert (format ":%s \"%s\"\n" field value)))))
-      (delete-char -1) ;; delete extra line
-      (insert ")")
-      (insert "\n;; After finishing editing, save changes with `<C-c> <C-c>'\n;; Do NOT exit without saving.")
-      (indent-region (point-min) (point-max)))))
+  (with-current-buffer (switch-to-buffer (get-buffer-create "*gnosis-edit*"))
+    (gnosis-edit-mode)
+    (erase-buffer)
+    (insert ";;\n;; You are editing a gnosis note. DO NOT change the value of id.\n\n")
+    (insert "(gnosis-edit-update-note ")
+    (gnosis-export-note id)
+    (insert ")")
+    (insert "\n\n;; After finishing editing, save changes with `<C-c> <C-c>'\n;; Do NOT exit without saving.")
+    (indent-region (point-min) (point-max))))
 
 (defun gnosis-edit-save-exit ()
   "Save edits and exit."
