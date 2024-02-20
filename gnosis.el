@@ -1367,6 +1367,12 @@ review."
            else
            collect (prin1-to-string item)))
 
+(defun gnosis-dashboard-output-notes ()
+  "Return note contents for gnosis dashboard."
+  (let ((max-id (apply 'max (gnosis-select 'id 'notes '1=1 t))))
+    (cl-loop for id from 1 to max-id collect
+	     (list (number-to-string id) (vconcat (gnosis-dashboard-output-note id))))))
+
 (defun gnosis-db-init ()
   "Create gnosis essential directories & database."
   (unless (length= (emacsql gnosis-db [:select name :from sqlite-master :where (= type table)]) 6)
