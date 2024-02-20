@@ -1181,9 +1181,9 @@ SECOND-IMAGE: Image to display after user-input"
 
 (cl-defun gnosis-get-notes-for-deck (&optional (deck (gnosis--get-deck-id)))
   "Return a list of ID vlaues for each note with value of deck-id DECK."
-  (gnosis-select 'id 'notes `(= deck-id ,deck) '1=1 t))
+  (gnosis-select 'id 'notes `(= deck-id ,deck) t))
 
-(defun gnosis-export-note (id)
+(cl-defun gnosis-export-note (id &optional (export-for-deck nil))
   "Export fields for note with value of id ID.
 
 ID: Identifier of the note to export.
