@@ -1250,33 +1250,16 @@ quotes.
 
 The final exported note is indented using the `indent-region' function
 to improve readability."
-  (let ((type (gnosis-get 'type 'notes `(= id ,id)))
-	(main (gnosis-get 'main 'notes `(= id ,id)))
-	(options (gnosis-get 'options 'notes `(= id ,id)))
-	(answer (gnosis-get 'answer 'notes `(= id ,id)))
-	(tags (gnosis-get 'tags 'notes `(= id ,id)))
-	(extra-notes (gnosis-get 'extra-notes 'extras `(= id ,id)))
-	(image (gnosis-get 'images 'extras `(= id ,id)))
-	(second-image (gnosis-get 'extra-image 'extras `(= id ,id))))
-    (cl-loop for (field . value) in `((type . ,type)
-				      (main . ,main)
-				      (options . ,options)
-				      (answer . ,answer)
-				      (tags . ,tags)
-				      (extra-notes . ,extra-notes)
-				      (image . ,image)
-				      (second-image . ,second-image))
-	     do (cond ((member field '(extra-notes image second-image))
-		       (insert (format ":%s \"%s\"\n" field value)))
-		      ((numberp value)
-		       (insert (format ":%s %s\n" field value)))
-		      ((listp value)
-		       (insert (format ":%s %s\n" field (format "%s" (cl-loop for item in value
-									      collect (format "\"%s\"" item))))))
-		      ((equal value nil)
-		       (insert (format ":%s %s\n" field 'nil)))
-		      (t (insert (format ":%s \"%s\"\n" field value))
-			 (indent-region (point-min) (point-max)))))))
+  (let ((values (append (gnosis-select '[id main options answer tags] 'notes `(= id ,id) t)
+			(gnosis-select '[extra-notes images extra-image] 'extras `(= id ,id) t)
+			(gnosis-select '[ef ff] 'review `(= id ,id) t)))
+	(fields '(:id :main :options :answer :tags :extra-notes :image :second-image :ef :ff)))
+    (cl-loop for value in values
+             for field in fields
+             do (insert
+		 (if (listp value)
+		     (format "\n%s '%s" (symbol-name field) (prin1-to-string value))
+		   (format "\n%s %s" (symbol-name field) (prin1-to-string value)))))))
 
 (defun gnosis-export-deck (filename)
   "Export notes for deck in FILENAME.
