@@ -36,6 +36,9 @@
 			  "microbiology" "gram-positive" "gram-negative"
 			  "fungi" "parasites"))
 
+(defvar gnosis-test-image "anatomy/typic-vertebra-superior-01.png"
+  "Random image for testing")
+
 (defun gnosis-test-random-items (list x)
   "Select X random items from LIST."
   (let ((shuffled-list (copy-sequence list))
@@ -72,6 +75,7 @@ deltoid, the spinal accessory nerve innervates the sternocleidomastoid
 and trapezius, the dorsal scapular nerve supplies the rhomboid muscles
 and levator scapulae, and the latissimus dorsi is the muscle supplied
 by the thoracodorsal nerve."
+			      :image gnosis-test-image
 			      :tags (gnosis-test-random-items gnosis-test-tags 2))))
     (when (y-or-n-p "Add Basic type questions?")
       (dotimes (_ num)
@@ -80,6 +84,7 @@ by the thoracodorsal nerve."
 				:hint "hint"
 				:answer "answer"
 				:extra "extra"
+				:image gnosis-test-image
 				:tags (gnosis-test-random-items gnosis-test-tags 2))))
     (when (y-or-n-p "Add single cloze type?")
       (dotimes (_ num)
@@ -87,6 +92,7 @@ by the thoracodorsal nerve."
 				:note "this is a {c1:note}"
 				:hint "note"
 				:tags (gnosis-test-random-items gnosis-test-tags 2)
+				:image gnosis-test-image
 				:extra "extra")))
     (when (y-or-n-p "Add note with multiple clozes?")
       (dotimes (_ num)
@@ -94,6 +100,7 @@ by the thoracodorsal nerve."
 				:note "this is a {c1:note}, a note with multiple {c1:clozes}"
 				:hint "note"
 				:tags (gnosis-test-random-items gnosis-test-tags 2)
+				:image gnosis-test-image
 				:extra "extra")))
     (when (y-or-n-p "Add note type y-or-n?")
       (dotimes (_ num)
@@ -102,6 +109,7 @@ by the thoracodorsal nerve."
 				 :hint "hint"
 				 :answer 110
 				 :extra "extra"
+				 :image gnosis-test-image
 				 :tags (gnosis-test-random-items gnosis-test-tags 2))))))
 
 (defun gnosis-test-start ()
