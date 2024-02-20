@@ -224,7 +224,7 @@ Example:
 
 (defun gnosis-display-mcq-options (id)
   "Display answer options for mcq note ID."
-  (let ((options (apply #'append (gnosis-select 'options 'notes `(= id 1) t)))
+  (let ((options (apply #'append (gnosis-select 'options 'notes `(= id ,id) t)))
 	(option-num 1))
     (insert "\n\n" (propertize "Options:" 'face 'gnosis-face-directions))
     (cl-loop for option in options
