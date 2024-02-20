@@ -319,7 +319,7 @@ If FALSE t, use gnosis-face-false face"
 (defun gnosis-display-image (id)
   "Display image for note ID."
   (let* ((img (gnosis-get 'images 'extras `(= id ,id)))
-	 (path-to-image (concat (file-name-as-directory gnosis-images-dir) img))
+	 (path-to-image (expand-file-name (or img "") (file-name-as-directory gnosis-images-dir)))
 	 (image (create-image path-to-image 'png nil :width 500 :height 300)))
     (when img
       (insert "\n\n")
@@ -924,8 +924,8 @@ SUCCESS is a boolean value, t for success, nil for failure."
 
 (defun gnosis-review-mcq (id)
   "Display multiple choice answers for question ID."
-  (gnosis-display-image id)
   (gnosis-display-question id)
+  (gnosis-display-image id)
   (when gnosis-mcq-display-choices
     (gnosis-display-mcq-options id))
   (let* ((choices (gnosis-get 'options 'notes `(= id ,id)))
@@ -943,8 +943,8 @@ SUCCESS is a boolean value, t for success, nil for failure."
 
 (defun gnosis-review-basic (id)
   "Review basic type note for ID."
-  (gnosis-display-image id)
   (gnosis-display-question id)
+  (gnosis-display-image id)
   (gnosis-display-hint (gnosis-get 'options 'notes `(= id ,id)))
   (let* ((answer (gnosis-get 'answer 'notes `(= id ,id)))
 	 (user-input (read-string "Answer: "))
@@ -956,8 +956,8 @@ SUCCESS is a boolean value, t for success, nil for failure."
 
 (defun gnosis-review-y-or-n (id)
   "Review y-or-n type note for ID."
-  (gnosis-display-image id)
   (gnosis-display-question id)
+  (gnosis-display-image id)
   (gnosis-display-hint (gnosis-get 'options 'notes `(= id ,id)))
   (let* ((answer (gnosis-get 'answer 'notes `(= id ,id)))
 	 (user-input (read-char-choice "[y]es or [n]o: " '(?y ?n)))
@@ -988,8 +988,8 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
 	 (num 1)
 	 (clozes-num (length clozes))
 	 (hint (gnosis-get 'options 'notes `(= id ,id))))
-    (gnosis-display-image id)
     (gnosis-display-cloze-sentence main clozes)
+    (gnosis-display-image id)
     (gnosis-display-hint hint)
     (cl-loop for cloze in clozes
 	     do (let ((input (gnosis-review-cloze--input cloze)))
@@ -1055,9 +1055,10 @@ NOTE-NUM: The number of notes reviewed in the session."
     (unless (file-exists-p (expand-file-name ".git" gnosis-dir))
       (vc-create-repo 'Git))
     ;; TODO: Redo this using vc
-    (shell-command (format "%s %s %s" git "add" (shell-quote-argument "gnosis.db")))
-    (shell-command (format "%s %s %s" git "commit -m"
-			   (shell-quote-argument (format "Total notes for session: %d" note-num))))
+    (unless gnosis-testing
+      (shell-command (format "%s %s %s" git "add" (shell-quote-argument "gnosis.db")))
+      (shell-command (format "%s %s %s" git "commit -m"
+			     (shell-quote-argument (format "Total notes for session: %d" note-num)))))
     (when gnosis-vc-auto-push
       (gnosis-vc-push))
     (message "Review session finished. %d notes reviewed." note-num)))
@@ -1163,13 +1164,13 @@ SECOND-IMAGE: Image to display after user-input"
              (answer . ,answer)
              (tags . ,tags)
              (extra-notes . ,extra-notes)
-             (image . ,image)
+             (images . ,image)
              (second-image . ,second-image)
 	     (ef . ',ef)
 	     (ff . ,ff)
 	     (suspend . ,suspend))
            when value
-           do (cond ((memq field '(extra-notes image second-image))
+           do (cond ((memq field '(extra-notes images second-image))
 		     (gnosis-update 'extras `(= ,field ,value) `(= id ,id)))
 		    ((memq field '(ef ff))
 		     (gnosis-update 'review `(= ,field ,value) `(= id ,id)))
