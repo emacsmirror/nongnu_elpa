@@ -12,7 +12,7 @@
 
 @dircategory Emacs misc features
 @direntry
-* Gnosis (γνῶσις): (gnosis). Spaced Repetition System For Note Taking And Self-Testing.
+* Gnosis (γνῶσις): (gnosis). Spaced Repetition System For Note Taking & Self-Testing.
 @end direntry
 
 @finalout
@@ -30,7 +30,7 @@ a spaced repetition system implementation for note taking and self
 testing.
 
 @noindent
-This manual is written for Gnosis version 0.1.7, released on 2023-02-18.
+This manual is written for Gnosis version 0.1.8, released on 2023-02-21.
 
 @itemize
 @item
@@ -51,9 +51,11 @@ Git repositories:
 * Installation::
 * Adding notes::
 * Note Types::
-* Customization & Extension::
+* Customization::
 * Gnosis Algorithm::
+* Editing notes::
 * Sync between devices::
+* Extending Gnosis::
 
 @detailmenu
 --- The Detailed Node Listing ---
@@ -71,16 +73,20 @@ Note Types
 * MCQ (Multiple Choice Question)::
 * y-or-n::
 
-Customization & Extension
+Customization
 
-* Adjust for typos | String Comparison::
-* Creating Custom Note Types::
+* Image size::
+* Typos | String Comparison::
 
 Gnosis Algorithm
 
 * Initial Interval::
 * Easiness Factor::
 * Forgetting Factor::
+
+Extending Gnosis
+
+* Creating Custom Note Types::
 
 @end detailmenu
 @end menu
@@ -157,42 +163,8 @@ Add this to your emacs configuration
 Creating notes for gnosis can be done interactively with:
   @samp{M-x gnosis-add-note}
 
-
-Advanced/Power users may prefer to use @samp{gnosis-add-note--TYPE}
-
-Example: 
-
-@lisp
-(gnosis-add-note--basic :deck "DECK-NAME"
-                      :question "Your Question"
-                      :answer "Answer"
-                      :hint "hint"
-                      :extra "Explanation"
-                      :image "Image displayed before user-input" ;; Optional
-                      :second-image "Image displayed after user-input" ;; Optional
-                      :tags '("tag1" "tag2"))
-@end lisp
-
-By default, the value of image and second image is nil. Their value
-must a string, the path of an image, from inside @code{gnosis-images-dir}.
-
-Each note type has a @samp{gnosis-add-note-TYPE} that is used
-interactively & a ``hidden function'' @samp{gnosis-add-note--TYPE} that handles
-all the logic.
-
-Every note type has these values in common:
-
-@itemize
-@item
-@code{extra} string value, extra information/explanation displayed after user-input
-@item
-@code{image} Image displayed @emph{before} user input
-@item
-@code{second-image} Image displayed @emph{after} user input
-@end itemize
-
-The following sections will cover the important differences you have
-to know when creating new notes.
+When it comes to adding images, you can select images that are inside
+@samp{gnosis-images-dir}. See more customization for @ref{Image size, , Image Size}
 
 @node Note Types
 @chapter Note Types
@@ -270,27 +242,27 @@ When using the hidden function @samp{gnosis-add-note--y-or-n}, note that the
 ANSWER must be either 121 (@code{y}) or 110 (@code{n}), as those correspond to the
 character values used to represent them.
 
-@node Customization & Extension
-@chapter Customization & Extension
-
-To make development and customization easier, gnosis comes with
-@samp{gnosis-test} module, that should be used to create a custom database for
-testing.
-
-To use @samp{gnosis-test}, first you have to @samp{(require 'gnosis-test)} & run
-@samp{M-x gnosis-test-start}. This will create a new database 'testing'
-with random inputs.
-
-To exit the testing environment, rerun @samp{M-x gnosis-test-start} and
-then enter @samp{n} (no) at the prompt ``Start development env?''
+@node Customization
+@chapter Customization
 
 @menu
-* Adjust for typos | String Comparison::
-* Creating Custom Note Types::
+* Image size::
+* Typos | String Comparison::
 @end menu
 
-@node Adjust for typos | String Comparison
-@section Adjust for typos | String Comparison
+@node Image size
+@section Image size
+
+Adjust image size using @samp{gnosis-image-height} & @samp{gnosis-image-width}
+
+Example:
+@lisp
+(setf gnosis-image-height 300
+      gnosis-image-width 500)
+@end lisp
+
+@node Typos | String Comparison
+@section Typos | String Comparison
 
 You can adjust @samp{gnosis-string-difference}, this is a threshold value
 for string comparison that determines the maximum acceptable
@@ -309,45 +281,6 @@ difference of at most one character edit.
 To demonstrate, 'example' and 'examples' will be recognized as
 similar, considering that the latter involves just one additional
 character.``
-
-@node Creating Custom Note Types
-@section Creating Custom Note Types
-
-Creating custom note types for gnosis is a fairly simple thing to do
-
-@itemize
-@item
-First add your NEW-TYPE to @samp{gnosis-note-types}
-
-@lisp
-(add-to-list 'gnosis-note-types 'new-type)
-@end lisp
-
-@item
-Create 2 functions; @samp{gnosis-add-note-TYPE} & @samp{gnosis-add-note--TYPE}
-@end itemize
-
-Each note type has a @samp{gnosis-add-note-TYPE} that is used
-interactively & a ``hidden function'' @samp{gnosis-add-note--TYPE} that handles
-all the logic.
-
-Refer to @samp{gnosis-add-note-basic} & @samp{gnosis-add-note--basic} for a simple
-example of how this is done.
-
-@itemize
-@item
-Create @samp{gnosis-review-TYPE}
-@end itemize
-
-This function should handle the review process, displaying it's
-contents and updating the database depending on the result of the
-review (fail/pass). Refer to @samp{gnosis-review-basic} for an example of how
-this should be done.
-
-@itemize
-@item
-Optionally, you might want to create your own custom @samp{gnosis-display} functions
-@end itemize
 
 @node Gnosis Algorithm
 @chapter Gnosis Algorithm
@@ -426,6 +359,21 @@ Example configuration:
 (setq gnosis-algorithm-ff 0.5)
 @end lisp
 
+@node Editing notes
+@chapter Editing notes
+
+@itemize
+@item
+Currently there are 2 ways for editing notes:
+
+@itemize
+@item
+You can edit a note after review by pressing @code{e}
+@item
+Open @samp{gnosis-dashboard} with @samp{M-x gnosis-dashboard}, find the note you want to edit and press @code{e}
+@end itemize
+@end itemize
+
 @node Sync between devices
 @chapter Sync between devices
 
@@ -457,6 +405,57 @@ To automatically push changes after a review session, add this to your configura
 (gnosis-vc-pull) ;; Run vc-pull for gnosis on startup
 @end lisp
 
-You might as well add
+@node Extending Gnosis
+@chapter Extending Gnosis
+
+To make development and customization easier, gnosis comes with
+@samp{gnosis-test} module, that should be used to create a custom database for
+testing.
+
+To exit the testing environment, rerun @samp{M-x gnosis-test-start} and
+then enter @samp{n} (no) at the prompt ``Start development env?''
+
+@menu
+* Creating Custom Note Types::
+@end menu
+
+@node Creating Custom Note Types
+@section Creating Custom Note Types
+
+Creating custom note types for gnosis is a fairly simple thing to do
+
+@itemize
+@item
+First add your NEW-TYPE to @samp{gnosis-note-types}
+
+@lisp
+(add-to-list 'gnosis-note-types 'new-type)
+@end lisp
+
+@item
+Create 2 functions; @samp{gnosis-add-note-TYPE} & @samp{gnosis-add-note--TYPE}
+@end itemize
+
+Each note type has a @samp{gnosis-add-note-TYPE} that is used
+interactively & a ``hidden function'' @samp{gnosis-add-note--TYPE} that handles
+all the logic.
+
+Refer to @samp{gnosis-add-note-basic} & @samp{gnosis-add-note--basic} for a simple
+example of how this is done.
+
+@itemize
+@item
+Create @samp{gnosis-review-TYPE}
+@end itemize
+
+This function should handle the review process, displaying it's
+contents and updating the database depending on the result of the
+review (fail/pass). Refer to @samp{gnosis-review-basic} for an example of how
+this should be done.
+
+@itemize
+@item
+Optionally, you might want to create your own custom @samp{gnosis-display} functions
+@end itemize
 
 @bye

@@ -4,9 +4,8 @@
 #+language: en
 #+options: ':t toc:nil author:t email:t num:t
 #+startup: content
-#+macro: stable-version 0.1.7
-#+macro: release-date 2023-02-18
-#+macro: development-version 0.1.8-dev
+#+macro: stable-version 0.1.8
+#+macro: release-date 2023-02-21
 #+macro: file @@texinfo:@file{@@$1@@texinfo:}@@
 #+macro: space @@texinfo:@: @@
 #+macro: kbd @@texinfo:@kbd{@@$1@@texinfo:}@@
@@ -16,7 +15,7 @@
 #+texinfo_filename: gnosis.info
 #+texinfo_dir_category: Emacs misc features
 #+texinfo_dir_title: Gnosis (γνῶσις): (gnosis) 
-#+texinfo_dir_desc: Spaced Repetition System For Note Taking And Self-Testing
+#+texinfo_dir_desc: Spaced Repetition System For Note Taking & Self-Testing
 #+texinfo_header: @set MAINTAINERSITE @uref{https://thanosapollo.org,maintainer webpage}
 #+texinfo_header: @set MAINTAINER Thanos Apollo
 #+texinfo_header: @set MAINTAINEREMAIL @email{public@thanosapollo.org}
@@ -87,37 +86,8 @@ or you may also install them manually from their repository.
 Creating notes for gnosis can be done interactively with:
   =M-x gnosis-add-note=
 
-
-Advanced/Power users may prefer to use =gnosis-add-note--TYPE=
-
-Example: 
-
-#+begin_src emacs-lisp
-  (gnosis-add-note--basic :deck "DECK-NAME"
-  			:question "Your Question"
-  			:answer "Answer"
-  			:hint "hint"
-  			:extra "Explanation"
-  			:image "Image displayed before user-input" ;; Optional
-  			:second-image "Image displayed after user-input" ;; Optional
-  			:tags '("tag1" "tag2"))
-#+end_src
-
-By default, the value of image and second image is nil. Their value
-must a string, the path of an image, from inside ~gnosis-images-dir~.
-
-Each note type has a =gnosis-add-note-TYPE= that is used
-interactively & a "hidden function" =gnosis-add-note--TYPE= that handles
-all the logic.
-
-Every note type has these values in common:
-
- + ~extra~ string value, extra information/explanation displayed after user-input
- + ~image~ Image displayed /before/ user input
- + ~second-image~ Image displayed /after/ user input
-
-The following sections will cover the important differences you have
-to know when creating new notes.
+When it comes to adding images, you can select images that are inside
+=gnosis-images-dir=. See more customization for [[Image size][Image Size]]
 
 * Note Types
 ** Cloze
@@ -172,20 +142,16 @@ When using the hidden function =gnosis-add-note--y-or-n=, note that the
 ANSWER must be either 121 (~y~) or 110 (~n~), as those correspond to the
 character values used to represent them.
 
-* Customization & Extension
+* Customization
+** Image size
+Adjust image size using =gnosis-image-height= & =gnosis-image-width=
 
-To make development and customization easier, gnosis comes with
-=gnosis-test= module, that should be used to create a custom database for
-testing.
-
-To use =gnosis-test=, first you have to =(require 'gnosis-test)= & run
-=M-x gnosis-test-start=. This will create a new database 'testing'
-with random inputs.
-
-To exit the testing environment, rerun =M-x gnosis-test-start= and
-then enter =n= (no) at the prompt "Start development env?"
-
-** Adjust for typos | String Comparison
+Example:
+#+begin_src emacs-lisp
+(setf gnosis-image-height 300
+      gnosis-image-width 500)
+#+end_src
+** Typos | String Comparison
 You can adjust =gnosis-string-difference=, this is a threshold value
 for string comparison that determines the maximum acceptable
 Levenshtein distance between two strings, which identifies their
@@ -203,34 +169,6 @@ difference of at most one character edit.
 To demonstrate, 'example' and 'examples' will be recognized as
 similar, considering that the latter involves just one additional
 character."
-
-** Creating Custom Note Types
-
-Creating custom note types for gnosis is a fairly simple thing to do
-
-+ First add your NEW-TYPE to =gnosis-note-types=
-
-    #+begin_src emacs-lisp
-    (add-to-list 'gnosis-note-types 'new-type)
-  #+end_src
-
-+ Create 2 functions; =gnosis-add-note-TYPE= & =gnosis-add-note--TYPE=
-
-Each note type has a =gnosis-add-note-TYPE= that is used
-interactively & a "hidden function" =gnosis-add-note--TYPE= that handles
-all the logic.
-
-Refer to =gnosis-add-note-basic= & =gnosis-add-note--basic= for a simple
-example of how this is done.
-
-+ Create =gnosis-review-TYPE=
-
-This function should handle the review process, displaying it's
-contents and updating the database depending on the result of the
-review (fail/pass). Refer to =gnosis-review-basic= for an example of how
-this should be done.
-
-+ Optionally, you might want to create your own custom =gnosis-display= functions
 
 * Gnosis Algorithm
 ** Initial Interval
@@ -292,6 +230,11 @@ Example configuration:
   (setq gnosis-algorithm-ff 0.5)
 #+end_src
 
+* Editing notes
++ Currently there are 2 ways for editing notes:
+
+    + You can edit a note after review by pressing ~e~
+    + Open =gnosis-dashboard= with =M-x gnosis-dashboard=, find the note you want to edit and press ~e~
 * Sync between devices
 
 Gnosis uses git to maintain data integrity and facilitate
@@ -321,5 +264,38 @@ To automatically push changes after a review session, add this to your configura
 (setf gnosis-vc-auto-push t)
 (gnosis-vc-pull) ;; Run vc-pull for gnosis on startup
 #+end_src
+* Extending Gnosis
+To make development and customization easier, gnosis comes with
+=gnosis-test= module, that should be used to create a custom database for
+testing.
 
-You might as well add
+To exit the testing environment, rerun =M-x gnosis-test-start= and
+then enter =n= (no) at the prompt "Start development env?"
+
+** Creating Custom Note Types
+
+Creating custom note types for gnosis is a fairly simple thing to do
+
++ First add your NEW-TYPE to =gnosis-note-types=
+
+    #+begin_src emacs-lisp
+    (add-to-list 'gnosis-note-types 'new-type)
+  #+end_src
+
++ Create 2 functions; =gnosis-add-note-TYPE= & =gnosis-add-note--TYPE=
+
+Each note type has a =gnosis-add-note-TYPE= that is used
+interactively & a "hidden function" =gnosis-add-note--TYPE= that handles
+all the logic.
+
+Refer to =gnosis-add-note-basic= & =gnosis-add-note--basic= for a simple
+example of how this is done.
+
++ Create =gnosis-review-TYPE=
+
+This function should handle the review process, displaying it's
+contents and updating the database depending on the result of the
+review (fail/pass). Refer to =gnosis-review-basic= for an example of how
+this should be done.
+
++ Optionally, you might want to create your own custom =gnosis-display= functions

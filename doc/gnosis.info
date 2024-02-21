@@ -2,7 +2,7 @@ This is gnosis.info, produced by makeinfo version 7.1 from gnosis.texi.
 
 INFO-DIR-SECTION Emacs misc features
 START-INFO-DIR-ENTRY
-* Gnosis (γνῶσις): (gnosis). Spaced Repetition System For Note Taking And Self-Testing.
+* Gnosis (γνῶσις): (gnosis). Spaced Repetition System For Note Taking & Self-Testing.
 END-INFO-DIR-ENTRY
 
 
@@ -15,7 +15,7 @@ Gnosis (γνῶσις), pronounced "noh-sis", _meaning knowledge in Greek_, is
 a spaced repetition system implementation for note taking and self
 testing.
 
-This manual is written for Gnosis version 0.1.7, released on 2023-02-18.
+This manual is written for Gnosis version 0.1.8, released on 2023-02-21.
 
    • Official manual: <https://thanosapollo.org/user-manual/gnosis>
    • Git repositories:
@@ -27,9 +27,11 @@ This manual is written for Gnosis version 0.1.7, released on 2023-02-18.
 * Installation::
 * Adding notes::
 * Note Types::
-* Customization & Extension::
+* Customization::
 * Gnosis Algorithm::
+* Editing notes::
 * Sync between devices::
+* Extending Gnosis::
 
 -- The Detailed Node Listing --
 
@@ -46,16 +48,20 @@ Note Types
 * MCQ (Multiple Choice Question)::
 * y-or-n::
 
-Customization & Extension
+Customization
 
-* Adjust for typos | String Comparison::
-* Creating Custom Note Types::
+* Image size::
+* Typos | String Comparison::
 
 Gnosis Algorithm
 
 * Initial Interval::
 * Easiness Factor::
 * Forgetting Factor::
+
+Extending Gnosis
+
+* Creating Custom Note Types::
 
 
 
@@ -132,38 +138,12 @@ File: gnosis.info,  Node: Adding notes,  Next: Note Types,  Prev: Installation, 
 Creating notes for gnosis can be done interactively with: ‘M-x
 gnosis-add-note’
 
-   Advanced/Power users may prefer to use ‘gnosis-add-note--TYPE’
-
-   Example:
-
-     (gnosis-add-note--basic :deck "DECK-NAME"
-                           :question "Your Question"
-                           :answer "Answer"
-                           :hint "hint"
-                           :extra "Explanation"
-                           :image "Image displayed before user-input" ;; Optional
-                           :second-image "Image displayed after user-input" ;; Optional
-                           :tags '("tag1" "tag2"))
-
-   By default, the value of image and second image is nil.  Their value
-must a string, the path of an image, from inside ‘gnosis-images-dir’.
-
-   Each note type has a ‘gnosis-add-note-TYPE’ that is used
-interactively & a "hidden function" ‘gnosis-add-note--TYPE’ that handles
-all the logic.
-
-   Every note type has these values in common:
-
-   • ‘extra’ string value, extra information/explanation displayed after
-     user-input
-   • ‘image’ Image displayed _before_ user input
-   • ‘second-image’ Image displayed _after_ user input
-
-   The following sections will cover the important differences you have
-to know when creating new notes.
+   When it comes to adding images, you can select images that are inside
+‘gnosis-images-dir’.  See more customization for *note Image Size: Image
+size.
 
 
-File: gnosis.info,  Node: Note Types,  Next: Customization & Extension,  Prev: Adding notes,  Up: Top
+File: gnosis.info,  Node: Note Types,  Next: Customization,  Prev: Adding notes,  Up: Top
 
 4 Note Types
 ************
@@ -253,32 +233,33 @@ the ANSWER must be either 121 (‘y’) or 110 (‘n’), as those correspond to
 the character values used to represent them.
 
 
-File: gnosis.info,  Node: Customization & Extension,  Next: Gnosis Algorithm,  Prev: Note Types,  Up: Top
+File: gnosis.info,  Node: Customization,  Next: Gnosis Algorithm,  Prev: Note Types,  Up: Top
 
-5 Customization & Extension
-***************************
-
-To make development and customization easier, gnosis comes with
-‘gnosis-test’ module, that should be used to create a custom database
-for testing.
-
-   To use ‘gnosis-test’, first you have to ‘(require 'gnosis-test)’ &
-run ‘M-x gnosis-test-start’.  This will create a new database 'testing'
-with random inputs.
-
-   To exit the testing environment, rerun ‘M-x gnosis-test-start’ and
-then enter ‘n’ (no) at the prompt "Start development env?"
+5 Customization
+***************
 
 * Menu:
 
-* Adjust for typos | String Comparison::
-* Creating Custom Note Types::
+* Image size::
+* Typos | String Comparison::
 
 
-File: gnosis.info,  Node: Adjust for typos | String Comparison,  Next: Creating Custom Note Types,  Up: Customization & Extension
+File: gnosis.info,  Node: Image size,  Next: Typos | String Comparison,  Up: Customization
 
-5.1 Adjust for typos | String Comparison
-========================================
+5.1 Image size
+==============
+
+Adjust image size using ‘gnosis-image-height’ & ‘gnosis-image-width’
+
+   Example:
+     (setf gnosis-image-height 300
+           gnosis-image-width 500)
+
+
+File: gnosis.info,  Node: Typos | String Comparison,  Prev: Image size,  Up: Customization
+
+5.2 Typos | String Comparison
+=============================
 
 You can adjust ‘gnosis-string-difference’, this is a threshold value for
 string comparison that determines the maximum acceptable Levenshtein
@@ -296,39 +277,7 @@ similar, considering that the latter involves just one additional
 character."
 
 
-File: gnosis.info,  Node: Creating Custom Note Types,  Prev: Adjust for typos | String Comparison,  Up: Customization & Extension
-
-5.2 Creating Custom Note Types
-==============================
-
-Creating custom note types for gnosis is a fairly simple thing to do
-
-   • First add your NEW-TYPE to ‘gnosis-note-types’
-
-          (add-to-list 'gnosis-note-types 'new-type)
-
-   • Create 2 functions; ‘gnosis-add-note-TYPE’ &
-     ‘gnosis-add-note--TYPE’
-
-   Each note type has a ‘gnosis-add-note-TYPE’ that is used
-interactively & a "hidden function" ‘gnosis-add-note--TYPE’ that handles
-all the logic.
-
-   Refer to ‘gnosis-add-note-basic’ & ‘gnosis-add-note--basic’ for a
-simple example of how this is done.
-
-   • Create ‘gnosis-review-TYPE’
-
-   This function should handle the review process, displaying it's
-contents and updating the database depending on the result of the review
-(fail/pass).  Refer to ‘gnosis-review-basic’ for an example of how this
-should be done.
-
-   • Optionally, you might want to create your own custom
-     ‘gnosis-display’ functions
-
-
-File: gnosis.info,  Node: Gnosis Algorithm,  Next: Sync between devices,  Prev: Customization & Extension,  Up: Top
+File: gnosis.info,  Node: Gnosis Algorithm,  Next: Editing notes,  Prev: Customization,  Up: Top
 
 6 Gnosis Algorithm
 ******************
@@ -404,9 +353,21 @@ interval was 6 days, the next interval will be 6 * 0.5 = 3 days.
      (setq gnosis-algorithm-ff 0.5)
 
 
-File: gnosis.info,  Node: Sync between devices,  Prev: Gnosis Algorithm,  Up: Top
+File: gnosis.info,  Node: Editing notes,  Next: Sync between devices,  Prev: Gnosis Algorithm,  Up: Top
 
-7 Sync between devices
+7 Editing notes
+***************
+
+   • Currently there are 2 ways for editing notes:
+
+        • You can edit a note after review by pressing ‘e’
+        • Open ‘gnosis-dashboard’ with ‘M-x gnosis-dashboard’, find the
+          note you want to edit and press ‘e’
+
+
+File: gnosis.info,  Node: Sync between devices,  Next: Extending Gnosis,  Prev: Editing notes,  Up: Top
+
+8 Sync between devices
 **********************
 
 Gnosis uses git to maintain data integrity and facilitate
@@ -432,31 +393,81 @@ your configuration:
      (setf gnosis-vc-auto-push t)
      (gnosis-vc-pull) ;; Run vc-pull for gnosis on startup
 
-   You might as well add
+
+File: gnosis.info,  Node: Extending Gnosis,  Prev: Sync between devices,  Up: Top
+
+9 Extending Gnosis
+******************
+
+To make development and customization easier, gnosis comes with
+‘gnosis-test’ module, that should be used to create a custom database
+for testing.
+
+   To exit the testing environment, rerun ‘M-x gnosis-test-start’ and
+then enter ‘n’ (no) at the prompt "Start development env?"
+
+* Menu:
+
+* Creating Custom Note Types::
+
+
+File: gnosis.info,  Node: Creating Custom Note Types,  Up: Extending Gnosis
+
+9.1 Creating Custom Note Types
+==============================
+
+Creating custom note types for gnosis is a fairly simple thing to do
+
+   • First add your NEW-TYPE to ‘gnosis-note-types’
+
+          (add-to-list 'gnosis-note-types 'new-type)
+
+   • Create 2 functions; ‘gnosis-add-note-TYPE’ &
+     ‘gnosis-add-note--TYPE’
+
+   Each note type has a ‘gnosis-add-note-TYPE’ that is used
+interactively & a "hidden function" ‘gnosis-add-note--TYPE’ that handles
+all the logic.
+
+   Refer to ‘gnosis-add-note-basic’ & ‘gnosis-add-note--basic’ for a
+simple example of how this is done.
+
+   • Create ‘gnosis-review-TYPE’
+
+   This function should handle the review process, displaying it's
+contents and updating the database depending on the result of the review
+(fail/pass).  Refer to ‘gnosis-review-basic’ for an example of how this
+should be done.
+
+   • Optionally, you might want to create your own custom
+     ‘gnosis-display’ functions
 
 
 
 Tag Table:
-Node: Top246
-Node: Introduction1280
-Node: Installation1760
-Node: Using straightel2037
-Node: Installing manually from source2549
-Node: Adding notes3238
-Node: Note Types4654
-Node: Cloze4878
-Node: Basic Type5851
-Node: Double6129
-Node: MCQ (Multiple Choice Question)6475
-Node: y-or-n6884
-Node: Customization & Extension7310
-Node: Adjust for typos | String Comparison8023
-Node: Creating Custom Note Types8859
-Node: Gnosis Algorithm9969
-Node: Initial Interval10200
-Node: Easiness Factor10707
-Node: Forgetting Factor11612
-Node: Sync between devices12146
+Node: Top244
+Node: Introduction1316
+Node: Installation1796
+Node: Using straightel2073
+Node: Installing manually from source2585
+Node: Adding notes3274
+Node: Note Types3639
+Node: Cloze3851
+Node: Basic Type4824
+Node: Double5102
+Node: MCQ (Multiple Choice Question)5448
+Node: y-or-n5857
+Node: Customization6283
+Node: Image size6468
+Node: Typos | String Comparison6754
+Node: Gnosis Algorithm7529
+Node: Initial Interval7741
+Node: Easiness Factor8248
+Node: Forgetting Factor9153
+Node: Editing notes9687
+Node: Sync between devices10079
+Node: Extending Gnosis11107
+Node: Creating Custom Note Types11562
 
 End Tag Table
 
