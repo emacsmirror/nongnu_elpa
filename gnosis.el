@@ -125,6 +125,9 @@ When nil, the image will be displayed at its original size."
 (defvar gnosis-previous-note-tags '()
   "Tags input from previously added note.")
 
+(defvar gnosis-previous-hint nil
+  "Hint input from previously added note.")
+
 ;;; Faces
 
 (defgroup gnosis-faces nil
@@ -537,7 +540,7 @@ Refer to `gnosis-add-note--basic' for more."
       (gnosis-add-note--basic :deck deck
 			      :question (read-string "Question: ")
 			      :answer (read-string "Answer: ")
-			      :hint (read-string "Hint: ")
+			      :hint (gnosis-hint-prompt gnosis-previous-hint)
 			      :extra (read-string "Extra: ")
 			      :image (gnosis-select-image)
 			      :tags (gnosis-tag-prompt)))))
@@ -574,7 +577,7 @@ Refer to `gnosis-add-note--double' for more."
 			       :image (when (y-or-n-p "Add image to display during review?")
 					(funcall gnosis-completing-read-function "Select image: "
 						 (gnosis-directory-files)))
-			       :hint (read-string "Hint: ")
+			       :hint (gnosis-hint-prompt gnosis-previous-hint)
 			       :extra (read-string "Extra: ")
 			       :image (gnosis-select-image)
 			       :tags (gnosis-tag-prompt)))))
@@ -603,7 +606,7 @@ refer to `gnosis-add-note--y-or-n' for more information about keyword values."
       (gnosis-add-note--y-or-n :deck deck
 			       :question (read-string "Question: ")
                                :answer (read-char-choice "Answer: [y] or [n]? " '(?y ?n))
-			       :hint (read-string "Hint: ")
+			       :hint (gnosis-hint-prompt gnosis-previous-hint)
 			       :extra (read-string "Extra: ")
 			       :image (gnosis-select-image)
 			       :tags (gnosis-tag-prompt)))))
@@ -676,7 +679,7 @@ See `gnosis-add-note--cloze' for more reference."
     (while (y-or-n-p (format "Add note of type `cloze' to `%s' deck? " deck))
       (gnosis-add-note--cloze :deck deck
 			      :note (read-string "Question: ")
-			      :hint (read-string "Hint: ")
+			      :hint (gnosis-hint-prompt gnosis-previous-hint)
 			      :extra (read-string "Extra: ")
 			      :image (gnosis-select-image)
 			      :tags (gnosis-tag-prompt)))))
@@ -842,6 +845,12 @@ Returns a list of unique tags."
           (push tag tags))))
     (setf gnosis-previous-note-tags (if use-prev tags (reverse tags)))
     (reverse tags)))
+
+(defun gnosis-hint-prompt (previous-hint &optional prompt)
+  (let* ((prompt (or prompt "Hint: "))
+	 (hint (read-from-minibuffer prompt previous-hint)))
+    (setf gnosis-previous-hint hint)
+    hint))
 
 ;; Review
 ;;;;;;;;;;
