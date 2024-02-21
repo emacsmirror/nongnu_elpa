@@ -88,6 +88,20 @@ framework's minibuffer."
   :type 'function
   :group 'gnosis)
 
+(defcustom gnosis-image-height nil
+  "Height of image to display during review.
+
+When nil, the image will be displayed at its original size."
+  :type 'integer
+  :group 'gnosis)
+
+(defcustom gnosis-image-width nil
+  "Width of image to display during review.
+
+When nil, the image will be displayed at its original size."
+  :type 'integer
+  :group 'gnosis)
+
 (defvar gnosis-images-dir (expand-file-name "images" gnosis-dir)
   "Gnosis images directory.")
 
@@ -320,7 +334,7 @@ If FALSE t, use gnosis-face-false face"
   "Display image for note ID."
   (let* ((img (gnosis-get 'images 'extras `(= id ,id)))
 	 (path-to-image (expand-file-name (or img "") (file-name-as-directory gnosis-images-dir)))
-	 (image (create-image path-to-image 'png nil :width 500 :height 300)))
+	 (image (create-image path-to-image 'png nil :width gnosis-image-width :height gnosis-image-height)))
     (when img
       (insert "\n\n")
       (insert-image image))))
