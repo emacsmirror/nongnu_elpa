@@ -1361,7 +1361,7 @@ name and all notes formatted as nested lists"
 ;; Dashboard
 (defun gnosis-dashboard-output-note (id)
   "Output note contents formatted for gnosis dashboard."
-  (cl-loop for item in (append (gnosis-select '[main options answer tags] 'notes `(= id ,id) t)
+  (cl-loop for item in (append (gnosis-select '[main options answer tags type] 'notes `(= id ,id) t)
 			       (gnosis-select 'suspend 'review-log `(= id ,id) t))
            if (listp item)
            collect (mapconcat #'identity item ", ")
@@ -1395,7 +1395,8 @@ name and all notes formatted as nested lists"
 			       ("Options" 20 t)
 			       ("Answer" 25 t)
 			       ("Tags" 25 t)
-			       ("Suspend" 5 t)])
+			       ("Type" 10 t)
+			       ("Suspend" 2 t)])
   (setq tabulated-list-padding 2
 	tabulated-list-sort-key nil)
   (tabulated-list-init-header))
