@@ -1042,7 +1042,7 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
          (func-name (intern (format "gnosis-review-%s" (downcase type)))))
     (if (fboundp func-name)
         (progn
-	  (pop-to-buffer (get-buffer-create "*gnosis*"))
+	  (pop-to-buffer-same-window (get-buffer-create "*gnosis*"))
           (gnosis-mode)
           (funcall func-name id))
       (error "Malformed note type: '%s'" type))))
