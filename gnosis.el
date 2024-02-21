@@ -1116,9 +1116,10 @@ NOTES: List of note ids"
 (defun gnosis-edit-note (id)
   "Edit the contents of a note with the given ID.
 
-This function creates an Emacs Lisp buffer named *gnosis-edit* and populates it
-with the values of the note identified by the specified ID. The note values are
-inserted as keywords for the `gnosis-edit-update-note' function.
+This function creates an Emacs Lisp buffer named *gnosis-edit* on the
+same window and populates it with the values of the note identified by
+the specified ID. The note values are inserted as keywords for the
+`gnosis-edit-update-note' function.
 
 To make changes, edit the values in the buffer, and then evaluate the
 `gnosis-edit-update-note' expression to save the changes.
@@ -1130,27 +1131,27 @@ The note fields that will be shown in the buffer are:
    - ANSWER: The answer associated with the note.
    - TAGS: The tags assigned to the note.
    - EXTRA-NOTES: Any extra notes for the note.
-   - IMAGE: An image associated with the note.
-   - SECOND-IMAGE: Another image associated with the note.
+   - IMAGE: An image associated with the note, at the question prompt.
+   - SECOND-IMAGE: Image to display after an answer is given.
 
 The buffer automatically indents the expressions for readability.
 After finishing editing, evaluate the entire expression to apply the
 changes."
-  (with-current-buffer (switch-to-buffer (get-buffer-create "*gnosis-edit*"))
-    (gnosis-edit-mode)
-    (erase-buffer)
-    (insert ";;\n;; You are editing a gnosis note. DO NOT change the value of id.\n\n")
-    (insert "(gnosis-edit-update-note ")
-    (gnosis-export-note id)
-    (insert ")")
-    (insert "\n\n;; After finishing editing, save changes with `<C-c> <C-c>'\n;; Do NOT exit without saving.")
-    (indent-region (point-min) (point-max))))
+  (pop-to-buffer-same-window (get-buffer-create "*gnosis-edit*"))
+  (gnosis-edit-mode)
+  (erase-buffer)
+  (insert ";;\n;; You are editing a gnosis note. DO NOT change the value of id.\n\n")
+  (insert "(gnosis-edit-update-note ")
+  (gnosis-export-note id)
+  (insert ")")
+  (insert "\n\n;; After finishing editing, save changes with `<C-c> <C-c>'\n;; Do NOT exit without saving.")
+  (indent-region (point-min) (point-max)))
 
 (defun gnosis-edit-save-exit ()
   "Save edits and exit."
   (interactive)
   (eval-buffer)
-  (kill-buffer)
+  (quit-window)
   ;; exit recursive edit if we are in one
   (if (>= (recursion-depth) 1)
       (exit-recursive-edit)
