@@ -125,7 +125,7 @@ When nil, the image will be displayed at its original size."
 (defvar gnosis-previous-note-tags '()
   "Tags input from previously added note.")
 
-(defvar gnosis-previous-hint nil
+(defvar gnosis-previous-note-hint nil
   "Hint input from previously added note.")
 
 ;;; Faces
@@ -849,7 +849,7 @@ Returns a list of unique tags."
 (defun gnosis-hint-prompt (previous-hint &optional prompt)
   (let* ((prompt (or prompt "Hint: "))
 	 (hint (read-from-minibuffer prompt previous-hint)))
-    (setf gnosis-previous-hint hint)
+    (setf gnosis-previous-note-hint hint)
     hint))
 
 ;; Review
