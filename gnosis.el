@@ -604,12 +604,12 @@ refer to `gnosis-add-note--y-or-n' for more information about keyword values."
   (let ((deck (gnosis--get-deck-name)))
     (while (y-or-n-p (format "Add note of type `y-or-n' to `%s' deck? " deck))
       (gnosis-add-note--y-or-n :deck deck
-			       :question (read-string "Question: ")
+			       :question (read-string-from-buffer "Question: " "")
                                :answer (read-char-choice "Answer: [y] or [n]? " '(?y ?n))
-			       :hint (gnosis-hint-prompt gnosis-previous-hint)
-			       :extra (read-string "Extra: ")
+			       :hint (gnosis-hint-prompt gnosis-previous-note-hint)
+			       :extra (read-string-from-buffer "Extra" "")
 			       :image (gnosis-select-image)
-			       :tags (gnosis-tag-prompt)))))
+			       :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))))
 
 
 (cl-defun gnosis-add-note--cloze (&key deck note hint tags (suspend 0) extra (image nil) (second-image nil))
