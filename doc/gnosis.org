@@ -4,8 +4,8 @@
 #+language: en
 #+options: ':t toc:nil author:t email:t num:t
 #+startup: content
-#+macro: stable-version 0.1.8
-#+macro: release-date 2023-02-21
+#+macro: stable-version 0.1.9
+#+macro: release-date 2023-02-22
 #+macro: file @@texinfo:@file{@@$1@@texinfo:}@@
 #+macro: space @@texinfo:@: @@
 #+macro: kbd @@texinfo:@kbd{@@$1@@texinfo:}@@
@@ -84,10 +84,11 @@ or you may also install them manually from their repository.
 
 * Adding notes
 Creating notes for gnosis can be done interactively with:
-  =M-x gnosis-add-note=
+
+    =M-x gnosis-add-note=
 
 When it comes to adding images, you can select images that are inside
-=gnosis-images-dir=. See more customization for [[Image size][Image Size]]
+=gnosis-images-dir=. For adjusting image size, refer to [[Image size][Image Size]]
 
 * Note Types
 ** Cloze
@@ -113,6 +114,26 @@ You can also format clozes like Anki if you prefer; e.g ~{{c1::Cyproheptadine}}~
 + Each `cX` tag can have multiple clozes, but each cloze must be a
   *UNIQUE* word (or a unique combination of words) in given note.
 
+** MCQ (Multiple Choice Question)
+
+A MCQ note type, as the name suggests, is a multiple choice question.
+
+First you will be prompted to input the question =stem= field.
+
+Afterwards you will be prompted to enter the choices, each =-=
+indicates a choice, the choice inside ={}= will be marked as the
+correct one.
+
+Example of options:
+#+BEGIN_QUOTE
+  - Option 1
+  
+  - Option 2
+  
+  - {Correct choice}
+#+END_QUOTE
+
+
 ** Basic Type
 
 Basic note type is a simple question/answer note, where the user first
@@ -125,14 +146,6 @@ The second one reverses question/answer.
 
 Ideal for vocabulary acquisition, creating vocabulary/translation
 notes for a foreign language.
-
-** MCQ (Multiple Choice Question)
-MCQ note type, consists of a "stem" part that is displayed, and
-"options" for the user to select the right one.
-
-Answer must be the index NUMBER of the correct answer from OPTIONS.
-
-Ideal for self testing & simulating exams
 
 ** y-or-n
 y-or-n (yes or no) note type, user is presented with a question and
@@ -196,16 +209,18 @@ The =gnosis-algorithm-ef= is a list that consists of three items:
 2. Easiness factor decrease value: Subtracted from the total easiness
    factor upon a failed review.
    
-3. Initial total easiness factor: Used to calculate the next interval.
+3. Total Easiness factor: Used to calculate the next interval.
 
-+ How this is used:
+
+How this is used:
   
 Multiplies the last interval by the easiness factor after a successful
 review.
 
-For example, if the last review was 6 days ago with an easiness factor
-of 2.0, the next interval would be calculated as 6 * 2.0, and the
-total easiness factor would be updated by adding the increase factor.
+For example, upon a successful review, if the last review was 6 days
+ago with an easiness factor of 2.0, the next interval would be
+calculated as 6 * 2.0, and the next total easiness factor would be
+updated by adding the increase value 2.0 + <increase-value>.
 
 Configuration example:
 

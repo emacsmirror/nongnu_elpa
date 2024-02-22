@@ -30,7 +30,7 @@ a spaced repetition system implementation for note taking and self
 testing.
 
 @noindent
-This manual is written for Gnosis version 0.1.8, released on 2023-02-21.
+This manual is written for Gnosis version 0.1.9, released on 2023-02-22.
 
 @itemize
 @item
@@ -68,9 +68,9 @@ Installation
 Note Types
 
 * Cloze::
+* MCQ (Multiple Choice Question)::
 * Basic Type::
 * Double::
-* MCQ (Multiple Choice Question)::
 * y-or-n::
 
 Customization
@@ -161,19 +161,20 @@ Add this to your emacs configuration
 @chapter Adding notes
 
 Creating notes for gnosis can be done interactively with:
-  @samp{M-x gnosis-add-note}
+
+@samp{M-x gnosis-add-note}
 
 When it comes to adding images, you can select images that are inside
-@samp{gnosis-images-dir}. See more customization for @ref{Image size, , Image Size}
+@samp{gnosis-images-dir}. For adjusting image size, refer to @ref{Image size, , Image Size}
 
 @node Note Types
 @chapter Note Types
 
 @menu
 * Cloze::
+* MCQ (Multiple Choice Question)::
 * Basic Type::
 * Double::
-* MCQ (Multiple Choice Question)::
 * y-or-n::
 @end menu
 
@@ -206,6 +207,32 @@ Each `cX` tag can have multiple clozes, but each cloze must be a
 @strong{UNIQUE} word (or a unique combination of words) in given note.
 @end itemize
 
+@node MCQ (Multiple Choice Question)
+@section MCQ (Multiple Choice Question)
+
+A MCQ note type, as the name suggests, is a multiple choice question.
+
+First you will be prompted to input the question @samp{stem} field.
+
+Afterwards you will be prompted to enter the choices, each @samp{-}
+indicates a choice, the choice inside @samp{@{@}} will be marked as the
+correct one.
+
+Example of options:
+@quotation
+@itemize
+@item
+Option 1
+
+@item
+Option 2
+
+@item
+@{Correct choice@}
+@end itemize
+
+@end quotation
+
 @node Basic Type
 @section Basic Type
 
@@ -221,16 +248,6 @@ The second one reverses question/answer.
 
 Ideal for vocabulary acquisition, creating vocabulary/translation
 notes for a foreign language.
-
-@node MCQ (Multiple Choice Question)
-@section MCQ (Multiple Choice Question)
-
-MCQ note type, consists of a ``stem'' part that is displayed, and
-``options'' for the user to select the right one.
-
-Answer must be the index NUMBER of the correct answer from OPTIONS@.
-
-Ideal for self testing & simulating exams
 
 @node y-or-n
 @section y-or-n
@@ -322,18 +339,19 @@ Easiness factor decrease value: Subtracted from the total easiness
 factor upon a failed review.
 
 @item
-Initial total easiness factor: Used to calculate the next interval.
-
-@item
-How this is used:
+Total Easiness factor: Used to calculate the next interval.
 @end enumerate
+
+
+How this is used:
 
 Multiplies the last interval by the easiness factor after a successful
 review.
 
-For example, if the last review was 6 days ago with an easiness factor
-of 2.0, the next interval would be calculated as 6 * 2.0, and the
-total easiness factor would be updated by adding the increase factor.
+For example, upon a successful review, if the last review was 6 days
+ago with an easiness factor of 2.0, the next interval would be
+calculated as 6 * 2.0, and the next total easiness factor would be
+updated by adding the increase value 2.0 + <increase-value>.
 
 Configuration example:
 

@@ -5,7 +5,7 @@
 ;; Author: Thanos Apollo <public@thanosapollo.org>
 ;; Keywords: extensions
 ;; URL: https://thanosapollo.org/projects/gnosis
-;; Version: 0.1.8
+;; Version: 0.1.9
 
 ;; Package-Requires: ((emacs "27.2") (compat "29.1.4.2") (emacsql "20240124"))
 
@@ -125,7 +125,7 @@ When nil, the image will be displayed at its original size."
 (defvar gnosis-previous-note-tags '()
   "Tags input from previously added note.")
 
-(defvar gnosis-previous-hint nil
+(defvar gnosis-previous-note-hint nil
   "Hint input from previously added note.")
 
 ;;; Faces
@@ -436,7 +436,6 @@ When called with a prefix, unsuspends all notes for tag."
       ("Tag" (gnosis-suspend-tag))
       (_ (message "Not ready yet.")))))
 
-
 (defun gnosis-add-note-fields (deck type main options answer extra tags suspend image second-image)
   "Insert fields for new note.
 
@@ -505,13 +504,17 @@ TAGS: Used to organize notes
 Refer to `gnosis-add-note--mcq' for more."
   (let ((deck (gnosis--get-deck-name)))
     (while (y-or-n-p (format "Add note of type `MCQ' to `%s' deck? " deck))
-      (gnosis-add-note--mcq :deck deck
-			    :question (read-string "Question: ")
-			    :choices (gnosis--prompt "Choices")
-			    :correct-answer (string-to-number (read-string "Which is the correct answer (number)? "))
-			    :extra (read-string "Extra: ")
-			    :image (gnosis-select-image)
-			    :tags (gnosis-tag-prompt)))))
+      (let* ((stem (read-string-from-buffer "Question: " ""))
+	     (input-choices (gnosis-prompt-mcq-choices))
+	     (choices (car input-choices))
+	     (correct-choice (cadr input-choices)))
+	(gnosis-add-note--mcq :deck deck
+			      :question stem
+			      :choices choices
+			      :correct-answer correct-choice
+			      :extra (read-string-from-buffer "Extra" "")
+			      :image (gnosis-select-image)
+			      :tags (gnosis-prompt-tags--split gnosis-previous-note-tags))))))
 
 (cl-defun gnosis-add-note--basic (&key deck question hint answer
 				       extra (image nil) tags (suspend 0) (second-image nil))
@@ -538,12 +541,12 @@ Refer to `gnosis-add-note--basic' for more."
   (let ((deck (gnosis--get-deck-name)))
     (while (y-or-n-p (format "Add note of type `basic' to `%s' deck? " deck))
       (gnosis-add-note--basic :deck deck
-			      :question (read-string "Question: ")
+			      :question (read-string-from-buffer "Question: " "")
 			      :answer (read-string "Answer: ")
-			      :hint (gnosis-hint-prompt gnosis-previous-hint)
-			      :extra (read-string "Extra: ")
+			      :hint (gnosis-hint-prompt gnosis-previous-note-hint)
+			      :extra (read-string-from-buffer "Extra: " "")
 			      :image (gnosis-select-image)
-			      :tags (gnosis-tag-prompt)))))
+			      :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))))
 
 (cl-defun gnosis-add-note--double (&key deck question hint answer extra (image nil) tags (suspend 0) (second-image nil))
   "Add Double type note.
@@ -574,13 +577,10 @@ Refer to `gnosis-add-note--double' for more."
       (gnosis-add-note--double :deck deck
 			       :question (read-string "Question: ")
 			       :answer (read-string "Answer: ")
-			       :image (when (y-or-n-p "Add image to display during review?")
-					(funcall gnosis-completing-read-function "Select image: "
-						 (gnosis-directory-files)))
-			       :hint (gnosis-hint-prompt gnosis-previous-hint)
-			       :extra (read-string "Extra: ")
-			       :image (gnosis-select-image)
-			       :tags (gnosis-tag-prompt)))))
+			       :hint (gnosis-hint-prompt gnosis-previous-note-hint)
+			       :extra (read-string-from-buffer "Extra" "")
+			       :image (gnosis-select-image "Add image to display during review?")
+			       :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))))
 
 (cl-defun gnosis-add-note--y-or-n (&key deck question hint answer extra (image nil) tags (suspend 0) (second-image nil))
   "Add y-or-n type note.
@@ -604,12 +604,12 @@ refer to `gnosis-add-note--y-or-n' for more information about keyword values."
   (let ((deck (gnosis--get-deck-name)))
     (while (y-or-n-p (format "Add note of type `y-or-n' to `%s' deck? " deck))
       (gnosis-add-note--y-or-n :deck deck
-			       :question (read-string "Question: ")
+			       :question (read-string-from-buffer "Question: " "")
                                :answer (read-char-choice "Answer: [y] or [n]? " '(?y ?n))
-			       :hint (gnosis-hint-prompt gnosis-previous-hint)
-			       :extra (read-string "Extra: ")
+			       :hint (gnosis-hint-prompt gnosis-previous-note-hint)
+			       :extra (read-string-from-buffer "Extra" "")
 			       :image (gnosis-select-image)
-			       :tags (gnosis-tag-prompt)))))
+			       :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))))
 
 
 (cl-defun gnosis-add-note--cloze (&key deck note hint tags (suspend 0) extra (image nil) (second-image nil))
@@ -678,11 +678,14 @@ See `gnosis-add-note--cloze' for more reference."
   (let ((deck (gnosis--get-deck-name)))
     (while (y-or-n-p (format "Add note of type `cloze' to `%s' deck? " deck))
       (gnosis-add-note--cloze :deck deck
-			      :note (read-string "Question: ")
-			      :hint (gnosis-hint-prompt gnosis-previous-hint)
-			      :extra (read-string "Extra: ")
+			      :note (read-string-from-buffer "Cloze questions are formatted like this:\{c1:Cyproheptadine} is a(n) {c2:5-HT2} receptor antagonist used to treat {c2:serotonin syndrome}
+
+- For each `cX`-tag there will be created a cloze type note, the above
+  example creates 2 cloze type notes." "")
+			      :hint (gnosis-hint-prompt gnosis-previous-note-hint)
+			      :extra (read-string-from-buffer "Extra" "")
 			      :image (gnosis-select-image)
-			      :tags (gnosis-tag-prompt)))))
+			      :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))))
 
 ;;;###autoload
 (defun gnosis-add-note (type)
@@ -849,8 +852,28 @@ Returns a list of unique tags."
 (defun gnosis-hint-prompt (previous-hint &optional prompt)
   (let* ((prompt (or prompt "Hint: "))
 	 (hint (read-from-minibuffer prompt previous-hint)))
-    (setf gnosis-previous-hint hint)
+    (setf gnosis-previous-note-hint hint)
     hint))
+
+(defun gnosis-prompt-mcq-choices ()
+  "Prompt user for mcq choices."
+  (let* ((input (split-string
+		 (read-string-from-buffer "Options\nEach '-' corresponds to an option\n-Example Option 1\n-Example Option 2\nYou can add as many options as you want\nCorrect Option must be inside {}" "-\n-")
+		 "-" t "[\s\n]"))
+	 (correct-choice-index (or (cl-position-if (lambda (string) (string-match "{.*}" string)) input)
+				   (error "Correct choice not found. Use {} to indicate the correct opiton")))
+	 (choices (mapcar (lambda (string) (replace-regexp-in-string "{\\|}" "" string)) input)))
+    (list choices (+ correct-choice-index 1))))
+
+(defun gnosis-prompt-tags--split (&optional previous-note-tags)
+  "Prompt user for tags, split string by space.
+
+Return a list of tags, split by space. If PREVIOUS-NOTE-TAGS is
+provided, use it as the default value."
+  (let* ((previous-note-tags (or nil previous-note-tags))
+	 (tags (split-string (read-from-minibuffer "Tags: " (mapconcat #'identity previous-note-tags " ")) " ")))
+    (setf gnosis-previous-note-tags tags)
+    tags))
 
 ;; Review
 ;;;;;;;;;;

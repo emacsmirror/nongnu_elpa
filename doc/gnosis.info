@@ -15,7 +15,7 @@ Gnosis (γνῶσις), pronounced "noh-sis", _meaning knowledge in Greek_, is
 a spaced repetition system implementation for note taking and self
 testing.
 
-This manual is written for Gnosis version 0.1.8, released on 2023-02-21.
+This manual is written for Gnosis version 0.1.9, released on 2023-02-22.
 
    • Official manual: <https://thanosapollo.org/user-manual/gnosis>
    • Git repositories:
@@ -43,9 +43,9 @@ Installation
 Note Types
 
 * Cloze::
+* MCQ (Multiple Choice Question)::
 * Basic Type::
 * Double::
-* MCQ (Multiple Choice Question)::
 * y-or-n::
 
 Customization
@@ -135,12 +135,13 @@ File: gnosis.info,  Node: Adding notes,  Next: Note Types,  Prev: Installation, 
 3 Adding notes
 **************
 
-Creating notes for gnosis can be done interactively with: ‘M-x
-gnosis-add-note’
+Creating notes for gnosis can be done interactively with:
+
+   ‘M-x gnosis-add-note’
 
    When it comes to adding images, you can select images that are inside
-‘gnosis-images-dir’.  See more customization for *note Image Size: Image
-size.
+‘gnosis-images-dir’.  For adjusting image size, refer to *note Image
+Size: Image size.
 
 
 File: gnosis.info,  Node: Note Types,  Next: Customization,  Prev: Adding notes,  Up: Top
@@ -151,13 +152,13 @@ File: gnosis.info,  Node: Note Types,  Next: Customization,  Prev: Adding notes,
 * Menu:
 
 * Cloze::
+* MCQ (Multiple Choice Question)::
 * Basic Type::
 * Double::
-* MCQ (Multiple Choice Question)::
 * y-or-n::
 
 
-File: gnosis.info,  Node: Cloze,  Next: Basic Type,  Up: Note Types
+File: gnosis.info,  Node: Cloze,  Next: MCQ (Multiple Choice Question),  Up: Note Types
 
 4.1 Cloze
 =========
@@ -185,9 +186,30 @@ selecting ‘Cloze’, the question should be formatted like this:
      *UNIQUE* word (or a unique combination of words) in given note.
 
 
-File: gnosis.info,  Node: Basic Type,  Next: Double,  Prev: Cloze,  Up: Note Types
+File: gnosis.info,  Node: MCQ (Multiple Choice Question),  Next: Basic Type,  Prev: Cloze,  Up: Note Types
 
-4.2 Basic Type
+4.2 MCQ (Multiple Choice Question)
+==================================
+
+A MCQ note type, as the name suggests, is a multiple choice question.
+
+   First you will be prompted to input the question ‘stem’ field.
+
+   Afterwards you will be prompted to enter the choices, each ‘-’
+indicates a choice, the choice inside ‘{}’ will be marked as the correct
+one.
+
+   Example of options:
+        • Option 1
+
+        • Option 2
+
+        • {Correct choice}
+
+
+File: gnosis.info,  Node: Basic Type,  Next: Double,  Prev: MCQ (Multiple Choice Question),  Up: Note Types
+
+4.3 Basic Type
 ==============
 
 Basic note type is a simple question/answer note, where the user first
@@ -195,9 +217,9 @@ sees a "main" part, which is usually a question, and he is prompted to
 input the answer.
 
 
-File: gnosis.info,  Node: Double,  Next: MCQ (Multiple Choice Question),  Prev: Basic Type,  Up: Note Types
+File: gnosis.info,  Node: Double,  Next: y-or-n,  Prev: Basic Type,  Up: Note Types
 
-4.3 Double
+4.4 Double
 ==========
 
 Double note type, is essentially a note that generates 2 basic notes.
@@ -207,20 +229,7 @@ The second one reverses question/answer.
 notes for a foreign language.
 
 
-File: gnosis.info,  Node: MCQ (Multiple Choice Question),  Next: y-or-n,  Prev: Double,  Up: Note Types
-
-4.4 MCQ (Multiple Choice Question)
-==================================
-
-MCQ note type, consists of a "stem" part that is displayed, and
-"options" for the user to select the right one.
-
-   Answer must be the index NUMBER of the correct answer from OPTIONS.
-
-   Ideal for self testing & simulating exams
-
-
-File: gnosis.info,  Node: y-or-n,  Prev: MCQ (Multiple Choice Question),  Up: Note Types
+File: gnosis.info,  Node: y-or-n,  Prev: Double,  Up: Note Types
 
 4.5 y-or-n
 ==========
@@ -319,16 +328,17 @@ The ‘gnosis-algorithm-ef’ is a list that consists of three items:
   2. Easiness factor decrease value: Subtracted from the total easiness
      factor upon a failed review.
 
-  3. Initial total easiness factor: Used to calculate the next interval.
+  3. Total Easiness factor: Used to calculate the next interval.
 
-  4. How this is used:
+   How this is used:
 
    Multiplies the last interval by the easiness factor after a
 successful review.
 
-   For example, if the last review was 6 days ago with an easiness
-factor of 2.0, the next interval would be calculated as 6 * 2.0, and the
-total easiness factor would be updated by adding the increase factor.
+   For example, upon a successful review, if the last review was 6 days
+ago with an easiness factor of 2.0, the next interval would be
+calculated as 6 * 2.0, and the next total easiness factor would be
+updated by adding the increase value 2.0 + <increase-value>.
 
    Configuration example:
 
@@ -451,23 +461,23 @@ Node: Installation1796
 Node: Using straightel2073
 Node: Installing manually from source2585
 Node: Adding notes3274
-Node: Note Types3639
-Node: Cloze3851
-Node: Basic Type4824
-Node: Double5102
-Node: MCQ (Multiple Choice Question)5448
-Node: y-or-n5857
-Node: Customization6283
-Node: Image size6468
-Node: Typos | String Comparison6754
-Node: Gnosis Algorithm7529
-Node: Initial Interval7741
-Node: Easiness Factor8248
-Node: Forgetting Factor9153
-Node: Editing notes9687
-Node: Sync between devices10079
-Node: Extending Gnosis11107
-Node: Creating Custom Note Types11562
+Node: Note Types3651
+Node: Cloze3863
+Node: MCQ (Multiple Choice Question)4856
+Node: Basic Type5429
+Node: Double5732
+Node: y-or-n6054
+Node: Customization6456
+Node: Image size6641
+Node: Typos | String Comparison6927
+Node: Gnosis Algorithm7702
+Node: Initial Interval7914
+Node: Easiness Factor8421
+Node: Forgetting Factor9369
+Node: Editing notes9903
+Node: Sync between devices10295
+Node: Extending Gnosis11323
+Node: Creating Custom Note Types11778
 
 End Tag Table
 
