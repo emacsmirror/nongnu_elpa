@@ -574,13 +574,10 @@ Refer to `gnosis-add-note--double' for more."
       (gnosis-add-note--double :deck deck
 			       :question (read-string "Question: ")
 			       :answer (read-string "Answer: ")
-			       :image (when (y-or-n-p "Add image to display during review?")
-					(funcall gnosis-completing-read-function "Select image: "
-						 (gnosis-directory-files)))
-			       :hint (gnosis-hint-prompt gnosis-previous-hint)
-			       :extra (read-string "Extra: ")
-			       :image (gnosis-select-image)
-			       :tags (gnosis-tag-prompt)))))
+			       :hint (gnosis-hint-prompt gnosis-previous-note-hint)
+			       :extra (read-string-from-buffer "Extra" "")
+			       :image (gnosis-select-image "Add image to display during review?")
+			       :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))))
 
 (cl-defun gnosis-add-note--y-or-n (&key deck question hint answer extra (image nil) tags (suspend 0) (second-image nil))
   "Add y-or-n type note.
