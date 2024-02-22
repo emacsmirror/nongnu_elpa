@@ -541,12 +541,12 @@ Refer to `gnosis-add-note--basic' for more."
   (let ((deck (gnosis--get-deck-name)))
     (while (y-or-n-p (format "Add note of type `basic' to `%s' deck? " deck))
       (gnosis-add-note--basic :deck deck
-			      :question (read-string "Question: ")
+			      :question (read-string-from-buffer "Question: " "")
 			      :answer (read-string "Answer: ")
-			      :hint (gnosis-hint-prompt gnosis-previous-hint)
-			      :extra (read-string "Extra: ")
+			      :hint (gnosis-hint-prompt gnosis-previous-note-hint)
+			      :extra (read-string-from-buffer "Extra: " "")
 			      :image (gnosis-select-image)
-			      :tags (gnosis-tag-prompt)))))
+			      :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))))
 
 (cl-defun gnosis-add-note--double (&key deck question hint answer extra (image nil) tags (suspend 0) (second-image nil))
   "Add Double type note.
