@@ -862,6 +862,16 @@ Returns a list of unique tags."
 	 (choices (mapcar (lambda (string) (replace-regexp-in-string "{\\|}" "" string)) input)))
     (list choices (+ correct-choice-index 1))))
 
+(defun gnosis-prompt-tags--split (&optional previous-note-tags)
+  "Prompt user for tags, split string by space.
+
+Return a list of tags, split by space. If PREVIOUS-NOTE-TAGS is
+provided, use it as the default value."
+  (let* ((previous-note-tags (or nil previous-note-tags))
+	 (tags (split-string (read-from-minibuffer "Tags: " (mapconcat #'identity previous-note-tags " ")) " ")))
+    (setf gnosis-previous-note-tags tags)
+    tags))
+
 ;; Review
 ;;;;;;;;;;
 (defun gnosis-review-is-due-p (note-id)
