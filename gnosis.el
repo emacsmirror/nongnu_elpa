@@ -852,6 +852,16 @@ Returns a list of unique tags."
     (setf gnosis-previous-note-hint hint)
     hint))
 
+(defun gnosis-prompt-mcq-choices ()
+  "Prompt user for mcq choices."
+  (let* ((input (split-string
+		 (read-string-from-buffer "Options\nEach '-' corresponds to an option\n-Example Option 1\n-Example Option 2\nYou can add as many options as you want\nCorrect Option must be inside {}" "-\n-")
+		 "-" t "[\s\n]"))
+	 (correct-choice-index (or (cl-position-if (lambda (string) (string-match "{.*}" string)) input)
+				   (error "Correct choice not found. Use {} to indicate the correct opiton")))
+	 (choices (mapcar (lambda (string) (replace-regexp-in-string "{\\|}" "" string)) input)))
+    (list choices (+ correct-choice-index 1))))
+
 ;; Review
 ;;;;;;;;;;
 (defun gnosis-review-is-due-p (note-id)
