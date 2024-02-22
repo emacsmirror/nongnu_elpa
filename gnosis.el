@@ -436,7 +436,6 @@ When called with a prefix, unsuspends all notes for tag."
       ("Tag" (gnosis-suspend-tag))
       (_ (message "Not ready yet.")))))
 
-
 (defun gnosis-add-note-fields (deck type main options answer extra tags suspend image second-image)
   "Insert fields for new note.
 
@@ -505,13 +504,17 @@ TAGS: Used to organize notes
 Refer to `gnosis-add-note--mcq' for more."
   (let ((deck (gnosis--get-deck-name)))
     (while (y-or-n-p (format "Add note of type `MCQ' to `%s' deck? " deck))
-      (gnosis-add-note--mcq :deck deck
-			    :question (read-string "Question: ")
-			    :choices (gnosis--prompt "Choices")
-			    :correct-answer (string-to-number (read-string "Which is the correct answer (number)? "))
-			    :extra (read-string "Extra: ")
-			    :image (gnosis-select-image)
-			    :tags (gnosis-tag-prompt)))))
+      (let* ((stem (read-string-from-buffer "Question: " ""))
+	     (input-choices (gnosis-prompt-mcq-choices))
+	     (choices (car input-choices))
+	     (correct-choice (cadr input-choices)))
+	(gnosis-add-note--mcq :deck deck
+			      :question stem
+			      :choices choices
+			      :correct-answer correct-choice
+			      :extra (read-string-from-buffer "Extra" "")
+			      :image (gnosis-select-image)
+			      :tags (gnosis-prompt-tags--split gnosis-previous-note-tags))))))
 
 (cl-defun gnosis-add-note--basic (&key deck question hint answer
 				       extra (image nil) tags (suspend 0) (second-image nil))
