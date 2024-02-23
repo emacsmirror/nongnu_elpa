@@ -1,4 +1,4 @@
-;;; hyperdrive-org.el --- Org-related functionality  -*- lexical-binding: t; -*-
+;;; hyperdrive-org.el --- Org-transclusion-related functionality  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2023  USHIN, Inc.
 
