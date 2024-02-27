@@ -1394,8 +1394,19 @@ name and all notes formatted as nested lists"
 
 (defvar gnosis-db-schema-extras '([(id integer :primary-key :not-null)
 				   (extra-notes string)
+				   ;; Despite the name 'images', this
+				   ;; is a single string value. At
+				   ;; first it was designed to hold a
+				   ;; list of strings for image paths,
+				   ;; but it was changed to just a
+				   ;; string to hold a single image
+				   ;; path.
 				   (images string)
+				   ;; Extra image path to show after review
 				   (extra-image string)]
+				  ;; Note that the value of the images
+				  ;; above is PATH inside
+				  ;; `gnosis-images-dir'
 				  (:foreign-key [id] :references notes [id]
 						:on-delete :cascade)))
 
