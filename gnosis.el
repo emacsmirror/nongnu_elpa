@@ -1192,7 +1192,7 @@ changes."
   "Save edits and exit."
   (interactive)
   (eval-buffer)
-  (quit-window)
+  (quit-window t)
   ;; exit recursive edit if we are in one
   (if (>= (recursion-depth) 1)
       (exit-recursive-edit)
