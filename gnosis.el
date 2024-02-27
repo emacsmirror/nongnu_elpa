@@ -1121,7 +1121,8 @@ NOTE-NUM: The number of notes reviewed in the session."
       (shell-command (format "%s %s %s" git "add" (shell-quote-argument "gnosis.db")))
       (shell-command (format "%s %s %s" git "commit -m"
 			     (shell-quote-argument (format "Total notes for session: %d" note-num)))))
-    (when gnosis-vc-auto-push
+    (when (and gnosis-vc-auto-push
+	       (not gnosis-testing))
       (gnosis-vc-push))
     (message "Review session finished. %d notes reviewed." note-num)))
 
