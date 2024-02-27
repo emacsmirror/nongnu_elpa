@@ -864,7 +864,7 @@ Returns a list of unique tags."
 
 (defun gnosis-hint-prompt (previous-hint &optional prompt)
   (let* ((prompt (or prompt "Hint: "))
-	 (hint (read-from-minibuffer prompt previous-hint)))
+	 (hint (read-string prompt previous-hint)))
     (setf gnosis-previous-note-hint hint)
     hint))
 
