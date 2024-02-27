@@ -128,6 +128,14 @@ When nil, the image will be displayed at its original size."
 (defvar gnosis-previous-note-hint nil
   "Hint input from previously added note.")
 
+(defvar gnosis-cloze-guidance
+  "Cloze questions are formatted like this:\n
+{c1:Cyproheptadine} is a(n) {c2:5-HT2} receptor antagonist used to treat {c2:serotonin syndrome}
+
+- For each `cX`-tag there will be created a cloze type note, the above
+  example creates 2 cloze type notes."
+  "Guidance for cloze note type.")
+
 ;;; Faces
 
 (defgroup gnosis-faces nil
@@ -686,10 +694,7 @@ See `gnosis-add-note--cloze' for more reference."
   (let ((deck (gnosis--get-deck-name)))
     (while (y-or-n-p (format "Add note of type `cloze' to `%s' deck? " deck))
       (gnosis-add-note--cloze :deck deck
-			      :note (read-string-from-buffer "Cloze questions are formatted like this:\{c1:Cyproheptadine} is a(n) {c2:5-HT2} receptor antagonist used to treat {c2:serotonin syndrome}
-
-- For each `cX`-tag there will be created a cloze type note, the above
-  example creates 2 cloze type notes." "")
+			      :note (read-string-from-buffer gnosis-cloze-guidance "")
 			      :hint (gnosis-hint-prompt gnosis-previous-note-hint)
 			      :extra (read-string-from-buffer "Extra" "")
 			      :image (gnosis-select-image)
