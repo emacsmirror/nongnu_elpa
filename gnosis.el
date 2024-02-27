@@ -886,7 +886,7 @@ provided, use it as the default value."
   (let* ((previous-note-tags (or nil previous-note-tags))
 	 (tags (split-string (read-from-minibuffer "Tags: " (mapconcat #'identity previous-note-tags " ")) " ")))
     (setf gnosis-previous-note-tags tags)
-    tags))
+    (if (equal tags '("")) '("untagged") tags)))
 
 ;; Review
 ;;;;;;;;;;
