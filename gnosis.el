@@ -1153,6 +1153,13 @@ NOTES: List of note ids"
 
 
 ;; Editing notes
+(defun gnosis-edit-read-only-values (&rest values)
+  "Makes the provided values read-only in the whole buffer."
+  (goto-char (point-min))
+  (dolist (value values)
+    (while (search-forward value nil t)
+      (put-text-property (match-beginning 0) (match-end 0) 'read-only t)))
+  (goto-char (point-min)))
 
 (defun gnosis-edit-note (id)
   "Edit the contents of a note with the given ID.
@@ -1181,12 +1188,16 @@ changes."
   (pop-to-buffer-same-window (get-buffer-create "*gnosis-edit*"))
   (gnosis-edit-mode)
   (erase-buffer)
-  (insert ";;\n;; You are editing a gnosis note. DO NOT change the value of id.\n\n")
+  (insert ";;\n;; You are editing a gnosis note.\n\n")
   (insert "(gnosis-edit-update-note ")
   (gnosis-export-note id)
   (insert ")")
-  (insert "\n\n;; After finishing editing, save changes with `<C-c> <C-c>'\n;; Do NOT exit without saving.")
-  (indent-region (point-min) (point-max)))
+  (insert "\n\n;; After finishing editing, save changes with `<C-c> <C-c>'\n;; Avoid exiting without saving.")
+  (indent-region (point-min) (point-max))
+  ;; Insert id & fields as read-only values
+  (gnosis-edit-read-only-values (format ":id %s" id) ":main" ":options" ":answer"
+				":tags" ":extra-notes" ":image" ":second-image"
+				":ef" ":ff" ":suspend"))
 
 (defun gnosis-edit-save-exit ()
   "Save edits and exit."
