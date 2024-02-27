@@ -333,9 +333,17 @@ If FALSE t, use gnosis-face-false face"
     (insert (propertize "\n\n-----\n" 'face 'gnosis-face-seperator))
     (fill-paragraph (insert "\n" (propertize extras 'face 'gnosis-face-extra)))))
 
-(defun gnosis-display-image (id)
-  "Display image for note ID."
-  (let* ((img (gnosis-get 'images 'extras `(= id ,id)))
+(cl-defun gnosis-display-image (id &optional (image 'images))
+  "Display image for note ID.
+
+IMAGE is the image type to display, should be either `images' or
+`extra-image'.
+
+`images' is the image to display before user-input, while
+`extra-image' is the image to display after user-input.
+
+Refer to `gnosis-db-schema-extras' for more."
+  (let* ((img (gnosis-get image 'extras `(= id ,id)))
 	 (path-to-image (expand-file-name (or img "") (file-name-as-directory gnosis-images-dir)))
 	 (image (create-image path-to-image 'png nil :width gnosis-image-width :height gnosis-image-height)))
     (when img
