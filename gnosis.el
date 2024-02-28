@@ -488,7 +488,7 @@ NOTE: If a gnosis--insert-into fails, the whole transaction will be
 ;; function.
 
 (cl-defun gnosis-add-note--mcq (&key deck question choices correct-answer
-				     extra (image nil) tags (suspend 0) (second-image nil))
+				     extra (images nil) tags (suspend 0))
   "Create a NOTE with a list of multiple CHOICES.
 
 MCQ type consists of a main `QUESTION' that is displayed to the user.
@@ -496,25 +496,27 @@ The user will be prompted to select the correct answer from a list of
 `CHOICES'. The `CORRECT-ANSWER' should be the index of the correct
 choice in the `CHOICES' list. Each note must correspond to one `DECK'.
 
-`IMAGE' Image to display before user-input
-`SECOND-IMAGE' Image to display after user-input
+`IMAGES' cons cell, where car is the image to display before and cdr
+is the image to display post review
+
 `EXTRA' are extra information displayed after an answer is given.
 `TAGS' are used to organize questions.
 `SUSPEND' is a binary value, where 1 is for suspend."
-  (cond ((or (not (numberp correct-answer)) (equal correct-answer 0))
-	 (error "Correct answer value must be the index number of the correct answer"))
-	((null tags)
-	 (setf tags 'untagged)))
-  (gnosis-add-note-fields deck "mcq" question choices correct-answer extra tags suspend image second-image))
+  (when (or (not (numberp correct-answer))
+	    (equal correct-answer 0))
+    (error "Correct answer value must be the index number of the correct answer"))
+  (gnosis-add-note-fields deck "mcq" question choices correct-answer extra tags suspend (car images) (cdr images)))
 
 (defun gnosis-add-note-mcq ()
   "Add note(s) of type `MCQ' interactively to selected deck.
 
 Create a note type MCQ for specified deck, that consists of:
-STEM: The question or problem statement
+QUESTION: The question or problem statement
 OPTIONS: Options for the user to select
 ANSWER: Answer is the index NUMBER of the correct answer from OPTIONS.
 EXTRA: Information to display after user-input
+IMAGES: Cons cell, where car is the image to display before user-input
+	and cdr is the image to display post review.
 TAGS: Used to organize notes
 
 Refer to `gnosis-add-note--mcq' for more."
@@ -529,11 +531,11 @@ Refer to `gnosis-add-note--mcq' for more."
 			      :choices choices
 			      :correct-answer correct-choice
 			      :extra (read-string-from-buffer "Extra" "")
-			      :image (gnosis-select-image)
+			      :images (gnosis-select-images)
 			      :tags (gnosis-prompt-tags--split gnosis-previous-note-tags))))))
 
 (cl-defun gnosis-add-note--basic (&key deck question hint answer
-				       extra (image nil) tags (suspend 0) (second-image nil))
+				       extra (images nil) (tags) (suspend 0))
   "Add Basic type note.
 
 DECK: Deck name for note.
@@ -541,10 +543,11 @@ QUESTION: Quesiton to display for note.
 ANSWER: Answer for QUESTION, which user will be prompted to type
 HINT: Hint to display during review, before user-input.
 EXTRA: Extra information to display after user-input/giving an answer.
-IMAGE: Image to display before user-input.
+IMAGES: Cons cell, where car is the image to display before user-input
+	and cdr is the image to display post review.
 TAGS: Tags used to organize notes
 SUSPEND: Binary value of 0 & 1, when 1 note will be ignored."
-  (gnosis-add-note-fields deck "basic" question hint answer extra tags suspend image second-image))
+  (gnosis-add-note-fields deck "basic" question hint answer extra tags suspend (car images) (cdr images)))
 
 (defun gnosis-add-note-basic ()
   "Add note(s) of type `Basic' interactively to selected deck.
@@ -561,10 +564,10 @@ Refer to `gnosis-add-note--basic' for more."
 			      :answer (read-string "Answer: ")
 			      :hint (gnosis-hint-prompt gnosis-previous-note-hint)
 			      :extra (read-string-from-buffer "Extra: " "")
-			      :image (gnosis-select-image)
+			      :images (gnosis-select-images)
 			      :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))))
 
-(cl-defun gnosis-add-note--double (&key deck question hint answer extra (image nil) tags (suspend 0) (second-image nil))
+(cl-defun gnosis-add-note--double (&key deck question hint answer extra (images nil) tags (suspend 0))
   "Add Double type note.
 
 Essentially, a \"note\" that generates 2 basic notes. The second one
@@ -575,11 +578,12 @@ QUESTION: Quesiton to display for note.
 ANSWER: Answer for QUESTION, which user will be prompted to type
 HINT: Hint to display during review, before user-input.
 EXTRA: Extra information to display after user-input/giving an answer.
-IMAGE: Image to display before user-input.
+IMAGES: Cons cell, where car is the image to display before user-input
+	and cdr is the image to display post review.
 TAGS: Tags used to organize notes
 SUSPEND: Binary value of 0 & 1, when 1 note will be ignored."
-  (gnosis-add-note-fields deck "basic" question hint answer extra tags suspend image second-image)
-  (gnosis-add-note-fields deck "basic" answer hint question extra tags suspend image second-image))
+  (gnosis-add-note-fields deck "basic" question hint answer extra tags suspend (car images) (cdr images))
+  (gnosis-add-note-fields deck "basic" answer hint question extra tags suspend (car images) (cdr images)))
 
 (defun gnosis-add-note-double ()
   "Add note(s) of type double interactively to selected deck.
@@ -595,28 +599,35 @@ Refer to `gnosis-add-note--double' for more."
 			       :answer (read-string "Answer: ")
 			       :hint (gnosis-hint-prompt gnosis-previous-note-hint)
 			       :extra (read-string-from-buffer "Extra" "")
-			       :image (gnosis-select-image "Add image to display during review?")
+			       :images (gnosis-select-images)
 			       :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))))
 
-(cl-defun gnosis-add-note--y-or-n (&key deck question hint answer extra (image nil) tags (suspend 0) (second-image nil))
+(cl-defun gnosis-add-note--y-or-n (&key deck question hint answer extra (images nil) tags (suspend 0))
   "Add y-or-n type note.
 
 DECK: Deck name for note.
+
 QUESTION: Quesiton to display for note.
+
 ANSWER: Answer for QUESTION, either `121' (char value for yes) or `110'
         (char value for no).
+
 HINT: Hint to display during review, before user-input.
+
 EXTRA: Extra information to display after user-input/giving an answer.
-IMAGE: Image to display before user-input.
+
+IMAGES: Cons cell, where car is the image to display before user-input
+	and cdr is the image to display post review.
+
 TAGS: Tags used to organize notes
-SUSSPEND: Binary value of 0 & 1, when 1 note will be ignored.
-SECOND-IMAGE: Image to display after user-input."
-  (gnosis-add-note-fields deck "y-or-n" question hint answer extra tags suspend image second-image))
+
+SUSSPEND: Binary value of 0 & 1, when 1 note will be ignored."
+  (gnosis-add-note-fields deck "y-or-n" question hint answer extra tags suspend (car images) (cdr images)))
 
 (defun gnosis-add-note-y-or-n ()
   "Add note(s) of type `y-or-n'.
 
-refer to `gnosis-add-note--y-or-n' for more information about keyword values."
+Refer to `gnosis-add-note--y-or-n' for more information about keyword values."
   (let ((deck (gnosis--get-deck-name)))
     (while (y-or-n-p (format "Add note of type `y-or-n' to `%s' deck? " deck))
       (gnosis-add-note--y-or-n :deck deck
@@ -624,11 +635,11 @@ refer to `gnosis-add-note--y-or-n' for more information about keyword values."
                                :answer (read-char-choice "Answer: [y] or [n]? " '(?y ?n))
 			       :hint (gnosis-hint-prompt gnosis-previous-note-hint)
 			       :extra (read-string-from-buffer "Extra" "")
-			       :image (gnosis-select-image)
+			       :images (gnosis-select-images)
 			       :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))))
 
 
-(cl-defun gnosis-add-note--cloze (&key deck note hint tags (suspend 0) extra (image nil) (second-image nil))
+(cl-defun gnosis-add-note--cloze (&key deck note hint tags (suspend 0) extra (images nil))
   "Add cloze type note.
 
 DECK: Deck name for note.
@@ -654,17 +665,23 @@ Example:
       monocytogenes} are CAMP test positive
    
 HINT: Hint to display during review, before user-input.
-   NOTE! In gnosis-db, hint is referred to as `options', same column
+
+   NOTE: In gnosis-db, hint is referred to as `options', same column
    options used in mcq.
-IMAGE: Image to display before user-input.
+
+IMAGES: Cons cell, where car is the image to display before user-input
+	and cdr is the image to display post review.
+
 TAGS: Tags used to organize notes
+
 SUSPEND: When t, note will be ignored.
-EXTRA: Extra information displayed after user-input.
-SECOND-IMAGE: Image to display after user-input."
+
+EXTRA: Extra information displayed after user-input."
   (let ((notags-note (gnosis-cloze-remove-tags note))
 	(clozes (gnosis-cloze-extract-answers note)))
     (cl-loop for cloze in clozes
-	     do (gnosis-add-note-fields deck "cloze" notags-note hint cloze extra tags suspend image second-image))))
+	     do (gnosis-add-note-fields deck "cloze" notags-note hint cloze extra tags suspend
+					(car images) (cdr images)))))
 
 (defun gnosis-add-note-cloze ()
   "Add note(s) of type cloze interactively to selected deck.
@@ -697,7 +714,7 @@ See `gnosis-add-note--cloze' for more reference."
 			      :note (read-string-from-buffer gnosis-cloze-guidance "")
 			      :hint (gnosis-hint-prompt gnosis-previous-note-hint)
 			      :extra (read-string-from-buffer "Extra" "")
-			      :image (gnosis-select-image)
+			      :images (gnosis-select-images)
 			      :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))))
 
 ;;;###autoload
@@ -1015,6 +1032,7 @@ SUCCESS is a boolean value, t for success, nil for failure."
       (message "False"))
     (gnosis-display-correct-answer-mcq answer user-choice)
     (gnosis-display-extra id)
+    (gnosis-display-image id 'extra-image)
     (gnosis-display-next-review id)))
 
 (defun gnosis-review-basic (id)
@@ -1027,6 +1045,7 @@ SUCCESS is a boolean value, t for success, nil for failure."
 	 (success (gnosis-compare-strings answer user-input)))
     (gnosis-display-basic-answer answer success user-input)
     (gnosis-display-extra id)
+    (gnosis-display-image id 'extra-image)
     (gnosis-review--update id success)
     (gnosis-display-next-review id)))
 
@@ -1040,6 +1059,7 @@ SUCCESS is a boolean value, t for success, nil for failure."
 	 (success (equal answer user-input)))
     (gnosis-display-y-or-n-answer :answer answer :success success)
     (gnosis-display-extra id)
+    (gnosis-display-image id 'extra-image)
     (gnosis-review--update id success)
     (gnosis-display-next-review id)))
 
@@ -1085,6 +1105,7 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
 	     ;; Update note after all clozes are revealed successfully
 	     finally (gnosis-review--update id t)))
   (gnosis-display-extra id)
+  (gnosis-display-image id 'extra-image)
   (gnosis-display-next-review id))
 
 (defun gnosis-review-note (id)
