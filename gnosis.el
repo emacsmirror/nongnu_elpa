@@ -330,18 +330,12 @@ If FALSE t, use gnosis-face-false face"
 					     'gnosis-face-correct
 					   'gnosis-face-false))))
 
-(defun gnosis-display-extra (id)
-  "Display extra information for note ID."
-  (let ((extras (or (gnosis-get 'extra-notes 'extras `(= id ,id)) "")))
-    (goto-char (point-max))
-    (insert (propertize "\n\n-----\n" 'face 'gnosis-face-seperator))
-    (fill-paragraph (insert "\n" (propertize extras 'face 'gnosis-face-extra)))))
-
 (cl-defun gnosis-display-image (id &optional (image 'images))
   "Display image for note ID.
 
-IMAGE is the image type to display, should be either `images' or
-`extra-image'.
+IMAGE is the image type to display, usually should be either `images'
+or `extra-image'.  Instead of using `extra-image' on review use
+`gnosis-display-extra'
 
 `images' is the image to display before user-input, while
 `extra-image' is the image to display after user-input.
@@ -353,6 +347,14 @@ Refer to `gnosis-db-schema-extras' for more."
     (when img
       (insert "\n\n")
       (insert-image image))))
+
+(defun gnosis-display-extra (id)
+  "Display extra information & extra-image for note ID."
+  (let ((extras (or (gnosis-get 'extra-notes 'extras `(= id ,id)) "")))
+    (goto-char (point-max))
+    (insert (propertize "\n\n-----\n" 'face 'gnosis-face-seperator))
+    (gnosis-display-image id 'extra-image)
+    (fill-paragraph (insert "\n" (propertize extras 'face 'gnosis-face-extra)))))
 
 (defun gnosis-display-next-review (id)
   "Display next interval for note ID."
@@ -1028,7 +1030,6 @@ SUCCESS is a boolean value, t for success, nil for failure."
       (message "False"))
     (gnosis-display-correct-answer-mcq answer user-choice)
     (gnosis-display-extra id)
-    (gnosis-display-image id 'extra-image)
     (gnosis-display-next-review id)))
 
 (defun gnosis-review-basic (id)
@@ -1041,7 +1042,6 @@ SUCCESS is a boolean value, t for success, nil for failure."
 	 (success (gnosis-compare-strings answer user-input)))
     (gnosis-display-basic-answer answer success user-input)
     (gnosis-display-extra id)
-    (gnosis-display-image id 'extra-image)
     (gnosis-review--update id success)
     (gnosis-display-next-review id)))
 
@@ -1055,7 +1055,6 @@ SUCCESS is a boolean value, t for success, nil for failure."
 	 (success (equal answer user-input)))
     (gnosis-display-y-or-n-answer :answer answer :success success)
     (gnosis-display-extra id)
-    (gnosis-display-image id 'extra-image)
     (gnosis-review--update id success)
     (gnosis-display-next-review id)))
 
@@ -1101,7 +1100,6 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
 	     ;; Update note after all clozes are revealed successfully
 	     finally (gnosis-review--update id t)))
   (gnosis-display-extra id)
-  (gnosis-display-image id 'extra-image)
   (gnosis-display-next-review id))
 
 (defun gnosis-review-note (id)
