@@ -1,23 +1,23 @@
 #+title: TODO's for Gnosis
 #+author: Thanos Apollo
+#+startup: content
 
-* Gnosis TODO's
-
+* Dashboard
 ** DONE Add Dashboard
 CLOSED: [2024-02-20 Tue 13:33]
 + Create a dashboard to view all notes created, user can edit &
   suspend notes. Use tabulated-list-mode, preferably.
-*** Notes after completion
-+ Dashboard added using tabulated-list-mode. Performance is not ideal
-  when 20K > notes, values should be cached
+** TODO Dashboard: Improve Performance :priorityLow:
++ emacsql is quite fast, but the current tabulated-list implementation
+  can be quite slow when having >30K notes. This should be improved upon in the feature
+** TODO Dashboard: Add filtering/search 
+Search by tags, deck or LIKE question.
 
-** TODO Dashboard: Improve Performance
-** TODO Dashboard: Add filtering/search
-
-** TODO Algorithm: changes for ef increase/decrease factors
-+ After 3 successful in a row reviews increase ef increase factor by 5% & vice versa
-
-
+* Algorithm
+** TODO Algorithm: changes for ef increase/decrease values :priorityHigh:
++ Create a =gnosis-algorithm-ef-increase=, which will be used to
+  increase ef increase value upon X consecutive successful reviews  
+* Misc  
 ** DONE Refactor =completing-read= UI choices
 CLOSED: [2024-02-17 Sat 21:59]
 /DONE on version 0.1.7/
@@ -31,14 +31,15 @@ that has ido-completing-read by default if vertico/ivy/helm is not
 enabled
 
 *** Notes
-
 Implemented =gnosis-completing-read-function=
 
-
-** DONE Use vc instead git shell commands
+** TODO Use vc instead to stage & commit :priorityLow:
+** DONE Use vc instead git shell commands to push/pull
 CLOSED: [2024-02-17 Sat 21:59]
 
 /DONE on version 0.1.7/
 
 Implemented =gnosis-git-*= functions to handle git commands.
+
+
 
