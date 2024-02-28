@@ -30,7 +30,7 @@
 ;; intervals.
 ;; 
 ;; Gnosis can help you better understand and retain the material by
-;; encouraging active engagement. It also provides a clear structure for
+;; encouraging active engagement.  It also provides a clear structure for
 ;; your notes & review sessions, making it easier to study.
 
 ;;; Code:
@@ -249,7 +249,7 @@ Example:
 	(option-num 1))
     (insert "\n\n" (propertize "Options:" 'face 'gnosis-face-directions))
     (cl-loop for option in options
-	     do (insert (format "\n%s. %s" option-num option))
+	     do (insert (format "\n%s.  %s" option-num option))
 	     (setf option-num (1+ option-num)))))
 
 (defun gnosis-display-cloze-sentence (sentence clozes)
@@ -277,7 +277,7 @@ When SUCCESS nil, display USER-INPUT as well"
 (cl-defun gnosis-display-y-or-n-answer (&key answer success)
   "Display y-or-n answer for note ID.
 
-ANSWER is the correct answer, either y or n. Answer is either 121 or
+ANSWER is the correct answer, either y or n.  Answer is either 121 or
 110, which are the char values for y & n respectively
 SUCCESS is t when user-input is correct, else nil"
   (let ((answer (if (equal answer 121) "y" "n")))
@@ -300,7 +300,7 @@ SUCCESS is t when user-input is correct, else nil"
   "Replace CLOZE-CHAR with REPLACE.
 
 If FACE nil, propertize replace using `gnosis-face-correct', or
-`gnosis-face-false' when (not SUCCESS). Else use FACE value."
+`gnosis-face-false' when (not SUCCESS).  Else use FACE value."
   (goto-char (point-min))
   (search-forward cloze-char nil t)
   (replace-match (propertize replace 'face (if (not face)
@@ -334,7 +334,7 @@ If FALSE t, use gnosis-face-false face"
   "Display image for note ID.
 
 IMAGE is the image type to display, usually should be either `images'
-or `extra-image'.  Instead of using `extra-image' on review use
+or `extra-image'.   Instead of using `extra-image' on review use
 `gnosis-display-extra'
 
 `images' is the image to display before user-input, while
@@ -467,7 +467,7 @@ IMAGE: Image to display during review.
 SECOND-IMAGE: Image to display after user-input.
 
 NOTE: If a gnosis--insert-into fails, the whole transaction will be
- (or at least it should). Else there will be an error for foreign key
+ (or at least it should).  Else there will be an error for foreign key
  constraint."
   (condition-case nil
       (progn
@@ -481,7 +481,7 @@ NOTE: If a gnosis--insert-into fails, the whole transaction will be
 
 ;; Adding note(s) consists firstly of a hidden 'gnosis-add-note--TYPE'
 ;; function that does the computation & error checking to generate a
-;; note from given input. Secondly, 'gnosis-add-note-TYPE' normal
+;; note from given input.  Secondly, 'gnosis-add-note-TYPE' normal
 ;; function, which prompts for user input and passes it to the hidden
 ;; function.
 
@@ -491,8 +491,8 @@ NOTE: If a gnosis--insert-into fails, the whole transaction will be
 
 MCQ type consists of a main `QUESTION' that is displayed to the user.
 The user will be prompted to select the correct answer from a list of
-`CHOICES'. The `CORRECT-ANSWER' should be the index of the correct
-choice in the `CHOICES' list. Each note must correspond to one `DECK'.
+`CHOICES'.  The `CORRECT-ANSWER' should be the index of the correct
+choice in the `CHOICES' list.  Each note must correspond to one `DECK'.
 
 `IMAGES' cons cell, where car is the image to display before and cdr
 is the image to display post review
@@ -568,7 +568,7 @@ Refer to `gnosis-add-note--basic' for more."
 (cl-defun gnosis-add-note--double (&key deck question hint answer extra (images nil) tags (suspend 0))
   "Add Double type note.
 
-Essentially, a \"note\" that generates 2 basic notes. The second one
+Essentially, a \"note\" that generates 2 basic notes.  The second one
 reverses question/answer.
 
 DECK: Deck name for note.
@@ -586,7 +586,7 @@ SUSPEND: Binary value of 0 & 1, when 1 note will be ignored."
 (defun gnosis-add-note-double ()
   "Add note(s) of type double interactively to selected deck.
 
-Essentially, a \"note\" that generates 2 basic notes. The second one
+Essentially, a \"note\" that generates 2 basic notes.  The second one
 reverses question/answer.
 
 Refer to `gnosis-add-note--double' for more."
@@ -654,7 +654,7 @@ Example:
       {c2:Staphylococcus aureus} causes {c3:rapid} onset
       food poisoning
 
-Generates 3 cloze note types. Where the \"main\" part of the note is the full
+Generates 3 cloze note types.  Where the \"main\" part of the note is the full
 note, with the cloze(s) extracted & used as the \"answer\".
 
 One cloze note may have multiple clozes
@@ -702,7 +702,7 @@ Example:
       {c2:Staphylococcus aureus} causes {c3:rapid} onset
       food poisoning
 
-Generates 3 cloze note types. Where the \"main\" part of the note is
+Generates 3 cloze note types.  Where the \"main\" part of the note is
 the full note, with the cloze(s) extracted & used as the \"answer\".
 
 See `gnosis-add-note--cloze' for more reference."
@@ -791,7 +791,7 @@ DIR is the base directory path from which to start the recursive search.
 REGEX is the regular expression pattern to match the file names against.
 
 This function traverses the subdirectories of DIR recursively,
-collecting file paths that match the regular expression. The file
+collecting file paths that match the regular expression.  The file
 paths are returned as a list of strings, with each string representing
 a relative file path to DIR.
 
@@ -898,14 +898,14 @@ Returns a list of unique tags."
 		 (read-string-from-buffer "Options\nEach '-' corresponds to an option\n-Example Option 1\n-Example Option 2\nYou can add as many options as you want\nCorrect Option must be inside {}" "-\n-")
 		 "-" t "[\s\n]"))
 	 (correct-choice-index (or (cl-position-if (lambda (string) (string-match "{.*}" string)) input)
-				   (error "Correct choice not found. Use {} to indicate the correct opiton")))
+				   (error "Correct choice not found.  Use {} to indicate the correct opiton")))
 	 (choices (mapcar (lambda (string) (replace-regexp-in-string "{\\|}" "" string)) input)))
     (list choices (+ correct-choice-index 1))))
 
 (defun gnosis-prompt-tags--split (&optional previous-note-tags)
   "Prompt user for tags, split string by space.
 
-Return a list of tags, split by space. If PREVIOUS-NOTE-TAGS is
+Return a list of tags, split by space.  If PREVIOUS-NOTE-TAGS is
 provided, use it as the default value."
   (let* ((previous-note-tags (or nil previous-note-tags))
 	 (tags (split-string (read-from-minibuffer "Tags: " (mapconcat #'identity previous-note-tags " ")) " ")))
@@ -924,7 +924,7 @@ Check if it's suspended, and if it's due today."
 (defun gnosis-review-is-due-today-p (id)
   "Return t if note with ID is due today.
 
-This function ignores if note is suspended. Refer to
+This function ignores if note is suspended.  Refer to
 `gnosis-review-is-due-p' if you need to check for suspended value as
 well."
   (let ((next-rev (gnosis-get 'next-rev 'review-log `(= id ,id))))
@@ -1135,7 +1135,7 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
   "Commit review session on git repository.
 
 This function initializes the `gnosis-dir' as a Git repository if it is not
-already one. It then adds the gnosis.db file to the repository and commits
+already one.  It then adds the gnosis.db file to the repository and commits
 the changes with a message containing the reviewed number of notes.
 
 NOTE-NUM: The number of notes reviewed in the session."
@@ -1153,7 +1153,7 @@ NOTE-NUM: The number of notes reviewed in the session."
     (when (and gnosis-vc-auto-push
 	       (not gnosis-testing))
       (gnosis-vc-push))
-    (message "Review session finished. %d notes reviewed." note-num)))
+    (message "Review session finished.  %d notes reviewed." note-num)))
 
 (defun gnosis-review--session (notes)
   "Start review session for NOTES.
@@ -1195,7 +1195,7 @@ NOTES: List of note ids"
 
 This function creates an Emacs Lisp buffer named *gnosis-edit* on the
 same window and populates it with the values of the note identified by
-the specified ID. The note values are inserted as keywords for the
+the specified ID.  The note values are inserted as keywords for the
 `gnosis-edit-update-note' function.
 
 To make changes, edit the values in the buffer, and then evaluate the
@@ -1294,13 +1294,13 @@ SECOND-IMAGE: Image to display after user-input"
 ID: Identifier of the note to export.
 
 This function retrieves the fields of a note with the given ID and
-inserts them into the current buffer. Each field is represented as a
-property list entry. The following fields are exported: type, main,
+inserts them into the current buffer.  Each field is represented as a
+property list entry.  The following fields are exported: type, main,
 options, answer, tags, extra-notes, image, and second-image.
 
 The exported fields are formatted as key-value pairs with a colon,
-e.g., :field value. The fields are inserted sequentially into the
-buffer. For certain field values, like lists or nil, special
+e.g., :field value.  The fields are inserted sequentially into the
+buffer.  For certain field values, like lists or nil, special
 formatting is applied.
 
 If the value is a list, the elements are formatted as strings and
@@ -1343,11 +1343,11 @@ It then retrieves all the notes associated with the deck and exports
 them.
 
 The exported notes are formatted as an Emacs Lisp code block that can
-be evaluated to recreate the deck with its associated notes. The
+be evaluated to recreate the deck with its associated notes.  The
 resulting code is saved to a file with the provided FILENAME and a
 '.el' extension is added automatically.
 
-Each note is exported using the `gnosis-export-note` function. The
+Each note is exported using the `gnosis-export-note` function.  The
 generated code includes a call to `gnosis-define-deck` with the deck
 name and all notes formatted as nested lists"
   ;; (interactive (list (gnosis-get-notes-for-deck)
@@ -1435,7 +1435,7 @@ name and all notes formatted as nested lists"
 (defvar gnosis-db-schema-extras '([(id integer :primary-key :not-null)
 				   (extra-notes string)
 				   ;; Despite the name 'images', this
-				   ;; is a single string value. At
+				   ;; is a single string value.  At
 				   ;; first it was designed to hold a
 				   ;; list of strings for image paths,
 				   ;; but it was changed to just a
