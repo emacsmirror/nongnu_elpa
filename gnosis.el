@@ -227,10 +227,6 @@ Example:
   "Return caar of VALUE from TABLE, optionally with where RESTRICTIONS."
   (caar (gnosis-select value table restrictions)))
 
-(defun gnosis-get-note-tags (id)
-  "Return tags for note ID."
-  (gnosis-get 'tags 'notes `(= id ,id)))
-
 (defun gnosis--delete (table value)
   "From TABLE use where to delete VALUE."
   (emacsql gnosis-db `[:delete :from ,table :where ,value]))
@@ -944,7 +940,7 @@ well."
   (let ((due-notes (gnosis-review-get-due-notes)))
     (cl-remove-duplicates
      (cl-mapcan (lambda (note-id)
-                  (gnosis-get-note-tags note-id))
+                  (gnosis-get 'tags 'notes `(= id ,note-id)))
 	        due-notes)
      :test #'equal)))
 
