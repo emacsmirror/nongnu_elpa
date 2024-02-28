@@ -75,7 +75,7 @@ deltoid, the spinal accessory nerve innervates the sternocleidomastoid
 and trapezius, the dorsal scapular nerve supplies the rhomboid muscles
 and levator scapulae, and the latissimus dorsi is the muscle supplied
 by the thoracodorsal nerve."
-			      :image gnosis-test-image
+			      :images (cons gnosis-test-image gnosis-test-image)
 			      :tags (gnosis-test-random-items gnosis-test-tags 2))))
     (when (y-or-n-p "Add Basic type questions?")
       (dotimes (_ num)
@@ -84,32 +84,32 @@ by the thoracodorsal nerve."
 				:hint "hint"
 				:answer "answer"
 				:extra "extra"
-				:image gnosis-test-image
+				:images (cons gnosis-test-image gnosis-test-image)
 				:tags (gnosis-test-random-items gnosis-test-tags 2))))
-    (when (y-or-n-p "Add single cloze type?")
+    (when (y-or-n-p "Add single Cloze type?")
       (dotimes (_ num)
 	(gnosis-add-note--cloze :deck testing-deck
 				:note "this is a {c1:note}"
 				:hint "note"
 				:tags (gnosis-test-random-items gnosis-test-tags 2)
-				:image gnosis-test-image
+				:images (cons gnosis-test-image gnosis-test-image)
 				:extra "extra")))
-    (when (y-or-n-p "Add note with multiple clozes?")
+    (when (y-or-n-p "Add multimple Clozes note?")
       (dotimes (_ num)
 	(gnosis-add-note--cloze :deck testing-deck
 				:note "this is a {c1:note}, a note with multiple {c1:clozes}"
 				:hint "note"
 				:tags (gnosis-test-random-items gnosis-test-tags 2)
-				:image gnosis-test-image
+				:images (cons gnosis-test-image gnosis-test-image)
 				:extra "extra")))
-    (when (y-or-n-p "Add note type y-or-n?")
+    (when (y-or-n-p "Add y-or-n note type?")
       (dotimes (_ num)
 	(gnosis-add-note--y-or-n :deck testing-deck
 				 :question "Is Codeine recommended in breastfeeding mothers?"
 				 :hint "hint"
 				 :answer 110
 				 :extra "extra"
-				 :image gnosis-test-image
+				 :images (cons gnosis-test-image gnosis-test-image)
 				 :tags (gnosis-test-random-items gnosis-test-tags 2))))))
 
 (defun gnosis-test-start ()
