@@ -124,7 +124,7 @@ reviews, increase the ef increase value (first item) by INCREASE.
 
 For every FREQUENCY of C-FAILURES reviews, decrease the ef decrease
 value (second item) by DECREASE."
-  (let ((change-p (= (% (if success c-successes c-failures) frequency) 0))
+  (let ((change-p (= (% (max 1 (if success c-successes c-failures)) frequency) 0))
 	(new-ef (if success (gnosis-algorithm-replace-at-index 2 (+ (nth 2 ef) (nth 0 ef)) ef)
 		  (gnosis-algorithm-replace-at-index 2 (max 1.3 (- (nth 2 ef) (nth 1 ef))) ef))))
     (cond ((and success change-p)
