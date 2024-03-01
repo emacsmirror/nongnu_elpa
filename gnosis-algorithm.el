@@ -69,6 +69,11 @@ NOTE: Do not change this value above 1"
   :group 'gnosis
   :type 'float)
 
+(defcustom gnosis-algorithm-ef-frequency 3
+  "Frequency for updating ef increase and decrease values."
+  :group 'gnosis
+  :type 'integer)
+
 
 (defun gnosis-algorithm-date (&optional offset)
   "Return the current date in a list (year month day).
