@@ -74,6 +74,12 @@ NOTE: Do not change this value above 1"
   :group 'gnosis
   :type 'integer)
 
+(defun gnosis-algorithm-replace-at-index (index new-item list)
+  "Replace item at INDEX with NEW-ITEM in LIST."
+  (cl-loop for item in list
+	   for i from 0
+	   collect (if (= i index) new-item item)))
+
 
 (defun gnosis-algorithm-date (&optional offset)
   "Return the current date in a list (year month day).
