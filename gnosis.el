@@ -987,15 +987,6 @@ This function is used to round floating point numbers to 2 decimals,
 such as the easiness factor (ef)."
   (/ (round (* num 100.00)) 100.00))
 
-(defun gnosis-review-new-ef (id success)
-  "Return new ef for note with value of id ID.
-
-Returns a list of the form (ef-increase ef-decrease ef).
-SUCCESS is a boolean value, t for success, nil for failure."
-  (let ((ef (nth 1 (gnosis-review--algorithm id success)))
-	(old-ef (gnosis-get 'ef 'review `(= id ,id))))
-    (cl-substitute (gnosis-review-round ef) (nth 2 old-ef) old-ef)))
-
 (defun gnosis-review--update (id success)
   "Update review-log for note with value of id ID.
 
