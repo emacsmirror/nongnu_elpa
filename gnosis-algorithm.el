@@ -80,6 +80,10 @@ NOTE: Do not change this value above 1"
 	   for i from 0
 	   collect (if (= i index) new-item item)))
 
+(defun gnosis-algorithm-round-items (list)
+  "Round all items in LIST to 2 decimal places."
+  (cl-loop for item in list
+	   collect (/ (round (* item 100)) 100.0)))
 
 (defun gnosis-algorithm-date (&optional offset)
   "Return the current date in a list (year month day).
