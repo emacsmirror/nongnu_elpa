@@ -57,6 +57,12 @@ NOTE: Do not change this value above 1"
   :group 'gnosis
   :type 'float)
 
+(defcustom gnosis-algorithm-ef-increase 0.1
+  "Increase ef increase value by this amount for every
+`gnosis-algorithm-ef-frequency' number of successful reviews."
+  :group 'gnosis
+  :type 'float)
+
 
 (defun gnosis-algorithm-date (&optional offset)
   "Return the current date in a list (year month day).
