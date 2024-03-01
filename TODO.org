@@ -2,6 +2,9 @@
 #+author: Thanos Apollo
 #+startup: content
 
+
+* Notes
+** TODO Add export deck
 * Dashboard
 ** DONE Add Dashboard
 CLOSED: [2024-02-20 Tue 13:33]
@@ -17,7 +20,8 @@ Search by tags, deck or LIKE question.
 ** TODO Algorithm: changes for ef increase/decrease values :priorityHigh:
 + Create a =gnosis-algorithm-ef-increase=, which will be used to
   increase ef increase value upon X consecutive successful reviews  
-* Misc  
+* Misc
+** TODO Add export deck :priorityHigh:
 ** DONE Refactor =completing-read= UI choices
 CLOSED: [2024-02-17 Sat 21:59]
 /DONE on version 0.1.7/
