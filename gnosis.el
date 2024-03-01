@@ -946,29 +946,34 @@ well."
 	        due-notes)
      :test #'equal)))
 
-(defun gnosis-review--algorithm (id success)
+(defun gnosis-review-algorithm (id success)
   "Return next review date & ef for note with value of id ID.
 
 SUCCESS is a boolean value, t for success, nil for failure.
 
-Returns a list of the form ((yyyy mm dd) ef)."
+Returns a list of the form ((yyyy mm dd) (ef-increase ef-decrease ef-total))."
   (let ((ff gnosis-algorithm-ff)
-	(ef (nth 2 (gnosis-get 'ef 'review `(= id ,id))))
-	(t-success (gnosis-get 't-success 'review-log `(= id ,id)))
-	(c-success (gnosis-get 'c-success 'review-log `(= id ,id)))
-	(c-fails (gnosis-get 'c-fails 'review-log `(= id ,id)))
-	(t-fails (gnosis-get 't-fails 'review-log `(= id ,id)))
-	(initial-interval (gnosis-get 'interval 'review `(= id ,id))))
-    (gnosis-algorithm-next-interval :last-interval (max (gnosis-review--get-offset id) 1) ;; last-interv always >=1
-				    :review-num (gnosis-get 'n 'review-log `(= id ,id))
-				    :ef ef
+	(ef (gnosis-get 'ef 'review `(= id ,id)))
+	(t-success (gnosis-get 't-success 'review-log `(= id ,id))) ;; total successful reviews
+	(c-success (gnosis-get 'c-success 'review-log `(= id ,id))) ;; consecutive successful reviews
+	(c-fails (gnosis-get 'c-fails 'review-log `(= id ,id))) ;; consecutive failed reviews
+	(t-fails (gnosis-get 't-fails 'review-log `(= id ,id))) ;; total failed reviews
+	(initial-interval (gnosis-get 'interval 'review `(= id ,id))) ;; initial interval
+	(review-num (gnosis-get 'n 'review-log `(= id ,id))) ;; total reviews
+	(last-interval (max (gnosis-review--get-offset id) 1))) ;; last interval
+    (list (gnosis-algorithm-next-interval :last-interval last-interval
+					  :ef ef
+					  :success success
+					  :successful-reviews t-success
+					  :failure-factor ff
+					  :initial-interval initial-interval)
+	  (gnosis-algorithm-next-ef :ef ef
 				    :success success
-				    :failure-factor ff
-				    :successful-reviews t-success
-				    :successful-reviews-c  c-success
-				    :fails-c c-fails
-				    :fails-t t-fails
-				    :initial-interval initial-interval)))
+				    :increase gnosis-algorithm-ef-increase
+				    :decrease gnosis-algorithm-ef-decrease
+				    :frequency gnosis-algorithm-ef-frequency
+				    :c-successes c-success
+				    :c-failures c-fails))))
 
 (defun gnosis-review--get-offset (id)
   "Return offset for note with value of id ID."
@@ -995,8 +1000,8 @@ SUCCESS is a boolean value, t for success, nil for failure."
   "Update review-log for note with value of id ID.
 
 SUCCESS is a boolean value, t for success, nil for failure."
-  (let ((ef (gnosis-review-new-ef id success))
-	(next-rev (car (gnosis-review--algorithm id success))))
+  (let ((ef (cdr (gnosis-review-algorithm id success)))
+	(next-rev (car (gnosis-review-algorithm id success))))
     ;; Update review-log
     (gnosis-update 'review-log `(= last-rev ',(gnosis-algorithm-date)) `(= id ,id))
     (gnosis-update 'review-log `(= next-rev ',next-rev) `(= id ,id))
