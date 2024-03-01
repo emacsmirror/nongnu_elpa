@@ -63,6 +63,12 @@ NOTE: Do not change this value above 1"
   :group 'gnosis
   :type 'float)
 
+(defcustom gnosis-algorithm-ef-decrease 0.1
+  "Decrease ef decrease value by this amount for every
+`gnosis-algorithm-ef-frequency' number of failed reviews."
+  :group 'gnosis
+  :type 'float)
+
 
 (defun gnosis-algorithm-date (&optional offset)
   "Return the current date in a list (year month day).
