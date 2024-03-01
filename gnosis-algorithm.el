@@ -101,12 +101,37 @@ Optional integer OFFSET is a number of days from the current date."
 (defun gnosis-algorithm-date-diff (date)
   "Find the difference between the current date and the given DATE.
 
-DATE format must be given as (yyyy mm dd)
-The structure of the given date is (YEAR MONTH DAY)."
+DATE format must be given as (year month day)."
   (let ((given-date (encode-time 0 0 0 (caddr date) (cadr date) (car date))))
     (- (time-to-days (current-time))
        (time-to-days given-date))))
 
+(cl-defun gnosis-algorithm-next-ef (&key ef success increase decrease frequency
+					 c-successes c-failures)
+  "Returns the new EF, (increase-value decrease-value total-value)
+
+Calculate the new e-factor given existing EF and SUCCESS, either t or nil.
+
+Next EF is calculated as follows:
+
+Upon a successful review, increase total value of ef by ef-increase
+value.
+
+Upon a failed review, decrease total ef by ef-decrease value (nth 1 ef).
+
+For every FREQUENCY of C-SUCCESSES (consecutive successful reviews)
+reviews, increase the ef increase value (first item) by INCREASE.
+
+For every FREQUENCY of C-FAILURES reviews, decrease the ef decrease
+value (second item) by DECREASE."
+  (let ((change-p (= (% (if success c-successes c-failures) frequency) 0))
+	(new-ef (if success (gnosis-algorithm-replace-at-index 2 (+ (nth 2 ef) (nth 0 ef)) ef)
+		  (gnosis-algorithm-replace-at-index 2 (max 1.3 (- (nth 2 ef) (nth 1 ef))) ef))))
+    (cond ((and success change-p)
+	   (setf new-ef (gnosis-algorithm-replace-at-index 0 (+ (nth 0 ef) increase) new-ef)))
+	  ((and (not success) change-p
+		(setf new-ef (gnosis-algorithm-replace-at-index 1 (+ (nth 1 ef) decrease) new-ef)))))
+    (gnosis-algorithm-round-items new-ef)))
 
 (defun gnosis-algorithm-e-factor (ef success)
   "Calculate the new e-factor given existing EF and SUCCESS, either t or nil."
