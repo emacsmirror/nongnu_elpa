@@ -980,13 +980,6 @@ Returns a list of the form ((yyyy mm dd) (ef-increase ef-decrease ef-total))."
   (let ((last-rev (gnosis-get 'last-rev 'review-log `(= id ,id))))
     (gnosis-algorithm-date-diff last-rev)))
 
-(defun gnosis-review-round (num)
-  "Round NUM to 2 decimals.
-
-This function is used to round floating point numbers to 2 decimals,
-such as the easiness factor (ef)."
-  (/ (round (* num 100.00)) 100.00))
-
 (defun gnosis-review--update (id success)
   "Update review-log for note with value of id ID.
 
