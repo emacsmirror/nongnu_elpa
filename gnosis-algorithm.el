@@ -133,69 +133,22 @@ value (second item) by DECREASE."
 		(setf new-ef (gnosis-algorithm-replace-at-index 1 (+ (nth 1 ef) decrease) new-ef)))))
     (gnosis-algorithm-round-items new-ef)))
 
-(defun gnosis-algorithm-e-factor (ef success)
-  "Calculate the new e-factor given existing EF and SUCCESS, either t or nil."
-  (pcase success
-    (`t (+ ef (car gnosis-algorithm-ef)))
-    (`nil (max 1.3 (- ef (cadr gnosis-algorithm-ef))))))
+(cl-defun gnosis-algorithm-next-interval (&key last-interval ef success successful-reviews
+					       failure-factor initial-interval)
+  "Calculate next interval."
+  (cl-assert (< gnosis-algorithm-ff 1) "Value of `gnosis-algorithm-ff' must be lower than 1")
+  ;; This should only occur in testing env or when the user has made breaking changes.
+  (cl-assert (> (nth 2 ef) 1) "Total ef value must be above 1")
+  (let* ((ef (nth 2 gnosis-algorithm-ef))
+	 (interval (cond ((and (= successful-reviews 0) success)
+			  (car initial-interval))
+			 ((and (= successful-reviews 1) success)
+			  (cadr initial-interval))
+			 (t (if success
+				(* ef last-interval)
+			      (* failure-factor last-interval))))))
+    (gnosis-algorithm-date (round interval))))
 
-
-(cl-defun gnosis-algorithm-next-interval (&key last-interval review-num ef success failure-factor successful-reviews successful-reviews-c fails-c fails-t initial-interval)
-  "Calculate next interval.
-- LAST-INTERVAL : The number of days since the item was last reviewed.
--review-num: Number of times the item has been reviewed.
-- EF : Easiness Factor.
-- SUCCESS : Success of the recall, ranges from 0 (unsuccessful) to 1
-  (successful).
-- FF: Failure factor
-- SUCCESSFUL-REVIEWS : Number of successful reviews.
-- SUCCESSFULL-REVIEWS-C: Successful reviews in a row.
-- FAILS-C: Failed reviews in a row.
-- FAILS-T: Total failed reviews.
-- INITIAL-INTERVAL: Initial intervals for successful reviews.
-
-Returns a list of: (INTERVAL N EF) where,
-- Next review date in (yyyy mm dd) format.
-- REVIEW-NUM: Incremented by 1.
-- EF : Modified based on the recall success for the item."
-  ;; Check if gnosis-algorithm-ff is lower than 1 & is total-ef above 1.3
-  (cond ((>= gnosis-algorithm-ff 1)
-	 (error "Value of `gnosis-algorithm-ff' must be lower than 1"))
-	((< (nth 2 gnosis-algorithm-ef) 1.3)
-	 (error "Value of total-ef from `gnosis-algorithm-ef' must be above 1.3")))
-  ;; Calculate the next easiness factor.
-  (let* ((next-ef (gnosis-algorithm-e-factor ef success))
-         (interval
-          (cond
-	   ;; TODO: Rewrite this!
-           ;; First successful review -> first interval
-           ((and (= successful-reviews 0) success
-		 (car initial-interval)))
-           ;; Second successful review -> second interval
-           ((and (= successful-reviews 1) success)
-	    (cadr initial-interval))
-	   ;; When successful-reviews-c is above 3, use 150% or 180%
-	   ;; of ef depending on the value of successful-reviews
-	   ((and success
-		 (>= successful-reviews-c 3)
-		 (>= review-num 5)
-		 (> last-interval 1))
-	    (* (* ef (if (>= successful-reviews 10) 1.8 1.5)) last-interval))
-	   ((and (equal success nil)
-		 (> fails-c 3)
-		 (>= review-num 5)
-		 (> last-interval 1))
-	    ;; When fails-c is above 3, use 150% or 180% of
-	    ;; failure-factor depending on the value of total failed
-	    ;; reviews.
-	    (* (max (min 0.8 (* failure-factor (if (>= fails-t 10) 1.8 1.5)))
-		     failure-factor)
-		last-interval))
-	   ;; For everything else
-           (t (if success
-                  (* ef last-interval)
-                (* failure-factor last-interval))))))
-    (list (gnosis-algorithm-date (round interval)) next-ef)))
 
 (provide 'gnosis-algorithm)
 ;;; gnosis-algorithm.el ends here
