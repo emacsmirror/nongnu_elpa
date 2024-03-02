@@ -22,7 +22,11 @@
 
 ;;; Commentary:
 
-;; Work in progress
+;; Handles date calculation as well as ef & interval calculations.
+
+;; This file contains the algorithm for the spaced repetition system used in Gnosis.
+;; Gnosis algorithm is inspired by the SM-2 algorithm used in Anki, but has been
+;; modified to fit the needs of Gnosis.
 
 ;;; Code:
 
@@ -59,18 +63,20 @@ NOTE: Do not change this value above 1"
 
 (defcustom gnosis-algorithm-ef-increase 0.1
   "Increase ef increase value by this amount for every
-`gnosis-algorithm-ef-frequency' number of successful reviews."
+`gnosis-algorithm-ef-threshold' number of successful reviews."
   :group 'gnosis
   :type 'float)
 
-(defcustom gnosis-algorithm-ef-decrease 0.1
+(defcustom gnosis-algorithm-ef-decrease 0.2
   "Decrease ef decrease value by this amount for every
-`gnosis-algorithm-ef-frequency' number of failed reviews."
+`gnosis-algorithm-ef-threshold' number of failed reviews."
   :group 'gnosis
   :type 'float)
 
-(defcustom gnosis-algorithm-ef-frequency 3
-  "Frequency for updating ef increase and decrease values."
+(defcustom gnosis-algorithm-ef-threshold 3
+  "Threshold for updating ef increase/decrease values.
+
+Refers to the number of consecutive successful or failed reviews."
   :group 'gnosis
   :type 'integer)
 
@@ -106,7 +112,7 @@ DATE format must be given as (year month day)."
     (- (time-to-days (current-time))
        (time-to-days given-date))))
 
-(cl-defun gnosis-algorithm-next-ef (&key ef success increase decrease frequency
+(cl-defun gnosis-algorithm-next-ef (&key ef success increase decrease threshold
 					 c-successes c-failures)
   "Returns the new EF, (increase-value decrease-value total-value)
 
@@ -114,17 +120,16 @@ Calculate the new e-factor given existing EF and SUCCESS, either t or nil.
 
 Next EF is calculated as follows:
 
-Upon a successful review, increase total value of ef by ef-increase
-value.
+Upon a successful review, increase total ef value (nth 2) by
+ef-increase value (nth 0).
 
-Upon a failed review, decrease total ef by ef-decrease value (nth 1 ef).
+Upon a failed review, decrease total ef by ef-decrease value (nth 1).
 
-For every FREQUENCY of C-SUCCESSES (consecutive successful reviews)
-reviews, increase the ef increase value (first item) by INCREASE.
+For every THRESHOLD of C-SUCCESSES (consecutive successful reviews)
+reviews, increase ef-increase by INCREASE.
 
-For every FREQUENCY of C-FAILURES reviews, decrease the ef decrease
-value (second item) by DECREASE."
-  (let ((change-p (= (% (max 1 (if success c-successes c-failures)) frequency) 0))
+For every THRESHOLD of C-FAILURES reviews, decrease ef-decrease value
+by DECREASE."
   (cl-loop for (param type) in '((ef listp) (success booleanp) (increase numberp)
                                  (decrease numberp) (threshold numberp))
            do (cl-assert (funcall type (symbol-value param)) nil
@@ -132,9 +137,9 @@ value (second item) by DECREASE."
   (let ((threshold-p (= (% (max 1 (if success c-successes c-failures)) threshold) 0))
 	(new-ef (if success (gnosis-algorithm-replace-at-index 2 (+ (nth 2 ef) (nth 0 ef)) ef)
 		  (gnosis-algorithm-replace-at-index 2 (max 1.3 (- (nth 2 ef) (nth 1 ef))) ef))))
-    (cond ((and success change-p)
+    (cond ((and success threshold-p)
 	   (setf new-ef (gnosis-algorithm-replace-at-index 0 (+ (nth 0 ef) increase) new-ef)))
-	  ((and (not success) change-p
+	  ((and (not success) threshold-p
 		(setf new-ef (gnosis-algorithm-replace-at-index 1 (+ (nth 1 ef) decrease) new-ef)))))
     (gnosis-algorithm-round-items new-ef)))
 
