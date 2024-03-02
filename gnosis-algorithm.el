@@ -125,6 +125,11 @@ reviews, increase the ef increase value (first item) by INCREASE.
 For every FREQUENCY of C-FAILURES reviews, decrease the ef decrease
 value (second item) by DECREASE."
   (let ((change-p (= (% (max 1 (if success c-successes c-failures)) frequency) 0))
+  (cl-loop for (param type) in '((ef listp) (success booleanp) (increase numberp)
+                                 (decrease numberp) (threshold numberp))
+           do (cl-assert (funcall type (symbol-value param)) nil
+			 "Assertion failed: %s must be of type %s" param type))
+  (let ((threshold-p (= (% (max 1 (if success c-successes c-failures)) threshold) 0))
 	(new-ef (if success (gnosis-algorithm-replace-at-index 2 (+ (nth 2 ef) (nth 0 ef)) ef)
 		  (gnosis-algorithm-replace-at-index 2 (max 1.3 (- (nth 2 ef) (nth 1 ef))) ef))))
     (cond ((and success change-p)
