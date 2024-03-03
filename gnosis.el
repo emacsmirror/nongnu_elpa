@@ -1555,14 +1555,20 @@ name and all notes formatted as nested lists"
 	tabulated-list-sort-key nil))
 
 ;;;###autoload
-(defun gnosis-dashboard ()
+(cl-defun gnosis-dashboard (&optional dashboard-type)
   "Display gnosis dashboard."
   (interactive)
-  (pop-to-buffer "*gnosis-dashboard*" nil)
-  (gnosis-dashboard-mode)
-  (setq tabulated-list-entries
-	(gnosis-dashboard-output-notes))
-  (tabulated-list-print t))
+  (let ((type (or dashboard-type
+		  (cadr (read-multiple-choice
+			 "Display:"
+			 '((?N "Notes")
+			   (?D "Decks")))))))
+    (pop-to-buffer "*gnosis-dashboard*")
+    (gnosis-dashboard-mode)
+    (pcase type
+      ("Notes" (gnosis-dashboard-output-notes))
+      ("Decks" (gnosis-dashboard-output-decks)))
+    (tabulated-list-print t)))
 
 (defun gnosis-db-init ()
   "Create gnosis essential directories & database."
