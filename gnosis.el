@@ -976,9 +976,9 @@ Returns a list of the form ((yyyy mm dd) (ef-increase ef-decrease ef-total))."
 					  :initial-interval initial-interval)
 	  (gnosis-algorithm-next-ef :ef ef
 				    :success success
-				    :increase gnosis-algorithm-ef-increase
-				    :decrease gnosis-algorithm-ef-decrease
-				    :frequency gnosis-algorithm-ef-threshold
+				    :increase (gnosis-get-ef-increase id)
+				    :decrease (gnosis-get-ef-decrease id)
+				    :threshold (gnosis-get-ef-threshold id)
 				    :c-successes c-success
 				    :c-failures c-fails))))
 
