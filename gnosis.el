@@ -1250,6 +1250,11 @@ Insert deck values `ef-increase', `ef-decrease', `ef-threshold', `failure-factor
     (unless (or (null value) (floatp value))
       (error "Invalid value: %s, %s" value description))))
 
+(defun gnosis-assert-number-or-nil (value description)
+  "Assert that VALUE is a number or nil."
+  (unless (or (null value) (numberp value))
+    (error "Invalid value: %s, %s" value description)))
+
 
 (cl-defun gnosis-edit-save-exit (&optional deck-edit (exit-func 'exit-recursive-edit) &rest args)
   "Save edits and exit.
