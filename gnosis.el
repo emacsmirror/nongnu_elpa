@@ -116,7 +116,7 @@ When nil, the image will be displayed at its original size."
 (defvar gnosis-testing nil
   "When t, warn user he is in a testing environment.")
 
-(defconst gnosis-db-version 1
+(defconst gnosis-db-version 2
   "Gnosis database version.")
 
 (defvar gnosis-note-types '("MCQ" "Cloze" "Basic" "Double" "y-or-n")
@@ -391,7 +391,7 @@ Set SPLIT to t to split all input given."
       (error "Aborted")))
   (if (gnosis-get 'name 'decks `(= name ,name))
       (error "Deck `%s' already exists" name)
-    (gnosis--insert-into 'decks `([nil ,name]))
+    (gnosis--insert-into 'decks `([nil ,name nil nil nil nil]))
     (message "Created deck '%s'" name)))
 
 (defun gnosis--get-deck-name ()
@@ -1391,7 +1391,11 @@ name and all notes formatted as nested lists"
 
 ;;; Database Schemas
 (defvar gnosis-db-schema-decks '([(id integer :primary-key :autoincrement)
-				  (name text :not-null)]))
+				  (name text :not-null)
+				  (failure-factor float)
+				  (ef-increase float)
+				  (ef-decrease float)
+				  (ef-threshold integer)]))
 
 (defvar gnosis-db-schema-notes '([(id integer :primary-key :autoincrement)
 				  (type text :not-null)
@@ -1487,21 +1491,29 @@ name and all notes formatted as nested lists"
 
 (defun gnosis-db-init ()
   "Create gnosis essential directories & database."
-  (unless (length= (emacsql gnosis-db [:select name :from sqlite-master :where (= type table)]) 6)
-    ;; Enable foreign keys
-    (emacsql gnosis-db "PRAGMA foreign_keys = ON")
-    ;; Gnosis version
-    (emacsql gnosis-db (format "PRAGMA user_version = %s" gnosis-db-version))
-    ;; Create decks table
-    (gnosis--create-table 'decks gnosis-db-schema-decks)
-    ;; Create notes table
-    (gnosis--create-table 'notes gnosis-db-schema-notes)
-    ;; Create review table
-    (gnosis--create-table 'review gnosis-db-schema-review)
-    ;; Create review-log table
-    (gnosis--create-table 'review-log gnosis-db-schema-review-log)
-    ;; Create extras table
-    (gnosis--create-table 'extras gnosis-db-schema-extras)))
+  (let ((gnosis-curr-version (caar (emacsql gnosis-db (format "PRAGMA user_version")))))
+    (unless (length= (emacsql gnosis-db [:select name :from sqlite-master :where (= type table)]) 6)
+      ;; Enable foreign keys
+      (emacsql gnosis-db "PRAGMA foreign_keys = ON")
+      ;; Gnosis version
+      (emacsql gnosis-db (format "PRAGMA user_version = %s" gnosis-db-version))
+      ;; Create decks table
+      (gnosis--create-table 'decks gnosis-db-schema-decks)
+      ;; Create notes table
+      (gnosis--create-table 'notes gnosis-db-schema-notes)
+      ;; Create review table
+      (gnosis--create-table 'review gnosis-db-schema-review)
+      ;; Create review-log table
+      (gnosis--create-table 'review-log gnosis-db-schema-review-log)
+      ;; Create extras table
+      (gnosis--create-table 'extras gnosis-db-schema-extras))
+    ;; Update database schema for version
+    (cond ((= gnosis-curr-version 1) ;; Update to version 2
+	   (emacsql gnosis-db [:alter-table decks :add failure-factor])
+	   (emacsql gnosis-db [:alter-table decks :add ef-increase])
+	   (emacsql gnosis-db [:alter-table decks :add ef-decrease])
+	   (emacsql gnosis-db [:alter-table decks :add ef-threshold])
+	   (emacsql gnosis-db (format "PRAGMA user_version = %s" gnosis-db-version))))))
 
 (gnosis-db-init)
 
