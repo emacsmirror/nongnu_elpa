@@ -1351,6 +1351,11 @@ SECOND-IMAGE: Image to display after user-input"
   "Return a list of ID vlaues for each note with value of deck-id DECK."
   (gnosis-select 'id 'notes `(= deck-id ,deck) t))
 
+(defun gnosis-get-ef-increase (id)
+  "Return ef-increase for note with value of id ID."
+  (let ((ef-increase (gnosis-get 'ef-increase 'decks `(= id ,(gnosis-get 'deck-id 'notes `(= id ,id))))))
+    (or ef-increase gnosis-algorithm-ef-increase)))
+
 (cl-defun gnosis-export-note (id &optional (export-for-deck nil))
   "Export fields for note with value of id ID.
 
