@@ -1549,6 +1549,16 @@ name and all notes formatted as nested lists"
   (let ((note-count (caar (emacsql gnosis-db (format "SELECT COUNT(*) FROM notes WHERE deck_id=%s" id)))))
     (when (gnosis-select 'id 'decks `(= id ,id))
       (list (number-to-string note-count)))))
+
+(defun gnosis-dashboard-output-deck (id)
+  "Output deck contents formatted for gnosis dashboard."
+  (cl-loop for item in (append (gnosis-select '[name failure-factor ef-increase ef-decrease ef-threshold]
+					      'decks `(= id ,id) t)
+			       (gnosis-dashboard-deck-note-count id))
+	   when (listp item)
+	   do (cl-remove-if (lambda (x) (and (vectorp x) (zerop (length x)))) item)
+	   collect (prin1-to-string item)))
+
 (defun gnosis-dashboard-edit-note ()
   "Get note id from tabulated list and edit it."
   (interactive)
