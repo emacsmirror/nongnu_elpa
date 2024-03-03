@@ -1237,6 +1237,11 @@ Insert deck values `ef-increase', `ef-decrease', `ef-threshold', `failure-factor
     (insert (format "\n:id %s\n:name \"%s\"\n:ef-increase %s\n:ef-decrease %s\n:ef-threshold %s\n:failure-factor %s"
 		    id name ef-increase ef-decrease ef-threshold failure-factor))))
 
+(defun gnosis-assert-int-or-nil (value description)
+  "Assert that VALUE is an integer or nil."
+  (unless (or (null value) (integerp value))
+    (error "Invalid value: %s, %s" value description)))
+
 
 (cl-defun gnosis-edit-save-exit (&optional deck-edit (exit-func 'exit-recursive-edit) &rest args)
   "Save edits and exit.
