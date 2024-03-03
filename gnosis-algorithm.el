@@ -130,10 +130,11 @@ reviews, increase ef-increase by INCREASE.
 
 For every THRESHOLD of C-FAILURES reviews, decrease ef-decrease value
 by DECREASE."
-  (cl-loop for (param type) in '((ef listp) (success booleanp) (increase numberp)
-                                 (decrease numberp) (threshold numberp))
-           do (cl-assert (funcall type (symbol-value param)) nil
-			 "Assertion failed: %s must be of type %s" param type))
+  (cl-assert (listp ef) nil "Assertion failed: ef must be a list")
+  (cl-assert (booleanp success) nil "Assertion failed: success must be a boolean value")
+  (cl-assert (numberp increase) nil "Assertion failed: increase must be a number")
+  (cl-assert (numberp decrease) nil "Assertion failed: decrease must be a number")
+  (cl-assert (numberp threshold) nil "Assertion failed: threshold must be a number")
   (let ((threshold-p (= (% (max 1 (if success c-successes c-failures)) threshold) 0))
 	(new-ef (if success (gnosis-algorithm-replace-at-index 2 (+ (nth 2 ef) (nth 0 ef)) ef)
 		  (gnosis-algorithm-replace-at-index 2 (max 1.3 (- (nth 2 ef) (nth 1 ef))) ef))))
