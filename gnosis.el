@@ -1217,15 +1217,16 @@ changes."
 				":tags" ":extra-notes" ":image" ":second-image"
 				":ef" ":ff" ":suspend"))
 
-(defun gnosis-edit-save-exit ()
-  "Save edits and exit."
+(cl-defun gnosis-edit-save-exit (&optional deck-edit (exit-func 'exit-recursive-edit) &rest args)
+  "Save edits and exit.
+
+If not DECK-EDIT and not in a recursive-edit, pop back
+gnosis-dashboard."
   (interactive)
-  (eval-buffer)
-  (quit-window t)
-  ;; exit recursive edit if we are in one
-  (if (>= (recursion-depth) 1)
-      (exit-recursive-edit)
-    (gnosis-dashboard)))
+  (let ((deck-edit (or deck-edit nil)))
+    (eval-buffer)
+    (quit-window t)
+    (apply exit-func args)))
 
 (defvar-keymap gnosis-edit-mode-map
   :doc "gnosis-edit keymap"
