@@ -1559,6 +1559,35 @@ name and all notes formatted as nested lists"
 	   do (cl-remove-if (lambda (x) (and (vectorp x) (zerop (length x)))) item)
 	   collect (prin1-to-string item)))
 
+(defun gnosis-dashboard-output-decks ()
+  "Return deck contents for gnosis dashboard."
+  (setq tabulated-list-format [("Name" 15 t)
+			       ("failure-factor" 15 t)
+			       ("ef-increase" 15 t)
+			       ("ef-decrease" 15 t)
+			       ("ef-threshold" 15 t)
+			       ("Notes" 10 t)])
+  (tabulated-list-init-header)
+  (let ((max-id (apply 'max (gnosis-select 'id 'decks '1=1 t)))
+	(decks (gnosis-select 'name 'decks '1=1 t)))
+    (setq tabulated-list-entries
+	  (cl-loop for id from 1 to max-id
+		   for output = (gnosis-dashboard-output-deck id)
+		   when output
+		   collect (list (number-to-string id) (vconcat output)))))
+  (local-set-key (kbd "e") #'gnosis-dashboard-edit-deck)
+  (local-set-key (kbd "d") #'(lambda () (interactive) (gnosis-delete-deck
+						  (string-to-number (tabulated-list-get-id)))
+			       (gnosis-dashboard-output-decks)
+			       (revert-buffer t t t)))
+  (local-set-key (kbd "a") #'(lambda () (interactive) (gnosis-add-deck (read-string "Deck name: "))
+			       (gnosis-dashboard-output-decks)
+			       (revert-buffer t t t)))
+  (local-set-key (kbd "s") #'(lambda () (interactive) (gnosis-suspend-deck
+						      (string-to-number (tabulated-list-get-id)))
+			       (gnosis-dashboard-output-decks)
+			       (revert-buffer t t t))))
+
 (defun gnosis-dashboard-edit-note ()
   "Get note id from tabulated list and edit it."
   (interactive)
