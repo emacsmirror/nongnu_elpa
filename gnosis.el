@@ -1325,9 +1325,12 @@ EXTRA-NOTES: Notes to display after user-input
 IMAGE: Image to display before user-input
 SECOND-IMAGE: Image to display after user-input"
   (cl-assert (stringp main) nil "Main must be a string")
-  (cl-assert (stringp image) nil "Image must be a string, path to image file from `gnosis-images-dir'")
-  (cl-assert (stringp second-image) nil "Second-image must be a string, path to image file from `gnosis-images-dir'")
-  (cl-assert (stringp extra-notes) nil "Extra-notes must be a string")
+  (cl-assert (or (stringp image) (null image)) nil
+	     "Image must be a string, path to image file from `gnosis-images-dir', or nil")
+  (cl-assert (or (stringp second-image) (null second-image)) nil
+	     "Second-image must be a string, path to image file from `gnosis-images-dir', or nil")
+  (cl-assert (or (stringp extra-notes) (null extra-notes)) nil
+	     "Extra-notes must be a string, or nil")
   (cl-assert (listp tags) nil "Tags must be a list of strings")
   (cl-assert (and (listp ef) (length= ef 3)) nil "ef must be a list of 3 floats")
   ;; Construct the update clause for the emacsql update statement.
