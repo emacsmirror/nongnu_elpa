@@ -1465,7 +1465,6 @@ name and all notes formatted as nested lists"
 
 (defvar-keymap gnosis-dashboard-mode-map
   :doc "gnosis-dashboard keymap"
-  "e" #'gnosis-dashboard-edit-note
   "q" #'quit-window)
 
 (define-derived-mode gnosis-dashboard-mode tabulated-list-mode "Gnosis Dashboard"
