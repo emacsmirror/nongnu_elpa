@@ -978,7 +978,7 @@ Returns a list of the form ((yyyy mm dd) (ef-increase ef-decrease ef-total))."
 				    :success success
 				    :increase gnosis-algorithm-ef-increase
 				    :decrease gnosis-algorithm-ef-decrease
-				    :frequency gnosis-algorithm-ef-frequency
+				    :frequency gnosis-algorithm-ef-threshold
 				    :c-successes c-success
 				    :c-failures c-fails))))
 
@@ -1222,7 +1222,10 @@ changes."
   ;; Insert id & fields as read-only values
   (gnosis-edit-read-only-values (format ":id %s" id) ":main" ":options" ":answer"
 				":tags" ":extra-notes" ":image" ":second-image"
-				":ef" ":ff" ":suspend"))
+				":ef" ":ff" ":suspend")
+  (local-unset-key (kbd "C-c C-c"))
+  (local-set-key (kbd "C-c C-c") (lambda () (interactive) (gnosis-edit-save-exit t 'gnosis-dashboard "Notes"))))
+
 (defun gnosis-edit-deck--export (id)
   "Export deck with ID.
 
