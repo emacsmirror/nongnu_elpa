@@ -1269,6 +1269,23 @@ Insert deck values `ef-increase', `ef-decrease', `ef-threshold', `failure-factor
 	   when value
 	   do (gnosis-update 'decks `(= ,field ,value) `(= id ,id))))
 
+(defun gnosis-edit-deck (&optional id)
+  "Edit the contents of a deck with the given ID."
+  (interactive "P")
+  (let ((id (or id (gnosis--get-deck-id))))
+    (pop-to-buffer-same-window (get-buffer-create "*gnosis-edit*"))
+    (gnosis-edit-mode)
+    (erase-buffer)
+    (insert ";;\n;; You are editing a gnosis deck.\n\n")
+    (insert "(gnosis-edit-update-deck ")
+    (gnosis-edit-deck--export id)
+    (insert ")")
+    (insert "\n\n;; After finishing editing, save changes with `<C-c> <C-c>'\n;; Avoid exiting without saving.")
+    (indent-region (point-min) (point-max))
+    (gnosis-edit-read-only-values (format ":id %s" id) ":name" ":ef-increase"
+				  ":ef-decrease" ":ef-threshold" ":failure-factor")
+    (local-unset-key (kbd "C-c C-c"))
+    (local-set-key (kbd "C-c C-c") (lambda () (interactive) (gnosis-edit-save-exit t 'gnosis-dashboard "Decks")))))
 (cl-defun gnosis-edit-save-exit (&optional deck-edit (exit-func 'exit-recursive-edit) &rest args)
   "Save edits and exit.
 
