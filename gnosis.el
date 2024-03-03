@@ -1472,15 +1472,8 @@ name and all notes formatted as nested lists"
   :keymap gnosis-dashboard-mode-map
   (interactive)
   (display-line-numbers-mode 0)
-  (setq tabulated-list-format [("Main" 30 t)
-			       ("Options" 20 t)
-			       ("Answer" 25 t)
-			       ("Tags" 25 t)
-			       ("Type" 10 t)
-			       ("Suspend" 2 t)])
   (setq tabulated-list-padding 2
-	tabulated-list-sort-key nil)
-  (tabulated-list-init-header))
+	tabulated-list-sort-key nil))
 
 ;;;###autoload
 (defun gnosis-dashboard ()
