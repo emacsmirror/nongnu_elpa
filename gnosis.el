@@ -1356,6 +1356,11 @@ SECOND-IMAGE: Image to display after user-input"
   (let ((ef-increase (gnosis-get 'ef-increase 'decks `(= id ,(gnosis-get 'deck-id 'notes `(= id ,id))))))
     (or ef-increase gnosis-algorithm-ef-increase)))
 
+(defun gnosis-get-ef-decrease (id)
+  "Return ef-decrease for note with value of id ID."
+  (let ((ef-decrease (gnosis-get 'ef-decrease 'decks `(= id ,(gnosis-get 'deck-id 'notes `(= id ,id))))))
+    (or ef-decrease gnosis-algorithm-ef-decrease)))
+
 (cl-defun gnosis-export-note (id &optional (export-for-deck nil))
   "Export fields for note with value of id ID.
 
