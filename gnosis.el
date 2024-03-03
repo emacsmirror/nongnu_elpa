@@ -1223,6 +1223,20 @@ changes."
   (gnosis-edit-read-only-values (format ":id %s" id) ":main" ":options" ":answer"
 				":tags" ":extra-notes" ":image" ":second-image"
 				":ef" ":ff" ":suspend"))
+(defun gnosis-edit-deck--export (id)
+  "Export deck with ID.
+
+WARNING: This export is only for editing said deck!
+
+Insert deck values `ef-increase', `ef-decrease', `ef-threshold', `failure-factor'"
+  (let ((name (gnosis-get 'name 'decks `(= id ,id)))
+	(ef-increase (gnosis-get 'ef-increase 'decks `(= id ,id)))
+	(ef-decrease (gnosis-get 'ef-decrease 'decks `(= id ,id)))
+	(ef-threshold (gnosis-get 'ef-threshold 'decks `(= id ,id)))
+	(failure-factor (gnosis-get 'failure-factor 'decks `(= id ,id))))
+    (insert (format "\n:id %s\n:name \"%s\"\n:ef-increase %s\n:ef-decrease %s\n:ef-threshold %s\n:failure-factor %s"
+		    id name ef-increase ef-decrease ef-threshold failure-factor))))
+
 
 (cl-defun gnosis-edit-save-exit (&optional deck-edit (exit-func 'exit-recursive-edit) &rest args)
   "Save edits and exit.
