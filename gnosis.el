@@ -1536,6 +1536,12 @@ name and all notes formatted as nested lists"
     (gnosis-edit-note (string-to-number id))
     (message "Editing note with id: %s" id)))
 
+(defun gnosis-dashboard-edit-deck ()
+  "Get deck id from tabulated list and edit it."
+  (interactive)
+  (let ((id (tabulated-list-get-id)))
+    (gnosis-edit-deck (string-to-number id))))
+
 (defvar-keymap gnosis-dashboard-mode-map
   :doc "gnosis-dashboard keymap"
   "q" #'quit-window)
