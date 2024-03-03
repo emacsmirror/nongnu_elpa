@@ -1526,8 +1526,23 @@ name and all notes formatted as nested lists"
 (defun gnosis-dashboard-output-notes ()
   "Return note contents for gnosis dashboard."
   (let ((max-id (apply 'max (gnosis-select 'id 'notes '1=1 t))))
-    (cl-loop for id from 1 to max-id collect
-	     (list (number-to-string id) (vconcat (gnosis-dashboard-output-note id))))))
+    (setq tabulated-list-format [("Main" 30 t)
+				 ("Options" 20 t)
+				 ("Answer" 25 t)
+				 ("Tags" 25 t)
+				 ("Type" 10 t)
+				 ("Suspend" 2 t)])
+    (tabulated-list-init-header)
+    (setf tabulated-list-entries
+	  (cl-loop for id from 1 to max-id
+		   for output = (gnosis-dashboard-output-note id)
+		   when output
+		   collect (list (number-to-string id) (vconcat output))))
+    (local-set-key (kbd "e") #'gnosis-dashboard-edit-note)
+    (local-set-key (kbd "s") #'(lambda () (interactive) (gnosis-suspend-note
+							(string-to-number (tabulated-list-get-id)))
+			       (gnosis-dashboard-output-notes)
+			       (revert-buffer t t t)))))
 
 (defun gnosis-dashboard-edit-note ()
   "Get note id from tabulated list and edit it."
