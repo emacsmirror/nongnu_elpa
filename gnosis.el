@@ -1286,6 +1286,7 @@ Insert deck values `ef-increase', `ef-decrease', `ef-threshold', `failure-factor
 				  ":ef-decrease" ":ef-threshold" ":failure-factor")
     (local-unset-key (kbd "C-c C-c"))
     (local-set-key (kbd "C-c C-c") (lambda () (interactive) (gnosis-edit-save-exit t 'gnosis-dashboard "Decks")))))
+
 (cl-defun gnosis-edit-save-exit (&optional deck-edit (exit-func 'exit-recursive-edit) &rest args)
   "Save edits and exit.
 
@@ -1303,7 +1304,7 @@ gnosis-dashboard."
 
 (define-derived-mode gnosis-edit-mode emacs-lisp-mode "Gnosis EDIT"
   "Gnosis Edit Mode."
-  :interactive t
+  :interactive nil
   :lighter " Gnosis Edit"
   :keymap gnosis-edit-mode-map)
 
