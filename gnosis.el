@@ -991,7 +991,7 @@ Returns a list of the form ((yyyy mm dd) (ef-increase ef-decrease ef-total))."
   "Update review-log for note with value of id ID.
 
 SUCCESS is a boolean value, t for success, nil for failure."
-  (let ((ef (cdr (gnosis-review-algorithm id success)))
+  (let ((ef (cadr (gnosis-review-algorithm id success)))
 	(next-rev (car (gnosis-review-algorithm id success))))
     ;; Update review-log
     (gnosis-update 'review-log `(= last-rev ',(gnosis-algorithm-date)) `(= id ,id))
