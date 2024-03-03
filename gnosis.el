@@ -1544,6 +1544,11 @@ name and all notes formatted as nested lists"
 			       (gnosis-dashboard-output-notes)
 			       (revert-buffer t t t)))))
 
+(defun gnosis-dashboard-deck-note-count (id)
+  "Return total note count for deck with ID."
+  (let ((note-count (caar (emacsql gnosis-db (format "SELECT COUNT(*) FROM notes WHERE deck_id=%s" id)))))
+    (when (gnosis-select 'id 'decks `(= id ,id))
+      (list (number-to-string note-count)))))
 (defun gnosis-dashboard-edit-note ()
   "Get note id from tabulated list and edit it."
   (interactive)
