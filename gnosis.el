@@ -394,11 +394,13 @@ Set SPLIT to t to split all input given."
     (gnosis--insert-into 'decks `([nil ,name nil nil nil nil]))
     (message "Created deck '%s'" name)))
 
-(defun gnosis--get-deck-name ()
+(defun gnosis--get-deck-name (&optional id)
   "Return name from table DECKS."
   (when (equal (gnosis-select 'name 'decks) nil)
     (error "No decks found"))
-  (funcall gnosis-completing-read-function "Deck: " (gnosis-select 'name 'decks)))
+  (if id
+      (gnosis-get 'name 'decks `(= id ,id))
+    (funcall gnosis-completing-read-function "Deck: " (gnosis-select 'name 'decks))))
 
 (cl-defun gnosis--get-deck-id (&optional (deck (gnosis--get-deck-name)))
   "Return id for DECK name."
