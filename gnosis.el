@@ -1255,6 +1255,19 @@ Insert deck values `ef-increase', `ef-decrease', `ef-threshold', `failure-factor
   (unless (or (null value) (numberp value))
     (error "Invalid value: %s, %s" value description)))
 
+(cl-defun gnosis-edit-update-deck (&key id name ef-increase ef-decrease ef-threshold failure-factor)
+  "Update deck with id value of ID."
+  (gnosis-assert-float-or-nil failure-factor "failure-factor must be a float less than 1" t)
+  (gnosis-assert-int-or-nil ef-threshold "ef-threshold must be an integer")
+  (gnosis-assert-number-or-nil ef-increase "ef-increase must be a number")
+  (cl-loop for (field . value) in
+	   `((ef-increase . ,ef-increase)
+	     (ef-decrease . ,ef-decrease)
+	     (ef-threshold . ,ef-threshold)
+	     (failure-factor . ,failure-factor)
+	     (name . ,name))
+	   when value
+	   do (gnosis-update 'decks `(= ,field ,value) `(= id ,id))))
 
 (cl-defun gnosis-edit-save-exit (&optional deck-edit (exit-func 'exit-recursive-edit) &rest args)
   "Save edits and exit.
