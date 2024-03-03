@@ -1361,6 +1361,11 @@ SECOND-IMAGE: Image to display after user-input"
   (let ((ef-decrease (gnosis-get 'ef-decrease 'decks `(= id ,(gnosis-get 'deck-id 'notes `(= id ,id))))))
     (or ef-decrease gnosis-algorithm-ef-decrease)))
 
+(defun gnosis-get-ef-threshold (id)
+  "Return ef-threshold for note with value of id ID."
+  (let ((ef-threshold (gnosis-get 'ef-threshold 'decks `(= id ,(gnosis-get 'deck-id 'notes `(= id ,id))))))
+    (or ef-threshold gnosis-algorithm-ef-threshold)))
+
 (cl-defun gnosis-export-note (id &optional (export-for-deck nil))
   "Export fields for note with value of id ID.
 
