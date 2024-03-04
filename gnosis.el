@@ -1135,7 +1135,10 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
   "Run `vc-pull' in DIR."
   (interactive)
   (let ((default-directory dir))
-    (vc-pull)))
+    (vc-pull)
+    (setf gnosis-db
+     (emacsql-sqlite-open
+     (expand-file-name "gnosis.db" gnosis-dir)))))
 
 (defun gnosis-review-commit (note-num)
   "Commit review session on git repository.
