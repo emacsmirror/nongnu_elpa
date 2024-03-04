@@ -397,7 +397,7 @@ Set SPLIT to t to split all input given."
     (message "Created deck '%s'" name)))
 
 (defun gnosis--get-deck-name (&optional id)
-  "Return name from table DECKS."
+  "Get deck name for ID, or prompt for deck name when ID is nil."
   (when (equal (gnosis-select 'name 'decks) nil)
     (error "No decks found"))
   (if id
@@ -410,7 +410,7 @@ Set SPLIT to t to split all input given."
 
 ;;;###autoload
 (defun gnosis-delete-deck (id)
-  "Delete DECK."
+  "Delete deck with ID."
   (interactive (list (gnosis--get-deck-id)))
   (let ((deck-name (gnosis--get-deck-name id)))
     (when (y-or-n-p (format "Delete deck `%s'? " deck-name))
@@ -758,7 +758,7 @@ Works both with {} and {{}} to make easier to import anki notes."
 		  (setq string (replace-match new t t string))
 		;; This error will be produced when user has edited a
 		;; note to an invalid cloze.
-		(error "`%s' is an invalid cloze for question: `%s'."
+		(error "`%s' is an invalid cloze for question: `%s'"
 		       word string )))
   string)
 
@@ -896,6 +896,11 @@ Returns a list of unique tags."
     (reverse tags)))
 
 (defun gnosis-hint-prompt (previous-hint &optional prompt)
+  "Prompt user for hint.
+
+PROMPT: Prompt string value
+PREVIOUS-HINT: Previous hint value, if any.  If nil, use PROMPT as
+default value."
   (let* ((prompt (or prompt "Hint: "))
 	 (hint (read-string prompt previous-hint)))
     (setf gnosis-previous-note-hint hint)
@@ -966,9 +971,9 @@ Returns a list of the form ((yyyy mm dd) (ef-increase ef-decrease ef-total))."
 	(t-success (gnosis-get 't-success 'review-log `(= id ,id))) ;; total successful reviews
 	(c-success (gnosis-get 'c-success 'review-log `(= id ,id))) ;; consecutive successful reviews
 	(c-fails (gnosis-get 'c-fails 'review-log `(= id ,id))) ;; consecutive failed reviews
-	(t-fails (gnosis-get 't-fails 'review-log `(= id ,id))) ;; total failed reviews
+	;; (t-fails (gnosis-get 't-fails 'review-log `(= id ,id))) ;; total failed reviews
 	(initial-interval (gnosis-get 'interval 'review `(= id ,id))) ;; initial interval
-	(review-num (gnosis-get 'n 'review-log `(= id ,id))) ;; total reviews
+	;; (review-num (gnosis-get 'n 'review-log `(= id ,id))) ;; total reviews
 	(last-interval (max (gnosis-review--get-offset id) 1))) ;; last interval
     (list (gnosis-algorithm-next-interval :last-interval last-interval
 					  :ef ef
@@ -1181,14 +1186,14 @@ NOTES: List of note ids"
 
 ;; Editing notes
 (defun gnosis-edit-read-only-values (&rest values)
-  "Makes the provided values read-only in the whole buffer."
+  "Make the provided VALUES read-only in the whole buffer."
   (goto-char (point-min))
   (dolist (value values)
     (while (search-forward value nil t)
       (put-text-property (match-beginning 0) (match-end 0) 'read-only t)))
   (goto-char (point-min)))
 
-(defun gnosis-edit-note (id)
+(cl-defun gnosis-edit-note (id &optional (recursive-edit nil))
   "Edit the contents of a note with the given ID.
 
 This function creates an Emacs Lisp buffer named *gnosis-edit* on the
@@ -1233,7 +1238,8 @@ changes."
 
 WARNING: This export is only for editing said deck!
 
-Insert deck values `ef-increase', `ef-decrease', `ef-threshold', `failure-factor'"
+Insert deck values:
+ `ef-increase', `ef-decrease', `ef-threshold', `failure-factor'"
   (let ((name (gnosis-get 'name 'decks `(= id ,id)))
 	(ef-increase (gnosis-get 'ef-increase 'decks `(= id ,id)))
 	(ef-decrease (gnosis-get 'ef-decrease 'decks `(= id ,id)))
@@ -1243,12 +1249,17 @@ Insert deck values `ef-increase', `ef-decrease', `ef-threshold', `failure-factor
 		    id name ef-increase ef-decrease ef-threshold failure-factor))))
 
 (defun gnosis-assert-int-or-nil (value description)
-  "Assert that VALUE is an integer or nil."
+  "Assert that VALUE is an integer or nil.
+
+DESCRIPTION is a string that describes the value."
   (unless (or (null value) (integerp value))
     (error "Invalid value: %s, %s" value description)))
 
 (defun gnosis-assert-float-or-nil (value description &optional less-than-1)
-  "Assert that VALUE is a float or nil."
+  "Assert that VALUE is a float or nil.
+
+DESCRIPTION is a string that describes the value.
+LESS-THAN-1: If t, assert that VALUE is a float less than 1."
   (if less-than-1
       (unless (or (null value) (and (floatp value) (< value 1)))
 	(error "Invalid value: %s, %s" value description))
@@ -1256,12 +1267,20 @@ Insert deck values `ef-increase', `ef-decrease', `ef-threshold', `failure-factor
       (error "Invalid value: %s, %s" value description))))
 
 (defun gnosis-assert-number-or-nil (value description)
-  "Assert that VALUE is a number or nil."
+  "Assert that VALUE is a number or nil.
+
+DESCRIPTION is a string that describes the value."
   (unless (or (null value) (numberp value))
     (error "Invalid value: %s, %s" value description)))
 
 (cl-defun gnosis-edit-update-deck (&key id name ef-increase ef-decrease ef-threshold failure-factor)
-  "Update deck with id value of ID."
+  "Update deck with id value of ID.
+
+NAME: Name of deck
+EF-INCREASE: Easiness factor increase value
+EF-DECREASE: Easiness factor decrease value
+EF-THRESHOLD: Easiness factor threshold value
+FAILURE-FACTOR: Failure factor value"
   (gnosis-assert-float-or-nil failure-factor "failure-factor must be a float less than 1" t)
   (gnosis-assert-int-or-nil ef-threshold "ef-threshold must be an integer")
   (gnosis-assert-number-or-nil ef-increase "ef-increase must be a number")
@@ -1320,12 +1339,14 @@ gnosis-dashboard."
 ID: Note id
 MAIN: Main part of note, the stem part of MCQ, question for basic, etc.
 OPTIONS: Options for mcq type notes/Hint for basic & cloze type notes
-ANSWER: Answer for MAIN, user is asked for input, if equal user-input
-= answer review is marked as successfull
+ANSWER: Answer for MAIN
 TAGS: Tags for note, used to organize & differentiate between notes
 EXTRA-NOTES: Notes to display after user-input
 IMAGE: Image to display before user-input
-SECOND-IMAGE: Image to display after user-input"
+SECOND-IMAGE: Image to display after user-input
+EF: Easiness factor value
+FF: Failure factor value
+SUSPEND: Suspend note, 0 for unsuspend, 1 for suspend"
   (cl-assert (stringp main) nil "Main must be a string")
   (cl-assert (or (stringp image) (null image)) nil
 	     "Image must be a string, path to image file from `gnosis-images-dir', or nil")
@@ -1381,6 +1402,7 @@ SECOND-IMAGE: Image to display after user-input"
   "Export fields for note with value of id ID.
 
 ID: Identifier of the note to export.
+EXPORT-FOR-DECK: If t, add type field and remove review fields
 
 This function retrieves the fields of a note with the given ID and
 inserts them into the current buffer.  Each field is represented as a
@@ -1417,61 +1439,6 @@ to improve readability."
 		 (cond ((listp value)
 			(format "\n%s '%s" (symbol-name field) (prin1-to-string value)))
 		       (t (format "\n%s %s" (symbol-name field) (prin1-to-string value))))))))
-
-;; TODO: Fix export of deck!
-(defun gnosis-export-deck (deck export-deck-name filename)
-  "Export notes for deck in FILENAME.
-
-WARNING: This function is not yet implemented.
-
-FILENAME: The name of the file to save the exported deck.
-
-This function prompts the user to provide a deck name and allows the
-user to specify a filename for exporting notes belonging to that deck.
-It then retrieves all the notes associated with the deck and exports
-them.
-
-The exported notes are formatted as an Emacs Lisp code block that can
-be evaluated to recreate the deck with its associated notes.  The
-resulting code is saved to a file with the provided FILENAME and a
-'.el' extension is added automatically.
-
-Each note is exported using the `gnosis-export-note` function.  The
-generated code includes a call to `gnosis-define-deck` with the deck
-name and all notes formatted as nested lists"
-  ;; (interactive (list (gnosis-get-notes-for-deck)
-  ;; 		     (read-string "Export deck as (name): ")
-  ;; 		     (read-string "Filename: ")))
-  (with-temp-file (concat filename ".el")
-    (insert "(gnosis-define-deck " "'" export-deck-name " '(")
-    (cl-loop for note in deck
-	     do (insert "(") (gnosis-export-note note t) (insert ")" "\n")
-	     finally (insert "))"))))
-
-;; TODO: Add defcustom to have suspended as 0 or 1 depending on
-;; gnosis-add-decks-suspended t or nil
-(cl-defun gnosis-define-deck (deck notes &optional (suspended 0))
-  "Define DECK consisting of NOTES, optionally add them as SUSPENDED."
-  (gnosis-add-deck (symbol-name deck))
-  (sit-for 0.1)
-  (cl-loop for note in notes
-           do (let ((type (plist-get note :type))
-                    (main (plist-get note :main))
-                    (options (plist-get note :options))
-                    (answer (plist-get note :answer))
-                    (extra-notes (plist-get note :extra-notes))
-                    (tags (plist-get note :tags))
-                    (suspend (plist-get note :suspend))
-                    (image (plist-get note :image))
-                    (second-image (plist-get note :second-image)))
-                (gnosis-add-note-fields deck type main options answer extra-notes tags suspend image second-image))
-           collect note))
-
-;; Rewrite this similarly to gnosis
-(cl-defun gnosis-define-deck--note (&keys deck type main options answer extra-notes tags image second-image)
-  "Define a note for DECK."
-  (gnosis-add-note-fields deck type main options answer extra-notes tags 0 image second-image))
-
 
 ;;;###autoload
 (defun gnosis-review ()
@@ -1545,7 +1512,7 @@ name and all notes formatted as nested lists"
 
 ;; Dashboard
 (defun gnosis-dashboard-output-note (id)
-  "Output note contents formatted for gnosis dashboard."
+  "Output contents for note with ID, formatted for gnosis dashboard."
   (cl-loop for item in (append (gnosis-select '[main options answer tags type] 'notes `(= id ,id) t)
 			       (gnosis-select 'suspend 'review-log `(= id ,id) t))
            if (listp item)
@@ -1581,7 +1548,7 @@ name and all notes formatted as nested lists"
       (list (number-to-string note-count)))))
 
 (defun gnosis-dashboard-output-deck (id)
-  "Output deck contents formatted for gnosis dashboard."
+  "Output contents from deck with ID, formatted for gnosis dashboard."
   (cl-loop for item in (append (gnosis-select '[name failure-factor ef-increase ef-decrease ef-threshold]
 					      'decks `(= id ,id) t)
 			       (gnosis-dashboard-deck-note-count id))
@@ -1598,8 +1565,7 @@ name and all notes formatted as nested lists"
 			       ("ef-threshold" 15 t)
 			       ("Notes" 10 t)])
   (tabulated-list-init-header)
-  (let ((max-id (apply 'max (gnosis-select 'id 'decks '1=1 t)))
-	(decks (gnosis-select 'name 'decks '1=1 t)))
+  (let ((max-id (apply 'max (gnosis-select 'id 'decks '1=1 t))))
     (setq tabulated-list-entries
 	  (cl-loop for id from 1 to max-id
 		   for output = (gnosis-dashboard-output-deck id)
@@ -1638,18 +1604,19 @@ name and all notes formatted as nested lists"
 (define-derived-mode gnosis-dashboard-mode tabulated-list-mode "Gnosis Dashboard"
   "Major mode for displaying Gnosis dashboard."
   :keymap gnosis-dashboard-mode-map
-  (interactive)
   (display-line-numbers-mode 0)
   (setq tabulated-list-padding 2
 	tabulated-list-sort-key nil))
 
 ;;;###autoload
 (cl-defun gnosis-dashboard (&optional dashboard-type)
-  "Display gnosis dashboard."
+  "Display gnosis dashboard.
+
+DASHBOARD-TYPE: either 'Notes' or 'Decks' to display the respective dashboard."
   (interactive)
   (let ((type (or dashboard-type
 		  (cadr (read-multiple-choice
-			 "Display:"
+			 "Display dashboard for:"
 			 '((?N "Notes")
 			   (?D "Decks")))))))
     (pop-to-buffer "*gnosis-dashboard*")
