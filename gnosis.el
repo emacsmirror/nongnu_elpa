@@ -1177,7 +1177,7 @@ NOTES: List of note ids"
 				(?q "quit"))))
 		   (?n nil)
 		   (?s (gnosis-suspend-note note))
-		   (?e (gnosis-edit-note note)
+		   (?e (gnosis-edit-note note t)
 		       (recursive-edit))
 		   (?q (gnosis-review-commit note-count)
 		       (cl-return)))
@@ -1231,7 +1231,9 @@ changes."
 				":tags" ":extra-notes" ":image" ":second-image"
 				":ef" ":ff" ":suspend")
   (local-unset-key (kbd "C-c C-c"))
-  (local-set-key (kbd "C-c C-c") (lambda () (interactive) (gnosis-edit-save-exit t 'gnosis-dashboard "Notes"))))
+  (local-set-key (kbd "C-c C-c") (lambda () (interactive) (if recursive-edit
+							 (gnosis-edit-save-exit 'exit-recursive-edit)
+						       (gnosis-edit-save-exit 'gnosis-dashboard "Notes")))))
 
 (defun gnosis-edit-deck--export (id)
   "Export deck with ID.
@@ -1309,17 +1311,14 @@ FAILURE-FACTOR: Failure factor value"
     (gnosis-edit-read-only-values (format ":id %s" id) ":name" ":ef-increase"
 				  ":ef-decrease" ":ef-threshold" ":failure-factor")
     (local-unset-key (kbd "C-c C-c"))
-    (local-set-key (kbd "C-c C-c") (lambda () (interactive) (gnosis-edit-save-exit t 'gnosis-dashboard "Decks")))))
+    (local-set-key (kbd "C-c C-c") (lambda () (interactive) (gnosis-edit-save-exit 'gnosis-dashboard "Decks")))))
 
-(cl-defun gnosis-edit-save-exit (&optional deck-edit (exit-func 'exit-recursive-edit) &rest args)
-  "Save edits and exit.
-
-If not DECK-EDIT and not in a recursive-edit, pop back
-gnosis-dashboard."
+(cl-defun gnosis-edit-save-exit (&optional exit-func &rest args)
+  "Save edits and exit using EXIT-FUNC, with ARGS."
   (interactive)
-  (let ((deck-edit (or deck-edit nil)))
-    (eval-buffer)
-    (quit-window t)
+  (eval-buffer)
+  (quit-window t)
+  (when exit-func
     (apply exit-func args)))
 
 (defvar-keymap gnosis-edit-mode-map
