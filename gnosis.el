@@ -788,9 +788,13 @@ Valid cloze formats include:
   "Compare STR1 and STR2.
 
 Compare 2 strings, ignoring case and whitespace."
-  (<= (string-distance (downcase (replace-regexp-in-string "\\s-" "" str1))
-		       (downcase (replace-regexp-in-string "\\s-" "" str2)))
-      gnosis-string-difference))
+  (let ((string-compare-func (if (or (>= (length str1) gnosis-string-difference)
+				     (>= (length str2) gnosis-string-difference))
+				 #'(lambda (str1 str2) (<= (string-distance str1 str2) gnosis-string-difference))
+			       #'string=)))
+    (funcall string-compare-func
+	     (downcase (replace-regexp-in-string "\\s-" "" str1))
+	     (downcase (replace-regexp-in-string "\\s-" "" str2)))))
 
 
 (defun gnosis-directory-files (&optional dir regex)
