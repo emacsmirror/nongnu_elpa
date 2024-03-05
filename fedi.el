@@ -281,7 +281,8 @@ text, i.e. hidden spoiler text."
     (replied   . ("⬇" . "↓"))
     (community . ("👪" . "[community]"))
     (reply-bar . ("│" . "|")) ;┃
-    (deleted   . ("🗑" . "[deleted]")))
+    (deleted   . ("🗑" . "[deleted]"))
+    (plus      . ("＋"  . "+")))
   "A set of symbols (and fallback strings) to be used in timeline.
 If a symbol does not look right (tofu), it means your
 font settings do not support it."
