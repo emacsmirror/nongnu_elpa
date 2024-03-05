@@ -753,12 +753,12 @@ Works both with {} and {{}} to make easier to import anki notes."
   "In STRING replace only the first occurrence of each word in WORDS with NEW."
   (cl-assert (listp words))
   (cl-loop for word in words
-           do (if (string-match (concat "\\b" word "\\b") string)
-		  (setq string (replace-match new t t string))
-		;; This error will be produced when user has edited a
-		;; note to an invalid cloze.
-		(error "`%s' is an invalid cloze for question: `%s'"
-		       word string )))
+           do (if (string-match (regexp-quote word) string)
+                  (setq string (replace-match new t t string))
+                ;; This error will be produced when user has edited a
+                ;; note to an invalid cloze.
+                (error "`%s' is an invalid cloze for question: `%s'"
+                       word string)))
   string)
 
 (defun gnosis-cloze-extract-answers (str)
