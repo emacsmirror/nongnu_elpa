@@ -787,8 +787,8 @@ Valid cloze formats include:
   "Compare STR1 and STR2.
 
 Compare 2 strings, ignoring case and whitespace."
-  (let ((string-compare-func (if (or (>= (length str1) gnosis-string-difference)
-				     (>= (length str2) gnosis-string-difference))
+  (let ((string-compare-func (if (or (> (length str1) gnosis-string-difference)
+				     (> (length str2) gnosis-string-difference))
 				 #'(lambda (str1 str2) (<= (string-distance str1 str2) gnosis-string-difference))
 			       #'string=)))
     (funcall string-compare-func
