@@ -437,7 +437,7 @@ time value."
 	(hour (string-to-number (substring timestamp 9 11)))
 	(minute (string-to-number (substring timestamp 12 14)))
 	(second (string-to-number (substring timestamp 15 17))))
-    (encode-time second minute hour day month year 0)))
+    (encode-time (list second minute hour day month year nil -1 nil))))
 
 (defun jabber-encode-legacy-time (timestamp)
   "Parse TIMESTAMP as internal time value and encode as ccyymmddThh:mm:ss (UTC)."
@@ -493,7 +493,7 @@ TIME is in a format accepted by `format-time-string'."
 	     (* (if (eq (aref timezone 0) ?+) 1 -1)
 		(* 60 (+ (* 60 (string-to-number (substring timezone 1 3)))
 			 (string-to-number (substring timezone 4 6))))))))
-      (encode-time second minute hour day month year timezone-seconds))))
+      (encode-time (list second minute hour day month year nil -1 timezone-seconds)))))
 
 (defun jabber-report-success (_jc xml-data context)
   "IQ callback reporting success or failure of the operation.
