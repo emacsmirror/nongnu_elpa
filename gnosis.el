@@ -1361,7 +1361,7 @@ SUSPEND: Suspend note, 0 for unsuspend, 1 for suspend"
 	     "Extra-notes must be a string, or nil")
   (cl-assert (listp tags) nil "Tags must be a list of strings")
   (cl-assert (and (listp ef) (length= ef 3)) nil "ef must be a list of 3 floats")
-  (cl-assert (stringp options) nil "Options must be a string")
+  (cl-assert (or (stringp options) (listp options)) nil "Options must be a string, or a list for MCQ")
   ;; Construct the update clause for the emacsql update statement.
   (cl-loop for (field . value) in
            `((main . ,main)
