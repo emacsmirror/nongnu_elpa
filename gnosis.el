@@ -137,6 +137,12 @@ When nil, the image will be displayed at its original size."
   example creates 2 cloze type notes."
   "Guidance for cloze note type.")
 
+(defvar gnosis-mcq-guidance
+  "First line is the Stem\nOptions\nEach '-' corresponds to an
+option\n-Example Option 1\n-Example Option 2\nYou can add as many
+options as you want\nCorrect Option must be inside {}"
+  "Guidance for MCQ note type.")
+
 ;;; Faces
 
 (defgroup gnosis-faces nil
