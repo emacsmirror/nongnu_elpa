@@ -238,6 +238,11 @@ Example:
   "From TABLE use where to delete VALUE."
   (emacsql gnosis-db `[:delete :from ,table :where ,value]))
 
+(defun gnosis-delete-note (id)
+  "Delete note with ID."
+  (when (y-or-n-p "Delete note?")
+    (gnosis--delete 'notes `(= id ,id))))
+
 (defun gnosis-replace-item-at-index (index new-item list)
   "Replace item at INDEX in LIST with NEW-ITEM."
   (cl-loop for i from 0 for item in list
@@ -1547,9 +1552,19 @@ to improve readability."
 		   for output = (gnosis-dashboard-output-note id)
 		   when output
 		   collect (list (number-to-string id) (vconcat output))))
+    ;; Keybindings, for editing, suspending, deleting notes.
+    ;; We use `local-set-key' to bind keys to the buffer to avoid
+    ;; conflicts when using the dashboard for displaying either notes
+    ;; or decks.
     (local-set-key (kbd "e") #'gnosis-dashboard-edit-note)
-    (local-set-key (kbd "s") #'(lambda () (interactive) (gnosis-suspend-note
-							(string-to-number (tabulated-list-get-id)))
+    (local-set-key (kbd "s") #'(lambda () (interactive)
+				 (gnosis-suspend-note
+				  (string-to-number (tabulated-list-get-id)))
+			       (gnosis-dashboard-output-notes)
+			       (revert-buffer t t t)))
+    (local-set-key (kbd "d") #'(lambda () (interactive)
+				 (gnosis-delete-note
+				  (string-to-number (tabulated-list-get-id)))
 			       (gnosis-dashboard-output-notes)
 			       (revert-buffer t t t)))))
 
