@@ -1444,6 +1444,11 @@ SUSPEND: Suspend note, 0 for unsuspend, 1 for suspend"
   (let ((ef-threshold (gnosis-get 'ef-threshold 'decks `(= id ,(gnosis-get 'deck-id 'notes `(= id ,id))))))
     (or ef-threshold gnosis-algorithm-ef-threshold)))
 
+(defun gnosis-get-deck-initial-interval (id)
+  "Return initial-interval for notes of deck ID."
+  (let ((initial-interval (gnosis-get 'initial-interval 'decks `(= id ,id))))
+    (or initial-interval gnosis-algorithm-interval)))
+
 (cl-defun gnosis-export-note (id &optional (export-for-deck nil))
   "Export fields for note with value of id ID.
 
