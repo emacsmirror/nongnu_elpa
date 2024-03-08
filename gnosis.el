@@ -536,16 +536,13 @@ is the image to display post review
 (defun gnosis-add-note-mcq ()
   "Add note(s) of type `MCQ' interactively to selected deck.
 
-Create a note type MCQ for specified deck, that consists of:
-QUESTION: The question or problem statement
-OPTIONS: Options for the user to select
-ANSWER: Answer is the index NUMBER of the correct answer from OPTIONS.
-EXTRA: Information to display after user-input
-IMAGES: Cons cell, where car is the image to display before user-input
-	and cdr is the image to display post review.
-TAGS: Used to organize notes
+Prompt user for input to create a note of type `MCQ'.
 
-Refer to `gnosis-add-note--mcq' for more."
+Stem field is seperated from options by `gnosis-mcq-seperator', and
+each option is seperated by `gnosis-mcq-option-seperator'.  The correct
+answer is surrounded by curly braces, e.g {Correct Answer}.
+
+Refer to `gnosis-add-note--mcq' & `gnosis-prompt-mcq-input' for more."
   (let ((deck (gnosis--get-deck-name)))
     (while (y-or-n-p (format "Add note of type `MCQ' to `%s' deck? " deck))
       (let* ((input (gnosis-prompt-mcq-input))
