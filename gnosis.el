@@ -70,7 +70,7 @@ between two strings to consider them as similar."
   :type 'boolean
   :group 'gnosis)
 
-(defcustom gnosis-mcq-display-choices t
+(defcustom gnosis-mcq-display-choices nil
   "When t, display choices for mcq notes during review.
 
 Users that use a completion framework like ivy/helm/vertico may want
