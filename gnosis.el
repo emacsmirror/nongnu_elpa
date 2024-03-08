@@ -1449,6 +1449,11 @@ SUSPEND: Suspend note, 0 for unsuspend, 1 for suspend"
   (let ((initial-interval (gnosis-get 'initial-interval 'decks `(= id ,id))))
     (or initial-interval gnosis-algorithm-interval)))
 
+(defun gnosis-get-note-initial-interval (id)
+  "Return initial-interval for note with ID."
+  (let ((deck-id (gnosis-get 'deck-id 'notes `(= id ,id))))
+    (gnosis-get-deck-initial-interval deck-id)))
+
 (cl-defun gnosis-export-note (id &optional (export-for-deck nil))
   "Export fields for note with value of id ID.
 
