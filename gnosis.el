@@ -151,6 +151,10 @@ Seperate the question/stem from options."
   :group 'gnosis)
 
 (defcustom gnosis-mcq-option-seperator "- "
+  "Seperator for options in mcq note type."
+  :type 'string
+  :group 'gnosis)
+
 ;;; Faces
 
 (defgroup gnosis-faces nil
