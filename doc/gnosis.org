@@ -4,8 +4,8 @@
 #+language: en
 #+options: ':t toc:nil author:t email:t num:t
 #+startup: content
-#+macro: stable-version 0.1.9
-#+macro: release-date 2023-02-22
+#+macro: stable-version 0.2.0
+#+macro: release-date 2023-03-08
 #+macro: file @@texinfo:@file{@@$1@@texinfo:}@@
 #+macro: space @@texinfo:@: @@
 #+macro: kbd @@texinfo:@kbd{@@$1@@texinfo:}@@
@@ -36,51 +36,16 @@ This manual is written for Gnosis version {{{stable-version}}}, released on {{{r
 #+texinfo: @insertcopying
 
 * Introduction
-Gnosis is a spaced repetition note taking and self testing system,
-where notes are taken in a Question/Answer/Explanation-like format &
-reviewed in spaced intervals.
+Gnosis, is a spaced repetition system for note taking & self
+testing, where notes are taken in a Question/Answer/Explanation
+format & reviewed in spaced intervals, determined by the success or
+failure to recall a given answer.
 
-Gnosis can help you better understand and retain the material by
-encouraging active engagement. It also provides a clear structure for
-your notes & review sessions, making it easier to study.
-
-* Installation
-
-Gnosis is available via MELPA
-+ <https://melpa.org/#/gnosis>
-  
-** Using straight.el
-If you have not installed straight.el, follow the instructions here:
-
-   <https://github.com/radian-software/straight.el>
-
-Once you have installed straight.el, you can install gnosis using the
-following emacs lisp snippet:
-
-#+begin_src emacs-lisp
-  (straight-use-package 
-   '(gnosis :type git
-  	  :host nil
-  	  :repo "https://git.thanosapollo.org/gnosis"))
-#+end_src
-
-** Installing manually from source
-Gnosis depends on the ~compat~ & ~emacsql~ libraries which are available
-from MELPA. Install them using ~M-x package-install RET <package> RET~
-or you may also install them manually from their repository.
-
-+ Clone gnosis repository
-  
-  #+begin_src shell
-    $ git clone https://git.thanosapollo.org/gnosis ~/.emacs.d/site-lisp/gnosis
-  #+end_src
-
-+ Add this to your emacs configuration
-  
-  #+begin_src emacs-lisp
-    (add-to-list 'load-path "~/.emacs.d/site-lisp/gnosis")
-    (load-file "~/.emacs.d/site-lisp/gnosis/gnosis.el")
-  #+end_src
+Gnosis implements a highly customizable algorithm, inspired by SM-2.
+Gnosis algorithm does not use user's subjective rating of a note to
+determine the next review interval, but instead uses the user's
+success or failure in recalling the answer of a note.  Read more on
+[[Gnosis Algorithm]]
 
 * Adding notes
 Creating notes for gnosis can be done interactively with:
@@ -88,16 +53,13 @@ Creating notes for gnosis can be done interactively with:
     =M-x gnosis-add-note=
 
 When it comes to adding images, you can select images that are inside
-=gnosis-images-dir=. For adjusting image size, refer to [[Image size][Image Size]]
+=gnosis-images-dir=.  For adjusting image size, refer to [[Customization]]
 
 * Note Types
 ** Cloze
 
 A cloze note type is a format where you create sentences or paragraphs
-with "missing" words. Almost all note types can be written as a cloze
-type in a way. Ideal type for memorizing definitions.
-
-To get the most out of gnosis, you have to become familiar with cloze type notes.
+with "missing" words.  A fill-in-the-blanks question.  
 
 You can create a cloze note type using =M-x gnosis-add-note= and
 selecting ~Cloze~, the question should be formatted like this:
@@ -114,24 +76,18 @@ You can also format clozes like Anki if you prefer; e.g ~{{c1::Cyproheptadine}}~
 + Each `cX` tag can have multiple clozes, but each cloze must be a
   *UNIQUE* word (or a unique combination of words) in given note.
 
+You can remove the /guidance/ string by adjusting
+=gnosis-cloze-guidance=.
+
 ** MCQ (Multiple Choice Question)
 
 A MCQ note type, as the name suggests, is a multiple choice question.
 
-First you will be prompted to input the question =stem= field.
+The stem field (question) is separated by the options (choices) via
+=gnosis-mcq-separator=, each option is separated by =gnosis-mcq-option-separator=.
 
-Afterwards you will be prompted to enter the choices, each =-=
-indicates a choice, the choice inside ={}= will be marked as the
-correct one.
-
-Example of options:
-#+BEGIN_QUOTE
-  - Option 1
-  
-  - Option 2
-  
-  - {Correct choice}
-#+END_QUOTE
+You can remove the /guidance/ string by adjusting
+=gnosis-mcq-guidance=.
 
 
 ** Basic Type
@@ -144,8 +100,7 @@ input the answer.
 Double note type, is essentially a note that generates 2 basic notes.
 The second one reverses question/answer.
 
-Ideal for vocabulary acquisition, creating vocabulary/translation
-notes for a foreign language.
+Ideal for vocabulary acquisition notes.
 
 ** y-or-n
 y-or-n (yes or no) note type, user is presented with a question and
@@ -162,7 +117,7 @@ Adjust image size using =gnosis-image-height= & =gnosis-image-width=
 Example:
 #+begin_src emacs-lisp
 (setf gnosis-image-height 300
-      gnosis-image-width 500)
+      gnosis-image-width 300)
 #+end_src
 ** Typos | String Comparison
 You can adjust =gnosis-string-difference=, this is a threshold value
@@ -184,20 +139,42 @@ similar, considering that the latter involves just one additional
 character."
 
 * Gnosis Algorithm
+
+Each gnosis note has an ef (easiness factor), which is a list of 3
+values.  The last value is the total ef for a note, which will be
+used to determine the next interval upon a successful answer recall,
+the second value is the ef-decrease value, this value will be
+subtracted from the the total ef upon failure to recall the answer of
+a note, the first value is the ef increase, will be added to the
+total ef upon a successful recall.
+
+Each gnosis deck has =gnosis-algorithm-ef-threshold=, it's an
+integer value that refers to the consecutive success or failures to
+recall an answer.  Upon reaching the threshold, gnosis-algorithm-ef-decrease
+or gnosis-algorithm-ef-increase will be applied to the ef-increase or
+ef-decrease of note.
+
+You can customize deck specific algorithm values using =gnosis-dashboard=.
+
 ** Initial Interval
 
-=gnosis-algorithm-interval= is a list of 2 numbers, representing the
-first two initial intervals for successful reviews.
+The default initial interval is defined at
+=gnosis-algorithm-interval=, you can define a custom initial interval
+for each deck as well.
+
+=gnosis-algorithm-interval= is a list of 2
+numbers, representing the first two initial intervals for successful
+reviews.
 
 Example:
 
 #+begin_src emacs-lisp
-  (setq gnosis-algorithm-interval '(1 3))
+  (setq gnosis-algorithm-interval '(0 1))
 #+end_src
 
 Using the above example, after first successfully reviewing a note,
-you will see it again tomorrow, if you successfully review said note
-again, the next review will be after 3 days.
+you will see it again in the next review session, if you successfully
+review said note again, the next review will be tomorrow.
 
 ** Easiness Factor
 
@@ -245,6 +222,7 @@ Example configuration:
   (setq gnosis-algorithm-ff 0.5)
 #+end_src
 
+You can set a custom =gnosis-algorithm-ff= for each deck as well.
 * Editing notes
 + Currently there are 2 ways for editing notes:
 
@@ -294,7 +272,7 @@ Creating custom note types for gnosis is a fairly simple thing to do
 + First add your NEW-TYPE to =gnosis-note-types=
 
     #+begin_src emacs-lisp
-    (add-to-list 'gnosis-note-types 'new-type)
+    (add-to-list 'gnosis-note-types "new-note-type")
   #+end_src
 
 + Create 2 functions; =gnosis-add-note-TYPE= & =gnosis-add-note--TYPE=

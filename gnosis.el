@@ -110,6 +110,9 @@ When nil, the image will be displayed at its original size."
   (make-directory gnosis-dir)
   (make-directory gnosis-images-dir))
 
+(defvar gnosis-db-file (expand-file-name "gnosis.db" gnosis-dir)
+  "Gnosis database file.")
+
 (defconst gnosis-db
   (emacsql-sqlite-open (expand-file-name "gnosis.db" gnosis-dir))
   "Gnosis database file.")
@@ -135,21 +138,25 @@ When nil, the image will be displayed at its original size."
 
 - For each `cX`-tag there will be created a cloze type note, the above
   example creates 2 cloze type notes.)" . "")
-  "Guidance for cloze note type.")
+  "Guidance for cloze note type.
+
+car value is the prompt, cdr is the prewritten string.")
 
 (defvar gnosis-mcq-guidance
   '("Write question options after the `--'.  Each `-' corresponds to an option\n-Example Option 1\n-{Correct Option}\nCorrect Option must be inside {}" . "Question\n--\n- Option\n- {Correct Option}")
-  "Guidance for MCQ note type.")
+  "Guidance for MCQ note type.
 
-(defcustom gnosis-mcq-seperator "\n--\n"
-  "Seperator for stem field and options in mcq note type.
+car value is the prompt, cdr is the prewritten string.")
+
+(defcustom gnosis-mcq-separator "\n--\n"
+  "Separator for stem field and options in mcq note type.
 
 Seperate the question/stem from options."
   :type 'string
   :group 'gnosis)
 
-(defcustom gnosis-mcq-option-seperator "- "
-  "Seperator for options in mcq note type."
+(defcustom gnosis-mcq-option-separator "-"
+  "Separator for options in mcq note type."
   :type 'string
   :group 'gnosis)
 
@@ -172,9 +179,9 @@ Seperate the question/stem from options."
   "Face for the main section from note."
   :group 'gnosis-face-faces)
 
-(defface gnosis-face-seperator
+(defface gnosis-face-separator
   '((t :inherit warning))
-  "Face for section seperator."
+  "Face for section separator."
   :group 'gnosis-face)
 
 (defface gnosis-face-directions
@@ -323,7 +330,7 @@ SUCCESS is t when user-input is correct, else nil"
   (let ((hint (or hint "")))
     (goto-char (point-max))
     (insert
-     (propertize "\n\n-----\n" 'face 'gnosis-face-seperator)
+     (propertize "\n\n-----\n" 'face 'gnosis-face-separator)
      (propertize hint 'face 'gnosis-face-hint))))
 
 (cl-defun gnosis-display-cloze-reveal (&key (cloze-char gnosis-cloze-string) replace (success t) (face nil))
@@ -382,7 +389,7 @@ Refer to `gnosis-db-schema-extras' for more."
   "Display extra information & extra-image for note ID."
   (let ((extras (or (gnosis-get 'extra-notes 'extras `(= id ,id)) "")))
     (goto-char (point-max))
-    (insert (propertize "\n\n-----\n" 'face 'gnosis-face-seperator))
+    (insert (propertize "\n\n-----\n" 'face 'gnosis-face-separator))
     (gnosis-display-image id 'extra-image)
     (fill-paragraph (insert "\n" (propertize extras 'face 'gnosis-face-extra)))))
 
@@ -538,8 +545,8 @@ is the image to display post review
 
 Prompt user for input to create a note of type `MCQ'.
 
-Stem field is seperated from options by `gnosis-mcq-seperator', and
-each option is seperated by `gnosis-mcq-option-seperator'.  The correct
+Stem field is seperated from options by `gnosis-mcq-separator', and
+each option is seperated by `gnosis-mcq-option-separator'.  The correct
 answer is surrounded by curly braces, e.g {Correct Answer}.
 
 Refer to `gnosis-add-note--mcq' & `gnosis-prompt-mcq-input' for more."
@@ -862,7 +869,7 @@ Optionally, add cusotm PROMPT."
   "Return note ID's for every note with INPUT-TAGS."
   (unless (listp input-tags)
     (error "`input-tags' need to be a list"))
-  (cl-loop for (id tags) in (emacsql gnosis-db [:select [id tags] :from notes])
+  (cl-loop for (id tags) in (gnosis-select '[id tags] 'notes)
            when (and (cl-every (lambda (tag) (member tag tags)) input-tags)
 		     (not (gnosis-suspended-p id)))
            collect id))
@@ -933,13 +940,13 @@ default value."
 Return a list of the form ((QUESTION CHOICES) CORRECT-CHOICE-INDEX)."
   (let ((user-input (read-string-from-buffer (or (car gnosis-mcq-guidance) "")
 					     (or (cdr gnosis-mcq-guidance) ""))))
-    (unless (string-match-p gnosis-mcq-seperator user-input)
-      (error "Seperator %s not found" gnosis-mcq-seperator))
-    (let* ((input-seperated (split-string user-input gnosis-mcq-seperator t "[\s\n]"))
+    (unless (string-match-p gnosis-mcq-separator user-input)
+      (error "Separator %s not found" gnosis-mcq-separator))
+    (let* ((input-seperated (split-string user-input gnosis-mcq-separator t "[\s\n]"))
 	   (stem (car input-seperated))
 	   (input (split-string
 		   (mapconcat 'identity (cdr input-seperated) "\n")
-		   gnosis-mcq-option-seperator t "[\s\n]"))
+		   gnosis-mcq-option-separator t "[\s\n]"))
 	   (correct-choice-index
 	    (or (cl-position-if (lambda (string) (string-match "{.*}" string)) input)
 		(error "Correct choice not found.  Use {} to indicate the correct option")))
