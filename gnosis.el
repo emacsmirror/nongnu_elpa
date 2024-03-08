@@ -500,15 +500,14 @@ SECOND-IMAGE: Image to display after user-input.
 NOTE: If a gnosis--insert-into fails, the whole transaction will be
  (or at least it should).  Else there will be an error for foreign key
  constraint."
-  (condition-case nil
-      (progn
-	;; Refer to `gnosis-db-schema-SCHEMA' e.g `gnosis-db-schema-review-log'
-        (gnosis--insert-into 'notes   `([nil ,type ,main ,options ,answer ,tags ,(gnosis--get-deck-id deck)]))
-        (gnosis--insert-into 'review  `([nil ,gnosis-algorithm-ef ,gnosis-algorithm-ff ,gnosis-algorithm-interval]))
-        (gnosis--insert-into 'review-log `([nil ,(gnosis-algorithm-date) ,(gnosis-algorithm-date) 0 0 0 0 ,suspend 0]))
-        (gnosis--insert-into 'extras `([nil ,extra ,image ,second-image])))
-    (error (message "An error occurred during insertion"))))
-
+  (let* ((deck-id (gnosis--get-deck-id deck))
+	 (initial-interval (gnosis-get-deck-initial-interval deck-id)))
+    (emacsql-with-transaction gnosis-db
+    ;; Refer to `gnosis-db-schema-SCHEMA' e.g `gnosis-db-schema-review-log'
+    (gnosis--insert-into 'notes   `([nil ,type ,main ,options ,answer ,tags ,deck-id]))
+    (gnosis--insert-into 'review  `([nil ,gnosis-algorithm-ef ,gnosis-algorithm-ff ,initial-interval]))
+    (gnosis--insert-into 'review-log `([nil ,(gnosis-algorithm-date) ,(gnosis-algorithm-date) 0 0 0 0 ,suspend 0]))
+    (gnosis--insert-into 'extras `([nil ,extra ,image ,second-image])))))
 
 ;; Adding note(s) consists firstly of a hidden 'gnosis-add-note--TYPE'
 ;; function that does the computation & error checking to generate a
