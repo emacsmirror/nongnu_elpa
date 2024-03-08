@@ -1162,9 +1162,8 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
   (interactive)
   (let ((default-directory dir))
     (vc-pull)
-    (setf gnosis-db
-     (emacsql-sqlite-open
-     (expand-file-name "gnosis.db" gnosis-dir)))))
+    ;; Reopen gnosis-db after pull
+    (setf gnosis-db (emacsql-sqlite-open (expand-file-name "gnosis.db" dir)))))
 
 (defun gnosis-review-commit (note-num)
   "Commit review session on git repository.
