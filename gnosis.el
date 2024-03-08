@@ -1637,11 +1637,13 @@ to improve readability."
 		   when output
 		   collect (list (number-to-string id) (vconcat output)))))
   (local-set-key (kbd "e") #'gnosis-dashboard-edit-deck)
-  (local-set-key (kbd "a") #'(lambda () (interactive) (gnosis-add-deck (read-string "Deck name: "))
+  (local-set-key (kbd "a") #'(lambda () (interactive)
+			       (gnosis-add-deck (read-string "Deck name: "))
 			       (gnosis-dashboard-output-decks)
 			       (revert-buffer t t t)))
-  (local-set-key (kbd "s") #'(lambda () (interactive) (gnosis-suspend-deck
-						      (string-to-number (tabulated-list-get-id)))
+  (local-set-key (kbd "s") #'(lambda () (interactive)
+			       (gnosis-suspend-deck
+				(string-to-number (tabulated-list-get-id)))
 			       (gnosis-dashboard-output-decks)
 			       (revert-buffer t t t))))
   ;; (local-set-key (kbd "d") #'(lambda () (interactive)
