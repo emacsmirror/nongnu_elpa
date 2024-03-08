@@ -5,9 +5,9 @@
 ;; Author: Thanos Apollo <public@thanosapollo.org>
 ;; Keywords: extensions
 ;; URL: https://thanosapollo.org/projects/gnosis
-;; Version: 0.1.9
+;; Version: 0.2.0
 
-;; Package-Requires: ((emacs "27.2") (compat "29.1.4.2") (emacsql "20240124"))
+;; Package-Requires: ((emacs "29.1") (emacsql "20240124"))
 
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -24,14 +24,15 @@
 
 ;;; Commentary:
 
-;; Gnosis, pronounced "noh-sis", is a spaced repetition system for
-;; note taking & self testing, where notes are taken in a
-;; Question/Answer/Explanation format & reviewed in spaced
-;; intervals.
-;; 
-;; Gnosis can help you better understand and retain the material by
-;; encouraging active engagement.  It also provides a clear structure for
-;; your notes & review sessions, making it easier to study.
+;; Gnosis, is a spaced repetition system for note taking & self
+;; testing, where notes are taken in a Question/Answer/Explanation
+;; format & reviewed in spaced intervals, determined by the success or
+;; failure to recall a given answer for question.
+
+;; Gnosis implements a highly customizable algorithm, inspired by SM-2.
+;; Gnosis algorithm does not use user's subjective rating of a note to
+;; determine the next review interval, but instead uses the user's
+;; success or failure in recalling the answer of a note.
 
 ;;; Code:
 
@@ -109,6 +110,9 @@ When nil, the image will be displayed at its original size."
   (make-directory gnosis-dir)
   (make-directory gnosis-images-dir))
 
+(defvar gnosis-db-file (expand-file-name "gnosis.db" gnosis-dir)
+  "Gnosis database file.")
+
 (defconst gnosis-db
   (emacsql-sqlite-open (expand-file-name "gnosis.db" gnosis-dir))
   "Gnosis database file.")
@@ -116,7 +120,7 @@ When nil, the image will be displayed at its original size."
 (defvar gnosis-testing nil
   "When t, warn user he is in a testing environment.")
 
-(defconst gnosis-db-version 1
+(defconst gnosis-db-version 2
   "Gnosis database version.")
 
 (defvar gnosis-note-types '("MCQ" "Cloze" "Basic" "Double" "y-or-n")
@@ -129,12 +133,32 @@ When nil, the image will be displayed at its original size."
   "Hint input from previously added note.")
 
 (defvar gnosis-cloze-guidance
-  "Cloze questions are formatted like this:\n
+  '("Cloze questions are formatted like this:\n
 {c1:Cyproheptadine} is a(n) {c2:5-HT2} receptor antagonist used to treat {c2:serotonin syndrome}
 
 - For each `cX`-tag there will be created a cloze type note, the above
-  example creates 2 cloze type notes."
-  "Guidance for cloze note type.")
+  example creates 2 cloze type notes.)" . "")
+  "Guidance for cloze note type.
+
+car value is the prompt, cdr is the prewritten string.")
+
+(defvar gnosis-mcq-guidance
+  '("Write question options after the `--'.  Each `-' corresponds to an option\n-Example Option 1\n-{Correct Option}\nCorrect Option must be inside {}" . "Question\n--\n- Option\n- {Correct Option}")
+  "Guidance for MCQ note type.
+
+car value is the prompt, cdr is the prewritten string.")
+
+(defcustom gnosis-mcq-separator "\n--\n"
+  "Separator for stem field and options in mcq note type.
+
+Seperate the question/stem from options."
+  :type 'string
+  :group 'gnosis)
+
+(defcustom gnosis-mcq-option-separator "-"
+  "Separator for options in mcq note type."
+  :type 'string
+  :group 'gnosis)
 
 ;;; Faces
 
@@ -155,9 +179,9 @@ When nil, the image will be displayed at its original size."
   "Face for the main section from note."
   :group 'gnosis-face-faces)
 
-(defface gnosis-face-seperator
+(defface gnosis-face-separator
   '((t :inherit warning))
-  "Face for section seperator."
+  "Face for section separator."
   :group 'gnosis-face)
 
 (defface gnosis-face-directions
@@ -231,6 +255,19 @@ Example:
   "From TABLE use where to delete VALUE."
   (emacsql gnosis-db `[:delete :from ,table :where ,value]))
 
+;; (defun gnosis-delete-note (id)
+;;   "Delete note with ID."
+;;   (when (y-or-n-p "Delete note?")
+;;     (emacsql-with-transaction gnosis-db (gnosis--delete 'notes `(= id ,id)))))
+
+;; (defun gnosis-delete-deck (id)
+;;   "Delete deck with ID."
+;;   (interactive (list (gnosis--get-deck-id)))
+;;   (let ((deck-name (gnosis--get-deck-name id)))
+;;     (when (y-or-n-p (format "Delete deck `%s'? " deck-name))
+;;       (gnosis--delete 'decks `(= id ,id))
+;;       (message "Deleted deck `%s'" deck-name))))
+
 (defun gnosis-replace-item-at-index (index new-item list)
   "Replace item at INDEX in LIST with NEW-ITEM."
   (cl-loop for i from 0 for item in list
@@ -293,7 +330,7 @@ SUCCESS is t when user-input is correct, else nil"
   (let ((hint (or hint "")))
     (goto-char (point-max))
     (insert
-     (propertize "\n\n-----\n" 'face 'gnosis-face-seperator)
+     (propertize "\n\n-----\n" 'face 'gnosis-face-separator)
      (propertize hint 'face 'gnosis-face-hint))))
 
 (cl-defun gnosis-display-cloze-reveal (&key (cloze-char gnosis-cloze-string) replace (success t) (face nil))
@@ -352,7 +389,7 @@ Refer to `gnosis-db-schema-extras' for more."
   "Display extra information & extra-image for note ID."
   (let ((extras (or (gnosis-get 'extra-notes 'extras `(= id ,id)) "")))
     (goto-char (point-max))
-    (insert (propertize "\n\n-----\n" 'face 'gnosis-face-seperator))
+    (insert (propertize "\n\n-----\n" 'face 'gnosis-face-separator))
     (gnosis-display-image id 'extra-image)
     (fill-paragraph (insert "\n" (propertize extras 'face 'gnosis-face-extra)))))
 
@@ -391,46 +428,45 @@ Set SPLIT to t to split all input given."
       (error "Aborted")))
   (if (gnosis-get 'name 'decks `(= name ,name))
       (error "Deck `%s' already exists" name)
-    (gnosis--insert-into 'decks `([nil ,name]))
+    (gnosis--insert-into 'decks `([nil ,name nil nil nil nil nil]))
     (message "Created deck '%s'" name)))
 
-(defun gnosis--get-deck-name ()
-  "Return name from table DECKS."
+(defun gnosis--get-deck-name (&optional id)
+  "Get deck name for ID, or prompt for deck name when ID is nil."
   (when (equal (gnosis-select 'name 'decks) nil)
     (error "No decks found"))
-  (funcall gnosis-completing-read-function "Deck: " (gnosis-select 'name 'decks)))
+  (if id
+      (gnosis-get 'name 'decks `(= id ,id))
+    (funcall gnosis-completing-read-function "Deck: " (gnosis-select 'name 'decks))))
 
 (cl-defun gnosis--get-deck-id (&optional (deck (gnosis--get-deck-name)))
   "Return id for DECK name."
   (gnosis-get 'id 'decks `(= name ,deck)))
 
-;;;###autoload
-(defun gnosis-delete-deck (deck)
-  "Delete DECK."
-  (interactive (list (gnosis--get-deck-name)))
-  (gnosis--delete 'decks `(= name ,deck))
-  (message "Deleted deck %s" deck))
 
-;; TODO: Redo this as a single function
-(cl-defun gnosis-suspend-note (id &optional (suspend 1))
-  "Suspend note with ID.
-
-SUSPEND: 1 to suspend, 0 to unsuspend."
-  (gnosis-update 'review-log `(= suspend ,suspend) `(= id ,id)))
+(cl-defun gnosis-suspend-note (id)
+  "Suspend note with ID."
+  (let ((suspended (= (gnosis-get 'suspend 'review-log `(= id ,id)) 1)))
+    (when (y-or-n-p (if suspended "Unsuspend note? " "Suspend note? "))
+      (if suspended
+	  (gnosis-update 'review-log '(= suspend 0) `(= id ,id))
+	(gnosis-update 'review-log '(= suspend 1) `(= id ,id))))))
 
 (cl-defun gnosis-suspend-deck (&optional (deck (gnosis--get-deck-id)))
   "Suspend all note(s) with DECK id.
 
 When called with a prefix, unsuspends all notes in deck."
-  (let ((notes (gnosis-select 'id 'notes `(= deck-id ,deck)))
-	(suspend (if current-prefix-arg 0 1))
-	(note-count 0))
-    (cl-loop for note in notes
-	     do (gnosis-update 'review-log `(= suspend ,suspend) `(= id ,(car note)))
+  (let* ((notes (gnosis-select 'id 'notes `(= deck-id ,deck) t))
+	 (suspend (if current-prefix-arg 0 1))
+	 (note-count 0)
+	 (confirm (y-or-n-p (if (= suspend 0) "Unsuspend all notes for deck? " "Suspend all notes for deck? "))))
+    (when confirm
+      (cl-loop for note in notes
+	     do (gnosis-update 'review-log `(= suspend ,suspend) `(= id ,note))
 	     (setq note-count (1+ note-count))
 	     finally (if (equal suspend 0)
 			 (message "Unsuspended %s notes" note-count)
-		       (message "Suspended %s notes" note-count)))))
+		       (message "Suspended %s notes" note-count))))))
 
 (defun gnosis-suspend-tag ()
   "Suspend all note(s) with tag.
@@ -469,15 +505,14 @@ SECOND-IMAGE: Image to display after user-input.
 NOTE: If a gnosis--insert-into fails, the whole transaction will be
  (or at least it should).  Else there will be an error for foreign key
  constraint."
-  (condition-case nil
-      (progn
-	;; Refer to `gnosis-db-schema-SCHEMA' e.g `gnosis-db-schema-review-log'
-        (gnosis--insert-into 'notes   `([nil ,type ,main ,options ,answer ,tags ,(gnosis--get-deck-id deck)]))
-        (gnosis--insert-into 'review  `([nil ,gnosis-algorithm-ef ,gnosis-algorithm-ff ,gnosis-algorithm-interval]))
-        (gnosis--insert-into 'review-log `([nil ,(gnosis-algorithm-date) ,(gnosis-algorithm-date) 0 0 0 0 ,suspend 0]))
-        (gnosis--insert-into 'extras `([nil ,extra ,image ,second-image])))
-    (error (message "An error occurred during insertion"))))
-
+  (let* ((deck-id (gnosis--get-deck-id deck))
+	 (initial-interval (gnosis-get-deck-initial-interval deck-id)))
+    (emacsql-with-transaction gnosis-db
+    ;; Refer to `gnosis-db-schema-SCHEMA' e.g `gnosis-db-schema-review-log'
+    (gnosis--insert-into 'notes   `([nil ,type ,main ,options ,answer ,tags ,deck-id]))
+    (gnosis--insert-into 'review  `([nil ,gnosis-algorithm-ef ,gnosis-algorithm-ff ,initial-interval]))
+    (gnosis--insert-into 'review-log `([nil ,(gnosis-algorithm-date) ,(gnosis-algorithm-date) 0 0 0 0 ,suspend 0]))
+    (gnosis--insert-into 'extras `([nil ,extra ,image ,second-image])))))
 
 ;; Adding note(s) consists firstly of a hidden 'gnosis-add-note--TYPE'
 ;; function that does the computation & error checking to generate a
@@ -508,22 +543,19 @@ is the image to display post review
 (defun gnosis-add-note-mcq ()
   "Add note(s) of type `MCQ' interactively to selected deck.
 
-Create a note type MCQ for specified deck, that consists of:
-QUESTION: The question or problem statement
-OPTIONS: Options for the user to select
-ANSWER: Answer is the index NUMBER of the correct answer from OPTIONS.
-EXTRA: Information to display after user-input
-IMAGES: Cons cell, where car is the image to display before user-input
-	and cdr is the image to display post review.
-TAGS: Used to organize notes
+Prompt user for input to create a note of type `MCQ'.
 
-Refer to `gnosis-add-note--mcq' for more."
+Stem field is seperated from options by `gnosis-mcq-separator', and
+each option is seperated by `gnosis-mcq-option-separator'.  The correct
+answer is surrounded by curly braces, e.g {Correct Answer}.
+
+Refer to `gnosis-add-note--mcq' & `gnosis-prompt-mcq-input' for more."
   (let ((deck (gnosis--get-deck-name)))
     (while (y-or-n-p (format "Add note of type `MCQ' to `%s' deck? " deck))
-      (let* ((stem (read-string-from-buffer "Question: " ""))
-	     (input-choices (gnosis-prompt-mcq-choices))
-	     (choices (car input-choices))
-	     (correct-choice (cadr input-choices)))
+      (let* ((input (gnosis-prompt-mcq-input))
+	     (stem (caar input))
+	     (choices (cdr (car input)))
+	     (correct-choice (cadr input)))
 	(gnosis-add-note--mcq :deck deck
 			      :question stem
 			      :choices choices
@@ -709,7 +741,8 @@ See `gnosis-add-note--cloze' for more reference."
   (let ((deck (gnosis--get-deck-name)))
     (while (y-or-n-p (format "Add note of type `cloze' to `%s' deck? " deck))
       (gnosis-add-note--cloze :deck deck
-			      :note (read-string-from-buffer gnosis-cloze-guidance "")
+			      :note (read-string-from-buffer (or (car gnosis-cloze-guidance) "")
+							     (or (cdr gnosis-cloze-guidance) ""))
 			      :hint (gnosis-hint-prompt gnosis-previous-note-hint)
 			      :extra (read-string-from-buffer "Extra" "")
 			      :images (gnosis-select-images)
@@ -745,12 +778,12 @@ Works both with {} and {{}} to make easier to import anki notes."
   "In STRING replace only the first occurrence of each word in WORDS with NEW."
   (cl-assert (listp words))
   (cl-loop for word in words
-           do (if (string-match (concat "\\<" word "\\>") string)
-		  (setq string (replace-match new t t string))
-		;; This error will be produced when user has edited a
-		;; note to an invalid cloze.
-		(error "`%s' is an invalid cloze for question: `%s'."
-		       word string )))
+           do (if (string-match (regexp-quote word) string)
+                  (setq string (replace-match new t t string))
+                ;; This error will be produced when user has edited a
+                ;; note to an invalid cloze.
+                (error "`%s' is an invalid cloze for question: `%s'"
+                       word string)))
   string)
 
 (defun gnosis-cloze-extract-answers (str)
@@ -779,9 +812,13 @@ Valid cloze formats include:
   "Compare STR1 and STR2.
 
 Compare 2 strings, ignoring case and whitespace."
-  (<= (string-distance (downcase (replace-regexp-in-string "\\s-" "" str1))
-		       (downcase (replace-regexp-in-string "\\s-" "" str2)))
-      gnosis-string-difference))
+  (let ((string-compare-func (if (or (> (length str1) gnosis-string-difference)
+				     (> (length str2) gnosis-string-difference))
+				 #'(lambda (str1 str2) (<= (string-distance str1 str2) gnosis-string-difference))
+			       #'string=)))
+    (funcall string-compare-func
+	     (downcase (replace-regexp-in-string "\\s-" "" str1))
+	     (downcase (replace-regexp-in-string "\\s-" "" str2)))))
 
 
 (defun gnosis-directory-files (&optional dir regex)
@@ -832,7 +869,7 @@ Optionally, add cusotm PROMPT."
   "Return note ID's for every note with INPUT-TAGS."
   (unless (listp input-tags)
     (error "`input-tags' need to be a list"))
-  (cl-loop for (id tags) in (emacsql gnosis-db [:select [id tags] :from notes])
+  (cl-loop for (id tags) in (gnosis-select '[id tags] 'notes)
            when (and (cl-every (lambda (tag) (member tag tags)) input-tags)
 		     (not (gnosis-suspended-p id)))
            collect id))
@@ -887,20 +924,34 @@ Returns a list of unique tags."
     (reverse tags)))
 
 (defun gnosis-hint-prompt (previous-hint &optional prompt)
+  "Prompt user for hint.
+
+PROMPT: Prompt string value
+PREVIOUS-HINT: Previous hint value, if any.  If nil, use PROMPT as
+default value."
   (let* ((prompt (or prompt "Hint: "))
 	 (hint (read-string prompt previous-hint)))
     (setf gnosis-previous-note-hint hint)
     hint))
 
-(defun gnosis-prompt-mcq-choices ()
-  "Prompt user for mcq choices."
-  (let* ((input (split-string
-		 (read-string-from-buffer "Options\nEach '-' corresponds to an option\n-Example Option 1\n-Example Option 2\nYou can add as many options as you want\nCorrect Option must be inside {}" "-\n-")
-		 "-" t "[\s\n]"))
-	 (correct-choice-index (or (cl-position-if (lambda (string) (string-match "{.*}" string)) input)
-				   (error "Correct choice not found.  Use {} to indicate the correct opiton")))
-	 (choices (mapcar (lambda (string) (replace-regexp-in-string "{\\|}" "" string)) input)))
-    (list choices (+ correct-choice-index 1))))
+(defun gnosis-prompt-mcq-input ()
+  "Prompt for MCQ content.
+
+Return a list of the form ((QUESTION CHOICES) CORRECT-CHOICE-INDEX)."
+  (let ((user-input (read-string-from-buffer (or (car gnosis-mcq-guidance) "")
+					     (or (cdr gnosis-mcq-guidance) ""))))
+    (unless (string-match-p gnosis-mcq-separator user-input)
+      (error "Separator %s not found" gnosis-mcq-separator))
+    (let* ((input-seperated (split-string user-input gnosis-mcq-separator t "[\s\n]"))
+	   (stem (car input-seperated))
+	   (input (split-string
+		   (mapconcat 'identity (cdr input-seperated) "\n")
+		   gnosis-mcq-option-separator t "[\s\n]"))
+	   (correct-choice-index
+	    (or (cl-position-if (lambda (string) (string-match "{.*}" string)) input)
+		(error "Correct choice not found.  Use {} to indicate the correct option")))
+	   (choices (mapcar (lambda (string) (replace-regexp-in-string "{\\|}" "" string)) input)))
+      (list (cons stem choices) (+ correct-choice-index 1)))))
 
 (defun gnosis-prompt-tags--split (&optional previous-note-tags)
   "Prompt user for tags, split string by space.
@@ -946,57 +997,45 @@ well."
 	        due-notes)
      :test #'equal)))
 
-(defun gnosis-review--algorithm (id success)
+(defun gnosis-review-algorithm (id success)
   "Return next review date & ef for note with value of id ID.
 
 SUCCESS is a boolean value, t for success, nil for failure.
 
-Returns a list of the form ((yyyy mm dd) ef)."
+Returns a list of the form ((yyyy mm dd) (ef-increase ef-decrease ef-total))."
   (let ((ff gnosis-algorithm-ff)
-	(ef (nth 2 (gnosis-get 'ef 'review `(= id ,id))))
-	(t-success (gnosis-get 't-success 'review-log `(= id ,id)))
-	(c-success (gnosis-get 'c-success 'review-log `(= id ,id)))
-	(c-fails (gnosis-get 'c-fails 'review-log `(= id ,id)))
-	(t-fails (gnosis-get 't-fails 'review-log `(= id ,id)))
-	(initial-interval (gnosis-get 'interval 'review `(= id ,id))))
-    (gnosis-algorithm-next-interval :last-interval (max (gnosis-review--get-offset id) 1) ;; last-interv always >=1
-				    :review-num (gnosis-get 'n 'review-log `(= id ,id))
-				    :ef ef
+	(ef (gnosis-get 'ef 'review `(= id ,id)))
+	(t-success (gnosis-get 't-success 'review-log `(= id ,id))) ;; total successful reviews
+	(c-success (gnosis-get 'c-success 'review-log `(= id ,id))) ;; consecutive successful reviews
+	(c-fails (gnosis-get 'c-fails 'review-log `(= id ,id))) ;; consecutive failed reviews
+	;; (t-fails (gnosis-get 't-fails 'review-log `(= id ,id))) ;; total failed reviews
+	;; (review-num (gnosis-get 'n 'review-log `(= id ,id))) ;; total reviews
+	(last-interval (max (gnosis-review--get-offset id) 1))) ;; last interval
+    (list (gnosis-algorithm-next-interval :last-interval last-interval
+					  :ef ef
+					  :success success
+					  :successful-reviews t-success
+					  :failure-factor ff
+					  :initial-interval (gnosis-get-note-initial-interval id))
+	  (gnosis-algorithm-next-ef :ef ef
 				    :success success
-				    :failure-factor ff
-				    :successful-reviews t-success
-				    :successful-reviews-c  c-success
-				    :fails-c c-fails
-				    :fails-t t-fails
-				    :initial-interval initial-interval)))
+				    :increase (gnosis-get-ef-increase id)
+				    :decrease (gnosis-get-ef-decrease id)
+				    :threshold (gnosis-get-ef-threshold id)
+				    :c-successes c-success
+				    :c-failures c-fails))))
 
 (defun gnosis-review--get-offset (id)
   "Return offset for note with value of id ID."
   (let ((last-rev (gnosis-get 'last-rev 'review-log `(= id ,id))))
     (gnosis-algorithm-date-diff last-rev)))
 
-(defun gnosis-review-round (num)
-  "Round NUM to 2 decimals.
-
-This function is used to round floating point numbers to 2 decimals,
-such as the easiness factor (ef)."
-  (/ (round (* num 100.00)) 100.00))
-
-(defun gnosis-review-new-ef (id success)
-  "Return new ef for note with value of id ID.
-
-Returns a list of the form (ef-increase ef-decrease ef).
-SUCCESS is a boolean value, t for success, nil for failure."
-  (let ((ef (nth 1 (gnosis-review--algorithm id success)))
-	(old-ef (gnosis-get 'ef 'review `(= id ,id))))
-    (cl-substitute (gnosis-review-round ef) (nth 2 old-ef) old-ef)))
-
 (defun gnosis-review--update (id success)
   "Update review-log for note with value of id ID.
 
 SUCCESS is a boolean value, t for success, nil for failure."
-  (let ((ef (gnosis-review-new-ef id success))
-	(next-rev (car (gnosis-review--algorithm id success))))
+  (let ((ef (cadr (gnosis-review-algorithm id success)))
+	(next-rev (car (gnosis-review-algorithm id success))))
     ;; Update review-log
     (gnosis-update 'review-log `(= last-rev ',(gnosis-algorithm-date)) `(= id ,id))
     (gnosis-update 'review-log `(= next-rev ',next-rev) `(= id ,id))
@@ -1129,7 +1168,9 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
   "Run `vc-pull' in DIR."
   (interactive)
   (let ((default-directory dir))
-    (vc-pull)))
+    (vc-pull)
+    ;; Reopen gnosis-db after pull
+    (setf gnosis-db (emacsql-sqlite-open (expand-file-name "gnosis.db" dir)))))
 
 (defun gnosis-review-commit (note-num)
   "Commit review session on git repository.
@@ -1174,7 +1215,7 @@ NOTES: List of note ids"
 				(?q "quit"))))
 		   (?n nil)
 		   (?s (gnosis-suspend-note note))
-		   (?e (gnosis-edit-note note)
+		   (?e (gnosis-edit-note note t)
 		       (recursive-edit))
 		   (?q (gnosis-review-commit note-count)
 		       (cl-return)))
@@ -1183,14 +1224,14 @@ NOTES: List of note ids"
 
 ;; Editing notes
 (defun gnosis-edit-read-only-values (&rest values)
-  "Makes the provided values read-only in the whole buffer."
+  "Make the provided VALUES read-only in the whole buffer."
   (goto-char (point-min))
   (dolist (value values)
     (while (search-forward value nil t)
       (put-text-property (match-beginning 0) (match-end 0) 'read-only t)))
   (goto-char (point-min)))
 
-(defun gnosis-edit-note (id)
+(cl-defun gnosis-edit-note (id &optional (recursive-edit nil))
   "Edit the contents of a note with the given ID.
 
 This function creates an Emacs Lisp buffer named *gnosis-edit* on the
@@ -1226,17 +1267,106 @@ changes."
   ;; Insert id & fields as read-only values
   (gnosis-edit-read-only-values (format ":id %s" id) ":main" ":options" ":answer"
 				":tags" ":extra-notes" ":image" ":second-image"
-				":ef" ":ff" ":suspend"))
+				":ef" ":ff" ":suspend")
+  (local-unset-key (kbd "C-c C-c"))
+  (local-set-key (kbd "C-c C-c") (lambda () (interactive) (if recursive-edit
+							 (gnosis-edit-save-exit 'exit-recursive-edit)
+						       (gnosis-edit-save-exit 'gnosis-dashboard "Notes")))))
 
-(defun gnosis-edit-save-exit ()
-  "Save edits and exit."
+(defun gnosis-edit-deck--export (id)
+  "Export deck with ID.
+
+WARNING: This export is only for editing said deck!
+
+Insert deck values:
+ `ef-increase', `ef-decrease', `ef-threshold', `failure-factor'"
+  (let ((name (gnosis-get 'name 'decks `(= id ,id)))
+	(ef-increase (gnosis-get 'ef-increase 'decks `(= id ,id)))
+	(ef-decrease (gnosis-get 'ef-decrease 'decks `(= id ,id)))
+	(ef-threshold (gnosis-get 'ef-threshold 'decks `(= id ,id)))
+	(failure-factor (gnosis-get 'failure-factor 'decks `(= id ,id)))
+	(initial-interval (gnosis-get 'initial-interval 'decks `(= id ,id))))
+    (insert
+     (format "\n:id %s\n:name \"%s\"\n:ef-increase %s\n:ef-decrease %s\n:ef-threshold %s\n:failure-factor %s\n :initial-interval '%s"
+	     id name ef-increase ef-decrease ef-threshold failure-factor initial-interval))))
+
+(defun gnosis-assert-int-or-nil (value description)
+  "Assert that VALUE is an integer or nil.
+
+DESCRIPTION is a string that describes the value."
+  (unless (or (null value) (integerp value))
+    (error "Invalid value: %s, %s" value description)))
+
+(defun gnosis-assert-float-or-nil (value description &optional less-than-1)
+  "Assert that VALUE is a float or nil.
+
+DESCRIPTION is a string that describes the value.
+LESS-THAN-1: If t, assert that VALUE is a float less than 1."
+  (if less-than-1
+      (unless (or (null value) (and (floatp value) (< value 1)))
+	(error "Invalid value: %s, %s" value description))
+    (unless (or (null value) (floatp value))
+      (error "Invalid value: %s, %s" value description))))
+
+(defun gnosis-assert-number-or-nil (value description)
+  "Assert that VALUE is a number or nil.
+
+DESCRIPTION is a string that describes the value."
+  (unless (or (null value) (numberp value))
+    (error "Invalid value: %s, %s" value description)))
+
+(cl-defun gnosis-edit-update-deck (&key id name ef-increase ef-decrease ef-threshold failure-factor initial-interval)
+  "Update deck with id value of ID.
+
+NAME: Name of deck
+EF-INCREASE: Easiness factor increase value
+EF-DECREASE: Easiness factor decrease value
+EF-THRESHOLD: Easiness factor threshold value
+FAILURE-FACTOR: Failure factor value
+INITIAL-INTERVAL: Initial interval for notes of deck"
+  (gnosis-assert-float-or-nil failure-factor "failure-factor must be a float less than 1" t)
+  (gnosis-assert-int-or-nil ef-threshold "ef-threshold must be an integer")
+  (gnosis-assert-number-or-nil ef-increase "ef-increase must be a number")
+  (cl-assert (or (and (listp initial-interval)
+		      (and (cl-every #'integerp initial-interval)
+			   (length= initial-interval 2)))
+		 (null initial-interval))
+	     nil "Initial-interval must be a list of 2 integers")
+  (cl-loop for (field . value) in
+	   `((ef-increase . ,ef-increase)
+	     (ef-decrease . ,ef-decrease)
+	     (ef-threshold . ,ef-threshold)
+	     (failure-factor . ,failure-factor)
+	     (initial-interval . ',initial-interval)
+	     (name . ,name))
+	   when value
+	   do (gnosis-update 'decks `(= ,field ,value) `(= id ,id))))
+
+(defun gnosis-edit-deck (&optional id)
+  "Edit the contents of a deck with the given ID."
+  (interactive "P")
+  (let ((id (or id (gnosis--get-deck-id))))
+    (pop-to-buffer-same-window (get-buffer-create "*gnosis-edit*"))
+    (gnosis-edit-mode)
+    (erase-buffer)
+    (insert ";;\n;; You are editing a gnosis deck.\n\n")
+    (insert "(gnosis-edit-update-deck ")
+    (gnosis-edit-deck--export id)
+    (insert ")")
+    (insert "\n\n;; After finishing editing, save changes with `<C-c> <C-c>'\n;; Avoid exiting without saving.")
+    (indent-region (point-min) (point-max))
+    (gnosis-edit-read-only-values (format ":id %s" id) ":name" ":ef-increase"
+				  ":ef-decrease" ":ef-threshold" ":failure-factor")
+    (local-unset-key (kbd "C-c C-c"))
+    (local-set-key (kbd "C-c C-c") (lambda () (interactive) (gnosis-edit-save-exit 'gnosis-dashboard "Decks")))))
+
+(cl-defun gnosis-edit-save-exit (&optional exit-func &rest args)
+  "Save edits and exit using EXIT-FUNC, with ARGS."
   (interactive)
   (eval-buffer)
   (quit-window t)
-  ;; exit recursive edit if we are in one
-  (if (>= (recursion-depth) 1)
-      (exit-recursive-edit)
-    (gnosis-dashboard)))
+  (when exit-func
+    (apply exit-func args)))
 
 (defvar-keymap gnosis-edit-mode-map
   :doc "gnosis-edit keymap"
@@ -1244,7 +1374,7 @@ changes."
 
 (define-derived-mode gnosis-edit-mode emacs-lisp-mode "Gnosis EDIT"
   "Gnosis Edit Mode."
-  :interactive t
+  :interactive nil
   :lighter " Gnosis Edit"
   :keymap gnosis-edit-mode-map)
 
@@ -1255,12 +1385,24 @@ changes."
 ID: Note id
 MAIN: Main part of note, the stem part of MCQ, question for basic, etc.
 OPTIONS: Options for mcq type notes/Hint for basic & cloze type notes
-ANSWER: Answer for MAIN, user is asked for input, if equal user-input
-= answer review is marked as successfull
+ANSWER: Answer for MAIN
 TAGS: Tags for note, used to organize & differentiate between notes
 EXTRA-NOTES: Notes to display after user-input
 IMAGE: Image to display before user-input
-SECOND-IMAGE: Image to display after user-input"
+SECOND-IMAGE: Image to display after user-input
+EF: Easiness factor value
+FF: Failure factor value
+SUSPEND: Suspend note, 0 for unsuspend, 1 for suspend"
+  (cl-assert (stringp main) nil "Main must be a string")
+  (cl-assert (or (stringp image) (null image)) nil
+	     "Image must be a string, path to image file from `gnosis-images-dir', or nil")
+  (cl-assert (or (stringp second-image) (null second-image)) nil
+	     "Second-image must be a string, path to image file from `gnosis-images-dir', or nil")
+  (cl-assert (or (stringp extra-notes) (null extra-notes)) nil
+	     "Extra-notes must be a string, or nil")
+  (cl-assert (listp tags) nil "Tags must be a list of strings")
+  (cl-assert (and (listp ef) (length= ef 3)) nil "ef must be a list of 3 floats")
+  (cl-assert (or (stringp options) (listp options)) nil "Options must be a string, or a list for MCQ")
   ;; Construct the update clause for the emacsql update statement.
   (cl-loop for (field . value) in
            `((main . ,main)
@@ -1288,10 +1430,36 @@ SECOND-IMAGE: Image to display after user-input"
   "Return a list of ID vlaues for each note with value of deck-id DECK."
   (gnosis-select 'id 'notes `(= deck-id ,deck) t))
 
+(defun gnosis-get-ef-increase (id)
+  "Return ef-increase for note with value of id ID."
+  (let ((ef-increase (gnosis-get 'ef-increase 'decks `(= id ,(gnosis-get 'deck-id 'notes `(= id ,id))))))
+    (or ef-increase gnosis-algorithm-ef-increase)))
+
+(defun gnosis-get-ef-decrease (id)
+  "Return ef-decrease for note with value of id ID."
+  (let ((ef-decrease (gnosis-get 'ef-decrease 'decks `(= id ,(gnosis-get 'deck-id 'notes `(= id ,id))))))
+    (or ef-decrease gnosis-algorithm-ef-decrease)))
+
+(defun gnosis-get-ef-threshold (id)
+  "Return ef-threshold for note with value of id ID."
+  (let ((ef-threshold (gnosis-get 'ef-threshold 'decks `(= id ,(gnosis-get 'deck-id 'notes `(= id ,id))))))
+    (or ef-threshold gnosis-algorithm-ef-threshold)))
+
+(defun gnosis-get-deck-initial-interval (id)
+  "Return initial-interval for notes of deck ID."
+  (let ((initial-interval (gnosis-get 'initial-interval 'decks `(= id ,id))))
+    (or initial-interval gnosis-algorithm-interval)))
+
+(defun gnosis-get-note-initial-interval (id)
+  "Return initial-interval for note with ID."
+  (let ((deck-id (gnosis-get 'deck-id 'notes `(= id ,id))))
+    (gnosis-get-deck-initial-interval deck-id)))
+
 (cl-defun gnosis-export-note (id &optional (export-for-deck nil))
   "Export fields for note with value of id ID.
 
 ID: Identifier of the note to export.
+EXPORT-FOR-DECK: If t, add type field and remove review fields
 
 This function retrieves the fields of a note with the given ID and
 inserts them into the current buffer.  Each field is represented as a
@@ -1329,61 +1497,6 @@ to improve readability."
 			(format "\n%s '%s" (symbol-name field) (prin1-to-string value)))
 		       (t (format "\n%s %s" (symbol-name field) (prin1-to-string value))))))))
 
-;; TODO: Fix export of deck!
-(defun gnosis-export-deck (deck export-deck-name filename)
-  "Export notes for deck in FILENAME.
-
-WARNING: This function is not yet implemented.
-
-FILENAME: The name of the file to save the exported deck.
-
-This function prompts the user to provide a deck name and allows the
-user to specify a filename for exporting notes belonging to that deck.
-It then retrieves all the notes associated with the deck and exports
-them.
-
-The exported notes are formatted as an Emacs Lisp code block that can
-be evaluated to recreate the deck with its associated notes.  The
-resulting code is saved to a file with the provided FILENAME and a
-'.el' extension is added automatically.
-
-Each note is exported using the `gnosis-export-note` function.  The
-generated code includes a call to `gnosis-define-deck` with the deck
-name and all notes formatted as nested lists"
-  ;; (interactive (list (gnosis-get-notes-for-deck)
-  ;; 		     (read-string "Export deck as (name): ")
-  ;; 		     (read-string "Filename: ")))
-  (with-temp-file (concat filename ".el")
-    (insert "(gnosis-define-deck " "'" export-deck-name " '(")
-    (cl-loop for note in deck
-	     do (insert "(") (gnosis-export-note note t) (insert ")" "\n")
-	     finally (insert "))"))))
-
-;; TODO: Add defcustom to have suspended as 0 or 1 depending on
-;; gnosis-add-decks-suspended t or nil
-(cl-defun gnosis-define-deck (deck notes &optional (suspended 0))
-  "Define DECK consisting of NOTES, optionally add them as SUSPENDED."
-  (gnosis-add-deck (symbol-name deck))
-  (sit-for 0.1)
-  (cl-loop for note in notes
-           do (let ((type (plist-get note :type))
-                    (main (plist-get note :main))
-                    (options (plist-get note :options))
-                    (answer (plist-get note :answer))
-                    (extra-notes (plist-get note :extra-notes))
-                    (tags (plist-get note :tags))
-                    (suspend (plist-get note :suspend))
-                    (image (plist-get note :image))
-                    (second-image (plist-get note :second-image)))
-                (gnosis-add-note-fields deck type main options answer extra-notes tags suspend image second-image))
-           collect note))
-
-;; Rewrite this similarly to gnosis
-(cl-defun gnosis-define-deck--note (&keys deck type main options answer extra-notes tags image second-image)
-  "Define a note for DECK."
-  (gnosis-add-note-fields deck type main options answer extra-notes tags 0 image second-image))
-
-
 ;;;###autoload
 (defun gnosis-review ()
   "Start gnosis review session."
@@ -1401,7 +1514,12 @@ name and all notes formatted as nested lists"
 
 ;;; Database Schemas
 (defvar gnosis-db-schema-decks '([(id integer :primary-key :autoincrement)
-				  (name text :not-null)]))
+				  (name text :not-null)
+				  (failure-factor float)
+				  (ef-increase float)
+				  (ef-decrease float)
+				  (ef-threshold integer)
+				  (initial-interval listp)]))
 
 (defvar gnosis-db-schema-notes '([(id integer :primary-key :autoincrement)
 				  (type text :not-null)
@@ -1452,7 +1570,7 @@ name and all notes formatted as nested lists"
 
 ;; Dashboard
 (defun gnosis-dashboard-output-note (id)
-  "Output note contents formatted for gnosis dashboard."
+  "Output contents for note with ID, formatted for gnosis dashboard."
   (cl-loop for item in (append (gnosis-select '[main options answer tags type] 'notes `(= id ,id) t)
 			       (gnosis-select 'suspend 'review-log `(= id ,id) t))
            if (listp item)
@@ -1463,8 +1581,82 @@ name and all notes formatted as nested lists"
 (defun gnosis-dashboard-output-notes ()
   "Return note contents for gnosis dashboard."
   (let ((max-id (apply 'max (gnosis-select 'id 'notes '1=1 t))))
-    (cl-loop for id from 1 to max-id collect
-	     (list (number-to-string id) (vconcat (gnosis-dashboard-output-note id))))))
+    (setq tabulated-list-format [("Main" 30 t)
+				 ("Options" 20 t)
+				 ("Answer" 25 t)
+				 ("Tags" 25 t)
+				 ("Type" 10 t)
+				 ("Suspend" 2 t)])
+    (tabulated-list-init-header)
+    (setf tabulated-list-entries
+	  (cl-loop for id from 1 to max-id
+		   for output = (gnosis-dashboard-output-note id)
+		   when output
+		   collect (list (number-to-string id) (vconcat output))))
+    ;; Keybindings, for editing, suspending, deleting notes.
+    ;; We use `local-set-key' to bind keys to the buffer to avoid
+    ;; conflicts when using the dashboard for displaying either notes
+    ;; or decks.
+    (local-set-key (kbd "e") #'gnosis-dashboard-edit-note)
+    (local-set-key (kbd "s") #'(lambda () (interactive)
+				 (gnosis-suspend-note
+				  (string-to-number (tabulated-list-get-id)))
+				 (gnosis-dashboard-output-notes)
+				 (revert-buffer t t t)))
+    ;; (local-set-key (kbd "d") #'(lambda () (interactive)
+    ;; 				 (gnosis-delete-note
+    ;; 				  (string-to-number (tabulated-list-get-id)))
+    ;; 				 (gnosis-dashboard-output-notes)
+    ;; 				 (revert-buffer t t t)))
+    (local-set-key (kbd "a") #'gnosis-add-note)))
+
+(defun gnosis-dashboard-deck-note-count (id)
+  "Return total note count for deck with ID."
+  (let ((note-count (caar (emacsql gnosis-db (format "SELECT COUNT(*) FROM notes WHERE deck_id=%s" id)))))
+    (when (gnosis-select 'id 'decks `(= id ,id))
+      (list (number-to-string note-count)))))
+
+(defun gnosis-dashboard-output-deck (id)
+  "Output contents from deck with ID, formatted for gnosis dashboard."
+  (cl-loop for item in (append (gnosis-select
+				'[name failure-factor ef-increase ef-decrease ef-threshold initial-interval]
+					      'decks `(= id ,id) t)
+			       (mapcar 'string-to-number (gnosis-dashboard-deck-note-count id)))
+	   when (listp item)
+	   do (cl-remove-if (lambda (x) (and (vectorp x) (zerop (length x)))) item)
+	   collect (prin1-to-string item)))
+
+(defun gnosis-dashboard-output-decks ()
+  "Return deck contents for gnosis dashboard."
+  (setq tabulated-list-format [("Name" 15 t)
+			       ("failure-factor" 15 t)
+			       ("ef-increase" 15 t)
+			       ("ef-decrease" 15 t)
+			       ("ef-threshold" 15 t)
+			       ("Initial Interval" 20 t)
+			       ("Total Notes" 10 t)])
+  (tabulated-list-init-header)
+  (let ((max-id (apply 'max (gnosis-select 'id 'decks '1=1 t))))
+    (setq tabulated-list-entries
+	  (cl-loop for id from 1 to max-id
+		   for output = (gnosis-dashboard-output-deck id)
+		   when output
+		   collect (list (number-to-string id) (vconcat output)))))
+  (local-set-key (kbd "e") #'gnosis-dashboard-edit-deck)
+  (local-set-key (kbd "a") #'(lambda () (interactive)
+			       (gnosis-add-deck (read-string "Deck name: "))
+			       (gnosis-dashboard-output-decks)
+			       (revert-buffer t t t)))
+  (local-set-key (kbd "s") #'(lambda () (interactive)
+			       (gnosis-suspend-deck
+				(string-to-number (tabulated-list-get-id)))
+			       (gnosis-dashboard-output-decks)
+			       (revert-buffer t t t))))
+  ;; (local-set-key (kbd "d") #'(lambda () (interactive)
+  ;; 			       (gnosis-delete-deck
+  ;; 				(string-to-number (tabulated-list-get-id)))
+  ;; 			       (gnosis-dashboard-output-decks)
+  ;; 			       (revert-buffer t t t))))
 
 (defun gnosis-dashboard-edit-note ()
   "Get note id from tabulated list and edit it."
@@ -1473,53 +1665,67 @@ name and all notes formatted as nested lists"
     (gnosis-edit-note (string-to-number id))
     (message "Editing note with id: %s" id)))
 
+(defun gnosis-dashboard-edit-deck ()
+  "Get deck id from tabulated list and edit it."
+  (interactive)
+  (let ((id (tabulated-list-get-id)))
+    (gnosis-edit-deck (string-to-number id))))
+
 (defvar-keymap gnosis-dashboard-mode-map
   :doc "gnosis-dashboard keymap"
-  "e" #'gnosis-dashboard-edit-note
   "q" #'quit-window)
 
 (define-derived-mode gnosis-dashboard-mode tabulated-list-mode "Gnosis Dashboard"
   "Major mode for displaying Gnosis dashboard."
   :keymap gnosis-dashboard-mode-map
-  (interactive)
   (display-line-numbers-mode 0)
-  (setq tabulated-list-format [("Main" 30 t)
-			       ("Options" 20 t)
-			       ("Answer" 25 t)
-			       ("Tags" 25 t)
-			       ("Type" 10 t)
-			       ("Suspend" 2 t)])
   (setq tabulated-list-padding 2
-	tabulated-list-sort-key nil)
-  (tabulated-list-init-header))
+	tabulated-list-sort-key nil))
 
 ;;;###autoload
-(defun gnosis-dashboard ()
-  "Display gnosis dashboard."
+(cl-defun gnosis-dashboard (&optional dashboard-type)
+  "Display gnosis dashboard.
+
+DASHBOARD-TYPE: either 'Notes' or 'Decks' to display the respective dashboard."
   (interactive)
-  (pop-to-buffer "*gnosis-dashboard*" nil)
-  (gnosis-dashboard-mode)
-  (setq tabulated-list-entries
-	(gnosis-dashboard-output-notes))
-  (tabulated-list-print t))
+  (let ((type (or dashboard-type
+		  (cadr (read-multiple-choice
+			 "Display dashboard for:"
+			 '((?N "Notes")
+			   (?D "Decks")))))))
+    (pop-to-buffer "*gnosis-dashboard*")
+    (gnosis-dashboard-mode)
+    (pcase type
+      ("Notes" (gnosis-dashboard-output-notes))
+      ("Decks" (gnosis-dashboard-output-decks)))
+    (tabulated-list-print t)))
 
 (defun gnosis-db-init ()
   "Create gnosis essential directories & database."
-  (unless (length= (emacsql gnosis-db [:select name :from sqlite-master :where (= type table)]) 6)
-    ;; Enable foreign keys
-    (emacsql gnosis-db "PRAGMA foreign_keys = ON")
-    ;; Gnosis version
-    (emacsql gnosis-db (format "PRAGMA user_version = %s" gnosis-db-version))
-    ;; Create decks table
-    (gnosis--create-table 'decks gnosis-db-schema-decks)
-    ;; Create notes table
-    (gnosis--create-table 'notes gnosis-db-schema-notes)
-    ;; Create review table
-    (gnosis--create-table 'review gnosis-db-schema-review)
-    ;; Create review-log table
-    (gnosis--create-table 'review-log gnosis-db-schema-review-log)
-    ;; Create extras table
-    (gnosis--create-table 'extras gnosis-db-schema-extras)))
+  (let ((gnosis-curr-version (caar (emacsql gnosis-db (format "PRAGMA user_version")))))
+    (unless (length= (emacsql gnosis-db [:select name :from sqlite-master :where (= type table)]) 6)
+      ;; Enable foreign keys
+      (emacsql gnosis-db "PRAGMA foreign_keys = ON")
+      ;; Gnosis version
+      (emacsql gnosis-db (format "PRAGMA user_version = %s" gnosis-db-version))
+      ;; Create decks table
+      (gnosis--create-table 'decks gnosis-db-schema-decks)
+      ;; Create notes table
+      (gnosis--create-table 'notes gnosis-db-schema-notes)
+      ;; Create review table
+      (gnosis--create-table 'review gnosis-db-schema-review)
+      ;; Create review-log table
+      (gnosis--create-table 'review-log gnosis-db-schema-review-log)
+      ;; Create extras table
+      (gnosis--create-table 'extras gnosis-db-schema-extras))
+    ;; Update database schema for version
+    (cond ((= gnosis-curr-version 1) ;; Update to version 2
+	   (emacsql gnosis-db [:alter-table decks :add failure-factor])
+	   (emacsql gnosis-db [:alter-table decks :add ef-increase])
+	   (emacsql gnosis-db [:alter-table decks :add ef-decrease])
+	   (emacsql gnosis-db [:alter-table decks :add ef-threshold])
+	   (emacsql gnosis-db [:alter-table decks :add initial-interval])
+	   (emacsql gnosis-db (format "PRAGMA user_version = %s" gnosis-db-version))))))
 
 (gnosis-db-init)
 
