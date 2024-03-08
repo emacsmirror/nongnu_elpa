@@ -143,6 +143,14 @@ option\n-Example Option 1\n-Example Option 2\nYou can add as many
 options as you want\nCorrect Option must be inside {}"
   "Guidance for MCQ note type.")
 
+(defcustom gnosis-mcq-seperator "\n--\n"
+  "Seperator for stem field and options in mcq note type.
+
+Seperate the question/stem from options."
+  :type 'string
+  :group 'gnosis)
+
+(defcustom gnosis-mcq-option-seperator "- "
 ;;; Faces
 
 (defgroup gnosis-faces nil
