@@ -1577,9 +1577,10 @@ to improve readability."
 
 (defun gnosis-dashboard-output-deck (id)
   "Output contents from deck with ID, formatted for gnosis dashboard."
-  (cl-loop for item in (append (gnosis-select '[name failure-factor ef-increase ef-decrease ef-threshold]
+  (cl-loop for item in (append (gnosis-select
+				'[name failure-factor ef-increase ef-decrease ef-threshold initial-interval]
 					      'decks `(= id ,id) t)
-			       (gnosis-dashboard-deck-note-count id))
+			       (mapcar 'string-to-number (gnosis-dashboard-deck-note-count id)))
 	   when (listp item)
 	   do (cl-remove-if (lambda (x) (and (vectorp x) (zerop (length x)))) item)
 	   collect (prin1-to-string item)))
@@ -1591,7 +1592,8 @@ to improve readability."
 			       ("ef-increase" 15 t)
 			       ("ef-decrease" 15 t)
 			       ("ef-threshold" 15 t)
-			       ("Notes" 10 t)])
+			       ("Initial Interval" 20 t)
+			       ("Total Notes" 10 t)])
   (tabulated-list-init-header)
   (let ((max-id (apply 'max (gnosis-select 'id 'decks '1=1 t))))
     (setq tabulated-list-entries
