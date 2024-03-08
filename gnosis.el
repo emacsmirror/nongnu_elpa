@@ -138,9 +138,7 @@ When nil, the image will be displayed at its original size."
   "Guidance for cloze note type.")
 
 (defvar gnosis-mcq-guidance
-  "First line is the Stem\nOptions\nEach '-' corresponds to an
-option\n-Example Option 1\n-Example Option 2\nYou can add as many
-options as you want\nCorrect Option must be inside {}"
+  '("Write question options after the `--'.  Each `-' corresponds to an option\n-Example Option 1\n-{Correct Option}\nCorrect Option must be inside {}" . "Question\n--\n- Option\n- {Correct Option}")
   "Guidance for MCQ note type.")
 
 (defcustom gnosis-mcq-seperator "\n--\n"
