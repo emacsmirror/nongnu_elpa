@@ -986,7 +986,6 @@ Returns a list of the form ((yyyy mm dd) (ef-increase ef-decrease ef-total))."
 	(c-success (gnosis-get 'c-success 'review-log `(= id ,id))) ;; consecutive successful reviews
 	(c-fails (gnosis-get 'c-fails 'review-log `(= id ,id))) ;; consecutive failed reviews
 	;; (t-fails (gnosis-get 't-fails 'review-log `(= id ,id))) ;; total failed reviews
-	(initial-interval (gnosis-get 'interval 'review `(= id ,id))) ;; initial interval
 	;; (review-num (gnosis-get 'n 'review-log `(= id ,id))) ;; total reviews
 	(last-interval (max (gnosis-review--get-offset id) 1))) ;; last interval
     (list (gnosis-algorithm-next-interval :last-interval last-interval
@@ -994,7 +993,7 @@ Returns a list of the form ((yyyy mm dd) (ef-increase ef-decrease ef-total))."
 					  :success success
 					  :successful-reviews t-success
 					  :failure-factor ff
-					  :initial-interval initial-interval)
+					  :initial-interval (gnosis-get-note-initial-interval id))
 	  (gnosis-algorithm-next-ef :ef ef
 				    :success success
 				    :increase (gnosis-get-ef-increase id)
@@ -1478,7 +1477,8 @@ to improve readability."
 				  (failure-factor float)
 				  (ef-increase float)
 				  (ef-decrease float)
-				  (ef-threshold integer)]))
+				  (ef-threshold integer)
+				  (initial-interval listp)]))
 
 (defvar gnosis-db-schema-notes '([(id integer :primary-key :autoincrement)
 				  (type text :not-null)
@@ -1679,6 +1679,7 @@ DASHBOARD-TYPE: either 'Notes' or 'Decks' to display the respective dashboard."
 	   (emacsql gnosis-db [:alter-table decks :add ef-increase])
 	   (emacsql gnosis-db [:alter-table decks :add ef-decrease])
 	   (emacsql gnosis-db [:alter-table decks :add ef-threshold])
+	   (emacsql gnosis-db [:alter-table decks :add initial-interval])
 	   (emacsql gnosis-db (format "PRAGMA user_version = %s" gnosis-db-version))))))
 
 (gnosis-db-init)
