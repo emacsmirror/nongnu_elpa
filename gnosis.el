@@ -5,7 +5,7 @@
 ;; Author: Thanos Apollo <public@thanosapollo.org>
 ;; Keywords: extensions
 ;; URL: https://thanosapollo.org/projects/gnosis
-;; Version: 0.2.0-dev
+;; Version: 0.2.0
 
 ;; Package-Requires: ((emacs "29.1") (emacsql "20240124"))
 
