@@ -421,7 +421,7 @@ Set SPLIT to t to split all input given."
       (error "Aborted")))
   (if (gnosis-get 'name 'decks `(= name ,name))
       (error "Deck `%s' already exists" name)
-    (gnosis--insert-into 'decks `([nil ,name nil nil nil nil]))
+    (gnosis--insert-into 'decks `([nil ,name nil nil nil nil nil]))
     (message "Created deck '%s'" name)))
 
 (defun gnosis--get-deck-name (&optional id)
