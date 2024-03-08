@@ -539,10 +539,10 @@ TAGS: Used to organize notes
 Refer to `gnosis-add-note--mcq' for more."
   (let ((deck (gnosis--get-deck-name)))
     (while (y-or-n-p (format "Add note of type `MCQ' to `%s' deck? " deck))
-      (let* ((stem (read-string-from-buffer "Question: " ""))
-	     (input-choices (gnosis-prompt-mcq-choices))
-	     (choices (car input-choices))
-	     (correct-choice (cadr input-choices)))
+      (let* ((input (gnosis-prompt-mcq-input))
+	     (stem (caar input))
+	     (choices (cdr (car input)))
+	     (correct-choice (cadr input)))
 	(gnosis-add-note--mcq :deck deck
 			      :question stem
 			      :choices choices
@@ -921,15 +921,24 @@ default value."
     (setf gnosis-previous-note-hint hint)
     hint))
 
-(defun gnosis-prompt-mcq-choices ()
-  "Prompt user for mcq choices."
-  (let* ((input (split-string
-		 (read-string-from-buffer "Options\nEach '-' corresponds to an option\n-Example Option 1\n-Example Option 2\nYou can add as many options as you want\nCorrect Option must be inside {}" "-\n-")
-		 "-" t "[\s\n]"))
-	 (correct-choice-index (or (cl-position-if (lambda (string) (string-match "{.*}" string)) input)
-				   (error "Correct choice not found.  Use {} to indicate the correct opiton")))
-	 (choices (mapcar (lambda (string) (replace-regexp-in-string "{\\|}" "" string)) input)))
-    (list choices (+ correct-choice-index 1))))
+(defun gnosis-prompt-mcq-input ()
+  "Prompt for MCQ content.
+
+Return a list of the form ((QUESTION CHOICES) CORRECT-CHOICE-INDEX)."
+  (let ((user-input (read-string-from-buffer (or (car gnosis-mcq-guidance) "")
+					     (or (cdr gnosis-mcq-guidance) ""))))
+    (unless (string-match-p gnosis-mcq-seperator user-input)
+      (error "Seperator %s not found" gnosis-mcq-seperator))
+    (let* ((input-seperated (split-string user-input gnosis-mcq-seperator t "[\s\n]"))
+	   (stem (car input-seperated))
+	   (input (split-string
+		   (mapconcat 'identity (cdr input-seperated) "\n")
+		   gnosis-mcq-option-seperator t "[\s\n]"))
+	   (correct-choice-index
+	    (or (cl-position-if (lambda (string) (string-match "{.*}" string)) input)
+		(error "Correct choice not found.  Use {} to indicate the correct option")))
+	   (choices (mapcar (lambda (string) (replace-regexp-in-string "{\\|}" "" string)) input)))
+      (list (cons stem choices) (+ correct-choice-index 1)))))
 
 (defun gnosis-prompt-tags--split (&optional previous-note-tags)
   "Prompt user for tags, split string by space.
