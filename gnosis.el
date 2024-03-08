@@ -1262,9 +1262,11 @@ Insert deck values:
 	(ef-increase (gnosis-get 'ef-increase 'decks `(= id ,id)))
 	(ef-decrease (gnosis-get 'ef-decrease 'decks `(= id ,id)))
 	(ef-threshold (gnosis-get 'ef-threshold 'decks `(= id ,id)))
-	(failure-factor (gnosis-get 'failure-factor 'decks `(= id ,id))))
-    (insert (format "\n:id %s\n:name \"%s\"\n:ef-increase %s\n:ef-decrease %s\n:ef-threshold %s\n:failure-factor %s"
-		    id name ef-increase ef-decrease ef-threshold failure-factor))))
+	(failure-factor (gnosis-get 'failure-factor 'decks `(= id ,id)))
+	(initial-interval (gnosis-get 'initial-interval 'decks `(= id ,id))))
+    (insert
+     (format "\n:id %s\n:name \"%s\"\n:ef-increase %s\n:ef-decrease %s\n:ef-threshold %s\n:failure-factor %s\n :initial-interval '%s"
+	     id name ef-increase ef-decrease ef-threshold failure-factor initial-interval))))
 
 (defun gnosis-assert-int-or-nil (value description)
   "Assert that VALUE is an integer or nil.
@@ -1291,22 +1293,29 @@ DESCRIPTION is a string that describes the value."
   (unless (or (null value) (numberp value))
     (error "Invalid value: %s, %s" value description)))
 
-(cl-defun gnosis-edit-update-deck (&key id name ef-increase ef-decrease ef-threshold failure-factor)
+(cl-defun gnosis-edit-update-deck (&key id name ef-increase ef-decrease ef-threshold failure-factor initial-interval)
   "Update deck with id value of ID.
 
 NAME: Name of deck
 EF-INCREASE: Easiness factor increase value
 EF-DECREASE: Easiness factor decrease value
 EF-THRESHOLD: Easiness factor threshold value
-FAILURE-FACTOR: Failure factor value"
+FAILURE-FACTOR: Failure factor value
+INITIAL-INTERVAL: Initial interval for notes of deck"
   (gnosis-assert-float-or-nil failure-factor "failure-factor must be a float less than 1" t)
   (gnosis-assert-int-or-nil ef-threshold "ef-threshold must be an integer")
   (gnosis-assert-number-or-nil ef-increase "ef-increase must be a number")
+  (cl-assert (or (and (listp initial-interval)
+		      (and (cl-every #'integerp initial-interval)
+			   (length= initial-interval 2)))
+		 (null initial-interval))
+	     nil "Initial-interval must be a list of 2 integers")
   (cl-loop for (field . value) in
 	   `((ef-increase . ,ef-increase)
 	     (ef-decrease . ,ef-decrease)
 	     (ef-threshold . ,ef-threshold)
 	     (failure-factor . ,failure-factor)
+	     (initial-interval . ',initial-interval)
 	     (name . ,name))
 	   when value
 	   do (gnosis-update 'decks `(= ,field ,value) `(= id ,id))))
