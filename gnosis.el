@@ -1136,8 +1136,7 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
   "Review cloze type note for ID."
   (let* ((main (gnosis-get 'main 'notes `(= id ,id)))
 	 (clozes (gnosis-get 'answer 'notes `(= id ,id)))
-	 (num 1)
-	 (clozes-num (length clozes))
+	 (num 1) ;; Number of clozes revealed
 	 (hint (gnosis-get 'options 'notes `(= id ,id))))
     (gnosis-display-cloze-sentence main clozes)
     (gnosis-display-image id)
@@ -1150,11 +1149,9 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
 			     (setf num (1+ num)))
 		    ;; Reveal cloze for wrong input, with `gnosis-face-false'
 		    (gnosis-display-cloze-reveal :replace cloze :success nil)
-		    ;; Do NOT remove the _when_ statement, unexpected
-		    ;; bugs occur if so depending on the number of
-		    ;; clozes.
-		    (when (< num clozes-num) (gnosis-review-cloze-reveal-unaswered clozes))
 		    (gnosis-display-cloze-user-answer (cdr input))
+		    ;; Reveal all clozes left with `gnosis-face-cloze-unanswered' face
+		    (gnosis-review-cloze-reveal-unaswered (nthcdr num clozes))
 		    (gnosis-review--update id nil)
 		    (cl-return)))
 	     ;; Update note after all clozes are revealed successfully
