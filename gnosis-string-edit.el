@@ -40,6 +40,32 @@
 (defvar gnosis-string-edit--success-callback)
 (defvar gnosis-string-edit--abort-callback)
 
+(defun gnosis-string-edit-ensure-empty-lines (&optional lines)
+  "Ensure that there are LINES number of empty lines before point.
+If LINES is nil or omitted, ensure that there is a single empty
+line before point.
+
+If called interactively, LINES is given by the prefix argument.
+
+If there are more than LINES empty lines before point, the number
+of empty lines is reduced to LINES.
+
+If point is not at the beginning of a line, a newline character
+is inserted before adjusting the number of empty lines."
+  (interactive "p")
+  (unless (bolp)
+    (insert "\n"))
+  (let ((lines (or lines 1))
+        (start (save-excursion
+                 (if (re-search-backward "[^\n]" nil t)
+                     (+ (point) 2)
+                   (point-min)))))
+    (cond
+     ((> (- (point) start) lines)
+      (delete-region (point) (- (point) (- (point) start lines))))
+     ((< (- (point) start) lines)
+      (insert (make-string (- lines (- (point) start)) ?\n))))))
+
 ;;;###autoload
 (cl-defun gnosis-string-edit (prompt string success-callback
                               &key abort-callback)
@@ -59,7 +85,7 @@ Also see `read-string-from-buffer'."
     (when prompt
       (let ((inhibit-read-only t))
         (insert prompt)
-        (ensure-empty-lines 0)
+        (gnosis-string-edit-ensure-empty-lines 0)
         (add-text-properties (point-min) (point)
                              (list 'intangible t
                                    'face 'gnosis-string-edit-prompt
