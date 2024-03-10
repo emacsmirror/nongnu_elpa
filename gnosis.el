@@ -455,7 +455,7 @@ Set SPLIT to t to split all input given."
 (defun gnosis--get-deck-name (&optional id)
   "Get deck name for ID, or prompt for deck name when ID is nil."
   (when (equal (gnosis-select 'name 'decks) nil)
-    (error "No decks found"))
+    (error "No decks found.  Please create a deck first with `gnosis-add-deck'"))
   (if id
       (gnosis-get 'name 'decks `(= id ,id))
     (funcall gnosis-completing-read-function "Deck: " (gnosis-select 'name 'decks))))
