@@ -5,9 +5,9 @@
 ;; Author: Thanos Apollo <public@thanosapollo.org>
 ;; Keywords: extensions
 ;; URL: https://thanosapollo.org/projects/gnosis
-;; Version: 0.2.0
+;; Version: 0.2.1
 
-;; Package-Requires: ((emacs "29.1") (emacsql "20240124"))
+;; Package-Requires: ((emacs "27.2") (emacsql "20240124") (compat "29.1.4.2"))
 
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -40,6 +40,8 @@
 (require 'cl-lib)
 
 (require 'gnosis-algorithm)
+(require 'gnosis-string-edit)
+
 (require 'vc)
 
 (defgroup gnosis nil
@@ -109,9 +111,6 @@ When nil, the image will be displayed at its original size."
 (unless (file-directory-p gnosis-dir)
   (make-directory gnosis-dir)
   (make-directory gnosis-images-dir))
-
-(defvar gnosis-db-file (expand-file-name "gnosis.db" gnosis-dir)
-  "Gnosis database file.")
 
 (defconst gnosis-db
   (emacsql-sqlite-open (expand-file-name "gnosis.db" gnosis-dir))
@@ -393,6 +392,28 @@ Refer to `gnosis-db-schema-extras' for more."
     (gnosis-display-image id 'extra-image)
     (fill-paragraph (insert "\n" (propertize extras 'face 'gnosis-face-extra)))))
 
+;;;###autoload
+(defun gnosis-read-string-from-buffer (prompt string)
+  "Switch to a new buffer to edit STRING in a recursive edit.
+The user finishes editing with \\<gnosis-string-edit-mode-map>\\[gnosis-string-edit-done], or aborts with \\<gnosis-string-edit-mode-map>\\[gnosis-string-edit-abort]).
+
+PROMPT will be inserted at the start of the buffer, but won't be
+included in the resulting string.  If nil, no prompt will be
+inserted in the buffer.
+
+Also see `gnosis-string-edit'."
+  (gnosis-string-edit
+   prompt
+   string
+   (lambda (edited)
+     (setq string (substring-no-properties edited))
+     (exit-recursive-edit))
+   :abort-callback (lambda ()
+                     (exit-recursive-edit)
+                     (error "Aborted edit")))
+  (recursive-edit)
+  string)
+
 (defun gnosis-display-next-review (id)
   "Display next interval for note ID."
   (let ((interval (gnosis-get 'next-rev 'review-log `(= id ,id))))
@@ -462,11 +483,11 @@ When called with a prefix, unsuspends all notes in deck."
 	 (confirm (y-or-n-p (if (= suspend 0) "Unsuspend all notes for deck? " "Suspend all notes for deck? "))))
     (when confirm
       (cl-loop for note in notes
-	     do (gnosis-update 'review-log `(= suspend ,suspend) `(= id ,note))
-	     (setq note-count (1+ note-count))
-	     finally (if (equal suspend 0)
-			 (message "Unsuspended %s notes" note-count)
-		       (message "Suspended %s notes" note-count))))))
+	       do (gnosis-update 'review-log `(= suspend ,suspend) `(= id ,note))
+	       (setq note-count (1+ note-count))
+	       finally (if (equal suspend 0)
+			   (message "Unsuspended %s notes" note-count)
+			 (message "Suspended %s notes" note-count))))))
 
 (defun gnosis-suspend-tag ()
   "Suspend all note(s) with tag.
@@ -508,11 +529,11 @@ NOTE: If a gnosis--insert-into fails, the whole transaction will be
   (let* ((deck-id (gnosis--get-deck-id deck))
 	 (initial-interval (gnosis-get-deck-initial-interval deck-id)))
     (emacsql-with-transaction gnosis-db
-    ;; Refer to `gnosis-db-schema-SCHEMA' e.g `gnosis-db-schema-review-log'
-    (gnosis--insert-into 'notes   `([nil ,type ,main ,options ,answer ,tags ,deck-id]))
-    (gnosis--insert-into 'review  `([nil ,gnosis-algorithm-ef ,gnosis-algorithm-ff ,initial-interval]))
-    (gnosis--insert-into 'review-log `([nil ,(gnosis-algorithm-date) ,(gnosis-algorithm-date) 0 0 0 0 ,suspend 0]))
-    (gnosis--insert-into 'extras `([nil ,extra ,image ,second-image])))))
+      ;; Refer to `gnosis-db-schema-SCHEMA' e.g `gnosis-db-schema-review-log'
+      (gnosis--insert-into 'notes   `([nil ,type ,main ,options ,answer ,tags ,deck-id]))
+      (gnosis--insert-into 'review  `([nil ,gnosis-algorithm-ef ,gnosis-algorithm-ff ,initial-interval]))
+      (gnosis--insert-into 'review-log `([nil ,(gnosis-algorithm-date) ,(gnosis-algorithm-date) 0 0 0 0 ,suspend 0]))
+      (gnosis--insert-into 'extras `([nil ,extra ,image ,second-image])))))
 
 ;; Adding note(s) consists firstly of a hidden 'gnosis-add-note--TYPE'
 ;; function that does the computation & error checking to generate a
@@ -560,7 +581,7 @@ Refer to `gnosis-add-note--mcq' & `gnosis-prompt-mcq-input' for more."
 			      :question stem
 			      :choices choices
 			      :correct-answer correct-choice
-			      :extra (read-string-from-buffer "Extra" "")
+			      :extra (gnosis-read-string-from-buffer "Extra" "")
 			      :images (gnosis-select-images)
 			      :tags (gnosis-prompt-tags--split gnosis-previous-note-tags))))))
 
@@ -590,10 +611,10 @@ Refer to `gnosis-add-note--basic' for more."
   (let ((deck (gnosis--get-deck-name)))
     (while (y-or-n-p (format "Add note of type `basic' to `%s' deck? " deck))
       (gnosis-add-note--basic :deck deck
-			      :question (read-string-from-buffer "Question: " "")
+			      :question (gnosis-read-string-from-buffer "Question: " "")
 			      :answer (read-string "Answer: ")
 			      :hint (gnosis-hint-prompt gnosis-previous-note-hint)
-			      :extra (read-string-from-buffer "Extra: " "")
+			      :extra (gnosis-read-string-from-buffer "Extra: " "")
 			      :images (gnosis-select-images)
 			      :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))))
 
@@ -628,7 +649,7 @@ Refer to `gnosis-add-note--double' for more."
 			       :question (read-string "Question: ")
 			       :answer (read-string "Answer: ")
 			       :hint (gnosis-hint-prompt gnosis-previous-note-hint)
-			       :extra (read-string-from-buffer "Extra" "")
+			       :extra (gnosis-read-string-from-buffer "Extra" "")
 			       :images (gnosis-select-images)
 			       :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))))
 
@@ -661,10 +682,10 @@ Refer to `gnosis-add-note--y-or-n' for more information about keyword values."
   (let ((deck (gnosis--get-deck-name)))
     (while (y-or-n-p (format "Add note of type `y-or-n' to `%s' deck? " deck))
       (gnosis-add-note--y-or-n :deck deck
-			       :question (read-string-from-buffer "Question: " "")
+			       :question (gnosis-read-string-from-buffer "Question: " "")
                                :answer (read-char-choice "Answer: [y] or [n]? " '(?y ?n))
 			       :hint (gnosis-hint-prompt gnosis-previous-note-hint)
-			       :extra (read-string-from-buffer "Extra" "")
+			       :extra (gnosis-read-string-from-buffer "Extra" "")
 			       :images (gnosis-select-images)
 			       :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))))
 
@@ -741,10 +762,10 @@ See `gnosis-add-note--cloze' for more reference."
   (let ((deck (gnosis--get-deck-name)))
     (while (y-or-n-p (format "Add note of type `cloze' to `%s' deck? " deck))
       (gnosis-add-note--cloze :deck deck
-			      :note (read-string-from-buffer (or (car gnosis-cloze-guidance) "")
-							     (or (cdr gnosis-cloze-guidance) ""))
+			      :note (gnosis-read-string-from-buffer (or (car gnosis-cloze-guidance) "")
+								    (or (cdr gnosis-cloze-guidance) ""))
 			      :hint (gnosis-hint-prompt gnosis-previous-note-hint)
-			      :extra (read-string-from-buffer "Extra" "")
+			      :extra (gnosis-read-string-from-buffer "Extra" "")
 			      :images (gnosis-select-images)
 			      :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))))
 
@@ -938,8 +959,8 @@ default value."
   "Prompt for MCQ content.
 
 Return a list of the form ((QUESTION CHOICES) CORRECT-CHOICE-INDEX)."
-  (let ((user-input (read-string-from-buffer (or (car gnosis-mcq-guidance) "")
-					     (or (cdr gnosis-mcq-guidance) ""))))
+  (let ((user-input (gnosis-read-string-from-buffer (or (car gnosis-mcq-guidance) "")
+						    (or (cdr gnosis-mcq-guidance) ""))))
     (unless (string-match-p gnosis-mcq-separator user-input)
       (error "Separator %s not found" gnosis-mcq-separator))
     (let* ((input-seperated (split-string user-input gnosis-mcq-separator t "[\s\n]"))
@@ -1236,21 +1257,15 @@ NOTES: List of note ids"
 
 This function creates an Emacs Lisp buffer named *gnosis-edit* on the
 same window and populates it with the values of the note identified by
-the specified ID.  The note values are inserted as keywords for the
-`gnosis-edit-update-note' function.
+the specified ID using `gnosis-export-note'.  The note values are
+inserted as keywords for the `gnosis-edit-update-note' function.
 
 To make changes, edit the values in the buffer, and then evaluate the
 `gnosis-edit-update-note' expression to save the changes.
 
-The note fields that will be shown in the buffer are:
-   - ID: The identifier of the note.
-   - MAIN: The main content of the note.
-   - OPTIONS: Additional options related to the note.
-   - ANSWER: The answer associated with the note.
-   - TAGS: The tags assigned to the note.
-   - EXTRA-NOTES: Any extra notes for the note.
-   - IMAGE: An image associated with the note, at the question prompt.
-   - SECOND-IMAGE: Image to display after an answer is given.
+RECURSIVE-EDIT: If t, exit `recursive-edit' after finishing editing.
+It should only be t when starting a recursive edit, when editing a
+note during a review session.
 
 The buffer automatically indents the expressions for readability.
 After finishing editing, evaluate the entire expression to apply the
@@ -1621,7 +1636,7 @@ to improve readability."
   "Output contents from deck with ID, formatted for gnosis dashboard."
   (cl-loop for item in (append (gnosis-select
 				'[name failure-factor ef-increase ef-decrease ef-threshold initial-interval]
-					      'decks `(= id ,id) t)
+				'decks `(= id ,id) t)
 			       (mapcar 'string-to-number (gnosis-dashboard-deck-note-count id)))
 	   when (listp item)
 	   do (cl-remove-if (lambda (x) (and (vectorp x) (zerop (length x)))) item)
@@ -1653,11 +1668,11 @@ to improve readability."
 				(string-to-number (tabulated-list-get-id)))
 			       (gnosis-dashboard-output-decks)
 			       (revert-buffer t t t))))
-  ;; (local-set-key (kbd "d") #'(lambda () (interactive)
-  ;; 			       (gnosis-delete-deck
-  ;; 				(string-to-number (tabulated-list-get-id)))
-  ;; 			       (gnosis-dashboard-output-decks)
-  ;; 			       (revert-buffer t t t))))
+;; (local-set-key (kbd "d") #'(lambda () (interactive)
+;; 			       (gnosis-delete-deck
+;; 				(string-to-number (tabulated-list-get-id)))
+;; 			       (gnosis-dashboard-output-decks)
+;; 			       (revert-buffer t t t))))
 
 (defun gnosis-dashboard-edit-note ()
   "Get note id from tabulated list and edit it."
