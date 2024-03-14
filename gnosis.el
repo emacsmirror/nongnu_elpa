@@ -1745,9 +1745,27 @@ DASHBOARD-TYPE: either 'Notes' or 'Decks' to display the respective dashboard."
 ;; Gnosis mode ;;
 ;;;;;;;;;;;;;;;;;
 
+;;;###autoload
+(define-minor-mode gnosis-modeline-mode
+  "Minor mode for showing gnosis total due notes on modeline."
+  :global t
+  :group 'gnosis
+  :lighter nil
+  (if gnosis-modeline-mode
+      (progn
+        (add-to-list 'global-mode-string '(:eval
+          (format " G:%d" (length (gnosis-review-get-due-notes)))))
+        (force-mode-line-update))
+    (setq global-mode-string
+          (seq-remove (lambda (item)
+                        (and (listp item) (eq (car item) :eval)
+                             (string-prefix-p " G:" (format "%s" (eval (cadr item))))))
+                      global-mode-string))
+    (force-mode-line-update)))
+
 (define-derived-mode gnosis-mode special-mode "Gnosis"
   "Gnosis Mode."
-  :interactive t
+  :interactive nil
   (read-only-mode 0)
   (display-line-numbers-mode 0)
   :lighter " gnosis-mode")
