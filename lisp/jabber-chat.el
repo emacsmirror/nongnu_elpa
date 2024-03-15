@@ -430,20 +430,24 @@ This function is used as an ewoc prettyprinter."
     ;; ...and body
     (pcase (car data)
       ((or :local :foreign)
-       (run-hook-with-args 'jabber-chat-printers (cadr data) (car data) :insert))
+       (run-hook-with-args 'jabber-chat-printers (cadr data) (car data) :insert)
+       (insert "\n"))
       ((or :muc-local :muc-foreign)
        (let ((args (list (cadr data) (car data) :insert)))
 	 (mapc (lambda (f) (apply f args))
-	       (append jabber-muc-printers jabber-chat-printers))))
+	       (append jabber-muc-printers jabber-chat-printers))
+         (insert "\n")))
       ((or :error :muc-error)
        (if (stringp (cadr data))
 	    (insert (jabber-propertize (cadr data) 'face 'jabber-chat-error))
-	 (jabber-chat-print-error (cadr data))))
+	 (jabber-chat-print-error (cadr data)))
+       (insert "\n"))
       ((or :notice :muc-notice)
-       (insert (cadr data)))
+       (insert (cadr data) "\n"))
       (:rare-time
        (insert (jabber-propertize (format-time-string jabber-rare-time-format (cadr data))
-                                  'face 'jabber-rare-time-face)))
+                                  'face 'jabber-rare-time-face)
+               "\n"))
       (:subscription-request
        (insert "This user requests subscription to your presence.\n")
        (when (and (stringp (cadr data)) (not (zerop (length (cadr data)))))
@@ -460,7 +464,8 @@ This function is used as an ewoc prettyprinter."
 		   (insert "\t")))
 	 (button "Mutual" 'jabber-subscription-accept-mutual)
 	 (button "One-way" 'jabber-subscription-accept-one-way)
-	 (button "Decline" 'jabber-subscription-decline))))
+	 (button "Decline" 'jabber-subscription-decline)
+         (insert "\n"))))
 
     (when jabber-chat-fill-long-lines
       (save-restriction

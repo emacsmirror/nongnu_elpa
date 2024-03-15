@@ -74,7 +74,7 @@ JC is the Jabber connection."
 
   (unless jabber-chat-ewoc
     (setq jabber-chat-ewoc
-	  (ewoc-create ewoc-pp nil "---"))
+	  (ewoc-create ewoc-pp nil "---\n" 'nosep))
     (goto-char (point-max))
     (put-text-property (point-min) (point) 'read-only t)
     (let ((inhibit-read-only t))
