@@ -138,4 +138,24 @@ JC is the Jabber connection."
 		(goto-char (marker-position goback)))))
 	  (forward-line 1))))))
 
+(defun jabber-chat-redisplay (&optional all-chats)
+  "Regenerate the EWOC text for one or more buffers.
+With prefix argument, regenerate all `jabber-chat-mode' buffers,
+otherwise regenerate the current buffer display."
+  (interactive "P")
+  (let ((current-buffer (current-buffer)))
+    (mapc
+     (lambda (buffer)
+       (with-current-buffer buffer
+         (ewoc-refresh jabber-chat-ewoc)
+         (forward-line)))
+     (seq-filter
+      (lambda (buffer)
+        (with-current-buffer buffer
+          (and (eq major-mode 'jabber-chat-mode)
+               (or all-chats
+                   (eq buffer current-buffer)))))
+      (buffer-list)))))
+
+
 (provide 'jabber-chatbuffer)
