@@ -211,6 +211,24 @@ added to the outgoing message.")
   "Float-time of earliest backlog entry inserted into buffer.
 nil if no backlog has been inserted.")
 
+(defface jabber-muc-presence-dim
+  '((t (:foreground "dark grey" :weight light :slant italic)))
+  "face for diminished presence notifications."
+  :group 'jabber-alerts)
+
+(defcustom jabber-muc-decorate-presence-patterns nil
+  "List of regular expressions and face pairs.
+When a presence notification matches a pattern, display it with
+associated face.  Ignore notification if face is `nil'."
+  :type '(repeat
+          :tag "Patterns"
+          (cons :format "%v"
+           (regexp :tag "Regexp")
+           (choice
+            (const :tag "Ignore" nil)
+            (face :tag "Face" :value jabber-muc-presence-dim))))
+  :group 'jabber-alerts)
+
 ;;;###autoload
 (defun jabber-chat-get-buffer (chat-with)
   "Return the chat buffer for chatting with CHAT-WITH (bare or full JID).
@@ -382,6 +400,17 @@ JC is the Jabber connection."
     ;; ...and send it...
     (jabber-send-sexp jc stanza-to-send)))
 
+(defun jabber-chat-muc-presence-highlight (message)
+  "Return non-`nil' to control MUC presence notification display.
+This matches :muc-notification message text with the list
+`jabber-muc-decorate-presence-patterns' and returns the pattern
+entry when a match is found, or nil if no matching pattern is
+found."
+  (seq-find
+   (lambda (pair)
+     (string-match (car pair) message nil 'inhibit-modify))
+   jabber-muc-decorate-presence-patterns))
+
 (defun jabber-chat-pp (data)
   "Pretty-print a <message/> stanza.
 \(car data) is either :local, :foreign, :error or :notice.
@@ -424,7 +453,8 @@ This function is used as an ewoc prettyprinter."
         (:muc-foreign
          (jabber-muc-print-prompt (cadr data) nil /me-p))
 	((or :muc-notice :muc-error)
-	 (jabber-muc-system-prompt)))
+         (unless (jabber-chat-muc-presence-highlight (cadr data))
+	   (jabber-muc-system-prompt))))
       (put-text-property prompt-start (point) 'field 'jabber-prompt))
 
     ;; ...and body
@@ -439,10 +469,18 @@ This function is used as an ewoc prettyprinter."
          (insert "\n")))
       ((or :error :muc-error)
        (if (stringp (cadr data))
-	    (insert (jabber-propertize (cadr data) 'face 'jabber-chat-error))
-	 (jabber-chat-print-error (cadr data)))
-       (insert "\n"))
-      ((or :notice :muc-notice)
+	    (insert (jabber-propertize (cadr data) 'face 'jabber-chat-error) "\n")
+	 (jabber-chat-print-error (cadr data))))
+      (:muc-notice
+       (let* ((highlight (jabber-chat-muc-presence-highlight (cadr data)))
+              (face (cdr-safe highlight)))
+         (cond
+          (face (insert
+                 (jabber-propertize (cadr data) 'face face)
+                 "\n"))
+          (highlight)
+          (t (insert (cadr data) "\n")))))
+      (:notice
        (insert (cadr data) "\n"))
       (:rare-time
        (insert (jabber-propertize (format-time-string jabber-rare-time-format (cadr data))
