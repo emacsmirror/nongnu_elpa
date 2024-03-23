@@ -229,6 +229,32 @@ associated face.  Ignore notification if face is `nil'."
             (face :tag "Face" :value jabber-muc-presence-dim))))
   :group 'jabber-alerts)
 
+(defcustom jabber-muc-decorate-presence-patterns-ring
+  '(nil
+    (("\\( enters the room ([^)]+)\\| has left the chatroom\\)$" . jabber-muc-presence-dim)
+      ("." . jabber-muc-presence-dim))
+    (("\\( enters the room ([^)]+)\\| has left the chatroom\\)$")
+      ("." . jabber-muc-presence-dim)))
+  "List lists of pattern/face pairs.
+Each list of pattern/face pairs are suitable values for
+`jabber-muc-decorate-presence-patterns'.  These pairs describe
+how to highlight presence events in MUC chat logs."
+  :type '(repeat
+          (repeat
+           :tag "Patterns"
+           (cons :format "%v"
+                 (regexp :tag "Regexp")
+                 (choice
+                  (const :tag "Ignore" nil)
+                  (face :tag "Face" :value jabber-muc-presence-dim)))))
+  :group 'jabber-alerts)
+
+(defvar jabber-muc-decorate-presence-ring-index 0
+  "Current position of `jabber-muc-decorate-presence-patterns-ring'.
+This is used by `jabber-chat-muc-presence-patterns-cycle' to
+update `jabber-muc-decorate-presence-patterns' with the next ring
+entry.")
+
 ;;;###autoload
 (defun jabber-chat-get-buffer (chat-with)
   "Return the chat buffer for chatting with CHAT-WITH (bare or full JID).
@@ -399,6 +425,21 @@ JC is the Jabber connection."
        (ewoc-enter-last jabber-chat-ewoc (list :local stanza-to-send :time (current-time)))))
     ;; ...and send it...
     (jabber-send-sexp jc stanza-to-send)))
+
+(defun jabber-chat-muc-presence-patterns-cycle ()
+  "Select next MUC presence highlight pattern.
+Update `jabber-muc-decorate-presence-patterns with the next entry
+in `jabber-muc-decorate-presence-patterns-ring', then update the
+current buffer to reflect the updated value."
+  (interactive)
+  (setq jabber-muc-decorate-presence-ring-index
+        (mod
+         (1+ jabber-muc-decorate-presence-ring-index)
+         (length jabber-muc-decorate-presence-patterns-ring)))
+  (setq jabber-muc-decorate-presence-patterns
+        (nth jabber-muc-decorate-presence-ring-index
+             jabber-muc-decorate-presence-patterns-ring))
+  (jabber-chat-redisplay))
 
 (defun jabber-chat-muc-presence-highlight (message)
   "Return non-`nil' to control MUC presence notification display.

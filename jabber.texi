@@ -518,7 +518,7 @@ jabber-muc-names}.  This gives a list of nicknames,
 * MUC Administration::
 @end menu
 
-@node Configuration, Invitations, , Groupchat
+@node Configuration, Presence announcements, , Groupchat
 @section Configuration
 
 @vindex jabber-muc-default-nicknames
@@ -555,32 +555,115 @@ accounts---if you connect several accounts, both will try to connect to
 the same chat rooms, or use the same nickname.  This will lead to
 confusion.
 
-@node Presence announcements
+@node Presence announcements, Invitations, Configuration, Groupchat
 @section Presence announcements
 
 @vindex jabber-muc-decorate-presence-patterns
+@vindex jabber-muc-decorate-presence-patterns-ring
+@cindex Invitations
+
+With the advent of mobile XMPP clients MUC chat buffers can be clogged
+with join/leave message, as mobile clients experience frequent network
+disconnect and reconnects.
 
 To limit, highlight, or deemphasize presences announcement messages,
+customize either the variable
+@code{jabber-muc-decorate-presence-patterns} or
+@code{jabber-muc-decorate-presence-patterns-ring}.  If you want to
+establish a single set of rules for displaying presence announcements,
 customize the variable @code{jabber-muc-decorate-presence-patterns}.
+If you prefer to view MUC chat buffers with different rules customize
+the variable @code{jabber-muc-decorate-presence-patterns-ring}.
 
-@code{jabber-muc-decorate-presence-patterns} is a list of pairs
-consisting of a regular expression and a face.  When a presence
-announcement matches a regular expression pattern, it will be
-displayed with the associated face.  If the face is @code{nil}, the
-announcement will not be added to the groupchat.  For example, the
-customization:
+The latter option allows, for example, join/leave presence
+announcements to be hidden by default, but displayed and re-hidden on
+demand.
+
+By default all MUC presence announcements are displayed as this has
+been historical behavior.
+
+@defopt jabber-muc-decorate-presence-patterns
+This value of this option can be customized to provide an initial,
+possibly unchanging, filter for displaying MUC presence announcements.
+
+This option is overwritten by the command
+@code{jabber-chat-muc-presence-patterns-cycle} when cycling though
+alternate display preferences.
+
+Making @code{jabber-muc-decorate-presence-patterns} buffer-local
+allows maintaining different MUC presence filters for each chat
+buffer.
+
+For example,
 
 @example
-'(jabber-muc-decorate-presence-patterns
-  '(("\\( enters the room ([^)]+)\\| has left the chatroom\\)$")
-    ("." . jabber-muc-presence-dim)))
+@group
+(defun local/chat-mode-hook ()
+  (setq-local jabber-muc-decorate-presence-patterns
+              '(("\\( enters the room ([^)]+)\\| has left the chatroom\\)$")
+                ("." . jabber-muc-presence-dim)))
+@end group
+
+@group
+(add-hook 'jabber-chat #'local/chat-mode-hook)
+@end group
 @end example
 
-This suppresses display of membership changes (join and leave events)
-and deemphasizes moderator action to set them off from surrounding
-chat messages.
+This both makes @code{jabber-muc-decorate-presence-patterns}
+buffer-local, and suppresses display of membership changes (join and
+leave events) and deemphasizes moderator action to set them off from
+surrounding chat messages.
 
-@node Invitations, Private messages, Configuration, Groupchat
+@end defopt
+
+@defopt jabber-muc-decorate-presence-patterns-ring
+
+This option specifies a list of values that can be assigned to
+@code{jabber-muc-decorate-presence-patterns} by the command
+@code{jabber-chat-muc-presence-patterns-cycle}.
+
+
+Each time the command @code{jabber-chat-muc-presence-patterns-cycle}
+is invoked it advances through the entries in
+@code{jabber-muc-decorate-presence-patterns-ring}, assigning the next
+value in the ring to @code{jabber-muc-decorate-presence-patterns}.  If
+the major mode of current buffer is @code{jabber-chat-mode}, after
+updating @code{jabber-muc-decorate-presence-patterns},
+@code{jabber-chat-muc-presence-patterns-cycle} redisplays the current
+buffer with the new display rules.
+@code{jabber-chat-muc-presence-patterns-cycle} wraps from the end of
+the pattern ring to the beginning of the ring.
+
+The default value for
+@code{jabber-muc-decorate-presence-patterns-ring} is:
+
+@example
+'(nil
+  (("\\( enters the room ([^)]+)\\| has left the chatroom\\)$" . jabber-muc-presence-dim)
+    ("." . jabber-muc-presence-dim))
+  (("\\( enters the room ([^)]+)\\| has left the chatroom\\)$")
+    ("." . jabber-muc-presence-dim)))
+@end example
+@end defopt
+
+The default value contains @code{nil} as the first entry to represent
+the default behavior (all presence announcements displayed).  Simply
+remove that first entry with @code{customize-variable} if you never
+want to view raw presence messages.
+
+@deffn command jabber-chat-muc-presence-patterns-cycle
+This command can be used to update
+@code{jabber-muc-decorate-presence-patterns} with the next value of
+@code{jabber-muc-decorate-presence-patterns-ring}.  If the major mode
+of the current buffer is @code{jabber-chat-mode}, the buffer is
+redisplayed using the new display rules.
+
+@code{jabber-chat-muc-presence-patterns-cycle} is bound to @kbd{C-x
+C-j C-h} by default.
+
+@end deffn
+
+@node Invitations, Private messages, Presence announcements, Groupchat
 @section Invitations
 
 @cindex Invitations
