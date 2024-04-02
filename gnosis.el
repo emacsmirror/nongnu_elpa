@@ -1680,17 +1680,15 @@ DECK: boolean value, t to specify notes from deck."
 				(string-to-number (tabulated-list-get-id)))
 			       (gnosis-dashboard-output-decks)
 			       (revert-buffer t t t))))
-;; (local-set-key (kbd "d") #'(lambda () (interactive)
-;; 			       (gnosis-delete-deck
-;; 				(string-to-number (tabulated-list-get-id)))
-;; 			       (gnosis-dashboard-output-decks)
-;; 			       (revert-buffer t t t))))
 
-(defun gnosis-dashboard-edit-note ()
-  "Get note id from tabulated list and edit it."
+(defun gnosis-dashboard-edit-note (&optional dashboard)
+  "Get note id from tabulated list and edit it.
+
+DASHBOARD: Dashboard to return to after editing."
   (interactive)
-  (let ((id (tabulated-list-get-id)))
-    (gnosis-edit-note (string-to-number id))
+  (let ((id (tabulated-list-get-id))
+	(dashboard (or dashboard "Notes")))
+    (gnosis-edit-note (string-to-number id) nil dashboard)
     (message "Editing note with id: %s" id)))
 
 (defun gnosis-dashboard-edit-deck ()
