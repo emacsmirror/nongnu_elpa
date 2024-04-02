@@ -1613,6 +1613,31 @@ to improve readability."
     ;; 				 (gnosis-dashboard-output-notes)
     ;; 				 (revert-buffer t t t)))
     (local-set-key (kbd "a") #'gnosis-add-note)))
+(cl-defun gnosis-collect-note-ids (&key (tags nil) (due nil) (deck nil))
+  "Return list of note ids based on TAGS, DUE, DECKS.
+
+TAGS: boolean value, t to specify tags.
+DUE: boolean value, t to specify due notes.
+DECK: boolean value, t to specify notes from deck."
+  (cl-assert (and (booleanp due) (booleanp tags) (booleanp deck)) nil "provide boolean value")
+  (cond ((and (null tags) (null due) (null deck))
+	 (gnosis-select 'id 'notes '1=1 t))
+	;; All due notes
+	((and (null tags) due (null deck))
+	 (gnosis-review-get-due-notes))
+	;; All notes for tags
+	((and tags (null due) (null deck))
+	 (gnosis-select-by-tag (gnosis-tag-prompt)))
+	;; All due notes for tags
+	((and tags due (null deck))
+	 (gnosis-select-by-tag (gnosis-tag-prompt :due t)))
+	;; All notes for deck
+	((and (null tags) (null due) deck)
+	 (gnosis-get-deck-notes nil nil))
+	;; All due notes for deck
+	((and (null tags) due deck)
+	 (gnosis-get-deck-notes nil t))))
+
 
 (defun gnosis-dashboard-deck-note-count (id)
   "Return total note count for deck with ID."
