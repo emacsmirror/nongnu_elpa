@@ -1513,11 +1513,10 @@ to improve readability."
 									   "Due notes of specified tag(s)"
 									   "All notes of tag(s)"))))
     (pcase review-type
-      ("Due notes" (gnosis-review--session (gnosis-review-get-due-notes)))
-      ("Due notes of deck" (gnosis-review--session (gnosis-get-deck-notes nil t)))
-      ("Due notes of specified tag(s)" (gnosis-review--session
-					(gnosis-select-by-tag (gnosis-tag-prompt :due t))))
-      ("All notes of tag(s)" (gnosis-review--session (gnosis-select-by-tag (gnosis-tag-prompt)))))))
+      ("Due notes" (gnosis-review--session (gnosis-collect-note-ids :due t)))
+      ("Due notes of deck" (gnosis-review--session (gnosis-collect-note-ids :due t :deck t)))
+      ("Due notes of specified tag(s)" (gnosis-review--session (gnosis-collect-note-ids :due t :tags t)))
+      ("All notes of tag(s)" (gnosis-review--session (gnosis-collect-note-ids :tags t))))))
 
 ;;; Database Schemas
 (defvar gnosis-db-schema-decks '([(id integer :primary-key :autoincrement)
