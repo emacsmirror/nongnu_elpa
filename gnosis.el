@@ -1281,7 +1281,8 @@ changes."
   (local-unset-key (kbd "C-c C-c"))
   (local-set-key (kbd "C-c C-c") (lambda () (interactive) (if recursive-edit
 							 (gnosis-edit-save-exit 'exit-recursive-edit)
-						       (gnosis-edit-save-exit 'gnosis-dashboard dashboard)))))
+						       (gnosis-edit-save-exit 'gnosis-dashboard dashboard
+									      gnosis-dashboard-note-ids)))))
 
 (defun gnosis-edit-deck--export (id)
   "Export deck with ID.
