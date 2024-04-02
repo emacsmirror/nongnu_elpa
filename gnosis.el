@@ -119,6 +119,9 @@ When nil, the image will be displayed at its original size."
 (defvar gnosis-testing nil
   "When t, warn user he is in a testing environment.")
 
+(defvar gnosis-dashboard-note-ids nil
+  "Store note ids for dashboard.")
+
 (defconst gnosis-db-version 2
   "Gnosis database version.")
 
