@@ -1709,22 +1709,26 @@ DASHBOARD: Dashboard to return to after editing."
 	tabulated-list-sort-key nil))
 
 ;;;###autoload
-(cl-defun gnosis-dashboard (&optional dashboard-type)
+(cl-defun gnosis-dashboard (&optional dashboard-type (note-ids nil))
   "Display gnosis dashboard.
+
+NOTE-IDS: List of note ids to display on dashboard.  When nil, prompt
+for dashboard type.
 
 DASHBOARD-TYPE: either 'Notes' or 'Decks' to display the respective dashboard."
   (interactive)
-  (let ((type (or dashboard-type
-		  (cadr (read-multiple-choice
-			 "Display dashboard for:"
-			 '((?N "Notes")
-			   (?D "Decks")))))))
-    (pop-to-buffer "*gnosis-dashboard*")
-    (gnosis-dashboard-mode)
-    (pcase type
-      ("Notes" (gnosis-dashboard-output-notes))
-      ("Decks" (gnosis-dashboard-output-decks)))
-    (tabulated-list-print t)))
+  (pop-to-buffer "*gnosis-dashboard*")
+  (gnosis-dashboard-mode)
+  (if note-ids (gnosis-dashboard-output-notes note-ids)
+    (pcase (or dashboard-type (cadr (read-multiple-choice
+				     "Display dashboard for:"
+				     '((?N "Notes")
+				       (?D "Decks")
+				       (?T "Tags")))))
+      ("Notes" (gnosis-dashboard-output-notes (gnosis-collect-note-ids)))
+      ("Decks" (gnosis-dashboard-output-decks))
+      ("Tags"  (gnosis-dashboard-output-notes (gnosis-collect-note-ids :tags t)))))
+  (tabulated-list-print t))
 
 (defun gnosis-db-init ()
   "Create gnosis essential directories & database."
