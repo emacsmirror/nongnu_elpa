@@ -888,8 +888,7 @@ Optionally, add cusotm PROMPT."
 
 (defun gnosis-select-by-tag (input-tags)
   "Return note ID's for every note with INPUT-TAGS."
-  (unless (listp input-tags)
-    (error "`input-tags' need to be a list"))
+  (cl-assert (listp input-tags) t "Input tags must be a list")
   (cl-loop for (id tags) in (gnosis-select '[id tags] 'notes)
            when (and (cl-every (lambda (tag) (member tag tags)) input-tags)
 		     (not (gnosis-suspended-p id)))
