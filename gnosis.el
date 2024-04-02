@@ -1582,37 +1582,6 @@ to improve readability."
            else
            collect (prin1-to-string item)))
 
-(defun gnosis-dashboard-output-notes ()
-  "Return note contents for gnosis dashboard."
-  (let ((max-id (apply 'max (gnosis-select 'id 'notes '1=1 t))))
-    (setq tabulated-list-format [("Main" 30 t)
-				 ("Options" 20 t)
-				 ("Answer" 25 t)
-				 ("Tags" 25 t)
-				 ("Type" 10 t)
-				 ("Suspend" 2 t)])
-    (tabulated-list-init-header)
-    (setf tabulated-list-entries
-	  (cl-loop for id from 1 to max-id
-		   for output = (gnosis-dashboard-output-note id)
-		   when output
-		   collect (list (number-to-string id) (vconcat output))))
-    ;; Keybindings, for editing, suspending, deleting notes.
-    ;; We use `local-set-key' to bind keys to the buffer to avoid
-    ;; conflicts when using the dashboard for displaying either notes
-    ;; or decks.
-    (local-set-key (kbd "e") #'gnosis-dashboard-edit-note)
-    (local-set-key (kbd "s") #'(lambda () (interactive)
-				 (gnosis-suspend-note
-				  (string-to-number (tabulated-list-get-id)))
-				 (gnosis-dashboard-output-notes)
-				 (revert-buffer t t t)))
-    ;; (local-set-key (kbd "d") #'(lambda () (interactive)
-    ;; 				 (gnosis-delete-note
-    ;; 				  (string-to-number (tabulated-list-get-id)))
-    ;; 				 (gnosis-dashboard-output-notes)
-    ;; 				 (revert-buffer t t t)))
-    (local-set-key (kbd "a") #'gnosis-add-note)))
 (cl-defun gnosis-collect-note-ids (&key (tags nil) (due nil) (deck nil))
   "Return list of note ids based on TAGS, DUE, DECKS.
 
@@ -1638,6 +1607,33 @@ DECK: boolean value, t to specify notes from deck."
 	((and (null tags) due deck)
 	 (gnosis-get-deck-notes nil t))))
 
+(defun gnosis-dashboard-output-notes (note-ids)
+  "Return NOTE-IDS contents on gnosis dashboard."
+  (cl-assert (listp note-ids) t "`note-ids' must be a list of note ids.")
+  (setf tabulated-list-format [("Main" 30 t)
+			       ("Options" 20 t)
+			       ("Answer" 25 t)
+			       ("Tags" 25 t)
+			       ("Type" 10 t)
+			       ("Suspend" 2 t)]
+	tabulated-list-entries (cl-loop for id in note-ids
+					for output = (gnosis-dashboard-output-note id)
+					when output
+					collect (list (number-to-string id) (vconcat output)))
+	gnosis-dashboard-note-ids note-ids)
+  (tabulated-list-init-header)
+  ;; Keybindings, for editing, suspending, deleting notes.
+  ;; We use `local-set-key' to bind keys to the buffer to avoid
+  ;; conflicts when using the dashboard for displaying either notes
+  ;; or decks.
+  (local-set-key (kbd "e") #'gnosis-dashboard-edit-note)
+  (local-set-key (kbd "s") #'(lambda () (interactive)
+			       (gnosis-suspend-note
+				(string-to-number (tabulated-list-get-id)))
+			       (gnosis-dashboard-output-notes)
+			       (revert-buffer t t t)))
+  (local-set-key (kbd "a") #'gnosis-add-note)
+  (local-set-key (kbd "r") #'gnosis-dashboard))
 
 (defun gnosis-dashboard-deck-note-count (id)
   "Return total note count for deck with ID."
