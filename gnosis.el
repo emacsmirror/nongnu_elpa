@@ -919,30 +919,25 @@ DATE is a list of the form (year month day)."
          (time-date (encode-time 0 0 0 (nth 2 date) (nth 1 date) (nth 0 date))))
     (not (time-less-p time-now time-date))))
 
-
-(cl-defun gnosis-tag-prompt (&key (prompt "Selected tags") (match nil) (due nil))
+(cl-defun gnosis-tag-prompt (&key (prompt "Selected tags:") (due nil))
   "PROMPT user to select tags, until they enter `q'.
-Prompt user to select tags, generated from `gnosis-get-tags--unique'.
 
+Prompt user to select tags, generated from `gnosis-get-tags--unique'.
 PROMPT: Prompt string value
 MATCH: Require match, t or nil value
-DUE: if t, return tags for due notes from `gnosis-due-tags'.
-Returns a list of unique tags."
-  (let* ((tags '())
-         (tag "")
-	 (use-prev (when gnosis-previous-note-tags
-		     (y-or-n-p (format "Use tags from previous note %s?" gnosis-previous-note-tags)))))
-    (if use-prev
-	(setf tags gnosis-previous-note-tags)
-      (while (not (string= tag "q"))
-	(setf tag (funcall gnosis-completing-read-function (concat prompt (format " %s (q for quit): " tags))
-			   (cons "q" (if due (gnosis-review-get-due-tags)
-				       (gnosis-get-tags--unique)))
-			   nil match))
-	(unless (or (string= tag "q") (member tag tags))
-          (push tag tags))))
-    (setf gnosis-previous-note-tags (if use-prev tags (reverse tags)))
-    (reverse tags)))
+DUE: if t, return tags for due notes from `gnosis-due-tags'."
+  (let ((tags '()))
+    (cond ((and due (null (gnosis-review-get-due-notes)))
+	   (message "No due notes."))
+	  (t (cl-loop for tag = (completing-read
+				 (concat prompt (format " (%s) (q for quit): " (mapconcat #'identity tags " ")))
+				 (cons "q" (if due (gnosis-review-get-due-tags)
+					     (gnosis-get-tags--unique)))
+				 nil t)
+		      until (string= tag "q")
+		      unless (member tag tags)
+		      do (push tag tags))
+	     tags))))
 
 (defun gnosis-hint-prompt (previous-hint &optional prompt)
   "Prompt user for hint.
