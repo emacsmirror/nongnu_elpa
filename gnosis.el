@@ -493,7 +493,7 @@ When called with a prefix, unsuspends all notes in deck."
   "Suspend all note(s) with tag.
 
 When called with a prefix, unsuspends all notes for tag."
-  (let ((notes (gnosis-select-by-tag (gnosis-tag-prompt nil t)))
+  (let ((notes (gnosis-select-by-tag (gnosis-tag-prompt)))
 	(suspend (if current-prefix-arg 0 1)))
     (cl-loop for note in notes
 	     do (gnosis-update 'review-log `(= suspend ,suspend) `(= id ,note)))))
@@ -1517,8 +1517,8 @@ to improve readability."
       ("Due notes" (gnosis-review--session (gnosis-review-get-due-notes)))
       ("Due notes of deck" (gnosis-review--session (gnosis-get-deck-due-notes)))
       ("Due notes of specified tag(s)" (gnosis-review--session
-					(gnosis-select-by-tag (gnosis-tag-prompt :match t :due t))))
-      ("All notes of tag(s)" (gnosis-review--session (gnosis-select-by-tag (gnosis-tag-prompt :match t)))))))
+					(gnosis-select-by-tag (gnosis-tag-prompt :due t))))
+      ("All notes of tag(s)" (gnosis-review--session (gnosis-select-by-tag (gnosis-tag-prompt)))))))
 
 ;;; Database Schemas
 (defvar gnosis-db-schema-decks '([(id integer :primary-key :autoincrement)
