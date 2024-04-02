@@ -799,7 +799,7 @@ Works both with {} and {{}} to make easier to import anki notes."
   "In STRING replace only the first occurrence of each word in WORDS with NEW."
   (cl-assert (listp words))
   (cl-loop for word in words
-           do (if (string-match (concat "\\b" (regexp-quote word) "\\b") string)
+           do (if (string-match (concat "\\b" word "\\b") string)
                   (setq string (replace-match new t t string))
                 ;; This error will be produced when user has edited a
                 ;; note to an invalid cloze.
