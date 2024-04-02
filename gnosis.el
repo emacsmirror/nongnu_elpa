@@ -1581,7 +1581,7 @@ to improve readability."
   (cl-loop for item in (append (gnosis-select '[main options answer tags type] 'notes `(= id ,id) t)
 			       (gnosis-select 'suspend 'review-log `(= id ,id) t))
            if (listp item)
-           collect (mapconcat #'identity item ", ")
+           collect (mapconcat #'identity item ",")
            else
            collect (prin1-to-string item)))
 
