@@ -1244,7 +1244,7 @@ NOTES: List of note ids"
       (put-text-property (match-beginning 0) (match-end 0) 'read-only t)))
   (goto-char (point-min)))
 
-(cl-defun gnosis-edit-note (id &optional (recursive-edit nil))
+(cl-defun gnosis-edit-note (id &optional (recursive-edit nil) (dashboard "Notes"))
   "Edit the contents of a note with the given ID.
 
 This function creates an Emacs Lisp buffer named *gnosis-edit* on the
@@ -1278,7 +1278,7 @@ changes."
   (local-unset-key (kbd "C-c C-c"))
   (local-set-key (kbd "C-c C-c") (lambda () (interactive) (if recursive-edit
 							 (gnosis-edit-save-exit 'exit-recursive-edit)
-						       (gnosis-edit-save-exit 'gnosis-dashboard "Notes")))))
+						       (gnosis-edit-save-exit 'gnosis-dashboard dashboard)))))
 
 (defun gnosis-edit-deck--export (id)
   "Export deck with ID.
