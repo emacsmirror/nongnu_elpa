@@ -931,7 +931,7 @@ MATCH: Require match, t or nil value
 DUE: if t, return tags for due notes from `gnosis-due-tags'."
   (let ((tags '()))
     (cond ((and due (null (gnosis-review-get-due-notes)))
-	   (message "No due notes."))
+	   (error "No due notes"))
 	  (t (cl-loop for tag = (completing-read
 				 (concat prompt (format " (%s) (q for quit): " (mapconcat #'identity tags " ")))
 				 (cons "q" (if due (gnosis-review-get-due-tags)
