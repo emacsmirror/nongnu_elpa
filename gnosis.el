@@ -898,16 +898,17 @@ Optionally, add cusotm PROMPT."
   "Return t if note with ID is suspended."
   (= (gnosis-get 'suspend 'review-log `(= id ,id)) 1))
 
-(defun gnosis-get-deck-due-notes (&optional deck-id)
-  "Return due notes for deck, with value of DECK-ID.
+(defun gnosis-get-deck-notes (&optional deck-id due)
+  "Return notes for deck, with value of DECK-ID.
 
-if DUE is t, return only due notes"
-  (let* ((deck (or deck-id (gnosis--get-deck-id)))
-	 (notes (gnosis-select 'id 'notes `(= deck-id ,deck) t)))
-    (cl-loop for note in notes
-	     when (and (not (gnosis-suspended-p note))
-		       (gnosis-review-is-due-p note))
-	     collect note)))
+If DUE is t, return only due notes."
+  (let ((notes (gnosis-select 'id 'notes `(= deck-id ,(or deck-id (gnosis--get-deck-id))) t)))
+    (if (or due nil)
+	(cl-loop for note in notes
+		 when (and (not (gnosis-suspended-p note))
+			   (gnosis-review-is-due-p note))
+		 collect note)
+      notes)))
 
 (defun gnosis-past-or-present-p (date)
   "Compare the input DATE with the current date.
@@ -1433,10 +1434,6 @@ SUSPEND: Suspend note, 0 for unsuspend, 1 for suspend"
 		     (gnosis-update 'notes `(= ,field ',value) `(= id ,id)))
 		    (t (gnosis-update 'notes `(= ,field ,value) `(= id ,id))))))
 
-(cl-defun gnosis-get-notes-for-deck (&optional (deck (gnosis--get-deck-id)))
-  "Return a list of ID vlaues for each note with value of deck-id DECK."
-  (gnosis-select 'id 'notes `(= deck-id ,deck) t))
-
 (defun gnosis-get-ef-increase (id)
   "Return ef-increase for note with value of id ID."
   (let ((ef-increase (gnosis-get 'ef-increase 'decks `(= id ,(gnosis-get 'deck-id 'notes `(= id ,id))))))
@@ -1514,7 +1511,7 @@ to improve readability."
 									   "All notes of tag(s)"))))
     (pcase review-type
       ("Due notes" (gnosis-review--session (gnosis-review-get-due-notes)))
-      ("Due notes of deck" (gnosis-review--session (gnosis-get-deck-due-notes)))
+      ("Due notes of deck" (gnosis-review--session (gnosis-get-deck-notes nil t)))
       ("Due notes of specified tag(s)" (gnosis-review--session
 					(gnosis-select-by-tag (gnosis-tag-prompt :due t))))
       ("All notes of tag(s)" (gnosis-review--session (gnosis-select-by-tag (gnosis-tag-prompt)))))))
