@@ -1247,7 +1247,7 @@ NOTES: List of note ids"
       (put-text-property (match-beginning 0) (match-end 0) 'read-only t)))
   (goto-char (point-min)))
 
-(cl-defun gnosis-edit-note (id &optional (recursive-edit nil) (dashboard "Notes"))
+(cl-defun gnosis-edit-note (id &optional (recursive-edit nil) (dashboard "notes"))
   "Edit the contents of a note with the given ID.
 
 This function creates an Emacs Lisp buffer named *gnosis-edit* on the
@@ -1372,7 +1372,7 @@ INITIAL-INTERVAL: Initial interval for notes of deck"
     (gnosis-edit-read-only-values (format ":id %s" id) ":name" ":ef-increase"
 				  ":ef-decrease" ":ef-threshold" ":failure-factor")
     (local-unset-key (kbd "C-c C-c"))
-    (local-set-key (kbd "C-c C-c") (lambda () (interactive) (gnosis-edit-save-exit 'gnosis-dashboard "Decks")))))
+    (local-set-key (kbd "C-c C-c") (lambda () (interactive) (gnosis-edit-save-exit 'gnosis-dashboard "decks")))))
 
 (cl-defun gnosis-edit-save-exit (&optional exit-func &rest args)
   "Save edits and exit using EXIT-FUNC, with ARGS."
@@ -1690,7 +1690,7 @@ DECK: boolean value, t to specify notes from deck."
 DASHBOARD: Dashboard to return to after editing."
   (interactive)
   (let ((id (tabulated-list-get-id))
-	(dashboard (or dashboard "Notes")))
+	(dashboard (or dashboard "notes")))
     (gnosis-edit-note (string-to-number id) nil dashboard)
     (message "Editing note with id: %s" id)))
 
@@ -1720,18 +1720,19 @@ for dashboard type.
 
 DASHBOARD-TYPE: either 'Notes' or 'Decks' to display the respective dashboard."
   (interactive)
-  (pop-to-buffer "*gnosis-dashboard*")
-  (gnosis-dashboard-mode)
-  (if note-ids (gnosis-dashboard-output-notes note-ids)
-    (pcase (or dashboard-type (cadr (read-multiple-choice
-				     "Display dashboard for:"
-				     '((?N "Notes")
-				       (?D "Decks")
-				       (?T "Tags")))))
-      ("Notes" (gnosis-dashboard-output-notes (gnosis-collect-note-ids)))
-      ("Decks" (gnosis-dashboard-output-decks))
-      ("Tags"  (gnosis-dashboard-output-notes (gnosis-collect-note-ids :tags t)))))
-  (tabulated-list-print t))
+  (let ((dashboard-type (or dashboard-type (cadr (read-multiple-choice
+						  "Display dashboard for:"
+						  '((?n "notes")
+						    (?d "decks")
+						    (?t "tags")))))))
+    (pop-to-buffer "*gnosis-dashboard*")
+    (gnosis-dashboard-mode)
+    (if note-ids (gnosis-dashboard-output-notes note-ids)
+      (pcase dashboard-type
+	("notes" (gnosis-dashboard-output-notes (gnosis-collect-note-ids)))
+	("decks" (gnosis-dashboard-output-decks))
+	("tags"  (gnosis-dashboard-output-notes (gnosis-collect-note-ids :tags t)))))
+    (tabulated-list-print t)))
 
 (defun gnosis-db-init ()
   "Create gnosis essential directories & database."
