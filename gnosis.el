@@ -373,19 +373,18 @@ If FALSE t, use gnosis-face-false face"
   "Display image for note ID.
 
 IMAGE is the image type to display, usually should be either `images'
-or `extra-image'.   Instead of using `extra-image' on review use
-`gnosis-display-extra'
+or `extra-image'.  Instead of using `extra-image' post review, prefer
+`gnosis-display-extra' which displays the `extra-image' as well.
 
-`images' is the image to display before user-input, while
-`extra-image' is the image to display after user-input.
-
-Refer to `gnosis-db-schema-extras' for more."
+Refer to `gnosis-db-schema-extras' for informations on images stored."
   (let* ((img (gnosis-get image 'extras `(= id ,id)))
 	 (path-to-image (expand-file-name (or img "") (file-name-as-directory gnosis-images-dir)))
 	 (image (create-image path-to-image 'png nil :width gnosis-image-width :height gnosis-image-height)))
-    (when img
-      (insert "\n\n")
-      (insert-image image))))
+    (cond ((and img (file-exists-p path-to-image))
+	   (insert "\n\n")
+	   (insert-image image))
+	  ((or (not img) (string-empty-p img))
+	   (insert "\n\n")))))
 
 (defun gnosis-display-extra (id)
   "Display extra information & extra-image for note ID."
