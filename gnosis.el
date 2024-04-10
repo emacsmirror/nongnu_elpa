@@ -1078,16 +1078,12 @@ SUCCESS is a boolean value, t for success, nil for failure."
     (gnosis-display-mcq-options id))
   (let* ((choices (gnosis-get 'options 'notes `(= id ,id)))
 	 (answer (nth (- (gnosis-get 'answer 'notes `(= id ,id)) 1) choices))
-	 (user-choice (gnosis-mcq-answer id)))
-    (if (string= answer user-choice)
-        (progn
-	  (gnosis-review--update id t)
-	  (message "Correct!"))
-      (gnosis-review--update id nil)
-      (message "False"))
+	 (user-choice (gnosis-mcq-answer id))
+	 (success (string= answer user-choice)))
     (gnosis-display-correct-answer-mcq answer user-choice)
     (gnosis-display-extra id)
-    (gnosis-display-next-review id)))
+    (gnosis-display-next-review id success)
+    success))
 
 (defun gnosis-review-basic (id)
   "Review basic type note for ID."
@@ -1099,8 +1095,8 @@ SUCCESS is a boolean value, t for success, nil for failure."
 	 (success (gnosis-compare-strings answer user-input)))
     (gnosis-display-basic-answer answer success user-input)
     (gnosis-display-extra id)
-    (gnosis-review--update id success)
-    (gnosis-display-next-review id)))
+    (gnosis-display-next-review id success)
+    success))
 
 (defun gnosis-review-y-or-n (id)
   "Review y-or-n type note for ID."
@@ -1112,8 +1108,8 @@ SUCCESS is a boolean value, t for success, nil for failure."
 	 (success (equal answer user-input)))
     (gnosis-display-y-or-n-answer :answer answer :success success)
     (gnosis-display-extra id)
-    (gnosis-review--update id success)
-    (gnosis-display-next-review id)))
+    (gnosis-display-next-review id success)
+    success))
 
 (defun gnosis-review-cloze--input (cloze)
   "Prompt for user input during cloze review.
@@ -1134,7 +1130,8 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
   (let* ((main (gnosis-get 'main 'notes `(= id ,id)))
 	 (clozes (gnosis-get 'answer 'notes `(= id ,id)))
 	 (num 1) ;; Number of clozes revealed
-	 (hint (gnosis-get 'options 'notes `(= id ,id))))
+	 (hint (gnosis-get 'options 'notes `(= id ,id)))
+	 (success nil))
     (gnosis-display-cloze-sentence main clozes)
     (gnosis-display-image id)
     (gnosis-display-hint hint)
@@ -1149,12 +1146,13 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
 		    (gnosis-display-cloze-user-answer (cdr input))
 		    ;; Reveal all clozes left with `gnosis-face-cloze-unanswered' face
 		    (gnosis-review-cloze-reveal-unaswered (nthcdr num clozes))
-		    (gnosis-review--update id nil)
+		    (setf success nil)
 		    (cl-return)))
 	     ;; Update note after all clozes are revealed successfully
-	     finally (gnosis-review--update id t)))
-  (gnosis-display-extra id)
-  (gnosis-display-next-review id))
+	     finally (setf success t))
+    (gnosis-display-extra id)
+    (gnosis-display-next-review id success)
+    success))
 
 (defun gnosis-review-note (id)
   "Start review for note with value of id ID, if note is unsuspended."
@@ -1229,7 +1227,7 @@ NOTES: List of note ids"
 				     (?s "suspend")
 				     (?e "edit")
 				     (?q "quit"))))
-			(?n (gnosis-review--update note success) (sit-for 10))
+			(?n (gnosis-review--update note success))
 			(?o (gnosis-review--update note (if success nil t)))
 			(?s (gnosis-suspend-note note))
 			(?e (gnosis-review--update note success)
