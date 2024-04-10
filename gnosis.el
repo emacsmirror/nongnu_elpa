@@ -416,9 +416,9 @@ Also see `gnosis-string-edit'."
   (recursive-edit)
   string)
 
-(defun gnosis-display-next-review (id)
-  "Display next interval for note ID."
-  (let ((interval (gnosis-get 'next-rev 'review-log `(= id ,id))))
+(defun gnosis-display-next-review (id success)
+  "Display next interval of note ID for SUCCESS."
+  (let ((interval (car (gnosis-review-algorithm id success))))
     (goto-char (point-max))
     (insert "\n\n"
 	    (propertize "Next review:" 'face 'gnosis-face-directions)
