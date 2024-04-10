@@ -1220,20 +1220,23 @@ NOTES: List of note ids"
 	(message "No notes for review.")
       (when (y-or-n-p (format "You have %s total notes for review, start session?" (length notes)))
 	(cl-loop for note in notes
-		 do (gnosis-review-note note)
-		 (setf note-count (1+ note-count))
-		 (pcase (car (read-multiple-choice
-			      "Note actions"
-			      '((?n "next")
-				(?s "suspend")
-				(?e "edit")
-				(?q "quit"))))
-		   (?n nil)
-		   (?s (gnosis-suspend-note note))
-		   (?e (gnosis-edit-note note t)
-		       (recursive-edit))
-		   (?q (gnosis-review-commit note-count)
-		       (cl-return)))
+		 do (let ((success (gnosis-review-note note)))
+		      (setf note-count (1+ note-count))
+		      (pcase (car (read-multiple-choice
+				   "Note actions"
+				   '((?n "next")
+				     (?o "override")
+				     (?s "suspend")
+				     (?e "edit")
+				     (?q "quit"))))
+			(?n (gnosis-review--update note success) (sit-for 10))
+			(?o (gnosis-review--update note (if success nil t)))
+			(?s (gnosis-suspend-note note))
+			(?e (gnosis-review--update note success)
+			    (gnosis-edit-note note t)
+			    (recursive-edit))
+			(?q (gnosis-review-commit note-count)
+			    (cl-return))))
 		 finally (gnosis-review-commit note-count))))))
 
 
