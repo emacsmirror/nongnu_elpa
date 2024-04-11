@@ -1216,6 +1216,16 @@ NOTE-NUM: The number of notes reviewed in the session."
       (gnosis-vc-push))
     (message "Review session finished.  %d notes reviewed." note-num)))
 
+(defun gnosis-review-override (id success)
+  "Override review result of note ID.
+
+Reverse the result of review SUCCESS."
+  (let ((success-new (if success nil t)))
+    (gnosis-display-next-review id success-new)
+    (if (y-or-n-p (format "Override review result as %s?" (if success-new "`SUCCESS'" "`FAILURE'")))
+	(gnosis-review--update id success-new)
+      (gnosis-review-override id success-new))))
+
 (defun gnosis-review--session (notes)
   "Start review session for NOTES.
 
@@ -1235,7 +1245,7 @@ NOTES: List of note ids"
 				     (?e "edit")
 				     (?q "quit"))))
 			(?n (gnosis-review--update note success))
-			(?o (gnosis-review--update note (if success nil t)))
+			(?o (gnosis-review-override note success))
 			(?s (gnosis-suspend-note note))
 			(?e (gnosis-review--update note success)
 			    (gnosis-edit-note note t)
