@@ -418,12 +418,19 @@ Also see `gnosis-string-edit'."
 
 (defun gnosis-display-next-review (id success)
   "Display next interval of note ID for SUCCESS."
-  (let ((interval (car (gnosis-review-algorithm id success))))
-    (goto-char (point-max))
-    (insert "\n\n"
-	    (propertize "Next review:" 'face 'gnosis-face-directions)
-	    " "
-	    (propertize (format "%s" interval) 'face 'gnosis-face-next-review))))
+  (let* ((interval (car (gnosis-review-algorithm id success)))
+	 (next-review-msg (format "\n\n%s %s"
+				  (propertize "Next review:" 'face 'gnosis-face-directions)
+				  (propertize (format "%s" interval) 'face 'gnosis-face-next-review))))
+    (if (search-backward "Next review" nil t)
+	;; Delete previous result, and override with new this should
+	;; occur only when used with `gnosis-review-override'
+        (progn (delete-region (point) (progn (end-of-line) (point)))
+	       (insert (propertize (replace-regexp-in-string "\n" "" next-review-msg)
+				   'face (if success 'gnosis-face-correct 'gnosis-face-false))))
+      ;; Default behaviour
+      (goto-char (point-max))
+      (insert next-review-msg))))
 
 (cl-defun gnosis--prompt (prompt &optional (downcase nil) (split nil))
   "PROMPT user for input until `q' is given.
