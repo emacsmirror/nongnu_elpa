@@ -4,7 +4,9 @@
 
 
 * Notes
-** TODO Add export deck
+** TODO Add export deck :priorityLow:
+** TODO Add support for org-mode
+Create gnosis notes using =org-mode=
 * Dashboard
 ** DONE Add Dashboard
 CLOSED: [2024-02-20 Tue 13:33]
@@ -14,36 +16,28 @@ CLOSED: [2024-02-20 Tue 13:33]
 + emacsql is quite fast, but the current tabulated-list implementation
   can be quite slow when having >30K notes. This should be improved upon in the feature
 ** TODO Dashboard: Add filtering/search 
-Search by tags, deck or LIKE question.
-
-* Algorithm
-** TODO Algorithm: changes for ef increase/decrease values :priorityHigh:
-+ Create a =gnosis-algorithm-ef-increase=, which will be used to
-  increase ef increase value upon X consecutive successful reviews  
+- [x] Search using tags
+- [] Search/Filter for main/answer
 * Misc
-** TODO Add export deck :priorityHigh:
 ** DONE Refactor =completing-read= UI choices
 CLOSED: [2024-02-17 Sat 21:59]
 /DONE on version 0.1.7/
 
-=completing-read= is not an ideal solution as a UI. If user has not
+=completing-read= is not an ideal solution as a UI.  If user has not
 enabled a completion system, such as vertico, this would make gnosis
 unusable.
 
 One possible solution is to create defcustom =gnosis-completing-read-function=
 that has ido-completing-read by default if vertico/ivy/helm is not
 enabled
-
 *** Notes
 Implemented =gnosis-completing-read-function=
 
-** TODO Use vc instead to stage & commit :priorityLow:
-** DONE Use vc instead git shell commands to push/pull
-CLOSED: [2024-02-17 Sat 21:59]
 
-/DONE on version 0.1.7/
+** TODO Use vc instead of shell commands :priorityLow:
+- [x] Push & Pull commands /DONE on version 0.1.7/
+- [] stage & commit 
 
-Implemented =gnosis-git-*= functions to handle git commands.
 
 
 
