@@ -1633,6 +1633,8 @@ DECK: boolean value, t to specify notes from deck."
 (defun gnosis-dashboard-output-notes (note-ids)
   "Return NOTE-IDS contents on gnosis dashboard."
   (cl-assert (listp note-ids) t "`note-ids' must be a list of note ids.")
+  (pop-to-buffer "*gnosis-dashboard*")
+  (gnosis-dashboard-mode)
   (setf tabulated-list-format [("Main" 30 t)
 			       ("Options" 20 t)
 			       ("Answer" 25 t)
@@ -1676,6 +1678,8 @@ DECK: boolean value, t to specify notes from deck."
 
 (defun gnosis-dashboard-output-decks ()
   "Return deck contents for gnosis dashboard."
+  (pop-to-buffer "*gnosis-dashboard*")
+  (gnosis-dashboard-mode)
   (setq tabulated-list-format [("Name" 15 t)
 			       ("failure-factor" 15 t)
 			       ("ef-increase" 15 t)
@@ -1742,8 +1746,6 @@ DASHBOARD-TYPE: either 'Notes' or 'Decks' to display the respective dashboard."
 						  '((?n "notes")
 						    (?d "decks")
 						    (?t "tags")))))))
-    (pop-to-buffer "*gnosis-dashboard*")
-    (gnosis-dashboard-mode)
     (if note-ids (gnosis-dashboard-output-notes note-ids)
       (pcase dashboard-type
 	("notes" (gnosis-dashboard-output-notes (gnosis-collect-note-ids)))
