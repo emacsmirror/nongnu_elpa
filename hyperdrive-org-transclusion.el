@@ -44,7 +44,7 @@ arguments LINK and PLIST."
   (and (or (string= "hyper" (org-element-property :type link))
            (and h/mode
                 (h/org--element-entry link)))
-       (h/message "Asynchronously transcluding at point %d, line %d..."
+       (h/message "Asynchronously transcluding hyperdrive file at point %d, line %d..."
                   (point) (org-current-line))
        #'h/org-transclusion-add-callback))
 
