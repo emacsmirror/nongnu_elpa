@@ -36,7 +36,7 @@
 
 ;;;; Functions
 
-(defun h/org-transclusion-add-file (link _plist)
+(defun h/org-transclusion-add (link _plist)
   "Return callback function when hyperdrive transclusion is appropriate.
 Otherwise, return nil.  Intended to be added to
 `org-transclusion-add-functions', which see for descriptions of
@@ -48,7 +48,7 @@ arguments LINK and PLIST."
                   (point) (org-current-line))
        #'h/org-transclusion-add-callback))
 
-(add-hook 'org-transclusion-add-functions #'h/org-transclusion-add-file)
+(add-hook 'org-transclusion-add-functions #'h/org-transclusion-add)
 
 ;; TODO: Consider excluding the modifications to a hyperdrive file buffer.
 ;;       Should only saved hyperdrive files be transcluded?
@@ -56,7 +56,7 @@ arguments LINK and PLIST."
 ;; TODO: hyperdrive directories?  (skip loading metadata?)
 
 ;; TODO: When `org-transclusion-add-src-lines' is pushed onto
-;; `org-transclusion-add-functions' after `h/org-transclusion-add-file', then an
+;; `org-transclusion-add-functions' after `h/org-transclusion-add', then an
 ;; error is signaled for hyperdrive transclusions with specified :lines (also
 ;; doesn't work with relative transclusion):
 ;; #+transclude: [[hyper://sw8dj5y9cs5nb8dzq1h9tbjt3b4u3sci6wfeckbsch9w3q7amipy/item2.org]]  :lines 1-10
