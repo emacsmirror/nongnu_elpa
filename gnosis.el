@@ -1614,14 +1614,16 @@ Return note ids for notes that match QUERY."
            else
            collect (prin1-to-string item)))
 
-(cl-defun gnosis-collect-note-ids (&key (tags nil) (due nil) (deck nil))
-  "Return list of note ids based on TAGS, DUE, DECKS.
+(cl-defun gnosis-collect-note-ids (&key (tags nil) (due nil) (deck nil) (query nil))
+  "Return list of note ids based on TAGS, DUE, DECKS, QUERY.
 
 TAGS: boolean value, t to specify tags.
 DUE: boolean value, t to specify due notes.
-DECK: boolean value, t to specify notes from deck."
-  (cl-assert (and (booleanp due) (booleanp tags) (booleanp deck)) nil "provide boolean value")
-  (cond ((and (null tags) (null due) (null deck))
+DECK: boolean value, t to specify notes from deck.
+QUERY: String value,"
+  (cl-assert (and (booleanp due) (booleanp tags) (booleanp deck) (or (stringp query) (null query)))
+	     nil "provide boolean value")
+  (cond ((and (null tags) (null due) (null deck) (null query))
 	 (gnosis-select 'id 'notes '1=1 t))
 	;; All due notes
 	((and (null tags) due (null deck))
@@ -1637,7 +1639,9 @@ DECK: boolean value, t to specify notes from deck."
 	 (gnosis-get-deck-notes nil nil))
 	;; All due notes for deck
 	((and (null tags) due deck)
-	 (gnosis-get-deck-notes nil t))))
+	 (gnosis-get-deck-notes nil t))
+	((and (null tags) (null due) (null deck) query)
+	 (gnosis-search-note query))))
 
 (defun gnosis-dashboard-output-notes (note-ids)
   "Return NOTE-IDS contents on gnosis dashboard."
@@ -1754,12 +1758,14 @@ DASHBOARD-TYPE: either 'Notes' or 'Decks' to display the respective dashboard."
 						  "Display dashboard for:"
 						  '((?n "notes")
 						    (?d "decks")
-						    (?t "tags")))))))
+						    (?t "tags")
+						    (?s "search")))))))
     (if note-ids (gnosis-dashboard-output-notes note-ids)
       (pcase dashboard-type
 	("notes" (gnosis-dashboard-output-notes (gnosis-collect-note-ids)))
 	("decks" (gnosis-dashboard-output-decks))
-	("tags"  (gnosis-dashboard-output-notes (gnosis-collect-note-ids :tags t)))))
+	("tags"  (gnosis-dashboard-output-notes (gnosis-collect-note-ids :tags t)))
+	("search" (gnosis-dashboard-output-notes (gnosis-collect-note-ids :query (read-string "Search for note: "))))))
     (tabulated-list-print t)))
 
 (defun gnosis-db-init ()
