@@ -1600,8 +1600,12 @@ to improve readability."
 
 Return note ids for notes that match QUERY."
   (cl-assert (or (stringp query) (eq query nil)))
-  (let ((query (or query (read-string "Search for note: "))))
-    (gnosis-select 'id 'notes `(like main ,(format "%%%s%%" query)) t)))
+  (let* ((query (or query (read-string "Search for note: ")))
+         (words (split-string query))
+         (clause `(and ,@(mapcar (lambda (word)
+                                   `(like main ,(format "%%%s%%" word)))
+                                 words))))
+    (gnosis-select 'id 'notes clause t)))
 
 ;; Dashboard
 
