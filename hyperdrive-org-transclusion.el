@@ -53,8 +53,6 @@ arguments LINK and PLIST."
 ;; TODO: Consider excluding the modifications to a hyperdrive file buffer.
 ;;       Should only saved hyperdrive files be transcluded?
 
-;; TODO: hyperdrive directories?  (skip loading metadata?)
-
 ;; TODO: When `org-transclusion-add-src-lines' is pushed onto
 ;; `org-transclusion-add-functions' after `h/org-transclusion-add', then an
 ;; error is signaled for hyperdrive transclusions with specified :lines (also
@@ -72,6 +70,9 @@ arguments LINK and PLIST."
                         (h/org--element-entry link)))
                ((cl-struct h/entry path etc) entry)
                ((map target) etc))
+    (when (hyperdrive--entry-directory-p entry)
+      (user-error "hyperdrive-org-transclusion:  Directory transclusion not supported: <%s>"
+                  (org-element-property :raw-link link)))
     (h/open
       entry
       :messagep nil
