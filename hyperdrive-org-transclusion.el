@@ -37,16 +37,17 @@
 ;;;; Functions
 
 (defun h/org-transclusion-add (link _plist)
-  "Return callback function when hyperdrive transclusion is appropriate.
-Otherwise, return nil.  Intended to be added to
-`org-transclusion-add-functions', which see for descriptions of
-arguments LINK and PLIST."
+  "Handle hyperdrive transclusion.
+Return `hyperdrive-org-transclusion-add-file' when
+transclusion link is a hyperdrive link.  Otherwise, return nil.
+Intended to be added to `org-transclusion-add-functions', which
+see for descriptions of arguments LINK and PLIST."
   (and (or (string= "hyper" (org-element-property :type link))
            (and h/mode
                 (h/org--element-entry link)))
        (h/message "Asynchronously transcluding hyperdrive file at point %d, line %d..."
                   (point) (org-current-line))
-       #'h/org-transclusion-add-callback))
+       #'h/org-transclusion-add-file))
 
 (add-hook 'org-transclusion-add-functions #'h/org-transclusion-add)
 
@@ -59,9 +60,9 @@ arguments LINK and PLIST."
 ;; doesn't work with relative transclusion):
 ;; #+transclude: [[hyper://sw8dj5y9cs5nb8dzq1h9tbjt3b4u3sci6wfeckbsch9w3q7amipy/item2.org]]  :lines 1-10
 
-(defun h/org-transclusion-add-callback (link plist copy)
+(defun h/org-transclusion-add-file (link plist copy)
   "Load hyperdrive file at LINK and call
-`org-transclusion-add-callback' with PAYLOAD, LINK, PLIST, COPY."
+`org-transclusion-add-payload' with PAYLOAD, LINK, PLIST, COPY."
   (pcase-let* ((target-mkr (point-marker))
                (entry (if (string= "hyper" (org-element-property :type link))
                           ;; Absolute link
@@ -95,7 +96,7 @@ arguments LINK and PLIST."
             (with-current-buffer target-buf
               (org-with-wide-buffer
                (goto-char (marker-position target-mkr))
-               (org-transclusion-add-callback payload link plist copy)))))))))
+               (org-transclusion-add-payload payload link plist copy)))))))))
 
 ;;;; Footer
 
