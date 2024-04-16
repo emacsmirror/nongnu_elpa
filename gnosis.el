@@ -1595,7 +1595,16 @@ to improve readability."
 				  (:foreign-key [id] :references notes [id]
 						:on-delete :cascade)))
 
+(defun gnosis-search-note (&optional query)
+  "Search for note QUERY.
+
+Return note ids for notes that match QUERY."
+  (cl-assert (or (stringp query) (eq query nil)))
+  (let ((query (or query (read-string "Search for note: "))))
+    (gnosis-select 'id 'notes `(like main ,(format "%%%s%%" query)) t)))
+
 ;; Dashboard
+
 (defun gnosis-dashboard-output-note (id)
   "Output contents for note with ID, formatted for gnosis dashboard."
   (cl-loop for item in (append (gnosis-select '[main options answer tags type] 'notes `(= id ,id) t)
