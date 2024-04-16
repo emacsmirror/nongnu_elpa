@@ -1612,7 +1612,7 @@ Return note ids for notes that match QUERY."
            if (listp item)
            collect (mapconcat #'identity item ",")
            else
-           collect (prin1-to-string item)))
+           collect (replace-regexp-in-string "\n" " " (format "%s" item))))
 
 (cl-defun gnosis-collect-note-ids (&key (tags nil) (due nil) (deck nil) (query nil))
   "Return list of note ids based on TAGS, DUE, DECKS, QUERY.
@@ -1741,7 +1741,6 @@ DASHBOARD: Dashboard to return to after editing."
 (define-derived-mode gnosis-dashboard-mode tabulated-list-mode "Gnosis Dashboard"
   "Major mode for displaying Gnosis dashboard."
   :keymap gnosis-dashboard-mode-map
-  (display-line-numbers-mode 0)
   (setq tabulated-list-padding 2
 	tabulated-list-sort-key nil))
 
