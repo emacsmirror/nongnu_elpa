@@ -1,0 +1,17 @@
+# id="care" points to <h2>: Transclude <h2> and content after <h2> also.
+#+transclude: [[hyper://aaj45d88g4eenu76rpmwzjiabsof1w8u6fufq6oogyhjk1ubygxy/needs-list.html#care]]
+
+# Org file with heading CUSTOM_ID: "care": Transclude only that heading.
+#+transclude: [[hyper://aaj45d88g4eenu76rpmwzjiabsof1w8u6fufq6oogyhjk1ubygxy/needs-list.org#%3A%3A%23care]]
+
+# Nonexistent target in Org file: Transclude entire file.
+#+transclude: [[hyper://aaj45d88g4eenu76rpmwzjiabsof1w8u6fufq6oogyhjk1ubygxy/needs-list.org#nonexistent-target]]
+
+# Nonexistent target in HTML file: Transclude entire file as Org.
+#+transclude: [[hyper://aaj45d88g4eenu76rpmwzjiabsof1w8u6fufq6oogyhjk1ubygxy/needs-list.html#nonexistent-target]]
+
+# Directory:  Signal error
+#+transclude: [[hyper://aaj45d88g4eenu76rpmwzjiabsof1w8u6fufq6oogyhjk1ubygxy/]]
+
+# File not found:  Signal error
+#+transclude: [[hyper://aaj45d88g4eenu76rpmwzjiabsof1w8u6fufq6oogyhjk1ubygxy/nonexistent-file]]
