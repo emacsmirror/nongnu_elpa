@@ -1690,7 +1690,7 @@ QUERY: String value,"
 			       (mapcar 'string-to-number (gnosis-dashboard-deck-note-count id)))
 	   when (listp item)
 	   do (cl-remove-if (lambda (x) (and (vectorp x) (zerop (length x)))) item)
-	   collect (prin1-to-string item)))
+	   collect (format "%s" item)))
 
 (defun gnosis-dashboard-output-decks ()
   "Return deck contents for gnosis dashboard."
@@ -1719,7 +1719,11 @@ QUERY: String value,"
 			       (gnosis-suspend-deck
 				(string-to-number (tabulated-list-get-id)))
 			       (gnosis-dashboard-output-decks)
-			       (revert-buffer t t t))))
+			       (revert-buffer t t t)))
+  (local-set-key (kbd "RET") #'(lambda () (interactive)
+				 (gnosis-dashboard "notes"
+						   (gnosis-collect-note-ids
+						    :deck (string-to-number (tabulated-list-get-id)))))))
 
 (defun gnosis-dashboard-edit-note (&optional dashboard)
   "Get note id from tabulated list and edit it.
