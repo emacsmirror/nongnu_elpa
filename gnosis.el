@@ -1670,9 +1670,8 @@ QUERY: String value,"
   ;; or decks.
   (local-set-key (kbd "e") #'gnosis-dashboard-edit-note)
   (local-set-key (kbd "s") #'(lambda () (interactive)
-			       (gnosis-suspend-note
-				(string-to-number (tabulated-list-get-id)))
-			       (gnosis-dashboard-output-notes)
+			       (gnosis-suspend-note (string-to-number (tabulated-list-get-id)))
+			       (gnosis-dashboard-output-notes gnosis-dashboard-note-ids)
 			       (revert-buffer t t t)))
   (local-set-key (kbd "a") #'gnosis-add-note)
   (local-set-key (kbd "r") #'gnosis-dashboard))
