@@ -895,12 +895,16 @@ Optionally, add cusotm PROMPT."
            nconc tags into all-tags
            finally return (delete-dups all-tags)))
 
-(defun gnosis-select-by-tag (input-tags)
-  "Return note ID's for every note with INPUT-TAGS."
+(defun gnosis-select-by-tag (input-tags &optional due)
+  "Return note ID's for every note with INPUT-TAGS.
+
+If DUE, return only due notes."
   (cl-assert (listp input-tags) t "Input tags must be a list")
+  (cl-assert (booleanp due) "Due value must be a boolean")
   (cl-loop for (id tags) in (gnosis-select '[id tags] 'notes)
            when (and (cl-every (lambda (tag) (member tag tags)) input-tags)
-		     (not (gnosis-suspended-p id)))
+		     (not (gnosis-suspended-p id))
+		     (if due (gnosis-review-is-due-p id) t))
            collect id))
 
 (defun gnosis-suspended-p (id)
@@ -936,17 +940,15 @@ PROMPT: Prompt string value
 MATCH: Require match, t or nil value
 DUE: if t, return tags for due notes from `gnosis-due-tags'."
   (let ((tags '()))
-    (cond ((and due (null (gnosis-review-get-due-notes)))
-	   (error "No due notes"))
-	  (t (cl-loop for tag = (completing-read
-				 (concat prompt (format " (%s) (q for quit): " (mapconcat #'identity tags " ")))
-				 (cons "q" (if due (gnosis-review-get-due-tags)
-					     (gnosis-get-tags--unique)))
-				 nil t)
-		      until (string= tag "q")
-		      unless (member tag tags)
-		      do (push tag tags))
-	     tags))))
+    (cl-loop for tag = (completing-read
+			(concat prompt (format " (%s) (q for quit): " (mapconcat #'identity tags " ")))
+			(cons "q" (if due (gnosis-review-get-due-tags)
+				    (gnosis-get-tags--unique)))
+			nil t)
+	     until (string= tag "q")
+	     unless (member tag tags)
+	     do (push tag tags))
+    tags))
 
 (defun gnosis-hint-prompt (previous-hint &optional prompt)
   "Prompt user for hint.
@@ -1535,7 +1537,7 @@ to improve readability."
 									   "All notes of tag(s)"))))
     (pcase review-type
       ("Due notes" (gnosis-review--session (gnosis-collect-note-ids :due t)))
-      ("Due notes of deck" (gnosis-review--session (gnosis-collect-note-ids :due t :deck t)))
+      ("Due notes of deck" (gnosis-review--session (gnosis-collect-note-ids :due t :deck (gnosis--get-deck-id))))
       ("Due notes of specified tag(s)" (gnosis-review--session (gnosis-collect-note-ids :due t :tags t)))
       ("All notes of tag(s)" (gnosis-review--session (gnosis-collect-note-ids :tags t))))))
 
@@ -1623,10 +1625,10 @@ Return note ids for notes that match QUERY."
 
 TAGS: boolean value, t to specify tags.
 DUE: boolean value, t to specify due notes.
-DECK: boolean value, t to specify notes from deck.
+DECK: Integer, specify deck id.
 QUERY: String value,"
-  (cl-assert (and (booleanp due) (booleanp tags) (booleanp deck) (or (stringp query) (null query)))
-	     nil "provide boolean value")
+  (cl-assert (and (booleanp due) (booleanp tags) (or (numberp deck) (null deck)) (or (stringp query) (null query)))
+	     nil "Incorrect value passed to `gnosis-collect-note-ids'")
   (cond ((and (null tags) (null due) (null deck) (null query))
 	 (gnosis-select 'id 'notes '1=1 t))
 	;; All due notes
@@ -1637,13 +1639,14 @@ QUERY: String value,"
 	 (gnosis-select-by-tag (gnosis-tag-prompt)))
 	;; All due notes for tags
 	((and tags due (null deck))
-	 (gnosis-select-by-tag (gnosis-tag-prompt :due t)))
+	 (gnosis-select-by-tag (gnosis-tag-prompt) t))
 	;; All notes for deck
 	((and (null tags) (null due) deck)
-	 (gnosis-get-deck-notes nil nil))
+	 (gnosis-get-deck-notes deck nil))
 	;; All due notes for deck
-	((and (null tags) due deck)
-	 (gnosis-get-deck-notes nil t))
+	((and (null tags) deck due)
+	 (gnosis-get-deck-notes deck t))
+	;; Query
 	((and (null tags) (null due) (null deck) query)
 	 (gnosis-search-note query))))
 
