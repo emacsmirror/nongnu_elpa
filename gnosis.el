@@ -1677,7 +1677,8 @@ QUERY: String value,"
 			       (gnosis-dashboard-output-notes gnosis-dashboard-note-ids)
 			       (revert-buffer t t t)))
   (local-set-key (kbd "a") #'gnosis-add-note)
-  (local-set-key (kbd "r") #'gnosis-dashboard))
+  (local-set-key (kbd "r") #'gnosis-dashboard)
+  (local-unset-key (kbd "RET")))
 
 (defun gnosis-dashboard-deck-note-count (id)
   "Return total note count for deck with ID."
