@@ -34,6 +34,14 @@
 
 ;;;; Check org-transclusion version v1.4.0 or later
 
+(eval-when-compile
+  (require 'cl-lib)
+  (require 'org)
+  (require 'org-element)
+
+  (require 'hyperdrive)
+  (require 'hyperdrive-org))
+
 (with-eval-after-load 'org-transclusion
   (require 'lisp-mnt)
   (let ((org-transclusion-version
