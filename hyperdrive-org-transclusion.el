@@ -66,6 +66,7 @@ Return `hyperdrive-org-transclusion-add-file' when
 transclusion link is a hyperdrive link.  Otherwise, return nil.
 Intended to be added to `org-transclusion-add-functions', which
 see for descriptions of arguments LINK and PLIST."
+      (declare-function hyperdrive-org-transclusion-add-file "hyperdrive-org")
       (and (or (string= "hyper" (org-element-property :type link))
                (and hyperdrive-mode
                     (hyperdrive-org--element-entry link)))
@@ -73,12 +74,23 @@ see for descriptions of arguments LINK and PLIST."
                                (point) (org-current-line))
            #'hyperdrive-org-transclusion-add-file))
 
+    (declare-function hyperdrive-org-transclusion-add "org-transclusion")
     (add-hook 'org-transclusion-add-functions #'hyperdrive-org-transclusion-add)
 
     (defun hyperdrive-org-transclusion-add-file (link plist copy)
       "Load hyperdrive file at LINK.
 Then call `org-transclusion-add-payload' with PAYLOAD, LINK,
 PLIST, COPY."
+      (declare-function hyperdrive-org-transclusion-error-handler "hyperdrive-org")
+      (declare-function org-transclusion-org-file-p "org-transclusion")
+      (declare-function org-transclusion-add-payload "org-transclusion")
+      (declare-function org-transclusion-content-org-buffer-or-element
+                        "org-transclusion")
+      (declare-function org-transclusion-html--html-p "org-transclusion-html")
+      (declare-function org-transclusion-html--target-content
+                        "org-transclusion-html")
+      (declare-function org-transclusion--insert-org-from-html-with-pandoc
+                        "org-transclusion-html")
       (pcase-let* ((target-mkr (point-marker))
                    (raw-link (org-element-property :raw-link link))
                    (entry (if (string= "hyper" (org-element-property :type link))
