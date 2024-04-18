@@ -60,22 +60,22 @@
 
 ;;;; Functions
 
-    (defun h/org-transclusion-add (link _plist)
+    (defun hyperdrive-org-transclusion-add (link _plist)
       "Handle hyperdrive transclusion.
 Return `hyperdrive-org-transclusion-add-file' when
 transclusion link is a hyperdrive link.  Otherwise, return nil.
 Intended to be added to `org-transclusion-add-functions', which
 see for descriptions of arguments LINK and PLIST."
       (and (or (string= "hyper" (org-element-property :type link))
-               (and h/mode
-                    (h/org--element-entry link)))
-           (h/message "Asynchronously transcluding hyperdrive file at point %d, line %d..."
-                      (point) (org-current-line))
-           #'h/org-transclusion-add-file))
+               (and hyperdrive-mode
+                    (hyperdrive-org--element-entry link)))
+           (hyperdrive-message "Asynchronously transcluding hyperdrive file at point %d, line %d..."
+                               (point) (org-current-line))
+           #'hyperdrive-org-transclusion-add-file))
 
-    (add-hook 'org-transclusion-add-functions #'h/org-transclusion-add)
+    (add-hook 'org-transclusion-add-functions #'hyperdrive-org-transclusion-add)
 
-    (defun h/org-transclusion-add-file (link plist copy)
+    (defun hyperdrive-org-transclusion-add-file (link plist copy)
       "Load hyperdrive file at LINK.
 Then call `org-transclusion-add-payload' with PAYLOAD, LINK,
 PLIST, COPY."
@@ -83,10 +83,10 @@ PLIST, COPY."
                    (raw-link (org-element-property :raw-link link))
                    (entry (if (string= "hyper" (org-element-property :type link))
                               ;; Absolute link
-                              (h/url-entry raw-link)
+                              (hyperdrive-url-entry raw-link)
                             ;; Relative link
-                            (h/org--element-entry link)))
-                   ((cl-struct h/entry hyperdrive path etc) entry)
+                            (hyperdrive-org--element-entry link)))
+                   ((cl-struct hyperdrive-entry hyperdrive path etc) entry)
                    ((map target) etc)
                    (tc-type))
         (when (hyperdrive--entry-directory-p entry)
@@ -106,51 +106,51 @@ PLIST, COPY."
         ;; HTML so it can call `org-transclusion--insert-org-from-html-with-pandoc'.
 
         ;; - Avoid unnecessarily loading major mode based on content type.
-        (h/fill entry
-                :then
-                (lambda (entry)
-                  (h/fill-latest-version hyperdrive)
-                  (h/persist hyperdrive)
-                  (h/api 'get (he/url entry) :noquery t :as 'buffer
-                         :then
-                         (lambda (_buffer)
-                           (when-let ((target-buf (marker-buffer target-mkr)))
-                             (cond ((org-transclusion-html--html-p (current-buffer)) ; HTML
-                                    (let ((dom (libxml-parse-html-region)))
-                                      (when (dom-by-id dom (format "\\`%s\\'" target))
-                                        ;; Page contains id element matching link target.
-                                        (erase-buffer)
-                                        (dom-print
-                                         (org-transclusion-html--target-content dom target)))
-                                      (org-transclusion--insert-org-from-html-with-pandoc)
-                                      ;; Use "org"-prefixed `tc-type' since HTML is converted
-                                      ;; to Org mode.
-                                      (setf tc-type "org-html-hyper")))
-                                   ((org-transclusion-org-file-p path) ; Org-mode
-                                    (when target
-                                      (org-mode)
-                                      (let ((org-link-search-must-match-exact-headline t))
-                                        (when (with-demoted-errors "hyperdrive-org-transclusion error:\n%s\ntranscluding whole file..."
-                                                (org-link-search (format "%s" target)))
-                                          (org-narrow-to-subtree))))
-                                    (setf tc-type "org-hyper"))
-                                   (t   ; All other file types
-                                    (setf tc-type "others-hyper")))
-                             (let* ((payload-without-type
-                                     (org-transclusion-content-org-buffer-or-element
-                                      nil plist))
-                                    (payload
-                                     (append `(:tc-type ,tc-type) payload-without-type)))
-                               (with-current-buffer target-buf
-                                 (org-with-wide-buffer
-                                  (goto-char (marker-position target-mkr))
-                                  (org-transclusion-add-payload payload link plist copy))))))
-                         :else (apply-partially #'h/org-transclusion-error-handler raw-link)))
-                :else (apply-partially #'h/org-transclusion-error-handler raw-link))))
+        (hyperdrive-fill entry
+          :then
+          (lambda (entry)
+            (hyperdrive-fill-latest-version hyperdrive)
+            (hyperdrive-persist hyperdrive)
+            (hyperdrive-api 'get (hyperdrive-entry-url entry) :noquery t :as 'buffer
+              :then
+              (lambda (_buffer)
+                (when-let ((target-buf (marker-buffer target-mkr)))
+                  (cond ((org-transclusion-html--html-p (current-buffer)) ; HTML
+                         (let ((dom (libxml-parse-html-region)))
+                           (when (dom-by-id dom (format "\\`%s\\'" target))
+                             ;; Page contains id element matching link target.
+                             (erase-buffer)
+                             (dom-print
+                              (org-transclusion-html--target-content dom target)))
+                           (org-transclusion--insert-org-from-html-with-pandoc)
+                           ;; Use "org"-prefixed `tc-type' since HTML is converted
+                           ;; to Org mode.
+                           (setf tc-type "org-html-hyper")))
+                        ((org-transclusion-org-file-p path) ; Org-mode
+                         (when target
+                           (org-mode)
+                           (let ((org-link-search-must-match-exact-headline t))
+                             (when (with-demoted-errors "hyperdrive-org-transclusion error:\n%s\ntranscluding whole file..."
+                                     (org-link-search (format "%s" target)))
+                               (org-narrow-to-subtree))))
+                         (setf tc-type "org-hyper"))
+                        (t   ; All other file types
+                         (setf tc-type "others-hyper")))
+                  (let* ((payload-without-type
+                          (org-transclusion-content-org-buffer-or-element
+                           nil plist))
+                         (payload
+                          (append `(:tc-type ,tc-type) payload-without-type)))
+                    (with-current-buffer target-buf
+                      (org-with-wide-buffer
+                       (goto-char (marker-position target-mkr))
+                       (org-transclusion-add-payload payload link plist copy))))))
+              :else (apply-partially #'hyperdrive-org-transclusion-error-handler raw-link)))
+          :else (apply-partially #'hyperdrive-org-transclusion-error-handler raw-link))))
 
 ;;;; Error handling
 
-    (defun h/org-transclusion-error-handler (url err)
+    (defun hyperdrive-org-transclusion-error-handler (url err)
       (let ((buf (get-buffer-create (format "*hyperdrive-org-transclusion-error <%s>" url))))
         (with-current-buffer buf
           (erase-buffer)
@@ -162,11 +162,4 @@ PLIST, COPY."
 
 (provide 'hyperdrive-org-transclusion)
 
-;; Local Variables:
-;; read-symbol-shorthands: (
-;;   ("he//" . "hyperdrive-entry--")
-;;   ("he/"  . "hyperdrive-entry-")
-;;   ("h//"  . "hyperdrive--")
-;;   ("h/"   . "hyperdrive-"))
-;; End:
 ;;; hyperdrive-org-transclusion.el ends here
