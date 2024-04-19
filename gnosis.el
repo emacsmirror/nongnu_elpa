@@ -516,6 +516,18 @@ When called with a prefix, unsuspends all notes for tag."
       ("Tag" (gnosis-suspend-tag))
       (_ (message "Not ready yet.")))))
 
+(defun gnosis-generate-id (&optional length)
+  "Generate a unique note ID.
+
+LENGTH: lenghth of id, default to 12."
+  (let* ((length (or length 12))
+         (max-val (expt 10 length))
+         (min-val (expt 10 (1- length)))
+         (id (+ (random (- max-val min-val)) min-val)))
+    (if (member id (gnosis-select 'id 'notes '1=1 t))
+        (gnosis-generate-id length)
+      id)))
+
 (defun gnosis-add-note-fields (deck type main options answer extra tags suspend image second-image)
   "Insert fields for new note.
 
@@ -536,13 +548,15 @@ NOTE: If a gnosis--insert-into fails, the whole transaction will be
  (or at least it should).  Else there will be an error for foreign key
  constraint."
   (let* ((deck-id (gnosis--get-deck-id deck))
-	 (initial-interval (gnosis-get-deck-initial-interval deck-id)))
+	 (initial-interval (gnosis-get-deck-initial-interval deck-id))
+	 (note-id (gnosis-generate-id)))
     (emacsql-with-transaction gnosis-db
       ;; Refer to `gnosis-db-schema-SCHEMA' e.g `gnosis-db-schema-review-log'
-      (gnosis--insert-into 'notes   `([nil ,type ,main ,options ,answer ,tags ,deck-id]))
-      (gnosis--insert-into 'review  `([nil ,gnosis-algorithm-ef ,gnosis-algorithm-ff ,initial-interval]))
-      (gnosis--insert-into 'review-log `([nil ,(gnosis-algorithm-date) ,(gnosis-algorithm-date) 0 0 0 0 ,suspend 0]))
-      (gnosis--insert-into 'extras `([nil ,extra ,image ,second-image])))))
+      (gnosis--insert-into 'notes `([,note-id ,type ,main ,options ,answer ,tags ,deck-id]))
+      (gnosis--insert-into 'review  `([,note-id ,gnosis-algorithm-ef ,gnosis-algorithm-ff ,initial-interval]))
+      (gnosis--insert-into 'review-log `([,note-id ,(gnosis-algorithm-date)
+						   ,(gnosis-algorithm-date) 0 0 0 0 ,suspend 0]))
+      (gnosis--insert-into 'extras `([,note-id ,extra ,image ,second-image])))))
 
 ;; Adding note(s) consists firstly of a hidden 'gnosis-add-note--TYPE'
 ;; function that does the computation & error checking to generate a
