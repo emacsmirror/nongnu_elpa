@@ -257,18 +257,19 @@ Example:
   "From TABLE use where to delete VALUE."
   (emacsql gnosis-db `[:delete :from ,table :where ,value]))
 
-;; (defun gnosis-delete-note (id)
-;;   "Delete note with ID."
-;;   (when (y-or-n-p "Delete note?")
-;;     (emacsql-with-transaction gnosis-db (gnosis--delete 'notes `(= id ,id)))))
+(defun gnosis-delete-note (id)
+  "Delete note with ID."
+  (when (y-or-n-p "Delete note?")
+    (emacsql-with-transaction gnosis-db (gnosis--delete 'notes `(= id ,id)))))
 
-;; (defun gnosis-delete-deck (id)
-;;   "Delete deck with ID."
-;;   (interactive (list (gnosis--get-deck-id)))
-;;   (let ((deck-name (gnosis--get-deck-name id)))
-;;     (when (y-or-n-p (format "Delete deck `%s'? " deck-name))
-;;       (gnosis--delete 'decks `(= id ,id))
-;;       (message "Deleted deck `%s'" deck-name))))
+(defun gnosis-delete-deck (&optional id)
+  "Delete deck with ID."
+  (interactive)
+  (let* ((id (or id (gnosis--get-deck-id)))
+	 (deck-name (gnosis--get-deck-name id)))
+    (when (y-or-n-p (format "Delete deck `%s'? " deck-name))
+      (emacsql-with-transaction gnosis-db (gnosis--delete 'decks `(= id ,id)))
+      (message "Deleted deck `%s'" deck-name))))
 
 (defun gnosis-replace-item-at-index (index new-item list)
   "Replace item at INDEX in LIST with NEW-ITEM."
@@ -1145,8 +1146,8 @@ If user-input is equal to CLOZE, return t."
   "Reveal CLOZES.
 
 Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
-  (cl-loop for cloze in clozes do (gnosis-display-cloze-reveal :replace cloze
-							       :face 'gnosis-face-cloze-unanswered)))
+  (cl-loop for cloze in clozes
+	   do (gnosis-display-cloze-reveal :replace cloze :face 'gnosis-face-cloze-unanswered)))
 
 (defun gnosis-review-cloze (id)
   "Review cloze type note for ID."
@@ -1692,6 +1693,10 @@ QUERY: String value,"
 			       (revert-buffer t t t)))
   (local-set-key (kbd "a") #'gnosis-add-note)
   (local-set-key (kbd "r") #'gnosis-dashboard)
+  (local-set-key (kbd "d") #'(lambda () (interactive)
+			       (gnosis-delete-note (string-to-number (tabulated-list-get-id)))
+			       (gnosis-dashboard-output-notes gnosis-dashboard-note-ids)
+			       (revert-buffer t t t)))
   (local-unset-key (kbd "RET")))
 
 (defun gnosis-dashboard-deck-note-count (id)
@@ -1729,16 +1734,20 @@ QUERY: String value,"
 		   when output
 		   collect (list (number-to-string id) (vconcat output)))))
   (local-set-key (kbd "e") #'gnosis-dashboard-edit-deck)
-  (local-set-key (kbd "a") #'(lambda () (interactive)
+  (local-set-key (kbd "a") #'(lambda () "Add deck & refresh" (interactive)
 			       (gnosis-add-deck (read-string "Deck name: "))
 			       (gnosis-dashboard-output-decks)
 			       (revert-buffer t t t)))
-  (local-set-key (kbd "s") #'(lambda () (interactive)
+  (local-set-key (kbd "s") #'(lambda () "Suspend notes" (interactive)
 			       (gnosis-suspend-deck
 				(string-to-number (tabulated-list-get-id)))
 			       (gnosis-dashboard-output-decks)
 			       (revert-buffer t t t)))
-  (local-set-key (kbd "RET") #'(lambda () (interactive)
+  (local-set-key (kbd "d") #'(lambda () "Delete deck" (interactive)
+			       (gnosis-delete-deck (string-to-number (tabulated-list-get-id)))
+			       (gnosis-dashboard-output-decks)
+			       (revert-buffer t t t)))
+  (local-set-key (kbd "RET") #'(lambda () "View notes of deck" (interactive)
 				 (gnosis-dashboard "notes"
 						   (gnosis-collect-note-ids
 						    :deck (string-to-number (tabulated-list-get-id)))))))
