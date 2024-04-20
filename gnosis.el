@@ -585,8 +585,10 @@ is the image to display post review
     (error "Correct answer value must be the index number of the correct answer"))
   (gnosis-add-note-fields deck "mcq" question choices correct-answer extra tags suspend (car images) (cdr images)))
 
-(defun gnosis-add-note-mcq ()
+(defun gnosis-add-note-mcq (deck)
   "Add note(s) of type `MCQ' interactively to selected deck.
+
+DECK: Deck to add gnosis
 
 Prompt user for input to create a note of type `MCQ'.
 
@@ -595,19 +597,17 @@ each option is seperated by `gnosis-mcq-option-separator'.  The correct
 answer is surrounded by curly braces, e.g {Correct Answer}.
 
 Refer to `gnosis-add-note--mcq' & `gnosis-prompt-mcq-input' for more."
-  (let ((deck (gnosis--get-deck-name)))
-    (while (y-or-n-p (format "Add note of type `MCQ' to `%s' deck? " deck))
-      (let* ((input (gnosis-prompt-mcq-input))
-	     (stem (caar input))
-	     (choices (cdr (car input)))
-	     (correct-choice (cadr input)))
-	(gnosis-add-note--mcq :deck deck
-			      :question stem
-			      :choices choices
-			      :correct-answer correct-choice
-			      :extra (gnosis-read-string-from-buffer "Extra" "")
-			      :images (gnosis-select-images)
-			      :tags (gnosis-prompt-tags--split gnosis-previous-note-tags))))))
+  (let* ((input (gnosis-prompt-mcq-input))
+	 (stem (caar input))
+	 (choices (cdr (car input)))
+	 (correct-choice (cadr input)))
+    (gnosis-add-note--mcq :deck deck
+			  :question stem
+			  :choices choices
+			  :correct-answer correct-choice
+			  :extra (gnosis-read-string-from-buffer "Extra" "")
+			  :images (gnosis-select-images)
+			  :tags (gnosis-prompt-tags--split gnosis-previous-note-tags))))
 
 (cl-defun gnosis-add-note--basic (&key deck question hint answer
 				       extra (images nil) (tags) (suspend 0))
@@ -624,23 +624,23 @@ TAGS: Tags used to organize notes
 SUSPEND: Binary value of 0 & 1, when 1 note will be ignored."
   (gnosis-add-note-fields deck "basic" question hint answer extra tags suspend (car images) (cdr images)))
 
-(defun gnosis-add-note-basic ()
+(defun gnosis-add-note-basic (deck)
   "Add note(s) of type `Basic' interactively to selected deck.
+
+DECK: Deck name to add gnosis
 
 Basic note type is a simple question/answer note, where user first
 sees a \"main\" part, which is usually a question, and he is prompted
 to input the answer.
 
 Refer to `gnosis-add-note--basic' for more."
-  (let ((deck (gnosis--get-deck-name)))
-    (while (y-or-n-p (format "Add note of type `basic' to `%s' deck? " deck))
-      (gnosis-add-note--basic :deck deck
-			      :question (gnosis-read-string-from-buffer "Question: " "")
-			      :answer (read-string "Answer: ")
-			      :hint (gnosis-hint-prompt gnosis-previous-note-hint)
-			      :extra (gnosis-read-string-from-buffer "Extra: " "")
-			      :images (gnosis-select-images)
-			      :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))))
+  (gnosis-add-note--basic :deck deck
+			  :question (gnosis-read-string-from-buffer "Question: " "")
+			  :answer (read-string "Answer: ")
+			  :hint (gnosis-hint-prompt gnosis-previous-note-hint)
+			  :extra (gnosis-read-string-from-buffer "Extra: " "")
+			  :images (gnosis-select-images)
+			  :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))
 
 (cl-defun gnosis-add-note--double (&key deck question hint answer extra (images nil) tags (suspend 0))
   "Add Double type note.
@@ -660,22 +660,22 @@ SUSPEND: Binary value of 0 & 1, when 1 note will be ignored."
   (gnosis-add-note-fields deck "basic" question hint answer extra tags suspend (car images) (cdr images))
   (gnosis-add-note-fields deck "basic" answer hint question extra tags suspend (car images) (cdr images)))
 
-(defun gnosis-add-note-double ()
+(defun gnosis-add-note-double (deck)
   "Add note(s) of type double interactively to selected deck.
+
+DECK: Deck name to add gnosis
 
 Essentially, a \"note\" that generates 2 basic notes.  The second one
 reverses question/answer.
 
 Refer to `gnosis-add-note--double' for more."
-  (let ((deck (gnosis--get-deck-name)))
-    (while (y-or-n-p (format "Add note of type `double' to `%s' deck? " deck))
-      (gnosis-add-note--double :deck deck
-			       :question (read-string "Question: ")
-			       :answer (read-string "Answer: ")
-			       :hint (gnosis-hint-prompt gnosis-previous-note-hint)
-			       :extra (gnosis-read-string-from-buffer "Extra" "")
-			       :images (gnosis-select-images)
-			       :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))))
+  (gnosis-add-note--double :deck deck
+			   :question (read-string "Question: ")
+			   :answer (read-string "Answer: ")
+			   :hint (gnosis-hint-prompt gnosis-previous-note-hint)
+			   :extra (gnosis-read-string-from-buffer "Extra" "")
+			   :images (gnosis-select-images)
+			   :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))
 
 (cl-defun gnosis-add-note--y-or-n (&key deck question hint answer extra (images nil) tags (suspend 0))
   "Add y-or-n type note.
@@ -699,19 +699,19 @@ TAGS: Tags used to organize notes
 SUSSPEND: Binary value of 0 & 1, when 1 note will be ignored."
   (gnosis-add-note-fields deck "y-or-n" question hint answer extra tags suspend (car images) (cdr images)))
 
-(defun gnosis-add-note-y-or-n ()
+(defun gnosis-add-note-y-or-n (deck)
   "Add note(s) of type `y-or-n'.
 
+DECK: Deck name to add gnosis
+
 Refer to `gnosis-add-note--y-or-n' for more information about keyword values."
-  (let ((deck (gnosis--get-deck-name)))
-    (while (y-or-n-p (format "Add note of type `y-or-n' to `%s' deck? " deck))
-      (gnosis-add-note--y-or-n :deck deck
-			       :question (gnosis-read-string-from-buffer "Question: " "")
-                               :answer (read-char-choice "Answer: [y] or [n]? " '(?y ?n))
-			       :hint (gnosis-hint-prompt gnosis-previous-note-hint)
-			       :extra (gnosis-read-string-from-buffer "Extra" "")
-			       :images (gnosis-select-images)
-			       :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))))
+  (gnosis-add-note--y-or-n :deck deck
+			   :question (gnosis-read-string-from-buffer "Question: " "")
+			   :answer (read-char-choice "Answer: [y] or [n]? " '(?y ?n))
+			   :hint (gnosis-hint-prompt gnosis-previous-note-hint)
+			   :extra (gnosis-read-string-from-buffer "Extra" "")
+			   :images (gnosis-select-images)
+			   :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))
 
 
 (cl-defun gnosis-add-note--cloze (&key deck note hint tags (suspend 0) extra (images nil))
@@ -758,8 +758,10 @@ EXTRA: Extra information displayed after user-input."
 	     do (gnosis-add-note-fields deck "cloze" notags-note hint cloze extra tags suspend
 					(car images) (cdr images)))))
 
-(defun gnosis-add-note-cloze ()
+(defun gnosis-add-note-cloze (deck)
   "Add note(s) of type cloze interactively to selected deck.
+
+DECK: Deck name to add gnosis
 
 Note with clozes, format for clozes is as follows:
       This is a {c1:cloze} note type.
@@ -783,27 +785,38 @@ Generates 3 cloze note types.  Where the \"main\" part of the note is
 the full note, with the cloze(s) extracted & used as the \"answer\".
 
 See `gnosis-add-note--cloze' for more reference."
-  (let ((deck (gnosis--get-deck-name)))
-    (while (y-or-n-p (format "Add note of type `cloze' to `%s' deck? " deck))
-      (gnosis-add-note--cloze :deck deck
-			      :note (gnosis-read-string-from-buffer (or (car gnosis-cloze-guidance) "")
-								    (or (cdr gnosis-cloze-guidance) ""))
-			      :hint (gnosis-hint-prompt gnosis-previous-note-hint)
-			      :extra (gnosis-read-string-from-buffer "Extra" "")
-			      :images (gnosis-select-images)
-			      :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))))
+  (gnosis-add-note--cloze :deck deck
+			  :note (gnosis-read-string-from-buffer (or (car gnosis-cloze-guidance) "")
+								(or (cdr gnosis-cloze-guidance) ""))
+			  :hint (gnosis-hint-prompt gnosis-previous-note-hint)
+			  :extra (gnosis-read-string-from-buffer "Extra" "")
+			  :images (gnosis-select-images)
+			  :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))
 
 ;;;###autoload
-(defun gnosis-add-note (type)
-  "Create note(s) as TYPE interactively."
-  (interactive (list (funcall gnosis-completing-read-function "Type: " gnosis-note-types nil t)))
+(defun gnosis-add-note (&optional deck type)
+  "Create note(s) as TYPE interactively.
+
+DECK: Deck name to add gnosis
+TYPE: Type of gnosis note, must be one of `gnosis-note-types'"
+  (interactive)
   (when gnosis-testing
     (unless (y-or-n-p "You are using a testing environment! Continue?")
       (error "Aborted")))
-  (let ((func-name (intern (format "gnosis-add-note-%s" (downcase type)))))
+  (let* ((deck (or deck (gnosis--get-deck-name)))
+	 (type (or type (funcall gnosis-completing-read-function "Type: " gnosis-note-types nil t)))
+	 (func-name (intern (format "gnosis-add-note-%s" (downcase type)))))
     (if (fboundp func-name)
-        (funcall func-name)
-      (message "No such type."))))
+	(progn (funcall func-name deck)
+	       (pcase (cadr (read-multiple-choice
+			     "Add more gnosis?"
+			     '((?y "yes")
+			       (?r "repeat")
+			       (?n "no"))))
+		 ("yes" (gnosis-add-note))
+		 ("repeat" (gnosis-add-note deck type))
+		 ("no" nil)))
+      (message "No such type"))))
 
 (defun gnosis-mcq-answer (id)
   "Choose the correct answer, from mcq choices for question ID."
