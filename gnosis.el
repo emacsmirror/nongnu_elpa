@@ -520,8 +520,8 @@ When called with a prefix, unsuspends all notes for tag."
 (defun gnosis-generate-id (&optional length)
   "Generate a unique note ID.
 
-LENGTH: lenghth of id, default to 12."
-  (let* ((length (or length 12))
+LENGTH: length of id, default to a random number between 10-15."
+  (let* ((length (or length (+ (random 5) 10)))
          (max-val (expt 10 length))
          (min-val (expt 10 (1- length)))
          (id (+ (random (- max-val min-val)) min-val)))
