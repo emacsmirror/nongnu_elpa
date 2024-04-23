@@ -989,24 +989,20 @@ default value."
     (setf gnosis-previous-note-hint hint)
     hint))
 
-(defun gnosis-prompt-mcq-input ()
-  "Prompt for MCQ content.
+(defun gnosis-prompt-mcq-input (&optional prompt string)
+  "PROMPT for MCQ note content.
 
-Return a list of the form ((QUESTION CHOICES) CORRECT-CHOICE-INDEX)."
-  (let ((user-input (gnosis-read-string-from-buffer (or (car gnosis-mcq-guidance) "")
-						    (or (cdr gnosis-mcq-guidance) ""))))
-    (unless (string-match-p gnosis-mcq-separator user-input)
-      (error "Separator %s not found" gnosis-mcq-separator))
-    (let* ((input-seperated (split-string user-input gnosis-mcq-separator t "[\s\n]"))
-	   (stem (car input-seperated))
-	   (input (split-string
-		   (mapconcat 'identity (cdr input-seperated) "\n")
-		   gnosis-mcq-option-separator t "[\s\n]"))
-	   (correct-choice-index
-	    (or (cl-position-if (lambda (string) (string-match "{.*}" string)) input)
-		(error "Correct choice not found.  Use {} to indicate the correct option")))
-	   (choices (mapcar (lambda (string) (replace-regexp-in-string "{\\|}" "" string)) input)))
-      (list (cons stem choices) (+ correct-choice-index 1)))))
+STRING: Guidance string."
+  (let ((user-input (gnosis-read-string-from-buffer (or prompt (car gnosis-mcq-guidance) "")
+						    (or string (cdr gnosis-mcq-guidance) ""))))
+    (cond ((not (string-match-p gnosis-mcq-separator user-input))
+	   (gnosis-prompt-mcq-input (format "`gnosis-mcq-separator': %s not found!" gnosis-mcq-separator)
+				    user-input))
+	  ((not (string-match "{.*}" user-input))
+	   (gnosis-prompt-mcq-input (format "Please wrap the right option with {}")
+				    user-input))
+	  (t (gnosis-mcq-process-input user-input)))))
+
 
 (defun gnosis-prompt-tags--split (&optional previous-note-tags)
   "Prompt user for tags, split string by space.
