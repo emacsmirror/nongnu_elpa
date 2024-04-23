@@ -1003,6 +1003,26 @@ STRING: Guidance string."
 				    user-input))
 	  (t (gnosis-mcq-process-input user-input)))))
 
+(defun gnosis-mcq-process-input (user-input &optional stem-separator option-separator)
+  "Process USER-INPUT for MCQ note.
+
+STEM-SEPARATOR: Separator of question stem & options
+OPTION-SEPARATOR: Separator of each option
+
+Return ((QUESTION CHOICES) CORRECT-CHOICE-INDEX)"
+  (let* ((stem-separator (or stem-separator gnosis-mcq-separator))
+	 (option-separator (or option-separator gnosis-mcq-option-separator))
+	 (input-separated (split-string user-input stem-separator t "[\s\n]"))
+	 (stem (car input-separated))
+	 (input (split-string
+		 (mapconcat 'identity (cdr input-separated) "\n")
+		 option-separator t "[\s\n]"))
+	 (correct-choice-index
+	  ;; Make sure correct choice is given
+	  (or (cl-position-if (lambda (string) (string-match "{.*}" string)) input)
+	      (error "Correct choice not found.  Use {} to indicate the correct option")))
+	 (choices (mapcar (lambda (string) (replace-regexp-in-string "{\\|}" "" string)) input)))
+    (list (cons stem choices) (+ correct-choice-index 1))))
 
 (defun gnosis-prompt-tags--split (&optional previous-note-tags)
   "Prompt user for tags, split string by space.
