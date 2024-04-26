@@ -1,4 +1,4 @@
-;;; gnosis.el --- Spaced Repetition System For Note Taking & Self Testing  -*- lexical-binding: t; -*-
+;;; gnosis.el --- Spaced Repetition System  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2023  Thanos Apollo
 
@@ -1298,7 +1298,8 @@ NOTES: List of note ids"
 			    (recursive-edit))
 			(?q (gnosis-review-commit note-count)
 			    (cl-return))))
-		 finally (gnosis-review-commit note-count))))))
+		 finally (gnosis-review-commit note-count)))
+      (setq gnosis-due-notes (length (gnosis-review-get-due-notes))))))
 
 
 ;; Editing notes
@@ -1871,13 +1872,14 @@ DASHBOARD-TYPE: either 'Notes' or 'Decks' to display the respective dashboard."
   (if gnosis-modeline-mode
       (progn
         (add-to-list 'global-mode-string '(:eval
-          (format " G:%d" (length (gnosis-review-get-due-notes)))))
+          (format " G:%d" gnosis-due-notes)))
         (force-mode-line-update))
     (setq global-mode-string
           (seq-remove (lambda (item)
                         (and (listp item) (eq (car item) :eval)
                              (string-prefix-p " G:" (format "%s" (eval (cadr item))))))
                       global-mode-string))
+    (run-at-time "5 min" 300 #'(lambda () (setq gnosis-due-notes (length (gnosis-review-get-due-notes)))))
     (force-mode-line-update)))
 
 (define-derived-mode gnosis-mode special-mode "Gnosis"
