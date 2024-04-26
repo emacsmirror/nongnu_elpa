@@ -162,6 +162,9 @@ Seperate the question/stem from options."
   :type 'string
   :group 'gnosis)
 
+(defvar gnosis-due-notes (length (gnosis-review-get-due-notes))
+  "Total due notes.")
+
 ;;; Faces
 
 (defgroup gnosis-faces nil
@@ -381,11 +384,11 @@ Refer to `gnosis-db-schema-extras' for informations on images stored."
   (let* ((img (gnosis-get image 'extras `(= id ,id)))
 	 (path-to-image (expand-file-name (or img "") (file-name-as-directory gnosis-images-dir)))
 	 (image (create-image path-to-image 'png nil :width gnosis-image-width :height gnosis-image-height)))
-    (cond ((and img (file-exists-p path-to-image))
+    (cond ((or (not img) (string-empty-p img))
+	   (insert "\n\n"))
+	  ((and img (file-exists-p path-to-image))
 	   (insert "\n\n")
-	   (insert-image image))
-	  ((or (not img) (string-empty-p img))
-	   (insert "\n\n")))))
+	   (insert-image image)))))
 
 (defun gnosis-display-extra (id)
   "Display extra information & extra-image for note ID."
