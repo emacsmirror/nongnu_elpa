@@ -3,8 +3,6 @@
 /.dir-locals-2.el
 *.elc
 /worktrees/
-/hyperdrive-autoloads.el
-/hyperdrive-pkg.el
+/hyperdrive-org-transclusion-autoloads.el
+/hyperdrive-org-transclusion-pkg.el
 /dir
-/doc/hyperdrive.info
-/hyperdrive.info
