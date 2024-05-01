@@ -1300,9 +1300,9 @@ NOTES: List of note ids"
 			    (gnosis-edit-note note t)
 			    (recursive-edit))
 			(?q (gnosis-review-commit note-count)
-			    (cl-return))))
-		 finally (gnosis-review-commit note-count)))
-      (setq gnosis-due-notes (length (gnosis-review-get-due-notes))))))
+			    (cl-return)))
+		      (setq gnosis-due-notes-total (length (gnosis-review-get-due-notes))))
+		 finally (gnosis-review-commit note-count))))))
 
 
 ;; Editing notes
