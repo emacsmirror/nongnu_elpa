@@ -280,11 +280,15 @@ Example:
            if (= i index) collect new-item
            else collect item))
 
-(defun gnosis-display-question (id)
-  "Display main row for note ID."
+(defun gnosis-display-question (id &optional fill-paragraph-p)
+  "Display main row for note ID.
+
+If FILL-PARAGRAPH-P, insert question using `fill-paragraph'."
   (let ((question (gnosis-get 'main 'notes `(= id ,id))))
     (erase-buffer)
-    (fill-paragraph (insert "\n"  (propertize question 'face 'gnosis-face-main)))))
+    (if fill-paragraph-p
+	(fill-paragraph (insert "\n"  (propertize question 'face 'gnosis-face-main))))
+    (insert "\n"  (propertize question 'face 'gnosis-face-main))))
 
 (defun gnosis-display-mcq-options (id)
   "Display answer options for mcq note ID."
@@ -295,12 +299,17 @@ Example:
 	     do (insert (format "\n%s.  %s" option-num option))
 	     (setf option-num (1+ option-num)))))
 
-(defun gnosis-display-cloze-sentence (sentence clozes)
-  "Display cloze sentence for SENTENCE with CLOZES."
+(defun gnosis-display-cloze-sentence (sentence clozes &optional fill-paragraph-p)
+  "Display cloze sentence for SENTENCE with CLOZES.
+
+If FILL-PARAGRAPH-P, insert using `fill-paragraph'"
   (erase-buffer)
-  (fill-paragraph
-   (insert "\n"
-	   (gnosis-cloze-replace-words sentence clozes (propertize gnosis-cloze-string 'face 'gnosis-face-cloze)))))
+  (let ((cloze-sentence
+	 (gnosis-cloze-replace-words sentence clozes (propertize gnosis-cloze-string 'face 'gnosis-face-cloze))))
+  (if fill-paragraph-p
+      (fill-paragraph
+       (insert "\n" cloze-sentence))
+    (insert "\n" cloze-sentence))))
 
 (defun gnosis-display-basic-answer (answer success user-input)
   "Display ANSWER.
