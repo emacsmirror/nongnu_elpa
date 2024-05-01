@@ -162,7 +162,7 @@ Seperate the question/stem from options."
   :type 'string
   :group 'gnosis)
 
-(defvar gnosis-due-notes (length (gnosis-review-get-due-notes))
+(defvar gnosis-due-notes-total nil
   "Total due notes.")
 
 ;;; Faces
@@ -1872,17 +1872,18 @@ DASHBOARD-TYPE: either 'Notes' or 'Decks' to display the respective dashboard."
   :global t
   :group 'gnosis
   :lighter nil
+  (setq gnosis-due-notes-total (length (gnosis-review-get-due-notes)))
   (if gnosis-modeline-mode
       (progn
         (add-to-list 'global-mode-string '(:eval
-          (format " G:%d" gnosis-due-notes)))
+          (format " G:%d" gnosis-due-notes-total)))
         (force-mode-line-update))
     (setq global-mode-string
           (seq-remove (lambda (item)
                         (and (listp item) (eq (car item) :eval)
                              (string-prefix-p " G:" (format "%s" (eval (cadr item))))))
                       global-mode-string))
-    (run-at-time "5 min" 300 #'(lambda () (setq gnosis-due-notes (length (gnosis-review-get-due-notes)))))
+    (run-at-time "5 min" 300 #'(lambda () (setq gnosis-due-notes-total (length (gnosis-review-get-due-notes)))))
     (force-mode-line-update)))
 
 (define-derived-mode gnosis-mode special-mode "Gnosis"
