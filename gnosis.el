@@ -1,11 +1,11 @@
-;;; gnosis.el --- Spaced Repetition System For Note Taking & Self Testing  -*- lexical-binding: t; -*-
+;;; gnosis.el --- Spaced Repetition System  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2023  Thanos Apollo
 
 ;; Author: Thanos Apollo <public@thanosapollo.org>
 ;; Keywords: extensions
 ;; URL: https://thanosapollo.org/projects/gnosis
-;; Version: 0.2.2
+;; Version: 0.2.3
 
 ;; Package-Requires: ((emacs "27.2") (emacsql "20240124") (compat "29.1.4.2"))
 
@@ -162,6 +162,9 @@ Seperate the question/stem from options."
   :type 'string
   :group 'gnosis)
 
+(defvar gnosis-due-notes-total nil
+  "Total due notes.")
+
 ;;; Faces
 
 (defgroup gnosis-faces nil
@@ -257,18 +260,19 @@ Example:
   "From TABLE use where to delete VALUE."
   (emacsql gnosis-db `[:delete :from ,table :where ,value]))
 
-;; (defun gnosis-delete-note (id)
-;;   "Delete note with ID."
-;;   (when (y-or-n-p "Delete note?")
-;;     (emacsql-with-transaction gnosis-db (gnosis--delete 'notes `(= id ,id)))))
+(defun gnosis-delete-note (id)
+  "Delete note with ID."
+  (when (y-or-n-p "Delete note?")
+    (emacsql-with-transaction gnosis-db (gnosis--delete 'notes `(= id ,id)))))
 
-;; (defun gnosis-delete-deck (id)
-;;   "Delete deck with ID."
-;;   (interactive (list (gnosis--get-deck-id)))
-;;   (let ((deck-name (gnosis--get-deck-name id)))
-;;     (when (y-or-n-p (format "Delete deck `%s'? " deck-name))
-;;       (gnosis--delete 'decks `(= id ,id))
-;;       (message "Deleted deck `%s'" deck-name))))
+(defun gnosis-delete-deck (&optional id)
+  "Delete deck with ID."
+  (interactive)
+  (let* ((id (or id (gnosis--get-deck-id)))
+	 (deck-name (gnosis--get-deck-name id)))
+    (when (y-or-n-p (format "Delete deck `%s'? " deck-name))
+      (emacsql-with-transaction gnosis-db (gnosis--delete 'decks `(= id ,id)))
+      (message "Deleted deck `%s'" deck-name))))
 
 (defun gnosis-replace-item-at-index (index new-item list)
   "Replace item at INDEX in LIST with NEW-ITEM."
@@ -380,11 +384,11 @@ Refer to `gnosis-db-schema-extras' for informations on images stored."
   (let* ((img (gnosis-get image 'extras `(= id ,id)))
 	 (path-to-image (expand-file-name (or img "") (file-name-as-directory gnosis-images-dir)))
 	 (image (create-image path-to-image 'png nil :width gnosis-image-width :height gnosis-image-height)))
-    (cond ((and img (file-exists-p path-to-image))
+    (cond ((or (not img) (string-empty-p img))
+	   (insert "\n\n"))
+	  ((and img (file-exists-p path-to-image))
 	   (insert "\n\n")
-	   (insert-image image))
-	  ((or (not img) (string-empty-p img))
-	   (insert "\n\n")))))
+	   (insert-image image)))))
 
 (defun gnosis-display-extra (id)
   "Display extra information & extra-image for note ID."
@@ -516,6 +520,18 @@ When called with a prefix, unsuspends all notes for tag."
       ("Tag" (gnosis-suspend-tag))
       (_ (message "Not ready yet.")))))
 
+(defun gnosis-generate-id (&optional length)
+  "Generate a unique note ID.
+
+LENGTH: length of id, default to a random number between 10-15."
+  (let* ((length (or length (+ (random 5) 10)))
+         (max-val (expt 10 length))
+         (min-val (expt 10 (1- length)))
+         (id (+ (random (- max-val min-val)) min-val)))
+    (if (member id (gnosis-select 'id 'notes '1=1 t))
+        (gnosis-generate-id length)
+      id)))
+
 (defun gnosis-add-note-fields (deck type main options answer extra tags suspend image second-image)
   "Insert fields for new note.
 
@@ -536,13 +552,15 @@ NOTE: If a gnosis--insert-into fails, the whole transaction will be
  (or at least it should).  Else there will be an error for foreign key
  constraint."
   (let* ((deck-id (gnosis--get-deck-id deck))
-	 (initial-interval (gnosis-get-deck-initial-interval deck-id)))
+	 (initial-interval (gnosis-get-deck-initial-interval deck-id))
+	 (note-id (gnosis-generate-id)))
     (emacsql-with-transaction gnosis-db
       ;; Refer to `gnosis-db-schema-SCHEMA' e.g `gnosis-db-schema-review-log'
-      (gnosis--insert-into 'notes   `([nil ,type ,main ,options ,answer ,tags ,deck-id]))
-      (gnosis--insert-into 'review  `([nil ,gnosis-algorithm-ef ,gnosis-algorithm-ff ,initial-interval]))
-      (gnosis--insert-into 'review-log `([nil ,(gnosis-algorithm-date) ,(gnosis-algorithm-date) 0 0 0 0 ,suspend 0]))
-      (gnosis--insert-into 'extras `([nil ,extra ,image ,second-image])))))
+      (gnosis--insert-into 'notes `([,note-id ,type ,main ,options ,answer ,tags ,deck-id]))
+      (gnosis--insert-into 'review  `([,note-id ,gnosis-algorithm-ef ,gnosis-algorithm-ff ,initial-interval]))
+      (gnosis--insert-into 'review-log `([,note-id ,(gnosis-algorithm-date)
+						   ,(gnosis-algorithm-date) 0 0 0 0 ,suspend 0]))
+      (gnosis--insert-into 'extras `([,note-id ,extra ,image ,second-image])))))
 
 ;; Adding note(s) consists firstly of a hidden 'gnosis-add-note--TYPE'
 ;; function that does the computation & error checking to generate a
@@ -570,8 +588,10 @@ is the image to display post review
     (error "Correct answer value must be the index number of the correct answer"))
   (gnosis-add-note-fields deck "mcq" question choices correct-answer extra tags suspend (car images) (cdr images)))
 
-(defun gnosis-add-note-mcq ()
+(defun gnosis-add-note-mcq (deck)
   "Add note(s) of type `MCQ' interactively to selected deck.
+
+DECK: Deck to add gnosis
 
 Prompt user for input to create a note of type `MCQ'.
 
@@ -580,19 +600,17 @@ each option is seperated by `gnosis-mcq-option-separator'.  The correct
 answer is surrounded by curly braces, e.g {Correct Answer}.
 
 Refer to `gnosis-add-note--mcq' & `gnosis-prompt-mcq-input' for more."
-  (let ((deck (gnosis--get-deck-name)))
-    (while (y-or-n-p (format "Add note of type `MCQ' to `%s' deck? " deck))
-      (let* ((input (gnosis-prompt-mcq-input))
-	     (stem (caar input))
-	     (choices (cdr (car input)))
-	     (correct-choice (cadr input)))
-	(gnosis-add-note--mcq :deck deck
-			      :question stem
-			      :choices choices
-			      :correct-answer correct-choice
-			      :extra (gnosis-read-string-from-buffer "Extra" "")
-			      :images (gnosis-select-images)
-			      :tags (gnosis-prompt-tags--split gnosis-previous-note-tags))))))
+  (let* ((input (gnosis-prompt-mcq-input))
+	 (stem (caar input))
+	 (choices (cdr (car input)))
+	 (correct-choice (cadr input)))
+    (gnosis-add-note--mcq :deck deck
+			  :question stem
+			  :choices choices
+			  :correct-answer correct-choice
+			  :extra (gnosis-read-string-from-buffer "Extra" "")
+			  :images (gnosis-select-images)
+			  :tags (gnosis-prompt-tags--split gnosis-previous-note-tags))))
 
 (cl-defun gnosis-add-note--basic (&key deck question hint answer
 				       extra (images nil) (tags) (suspend 0))
@@ -609,23 +627,23 @@ TAGS: Tags used to organize notes
 SUSPEND: Binary value of 0 & 1, when 1 note will be ignored."
   (gnosis-add-note-fields deck "basic" question hint answer extra tags suspend (car images) (cdr images)))
 
-(defun gnosis-add-note-basic ()
+(defun gnosis-add-note-basic (deck)
   "Add note(s) of type `Basic' interactively to selected deck.
+
+DECK: Deck name to add gnosis
 
 Basic note type is a simple question/answer note, where user first
 sees a \"main\" part, which is usually a question, and he is prompted
 to input the answer.
 
 Refer to `gnosis-add-note--basic' for more."
-  (let ((deck (gnosis--get-deck-name)))
-    (while (y-or-n-p (format "Add note of type `basic' to `%s' deck? " deck))
-      (gnosis-add-note--basic :deck deck
-			      :question (gnosis-read-string-from-buffer "Question: " "")
-			      :answer (read-string "Answer: ")
-			      :hint (gnosis-hint-prompt gnosis-previous-note-hint)
-			      :extra (gnosis-read-string-from-buffer "Extra: " "")
-			      :images (gnosis-select-images)
-			      :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))))
+  (gnosis-add-note--basic :deck deck
+			  :question (gnosis-read-string-from-buffer "Question: " "")
+			  :answer (read-string "Answer: ")
+			  :hint (gnosis-hint-prompt gnosis-previous-note-hint)
+			  :extra (gnosis-read-string-from-buffer "Extra: " "")
+			  :images (gnosis-select-images)
+			  :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))
 
 (cl-defun gnosis-add-note--double (&key deck question hint answer extra (images nil) tags (suspend 0))
   "Add Double type note.
@@ -645,22 +663,22 @@ SUSPEND: Binary value of 0 & 1, when 1 note will be ignored."
   (gnosis-add-note-fields deck "basic" question hint answer extra tags suspend (car images) (cdr images))
   (gnosis-add-note-fields deck "basic" answer hint question extra tags suspend (car images) (cdr images)))
 
-(defun gnosis-add-note-double ()
+(defun gnosis-add-note-double (deck)
   "Add note(s) of type double interactively to selected deck.
+
+DECK: Deck name to add gnosis
 
 Essentially, a \"note\" that generates 2 basic notes.  The second one
 reverses question/answer.
 
 Refer to `gnosis-add-note--double' for more."
-  (let ((deck (gnosis--get-deck-name)))
-    (while (y-or-n-p (format "Add note of type `double' to `%s' deck? " deck))
-      (gnosis-add-note--double :deck deck
-			       :question (read-string "Question: ")
-			       :answer (read-string "Answer: ")
-			       :hint (gnosis-hint-prompt gnosis-previous-note-hint)
-			       :extra (gnosis-read-string-from-buffer "Extra" "")
-			       :images (gnosis-select-images)
-			       :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))))
+  (gnosis-add-note--double :deck deck
+			   :question (read-string "Question: ")
+			   :answer (read-string "Answer: ")
+			   :hint (gnosis-hint-prompt gnosis-previous-note-hint)
+			   :extra (gnosis-read-string-from-buffer "Extra" "")
+			   :images (gnosis-select-images)
+			   :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))
 
 (cl-defun gnosis-add-note--y-or-n (&key deck question hint answer extra (images nil) tags (suspend 0))
   "Add y-or-n type note.
@@ -684,19 +702,19 @@ TAGS: Tags used to organize notes
 SUSSPEND: Binary value of 0 & 1, when 1 note will be ignored."
   (gnosis-add-note-fields deck "y-or-n" question hint answer extra tags suspend (car images) (cdr images)))
 
-(defun gnosis-add-note-y-or-n ()
+(defun gnosis-add-note-y-or-n (deck)
   "Add note(s) of type `y-or-n'.
 
+DECK: Deck name to add gnosis
+
 Refer to `gnosis-add-note--y-or-n' for more information about keyword values."
-  (let ((deck (gnosis--get-deck-name)))
-    (while (y-or-n-p (format "Add note of type `y-or-n' to `%s' deck? " deck))
-      (gnosis-add-note--y-or-n :deck deck
-			       :question (gnosis-read-string-from-buffer "Question: " "")
-                               :answer (read-char-choice "Answer: [y] or [n]? " '(?y ?n))
-			       :hint (gnosis-hint-prompt gnosis-previous-note-hint)
-			       :extra (gnosis-read-string-from-buffer "Extra" "")
-			       :images (gnosis-select-images)
-			       :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))))
+  (gnosis-add-note--y-or-n :deck deck
+			   :question (gnosis-read-string-from-buffer "Question: " "")
+			   :answer (read-char-choice "Answer: [y] or [n]? " '(?y ?n))
+			   :hint (gnosis-hint-prompt gnosis-previous-note-hint)
+			   :extra (gnosis-read-string-from-buffer "Extra" "")
+			   :images (gnosis-select-images)
+			   :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))
 
 
 (cl-defun gnosis-add-note--cloze (&key deck note hint tags (suspend 0) extra (images nil))
@@ -743,8 +761,10 @@ EXTRA: Extra information displayed after user-input."
 	     do (gnosis-add-note-fields deck "cloze" notags-note hint cloze extra tags suspend
 					(car images) (cdr images)))))
 
-(defun gnosis-add-note-cloze ()
+(defun gnosis-add-note-cloze (deck)
   "Add note(s) of type cloze interactively to selected deck.
+
+DECK: Deck name to add gnosis
 
 Note with clozes, format for clozes is as follows:
       This is a {c1:cloze} note type.
@@ -768,27 +788,38 @@ Generates 3 cloze note types.  Where the \"main\" part of the note is
 the full note, with the cloze(s) extracted & used as the \"answer\".
 
 See `gnosis-add-note--cloze' for more reference."
-  (let ((deck (gnosis--get-deck-name)))
-    (while (y-or-n-p (format "Add note of type `cloze' to `%s' deck? " deck))
-      (gnosis-add-note--cloze :deck deck
-			      :note (gnosis-read-string-from-buffer (or (car gnosis-cloze-guidance) "")
-								    (or (cdr gnosis-cloze-guidance) ""))
-			      :hint (gnosis-hint-prompt gnosis-previous-note-hint)
-			      :extra (gnosis-read-string-from-buffer "Extra" "")
-			      :images (gnosis-select-images)
-			      :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))))
+  (gnosis-add-note--cloze :deck deck
+			  :note (gnosis-read-string-from-buffer (or (car gnosis-cloze-guidance) "")
+								(or (cdr gnosis-cloze-guidance) ""))
+			  :hint (gnosis-hint-prompt gnosis-previous-note-hint)
+			  :extra (gnosis-read-string-from-buffer "Extra" "")
+			  :images (gnosis-select-images)
+			  :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))
 
 ;;;###autoload
-(defun gnosis-add-note (type)
-  "Create note(s) as TYPE interactively."
-  (interactive (list (funcall gnosis-completing-read-function "Type: " gnosis-note-types nil t)))
+(defun gnosis-add-note (&optional deck type)
+  "Create note(s) as TYPE interactively.
+
+DECK: Deck name to add gnosis
+TYPE: Type of gnosis note, must be one of `gnosis-note-types'"
+  (interactive)
   (when gnosis-testing
     (unless (y-or-n-p "You are using a testing environment! Continue?")
       (error "Aborted")))
-  (let ((func-name (intern (format "gnosis-add-note-%s" (downcase type)))))
+  (let* ((deck (or deck (gnosis--get-deck-name)))
+	 (type (or type (funcall gnosis-completing-read-function "Type: " gnosis-note-types nil t)))
+	 (func-name (intern (format "gnosis-add-note-%s" (downcase type)))))
     (if (fboundp func-name)
-        (funcall func-name)
-      (message "No such type."))))
+	(progn (funcall func-name deck)
+	       (pcase (cadr (read-multiple-choice
+			     "Add more gnosis?"
+			     '((?y "yes")
+			       (?r "repeat")
+			       (?n "no"))))
+		 ("yes" (gnosis-add-note))
+		 ("repeat" (gnosis-add-note deck type))
+		 ("no" nil)))
+      (message "No such type"))))
 
 (defun gnosis-mcq-answer (id)
   "Choose the correct answer, from mcq choices for question ID."
@@ -961,24 +992,40 @@ default value."
     (setf gnosis-previous-note-hint hint)
     hint))
 
-(defun gnosis-prompt-mcq-input ()
-  "Prompt for MCQ content.
+(defun gnosis-prompt-mcq-input (&optional prompt string)
+  "PROMPT for MCQ note content.
 
-Return a list of the form ((QUESTION CHOICES) CORRECT-CHOICE-INDEX)."
-  (let ((user-input (gnosis-read-string-from-buffer (or (car gnosis-mcq-guidance) "")
-						    (or (cdr gnosis-mcq-guidance) ""))))
-    (unless (string-match-p gnosis-mcq-separator user-input)
-      (error "Separator %s not found" gnosis-mcq-separator))
-    (let* ((input-seperated (split-string user-input gnosis-mcq-separator t "[\s\n]"))
-	   (stem (car input-seperated))
-	   (input (split-string
-		   (mapconcat 'identity (cdr input-seperated) "\n")
-		   gnosis-mcq-option-separator t "[\s\n]"))
-	   (correct-choice-index
-	    (or (cl-position-if (lambda (string) (string-match "{.*}" string)) input)
-		(error "Correct choice not found.  Use {} to indicate the correct option")))
-	   (choices (mapcar (lambda (string) (replace-regexp-in-string "{\\|}" "" string)) input)))
-      (list (cons stem choices) (+ correct-choice-index 1)))))
+STRING: Guidance string."
+  (let ((user-input (gnosis-read-string-from-buffer (or prompt (car gnosis-mcq-guidance) "")
+						    (or string (cdr gnosis-mcq-guidance) ""))))
+    (cond ((not (string-match-p gnosis-mcq-separator user-input))
+	   (gnosis-prompt-mcq-input (format "`gnosis-mcq-separator': %s not found!" gnosis-mcq-separator)
+				    user-input))
+	  ((not (string-match "{.*}" user-input))
+	   (gnosis-prompt-mcq-input (format "Please wrap the right option with {}")
+				    user-input))
+	  (t (gnosis-mcq-process-input user-input)))))
+
+(defun gnosis-mcq-process-input (user-input &optional stem-separator option-separator)
+  "Process USER-INPUT for MCQ note.
+
+STEM-SEPARATOR: Separator of question stem & options
+OPTION-SEPARATOR: Separator of each option
+
+Return ((QUESTION CHOICES) CORRECT-CHOICE-INDEX)"
+  (let* ((stem-separator (or stem-separator gnosis-mcq-separator))
+	 (option-separator (or option-separator gnosis-mcq-option-separator))
+	 (input-separated (split-string user-input stem-separator t "[\s\n]"))
+	 (stem (car input-separated))
+	 (input (split-string
+		 (mapconcat 'identity (cdr input-separated) "\n")
+		 option-separator t "[\s\n]"))
+	 (correct-choice-index
+	  ;; Make sure correct choice is given
+	  (or (cl-position-if (lambda (string) (string-match "{.*}" string)) input)
+	      (error "Correct choice not found.  Use {} to indicate the correct option")))
+	 (choices (mapcar (lambda (string) (replace-regexp-in-string "{\\|}" "" string)) input)))
+    (list (cons stem choices) (+ correct-choice-index 1))))
 
 (defun gnosis-prompt-tags--split (&optional previous-note-tags)
   "Prompt user for tags, split string by space.
@@ -1131,8 +1178,8 @@ If user-input is equal to CLOZE, return t."
   "Reveal CLOZES.
 
 Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
-  (cl-loop for cloze in clozes do (gnosis-display-cloze-reveal :replace cloze
-							       :face 'gnosis-face-cloze-unanswered)))
+  (cl-loop for cloze in clozes
+	   do (gnosis-display-cloze-reveal :replace cloze :face 'gnosis-face-cloze-unanswered)))
 
 (defun gnosis-review-cloze (id)
   "Review cloze type note for ID."
@@ -1253,7 +1300,8 @@ NOTES: List of note ids"
 			    (gnosis-edit-note note t)
 			    (recursive-edit))
 			(?q (gnosis-review-commit note-count)
-			    (cl-return))))
+			    (cl-return)))
+		      (setq gnosis-due-notes-total (length (gnosis-review-get-due-notes))))
 		 finally (gnosis-review-commit note-count))))))
 
 
@@ -1678,6 +1726,10 @@ QUERY: String value,"
 			       (revert-buffer t t t)))
   (local-set-key (kbd "a") #'gnosis-add-note)
   (local-set-key (kbd "r") #'gnosis-dashboard)
+  (local-set-key (kbd "d") #'(lambda () (interactive)
+			       (gnosis-delete-note (string-to-number (tabulated-list-get-id)))
+			       (gnosis-dashboard-output-notes gnosis-dashboard-note-ids)
+			       (revert-buffer t t t)))
   (local-unset-key (kbd "RET")))
 
 (defun gnosis-dashboard-deck-note-count (id)
@@ -1715,16 +1767,20 @@ QUERY: String value,"
 		   when output
 		   collect (list (number-to-string id) (vconcat output)))))
   (local-set-key (kbd "e") #'gnosis-dashboard-edit-deck)
-  (local-set-key (kbd "a") #'(lambda () (interactive)
+  (local-set-key (kbd "a") #'(lambda () "Add deck & refresh" (interactive)
 			       (gnosis-add-deck (read-string "Deck name: "))
 			       (gnosis-dashboard-output-decks)
 			       (revert-buffer t t t)))
-  (local-set-key (kbd "s") #'(lambda () (interactive)
+  (local-set-key (kbd "s") #'(lambda () "Suspend notes" (interactive)
 			       (gnosis-suspend-deck
 				(string-to-number (tabulated-list-get-id)))
 			       (gnosis-dashboard-output-decks)
 			       (revert-buffer t t t)))
-  (local-set-key (kbd "RET") #'(lambda () (interactive)
+  (local-set-key (kbd "d") #'(lambda () "Delete deck" (interactive)
+			       (gnosis-delete-deck (string-to-number (tabulated-list-get-id)))
+			       (gnosis-dashboard-output-decks)
+			       (revert-buffer t t t)))
+  (local-set-key (kbd "RET") #'(lambda () "View notes of deck" (interactive)
 				 (gnosis-dashboard "notes"
 						   (gnosis-collect-note-ids
 						    :deck (string-to-number (tabulated-list-get-id)))))))
@@ -1816,16 +1872,18 @@ DASHBOARD-TYPE: either 'Notes' or 'Decks' to display the respective dashboard."
   :global t
   :group 'gnosis
   :lighter nil
+  (setq gnosis-due-notes-total (length (gnosis-review-get-due-notes)))
   (if gnosis-modeline-mode
       (progn
         (add-to-list 'global-mode-string '(:eval
-          (format " G:%d" (length (gnosis-review-get-due-notes)))))
+          (format " G:%d" gnosis-due-notes-total)))
         (force-mode-line-update))
     (setq global-mode-string
           (seq-remove (lambda (item)
                         (and (listp item) (eq (car item) :eval)
                              (string-prefix-p " G:" (format "%s" (eval (cadr item))))))
                       global-mode-string))
+    (run-at-time "5 min" 300 #'(lambda () (setq gnosis-due-notes-total (length (gnosis-review-get-due-notes)))))
     (force-mode-line-update)))
 
 (define-derived-mode gnosis-mode special-mode "Gnosis"

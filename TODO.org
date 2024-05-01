@@ -4,20 +4,21 @@
 
 
 * Notes
-** TODO Add export deck :priorityLow:
+** TODO Add export deck
 ** TODO Add support for org-mode
-Create gnosis notes using =org-mode=
++ Create gnosis notes using =org-mode=
 * Dashboard
 ** DONE Add Dashboard
 CLOSED: [2024-02-20 Tue 13:33]
 + Create a dashboard to view all notes created, user can edit &
   suspend notes. Use tabulated-list-mode, preferably.
-** TODO Dashboard: Improve Performance :priorityLow:
+** TODO Dashboard: Improve Performance
 + emacsql is quite fast, but the current tabulated-list implementation
-  can be quite slow when having >30K notes. This should be improved upon in the feature
-** TODO Dashboard: Add filtering/search 
+  can be quite slow when having >30K notes.  Consider alternatives to tabulated-list
+** DONE Dashboard: Add filtering/search
+CLOSED: [2024-04-20 Sat 12:54]
 - [x] Search using tags
-- [] Search/Filter for main/answer
+- [x] Search/Filter for main/answer
 * Misc
 ** DONE Refactor =completing-read= UI choices
 CLOSED: [2024-02-17 Sat 21:59]
@@ -33,8 +34,7 @@ enabled
 *** Notes
 Implemented =gnosis-completing-read-function=
 
-
-** TODO Use vc instead of shell commands :priorityLow:
+** TODO Use vc instead of shell commands
 - [x] Push & Pull commands /DONE on version 0.1.7/
 - [] stage & commit 
 
