@@ -437,7 +437,7 @@ Also see `gnosis-string-edit'."
 				  (propertize (format "%s" interval) 'face 'gnosis-face-next-review))))
     (if (search-backward "Next review" nil t)
 	;; Delete previous result, and override with new this should
-	;; occur only when used with `gnosis-review-override'
+	;; occur only when used for overriding review result.
         (progn (delete-region (point) (progn (end-of-line) (point)))
 	       (insert (propertize (replace-regexp-in-string "\n" "" next-review-msg)
 				   'face (if success 'gnosis-face-correct 'gnosis-face-false))))
@@ -1274,15 +1274,6 @@ NOTE-NUM: The number of notes reviewed in the session."
       (gnosis-vc-push))
     (message "Review session finished.  %d notes reviewed." note-num)))
 
-(defun gnosis-review-override (id success)
-  "Override review result of note ID.
-
-Reverse the result of review SUCCESS."
-  (let ((success-new (if success nil t)))
-    (gnosis-display-next-review id success-new)
-    (if (y-or-n-p (format "Override review result as %s?" (if success-new "`SUCCESS'" "`FAILURE'")))
-	(gnosis-review--update id success-new)
-      (gnosis-review-override id success-new))))
 
 (defun gnosis-review--session (notes)
   "Start review session for NOTES.
