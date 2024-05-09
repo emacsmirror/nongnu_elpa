@@ -1274,6 +1274,30 @@ NOTE-NUM: The number of notes reviewed in the session."
       (gnosis-vc-push))
     (message "Review session finished.  %d notes reviewed." note-num)))
 
+(defun gnosis-review-actions (success note note-count)
+  "Specify action during review of note.
+
+SUCCESS: Review result
+NOTE: Note ID
+NOTE-COUNT: Total notes reviewed"
+  (pcase (car (read-multiple-choice
+	       "Note actions"
+	       '((?n "next")
+		 (?o "override")
+		 (?s "suspend")
+		 (?e "edit")
+		 (?q "quit"))))
+    (?n (gnosis-review--update note success))
+    (?o (setf success (if success nil t))
+	(gnosis-display-next-review note success)
+	(gnosis-review-actions success note note-count))
+    (?s (gnosis-suspend-note note))
+    (?e (gnosis-edit-note note t)
+	(recursive-edit)
+	(gnosis-review-actions success note note-count))
+    (?q (gnosis-review--update note success)
+	(gnosis-review-commit note-count)
+	(cl-return))))
 
 (defun gnosis-review--session (notes)
   "Start review session for NOTES.
@@ -1286,22 +1310,7 @@ NOTES: List of note ids"
 	(cl-loop for note in notes
 		 do (let ((success (gnosis-review-note note)))
 		      (setf note-count (1+ note-count))
-		      (pcase (car (read-multiple-choice
-				   "Note actions"
-				   '((?n "next")
-				     (?o "override")
-				     (?s "suspend")
-				     (?e "edit")
-				     (?q "quit"))))
-			(?n (gnosis-review--update note success))
-			(?o (gnosis-review-override note success))
-			(?s (gnosis-suspend-note note))
-			(?e (gnosis-review--update note success)
-			    (gnosis-edit-note note t)
-			    (recursive-edit))
-			(?q (gnosis-review--update note success)
-			    (gnosis-review-commit note-count)
-			    (cl-return)))
+		      (gnosis-review-actions success note note-count)
 		      (setq gnosis-due-notes-total (length (gnosis-review-get-due-notes))))
 		 finally (gnosis-review-commit note-count))))))
 
