@@ -1297,9 +1297,10 @@ NOTE-COUNT: Total notes reviewed"
 	(gnosis-review-actions success note note-count))
     (?q (gnosis-review--update note success)
 	(gnosis-review-commit note-count)
-	(cl-return))))
+	;; Break the loop of `gnosis-review-session'
+	(throw 'stop-loop t))))
 
-(defun gnosis-review--session (notes)
+(defun gnosis-review-session (notes)
   "Start review session for NOTES.
 
 NOTES: List of note ids"
@@ -1307,13 +1308,13 @@ NOTES: List of note ids"
     (if (null notes)
 	(message "No notes for review.")
       (when (y-or-n-p (format "You have %s total notes for review, start session?" (length notes)))
-	(cl-loop for note in notes
-		 do (let ((success (gnosis-review-note note)))
-		      (setf note-count (1+ note-count))
-		      (gnosis-review-actions success note note-count)
-		      (setq gnosis-due-notes-total (length (gnosis-review-get-due-notes))))
-		 finally (gnosis-review-commit note-count))))))
-
+	(catch 'stop-loop
+	  (cl-loop for note in notes
+		   do (let ((success (gnosis-review-note note)))
+			(setf note-count (1+ note-count))
+			(gnosis-review-actions success note note-count)
+			(setf gnosis-due-notes-total (length (gnosis-review-get-due-notes))))
+		   finally (gnosis-review-commit note-count)))))))
 
 ;; Editing notes
 (defun gnosis-edit-read-only-values (&rest values)
@@ -1594,10 +1595,10 @@ to improve readability."
 									   "Due notes of specified tag(s)"
 									   "All notes of tag(s)"))))
     (pcase review-type
-      ("Due notes" (gnosis-review--session (gnosis-collect-note-ids :due t)))
-      ("Due notes of deck" (gnosis-review--session (gnosis-collect-note-ids :due t :deck (gnosis--get-deck-id))))
-      ("Due notes of specified tag(s)" (gnosis-review--session (gnosis-collect-note-ids :due t :tags t)))
-      ("All notes of tag(s)" (gnosis-review--session (gnosis-collect-note-ids :tags t))))))
+      ("Due notes" (gnosis-review-session (gnosis-collect-note-ids :due t)))
+      ("Due notes of deck" (gnosis-review-session (gnosis-collect-note-ids :due t :deck (gnosis--get-deck-id))))
+      ("Due notes of specified tag(s)" (gnosis-review-session (gnosis-collect-note-ids :due t :tags t)))
+      ("All notes of tag(s)" (gnosis-review-session (gnosis-collect-note-ids :tags t))))))
 
 ;;; Database Schemas
 (defvar gnosis-db-schema-decks '([(id integer :primary-key :autoincrement)
