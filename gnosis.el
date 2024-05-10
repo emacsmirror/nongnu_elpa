@@ -1119,14 +1119,15 @@ well."
 SUCCESS is a boolean value, t for success, nil for failure.
 
 Returns a list of the form ((yyyy mm dd) (ef-increase ef-decrease ef-total))."
-  (let ((ff gnosis-algorithm-ff)
+  (let ((ff (gnosis-get-note-ff id))
 	(ef (gnosis-get 'ef 'review `(= id ,id)))
 	(t-success (gnosis-get 't-success 'review-log `(= id ,id))) ;; total successful reviews
 	(c-success (gnosis-get 'c-success 'review-log `(= id ,id))) ;; consecutive successful reviews
 	(c-fails (gnosis-get 'c-fails 'review-log `(= id ,id))) ;; consecutive failed reviews
 	;; (t-fails (gnosis-get 't-fails 'review-log `(= id ,id))) ;; total failed reviews
 	;; (review-num (gnosis-get 'n 'review-log `(= id ,id))) ;; total reviews
-	(last-interval (max (gnosis-review--get-offset id) 1))) ;; last interval
+	;; (last-interval (max (gnosis-review--get-offset id) 1))
+	(last-interval (gnosis-review-last-interval id))) ;; last interval
     (list (gnosis-algorithm-next-interval :last-interval last-interval
 					  :ef ef
 					  :success success
