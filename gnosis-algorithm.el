@@ -183,9 +183,12 @@ successful reviews."
 			  (car initial-interval))
 			 ((and (= successful-reviews 1) success)
 			  (cadr initial-interval))
-			 (t (if success
-				(* ef last-interval)
-			      (* failure-factor last-interval))))))
+			 (t (let* ((success-interval (* ef last-interval))
+				   (failure-interval (* last-interval failure-factor)))
+			      (if success success-interval
+				;; Make sure failure interval is never
+				;; higher than success
+			        (min success-interval failure-interval)))))))
     (gnosis-algorithm-date (round interval))))
 
 
