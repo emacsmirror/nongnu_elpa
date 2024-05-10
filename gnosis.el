@@ -1101,6 +1101,18 @@ well."
 	        due-notes)
      :test #'equal)))
 
+(defun gnosis-review--get-offset (id)
+  "Return offset for note with value of id ID."
+  (let ((last-rev (gnosis-get 'last-rev 'review-log `(= id ,id))))
+    (gnosis-algorithm-date-diff last-rev)))
+
+(defun gnosis-review-last-interval (id)
+  "Return last review interval for note ID."
+  (let* ((where-id-clause `(= id ,id))
+         (last-rev (gnosis-get 'last-rev 'review-log where-id-clause))
+	 (rev-date (gnosis-get 'next-rev 'review-log where-id-clause)))
+    (gnosis-algorithm-date-diff last-rev rev-date)))
+
 (defun gnosis-review-algorithm (id success)
   "Return next review date & ef for note with value of id ID.
 
@@ -1128,11 +1140,6 @@ Returns a list of the form ((yyyy mm dd) (ef-increase ef-decrease ef-total))."
 				    :threshold (gnosis-get-ef-threshold id)
 				    :c-successes c-success
 				    :c-failures c-fails))))
-
-(defun gnosis-review--get-offset (id)
-  "Return offset for note with value of id ID."
-  (let ((last-rev (gnosis-get 'last-rev 'review-log `(= id ,id))))
-    (gnosis-algorithm-date-diff last-rev)))
 
 (defun gnosis-review--update (id success)
   "Update review-log for note with value of id ID.
