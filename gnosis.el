@@ -499,6 +499,15 @@ If NAME is t, return name of deck."
   (let* ((id-clause `(= id ,id))
 	 (deck-ff (gnosis-get 'failure-factor 'decks id-clause)))
     deck-ff))
+
+(defun gnosis-get-note-ff (id)
+  "Return failure factor for note ID.."
+  (let ((deck-ff (gnosis-get-deck-ff (gnosis-get-deck--note id)))
+	(note-ff (gnosis-get 'ff 'review `(= id ,id))))
+    deck-ff
+    ;; (max deck-ff note-ff)
+    ))
+
 (cl-defun gnosis-suspend-note (id)
   "Suspend note with ID."
   (let ((suspended (= (gnosis-get 'suspend 'review-log `(= id ,id)) 1)))
