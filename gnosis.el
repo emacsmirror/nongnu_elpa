@@ -486,6 +486,13 @@ Set SPLIT to t to split all input given."
   "Return id for DECK name."
   (gnosis-get 'id 'decks `(= name ,deck)))
 
+(defun gnosis-get-deck--note (id &optional name)
+  "Get deck id for note ID.
+
+If NAME is t, return name of deck."
+  (let* ((id-clause `(= id ,id))
+	 (deck (gnosis-get 'deck-id 'notes id-clause)))
+    (if name (gnosis--get-deck-name deck) deck)))
 
 (cl-defun gnosis-suspend-note (id)
   "Suspend note with ID."
