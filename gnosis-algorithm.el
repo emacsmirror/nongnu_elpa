@@ -123,13 +123,18 @@ Optional integer OFFSET is a number of days from the current date."
                    (+ offset (calendar-absolute-from-gregorian now))))))
       (list (nth 2 date) (nth 0 date) (nth 1 date)))))
 
-(defun gnosis-algorithm-date-diff (date)
-  "Find the difference between the current date and the given DATE.
+(defun gnosis-algorithm-date-diff (date &optional date2)
+  "Find the difference between DATE2 and DATE.
+
+If DATE2 is nil, current date will be used instead.
 
 DATE format must be given as (year month day)."
-  (let ((given-date (encode-time 0 0 0 (caddr date) (cadr date) (car date))))
-    (- (time-to-days (current-time))
-       (time-to-days given-date))))
+  (let* ((given-date (encode-time 0 0 0 (caddr date) (cadr date) (car date)))
+	 (date2 (if date2 (encode-time 0 0 0 (caddr date2) (cadr date2) (car date2))
+		  (current-time)))
+	 (diff (- (time-to-days date2)
+		  (time-to-days given-date))))
+    (if (>= diff 0) diff (error "`DATE2' must be higher than `DATE'"))))
 
 (cl-defun gnosis-algorithm-next-ef (&key ef success increase decrease threshold
 					 c-successes c-failures)
