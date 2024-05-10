@@ -1619,6 +1619,8 @@ to improve readability."
 (defun gnosis-review ()
   "Start gnosis review session."
   (interactive)
+  ;; Refresh modeline
+  (setq gnosis-due-notes-total (length (gnosis-review-get-due-notes)))
   (let ((review-type (funcall gnosis-completing-read-function "Review: " '("Due notes"
 									   "Due notes of deck"
 									   "Due notes of specified tag(s)"
