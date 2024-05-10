@@ -1,11 +1,11 @@
 ;;; gnosis.el --- Spaced Repetition System  -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2023  Thanos Apollo
+;; Copyright (C) 2023-2024  Thanos Apollo
 
 ;; Author: Thanos Apollo <public@thanosapollo.org>
 ;; Keywords: extensions
 ;; URL: https://thanosapollo.org/projects/gnosis
-;; Version: 0.2.3
+;; Version: 0.2.4
 
 ;; Package-Requires: ((emacs "27.2") (emacsql "20240124") (compat "29.1.4.2"))
 
@@ -280,11 +280,15 @@ Example:
            if (= i index) collect new-item
            else collect item))
 
-(defun gnosis-display-question (id)
-  "Display main row for note ID."
+(defun gnosis-display-question (id &optional fill-paragraph-p)
+  "Display main row for note ID.
+
+If FILL-PARAGRAPH-P, insert question using `fill-paragraph'."
   (let ((question (gnosis-get 'main 'notes `(= id ,id))))
     (erase-buffer)
-    (fill-paragraph (insert "\n"  (propertize question 'face 'gnosis-face-main)))))
+    (if fill-paragraph-p
+	(fill-paragraph (insert "\n"  (propertize question 'face 'gnosis-face-main))))
+    (insert "\n"  (propertize question 'face 'gnosis-face-main))))
 
 (defun gnosis-display-mcq-options (id)
   "Display answer options for mcq note ID."
@@ -295,12 +299,17 @@ Example:
 	     do (insert (format "\n%s.  %s" option-num option))
 	     (setf option-num (1+ option-num)))))
 
-(defun gnosis-display-cloze-sentence (sentence clozes)
-  "Display cloze sentence for SENTENCE with CLOZES."
+(defun gnosis-display-cloze-sentence (sentence clozes &optional fill-paragraph-p)
+  "Display cloze sentence for SENTENCE with CLOZES.
+
+If FILL-PARAGRAPH-P, insert using `fill-paragraph'"
   (erase-buffer)
-  (fill-paragraph
-   (insert "\n"
-	   (gnosis-cloze-replace-words sentence clozes (propertize gnosis-cloze-string 'face 'gnosis-face-cloze)))))
+  (let ((cloze-sentence
+	 (gnosis-cloze-replace-words sentence clozes (propertize gnosis-cloze-string 'face 'gnosis-face-cloze))))
+  (if fill-paragraph-p
+      (fill-paragraph
+       (insert "\n" cloze-sentence))
+    (insert "\n" cloze-sentence))))
 
 (defun gnosis-display-basic-answer (answer success user-input)
   "Display ANSWER.
@@ -428,7 +437,7 @@ Also see `gnosis-string-edit'."
 				  (propertize (format "%s" interval) 'face 'gnosis-face-next-review))))
     (if (search-backward "Next review" nil t)
 	;; Delete previous result, and override with new this should
-	;; occur only when used with `gnosis-review-override'
+	;; occur only when used for overriding review result.
         (progn (delete-region (point) (progn (end-of-line) (point)))
 	       (insert (propertize (replace-regexp-in-string "\n" "" next-review-msg)
 				   'face (if success 'gnosis-face-correct 'gnosis-face-false))))
@@ -1265,17 +1274,33 @@ NOTE-NUM: The number of notes reviewed in the session."
       (gnosis-vc-push))
     (message "Review session finished.  %d notes reviewed." note-num)))
 
-(defun gnosis-review-override (id success)
-  "Override review result of note ID.
+(defun gnosis-review-actions (success note note-count)
+  "Specify action during review of note.
 
-Reverse the result of review SUCCESS."
-  (let ((success-new (if success nil t)))
-    (gnosis-display-next-review id success-new)
-    (if (y-or-n-p (format "Override review result as %s?" (if success-new "`SUCCESS'" "`FAILURE'")))
-	(gnosis-review--update id success-new)
-      (gnosis-review-override id success-new))))
+SUCCESS: Review result
+NOTE: Note ID
+NOTE-COUNT: Total notes reviewed"
+  (pcase (car (read-multiple-choice
+	       "Note actions"
+	       '((?n "next")
+		 (?o "override")
+		 (?s "suspend")
+		 (?e "edit")
+		 (?q "quit"))))
+    (?n (gnosis-review--update note success))
+    (?o (setf success (if success nil t))
+	(gnosis-display-next-review note success)
+	(gnosis-review-actions success note note-count))
+    (?s (gnosis-suspend-note note))
+    (?e (gnosis-edit-note note t)
+	(recursive-edit)
+	(gnosis-review-actions success note note-count))
+    (?q (gnosis-review--update note success)
+	(gnosis-review-commit note-count)
+	;; Break the loop of `gnosis-review-session'
+	(throw 'stop-loop t))))
 
-(defun gnosis-review--session (notes)
+(defun gnosis-review-session (notes)
   "Start review session for NOTES.
 
 NOTES: List of note ids"
@@ -1283,28 +1308,13 @@ NOTES: List of note ids"
     (if (null notes)
 	(message "No notes for review.")
       (when (y-or-n-p (format "You have %s total notes for review, start session?" (length notes)))
-	(cl-loop for note in notes
-		 do (let ((success (gnosis-review-note note)))
-		      (setf note-count (1+ note-count))
-		      (pcase (car (read-multiple-choice
-				   "Note actions"
-				   '((?n "next")
-				     (?o "override")
-				     (?s "suspend")
-				     (?e "edit")
-				     (?q "quit"))))
-			(?n (gnosis-review--update note success))
-			(?o (gnosis-review-override note success))
-			(?s (gnosis-suspend-note note))
-			(?e (gnosis-review--update note success)
-			    (gnosis-edit-note note t)
-			    (recursive-edit))
-			(?q (gnosis-review--update note success)
-			    (gnosis-review-commit note-count)
-			    (cl-return)))
-		      (setq gnosis-due-notes-total (length (gnosis-review-get-due-notes))))
-		 finally (gnosis-review-commit note-count))))))
-
+	(catch 'stop-loop
+	  (cl-loop for note in notes
+		   do (let ((success (gnosis-review-note note)))
+			(setf note-count (1+ note-count))
+			(gnosis-review-actions success note note-count)
+			(setf gnosis-due-notes-total (length (gnosis-review-get-due-notes))))
+		   finally (gnosis-review-commit note-count)))))))
 
 ;; Editing notes
 (defun gnosis-edit-read-only-values (&rest values)
@@ -1585,10 +1595,10 @@ to improve readability."
 									   "Due notes of specified tag(s)"
 									   "All notes of tag(s)"))))
     (pcase review-type
-      ("Due notes" (gnosis-review--session (gnosis-collect-note-ids :due t)))
-      ("Due notes of deck" (gnosis-review--session (gnosis-collect-note-ids :due t :deck (gnosis--get-deck-id))))
-      ("Due notes of specified tag(s)" (gnosis-review--session (gnosis-collect-note-ids :due t :tags t)))
-      ("All notes of tag(s)" (gnosis-review--session (gnosis-collect-note-ids :tags t))))))
+      ("Due notes" (gnosis-review-session (gnosis-collect-note-ids :due t)))
+      ("Due notes of deck" (gnosis-review-session (gnosis-collect-note-ids :due t :deck (gnosis--get-deck-id))))
+      ("Due notes of specified tag(s)" (gnosis-review-session (gnosis-collect-note-ids :due t :tags t)))
+      ("All notes of tag(s)" (gnosis-review-session (gnosis-collect-note-ids :tags t))))))
 
 ;;; Database Schemas
 (defvar gnosis-db-schema-decks '([(id integer :primary-key :autoincrement)
