@@ -112,7 +112,7 @@ When nil, the image will be displayed at its original size."
   (make-directory gnosis-dir)
   (make-directory gnosis-images-dir))
 
-(defconst gnosis-db
+(defvar gnosis-db
   (emacsql-sqlite-open (expand-file-name "gnosis.db" gnosis-dir))
   "Gnosis database file.")
 
