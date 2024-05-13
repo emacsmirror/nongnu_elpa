@@ -1925,7 +1925,6 @@ DASHBOARD-TYPE: either 'Notes' or 'Decks' to display the respective dashboard."
                         (and (listp item) (eq (car item) :eval)
                              (string-prefix-p " G:" (format "%s" (eval (cadr item))))))
                       global-mode-string))
-    (run-at-time "5 min" 300 #'(lambda () (setq gnosis-due-notes-total (length (gnosis-review-get-due-notes)))))
     (force-mode-line-update)))
 
 (define-derived-mode gnosis-mode special-mode "Gnosis"
