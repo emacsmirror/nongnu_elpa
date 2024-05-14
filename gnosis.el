@@ -501,12 +501,12 @@ If NAME is t, return name of deck."
     deck-ff))
 
 (defun gnosis-get-note-ff (id)
-  "Return failure factor for note ID.."
+  "Return failure factor for note ID."
   (let ((deck-ff (gnosis-get-deck-ff (gnosis-get-deck--note id)))
 	(note-ff (gnosis-get 'ff 'review `(= id ,id))))
-    deck-ff
-    ;; (max deck-ff note-ff)
-    ))
+    (if (and deck-ff (> deck-ff note-ff))
+	deck-ff
+      note-ff)))
 
 (cl-defun gnosis-suspend-note (id)
   "Suspend note with ID."
@@ -1873,7 +1873,8 @@ DASHBOARD-TYPE: either 'Notes' or 'Decks' to display the respective dashboard."
 	("notes" (gnosis-dashboard-output-notes (gnosis-collect-note-ids)))
 	("decks" (gnosis-dashboard-output-decks))
 	("tags"  (gnosis-dashboard-output-notes (gnosis-collect-note-ids :tags t)))
-	("search" (gnosis-dashboard-output-notes (gnosis-collect-note-ids :query (read-string "Search for note: "))))))
+	("search" (gnosis-dashboard-output-notes
+		   (gnosis-collect-note-ids :query (read-string "Search for note: "))))))
     (tabulated-list-print t)))
 
 (defun gnosis-db-init ()
