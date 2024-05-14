@@ -184,10 +184,15 @@ successful reviews."
   ;; This should only occur in testing env or when the user has made breaking changes.
   (cl-assert (> (nth 2 ef) 1) "Total ef value must be above 1")
   (let* ((ef (nth 2 gnosis-algorithm-ef))
+	 ;; If last-interval is 0, use 1 instead.
+	 (last-interval (if (<= last-interval 0) 1 last-interval))
 	 (interval (cond ((and (= successful-reviews 0) success)
 			  (car initial-interval))
 			 ((and (= successful-reviews 1) success)
 			  (cadr initial-interval))
+			 ;; If it's still on initial stage, review the
+			 ;; same day
+			 ((and (< successful-reviews 2) (not success)) 0)
 			 (t (let* ((success-interval (* ef last-interval))
 				   (failure-interval (* last-interval failure-factor)))
 			      (if success success-interval
