@@ -282,6 +282,14 @@ Example:
                 (cl-rotatef (nth (1- i) seq) (nth j seq)))  ; Swap elements.
            finally return seq))
 
+(defun gnosis-completing-read (prompt seq)
+  "Call `gnosis-completing-read-function' with shuffled SEQ.
+
+PROMPT: Prompt for `gnosis-completing-read-function'
+History is disabled."
+  (let ((history-add-new-input nil))
+    (funcall gnosis-completing-read-function prompt (gnosis-shuffle seq))))
+
 (defun gnosis-replace-item-at-index (index new-item list)
   "Replace item at INDEX in LIST with NEW-ITEM."
   (cl-loop for i from 0 for item in list
@@ -488,7 +496,7 @@ Set SPLIT to t to split all input given."
     (error "No decks found.  Please create a deck first with `gnosis-add-deck'"))
   (if id
       (gnosis-get 'name 'decks `(= id ,id))
-    (funcall gnosis-completing-read-function "Deck: " (gnosis-select 'name 'decks))))
+    (gnosis-completing-read "Deck: " (gnosis-select 'name 'decks))))
 
 (cl-defun gnosis--get-deck-id (&optional (deck (gnosis--get-deck-name)))
   "Return id for DECK name."
@@ -552,7 +560,7 @@ When called with a prefix, unsuspends all notes for tag."
 (defun gnosis-suspend ()
   "Suspend note(s) with specified values."
   (interactive)
-  (let ((item (funcall gnosis-completing-read-function "Suspend by: " '("Deck" "Tag"))))
+  (let ((item (gnosis-completing-read "Suspend by: " '("Deck" "Tag"))))
     (pcase item
       ("Deck" (gnosis-suspend-deck))
       ("Tag" (gnosis-suspend-tag))
@@ -845,7 +853,7 @@ TYPE: Type of gnosis note, must be one of `gnosis-note-types'"
     (unless (y-or-n-p "You are using a testing environment! Continue?")
       (error "Aborted")))
   (let* ((deck (or deck (gnosis--get-deck-name)))
-	 (type (or type (funcall gnosis-completing-read-function "Type: " gnosis-note-types nil t)))
+	 (type (or type (gnosis-completing-read "Type: " gnosis-note-types nil t)))
 	 (func-name (intern (format "gnosis-add-note-%s" (downcase type)))))
     (if (fboundp func-name)
 	(progn (funcall func-name deck)
@@ -863,7 +871,7 @@ TYPE: Type of gnosis note, must be one of `gnosis-note-types'"
   "Choose the correct answer, from mcq choices for question ID."
   (let ((choices (gnosis-get 'options 'notes `(= id ,id)))
 	(history-add-new-input nil)) ;; Disable history
-    (funcall gnosis-completing-read-function "Answer: " choices)))
+    (gnosis-completing-read "Answer: " choices)))
 
 (defun gnosis-cloze-remove-tags (string)
   "Replace cx-tags in STRING.
@@ -949,11 +957,11 @@ Optionally, add cusotm PROMPT."
   (if (y-or-n-p "Include images?")
       (let* ((prompt (or prompt "Select image: "))
 	     (image (if (y-or-n-p "Add review image?")
-			(funcall gnosis-completing-read-function prompt
+			(gnosis-completing-read prompt
 				 (cons nil (gnosis-directory-files gnosis-images-dir)))
 		      nil))
 	     (extra-image (if (y-or-n-p "Add post review image?")
-			      (funcall gnosis-completing-read-function prompt
+			      (gnosis-completing-read prompt
 				       (cons nil (gnosis-directory-files gnosis-images-dir))))))
 	(cons image extra-image))
     nil))
@@ -1629,7 +1637,7 @@ to improve readability."
   (interactive)
   ;; Refresh modeline
   (setq gnosis-due-notes-total (length (gnosis-review-get-due-notes)))
-  (let ((review-type (funcall gnosis-completing-read-function "Review: " '("Due notes"
+  (let ((review-type (gnosis-completing-read "Review: " '("Due notes"
 									   "Due notes of deck"
 									   "Due notes of specified tag(s)"
 									   "All notes of tag(s)"))))
