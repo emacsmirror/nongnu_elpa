@@ -274,6 +274,14 @@ Example:
       (emacsql-with-transaction gnosis-db (gnosis--delete 'decks `(= id ,id)))
       (message "Deleted deck `%s'" deck-name))))
 
+(defun gnosis-shuffle (seq)
+  "Shuffle SEQ."
+  (cl-loop with len = (length seq)
+           for i from len downto 2
+           do (let ((j (random i)))  ; Get random index < i.
+                (cl-rotatef (nth (1- i) seq) (nth j seq)))  ; Swap elements.
+           finally return seq))
+
 (defun gnosis-replace-item-at-index (index new-item list)
   "Replace item at INDEX in LIST with NEW-ITEM."
   (cl-loop for i from 0 for item in list
