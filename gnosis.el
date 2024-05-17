@@ -112,7 +112,7 @@ When nil, the image will be displayed at its original size."
   (make-directory gnosis-dir)
   (make-directory gnosis-images-dir))
 
-(defconst gnosis-db
+(defvar gnosis-db
   (emacsql-sqlite-open (expand-file-name "gnosis.db" gnosis-dir))
   "Gnosis database file.")
 
@@ -486,6 +486,27 @@ Set SPLIT to t to split all input given."
   "Return id for DECK name."
   (gnosis-get 'id 'decks `(= name ,deck)))
 
+(defun gnosis-get-deck--note (id &optional name)
+  "Get deck id for note ID.
+
+If NAME is t, return name of deck."
+  (let* ((id-clause `(= id ,id))
+	 (deck (gnosis-get 'deck-id 'notes id-clause)))
+    (if name (gnosis--get-deck-name deck) deck)))
+
+(defun gnosis-get-deck-ff (id)
+  "Return failure factor for deck of ID."
+  (let* ((id-clause `(= id ,id))
+	 (deck-ff (gnosis-get 'failure-factor 'decks id-clause)))
+    deck-ff))
+
+(defun gnosis-get-note-ff (id)
+  "Return failure factor for note ID."
+  (let ((deck-ff (gnosis-get-deck-ff (gnosis-get-deck--note id)))
+	(note-ff (gnosis-get 'ff 'review `(= id ,id))))
+    (if (and deck-ff (> deck-ff note-ff))
+	deck-ff
+      note-ff)))
 
 (cl-defun gnosis-suspend-note (id)
   "Suspend note with ID."
@@ -1080,20 +1101,33 @@ well."
 	        due-notes)
      :test #'equal)))
 
+(defun gnosis-review--get-offset (id)
+  "Return offset for note with value of id ID."
+  (let ((last-rev (gnosis-get 'last-rev 'review-log `(= id ,id))))
+    (gnosis-algorithm-date-diff last-rev)))
+
+(defun gnosis-review-last-interval (id)
+  "Return last review interval for note ID."
+  (let* ((where-id-clause `(= id ,id))
+         (last-rev (gnosis-get 'last-rev 'review-log where-id-clause))
+	 (rev-date (gnosis-get 'next-rev 'review-log where-id-clause)))
+    (gnosis-algorithm-date-diff last-rev rev-date)))
+
 (defun gnosis-review-algorithm (id success)
   "Return next review date & ef for note with value of id ID.
 
 SUCCESS is a boolean value, t for success, nil for failure.
 
 Returns a list of the form ((yyyy mm dd) (ef-increase ef-decrease ef-total))."
-  (let ((ff gnosis-algorithm-ff)
+  (let ((ff (gnosis-get-note-ff id))
 	(ef (gnosis-get 'ef 'review `(= id ,id)))
 	(t-success (gnosis-get 't-success 'review-log `(= id ,id))) ;; total successful reviews
 	(c-success (gnosis-get 'c-success 'review-log `(= id ,id))) ;; consecutive successful reviews
 	(c-fails (gnosis-get 'c-fails 'review-log `(= id ,id))) ;; consecutive failed reviews
 	;; (t-fails (gnosis-get 't-fails 'review-log `(= id ,id))) ;; total failed reviews
 	;; (review-num (gnosis-get 'n 'review-log `(= id ,id))) ;; total reviews
-	(last-interval (max (gnosis-review--get-offset id) 1))) ;; last interval
+	;; (last-interval (max (gnosis-review--get-offset id) 1))
+	(last-interval (gnosis-review-last-interval id))) ;; last interval
     (list (gnosis-algorithm-next-interval :last-interval last-interval
 					  :ef ef
 					  :success success
@@ -1107,11 +1141,6 @@ Returns a list of the form ((yyyy mm dd) (ef-increase ef-decrease ef-total))."
 				    :threshold (gnosis-get-ef-threshold id)
 				    :c-successes c-success
 				    :c-failures c-fails))))
-
-(defun gnosis-review--get-offset (id)
-  "Return offset for note with value of id ID."
-  (let ((last-rev (gnosis-get 'last-rev 'review-log `(= id ,id))))
-    (gnosis-algorithm-date-diff last-rev)))
 
 (defun gnosis-review--update (id success)
   "Update review-log for note with value of id ID.
@@ -1590,6 +1619,8 @@ to improve readability."
 (defun gnosis-review ()
   "Start gnosis review session."
   (interactive)
+  ;; Refresh modeline
+  (setq gnosis-due-notes-total (length (gnosis-review-get-due-notes)))
   (let ((review-type (funcall gnosis-completing-read-function "Review: " '("Due notes"
 									   "Due notes of deck"
 									   "Due notes of specified tag(s)"
@@ -1842,7 +1873,8 @@ DASHBOARD-TYPE: either 'Notes' or 'Decks' to display the respective dashboard."
 	("notes" (gnosis-dashboard-output-notes (gnosis-collect-note-ids)))
 	("decks" (gnosis-dashboard-output-decks))
 	("tags"  (gnosis-dashboard-output-notes (gnosis-collect-note-ids :tags t)))
-	("search" (gnosis-dashboard-output-notes (gnosis-collect-note-ids :query (read-string "Search for note: "))))))
+	("search" (gnosis-dashboard-output-notes
+		   (gnosis-collect-note-ids :query (read-string "Search for note: "))))))
     (tabulated-list-print t)))
 
 (defun gnosis-db-init ()
@@ -1894,7 +1926,6 @@ DASHBOARD-TYPE: either 'Notes' or 'Decks' to display the respective dashboard."
                         (and (listp item) (eq (car item) :eval)
                              (string-prefix-p " G:" (format "%s" (eval (cadr item))))))
                       global-mode-string))
-    (run-at-time "5 min" 300 #'(lambda () (setq gnosis-due-notes-total (length (gnosis-review-get-due-notes)))))
     (force-mode-line-update)))
 
 (define-derived-mode gnosis-mode special-mode "Gnosis"

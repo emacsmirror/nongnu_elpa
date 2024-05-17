@@ -123,13 +123,18 @@ Optional integer OFFSET is a number of days from the current date."
                    (+ offset (calendar-absolute-from-gregorian now))))))
       (list (nth 2 date) (nth 0 date) (nth 1 date)))))
 
-(defun gnosis-algorithm-date-diff (date)
-  "Find the difference between the current date and the given DATE.
+(defun gnosis-algorithm-date-diff (date &optional date2)
+  "Find the difference between DATE2 and DATE.
+
+If DATE2 is nil, current date will be used instead.
 
 DATE format must be given as (year month day)."
-  (let ((given-date (encode-time 0 0 0 (caddr date) (cadr date) (car date))))
-    (- (time-to-days (current-time))
-       (time-to-days given-date))))
+  (let* ((given-date (encode-time 0 0 0 (caddr date) (cadr date) (car date)))
+	 (date2 (if date2 (encode-time 0 0 0 (caddr date2) (cadr date2) (car date2))
+		  (current-time)))
+	 (diff (- (time-to-days date2)
+		  (time-to-days given-date))))
+    (if (>= diff 0) diff (error "`DATE2' must be higher than `DATE'"))))
 
 (cl-defun gnosis-algorithm-next-ef (&key ef success increase decrease threshold
 					 c-successes c-failures)
@@ -179,13 +184,21 @@ successful reviews."
   ;; This should only occur in testing env or when the user has made breaking changes.
   (cl-assert (> (nth 2 ef) 1) "Total ef value must be above 1")
   (let* ((ef (nth 2 gnosis-algorithm-ef))
+	 ;; If last-interval is 0, use 1 instead.
+	 (last-interval (if (<= last-interval 0) 1 last-interval))
 	 (interval (cond ((and (= successful-reviews 0) success)
 			  (car initial-interval))
 			 ((and (= successful-reviews 1) success)
 			  (cadr initial-interval))
-			 (t (if success
-				(* ef last-interval)
-			      (* failure-factor last-interval))))))
+			 ;; If it's still on initial stage, review the
+			 ;; same day
+			 ((and (< successful-reviews 2) (not success)) 0)
+			 (t (let* ((success-interval (* ef last-interval))
+				   (failure-interval (* last-interval failure-factor)))
+			      (if success success-interval
+				;; Make sure failure interval is never
+				;; higher than success
+			        (min success-interval failure-interval)))))))
     (gnosis-algorithm-date (round interval))))
 
 
