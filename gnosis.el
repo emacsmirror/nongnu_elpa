@@ -847,6 +847,16 @@ See `gnosis-add-note--cloze' for more reference."
 			  :images (gnosis-select-images)
 			  :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))
 
+(cl-defun gnosis-mcc-extract-options (str &optional (char gnosis-mcc-separator))
+  "Extract options for MCC note type from STR.
+
+CHAR: separator for mcc, default to `gnosis-mcc-separator'"
+  (cl-remove-if
+   #'null
+   (mapcar (lambda (s)
+             (when (string-match-p (regexp-quote char) s)
+               (split-string s (regexp-quote char))))
+           (split-string str " "))))
 ;;;###autoload
 (defun gnosis-add-note (&optional deck type)
   "Create note(s) as TYPE interactively.
