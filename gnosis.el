@@ -150,6 +150,11 @@ car value is the prompt, cdr is the prewritten string.")
 
 car value is the prompt, cdr is the prewritten string.")
 
+(defcustom gnosis-mcc-separator "&-"
+  "Sseparator for choices on multiple choice clozes."
+  :type 'string
+  :group 'gnosis)
+
 (defcustom gnosis-mcq-separator "\n--\n"
   "Separator for stem field and options in mcq note type.
 
