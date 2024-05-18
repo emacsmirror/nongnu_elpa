@@ -888,14 +888,6 @@ TYPE: Type of gnosis note, must be one of `gnosis-note-types'"
 	(history-add-new-input nil)) ;; Disable history
     (gnosis-completing-read "Answer: " choices)))
 
-(defun gnosis-cloze-remove-tags (string)
-  "Replace cx-tags in STRING.
-
-Works both with {} and {{}} to make easier to import anki notes."
-  (let* ((regex "{\\{1,2\\}c\\([0-9]+\\)::?\\(.*?\\)}\\{1,2\\}")
-         (result (replace-regexp-in-string regex "\\2" string)))
-    result))
-
 (defun gnosis-cloze-replace-words (string words new)
   "In STRING replace only the first occurrence of each word in WORDS with NEW."
   (cl-assert (listp words))
@@ -907,6 +899,14 @@ Works both with {} and {{}} to make easier to import anki notes."
                 (error "`%s' is an invalid cloze for question: `%s'"
                        word string)))
   string)
+
+(defun gnosis-cloze-remove-tags (string)
+  "Remove cx-tags in STRING.
+
+Works both with {} and {{}} to make easier to import anki notes."
+  (let* ((regex "{\\{1,2\\}c\\([0-9]+\\)::?\\(.*?\\)}\\{1,2\\}")
+         (result (replace-regexp-in-string regex "\\2" string)))
+    result))
 
 (defun gnosis-cloze-extract-answers (str)
   "Extract cloze answers for STR.
