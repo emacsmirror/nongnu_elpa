@@ -182,10 +182,7 @@ reviews.  Will be used to determine the next interval for the first 2
 successful reviews."
   (cl-assert (< gnosis-algorithm-ff 1) "Value of `gnosis-algorithm-ff' must be lower than 1")
   ;; This should only occur in testing env or when the user has made breaking changes.
-  (cl-assert (> (nth 2 ef) 1) "Total ef value must be above 1")
-  (let* ((ef (nth 2 gnosis-algorithm-ef))
-	 ;; If last-interval is 0, use 1 instead.
-	 (last-interval (if (<= last-interval 0) 1 last-interval))
+  (let* ((last-interval (if (<= last-interval 0) 1 last-interval)) ;; If last-interval is 0, use 1 instead.
 	 (interval (cond ((and (= successful-reviews 0) success)
 			  (car initial-interval))
 			 ((and (= successful-reviews 1) success)
