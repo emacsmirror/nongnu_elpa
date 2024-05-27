@@ -885,7 +885,7 @@ TYPE: Type of gnosis note, must be one of `gnosis-note-types'"
     (unless (y-or-n-p "You are using a testing environment! Continue?")
       (error "Aborted")))
   (let* ((deck (or deck (gnosis--get-deck-name)))
-	 (type (or type (gnosis-completing-read "Type: " gnosis-note-types nil t)))
+	 (type (or type (completing-read "Type: " gnosis-note-types nil t)))
 	 (func-name (intern (format "gnosis-add-note-%s" (downcase type)))))
     (if (fboundp func-name)
 	(progn (funcall func-name deck)
@@ -996,8 +996,7 @@ Optionally, add cusotm PROMPT."
       (let* ((prompt (or prompt "Select image: "))
 	     (image (if (y-or-n-p "Add review image?")
 			(gnosis-completing-read prompt
-				 (cons nil (gnosis-directory-files gnosis-images-dir)))
-		      nil))
+				 (cons nil (gnosis-directory-files gnosis-images-dir)))))
 	     (extra-image (if (y-or-n-p "Add post review image?")
 			      (gnosis-completing-read prompt
 				       (cons nil (gnosis-directory-files gnosis-images-dir))))))
@@ -1372,8 +1371,7 @@ NOTE-NUM: The number of notes reviewed in the session."
       (shell-command (format "%s %s %s" git "add" (shell-quote-argument "gnosis.db")))
       (shell-command (format "%s %s %s" git "commit -m"
 			     (shell-quote-argument (format "Total notes for session: %d" note-num)))))
-    (when (and gnosis-vc-auto-push
-	       (not gnosis-testing))
+    (when (and gnosis-vc-auto-push (not gnosis-testing))
       (gnosis-vc-push))
     (message "Review session finished.  %d notes reviewed." note-num)))
 
@@ -1600,17 +1598,16 @@ SUSPEND: Suspend note, 0 for unsuspend, 1 for suspend"
   (cl-assert (or (stringp options) (listp options)) nil "Options must be a string, or a list for MCQ")
   (cl-assert (or (= suspend 0) (= suspend 1)) nil "Suspend must be either 0 or 1")
   ;; Construct the update clause for the emacsql update statement.
-  (cl-loop for (field . value) in
-           `((main . ,main)
-             (options . ,options)
-             (answer . ,answer)
-             (tags . ,tags)
-             (extra-notes . ,extra-notes)
-             (images . ,image)
-             (extra-image . ,second-image)
-	     (ef . ',ef)
-	     (ff . ,ff)
-	     (suspend . ,suspend))
+  (cl-loop for (field . value) in `((main . ,main)
+				    (options . ,options)
+				    (answer . ,answer)
+				    (tags . ,tags)
+				    (extra-notes . ,extra-notes)
+				    (images . ,image)
+				    (extra-image . ,second-image)
+				    (ef . ',ef)
+				    (ff . ,ff)
+				    (suspend . ,suspend))
            when value
            do (cond ((memq field '(extra-notes images extra-image))
 		     (gnosis-update 'extras `(= ,field ,value) `(= id ,id)))
@@ -1696,9 +1693,9 @@ to improve readability."
   ;; Refresh modeline
   (setq gnosis-due-notes-total (length (gnosis-review-get-due-notes)))
   (let ((review-type (gnosis-completing-read "Review: " '("Due notes"
-									   "Due notes of deck"
-									   "Due notes of specified tag(s)"
-									   "All notes of tag(s)"))))
+							  "Due notes of deck"
+							  "Due notes of specified tag(s)"
+							  "All notes of tag(s)"))))
     (pcase review-type
       ("Due notes" (gnosis-review-session (gnosis-collect-note-ids :due t)))
       ("Due notes of deck" (gnosis-review-session (gnosis-collect-note-ids :due t :deck (gnosis--get-deck-id))))
@@ -1784,6 +1781,8 @@ Return note ids for notes that match QUERY."
            else
            collect (replace-regexp-in-string "\n" " " (format "%s" item))))
 
+;; TODO: Rewrite.  Tags should be an input of strings, interactive
+;; handling should be done by "helper" funcs
 (cl-defun gnosis-collect-note-ids (&key (tags nil) (due nil) (deck nil) (query nil))
   "Return list of note ids based on TAGS, DUE, DECKS, QUERY.
 
@@ -1936,12 +1935,13 @@ for dashboard type.
 
 DASHBOARD-TYPE: either 'Notes' or 'Decks' to display the respective dashboard."
   (interactive)
-  (let ((dashboard-type (or dashboard-type (cadr (read-multiple-choice
-						  "Display dashboard for:"
-						  '((?n "notes")
-						    (?d "decks")
-						    (?t "tags")
-						    (?s "search")))))))
+  (let ((dashboard-type (or dashboard-type
+			    (cadr (read-multiple-choice
+				   "Display dashboard for:"
+				   '((?n "notes")
+				     (?d "decks")
+				     (?t "tags")
+				     (?s "search")))))))
     (if note-ids (gnosis-dashboard-output-notes note-ids)
       (pcase dashboard-type
 	("notes" (gnosis-dashboard-output-notes (gnosis-collect-note-ids)))
