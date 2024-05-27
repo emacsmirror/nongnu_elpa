@@ -125,7 +125,7 @@ When nil, the image will be displayed at its original size."
 (defconst gnosis-db-version 2
   "Gnosis database version.")
 
-(defvar gnosis-note-types '("MCQ" "Cloze" "Basic" "Double" "y-or-n")
+(defvar gnosis-note-types '("MCQ" "MCC" "Cloze" "Basic" "Double" "y-or-n")
   "Gnosis available note types.")
 
 (defvar gnosis-previous-note-tags '()
@@ -857,6 +857,23 @@ CHAR: separator for mcc, default to `gnosis-mcc-separator'"
              (when (string-match-p (regexp-quote char) s)
                (split-string s (regexp-quote char))))
            (split-string str " "))))
+
+(defun gnosis-add-note-mcc (deck)
+  "Add MCC note type to DECK.
+
+MCC (Multiple Choice Cloze) note type consists of a sentence with a
+single cloze, for which user will be prompted to select the correct
+answer."
+  (interactive)
+  (let* ((input (gnosis-read-string-from-buffer "prompt" "string"))
+	 (question (gnosis-mcc-remove-separator input))
+	 (options (gnosis-mcc-extract-options input))
+	 (tags (gnosis-prompt-tags--split gnosis-previous-note-tags))
+	 (images (gnosis-select-images)))
+    (cl-loop for option in options
+	     do (gnosis-add-note-fields deck "mcc" question option (car option)
+					"extra" tags 0 (car images) (cdr images)))))
+
 ;;;###autoload
 (defun gnosis-add-note (&optional deck type)
   "Create note(s) as TYPE interactively.
@@ -929,6 +946,12 @@ Valid cloze formats include:
         (setf start (match-end 0))))
     (mapcar (lambda (tag-group) (nreverse (cdr tag-group)))
 	    (nreverse result-alist))))
+
+(defun gnosis-mcc-remove-separator (string &optional separator)
+  "Remove SEPARATOR and all followed words from STRING."
+  (let* ((separator (or separator gnosis-mcc-separator))
+	 (result (replace-regexp-in-string (format "%s[^ ]*" separator) "" string)))
+    result))
 
 (defun gnosis-compare-strings (str1 str2)
   "Compare STR1 and STR2.
@@ -1275,6 +1298,26 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
 		    (cl-return)))
 	     ;; Update note after all clozes are revealed successfully
 	     finally (setf success t))
+    (gnosis-display-extra id)
+    (gnosis-display-next-review id success)
+    success))
+
+(defun gnosis-review-mcc (id)
+  "Review MCC note of ID."
+  (let ((main (gnosis-get 'main 'notes `(= id ,id)))
+	;; Cloze needs to be a list, we take car as the answer
+	(cloze (list (gnosis-get 'answer 'notes `(= id ,id))))
+	(user-choice nil)
+	(success nil))
+    (gnosis-display-cloze-sentence main cloze)
+    (gnosis-display-image id)
+    (setf user-choice (gnosis-mcq-answer id)
+	  success (string= user-choice (car cloze)))
+    (gnosis-display-cloze-reveal :replace (car cloze)
+				 :success success)
+    ;; Display user answer only upon failure
+    (unless success
+      (gnosis-display-cloze-user-answer user-choice))
     (gnosis-display-extra id)
     (gnosis-display-next-review id success)
     success))
