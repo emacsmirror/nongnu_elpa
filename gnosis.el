@@ -1127,7 +1127,7 @@ well."
   (let* ((where-id-clause `(= id ,id))
          (last-rev (gnosis-get 'last-rev 'review-log where-id-clause))
 	 (rev-date (gnosis-get 'next-rev 'review-log where-id-clause)))
-    (gnosis-algorithm-date-diff last-rev rev-date)))
+    (max (gnosis-algorithm-date-diff last-rev rev-date) 1)))
 
 (defun gnosis-review-algorithm (id success)
   "Return next review date & ef for note with value of id ID.
@@ -1145,7 +1145,7 @@ Returns a list of the form ((yyyy mm dd) (ef-increase ef-decrease ef-total))."
 	;; (last-interval (max (gnosis-review--get-offset id) 1))
 	(last-interval (gnosis-review-last-interval id))) ;; last interval
     (list (gnosis-algorithm-next-interval :last-interval last-interval
-					  :ef ef
+					  :ef (nth 2 ef) ;; total ef is used for next interval
 					  :success success
 					  :successful-reviews t-success
 					  :failure-factor ff
