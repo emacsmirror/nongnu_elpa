@@ -1142,7 +1142,7 @@ well."
   (let* ((where-id-clause `(= id ,id))
          (last-rev (gnosis-get 'last-rev 'review-log where-id-clause))
 	 (rev-date (gnosis-get 'next-rev 'review-log where-id-clause)))
-    (gnosis-algorithm-date-diff last-rev rev-date)))
+    (max (gnosis-algorithm-date-diff last-rev rev-date) 1)))
 
 (defun gnosis-review-algorithm (id success)
   "Return next review date & ef for note with value of id ID.
