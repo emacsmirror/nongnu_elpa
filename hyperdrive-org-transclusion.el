@@ -121,7 +121,7 @@ PLIST, COPY."
                      (when target
                        (org-mode)
                        (let ((org-link-search-must-match-exact-headline t))
-                         (when (with-demoted-errors "hyperdrive-org-transclusion error:\n%s\ntranscluding whole file..."
+                         (when (with-demoted-errors "hyperdrive-org-transclusion: Transcluding whole file due to %S"
                                  (org-link-search (format "%s" target)))
                            (org-narrow-to-subtree))))
                      (setf tc-type "org-hyper"))
