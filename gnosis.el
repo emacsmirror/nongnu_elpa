@@ -853,7 +853,7 @@ TYPE: Type of gnosis note, must be one of `gnosis-note-types'"
     (unless (y-or-n-p "You are using a testing environment! Continue?")
       (error "Aborted")))
   (let* ((deck (or deck (gnosis--get-deck-name)))
-	 (type (or type (gnosis-completing-read "Type: " gnosis-note-types nil t)))
+	 (type (or type (funcall gnosis-completing-read-function "Type: " gnosis-note-types nil t)))
 	 (func-name (intern (format "gnosis-add-note-%s" (downcase type)))))
     (if (fboundp func-name)
 	(progn (funcall func-name deck)
@@ -1180,6 +1180,11 @@ SUCCESS is a boolean value, t for success, nil for failure."
       (gnosis-update 'review-log `(= t-fails ,(1+ (gnosis-get 't-fails 'review-log `(= id ,id)))) `(= id ,id))
       (gnosis-update 'review-log `(= c-success 0) `(= id ,id)))))
 
+(defun gnosis-review-result (id success)
+  "Update review note ID results for SUCCESS."
+  (gnosis-review--update id success)
+  (setf gnosis-due-notes-total (length (gnosis-review-get-due-notes))))
+
 (defun gnosis-review-mcq (id)
   "Display multiple choice answers for question ID."
   (gnosis-display-question id)
@@ -1332,7 +1337,7 @@ NOTE-COUNT: Total notes reviewed"
 		 (?s "suspend")
 		 (?e "edit")
 		 (?q "quit"))))
-    (?n (gnosis-review--update note success))
+    (?n (gnosis-review-result note success))
     (?o (setf success (if success nil t))
 	(gnosis-display-next-review note success)
 	(gnosis-review-actions success note note-count))
@@ -1340,7 +1345,7 @@ NOTE-COUNT: Total notes reviewed"
     (?e (gnosis-edit-note note t)
 	(recursive-edit)
 	(gnosis-review-actions success note note-count))
-    (?q (gnosis-review--update note success)
+    (?q (gnosis-review-result note success)
 	(gnosis-review-commit note-count)
 	;; Break the loop of `gnosis-review-session'
 	(throw 'stop-loop t))))
@@ -1357,8 +1362,7 @@ NOTES: List of note ids"
 	  (cl-loop for note in notes
 		   do (let ((success (gnosis-review-note note)))
 			(setf note-count (1+ note-count))
-			(gnosis-review-actions success note note-count)
-			(setf gnosis-due-notes-total (length (gnosis-review-get-due-notes))))
+			(gnosis-review-actions success note note-count))
 		   finally (gnosis-review-commit note-count)))))))
 
 ;; Editing notes
@@ -1637,7 +1641,7 @@ to improve readability."
   (interactive)
   ;; Refresh modeline
   (setq gnosis-due-notes-total (length (gnosis-review-get-due-notes)))
-  (let ((review-type (gnosis-completing-read "Review: " '("Due notes"
+  (let ((review-type (funcall gnosis-completing-read-function "Review: " '("Due notes"
 									   "Due notes of deck"
 									   "Due notes of specified tag(s)"
 									   "All notes of tag(s)"))))
