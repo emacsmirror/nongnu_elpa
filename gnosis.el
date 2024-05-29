@@ -288,7 +288,7 @@ Example:
 PROMPT: Prompt for `gnosis-completing-read-function'
 History is disabled."
   (let ((history-add-new-input nil))
-    (gnosis-completing-read prompt (gnosis-shuffle seq))))
+    (funcall gnosis-completing-read-function prompt (gnosis-shuffle seq))))
 
 (defun gnosis-replace-item-at-index (index new-item list)
   "Replace item at INDEX in LIST with NEW-ITEM."
