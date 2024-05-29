@@ -905,6 +905,14 @@ TYPE: Type of gnosis note, must be one of `gnosis-note-types'"
 	(history-add-new-input nil)) ;; Disable history
     (gnosis-completing-read "Answer: " choices)))
 
+(defun gnosis-cloze-remove-tags (string)
+  "Replace cx-tags in STRING.
+
+Works both with {} and {{}} to make easier to import anki notes."
+  (let* ((regex "{\\{1,2\\}c\\([0-9]+\\)::?\\(.*?\\)}\\{1,2\\}")
+         (result (replace-regexp-in-string regex "\\2" string)))
+    result))
+
 (defun gnosis-cloze-replace-words (string words new)
   "In STRING replace only the first occurrence of each word in WORDS with NEW."
   (cl-assert (listp words))
@@ -996,7 +1004,8 @@ Optionally, add cusotm PROMPT."
       (let* ((prompt (or prompt "Select image: "))
 	     (image (if (y-or-n-p "Add review image?")
 			(gnosis-completing-read prompt
-				 (cons nil (gnosis-directory-files gnosis-images-dir)))))
+				 (cons nil (gnosis-directory-files gnosis-images-dir)))
+		      nil))
 	     (extra-image (if (y-or-n-p "Add post review image?")
 			      (gnosis-completing-read prompt
 				       (cons nil (gnosis-directory-files gnosis-images-dir))))))
@@ -1217,6 +1226,11 @@ SUCCESS is a boolean value, t for success, nil for failure."
       (gnosis-update 'review-log `(= t-fails ,(1+ (gnosis-get 't-fails 'review-log `(= id ,id)))) `(= id ,id))
       (gnosis-update 'review-log `(= c-success 0) `(= id ,id)))))
 
+(defun gnosis-review-result (id success)
+  "Update review note ID results for SUCCESS."
+  (gnosis-review--update id success)
+  (setf gnosis-due-notes-total (length (gnosis-review-get-due-notes))))
+
 (defun gnosis-review-mcq (id)
   "Display multiple choice answers for question ID."
   (gnosis-display-question id)
@@ -1388,7 +1402,7 @@ NOTE-COUNT: Total notes reviewed"
 		 (?s "suspend")
 		 (?e "edit")
 		 (?q "quit"))))
-    (?n (gnosis-review--update note success))
+    (?n (gnosis-review-result note success))
     (?o (setf success (if success nil t))
 	(gnosis-display-next-review note success)
 	(gnosis-review-actions success note note-count))
@@ -1396,7 +1410,7 @@ NOTE-COUNT: Total notes reviewed"
     (?e (gnosis-edit-note note t)
 	(recursive-edit)
 	(gnosis-review-actions success note note-count))
-    (?q (gnosis-review--update note success)
+    (?q (gnosis-review-result note success)
 	(gnosis-review-commit note-count)
 	;; Break the loop of `gnosis-review-session'
 	(throw 'stop-loop t))))
@@ -1413,8 +1427,7 @@ NOTES: List of note ids"
 	  (cl-loop for note in notes
 		   do (let ((success (gnosis-review-note note)))
 			(setf note-count (1+ note-count))
-			(gnosis-review-actions success note note-count)
-			(setf gnosis-due-notes-total (length (gnosis-review-get-due-notes))))
+			(gnosis-review-actions success note note-count))
 		   finally (gnosis-review-commit note-count)))))))
 
 ;; Editing notes
