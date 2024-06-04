@@ -211,12 +211,41 @@ added to the outgoing message.")
   "Float-time of earliest backlog entry inserted into buffer.
 nil if no backlog has been inserted.")
 
+(defvar jaber-chat-much-presence-patterns-history nil
+  "History values selected for `jabber-muc-decorate-presence-patterns'")
+
 (defface jabber-muc-presence-dim
   '((t (:foreground "dark grey" :weight light :slant italic)))
   "face for diminished presence notifications."
   :group 'jabber-alerts)
 
-(defcustom jabber-muc-decorate-presence-patterns nil
+(defcustom jabber-muc-decorate-presence-patterns-alist
+  '(("Show all"
+     ("." . jabber-chat-text-foreign))
+    ("Hide all"
+     ("."))
+    ("Show enter/leave diminished"
+     ("." . jabber-muc-presence-dim))
+    ("Hide enter/leave"
+     ("\\( enters the room ([^)]+)\\| has left the chatroom\\)$")
+     ("." . jabber-muc-presence-dim)))
+  "List presence treatment specifications.
+Each specification consists of a label (string) and a list of
+pattern/face pairs which are suitable values for
+`jabber-muc-decorate-presence-patterns'.  These pairs describe
+how to highlight presence events in MUC chat logs."
+  :type '(alist
+          :key-type string
+          :value-type (repeat
+                       :tag "Patterns"
+                       (cons :format "%v"
+                             (regexp :tag "Regexp")
+                             (choice
+                              (const :tag "Ignore" nil)
+                              (face :tag "Face" :value jabber-muc-presence-dim)))))
+  :group 'jabber-alerts)
+
+(defcustom jabber-muc-decorate-presence-patterns (cdar jabber-muc-decorate-presence-patterns-alist)
   "List of regular expressions and face pairs.
 When a presence notification matches a pattern, display it with
 associated face.  Ignore notification if face is `nil'."
@@ -228,32 +257,6 @@ associated face.  Ignore notification if face is `nil'."
             (const :tag "Ignore" nil)
             (face :tag "Face" :value jabber-muc-presence-dim))))
   :group 'jabber-alerts)
-
-(defcustom jabber-muc-decorate-presence-patterns-ring
-  '(nil
-    (("\\( enters the room ([^)]+)\\| has left the chatroom\\)$" . jabber-muc-presence-dim)
-      ("." . jabber-muc-presence-dim))
-    (("\\( enters the room ([^)]+)\\| has left the chatroom\\)$")
-      ("." . jabber-muc-presence-dim)))
-  "List lists of pattern/face pairs.
-Each list of pattern/face pairs are suitable values for
-`jabber-muc-decorate-presence-patterns'.  These pairs describe
-how to highlight presence events in MUC chat logs."
-  :type '(repeat
-          (repeat
-           :tag "Patterns"
-           (cons :format "%v"
-                 (regexp :tag "Regexp")
-                 (choice
-                  (const :tag "Ignore" nil)
-                  (face :tag "Face" :value jabber-muc-presence-dim)))))
-  :group 'jabber-alerts)
-
-(defvar jabber-muc-decorate-presence-ring-index 0
-  "Current position of `jabber-muc-decorate-presence-patterns-ring'.
-This is used by `jabber-chat-muc-presence-patterns-cycle' to
-update `jabber-muc-decorate-presence-patterns' with the next ring
-entry.")
 
 ;;;###autoload
 (defun jabber-chat-get-buffer (chat-with)
@@ -426,20 +429,38 @@ JC is the Jabber connection."
     ;; ...and send it...
     (jabber-send-sexp jc stanza-to-send)))
 
-(defun jabber-chat-muc-presence-patterns-cycle ()
-  "Select next MUC presence highlight pattern.
-Update `jabber-muc-decorate-presence-patterns with the next entry
-in `jabber-muc-decorate-presence-patterns-ring', then update the
-current buffer to reflect the updated value."
-  (interactive)
-  (setq jabber-muc-decorate-presence-ring-index
-        (mod
-         (1+ jabber-muc-decorate-presence-ring-index)
-         (length jabber-muc-decorate-presence-patterns-ring)))
-  (setq jabber-muc-decorate-presence-patterns
-        (nth jabber-muc-decorate-presence-ring-index
-             jabber-muc-decorate-presence-patterns-ring))
-  (jabber-chat-redisplay))
+(defun jabber-chat-muc-presence-patterns-select (global)
+  "Select a MUC presence treatment.
+Prompts user to select a presence treatment by name, where the
+name is the `car' of an entry in
+`jabber-muc-decorate-presence-patterns-alist'.  The variable
+`jabber-muc-decorate-presence-patterns' is set to the `cdr' of
+the selected treatment.
+
+By default, when `jabber-muc-decorate-presence-patterns' is
+updated, it is made buffer local.  With a prefix argument, the
+buffer-local state of the variable is not changed.
+
+The chat buffer is redisplayed using the new value of
+`jabber-muc-decorate-presence-patterns'.  Redisplaying the buffer
+may take a few second, especially in MUCs with a large number of
+participants connected through intermittent networks (like mobile
+clients)."
+  (interactive "P")
+  (when-let ((patterns (cdr
+                        (assoc-string
+                         (completing-read
+                          "MUC presence treatment: "
+                          (mapcar #'car jabber-muc-decorate-presence-patterns-alist)
+                          nil t nil
+                          'jaber-chat-much-presence-patterns-history)
+                         jabber-muc-decorate-presence-patterns-alist))))
+    (unless (equal patterns jabber-muc-decorate-presence-patterns)
+      (set (if global
+               'jabber-muc-decorate-presence-patterns
+             (make-local-variable 'jabber-muc-decorate-presence-patterns))
+           patterns)
+      (jabber-chat-redisplay))))
 
 (defun jabber-chat-muc-presence-highlight (message)
   "Return non-`nil' to control MUC presence notification display.
