@@ -125,7 +125,7 @@ When nil, the image will be displayed at its original size."
 (defconst gnosis-db-version 2
   "Gnosis database version.")
 
-(defvar gnosis-note-types '("MCQ" "MCC" "Cloze" "Basic" "Double" "y-or-n")
+(defvar gnosis-note-types '("MCQ" "MC-Cloze" "Cloze" "Basic" "Double" "y-or-n")
   "Gnosis available note types.")
 
 (defvar gnosis-previous-note-tags '()
@@ -150,7 +150,10 @@ car value is the prompt, cdr is the prewritten string.")
 
 car value is the prompt, cdr is the prewritten string.")
 
-(defcustom gnosis-mcc-separator "&-"
+(defvar gnosis-mc-cloze-guidance
+  '("MC-Cloze format example: This is an example correct-option&-option2&-option3" . "Example correct-option&-option2&-option3"))
+
+(defcustom gnosis-mc-cloze-separator "&-"
   "Sseparator for choices on multiple choice clozes."
   :type 'string
   :group 'gnosis)
@@ -847,10 +850,10 @@ See `gnosis-add-note--cloze' for more reference."
 			  :images (gnosis-select-images)
 			  :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))
 
-(cl-defun gnosis-mcc-extract-options (str &optional (char gnosis-mcc-separator))
-  "Extract options for MCC note type from STR.
+(cl-defun gnosis-mc-cloze-extract-options (str &optional (char gnosis-mc-cloze-separator))
+  "Extract options for MC-CLOZE note type from STR.
 
-CHAR: separator for mcc, default to `gnosis-mcc-separator'"
+CHAR: separator for mc-cloze, default to `gnosis-mc-cloze-separator'"
   (cl-remove-if
    #'null
    (mapcar (lambda (s)
@@ -858,20 +861,21 @@ CHAR: separator for mcc, default to `gnosis-mcc-separator'"
                (split-string s (regexp-quote char))))
            (split-string str " "))))
 
-(defun gnosis-add-note-mcc (deck)
-  "Add MCC note type to DECK.
+(defun gnosis-add-note-mc-cloze (deck)
+  "Add MC-CLOZE note type to DECK.
 
-MCC (Multiple Choice Cloze) note type consists of a sentence with a
+MC-CLOZE (Multiple Choice Cloze) note type consists of a sentence with a
 single cloze, for which user will be prompted to select the correct
 answer."
   (interactive)
-  (let* ((input (gnosis-read-string-from-buffer "prompt" "string"))
-	 (question (gnosis-mcc-remove-separator input))
-	 (options (gnosis-mcc-extract-options input))
+  (let* ((input (gnosis-read-string-from-buffer (or (car gnosis-mc-cloze-guidance) "")
+						(or (cdr gnosis-mc-cloze-guidance) "")))
+	 (question (gnosis-mc-cloze-remove-separator input))
+	 (options (gnosis-mc-cloze-extract-options input))
 	 (tags (gnosis-prompt-tags--split gnosis-previous-note-tags))
 	 (images (gnosis-select-images)))
     (cl-loop for option in options
-	     do (gnosis-add-note-fields deck "mcc" question option (car option)
+	     do (gnosis-add-note-fields deck "mc-cloze" question option (car option)
 					"extra" tags 0 (car images) (cdr images)))))
 
 ;;;###autoload
@@ -955,9 +959,9 @@ Valid cloze formats include:
     (mapcar (lambda (tag-group) (nreverse (cdr tag-group)))
 	    (nreverse result-alist))))
 
-(defun gnosis-mcc-remove-separator (string &optional separator)
+(defun gnosis-mc-cloze-remove-separator (string &optional separator)
   "Remove SEPARATOR and all followed words from STRING."
-  (let* ((separator (or separator gnosis-mcc-separator))
+  (let* ((separator (or separator gnosis-mc-cloze-separator))
 	 (result (replace-regexp-in-string (format "%s[^ ]*" separator) "" string)))
     result))
 
@@ -1315,8 +1319,8 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
     (gnosis-display-next-review id success)
     success))
 
-(defun gnosis-review-mcc (id)
-  "Review MCC note of ID."
+(defun gnosis-review-mc-cloze (id)
+  "Review MC-CLOZE note of ID."
   (let ((main (gnosis-get 'main 'notes `(= id ,id)))
 	;; Cloze needs to be a list, we take car as the answer
 	(cloze (list (gnosis-get 'answer 'notes `(= id ,id))))
