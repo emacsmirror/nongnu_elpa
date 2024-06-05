@@ -929,14 +929,6 @@ Works both with {} and {{}} to make easier to import anki notes."
                        word string)))
   string)
 
-(defun gnosis-cloze-remove-tags (string)
-  "Remove cx-tags in STRING.
-
-Works both with {} and {{}} to make easier to import anki notes."
-  (let* ((regex "{\\{1,2\\}c\\([0-9]+\\)::?\\(.*?\\)}\\{1,2\\}")
-         (result (replace-regexp-in-string regex "\\2" string)))
-    result))
-
 (defun gnosis-cloze-extract-answers (str)
   "Extract cloze answers for STR.
 
