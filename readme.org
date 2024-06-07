@@ -47,6 +47,6 @@ completion of items like handles and tags.
 * contributing
 
 If you're making an Emacs to a fediverse (or similar) service and interested
-in using this library, don't hesitate to get in touch. The library was only
-created to port code from =mastodon.el= to =lem.el=, but could happily be further
-adapted to accommodate other projects.
+in using this library, don't hesitate to get in touch. The library was
+originally created to abstract code out of =mastodon.el= for use in =lem.el=, but
+could happily be further adapted to accommodate other projects.

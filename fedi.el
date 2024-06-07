@@ -281,7 +281,9 @@ text, i.e. hidden spoiler text."
     (replied   . ("⬇" . "↓"))
     (community . ("👪" . "[community]"))
     (reply-bar . ("│" . "|")) ;┃
-    (deleted   . ("🗑" . "[deleted]")))
+    (deleted   . ("🗑" . "[deleted]"))
+    (plus      . ("＋" . "+"))
+    (minus     . ("－" . "-")))
   "A set of symbols (and fallback strings) to be used in timeline.
 If a symbol does not look right (tofu), it means your
 font settings do not support it."
@@ -587,17 +589,23 @@ candidate's car, a string, usually its name or a handle."
          (completion-extra-properties
           (when list
             (list :annotation-function
-                  (lambda (i)
-                    (let ((annot (nth 2 (assoc i list #'equal))))
-                      (concat
-                       (propertize " " 'display
-                                   '(space :align-to (- right-margin 51)))
-                       (string-limit (car (string-lines annot)) 50)))))))
+                  (lambda (cand)
+                    (funcall #'fedi-annot-fun cand list)))))
          (choice (when list (completing-read prompt list)))
          (id (when list (nth 1 (assoc choice list #'equal)))))
     (if (not list)
         (user-error "No items returned")
       (funcall action-fun id choice))))
+
+(defun fedi-annot-fun (cand list)
+  "Annotation function for `fedi-do-item-completing'.
+Given CAND, return from LIST its annotation."
+  (let ((annot (nth 2
+                    (assoc cand list #'equal))))
+    (concat
+     (propertize " " 'display
+                 '(space :align-to (- right-margin 51)))
+     (string-limit (car (string-lines annot)) 50))))
 
 (defun fedi-response-msg (response &optional key value format-str)
   "Check RESPONSE, JSON from the server, and message on success.
