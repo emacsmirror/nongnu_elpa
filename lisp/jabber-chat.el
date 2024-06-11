@@ -429,6 +429,21 @@ JC is the Jabber connection."
     ;; ...and send it...
     (jabber-send-sexp jc stanza-to-send)))
 
+(defun jabber-find-previous-visible-node (node)
+  "Return first visible EWOC node preceding NODE.
+Step backward over hidden nodes, like MUC presence join/leave
+messages."
+  (let* ((node-location (ewoc-location node))
+         (prev (ewoc-prev jabber-chat-ewoc node))
+         (prev-location (and prev (ewoc-location prev))))
+    (while (and
+            prev
+            (not (equal (ewoc-data node) (ewoc-data prev)))
+            (equal (marker-position node-location) (marker-position prev-location)))
+      (setq prev (ewoc-prev jabber-chat-ewoc prev)
+            prev-location (and prev (ewoc-location prev))))
+    prev))
+
 (defun jabber-chat-muc-presence-patterns-select (global)
   "Select a MUC presence treatment.
 Prompts user to select a presence treatment by name, where the
@@ -545,6 +560,21 @@ This function is used as an ewoc prettyprinter."
       (:notice
        (insert (cadr data) "\n"))
       (:rare-time
+       ;; When MUC presence announcements are hidden, lightly
+       ;; trafficked chat rooms fill with superfluous :rare-time
+       ;; entries.  To suppress these, search backward from the node
+       ;; containing DATA for the previous visible node.  If that node
+       ;; is also a :rare-time entry, remove its text.  This seems a
+       ;; bit skeevy; we await a better implementation.
+       (let* ((node (jabber-chat-find-node data))
+              (prev-visible (jabber-find-previous-visible-node node)))
+         (when (and
+		prev-visible
+		(eq (car (ewoc-data prev-visible)) :rare-time))
+           (delete-region
+            (setq beg (marker-position (ewoc-location prev-visible)))
+            (point))
+           (goto-char beg)))
        (insert (jabber-propertize (format-time-string jabber-rare-time-format (cadr data))
                                   'face 'jabber-rare-time-face)
                "\n"))
@@ -581,21 +611,47 @@ This function is used as an ewoc prettyprinter."
   (not (string= (format-time-string jabber-rare-time-format time1)
 		(format-time-string jabber-rare-time-format time2))))
 
+(defun jabber-chat-entry-time (entry)
+  "Return timestamp from EWOC node ENTRY."
+  (or (when (listp (cadr entry))
+	(jabber-message-timestamp (cadr entry)))
+      (plist-get (cddr entry) :time)))
+
+(defun jabber-chat-find-node (data)
+  "Find EWOC node whose data element equals DATA."
+  (let* ((node (ewoc-locate jabber-chat-ewoc (point)))
+         (node-time (jabber-chat-entry-time (ewoc-data node)))
+         (data-time (jabber-chat-entry-time data))
+         (node-iter (if (time-less-p data-time node-time)
+                        #'ewoc-next
+                      #'ewoc-prev)))
+    (cl-macrolet ((search ()))
+      (while (and
+              node
+              (not (equal data (ewoc-data node))))
+        (setq node (funcall node-iter jabber-chat-ewoc node)))
+      (search)
+      ;; In the off chance we searched the wrong direction, switch
+      ;; directions and re-search.
+      (unless node
+        (setq node (ewoc-locate jabber-chat-ewoc (point))
+              node-iter (if (equal node-iter #'ewoc-prev)
+                            #'ewoc-next
+                          #'ewoc-prev))
+        (search)))
+    node))
+
 (defun jabber-maybe-print-rare-time (node)
   "Print rare time before NODE, if appropriate."
   (let* ((prev (ewoc-prev jabber-chat-ewoc node))
 	 (data (ewoc-data node))
 	 (prev-data (when prev (ewoc-data prev))))
-    (cl-flet ((entry-time (entry)
-		(or (when (listp (cadr entry))
-		      (jabber-message-timestamp (cadr entry)))
-		    (plist-get (cddr entry) :time))))
-      (when (and jabber-print-rare-time
-		 (or (null prev)
-		     (jabber-rare-time-needed (entry-time prev-data)
-					      (entry-time data))))
-	(ewoc-enter-before jabber-chat-ewoc node
-			   (list :rare-time (entry-time data)))))))
+    (when (and jabber-print-rare-time
+	       (or (null prev)
+		   (jabber-rare-time-needed (jabber-chat-entry-time prev-data)
+					    (jabber-chat-entry-time data))))
+      (ewoc-enter-before jabber-chat-ewoc node
+			 (list :rare-time (jabber-chat-entry-time data))))))
 
 (defun jabber-chat-print-prompt (xml-data timestamp delayed dont-print-nick-p)
   "Print prompt for received message in XML-DATA.
