@@ -504,7 +504,7 @@ Set SPLIT to t to split all input given."
     (error "No decks found.  Please create a deck first with `gnosis-add-deck'"))
   (if id
       (gnosis-get 'name 'decks `(= id ,id))
-    (gnosis-completing-read "Deck: " (gnosis-select 'name 'decks))))
+    (funcall gnosis-completing-read-function "Deck: " (gnosis-select 'name 'decks))))
 
 (cl-defun gnosis--get-deck-id (&optional (deck (gnosis--get-deck-name)))
   "Return id for DECK name."
