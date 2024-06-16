@@ -1385,6 +1385,48 @@ NOTE-NUM: The number of notes reviewed in the session."
       (gnosis-vc-push))
     (message "Review session finished.  %d notes reviewed." note-num)))
 
+(defun gnosis-review-action--edit (success note note-count)
+  "Edit NOTE during review.
+
+Save current contents of *gnosis-edit* buffer, if any, and start
+editing NOTE with it's new contents.
+
+After done editing, call `gnosis-review-actions' with SUCCESS NOTE
+NOTE-COUNT."
+  (gnosis-edit-save-exit)
+  (gnosis-edit-note note t)
+  (recursive-edit)
+  (gnosis-review-actions success note note-count))
+
+(defun gnosis-review-action--quit (success note note-count)
+  "Quit review session.
+
+Update result for NOTE review with SUCCESS and commit session for NOTE-COUNT.
+
+This function should be used with `gnosis-review-actions', to finish
+the review session."
+  (gnosis-review-result note success)
+  (gnosis-review-commit note-count)
+  ;; Break the loop of `gnosis-review-session'
+  (throw 'stop-loop t))
+
+(defun gnosis-review-action--suspend (success note note-count)
+  "Suspend/Unsuspend NOTE.
+
+This function should be used with `gnosis-review-actions', which
+should be recursively called using SUCCESS, NOTE, NOTE-COUNT."
+  (gnosis-suspend-note note)
+  (gnosis-review-actions success note note-count))
+
+(defun gnosis-review-action--override (success note note-count)
+  "Override current review result for SUCCESS.
+
+This function should be used with `gnosis-review-actions', which will
+be called with new SUCCESS value plus NOTE & NOTE-COUNT."
+  (setf success (if success nil t))
+  (gnosis-display-next-review note success)
+  (gnosis-review-actions success note note-count))
+
 (defun gnosis-review-actions (success note note-count)
   "Specify action during review of note.
 
@@ -1399,17 +1441,10 @@ NOTE-COUNT: Total notes reviewed"
 		 (?e "edit")
 		 (?q "quit"))))
     (?n (gnosis-review-result note success))
-    (?o (setf success (if success nil t))
-	(gnosis-display-next-review note success)
-	(gnosis-review-actions success note note-count))
-    (?s (gnosis-suspend-note note))
-    (?e (gnosis-edit-note note t)
-	(recursive-edit)
-	(gnosis-review-actions success note note-count))
-    (?q (gnosis-review-result note success)
-	(gnosis-review-commit note-count)
-	;; Break the loop of `gnosis-review-session'
-	(throw 'stop-loop t))))
+    (?o (gnosis-review-action--override success note note-count))
+    (?s (gnosis-review-action--suspend success note note-count))
+    (?e (gnosis-review-action--edit success note note-count))
+    (?q (gnosis-review-action--quit success note note-count))))
 
 (defun gnosis-review-session (notes)
   "Start review session for NOTES.
@@ -1565,10 +1600,12 @@ INITIAL-INTERVAL: Initial interval for notes of deck"
 (cl-defun gnosis-edit-save-exit (&optional exit-func &rest args)
   "Save edits and exit using EXIT-FUNC, with ARGS."
   (interactive)
-  (eval-buffer)
-  (quit-window t)
-  (when exit-func
-    (apply exit-func args)))
+  (when (get-buffer "*gnosis-edit*")
+    (switch-to-buffer "*gnosis-edit*")
+    (eval-buffer)
+    (quit-window t)
+    (when exit-func
+      (apply exit-func args))))
 
 (defvar-keymap gnosis-edit-mode-map
   :doc "gnosis-edit keymap"
