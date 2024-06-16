@@ -455,14 +455,16 @@ prompt for a repo to list."
          (number (car (seq-first item))))
     (fj-issue-view fj-current-repo number)))
 
-(defun fj-issue-view (&optional repo number)
-  "View issue number NUMBER from REPO."
+(defun fj-issue-view (&optional repo number reload)
+  "View issue number NUMBER from REPO.
+RELOAD means we are reloading, so don't open in other-window."
   (interactive "P")
   (let* ((repo (fj-read-user-repo repo))
          (issue (fj-get-issue repo number))
          (number (alist-get 'number issue))
          (comments (fj-issue-get-comments repo number)))
-    (fedi-with-buffer (format "*fj-issue-%s" number) 'fj-issue-view-mode t
+    (fedi-with-buffer (format "*fj-issue-%s" number) 'fj-issue-view-mode
+                      (not reload)
       (let-alist issue
         (insert
          (propertize
@@ -480,7 +482,17 @@ prompt for a repo to list."
           'fj-repo repo))
         (setq fj-current-repo repo)
         (setq fj-issue-spec
-              `((:repo ,repo :issue ,number :url ,.url)))))))
+              `(:repo ,repo :issue ,number :url ,.url))))))
+
+(defun fj-issue-view-reload ()
+  "Reload the current issue view."
+  (interactive)
+  ;; TODO: check for current issue view!
+  (if (not fj-issue-spec)
+      (user-error "Not in an issue view?")
+    (let ((number (plist-get fj-issue-spec :issue)))
+      (fj-issue-view fj-current-repo
+                     number :reload))))
 
 (defun fj-render-comments (comments)
   "Render a list of COMMENTS."
