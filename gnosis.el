@@ -1324,6 +1324,18 @@ NOTE-NUM: The number of notes reviewed in the session."
       (gnosis-vc-push))
     (message "Review session finished.  %d notes reviewed." note-num)))
 
+(defun gnosis-review-action--edit (success note note-count)
+  "Edit NOTE during review.
+
+Save current contents of *gnosis-edit* buffer, if any, and start
+editing NOTE with it's new contents.
+
+After done editing, call `gnosis-review-actions' with SUCCESS NOTE
+NOTE-COUNT."
+  (gnosis-edit-save-exit)
+  (gnosis-edit-note note t)
+  (recursive-edit)
+  (gnosis-review-actions success note note-count))
 (defun gnosis-review-actions (success note note-count)
   "Specify action during review of note.
 
