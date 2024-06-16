@@ -414,8 +414,9 @@ prompt for a repo to list."
   (interactive "P")
   (let* ((repo (fj-read-user-repo repo))
          (issues (or issues (fj-repo-get-issues repo)))
-         (prev-buf (buffer-name (current-buffer))))
-    (with-current-buffer (get-buffer-create (format "*%s-issues*" repo))
+         (prev-buf (buffer-name (current-buffer)))
+         (buf-name (format "*%s-issues*" repo)))
+    (with-current-buffer (get-buffer-create buf-name)
       (setq tabulated-list-entries
             (cl-loop for issue in issues
                      for id = (alist-get 'number issue)
@@ -430,8 +431,12 @@ prompt for a repo to list."
       (tabulated-list-init-header)
       (tabulated-list-print)
       (setq fj-current-repo repo)
-      (unless (string-suffix-p "-issues*" prev-buf)
-        (switch-to-buffer-other-window (current-buffer))))))
+      (cond ((string= buf-name prev-buf) ; same repo
+             nil)
+            ((string-suffix-p "-issues*" prev-buf) ; diff repo
+             (switch-to-buffer (current-buffer)))
+            (t ; new buf
+             (switch-to-buffer-other-window (current-buffer)))))))
 
 (defun fj-list-pull-reqs (&optional repo)
   "List pull requests for REPO."
