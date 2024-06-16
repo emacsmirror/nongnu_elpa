@@ -117,7 +117,7 @@ JSON."
 (defun fj-get-repos ()
   "Return the user's repos."
   (let ((endpoint "user/repos"))
-    (fj-get endpoint)))
+    (fj-get endpoint '(("limit" . "100")))))
 
 (defun fj-get-repo-candidates (repos)
   "Return REPOS as completion candidates."
