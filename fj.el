@@ -448,7 +448,7 @@ prompt for a repo to list."
 (define-derived-mode fj-issue-post-mode fedi-post-mode
   "fj-post")
 
-(define-derived-mode fj-issue-view-mode special-mode "fj-issue"
+(define-derived-mode fj-issue-view-mode view-mode "fj-issue"
   "Major mode for viewing an issue."
   :group "fj")
 
