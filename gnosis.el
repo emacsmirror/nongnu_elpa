@@ -1380,17 +1380,10 @@ NOTE-COUNT: Total notes reviewed"
 		 (?e "edit")
 		 (?q "quit"))))
     (?n (gnosis-review-result note success))
-    (?o (setf success (if success nil t))
-	(gnosis-display-next-review note success)
-	(gnosis-review-actions success note note-count))
-    (?s (gnosis-suspend-note note))
-    (?e (gnosis-edit-note note t)
-	(recursive-edit)
-	(gnosis-review-actions success note note-count))
-    (?q (gnosis-review-result note success)
-	(gnosis-review-commit note-count)
-	;; Break the loop of `gnosis-review-session'
-	(throw 'stop-loop t))))
+    (?o (gnosis-review-action--override success note note-count))
+    (?s (gnosis-review-action--suspend success note note-count))
+    (?e (gnosis-review-action--edit success note note-count))
+    (?q (gnosis-review-action--quit success note note-count))))
 
 (defun gnosis-review-session (notes)
   "Start review session for NOTES.
