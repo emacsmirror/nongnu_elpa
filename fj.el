@@ -462,7 +462,7 @@ prompt for a repo to list."
 
 (defun fj-issue-view (&optional repo number reload)
   "View issue number NUMBER from REPO.
-RELOAD means we are reloading, so don't open in other-window."
+RELOAD means we are reloading, so don't open in other window."
   (interactive "P")
   (let* ((repo (fj-read-user-repo repo))
          (issue (fj-get-issue repo number))
