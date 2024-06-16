@@ -1357,6 +1357,15 @@ should be recursively called using SUCCESS, NOTE, NOTE-COUNT."
   (gnosis-suspend-note note)
   (gnosis-review-actions success note note-count))
 
+(defun gnosis-review-action--override (success note note-count)
+  "Override current review result for SUCCESS.
+
+This function should be used with `gnosis-review-actions', which will
+be called with new SUCCESS value plus NOTE & NOTE-COUNT."
+  (setf success (if success nil t))
+  (gnosis-display-next-review note success)
+  (gnosis-review-actions success note note-count))
+
 (defun gnosis-review-actions (success note note-count)
   "Specify action during review of note.
 
