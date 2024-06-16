@@ -263,7 +263,7 @@ With PARAMS."
   (let* ((item (tabulated-list-get-entry))
          (number (car (seq-first item))))
     (fj-issue-close fj-current-repo number)
-    (fj-list-issues-list)))
+    (fj-list-issues)))
 
 (defun fj-issue-delete (&optional repo issue)
   "Delete ISSUE in REPO."
@@ -406,7 +406,7 @@ PARAMS."
   'action 'fj-issues-view-current-issue
   'help-echo "RET: View this issue.")
 
-(defun fj-list-issues-list (&optional repo issues)
+(defun fj-list-issues (&optional repo issues)
   "Display ISSUES in a tabulated list view.
 Either for `fj-current-repo', or for REPO, a string.
 With a prefix arg, or if REPO and `fj-current-repo' are nil,
@@ -438,7 +438,7 @@ prompt for a repo to list."
   (interactive "P")
   (let* ((repo (fj-read-user-repo repo))
          (prs (fj-repo-get-pull-reqs repo)))
-    (fj-list-issues-list repo prs)))
+    (fj-list-issues repo prs)))
 
 (define-derived-mode fj-issue-post-mode fedi-post-mode
   "fj-post")
