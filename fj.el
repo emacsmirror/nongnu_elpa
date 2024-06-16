@@ -180,17 +180,15 @@ Return the issue number."
                          cands))))
     (cadr item)))
 
-(defun fj-repo-get-issues (&optional repo)
+(defun fj-repo-get-issues (repo)
   "Return issues for REPO."
-  (let* ((repo (fj-read-user-repo repo))
-         (endpoint (format "repos/%s/%s/issues" fj-user repo)))
+  (let* ((endpoint (format "repos/%s/%s/issues" fj-user repo)))
     (fj-get endpoint)))
 
-(defun fj-get-issue (&optional repo issue)
+(defun fj-get-issue (repo &optional issue)
   "GET ISSUE in REPO.
 ISSUE is a number."
-  (let* ((repo (fj-read-user-repo repo))
-         (issue (or issue (fj-read-repo-issue repo)))
+  (let* ((issue (or issue (fj-read-repo-issue repo)))
          (endpoint (format "repos/%s/%s/issues/%s" fj-user repo issue)))
     (fj-get endpoint)))
 
@@ -249,7 +247,7 @@ With PARAMS."
 
 (defun fj-issue-close (&optional repo issue)
   "Close ISSUE in REPO."
-  (interactive)
+  (interactive "P")
   (let* ((repo (fj-read-user-repo repo))
          (issue (or issue (fj-read-repo-issue repo))))
     (when (y-or-n-p (format "Close issue #%s?" issue))
@@ -269,7 +267,7 @@ With PARAMS."
 
 (defun fj-issue-delete (&optional repo issue)
   "Delete ISSUE in REPO."
-  (interactive)
+  (interactive "P")
   (let* ((repo (fj-read-user-repo repo))
          (issue (or issue (fj-read-repo-issue repo))))
     (when (y-or-n-p "Delete issue?")
@@ -294,24 +292,23 @@ Return its number."
                          cands))))
     (cadr item)))
 
-(defun fj-repo-get-pull-reqs (&optional repo state)
+(defun fj-repo-get-pull-reqs (repo &optional state)
   "Return pull requests for REPO.
 STATE should be \"open\", \"closed\", or \"all\"."
-  (let* ((repo (fj-read-user-repo repo))
-         (endpoint (format "repos/%s/%s/pulls" fj-user repo))
+  (let* ((endpoint (format "repos/%s/%s/pulls" fj-user repo))
          (params `(("state" . ,(or state "open")))))
     (fj-get endpoint params)))
 
 (defun fj-pull-req-comment (&optional repo pull)
   "Add comment to PULL in REPO."
-  (interactive)
+  (interactive "P")
   (let* ((repo (fj-read-user-repo repo))
          (pull (or pull (fj-read-repo-pull-req repo))))
     (fj-issue-comment repo pull)))
 
 (defun fj-pull-req-comment-edit (&optional repo pull)
   "Edit a comment on PULL in REPO."
-  (interactive)
+  (interactive "P")
   (let* ((repo (fj-read-user-repo repo))
          (pull (or pull (fj-read-repo-pull-req repo))))
     (fj-issue-comment-edit repo pull)))
@@ -346,18 +343,17 @@ Return the comment number."
                            fj-user repo issue)))
     (fj-get endpoint)))
 
-(defun fj-get-comment (&optional repo issue comment)
+(defun fj-get-comment (repo issue &optional comment)
   "GET data for COMMENT of ISSUE in REPO.
 COMMENT is a number."
-  (let* ((repo (fj-read-user-repo repo))
-         (issue (or issue (fj-read-repo-issue repo)))
-         (comment (or comment (fj-read-item-comment repo issue)))
-         (endpoint (format "repos/%s/%s/issues/comments/%s" fj-user repo comment)))
+  (let* ((comment (or comment (fj-read-item-comment repo issue)))
+         (endpoint (format "repos/%s/%s/issues/comments/%s"
+                           fj-user repo comment)))
     (fj-get endpoint)))
 
 (defun fj-issue-comment (&optional repo issue)
   "Add comment to ISSUE in REPO."
-  (interactive)
+  (interactive "P")
   (let* ((repo (fj-read-user-repo repo))
          (issue (or issue (fj-read-repo-issue repo)))
          (url (format "repos/%s/%s/issues/%s/comments" fj-user repo issue))
@@ -375,18 +371,16 @@ COMMENT is a number."
         (number (get-text-property (point) 'fj-issue)))
     (fj-issue-comment repo number)))
 
-(defun fj-comment-patch (&optional repo issue comment params)
-  "Edit ISSUE in REPO.
+(defun fj-comment-patch (repo issue &optional comment params)
+  "Edit ISSUE COMMENT in REPO.
 PARAMS."
-  (let* ((repo (fj-read-user-repo repo))
-         (issue (or issue (fj-read-repo-issue repo)))
-         (comment (or comment (fj-read-item-comment repo issue)))
+  (let* ((comment (or comment (fj-read-item-comment repo issue)))
          (endpoint (format "repos/%s/%s/issues/comments/%s" fj-user repo comment)))
     (fj-patch endpoint params :json)))
 
 (defun fj-issue-comment-edit (&optional repo issue)
   "Edit comment on ISSUE in REPO."
-  (interactive)
+  (interactive "P")
   (let* ((repo (fj-read-user-repo repo))
          (issue (or issue (fj-read-repo-issue repo)))
          (data (fj-get-comment repo issue))
@@ -441,9 +435,9 @@ prompt for a repo to list."
 
 (defun fj-list-pull-reqs (&optional repo)
   "List pull requests for REPO."
-  (interactive)
-  (let ((repo (fj-read-user-repo repo))
-        (prs (fj-repo-get-pull-reqs repo)))
+  (interactive "P")
+  (let* ((repo (fj-read-user-repo repo))
+         (prs (fj-repo-get-pull-reqs repo)))
     (fj-list-issues-list repo prs)))
 
 (define-derived-mode fj-issue-post-mode fedi-post-mode
@@ -463,7 +457,7 @@ prompt for a repo to list."
 
 (defun fj-issue-view (&optional repo number)
   "View issue number NUMBER from REPO."
-  (interactive)
+  (interactive "P")
   (let* ((repo (fj-read-user-repo repo))
          (issue (fj-get-issue repo number))
          (number (alist-get 'number issue))
