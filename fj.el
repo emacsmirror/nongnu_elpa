@@ -478,6 +478,7 @@ prompt for a repo to list."
            (fj-render-comments comments))
           'fj-issue number
           'fj-repo repo))
+        (setq fj-current-repo repo)
         (setq fj-issue-spec
               `((:repo ,repo :issue ,number :url ,.url)))))))
 
