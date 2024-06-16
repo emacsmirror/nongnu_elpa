@@ -1336,6 +1336,18 @@ NOTE-COUNT."
   (gnosis-edit-note note t)
   (recursive-edit)
   (gnosis-review-actions success note note-count))
+
+(defun gnosis-review-action--quit (success note note-count)
+  "Quit review session.
+
+Update result for NOTE review with SUCCESS and commit session for NOTE-COUNT.
+
+This function should be used with `gnosis-review-actions', to finish
+the review session."
+  (gnosis-review-result note success)
+  (gnosis-review-commit note-count)
+  ;; Break the loop of `gnosis-review-session'
+  (throw 'stop-loop t))
 (defun gnosis-review-actions (success note note-count)
   "Specify action during review of note.
 
