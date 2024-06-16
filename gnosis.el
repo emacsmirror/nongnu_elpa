@@ -1539,10 +1539,12 @@ INITIAL-INTERVAL: Initial interval for notes of deck"
 (cl-defun gnosis-edit-save-exit (&optional exit-func &rest args)
   "Save edits and exit using EXIT-FUNC, with ARGS."
   (interactive)
-  (eval-buffer)
-  (quit-window t)
-  (when exit-func
-    (apply exit-func args)))
+  (when (get-buffer "*gnosis-edit*")
+    (switch-to-buffer "*gnosis-edit*")
+    (eval-buffer)
+    (quit-window t)
+    (when exit-func
+      (apply exit-func args))))
 
 (defvar-keymap gnosis-edit-mode-map
   :doc "gnosis-edit keymap"
