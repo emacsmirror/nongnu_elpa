@@ -417,10 +417,17 @@ PARAMS."
   'help-echo "RET: View this issue.")
 
 (defun fj-list-issues-list (&optional repo issues)
-  "List ISSUES for current repo, or for REPO."
-  (interactive)
-  (let* ((repo (or repo (fj-read-user-repo)))
+  "Display ISSUES in a tabulated list view.
+Either for `fj-current-repo', or for REPO, a string.
+With a prefix arg, or if REPO and `fj-current-repo' are nil,
+prompt for a repo to list."
+  (interactive "P")
+  (let* ((repo (if (consp repo) ; prefix
+                   (fj-read-user-repo)
+                 (or repo fj-current-repo (fj-read-user-repo))))
          (issues (or issues (fj-repo-get-issues repo))))
+         (issues (or issues (fj-repo-get-issues repo)))
+         (prev-buf (buffer-name (current-buffer))))
     (with-current-buffer (get-buffer-create (format "*%s-issues*" repo))
       (setq tabulated-list-entries
             (cl-loop for issue in issues
@@ -436,7 +443,8 @@ PARAMS."
       (tabulated-list-init-header)
       (tabulated-list-print)
       (setq fj-current-repo repo)
-      (switch-to-buffer-other-window (current-buffer)))))
+      (unless (string-suffix-p "-issues*" prev-buf)
+        (switch-to-buffer-other-window (current-buffer))))))
 
 (defun fj-list-pull-reqs (&optional repo)
   "List pull requests for REPO."
