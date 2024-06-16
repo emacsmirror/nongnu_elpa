@@ -1348,6 +1348,15 @@ the review session."
   (gnosis-review-commit note-count)
   ;; Break the loop of `gnosis-review-session'
   (throw 'stop-loop t))
+
+(defun gnosis-review-action--suspend (success note note-count)
+  "Suspend/Unsuspend NOTE.
+
+This function should be used with `gnosis-review-actions', which
+should be recursively called using SUCCESS, NOTE, NOTE-COUNT."
+  (gnosis-suspend-note note)
+  (gnosis-review-actions success note note-count))
+
 (defun gnosis-review-actions (success note note-count)
   "Specify action during review of note.
 
