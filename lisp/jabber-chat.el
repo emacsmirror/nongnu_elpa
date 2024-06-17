@@ -529,9 +529,11 @@ This function is used as an ewoc prettyprinter."
 	 (jabber-muc-print-prompt (cadr data) t /me-p))
         (:muc-foreign
          (jabber-muc-print-prompt (cadr data) nil /me-p))
-	((or :muc-notice :muc-error)
+	(:muc-notice
          (unless (jabber-chat-muc-presence-highlight (cadr data))
-	   (jabber-muc-system-prompt))))
+	   (jabber-muc-system-prompt)))
+        (:muc-error
+	 (jabber-muc-system-prompt)))
       (put-text-property prompt-start (point) 'field 'jabber-prompt))
 
     ;; ...and body
@@ -730,7 +732,8 @@ obtained from `xml-parse-region'."
     (insert
      (jabber-propertize
       (concat "Error: " (jabber-parse-error the-error))
-      'face 'jabber-chat-error))))
+      'face 'jabber-chat-error)
+     "\n")))
 
 (defun jabber-chat-print-subject (xml-data _who mode)
   "Print subject of given <message/>, if any.
