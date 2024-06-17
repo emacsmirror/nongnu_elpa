@@ -42,21 +42,24 @@ It just aims to cover a few of the bread and butter functions that will save you
 |---------+-------------------------------+--------------------------------------------------------------------|
 |         | fj-issue-close                | Close ISSUE in REPO.                                               |
 |         | fj-issue-comment              | Add comment to ISSUE in REPO.                                      |
-|         | fj-issue-comment-current      | Comment on the issue currently being displayed.                    |
 |         | fj-issue-comment-edit         | Edit comment on ISSUE in REPO.                                     |
 |         | fj-issue-create               | Create an issue in REPO.                                           |
 |         | fj-issue-delete               | Delete ISSUE in REPO.                                              |
 |         | fj-issue-edit                 | Edit ISSUE body in REPO.                                           |
-|         | fj-issue-edit-current         | Edit the issue currently being displayed.                          |
 |         | fj-issue-edit-title           | Edit ISSUE title in REPO.                                          |
-|         | fj-issue-edit-title-current   | Edit title of issue at point.                                      |
 |         | fj-issue-post-mode            | Major mode derived from `fedi-post-mode' by `define-derived-mode'. |
 |         | fj-issue-view                 | View issue number NUMBER from REPO.                                |
+|         | fj-issue-view-comment         | Comment on the issue currently being viewed.                       |
+|         | fj-issue-view-edit            | Edit the issue currently being viewed.                             |
 |         | fj-issue-view-mode            | Major mode for viewing an issue.                                   |
-|         | fj-issues-close-current-issue | Close current issue from tabulated issues listing.                 |
-|         | fj-issues-view-current-issue  | View current issue from tabulated issues listing.                  |
-|         | fj-list-issue-mode            | Major mode for browsing a list of issues.                          |
-|         | fj-list-issues-list           | Display ISSUES in a tabulated list view.                           |
+|         | fj-issue-view-reload          | Reload the current issue view.                                     |
+|         | fj-issues-ts-close-issue      | Close current issue from tabulated issues listing.                 |
+|         | fj-issues-ts-comment-issue    | Comment on issue from tabulated issues listing.                    |
+|         | fj-issues-ts-edit-issue       | Edit issue from tabulated issues listing.                          |
+|         | fj-issues-ts-edit-issue-title | Edit title of issue from tabulated issues listing.                 |
+|         | fj-issues-ts-view-issue       | View current issue from tabulated issues listing.                  |
+|         | fj-list-issue-mode            | Major mode for browsing a tabulated list of issues.                |
+|         | fj-list-issues                | Display ISSUES in a tabulated list view.                           |
 |         | fj-list-pull-reqs             | List pull requests for REPO.                                       |
 |         | fj-pull-req-comment           | Add comment to PULL in REPO.                                       |
 |         | fj-pull-req-comment-edit      | Edit a comment on PULL in REPO.                                    |
