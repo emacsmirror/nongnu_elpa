@@ -240,13 +240,6 @@ With PARAMS."
                        (lambda ()
                          (message "issue title edited!")))))
 
-(defun fj-issue-edit-title-current ()
-  "Edit title of issue at point."
-  (interactive)
-  (let* ((item (tabulated-list-get-entry))
-         (number (car (seq-first item))))
-    (fj-issue-edit-title fj-current-repo number)))
-
 (defun fj-issue-close (&optional repo issue)
   "Close ISSUE in REPO."
   (interactive "P")
@@ -258,14 +251,6 @@ With PARAMS."
         (fedi-http--triage response
                            (lambda ()
                              (message "issue closed!")))))))
-
-(defun fj-issues-close-current-issue (&optional _)
-  "Close current issue from tabulated issues listing."
-  (interactive)
-  (let* ((item (tabulated-list-get-entry))
-         (number (car (seq-first item))))
-    (fj-issue-close fj-current-repo number)
-    (fj-list-issues)))
 
 (defun fj-issue-delete (&optional repo issue)
   "Delete ISSUE in REPO."
@@ -366,13 +351,6 @@ COMMENT is a number."
                        (lambda ()
                          (message "comment created!")))))
 
-(defun fj-issue-comment-current ()
-  "Comment on the issue currently being displayed."
-  (interactive)
-  (let ((repo (get-text-property (point) 'fj-repo))
-        (number (get-text-property (point) 'fj-issue)))
-    (fj-issue-comment repo number)))
-
 (defun fj-comment-patch (repo issue &optional comment params)
   "Edit ISSUE COMMENT in REPO.
 PARAMS."
@@ -395,17 +373,17 @@ PARAMS."
                        (lambda ()
                          (message "comment edited!")))))
 
-;;; tl modes
+;;; TABLIST VIEWS
 
 (define-derived-mode fj-list-issue-mode tabulated-list-mode
   "fj-issues"
-  "Major mode for browsing a list of issues."
+  "Major mode for browsing a tabulated list of issues."
   (setq tabulated-list-padding 0) ;2) ; point directly on issue
   (setq tabulated-list-format (vector (list "#" 3 t) (list "Issue" 2 t))))
 
 (define-button-type 'fj-button
   'follow-link t
-  'action 'fj-issues-view-current-issue
+  'action 'fj-issues-ts-view-issue
   'help-echo "RET: View this issue.")
 
 (defun fj-list-issues (&optional repo issues)
@@ -447,20 +425,41 @@ prompt for a repo to list."
          (prs (fj-repo-get-pull-reqs repo)))
     (fj-list-issues repo prs)))
 
-(define-derived-mode fj-issue-post-mode fedi-post-mode
-  "fj-post")
-
-(define-derived-mode fj-issue-view-mode view-mode "fj-issue"
-  "Major mode for viewing an issue."
-  :group "fj")
-
 ;; arg fj-button in tl view:
-(defun fj-issues-view-current-issue (&optional _)
+(defun fj-issues-ts-view-issue (&optional _)
   "View current issue from tabulated issues listing."
   (interactive)
   (let* ((item (tabulated-list-get-entry))
          (number (car (seq-first item))))
     (fj-issue-view fj-current-repo number)))
+
+(defun fj-issues-ts-edit-issue-title ()
+  "Edit title of issue from tabulated issues listing."
+  (interactive)
+  (let* ((item (tabulated-list-get-entry))
+         (number (car (seq-first item))))
+    (fj-issue-edit-title fj-current-repo number)))
+
+(defun fj-issues-ts-close-issue (&optional _)
+  "Close current issue from tabulated issues listing."
+  (interactive)
+  (let* ((item (tabulated-list-get-entry))
+         (number (car (seq-first item))))
+    (fj-issue-close fj-current-repo number)
+    (fj-list-issues)))
+
+;;; ISSUE VIEW
+
+(defun fj-render-comments (comments)
+  "Render a list of COMMENTS."
+  (cl-loop for c in comments
+           concat (let-alist c
+                    (concat
+                     .body "\n"
+                     (propertize .user.login
+                                 'face '(:underline t))
+                     "\n\n"
+                     fedi-horiz-bar "\n\n"))))
 
 (defun fj-issue-view (&optional repo number reload)
   "View issue number NUMBER from REPO.
@@ -491,6 +490,13 @@ RELOAD means we are reloading, so don't open in other window."
         (setq fj-issue-spec
               `(:repo ,repo :issue ,number :url ,.url))))))
 
+(defun fj-issue-view-comment ()
+  "Comment on the issue currently being viewed."
+  (interactive)
+  (let ((repo (get-text-property (point) 'fj-repo))
+        (number (get-text-property (point) 'fj-issue)))
+    (fj-issue-comment repo number)))
+
 (defun fj-issue-view-reload ()
   "Reload the current issue view."
   (interactive)
@@ -501,24 +507,22 @@ RELOAD means we are reloading, so don't open in other window."
       (fj-issue-view fj-current-repo
                      number :reload))))
 
-(defun fj-render-comments (comments)
-  "Render a list of COMMENTS."
-  (cl-loop for c in comments
-           concat (let-alist c
-                    (concat
-                     .body "\n"
-                     (propertize .user.login
-                                 'face '(:underline t))
-                     "\n\n"
-                     fedi-horiz-bar "\n\n"))))
-
-(defun fj-issue-edit-current ()
-  "Edit the issue currently being displayed."
+(defun fj-issue-view-edit ()
+  "Edit the issue currently being viewed."
   (interactive)
   (goto-char (point-min))
   (let ((repo (get-text-property (point) 'fj-repo))
         (number (get-text-property (point) 'fj-issue)))
     (fj-issue-edit repo number)))
+
+;;; POST AND VIEW MODES
+
+(define-derived-mode fj-issue-post-mode fedi-post-mode
+  "fj-post")
+
+(define-derived-mode fj-issue-view-mode view-mode "fj-issue"
+  "Major mode for viewing an issue."
+  :group "fj")
 
 (provide 'fj)
 ;;; fj.el ends here
