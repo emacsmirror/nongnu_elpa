@@ -433,6 +433,13 @@ prompt for a repo to list."
          (number (car (seq-first item))))
     (fj-issue-view fj-current-repo number)))
 
+(defun fj-issues-ts-edit-issue ()
+  "Edit issue from tabulated issues listing."
+  (interactive)
+  (let* ((item (tabulated-list-get-entry))
+         (number (car (seq-first item))))
+    (fj-issue-edit fj-current-repo number)))
+
 (defun fj-issues-ts-edit-issue-title ()
   "Edit title of issue from tabulated issues listing."
   (interactive)
