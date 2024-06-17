@@ -447,6 +447,13 @@ prompt for a repo to list."
          (number (car (seq-first item))))
     (fj-issue-edit-title fj-current-repo number)))
 
+(defun fj-issues-ts-comment-issue ()
+  "Comment on issue from tabulated issues listing."
+  (interactive)
+  (let* ((item (tabulated-list-get-entry))
+         (number (car (seq-first item))))
+    (fj-issue-comment fj-current-repo number)))
+
 (defun fj-issues-ts-close-issue (&optional _)
   "Close current issue from tabulated issues listing."
   (interactive)
