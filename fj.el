@@ -33,6 +33,7 @@
 (require 'fedi)
 (require 'fedi-post)
 (require 'magit-git)
+(require 'magit-process)
 
 ;;; VARIABLES
 
@@ -109,10 +110,11 @@ JSON."
 
 (defun fj-current-dir-repo ()
   "If we are in a repository, return its name."
-  (if (magit-inside-worktree-p)
-      (file-name-nondirectory
-       (directory-file-name
-        (magit-toplevel)))))
+  (ignore-errors
+    (if (magit-inside-worktree-p)
+        (file-name-nondirectory
+         (directory-file-name
+          (magit-toplevel))))))
 
 (defun fj-get-repos ()
   "Return the user's repos."
@@ -142,7 +144,7 @@ If both return nil, also prompt."
       (fj-read-user-repo-do)
     (or arg
         fj-current-repo
-        (ignore-errors (fj-current-dir-repo))
+        (fj-current-dir-repo) ;; requires loaded magit
         (fj-read-user-repo-do))))
 
 (defun fj-repo-create ()
