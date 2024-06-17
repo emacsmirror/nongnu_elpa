@@ -529,14 +529,14 @@ RELOAD means we are reloading, so don't open in other window."
         (number (get-text-property (point) 'fj-issue)))
     (fj-issue-edit repo number)))
 
-;;; POST AND VIEW MODES
-
-(define-derived-mode fj-issue-post-mode fedi-post-mode
-  "fj-post")
-
 (define-derived-mode fj-issue-view-mode view-mode "fj-issue"
   "Major mode for viewing an issue."
   :group "fj")
+
+;;; POST MODE
+
+(define-derived-mode fj-issue-post-mode fedi-post-mode
+  "fj-post")
 
 (provide 'fj)
 ;;; fj.el ends here
