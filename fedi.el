@@ -169,7 +169,8 @@ than `switch-to-buffer'."
   `(with-current-buffer (get-buffer-create ,buffer)
      (let ((inhibit-read-only t))
        (erase-buffer)
-       (funcall ,mode-fun)
+       (unless (equal major-mode ,mode-fun)
+         (funcall ,mode-fun))
        (if ,other-window
            (switch-to-buffer-other-window ,buffer)
          ;; (switch-to-buffer ,buffer))
