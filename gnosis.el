@@ -1396,7 +1396,7 @@ NOTES: List of note ids"
 	(catch 'stop-loop
 	  (cl-loop for note in notes
 		   do (let ((success (gnosis-review-note note)))
-			(setf note-count (1+ note-count))
+			(cl-incf note-count)
 			(gnosis-review-actions success note note-count))
 		   finally (gnosis-review-commit note-count)))))))
 
