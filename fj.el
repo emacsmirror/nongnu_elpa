@@ -383,7 +383,7 @@ PARAMS."
 
 (define-button-type 'fj-button
   'follow-link t
-  'action 'fj-issues-ts-view-issue
+  'action 'fj-issues-tl-view-issue
   'help-echo "RET: View this issue.")
 
 (defun fj-list-issues (&optional repo issues)
@@ -426,35 +426,35 @@ prompt for a repo to list."
     (fj-list-issues repo prs)))
 
 ;; arg fj-button in tl view:
-(defun fj-issues-ts-view-issue (&optional _)
+(defun fj-issues-tl-view-issue (&optional _)
   "View current issue from tabulated issues listing."
   (interactive)
   (let* ((item (tabulated-list-get-entry))
          (number (car (seq-first item))))
     (fj-issue-view fj-current-repo number)))
 
-(defun fj-issues-ts-edit-issue ()
+(defun fj-issues-tl-edit-issue ()
   "Edit issue from tabulated issues listing."
   (interactive)
   (let* ((item (tabulated-list-get-entry))
          (number (car (seq-first item))))
     (fj-issue-edit fj-current-repo number)))
 
-(defun fj-issues-ts-edit-issue-title ()
+(defun fj-issues-tl-edit-issue-title ()
   "Edit title of issue from tabulated issues listing."
   (interactive)
   (let* ((item (tabulated-list-get-entry))
          (number (car (seq-first item))))
     (fj-issue-edit-title fj-current-repo number)))
 
-(defun fj-issues-ts-comment-issue ()
+(defun fj-issues-tl-comment-issue ()
   "Comment on issue from tabulated issues listing."
   (interactive)
   (let* ((item (tabulated-list-get-entry))
          (number (car (seq-first item))))
     (fj-issue-comment fj-current-repo number)))
 
-(defun fj-issues-ts-close-issue (&optional _)
+(defun fj-issues-tl-close-issue (&optional _)
   "Close current issue from tabulated issues listing."
   (interactive)
   (let* ((item (tabulated-list-get-entry))

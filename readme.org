@@ -53,11 +53,11 @@ It just aims to cover a few of the bread and butter functions that will save you
 |         | fj-issue-view-edit            | Edit the issue currently being viewed.                             |
 |         | fj-issue-view-mode            | Major mode for viewing an issue.                                   |
 |         | fj-issue-view-reload          | Reload the current issue view.                                     |
-|         | fj-issues-ts-close-issue      | Close current issue from tabulated issues listing.                 |
-|         | fj-issues-ts-comment-issue    | Comment on issue from tabulated issues listing.                    |
-|         | fj-issues-ts-edit-issue       | Edit issue from tabulated issues listing.                          |
-|         | fj-issues-ts-edit-issue-title | Edit title of issue from tabulated issues listing.                 |
-|         | fj-issues-ts-view-issue       | View current issue from tabulated issues listing.                  |
+|         | fj-issues-tl-close-issue      | Close current issue from tabulated issues listing.                 |
+|         | fj-issues-tl-comment-issue    | Comment on issue from tabulated issues listing.                    |
+|         | fj-issues-tl-edit-issue       | Edit issue from tabulated issues listing.                          |
+|         | fj-issues-tl-edit-issue-title | Edit title of issue from tabulated issues listing.                 |
+|         | fj-issues-tl-view-issue       | View current issue from tabulated issues listing.                  |
 |         | fj-list-issue-mode            | Major mode for browsing a tabulated list of issues.                |
 |         | fj-list-issues                | Display ISSUES in a tabulated list view.                           |
 |         | fj-list-pull-reqs             | List pull requests for REPO.                                       |
