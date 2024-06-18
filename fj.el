@@ -218,7 +218,15 @@ ISSUE is a number."
          (response (fj-post url params)))
     (fedi-http--triage response
                        (lambda ()
-                         (message "issue %s created!" title)))))
+                         (message "issue %s created!" title)
+                         (fj-issues-tl-reload)))))
+
+(defun fj-issues-tl-reload ()
+  "Reload current issues tabulated list view."
+  (when (string-suffix-p "-issues*"
+                         (buffer-name (current-buffer)))
+    (let ((state (plist-get fj-issues-tl-spec :state)))
+      (fj-list-issues nil nil state))))
 
 (defun fj-issue-patch (repo issue params)
   "PATCH/Edit ISSUE in REPO.
@@ -480,7 +488,8 @@ prompt for a repo to list."
   (interactive)
   (let* ((item (tabulated-list-get-entry))
          (number (car (seq-first item))))
-    (fj-issue-edit-title fj-current-repo number)))
+    (fj-issue-edit-title fj-current-repo number)
+    (fj-issues-tl-reload)))
 
 (defun fj-issues-tl-comment-issue ()
   "Comment on issue from tabulated issues listing."
