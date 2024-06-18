@@ -75,9 +75,14 @@ Requires `fj-token' to be set."
 (defun fj-get (endpoint &optional params)
   "Make a GET request to ENDPOINT.
 PARAMS is any parameters to send with the request."
-  (let ((url (fj-api endpoint)))
-    (fj-authorized-request "GET"
-      (fedi-http--get-json url params))))
+  (let* ((url (fj-api endpoint))
+         (resp (fj-authorized-request "GET"
+                 (fedi-http--get-json url params))))
+    (if (eq (caar resp) 'errors)
+        (error "I am Error: %s Endpoint: %s"
+               (alist-get 'message resp)
+               endpoint)
+      resp)))
 
 (defun fj-post (endpoint params)
   "Make a POST request to ENDPOINT.
@@ -110,6 +115,7 @@ JSON."
 
 (defun fj-current-dir-repo ()
   "If we are in a repository, return its name."
+  ;; FIXME: fails if remote url is diff to root dir!
   (ignore-errors
     (if (magit-inside-worktree-p)
         (file-name-nondirectory
@@ -182,10 +188,12 @@ Return the issue number."
                          cands))))
     (cadr item)))
 
-(defun fj-repo-get-issues (repo)
-  "Return issues for REPO."
-  (let* ((endpoint (format "repos/%s/%s/issues" fj-user repo)))
-    (fj-get endpoint)))
+(defun fj-repo-get-issues (repo &optional state)
+  "Return issues for REPO.
+STATE is for issue status, a string of open, closed or all."
+  (let* ((endpoint (format "repos/%s/%s/issues" fj-user repo))
+         (params `(("state" . ,state))))
+    (fj-get endpoint params)))
 
 (defun fj-get-issue (repo &optional issue)
   "GET ISSUE in REPO.
