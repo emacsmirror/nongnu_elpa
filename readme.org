@@ -6,6 +6,14 @@ It doesn't interact with =forge= / =magit=, which don't implement Gitea/Forgejo 
 
 It just aims to cover a few of the bread and butter functions that will save you switching to the browser 80% of the time.
 
+* getting started
+
+To get going, first set =fj-host=,  =fj-user=, and =fj-token=. The token you can obtain from your profile settings.
+
+* repositories
+
+Current repository detection should work partially automatically. If you find you are still being asked for the repo when calling a command from a repo with a forgejo remote, check to make sure the local root directory matches the name of the forgejo repo!
+
 * dependencies
 - =magit-post=, =magit-process= (for obtaining current repo)
 - [[https://codeberg.org/martianh/fedi.el][fedi.el]]
