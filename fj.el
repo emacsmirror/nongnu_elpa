@@ -469,7 +469,7 @@ prompt for a repo to list."
   (fj-list-issues repo issues "closed"))
 
 (defun fj-list-issues-all (&optional repo issues)
-  "Display closed ISSUES for REPO in tabulated list view."
+  "Display all ISSUES for REPO in tabulated list view."
   (interactive "P")
   (fj-list-issues repo issues "all"))
 
