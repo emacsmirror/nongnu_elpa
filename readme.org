@@ -1,10 +1,14 @@
 * fj.el
 
-This repo contains some extremely basic functions for interacting with a Forgejo instance (such as [[https://codeberg.org][codeberg.org]]) from within Emacs.
+This repo contains some basic functions for interacting with a Forgejo instance (such as [[https://codeberg.org][codeberg.org]]) from within Emacs.
 
-It doesn't interact with =forge= / =magit=, which don't implement Gitea/Forgejo support and likely never will. Nor does it attempt to follow their wonderful design (for now).
+It doesn't interact with =forge= / =magit=, which don't implement Gitea/Forgejo support and likely never will (see https://github.com/magit/forge/discussions/557). Nor does it attempt to follow their wonderful design (for now).
 
 It just aims to cover a few of the bread and butter functions that will save you switching to the browser 80% of the time.
+
+* dependencies
+- =magit-post=, =magit-process= (for obtaining current repo)
+- [[https://codeberg.org/martianh/fedi.el][fedi.el]]
 
 * commands index
 
