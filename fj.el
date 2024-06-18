@@ -121,10 +121,15 @@ JSON."
   "If we are in a repository, return its name."
   ;; FIXME: fails if remote url is diff to root dir!
   (ignore-errors
-    (if (magit-inside-worktree-p)
-        (file-name-nondirectory
-         (directory-file-name
-          (magit-toplevel))))))
+    (when (magit-inside-worktree-p)
+      (let* ((repos (fj-get-repos))
+             (names (cl-loop for r in repos
+                             collect (alist-get 'name r)))
+             (dir (file-name-nondirectory
+                   (directory-file-name
+                    (magit-toplevel)))))
+        (when (member dir names)
+          dir))))) ; nil if dir no match any remotes
 
 (defun fj-get-repos ()
   "Return the user's repos."
