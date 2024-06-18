@@ -383,11 +383,13 @@ PARAMS."
 
 (defvar fj-list-issue-mode-map
   (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "c") #'fj-issues-tl-comment-issue)
+    (define-key map (kbd "C") #'fj-issues-tl-comment-issue)
     (define-key map (kbd "e") #'fj-issues-tl-edit-issue)
     (define-key map (kbd "t") #'fj-issues-tl-edit-issue-title)
     (define-key map (kbd "v") #'fj-issues-tl-view-issue)
     (define-key map (kbd "k") #'fj-issues-tl-close-issue)
+    (define-key map (kbd "n") #'fj-issues-tl-create)
+    (define-key map (kbd "c") #'fj-issues-tl-create)
     map)
   "Map for `fj-list-issue-mode', a tabluated list of issues.")
 
@@ -434,6 +436,11 @@ prompt for a repo to list."
   (let* ((repo (fj-read-user-repo repo))
          (prs (fj-repo-get-pull-reqs repo)))
     (fj-list-issues repo prs)))
+
+(defun fj-issues-tl-create ()
+  "Create an issue in current repo."
+  (interactive)
+  (fj-issue-create fj-current-repo))
 
 ;; arg fj-button in tl view:
 (defun fj-issues-tl-view-issue (&optional _)
