@@ -71,6 +71,7 @@ Current repository detection should work partially automatically. If you find yo
 |         | fj-issues-tl-delete-issue     | Delete current issue from tabulated issues listing.                |
 |         | fj-issues-tl-edit-issue       | Edit issue from tabulated issues listing.                          |
 |         | fj-issues-tl-edit-issue-title | Edit title of issue from tabulated issues listing.                 |
+|         | fj-issues-tl-reload           | Reload current issues tabulated list view.                         |
 |         | fj-issues-tl-reopen-issue     | Reopen current issue from tabulated issues listing.                |
 |         | fj-issues-tl-view-issue       | View current issue from tabulated issues listing.                  |
 |         | fj-list-issue-mode            | Major mode for browsing a tabulated list of issues.                |
