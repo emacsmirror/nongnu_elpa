@@ -413,14 +413,9 @@ PARAMS."
 ;;     "nearduedate"
 ;;     "farduedate"))
 
-(define-derived-mode fj-list-issue-mode tabulated-list-mode
-  "fj-issues"
-  "Major mode for browsing a tabulated list of issues."
-  (setq tabulated-list-padding 0) ;2) ; point directly on issue
-  (setq tabulated-list-format (vector (list "#" 3 t) (list "Issue" 2 t))))
-
 (defvar fj-list-issue-mode-map
   (let ((map (make-sparse-keymap)))
+    (set-keymap-parent map tabulated-list-mode-map)
     (define-key map (kbd "C") #'fj-issues-tl-comment-issue)
     (define-key map (kbd "e") #'fj-issues-tl-edit-issue)
     (define-key map (kbd "t") #'fj-issues-tl-edit-issue-title)
@@ -429,10 +424,18 @@ PARAMS."
     (define-key map (kbd "K") #'fj-issues-tl-delete-issue)
     (define-key map (kbd "n") #'fj-issues-tl-create)
     (define-key map (kbd "c") #'fj-issues-tl-create)
+    (define-key map (kbd "g") #'fj-issues-tl-reload)
     (define-key map (kbd "C-c C-c") #'fj-list-issues-cycle)
     (define-key map (kbd "o") #'fj-issues-tl-reopen-issue)
     map)
   "Map for `fj-list-issue-mode', a tabluated list of issues.")
+
+(define-derived-mode fj-list-issue-mode tabulated-list-mode
+  "fj-issues"
+  "Major mode for browsing a tabulated list of issues."
+  :group 'fj
+  (setq tabulated-list-padding 0) ;2) ; point directly on issue
+  (setq tabulated-list-format (vector (list "#" 3 t) (list "Issue" 2 t))))
 
 (define-button-type 'fj-button
   'follow-link t
@@ -642,12 +645,13 @@ RELOAD means we are reloading, so don't open in other window."
 
 (define-derived-mode fj-issue-view-mode view-mode "fj-issue"
   "Major mode for viewing an issue."
-  :group "fj")
+  :group 'fj)
 
 ;;; POST MODE
 
 (define-derived-mode fj-issue-post-mode fedi-post-mode
-  "fj-post")
+  "fj-post"
+  :group 'fj)
 
 (provide 'fj)
 ;;; fj.el ends here
