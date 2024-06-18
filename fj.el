@@ -279,12 +279,13 @@ With PARAMS."
                            (lambda ()
                              (message "Issue %s %s!" issue state)))))))
 
-(defun fj-issue-delete (&optional repo issue)
+(defun fj-issue-delete (&optional repo issue no-confirm)
   "Delete ISSUE in REPO."
   (interactive "P")
   (let* ((repo (fj-read-user-repo repo))
          (issue (or issue (fj-read-repo-issue repo))))
-    (when (y-or-n-p "Delete issue?")
+    (when (or no-confirm
+              (y-or-n-p "Delete issue?"))
       (let* ((url (format "repos/%s/%s/issues/%s" fj-user repo issue))
              (response (fj-delete url)))
         (fedi-http--triage response
@@ -415,6 +416,7 @@ PARAMS."
     (define-key map (kbd "t") #'fj-issues-tl-edit-issue-title)
     (define-key map (kbd "v") #'fj-issues-tl-view-issue)
     (define-key map (kbd "k") #'fj-issues-tl-close-issue)
+    (define-key map (kbd "K") #'fj-issues-tl-delete-issue)
     (define-key map (kbd "n") #'fj-issues-tl-create)
     (define-key map (kbd "c") #'fj-issues-tl-create)
     (define-key map (kbd "C-c C-c") #'fj-list-issues-cycle)
@@ -540,6 +542,15 @@ prompt for a repo to list."
     (let* ((item (tabulated-list-get-entry))
            (number (car (seq-first item))))
       (fj-issue-close fj-current-repo number)
+      (fj-issues-tl-reload))))
+
+(defun fj-issues-tl-delete-issue (&optional _)
+  "Delete current issue from tabulated issues listing."
+  (interactive)
+  (let* ((item (tabulated-list-get-entry))
+         (number (car (seq-first item))))
+    (when (y-or-n-p (format "Delete issue %s?" number))
+      (fj-issue-delete fj-current-repo number :no-confirm)
       (fj-issues-tl-reload))))
 
 (defun fj-issues-tl-reopen-issue (&optional _)
