@@ -381,6 +381,16 @@ PARAMS."
   (setq tabulated-list-padding 0) ;2) ; point directly on issue
   (setq tabulated-list-format (vector (list "#" 3 t) (list "Issue" 2 t))))
 
+(defvar fj-list-issue-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "c") #'fj-issues-tl-comment-issue)
+    (define-key map (kbd "e") #'fj-issues-tl-edit-issue)
+    (define-key map (kbd "t") #'fj-issues-tl-edit-issue-title)
+    (define-key map (kbd "v") #'fj-issues-tl-view-issue)
+    (define-key map (kbd "k") #'fj-issues-tl-close-issue)
+    map)
+  "Map for `fj-list-issue-mode', a tabluated list of issues.")
+
 (define-button-type 'fj-button
   'follow-link t
   'action 'fj-issues-tl-view-issue
