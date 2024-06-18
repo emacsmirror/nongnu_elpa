@@ -366,13 +366,13 @@ COMMENT is a number."
                            fj-user repo comment)))
     (fj-get endpoint)))
 
-(defun fj-issue-comment (&optional repo issue)
+(defun fj-issue-comment (&optional repo issue comment)
   "Add comment to ISSUE in REPO."
   (interactive "P")
   (let* ((repo (fj-read-user-repo repo))
          (issue (or issue (fj-read-repo-issue repo)))
          (url (format "repos/%s/%s/issues/%s/comments" fj-user repo issue))
-         (body (read-string "Comment: "))
+         (body (or comment (read-string "Comment: ")))
          (params `(("body" . ,body)))
          (response (fj-post url params)))
     (fedi-http--triage response
@@ -543,8 +543,10 @@ prompt for a repo to list."
   "Comment on issue from tabulated issues listing."
   (interactive)
   (let* ((item (tabulated-list-get-entry))
-         (number (car (seq-first item))))
-    (fj-issue-comment fj-current-repo number)))
+         (number (car (seq-first item)))
+         (comment (read-string
+                   (format "Comment on issue #%s: " number))))
+    (fj-issue-comment fj-current-repo number comment)))
 
 (defun fj-issues-tl-close-issue (&optional _)
   "Close current issue from tabulated issues listing."
