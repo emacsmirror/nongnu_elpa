@@ -410,6 +410,7 @@ PARAMS."
     (define-key map (kbd "k") #'fj-issues-tl-close-issue)
     (define-key map (kbd "n") #'fj-issues-tl-create)
     (define-key map (kbd "c") #'fj-issues-tl-create)
+    (define-key map (kbd "C-c C-c") #'fj-list-issues-cycle)
     map)
   "Map for `fj-list-issue-mode', a tabluated list of issues.")
 
@@ -437,9 +438,12 @@ With a prefix arg, or if REPO and `fj-current-repo' are nil,
 prompt for a repo to list."
   (interactive "P")
   (let* ((repo (fj-read-user-repo repo))
-         (issues (or issues (fj-repo-get-issues repo)))
+         (issues (or issues (fj-repo-get-issues repo state)))
          (prev-buf (buffer-name (current-buffer)))
-         (buf-name (format "*%s-issues*" repo)))
+         (state-str (or state "open"))
+         ;; FIXME: opens a buf for each state:
+         ;; can we put the state in the header?
+         (buf-name (format "*%s-%s-issues*" repo state-str)))
     (with-current-buffer (get-buffer-create buf-name)
       (setq tabulated-list-entries
             (fj-return-tl-entries issues))
@@ -448,13 +452,34 @@ prompt for a repo to list."
       (tabulated-list-print)
       (setq fj-current-repo repo)
       (setq fj-issues-tl-spec
-            `(:repo ,repo :state state ))
+            `(:repo ,repo :state ,state-str))
       (cond ((string= buf-name prev-buf) ; same repo
              nil)
             ((string-suffix-p "-issues*" prev-buf) ; diff repo
              (switch-to-buffer (current-buffer)))
             (t                             ; new buf
              (switch-to-buffer-other-window (current-buffer)))))))
+
+(defun fj-list-issues-closed (&optional repo issues)
+  "Display closed ISSUES for REPO in tabulated list view."
+  (interactive "P")
+  (fj-list-issues repo issues "closed"))
+
+(defun fj-list-issues-all (&optional repo issues)
+  "Display closed ISSUES for REPO in tabulated list view."
+  (interactive "P")
+  (fj-list-issues repo issues "all"))
+
+(defun fj-list-issues-cycle ()
+  "Cycle between listing of open, closed, and all issues."
+  (interactive)
+  (let ((state (plist-get fj-issues-tl-spec :state)))
+    (cond ((string= state "closed")
+           (fj-list-issues-all))
+          ((string= state "all")
+           (fj-list-issues))
+          (t ; open is default
+           (fj-list-issues-closed)))))
 
 (defun fj-list-pull-reqs (&optional repo)
   "List pull requests for REPO."
