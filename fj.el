@@ -402,6 +402,16 @@ PARAMS."
                          (message "comment edited!")))))
 
 ;;; TABLIST VIEWS
+;; webUI sort options:
+;; (defvar fj-list-tl-sort-options
+;;   '("latest"
+;;     "oldest"
+;;     "recentupdate"
+;;     "leastupdate"
+;;     "mostcomment"
+;;     "leastcomment"
+;;     "nearduedate"
+;;     "farduedate"))
 
 (define-derived-mode fj-list-issue-mode tabulated-list-mode
   "fj-issues"
