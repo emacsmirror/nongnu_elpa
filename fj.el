@@ -49,6 +49,10 @@
   "A plist holding some basic info about the issue currently displayed.
 Repo, issue number, url.")
 
+(defvar-local fj-issues-tl-spec nil
+  "A plist holding some basic info about the issues currently displayed.
+Repo, view parameters, etc.")
+
 (defun fj-api (endpoint)
   "Return a URL for ENDPOINT."
   (fedi-http--api endpoint fj-host "v1"))
@@ -435,11 +439,13 @@ prompt for a repo to list."
       (tabulated-list-init-header)
       (tabulated-list-print)
       (setq fj-current-repo repo)
+      (setq fj-issues-tl-spec
+            `(:repo ,repo :state state ))
       (cond ((string= buf-name prev-buf) ; same repo
              nil)
             ((string-suffix-p "-issues*" prev-buf) ; diff repo
              (switch-to-buffer (current-buffer)))
-            (t ; new buf
+            (t                             ; new buf
              (switch-to-buffer-other-window (current-buffer)))))))
 
 (defun fj-list-pull-reqs (&optional repo)
