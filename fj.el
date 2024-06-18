@@ -260,17 +260,19 @@ With PARAMS."
                        (lambda ()
                          (message "issue title edited!")))))
 
-(defun fj-issue-close (&optional repo issue)
-  "Close ISSUE in REPO."
+(defun fj-issue-close (&optional repo issue state)
+  "Close ISSUE in REPO or set to STATE."
   (interactive "P")
   (let* ((repo (fj-read-user-repo repo))
-         (issue (or issue (fj-read-repo-issue repo))))
-    (when (y-or-n-p (format "Close issue #%s?" issue))
+         (issue (or issue (fj-read-repo-issue repo)))
+         (action-str (if (string= state "open") "Open" "Close"))
+         (state (or state "closed")))
+    (when (y-or-n-p (format "%s issue #%s?" action-str issue))
       (let ((response (fj-issue-patch repo issue
-                                      `(("state" . "closed")))))
+                                      `(("state" . ,state)))))
         (fedi-http--triage response
                            (lambda ()
-                             (message "issue closed!")))))))
+                             (message "Issue %s %s!" issue state)))))))
 
 (defun fj-issue-delete (&optional repo issue)
   "Delete ISSUE in REPO."
@@ -411,6 +413,7 @@ PARAMS."
     (define-key map (kbd "n") #'fj-issues-tl-create)
     (define-key map (kbd "c") #'fj-issues-tl-create)
     (define-key map (kbd "C-c C-c") #'fj-list-issues-cycle)
+    (define-key map (kbd "o") #'fj-issues-tl-reopen-issue)
     map)
   "Map for `fj-list-issue-mode', a tabluated list of issues.")
 
@@ -526,10 +529,23 @@ prompt for a repo to list."
 (defun fj-issues-tl-close-issue (&optional _)
   "Close current issue from tabulated issues listing."
   (interactive)
-  (let* ((item (tabulated-list-get-entry))
-         (number (car (seq-first item))))
-    (fj-issue-close fj-current-repo number)
-    (fj-list-issues)))
+  ;; TODO make check work for "all": need to prop each tl entry
+  (if (string= (plist-get fj-issues-tl-spec :state) "closed")
+      (user-error "Viewing closed issues?")
+    (let* ((item (tabulated-list-get-entry))
+           (number (car (seq-first item))))
+      (fj-issue-close fj-current-repo number)
+      (fj-issues-tl-reload))))
+
+(defun fj-issues-tl-reopen-issue (&optional _)
+  "Reopen current issue from tabulated issues listing."
+  (interactive)
+  (if (string= (plist-get fj-issues-tl-spec :state) "open")
+      (user-error "Viewing open issues?")
+    (let* ((item (tabulated-list-get-entry))
+           (number (car (seq-first item))))
+      (fj-issue-close fj-current-repo number "open")
+      (fj-issues-tl-reload))))
 
 ;;; ISSUE VIEW
 
