@@ -406,7 +406,19 @@ PARAMS."
   'action 'fj-issues-tl-view-issue
   'help-echo "RET: View this issue.")
 
-(defun fj-list-issues (&optional repo issues)
+(defun fj-return-tl-entries (issues)
+  "Return tabluated list entries for ISSUES."
+  (cl-loop for issue in issues
+           for id = (alist-get 'number issue)
+           for name = (alist-get 'title issue)
+           collect `(nil [(,(number-to-string id)
+                           id ,id
+                           type fj-button)
+                          (,name face link
+                                 id ,id
+                                 type fj-button)])))
+
+(defun fj-list-issues (&optional repo issues state)
   "Display ISSUES in a tabulated list view.
 Either for `fj-current-repo', or for REPO, a string.
 With a prefix arg, or if REPO and `fj-current-repo' are nil,
@@ -418,15 +430,7 @@ prompt for a repo to list."
          (buf-name (format "*%s-issues*" repo)))
     (with-current-buffer (get-buffer-create buf-name)
       (setq tabulated-list-entries
-            (cl-loop for issue in issues
-                     for id = (alist-get 'number issue)
-                     for name = (alist-get 'title issue)
-                     collect `(nil [(,(number-to-string id)
-                                     id ,id
-                                     type fj-button)
-                                    (,name face link
-                                           id ,id
-                                           type fj-button)])))
+            (fj-return-tl-entries issues))
       (fj-list-issue-mode)
       (tabulated-list-init-header)
       (tabulated-list-print)
