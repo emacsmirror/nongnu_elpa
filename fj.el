@@ -228,6 +228,7 @@ ISSUE is a number."
 
 (defun fj-issues-tl-reload ()
   "Reload current issues tabulated list view."
+  (interactive)
   (when (string-suffix-p "-issues*"
                          (buffer-name (current-buffer)))
     (let ((state (plist-get fj-issues-tl-spec :state)))
