@@ -111,9 +111,14 @@ JSON."
 
 ;;; USER
 
-(defun fj-get-user ()
+(defun fj-get-current-user ()
   "Return the data for the current user."
   (fj-get "user"))
+
+(defun fj-get-user-repos (user)
+  "GET request repos for USER."
+  (let ((endpoint (format "users/%s/repos" user)))
+    (fj-get endpoint)))
 
 ;;; REPOS
 
@@ -710,7 +715,7 @@ If TOPIC, QUERY is a search for topic keywords."
 
 (define-button-type 'fj-search-owner-button
   'follow-link t
-  'action 'fj-repo-tl-list-issues
+  'action 'fj-repo-tl-list-user-repos
   'help-echo "RET: View this user.")
 
 (defun fj-search-tl-entries (repos)
@@ -723,7 +728,7 @@ If TOPIC, QUERY is a search for topic keywords."
            for owner = (alist-get 'username
                                   (alist-get 'owner r))
            for lang = (alist-get 'language r)
-           for url = (alist-get 'html_url r)
+           ;; for url = (alist-get 'html_url r)
            for stars = (number-to-string
                         (alist-get 'stars_count r))
            for fork = (let ((status (alist-get 'fork r)))
@@ -753,21 +758,25 @@ TOPIC, a boolean, means search in repo topics."
                    ,(when topic
                       '("topic" . "t"))))
          (resp (fj-get "/repos/search" params))
+         (buf (format "*fj-search-%s*" query))
          (data (alist-get 'data resp))
-         (buf-name (format "*fj-search-%s*" query)))
-    (with-current-buffer (get-buffer-create buf-name)
-      (setq tabulated-list-entries
-            (fj-search-tl-entries data))
-      (fj-repo-tl-mode)
-      (tabulated-list-init-header)
-      (tabulated-list-print)
-      (cond
-       ;; ((string= buf-name prev-buf) ; same repo
-       ;;  nil)
-       ;; ((string-suffix-p "-issues*" prev-buf) ; diff repo
-       ;;  (switch-to-buffer (current-buffer)))
-       (t                             ; new buf
-        (switch-to-buffer-other-window (current-buffer)))))))
+         (entries (fj-search-tl-entries data)))
+    (fj-repos-tl-render buf entries #'fj-repo-tl-mode)))
+
+(defun fj-repos-tl-render (buf entries mode)
+  "RENDER a tabulated list in BUF fer, with ENTRIES, in MODE."
+  (with-current-buffer (get-buffer-create buf)
+    (setq tabulated-list-entries entries)
+    (funcall mode)
+    (tabulated-list-init-header)
+    (tabulated-list-print)
+    (cond
+     ;; ((string= buf-name prev-buf) ; same repo
+     ;;  nil)
+     ;; ((string-suffix-p "-issues*" prev-buf) ; diff repo
+     ;;  (switch-to-buffer (current-buffer)))
+     (t                             ; new buf
+      (switch-to-buffer-other-window (current-buffer))))))
 
 (defun fj-repo-tl-list-issues (&optional _)
   "View issues of current repo from tabulated repos listing."
@@ -776,6 +785,17 @@ TOPIC, a boolean, means search in repo topics."
          (name (car (seq-first item)))
          (user (car (seq-elt item 1))))
     (fj-list-issues name nil nil user)))
+
+;; TODO: a non-tabulated list version too? (this is for repo search)
+(defun fj-repo-tl-list-user-repos (&optional user)
+  "View a tabulated list of USER's repos."
+  (interactive)
+  (let* ((item (tabulated-list-get-entry))
+         (user (or user (car (seq-elt item 1))))
+         (repos (fj-get-user-repos user))
+         (entries (fj-search-tl-entries repos))
+         (buf (format "*fj-repos-%s*" user)))
+    (fj-repos-tl-render buf entries #'fj-repo-tl-mode)))
 
 
 ;;; POST MODE
