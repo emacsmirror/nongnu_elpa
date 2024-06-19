@@ -197,10 +197,10 @@ Return the issue number."
                          cands))))
     (cadr item)))
 
-(defun fj-repo-get-issues (repo &optional state)
+(defun fj-repo-get-issues (repo &optional state user)
   "Return issues for REPO.
 STATE is for issue status, a string of open, closed or all."
-  (let* ((endpoint (format "repos/%s/%s/issues" fj-user repo))
+  (let* ((endpoint (format "repos/%s/%s/issues" (or user fj-user) repo))
          (params `(("state" . ,state))))
     (fj-get endpoint params)))
 
@@ -455,14 +455,14 @@ PARAMS."
                                  id ,id
                                  type fj-button)])))
 
-(defun fj-list-issues (&optional repo issues state)
+(defun fj-list-issues (&optional repo issues state user)
   "Display ISSUES in a tabulated list view.
 Either for `fj-current-repo', or for REPO, a string.
 With a prefix arg, or if REPO and `fj-current-repo' are nil,
 prompt for a repo to list."
   (interactive "P")
   (let* ((repo (fj-read-user-repo repo))
-         (issues (or issues (fj-repo-get-issues repo state)))
+         (issues (or issues (fj-repo-get-issues repo state user)))
          (prev-buf (buffer-name (current-buffer)))
          (state-str (or state "open"))
          ;; FIXME: opens a buf for each state:
