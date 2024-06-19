@@ -666,10 +666,18 @@ If TOPIC, QUERY is a search for topic keywords."
          (resp (fj-get "/repos/search" params))
          (data (alist-get 'data resp))
          (cands (fj-get-repo-candidates data))
+         (completion-extra-properties
+          '(:annotation-function fj-repo-candidates-annot-fun))
          (choice (completing-read "Repo: " cands))
-         (choice-list (assoc choice cands #'equal))
-         (user (cl-fourth choice-list)))
+         (user (cl-fourth
+                (assoc choice cands #'equal))))
     (fj-list-issues choice nil nil user)))
+
+;; doesn't work
+(defun fj-repo-candidates-annot-fun (cand)
+  (cl-fourth
+   (assoc cand minibuffer-completion-table
+          #'equal)))
 
 ;;; POST MODE
 
