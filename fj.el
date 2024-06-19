@@ -120,6 +120,14 @@ JSON."
   (let ((endpoint (format "users/%s/repos" user)))
     (fj-get endpoint)))
 
+(defun fj-user-repos-tl (&optional user)
+  "View a tabulated list of respos for USER."
+  (interactive "sView user repos: ")
+  (let* ((repos (fj-get-user-repos user))
+         (entries (fj-search-tl-entries repos))
+         (buf (format "*fj-repos-%s*" user)))
+    (fj-repos-tl-render buf entries #'fj-repo-tl-mode)))
+
 ;;; REPOS
 
 (defun fj-current-dir-repo ()
@@ -786,17 +794,12 @@ TOPIC, a boolean, means search in repo topics."
          (user (car (seq-elt item 1))))
     (fj-list-issues name nil nil user)))
 
-;; TODO: a non-tabulated list version too? (this is for repo search)
-(defun fj-repo-tl-list-user-repos (&optional user)
-  "View a tabulated list of USER's repos."
+(defun fj-repo-tl-list-user-repos (&optional _)
+  "View a tabulated list of current user from tabulated repos listing."
   (interactive)
   (let* ((item (tabulated-list-get-entry))
-         (user (or user (car (seq-elt item 1))))
-         (repos (fj-get-user-repos user))
-         (entries (fj-search-tl-entries repos))
-         (buf (format "*fj-repos-%s*" user)))
-    (fj-repos-tl-render buf entries #'fj-repo-tl-mode)))
-
+         (user (car (seq-elt item 1))))
+    (fj-user-repos-tl user)))
 
 ;;; POST MODE
 
