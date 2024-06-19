@@ -520,7 +520,7 @@ PARAMS."
                            type fj-issue-button)
                           ,(propertize comments
                                        'face 'fj-figures-face)
-                          (,author face 'fj-user-face
+                          (,author face fj-user-face
                                    id ,id
                                    type  fj-issues-owner-button)
                           (,title face ,(if (equal state "closed")
