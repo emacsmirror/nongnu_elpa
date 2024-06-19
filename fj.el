@@ -111,6 +111,13 @@ JSON."
 
 ;;; USER
 
+(defvar fj-user-spec nil)
+
+(define-button-type 'fj-user-repo-button
+  'follow-link t
+  'action 'fj-user-repo-tl-list-issues
+  'help-echo "RET: View this repo's issues.")
+
 (define-derived-mode fj-user-repo-tl-mode tabulated-list-mode
   "fj-user-repos"
   "Mode for displaying a tabulated list of user repos."
@@ -139,7 +146,16 @@ JSON."
   (let* ((repos (fj-get-user-repos user))
          (entries (fj-search-tl-entries repos :no-owner))
          (buf (format "*fj-repos-%s*" user)))
-    (fj-repos-tl-render buf entries #'fj-user-repo-tl-mode)))
+    (fj-repos-tl-render buf entries #'fj-user-repo-tl-mode)
+    (setq fj-user-spec `(:owner ,user))))
+
+(defun fj-user-repo-tl-list-issues (&optional _)
+  "View issues of current repo from tabulated user repos listing."
+  (interactive)
+  (let* ((item (tabulated-list-get-entry))
+         (name (car (seq-first item)))
+         (user (plist-get fj-user-spec :owner)))
+    (fj-list-issues name nil nil user)))
 
 ;;; REPOS
 
@@ -740,7 +756,8 @@ If TOPIC, QUERY is a search for topic keywords."
   'help-echo "RET: View this user.")
 
 (defun fj-search-tl-entries (repos &optional no-owner)
-  "Return tabluated list entries for REPOS."
+  "Return tabluated list entries for REPOS.
+NO-OWNER means don't display owner column (user repos view)."
   (cl-loop for r in repos
            for id = (alist-get 'id r)
            for name = (alist-get 'name r)
@@ -759,14 +776,16 @@ If TOPIC, QUERY is a search for topic keywords."
                           "⑂"))
            collect
            (if no-owner
+               ;; user repo button:
                `(nil [(,name face link
                              id ,id
-                             type fj-search-repo-button)
+                             type fj-user-repo-button)
                       (,stars id ,id face font-lock-string-face)
                       (,fork id ,id face font-lock-string-face)
                       ,lang
                       ,(propertize desc
                                    'face font-lock-comment-face)])
+             ;; search-repo and search owner button:
              `(nil [(,name face link
                            id ,id
                            type fj-search-repo-button)
