@@ -111,9 +111,22 @@ JSON."
 
 ;;; USER
 
-(defun fj-get-user ()
+(defun fj-get-current-user ()
   "Return the data for the current user."
   (fj-get "user"))
+
+(defun fj-get-user-repos (user)
+  "GET request repos for USER."
+  (let ((endpoint (format "users/%s/repos" user)))
+    (fj-get endpoint)))
+
+(defun fj-user-repos-tl (&optional user)
+  "View a tabulated list of respos for USER."
+  (interactive "sView user repos: ")
+  (let* ((repos (fj-get-user-repos user))
+         (entries (fj-search-tl-entries repos))
+         (buf (format "*fj-repos-%s*" user)))
+    (fj-repos-tl-render buf entries #'fj-repo-tl-mode)))
 
 ;;; REPOS
 
@@ -141,7 +154,9 @@ JSON."
   (cl-loop for r in repos
            collect `(,(alist-get 'name r)
                      ,(alist-get 'id r)
-                     ,(alist-get 'description r))))
+                     ,(alist-get 'description r)
+                     ,(alist-get 'username
+                                 (alist-get 'owner r)))))
 
 (defun fj-read-user-repo-do ()
   "Prompt for a user repository."
@@ -197,10 +212,11 @@ Return the issue number."
                          cands))))
     (cadr item)))
 
-(defun fj-repo-get-issues (repo &optional state)
+(defun fj-repo-get-issues (repo &optional state user)
   "Return issues for REPO.
-STATE is for issue status, a string of open, closed or all."
-  (let* ((endpoint (format "repos/%s/%s/issues" fj-user repo))
+STATE is for issue status, a string of open, closed or all.
+USER is the repo owner."
+  (let* ((endpoint (format "repos/%s/%s/issues" (or user fj-user) repo))
          (params `(("state" . ,state))))
     (fj-get endpoint params)))
 
@@ -443,7 +459,7 @@ PARAMS."
   'action 'fj-issues-tl-view-issue
   'help-echo "RET: View this issue.")
 
-(defun fj-return-tl-entries (issues)
+(defun fj-issues-tl-entries (issues)
   "Return tabluated list entries for ISSUES."
   (cl-loop for issue in issues
            for id = (alist-get 'number issue)
@@ -455,14 +471,14 @@ PARAMS."
                                  id ,id
                                  type fj-button)])))
 
-(defun fj-list-issues (&optional repo issues state)
+(defun fj-list-issues (&optional repo issues state user)
   "Display ISSUES in a tabulated list view.
 Either for `fj-current-repo', or for REPO, a string.
 With a prefix arg, or if REPO and `fj-current-repo' are nil,
 prompt for a repo to list."
   (interactive "P")
   (let* ((repo (fj-read-user-repo repo))
-         (issues (or issues (fj-repo-get-issues repo state)))
+         (issues (or issues (fj-repo-get-issues repo state user)))
          (prev-buf (buffer-name (current-buffer)))
          (state-str (or state "open"))
          ;; FIXME: opens a buf for each state:
@@ -470,7 +486,7 @@ prompt for a repo to list."
          (buf-name (format "*%s-%s-issues*" repo state-str)))
     (with-current-buffer (get-buffer-create buf-name)
       (setq tabulated-list-entries
-            (fj-return-tl-entries issues))
+            (fj-issues-tl-entries issues))
       (fj-list-issue-mode)
       (tabulated-list-init-header)
       (tabulated-list-print)
@@ -649,6 +665,141 @@ RELOAD means we are reloading, so don't open in other window."
 (define-derived-mode fj-issue-view-mode view-mode "fj-issue"
   "Major mode for viewing an issue."
   :group 'fj)
+
+;;; SEARCH
+
+(defun fj-repo-search (query &optional topic)
+  "Search repos for QUERY.
+If TOPIC, QUERY is a search for topic keywords."
+  (interactive "sSearch for repo: ")
+  (let* ((params `(("q" . ,query)
+                   ("limit" . "100")
+                   ("sort" . "updated")
+                   ,(when topic
+                      '("topic" . "t"))))
+         (resp (fj-get "/repos/search" params))
+         (data (alist-get 'data resp))
+         (cands (fj-get-repo-candidates data))
+         (completion-extra-properties
+          '(:annotation-function fj-repo-candidates-annot-fun))
+         (choice (completing-read "Repo: " cands))
+         (user (cl-fourth
+                (assoc choice cands #'equal))))
+    (fj-list-issues choice nil nil user)))
+
+;; doesn't work
+(defun fj-repo-candidates-annot-fun (cand)
+  "CAND."
+  (cl-fourth
+   (assoc cand minibuffer-completion-table
+          #'equal)))
+
+;;; SEARCH TL
+
+(defvar fj-repo-tl-mode-map
+  (let ((map (make-sparse-keymap)))
+    (set-keymap-parent map tabulated-list-mode-map)
+    (define-key map (kbd "RET") #'fj-repo-tl-list-issues)
+    map)
+  "Map for `fj-repo-search-mode a tabluated list of repos.")
+
+(define-derived-mode fj-repo-tl-mode tabulated-list-mode
+  "fj-repo-search"
+  "Mode for displaying a tabulated list of repo search results."
+  :group 'fj
+  (setq tabulated-list-padding 0) ;2) ; point directly on issue
+  (setq tabulated-list-format
+        (vector '("Name" 16 t)
+                '("Owner" 12 t)
+                '("★" 3 t)
+                '("" 2 t)
+                '("Lang" 10 t)
+                '("Description" 55 nil))))
+
+(define-button-type 'fj-search-repo-button
+  'follow-link t
+  'action 'fj-repo-tl-list-issues
+  'help-echo "RET: View this repo's issues.")
+
+(define-button-type 'fj-search-owner-button
+  'follow-link t
+  'action 'fj-repo-tl-list-user-repos
+  'help-echo "RET: View this user.")
+
+(defun fj-search-tl-entries (repos)
+  "Return tabluated list entries for REPOS."
+  (cl-loop for r in repos
+           for id = (alist-get 'id r)
+           for name = (alist-get 'name r)
+           for desc = (string-replace "\n" " "
+                                      (alist-get 'description r))
+           for owner = (alist-get 'username
+                                  (alist-get 'owner r))
+           for lang = (alist-get 'language r)
+           ;; for url = (alist-get 'html_url r)
+           for stars = (number-to-string
+                        (alist-get 'stars_count r))
+           for fork = (let ((status (alist-get 'fork r)))
+                        (if (eq status :json-false)
+                            "ℹ"
+                          "⑂"))
+           collect
+           `(nil [(,name face link
+                         id ,id
+                         type fj-search-repo-button)
+                  (,owner face link
+                          id ,id
+                          type fj-search-owner-button)
+                  (,stars id ,id face font-lock-string-face)
+                  (,fork id ,id face font-lock-string-face)
+                  ,lang
+                  ,(propertize desc
+                               'face font-lock-comment-face)])))
+
+(defun fj-repo-search-tl (query &optional topic)
+  "Search repos for QUERY, and display a tabulated list of results.
+TOPIC, a boolean, means search in repo topics."
+  (interactive "sSearch for repos: ")
+  (let* ((params `(("q" . ,query)
+                   ("limit" . "100")
+                   ("sort" . "updated")
+                   ,(when topic
+                      '("topic" . "t"))))
+         (resp (fj-get "/repos/search" params))
+         (buf (format "*fj-search-%s*" query))
+         (data (alist-get 'data resp))
+         (entries (fj-search-tl-entries data)))
+    (fj-repos-tl-render buf entries #'fj-repo-tl-mode)))
+
+(defun fj-repos-tl-render (buf entries mode)
+  "RENDER a tabulated list in BUF fer, with ENTRIES, in MODE."
+  (with-current-buffer (get-buffer-create buf)
+    (setq tabulated-list-entries entries)
+    (funcall mode)
+    (tabulated-list-init-header)
+    (tabulated-list-print)
+    (cond
+     ;; ((string= buf-name prev-buf) ; same repo
+     ;;  nil)
+     ;; ((string-suffix-p "-issues*" prev-buf) ; diff repo
+     ;;  (switch-to-buffer (current-buffer)))
+     (t                             ; new buf
+      (switch-to-buffer-other-window (current-buffer))))))
+
+(defun fj-repo-tl-list-issues (&optional _)
+  "View issues of current repo from tabulated repos listing."
+  (interactive)
+  (let* ((item (tabulated-list-get-entry))
+         (name (car (seq-first item)))
+         (user (car (seq-elt item 1))))
+    (fj-list-issues name nil nil user)))
+
+(defun fj-repo-tl-list-user-repos (&optional _)
+  "View a tabulated list of current user from tabulated repos listing."
+  (interactive)
+  (let* ((item (tabulated-list-get-entry))
+         (user (car (seq-elt item 1))))
+    (fj-user-repos-tl user)))
 
 ;;; POST MODE
 
