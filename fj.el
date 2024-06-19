@@ -201,7 +201,8 @@ Return the issue number."
 
 (defun fj-repo-get-issues (repo &optional state user)
   "Return issues for REPO.
-STATE is for issue status, a string of open, closed or all."
+STATE is for issue status, a string of open, closed or all.
+USER is the repo owner."
   (let* ((endpoint (format "repos/%s/%s/issues" (or user fj-user) repo))
          (params `(("state" . ,state))))
     (fj-get endpoint params)))
@@ -675,6 +676,7 @@ If TOPIC, QUERY is a search for topic keywords."
 
 ;; doesn't work
 (defun fj-repo-candidates-annot-fun (cand)
+  "CAND."
   (cl-fourth
    (assoc cand minibuffer-completion-table
           #'equal)))
@@ -735,7 +737,8 @@ If TOPIC, QUERY is a search for topic keywords."
                   (,desc id ,id face default)])))
 
 (defun fj-repo-search-tl (query &optional topic)
-  "Search repos for QUERY, and display a tabulated list of results."
+  "Search repos for QUERY, and display a tabulated list of results.
+TOPIC, a boolean, means search in repo topics."
   (interactive "sSearch for repos: ")
   (let* ((params `(("q" . ,query)
                    ("limit" . "100")
