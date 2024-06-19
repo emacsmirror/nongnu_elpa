@@ -83,3 +83,7 @@ Current repository detection should work partially automatically. If you find yo
 |         | fj-pull-req-comment           | Add comment to PULL in REPO.                                       |
 |         | fj-pull-req-comment-edit      | Edit a comment on PULL in REPO.                                    |
 |         | fj-repo-create                | Create a new repo.                                                 |
+|         | fj-repo-search-mode           | Major mode for browsing a tabulated list of issues.                |
+|         | fj-repo-search-tl             | Search repos for QUERY, and display a tabulated list of results.   |
+|         | fj-repo-tl-list-issues        | View issues of current repo from tabulated repos listing.          |
+|         | fj-repo-tl-mode               | Mode for displaying a tabulated list of repo search results.       |
