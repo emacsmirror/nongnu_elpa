@@ -111,6 +111,19 @@ JSON."
 
 ;;; USER
 
+(define-derived-mode fj-user-repo-tl-mode tabulated-list-mode
+  "fj-user-repos"
+  "Mode for displaying a tabulated list of user repos."
+  :group 'fj
+  (setq tabulated-list-padding 0) ;2) ; point directly on issue
+  (setq tabulated-list-format
+        (vector '("Name" 16 t)
+                ;; '("Owner" 12 t)
+                '("★" 3 t)
+                '("" 2 t)
+                '("Lang" 10 t)
+                '("Description" 55 nil))))
+
 (defun fj-get-current-user ()
   "Return the data for the current user."
   (fj-get "user"))
@@ -124,9 +137,9 @@ JSON."
   "View a tabulated list of respos for USER."
   (interactive "sView user repos: ")
   (let* ((repos (fj-get-user-repos user))
-         (entries (fj-search-tl-entries repos))
+         (entries (fj-search-tl-entries repos :no-owner))
          (buf (format "*fj-repos-%s*" user)))
-    (fj-repos-tl-render buf entries #'fj-repo-tl-mode)))
+    (fj-repos-tl-render buf entries #'fj-user-repo-tl-mode)))
 
 ;;; REPOS
 
@@ -726,15 +739,16 @@ If TOPIC, QUERY is a search for topic keywords."
   'action 'fj-repo-tl-list-user-repos
   'help-echo "RET: View this user.")
 
-(defun fj-search-tl-entries (repos)
+(defun fj-search-tl-entries (repos &optional no-owner)
   "Return tabluated list entries for REPOS."
   (cl-loop for r in repos
            for id = (alist-get 'id r)
            for name = (alist-get 'name r)
            for desc = (string-replace "\n" " "
                                       (alist-get 'description r))
-           for owner = (alist-get 'username
-                                  (alist-get 'owner r))
+           for owner = (unless no-owner
+                         (alist-get 'username
+                                    (alist-get 'owner r)))
            for lang = (alist-get 'language r)
            ;; for url = (alist-get 'html_url r)
            for stars = (number-to-string
@@ -744,17 +758,26 @@ If TOPIC, QUERY is a search for topic keywords."
                             "ℹ"
                           "⑂"))
            collect
-           `(nil [(,name face link
-                         id ,id
-                         type fj-search-repo-button)
-                  (,owner face link
-                          id ,id
-                          type fj-search-owner-button)
-                  (,stars id ,id face font-lock-string-face)
-                  (,fork id ,id face font-lock-string-face)
-                  ,lang
-                  ,(propertize desc
-                               'face font-lock-comment-face)])))
+           (if no-owner
+               `(nil [(,name face link
+                             id ,id
+                             type fj-search-repo-button)
+                      (,stars id ,id face font-lock-string-face)
+                      (,fork id ,id face font-lock-string-face)
+                      ,lang
+                      ,(propertize desc
+                                   'face font-lock-comment-face)])
+             `(nil [(,name face link
+                           id ,id
+                           type fj-search-repo-button)
+                    (,owner face link
+                            id ,id
+                            type fj-search-owner-button)
+                    (,stars id ,id face font-lock-string-face)
+                    (,fork id ,id face font-lock-string-face)
+                    ,lang
+                    ,(propertize desc
+                                 'face font-lock-comment-face)]))))
 
 (defun fj-repo-search-tl (query &optional topic)
   "Search repos for QUERY, and display a tabulated list of results.
