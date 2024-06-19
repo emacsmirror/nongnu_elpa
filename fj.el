@@ -652,6 +652,25 @@ RELOAD means we are reloading, so don't open in other window."
   "Major mode for viewing an issue."
   :group 'fj)
 
+;;; SEARCH
+
+(defun fj-repo-search (query &optional topic)
+  "Search repos for QUERY.
+If TOPIC, QUERY is a search for topic keywords."
+  (interactive "sSearch for repo: ")
+  (let* ((params `(("q" . ,query)
+                   ("limit" . "100")
+                   ("sort" . "updated")
+                   ,(when topic
+                      '("topic" . "t"))))
+         (resp (fj-get "/repos/search" params))
+         (data (alist-get 'data resp))
+         (cands (fj-get-repo-candidates data))
+         (choice (completing-read "Repo: " cands))
+         (choice-list (assoc choice cands #'equal))
+         (user (cl-fourth choice-list)))
+    (fj-list-issues choice nil nil user)))
+
 ;;; POST MODE
 
 (define-derived-mode fj-issue-post-mode fedi-post-mode
