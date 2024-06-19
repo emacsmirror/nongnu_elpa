@@ -696,7 +696,7 @@ If TOPIC, QUERY is a search for topic keywords."
   :group 'fj
   (setq tabulated-list-padding 0) ;2) ; point directly on issue
   (setq tabulated-list-format
-        (vector '("Name" 12 t)
+        (vector '("Name" 16 t)
                 '("Owner" 12 t)
                 '("★" 3 t)
                 '("" 2 t)
@@ -716,9 +716,10 @@ If TOPIC, QUERY is a search for topic keywords."
 (defun fj-search-tl-entries (repos)
   "Return tabluated list entries for REPOS."
   (cl-loop for r in repos
-           for id = (alist-get 'number r)
+           for id = (alist-get 'id r)
            for name = (alist-get 'name r)
-           for desc = (alist-get 'description r)
+           for desc = (string-replace "\n" " "
+                                      (alist-get 'description r))
            for owner = (alist-get 'username
                                   (alist-get 'owner r))
            for lang = (alist-get 'language r)
