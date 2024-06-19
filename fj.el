@@ -141,7 +141,9 @@ JSON."
   (cl-loop for r in repos
            collect `(,(alist-get 'name r)
                      ,(alist-get 'id r)
-                     ,(alist-get 'description r))))
+                     ,(alist-get 'description r)
+                     ,(alist-get 'username
+                                 (alist-get 'owner r)))))
 
 (defun fj-read-user-repo-do ()
   "Prompt for a user repository."
