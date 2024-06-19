@@ -485,29 +485,46 @@ PARAMS."
   (setq tabulated-list-padding 0) ;2) ; point directly on issue
   (setq tabulated-list-format (vector (list "#" 3 t) (list "Issue" 2 t))))
 
-(define-button-type 'fj-button
+(define-button-type 'fj-issue-button
   'follow-link t
   'action 'fj-issues-tl-view-issue
   'help-echo "RET: View this issue.")
 
-(defface fj-closed-issue
+(defface fj-closed-issue-face
   '((t :inherit font-lock-comment-face :weight bold :underline t))
   "Face for the title of a closed issue.")
+
+(defface fj-user-face
+  '((t :inherit font-lock-function-name-face))
+  "")
+
+(defface fj-figures-face
+  '((t :inherit font-lock-doc-face))
+  "")
 
 (defun fj-issues-tl-entries (issues)
   "Return tabluated list entries for ISSUES."
   (cl-loop for issue in issues
            for id = (alist-get 'number issue)
-           for name = (alist-get 'title issue)
+           for title = (alist-get 'title issue)
            for state = (alist-get 'state issue)
+           for comments = (number-to-string
+                           (alist-get 'comments issue))
+           for author = (alist-get 'login
+                                   (alist-get 'user issue))
            collect `(nil [(,(number-to-string id)
                            id ,id
-                           type fj-button)
-                          (,name face ,(if (equal state "closed")
-                                           'fj-closed-issue
-                                         'link)
-                                 id ,id
-                                 type fj-button)])))
+                           type fj-issue-button)
+                          ,(propertize comments
+                                       'face 'fj-figures-face)
+                          (,author face 'fj-user-face
+                                   id ,id
+                                   type  fj-issues-owner-button)
+                          (,title face ,(if (equal state "closed")
+                                            'fj-closed-issue-face
+                                          'link)
+                                  id ,id
+                                  type fj-issue-button)])))
 
 (defun fj-list-issues (&optional repo issues state user)
   "Display ISSUES in a tabulated list view.
@@ -571,7 +588,7 @@ prompt for a repo to list."
   (interactive)
   (fj-issue-create fj-current-repo))
 
-;; arg fj-button in tl view:
+;; arg fj-issue-button in tl view:
 (defun fj-issues-tl-view-issue (&optional _)
   "View current issue from tabulated issues listing."
   (interactive)
@@ -765,6 +782,11 @@ If TOPIC, QUERY is a search for topic keywords."
   'action 'fj-repo-tl-list-user-repos
   'help-echo "RET: View this user.")
 
+(define-button-type 'fj-issues-owner-button
+  'follow-link t
+  'action 'fj-issues-tl-list-user-repos
+  'help-echo "RET: View this user.")
+
 (defun fj-search-tl-entries (repos &optional no-owner)
   "Return tabluated list entries for REPOS.
 NO-OWNER means don't display owner column (user repos view)."
@@ -849,8 +871,19 @@ TOPIC, a boolean, means search in repo topics."
 (defun fj-repo-tl-list-user-repos (&optional _)
   "View a tabulated list of current user from tabulated repos listing."
   (interactive)
+  ;; FIXME: this really needs to be somehow independent of columns
+  ;; as we want to have author in diff columns depending on different views.
+  ;; text-props to the rescue? (but they're also per column)
+  ;; tabulated lists should be prop lists!
   (let* ((item (tabulated-list-get-entry))
          (user (car (seq-elt item 1))))
+    (fj-user-repos-tl user)))
+
+(defun fj-issues-tl-list-user-repos (&optional _)
+  "View a tabulated list of current user from issues listing."
+  (interactive)
+  (let* ((item (tabulated-list-get-entry))
+         (user (car (seq-elt item 2))))
     (fj-user-repos-tl user)))
 
 ;;; POST MODE
