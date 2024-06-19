@@ -125,12 +125,11 @@ JSON."
   (hl-line-mode 1)
   (setq tabulated-list-padding 0) ;2) ; point directly on issue
   (setq tabulated-list-format
-        (vector '("Name" 16 t)
-                ;; '("Owner" 12 t)
-                '("★" 3 t)
-                '("" 2 t)
-                '("Lang" 10 t)
-                '("Description" 55 nil))))
+        '[("Name" 16 t)
+          ("★" 3 t)
+          ("" 2 t)
+          ("Lang" 10 t)
+          ("Description" 55 nil)]))
 
 (defun fj-get-current-user ()
   "Return the data for the current user."
@@ -483,7 +482,11 @@ PARAMS."
   :group 'fj
   (hl-line-mode 1)
   (setq tabulated-list-padding 0) ;2) ; point directly on issue
-  (setq tabulated-list-format (vector (list "#" 3 t) (list "Issue" 2 t))))
+  (setq tabulated-list-format
+        '[("#" 3 t)
+          ("💬" 3 t)
+          ("Author" 10 t)
+          ("Issue" 2 t)]))
 
 (define-button-type 'fj-issue-button
   'follow-link t
@@ -765,12 +768,12 @@ If TOPIC, QUERY is a search for topic keywords."
   (hl-line-mode 1)
   (setq tabulated-list-padding 0) ;2) ; point directly on issue
   (setq tabulated-list-format
-        (vector '("Name" 16 t)
-                '("Owner" 12 t)
-                '("★" 3 t)
-                '("" 2 t)
-                '("Lang" 10 t)
-                '("Description" 55 nil))))
+        '[("Name" 16 t)
+          ("Owner" 12 t)
+          ("★" 3 t)
+          ("" 2 t)
+          ("Lang" 10 t)
+          ("Description" 55 nil)]))
 
 (define-button-type 'fj-search-repo-button
   'follow-link t
