@@ -703,10 +703,15 @@ If TOPIC, QUERY is a search for topic keywords."
                 '("Lang" 10 t)
                 '("Description" 55 nil))))
 
-(define-button-type 'fj-search-button
+(define-button-type 'fj-search-repo-button
   'follow-link t
   'action 'fj-repo-tl-list-issues
-  'help-echo "RET: View this issue.")
+  'help-echo "RET: View this repo's issues.")
+
+(define-button-type 'fj-search-owner-button
+  'follow-link t
+  'action 'fj-repo-tl-list-issues
+  'help-echo "RET: View this user.")
 
 (defun fj-search-tl-entries (repos)
   "Return tabluated list entries for REPOS."
@@ -727,14 +732,15 @@ If TOPIC, QUERY is a search for topic keywords."
            collect
            `(nil [(,name face link
                          id ,id
-                         type fj-search-button)
+                         type fj-search-repo-button)
                   (,owner face link
                           id ,id
-                          type fj-search-button)
+                          type fj-search-owner-button)
                   (,stars id ,id face font-lock-string-face)
                   (,fork id ,id face font-lock-string-face)
-                  (,lang id ,id)
-                  (,desc id ,id face default)])))
+                  ,lang
+                  ,(propertize desc
+                               'face font-lock-comment-face)])))
 
 (defun fj-repo-search-tl (query &optional topic)
   "Search repos for QUERY, and display a tabulated list of results.
