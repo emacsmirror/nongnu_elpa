@@ -445,7 +445,7 @@ PARAMS."
   'action 'fj-issues-tl-view-issue
   'help-echo "RET: View this issue.")
 
-(defun fj-return-tl-entries (issues)
+(defun fj-issues-tl-entries (issues)
   "Return tabluated list entries for ISSUES."
   (cl-loop for issue in issues
            for id = (alist-get 'number issue)
@@ -472,7 +472,7 @@ prompt for a repo to list."
          (buf-name (format "*%s-%s-issues*" repo state-str)))
     (with-current-buffer (get-buffer-create buf-name)
       (setq tabulated-list-entries
-            (fj-return-tl-entries issues))
+            (fj-issues-tl-entries issues))
       (fj-list-issue-mode)
       (tabulated-list-init-header)
       (tabulated-list-print)
@@ -678,6 +678,95 @@ If TOPIC, QUERY is a search for topic keywords."
   (cl-fourth
    (assoc cand minibuffer-completion-table
           #'equal)))
+
+;;; SEARCH TL
+
+(defvar fj-repo-tl-mode-map
+  (let ((map (make-sparse-keymap)))
+    (set-keymap-parent map tabulated-list-mode-map)
+    (define-key map (kbd "RET") #'fj-repo-tl-list-issues)
+    map)
+  "Map for `fj-repo-search-mode a tabluated list of repos.")
+
+(define-derived-mode fj-repo-tl-mode tabulated-list-mode
+  "fj-repo-search"
+  "Mode for displaying a tabulated list of repo search results."
+  :group 'fj
+  (setq tabulated-list-padding 0) ;2) ; point directly on issue
+  (setq tabulated-list-format
+        (vector '("Name" 12 t)
+                '("Owner" 12 t)
+                '("★" 3 t)
+                '("" 2 t)
+                '("Lang" 10 t)
+                '("Description" 55 nil))))
+
+(define-button-type 'fj-search-button
+  'follow-link t
+  'action 'fj-repo-tl-list-issues
+  'help-echo "RET: View this issue.")
+
+(defun fj-search-tl-entries (repos)
+  "Return tabluated list entries for REPOS."
+  (cl-loop for r in repos
+           for id = (alist-get 'number r)
+           for name = (alist-get 'name r)
+           for desc = (alist-get 'description r)
+           for owner = (alist-get 'username
+                                  (alist-get 'owner r))
+           for lang = (alist-get 'language r)
+           for url = (alist-get 'html_url r)
+           for stars = (number-to-string
+                        (alist-get 'stars_count r))
+           for fork = (let ((status (alist-get 'fork r)))
+                        (if (eq status :json-false)
+                            "ℹ"
+                          "⑂"))
+           collect
+           `(nil [(,name face link
+                         id ,id
+                         type fj-search-button)
+                  (,owner face link
+                          id ,id
+                          type fj-search-button)
+                  (,stars id ,id face font-lock-string-face)
+                  (,fork id ,id face font-lock-string-face)
+                  (,lang id ,id)
+                  (,desc id ,id face default)])))
+
+(defun fj-repo-search-tl (query &optional topic)
+  "Search repos for QUERY, and display a tabulated list of results."
+  (interactive "sSearch for repos: ")
+  (let* ((params `(("q" . ,query)
+                   ("limit" . "100")
+                   ("sort" . "updated")
+                   ,(when topic
+                      '("topic" . "t"))))
+         (resp (fj-get "/repos/search" params))
+         (data (alist-get 'data resp))
+         (buf-name (format "*fj-search-%s*" query)))
+    (with-current-buffer (get-buffer-create buf-name)
+      (setq tabulated-list-entries
+            (fj-search-tl-entries data))
+      (fj-repo-tl-mode)
+      (tabulated-list-init-header)
+      (tabulated-list-print)
+      (cond
+       ;; ((string= buf-name prev-buf) ; same repo
+       ;;  nil)
+       ;; ((string-suffix-p "-issues*" prev-buf) ; diff repo
+       ;;  (switch-to-buffer (current-buffer)))
+       (t                             ; new buf
+        (switch-to-buffer-other-window (current-buffer)))))))
+
+(defun fj-repo-tl-list-issues (&optional _)
+  "View issues of current repo from tabulated repos listing."
+  (interactive)
+  (let* ((item (tabulated-list-get-entry))
+         (name (car (seq-first item)))
+         (user (car (seq-elt item 1))))
+    (fj-list-issues name nil nil user)))
+
 
 ;;; POST MODE
 
