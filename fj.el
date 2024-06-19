@@ -122,6 +122,7 @@ JSON."
   "fj-user-repos"
   "Mode for displaying a tabulated list of user repos."
   :group 'fj
+  (hl-line-mode 1)
   (setq tabulated-list-padding 0) ;2) ; point directly on issue
   (setq tabulated-list-format
         (vector '("Name" 16 t)
@@ -480,6 +481,7 @@ PARAMS."
   "fj-issues"
   "Major mode for browsing a tabulated list of issues."
   :group 'fj
+  (hl-line-mode 1)
   (setq tabulated-list-padding 0) ;2) ; point directly on issue
   (setq tabulated-list-format (vector (list "#" 3 t) (list "Issue" 2 t))))
 
@@ -743,6 +745,7 @@ If TOPIC, QUERY is a search for topic keywords."
   "fj-repo-search"
   "Mode for displaying a tabulated list of repo search results."
   :group 'fj
+  (hl-line-mode 1)
   (setq tabulated-list-padding 0) ;2) ; point directly on issue
   (setq tabulated-list-format
         (vector '("Name" 16 t)
