@@ -488,15 +488,22 @@ PARAMS."
   'action 'fj-issues-tl-view-issue
   'help-echo "RET: View this issue.")
 
+(defface fj-closed-issue
+  '((t :inherit font-lock-comment-face :weight bold :underline t))
+  "Face for the title of a closed issue.")
+
 (defun fj-issues-tl-entries (issues)
   "Return tabluated list entries for ISSUES."
   (cl-loop for issue in issues
            for id = (alist-get 'number issue)
            for name = (alist-get 'title issue)
+           for state = (alist-get 'state issue)
            collect `(nil [(,(number-to-string id)
                            id ,id
                            type fj-button)
-                          (,name face link
+                          (,name face ,(if (equal state "closed")
+                                           'fj-closed-issue
+                                         'link)
                                  id ,id
                                  type fj-button)])))
 
