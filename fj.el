@@ -75,6 +75,37 @@ Repo, view parameters, etc.")
   '((t :inherit font-lock-doc-face))
   "Face for figures (stars count, comments count, etc.)")
 
+;;; UTILS
+
+(defun fj-issues-tl-own-repo-p ()
+  "T if repo is owned by `fj-user'."
+  (equal (plist-get fj-issues-tl-spec :owner)
+         fj-user))
+
+(defun fj-issue-own-p ()
+  "T if issue is authored by `fj-user'."
+  (cond ((eq major-mode 'fj-issue-view-mode)
+         (equal fj-user
+                (plist-get fj-issue-spec :author)))
+        ((eq major-mode 'fj-list-issue-mode)
+         (let* ((entry (tabulated-list-get-entry))
+                (author (car (seq-elt entry 2))))
+           (equal fj-user author)))))
+
+(defmacro fj-with-own-repo (&optional body)
+  "Execute body if a repo owned by `fj-user'."
+  (declare (debug t))
+  `(if (not (fj-issues-tl-own-repo-p))
+       (user-error "Not in a repo you own.")
+     ,@body))
+
+(defmacro fj-with-own-issue (&optional body)
+  "Execute body if issue is authored by `fj-user'."
+  (declare (debug t))
+  `(if (not (fj-issue-own-p))
+       (user-error "Not an issue you own.")
+     ,@body))
+
 ;;; REQUESTS
 
 (defmacro fj-authorized-request (method body &optional unauthenticated-p)
