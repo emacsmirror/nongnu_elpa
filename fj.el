@@ -538,7 +538,7 @@ PARAMS."
   'action 'fj-issues-tl-view-issue
   'help-echo "RET: View this issue.")
 
-(defun fj-issues-tl-entries (issues)
+(defun fj-issues-tl-entries (issues &optional state)
   "Return tabluated list entries for ISSUES."
   (cl-loop for issue in issues
            for id = (alist-get 'number issue)
@@ -550,16 +550,19 @@ PARAMS."
                                    (alist-get 'user issue))
            collect `(nil [(,(number-to-string id)
                            id ,id
+                           state ,state
                            type fj-issue-button)
                           ,(propertize comments
                                        'face 'fj-figures-face)
                           (,author face fj-user-face
                                    id ,id
+                                   state ,state
                                    type  fj-issues-owner-button)
                           (,title face ,(if (equal state "closed")
                                             'fj-closed-issue-face
                                           'link)
                                   id ,id
+                                  state ,state
                                   type fj-issue-button)])))
 
 (defun fj-list-issues (&optional repo issues state user)
@@ -577,7 +580,7 @@ prompt for a repo to list."
          (buf-name (format "*%s-%s-issues*" repo state-str)))
     (with-current-buffer (get-buffer-create buf-name)
       (setq tabulated-list-entries
-            (fj-issues-tl-entries issues))
+            (fj-issues-tl-entries issues state-str))
       (fj-list-issue-mode)
       (tabulated-list-init-header)
       (tabulated-list-print)
