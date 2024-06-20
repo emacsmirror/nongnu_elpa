@@ -660,17 +660,19 @@ prompt for a repo to list."
 (defun fj-issues-tl-edit-issue ()
   "Edit issue from tabulated issues listing."
   (interactive)
-  (let* ((item (tabulated-list-get-entry))
-         (number (car (seq-first item))))
-    (fj-issue-edit fj-current-repo number)))
+  (fj-with-own-issue
+   (let* ((item (tabulated-list-get-entry))
+          (number (car (seq-first item))))
+     (fj-issue-edit fj-current-repo number))))
 
 (defun fj-issues-tl-edit-issue-title ()
   "Edit title of issue from tabulated issues listing."
   (interactive)
-  (let* ((item (tabulated-list-get-entry))
-         (number (car (seq-first item))))
-    (fj-issue-edit-title fj-current-repo number)
-    (fj-issues-tl-reload)))
+  (fj-with-own-issue-or-repo
+   (let* ((item (tabulated-list-get-entry))
+          (number (car (seq-first item))))
+     (fj-issue-edit-title fj-current-repo number)
+     (fj-issues-tl-reload))))
 
 (defun fj-issues-tl-comment-issue ()
   "Comment on issue from tabulated issues listing."
@@ -681,29 +683,37 @@ prompt for a repo to list."
                    (format "Comment on issue #%s: " number))))
     (fj-issue-comment fj-current-repo number comment)))
 
+(defun fj--property (prop)
+  "Get text property PROP at point."
+  (get-text-property (point) prop))
+
 (defun fj-issues-tl-close-issue (&optional _)
   "Close current issue from tabulated issues listing."
   (interactive)
   ;; TODO make check work for "all": need to prop each tl entry
-  (if (string= (plist-get fj-issues-tl-spec :state) "closed")
-      (user-error "Viewing closed issues?")
-    (let* ((item (tabulated-list-get-entry))
-           (number (car (seq-first item))))
-      (fj-issue-close fj-current-repo number)
-      (fj-issues-tl-reload))))
+  (fj-with-own-issue-or-repo
+   (if (string= (fj--property 'state)
+                "closed")
+       (user-error "Issue already closed")
+     (let* ((item (tabulated-list-get-entry))
+            (number (car (seq-first item))))
+       (fj-issue-close fj-current-repo number)
+       (fj-issues-tl-reload)))))
 
 (defun fj-issues-tl-delete-issue (&optional _)
   "Delete current issue from tabulated issues listing."
   (interactive)
-  (let* ((item (tabulated-list-get-entry))
-         (number (car (seq-first item))))
-    (when (y-or-n-p (format "Delete issue %s?" number))
-      (fj-issue-delete fj-current-repo number :no-confirm)
-      (fj-issues-tl-reload))))
+  (fj-with-own-repo
+   (let* ((item (tabulated-list-get-entry))
+          (number (car (seq-first item))))
+     (when (y-or-n-p (format "Delete issue %s?" number))
+       (fj-issue-delete fj-current-repo number :no-confirm)
+       (fj-issues-tl-reload)))))
 
 (defun fj-issues-tl-reopen-issue (&optional _)
   "Reopen current issue from tabulated issues listing."
   (interactive)
+  ;; FIXME: check should be per entry:
   (if (string= (plist-get fj-issues-tl-spec :state) "open")
       (user-error "Viewing open issues?")
     (let* ((item (tabulated-list-get-entry))
