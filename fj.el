@@ -97,22 +97,22 @@ Repo, view parameters, etc.")
   (declare (debug t))
   `(if (not (fj-issues-tl-own-repo-p))
        (user-error "Not in a repo you own.")
-     ,@body))
+     ,body))
 
 (defmacro fj-with-own-issue (&optional body)
   "Execute body if issue is authored by `fj-user'."
   (declare (debug t))
   `(if (not (fj-issue-own-p))
        (user-error "Not an issue you own.")
-     ,@body))
+     ,body))
 
 (defmacro fj-with-own-issue-or-repo (&optional body)
   "Execute body if issue authored or repo owned by `fj-user'."
   (declare (debug t))
   `(if (not (or (fj-issue-own-p)
                 (fj-issues-tl-own-repo-p)))
-       (user-error "Not an issue you own.")
-     ,@body))
+       (user-error "Not an issue or repo you own.")
+     ,body))
 
 ;;; REQUESTS
 
