@@ -57,6 +57,63 @@ Repo, view parameters, etc.")
   "Return a URL for ENDPOINT."
   (fedi-http--api endpoint fj-host "v1"))
 
+;;; FACES
+
+(defface fj-commented-face
+  '((t :inherit font-lock-comment-face))
+  "Face for secondary info.")
+
+(defface fj-closed-issue-face
+  '((t :inherit font-lock-comment-face :weight bold :underline t))
+  "Face for the title of a closed issue.")
+
+(defface fj-user-face
+  '((t :inherit font-lock-function-name-face))
+  "")
+
+(defface fj-figures-face
+  '((t :inherit font-lock-doc-face))
+  "Face for figures (stars count, comments count, etc.)")
+
+;;; UTILS
+
+(defun fj-issues-tl-own-repo-p ()
+  "T if repo is owned by `fj-user'."
+  (equal (plist-get fj-issues-tl-spec :owner)
+         fj-user))
+
+(defun fj-issue-own-p ()
+  "T if issue is authored by `fj-user'."
+  (cond ((eq major-mode 'fj-issue-view-mode)
+         (equal fj-user
+                (plist-get fj-issue-spec :author)))
+        ((eq major-mode 'fj-list-issue-mode)
+         (let* ((entry (tabulated-list-get-entry))
+                (author (car (seq-elt entry 2))))
+           (equal fj-user author)))))
+
+(defmacro fj-with-own-repo (&optional body)
+  "Execute body if a repo owned by `fj-user'."
+  (declare (debug t))
+  `(if (not (fj-issues-tl-own-repo-p))
+       (user-error "Not in a repo you own.")
+     ,body))
+
+(defmacro fj-with-own-issue (&optional body)
+  "Execute body if issue is authored by `fj-user'."
+  (declare (debug t))
+  `(if (not (fj-issue-own-p))
+       (user-error "Not an issue you own.")
+     ,body))
+
+(defmacro fj-with-own-issue-or-repo (&optional body)
+  "Execute body if issue authored or repo owned by `fj-user'."
+  (declare (debug t))
+  `(if (not (or (fj-issue-own-p)
+                (fj-issues-tl-own-repo-p)))
+       (user-error "Not an issue or repo you own.")
+     ,body))
+
 ;;; REQUESTS
 
 (defmacro fj-authorized-request (method body &optional unauthenticated-p)
@@ -72,21 +129,19 @@ Requires `fj-token' to be set."
                         (concat "token " fj-token))))))
      ,body))
 
-;; (defvar fj-user-data (fj-get "user"))
-
-;; (setq fj-user (alist-get 'login fj-user-data))
-
 (defun fj-get (endpoint &optional params)
   "Make a GET request to ENDPOINT.
 PARAMS is any parameters to send with the request."
   (let* ((url (fj-api endpoint))
          (resp (fj-authorized-request "GET"
                  (fedi-http--get-json url params))))
-    (if (eq (caar resp) 'errors)
-        (error "I am Error: %s Endpoint: %s"
-               (alist-get 'message resp)
-               endpoint)
-      resp)))
+    (cond ((or (eq (caar resp) 'errors)
+               (eq (caar resp) 'message))
+           (user-error "I am Error: %s Endpoint: %s"
+                       (alist-get 'message resp)
+                       endpoint))
+          (t
+           resp))))
 
 (defun fj-post (endpoint params)
   "Make a POST request to ENDPOINT.
@@ -94,6 +149,15 @@ PARAMS."
   (let ((url (fj-api endpoint)))
     (fj-authorized-request "POST"
       (fedi-http--post url params nil :json))))
+
+
+(defun fj-put (endpoint &optional params json)
+  "Make a PUT request to ENDPOINT.
+PARAMS.
+JSON."
+  (let ((url (fj-api endpoint)))
+    (fj-authorized-request "PUT"
+      (fedi-http--put url params nil json))))
 
 (defun fj-patch (endpoint &optional params json)
   "Make a PATCH request to ENDPOINT.
@@ -109,7 +173,7 @@ JSON."
     (fj-authorized-request "DELETE"
       (fedi-http--delete url))))
 
-;;; USER
+;;; USER REPOS TL
 
 (defvar fj-user-spec nil)
 
@@ -149,6 +213,11 @@ JSON."
     (fj-repos-tl-render buf entries #'fj-user-repo-tl-mode)
     (setq fj-user-spec `(:owner ,user))))
 
+(defun fj-list-own-repos ()
+  "List repos for `fj-user'."
+  (interactive)
+  (fj-user-repos-tl fj-user))
+
 (defun fj-user-repo-tl-list-issues (&optional _)
   "View issues of current repo from tabulated user repos listing."
   (interactive)
@@ -157,7 +226,32 @@ JSON."
          (user (plist-get fj-user-spec :owner)))
     (fj-list-issues name nil nil user)))
 
-;;; REPOS
+;; FIXME: make work in search-repos TL too
+(defun fj-user-repo-tl-star (&optional unstar)
+  "Star current repo from tabulated user repos listing."
+  (interactive)
+  (let* ((item (tabulated-list-get-entry))
+         (name (car (seq-first item)))
+         (owner (plist-get fj-user-spec :owner)))
+    (fj-star-repo name owner unstar)))
+
+(defun fj-star-repo (repo owner &optional unstar)
+  "Star REPO owned by OWNER."
+  (let* ((endpoint (format "user/starred/%s/%s" owner repo))
+         (resp (if unstar
+                   (fj-delete endpoint)
+                 (fj-put endpoint))))
+    (fedi-http--triage resp
+                       (lambda ()
+                         (message "Repo %s %s!" repo
+                                  (if unstar "unstarred" "starred"))))))
+
+(defun fj-user-repo-tl-unstar ()
+  "Unstar current repo from tabulated user repos listing."
+  (interactive)
+  (fj-user-repo-tl-star :unstar))
+
+;;; USER REPOS
 
 (defun fj-current-dir-repo ()
   "If we are in a repository, return its name."
@@ -247,7 +341,9 @@ STATE is for issue status, a string of open, closed or all.
 USER is the repo owner."
   (let* ((endpoint (format "repos/%s/%s/issues" (or user fj-user) repo))
          (params `(("state" . ,state))))
-    (fj-get endpoint params)))
+    (condition-case err
+        (fj-get endpoint params)
+      (t (format "%s" (error-message-string err))))))
 
 (defun fj-get-issue (repo &optional issue)
   "GET ISSUE in REPO.
@@ -270,14 +366,6 @@ ISSUE is a number."
                        (lambda ()
                          (message "issue %s created!" title)
                          (fj-issues-tl-reload)))))
-
-(defun fj-issues-tl-reload ()
-  "Reload current issues tabulated list view."
-  (interactive)
-  (when (string-suffix-p "-issues*"
-                         (buffer-name (current-buffer)))
-    (let ((state (plist-get fj-issues-tl-spec :state)))
-      (fj-list-issues nil nil state))))
 
 (defun fj-issue-patch (repo issue params)
   "PATCH/Edit ISSUE in REPO.
@@ -374,6 +462,13 @@ STATE should be \"open\", \"closed\", or \"all\"."
          (pull (or pull (fj-read-repo-pull-req repo))))
     (fj-issue-comment-edit repo pull)))
 
+(defun fj-list-pull-reqs (&optional repo)
+  "List pull requests for REPO."
+  (interactive "P")
+  (let* ((repo (fj-read-user-repo repo))
+         (prs (fj-repo-get-pull-reqs repo)))
+    (fj-list-issues repo prs)))
+
 ;;; COMMENTS
 
 (defun fj-get-comment-candidates (comments)
@@ -447,7 +542,8 @@ PARAMS."
                        (lambda ()
                          (message "comment edited!")))))
 
-;;; TABLIST VIEWS
+;;; ISSUES TABLIST
+
 ;; webUI sort options:
 ;; (defvar fj-list-tl-sort-options
 ;;   '("latest"
@@ -483,7 +579,7 @@ PARAMS."
   (hl-line-mode 1)
   (setq tabulated-list-padding 0) ;2) ; point directly on issue
   (setq tabulated-list-format
-        '[("#" 3 t)
+        '[("#" 5 t)
           ("💬" 3 t)
           ("Author" 10 t)
           ("Issue" 2 t)]))
@@ -493,19 +589,7 @@ PARAMS."
   'action 'fj-issues-tl-view-issue
   'help-echo "RET: View this issue.")
 
-(defface fj-closed-issue-face
-  '((t :inherit font-lock-comment-face :weight bold :underline t))
-  "Face for the title of a closed issue.")
-
-(defface fj-user-face
-  '((t :inherit font-lock-function-name-face))
-  "")
-
-(defface fj-figures-face
-  '((t :inherit font-lock-doc-face))
-  "")
-
-(defun fj-issues-tl-entries (issues)
+(defun fj-issues-tl-entries (issues &optional state)
   "Return tabluated list entries for ISSUES."
   (cl-loop for issue in issues
            for id = (alist-get 'number issue)
@@ -517,16 +601,19 @@ PARAMS."
                                    (alist-get 'user issue))
            collect `(nil [(,(number-to-string id)
                            id ,id
+                           state ,state
                            type fj-issue-button)
                           ,(propertize comments
                                        'face 'fj-figures-face)
                           (,author face fj-user-face
                                    id ,id
+                                   state ,state
                                    type  fj-issues-owner-button)
                           (,title face ,(if (equal state "closed")
                                             'fj-closed-issue-face
                                           'link)
                                   id ,id
+                                  state ,state
                                   type fj-issue-button)])))
 
 (defun fj-list-issues (&optional repo issues state user)
@@ -537,6 +624,8 @@ prompt for a repo to list."
   (interactive "P")
   (let* ((repo (fj-read-user-repo repo))
          (issues (or issues (fj-repo-get-issues repo state user)))
+         (owner (alist-get 'owner
+                           (alist-get 'repository (car issues))))
          (prev-buf (buffer-name (current-buffer)))
          (state-str (or state "open"))
          ;; FIXME: opens a buf for each state:
@@ -544,13 +633,13 @@ prompt for a repo to list."
          (buf-name (format "*%s-%s-issues*" repo state-str)))
     (with-current-buffer (get-buffer-create buf-name)
       (setq tabulated-list-entries
-            (fj-issues-tl-entries issues))
+            (fj-issues-tl-entries issues state-str))
       (fj-list-issue-mode)
       (tabulated-list-init-header)
       (tabulated-list-print)
       (setq fj-current-repo repo)
       (setq fj-issues-tl-spec
-            `(:repo ,repo :state ,state-str))
+            `(:repo ,repo :state ,state-str :owner ,owner))
       (cond ((string= buf-name prev-buf) ; same repo
              nil)
             ((string-suffix-p "-issues*" prev-buf) ; diff repo
@@ -558,37 +647,44 @@ prompt for a repo to list."
             (t                             ; new buf
              (switch-to-buffer-other-window (current-buffer)))))))
 
-(defun fj-list-issues-closed (&optional repo issues)
+(defun fj-list-issues-closed (&optional repo issues user)
   "Display closed ISSUES for REPO in tabulated list view."
   (interactive "P")
-  (fj-list-issues repo issues "closed"))
+  (fj-list-issues repo issues "closed" user))
 
-(defun fj-list-issues-all (&optional repo issues)
+(defun fj-list-issues-all (&optional repo issues user)
   "Display all ISSUES for REPO in tabulated list view."
   (interactive "P")
-  (fj-list-issues repo issues "all"))
+  (fj-list-issues repo issues "all" user))
 
 (defun fj-list-issues-cycle ()
   "Cycle between listing of open, closed, and all issues."
   (interactive)
-  (let ((state (plist-get fj-issues-tl-spec :state)))
+  (let ((state (plist-get fj-issues-tl-spec :state))
+        (owner (plist-get fj-issues-tl-spec :owner)))
     (cond ((string= state "closed")
-           (fj-list-issues-all))
+           (fj-list-issues-all nil nil owner))
           ((string= state "all")
-           (fj-list-issues))
+           (fj-list-issues nil nil nil owner))
           (t ; open is default
-           (fj-list-issues-closed)))))
+           (fj-list-issues-closed nil nil owner)))))
 
-(defun fj-list-pull-reqs (&optional repo)
-  "List pull requests for REPO."
-  (interactive "P")
-  (let* ((repo (fj-read-user-repo repo))
-         (prs (fj-repo-get-pull-reqs repo)))
-    (fj-list-issues repo prs)))
+(defun fj-issues-tl-reload ()
+  "Reload current issues tabulated list view."
+  (interactive)
+  (when (string-suffix-p "-issues*"
+                         (buffer-name (current-buffer)))
+    (let ((state (plist-get fj-issues-tl-spec :state))
+          (user (plist-get fj-issues-tl-spec :owner)))
+      (fj-list-issues nil nil state user))))
+
+;; ISSUES TL ACTIONS
 
 (defun fj-issues-tl-create ()
   "Create an issue in current repo."
   (interactive)
+  ;; TODO: handle response if not allowed to create
+  ;; or check before creating
   (fj-issue-create fj-current-repo))
 
 ;; arg fj-issue-button in tl view:
@@ -602,17 +698,19 @@ prompt for a repo to list."
 (defun fj-issues-tl-edit-issue ()
   "Edit issue from tabulated issues listing."
   (interactive)
-  (let* ((item (tabulated-list-get-entry))
-         (number (car (seq-first item))))
-    (fj-issue-edit fj-current-repo number)))
+  (fj-with-own-issue
+   (let* ((item (tabulated-list-get-entry))
+          (number (car (seq-first item))))
+     (fj-issue-edit fj-current-repo number))))
 
 (defun fj-issues-tl-edit-issue-title ()
   "Edit title of issue from tabulated issues listing."
   (interactive)
-  (let* ((item (tabulated-list-get-entry))
-         (number (car (seq-first item))))
-    (fj-issue-edit-title fj-current-repo number)
-    (fj-issues-tl-reload)))
+  (fj-with-own-issue-or-repo
+   (let* ((item (tabulated-list-get-entry))
+          (number (car (seq-first item))))
+     (fj-issue-edit-title fj-current-repo number)
+     (fj-issues-tl-reload))))
 
 (defun fj-issues-tl-comment-issue ()
   "Comment on issue from tabulated issues listing."
@@ -623,29 +721,37 @@ prompt for a repo to list."
                    (format "Comment on issue #%s: " number))))
     (fj-issue-comment fj-current-repo number comment)))
 
+(defun fj--property (prop)
+  "Get text property PROP at point."
+  (get-text-property (point) prop))
+
 (defun fj-issues-tl-close-issue (&optional _)
   "Close current issue from tabulated issues listing."
   (interactive)
   ;; TODO make check work for "all": need to prop each tl entry
-  (if (string= (plist-get fj-issues-tl-spec :state) "closed")
-      (user-error "Viewing closed issues?")
-    (let* ((item (tabulated-list-get-entry))
-           (number (car (seq-first item))))
-      (fj-issue-close fj-current-repo number)
-      (fj-issues-tl-reload))))
+  (fj-with-own-issue-or-repo
+   (if (string= (fj--property 'state)
+                "closed")
+       (user-error "Issue already closed")
+     (let* ((item (tabulated-list-get-entry))
+            (number (car (seq-first item))))
+       (fj-issue-close fj-current-repo number)
+       (fj-issues-tl-reload)))))
 
 (defun fj-issues-tl-delete-issue (&optional _)
   "Delete current issue from tabulated issues listing."
   (interactive)
-  (let* ((item (tabulated-list-get-entry))
-         (number (car (seq-first item))))
-    (when (y-or-n-p (format "Delete issue %s?" number))
-      (fj-issue-delete fj-current-repo number :no-confirm)
-      (fj-issues-tl-reload))))
+  (fj-with-own-repo
+   (let* ((item (tabulated-list-get-entry))
+          (number (car (seq-first item))))
+     (when (y-or-n-p (format "Delete issue %s?" number))
+       (fj-issue-delete fj-current-repo number :no-confirm)
+       (fj-issues-tl-reload)))))
 
 (defun fj-issues-tl-reopen-issue (&optional _)
   "Reopen current issue from tabulated issues listing."
   (interactive)
+  ;; FIXME: check should be per entry:
   (if (string= (plist-get fj-issues-tl-spec :state) "open")
       (user-error "Viewing open issues?")
     (let* ((item (tabulated-list-get-entry))
@@ -654,6 +760,10 @@ prompt for a repo to list."
       (fj-issues-tl-reload))))
 
 ;;; ISSUE VIEW
+
+(define-derived-mode fj-issue-view-mode view-mode "fj-issue"
+  "Major mode for viewing an issue."
+  :group 'fj)
 
 (defun fj-render-comments (comments)
   "Render a list of COMMENTS."
@@ -720,10 +830,6 @@ RELOAD means we are reloading, so don't open in other window."
         (number (get-text-property (point) 'fj-issue)))
     (fj-issue-edit repo number)))
 
-(define-derived-mode fj-issue-view-mode view-mode "fj-issue"
-  "Major mode for viewing an issue."
-  :group 'fj)
-
 ;;; SEARCH
 
 (defun fj-repo-search (query &optional topic)
@@ -752,7 +858,7 @@ If TOPIC, QUERY is a search for topic keywords."
    (assoc cand minibuffer-completion-table
           #'equal)))
 
-;;; SEARCH TL
+;;; SEARCH REPOS TL
 
 (defvar fj-repo-tl-mode-map
   (let ((map (make-sparse-keymap)))
@@ -815,11 +921,11 @@ NO-OWNER means don't display owner column (user repos view)."
                `(nil [(,name face link
                              id ,id
                              type fj-user-repo-button)
-                      (,stars id ,id face font-lock-string-face)
-                      (,fork id ,id face font-lock-string-face)
+                      (,stars id ,id face fj-figures-face)
+                      (,fork id ,id face fj-figures-face)
                       ,lang
                       ,(propertize desc
-                                   'face font-lock-comment-face)])
+                                   'face 'fj-commented-face)])
              ;; search-repo and search owner button:
              `(nil [(,name face link
                            id ,id
@@ -827,11 +933,11 @@ NO-OWNER means don't display owner column (user repos view)."
                     (,owner face link
                             id ,id
                             type fj-search-owner-button)
-                    (,stars id ,id face font-lock-string-face)
-                    (,fork id ,id face font-lock-string-face)
+                    (,stars id ,id face 'fj-figures-face)
+                    (,fork id ,id face 'fj-figures-face)
                     ,lang
                     ,(propertize desc
-                                 'face font-lock-comment-face)]))))
+                                 'face 'fj-commented-face)]))))
 
 (defun fj-repo-search-tl (query &optional topic)
   "Search repos for QUERY, and display a tabulated list of results.
@@ -872,7 +978,7 @@ TOPIC, a boolean, means search in repo topics."
     (fj-list-issues name nil nil user)))
 
 (defun fj-repo-tl-list-user-repos (&optional _)
-  "View a tabulated list of current user from tabulated repos listing."
+  "View repos of current entry user from tabulated repos listing."
   (interactive)
   ;; FIXME: this really needs to be somehow independent of columns
   ;; as we want to have author in diff columns depending on different views.
