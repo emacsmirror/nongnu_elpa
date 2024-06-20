@@ -573,6 +573,8 @@ prompt for a repo to list."
   (interactive "P")
   (let* ((repo (fj-read-user-repo repo))
          (issues (or issues (fj-repo-get-issues repo state user)))
+         (owner (alist-get 'owner
+                           (alist-get 'repository (car issues))))
          (prev-buf (buffer-name (current-buffer)))
          (state-str (or state "open"))
          ;; FIXME: opens a buf for each state:
@@ -586,7 +588,7 @@ prompt for a repo to list."
       (tabulated-list-print)
       (setq fj-current-repo repo)
       (setq fj-issues-tl-spec
-            `(:repo ,repo :state ,state-str))
+            `(:repo ,repo :state ,state-str :owner ,owner))
       (cond ((string= buf-name prev-buf) ; same repo
              nil)
             ((string-suffix-p "-issues*" prev-buf) ; diff repo
