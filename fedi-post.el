@@ -403,13 +403,14 @@ descriptions."
                 nil))))
 
 (defun fedi-post--concat-fields (fields)
-  "Concat FIELDS for compose buffer docs."
+  "Concat FIELDS for compose buffer docs.
+The property added here is used by `fedi-post--update-status-fields'
+to update status fields."
   (cl-loop for item in fields
-           for field = (alist-get 'name item)
-           concat (propertize (capitalize field)
-                              (intern
-                               (concat "post-" (downcase field)))
-                              t)))
+           for name = (alist-get 'name item)
+           for prop = (alist-get 'prop item)
+           concat (propertize (capitalize name)
+                              prop t)))
 
 (defun fedi-post--display-docs-and-status-fields (&optional mode prefix
                                                             fields type)
