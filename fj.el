@@ -606,26 +606,27 @@ prompt for a repo to list."
             (t                             ; new buf
              (switch-to-buffer-other-window (current-buffer)))))))
 
-(defun fj-list-issues-closed (&optional repo issues)
+(defun fj-list-issues-closed (&optional repo issues user)
   "Display closed ISSUES for REPO in tabulated list view."
   (interactive "P")
-  (fj-list-issues repo issues "closed"))
+  (fj-list-issues repo issues "closed" user))
 
-(defun fj-list-issues-all (&optional repo issues)
+(defun fj-list-issues-all (&optional repo issues user)
   "Display all ISSUES for REPO in tabulated list view."
   (interactive "P")
-  (fj-list-issues repo issues "all"))
+  (fj-list-issues repo issues "all" user))
 
 (defun fj-list-issues-cycle ()
   "Cycle between listing of open, closed, and all issues."
   (interactive)
-  (let ((state (plist-get fj-issues-tl-spec :state)))
+  (let ((state (plist-get fj-issues-tl-spec :state))
+        (owner (plist-get fj-issues-tl-spec :owner)))
     (cond ((string= state "closed")
-           (fj-list-issues-all))
+           (fj-list-issues-all nil nil owner))
           ((string= state "all")
-           (fj-list-issues))
+           (fj-list-issues nil nil nil owner))
           (t ; open is default
-           (fj-list-issues-closed)))))
+           (fj-list-issues-closed nil nil owner)))))
 
 (defun fj-issues-tl-reload ()
   "Reload current issues tabulated list view."
