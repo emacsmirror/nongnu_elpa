@@ -106,6 +106,14 @@ Repo, view parameters, etc.")
        (user-error "Not an issue you own.")
      ,@body))
 
+(defmacro fj-with-own-issue-or-repo (&optional body)
+  "Execute body if issue authored or repo owned by `fj-user'."
+  (declare (debug t))
+  `(if (not (or (fj-issue-own-p)
+                (fj-issues-tl-own-repo-p)))
+       (user-error "Not an issue you own.")
+     ,@body))
+
 ;;; REQUESTS
 
 (defmacro fj-authorized-request (method body &optional unauthenticated-p)
