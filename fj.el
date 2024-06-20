@@ -647,6 +647,8 @@ prompt for a repo to list."
 (defun fj-issues-tl-create ()
   "Create an issue in current repo."
   (interactive)
+  ;; TODO: handle response if not allowed to create
+  ;; or check before creating
   (fj-issue-create fj-current-repo))
 
 ;; arg fj-issue-button in tl view:
@@ -940,7 +942,7 @@ TOPIC, a boolean, means search in repo topics."
     (fj-list-issues name nil nil user)))
 
 (defun fj-repo-tl-list-user-repos (&optional _)
-  "View a tabulated list of current user from tabulated repos listing."
+  "View repos of current entry user from tabulated repos listing."
   (interactive)
   ;; FIXME: this really needs to be somehow independent of columns
   ;; as we want to have author in diff columns depending on different views.
