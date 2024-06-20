@@ -114,6 +114,16 @@ Repo, view parameters, etc.")
        (user-error "Not an issue or repo you own.")
      ,body))
 
+(defun fj-kill-all-buffers ()
+  "Kill all fj buffers."
+  (interactive)
+  (fedi-kill-all-buffers "*fj-"))
+
+(defun fj-switch-to-buffer ()
+  "Switch to a live fj buffer."
+  (interactive)
+  (fedi-switch-to-buffer "*fj-"))
+
 ;;; REQUESTS
 
 (defmacro fj-authorized-request (method body &optional unauthenticated-p)
