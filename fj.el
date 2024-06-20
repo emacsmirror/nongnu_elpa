@@ -363,20 +363,26 @@ ISSUE is a number."
          (endpoint (format "repos/%s/%s/issues/%s" fj-user repo issue)))
     (fj-get endpoint)))
 
-(defun fj-issue-create (&optional repo)
-  "Create an issue in REPO."
+(defun fj-issue-create (&optional repo user)
+  "Create an issue in REPO owned by USER."
   (interactive "P")
   (let* ((repo (fj-read-user-repo repo))
-         (url (format "repos/%s/%s/issues" fj-user repo))
+         (user (or user fj-user))
          (title (read-string "Title: "))
          (body (read-string "Body: "))
-         (params `(("body" . ,body)
-                   ("title" . ,title)))
-         (response (fj-post url params)))
+         (response (fj-issue-post repo user title body)))
     (fedi-http--triage response
                        (lambda ()
                          (message "issue %s created!" title)
                          (fj-issues-tl-reload)))))
+
+(defun fj-issue-post (repo user title body)
+  "POST a new issue to REPO owned by USER.
+TITLE and BODY are the parts of the issue to send."
+  (let ((url (format "repos/%s/%s/issues" user repo))
+        (params `(("body" . ,body)
+                  ("title" . ,title))))
+    (fj-post url params)))
 
 (defun fj-issue-patch (repo issue params)
   "PATCH/Edit ISSUE in REPO.
@@ -1010,7 +1016,9 @@ TOPIC, a boolean, means search in repo topics."
 
 (defvar fj-post-last-buffer nil)
 
-(defvar fj-compose-repo nil)
+(defvar-local fj-compose-repo nil)
+
+(defvar-local fj-compose-repo-owner nil)
 
 (defvar-local fj-compose-issue-title nil)
 
@@ -1069,6 +1077,30 @@ TYPE is a symbol of what we are composing, it may be issue or comment."
         (prop . compose-repo)
         (item-var . fj-compose-repo)
         (face . link))))))
+
+(defun fj-compose-send ()
+  "Submit the issue or comment to your Forgejo instance.
+Call response and update functions."
+  (interactive)
+  (let ((buf (buffer-name))
+        ;; FIXME: handle types: new/edit-issue, new/edit-comment
+        (type 'new-issue))
+    (if (and (or (eq type 'new-issue)
+                 (eq type 'edit-issue))
+             (not (and fj-compose-repo
+                       fj-compose-issue-title)))
+        (user-error "You need to set a repo and title.")
+      (let* ((body (fedi-post--remove-docs))
+             (response
+              (fj-issue-post fj-compose-repo
+                             ;; FIXME: allow other repo owners:
+                             (or fj-compose-repo-owner
+                                 fj-user)
+                             fj-compose-issue-title body)))
+        (when response
+          (with-current-buffer buf
+            (fedi-post-kill))
+          (fj-list-issues fj-compose-repo))))))
 
 (provide 'fj)
 ;;; fj.el ends here
