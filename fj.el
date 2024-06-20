@@ -291,11 +291,12 @@ JSON."
                      ,(alist-get 'username
                                  (alist-get 'owner r)))))
 
-(defun fj-read-user-repo-do ()
+(defun fj-read-user-repo-do (&optional default)
   "Prompt for a user repository."
   (let* ((repos (fj-get-repos))
          (cands (fj-get-repo-candidates repos)))
-    (completing-read "Repo: " cands)))
+    (completing-read "Repo: " cands
+                     nil nil default)))
 
 (defun fj-read-user-repo (arg)
   "Return a user repo.
@@ -1005,11 +1006,69 @@ TOPIC, a boolean, means search in repo topics."
          (user (car (seq-elt item 2))))
     (fj-user-repos-tl user)))
 
-;;; POST MODE
+;;; COMPOSING
 
-(define-derived-mode fj-issue-post-mode fedi-post-mode
-  "fj-post"
-  :group 'fj)
+(defvar fj-post-last-buffer nil)
+
+(defvar fj-compose-repo nil)
+
+(defvar-local fj-compose-issue-title nil)
+
+(defalias 'fj-compose-cancel #'fedi-post-cancel)
+
+(defvar fj-compose-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "C-c C-t") #'fj-compose-read-title)
+    (define-key map (kbd "C-c C-r") #'fj-compose-read-repo)
+    (define-key map (kbd "C-c C-k") #'fj-compose-cancel)
+    map)
+  "Keymap for `fj-compose-mode'.")
+
+(define-minor-mode fj-compose-mode
+  "Minor mode for composing issues and comments."
+  :keymap fj-compose-mode-map
+  :global nil)
+
+(defun fj-compose-read-repo ()
+  "Read a repo for composing a issue or comment."
+  (interactive)
+  ;; FIXME: combine own repos and search:
+  (setq fj-compose-repo
+        (fj-read-user-repo-do fj-compose-repo))
+  (fedi-post--update-status-fields))
+
+(defun fj-compose-read-title ()
+  "Read an issue title."
+  (interactive)
+  (setq fj-compose-issue-title
+        (read-string "Title: "
+                     fj-compose-issue-title))
+  (fedi-post--update-status-fields))
+
+(defun fj-issue-compose (&optional edit mode type)
+  "Compose a new post.
+EDIT means we are editing.
+MODE is the fj.el minor mode to enable in the compose buffer.
+TYPE is a symbol of what we are composing, it may be issue or comment."
+  (interactive)
+  (setq fj-post-last-buffer (buffer-name (current-buffer)))
+  (fedi-post--compose-buffer
+   edit
+   #'markdown-mode
+   (or mode #'fj-compose-mode)
+   (when mode "fj-compose")
+   (or type 'issue)
+   (list #'lem-post--mentions-capf
+         #'lem-post--comms-capf)
+   (unless type ; post
+     '(((name . "title")
+        (prop . compose-title)
+        (item-var . fj-compose-issue-title)
+        (face . lem-post-title-face))
+       ((name . "repo")
+        (prop . compose-repo)
+        (item-var . fj-compose-repo)
+        (face . link))))))
 
 (provide 'fj)
 ;;; fj.el ends here
