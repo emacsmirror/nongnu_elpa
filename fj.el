@@ -57,6 +57,24 @@ Repo, view parameters, etc.")
   "Return a URL for ENDPOINT."
   (fedi-http--api endpoint fj-host "v1"))
 
+;;; FACES
+
+(defface fj-commented-face
+  '((t :inherit font-lock-comment-face))
+  "Face for secondary info.")
+
+(defface fj-closed-issue-face
+  '((t :inherit font-lock-comment-face :weight bold :underline t))
+  "Face for the title of a closed issue.")
+
+(defface fj-user-face
+  '((t :inherit font-lock-function-name-face))
+  "")
+
+(defface fj-figures-face
+  '((t :inherit font-lock-doc-face))
+  "Face for figures (stars count, comments count, etc.)")
+
 ;;; REQUESTS
 
 (defmacro fj-authorized-request (method body &optional unauthenticated-p)
@@ -493,18 +511,6 @@ PARAMS."
   'action 'fj-issues-tl-view-issue
   'help-echo "RET: View this issue.")
 
-(defface fj-closed-issue-face
-  '((t :inherit font-lock-comment-face :weight bold :underline t))
-  "Face for the title of a closed issue.")
-
-(defface fj-user-face
-  '((t :inherit font-lock-function-name-face))
-  "")
-
-(defface fj-figures-face
-  '((t :inherit font-lock-doc-face))
-  "")
-
 (defun fj-issues-tl-entries (issues)
   "Return tabluated list entries for ISSUES."
   (cl-loop for issue in issues
@@ -815,11 +821,11 @@ NO-OWNER means don't display owner column (user repos view)."
                `(nil [(,name face link
                              id ,id
                              type fj-user-repo-button)
-                      (,stars id ,id face font-lock-string-face)
-                      (,fork id ,id face font-lock-string-face)
+                      (,stars id ,id face fj-figures-face)
+                      (,fork id ,id face fj-figures-face)
                       ,lang
                       ,(propertize desc
-                                   'face font-lock-comment-face)])
+                                   'face fj-commented-face)])
              ;; search-repo and search owner button:
              `(nil [(,name face link
                            id ,id
@@ -827,11 +833,11 @@ NO-OWNER means don't display owner column (user repos view)."
                     (,owner face link
                             id ,id
                             type fj-search-owner-button)
-                    (,stars id ,id face font-lock-string-face)
-                    (,fork id ,id face font-lock-string-face)
+                    (,stars id ,id face fj-figures-face)
+                    (,fork id ,id face fj-figures-face)
                     ,lang
                     ,(propertize desc
-                                 'face font-lock-comment-face)]))))
+                                 'face fj-commented-face)]))))
 
 (defun fj-repo-search-tl (query &optional topic)
   "Search repos for QUERY, and display a tabulated list of results.
