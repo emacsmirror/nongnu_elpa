@@ -127,11 +127,13 @@ PARAMS is any parameters to send with the request."
   (let* ((url (fj-api endpoint))
          (resp (fj-authorized-request "GET"
                  (fedi-http--get-json url params))))
-    (if (eq (caar resp) 'errors)
-        (error "I am Error: %s Endpoint: %s"
-               (alist-get 'message resp)
-               endpoint)
-      resp)))
+    (cond ((or (eq (caar resp) 'errors)
+               (eq (caar resp) 'message))
+           (user-error "I am Error: %s Endpoint: %s"
+                       (alist-get 'message resp)
+                       endpoint))
+          (t
+           resp))))
 
 (defun fj-post (endpoint params)
   "Make a POST request to ENDPOINT.
