@@ -543,7 +543,7 @@ PARAMS."
   (hl-line-mode 1)
   (setq tabulated-list-padding 0) ;2) ; point directly on issue
   (setq tabulated-list-format
-        '[("#" 3 t)
+        '[("#" 5 t)
           ("💬" 3 t)
           ("Author" 10 t)
           ("Issue" 2 t)]))
