@@ -25,10 +25,10 @@ Forgejo's API is vast. Currently =fj.el= just implements a few basic things:
 
 - list repo issues
 - act on issue from issues listing (edit, edit title, comment, close, reopen, delete)
-- view issue discussion
+- view issue discussion (and act on issue as above)
 
 
-- view PRs and PR discussion
+- list PRs and view PR discussion
 
 
 - create repo
