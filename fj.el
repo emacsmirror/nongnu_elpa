@@ -640,7 +640,7 @@ prompt for a repo to list."
          (state-str (or state "open"))
          ;; FIXME: opens a buf for each state:
          ;; can we put the state in the header?
-         (buf-name (format "*%s-%s-issues*" repo state-str)))
+         (buf-name (format "*fj-%s-%s-issues*" repo state-str)))
     (with-current-buffer (get-buffer-create buf-name)
       (setq tabulated-list-entries
             (fj-issues-tl-entries issues state-str))
