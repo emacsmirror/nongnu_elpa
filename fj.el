@@ -871,7 +871,7 @@ NO-OWNER means don't display owner column (user repos view)."
                       (,fork id ,id face fj-figures-face)
                       ,lang
                       ,(propertize desc
-                                   'face fj-commented-face)])
+                                   'face 'fj-commented-face)])
              ;; search-repo and search owner button:
              `(nil [(,name face link
                            id ,id
@@ -879,11 +879,11 @@ NO-OWNER means don't display owner column (user repos view)."
                     (,owner face link
                             id ,id
                             type fj-search-owner-button)
-                    (,stars id ,id face fj-figures-face)
-                    (,fork id ,id face fj-figures-face)
+                    (,stars id ,id face 'fj-figures-face)
+                    (,fork id ,id face 'fj-figures-face)
                     ,lang
                     ,(propertize desc
-                                 'face fj-commented-face)]))))
+                                 'face 'fj-commented-face)]))))
 
 (defun fj-repo-search-tl (query &optional topic)
   "Search repos for QUERY, and display a tabulated list of results.
