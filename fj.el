@@ -121,10 +121,6 @@ Requires `fj-token' to be set."
                         (concat "token " fj-token))))))
      ,body))
 
-;; (defvar fj-user-data (fj-get "user"))
-
-;; (setq fj-user (alist-get 'login fj-user-data))
-
 (defun fj-get (endpoint &optional params)
   "Make a GET request to ENDPOINT.
 PARAMS is any parameters to send with the request."
@@ -158,7 +154,7 @@ JSON."
     (fj-authorized-request "DELETE"
       (fedi-http--delete url))))
 
-;;; USER
+;;; USER REPOS TL
 
 (defvar fj-user-spec nil)
 
@@ -206,7 +202,7 @@ JSON."
          (user (plist-get fj-user-spec :owner)))
     (fj-list-issues name nil nil user)))
 
-;;; REPOS
+;;; USER REPOS
 
 (defun fj-current-dir-repo ()
   "If we are in a repository, return its name."
@@ -320,14 +316,6 @@ ISSUE is a number."
                          (message "issue %s created!" title)
                          (fj-issues-tl-reload)))))
 
-(defun fj-issues-tl-reload ()
-  "Reload current issues tabulated list view."
-  (interactive)
-  (when (string-suffix-p "-issues*"
-                         (buffer-name (current-buffer)))
-    (let ((state (plist-get fj-issues-tl-spec :state)))
-      (fj-list-issues nil nil state))))
-
 (defun fj-issue-patch (repo issue params)
   "PATCH/Edit ISSUE in REPO.
 With PARAMS."
@@ -423,6 +411,13 @@ STATE should be \"open\", \"closed\", or \"all\"."
          (pull (or pull (fj-read-repo-pull-req repo))))
     (fj-issue-comment-edit repo pull)))
 
+(defun fj-list-pull-reqs (&optional repo)
+  "List pull requests for REPO."
+  (interactive "P")
+  (let* ((repo (fj-read-user-repo repo))
+         (prs (fj-repo-get-pull-reqs repo)))
+    (fj-list-issues repo prs)))
+
 ;;; COMMENTS
 
 (defun fj-get-comment-candidates (comments)
@@ -496,7 +491,8 @@ PARAMS."
                        (lambda ()
                          (message "comment edited!")))))
 
-;;; TABLIST VIEWS
+;;; ISSUES TABLIST
+
 ;; webUI sort options:
 ;; (defvar fj-list-tl-sort-options
 ;;   '("latest"
@@ -616,12 +612,15 @@ prompt for a repo to list."
           (t ; open is default
            (fj-list-issues-closed)))))
 
-(defun fj-list-pull-reqs (&optional repo)
-  "List pull requests for REPO."
-  (interactive "P")
-  (let* ((repo (fj-read-user-repo repo))
-         (prs (fj-repo-get-pull-reqs repo)))
-    (fj-list-issues repo prs)))
+(defun fj-issues-tl-reload ()
+  "Reload current issues tabulated list view."
+  (interactive)
+  (when (string-suffix-p "-issues*"
+                         (buffer-name (current-buffer)))
+    (let ((state (plist-get fj-issues-tl-spec :state)))
+      (fj-list-issues nil nil state))))
+
+;; ISSUES TL ACTIONS
 
 (defun fj-issues-tl-create ()
   "Create an issue in current repo."
@@ -692,6 +691,10 @@ prompt for a repo to list."
 
 ;;; ISSUE VIEW
 
+(define-derived-mode fj-issue-view-mode view-mode "fj-issue"
+  "Major mode for viewing an issue."
+  :group 'fj)
+
 (defun fj-render-comments (comments)
   "Render a list of COMMENTS."
   (cl-loop for c in comments
@@ -757,10 +760,6 @@ RELOAD means we are reloading, so don't open in other window."
         (number (get-text-property (point) 'fj-issue)))
     (fj-issue-edit repo number)))
 
-(define-derived-mode fj-issue-view-mode view-mode "fj-issue"
-  "Major mode for viewing an issue."
-  :group 'fj)
-
 ;;; SEARCH
 
 (defun fj-repo-search (query &optional topic)
@@ -789,7 +788,7 @@ If TOPIC, QUERY is a search for topic keywords."
    (assoc cand minibuffer-completion-table
           #'equal)))
 
-;;; SEARCH TL
+;;; SEARCH REPOS TL
 
 (defvar fj-repo-tl-mode-map
   (let ((map (make-sparse-keymap)))
