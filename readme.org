@@ -8,11 +8,31 @@ It just aims to cover a few of the bread and butter functions that will save you
 
 * getting started
 
-To get going, first set =fj-host=,  =fj-user=, and =fj-token=. The token you can obtain from your profile settings.
+To get going, first set =fj-host=,  =fj-user=, and =fj-token=. You can obtain a token from your profile settings on your Forgejo instance.
 
 * repositories
 
-Current repository detection should work partially automatically. If you find you are still being asked for the repo when calling a command from a repo with a forgejo remote, check to make sure the local root directory matches the name of the forgejo repo!
+Current repository detection should work partially automatically. If you find you are still being asked for the repo when calling a command from inside a repo with a Forgejo remote, check to make sure the local root directory matches the name of the Forgejo repo!
+
+* features
+
+Forgejo's API is vast. Currently =fj.el= just implements a few basic things:
+
+- search and list repos
+- list user's repos
+- star repos from repo listing
+
+
+- list repo issues
+- open issue
+- act on issue from issues listing (edit, edit title, comment, close, reopen, delete)
+- view issue discussion (and act on issue as above)
+
+
+- list PRs and view PR discussion
+
+
+- create repo
 
 * dependencies
 - =magit-post=, =magit-process= (for obtaining current repo)
