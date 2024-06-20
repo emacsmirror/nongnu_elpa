@@ -632,8 +632,9 @@ prompt for a repo to list."
   (interactive)
   (when (string-suffix-p "-issues*"
                          (buffer-name (current-buffer)))
-    (let ((state (plist-get fj-issues-tl-spec :state)))
-      (fj-list-issues nil nil state))))
+    (let ((state (plist-get fj-issues-tl-spec :state))
+          (user (plist-get fj-issues-tl-spec :owner)))
+      (fj-list-issues nil nil state user))))
 
 ;; ISSUES TL ACTIONS
 
