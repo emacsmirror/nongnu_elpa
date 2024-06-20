@@ -150,6 +150,15 @@ PARAMS."
     (fj-authorized-request "POST"
       (fedi-http--post url params nil :json))))
 
+
+(defun fj-put (endpoint &optional params json)
+  "Make a PUT request to ENDPOINT.
+PARAMS.
+JSON."
+  (let ((url (fj-api endpoint)))
+    (fj-authorized-request "PUT"
+      (fedi-http--put url params nil json))))
+
 (defun fj-patch (endpoint &optional params json)
   "Make a PATCH request to ENDPOINT.
 PARAMS.
@@ -216,6 +225,31 @@ JSON."
          (name (car (seq-first item)))
          (user (plist-get fj-user-spec :owner)))
     (fj-list-issues name nil nil user)))
+
+;; FIXME: make work in search-repos TL too
+(defun fj-user-repo-tl-star (&optional unstar)
+  "Star current repo from tabulated user repos listing."
+  (interactive)
+  (let* ((item (tabulated-list-get-entry))
+         (name (car (seq-first item)))
+         (owner (plist-get fj-user-spec :owner)))
+    (fj-star-repo name owner unstar)))
+
+(defun fj-star-repo (repo owner &optional unstar)
+  "Star REPO owned by OWNER."
+  (let* ((endpoint (format "user/starred/%s/%s" owner repo))
+         (resp (if unstar
+                   (fj-delete endpoint)
+                 (fj-put endpoint))))
+    (fedi-http--triage resp
+                       (lambda ()
+                         (message "Repo %s %s!" repo
+                                  (if unstar "unstarred" "starred"))))))
+
+(defun fj-user-repo-tl-unstar ()
+  "Unstar current repo from tabulated user repos listing."
+  (interactive)
+  (fj-user-repo-tl-star :unstar))
 
 ;;; USER REPOS
 
