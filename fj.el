@@ -363,20 +363,26 @@ ISSUE is a number."
          (endpoint (format "repos/%s/%s/issues/%s" fj-user repo issue)))
     (fj-get endpoint)))
 
-(defun fj-issue-create (&optional repo)
-  "Create an issue in REPO."
+(defun fj-issue-create (&optional repo user)
+  "Create an issue in REPO owned by USER."
   (interactive "P")
   (let* ((repo (fj-read-user-repo repo))
-         (url (format "repos/%s/%s/issues" fj-user repo))
+         (user (or user fj-user))
          (title (read-string "Title: "))
          (body (read-string "Body: "))
-         (params `(("body" . ,body)
-                   ("title" . ,title)))
-         (response (fj-post url params)))
+         (response (fj-issue-post repo user title body)))
     (fedi-http--triage response
                        (lambda ()
                          (message "issue %s created!" title)
                          (fj-issues-tl-reload)))))
+
+(defun fj-issue-post (repo user title body)
+  "POST a new issue to REPO owned by USER.
+TITLE and BODY are the parts of the issue to send."
+  (let ((url (format "repos/%s/%s/issues" user repo))
+        (params `(("body" . ,body)
+                  ("title" . ,title))))
+    (fj-post url params)))
 
 (defun fj-issue-patch (repo issue params)
   "PATCH/Edit ISSUE in REPO.
