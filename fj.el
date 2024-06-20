@@ -204,6 +204,11 @@ JSON."
     (fj-repos-tl-render buf entries #'fj-user-repo-tl-mode)
     (setq fj-user-spec `(:owner ,user))))
 
+(defun fj-list-own-repos ()
+  "List repos for `fj-user'."
+  (interactive)
+  (fj-user-repos-tl fj-user))
+
 (defun fj-user-repo-tl-list-issues (&optional _)
   "View issues of current repo from tabulated user repos listing."
   (interactive)
