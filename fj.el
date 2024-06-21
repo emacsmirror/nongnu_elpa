@@ -134,6 +134,15 @@ Repo, view parameters, etc.")
   (interactive)
   (fedi-switch-to-buffer "*fj-"))
 
+(defun fj-issue-right-align-str (str)
+  "Right align STR and return it."
+  (concat
+   (propertize
+    " "
+    'display
+    `(space :align-to (- right ,(+ (length str) 4))))
+   str))
+
 ;;; REQUESTS
 
 (defmacro fj-authorized-request (method body &optional unauthenticated-p)
@@ -796,14 +805,15 @@ prompt for a repo to list."
   "Render a list of COMMENTS."
   (cl-loop for c in comments
            concat (let-alist c
-                    (concat
-                     (propertize
-                      (concat .user.login " "
-                              (fedi--relative-time-description
-                               (date-to-time .created_at)))
-                      'face 'fj-item-author-face)
-                     "\n" .body "\n"
-                     fedi-horiz-bar fedi-horiz-bar "\n\n"))))
+                    (let ((stamp (fedi--relative-time-description
+                                  (date-to-time .created_at))))
+                      (concat
+                       (propertize
+                        (concat .user.login " "
+                                (fj-issue-right-align-str stamp))
+                        'face 'fj-item-author-face)
+                       "\n" .body "\n"
+                       fedi-horiz-bar fedi-horiz-bar "\n\n")))))
 
 (defun fj-issue-view (&optional repo number reload)
   "View issue number NUMBER from REPO.
@@ -815,29 +825,33 @@ RELOAD means we are reloading, so don't open in other window."
          (comments (fj-issue-get-comments repo number)))
     (fedi-with-buffer (format "*fj-issue-%s" number) 'fj-issue-view-mode
                       (not reload)
-      (let ((header-line-indent " ")
-            (header-line-indent-mode 1))
+      (let ((header-line-indent " "))
+        (header-line-indent-mode 1)
         (let-alist issue
-          (setq header-line-format
-                `("" header-line-indent
-                  ,(concat "#" (number-to-string .number) " "
-                           (propertize .title
-                                       'face 'fj-item-face))))
-          (insert
-           (propertize
-            (concat
-             ;; FIXME: :extend t doesn't work here whatever i do
-             (propertize .user.login
-                         'face 'fj-item-author-face)
-             "\n\n"
-             .body "\n"
-             fedi-horiz-bar "\n\n"
-             (fj-render-comments comments))
-            'fj-issue number
-            'fj-repo repo))
-          (setq fj-current-repo repo)
-          (setq fj-issue-spec
-                `(:repo ,repo :issue ,number :url ,.url)))))))
+          (let ((stamp (fedi--relative-time-description
+                        (date-to-time .created_at))))
+            .labels .state .is_locked
+            (setq header-line-format
+                  `("" header-line-indent
+                    ,(concat "#" (number-to-string .number) " "
+                             (propertize .title
+                                         'face 'fj-item-face))))
+            (insert
+             (propertize
+              (concat
+               ;; FIXME: :extend t doesn't work here whatever i do
+               (propertize (concat .user.login
+                                   (fj-issue-right-align-str stamp))
+                           'face 'fj-item-author-face)
+               "\n\n"
+               .body "\n"
+               fedi-horiz-bar "\n\n"
+               (fj-render-comments comments))
+              'fj-issue number
+              'fj-repo repo))
+            (setq fj-current-repo repo)
+            (setq fj-issue-spec
+                  `(:repo ,repo :issue ,number :url ,.url))))))))
 
 (defun fj-issue-view-comment ()
   "Comment on the issue currently being viewed."
