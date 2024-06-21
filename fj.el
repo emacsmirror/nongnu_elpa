@@ -73,7 +73,7 @@ Repo, view parameters, etc.")
 
 (defface fj-figures-face
   '((t :inherit font-lock-doc-face))
-  "Face for figures (stars count, comments count, etc.)")
+  "Face for figures (stars count, comments count, etc.).")
 
 (defface fj-item-face
   '((t :inherit font-lock-type-face :weight bold))
@@ -103,25 +103,25 @@ Repo, view parameters, etc.")
            (equal fj-user author)))))
 
 (defmacro fj-with-own-repo (&optional body)
-  "Execute body if a repo owned by `fj-user'."
+  "Execute BODY if a repo owned by `fj-user'."
   (declare (debug t))
   `(if (not (fj-issues-tl-own-repo-p))
-       (user-error "Not in a repo you own.")
+       (user-error "Not in a repo you own")
      ,body))
 
 (defmacro fj-with-own-issue (&optional body)
-  "Execute body if issue is authored by `fj-user'."
+  "Execute BODY if issue is authored by `fj-user'."
   (declare (debug t))
   `(if (not (fj-issue-own-p))
-       (user-error "Not an issue you own.")
+       (user-error "Not an issue you own")
      ,body))
 
 (defmacro fj-with-own-issue-or-repo (&optional body)
-  "Execute body if issue authored or repo owned by `fj-user'."
+  "Execute BODY if issue authored or repo owned by `fj-user'."
   (declare (debug t))
   `(if (not (or (fj-issue-own-p)
                 (fj-issues-tl-own-repo-p)))
-       (user-error "Not an issue or repo you own.")
+       (user-error "Not an issue or repo you own")
      ,body))
 
 (defun fj-kill-all-buffers ()
@@ -257,7 +257,7 @@ JSON."
 
 ;; FIXME: make work in search-repos TL too
 (defun fj-user-repo-tl-star (&optional unstar)
-  "Star current repo from tabulated user repos listing."
+  "Star or UNSTAR current repo from tabulated user repos listing."
   (interactive)
   (let* ((item (tabulated-list-get-entry))
          (name (car (seq-first item)))
@@ -265,7 +265,7 @@ JSON."
     (fj-star-repo name owner unstar)))
 
 (defun fj-star-repo (repo owner &optional unstar)
-  "Star REPO owned by OWNER."
+  "Star or UNSTAR REPO owned by OWNER."
   (let* ((endpoint (format "user/starred/%s/%s" owner repo))
          (resp (if unstar
                    (fj-delete endpoint)
@@ -311,7 +311,8 @@ JSON."
                                  (alist-get 'owner r)))))
 
 (defun fj-read-user-repo-do (&optional default)
-  "Prompt for a user repository."
+  "Prompt for a user repository.
+DEFAULT is initial input for `completing-read'."
   (let* ((repos (fj-get-repos))
          (cands (fj-get-repo-candidates repos)))
     (completing-read "Repo: " cands
@@ -626,11 +627,12 @@ PARAMS."
   'help-echo "RET: View this issue.")
 
 (defun fj-issues-tl-entries (issues &optional state)
-  "Return tabluated list entries for ISSUES."
+  "Return tabluated list entries for ISSUES.
+STATE is a string."
   (cl-loop for issue in issues
            for id = (alist-get 'number issue)
            for title = (alist-get 'title issue)
-           for state = (alist-get 'state issue)
+           for state = (or state (alist-get 'state issue))
            for comments = (number-to-string
                            (alist-get 'comments issue))
            for author = (alist-get 'login
@@ -1098,8 +1100,8 @@ TYPE is a symbol of what we are composing, it may be issue or comment."
    (or mode #'fj-compose-mode)
    (when mode "fj-compose")
    (or type 'issue)
-   (list #'lem-post--mentions-capf
-         #'lem-post--comms-capf)
+   ;; (list #'lem-post--mentions-capf
+   ;; #'lem-post--comms-capf)
    (unless type ; post
      '(((name . "title")
         (prop . compose-title)
@@ -1121,7 +1123,7 @@ Call response and update functions."
                  (eq type 'edit-issue))
              (not (and fj-compose-repo
                        fj-compose-issue-title)))
-        (user-error "You need to set a repo and title.")
+        (user-error "You need to set a repo and title")
       (let* ((body (fedi-post--remove-docs))
              (response
               (fj-issue-post fj-compose-repo
@@ -1143,7 +1145,7 @@ Call response and update functions."
   '("issue" "pull" "commit" "repository")
   "List of possible subject types for getting notifications.")
 
-(defun fj-get-notifications (&optional all status-types subject-type)
+(defun fj-get-notifications (&optional all) ; status-types subject-type)
                                         ; before since page limit
   "GET notifications for `fj-user'.
 ALL is a boolean string, meaning also show read notifications.
