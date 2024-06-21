@@ -32,8 +32,13 @@
 
 (require 'fedi)
 (require 'fedi-post)
+
 (require 'magit-git)
 (require 'magit-process)
+(require 'magit-diff)
+
+(require 'markdown-mode)
+(require 'shr)
 
 ;;; VARIABLES
 
@@ -821,6 +826,61 @@ prompt for a repo to list."
       (fj-issues-tl-reload))))
 
 ;;; ISSUE VIEW
+(defvar fj-url-regex fedi-post-url-regex)
+
+(defun fj-mdize-plain-urls ()
+  "Markdown-ize any plain string URLs found in current buffer."
+  ;; FIXME: this doesn't rly work with ```verbatim``` in md
+  ;; NB: this must not break any md, otherwise `markdown-standalone' may
+  ;; hang!
+  (while (re-search-forward fj-url-regex nil :no-error)
+    (unless
+        (save-excursion
+          (goto-char (1- (point)))
+          (or (markdown-inside-link-p)
+              ;; bbcode (seen in spam, breaks markdown if url replaced):
+              (let ((regex (concat "\\[url=" markdown-regex-uri "\\/\\]"
+                                   ".*" ; description
+                                   "\\[\\/url\\]")))
+                (thing-at-point-looking-at regex))))
+      (replace-match
+       (concat "<" (match-string 0) ">")))))
+
+;; I think magit/forge just uses markdown-mode rather than rendering
+(defun fj-render-body (body)
+  "Render item BODY as markdowned html.
+JSON is the item's data to process the link with."
+  ;; NB: make sure this doesn't leak into our issue buffers!
+  (let ((buf "*fj-md*")
+        str)
+    ;; 1: temp buffer, prepare for md
+    (with-temp-buffer
+      (insert body)
+      (goto-char (point-min))
+      (fj-mdize-plain-urls)
+      (goto-char (point-min))
+      ;; 2: md-ize or fallback
+      (let ((old-buf (buffer-string)))
+        (condition-case nil
+            (markdown-standalone buf)
+          (t ; if rendering fails, return unrendered body:
+           (with-current-buffer buf
+             (erase-buffer)
+             (insert old-buf)))))
+      ;; 3: shr-render the md
+      (with-current-buffer buf
+        (switch-to-buffer buf)
+        (let ((shr-width (window-width))
+              (shr-discard-aria-hidden t)) ; for pandoc md image output
+          ;; shr render:
+          (shr-render-buffer (current-buffer))))
+      ;; 4 collect result
+      (with-current-buffer "*html*"
+        (re-search-forward "\n\n" nil :no-error)
+        (setq str (buffer-substring (point) (point-max)))
+        (kill-buffer-and-window)        ; shr's *html*
+        (kill-buffer buf)))             ; our md
+    str))
 
 (define-derived-mode fj-issue-view-mode view-mode "fj-issue"
   "Major mode for viewing an issue."
@@ -845,7 +905,9 @@ OWNER is the repo owner."
                         (fj-author-or-owner-str .user.username nil owner)
                         (propertize (fj-issue-right-align-str stamp)
                                     'face 'fj-item-author-face))
-                       "\n\n" .body "\n"
+                       "\n\n"
+                       (fj-render-body .body)
+                       "\n"
                        fedi-horiz-bar fedi-horiz-bar "\n\n")))))
 
 (defun fj-author-or-owner-str (username author &optional owner)
@@ -903,7 +965,8 @@ RELOAD mean we reloaded."
              (propertize (fj-issue-right-align-str stamp)
                          'face 'fj-item-author-face)
              "\n\n"
-             .body "\n"
+             (fj-render-body .body)
+             "\n"
              fedi-horiz-bar "\n\n"
              ;; comments
              (fj-render-comments comments .user.username owner))
