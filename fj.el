@@ -383,7 +383,8 @@ USER is the repo owner."
 
 (defun fj-get-issue (repo &optional owner issue)
   "GET ISSUE in REPO.
-ISSUE is a number."
+ISSUE is a number.
+OWNER is the repo owner."
   (let* ((issue (or issue (fj-read-repo-issue repo)))
          (owner (or owner fj-user)) ;; FIXME
          (endpoint (format "repos/%s/%s/issues/%s" owner repo issue)))
@@ -417,7 +418,8 @@ With PARAMS."
     (fj-patch endpoint params :json)))
 
 (defun fj-issue-edit (&optional repo owner issue)
-  "Edit ISSUE body in REPO."
+  "Edit ISSUE body in REPO.
+OWNER is the repo owner."
   (interactive)
   ;; FIXME: only if author!
   (let* ((repo (fj-read-user-repo repo))
@@ -531,10 +533,11 @@ STATE should be \"open\", \"closed\", or \"all\"."
            collect `(,trim
                      ,(alist-get 'id c))))
 
-(defun fj-read-item-comment (repo item)
+(defun fj-read-item-comment (repo owner item)
   "Given ITEM in REPO, read a comment in the minibuffer.
-Return the comment number."
-  (let* ((comments (fj-issue-get-comments repo item))
+Return the comment number.
+OWNER is the repo owner."
+  (let* ((comments (fj-issue-get-comments repo owner item))
          (cands (fj-get-comment-candidates comments))
          (choice (completing-read "Comment: " cands))
          (comm
@@ -545,15 +548,17 @@ Return the comment number."
     (cadr comm)))
 
 (defun fj-issue-get-comments (repo owner issue)
-  "Return comments for ISSUE in REPO."
+  "Return comments for ISSUE in REPO.
+OWNER is the repo owner."
   (let* ((endpoint (format "repos/%s/%s/issues/%s/comments"
                            owner repo issue)))
     (fj-get endpoint)))
 
 (defun fj-get-comment (repo owner issue &optional comment)
   "GET data for COMMENT of ISSUE in REPO.
-COMMENT is a number."
-  (let* ((comment (or comment (fj-read-item-comment repo issue)))
+COMMENT is a number.
+OWNER is the repo owner."
+  (let* ((comment (or comment (fj-read-item-comment repo owner issue)))
          (endpoint (format "repos/%s/%s/issues/comments/%s"
                            owner repo comment)))
     (fj-get endpoint)))
@@ -571,15 +576,16 @@ COMMENT is a number."
                        (lambda ()
                          (message "comment created!")))))
 
-(defun fj-comment-patch (repo issue &optional comment params)
-  "Edit ISSUE COMMENT in REPO.
+(defun fj-comment-patch (repo owner issue &optional comment params)
+  "Edit ISSUE COMMENT in REPO owned by OWNER.
 PARAMS."
-  (let* ((comment (or comment (fj-read-item-comment repo issue)))
+  (let* ((comment (or comment (fj-read-item-comment repo owner issue)))
          (endpoint (format "repos/%s/%s/issues/comments/%s" fj-user repo comment)))
     (fj-patch endpoint params :json)))
 
 (defun fj-issue-comment-edit (&optional repo owner issue)
-  "Edit comment on ISSUE in REPO."
+  "Edit comment on ISSUE in REPO.
+OWNER is the repo owner."
   (interactive "P")
   ;; FIXME: check for author!
   (let* ((repo (fj-read-user-repo repo))
@@ -589,7 +595,7 @@ PARAMS."
          (comment (alist-get 'id data))
          (old-body (alist-get 'body data))
          (new-body (read-string "Edit comment: " old-body))
-         (response (fj-comment-patch repo issue comment
+         (response (fj-comment-patch repo owner issue comment
                                      `(("body" . ,new-body)))))
     (fedi-http--triage response
                        (lambda ()
@@ -822,7 +828,8 @@ prompt for a repo to list."
 
 (defun fj-render-comments (comments &optional author owner)
   "Render a list of COMMENTS.
-AUTHOR is the author of the parent issue."
+AUTHOR is the author of the parent issue.
+OWNER is the repo owner."
   (cl-loop for c in comments
            concat (let-alist c
                     (let ((stamp (fedi--relative-time-description
@@ -864,6 +871,7 @@ AUTHOR is the author of the parent issue."
 
 (defun fj-render-issue (repo owner issue number comments &optional reload)
   "Render an ISSUE number NUMBER, in REPO and its COMMENTS.
+OWNER is the repo owner.
 RELOAD mean we reloaded."
   (fedi-with-buffer (format "*fj-issue-%s" number) 'fj-issue-view-mode
                     (not reload)
