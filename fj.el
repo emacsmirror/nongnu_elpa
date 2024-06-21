@@ -900,9 +900,10 @@ JSON is the item's data to process the link with."
     map)
   "Keymap for `fj-issue-view-mode'.")
 
-(define-derived-mode fj-issue-view-mode view-mode "fj-issue"
+(define-derived-mode fj-issue-view-mode special-mode "fj-issue"
   "Major mode for viewing an issue."
-  :group 'fj)
+  :group 'fj
+  (read-only-mode 1))
 
 (defun fj-render-comments (comments &optional author owner)
   "Render a list of COMMENTS.
