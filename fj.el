@@ -1450,25 +1450,26 @@ Call response and update functions."
                        fj-compose-issue-title)))
         (user-error "You need to set a repo and title")
       (let* ((body (fedi-post--remove-docs))
+             (repo fj-compose-repo)
              (response
               (cond ((eq type 'new-comment)
-                     (fj-issue-comment fj-compose-repo
+                     (fj-issue-comment repo
                                        fj-compose-repo-owner
                                        fj-compose-issue-number
                                        body))
                     ((eq type 'edit-comment)
-                     (fj-issue-comment-edit fj-compose-repo
+                     (fj-issue-comment-edit repo
                                             fj-compose-repo-owner
                                             fj-compose-comment-id
                                             body))
                     ((eq type 'edit-issue)
-                     (fj-issue-patch fj-compose-repo
+                     (fj-issue-patch repo
                                      fj-compose-repo-owner
                                      fj-compose-issue-number
                                      fj-compose-issue-title
                                      body))
                     (t ; new issue
-                     (fj-issue-post fj-compose-repo
+                     (fj-issue-post repo
                                     fj-compose-repo-owner
                                     fj-compose-issue-title body)))))
         (when response
@@ -1476,7 +1477,7 @@ Call response and update functions."
             (fedi-post-kill))
           (if (not (eq type 'new-issue))
               (fj-issue-view-reload)
-            (fj-list-issues fj-compose-repo)))))))
+            (fj-list-issues repo)))))))
 
 ;;; NOTIFICATIONS
 
