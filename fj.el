@@ -639,7 +639,7 @@ STATE is a string."
            for state = (or state (alist-get 'state issue))
            for comments = (number-to-string
                            (alist-get 'comments issue))
-           for author = (alist-get 'login
+           for author = (alist-get 'username
                                    (alist-get 'user issue))
            collect `(nil [(,(number-to-string id)
                            id ,id
@@ -815,7 +815,9 @@ prompt for a repo to list."
                                   (date-to-time .created_at))))
                       (concat
                        (propertize
-                        (concat .user.login " "
+                        (concat .user.username " "
+                                (when (equal .original_author .user.username)
+                                  "author")
                                 (fj-issue-right-align-str stamp))
                         'face 'fj-item-author-face)
                        "\n" .body "\n"
