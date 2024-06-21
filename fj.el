@@ -1238,7 +1238,7 @@ NO-OWNER means don't display owner column (user repos view)."
            collect
            (if no-owner
                ;; user repo button:
-               `(nil [(,name face 'fj-item-face
+               `(nil [(,name face fj-item-face
                              id ,id
                              type fj-user-repo-button)
                       (,stars id ,id face fj-figures-face)
@@ -1247,14 +1247,14 @@ NO-OWNER means don't display owner column (user repos view)."
                       ,(propertize desc
                                    'face 'fj-comment-face)])
              ;; search-repo and search owner button:
-             `(nil [(,name face 'fj-item-face
+             `(nil [(,name face fj-item-face
                            id ,id
                            type fj-search-repo-button)
-                    (,owner face 'fj-user-face
+                    (,owner face fj-user-face
                             id ,id
                             type fj-search-owner-button)
-                    (,stars id ,id face 'fj-figures-face)
-                    (,fork id ,id face 'fj-figures-face)
+                    (,stars id ,id face fj-figures-face)
+                    (,fork id ,id face fj-figures-face)
                     ,lang
                     ,(propertize desc
                                  'face 'fj-comment-face)]))))
