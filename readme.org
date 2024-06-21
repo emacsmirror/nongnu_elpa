@@ -93,6 +93,7 @@ Forgejo's API is vast. Currently =fj.el= just implements a few basic things:
 |         | fj-issue-view                 | View issue NUMBER from REPO of OWNER.                            |
 |         | fj-issue-view-close           | Close issue being viewed.                                        |
 |         | fj-issue-view-comment         | Comment on the issue currently being viewed.                     |
+|         | fj-issue-view-comment-delete  | Delete comment at point.                                         |
 |         | fj-issue-view-edit            | Edit the issue currently being viewed.                           |
 |         | fj-issue-view-edit-comment    | Edit the comment at point.                                       |
 |         | fj-issue-view-mode            | Major mode for viewing an issue.                                 |
