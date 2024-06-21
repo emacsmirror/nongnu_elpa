@@ -59,21 +59,31 @@ Repo, view parameters, etc.")
 
 ;;; FACES
 
-(defface fj-commented-face
+(defface fj-comment-face
   '((t :inherit font-lock-comment-face))
   "Face for secondary info.")
 
 (defface fj-closed-issue-face
-  '((t :inherit font-lock-comment-face :weight bold :underline t))
+  '((t :inherit font-lock-comment-face :weight bold))
   "Face for the title of a closed issue.")
 
 (defface fj-user-face
   '((t :inherit font-lock-function-name-face))
-  "")
+  "User face.")
 
 (defface fj-figures-face
   '((t :inherit font-lock-doc-face))
   "Face for figures (stars count, comments count, etc.)")
+
+(defface fj-item-face
+  '((t :inherit font-lock-type-face :weight bold))
+  "Face for item names.")
+
+(defface fj-item-author-face
+  `((t ;:background ,(face-attribute 'magit-diff-hunk-heading :background)
+     :inherit magit-diff-hunk-heading
+     :extend t))
+  "Face for item authors.")
 
 ;;; UTILS
 
@@ -628,7 +638,7 @@ PARAMS."
                                    type  fj-issues-owner-button)
                           (,title face ,(if (equal state "closed")
                                             'fj-closed-issue-face
-                                          'link)
+                                          'fj-item-face)
                                   id ,id
                                   state ,state
                                   type fj-issue-button)])))
@@ -795,16 +805,6 @@ prompt for a repo to list."
                      "\n" .body "\n"
                      fedi-horiz-bar fedi-horiz-bar "\n\n"))))
 
-(defface fj-item-face
-  '((t :inherit font-lock-type-face :weight bold))
-  "Face for item names.")
-
-(defface fj-item-author-face
-  `((t ;:background ,(face-attribute 'magit-diff-hunk-heading :background)
-     :inherit magit-diff-hunk-heading
-     :extend t))
-  "Face for item authors.")
-
 (defun fj-issue-view (&optional repo number reload)
   "View issue number NUMBER from REPO.
 RELOAD means we are reloading, so don't open in other window."
@@ -952,26 +952,26 @@ NO-OWNER means don't display owner column (user repos view)."
            collect
            (if no-owner
                ;; user repo button:
-               `(nil [(,name face link
+               `(nil [(,name face 'fj-item-face
                              id ,id
                              type fj-user-repo-button)
                       (,stars id ,id face fj-figures-face)
                       (,fork id ,id face fj-figures-face)
                       ,lang
                       ,(propertize desc
-                                   'face 'fj-commented-face)])
+                                   'face 'fj-comment-face)])
              ;; search-repo and search owner button:
-             `(nil [(,name face link
+             `(nil [(,name face 'fj-item-face
                            id ,id
                            type fj-search-repo-button)
-                    (,owner face link
+                    (,owner face 'fj-item-face
                             id ,id
                             type fj-search-owner-button)
                     (,stars id ,id face 'fj-figures-face)
                     (,fork id ,id face 'fj-figures-face)
                     ,lang
                     ,(propertize desc
-                                 'face 'fj-commented-face)]))))
+                                 'face 'fj-comment-face)]))))
 
 (defun fj-repo-search-tl (query &optional topic)
   "Search repos for QUERY, and display a tabulated list of results.
