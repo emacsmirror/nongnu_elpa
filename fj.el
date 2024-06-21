@@ -375,7 +375,8 @@ Return the issue number."
 STATE is for issue status, a string of open, closed or all.
 USER is the repo owner."
   (let* ((endpoint (format "repos/%s/%s/issues" (or user fj-user) repo))
-         (params `(("state" . ,state))))
+         (params `(("state" . ,state)
+                   ("limit" . "100"))))
     (condition-case err
         (fj-get endpoint params)
       (t (format "%s" (error-message-string err))))))
