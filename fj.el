@@ -1324,6 +1324,8 @@ TOPIC, a boolean, means search in repo topics."
 
 (defvar-local fj-compose-issue-title nil)
 
+(defvar-local fj-compose-item-type nil)
+
 (defalias 'fj-compose-cancel #'fedi-post-cancel)
 
 (defvar fj-compose-comment-mode-map
@@ -1367,8 +1369,6 @@ TOPIC, a boolean, means search in repo topics."
         (read-string "Title: "
                      fj-compose-issue-title))
   (fedi-post--update-status-fields))
-
-(defvar-local fj-compose-item-type nil)
 
 (defun fj-issue-compose (&optional edit mode type init-text)
   "Compose a new post.
@@ -1438,9 +1438,7 @@ Call response and update functions."
                                      body))
                     (t ; new issue
                      (fj-issue-post fj-compose-repo
-                                    ;; FIXME: allow other repo owners:
-                                    (or fj-compose-repo-owner
-                                        fj-user)
+                                    fj-compose-repo-owner
                                     fj-compose-issue-title body)))))
         (when response
           (with-current-buffer buf
@@ -1450,6 +1448,7 @@ Call response and update functions."
             (fj-list-issues fj-compose-repo)))))))
 
 ;;; NOTIFICATIONS
+
 (defvar fj-notifications-status-types
   '("unread" "read" "pinned")
   "List of possible status types for getting notifications.")
