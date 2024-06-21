@@ -18,12 +18,12 @@ Current repository detection should work partially automatically. If you find yo
 
 Forgejo's API is vast. Currently =fj.el= just implements a few basic things:
 
-- search and list repos
+- search and list instance repos
 - list user's repos
 - star repos from repo listing
 
 
-- rich create issue/comment interface.
+- rich create/edit issue/comment interface.
 
 
 - list repo issues
@@ -75,21 +75,26 @@ Forgejo's API is vast. Currently =fj.el= just implements a few basic things:
 | Binding | Command                       | Description                                                      |
 |---------+-------------------------------+------------------------------------------------------------------|
 |         | fj-compose-cancel             | Kill new-post buffer/window. Does not POST content.              |
+|         | fj-compose-comment-mode       | Minor mode for composing issues.                                 |
 |         | fj-compose-mode               | Minor mode for composing issues and comments.                    |
 |         | fj-compose-read-repo          | Read a repo for composing a issue or comment.                    |
 |         | fj-compose-read-title         | Read an issue title.                                             |
 |         | fj-compose-send               | Submit the issue or comment to your Forgejo instance.            |
 |         | fj-issue-close                | Close ISSUE in REPO or set to STATE.                             |
-|         | fj-issue-comment              | Add comment to ISSUE in REPO.                                    |
+|         | fj-issue-comment              | Add COMMENT to ISSUE in REPO.                                    |
 |         | fj-issue-comment-edit         | Edit comment on ISSUE in REPO.                                   |
 |         | fj-issue-compose              | Compose a new post.                                              |
 |         | fj-issue-create               | Create an issue in REPO owned by USER.                           |
 |         | fj-issue-delete               | Delete ISSUE in REPO.                                            |
 |         | fj-issue-edit                 | Edit ISSUE body in REPO.                                         |
 |         | fj-issue-edit-title           | Edit ISSUE title in REPO.                                        |
-|         | fj-issue-view                 | View issue number NUMBER from REPO.                              |
+|         | fj-issue-next                 | Go to next issue or comment.                                     |
+|         | fj-issue-prev                 | Goto previous issue or comment.                                  |
+|         | fj-issue-view                 | View issue NUMBER from REPO of OWNER.                            |
+|         | fj-issue-view-close           | Close issue being viewed.                                        |
 |         | fj-issue-view-comment         | Comment on the issue currently being viewed.                     |
 |         | fj-issue-view-edit            | Edit the issue currently being viewed.                           |
+|         | fj-issue-view-edit-comment    | Edit the comment at point.                                       |
 |         | fj-issue-view-mode            | Major mode for viewing an issue.                                 |
 |         | fj-issue-view-reload          | Reload the current issue view.                                   |
 |         | fj-issues-tl-close-issue      | Close current issue from tabulated issues listing.               |
@@ -119,8 +124,9 @@ Forgejo's API is vast. Currently =fj.el= just implements a few basic things:
 |         | fj-repo-tl-list-user-repos    | View repos of current entry user from tabulated repos listing.   |
 |         | fj-repo-tl-mode               | Mode for displaying a tabulated list of repo search results.     |
 |         | fj-switch-to-buffer           | Switch to a live fj buffer.                                      |
+|         | fj-url-regex                  | Keyboard macro.                                                  |
 |         | fj-user-repo-tl-list-issues   | View issues of current repo from tabulated user repos listing.   |
 |         | fj-user-repo-tl-mode          | Mode for displaying a tabulated list of user repos.              |
-|         | fj-user-repo-tl-star          | Star current repo from tabulated user repos listing.             |
+|         | fj-user-repo-tl-star          | Star or UNSTAR current repo from tabulated user repos listing.   |
 |         | fj-user-repo-tl-unstar        | Unstar current repo from tabulated user repos listing.           |
 |         | fj-user-repos-tl              | View a tabulated list of respos for USER.                        |
