@@ -1102,5 +1102,28 @@ Call response and update functions."
             (fedi-post-kill))
           (fj-list-issues fj-compose-repo))))))
 
+;;; NOTIFICATIONS
+(defvar fj-notifications-status-types
+  '("unread" "read" "pinned")
+  "List of possible status types for getting notifications.")
+
+(defvar fj-notifications-subject-types
+  '("issue" "pull" "commit" "repository")
+  "List of possible subject types for getting notifications.")
+
+(defun fj-get-notifications (&optional all status-types subject-type)
+                                        ; before since page limit
+  "GET notifications for `fj-user'.
+ALL is a boolean string, meaning also show read notifications.
+STATUS-TYPES and SUBJECT-TYPE are array strings."
+  (let ((params `(("all" . ,all)))
+        (endpoint "notifications"))
+    (fj-get endpoint params)))
+
+(defun fj-get-new-notifications-count ()
+  "Return the number of new notifications for `fj-user'."
+  (alist-get 'new
+             (fj-get "notifications/new")))
+
 (provide 'fj)
 ;;; fj.el ends here
