@@ -426,7 +426,8 @@ TITLE and BODY are the parts of the issue to send."
 
 (defun fj-issue-patch (repo owner issue title body)
   "PATCH/Edit ISSUE in REPO.
-With PARAMS."
+With PARAMS.
+OWNER is the repo owner."
   (let* ((params `(("body" . ,body)
                    ("title" . ,title)))
          (endpoint (format "repos/%s/%s/issues/%s" owner repo issue)))
@@ -451,7 +452,8 @@ OWNER is the repo owner."
                          (message "issue edited!")))))
 
 (defun fj-issue-edit-title (&optional repo owner issue)
-  "Edit ISSUE title in REPO."
+  "Edit ISSUE title in REPO.
+OWNER is the repo owner."
   (interactive)
   ;; FIXME: only if author!
   (let* ((repo (fj-read-user-repo repo))
@@ -468,7 +470,8 @@ OWNER is the repo owner."
                          (message "issue title edited!")))))
 
 (defun fj-issue-close (&optional repo owner issue state)
-  "Close ISSUE in REPO or set to STATE."
+  "Close ISSUE in REPO or set to STATE.
+OWNER is the repo owner."
   (interactive "P")
   (let* ((repo (fj-read-user-repo repo))
          (issue (or issue (fj-read-repo-issue repo)))
@@ -578,12 +581,14 @@ OWNER is the repo owner."
                            owner repo comment)))
     (fj-get endpoint)))
 
-(defun fj-issue-comment (&optional repo issue comment)
-  "Add comment to ISSUE in REPO."
+(defun fj-issue-comment (&optional repo owner issue comment)
+  "Add COMMENT to ISSUE in REPO.
+OWNER is the repo owner."
   (interactive "P")
   (let* ((repo (fj-read-user-repo repo))
          (issue (or issue (fj-read-repo-issue repo)))
-         (url (format "repos/%s/%s/issues/%s/comments" fj-user repo issue))
+         (owner (or owner fj-user)) ;; FIXME owner
+         (url (format "repos/%s/%s/issues/%s/comments" owner repo issue))
          (body (or comment (read-string "Comment: ")))
          (params `(("body" . ,body)))
          (response (fj-post url params)))
@@ -1041,13 +1046,13 @@ RELOAD means we are reloading, so don't open in other window."
 
 ;; TODO: merge simple action functions
 (defun fj-issue-view-close ()
-  ""
+  "Close issue being viewed."
   (interactive)
   (fj-with-issue
    (let ((number (plist-get fj-issue-spec :issue))
          (owner (plist-get fj-issue-spec :owner))
          (repo (plist-get fj-issue-spec :repo)))
-     (fj-issue-close repo owner issue))))
+     (fj-issue-close repo owner number))))
 
 (defvar fj-compose-spec nil)
 
