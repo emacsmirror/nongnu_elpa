@@ -281,8 +281,9 @@ JSON."
   (interactive "sView user repos: ")
   (let* ((repos (fj-get-user-repos user))
          (entries (fj-search-tl-entries repos :no-owner))
-         (buf (format "*fj-repos-%s*" user)))
-    (fj-repos-tl-render buf entries #'fj-user-repo-tl-mode)
+         (buf (format "*fj-repos-%s*" user))
+         (prev-buf))
+    (fj-repos-tl-render buf entries #'fj-user-repo-tl-mode prev-buf)
     (setq fj-user-spec `(:owner ,user)))) ;; TODO: URL
 
 (defun fj-list-own-repos ()
@@ -1270,10 +1271,11 @@ TOPIC, a boolean, means search in repo topics."
          (resp (fj-get "/repos/search" params))
          (buf (format "*fj-search-%s*" query))
          (data (alist-get 'data resp))
-         (entries (fj-search-tl-entries data)))
-    (fj-repos-tl-render buf entries #'fj-repo-tl-mode)))
+         (entries (fj-search-tl-entries data))
+         (prev-buf (current-buffer)))
+    (fj-repos-tl-render buf entries #'fj-repo-tl-mode prev-buf)))
 
-(defun fj-repos-tl-render (buf entries mode)
+(defun fj-repos-tl-render (buf entries mode prev-buf)
   "RENDER a tabulated list in BUF fer, with ENTRIES, in MODE."
   (with-current-buffer (get-buffer-create buf)
     (setq tabulated-list-entries entries)
@@ -1285,6 +1287,8 @@ TOPIC, a boolean, means search in repo topics."
      ;;  nil)
      ;; ((string-suffix-p "-issues*" prev-buf) ; diff repo
      ;;  (switch-to-buffer (current-buffer)))
+     ((string-prefix-p "*fj-search" buf) ;; any search
+      (switch-to-buffer (current-buffer)))
      (t                             ; new buf
       (switch-to-buffer-other-window (current-buffer))))))
 
