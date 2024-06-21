@@ -1029,6 +1029,7 @@ TOPIC, a boolean, means search in repo topics."
     (define-key map (kbd "C-c C-t") #'fj-compose-read-title)
     (define-key map (kbd "C-c C-r") #'fj-compose-read-repo)
     (define-key map (kbd "C-c C-k") #'fj-compose-cancel)
+    (define-key map (kbd "C-c C-c") #'fj-compose-send)
     map)
   "Keymap for `fj-compose-mode'.")
 
