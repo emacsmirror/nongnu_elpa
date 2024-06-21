@@ -273,8 +273,9 @@ JSON."
 
 (defun fj-get-user-repos (user)
   "GET request repos for USER."
-  (let ((endpoint (format "users/%s/repos" user)))
-    (fj-get endpoint)))
+  (let ((params '(("limit" . "100")))
+        (endpoint (format "users/%s/repos" user)))
+    (fj-get endpoint params)))
 
 (defun fj-user-repos-tl (&optional user)
   "View a tabulated list of respos for USER."
