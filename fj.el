@@ -116,6 +116,27 @@ Repo, view parameters, etc.")
   (and (eq major-mode 'fj-issue-view-mode)
        (equal fj-user (fj--property 'fj-comment-author))))
 
+(defun fj-kill-all-buffers ()
+  "Kill all fj buffers."
+  (interactive)
+  (fedi-kill-all-buffers "*fj-"))
+
+(defun fj-switch-to-buffer ()
+  "Switch to a live fj buffer."
+  (interactive)
+  (fedi-switch-to-buffer "*fj-"))
+
+(defun fj-issue-right-align-str (str)
+  "Right align STR and return it."
+  (concat
+   (propertize
+    " "
+    'display
+    `(space :align-to (- right ,(+ (length str) 4))))
+   str))
+
+;;; MACROS
+
 (defmacro fj-with-issue (&optional body)
   "Execute BODY if we are in an issue view."
   (declare (debug t))
@@ -153,25 +174,6 @@ Repo, view parameters, etc.")
     (if (not (fj-comment-own-p))
         (user-error "No comment of yours at point")
       ,body)))
-
-(defun fj-kill-all-buffers ()
-  "Kill all fj buffers."
-  (interactive)
-  (fedi-kill-all-buffers "*fj-"))
-
-(defun fj-switch-to-buffer ()
-  "Switch to a live fj buffer."
-  (interactive)
-  (fedi-switch-to-buffer "*fj-"))
-
-(defun fj-issue-right-align-str (str)
-  "Right align STR and return it."
-  (concat
-   (propertize
-    " "
-    'display
-    `(space :align-to (- right ,(+ (length str) 4))))
-   str))
 
 ;;; NAV
 
@@ -329,7 +331,7 @@ JSON."
 
 (defun fj-current-dir-repo ()
   "If we are in a repository, return its name."
-  ;; FIXME: fails if remote url is diff to root dir!
+  ;; NB: fails if remote url is diff to root dir!
   (ignore-errors
     (when (magit-inside-worktree-p)
       (let* ((repos (fj-get-repos))
@@ -483,7 +485,6 @@ OWNER is the repo owner."
   "Edit ISSUE title in REPO.
 OWNER is the repo owner."
   (interactive)
-  ;; FIXME: only if author!
   (let* ((repo (fj-read-user-repo repo))
          (issue (or issue (fj-read-repo-issue repo)))
          (owner (or owner ;; FIXME: owner
