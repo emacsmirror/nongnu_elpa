@@ -85,6 +85,10 @@ Repo, view parameters, etc.")
      :extend t))
   "Face for item authors.")
 
+(defface fj-issue-label-face
+  '((t :inherit font-lock-keyword-face :box t))
+  "Face for issue labels.")
+
 ;;; UTILS
 
 (defun fj-issues-tl-own-repo-p ()
@@ -817,6 +821,55 @@ prompt for a repo to list."
                        "\n" .body "\n"
                        fedi-horiz-bar fedi-horiz-bar "\n\n")))))
 
+(defun fj-render-labels (labels)
+  "Render LABELS, a list of issue labels."
+  (concat "\nLabels: "
+          (cl-loop for l in labels
+                   concat (concat (propertize (alist-get 'name l)
+                                              'face 'fj-issue-label-face)
+                                  " "))))
+
+(defun fj-issue-render (repo issue number comments reload)
+  "Render an ISSUE number NUMBER, in REPO and its COMMENTS.
+RELOAD mean we reloaded."
+  (fedi-with-buffer (format "*fj-issue-%s" number) 'fj-issue-view-mode
+                    (not reload)
+    (let ((header-line-indent " "))
+      (header-line-indent-mode 1) ; broken?
+      (let-alist issue
+        (let ((stamp (fedi--relative-time-description
+                      (date-to-time .created_at))))
+          .state .is_locked
+          (setq header-line-format
+                `("" header-line-indent
+                  ,(concat "#" (number-to-string .number) " "
+                           (propertize .title
+                                       'face 'fj-item-face))))
+          (insert
+           ;; header stuff:
+           "State: " .state
+           (if .labels
+               (fj-render-labels .labels)
+             "")
+           "\n\n"
+           (propertize
+            (concat
+             ;; issue stuff:
+             ;; FIXME: :extend t doesn't work here whatever i do
+             (propertize (concat .user.username
+                                 (fj-issue-right-align-str stamp))
+                         'face 'fj-item-author-face)
+             "\n\n"
+             .body "\n"
+             fedi-horiz-bar "\n\n"
+             ;; comments
+             (fj-render-comments comments))
+            'fj-issue number
+            'fj-repo repo))
+          (setq fj-current-repo repo)
+          (setq fj-issue-spec
+                `(:repo ,repo :issue ,number :url ,.url)))))))
+
 (defun fj-issue-view (&optional repo number reload)
   "View issue number NUMBER from REPO.
 RELOAD means we are reloading, so don't open in other window."
@@ -825,35 +878,7 @@ RELOAD means we are reloading, so don't open in other window."
          (issue (fj-get-issue repo number))
          (number (alist-get 'number issue))
          (comments (fj-issue-get-comments repo number)))
-    (fedi-with-buffer (format "*fj-issue-%s" number) 'fj-issue-view-mode
-                      (not reload)
-      (let ((header-line-indent " "))
-        (header-line-indent-mode 1)
-        (let-alist issue
-          (let ((stamp (fedi--relative-time-description
-                        (date-to-time .created_at))))
-            .labels .state .is_locked
-            (setq header-line-format
-                  `("" header-line-indent
-                    ,(concat "#" (number-to-string .number) " "
-                             (propertize .title
-                                         'face 'fj-item-face))))
-            (insert
-             (propertize
-              (concat
-               ;; FIXME: :extend t doesn't work here whatever i do
-               (propertize (concat .user.login
-                                   (fj-issue-right-align-str stamp))
-                           'face 'fj-item-author-face)
-               "\n\n"
-               .body "\n"
-               fedi-horiz-bar "\n\n"
-               (fj-render-comments comments))
-              'fj-issue number
-              'fj-repo repo))
-            (setq fj-current-repo repo)
-            (setq fj-issue-spec
-                  `(:repo ,repo :issue ,number :url ,.url))))))))
+    (fj-issue-render repo issue number comments reload)))
 
 (defun fj-issue-view-comment ()
   "Comment on the issue currently being viewed."
