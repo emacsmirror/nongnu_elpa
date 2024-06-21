@@ -284,9 +284,8 @@ JSON."
   (interactive "sView user repos: ")
   (let* ((repos (fj-get-user-repos user))
          (entries (fj-search-tl-entries repos :no-owner))
-         (buf (format "*fj-repos-%s*" user))
-         (prev-buf))
-    (fj-repos-tl-render buf entries #'fj-user-repo-tl-mode prev-buf)
+         (buf (format "*fj-repos-%s*" user)))
+    (fj-repos-tl-render buf entries #'fj-user-repo-tl-mode)
     (setq fj-user-spec `(:owner ,user)))) ;; TODO: URL
 
 (defun fj-list-own-repos ()
@@ -454,12 +453,13 @@ TITLE and BODY are the parts of the issue to send."
                   ("title" . ,title))))
     (fj-post url params)))
 
-(defun fj-issue-patch (repo owner issue title body)
+(defun fj-issue-patch (repo owner issue &optional title body state)
   "PATCH/Edit ISSUE in REPO.
 With PARAMS.
 OWNER is the repo owner."
   (let* ((params `(("body" . ,body)
-                   ("title" . ,title)))
+                   ("title" . ,title)
+                   ("state" . ,state)))
          (endpoint (format "repos/%s/%s/issues/%s" owner repo issue)))
     (fj-patch endpoint params :json)))
 
@@ -507,8 +507,7 @@ OWNER is the repo owner."
          (action-str (if (string= state "open") "Open" "Close"))
          (state (or state "closed")))
     (when (y-or-n-p (format "%s issue #%s?" action-str issue))
-      (let ((response (fj-issue-patch repo owner issue
-                                      `(("state" . ,state)))))
+      (let ((response (fj-issue-patch repo owner issue nil nil state)))
         (fedi-http--triage response
                            (lambda ()
                              (message "Issue %s %s!" issue state)))))))
@@ -625,15 +624,16 @@ OWNER is the repo owner."
                        (lambda ()
                          (message "comment created!")))))
 
-(defun fj-comment-patch (repo owner comment-id &optional params issue)
-  "Edit ISSUE COMMENT in REPO owned by OWNER.
+(defun fj-comment-patch (repo owner id &optional params issue)
+  "Edit comment with ID in REPO owned by OWNER.
 PARAMS."
-  (let* ((id (or comment-id (fj-read-item-comment repo owner issue)))
+  (let* ((id (or id (fj-read-item-comment repo owner issue)))
          (endpoint (format "repos/%s/%s/issues/comments/%s" owner repo id)))
     (fj-patch endpoint params :json)))
 
+;; FIXME: still needs an issue?
 (defun fj-issue-comment-edit (&optional repo owner id new-body)
-  "Edit comment on ISSUE in REPO.
+  "Edit comment with ID in REPO.
 OWNER is the repo owner."
   (interactive "P")
   (let* ((repo (fj-read-user-repo repo))
@@ -1286,11 +1286,10 @@ TOPIC, a boolean, means search in repo topics."
          (resp (fj-get "/repos/search" params))
          (buf (format "*fj-search-%s*" query))
          (data (alist-get 'data resp))
-         (entries (fj-search-tl-entries data))
-         (prev-buf (current-buffer)))
-    (fj-repos-tl-render buf entries #'fj-repo-tl-mode prev-buf)))
+         (entries (fj-search-tl-entries data)))
+    (fj-repos-tl-render buf entries #'fj-repo-tl-mode)))
 
-(defun fj-repos-tl-render (buf entries mode prev-buf)
+(defun fj-repos-tl-render (buf entries mode)
   "RENDER a tabulated list in BUF fer, with ENTRIES, in MODE."
   (with-current-buffer (get-buffer-create buf)
     (setq tabulated-list-entries entries)
