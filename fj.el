@@ -173,6 +173,19 @@ Repo, view parameters, etc.")
     `(space :align-to (- right ,(+ (length str) 4))))
    str))
 
+;;; NAV
+
+(defun fj-issue-next ()
+  "Go to next issue or comment."
+  (interactive)
+  (fedi--goto-pos #'next-single-property-change 'fj-byline))
+
+
+(defun fj-issue-prev ()
+  "Goto previous issue or comment."
+  (interactive)
+  (fedi--goto-pos #'previous-single-property-change 'fj-byline))
+
 ;;; REQUESTS
 
 (defmacro fj-authorized-request (method body &optional unauthenticated-p)
@@ -661,14 +674,13 @@ OWNER is the repo owner."
 
 (defvar fj-list-issue-mode-map
   (let ((map (make-sparse-keymap)))
-    (set-keymap-parent map tabulated-list-mode-map)
+    (set-keymap-parent map tabulated-list-mode-map) ; has nav
     (define-key map (kbd "C") #'fj-issues-tl-comment-issue)
     (define-key map (kbd "e") #'fj-issues-tl-edit-issue)
     (define-key map (kbd "t") #'fj-issues-tl-edit-issue-title)
     (define-key map (kbd "v") #'fj-issues-tl-view-issue)
     (define-key map (kbd "k") #'fj-issues-tl-close-issue)
     (define-key map (kbd "K") #'fj-issues-tl-delete-issue)
-    (define-key map (kbd "n") #'fj-issues-tl-create)
     (define-key map (kbd "c") #'fj-issues-tl-create)
     (define-key map (kbd "g") #'fj-issues-tl-reload)
     (define-key map (kbd "C-c C-c") #'fj-list-issues-cycle)
@@ -937,6 +949,8 @@ JSON is the item's data to process the link with."
 
 (defvar fj-issue-view-mode-map
   (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "n") #'fj-issue-next)
+    (define-key map (kbd "p") #'fj-issue-prev)
     (define-key map (kbd "g") #'fj-issue-view-reload)
     (define-key map (kbd "e") #'fj-issue-view-edit)
     (define-key map (kbd "c") #'fj-issue-view-comment)
@@ -1027,7 +1041,9 @@ RELOAD mean we reloaded."
              ;; issue stuff:
              ;; FIXME: :extend t doesn't work here whatever i do
              (propertize (concat .user.username " ")
-                         'face 'fj-item-author-face)
+                         'face 'fj-item-author-face
+                         'fj-byline t
+                         'fj-issue issue)
              (fj-author-or-owner-str .user.username nil owner)
              (propertize (fj-issue-right-align-str stamp)
                          'face 'fj-item-author-face)
