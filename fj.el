@@ -957,6 +957,7 @@ JSON is the item's data to process the link with."
     (define-key map (kbd "e") #'fj-issue-view-edit)
     (define-key map (kbd "c") #'fj-issue-view-comment)
     (define-key map (kbd "k") #'fj-issue-view-close)
+    (define-key map (kbd "K") #'fj-issue-view-comment-delete)
     map)
   "Keymap for `fj-issue-view-mode'.")
 
@@ -1137,7 +1138,7 @@ RELOAD means we are reloading, so don't open in other window."
   "Edit the comment at point."
   (interactive)
   (fj-with-own-comment
-   (let ((number (fj--property 'fj-comment-id))
+   (let ((id (fj--property 'fj-comment-id))
          (repo (plist-get fj-issue-spec :repo))
          (owner (plist-get fj-issue-spec :owner))
          (body (alist-get 'body
@@ -1145,8 +1146,20 @@ RELOAD means we are reloading, so don't open in other window."
      (fj-issue-compose :edit 'fj-compose-comment-mode 'comment body)
      (setq fj-compose-repo repo
            fj-compose-repo-owner owner
-           fj-compose-comment-number number)
+           fj-compose-comment-id id)
      (fedi-post--update-status-fields))))
+
+(defun fj-issue-view-comment-delete ()
+  "Delete comment at point."
+  (interactive)
+  (fj-with-own-comment
+   (let* ((id (fj--property 'fj-comment-id))
+          (repo (plist-get fj-issue-spec :repo))
+          (owner (plist-get fj-issue-spec :owner))
+          (endpoint (format "repos/%s/%s/issues/comments/%s" owner repo id)))
+     (when (yes-or-no-p "Delete comment?")
+       (fj-delete endpoint)
+       (fj-issue-view-reload)))))
 
 ;; fj-compose-spec
 ;; `(:title ,title :repo ,repo :owner ,owner :issue ,issue))))))
@@ -1433,7 +1446,7 @@ Call response and update functions."
                     ((eq type 'edit-comment)
                      (fj-issue-comment-edit fj-compose-repo
                                             fj-compose-repo-owner
-                                            fj-compose-comment-number
+                                            fj-compose-comment-id
                                             body))
                     ((eq type 'edit-issue)
                      (fj-issue-patch fj-compose-repo
