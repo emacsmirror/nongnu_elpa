@@ -1326,6 +1326,18 @@ TOPIC, a boolean, means search in repo topics."
          (user (car (seq-elt item 1))))
     (fj-user-repos-tl user)))
 
+(defun fj-repo-tl-create-issue (&optional _)
+  "Create issue for repo at point in tabulated listing."
+  (interactive)
+  (let* ((item (tabulated-list-get-entry))
+         (user (car (seq-elt item 1)))
+         (repo (car (seq-elt item 0))))
+    (fj-issue-compose nil nil 'issue)
+    (setq fj-compose-repo repo
+          fj-compose-repo-owner user)
+    (fedi-post--update-status-fields)))
+
+
 (defun fj-issues-tl-list-user-repos (&optional _)
   "View a tabulated list of current user from issues listing."
   (interactive)
