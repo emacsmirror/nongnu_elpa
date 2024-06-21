@@ -111,6 +111,11 @@ Repo, view parameters, etc.")
                 (author (car (seq-elt entry 2))))
            (equal fj-user author)))))
 
+(defun fj-comment-own-p ()
+  "T if comment is authored by `fj-user'."
+  (and (eq major-mode 'fj-issue-view-mode)
+       (equal fj-user (fj--property 'fj-comment-author))))
+
 (defmacro fj-with-issue (&optional body)
   "Execute BODY if we are in an issue view."
   (declare (debug t))
@@ -140,6 +145,14 @@ Repo, view parameters, etc.")
                 (fj-issues-tl-own-repo-p)))
        (user-error "Not an issue or repo you own")
      ,body))
+
+(defmacro fj-with-own-comment (&optional body)
+  "Execute BODY if comment at point is authored by `fj-user'."
+  (declare (debug t))
+  `(fj-with-issue
+    (if (not (fj-comment-own-p))
+        (user-error "No comment of yours at point")
+      ,body)))
 
 (defun fj-kill-all-buffers ()
   "Kill all fj buffers."
@@ -526,12 +539,12 @@ STATE should be \"open\", \"closed\", or \"all\"."
          (pull (or pull (fj-read-repo-pull-req repo))))
     (fj-issue-comment repo pull)))
 
-(defun fj-pull-req-comment-edit (&optional repo pull)
-  "Edit a comment on PULL in REPO."
-  (interactive "P")
-  (let* ((repo (fj-read-user-repo repo))
-         (pull (or pull (fj-read-repo-pull-req repo))))
-    (fj-issue-comment-edit repo pull)))
+;; (defun fj-pull-req-comment-edit (&optional repo pull)
+;;   "Edit a comment on PULL in REPO."
+;;   (interactive "P")
+;;   (let* ((repo (fj-read-user-repo repo))
+;;          (pull (or pull (fj-read-repo-pull-req repo))))
+;;     (fj-issue-comment-edit repo pull)))
 
 (defun fj-list-pull-reqs (&optional repo)
   "List pull requests for REPO."
@@ -596,30 +609,42 @@ OWNER is the repo owner."
                        (lambda ()
                          (message "comment created!")))))
 
-(defun fj-comment-patch (repo owner issue &optional comment params)
+(defun fj-comment-patch (repo owner comment-id &optional params issue)
   "Edit ISSUE COMMENT in REPO owned by OWNER.
 PARAMS."
-  (let* ((comment (or comment (fj-read-item-comment repo owner issue)))
-         (endpoint (format "repos/%s/%s/issues/comments/%s" fj-user repo comment)))
+  (let* ((id (or comment-id (fj-read-item-comment repo owner issue)))
+         (endpoint (format "repos/%s/%s/issues/comments/%s" owner repo id)))
     (fj-patch endpoint params :json)))
 
-(defun fj-issue-comment-edit (&optional repo owner issue)
+(defun fj-issue-comment-edit (&optional repo owner id new-body)
   "Edit comment on ISSUE in REPO.
 OWNER is the repo owner."
   (interactive "P")
-  ;; FIXME: check for author!
   (let* ((repo (fj-read-user-repo repo))
-         (issue (or issue (fj-read-repo-issue repo)))
+         (id (or id (fj--property 'fj-comment-id)))
          (owner (or owner fj-user)) ;; FIXME
-         (data (fj-get-comment repo owner issue))
-         (comment (alist-get 'id data))
-         (old-body (alist-get 'body data))
-         (new-body (read-string "Edit comment: " old-body))
-         (response (fj-comment-patch repo owner issue comment
+         (response (fj-comment-patch repo owner id
                                      `(("body" . ,new-body)))))
     (fedi-http--triage response
                        (lambda ()
                          (message "comment edited!")))))
+
+;; (defun fj-issue-comment-edit (&optional repo owner issue)
+;;   "Edit comment on ISSUE in REPO.
+;; OWNER is the repo owner."
+;;   (interactive "P")
+;;   (let* ((repo (fj-read-user-repo repo))
+;;          (issue (or issue (fj-read-repo-issue repo)))
+;;          (owner (or owner fj-user)) ;; FIXME
+;;          (data (fj-get-comment repo owner issue))
+;;          (comment (alist-get 'id data))
+;;          (old-body (alist-get 'body data))
+;;          (new-body (read-string "Edit comment: " old-body))
+;;          (response (fj-comment-patch repo owner issue comment
+;;                                      `(("body" . ,new-body)))))
+;;     (fedi-http--triage response
+;;                        (lambda ()
+;;                          (message "comment edited!")))))
 
 ;;; ISSUES TABLIST
 
@@ -932,21 +957,25 @@ OWNER is the repo owner."
            concat (let-alist c
                     (let ((stamp (fedi--relative-time-description
                                   (date-to-time .created_at))))
-                      (concat
+                      (propertize
                        (concat
                         ;; FIXME: no better way than this?
                         (propertize (concat .user.username " ")
-                                    'face 'fj-item-author-face)
+                                    'face 'fj-item-author-face
+                                    'fj-byline t)
                         (fj-author-or-owner-str .user.username author)
                         (propertize " "
                                     'face 'fj-item-author-face)
                         (fj-author-or-owner-str .user.username nil owner)
                         (propertize (fj-issue-right-align-str stamp)
-                                    'face 'fj-item-author-face))
-                       "\n\n"
-                       (fj-render-body .body)
-                       "\n"
-                       fedi-horiz-bar fedi-horiz-bar "\n\n")))))
+                                    'face 'fj-item-author-face)
+                        "\n\n"
+                        (fj-render-body .body)
+                        "\n"
+                        fedi-horiz-bar fedi-horiz-bar "\n\n")
+                       'fj-comment c
+                       'fj-comment-author .user.username
+                       'fj-comment-id .id)))))
 
 (defun fj-author-or-owner-str (username author &optional owner)
   "If USERNAME is equal either AUTHOR or OWNER, return a boxed string."
@@ -1067,7 +1096,7 @@ RELOAD means we are reloading, so don't open in other window."
          (owner (plist-get fj-issue-spec :owner))
          (title (plist-get fj-issue-spec :title))
          (body (plist-get fj-issue-spec :body)))
-     (fj-issue-compose :edit nil nil body)
+     (fj-issue-compose :edit nil 'issue body)
      (setq fj-compose-issue-title title
            fj-compose-repo repo
            fj-compose-repo-owner owner
@@ -1077,14 +1106,28 @@ RELOAD means we are reloading, so don't open in other window."
 (defun fj-issue-view-comment ()
   "Comment on the issue currently being viewed."
   (interactive)
-  (fj-with-issue
-   (let ((number (plist-get fj-issue-spec :issue))
+  (let ((number (plist-get fj-issue-spec :issue))
+        (repo (plist-get fj-issue-spec :repo))
+        (owner (plist-get fj-issue-spec :owner)))
+    (fj-issue-compose nil 'fj-compose-comment-mode 'comment)
+    (setq fj-compose-repo repo
+          fj-compose-repo-owner owner
+          fj-compose-issue-number number)
+    (fedi-post--update-status-fields)))
+
+(defun fj-issue-view-edit-comment ()
+  "Edit the comment at point."
+  (interactive)
+  (fj-with-own-comment
+   (let ((number (fj--property 'fj-comment-id))
          (repo (plist-get fj-issue-spec :repo))
-         (owner (plist-get fj-issue-spec :owner)))
-     (fj-issue-compose nil 'fj-compose-comment-mode 'comment)
+         (owner (plist-get fj-issue-spec :owner))
+         (body (alist-get 'body
+                          (fj--property 'fj-comment))))
+     (fj-issue-compose :edit 'fj-compose-comment-mode 'comment body)
      (setq fj-compose-repo repo
            fj-compose-repo-owner owner
-           fj-compose-issue-number number)
+           fj-compose-comment-number number)
      (fedi-post--update-status-fields))))
 
 ;; fj-compose-spec
@@ -1309,11 +1352,14 @@ TOPIC, a boolean, means search in repo topics."
                      fj-compose-issue-title))
   (fedi-post--update-status-fields))
 
+(defvar-local fj-compose-item-type nil)
+
 (defun fj-issue-compose (&optional edit mode type init-text)
   "Compose a new post.
 EDIT means we are editing.
 MODE is the fj.el minor mode to enable in the compose buffer.
-TYPE is a symbol of what we are composing, it may be issue or comment."
+TYPE is a symbol of what we are composing, it may be issue or comment.
+Inject INIT-TEXT into the buffer, for editing."
   (interactive)
   (setq fj-post-last-buffer (buffer-name (current-buffer)))
   (fedi-post--compose-buffer
@@ -1335,16 +1381,22 @@ TYPE is a symbol of what we are composing, it may be issue or comment."
         (prop . compose-repo)
         (item-var . fj-compose-repo)
         (face . link))))
-   init-text))
+   init-text)
+  (setq fj-compose-item-type
+        (if edit
+            (if (eq type 'comment)
+                'edit-comment
+              'edit-issue)
+          (if (eq type 'comment)
+              'new-comment
+            'new-issue))))
 
 (defun fj-compose-send ()
   "Submit the issue or comment to your Forgejo instance.
 Call response and update functions."
   (interactive)
   (let ((buf (buffer-name))
-        ;; FIXME: handle types: new/edit-issue, new/edit-comment
-        (type (cond (fj-compose-issue-number 'edit-issue)
-                    (t 'new-issue))))
+        (type fj-compose-item-type))
     (if (and (or (eq type 'new-issue)
                  (eq type 'edit-issue))
              (not (and fj-compose-repo
@@ -1352,13 +1404,23 @@ Call response and update functions."
         (user-error "You need to set a repo and title")
       (let* ((body (fedi-post--remove-docs))
              (response
-              (cond ((eq type 'edit-issue)
+              (cond ((eq type 'new-comment)
+                     (fj-issue-comment fj-compose-repo
+                                       fj-compose-repo-owner
+                                       fj-compose-issue-number
+                                       body))
+                    ((eq type 'edit-comment)
+                     (fj-issue-comment-edit fj-compose-repo
+                                            fj-compose-repo-owner
+                                            fj-compose-comment-number
+                                            body))
+                    ((eq type 'edit-issue)
                      (fj-issue-patch fj-compose-repo
                                      fj-compose-repo-owner
                                      fj-compose-issue-number
                                      fj-compose-issue-title
                                      body))
-                    (t
+                    (t ; new issue
                      (fj-issue-post fj-compose-repo
                                     ;; FIXME: allow other repo owners:
                                     (or fj-compose-repo-owner
@@ -1367,7 +1429,9 @@ Call response and update functions."
         (when response
           (with-current-buffer buf
             (fedi-post-kill))
-          (fj-list-issues fj-compose-repo))))))
+          (if (not (eq type 'new-issue))
+              (fj-issue-view-reload)
+            (fj-list-issues fj-compose-repo)))))))
 
 ;;; NOTIFICATIONS
 (defvar fj-notifications-status-types
