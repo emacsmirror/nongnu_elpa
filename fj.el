@@ -1250,7 +1250,7 @@ NO-OWNER means don't display owner column (user repos view)."
              `(nil [(,name face 'fj-item-face
                            id ,id
                            type fj-search-repo-button)
-                    (,owner face 'fj-item-face
+                    (,owner face 'fj-user-face
                             id ,id
                             type fj-search-owner-button)
                     (,stars id ,id face 'fj-figures-face)
