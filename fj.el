@@ -820,21 +820,39 @@ prompt for a repo to list."
   "Major mode for viewing an issue."
   :group 'fj)
 
-(defun fj-render-comments (comments)
-  "Render a list of COMMENTS."
+(defun fj-render-comments (comments &optional author owner)
+  "Render a list of COMMENTS.
+AUTHOR is the author of the parent issue."
   (cl-loop for c in comments
            concat (let-alist c
                     (let ((stamp (fedi--relative-time-description
                                   (date-to-time .created_at))))
                       (concat
-                       (propertize
-                        (concat .user.username " "
-                                (when (equal .original_author .user.username)
-                                  "author")
-                                (fj-issue-right-align-str stamp))
-                        'face 'fj-item-author-face)
-                       "\n" .body "\n"
+                       (concat
+                        ;; FIXME: no better way than this?
+                        (propertize (concat .user.username " ")
+                                    'face 'fj-item-author-face)
+                        (fj-author-or-owner-str .user.username author)
+                        (propertize " "
+                                    'face 'fj-item-author-face)
+                        (fj-author-or-owner-str .user.username nil owner)
+                        (propertize (fj-issue-right-align-str stamp)
+                                    'face 'fj-item-author-face))
+                       "\n\n" .body "\n"
                        fedi-horiz-bar fedi-horiz-bar "\n\n")))))
+
+(defun fj-author-or-owner-str (username author &optional owner)
+  "If USERNAME is equal either AUTHOR or OWNER, return a boxed string."
+  ;; FIXME: improve this junk
+  (if owner
+      (if (equal owner username)
+          (propertize "owner"
+                      'face '(:inherit fj-item-author-face :box t))
+        "")
+    (if (equal author username)
+        (propertize "author"
+                    'face '(:inherit fj-item-author-face :box t))
+      "")))
 
 (defun fj-render-labels (labels)
   "Render LABELS, a list of issue labels."
@@ -854,7 +872,7 @@ RELOAD mean we reloaded."
       (let-alist issue
         (let ((stamp (fedi--relative-time-description
                       (date-to-time .created_at))))
-          .state .is_locked
+          .is_locked
           (setq header-line-format
                 `("" header-line-indent
                   ,(concat "#" (number-to-string .number) " "
@@ -871,14 +889,16 @@ RELOAD mean we reloaded."
             (concat
              ;; issue stuff:
              ;; FIXME: :extend t doesn't work here whatever i do
-             (propertize (concat .user.username
-                                 (fj-issue-right-align-str stamp))
+             (propertize (concat .user.username " ")
+                         'face 'fj-item-author-face)
+             (fj-author-or-owner-str .user.username nil owner)
+             (propertize (fj-issue-right-align-str stamp)
                          'face 'fj-item-author-face)
              "\n\n"
              .body "\n"
              fedi-horiz-bar "\n\n"
              ;; comments
-             (fj-render-comments comments))
+             (fj-render-comments comments .user.username owner))
             'fj-issue number
             'fj-repo repo))
           (setq fj-current-repo repo)
