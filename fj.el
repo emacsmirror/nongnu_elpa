@@ -855,6 +855,16 @@ prompt for a repo to list."
       (replace-match
        (concat "<" (match-string 0) ">")))))
 
+(defvar fj-previous-window-config nil
+  "A list of window configuration prior to composing a toot.
+Takes its form from `window-configuration-to-register'.")
+
+(defun fj-restore-previous-window-config (config)
+  "Restore the window CONFIG after killing the toot compose buffer.
+Buffer-local variable `fj-previous-window-config' holds the config."
+  (set-window-configuration (car config))
+  (goto-char (cadr config)))
+
 ;; I think magit/forge just uses markdown-mode rather than rendering
 (defun fj-render-body (body)
   "Render item BODY as markdowned html.
@@ -862,6 +872,10 @@ JSON is the item's data to process the link with."
   ;; NB: make sure this doesn't leak into our issue buffers!
   (let ((buf "*fj-md*")
         str)
+    ;; shr.el fucks windows up, so we save and restore:
+    (setq fj-previous-window-config
+          (list (current-window-configuration)
+                (point-marker)))
     ;; 1: temp buffer, prepare for md
     (with-temp-buffer
       (insert body)
@@ -877,8 +891,7 @@ JSON is the item's data to process the link with."
              (erase-buffer)
              (insert old-buf)))))
       ;; 3: shr-render the md
-      (with-current-buffer buf
-        (switch-to-buffer buf)
+      (with-current-buffer (get-buffer-create buf)
         (let ((shr-width (window-width))
               (shr-discard-aria-hidden t)) ; for pandoc md image output
           ;; shr render:
@@ -889,6 +902,7 @@ JSON is the item's data to process the link with."
         (setq str (buffer-substring (point) (point-max)))
         (kill-buffer-and-window)        ; shr's *html*
         (kill-buffer buf)))             ; our md
+    (fj-restore-previous-window-config fj-previous-window-config)
     str))
 
 (defvar fj-issue-view-mode-map
