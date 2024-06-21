@@ -244,7 +244,7 @@ JSON."
          (entries (fj-search-tl-entries repos :no-owner))
          (buf (format "*fj-repos-%s*" user)))
     (fj-repos-tl-render buf entries #'fj-user-repo-tl-mode)
-    (setq fj-user-spec `(:owner ,user))))
+    (setq fj-user-spec `(:owner ,user)))) ;; TODO: URL
 
 (defun fj-list-own-repos ()
   "List repos for `fj-user'."
@@ -381,11 +381,12 @@ USER is the repo owner."
         (fj-get endpoint params)
       (t (format "%s" (error-message-string err))))))
 
-(defun fj-get-issue (repo &optional issue)
+(defun fj-get-issue (repo &optional owner issue)
   "GET ISSUE in REPO.
 ISSUE is a number."
   (let* ((issue (or issue (fj-read-repo-issue repo)))
-         (endpoint (format "repos/%s/%s/issues/%s" fj-user repo issue)))
+         (owner (or owner fj-user)) ;; FIXME
+         (endpoint (format "repos/%s/%s/issues/%s" owner repo issue)))
     (fj-get endpoint)))
 
 (defun fj-issue-create (&optional repo user)
@@ -415,12 +416,16 @@ With PARAMS."
   (let* ((endpoint (format "repos/%s/%s/issues/%s" fj-user repo issue)))
     (fj-patch endpoint params :json)))
 
-(defun fj-issue-edit (&optional repo issue)
+(defun fj-issue-edit (&optional repo owner issue)
   "Edit ISSUE body in REPO."
   (interactive)
+  ;; FIXME: only if author!
   (let* ((repo (fj-read-user-repo repo))
          (issue (or issue (fj-read-repo-issue repo)))
-         (data (fj-get-issue repo issue))
+         (owner (or owner ;; FIXME: owner
+                    (plist-get fj-issue-spec :owner)
+                    fj-user))
+         (data (fj-get-issue repo owner issue))
          (old-body (alist-get 'body data))
          (new-body (read-string "Edit issue body: " old-body))
          (response (fj-issue-patch repo issue `(("body" . ,new-body)))))
@@ -431,9 +436,13 @@ With PARAMS."
 (defun fj-issue-edit-title (&optional repo issue)
   "Edit ISSUE title in REPO."
   (interactive)
+  ;; FIXME: only if author!
   (let* ((repo (fj-read-user-repo repo))
          (issue (or issue (fj-read-repo-issue repo)))
-         (data (fj-get-issue repo issue))
+         (owner (or owner ;; FIXME: owner
+                    (plist-get fj-issue-spec :owner)
+                    fj-user))
+         (data (fj-get-issue repo owner issue))
          (old-title (alist-get 'title data))
          (new-title (read-string "Edit issue title: " old-title))
          (response (fj-issue-patch repo issue `(("title" . ,new-title)))))
@@ -535,18 +544,18 @@ Return the comment number."
                          cands))))
     (cadr comm)))
 
-(defun fj-issue-get-comments (repo issue)
+(defun fj-issue-get-comments (repo owner issue)
   "Return comments for ISSUE in REPO."
   (let* ((endpoint (format "repos/%s/%s/issues/%s/comments"
-                           fj-user repo issue)))
+                           owner repo issue)))
     (fj-get endpoint)))
 
-(defun fj-get-comment (repo issue &optional comment)
+(defun fj-get-comment (repo owner issue &optional comment)
   "GET data for COMMENT of ISSUE in REPO.
 COMMENT is a number."
   (let* ((comment (or comment (fj-read-item-comment repo issue)))
          (endpoint (format "repos/%s/%s/issues/comments/%s"
-                           fj-user repo comment)))
+                           owner repo comment)))
     (fj-get endpoint)))
 
 (defun fj-issue-comment (&optional repo issue comment)
@@ -569,12 +578,14 @@ PARAMS."
          (endpoint (format "repos/%s/%s/issues/comments/%s" fj-user repo comment)))
     (fj-patch endpoint params :json)))
 
-(defun fj-issue-comment-edit (&optional repo issue)
+(defun fj-issue-comment-edit (&optional repo owner issue)
   "Edit comment on ISSUE in REPO."
   (interactive "P")
+  ;; FIXME: check for author!
   (let* ((repo (fj-read-user-repo repo))
          (issue (or issue (fj-read-repo-issue repo)))
-         (data (fj-get-comment repo issue))
+         (owner (or owner fj-user)) ;; FIXME
+         (data (fj-get-comment repo owner issue))
          (comment (alist-get 'id data))
          (old-body (alist-get 'body data))
          (new-body (read-string "Edit comment: " old-body))
@@ -682,7 +693,7 @@ prompt for a repo to list."
       (tabulated-list-print)
       (setq fj-current-repo repo)
       (setq fj-issues-tl-spec
-            `(:repo ,repo :state ,state-str :owner ,owner))
+            `(:repo ,repo :state ,state-str :owner ,owner)) ;; TODO: URL?
       (cond ((string= buf-name prev-buf) ; same repo
              nil)
             ((string-suffix-p "-issues*" prev-buf) ; diff repo
@@ -735,8 +746,9 @@ prompt for a repo to list."
   "View current issue from tabulated issues listing."
   (interactive)
   (let* ((item (tabulated-list-get-entry))
-         (number (car (seq-first item))))
-    (fj-issue-view fj-current-repo number)))
+         (number (car (seq-first item)))
+         (owner (plist-get fj-issues-tl-spec :owner)))
+    (fj-issue-view fj-current-repo owner number)))
 
 (defun fj-issues-tl-edit-issue ()
   "Edit issue from tabulated issues listing."
@@ -832,7 +844,7 @@ prompt for a repo to list."
                                               'face 'fj-issue-label-face)
                                   " "))))
 
-(defun fj-issue-render (repo issue number comments reload)
+(defun fj-render-issue (repo owner issue number comments &optional reload)
   "Render an ISSUE number NUMBER, in REPO and its COMMENTS.
 RELOAD mean we reloaded."
   (fedi-with-buffer (format "*fj-issue-%s" number) 'fj-issue-view-mode
@@ -871,17 +883,17 @@ RELOAD mean we reloaded."
             'fj-repo repo))
           (setq fj-current-repo repo)
           (setq fj-issue-spec
-                `(:repo ,repo :issue ,number :url ,.url)))))))
+                `(:repo ,repo :owner ,owner :issue ,number :url ,.url)))))))
 
-(defun fj-issue-view (&optional repo number reload)
-  "View issue number NUMBER from REPO.
+(defun fj-issue-view (&optional repo owner number reload)
+  "View issue NUMBER from REPO of OWNER.
 RELOAD means we are reloading, so don't open in other window."
   (interactive "P")
   (let* ((repo (fj-read-user-repo repo))
-         (issue (fj-get-issue repo number))
-         (number (alist-get 'number issue))
-         (comments (fj-issue-get-comments repo number)))
-    (fj-issue-render repo issue number comments reload)))
+         (issue (fj-get-issue repo owner number))
+         (number (or number (alist-get 'number issue)))
+         (comments (fj-issue-get-comments repo owner number)))
+    (fj-render-issue repo owner issue number comments reload)))
 
 (defun fj-issue-view-comment ()
   "Comment on the issue currently being viewed."
@@ -896,8 +908,9 @@ RELOAD means we are reloading, so don't open in other window."
   ;; TODO: check for current issue view!
   (if (not fj-issue-spec)
       (user-error "Not in an issue view?")
-    (let ((number (plist-get fj-issue-spec :issue)))
-      (fj-issue-view fj-current-repo
+    (let ((number (plist-get fj-issue-spec :issue))
+          (owner (plist-get fj-issue-spec :owner)))
+      (fj-issue-view fj-current-repo owner
                      number :reload))))
 
 (defun fj-issue-view-edit ()
