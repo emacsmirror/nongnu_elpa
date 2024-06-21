@@ -569,7 +569,7 @@ Added to `after-change-functions'."
 ;;; COMPOSE BUFFER FUNCTION
 
 (defun fedi-post--compose-buffer
-    (&optional edit major minor prefix type capf-funs fields)
+    (&optional edit major minor prefix type capf-funs fields init-text)
   "Create a new buffer to capture text for a new post.
 EDIT means we are editing an existing post, not composing a new one.
 MAJOR is the major mode to enable.
@@ -641,7 +641,10 @@ string, the other elements should be symbols."
     ;; FIXME: this is incompat with propertize-tags-and-handles
     ;; we would need to add our own propertizing to md-mode font-locking
     (when (eq major 'markdown-mode)
-      (cl-pushnew #'fedi-post-fontify-body-region after-change-functions))))
+      (cl-pushnew #'fedi-post-fontify-body-region after-change-functions))
+    (when init-text
+      (insert init-text)
+      (delete-trailing-whitespace))))
 
 (defun fedi-post-fontify-body-region (&rest _args)
   "Call `font-lock-fontify-region' on post body.
