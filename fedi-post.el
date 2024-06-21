@@ -381,7 +381,7 @@ LONGEST is the length of the longest binding."
   (propertize str
               'face 'fedi-post-docs-face))
 
-(defun fedi-post--make-mode-docs (&optional mode prefix type)
+(defun fedi-post--make-mode-docs (&optional mode prefix type edit)
   "Create formatted documentation text for MODE or fedi-post-mode.
 PREFIX is a string corresponding to the prefix of the minor mode
 enabled. It is used for constructing clean keybinding
@@ -395,7 +395,8 @@ descriptions."
     (concat
      (fedi-post-comment
       (format
-       " Compose a new %s here. The following keybindings are available:" type))
+       " %s %s here. The following keybindings are available:"
+       (if edit "Edit your" "Compose a new") type))
      (mapconcat #'identity
                 (fedi-post--formatted-kbinds-pairs
                  (fedi-post--format-kbinds kbinds prefix)
@@ -413,7 +414,7 @@ to update status fields."
                               prop t)))
 
 (defun fedi-post--display-docs-and-status-fields (&optional mode prefix
-                                                            fields type)
+                                                            fields type edit)
   "Insert propertized text with documentation about MODE or `fedi-post-mode'.
 Also includes and the status fields which will get updated based
 on the status of NSFW, language, media attachments, etc.
@@ -425,7 +426,7 @@ FIELDS is a list of alists of fields to add, using `fedi-post--concat-fields'."
          "|=================================================================|"))
     (insert
      (concat
-      (fedi-post--make-mode-docs mode prefix type) "\n"
+      (fedi-post--make-mode-docs mode prefix type edit) "\n"
       (fedi-post-comment divider) "\n"
       (propertize
        (concat
@@ -606,7 +607,7 @@ string, the other elements should be symbols."
         ;; (setq markdown-mode-hook (delete 'variable-pitch-mode markdown-mode-hook))
         (variable-pitch-mode -1)))
     (unless buffer-exists
-      (fedi-post--display-docs-and-status-fields minor prefix fields type))
+      (fedi-post--display-docs-and-status-fields minor prefix fields type edit))
     ;; set up completion:
     (when fedi-post--enable-completion
       (set (make-local-variable 'completion-at-point-functions)
