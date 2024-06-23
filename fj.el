@@ -265,20 +265,21 @@ JSON."
   'action 'fj-repo-tl-list-issues
   'help-echo "RET: View this repo's issues.")
 
-(defvar fj-user-repo-tl-mode-map fj-repo-tl-mode-map)
+;; (defvar fj-user-repo-tl-mode-map fj-repo-tl-mode-map)
 
 (define-derived-mode fj-user-repo-tl-mode tabulated-list-mode
   "fj-user-repos"
   "Mode for displaying a tabulated list of user repos."
   :group 'fj
   (hl-line-mode 1)
-  (setq tabulated-list-padding 0) ;2) ; point directly on issue
-  (setq tabulated-list-format
+  (setq tabulated-list-padding 0 ;2) ; point directly on issue
+        tabulated-list-format
         '[("Name" 16 t)
           ("★" 3 t)
           ("" 2 t)
           ("Lang" 10 t)
-          ("Description" 55 nil)]))
+          ("Description" 55 nil)])
+  (setq fj-user-repo-tl-mode-map fj-repo-tl-mode-map))
 
 (defun fj-get-current-user ()
   "Return the data for the current user."
