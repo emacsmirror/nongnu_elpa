@@ -176,6 +176,14 @@ Repo, owner, item number, url.")
         (user-error "No comment of yours at point")
       ,body)))
 
+(defmacro fj-with-entry (&optional body)
+  "Execute BODY if we have a tabulated list entry at point."
+  (declare (debug t))
+  `(if (not (tabulated-list-get-entry))
+       (user-error "No entry at point")
+     ,body))
+
+
 ;;; NAV
 
 (defun fj-issue-next ()
