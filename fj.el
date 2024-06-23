@@ -1346,9 +1346,16 @@ TOPIC, a boolean, means search in repo topics."
   (fj-with-entry
    (let* ((item (tabulated-list-get-entry))
           (number (car (seq-first item)))
-          (comment (read-string
-                    (format "Comment on issue #%s: " number))))
-     (fj-issue-comment fj-current-repo number comment))))
+          (owner (plist-get fj-buffer-spec :owner))
+          (repo (plist-get fj-buffer-spec :repo)))
+     ;; (comment (read-string
+     ;; (format "Comment on issue #%s: " number))))
+     ;; (fj-issue-comment fj-current-repo owner number comment))))
+     ;; TODO: display repo in status fields, but not editable?
+     (fj-issue-compose nil #'fj-compose-comment-mode 'comment)
+     (setq fj-compose-repo repo
+           fj-compose-repo-owner owner
+           fj-compose-issue-number number))))
 
 (defun fj-issues-tl-close (&optional _)
   "Close current issue from tabulated issues listing."
@@ -1536,6 +1543,7 @@ Call response and update functions."
           (if (not (eq type 'new-issue))
               ;; FIXME: we may have been in issues TL or issue view.
               ;; we we need prev-buffer arg?
+              ;; else generic reload function
               (fj-issue-view-reload)
             (fj-list-issues repo)))))))
 
