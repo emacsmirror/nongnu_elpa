@@ -515,7 +515,7 @@ OWNER is the repo owner."
                              (message "issue deleted!")))))))
 
 ;;; PULL REQUESTS
-
+;; TODO: owner args not `fj-user'
 (defun fj-read-repo-pull-req (repo)
   "Given REPO, read an pull request in the minibuffer.
 Return its number."
@@ -1271,6 +1271,8 @@ TOPIC, a boolean, means search in repo topics."
   "Unstar current repo from tabulated user repos listing."
   (interactive)
   (fj-repo-tl-star-repo :unstar))
+
+;; TODO: star toggle
 
 ;; TL ACTIONS, ISSUES ONLY
 
