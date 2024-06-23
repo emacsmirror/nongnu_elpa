@@ -708,13 +708,13 @@ OWNER is the repo owner."
   'action 'fj-issues-tl-view-issue
   'help-echo "RET: View this issue.")
 
-(defun fj-issues-tl-entries (issues &optional state)
+(defun fj-issue-tl-entries (issues)
   "Return tabluated list entries for ISSUES.
 STATE is a string."
   (cl-loop for issue in issues
            for id = (alist-get 'number issue)
            for title = (alist-get 'title issue)
-           for state = (or state (alist-get 'state issue))
+           for state =  (alist-get 'state issue)
            for comments = (number-to-string
                            (alist-get 'comments issue))
            for author = (alist-get 'username
@@ -753,8 +753,8 @@ prompt for a repo to list."
          (buf-name (format "*fj-%s-%s-issues*" repo state-str)))
     (with-current-buffer (get-buffer-create buf-name)
       (setq tabulated-list-entries
-            (fj-issues-tl-entries issues state-str))
       (fj-list-issue-mode)
+            (fj-issue-tl-entries issues))
       (tabulated-list-init-header)
       (tabulated-list-print)
       (setq fj-current-repo repo)
