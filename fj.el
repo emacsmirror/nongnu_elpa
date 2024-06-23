@@ -848,6 +848,7 @@ JSON is the item's data to process the link with."
     (define-key map (kbd "e") #'fj-issue-view-edit)
     (define-key map (kbd "c") #'fj-issue-view-comment)
     (define-key map (kbd "k") #'fj-issue-view-close)
+    (define-key map (kbd "o") #'fj-issue-view-reopen)
     (define-key map (kbd "K") #'fj-issue-view-comment-delete)
     map)
   "Keymap for `fj-issue-view-mode'.")
@@ -984,14 +985,20 @@ RELOAD means we are reloading, so don't open in other window."
                     number :reload))))
 
 ;; TODO: merge simple action functions
-(defun fj-issue-view-close ()
-  "Close issue being viewed."
+(defun fj-issue-view-close (&optional state)
+  "Close issue being viewed, or set to STATE."
   (interactive)
   (fj-with-issue
    (let ((number (plist-get fj-buffer-spec :issue))
          (owner (plist-get fj-buffer-spec :owner))
          (repo (plist-get fj-buffer-spec :repo)))
-     (fj-issue-close repo owner number))))
+     (fj-issue-close repo owner number state)
+     (fj-issue-view-reload))))
+
+(defun fj-issue-view-reopen ()
+  "Reopen issue being viewed."
+  (interactive)
+  (fj-issue-view-close "open"))
 
 (defvar fj-compose-spec nil)
 
@@ -1339,8 +1346,9 @@ TOPIC, a boolean, means search in repo topics."
    (if (string= (plist-get fj-buffer-spec :state) "open")
        (user-error "Viewing open issues?")
      (let* ((item (tabulated-list-get-entry))
-            (number (car (seq-first item))))
-       (fj-issue-close fj-current-repo number "open")
+            (number (car (seq-first item)))
+            (owner (plist-get fj-buffer-spec :owner)))
+       (fj-issue-close fj-current-repo owner number "open")
        (fj-issues-tl-reload)))))
 
 ;;; COMPOSING
