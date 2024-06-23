@@ -1242,7 +1242,7 @@ TOPIC, a boolean, means search in repo topics."
          (repo (if (eq major-mode #'fj-issue-tl-mode)
                    fj-current-repo
                  (car (seq-elt item 0)))))
-    (fj-issue-compose nil nil 'issue)
+    (fj-issue-compose)
     (setq fj-compose-repo repo
           fj-compose-repo-owner user)
     (fedi-post--update-status-fields)))
@@ -1475,15 +1475,17 @@ Inject INIT-TEXT into the buffer, for editing."
    ;; #'lem-post--comms-capf)
    nil
    ;; TODO: why not have a compose-buffer-spec rather than 10 separate vars?
-   (unless type ; post
-     '(((name . "title")
-        (prop . compose-title)
-        (item-var . fj-compose-issue-title)
-        (face . lem-post-title-face))
-       ((name . "repo")
-        (prop . compose-repo)
-        (item-var . fj-compose-repo)
-        (face . link))))
+   (cond ((eq type 'comment)
+          nil)
+         (t
+          '(((name . "title")
+             (prop . compose-title)
+             (item-var . fj-compose-issue-title)
+             (face . lem-post-title-face))
+            ((name . "repo")
+             (prop . compose-repo)
+             (item-var . fj-compose-repo)
+             (face . link)))))
    init-text)
   (setq fj-compose-item-type
         (if edit
