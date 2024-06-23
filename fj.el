@@ -617,10 +617,10 @@ PARAMS."
          (endpoint (format "repos/%s/%s/issues/comments/%s" owner repo id)))
     (fj-patch endpoint params :json)))
 
-;; FIXME: still needs an issue?
 (defun fj-issue-comment-edit (&optional repo owner id new-body)
   "Edit comment with ID in REPO.
-OWNER is the repo owner."
+OWNER is the repo owner.
+NEW-BODY is the new comment text to send."
   (interactive "P")
   (let* ((repo (fj-read-user-repo repo))
          (id (or id (fj--property 'fj-comment-id)))
