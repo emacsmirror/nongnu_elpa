@@ -678,7 +678,7 @@ NEW-BODY is the new comment text to send."
     (define-key map (kbd "v") #'fj-issues-tl-view)
     (define-key map (kbd "k") #'fj-issues-tl-close)
     (define-key map (kbd "K") #'fj-issues-tl-delete)
-    (define-key map (kbd "c") #'fj-issues-tl-create)
+    (define-key map (kbd "c") #'fj-create-issue)
     (define-key map (kbd "g") #'fj-issues-tl-reload)
     (define-key map (kbd "C-c C-c") #'fj-list-issues-cycle)
     (define-key map (kbd "o") #'fj-issues-tl-reopen)
