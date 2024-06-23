@@ -498,14 +498,14 @@ OWNER is the repo owner."
                            (lambda ()
                              (message "Issue %s %s!" issue state)))))))
 
-(defun fj-issue-delete (&optional repo issue no-confirm)
+(defun fj-issue-delete (&optional repo owner issue no-confirm)
   "Delete ISSUE in REPO."
   (interactive "P")
   (let* ((repo (fj-read-user-repo repo))
          (issue (or issue (fj-read-repo-issue repo))))
     (when (or no-confirm
               (y-or-n-p "Delete issue?"))
-      (let* ((url (format "repos/%s/%s/issues/%s" fj-user repo issue))
+      (let* ((url (format "repos/%s/%s/issues/%s" owner repo issue))
              (response (fj-delete url)))
         (fedi-http--triage response
                            (lambda ()
