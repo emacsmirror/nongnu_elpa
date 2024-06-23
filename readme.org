@@ -125,4 +125,5 @@ Forgejo's API is vast. Currently =fj.el= just implements a few basic things:
 |         | fj-repo-tl-unstar-repo       | Unstar current repo from tabulated user repos listing.              |
 |         | fj-switch-to-buffer          | Switch to a live fj buffer.                                         |
 |         | fj-user-repo-tl-mode         | Mode for displaying a tabulated list of user repos.                 |
+|         | fj-user-repo-tl-reload       | Reload current user repos tl.                                       |
 |         | fj-user-repos-tl             | View a tabulated list of respos for USER.                           |
