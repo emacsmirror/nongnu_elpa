@@ -226,7 +226,7 @@ PARAMS is any parameters to send with the request."
           (t
            resp))))
 
-(defun fj-post (endpoint params)
+(defun fj-post (endpoint &optional params)
   "Make a POST request to ENDPOINT.
 PARAMS."
   (let ((url (fj-api endpoint)))
@@ -326,6 +326,16 @@ JSON."
                        (lambda ()
                          (message "Repo %s %s!" repo
                                   (if unstar "unstarred" "starred"))))))
+
+(defun fj-fork-repo (repo owner &optional name org)
+  "For REPO owned by OWNER."
+  (let* ((endpoint (format "repos/%s/%s/forks" owner repo))
+         (params `(("name" . ,name)))
+         ;; ("organization" . ,org)))
+         (resp (fj-post endpoint params)))
+    (fedi-http--triage resp
+                       (lambda ()
+                         (message "Repo forked!" repo)))))
 
 ;;; USER REPOS
 
@@ -1218,8 +1228,6 @@ TOPIC, a boolean, means search in repo topics."
     (setq fj-buffer-spec `(:owner ,owner)))) ; NB: only works for user repos
 
 ;;; TL ACTIONS
-;; NB: obvs `tabulated-list-get-entry' won't work if point is after last
-;; entry!
 
 ;; in repo's issues TL, or for repo entry at point:
 (defun fj-create-issue (&optional _)
@@ -1276,16 +1284,28 @@ TOPIC, a boolean, means search in repo topics."
   (interactive)
   (fj-with-entry
    (let* ((item (tabulated-list-get-entry))
-          (name (car (seq-first item)))
+          (repo (car (seq-first item)))
           (owner (if (eq major-mode #'fj-user-repo-tl-mode)
                      (plist-get fj-buffer-spec :owner)
                    (car (seq-elt item 1)))))
-     (fj-star-repo name owner unstar))))
+     (fj-star-repo repo owner unstar))))
 
 (defun fj-repo-tl-unstar-repo ()
   "Unstar current repo from tabulated user repos listing."
   (interactive)
   (fj-repo-tl-star-repo :unstar))
+
+(defun fj-repo-tl-fork ()
+  "Fork repo entry at point."
+  (interactive)
+  (fj-with-entry
+   (let* ((item (tabulated-list-get-entry))
+          (repo (car (seq-first item)))
+          (owner (if (eq major-mode #'fj-user-repo-tl-mode)
+                     (plist-get fj-buffer-spec :owner)
+                   (car (seq-elt item 1))))
+          (name (read-string "Fork name: " repo)))
+     (fj-fork-repo repo owner name))))
 
 ;; TODO: star toggle
 
