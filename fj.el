@@ -662,16 +662,16 @@ NEW-BODY is the new comment text to send."
 (defvar fj-issue-tl-mode-map
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map tabulated-list-mode-map) ; has nav
-    (define-key map (kbd "C") #'fj-issues-tl-comment-issue)
-    (define-key map (kbd "e") #'fj-issues-tl-edit-issue)
-    (define-key map (kbd "t") #'fj-issues-tl-edit-issue-title)
-    (define-key map (kbd "v") #'fj-issues-tl-view-issue)
-    (define-key map (kbd "k") #'fj-issues-tl-close-issue)
-    (define-key map (kbd "K") #'fj-issues-tl-delete-issue)
+    (define-key map (kbd "C") #'fj-issues-tl-comment)
+    (define-key map (kbd "e") #'fj-issues-tl-edit)
+    (define-key map (kbd "t") #'fj-issues-tl-edit-title)
+    (define-key map (kbd "v") #'fj-issues-tl-view)
+    (define-key map (kbd "k") #'fj-issues-tl-close)
+    (define-key map (kbd "K") #'fj-issues-tl-delete)
     (define-key map (kbd "c") #'fj-issues-tl-create)
     (define-key map (kbd "g") #'fj-issues-tl-reload)
     (define-key map (kbd "C-c C-c") #'fj-list-issues-cycle)
-    (define-key map (kbd "o") #'fj-issues-tl-reopen-issue)
+    (define-key map (kbd "o") #'fj-issues-tl-reopen)
     map)
   "Map for `fj-issue-tl-mode', a tabluated list of issues.")
 
@@ -689,7 +689,7 @@ NEW-BODY is the new comment text to send."
 
 (define-button-type 'fj-issue-button
   'follow-link t
-  'action 'fj-issues-tl-view-issue
+  'action 'fj-issues-tl-view
   'help-echo "RET: View this issue.")
 
 (defun fj-issue-tl-entries (issues)
@@ -1289,9 +1289,9 @@ TOPIC, a boolean, means search in repo topics."
 
 ;; TODO: star toggle
 
-;; TL ACTIONS, ISSUES ONLY
+;;; TL ACTIONS, ISSUES ONLY
 
-(defun fj-issues-tl-view-issue (&optional _)
+(defun fj-issues-tl-view (&optional _)
   "View current issue from tabulated issues listing."
   (interactive)
   (fj-with-entry
@@ -1300,7 +1300,7 @@ TOPIC, a boolean, means search in repo topics."
           (owner (plist-get fj-buffer-spec :owner)))
      (fj-issue-view fj-current-repo owner number))))
 
-(defun fj-issues-tl-edit-issue ()
+(defun fj-issues-tl-edit ()
   "Edit issue from tabulated issues listing."
   (interactive)
   (fj-with-entry
@@ -1320,7 +1320,7 @@ TOPIC, a boolean, means search in repo topics."
             fj-compose-issue-number number)
       (fedi-post--update-status-fields)))))
 
-(defun fj-issues-tl-comment-issue ()
+(defun fj-issues-tl-comment ()
   "Comment on issue from tabulated issues listing."
   (interactive)
   (fj-with-entry
@@ -1330,7 +1330,7 @@ TOPIC, a boolean, means search in repo topics."
                     (format "Comment on issue #%s: " number))))
      (fj-issue-comment fj-current-repo number comment))))
 
-(defun fj-issues-tl-close-issue (&optional _)
+(defun fj-issues-tl-close (&optional _)
   "Close current issue from tabulated issues listing."
   (interactive)
   (fj-with-entry
@@ -1344,7 +1344,7 @@ TOPIC, a boolean, means search in repo topics."
         (fj-issue-close fj-current-repo owner number)
         (fj-issues-tl-reload))))))
 
-(defun fj-issues-tl-delete-issue (&optional _)
+(defun fj-issues-tl-delete (&optional _)
   "Delete current issue from tabulated issues listing."
   (interactive)
   (fj-with-entry
@@ -1356,7 +1356,7 @@ TOPIC, a boolean, means search in repo topics."
         (fj-issue-delete fj-current-repo owner number :no-confirm)
         (fj-issues-tl-reload))))))
 
-(defun fj-issues-tl-reopen-issue (&optional _)
+(defun fj-issues-tl-reopen (&optional _)
   "Reopen current issue from tabulated issues listing."
   (interactive)
   (fj-with-entry
