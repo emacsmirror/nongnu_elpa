@@ -1360,9 +1360,10 @@ TOPIC, a boolean, means search in repo topics."
   "Reopen current issue from tabulated issues listing."
   (interactive)
   (fj-with-entry
-   ;; FIXME: check should be per entry:
-   (if (string= (plist-get fj-buffer-spec :state) "open")
-       (user-error "Viewing open issues?")
+   (if (string= (fj--property 'state) "open")
+       (user-error "Issue already open")
+     ;; (if (string= (plist-get fj-buffer-spec :state) "open")
+     ;; (user-error "Viewing open issues?")
      (let* ((item (tabulated-list-get-entry))
             (number (car (seq-first item)))
             (owner (plist-get fj-buffer-spec :owner)))
