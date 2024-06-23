@@ -120,6 +120,7 @@ Forgejo's API is vast. Currently =fj.el= just implements a few basic things:
 |         | fj-repo-create               | Create a new repo.                                                  |
 |         | fj-repo-search               | Search repos for QUERY.                                             |
 |         | fj-repo-search-tl            | Search repos for QUERY, and display a tabulated list of results.    |
+|         | fj-repo-tl-fork              | Fork repo entry at point.                                           |
 |         | fj-repo-tl-list-issues       | View issues of current repo from tabulated repos listing.           |
 |         | fj-repo-tl-mode              | Mode for displaying a tabulated list of repo search results.        |
 |         | fj-repo-tl-star-repo         | Star or UNSTAR current repo from tabulated user repos listing.      |
