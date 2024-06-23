@@ -1369,6 +1369,17 @@ TOPIC, a boolean, means search in repo topics."
        (fj-issue-close fj-current-repo owner number "open")
        (fj-issues-tl-reload)))))
 
+(defun fj-issues-tl-edit-title ()
+  "Edit issue title from issues tabulatd list view."
+  (interactive)
+  (fj-with-own-issue
+   (let* ((entry (tabulated-list-get-entry))
+          (repo (plist-get fj-buffer-spec :repo))
+          (owner (plist-get fj-buffer-spec :owner))
+          (number (car (seq-first entry))))
+     (fj-issue-edit-title repo owner number)
+     (fj-issues-tl-reload))))
+
 ;;; COMPOSING
 
 (defvar fj-post-last-buffer nil)
