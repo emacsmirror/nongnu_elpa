@@ -1264,6 +1264,12 @@ TOPIC, a boolean, means search in repo topics."
                     (car (seq-elt item 2))))) ; fj-issue-tl-mode
        (fj-user-repos-tl user)))))
 
+(defun fj-user-repo-tl-reload ()
+  "Reload current user repos tl."
+  (interactive)
+  (let ((user (plist-get fj-buffer-spec :owner)))
+    (fj-user-repos-tl user)))
+
 ;; search or user repo TL
 (defun fj-repo-tl-star-repo (&optional unstar)
   "Star or UNSTAR current repo from tabulated user repos listing."
