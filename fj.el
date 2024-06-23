@@ -265,6 +265,8 @@ JSON."
   'action 'fj-repo-tl-list-issues
   'help-echo "RET: View this repo's issues.")
 
+(defvar fj-user-repo-tl-mode-map fj-repo-tl-mode-map)
+
 (define-derived-mode fj-user-repo-tl-mode tabulated-list-mode
   "fj-user-repos"
   "Mode for displaying a tabulated list of user repos."
@@ -1087,8 +1089,11 @@ If TOPIC, QUERY is a search for topic keywords."
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map tabulated-list-mode-map)
     (define-key map (kbd "RET") #'fj-repo-tl-list-issues)
+    (define-key map (kbd "*") #'fj-repo-tl-star-repo)
+    (define-key map (kbd "u") #'fj-tl-list-user-repos)
+    (define-key map (kbd "c") #'fj-tl-create-issue)
     map)
-  "Map for `fj-repo-search-mode a tabluated list of repos.")
+  "Map for `fj-repo-tl-mode', a tabluated list of repos.")
 
 (define-derived-mode fj-repo-tl-mode tabulated-list-mode
   "fj-repo-search"
@@ -1233,15 +1238,17 @@ TOPIC, a boolean, means search in repo topics."
 (defun fj-tl-list-user-repos (&optional _)
   "View repos of current entry user from tabulated repos listing."
   (interactive)
-  (fj-with-entry
-   (let* ((item (tabulated-list-get-entry))
-          (user (if (eq major-mode #'fj-repo-tl-mode)
-                    (car (seq-elt item 1))
-                  (car (seq-elt item 2))))) ; fj-issue-tl-mode
-     (fj-user-repos-tl user))))
+  (if (eq major-mode #'fj-user-repo-tl-mode)
+      (user-error "Already viewing user repos")
+    (fj-with-entry
+     (let* ((item (tabulated-list-get-entry))
+            (user (if (eq major-mode #'fj-repo-tl-mode)
+                      (car (seq-elt item 1))
+                    (car (seq-elt item 2))))) ; fj-issue-tl-mode
+       (fj-user-repos-tl user)))))
 
 ;; search or user repo TL
-(defun fj-tl-star-repo (&optional unstar)
+(defun fj-repo-tl-star-repo (&optional unstar)
   "Star or UNSTAR current repo from tabulated user repos listing."
   (interactive)
   (fj-with-entry
@@ -1255,7 +1262,7 @@ TOPIC, a boolean, means search in repo topics."
 (defun fj-tl-unstar-repo ()
   "Unstar current repo from tabulated user repos listing."
   (interactive)
-  (fj-tl-star-repo :unstar))
+  (fj-repo-tl-star-repo :unstar))
 
 ;; TL ACTIONS, ISSUES ONLY
 
