@@ -258,14 +258,26 @@ JSON."
 
 ;;; USER REPOS TL
 
-;; (defvar fj-buffer-spec nil)
-
 (define-button-type 'fj-user-repo-button
   'follow-link t
   'action 'fj-repo-tl-list-issues
   'help-echo "RET: View this repo's issues.")
 
-;; (defvar fj-user-repo-tl-mode-map fj-repo-tl-mode-map)
+(defvar fj-repo-tl-map
+  (let ((map (make-sparse-keymap)))
+    (set-keymap-parent map tabulated-list-mode-map)
+    (define-key map (kbd "RET") #'fj-repo-tl-list-issues)
+    (define-key map (kbd "*") #'fj-repo-tl-star-repo)
+    (define-key map (kbd "c") #'fj-create-issue)
+    map)
+  "Map for `fj-repo-tl-mode' and `fj-user-repo-tl-mode' to inherit.")
+
+(defvar fj-user-repo-tl-mode-map
+  (let ((map (make-sparse-keymap)))
+    (set-keymap-parent map fj-repo-tl-map)
+    (define-key map (kbd "g") #'fj-user-repo-tl-reload)
+    map)
+  "Map for `fj-user-repo-tl-mode', a tabluated list of repos.")
 
 (define-derived-mode fj-user-repo-tl-mode tabulated-list-mode
   "fj-user-repos"
@@ -1095,11 +1107,8 @@ If TOPIC, QUERY is a search for topic keywords."
 
 (defvar fj-repo-tl-mode-map
   (let ((map (make-sparse-keymap)))
-    (set-keymap-parent map tabulated-list-mode-map)
-    (define-key map (kbd "RET") #'fj-repo-tl-list-issues)
-    (define-key map (kbd "*") #'fj-repo-tl-star-repo)
+    (set-keymap-parent map fj-repo-tl-map)
     (define-key map (kbd "u") #'fj-list-user-repos)
-    (define-key map (kbd "c") #'fj-create-issue)
     map)
   "Map for `fj-repo-tl-mode', a tabluated list of repos.")
 
