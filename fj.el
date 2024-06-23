@@ -101,8 +101,8 @@ Repo, owner, item number, url.")
   "T if issue is authored by `fj-user'."
   (cond ((eq major-mode 'fj-issue-view-mode)
          (equal fj-user
-        ((eq major-mode 'fj-list-issue-mode)
                 (plist-get fj-buffer-spec :author)))
+        ((eq major-mode 'fj-issue-tl-mode)
          (let* ((entry (tabulated-list-get-entry))
                 (author (car (seq-elt entry 2))))
            (equal fj-user author)))))
@@ -671,7 +671,7 @@ OWNER is the repo owner."
 ;;     "nearduedate"
 ;;     "farduedate"))
 
-(defvar fj-list-issue-mode-map
+(defvar fj-issue-tl-mode-map
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map tabulated-list-mode-map) ; has nav
     (define-key map (kbd "C") #'fj-issues-tl-comment-issue)
@@ -685,9 +685,9 @@ OWNER is the repo owner."
     (define-key map (kbd "C-c C-c") #'fj-list-issues-cycle)
     (define-key map (kbd "o") #'fj-issues-tl-reopen-issue)
     map)
-  "Map for `fj-list-issue-mode', a tabluated list of issues.")
+  "Map for `fj-issue-tl-mode', a tabluated list of issues.")
 
-(define-derived-mode fj-list-issue-mode tabulated-list-mode
+(define-derived-mode fj-issue-tl-mode tabulated-list-mode
   "fj-issues"
   "Major mode for browsing a tabulated list of issues."
   :group 'fj
@@ -749,8 +749,8 @@ prompt for a repo to list."
          (buf-name (format "*fj-%s-%s-issues*" repo state-str)))
     (with-current-buffer (get-buffer-create buf-name)
       (setq tabulated-list-entries
-      (fj-list-issue-mode)
             (fj-issue-tl-entries issues))
+      (fj-issue-tl-mode)
       (tabulated-list-init-header)
       (tabulated-list-print)
       (setq fj-current-repo repo)
