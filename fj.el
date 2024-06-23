@@ -50,13 +50,9 @@
 
 (defvar-local fj-current-repo nil)
 
-(defvar-local fj-issue-spec nil
-  "A plist holding some basic info about the issue currently displayed.
-Repo, issue number, url.")
-
-(defvar-local fj-issues-tl-spec nil
-  "A plist holding some basic info about the issues currently displayed.
-Repo, view parameters, etc.")
+(defvar-local fj-buffer-spec nil
+  "A plist holding some basic info about the current buffer.
+Repo, owner, item number, url.")
 
 (defun fj-api (endpoint)
   "Return a URL for ENDPOINT."
@@ -98,15 +94,15 @@ Repo, view parameters, etc.")
 
 (defun fj-issues-tl-own-repo-p ()
   "T if repo is owned by `fj-user'."
-  (equal (plist-get fj-issues-tl-spec :owner)
+  (equal (plist-get fj-buffer-spec :owner)
          fj-user))
 
 (defun fj-issue-own-p ()
   "T if issue is authored by `fj-user'."
   (cond ((eq major-mode 'fj-issue-view-mode)
          (equal fj-user
-                (plist-get fj-issue-spec :author)))
         ((eq major-mode 'fj-list-issue-mode)
+                (plist-get fj-buffer-spec :author)))
          (let* ((entry (tabulated-list-get-entry))
                 (author (car (seq-elt entry 2))))
            (equal fj-user author)))))
@@ -140,7 +136,7 @@ Repo, view parameters, etc.")
 (defmacro fj-with-issue (&optional body)
   "Execute BODY if we are in an issue view."
   (declare (debug t))
-  `(if (not fj-issue-spec)
+  `(if (not fj-buffer-spec)
        (user-error "Not in an issue view?")
      ,body))
 
@@ -249,7 +245,7 @@ JSON."
 
 ;;; USER REPOS TL
 
-(defvar fj-user-spec nil)
+;; (defvar fj-buffer-spec nil)
 
 (define-button-type 'fj-user-repo-button
   'follow-link t
@@ -471,7 +467,7 @@ OWNER is the repo owner."
   (let* ((repo (fj-read-user-repo repo))
          (issue (or issue (fj-read-repo-issue repo)))
          (owner (or owner ;; FIXME: owner
-                    (plist-get fj-issue-spec :owner)
+                    (plist-get fj-buffer-spec :owner)
                     fj-user))
          (data (fj-get-issue repo owner issue))
          (old-body (alist-get 'body data))
@@ -488,7 +484,7 @@ OWNER is the repo owner."
   (let* ((repo (fj-read-user-repo repo))
          (issue (or issue (fj-read-repo-issue repo)))
          (owner (or owner ;; FIXME: owner
-                    (plist-get fj-issue-spec :owner)
+                    (plist-get fj-buffer-spec :owner)
                     fj-user))
          (data (fj-get-issue repo owner issue))
          (old-title (alist-get 'title data))
@@ -758,7 +754,7 @@ prompt for a repo to list."
       (tabulated-list-init-header)
       (tabulated-list-print)
       (setq fj-current-repo repo)
-      (setq fj-issues-tl-spec
+      (setq fj-buffer-spec
             `(:repo ,repo :state ,state-str :owner ,owner)) ;; TODO: URL?
       (cond ((string= buf-name prev-buf) ; same repo
              nil)
@@ -780,8 +776,8 @@ prompt for a repo to list."
 (defun fj-list-issues-cycle ()
   "Cycle between listing of open, closed, and all issues."
   (interactive)
-  (let ((state (plist-get fj-issues-tl-spec :state))
-        (owner (plist-get fj-issues-tl-spec :owner)))
+  (let ((state (plist-get fj-buffer-spec :state))
+        (owner (plist-get fj-buffer-spec :owner)))
     (cond ((string= state "closed")
            (fj-list-issues-all nil nil owner))
           ((string= state "all")
@@ -794,8 +790,8 @@ prompt for a repo to list."
   (interactive)
   (when (string-suffix-p "-issues*"
                          (buffer-name (current-buffer)))
-    (let ((state (plist-get fj-issues-tl-spec :state))
-          (user (plist-get fj-issues-tl-spec :owner)))
+    (let ((state (plist-get fj-buffer-spec :state))
+          (user (plist-get fj-buffer-spec :owner)))
       (fj-list-issues nil nil state user))))
 
 ;; ISSUES TL ACTIONS
@@ -1060,7 +1056,7 @@ RELOAD mean we reloaded."
             'fj-issue number
             'fj-repo repo))
           (setq fj-current-repo repo)
-          (setq fj-issue-spec
+          (setq fj-buffer-spec
                 `(:repo ,repo :owner ,owner :issue ,number
                         :author ,.user.username :title ,.title
                         :body ,.body :url ,.url)))))))
@@ -1079,17 +1075,17 @@ RELOAD means we are reloading, so don't open in other window."
 ;;   "Comment on the issue currently being viewed."
 ;;   (interactive)
 ;;   (fj-with-issue
-;;    (let ((number (plist-get fj-issue-spec :issue))
-;;          (owner (plist-get fj-issue-spec :owner))
-;;          (repo (plist-get fj-issue-spec :repo)))
+;;    (let ((number (plist-get fj-buffer-spec :issue))
+;;          (owner (plist-get fj-buffer-spec :owner))
+;;          (repo (plist-get fj-buffer-spec :repo)))
 ;;      (fj-issue-comment repo number))))
 
 (defun fj-issue-view-reload ()
   "Reload the current issue view."
   (interactive)
   (fj-with-issue
-   (let ((number (plist-get fj-issue-spec :issue))
-         (owner (plist-get fj-issue-spec :owner)))
+   (let ((number (plist-get fj-buffer-spec :issue))
+         (owner (plist-get fj-buffer-spec :owner)))
      (fj-issue-view fj-current-repo owner
                     number :reload))))
 
@@ -1098,9 +1094,9 @@ RELOAD means we are reloading, so don't open in other window."
   "Close issue being viewed."
   (interactive)
   (fj-with-issue
-   (let ((number (plist-get fj-issue-spec :issue))
-         (owner (plist-get fj-issue-spec :owner))
-         (repo (plist-get fj-issue-spec :repo)))
+   (let ((number (plist-get fj-buffer-spec :issue))
+         (owner (plist-get fj-buffer-spec :owner))
+         (repo (plist-get fj-buffer-spec :repo)))
      (fj-issue-close repo owner number))))
 
 (defvar fj-compose-spec nil)
@@ -1111,11 +1107,11 @@ RELOAD means we are reloading, so don't open in other window."
   "Edit the issue currently being viewed."
   (interactive)
   (fj-with-own-issue
-   (let ((number (plist-get fj-issue-spec :issue))
-         (repo (plist-get fj-issue-spec :repo))
-         (owner (plist-get fj-issue-spec :owner))
-         (title (plist-get fj-issue-spec :title))
-         (body (plist-get fj-issue-spec :body)))
+   (let ((number (plist-get fj-buffer-spec :issue))
+         (repo (plist-get fj-buffer-spec :repo))
+         (owner (plist-get fj-buffer-spec :owner))
+         (title (plist-get fj-buffer-spec :title))
+         (body (plist-get fj-buffer-spec :body)))
      (fj-issue-compose :edit nil 'issue body)
      (setq fj-compose-issue-title title
            fj-compose-repo repo
@@ -1126,9 +1122,9 @@ RELOAD means we are reloading, so don't open in other window."
 (defun fj-issue-view-comment ()
   "Comment on the issue currently being viewed."
   (interactive)
-  (let ((number (plist-get fj-issue-spec :issue))
-        (repo (plist-get fj-issue-spec :repo))
-        (owner (plist-get fj-issue-spec :owner)))
+  (let ((number (plist-get fj-buffer-spec :issue))
+        (repo (plist-get fj-buffer-spec :repo))
+        (owner (plist-get fj-buffer-spec :owner)))
     (fj-issue-compose nil 'fj-compose-comment-mode 'comment)
     (setq fj-compose-repo repo
           fj-compose-repo-owner owner
@@ -1140,8 +1136,8 @@ RELOAD means we are reloading, so don't open in other window."
   (interactive)
   (fj-with-own-comment
    (let ((id (fj--property 'fj-comment-id))
-         (repo (plist-get fj-issue-spec :repo))
-         (owner (plist-get fj-issue-spec :owner))
+         (repo (plist-get fj-buffer-spec :repo))
+         (owner (plist-get fj-buffer-spec :owner))
          (body (alist-get 'body
                           (fj--property 'fj-comment))))
      (fj-issue-compose :edit 'fj-compose-comment-mode 'comment body)
@@ -1155,8 +1151,8 @@ RELOAD means we are reloading, so don't open in other window."
   (interactive)
   (fj-with-own-comment
    (let* ((id (fj--property 'fj-comment-id))
-          (repo (plist-get fj-issue-spec :repo))
-          (owner (plist-get fj-issue-spec :owner))
+          (repo (plist-get fj-buffer-spec :repo))
+          (owner (plist-get fj-buffer-spec :owner))
           (endpoint (format "repos/%s/%s/issues/comments/%s" owner repo id)))
      (when (yes-or-no-p "Delete comment?")
        (fj-delete endpoint)
