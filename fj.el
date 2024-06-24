@@ -215,19 +215,23 @@ Requires `fj-token' to be set."
                         (concat "token " fj-token))))))
      ,body))
 
-(defun fj-get (endpoint &optional params)
+(defun fj-get (endpoint &optional params no-json)
   "Make a GET request to ENDPOINT.
 PARAMS is any parameters to send with the request."
   (let* ((url (fj-api endpoint))
          (resp (fj-authorized-request "GET"
-                 (fedi-http--get-json url params))))
-    (cond ((or (eq (caar resp) 'errors)
-               (eq (caar resp) 'message))
-           (user-error "I am Error: %s Endpoint: %s"
-                       (alist-get 'message resp)
-                       endpoint))
-          (t
-           resp))))
+                 (if no-json
+                     (fedi-http--get url params)
+                   (fedi-http--get-json url params)))))
+    (if no-json
+        resp
+      (cond ((or (eq (caar resp) 'errors)
+                 (eq (caar resp) 'message))
+             (user-error "I am Error: %s Endpoint: %s"
+                         (alist-get 'message resp)
+                         endpoint))
+            (t
+             resp)))))
 
 (defun fj-post (endpoint &optional params)
   "Make a POST request to ENDPOINT.
