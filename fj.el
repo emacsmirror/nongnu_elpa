@@ -435,7 +435,7 @@ Return the issue number."
                          cands))))
     (cadr item)))
 
-(defun fj-repo-get-issues (repo &optional state user)
+(defun fj-repo-get-issues (repo &optional user state)
   "Return issues for REPO.
 STATE is for issue status, a string of open, closed or all.
 USER is the repo owner."
@@ -746,16 +746,20 @@ STATE is a string."
                                   state ,state
                                   type fj-issue-button)])))
 
-(defun fj-list-issues (&optional repo user issues state)
+(defun fj-list-issues (repo &optional user issues state)
   "Display ISSUES in a tabulated list view.
 Either for `fj-current-repo', or for REPO, a string.
 With a prefix arg, or if REPO and `fj-current-repo' are nil,
 prompt for a repo to list."
   (interactive "P")
   (let* ((repo (fj-read-user-repo repo))
-         (issues (or issues (fj-repo-get-issues repo state user)))
-         (owner (alist-get 'owner
-                           (alist-get 'repository (car issues))))
+         (issues (or issues (fj-repo-get-issues repo user state)))
+         (owner (or user
+                    (alist-get 'owner
+                               (alist-get 'repository (car issues)))))
+         (repo-data (fj-get-repo repo user))
+         (url (concat (alist-get 'html_url repo-data)
+                      "/issues"))
          (prev-buf (buffer-name (current-buffer)))
          (state-str (or state "open"))
          ;; FIXME: opens a buf for each state:
@@ -769,7 +773,7 @@ prompt for a repo to list."
       (tabulated-list-print)
       (setq fj-current-repo repo)
       (setq fj-buffer-spec
-            `(:repo ,repo :state ,state-str :owner ,owner)) ;; TODO: URL?
+            `(:repo ,repo :state ,state-str :owner ,owner :url ,url))
       (cond ((string= buf-name prev-buf) ; same repo
              nil)
             ((string-suffix-p "-issues*" prev-buf) ; diff repo
