@@ -736,42 +736,33 @@ NEW-BODY is the new comment text to send."
 (defun fj-issue-tl-entries (issues)
   "Return tabluated list entries for ISSUES.
 STATE is a string."
-  (cl-loop for issue in issues
-           for id = (alist-get 'number issue)
-           for title = (alist-get 'title issue)
-           for state =  (alist-get 'state issue)
-           for comments = (number-to-string
-                           (alist-get 'comments issue))
-           for author = (alist-get 'username
-                                   (alist-get 'user issue))
-           for url = (alist-get 'html_url issue)
-           for updated =  (date-to-time
-                           (alist-get 'updated_at issue))
-           for updated-str = (format-time-string "%s" updated)
-           for updated-display = (fedi--relative-time-description updated)
-           collect
-           `(nil
-             [(,(number-to-string id)
-               id ,id
-               state ,state
-               type fj-issue-button
-               fj-url ,url)
-              ,(propertize comments
-                           'face 'fj-figures-face)
-              (,author face fj-user-face
-                       id ,id
-                       state ,state
-                       type  fj-issues-owner-button)
-              ;; FIXME: to sort by timestamp, we need the raw stamp
-              ;; but using display prob is tricky for cell width...
-              ,(propertize updated-str
-                           'display updated-display)
-              (,title face ,(if (equal state "closed")
-                                'fj-closed-issue-face
-                              'fj-item-face)
-                      id ,id
-                      state ,state
-                      type fj-issue-button)])))
+  (cl-loop
+   for issue in issues
+   collect
+   (let-alist issue
+     (let* ((updated (date-to-time .updated_at))
+            (updated-str (format-time-string "%s" updated))
+            (updated-display (fedi--relative-time-description updated)))
+       `(nil ;; TODO: id
+         [(,(number-to-string .number)
+           id ,.id
+           state ,.state
+           type fj-issue-button
+           fj-url ,.html_url)
+          ,(propertize (number-to-string .comments)
+                       'face 'fj-figures-face)
+          (,.user.username face fj-user-face
+                           id ,.id
+                           state ,.state
+                           type  fj-issues-owner-button)
+          ,(propertize updated-str
+                       'display updated-display)
+          (,.title face ,(if (equal .state "closed")
+                             'fj-closed-issue-face
+                           'fj-item-face)
+                   id ,.id
+                   state ,.state
+                   type fj-issue-button)])))))
 
 (defun fj-list-issues (repo &optional user issues state)
   "Display ISSUES in a tabulated list view.
