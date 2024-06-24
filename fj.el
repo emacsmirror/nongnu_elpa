@@ -1001,7 +1001,7 @@ RELOAD mean we reloaded."
           (setq fj-buffer-spec
                 `(:repo ,repo :owner ,owner :issue ,number
                         :author ,.user.username :title ,.title
-                        :body ,.body :url ,.url)))))))
+                        :body ,.body :url ,.html_url)))))))
 
 (defun fj-issue-view (&optional repo owner number reload)
   "View issue NUMBER from REPO of OWNER.
