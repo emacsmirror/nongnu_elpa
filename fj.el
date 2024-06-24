@@ -1119,6 +1119,7 @@ If TOPIC, QUERY is a search for topic keywords."
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map fj-repo-tl-map)
     (define-key map (kbd "u") #'fj-list-user-repos)
+    (define-key map (kbd "s") #'fj-repo-search-tl)
     map)
   "Map for `fj-repo-tl-mode', a tabluated list of repos.")
 
