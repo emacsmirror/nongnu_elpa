@@ -3,10 +3,10 @@
 ;; Author: Marty Hiatt <martianhiatus AT riseup.net>
 ;; Copyright (C) 2023 Marty Hiatt <martianhiatus AT riseup.net>
 ;;
-;; Package-Requires: ((emacs "28.1") (fedi "0.1"))
+;; Package-Requires: ((emacs "28.1") (fedi "0.2"))
 ;; Keywords: git, convenience
 ;; URL: https://codeberg.org/martianh/fj.el
-;; Version: 0.1
+;; Version: 0.2
 ;; Separator: -
 
 ;; This program is free software; you can redistribute it and/or modify
