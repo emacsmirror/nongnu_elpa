@@ -1588,5 +1588,20 @@ STATUS-TYPES and SUBJECT-TYPE are array strings."
   (alist-get 'new
              (fj-get "notifications/new")))
 
+;;; BROWSE
+
+(defun fj-tl-browse-entry-url ()
+  "Browse URL of tabulated list entry at point."
+  (interactive)
+  (fj-with-entry
+   (let ((url (fj--property 'fj-url)))
+     (browse-url-generic url))))
+
+(defun fj-browse-view-url ()
+  "Brose URL of view at point."
+  (interactive)
+  (let ((url (fj--get-buffer-spec :url)))
+    (browse-url-generic url)))
+
 (provide 'fj)
 ;;; fj.el ends here
