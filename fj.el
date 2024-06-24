@@ -307,7 +307,7 @@ JSON."
   "View a tabulated list of respos for USER."
   (interactive "sView user repos: ")
   (let* ((repos (fj-get-user-repos user))
-         (entries (fj-search-tl-entries repos :no-owner))
+         (entries (fj-repo-tl-entries repos :no-owner))
          (buf (format "*fj-repos-%s*" user)))
     (fj-repos-tl-render buf entries #'fj-user-repo-tl-mode user))) ;; TODO: URL
 
@@ -1151,7 +1151,7 @@ If TOPIC, QUERY is a search for topic keywords."
   'action 'fj-list-user-repos
   'help-echo "RET: View this user.")
 
-(defun fj-search-tl-entries (repos &optional no-owner)
+(defun fj-repo-tl-entries (repos &optional no-owner)
   "Return tabluated list entries for REPOS.
 NO-OWNER means don't display owner column (user repos view)."
   (cl-loop for r in repos
@@ -1206,7 +1206,7 @@ TOPIC, a boolean, means search in repo topics."
          (resp (fj-get "/repos/search" params))
          (buf (format "*fj-search-%s*" query))
          (data (alist-get 'data resp))
-         (entries (fj-search-tl-entries data)))
+         (entries (fj-repo-tl-entries data)))
     (fj-repos-tl-render buf entries #'fj-repo-tl-mode)))
 
 (defun fj-repos-tl-render (buf entries mode &optional owner)
