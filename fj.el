@@ -282,14 +282,15 @@ JSON."
     (define-key map (kbd "u") #'fj-list-user-repos)
     (define-key map (kbd "B") #'fj-tl-browse-entry)
     (define-key map (kbd "b") #'fj-browse-view)
-    ;; (define-key map (kbd "g") #'fj-repo-tl-reload)
+    (define-key map (kbd "j") #'imenu)
+    (define-key map (kbd "g") #'fj-user-repo-tl-reload)
     map)
   "Map for `fj-repo-tl-mode' and `fj-user-repo-tl-mode' to inherit.")
 
 (defvar fj-user-repo-tl-mode-map
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map fj-repo-tl-map)
-    (define-key map (kbd "g") #'fj-user-repo-tl-reload)
+    ;; (define-key map (kbd "g") #'fj-user-repo-tl-reload)
     map)
   "Map for `fj-user-repo-tl-mode', a tabluated list of repos.")
 
@@ -700,6 +701,7 @@ NEW-BODY is the new comment text to send."
     (define-key map (kbd "u") #'fj-list-user-repos)
     (define-key map (kbd "B") #'fj-tl-browse-entry)
     (define-key map (kbd "b") #'fj-browse-view)
+    (define-key map (kbd "j") #'imenu)
     map)
   "Map for `fj-issue-tl-mode', a tabluated list of issues.")
 
@@ -1252,6 +1254,7 @@ TOPIC, a boolean, means search in repo topics."
     (tabulated-list-init-header)
     (tabulated-list-print)
     (cond
+     ;; FIXME: when called by reload, keep no switch:
      ;; ((string= buf-name prev-buf) ; same repo
      ;;  nil)
      ;; ((string-suffix-p "-issues*" prev-buf) ; diff repo
