@@ -711,11 +711,13 @@ NEW-BODY is the new comment text to send."
   :group 'fj
   (hl-line-mode 1)
   (setq tabulated-list-padding 0 ;2) ; point directly on issue
+        ;; tabulated-list-sort-key '("Updated") ;; need to sort by stamp!
         tabulated-list-format
         '[("#" 5 t)
           ("💬" 3 t)
           ("Author" 10 t)
-          ("Issue" 2 t)])
+          ("Updated" 14 t)
+          ("Issue" 20 t)])
   (setq imenu-create-index-function #'fj-tl-imenu-index-fun))
 
 (define-button-type 'fj-issue-button
@@ -735,23 +737,30 @@ STATE is a string."
            for author = (alist-get 'username
                                    (alist-get 'user issue))
            for url = (alist-get 'html_url issue)
-           collect `(nil [(,(number-to-string id)
-                           id ,id
-                           state ,state
-                           type fj-issue-button
-                           fj-url ,url)
-                          ,(propertize comments
-                                       'face 'fj-figures-face)
-                          (,author face fj-user-face
-                                   id ,id
-                                   state ,state
-                                   type  fj-issues-owner-button)
-                          (,title face ,(if (equal state "closed")
-                                            'fj-closed-issue-face
-                                          'fj-item-face)
-                                  id ,id
-                                  state ,state
-                                  type fj-issue-button)])))
+           for updated = (alist-get 'updated_at issue)
+           collect
+           `(nil
+             [(,(number-to-string id)
+               id ,id
+               state ,state
+               type fj-issue-button
+               fj-url ,url)
+              ,(propertize comments
+                           'face 'fj-figures-face)
+              (,author face fj-user-face
+                       id ,id
+                       state ,state
+                       type  fj-issues-owner-button)
+              ;; FIXME: to sort by timestamp, we need the raw stamp
+              ;; but using display prob is tricky for cell width...
+              ,(propertize (fedi--relative-time-description
+                            (date-to-time updated)))
+              (,title face ,(if (equal state "closed")
+                                'fj-closed-issue-face
+                              'fj-item-face)
+                      id ,id
+                      state ,state
+                      type fj-issue-button)])))
 
 (defun fj-list-issues (repo &optional user issues state)
   "Display ISSUES in a tabulated list view.
