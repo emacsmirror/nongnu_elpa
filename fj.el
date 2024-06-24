@@ -581,7 +581,7 @@ STATE should be \"open\", \"closed\", or \"all\"."
   (interactive "P")
   (let* ((repo (fj-read-user-repo repo))
          (prs (fj-repo-get-pull-reqs repo)))
-    (fj-list-issues repo prs)))
+    (fj-list-issues repo nil prs))) ;; FIXME: owner
 
 ;;; COMMENTS
 
@@ -738,7 +738,7 @@ STATE is a string."
                                   state ,state
                                   type fj-issue-button)])))
 
-(defun fj-list-issues (&optional repo issues state user)
+(defun fj-list-issues (&optional repo user issues state)
   "Display ISSUES in a tabulated list view.
 Either for `fj-current-repo', or for REPO, a string.
 With a prefix arg, or if REPO and `fj-current-repo' are nil,
@@ -769,27 +769,32 @@ prompt for a repo to list."
             (t                             ; new buf
              (switch-to-buffer-other-window (current-buffer)))))))
 
-(defun fj-list-issues-closed (&optional repo issues user)
+(defun fj-list-issues-closed (&optional repo user issues)
   "Display closed ISSUES for REPO in tabulated list view."
   (interactive "P")
-  (fj-list-issues repo issues "closed" user))
+  (fj-list-issues repo user issues "closed"))
 
-(defun fj-list-issues-all (&optional repo issues user)
+(defun fj-list-issues-all (&optional repo user issues)
   "Display all ISSUES for REPO in tabulated list view."
   (interactive "P")
-  (fj-list-issues repo issues "all" user))
+  (fj-list-issues repo user issues "all"))
+
+(defun fj--get-buffer-spec (key)
+  "Get entry for KEY from `fj-buffer-spec'."
+  (plist-get fj-buffer-spec key))
 
 (defun fj-list-issues-cycle ()
   "Cycle between listing of open, closed, and all issues."
   (interactive)
-  (let ((state (plist-get fj-buffer-spec :state))
-        (owner (plist-get fj-buffer-spec :owner)))
+  (let ((state (fj--get-buffer-spec :state))
+        (owner (fj--get-buffer-spec :owner))
+        (repo (fj--get-buffer-spec :repo)))
     (cond ((string= state "closed")
-           (fj-list-issues-all nil nil owner))
+           (fj-list-issues-all repo owner))
           ((string= state "all")
-           (fj-list-issues nil nil nil owner))
+           (fj-list-issues repo owner))
           (t ; open is default
-           (fj-list-issues-closed nil nil owner)))))
+           (fj-list-issues-closed repo owner)))))
 
 (defun fj-issues-tl-reload ()
   "Reload current issues tabulated list view."
@@ -1114,7 +1119,7 @@ If TOPIC, QUERY is a search for topic keywords."
          (choice (completing-read "Repo: " cands))
          (user (cl-fourth
                 (assoc choice cands #'equal))))
-    (fj-list-issues choice nil nil user)))
+    (fj-list-issues choice user)))
 
 ;; doesn't work
 (defun fj-repo-candidates-annot-fun (cand)
@@ -1269,7 +1274,7 @@ TOPIC, a boolean, means search in repo topics."
           (user (if (eq major-mode #'fj-user-repo-tl-mode)
                     (plist-get fj-buffer-spec :owner)
                   (car (seq-elt item 1)))))
-     (fj-list-issues name nil nil user))))
+     (fj-list-issues name user))))
 
 ;; author/owner button, in search or issues TL, not user repo TL
 (defun fj-list-user-repos (&optional _)
