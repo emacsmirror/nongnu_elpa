@@ -995,7 +995,7 @@ RELOAD mean we reloaded."
                            (propertize .title
                                        'face 'fj-item-face))))
           (insert
-           ;; header stuff:
+           ;; header stuff (forge has: state, status, milestone, labels, marks, assignees):
            "State: " .state
            (if .labels
                (fj-render-labels .labels)
