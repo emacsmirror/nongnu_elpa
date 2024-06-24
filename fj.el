@@ -269,6 +269,10 @@ JSON."
     (define-key map (kbd "RET") #'fj-repo-tl-list-issues)
     (define-key map (kbd "*") #'fj-repo-tl-star-repo)
     (define-key map (kbd "c") #'fj-create-issue)
+    (define-key map (kbd "O") #'fj-list-own-repos)
+    (define-key map (kbd "s") #'fj-repo-search-tl)
+    (define-key map (kbd "u") #'fj-list-user-repos)
+    ;; (define-key map (kbd "g") #'fj-repo-tl-reload)
     map)
   "Map for `fj-repo-tl-mode' and `fj-user-repo-tl-mode' to inherit.")
 
@@ -682,6 +686,8 @@ NEW-BODY is the new comment text to send."
     (define-key map (kbd "g") #'fj-issues-tl-reload)
     (define-key map (kbd "C-c C-c") #'fj-list-issues-cycle)
     (define-key map (kbd "o") #'fj-issues-tl-reopen)
+    (define-key map (kbd "s") #'fj-repo-search-tl)
+    (define-key map (kbd "u") #'fj-list-user-repos)
     map)
   "Map for `fj-issue-tl-mode', a tabluated list of issues.")
 
@@ -875,6 +881,8 @@ JSON is the item's data to process the link with."
     (define-key map (kbd "k") #'fj-issue-view-close)
     (define-key map (kbd "o") #'fj-issue-view-reopen)
     (define-key map (kbd "K") #'fj-issue-view-comment-delete)
+    (define-key map (kbd "s") #'fj-repo-search-tl)
+    (define-key map (kbd "O") #'fj-list-own-repos)
     map)
   "Keymap for `fj-issue-view-mode'.")
 
@@ -1120,8 +1128,6 @@ If TOPIC, QUERY is a search for topic keywords."
 (defvar fj-repo-tl-mode-map
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map fj-repo-tl-map)
-    (define-key map (kbd "u") #'fj-list-user-repos)
-    (define-key map (kbd "s") #'fj-repo-search-tl)
     map)
   "Map for `fj-repo-tl-mode', a tabluated list of repos.")
 
