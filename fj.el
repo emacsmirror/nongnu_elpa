@@ -304,7 +304,8 @@ JSON."
         '[("Name" 16 t)
           ("★" 3 t)
           ("" 2 t)
-          ("Lang" 10 t)
+          ("Lang" 11 t)
+          ("Updated" 14 t)
           ("Description" 55 nil)])
   (setq imenu-create-index-function #'fj-tl-imenu-index-fun))
 
@@ -1173,7 +1174,8 @@ If TOPIC, QUERY is a search for topic keywords."
           ("Owner" 12 t)
           ("★" 3 t)
           ("" 2 t)
-          ("Lang" 10 t)
+          ("Lang" 11 t)
+          ("Updated" 14 t)
           ("Description" 55 nil)])
   (setq imenu-create-index-function #'fj-tl-imenu-index-fun))
 
@@ -1212,6 +1214,7 @@ NO-OWNER means don't display owner column (user repos view)."
                             "ℹ"
                           "⑂"))
            for url = (alist-get 'html_url r)
+           for updated = (alist-get 'updated_at r)
            collect
            (if no-owner
                ;; user repo button:
@@ -1222,6 +1225,9 @@ NO-OWNER means don't display owner column (user repos view)."
                       (,stars id ,id face fj-figures-face)
                       (,fork id ,id face fj-figures-face)
                       ,lang
+                      ;; FIXME: sort on timestamp
+                      ,(propertize (fedi--relative-time-description
+                                    (date-to-time updated)))
                       ,(propertize desc
                                    'face 'fj-comment-face)])
              ;; search-repo and search owner button:
@@ -1235,6 +1241,9 @@ NO-OWNER means don't display owner column (user repos view)."
                     (,stars id ,id face fj-figures-face)
                     (,fork id ,id face fj-figures-face)
                     ,lang
+                    ;; FIXME: sort on timestamp
+                    ,(propertize (fedi--relative-time-description
+                                  (date-to-time updated)))
                     ,(propertize desc
                                  'face 'fj-comment-face)]))))
 
