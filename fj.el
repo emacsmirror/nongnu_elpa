@@ -309,6 +309,7 @@ JSON."
         '[("Name" 16 t)
           ("★" 3 t)
           ("" 2 t)
+          ("issues" 6 t)
           ("Lang" 11 t)
           ("Updated" 14 t)
           ("Description" 55 nil)])
@@ -1184,6 +1185,7 @@ If TOPIC, QUERY is a search for topic keywords."
           ("Owner" 12 t)
           ("★" 3 t)
           ("" 2 t)
+          ("issues" 6 t)
           ("Lang" 11 t)
           ("Updated" 14 t)
           ("Description" 55 nil)])
@@ -1224,40 +1226,30 @@ NO-OWNER means don't display owner column (user repos view)."
                             "ℹ"
                           "⑂"))
            for url = (alist-get 'html_url r)
+           for issues = (number-to-string
+                         (alist-get 'open_issues_count r))
            for updated =  (date-to-time
                            (alist-get 'updated_at r))
            for updated-str = (format-time-string "%s" updated)
            for updated-display = (fedi--relative-time-description updated)
            collect
-           (if no-owner
-               ;; FIXME: refactor (we can't `when' the owner col tho):
-               ;; user repo button:
-               `(nil [(,name face fj-item-face
-                             id ,id
-                             type fj-user-repo-button
-                             fj-url ,url)
-                      (,stars id ,id face fj-figures-face)
-                      (,fork id ,id face fj-figures-face)
-                      ,lang
-                      ,(propertize updated-str
-                                   'display updated-display)
-                      ,(propertize desc
-                                   'face 'fj-comment-face)])
-             ;; search-repo and search owner button:
-             `(nil [(,name face fj-item-face
-                           id ,id
-                           type fj-search-repo-button
-                           fj-url ,url)
-                    (,owner face fj-user-face
-                            id ,id
-                            type fj-search-owner-button)
-                    (,stars id ,id face fj-figures-face)
-                    (,fork id ,id face fj-figures-face)
-                    ,lang
-                    ,(propertize updated-str
-                                 'display updated-display)
-                    ,(propertize desc
-                                 'face 'fj-comment-face)]))))
+           `(nil ,(cl-remove 'nil
+                             `[(,name face fj-item-face
+                                      id ,id
+                                      type fj-user-repo-button
+                                      fj-url ,url)
+                               ,(unless no-owner
+                                  `(,owner face fj-user-face
+                                           id ,id
+                                           type fj-search-owner-button))
+                               (,stars id ,id face fj-figures-face)
+                               (,fork id ,id face fj-figures-face)
+                               (,issues id ,id face fj-figures-face)
+                               ,lang
+                               ,(propertize updated-str
+                                            'display updated-display)
+                               ,(propertize desc
+                                            'face 'fj-comment-face)]))))
 
 (defun fj-repo-search-tl (query &optional topic)
   "Search repos for QUERY, and display a tabulated list of results.
