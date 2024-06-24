@@ -3,10 +3,10 @@
 ;; Author: Marty Hiatt <martianhiatus AT riseup.net>
 ;; Copyright (C) 2023 Marty Hiatt <martianhiatus AT riseup.net>
 ;;
-;; Package-Requires: ((emacs "28.1") (fedi "0.1"))
+;; Package-Requires: ((emacs "28.1") (fedi "0.2"))
 ;; Keywords: git, convenience
 ;; URL: https://codeberg.org/martianh/fj.el
-;; Version: 0.1
+;; Version: 0.2
 ;; Separator: -
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -282,14 +282,15 @@ JSON."
     (define-key map (kbd "u") #'fj-list-user-repos)
     (define-key map (kbd "B") #'fj-tl-browse-entry)
     (define-key map (kbd "b") #'fj-browse-view)
-    ;; (define-key map (kbd "g") #'fj-repo-tl-reload)
+    (define-key map (kbd "j") #'imenu)
+    (define-key map (kbd "g") #'fj-user-repo-tl-reload)
     map)
   "Map for `fj-repo-tl-mode' and `fj-user-repo-tl-mode' to inherit.")
 
 (defvar fj-user-repo-tl-mode-map
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map fj-repo-tl-map)
-    (define-key map (kbd "g") #'fj-user-repo-tl-reload)
+    ;; (define-key map (kbd "g") #'fj-user-repo-tl-reload)
     map)
   "Map for `fj-user-repo-tl-mode', a tabluated list of repos.")
 
@@ -299,13 +300,15 @@ JSON."
   :group 'fj
   (hl-line-mode 1)
   (setq tabulated-list-padding 0 ;2) ; point directly on issue
+        tabulated-list-sort-key '("Updated" . t) ;; default
         tabulated-list-format
         '[("Name" 16 t)
           ("★" 3 t)
           ("" 2 t)
-          ("Lang" 10 t)
+          ("Lang" 11 t)
+          ("Updated" 14 t)
           ("Description" 55 nil)])
-  (setq fj-user-repo-tl-mode-map fj-repo-tl-mode-map))
+  (setq imenu-create-index-function #'fj-tl-imenu-index-fun))
 
 (defun fj-get-current-user ()
   "Return the data for the current user."
@@ -700,6 +703,7 @@ NEW-BODY is the new comment text to send."
     (define-key map (kbd "u") #'fj-list-user-repos)
     (define-key map (kbd "B") #'fj-tl-browse-entry)
     (define-key map (kbd "b") #'fj-browse-view)
+    (define-key map (kbd "j") #'imenu)
     map)
   "Map for `fj-issue-tl-mode', a tabluated list of issues.")
 
@@ -708,12 +712,16 @@ NEW-BODY is the new comment text to send."
   "Major mode for browsing a tabulated list of issues."
   :group 'fj
   (hl-line-mode 1)
-  (setq tabulated-list-padding 0) ;2) ; point directly on issue
-  (setq tabulated-list-format
+  (setq tabulated-list-padding 0 ;2) ; point directly on issue
+        ;; this is changed by `tabulated-list-sort' which sorts by col at point:
+        tabulated-list-sort-key '("Updated" . t) ;; default
+        tabulated-list-format
         '[("#" 5 t)
           ("💬" 3 t)
           ("Author" 10 t)
-          ("Issue" 2 t)]))
+          ("Updated" 14 t) ;; instead of display, you could use a sort fun here
+          ("Issue" 20 t)])
+  (setq imenu-create-index-function #'fj-tl-imenu-index-fun))
 
 (define-button-type 'fj-issue-button
   'follow-link t
@@ -732,23 +740,33 @@ STATE is a string."
            for author = (alist-get 'username
                                    (alist-get 'user issue))
            for url = (alist-get 'html_url issue)
-           collect `(nil [(,(number-to-string id)
-                           id ,id
-                           state ,state
-                           type fj-issue-button
-                           fj-url ,url)
-                          ,(propertize comments
-                                       'face 'fj-figures-face)
-                          (,author face fj-user-face
-                                   id ,id
-                                   state ,state
-                                   type  fj-issues-owner-button)
-                          (,title face ,(if (equal state "closed")
-                                            'fj-closed-issue-face
-                                          'fj-item-face)
-                                  id ,id
-                                  state ,state
-                                  type fj-issue-button)])))
+           for updated =  (date-to-time
+                           (alist-get 'updated_at issue))
+           for updated-str = (format-time-string "%s" updated)
+           for updated-display = (fedi--relative-time-description updated)
+           collect
+           `(nil
+             [(,(number-to-string id)
+               id ,id
+               state ,state
+               type fj-issue-button
+               fj-url ,url)
+              ,(propertize comments
+                           'face 'fj-figures-face)
+              (,author face fj-user-face
+                       id ,id
+                       state ,state
+                       type  fj-issues-owner-button)
+              ;; FIXME: to sort by timestamp, we need the raw stamp
+              ;; but using display prob is tricky for cell width...
+              ,(propertize updated-str
+                           'display updated-display)
+              (,title face ,(if (equal state "closed")
+                                'fj-closed-issue-face
+                              'fj-item-face)
+                      id ,id
+                      state ,state
+                      type fj-issue-button)])))
 
 (defun fj-list-issues (repo &optional user issues state)
   "Display ISSUES in a tabulated list view.
@@ -977,7 +995,7 @@ RELOAD mean we reloaded."
                            (propertize .title
                                        'face 'fj-item-face))))
           (insert
-           ;; header stuff:
+           ;; header stuff (forge has: state, status, milestone, labels, marks, assignees):
            "State: " .state
            (if .labels
                (fj-render-labels .labels)
@@ -1155,14 +1173,17 @@ If TOPIC, QUERY is a search for topic keywords."
   "Mode for displaying a tabulated list of repo search results."
   :group 'fj
   (hl-line-mode 1)
-  (setq tabulated-list-padding 0) ;2) ; point directly on issue
-  (setq tabulated-list-format
+  (setq tabulated-list-padding 0 ;2) ; point directly on issue
+        tabulated-list-sort-key '("Updated" . t) ;; default
+        tabulated-list-format
         '[("Name" 16 t)
           ("Owner" 12 t)
           ("★" 3 t)
           ("" 2 t)
-          ("Lang" 10 t)
-          ("Description" 55 nil)]))
+          ("Lang" 11 t)
+          ("Updated" 14 t)
+          ("Description" 55 nil)])
+  (setq imenu-create-index-function #'fj-tl-imenu-index-fun))
 
 (define-button-type 'fj-search-repo-button
   'follow-link t
@@ -1199,8 +1220,13 @@ NO-OWNER means don't display owner column (user repos view)."
                             "ℹ"
                           "⑂"))
            for url = (alist-get 'html_url r)
+           for updated =  (date-to-time
+                           (alist-get 'updated_at r))
+           for updated-str = (format-time-string "%s" updated)
+           for updated-display = (fedi--relative-time-description updated)
            collect
            (if no-owner
+               ;; FIXME: refactor (we can't `when' the owner col tho):
                ;; user repo button:
                `(nil [(,name face fj-item-face
                              id ,id
@@ -1209,6 +1235,8 @@ NO-OWNER means don't display owner column (user repos view)."
                       (,stars id ,id face fj-figures-face)
                       (,fork id ,id face fj-figures-face)
                       ,lang
+                      ,(propertize updated-str
+                                   'display updated-display)
                       ,(propertize desc
                                    'face 'fj-comment-face)])
              ;; search-repo and search owner button:
@@ -1222,6 +1250,8 @@ NO-OWNER means don't display owner column (user repos view)."
                     (,stars id ,id face fj-figures-face)
                     (,fork id ,id face fj-figures-face)
                     ,lang
+                    ,(propertize updated-str
+                                 'display updated-display)
                     ,(propertize desc
                                  'face 'fj-comment-face)]))))
 
@@ -1250,6 +1280,7 @@ TOPIC, a boolean, means search in repo topics."
     (tabulated-list-init-header)
     (tabulated-list-print)
     (cond
+     ;; FIXME: when called by reload, keep no switch:
      ;; ((string= buf-name prev-buf) ; same repo
      ;;  nil)
      ;; ((string-suffix-p "-issues*" prev-buf) ; diff repo
@@ -1365,7 +1396,7 @@ TOPIC, a boolean, means search in repo topics."
     (let* ((item (tabulated-list-get-entry))
            (number (car (seq-first item)))
            (owner (fj--get-buffer-spec :owner))
-           (title (car (seq-elt item 3)))
+           (title (car (seq-elt item 4)))
            (repo (fj--get-buffer-spec :repo))
            (data (fj-get-issue repo owner number))
            (old-body (alist-get 'body data)))
@@ -1384,7 +1415,8 @@ TOPIC, a boolean, means search in repo topics."
    (let* ((item (tabulated-list-get-entry))
           (number (car (seq-first item)))
           (owner (fj--get-buffer-spec :owner))
-          (repo (fj--get-buffer-spec :repo)))
+          (repo (fj--get-buffer-spec :repo))
+          (title (car (seq-elt item 4))))
      ;; (comment (read-string
      ;; (format "Comment on issue #%s: " number))))
      ;; (fj-issue-comment fj-current-repo owner number comment))))
@@ -1392,7 +1424,9 @@ TOPIC, a boolean, means search in repo topics."
      (fj-issue-compose nil #'fj-compose-comment-mode 'comment)
      (setq fj-compose-repo repo
            fj-compose-repo-owner owner
-           fj-compose-issue-number number))))
+           fj-compose-issue-title title
+           fj-compose-issue-number number)
+     (fedi-post--update-status-fields))))
 
 (defun fj-issues-tl-close (&optional _)
   "Close current issue from tabulated issues listing."
@@ -1519,17 +1553,14 @@ Inject INIT-TEXT into the buffer, for editing."
    ;; #'lem-post--comms-capf)
    nil
    ;; TODO: why not have a compose-buffer-spec rather than 10 separate vars?
-   (cond ((eq type 'comment)
-          nil)
-         (t
-          '(((name . "title")
-             (prop . compose-title)
-             (item-var . fj-compose-issue-title)
-             (face . lem-post-title-face))
-            ((name . "repo")
-             (prop . compose-repo)
-             (item-var . fj-compose-repo)
-             (face . link)))))
+   `(((name . "repo")
+      (prop . compose-repo)
+      (item-var . fj-compose-repo)
+      (face . link))
+     ((name . ,(if (eq type 'comment) "issue ""title"))
+      (prop . compose-title)
+      (item-var . fj-compose-issue-title)
+      (face . lem-post-title-face)))
    init-text)
   (setq fj-compose-item-type
         (if edit
@@ -1622,6 +1653,21 @@ STATUS-TYPES and SUBJECT-TYPE are array strings."
   (interactive)
   (let ((url (fj--get-buffer-spec :url)))
     (browse-url-generic url)))
+
+(defun fj-tl-imenu-index-fun ()
+  "Function for `imenu-create-index-function'.
+Allow quick jumping to an element in a tabulated list view."
+  (let* (alist)
+    (save-excursion
+      (goto-char (point-min))
+      (while (tabulated-list-get-entry)
+        (let* ((entry (tabulated-list-get-entry))
+               (name (if (eq major-mode #'fj-issue-tl-mode)
+                         (car (seq-elt entry 4))
+                       (car (seq-first entry)))))
+          (push `(,name . ,(point)) alist))
+        (next-line)))
+    alist))
 
 (provide 'fj)
 ;;; fj.el ends here
