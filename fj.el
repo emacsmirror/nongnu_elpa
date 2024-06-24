@@ -300,6 +300,7 @@ JSON."
   :group 'fj
   (hl-line-mode 1)
   (setq tabulated-list-padding 0 ;2) ; point directly on issue
+        tabulated-list-sort-key '("Updated" . t) ;; default
         tabulated-list-format
         '[("Name" 16 t)
           ("★" 3 t)
@@ -712,12 +713,13 @@ NEW-BODY is the new comment text to send."
   :group 'fj
   (hl-line-mode 1)
   (setq tabulated-list-padding 0 ;2) ; point directly on issue
-        ;; tabulated-list-sort-key '("Updated") ;; need to sort by stamp!
+        ;; this is changed by `tabulated-list-sort' which sorts by col at point:
+        tabulated-list-sort-key '("Updated" . t) ;; default
         tabulated-list-format
         '[("#" 5 t)
           ("💬" 3 t)
           ("Author" 10 t)
-          ("Updated" 14 t)
+          ("Updated" 14 t) ;; instead of display, you could use a sort fun here
           ("Issue" 20 t)])
   (setq imenu-create-index-function #'fj-tl-imenu-index-fun))
 
@@ -738,7 +740,10 @@ STATE is a string."
            for author = (alist-get 'username
                                    (alist-get 'user issue))
            for url = (alist-get 'html_url issue)
-           for updated = (alist-get 'updated_at issue)
+           for updated =  (date-to-time
+                           (alist-get 'updated_at issue))
+           for updated-str = (format-time-string "%s" updated)
+           for updated-display = (fedi--relative-time-description updated)
            collect
            `(nil
              [(,(number-to-string id)
@@ -754,8 +759,8 @@ STATE is a string."
                        type  fj-issues-owner-button)
               ;; FIXME: to sort by timestamp, we need the raw stamp
               ;; but using display prob is tricky for cell width...
-              ,(propertize (fedi--relative-time-description
-                            (date-to-time updated)))
+              ,(propertize updated-str
+                           'display updated-display)
               (,title face ,(if (equal state "closed")
                                 'fj-closed-issue-face
                               'fj-item-face)
@@ -1169,6 +1174,7 @@ If TOPIC, QUERY is a search for topic keywords."
   :group 'fj
   (hl-line-mode 1)
   (setq tabulated-list-padding 0 ;2) ; point directly on issue
+        tabulated-list-sort-key '("Updated" . t) ;; default
         tabulated-list-format
         '[("Name" 16 t)
           ("Owner" 12 t)
@@ -1214,9 +1220,13 @@ NO-OWNER means don't display owner column (user repos view)."
                             "ℹ"
                           "⑂"))
            for url = (alist-get 'html_url r)
-           for updated = (alist-get 'updated_at r)
+           for updated =  (date-to-time
+                           (alist-get 'updated_at r))
+           for updated-str = (format-time-string "%s" updated)
+           for updated-display = (fedi--relative-time-description updated)
            collect
            (if no-owner
+               ;; FIXME: refactor (we can't `when' the owner col tho):
                ;; user repo button:
                `(nil [(,name face fj-item-face
                              id ,id
@@ -1225,9 +1235,8 @@ NO-OWNER means don't display owner column (user repos view)."
                       (,stars id ,id face fj-figures-face)
                       (,fork id ,id face fj-figures-face)
                       ,lang
-                      ;; FIXME: sort on timestamp
-                      ,(propertize (fedi--relative-time-description
-                                    (date-to-time updated)))
+                      ,(propertize updated-str
+                                   'display updated-display)
                       ,(propertize desc
                                    'face 'fj-comment-face)])
              ;; search-repo and search owner button:
@@ -1241,9 +1250,8 @@ NO-OWNER means don't display owner column (user repos view)."
                     (,stars id ,id face fj-figures-face)
                     (,fork id ,id face fj-figures-face)
                     ,lang
-                    ;; FIXME: sort on timestamp
-                    ,(propertize (fedi--relative-time-description
-                                  (date-to-time updated)))
+                    ,(propertize updated-str
+                                 'display updated-display)
                     ,(propertize desc
                                  'face 'fj-comment-face)]))))
 
