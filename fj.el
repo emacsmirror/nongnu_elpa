@@ -1209,47 +1209,33 @@ If TOPIC, QUERY is a search for topic keywords."
 (defun fj-repo-tl-entries (repos &optional no-owner)
   "Return tabluated list entries for REPOS.
 NO-OWNER means don't display owner column (user repos view)."
-  (cl-loop for r in repos
-           for id = (alist-get 'id r)
-           for name = (alist-get 'name r)
-           for desc = (string-replace "\n" " "
-                                      (alist-get 'description r))
-           for owner = (unless no-owner
-                         (alist-get 'username
-                                    (alist-get 'owner r)))
-           for lang = (alist-get 'language r)
-           ;; for url = (alist-get 'html_url r)
-           for stars = (number-to-string
-                        (alist-get 'stars_count r))
-           for fork = (let ((status (alist-get 'fork r)))
-                        (if (eq status :json-false)
-                            "ℹ"
-                          "⑂"))
-           for url = (alist-get 'html_url r)
-           for issues = (number-to-string
-                         (alist-get 'open_issues_count r))
-           for updated =  (date-to-time
-                           (alist-get 'updated_at r))
-           for updated-str = (format-time-string "%s" updated)
-           for updated-display = (fedi--relative-time-description updated)
-           collect
-           `(nil ,(cl-remove 'nil
-                             `[(,name face fj-item-face
-                                      id ,id
-                                      type fj-user-repo-button
-                                      fj-url ,url)
-                               ,(unless no-owner
-                                  `(,owner face fj-user-face
-                                           id ,id
-                                           type fj-search-owner-button))
-                               (,stars id ,id face fj-figures-face)
-                               (,fork id ,id face fj-figures-face)
-                               (,issues id ,id face fj-figures-face)
-                               ,lang
-                               ,(propertize updated-str
-                                            'display updated-display)
-                               ,(propertize desc
-                                            'face 'fj-comment-face)]))))
+  (cl-loop
+   for r in repos
+   collect
+   (let-alist r
+     (let* ((fork (if (eq .fork :json-false) "ℹ" "⑂"))
+            (updated (date-to-time .updated_at))
+            (updated-str (format-time-string "%s" updated))
+            (updated-display (fedi--relative-time-description updated)))
+       `(nil ;; TODO: id
+         ,(cl-remove 'nil
+                     `[(,.name face fj-item-face
+                               id ,.id
+                               type fj-user-repo-button
+                               fj-url ,.html_url)
+                       ,(unless no-owner
+                          `(,.owner.username face fj-user-face
+                                             id ,.id
+                                             type fj-search-owner-button))
+                       (,(number-to-string .stars_count) id ,.id face fj-figures-face)
+                       (,fork id ,.id face fj-figures-face)
+                       (,(number-to-string .open_issues_count)
+                        id ,.id face fj-figures-face)
+                       ,.language
+                       ,(propertize updated-str
+                                    'display updated-display)
+                       ,(propertize (string-replace "\n" " " .description)
+                                    'face 'fj-comment-face)]))))))
 
 (defun fj-repo-search-tl (query &optional topic)
   "Search repos for QUERY, and display a tabulated list of results.
