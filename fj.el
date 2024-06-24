@@ -1381,6 +1381,47 @@ TOPIC, a boolean, means search in repo topics."
 
 ;; TODO: star toggle
 
+(defun fj-get-repo-files (repo owner &optional ref)
+  "Get files for REPO of OWNER.
+ REF is a commiit, branch or tag."
+  (let ((endpoint (format"repos/%s/%s/contents" owner repo)))
+    (fj-get endpoint)))
+
+(defun fj-get-repo-file (repo owner file)
+  "Return FILE from REPO of OWNER.
+FILE is a string, including type suffix, and is case-sensitive."
+  (let ((endpoint (format "repos/%s/%s/raw/%s" owner repo file)))
+    (fj-get endpoint nil :no-json)))
+
+(defun fj-repo-readme (&optional repo owner file files ref)
+  ""
+  (let* ((files (or files (fj-get-repo-files repo owner ref)))
+         (names (cl-loop for f in files
+                         collect (alist-get 'name f)))
+         (readme-name
+          (car (or (cl-member "readme" names :test #'string-prefix-p)
+                   (cl-member "README" names :test #'string-prefix-p))))
+         (suffix (file-name-extension readme-name))
+         (file  (fj-get-repo-file repo owner readme-name))
+         (file-str (with-current-buffer file
+                     (goto-char (point-min))
+                     (re-search-forward "^$" nil 'move)
+                     (buffer-substring (point) (point-max))))
+         (buf (format "*fj-%s-%s*" repo readme-name)))
+    (with-current-buffer (get-buffer-create buf)
+      (let ((inhibit-read-only t)) ;; in case already open
+        (erase-buffer)
+        (save-excursion
+          (insert file-str)))
+      (if (string= suffix "org")
+          (org-mode)
+        (markdown-mode))
+      (read-only-mode 1)
+      ;; TODO: setq a quick q kill-buffer with (local keymap)
+      ;; (quit-window)
+      ;; (kill-buffer buffer)
+      (switch-to-buffer-other-window (current-buffer)))))
+
 ;;; TL ACTIONS, ISSUES ONLY
 
 (defun fj-issues-tl-view (&optional _)
