@@ -1389,7 +1389,8 @@ TOPIC, a boolean, means search in repo topics."
    (let* ((item (tabulated-list-get-entry))
           (number (car (seq-first item)))
           (owner (fj--get-buffer-spec :owner))
-          (repo (fj--get-buffer-spec :repo)))
+          (repo (fj--get-buffer-spec :repo))
+          (title (car (seq-elt item 3))))
      ;; (comment (read-string
      ;; (format "Comment on issue #%s: " number))))
      ;; (fj-issue-comment fj-current-repo owner number comment))))
@@ -1397,7 +1398,9 @@ TOPIC, a boolean, means search in repo topics."
      (fj-issue-compose nil #'fj-compose-comment-mode 'comment)
      (setq fj-compose-repo repo
            fj-compose-repo-owner owner
-           fj-compose-issue-number number))))
+           fj-compose-issue-title title
+           fj-compose-issue-number number)
+     (fedi-post--update-status-fields))))
 
 (defun fj-issues-tl-close (&optional _)
   "Close current issue from tabulated issues listing."
@@ -1524,17 +1527,14 @@ Inject INIT-TEXT into the buffer, for editing."
    ;; #'lem-post--comms-capf)
    nil
    ;; TODO: why not have a compose-buffer-spec rather than 10 separate vars?
-   (cond ((eq type 'comment)
-          nil)
-         (t
-          '(((name . "title")
-             (prop . compose-title)
-             (item-var . fj-compose-issue-title)
-             (face . lem-post-title-face))
-            ((name . "repo")
-             (prop . compose-repo)
-             (item-var . fj-compose-repo)
-             (face . link)))))
+   `(((name . "repo")
+      (prop . compose-repo)
+      (item-var . fj-compose-repo)
+      (face . link))
+     ((name . ,(if (eq type 'comment) "issue ""title"))
+      (prop . compose-title)
+      (item-var . fj-compose-issue-title)
+      (face . lem-post-title-face)))
    init-text)
   (setq fj-compose-item-type
         (if edit
