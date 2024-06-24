@@ -74,6 +74,7 @@ Forgejo's API is vast. Currently =fj.el= just implements a few basic things:
 #+RESULTS:
 | Binding | Command                      | Description                                                         |
 |---------+------------------------------+---------------------------------------------------------------------|
+|         | fj-browse-view               | Brose URL of view at point.                                         |
 |         | fj-compose-cancel            | Kill new-post buffer/window. Does not POST content.                 |
 |         | fj-compose-comment-mode      | Minor mode for composing issues.                                    |
 |         | fj-compose-mode              | Minor mode for composing issues and comments.                       |
@@ -126,6 +127,7 @@ Forgejo's API is vast. Currently =fj.el= just implements a few basic things:
 |         | fj-repo-tl-star-repo         | Star or UNSTAR current repo from tabulated user repos listing.      |
 |         | fj-repo-tl-unstar-repo       | Unstar current repo from tabulated user repos listing.              |
 |         | fj-switch-to-buffer          | Switch to a live fj buffer.                                         |
+|         | fj-tl-browse-entry           | Browse URL of tabulated list entry at point.                        |
 |         | fj-user-repo-tl-mode         | Mode for displaying a tabulated list of user repos.                 |
 |         | fj-user-repo-tl-reload       | Reload current user repos tl.                                       |
 |         | fj-user-repos-tl             | View a tabulated list of respos for USER.                           |
