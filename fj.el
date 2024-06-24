@@ -1236,11 +1236,13 @@ TOPIC, a boolean, means search in repo topics."
                       '("topic" . "t"))))
          (resp (fj-get "/repos/search" params))
          (buf (format "*fj-search-%s*" query))
+         (url (fedi-http--concat-params-to-url
+               (concat fj-host "/explore/repos") params))
          (data (alist-get 'data resp))
          (entries (fj-repo-tl-entries data)))
-    (fj-repos-tl-render buf entries #'fj-repo-tl-mode)))
+    (fj-repos-tl-render buf entries #'fj-repo-tl-mode nil url)))
 
-(defun fj-repos-tl-render (buf entries mode &optional owner)
+(defun fj-repos-tl-render (buf entries mode &optional owner url)
   "RENDER a tabulated list in BUF fer, with ENTRIES, in MODE."
   (with-current-buffer (get-buffer-create buf)
     (setq tabulated-list-entries entries)
@@ -1256,7 +1258,11 @@ TOPIC, a boolean, means search in repo topics."
       (switch-to-buffer (current-buffer)))
      (t                             ; new buf
       (switch-to-buffer-other-window (current-buffer))))
-    (setq fj-buffer-spec `(:owner ,owner)))) ; NB: only works for user repos
+    (setq fj-buffer-spec
+          `( :owner ,owner
+             :url ,(if owner
+                       (concat fj-host "/" owner)
+                     url)))))
 
 ;;; TL ACTIONS
 
