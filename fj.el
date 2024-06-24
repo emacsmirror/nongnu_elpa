@@ -261,6 +261,11 @@ JSON."
 
 ;;; USER REPOS TL
 
+(defun fj-get-repo (repo owner)
+  "GET REPO owner by OWNER."
+  (let* ((endpoint (format "repos/%s/%s/" owner repo)))
+    (fj-get endpoint)))
+
 (define-button-type 'fj-user-repo-button
   'follow-link t
   'action 'fj-repo-tl-list-issues
