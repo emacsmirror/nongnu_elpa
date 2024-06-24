@@ -1301,15 +1301,15 @@ TOPIC, a boolean, means search in repo topics."
 (defun fj-create-issue (&optional _)
   "Create issue in current repo or repo at point in tabulated listing."
   (interactive)
-  (let* ((item (tabulated-list-get-entry))
+  (let* ((entry (tabulated-list-get-entry))
          (user (cond ((eq major-mode #'fj-repo-tl-mode)
-                      (car (seq-elt item 1)))
+                      (car (seq-elt entry 1)))
                      ((or (eq major-mode #'fj-user-repo-tl-mode)
                           (eq major-mode #'fj-issue-tl-mode))
                       (fj--get-buffer-spec :owner))))
          (repo (if (eq major-mode #'fj-issue-tl-mode)
                    fj-current-repo
-                 (car (seq-elt item 0)))))
+                 (car (seq-elt entry 0)))))
     (fj-issue-compose)
     (setq fj-compose-repo repo
           fj-compose-repo-owner user)
@@ -1320,11 +1320,11 @@ TOPIC, a boolean, means search in repo topics."
   "View issues of current repo from tabulated repos listing."
   (interactive)
   (fj-with-entry
-   (let* ((item (tabulated-list-get-entry))
-          (name (car (seq-first item)))
+   (let* ((entry (tabulated-list-get-entry))
+          (name (car (seq-first entry)))
           (user (if (eq major-mode #'fj-user-repo-tl-mode)
                     (fj--get-buffer-spec :owner)
-                  (car (seq-elt item 1)))))
+                  (car (seq-elt entry 1)))))
      (fj-list-issues name user))))
 
 ;; author/owner button, in search or issues TL, not user repo TL
@@ -1334,10 +1334,10 @@ TOPIC, a boolean, means search in repo topics."
   (if (eq major-mode #'fj-user-repo-tl-mode)
       (user-error "Already viewing user repos")
     (fj-with-entry
-     (let* ((item (tabulated-list-get-entry))
+     (let* ((entry (tabulated-list-get-entry))
             (user (if (eq major-mode #'fj-repo-tl-mode)
-                      (car (seq-elt item 1))
-                    (car (seq-elt item 2))))) ; fj-issue-tl-mode
+                      (car (seq-elt entry 1))
+                    (car (seq-elt entry 2))))) ; fj-issue-tl-mode
        (fj-user-repos-tl user)))))
 
 (defun fj-user-repo-tl-reload ()
@@ -1351,11 +1351,11 @@ TOPIC, a boolean, means search in repo topics."
   "Star or UNSTAR current repo from tabulated user repos listing."
   (interactive)
   (fj-with-entry
-   (let* ((item (tabulated-list-get-entry))
-          (repo (car (seq-first item)))
+   (let* ((entry (tabulated-list-get-entry))
+          (repo (car (seq-first entry)))
           (owner (if (eq major-mode #'fj-user-repo-tl-mode)
                      (fj--get-buffer-spec :owner)
-                   (car (seq-elt item 1)))))
+                   (car (seq-elt entry 1)))))
      (fj-star-repo repo owner unstar))))
 
 (defun fj-repo-tl-unstar-repo ()
@@ -1367,11 +1367,11 @@ TOPIC, a boolean, means search in repo topics."
   "Fork repo entry at point."
   (interactive)
   (fj-with-entry
-   (let* ((item (tabulated-list-get-entry))
-          (repo (car (seq-first item)))
+   (let* ((entry (tabulated-list-get-entry))
+          (repo (car (seq-first entry)))
           (owner (if (eq major-mode #'fj-user-repo-tl-mode)
                      (fj--get-buffer-spec :owner)
-                   (car (seq-elt item 1))))
+                   (car (seq-elt entry 1))))
           (name (read-string "Fork name: " repo)))
      (fj-fork-repo repo owner name))))
 
@@ -1383,8 +1383,8 @@ TOPIC, a boolean, means search in repo topics."
   "View current issue from tabulated issues listing."
   (interactive)
   (fj-with-entry
-   (let* ((item (tabulated-list-get-entry))
-          (number (car (seq-first item)))
+   (let* ((entry (tabulated-list-get-entry))
+          (number (car (seq-first entry)))
           (owner (fj--get-buffer-spec :owner)))
      (fj-issue-view fj-current-repo owner number))))
 
@@ -1393,10 +1393,10 @@ TOPIC, a boolean, means search in repo topics."
   (interactive)
   (fj-with-entry
    (fj-with-own-issue
-    (let* ((item (tabulated-list-get-entry))
-           (number (car (seq-first item)))
+    (let* ((entry (tabulated-list-get-entry))
+           (number (car (seq-first entry)))
            (owner (fj--get-buffer-spec :owner))
-           (title (car (seq-elt item 4)))
+           (title (car (seq-elt entry 4)))
            (repo (fj--get-buffer-spec :repo))
            (data (fj-get-issue repo owner number))
            (old-body (alist-get 'body data)))
@@ -1412,11 +1412,11 @@ TOPIC, a boolean, means search in repo topics."
   "Comment on issue from tabulated issues listing."
   (interactive)
   (fj-with-entry
-   (let* ((item (tabulated-list-get-entry))
-          (number (car (seq-first item)))
+   (let* ((entry (tabulated-list-get-entry))
+          (number (car (seq-first entry)))
           (owner (fj--get-buffer-spec :owner))
           (repo (fj--get-buffer-spec :repo))
-          (title (car (seq-elt item 4))))
+          (title (car (seq-elt entry 4))))
      ;; (comment (read-string
      ;; (format "Comment on issue #%s: " number))))
      ;; (fj-issue-comment fj-current-repo owner number comment))))
@@ -1436,8 +1436,8 @@ TOPIC, a boolean, means search in repo topics."
    (fj-with-own-issue-or-repo
     (if (string= (fj--property 'state) "closed")
         (user-error "Issue already closed")
-      (let* ((item (tabulated-list-get-entry))
-             (number (car (seq-first item)))
+      (let* ((entry (tabulated-list-get-entry))
+             (number (car (seq-first entry)))
              (owner (fj--get-buffer-spec :owner)))
         (fj-issue-close fj-current-repo owner number)
         (fj-issues-tl-reload))))))
@@ -1447,8 +1447,8 @@ TOPIC, a boolean, means search in repo topics."
   (interactive)
   (fj-with-entry
    (fj-with-own-repo
-    (let* ((item (tabulated-list-get-entry))
-           (number (car (seq-first item)))
+    (let* ((entry (tabulated-list-get-entry))
+           (number (car (seq-first entry)))
            (owner (fj--get-buffer-spec :owner)))
       (when (y-or-n-p (format "Delete issue %s?" number))
         (fj-issue-delete fj-current-repo owner number :no-confirm)
@@ -1462,8 +1462,8 @@ TOPIC, a boolean, means search in repo topics."
        (user-error "Issue already open")
      ;; (if (string= (fj--get-buffer-spec :state) "open")
      ;; (user-error "Viewing open issues?")
-     (let* ((item (tabulated-list-get-entry))
-            (number (car (seq-first item)))
+     (let* ((entry (tabulated-list-get-entry))
+            (number (car (seq-first entry)))
             (owner (fj--get-buffer-spec :owner)))
        (fj-issue-close fj-current-repo owner number "open")
        (fj-issues-tl-reload)))))
