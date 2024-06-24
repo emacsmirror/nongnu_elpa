@@ -280,6 +280,8 @@ JSON."
     (define-key map (kbd "O") #'fj-list-own-repos)
     (define-key map (kbd "s") #'fj-repo-search-tl)
     (define-key map (kbd "u") #'fj-list-user-repos)
+    (define-key map (kbd "B") #'fj-tl-browse-entry)
+    (define-key map (kbd "b") #'fj-browse-view)
     ;; (define-key map (kbd "g") #'fj-repo-tl-reload)
     map)
   "Map for `fj-repo-tl-mode' and `fj-user-repo-tl-mode' to inherit.")
@@ -696,6 +698,8 @@ NEW-BODY is the new comment text to send."
     (define-key map (kbd "o") #'fj-issues-tl-reopen)
     (define-key map (kbd "s") #'fj-repo-search-tl)
     (define-key map (kbd "u") #'fj-list-user-repos)
+    (define-key map (kbd "B") #'fj-tl-browse-entry)
+    (define-key map (kbd "b") #'fj-browse-view)
     map)
   "Map for `fj-issue-tl-mode', a tabluated list of issues.")
 
@@ -897,6 +901,7 @@ JSON is the item's data to process the link with."
     (define-key map (kbd "K") #'fj-issue-view-comment-delete)
     (define-key map (kbd "s") #'fj-repo-search-tl)
     (define-key map (kbd "O") #'fj-list-own-repos)
+    (define-key map (kbd "b") #'fj-browse-view)
     map)
   "Keymap for `fj-issue-view-mode'.")
 
@@ -1599,14 +1604,14 @@ STATUS-TYPES and SUBJECT-TYPE are array strings."
 
 ;;; BROWSE
 
-(defun fj-tl-browse-entry-url ()
+(defun fj-tl-browse-entry ()
   "Browse URL of tabulated list entry at point."
   (interactive)
   (fj-with-entry
    (let ((url (fj--property 'fj-url)))
      (browse-url-generic url))))
 
-(defun fj-browse-view-url ()
+(defun fj-browse-view ()
   "Brose URL of view at point."
   (interactive)
   (let ((url (fj--get-buffer-spec :url)))
