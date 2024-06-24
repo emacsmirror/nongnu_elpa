@@ -713,10 +713,12 @@ STATE is a string."
                            (alist-get 'comments issue))
            for author = (alist-get 'username
                                    (alist-get 'user issue))
+           for url = (alist-get 'html_url issue)
            collect `(nil [(,(number-to-string id)
                            id ,id
                            state ,state
-                           type fj-issue-button)
+                           type fj-issue-button
+                           fj-url ,url)
                           ,(propertize comments
                                        'face 'fj-figures-face)
                           (,author face fj-user-face
@@ -1171,12 +1173,14 @@ NO-OWNER means don't display owner column (user repos view)."
                         (if (eq status :json-false)
                             "ℹ"
                           "⑂"))
+           for url = (alist-get 'html_url r)
            collect
            (if no-owner
                ;; user repo button:
                `(nil [(,name face fj-item-face
                              id ,id
-                             type fj-user-repo-button)
+                             type fj-user-repo-button
+                             fj-url ,url)
                       (,stars id ,id face fj-figures-face)
                       (,fork id ,id face fj-figures-face)
                       ,lang
@@ -1185,7 +1189,8 @@ NO-OWNER means don't display owner column (user repos view)."
              ;; search-repo and search owner button:
              `(nil [(,name face fj-item-face
                            id ,id
-                           type fj-search-repo-button)
+                           type fj-search-repo-button
+                           fj-url ,url)
                     (,owner face fj-user-face
                             id ,id
                             type fj-search-owner-button)
