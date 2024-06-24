@@ -305,7 +305,7 @@ JSON."
           ("" 2 t)
           ("Lang" 10 t)
           ("Description" 55 nil)])
-  (setq fj-user-repo-tl-mode-map fj-repo-tl-mode-map))
+  (setq imenu-create-index-function #'fj-tl-imenu-index-fun))
 
 (defun fj-get-current-user ()
   "Return the data for the current user."
@@ -708,12 +708,13 @@ NEW-BODY is the new comment text to send."
   "Major mode for browsing a tabulated list of issues."
   :group 'fj
   (hl-line-mode 1)
-  (setq tabulated-list-padding 0) ;2) ; point directly on issue
-  (setq tabulated-list-format
+  (setq tabulated-list-padding 0 ;2) ; point directly on issue
+        tabulated-list-format
         '[("#" 5 t)
           ("💬" 3 t)
           ("Author" 10 t)
-          ("Issue" 2 t)]))
+          ("Issue" 2 t)])
+  (setq imenu-create-index-function #'fj-tl-imenu-index-fun))
 
 (define-button-type 'fj-issue-button
   'follow-link t
@@ -1155,14 +1156,15 @@ If TOPIC, QUERY is a search for topic keywords."
   "Mode for displaying a tabulated list of repo search results."
   :group 'fj
   (hl-line-mode 1)
-  (setq tabulated-list-padding 0) ;2) ; point directly on issue
-  (setq tabulated-list-format
+  (setq tabulated-list-padding 0 ;2) ; point directly on issue
+        tabulated-list-format
         '[("Name" 16 t)
           ("Owner" 12 t)
           ("★" 3 t)
           ("" 2 t)
           ("Lang" 10 t)
-          ("Description" 55 nil)]))
+          ("Description" 55 nil)])
+  (setq imenu-create-index-function #'fj-tl-imenu-index-fun))
 
 (define-button-type 'fj-search-repo-button
   'follow-link t
@@ -1622,6 +1624,21 @@ STATUS-TYPES and SUBJECT-TYPE are array strings."
   (interactive)
   (let ((url (fj--get-buffer-spec :url)))
     (browse-url-generic url)))
+
+(defun fj-tl-imenu-index-fun ()
+  "Function for `imenu-create-index-function'.
+Allow quick jumping to an element in a tabulated list view."
+  (let* (alist)
+    (save-excursion
+      (goto-char (point-min))
+      (while (tabulated-list-get-entry)
+        (let* ((entry (tabulated-list-get-entry))
+               (name (if (eq major-mode #'fj-issue-tl-mode)
+                         (car (seq-elt entry 3))
+                       (car (seq-first entry)))))
+          (push `(,name . ,(point)) alist))
+        (next-line)))
+    alist))
 
 (provide 'fj)
 ;;; fj.el ends here
