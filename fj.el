@@ -92,16 +92,24 @@ Repo, owner, item number, url.")
 
 ;;; UTILS
 
+(defun fj--property (prop)
+  "Get text property PROP at point."
+  (get-text-property (point) prop))
+
+(defun fj--get-buffer-spec (key)
+  "Get entry for KEY from `fj-buffer-spec'."
+  (plist-get fj-buffer-spec key))
+
 (defun fj-issues-tl-own-repo-p ()
   "T if repo is owned by `fj-user'."
-  (equal (plist-get fj-buffer-spec :owner)
+  (equal (fj--get-buffer-spec :owner)
          fj-user))
 
 (defun fj-issue-own-p ()
   "T if issue is authored by `fj-user'."
   (cond ((eq major-mode 'fj-issue-view-mode)
          (equal fj-user
-                (plist-get fj-buffer-spec :author)))
+                (fj--get-buffer-spec :author)))
         ((eq major-mode 'fj-issue-tl-mode)
          (let* ((entry (tabulated-list-get-entry))
                 (author (car (seq-elt entry 2))))
@@ -130,11 +138,6 @@ Repo, owner, item number, url.")
     'display
     `(space :align-to (- right ,(+ (length str) 4))))
    str))
-
-
-(defun fj--property (prop)
-  "Get text property PROP at point."
-  (get-text-property (point) prop))
 
 ;;; MACROS
 
@@ -486,7 +489,7 @@ OWNER is the repo owner."
   (let* ((repo (fj-read-user-repo repo))
          (issue (or issue (fj-read-repo-issue repo)))
          (owner (or owner ;; FIXME: owner
-                    (plist-get fj-buffer-spec :owner)
+                    (fj--get-buffer-spec :owner)
                     fj-user))
          (data (fj-get-issue repo owner issue))
          (old-body (alist-get 'body data))
@@ -503,7 +506,7 @@ OWNER is the repo owner."
   (let* ((repo (fj-read-user-repo repo))
          (issue (or issue (fj-read-repo-issue repo)))
          (owner (or owner ;; FIXME: owner
-                    (plist-get fj-buffer-spec :owner)
+                    (fj--get-buffer-spec :owner)
                     fj-user))
          (data (fj-get-issue repo owner issue))
          (old-title (alist-get 'title data))
@@ -779,10 +782,6 @@ prompt for a repo to list."
   (interactive "P")
   (fj-list-issues repo user issues "all"))
 
-(defun fj--get-buffer-spec (key)
-  "Get entry for KEY from `fj-buffer-spec'."
-  (plist-get fj-buffer-spec key))
-
 (defun fj-list-issues-cycle ()
   "Cycle between listing of open, closed, and all issues."
   (interactive)
@@ -801,9 +800,10 @@ prompt for a repo to list."
   (interactive)
   (when (string-suffix-p "-issues*"
                          (buffer-name (current-buffer)))
-    (let ((state (plist-get fj-buffer-spec :state))
-          (user (plist-get fj-buffer-spec :owner)))
-      (fj-list-issues nil nil state user))))
+    (let ((state (fj--get-buffer-spec :state))
+          (owner (fj--get-buffer-spec :owner))
+          (repo (fj--get-buffer-spec :repo)))
+      (fj-list-issues repo owner nil state))))
 
 ;;; ISSUE VIEW
 (defvar fj-url-regex fedi-post-url-regex)
@@ -1008,17 +1008,17 @@ RELOAD means we are reloading, so don't open in other window."
 ;;   "Comment on the issue currently being viewed."
 ;;   (interactive)
 ;;   (fj-with-issue
-;;    (let ((number (plist-get fj-buffer-spec :issue))
-;;          (owner (plist-get fj-buffer-spec :owner))
-;;          (repo (plist-get fj-buffer-spec :repo)))
+;;    (let ((number (fj--get-buffer-spec :issue))
+;;          (owner (fj--get-buffer-spec :owner))
+;;          (repo (fj--get-buffer-spec :repo)))
 ;;      (fj-issue-comment repo number))))
 
 (defun fj-issue-view-reload ()
   "Reload the current issue view."
   (interactive)
   (fj-with-issue
-   (let ((number (plist-get fj-buffer-spec :issue))
-         (owner (plist-get fj-buffer-spec :owner)))
+   (let ((number (fj--get-buffer-spec :issue))
+         (owner (fj--get-buffer-spec :owner)))
      (fj-issue-view fj-current-repo owner
                     number :reload))))
 
@@ -1027,9 +1027,9 @@ RELOAD means we are reloading, so don't open in other window."
   "Close issue being viewed, or set to STATE."
   (interactive)
   (fj-with-issue
-   (let ((number (plist-get fj-buffer-spec :issue))
-         (owner (plist-get fj-buffer-spec :owner))
-         (repo (plist-get fj-buffer-spec :repo)))
+   (let ((number (fj--get-buffer-spec :issue))
+         (owner (fj--get-buffer-spec :owner))
+         (repo (fj--get-buffer-spec :repo)))
      (fj-issue-close repo owner number state)
      (fj-issue-view-reload))))
 
@@ -1046,11 +1046,11 @@ RELOAD means we are reloading, so don't open in other window."
   "Edit the issue currently being viewed."
   (interactive)
   (fj-with-own-issue
-   (let ((number (plist-get fj-buffer-spec :issue))
-         (repo (plist-get fj-buffer-spec :repo))
-         (owner (plist-get fj-buffer-spec :owner))
-         (title (plist-get fj-buffer-spec :title))
-         (body (plist-get fj-buffer-spec :body)))
+   (let ((number (fj--get-buffer-spec :issue))
+         (repo (fj--get-buffer-spec :repo))
+         (owner (fj--get-buffer-spec :owner))
+         (title (fj--get-buffer-spec :title))
+         (body (fj--get-buffer-spec :body)))
      (fj-issue-compose :edit nil 'issue body)
      (setq fj-compose-issue-title title
            fj-compose-repo repo
@@ -1061,9 +1061,9 @@ RELOAD means we are reloading, so don't open in other window."
 (defun fj-issue-view-comment ()
   "Comment on the issue currently being viewed."
   (interactive)
-  (let ((number (plist-get fj-buffer-spec :issue))
-        (repo (plist-get fj-buffer-spec :repo))
-        (owner (plist-get fj-buffer-spec :owner)))
+  (let ((number (fj--get-buffer-spec :issue))
+        (repo (fj--get-buffer-spec :repo))
+        (owner (fj--get-buffer-spec :owner)))
     (fj-issue-compose nil 'fj-compose-comment-mode 'comment)
     (setq fj-compose-repo repo
           fj-compose-repo-owner owner
@@ -1075,8 +1075,8 @@ RELOAD means we are reloading, so don't open in other window."
   (interactive)
   (fj-with-own-comment
    (let ((id (fj--property 'fj-comment-id))
-         (repo (plist-get fj-buffer-spec :repo))
-         (owner (plist-get fj-buffer-spec :owner))
+         (repo (fj--get-buffer-spec :repo))
+         (owner (fj--get-buffer-spec :owner))
          (body (alist-get 'body
                           (fj--property 'fj-comment))))
      (fj-issue-compose :edit 'fj-compose-comment-mode 'comment body)
@@ -1090,8 +1090,8 @@ RELOAD means we are reloading, so don't open in other window."
   (interactive)
   (fj-with-own-comment
    (let* ((id (fj--property 'fj-comment-id))
-          (repo (plist-get fj-buffer-spec :repo))
-          (owner (plist-get fj-buffer-spec :owner))
+          (repo (fj--get-buffer-spec :repo))
+          (owner (fj--get-buffer-spec :owner))
           (endpoint (format "repos/%s/%s/issues/comments/%s" owner repo id)))
      (when (yes-or-no-p "Delete comment?")
        (fj-delete endpoint)
@@ -1255,7 +1255,7 @@ TOPIC, a boolean, means search in repo topics."
                       (car (seq-elt item 1)))
                      ((or (eq major-mode #'fj-user-repo-tl-mode)
                           (eq major-mode #'fj-issue-tl-mode))
-                      (plist-get fj-buffer-spec :owner))))
+                      (fj--get-buffer-spec :owner))))
          (repo (if (eq major-mode #'fj-issue-tl-mode)
                    fj-current-repo
                  (car (seq-elt item 0)))))
@@ -1272,7 +1272,7 @@ TOPIC, a boolean, means search in repo topics."
    (let* ((item (tabulated-list-get-entry))
           (name (car (seq-first item)))
           (user (if (eq major-mode #'fj-user-repo-tl-mode)
-                    (plist-get fj-buffer-spec :owner)
+                    (fj--get-buffer-spec :owner)
                   (car (seq-elt item 1)))))
      (fj-list-issues name user))))
 
@@ -1292,7 +1292,7 @@ TOPIC, a boolean, means search in repo topics."
 (defun fj-user-repo-tl-reload ()
   "Reload current user repos tl."
   (interactive)
-  (let ((user (plist-get fj-buffer-spec :owner)))
+  (let ((user (fj--get-buffer-spec :owner)))
     (fj-user-repos-tl user)))
 
 ;; search or user repo TL
@@ -1303,7 +1303,7 @@ TOPIC, a boolean, means search in repo topics."
    (let* ((item (tabulated-list-get-entry))
           (repo (car (seq-first item)))
           (owner (if (eq major-mode #'fj-user-repo-tl-mode)
-                     (plist-get fj-buffer-spec :owner)
+                     (fj--get-buffer-spec :owner)
                    (car (seq-elt item 1)))))
      (fj-star-repo repo owner unstar))))
 
@@ -1319,7 +1319,7 @@ TOPIC, a boolean, means search in repo topics."
    (let* ((item (tabulated-list-get-entry))
           (repo (car (seq-first item)))
           (owner (if (eq major-mode #'fj-user-repo-tl-mode)
-                     (plist-get fj-buffer-spec :owner)
+                     (fj--get-buffer-spec :owner)
                    (car (seq-elt item 1))))
           (name (read-string "Fork name: " repo)))
      (fj-fork-repo repo owner name))))
@@ -1334,7 +1334,7 @@ TOPIC, a boolean, means search in repo topics."
   (fj-with-entry
    (let* ((item (tabulated-list-get-entry))
           (number (car (seq-first item)))
-          (owner (plist-get fj-buffer-spec :owner)))
+          (owner (fj--get-buffer-spec :owner)))
      (fj-issue-view fj-current-repo owner number))))
 
 (defun fj-issues-tl-edit ()
@@ -1344,9 +1344,9 @@ TOPIC, a boolean, means search in repo topics."
    (fj-with-own-issue
     (let* ((item (tabulated-list-get-entry))
            (number (car (seq-first item)))
-           (owner (plist-get fj-buffer-spec :owner))
+           (owner (fj--get-buffer-spec :owner))
            (title (car (seq-elt item 3)))
-           (repo (plist-get fj-buffer-spec :repo))
+           (repo (fj--get-buffer-spec :repo))
            (data (fj-get-issue repo owner number))
            (old-body (alist-get 'body data)))
       ;; (fj-issue-edit fj-current-repo owner number))))
@@ -1363,8 +1363,8 @@ TOPIC, a boolean, means search in repo topics."
   (fj-with-entry
    (let* ((item (tabulated-list-get-entry))
           (number (car (seq-first item)))
-          (owner (plist-get fj-buffer-spec :owner))
-          (repo (plist-get fj-buffer-spec :repo)))
+          (owner (fj--get-buffer-spec :owner))
+          (repo (fj--get-buffer-spec :repo)))
      ;; (comment (read-string
      ;; (format "Comment on issue #%s: " number))))
      ;; (fj-issue-comment fj-current-repo owner number comment))))
@@ -1384,7 +1384,7 @@ TOPIC, a boolean, means search in repo topics."
         (user-error "Issue already closed")
       (let* ((item (tabulated-list-get-entry))
              (number (car (seq-first item)))
-             (owner (plist-get fj-buffer-spec :owner)))
+             (owner (fj--get-buffer-spec :owner)))
         (fj-issue-close fj-current-repo owner number)
         (fj-issues-tl-reload))))))
 
@@ -1395,7 +1395,7 @@ TOPIC, a boolean, means search in repo topics."
    (fj-with-own-repo
     (let* ((item (tabulated-list-get-entry))
            (number (car (seq-first item)))
-           (owner (plist-get fj-buffer-spec :owner)))
+           (owner (fj--get-buffer-spec :owner)))
       (when (y-or-n-p (format "Delete issue %s?" number))
         (fj-issue-delete fj-current-repo owner number :no-confirm)
         (fj-issues-tl-reload))))))
@@ -1406,11 +1406,11 @@ TOPIC, a boolean, means search in repo topics."
   (fj-with-entry
    (if (string= (fj--property 'state) "open")
        (user-error "Issue already open")
-     ;; (if (string= (plist-get fj-buffer-spec :state) "open")
+     ;; (if (string= (fj--get-buffer-spec :state) "open")
      ;; (user-error "Viewing open issues?")
      (let* ((item (tabulated-list-get-entry))
             (number (car (seq-first item)))
-            (owner (plist-get fj-buffer-spec :owner)))
+            (owner (fj--get-buffer-spec :owner)))
        (fj-issue-close fj-current-repo owner number "open")
        (fj-issues-tl-reload)))))
 
@@ -1419,8 +1419,8 @@ TOPIC, a boolean, means search in repo topics."
   (interactive)
   (fj-with-own-issue
    (let* ((entry (tabulated-list-get-entry))
-          (repo (plist-get fj-buffer-spec :repo))
-          (owner (plist-get fj-buffer-spec :owner))
+          (repo (fj--get-buffer-spec :repo))
+          (owner (fj--get-buffer-spec :owner))
           (number (car (seq-first entry))))
      (fj-issue-edit-title repo owner number)
      (fj-issues-tl-reload))))
