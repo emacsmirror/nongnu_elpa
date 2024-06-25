@@ -954,14 +954,9 @@ OWNER is the repo owner."
 
 (defun fj-author-or-owner-str (username author &optional owner)
   "If USERNAME is equal either AUTHOR or OWNER, return a boxed string."
-  ;; FIXME: improve this junk
-  (if owner
-      (if (equal owner username)
-          (propertize "owner"
-                      'face '(:inherit fj-item-author-face :box t))
-        "")
-    (if (equal author username)
-        (propertize "author"
+  (let ((name (or owner author)))
+    (if (equal name username)
+        (propertize (if owner "owner" "author")
                     'face '(:inherit fj-item-author-face :box t))
       "")))
 
