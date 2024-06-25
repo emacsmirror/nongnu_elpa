@@ -710,6 +710,7 @@ NEW-BODY is the new comment text to send."
     (define-key map (kbd "o") #'fj-issues-tl-reopen)
     (define-key map (kbd "s") #'fj-repo-search-tl)
     (define-key map (kbd "u") #'fj-list-user-repos)
+    (define-key map (kbd "O") #'fj-list-own-repos)
     (define-key map (kbd "B") #'fj-tl-browse-entry)
     (define-key map (kbd "b") #'fj-browse-view)
     (define-key map (kbd "j") #'imenu)
