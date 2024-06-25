@@ -1569,9 +1569,7 @@ Inject INIT-TEXT into the buffer, for editing."
    (or mode #'fj-compose-mode)
    (when mode "fj-compose")
    (or type 'issue)
-   ;; (list #'lem-post--mentions-capf
-   ;; #'lem-post--comms-capf)
-   nil
+   (list #'fj-compose-mentions-capf)
    ;; TODO: why not have a compose-buffer-spec rather than 10 separate vars?
    `(((name . "repo")
       (prop . compose-repo)
@@ -1634,6 +1632,47 @@ Call response and update functions."
               ;; else generic reload function
               (fj-issue-view-reload)
             (fj-list-issues repo)))))))
+
+(defun fj-search-users (query &optional limit)
+  "Search instance users for QUERY.
+Optionally set LIMIT to results."
+  (let ((params `(("q" . ,query)
+                  ("limit" . ,limit))))
+    (fj-get "users/search" params)))
+
+(defun fj-users-alist (data)
+  "Return an alists of user data, containing handle and id."
+  ;; users have no html_url, just concat it to `fj-host'
+  (cl-loop for u in data
+           for id = (alist-get 'id u)
+           for name = (alist-get 'login u)
+           collect (concat "@" name))) ;; @ needed to match for display!
+
+(defun fj-compose-handle-exit-fun (str _status)
+  "Turn completion STR into a markdown link."
+  (save-excursion
+    (delete-backward-char (length str))
+    (insert
+     ;; FIXME: doesn't work with markdown-mode!
+     (propertize str
+                 'face 'fj-user-face)))
+  (forward-word))
+
+(defun fj-compose-mentions-fun (start end)
+  "Given prefix str between START and END, return an alist of mentions for capf."
+  (let* ((resp (fj-search-users
+                (buffer-substring-no-properties (1+ start) ; cull '@'
+                                                end)
+                "25")) ; limit
+         (data (alist-get 'data resp)))
+    (fj-users-alist data)))
+
+(defun fj-compose-mentions-capf ()
+  "Build a mentions completion backend for `completion-at-point-functions'."
+  (fedi-post--return-capf fedi-post-handle-regex
+                          #'fj-compose-mentions-fun
+                          nil nil
+                          #'fj-compose-handle-exit-fun))
 
 ;;; NOTIFICATIONS
 
