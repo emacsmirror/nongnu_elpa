@@ -1128,16 +1128,20 @@ RELOAD means we are reloading, so don't open in other window."
 
 ;;; SEARCH
 
-(defun fj-repo-search (query &optional topic)
-  "Search repos for QUERY.
-If TOPIC, QUERY is a search for topic keywords."
-  (interactive "sSearch for repo: ")
+(defun fj-repo-search-do (query &optional topic)
+  ""
   (let* ((params `(("q" . ,query)
                    ("limit" . "100")
                    ("sort" . "updated")
                    ,(when topic
-                      '("topic" . "t"))))
-         (resp (fj-get "/repos/search" params))
+                      '("topic" . "t")))))
+    (fj-get "/repos/search" params)))
+
+(defun fj-repo-search (query &optional topic)
+  "Search repos for QUERY.
+If TOPIC, QUERY is a search for topic keywords."
+  (interactive "sSearch for repo: ")
+  (let* ((resp (fj-repo-search-do query topic))
          (data (alist-get 'data resp))
          (cands (fj-get-repo-candidates data))
          (completion-extra-properties
@@ -1230,18 +1234,21 @@ NO-OWNER means don't display owner column (user repos view)."
   "Search repos for QUERY, and display a tabulated list of results.
 TOPIC, a boolean, means search in repo topics."
   (interactive "sSearch for repos: ")
-  (let* ((params `(("q" . ,query)
-                   ("limit" . "100")
-                   ("sort" . "updated")
-                   ,(when topic
-                      '("topic" . "t"))))
-         (resp (fj-get "/repos/search" params))
+  (let* ((resp (fj-repo-search-do query topic))
          (buf (format "*fj-search-%s*" query))
-         (url (fedi-http--concat-params-to-url
-               (concat fj-host "/explore/repos") params))
+         (url ;(fedi-http--concat-params-to-url
+          (concat fj-host "/explore/repos"))
          (data (alist-get 'data resp))
          (entries (fj-repo-tl-entries data)))
-    (fj-repos-tl-render buf entries #'fj-repo-tl-mode nil url)))
+    (with-current-buffer
+        (fj-repos-tl-render buf entries #'fj-repo-tl-mode)
+      (setq fj-buffer-spec
+            `(:url ,url :query ,query)))))
+
+(defun fj-repo-search-tl-topic (query)
+  "Search repo topics for QUERY, and display a tabulated list."
+  (interactive "sSearch for topic in repos: ")
+  (fj-repo-search-tl query 'topic))
 
 (defun fj-repos-tl-render (buf entries mode)
   "Render a tabulated list in BUF fer, with ENTRIES, in MODE.
