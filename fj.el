@@ -500,19 +500,19 @@ OWNER is the repo owner."
   "Edit ISSUE body in REPO.
 OWNER is the repo owner."
   (interactive)
-  ;; FIXME: only if author!
-  (let* ((repo (fj-read-user-repo repo))
-         (issue (or issue (fj-read-repo-issue repo)))
-         (owner (or owner ;; FIXME: owner
-                    (fj--get-buffer-spec :owner)
-                    fj-user))
-         (data (fj-get-issue repo owner issue))
-         (old-body (alist-get 'body data))
-         (new-body (read-string "Edit issue body: " old-body))
-         (response (fj-issue-patch repo owner issue nil new-body)))
-    (fedi-http--triage response
-                       (lambda ()
-                         (message "issue edited!")))))
+  (fj-with-own-issue ;; or owner?
+   (let* ((repo (fj-read-user-repo repo))
+          (issue (or issue (fj-read-repo-issue repo)))
+          (owner (or owner ;; FIXME: owner
+                     (fj--get-buffer-spec :owner)
+                     fj-user))
+          (data (fj-get-issue repo owner issue))
+          (old-body (alist-get 'body data))
+          (new-body (read-string "Edit issue body: " old-body))
+          (response (fj-issue-patch repo owner issue nil new-body)))
+     (fedi-http--triage response
+                        (lambda ()
+                          (message "issue edited!"))))))
 
 (defun fj-issue-edit-title (&optional repo owner issue)
   "Edit ISSUE title in REPO.
