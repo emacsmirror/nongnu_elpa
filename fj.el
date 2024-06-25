@@ -217,7 +217,8 @@ Requires `fj-token' to be set."
 
 (defun fj-get (endpoint &optional params no-json)
   "Make a GET request to ENDPOINT.
-PARAMS is any parameters to send with the request."
+PARAMS is any parameters to send with the request.
+NO-JSON means return the raw response."
   (let* ((url (fj-api endpoint))
          (resp (fj-authorized-request "GET"
                  (if no-json
@@ -349,8 +350,8 @@ JSON."
                          (message "Repo %s %s!" repo
                                   (if unstar "unstarred" "starred"))))))
 
-(defun fj-fork-repo (repo owner &optional name org)
-  "For REPO owned by OWNER."
+(defun fj-fork-repo (repo owner &optional name) ; org
+  "Fork REPO owned by OWNER, optionally call fork NAME."
   (let* ((endpoint (format "repos/%s/%s/forks" owner repo))
          (params `(("name" . ,name)))
          ;; ("organization" . ,org)))
@@ -445,11 +446,10 @@ Return the issue number."
                          cands))))
     (cadr item)))
 
-(defun fj-repo-get-issues (repo &optional user state)
-  "Return issues for REPO.
-STATE is for issue status, a string of open, closed or all.
-USER is the repo owner."
-  (let* ((endpoint (format "repos/%s/%s/issues" (or user fj-user) repo))
+(defun fj-repo-get-issues (repo &optional owner state)
+  "Return issues for REPO by OWNER.
+STATE is for issue status, a string of open, closed or all."
+  (let* ((endpoint (format "repos/%s/%s/issues" (or owner fj-user) repo))
          (params `(("state" . ,state)
                    ("limit" . "100"))))
     (condition-case err
@@ -546,7 +546,8 @@ OWNER is the repo owner."
                              (message "Issue %s %s!" issue state)))))))
 
 (defun fj-issue-delete (&optional repo owner issue no-confirm)
-  "Delete ISSUE in REPO."
+  "Delete ISSUE in REPO of OWNER.
+Optionally, NO-CONFIRM means don't ask before deleting."
   (interactive "P")
   (let* ((repo (fj-read-user-repo repo))
          (issue (or issue (fj-read-repo-issue repo))))
@@ -764,24 +765,23 @@ STATE is a string."
                    state ,.state
                    type fj-issue-button)])))))
 
-(defun fj-list-issues (repo &optional user issues state)
+(defun fj-list-issues (repo &optional owner issues state)
   "Display ISSUES in a tabulated list view.
-Either for `fj-current-repo', or for REPO, a string.
+Either for `fj-current-repo' or REPO, a string, owned by OWNER.
 With a prefix arg, or if REPO and `fj-current-repo' are nil,
-prompt for a repo to list."
+prompt for a repo to list.
+Optionally specify ISSUES data, and the STATE filter (open, closed, all)."
   (interactive "P")
   (let* ((repo (fj-read-user-repo repo))
-         (issues (or issues (fj-repo-get-issues repo user state)))
-         (owner (or user
+         (issues (or issues (fj-repo-get-issues repo owner state)))
+         (owner (or owner
                     (alist-get 'owner
                                (alist-get 'repository (car issues)))))
-         (repo-data (fj-get-repo repo user))
+         (repo-data (fj-get-repo repo owner))
          (url (concat (alist-get 'html_url repo-data)
                       "/issues"))
          (prev-buf (buffer-name (current-buffer)))
          (state-str (or state "open"))
-         ;; FIXME: opens a buf for each state:
-         ;; can we put the state in the header?
          (buf-name (format "*fj-%s-%s-issues*" repo state-str)))
     (with-current-buffer (get-buffer-create buf-name)
       (setq tabulated-list-entries
@@ -799,15 +799,15 @@ prompt for a repo to list."
             (t                             ; new buf
              (switch-to-buffer-other-window (current-buffer)))))))
 
-(defun fj-list-issues-closed (&optional repo user issues)
-  "Display closed ISSUES for REPO in tabulated list view."
+(defun fj-list-issues-closed (&optional repo owner issues)
+  "Display closed ISSUES for REPO by OWNER in tabulated list view."
   (interactive "P")
   (fj-list-issues repo user issues "closed"))
 
-(defun fj-list-issues-all (&optional repo user issues)
-  "Display all ISSUES for REPO in tabulated list view."
+(defun fj-list-issues-all (&optional repo owner issues)
+  "Display all ISSUES for REPO by OWNER in tabulated list view."
   (interactive "P")
-  (fj-list-issues repo user issues "all"))
+  (fj-list-issues repo owner issues "all"))
 
 (defun fj-list-issues-cycle ()
   "Cycle between listing of open, closed, and all issues."
@@ -1246,7 +1246,8 @@ TOPIC, a boolean, means search in repo topics."
     (fj-repos-tl-render buf entries #'fj-repo-tl-mode nil url)))
 
 (defun fj-repos-tl-render (buf entries mode &optional owner url)
-  "RENDER a tabulated list in BUF fer, with ENTRIES, in MODE."
+  "Render a tabulated list in BUF fer, with ENTRIES, in MODE.
+Optionally specify repo OWNER and URL."
   (with-current-buffer (get-buffer-create buf)
     (setq tabulated-list-entries entries)
     (funcall mode)
@@ -1352,7 +1353,7 @@ TOPIC, a boolean, means search in repo topics."
 
 (defun fj-get-repo-files (repo owner &optional ref)
   "Get files for REPO of OWNER.
- REF is a commiit, branch or tag."
+REF is a commiit, branch or tag."
   (let ((endpoint (format"repos/%s/%s/contents" owner repo)))
     (fj-get endpoint)))
 
@@ -1362,9 +1363,10 @@ FILE is a string, including type suffix, and is case-sensitive."
   (let ((endpoint (format "repos/%s/%s/raw/%s" owner repo file)))
     (fj-get endpoint nil :no-json)))
 
-(defun fj-repo-readme (&optional repo owner file files ref)
-  ""
-  (let* ((files (or files (fj-get-repo-files repo owner ref)))
+(defun fj-repo-readme (&optional repo owner ref)
+  "Display readme file of REPO by OWNER.
+Optionally specify REF, a commit, branch, or tag."
+  (let* ((files (fj-get-repo-files repo owner ref))
          (names (cl-loop for f in files
                          collect (alist-get 'name f)))
          (readme-name
