@@ -288,14 +288,14 @@ JSON."
     (define-key map (kbd "B") #'fj-tl-browse-entry)
     (define-key map (kbd "b") #'fj-browse-view)
     (define-key map (kbd "j") #'imenu)
-    (define-key map (kbd "g") #'fj-user-repo-tl-reload)
+    (define-key map (kbd "g") #'fj-repo-tl-reload)
     map)
   "Map for `fj-repo-tl-mode' and `fj-user-repo-tl-mode' to inherit.")
 
 (defvar fj-user-repo-tl-mode-map
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map fj-repo-tl-map)
-    ;; (define-key map (kbd "g") #'fj-user-repo-tl-reload)
+    ;; (define-key map (kbd "g") #'fj-repo-tl-reload)
     map)
   "Map for `fj-user-repo-tl-mode', a tabluated list of repos.")
 
@@ -332,7 +332,10 @@ JSON."
   (let* ((repos (fj-get-user-repos user))
          (entries (fj-repo-tl-entries repos :no-owner))
          (buf (format "*fj-repos-%s*" user)))
-    (fj-repos-tl-render buf entries #'fj-user-repo-tl-mode user))) ;; TODO: URL
+    (with-current-buffer
+        (fj-repos-tl-render buf entries #'fj-user-repo-tl-mode)
+      (setq fj-buffer-spec
+            `(:owner user :url ,(concat fj-host "/" owner))))))
 
 (defun fj-list-own-repos ()
   "List repos for `fj-user'."
@@ -1240,7 +1243,7 @@ TOPIC, a boolean, means search in repo topics."
          (entries (fj-repo-tl-entries data)))
     (fj-repos-tl-render buf entries #'fj-repo-tl-mode nil url)))
 
-(defun fj-repos-tl-render (buf entries mode &optional owner url)
+(defun fj-repos-tl-render (buf entries mode)
   "Render a tabulated list in BUF fer, with ENTRIES, in MODE.
 Optionally specify repo OWNER and URL."
   (with-current-buffer (get-buffer-create buf)
@@ -1257,12 +1260,7 @@ Optionally specify repo OWNER and URL."
      ((string-prefix-p "*fj-search" buf) ;; any search
       (switch-to-buffer (current-buffer)))
      (t                             ; new buf
-      (switch-to-buffer-other-window (current-buffer))))
-    (setq fj-buffer-spec
-          `( :owner ,owner
-             :url ,(if owner
-                       (concat fj-host "/" owner)
-                     url)))))
+      (switch-to-buffer-other-window (current-buffer))))))
 
 ;;; TL ACTIONS
 
@@ -1309,11 +1307,14 @@ Optionally specify repo OWNER and URL."
                     (car (seq-elt entry 2))))) ; fj-issue-tl-mode
        (fj-user-repos-tl user)))))
 
-(defun fj-user-repo-tl-reload ()
+(defun fj-repo-tl-reload ()
   "Reload current user repos tl."
   (interactive)
-  (let ((user (fj--get-buffer-spec :owner)))
-    (fj-user-repos-tl user)))
+  (let* ((query (fj--get-buffer-spec :query)) ; only in search tl
+         (user (unless query (fj--get-buffer-spec :owner))))
+    (if query
+        (fj-repo-search-tl query)
+      (fj-user-repos-tl user))))
 
 ;; search or user repo TL
 (defun fj-repo-tl-star-repo (&optional unstar)
