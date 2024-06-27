@@ -553,8 +553,14 @@ Added to `after-change-functions'."
   "Return t if compose buffer is current."
   (let ((buf (buffer-name (current-buffer))))
     ;; TODO: generalize:
+    ;; (let ((new-or-edit '("new" . "edit"))
+    ;; (types '("post" "issue" "comment")))
     (or (equal "*new post*" buf)
-        (equal "*edit post*" buf))))
+        (equal "*edit post*" buf)
+        (equal "*new issue*" buf)
+        (equal "*edit issue*" buf)
+        (equal "*new comment*" buf)
+        (equal "*edit comment*" buf))))
 
 (defun fedi-post--fill-reply-in-compose ()
   "Fill reply text in compose buffer to the width of the divider."
