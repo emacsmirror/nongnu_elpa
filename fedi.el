@@ -490,7 +490,7 @@ from the start if it is nil."
                                #'fedi--update-timestamps-callback
                                buffer nil))))))))
 
-(defun fedi--relative-time-details (timestamp &optional current-time)
+(defun fedi--relative-time-details (timestamp &optional current-time brief)
   "Return cons of (descriptive string . next change) for the TIMESTAMP.
 Use the optional CURRENT-TIME as the current time (only used for
 reliable testing).
@@ -512,10 +512,10 @@ TIMESTAMP is assumed to be in the past."
             (cons "just now"
                   60))
            ((< seconds-difference (* 1.5 60))
-            (cons "1 minute ago"
+            (cons (format "1 %s ago" (if brief "min" "minute"))
                   90)) ;; at 90 secs
            ((< seconds-difference (* 60 59.5))
-            (funcall regular-response seconds-difference 60 "minute"))
+            (funcall regular-response seconds-difference 60 (if brief "min" "minute")))
            ((< seconds-difference (* 1.5 60 60))
             (cons "1 hour ago"
                   (* 60 90))) ;; at 90 minutes
@@ -542,13 +542,13 @@ TIMESTAMP is assumed to be in the past."
     (cons (car relative-result)
           (time-add timestamp (seconds-to-time (cdr relative-result))))))
 
-(defun fedi--relative-time-description (timestamp &optional current-time)
+(defun fedi--relative-time-description (timestamp &optional current-time brief)
   "Return a string with a human readable TIMESTAMP relative to the current time.
 Use the optional CURRENT-TIME as the current time (only used for
 reliable testing).
 E.g. this could return something like \"1 min ago\", \"yesterday\", etc.
 TIME-STAMP is assumed to be in the past."
-  (car (fedi--relative-time-details timestamp current-time)))
+  (car (fedi--relative-time-details timestamp current-time brief)))
 
 ;;; LIVE BUFFERS
 
