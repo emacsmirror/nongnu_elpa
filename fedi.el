@@ -682,5 +682,56 @@ the whole likes count in order to propertize it fully."
       (insert
        (funcall replace-fun json)))))
 
+;;; PROPERTIZING SPECIAL ITEMS
+
+(defun fedi-propertize-items (str regex type json keymap subexp
+                                  &optional item-subexp domain-subexp link
+                                  extra-props)
+  "Propertize any items of TYPE in STR as links using JSON.
+Type is a symbol, either handle or community.
+Communities are of the form \"!community@instance.com.\""
+  ;; FIXME: ideally we'd not do this in a sep buffer (gc)
+  (with-temp-buffer
+    (switch-to-buffer (current-buffer))
+    (insert str)
+    (goto-char (point-min))
+    (save-match-data
+      ;; ideally we'd work errors out, but we don't want to ruin
+      ;; our caller, which might make a page load fail:
+      (ignore-errors
+        ;; FIXME: do URLs
+        ;; (if (eq type 'url)
+        ;; (lem-ui-tabstop-link-by-regex regex)
+        (while (re-search-forward regex nil :no-error)
+          (let* ((item (when item-subexp
+                         (buffer-substring-no-properties
+                          (match-beginning item-subexp)
+                          (match-end item-subexp))))
+                 (beg (match-beginning subexp))
+                 (end (match-end subexp))
+                 (item-str (buffer-substring-no-properties beg end))
+                 (domain (when domain-subexp ; fedi-post-handle-regex
+                           (buffer-substring-no-properties (match-beginning domain-subexp)
+                                                           (match-end domain-subexp))))
+                 (link (if (functionp link)
+                           (funcall link)
+                         link)))
+            (add-text-properties beg
+                                 end
+                                 `(face '(shr-text shr-link)
+                                        mouse-face highlight
+                                        shr-tabstop t
+                                        shr-url ,link
+                                        button t
+                                        type ,type
+                                        item ,item
+                                        category shr
+                                        follow-link t
+                                        help-echo ,item-str
+                                        keymap ,keymap))
+            (add-text-properties beg end
+                                 extra-props)))))
+    (buffer-string)))
+
 (provide 'fedi)
 ;;; fedi.el ends here
