@@ -251,11 +251,13 @@ and a status."
             ;; FIXME: we "should" use :affixation-function for this but i
             ;; can't get it to work so use an exit-fun hack:
             :exit-function
-            (lambda (str status)
-              (funcall exit-fun str status))
+            (when exit-fun
+              (lambda (str status)
+                (funcall exit-fun str status)))
             :annotation-function
-            (lambda (cand)
-              (concat " " (funcall annot-fun cand)))))))
+            (when annot-fun
+              (lambda (cand)
+                (concat " " (funcall annot-fun cand))))))))
 
 (defun fedi-post--mentions-annotation-fun (candidate)
   "Given a handle completion CANDIDATE, return its annotation string, a username."
