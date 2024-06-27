@@ -335,7 +335,7 @@ JSON."
     (with-current-buffer
         (fj-repos-tl-render buf entries #'fj-user-repo-tl-mode)
       (setq fj-buffer-spec
-            `(:owner user :url ,(concat fj-host "/" user))))))
+            `(:owner ,user :url ,(concat fj-host "/" user))))))
 
 (defun fj-list-own-repos ()
   "List repos for `fj-user'."
