@@ -335,7 +335,7 @@ JSON."
     (with-current-buffer
         (fj-repos-tl-render buf entries #'fj-user-repo-tl-mode)
       (setq fj-buffer-spec
-            `(:owner user :url ,(concat fj-host "/" owner))))))
+            `(:owner user :url ,(concat fj-host "/" user))))))
 
 (defun fj-list-own-repos ()
   "List repos for `fj-user'."
@@ -806,7 +806,7 @@ Optionally specify ISSUES data, and the STATE filter (open, closed, all)."
 (defun fj-list-issues-closed (&optional repo owner issues)
   "Display closed ISSUES for REPO by OWNER in tabulated list view."
   (interactive "P")
-  (fj-list-issues repo user issues "closed"))
+  (fj-list-issues repo owner issues "closed"))
 
 (defun fj-list-issues-all (&optional repo owner issues)
   "Display all ISSUES for REPO by OWNER in tabulated list view."
@@ -1130,7 +1130,7 @@ RELOAD means we are reloading, so don't open in other window."
 ;;; SEARCH
 
 (defun fj-repo-search-do (query &optional topic)
-  ""
+  "Search for QUERY, optionally flag it as a TOPIC."
   (let* ((params `(("q" . ,query)
                    ("limit" . "100")
                    ("sort" . "updated")
@@ -1542,7 +1542,7 @@ Optionally specify REF, a commit, branch, or tag."
 (defun fj-compose-read-repo ()
   "Read a repo for composing a issue or comment."
   (interactive)
-  ;; FIXME: combine own repos and search:
+  ;; FIXME: combine own repos and completing search:
   (setq fj-compose-repo
         (fj-read-user-repo-do fj-compose-repo))
   (fedi-post--update-status-fields))
@@ -1636,12 +1636,13 @@ Call response and update functions."
 (defun fj-search-users (query &optional limit)
   "Search instance users for QUERY.
 Optionally set LIMIT to results."
+  ;; FIXME: server: limit is an integer; it doesn't respect our 25, returns 2500
   (let ((params `(("q" . ,query)
                   ("limit" . ,limit))))
     (fj-get "users/search" params)))
 
 (defun fj-users-alist (data)
-  "Return an alists of user data, containing handle and id."
+  "Return an alist of users' DATA, containing handle and id."
   ;; users have no html_url, just concat it to `fj-host'
   (cl-loop for u in data
            for id = (alist-get 'id u)
