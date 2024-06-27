@@ -123,8 +123,9 @@ face. no-label is optional.")
          (? ?@
             (group-n 3 ; = optional domain
               (* (not (any "\n" "\t" " ")))))))
-      (| "'" word-boundary)) ; boundary or possessive
-  "Regex for a handle, e.g. @user@instance.com.
+      (| "'" word-boundary) ;; FIXME: fails with full stop? but we must exclude it!)
+      ) ; boundary or possessive
+  "Regex for a handle, e.g. @user or @user@instance.com.
 Group 1 is for completion at point functions. Group 2 and 3 are
 for forming a URL.")
 

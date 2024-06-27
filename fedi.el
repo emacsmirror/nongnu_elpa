@@ -126,7 +126,8 @@ Used to construct function names in `fedi-request'.")
 ;; Still, it solves the problem of the server rejecting nil param values.
 (defun fedi-arg-when-expr (arg &optional coerce)
   "Return a cons of a string and a symbol type of ARG.
-Also replace _ with - (for Lemmy's type_ param)."
+Also replace _ with - (for Lemmy's type_ param).
+If COERCE, make numbers strings."
   (let ((str
          (string-replace "-" "_" ; for "type_" etc.
                          (symbol-name arg))))
@@ -181,7 +182,8 @@ than `switch-to-buffer'."
 ;;; NAV
 
 (defun fedi--goto-pos (fun prop &optional refresh pos)
-  "Search for item with FUN.
+  "Search for item, moving with FUN.
+If PROP is not found after moving, recur.
 If search returns nil, execute REFRESH function.
 Optionally start from POS."
   (let* ((npos (funcall fun
@@ -254,9 +256,9 @@ text, i.e. hidden spoiler text."
                  name))
          (name (string-replace "-" " " name)))
     (propertize
-     (concat " " lem-ui-horiz-bar "\n "
+     (concat " " fedi-horiz-bar "\n "
              (upcase name)
-             "\n " lem-ui-horiz-bar "\n")
+             "\n " fedi-horiz-bar "\n")
      'face 'success)))
 
 (defun fedi-insert-heading (name)
@@ -687,9 +689,13 @@ the whole likes count in order to propertize it fully."
 (defun fedi-propertize-items (str regex type json keymap subexp
                                   &optional item-subexp domain-subexp link
                                   extra-props)
-  "Propertize any items of TYPE in STR as links using JSON.
-Type is a symbol, either handle or community.
-Communities are of the form \"!community@instance.com.\""
+  "Propertize items of TYPE matching REGEX in STR as links using JSON.
+KEYMAP and LINK are properties to add to the match.
+EXTRA-PROPS is a property list of any extra properties to add.
+SUBEXP, ITEM-SUBEXP and DOMAIN-SUBEXP are regex subexpressions to
+handle submatches. Domain can be used to construct a URL, while
+item contains the item without a preceding @ or simialar. For an
+example, see `fedi-post-handle-regex'."
   ;; FIXME: ideally we'd not do this in a sep buffer (gc)
   (with-temp-buffer
     (switch-to-buffer (current-buffer))
