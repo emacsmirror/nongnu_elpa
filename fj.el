@@ -366,7 +366,7 @@ JSON."
 ;;; USER REPOS
 
 (defun fj-current-dir-repo ()
-  "If we are in a repository, return its name."
+  "If we are in a `fj-host' repository, return its name."
   ;; NB: fails if remote url is diff to root dir!
   (ignore-errors
     (when (magit-inside-worktree-p)
