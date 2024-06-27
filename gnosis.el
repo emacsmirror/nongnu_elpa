@@ -306,6 +306,19 @@ History is disabled."
            if (= i index) collect new-item
            else collect item))
 
+(defun gnosis-insert-separator ()
+  "Insert a dashed line spanning the entire width of the buffer."
+  (interactive)
+  (let* ((width (window-width))
+         (dash-line (concat (make-string width ?-))))
+    (insert "\n" dash-line "\n")
+    ;; Apply an overlay to hide only the dashes
+    (let ((start (save-excursion (forward-line -1) (point)))
+          (end (point)))
+      (let ((overlay (make-overlay start end)))
+        (overlay-put overlay 'face 'gnosis-face-separator)
+        (overlay-put overlay 'display (make-string width ?\s))))))
+
 (defun gnosis-display-question (id &optional fill-paragraph-p)
   "Display main row for note ID.
 
@@ -314,7 +327,8 @@ If FILL-PARAGRAPH-P, insert question using `fill-paragraph'."
     (erase-buffer)
     (if fill-paragraph-p
 	(fill-paragraph (insert "\n"  (propertize question 'face 'gnosis-face-main))))
-    (insert "\n"  (propertize question 'face 'gnosis-face-main))))
+    (insert "\n"  (propertize question 'face 'gnosis-face-main))
+    (gnosis-apply-overlays)))
 
 (defun gnosis-display-mcq-options (id)
   "Display answer options for mcq note ID."
@@ -370,9 +384,8 @@ SUCCESS is t when user-input is correct, else nil"
   "Display HINT."
   (let ((hint (or hint "")))
     (goto-char (point-max))
-    (insert
-     (propertize "\n-----\n" 'face 'gnosis-face-separator)
-     (propertize hint 'face 'gnosis-face-hint))))
+    (gnosis-insert-separator)
+    (insert (propertize hint 'face 'gnosis-face-hint))))
 
 (cl-defun gnosis-display-cloze-reveal (&key (cloze-char gnosis-cloze-string) replace (success t) (face nil))
   "Replace CLOZE-CHAR with REPLACE.
@@ -429,7 +442,7 @@ Refer to `gnosis-db-schema-extras' for informations on images stored."
   "Display extra information & extra-image for note ID."
   (let ((extras (or (gnosis-get 'extra-notes 'extras `(= id ,id)) "")))
     (goto-char (point-max))
-    (insert (propertize "\n\n-----\n" 'face 'gnosis-face-separator))
+    (gnosis-insert-separator)
     (gnosis-display-image id 'extra-image)
     (fill-paragraph (insert "\n" (propertize extras 'face 'gnosis-face-extra)))))
 
@@ -2037,18 +2050,18 @@ DASHBOARD-TYPE: either 'Notes' or 'Decks' to display the respective dashboard."
   :global t
   :group 'gnosis
   :lighter nil
-  (setq gnosis-due-notes-total (length (gnosis-review-get-due-notes)))
-  (if gnosis-modeline-mode
-      (progn
-        (add-to-list 'global-mode-string '(:eval
-          (format " G:%d" gnosis-due-notes-total)))
-        (force-mode-line-update))
-    (setq global-mode-string
-          (seq-remove (lambda (item)
-                        (and (listp item) (eq (car item) :eval)
-                             (string-prefix-p " G:" (format "%s" (eval (cadr item))))))
-                      global-mode-string))
-    (force-mode-line-update)))
+    (setq gnosis-due-notes-total (length (gnosis-review-get-due-notes)))
+    (if gnosis-modeline-mode
+	(progn
+          (add-to-list 'global-mode-string '(:eval
+					     (format " G:%d" gnosis-due-notes-total)))
+          (force-mode-line-update))
+      (setq global-mode-string
+            (seq-remove (lambda (item)
+                          (and (listp item) (eq (car item) :eval)
+                               (string-prefix-p " G:" (format "%s" (eval (cadr item))))))
+			global-mode-string))
+      (force-mode-line-update)))
 
 (define-derived-mode gnosis-mode special-mode "Gnosis"
   "Gnosis Mode."
