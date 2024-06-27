@@ -452,6 +452,7 @@ Return the issue number."
 (defun fj-repo-get-issues (repo &optional owner state)
   "Return issues for REPO by OWNER.
 STATE is for issue status, a string of open, closed or all."
+  ;; FIXME: how to get issues by number, or get all issues?
   (let* ((endpoint (format "repos/%s/%s/issues" (or owner fj-user) repo))
          (params `(("state" . ,state)
                    ("limit" . "100"))))
@@ -1574,7 +1575,8 @@ Inject INIT-TEXT into the buffer, for editing."
    (or mode #'fj-compose-mode)
    (when mode "fj-compose")
    (or type 'issue)
-   (list #'fj-compose-mentions-capf)
+   (list #'fj-compose-mentions-capf
+         #'fj-compose-issues-capf)
    ;; TODO: why not have a compose-buffer-spec rather than 10 separate vars?
    `(((name . "repo")
       (prop . compose-repo)
@@ -1679,6 +1681,34 @@ Optionally set LIMIT to results."
                           #'fj-compose-mentions-fun
                           nil nil
                           #'fj-compose-handle-exit-fun))
+
+;;; issues capf
+;; TODO: we need to trigger completion on typing # alone (depends on regex)
+;; TODO: we need to fetch all issues or do GET query by number
+(defun fj-issues-alist (data)
+  "Return an alist from issue DATA, a cons of number and title."
+  (cl-loop for i in data
+           collect (cons (concat "#"
+                                 (number-to-string
+                                  (alist-get 'number i)))
+                         (alist-get 'title i))))
+
+(defun fj-compose-issues-fun (start end)
+  "Given prefix str between START and END, return an alist of issues for capf."
+  (let ((resp (fj-repo-get-issues fj-compose-repo fj-compose-repo-owner
+                                  "all")))
+    (fj-issues-alist resp)))
+
+(defun fj-compose-issues-capf ()
+  "Build an issues completion backend for `completion-at-point-functions'."
+  (fedi-post--return-capf fedi-post-tag-regex
+                          #'fj-compose-issues-fun
+                          #'fj--issues-annot-fun))
+;; #'fj-compose-issue-exit-fun))
+
+(defun fj--issues-annot-fun (candidate)
+  "Given an issues completion CANDIDATE, return its annotation."
+  (concat " " (cdr (assoc candidate fedi-post-completions #'equal))))
 
 ;;; NOTIFICATIONS
 
