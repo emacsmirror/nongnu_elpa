@@ -868,7 +868,7 @@ Buffer-local variable `fj-previous-window-config' holds the config."
   (goto-char (cadr config)))
 
 ;; I think magit/forge just uses markdown-mode rather than rendering
-(defun fj-render-body (body)
+(defun fj-render-body (body &optional json)
   "Render item BODY as markdowned html.
 JSON is the item's data to process the link with."
   ;; NB: make sure this doesn't leak into our issue buffers!
@@ -904,6 +904,9 @@ JSON is the item's data to process the link with."
         (setq str (buffer-substring (point) (point-max)))
         (kill-buffer-and-window)        ; shr's *html*
         (kill-buffer buf)))             ; our md
+    (setq str (fedi-propertize-items str fedi-post-handle-regex 'handle json
+                                     fj-link-keymap 1 2 nil nil
+                                     '(fj-tab-stop t)))
     (fj-restore-previous-window-config fj-previous-window-config)
     str))
 
@@ -911,6 +914,8 @@ JSON is the item's data to process the link with."
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "n") #'fj-issue-next)
     (define-key map (kbd "p") #'fj-issue-prev)
+    (define-key map [?\t] #'fj-next-tab-item)
+    (define-key map [backtab] #'fj-prev-tab-item)
     (define-key map (kbd "g") #'fj-issue-view-reload)
     (define-key map (kbd "e") #'fj-issue-view-edit)
     (define-key map (kbd "c") #'fj-issue-view-comment)
@@ -949,7 +954,7 @@ OWNER is the repo owner."
                         (propertize (fj-issue-right-align-str stamp)
                                     'face 'fj-item-author-face)
                         "\n\n"
-                        (fj-render-body .body)
+                        (fj-render-body .body c)
                         "\n"
                         fedi-horiz-bar fedi-horiz-bar "\n\n")
                        'fj-comment c
@@ -1008,7 +1013,7 @@ RELOAD mean we reloaded."
              (propertize (fj-issue-right-align-str stamp)
                          'face 'fj-item-author-face)
              "\n\n"
-             (fj-render-body .body)
+             (fj-render-body .body issue)
              "\n"
              fedi-horiz-bar "\n\n"
              ;; comments
@@ -1728,6 +1733,48 @@ Allow quick jumping to an element in a tabulated list view."
           (push `(,name . ,(point)) alist))
         (next-line)))
     alist))
+
+;;; ITEMS: RENDERING HANDLES, etc.
+
+(defun fj-do-link-action (pos)
+  "Do the action of the link at POS.
+Used for hitting RET on a given link."
+  (interactive "d")
+  (let ((type (get-text-property pos 'type)))
+    (cond ((eq type 'hash)
+           nil) ; FIXME: hashes
+          ((eq type 'handle)
+           (let ((user (fj--property 'item)))
+             (fj-user-repos-tl user)))
+          (t
+           (error "Unknown link type %s" type)))))
+
+(defun fj-do-link-action-mouse (event)
+  "Do the action of the link at point.
+Used for a mouse-click EVENT on a link."
+  (interactive "e")
+  (fj-do-link-action (posn-point (event-end event))))
+
+(defvar fj-link-keymap
+  (let ((map (make-sparse-keymap)))
+    (define-key map [return] #'fj-do-link-action)
+    (define-key map [mouse-2] #'fj-do-link-action-mouse)
+    (define-key map [follow-link] 'mouse-face)
+    map)
+  "The keymap for link-like things in buffer (except for shr.el links).
+This will make the region of text act like like a link with mouse
+highlighting, mouse click action tabbing to next/previous link
+etc.")
+
+(defun fj-next-tab-item ()
+  "Jump to next tab item."
+  (interactive)
+  (fedi-next-tab-item nil 'fj-tab-stop))
+
+(defun fj-prev-tab-item ()
+  "Jump to prev tab item."
+  (interactive)
+  (fedi-next-tab-item :prev 'fj-tab-stop))
 
 (provide 'fj)
 ;;; fj.el ends here
