@@ -319,6 +319,22 @@ History is disabled."
         (overlay-put overlay 'face 'gnosis-face-separator)
         (overlay-put overlay 'display (make-string width ?\s))))))
 
+(defun gnosis-apply-overlays ()
+  "Apply custom font overlays for syntax highlighting."
+  (save-excursion
+    (goto-char (point-min))
+    (while (re-search-forward "\\*\\([^*]+\\)\\*" nil t)
+      (overlay-put (make-overlay (match-beginning 1) (match-end 1)) 'face 'bold))
+    (goto-char (point-min))
+    (while (re-search-forward "/\\([^/]+\\)/" nil t)
+      (overlay-put (make-overlay (match-beginning 1) (match-end 1)) 'face 'italic))
+    (goto-char (point-min))
+    (while (re-search-forward "=\\([^=]+\\)=" nil t)
+      (overlay-put (make-overlay (match-beginning 1) (match-end 1)) 'face 'font-lock-constant-face))
+    (goto-char (point-min))
+    (while (re-search-forward "~\\([^~]+\\)~" nil t)
+      (overlay-put (make-overlay (match-beginning 1) (match-end 1)) 'face 'font-lock-keyword-face))))
+
 (defun gnosis-display-question (id &optional fill-paragraph-p)
   "Display main row for note ID.
 
