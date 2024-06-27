@@ -193,7 +193,9 @@ Seperate the question/stem from options."
   :group 'gnosis-face-faces)
 
 (defface gnosis-face-separator
-  '((t :inherit warning))
+  '((default :inherit org-hide)
+    (((background light)) :strike-through "gray70")
+    (t :strike-through "gray30"))
   "Face for section separator."
   :group 'gnosis-face)
 
