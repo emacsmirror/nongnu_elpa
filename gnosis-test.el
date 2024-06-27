@@ -62,11 +62,11 @@ DECK: Deck to add the inputs to."
     (when (y-or-n-p "Add MCQ type?")
       (dotimes (_ num)
 	(gnosis-add-note--mcq :deck testing-deck
-			      :question "A 37-year-old man is admitted to the
-emergency department after a severe car crash. After examining the
-patient the emergency medicine physician concludes that the serratus
-anterior muscle is damaged. Which of the following nerves innervates
-the serratus anterior muscle?"
+			      :question "A *37-year-old* man is admitted to the
+emergency department after a severe car crash. /After/ examining the
+patient the emergency medicine physician concludes *that* the serratus
+anterior muscle is damaged. ~Which~ of the following nerves innervates
+the =serratus anterior muscle=?"
 			      :choices '("Long thoracic" "Axillary" "Spinal accessory" "Dorsal scapular" "Thoracodorsal")
 			      :correct-answer 1
 			      :extra "The long thoracic is the only nerve that
@@ -112,7 +112,7 @@ by the thoracodorsal nerve."
 				 :images (cons gnosis-test-image gnosis-test-image)
 				 :tags (gnosis-test-random-items gnosis-test-tags 2))))))
 
-(defun gnosis-test-start ()
+(defun gnosis-test-start (&optional note-num)
   "Begin/End testing env.
 
 If ask nil, leave testing env"
@@ -130,7 +130,7 @@ If ask nil, leave testing env"
 		(gnosis--drop-table table)
 	      (error (message "No %s table to drop." table))))
 	  (gnosis-db-init)
-	  (gnosis-test-add-fields)
+	  (gnosis-test-add-fields note-num)
 	  (message "Adding testing values...")
 	  (message "Development env is ready for testing."))
       (setf gnosis-db (emacsql-sqlite-open (expand-file-name "gnosis.db" gnosis-dir)))
