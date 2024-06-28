@@ -36,13 +36,15 @@
 
 ;;; Code:
 
-(eval-when-compile
-  (require 'cl-lib)
-  (require 'vc))
+(require 'cl-lib)
 
+(require 'vc)
 (require 'emacsql-sqlite)
+
 (require 'gnosis-algorithm)
 (require 'gnosis-string-edit)
+
+(require 'animate)
 
 (defgroup gnosis nil
   "Spaced Repetition System For Note Taking & Self Testing."
@@ -151,9 +153,9 @@ car value is the prompt, cdr is the prewritten string.")
 car value is the prompt, cdr is the prewritten string.")
 
 (defvar gnosis-mc-cloze-guidance
-  '("MC-Cloze format example: This is an example correct-option::option2::option3" . ""))
+  '("MC-Cloze Example: This is an example answer&&option2&&option3" . ""))
 
-(defcustom gnosis-mc-cloze-separator "::"
+(defcustom gnosis-mc-cloze-separator "&&"
   "Sseparator for choices on multiple choice clozes."
   :type 'string
   :group 'gnosis)
@@ -958,22 +960,50 @@ CHAR: separator for mc-cloze, default to `gnosis-mc-cloze-separator'"
                (split-string s (regexp-quote char))))
            (split-string str " "))))
 
+(cl-defun gnosis-add-note--mc-cloze (&key deck question options answer
+					  extra (images nil) tags (suspend 0))
+  "Add MC-CLOZE note type to DECK.
+
+Refer to `gnosis-add-note-mc-cloze' for how this procedure should be used
+
+DECK: Deck to add note to
+QUESTION: Question, a string
+OPTIONS: Answer options, a list of strings
+ANSWER: the correct string, from OPTIONS.
+EXTRA: Extra notes
+IMAGES: Images to display during & after review
+TAGS: Tags for note
+SUSPEND: whether to suspend not"
+  (cl-assert (stringp deck) nil "Deck name must be a string")
+  (cl-assert (stringp question) nil "Question must be a string")
+  (cl-assert (listp options) nil "Options must be a list")
+  (cl-assert (stringp extra) nil "Extra value must be a string")
+  (cl-assert (listp images) nil "Images must be a list of string paths")
+  (cl-assert (listp tags) nil "Tags value must be a list of tags as strings")
+  (cl-assert (or (= suspend 1) (= suspend 0)) nil "Suspend value must be either 0 or 1")
+  (gnosis-add-note-fields deck "mc-cloze" question options answer extra tags (or suspend 0)
+			  (car images) (cdr images)))
+
 (defun gnosis-add-note-mc-cloze (deck)
   "Add MC-CLOZE note type to DECK.
 
 MC-CLOZE (Multiple Choice Cloze) note type consists of a sentence with a
-single cloze, for which user will be prompted to select the correct
+single cloze, for which the user will be prompted to select the correct
 answer."
   (interactive)
   (let* ((input (gnosis-read-string-from-buffer (or (car gnosis-mc-cloze-guidance) "")
 						(or (cdr gnosis-mc-cloze-guidance) "")))
 	 (question (gnosis-mc-cloze-remove-separator input))
-	 (options (gnosis-mc-cloze-extract-options input))
-	 (tags (gnosis-prompt-tags--split gnosis-previous-note-tags))
-	 (images (gnosis-select-images)))
+	 (options (gnosis-mc-cloze-extract-options input)))
+    ;; Create a note for each option extracted
     (cl-loop for option in options
-	     do (gnosis-add-note-fields deck "mc-cloze" question option (car option)
-					"extra" tags 0 (car images) (cdr images)))))
+	     do (gnosis-add-note--mc-cloze :deck deck
+					   :question question
+					   :options option
+					   :answer (car option)
+					   :extra (gnosis-read-string-from-buffer "Extra" "")
+					   :images (gnosis-select-images)
+					   :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))))
 
 ;;;###autoload
 (defun gnosis-add-note (&optional deck type)
