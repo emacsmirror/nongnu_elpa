@@ -182,8 +182,7 @@ Seperate the question/stem from options."
   :prefix 'gnosis-face)
 
 (defface gnosis-face-extra
-  '((t :inherit italic
-       :foreground "#9C91E4"))
+  '((t :inherit font-lock-doc-face))
   "Face for extra-notes."
   :group 'gnosis-faces)
 
