@@ -131,7 +131,9 @@ for forming a URL.")
 
 (defvar fedi-post-tag-regex
   (rx (| (any ?\( "\n" "\t" " ") bol)
-      (group-n 1 ?# (+ (any "A-Z" "a-z" "0-9")))
+      (group-n 1 ?#
+               (group-n 2
+                 (one-or-more (any "A-Z" "a-z" "0-9"))))
       (| "'" word-boundary)) ; boundary or possessive
   "Regex for a tag. Group 1 is for completion at point functions.")
 
