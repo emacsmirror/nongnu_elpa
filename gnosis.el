@@ -391,11 +391,14 @@ This will not be applied to sentences that start with double space."
   "Display main row for note ID.
 
 If FILL-PARAGRAPH-P, insert question using `fill-paragraph'."
-  (let ((question (gnosis-get 'main 'notes `(= id ,id))))
+  (let ((question (gnosis-get 'main 'notes `(= id ,id)))
+	(fill-paragraph-p (or fill-paragraph-p t)))
     (erase-buffer)
     (if fill-paragraph-p
-	(fill-paragraph (insert "\n"  (propertize question 'face 'gnosis-face-main))))
-    (insert "\n"  (gnosis-center-string (propertize question 'face 'gnosis-face-main)))
+	(fill-paragraph (insert "\n"  (propertize question 'face 'gnosis-face-main)))
+      (insert "\n"  (propertize question 'face 'gnosis-face-main)))
+    (newline)
+    (gnosis-apply-center-buffer-overlay)
     (gnosis-apply-syntax-overlay)))
 
 (cl-defun gnosis-display-image (id &optional (image 'images))
@@ -450,13 +453,14 @@ When SUCCESS nil, display USER-INPUT as well"
 	  (propertize "Answer:" 'face 'gnosis-face-directions)
 	  " "
 	  (propertize answer 'face 'gnosis-face-correct))
+  (gnosis-center-current-line)
   ;; Insert user wrong answer
   (when (not success)
     (insert "\n"
-	    (propertize "Your answer:" 'face 'gnosis-face-directions)
+	     (propertize "Your answer:" 'face 'gnosis-face-directions)
 	    " "
-	    (propertize user-input 'face 'gnosis-face-false)))
-  (gnosis-center-current-line))
+	    (propertize user-input 'face 'gnosis-face-false))
+    (gnosis-center-current-line)))
 
 (cl-defun gnosis-display-y-or-n-answer (&key answer success)
   "Display y-or-n answer for note ID.
@@ -478,7 +482,8 @@ SUCCESS is t when user-input is correct, else nil"
   (let ((hint (or hint "")))
     (goto-char (point-max))
     (gnosis-insert-separator)
-    (insert (gnosis-center-string (propertize hint 'face 'gnosis-face-hint)))))
+    (and (not (string-empty-p hint))
+	 (insert (gnosis-center-string (propertize hint 'face 'gnosis-face-hint))))))
 
 (cl-defun gnosis-display-cloze-reveal (&key (cloze-char gnosis-cloze-string) replace (success t) (face nil))
   "Replace CLOZE-CHAR with REPLACE.
@@ -517,14 +522,12 @@ If FALSE t, use gnosis-face-false face"
 
 (defun gnosis-display-extra (id)
   "Display extra information & extra-image for note ID."
-  (let ((extras (or (gnosis-get 'extra-notes 'extras `(= id ,id)) ""))
-	(insert-point))
+  (let ((extras (or (gnosis-get 'extra-notes 'extras `(= id ,id)) "")))
     (goto-char (point-max))
     (gnosis-insert-separator)
     (gnosis-display-image id 'extra-image)
-    (setq insert-point (point))
-    (insert "\n" (propertize extras 'face 'gnosis-face-extra))
-    (gnosis-apply-center-buffer-overlay insert-point)
+    (insert "\n" (gnosis-center-string
+		  (propertize extras 'face 'gnosis-face-extra)))
     (gnosis-apply-syntax-overlay)))
 
 ;;;###autoload
