@@ -151,9 +151,9 @@ car value is the prompt, cdr is the prewritten string.")
 car value is the prompt, cdr is the prewritten string.")
 
 (defvar gnosis-mc-cloze-guidance
-  '("MC-Cloze format example: This is an example correct-option&-option2&-option3" . "Example correct-option&-option2&-option3"))
+  '("MC-Cloze format example: This is an example correct-option::option2::option3" . ""))
 
-(defcustom gnosis-mc-cloze-separator "&-"
+(defcustom gnosis-mc-cloze-separator "::"
   "Sseparator for choices on multiple choice clozes."
   :type 'string
   :group 'gnosis)
