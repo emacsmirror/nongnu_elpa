@@ -320,6 +320,15 @@ History is disabled."
 
 (defun gnosis-apply-overlays ()
   "Apply custom font overlays for syntax highlighting."
+(defun gnosis-center-current-line ()
+  "Center text in the current line ignoring leading spaces."
+  (interactive)
+  (let* ((start (line-beginning-position))
+         (end (line-end-position))
+         (text (string-trim (buffer-substring start end)))
+         (padding (max (/ (- (window-width) (length text)) 2) 0)))
+    (delete-region start end)
+    (insert (make-string padding ? ) text)))
   (save-excursion
     (goto-char (point-min))
     (while (re-search-forward "\\*\\([^*]+\\)\\*" nil t)
