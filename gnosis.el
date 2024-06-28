@@ -366,6 +366,17 @@ This will not be applied to sentences that start with double space."
 			(delete-region end (match-end 0))
 			(delete-region (match-beginning 0) start))))))))
 
+(defun gnosis-display-question (id &optional fill-paragraph-p)
+  "Display main row for note ID.
+
+If FILL-PARAGRAPH-P, insert question using `fill-paragraph'."
+  (let ((question (gnosis-get 'main 'notes `(= id ,id))))
+    (erase-buffer)
+    (if fill-paragraph-p
+	(fill-paragraph (insert "\n"  (propertize question 'face 'gnosis-face-main))))
+    (insert "\n"  (gnosis-center-string (propertize question 'face 'gnosis-face-main)))
+    (gnosis-apply-syntax-overlay)))
+
 (cl-defun gnosis-display-image (id &optional (image 'images))
   "Display image for note ID.
 
