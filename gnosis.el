@@ -529,7 +529,8 @@ If FALSE t, use gnosis-face-false face"
     (gnosis-insert-separator)
     (gnosis-display-image id 'extra-image)
     (insert "\n" (gnosis-center-string
-		  (propertize extras 'face 'gnosis-face-extra)))
+		  (propertize extras 'face 'gnosis-face-extra))
+	    "\n")
     (gnosis-apply-syntax-overlay)))
 
 ;;;###autoload
@@ -2154,6 +2155,90 @@ DASHBOARD-TYPE: either 'Notes' or 'Decks' to display the respective dashboard."
 	   (emacsql gnosis-db (format "PRAGMA user_version = %s" gnosis-db-version))))))
 
 (gnosis-db-init)
+
+;;;; Gnosis Demo ;;;;
+;;;;;;;;;;;;;;;;;;;;;
+
+(defun gnosis-animate-string (string vpos &optional hpos string-section face)
+  "Display STRING animations starting at position VPOS, HPOS in BUFFER-NAME.
+
+If STRING-SECTION and FACE are provided, highlight the occurrences of
+STRING-SECTION in the STRING with FACE.
+
+If STRING-SECTION is nil, apply FACE to the entire STRING."
+  (let ((animate-n-steps 60))
+    (goto-char (point-min))
+    (animate-string string vpos hpos)
+    (and face
+      (if string-section
+	  (progn
+	    (goto-char (point-min))
+	    (while (search-forward string-section nil t)
+	      (add-text-properties (match-beginning 0) (match-end 0) `(face ,face))))
+	(add-text-properties (line-beginning-position) (line-end-position) `(face ,face))))))
+
+;;;###autoload
+(defun gnosis-demo ()
+  "Start gnosis demo."
+  (interactive)
+  (pop-to-buffer-same-window "*Gnosis Demo*")
+  (fundamental-mode)
+  (setq-local display-line-numbers nil)
+  (erase-buffer)
+  (gnosis-animate-string "Welcome to the Gnosis demo!" 2 nil "Gnosis demo" 'underline)
+  (sit-for 1)
+  (gnosis-animate-string "Gnosis is a tool designed to create a gnostikon" 3 nil "gnostikon" 'bold-italic)
+  (sit-for 1.5)
+  (gnosis-animate-string "--A place to store & test your knowledge--" 4 nil nil 'italic)
+  (sit-for 1)
+  (gnosis-animate-string "The objective of gnosis is to maximize memory retention." 6 nil
+			 "maximize memory retention" 'underline)
+  (sit-for 1)
+  (gnosis-animate-string "Consistency is key; be sure to do your daily reviews!" 8 nil "Consistency is key" 'bold)
+  (sit-for 1)
+  (gnosis-animate-string "Create meaningful notes; Gnosis offers a plethora of note types --try them!"
+			 9 nil "Create Meaningful Notes" 'bold)
+  (sit-for 1)
+  (when (y-or-n-p "Try out demo gnosis note review session?")
+    (gnosis-demo-create-deck)
+    (gnosis-review-session (gnosis-select-by-tag '("demo")))))
+
+(defun gnosis-demo-create-deck ()
+  "Create demo deck."
+  (let ((deck-name "demo")
+	(note-tags '("demo")))
+    (if (not (cl-some #'(lambda (x) (member "demo" x)) (gnosis-select 'name 'decks)))
+	(progn (gnosis-add-deck deck-name)
+	       (gnosis-add-note--basic :deck deck-name
+				     :question "What's the =key= that was mentioned in the /demo/ of gnosis?"
+				     :hint "__ is key!"
+				     :answer "Consistency"
+				     :extra "/Regular review/ at increasing intervals *reinforces memory retention*.  Strengthening neural connections & making it easier to recall information long-term"
+				     :tags note-tags)
+	     (gnosis-add-note--mc-cloze :deck deck-name
+					:question "Gnosis has a plethora of note types!"
+					:options '("plethora" "limited selection")
+					:answer "plethora"
+					:extra "*Note types include*:\n\n=MCQ=: Multiple Choice Questions, to easily copy textbook review questions :)\n=Cloze=: Fill in the blank sentences\n=Basic=: Question-Answer-Explanation note\n=Double=: Creates 2 basic notes, second one is generated with the question & answer switched\n=MC-Cloze=: Multiple question cloze question, just like this current note\n=y-or-n=: Y or N questions"
+					:tags note-tags)
+	     (gnosis-add-note--mcq :deck deck-name
+				   :question "Which one is the capital of Greece?"
+				   :choices '("Athens" "Sparta" "Rome" "Berlin")
+				   :correct-answer 1
+				   :extra "Athens (Αθήνα) is the largest city of Greece & one of the world's oldest cities, with it's recorded history spanning over 3,500 years."
+				   :tags note-tags)
+	     (gnosis-add-note--cloze :deck deck-name
+				     :note "GNU Emacs is an extensible editor created by {c1:Richard} {c1:Stallman} in {c2:1984}"
+				     :hint ""
+				     :tags note-tags
+				     :extra "Emacs was originally implemented in 1976 on the MIT AI Lab's Incompatible Timesharing System (ITS), as a collection of TECO macros. The name “Emacs” was originally chosen as an abbreviation of “Editor MACroS”. =This version of Emacs=, GNU Emacs, was originally *written in 1984*")
+	     (gnosis-add-note--y-or-n :deck deck-name
+				      :question "Is GNU Emacs the greatest program ever written?"
+				      :hint "Duh"
+				      :answer 121
+				      :extra ""
+				      :tags note-tags))
+      (error "Demo deck already exists"))))
 
 ;; Gnosis mode ;;
 ;;;;;;;;;;;;;;;;;
