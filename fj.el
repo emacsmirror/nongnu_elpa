@@ -449,13 +449,14 @@ Return the issue number."
                          cands))))
     (cadr item)))
 
-(defun fj-repo-get-issues (repo &optional owner state)
+(defun fj-repo-get-issues (repo &optional owner state type)
   "Return issues for REPO by OWNER.
 STATE is for issue status, a string of open, closed or all."
   ;; FIXME: how to get issues by number, or get all issues?
   (let* ((endpoint (format "repos/%s/%s/issues" (or owner fj-user) repo))
          (params `(("state" . ,state)
-                   ("limit" . "100"))))
+                   ("limit" . "100")
+                   ("type" . ,type))))
     (condition-case err
         (fj-get endpoint params)
       (t (format "%s" (error-message-string err))))))
@@ -770,24 +771,39 @@ STATE is a string."
                    state ,.state
                    type fj-issue-button)])))))
 
-(defun fj-list-issues (repo &optional owner issues state)
+(defun fj-list-issues-+-pulls (repo &optional owner state)
+  "List issues and pulls for REPO by OWNER, filtered by STATE."
+  (interactive "P")
+  (let* ((repo (fj-read-user-repo repo)))
+    (fj-list-issues repo owner nil state "all")))
+
+;; FIXME: duplicates `fj-list-pull-reqs'
+(defun fj-list-pulls (repo &optional owner state)
+  "List pulls for REPO by OWNER, filtered by STATE."
+  (interactive "P")
+  (let* ((repo (fj-read-user-repo repo)))
+    (fj-list-issues repo owner nil state "pulls")))
+
+(defun fj-list-issues (repo &optional owner issues state type)
   "Display ISSUES in a tabulated list view.
 Either for `fj-current-repo' or REPO, a string, owned by OWNER.
 With a prefix arg, or if REPO and `fj-current-repo' are nil,
 prompt for a repo to list.
-Optionally specify ISSUES data, and the STATE filter (open, closed, all)."
+Optionally specify ISSUES data, the STATE filter (open, closed, all),
+and the TYPE filter (issues, pulls, all)."
   (interactive "P")
   (let* ((repo (fj-read-user-repo repo))
-         (issues (or issues (fj-repo-get-issues repo owner state)))
-         (owner (or owner
-                    (alist-get 'owner
-                               (alist-get 'repository (car issues)))))
+         (owner (or owner fj-user))
+         ;; (alist-get 'owner
+         ;; (alist-get 'repository (car issues)))))
+         (issues (or issues (fj-repo-get-issues repo owner state
+                                                (or type "issues"))))
          (repo-data (fj-get-repo repo owner))
          (url (concat (alist-get 'html_url repo-data)
                       "/issues"))
          (prev-buf (buffer-name (current-buffer)))
          (state-str (or state "open"))
-         (buf-name (format "*fj-%s-%s-issues*" repo state-str)))
+         (buf-name (format "*fj-%s-%s-%s*" repo state-str type)))
     (with-current-buffer (get-buffer-create buf-name)
       (setq tabulated-list-entries
             (fj-issue-tl-entries issues))
