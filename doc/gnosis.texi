@@ -25,12 +25,17 @@
 @node Top
 @top Gnosis User Manual
 
-Gnosis (γνῶσις), pronounced ``noh-sis'', @emph{meaning knowledge in Greek}, is
-a spaced repetition system implementation for note taking and self
-testing.
+Gnosis (γνῶσις), pronounced ``noh-sis'', @emph{meaning knowledge in Greek},
+is a spaced repetition system implementation for note taking and self
+testing.  The objective of gnosis is to maximize memory retention by
+implementing reviewing  of information at increasing intervals.
+
+The intervals grow longer as you become more familiar with the
+information, which reinforces long-term retention and reduces the risk
+of forgetting
 
 @noindent
-This manual is written for Gnosis version 0.2.0, released on 2023-03-08.
+This manual is written for Gnosis version 0.3.0, released on 2024-06-28.
 
 @itemize
 @item
@@ -62,6 +67,7 @@ Git repositories:
 Note Types
 
 * Cloze::
+* MC-Cloze::
 * MCQ (Multiple Choice Question)::
 * Basic Type::
 * Double::
@@ -87,6 +93,8 @@ Extending Gnosis
 
 @node Introduction
 @chapter Introduction
+
+Before reading this manual, it's recommended you first try out @samp{gnosis-demo}
 
 Gnosis, is a spaced repetition system for note taking & self
 testing, where notes are taken in a Question/Answer/Explanation
@@ -114,6 +122,7 @@ When it comes to adding images, you can select images that are inside
 
 @menu
 * Cloze::
+* MC-Cloze::
 * MCQ (Multiple Choice Question)::
 * Basic Type::
 * Double::
@@ -148,6 +157,28 @@ Each `cX` tag can have multiple clozes, but each cloze must be a
 
 You can remove the @emph{guidance} string by adjusting
 @samp{gnosis-cloze-guidance}.
+
+@node MC-Cloze
+@section MC-Cloze
+
+A MC-Cloze (@emph{Multiple Choice Cloze}) is a fill-in-the-blank note,
+but unlike @ref{Cloze, , cloze note type} the user is prompted to select an option
+instead of typing an answer.
+
+You can create multiple notes from one input, but each note can only
+have @strong{one} cloze. The first option will always be the right answer
+(will be randomized in the database), separated by the rest of the
+answer by @samp{gnosis-mc-cloze-separator} (default value is ``&&''), and a
+note will be generated from each cloze.
+
+Example:
+@quotation
+The greatest text editor is Emacs&&Vim&&Helix
+
+@end quotation
+
+When customizing @samp{gnosis-mc-cloze=separator} pay attention to not use
+values that would mess up with regex functions.
 
 @node MCQ (Multiple Choice Question)
 @section MCQ (Multiple Choice Question)
@@ -271,6 +302,9 @@ Using the above example, after first successfully reviewing a note,
 you will see it again in the next review session, if you successfully
 review said note again, the next review will be tomorrow.
 
+Upon failing to review a note without completing 2 successful reviews,
+you will have to review it again on the same day.
+
 @node Easiness Factor
 @section Easiness Factor
 
@@ -354,7 +388,7 @@ Example:
 @example
 cd ~/.emacs.d/gnosis # default location for gnosis
 git init # After completing your first review session, a git repo should have been initialized automatically.
-git remote add <remote_name> <remote_url>
+git remote add origin <remote_url>
 git push --set-upstream origin master
 @end example
 
