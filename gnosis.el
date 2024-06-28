@@ -36,13 +36,13 @@
 
 ;;; Code:
 
-(require 'emacsql-sqlite)
-(require 'cl-lib)
+(eval-when-compile
+  (require 'cl-lib)
+  (require 'vc))
 
+(require 'emacsql-sqlite)
 (require 'gnosis-algorithm)
 (require 'gnosis-string-edit)
-
-(require 'vc)
 
 (defgroup gnosis nil
   "Spaced Repetition System For Note Taking & Self Testing."
