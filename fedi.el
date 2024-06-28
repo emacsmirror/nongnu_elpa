@@ -692,11 +692,15 @@ the whole likes count in order to propertize it fully."
   "Propertize items of TYPE matching REGEX in STR as links using JSON.
 KEYMAP and LINK are properties to add to the match.
 EXTRA-PROPS is a property list of any extra properties to add.
+
 SUBEXP, ITEM-SUBEXP and DOMAIN-SUBEXP are regex subexpressions to
 handle submatches. Domain can be used to construct a URL, while
-item contains the item without a preceding @ or simialar. For an
-example, see `fedi-post-handle-regex'."
+the item submatch contains the item without a preceding @ or
+similar. It is added to the object's item property, so it can be
+used in a link function. For an example of regexes' subgroups, see
+`fedi-post-handle-regex'."
   ;; FIXME: ideally we'd not do this in a sep buffer (gc)
+  ;; this runs on every item for every regex type!
   (with-temp-buffer
     (switch-to-buffer (current-buffer))
     (insert str)
