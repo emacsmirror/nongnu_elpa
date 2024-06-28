@@ -905,9 +905,15 @@ JSON is the item's data to process the link with."
         (setq str (buffer-substring (point) (point-max)))
         (kill-buffer-and-window)        ; shr's *html*
         (kill-buffer buf)))             ; our md
-    (setq str (fedi-propertize-items str fedi-post-handle-regex 'handle json
-                                     fj-link-keymap 1 2 nil nil
-                                     '(fj-tab-stop t)))
+    ;; propertize special items:
+    (setq str
+          (fedi-propertize-items str fedi-post-handle-regex 'handle json
+                                 fj-link-keymap 1 2 nil nil
+                                 '(fj-tab-stop t)))
+    (setq str
+          (fedi-propertize-items str fedi-post-tag-regex 'tag json
+                                 fj-link-keymap 1 2 nil nil
+                                 '(fj-tab-stop t)))
     (fj-restore-previous-window-config fj-previous-window-config)
     str))
 
@@ -1778,8 +1784,11 @@ Allow quick jumping to an element in a tabulated list view."
 Used for hitting RET on a given link."
   (interactive "d")
   (let ((type (get-text-property pos 'type)))
-    (cond ((eq type 'hash)
-           nil) ; FIXME: hashes
+    (cond ((eq type 'tag)
+           (let ((owner (fj--get-buffer-spec :owner))
+                 (repo (fj--get-buffer-spec :repo))
+                 (number (fj--property 'item)))
+             (fj-issue-view repo owner number)))
           ((eq type 'handle)
            (let ((user (fj--property 'item)))
              (fj-user-repos-tl user)))
