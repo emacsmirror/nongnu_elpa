@@ -366,6 +366,27 @@ This will not be applied to sentences that start with double space."
 			(delete-region end (match-end 0))
 			(delete-region (match-beginning 0) start))))))))
 
+(cl-defun gnosis-display-image (id &optional (image 'images))
+  "Display image for note ID.
+
+IMAGE is the image type to display, usually should be either =images'
+or =extra-image'.  Instead of using =extra-image' post review, prefer
+=gnosis-display-extra' which displays the =extra-image' as well.
+
+Refer to =gnosis-db-schema-extras' for informations on images stored."
+  (let* ((img (gnosis-get image 'extras `(= id ,id)))
+         (path-to-image (expand-file-name (or img "") (file-name-as-directory gnosis-images-dir)))
+         (image (create-image path-to-image 'png nil :width gnosis-image-width :height gnosis-image-height))
+         (image-width (car (image-size image t)))
+         (frame-width (window-text-width))) ;; Width of the current window in columns
+    (cond ((or (not img) (string-empty-p img))
+           (insert "\n\n"))
+          ((and img (file-exists-p path-to-image))
+           (let* ((padding-cols (/ (- frame-width (floor (/ image-width (frame-char-width)))) 2))
+                  (padding (make-string (max 0 padding-cols) ?\s)))
+             (insert "\n\n" padding)  ;; Insert padding before the image
+             (insert-image image)
+             (insert "\n\n"))))))
 
 (defun gnosis-display-mcq-options (id)
   "Display answer options for mcq note ID."
