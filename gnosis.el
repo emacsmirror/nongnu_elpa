@@ -397,7 +397,7 @@ Refer to =gnosis-db-schema-extras' for informations on images stored."
 	     do (insert (format "\n%s.  %s" option-num option))
 	     (setf option-num (1+ option-num)))))
 
-(defun gnosis-display-cloze-sentence (sentence clozes &optional fill-paragraph-p)
+(cl-defun gnosis-display-cloze-sentence (sentence clozes &optional (fill-paragraph-p nil))
   "Display cloze sentence for SENTENCE with CLOZES.
 
 If FILL-PARAGRAPH-P, insert using `fill-paragraph'"
@@ -407,7 +407,8 @@ If FILL-PARAGRAPH-P, insert using `fill-paragraph'"
   (if fill-paragraph-p
       (fill-paragraph
        (insert "\n" cloze-sentence))
-    (insert "\n" cloze-sentence))))
+    (insert "\n" (gnosis-center-string cloze-sentence)))
+  (gnosis-apply-syntax-overlay)))
 
 (defun gnosis-display-basic-answer (answer success user-input)
   "Display ANSWER.
@@ -422,7 +423,8 @@ When SUCCESS nil, display USER-INPUT as well"
     (insert "\n"
 	    (propertize "Your answer:" 'face 'gnosis-face-directions)
 	    " "
-	    (propertize user-input 'face 'gnosis-face-false))))
+	    (propertize user-input 'face 'gnosis-face-false)))
+  (gnosis-center-current-line))
 
 (cl-defun gnosis-display-y-or-n-answer (&key answer success)
   "Display y-or-n answer for note ID.
@@ -435,7 +437,8 @@ SUCCESS is t when user-input is correct, else nil"
      "\n\n"
      (propertize "Answer:" 'face 'gnosis-face-directions)
      " "
-     (propertize answer 'face (if success 'gnosis-face-correct 'gnosis-face-false)))))
+     (propertize answer 'face (if success 'gnosis-face-correct 'gnosis-face-false)))
+    (gnosis-center-current-line)))
 
 
 (defun gnosis-display-hint (hint)
@@ -443,7 +446,7 @@ SUCCESS is t when user-input is correct, else nil"
   (let ((hint (or hint "")))
     (goto-char (point-max))
     (gnosis-insert-separator)
-    (insert (propertize hint 'face 'gnosis-face-hint))))
+    (insert (gnosis-center-string (propertize hint 'face 'gnosis-face-hint)))))
 
 (cl-defun gnosis-display-cloze-reveal (&key (cloze-char gnosis-cloze-string) replace (success t) (face nil))
   "Replace CLOZE-CHAR with REPLACE.
@@ -454,7 +457,8 @@ If FACE nil, propertize replace using `gnosis-face-correct', or
   (search-forward cloze-char nil t)
   (replace-match (propertize replace 'face (if (not face)
 					       (if success 'gnosis-face-correct 'gnosis-face-false)
-					     face))))
+					     face)))
+  (gnosis-center-current-line))
 
 (cl-defun gnosis-display-cloze-user-answer (user-input &optional (false t))
   "Display USER-INPUT answer for cloze note upon failed review.
@@ -464,45 +468,32 @@ If FALSE t, use gnosis-face-false face"
   (insert "\n\n"
 	  (propertize "Your answer:" 'face 'gnosis-face-directions)
 	  " "
-	  (propertize user-input 'face (if false 'gnosis-face-false 'gnosis-face-correct))))
+	  (propertize user-input 'face (if false 'gnosis-face-false 'gnosis-face-correct)))
+  (gnosis-center-current-line)
+  (newline))
 
 (defun gnosis-display-correct-answer-mcq (answer user-choice)
   "Display correct ANSWER & USER-CHOICE for MCQ note."
-  (insert  "\n\n"
-	   (propertize "Correct Answer:" 'face 'gnosis-face-directions)
-	   " "
-	   (propertize answer 'face 'gnosis-face-correct)
-	   "\n"
-	   (propertize "Your answer:" 'face 'gnosis-face-directions)
-	   " "
-	   (propertize user-choice 'face (if (string= answer user-choice)
-					     'gnosis-face-correct
-					   'gnosis-face-false))))
-
-(cl-defun gnosis-display-image (id &optional (image 'images))
-  "Display image for note ID.
-
-IMAGE is the image type to display, usually should be either `images'
-or `extra-image'.  Instead of using `extra-image' post review, prefer
-`gnosis-display-extra' which displays the `extra-image' as well.
-
-Refer to `gnosis-db-schema-extras' for informations on images stored."
-  (let* ((img (gnosis-get image 'extras `(= id ,id)))
-	 (path-to-image (expand-file-name (or img "") (file-name-as-directory gnosis-images-dir)))
-	 (image (create-image path-to-image 'png nil :width gnosis-image-width :height gnosis-image-height)))
-    (cond ((or (not img) (string-empty-p img))
-	   (insert "\n\n"))
-	  ((and img (file-exists-p path-to-image))
-	   (insert "\n\n")
-	   (insert-image image)))))
+  (insert (gnosis-center-string
+	   (format "\n\n%s %s\n%s %s"
+		   (propertize "Correct Answer:" 'face 'gnosis-face-directions)
+		   (propertize answer 'face 'gnosis-face-correct)
+		   (propertize "Your answer:" 'face 'gnosis-face-directions)
+		   (propertize user-choice 'face (if (string= answer user-choice)
+						     'gnosis-face-correct
+						   'gnosis-face-false))))))
 
 (defun gnosis-display-extra (id)
   "Display extra information & extra-image for note ID."
-  (let ((extras (or (gnosis-get 'extra-notes 'extras `(= id ,id)) "")))
+  (let ((extras (or (gnosis-get 'extra-notes 'extras `(= id ,id)) ""))
+	(insert-point))
     (goto-char (point-max))
     (gnosis-insert-separator)
     (gnosis-display-image id 'extra-image)
-    (fill-paragraph (insert "\n" (propertize extras 'face 'gnosis-face-extra)))))
+    (setq insert-point (point))
+    (insert "\n" (propertize extras 'face 'gnosis-face-extra))
+    (gnosis-apply-center-buffer-overlay insert-point)
+    (gnosis-apply-syntax-overlay)))
 
 ;;;###autoload
 (defun gnosis-read-string-from-buffer (prompt string)
@@ -514,9 +505,7 @@ included in the resulting string.  If nil, no prompt will be
 inserted in the buffer.
 
 Also see `gnosis-string-edit'."
-  (gnosis-string-edit
-   prompt
-   string
+  (gnosis-string-edit prompt  string
    (lambda (edited)
      (setq string (substring-no-properties edited))
      (exit-recursive-edit))
@@ -540,7 +529,7 @@ Also see `gnosis-string-edit'."
 				   'face (if success 'gnosis-face-correct 'gnosis-face-false))))
       ;; Default behaviour
       (goto-char (point-max))
-      (insert next-review-msg))))
+      (insert (gnosis-center-string next-review-msg)))))
 
 (cl-defun gnosis--prompt (prompt &optional (downcase nil) (split nil))
   "PROMPT user for input until `q' is given.
@@ -1432,6 +1421,8 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
   (interactive)
   (let ((default-directory dir))
     (vc-pull)
+    ;; Fix sync by adding a small delay
+    (sit-for 0.3)
     ;; Reopen gnosis-db after pull
     (setf gnosis-db (emacsql-sqlite-open (expand-file-name "gnosis.db" dir)))))
 
