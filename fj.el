@@ -1703,12 +1703,19 @@ Optionally set LIMIT to results."
   "Build an issues completion backend for `completion-at-point-functions'."
   (fedi-post--return-capf fedi-post-tag-regex
                           #'fj-compose-issues-fun
-                          #'fj--issues-annot-fun))
-;; #'fj-compose-issue-exit-fun))
+                          #'fj--issues-annot-fun nil
+                          #'fj-compose-issue-exit-fun))
 
 (defun fj--issues-annot-fun (candidate)
   "Given an issues completion CANDIDATE, return its annotation."
   (concat " " (cdr (assoc candidate fedi-post-completions #'equal))))
+
+(defun fj-compose-issue-exit-fun (str _status)
+  "Mark completion STR as verbatim."
+  (save-excursion
+    (backward-char (length str))
+    (insert "`"))
+  (insert "`"))
 
 ;;; NOTIFICATIONS
 
