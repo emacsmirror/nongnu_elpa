@@ -4,8 +4,8 @@
 #+language: en
 #+options: ':t toc:nil author:t email:t num:t
 #+startup: content
-#+macro: stable-version 0.2.0
-#+macro: release-date 2023-03-08
+#+macro: stable-version 0.3.0
+#+macro: release-date 2024-06-28
 #+macro: file @@texinfo:@file{@@$1@@texinfo:}@@
 #+macro: space @@texinfo:@: @@
 #+macro: kbd @@texinfo:@kbd{@@$1@@texinfo:}@@
@@ -22,9 +22,14 @@
 #+texinfo_header: @set MAINTAINERCONTACT @uref{mailto:public@thanosapollo.org,contact the maintainer}
 
 
-Gnosis (γνῶσις), pronounced "noh-sis", /meaning knowledge in Greek/, is
-a spaced repetition system implementation for note taking and self
-testing.
+Gnosis (γνῶσις), pronounced "noh-sis", /meaning knowledge in Greek/,
+is a spaced repetition system implementation for note taking and self
+testing.  The objective of gnosis is to maximize memory retention by
+implementing reviewing  of information at increasing intervals.
+
+The intervals grow longer as you become more familiar with the
+information, which reinforces long-term retention and reduces the risk
+of forgetting
 
 #+texinfo: @noindent
 This manual is written for Gnosis version {{{stable-version}}}, released on {{{release-date}}}.
@@ -36,6 +41,9 @@ This manual is written for Gnosis version {{{stable-version}}}, released on {{{r
 #+texinfo: @insertcopying
 
 * Introduction
+
+Before reading this manual, it's recommended you first try out =gnosis-demo=
+
 Gnosis, is a spaced repetition system for note taking & self
 testing, where notes are taken in a Question/Answer/Explanation
 format & reviewed in spaced intervals, determined by the success or
@@ -53,11 +61,13 @@ Creating notes for gnosis can be done interactively with:
     =M-x gnosis-add-note=
 
 When it comes to adding images, you can select images that are inside
-=gnosis-images-dir=.  For adjusting image size, refer to [[Customization]]
+=gnosis-images-dir=.  For adjusting image size, refer to [[#Customization][Customization]]
 
 * Note Types
 ** Cloze
-
+:PROPERTIES:
+:CUSTOM_ID: Cloze
+:END:
 A cloze note type is a format where you create sentences or paragraphs
 with "missing" words.  A fill-in-the-blanks question.  
 
@@ -79,6 +89,24 @@ You can also format clozes like Anki if you prefer; e.g ~{{c1::Cyproheptadine}}~
 You can remove the /guidance/ string by adjusting
 =gnosis-cloze-guidance=.
 
+** MC-Cloze
+A MC-Cloze (/Multiple Choice Cloze/) is a fill-in-the-blank note,
+but unlike [[#Cloze][cloze note type]] the user is prompted to select an option
+instead of typing an answer.
+
+You can create multiple notes from one input, but each note can only
+have *one* cloze. The first option will always be the right answer
+(will be randomized in the database), separated by the rest of the
+answer by =gnosis-mc-cloze-separator= (default value is "&&"), and a
+note will be generated from each cloze.
+
+Example:
+#+BEGIN_QUOTE
+    The greatest text editor is Emacs&&Vim&&Helix
+#+END_QUOTE
+
+When customizing =gnosis-mc-cloze=separator= pay attention to not use
+values that would mess up with regex functions.
 ** MCQ (Multiple Choice Question)
 
 A MCQ note type, as the name suggests, is a multiple choice question.
@@ -111,7 +139,13 @@ ANSWER must be either 121 (~y~) or 110 (~n~), as those correspond to the
 character values used to represent them.
 
 * Customization
+:PROPERTIES:
+:CUSTOM_ID: Customization
+:END:
 ** Image size
+:PROPERTIES:
+:CUSTOM_ID: image-size
+:END:
 Adjust image size using =gnosis-image-height= & =gnosis-image-width=
 
 Example:
@@ -175,6 +209,9 @@ Example:
 Using the above example, after first successfully reviewing a note,
 you will see it again in the next review session, if you successfully
 review said note again, the next review will be tomorrow.
+
+Upon failing to review a note without completing 2 successful reviews,
+you will have to review it again on the same day.
 
 ** Easiness Factor
 
@@ -240,7 +277,7 @@ Example:
 #+begin_src bash
  cd ~/.emacs.d/gnosis # default location for gnosis
  git init # After completing your first review session, a git repo should have been initialized automatically.
- git remote add <remote_name> <remote_url>
+ git remote add origin <remote_url>
  git push --set-upstream origin master
 #+end_src
 
@@ -257,6 +294,7 @@ To automatically push changes after a review session, add this to your configura
 (setf gnosis-vc-auto-push t)
 (gnosis-vc-pull) ;; Run vc-pull for gnosis on startup
 #+end_src
+
 * Extending Gnosis
 To make development and customization easier, gnosis comes with
 =gnosis-test= module, that should be used to create a custom database for

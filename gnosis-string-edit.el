@@ -28,7 +28,7 @@
 ;; modified version string-edit.el to make gnosis available to users
 ;; of Emacs versions < 29.
 
-;; Code:
+;;; Code:
 
 (require 'cl-lib)
 

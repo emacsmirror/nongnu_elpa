@@ -1,4 +1,5 @@
-This is gnosis.info, produced by makeinfo version 7.1 from gnosis.texi.
+This is gnosis.info, produced by .texi2any-real version 7.1 from
+gnosis.texi.
 
 INFO-DIR-SECTION Emacs misc features
 START-INFO-DIR-ENTRY
@@ -13,9 +14,14 @@ Gnosis User Manual
 
 Gnosis (γνῶσις), pronounced "noh-sis", _meaning knowledge in Greek_, is
 a spaced repetition system implementation for note taking and self
-testing.
+testing.  The objective of gnosis is to maximize memory retention by
+implementing reviewing of information at increasing intervals.
 
-This manual is written for Gnosis version 0.2.0, released on 2023-03-08.
+   The intervals grow longer as you become more familiar with the
+information, which reinforces long-term retention and reduces the risk
+of forgetting
+
+This manual is written for Gnosis version 0.3.0, released on 2024-06-28.
 
    • Official manual: <https://thanosapollo.org/user-manual/gnosis>
    • Git repositories:
@@ -37,6 +43,7 @@ This manual is written for Gnosis version 0.2.0, released on 2023-03-08.
 Note Types
 
 * Cloze::
+* MC-Cloze::
 * MCQ (Multiple Choice Question)::
 * Basic Type::
 * Double::
@@ -64,7 +71,10 @@ File: gnosis.info,  Node: Introduction,  Next: Adding notes,  Prev: Top,  Up: To
 1 Introduction
 **************
 
-Gnosis, is a spaced repetition system for note taking & self testing,
+Before reading this manual, it's recommended you first try out
+‘gnosis-demo’
+
+   Gnosis, is a spaced repetition system for note taking & self testing,
 where notes are taken in a Question/Answer/Explanation format & reviewed
 in spaced intervals, determined by the success or failure to recall a
 given answer.
@@ -98,13 +108,14 @@ File: gnosis.info,  Node: Note Types,  Next: Customization,  Prev: Adding notes,
 * Menu:
 
 * Cloze::
+* MC-Cloze::
 * MCQ (Multiple Choice Question)::
 * Basic Type::
 * Double::
 * y-or-n::
 
 
-File: gnosis.info,  Node: Cloze,  Next: MCQ (Multiple Choice Question),  Up: Note Types
+File: gnosis.info,  Node: Cloze,  Next: MC-Cloze,  Up: Note Types
 
 3.1 Cloze
 =========
@@ -131,9 +142,31 @@ selecting ‘Cloze’, the question should be formatted like this:
 ‘gnosis-cloze-guidance’.
 
 
-File: gnosis.info,  Node: MCQ (Multiple Choice Question),  Next: Basic Type,  Prev: Cloze,  Up: Note Types
+File: gnosis.info,  Node: MC-Cloze,  Next: MCQ (Multiple Choice Question),  Prev: Cloze,  Up: Note Types
 
-3.2 MCQ (Multiple Choice Question)
+3.2 MC-Cloze
+============
+
+A MC-Cloze (_Multiple Choice Cloze_) is a fill-in-the-blank note, but
+unlike *note cloze note type: Cloze. the user is prompted to select an
+option instead of typing an answer.
+
+   You can create multiple notes from one input, but each note can only
+have *one* cloze.  The first option will always be the right answer
+(will be randomized in the database), separated by the rest of the
+answer by ‘gnosis-mc-cloze-separator’ (default value is "&&"), and a
+note will be generated from each cloze.
+
+   Example:
+     The greatest text editor is Emacs&&Vim&&Helix
+
+   When customizing ‘gnosis-mc-cloze=separator’ pay attention to not use
+values that would mess up with regex functions.
+
+
+File: gnosis.info,  Node: MCQ (Multiple Choice Question),  Next: Basic Type,  Prev: MC-Cloze,  Up: Note Types
+
+3.3 MCQ (Multiple Choice Question)
 ==================================
 
 A MCQ note type, as the name suggests, is a multiple choice question.
@@ -148,7 +181,7 @@ A MCQ note type, as the name suggests, is a multiple choice question.
 
 File: gnosis.info,  Node: Basic Type,  Next: Double,  Prev: MCQ (Multiple Choice Question),  Up: Note Types
 
-3.3 Basic Type
+3.4 Basic Type
 ==============
 
 Basic note type is a simple question/answer note, where the user first
@@ -158,7 +191,7 @@ input the answer.
 
 File: gnosis.info,  Node: Double,  Next: y-or-n,  Prev: Basic Type,  Up: Note Types
 
-3.4 Double
+3.5 Double
 ==========
 
 Double note type, is essentially a note that generates 2 basic notes.
@@ -169,7 +202,7 @@ The second one reverses question/answer.
 
 File: gnosis.info,  Node: y-or-n,  Prev: Double,  Up: Note Types
 
-3.5 y-or-n
+3.6 y-or-n
 ==========
 
 y-or-n (yes or no) note type, user is presented with a question and
@@ -272,6 +305,9 @@ first two initial intervals for successful reviews.
 you will see it again in the next review session, if you successfully
 review said note again, the next review will be tomorrow.
 
+   Upon failing to review a note without completing 2 successful
+reviews, you will have to review it again on the same day.
+
 
 File: gnosis.info,  Node: Easiness Factor,  Next: Forgetting Factor,  Prev: Initial Interval,  Up: Gnosis Algorithm
 
@@ -349,7 +385,7 @@ synchronization across devices.
 
      cd ~/.emacs.d/gnosis # default location for gnosis
      git init # After completing your first review session, a git repo should have been initialized automatically.
-     git remote add <remote_name> <remote_url>
+     git remote add origin <remote_url>
      git push --set-upstream origin master
 
    You can interactively use ‘gnosis-vc-push’ & ‘gnosis-vc-pull’.  As
@@ -415,26 +451,27 @@ should be done.
 
 
 Tag Table:
-Node: Top244
-Node: Introduction1209
-Node: Adding notes1851
-Node: Note Types2220
-Node: Cloze2432
-Node: MCQ (Multiple Choice Question)3350
-Node: Basic Type3846
-Node: Double4149
-Node: y-or-n4415
-Node: Customization4817
-Node: Image size5002
-Node: Typos | String Comparison5288
-Node: Gnosis Algorithm6063
-Node: Initial Interval7099
-Node: Easiness Factor7764
-Node: Forgetting Factor8712
-Node: Editing notes9320
-Node: Sync between devices9712
-Node: Extending Gnosis10740
-Node: Creating Custom Note Types11195
+Node: Top250
+Node: Introduction1503
+Node: Adding notes2230
+Node: Note Types2599
+Node: Cloze2824
+Node: MC-Cloze3720
+Node: MCQ (Multiple Choice Question)4544
+Node: Basic Type5043
+Node: Double5346
+Node: y-or-n5612
+Node: Customization6014
+Node: Image size6199
+Node: Typos | String Comparison6485
+Node: Gnosis Algorithm7260
+Node: Initial Interval8296
+Node: Easiness Factor9086
+Node: Forgetting Factor10034
+Node: Editing notes10642
+Node: Sync between devices11034
+Node: Extending Gnosis12055
+Node: Creating Custom Note Types12510
 
 End Tag Table
 

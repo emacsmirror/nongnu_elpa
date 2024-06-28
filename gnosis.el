@@ -5,7 +5,7 @@
 ;; Author: Thanos Apollo <public@thanosapollo.org>
 ;; Keywords: extensions
 ;; URL: https://thanosapollo.org/projects/gnosis
-;; Version: 0.2.4
+;; Version: 0.3.0
 
 ;; Package-Requires: ((emacs "27.2") (emacsql "20240124") (compat "29.1.4.2"))
 
@@ -36,13 +36,15 @@
 
 ;;; Code:
 
-(require 'emacsql-sqlite)
 (require 'cl-lib)
+
+(require 'vc)
+(require 'emacsql-sqlite)
 
 (require 'gnosis-algorithm)
 (require 'gnosis-string-edit)
 
-(require 'vc)
+(require 'animate)
 
 (defgroup gnosis nil
   "Spaced Repetition System For Note Taking & Self Testing."
@@ -125,7 +127,7 @@ When nil, the image will be displayed at its original size."
 (defconst gnosis-db-version 2
   "Gnosis database version.")
 
-(defvar gnosis-note-types '("MCQ" "Cloze" "Basic" "Double" "y-or-n")
+(defvar gnosis-note-types '("MCQ" "MC-Cloze" "Cloze" "Basic" "Double" "y-or-n")
   "Gnosis available note types.")
 
 (defvar gnosis-previous-note-tags '()
@@ -150,6 +152,14 @@ car value is the prompt, cdr is the prewritten string.")
 
 car value is the prompt, cdr is the prewritten string.")
 
+(defvar gnosis-mc-cloze-guidance
+  '("MC-Cloze Example: This is an example answer&&option2&&option3" . ""))
+
+(defcustom gnosis-mc-cloze-separator "&&"
+  "Sseparator for choices on multiple choice clozes."
+  :type 'string
+  :group 'gnosis)
+
 (defcustom gnosis-mcq-separator "\n--\n"
   "Separator for stem field and options in mcq note type.
 
@@ -161,6 +171,11 @@ Seperate the question/stem from options."
   "Separator for options in mcq note type."
   :type 'string
   :group 'gnosis)
+
+(defcustom gnosis-center-content t
+  "When t, centers text."
+  :type 'boolean
+  :group 'gosis)
 
 (defvar gnosis-due-notes-total nil
   "Total due notes.")
@@ -174,8 +189,7 @@ Seperate the question/stem from options."
   :prefix 'gnosis-face)
 
 (defface gnosis-face-extra
-  '((t :inherit italic
-       :foreground "#9C91E4"))
+  '((t :inherit font-lock-doc-face))
   "Face for extra-notes."
   :group 'gnosis-faces)
 
@@ -185,7 +199,9 @@ Seperate the question/stem from options."
   :group 'gnosis-face-faces)
 
 (defface gnosis-face-separator
-  '((t :inherit warning))
+  '((default :inherit org-hide)
+    (((background light)) :strike-through "gray70")
+    (t :strike-through "gray30"))
   "Face for section separator."
   :group 'gnosis-face)
 
@@ -296,15 +312,118 @@ History is disabled."
            if (= i index) collect new-item
            else collect item))
 
+(defun gnosis-insert-separator ()
+  "Insert a dashed line spanning the entire width of the buffer."
+  (interactive)
+  (let* ((width (window-width))
+         (dash-line (concat (make-string width ?-))))
+    (insert "\n" dash-line "\n")
+    ;; Apply an overlay to hide only the dashes
+    (let ((start (save-excursion (forward-line -1) (point)))
+          (end (point)))
+      (let ((overlay (make-overlay start end)))
+        (overlay-put overlay 'face 'gnosis-face-separator)
+        (overlay-put overlay 'display (make-string width ?\s))))))
+
+(defun gnosis-center-current-line (&optional center?)
+  "Centers text in the current line ignoring leading spaces.
+
+Acts only when CENTER? is t."
+  (interactive)
+  (let* ((start (line-beginning-position))
+         (end (line-end-position))
+         (text (string-trim (buffer-substring start end)))
+         (padding (max (/ (- (window-width) (length text)) 2) 0))
+	 (center? (or center? gnosis-center-content)))
+    (when center?
+      (delete-region start end)
+      (insert (make-string padding ? ) text))))
+
+(defun gnosis-center-string (input-string &optional center?)
+  "Center each line of the given INPUT-STRING in the current window width.
+
+Acts only when CENTER? is t."
+  (let ((window-width (window-width))
+	(center? (or center? gnosis-center-content)))
+    (when center?
+      (mapconcat
+       (lambda (line)
+         (let* ((text (string-trim line))
+                (wrapped (with-temp-buffer
+                           (insert text)
+                           (fill-region (point-min) (point-max))
+                           (buffer-string)))
+                (lines (split-string wrapped "\n")))
+           (mapconcat
+            (lambda (line)
+              (let ((padding (max (/ (- window-width (length line)) 2) 0)))
+                (concat (make-string padding ? ) line)))
+            lines
+            "\n")))
+       (split-string input-string "\n")
+       "\n"))))
+
+(defun gnosis-apply-center-buffer-overlay (&optional point)
+  "Center text in buffer starting at POINT using `gnosis-center-current-line'.
+This will not be applied to sentences that start with double space."
+  (save-excursion
+    (goto-char (or point (point-min)))
+    (while (not (or (= (point-max) (point)) (looking-at "^  ")))
+      (gnosis-center-current-line)
+      (forward-line 1))))
+
+(defun gnosis-apply-syntax-overlay ()
+  "Apply custom font overlays for syntax highlighting, and remove delimiters."
+  (let ((syntax-highlights '(("\\*\\([^*[:space:]][^*]*[^*[:space:]]\\)\\*" . bold)
+                             ("/\\([^/[:space:]][^/]*[^/[:space:]]\\)/" . italic)
+                             ("=\\([^=[:space:]][^=]*[^=[:space:]]\\)=" . font-lock-constant-face)
+                             ("~\\([^~[:space:]][^~]*[^~[:space:]]\\)~" . font-lock-keyword-face))))
+    (save-excursion
+      (cl-loop for (regex . face) in syntax-highlights
+               do (progn
+                    (goto-char (point-min))
+                    (while (re-search-forward regex nil t)
+                      (let ((start (match-beginning 1))
+                            (end (match-end 1)))
+			(overlay-put (make-overlay start end) 'face face)
+			(delete-region end (match-end 0))
+			(delete-region (match-beginning 0) start))))))))
+
 (defun gnosis-display-question (id &optional fill-paragraph-p)
   "Display main row for note ID.
 
 If FILL-PARAGRAPH-P, insert question using `fill-paragraph'."
-  (let ((question (gnosis-get 'main 'notes `(= id ,id))))
+  (let ((question (gnosis-get 'main 'notes `(= id ,id)))
+	(fill-paragraph-p (or fill-paragraph-p t)))
     (erase-buffer)
     (if fill-paragraph-p
-	(fill-paragraph (insert "\n"  (propertize question 'face 'gnosis-face-main))))
-    (insert "\n"  (propertize question 'face 'gnosis-face-main))))
+	(fill-paragraph (insert "\n"  (propertize question 'face 'gnosis-face-main)))
+      (insert "\n"  (propertize question 'face 'gnosis-face-main)))
+    (newline)
+    (gnosis-apply-center-buffer-overlay)
+    (gnosis-apply-syntax-overlay)))
+
+(cl-defun gnosis-display-image (id &optional (image 'images))
+  "Display image for note ID.
+
+IMAGE is the image type to display, usually should be either =images'
+or =extra-image'.  Instead of using =extra-image' post review, prefer
+=gnosis-display-extra' which displays the =extra-image' as well.
+
+Refer to =gnosis-db-schema-extras' for informations on images stored."
+  (let* ((img (gnosis-get image 'extras `(= id ,id)))
+         (path-to-image (expand-file-name (or img "") (file-name-as-directory gnosis-images-dir)))
+         (image (create-image path-to-image 'png nil :width gnosis-image-width :height gnosis-image-height))
+         (image-width (car (image-size image t)))
+         (frame-width (window-text-width))) ;; Width of the current window in columns
+    (cond ((or (not img) (string-empty-p img))
+           (insert "\n\n"))
+          ((and img (file-exists-p path-to-image))
+           (let* ((padding-cols (/ (- frame-width (floor (/ image-width (frame-char-width)))) 2))
+                  (padding (make-string (max 0 padding-cols) ?\s)))
+             (insert "\n\n" padding)  ;; Insert padding before the image
+             (insert-image image)
+             (insert "\n\n"))))))
 
 (defun gnosis-display-mcq-options (id)
   "Display answer options for mcq note ID."
@@ -315,7 +434,7 @@ If FILL-PARAGRAPH-P, insert question using `fill-paragraph'."
 	     do (insert (format "\n%s.  %s" option-num option))
 	     (setf option-num (1+ option-num)))))
 
-(defun gnosis-display-cloze-sentence (sentence clozes &optional fill-paragraph-p)
+(cl-defun gnosis-display-cloze-sentence (sentence clozes &optional (fill-paragraph-p nil))
   "Display cloze sentence for SENTENCE with CLOZES.
 
 If FILL-PARAGRAPH-P, insert using `fill-paragraph'"
@@ -325,7 +444,8 @@ If FILL-PARAGRAPH-P, insert using `fill-paragraph'"
   (if fill-paragraph-p
       (fill-paragraph
        (insert "\n" cloze-sentence))
-    (insert "\n" cloze-sentence))))
+    (insert "\n" (gnosis-center-string cloze-sentence)))
+  (gnosis-apply-syntax-overlay)))
 
 (defun gnosis-display-basic-answer (answer success user-input)
   "Display ANSWER.
@@ -335,12 +455,14 @@ When SUCCESS nil, display USER-INPUT as well"
 	  (propertize "Answer:" 'face 'gnosis-face-directions)
 	  " "
 	  (propertize answer 'face 'gnosis-face-correct))
+  (gnosis-center-current-line)
   ;; Insert user wrong answer
   (when (not success)
     (insert "\n"
-	    (propertize "Your answer:" 'face 'gnosis-face-directions)
+	     (propertize "Your answer:" 'face 'gnosis-face-directions)
 	    " "
-	    (propertize user-input 'face 'gnosis-face-false))))
+	    (propertize user-input 'face 'gnosis-face-false))
+    (gnosis-center-current-line)))
 
 (cl-defun gnosis-display-y-or-n-answer (&key answer success)
   "Display y-or-n answer for note ID.
@@ -353,16 +475,17 @@ SUCCESS is t when user-input is correct, else nil"
      "\n\n"
      (propertize "Answer:" 'face 'gnosis-face-directions)
      " "
-     (propertize answer 'face (if success 'gnosis-face-correct 'gnosis-face-false)))))
+     (propertize answer 'face (if success 'gnosis-face-correct 'gnosis-face-false)))
+    (gnosis-center-current-line)))
 
 
 (defun gnosis-display-hint (hint)
   "Display HINT."
   (let ((hint (or hint "")))
     (goto-char (point-max))
-    (insert
-     (propertize "\n\n-----\n" 'face 'gnosis-face-separator)
-     (propertize hint 'face 'gnosis-face-hint))))
+    (gnosis-insert-separator)
+    (and (not (string-empty-p hint))
+	 (insert (gnosis-center-string (propertize hint 'face 'gnosis-face-hint))))))
 
 (cl-defun gnosis-display-cloze-reveal (&key (cloze-char gnosis-cloze-string) replace (success t) (face nil))
   "Replace CLOZE-CHAR with REPLACE.
@@ -373,7 +496,8 @@ If FACE nil, propertize replace using `gnosis-face-correct', or
   (search-forward cloze-char nil t)
   (replace-match (propertize replace 'face (if (not face)
 					       (if success 'gnosis-face-correct 'gnosis-face-false)
-					     face))))
+					     face)))
+  (gnosis-center-current-line))
 
 (cl-defun gnosis-display-cloze-user-answer (user-input &optional (false t))
   "Display USER-INPUT answer for cloze note upon failed review.
@@ -383,45 +507,31 @@ If FALSE t, use gnosis-face-false face"
   (insert "\n\n"
 	  (propertize "Your answer:" 'face 'gnosis-face-directions)
 	  " "
-	  (propertize user-input 'face (if false 'gnosis-face-false 'gnosis-face-correct))))
+	  (propertize user-input 'face (if false 'gnosis-face-false 'gnosis-face-correct)))
+  (gnosis-center-current-line)
+  (newline))
 
 (defun gnosis-display-correct-answer-mcq (answer user-choice)
   "Display correct ANSWER & USER-CHOICE for MCQ note."
-  (insert  "\n\n"
-	   (propertize "Correct Answer:" 'face 'gnosis-face-directions)
-	   " "
-	   (propertize answer 'face 'gnosis-face-correct)
-	   "\n"
-	   (propertize "Your answer:" 'face 'gnosis-face-directions)
-	   " "
-	   (propertize user-choice 'face (if (string= answer user-choice)
-					     'gnosis-face-correct
-					   'gnosis-face-false))))
-
-(cl-defun gnosis-display-image (id &optional (image 'images))
-  "Display image for note ID.
-
-IMAGE is the image type to display, usually should be either `images'
-or `extra-image'.  Instead of using `extra-image' post review, prefer
-`gnosis-display-extra' which displays the `extra-image' as well.
-
-Refer to `gnosis-db-schema-extras' for informations on images stored."
-  (let* ((img (gnosis-get image 'extras `(= id ,id)))
-	 (path-to-image (expand-file-name (or img "") (file-name-as-directory gnosis-images-dir)))
-	 (image (create-image path-to-image 'png nil :width gnosis-image-width :height gnosis-image-height)))
-    (cond ((or (not img) (string-empty-p img))
-	   (insert "\n\n"))
-	  ((and img (file-exists-p path-to-image))
-	   (insert "\n\n")
-	   (insert-image image)))))
+  (insert (gnosis-center-string
+	   (format "\n\n%s %s\n%s %s"
+		   (propertize "Correct Answer:" 'face 'gnosis-face-directions)
+		   (propertize answer 'face 'gnosis-face-correct)
+		   (propertize "Your answer:" 'face 'gnosis-face-directions)
+		   (propertize user-choice 'face (if (string= answer user-choice)
+						     'gnosis-face-correct
+						   'gnosis-face-false))))))
 
 (defun gnosis-display-extra (id)
   "Display extra information & extra-image for note ID."
   (let ((extras (or (gnosis-get 'extra-notes 'extras `(= id ,id)) "")))
     (goto-char (point-max))
-    (insert (propertize "\n\n-----\n" 'face 'gnosis-face-separator))
+    (gnosis-insert-separator)
     (gnosis-display-image id 'extra-image)
-    (fill-paragraph (insert "\n" (propertize extras 'face 'gnosis-face-extra)))))
+    (insert "\n" (gnosis-center-string
+		  (propertize extras 'face 'gnosis-face-extra))
+	    "\n")
+    (gnosis-apply-syntax-overlay)))
 
 ;;;###autoload
 (defun gnosis-read-string-from-buffer (prompt string)
@@ -433,9 +543,7 @@ included in the resulting string.  If nil, no prompt will be
 inserted in the buffer.
 
 Also see `gnosis-string-edit'."
-  (gnosis-string-edit
-   prompt
-   string
+  (gnosis-string-edit prompt  string
    (lambda (edited)
      (setq string (substring-no-properties edited))
      (exit-recursive-edit))
@@ -459,7 +567,7 @@ Also see `gnosis-string-edit'."
 				   'face (if success 'gnosis-face-correct 'gnosis-face-false))))
       ;; Default behaviour
       (goto-char (point-max))
-      (insert next-review-msg))))
+      (insert (gnosis-center-string next-review-msg)))))
 
 (cl-defun gnosis--prompt (prompt &optional (downcase nil) (split nil))
   "PROMPT user for input until `q' is given.
@@ -496,7 +604,7 @@ Set SPLIT to t to split all input given."
     (error "No decks found.  Please create a deck first with `gnosis-add-deck'"))
   (if id
       (gnosis-get 'name 'decks `(= id ,id))
-    (gnosis-completing-read "Deck: " (gnosis-select 'name 'decks))))
+    (funcall gnosis-completing-read-function "Deck: " (gnosis-select 'name 'decks))))
 
 (cl-defun gnosis--get-deck-id (&optional (deck (gnosis--get-deck-name)))
   "Return id for DECK name."
@@ -842,6 +950,62 @@ See `gnosis-add-note--cloze' for more reference."
 			  :images (gnosis-select-images)
 			  :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))
 
+(cl-defun gnosis-mc-cloze-extract-options (str &optional (char gnosis-mc-cloze-separator))
+  "Extract options for MC-CLOZE note type from STR.
+
+CHAR: separator for mc-cloze, default to `gnosis-mc-cloze-separator'"
+  (cl-remove-if
+   #'null
+   (mapcar (lambda (s)
+             (when (string-match-p (regexp-quote char) s)
+               (split-string s (regexp-quote char))))
+           (split-string str " "))))
+
+(cl-defun gnosis-add-note--mc-cloze (&key deck question options answer
+					  extra (images nil) tags (suspend 0))
+  "Add MC-CLOZE note type to DECK.
+
+Refer to `gnosis-add-note-mc-cloze' for how this procedure should be used
+
+DECK: Deck to add note to
+QUESTION: Question, a string
+OPTIONS: Answer options, a list of strings
+ANSWER: the correct string, from OPTIONS.
+EXTRA: Extra notes
+IMAGES: Images to display during & after review
+TAGS: Tags for note
+SUSPEND: whether to suspend not"
+  (cl-assert (stringp deck) nil "Deck name must be a string")
+  (cl-assert (stringp question) nil "Question must be a string")
+  (cl-assert (listp options) nil "Options must be a list")
+  (cl-assert (stringp extra) nil "Extra value must be a string")
+  (cl-assert (listp images) nil "Images must be a list of string paths")
+  (cl-assert (listp tags) nil "Tags value must be a list of tags as strings")
+  (cl-assert (or (= suspend 1) (= suspend 0)) nil "Suspend value must be either 0 or 1")
+  (gnosis-add-note-fields deck "mc-cloze" question options answer extra tags (or suspend 0)
+			  (car images) (cdr images)))
+
+(defun gnosis-add-note-mc-cloze (deck)
+  "Add MC-CLOZE note type to DECK.
+
+MC-CLOZE (Multiple Choice Cloze) note type consists of a sentence with a
+single cloze, for which the user will be prompted to select the correct
+answer."
+  (interactive)
+  (let* ((input (gnosis-read-string-from-buffer (or (car gnosis-mc-cloze-guidance) "")
+						(or (cdr gnosis-mc-cloze-guidance) "")))
+	 (question (gnosis-mc-cloze-remove-separator input))
+	 (options (gnosis-mc-cloze-extract-options input)))
+    ;; Create a note for each option extracted
+    (cl-loop for option in options
+	     do (gnosis-add-note--mc-cloze :deck deck
+					   :question question
+					   :options option
+					   :answer (car option)
+					   :extra (gnosis-read-string-from-buffer "Extra" "")
+					   :images (gnosis-select-images)
+					   :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))))
+
 ;;;###autoload
 (defun gnosis-add-note (&optional deck type)
   "Create note(s) as TYPE interactively.
@@ -853,7 +1017,7 @@ TYPE: Type of gnosis note, must be one of `gnosis-note-types'"
     (unless (y-or-n-p "You are using a testing environment! Continue?")
       (error "Aborted")))
   (let* ((deck (or deck (gnosis--get-deck-name)))
-	 (type (or type (funcall gnosis-completing-read-function "Type: " gnosis-note-types nil t)))
+	 (type (or type (completing-read "Type: " gnosis-note-types nil t)))
 	 (func-name (intern (format "gnosis-add-note-%s" (downcase type)))))
     (if (fboundp func-name)
 	(progn (funcall func-name deck)
@@ -914,6 +1078,12 @@ Valid cloze formats include:
         (setf start (match-end 0))))
     (mapcar (lambda (tag-group) (nreverse (cdr tag-group)))
 	    (nreverse result-alist))))
+
+(defun gnosis-mc-cloze-remove-separator (string &optional separator)
+  "Remove SEPARATOR and all followed words from STRING."
+  (let* ((separator (or separator gnosis-mc-cloze-separator))
+	 (result (replace-regexp-in-string (format "%s[^ ]*" separator) "" string)))
+    result))
 
 (defun gnosis-compare-strings (str1 str2)
   "Compare STR1 and STR2.
@@ -1269,6 +1439,26 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
     (gnosis-display-next-review id success)
     success))
 
+(defun gnosis-review-mc-cloze (id)
+  "Review MC-CLOZE note of ID."
+  (let ((main (gnosis-get 'main 'notes `(= id ,id)))
+	;; Cloze needs to be a list, we take car as the answer
+	(cloze (list (gnosis-get 'answer 'notes `(= id ,id))))
+	(user-choice nil)
+	(success nil))
+    (gnosis-display-cloze-sentence main cloze)
+    (gnosis-display-image id)
+    (setf user-choice (gnosis-mcq-answer id)
+	  success (string= user-choice (car cloze)))
+    (gnosis-display-cloze-reveal :replace (car cloze)
+				 :success success)
+    ;; Display user answer only upon failure
+    (unless success
+      (gnosis-display-cloze-user-answer user-choice))
+    (gnosis-display-extra id)
+    (gnosis-display-next-review id success)
+    success))
+
 (defun gnosis-review-note (id)
   "Start review for note with value of id ID, if note is unsuspended."
   (when (gnosis-suspended-p id)
@@ -1297,6 +1487,8 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
   (interactive)
   (let ((default-directory dir))
     (vc-pull)
+    ;; Fix sync by adding a small delay
+    (sit-for 0.3)
     ;; Reopen gnosis-db after pull
     (setf gnosis-db (emacsql-sqlite-open (expand-file-name "gnosis.db" dir)))))
 
@@ -1319,8 +1511,7 @@ NOTE-NUM: The number of notes reviewed in the session."
       (shell-command (format "%s %s %s" git "add" (shell-quote-argument "gnosis.db")))
       (shell-command (format "%s %s %s" git "commit -m"
 			     (shell-quote-argument (format "Total notes for session: %d" note-num)))))
-    (when (and gnosis-vc-auto-push
-	       (not gnosis-testing))
+    (when (and gnosis-vc-auto-push (not gnosis-testing))
       (gnosis-vc-push))
     (message "Review session finished.  %d notes reviewed." note-num)))
 
@@ -1583,17 +1774,16 @@ SUSPEND: Suspend note, 0 for unsuspend, 1 for suspend"
   (cl-assert (or (stringp options) (listp options)) nil "Options must be a string, or a list for MCQ")
   (cl-assert (or (= suspend 0) (= suspend 1)) nil "Suspend must be either 0 or 1")
   ;; Construct the update clause for the emacsql update statement.
-  (cl-loop for (field . value) in
-           `((main . ,main)
-             (options . ,options)
-             (answer . ,answer)
-             (tags . ,tags)
-             (extra-notes . ,extra-notes)
-             (images . ,image)
-             (extra-image . ,second-image)
-	     (ef . ',ef)
-	     (ff . ,ff)
-	     (suspend . ,suspend))
+  (cl-loop for (field . value) in `((main . ,main)
+				    (options . ,options)
+				    (answer . ,answer)
+				    (tags . ,tags)
+				    (extra-notes . ,extra-notes)
+				    (images . ,image)
+				    (extra-image . ,second-image)
+				    (ef . ',ef)
+				    (ff . ,ff)
+				    (suspend . ,suspend))
            when value
            do (cond ((memq field '(extra-notes images extra-image))
 		     (gnosis-update 'extras `(= ,field ,value) `(= id ,id)))
@@ -1678,10 +1868,10 @@ to improve readability."
   (interactive)
   ;; Refresh modeline
   (setq gnosis-due-notes-total (length (gnosis-review-get-due-notes)))
-  (let ((review-type (funcall gnosis-completing-read-function "Review: " '("Due notes"
-									   "Due notes of deck"
-									   "Due notes of specified tag(s)"
-									   "All notes of tag(s)"))))
+  (let ((review-type (gnosis-completing-read "Review: " '("Due notes"
+							  "Due notes of deck"
+							  "Due notes of specified tag(s)"
+							  "All notes of tag(s)"))))
     (pcase review-type
       ("Due notes" (gnosis-review-session (gnosis-collect-note-ids :due t)))
       ("Due notes of deck" (gnosis-review-session (gnosis-collect-note-ids :due t :deck (gnosis--get-deck-id))))
@@ -1767,6 +1957,8 @@ Return note ids for notes that match QUERY."
            else
            collect (replace-regexp-in-string "\n" " " (format "%s" item))))
 
+;; TODO: Rewrite.  Tags should be an input of strings, interactive
+;; handling should be done by "helper" funcs
 (cl-defun gnosis-collect-note-ids (&key (tags nil) (due nil) (deck nil) (query nil))
   "Return list of note ids based on TAGS, DUE, DECKS, QUERY.
 
@@ -1919,12 +2111,13 @@ for dashboard type.
 
 DASHBOARD-TYPE: either 'Notes' or 'Decks' to display the respective dashboard."
   (interactive)
-  (let ((dashboard-type (or dashboard-type (cadr (read-multiple-choice
-						  "Display dashboard for:"
-						  '((?n "notes")
-						    (?d "decks")
-						    (?t "tags")
-						    (?s "search")))))))
+  (let ((dashboard-type (or dashboard-type
+			    (cadr (read-multiple-choice
+				   "Display dashboard for:"
+				   '((?n "notes")
+				     (?d "decks")
+				     (?t "tags")
+				     (?s "search")))))))
     (if note-ids (gnosis-dashboard-output-notes note-ids)
       (pcase dashboard-type
 	("notes" (gnosis-dashboard-output-notes (gnosis-collect-note-ids)))
@@ -1963,6 +2156,90 @@ DASHBOARD-TYPE: either 'Notes' or 'Decks' to display the respective dashboard."
 
 (gnosis-db-init)
 
+;;;; Gnosis Demo ;;;;
+;;;;;;;;;;;;;;;;;;;;;
+
+(defun gnosis-animate-string (string vpos &optional hpos string-section face)
+  "Display STRING animations starting at position VPOS, HPOS in BUFFER-NAME.
+
+If STRING-SECTION and FACE are provided, highlight the occurrences of
+STRING-SECTION in the STRING with FACE.
+
+If STRING-SECTION is nil, apply FACE to the entire STRING."
+  (let ((animate-n-steps 60))
+    (goto-char (point-min))
+    (animate-string string vpos hpos)
+    (and face
+      (if string-section
+	  (progn
+	    (goto-char (point-min))
+	    (while (search-forward string-section nil t)
+	      (add-text-properties (match-beginning 0) (match-end 0) `(face ,face))))
+	(add-text-properties (line-beginning-position) (line-end-position) `(face ,face))))))
+
+;;;###autoload
+(defun gnosis-demo ()
+  "Start gnosis demo."
+  (interactive)
+  (pop-to-buffer-same-window "*Gnosis Demo*")
+  (fundamental-mode)
+  (setq-local display-line-numbers nil)
+  (erase-buffer)
+  (gnosis-animate-string "Welcome to the Gnosis demo!" 2 nil "Gnosis demo" 'underline)
+  (sit-for 1)
+  (gnosis-animate-string "Gnosis is a tool designed to create a gnostikon" 3 nil "gnostikon" 'bold-italic)
+  (sit-for 1.5)
+  (gnosis-animate-string "--A place to store & test your knowledge--" 4 nil nil 'italic)
+  (sit-for 1)
+  (gnosis-animate-string "The objective of gnosis is to maximize memory retention." 6 nil
+			 "maximize memory retention" 'underline)
+  (sit-for 1)
+  (gnosis-animate-string "Consistency is key; be sure to do your daily reviews!" 8 nil "Consistency is key" 'bold)
+  (sit-for 1)
+  (gnosis-animate-string "Create meaningful notes; Gnosis offers a plethora of note types --try them!"
+			 9 nil "Create Meaningful Notes" 'bold)
+  (sit-for 1)
+  (when (y-or-n-p "Try out demo gnosis note review session?")
+    (gnosis-demo-create-deck)
+    (gnosis-review-session (gnosis-select-by-tag '("demo")))))
+
+(defun gnosis-demo-create-deck ()
+  "Create demo deck."
+  (let ((deck-name "demo")
+	(note-tags '("demo")))
+    (if (not (cl-some #'(lambda (x) (member "demo" x)) (gnosis-select 'name 'decks)))
+	(progn (gnosis-add-deck deck-name)
+	       (gnosis-add-note--basic :deck deck-name
+				     :question "What's the =key= that was mentioned in the /demo/ of gnosis?"
+				     :hint "__ is key!"
+				     :answer "Consistency"
+				     :extra "/Regular review/ at increasing intervals *reinforces memory retention*.  Strengthening neural connections & making it easier to recall information long-term"
+				     :tags note-tags)
+	     (gnosis-add-note--mc-cloze :deck deck-name
+					:question "Gnosis has a plethora of note types!"
+					:options '("plethora" "limited selection")
+					:answer "plethora"
+					:extra "*Note types include*:\n\n=MCQ=: Multiple Choice Questions, to easily copy textbook review questions :)\n=Cloze=: Fill in the blank sentences\n=Basic=: Question-Answer-Explanation note\n=Double=: Creates 2 basic notes, second one is generated with the question & answer switched\n=MC-Cloze=: Multiple question cloze question, just like this current note\n=y-or-n=: Y or N questions"
+					:tags note-tags)
+	     (gnosis-add-note--mcq :deck deck-name
+				   :question "Which one is the capital of Greece?"
+				   :choices '("Athens" "Sparta" "Rome" "Berlin")
+				   :correct-answer 1
+				   :extra "Athens (Αθήνα) is the largest city of Greece & one of the world's oldest cities, with it's recorded history spanning over 3,500 years."
+				   :tags note-tags)
+	     (gnosis-add-note--cloze :deck deck-name
+				     :note "GNU Emacs is an extensible editor created by {c1:Richard} {c1:Stallman} in {c2:1984}"
+				     :hint ""
+				     :tags note-tags
+				     :extra "Emacs was originally implemented in 1976 on the MIT AI Lab's Incompatible Timesharing System (ITS), as a collection of TECO macros. The name “Emacs” was originally chosen as an abbreviation of “Editor MACroS”. =This version of Emacs=, GNU Emacs, was originally *written in 1984*")
+	     (gnosis-add-note--y-or-n :deck deck-name
+				      :question "Is GNU Emacs the greatest program ever written?"
+				      :hint "Duh"
+				      :answer 121
+				      :extra ""
+				      :tags note-tags))
+      (error "Demo deck already exists"))))
+
 ;; Gnosis mode ;;
 ;;;;;;;;;;;;;;;;;
 
@@ -1972,18 +2249,18 @@ DASHBOARD-TYPE: either 'Notes' or 'Decks' to display the respective dashboard."
   :global t
   :group 'gnosis
   :lighter nil
-  (setq gnosis-due-notes-total (length (gnosis-review-get-due-notes)))
-  (if gnosis-modeline-mode
-      (progn
-        (add-to-list 'global-mode-string '(:eval
-          (format " G:%d" gnosis-due-notes-total)))
-        (force-mode-line-update))
-    (setq global-mode-string
-          (seq-remove (lambda (item)
-                        (and (listp item) (eq (car item) :eval)
-                             (string-prefix-p " G:" (format "%s" (eval (cadr item))))))
-                      global-mode-string))
-    (force-mode-line-update)))
+    (setq gnosis-due-notes-total (length (gnosis-review-get-due-notes)))
+    (if gnosis-modeline-mode
+	(progn
+          (add-to-list 'global-mode-string '(:eval
+					     (format " G:%d" gnosis-due-notes-total)))
+          (force-mode-line-update))
+      (setq global-mode-string
+            (seq-remove (lambda (item)
+                          (and (listp item) (eq (car item) :eval)
+                               (string-prefix-p " G:" (format "%s" (eval (cadr item))))))
+			global-mode-string))
+      (force-mode-line-update)))
 
 (define-derived-mode gnosis-mode special-mode "Gnosis"
   "Gnosis Mode."
