@@ -226,8 +226,13 @@ Buffer-local variable `fedi-post-previous-window-config' holds the config."
                                      annot-fun _affix-fun exit-fun)
   "Return a completion at point function.
 REGEX is used to get the item before point.
+
 COMPLETION-FUN takes two args, start and end bounds of item
-before point, and returns a completion table.
+before point, and returns a completion table. Nota bene that for
+completion to work correctly, COMPLETION-FUN must return data
+containing candidates that will literally match the preceding
+search string, including any prefixes like @ or #.
+
 ANNOT-FUN takes one arg, a candidate, and returns an annotation
 for it.
 AFFIX-FUN is currently unused, it would be :affixation-function.
