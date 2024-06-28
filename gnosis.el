@@ -323,30 +323,46 @@ History is disabled."
         (overlay-put overlay 'face 'gnosis-face-separator)
         (overlay-put overlay 'display (make-string width ?\s))))))
 
-(defun gnosis-center-current-line ()
-  "Center text in the current line ignoring leading spaces."
+(defun gnosis-center-current-line (&optional center?)
+  "Centers text in the current line ignoring leading spaces.
+
+Acts only when CENTER? is t."
   (interactive)
   (let* ((start (line-beginning-position))
          (end (line-end-position))
          (text (string-trim (buffer-substring start end)))
-         (padding (max (/ (- (window-width) (length text)) 2) 0)))
-    (delete-region start end)
-    (insert (make-string padding ? ) text)))
+         (padding (max (/ (- (window-width) (length text)) 2) 0))
+	 (center? (or center? gnosis-center-content)))
+    (when center?
+      (delete-region start end)
+      (insert (make-string padding ? ) text))))
 
-(defun gnosis-center-string (input-string)
-  "Center each line of the given INPUT-STRING in the current window width."
-  (let* ((lines (split-string input-string "\n"))
-         (window-width (window-width)))
-    (mapconcat
-     (lambda (line)
-       (let* ((text (string-trim line))
-              (padding (/ (max 0 (- window-width (length text))) 2)))
-         (concat (make-string padding ? ) text)))
-     lines
-     "\n")))
+(defun gnosis-center-string (input-string &optional center?)
+  "Center each line of the given INPUT-STRING in the current window width.
+
+Acts only when CENTER? is t."
+  (let ((window-width (window-width))
+	(center? (or center? gnosis-center-content)))
+    (when center?
+      (mapconcat
+       (lambda (line)
+         (let* ((text (string-trim line))
+                (wrapped (with-temp-buffer
+                           (insert text)
+                           (fill-region (point-min) (point-max))
+                           (buffer-string)))
+                (lines (split-string wrapped "\n")))
+           (mapconcat
+            (lambda (line)
+              (let ((padding (max (/ (- window-width (length line)) 2) 0)))
+                (concat (make-string padding ? ) line)))
+            lines
+            "\n")))
+       (split-string input-string "\n")
+       "\n"))))
 
 (defun gnosis-apply-center-buffer-overlay (&optional point)
-  "Center text in buffer start at POINT using overlays for visual centering.
+  "Center text in buffer starting at POINT using `gnosis-center-current-line'.
 This will not be applied to sentences that start with double space."
   (save-excursion
     (goto-char (or point (point-min)))
