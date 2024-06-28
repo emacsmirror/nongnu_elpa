@@ -318,8 +318,6 @@ History is disabled."
         (overlay-put overlay 'face 'gnosis-face-separator)
         (overlay-put overlay 'display (make-string width ?\s))))))
 
-(defun gnosis-apply-overlays ()
-  "Apply custom font overlays for syntax highlighting."
 (defun gnosis-center-current-line ()
   "Center text in the current line ignoring leading spaces."
   (interactive)
@@ -342,30 +340,15 @@ History is disabled."
      lines
      "\n")))
 
+(defun gnosis-apply-center-buffer-overlay (&optional point)
+  "Center text in buffer start at POINT using overlays for visual centering.
+This will not be applied to sentences that start with double space."
   (save-excursion
-    (goto-char (point-min))
-    (while (re-search-forward "\\*\\([^*]+\\)\\*" nil t)
-      (overlay-put (make-overlay (match-beginning 1) (match-end 1)) 'face 'bold))
-    (goto-char (point-min))
-    (while (re-search-forward "/\\([^/]+\\)/" nil t)
-      (overlay-put (make-overlay (match-beginning 1) (match-end 1)) 'face 'italic))
-    (goto-char (point-min))
-    (while (re-search-forward "=\\([^=]+\\)=" nil t)
-      (overlay-put (make-overlay (match-beginning 1) (match-end 1)) 'face 'font-lock-constant-face))
-    (goto-char (point-min))
-    (while (re-search-forward "~\\([^~]+\\)~" nil t)
-      (overlay-put (make-overlay (match-beginning 1) (match-end 1)) 'face 'font-lock-keyword-face))))
+    (goto-char (or point (point-min)))
+    (while (not (or (= (point-max) (point)) (looking-at "^  ")))
+      (gnosis-center-current-line)
+      (forward-line 1))))
 
-(defun gnosis-display-question (id &optional fill-paragraph-p)
-  "Display main row for note ID.
-
-If FILL-PARAGRAPH-P, insert question using `fill-paragraph'."
-  (let ((question (gnosis-get 'main 'notes `(= id ,id))))
-    (erase-buffer)
-    (if fill-paragraph-p
-	(fill-paragraph (insert "\n"  (propertize question 'face 'gnosis-face-main))))
-    (insert "\n"  (propertize question 'face 'gnosis-face-main))
-    (gnosis-apply-overlays)))
 
 (defun gnosis-display-mcq-options (id)
   "Display answer options for mcq note ID."
