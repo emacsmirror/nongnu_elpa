@@ -349,6 +349,23 @@ This will not be applied to sentences that start with double space."
       (gnosis-center-current-line)
       (forward-line 1))))
 
+(defun gnosis-apply-syntax-overlay ()
+  "Apply custom font overlays for syntax highlighting, and remove delimiters."
+  (let ((syntax-highlights '(("\\*\\([^*[:space:]][^*]*[^*[:space:]]\\)\\*" . bold)
+                             ("/\\([^/[:space:]][^/]*[^/[:space:]]\\)/" . italic)
+                             ("=\\([^=[:space:]][^=]*[^=[:space:]]\\)=" . font-lock-constant-face)
+                             ("~\\([^~[:space:]][^~]*[^~[:space:]]\\)~" . font-lock-keyword-face))))
+    (save-excursion
+      (cl-loop for (regex . face) in syntax-highlights
+               do (progn
+                    (goto-char (point-min))
+                    (while (re-search-forward regex nil t)
+                      (let ((start (match-beginning 1))
+                            (end (match-end 1)))
+			(overlay-put (make-overlay start end) 'face face)
+			(delete-region end (match-end 0))
+			(delete-region (match-beginning 0) start))))))))
+
 
 (defun gnosis-display-mcq-options (id)
   "Display answer options for mcq note ID."
