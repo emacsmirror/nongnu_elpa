@@ -170,6 +170,11 @@ Seperate the question/stem from options."
   :type 'string
   :group 'gnosis)
 
+(defcustom gnosis-center-content t
+  "When t, centers text."
+  :type 'boolean
+  :group 'gosis)
+
 (defvar gnosis-due-notes-total nil
   "Total due notes.")
 
