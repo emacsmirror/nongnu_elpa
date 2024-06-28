@@ -329,6 +329,19 @@ History is disabled."
          (padding (max (/ (- (window-width) (length text)) 2) 0)))
     (delete-region start end)
     (insert (make-string padding ? ) text)))
+
+(defun gnosis-center-string (input-string)
+  "Center each line of the given INPUT-STRING in the current window width."
+  (let* ((lines (split-string input-string "\n"))
+         (window-width (window-width)))
+    (mapconcat
+     (lambda (line)
+       (let* ((text (string-trim line))
+              (padding (/ (max 0 (- window-width (length text))) 2)))
+         (concat (make-string padding ? ) text)))
+     lines
+     "\n")))
+
   (save-excursion
     (goto-char (point-min))
     (while (re-search-forward "\\*\\([^*]+\\)\\*" nil t)
