@@ -1857,7 +1857,7 @@ etc.")
     (fj-get endpoint)))
 
 (defun fj-view-commit (repo owner sha)
-  "View commie with SHA in REPO by OWNER.
+  "View commit with SHA in REPO by OWNER.
 Currently we just browse-url it."
   (interactive)
   (let* ((resp (fj-get-commit repo owner sha))
