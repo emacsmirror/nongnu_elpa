@@ -83,11 +83,13 @@ Forgejo's API is vast. Currently =fj.el= just implements a few basic things:
 |         | fj-compose-read-title        | Read an issue title.                                                |
 |         | fj-compose-send              | Submit the issue or comment to your Forgejo instance.               |
 |         | fj-create-issue              | Create issue in current repo or repo at point in tabulated listing. |
+|         | fj-do-link-action            | Do the action of the link at POS.                                   |
+|         | fj-do-link-action-mouse      | Do the action of the link at point.                                 |
 |         | fj-issue-close               | Close ISSUE in REPO or set to STATE.                                |
 |         | fj-issue-comment             | Add COMMENT to ISSUE in REPO.                                       |
 |         | fj-issue-comment-edit        | Edit comment with ID in REPO.                                       |
 |         | fj-issue-compose             | Compose a new post.                                                 |
-|         | fj-issue-delete              | Delete ISSUE in REPO.                                               |
+|         | fj-issue-delete              | Delete ISSUE in REPO of OWNER.                                      |
 |         | fj-issue-edit                | Edit ISSUE body in REPO.                                            |
 |         | fj-issue-edit-title          | Edit ISSUE title in REPO.                                           |
 |         | fj-issue-next                | Go to next issue or comment.                                        |
@@ -112,23 +114,28 @@ Forgejo's API is vast. Currently =fj.el= just implements a few basic things:
 |         | fj-issues-tl-view            | View current issue from tabulated issues listing.                   |
 |         | fj-kill-all-buffers          | Kill all fj buffers.                                                |
 |         | fj-list-issues               | Display ISSUES in a tabulated list view.                            |
-|         | fj-list-issues-all           | Display all ISSUES for REPO in tabulated list view.                 |
-|         | fj-list-issues-closed        | Display closed ISSUES for REPO in tabulated list view.              |
+|         | fj-list-issues-+-pulls       | List issues and pulls for REPO by OWNER, filtered by STATE.         |
+|         | fj-list-issues-all           | Display all ISSUES for REPO by OWNER in tabulated list view.        |
+|         | fj-list-issues-closed        | Display closed ISSUES for REPO by OWNER in tabulated list view.     |
 |         | fj-list-issues-cycle         | Cycle between listing of open, closed, and all issues.              |
 |         | fj-list-own-repos            | List repos for `fj-user'.                                           |
-|         | fj-list-pull-reqs            | List pull requests for REPO.                                        |
+|         | fj-list-pulls                | List pulls for REPO by OWNER, filtered by STATE.                    |
 |         | fj-list-user-repos           | View repos of current entry user from tabulated repos listing.      |
+|         | fj-next-tab-item             | Jump to next tab item.                                              |
+|         | fj-prev-tab-item             | Jump to prev tab item.                                              |
 |         | fj-pull-req-comment          | Add comment to PULL in REPO.                                        |
 |         | fj-repo-create               | Create a new repo.                                                  |
 |         | fj-repo-search               | Search repos for QUERY.                                             |
 |         | fj-repo-search-tl            | Search repos for QUERY, and display a tabulated list of results.    |
+|         | fj-repo-search-tl-topic      | Search repo topics for QUERY, and display a tabulated list.         |
 |         | fj-repo-tl-fork              | Fork repo entry at point.                                           |
 |         | fj-repo-tl-list-issues       | View issues of current repo from tabulated repos listing.           |
 |         | fj-repo-tl-mode              | Mode for displaying a tabulated list of repo search results.        |
+|         | fj-repo-tl-reload            | Reload current user repos tl.                                       |
 |         | fj-repo-tl-star-repo         | Star or UNSTAR current repo from tabulated user repos listing.      |
 |         | fj-repo-tl-unstar-repo       | Unstar current repo from tabulated user repos listing.              |
 |         | fj-switch-to-buffer          | Switch to a live fj buffer.                                         |
 |         | fj-tl-browse-entry           | Browse URL of tabulated list entry at point.                        |
 |         | fj-user-repo-tl-mode         | Mode for displaying a tabulated list of user repos.                 |
-|         | fj-user-repo-tl-reload       | Reload current user repos tl.                                       |
 |         | fj-user-repos-tl             | View a tabulated list of respos for USER.                           |
+|         | fj-view-commit               | View commit with SHA in REPO by OWNER.                              |
