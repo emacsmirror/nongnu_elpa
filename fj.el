@@ -930,6 +930,10 @@ JSON is the item's data to process the link with."
           (fedi-propertize-items str fedi-post-tag-regex 'tag json
                                  fj-link-keymap 1 2 nil nil
                                  '(fj-tab-stop t)))
+    (setq str
+          (fedi-propertize-items str fedi-post-commit-regex 'commit json
+                                 fj-link-keymap 1 1 nil nil
+                                 '(fj-tab-stop t)))
     (fj-restore-previous-window-config fj-previous-window-config)
     str))
 
@@ -1837,6 +1841,21 @@ etc.")
   "Jump to prev tab item."
   (interactive)
   (fedi-next-tab-item :prev 'fj-tab-stop))
+
+;;; COMMITS
+
+(defun fj-get-commit (repo owner sha)
+  "Get a commit with SHA in REPO by OWNER."
+  (let ((endpoint
+         (format "repos/%s/%s/git/commits/%s" owner repo sha)))
+    (fj-get endpoint)))
+
+;; (defun fj-view-commit ()
+;;   ""
+;;   (interactive)
+;;   (let ((resp (fj-get-commit repo owner sha)))
+;;     ( ;; TODO: view commit
+;;      )))
 
 (provide 'fj)
 ;;; fj.el ends here
