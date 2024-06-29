@@ -119,7 +119,8 @@ face. no-label is optional.")
         (+ ; breaks groups with instance handles!
          ?@
          (group-n 2 ; = username only
-           (* (any ?- ?_ ?. "A-Z" "a-z" "0-9" )))
+           (* (any ?- ?_ ;?. ;; this . breaks word-boundary at end
+                   "A-Z" "a-z" "0-9" )))
          (? ?@
             (group-n 3 ; = optional domain
               (* (not (any "\n" "\t" " ")))))))
