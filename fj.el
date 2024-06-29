@@ -90,6 +90,10 @@ Repo, owner, item number, url.")
   '((t :inherit font-lock-keyword-face :box t))
   "Face for issue labels.")
 
+(defface fj-issue-commit-face
+  '((t :inherit (link ;font-lock-comment-face
+                 highlight)))
+  "Face for issue commit references.")
 ;;; UTILS
 
 (defun fj--property (prop)
@@ -933,7 +937,8 @@ JSON is the item's data to process the link with."
     (setq str
           (fedi-propertize-items str fedi-post-commit-regex 'commit json
                                  fj-link-keymap 1 1 nil nil
-                                 '(fj-tab-stop t)))
+                                 '(fj-tab-stop t)
+                                 'fj-issue-commit-face))
     (fj-restore-previous-window-config fj-previous-window-config)
     str))
 
