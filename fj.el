@@ -455,7 +455,8 @@ Return the issue number."
 
 (defun fj-repo-get-issues (repo &optional owner state type)
   "Return issues for REPO by OWNER.
-STATE is for issue status, a string of open, closed or all."
+STATE is for issue status, a string of open, closed or all.
+TYPE is item type: issue pull or all."
   ;; FIXME: how to get issues by number, or get all issues?
   (let* ((endpoint (format "repos/%s/%s/issues" (or owner fj-user) repo))
          (params `(("state" . ,state)
@@ -1857,7 +1858,7 @@ etc.")
 
 (defun fj-view-commit (repo owner sha)
   "View commit with SHA in REPO by OWNER.
-Currently we just browse-url it."
+Currently we just `browse-url' it."
   (interactive)
   (let* ((resp (fj-get-commit repo owner sha))
          (url (alist-get 'html_url resp)))
