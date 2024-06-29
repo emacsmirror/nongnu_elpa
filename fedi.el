@@ -688,7 +688,7 @@ the whole likes count in order to propertize it fully."
 
 (defun fedi-propertize-items (str regex type json keymap subexp
                                   &optional item-subexp domain-subexp link
-                                  extra-props)
+                                  extra-props face)
   "Propertize items of TYPE matching REGEX in STR as links using JSON.
 KEYMAP and LINK are properties to add to the match.
 EXTRA-PROPS is a property list of any extra properties to add.
@@ -728,7 +728,7 @@ used in a link function. For an example of regexes' subgroups, see
                          link)))
             (add-text-properties beg
                                  end
-                                 `(face (shr-text shr-link)
+                                 `(face ,(or face '(shr-text shr-link))
                                         mouse-face highlight
                                         shr-tabstop t
                                         shr-url ,link
