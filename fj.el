@@ -1803,15 +1803,16 @@ Allow quick jumping to an element in a tabulated list view."
   "Do the action of the link at POS.
 Used for hitting RET on a given link."
   (interactive "d")
-  (let ((type (get-text-property pos 'type)))
+  (let ((type (get-text-property pos 'type))
+        (owner (fj--get-buffer-spec :owner))
+        (repo (fj--get-buffer-spec :repo))
+        (item (fj--property 'item)))
     (cond ((eq type 'tag)
-           (let ((owner (fj--get-buffer-spec :owner))
-                 (repo (fj--get-buffer-spec :repo))
-                 (number (fj--property 'item)))
-             (fj-issue-view repo owner number)))
+           (fj-issue-view repo owner item))
           ((eq type 'handle)
-           (let ((user (fj--property 'item)))
-             (fj-user-repos-tl user)))
+           (fj-user-repos-tl item))
+          ((eq type 'commit)
+           (fj-get-commit repo owner item))
           (t
            (error "Unknown link type %s" type)))))
 
