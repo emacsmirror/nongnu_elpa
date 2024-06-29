@@ -728,7 +728,7 @@ used in a link function. For an example of regexes' subgroups, see
                          link)))
             (add-text-properties beg
                                  end
-                                 `(face '(shr-text shr-link)
+                                 `(face (shr-text shr-link)
                                         mouse-face highlight
                                         shr-tabstop t
                                         shr-url ,link
