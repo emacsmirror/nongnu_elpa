@@ -1812,7 +1812,7 @@ Used for hitting RET on a given link."
           ((eq type 'handle)
            (fj-user-repos-tl item))
           ((eq type 'commit)
-           (fj-get-commit repo owner item))
+           (fj-view-commit repo owner item))
           (t
            (error "Unknown link type %s" type)))))
 
@@ -1851,12 +1851,14 @@ etc.")
          (format "repos/%s/%s/git/commits/%s" owner repo sha)))
     (fj-get endpoint)))
 
-;; (defun fj-view-commit ()
-;;   ""
-;;   (interactive)
-;;   (let ((resp (fj-get-commit repo owner sha)))
-;;     ( ;; TODO: view commit
-;;      )))
+(defun fj-view-commit (repo owner sha)
+  "View commie with SHA in REPO by OWNER.
+Currently we just browse-url it."
+  (interactive)
+  (let* ((resp (fj-get-commit repo owner sha))
+         (url (alist-get 'html_url resp)))
+    ;; TODO: view commit
+    (browse-url-generic url)))
 
 (provide 'fj)
 ;;; fj.el ends here
