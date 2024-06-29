@@ -123,8 +123,9 @@ face. no-label is optional.")
          (? ?@
             (group-n 3 ; = optional domain
               (* (not (any "\n" "\t" " ")))))))
-      (| "'" word-boundary) ;; FIXME: fails with full stop? but we must exclude it!)
-      ) ; boundary or possessive
+      ;; FIXME: fails with full stop? but we must exclude it! other regexes
+      ;; don't fail with full stops!
+      (| "'" word-boundary)) ; boundary or possessive
   "Regex for a handle, e.g. @user or @user@instance.com.
 Group 1 is for completion at point functions. Group 2 and 3 are
 for forming a URL.")
@@ -145,6 +146,12 @@ for forming a URL.")
    "[^ \n\t]*\\)" ; any old thing, that is, i.e. we allow invalid/unwise chars
    "\\b"))
                                         ; boundary
+
+(defvar fedi-post-commit-regex
+  (rx (| (any ?\( "\n" "\t" " ") bol)
+      (group-n 1 (>= 7 hex-digit)) ;; 7 or more hex
+      (| "'" word-boundary))
+  "Regex for a commit ref, a 7-digit hex value.")
 
 
 ;;; MODE MAP
