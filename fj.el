@@ -604,12 +604,12 @@ STATE should be \"open\", \"closed\", or \"all\"."
 ;;          (pull (or pull (fj-read-repo-pull-req repo))))
 ;;     (fj-issue-comment-edit repo pull)))
 
-(defun fj-list-pull-reqs (&optional repo)
-  "List pull requests for REPO."
-  (interactive "P")
-  (let* ((repo (fj-read-user-repo repo))
-         (prs (fj-repo-get-pull-reqs repo)))
-    (fj-list-issues repo nil prs))) ;; FIXME: owner
+;; (defun fj-list-pull-reqs (&optional repo)
+;;   "List pull requests for REPO."
+;;   (interactive "P")
+;;   (let* ((repo (fj-read-user-repo repo))
+;;          (prs (fj-repo-get-pull-reqs repo)))
+;;     (fj-list-issues repo nil prs))) ;; FIXME: owner
 
 ;;; COMMENTS
 
@@ -781,7 +781,6 @@ STATE is a string."
   (let* ((repo (fj-read-user-repo repo)))
     (fj-list-issues repo owner nil state "all")))
 
-;; FIXME: duplicates `fj-list-pull-reqs'
 (defun fj-list-pulls (repo &optional owner state)
   "List pulls for REPO by OWNER, filtered by STATE."
   (interactive "P")
