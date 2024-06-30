@@ -399,7 +399,7 @@ If FILL-PARAGRAPH-P, insert question using `fill-paragraph'."
     (if fill-paragraph-p
 	(fill-paragraph (insert "\n"  (propertize question 'face 'gnosis-face-main)))
       (insert "\n"  (propertize question 'face 'gnosis-face-main)))
-    (newline)
+    (gnosis-insert-separator)
     (gnosis-apply-center-buffer-overlay)
     (gnosis-apply-syntax-overlay)))
 
@@ -429,23 +429,20 @@ Refer to =gnosis-db-schema-extras' for informations on images stored."
   "Display answer options for mcq note ID."
   (let ((options (apply #'append (gnosis-select 'options 'notes `(= id ,id) t)))
 	(option-num 1))
-    (insert "\n\n" (propertize "Options:" 'face 'gnosis-face-directions))
+    (insert "\n" (propertize "Options:" 'face 'gnosis-face-directions))
     (cl-loop for option in options
 	     do (insert (format "\n%s.  %s" option-num option))
 	     (setf option-num (1+ option-num)))))
 
-(cl-defun gnosis-display-cloze-sentence (sentence clozes &optional (fill-paragraph-p nil))
+(cl-defun gnosis-display-cloze-sentence (sentence clozes)
   "Display cloze sentence for SENTENCE with CLOZES.
 
 If FILL-PARAGRAPH-P, insert using `fill-paragraph'"
   (erase-buffer)
   (let ((cloze-sentence
 	 (gnosis-cloze-replace-words sentence clozes (propertize gnosis-cloze-string 'face 'gnosis-face-cloze))))
-  (if fill-paragraph-p
-      (fill-paragraph
-       (insert "\n" cloze-sentence))
-    (insert "\n" (gnosis-center-string cloze-sentence)))
-  (gnosis-apply-syntax-overlay)))
+    (insert "\n" (gnosis-center-string cloze-sentence))
+    (gnosis-insert-separator)))
 
 (defun gnosis-display-basic-answer (answer success user-input)
   "Display ANSWER.
@@ -482,10 +479,11 @@ SUCCESS is t when user-input is correct, else nil"
 (defun gnosis-display-hint (hint)
   "Display HINT."
   (let ((hint (or hint "")))
-    (goto-char (point-max))
-    (gnosis-insert-separator)
-    (and (not (string-empty-p hint))
-	 (insert (gnosis-center-string (propertize hint 'face 'gnosis-face-hint))))))
+    (unless (string-empty-p hint)
+      (goto-char (point-max))
+      (and (not (string-empty-p hint))
+	   (insert (gnosis-center-string (propertize hint 'face 'gnosis-face-hint))))
+      (gnosis-insert-separator))))
 
 (cl-defun gnosis-display-cloze-reveal (&key (cloze-char gnosis-cloze-string) replace (success t) (face nil))
   "Replace CLOZE-CHAR with REPLACE.
@@ -514,19 +512,20 @@ If FALSE t, use gnosis-face-false face"
 (defun gnosis-display-correct-answer-mcq (answer user-choice)
   "Display correct ANSWER & USER-CHOICE for MCQ note."
   (insert (gnosis-center-string
-	   (format "\n\n%s %s\n%s %s"
+	   (format "%s %s\n%s %s"
 		   (propertize "Correct Answer:" 'face 'gnosis-face-directions)
 		   (propertize answer 'face 'gnosis-face-correct)
 		   (propertize "Your answer:" 'face 'gnosis-face-directions)
 		   (propertize user-choice 'face (if (string= answer user-choice)
 						     'gnosis-face-correct
-						   'gnosis-face-false))))))
+						   'gnosis-face-false))))
+	  "\n")
+  (gnosis-insert-separator))
 
 (defun gnosis-display-extra (id)
   "Display extra information & extra-image for note ID."
   (let ((extras (or (gnosis-get 'extra-notes 'extras `(= id ,id)) "")))
     (goto-char (point-max))
-    (gnosis-insert-separator)
     (gnosis-display-image id 'extra-image)
     (insert "\n" (gnosis-center-string
 		  (propertize extras 'face 'gnosis-face-extra))
@@ -2199,7 +2198,7 @@ If STRING-SECTION is nil, apply FACE to the entire STRING."
   (gnosis-animate-string "Create meaningful notes; Gnosis offers a plethora of note types --try them!"
 			 9 nil "Create Meaningful Notes" 'bold)
   (sit-for 1)
-  (when (y-or-n-p "Try out demo gnosis note review session?")
+  (when (y-or-n-p "Try out demo gnosis review session?")
     (gnosis-demo-create-deck)
     (gnosis-review-session (gnosis-select-by-tag '("demo")))))
 
