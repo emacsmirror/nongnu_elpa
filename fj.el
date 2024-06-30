@@ -808,10 +808,10 @@ and the TYPE filter (issues, pulls, all)."
   (interactive "P")
   (let* ((repo (fj-read-user-repo repo))
          (owner (or owner fj-user))
+         (type (or type "issues"))
          ;; (alist-get 'owner
          ;; (alist-get 'repository (car issues)))))
-         (issues (or issues (fj-repo-get-issues repo owner state
-                                                (or type "issues"))))
+         (issues (or issues (fj-repo-get-issues repo owner state type)))
          (repo-data (fj-get-repo repo owner))
          (url (concat (alist-get 'html_url repo-data)
                       "/issues"))
