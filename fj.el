@@ -959,7 +959,7 @@ JSON is the item's data to process the link with."
     (define-key map [?\t] #'fj-next-tab-item)
     (define-key map [backtab] #'fj-prev-tab-item)
     (define-key map (kbd "g") #'fj-issue-view-reload)
-    (define-key map (kbd "e") #'fj-issue-view-edit)
+    (define-key map (kbd "e") #'fj-issue-view-edit-item-at-point)
     (define-key map (kbd "c") #'fj-issue-view-comment)
     (define-key map (kbd "k") #'fj-issue-view-close)
     (define-key map (kbd "o") #'fj-issue-view-reopen)
@@ -1115,6 +1115,13 @@ RELOAD means we are reloading, so don't open in other window."
 (defvar fj-compose-spec nil)
 
 (defvar fj-compose-issue-number nil)
+
+(defun fj-issue-view-edit-item-at-point ()
+  "Edit issue or comment at point in issue view mode."
+  (interactive)
+  (if (fj--property 'fj-comment)
+      (fj-issue-view-edit-comment)
+    (fj-issue-view-edit)))
 
 (defun fj-issue-view-edit ()
   "Edit the issue currently being viewed."
