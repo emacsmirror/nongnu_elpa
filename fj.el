@@ -300,6 +300,7 @@ JSON."
     (define-key map (kbd "s") #'fj-repo-search-tl)
     (define-key map (kbd "u") #'fj-list-user-repos)
     (define-key map (kbd "B") #'fj-tl-browse-entry)
+    (define-key map (kbd "L") #'fj-repo-copy-clone-url)
     (define-key map (kbd "b") #'fj-browse-view)
     (define-key map (kbd "j") #'imenu)
     (define-key map (kbd "g") #'fj-repo-tl-reload)
@@ -730,6 +731,7 @@ NEW-BODY is the new comment text to send."
     (define-key map (kbd "O") #'fj-list-own-repos)
     (define-key map (kbd "B") #'fj-tl-browse-entry)
     (define-key map (kbd "b") #'fj-browse-view)
+    (define-key map (kbd "L") #'fj-repo-copy-clone-url)
     (define-key map (kbd "j") #'imenu)
     map)
   "Map for `fj-issue-tl-mode', a tabluated list of issues.")
@@ -1406,6 +1408,30 @@ Optionally specify repo OWNER and URL."
                    (car (seq-elt entry 1))))
           (name (read-string "Fork name: " repo)))
      (fj-fork-repo repo owner name))))
+
+(defun fj-repo-copy-clone-url ()
+  "Add the clone_url of repo at point to the kill ring.
+Or if viewing a repo's issues, use its clone_url."
+  (interactive)
+  ;; FIXME: refactor - we don't want `fj-with-entry' in issues tl, as there it
+  ;; is anywhere in buffer while in repos tl it is for repo at point.
+  (if (equal major-mode #'fj-issue-tl-mode)
+      (let ((repo (fj--get-buffer-spec :repo))
+            (owner (fj--get-buffer-spec :owner))
+            (resp (fj-get-repo repo owner))
+            (url (alist-get 'clone_url resp)))
+        (kill-new url)
+        (message (format "Copied: %s" url)))
+    (fj-with-repo-entry
+     (let* ((entry (tabulated-list-get-entry))
+            (repo (car (seq-first entry)))
+            (owner (if (eq major-mode #'fj-user-repo-tl-mode)
+                       (fj--get-buffer-spec :owner)
+                     (car (seq-elt entry 1))))
+            (resp (fj-get-repo repo owner))
+            (url (alist-get 'clone_url resp)))
+       (kill-new url)
+       (message (format "Copied: %s" url))))))
 
 ;; TODO: star toggle
 
