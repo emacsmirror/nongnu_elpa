@@ -146,6 +146,21 @@ Works in issue view mode or in issues tl."
     `(space :align-to (- right ,(+ (length str) 4))))
    str))
 
+(defun fj--repo-owner ()
+  "Return repo owner, whatever view we are in."
+  (if (eq major-mode #'fj-repo-tl-mode)
+      (let ((entry (tabulated-list-get-entry)))
+        (car (seq-elt entry 1)))
+    ;;(eq major-mode #'fj-user-repo-tl-mode)
+    (fj--get-buffer-spec :owner)))
+
+(defun fj--repo-name ()
+  "Return repo name, whatever view we are in."
+  (or (fj--get-buffer-spec :repo)
+      fj-current-repo
+      (let ((entry (tabulated-list-get-entry)))
+        (car (seq-elt entry 0)))))
+
 ;;; MACROS
 
 (defmacro fj-with-issue (&optional body)
