@@ -98,11 +98,11 @@ Repo, owner, item number, url.")
 ;;; UTILS
 
 (defun fj--property (prop)
-  "Get text property PROP at point."
+  "Get text property PROP at point, else return nil."
   (get-text-property (point) prop))
 
 (defun fj--get-buffer-spec (key)
-  "Get entry for KEY from `fj-buffer-spec'."
+  "Get entry for KEY from `fj-buffer-spec', else return nil."
   (plist-get fj-buffer-spec key))
 
 (defun fj-issues-tl-own-repo-p ()
