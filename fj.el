@@ -1416,10 +1416,10 @@ Or if viewing a repo's issues, use its clone_url."
   ;; FIXME: refactor - we don't want `fj-with-entry' in issues tl, as there it
   ;; is anywhere in buffer while in repos tl it is for repo at point.
   (if (equal major-mode #'fj-issue-tl-mode)
-      (let ((repo (fj--get-buffer-spec :repo))
-            (owner (fj--get-buffer-spec :owner))
-            (resp (fj-get-repo repo owner))
-            (url (alist-get 'clone_url resp)))
+      (let* ((repo (fj--get-buffer-spec :repo))
+             (owner (fj--get-buffer-spec :owner))
+             (resp (fj-get-repo repo owner))
+             (url (alist-get 'clone_url resp)))
         (kill-new url)
         (message (format "Copied: %s" url)))
     (fj-with-repo-entry
