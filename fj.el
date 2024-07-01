@@ -1348,15 +1348,11 @@ Optionally specify repo OWNER and URL."
   "Create issue in current repo or repo at point in tabulated listing."
   (interactive)
   (let* ((entry (tabulated-list-get-entry))
-         (user (cond ((eq major-mode #'fj-repo-tl-mode)
-                      (car (seq-elt entry 1)))
-                     ((or (eq major-mode #'fj-user-repo-tl-mode)
-                          (eq major-mode #'fj-issue-tl-mode))
-                      (fj--get-buffer-spec :owner))))
+         (owner (fj--repo-owner))
          (repo (fj--repo-name)))
     (fj-issue-compose)
     (setq fj-compose-repo repo
-          fj-compose-repo-owner user)
+          fj-compose-repo-owner owner)
     (fedi-post--update-status-fields)))
 
 ;; in search or user repo TL
@@ -1377,10 +1373,8 @@ Optionally specify repo OWNER and URL."
       (user-error "Already viewing user repos")
     (fj-with-entry
      (let* ((entry (tabulated-list-get-entry))
-            (user (if (eq major-mode #'fj-repo-tl-mode)
-                      (car (seq-elt entry 1))
-                    (car (seq-elt entry 2))))) ; fj-issue-tl-mode
-       (fj-user-repos-tl user)))))
+            (owner (fj--repo-owner)))
+       (fj-user-repos-tl owner)))))
 
 (defun fj-repo-tl-reload ()
   "Reload current user repos tl."
