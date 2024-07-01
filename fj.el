@@ -1353,9 +1353,7 @@ Optionally specify repo OWNER and URL."
                      ((or (eq major-mode #'fj-user-repo-tl-mode)
                           (eq major-mode #'fj-issue-tl-mode))
                       (fj--get-buffer-spec :owner))))
-         (repo (if (eq major-mode #'fj-issue-tl-mode)
-                   fj-current-repo
-                 (car (seq-elt entry 0)))))
+         (repo (fj--repo-name)))
     (fj-issue-compose)
     (setq fj-compose-repo repo
           fj-compose-repo-owner user)
@@ -1368,10 +1366,8 @@ Optionally specify repo OWNER and URL."
   (fj-with-repo-entry
    (let* ((entry (tabulated-list-get-entry))
           (name (car (seq-first entry)))
-          (user (if (eq major-mode #'fj-user-repo-tl-mode)
-                    (fj--get-buffer-spec :owner)
-                  (car (seq-elt entry 1)))))
-     (fj-list-issues name user))))
+          (owner (fj--repo-owner)))
+     (fj-list-issues name owner))))
 
 ;; author/owner button, in search or issues TL, not user repo TL
 (defun fj-list-user-repos (&optional _)
@@ -1400,11 +1396,8 @@ Optionally specify repo OWNER and URL."
   "Star or UNSTAR current repo from tabulated user repos listing."
   (interactive)
   (fj-with-repo-entry
-   (let* ((entry (tabulated-list-get-entry))
-          (repo (car (seq-first entry)))
-          (owner (if (eq major-mode #'fj-user-repo-tl-mode)
-                     (fj--get-buffer-spec :owner)
-                   (car (seq-elt entry 1)))))
+   (let* ((repo (fj--repo-name))
+          (owner (fj--repo-owner)))
      (fj-star-repo repo owner unstar))))
 
 (defun fj-repo-tl-unstar-repo ()
@@ -1416,11 +1409,8 @@ Optionally specify repo OWNER and URL."
   "Fork repo entry at point."
   (interactive)
   (fj-with-entry
-   (let* ((entry (tabulated-list-get-entry))
-          (repo (car (seq-first entry)))
-          (owner (if (eq major-mode #'fj-user-repo-tl-mode)
-                     (fj--get-buffer-spec :owner)
-                   (car (seq-elt entry 1))))
+   (let* ((repo (fj--repo-name))
+          (owner (fj--repo-owner))
           (name (read-string "Fork name: " repo)))
      (fj-fork-repo repo owner name))))
 
@@ -1440,9 +1430,7 @@ Or if viewing a repo's issues, use its clone_url."
     (fj-with-repo-entry
      (let* ((entry (tabulated-list-get-entry))
             (repo (car (seq-first entry)))
-            (owner (if (eq major-mode #'fj-user-repo-tl-mode)
-                       (fj--get-buffer-spec :owner)
-                     (car (seq-elt entry 1))))
+            (owner (fj--repo-owner))
             (resp (fj-get-repo repo owner))
             (url (alist-get 'clone_url resp)))
        (kill-new url)
