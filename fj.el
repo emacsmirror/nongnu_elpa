@@ -94,6 +94,7 @@ Repo, owner, item number, url.")
   '((t :inherit (link ;font-lock-comment-face
                  highlight)))
   "Face for issue commit references.")
+
 ;;; UTILS
 
 (defun fj--property (prop)
@@ -106,11 +107,13 @@ Repo, owner, item number, url.")
 
 (defun fj-issues-tl-own-repo-p ()
   "T if repo is owned by `fj-user'."
+  ;; NB: is also T in issues TL!
   (equal (fj--get-buffer-spec :owner)
          fj-user))
 
 (defun fj-issue-own-p ()
-  "T if issue is authored by `fj-user'."
+  "T if issue is authored by `fj-user'.
+Works in issue view mode or in issues tl."
   (cond ((eq major-mode 'fj-issue-view-mode)
          (equal fj-user
                 (fj--get-buffer-spec :author)))
@@ -148,7 +151,7 @@ Repo, owner, item number, url.")
 (defmacro fj-with-issue (&optional body)
   "Execute BODY if we are in an issue view."
   (declare (debug t))
-  `(if (not fj-buffer-spec)
+  `(if (not (fj--get-buffer-spec :issue))
        (user-error "Not in an issue view?")
      ,body))
 
@@ -190,6 +193,13 @@ Repo, owner, item number, url.")
        (user-error "No entry at point")
      ,body))
 
+(defmacro fj-with-repo-entry (&optional body)
+  "Execute BODY if we have a repo tabulated list entry at point."
+  (declare (debug t))
+  `(if (or (not (tabulated-list-get-entry))
+           (eq major-mode #'fj-issue-tl-mode))
+       (user-error "No repo entry at point")
+     ,body))
 
 ;;; NAV
 
@@ -290,6 +300,7 @@ JSON."
     (define-key map (kbd "s") #'fj-repo-search-tl)
     (define-key map (kbd "u") #'fj-list-user-repos)
     (define-key map (kbd "B") #'fj-tl-browse-entry)
+    (define-key map (kbd "L") #'fj-repo-copy-clone-url)
     (define-key map (kbd "b") #'fj-browse-view)
     (define-key map (kbd "j") #'imenu)
     (define-key map (kbd "g") #'fj-repo-tl-reload)
@@ -720,6 +731,7 @@ NEW-BODY is the new comment text to send."
     (define-key map (kbd "O") #'fj-list-own-repos)
     (define-key map (kbd "B") #'fj-tl-browse-entry)
     (define-key map (kbd "b") #'fj-browse-view)
+    (define-key map (kbd "L") #'fj-repo-copy-clone-url)
     (define-key map (kbd "j") #'imenu)
     map)
   "Map for `fj-issue-tl-mode', a tabluated list of issues.")
@@ -798,10 +810,10 @@ and the TYPE filter (issues, pulls, all)."
   (interactive "P")
   (let* ((repo (fj-read-user-repo repo))
          (owner (or owner fj-user))
+         (type (or type "issues"))
          ;; (alist-get 'owner
          ;; (alist-get 'repository (car issues)))))
-         (issues (or issues (fj-repo-get-issues repo owner state
-                                                (or type "issues"))))
+         (issues (or issues (fj-repo-get-issues repo owner state type)))
          (repo-data (fj-get-repo repo owner))
          (url (concat (alist-get 'html_url repo-data)
                       "/issues"))
@@ -949,7 +961,7 @@ JSON is the item's data to process the link with."
     (define-key map [?\t] #'fj-next-tab-item)
     (define-key map [backtab] #'fj-prev-tab-item)
     (define-key map (kbd "g") #'fj-issue-view-reload)
-    (define-key map (kbd "e") #'fj-issue-view-edit)
+    (define-key map (kbd "e") #'fj-issue-view-edit-item-at-point)
     (define-key map (kbd "c") #'fj-issue-view-comment)
     (define-key map (kbd "k") #'fj-issue-view-close)
     (define-key map (kbd "o") #'fj-issue-view-reopen)
@@ -1105,6 +1117,13 @@ RELOAD means we are reloading, so don't open in other window."
 (defvar fj-compose-spec nil)
 
 (defvar fj-compose-issue-number nil)
+
+(defun fj-issue-view-edit-item-at-point ()
+  "Edit issue or comment at point in issue view mode."
+  (interactive)
+  (if (fj--property 'fj-comment)
+      (fj-issue-view-edit-comment)
+    (fj-issue-view-edit)))
 
 (defun fj-issue-view-edit ()
   "Edit the issue currently being viewed."
@@ -1331,7 +1350,7 @@ Optionally specify repo OWNER and URL."
 (defun fj-repo-tl-list-issues (&optional _)
   "View issues of current repo from tabulated repos listing."
   (interactive)
-  (fj-with-entry
+  (fj-with-repo-entry
    (let* ((entry (tabulated-list-get-entry))
           (name (car (seq-first entry)))
           (user (if (eq major-mode #'fj-user-repo-tl-mode)
@@ -1365,7 +1384,7 @@ Optionally specify repo OWNER and URL."
 (defun fj-repo-tl-star-repo (&optional unstar)
   "Star or UNSTAR current repo from tabulated user repos listing."
   (interactive)
-  (fj-with-entry
+  (fj-with-repo-entry
    (let* ((entry (tabulated-list-get-entry))
           (repo (car (seq-first entry)))
           (owner (if (eq major-mode #'fj-user-repo-tl-mode)
@@ -1389,6 +1408,30 @@ Optionally specify repo OWNER and URL."
                    (car (seq-elt entry 1))))
           (name (read-string "Fork name: " repo)))
      (fj-fork-repo repo owner name))))
+
+(defun fj-repo-copy-clone-url ()
+  "Add the clone_url of repo at point to the kill ring.
+Or if viewing a repo's issues, use its clone_url."
+  (interactive)
+  ;; FIXME: refactor - we don't want `fj-with-entry' in issues tl, as there it
+  ;; is anywhere in buffer while in repos tl it is for repo at point.
+  (if (equal major-mode #'fj-issue-tl-mode)
+      (let* ((repo (fj--get-buffer-spec :repo))
+             (owner (fj--get-buffer-spec :owner))
+             (resp (fj-get-repo repo owner))
+             (url (alist-get 'clone_url resp)))
+        (kill-new url)
+        (message (format "Copied: %s" url)))
+    (fj-with-repo-entry
+     (let* ((entry (tabulated-list-get-entry))
+            (repo (car (seq-first entry)))
+            (owner (if (eq major-mode #'fj-user-repo-tl-mode)
+                       (fj--get-buffer-spec :owner)
+                     (car (seq-elt entry 1))))
+            (resp (fj-get-repo repo owner))
+            (url (alist-get 'clone_url resp)))
+       (kill-new url)
+       (message (format "Copied: %s" url))))))
 
 ;; TODO: star toggle
 
