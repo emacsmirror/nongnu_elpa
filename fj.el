@@ -1492,6 +1492,13 @@ Optionally specify REF, a commit, branch, or tag."
       ;; (kill-buffer buffer)
       (switch-to-buffer-other-window (current-buffer)))))
 
+(defun fj-repo-tl-readme ()
+  "Display readme file of current repo."
+  (interactive)
+  (let ((repo (fj--repo-name))
+        (owner (fj--repo-owner)))
+    (fj-repo-readme repo owner)))
+
 ;;; TL ACTIONS, ISSUES ONLY
 
 (defun fj-issues-tl-view (&optional _)
