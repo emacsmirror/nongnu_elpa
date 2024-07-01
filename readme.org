@@ -22,12 +22,16 @@ Forgejo's API is vast. Currently =fj.el= just implements a few basic things:
 - list a user's repos
 - fork or star a repo from repos listing
 
-
 - rich create/edit issue/comment interface.
 
 
 - list repo issues
 - act on an issue from issues listing (edit, edit title, comment, close, reopen, delete)
+
+
+- quick jump to any issue or repo in a listing with imenu.
+
+
 - view issue discussion (reply or delete comment, or act on issue as above)
 - viewing issue, jump to mentioned user, issue or commit.
 - browse URL of view or entry at point
