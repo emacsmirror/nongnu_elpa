@@ -46,6 +46,14 @@ Forgejo's API is vast. Currently =fj.el= just implements a few basic things:
 - =magit-post=, =magit-process= (for obtaining current repo)
 - [[https://codeberg.org/martianh/fedi.el][fedi.el]]
 
+* screenshots
+
+[[file:screenshot-user.png][file:./screenshot-user.png]]
+
+[[file:screenshot-search.png][file:./screenshot-search.png]]
+
+[[file:screenshot-issues.png][file:./screenshot-issues.png]]
+
 * commands index
 
 #+BEGIN_SRC emacs-lisp :results table :colnames '("Binding" "Command" "Description") :exports results
