@@ -374,10 +374,11 @@ This will not be applied to sentences that start with double space."
 
 (defun gnosis-apply-syntax-overlay ()
   "Apply custom font overlays for syntax highlighting, and remove delimiters."
-  (let ((syntax-highlights '(("\\*\\([^*[:space:]][^*]*[^*[:space:]]\\)\\*" . bold)
-                             ("/\\([^/[:space:]][^/]*[^/[:space:]]\\)/" . italic)
-                             ("=\\([^=[:space:]][^=]*[^=[:space:]]\\)=" . font-lock-constant-face)
-                             ("~\\([^~[:space:]][^~]*[^~[:space:]]\\)~" . font-lock-keyword-face))))
+  (let ((syntax-highlights '(("\\*\\([^*[:space:]][^*\n]*[^*[:space:]]\\)\\*" . bold)
+                             ("/\\([^/[:space:]][^/\n]*[^/[:space:]]\\)/" . italic)
+                             ("=\\([^=[:space:]][^=\n]*[^=[:space:]]\\)=" . font-lock-constant-face)
+                             ("~\\([^~[:space:]][^~\n]*[^~[:space:]]\\)~" . font-lock-keyword-face)
+                             ("_\\([^_[:space:]][^_\n]*[^_[:space:]]\\)_" . underline))))
     (save-excursion
       (cl-loop for (regex . face) in syntax-highlights
                do (progn
@@ -442,7 +443,8 @@ If FILL-PARAGRAPH-P, insert using `fill-paragraph'"
   (let ((cloze-sentence
 	 (gnosis-cloze-replace-words sentence clozes (propertize gnosis-cloze-string 'face 'gnosis-face-cloze))))
     (insert "\n" (gnosis-center-string cloze-sentence))
-    (gnosis-insert-separator)))
+    (gnosis-insert-separator)
+    (gnosis-apply-syntax-overlay)))
 
 (defun gnosis-display-basic-answer (answer success user-input)
   "Display ANSWER.
