@@ -2,7 +2,7 @@
 
 This repo contains some basic functions for interacting with a Forgejo instance (such as [[https://codeberg.org][codeberg.org]]) from within Emacs.
 
-It doesn't interact with =forge= / =magit=, which don't implement Gitea/Forgejo support and likely never will (see https://github.com/magit/forge/discussions/557). Nor does it attempt to follow their wonderful design (for now).
+It doesn't interact with =forge= / =magit=, which don't implement Gitea/Forgejo support and likely never will (see [[https://github.com/magit/forge/discussions/557][https://github.com/magit/forge/discussions/557]]). Nor does it attempt to follow their wonderful design (for now).
 
 It just aims to cover a few of the bread and butter functions that will save you switching to the browser 80% of the time.
 
@@ -22,12 +22,16 @@ Forgejo's API is vast. Currently =fj.el= just implements a few basic things:
 - list a user's repos
 - fork or star a repo from repos listing
 
-
 - rich create/edit issue/comment interface.
 
 
 - list repo issues
 - act on an issue from issues listing (edit, edit title, comment, close, reopen, delete)
+
+
+- quick jump to any issue or repo in a listing with imenu.
+
+
 - view issue discussion (reply or delete comment, or act on issue as above)
 - viewing issue, jump to mentioned user, issue or commit.
 - browse URL of view or entry at point
@@ -41,6 +45,14 @@ Forgejo's API is vast. Currently =fj.el= just implements a few basic things:
 * dependencies
 - =magit-post=, =magit-process= (for obtaining current repo)
 - [[https://codeberg.org/martianh/fedi.el][fedi.el]]
+
+* screenshots
+
+[[file:screenshot-user.png][file:./screenshot-user.png]]
+
+[[file:screenshot-search.png][file:./screenshot-search.png]]
+
+[[file:screenshot-issues.png][file:./screenshot-issues.png]]
 
 * commands index
 
