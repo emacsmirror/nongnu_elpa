@@ -48,11 +48,11 @@ Forgejo's API is vast. Currently =fj.el= just implements a few basic things:
 
 * screenshots
 
-[[file:screenshot-user.png][file:./screenshot-user.png]]
+[[file:Screenshot-user.png]]
 
-[[file:screenshot-search.png][file:./screenshot-search.png]]
+[[file:Screenshot-issues.png]]
 
-[[file:screenshot-issues.png][file:./screenshot-issues.png]]
+[[file:Screenshot-search.png]]
 
 * commands index
 
