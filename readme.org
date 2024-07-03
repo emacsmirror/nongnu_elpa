@@ -21,6 +21,8 @@ Forgejo's API is vast. Currently =fj.el= just implements a few basic things:
 - search and list instance repos
 - list a user's repos
 - fork or star a repo from repos listing
+- copy clone URL of repo at point
+
 
 - rich create/edit issue/comment interface.
 
@@ -90,7 +92,7 @@ Forgejo's API is vast. Currently =fj.el= just implements a few basic things:
 |---------+----------------------------------+---------------------------------------------------------------------|
 |         | fj-browse-view                   | Brose URL of view at point.                                         |
 |         | fj-compose-cancel                | Kill new-post buffer/window. Does not POST content.                 |
-|         | fj-compose-comment-mode          | Minor mode for composing issues.                                    |
+|         | fj-compose-comment-mode          | Minor mode for composing comments.                                  |
 |         | fj-compose-mode                  | Minor mode for composing issues and comments.                       |
 |         | fj-compose-read-repo             | Read a repo for composing a issue or comment.                       |
 |         | fj-compose-read-title            | Read an issue title.                                                |
