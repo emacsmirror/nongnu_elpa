@@ -50,9 +50,15 @@ Forgejo's API is vast. Currently =fj.el= just implements a few basic things:
 
 * screenshots
 
+User repos listing:
+
 [[file:Screenshot-user.png]]
 
+Issue view followed by repo issues listing:
+
 [[file:Screenshot-issues.png]]
+
+Repo search listing:
 
 [[file:Screenshot-search.png]]
 
