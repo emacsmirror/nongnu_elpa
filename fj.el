@@ -1605,7 +1605,7 @@ Optionally specify REF, a commit, branch, or tag."
   "Keymap for `fj-compose-comment-mode'.")
 
 (define-minor-mode fj-compose-comment-mode
-  "Minor mode for composing issues."
+  "Minor mode for composing comments."
   :keymap fj-compose-comment-mode-map
   :global nil)
 
