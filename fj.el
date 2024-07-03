@@ -1375,7 +1375,10 @@ Optionally specify repo OWNER and URL."
       (user-error "Already viewing user repos")
     (fj-with-entry
      (let* ((entry (tabulated-list-get-entry))
-            (owner (fj--repo-owner)))
+            ;; in issues TL, we want ISSUE author, not REPO owner:
+            (owner (if (eq major-mode #'fj-issue-tl-mode)
+                       (car (seq-elt entry 2))
+                     (fj--repo-owner))))
        (fj-user-repos-tl owner)))))
 
 (defun fj-repo-tl-reload ()
