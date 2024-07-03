@@ -1161,9 +1161,11 @@ RELOAD means we are reloading, so don't open in other window."
   (interactive)
   (let ((number (fj--get-buffer-spec :issue))
         (repo (fj--get-buffer-spec :repo))
-        (owner (fj--get-buffer-spec :owner)))
+        (owner (fj--get-buffer-spec :owner))
+        (title (fj--get-buffer-spec :title)))
     (fj-issue-compose nil 'fj-compose-comment-mode 'comment)
     (setq fj-compose-repo repo
+          fj-compose-issue-title title
           fj-compose-repo-owner owner
           fj-compose-issue-number number)
     (fedi-post--update-status-fields)))
