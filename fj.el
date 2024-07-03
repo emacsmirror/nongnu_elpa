@@ -1585,7 +1585,7 @@ Optionally specify REF, a commit, branch, or tag."
 
 ;;; COMPOSING
 
-(defvar fj-post-last-buffer nil)
+(defvar fj-compose-last-buffer nil)
 
 (defvar-local fj-compose-repo nil)
 
@@ -1646,7 +1646,7 @@ MODE is the fj.el minor mode to enable in the compose buffer.
 TYPE is a symbol of what we are composing, it may be issue or comment.
 Inject INIT-TEXT into the buffer, for editing."
   (interactive)
-  (setq fj-post-last-buffer (buffer-name (current-buffer)))
+  (setq fj-compose-last-buffer (buffer-name (current-buffer)))
   (fedi-post--compose-buffer
    edit
    #'markdown-mode
