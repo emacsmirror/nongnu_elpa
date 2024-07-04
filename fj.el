@@ -208,6 +208,14 @@ Works in issue view mode or in issues tl."
        (user-error "No entry at point")
      ,body))
 
+(defmacro fj-with-own-entry (&optional body)
+  "Execute BODY if the tabulated list entry at point is owned by `fj-user'."
+  (declare (debug t))
+  `(fj-with-entry
+    (if (not (fj-issue-own-p))
+        (user-error "No an entry you own")
+      ,body)))
+
 (defmacro fj-with-repo-entry (&optional body)
   "Execute BODY if we have a repo tabulated list entry at point."
   (declare (debug t))
@@ -1500,22 +1508,21 @@ Optionally specify REF, a commit, branch, or tag."
 (defun fj-issues-tl-edit ()
   "Edit issue from tabulated issues listing."
   (interactive)
-  (fj-with-entry
-   (fj-with-own-issue
-    (let* ((entry (tabulated-list-get-entry))
-           (number (car (seq-first entry)))
-           (owner (fj--get-buffer-spec :owner))
-           (title (car (seq-elt entry 4)))
-           (repo (fj--get-buffer-spec :repo))
-           (data (fj-get-issue repo owner number))
-           (old-body (alist-get 'body data)))
-      ;; (fj-issue-edit fj-current-repo owner number))))
-      (fj-issue-compose :edit nil 'issue old-body)
-      (setq fj-compose-issue-title title
-            fj-compose-repo repo
-            fj-compose-repo-owner owner
-            fj-compose-issue-number number)
-      (fedi-post--update-status-fields)))))
+  (fj-with-own-entry
+   (let* ((entry (tabulated-list-get-entry))
+          (number (car (seq-first entry)))
+          (owner (fj--get-buffer-spec :owner))
+          (title (car (seq-elt entry 4)))
+          (repo (fj--get-buffer-spec :repo))
+          (data (fj-get-issue repo owner number))
+          (old-body (alist-get 'body data)))
+     ;; (fj-issue-edit fj-current-repo owner number))))
+     (fj-issue-compose :edit nil 'issue old-body)
+     (setq fj-compose-issue-title title
+           fj-compose-repo repo
+           fj-compose-repo-owner owner
+           fj-compose-issue-number number)
+     (fedi-post--update-status-fields))))
 
 (defun fj-issues-tl-comment ()
   "Comment on issue from tabulated issues listing."
