@@ -107,6 +107,19 @@ When nil, the image will be displayed at its original size."
   :type 'integer
   :group 'gnosis)
 
+(defcustom gnosis-review-keybindings
+  '((?n . "next")
+    (?o . "override")
+    (?s . "suspend")
+    (?e . "edit")
+    (?q . "quit"))
+  "List of action bindings for `gnosis-review-actions'.
+
+Each element should be a list of a single character (the key),
+a string describing the action."
+  :type '(alist :key-type character :value-type string)
+  :group 'gnosis)
+
 (defvar gnosis-images-dir (expand-file-name "images" gnosis-dir)
   "Gnosis images directory.")
 
@@ -1563,19 +1576,20 @@ be called with new SUCCESS value plus NOTE & NOTE-COUNT."
 
 SUCCESS: Review result
 NOTE: Note ID
-NOTE-COUNT: Total notes reviewed"
-  (pcase (car (read-multiple-choice
-	       "Note actions"
-	       '((?n "next")
-		 (?o "override")
-		 (?s "suspend")
-		 (?e "edit")
-		 (?q "quit"))))
-    (?n (gnosis-review-result note success))
-    (?o (gnosis-review-action--override success note note-count))
-    (?s (gnosis-review-action--suspend success note note-count))
-    (?e (gnosis-review-action--edit success note note-count))
-    (?q (gnosis-review-action--quit success note note-count))))
+NOTE-COUNT: Total notes reviewed
+
+To customize the keybindings, adjust `gnosis-review-keybindings'."
+  (let* ((choices (mapcar (lambda (pair)
+                            (list (car pair) (cdr pair)))
+                          gnosis-review-keybindings))
+         (choice (car (read-multiple-choice "Note actions" choices)))
+         (action (alist-get choice gnosis-review-keybindings)))
+    (pcase action
+      ("next" (gnosis-review-result note success))
+      ("override" (gnosis-review-action--override success note note-count))
+      ("suspend" (gnosis-review-action--suspend success note note-count))
+      ("edit" (gnosis-review-action--edit success note note-count))
+      ("quit" (gnosis-review-action--quit success note note-count)))))
 
 (defun gnosis-review-session (notes)
   "Start review session for NOTES.
