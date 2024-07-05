@@ -1571,6 +1571,13 @@ be called with new SUCCESS value plus NOTE & NOTE-COUNT."
   (gnosis-display-next-review note success)
   (gnosis-review-actions success note note-count))
 
+(defun gnosis-validate-actions-keys ()
+  "Ensure all actions in `gnosis-review-actions-keys` are valid."
+  (let ((valid-actions '("next" "override" "suspend" "edit" "quit")))
+    (dolist (entry gnosis-review-keybindings)
+      (cl-assert (member (cdr entry) valid-actions) nil
+                 "Invalid action: %s" (cdr entry)))))
+
 (defun gnosis-review-actions (success note note-count)
   "Specify action during review of note.
 
@@ -1579,6 +1586,7 @@ NOTE: Note ID
 NOTE-COUNT: Total notes reviewed
 
 To customize the keybindings, adjust `gnosis-review-keybindings'."
+  (gnosis-validate-actions-keys)
   (let* ((choices (mapcar (lambda (pair)
                             (list (car pair) (cdr pair)))
                           gnosis-review-keybindings))
