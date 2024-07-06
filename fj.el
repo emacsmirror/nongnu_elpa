@@ -795,21 +795,26 @@ STATE is a string."
            id ,.id
            state ,.state
            type fj-issue-button
+           item issue
            fj-url ,.html_url)
           ,(propertize (number-to-string .comments)
-                       'face 'fj-figures-face)
+                       'face 'fj-figures-face
+                       'item 'issue)
           (,.user.username face fj-user-face
                            id ,.id
                            state ,.state
-                           type  fj-issues-owner-button)
+                           type  fj-issues-owner-button
+                           item issue)
           ,(propertize updated-str
-                       'display updated-display)
+                       'display updated-display
+                       'item 'issue)
           (,.title face ,(if (equal .state "closed")
                              'fj-closed-issue-face
                            'fj-item-face)
                    id ,.id
                    state ,.state
-                   type fj-issue-button)])))))
+                   type fj-issue-button
+                   item issue)])))))
 
 (defun fj-list-issues-+-pulls (repo &optional owner state)
   "List issues and pulls for REPO by OWNER, filtered by STATE."
@@ -1297,20 +1302,27 @@ NO-OWNER means don't display owner column (user repos view)."
                      `[(,.name face fj-item-face
                                id ,.id
                                type fj-user-repo-button
+                               item repo
                                fj-url ,.html_url)
                        ,(unless no-owner
                           `(,.owner.username face fj-user-face
                                              id ,.id
-                                             type fj-search-owner-button))
-                       (,(number-to-string .stars_count) id ,.id face fj-figures-face)
-                       (,fork id ,.id face fj-figures-face)
+                                             type fj-search-owner-button
+                                             item repo))
+                       (,(number-to-string .stars_count)
+                        id ,.id face fj-figures-face
+                        item repo)
+                       (,fork id ,.id face fj-figures-face item repo)
                        (,(number-to-string .open_issues_count)
-                        id ,.id face fj-figures-face)
+                        id ,.id face fj-figures-face
+                        item repo)
                        ,.language
                        ,(propertize updated-str
-                                    'display updated-display)
+                                    'display updated-display
+                                    'item 'repo)
                        ,(propertize (string-replace "\n" " " .description)
-                                    'face 'fj-comment-face)]))))))
+                                    'face 'fj-comment-face
+                                    'item 'repo)]))))))
 
 (defun fj-repo-search-tl (query &optional topic)
   "Search repos for QUERY, and display a tabulated list of results.
