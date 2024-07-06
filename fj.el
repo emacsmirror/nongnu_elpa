@@ -164,6 +164,14 @@ Works in issue view mode or in issues tl."
 ;;; MACROS
 
 (defmacro fj-with-issue (&optional body)
+  "Execute BODY if we are in an issue view or if issue at point."
+  (declare (debug t))
+  `(if (not (or (fj--get-buffer-spec :issue)
+                (eq 'issue (fj--property 'item))))
+       (user-error "Not issue here?")
+     ,body))
+
+(defmacro fj-with-issue-view (&optional body)
   "Execute BODY if we are in an issue view."
   (declare (debug t))
   `(if (not (fj--get-buffer-spec :issue))
@@ -678,6 +686,14 @@ OWNER is the repo owner."
                            owner repo issue)))
     (fj-get endpoint)))
 
+(defun fj-issue-get-comments-timeline (repo owner issue)
+  "Return comments timeline for ISSUE in REPO.
+OWNER is the repo owner.
+Comments timeline contains comments of any type."
+  (let* ((endpoint (format "repos/%s/%s/issues/%s/timeline"
+                           owner repo issue)))
+    (fj-get endpoint)))
+
 (defun fj-get-comment (repo owner issue &optional comment)
   "GET data for COMMENT of ISSUE in REPO.
 COMMENT is a number.
@@ -1120,7 +1136,7 @@ RELOAD means we are reloading, so don't open in other window."
 (defun fj-issue-view-reload ()
   "Reload the current issue view."
   (interactive)
-  (fj-with-issue
+  (fj-with-issue-view
    (let ((number (fj--get-buffer-spec :issue))
          (owner (fj--get-buffer-spec :owner)))
      (fj-issue-view fj-current-repo owner
@@ -1130,7 +1146,7 @@ RELOAD means we are reloading, so don't open in other window."
 (defun fj-issue-view-close (&optional state)
   "Close issue being viewed, or set to STATE."
   (interactive)
-  (fj-with-issue
+  (fj-with-issue-view
    (let ((number (fj--get-buffer-spec :issue))
          (owner (fj--get-buffer-spec :owner))
          (repo (fj--get-buffer-spec :repo)))
