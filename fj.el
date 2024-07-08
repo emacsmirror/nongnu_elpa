@@ -1070,8 +1070,8 @@ OWNER is the repo owner."
                                               'face 'fj-issue-label-face)
                                   " "))))
 
-(defun fj-render-issue (repo owner issue number comments &optional reload)
-  "Render an ISSUE number NUMBER, in REPO and its COMMENTS.
+(defun fj-render-issue (repo owner issue number timeline &optional reload)
+  "Render an ISSUE number NUMBER, in REPO and its TIMELINE.
 OWNER is the repo owner.
 RELOAD mean we reloaded."
   (fedi-with-buffer (format "*fj-issue-%s" number) 'fj-issue-view-mode
@@ -1108,11 +1108,12 @@ RELOAD mean we reloaded."
              "\n\n"
              (fj-render-body .body issue)
              "\n"
-             fedi-horiz-bar "\n\n"
-             ;; comments
-             (fj-render-comments comments .user.username owner))
+             fedi-horiz-bar "\n\n")
             'fj-issue number
             'fj-repo repo))
+          ;; comments
+          ;; (fj-render-comments comments .user.username owner))
+          (fj-render-timeline timeline .user.username owner)
           (setq fj-current-repo repo)
           (setq fj-buffer-spec
                 `(:repo ,repo :owner ,owner :issue ,number
@@ -1126,8 +1127,8 @@ RELOAD means we are reloading, so don't open in other window."
   (let* ((repo (fj-read-user-repo repo))
          (issue (fj-get-issue repo owner number))
          (number (or number (alist-get 'number issue)))
-         (comments (fj-issue-get-comments repo owner number)))
-    (fj-render-issue repo owner issue number comments reload)))
+         (timeline (fj-issue-get-comments-timeline repo owner number)))
+    (fj-render-issue repo owner issue number timeline reload)))
 
 ;; (defun fj-issue-view-comment ()
 ;;   "Comment on the issue currently being viewed."
@@ -1231,8 +1232,79 @@ RELOAD means we are reloading, so don't open in other window."
        (fj-delete endpoint)
        (fj-issue-view-reload)))))
 
-;; fj-compose-spec
-;; `(:title ,title :repo ,repo :owner ,owner :issue ,issue))))))
+;;; TIMELINE ITEMS
+
+(defvar fj-issue-timeline-action-str-alist
+  '(("close" . "%s closed this issue %s")
+    ("reopen" . "%s reopened this issue %s")
+    ("comment_ref" . "%s referenced this issue %s")
+    ("change_title" . "%s changed title from \"%s\" to \"%s\" %s")
+    ("commit_ref" . "%s referenced this issue from a commit %s")))
+
+(defun fj-render-timeline (data) ; &optional author owner)
+  "Render timeline DATA.
+DATA contains all types of issue comments (references, name
+changes, commit references, etc.)."
+  (cl-loop for i in data
+           do (fj-render-timeline-item i)))
+
+(defun fj-render-timeline-item (item)
+  "Render timeline ITEM."
+  (let-alist item
+    (let ((format-str
+           (cdr (assoc .type fj-issue-timeline-action-str-alist)))
+          (ts (fedi--relative-time-description
+               (date-to-time .updated_at)))
+          (user (propertize .user.login 'face '(:weight bold))))
+      (insert
+       (propertize
+        (cond ((equal .type "comment")
+               (fj-format-comment item))
+              ((equal .type "close")
+               (format format-str user ts))
+              ((equal .type "reopen")
+               (format format-str user ts))
+              ((equal .type "change_title")
+               (format format-str user .old_title .new_title ts))
+              ((equal .type "comment_ref")
+               (let ((number (number-to-string
+                              .ref_issue.number)))
+                 (concat
+                  (format format-str user ts)
+                  "\n"
+                  (fj-propertize-link (concat .ref_issue.title " #" number)
+                                      'comment-ref number))))
+              ((equal .type "commit_ref")
+               (concat
+                (format format-str user ts)
+                "\n"
+                (fj-propertize-link (fj-get-html-link-desc .body)
+                                    'commit-ref .ref_commit_sha)
+                )))
+        'fj-item-data item)
+       "\n\n"))))
+
+(defun fj-get-html-link-desc (str)
+"Return a description string from HTML link STR."
+(save-match-data
+  (let ((match (string-match "<a[^\n]*>\\(?2:[^\n]*\\)</a>" str)))
+    (match-string 2 str))))
+
+(defun fj-propertize-link (str &optional type item)
+  "Propertize a link with text STR.
+Optionally set link TYPE and ITEM number."
+  ;; TODO: poss to refactor with `fedi-link-props'?
+  (propertize str
+              'face 'shr-link
+              'mouse-face 'highlight
+              'shr-tabstop t
+              'keymap fj-link-keymap
+              'button t
+              'type type
+              'item item
+              'fj-tab-stop t
+              'category 'shr
+              'follow-link t))
 
 ;;; SEARCH
 
@@ -1904,11 +1976,13 @@ Used for hitting RET on a given link."
         (owner (fj--get-buffer-spec :owner))
         (repo (fj--get-buffer-spec :repo))
         (item (fj--property 'item)))
-    (cond ((eq type 'tag)
+    (cond ((or (eq type 'tag)
+               (eq type 'comment-ref))
            (fj-issue-view repo owner item))
           ((eq type 'handle)
            (fj-user-repos-tl item))
-          ((eq type 'commit)
+          ((or (eq type 'commit)
+               (eq type 'commit-ref))
            (fj-view-commit repo owner item))
           (t
            (error "Unknown link type %s" type)))))
