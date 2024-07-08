@@ -1042,7 +1042,7 @@ AUTHOR is of comment, OWNER is of repo."
         "\n\n"
         (fj-render-body .body comment)
         "\n"
-        fedi-horiz-bar fedi-horiz-bar "\n\n")
+        fedi-horiz-bar fedi-horiz-bar) ; "\n")
        'fj-comment comment
        'fj-comment-author .user.username
        'fj-comment-id .id))))
