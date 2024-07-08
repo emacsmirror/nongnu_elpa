@@ -1235,7 +1235,9 @@ RELOAD means we are reloading, so don't open in other window."
     ("reopen" . "%s reopened this issue %s")
     ("comment_ref" . "%s referenced this issue %s")
     ("change_title" . "%s changed title from \"%s\" to \"%s\" %s")
-    ("commit_ref" . "%s referenced this issue from a commit %s")))
+    ("commit_ref" . "%s referenced this issue from a commit %s")
+    ("issue_ref" . "%s referenced this issue from %s %s")
+    ("label" . "%s added the %s label %s")))
 
 (defun fj-render-timeline (data) ; &optional author owner)
   "Render timeline DATA.
@@ -1276,7 +1278,13 @@ changes, commit references, etc.)."
                 "\n"
                 (fj-propertize-link (fj-get-html-link-desc .body)
                                     'commit-ref .ref_commit_sha)
-                )))
+                ))
+              ((equal .type "issue_ref")
+               (format format-str user .repository.full_name ts))
+              ((equal .type "label")
+               (format format-str user .label.name ts))
+              (t
+               ()))
         'fj-item-data item)
        "\n\n"))))
 
