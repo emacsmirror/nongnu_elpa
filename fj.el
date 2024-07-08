@@ -1113,7 +1113,7 @@ RELOAD mean we reloaded."
             'fj-repo repo))
           ;; comments
           ;; (fj-render-comments comments .user.username owner))
-          (fj-render-timeline timeline .user.username owner)
+          (fj-render-timeline timeline) ; .user.username owner)
           (setq fj-current-repo repo)
           (setq fj-buffer-spec
                 `(:repo ,repo :owner ,owner :issue ,number
