@@ -1944,6 +1944,39 @@ STATUS-TYPES and SUBJECT-TYPE are array strings."
   (alist-get 'new
              (fj-get "notifications/new")))
 
+(defun fj-view-notifications ()
+  "View notifications for `fj-user'."
+  (interactive)
+  (let ((buf "*fj-notifications*") ;"*fj-notifications-%s" read-flag)))
+        (data (fj-get-notifications "t")))
+    (fedi-with-buffer buf 'fj-issue-view-mode nil
+      (fj-render-notifications data))))
+
+(defun fj-render-notifications (data)
+  "Render notifications DATA."
+  (cl-loop for n in data
+           do (fj-render-notification n)))
+
+(defun fj-render-notification (notif)
+  "Render NOTIF."
+  (let-alist notif
+    ;; notifs don't have item #, so we get from URL:
+    (let ((number (car (last (split-string .subject.url "/")))))
+      (insert
+       (propertize (concat "#" number)
+                   'face 'fj-comment-face)
+       (concat " "
+               (propertize
+                (fj-propertize-link .subject.title 'notif number)
+                'fj-repo .repository.name
+                'fj-owner .repository.owner.login
+                'fj-url .subject.html_url)
+               "\n"
+               .repository.owner.login "/" .repository.name
+               "\n"
+               fedi-horiz-bar fedi-horiz-bar
+               "\n\n")))))
+
 ;;; BROWSE
 
 (defun fj-tl-browse-entry ()
@@ -1992,6 +2025,10 @@ Used for hitting RET on a given link."
           ((or (eq type 'commit)
                (eq type 'commit-ref))
            (fj-view-commit repo owner item))
+          ((eq type 'notif)
+           (let ((repo (fj--property 'fj-repo))
+                 (owner (fj--property 'fj-owner)))
+             (fj-issue-view repo owner item)))
           (t
            (error "Unknown link type %s" type)))))
 
