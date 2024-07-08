@@ -186,8 +186,11 @@ PARAMS is an alist of any extra parameters to send with the request.
 SILENT means don't message.
 NO-HEADERS means don't collect http response headers.
 VECTOR means return json arrays as vectors."
+  ;; some APIs return nil if no data, so we can't just error
+  ;; (condition-case err
   (with-current-buffer (fedi-http--get url params silent)
     (fedi-http--process-response no-headers vector)))
+  ;; (t (error "I am Error. Looks like server borked."))))
 
 (defun fedi-http--get-json (url &optional params silent vector)
   "Return only JSON data from URL request.
@@ -230,7 +233,8 @@ Callback to `fedi-http--get-response-async'."
                         (buffer-substring-no-properties (point) (point-max))
                         'utf-8)))
       (kill-buffer)
-      (cond ((or (string-empty-p json-string) (null json-string))
+      (cond ((or (string-empty-p json-string) (null json-string)
+                 (string= "\nnull\n" json-string))
              nil)
             ;; if we get html, just render it and error:
             ;; ideally we should handle the status code in here rather than
