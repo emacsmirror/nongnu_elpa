@@ -163,3 +163,4 @@ Repo search listing:
 |         | fj-user-repo-tl-mode             | Mode for displaying a tabulated list of user repos.                 |
 |         | fj-user-repos-tl                 | View a tabulated list of respos for USER.                           |
 |         | fj-view-commit                   | View commit with SHA in REPO by OWNER.                              |
+|         | fj-view-notifications            | View notifications for `fj-user'.                                   |
