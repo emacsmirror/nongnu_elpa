@@ -1231,13 +1231,18 @@ RELOAD means we are reloading, so don't open in other window."
 ;;; TIMELINE ITEMS
 
 (defvar fj-issue-timeline-action-str-alist
+  ;; issues:
   '(("close" . "%s closed this issue %s")
     ("reopen" . "%s reopened this issue %s")
     ("comment_ref" . "%s referenced this issue %s")
     ("change_title" . "%s changed title from \"%s\" to \"%s\" %s")
     ("commit_ref" . "%s referenced this issue from a commit %s")
     ("issue_ref" . "%s referenced this issue from %s %s")
-    ("label" . "%s added the %s label %s")))
+    ("label" . "%s added the %s label %s")
+    ;; PRs:
+    ("pull_push" . "%s added %s commits %s")
+    ("merge_pull" . "%s merged commit %s into %s %s")
+    ("delete_branch" . "%s delete branch %s %s")))
 
 (defun fj-render-timeline (data) ; &optional author owner)
   "Render timeline DATA.
@@ -1283,8 +1288,18 @@ changes, commit references, etc.)."
                (format format-str user .repository.full_name ts))
               ((equal .type "label")
                (format format-str user .label.name ts))
-              (t
-               ()))
+              ;; PRs:
+              ((equal .type "pull_push")
+               ;; FIXME: get commit count + list each commit msg
+               ;; .body contains JSON string here!
+               ;; e.g. {"is_force_push":false,"commit_ids":["bc18bfade9cab750dcfc62e65bd267e303a0e805","b63c67cf3bf8f7484ece92c07ede22c718aa6885"]}
+               (format format-str user .body ts))
+              ((equal .type "merge_pull")
+               (format format-str user nil nil ts))
+              ((equal .type "delete_branch")
+               (format format-str user .old_ref ts))
+              (t ;; just so we never break the rest of the view:
+               (format "%s did unknown action %s" user ts)))
         'fj-item-data item)
        "\n\n"))))
 
