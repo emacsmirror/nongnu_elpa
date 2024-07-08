@@ -1021,33 +1021,38 @@ JSON is the item's data to process the link with."
   :group 'fj
   (read-only-mode 1))
 
+(defun fj-format-comment (comment &optional author owner)
+  "Render COMMENT.
+AUTHOR is of comment, OWNER is of repo."
+  (let-alist comment
+    (let ((stamp (fedi--relative-time-description
+                  (date-to-time .created_at))))
+      (propertize
+       (concat
+        ;; TODO: improve this?
+        (propertize (concat .user.username " ")
+                    'face 'fj-item-author-face
+                    'fj-byline t)
+        (fj-author-or-owner-str .user.username author)
+        (propertize " "
+                    'face 'fj-item-author-face)
+        (fj-author-or-owner-str .user.username nil owner)
+        (propertize (fj-issue-right-align-str stamp)
+                    'face 'fj-item-author-face)
+        "\n\n"
+        (fj-render-body .body comment)
+        "\n"
+        fedi-horiz-bar fedi-horiz-bar "\n\n")
+       'fj-comment comment
+       'fj-comment-author .user.username
+       'fj-comment-id .id))))
+
 (defun fj-render-comments (comments &optional author owner)
   "Render a list of COMMENTS.
 AUTHOR is the author of the parent issue.
 OWNER is the repo owner."
   (cl-loop for c in comments
-           concat (let-alist c
-                    (let ((stamp (fedi--relative-time-description
-                                  (date-to-time .created_at))))
-                      (propertize
-                       (concat
-                        ;; TODO: improve this?
-                        (propertize (concat .user.username " ")
-                                    'face 'fj-item-author-face
-                                    'fj-byline t)
-                        (fj-author-or-owner-str .user.username author)
-                        (propertize " "
-                                    'face 'fj-item-author-face)
-                        (fj-author-or-owner-str .user.username nil owner)
-                        (propertize (fj-issue-right-align-str stamp)
-                                    'face 'fj-item-author-face)
-                        "\n\n"
-                        (fj-render-body .body c)
-                        "\n"
-                        fedi-horiz-bar fedi-horiz-bar "\n\n")
-                       'fj-comment c
-                       'fj-comment-author .user.username
-                       'fj-comment-id .id)))))
+           concat (fj-format-comment c author owner)))
 
 (defun fj-author-or-owner-str (username author &optional owner)
   "If USERNAME is equal either AUTHOR or OWNER, return a boxed string."
