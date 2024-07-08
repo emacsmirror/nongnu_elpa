@@ -1164,10 +1164,6 @@ RELOAD means we are reloading, so don't open in other window."
   (interactive)
   (fj-issue-view-close "open"))
 
-(defvar fj-compose-spec nil)
-
-(defvar fj-compose-issue-number nil)
-
 (defun fj-issue-view-edit-item-at-point ()
   "Edit issue or comment at point in issue view mode."
   (interactive)
@@ -1711,6 +1707,10 @@ Optionally specify REF, a commit, branch, or tag."
 (defvar-local fj-compose-issue-title nil)
 
 (defvar-local fj-compose-item-type nil)
+
+(defvar-local fj-compose-spec nil)
+
+(defvar-local fj-compose-issue-number nil)
 
 (defalias 'fj-compose-cancel #'fedi-post-cancel)
 
