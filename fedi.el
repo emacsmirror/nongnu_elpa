@@ -712,7 +712,7 @@ used in a link function. For an example of regexes' subgroups, see
         ;; FIXME: do URLs
         ;; (if (eq type 'url)
         ;; (lem-ui-tabstop-link-by-regex regex)
-        (while (re-search-forward regex nil :no-error)
+        (while (re-search-forward regex)
           (let* ((item (when item-subexp
                          (buffer-substring-no-properties
                           (match-beginning item-subexp)
