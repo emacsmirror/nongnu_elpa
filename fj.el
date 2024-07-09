@@ -1276,7 +1276,7 @@ changes, commit references, etc.)."
       (insert
        (propertize
         (cond ((equal .type "comment")
-               (fj-format-comment item))
+               (fj-format-comment item author owner))
               ((equal .type "close")
                (format format-str user ts))
               ((equal .type "reopen")
