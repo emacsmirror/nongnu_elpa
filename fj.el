@@ -495,7 +495,7 @@ Return the issue number."
                          cands))))
     (cadr item)))
 
-(defun fj-repo-get-issues (repo &optional owner state type)
+(defun fj-repo-get-issues (repo &optional owner state type query)
   "Return issues for REPO by OWNER.
 STATE is for issue status, a string of open, closed or all.
 TYPE is item type: issue pull or all."
@@ -503,7 +503,8 @@ TYPE is item type: issue pull or all."
   (let* ((endpoint (format "repos/%s/%s/issues" (or owner fj-user) repo))
          (params `(("state" . ,state)
                    ("limit" . "100")
-                   ("type" . ,type))))
+                   ("type" . ,type)
+                   ("q" . ,query))))
     (condition-case err
         (fj-get endpoint params)
       (t (format "%s" (error-message-string err))))))
@@ -844,7 +845,7 @@ STATE is a string."
   (let* ((repo (fj-read-user-repo repo)))
     (fj-list-issues repo owner nil state "pulls")))
 
-(defun fj-list-issues (repo &optional owner issues state type)
+(defun fj-list-issues (repo &optional owner issues state type query)
   "Display ISSUES in a tabulated list view.
 Either for `fj-current-repo' or REPO, a string, owned by OWNER.
 With a prefix arg, or if REPO and `fj-current-repo' are nil,
@@ -857,7 +858,7 @@ and the TYPE filter (issues, pulls, all)."
          (type (or type "issues"))
          ;; (alist-get 'owner
          ;; (alist-get 'repository (car issues)))))
-         (issues (or issues (fj-repo-get-issues repo owner state type)))
+         (issues (or issues (fj-repo-get-issues repo owner state type query)))
          (repo-data (fj-get-repo repo owner))
          (url (concat (alist-get 'html_url repo-data)
                       "/issues"))
@@ -879,6 +880,13 @@ and the TYPE filter (issues, pulls, all)."
              (switch-to-buffer (current-buffer)))
             (t                             ; new buf
              (switch-to-buffer-other-window (current-buffer)))))))
+
+(defun fj-list-issues-search (query &optional state type)
+  ""
+  (interactive "sSearch repo issues: ")
+  (let ((owner (fj--get-buffer-spec :owner)))
+    (fj-list-issues nil owner nil state type query))
+  )
 
 (defun fj-list-issues-closed (&optional repo owner issues)
   "Display closed ISSUES for REPO by OWNER in tabulated list view."
