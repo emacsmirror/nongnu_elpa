@@ -1985,7 +1985,8 @@ STATUS-TYPES and SUBJECT-TYPE are array strings."
                 (fj-propertize-link .subject.title 'notif number)
                 'fj-repo .repository.name
                 'fj-owner .repository.owner.login
-                'fj-url .subject.html_url)
+                'fj-url .subject.html_url
+                'fj-byline t) ; for nav
                "\n"
                .repository.owner.login "/" .repository.name
                "\n"
