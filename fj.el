@@ -1282,7 +1282,12 @@ changes, commit references, etc.)."
               ((equal .type "reopen")
                (format format-str user ts))
               ((equal .type "change_title")
-               (format format-str user .old_title .new_title ts))
+               (format format-str user
+                       (propertize .old_title
+                                   'face '(:strike-through t))
+                       (propertize .new_title
+                                   'face '(:weight bold))
+                       ts))
               ((equal .type "comment_ref")
                (let ((number (number-to-string
                               .ref_issue.number)))
