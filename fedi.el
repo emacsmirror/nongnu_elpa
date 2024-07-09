@@ -728,20 +728,24 @@ used in a link function. For an example of regexes' subgroups, see
                          link)))
             (add-text-properties beg
                                  end
-                                 `(face ,(or face '(shr-text shr-link))
-                                        mouse-face highlight
-                                        shr-tabstop t
-                                        shr-url ,link
-                                        button t
-                                        type ,type
-                                        item ,item
-                                        category shr
-                                        follow-link t
-                                        help-echo ,item-str
-                                        keymap ,keymap))
+                                 (fedi-link-props face link item type item-str keymap))
             (add-text-properties beg end
                                  extra-props)))))
     (buffer-string)))
+
+(defun fedi-link-props (&optional face link item type help-echo keymap)
+  "Return a plist for a link."
+  `(face ,(or face '(shr-text shr-link))
+         mouse-face highlight
+         shr-tabstop t
+         shr-url ,link
+         button t
+         type ,type
+         item ,item
+         category shr
+         follow-link t
+         help-echo ,help-echo
+         keymap ,keymap))
 
 (provide 'fedi)
 ;;; fedi.el ends here
