@@ -953,6 +953,7 @@ Buffer-local variable `fj-previous-window-config' holds the config."
   (goto-char (cadr config)))
 
 ;; I think magit/forge just uses markdown-mode rather than rendering
+;; FIXME: use POST /markdown on the instance to render!
 (defun fj-render-body (body &optional json)
   "Render item BODY as markdowned html.
 JSON is the item's data to process the link with."
