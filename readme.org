@@ -29,13 +29,14 @@ Forgejo's API is vast. Currently =fj.el= just implements a few basic things:
 
 - list repo issues
 - act on an issue from issues listing (edit, edit title, comment, close, reopen, delete)
-
+- search in repo issues
 
 - quick jump to any issue or repo in a listing with imenu.
 
 
 - view issue discussion (reply or delete comment, or act on issue as above)
 - viewing issue, jump to mentioned user, issue or commit.
+- display all issue/PR timeline items (references, commits, merges, close/reopen, edit, etc.)
 - browse URL of view or entry at point
 
 
@@ -43,6 +44,9 @@ Forgejo's API is vast. Currently =fj.el= just implements a few basic things:
 
 
 - create new repo
+
+
+- view your notifications
 
 * dependencies
 - =magit-post=, =magit-process= (for obtaining current repo)
@@ -140,6 +144,7 @@ Repo search listing:
 |         | fj-list-issues-all               | Display all ISSUES for REPO by OWNER in tabulated list view.        |
 |         | fj-list-issues-closed            | Display closed ISSUES for REPO by OWNER in tabulated list view.     |
 |         | fj-list-issues-cycle             | Cycle between listing of open, closed, and all issues.              |
+|         | fj-list-issues-search            | Search current repo issues for QUERY.                               |
 |         | fj-list-own-repos                | List repos for `fj-user'.                                           |
 |         | fj-list-pulls                    | List pulls for REPO by OWNER, filtered by STATE.                    |
 |         | fj-list-user-repos               | View repos of current entry user from tabulated repos listing.      |
