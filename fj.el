@@ -335,6 +335,7 @@ JSON."
     (define-key map (kbd "b") #'fj-browse-view)
     (define-key map (kbd "j") #'imenu)
     (define-key map (kbd "g") #'fj-repo-tl-reload)
+    (define-key map (kbd "N") #'fj-view-notifications)
     map)
   "Map for `fj-repo-tl-mode' and `fj-user-repo-tl-mode' to inherit.")
 
@@ -766,11 +767,13 @@ NEW-BODY is the new comment text to send."
     (define-key map (kbd "g") #'fj-issues-tl-reload)
     (define-key map (kbd "C-c C-c") #'fj-list-issues-cycle)
     (define-key map (kbd "o") #'fj-issues-tl-reopen)
-    (define-key map (kbd "s") #'fj-repo-search-tl)
+    (define-key map (kbd "s") #'fj-list-issues-search)
+    (define-key map (kbd "S") #'fj-repo-search-tl)
     (define-key map (kbd "u") #'fj-list-user-repos)
     (define-key map (kbd "O") #'fj-list-own-repos)
     (define-key map (kbd "B") #'fj-tl-browse-entry)
     (define-key map (kbd "b") #'fj-browse-view)
+    (define-key map (kbd "N") #'fj-view-notifications)
     (define-key map (kbd "L") #'fj-repo-copy-clone-url)
     (define-key map (kbd "j") #'imenu)
     map)
@@ -884,7 +887,7 @@ TYPE filter (issues, pulls, all)."
 (defun fj-list-issues-search (query &optional state type)
   "Search current repo issues for QUERY.
 STATE and TYPE as for `fj-list-issues'."
-  (interactive "sSearch repo issues: ")
+  (interactive "sSearch issues in repo: ")
   (let ((owner (fj--get-buffer-spec :owner)))
     (fj-list-issues nil owner state type query)))
 
@@ -1019,9 +1022,11 @@ JSON is the item's data to process the link with."
     (define-key map (kbd "k") #'fj-issue-view-close)
     (define-key map (kbd "o") #'fj-issue-view-reopen)
     (define-key map (kbd "K") #'fj-issue-view-comment-delete)
-    (define-key map (kbd "s") #'fj-repo-search-tl)
+    (define-key map (kbd "s") #'fj-list-issues-search)
+    (define-key map (kbd "S") #'fj-repo-search-tl)
     (define-key map (kbd "O") #'fj-list-own-repos)
     (define-key map (kbd "b") #'fj-browse-view)
+    (define-key map (kbd "N") #'fj-view-notifications)
     map)
   "Keymap for `fj-issue-view-mode'.")
 
