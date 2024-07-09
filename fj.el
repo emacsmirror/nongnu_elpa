@@ -876,7 +876,8 @@ TYPE filter (issues, pulls, all)."
       (tabulated-list-print)
       (setq fj-current-repo repo)
       (setq fj-buffer-spec
-            `(:repo ,repo :state ,state-str :owner ,owner :url ,url))
+            `(:repo ,repo :state ,state-str :owner ,owner :url ,url
+                    :type ,type))
       (cond ((string= buf-name prev-buf) ; same repo
              nil)
             ((string-suffix-p "-issues*" prev-buf) ; diff repo
@@ -889,30 +890,31 @@ TYPE filter (issues, pulls, all)."
 STATE and TYPE as for `fj-list-issues'."
   (interactive "sSearch issues in repo: ")
   (let ((owner (fj--get-buffer-spec :owner)))
-    (fj-list-issues nil owner state type query)))
+    (fj-list-issues nil owner (or state "all") type query)))
 
-(defun fj-list-issues-closed (&optional repo owner)
+(defun fj-list-issues-closed (&optional repo owner type)
   "Display closed ISSUES for REPO by OWNER in tabulated list view."
   (interactive "P")
-  (fj-list-issues repo owner "closed"))
+  (fj-list-issues repo owner "closed" type))
 
-(defun fj-list-issues-all (&optional repo owner)
+(defun fj-list-issues-all (&optional repo owner type)
   "Display all ISSUES for REPO by OWNER in tabulated list view."
   (interactive "P")
-  (fj-list-issues repo owner "all"))
+  (fj-list-issues repo owner "all" type))
 
 (defun fj-list-issues-cycle ()
   "Cycle between listing of open, closed, and all issues."
   (interactive)
   (let ((state (fj--get-buffer-spec :state))
         (owner (fj--get-buffer-spec :owner))
-        (repo (fj--get-buffer-spec :repo)))
+        (repo (fj--get-buffer-spec :repo))
+        (type (fj--get-buffer-spec :type)))
     (cond ((string= state "closed")
-           (fj-list-issues-all repo owner))
+           (fj-list-issues-all repo owner type))
           ((string= state "all")
-           (fj-list-issues repo owner))
+           (fj-list-issues repo owner nil type))
           (t ; open is default
-           (fj-list-issues-closed repo owner)))))
+           (fj-list-issues-closed repo owner type)))))
 
 (defun fj-issues-tl-reload ()
   "Reload current issues tabulated list view."
