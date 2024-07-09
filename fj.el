@@ -1256,9 +1256,10 @@ RELOAD means we are reloading, so don't open in other window."
     ("issue_ref" . "%s referenced this issue from %s %s")
     ("label" . "%s added the %s label %s")
     ;; PRs:
-    ("pull_push" . "%s added %s commits %s")
+    ("pull_push" . "%s %s %d commits %s")
     ("merge_pull" . "%s merged commit %s into %s %s")
-    ("delete_branch" . "%s delete branch %s %s")))
+    ("pull_ref" . "%s referenced a PR that will close this %s")
+    ("delete_branch" . "%s deleted branch %s %s")))
 
 (defun fj-render-timeline (data &optional author owner)
   "Render timeline DATA.
@@ -1311,12 +1312,27 @@ changes, commit references, etc.)."
                (format format-str user .label.name ts))
               ;; PRs:
               ((equal .type "pull_push")
-               ;; FIXME: get commit count + list each commit msg
-               ;; .body contains JSON string here!
-               ;; e.g. {"is_force_push":false,"commit_ids":["bc18bfade9cab750dcfc62e65bd267e303a0e805","b63c67cf3bf8f7484ece92c07ede22c718aa6885"]}
-               (format format-str user .body ts))
+               (let* ((json-array-type 'list)
+                      (json (json-read-from-string .body))
+                      (commits (alist-get 'commit_ids json))
+                      (force (equal (alist-get 'is_force_push json) "t")))
+                 (concat
+                  (format format-str user (if force "force pushed" "added")
+                          (length commits) ts)
+                  ;; FIXME: display commit msg here too:
+                  (cl-loop for c in commits
+                           concat
+                           (concat "\n"
+                                   (fj-propertize-link (substring c 0 7)
+                                                       'commit-ref c))))))
               ((equal .type "merge_pull")
+               ;; FIXME: get commit and branch for merge:
                (format format-str user nil nil ts))
+              ((equal .type "pull_ref")
+               (concat
+                (format format-str user ts)
+                "\n"
+                (fj-propertize-link .ref_issue.title 'comment-ref .ref_issue.number)))
               ((equal .type "delete_branch")
                (format format-str user .old_ref ts))
               (t ;; just so we never break the rest of the view:
