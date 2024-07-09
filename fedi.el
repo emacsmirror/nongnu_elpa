@@ -245,9 +245,9 @@ text, i.e. hidden spoiler text."
 ;;; HEADINGS
 
 (defvar fedi-horiz-bar
-  (if (char-displayable-p ?―)
-      (make-string 12 ?―)
-    (make-string 12 ?-)))
+  (let ((count 16))
+    (make-string count
+                 (if (char-displayable-p ?―) ?― ?-))))
 
 (defun fedi-format-heading (name)
   "Format a heading for NAME, a string."
