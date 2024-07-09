@@ -837,28 +837,28 @@ STATE is a string."
   "List issues and pulls for REPO by OWNER, filtered by STATE."
   (interactive "P")
   (let* ((repo (fj-read-user-repo repo)))
-    (fj-list-issues repo owner nil state "all")))
+    (fj-list-issues repo owner state "all")))
 
 (defun fj-list-pulls (repo &optional owner state)
   "List pulls for REPO by OWNER, filtered by STATE."
   (interactive "P")
   (let* ((repo (fj-read-user-repo repo)))
-    (fj-list-issues repo owner nil state "pulls")))
+    (fj-list-issues repo owner state "pulls")))
 
-(defun fj-list-issues (repo &optional owner issues state type query)
+(defun fj-list-issues (repo &optional owner state type query)
   "Display ISSUES in a tabulated list view.
 Either for `fj-current-repo' or REPO, a string, owned by OWNER.
 With a prefix arg, or if REPO and `fj-current-repo' are nil,
 prompt for a repo to list.
-Optionally specify ISSUES data, the STATE filter (open, closed, all),
-and the TYPE filter (issues, pulls, all)."
+Optionally specify the STATE filter (open, closed, all), and the
+TYPE filter (issues, pulls, all)."
   (interactive "P")
   (let* ((repo (fj-read-user-repo repo))
          (owner (or owner fj-user))
          (type (or type "issues"))
          ;; (alist-get 'owner
          ;; (alist-get 'repository (car issues)))))
-         (issues (or issues (fj-repo-get-issues repo owner state type query)))
+         (issues (fj-repo-get-issues repo owner state type query))
          (repo-data (fj-get-repo repo owner))
          (url (concat (alist-get 'html_url repo-data)
                       "/issues"))
@@ -882,21 +882,21 @@ and the TYPE filter (issues, pulls, all)."
              (switch-to-buffer-other-window (current-buffer)))))))
 
 (defun fj-list-issues-search (query &optional state type)
-  ""
+  "Search current repo issues for QUERY.
+STATE and TYPE as for `fj-list-issues'."
   (interactive "sSearch repo issues: ")
   (let ((owner (fj--get-buffer-spec :owner)))
-    (fj-list-issues nil owner nil state type query))
-  )
+    (fj-list-issues nil owner state type query)))
 
-(defun fj-list-issues-closed (&optional repo owner issues)
+(defun fj-list-issues-closed (&optional repo owner)
   "Display closed ISSUES for REPO by OWNER in tabulated list view."
   (interactive "P")
-  (fj-list-issues repo owner issues "closed"))
+  (fj-list-issues repo owner "closed"))
 
-(defun fj-list-issues-all (&optional repo owner issues)
+(defun fj-list-issues-all (&optional repo owner)
   "Display all ISSUES for REPO by OWNER in tabulated list view."
   (interactive "P")
-  (fj-list-issues repo owner issues "all"))
+  (fj-list-issues repo owner "all"))
 
 (defun fj-list-issues-cycle ()
   "Cycle between listing of open, closed, and all issues."
@@ -919,7 +919,7 @@ and the TYPE filter (issues, pulls, all)."
     (let ((state (fj--get-buffer-spec :state))
           (owner (fj--get-buffer-spec :owner))
           (repo (fj--get-buffer-spec :repo)))
-      (fj-list-issues repo owner nil state))))
+      (fj-list-issues repo owner state))))
 
 ;;; ISSUE VIEW
 (defvar fj-url-regex fedi-post-url-regex)
