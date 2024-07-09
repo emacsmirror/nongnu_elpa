@@ -2017,12 +2017,12 @@ QUERY: String value,"
   (cl-assert (listp note-ids) t "`note-ids' must be a list of note ids.")
   (pop-to-buffer "*gnosis-dashboard*")
   (gnosis-dashboard-mode)
-  (setf tabulated-list-format [("Main" 30 t)
-			       ("Options" 20 t)
-			       ("Answer" 25 t)
-			       ("Tags" 25 t)
-			       ("Type" 10 t)
-			       ("Suspend" 2 t)]
+  (setf tabulated-list-format `[("Main" ,(/ (window-width) 4) t)
+				("Options" ,(/ (window-width) 6) t)
+				("Answer" ,(/ (window-width) 6) t)
+				("Tags" ,(/ (window-width) 5) t)
+				("Type" ,(/ (window-width) 10) T)
+				("Suspend" ,(/ (window-width) 6) t)]
 	tabulated-list-entries (cl-loop for id in note-ids
 					for output = (gnosis-dashboard-output-note id)
 					when output
