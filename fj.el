@@ -171,7 +171,7 @@ Works in issue view mode or in issues tl."
 (defmacro fj-with-issue (&optional body)
   "Execute BODY if we are in an issue view or if issue at point."
   (declare (debug t))
-  `(if (not (or (fj--get-buffer-spec :issue)
+  `(if (not (or (fj--get-buffer-spec :item)
                 (eq 'issue (fj--property 'item))))
        (user-error "Not issue here?")
      ,body))
@@ -179,7 +179,7 @@ Works in issue view mode or in issues tl."
 (defmacro fj-with-issue-view (&optional body)
   "Execute BODY if we are in an issue view."
   (declare (debug t))
-  `(if (not (fj--get-buffer-spec :issue))
+  `(if (not (fj--get-buffer-spec :item))
        (user-error "Not in an issue view?")
      ,body))
 
@@ -1104,7 +1104,8 @@ RELOAD mean we reloaded."
       (header-line-indent-mode 1) ; broken?
       (let-alist item
         (let ((stamp (fedi--relative-time-description
-                      (date-to-time .created_at))))
+                      (date-to-time .created_at)))
+              (pull-p .base)) ;; rough PR check!
           .is_locked
           (setq header-line-format
                 `("" header-line-indent
@@ -1120,7 +1121,7 @@ RELOAD mean we reloaded."
                  (fj-render-labels .labels)
                "")
              ;; PR stuff:
-             (if .base ;; rough PR check
+             (if pull-p
                  (format
                   "\n%s wants to merge from %s into %s"
                   (propertize .user.username
@@ -1155,7 +1156,8 @@ RELOAD mean we reloaded."
           (fj-render-timeline timeline .user.username owner)
           (setq fj-current-repo repo)
           (setq fj-buffer-spec
-                `(:repo ,repo :owner ,owner :issue ,number
+                `(:repo ,repo :owner ,owner :item ,number
+                        :type ,(if pull-p :pull :issue)
                         :author ,.user.username :title ,.title
                         :body ,.body :url ,.html_url)))))))
 
@@ -1173,7 +1175,7 @@ RELOAD means we are reloading, so don't open in other window."
 ;;   "Comment on the issue currently being viewed."
 ;;   (interactive)
 ;;   (fj-with-issue
-;;    (let ((number (fj--get-buffer-spec :issue))
+;;    (let ((number (fj--get-buffer-spec :item))
 ;;          (owner (fj--get-buffer-spec :owner))
 ;;          (repo (fj--get-buffer-spec :repo)))
 ;;      (fj-issue-comment repo number))))
@@ -1182,18 +1184,19 @@ RELOAD means we are reloading, so don't open in other window."
   "Reload the current issue view."
   (interactive)
   (fj-with-issue-view
-   (let ((number (fj--get-buffer-spec :issue))
-         (owner (fj--get-buffer-spec :owner)))
+   (let ((number (fj--get-buffer-spec :item))
+         (owner (fj--get-buffer-spec :owner))
+         (type (fj--get-buffer-spec :type)))
      ;; FIXME: handle pull view:
      (fj-item-view fj-current-repo owner
-                   number :reload))))
+                   number :reload type))))
 
 ;; TODO: merge simple action functions
 (defun fj-issue-view-close (&optional state)
   "Close issue being viewed, or set to STATE."
   (interactive)
   (fj-with-issue-view
-   (let ((number (fj--get-buffer-spec :issue))
+   (let ((number (fj--get-buffer-spec :item))
          (owner (fj--get-buffer-spec :owner))
          (repo (fj--get-buffer-spec :repo)))
      (fj-issue-close repo owner number state)
@@ -1215,7 +1218,7 @@ RELOAD means we are reloading, so don't open in other window."
   "Edit the issue currently being viewed."
   (interactive)
   (fj-with-own-issue
-   (let ((number (fj--get-buffer-spec :issue))
+   (let ((number (fj--get-buffer-spec :item))
          (repo (fj--get-buffer-spec :repo))
          (owner (fj--get-buffer-spec :owner))
          (title (fj--get-buffer-spec :title))
@@ -1230,7 +1233,7 @@ RELOAD means we are reloading, so don't open in other window."
 (defun fj-issue-view-comment ()
   "Comment on the issue currently being viewed."
   (interactive)
-  (let ((number (fj--get-buffer-spec :issue))
+  (let ((number (fj--get-buffer-spec :item))
         (repo (fj--get-buffer-spec :repo))
         (owner (fj--get-buffer-spec :owner))
         (title (fj--get-buffer-spec :title)))
