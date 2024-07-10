@@ -1258,7 +1258,7 @@ RELOAD means we are reloading, so don't open in other window."
     ("label" . "%s added the %s label %s")
     ;; PRs:
     ("pull_push" . "%s %s %d commits %s")
-    ("merge_pull" . "%s merged commit %s into %s %s")
+    ("merge_pull" . "%s merged this pull request %s")
     ("pull_ref" . "%s referenced a PR that will close this %s")
     ("delete_branch" . "%s deleted branch %s %s")))
 
@@ -1328,7 +1328,11 @@ changes, commit references, etc.)."
                                                        'commit-ref c))))))
               ((equal .type "merge_pull")
                ;; FIXME: get commit and branch for merge:
-               (format format-str user nil nil ts))
+               ;; Commit is the *merge* commit, created by actually merging
+               ;; the proposed commits
+               ;; branch etc. details should be given at top, diff details to
+               ;; plain issue
+               (format format-str user ts))
               ((equal .type "pull_ref")
                (concat
                 (format format-str user ts)
