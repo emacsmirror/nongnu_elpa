@@ -622,6 +622,7 @@ Optionally, NO-CONFIRM means don't ask before deleting."
 
 ;;; PULL REQUESTS
 ;; TODO: owner args not `fj-user'
+
 (defun fj-read-repo-pull-req (repo)
   "Given REPO, read an pull request in the minibuffer.
 Return its number."
@@ -871,6 +872,7 @@ TYPE filter (issues, pulls, all)."
          ;; (alist-get 'repository (car issues)))))
          (issues (fj-repo-get-issues repo owner state type query))
          (repo-data (fj-get-repo repo owner))
+         ;; FIXME: pulls:
          (url (concat (alist-get 'html_url repo-data)
                       "/issues"))
          (prev-buf (buffer-name (current-buffer)))
@@ -888,6 +890,7 @@ TYPE filter (issues, pulls, all)."
                     :type ,type))
       (cond ((string= buf-name prev-buf) ; same repo
              nil)
+            ;; FIXME: don't use buffer names (pulls/state):
             ((string-suffix-p "-issues*" prev-buf) ; diff repo
              (switch-to-buffer (current-buffer)))
             (t                             ; new buf
@@ -927,12 +930,12 @@ STATE and TYPE as for `fj-list-issues'."
 (defun fj-issues-tl-reload ()
   "Reload current issues tabulated list view."
   (interactive)
-  (when (string-suffix-p "-issues*"
-                         (buffer-name (current-buffer)))
+  (when (eq major-mode #'fj-issue-tl-mode)
     (let ((state (fj--get-buffer-spec :state))
           (owner (fj--get-buffer-spec :owner))
-          (repo (fj--get-buffer-spec :repo)))
-      (fj-list-issues repo owner state))))
+          (repo (fj--get-buffer-spec :repo))
+          (type (fj--get-buffer-spec :type)))
+      (fj-list-issues repo owner state type))))
 
 ;;; ISSUE VIEW
 (defvar fj-url-regex fedi-post-url-regex)
