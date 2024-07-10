@@ -515,14 +515,20 @@ TYPE is item type: issue pull or all."
         (fj-get endpoint params)
       (t (format "%s" (error-message-string err))))))
 
-(defun fj-get-issue (repo &optional owner issue)
-  "GET ISSUE in REPO.
-ISSUE is a number.
-OWNER is the repo owner."
-  (let* ((issue (or issue (fj-read-repo-issue repo)))
+(defun fj-get-item (repo &optional owner number type)
+  "GET ISSUE NUMBER, in REPO by OWNER.
+If TYPE is \"pull\", get a pull request, not issue."
+  (let* ((number (or number (if type
+                                (fj-read-repo-pull-req repo)
+                              (fj-read-repo-issue repo))))
          (owner (or owner fj-user)) ;; FIXME
-         (endpoint (format "repos/%s/%s/issues/%s" owner repo issue)))
+         (endpoint (format "repos/%s/%s/%s/%s" owner repo
+                           (or type "issues") number)))
     (fj-get endpoint)))
+
+(defun fj-get-pull (repo &optional owner number)
+  "Get pull request from REPO by OWNER."
+  (fj-get-item repo owner number "pulls"))
 
 ;; (defun fj-issue-create (&optional repo user)
 ;;   "Create an issue in REPO owned by USER."
@@ -565,7 +571,7 @@ OWNER is the repo owner."
           (owner (or owner ;; FIXME: owner
                      (fj--get-buffer-spec :owner)
                      fj-user))
-          (data (fj-get-issue repo owner issue))
+          (data (fj-get-item repo owner issue))
           (old-body (alist-get 'body data))
           (new-body (read-string "Edit issue body: " old-body))
           (response (fj-issue-patch repo owner issue nil new-body)))
@@ -582,7 +588,7 @@ OWNER is the repo owner."
          (owner (or owner ;; FIXME: owner
                     (fj--get-buffer-spec :owner)
                     fj-user))
-         (data (fj-get-issue repo owner issue))
+         (data (fj-get-item repo owner issue))
          (old-title (alist-get 'title data))
          (new-title (read-string "Edit issue title: " old-title))
          (response (fj-issue-patch repo owner issue new-title)))
@@ -1131,7 +1137,7 @@ RELOAD mean we reloaded."
              (fj-render-body .body issue)
              "\n"
              fedi-horiz-bar "\n\n")
-            'fj-issue number
+            'fj-item-number number
             'fj-repo repo
             'fj-item-data issue))
           ;; comments
@@ -1143,15 +1149,17 @@ RELOAD mean we reloaded."
                         :author ,.user.username :title ,.title
                         :body ,.body :url ,.html_url)))))))
 
-(defun fj-issue-view (&optional repo owner number reload)
-  "View issue NUMBER from REPO of OWNER.
+(defun fj-issue-view (&optional repo owner number reload pull)
+  "View item NUMBER from REPO of OWNER.
 RELOAD means we are reloading, so don't open in other window."
   (interactive "P")
   (let* ((repo (fj-read-user-repo repo))
-         (issue (fj-get-issue repo owner number))
-         (number (or number (alist-get 'number issue)))
+         (item (if pull
+                   (fj-get-pull repo owner number)
+                 (fj-get-item repo owner number)))
+         (number (or number (alist-get 'number item)))
          (timeline (fj-issue-get-comments-timeline repo owner number)))
-    (fj-render-issue repo owner issue number timeline reload)))
+    (fj-render-issue repo owner item number timeline reload)))
 
 ;; (defun fj-issue-view-comment ()
 ;;   "Comment on the issue currently being viewed."
@@ -1690,7 +1698,7 @@ Optionally specify REF, a commit, branch, or tag."
           (owner (fj--get-buffer-spec :owner))
           (title (car (seq-elt entry 4)))
           (repo (fj--get-buffer-spec :repo))
-          (data (fj-get-issue repo owner number))
+          (data (fj-get-item repo owner number))
           (old-body (alist-get 'body data)))
      ;; (fj-issue-edit fj-current-repo owner number))))
      (fj-issue-compose :edit nil 'issue old-body)
