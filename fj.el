@@ -1105,13 +1105,13 @@ RELOAD mean we reloaded."
                                        'face 'fj-item-face))))
           (insert
            ;; header stuff (forge has: state, status, milestone, labels, marks, assignees):
-           "State: " .state
-           (if .labels
-               (fj-render-labels .labels)
-             "")
-           "\n\n"
            (propertize
             (concat
+             "State: " .state
+             (if .labels
+                 (fj-render-labels .labels)
+               "")
+             "\n\n"
              ;; issue stuff:
              ;; FIXME: :extend t doesn't work here whatever i do
              (propertize (concat .user.username " ")
@@ -1126,7 +1126,8 @@ RELOAD mean we reloaded."
              "\n"
              fedi-horiz-bar "\n\n")
             'fj-issue number
-            'fj-repo repo))
+            'fj-repo repo
+            'fj-item-data issue))
           ;; comments
           ;; (fj-render-comments comments .user.username owner))
           (fj-render-timeline timeline .user.username owner)
