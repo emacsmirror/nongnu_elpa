@@ -1275,7 +1275,7 @@ changes, commit references, etc.)."
            (cdr (assoc .type fj-issue-timeline-action-str-alist)))
           (ts (fedi--relative-time-description
                (date-to-time .updated_at)))
-          (user (propertize .user.login 'face '(:weight bold))))
+          (user (propertize .user.username 'face '(:weight bold))))
       (insert
        (propertize
         (cond ((equal .type "comment")
