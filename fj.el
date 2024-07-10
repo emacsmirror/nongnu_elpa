@@ -814,32 +814,33 @@ STATE is a string."
    (let-alist issue
      (let* ((updated (date-to-time .updated_at))
             (updated-str (format-time-string "%s" updated))
-            (updated-display (fedi--relative-time-description updated nil :brief)))
+            (updated-display (fedi--relative-time-description updated nil :brief))
+            (type (if .pull_request 'pull 'issue)))
        `(nil ;; TODO: id
          [(,(number-to-string .number)
            id ,.id
            state ,.state
            type fj-issue-button
-           item issue
+           item ,type
            fj-url ,.html_url)
           ,(propertize (number-to-string .comments)
                        'face 'fj-figures-face
-                       'item 'issue)
+                       'item type)
           (,.user.username face fj-user-face
                            id ,.id
                            state ,.state
                            type  fj-issues-owner-button
-                           item issue)
+                           item ,type)
           ,(propertize updated-str
                        'display updated-display
-                       'item 'issue)
+                       'item type)
           (,.title face ,(if (equal .state "closed")
                              'fj-closed-issue-face
                            'fj-item-face)
                    id ,.id
                    state ,.state
                    type fj-issue-button
-                   item issue)])))))
+                   item ,type)])))))
 
 (defun fj-list-issues-+-pulls (repo &optional owner state)
   "List issues and pulls for REPO by OWNER, filtered by STATE."
