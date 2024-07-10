@@ -95,6 +95,11 @@ Repo, owner, item number, url.")
                  highlight)))
   "Face for issue commit references.")
 
+(defface fj-name-face
+  '((t :weight bold))
+  "Face for timeline item names (user, issue, PR).
+Not used for items that are links.")
+
 ;;; UTILS
 
 (defun fj--property (prop)
@@ -1276,7 +1281,8 @@ changes, commit references, etc.)."
            (cdr (assoc .type fj-issue-timeline-action-str-alist)))
           (ts (fedi--relative-time-description
                (date-to-time .updated_at)))
-          (user (propertize .user.username 'face '(:weight bold))))
+          (user (propertize .user.username
+                            'face 'fj-name-face)))
       (insert
        (propertize
         (cond ((equal .type "comment")
@@ -1290,7 +1296,7 @@ changes, commit references, etc.)."
                        (propertize .old_title
                                    'face '(:strike-through t))
                        (propertize .new_title
-                                   'face '(:weight bold))
+                                   'face 'fj-name-face)
                        ts))
               ((equal .type "comment_ref")
                (let ((number (number-to-string
@@ -1339,7 +1345,10 @@ changes, commit references, etc.)."
                 "\n"
                 (fj-propertize-link .ref_issue.title 'comment-ref .ref_issue.number)))
               ((equal .type "delete_branch")
-               (format format-str user .old_ref ts))
+               (format format-str user
+                       (propertize .old_ref
+                                   'face 'fj-name-face)
+                       ts))
               (t ;; just so we never break the rest of the view:
                (format "%s did unknown action %s" user ts)))
         'fj-item-data item)
