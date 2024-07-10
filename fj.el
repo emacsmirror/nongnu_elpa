@@ -1119,6 +1119,20 @@ RELOAD mean we reloaded."
              (if .labels
                  (fj-render-labels .labels)
                "")
+             ;; PR stuff:
+             (if .base ;; rough PR check
+                 (format
+                  "\n%s wants to merge from %s into %s"
+                  (propertize .user.username
+                              'face 'fj-name-face)
+                  ;; FIXME: make links work! data doesn't have branch URLs
+                  ;; and gitnex doesn't linkify them
+                  ;; webUI uses $fork-repo/src/branch/$name:
+                  (fj-propertize-link
+                   (format "%s:%s".head.repo.full_name .head.label)
+                   'branch)
+                  (fj-propertize-link .base.label 'branch))
+               "")
              "\n\n"
              ;; item stuff:
              ;; FIXME: :extend t doesn't work here whatever i do
