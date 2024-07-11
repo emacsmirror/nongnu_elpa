@@ -658,18 +658,19 @@ STATE should be \"open\", \"closed\", or \"all\"."
          (pull (or pull (fj-read-repo-pull-req repo))))
     (fj-issue-comment repo pull)))
 
-(defvar fj-merge-type-params
+(defvar fj-merge-types
   '("merge" "rebase" "rebase-merge" "squash"
     "fast-forward-only" "manually-merged"))
 
-;; FIXME: we need to post DO body param containing one of `fj-merge-type-params'
-(defun fj-pull-merge-post (repo owner number)
+;; FIXME: we need to post DO body param containing one of `fj-merge-types'
+(defun fj-pull-merge-post (repo owner number merge-type)
   "POST a merge pull request REPO owned by USER.
 NUMBER is that of the PR."
   (let ((url (format "repos/%s/%s/pulls/%s/merge" owner repo number))
         (params `(("owner" . ,owner)
                   ("repo" . ,repo)
-                  ("index" . ,number))))
+                  ("index" . ,number)
+                  ("Do" . ,merge-type))))
     (fj-post url params)))
 
 ;; (defun fj-pull-req-comment-edit (&optional repo pull)
@@ -1307,9 +1308,10 @@ RELOAD means we are reloading, so don't open in other window."
          (number (if (eq major-mode 'fj-issue-tl-mode)
                      (let* ((entry (tabulated-list-get-entry)))
                        (car (seq-first entry)))
-                   (fj--get-buffer-spec :item))))
+                   (fj--get-buffer-spec :item)))
+         (merge-type (completing-read "Merge type: " fj-merge-types)))
      (when (y-or-n-p (format "Merge PR #%s into %s?" number repo))
-       (let ((resp (fj-pull-merge-post repo owner number)))
+       (let ((resp (fj-pull-merge-post repo owner number merge-type)))
          (fedi-http--triage resp
                             (lambda ()
                               (message "Merged!"))))))))
