@@ -27,20 +27,18 @@ Forgejo's API is vast. Currently =fj.el= just implements a few basic things:
 - rich create/edit issue/comment interface.
 
 
-- list repo issues
-- act on an issue from issues listing (edit, edit title, comment, close, reopen, delete)
-- search in repo issues
+- list repo issues/PRs
+- act on an issue/PR from issues/PR listing (edit, edit title, comment, close, reopen, delete)
+- search in repo issues/PRs
 
-- quick jump to any issue or repo in a listing with imenu.
+- quick jump to any issue/PR or repo in a listing with imenu.
 
 
-- view issue discussion (reply or delete comment, or act on issue as above)
-- viewing issue, jump to mentioned user, issue or commit.
+- view issue/PR discussion (reply or delete comment, or act on issue as above)
+- viewing issue/PR, jump to mentioned user, issue or commit.
 - display all issue/PR timeline items (references, commits, merges, close/reopen, edit, etc.)
+- merge PR
 - browse URL of view or entry at point
-
-
-- list PRs and view PR discussion
 
 
 - create new repo
@@ -120,7 +118,7 @@ Repo search listing:
 |         | fj-issue-next                    | Go to next issue or comment.                                        |
 |         | fj-issue-prev                    | Goto previous issue or comment.                                     |
 |         | fj-issue-tl-mode                 | Major mode for browsing a tabulated list of issues.                 |
-|         | fj-issue-view                    | View issue NUMBER from REPO of OWNER.                               |
+|         | fj-issue-view                    | View item NUMBER from REPO of OWNER.                                |
 |         | fj-issue-view-close              | Close issue being viewed, or set to STATE.                          |
 |         | fj-issue-view-comment            | Comment on the issue currently being viewed.                        |
 |         | fj-issue-view-comment-delete     | Delete comment at point.                                            |
@@ -138,6 +136,7 @@ Repo search listing:
 |         | fj-issues-tl-reload              | Reload current issues tabulated list view.                          |
 |         | fj-issues-tl-reopen              | Reopen current issue from tabulated issues listing.                 |
 |         | fj-issues-tl-view                | View current issue from tabulated issues listing.                   |
+|         | fj-item-view                     | View item NUMBER from REPO of OWNER.                                |
 |         | fj-kill-all-buffers              | Kill all fj buffers.                                                |
 |         | fj-list-issues                   | Display ISSUES in a tabulated list view.                            |
 |         | fj-list-issues-+-pulls           | List issues and pulls for REPO by OWNER, filtered by STATE.         |
@@ -148,6 +147,7 @@ Repo search listing:
 |         | fj-list-own-repos                | List repos for `fj-user'.                                           |
 |         | fj-list-pulls                    | List pulls for REPO by OWNER, filtered by STATE.                    |
 |         | fj-list-user-repos               | View repos of current entry user from tabulated repos listing.      |
+|         | fj-merge-pull                    | Merge pull request of current view or at point.                     |
 |         | fj-next-tab-item                 | Jump to next tab item.                                              |
 |         | fj-prev-tab-item                 | Jump to prev tab item.                                              |
 |         | fj-pull-req-comment              | Add comment to PULL in REPO.                                        |
