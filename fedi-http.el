@@ -121,7 +121,8 @@ RESPONSE if unsuccessful."
            (let ((json-response (with-current-buffer response
                                   (fedi-http--process-json))))
              (user-error "Error %s: %s" status
-                         (alist-get 'error json-response)))))))
+                         (or (alist-get 'error json-response)
+                             (alist-get 'message json-response))))))))
 
 (defun fedi-http--read-file-as-string (filename)
   "Read a file FILENAME as a string. Used to generate image preview."
