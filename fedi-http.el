@@ -179,7 +179,10 @@ json-string PARAMS."
 PARAMS is an alist of any extra parameters to send with the request.
 SILENT means don't message."
   (let ((url (fedi-http--concat-params-to-url url params)))
-    (fedi-http--url-retrieve-synchronously url silent)))
+    (condition-case err
+        (fedi-http--url-retrieve-synchronously url silent)
+      (t (error "I am Error. Request borked. %s"
+                (error-message-string err))))))
 
 (defun fedi-http--get-response (url &optional params no-headers silent vector)
   "Make synchronous GET request to URL. Return JSON and response headers.
