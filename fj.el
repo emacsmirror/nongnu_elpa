@@ -960,6 +960,20 @@ STATE and TYPE as for `fj-list-issues'."
           (type (fj--get-buffer-spec :type)))
       (fj-list-issues repo owner state type))))
 
+(defun fj-issues-item-cycle ()
+  "Cycle item type listing of issues, pulls, and all."
+  (interactive)
+  (let ((state (fj--get-buffer-spec :state))
+        (owner (fj--get-buffer-spec :owner))
+        (repo (fj--get-buffer-spec :repo))
+        (type (fj--get-buffer-spec :type)))
+    (cond ((string= type "pulls")
+           (fj-list-issues repo owner state "all"))
+          ((string= type "all")
+           (fj-list-issues repo owner state "issues"))
+          (t ; issues default
+           (fj-list-issues repo owner state "pulls")))))
+
 ;;; ISSUE VIEW
 (defvar fj-url-regex fedi-post-url-regex)
 
