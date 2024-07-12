@@ -349,6 +349,7 @@ JSON."
     (define-key map (kbd "j") #'imenu)
     (define-key map (kbd "g") #'fj-repo-tl-reload)
     (define-key map (kbd "N") #'fj-view-notifications)
+    (define-key map (kbd "M-C-q") #'fj-kill-all-buffers)
     map)
   "Map for `fj-repo-tl-mode' and `fj-user-repo-tl-mode' to inherit.")
 
@@ -810,6 +811,7 @@ NEW-BODY is the new comment text to send."
     (define-key map (kbd "N") #'fj-view-notifications)
     (define-key map (kbd "L") #'fj-repo-copy-clone-url)
     (define-key map (kbd "j") #'imenu)
+    (define-key map (kbd "M-C-q") #'fj-kill-all-buffers)
     map)
   "Map for `fj-issue-tl-mode', a tabluated list of issues.")
 
@@ -1083,6 +1085,7 @@ JSON is the item's data to process the link with."
     (define-key map (kbd "O") #'fj-list-own-repos)
     (define-key map (kbd "b") #'fj-browse-view)
     (define-key map (kbd "N") #'fj-view-notifications)
+    (define-key map (kbd "M-C-q") #'fj-kill-all-buffers)
     map)
   "Keymap for `fj-issue-view-mode'.")
 
