@@ -321,12 +321,6 @@ History is disabled."
   (let ((history-add-new-input nil))
     (funcall gnosis-completing-read-function prompt (gnosis-shuffle seq))))
 
-(defun gnosis-replace-item-at-index (index new-item list)
-  "Replace item at INDEX in LIST with NEW-ITEM."
-  (cl-loop for i from 0 for item in list
-           if (= i index) collect new-item
-           else collect item))
-
 (defun gnosis-insert-separator ()
   "Insert a dashed line spanning the entire width of the buffer."
   (interactive)
@@ -450,16 +444,57 @@ Refer to =gnosis-db-schema-extras' for informations on images stored."
 	     do (insert (format "\n%s.  %s" option-num option))
 	     (setf option-num (1+ option-num)))))
 
-(cl-defun gnosis-display-cloze-sentence (sentence clozes)
-  "Display cloze sentence for SENTENCE with CLOZES.
+;; FIXME: Adjust for multiple identical clozes
+(defun gnosis-display-cloze-sentence (sentence clozes hints success &optional failure)
+  "Display SENTENCE with CLOZES and HINTS.
 
-If FILL-PARAGRAPH-P, insert using `fill-paragraph'"
-  (erase-buffer)
-  (let ((cloze-sentence
-	 (gnosis-cloze-replace-words sentence clozes (propertize gnosis-cloze-string 'face 'gnosis-face-cloze))))
-    (insert "\n" (gnosis-center-string cloze-sentence))
-    (gnosis-insert-separator)
-    (gnosis-apply-syntax-overlay)))
+SUCCESS represents the number of correctly answered clozes.
+
+If FAILURE is t, it reveals all clozes that have not been answered yet
+with `gnosis-face-cloze-unanswered', only the current cloze will be
+revealed with `gnosis-face-false' and the ones before with
+`gnosis-face-correct'."
+  (cl-assert (listp clozes) "Clozes must be a list.")
+  (cl-assert (numberp success) "Success must be an integer.")
+  (cl-assert (or (not failure) (booleanp failure)) "Failure must be a boolean if provided.")
+
+  ;; Ensure hints is a list of the correct length.  This also fixes
+  ;; older versions of cloze notes.
+  (setq hints (if (stringp hints)
+                  (cons hints (make-list (1- (length clozes)) nil))
+                hints))
+  (cl-assert (listp hints) "Hints must be a list or a string.")
+
+  ;; Ensure hints list is the same length as clozes
+  (setq hints (append hints (make-list (- (length clozes) (length hints)) nil)))
+
+  (let ((result sentence)
+        (idx 0))
+    ;; Process each cloze
+    (cl-loop for cloze in clozes
+             do (let* ((hint (nth idx hints))
+                       (display-cloze (cond
+                                       ((< idx success) cloze)
+                                       ((and failure (>= idx success)) cloze)
+                                       (t (if (or (not hint) (string-empty-p hint))
+                                              gnosis-cloze-string
+                                            hint))))
+                       (face (cond
+                              ((< idx success) 'gnosis-face-correct)
+                              ((and failure (= idx success)) 'gnosis-face-false)
+                              ((and failure (> idx success)) 'gnosis-face-cloze-unanswered)
+                              (t 'gnosis-face-cloze))))
+                  ;; Replace only the first occurrence of each cloze in the sentence
+                  (setq result (replace-regexp-in-string (concat "\\(" (regexp-quote cloze) "\\)")
+                                                         (propertize display-cloze 'face face)
+                                                         result
+                                                         nil nil 1))
+                  (setq idx (1+ idx))))
+    (let ((inhibit-read-only t))
+      (erase-buffer)
+      (insert "\n" (gnosis-center-string (string-trim result)))
+      (gnosis-apply-syntax-overlay)
+      (gnosis-insert-separator))))
 
 (defun gnosis-display-basic-answer (answer success user-input)
   "Display ANSWER.
@@ -501,18 +536,6 @@ SUCCESS is t when user-input is correct, else nil"
       (and (not (string-empty-p hint))
 	   (insert (gnosis-center-string (propertize hint 'face 'gnosis-face-hint))))
       (gnosis-insert-separator))))
-
-(cl-defun gnosis-display-cloze-reveal (&key (cloze-char gnosis-cloze-string) replace (success t) (face nil))
-  "Replace CLOZE-CHAR with REPLACE.
-
-If FACE nil, propertize replace using `gnosis-face-correct', or
-`gnosis-face-false' when (not SUCCESS).  Else use FACE value."
-  (goto-char (point-min))
-  (search-forward cloze-char nil t)
-  (replace-match (propertize replace 'face (if (not face)
-					       (if success 'gnosis-face-correct 'gnosis-face-false)
-					     face)))
-  (gnosis-center-current-line))
 
 (cl-defun gnosis-display-cloze-user-answer (user-input &optional (false t))
   "Display USER-INPUT answer for cloze note upon failed review.
@@ -1419,38 +1442,34 @@ If user-input is equal to CLOZE, return t."
   (let ((user-input (read-string "Answer: ")))
     (cons (gnosis-compare-strings user-input cloze) user-input)))
 
-(defun gnosis-review-cloze-reveal-unaswered (clozes)
-  "Reveal CLOZES.
-
-Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
-  (cl-loop for cloze in clozes
-	   do (gnosis-display-cloze-reveal :replace cloze :face 'gnosis-face-cloze-unanswered)))
-
 (defun gnosis-review-cloze (id)
   "Review cloze type note for ID."
   (let* ((main (gnosis-get 'main 'notes `(= id ,id)))
 	 (clozes (gnosis-get 'answer 'notes `(= id ,id)))
-	 (num 1) ;; Number of clozes revealed
-	 (hint (gnosis-get 'options 'notes `(= id ,id)))
+	 (num 0) ;; Number of clozes revealed
+	 (hints (gnosis-get 'options 'notes `(= id ,id)))
 	 (success nil))
-    (gnosis-display-cloze-sentence main clozes)
-    (gnosis-display-image id)
-    (gnosis-display-hint hint)
+    ;; Initially display the sentence with no reveals
+    (message "reviewing %d" id)
+    ;; (when (or (stringp hints)
+    ;; 	      (null hints))
+    ;;   (setq hints nil))
+    ;; quick fix for old versions of gnosis cloze.
+    (message "Using deprecated cloze hints.")
+    (gnosis-display-cloze-sentence main clozes hints 0)
     (cl-loop for cloze in clozes
 	     do (let ((input (gnosis-review-cloze--input cloze)))
 		  (if (equal (car input) t)
-		      ;; Reveal only one cloze
-		      (progn (gnosis-display-cloze-reveal :replace cloze)
-			     (setf num (1+ num)))
-		    ;; Reveal cloze for wrong input, with `gnosis-face-false'
-		    (gnosis-display-cloze-reveal :replace cloze :success nil)
+		      ;; Correct answer -> reveal the current cloze
+		      (progn (setq num (1+ num))
+			     (gnosis-display-cloze-sentence main clozes hints num))
+		    ;; Incorrect answer -> display current state with failure mode
+		    (gnosis-display-cloze-sentence main clozes hints num t)
 		    (gnosis-display-cloze-user-answer (cdr input))
-		    ;; Reveal all clozes left with `gnosis-face-cloze-unanswered' face
-		    (gnosis-review-cloze-reveal-unaswered (nthcdr num clozes))
-		    (setf success nil)
+		    (setq success nil)
 		    (cl-return)))
 	     ;; Update note after all clozes are revealed successfully
-	     finally (setf success t))
+	     finally (setq success t))
     (gnosis-display-extra id)
     (gnosis-display-next-review id success)
     success))
@@ -1462,12 +1481,13 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
 	(cloze (list (gnosis-get 'answer 'notes `(= id ,id))))
 	(user-choice nil)
 	(success nil))
-    (gnosis-display-cloze-sentence main cloze)
+    (gnosis-display-cloze-sentence main cloze nil 0 success)
     (gnosis-display-image id)
     (setf user-choice (gnosis-mcq-answer id)
 	  success (string= user-choice (car cloze)))
-    (gnosis-display-cloze-reveal :replace (car cloze)
-				 :success success)
+    (if success
+	(gnosis-display-cloze-sentence main cloze nil 1 nil)
+      (gnosis-display-cloze-sentence main cloze nil 0 t))
     ;; Display user answer only upon failure
     (unless success
       (gnosis-display-cloze-user-answer user-choice))
