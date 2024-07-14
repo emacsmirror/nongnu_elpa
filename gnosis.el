@@ -910,7 +910,7 @@ Refer to `gnosis-add-note--y-or-n' for more information about keyword values."
 			   :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))
 
 
-(cl-defun gnosis-add-note--cloze (&key deck note hint tags (suspend 0) extra (images nil))
+(cl-defun gnosis-add-note--cloze (&key deck note tags (suspend 0) extra (images nil))
   "Add cloze type note.
 
 DECK: Deck name for note.
@@ -948,9 +948,12 @@ TAGS: Tags used to organize notes
 SUSPEND: When t, note will be ignored.
 
 EXTRA: Extra information displayed after user-input."
-  (let ((notags-note (gnosis-cloze-remove-tags note))
-	(clozes (gnosis-cloze-extract-answers note)))
+  (let* ((notags-note (gnosis-cloze-remove-tags note))
+	 (cloze-contents (gnosis-cloze-extract-contents note))
+	 (clozes (gnosis-cloze-extract-answers cloze-contents))
+	 (hints (gnosis-cloze-extract-hints cloze-contents)))
     (cl-loop for cloze in clozes
+	     for hint in hints
 	     do (gnosis-add-note-fields deck "cloze" notags-note hint cloze extra tags suspend
 					(car images) (cdr images)))))
 
@@ -984,7 +987,6 @@ See `gnosis-add-note--cloze' for more reference."
   (gnosis-add-note--cloze :deck deck
 			  :note (gnosis-read-string-from-buffer (or (car gnosis-cloze-guidance) "")
 								(or (cdr gnosis-cloze-guidance) ""))
-			  :hint (gnosis-hint-prompt gnosis-previous-note-hint)
 			  :extra (gnosis-read-string-from-buffer "Extra" "")
 			  :images (gnosis-select-images)
 			  :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))
@@ -1080,26 +1082,14 @@ TYPE: Type of gnosis note, must be one of `gnosis-note-types'"
   "Replace cx-tags in STRING.
 
 Works both with {} and {{}} to make easier to import anki notes."
-  (let* ((regex "{\\{1,2\\}c\\([0-9]+\\)::?\\(.*?\\)}\\{1,2\\}")
-         (result (replace-regexp-in-string regex "\\2" string)))
-    result))
+  (let* ((regex "{\\{1,2\\}c[0-9]+::\\([^:}]*?\\)\\(::.*?\\)?}\\{1,2\\}")
+         (result (replace-regexp-in-string regex "\\1" string)))
+    (string-remove-suffix "::" result)))
 
-(defun gnosis-cloze-replace-words (string words new)
-  "In STRING replace only the first occurrence of each word in WORDS with NEW."
-  (cl-assert (listp words))
-  (cl-loop for word in words
-           do (if (string-match (concat "\\b" word "\\b") string)
-                  (setq string (replace-match new t t string))
-                ;; This error will be produced when user has edited a
-                ;; note to an invalid cloze.
-                (error "`%s' is an invalid cloze for question: `%s'"
-                       word string)))
-  string)
+(defun gnosis-cloze-extract-contents (str)
+  "Extract cloze contents for STR.
 
-(defun gnosis-cloze-extract-answers (str)
-  "Extract cloze answers for STR.
-
-Return a list of cloze answers for STR, organized by cX-tag.
+Return a list of cloze tag contents for STR, organized by cX-tag.
 
 Valid cloze formats include:
 \"This is an {c1:example}\"
@@ -1117,6 +1107,27 @@ Valid cloze formats include:
         (setf start (match-end 0))))
     (mapcar (lambda (tag-group) (nreverse (cdr tag-group)))
 	    (nreverse result-alist))))
+
+(defun gnosis-cloze-extract-answers (nested-lst)
+    "Extract cloze answers for string clozes inside the NESTED-LST.
+
+This function should be used in combination with `gnosis-cloze-extract-answers'."
+  (mapcar (lambda (lst)
+            (mapcar (lambda (str)
+                      (replace-regexp-in-string "::\\(.*\\)" "" str))
+                    lst))
+          nested-lst))
+
+(defun gnosis-cloze-extract-hints (nested-lst)
+  "Extract cloze hints for string clozes inside the NESTED-LST.
+
+This function should be used in combination with `gnosis-cloze-extract-answers'."
+  (mapcar (lambda (lst)
+            (mapcar (lambda (str)
+                      (when (string-match "::\\(.*\\)" str)
+                        (match-string 1 str)))
+                    lst))
+          nested-lst))
 
 (defun gnosis-mc-cloze-remove-separator (string &optional separator)
   "Remove SEPARATOR and all followed words from STRING."
