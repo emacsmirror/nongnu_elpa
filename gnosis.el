@@ -38,6 +38,7 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'subr-x)
 
 (require 'vc)
 (require 'emacsql-sqlite)
@@ -57,7 +58,7 @@
   :type 'directory
   :group 'gnosis)
 
-(defcustom gnosis-cloze-string "__"
+(defcustom gnosis-cloze-string "[...]"
   "Gnosis string to represent a cloze."
   :type 'string
   :group 'gnosis)
@@ -230,7 +231,7 @@ Seperate the question/stem from options."
   :group 'gnosis-face)
 
 (defface gnosis-face-cloze
-  '((t :inherit cursor))
+  '((t :inherit (ffap italic)))
   "Face for clozes."
   :group 'gnosis-face)
 
