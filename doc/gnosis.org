@@ -4,8 +4,8 @@
 #+language: en
 #+options: ':t toc:nil author:t email:t num:t
 #+startup: content
-#+macro: stable-version 0.3.0
-#+macro: release-date 2024-06-28
+#+macro: stable-version 0.3.1
+#+macro: release-date 2024-07-15
 #+macro: file @@texinfo:@file{@@$1@@texinfo:}@@
 #+macro: space @@texinfo:@: @@
 #+macro: kbd @@texinfo:@kbd{@@$1@@texinfo:}@@
@@ -22,14 +22,18 @@
 #+texinfo_header: @set MAINTAINERCONTACT @uref{mailto:public@thanosapollo.org,contact the maintainer}
 
 
+
 Gnosis (γνῶσις), pronounced "noh-sis", /meaning knowledge in Greek/,
 is a spaced repetition system implementation for note taking and self
-testing.  The objective of gnosis is to maximize memory retention by
-implementing reviewing  of information at increasing intervals.
+testing.  Notes are organized in a Question/Answer/Explanation format
+and reviewed at spaced intervals, determined by the success or failure
+to recall the answer.
 
-The intervals grow longer as you become more familiar with the
-information, which reinforces long-term retention and reduces the risk
-of forgetting
+The goal of Gnosis is to enhance memory retention through active
+recall.  To achieve optimal results, users review Gnosis notes by
+writing out the answers.
+
+Above all, Gnosis aspires to be a versatile instrument of learning.
 
 #+texinfo: @noindent
 This manual is written for Gnosis version {{{stable-version}}}, released on {{{release-date}}}.
@@ -75,16 +79,18 @@ You can create a cloze note type using =M-x gnosis-add-note= and
 selecting ~Cloze~, the question should be formatted like this:
 
 #+BEGIN_QUOTE
-{c1:Cyproheptadine} is a(n) {c2:5-HT2} receptor antagonist used to treat {c2:serotonin syndrome}
+{c1:Cyproheptadine::drug name} is a(n) {c2:5-HT2} receptor antagonist used to treat {c2:serotonin syndrome}
 #+END_QUOTE
 
-You can also format clozes like Anki if you prefer; e.g ~{{c1::Cyproheptadine}}~
+You can also format clozes like Anki if you so prefer; e.g ~{{c1::Cyproheptadine::drug name}}~
 
-+ For each `cX`-tag there will be created a cloze type note, the above
++ For each cX-tag there will be created a cloze type note, the above
   example creates 2 cloze type notes.
   
-+ Each `cX` tag can have multiple clozes, but each cloze must be a
++ Each cX tag can have multiple clozes, but each cloze must be a
   *UNIQUE* word (or a unique combination of words) in given note.
+
++ You can use the keyword =::= to indicate a hint.
 
 You can remove the /guidance/ string by adjusting
 =gnosis-cloze-guidance=.
@@ -116,7 +122,6 @@ The stem field (question) is separated by the options (choices) via
 
 You can remove the /guidance/ string by adjusting
 =gnosis-mcq-guidance=.
-
 
 ** Basic Type
 

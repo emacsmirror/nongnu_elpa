@@ -27,15 +27,18 @@
 
 Gnosis (γνῶσις), pronounced ``noh-sis'', @emph{meaning knowledge in Greek},
 is a spaced repetition system implementation for note taking and self
-testing.  The objective of gnosis is to maximize memory retention by
-implementing reviewing  of information at increasing intervals.
+testing.  Notes are organized in a Question/Answer/Explanation format
+and reviewed at spaced intervals, determined by the success or failure
+to recall the answer.
 
-The intervals grow longer as you become more familiar with the
-information, which reinforces long-term retention and reduces the risk
-of forgetting
+The goal of Gnosis is to enhance memory retention through active
+recall.  To achieve optimal results, users review Gnosis notes by
+writing out the answers.
+
+Above all, Gnosis aspires to be a versatile instrument of learning.
 
 @noindent
-This manual is written for Gnosis version 0.3.0, released on 2024-06-28.
+This manual is written for Gnosis version 0.3.1, released on 2024-07-15.
 
 @itemize
 @item
@@ -139,20 +142,23 @@ You can create a cloze note type using @samp{M-x gnosis-add-note} and
 selecting @code{Cloze}, the question should be formatted like this:
 
 @quotation
-@{c1:Cyproheptadine@} is a(n) @{c2:5-HT2@} receptor antagonist used to treat @{c2:serotonin syndrome@}
+@{c1:Cyproheptadine::drug name@} is a(n) @{c2:5-HT2@} receptor antagonist used to treat @{c2:serotonin syndrome@}
 
 @end quotation
 
-You can also format clozes like Anki if you prefer; e.g @code{@{@{c1::Cyproheptadine@}@}}
+You can also format clozes like Anki if you so prefer; e.g @code{@{@{c1::Cyproheptadine::drug name@}@}}
 
 @itemize
 @item
-For each `cX`-tag there will be created a cloze type note, the above
+For each cX-tag there will be created a cloze type note, the above
 example creates 2 cloze type notes.
 
 @item
-Each `cX` tag can have multiple clozes, but each cloze must be a
+Each cX tag can have multiple clozes, but each cloze must be a
 @strong{UNIQUE} word (or a unique combination of words) in given note.
+
+@item
+You can use the keyword @samp{::} to indicate a hint.
 @end itemize
 
 You can remove the @emph{guidance} string by adjusting
