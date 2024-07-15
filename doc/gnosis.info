@@ -14,14 +14,17 @@ Gnosis User Manual
 
 Gnosis (γνῶσις), pronounced "noh-sis", _meaning knowledge in Greek_, is
 a spaced repetition system implementation for note taking and self
-testing.  The objective of gnosis is to maximize memory retention by
-implementing reviewing of information at increasing intervals.
+testing.  Notes are organized in a Question/Answer/Explanation format
+and reviewed at spaced intervals, determined by the success or failure
+to recall the answer.
 
-   The intervals grow longer as you become more familiar with the
-information, which reinforces long-term retention and reduces the risk
-of forgetting
+   The goal of Gnosis is to enhance memory retention through active
+recall.  To achieve optimal results, users review Gnosis notes by
+writing out the answers.
 
-This manual is written for Gnosis version 0.3.0, released on 2024-06-28.
+   Above all, Gnosis aspires to be a versatile instrument of learning.
+
+This manual is written for Gnosis version 0.3.1, released on 2024-07-15.
 
    • Official manual: <https://thanosapollo.org/user-manual/gnosis>
    • Git repositories:
@@ -126,17 +129,19 @@ with "missing" words.  A fill-in-the-blanks question.
    You can create a cloze note type using ‘M-x gnosis-add-note’ and
 selecting ‘Cloze’, the question should be formatted like this:
 
-     {c1:Cyproheptadine} is a(n) {c2:5-HT2} receptor antagonist used to
-     treat {c2:serotonin syndrome}
+     {c1:Cyproheptadine::drug name} is a(n) {c2:5-HT2} receptor
+     antagonist used to treat {c2:serotonin syndrome}
 
-   You can also format clozes like Anki if you prefer; e.g
-‘{{c1::Cyproheptadine}}’
+   You can also format clozes like Anki if you so prefer; e.g
+‘{{c1::Cyproheptadine::drug name}}’
 
-   • For each 'cX'-tag there will be created a cloze type note, the
-     above example creates 2 cloze type notes.
+   • For each cX-tag there will be created a cloze type note, the above
+     example creates 2 cloze type notes.
 
-   • Each 'cX' tag can have multiple clozes, but each cloze must be a
+   • Each cX tag can have multiple clozes, but each cloze must be a
      *UNIQUE* word (or a unique combination of words) in given note.
+
+   • You can use the keyword ‘::’ to indicate a hint.
 
    You can remove the _guidance_ string by adjusting
 ‘gnosis-cloze-guidance’.
@@ -452,26 +457,26 @@ should be done.
 
 Tag Table:
 Node: Top250
-Node: Introduction1503
-Node: Adding notes2230
-Node: Note Types2599
-Node: Cloze2824
-Node: MC-Cloze3720
-Node: MCQ (Multiple Choice Question)4544
-Node: Basic Type5043
-Node: Double5346
-Node: y-or-n5612
-Node: Customization6014
-Node: Image size6199
-Node: Typos | String Comparison6485
-Node: Gnosis Algorithm7260
-Node: Initial Interval8296
-Node: Easiness Factor9086
-Node: Forgetting Factor10034
-Node: Editing notes10642
-Node: Sync between devices11034
-Node: Extending Gnosis12055
-Node: Creating Custom Note Types12510
+Node: Introduction1614
+Node: Adding notes2341
+Node: Note Types2710
+Node: Cloze2935
+Node: MC-Cloze3913
+Node: MCQ (Multiple Choice Question)4737
+Node: Basic Type5236
+Node: Double5539
+Node: y-or-n5805
+Node: Customization6207
+Node: Image size6392
+Node: Typos | String Comparison6678
+Node: Gnosis Algorithm7453
+Node: Initial Interval8489
+Node: Easiness Factor9279
+Node: Forgetting Factor10227
+Node: Editing notes10835
+Node: Sync between devices11227
+Node: Extending Gnosis12248
+Node: Creating Custom Note Types12703
 
 End Tag Table
 

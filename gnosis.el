@@ -5,7 +5,7 @@
 ;; Author: Thanos Apollo <public@thanosapollo.org>
 ;; Keywords: extensions
 ;; URL: https://thanosapollo.org/projects/gnosis
-;; Version: 0.3.0
+;; Version: 0.3.1
 
 ;; Package-Requires: ((emacs "27.2") (emacsql "20240124") (compat "29.1.4.2"))
 
@@ -38,6 +38,7 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'subr-x)
 
 (require 'vc)
 (require 'emacsql-sqlite)
@@ -57,7 +58,7 @@
   :type 'directory
   :group 'gnosis)
 
-(defcustom gnosis-cloze-string "__"
+(defcustom gnosis-cloze-string "[...]"
   "Gnosis string to represent a cloze."
   :type 'string
   :group 'gnosis)
@@ -230,7 +231,7 @@ Seperate the question/stem from options."
   :group 'gnosis-face)
 
 (defface gnosis-face-cloze
-  '((t :inherit cursor))
+  '((t :inherit (ffap italic)))
   "Face for clozes."
   :group 'gnosis-face)
 
@@ -319,12 +320,6 @@ PROMPT: Prompt for `gnosis-completing-read-function'
 History is disabled."
   (let ((history-add-new-input nil))
     (funcall gnosis-completing-read-function prompt (gnosis-shuffle seq))))
-
-(defun gnosis-replace-item-at-index (index new-item list)
-  "Replace item at INDEX in LIST with NEW-ITEM."
-  (cl-loop for i from 0 for item in list
-           if (= i index) collect new-item
-           else collect item))
 
 (defun gnosis-insert-separator ()
   "Insert a dashed line spanning the entire width of the buffer."
@@ -449,16 +444,82 @@ Refer to =gnosis-db-schema-extras' for informations on images stored."
 	     do (insert (format "\n%s.  %s" option-num option))
 	     (setf option-num (1+ option-num)))))
 
-(cl-defun gnosis-display-cloze-sentence (sentence clozes)
-  "Display cloze sentence for SENTENCE with CLOZES.
+;; FIXME: Adjust for multiple identical clozes
+(defun gnosis-display-cloze-sentence (sentence clozes hints success &optional failure)
+  "Display SENTENCE with CLOZES and HINTS.
 
-If FILL-PARAGRAPH-P, insert using `fill-paragraph'"
-  (erase-buffer)
-  (let ((cloze-sentence
-	 (gnosis-cloze-replace-words sentence clozes (propertize gnosis-cloze-string 'face 'gnosis-face-cloze))))
-    (insert "\n" (gnosis-center-string cloze-sentence))
-    (gnosis-insert-separator)
-    (gnosis-apply-syntax-overlay)))
+SUCCESS represents the number of correctly answered clozes.
+
+If FAILURE is t, it reveals all clozes that have not been answered yet
+with `gnosis-face-cloze-unanswered', only the current cloze will be
+revealed with `gnosis-face-false' and the ones before with
+`gnosis-face-correct'."
+  (cl-assert (listp clozes) "Clozes must be a list.")
+  (cl-assert (numberp success) "Success must be an integer.")
+  (cl-assert (or (not failure) (booleanp failure)) "Failure must be a boolean if provided.")
+
+  ;; Ensure hints is a list of the correct length.  This also fixes
+  ;; older versions of cloze notes.
+  (setq hints (if (stringp hints)
+                  (cons hints (make-list (1- (length clozes)) nil))
+                hints))
+  (cl-assert (listp hints) "Hints must be a list or a string.")
+
+  ;; Ensure hints list is the same length as clozes
+  (setq hints (append hints (make-list (- (length clozes) (length hints)) nil)))
+
+  (let ((result sentence)
+        (idx 0))
+    ;; Process each cloze
+    (cl-loop for cloze in clozes
+             do (let* ((hint (nth idx hints))
+                       (display-cloze (cond
+                                       ((< idx success) cloze)
+				       (failure cloze)
+				       ((and hint (not (string-empty-p hint))) (format "[%s]" hint))
+                                       (t gnosis-cloze-string)))
+                       (face (cond
+                              ((< idx success) 'gnosis-face-correct)
+                              ((and failure (= idx success)) 'gnosis-face-false)
+                              ((and failure (> idx success)) 'gnosis-face-cloze-unanswered)
+                              (t 'gnosis-face-cloze))))
+                  ;; Replace only the first occurrence of each cloze in the sentence
+                  (setq result (replace-regexp-in-string (concat "\\(" (regexp-quote cloze) "\\)")
+                                                         (propertize display-cloze 'face face)
+                                                         result
+                                                         nil nil 1))
+                  (setq idx (1+ idx))))
+    (let ((inhibit-read-only t))
+      (erase-buffer)
+      (insert "\n" (gnosis-center-string (string-trim result)))
+      (gnosis-apply-syntax-overlay)
+      (gnosis-insert-separator))))
+
+;; TODO: Reconsider using smaller functions for display cloze notes.
+
+;; (defun gnosis-add-clozes (sentence clozes &optional cloze-string)
+;;   "Replace CLOZES in SENTENCE with CLOZE-STRING."
+;;   (let ((cloze-string (or cloze-string gnosis-cloze-string)))
+;;     (with-temp-buffer
+;;       (insert sentence)
+;;       (goto-char (point-min))
+;;       (dolist (cloze clozes)
+;;         (when (search-forward cloze nil t)
+;;           (replace-match (propertize cloze-string 'face 'gnosis-face-cloze) nil t)))
+;;       (buffer-string))))
+
+;; (defun gnosis-replace-clozes-with-hints (sentence hints &optional cloze-string)
+;;   "Replace CLOZE-STRING in SENTENCE with HINTS."
+;;   (let ((cloze-string (or cloze-string gnosis-cloze-string))
+;;         (count 0))
+;;     (with-temp-buffer
+;;       (insert sentence)
+;;       (goto-char (point-min))
+;;       (while (search-forward cloze-string nil t)
+;;         (when (and (nth count hints) (search-backward cloze-string nil t))
+;;           (replace-match (propertize (format "[%s]" (nth count hints)) 'face 'gnosis-face-cloze)))
+;;         (setq count (1+ count)))
+;;       (buffer-string))))
 
 (defun gnosis-display-basic-answer (answer success user-input)
   "Display ANSWER.
@@ -500,18 +561,6 @@ SUCCESS is t when user-input is correct, else nil"
       (and (not (string-empty-p hint))
 	   (insert (gnosis-center-string (propertize hint 'face 'gnosis-face-hint))))
       (gnosis-insert-separator))))
-
-(cl-defun gnosis-display-cloze-reveal (&key (cloze-char gnosis-cloze-string) replace (success t) (face nil))
-  "Replace CLOZE-CHAR with REPLACE.
-
-If FACE nil, propertize replace using `gnosis-face-correct', or
-`gnosis-face-false' when (not SUCCESS).  Else use FACE value."
-  (goto-char (point-min))
-  (search-forward cloze-char nil t)
-  (replace-match (propertize replace 'face (if (not face)
-					       (if success 'gnosis-face-correct 'gnosis-face-false)
-					     face)))
-  (gnosis-center-current-line))
 
 (cl-defun gnosis-display-cloze-user-answer (user-input &optional (false t))
   "Display USER-INPUT answer for cloze note upon failed review.
@@ -605,13 +654,14 @@ Set SPLIT to t to split all input given."
 (defun gnosis-add-deck (name)
   "Create deck with NAME."
   (interactive (list (read-string "Deck Name: ")))
-  (when gnosis-testing
-    (unless (y-or-n-p "You are using a testing environment! Continue?")
-      (error "Aborted")))
-  (if (gnosis-get 'name 'decks `(= name ,name))
-      (error "Deck `%s' already exists" name)
-    (gnosis--insert-into 'decks `([nil ,name nil nil nil nil nil]))
-    (message "Created deck '%s'" name)))
+    (when gnosis-testing
+      (unless (y-or-n-p "You are using a testing environment! Continue?")
+	(error "Aborted")))
+    (if (gnosis-get 'name 'decks `(= name ,name))
+	(error "Deck `%s' already exists" name)
+      (let ((deck-id (gnosis-generate-id 5 t)))
+	(gnosis--insert-into 'decks `([,deck-id ,name nil nil nil nil nil]))
+	(message "Created deck '%s'" name))))
 
 (defun gnosis--get-deck-name (&optional id)
   "Get deck name for ID, or prompt for deck name when ID is nil."
@@ -689,15 +739,19 @@ When called with a prefix, unsuspends all notes for tag."
       ("Tag" (gnosis-suspend-tag))
       (_ (message "Not ready yet.")))))
 
-(defun gnosis-generate-id (&optional length)
-  "Generate a unique note ID.
+(defun gnosis-generate-id (&optional length deck-p)
+  "Generate a unique gnosis ID.
+
+Default to generating a note id, when DECK-P is t generates a deck id.
 
 LENGTH: length of id, default to a random number between 10-15."
   (let* ((length (or length (+ (random 5) 10)))
          (max-val (expt 10 length))
          (min-val (expt 10 (1- length)))
-         (id (+ (random (- max-val min-val)) min-val)))
-    (if (member id (gnosis-select 'id 'notes '1=1 t))
+         (id (+ (random (- max-val min-val)) min-val))
+	 (current-ids (if deck-p (gnosis-select 'id 'decks '1=1 t)
+			(gnosis-select 'id 'notes '1=1 t))))
+    (if (member id current-ids)
         (gnosis-generate-id length)
       id)))
 
@@ -886,7 +940,7 @@ Refer to `gnosis-add-note--y-or-n' for more information about keyword values."
 			   :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))
 
 
-(cl-defun gnosis-add-note--cloze (&key deck note hint tags (suspend 0) extra (images nil))
+(cl-defun gnosis-add-note--cloze (&key deck note tags (suspend 0) extra (images nil))
   "Add cloze type note.
 
 DECK: Deck name for note.
@@ -924,9 +978,12 @@ TAGS: Tags used to organize notes
 SUSPEND: When t, note will be ignored.
 
 EXTRA: Extra information displayed after user-input."
-  (let ((notags-note (gnosis-cloze-remove-tags note))
-	(clozes (gnosis-cloze-extract-answers note)))
+  (let* ((notags-note (gnosis-cloze-remove-tags note))
+	 (cloze-contents (gnosis-cloze-extract-contents note))
+	 (clozes (gnosis-cloze-extract-answers cloze-contents))
+	 (hints (gnosis-cloze-extract-hints cloze-contents)))
     (cl-loop for cloze in clozes
+	     for hint in hints
 	     do (gnosis-add-note-fields deck "cloze" notags-note hint cloze extra tags suspend
 					(car images) (cdr images)))))
 
@@ -960,7 +1017,6 @@ See `gnosis-add-note--cloze' for more reference."
   (gnosis-add-note--cloze :deck deck
 			  :note (gnosis-read-string-from-buffer (or (car gnosis-cloze-guidance) "")
 								(or (cdr gnosis-cloze-guidance) ""))
-			  :hint (gnosis-hint-prompt gnosis-previous-note-hint)
 			  :extra (gnosis-read-string-from-buffer "Extra" "")
 			  :images (gnosis-select-images)
 			  :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))
@@ -1053,34 +1109,21 @@ TYPE: Type of gnosis note, must be one of `gnosis-note-types'"
     (gnosis-completing-read "Answer: " choices)))
 
 (defun gnosis-cloze-remove-tags (string)
-  "Replace cx-tags in STRING.
+  "Replace cloze tags and hints in STRING.
 
-Works both with {} and {{}} to make easier to import anki notes."
-  (let* ((regex "{\\{1,2\\}c\\([0-9]+\\)::?\\(.*?\\)}\\{1,2\\}")
-         (result (replace-regexp-in-string regex "\\2" string)))
+Works with both single (:), double colons (::), single braces ({}) and
+double braces ({{}})."
+  (let* ((regex "{\\{1,2\\}c[0-9]+:\\{1,2\\}\\([^:}]*\\).*?\\(}\\|::}\\)\\{1,2\\}")
+         (result (replace-regexp-in-string regex "\\1" string)))
     result))
 
-(defun gnosis-cloze-replace-words (string words new)
-  "In STRING replace only the first occurrence of each word in WORDS with NEW."
-  (cl-assert (listp words))
-  (cl-loop for word in words
-           do (if (string-match (concat "\\b" word "\\b") string)
-                  (setq string (replace-match new t t string))
-                ;; This error will be produced when user has edited a
-                ;; note to an invalid cloze.
-                (error "`%s' is an invalid cloze for question: `%s'"
-                       word string)))
-  string)
+(defun gnosis-cloze-extract-contents (str)
+  "Extract cloze contents for STR.
 
-(defun gnosis-cloze-extract-answers (str)
-  "Extract cloze answers for STR.
-
-Return a list of cloze answers for STR, organized by cX-tag.
+Return a list of cloze tag contents for STR, organized by cX-tag.
 
 Valid cloze formats include:
 \"This is an {c1:example}\"
-\"This is an {c1::example}\"
-\"This is an {{c1:example}}\"
 \"This is an {{c1::example}}\""
   (let ((result-alist '())
         (start 0))
@@ -1093,6 +1136,27 @@ Valid cloze formats include:
         (setf start (match-end 0))))
     (mapcar (lambda (tag-group) (nreverse (cdr tag-group)))
 	    (nreverse result-alist))))
+
+(defun gnosis-cloze-extract-answers (nested-lst)
+    "Extract cloze answers for string clozes inside the NESTED-LST.
+
+This function should be used in combination with `gnosis-cloze-extract-answers'."
+  (mapcar (lambda (lst)
+            (mapcar (lambda (str)
+                      (replace-regexp-in-string "::\\(.*\\)" "" str))
+                    lst))
+          nested-lst))
+
+(defun gnosis-cloze-extract-hints (nested-lst)
+  "Extract cloze hints for string clozes inside the NESTED-LST.
+
+This function should be used in combination with `gnosis-cloze-extract-answers'."
+  (mapcar (lambda (lst)
+            (mapcar (lambda (str)
+                      (when (string-match "::\\(.*\\)" str)
+                        (match-string 1 str)))
+                    lst))
+          nested-lst))
 
 (defun gnosis-mc-cloze-remove-separator (string &optional separator)
   "Remove SEPARATOR and all followed words from STRING."
@@ -1418,38 +1482,34 @@ If user-input is equal to CLOZE, return t."
   (let ((user-input (read-string "Answer: ")))
     (cons (gnosis-compare-strings user-input cloze) user-input)))
 
-(defun gnosis-review-cloze-reveal-unaswered (clozes)
-  "Reveal CLOZES.
-
-Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
-  (cl-loop for cloze in clozes
-	   do (gnosis-display-cloze-reveal :replace cloze :face 'gnosis-face-cloze-unanswered)))
-
 (defun gnosis-review-cloze (id)
   "Review cloze type note for ID."
   (let* ((main (gnosis-get 'main 'notes `(= id ,id)))
 	 (clozes (gnosis-get 'answer 'notes `(= id ,id)))
-	 (num 1) ;; Number of clozes revealed
-	 (hint (gnosis-get 'options 'notes `(= id ,id)))
+	 (num 0) ;; Number of clozes revealed
+	 (hints (gnosis-get 'options 'notes `(= id ,id)))
 	 (success nil))
-    (gnosis-display-cloze-sentence main clozes)
-    (gnosis-display-image id)
-    (gnosis-display-hint hint)
+    ;; Initially display the sentence with no reveals
+    (message "reviewing %d" id)
+    ;; (when (or (stringp hints)
+    ;; 	      (null hints))
+    ;;   (setq hints nil))
+    ;; quick fix for old versions of gnosis cloze.
+    (message "Using deprecated cloze hints.")
+    (gnosis-display-cloze-sentence main clozes hints 0)
     (cl-loop for cloze in clozes
 	     do (let ((input (gnosis-review-cloze--input cloze)))
 		  (if (equal (car input) t)
-		      ;; Reveal only one cloze
-		      (progn (gnosis-display-cloze-reveal :replace cloze)
-			     (setf num (1+ num)))
-		    ;; Reveal cloze for wrong input, with `gnosis-face-false'
-		    (gnosis-display-cloze-reveal :replace cloze :success nil)
+		      ;; Correct answer -> reveal the current cloze
+		      (progn (setq num (1+ num))
+			     (gnosis-display-cloze-sentence main clozes hints num))
+		    ;; Incorrect answer -> display current state with failure mode
+		    (gnosis-display-cloze-sentence main clozes hints num t)
 		    (gnosis-display-cloze-user-answer (cdr input))
-		    ;; Reveal all clozes left with `gnosis-face-cloze-unanswered' face
-		    (gnosis-review-cloze-reveal-unaswered (nthcdr num clozes))
-		    (setf success nil)
+		    (setq success nil)
 		    (cl-return)))
 	     ;; Update note after all clozes are revealed successfully
-	     finally (setf success t))
+	     finally (setq success t))
     (gnosis-display-extra id)
     (gnosis-display-next-review id success)
     success))
@@ -1461,12 +1521,13 @@ Used to reveal all clozes left with `gnosis-face-cloze-unanswered' face."
 	(cloze (list (gnosis-get 'answer 'notes `(= id ,id))))
 	(user-choice nil)
 	(success nil))
-    (gnosis-display-cloze-sentence main cloze)
+    (gnosis-display-cloze-sentence main cloze nil 0 success)
     (gnosis-display-image id)
     (setf user-choice (gnosis-mcq-answer id)
 	  success (string= user-choice (car cloze)))
-    (gnosis-display-cloze-reveal :replace (car cloze)
-				 :success success)
+    (if success
+	(gnosis-display-cloze-sentence main cloze nil 1 nil)
+      (gnosis-display-cloze-sentence main cloze nil 0 t))
     ;; Display user answer only upon failure
     (unless success
       (gnosis-display-cloze-user-answer user-choice))
@@ -2075,12 +2136,11 @@ QUERY: String value,"
 			       ("Initial Interval" 20 t)
 			       ("Total Notes" 10 t)])
   (tabulated-list-init-header)
-  (let ((max-id (apply 'max (gnosis-select 'id 'decks '1=1 t))))
-    (setq tabulated-list-entries
-	  (cl-loop for id from 1 to max-id
-		   for output = (gnosis-dashboard-output-deck id)
-		   when output
-		   collect (list (number-to-string id) (vconcat output)))))
+  (setq tabulated-list-entries
+	(cl-loop for id in (gnosis-select 'id 'decks '1=1 t)
+		 for output = (gnosis-dashboard-output-deck id)
+		 when output
+		 collect (list (number-to-string id) (vconcat output))))
   (local-set-key (kbd "e") #'gnosis-dashboard-edit-deck)
   (local-set-key (kbd "a") #'(lambda () "Add deck & refresh" (interactive)
 			       (gnosis-add-deck (read-string "Deck name: "))
@@ -2215,13 +2275,16 @@ If STRING-SECTION is nil, apply FACE to the entire STRING."
   (sit-for 1.5)
   (gnosis-animate-string "--A place to store & test your knowledge--" 4 nil nil 'italic)
   (sit-for 1)
-  (gnosis-animate-string "The objective of gnosis is to maximize memory retention." 6 nil
+  (gnosis-animate-string "The objective of gnosis is to maximize memory retention, through repetition." 6 nil
 			 "maximize memory retention" 'underline)
   (sit-for 1)
-  (gnosis-animate-string "Consistency is key; be sure to do your daily reviews!" 8 nil "Consistency is key" 'bold)
+  (gnosis-animate-string "Remember, repetitio est mater memoriae" 8 nil
+			 "repetitio est mater memoriae" 'bold-italic)
+  (sit-for 0.5)
+  (gnosis-animate-string "-- repetition is the mother of memory --" 9 nil
+			 "repetition is the mother of memory" 'italic)
   (sit-for 1)
-  (gnosis-animate-string "Create meaningful notes; Gnosis offers a plethora of note types --try them!"
-			 9 nil "Create Meaningful Notes" 'bold)
+  (gnosis-animate-string "Consistency is key; be sure to do your daily reviews!" 11 nil "Consistency is key" 'bold)
   (sit-for 1)
   (when (y-or-n-p "Try out demo gnosis review session?")
     (gnosis-demo-create-deck)
@@ -2234,16 +2297,16 @@ If STRING-SECTION is nil, apply FACE to the entire STRING."
     (if (not (cl-some #'(lambda (x) (member "demo" x)) (gnosis-select 'name 'decks)))
 	(progn (gnosis-add-deck deck-name)
 	       (gnosis-add-note--basic :deck deck-name
-				     :question "What's the =key= that was mentioned in the /demo/ of gnosis?"
-				     :hint "__ is key!"
-				     :answer "Consistency"
-				     :extra "/Regular review/ at increasing intervals *reinforces memory retention*.  Strengthening neural connections & making it easier to recall information long-term"
+				     :question "Repetitio est mater memoriae"
+				     :hint "Translate this Latin phrase to English."
+				     :answer "Repetition is the mother of memory"
+				     :extra "/Regular review/ at increasing intervals *reinforces* *memory* *retention*.  Strengthening neural connections & making it easier to recall information long-term"
 				     :tags note-tags)
 	     (gnosis-add-note--mc-cloze :deck deck-name
-					:question "Gnosis has a plethora of note types!"
-					:options '("plethora" "limited selection")
-					:answer "plethora"
-					:extra "*Note types include*:\n\n=MCQ=: Multiple Choice Questions, to easily copy textbook review questions :)\n=Cloze=: Fill in the blank sentences\n=Basic=: Question-Answer-Explanation note\n=Double=: Creates 2 basic notes, second one is generated with the question & answer switched\n=MC-Cloze=: Multiple question cloze question, just like this current note\n=y-or-n=: Y or N questions"
+					:question "Consistency is _key_ to using gnosis effectively."
+					:options '("Consistency" "Procrastination" "Incosistency")
+					:answer "Consistency"
+					:extra "Avoid monotony, try to engage with the material actively, and stay _consistent_!"
 					:tags note-tags)
 	     (gnosis-add-note--mcq :deck deck-name
 				   :question "Which one is the capital of Greece?"
@@ -2252,8 +2315,7 @@ If STRING-SECTION is nil, apply FACE to the entire STRING."
 				   :extra "Athens (Αθήνα) is the largest city of Greece & one of the world's oldest cities, with it's recorded history spanning over 3,500 years."
 				   :tags note-tags)
 	     (gnosis-add-note--cloze :deck deck-name
-				     :note "GNU Emacs is an extensible editor created by {c1:Richard} {c1:Stallman} in {c2:1984}"
-				     :hint ""
+				     :note "GNU Emacs is an extensible editor created by {{c1::Richard}} {{c1::Stallman}} in {{c2::1984::year}}"
 				     :tags note-tags
 				     :extra "Emacs was originally implemented in 1976 on the MIT AI Lab's Incompatible Timesharing System (ITS), as a collection of TECO macros. The name “Emacs” was originally chosen as an abbreviation of “Editor MACroS”. =This version of Emacs=, GNU Emacs, was originally *written in 1984*")
 	     (gnosis-add-note--y-or-n :deck deck-name

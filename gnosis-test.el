@@ -88,9 +88,9 @@ by the thoracodorsal nerve."
 				:tags (gnosis-test-random-items gnosis-test-tags 2))))
     (when (y-or-n-p "Add single Cloze type?")
       (dotimes (_ num)
+	;; TODO: Update tests for include hints.
 	(gnosis-add-note--cloze :deck testing-deck
 				:note "this is a {c1:note}"
-				:hint "note"
 				:tags (gnosis-test-random-items gnosis-test-tags 2)
 				:images (cons gnosis-test-image gnosis-test-image)
 				:extra "extra")))
