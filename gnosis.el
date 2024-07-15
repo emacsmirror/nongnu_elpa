@@ -2275,13 +2275,16 @@ If STRING-SECTION is nil, apply FACE to the entire STRING."
   (sit-for 1.5)
   (gnosis-animate-string "--A place to store & test your knowledge--" 4 nil nil 'italic)
   (sit-for 1)
-  (gnosis-animate-string "The objective of gnosis is to maximize memory retention." 6 nil
+  (gnosis-animate-string "The objective of gnosis is to maximize memory retention, through repetition." 6 nil
 			 "maximize memory retention" 'underline)
   (sit-for 1)
-  (gnosis-animate-string "Consistency is key; be sure to do your daily reviews!" 8 nil "Consistency is key" 'bold)
+  (gnosis-animate-string "Remember, repetitio est mater memoriae" 8 nil
+			 "repetitio est mater memoriae" 'bold-italic)
+  (sit-for 0.5)
+  (gnosis-animate-string "-- repetition is the mother of memory --" 9 nil
+			 "repetition is the mother of memory" 'italic)
   (sit-for 1)
-  (gnosis-animate-string "Create meaningful notes; Gnosis offers a plethora of note types --try them!"
-			 9 nil "Create Meaningful Notes" 'bold)
+  (gnosis-animate-string "Consistency is key; be sure to do your daily reviews!" 11 nil "Consistency is key" 'bold)
   (sit-for 1)
   (when (y-or-n-p "Try out demo gnosis review session?")
     (gnosis-demo-create-deck)
@@ -2294,16 +2297,16 @@ If STRING-SECTION is nil, apply FACE to the entire STRING."
     (if (not (cl-some #'(lambda (x) (member "demo" x)) (gnosis-select 'name 'decks)))
 	(progn (gnosis-add-deck deck-name)
 	       (gnosis-add-note--basic :deck deck-name
-				     :question "What's the =key= that was mentioned in the /demo/ of gnosis?"
-				     :hint "__ is key!"
-				     :answer "Consistency"
-				     :extra "/Regular review/ at increasing intervals *reinforces memory retention*.  Strengthening neural connections & making it easier to recall information long-term"
+				     :question "Repetitio est mater memoriae"
+				     :hint "Translate this Latin phrase to English."
+				     :answer "Repetition is the mother of memory"
+				     :extra "/Regular review/ at increasing intervals *reinforces* *memory* *retention*.  Strengthening neural connections & making it easier to recall information long-term"
 				     :tags note-tags)
 	     (gnosis-add-note--mc-cloze :deck deck-name
-					:question "Gnosis has a plethora of note types!"
-					:options '("plethora" "limited selection")
-					:answer "plethora"
-					:extra "*Note types include*:\n\n=MCQ=: Multiple Choice Questions, to easily copy textbook review questions :)\n=Cloze=: Fill in the blank sentences\n=Basic=: Question-Answer-Explanation note\n=Double=: Creates 2 basic notes, second one is generated with the question & answer switched\n=MC-Cloze=: Multiple question cloze question, just like this current note\n=y-or-n=: Y or N questions"
+					:question "Consistency is _key_ to using gnosis effectively."
+					:options '("Consistency" "Procrastination" "Incosistency")
+					:answer "Consistency"
+					:extra "Avoid monotony, try to engage with the material actively, and stay _consistent_!"
 					:tags note-tags)
 	     (gnosis-add-note--mcq :deck deck-name
 				   :question "Which one is the capital of Greece?"
