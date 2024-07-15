@@ -654,13 +654,14 @@ Set SPLIT to t to split all input given."
 (defun gnosis-add-deck (name)
   "Create deck with NAME."
   (interactive (list (read-string "Deck Name: ")))
-  (when gnosis-testing
-    (unless (y-or-n-p "You are using a testing environment! Continue?")
-      (error "Aborted")))
-  (if (gnosis-get 'name 'decks `(= name ,name))
-      (error "Deck `%s' already exists" name)
-    (gnosis--insert-into 'decks `([nil ,name nil nil nil nil nil]))
-    (message "Created deck '%s'" name)))
+    (when gnosis-testing
+      (unless (y-or-n-p "You are using a testing environment! Continue?")
+	(error "Aborted")))
+    (if (gnosis-get 'name 'decks `(= name ,name))
+	(error "Deck `%s' already exists" name)
+      (let ((deck-id (gnosis-generate-id 5 t)))
+	(gnosis--insert-into 'decks `([,deck-id ,name nil nil nil nil nil]))
+	(message "Created deck '%s'" name))))
 
 (defun gnosis--get-deck-name (&optional id)
   "Get deck name for ID, or prompt for deck name when ID is nil."
@@ -738,15 +739,19 @@ When called with a prefix, unsuspends all notes for tag."
       ("Tag" (gnosis-suspend-tag))
       (_ (message "Not ready yet.")))))
 
-(defun gnosis-generate-id (&optional length)
-  "Generate a unique note ID.
+(defun gnosis-generate-id (&optional length deck-p)
+  "Generate a unique gnosis ID.
+
+Default to generating a note id, when DECK-P is t generates a deck id.
 
 LENGTH: length of id, default to a random number between 10-15."
   (let* ((length (or length (+ (random 5) 10)))
          (max-val (expt 10 length))
          (min-val (expt 10 (1- length)))
-         (id (+ (random (- max-val min-val)) min-val)))
-    (if (member id (gnosis-select 'id 'notes '1=1 t))
+         (id (+ (random (- max-val min-val)) min-val))
+	 (current-ids (if deck-p (gnosis-select 'id 'decks '1=1 t)
+			(gnosis-select 'id 'notes '1=1 t))))
+    (if (member id current-ids)
         (gnosis-generate-id length)
       id)))
 
@@ -2131,12 +2136,11 @@ QUERY: String value,"
 			       ("Initial Interval" 20 t)
 			       ("Total Notes" 10 t)])
   (tabulated-list-init-header)
-  (let ((max-id (apply 'max (gnosis-select 'id 'decks '1=1 t))))
-    (setq tabulated-list-entries
-	  (cl-loop for id from 1 to max-id
-		   for output = (gnosis-dashboard-output-deck id)
-		   when output
-		   collect (list (number-to-string id) (vconcat output)))))
+  (setq tabulated-list-entries
+	(cl-loop for id in (gnosis-select 'id 'decks '1=1 t)
+		 for output = (gnosis-dashboard-output-deck id)
+		 when output
+		 collect (list (number-to-string id) (vconcat output))))
   (local-set-key (kbd "e") #'gnosis-dashboard-edit-deck)
   (local-set-key (kbd "a") #'(lambda () "Add deck & refresh" (interactive)
 			       (gnosis-add-deck (read-string "Deck name: "))
