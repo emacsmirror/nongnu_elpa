@@ -475,10 +475,9 @@ revealed with `gnosis-face-false' and the ones before with
              do (let* ((hint (nth idx hints))
                        (display-cloze (cond
                                        ((< idx success) cloze)
-                                       ((and failure (>= idx success)) cloze)
-                                       (t (if (or (not hint) (string-empty-p hint))
-                                              gnosis-cloze-string
-                                            hint))))
+				       (failure cloze)
+				       ((and hint (not (string-empty-p hint))) (format "[%s]" hint))
+                                       (t gnosis-cloze-string)))
                        (face (cond
                               ((< idx success) 'gnosis-face-correct)
                               ((and failure (= idx success)) 'gnosis-face-false)
@@ -495,6 +494,32 @@ revealed with `gnosis-face-false' and the ones before with
       (insert "\n" (gnosis-center-string (string-trim result)))
       (gnosis-apply-syntax-overlay)
       (gnosis-insert-separator))))
+
+;; TODO: Reconsider using smaller functions for display cloze notes.
+
+;; (defun gnosis-add-clozes (sentence clozes &optional cloze-string)
+;;   "Replace CLOZES in SENTENCE with CLOZE-STRING."
+;;   (let ((cloze-string (or cloze-string gnosis-cloze-string)))
+;;     (with-temp-buffer
+;;       (insert sentence)
+;;       (goto-char (point-min))
+;;       (dolist (cloze clozes)
+;;         (when (search-forward cloze nil t)
+;;           (replace-match (propertize cloze-string 'face 'gnosis-face-cloze) nil t)))
+;;       (buffer-string))))
+
+;; (defun gnosis-replace-clozes-with-hints (sentence hints &optional cloze-string)
+;;   "Replace CLOZE-STRING in SENTENCE with HINTS."
+;;   (let ((cloze-string (or cloze-string gnosis-cloze-string))
+;;         (count 0))
+;;     (with-temp-buffer
+;;       (insert sentence)
+;;       (goto-char (point-min))
+;;       (while (search-forward cloze-string nil t)
+;;         (when (and (nth count hints) (search-backward cloze-string nil t))
+;;           (replace-match (propertize (format "[%s]" (nth count hints)) 'face 'gnosis-face-cloze)))
+;;         (setq count (1+ count)))
+;;       (buffer-string))))
 
 (defun gnosis-display-basic-answer (answer success user-input)
   "Display ANSWER.
@@ -1079,12 +1104,13 @@ TYPE: Type of gnosis note, must be one of `gnosis-note-types'"
     (gnosis-completing-read "Answer: " choices)))
 
 (defun gnosis-cloze-remove-tags (string)
-  "Replace cx-tags in STRING.
+  "Replace cloze tags and hints in STRING.
 
-Works both with {} and {{}} to make easier to import anki notes."
-  (let* ((regex "{\\{1,2\\}c[0-9]+::\\([^:}]*?\\)\\(::.*?\\)?}\\{1,2\\}")
+Works with both single (:), double colons (::), single braces ({}) and
+double braces ({{}})."
+  (let* ((regex "{\\{1,2\\}c[0-9]+:\\{1,2\\}\\([^:}]*\\).*?\\(}\\|::}\\)\\{1,2\\}")
          (result (replace-regexp-in-string regex "\\1" string)))
-    (string-remove-suffix "::" result)))
+    result))
 
 (defun gnosis-cloze-extract-contents (str)
   "Extract cloze contents for STR.
@@ -1093,8 +1119,6 @@ Return a list of cloze tag contents for STR, organized by cX-tag.
 
 Valid cloze formats include:
 \"This is an {c1:example}\"
-\"This is an {c1::example}\"
-\"This is an {{c1:example}}\"
 \"This is an {{c1::example}}\""
   (let ((result-alist '())
         (start 0))
