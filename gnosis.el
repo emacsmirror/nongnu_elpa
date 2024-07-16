@@ -1677,6 +1677,23 @@ NOTES: List of note ids"
 			(gnosis-review-actions success note note-count))
 		   finally (gnosis-review-commit note-count)))))))
 
+;;;###autoload
+(defun gnosis-review ()
+  "Start gnosis review session."
+  (interactive)
+  ;; Refresh modeline
+  (setq gnosis-due-notes-total (length (gnosis-review-get-due-notes)))
+  (let ((review-type (gnosis-completing-read "Review: " '("Due notes"
+							  "Due notes of deck"
+							  "Due notes of specified tag(s)"
+							  "All notes of tag(s)"))))
+    (pcase review-type
+      ("Due notes" (gnosis-review-session (gnosis-collect-note-ids :due t)))
+      ("Due notes of deck" (gnosis-review-session (gnosis-collect-note-ids :due t :deck (gnosis--get-deck-id))))
+      ("Due notes of specified tag(s)" (gnosis-review-session (gnosis-collect-note-ids :due t :tags t)))
+      ("All notes of tag(s)" (gnosis-review-session (gnosis-collect-note-ids :tags t))))))
+
+
 ;; Editing notes
 (defun gnosis-edit-read-only-values (&rest values)
   "Make the provided VALUES read-only in the whole buffer."
@@ -1951,22 +1968,6 @@ to improve readability."
 		 (cond ((listp value)
 			(format "\n%s '%s" (symbol-name field) (prin1-to-string value)))
 		       (t (format "\n%s %s" (symbol-name field) (prin1-to-string value))))))))
-
-;;;###autoload
-(defun gnosis-review ()
-  "Start gnosis review session."
-  (interactive)
-  ;; Refresh modeline
-  (setq gnosis-due-notes-total (length (gnosis-review-get-due-notes)))
-  (let ((review-type (gnosis-completing-read "Review: " '("Due notes"
-							  "Due notes of deck"
-							  "Due notes of specified tag(s)"
-							  "All notes of tag(s)"))))
-    (pcase review-type
-      ("Due notes" (gnosis-review-session (gnosis-collect-note-ids :due t)))
-      ("Due notes of deck" (gnosis-review-session (gnosis-collect-note-ids :due t :deck (gnosis--get-deck-id))))
-      ("Due notes of specified tag(s)" (gnosis-review-session (gnosis-collect-note-ids :due t :tags t)))
-      ("All notes of tag(s)" (gnosis-review-session (gnosis-collect-note-ids :tags t))))))
 
 ;;; Database Schemas
 (defvar gnosis-db-schema-decks '([(id integer :primary-key :autoincrement)
