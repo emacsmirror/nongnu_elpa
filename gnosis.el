@@ -503,6 +503,20 @@ First item of answers will be marked as false, while the rest unanswered."
 					       'underline))
       (setq final (or str-with-false str)))
     final))
+
+(defun gnosis-display-cloze-string (str clozes hints correct false)
+  "Display STR with CLOZES and HINTS.
+
+Applies highlighting for CORRECT & FALSE."
+  (let* ((cloze-str (gnosis-cloze-create str clozes))
+	 (str-with-hints (gnosis-cloze-add-hints cloze-str hints))
+	 (str-with-c-answers (gnosis-cloze-mark-answers str-with-hints correct 'gnosis-face-correct))
+	 (final (gnosis-cloze-mark-false str-with-c-answers false)))
+    (erase-buffer)
+    (insert "\n" (gnosis-center-string final))
+    (gnosis-insert-separator)
+    (gnosis-apply-syntax-overlay)))
+
 (defun gnosis-display-basic-answer (answer success user-input)
   "Display ANSWER.
 
@@ -1480,21 +1494,18 @@ If user-input is equal to CLOZE, return t."
 	 (hints (gnosis-get 'options 'notes `(= id ,id)))
 	 (success nil))
     ;; Initially display the sentence with no reveals
-    (message "reviewing %d" id)
-    ;; (when (or (stringp hints)
-    ;; 	      (null hints))
-    ;;   (setq hints nil))
-    ;; quick fix for old versions of gnosis cloze.
-    (message "Using deprecated cloze hints.")
-    (gnosis-display-cloze-sentence main clozes hints 0)
+    (gnosis-display-cloze-string main clozes hints nil nil)
     (cl-loop for cloze in clozes
 	     do (let ((input (gnosis-review-cloze--input cloze)))
 		  (if (equal (car input) t)
 		      ;; Correct answer -> reveal the current cloze
-		      (progn (setq num (1+ num))
-			     (gnosis-display-cloze-sentence main clozes hints num))
-		    ;; Incorrect answer -> display current state with failure mode
-		    (gnosis-display-cloze-sentence main clozes hints num t)
+		      (progn (cl-incf num)
+			     (gnosis-display-cloze-string main (nthcdr num clozes)
+							    (nthcdr num hints)
+							    (cl-subseq clozes 0 num)
+							    nil))
+		    ;; Incorrect answer
+		    (gnosis-display-cloze-string main nil nil (cl-subseq clozes 0 num) (member cloze clozes))
 		    (gnosis-display-cloze-user-answer (cdr input))
 		    (setq success nil)
 		    (cl-return)))
