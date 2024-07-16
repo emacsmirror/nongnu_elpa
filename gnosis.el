@@ -142,7 +142,7 @@ a string describing the action."
 (defconst gnosis-db-version 2
   "Gnosis database version.")
 
-(defvar gnosis-note-types '("MCQ" "MC-Cloze" "Cloze" "Basic" "Double" "y-or-n")
+(defvar gnosis-note-types '("MCQ" "Cloze" "Basic" "Double" "y-or-n")
   "Gnosis available note types.")
 
 (defvar gnosis-previous-note-tags '()
@@ -1493,6 +1493,11 @@ If user-input is equal to CLOZE, return t."
 	 (num 0) ;; Number of clozes revealed
 	 (hints (gnosis-get 'options 'notes `(= id ,id)))
 	 (success nil))
+    ;; Quick fix for old cloze note versions.
+    (cond ((and (stringp hints) (string-empty-p hints))
+	   (setq hints nil))
+	  ((and (not (listp hints)) (not (string-empty-p hints)))
+	   (setq hints (list hints))))
     ;; Initially display the sentence with no reveals
     (gnosis-display-cloze-string main clozes hints nil nil)
     (cl-loop for cloze in clozes
@@ -1676,6 +1681,23 @@ NOTES: List of note ids"
 			(cl-incf note-count)
 			(gnosis-review-actions success note note-count))
 		   finally (gnosis-review-commit note-count)))))))
+
+;;;###autoload
+(defun gnosis-review ()
+  "Start gnosis review session."
+  (interactive)
+  ;; Refresh modeline
+  (setq gnosis-due-notes-total (length (gnosis-review-get-due-notes)))
+  (let ((review-type (gnosis-completing-read "Review: " '("Due notes"
+							  "Due notes of deck"
+							  "Due notes of specified tag(s)"
+							  "All notes of tag(s)"))))
+    (pcase review-type
+      ("Due notes" (gnosis-review-session (gnosis-collect-note-ids :due t)))
+      ("Due notes of deck" (gnosis-review-session (gnosis-collect-note-ids :due t :deck (gnosis--get-deck-id))))
+      ("Due notes of specified tag(s)" (gnosis-review-session (gnosis-collect-note-ids :due t :tags t)))
+      ("All notes of tag(s)" (gnosis-review-session (gnosis-collect-note-ids :tags t))))))
+
 
 ;; Editing notes
 (defun gnosis-edit-read-only-values (&rest values)
@@ -1951,22 +1973,6 @@ to improve readability."
 		 (cond ((listp value)
 			(format "\n%s '%s" (symbol-name field) (prin1-to-string value)))
 		       (t (format "\n%s %s" (symbol-name field) (prin1-to-string value))))))))
-
-;;;###autoload
-(defun gnosis-review ()
-  "Start gnosis review session."
-  (interactive)
-  ;; Refresh modeline
-  (setq gnosis-due-notes-total (length (gnosis-review-get-due-notes)))
-  (let ((review-type (gnosis-completing-read "Review: " '("Due notes"
-							  "Due notes of deck"
-							  "Due notes of specified tag(s)"
-							  "All notes of tag(s)"))))
-    (pcase review-type
-      ("Due notes" (gnosis-review-session (gnosis-collect-note-ids :due t)))
-      ("Due notes of deck" (gnosis-review-session (gnosis-collect-note-ids :due t :deck (gnosis--get-deck-id))))
-      ("Due notes of specified tag(s)" (gnosis-review-session (gnosis-collect-note-ids :due t :tags t)))
-      ("All notes of tag(s)" (gnosis-review-session (gnosis-collect-note-ids :tags t))))))
 
 ;;; Database Schemas
 (defvar gnosis-db-schema-decks '([(id integer :primary-key :autoincrement)
