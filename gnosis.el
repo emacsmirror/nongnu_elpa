@@ -142,7 +142,7 @@ a string describing the action."
 (defconst gnosis-db-version 2
   "Gnosis database version.")
 
-(defvar gnosis-note-types '("MCQ" "MC-Cloze" "Cloze" "Basic" "Double" "y-or-n")
+(defvar gnosis-note-types '("MCQ" "Cloze" "Basic" "Double" "y-or-n")
   "Gnosis available note types.")
 
 (defvar gnosis-previous-note-tags '()
