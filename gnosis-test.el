@@ -97,8 +97,7 @@ by the thoracodorsal nerve."
     (when (y-or-n-p "Add multimple Clozes note?")
       (dotimes (_ num)
 	(gnosis-add-note--cloze :deck testing-deck
-				:note "this is a {c1:note}, a note with multiple {c1:clozes}"
-				:hint "note"
+				:note "this is a {c1:note}, a note with multiple {c1:clozes::what}"
 				:tags (gnosis-test-random-items gnosis-test-tags 2)
 				:images (cons gnosis-test-image gnosis-test-image)
 				:extra "extra")))
