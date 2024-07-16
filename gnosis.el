@@ -464,6 +464,19 @@ Refer to =gnosis-db-schema-extras' for informations on images stored."
           (replace-match (propertize cloze-string 'face 'gnosis-face-cloze) nil t)))
       (buffer-string))))
 
+(defun gnosis-cloze-add-hints (str hints &optional cloze-string)
+  "Replace CLOZE-STRING in STR with HINTS."
+  (cl-assert (listp hints) nil "Hints must be a list.")
+  (let ((cloze-string (or cloze-string gnosis-cloze-string))
+        (count 0))
+    (with-temp-buffer
+      (insert str)
+      (goto-char (point-min))
+      (while (search-forward cloze-string nil t)
+        (when (and (nth count hints) (search-backward cloze-string nil t))
+          (replace-match (propertize (format "[%s]" (nth count hints)) 'face 'gnosis-face-cloze)))
+        (setq count (1+ count)))
+      (buffer-string))))
 (defun gnosis-display-basic-answer (answer success user-input)
   "Display ANSWER.
 
