@@ -1493,6 +1493,11 @@ If user-input is equal to CLOZE, return t."
 	 (num 0) ;; Number of clozes revealed
 	 (hints (gnosis-get 'options 'notes `(= id ,id)))
 	 (success nil))
+    ;; Quick fix for old cloze note versions.
+    (cond ((and (stringp hints) (string-empty-p hints))
+	   (setq hints nil))
+	  ((and (not (listp hints)) (not (string-empty-p hints)))
+	   (setq hints (list hints))))
     ;; Initially display the sentence with no reveals
     (gnosis-display-cloze-string main clozes hints nil nil)
     (cl-loop for cloze in clozes
