@@ -477,6 +477,18 @@ Refer to =gnosis-db-schema-extras' for informations on images stored."
           (replace-match (propertize (format "[%s]" (nth count hints)) 'face 'gnosis-face-cloze)))
         (setq count (1+ count)))
       (buffer-string))))
+
+(defun gnosis-cloze-mark-answers (str answers face)
+  "Mark ANSWERS in STR with FACE."
+  (cl-assert (listp answers) nil "Answers to mark must be a list.")
+  (with-temp-buffer
+    (insert str)
+    (goto-char (point-min))
+    (dolist (answer answers)
+      (when (search-forward answer nil t)
+	(replace-match (propertize answer 'face face) nil t)))
+    (buffer-string)))
+
 (defun gnosis-display-basic-answer (answer success user-input)
   "Display ANSWER.
 
