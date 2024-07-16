@@ -1116,6 +1116,14 @@ TYPE: Type of gnosis note, must be one of `gnosis-note-types'"
 	(history-add-new-input nil)) ;; Disable history
     (gnosis-completing-read "Answer: " choices)))
 
+(defun gnosis-cloze-check (sentence clozes)
+  "Check if CLOZES are found in SENTENCE."
+    (catch 'not-found
+      (dolist (cloze clozes)
+	(unless (string-match-p cloze sentence)
+          (throw 'not-found nil)))
+      t))
+
 (defun gnosis-cloze-remove-tags (string)
   "Replace cloze tags and hints in STRING.
 
