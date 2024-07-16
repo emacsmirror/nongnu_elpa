@@ -452,29 +452,17 @@ Refer to =gnosis-db-schema-extras' for informations on images stored."
 	     do (insert (format "\n%s.  %s" option-num option))
 	     (setf option-num (1+ option-num)))))
 
-;; (defun gnosis-add-clozes (sentence clozes &optional cloze-string)
-;;   "Replace CLOZES in SENTENCE with CLOZE-STRING."
-;;   (let ((cloze-string (or cloze-string gnosis-cloze-string)))
-;;     (with-temp-buffer
-;;       (insert sentence)
-;;       (goto-char (point-min))
-;;       (dolist (cloze clozes)
-;;         (when (search-forward cloze nil t)
-;;           (replace-match (propertize cloze-string 'face 'gnosis-face-cloze) nil t)))
-;;       (buffer-string))))
-
-;; (defun gnosis-replace-clozes-with-hints (sentence hints &optional cloze-string)
-;;   "Replace CLOZE-STRING in SENTENCE with HINTS."
-;;   (let ((cloze-string (or cloze-string gnosis-cloze-string))
-;;         (count 0))
-;;     (with-temp-buffer
-;;       (insert sentence)
-;;       (goto-char (point-min))
-;;       (while (search-forward cloze-string nil t)
-;;         (when (and (nth count hints) (search-backward cloze-string nil t))
-;;           (replace-match (propertize (format "[%s]" (nth count hints)) 'face 'gnosis-face-cloze)))
-;;         (setq count (1+ count)))
-;;       (buffer-string))))
+(defun gnosis-cloze-create (str clozes &optional cloze-string)
+  "Replace CLOZES in STR with CLOZE-STRING."
+  (cl-assert (listp clozes) nil "Adding clozes: Clozes need to be a list.")
+  (let ((cloze-string (or cloze-string gnosis-cloze-string)))
+    (with-temp-buffer
+      (insert str)
+      (goto-char (point-min))
+      (dolist (cloze clozes)
+        (when (search-forward cloze nil t)
+          (replace-match (propertize cloze-string 'face 'gnosis-face-cloze) nil t)))
+      (buffer-string))))
 
 (defun gnosis-display-basic-answer (answer success user-input)
   "Display ANSWER.
