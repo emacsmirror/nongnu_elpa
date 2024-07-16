@@ -452,59 +452,6 @@ Refer to =gnosis-db-schema-extras' for informations on images stored."
 	     do (insert (format "\n%s.  %s" option-num option))
 	     (setf option-num (1+ option-num)))))
 
-;; FIXME: Adjust for multiple identical clozes
-(defun gnosis-display-cloze-sentence (sentence clozes hints success &optional failure)
-  "Display SENTENCE with CLOZES and HINTS.
-
-SUCCESS represents the number of correctly answered clozes.
-
-If FAILURE is t, it reveals all clozes that have not been answered yet
-with `gnosis-face-cloze-unanswered', only the current cloze will be
-revealed with `gnosis-face-false' and the ones before with
-`gnosis-face-correct'."
-  (cl-assert (listp clozes) "Clozes must be a list.")
-  (cl-assert (numberp success) "Success must be an integer.")
-  (cl-assert (or (not failure) (booleanp failure)) "Failure must be a boolean if provided.")
-
-  ;; Ensure hints is a list of the correct length.  This also fixes
-  ;; older versions of cloze notes.
-  (setq hints (if (stringp hints)
-                  (cons hints (make-list (1- (length clozes)) nil))
-                hints))
-  (cl-assert (listp hints) "Hints must be a list or a string.")
-
-  ;; Ensure hints list is the same length as clozes
-  (setq hints (append hints (make-list (- (length clozes) (length hints)) nil)))
-
-  (let ((result sentence)
-        (idx 0))
-    ;; Process each cloze
-    (cl-loop for cloze in clozes
-             do (let* ((hint (nth idx hints))
-                       (display-cloze (cond
-                                       ((< idx success) cloze)
-				       (failure cloze)
-				       ((and hint (not (string-empty-p hint))) (format "[%s]" hint))
-                                       (t gnosis-cloze-string)))
-                       (face (cond
-                              ((< idx success) 'gnosis-face-correct)
-                              ((and failure (= idx success)) 'gnosis-face-false)
-                              ((and failure (> idx success)) 'gnosis-face-cloze-unanswered)
-                              (t 'gnosis-face-cloze))))
-                  ;; Replace only the first occurrence of each cloze in the sentence
-                  (setq result (replace-regexp-in-string (concat "\\(" (regexp-quote cloze) "\\)")
-                                                         (propertize display-cloze 'face face)
-                                                         result
-                                                         nil nil 1))
-                  (setq idx (1+ idx))))
-    (let ((inhibit-read-only t))
-      (erase-buffer)
-      (insert "\n" (gnosis-center-string (string-trim result)))
-      (gnosis-apply-syntax-overlay)
-      (gnosis-insert-separator))))
-
-;; TODO: Reconsider using smaller functions for display cloze notes.
-
 ;; (defun gnosis-add-clozes (sentence clozes &optional cloze-string)
 ;;   "Replace CLOZES in SENTENCE with CLOZE-STRING."
 ;;   (let ((cloze-string (or cloze-string gnosis-cloze-string)))
