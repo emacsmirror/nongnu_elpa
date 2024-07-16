@@ -264,6 +264,10 @@ Optional argument FLATTEN, when non-nil, flattens the result."
 	(apply #'append output)
       output)))
 
+(defun gnosis-select-id (value table id)
+  "Select VALUE from TABLE for note ID."
+  (gnosis-select value table `(= id ,id) t))
+
 (cl-defun gnosis--create-table (table &optional values)
   "Create TABLE for VALUES."
   (emacsql gnosis-db `[:create-table ,table ,values]))
