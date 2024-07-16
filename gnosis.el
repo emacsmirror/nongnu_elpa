@@ -489,6 +489,20 @@ Refer to =gnosis-db-schema-extras' for informations on images stored."
 	(replace-match (propertize answer 'face face) nil t)))
     (buffer-string)))
 
+(defun gnosis-cloze-mark-false (str answers)
+  "Mark contents of STR as false for ANSWERS.
+
+First item of answers will be marked as false, while the rest unanswered."
+  (let* ((false (car answers))
+	 (unanswered (cdr answers))
+         (str-with-false (and answers (gnosis-cloze-mark-answers str (list false) 'gnosis-face-false)))
+	 final)
+    (if unanswered
+	(setq final (gnosis-cloze-mark-answers str-with-false (if (listp unanswered) unanswered
+								(list unanswered))
+					       'underline))
+      (setq final (or str-with-false str)))
+    final))
 (defun gnosis-display-basic-answer (answer success user-input)
   "Display ANSWER.
 
