@@ -1898,7 +1898,8 @@ SUSPEND: Suspend note, 0 for unsuspend, 1 for suspend"
 	     (not (stringp options)))
     (cl-assert (or (listp options) (stringp options)) nil "Options must be a list or a string.")
     (cl-assert (gnosis-cloze-check main answer) nil "Clozes are not part of the question (main).")
-    (cl-assert (>= (length answer) (length options)) nil "Hints (options) must be equal or less than clozes (answer)."))
+    (cl-assert (>= (length answer) (length options)) nil "Hints (options) must be equal or less than clozes (answer).")
+    (cl-assert (cl-every (lambda (item) (or (null item) (stringp item))) options) nil "Hints (options) must be either nil or a string."))
   ;; Construct the update clause for the emacsql update statement.
   (cl-loop for (field . value) in `((main . ,main)
 				    (options . ,options)
