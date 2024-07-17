@@ -245,6 +245,11 @@ Seperate the question/stem from options."
   "Face for user choice."
   :group 'gnosis-face)
 
+(defface gnosis-face-unanswered
+  '((t :inherit (italic underline)))
+  "Face for unanswered clozes."
+  :group 'gnosis-face)
+
 (defface gnosis-face-hint
   '((t :inherit warning))
   "Face for user choice."
@@ -508,7 +513,7 @@ First item of answers will be marked as false, while the rest unanswered."
     (if unanswered
 	(setq final (gnosis-cloze-mark-answers str-with-false (if (listp unanswered) unanswered
 								(list unanswered))
-					       'underline))
+					       'gnosis-face-unanswered))
       (setq final (or str-with-false str)))
     final))
 
