@@ -191,6 +191,9 @@ Seperate the question/stem from options."
   "Non-nil means center content."
   :type 'boolean
   :group 'gosis)
+
+(defcustom gnosis-apply-highlighting-p t
+  "Non-nil means apply syntax highlighting."
   :type 'boolean
   :group 'gosis)
 
@@ -400,16 +403,17 @@ This will not be applied to sentences that start with double space."
                              ("=\\([^=[:space:]][^=\n]*[^=[:space:]]\\)=" . font-lock-constant-face)
                              ("~\\([^~[:space:]][^~\n]*[^~[:space:]]\\)~" . font-lock-keyword-face)
                              ("_\\([^_[:space:]][^_\n]*[^_[:space:]]\\)_" . underline))))
-    (save-excursion
-      (cl-loop for (regex . face) in syntax-highlights
-               do (progn
-                    (goto-char (point-min))
-                    (while (re-search-forward regex nil t)
-                      (let ((start (match-beginning 1))
-                            (end (match-end 1)))
-			(overlay-put (make-overlay start end) 'face face)
-			(delete-region end (match-end 0))
-			(delete-region (match-beginning 0) start))))))))
+    (when gnosis-apply-highlighting-p
+      (save-excursion
+	(cl-loop for (regex . face) in syntax-highlights
+		 do (progn
+                      (goto-char (point-min))
+                      (while (re-search-forward regex nil t)
+			(let ((start (match-beginning 1))
+                              (end (match-end 1)))
+			  (overlay-put (make-overlay start end) 'face face)
+			  (delete-region end (match-end 0))
+			  (delete-region (match-beginning 0) start)))))))))
 
 (defun gnosis-display-question (id &optional fill-paragraph-p)
   "Display main row for note ID.
