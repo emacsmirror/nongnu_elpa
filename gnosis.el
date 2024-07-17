@@ -187,8 +187,10 @@ Seperate the question/stem from options."
   :type 'string
   :group 'gnosis)
 
-(defcustom gnosis-center-content t
-  "When t, centers text."
+(defcustom gnosis-center-content-p t
+  "Non-nil means center content."
+  :type 'boolean
+  :group 'gosis)
   :type 'boolean
   :group 'gosis)
 
@@ -351,18 +353,19 @@ Acts only when CENTER? is t."
          (end (line-end-position))
          (text (string-trim (buffer-substring start end)))
          (padding (max (/ (- (window-width) (length text)) 2) 0))
-	 (center? (or center? gnosis-center-content)))
-    (when center?
-      (delete-region start end)
-      (insert (make-string padding ? ) text))))
+	 (center? (or center? gnosis-center-content-p)))
+    (if center?
+	(progn (delete-region start end)
+	       (insert (make-string padding ? ) text))
+      (insert text))))
 
 (defun gnosis-center-string (input-string &optional center?)
   "Center each line of the given INPUT-STRING in the current window width.
 
 Acts only when CENTER? is t."
   (let ((window-width (window-width))
-	(center? (or center? gnosis-center-content)))
-    (when center?
+	(center? (or center? gnosis-center-content-p)))
+    (if center?
       (mapconcat
        (lambda (line)
          (let* ((text (string-trim line))
@@ -378,7 +381,8 @@ Acts only when CENTER? is t."
             lines
             "\n")))
        (split-string input-string "\n")
-       "\n"))))
+       "\n")
+      input-string)))
 
 (defun gnosis-apply-center-buffer-overlay (&optional point)
   "Center text in buffer starting at POINT using `gnosis-center-current-line'.
