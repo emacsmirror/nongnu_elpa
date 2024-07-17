@@ -1535,13 +1535,13 @@ If user-input is equal to CLOZE, return t."
 	(cloze (list (gnosis-get 'answer 'notes `(= id ,id))))
 	(user-choice nil)
 	(success nil))
-    (gnosis-display-cloze-sentence main cloze nil 0 success)
+    (gnosis-display-cloze-string main cloze nil nil nil)
     (gnosis-display-image id)
     (setf user-choice (gnosis-mcq-answer id)
 	  success (string= user-choice (car cloze)))
     (if success
-	(gnosis-display-cloze-sentence main cloze nil 1 nil)
-      (gnosis-display-cloze-sentence main cloze nil 0 t))
+	(gnosis-display-cloze-string main nil nil cloze nil)
+      (gnosis-display-cloze-string main nil nil nil cloze))
     ;; Display user answer only upon failure
     (unless success
       (gnosis-display-cloze-user-answer user-choice))
