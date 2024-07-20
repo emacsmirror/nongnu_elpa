@@ -287,13 +287,21 @@ Optional argument FLATTEN, when non-nil, flattens the result."
   "Select VALUE from TABLE for note ID."
   (gnosis-select value table `(= id ,id) t))
 
+(defun gnosis-table-exists-p (table)
+  "Check if TABLE exists."
+  (let ((tables (mapcar (lambda (str) (replace-regexp-in-string "_" "-" (symbol-name str)))
+			(cdr (gnosis-select 'name 'sqlite-master '(= type table) t)))))
+    (member (symbol-name table) tables)))
+
 (cl-defun gnosis--create-table (table &optional values)
   "Create TABLE for VALUES."
-  (emacsql gnosis-db `[:create-table ,table ,values]))
+  (unless (gnosis-table-exists-p table)
+    (emacsql gnosis-db `[:create-table ,table ,values])))
 
 (cl-defun gnosis--drop-table (table)
   "Drop TABLE from `gnosis-db'."
-  (emacsql gnosis-db `[:drop-table ,table]))
+  (when (gnosis-table-exists-p table)
+    (emacsql gnosis-db `[:drop-table ,table])))
 
 (cl-defun gnosis--insert-into (table values)
   "Insert VALUES to TABLE."
