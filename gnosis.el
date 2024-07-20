@@ -190,12 +190,13 @@ Seperate the question/stem from options."
 (defcustom gnosis-center-content-p t
   "Non-nil means center content."
   :type 'boolean
-  :group 'gosis)
+  :group 'gnosis)
 
 (defcustom gnosis-apply-highlighting-p t
   "Non-nil means apply syntax highlighting."
   :type 'boolean
-  :group 'gosis)
+  :group 'gnosis)
+
 
 (defvar gnosis-due-notes-total nil
   "Total due notes.")
