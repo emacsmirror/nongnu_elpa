@@ -1566,18 +1566,29 @@ If user-input is equal to CLOZE, return t."
     (gnosis-display-next-review id success)
     success))
 
-(defun gnosis-review-note (id)
-  "Start review for note with value of id ID, if note is unsuspended."
+(defun gnosis-review-increment-activity-log (&optional date)
+  "Increament activity log for DATE by one."
+  (let* ((current-value (gnosis-get-date-total-notes))
+	 (new-value (cl-incf current-value))
+	 (date (or date (gnosis-algorithm-date))))
+    (gnosis-update 'activity-log `(= note-num ,new-value) `(= date ',date))))
+
+(defun gnosis-review-note (id &optional date)
+  "Start review for note with value of id ID, if note is unsuspended.
+
+DATE: Date to log the note review on the activity-log."
   (when (gnosis-suspended-p id)
     (message "Suspended note with id: %s" id)
     (sit-for 0.3)) ;; this should only occur in testing/dev cases
   (let* ((type (gnosis-get 'type 'notes `(= id ,id)))
-         (func-name (intern (format "gnosis-review-%s" (downcase type)))))
+         (func-name (intern (format "gnosis-review-%s" (downcase type))))
+	 (date (or date (gnosis-algorithm-date))))
     (if (fboundp func-name)
         (progn
 	  (pop-to-buffer-same-window (get-buffer-create "*gnosis*"))
           (gnosis-mode)
-          (funcall func-name id))
+          (funcall func-name id)
+	  (gnosis-review-increment-activity-log date))
       (error "Malformed note type: '%s'" type))))
 
 
@@ -1696,14 +1707,15 @@ To customize the keybindings, adjust `gnosis-review-keybindings'."
   "Start review session for NOTES.
 
 NOTES: List of note ids"
-  (let ((note-count 0))
+  (let ((note-count 0)
+	(date (gnosis-algorithm-date)))
     (if (null notes)
 	(message "No notes for review.")
       (when (y-or-n-p (format "You have %s total notes for review, start session?" (length notes)))
 	(setf gnosis-review-notes notes)
 	(catch 'stop-loop
 	  (cl-loop for note in notes
-		   do (let ((success (gnosis-review-note note)))
+		   do (let ((success (gnosis-review-note note date)))
 			(cl-incf note-count)
 			(gnosis-review-actions success note note-count))
 		   finally (gnosis-review-commit note-count)))))))
@@ -1961,6 +1973,18 @@ SUSPEND: Suspend note, 0 for unsuspend, 1 for suspend"
   "Return initial-interval for note with ID."
   (let ((deck-id (gnosis-get 'deck-id 'notes `(= id ,id))))
     (gnosis-get-deck-initial-interval deck-id)))
+
+(defun gnosis-get-date-total-notes (&optional date)
+  "Return total notes reviewed for DATE.
+
+Defaults to current date."
+  (cl-assert (listp date) nil "Date must be a list.")
+  (let* ((date (or date (gnosis-algorithm-date)))
+	 (note-num (car (gnosis-select 'note-num 'activity-log `(= date ',date) t))))
+    (or note-num
+	(progn
+	  (gnosis--insert-into 'activity-log `([,date 0]))
+	  0))))
 
 (cl-defun gnosis-export-note (id &optional (export-for-deck nil))
   "Export fields for note with value of id ID.
