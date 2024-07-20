@@ -124,7 +124,7 @@ If ask nil, leave testing env"
 	    (make-directory testing-dir))
 	  (setf gnosis-db (emacsql-sqlite-open (expand-file-name "testing.db" testing-dir)))
 	  (setf gnosis-testing t)
-	  (dolist (table '(notes decks review review-log extras))
+	  (dolist (table '(notes decks review review-log extras activity-log))
 	    (condition-case nil
 		(gnosis--drop-table table)
 	      (error (message "No %s table to drop." table))))
