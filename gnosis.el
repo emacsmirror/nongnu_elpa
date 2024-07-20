@@ -197,6 +197,11 @@ Seperate the question/stem from options."
   :type 'boolean
   :group 'gnosis)
 
+(defcustom gnosis-new-notes-limit nil
+  "Total new notes limit."
+  :type '(choice (const :tag "None" nil)
+		 (integer :tag "Number"))
+  :group 'gnosis)
 
 (defvar gnosis-due-notes-total nil
   "Total due notes.")
