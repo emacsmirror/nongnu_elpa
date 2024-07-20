@@ -206,6 +206,9 @@ Seperate the question/stem from options."
 (defvar gnosis-due-notes-total nil
   "Total due notes.")
 
+(defvar gnosis-review-notes nil
+  "Review notes.")
+
 ;;; Faces
 
 (defgroup gnosis-faces nil
@@ -1702,6 +1705,7 @@ NOTES: List of note ids"
     (if (null notes)
 	(message "No notes for review.")
       (when (y-or-n-p (format "You have %s total notes for review, start session?" (length notes)))
+	(setf gnosis-review-notes notes)
 	(catch 'stop-loop
 	  (cl-loop for note in notes
 		   do (let ((success (gnosis-review-note note)))
