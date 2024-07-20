@@ -1379,6 +1379,10 @@ well."
     (cl-loop for note in notes
 	     when (gnosis-review-is-due-p note)
 	     collect note)))
+(defun gnosis-get-new-notes (notes)
+  "Get new notes from NOTES."
+  (cl-assert (listp notes) nil "Notes must be a list.")
+  (cl-intersection notes (gnosis-select 'id 'review-log '(= n 0) t)))
 
 (defun gnosis-review-get-due-tags ()
   "Return a list of due note tags."
