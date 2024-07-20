@@ -1711,6 +1711,7 @@ NOTES: List of note ids"
   (interactive)
   ;; Refresh modeline
   (setq gnosis-due-notes-total (length (gnosis-review-get-due-notes)))
+  ;; Select review type
   (let ((review-type (gnosis-completing-read "Review: " '("Due notes"
 							  "Due notes of deck"
 							  "Due notes of specified tag(s)"
@@ -1719,6 +1720,7 @@ NOTES: List of note ids"
       ("Due notes" (gnosis-review-session (gnosis-collect-note-ids :due t)))
       ("Due notes of deck" (gnosis-review-session (gnosis-collect-note-ids :due t :deck (gnosis--get-deck-id))))
       ("Due notes of specified tag(s)" (gnosis-review-session (gnosis-collect-note-ids :due t :tags t)))
+      ("All notes of deck" (gnosis-review-session (gnosis-collect-note-ids :deck (gnosis--get-deck-id))))
       ("All notes of tag(s)" (gnosis-review-session (gnosis-collect-note-ids :tags t))))))
 
 
