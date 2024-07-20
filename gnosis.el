@@ -1386,11 +1386,6 @@ well."
 			     collect note)))
     (append (cl-subseq new-notes 0 gnosis-new-notes-limit) old-notes)))
 
-(defun gnosis-get-new-notes (notes)
-  "Get new notes from NOTES."
-  (cl-assert (listp notes) nil "Notes must be a list.")
-  (cl-intersection notes (gnosis-select 'id 'review-log '(= n 0) t)))
-
 (defun gnosis-review-get-due-tags ()
   "Return a list of due note tags."
   (let ((due-notes (gnosis-review-get-due-notes)))
