@@ -139,7 +139,7 @@ a string describing the action."
 (defvar gnosis-dashboard-note-ids nil
   "Store note ids for dashboard.")
 
-(defconst gnosis-db-version 2
+(defconst gnosis-db-version 3
   "Gnosis database version.")
 
 (defvar gnosis-note-types '("MCQ" "Cloze" "Basic" "Double" "y-or-n")
@@ -2042,6 +2042,9 @@ to improve readability."
 				      (:foreign-key [id] :references notes [id]
 						    :on-delete :cascade)))
 
+(defvar gnosis-db-schema-activity-log '([(date text :not-null)
+					 (note-num integer :not-null)]))
+
 (defvar gnosis-db-schema-extras '([(id integer :primary-key :not-null)
 				   (extra-notes string)
 				   ;; Despite the name 'images', this
@@ -2255,7 +2258,7 @@ DASHBOARD-TYPE: either 'Notes' or 'Decks' to display the respective dashboard."
 (defun gnosis-db-init ()
   "Create gnosis essential directories & database."
   (let ((gnosis-curr-version (caar (emacsql gnosis-db (format "PRAGMA user_version")))))
-    (unless (length= (emacsql gnosis-db [:select name :from sqlite-master :where (= type table)]) 6)
+    (unless (length= (emacsql gnosis-db [:select name :from sqlite-master :where (= type table)]) 7)
       ;; Enable foreign keys
       (emacsql gnosis-db "PRAGMA foreign_keys = ON")
       ;; Gnosis version
@@ -2269,14 +2272,21 @@ DASHBOARD-TYPE: either 'Notes' or 'Decks' to display the respective dashboard."
       ;; Create review-log table
       (gnosis--create-table 'review-log gnosis-db-schema-review-log)
       ;; Create extras table
-      (gnosis--create-table 'extras gnosis-db-schema-extras))
+      (gnosis--create-table 'extras gnosis-db-schema-extras)
+      ;; Create activity-log table
+      (gnosis--create-table 'activity-log gnosis-db-schema-activity-log))
     ;; Update database schema for version
-    (cond ((= gnosis-curr-version 1) ;; Update to version 2
+    (cond ((= gnosis-curr-version 1) ;; Update from version 1 to version 3
 	   (emacsql gnosis-db [:alter-table decks :add failure-factor])
 	   (emacsql gnosis-db [:alter-table decks :add ef-increase])
 	   (emacsql gnosis-db [:alter-table decks :add ef-decrease])
 	   (emacsql gnosis-db [:alter-table decks :add ef-threshold])
 	   (emacsql gnosis-db [:alter-table decks :add initial-interval])
+	   (emacsql gnosis-db (format "PRAGMA user_version = %s" gnosis-db-version))
+	   (gnosis--create-table 'activity-log gnosis-db-schema-activity-log))
+	  ;; Update from version 2 to 3
+	  ((= gnosis-curr-version 2)
+	   (gnosis--create-table 'activity-log gnosis-db-schema-activity-log)
 	   (emacsql gnosis-db (format "PRAGMA user_version = %s" gnosis-db-version))))))
 
 (gnosis-db-init)
