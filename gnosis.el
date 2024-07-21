@@ -1386,11 +1386,15 @@ well."
 
 (defun gnosis-review-get-due-notes ()
   "Return a list due notes id for current date."
-  (let* ((old-notes (cl-loop for note in (gnosis-select 'id 'review-log '(> n 0) t)
+  (let* ((old-notes (cl-loop for note in (gnosis-select 'id 'review-log '(and (> n 0)
+									      (= suspend 0))
+							t)
 			     when (gnosis-review-is-due-p note)
 			     collect note))
-	 (new-notes (cl-loop for note in (gnosis-select 'id 'review-log '(= n 0) t)
-			     when (gnosis-review-is-due-p note)
+	 (new-notes (cl-loop for note in (gnosis-select 'id 'review-log '(and (= n 0)
+									      (= suspend 0))
+							t)
+			     when (gnosis-review-is-due-today-p note)
 			     collect note)))
     (append (cl-subseq new-notes 0 gnosis-new-notes-limit) old-notes)))
 
