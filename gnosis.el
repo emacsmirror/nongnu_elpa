@@ -1450,6 +1450,8 @@ Returns a list of the form ((yyyy mm dd) (ef-increase ef-decrease ef-total))."
 SUCCESS is a boolean value, t for success, nil for failure."
   (let ((ef (cadr (gnosis-review-algorithm id success)))
 	(next-rev (car (gnosis-review-algorithm id success))))
+    ;; Update activity-log
+    (gnosis-review-increment-activity-log)
     ;; Update review-log
     (gnosis-update 'review-log `(= last-rev ',(gnosis-algorithm-date)) `(= id ,id))
     (gnosis-update 'review-log `(= next-rev ',next-rev) `(= id ,id))
@@ -1595,8 +1597,7 @@ DATE: Date to log the note review on the activity-log."
         (progn
 	  (pop-to-buffer-same-window (get-buffer-create "*gnosis*"))
           (gnosis-mode)
-          (funcall func-name id)
-	  (gnosis-review-increment-activity-log date))
+          (funcall func-name id))
       (error "Malformed note type: '%s'" type))))
 
 
