@@ -169,17 +169,27 @@ by DECREASE."
     (gnosis-algorithm-round-items new-ef)))
 
 (cl-defun gnosis-algorithm-next-interval (&key last-interval ef success successful-reviews
-					       failure-factor initial-interval)
+					       failure-factor initial-interval c-fails
+					       threshold)
   "Calculate next interval.
 
-LAST-INTERVAL: number of days since last review
+LAST-INTERVAL: Number of days since last review
+
+C-FAILS: Total consecutive failed reviews.
+
 EF: Easiness factor
-SUCCESS: t if review was successful, nil otherwise
-SUCCESSFUL-REVIEWS: number of successful reviews
-FAILURE-FACTOR: factor to multiply last interval by if review was unsuccessful
-INITIAL-INTERVAL: list of initial intervals for initial successful
+
+SUCCESS: non-nil when review was successful.
+
+SUCCESSFUL-REVIEWS: Number of successful reviews.
+
+FAILURE-FACTOR: Factor to multiply last interval by if review was unsuccessful.
+
+INITIAL-INTERVAL: List of initial intervals for initial successful
 reviews.  Will be used to determine the next interval for the first 2
-successful reviews."
+successful reviews.  Until successfully completing INITIAL-INTERVAL reviews, for every failed attempt next interval will be set to 0.
+
+THRESHOLD: Upon having C-FAILS >= threshold, set next interval to 0."
   (cl-assert (< gnosis-algorithm-ff 1) "Value of `gnosis-algorithm-ff' must be lower than 1")
   ;; This should only occur in testing env or when the user has made breaking changes.
   (let* ((last-interval (if (<= last-interval 0) 1 last-interval)) ;; If last-interval is 0, use 1 instead.
@@ -189,7 +199,11 @@ successful reviews."
 			  (cadr initial-interval))
 			 ;; If it's still on initial stage, review the
 			 ;; same day
-			 ((and (< successful-reviews 2) (not success)) 0)
+			 ((and (or (< successful-reviews (length initial-interval))
+				   ;; reset threshold
+				   (and threshold (>= c-fails threshold)))
+			       (not success))
+			  0)
 			 (t (let* ((success-interval (* ef last-interval))
 				   (failure-interval (* last-interval failure-factor)))
 			      (if success success-interval
