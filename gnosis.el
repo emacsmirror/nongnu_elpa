@@ -1614,12 +1614,17 @@ If user-input is equal to CLOZE, return t."
     (gnosis-display-next-review id success)
     success))
 
-(defun gnosis-review-increment-activity-log (&optional date)
-  "Increament activity log for DATE by one."
-  (let* ((current-value (gnosis-get-date-total-notes))
-	 (new-value (cl-incf current-value))
+(defun gnosis-review-increment-activity-log (new? &optional date)
+  "Increament activity log for DATE by one.
+
+If NEW? is non-nil, increment new notes log by 1."
+  (let* ((current-total-value (gnosis-get-date-total-notes))
+	 (inc-total (cl-incf current-total-value))
+	 (current-new-value (gnosis-get-date-new-notes))
+	 (inc-new (cl-incf current-new-value))
 	 (date (or date (gnosis-algorithm-date))))
-    (gnosis-update 'activity-log `(= note-num ,new-value) `(= date ',date))))
+    (gnosis-update 'activity-log `(= reviewed-total ,inc-total) `(= date ',date))
+    (and new? (gnosis-update 'activity-log `(= reviewed-new ,inc-new) `(= date ',date)))))
 
 (defun gnosis-review-note (id &optional date)
   "Start review for note with value of id ID, if note is unsuspended.
