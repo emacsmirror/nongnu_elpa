@@ -1614,6 +1614,11 @@ If user-input is equal to CLOZE, return t."
     (gnosis-display-next-review id success)
     success))
 
+(defun gnosis-review-is-note-new-p (id)
+  "Return t if note with ID is new."
+  (let ((reviews (car (gnosis-select-id 'n 'review-log id))))
+    (not (> reviews 0))))
+
 (defun gnosis-review-increment-activity-log (new? &optional date)
   "Increament activity log for DATE by one.
 
