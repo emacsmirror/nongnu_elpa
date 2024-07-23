@@ -2043,6 +2043,15 @@ Defaults to current date."
 	  (gnosis--insert-into 'activity-log `([,date 0]))
 	  0))))
 
+(defun gnosis-get-date-new-notes (&optional date)
+  "Return total notes reviewed for DATE.
+
+Defaults to current date."
+  (cl-assert (listp date) nil "Date must be a list.")
+  (let* ((date (or date (gnosis-algorithm-date)))
+	 (reviewed-new (or (car (gnosis-select 'reviewed-new 'activity-log `(= date ',date) t)) 0)))
+    reviewed-new))
+
 (cl-defun gnosis-export-note (id &optional (export-for-deck nil))
   "Export fields for note with value of id ID.
 
