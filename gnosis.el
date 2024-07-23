@@ -1900,8 +1900,7 @@ INITIAL-INTERVAL: Initial interval for notes of deck"
   (gnosis-assert-int-or-nil ef-threshold "ef-threshold must be an integer")
   (gnosis-assert-number-or-nil ef-increase "ef-increase must be a number")
   (cl-assert (or (and (listp initial-interval)
-		      (and (cl-every #'integerp initial-interval)
-			   (length= initial-interval 2)))
+		      (cl-every #'integerp initial-interval))
 		 (null initial-interval))
 	     nil "Initial-interval must be a list of 2 integers")
   (cl-loop for (field . value) in
