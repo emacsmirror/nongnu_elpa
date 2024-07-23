@@ -193,7 +193,7 @@ Optionally, use REMOVE-SPACES when using multiple months."
 (defun gnosis-dashboard-output-notes (note-ids)
   "Return NOTE-IDS contents on gnosis dashboard."
   (cl-assert (listp note-ids) t "`note-ids' must be a list of note ids.")
-  (pop-to-buffer "*gnosis-dashboard*")
+  (pop-to-buffer-same-window "*gnosis-dashboard*")
   (gnosis-dashboard-mode)
   (setf tabulated-list-format `[("Main" ,(/ (window-width) 4) t)
 				("Options" ,(/ (window-width) 6) t)
@@ -242,7 +242,7 @@ Optionally, use REMOVE-SPACES when using multiple months."
 
 (defun gnosis-dashboard-output-decks ()
   "Return deck contents for gnosis dashboard."
-  (pop-to-buffer "*gnosis-dashboard*")
+  (pop-to-buffer-same-window "*gnosis-dashboard*")
   (gnosis-dashboard-mode)
   (setq tabulated-list-format [("Name" 15 t)
 			       ("failure-factor" 15 t)
