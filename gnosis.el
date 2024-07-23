@@ -1470,6 +1470,8 @@ Returns a list of the form ((yyyy mm dd) (ef-increase ef-decrease ef-total))."
 					  :ef (nth 2 ef) ;; total ef is used for next interval
 					  :success success
 					  :successful-reviews t-success
+					  :c-fails c-fails
+					  :threshold 3 ;;TODO: Create a gnosis-interval-thershold
 					  :failure-factor ff
 					  :initial-interval (gnosis-get-note-initial-interval id))
 	  (gnosis-algorithm-next-ef :ef ef
