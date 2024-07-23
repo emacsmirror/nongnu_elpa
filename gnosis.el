@@ -2033,13 +2033,18 @@ SUSPEND: Suspend note, 0 for unsuspend, 1 for suspend"
 (defun gnosis-get-date-total-notes (&optional date)
   "Return total notes reviewed for DATE.
 
+If entry for DATE does not exist, it will be created.
+
 Defaults to current date."
   (cl-assert (listp date) nil "Date must be a list.")
   (let* ((date (or date (gnosis-algorithm-date)))
-	 (note-num (car (gnosis-select 'note-num 'activity-log `(= date ',date) t))))
-    (or note-num
+	 (reviewed-total (car (gnosis-select 'reviewed-total 'activity-log `(= date ',date) t)))
+	 (reviewed-new (or (car (gnosis-select 'reviewed-new 'activity-log `(= date ',date) t)) 0)))
+    (or reviewed-total
 	(progn
-	  (gnosis--insert-into 'activity-log `([,date 0]))
+	  ;; Using reviewed-new instead of hardcoding 0 just to not mess up tests.
+	  (and (equal date (gnosis-algorithm-date))
+	       (gnosis--insert-into 'activity-log `([,date 0 ,reviewed-new])))
 	  0))))
 
 (defun gnosis-get-date-new-notes (&optional date)
