@@ -28,6 +28,7 @@
 
 ;;; Code:
 (require 'cl-lib)
+(require 'calendar)
 
 (declare-function gnosis-select "gnosis.el")
 (declare-function gnosis-delete-note "gnosis.el")
@@ -39,6 +40,11 @@
 (declare-function gnosis-suspend-deck "gnosis.el")
 (declare-function gnosis-add-deck "gnosis.el")
 (declare-function gnosis-add-note "gnosis.el")
+(declare-function gnosis-insert-separator "gnosis.el")
+(declare-function gnosis-get-date-total-notes "gnosis.el")
+(declare-function gnosis-center-string "gnosis.el")
+(declare-function gnosis-get-date-new-notes "gnosis.el")
+(declare-function gnosis-review-get-due-notes "gnosis.el")
 
 (defvar gnosis-dashboard-note-ids nil
   "Store note ids for dashboard.")
