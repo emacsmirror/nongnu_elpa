@@ -2114,7 +2114,8 @@ to improve readability."
 						    :on-delete :cascade)))
 
 (defvar gnosis-db-schema-activity-log '([(date text :not-null)
-					 (note-num integer :not-null)]))
+					 (reviewed-total integer :not-null)
+					 (reviewed-new integer :not-null)]))
 
 (defvar gnosis-db-schema-extras '([(id integer :primary-key :not-null)
 				   (extra-notes string)
