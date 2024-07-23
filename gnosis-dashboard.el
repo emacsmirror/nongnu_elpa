@@ -128,6 +128,17 @@ Optionally, use REMOVE-SPACES when using multiple months."
 	     (when (and (/= (forward-line 1) 0) (eobp))
 	       (insert "\n")
 	       (forward-line 0)))))
+;; TODO: Refactor this!
+(defun gnosis-dashboard-month-overview ()
+  "Insert the 3 month overview."
+  (let ((point (point)))
+    (gnosis-dashboard-reviews-graph (gnosis-dashboard-month-reviews 7) 0)
+    (goto-char point)
+    (end-of-line)
+    (gnosis-dashboard-reviews-graph (gnosis-dashboard-month-reviews 8) 15)
+    (goto-char point)
+    (end-of-line)
+    (gnosis-dashboard-reviews-graph (gnosis-dashboard-month-reviews 9) 46)))
 (defun gnosis-dashboard-output-note (id)
   "Output contents for note with ID, formatted for gnosis dashboard."
   (cl-loop for item in (append (gnosis-select '[main options answer tags type] 'notes `(= id ,id) t)
