@@ -105,6 +105,29 @@ Skips days where no note was reviewed."
 	 (propertize string 'face 'shadow))
 	((> num 0)
 	 (propertize string 'face 'font-lock-constant-face))))
+
+(defun gnosis-dashboard-reviews-graph (dates &optional remove-spaces)
+  "Insert graph for month DATES.
+
+Optionally, use REMOVE-SPACES when using multiple months."
+  (let ((count 0)
+	(insert-column (current-column)))
+    (cl-loop for day in dates
+	     when (= count 0)
+	     do (let ((current-column (current-column)))
+		  (and (< (move-to-column insert-column) insert-column)
+		       ;; TODO: Rewrite this!
+		       (insert (make-string (- (- insert-column current-column) remove-spaces) ?\s))))
+	     (insert "   ")
+	     do (end-of-line)
+	     (insert (gnosis-dashboard--graph-propertize (format "[%s] " (if (= day 0) "-" "x")) day))
+	     (cl-incf count)
+	     when (= count 7)
+	     do (setq count 0)
+	     (end-of-line)
+	     (when (and (/= (forward-line 1) 0) (eobp))
+	       (insert "\n")
+	       (forward-line 0)))))
 (defun gnosis-dashboard-output-note (id)
   "Output contents for note with ID, formatted for gnosis dashboard."
   (cl-loop for item in (append (gnosis-select '[main options answer tags type] 'notes `(= id ,id) t)
