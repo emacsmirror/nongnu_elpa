@@ -98,6 +98,13 @@ Skips days where no note was reviewed."
 	       do (setq total (+ total entry)))
       (/ total (length (remove 0 entries)))))
 
+;; TODO: Add more conds & faces
+(defun gnosis-dashboard--graph-propertize (string num)
+  "Propertize STRING depending on the NUM of reviews."
+  (cond ((= num 0)
+	 (propertize string 'face 'shadow))
+	((> num 0)
+	 (propertize string 'face 'font-lock-constant-face))))
 (defun gnosis-dashboard-output-note (id)
   "Output contents for note with ID, formatted for gnosis dashboard."
   (cl-loop for item in (append (gnosis-select '[main options answer tags type] 'notes `(= id ,id) t)
