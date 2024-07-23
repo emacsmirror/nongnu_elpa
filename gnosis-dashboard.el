@@ -67,6 +67,37 @@
           (push (list current-year (+ month 1) (+ day 1)) result))))
     (nreverse result)))
 
+(defun gnosis-dashboard-year-stats (&optional year)
+  "Return YEAR review stats."
+  (let ((notes nil))
+    (cl-loop for date in (gnosis-dashboard-generate-dates (and year))
+	     do (setq notes (append notes (list (gnosis-get-date-total-notes date)))))
+    notes))
+
+(defun gnosis-dashboard-month-reviews (month)
+  "Return reviewes for MONTH in current year."
+  (cl-assert (and (integerp month)
+		  (< month 12))
+	     nil "Month must be an integer, lower than 12.")
+  (let* ((month-dates (cl-loop for date in (gnosis-dashboard-generate-dates)
+			       if (and (= (nth 1 date) month)
+				       (= (nth 0 date) (decoded-time-year (decode-time))))
+			       collect date))
+	 (month-reviews (cl-loop for date in month-dates
+				 collect (gnosis-get-date-total-notes date))))
+    month-reviews))
+
+;; TODO: Optionally, add dates where no review was made.
+(defun gnosis-dashboard-output-average-rev ()
+  "Output the average daily notes reviewed for current year.
+
+Skips days where no note was reviewed."
+    (let ((total 0)
+	  (entries (gnosis-dashboard-year-stats)))
+      (cl-loop for entry in entries
+	       do (setq total (+ total entry)))
+      (/ total (length (remove 0 entries)))))
+
 (defun gnosis-dashboard-output-note (id)
   "Output contents for note with ID, formatted for gnosis dashboard."
   (cl-loop for item in (append (gnosis-select '[main options answer tags type] 'notes `(= id ,id) t)
