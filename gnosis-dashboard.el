@@ -52,6 +52,10 @@
 (defvar gnosis-dashboard-search-value nil
   "Store search value.")
 
+(defface gnosis-dashboard-header-face
+  '((t :inherit (outline-1) :weight bold))
+  "Face for the dashboard header.."
+  :group 'gnosis)
 (defun gnosis-dashboard-output-note (id)
   "Output contents for note with ID, formatted for gnosis dashboard."
   (cl-loop for item in (append (gnosis-select '[main options answer tags type] 'notes `(= id ,id) t)
