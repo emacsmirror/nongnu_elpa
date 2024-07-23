@@ -49,6 +49,9 @@
 (defvar gnosis-dashboard-note-ids nil
   "Store note ids for dashboard.")
 
+(defvar gnosis-dashboard-search-value nil
+  "Store search value.")
+
 (defun gnosis-dashboard-output-note (id)
   "Output contents for note with ID, formatted for gnosis dashboard."
   (cl-loop for item in (append (gnosis-select '[main options answer tags type] 'notes `(= id ,id) t)
