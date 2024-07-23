@@ -139,6 +139,48 @@ Optionally, use REMOVE-SPACES when using multiple months."
     (goto-char point)
     (end-of-line)
     (gnosis-dashboard-reviews-graph (gnosis-dashboard-month-reviews 9) 46)))
+
+;; TODO: Create a dashboard utilizing widgets
+(defun gnosis-dashboard-test ()
+  "Test function to create an editable field and a search button."
+  (interactive)
+  (let ((buffer-name "*Gnosis Dashboard*"))
+    (when (get-buffer buffer-name)
+      (kill-buffer buffer-name))  ;; Kill the existing buffer if it exists
+    (let ((buffer (get-buffer-create buffer-name)))
+      (with-current-buffer buffer
+        (widget-insert "\n"
+		       (gnosis-center-string
+			(format "%s" (propertize "Gnosis Dashboard" 'face 'gnosis-dashboard-header-face))))
+	(gnosis-insert-separator)
+	(widget-insert (gnosis-center-string (propertize "Stats:" 'face 'outline-3)) "\n")
+	(widget-insert (gnosis-center-string
+			(format "Reviewed today: %s | New: %s"
+				(propertize
+				 (number-to-string (gnosis-get-date-total-notes))
+				 'face
+				 'font-lock-variable-use-face)
+				(propertize
+				 (number-to-string (gnosis-get-date-new-notes))
+				 'face
+				 'font-lock-keyword-face))))
+	(insert "\n")
+	(widget-insert  (gnosis-center-string
+			 (format "Daily Average: %s"
+				 (propertize (number-to-string (gnosis-dashboard-output-average-rev))
+					     'face 'font-lock-type-face))))
+	(insert "\n")
+	(widget-insert (gnosis-center-string
+			 (format "Due notes: %s"
+				(propertize
+				 (number-to-string (length (gnosis-review-get-due-notes)))
+				 'face 'error))))
+	(insert "\n\n")
+        (gnosis-dashboard-month-overview)
+        (use-local-map widget-keymap)
+        (widget-setup))
+      (pop-to-buffer-same-window buffer))))
+
 (defun gnosis-dashboard-output-note (id)
   "Output contents for note with ID, formatted for gnosis dashboard."
   (cl-loop for item in (append (gnosis-select '[main options answer tags type] 'notes `(= id ,id) t)
