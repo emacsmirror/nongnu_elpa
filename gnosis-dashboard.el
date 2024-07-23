@@ -56,6 +56,17 @@
   '((t :inherit (outline-1) :weight bold))
   "Face for the dashboard header.."
   :group 'gnosis)
+
+(defun gnosis-dashboard-generate-dates (&optional year)
+  "Return a list of all dates (year month day) for YEAR."
+  (let* ((current-year (or (decoded-time-year (decode-time)) year))
+         (result '()))
+    (dotimes (month 12)
+      (let ((days-in-month (calendar-last-day-of-month (+ month 1) current-year)))
+        (dotimes (day days-in-month)
+          (push (list current-year (+ month 1) (+ day 1)) result))))
+    (nreverse result)))
+
 (defun gnosis-dashboard-output-note (id)
   "Output contents for note with ID, formatted for gnosis dashboard."
   (cl-loop for item in (append (gnosis-select '[main options answer tags type] 'notes `(= id ,id) t)
