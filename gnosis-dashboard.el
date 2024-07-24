@@ -161,7 +161,7 @@ Optionally, use  when using multiple months."
       (cl-incf month))))
 
 ;; TODO: Create a dashboard utilizing widgets
-(defun gnosis-dashboard-test ()
+(defun gnosis-dashboard ()
   "Test function to create an editable field and a search button."
   (interactive)
   (let ((buffer-name "*Gnosis Dashboard*"))
@@ -200,7 +200,8 @@ Optionally, use  when using multiple months."
         (use-local-map widget-keymap)
         (widget-setup))
       (pop-to-buffer-same-window buffer)
-      (goto-char (point-min)))))
+      (goto-char (point-min))
+      (gnosis-dashboard-transient))))
 
 (defun gnosis-dashboard-output-note (id)
   "Output contents for note with ID, formatted for gnosis dashboard."
@@ -324,7 +325,7 @@ DASHBOARD: Dashboard to return to after editing."
 	tabulated-list-sort-key nil))
 
 ;;;###autoload
-(cl-defun gnosis-dashboard (&optional dashboard-type (note-ids nil))
+(cl-defun gnosis--dashboard (&optional dashboard-type (note-ids nil))
   "Display gnosis dashboard.
 
 NOTE-IDS: List of note ids to display on dashboard.  When nil, prompt
@@ -348,6 +349,11 @@ DASHBOARD-TYPE: either 'Notes' or 'Decks' to display the respective dashboard."
 		   (gnosis-collect-note-ids :query (read-string "Search for note: "))))))
     (tabulated-list-print t)))
 
+
+(transient-define-prefix gnosis-dashboard-transient ()
+  "Transient buffer for gnosis dashboard interactions."
+  [["Actions" ("r" "Start Review" gnosis-review)]
+   ["Dashboard" ("d" "Dashboard" gnosis--dashboard)]])
 
 (provide 'gnosis-dashboard)
 ;;; gnosis-dashboard.el ends here
