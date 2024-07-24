@@ -130,7 +130,7 @@ Optionally, use  when using multiple months."
 		  (and (< (move-to-column start-column) start-column)
 		       ;; Add spaces to reach start-column.
 		       (insert (make-string (- start-column current-column) ?\s))))
-	     (insert " |")
+	     (insert " ")
 	     do (end-of-line)
 	     (insert (gnosis-dashboard--graph-propertize (format "[%s] " (if (= day 0) "-" "x")) day))
 	     (cl-incf count)
@@ -138,14 +138,14 @@ Optionally, use  when using multiple months."
 	     do
 	     (setq end-column (current-column))
 	     (setq count 0)
-	     (insert "|")
+	     (insert " ")
 	     (cl-incf row)
 	     (end-of-line)
 	     (when (and (/= (forward-line 1) 0) (eobp))
 	       (insert "\n")
 	       (forward-line 0)))
     (insert (make-string (- end-column (current-column)) ?\s))
-    (insert "|")))
+    (insert " ")))
 ;; TODO: Refactor this!
 (defun gnosis-dashboard-month-overview (&optional num)
   "Insert review graph for MONTHS."
