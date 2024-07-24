@@ -111,7 +111,6 @@ Skips days where no note was reviewed."
 	((> num 0)
 	 (propertize string 'face 'font-lock-constant-face))))
 
-(defun gnosis-dashboard-reviews-graph (dates &optional remove-spaces)
 (defun gnosis-dashboard--add-padding (str-length)
   "Add padding for STR-LENGTH."
   (let ((padding (/ (- (window-width) str-length) 2)))
@@ -120,36 +119,46 @@ Skips days where no note was reviewed."
 (defun gnosis-dashboard-reviews-graph (dates &optional )
   "Insert graph for month DATES.
 
-Optionally, use REMOVE-SPACES when using multiple months."
+Optionally, use  when using multiple months."
   (let ((count 0)
-	(insert-column (current-column)))
+	(row 0)
+	(start-column (current-column))
+	(end-column nil))
     (cl-loop for day in dates
 	     when (= count 0)
 	     do (let ((current-column (current-column)))
-		  (and (< (move-to-column insert-column) insert-column)
-		       ;; TODO: Rewrite this!
-		       (insert (make-string (- (- insert-column current-column) remove-spaces) ?\s))))
-	     (insert "   ")
+		  (and (< (move-to-column start-column) start-column)
+		       ;; Add spaces to reach start-column.
+		       (insert (make-string (- start-column current-column) ?\s))))
+	     (insert " |")
 	     do (end-of-line)
 	     (insert (gnosis-dashboard--graph-propertize (format "[%s] " (if (= day 0) "-" "x")) day))
 	     (cl-incf count)
 	     when (= count 7)
-	     do (setq count 0)
+	     do
+	     (setq end-column (current-column))
+	     (setq count 0)
+	     (insert "|")
+	     (cl-incf row)
 	     (end-of-line)
 	     (when (and (/= (forward-line 1) 0) (eobp))
 	       (insert "\n")
-	       (forward-line 0)))))
+	       (forward-line 0)))
+    (insert (make-string (- end-column (current-column)) ?\s))
+    (insert "|")))
 ;; TODO: Refactor this!
-(defun gnosis-dashboard-month-overview ()
-  "Insert the 3 month overview."
-  (let ((point (point)))
-    (gnosis-dashboard-reviews-graph (gnosis-dashboard-month-reviews 7) 0)
-    (goto-char point)
-    (end-of-line)
-    (gnosis-dashboard-reviews-graph (gnosis-dashboard-month-reviews 8) 15)
-    (goto-char point)
-    (end-of-line)
-    (gnosis-dashboard-reviews-graph (gnosis-dashboard-month-reviews 9) 46)))
+(defun gnosis-dashboard-month-overview (&optional num)
+  "Insert review graph for MONTHS."
+  (gnosis-insert-separator)
+  (let* ((point (point))
+	 (month (car (calendar-current-date))))
+    (insert (gnosis-dashboard--add-padding (min (* (max num 1) 50) (window-width))))
+    (while (<= month (+ (car (calendar-current-date)) num))
+      ;; (insert (format "%d" month))
+      (gnosis-dashboard-reviews-graph (gnosis-dashboard-month-reviews month))
+      (goto-char point)
+      (end-of-line)
+      (cl-incf month))))
 
 ;; TODO: Create a dashboard utilizing widgets
 (defun gnosis-dashboard-test ()
@@ -187,10 +196,11 @@ Optionally, use REMOVE-SPACES when using multiple months."
 				 (number-to-string (length (gnosis-review-get-due-notes)))
 				 'face 'error))))
 	(insert "\n\n")
-        (gnosis-dashboard-month-overview)
+        (gnosis-dashboard-month-overview (or gnosis-dashboard-months 0))
         (use-local-map widget-keymap)
         (widget-setup))
-      (pop-to-buffer-same-window buffer))))
+      (pop-to-buffer-same-window buffer)
+      (goto-char (point-min)))))
 
 (defun gnosis-dashboard-output-note (id)
   "Output contents for note with ID, formatted for gnosis dashboard."
