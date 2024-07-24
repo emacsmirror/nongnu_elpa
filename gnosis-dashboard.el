@@ -112,6 +112,12 @@ Skips days where no note was reviewed."
 	 (propertize string 'face 'font-lock-constant-face))))
 
 (defun gnosis-dashboard-reviews-graph (dates &optional remove-spaces)
+(defun gnosis-dashboard--add-padding (str-length)
+  "Add padding for STR-LENGTH."
+  (let ((padding (/ (- (window-width) str-length) 2)))
+    (make-string padding ?\s)))
+
+(defun gnosis-dashboard-reviews-graph (dates &optional )
   "Insert graph for month DATES.
 
 Optionally, use REMOVE-SPACES when using multiple months."
