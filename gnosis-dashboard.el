@@ -46,6 +46,11 @@
 (declare-function gnosis-get-date-new-notes "gnosis.el")
 (declare-function gnosis-review-get-due-notes "gnosis.el")
 
+(defcustom gnosis-dashboard-months 2
+  "Number of additional months to display on dashboard."
+  :type 'integer
+  :group 'gnosis)
+
 (defvar gnosis-dashboard-note-ids nil
   "Store note ids for dashboard.")
 
