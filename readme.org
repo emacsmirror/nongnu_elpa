@@ -28,8 +28,10 @@ Forgejo's API is vast. Currently =fj.el= just implements a few basic things:
 
 
 - list repo issues/PRs
-- act on an issue/PR from issues/PR listing (edit, edit title, comment, close, reopen, delete)
+- act on an issue/PR from the listing (edit, edit title, comment, close, reopen, delete)
 - search in repo issues/PRs
+- cycle between issues/PRs/all
+- cycle between open/closed/all issues/PRs
 
 - quick jump to any issue/PR or repo in a listing with imenu.
 
@@ -128,6 +130,7 @@ Repo search listing:
 |         | fj-issue-view-mode               | Major mode for viewing an issue.                                    |
 |         | fj-issue-view-reload             | Reload the current issue view.                                      |
 |         | fj-issue-view-reopen             | Reopen issue being viewed.                                          |
+|         | fj-issues-item-cycle             | Cycle item type listing of issues, pulls, and all.                  |
 |         | fj-issues-tl-close               | Close current issue from tabulated issues listing.                  |
 |         | fj-issues-tl-comment             | Comment on issue from tabulated issues listing.                     |
 |         | fj-issues-tl-delete              | Delete current issue from tabulated issues listing.                 |

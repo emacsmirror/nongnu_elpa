@@ -349,6 +349,7 @@ JSON."
     (define-key map (kbd "j") #'imenu)
     (define-key map (kbd "g") #'fj-repo-tl-reload)
     (define-key map (kbd "N") #'fj-view-notifications)
+    (define-key map (kbd "M-C-q") #'fj-kill-all-buffers)
     map)
   "Map for `fj-repo-tl-mode' and `fj-user-repo-tl-mode' to inherit.")
 
@@ -512,7 +513,8 @@ Return the issue number."
 (defun fj-repo-get-issues (repo &optional owner state type query)
   "Return issues for REPO by OWNER.
 STATE is for issue status, a string of open, closed or all.
-TYPE is item type: issue pull or all."
+TYPE is item type: issue pull or all.
+QUERY is a search term to filter by."
   ;; FIXME: how to get issues by number, or get all issues?
   (let* ((endpoint (format "repos/%s/%s/issues" (or owner fj-user) repo))
          (params `(("state" . ,state)
@@ -664,8 +666,9 @@ STATE should be \"open\", \"closed\", or \"all\"."
 
 ;; FIXME: we need to post DO body param containing one of `fj-merge-types'
 (defun fj-pull-merge-post (repo owner number merge-type)
-  "POST a merge pull request REPO owned by USER.
-NUMBER is that of the PR."
+  "POST a merge pull request REPO by OWNER.
+NUMBER is that of the PR.
+MERGE-TYPE is one of `fj-merge-types'."
   (let ((url (format "repos/%s/%s/pulls/%s/merge" owner repo number))
         (params `(("owner" . ,owner)
                   ("repo" . ,repo)
@@ -797,6 +800,7 @@ NEW-BODY is the new comment text to send."
     (define-key map (kbd "c") #'fj-create-issue)
     (define-key map (kbd "g") #'fj-issues-tl-reload)
     (define-key map (kbd "C-c C-c") #'fj-list-issues-cycle)
+    (define-key map (kbd "C-c C-s") #'fj-issues-item-cycle)
     (define-key map (kbd "o") #'fj-issues-tl-reopen)
     (define-key map (kbd "s") #'fj-list-issues-search)
     (define-key map (kbd "S") #'fj-repo-search-tl)
@@ -807,6 +811,7 @@ NEW-BODY is the new comment text to send."
     (define-key map (kbd "N") #'fj-view-notifications)
     (define-key map (kbd "L") #'fj-repo-copy-clone-url)
     (define-key map (kbd "j") #'imenu)
+    (define-key map (kbd "M-C-q") #'fj-kill-all-buffers)
     map)
   "Map for `fj-issue-tl-mode', a tabluated list of issues.")
 
@@ -886,7 +891,8 @@ Either for `fj-current-repo' or REPO, a string, owned by OWNER.
 With a prefix arg, or if REPO and `fj-current-repo' are nil,
 prompt for a repo to list.
 Optionally specify the STATE filter (open, closed, all), and the
-TYPE filter (issues, pulls, all)."
+TYPE filter (issues, pulls, all).
+QUERY is a search query to filter by."
   (interactive "P")
   (let* ((repo (fj-read-user-repo repo))
          (owner (or owner fj-user))
@@ -927,12 +933,14 @@ STATE and TYPE as for `fj-list-issues'."
     (fj-list-issues nil owner (or state "all") type query)))
 
 (defun fj-list-issues-closed (&optional repo owner type)
-  "Display closed ISSUES for REPO by OWNER in tabulated list view."
+  "Display closed ISSUES for REPO by OWNER in tabulated list view.
+TYPE is the item type."
   (interactive "P")
   (fj-list-issues repo owner "closed" type))
 
 (defun fj-list-issues-all (&optional repo owner type)
-  "Display all ISSUES for REPO by OWNER in tabulated list view."
+  "Display all ISSUES for REPO by OWNER in tabulated list view.
+TYPE is the item type."
   (interactive "P")
   (fj-list-issues repo owner "all" type))
 
@@ -959,6 +967,20 @@ STATE and TYPE as for `fj-list-issues'."
           (repo (fj--get-buffer-spec :repo))
           (type (fj--get-buffer-spec :type)))
       (fj-list-issues repo owner state type))))
+
+(defun fj-issues-item-cycle ()
+  "Cycle item type listing of issues, pulls, and all."
+  (interactive)
+  (let ((state (fj--get-buffer-spec :state))
+        (owner (fj--get-buffer-spec :owner))
+        (repo (fj--get-buffer-spec :repo))
+        (type (fj--get-buffer-spec :type)))
+    (cond ((string= type "pulls")
+           (fj-list-issues repo owner state "all"))
+          ((string= type "all")
+           (fj-list-issues repo owner state "issues"))
+          (t ; issues default
+           (fj-list-issues repo owner state "pulls")))))
 
 ;;; ISSUE VIEW
 (defvar fj-url-regex fedi-post-url-regex)
@@ -1063,6 +1085,7 @@ JSON is the item's data to process the link with."
     (define-key map (kbd "O") #'fj-list-own-repos)
     (define-key map (kbd "b") #'fj-browse-view)
     (define-key map (kbd "N") #'fj-view-notifications)
+    (define-key map (kbd "M-C-q") #'fj-kill-all-buffers)
     map)
   "Keymap for `fj-issue-view-mode'.")
 
@@ -1121,7 +1144,7 @@ OWNER is the repo owner."
                                   " "))))
 
 (defun fj-render-item (repo owner item number timeline &optional reload)
-  "Render an ISSUE number NUMBER, in REPO and its TIMELINE.
+  "Render ITEM number NUMBER, in REPO and its TIMELINE.
 OWNER is the repo owner.
 RELOAD mean we reloaded."
   (fedi-with-buffer (format "*fj-issue-%s" number) 'fj-issue-view-mode
@@ -1336,12 +1359,14 @@ RELOAD means we are reloading, so don't open in other window."
 (defun fj-render-timeline (data &optional author owner)
   "Render timeline DATA.
 DATA contains all types of issue comments (references, name
-changes, commit references, etc.)."
+changes, commit references, etc.).
+AUTHOR is timeline item's author, OWNER is of item's repo."
   (cl-loop for i in data
            do (fj-render-timeline-item i author owner)))
 
 (defun fj-render-timeline-item (item &optional author owner)
-  "Render timeline ITEM."
+  "Render timeline ITEM.
+AUTHOR is timeline item's author, OWNER is of item's repo."
   (let-alist item
     (let ((format-str
            (cdr (assoc .type fj-issue-timeline-action-str-alist)))
