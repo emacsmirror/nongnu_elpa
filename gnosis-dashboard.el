@@ -80,6 +80,18 @@
 	     do (setq notes (append notes (list (gnosis-get-date-total-notes date)))))
     notes))
 
+(defun gnosis-dashboard--streak (dates &optional num date)
+  "Return current review streak.
+
+DATES: Dates in the activity log.
+NUM: Streak number.
+DATE: Integer, used with `gnosis-algorithm-date' to get previous dates."
+  (let ((num (or num 0))
+	(date (or date 0)))
+    (if (member (gnosis-algorithm-date date) dates)
+	(gnosis-dashboard--streak dates (cl-incf num) (- date 1))
+      num)))
+
 (defun gnosis-dashboard-month-reviews (month)
   "Return reviewes for MONTH in current year."
   (cl-assert (and (integerp month)
