@@ -265,9 +265,9 @@ Optionally, use  when using multiple months."
 			       (gnosis-dashboard-output-decks)
 			       (revert-buffer t t t)))
   (local-set-key (kbd "RET") #'(lambda () "View notes of deck" (interactive)
-				 (gnosis-dashboard "notes"
-						   (gnosis-collect-note-ids
-						    :deck (string-to-number (tabulated-list-get-id)))))))
+				 (gnosis-dashboard--search "notes"
+							   (gnosis-collect-note-ids
+							    :deck (string-to-number (tabulated-list-get-id)))))))
 
 (defun gnosis-dashboard-edit-note (&optional dashboard)
   "Get note id from tabulated list and edit it.
@@ -295,8 +295,7 @@ DASHBOARD: Dashboard to return to after editing."
   (setq tabulated-list-padding 2
 	tabulated-list-sort-key nil))
 
-;;;###autoload
-(cl-defun gnosis--dashboard (&optional dashboard-type (note-ids nil))
+(cl-defun gnosis-dashboard--search (&optional dashboard-type (note-ids nil))
   "Display gnosis dashboard.
 
 NOTE-IDS: List of note ids to display on dashboard.  When nil, prompt
