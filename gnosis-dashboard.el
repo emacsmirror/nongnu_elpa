@@ -174,49 +174,6 @@ Optionally, use  when using multiple months."
       (end-of-line)
       (cl-incf month))))
 
-;; TODO: Create a dashboard utilizing widgets
-(defun gnosis-dashboard ()
-  "Test function to create an editable field and a search button."
-  (interactive)
-  (let ((buffer-name "*Gnosis Dashboard*"))
-    (when (get-buffer buffer-name)
-      (kill-buffer buffer-name))  ;; Kill the existing buffer if it exists
-    (let ((buffer (get-buffer-create buffer-name)))
-      (with-current-buffer buffer
-        (widget-insert "\n"
-		       (gnosis-center-string
-			(format "%s" (propertize "Gnosis Dashboard" 'face 'gnosis-dashboard-header-face))))
-	(gnosis-insert-separator)
-	(widget-insert (gnosis-center-string (propertize "Stats:" 'face 'outline-3)) "\n")
-	(widget-insert (gnosis-center-string
-			(format "Reviewed today: %s | New: %s"
-				(propertize
-				 (number-to-string (gnosis-get-date-total-notes))
-				 'face
-				 'font-lock-variable-use-face)
-				(propertize
-				 (number-to-string (gnosis-get-date-new-notes))
-				 'face
-				 'font-lock-keyword-face))))
-	(insert "\n")
-	(widget-insert  (gnosis-center-string
-			 (format "Daily Average: %s"
-				 (propertize (number-to-string (gnosis-dashboard-output-average-rev))
-					     'face 'font-lock-type-face))))
-	(insert "\n")
-	(widget-insert (gnosis-center-string
-			 (format "Due notes: %s"
-				(propertize
-				 (number-to-string (length (gnosis-review-get-due-notes)))
-				 'face 'error))))
-	(insert "\n\n")
-        (gnosis-dashboard-month-overview (or gnosis-dashboard-months 0))
-        (use-local-map widget-keymap)
-        (widget-setup))
-      (pop-to-buffer-same-window buffer)
-      (goto-char (point-min))
-      (gnosis-dashboard-transient))))
-
 (defun gnosis-dashboard-output-note (id)
   "Output contents for note with ID, formatted for gnosis dashboard."
   (cl-loop for item in (append (gnosis-select '[main options answer tags type] 'notes `(= id ,id) t)
@@ -368,6 +325,58 @@ DASHBOARD-TYPE: either 'Notes' or 'Decks' to display the respective dashboard."
   "Transient buffer for gnosis dashboard interactions."
   [["Actions" ("r" "Start Review" gnosis-review)]
    ["Dashboard" ("d" "Dashboard" gnosis--dashboard)]])
+;; TODO: Create a dashboard utilizing widgets
+;;;###autoload
+(defun gnosis-dashboard ()
+  "Test function to create an editable field and a search button."
+  (interactive)
+  (delete-other-windows)
+  (let ((buffer-name "*Gnosis Dashboard*"))
+    (when (get-buffer buffer-name)
+      (kill-buffer buffer-name))  ;; Kill the existing buffer if it exists
+    (let ((buffer (get-buffer-create buffer-name)))
+      (with-current-buffer buffer
+        (widget-insert "\n"
+		       (gnosis-center-string
+			(format "%s" (propertize "Gnosis Dashboard" 'face 'gnosis-dashboard-header-face))))
+	(gnosis-insert-separator)
+	;; (widget-insert (gnosis-center-string (propertize "Stats:" 'face 'underline)) "\n\n")
+	(widget-insert (gnosis-center-string
+			(format "Reviewed today: %s | New: %s"
+				(propertize
+				 (number-to-string (gnosis-get-date-total-notes))
+				 'face
+				 'font-lock-variable-use-face)
+				(propertize
+				 (number-to-string (gnosis-get-date-new-notes))
+				 'face
+				 'font-lock-keyword-face))))
+	(insert "\n")
+	(widget-insert (gnosis-center-string
+			(format "Daily Average: %s"
+				(propertize (number-to-string (gnosis-dashboard-output-average-rev))
+					    'face 'font-lock-type-face))))
+	(insert "\n")
+	(widget-insert (gnosis-center-string
+			 (format "Due notes: %s"
+				(propertize
+				 (number-to-string (length (gnosis-review-get-due-notes)))
+				 'face 'error))))
+	(insert "\n\n")
+	(widget-insert (gnosis-center-string
+			(format "Current streak: %s days"
+				(propertize
+				 (number-to-string
+				  (gnosis-dashboard--streak
+				   (gnosis-select 'date 'activity-log '1=1 t)))
+				 'face 'success))))
+	(insert "\n\n")
+        ;; (gnosis-dashboard-month-overview (or gnosis-dashboard-months 0))
+        (use-local-map widget-keymap)
+        (widget-setup))
+      (pop-to-buffer-same-window buffer)
+      (goto-char (point-min))
+      (gnosis-dashboard-transient))))
 
 (provide 'gnosis-dashboard)
 ;;; gnosis-dashboard.el ends here
