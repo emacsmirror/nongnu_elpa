@@ -320,10 +320,13 @@ DASHBOARD-TYPE: either 'Notes' or 'Decks' to display the respective dashboard."
     (tabulated-list-print t)))
 
 
-(transient-define-prefix gnosis-dashboard-transient ()
+(transient-define-prefix gnosis-dashboard-menu ()
   "Transient buffer for gnosis dashboard interactions."
-  [["Actions" ("r" "Start Review" gnosis-review)]
-   ["Dashboard" ("d" "Dashboard" gnosis--dashboard)]])
+  [["Actions"
+    ("r" "Review" gnosis-review)
+    ("a" "Add note" gnosis-add-note)]
+   ["Dashboard" ("s" "Search" gnosis-dashboard--search)]])
+
 ;; TODO: Create a dashboard utilizing widgets
 ;;;###autoload
 (defun gnosis-dashboard ()
@@ -375,7 +378,7 @@ DASHBOARD-TYPE: either 'Notes' or 'Decks' to display the respective dashboard."
         (widget-setup))
       (pop-to-buffer-same-window buffer)
       (goto-char (point-min))
-      (gnosis-dashboard-transient))))
+      (gnosis-dashboard-menu))))
 
 (provide 'gnosis-dashboard)
 ;;; gnosis-dashboard.el ends here
