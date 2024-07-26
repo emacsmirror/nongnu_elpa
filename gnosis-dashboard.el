@@ -59,9 +59,8 @@
   "Store search value.")
 
 (defface gnosis-dashboard-header-face
-  '((t :inherit (outline-1) :weight bold))
-  "Face for the dashboard header.."
-  :group 'gnosis)
+  '((t :foreground "#ff0a6a" :weight bold))
+  "My custom face for both light and dark backgrounds.")
 
 (defun gnosis-dashboard-generate-dates (&optional year)
   "Return a list of all dates (year month day) for YEAR."
