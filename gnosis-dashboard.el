@@ -101,8 +101,9 @@ Skips days where no note was reviewed."
     (let ((total 0)
 	  (entries (gnosis-dashboard-year-stats)))
       (cl-loop for entry in entries
+	       when (not (= entry 0))
 	       do (setq total (+ total entry)))
-      (/ total (length (remove 0 entries)))))
+      (/ total (max (length (remove 0 entries)) 1))))
 
 ;; TODO: Add more conds & faces
 (defun gnosis-dashboard--graph-propertize (string num)
