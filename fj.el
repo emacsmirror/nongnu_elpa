@@ -1760,6 +1760,26 @@ Optionally specify REF, a commit, branch, or tag."
         (owner (fj--repo-owner)))
     (fj-repo-readme repo owner)))
 
+(defun fj-repo-tl-stargazers (&optional page limit)
+  "Prompt for a repo stargazer, and view their repos.
+PAGE and LIMIT are for `fj-get-stargazers'."
+  (interactive)
+  (let* ((repo (fj--repo-name))
+         (owner (fj--repo-owner))
+         (gazers (fj-get-stargazers repo owner page limit))
+         (gazers-list (cl-loop for u in gazers
+                               collect (alist-get 'login u)))
+         (choice (completing-read "Stargazer: " gazers-list)))
+    (fj-user-repos-tl choice)))
+
+(defun fj-get-stargazers (repo owner &optional page limit)
+  "Get stargazers for REPO by OWNER.
+Optionally set PAGE and LIMIT."
+  (let ((endpoint (format "repos/%s/%s/stargazers" owner repo))
+        (params `(("page" . ,page)
+                  ("limit" . ,limit))))
+    (fj-get endpoint)))
+
 ;;; TL ACTIONS, ISSUES ONLY
 
 (defun fj-issues-tl-view (&optional _)
