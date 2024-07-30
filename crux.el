@@ -732,6 +732,13 @@ Doesn't mess with special buffers."
       (find-file-other-window (car candidates)))))
 
 ;;;###autoload
+(defun crux-find-current-directory-dir-locals-file ()
+  "Edit the current directory's `.dir-locals.el' file in another window."
+  (interactive)
+  (find-file-other-window
+   (expand-file-name ".dir-locals.el")))
+
+;;;###autoload
 (defun crux-upcase-region (beg end)
   "`upcase-region' when `transient-mark-mode' is on and region is active."
   (interactive "*r")

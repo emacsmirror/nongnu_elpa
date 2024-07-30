@@ -2,6 +2,8 @@
 
 ## master (unreleased)
 
+* [#101](https://github.com/bbatsov/crux/pull/101): Add `crux-find-current-directory-dir-locals-file`.
+
 ### Bugs fixed
 
 * Create nonexistent parent directories in `crux-copy-file-preserve-attributes`.
