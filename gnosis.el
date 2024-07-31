@@ -201,6 +201,13 @@ Seperate the question/stem from options."
 		 (integer :tag "Number"))
   :group 'gnosis)
 
+(defcustom gnosis-review-new-first t
+  "Review new notes first.
+
+When nil, review new notes last."
+  :type 'bolean
+  :group 'gnosis)
+
 (defvar gnosis-due-notes-total nil
   "Total due notes.")
 
@@ -795,9 +802,7 @@ SUSPEND: Integer value of 1 or 0, where 1 suspends the card
 IMAGE: Image to display during review.
 SECOND-IMAGE: Image to display after user-input.
 
-NOTE: If a gnosis--insert-into fails, the whole transaction will be
- (or at least it should).  Else there will be an error for foreign key
- constraint."
+If a gnosis--insert-into fails, the whole transaction will be."
   (let* ((deck-id (gnosis--get-deck-id deck))
 	 (initial-interval (gnosis-get-deck-initial-interval deck-id))
 	 (note-id (gnosis-generate-id)))
@@ -1428,7 +1433,9 @@ well."
 							t)
 			     when (gnosis-review-is-due-today-p note)
 			     collect note)))
-    (append (cl-subseq new-notes 0 gnosis-new-notes-limit) old-notes)))
+    (if gnosis-review-new-first
+	(append (cl-subseq new-notes 0 gnosis-new-notes-limit) old-notes)
+      (append old-notes (cl-subseq new-notes 0 gnosis-new-notes-limit)))))
 
 (defun gnosis-review-get-due-tags ()
   "Return a list of due note tags."
