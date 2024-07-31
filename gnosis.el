@@ -1720,7 +1720,7 @@ the review session."
   (gnosis-review-result note success)
   (gnosis-review-commit note-count)
   ;; Break the loop of `gnosis-review-session'
-  (throw 'stop-loop t))
+  (throw 'review-loop t))
 
 (defun gnosis-review-action--suspend (success note note-count)
   "Suspend/Unsuspend NOTE.
@@ -1767,7 +1767,7 @@ To customize the keybindings, adjust `gnosis-review-keybindings'."
       ("edit" (gnosis-review-action--edit success note note-count))
       ("quit" (gnosis-review-action--quit success note note-count)))))
 
-(defun gnosis-review-session (notes)
+(defun gnosis-review-session (notes &optional due)
   "Start review session for NOTES.
 
 NOTES: List of note ids"
@@ -1775,14 +1775,17 @@ NOTES: List of note ids"
 	(date (gnosis-algorithm-date)))
     (if (null notes)
 	(message "No notes for review.")
-      (when (y-or-n-p (format "You have %s total notes for review, start session?" (length notes)))
-	(setf gnosis-review-notes notes)
-	(catch 'stop-loop
-	  (cl-loop for note in notes
-		   do (let ((success (gnosis-review-note note date)))
-			(cl-incf note-count)
-			(gnosis-review-actions success note note-count))
-		   finally (gnosis-review-commit note-count)))))))
+      (setf gnosis-review-notes notes)
+      (catch 'review-loop
+	(cl-loop for note in notes
+		 do (let ((success (gnosis-review-note note date)))
+		      (cl-incf note-count)
+		      (gnosis-review-actions success note note-count))
+		 finally (gnosis-review-commit note-count)
+		 ;; TODO: Add optional arg to repeat for specific deck/tag
+		 ;; Repeat until there are no due notes
+		 (and due (gnosis-review-session (gnosis-collect-note-ids :due t) t))))
+      (gnosis-dashboard))))
 
 ;;;###autoload
 (defun gnosis-review ()
@@ -1796,8 +1799,9 @@ NOTES: List of note ids"
 							  "Due notes of specified tag(s)"
 							  "All notes of tag(s)"))))
     (pcase review-type
-      ("Due notes" (gnosis-review-session (gnosis-collect-note-ids :due t)))
-      ("Due notes of deck" (gnosis-review-session (gnosis-collect-note-ids :due t :deck (gnosis--get-deck-id))))
+      ("Due notes" (gnosis-review-session (gnosis-collect-note-ids :due t) t))
+      ("Due notes of deck" (gnosis-review-session
+			    (gnosis-collect-note-ids :due t :deck (gnosis--get-deck-id))))
       ("Due notes of specified tag(s)" (gnosis-review-session (gnosis-collect-note-ids :due t :tags t)))
       ("All notes of deck" (gnosis-review-session (gnosis-collect-note-ids :deck (gnosis--get-deck-id))))
       ("All notes of tag(s)" (gnosis-review-session (gnosis-collect-note-ids :tags t))))))
