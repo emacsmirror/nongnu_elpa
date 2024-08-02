@@ -738,6 +738,11 @@ If INSTANCE is given, use that."
          (string-remove-suffix (concat "/@" username)
                                url))))
 
+(defun mastodon-views--get-own-instance ()
+  "Return JSON of `mastodon-active-user's instance."
+  (mastodon-http--get-json
+   (mastodon-http--api "instance" "v2") nil nil :vector))
+
 (defun mastodon-views--view-instance-description
     (&optional user brief instance misskey)
   "View the details of the instance the current post's author is on.
@@ -747,8 +752,7 @@ INSTANCE is an instance domain name.
 MISSKEY means the instance is a Misskey or derived server."
   (interactive)
   (if user
-      (let ((response (mastodon-http--get-json
-                       (mastodon-http--api "instance" "v2") nil nil :vector)))
+      (let ((response (mastodon-views--get-own-instance)))
         (mastodon-views--instance-response-fun response brief instance))
     (mastodon-tl--do-if-item
      (let* ((toot (if (mastodon-tl--profile-buffer-p)

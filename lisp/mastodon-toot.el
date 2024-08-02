@@ -97,6 +97,7 @@
 (autoload 'mastodon-tl--get-buffer-type "mastodon-tl")
 (autoload 'mastodon-tl--human-duration "mastodon-tl")
 (autoload 'mastodon-profile--get-preferences-pref "mastodon-profile")
+(autoload 'mastodon-views--get-own-instance "mastodon-views")
 
 ;; for mastodon-toot--translate-toot-text
 (autoload 'mastodon-tl--content "mastodon-tl")
@@ -1245,33 +1246,43 @@ Return its two letter ISO 639 1 code."
   (mastodon-toot--refresh-attachments-display)
   (mastodon-toot--update-status-fields))
 
+(defun mastodon-toot--get-instance-max-attachments ()
+  "Return the maximum attachments from `mastodon-active-user's instance."
+  ;; FIXME: this likely various for other server types:
+  (let ((config (alist-get 'statuses
+                           (alist-get 'configuration
+                                      (mastodon-views--get-own-instance)))))
+    (alist-get 'max_media_attachments config)))
+
 (defun mastodon-toot--attach-media (file description)
   "Prompt for an attachment FILE with DESCRIPTION.
 A preview is displayed in the new toot buffer, and the file
 is uploaded asynchronously using `mastodon-toot--upload-attached-media'.
 File is actually attached to the toot upon posting."
   (interactive "fFilename: \nsDescription: ")
-  (when (>= (length mastodon-toot--media-attachments) 4)
-    ;; Only a max. of 4 attachments are allowed, so pop the oldest one.
-    (pop mastodon-toot--media-attachments))
-  (if (file-directory-p file)
-      (user-error "Looks like you chose a directory not a file")
-    (setq mastodon-toot--media-attachments
-          (nconc mastodon-toot--media-attachments
-                 `(((:contents . ,(mastodon-http--read-file-as-string file))
-                    (:description . ,description)
-                    (:filename . ,file)))))
-    (mastodon-toot--refresh-attachments-display)
-    ;; upload only most recent attachment:
-    (mastodon-toot--upload-attached-media
-     (car (last mastodon-toot--media-attachments)))))
+  (let ((max-attachments (mastodon-toot--get-instance-max-attachments)))
+    (when (>= (length mastodon-toot--media-attachments)
+              (or max-attachments 4))
+      ;; warn + pop the oldest one:
+      (when (y-or-n-p
+             (format "Maximum attachments (%s) reached: remove first one?"
+                     max-attachments))
+        (pop mastodon-toot--media-attachments)))
+    (if (file-directory-p file)
+        (user-error "Looks like you chose a directory not a file")
+      (setq mastodon-toot--media-attachments
+            (nconc mastodon-toot--media-attachments
+                   `(((:contents . ,(mastodon-http--read-file-as-string file))
+                      (:description . ,description)
+                      (:filename . ,file)))))
+      (mastodon-toot--refresh-attachments-display)
+      ;; upload only most recent attachment:
+      (mastodon-toot--upload-attached-media
+       (car (last mastodon-toot--media-attachments))))))
 
 (defun mastodon-toot--attachment-descriptions ()
   "Return a list of image descriptions for current attachments."
-  (mastodon-tl--map-alist :description
-                          ;; (mapcar (lambda (a)
-                          ;; (alist-get :description a))
-                          mastodon-toot--media-attachments))
+  (mastodon-tl--map-alist :description mastodon-toot--media-attachments))
 
 (defun mastodon-toot--attachment-from-desc (desc)
   "Return an attachment based on its description DESC."
