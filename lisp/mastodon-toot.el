@@ -1167,7 +1167,6 @@ prefixed by >."
    (let* ((quote (when (region-active-p)
                    (buffer-substring (region-beginning)
                                      (region-end))))
-          ;; no-move arg for base toot: don't try next toot
           (toot (mastodon-toot--base-toot-or-item-json))
           (account (mastodon-tl--field 'account toot))
           (user (alist-get 'acct account))
@@ -1175,22 +1174,20 @@ prefixed by >."
           (boosted (mastodon-tl--field 'reblog toot))
           (booster (when boosted
                      (alist-get 'acct
-                                (alist-get 'account toot)))))
-     (mastodon-toot--compose-buffer
-      (when user
-        (if (and booster
-                 ;; (if
-                 (and (not (equal user booster))
-                      (not (member booster mentions))))
-            ;; different booster, user and mentions:
-	    (mastodon-toot--mentions-to-string (append (list user booster) mentions nil))
-          ;; booster is either user or in mentions or nil:
-          (if (not (member user mentions))
-              ;; user not already in mentions:
-	      (mastodon-toot--mentions-to-string (append (list user) mentions nil))
-            ;; user already in mentions:
-            (mastodon-toot--mentions-to-string (copy-sequence mentions)))))
-      id toot quote))))
+                                (alist-get 'account toot))))
+          (mentions
+           (cond ((and booster ;; different booster, user and mentions:
+                       (and (not (equal user booster))
+                            (not (member booster mentions))))
+	          (mastodon-toot--mentions-to-string
+                   (append (list user booster) mentions nil)))
+                 ((not (member user mentions)) ;; user not in mentions:
+	          (mastodon-toot--mentions-to-string
+                   (append (list user) mentions nil)))
+                 (t ;; user already in mentions:
+                  (mastodon-toot--mentions-to-string
+                   (copy-sequence mentions))))))
+     (mastodon-toot--compose-buffer mentions id toot quote))))
 
 
 ;;; COMPOSE TOOT SETTINGS
