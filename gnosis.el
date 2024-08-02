@@ -1674,14 +1674,14 @@ DATE: Date to log the note review on the activity-log."
     ;; Reopen gnosis-db after pull
     (setf gnosis-db (emacsql-sqlite-open (expand-file-name "gnosis.db" dir)))))
 
-(defun gnosis-review-commit (note-num)
+(defun gnosis-review-commit (note-count)
   "Commit review session on git repository.
 
 This function initializes the `gnosis-dir' as a Git repository if it is not
 already one.  It then adds the gnosis.db file to the repository and commits
 the changes with a message containing the reviewed number of notes.
 
-NOTE-NUM: The number of notes reviewed in the session."
+NOTE-COUNT: The number of notes reviewed in the session to be commited."
   (let ((git (executable-find "git"))
 	(default-directory gnosis-dir))
     (unless git
@@ -1692,10 +1692,11 @@ NOTE-NUM: The number of notes reviewed in the session."
     (unless gnosis-testing
       (shell-command (format "%s %s %s" git "add" (shell-quote-argument "gnosis.db")))
       (shell-command (format "%s %s %s" git "commit -m"
-			     (shell-quote-argument (format "Total notes for session: %d" note-num)))))
+			     (shell-quote-argument
+			      (format "Reviewed %d notes." note-count)))))
     (when (and gnosis-vc-auto-push (not gnosis-testing))
       (gnosis-vc-push))
-    (message "Review session finished.  %d notes reviewed." note-num)))
+    (message "Review session finished.")))
 
 (defun gnosis-review-action--edit (success note note-count)
   "Edit NOTE during review.
@@ -1767,11 +1768,13 @@ To customize the keybindings, adjust `gnosis-review-keybindings'."
       ("edit" (gnosis-review-action--edit success note note-count))
       ("quit" (gnosis-review-action--quit success note note-count)))))
 
-(defun gnosis-review-session (notes &optional due)
+(defun gnosis-review-session (notes &optional due note-count)
   "Start review session for NOTES.
 
-NOTES: List of note ids"
-  (let ((note-count 0)
+NOTES: List of note ids
+DUE: If due is non-nil, session will loop for due notes.
+NOTE-COUNT: Total notes to be commited for session."
+  (let ((note-count (or note-count 0))
 	(date (gnosis-algorithm-date)))
     (if (null notes)
 	(message "No notes for review.")
@@ -1781,11 +1784,12 @@ NOTES: List of note ids"
 		 do (let ((success (gnosis-review-note note date)))
 		      (cl-incf note-count)
 		      (gnosis-review-actions success note note-count))
-		 finally (gnosis-review-commit note-count)
+		 finally
 		 ;; TODO: Add optional arg to repeat for specific deck/tag
 		 ;; Repeat until there are no due notes
-		 (and due (gnosis-review-session (gnosis-collect-note-ids :due t) t))))
-      (gnosis-dashboard))))
+		 (and due (gnosis-review-session (gnosis-collect-note-ids :due t) t note-count))))
+      (gnosis-dashboard)
+      (gnosis-review-commit note-count))))
 
 ;;;###autoload
 (defun gnosis-review ()
