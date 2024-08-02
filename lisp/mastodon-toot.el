@@ -1177,26 +1177,19 @@ prefixed by >."
                                 (alist-get 'account toot)))))
      (mastodon-toot--compose-buffer
       (when user
-        (if booster
-            (if (and (not (equal user booster))
-                     (not (member booster mentions)))
-                ;; different booster, user and mentions:
-		(mastodon-toot--mentions-to-string (append (list user booster) mentions nil))
-              ;; booster is either user or in mentions:
-              (if (not (member user mentions))
-                  ;; user not already in mentions:
-		  (mastodon-toot--mentions-to-string (append (list user) mentions nil))
-                ;; user already in mentions:
-                (mastodon-toot--mentions-to-string (copy-sequence mentions))))
-          ;; ELSE no booster:
+        (if (and booster
+                 ;; (if
+                 (and (not (equal user booster))
+                      (not (member booster mentions))))
+            ;; different booster, user and mentions:
+	    (mastodon-toot--mentions-to-string (append (list user booster) mentions nil))
+          ;; booster is either user or in mentions or nil:
           (if (not (member user mentions))
-              ;; user not in mentions:
+              ;; user not already in mentions:
 	      (mastodon-toot--mentions-to-string (append (list user) mentions nil))
-            ;; user in mentions already:
+            ;; user already in mentions:
             (mastodon-toot--mentions-to-string (copy-sequence mentions)))))
-      id
-      toot
-      quote))))
+      id toot quote))))
 
 
 ;;; COMPOSE TOOT SETTINGS
