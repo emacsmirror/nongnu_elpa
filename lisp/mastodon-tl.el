@@ -2464,8 +2464,7 @@ ARGS is an alist of any parameters to send with the request."
 
 (defun mastodon-tl--get-tags-list ()
   "Return the list of tags of the toot at point."
-  (let* ((toot (or (mastodon-tl--property 'base-toot :no-move) ; fave/boost notifs
-                   (mastodon-tl--property 'item-json :no-move)))
+  (let* ((toot (mastodon-toot--base-toot-or-item-json))
          (tags (mastodon-tl--field 'tags toot)))
     (mastodon-tl--map-alist 'name tags)))
 
