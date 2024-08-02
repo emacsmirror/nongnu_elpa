@@ -1039,10 +1039,7 @@ eg. \"feduser@fed.social\" -> \"@feduser@fed.social\"."
 The mentioned users look like this:
 Local user (including the logged in): `username`.
 Federated user: `username@host.co`."
-  (let* ((boosted (mastodon-tl--field 'reblog status))
-         (mentions (if boosted
-	               (alist-get 'mentions (alist-get 'reblog status))
-	             (alist-get 'mentions status))))
+  (let* ((mentions (mastodon-tl--field 'mentions status)))
     ;; reverse does not work on vectors in 24.5
     (mastodon-tl--map-alist 'acct (reverse mentions))))
 
