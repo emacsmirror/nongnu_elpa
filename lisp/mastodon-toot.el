@@ -1320,30 +1320,30 @@ which is used to attach it to a toot when posting."
                              'toot-attachments (point-min)))
         (display-specs (mastodon-toot--format-attachments)))
     (dotimes (i (- (cdr attachments-region) (car attachments-region)))
-      (add-text-properties (+ (car attachments-region) i)
-                           (+ (car attachments-region) i 1)
+      (add-text-properties (+ i (car attachments-region))
+                           (+ i 1 (car attachments-region))
                            (list 'display (or (nth i display-specs) ""))))))
 
 (defun mastodon-toot--format-attachments ()
   "Format the attachment previews for display in toot draft buffer."
-  (or (let ((counter 0)
-            (image-options (when (or (image-type-available-p 'imagemagick)
-                                     (image-transforms-p))
-                             `(:height ,mastodon-toot--attachment-height))))
-        (mapcan (lambda (attachment)
-                  (let* ((data (alist-get :contents attachment))
-                         (image (apply #'create-image data
-                                       (if (version< emacs-version "27.1")
-                                           (when image-options 'imagemagick)
-                                         nil) ; inbuilt scaling in 27.1
-                                       t image-options))
-                         (description (alist-get :description attachment)))
-                    (setq counter (1+ counter))
-                    (list (format "\n    %d: " counter)
-                          image
-                          (format " \"%s\"" description))))
-                mastodon-toot--media-attachments))
-      (list "None")))
+  (or
+   (let ((image-options (when (or (image-type-available-p 'imagemagick)
+                                  (image-transforms-p))
+                          `(:height ,mastodon-toot--attachment-height))))
+     (cl-loop for count from 1
+              for att in mastodon-toot--media-attachments
+              nconc
+              (let* ((data (alist-get :contents att))
+                     (image (apply #'create-image data
+                                   (if (version< emacs-version "27.1")
+                                       (when image-options 'imagemagick)
+                                     nil) ; inbuilt scaling in 27.1
+                                   t image-options))
+                     (desc (alist-get :description att)))
+                (list (format "\n    %d: " count)
+                      image
+                      (format " \"%s\"" desc)))))
+   (list "None")))
 
 
 ;;; POLL
