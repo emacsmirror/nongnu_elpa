@@ -215,6 +215,14 @@ Optionally, use  when using multiple months."
     (gnosis-dashboard-output-notes gnosis-dashboard-note-ids)
     (revert-buffer t t t)))
 
+(defun gnosis-dashboard-delete ()
+  "Delete note."
+  (interactive)
+  (if gnosis-dashboard--selected-ids
+      (gnosis-dashboard-marked-delete)
+    (gnosis-delete-note (string-to-number (tabulated-list-get-id)))
+    (gnosis-dashboard-output-notes gnosis-dashboard-note-ids)
+    (revert-buffer t t t)))
 (defun gnosis-dashboard-output-notes (note-ids)
   "Return NOTE-IDS contents on gnosis dashboard."
   (cl-assert (listp note-ids) t "`note-ids' must be a list of note ids.")
