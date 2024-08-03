@@ -200,6 +200,12 @@ Optionally, use  when using multiple months."
            else
            collect (replace-regexp-in-string "\n" " " (format "%s" item))))
 
+(defun gnosis-dashboard-edit-note (&optional id)
+  "Edit note with ID."
+  (interactive)
+  (let ((id (or id (string-to-number (tabulated-list-get-id)))))
+    (gnosis-edit-note id)))
+
 (defun gnosis-dashboard-output-notes (note-ids)
   "Return NOTE-IDS contents on gnosis dashboard."
   (cl-assert (listp note-ids) t "`note-ids' must be a list of note ids.")
