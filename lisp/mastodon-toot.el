@@ -1403,10 +1403,11 @@ MAX is the maximum number set by their instance."
 (defun mastodon-toot--read-poll-options (count length)
   "Read a list of options for poll with COUNT options.
 LENGTH is the maximum character length allowed for a poll option."
-  (let* ((choices (cl-loop for x from 1 to count
-                           collect (read-string
-                                    (format "Poll option [%s/%s] [max %s chars]: "
-                                            x count length))))
+  (let* ((choices
+          (cl-loop for x from 1 to count
+                   collect (read-string
+                            (format "Poll option [%s/%s] [max %s chars]: "
+                                    x count length))))
          (longest (apply #'max (mapcar #'length choices))))
     (if (> longest length)
         (progn
@@ -1450,16 +1451,15 @@ Sets `mastodon-toot-poll' to nil."
 (defun mastodon-toot--server-poll-to-local (json)
   "Convert server poll data JSON to a `mastodon-toot-poll' plist."
   (let-alist json
-    (let* ((expiry-seconds-from-now
+    (let* ((expiry-seconds-rel
             (time-to-seconds
              (time-subtract
               (encode-time
                (parse-time-string .expires_at))
               (current-time))))
-           (expiry-str
-            (format-time-string "%s"
-                                expiry-seconds-from-now))
-           (expiry-human (car (mastodon-tl--human-duration expiry-seconds-from-now)))
+           (expiry-str (format-time-string "%s" expiry-seconds-rel))
+           (expiry-human (car
+                          (mastodon-tl--human-duration expiry-seconds-rel)))
            (options (mastodon-tl--map-alist 'title .options))
            (multiple (if (eq :json-false .multiple) nil t)))
       (setq mastodon-toot-poll
