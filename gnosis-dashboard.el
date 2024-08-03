@@ -287,6 +287,12 @@ Optionally, use  when using multiple months."
 		       (new-tags (cl-substitute new-tag tag tags :test #'string-equal)))
 		  (gnosis-update 'notes `(= tags ',new-tags) `(= id ,note))))))
 
+(defun gnosis-dashboard-tag-view-notes (&optional tag)
+  "View notes for TAG."
+  (interactive)
+  (let ((tag (or tag (tabulated-list-get-id))))
+    (gnosis-dashboard-output-notes (gnosis-get-tag-notes tag))))
+
 (defun gnosis-dashboard-output-deck (id)
   "Output contents from deck with ID, formatted for gnosis dashboard."
   (cl-loop for item in (append (gnosis-select
