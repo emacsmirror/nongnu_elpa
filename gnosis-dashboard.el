@@ -555,6 +555,7 @@ DASHBOARD-TYPE: either 'Notes' or 'Decks' to display the respective dashboard."
         (widget-setup))
       (pop-to-buffer-same-window buffer)
       (goto-char (point-min))
+      (gnosis-dashboard-mode)
       (gnosis-dashboard-menu))))
 
 (provide 'gnosis-dashboard)
