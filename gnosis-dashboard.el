@@ -67,6 +67,9 @@
   '((t :foreground "#ff0a6a" :weight bold))
   "My custom face for both light and dark backgrounds.")
 
+(defvar gnosis-dashboard--selected-ids nil
+  "Selected ids from the tabulated list.")
+
 (defun gnosis-dashboard-return (&optional current-values)
   "Return to dashboard for CURRENT-VALUES."
   (interactive)
