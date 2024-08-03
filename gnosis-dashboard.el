@@ -206,6 +206,15 @@ Optionally, use  when using multiple months."
   (let ((id (or id (string-to-number (tabulated-list-get-id)))))
     (gnosis-edit-note id)))
 
+(defun gnosis-dashboard-suspend-note ()
+  "Suspend note."
+  (interactive)
+  (if gnosis-dashboard--selected-ids
+      (gnosis-dashboard-marked-suspend)
+    (gnosis-suspend-note (string-to-number (tabulated-list-get-id)))
+    (gnosis-dashboard-output-notes gnosis-dashboard-note-ids)
+    (revert-buffer t t t)))
+
 (defun gnosis-dashboard-output-notes (note-ids)
   "Return NOTE-IDS contents on gnosis dashboard."
   (cl-assert (listp note-ids) t "`note-ids' must be a list of note ids.")
