@@ -324,8 +324,7 @@ Optionally, use  when using multiple months."
 
 (defun gnosis-dashboard-output-deck (id)
   "Output contents from deck with ID, formatted for gnosis dashboard."
-  (cl-loop for item in (append (gnosis-select
-				'[name failure-factor ef-increase ef-decrease ef-threshold initial-interval]
+  (cl-loop for item in (append (gnosis-select 'name
 				'decks `(= id ,id) t)
 			       (mapcar 'string-to-number (gnosis-dashboard-deck-note-count id)))
 	   when (listp item)
