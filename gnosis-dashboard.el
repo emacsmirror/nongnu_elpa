@@ -467,6 +467,14 @@ DASHBOARD-TYPE: either 'Notes' or 'Decks' to display the respective dashboard."
     (remove-overlays nil nil 'gnosis-mark t)
     (message "All items unmarked")))
 
+(defun gnosis-dashboard-marked-delete ()
+  "Delete marked note entries."
+  (interactive)
+  (when (y-or-n-p "Delete selected notes?")
+    (cl-loop for note in gnosis-dashboard--selected-ids
+	     do (gnosis-delete-note (string-to-number note) t))
+    (gnosis-dashboard-return)))
+
 (transient-define-prefix gnosis-dashboard-menu ()
   "Transient buffer for gnosis dashboard interactions."
   [["Actions"
