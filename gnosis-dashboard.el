@@ -223,6 +223,22 @@ Optionally, use  when using multiple months."
     (gnosis-delete-note (string-to-number (tabulated-list-get-id)))
     (gnosis-dashboard-output-notes gnosis-dashboard-note-ids)
     (revert-buffer t t t)))
+
+(defvar-keymap gnosis-dashboard-notes-mode-map
+  :doc "Keymap for notes dashboard."
+  "e" #'gnosis-dashboard-edit-note
+  "s" #'gnosis-dashboard-suspend-note
+  "a" #'gnosis-add-note
+  "r" #'gnosis-dashboard-return
+  "g" #'gnosis-dashboard-return
+  "d" #'gnosis-dashboard-delete
+  "m" #'gnosis-dashboard-mark-toggle
+  "u" #'gnosis-dashboard-mark-toggle)
+
+(define-minor-mode gnosis-dashboard-notes-mode
+  "Minor mode for gnosis dashboard notes output."
+  :keymap gnosis-dashboard-notes-mode-map)
+
 (defun gnosis-dashboard-output-notes (note-ids)
   "Return NOTE-IDS contents on gnosis dashboard."
   (cl-assert (listp note-ids) t "`note-ids' must be a list of note ids.")
