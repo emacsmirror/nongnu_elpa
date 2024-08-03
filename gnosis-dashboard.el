@@ -496,8 +496,13 @@ DASHBOARD-TYPE: either 'Notes' or 'Decks' to display the respective dashboard."
   "Transient buffer for gnosis dashboard interactions."
   [["Actions"
     ("r" "Review" gnosis-review)
-    ("a" "Add note" gnosis-add-note)]
-   ["Dashboard" ("s" "Search" gnosis-dashboard--search)]])
+    ("a" "Add note" gnosis-add-note)
+    ("q" "Quit" quit-window)]
+   ["Notes"
+    ("s" "Search" gnosis-dashboard-suffix-query)
+    ("n" "Notes" (lambda () (interactive) (gnosis-dashboard-output-notes (gnosis-collect-note-ids))))
+    ("d" "Decks" gnosis-dashboard-suffix-decks)
+    ("t" "Tags" (lambda () (interactive) (gnosis-dashboard-output-tags)))]])
 
 ;; TODO: Create a dashboard utilizing widgets
 ;;;###autoload
