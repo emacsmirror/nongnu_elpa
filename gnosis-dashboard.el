@@ -306,6 +306,22 @@ Optionally, use  when using multiple months."
   "Mode for dashboard output of tags."
   :keymap gnosis-dashboard-tags-mode-map)
 
+(defun gnosis-dashboard-output-tags (&optional tags)
+  "Format gnosis dashboard with output of TAGS."
+  (let ((tags (or tags (gnosis-get-tags--unique))))
+    (pop-to-buffer-same-window "*gnosis-dashboard*")
+    (gnosis-dashboard-mode)
+    (gnosis-dashboard-tags-mode)
+    (setf gnosis-dashboard--current '(:type 'tags))
+    (setq tabulated-list-format [("Name" 35 t)
+                                 ("Total Notes" 10 gnosis-dashboard-sort-total-notes)])
+    (tabulated-list-init-header)
+    (setq tabulated-list-entries
+          (cl-loop for tag in tags
+                   collect (list (car (gnosis-dashboard-output-tag tag))
+                                 (vconcat (gnosis-dashboard-output-tag tag)))))
+    (tabulated-list-print t)))
+
 (defun gnosis-dashboard-output-deck (id)
   "Output contents from deck with ID, formatted for gnosis dashboard."
   (cl-loop for item in (append (gnosis-select
