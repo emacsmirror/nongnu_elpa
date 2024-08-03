@@ -1247,12 +1247,17 @@ Return its two letter ISO 639 1 code."
   (mastodon-toot--update-status-fields))
 
 (defun mastodon-toot--get-instance-max-attachments ()
-  "Return the maximum attachments from `mastodon-active-user's instance."
+  "Return the maximum attachments from `mastodon-active-user's instance.
+If that fails, return 4 as a fallback"
   ;; FIXME: this likely various for other server types:
-  (let ((config (alist-get 'statuses
-                           (alist-get 'configuration
-                                      (mastodon-views--get-own-instance)))))
-    (alist-get 'max_media_attachments config)))
+  ;; pleroma doesn't advertise this on "api/v1/instance" (checked
+  ;; fe.disroot.org)
+  (or
+   (let ((config (alist-get 'statuses
+                            (alist-get 'configuration
+                                       (mastodon-views--get-own-instance)))))
+     (alist-get 'max_media_attachments config))
+   4)) ; mastodon default as fallback
 
 (defun mastodon-toot--attach-media (file description)
   "Prompt for an attachment FILE with DESCRIPTION.
@@ -1262,7 +1267,7 @@ File is actually attached to the toot upon posting."
   (interactive "fFilename: \nsDescription: ")
   (let ((max-attachments (mastodon-toot--get-instance-max-attachments)))
     (when (>= (length mastodon-toot--media-attachments)
-              (or max-attachments 4))
+              max-attachments)
       ;; warn + pop the oldest one:
       (when (y-or-n-p
              (format "Maximum attachments (%s) reached: remove first one?"
