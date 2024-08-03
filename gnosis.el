@@ -706,6 +706,11 @@ Set SPLIT to t to split all input given."
   "Return id for DECK name."
   (gnosis-get 'id 'decks `(= name ,deck)))
 
+(defun gnosis-get-note-deck-name (id)
+  "Return deck name of note ID."
+  (let ((deck (gnosis-get 'deck-id 'notes `(= id ,id))))
+    (gnosis--get-deck-name deck)))
+
 (defun gnosis-get-deck--note (id &optional name)
   "Get deck id for note ID.
 
