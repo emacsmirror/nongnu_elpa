@@ -277,6 +277,16 @@ Optionally, use  when using multiple months."
         (total2 (string-to-number (elt (cadr entry2) 1))))
     (< total1 total2)))
 
+(defun gnosis-dashboard-rename-tag (&optional tag new-tag )
+  "Rename TAG to NEW-TAG."
+  (interactive)
+  (let ((new-tag (or new-tag (read-string "News tag name: ")))
+	(tag (or tag (tabulated-list-get-id))))
+    (cl-loop for note in (gnosis-get-tag-notes tag)
+	     do (let* ((tags (car (gnosis-select '[tags] 'notes `(= id ,note) t)))
+		       (new-tags (cl-substitute new-tag tag tags :test #'string-equal)))
+		  (gnosis-update 'notes `(= tags ',new-tags) `(= id ,note))))))
+
 (defun gnosis-dashboard-output-deck (id)
   "Output contents from deck with ID, formatted for gnosis dashboard."
   (cl-loop for item in (append (gnosis-select
