@@ -365,6 +365,16 @@ DASHBOARD: Dashboard to return to after editing."
   (let ((id (tabulated-list-get-id)))
     (gnosis-edit-deck (string-to-number id))))
 
+(defun gnosis-dashboard-decks-suspend-deck (&optional deck-id)
+  "Suspend notes for DECK-ID.
+
+When called with called with a prefix, unsuspend all notes of deck."
+  (interactive)
+  (let ((deck-id (or deck-id (string-to-number (tabulated-list-get-id)))))
+    (gnosis-suspend-deck deck-id)
+    (gnosis-dashboard-output-decks)
+    (revert-buffer t t t)))
+
 (defvar-keymap gnosis-dashboard-mode-map
   :doc "gnosis-dashboard keymap"
   "q" #'quit-window)
