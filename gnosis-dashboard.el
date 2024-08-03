@@ -271,6 +271,12 @@ Optionally, use  when using multiple months."
   (let ((notes (gnosis-get-tag-notes tag)))
     `(,tag ,(number-to-string (length notes)))))
 
+(defun gnosis-dashboard-sort-total-notes (entry1 entry2)
+  "Sort function for the total notes column, for ENTRY1 and ENTRY2."
+  (let ((total1 (string-to-number (elt (cadr entry1) 1)))
+        (total2 (string-to-number (elt (cadr entry2) 1))))
+    (< total1 total2)))
+
 (defun gnosis-dashboard-output-deck (id)
   "Output contents from deck with ID, formatted for gnosis dashboard."
   (cl-loop for item in (append (gnosis-select
