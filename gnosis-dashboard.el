@@ -475,6 +475,13 @@ DASHBOARD-TYPE: either 'Notes' or 'Decks' to display the respective dashboard."
 	     do (gnosis-delete-note (string-to-number note) t))
     (gnosis-dashboard-return)))
 
+(defun gnosis-dashboard-marked-suspend ()
+  "Suspend marked note entries."
+  (interactive)
+  (when (y-or-n-p "Toggle SUSPEND on selected notes?")
+    (cl-loop for note in gnosis-dashboard--selected-ids
+	     do (gnosis-suspend-note (string-to-number note) t))
+    (gnosis-dashboard-return)))
 (transient-define-prefix gnosis-dashboard-menu ()
   "Transient buffer for gnosis dashboard interactions."
   [["Actions"
