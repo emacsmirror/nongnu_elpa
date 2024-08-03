@@ -391,7 +391,8 @@ When called with called with a prefix, unsuspend all notes of deck."
 
 (defvar-keymap gnosis-dashboard-mode-map
   :doc "gnosis-dashboard keymap"
-  "q" #'quit-window)
+  "q" #'quit-window
+  "h" #'gnosis-dashboard-menu)
 
 (define-derived-mode gnosis-dashboard-mode tabulated-list-mode "Gnosis Dashboard"
   "Major mode for displaying Gnosis dashboard."
