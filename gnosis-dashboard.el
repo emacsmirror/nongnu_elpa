@@ -67,6 +67,19 @@
   '((t :foreground "#ff0a6a" :weight bold))
   "My custom face for both light and dark backgrounds.")
 
+(defun gnosis-dashboard-return (&optional current-values)
+  "Return to dashboard for CURRENT-VALUES."
+  (interactive)
+  (let* ((current-values (or current-values gnosis-dashboard--current))
+	 (type (plist-get current-values :type))
+	 (ids (plist-get current-values :ids)))
+    (cond ((eq type 'notes)
+	   (gnosis-dashboard-output-notes ids))
+	  ((eq type 'decks )
+	   (gnosis-dashboard-output-decks))
+	  ((eq type 'tags )
+	   (gnosis-dashboard-output-tags)))))
+
 (defun gnosis-dashboard-generate-dates (&optional year)
   "Return a list of all dates (year month day) for YEAR."
   (let* ((current-year (or (decoded-time-year (decode-time)) year))
