@@ -487,6 +487,11 @@ DASHBOARD-TYPE: either 'Notes' or 'Decks' to display the respective dashboard."
   "Search for note content for QUERY."
   (interactive "sSearch for note content: ")
   (gnosis-dashboard-output-notes (gnosis-collect-note-ids :query query)))
+
+(transient-define-suffix gnosis-dashboard-suffix-decks ()
+  (interactive)
+  (gnosis-dashboard-output-decks))
+
 (transient-define-prefix gnosis-dashboard-menu ()
   "Transient buffer for gnosis dashboard interactions."
   [["Actions"
