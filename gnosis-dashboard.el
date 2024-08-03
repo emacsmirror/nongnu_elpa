@@ -383,6 +383,12 @@ When called with called with a prefix, unsuspend all notes of deck."
     (gnosis-dashboard-output-decks)
     (revert-buffer t t t)))
 
+(defun gnosis-dashboard-decks-view-deck (&optional deck-id)
+  "View notes of DECK-ID."
+  (interactive)
+  (let ((deck-id (or deck-id (string-to-number (tabulated-list-get-id)))))
+    (gnosis-dashboard-output-notes (gnosis-collect-note-ids :deck deck-id))))
+
 (defvar-keymap gnosis-dashboard-mode-map
   :doc "gnosis-dashboard keymap"
   "q" #'quit-window)
