@@ -346,42 +346,18 @@ Optionally, use  when using multiple months."
   "Return deck contents for gnosis dashboard."
   (pop-to-buffer-same-window "*gnosis-dashboard*")
   (gnosis-dashboard-mode)
+  (gnosis-dashboard-decks-mode)
   (setq tabulated-list-format [("Name" 15 t)
-			       ("failure-factor" 15 t)
-			       ("ef-increase" 15 t)
-			       ("ef-decrease" 15 t)
-			       ("ef-threshold" 15 t)
-			       ("Initial Interval" 20 t)
-			       ("Total Notes" 10 t)])
+			       ("Total Notes" 10 gnosis-dashboard-sort-total-notes)])
   (tabulated-list-init-header)
   (setq tabulated-list-entries
 	(cl-loop for id in (gnosis-select 'id 'decks '1=1 t)
 		 for output = (gnosis-dashboard-output-deck id)
 		 when output
 		 collect (list (number-to-string id) (vconcat output))))
-  (local-set-key (kbd "e") #'gnosis-dashboard-edit-deck)
-  (local-set-key (kbd "a") #'(lambda () "Add deck & refresh" (interactive)
-			       (gnosis-add-deck (read-string "Deck name: "))
-			       (gnosis-dashboard-output-decks)
-			       (revert-buffer t t t)))
-  (local-set-key (kbd "s") #'(lambda () "Suspend notes" (interactive)
-			       (gnosis-suspend-deck
-				(string-to-number (tabulated-list-get-id)))
-			       (gnosis-dashboard-output-decks)
-			       (revert-buffer t t t)))
-  (local-set-key (kbd "d") #'(lambda () "Delete deck" (interactive)
-			       (gnosis-delete-deck (string-to-number (tabulated-list-get-id)))
-			       (gnosis-dashboard-output-decks)
-			       (revert-buffer t t t)))
-  (local-set-key (kbd "RET") #'(lambda () "View notes of deck" (interactive)
-				 (gnosis-dashboard--search "notes"
-							   (gnosis-collect-note-ids
-							    :deck (string-to-number (tabulated-list-get-id)))))))
+  (tabulated-list-print t)
+  (setf gnosis-dashboard--current `(:type decks :ids ,(gnosis-select 'id 'decks '1=1 t))))
 
-(defun gnosis-dashboard-edit-note (&optional dashboard)
-  "Get note id from tabulated list and edit it.
-
-DASHBOARD: Dashboard to return to after editing."
   (interactive)
   (let ((id (tabulated-list-get-id))
 	(dashboard (or dashboard "notes")))
