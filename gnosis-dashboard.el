@@ -293,6 +293,16 @@ Optionally, use  when using multiple months."
   (let ((tag (or tag (tabulated-list-get-id))))
     (gnosis-dashboard-output-notes (gnosis-get-tag-notes tag))))
 
+(defvar-keymap gnosis-dashboard-tags-mode-map
+  "RET" #'gnosis-dashboard-tag-view-notes
+  "e" #'gnosis-dashboard-rename-tag
+  "r" #'gnosis-dashboard-rename-tag
+  "g" #'gnosis-dashboard-return)
+
+(define-minor-mode gnosis-dashboard-tags-mode
+  "Mode for dashboard output of tags."
+  :keymap gnosis-dashboard-tags-mode-map)
+
 (defun gnosis-dashboard-output-deck (id)
   "Output contents from deck with ID, formatted for gnosis dashboard."
   (cl-loop for item in (append (gnosis-select
