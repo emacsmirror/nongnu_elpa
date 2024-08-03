@@ -244,6 +244,7 @@ Optionally, use  when using multiple months."
   (cl-assert (listp note-ids) t "`note-ids' must be a list of note ids.")
   (pop-to-buffer-same-window "*gnosis-dashboard*")
   (gnosis-dashboard-mode)
+  (gnosis-dashboard-notes-mode)
   (setf tabulated-list-format `[("Main" ,(/ (window-width) 4) t)
 				("Options" ,(/ (window-width) 6) t)
 				("Answer" ,(/ (window-width) 6) t)
@@ -256,22 +257,8 @@ Optionally, use  when using multiple months."
 					collect (list (number-to-string id) (vconcat output)))
 	gnosis-dashboard-note-ids note-ids)
   (tabulated-list-init-header)
-  ;; Keybindings, for editing, suspending, deleting notes.
-  ;; We use `local-set-key' to bind keys to the buffer to avoid
-  ;; conflicts when using the dashboard for displaying either notes
-  ;; or decks.
-  (local-set-key (kbd "e") #'gnosis-dashboard-edit-note)
-  (local-set-key (kbd "s") #'(lambda () (interactive)
-			       (gnosis-suspend-note (string-to-number (tabulated-list-get-id)))
-			       (gnosis-dashboard-output-notes gnosis-dashboard-note-ids)
-			       (revert-buffer t t t)))
-  (local-set-key (kbd "a") #'gnosis-add-note)
-  (local-set-key (kbd "r") #'gnosis-dashboard)
-  (local-set-key (kbd "d") #'(lambda () (interactive)
-			       (gnosis-delete-note (string-to-number (tabulated-list-get-id)))
-			       (gnosis-dashboard-output-notes gnosis-dashboard-note-ids)
-			       (revert-buffer t t t)))
-  (local-unset-key (kbd "RET")))
+  (tabulated-list-print t)
+  (setf gnosis-dashboard--current `(:type notes :ids ,note-ids)))
 
 (defun gnosis-dashboard-deck-note-count (id)
   "Return total note count for deck with ID."
