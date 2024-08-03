@@ -459,6 +459,14 @@ DASHBOARD-TYPE: either 'Notes' or 'Decks' to display the respective dashboard."
           (message "No entry at point"))
       (message "Not in a tabulated-list-mode"))))
 
+(defun gnosis-dashboard-unmark-all ()
+  "Unmark all items in the tabulated-list."
+  (interactive)
+  (let ((inhibit-read-only t))
+    (setq gnosis-dashboard--selected-ids nil)
+    (remove-overlays nil nil 'gnosis-mark t)
+    (message "All items unmarked")))
+
 (transient-define-prefix gnosis-dashboard-menu ()
   "Transient buffer for gnosis dashboard interactions."
   [["Actions"
