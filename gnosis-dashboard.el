@@ -266,6 +266,11 @@ Optionally, use  when using multiple months."
     (when (gnosis-select 'id 'decks `(= id ,id))
       (list (number-to-string note-count)))))
 
+(defun gnosis-dashboard-output-tag (tag)
+  "Output TAG name and total notes."
+  (let ((notes (gnosis-get-tag-notes tag)))
+    `(,tag ,(number-to-string (length notes)))))
+
 (defun gnosis-dashboard-output-deck (id)
   "Output contents from deck with ID, formatted for gnosis dashboard."
   (cl-loop for item in (append (gnosis-select
