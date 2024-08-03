@@ -432,6 +432,32 @@ DASHBOARD-TYPE: either 'Notes' or 'Decks' to display the respective dashboard."
 		   (gnosis-collect-note-ids :query (read-string "Search for note: "))))))
     (tabulated-list-print t)))
 
+(defun gnosis-dashboard-mark-toggle ()
+  "Toggle mark on the current item in the tabulated-list."
+  (interactive)
+  (let ((inhibit-read-only t)
+        (entry (tabulated-list-get-entry))
+	(id (tabulated-list-get-id)))
+    (if (derived-mode-p 'tabulated-list-mode)
+        (if entry
+            (let ((beg (line-beginning-position))
+                  (end (line-end-position))
+                  (overlays (overlays-in (line-beginning-position) (line-end-position))))
+              (if (cl-some (lambda (ov) (overlay-get ov 'gnosis-mark)) overlays)
+                  (progn
+                    (remove-overlays beg end 'gnosis-mark t)
+		    (setq gnosis-dashboard--selected-ids (remove id gnosis-dashboard--selected-ids))
+                    ;; (message "Unmarked: %s" (aref entry 0))
+		    )
+                (let ((ov (make-overlay beg end)))
+		  (setf gnosis-dashboard--selected-ids
+			(append gnosis-dashboard--selected-ids (list id)))
+                  (overlay-put ov 'face 'highlight)
+                  (overlay-put ov 'gnosis-mark t)
+                  ;; (message "Marked: %s" (aref entry 0))
+		  )))
+          (message "No entry at point"))
+      (message "Not in a tabulated-list-mode"))))
 
 (transient-define-prefix gnosis-dashboard-menu ()
   "Transient buffer for gnosis dashboard interactions."
