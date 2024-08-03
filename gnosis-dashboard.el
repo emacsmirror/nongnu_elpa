@@ -482,6 +482,11 @@ DASHBOARD-TYPE: either 'Notes' or 'Decks' to display the respective dashboard."
     (cl-loop for note in gnosis-dashboard--selected-ids
 	     do (gnosis-suspend-note (string-to-number note) t))
     (gnosis-dashboard-return)))
+
+(transient-define-suffix gnosis-dashboard-suffix-query (query)
+  "Search for note content for QUERY."
+  (interactive "sSearch for note content: ")
+  (gnosis-dashboard-output-notes (gnosis-collect-note-ids :query query)))
 (transient-define-prefix gnosis-dashboard-menu ()
   "Transient buffer for gnosis dashboard interactions."
   [["Actions"
