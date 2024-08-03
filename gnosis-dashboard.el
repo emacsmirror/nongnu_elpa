@@ -331,6 +331,17 @@ Optionally, use  when using multiple months."
 	   do (cl-remove-if (lambda (x) (and (vectorp x) (zerop (length x)))) item)
 	   collect (format "%s" item)))
 
+(defvar-keymap gnosis-dashboard-decks-mode-map
+  "e" #'gnosis-dashboard-edit-deck
+  "a" #'gnosis-dashboard-decks-add
+  "s" #'gnosis-dashboard-decks-suspend-deck
+  "d" #'gnosis-dashboard-decks-delete
+  "RET" #'gnosis-dashboard-decks-view-deck)
+
+(define-minor-mode gnosis-dashboard-decks-mode
+  "Minor mode for deck output."
+  :keymap gnosis-dashboard-decks-mode-map)
+
 (defun gnosis-dashboard-output-decks ()
   "Return deck contents for gnosis dashboard."
   (pop-to-buffer-same-window "*gnosis-dashboard*")
