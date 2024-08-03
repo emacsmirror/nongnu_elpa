@@ -404,7 +404,9 @@ When called with called with a prefix, unsuspend all notes of deck."
   "Major mode for displaying Gnosis dashboard."
   :keymap gnosis-dashboard-mode-map
   (setq tabulated-list-padding 2
-	tabulated-list-sort-key nil))
+	tabulated-list-sort-key nil
+	gnosis-dashboard--selected-ids nil)
+  (display-line-numbers-mode 0))
 
 (cl-defun gnosis-dashboard--search (&optional dashboard-type (note-ids nil))
   "Display gnosis dashboard.
