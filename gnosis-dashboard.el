@@ -358,11 +358,12 @@ Optionally, use  when using multiple months."
   (tabulated-list-print t)
   (setf gnosis-dashboard--current `(:type decks :ids ,(gnosis-select 'id 'decks '1=1 t))))
 
+(defun gnosis-dashboard-decks-add ()
+  "Add deck & refresh."
   (interactive)
-  (let ((id (tabulated-list-get-id))
-	(dashboard (or dashboard "notes")))
-    (gnosis-edit-note (string-to-number id) nil dashboard)
-    (message "Editing note with id: %s" id)))
+  (gnosis-add-deck (read-string "Deck name: "))
+  (gnosis-dashboard-output-decks)
+  (revert-buffer t t t))
 
 (defun gnosis-dashboard-edit-deck ()
   "Get deck id from tabulated list and edit it."
