@@ -697,7 +697,8 @@ LETTER is a string, F for favourited, B for boosted, or K for bookmarked."
                         'help-echo (format "You have %s this status."
                                            help-string)))))
 
-(defun mastodon-tl--byline (toot author-byline action-byline &optional detailed-p domain)
+(defun mastodon-tl--byline (toot author-byline action-byline
+                                 &optional detailed-p domain base-toot)
   "Generate byline for TOOT.
 AUTHOR-BYLINE is a function for adding the author portion of
 the byline that takes one variable.
@@ -716,14 +717,16 @@ When DOMAIN, force inclusion of user's domain in their handle."
               ;; (mastodon-tl--field auto fetches from reblogs if needed):
               (mastodon-tl--field 'created_at toot)))
          (parsed-time (date-to-time created-time))
-         (faved (equal 't (mastodon-tl--field 'favourited toot)))
-         (boosted (equal 't (mastodon-tl--field 'reblogged toot)))
-         (bookmarked (equal 't (mastodon-tl--field 'bookmarked toot)))
+         (faved (eq t (mastodon-tl--field 'favourited toot)))
+         (boosted (eq t (mastodon-tl--field 'reblogged toot)))
+         (bookmarked (eq t (mastodon-tl--field 'bookmarked toot)))
          (visibility (mastodon-tl--field 'visibility toot))
          (account (alist-get 'account toot))
          (avatar-url (alist-get 'avatar account))
          (type (alist-get 'type toot))
-         (edited-time (alist-get 'edited_at toot))
+         (base-toot-maybe (or base-toot ;; show edits for notifs
+                              (mastodon-tl--toot-or-base toot))) ;; for boosts
+         (edited-time (alist-get 'edited_at base-toot-maybe))
          (edited-parsed (when edited-time (date-to-time edited-time))))
     (concat
      ;; Boosted/favourited markers are not technically part of the byline, so
@@ -811,7 +814,8 @@ When DOMAIN, force inclusion of user's domain in their handle."
       'bookmarked-p bookmarked
       'edited edited-time
       'edit-history (when edited-time
-                      (mastodon-toot--get-toot-edits (alist-get 'id toot)))
+                      (mastodon-toot--get-toot-edits
+                       (alist-get 'id base-toot-maybe)))
       'byline       t))))
 
 
@@ -1563,7 +1567,7 @@ NO-BYLINE means just insert toot body, used for folding."
        (if no-byline
            ""
          (mastodon-tl--byline toot author-byline action-byline
-                              detailed-p domain)))
+                              detailed-p domain base-toot)))
       'item-type    'toot
       'item-id      (or id ; notification's own id
                         (alist-get 'id toot)) ; toot id
@@ -2460,8 +2464,7 @@ ARGS is an alist of any parameters to send with the request."
 
 (defun mastodon-tl--get-tags-list ()
   "Return the list of tags of the toot at point."
-  (let* ((toot (or (mastodon-tl--property 'base-toot :no-move) ; fave/boost notifs
-                   (mastodon-tl--property 'item-json :no-move)))
+  (let* ((toot (mastodon-toot--base-toot-or-item-json))
          (tags (mastodon-tl--field 'tags toot)))
     (mastodon-tl--map-alist 'name tags)))
 
