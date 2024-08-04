@@ -1524,13 +1524,14 @@ With RESCHEDULE, reschedule the scheduled toot at point without editing."
 
 ;;; DISPLAY KEYBINDINGS
 
-(defun mastodon-toot--get-mode-kbinds ()
+(defun mastodon-toot--get-kbinds ()
   "Get a list of the keybindings in the `mastodon-toot-mode'."
   (let* ((binds (copy-tree mastodon-toot-mode-map))
          (prefix (car (cadr binds)))
-         (bindings (remove nil (mapcar (lambda (i)
-                                         (when (listp i) i))
-                                       (cadr binds)))))
+         (bindings (remove nil
+                           (mapcar (lambda (i)
+                                     (when (listp i) i))
+                                   (cadr binds)))))
     (mapcar (lambda (b)
               (setf (car b) (vector prefix (car b)))
               b)
@@ -1585,7 +1586,7 @@ LONGEST is the length of the longest binding."
     (mastodon-toot--formatted-kbinds-pairs (cddr kbinds-list) longest))
   (reverse mastodon-toot--kbinds-pairs))
 
-(defun mastodon-toot--formatted-kbinds-longest (kbinds-list)
+(defun mastodon-toot--kbinds-longest (kbinds-list)
   "Return the length of the longest item in KBINDS-LIST."
   (let ((lengths (mapcar #'length kbinds-list)))
     (car (sort lengths #'>))))
@@ -1594,19 +1595,20 @@ LONGEST is the length of the longest binding."
 ;;; DISPLAY DOCS
 
 (defun mastodon-toot--make-mode-docs ()
-  "Create formatted documentation text for the `mastodon-toot-mode'."
-  (let* ((kbinds (mastodon-toot--get-mode-kbinds))
-         (longest-kbind (mastodon-toot--formatted-kbinds-longest
-                         (mastodon-toot--format-kbinds kbinds))))
+  "Create formatted documentation text for `mastodon-toot-mode'."
+  (let* ((kbinds (mastodon-toot--get-kbinds))
+         (formatted (mastodon-toot--format-kbinds kbinds))
+         (longest-kbind (mastodon-toot--kbinds-longest
+                         formatted)))
     (concat
-     (mastodon-toot--comment " Compose a new toot here. The following keybindings are available:")
-     (mapconcat #'identity
-                (mastodon-toot--formatted-kbinds-pairs
-                 (mastodon-toot--format-kbinds kbinds)
-                 longest-kbind)
-                nil))))
+     (mastodon-toot--comment
+      " Compose a new toot here. The following keybindings are available:")
+     (mapconcat
+      #'identity
+      (mastodon-toot--formatted-kbinds-pairs formatted longest-kbind)
+      nil))))
 
-(defun mastodon-toot--format-reply-in-compose-string (reply-text)
+(defun mastodon-toot--format-reply-in-compose (reply-text)
   "Format a REPLY-TEXT for display in compose buffer docs."
   (let* ((rendered (mastodon-tl--render-text reply-text))
          (no-props (substring-no-properties rendered))
@@ -1662,7 +1664,7 @@ REPLY-TEXT is the text of the toot being replied to."
         "\n"
         (if reply-text
             (propertize
-             (mastodon-toot--format-reply-in-compose-string reply-text)
+             (mastodon-toot--format-reply-in-compose reply-text)
              'toot-reply t)
           "")
         divider)
@@ -1755,16 +1757,13 @@ REPLY-REGION is a string to be injected into the buffer."
       (mastodon-toot--apply-fields-props
        vis-region
        (format "%s"
-               (if (equal
-                    mastodon-toot--visibility
-                    "private")
+               (if (equal "private" mastodon-toot--visibility)
                    "followers-only"
                  mastodon-toot--visibility)))
       (mastodon-toot--apply-fields-props
        lang-region
        (if mastodon-toot--language
-           (format "Lang: %s ⋅"
-                   mastodon-toot--language)
+           (format "Lang: %s ⋅" mastodon-toot--language)
          ""))
       (mastodon-toot--apply-fields-props
        sched-region
@@ -1806,6 +1805,8 @@ REPLY-REGION is a string to be injected into the buffer."
 URLs always = 23, and domain names of handles are not counted.
 This is how mastodon does it.
 CW is the content warning, which contributes to the character count."
+  ;; FIXME: URL chars is avail at /api/v1/instance
+  ;; for masto, it's .statuses.characters_reserved_per_url
   (let* ((url-replacement (make-string 23 ?x))
          (count-str (replace-regexp-in-string ; handle @handles
                      mastodon-toot-handle-regex "\2"
@@ -1854,7 +1855,7 @@ Added to `after-change-functions' in new toot buffers."
   "Prompt for a draft toot and delete it."
   (interactive)
   (if (not (multisession-value mastodon-toot-draft-toots-list))
-      (message "No drafts to delete.")
+      (user-error "No drafts to delete")
     (let ((draft (completing-read
                   "Select draft to delete: "
                   (multisession-value mastodon-toot-draft-toots-list)
