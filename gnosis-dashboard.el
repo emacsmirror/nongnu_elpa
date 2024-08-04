@@ -294,6 +294,15 @@ Optionally, use  when using multiple months."
 		       (new-tags (cl-substitute new-tag tag tags :test #'string-equal)))
 		  (gnosis-update 'notes `(= tags ',new-tags) `(= id ,note))))))
 
+(defun gnosis-dashboard-suspend-tag (&optional tag)
+  "Suspend notes of TAG."
+  (interactive)
+  (let* ((tag (or tag (tabulated-list-get-id)))
+	 (notes (gnosis-get-tag-notes tag)))
+    (when (y-or-n-p "Toggle SUSPEND for tagged notes?")
+      (cl-loop for note in notes
+	       do (gnosis-suspend-note note t)))))
+
 (defun gnosis-dashboard-tag-view-notes (&optional tag)
   "View notes for TAG."
   (interactive)
@@ -303,6 +312,7 @@ Optionally, use  when using multiple months."
 (defvar-keymap gnosis-dashboard-tags-mode-map
   "RET" #'gnosis-dashboard-tag-view-notes
   "e" #'gnosis-dashboard-rename-tag
+  "s" #'gnosis-dashboard-suspend-tag
   "r" #'gnosis-dashboard-rename-tag
   "g" #'gnosis-dashboard-return)
 
