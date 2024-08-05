@@ -56,6 +56,22 @@ Transfer-Encoding: chunked")
                 (username . "local")
                 (url . "")
                 (acct . "local"))])))
+
+(defconst mastodon-toot--multi-mention-list
+  '((mentions .
+              (((id . "1")
+                (username . "federated")
+                (url . "https://site.cafe/@federated")
+                (acct . "federated@federated.cafe"))
+               ((id . "1")
+                (username . "federated")
+                (url . "https://site.cafe/@federated")
+                (acct . "federated@federated.social"))
+               ((id . "1")
+                (username . "local")
+                (url . "")
+                (acct . "local"))))))
+
 (defconst mastodon-toot-no-mention
   '((mentions . [])))
 
@@ -67,10 +83,17 @@ Transfer-Encoding: chunked")
 
 Even the local name \"local\" gets a domain name added."
   (let ((mastodon-auth--acct-alist '(("https://local.social". "null")))
-        (mastodon-instance-url "https://local.social"))
-    (should (equal
-             (mastodon-toot--mentions mastodon-toot--multi-mention)
-             '("local" "federated@federated.social" "federated@federated.cafe")))))
+        (mastodon-instance-url "https://local.social")
+        (status mastodon-toot-test-base-toot))
+    (with-mock
+      ;; test-base-toot has no mentions so we mock some, using a list not an
+      ;; array as formerly
+      (mock (mastodon-tl--field 'mentions status)
+            => (alist-get 'mentions mastodon-toot--multi-mention-list))
+      (should (equal
+               (mastodon-toot--mentions mastodon-toot-test-base-toot)
+               ;; mastodon-toot--multi-mention) ; how did that ever work?
+               '("local" "federated@federated.social" "federated@federated.cafe"))))))
 
 (ert-deftest mastodon-toot--multi-mentions-to-string ()
   "Should build a correct mention string from the test toot data.
