@@ -98,3 +98,10 @@ Strict-Transport-Security: max-age=31536000
     (should (equal (mastodon-http--build-array-params-alist param-str array)
                    '(("poll[x][]" . "option")
                      ("poll[x][]" . "option2"))))))
+
+(ert-deftest mastodon-http-concat-params-url ()
+  ""
+  (let ((url "https://example.com")
+        (params '(("q" . "query"))))
+    (should (equal (mastodon-http--concat-params-to-url url params)
+                   "https://example.com?q=query"))))
