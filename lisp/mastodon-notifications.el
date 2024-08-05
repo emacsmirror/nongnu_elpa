@@ -115,32 +115,31 @@ With no argument, the request is accepted. Argument REJECT means
 reject the request. Can be called in notifications view or in
 follow-requests view."
   (if (not (mastodon-tl--find-property-range 'item-json (point)))
-      (message "No follow request at point?")
+      (user-error "No follow request at point?")
     (let* ((item-json (mastodon-tl--property 'item-json))
            (f-reqs-view-p (string= "follow_requests"
                                    (plist-get mastodon-tl--buffer-spec 'endpoint)))
            (f-req-p (or (string= "follow_request" (alist-get 'type item-json)) ;notifs
                         f-reqs-view-p)))
       (if (not f-req-p)
-          (message "No follow request at point?")
+          (user-error "No follow request at point?")
         (let-alist (or (alist-get 'account item-json) ;notifs
                        item-json) ;f-reqs
-          (if .id
-              (let ((response
-                     (mastodon-http--post
-                      (concat
-                       (mastodon-http--api "follow_requests")
-                       (format "/%s/%s" .id (if reject "reject" "authorize"))))))
-                (mastodon-http--triage response
-                                       (lambda (_)
-                                         (if f-reqs-view-p
-                                             (mastodon-views--view-follow-requests)
-                                           (mastodon-tl--reload-timeline-or-profile))
-                                         (message "Follow request of %s (@%s) %s!"
-                                                  .username .acct (if reject
-                                                                      "rejected"
-                                                                    "accepted")))))
-            (message "No account result at point?")))))))
+          (if (not .id)
+              (user-error "No account result at point?")
+            (let ((response
+                   (mastodon-http--post
+                    (mastodon-http--api
+                     (format "follow_requests/%s/%s"
+                             .id (if reject "reject" "authorize"))))))
+              (mastodon-http--triage
+               response
+               (lambda (_)
+                 (if f-reqs-view-p
+                     (mastodon-views--view-follow-requests)
+                   (mastodon-tl--reload-timeline-or-profile))
+                 (message "Follow request of %s (@%s) %s!"
+                          .username .acct (if reject "rejected" "accepted")))))))))))
 
 (defun mastodon-notifications--follow-request-accept ()
   "Accept a follow request.
@@ -191,7 +190,6 @@ Status notifications are given when
 (defun mastodon-notifications--comment-note-text (str)
   "Add comment face to all text in STR with `shr-text' face only."
   (with-temp-buffer
-    (switch-to-buffer (current-buffer))
     (insert str)
     (goto-char (point-min))
     (let (prop)
@@ -214,7 +212,7 @@ Status notifications are given when
                 str))))
          (status (mastodon-tl--field 'status note))
          (follower (alist-get 'username (alist-get 'account note))))
-    (mastodon-notifications--insert-status
+    (mastodon-tl--insert-status
      ;; toot
      (cond ((or (equal type 'follow)
                 (equal type 'follow-request))
@@ -237,24 +235,22 @@ Status notifications are given when
                       (mastodon-tl--content status))))))
        (cond ((or (eq type 'follow)
                   (eq type 'follow-request))
-              (propertize
-               (if (equal type 'follow)
-                   (propertize
-                    "Congratulations, you have a new follower!"
-                    'face 'default)
-                 (concat
-                  (propertize
-                   (format "You have a follow request from... %s"
-                           follower)
-                   'face 'default)
-                  (when mastodon-notifications--profile-note-in-foll-reqs
-                    (concat
-                     ":\n"
-                     (mastodon-notifications--comment-note-text body)))))))
+              (if (equal type 'follow)
+                  (propertize "Congratulations, you have a new follower!"
+                              'face 'default)
+                (concat
+                 (propertize
+                  (format "You have a follow request from... %s"
+                          follower)
+                  'face 'default)
+                 (if mastodon-notifications--profile-note-in-foll-reqs
+                     (concat
+                      ":\n"
+                      (mastodon-notifications--comment-note-text body))
+                   ""))))
              ((or (eq type 'favourite)
                   (eq type 'boost))
-              (mastodon-notifications--comment-note-text
-               body))
+              (mastodon-notifications--comment-note-text body))
              (t body)))
      ;; author-byline
      (if (or (equal type 'follow)
@@ -288,28 +284,9 @@ Status notifications are given when
                (equal type 'boost))
        status))))
 
-(defun mastodon-notifications--insert-status
-    (toot body author-byline action-byline id &optional base-toot)
-  "Display the content and byline of timeline element TOOT.
-BODY will form the section of the toot above the byline.
-
-AUTHOR-BYLINE is an optional function for adding the author
-portion of the byline that takes one variable. By default it is
-`mastodon-tl--byline-author'.
-
-ACTION-BYLINE is also an optional function for adding an action,
-such as boosting favouriting and following to the byline. It also
-takes a single function. By default it is
-`mastodon-tl--byline-boosted'.
-
-ID is the notification's own id, which is attached as a property.
-If the status is a favourite or a boost, BASE-TOOT is the JSON
-of the toot responded to."
-  (when toot ; handle rare blank notif server bug
-    (mastodon-tl--insert-status toot body author-byline action-byline id base-toot)))
-
 (defun mastodon-notifications--by-type (note)
-  "Filters NOTE for those listed in `mastodon-notifications--types-alist'."
+  "Filter NOTE for those listed in `mastodon-notifications--types-alist'.
+Call its function in that list on NOTE."
   (let* ((type (mastodon-tl--field 'type note))
          (fun (cdr (assoc type mastodon-notifications--types-alist)))
          (start-pos (point)))
@@ -321,7 +298,7 @@ of the toot responded to."
 (defun mastodon-notifications--timeline (json)
   "Format JSON in Emacs buffer."
   (if (seq-empty-p json)
-      (message "Looks like you have no (more) notifications for the moment.")
+      (user-error "Looks like you have no (more) notifications for now")
     (mapc #'mastodon-notifications--by-type json)
     (goto-char (point-min))))
 
