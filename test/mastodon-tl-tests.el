@@ -228,10 +228,10 @@ Strict-Transport-Security: max-age=31536000
               (weeks (n) (* n (days 7)))
               (years (n) (* n (days 365)))
               (format-seconds-since (seconds)
-                                    (let ((timestamp (time-subtract (current-time) (seconds-to-time seconds))))
-                                      (mastodon-tl--relative-time-description timestamp)))
+                (let ((timestamp (time-subtract (current-time) (seconds-to-time seconds))))
+                  (mastodon-tl--relative-time-description timestamp)))
               (check (seconds expected)
-                     (should (string= (format-seconds-since seconds) expected))))
+                (should (string= (format-seconds-since seconds) expected))))
     (check 1 "just now")
     (check 59 "just now")
     (check 60 "1 minute ago")
@@ -267,33 +267,33 @@ Strict-Transport-Security: max-age=31536000
                 (weeks (n) (* n (days 7)))
                 (years (n) (* n (days 365.25)))
                 (next-update (seconds-ago)
-                             (let* ((timestamp (time-subtract current-time
-                                                              (seconds-to-time seconds-ago))))
-                               (cdr (mastodon-tl--relative-time-details timestamp current-time))))
+                  (let* ((timestamp (time-subtract current-time
+                                                   (seconds-to-time seconds-ago))))
+                    (cdr (mastodon-tl--relative-time-details timestamp current-time))))
                 (check (seconds-ago)
-                       (let* ((timestamp (time-subtract current-time (seconds-to-time seconds-ago)))
-                              (at-now (mastodon-tl--relative-time-description timestamp current-time))
-                              (at-one-second-before (mastodon-tl--relative-time-description
-                                                     timestamp
-                                                     (time-subtract (next-update seconds-ago)
-                                                                    (seconds-to-time 1))))
-                              (at-result (mastodon-tl--relative-time-description
-                                          timestamp
-                                          (next-update seconds-ago))))
-                         (when nil  ;; change to t to debug test failures
-                           (prin1 (format "\nFor %s: %s / %s"
-                                          seconds-ago
-                                          (time-to-seconds
-                                           (time-subtract (next-update seconds-ago)
-                                                          timestamp))
-                                          (round
-                                           (time-to-seconds
-                                            (time-subtract (next-update seconds-ago)
-                                                           current-time))))))
-                         ;; a second earlier the description is the same as at current time
-                         (should (string= at-now at-one-second-before))
-                         ;; but at the result time it is different
-                         (should-not (string= at-one-second-before at-result)))))
+                  (let* ((timestamp (time-subtract current-time (seconds-to-time seconds-ago)))
+                         (at-now (mastodon-tl--relative-time-description timestamp current-time))
+                         (at-one-second-before (mastodon-tl--relative-time-description
+                                                timestamp
+                                                (time-subtract (next-update seconds-ago)
+                                                               (seconds-to-time 1))))
+                         (at-result (mastodon-tl--relative-time-description
+                                     timestamp
+                                     (next-update seconds-ago))))
+                    (when nil  ;; change to t to debug test failures
+                      (prin1 (format "\nFor %s: %s / %s"
+                                     seconds-ago
+                                     (time-to-seconds
+                                      (time-subtract (next-update seconds-ago)
+                                                     timestamp))
+                                     (round
+                                      (time-to-seconds
+                                       (time-subtract (next-update seconds-ago)
+                                                      current-time))))))
+                    ;; a second earlier the description is the same as at current time
+                    (should (string= at-now at-one-second-before))
+                    ;; but at the result time it is different
+                    (should-not (string= at-one-second-before at-result)))))
       (check 0)
       (check 1)
       (check 59)
@@ -865,13 +865,13 @@ constant."
   (let ((now (current-time))
         markers)
     (cl-labels ((insert-timestamp (n)
-                                  (insert (format "\nSome text before timestamp %s:" n))
-                                  (insert (propertize
-                                           (format "timestamp #%s" n)
-                                           'timestamp (time-subtract now (seconds-to-time (* 60 n)))
-                                           'display (format "unset %s" n)))
-                                  (push (copy-marker (point)) markers)
-                                  (insert " some more text.")))
+                  (insert (format "\nSome text before timestamp %s:" n))
+                  (insert (propertize
+                           (format "timestamp #%s" n)
+                           'timestamp (time-subtract now (seconds-to-time (* 60 n)))
+                           'display (format "unset %s" n)))
+                  (push (copy-marker (point)) markers)
+                  (insert " some more text.")))
       (with-temp-buffer
         (cl-dotimes (n 12) (insert-timestamp (+ n 2)))
         (setq markers (nreverse markers))
@@ -931,13 +931,13 @@ constant."
       (insert "some text before\n")
       (setq toot-start (point))
       (with-mock
-       (mock (mastodon-profile--get-preferences-pref
-              'reading:expand:spoilers)
-             => :json-false)
-       (stub create-image => '(image "fake data"))
-       (stub shr-render-region => nil) ;; Travis's Emacs doesn't have libxml
-       (insert
-        (mastodon-tl--spoiler normal-toot-with-spoiler)))
+        (mock (mastodon-profile--get-preferences-pref
+               'reading:expand:spoilers)
+              => :json-false)
+        (stub create-image => '(image "fake data"))
+        (stub shr-render-region => nil) ;; Travis's Emacs doesn't have libxml
+        (insert
+         (mastodon-tl--spoiler normal-toot-with-spoiler)))
       (setq toot-end (point))
       (insert "\nsome more text.")
       (add-text-properties
@@ -1015,28 +1015,28 @@ constant."
 (ert-deftest mastodon-tl--extract-hashtag-from-url-mastodon-link ()
   "Should extract the hashtag from a tags url."
   (should (equal (mastodon-tl--extract-hashtag-from-url
-		          "https://example.org/tags/foo"
-		          "https://example.org")
-		         "foo")))
+		  "https://example.org/tags/foo"
+		  "https://example.org")
+		 "foo")))
 
 (ert-deftest mastodon-tl--extract-hashtag-from-url-other-link ()
   "Should extract the hashtag from a tag url."
   (should (equal (mastodon-tl--extract-hashtag-from-url
-		          "https://example.org/tag/foo"
-		          "https://example.org")
-		         "foo")))
+		  "https://example.org/tag/foo"
+		  "https://example.org")
+		 "foo")))
 
 (ert-deftest mastodon-tl--extract-hashtag-from-url-wrong-instance ()
   "Should not find a tag when the instance doesn't match."
   (should (null (mastodon-tl--extract-hashtag-from-url
-		         "https://example.org/tags/foo"
-		         "https://other.example.org"))))
+		 "https://example.org/tags/foo"
+		 "https://other.example.org"))))
 
 (ert-deftest mastodon-tl--extract-hashtag-from-url-not-tag ()
   "Should not find a hashtag when not a tag url"
   (should (null (mastodon-tl--extract-hashtag-from-url
-		         "https://example.org/@userid"
-		         "https://example.org"))))
+		 "https://example.org/@userid"
+		 "https://example.org"))))
 
 (ert-deftest mastodon-tl--userhandles ()
   "Should recognise userhandles in a toot and add the required properties to it."
@@ -1166,28 +1166,28 @@ correct value for following, as well as notifications enabled or disabled."
     (let* ((toot mastodon-tl-test-base-toot)
            (account (alist-get 'account toot)))
       (with-mock
-       ;; no longer needed after our refactor
-       ;; (mock (mastodon-http--api "reports") => "https://instance.url/api/v1/reports")
-       ;; (mock (mastodon-tl--toot-or-base
-       ;; (mastodon-tl--property 'item-json :no-move))
-       ;; => mastodon-tl-test-base-toot)
-       (mock (read-string "Add comment [optional]: ") => "Dummy complaint")
-       (stub y-or-n-p => nil) ; no to all
-       (should (equal (mastodon-tl--report-params account toot)
-                      '(("account_id" . 42)
-                        ("comment" . "Dummy complaint")
-                        ("category" . "other"))))
-       (with-mock
-        (stub y-or-n-p => t) ; yes to all
-        (mock (mastodon-tl--read-rules-ids) => '(1 2 3))
+        ;; no longer needed after our refactor
+        ;; (mock (mastodon-http--api "reports") => "https://instance.url/api/v1/reports")
+        ;; (mock (mastodon-tl--toot-or-base
+        ;; (mastodon-tl--property 'item-json :no-move))
+        ;; => mastodon-tl-test-base-toot)
+        (mock (read-string "Add comment [optional]: ") => "Dummy complaint")
+        (stub y-or-n-p => nil) ; no to all
         (should (equal (mastodon-tl--report-params account toot)
-                       '(("rule_ids[]" . 3)
-                         ("rule_ids[]" . 2)
-                         ("rule_ids[]" . 1)
-                         ("account_id" . 42)
+                       '(("account_id" . 42)
                          ("comment" . "Dummy complaint")
-                         ("status_ids[]" . 61208)
-                         ("forward" . "true")))))))))
+                         ("category" . "other"))))
+        (with-mock
+          (stub y-or-n-p => t) ; yes to all
+          (mock (mastodon-tl--read-rules-ids) => '(1 2 3))
+          (should (equal (mastodon-tl--report-params account toot)
+                         '(("rule_ids[]" . 3)
+                           ("rule_ids[]" . 2)
+                           ("rule_ids[]" . 1)
+                           ("account_id" . 42)
+                           ("comment" . "Dummy complaint")
+                           ("status_ids[]" . 61208)
+                           ("forward" . "true")))))))))
 
 (ert-deftest mastodon-tl--report-build-params ()
   ""
