@@ -1234,3 +1234,21 @@ correct value for following, as well as notifications enabled or disabled."
                                           "We also do not accept hate speech."))
       (should (equal '("2" "5" "6")
                      (mastodon-tl--read-rules-ids))))))
+
+
+;;; UTILS tests
+
+(ert-deftest mastodon-tl--map-alist ()
+  "Should return a list of values from `mastodon-tl--test-instance-rules'.
+The key is 'id."
+  (should (equal
+           (mastodon-tl--map-alist 'id mastodon-tl--test-instance-rules)
+           '("1" "2" "3" "4" "5" "6" "7" "8"))))
+
+(ert-deftest mastodon-tl--map-alist-vals-to-alist ()
+  "Should return an alist of value1 value2, using key1 id, and key2 text."
+  (should
+   (equal
+    (mastodon-tl--map-alist-vals-to-alist
+     'id 'text mastodon-tl--test-instance-rules)
+    '(("1" . "We do not accept racism.") ("2" . "We do not accept homophobia.") ("3" . "We do not accept sexism.") ("4" . "We do not accept ableism.") ("5" . "We do not accept harassment.") ("6" . "We also do not accept hate speech.") ("7" . "We do not accept abuse of minors.") ("8" . "We do not accept glorification of violence.")))))
