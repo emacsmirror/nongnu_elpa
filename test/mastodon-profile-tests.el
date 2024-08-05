@@ -170,11 +170,10 @@ When formatting Gargon's state we want to see
 
 The search will happen as if called without the \"@\"."
   (with-mock
-
     (mock (mastodon-http--get-json
-           "https://instance.url/api/v1/accounts/search"
-           '(("q" . "gargron"))))
-
+           "https://instance.url/api/v2/search"
+           '(("q" . "gargron")
+             ("type" . "accounts"))))
     (let ((mastodon-instance-url "https://instance.url"))
       ;; We don't check anything from the return value. We only care
       ;; that the mocked fetch was called with the expected URL.
