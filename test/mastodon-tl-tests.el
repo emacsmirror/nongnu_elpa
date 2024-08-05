@@ -1095,7 +1095,7 @@ correct value for following, as well as notifications enabled or disabled."
       (let ((response-buffer-true (current-buffer)))
         (insert mastodon-tl--follow-notify-true-response)
         (with-mock
-          (mock (mastodon-http--post url-follow-only nil)
+          (mock (mastodon-http--post url-follow-only nil nil nil nil)
                 => response-buffer-true)
           (should
            (equal
@@ -1108,7 +1108,7 @@ correct value for following, as well as notifications enabled or disabled."
       (let ((response-buffer-true (current-buffer)))
         (insert mastodon-tl--follow-notify-true-response)
         (with-mock
-          (mock (mastodon-http--post url-mute nil)
+          (mock (mastodon-http--post url-mute nil nil nil nil)
                 => response-buffer-true)
           (should
            (equal
@@ -1121,7 +1121,7 @@ correct value for following, as well as notifications enabled or disabled."
       (let ((response-buffer-true (current-buffer)))
         (insert mastodon-tl--follow-notify-true-response)
         (with-mock
-          (mock (mastodon-http--post url-block nil)
+          (mock (mastodon-http--post url-block nil nil nil nil)
                 => response-buffer-true)
           (should
            (equal
@@ -1135,7 +1135,8 @@ correct value for following, as well as notifications enabled or disabled."
         (insert mastodon-tl--follow-notify-true-response)
         (with-mock
           (with-mock
-            (mock (mastodon-http--post url-true nil) => response-buffer-true)
+            (mock (mastodon-http--post url-true nil nil nil nil)
+                  => response-buffer-true)
             (should
              (equal
               (mastodon-tl--do-user-action-function url-true
@@ -1148,7 +1149,8 @@ correct value for following, as well as notifications enabled or disabled."
       (let ((response-buffer-false (current-buffer)))
         (insert mastodon-tl--follow-notify-false-response)
         (with-mock
-          (mock (mastodon-http--post url-false nil) => response-buffer-false)
+          (mock (mastodon-http--post url-false nil nil nil nil)
+                => response-buffer-false)
           (should
            (equal
             (mastodon-tl--do-user-action-function url-false
