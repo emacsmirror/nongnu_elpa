@@ -242,11 +242,10 @@ MAX-ID is a flag to include the max_id pagination parameter."
 (defun mastodon-profile--add-account-to-list ()
   "Add account of current profile buffer to a list."
   (interactive)
-  (when mastodon-profile--account
-    (let* ((profile mastodon-profile--account)
-           (id (alist-get 'id profile))
-           (handle (alist-get 'acct profile)))
-      (mastodon-views--add-account-to-list nil id handle))))
+  (if (not mastodon-profile--account)
+      (user-error "No profile to add?")
+    (let-alist mastodon-profile--account
+      (mastodon-views--add-account-to-list nil .id .acct))))
 
 (defun mastodon-profile--account-search (query)
   "Run a statuses search QUERY for the currently viewed account."
@@ -258,43 +257,50 @@ MAX-ID is a flag to include the max_id pagination parameter."
 
 ;;; ACCOUNT PREFERENCES
 
-(defun mastodon-profile--get-json-value (val)
-  "Fetch current VAL ue from account."
-  (let* ((response (mastodon-return-credential-account)))
-    (if (eq (alist-get val response) :json-false)
-        nil
-      (alist-get val response))))
+(defun mastodon-profile--get-account-value (key function)
+  "Fetch KEY from data returned by FUNCTION.
+If value is :json-false, return nil."
+  (let* ((response (funcall function))
+         (value (alist-get key response)))
+    (if (eq value :json-false) nil value)))
+
+(defun mastodon-profile--get-json-value (key)
+  "Fetch value for KEY from account.
+Account details are from `mastodon-return-credential-account'.
+If value is :json-false, return nil."
+  (mastodon-profile--get-account-value
+   key #'mastodon-return-credential-account))
 
 (defun mastodon-profile--get-source-values ()
   "Return the \"source\" preferences from the server."
   (mastodon-profile--get-json-value 'source))
 
 (defun mastodon-profile--get-source-value (pref)
-  "Return account PREF erence from the \"source\" section on the server."
-  (let ((source (mastodon-profile--get-source-values)))
-    (if (eq (alist-get pref source) :json-false)
-        nil
-      (alist-get pref source))))
+  "Return PREF erence from the account's \"source\" field."
+  (mastodon-profile--get-account-value
+   pref #'mastodon-profile--get-source-values))
 
 (defun mastodon-profile--update-user-profile-note ()
   "Fetch user's profile note and display for editing."
   (interactive)
-  (let* ((json (mastodon-return-credential-account))
-         (source (alist-get 'source json))
+  (let* ((source (mastodon-profile--get-source-values))
          (note (alist-get 'note source))
          (buffer (get-buffer-create "*mastodon-update-profile*"))
          (inhibit-read-only t)
-         (msg-str (substitute-command-keys
-                   "Edit your profile note. \\`C-c C-c' to send, \\`C-c C-k' to cancel.")))
+         (msg-str
+          (substitute-command-keys
+           "Edit your profile note. \\`C-c C-c' to send, \\`C-c C-k' to cancel.")))
     (switch-to-buffer-other-window buffer)
     (text-mode)
-    (mastodon-tl--set-buffer-spec (buffer-name buffer) "accounts/verify_credentials" nil)
+    (mastodon-tl--set-buffer-spec (buffer-name buffer)
+                                  "accounts/verify_credentials" nil)
     (setq-local header-line-format msg-str)
     (mastodon-profile-update-mode t)
-    (insert (propertize (concat (propertize "0"
-                                            'note-counter t
-                                            'display nil)
-                                "/500 characters")
+    (insert (propertize (concat
+                         (propertize "0"
+                                     'note-counter t
+                                     'display nil)
+                         "/500 characters")
                         'read-only t
                         'face 'font-lock-comment-face
                         'note-header t)
@@ -327,7 +333,7 @@ MAX-ID is a flag to include the max_id pagination parameter."
     (mastodon-kill-window)))
 
 (defun mastodon-profile--note-remove-header ()
-  "Get the body of a toot from the current compose buffer."
+  "Get the profile note, without the buffer header."
   (let ((header-region (mastodon-tl--find-property-range 'note-header
                                                          (point-min))))
     (buffer-substring (cdr header-region) (point-max))))
