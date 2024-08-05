@@ -137,6 +137,13 @@ Used for API form data parameters that take an array."
   (cl-loop for x in array
            collect (cons param-str x)))
 
+(defun mastodon-http--concat-params-to-url (url params)
+  "Build a query string with PARAMS and concat to URL."
+  (if params
+      (concat url "?"
+              (mastodon-http--build-params-string params))
+    url))
+
 (defun mastodon-http--post (url
                             &optional params headers unauthenticated-p json)
   "POST synchronously to URL, optionally with PARAMS and HEADERS.
@@ -164,13 +171,6 @@ the request data. If it is :raw, just use the plain params."
       (with-temp-buffer
         (mastodon-http--url-retrieve-synchronously url)))
     unauthenticated-p))
-
-(defun mastodon-http--concat-params-to-url (url params)
-  "Build a query string with PARAMS and concat to URL."
-  (if params
-      (concat url "?"
-              (mastodon-http--build-params-string params))
-    url))
 
 (defun mastodon-http--get (url &optional params silent)
   "Make synchronous GET request to URL.
