@@ -23,12 +23,12 @@
     (statuses_count . 70741)
     (last_status_at . "2021-11-14")
     (emojis . [])
-    (fields . [((name . "Patreon")
+    (fields . (((name . "Patreon")
                 (value . "<a href=\"https://www.patreon.com/mastodon\" rel=\"me nofollow noopener noreferrer\" target=\"_blank\"><span class=\"invisible\">https://www.</span><span class=\"\">patreon.com/mastodon</span><span class=\"invisible\"></span></a>")
                 (verified_at))
                ((name . "Homepage")
                 (value . "<a href=\"https://zeonfederated.com\" rel=\"me nofollow noopener noreferrer\" target=\"_blank\"><span class=\"invisible\">https://</span><span class=\"\">zeonfederated.com</span><span class=\"invisible\"></span></a>")
-                (verified_at . "2019-07-15T18:29:57.191+00:00"))])))
+                (verified_at . "2019-07-15T18:29:57.191+00:00"))))))
 
 (defconst ccc-profile-json
   '((id . "369027")
@@ -105,10 +105,10 @@
       (website))
      (account ,@gargron-profile-json)
      (media_attachments . [])
-     (mentions . [((id . "369027")
+     (mentions . (((id . "369027")
                    (username . "CCC")
                    (url . "https://social.bau-ha.us/@CCC")
-                   (acct . "CCC@social.bau-ha.us"))])
+                   (acct . "CCC@social.bau-ha.us"))))
      (tags . [])
      (emojis . [])
      (card)
@@ -183,11 +183,10 @@ The search will happen as if called without the \"@\"."
   "Should ignore results that don't match the searched handle."
   (with-mock
     (mock (mastodon-http--get-json
-           "https://instance.url/api/v1/accounts/search"
-           '(("q" . "Gargron")))
-          =>
-          (vector ccc-profile-json gargron-profile-json))
-
+           "https://instance.url/api/v2/search"
+           '(("q" . "Gargron")
+             ("type" . "accounts")))
+          => `((accounts ,ccc-profile-json ,gargron-profile-json)))
     (let ((mastodon-instance-url "https://instance.url"))
       (should
        (equal
@@ -199,9 +198,11 @@ The search will happen as if called without the \"@\"."
 
 TODO: We need to decide if this is actually desired or not."
   (with-mock
-    (mock (mastodon-http--get-json *
-                                   '(("q" . "gargron")))
-          => (vector gargron-profile-json))
+    (mock (mastodon-http--get-json
+           "https://instance.url/api/v2/search"
+           '(("q" . "gargron")
+             ("type" . "accounts")))
+          => `((accounts ,ccc-profile-json ,gargron-profile-json)))
 
     (let ((mastodon-instance-url "https://instance.url"))
       (should
