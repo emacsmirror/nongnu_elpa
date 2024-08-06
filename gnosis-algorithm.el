@@ -147,41 +147,46 @@ DATE format must be given as (year month day)."
 		  (time-to-days given-date))))
     (if (>= diff 0) diff (error "`DATE2' must be higher than `DATE'"))))
 
-(cl-defun gnosis-algorithm-next-ef (&key ef success increase decrease threshold
-					 c-successes c-failures)
-  "Return the new EF, (increase-value decrease-value total-value)
+(cl-defun gnosis-algorithm-next-gnosis (&key gnosis success epignosis agnoia anagnosis
+					     c-successes c-failures)
+  "Return the neo GNOSIS value. (gnosis-plus gnosis-minus gnsois-synolon)
 
-Calculate the new e-factor given existing EF and SUCCESS, either t or nil.
+Calculate the new e-factor given existing GNOSIS and SUCCESS, either t or nil.
 
-Next EF is calculated as follows:
+Next GNOSIS is calculated as follows:
 
-Upon a successful review, increase total ef value (nth 2) by
-ef-increase value (nth 0).
+Upon a successful review, increase gnosis-synolon value (nth 2 gnosis) by
+gnosis-plus value (nth 0 gnosis).
 
-Upon a failed review, decrease total ef by ef-decrease value (nth 1).
+Upon a failed review, decrease gnosis-synolon by gnosis-minus value
+ (nth 1 gnosis).
 
-For every THRESHOLD of C-SUCCESSES (consecutive successful reviews)
-reviews, increase ef-increase by INCREASE.
+ANAGNOSIS is an event threshold, updating either the gnosis-plus or
+gnosis-minus values.
 
-For every THRESHOLD of C-FAILURES reviews, decrease ef-decrease value
-by DECREASE."
-  (cl-assert (listp ef) nil "Assertion failed: ef must be a list")
+When C-SUCCESSES (consecutive successes) reach ANAGNOSIS,
+increase gnosis-plus by EPIGNOSIS.
+
+When C-FAILURES reach ANAGOSNIS, increase gnosis-minus by AGNOIA."
+  (cl-assert (listp gnosis) nil "Assertion failed: gnosis must be a list")
   (cl-assert (booleanp success) nil "Assertion failed: success must be a boolean value")
-  (cl-assert (numberp increase) nil "Assertion failed: increase must be a number")
-  (cl-assert (numberp decrease) nil "Assertion failed: decrease must be a number")
-  (cl-assert (numberp threshold) nil "Assertion failed: threshold must be a number")
-  (let ((threshold-p (= (% (max 1 (if success c-successes c-failures)) threshold) 0))
-	(new-ef (if success (gnosis-algorithm-replace-at-index 2 (+ (nth 2 ef) (nth 0 ef)) ef)
-		  (gnosis-algorithm-replace-at-index 2 (max 1.3 (- (nth 2 ef) (nth 1 ef))) ef))))
-    (cond ((and success threshold-p)
-	   (setf new-ef (gnosis-algorithm-replace-at-index 0 (+ (nth 0 ef) increase) new-ef)))
-	  ((and (not success) threshold-p
-		(setf new-ef (gnosis-algorithm-replace-at-index 1 (+ (nth 1 ef) decrease) new-ef)))))
-    (gnosis-algorithm-round-items new-ef)))
+  (cl-assert (numberp epignosis) nil "Assertion failed: epignosis must be a number")
+  (cl-assert (numberp agnoia) nil "Assertion failed: agnoia must be a number")
+  (cl-assert (numberp anagnosis) nil "Assertion failed: anagosis must be a number")
+  (let ((anagnosis-p (= (% (max 1 (if success c-successes c-failures)) anagnosis) 0))
+	(neo-gnosis (if success
+			(gnosis-algorithm-replace-at-index 2 (+ (nth 2 gnosis) (nth 0 gnosis)) gnosis)
+		      (gnosis-algorithm-replace-at-index 2 (max 1.3 (- (nth 2 gnosis) (nth 1 gnosis))) gnosis))))
+    ;; TODO: Change amnesia & epignosis value upon reaching a lethe or anagnosis event.
+    (cond ((and success anagnosis-p)
+	   (setf neo-gnosis (gnosis-algorithm-replace-at-index 0 (+ (nth 0 gnosis) epignosis) neo-gnosis)))
+	  ((and (not success) anagnosis-p
+		(setf neo-gnosis
+		      (gnosis-algorithm-replace-at-index 1 (+ (nth 1 gnosis) agnoia) neo-gnosis)))))
+    (gnosis-algorithm-round-items neo-gnosis)))
 
-(cl-defun gnosis-algorithm-next-interval (&key last-interval ef success successful-reviews
-					       failure-factor initial-interval c-fails
-					       threshold)
+(cl-defun gnosis-algorithm-next-interval (&key last-interval gnosis-synolon success successful-reviews
+					       amnesia proto c-fails lethe)
   "Calculate next interval.
 
 LAST-INTERVAL: Number of days since last review
