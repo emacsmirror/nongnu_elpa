@@ -331,9 +331,11 @@ Example:
   "From TABLE use where to delete VALUE."
   (emacsql gnosis-db `[:delete :from ,table :where ,value]))
 
-(defun gnosis-delete-note (id)
-  "Delete note with ID."
-  (when (y-or-n-p "Delete note?")
+(defun gnosis-delete-note (id &optional verification)
+  "Delete note with ID.
+
+When VERIFICATION is non-nil, skip `y-or-n-p' prompt."
+  (when (or verification (y-or-n-p "Delete note?"))
     (emacsql-with-transaction gnosis-db (gnosis--delete 'notes `(= id ,id)))))
 
 (defun gnosis-delete-deck (&optional id)
