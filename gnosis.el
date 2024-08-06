@@ -2095,9 +2095,10 @@ The final exported note is indented using the `indent-region' function
 to improve readability."
   (let ((values (append (gnosis-select '[id main options answer tags] 'notes `(= id ,id) t)
 			(gnosis-select '[extra-notes images extra-image] 'extras `(= id ,id) t)
-			(gnosis-select '[ef ff] 'review `(= id ,id) t)
+			(gnosis-select '[gnosis amnesia] 'review `(= id ,id) t)
 			(gnosis-select 'suspend 'review-log `(= id ,id) t)))
-	(fields '(:id :main :options :answer :tags :extra-notes :image :second-image :ef :ff :suspend)))
+	(fields (list :id :main :options :answer :tags
+		      :extra-notes :image :second-image :gnosis :amnesia :suspend)))
     (when export-for-deck
       (setf values (append (gnosis-select 'type 'notes `(= id ,id) t)
 			   (butlast (cdr values) 3)))
