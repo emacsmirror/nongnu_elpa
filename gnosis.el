@@ -2180,6 +2180,22 @@ Return note ids for notes that match QUERY."
                                    `(like main ,(format "%%%s%%" word)))
                                  words))))
     (gnosis-select 'id 'notes clause t)))
+(defun gnosis-db-update-v3 ()
+  "Upgrade database to version 3."
+  (emacsql-with-transaction gnosis-db
+    (emacsql gnosis-db [:alter-table decks :drop-column failure-factor])
+    (emacsql gnosis-db [:alter-table decks :drop-column ef-increase])
+    (emacsql gnosis-db [:alter-table decks :drop-column ef-threshold])
+    (emacsql gnosis-db [:alter-table decks :drop-column ef-decrease])
+    (emacsql gnosis-db [:alter-table decks :drop-column initial-interval])
+    ;; Review changes
+    (emacsql gnosis-db [:alter-table review :rename ef :to gnosis])
+    (emacsql gnosis-db [:alter-table review :rename ff :to amnesia])
+    (emacsql gnosis-db [:alter-table review :drop-column interval])
+    ;; Add activity log
+    (gnosis--create-table 'activity-log gnosis-db-schema-activity-log)
+    ;; Update version
+    (emacsql gnosis-db (format "PRAGMA user_version = %s" gnosis-db-version))))
 
 (defun gnosis-db-init ()
   "Create essential directories & database."
