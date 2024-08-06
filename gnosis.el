@@ -1600,11 +1600,13 @@ If user-input is equal to CLOZE, return t."
 		      ;; Correct answer -> reveal the current cloze
 		      (progn (cl-incf num)
 			     (gnosis-display-cloze-string main (nthcdr num clozes)
-							    (nthcdr num hints)
-							    (cl-subseq clozes 0 num)
-							    nil))
+							  (nthcdr num hints)
+							  (cl-subseq clozes 0 num)
+							  nil))
 		    ;; Incorrect answer
-		    (gnosis-display-cloze-string main nil nil (cl-subseq clozes 0 num) (member cloze clozes))
+		    (gnosis-display-cloze-string main nil nil
+						 (cl-subseq clozes 0 num)
+						 (member cloze clozes))
 		    (gnosis-display-cloze-user-answer (cdr input))
 		    (setq success nil)
 		    (cl-return)))
@@ -1652,7 +1654,7 @@ If NEW? is non-nil, increment new notes log by 1."
     (gnosis-update 'activity-log `(= reviewed-total ,inc-total) `(= date ',date))
     (and new? (gnosis-update 'activity-log `(= reviewed-new ,inc-new) `(= date ',date)))))
 
-(defun gnosis-review-note (id &optional date)
+(defun gnosis-review-note (id)
   "Start review for note with value of id ID, if note is unsuspended.
 
 DATE: Date to log the note review on the activity-log."
@@ -1660,8 +1662,7 @@ DATE: Date to log the note review on the activity-log."
     (message "Suspended note with id: %s" id)
     (sit-for 0.3)) ;; this should only occur in testing/dev cases
   (let* ((type (gnosis-get 'type 'notes `(= id ,id)))
-         (func-name (intern (format "gnosis-review-%s" (downcase type))))
-	 (date (or date (gnosis-algorithm-date))))
+         (func-name (intern (format "gnosis-review-%s" (downcase type)))))
     (if (fboundp func-name)
         (progn
 	  (pop-to-buffer-same-window (get-buffer-create "*gnosis*"))
