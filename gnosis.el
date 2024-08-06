@@ -398,22 +398,22 @@ Acts only when CENTER? is t."
   (let ((window-width (window-width))
 	(center? (or center? gnosis-center-content-p)))
     (if center?
-      (mapconcat
-       (lambda (line)
-         (let* ((text (string-trim line))
-                (wrapped (with-temp-buffer
-                           (insert text)
-                           (fill-region (point-min) (point-max))
-                           (buffer-string)))
-                (lines (split-string wrapped "\n")))
-           (mapconcat
-            (lambda (line)
-              (let ((padding (max (/ (- window-width (length line)) 2) 0)))
-                (concat (make-string padding ? ) line)))
-            lines
-            "\n")))
-       (split-string input-string "\n")
-       "\n")
+	(mapconcat
+	 (lambda (line)
+           (let* ((text (string-trim line))
+                  (wrapped (with-temp-buffer
+                             (insert text)
+                             (fill-region (point-min) (point-max))
+                             (buffer-string)))
+                  (lines (split-string wrapped "\n")))
+             (mapconcat
+              (lambda (line)
+		(let ((padding (max (/ (- window-width (length line)) 2) 0)))
+                  (concat (make-string padding ? ) line)))
+              lines
+              "\n")))
+	 (split-string input-string "\n")
+	 "\n")
       input-string)))
 
 (defun gnosis-apply-center-buffer-overlay (&optional point)
@@ -566,7 +566,7 @@ When SUCCESS nil, display USER-INPUT as well"
   ;; Insert user wrong answer
   (when (not success)
     (insert "\n"
-	     (propertize "Your answer:" 'face 'gnosis-face-directions)
+	    (propertize "Your answer:" 'face 'gnosis-face-directions)
 	    " "
 	    (propertize user-input 'face 'gnosis-face-false))
     (gnosis-center-current-line)))
@@ -641,12 +641,12 @@ inserted in the buffer.
 
 Also see `gnosis-string-edit'."
   (gnosis-string-edit prompt  string
-   (lambda (edited)
-     (setq string (substring-no-properties edited))
-     (exit-recursive-edit))
-   :abort-callback (lambda ()
-                     (exit-recursive-edit)
-                     (error "Aborted edit")))
+		      (lambda (edited)
+			(setq string (substring-no-properties edited))
+			(exit-recursive-edit))
+		      :abort-callback (lambda ()
+					(exit-recursive-edit)
+					(error "Aborted edit")))
   (recursive-edit)
   string)
 
@@ -687,14 +687,14 @@ Set SPLIT to t to split all input given."
 (defun gnosis-add-deck (name)
   "Create deck with NAME."
   (interactive (list (read-string "Deck Name: ")))
-    (when gnosis-testing
-      (unless (y-or-n-p "You are using a testing environment! Continue?")
-	(error "Aborted")))
-    (if (gnosis-get 'name 'decks `(= name ,name))
-	(error "Deck `%s' already exists" name)
-      (let ((deck-id (gnosis-generate-id 5 t)))
-	(gnosis--insert-into 'decks `([,deck-id ,name nil nil nil nil nil]))
-	(message "Created deck '%s'" name))))
+  (when gnosis-testing
+    (unless (y-or-n-p "You are using a testing environment! Continue?")
+      (error "Aborted")))
+  (if (gnosis-get 'name 'decks `(= name ,name))
+      (error "Deck `%s' already exists" name)
+    (let ((deck-id (gnosis-generate-id 5 t)))
+      (gnosis--insert-into 'decks `([,deck-id ,name]))
+      (message "Created deck '%s'" name))))
 
 (defun gnosis--get-deck-name (&optional id)
   "Get deck name for ID, or prompt for deck name when ID is nil."
@@ -1146,11 +1146,11 @@ TYPE: Type of gnosis note, must be one of `gnosis-note-types'"
 
 (defun gnosis-cloze-check (sentence clozes)
   "Check if CLOZES are found in SENTENCE."
-    (catch 'not-found
-      (dolist (cloze clozes)
-	(unless (string-match-p cloze sentence)
-          (throw 'not-found nil)))
-      t))
+  (catch 'not-found
+    (dolist (cloze clozes)
+      (unless (string-match-p cloze sentence)
+        (throw 'not-found nil)))
+    t))
 
 (defun gnosis-cloze-remove-tags (string)
   "Replace cloze tags and hints in STRING.
@@ -1182,7 +1182,7 @@ Valid cloze formats include:
 	    (nreverse result-alist))))
 
 (defun gnosis-cloze-extract-answers (nested-lst)
-    "Extract cloze answers for string clozes inside the NESTED-LST.
+  "Extract cloze answers for string clozes inside the NESTED-LST.
 
 This function should be used in combination with `gnosis-cloze-extract-answers'."
   (mapcar (lambda (lst)
@@ -1251,11 +1251,11 @@ Optionally, add cusotm PROMPT."
       (let* ((prompt (or prompt "Select image: "))
 	     (image (if (y-or-n-p "Add review image?")
 			(gnosis-completing-read prompt
-				 (cons nil (gnosis-directory-files gnosis-images-dir)))
+						(cons nil (gnosis-directory-files gnosis-images-dir)))
 		      nil))
 	     (extra-image (if (y-or-n-p "Add post review image?")
 			      (gnosis-completing-read prompt
-				       (cons nil (gnosis-directory-files gnosis-images-dir))))))
+						      (cons nil (gnosis-directory-files gnosis-images-dir))))))
 	(cons image extra-image))
     nil))
 
