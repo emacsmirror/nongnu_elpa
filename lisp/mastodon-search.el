@@ -102,8 +102,7 @@ QUERY is the string to search."
   "Display a list of tags trending on your instance.
 TYPE is a string, either tags, statuses, or links.
 PRINT-FUN is the function used to print the data from the response."
-  (let* ((url (mastodon-http--api
-               (format "trends/%s" type)))
+  (let* ((url (mastodon-http--api (format "trends/%s" type)))
          ;; max for statuses = 40, for others = 20
          (limit (if (equal type "statuses")
                     '("limit" . "40")
@@ -115,8 +114,7 @@ PRINT-FUN is the function used to print the data from the response."
     (with-mastodon-buffer buffer #'mastodon-mode nil
       (mastodon-tl--set-buffer-spec (buffer-name buffer)
                                     (format "trends/%s" type)
-                                    print-fun nil
-                                    params)
+                                    print-fun nil params)
       (mastodon-search--insert-heading "trending" type)
       (funcall print-fun data)
       (unless (equal type "statuses")
@@ -143,9 +141,8 @@ Optionally add string TYPE after HEADING."
 (defvar mastodon-search-types
   '("statuses" "accounts" "hashtags"))
 
-(defun mastodon-search--query (query
-                               &optional type limit
-                               following account-id offset)
+(defun mastodon-search--query (query &optional type limit
+                                     following account-id offset)
   "Prompt for a search QUERY and return accounts, statuses, and hashtags.
 TYPE is a member of `mastodon-search-types'.
 LIMIT is a number as string, up to 40, with 40 the default.
@@ -157,15 +154,13 @@ is used for pagination."
   ;; TODO: handle no results
   (interactive "sSearch mastodon for: ")
   (let* ((url (mastodon-http--api-search))
-         (following (when (or following
-                              (equal current-prefix-arg '(4)))
+         (following (when (or following (equal current-prefix-arg '(4)))
                       "true"))
          (type (or type
                    (if (equal current-prefix-arg '(4))
                        "accounts" ; if FOLLOWING, must be "accounts"
                      (completing-read "Search type: "
-                                      mastodon-search-types
-                                      nil t))))
+                                      mastodon-search-types nil :match))))
          (limit (or limit "40"))
          (offset (or offset "0"))
          (buffer (format "*mastodon-search-%s-%s*" type query))
@@ -177,26 +172,20 @@ is used for pagination."
                               ,(when following `("following" . ,following))
                               ,(when account-id `("account_id" . ,account-id)))))
          (response (mastodon-http--get-json url params))
-         (accts (when (equal type "accounts")
-                  (alist-get 'accounts response)))
-         (tags (when (equal type "hashtags")
-                 (alist-get 'hashtags response)))
-         (statuses (when (equal type "statuses")
-                     (alist-get 'statuses response))))
+         (items (alist-get (intern type) response)))
     (with-mastodon-buffer buffer #'mastodon-mode nil
       (mastodon-search-mode)
       (mastodon-search--insert-heading type)
-      ;; user results:
       (cond ((equal type "accounts")
-             (mastodon-search--render-response accts type buffer params
+             (mastodon-search--render-response items type buffer params
                                                'mastodon-views--insert-users-propertized-note
                                                'mastodon-views--insert-users-propertized-note))
             ((equal type "hashtags")
-             (mastodon-search--render-response tags type buffer params
+             (mastodon-search--render-response items type buffer params
                                                'mastodon-search--print-tags
                                                'mastodon-search--print-tags))
             ((equal type "statuses")
-             (mastodon-search--render-response statuses type buffer params
+             (mastodon-search--render-response items type buffer params
                                                #'mastodon-tl--timeline
                                                #'mastodon-tl--timeline)))
       (goto-char (point-min))
@@ -218,10 +207,8 @@ BUFFER, PARAMS, and UPDATE-FUN are for `mastodon-tl--buffer-spec'."
   (if (not data)
       (mastodon-search-insert-no-results type)
     (funcall insert-fun data))
-  ;; (mapc #'mastodon-tl--toot data))
   (mastodon-tl--set-buffer-spec buffer "search"
-                                update-fun
-                                nil params))
+                                update-fun nil params))
 
 (defun mastodon-search--buf-type ()
   "Return search buffer type, a member of `mastodon-search-types'."
