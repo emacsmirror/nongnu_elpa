@@ -2251,12 +2251,12 @@ If STRING-SECTION is nil, apply FACE to the entire STRING."
     (goto-char (point-min))
     (animate-string string vpos hpos)
     (and face
-      (if string-section
-	  (progn
-	    (goto-char (point-min))
-	    (while (search-forward string-section nil t)
-	      (add-text-properties (match-beginning 0) (match-end 0) `(face ,face))))
-	(add-text-properties (line-beginning-position) (line-end-position) `(face ,face))))))
+	 (if string-section
+	     (progn
+	       (goto-char (point-min))
+	       (while (search-forward string-section nil t)
+		 (add-text-properties (match-beginning 0) (match-end 0) `(face ,face))))
+	   (add-text-properties (line-beginning-position) (line-end-position) `(face ,face))))))
 
 ;;;###autoload
 (defun gnosis-demo ()
@@ -2332,18 +2332,18 @@ If STRING-SECTION is nil, apply FACE to the entire STRING."
   :global t
   :group 'gnosis
   :lighter nil
-    (setq gnosis-due-notes-total (length (gnosis-review-get-due-notes)))
-    (if gnosis-modeline-mode
-	(progn
-          (add-to-list 'global-mode-string '(:eval
-					     (format " G:%d" gnosis-due-notes-total)))
-          (force-mode-line-update))
-      (setq global-mode-string
-            (seq-remove (lambda (item)
-                          (and (listp item) (eq (car item) :eval)
-                               (string-prefix-p " G:" (format "%s" (eval (cadr item))))))
-			global-mode-string))
-      (force-mode-line-update)))
+  (setq gnosis-due-notes-total (length (gnosis-review-get-due-notes)))
+  (if gnosis-modeline-mode
+      (progn
+        (add-to-list 'global-mode-string '(:eval
+					   (format " G:%d" gnosis-due-notes-total)))
+        (force-mode-line-update))
+    (setq global-mode-string
+          (seq-remove (lambda (item)
+                        (and (listp item) (eq (car item) :eval)
+                             (string-prefix-p " G:" (format "%s" (eval (cadr item))))))
+		      global-mode-string))
+    (force-mode-line-update)))
 
 (define-derived-mode gnosis-mode special-mode "Gnosis"
   "Gnosis Mode."
