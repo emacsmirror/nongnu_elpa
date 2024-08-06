@@ -2111,12 +2111,7 @@ to improve readability."
 
 ;;; Database Schemas
 (defvar gnosis-db-schema-decks '([(id integer :primary-key :autoincrement)
-				  (name text :not-null)
-				  (failure-factor float)
-				  (ef-increase float)
-				  (ef-decrease float)
-				  (ef-threshold integer)
-				  (initial-interval listp)]))
+				  (name text :not-null)]))
 
 (defvar gnosis-db-schema-notes '([(id integer :primary-key :autoincrement)
 				  (type text :not-null)
@@ -2129,19 +2124,18 @@ to improve readability."
 					       :on-delete :cascade)))
 
 (defvar gnosis-db-schema-review '([(id integer :primary-key :not-null) ;; note-id
-				   (ef integer :not-null) ;; Easiness factor
-				   (ff integer :not-null) ;; Forgetting factor
-				   (interval integer :not-null)] ;; Initial Interval
+				   (gnosis integer :not-null)
+				   (amnesia integer :not-null)]
 				  (:foreign-key [id] :references notes [id]
 						:on-delete :cascade)))
 
 (defvar gnosis-db-schema-review-log '([(id integer :primary-key :not-null) ;; note-id
 				       (last-rev integer :not-null)  ;; Last review date
 				       (next-rev integer :not-null)  ;; Next review date
-				       (c-success integer :not-null) ;; number of consecutive successful reviews
-				       (t-success integer :not-null) ;; Number of total successful reviews
-				       (c-fails integer :not-null)   ;; Number of consecutive failed reviewss
-				       (t-fails integer :not-null)   ;; Number of total failed reviews
+				       (c-success integer :not-null) ;; Consecutive successful reviews
+				       (t-success integer :not-null) ;; Total successful reviews
+				       (c-fails integer :not-null)   ;; Consecutive failed reviewss
+				       (t-fails integer :not-null)   ;; Total failed reviews
 				       (suspend integer :not-null)   ;; Binary value, 1=suspended
 				       (n integer :not-null)]        ;; Number of reviews
 				      (:foreign-key [id] :references notes [id]
@@ -2153,13 +2147,6 @@ to improve readability."
 
 (defvar gnosis-db-schema-extras '([(id integer :primary-key :not-null)
 				   (extra-notes string)
-				   ;; Despite the name 'images', this
-				   ;; is a single string value.  At
-				   ;; first it was designed to hold a
-				   ;; list of strings for image paths,
-				   ;; but it was changed to just a
-				   ;; string to hold a single image
-				   ;; path.
 				   (images string)
 				   ;; Extra image path to show after review
 				   (extra-image string)]
