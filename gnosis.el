@@ -2176,10 +2176,15 @@ Return note ids for notes that match QUERY."
   (cl-assert (or (stringp query) (eq query nil)))
   (let* ((query (or query (read-string "Search for note: ")))
          (words (split-string query))
-         (clause `(and ,@(mapcar (lambda (word)
-                                   `(like main ,(format "%%%s%%" word)))
-                                 words))))
-    (gnosis-select 'id 'notes clause t)))
+         (clause-main `(and ,@(mapcar (lambda (word)
+					`(like main ,(format "%%%s%%" word)))
+                                      words)))
+	 (clause-answer `(and ,@(mapcar (lambda (word)
+					  `(like answer ,(format "%%%s%%" word)))
+					words))))
+    (append (gnosis-select 'id 'notes clause-main t)
+	    (gnosis-select 'id 'notes clause-answer t))))
+
 (defun gnosis-db-update-v2 ()
   "Update to first gnosis-db version."
   (emacsql-with-transaction gnosis-db
