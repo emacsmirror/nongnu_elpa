@@ -1788,14 +1788,13 @@ To customize the keybindings, adjust `gnosis-review-keybindings'."
 NOTES: List of note ids
 DUE: If due is non-nil, session will loop for due notes.
 NOTE-COUNT: Total notes to be commited for session."
-  (let ((note-count (or note-count 0))
-	(date (gnosis-algorithm-date)))
+  (let ((note-count (or note-count 0)))
     (if (null notes)
 	(message "No notes for review.")
       (setf gnosis-review-notes notes)
       (catch 'review-loop
 	(cl-loop for note in notes
-		 do (let ((success (gnosis-review-note note date)))
+		 do (let ((success (gnosis-review-note note)))
 		      (cl-incf note-count)
 		      (gnosis-review-actions success note note-count))
 		 finally
