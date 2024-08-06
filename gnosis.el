@@ -2039,6 +2039,30 @@ CUSTOM-VALUES: Specify values for tags."
 	(error "Amnesia value must be lower than 1")
       note-amnesia)))
 
+(defun gnosis-get-note-tag-epignosis (id &optional custom-tags custom-values)
+  "Return tag epignosis for note ID.
+
+CUSTOM-TAGS: Specify tags for note id.
+CUSTOM-VALUES: Specify values for tags."
+  (let* ((epignosis-values (gnosis-get-custom-tag-values id :epignosis custom-tags custom-values)))
+    (if epignosis-values
+	(apply #'max epignosis-values)
+      gnosis-algorithm-epignosis-value)))
+
+(defun gnosis-get-note-deck-epignosis (id &optional custom-deck custom-values)
+  "Return deck epignosis for note ID."
+  (let ((deck (or (gnosis-get-note-deck-name id) custom-deck)))
+    (or (gnosis-get-custom-deck-value deck :epignosis custom-values)
+	gnosis-algorithm-epignosis-value)))
+
+(defun gnosis-get-note-epignosis (id &optional custom-deck custom-tags custom-values)
+  "Return epignosis value for note ID."
+  (let* ((deck-epignosis (gnosis-get-note-deck-epignosis id custom-deck custom-values))
+         (tag-epignosis (gnosis-get-note-tag-epignosis id custom-tags custom-values))
+	 (note-epignosis (max deck-epignosis tag-epignosis)))
+    (if (>= note-epignosis 1)
+	(error "Epignosis value must be lower than 1")
+      note-epignosis)))
 (defun gnosis-get-date-total-notes (&optional date)
   "Return total notes reviewed for DATE.
 
