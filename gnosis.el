@@ -1977,6 +1977,20 @@ SUSPEND: Suspend note, 0 for unsuspend, 1 for suspend"
 		     (gnosis-update 'notes `(= ,field ',value) `(= id ,id)))
 		    (t (gnosis-update 'notes `(= ,field ,value) `(= id ,id))))))
 
+(defun gnosis-get-custom-values (key search-value &optional values)
+  "Return SEARCH-VALUE for KEY from VALUES.
+
+VALUES: Defaults to `gnosis-custom-values'."
+  (cl-assert (or (eq key :deck) (eq key :tag)) nil "Key value must be either :tag or :deck")
+  (cl-assert (stringp search-value) nil "Search-value must be a string, the name of tag or deck.")
+  (let ((results)
+	(values (or values gnosis-custom-values)))
+    (dolist (rule values)
+      (when (and (plist-get rule key)
+                 (equal (plist-get rule key) search-value))
+        (setq results (append results (nth 2 rule)))))
+    results))
+
 
 (defun gnosis-get-date-total-notes (&optional date)
   "Return total notes reviewed for DATE.
