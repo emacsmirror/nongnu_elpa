@@ -50,11 +50,11 @@
 (require 'cl-lib)
 (require 'calendar)
 
-(defcustom gnosis-algorithm-interval '(1 3)
-  "Gnosis initial interval for initial successful reviews.
+(defcustom gnosis-algorithm-proto '(0 1 2)
+  "Gnosis proto interval for the first successful reviews.
 
-First item: First interval,
-Second item: Second interval."
+Values for the first proto successful intervals.  There is no
+restriction for length."
   :group 'gnosis
   :type '(list integer))
 
