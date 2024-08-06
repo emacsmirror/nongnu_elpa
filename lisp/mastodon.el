@@ -454,12 +454,10 @@ Calls `mastodon-tl--get-buffer-type', which see."
 (defun mastodon-switch-to-buffer ()
   "Switch to a live mastodon buffer."
   (interactive)
-  (let ((choice (read-buffer
-                 "Switch to mastodon buffer: " nil t
-                 (lambda (cand)
-                   (with-current-buffer
-                       (if (stringp cand) cand (car cand))
-                     (mastodon-tl--get-buffer-type))))))
+  (let ((choice (completing-read
+                 "Switch to mastodon buffer: "
+                 (mapcar #'buffer-name (mastodon-live-buffers))
+                 nil :match)))
     (switch-to-buffer choice)))
 
 (defun mastodon--url-at-point ()
