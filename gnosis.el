@@ -2016,30 +2016,6 @@ SUSPEND: Suspend note, 0 for unsuspend, 1 for suspend"
 		     (gnosis-update 'notes `(= ,field ',value) `(= id ,id)))
 		    (t (gnosis-update 'notes `(= ,field ,value) `(= id ,id))))))
 
-(defun gnosis-get-ef-increase (id)
-  "Return ef-increase for note with value of id ID."
-  (let ((ef-increase (gnosis-get 'ef-increase 'decks `(= id ,(gnosis-get 'deck-id 'notes `(= id ,id))))))
-    (or ef-increase gnosis-algorithm-ef-increase)))
-
-(defun gnosis-get-ef-decrease (id)
-  "Return ef-decrease for note with value of id ID."
-  (let ((ef-decrease (gnosis-get 'ef-decrease 'decks `(= id ,(gnosis-get 'deck-id 'notes `(= id ,id))))))
-    (or ef-decrease gnosis-algorithm-ef-decrease)))
-
-(defun gnosis-get-ef-threshold (id)
-  "Return ef-threshold for note with value of id ID."
-  (let ((ef-threshold (gnosis-get 'ef-threshold 'decks `(= id ,(gnosis-get 'deck-id 'notes `(= id ,id))))))
-    (or ef-threshold gnosis-algorithm-ef-threshold)))
-
-(defun gnosis-get-deck-initial-interval (id)
-  "Return initial-interval for notes of deck ID."
-  (let ((initial-interval (gnosis-get 'initial-interval 'decks `(= id ,id))))
-    (or initial-interval gnosis-algorithm-interval)))
-
-(defun gnosis-get-note-initial-interval (id)
-  "Return initial-interval for note with ID."
-  (let ((deck-id (gnosis-get 'deck-id 'notes `(= id ,id))))
-    (gnosis-get-deck-initial-interval deck-id)))
 
 (defun gnosis-get-date-total-notes (&optional date)
   "Return total notes reviewed for DATE.
