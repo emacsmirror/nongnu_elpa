@@ -2294,33 +2294,33 @@ If STRING-SECTION is nil, apply FACE to the entire STRING."
     (if (not (cl-some #'(lambda (x) (member "demo" x)) (gnosis-select 'name 'decks)))
 	(progn (gnosis-add-deck deck-name)
 	       (gnosis-add-note--basic :deck deck-name
-				     :question "Repetitio est mater memoriae"
-				     :hint "Translate this Latin phrase to English."
-				     :answer "Repetition is the mother of memory"
-				     :extra "/Regular review/ at increasing intervals *reinforces* *memory* *retention*.  Strengthening neural connections & making it easier to recall information long-term"
+				       :question "Repetitio est mater memoriae"
+				       :hint "Translate this Latin phrase to English."
+				       :answer "Repetition is the mother of memory"
+				       :extra "/Regular review/ at increasing intervals *reinforces* *memory* *retention*.  Strengthening neural connections & making it easier to recall information long-term"
+				       :tags note-tags)
+	       (gnosis-add-note--mc-cloze :deck deck-name
+					  :question "Consistency is _key_ to using gnosis effectively."
+					  :options '("Consistency" "Procrastination" "Incosistency")
+					  :answer "Consistency"
+					  :extra "Avoid monotony, try to engage with the material actively, and stay _consistent_!"
+					  :tags note-tags)
+	       (gnosis-add-note--mcq :deck deck-name
+				     :question "Which one is the capital of Greece?"
+				     :choices '("Athens" "Sparta" "Rome" "Berlin")
+				     :correct-answer 1
+				     :extra "Athens (Αθήνα) is the largest city of Greece & one of the world's oldest cities, with it's recorded history spanning over 3,500 years."
 				     :tags note-tags)
-	     (gnosis-add-note--mc-cloze :deck deck-name
-					:question "Consistency is _key_ to using gnosis effectively."
-					:options '("Consistency" "Procrastination" "Incosistency")
-					:answer "Consistency"
-					:extra "Avoid monotony, try to engage with the material actively, and stay _consistent_!"
-					:tags note-tags)
-	     (gnosis-add-note--mcq :deck deck-name
-				   :question "Which one is the capital of Greece?"
-				   :choices '("Athens" "Sparta" "Rome" "Berlin")
-				   :correct-answer 1
-				   :extra "Athens (Αθήνα) is the largest city of Greece & one of the world's oldest cities, with it's recorded history spanning over 3,500 years."
-				   :tags note-tags)
-	     (gnosis-add-note--cloze :deck deck-name
-				     :note "GNU Emacs is an extensible editor created by {{c1::Richard}} {{c1::Stallman}} in {{c2::1984::year}}"
-				     :tags note-tags
-				     :extra "Emacs was originally implemented in 1976 on the MIT AI Lab's Incompatible Timesharing System (ITS), as a collection of TECO macros. The name “Emacs” was originally chosen as an abbreviation of “Editor MACroS”. =This version of Emacs=, GNU Emacs, was originally *written in 1984*")
-	     (gnosis-add-note--y-or-n :deck deck-name
-				      :question "Is GNU Emacs the greatest program ever written?"
-				      :hint "Duh"
-				      :answer 121
-				      :extra ""
-				      :tags note-tags))
+	       (gnosis-add-note--cloze :deck deck-name
+				       :note "GNU Emacs is an extensible editor created by {{c1::Richard}} {{c1::Stallman}} in {{c2::1984::year}}"
+				       :tags note-tags
+				       :extra "Emacs was originally implemented in 1976 on the MIT AI Lab's Incompatible Timesharing System (ITS), as a collection of TECO macros. The name “Emacs” was originally chosen as an abbreviation of “Editor MACroS”. =This version of Emacs=, GNU Emacs, was originally *written in 1984*")
+	       (gnosis-add-note--y-or-n :deck deck-name
+					:question "Is GNU Emacs the greatest program ever written?"
+					:hint "Duh"
+					:answer 121
+					:extra ""
+					:tags note-tags))
       (error "Demo deck already exists"))))
 
 ;; Gnosis mode ;;
