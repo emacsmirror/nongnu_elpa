@@ -169,15 +169,16 @@ When C-SUCCESSES (consecutive successes) reach ANAGNOSIS,
 increase gnosis-plus by EPIGNOSIS.
 
 When C-FAILURES reach ANAGOSNIS, increase gnosis-minus by AGNOIA."
-  (cl-assert (listp gnosis) nil "Assertion failed: gnosis must be a list")
+  (cl-assert (listp gnosis) nil "Assertion failed: gnosis must be a list of floats.")
   (cl-assert (booleanp success) nil "Assertion failed: success must be a boolean value")
-  (cl-assert (numberp epignosis) nil "Assertion failed: epignosis must be a number")
-  (cl-assert (numberp agnoia) nil "Assertion failed: agnoia must be a number")
-  (cl-assert (numberp anagnosis) nil "Assertion failed: anagosis must be a number")
+  (cl-assert (and (floatp epignosis) (< epignosis 1)) nil "Assertion failed: epignosis must be a float < 1")
+  (cl-assert (and (floatp agnoia) (< agnoia 1)) nil "Assertion failed: agnoia must be a float < 1")
+  (cl-assert (integerp anagnosis) nil "Assertion failed: anagosis must be an integer.")
   (let ((anagnosis-p (= (% (max 1 (if success c-successes c-failures)) anagnosis) 0))
-	(neo-gnosis (if success
-			(gnosis-algorithm-replace-at-index 2 (+ (nth 2 gnosis) (nth 0 gnosis)) gnosis)
-		      (gnosis-algorithm-replace-at-index 2 (max 1.3 (- (nth 2 gnosis) (nth 1 gnosis))) gnosis))))
+	(neo-gnosis
+	 (if success
+	     (gnosis-algorithm-replace-at-index 2 (+ (nth 2 gnosis) (nth 0 gnosis)) gnosis)
+	   (gnosis-algorithm-replace-at-index 2 (max 1.3 (- (nth 2 gnosis) (nth 1 gnosis))) gnosis))))
     ;; TODO: Change amnesia & epignosis value upon reaching a lethe or anagnosis event.
     (cond ((and success anagnosis-p)
 	   (setf neo-gnosis (gnosis-algorithm-replace-at-index 0 (+ (nth 0 gnosis) epignosis) neo-gnosis)))
