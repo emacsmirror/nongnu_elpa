@@ -2085,6 +2085,17 @@ CUSTOM-VALUES: Specify values for tags."
     (if (>= max-agnoia 1)
 	(error "Agnoia value must be lower than 1")
       max-agnoia)))
+
+(defun gnosis-proto-max-values (proto-values)
+  "Return max values from PROTO-VALUES."
+  (if (not (and (listp proto-values) (cl-every #'listp proto-values)))
+      proto-values
+    (let* ((max-len (apply #'max (mapcar #'length proto-values)))
+           (padded-lists (mapcar (lambda (lst)
+                                   (append lst (make-list (- max-len (length lst)) 0)))
+                                 proto-values)))
+      (apply #'cl-mapcar #'max padded-lists))))
+
 (defun gnosis-get-date-total-notes (&optional date)
   "Return total notes reviewed for DATE.
 
