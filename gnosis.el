@@ -1922,8 +1922,8 @@ DESCRIPTION is a string that describes the value."
   :lighter " Gnosis Edit"
   :keymap gnosis-edit-mode-map)
 
-(cl-defun gnosis-edit-update-note (&key id main options answer tags (extra-notes nil) (image nil) (second-image nil)
-					ef ff suspend)
+(cl-defun gnosis-edit-update-note (&key id main options answer tags (extra-notes nil) (image nil)
+					(second-image nil) gnosis amnesia suspend)
   "Update note with id value of ID.
 
 ID: Note id
@@ -1934,8 +1934,8 @@ TAGS: Tags for note, used to organize & differentiate between notes
 EXTRA-NOTES: Notes to display after user-input
 IMAGE: Image to display before user-input
 SECOND-IMAGE: Image to display after user-input
-EF: Easiness factor value
-FF: Failure factor value
+GNOSIS: Gnosis score
+AMNESIA: Amnesia value
 SUSPEND: Suspend note, 0 for unsuspend, 1 for suspend"
   (cl-assert (stringp main) nil "Main must be a string")
   (cl-assert (or (stringp image) (null image)) nil
@@ -1945,14 +1945,15 @@ SUSPEND: Suspend note, 0 for unsuspend, 1 for suspend"
   (cl-assert (or (stringp extra-notes) (null extra-notes)) nil
 	     "Extra-notes must be a string, or nil")
   (cl-assert (listp tags) nil "Tags must be a list of strings")
-  (cl-assert (and (listp ef) (length= ef 3)) nil "ef must be a list of 3 floats")
+  (cl-assert (and (listp gnosis) (length= gnosis 3)) nil "gnosis must be a list of 3 floats")
   (cl-assert (or (stringp options) (listp options)) nil "Options must be a string, or a list for MCQ")
   (cl-assert (or (= suspend 0) (= suspend 1)) nil "Suspend must be either 0 or 1")
   (when (and (string= (gnosis-get-type id) "cloze")
 	     (not (stringp options)))
     (cl-assert (or (listp options) (stringp options)) nil "Options must be a list or a string.")
     (cl-assert (gnosis-cloze-check main answer) nil "Clozes are not part of the question (main).")
-    (cl-assert (>= (length answer) (length options)) nil "Hints (options) must be equal or less than clozes (answer).")
+    (cl-assert (>= (length answer) (length options)) nil
+	       "Hints (options) must be equal or less than clozes (answer).")
     (cl-assert (cl-every (lambda (item) (or (null item) (stringp item))) options) nil "Hints (options) must be either nil or a string."))
   ;; Construct the update clause for the emacsql update statement.
   (cl-loop for (field . value) in `((main . ,main)
@@ -1962,13 +1963,13 @@ SUSPEND: Suspend note, 0 for unsuspend, 1 for suspend"
 				    (extra-notes . ,extra-notes)
 				    (images . ,image)
 				    (extra-image . ,second-image)
-				    (ef . ',ef)
-				    (ff . ,ff)
+				    (gnosis . ',gnosis)
+				    (amnesia . ,amnesia)
 				    (suspend . ,suspend))
            when value
            do (cond ((memq field '(extra-notes images extra-image))
 		     (gnosis-update 'extras `(= ,field ,value) `(= id ,id)))
-		    ((memq field '(ef ff))
+		    ((memq field '(gnosis amnesia))
 		     (gnosis-update 'review `(= ,field ,value) `(= id ,id)))
 		    ((eq field 'suspend)
 		     (gnosis-update 'review-log `(= ,field ,value) `(= id ,id)))
