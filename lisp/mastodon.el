@@ -282,7 +282,9 @@ See `mastodon-toot-display-orig-in-reply-buffer'.")
 
 ;;;###autoload
 (defun mastodon ()
-  "Connect client to `mastodon-instance-url' instance."
+  "Connect client to `mastodon-instance-url' instance.
+If there are any open mastodon.el buffers, switch to one instead.
+Prority in switching is given to timeline views."
   (interactive)
   (let* ((tls (list "home"
                     "local"
@@ -294,8 +296,8 @@ See `mastodon-toot-display-orig-in-reply-buffer'.")
                                 (get-buffer (concat "*mastodon-" el "*")))
                               tls) ; return first buff that exists
                      (cl-some (lambda (x)
-                                (when
-                                    (string-prefix-p "*mastodon-" (buffer-name x))
+                                (when (string-prefix-p "*mastodon-"
+                                                       (buffer-name x))
                                   (get-buffer x)))
                               (buffer-list))))) ; catch any other masto buffer
     (if buffer
@@ -348,20 +350,19 @@ BUFFER-NAME is added to \"*mastodon-\" to create the buffer name.
 FORCE means do not try to update an existing buffer, but fetch
 from the server and load anew."
   (interactive)
-  (let ((buffer (if buffer-name
-                    (concat "*mastodon-" buffer-name "*")
-                  "*mastodon-notifications*")))
-    (if (and (not force)
-             (get-buffer buffer))
+  (let ((buffer-name (or buffer-name "notifications"))
+        (buffer (concat "*mastodon-" buffer-name "*")))
+    (if (and (not force) (get-buffer buffer))
         (progn (pop-to-buffer buffer '(display-buffer-same-window))
                (mastodon-tl--update))
       (message "Loading your notifications...")
-      (mastodon-tl--init-sync (or buffer-name "notifications")
-                              "notifications"
-                              'mastodon-notifications--timeline
-                              type
-                              (when max-id
-                                `(("max_id" . ,(mastodon-tl--buffer-property 'max-id)))))
+      (mastodon-tl--init-sync
+       buffer-name
+       "notifications"
+       'mastodon-notifications--timeline
+       type
+       (when max-id
+         `(("max_id" . ,(mastodon-tl--buffer-property 'max-id)))))
       (with-current-buffer buffer
         (use-local-map mastodon-notifications--map)))))
 
@@ -369,8 +370,8 @@ from the server and load anew."
 
 ;;;###autoload
 (defun mastodon-url-lookup (&optional query-url force)
-  "If a URL resembles a mastodon link, try to load in `mastodon.el'.
-Does a WebFinger lookup.
+  "If a URL resembles a fediverse link, try to load in `mastodon.el'.
+Does a WebFinger lookup on the server.
 URL can be arg QUERY-URL, or URL at point, or provided by the user.
 If a status or account is found, load it in `mastodon.el', if
 not, just browse the URL in the normal fashion."
@@ -382,24 +383,24 @@ not, just browse the URL in the normal fashion."
     (if (and (not force)
              (not (mastodon--fedi-url-p query)))
         ;; (shr-browse-url query) ; doesn't work (keep our shr keymap)
-        (browse-url query)
+        (progn (message "Using external browser")
+               (browse-url query))
       (message "Performing lookup...")
       (let* ((url (format "%s/api/v2/search" mastodon-instance-url))
              (params `(("q" . ,query)
                        ("resolve" . "t"))) ; webfinger
              (response (mastodon-http--get-json url params :silent)))
-        (cond ((not (seq-empty-p
-                     (alist-get 'statuses response)))
+        (cond ((not (seq-empty-p (alist-get 'statuses response)))
                (let* ((statuses (assoc 'statuses response))
                       (status (seq-first (cdr statuses)))
                       (status-id (alist-get 'id status)))
                  (mastodon-tl--thread status-id)))
-              ((not (seq-empty-p
-                     (alist-get 'accounts response)))
+              ((not (seq-empty-p (alist-get 'accounts response)))
                (let* ((accounts (assoc 'accounts response))
                       (account (seq-first (cdr accounts))))
                  (mastodon-profile--make-author-buffer account)))
               (t
+               (message "Lookup failed. Using external browser")
                (browse-url query)))))))
 
 (defun mastodon-url-lookup-force ()
