@@ -2063,6 +2063,28 @@ CUSTOM-VALUES: Specify values for tags."
     (if (>= note-epignosis 1)
 	(error "Epignosis value must be lower than 1")
       note-epignosis)))
+
+(defun gnosis-get-note-tag-agnoia (id &optional custom-tags custom-values)
+  "Return agnoia value for note ID."
+  (let ((agnoia-values (gnosis-get-custom-tag-values id :agnoia custom-tags custom-values)))
+    (if agnoia-values
+	(apply #'max agnoia-values)
+      gnosis-algorithm-agnoia-value)))
+
+(defun gnosis-get-note-deck-agnoia (id &optional custom-deck custom-values)
+  "Return agnoia value for note ID."
+  (let ((deck (or (gnosis-get-note-deck-name id) custom-deck)))
+    (or (gnosis-get-custom-deck-value deck :agnoia custom-values)
+	gnosis-algorithm-agnoia-value)))
+
+(defun gnosis-get-note-agnoia (id &optional custom-deck custom-tags custom-values)
+  "Return agnoia value for note ID."
+  (let* ((deck-agnoia (gnosis-get-note-deck-agnoia id custom-deck custom-values))
+         (tag-agnoia (gnosis-get-note-tag-agnoia id custom-tags custom-values))
+	 (max-agnoia (max deck-agnoia tag-agnoia)))
+    (if (>= max-agnoia 1)
+	(error "Agnoia value must be lower than 1")
+      max-agnoia)))
 (defun gnosis-get-date-total-notes (&optional date)
   "Return total notes reviewed for DATE.
 
