@@ -54,7 +54,7 @@
   "Gnosis proto interval for the first successful reviews.
 
 Values for the first proto successful intervals.  There is no
-restriction for length."
+restriction for list length."
   :group 'gnosis
   :type '(list integer))
 
@@ -72,7 +72,8 @@ Third item : Total gnosis (gnosis-synolon/totalis) -> Total gnosis score"
 
 Used to calcuate new interval for failed questions.
 
-This value should be less than 1.0."
+The closer this value is to 0, the closer it is to total amnesia for
+each a recall.  This value should be less than 1.0."
   :group 'gnosis
   :type 'float)
 
