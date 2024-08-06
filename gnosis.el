@@ -1466,13 +1466,13 @@ well."
     (max (gnosis-algorithm-date-diff last-rev rev-date) 1)))
 
 (defun gnosis-review-algorithm (id success)
-  "Return next review date & ef for note with value of id ID.
+  "Return next review date & gnosis for note with value of id ID.
 
 SUCCESS is a boolean value, t for success, nil for failure.
 
 Returns a list of the form ((yyyy mm dd) (ef-increase ef-decrease ef-total))."
-  (let ((ff (gnosis-get-note-ff id))
-	(ef (gnosis-get 'ef 'review `(= id ,id)))
+  (let ((amnesia (gnosis-get-note-amnesia id))
+	(gnosis (gnosis-get 'gnosis 'review `(= id ,id)))
 	(t-success (gnosis-get 't-success 'review-log `(= id ,id))) ;; total successful reviews
 	(c-success (gnosis-get 'c-success 'review-log `(= id ,id))) ;; consecutive successful reviews
 	(c-fails (gnosis-get 'c-fails 'review-log `(= id ,id))) ;; consecutive failed reviews
@@ -1480,21 +1480,24 @@ Returns a list of the form ((yyyy mm dd) (ef-increase ef-decrease ef-total))."
 	;; (review-num (gnosis-get 'n 'review-log `(= id ,id))) ;; total reviews
 	;; (last-interval (max (gnosis-review--get-offset id) 1))
 	(last-interval (gnosis-review-last-interval id))) ;; last interval
-    (list (gnosis-algorithm-next-interval :last-interval last-interval
-					  :ef (nth 2 ef) ;; total ef is used for next interval
-					  :success success
-					  :successful-reviews t-success
-					  :c-fails c-fails
-					  :threshold 3 ;;TODO: Create a gnosis-interval-thershold
-					  :failure-factor ff
-					  :initial-interval (gnosis-get-note-initial-interval id))
-	  (gnosis-algorithm-next-ef :ef ef
-				    :success success
-				    :increase (gnosis-get-ef-increase id)
-				    :decrease (gnosis-get-ef-decrease id)
-				    :threshold (gnosis-get-ef-threshold id)
-				    :c-successes c-success
-				    :c-failures c-fails))))
+    (list
+     (gnosis-algorithm-next-interval
+      :last-interval last-interval
+      :gnosis-synolon (nth 2 gnosis)
+      :success success
+      :successful-reviews t-success
+      :c-fails c-fails
+      :lethe (gnosis-get-note-lethe id)
+      :amnesia amnesia
+      :proto (gnosis-get-note-proto id))
+     (gnosis-algorithm-next-gnosis
+      :gnosis gnosis
+      :success success
+      :epignosis (gnosis-get-note-epignosis id)
+      :agnoia (gnosis-get-note-agnoia id)
+      :anagnosis (gnosis-get-note-anagnosis id)
+      :c-successes c-success
+      :c-failures c-fails))))
 
 (defun gnosis-review--update (id success)
   "Update review-log for note with value of id ID.
