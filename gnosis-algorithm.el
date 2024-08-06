@@ -67,12 +67,12 @@ Third item : Total gnosis (gnosis-synolon/totalis) -> Total gnosis score"
   :group 'gnosis
   :type '(list float))
 
-(defcustom gnosis-algorithm-ff 0.5
+(defcustom gnosis-algorithm-amnesia-value 0.5
   "Gnosis forgetting factor.
 
 Used to calcuate new interval for failed questions.
 
-NOTE: This value should be less than 1.0."
+This value should be less than 1.0."
   :group 'gnosis
   :type 'float)
 
