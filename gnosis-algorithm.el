@@ -58,12 +58,12 @@ restriction for length."
   :group 'gnosis
   :type '(list integer))
 
-(defcustom gnosis-algorithm-ef '(0.35 0.30 1.3)
-  "Gnosis easiness factor.
+(defcustom gnosis-algorithm-gnosis-value '(0.35 0.30 1.3)
+  "Starting gnosis score.
 
-First item : Increase value
-Second item: Decrease value
-Third item : Total ef"
+First item : Increase value (gnosis-plus)
+Second item: Decrease value (gnosis-minus)
+Third item : Total gnosis (gnosis-synolon/totalis) -> Total gnosis score"
   :group 'gnosis
   :type '(list float))
 
