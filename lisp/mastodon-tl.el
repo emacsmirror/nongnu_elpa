@@ -1997,6 +1997,12 @@ Return value from boosted content if available."
   (or (alist-get field (alist-get 'reblog toot))
       (alist-get field toot)))
 
+(defun mastodon-tl--field-status (field toot)
+  "Return FIELD from TOOT.
+Return value from status field if available."
+  (or (alist-get field (alist-get 'status toot))
+      (alist-get field toot)))
+
 (defun mastodon-tl--remove-html (toot)
   "Remove unrendered tags from TOOT."
   (let* ((t1 (replace-regexp-in-string "<\/p>" "\n\n" toot))
