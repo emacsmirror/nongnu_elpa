@@ -2017,6 +2017,14 @@ CUSTOM-VALUES: Specify values for tags."
 	(apply #'min amnesia-values)
       gnosis-algorithm-amnesia-value)))
 
+(defun gnosis-get-note-deck-amnesia (id &optional custom-deck custom-values)
+  "Return tag amnesia for note ID.
+
+Optionally, use CUSTOM-DECK and CUSTOM-VALUES."
+  (let ((deck (or (gnosis-get-note-deck-name id) custom-deck )))
+    (or (gnosis-get-custom-deck-value deck :amnesia custom-values)
+	gnosis-algorithm-amnesia-value)))
+
 
 (defun gnosis-get-date-total-notes (&optional date)
   "Return total notes reviewed for DATE.
