@@ -75,7 +75,7 @@
 ;; switch to timlines without closing the minor view.
 
 ;; copying the mode map however means we need to avoid/unbind/override any
-;; functions that might cause interfere with the minor view.
+;; functions that might interfere with the minor view.
 
 ;; this is not redundant, as while the buffer -init function calls
 ;; `mastodon-mode', it gets overridden in some but not all cases.
@@ -121,6 +121,7 @@
     (define-key map (kbd "a") #'mastodon-views--add-account-to-list-at-point)
     (define-key map (kbd "r") #'mastodon-views--remove-account-from-list-at-point)
     (define-key map (kbd "e") #'mastodon-views--edit-list-at-point)
+    (define-key map (kbd "g") #'mastodon-views--view-lists)
     map)
   "Keymap for when point is on list name.")
 
@@ -131,6 +132,7 @@
     (define-key map (kbd "c") #'mastodon-views--cancel-scheduled-toot)
     (define-key map (kbd "e") #'mastodon-views--edit-scheduled-as-new)
     (define-key map (kbd "RET") #'mastodon-views--edit-scheduled-as-new)
+    (define-key map (kbd "g") #'mastodon-views--view-scheduled-toots)
     map)
   "Keymap for when point is on a scheduled toot.")
 
@@ -158,15 +160,9 @@ request.
 This function is used as the update-function to
 `mastodon-tl--init-sync', which initializes a buffer for us and
 provides the JSON data."
-  ;; FIXME: this is not an update function as it inserts a heading and
-  ;; possible bindings string
-  ;; either it should go in init-sync, or possibly in each view function
-  ;; but either way, this function does almost nothing for us.
-  ;; could we call init-sync in here pehaps?
-  ;; (mastodon-search--insert-heading view-name)
-  ;; (when bindings-string
-  ;;   (insert (mastodon-tl--set-face (concat "[" bindings-string "]\n\n")
-  ;;                                  'font-lock-comment-face)))
+  ;; FIXME not tecnically an update-fun for init-sync, but just a simple way
+  ;; to set up the empty buffer or else call the insert-fun. not sure if we cd
+  ;; improve by eg calling init-sync in here, making this a real view function.
   (if (seq-empty-p data)
       (insert (propertize
                (format "Looks like you have no %s for now." view-name)
@@ -326,8 +322,7 @@ If ID is provided, use that list."
          (name (mastodon-views--get-list-name id))
          (buffer-name (format "list-%s" name)))
     (mastodon-tl--init buffer-name endpoint
-                       'mastodon-tl--timeline
-                       nil
+                       'mastodon-tl--timeline nil
                        `(("limit" . ,mastodon-tl--timeline-posts-count)))))
 
 (defun mastodon-views--create-list ()
@@ -432,8 +427,7 @@ If ID is provided, use that list."
          (list-id (or id (mastodon-views--get-list-id list-name)))
          (accounts (mastodon-views--accounts-in-list list-id))
          (handles (mastodon-tl--map-alist-vals-to-alist 'acct 'id accounts))
-         (account (completing-read "Account to remove: "
-                                   handles nil t))
+         (account (completing-read "Account to remove: " handles nil t))
          (account-id (alist-get account handles))
          (url (mastodon-http--api (format "lists/%s/accounts" list-id)))
          (args (mastodon-http--build-array-params-alist "account_ids[]" `(,account-id)))
@@ -537,7 +531,7 @@ If ID, just return that toot."
   (interactive)
   (let ((id (mastodon-tl--property 'id :no-move)))
     (if (null id)
-        (message "no scheduled toot at point?")
+        (user-error "no scheduled toot at point?")
       (mastodon-toot--schedule-toot :reschedule))))
 
 (defun mastodon-views--copy-scheduled-toot-text ()
@@ -555,7 +549,7 @@ NO-CONFIRM means there is no ask or message, there is only do."
   (interactive)
   (let ((id (or id (mastodon-tl--property 'id :no-move))))
     (if (null id)
-        (message "no scheduled toot at point?")
+        (user-error "no scheduled toot at point?")
       (when (or no-confirm
                 (y-or-n-p "Cancel scheduled toot?"))
         (let* ((url (mastodon-http--api (format "scheduled_statuses/%s" id)))
@@ -571,7 +565,7 @@ NO-CONFIRM means there is no ask or message, there is only do."
   (interactive)
   (let ((id (mastodon-tl--property 'id :no-move)))
     (if (null id)
-        (message "no scheduled toot at point?")
+        (user-error "no scheduled toot at point?")
       (let* ((toot (mastodon-tl--property 'scheduled-json :no-move))
              (scheduled (alist-get 'scheduled_at toot)))
         (let-alist (alist-get 'params toot)
@@ -646,9 +640,8 @@ Prompt for a context, must be a list containting at least one of \"home\",
          (contexts-processed
           (if (equal nil contexts)
               (user-error "You must select at least one context for a filter")
-            (mapcar (lambda (x)
-                      (cons "context[]" x))
-                    contexts)))
+            (cl-loop for c in contexts
+                     collect (cons "context[]" c))))
          (response (mastodon-http--post url (push
                                              `("phrase" . ,word)
                                              contexts-processed))))
@@ -726,8 +719,7 @@ BRIEF means show fewer details."
   "Return an instance base url from a user account URL.
 USERNAME is the name to cull.
 If INSTANCE is given, use that."
-  (cond (instance
-         (concat "https://" instance))
+  (cond (instance (concat "https://" instance))
         ;; pleroma URL is https://instance.com/users/username
         ((string-suffix-p "users/" (url-basepath url))
          (string-remove-suffix "/users/"
@@ -758,13 +750,9 @@ MISSKEY means the instance is a Misskey or derived server."
       (let ((response (mastodon-views--get-own-instance)))
         (mastodon-views--instance-response-fun response brief instance))
     (mastodon-tl--do-if-item
-     (let* ((toot (if (mastodon-tl--profile-buffer-p)
-                      ;; we may be on profile description itself:
-                      (or (mastodon-tl--property 'profile-json)
-                          ;; or on profile account listings, or just toots:
-                          (mastodon-tl--property 'item-json))
-                    ;; normal timeline/account listing:
-                    (mastodon-tl--property 'item-json)))
+     (let* ((toot (or (and (mastodon-tl--profile-buffer-p)
+                           (mastodon-tl--property 'profile-json)) ; either profile
+                      (mastodon-tl--property 'item-json)) ; or toot or user listing
             (reblog (alist-get 'reblog toot))
             (account (or (alist-get 'account reblog)
                          (alist-get 'account toot)
