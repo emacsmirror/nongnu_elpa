@@ -1726,7 +1726,7 @@ NOTE-COUNT."
   (recursive-edit)
   (gnosis-review-actions success note note-count))
 
-(defun gnosis-review-action--quit (success note note-count)
+(defun gnosis-review-action--quit (success note)
   "Quit review session.
 
 Update result for NOTE review with SUCCESS and commit session for NOTE-COUNT.
@@ -1734,8 +1734,7 @@ Update result for NOTE review with SUCCESS and commit session for NOTE-COUNT.
 This function should be used with `gnosis-review-actions', to finish
 the review session."
   (gnosis-review-result note success)
-  (gnosis-review-commit note-count)
-  ;; Break the loop of `gnosis-review-session'
+  ;; Break the review loop of `gnosis-review-session'
   (throw 'review-loop t))
 
 (defun gnosis-review-action--suspend (success note note-count)
@@ -1781,7 +1780,7 @@ To customize the keybindings, adjust `gnosis-review-keybindings'."
       ("override" (gnosis-review-action--override success note note-count))
       ("suspend" (gnosis-review-action--suspend success note note-count))
       ("edit" (gnosis-review-action--edit success note note-count))
-      ("quit" (gnosis-review-action--quit success note note-count)))))
+      ("quit" (gnosis-review-action--quit success note)))))
 
 (defun gnosis-review-session (notes &optional due note-count)
   "Start review session for NOTES.
