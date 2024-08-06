@@ -28,7 +28,10 @@
 ;; easier by creating a testing environment with random inputs.
 
 ;;; Code:
+(add-to-list 'load-path ".")
 
+
+(require 'ert)
 (require 'gnosis)
 
 (defvar gnosis-test-tags '("anatomy" "thoracic" "serratus-anterior"
@@ -60,74 +63,74 @@ DECK: Deck to add the inputs to."
     (unless (gnosis-get 'name 'decks `(= name ,testing-deck))
       (gnosis-add-deck testing-deck))
     (when (y-or-n-p "Add MCQ type?")
-      (dotimes (_ num)
-	(gnosis-add-note--mcq :deck testing-deck
-			      :question "A *37-year-old* man is admitted to the
+      (emacsql-with-transaction gnosis-db
+	(dotimes (_ num)
+	  (gnosis-add-note--mcq :deck testing-deck
+				:question "A *37-year-old* man is admitted to the
 emergency department after a severe car crash. /After/ examining the
 patient the emergency medicine physician concludes *that* the serratus
 anterior muscle is damaged. ~Which~ of the following nerves innervates
 the =serratus anterior muscle=?"
-			      :choices '("Long thoracic" "Axillary" "Spinal accessory" "Dorsal scapular" "Thoracodorsal")
-			      :correct-answer 1
-			      :extra "The long thoracic is the only nerve that
+				:choices '("Long thoracic" "Axillary" "Spinal accessory" "Dorsal scapular" "Thoracodorsal")
+				:correct-answer 1
+				:extra "The long thoracic is the only nerve that
 innervates the serratus anterior. The axillary nerve innervates the
 deltoid, the spinal accessory nerve innervates the sternocleidomastoid
 and trapezius, the dorsal scapular nerve supplies the rhomboid muscles
 and levator scapulae, and the latissimus dorsi is the muscle supplied
 by the thoracodorsal nerve."
-			      :images (cons gnosis-test-image gnosis-test-image)
-			      :tags (gnosis-test-random-items gnosis-test-tags 2))))
-    (when (y-or-n-p "Add Basic type questions?")
-      (dotimes (_ num)
-	(gnosis-add-note--basic :deck testing-deck
-				:question "A question"
-				:hint "hint"
-				:answer "answer"
-				:extra "extra"
 				:images (cons gnosis-test-image gnosis-test-image)
 				:tags (gnosis-test-random-items gnosis-test-tags 2))))
-    (when (y-or-n-p "Add single Cloze type?")
-      (dotimes (_ num)
-	;; TODO: Update tests for include hints.
-	(gnosis-add-note--cloze :deck testing-deck
-				:note "this is a {c1:note}"
-				:tags (gnosis-test-random-items gnosis-test-tags 2)
-				:images (cons gnosis-test-image gnosis-test-image)
-				:extra "extra")))
-    (when (y-or-n-p "Add multimple Clozes note?")
-      (dotimes (_ num)
-	(gnosis-add-note--cloze :deck testing-deck
-				:note "this is a {c1:note}, a note with multiple {c1:clozes::what}"
-				:tags (gnosis-test-random-items gnosis-test-tags 2)
-				:images (cons gnosis-test-image gnosis-test-image)
-				:extra "extra")))
-    (when (y-or-n-p "Add y-or-n note type?")
-      (dotimes (_ num)
-	(gnosis-add-note--y-or-n :deck testing-deck
-				 :question "Is Codeine recommended in breastfeeding mothers?"
-				 :hint "hint"
-				 :answer 110
-				 :extra "extra"
-				 :images (cons gnosis-test-image gnosis-test-image)
-				 :tags (gnosis-test-random-items gnosis-test-tags 2))))))
+      (when (y-or-n-p "Add Basic type questions?")
+	(dotimes (_ num)
+	  (gnosis-add-note--basic :deck testing-deck
+				  :question "A question"
+				  :hint "hint"
+				  :answer "answer"
+				  :extra "extra"
+				  :images (cons gnosis-test-image gnosis-test-image)
+				  :tags (gnosis-test-random-items gnosis-test-tags 2))))
+      (when (y-or-n-p "Add single Cloze type?")
+	(dotimes (_ num)
+	  ;; TODO: Update tests for include hints.
+	  (gnosis-add-note--cloze :deck testing-deck
+				  :note "this is a {c1:note}"
+				  :tags (gnosis-test-random-items gnosis-test-tags 2)
+				  :images (cons gnosis-test-image gnosis-test-image)
+				  :extra "extra")))
+      (when (y-or-n-p "Add multimple Clozes note?")
+	(dotimes (_ num)
+	  (gnosis-add-note--cloze :deck testing-deck
+				  :note "this is a {c1:note}, a note with multiple {c1:clozes::what}"
+				  :tags (gnosis-test-random-items gnosis-test-tags 2)
+				  :images (cons gnosis-test-image gnosis-test-image)
+				  :extra "extra")))
+      (when (y-or-n-p "Add y-or-n note type?")
+	(dotimes (_ num)
+	  (gnosis-add-note--y-or-n :deck testing-deck
+				   :question "Is Codeine recommended in breastfeeding mothers?"
+				   :hint "hint"
+				   :answer 110
+				   :extra "extra"
+				   :images (cons gnosis-test-image gnosis-test-image)
+				   :tags (gnosis-test-random-items gnosis-test-tags 2)))))))
 
 (defun gnosis-test-start (&optional note-num)
   "Begin/End testing env.
 
 If ask nil, leave testing env"
   (interactive)
-  (let ((ask (y-or-n-p "Start development env (n for exit)?"))
-	(testing-dir (expand-file-name "testing" gnosis-dir)))
+  (let* ((ask (y-or-n-p "Start development env (n for exit)?"))
+	 (testing-dir (expand-file-name "testing" gnosis-dir))
+	 (testing-db (expand-file-name "testing.db" testing-dir)))
     (if ask
 	(progn
 	  (unless (file-exists-p testing-dir)
 	    (make-directory testing-dir))
-	  (setf gnosis-db (emacsql-sqlite-open (expand-file-name "testing.db" testing-dir)))
+	  (when (file-exists-p testing-db)
+	    (delete-file testing-db))
+	  (setf gnosis-db (emacsql-sqlite-open testing-db))
 	  (setf gnosis-testing t)
-	  (dolist (table '(notes decks review review-log extras activity-log))
-	    (condition-case nil
-		(gnosis--drop-table table)
-	      (error (message "No %s table to drop." table))))
 	  (gnosis-db-init)
 	  (gnosis-test-add-fields note-num)
 	  (message "Adding testing values...")
@@ -136,6 +139,279 @@ If ask nil, leave testing env"
       (setf gnosis-testing nil)
       (message "Exited development env."))))
 
+(ert-deftest gnosis-test-algorithm-next-interval-proto ()
+  "Test next interval for proto values."
+  (should (equal (gnosis-algorithm-next-interval :last-interval 0
+						 :gnosis-synolon 1.3
+						 :success t
+						 :successful-reviews 0
+						 :amnesia 0.5
+						 :proto '(1 2 3)
+						 :c-fails 0
+						 :lethe 3)
+		 (gnosis-algorithm-date 1)))
+  (should (equal (gnosis-algorithm-next-interval :last-interval 0
+						 :gnosis-synolon 1.3
+						 :success t
+						 :successful-reviews 1
+						 :amnesia 0.5
+						 :proto '(1 2 3)
+						 :c-fails 0
+						 :lethe 3)
+		 (gnosis-algorithm-date 2)))
+  (should (equal (gnosis-algorithm-next-interval :last-interval 0
+						 :gnosis-synolon 1.3
+						 :success t
+						 :successful-reviews 2
+						 :amnesia 0.5
+						 :proto '(1 2 3)
+						 :c-fails 0
+						 :lethe 3)
+		 (gnosis-algorithm-date 3)))
+  (should (equal (gnosis-algorithm-next-interval :last-interval 0
+						 :gnosis-synolon 1.3
+						 :success t
+						 :successful-reviews 3
+						 :amnesia 0.5
+						 :proto '(1 2 3 70)
+						 :c-fails 0
+						 :lethe 3)
+		 (gnosis-algorithm-date 70)))
+  (should (equal (gnosis-algorithm-next-interval :last-interval 0
+						 :gnosis-synolon 2.0
+						 :success t
+						 :successful-reviews 4
+						 :amnesia 0.5
+						 :proto '(1 2 3 70)
+						 :c-fails 0
+						 :lethe 3)
+		 (gnosis-algorithm-date 2)))
+  (should (equal (gnosis-algorithm-next-interval :last-interval 0
+						 :gnosis-synolon 3.0
+						 :success t
+						 :successful-reviews 5
+						 :amnesia 0.5
+						 :proto '(1 2 3 70)
+						 :c-fails 0
+						 :lethe 3)
+		 (gnosis-algorithm-date 3))))
+
+(ert-deftest gnosis-test-algorithm-next-interval-lethe ()
+  (should (equal (gnosis-algorithm-next-interval :last-interval 0
+						 :gnosis-synolon 1.3
+						 :success nil
+						 :successful-reviews 0
+						 :amnesia 0.5
+						 :proto '(1 2 3)
+						 :c-fails 3
+						 :lethe 3)
+		 (gnosis-algorithm-date)))
+  (should (equal (gnosis-algorithm-next-interval :last-interval 0
+						 :gnosis-synolon 1.3
+						 :success nil
+						 :successful-reviews 0
+						 :amnesia 0.5
+						 :proto '(1 2 3)
+						 :c-fails 3
+						 :lethe 4)
+		 (gnosis-algorithm-date)))
+  (should (equal (gnosis-algorithm-next-interval :last-interval 10
+						 :gnosis-synolon 20.0
+						 :success nil
+						 :successful-reviews 2
+						 :amnesia 0.5
+						 :proto '(1 2 3)
+						 :c-fails 3
+						 :lethe 4)
+		 (gnosis-algorithm-date 5)))
+  (should (equal (gnosis-algorithm-next-interval :last-interval 10
+						 :gnosis-synolon 20.0
+						 :success nil
+						 :successful-reviews 2
+						 :amnesia 0.5
+						 :proto '(1 2 3)
+						 :c-fails 5
+						 :lethe 4)
+		 (gnosis-algorithm-date))))
+
+(ert-deftest gnosis-test-algorithm-next-interval-success ()
+  "Test next interval for successful non-proto recalls."
+  (should (equal (gnosis-algorithm-next-interval :last-interval 10
+						 :gnosis-synolon 2.0
+						 :success t
+						 :successful-reviews 5
+						 :amnesia 0.5
+						 :proto '(1 2 3)
+						 :c-fails 500
+						 :lethe 4)
+		 (gnosis-algorithm-date 20)))
+  (should (equal (gnosis-algorithm-next-interval :last-interval 3
+						 :gnosis-synolon 1.3
+						 :success t
+						 :successful-reviews 5
+						 :amnesia 0.5
+						 :proto '(1 2 3)
+						 :c-fails 300
+						 :lethe 4)
+		 (gnosis-algorithm-date 4))))
+
+(ert-deftest gnosis-test-algorithm-next-interval-amnesia ()
+  "Test next interval for failed non-proto recalls."
+  (should (equal (gnosis-algorithm-next-interval :last-interval 10
+						 :gnosis-synolon 1.3
+						 :success nil
+						 :successful-reviews 3
+						 :amnesia 0.5
+						 :proto '(1 2 3)
+						 :c-fails 3
+						 :lethe 4)
+		 (gnosis-algorithm-date 5)))
+  (should (equal (gnosis-algorithm-next-interval :last-interval 3
+						 :gnosis-synolon 1.3
+						 :success nil
+						 :successful-reviews 3
+						 :amnesia 0.5
+						 :proto '(1 2 3)
+						 :c-fails 3
+						 :lethe 4)
+		 (gnosis-algorithm-date 2)))
+  (should (equal (gnosis-algorithm-next-interval :last-interval 2
+						 :gnosis-synolon 1.3
+						 :success nil
+						 :successful-reviews 3
+						 :amnesia 0.5
+						 :proto '(1 2 3)
+						 :c-fails 3
+						 :lethe 4)
+		 (gnosis-algorithm-date 1)))
+  (should (equal (gnosis-algorithm-next-interval :last-interval 10
+						 :gnosis-synolon 1.3
+						 :success nil
+						 :successful-reviews 3
+						 :amnesia 0.3
+						 :proto '(1 2 3)
+						 :c-fails 3
+						 :lethe 4)
+		 (gnosis-algorithm-date 3)))
+  (should (equal (gnosis-algorithm-next-interval :last-interval 10
+						 :gnosis-synolon 1.3
+						 :success nil
+						 :successful-reviews 3
+						 :amnesia 0.2
+						 :proto '(1 2 3)
+						 :c-fails 3
+						 :lethe 4)
+		 (gnosis-algorithm-date 2)))
+  (should (equal (gnosis-algorithm-next-interval :last-interval 10
+						 :gnosis-synolon 1.3
+						 :success nil
+						 :successful-reviews 3
+						 :amnesia 0.0
+						 :proto '(1 2 3)
+						 :c-fails 3
+						 :lethe 4)
+		 (gnosis-algorithm-date))))
+
+(ert-deftest gnosis-test-algorithm-next-gnosis-synolon ()
+  "Test algorithm for gnosis synolon (totalis)."
+  (should (equal (gnosis-algorithm-next-gnosis
+		  :gnosis '(0.35 0.30 1.30)
+		  :success t
+		  :epignosis 0.3
+		  :agnoia 0.2
+		  :anagnosis 3
+		  :c-successes 1
+		  :c-failures 0)
+		 '(0.35 0.30 1.65)))
+  (should (equal (gnosis-algorithm-next-gnosis
+		  :gnosis '(0.45 0.30 1.30)
+		  :success t
+		  :epignosis 0.3
+		  :agnoia 0.2
+		  :anagnosis 3
+		  :c-successes 1
+		  :c-failures 0)
+		 '(0.45 0.30 1.75)))
+  (should (equal (gnosis-algorithm-next-gnosis
+		  :gnosis '(0.45 0.30 2.0)
+		  :success nil
+		  :epignosis 0.3
+		  :agnoia 0.2
+		  :anagnosis 3
+		  :c-successes 1
+		  :c-failures 0)
+		 '(0.45 0.30 1.70)))
+  (should (equal (gnosis-algorithm-next-gnosis
+		  :gnosis '(0.45 0.30 3.5)
+		  :success nil
+		  :epignosis 0.3
+		  :agnoia 0.2
+		  :anagnosis 3
+		  :c-successes 1
+		  :c-failures 0)
+		 '(0.45 0.30 3.2))))
+
+(ert-deftest gnosis-test-algorithm-test-epignosis ()
+  "Test epignosis during anagnosis events."
+  (should (equal (gnosis-algorithm-next-gnosis
+		  :gnosis '(0.45 0.30 3.5)
+		  :success t
+		  :epignosis 0.3
+		  :agnoia 0.2
+		  :anagnosis 3
+		  :c-successes 3
+		  :c-failures 0)
+		 '(0.75 0.30 3.95)))
+  (should (equal (gnosis-algorithm-next-gnosis
+		  :gnosis '(0.45 0.30 3.5)
+		  :success t
+		  :epignosis 0.2
+		  :agnoia 0.2
+		  :anagnosis 3
+		  :c-successes 3
+		  :c-failures 0)
+		 '(0.65 0.30 3.95)))
+  (should (equal (gnosis-algorithm-next-gnosis
+		  :gnosis '(0.45 0.30 3.5)
+		  :success t
+		  :epignosis 0.2
+		  :agnoia 0.2
+		  :anagnosis 4
+		  :c-successes 3
+		  :c-failures 0)
+		 '(0.45 0.30 3.95))))
+
+(ert-deftest gnosis-test-algorithm-test-agnoia ()
+  "Test epignosis during anagnosis events."
+  (should (equal (gnosis-algorithm-next-gnosis
+		  :gnosis '(0.45 0.30 3.5)
+		  :success nil
+		  :epignosis 0.3
+		  :agnoia 0.2
+		  :anagnosis 3
+		  :c-successes 0
+		  :c-failures 3)
+		 '(0.45 0.5 3.2)))
+  (should (equal (gnosis-algorithm-next-gnosis
+		  :gnosis '(0.45 0.30 3.5)
+		  :success nil
+		  :epignosis 0.3
+		  :agnoia 0.3
+		  :anagnosis 3
+		  :c-successes 0
+		  :c-failures 3)
+		 '(0.45 0.6 3.2)))
+  (should (equal (gnosis-algorithm-next-gnosis
+		  :gnosis '(0.45 0.30 3.5)
+		  :success nil
+		  :epignosis 0.3
+		  :agnoia 0.3
+		  :anagnosis 4
+		  :c-successes 0
+		  :c-failures 3)
+		 '(0.45 0.3 3.2))))
+
+(ert-run-tests-batch-and-exit)
 
 (provide 'gnosis-test)
 ;;; gnosis-test.el ends here
