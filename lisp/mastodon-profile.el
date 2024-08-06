@@ -347,10 +347,8 @@ Ask for confirmation if length > 500 characters."
   (interactive)
   (let* ((note (mastodon-profile--note-remove-header))
          (url (mastodon-http--api "accounts/update_credentials")))
-    (if (> (mastodon-toot--count-toot-chars note) 500)
-        (when (y-or-n-p "Note is over mastodon's max for profile notes (500). Proceed?")
-          (quit-window 'kill)
-          (mastodon-profile--user-profile-send-updated-do url note))
+    (when (or (not (> (mastodon-toot--count-toot-chars note) 500))
+              (y-or-n-p "Note is over mastodon's max for profile notes (500). Proceed?"))
       (quit-window 'kill)
       (mastodon-profile--user-profile-send-updated-do url note))))
 
