@@ -805,12 +805,12 @@ SECOND-IMAGE: Image to display after user-input.
 
 If a gnosis--insert-into fails, the whole transaction will be."
   (let* ((deck-id (gnosis--get-deck-id deck))
-	 (initial-interval (gnosis-get-deck-initial-interval deck-id))
 	 (note-id (gnosis-generate-id)))
     (emacsql-with-transaction gnosis-db
       ;; Refer to `gnosis-db-schema-SCHEMA' e.g `gnosis-db-schema-review-log'
       (gnosis--insert-into 'notes `([,note-id ,type ,main ,options ,answer ,tags ,deck-id]))
-      (gnosis--insert-into 'review  `([,note-id ,gnosis-algorithm-ef ,gnosis-algorithm-ff ,initial-interval]))
+      (gnosis--insert-into 'review  `([,note-id ,gnosis-algorithm-gnosis-value
+						,gnosis-algorithm-amnesia-value]))
       (gnosis--insert-into 'review-log `([,note-id ,(gnosis-algorithm-date)
 						   ,(gnosis-algorithm-date) 0 0 0 0 ,suspend 0]))
       (gnosis--insert-into 'extras `([,note-id ,extra ,image ,second-image])))))
