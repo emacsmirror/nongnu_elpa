@@ -195,39 +195,40 @@ LAST-INTERVAL: Number of days since last review
 
 C-FAILS: Total consecutive failed reviews.
 
-EF: Easiness factor
+GNOSIS-SYNOLON: Current gnosis-synolon (gnosis totalis).
 
 SUCCESS: non-nil when review was successful.
 
 SUCCESSFUL-REVIEWS: Number of successful reviews.
 
-FAILURE-FACTOR: Factor to multiply last interval by if review was unsuccessful.
+AMNESIA: 'Forget value', used to calculate next interval upon failed
+review.
 
-INITIAL-INTERVAL: List of initial intervals for initial successful
-reviews.  Will be used to determine the next interval for the first 2
-successful reviews.  Until successfully completing INITIAL-INTERVAL reviews, for every failed attempt next interval will be set to 0.
+PROTO: List of proto intervals, for successful reviews.
+Until successfully completing proto reviews, for every failed attempt
+the next interval will be set to 0.
 
-THRESHOLD: Upon having C-FAILS >= threshold, set next interval to 0."
-  (cl-assert (< gnosis-algorithm-ff 1) "Value of `gnosis-algorithm-ff' must be lower than 1")
+LETHE: Upon having C-FAILS >= lethe, set next interval to 0."
+  (cl-assert (booleanp success) nil "Success value must be a boolean")
+  (cl-assert (integerp successful-reviews) nil "Successful-reviews must be an integer")
+  (cl-assert (and (floatp amnesia) (<= amnesia 1)) nil "Amnesia must be a float <=1")
+  (cl-assert (< amnesia 1) nil "Value of amnesia must be lower than 1")
+  (cl-assert (and (integerp lethe) (>= lethe 1)) nil "Value of lethe must be an integer >= 1")
   ;; This should only occur in testing env or when the user has made breaking changes.
   (let* ((last-interval (if (<= last-interval 0) 1 last-interval)) ;; If last-interval is 0, use 1 instead.
-	 (interval (cond ((and (= successful-reviews 0) success)
-			  (car initial-interval))
-			 ((and (= successful-reviews 1) success)
-			  (cadr initial-interval))
-			 ;; If it's still on initial stage, review the
-			 ;; same day
-			 ((and (or (< successful-reviews (length initial-interval))
-				   ;; reset threshold
-				   (and threshold (>= c-fails threshold)))
+	 (interval (cond ((and (< successful-reviews (length proto))
+			       success)
+			  (nth successful-reviews proto))
+			 ;; Lethe event, reset interval.
+			 ((and (>= c-fails lethe)
 			       (not success))
 			  0)
-			 (t (let* ((success-interval (* ef last-interval))
-				   (failure-interval (* last-interval failure-factor)))
+			 (t (let* ((success-interval (* gnosis-synolon last-interval))
+				   (failure-interval (* amnesia last-interval)))
 			      (if success success-interval
 				;; Make sure failure interval is never
-				;; higher than success
-			        (min success-interval failure-interval)))))))
+				;; higher than success and at least 0
+			        (max (min success-interval failure-interval) 0)))))))
     (gnosis-algorithm-date (round interval))))
 
 
