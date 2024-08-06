@@ -1991,6 +1991,10 @@ VALUES: Defaults to `gnosis-custom-values'."
         (setq results (append results (nth 2 rule)))))
     results))
 
+(defun gnosis-get-custom-deck-value (deck value &optional values)
+  "Return custom VALUE for note DECK."
+  (plist-get (gnosis-get-custom-values :deck deck values) value))
+
 
 (defun gnosis-get-date-total-notes (&optional date)
   "Return total notes reviewed for DATE.
