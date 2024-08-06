@@ -1722,7 +1722,7 @@ editing NOTE with it's new contents.
 After done editing, call `gnosis-review-actions' with SUCCESS NOTE
 NOTE-COUNT."
   (gnosis-edit-save-exit)
-  (gnosis-edit-note note t)
+  (gnosis-edit-note note)
   (recursive-edit)
   (gnosis-review-actions success note note-count))
 
@@ -1834,7 +1834,7 @@ NOTE-COUNT: Total notes to be commited for session."
       (put-text-property (match-beginning 0) (match-end 0) 'read-only t)))
   (goto-char (point-min)))
 
-(cl-defun gnosis-edit-note (id &optional (recursive-edit nil) (dashboard "notes"))
+(cl-defun gnosis-edit-note (id)
   "Edit the contents of a note with the given ID.
 
 This function creates an Emacs Lisp buffer named *gnosis-edit* on the
