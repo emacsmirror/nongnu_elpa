@@ -64,11 +64,13 @@
 Returns a nested list containing user handle, display name, and URL."
   (let* ((url (mastodon-http--api "accounts/search"))
          (response
-          (if (equal mastodon-toot--completion-style-for-mentions "following")
-              (mastodon-http--get-json
-               url `(("q" . ,query) ("following" . "true"))
-               :silent)
-            (mastodon-http--get-json url `(("q" . ,query)) :silent))))
+          (mastodon-http--get-json
+           url
+           `(("q" . ,query) ;; NB: nil can break params (but works for me)
+             ,(when (equal "following"
+                           mastodon-toot--completion-style-for-mentions)
+                '("following" . "true")))
+           :silent)))
     (mapcar #'mastodon-search--get-user-info-@ response)))
 
 ;; functions for tags completion:
