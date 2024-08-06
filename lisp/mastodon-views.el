@@ -393,8 +393,11 @@ If ACCOUNT-ID and HANDLE are provided use them rather than prompting."
                       (completing-read list-prompt
                                        (mastodon-views--get-lists-names) nil t)))
          (list-id (or id (mastodon-views--get-list-id list-name)))
-         (followings (mastodon-views--get-users-followings))
-         (handles (mastodon-tl--map-alist-vals-to-alist 'acct 'id followings))
+         (followings (unless handle
+                       (mastodon-views--get-users-followings)))
+         (handles (unless handle
+                    (mastodon-tl--map-alist-vals-to-alist
+                     'acct 'id followings)))
          (account (or handle (completing-read "Account to add: "
                                               handles nil t)))
          (account-id (or account-id (alist-get account handles)))
