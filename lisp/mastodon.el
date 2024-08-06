@@ -298,9 +298,11 @@ See `mastodon-toot-display-orig-in-reply-buffer'.")
                                     (string-prefix-p "*mastodon-" (buffer-name x))
                                   (get-buffer x)))
                               (buffer-list))))) ; catch any other masto buffer
-    (mastodon-return-credential-account :force)
     (if buffer
         (pop-to-buffer buffer '(display-buffer-same-window))
+      ;; we need to update credential-account in case setting have been changed
+      ;; outside mastodon.el in the meantime:
+      (mastodon-return-credential-account :force)
       (mastodon-tl--get-home-timeline)
       (message "Loading fediverse account %s on %s..."
                (mastodon-auth--user-acct)
