@@ -1866,29 +1866,8 @@ changes."
   ;; Insert id & fields as read-only values
   (gnosis-edit-read-only-values (format ":id %s" id) ":main" ":options" ":answer"
 				":tags" ":extra-notes" ":image" ":second-image"
-				":ef" ":ff" ":suspend")
-  (local-unset-key (kbd "C-c C-c"))
-  (local-set-key (kbd "C-c C-c") (lambda () (interactive) (if recursive-edit
-							 (gnosis-edit-save-exit 'exit-recursive-edit)
-						       (gnosis-edit-save-exit 'gnosis-dashboard dashboard
-									      gnosis-dashboard-note-ids)))))
-
-(defun gnosis-edit-deck--export (id)
-  "Export deck with ID.
-
-WARNING: This export is only for editing said deck!
-
-Insert deck values:
- `ef-increase', `ef-decrease', `ef-threshold', `failure-factor'"
-  (let ((name (gnosis-get 'name 'decks `(= id ,id)))
-	(ef-increase (gnosis-get 'ef-increase 'decks `(= id ,id)))
-	(ef-decrease (gnosis-get 'ef-decrease 'decks `(= id ,id)))
-	(ef-threshold (gnosis-get 'ef-threshold 'decks `(= id ,id)))
-	(failure-factor (gnosis-get 'failure-factor 'decks `(= id ,id)))
-	(initial-interval (gnosis-get 'initial-interval 'decks `(= id ,id))))
-    (insert
-     (format "\n:id %s\n:name \"%s\"\n:ef-increase %s\n:ef-decrease %s\n:ef-threshold %s\n:failure-factor %s\n :initial-interval '%s"
-	     id name ef-increase ef-decrease ef-threshold failure-factor initial-interval))))
+				":gnosis" ":amensia" ":suspend")
+  (local-set-key (kbd "C-c C-c") (lambda () (interactive) (gnosis-edit-note-save-exit))))
 
 (defun gnosis-assert-int-or-nil (value description)
   "Assert that VALUE is an integer or nil.
@@ -1915,59 +1894,23 @@ DESCRIPTION is a string that describes the value."
   (unless (or (null value) (numberp value))
     (error "Invalid value: %s, %s" value description)))
 
-(cl-defun gnosis-edit-update-deck (&key id name ef-increase ef-decrease ef-threshold failure-factor initial-interval)
-  "Update deck with id value of ID.
-
-NAME: Name of deck
-EF-INCREASE: Easiness factor increase value
-EF-DECREASE: Easiness factor decrease value
-EF-THRESHOLD: Easiness factor threshold value
-FAILURE-FACTOR: Failure factor value
-INITIAL-INTERVAL: Initial interval for notes of deck"
-  (gnosis-assert-float-or-nil failure-factor "failure-factor must be a float less than 1" t)
-  (gnosis-assert-int-or-nil ef-threshold "ef-threshold must be an integer")
-  (gnosis-assert-number-or-nil ef-increase "ef-increase must be a number")
-  (cl-assert (or (and (listp initial-interval)
-		      (cl-every #'integerp initial-interval))
-		 (null initial-interval))
-	     nil "Initial-interval must be a list of 2 integers")
-  (cl-loop for (field . value) in
-	   `((ef-increase . ,ef-increase)
-	     (ef-decrease . ,ef-decrease)
-	     (ef-threshold . ,ef-threshold)
-	     (failure-factor . ,failure-factor)
-	     (initial-interval . ',initial-interval)
-	     (name . ,name))
-	   when value
-	   do (gnosis-update 'decks `(= ,field ,value) `(= id ,id))))
-
-(defun gnosis-edit-deck (&optional id)
-  "Edit the contents of a deck with the given ID."
-  (interactive "P")
-  (let ((id (or id (gnosis--get-deck-id))))
-    (pop-to-buffer-same-window (get-buffer-create "*gnosis-edit*"))
-    (gnosis-edit-mode)
-    (erase-buffer)
-    (insert ";;\n;; You are editing a gnosis deck.\n\n")
-    (insert "(gnosis-edit-update-deck ")
-    (gnosis-edit-deck--export id)
-    (insert ")")
-    (insert "\n\n;; After finishing editing, save changes with `<C-c> <C-c>'\n;; Avoid exiting without saving.")
-    (indent-region (point-min) (point-max))
-    (gnosis-edit-read-only-values (format ":id %s" id) ":name" ":ef-increase"
-				  ":ef-decrease" ":ef-threshold" ":failure-factor")
-    (local-unset-key (kbd "C-c C-c"))
-    (local-set-key (kbd "C-c C-c") (lambda () (interactive) (gnosis-edit-save-exit 'gnosis-dashboard "decks")))))
-
-(cl-defun gnosis-edit-save-exit (&optional exit-func &rest args)
+(cl-defun gnosis-edit-save-exit ()
   "Save edits and exit using EXIT-FUNC, with ARGS."
   (interactive)
   (when (get-buffer "*gnosis-edit*")
     (switch-to-buffer "*gnosis-edit*")
     (eval-buffer)
     (quit-window t)
-    (when exit-func
-      (apply exit-func args))))
+    (gnosis-dashboard-return)))
+
+(cl-defun gnosis-edit-note-save-exit ()
+  "Save edits and exit using EXIT-FUNC, with ARGS."
+  (interactive)
+  (when (get-buffer "*gnosis-edit*")
+    (switch-to-buffer "*gnosis-edit*")
+    (eval-buffer)
+    (quit-window t)
+    (exit-recursive-edit)))
 
 (defvar-keymap gnosis-edit-mode-map
   :doc "gnosis-edit keymap"
