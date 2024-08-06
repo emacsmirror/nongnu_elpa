@@ -1503,7 +1503,7 @@ Returns a list of the form ((yyyy mm dd) (ef-increase ef-decrease ef-total))."
   "Update review-log for note with value of id ID.
 
 SUCCESS is a boolean value, t for success, nil for failure."
-  (let ((ef (cadr (gnosis-review-algorithm id success)))
+  (let ((gnosis (cadr (gnosis-review-algorithm id success)))
 	(next-rev (car (gnosis-review-algorithm id success))))
     ;; Update activity-log
     (gnosis-review-increment-activity-log (gnosis-review-is-note-new-p id))
@@ -1512,15 +1512,19 @@ SUCCESS is a boolean value, t for success, nil for failure."
     (gnosis-update 'review-log `(= next-rev ',next-rev) `(= id ,id))
     (gnosis-update 'review-log `(= n (+ 1 ,(gnosis-get 'n 'review-log `(= id ,id)))) `(= id ,id))
     ;; Update review
-    (gnosis-update 'review `(= ef ',ef) `(= id ,id))
+    (gnosis-update 'review `(= gnosis ',gnosis) `(= id ,id))
     (if success
 	(progn (gnosis-update 'review-log
-			      `(= c-success ,(1+ (gnosis-get 'c-success 'review-log `(= id ,id)))) `(= id ,id))
-	       (gnosis-update 'review-log `(= t-success ,(1+ (gnosis-get 't-success 'review-log `(= id ,id))))
+			      `(= c-success ,(1+ (gnosis-get 'c-success 'review-log `(= id ,id))))
+			      `(= id ,id))
+	       (gnosis-update 'review-log
+			      `(= t-success ,(1+ (gnosis-get 't-success 'review-log `(= id ,id))))
 			      `(= id ,id))
 	       (gnosis-update 'review-log `(= c-fails 0) `(= id ,id)))
-      (gnosis-update 'review-log `(= c-fails ,(1+ (gnosis-get 'c-fails 'review-log `(= id ,id)))) `(= id ,id))
-      (gnosis-update 'review-log `(= t-fails ,(1+ (gnosis-get 't-fails 'review-log `(= id ,id)))) `(= id ,id))
+      (gnosis-update 'review-log
+		     `(= c-fails ,(1+ (gnosis-get 'c-fails 'review-log `(= id ,id)))) `(= id ,id))
+      (gnosis-update 'review-log
+		     `(= t-fails ,(1+ (gnosis-get 't-fails 'review-log `(= id ,id)))) `(= id ,id))
       (gnosis-update 'review-log `(= c-success 0) `(= id ,id)))))
 
 (defun gnosis-review-result (id success)
