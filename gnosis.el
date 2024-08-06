@@ -2125,6 +2125,27 @@ CUSTOM-VALUES: Specify values for tags."
 	 (tag-anagnosis (gnosis-get-note-tag-anagnosis id custom-tags custom-values))
 	 (note-anagnosis (min deck-anagnosis tag-anagnosis)))
     note-anagnosis))
+
+(defun gnosis-get-note-deck-lethe (id &optional custom-deck custom-values)
+  "Return lethe deck value for note ID."
+  (let ((deck (or (gnosis-get-note-deck-name id) custom-deck)))
+    (or (gnosis-get-custom-deck-value deck :lethe custom-values)
+	gnosis-algorithm-lethe-value)))
+
+(defun gnosis-get-note-tag-lethe (id &optional custom-tags custom-values)
+  "Return note ID tag lethe values."
+  (let ((lethe-values (gnosis-get-custom-tag-values id :lethe custom-tags custom-values)))
+    (if lethe-values
+	(apply #'min lethe-values)
+      gnosis-algorithm-lethe-value)))
+
+(defun gnosis-get-note-lethe (id &optional custom-deck custom-tags custom-values)
+  "Return note ID lethe value."
+  (let* ((deck-lethe (gnosis-get-note-deck-lethe id custom-deck custom-values))
+	 (tag-lethe (gnosis-get-note-tag-lethe id custom-tags custom-values))
+	 (note-lethe (min deck-lethe tag-lethe)))
+    note-lethe))
+
 (defun gnosis-get-date-total-notes (&optional date)
   "Return total notes reviewed for DATE.
 
