@@ -1258,16 +1258,17 @@ Optionally, add cusotm PROMPT."
   (cl-loop for tags in (gnosis-select 'tags 'notes '1=1 t)
            nconc tags into all-tags
            finally return (delete-dups all-tags)))
-
-(defun gnosis-select-by-tag (input-tags &optional due)
+;; TODO: Rewrite this using `gnosis-get-tag-notes'.
+(defun gnosis-select-by-tag (input-tags &optional due suspended-p)
   "Return note ID's for every note with INPUT-TAGS.
 
-If DUE, return only due notes."
+If DUE, return only due notes.
+If SUSPENDED-P, return suspended notes as well."
   (cl-assert (listp input-tags) t "Input tags must be a list")
   (cl-assert (booleanp due) "Due value must be a boolean")
   (cl-loop for (id tags) in (gnosis-select '[id tags] 'notes)
            when (and (cl-every (lambda (tag) (member tag tags)) input-tags)
-		     (not (gnosis-suspended-p id))
+		     (or (not suspended-p) (not (gnosis-suspended-p id)))
 		     (if due (gnosis-review-is-due-p id) t))
            collect id))
 
