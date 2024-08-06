@@ -2105,6 +2105,26 @@ CUSTOM-VALUES: Specify values for tags."
 										 custom-values))))
 			   gnosis-algorithm-proto)))
     (gnosis-proto-max-values proto-values)))
+
+(defun gnosis-get-note-tag-anagnosis (id &optional custom-tags custom-values)
+  "Return the minimum anagnosis tag value for note ID."
+  (let ((anagnosis-values (gnosis-get-custom-tag-values id :anagnosis custom-tags custom-values)))
+    (if anagnosis-values
+	(apply #'min anagnosis-values)
+      gnosis-algorithm-anagnosis-value)))
+
+(defun gnosis-get-note-deck-anagnosis (id &optional custom-deck custom-values)
+  "Return anagnosis deck value for note ID."
+  (let ((deck (or (gnosis-get-note-deck-name id) custom-deck)))
+    (or (gnosis-get-custom-deck-value deck :anagnosis custom-values)
+	gnosis-algorithm-anagnosis-value)))
+
+(defun gnosis-get-note-anagnosis (id &optional custom-deck custom-tags custom-values)
+  "Return minimum anagnosis value for note ID."
+  (let* ((deck-anagnosis (gnosis-get-note-deck-anagnosis id custom-deck custom-values))
+	 (tag-anagnosis (gnosis-get-note-tag-anagnosis id custom-tags custom-values))
+	 (note-anagnosis (min deck-anagnosis tag-anagnosis)))
+    note-anagnosis))
 (defun gnosis-get-date-total-notes (&optional date)
   "Return total notes reviewed for DATE.
 
