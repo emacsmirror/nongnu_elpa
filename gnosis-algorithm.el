@@ -90,10 +90,15 @@ Agnoia refers to the lack of knowledge."
   :group 'gnosis
   :type 'float)
 
-(defcustom gnosis-algorithm-ef-threshold 3
-  "Threshold for updating ef increase/decrease values.
+(defcustom gnosis-algorithm-anagnosis-value 3
+  "Threshold value for anagnosis event.
 
-Refers to the number of consecutive successful or failed reviews."
+Anagosis is the process recognition & understanding of a context/gnosis.
+
+Anagnosis events update gnosis-plus & gnosis-minus values, depending
+on the success or failure of recall."
+  :group 'gnosis
+  :type 'integer)
   :group 'gnosis
   :type 'integer)
 
