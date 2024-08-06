@@ -309,30 +309,25 @@ See `mastodon-toot-display-orig-in-reply-buffer'.")
 (defvar mastodon-profile-credential-account nil)
 
 ;; TODO: the get request in mastodon-http--get-response often returns nil
-;; after waking pc from sleep, not sure how to fix, or if just my pc
+;; after waking from sleep, not sure how to fix, or if just my pc.
 ;; interestingly it only happens with this function tho.
-;;we have to use :force to update the credential-account object in case things
-;; have been changed via another client.
 (defun mastodon-return-credential-account (&optional force)
   "Return the CredentialAccount entity.
 Either from `mastodon-profile-credential-account' or from the
-server.
-FORCE means to fetch from the server and update
+server if that var is nil.
+FORCE means to fetch from the server in any case and update
 `mastodon-profile-credential-account'."
-  (let ((req '(mastodon-http--get-json
-               (mastodon-http--api "accounts/verify_credentials")
-               nil :silent)))
-    (if force
-        (setq mastodon-profile-credential-account
-              ;; TODO: we should also signal a quit condition after like 5
-              ;; secs here
-              (condition-case nil
-                  (eval req)
-                (t ; req fails, return old value
-                 mastodon-profile-credential-account)))
-      (or mastodon-profile-credential-account
-          (setq mastodon-profile-credential-account
-                (eval req))))))
+  (if (or force (not mastodon-profile-credential-account))
+      (setq mastodon-profile-credential-account
+            ;; TODO: we should signal a quit condition after 5 secs here
+            (condition-case nil
+                (mastodon-http--get-json
+                 (mastodon-http--api "accounts/verify_credentials")
+                 nil :silent)
+              (t ; req fails, return old value
+               mastodon-profile-credential-account)))
+    ;; else just return the var:
+    mastodon-profile-credential-account))
 
 ;;;###autoload
 (defun mastodon-toot (&optional user reply-to-id reply-json)
