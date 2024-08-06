@@ -1848,9 +1848,6 @@ RECURSIVE-EDIT: If t, exit `recursive-edit' after finishing editing.
 It should only be t when starting a recursive edit, when editing a
 note during a review session.
 
-DASHBOARD: Dashboard to return after editing.  Default value is
-Notes.
-
 The buffer automatically indents the expressions for readability.
 After finishing editing, evaluate the entire expression to apply the
 changes."
