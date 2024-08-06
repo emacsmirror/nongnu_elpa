@@ -1995,6 +1995,15 @@ VALUES: Defaults to `gnosis-custom-values'."
   "Return custom VALUE for note DECK."
   (plist-get (gnosis-get-custom-values :deck deck values) value))
 
+(defun gnosis-get-custom-tag-values (id keyword &optional custom-tags custom-values)
+  "Return KEYWORD values for note ID."
+  (cl-assert (keywordp keyword) nil "keyword must be a keyword!")
+  (let ((tags (if id (gnosis-get 'tags 'notes `(= id ,id)) custom-tags)))
+    (cl-loop for tag in tags
+	     ;; Only collect non-nil values
+	     when (plist-get (gnosis-get-custom-values :tag tag custom-values) keyword)
+	     collect (plist-get (gnosis-get-custom-values :tag tag custom-values) keyword))))
+
 
 (defun gnosis-get-date-total-notes (&optional date)
   "Return total notes reviewed for DATE.
