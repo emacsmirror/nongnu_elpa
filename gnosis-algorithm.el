@@ -76,11 +76,10 @@ This value should be less than 1.0."
   :group 'gnosis
   :type 'float)
 
-(defcustom gnosis-algorithm-ef-increase 0.1
-  "Value to increase ef increase value with.
+(defcustom gnosis-algorithm-epignosis-value 0.1
+  "Value to increase gnosis-plus upon anagnosis.
 
-Increase ef-increase value by this amount for every
-`gnosis-algorithm-ef-threshold' number of successful reviews."
+Epignosis means knowledge accuracy.."
   :group 'gnosis
   :type 'float)
 
