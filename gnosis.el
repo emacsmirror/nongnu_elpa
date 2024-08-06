@@ -2025,6 +2025,19 @@ Optionally, use CUSTOM-DECK and CUSTOM-VALUES."
     (or (gnosis-get-custom-deck-value deck :amnesia custom-values)
 	gnosis-algorithm-amnesia-value)))
 
+(defun gnosis-get-note-amnesia (id &optional custom-deck custom-tags custom-values )
+  "Return amnesia value for note ID.
+
+Note amnesia should be hte MINIMUM value of deck's & tags' amnesia.
+
+CUSTOM-TAGS: Specify tags for note id.
+CUSTOM-VALUES: Specify values for tags."
+  (let* ((deck-amnesia (gnosis-get-note-deck-amnesia id custom-deck custom-values))
+         (tags-amnesia (gnosis-get-note-tag-amnesia id custom-tags custom-values))
+	 (note-amnesia (min deck-amnesia tags-amnesia)))
+    (if (>= note-amnesia 1)
+	(error "Amnesia value must be lower than 1")
+      note-amnesia)))
 
 (defun gnosis-get-date-total-notes (&optional date)
   "Return total notes reviewed for DATE.
