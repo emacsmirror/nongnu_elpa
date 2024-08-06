@@ -83,11 +83,10 @@ Epignosis means knowledge accuracy.."
   :group 'gnosis
   :type 'float)
 
-(defcustom gnosis-algorithm-ef-decrease 0.2
-  "Value to decrease ef decrease value with.
+(defcustom gnosis-algorithm-agnoia-value 0.2
+  "Value to increase gnosis-minus upon anagnosis.
 
-Decrease ef decrease value by this amount for every
-`gnosis-algorithm-ef-threshold' number of failed reviews."
+Agnoia refers to the lack of knowledge."
   :group 'gnosis
   :type 'float)
 
