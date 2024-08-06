@@ -2004,6 +2004,19 @@ VALUES: Defaults to `gnosis-custom-values'."
 	     when (plist-get (gnosis-get-custom-values :tag tag custom-values) keyword)
 	     collect (plist-get (gnosis-get-custom-values :tag tag custom-values) keyword))))
 
+(defun gnosis-get-note-tag-amnesia (id &optional custom-tags custom-values)
+  "Return tag MINIMUM amnesia for note ID.
+
+The closer the amnesia value is to 0, the closer it is to total
+amnesia i.e next interval to be 0.
+
+CUSTOM-TAGS: Specify tags for note id.
+CUSTOM-VALUES: Specify values for tags."
+  (let ((amnesia-values (gnosis-get-custom-tag-values id :amnesia custom-tags custom-values)))
+    (if amnesia-values
+	(apply #'min amnesia-values)
+      gnosis-algorithm-amnesia-value)))
+
 
 (defun gnosis-get-date-total-notes (&optional date)
   "Return total notes reviewed for DATE.
