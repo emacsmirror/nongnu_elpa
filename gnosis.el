@@ -721,10 +721,13 @@ If NAME is t, return name of deck."
 	 (deck (gnosis-get 'deck-id 'notes id-clause)))
     (if name (gnosis--get-deck-name deck) deck)))
 
-(cl-defun gnosis-suspend-note (id)
-  "Suspend note with ID."
-  (let ((suspended (= (gnosis-get 'suspend 'review-log `(= id ,id)) 1)))
-    (when (y-or-n-p (if suspended "Unsuspend note? " "Suspend note? "))
+(cl-defun gnosis-suspend-note (id &optional verification)
+  "Suspend note with ID.
+
+When VERIFICATION is non-nil, skips `y-or-n-p' prompt."
+  (let* ((suspended (= (gnosis-get 'suspend 'review-log `(= id ,id)) 1))
+	 (verification (or verification (y-or-n-p (if suspended "Unsuspend note? " "Suspend note? ")))))
+    (when verification
       (if suspended
 	  (gnosis-update 'review-log '(= suspend 0) `(= id ,id))
 	(gnosis-update 'review-log '(= suspend 1) `(= id ,id))))))
