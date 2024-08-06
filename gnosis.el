@@ -1271,6 +1271,11 @@ If DUE, return only due notes."
 		     (if due (gnosis-review-is-due-p id) t))
            collect id))
 
+(defun gnosis-get-tag-notes (tag)
+  "Return note ids for TAG."
+  (let ((notes (gnosis-select 'id 'notes `(like tags ',(format "%%\"%s\"%%" tag)) t)))
+    notes))
+
 (defun gnosis-suspended-p (id)
   "Return t if note with ID is suspended."
   (= (gnosis-get 'suspend 'review-log `(= id ,id)) 1))
