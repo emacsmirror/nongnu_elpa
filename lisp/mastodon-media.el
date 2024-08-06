@@ -500,9 +500,8 @@ SENSITIVE is a flag from the item's JSON data."
           (substitute-command-keys
            (concat "\\`RET'/\\`i': load full image (prefix: copy URL), \\`+'/\\`-': zoom,\
  \\`r': rotate, \\`o': save preview"
-                   (if (not (eq sensitive :json-false))
-                       ", \\`S': toggle sensitive media"
-                     ""))))
+                   (when (not (eq sensitive :json-false))
+                     ", \\`S': toggle sensitive media"))))
          (help-echo (if caption
                         (concat help-echo-base
                                 "\n\"" caption "\"")

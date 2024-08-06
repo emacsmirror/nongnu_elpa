@@ -1659,11 +1659,10 @@ REPLY-TEXT is the text of the toot being replied to."
         (propertize "None                  "
                     'toot-attachments t)
         "\n"
-        (if reply-text
-            (propertize
-             (mastodon-toot--format-reply-in-compose reply-text)
-             'toot-reply t)
-          "")
+        (when reply-text
+          (propertize
+           (mastodon-toot--format-reply-in-compose reply-text)
+           'toot-reply t))
         divider)
        'face 'mastodon-toot-docs-face
        'read-only "Edit your message below."
@@ -1757,6 +1756,7 @@ REPLY-REGION is a string to be injected into the buffer."
                (if (equal "private" mastodon-toot--visibility)
                    "followers-only"
                  mastodon-toot--visibility)))
+      ;; WHEN clauses don't work here, we need "" as display arg:
       (mastodon-toot--apply-fields-props
        lang-region
        (if mastodon-toot--language

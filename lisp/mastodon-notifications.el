@@ -243,11 +243,10 @@ Status notifications are given when
                   (format "You have a follow request from... %s"
                           follower)
                   'face 'default)
-                 (if mastodon-notifications--profile-note-in-foll-reqs
-                     (concat
-                      ":\n"
-                      (mastodon-notifications--comment-note-text body))
-                   ""))))
+                 (when mastodon-notifications--profile-note-in-foll-reqs
+                   (concat
+                    ":\n"
+                    (mastodon-notifications--comment-note-text body))))))
              ((or (eq type 'favourite)
                   (eq type 'boost))
               (mastodon-notifications--comment-note-text body))

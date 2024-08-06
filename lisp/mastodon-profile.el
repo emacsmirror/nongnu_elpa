@@ -681,18 +681,16 @@ MAX-ID is a flag to include the max_id pagination parameter."
                        (mastodon-profile--render-roles .roles)))
              "\n"
              (propertize (concat "@" .acct) 'face 'default)
-             (if (eq .locked t)
-                 (concat " " (mastodon-tl--symbol 'locked))
-               "")
+             (when (eq .locked t)
+               (concat " " (mastodon-tl--symbol 'locked)))
              "\n " mastodon-tl--horiz-bar "\n"
              ;; profile note:
              (mastodon-tl--render-text .note account) ; account = tab-stops in profile
              ;; meta fields:
-             (if fields
-                 (concat "\n" (mastodon-tl--set-face
-                               (mastodon-profile--fields-insert fields)
-                               'success))
-               "")
+             (when fields
+               (concat "\n" (mastodon-tl--set-face
+                             (mastodon-profile--fields-insert fields)
+                             'success)))
              "\n"
              ;; Joined date:
              (propertize

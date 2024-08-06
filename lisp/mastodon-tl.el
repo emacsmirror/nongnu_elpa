@@ -614,11 +614,10 @@ When DOMAIN, force inclusion of user's domain in their handle."
      ;; handle:
      " ("
      (propertize (concat "@" .account.acct
-                         (if domain
-                             (concat "@"
-                                     (url-host
-                                      (url-generic-parse-url .account.url)))
-                           ""))
+                         (when domain
+                           (concat "@"
+                                   (url-host
+                                    (url-generic-parse-url .account.url)))))
                  'face 'mastodon-handle-face
                  'mouse-face 'highlight
 	         'mastodon-tab-stop 'user-handle
@@ -788,26 +787,24 @@ When DOMAIN, force inclusion of user's domain in their handle."
 		          'shr-url app-url
                           'help-echo app-url
 		          'keymap mastodon-tl--shr-map-replacement)))))
-       (if edited-time
-           (concat
-            " "
-            (mastodon-tl--symbol 'edited)
-            " "
-            (propertize
-             (format-time-string mastodon-toot-timestamp-format
-                                 edited-parsed)
-             'face 'font-lock-comment-face
-             'timestamp edited-parsed
-             'display (if mastodon-tl--enable-relative-timestamps
-                          (mastodon-tl--relative-time-description edited-parsed)
-                        edited-parsed)))
-         "")
+       (when edited-time
+         (concat
+          " "
+          (mastodon-tl--symbol 'edited)
+          " "
+          (propertize
+           (format-time-string mastodon-toot-timestamp-format
+                               edited-parsed)
+           'face 'font-lock-comment-face
+           'timestamp edited-parsed
+           'display (if mastodon-tl--enable-relative-timestamps
+                        (mastodon-tl--relative-time-description edited-parsed)
+                      edited-parsed))))
        (propertize (concat "\n  " mastodon-tl--horiz-bar)
                    'face 'default)
-       (if (and mastodon-tl--show-stats
-                (not (member type '("follow" "follow_request"))))
-           (mastodon-tl--toot-stats toot)
-         "")
+       (when (and mastodon-tl--show-stats
+                  (not (member type '("follow" "follow_request"))))
+         (mastodon-tl--toot-stats toot))
        "\n")
       'favourited-p faved
       'boosted-p    boosted
@@ -1149,7 +1146,8 @@ message is a link which unhides/hides the main body."
 ;;; MEDIA
 
 (defun mastodon-tl--media (toot)
-  "Retrieve a media attachment link for TOOT if one exists."
+  "Retrieve a media attachment link for TOOT if one exists.
+Else return an empty string."
   (let* ((media-attachments (mastodon-tl--field 'media_attachments toot))
          (sensitive (mastodon-tl--field 'sensitive toot))
          (media-string (mapconcat
@@ -1291,8 +1289,7 @@ LENGTH is of the longest option, for formatting."
                         (format "%s people | " .voters_count)))
                      (.vote_count
                       (format "%s votes | " .vote_count))
-                     (t
-                      ""))
+                     (t ""))
                'face 'font-lock-comment-face)
               (let ((str (if (eq .expired :json-false)
                              (if (eq .expires_at nil)
@@ -1547,10 +1544,9 @@ NO-BYLINE means just insert toot body, used for folding."
         (concat
          "\n"
          ;; relpy symbol (broken):
-         (if (and after-reply-status-p thread)
-             (concat (mastodon-tl--symbol 'replied)
-                     "\n")
-           "")
+         (when (and after-reply-status-p thread)
+           (concat (mastodon-tl--symbol 'replied)
+                   "\n"))
          ;; actual body:
          (let ((bar (mastodon-tl--symbol 'reply-bar))
                (body (if (and toot-foldable (not unfolded))
@@ -1564,8 +1560,7 @@ NO-BYLINE means just insert toot body, used for folding."
         'toot-body t) ;; includes newlines etc. for folding
        ;; byline:
        "\n"
-       (if no-byline
-           ""
+       (unless no-byline
          (mastodon-tl--byline toot author-byline action-byline
                               detailed-p domain base-toot)))
       'item-type    'toot

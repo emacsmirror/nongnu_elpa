@@ -134,7 +134,7 @@ Optionally add string TYPE after HEADING."
   (mastodon-tl--set-face
    (concat "\n " mastodon-tl--horiz-bar "\n "
            (upcase str) " "
-           (if type (upcase type) "") "\n"
+           (when type (upcase type)) "\n"
            " " mastodon-tl--horiz-bar (unless no-newline "\n"))
    'success))
 
@@ -266,9 +266,8 @@ If NOTE is non-nil, include user's profile note. This is also
                   'mastodon-handle (concat "@" (cadr user))
 		  'help-echo (concat "Browse user profile of @" (cadr user)))
       " : \n"
-      (if note
-          (mastodon-tl--render-text (cadddr user) acct)
-        "")
+      (when note
+        (mastodon-tl--render-text (cadddr user) acct))
       "\n")
      'item-json acct))) ; for compat w other processing functions
 
