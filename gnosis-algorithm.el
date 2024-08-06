@@ -99,6 +99,13 @@ Anagnosis events update gnosis-plus & gnosis-minus values, depending
 on the success or failure of recall."
   :group 'gnosis
   :type 'integer)
+
+(defcustom gnosis-algorithm-lethe-value 2
+  "Threshold value for hitting a lethe event.
+
+Lethe is the process of being unable to recall a memory/gnosis.
+
+On lethe events the next interval is set to 0."
   :group 'gnosis
   :type 'integer)
 
