@@ -123,6 +123,7 @@ On lethe events the next interval is set to 0."
 (defun gnosis-algorithm-date (&optional offset)
   "Return the current date in a list (year month day).
 Optional integer OFFSET is a number of days from the current date."
+  (cl-assert (or (numberp offset) (null offset)) nil "Date offset must be an integer or nil")
   (let* ((now (decode-time))
          (now (list (decoded-time-month now)
                     (decoded-time-day now)
