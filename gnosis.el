@@ -214,6 +214,11 @@ When nil, review new notes last."
 (defvar gnosis-review-notes nil
   "Review notes.")
 
+(defvar gnosis-custom-values
+  '((:deck "demo" (:proto (0 1 3) :anagnsois 3 :epignosis 0.5 :agnoia 0.3 :amnesia 0.5 :lethe 3))
+    (:tag "demo" (:proto (1 2) :anagnosis 3 :epignosis 0.5 :agnoia 0.3 :amnesia 0.45 :lethe 3)))
+  "Custom review values for adjusting gnosis algorithm.")
+
 ;;; Faces
 
 (defgroup gnosis-faces nil
