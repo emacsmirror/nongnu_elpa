@@ -2116,7 +2116,7 @@ CUSTOM-DECK: Custom deck to be used instead."
   (let* ((deck (or custom-deck (gnosis-get-note-deck-name id)))
 	 (tags-proto (gnosis-get-custom-tag-values id :proto custom-tags custom-values))
 	 (decks-proto (gnosis-get-custom-deck-value deck :proto custom-values)))
-    (if tags-proto (gnosis-proto-max-values tags-proto) (gnosis-proto-max-values decks-proto))))
+    (if tags-proto (gnosis-proto-max-values tags-proto) (gnosis-proto-max-values (or decks-proto gnosis-algorithm-proto)))))
 
 (defun gnosis-get-note-tag-anagnosis (id &optional custom-tags custom-values)
   "Return the minimum anagnosis tag value for note ID.
