@@ -24,26 +24,8 @@
 
 ;;; Commentary:
 
-;; Handles date calculation as well as ef & interval calculations.
-
-;; Gnosis implements a highly customizable algorithm, inspired by SM-2.
-;; Gnosis algorithm does not use user's subjective rating of a note to
-;; determine the next review interval, but instead uses the user's
-;; success or failure in recalling the answer of a note.
-
-;; Each gnosis note has an ef (easiness factor), which is a list of 3
-;; values.  The last value is the total ef for a note, which will be
-;; used to determine the next interval upon a successful answer recall,
-;; the second value is the ef-decrease value, this value will be
-;; subtracted from the the total ef upon failure to recall the answer of
-;; a note, the first value is the ef increase, will be added to the
-;; total ef upon a successful recall.
-
-;; Each gnosis deck has a gnosis-algorithm-ef-threshold, it's an
-;; integer value that refers to the consecutive success or failures to
-;; recall an answer.  Upon reaching the threshold, gnosis-algorithm-ef-decrease
-;; or gnosis-algorithm-ef-increase will be applied to the ef-increase or
-;; ef-decrease of note.
+;; Module that handles date and interval calculation as well as
+;; gnosis-score for notes.
 
 ;;; Code:
 
@@ -68,19 +50,18 @@ Third item : Total gnosis (gnosis-synolon/totalis) -> Total gnosis score"
   :type '(list float))
 
 (defcustom gnosis-algorithm-amnesia-value 0.5
-  "Gnosis forgetting factor.
+  "Gnosis amnesia value.
 
-Used to calcuate new interval for failed questions.
+Used to calcuate new interval upon a failed recall i.e the memmory loss.
 
-The closer this value is to 0, the closer it is to total amnesia for
-each a recall.  This value should be less than 1.0."
+The closer this value is to 1, the more the memory loss."
   :group 'gnosis
   :type 'float)
 
 (defcustom gnosis-algorithm-epignosis-value 0.1
   "Value to increase gnosis-plus upon anagnosis.
 
-Epignosis means knowledge accuracy.."
+Epignosis means knowledge accuracy."
   :group 'gnosis
   :type 'float)
 
