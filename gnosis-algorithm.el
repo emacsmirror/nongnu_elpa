@@ -24,78 +24,70 @@
 
 ;;; Commentary:
 
-;; Handles date calculation as well as ef & interval calculations.
-
-;; Gnosis implements a highly customizable algorithm, inspired by SM-2.
-;; Gnosis algorithm does not use user's subjective rating of a note to
-;; determine the next review interval, but instead uses the user's
-;; success or failure in recalling the answer of a note.
-
-;; Each gnosis note has an ef (easiness factor), which is a list of 3
-;; values.  The last value is the total ef for a note, which will be
-;; used to determine the next interval upon a successful answer recall,
-;; the second value is the ef-decrease value, this value will be
-;; subtracted from the the total ef upon failure to recall the answer of
-;; a note, the first value is the ef increase, will be added to the
-;; total ef upon a successful recall.
-
-;; Each gnosis deck has a gnosis-algorithm-ef-threshold, it's an
-;; integer value that refers to the consecutive success or failures to
-;; recall an answer.  Upon reaching the threshold, gnosis-algorithm-ef-decrease
-;; or gnosis-algorithm-ef-increase will be applied to the ef-increase or
-;; ef-decrease of note.
+;; Module that handles date and interval calculation as well as
+;; gnosis-score for notes.
 
 ;;; Code:
 
 (require 'cl-lib)
 (require 'calendar)
 
-(defcustom gnosis-algorithm-interval '(1 3)
-  "Gnosis initial interval for initial successful reviews.
+(defcustom gnosis-algorithm-proto '(0 1 2)
+  "Gnosis proto interval for the first successful reviews.
 
-First item: First interval,
-Second item: Second interval."
+Values for the first proto successful intervals.  There is no
+restriction for list length."
   :group 'gnosis
   :type '(list integer))
 
-(defcustom gnosis-algorithm-ef '(0.35 0.30 1.3)
-  "Gnosis easiness factor.
+(defcustom gnosis-algorithm-gnosis-value '(0.35 0.30 1.3)
+  "Starting gnosis score.
 
-First item : Increase value
-Second item: Decrease value
-Third item : Total ef"
+First item : Increase value (gnosis-plus)
+Second item: Decrease value (gnosis-minus)
+Third item : Total gnosis (gnosis-synolon/totalis) -> Total gnosis score"
   :group 'gnosis
   :type '(list float))
 
-(defcustom gnosis-algorithm-ff 0.5
-  "Gnosis forgetting factor.
+(defcustom gnosis-algorithm-amnesia-value 0.5
+  "Gnosis amnesia value.
 
-Used to calcuate new interval for failed questions.
+Used to calcuate new interval upon a failed recall i.e the memmory loss.
 
-NOTE: This value should be less than 1.0."
+The closer this value is to 1, the more the memory loss."
   :group 'gnosis
   :type 'float)
 
-(defcustom gnosis-algorithm-ef-increase 0.1
-  "Value to increase ef increase value with.
+(defcustom gnosis-algorithm-epignosis-value 0.1
+  "Value to increase gnosis-plus upon anagnosis.
 
-Increase ef-increase value by this amount for every
-`gnosis-algorithm-ef-threshold' number of successful reviews."
+Epignosis means knowledge accuracy."
   :group 'gnosis
   :type 'float)
 
-(defcustom gnosis-algorithm-ef-decrease 0.2
-  "Value to decrease ef decrease value with.
+(defcustom gnosis-algorithm-agnoia-value 0.2
+  "Value to increase gnosis-minus upon anagnosis.
 
-Decrease ef decrease value by this amount for every
-`gnosis-algorithm-ef-threshold' number of failed reviews."
+Agnoia refers to the lack of knowledge."
   :group 'gnosis
   :type 'float)
 
-(defcustom gnosis-algorithm-ef-threshold 3
-  "Threshold for updating ef increase/decrease values.
+(defcustom gnosis-algorithm-anagnosis-value 3
+  "Threshold value for anagnosis event.
 
-Refers to the number of consecutive successful or failed reviews."
+Anagosis is the process recognition & understanding of a context/gnosis.
+
+Anagnosis events update gnosis-plus & gnosis-minus values, depending
+on the success or failure of recall."
+  :group 'gnosis
+  :type 'integer)
+
+(defcustom gnosis-algorithm-lethe-value 2
+  "Threshold value for hitting a lethe event.
+
+Lethe is the process of being unable to recall a memory/gnosis.
+
+On lethe events the next interval is set to 0."
   :group 'gnosis
   :type 'integer)
 
@@ -113,6 +105,7 @@ Refers to the number of consecutive successful or failed reviews."
 (defun gnosis-algorithm-date (&optional offset)
   "Return the current date in a list (year month day).
 Optional integer OFFSET is a number of days from the current date."
+  (cl-assert (or (numberp offset) (null offset)) nil "Date offset must be an integer or nil")
   (let* ((now (decode-time))
          (now (list (decoded-time-month now)
                     (decoded-time-day now)
@@ -136,66 +129,88 @@ DATE format must be given as (year month day)."
 		  (time-to-days given-date))))
     (if (>= diff 0) diff (error "`DATE2' must be higher than `DATE'"))))
 
-(cl-defun gnosis-algorithm-next-ef (&key ef success increase decrease threshold
-					 c-successes c-failures)
-  "Return the new EF, (increase-value decrease-value total-value)
+(cl-defun gnosis-algorithm-next-gnosis (&key gnosis success epignosis agnoia anagnosis
+					     c-successes c-failures)
+  "Return the neo GNOSIS value. (gnosis-plus gnosis-minus gnsois-synolon)
 
-Calculate the new e-factor given existing EF and SUCCESS, either t or nil.
+Calculate the new e-factor given existing GNOSIS and SUCCESS, either t or nil.
 
-Next EF is calculated as follows:
+Next GNOSIS is calculated as follows:
 
-Upon a successful review, increase total ef value (nth 2) by
-ef-increase value (nth 0).
+Upon a successful review, increase gnosis-synolon value (nth 2 gnosis) by
+gnosis-plus value (nth 0 gnosis).
 
-Upon a failed review, decrease total ef by ef-decrease value (nth 1).
+Upon a failed review, decrease gnosis-synolon by gnosis-minus value
+ (nth 1 gnosis).
 
-For every THRESHOLD of C-SUCCESSES (consecutive successful reviews)
-reviews, increase ef-increase by INCREASE.
+ANAGNOSIS is an event threshold, updating either the gnosis-plus or
+gnosis-minus values.
 
-For every THRESHOLD of C-FAILURES reviews, decrease ef-decrease value
-by DECREASE."
-  (cl-assert (listp ef) nil "Assertion failed: ef must be a list")
+When C-SUCCESSES (consecutive successes) reach ANAGNOSIS,
+increase gnosis-plus by EPIGNOSIS.
+
+When C-FAILURES reach ANAGOSNIS, increase gnosis-minus by AGNOIA."
+  (cl-assert (listp gnosis) nil "Assertion failed: gnosis must be a list of floats.")
   (cl-assert (booleanp success) nil "Assertion failed: success must be a boolean value")
-  (cl-assert (numberp increase) nil "Assertion failed: increase must be a number")
-  (cl-assert (numberp decrease) nil "Assertion failed: decrease must be a number")
-  (cl-assert (numberp threshold) nil "Assertion failed: threshold must be a number")
-  (let ((threshold-p (= (% (max 1 (if success c-successes c-failures)) threshold) 0))
-	(new-ef (if success (gnosis-algorithm-replace-at-index 2 (+ (nth 2 ef) (nth 0 ef)) ef)
-		  (gnosis-algorithm-replace-at-index 2 (max 1.3 (- (nth 2 ef) (nth 1 ef))) ef))))
-    (cond ((and success threshold-p)
-	   (setf new-ef (gnosis-algorithm-replace-at-index 0 (+ (nth 0 ef) increase) new-ef)))
-	  ((and (not success) threshold-p
-		(setf new-ef (gnosis-algorithm-replace-at-index 1 (+ (nth 1 ef) decrease) new-ef)))))
-    (gnosis-algorithm-round-items new-ef)))
+  (cl-assert (and (floatp epignosis) (< epignosis 1)) nil "Assertion failed: epignosis must be a float < 1")
+  (cl-assert (and (floatp agnoia) (< agnoia 1)) nil "Assertion failed: agnoia must be a float < 1")
+  (cl-assert (integerp anagnosis) nil "Assertion failed: anagosis must be an integer.")
+  (let ((anagnosis-p (= (% (max 1 (if success c-successes c-failures)) anagnosis) 0))
+	(neo-gnosis
+	 (if success
+	     (gnosis-algorithm-replace-at-index 2 (+ (nth 2 gnosis) (nth 0 gnosis)) gnosis)
+	   (gnosis-algorithm-replace-at-index 2 (max 1.3 (- (nth 2 gnosis) (nth 1 gnosis))) gnosis))))
+    ;; TODO: Change amnesia & epignosis value upon reaching a lethe or anagnosis event.
+    (cond ((and success anagnosis-p)
+	   (setf neo-gnosis (gnosis-algorithm-replace-at-index 0 (+ (nth 0 gnosis) epignosis) neo-gnosis)))
+	  ((and (not success) anagnosis-p
+		(setf neo-gnosis
+		      (gnosis-algorithm-replace-at-index 1 (+ (nth 1 gnosis) agnoia) neo-gnosis)))))
+    (gnosis-algorithm-round-items neo-gnosis)))
 
-(cl-defun gnosis-algorithm-next-interval (&key last-interval ef success successful-reviews
-					       failure-factor initial-interval)
+(cl-defun gnosis-algorithm-next-interval (&key last-interval gnosis-synolon success successful-reviews
+					       amnesia proto c-fails lethe)
   "Calculate next interval.
 
-LAST-INTERVAL: number of days since last review
-EF: Easiness factor
-SUCCESS: t if review was successful, nil otherwise
-SUCCESSFUL-REVIEWS: number of successful reviews
-FAILURE-FACTOR: factor to multiply last interval by if review was unsuccessful
-INITIAL-INTERVAL: list of initial intervals for initial successful
-reviews.  Will be used to determine the next interval for the first 2
-successful reviews."
-  (cl-assert (< gnosis-algorithm-ff 1) "Value of `gnosis-algorithm-ff' must be lower than 1")
+LAST-INTERVAL: Number of days since last review
+
+C-FAILS: Total consecutive failed reviews.
+
+GNOSIS-SYNOLON: Current gnosis-synolon (gnosis totalis).
+
+SUCCESS: non-nil when review was successful.
+
+SUCCESSFUL-REVIEWS: Number of successful reviews.
+
+AMNESIA: 'Forget value', used to calculate next interval upon failed
+review.
+
+PROTO: List of proto intervals, for successful reviews.
+Until successfully completing proto reviews, for every failed attempt
+the next interval will be set to 0.
+
+LETHE: Upon having C-FAILS >= lethe, set next interval to 0."
+  (cl-assert (booleanp success) nil "Success value must be a boolean")
+  (cl-assert (integerp successful-reviews) nil "Successful-reviews must be an integer")
+  (cl-assert (and (floatp amnesia) (<= amnesia 1)) nil "Amnesia must be a float <=1")
+  (cl-assert (and (<= amnesia 1) (> amnesia 0)) nil "Value of amnesia must be a float <= 1")
+  (cl-assert (and (integerp lethe) (>= lethe 1)) nil "Value of lethe must be an integer >= 1")
   ;; This should only occur in testing env or when the user has made breaking changes.
   (let* ((last-interval (if (<= last-interval 0) 1 last-interval)) ;; If last-interval is 0, use 1 instead.
-	 (interval (cond ((and (= successful-reviews 0) success)
-			  (car initial-interval))
-			 ((and (= successful-reviews 1) success)
-			  (cadr initial-interval))
-			 ;; If it's still on initial stage, review the
-			 ;; same day
-			 ((and (< successful-reviews 2) (not success)) 0)
-			 (t (let* ((success-interval (* ef last-interval))
-				   (failure-interval (* last-interval failure-factor)))
+	 (amnesia (- 1 amnesia)) ;; inverse amnesia
+	 (interval (cond ((and (< successful-reviews (length proto))
+			       success)
+			  (nth successful-reviews proto))
+			 ;; Lethe event, reset interval.
+			 ((and (>= c-fails lethe)
+			       (not success))
+			  0)
+			 (t (let* ((success-interval (* gnosis-synolon last-interval))
+				   (failure-interval (* amnesia last-interval)))
 			      (if success success-interval
 				;; Make sure failure interval is never
-				;; higher than success
-			        (min success-interval failure-interval)))))))
+				;; higher than success and at least 0
+			        (max (min success-interval failure-interval) 0)))))))
     (gnosis-algorithm-date (round interval))))
 
 

@@ -4,8 +4,8 @@
 #+language: en
 #+options: ':t toc:nil author:t email:t num:t
 #+startup: content
-#+macro: stable-version 0.3.1
-#+macro: release-date 2024-07-15
+#+macro: stable-version 0.4.0
+#+macro: release-date 2024-08-7
 #+macro: file @@texinfo:@file{@@$1@@texinfo:}@@
 #+macro: space @@texinfo:@: @@
 #+macro: kbd @@texinfo:@kbd{@@$1@@texinfo:}@@
@@ -22,18 +22,10 @@
 #+texinfo_header: @set MAINTAINERCONTACT @uref{mailto:public@thanosapollo.org,contact the maintainer}
 
 
-
-Gnosis (γνῶσις), pronounced "noh-sis", /meaning knowledge in Greek/,
-is a spaced repetition system implementation for note taking and self
-testing.  Notes are organized in a Question/Answer/Explanation format
-and reviewed at spaced intervals, determined by the success or failure
-to recall the answer.
-
-The goal of Gnosis is to enhance memory retention through active
-recall.  To achieve optimal results, users review Gnosis notes by
-writing out the answers.
-
-Above all, Gnosis aspires to be a versatile instrument of learning.
+Gnosis is a customizable spaced repetition system designed to enhance
+memory retention through active recall.  It allows users to set
+specific review intervals for note decks & tags, creating an optimal
+learning environment tailored to each specific topic.
 
 #+texinfo: @noindent
 This manual is written for Gnosis version {{{stable-version}}}, released on {{{release-date}}}.
@@ -46,23 +38,30 @@ This manual is written for Gnosis version {{{stable-version}}}, released on {{{r
 
 * Introduction
 
-Before reading this manual, it's recommended you first try out =gnosis-demo=
+Gnosis (γνῶσις) is a spaced repetition system that enhances memory
+retention through active recall. It employs a Q&A format, where each
+note consists of a question, answer, and explanation. Notes are
+reviewed at optimally spaced intervals based on the user's success or
+failure to recall the answer.  Key benefits arise from writing out
+answers when reviewing notes, fostering deeper understanding
+and improved memory retention.
 
-Gnosis, is a spaced repetition system for note taking & self
-testing, where notes are taken in a Question/Answer/Explanation
-format & reviewed in spaced intervals, determined by the success or
-failure to recall a given answer.
-
-Gnosis implements a highly customizable algorithm, inspired by SM-2.
-Gnosis algorithm does not use user's subjective rating of a note to
-determine the next review interval, but instead uses the user's
-success or failure in recalling the answer of a note.  Read more on
+Gnosis algorithm is highly adjustable, allowing users to set specific
+values not just for note decks but for tags as well.  Gnosis'
+adjustability allows users to fine-tune settings not only for entire
+note collections but also for specific tagged topics, thereby creating
+a personalized learning environment for each topic.  Read more on
 [[Gnosis Algorithm]]
+
+Before continuing reading this manual, it's recommended you try out
+=gnosis-demo=.
 
 * Adding notes
 Creating notes for gnosis can be done interactively with:
 
     =M-x gnosis-add-note=
+
+Or from within =gnosis-dashboard=
 
 When it comes to adding images, you can select images that are inside
 =gnosis-images-dir=.  For adjusting image size, refer to [[#Customization][Customization]]
@@ -88,14 +87,23 @@ You can also format clozes like Anki if you so prefer; e.g ~{{c1::Cyproheptadine
   example creates 2 cloze type notes.
   
 + Each cX tag can have multiple clozes, but each cloze must be a
-  *UNIQUE* word (or a unique combination of words) in given note.
+  *UNIQUE* word, or a unique combination of words, in given note.
+
+  + If a cloze is repeated, such as in phrases with "acetyl" &
+    acetylcholine, include whitespace in the cloze to denote a single
+    word.
 
 + You can use the keyword =::= to indicate a hint.
 
 You can remove the /guidance/ string by adjusting
 =gnosis-cloze-guidance=.
 
-** MC-Cloze
+** MC-Cloze (Under development)
+
+MC-Cloze is disabled by default, to enable it add to your configuration:
+
+    =(add-to-list 'gnosis-note-types "MC-Cloze")=
+
 A MC-Cloze (/Multiple Choice Cloze/) is a fill-in-the-blank note,
 but unlike [[#Cloze][cloze note type]] the user is prompted to select an option
 instead of typing an answer.
@@ -113,7 +121,7 @@ Example:
 
 When customizing =gnosis-mc-cloze=separator= pay attention to not use
 values that would mess up with regex functions.
-** MCQ (Multiple Choice Question)
+** MCQ
 
 A MCQ note type, as the name suggests, is a multiple choice question.
 
@@ -179,92 +187,51 @@ character."
 
 * Gnosis Algorithm
 
-Each gnosis note has an ef (easiness factor), which is a list of 3
-values.  The last value is the total ef for a note, which will be
-used to determine the next interval upon a successful answer recall,
-the second value is the ef-decrease value, this value will be
-subtracted from the the total ef upon failure to recall the answer of
-a note, the first value is the ef increase, will be added to the
-total ef upon a successful recall.
+Each gnosis note has a gnosis score, which is a list of 3 values,
+(gnosis-plus gnosis-minus gnosis-synolon/total).  Gnosis-synolon is
+what is used to determine the next interval upon a successful recall,
+gnosis-plus is added to gnosis-synolon upon a successful recall as
+well, gnosis-minus is subtracted from gnosis-synolon upon failing to
+recall a note's answer.
 
-Each gnosis deck has =gnosis-algorithm-ef-threshold=, it's an
-integer value that refers to the consecutive success or failures to
-recall an answer.  Upon reaching the threshold, gnosis-algorithm-ef-decrease
-or gnosis-algorithm-ef-increase will be applied to the ef-increase or
-ef-decrease of note.
+Gnosis has 2 special events, one is ~anagnosis~ /ανάγνωση/ and ~lethe~ /λήθη/.
+** Anagnosis Event
+~Anagnosis~, which means comprehension & recognition of knowledge, is
+triggered when the consecutive successful or failed recalls are equal
+or greater to anagnosis value.
 
-You can customize deck specific algorithm values using =gnosis-dashboard=.
+When ~anagnosis~ is triggered by consecutive *successful* recalls,
+~epignosis~ value is added to gnosis-plus.  /Epignosis means accuracy of knowledge/.
 
-** Initial Interval
+When ~anagnosis~ is triggered by consecutive *failed* recalls,
+~agnoia~ value is added to gnosis-minus. /Agnoia means lack of knowledge/
+
+You can set specific values for each deck and tag of the variables
+mentioned above by adjusting =gnosis-custom-values=.
+
+** Proto
 
 The default initial interval is defined at
-=gnosis-algorithm-interval=, you can define a custom initial interval
+=gnosis-algorithm-proto=, you can define a custom initial interval
 for each deck as well.
 
-=gnosis-algorithm-interval= is a list of 2
-numbers, representing the first two initial intervals for successful
-reviews.
+=gnosis-algorithm-interval= is a list of numbers, representing the
+first initial intervals for successful reviews.  There is no limit on
+the length of the list.
 
 Example:
 
 #+begin_src emacs-lisp
-  (setq gnosis-algorithm-interval '(0 1))
+  (setq gnosis-algorithm-interval '(0 1 2 30))
 #+end_src
 
-Using the above example, after first successfully reviewing a note,
-you will see it again in the next review session, if you successfully
-review said note again, the next review will be tomorrow.
+Upon each successful note review, the algorithm will increment to the
+next interval value: 0 days (0), 1 day later (1), 2 days later
+(2), and 30 days later.
 
-Upon failing to review a note without completing 2 successful reviews,
-you will have to review it again on the same day.
+Upon failing to review a note without completing it's proto successful reviews,
+it's next review date will be on the same date.
 
-** Easiness Factor
-
-The =gnosis-algorithm-ef= is a list that consists of three items:
-
-1. Easiness factor increase value: Added to the easiness factor upon a
-   successful review.
-   
-2. Easiness factor decrease value: Subtracted from the total easiness
-   factor upon a failed review.
-   
-3. Total Easiness factor: Used to calculate the next interval.
-
-
-How this is used:
-  
-Multiplies the last interval by the easiness factor after a successful
-review.
-
-For example, upon a successful review, if the last review was 6 days
-ago with an easiness factor of 2.0, the next interval would be
-calculated as 6 * 2.0, and the next total easiness factor would be
-updated by adding the increase value 2.0 + <increase-value>.
-
-Configuration example:
-
-#+begin_src emacs-lisp
-  (setq gnosis-algorithm-ef '(0.30 0.25 1.3))
-#+end_src
-
-** Forgetting Factor
-
-=gnosis-algorithm-ff= is a floating number below 1.
-
-Used to determine the next interval after an unsuccessful review.
-
-Multiplied with the last interval to calculate the next interval. For
-example, if =gnosis-algorithm-ff= is set to 0.5 and the last interval
-was 6 days, the next interval will be 6 * 0.5 = 3 days.
-
-
-Example configuration:
-
-#+begin_src emacs-lisp
-  (setq gnosis-algorithm-ff 0.5)
-#+end_src
-
-You can set a custom =gnosis-algorithm-ff= for each deck as well.
 * Editing notes
 + Currently there are 2 ways for editing notes:
 
@@ -300,14 +267,27 @@ To automatically push changes after a review session, add this to your configura
 (gnosis-vc-pull) ;; Run vc-pull for gnosis on startup
 #+end_src
 
-* Extending Gnosis
-To make development and customization easier, gnosis comes with
-=gnosis-test= module, that should be used to create a custom database for
-testing.
+* Configuring Note Types
+** Adjust Current Types Entries
+Each gnosis note type has an /interactive/ function, named
+=gnosis-add-note-TYPE=.  You can set default values for each entry by
+hard coding specific values to their keywords.
 
-To exit the testing environment, rerun =M-x gnosis-test-start= and
-then enter =n= (no) at the prompt "Start development env?"
+For example:
 
+#+begin_src emacs-lisp
+(defun gnosis-add-note-basic (deck)
+  (gnosis-add-note--basic :deck deck
+			  :question (gnosis-read-string-from-buffer "Question: " "")
+			  :answer (read-string "Answer: ")
+			  :hint (gnosis-hint-prompt gnosis-previous-note-hint)
+			  :extra ""
+			  :images nil
+			  :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))
+#+end_src
+
+By evaluating the above code snippet, you won't be prompted to enter
+anything for ~extra~ & ~images~. 
 ** Creating Custom Note Types
 
 Creating custom note types for gnosis is a fairly simple thing to do
@@ -315,23 +295,22 @@ Creating custom note types for gnosis is a fairly simple thing to do
 + First add your NEW-TYPE to =gnosis-note-types=
 
     #+begin_src emacs-lisp
-    (add-to-list 'gnosis-note-types "new-note-type")
+    (add-to-list 'gnosis-note-types "NEW-TYPE")
   #+end_src
++ Create an interactive function
 
-+ Create 2 functions; =gnosis-add-note-TYPE= & =gnosis-add-note--TYPE=
-
-Each note type has a =gnosis-add-note-TYPE= that is used
-interactively & a "hidden function" =gnosis-add-note--TYPE= that handles
-all the logic.
+Each note type has a =gnosis-add-note-TYPE= that is used interactively
+& a "hidden function" =gnosis-add-note--TYPE= that handles all the
+logic.  You can use one of the =current gnosis-add-note--TYPE=
+functions or create one of your own.
 
 Refer to =gnosis-add-note-basic= & =gnosis-add-note--basic= for a simple
-example of how this is done.
+example of how this is done, as well as =gnosis-add-note-double=.
 
-+ Create =gnosis-review-TYPE=
+** Development
+To make development and customization easier, gnosis comes with
+=gnosis-test= module, that should be used to create a custom database for
+testing.
 
-This function should handle the review process, displaying it's
-contents and updating the database depending on the result of the
-review (fail/pass). Refer to =gnosis-review-basic= for an example of how
-this should be done.
-
-+ Optionally, you might want to create your own custom =gnosis-display= functions
+To exit the testing environment, rerun =M-x gnosis-test-start= and
+then enter =n= (no) at the prompt "Start development env?"

@@ -12,19 +12,12 @@ File: gnosis.info,  Node: Top,  Next: Introduction,  Up: (dir)
 Gnosis User Manual
 ******************
 
-Gnosis (γνῶσις), pronounced "noh-sis", _meaning knowledge in Greek_, is
-a spaced repetition system implementation for note taking and self
-testing.  Notes are organized in a Question/Answer/Explanation format
-and reviewed at spaced intervals, determined by the success or failure
-to recall the answer.
+Gnosis is a customizable spaced repetition system designed to enhance
+memory retention through active recall.  It allows users to set specific
+review intervals for note decks & tags, creating an optimal learning
+environment tailored to each specific topic.
 
-   The goal of Gnosis is to enhance memory retention through active
-recall.  To achieve optimal results, users review Gnosis notes by
-writing out the answers.
-
-   Above all, Gnosis aspires to be a versatile instrument of learning.
-
-This manual is written for Gnosis version 0.3.1, released on 2024-07-15.
+This manual is written for Gnosis version 0.4.0, released on 2024-08-7.
 
    • Official manual: <https://thanosapollo.org/user-manual/gnosis>
    • Git repositories:
@@ -39,15 +32,15 @@ This manual is written for Gnosis version 0.3.1, released on 2024-07-15.
 * Gnosis Algorithm::
 * Editing notes::
 * Sync between devices::
-* Extending Gnosis::
+* Configuring Note Types::
 
 -- The Detailed Node Listing --
 
 Note Types
 
 * Cloze::
-* MC-Cloze::
-* MCQ (Multiple Choice Question)::
+* MC-Cloze (Under development)::
+* MCQ::
 * Basic Type::
 * Double::
 * y-or-n::
@@ -59,13 +52,14 @@ Customization
 
 Gnosis Algorithm
 
-* Initial Interval::
-* Easiness Factor::
-* Forgetting Factor::
+* Anagnosis Event::
+* Proto::
 
-Extending Gnosis
+Configuring Note Types
 
+* Adjust Current Types Entries::
 * Creating Custom Note Types::
+* Development::
 
 
 
@@ -74,19 +68,23 @@ File: gnosis.info,  Node: Introduction,  Next: Adding notes,  Prev: Top,  Up: To
 1 Introduction
 **************
 
-Before reading this manual, it's recommended you first try out
-‘gnosis-demo’
+Gnosis (γνῶσις) is a spaced repetition system that enhances memory
+retention through active recall.  It employs a Q&A format, where each
+note consists of a question, answer, and explanation.  Notes are
+reviewed at optimally spaced intervals based on the user's success or
+failure to recall the answer.  Key benefits arise from writing out
+answers when reviewing notes, fostering deeper understanding and
+improved memory retention.
 
-   Gnosis, is a spaced repetition system for note taking & self testing,
-where notes are taken in a Question/Answer/Explanation format & reviewed
-in spaced intervals, determined by the success or failure to recall a
-given answer.
+   Gnosis algorithm is highly adjustable, allowing users to set specific
+values not just for note decks but for tags as well.  Gnosis'
+adjustability allows users to fine-tune settings not only for entire
+note collections but also for specific tagged topics, thereby creating a
+personalized learning environment for each topic.  Read more on *note
+Gnosis Algorithm::
 
-   Gnosis implements a highly customizable algorithm, inspired by SM-2.
-Gnosis algorithm does not use user's subjective rating of a note to
-determine the next review interval, but instead uses the user's success
-or failure in recalling the answer of a note.  Read more on *note Gnosis
-Algorithm::
+   Before continuing reading this manual, it's recommended you try out
+‘gnosis-demo’.
 
 
 File: gnosis.info,  Node: Adding notes,  Next: Note Types,  Prev: Introduction,  Up: Top
@@ -97,6 +95,8 @@ File: gnosis.info,  Node: Adding notes,  Next: Note Types,  Prev: Introduction, 
 Creating notes for gnosis can be done interactively with:
 
    ‘M-x gnosis-add-note’
+
+   Or from within ‘gnosis-dashboard’
 
    When it comes to adding images, you can select images that are inside
 ‘gnosis-images-dir’.  For adjusting image size, refer to *note
@@ -111,14 +111,14 @@ File: gnosis.info,  Node: Note Types,  Next: Customization,  Prev: Adding notes,
 * Menu:
 
 * Cloze::
-* MC-Cloze::
-* MCQ (Multiple Choice Question)::
+* MC-Cloze (Under development)::
+* MCQ::
 * Basic Type::
 * Double::
 * y-or-n::
 
 
-File: gnosis.info,  Node: Cloze,  Next: MC-Cloze,  Up: Note Types
+File: gnosis.info,  Node: Cloze,  Next: MC-Cloze (Under development),  Up: Note Types
 
 3.1 Cloze
 =========
@@ -139,7 +139,11 @@ selecting ‘Cloze’, the question should be formatted like this:
      example creates 2 cloze type notes.
 
    • Each cX tag can have multiple clozes, but each cloze must be a
-     *UNIQUE* word (or a unique combination of words) in given note.
+     *UNIQUE* word, or a unique combination of words, in given note.
+
+        • If a cloze is repeated, such as in phrases with "acetyl" &
+          acetylcholine, include whitespace in the cloze to denote a
+          single word.
 
    • You can use the keyword ‘::’ to indicate a hint.
 
@@ -147,12 +151,16 @@ selecting ‘Cloze’, the question should be formatted like this:
 ‘gnosis-cloze-guidance’.
 
 
-File: gnosis.info,  Node: MC-Cloze,  Next: MCQ (Multiple Choice Question),  Prev: Cloze,  Up: Note Types
+File: gnosis.info,  Node: MC-Cloze (Under development),  Next: MCQ,  Prev: Cloze,  Up: Note Types
 
-3.2 MC-Cloze
-============
+3.2 MC-Cloze (Under development)
+================================
 
-A MC-Cloze (_Multiple Choice Cloze_) is a fill-in-the-blank note, but
+MC-Cloze is disabled by default, to enable it add to your configuration:
+
+   ‘(add-to-list 'gnosis-note-types "MC-Cloze")’
+
+   A MC-Cloze (_Multiple Choice Cloze_) is a fill-in-the-blank note, but
 unlike *note cloze note type: Cloze. the user is prompted to select an
 option instead of typing an answer.
 
@@ -169,10 +177,10 @@ note will be generated from each cloze.
 values that would mess up with regex functions.
 
 
-File: gnosis.info,  Node: MCQ (Multiple Choice Question),  Next: Basic Type,  Prev: MC-Cloze,  Up: Note Types
+File: gnosis.info,  Node: MCQ,  Next: Basic Type,  Prev: MC-Cloze (Under development),  Up: Note Types
 
-3.3 MCQ (Multiple Choice Question)
-==================================
+3.3 MCQ
+=======
 
 A MCQ note type, as the name suggests, is a multiple choice question.
 
@@ -184,7 +192,7 @@ A MCQ note type, as the name suggests, is a multiple choice question.
 ‘gnosis-mcq-guidance’.
 
 
-File: gnosis.info,  Node: Basic Type,  Next: Double,  Prev: MCQ (Multiple Choice Question),  Up: Note Types
+File: gnosis.info,  Node: Basic Type,  Next: Double,  Prev: MCQ,  Up: Note Types
 
 3.4 Basic Type
 ==============
@@ -267,101 +275,65 @@ File: gnosis.info,  Node: Gnosis Algorithm,  Next: Editing notes,  Prev: Customi
 5 Gnosis Algorithm
 ******************
 
-Each gnosis note has an ef (easiness factor), which is a list of 3
-values.  The last value is the total ef for a note, which will be used
-to determine the next interval upon a successful answer recall, the
-second value is the ef-decrease value, this value will be subtracted
-from the the total ef upon failure to recall the answer of a note, the
-first value is the ef increase, will be added to the total ef upon a
-successful recall.
+Each gnosis note has a gnosis score, which is a list of 3 values,
+(gnosis-plus gnosis-minus gnosis-synolon/total).  Gnosis-synolon is what
+is used to determine the next interval upon a successful recall,
+gnosis-plus is added to gnosis-synolon upon a successful recall as well,
+gnosis-minus is subtracted from gnosis-synolon upon failing to recall a
+note's answer.
 
-   Each gnosis deck has ‘gnosis-algorithm-ef-threshold’, it's an integer
-value that refers to the consecutive success or failures to recall an
-answer.  Upon reaching the threshold, gnosis-algorithm-ef-decrease or
-gnosis-algorithm-ef-increase will be applied to the ef-increase or
-ef-decrease of note.
-
-   You can customize deck specific algorithm values using
-‘gnosis-dashboard’.
+   Gnosis has 2 special events, one is ‘anagnosis’ _ανάγνωση_ and
+‘lethe’ _λήθη_.
 
 * Menu:
 
-* Initial Interval::
-* Easiness Factor::
-* Forgetting Factor::
+* Anagnosis Event::
+* Proto::
 
 
-File: gnosis.info,  Node: Initial Interval,  Next: Easiness Factor,  Up: Gnosis Algorithm
+File: gnosis.info,  Node: Anagnosis Event,  Next: Proto,  Up: Gnosis Algorithm
 
-5.1 Initial Interval
-====================
+5.1 Anagnosis Event
+===================
 
-The default initial interval is defined at ‘gnosis-algorithm-interval’,
-you can define a custom initial interval for each deck as well.
+‘Anagnosis’, which means comprehension & recognition of knowledge, is
+triggered when the consecutive successful or failed recalls are equal or
+greater to anagnosis value.
 
-   ‘gnosis-algorithm-interval’ is a list of 2 numbers, representing the
-first two initial intervals for successful reviews.
+   When ‘anagnosis’ is triggered by consecutive *successful* recalls,
+‘epignosis’ value is added to gnosis-plus.  _Epignosis means accuracy of
+knowledge_.
+
+   When ‘anagnosis’ is triggered by consecutive *failed* recalls,
+‘agnoia’ value is added to gnosis-minus.  _Agnoia means lack of
+knowledge_
+
+   You can set specific values for each deck and tag of the variables
+mentioned above by adjusting ‘gnosis-custom-values’.
+
+
+File: gnosis.info,  Node: Proto,  Prev: Anagnosis Event,  Up: Gnosis Algorithm
+
+5.2 Proto
+=========
+
+The default initial interval is defined at ‘gnosis-algorithm-proto’, you
+can define a custom initial interval for each deck as well.
+
+   ‘gnosis-algorithm-interval’ is a list of numbers, representing the
+first initial intervals for successful reviews.  There is no limit on
+the length of the list.
 
    Example:
 
-     (setq gnosis-algorithm-interval '(0 1))
+     (setq gnosis-algorithm-interval '(0 1 2 30))
 
-   Using the above example, after first successfully reviewing a note,
-you will see it again in the next review session, if you successfully
-review said note again, the next review will be tomorrow.
+   Upon each successful note review, the algorithm will increment to the
+next interval value: 0 days (0), 1 day later (1), 2 days later (2), and
+30 days later.
 
-   Upon failing to review a note without completing 2 successful
-reviews, you will have to review it again on the same day.
-
-
-File: gnosis.info,  Node: Easiness Factor,  Next: Forgetting Factor,  Prev: Initial Interval,  Up: Gnosis Algorithm
-
-5.2 Easiness Factor
-===================
-
-The ‘gnosis-algorithm-ef’ is a list that consists of three items:
-
-  1. Easiness factor increase value: Added to the easiness factor upon a
-     successful review.
-
-  2. Easiness factor decrease value: Subtracted from the total easiness
-     factor upon a failed review.
-
-  3. Total Easiness factor: Used to calculate the next interval.
-
-   How this is used:
-
-   Multiplies the last interval by the easiness factor after a
-successful review.
-
-   For example, upon a successful review, if the last review was 6 days
-ago with an easiness factor of 2.0, the next interval would be
-calculated as 6 * 2.0, and the next total easiness factor would be
-updated by adding the increase value 2.0 + <increase-value>.
-
-   Configuration example:
-
-     (setq gnosis-algorithm-ef '(0.30 0.25 1.3))
-
-
-File: gnosis.info,  Node: Forgetting Factor,  Prev: Easiness Factor,  Up: Gnosis Algorithm
-
-5.3 Forgetting Factor
-=====================
-
-‘gnosis-algorithm-ff’ is a floating number below 1.
-
-   Used to determine the next interval after an unsuccessful review.
-
-   Multiplied with the last interval to calculate the next interval.
-For example, if ‘gnosis-algorithm-ff’ is set to 0.5 and the last
-interval was 6 days, the next interval will be 6 * 0.5 = 3 days.
-
-   Example configuration:
-
-     (setq gnosis-algorithm-ff 0.5)
-
-   You can set a custom ‘gnosis-algorithm-ff’ for each deck as well.
+   Upon failing to review a note without completing it's proto
+successful reviews, it's next review date will be on the same date.
 
 
 File: gnosis.info,  Node: Editing notes,  Next: Sync between devices,  Prev: Gnosis Algorithm,  Up: Top
@@ -376,7 +348,7 @@ File: gnosis.info,  Node: Editing notes,  Next: Sync between devices,  Prev: Gno
           note you want to edit and press ‘e’
 
 
-File: gnosis.info,  Node: Sync between devices,  Next: Extending Gnosis,  Prev: Editing notes,  Up: Top
+File: gnosis.info,  Node: Sync between devices,  Next: Configuring Note Types,  Prev: Editing notes,  Up: Top
 
 7 Sync between devices
 **********************
@@ -405,10 +377,67 @@ your configuration:
      (gnosis-vc-pull) ;; Run vc-pull for gnosis on startup
 
 
-File: gnosis.info,  Node: Extending Gnosis,  Prev: Sync between devices,  Up: Top
+File: gnosis.info,  Node: Configuring Note Types,  Prev: Sync between devices,  Up: Top
 
-8 Extending Gnosis
-******************
+8 Configuring Note Types
+************************
+
+* Menu:
+
+* Adjust Current Types Entries::
+* Creating Custom Note Types::
+* Development::
+
+
+File: gnosis.info,  Node: Adjust Current Types Entries,  Next: Creating Custom Note Types,  Up: Configuring Note Types
+
+8.1 Adjust Current Types Entries
+================================
+
+Each gnosis note type has an _interactive_ function, named
+‘gnosis-add-note-TYPE’.  You can set default values for each entry by
+hard coding specific values to their keywords.
+
+   For example:
+
+     (defun gnosis-add-note-basic (deck)
+       (gnosis-add-note--basic :deck deck
+                               :question (gnosis-read-string-from-buffer "Question: " "")
+                               :answer (read-string "Answer: ")
+                               :hint (gnosis-hint-prompt gnosis-previous-note-hint)
+                               :extra ""
+                               :images nil
+                               :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))
+
+   By evaluating the above code snippet, you won't be prompted to enter
+anything for ‘extra’ & ‘images’.
+
+
+File: gnosis.info,  Node: Creating Custom Note Types,  Next: Development,  Prev: Adjust Current Types Entries,  Up: Configuring Note Types
+
+8.2 Creating Custom Note Types
+==============================
+
+Creating custom note types for gnosis is a fairly simple thing to do
+
+   • First add your NEW-TYPE to ‘gnosis-note-types’
+
+          (add-to-list 'gnosis-note-types "NEW-TYPE")
+   • Create an interactive function
+
+   Each note type has a ‘gnosis-add-note-TYPE’ that is used
+interactively & a "hidden function" ‘gnosis-add-note--TYPE’ that handles
+all the logic.  You can use one of the ‘current gnosis-add-note--TYPE’
+functions or create one of your own.
+
+   Refer to ‘gnosis-add-note-basic’ & ‘gnosis-add-note--basic’ for a
+simple example of how this is done, as well as ‘gnosis-add-note-double’.
+
+
+File: gnosis.info,  Node: Development,  Prev: Creating Custom Note Types,  Up: Configuring Note Types
+
+8.3 Development
+===============
 
 To make development and customization easier, gnosis comes with
 ‘gnosis-test’ module, that should be used to create a custom database
@@ -417,66 +446,31 @@ for testing.
    To exit the testing environment, rerun ‘M-x gnosis-test-start’ and
 then enter ‘n’ (no) at the prompt "Start development env?"
 
-* Menu:
-
-* Creating Custom Note Types::
-
-
-File: gnosis.info,  Node: Creating Custom Note Types,  Up: Extending Gnosis
-
-8.1 Creating Custom Note Types
-==============================
-
-Creating custom note types for gnosis is a fairly simple thing to do
-
-   • First add your NEW-TYPE to ‘gnosis-note-types’
-
-          (add-to-list 'gnosis-note-types "new-note-type")
-
-   • Create 2 functions; ‘gnosis-add-note-TYPE’ &
-     ‘gnosis-add-note--TYPE’
-
-   Each note type has a ‘gnosis-add-note-TYPE’ that is used
-interactively & a "hidden function" ‘gnosis-add-note--TYPE’ that handles
-all the logic.
-
-   Refer to ‘gnosis-add-note-basic’ & ‘gnosis-add-note--basic’ for a
-simple example of how this is done.
-
-   • Create ‘gnosis-review-TYPE’
-
-   This function should handle the review process, displaying it's
-contents and updating the database depending on the result of the review
-(fail/pass).  Refer to ‘gnosis-review-basic’ for an example of how this
-should be done.
-
-   • Optionally, you might want to create your own custom
-     ‘gnosis-display’ functions
-
 
 
 Tag Table:
 Node: Top250
-Node: Introduction1614
-Node: Adding notes2341
-Node: Note Types2710
-Node: Cloze2935
-Node: MC-Cloze3913
-Node: MCQ (Multiple Choice Question)4737
-Node: Basic Type5236
-Node: Double5539
-Node: y-or-n5805
-Node: Customization6207
-Node: Image size6392
-Node: Typos | String Comparison6678
-Node: Gnosis Algorithm7453
-Node: Initial Interval8489
-Node: Easiness Factor9279
-Node: Forgetting Factor10227
-Node: Editing notes10835
-Node: Sync between devices11227
-Node: Extending Gnosis12248
-Node: Creating Custom Note Types12703
+Node: Introduction1350
+Node: Adding notes2363
+Node: Note Types2774
+Node: Cloze2992
+Node: MC-Cloze (Under development)4154
+Node: MCQ5142
+Node: Basic Type5580
+Node: Double5856
+Node: y-or-n6122
+Node: Customization6524
+Node: Image size6709
+Node: Typos | String Comparison6995
+Node: Gnosis Algorithm7770
+Node: Anagnosis Event8417
+Node: Proto9158
+Node: Editing notes9925
+Node: Sync between devices10317
+Node: Configuring Note Types11344
+Node: Adjust Current Types Entries11576
+Node: Creating Custom Note Types12576
+Node: Development13412
 
 End Tag Table
 
