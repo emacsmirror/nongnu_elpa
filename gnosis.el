@@ -2099,23 +2099,31 @@ CUSTOM-DECK: Custom deck to be used instead."
     (if tags-proto (gnosis-proto-max-values tags-proto) (gnosis-proto-max-values decks-proto))))
 
 (defun gnosis-get-note-tag-anagnosis (id &optional custom-tags custom-values)
-  "Return the minimum anagnosis tag value for note ID."
+  "Return the minimum anagnosis tag value for note ID.
+
+CUSTOM-VALUES: Custom values to be used instead.
+CUSTOM-TAGS: Custom tags to be used instead."
   (let ((anagnosis-values (gnosis-get-custom-tag-values id :anagnosis custom-tags custom-values)))
-    (if anagnosis-values
-	(apply #'min anagnosis-values)
-      gnosis-algorithm-anagnosis-value)))
+    (and anagnosis-values (apply #'min anagnosis-values))))
 
 (defun gnosis-get-note-deck-anagnosis (id &optional custom-deck custom-values)
-  "Return anagnosis deck value for note ID."
+  "Return anagnosis deck value for note ID.
+
+CUSTOM-VALUES: Custom values to be used instead.
+CUSTOM-DECK: Custom deck to be used instead."
   (let ((deck (or (gnosis-get-note-deck-name id) custom-deck)))
     (or (gnosis-get-custom-deck-value deck :anagnosis custom-values)
 	gnosis-algorithm-anagnosis-value)))
 
 (defun gnosis-get-note-anagnosis (id &optional custom-deck custom-tags custom-values)
-  "Return minimum anagnosis value for note ID."
+  "Return minimum anagnosis value for note ID.
+
+CUSTOM-VALUES: Custom values to be used instead.
+CUSTOM-TAGS: Custom tags to be used instead.
+CUSTOM-DECK: Custom deck to be used instead."
   (let* ((deck-anagnosis (gnosis-get-note-deck-anagnosis id custom-deck custom-values))
 	 (tag-anagnosis (gnosis-get-note-tag-anagnosis id custom-tags custom-values))
-	 (note-anagnosis (min deck-anagnosis tag-anagnosis)))
+	 (note-anagnosis (or tag-anagnosis deck-anagnosis)))
     note-anagnosis))
 
 (defun gnosis-get-note-deck-lethe (id &optional custom-deck custom-values)
