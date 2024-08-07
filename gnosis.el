@@ -2362,7 +2362,7 @@ Return note ids for notes that match QUERY."
 	;; Create activity-log table
 	(gnosis--create-table 'activity-log gnosis-db-schema-activity-log)))
     ;; Update database schema for version
-    (cond ((<= gnosis-curr-version 2)
+    (cond ((= gnosis-curr-version 2)
 	   (gnosis-db-update-v3)))))
 
 (gnosis-db-init)
