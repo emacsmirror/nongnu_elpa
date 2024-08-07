@@ -2060,9 +2060,7 @@ CUSTOM-VALUES: Specify values for tags."
 (defun gnosis-get-note-tag-agnoia (id &optional custom-tags custom-values)
   "Return agnoia value for note ID."
   (let ((agnoia-values (gnosis-get-custom-tag-values id :agnoia custom-tags custom-values)))
-    (if agnoia-values
-	(apply #'max agnoia-values)
-      gnosis-algorithm-agnoia-value)))
+    (and agnoia-values (apply #'max agnoia-values))))
 
 (defun gnosis-get-note-deck-agnoia (id &optional custom-deck custom-values)
   "Return agnoia value for note ID."
@@ -2074,10 +2072,10 @@ CUSTOM-VALUES: Specify values for tags."
   "Return agnoia value for note ID."
   (let* ((deck-agnoia (gnosis-get-note-deck-agnoia id custom-deck custom-values))
          (tag-agnoia (gnosis-get-note-tag-agnoia id custom-tags custom-values))
-	 (max-agnoia (max deck-agnoia tag-agnoia)))
-    (if (>= max-agnoia 1)
+	 (note-agnoia (or tag-agnoia deck-agnoia)))
+    (if (>= note-agnoia 1)
 	(error "Agnoia value must be lower than 1")
-      max-agnoia)))
+      note-agnoia)))
 
 (defun gnosis-proto-max-values (proto-values)
   "Return max values from PROTO-VALUES."
