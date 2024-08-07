@@ -2010,9 +2010,7 @@ amnesia i.e next interval to be 0.
 CUSTOM-TAGS: Specify tags for note id.
 CUSTOM-VALUES: Specify values for tags."
   (let ((amnesia-values (gnosis-get-custom-tag-values id :amnesia custom-tags custom-values)))
-    (if amnesia-values
-	(apply #'min amnesia-values)
-      gnosis-algorithm-amnesia-value)))
+    (and amnesia-values (apply #'max amnesia-values))))
 
 (defun gnosis-get-note-deck-amnesia (id &optional custom-deck custom-values)
   "Return tag amnesia for note ID.
