@@ -350,8 +350,8 @@ BUFFER-NAME is added to \"*mastodon-\" to create the buffer name.
 FORCE means do not try to update an existing buffer, but fetch
 from the server and load anew."
   (interactive)
-  (let ((buffer-name (or buffer-name "notifications"))
-        (buffer (concat "*mastodon-" buffer-name "*")))
+  (let* ((buffer-name (or buffer-name "notifications"))
+         (buffer (concat "*mastodon-" buffer-name "*")))
     (if (and (not force) (get-buffer buffer))
         (progn (pop-to-buffer buffer '(display-buffer-same-window))
                (mastodon-tl--update))
