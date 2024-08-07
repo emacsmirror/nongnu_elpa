@@ -288,7 +288,7 @@ If ask nil, leave testing env"
 						 :gnosis-synolon 1.3
 						 :success nil
 						 :successful-reviews 3
-						 :amnesia 0.3
+						 :amnesia 0.7
 						 :proto '(1 2 3)
 						 :c-fails 3
 						 :lethe 4)
@@ -297,7 +297,7 @@ If ask nil, leave testing env"
 						 :gnosis-synolon 1.3
 						 :success nil
 						 :successful-reviews 3
-						 :amnesia 0.2
+						 :amnesia 0.8
 						 :proto '(1 2 3)
 						 :c-fails 3
 						 :lethe 4)
@@ -306,7 +306,7 @@ If ask nil, leave testing env"
 						 :gnosis-synolon 1.3
 						 :success nil
 						 :successful-reviews 3
-						 :amnesia 0.0
+						 :amnesia 1.0
 						 :proto '(1 2 3)
 						 :c-fails 3
 						 :lethe 4)
@@ -440,32 +440,32 @@ If ask nil, leave testing env"
 		       (:tag "tag3" (:proto (2 4 10) :epignosis 0.5 :agnoia 0.5 :amnesia 0.9 :lethe 2)))))
     (should (equal (gnosis-get-custom-tag-values nil :amnesia '("tag1") test-values) (list 0.3)))
     (should (equal (gnosis-get-note-tag-amnesia nil '("tag1") test-values) 0.3))
-    (should (equal (gnosis-get-note-tag-amnesia nil '("tag1" "tag2") test-values) 0.3))
-    (should (equal (gnosis-get-note-tag-amnesia nil '("tag1" "tag2" "tag3") test-values) 0.3))
-    (should (equal (gnosis-get-note-tag-amnesia nil '("tag2" "tag3") test-values) 0.5))))
+    (should (equal (gnosis-get-note-tag-amnesia nil '("tag1" "tag2") test-values) 0.5))
+    (should (equal (gnosis-get-note-tag-amnesia nil '("tag1" "tag2" "tag3") test-values) 0.9))
+    (should (equal (gnosis-get-note-tag-amnesia nil '("tag2" "tag1") test-values) 0.5))))
 
 (ert-deftest gnosis-test-get-proto ()
   (let ((test-values '((:deck "deck1" (:proto (0 1 3) :epignosis 0.5 :agnoia 0.3 :amnesia 0.3 :lethe 3))
-		       (:tag "tag1" (:proto (10 1) :epignosis 0.5))
+		       (:tag "tag1" (:epignosis 0.5))
 		       (:tag "tag2" (:proto (2 2 2) :epignosis 0.5))
 		       (:tag "tag3" (:proto (1 1 1 1) :epignosis 0.5)))))
-    (should (equal (gnosis-get-note-proto nil '("tag1") "deck1" test-values) '(10 1 3)))
-    (should (equal (gnosis-get-note-proto nil '("tag1" "tag2") "deck1" test-values) '(10 2 3)))
-    (should (equal (gnosis-get-note-proto nil '("tag1" "tag2" "tag3") "deck1" test-values) '(10 2 3 1)))
-    (should (equal (gnosis-get-note-proto nil '("tag2" "tag3") "deck1" test-values) '(2 2 3 1)))))
+    (should (equal (gnosis-get-note-proto nil '("tag1") "deck1" test-values) '(0 1 3)))
+    (should (equal (gnosis-get-note-proto nil '("tag1" "tag2") "deck1" test-values) '(2 2 2)))
+    (should (equal (gnosis-get-note-proto nil '("tag1" "tag2" "tag3") "deck1" test-values) '(2 2 2 1)))))
 
 (ert-deftest gnosis-test-get-note-amnesia ()
   (let ((test-values '((:deck "deck1" (:proto (0 1 3) :epignosis 0.5 :agnoia 0.3 :amnesia 0.3 :lethe 3))
-		       (:tag "tag1" (:proto (10 1) :epignosis 0.5 :amnesia 0.5))
+		       (:tag "tag1" (:proto (10 1) :epignosis 0.5))
 		       (:tag "tag2" (:proto (2 2 2) :epignosis 0.5 :amnesia 0.2))
-		       (:tag "tag3" (:proto (1 1 1 1) :epignosis 0.5 :amnesia 0.4)))))
+		       (:tag "tag3" (:proto (1 1 1 1) :epignosis 0.5 :amnesia 0.6)))))
     (should (equal (gnosis-get-note-amnesia nil "deck1" '("tag1") test-values) 0.3))
     (should (equal (gnosis-get-note-amnesia nil "deck1" '("tag1" "tag2") test-values) 0.2))
-    (should (equal (gnosis-get-note-amnesia nil "deck1" '("tag1" "tag3") test-values) 0.3))))
+    (should (equal (gnosis-get-note-amnesia nil "deck1" '("tag1" "tag3") test-values) 0.6))
+    (should (equal (gnosis-get-note-amnesia nil "deck1" '("tag2" "tag3") test-values) 0.6))))
 
 (ert-deftest gnosis-test-get-note-epginosis ()
   (let ((test-values'((:deck "deck1" (:proto (0 1 3) :epignosis 0.5 :agnoia 0.3 :amnesia 0.3 :lethe 3))
-		      (:tag "tag1" (:proto (10 1) :epignosis 0.4 :amnesia 0.5))
+		      (:tag "tag1" (:proto (10 1) :amnesia 0.5))
 		      (:tag "tag2" (:proto (2 2 2) :epignosis 0.6 :amnesia 0.2))
 		      (:tag "tag3" (:proto (1 1 1 1) :epignosis 0.7 :amnesia 0.4)))))
     (should (equal (gnosis-get-note-epignosis nil "deck1" '("tag1") test-values) 0.5))
@@ -484,22 +484,22 @@ If ask nil, leave testing env"
 (ert-deftest gnosis-test-get-note-anagnosis ()
   (let ((test-values '((:deck "deck1" (:proto (0 1 3) :anagnosis 3 :amnesia 0.3 :lethe 3))
 		       (:deck "deck2" (:anagnosis 1 :amnesia 0.3 :lethe 3))
-		       (:tag "tag1" (:proto (10 1) :amnesia 0.5 :anagnosis 4))
+		       (:tag "tag1" (:proto (10 1)))
 		       (:tag "tag2" (:proto (2 2 2) :amnesia 0.2 :agnoia 0.4 :anagnosis 2))
 		       (:tag "tag3" (:proto (1 1 1 1) :amnesia 0.3)))))
     (should (equal (gnosis-get-note-anagnosis nil "deck1" '("tag1") test-values) 3))
     (should (equal (gnosis-get-note-anagnosis nil "deck1" '("tag1" "tag2") test-values) 2))
-    (should (equal (gnosis-get-note-anagnosis nil "deck2" '("tag1" "tag2") test-values) 1))))
+    (should (equal (gnosis-get-note-anagnosis nil "deck2" '("tag1" "tag2") test-values) 2))))
 
 (ert-deftest gnosis-test-get-note-lethe ()
   (let ((test-values '((:deck "deck1" (:proto (0 1 3) :anagnosis 3 :amnesia 0.3 :lethe 3))
 		       (:deck "deck2" (:anagnosis 1 :lethe 9))
-		       (:tag "tag1" (:proto (10 1) :lethe 4))
+		       (:tag "tag1" (:proto (10 1) :lethe nil))
 		       (:tag "tag2" (:proto (2 2 2) :lethe 2))
-		       (:tag "tag3" (:proto (1 1 1 1) :amnesia 0.3)))))
+		       (:tag "tag3" (:proto (1 1 1 1) :amnesia 0.3 :lethe 1)))))
     (should (equal (gnosis-get-note-lethe nil "deck1" '("tag1") test-values) 3))
     (should (equal (gnosis-get-note-lethe nil "deck1" '("tag2") test-values) 2))
-    (should (equal (gnosis-get-note-lethe nil "deck2" '("tag1") test-values) 4))
+    (should (equal (gnosis-get-note-lethe nil "deck2" '("tag3" "tag2") test-values) 1))
     (should (equal (gnosis-get-note-lethe nil "deck2" '("tag1" "tag2") test-values) 2))))
 
 
