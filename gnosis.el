@@ -2088,14 +2088,15 @@ CUSTOM-VALUES: Specify values for tags."
       (apply #'cl-mapcar #'max padded-lists))))
 
 (defun gnosis-get-note-proto (id &optional custom-tags custom-deck custom-values)
-  "Return tag proto values for note ID."
+  "Return tag proto values for note ID.
+
+CUSTOM-VALUES: Custom values to be used instead.
+CUSTOM-TAGS: Custom tags to be used instead.
+CUSTOM-DECK: Custom deck to be used instead."
   (let* ((deck (or custom-deck (gnosis-get-note-deck-name id)))
-	 (tags (or custom-tags (gnosis-get 'tags 'notes `(= id ,id))))
-	 (proto-values (or (delq nil (append (gnosis-get-custom-tag-values nil :proto tags custom-values)
-					     (list (gnosis-get-custom-deck-value deck :proto
-										 custom-values))))
-			   gnosis-algorithm-proto)))
-    (gnosis-proto-max-values proto-values)))
+	 (tags-proto (gnosis-get-custom-tag-values id :proto custom-tags custom-values))
+	 (decks-proto (gnosis-get-custom-deck-value deck :proto custom-values)))
+    (if tags-proto (gnosis-proto-max-values tags-proto) (gnosis-proto-max-values decks-proto))))
 
 (defun gnosis-get-note-tag-anagnosis (id &optional custom-tags custom-values)
   "Return the minimum anagnosis tag value for note ID."
