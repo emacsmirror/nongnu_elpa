@@ -2308,7 +2308,7 @@ Return note ids for notes that match QUERY."
 (defun gnosis-db-init ()
   "Create essential directories & database."
   (let ((gnosis-curr-version (caar (emacsql gnosis-db (format "PRAGMA user_version")))))
-    (unless (length= (emacsql gnosis-db [:select name :from sqlite-master :where (= type table)]) 7)
+    (unless (length> (emacsql gnosis-db [:select name :from sqlite-master :where (= type table)]) 3)
       (emacsql-with-transaction gnosis-db
 	;; Enable foreign keys
 	(emacsql gnosis-db "PRAGMA foreign_keys = ON")
