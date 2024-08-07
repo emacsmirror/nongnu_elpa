@@ -317,8 +317,12 @@ Optional argument FLATTEN, when non-nil, flattens the result."
 
 (cl-defun gnosis--drop-table (table)
   "Drop TABLE from `gnosis-db'."
+  (emacsql gnosis-db `[:drop-table ,table]))
+
+(cl-defun gnosis-drop-table (table)
+  "Drop TABLE from `gnosis-db'."
   (when (gnosis-table-exists-p table)
-    (emacsql gnosis-db `[:drop-table ,table])))
+    (gnosis--drop-table table)))
 
 (cl-defun gnosis--insert-into (table values)
   "Insert VALUES to TABLE."
