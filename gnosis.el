@@ -2029,7 +2029,7 @@ CUSTOM-TAGS: Specify tags for note id.
 CUSTOM-VALUES: Specify values for tags."
   (let* ((deck-amnesia (gnosis-get-note-deck-amnesia id custom-deck custom-values))
          (tags-amnesia (gnosis-get-note-tag-amnesia id custom-tags custom-values))
-	 (note-amnesia (min deck-amnesia tags-amnesia)))
+	 (note-amnesia (or tags-amnesia deck-amnesia)))
     (if (>= note-amnesia 1)
 	(error "Amnesia value must be lower than 1")
       note-amnesia)))
