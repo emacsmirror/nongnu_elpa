@@ -2127,23 +2127,31 @@ CUSTOM-DECK: Custom deck to be used instead."
     note-anagnosis))
 
 (defun gnosis-get-note-deck-lethe (id &optional custom-deck custom-values)
-  "Return lethe deck value for note ID."
+  "Return lethe deck value for note ID.
+
+CUSTOM-VALUES: Custom values to be used instead.
+CUSTOM-DECK: Custom deck to be used instead."
   (let ((deck (or (gnosis-get-note-deck-name id) custom-deck)))
     (or (gnosis-get-custom-deck-value deck :lethe custom-values)
 	gnosis-algorithm-lethe-value)))
 
 (defun gnosis-get-note-tag-lethe (id &optional custom-tags custom-values)
-  "Return note ID tag lethe values."
+  "Return note ID tag lethe values.
+
+CUSTOM-VALUES: Custom values to be used instead.
+CUSTOM-TAGS: Custom tags to be used instead."
   (let ((lethe-values (gnosis-get-custom-tag-values id :lethe custom-tags custom-values)))
-    (if lethe-values
-	(apply #'min lethe-values)
-      gnosis-algorithm-lethe-value)))
+    (and lethe-values (apply #'min lethe-values))))
 
 (defun gnosis-get-note-lethe (id &optional custom-deck custom-tags custom-values)
-  "Return note ID lethe value."
+  "Return note ID lethe value.
+
+CUSTOM-VALUES: Custom values to be used instead.
+CUSTOM-TAGS: Custom tags to be used instead.
+CUSTOM-DECK: Custom deck to be used instead."
   (let* ((deck-lethe (gnosis-get-note-deck-lethe id custom-deck custom-values))
 	 (tag-lethe (gnosis-get-note-tag-lethe id custom-tags custom-values))
-	 (note-lethe (min deck-lethe tag-lethe)))
+	 (note-lethe (or tag-lethe deck-lethe)))
     note-lethe))
 
 (defun gnosis-get-date-total-notes (&optional date)
