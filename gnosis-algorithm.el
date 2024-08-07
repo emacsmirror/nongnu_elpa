@@ -212,10 +212,11 @@ LETHE: Upon having C-FAILS >= lethe, set next interval to 0."
   (cl-assert (booleanp success) nil "Success value must be a boolean")
   (cl-assert (integerp successful-reviews) nil "Successful-reviews must be an integer")
   (cl-assert (and (floatp amnesia) (<= amnesia 1)) nil "Amnesia must be a float <=1")
-  (cl-assert (< amnesia 1) nil "Value of amnesia must be lower than 1")
+  (cl-assert (and (<= amnesia 1) (> amnesia 0)) nil "Value of amnesia must be a float <= 1")
   (cl-assert (and (integerp lethe) (>= lethe 1)) nil "Value of lethe must be an integer >= 1")
   ;; This should only occur in testing env or when the user has made breaking changes.
   (let* ((last-interval (if (<= last-interval 0) 1 last-interval)) ;; If last-interval is 0, use 1 instead.
+	 (amnesia (- 1 amnesia)) ;; inverse amnesia
 	 (interval (cond ((and (< successful-reviews (length proto))
 			       success)
 			  (nth successful-reviews proto))
