@@ -2052,7 +2052,7 @@ CUSTOM-VALUES: Specify values for tags."
   "Return epignosis value for note ID."
   (let* ((deck-epignosis (gnosis-get-note-deck-epignosis id custom-deck custom-values))
          (tag-epignosis (gnosis-get-note-tag-epignosis id custom-tags custom-values))
-	 (note-epignosis (max deck-epignosis tag-epignosis)))
+	 (note-epignosis (or tag-epignosis deck-epignosis)))
     (if (>= note-epignosis 1)
 	(error "Epignosis value must be lower than 1")
       note-epignosis)))
