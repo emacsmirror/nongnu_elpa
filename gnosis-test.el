@@ -127,9 +127,11 @@ If ask nil, leave testing env"
 	(progn
 	  (unless (file-exists-p testing-dir)
 	    (make-directory testing-dir))
-	  (when (file-exists-p testing-db)
-	    (delete-file testing-db))
 	  (setf gnosis-db (emacsql-sqlite-open testing-db))
+	  (dolist (table '(decks notes review review-log extras activity-log))
+	    (condition-case nil
+		(gnosis--drop-table table)
+	      (error (message "No %s table to drop." table))))
 	  (setf gnosis-testing t)
 	  (gnosis-db-init)
 	  (gnosis-test-add-fields note-num)
