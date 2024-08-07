@@ -2040,9 +2040,7 @@ CUSTOM-VALUES: Specify values for tags."
 CUSTOM-TAGS: Specify tags for note id.
 CUSTOM-VALUES: Specify values for tags."
   (let* ((epignosis-values (gnosis-get-custom-tag-values id :epignosis custom-tags custom-values)))
-    (if epignosis-values
-	(apply #'max epignosis-values)
-      gnosis-algorithm-epignosis-value)))
+    (and epignosis-values (apply #'max epignosis-values))))
 
 (defun gnosis-get-note-deck-epignosis (id &optional custom-deck custom-values)
   "Return deck epignosis for note ID."
