@@ -98,13 +98,13 @@
 
 (when (require 'mpv nil :no-error)
   (declare-function mpv-start "mpv"))
+(defvar mastodon-mode-map)
 (defvar mastodon-instance-url)
 (defvar mastodon-toot-timestamp-format)
 (defvar shr-use-fonts)  ;; declare it since Emacs24 didn't have this
 (defvar mastodon-media--enable-image-caching)
 (defvar mastodon-media--generic-broken-image-data)
-
-(defvar mastodon-mode-map)
+(defvar mastodon-media--sensitive-image-data)
 
 
 ;;; CUSTOMIZES
@@ -889,23 +889,19 @@ START and END are the boundaries of the link in the toot."
                                         (url-host toot-url))
                               mastodon-instance-url))
          (link-str (buffer-substring-no-properties start end))
-         (maybe-hashtag (mastodon-tl--extract-hashtag-from-url
+         (maybe-hashtag (mastodon-tl--hashtag-from-url
                          url toot-instance-url))
          (maybe-userhandle
           (if (proper-list-p toot) ; fails for profile buffers?
               (or (mastodon-tl--userhandle-from-mentions toot link-str)
-                  ;; FIXME: if prev always works, cut this:
-                  (mastodon-tl--extract-userhandle-from-url url link-str))
-            (mastodon-tl--extract-userhandle-from-url url link-str))))
-    (cond (;; Hashtags:
-           maybe-hashtag
+                  (mastodon-tl--userhandle-from-url url link-str))
+            (mastodon-tl--userhandle-from-url url link-str))))
+    (cond (maybe-hashtag
            (setq mastodon-tab-stop-type 'hashtag
                  keymap mastodon-tl--link-keymap
                  help-echo (concat "Browse tag #" maybe-hashtag)
                  extra-properties (list 'mastodon-tag maybe-hashtag)))
-          (;; User handles:
-           maybe-userhandle
-           ;; this fails on mentions in profile notes:
+          (maybe-userhandle ;; fails on mentions in profile notes:
            (let ((maybe-userid (when (proper-list-p toot)
                                  (mastodon-tl--extract-userid-toot
                                   toot link-str))))
@@ -916,8 +912,7 @@ START and END are the boundaries of the link in the toot."
                                      (list 'mastodon-handle maybe-userhandle)
                                      (when maybe-userid
                                        (list 'account-id maybe-userid))))))
-          ;; Anything else:
-          (t ; Leave it as a url handled by shr.el.
+          (t ;; Anything else (leave it as a url handled by shr.el):
            (setq keymap (if (eq shr-map (get-text-property start 'keymap))
                             mastodon-tl--shr-map-replacement
                           mastodon-tl--shr-image-map-replacement)
@@ -932,19 +927,18 @@ START and END are the boundaries of the link in the toot."
 (defun mastodon-tl--userhandle-from-mentions (toot link)
   "Extract a user handle from mentions in json TOOT.
 LINK is maybe the `@handle' to search for."
-  (mastodon-tl--extract-el-from-mentions 'acct toot link))
+  (mastodon-tl--el-from-mentions 'acct toot link))
 
 (defun mastodon-tl--extract-userid-toot (toot link)
   "Extract a user id for an ACCT from mentions in a TOOT.
 LINK is maybe the `@handle' to search for."
-  (mastodon-tl--extract-el-from-mentions 'id toot link))
+  (mastodon-tl--el-from-mentions 'id toot link))
 
-(defun mastodon-tl--extract-el-from-mentions (el toot link)
+(defun mastodon-tl--el-from-mentions (el toot link)
   "Extract element EL from TOOT mentions that matches LINK.
 LINK should be a simple handle string with no domain, i.e. \"@user\".
 Return nil if no matching element."
-  ;; Must return nil if nothing found!
-  (let ((mentions (append (alist-get 'mentions toot) nil)))
+  (let ((mentions (alist-get 'mentions toot)))
     (when mentions
       (let* ((mention (pop mentions))
              (name (substring-no-properties link 1 (length link))) ; cull @
@@ -955,24 +949,26 @@ Return nil if no matching element."
           (setq mention (pop mentions)))
         return))))
 
-(defun mastodon-tl--extract-userhandle-from-url (url buffer-text)
+(defun mastodon-tl--userhandle-from-url (url buffer-text)
   "Return the user hande the URL points to or nil if it is not a profile link.
 BUFFER-TEXT is the text covered by the link with URL, for a user profile
 this should be of the form <at-sign><user id>, e.g. \"@Gargon\"."
   (let* ((parsed-url (url-generic-parse-url url))
+         (host (url-host parsed-url))
          (local-p (string=
                    (url-host (url-generic-parse-url mastodon-instance-url))
-                   (url-host parsed-url))))
+                   host))
+         (path (url-filename parsed-url)))
     (when (and (string= "@" (substring buffer-text 0 1))
                ;; don't error on domain only url (rare):
-               (not (string= "" (url-filename parsed-url)))
+               (not (string= "" path))
                (string= (downcase buffer-text)
-                        (downcase (substring (url-filename parsed-url) 1))))
+                        (downcase (substring path 1))))
       (if local-p
           buffer-text ; no instance suffix for local mention
-        (concat buffer-text "@" (url-host parsed-url))))))
+        (concat buffer-text "@" host)))))
 
-(defun mastodon-tl--extract-hashtag-from-url (url instance-url)
+(defun mastodon-tl--hashtag-from-url (url instance-url)
   "Return the hashtag that URL points to or nil if URL is not a tag link.
 INSTANCE-URL is the url of the instance for the toot that the link
 came from (tag links always point to a page on the instance publishing
@@ -1005,39 +1001,38 @@ LINK-TYPE is the type of link to produce."
                 'keymap mastodon-tl--link-keymap
                 'help-echo help-text)))
 
-(defun mastodon-tl--do-link-action-at-point (position)
-  "Do the action of the link at POSITION.
+(defun mastodon-tl--do-link-action-at-point (pos)
+  "Do the action of the link at POS.
 Used for hitting RET on a given link."
   (interactive "d")
-  (let ((link-type (get-text-property position 'mastodon-tab-stop)))
+  (let ((link-type (get-text-property pos 'mastodon-tab-stop)))
     (cond ((eq link-type 'content-warning)
-           (mastodon-tl--toggle-spoiler-text position))
+           (mastodon-tl--toggle-spoiler-text pos))
           ((eq link-type 'hashtag)
            (mastodon-tl--show-tag-timeline
-            nil (get-text-property position 'mastodon-tag)))
+            nil (get-text-property pos 'mastodon-tag)))
           ;; 'account / 'account-id is not set for mentions, only bylines
           ((eq link-type 'user-handle)
-           (let ((account-json (get-text-property position 'account))
-                 (account-id (get-text-property position 'account-id)))
+           (let ((account-json (get-text-property pos 'account))
+                 (account-id (get-text-property pos 'account-id)))
              (cond
               (account-json
-               (mastodon-profile--make-author-buffer
-                account-json))
+               (mastodon-profile--make-author-buffer account-json))
               (account-id
                (mastodon-profile--make-author-buffer
                 (mastodon-profile--account-from-id account-id)))
               (t
-               (let ((account
-                      (mastodon-profile--search-account-by-handle
-                       (get-text-property position 'mastodon-handle))))
+               (let ((account (mastodon-profile--search-account-by-handle
+                               (get-text-property pos 'mastodon-handle))))
                  ;; never call make-author-buffer on nil account:
-                 (if account
-                     (mastodon-profile--make-author-buffer account)
-                   ;; optional webfinger lookup:
-                   (if (y-or-n-p
-                        "Search for account returned nothing. Perform URL lookup?")
-                       (mastodon-url-lookup (get-text-property position 'shr-url))
-                     (message "Unable to find account."))))))))
+                 (cond (account
+                        (mastodon-profile--make-author-buffer account))
+                       ;; optional webfinger lookup:
+                       ((y-or-n-p
+                         "Search for account returned nothing. Perform URL lookup?")
+                        (mastodon-url-lookup (get-text-property pos 'shr-url)))
+                       (t
+                        (error "Unable to find account"))))))))
           ((eq link-type 'read-more)
            (mastodon-tl--unfold-post))
           (t
@@ -1062,13 +1057,13 @@ content should be hidden."
 (defun mastodon-tl--toggle-spoiler-text (position)
   "Toggle the visibility of the spoiler text at/after POSITION."
   (let ((inhibit-read-only t)
-        (spoiler-text-region (mastodon-tl--find-property-range
-                              'mastodon-content-warning-body position nil)))
-    (if (not spoiler-text-region)
-        (message "No spoiler text here")
-      (add-text-properties (car spoiler-text-region) (cdr spoiler-text-region)
+        (spoiler-region (mastodon-tl--find-property-range
+                         'mastodon-content-warning-body position nil)))
+    (if (not spoiler-region)
+        (user-error "No spoiler text here")
+      (add-text-properties (car spoiler-region) (cdr spoiler-region)
                            (list 'invisible
-                                 (not (get-text-property (car spoiler-text-region)
+                                 (not (get-text-property (car spoiler-region)
                                                          'invisible)))))))
 
 (defun mastodon-tl--toggle-spoiler-text-in-toot ()
@@ -1083,10 +1078,10 @@ content should be hidden."
                            'mastodon-content-warning-body
                            (car toot-range)))))
     (cond ((null toot-range)
-           (message "No toot here"))
+           (user-error "No toot here"))
           ((or (null spoiler-range)
                (> (car spoiler-range) (cdr toot-range)))
-           (message "No content warning text here"))
+           (user-error "No content warning text here"))
           (t
            (mastodon-tl--toggle-spoiler-text (car spoiler-range))))))
 
@@ -1105,10 +1100,6 @@ content should be hidden."
                  (cw (alist-get 'spoiler_text json)))
             (when (not (equal "" cw))
               (mastodon-tl--toggle-spoiler-text-in-toot))))))))
-
-(defun mastodon-tl--clean-tabs-and-nl (string)
-  "Remove tabs and newlines from STRING."
-  (replace-regexp-in-string "[\t\n ]*\\'" "" string))
 
 (defun mastodon-tl--spoiler (toot)
   "Render TOOT with spoiler message.
@@ -1154,35 +1145,36 @@ message is a link which unhides/hides the main body."
 (defun mastodon-tl--media (toot)
   "Retrieve a media attachment link for TOOT if one exists.
 Else return an empty string."
-  (let* ((media-attachments (mastodon-tl--field 'media_attachments toot))
+  (let* ((attachments (mastodon-tl--field 'media_attachments toot))
          (sensitive (mastodon-tl--field 'sensitive toot))
          (media-string (mapconcat
                         (lambda (x)
                           (mastodon-tl--media-attachment x sensitive))
-                        media-attachments "")))
+                        attachments "")))
     (if (not (and mastodon-tl--display-media-p
                   (string-empty-p media-string)))
         (concat "\n" media-string)
       "")))
 
-(defun mastodon-tl--media-attachment (media-attachment sensitive)
-  "Return a propertized string for MEDIA-ATTACHMENT.
+(defun mastodon-tl--media-attachment (attachment sensitive)
+  "Return a propertized string for ATTACHMENT.
 SENSITIVE is a flag from the item's JSON data."
-  (let-alist media-attachment
+  (let-alist attachment
     (let ((display-str
-           (if (and mastodon-tl--display-caption-not-url-when-no-media
-                    .description)
-               (concat "Media:: " .description)
-             (concat "Media:: " .preview_url))))
+           (concat "Media:: "
+                   (if (and mastodon-tl--display-caption-not-url-when-no-media
+                            .description)
+                       .description)
+                   .preview_url)))
       (if mastodon-tl--display-media-p
           (mastodon-media--get-media-link-rendering ; placeholder: "[img]"
-           .preview_url (or .remote_url .url) .type .description sensitive) ; 2nd arg for shr-browse-url
+           .preview_url (or .remote_url .url) ; for shr-browse-url
+           .type .description sensitive)
         ;; return URL/caption:
         (concat (mastodon-tl--propertize-img-str-or-url
                  (concat "Media:: " .preview_url) ; string
                  .preview_url .remote_url .type .description
-                 display-str ; display
-                 'shr-link .description sensitive)
+                 display-str 'shr-link .description sensitive)
                 "\n")))))
 
 (defun mastodon-tl--propertize-img-str-or-url
@@ -1227,8 +1219,6 @@ SENSITIVE is a flag from the item's JSON data."
          #'mastodon-media--process-full-sized-image-response
          `(nil ,url))))))
 
-(defvar mastodon-media--sensitive-image-data)
-
 (defun mastodon-tl--toggle-sensitive-image ()
   "Toggle dislay of sensitive image at point."
   (interactive)
@@ -1237,17 +1227,17 @@ SENSITIVE is a flag from the item's JSON data."
     (let ((data (mastodon-tl--property 'image-data :no-move))
           (inhibit-read-only t)
           (end (next-single-property-change (point) 'sensitive-state)))
-      (if (equal 'hidden (mastodon-tl--property 'sensitive-state :no-move))
-          ;; display sensitive image:
-          (add-text-properties (point) end
-                               `(display ,data
-                                         sensitive-state showing))
-        ;; hide sensitive image:
-        (add-text-properties (point) end
-                             `( sensitive-state hidden
-                                display
-                                ,(create-image
-                                  mastodon-media--sensitive-image-data nil t)))))))
+      (add-text-properties
+       (point) end
+       (if (eq 'hidden (mastodon-tl--property 'sensitive-state :no-move))
+           ;; display:
+           `( display ,data
+              sensitive-state showing))
+       ;; hide:
+       `( sensitive-state hidden
+          display
+          ,(create-image
+            mastodon-media--sensitive-image-data nil t))))))
 
 
 ;; POLLS
@@ -1954,6 +1944,10 @@ timeline."
 
 
 ;;; UTILITIES
+
+(defun mastodon-tl--clean-tabs-and-nl (string)
+  "Remove tabs and newlines from STRING."
+  (replace-regexp-in-string "[\t\n ]*\\'" "" string))
 
 (defun mastodon-tl--map-alist (key alists &optional testfn)
   "Return a list of values extracted from ALISTS with KEY.
