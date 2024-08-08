@@ -221,7 +221,6 @@ respects the user's `browse-url' settings."
 See `mastodon-tl--get-remote-local-timeline' for view remote local domains."
   :type '(repeat string))
 
-
 (defcustom mastodon-tl--fold-toots-at-length 1200
   "Length, in characters, to fold a toot at.
 Longer toots will be folded and the remainder replaced by a
@@ -294,7 +293,7 @@ types of mastodon links and not just shr.el-generated ones.")
     (define-key map [remap shr-previous-link] #'mastodon-tl--previous-tab-item)
     ;; browse-url loads the preview only, we want browse-image
     ;; on RET to browse full sized image URL
-    (define-key map [remap shr-browse-url] #'mastodon-tl--view-full-image-or-play-video) ;#'shr-browse-image)
+    (define-key map [remap shr-browse-url] #'mastodon-tl--view-full-image-or-play-video)
     ;; remove shr's u binding, as it the maybe-probe-and-copy-url
     ;; is already bound to w also
     (define-key map (kbd "u") #'mastodon-tl--update)
@@ -314,6 +313,7 @@ types of mastodon links and not just shr.el-generated ones.")
     (let ((map (make-sparse-keymap)))
       (define-key map (kbd "<C-return>") #'mastodon-tl--mpv-play-video-from-byline)
       (define-key map (kbd "RET") #'mastodon-profile--get-toot-author)
+      (define-key map (kbd "S") #'mastodon-tl--toggle-sensitive-image)
       map))
   "The keymap to be set for the author byline.
 It is active where point is placed by `mastodon-tl--goto-next-item.'")
@@ -344,7 +344,7 @@ than `pop-to-buffer'."
   (declare (debug t))
   `(if (and (not (mastodon-tl--profile-buffer-p))
             (not (mastodon-tl--property 'item-json))) ; includes users but not tags
-       (message "Looks like there's no item at point?")
+       (user-error "Looks like there's no item at point?")
      ,@body))
 
 
@@ -354,7 +354,7 @@ than `pop-to-buffer'."
   "Call `scroll-up-command', loading more toots if necessary.
 If we hit `point-max', call `mastodon-tl--more' then `scroll-up-command'."
   (interactive)
-  (if (not (equal (point) (point-max)))
+  (if (not (eq (point) (point-max)))
       (scroll-up-command)
     (mastodon-tl--more)
     (scroll-up-command)))
@@ -362,7 +362,7 @@ If we hit `point-max', call `mastodon-tl--more' then `scroll-up-command'."
 (defun mastodon-tl--next-tab-item (&optional previous)
   "Move to the next interesting item.
 This could be the next toot, link, or image; whichever comes first.
-Don't move if nothing else to move to is found, i.e. near the end of the buffer.
+Don't move if nothing to move to is found, i.e. near the end of the buffer.
 This also skips tab items in invisible text, i.e. hidden spoiler text.
 PREVIOUS means move to previous item."
   (interactive)
@@ -378,7 +378,7 @@ PREVIOUS means move to previous item."
       ;; do nothing, all the action is in the while condition
       )
     (if (null next-range)
-        (message "Nothing else here.")
+        (user-error "Nothing else here")
       (goto-char (car next-range))
       (message "%s" (mastodon-tl--property 'help-echo :no-move)))))
 
@@ -562,9 +562,7 @@ With a double PREFIX arg, limit results to your own instance."
     (mastodon-tl--init
      (if (listp tag) "tags-multiple" (concat "tag-" tag))
      (concat "timelines/tag/" (if (listp tag) (car tag) tag)) ; must be /tag/:sth
-     'mastodon-tl--timeline
-     nil
-     params)))
+     'mastodon-tl--timeline nil params)))
 
 
 ;;; BYLINES, etc.
@@ -643,8 +641,9 @@ Used when point is at the start of a byline, i.e. where
              toot)
            (alist-get 'reblog toot) ; boosts
            toot)) ; everything else
-         (fol-req-p (or (string= (alist-get 'type toot-to-count) "follow")
-                        (string= (alist-get 'type toot-to-count) "follow_request"))))
+         (fol-req-p (let ((type (alist-get 'type toot-to-count)))
+                      (or (string= type "follow")
+                          (string= type "follow_request")))))
     (unless fol-req-p
       (let* ((media-types (mastodon-tl--get-media-types toot))
              (format-media (when media-types
@@ -653,8 +652,8 @@ Used when point is at the start of a byline, i.e. where
              (format-media-binding (when (and (or (member "video" media-types)
                                                   (member "gifv" media-types))
                                               (require 'mpv nil :no-error))
-                                     (format " | C-RET to view with mpv"))))
-        (format "%s" (concat format-media format-media-binding))))))
+                                     " | C-RET to view with mpv")))
+        (concat format-media format-media-binding)))))
 
 (defun mastodon-tl--get-media-types (toot)
   "Return a list of the media attachment types of the TOOT at point."
@@ -664,12 +663,12 @@ Used when point is at the start of a byline, i.e. where
 (defun mastodon-tl--get-attachments-for-byline (toot)
   "Return a list of attachment URLs and types for TOOT.
 The result is added as an attachments property to author-byline."
-  (let ((media-attachments (mastodon-tl--field 'media_attachments toot)))
+  (let ((media (mastodon-tl--field 'media_attachments toot)))
     (mapcar (lambda (attachment)
               (let-alist attachment
                 (list :url (or .remote_url .url) ; fallback for notifications
                       :type .type)))
-            media-attachments)))
+            media)))
 
 (defun mastodon-tl--byline-boosted (toot)
   "Add byline for boosted data from TOOT."
@@ -766,14 +765,17 @@ When DOMAIN, force inclusion of user's domain in their handle."
              ((equal visibility "private")
               (propertize (concat " " (mastodon-tl--symbol 'private))
                           'help-echo visibility)))
+       ;;action byline:
        (funcall action-byline toot)
        " "
+       ;; timestamp:
        (propertize
         (format-time-string mastodon-toot-timestamp-format parsed-time)
         'timestamp parsed-time
         'display (if mastodon-tl--enable-relative-timestamps
                      (mastodon-tl--relative-time-description parsed-time)
                    parsed-time))
+       ;; detailed:
        (when detailed-p
          (let* ((app (alist-get 'application toot))
                 (app-name (alist-get 'name app))
@@ -789,6 +791,7 @@ When DOMAIN, force inclusion of user's domain in their handle."
 		          'shr-url app-url
                           'help-echo app-url
 		          'keymap mastodon-tl--shr-map-replacement)))))
+       ;; edited:
        (when edited-time
          (concat
           " "
@@ -804,6 +807,7 @@ When DOMAIN, force inclusion of user's domain in their handle."
                       edited-parsed))))
        (propertize (concat "\n  " mastodon-tl--horiz-bar)
                    'face 'default)
+       ;; stats:
        (when (and mastodon-tl--show-stats
                   (not (member type '("follow" "follow_request"))))
          (mastodon-tl--toot-stats toot))
