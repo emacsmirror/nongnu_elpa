@@ -401,21 +401,16 @@ Optionally start from POS."
                    ;; FIXME: we need to fix item-type?
                    ;; 'item-type ; breaks nav to last item in a view?
                    'byline
-                   (current-buffer))))
+                   (current-buffer)))
+         (max-lisp-eval-depth 4)) ;; clamp down on endless loops
     (if npos
-        (if (not
-             (get-text-property npos 'item-type)) ; generic
+        (if (not (get-text-property npos 'item-type)) ; generic
             ;; FIXME let's make refresh &optional and only call refresh/recur
             ;; if non-nil:
             (mastodon-tl--goto-item-pos find-pos refresh npos)
           (goto-char npos)
           ;; force display of help-echo on moving to a toot byline:
           (mastodon-tl--message-help-echo))
-      ;; FIXME: doesn't work, the funcall doesn't return if in an endless
-      ;; refresh loop.
-      ;; either let-bind `max-lisp-eval-depth' and try to error handle when it
-      ;; errors, or else set up a counter, and error when it gets to high
-      ;; (like >2 would already be too much)
       (condition-case nil
           (funcall refresh)
         (error "No more items")))))
@@ -426,26 +421,28 @@ Load more items it no next item.
 NO-REFRESH means do no not try to load more items if no next item
 found."
   (interactive)
-  (mastodon-tl--goto-item-pos 'next-single-property-change
-                              (unless no-refresh 'mastodon-tl--more)))
+  (condition-case err
+      (mastodon-tl--goto-item-pos 'next-single-property-change
+                                  (unless no-refresh 'mastodon-tl--more))
+    (t (error "No more items"))))
 
 (defun mastodon-tl--goto-prev-item ()
   "Jump to previous item.
 Update if no previous items"
   (interactive)
-  (mastodon-tl--goto-item-pos 'previous-single-property-change
-                              'mastodon-tl--update))
+  (condition-case err
+      (mastodon-tl--goto-item-pos 'previous-single-property-change
+                                  'mastodon-tl--update)
+    (t (error "No more items"))))
 
 (defun mastodon-tl--goto-first-item ()
   "Jump to first toot or item in buffer.
 Used on initializing a timeline or thread."
-  ;; goto-next-item assumes we already have items, and is therefore
-  ;; incompatible with any view where it is possible to have no items.
-  ;; when that is the case the call to goto-toot-pos loops infinitely
   (goto-char (point-min))
-  (mastodon-tl--goto-item-pos 'next-single-property-change
-                              'next-line))
-;; (mastodon-tl--goto-next-item))
+  (condition-case err
+      (mastodon-tl--goto-item-pos 'next-single-property-change
+                                  'next-line)
+    (t (error "No item"))))
 
 
 ;;; TIMELINES
