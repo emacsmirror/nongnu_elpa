@@ -1222,18 +1222,10 @@ SENSITIVE is a flag from the item's JSON data."
     (let* ((url (mastodon-tl--property 'image-url)))
       (if (not mastodon-tl--load-full-sized-images-in-emacs)
           (shr-browse-image)
-        (if (and mastodon-media--enable-image-caching
-                 (url-is-cached url))
-            ;; if image url is cached, decompress and use it
-            (with-current-buffer (url-fetch-from-cache url)
-              (set-buffer-multibyte nil)
-              (goto-char (point-min))
-              (zlib-decompress-region
-               (goto-char (search-forward "\n\n")) (point-max))
-              (mastodon-media--process-full-sized-image-response nil url))
-          ;; else fetch and load:
-          (url-retrieve url #'mastodon-media--process-full-sized-image-response
-                        `(,url)))))))
+        (mastodon-media--image-or-cached
+         url
+         #'mastodon-media--process-full-sized-image-response
+         `(nil ,url))))))
 
 (defvar mastodon-media--sensitive-image-data)
 

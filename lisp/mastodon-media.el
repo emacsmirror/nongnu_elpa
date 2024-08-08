@@ -357,6 +357,20 @@ STATUS-PLIST is a plist of status events as per `url-retrieve'."
           (switch-to-buffer-other-window (current-buffer))
           (image-transform-fit-both))))))
 
+(defun mastodon-media--image-or-cached (url process-fun args)
+  "Fetch URL from cache or fro host.
+Call PROCESS-FUN on it with ARGS."
+  (if (and mastodon-media--enable-image-caching
+           (url-is-cached url)) ;; if cached, decompress and use:
+      (with-current-buffer (url-fetch-from-cache url)
+        (set-buffer-multibyte nil)
+        (goto-char (point-min))
+        (zlib-decompress-region
+         (goto-char (search-forward "\n\n")) (point-max))
+        (funcall process-fun url args))
+    ;; fetch as usual and process-image-response will cache it
+    (url-retrieve url process-fun (cdr args))))
+
 (defun mastodon-media--load-image-from-url (url media-type start region-length)
   "Take a URL and MEDIA-TYPE and load the image asynchronously.
 MEDIA-TYPE is a symbol and either `avatar' or `media-link'.
@@ -373,24 +387,14 @@ REGION-LENGTH is the range from start to propertize."
         (url-show-status nil)) ; stop url.el from spamming us about connecting
     (condition-case nil
         ;; catch errors in url-retrieve to not break our caller
-        (if (and mastodon-media--enable-image-caching
-                 (url-is-cached url)) ;; if cached, decompress and use:
-            (with-current-buffer (url-fetch-from-cache url)
-              (set-buffer-multibyte nil)
-              (goto-char (point-min))
-              (zlib-decompress-region
-               (goto-char (search-forward "\n\n")) (point-max))
-              (mastodon-media--process-image-response
-               nil marker image-options region-length url))
-          ;; else fetch as usual and process-image-response will cache it
-          (url-retrieve url #'mastodon-media--process-image-response
-                        (list marker image-options region-length url)))
+        (mastodon-media--image-or-cached
+         url
+         #'mastodon-media--process-image-response
+         (list nil marker image-options region-length url))
       (error (with-current-buffer buffer
-               ;; TODO: Consider adding retries
-               (put-text-property marker
-                                  (+ marker region-length)
-                                  'media-state
-                                  'loading-failed)
+               ;; TODO: Add retries
+               (put-text-property marker (+ marker region-length)
+                                  'media-state 'loading-failed)
                :loading-failed)))))
 
 (defun mastodon-media--select-next-media-line (end-pos)
