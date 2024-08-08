@@ -1668,34 +1668,33 @@ To disable showing the stats, customize
            (faves (format "%s %s" faves-prop (mastodon-tl--symbol 'favourite)))
            (boosts (format "%s %s" boosts-prop (mastodon-tl--symbol 'boost)))
            (replies (format "%s %s" .replies_count (mastodon-tl--symbol 'reply)))
-           (status (concat
-                    (propertize faves
-                                'favourited-p (eq 't .favourited)
-                                'favourites-field t
-                                'help-echo (format "%s favourites" .favourites_count)
-                                'face 'font-lock-comment-face)
-                    (propertize " | " 'face 'font-lock-comment-face)
-                    (propertize boosts
-                                'boosted-p (eq 't .reblogged)
-                                'boosts-field t
-                                'help-echo (format "%s boosts" .reblogs_count)
-                                'face 'font-lock-comment-face)
-                    (propertize " | " 'face 'font-lock-comment-face)
-                    (propertize replies
-                                'replies-field t
-                                'replies-count .replies_count
-                                'help-echo (format "%s replies" .replies_count)
-                                'face 'font-lock-comment-face)))
-           (status
-            (concat
-             (propertize " "
-                         'display
-                         `(space :align-to (- right ,(+ (length status) 7))))
-             status)))
-      status)))
+           (stats (concat
+                   (propertize faves
+                               'favourited-p (eq 't .favourited)
+                               'favourites-field t
+                               'help-echo (format "%s favourites" .favourites_count)
+                               'face 'font-lock-comment-face)
+                   (propertize " | " 'face 'font-lock-comment-face)
+                   (propertize boosts
+                               'boosted-p (eq 't .reblogged)
+                               'boosts-field t
+                               'help-echo (format "%s boosts" .reblogs_count)
+                               'face 'font-lock-comment-face)
+                   (propertize " | " 'face 'font-lock-comment-face)
+                   (propertize replies
+                               'replies-field t
+                               'replies-count .replies_count
+                               'help-echo (format "%s replies" .replies_count)
+                               'face 'font-lock-comment-face)))
+           (right-spacing
+            (propertize " "
+                        'display
+                        `(space :align-to (- right ,(+ (length stats) 7))))))
+      (concat right-spacing stats))))
 
 (defun mastodon-tl--is-reply (toot)
-  "Check if the TOOT is a reply to another one (and not boosted)."
+  "Check if the TOOT is a reply to another one (and not boosted).
+Used as a predicate in `mastodon-tl--timeline'."
   (and (mastodon-tl--field 'in_reply_to_id toot)
        (eq :json-false (mastodon-tl--field 'reblogged toot))))
 
