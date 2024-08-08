@@ -1329,8 +1329,7 @@ which is used to attach it to a toot when posting."
 (defun mastodon-toot--format-attachments ()
   "Format the attachment previews for display in toot draft buffer."
   (or
-   (let ((image-options (when (or (image-type-available-p 'imagemagick)
-                                  (image-transforms-p))
+   (let ((image-options (when (mastodon-tl--image-trans-check)
                           `(:height ,mastodon-toot--attachment-height))))
      (cl-loop for count from 1
               for att in mastodon-toot--media-attachments

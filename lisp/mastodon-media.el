@@ -363,15 +363,14 @@ MEDIA-TYPE is a symbol and either `avatar' or `media-link'.
 START is the position where we start loading the image.
 REGION-LENGTH is the range from start to propertize."
   (let ((image-options
-         (when (or (image-type-available-p 'imagemagick)
-                   (image-transforms-p)) ; inbuilt scaling in 27.1
+         (when (mastodon-tl--image-trans-check)
            (cond ((eq media-type 'avatar)
                   `(:height ,mastodon-media--avatar-height))
                  ((eq media-type 'media-link)
                   `(:max-height ,mastodon-media--preview-max-height)))))
         (buffer (current-buffer))
         (marker (copy-marker start))
-	(url-show-status nil)) ; stop url.el from spamming us about connecting
+        (url-show-status nil)) ; stop url.el from spamming us about connecting
     (condition-case nil
         ;; catch errors in url-retrieve to not break our caller
         (if (and mastodon-media--enable-image-caching
@@ -469,8 +468,7 @@ START and END are the beginning and end of the media item to overlay."
   ;; We use just an empty space as the textual representation.
   ;; This is what a user will see on a non-graphical display
   ;; where not showing an avatar at all is preferable.
-  (let ((image-options (when (or (image-type-available-p 'imagemagick)
-                                 (image-transforms-p)) ; inbuilt scaling in 27.1
+  (let ((image-options (when (mastodon-tl--image-trans-check)
                          `(:height ,mastodon-media--avatar-height))))
     (concat
      (propertize " "

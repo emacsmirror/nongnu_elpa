@@ -591,9 +591,7 @@ When DOMAIN, force inclusion of user's domain in their handle."
      (when (and avatar ; used by `mastodon-profile--format-user'
                 mastodon-tl--show-avatars
                 mastodon-tl--display-media-p
-                (if (version< emacs-version "27.1")
-                    (image-type-available-p 'imagemagick)
-                  (image-transforms-p)))
+                (mastodon-tl--image-trans-check))
        (mastodon-media--get-avatar-rendering .account.avatar))
      ;; username:
      (propertize (if (not (string-empty-p .account.display_name))
@@ -696,6 +694,12 @@ LETTER is a string, F for favourited, B for boosted, or K for bookmarked."
                         'help-echo (format "You have %s this status."
                                            help-string)))))
 
+(defun mastodon-tl--image-trans-check ()
+  "Call `image-transforms-p', or `image-type-available-p' 'imagemagick."
+  (if (version< emacs-version "27.1")
+      (image-type-available-p 'imagemagick)
+    (image-transforms-p)))
+
 (defun mastodon-tl--byline (toot author-byline action-byline
                                  &optional detailed-p domain base-toot)
   "Generate byline for TOOT.
@@ -748,9 +752,7 @@ When DOMAIN, force inclusion of user's domain in their handle."
      ;; with `mastodon-tl--goto-next-item':
      (when (and mastodon-tl--show-avatars
                 mastodon-tl--display-media-p
-                (if (version< emacs-version "27.1")
-                    (image-type-available-p 'imagemagick)
-                  (image-transforms-p)))
+                (mastodon-tl--image-trans-check))
        (mastodon-media--get-avatar-rendering avatar-url))
      (propertize
       (concat
