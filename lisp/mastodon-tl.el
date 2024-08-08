@@ -91,6 +91,8 @@
 (autoload 'mastodon-search--trending-statuses "mastodon-search")
 (autoload 'mastodon-search--format-heading "mastodon-search")
 (autoload 'mastodon-toot--with-toot-item "mastodon-toot")
+(autoload 'mastodon-media--image-or-cached "mastodon-media")
+(autoload 'mastodon-toot--base-toot-or-item-json "mastodon-toot")
 
 (defvar mastodon-toot--visibility)
 (defvar mastodon-toot-mode)
@@ -421,7 +423,7 @@ Load more items it no next item.
 NO-REFRESH means do no not try to load more items if no next item
 found."
   (interactive)
-  (condition-case err
+  (condition-case nil
       (mastodon-tl--goto-item-pos 'next-single-property-change
                                   (unless no-refresh 'mastodon-tl--more))
     (t (error "No more items"))))
@@ -430,7 +432,7 @@ found."
   "Jump to previous item.
 Update if no previous items"
   (interactive)
-  (condition-case err
+  (condition-case nil
       (mastodon-tl--goto-item-pos 'previous-single-property-change
                                   'mastodon-tl--update)
     (t (error "No more items"))))
@@ -439,7 +441,7 @@ Update if no previous items"
   "Jump to first toot or item in buffer.
 Used on initializing a timeline or thread."
   (goto-char (point-min))
-  (condition-case err
+  (condition-case nil
       (mastodon-tl--goto-item-pos 'next-single-property-change
                                   'next-line)
     (t (error "No item"))))
@@ -694,7 +696,7 @@ LETTER is a string, F for favourited, B for boosted, or K for bookmarked."
                                            help-string)))))
 
 (defun mastodon-tl--image-trans-check ()
-  "Call `image-transforms-p', or `image-type-available-p' 'imagemagick."
+  "Call `image-transforms-p', or `image-type-available-p' imagemagick."
   (if (version< emacs-version "27.1")
       (image-type-available-p 'imagemagick)
     (image-transforms-p)))
@@ -709,7 +711,8 @@ favouriting and following to the byline. It also takes a single function.
 By default it is `mastodon-tl--byline-boosted'.
 DETAILED-P means display more detailed info. For now
 this just means displaying toot client.
-When DOMAIN, force inclusion of user's domain in their handle."
+When DOMAIN, force inclusion of user's domain in their handle.
+BASE-TOOT is JSON for the base toot, if any."
   (let* ((created-time
           ;; bosts and faves in notifs view
           ;; (makes timestamps be for the original toot not the boost/fave):
@@ -968,11 +971,12 @@ this should be of the form <at-sign><user id>, e.g. \"@Gargon\"."
           buffer-text ; no instance suffix for local mention
         (concat buffer-text "@" host)))))
 
-(defun mastodon-tl--hashtag-from-url (url instance-url)
+(defun mastodon-tl--hashtag-from-url (url _instance-url)
   "Return the hashtag that URL points to or nil if URL is not a tag link.
 INSTANCE-URL is the url of the instance for the toot that the link
 came from (tag links always point to a page on the instance publishing
 the toot)."
+  ;; FIXME: do we rly need to check it against instance-url?
   (let* ((parsed (url-generic-parse-url url))
          (path (url-filename parsed))
          (split (string-split path "/")))
