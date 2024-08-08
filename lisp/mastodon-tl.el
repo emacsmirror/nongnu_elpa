@@ -973,15 +973,11 @@ this should be of the form <at-sign><user id>, e.g. \"@Gargon\"."
 INSTANCE-URL is the url of the instance for the toot that the link
 came from (tag links always point to a page on the instance publishing
 the toot)."
-  (cond
-   ;; Mastodon type tag link:
-   ((string-prefix-p (concat instance-url "/tags/") url)
-    (substring url (length (concat instance-url "/tags/"))))
-   ;; Link from some other ostatus site we've encountered:
-   ((string-prefix-p (concat instance-url "/tag/") url)
-    (substring url (length (concat instance-url "/tag/"))))
-   ;; If nothing matches we assume it is not a hashtag link:
-   (t nil)))
+  (let* ((parsed (url-generic-parse-url url))
+         (path (url-filename parsed))
+         (split (string-split path "/")))
+    (when (string-prefix-p "/tag" path) ;; "/tag/" or "/tags/"
+      (nth 2 split))))
 
 
 ;;; HYPERLINKS
