@@ -195,7 +195,7 @@ is used for pagination."
 
 (defun mastodon-search-insert-no-results (&optional thing)
   "Insert a no results message for object THING."
-  (let ((thing (or thing "nothing")))
+  (let ((thing (or thing "items")))
     (insert
      (propertize (format "Looks like search returned no %s." thing)
                  'face 'font-lock-comment-face))))
@@ -307,26 +307,29 @@ If NOTE is non-nil, include user's profile note. This is also
   (list (alist-get 'name tag)
         (alist-get 'url tag)))
 
-(defun mastodon-search--get-status-info (status)
-  "Get ID, timestamp, content, and spoiler from STATUS."
-  (list (alist-get 'id status)
-        (alist-get 'created_at status)
-        (alist-get 'spoiler_text status)
-        (alist-get 'content status)))
+;; These functions are all unused!
 
-(defun mastodon-search--id-from-status (status)
-  "Fetch the id from a STATUS returned by a search call to the server.
-We use this to fetch the complete status from the server."
-  (alist-get 'id status))
+;; (defun mastodon-search--get-status-info (status)
+;;   "Get ID, timestamp, content, and spoiler from STATUS."
+;;   (list (alist-get 'id status)
+;;         (alist-get 'created_at status)
+;;         (alist-get 'spoiler_text status)
+;;         (alist-get 'content status)))
 
-(defun mastodon-search--full-status-from-id (id)
-  "Fetch the full status with id ID from the server.
-This allows us to access the full account etc. details and to
-render them properly."
-  (let* ((url (concat mastodon-instance-url "/api/v1/statuses/" (mastodon-tl--as-string id)))
-         (json (mastodon-http--get-json url)))
-    json))
+;; (defun mastodon-search--id-from-status (status)
+;;   "Fetch the id from a STATUS returned by a search call to the server.
+;; We use this to fetch the complete status from the server."
+;;   (alist-get 'id status))
 
+;; (defun mastodon-search--full-status-from-id (id)
+;;   "Fetch the full status with id ID from the server.
+;; This allows us to access the full account etc. details and to
+;; render them properly."
+;;   (let* ((url (mastodon-http--api (format "statuses/%s" id)))
+;;          ;; (concat mastodon-instance-url "/api/v1/statuses/"
+;;          ;; (mastodon-tl--as-string id)))
+;;          (json (mastodon-http--get-json url)))
+;;     json))
 
 (defvar mastodon-search-mode-map
   (let ((map (make-sparse-keymap)))
@@ -342,7 +345,6 @@ This minor mode is used for mastodon search pages to adds a keybinding."
   :keymap mastodon-search-mode-map
   :group 'mastodon
   :global nil)
-
 
 (provide 'mastodon-search)
 ;;; mastodon-search.el ends here
