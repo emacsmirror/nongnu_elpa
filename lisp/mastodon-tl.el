@@ -456,15 +456,16 @@ If LOCAL, get only local timeline.
 With a single PREFIX arg, hide-replies.
 With a double PREFIX arg, only show posts with media."
   (interactive "p")
-  (let ((params `(("limit" . ,mastodon-tl--timeline-posts-count))))
-    ;; avoid adding 'nil' to our params alist:
-    (when (eq prefix 16)
-      (push '("only_media" . "true") params))
-    (when local
-      (push '("local" . "true") params))
-    (when max-id
-      (push `("max_id" . ,(mastodon-tl--buffer-property 'max-id))
-            params))
+  (let ((params
+         (cl-remove
+          nil
+          `(("limit" . ,mastodon-tl--timeline-posts-count)
+            ,(when (eq prefix 16)
+               '("only_media" . "true"))
+            ,(when local
+               '("local" . "true"))
+            ,(when max-id
+               `("max_id" . ,(mastodon-tl--buffer-property 'max-id)))))))
     (message "Loading federated timeline...")
     (mastodon-tl--init (if local "local" "federated")
                        "timelines/public" 'mastodon-tl--timeline nil
@@ -549,12 +550,14 @@ With a double PREFIX arg, limit results to your own instance."
 If TAG is a list, show a timeline for all tags.
 With a single PREFIX arg, only show posts with media.
 With a double PREFIX arg, limit results to your own instance."
-  (let ((params `(("limit" . ,mastodon-tl--timeline-posts-count))))
-    ;; avoid adding 'nil' to our params alist:
-    (when (eq prefix 4)
-      (push '("only_media" . "true") params))
-    (when (eq prefix 16)
-      (push '("local" . "true") params))
+  (let ((params
+         (cl-remove
+          nil
+          `(("limit" . ,mastodon-tl--timeline-posts-count)
+            ,(when (eq prefix 4)
+               '("only_media" . "true"))
+            ,(when (eq prefix 16)
+               '("local" . "true"))))))
     (when (listp tag)
       (let ((list (mastodon-http--build-array-params-alist "any[]" (cdr tag))))
         (while list
