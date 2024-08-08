@@ -1238,11 +1238,11 @@ SENSITIVE is a flag from the item's JSON data."
 
 ;; POLLS
 
-(defun mastodon-tl--format-poll-option (option option-counter length)
-  "Format poll OPTION. OPTION-COUNTER is just a counter.
+(defun mastodon-tl--format-poll-option (option counter length)
+  "Format poll OPTION. COUNTER is a counter.
 LENGTH is of the longest option, for formatting."
   (format "%s: %s%s%s\n"
-          option-counter
+          counter
           (propertize (alist-get 'title option)
                       'face 'success)
           (make-string (1+ (- length
@@ -1255,22 +1255,21 @@ LENGTH is of the longest option, for formatting."
 (defun mastodon-tl--format-poll (poll)
   "From json poll data POLL, return a display string."
   (let-alist poll
-    (let* ((option-titles (mastodon-tl--map-alist 'title .options))
-           (longest (car (sort (mapcar #'length option-titles) #'>)))
-           (option-counter 0))
+    (let* ((options (mastodon-tl--map-alist 'title .options))
+           (longest (car (sort (mapcar #'length options ) #'>)))
+           (counter 0))
       (concat "\nPoll: \n\n"
               (mapconcat (lambda (option)
-                           (setq option-counter (1+ option-counter))
+                           (setq counter (1+ counter))
                            (mastodon-tl--format-poll-option
-                            option option-counter longest))
+                            option counter longest))
                          .options
                          "\n")
               "\n"
               (propertize
                (cond (.voters_count ; sometimes it is nil
-                      (if (= .voters_count 1)
-                          (format "%s person | " .voters_count)
-                        (format "%s people | " .voters_count)))
+                      (format "%s %s | " .voters_count
+                              (if (= .voters_count 1) "person" "people")))
                      (.vote_count
                       (format "%s votes | " .vote_count))
                      (t ""))
@@ -1284,7 +1283,7 @@ LENGTH is of the longest option, for formatting."
               "\n"))))
 
 (defconst mastodon-tl--time-units
-  '("sec"   60.0                          ;Use a float to convert `n' to float.
+  '("sec"   60.0 ;; Use a float to convert `n' to float.
     "min"   60
     "hour"  24
     "day"   7
@@ -1293,8 +1292,9 @@ LENGTH is of the longest option, for formatting."
     "year"))
 
 (defun mastodon-tl--format-poll-expiry (timestamp)
-  "Convert poll expiry TIMESTAMP into a descriptive string."
-  ;; FIXME: Could we document the format of TIMESTAMP here?
+  "Convert poll expiry TIMESTAMP into a descriptive string.
+TIMESTAMP is from the expires_at field of a poll's JSON data, and
+is in ISO 8601 Datetime format."
   (let* ((ts (encode-time (parse-time-string timestamp)))
          (seconds (time-to-seconds (time-subtract ts nil))))
     ;; FIXME: Use the `cdr' to update poll expiry times?
@@ -1342,47 +1342,50 @@ displayed when the duration is smaller than a minute)."
                     n2 unit2 (if (> n2 1) "s" ""))
             (max res2 resolution))))))
 
+(defun mastodon-tl--format-read-poll-option (options)
+  "Format poll OPTIONS for `completing-read'.
+OPTIONS is an alist."
+  ;; we display option number and the option title
+  ;; but also store both as a cons cell as the cdr, as we need it later
+  (cl-loop for cell in options
+           collect (cons (format "%s | %s" (car cell) (cdr cell))
+                         cell)))
+
 (defun mastodon-tl--read-poll-option ()
   "Read a poll option to vote on a poll."
   (let* ((toot (mastodon-tl--property 'item-json))
          (poll (mastodon-tl--field 'poll toot))
          (options (mastodon-tl--field 'options poll))
-         (options-titles (mastodon-tl--map-alist 'title options))
-         (options-number-seq (number-sequence 1 (length options)))
-         (options-numbers (mapcar #'number-to-string options-number-seq))
-         (options-alist (cl-mapcar #'cons options-numbers options-titles))
-         ;; we display both option number and the option title
-         ;; but also store both as cons cell as cdr, as we need it below
-         (candidates (mapcar (lambda (cell)
-                               (cons (format "%s | %s" (car cell) (cdr cell))
-                                     cell))
-                             options-alist)))
+         (titles (mastodon-tl--map-alist 'title options))
+         (number-seq (number-sequence 1 (length options)))
+         (numbers (mapcar #'number-to-string number-seq))
+         (options-alist (cl-mapcar #'cons numbers titles))
+
+         (candidates (mastodon-tl--format-read-poll-option options-alist))
+         (choice (completing-read "Poll option to vote for: "
+                                  candidates nil :match)))
     (if (null poll)
         (user-error "No poll here")
-      (list
-       ;; var "option" = just the cdr, a cons of option number and desc
-       (cdr (assoc (completing-read "Poll option to vote for: "
-                                    candidates
-                                    nil t) ; require match
-                   candidates))))))
+      (list (cdr (assoc choice candidates))))))
 
 (defun mastodon-tl--poll-vote (option)
   "If there is a poll at point, prompt user for OPTION to vote on it."
   (interactive (mastodon-tl--read-poll-option))
-  (if (null (mastodon-tl--field 'poll (mastodon-tl--property 'item-json)))
-      (user-error "No poll here")
-    (let* ((toot (mastodon-tl--property 'item-json))
-           (poll (mastodon-tl--field 'poll toot))
-           (poll-id (alist-get 'id poll))
-           (url (mastodon-http--api (format "polls/%s/votes" poll-id)))
-           ;; need to zero-index our option:
-           (option-as-arg (number-to-string (1- (string-to-number (car option)))))
-           (arg `(("choices[]" . ,option-as-arg)))
-           (response (mastodon-http--post url arg)))
-      (mastodon-http--triage response
-                             (lambda (_)
-                               (message "You voted for option %s: %s!"
-                                        (car option) (cdr option)))))))
+  (let ((toot (mastodon-tl--property 'item-json)))
+    (if (null (mastodon-tl--field 'poll toot))
+        (user-error "No poll here")
+      (let* ((poll (mastodon-tl--field 'poll toot))
+             (id (alist-get 'id poll))
+             (url (mastodon-http--api (format "polls/%s/votes" id)))
+             ;; zero-index our option:
+             (option-arg (number-to-string
+                          (1- (string-to-number (car option)))))
+             (arg `(("choices[]" . ,option-arg)))
+             (response (mastodon-http--post url arg)))
+        (mastodon-http--triage response
+                               (lambda (_)
+                                 (message "You voted for option %s: %s!"
+                                          (car option) (cdr option))))))))
 
 
 ;; VIDEOS / MPV
@@ -1407,19 +1410,19 @@ displayed when the duration is smaller than a minute)."
          (type (plist-get video :type)))
     (mastodon-tl--mpv-play-video-at-point url type)))
 
-(defun mastodon-tl--view-full-image-or-play-video ()
+(defun mastodon-tl--view-full-image-or-play-video (_pos)
   "View full sized version of image at point, or try to play video."
-  (interactive)
+  (interactive "d")
   (if (mastodon-tl--media-video-p)
       (mastodon-tl--mpv-play-video-at-point)
     (mastodon-tl--view-full-image)))
 
-(defun mastodon-tl--click-image-or-video (_event)
-  "Click to play video with `mpv.el'."
+(defun mastodon-tl--click-image-or-video (event)
+  "Click to play video with `mpv.el'.
+EVENT is a mouse-click arg."
   (interactive "e")
-  (if (mastodon-tl--media-video-p)
-      (mastodon-tl--mpv-play-video-at-point)
-    (mastodon-tl--view-full-image)))
+  (mastodon-tl--view-full-image-or-play-video
+   (posn-point (event-end event))))
 
 (defun mastodon-tl--media-video-p (&optional type)
   "T if mastodon-media-type prop is \"gifv\" or \"video\".
@@ -1435,20 +1438,15 @@ in which case play first video or gif from current toot."
   (interactive)
   (let ((url (or url ; point in byline:
                  (mastodon-tl--property 'image-url :no-move)))) ; point in toot
-    ;; (type (or type ; in byline
-    ;; point in toot:
-    ;; (mastodon-tl--property 'mastodon-media-type :no-move))))
-    (if url
-        (if (mastodon-tl--media-video-p type)
-            (progn
-              (message "'q' to kill mpv.")
-              (condition-case x
-                  (mpv-start "--loop" url)
-                (void-function
-                 (message "Looks like mpv.el not installed. Error: %s"
-                          (error-message-string x)))))
-          (message "no moving image here?"))
-      (message "no moving image here?"))))
+    (if (or (not url)
+            (not (mastodon-tl--media-video-p type)))
+        (user-error "No moving image here?")
+      (message "'q' to kill mpv.")
+      (condition-case x
+          (mpv-start "--loop" url)
+        (void-function
+         (message "Looks like mpv.el not installed. Error: %s"
+                  (error-message-string x)))))))
 
 (defun mastodon-tl--copy-image-caption ()
   "Copy the caption of the image at point."
@@ -1480,8 +1478,7 @@ Runs `mastodon-tl--render-text' and fetches poll or media."
   (let* ((prev-change
           (save-excursion
             (previous-single-property-change (point) 'base-item-id)))
-         (prev-pos
-          (when prev-change (1- prev-change))))
+         (prev-pos (when prev-change (1- prev-change))))
     (when prev-pos
       (get-text-property prev-pos 'base-item-id))))
 
@@ -1490,9 +1487,9 @@ Runs `mastodon-tl--render-text' and fetches poll or media."
   (let ((prev-id (mastodon-tl--prev-item-id)))
     (string= reply-to-id prev-id)))
 
-(defun mastodon-tl--insert-status (toot body author-byline action-byline
-                                        &optional id base-toot detailed-p
-                                        thread domain unfolded no-byline)
+(defun mastodon-tl--insert-status
+    (toot body author-byline action-byline &optional id base-toot
+          detailed-p thread domain unfolded no-byline)
   "Display the content and byline of timeline element TOOT.
 BODY will form the section of the toot above the byline.
 AUTHOR-BYLINE is an optional function for adding the author
@@ -1522,9 +1519,9 @@ NO-BYLINE means just insert toot body, used for folding."
           (and mastodon-tl--fold-toots-at-length
                (length> body mastodon-tl--fold-toots-at-length))))
     (insert
-     (propertize
+     (propertize ;; body + byline:
       (concat
-       (propertize
+       (propertize ;; body only:
         (concat
          "\n"
          ;; relpy symbol (broken):
@@ -1562,8 +1559,53 @@ NO-BYLINE means just insert toot body, used for folding."
       'toot-foldable toot-foldable
       'toot-folded (and toot-foldable (not unfolded)))
      (if no-byline "" "\n"))
+    ;; media:
     (when mastodon-tl--display-media-p
       (mastodon-media--inline-images start-pos (point)))))
+
+(defun mastodon-tl--is-reply (toot)
+  "Check if the TOOT is a reply to another one (and not boosted).
+Used as a predicate in `mastodon-tl--timeline'."
+  (and (mastodon-tl--field 'in_reply_to_id toot)
+       (eq :json-false (mastodon-tl--field 'reblogged toot))))
+
+(defun mastodon-tl--toot (toot &optional detailed-p thread domain
+                               unfolded no-byline)
+  "Format TOOT and insert it into the buffer.
+DETAILED-P means display more detailed info. For now
+this just means displaying toot client.
+THREAD means the status will be displayed in a thread view.
+When DOMAIN, force inclusion of user's domain in their handle.
+UNFOLDED is a boolean meaning whether to unfold or fold item if foldable.
+NO-BYLINE means just insert toot body, used for folding."
+  (mastodon-tl--insert-status
+   toot
+   (mastodon-tl--clean-tabs-and-nl
+    (if (mastodon-tl--has-spoiler toot)
+        (mastodon-tl--spoiler toot)
+      (mastodon-tl--content toot)))
+   'mastodon-tl--byline-author 'mastodon-tl--byline-boosted
+   nil nil detailed-p thread domain unfolded no-byline))
+
+(defun mastodon-tl--timeline (toots &optional thread domain)
+  "Display each toot in TOOTS.
+This function removes replies if user required.
+THREAD means the status will be displayed in a thread view.
+When DOMAIN, force inclusion of user's domain in their handle."
+  (mapc (lambda (toot)
+          (mastodon-tl--toot toot nil thread domain))
+        ;; hack to *not* filter replies on profiles:
+        (if (eq (mastodon-tl--get-buffer-type) 'profile-statuses)
+            toots
+          (if (or ; we were called via --more*:
+               (mastodon-tl--buffer-property 'hide-replies nil :no-error)
+               ;; loading a tl with a prefix arg:
+               (mastodon-tl--hide-replies-p current-prefix-arg))
+	      (cl-remove-if-not #'mastodon-tl--is-reply toots)
+	    toots)))
+  (goto-char (point-min)))
+
+;;; FOLDING
 
 (defun mastodon-tl--fold-body (body)
   "Fold toot BODY if it is very long.
@@ -1579,7 +1621,7 @@ Folding decided by `mastodon-tl--fold-toots-at-length'."
 
 (defun mastodon-tl--unfold-post (&optional fold)
   "Unfold the toot at point if it is folded (read-more).
-FOLD means to fold it instead"
+FOLD means to fold it instead."
   (interactive)
   (let ((at-byline (mastodon-tl--property 'byline :no-move)))
     (if (save-excursion
@@ -1599,16 +1641,13 @@ FOLD means to fold it instead"
              (point-after-fold (> last-point
                                   (+ beg mastodon-tl--fold-toots-at-length))))
         ;; save-excursion here useless actually:
-
         ;; FIXME: because point goes to top of item, the screen gets scrolled
         ;; by insertion
         (goto-char beg)
         (delete-region beg end)
         (delete-char 1) ;; prevent newlines accumulating
         ;; insert toot body:
-        (mastodon-tl--toot toot nil nil nil
-                           (not fold) ;; (if fold :folded :unfolded)
-                           :no-byline)
+        (mastodon-tl--toot toot nil nil nil (not fold) :no-byline)
         ;; set toot-folded prop on entire toot (not just body):
         (let ((toot-range ;; post fold action range:
                (mastodon-tl--find-property-range 'item-json
@@ -1618,20 +1657,19 @@ FOLD means to fold it instead"
                                `(toot-folded ,fold)))
         ;; try to leave point somewhere sane:
         (cond ((or at-byline
-                   (and fold
-                        point-after-fold)) ;; point was in area now folded
-               (ignore-errors (forward-line -1)) ;; in case we are btw
+                   (and fold point-after-fold)) ;; point was in area now folded
+               (ignore-errors (forward-line -1)) ;; in case we are between
                (mastodon-tl--goto-next-item)) ;; goto byline
               (t
                (goto-char last-point)
                (when point-after-fold ;; point was in READ MORE heading:
                  (beginning-of-line))))
-        (message (format "%s" (if fold "Fold" "Unfold")))))))
+        (message (format "%s toot" (if fold "Fold" "Unfold")))))))
 
 (defun mastodon-tl--fold-post ()
   "Fold post at point, if it is too long."
   (interactive)
-  (mastodon-tl--unfold-post t))
+  (mastodon-tl--unfold-post :fold))
 
 (defun mastodon-tl--fold-post-toggle ()
   "Toggle the folding status of the toot at point."
@@ -1639,7 +1677,9 @@ FOLD means to fold it instead"
   (let* ((folded (mastodon-tl--property 'toot-folded :no-move)))
     (mastodon-tl--unfold-post (not folded))))
 
-;; from mastodon-alt.el:
+;;; TOOT STATS
+
+;; calqued off mastodon-alt.el:
 (defun mastodon-tl--toot-for-stats (&optional toot)
   "Return the TOOT on which we want to extract stats.
 If no TOOT is given, the one at point is considered."
@@ -1691,47 +1731,6 @@ To disable showing the stats, customize
                         'display
                         `(space :align-to (- right ,(+ (length stats) 7))))))
       (concat right-spacing stats))))
-
-(defun mastodon-tl--is-reply (toot)
-  "Check if the TOOT is a reply to another one (and not boosted).
-Used as a predicate in `mastodon-tl--timeline'."
-  (and (mastodon-tl--field 'in_reply_to_id toot)
-       (eq :json-false (mastodon-tl--field 'reblogged toot))))
-
-(defun mastodon-tl--toot (toot &optional detailed-p thread domain
-                               unfolded no-byline)
-  "Format TOOT and insert it into the buffer.
-DETAILED-P means display more detailed info. For now
-this just means displaying toot client.
-THREAD means the status will be displayed in a thread view.
-When DOMAIN, force inclusion of user's domain in their handle.
-UNFOLDED is a boolean meaning whether to unfold or fold item if foldable.
-NO-BYLINE means just insert toot body, used for folding."
-  (mastodon-tl--insert-status
-   toot
-   (mastodon-tl--clean-tabs-and-nl (if (mastodon-tl--has-spoiler toot)
-                                       (mastodon-tl--spoiler toot)
-                                     (mastodon-tl--content toot)))
-   'mastodon-tl--byline-author 'mastodon-tl--byline-boosted
-   nil nil detailed-p thread domain unfolded no-byline))
-
-(defun mastodon-tl--timeline (toots &optional thread domain)
-  "Display each toot in TOOTS.
-This function removes replies if user required.
-THREAD means the status will be displayed in a thread view.
-When DOMAIN, force inclusion of user's domain in their handle."
-  (mapc (lambda (toot)
-          (mastodon-tl--toot toot nil thread domain))
-        ;; hack to *not* filter replies on profiles:
-        (if (eq (mastodon-tl--get-buffer-type) 'profile-statuses)
-            toots
-          (if (or ; we were called via --more*:
-               (mastodon-tl--buffer-property 'hide-replies nil :no-error)
-               ;; loading a tl with a prefix arg:
-               (mastodon-tl--hide-replies-p current-prefix-arg))
-	      (cl-remove-if-not #'mastodon-tl--is-reply toots)
-	    toots)))
-  (goto-char (point-min)))
 
 
 ;;; BUFFER SPEC
@@ -1817,7 +1816,7 @@ to be set. It is set for almost all buffers, but you still have to
 call this function after it is set or use something else."
   (let ((buffer-name (mastodon-tl--buffer-name nil :no-error)))
     (cond (mastodon-toot-mode
-           ;; composing/editing:
+           ;; composing/editing (no buffer spec):
            (if (string= "*edit toot*" (buffer-name))
                'edit-toot
              'new-toot))
@@ -1871,11 +1870,11 @@ call this function after it is set or use something else."
            'preferences)
           ;; search
           ((mastodon-tl--search-buffer-p)
-           (cond ((equal (mastodon-search--buf-type) "accounts")
+           (cond ((equal "accounts" (mastodon-search--buf-type))
                   'search-accounts)
-                 ((equal (mastodon-search--buf-type) "hashtags")
+                 ((equal "hashtags" (mastodon-search--buf-type))
                   'search-hashtags)
-                 ((equal (mastodon-search--buf-type) "statuses")
+                 ((equal "statuses" (mastodon-search--buf-type))
                   'search-statuses)))
           ;; trends
           ((mastodon-tl--endpoint-str-= "trends/statuses")
@@ -2023,7 +2022,7 @@ BACKWARD means move backward (up) the timeline."
   (cond ((numberp numeric)
          (number-to-string numeric))
         ((stringp numeric) numeric)
-        (t (error "Numeric:%s must be either a string or a number"
+        (t (error "Numeric: %s must be either a string or a number"
                   numeric))))
 
 (defun mastodon-tl--item-id (json)
