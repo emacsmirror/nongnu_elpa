@@ -171,8 +171,8 @@
 | e                | mastodon-toot--edit-toot-at-point                 | Edit the user's toot at point.                                                 |
 |                  | mastodon-toot--enable-custom-emoji                | Add `mastodon-instance-url's custom emoji to `emojify'.                        |
 | C-c C-e          | mastodon-toot--insert-emoji                       | Prompt to insert an emoji.                                                     |
-| .                | mastodon-toot--list-toot-boosters                 | List the boosters of toot at point.                                            |
-| ,                | mastodon-toot--list-toot-favouriters              | List the favouriters of toot at point.                                         |
+| .                | mastodon-toot--list-boosters                      | List the boosters of toot at point.                                            |
+| ,                | mastodon-toot--list-favouriters                   | List the favouriters of toot at point.                                         |
 |                  | mastodon-toot--open-draft-toot                    | Prompt for a draft and compose a toot with it.                                 |
 | o                | mastodon-toot--open-toot-url                      | Open URL of toot at point.                                                     |
 | i                | mastodon-toot--pin-toot-toggle                    | Pin or unpin user's toot at point.                                             |
