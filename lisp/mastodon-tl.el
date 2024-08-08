@@ -1696,8 +1696,8 @@ To disable showing the stats, customize
 
 (defun mastodon-tl--is-reply (toot)
   "Check if the TOOT is a reply to another one (and not boosted)."
-  (and (null (mastodon-tl--field 'in_reply_to_id toot))
-       (not (mastodon-tl--field 'rebloged toot))))
+  (and (mastodon-tl--field 'in_reply_to_id toot)
+       (eq :json-false (mastodon-tl--field 'reblogged toot))))
 
 (defun mastodon-tl--toot (toot &optional detailed-p thread domain
                                unfolded no-byline)
