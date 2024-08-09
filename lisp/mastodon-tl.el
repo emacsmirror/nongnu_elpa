@@ -1103,12 +1103,13 @@ content should be hidden."
   "Remove tabs and newlines from STRING."
   (replace-regexp-in-string "[\t\n ]*\\'" "" string))
 
-(defun mastodon-tl--spoiler (toot)
+(defun mastodon-tl--spoiler (toot &optional filter)
   "Render TOOT with spoiler message.
 This assumes TOOT is a toot with a spoiler message.
 The main body gets hidden and only the spoiler text and the
 content warning message are displayed. The content warning
-message is a link which unhides/hides the main body."
+message is a link which unhides/hides the main body.
+FILTER is a string to use as a filter warning spoiler instead."
   (let* ((spoiler (mastodon-tl--field 'spoiler_text toot))
          (string (mastodon-tl--set-face
                   (mastodon-tl--clean-tabs-and-nl
@@ -1116,7 +1117,9 @@ message is a link which unhides/hides the main body."
                   'default))
          (message (concat " " mastodon-tl--horiz-bar "\n "
                           (mastodon-tl--make-link
-                           (concat "CW: " string)
+                           (if filter
+                               (concat "Filtered: " filter)
+                             (concat "CW: " string))
                            'content-warning)
                           "\n "
                           mastodon-tl--horiz-bar "\n"))
@@ -1125,20 +1128,22 @@ message is a link which unhides/hides the main body."
      cw
      (propertize (mastodon-tl--content toot)
                  'invisible
-                 (let ((cust mastodon-tl--expand-content-warnings))
-                   (cond ((eq t cust)
-                          nil)
-                         ((eq nil cust)
-                          t)
-                         ((eq 'server cust)
-                          (unless (eq t
-                                      ;; If something goes wrong reading prefs,
-                                      ;; just return nil so CWs show by default.
-                                      (condition-case nil
-                                          (mastodon-profile--get-preferences-pref
-                                           'reading:expand:spoilers)
-                                        (error nil)))
-                            t))))
+                 (if filter
+                     t
+                   (let ((cust mastodon-tl--expand-content-warnings))
+                     (cond ((eq t cust)
+                            nil)
+                           ((eq nil cust)
+                            t)
+                           ((eq 'server cust)
+                            (unless (eq t
+                                        ;; If something goes wrong reading prefs,
+                                        ;; just return nil so CWs show by default.
+                                        (condition-case nil
+                                            (mastodon-profile--get-preferences-pref
+                                             'reading:expand:spoilers)
+                                          (error nil)))
+                              t)))))
                  'mastodon-content-warning-body t))))
 
 
@@ -1581,6 +1586,96 @@ NO-BYLINE means just insert toot body, used for folding."
      (if no-byline "" "\n"))
     (when mastodon-tl--display-media-p
       (mastodon-media--inline-images start-pos (point)))))
+
+(defun mastodon-tl--is-reply (toot)
+  "Check if the TOOT is a reply to another one (and not boosted).
+Used as a predicate in `mastodon-tl--timeline'."
+  (and (mastodon-tl--field 'in_reply_to_id toot)
+       (eq :json-false (mastodon-tl--field 'reblogged toot))))
+
+(defun mastodon-tl--filters-alist (filters)
+  "Parse filter data for FILTERS.
+For each filter, return a list of action (warn or hide), filter
+title, and context."
+  (cl-loop for x in filters ;; includes non filter elts!
+           for f = (alist-get 'filter x)
+           collect (list (alist-get 'filter_action f)
+                         (alist-get 'title f)
+                         (alist-get 'context f))))
+
+(defun mastodon-tl--filter-by-context (context filters)
+  "Remove FILTERS that don't apply to the current CONTEXT."
+  (cl-remove-if-not
+   (lambda (x)
+     (member context (nth 2 x)))
+   filters))
+
+(defun mastodon-tl--filters-context ()
+  "Return a string of the current buffer's filter context.
+Returns a member of `mastodon-views--filter-types'."
+  (let ((buf (mastodon-tl--get-buffer-type)))
+    (cond ((or (eq buf 'local) (eq buf 'federated))
+           "public")
+          ((mastodon-tl--profile-buffer-p)
+           "profile")
+          (t ;; thread, notifs, home:
+           (symbol-name buf)))))
+
+(defun mastodon-tl--current-filters (filters)
+  "Return the filters from FILTERS data that apply in the current context.
+For each filter, return a list of action (warn or hide), filter
+title, and context."
+  (let ((context (mastodon-tl--filters-context))
+        (filters-no-context (mastodon-tl--filters-alist filters)))
+    (mastodon-tl--filter-by-context context filters-no-context)))
+
+(defun mastodon-tl--toot (toot &optional detailed-p thread domain
+                               unfolded no-byline)
+  "Format TOOT and insert it into the buffer.
+DETAILED-P means display more detailed info. For now
+this just means displaying toot client.
+THREAD means the status will be displayed in a thread view.
+When DOMAIN, force inclusion of user's domain in their handle.
+UNFOLDED is a boolean meaning whether to unfold or fold item if foldable.
+NO-BYLINE means just insert toot body, used for folding."
+  (let* ((filtered (mastodon-tl--field 'filtered toot))
+         (filters (when filtered
+                    (mastodon-tl--current-filters filtered)))
+         (spoiler-or-content (if-let ((match (assoc "warn" filters)))
+                                 (mastodon-tl--spoiler toot (cadr match))
+                               (if (mastodon-tl--has-spoiler toot)
+                                   (mastodon-tl--spoiler toot)
+                                 (mastodon-tl--content toot)))))
+    ;; If any filters are "hide", then we hide,
+    ;; even though item may also have a "warn" filter:
+    (if (and filtered (assoc "hide" filters))
+        nil ;; no insert
+      (mastodon-tl--insert-status
+       toot
+       (mastodon-tl--clean-tabs-and-nl spoiler-or-content)
+       'mastodon-tl--byline-author 'mastodon-tl--byline-boosted
+       nil nil detailed-p thread domain unfolded no-byline))))
+
+(defun mastodon-tl--timeline (toots &optional thread domain)
+  "Display each toot in TOOTS.
+This function removes replies if user required.
+THREAD means the status will be displayed in a thread view.
+When DOMAIN, force inclusion of user's domain in their handle."
+  (let ((toots ;; hack to *not* filter replies on profiles:
+         (if (eq (mastodon-tl--get-buffer-type) 'profile-statuses)
+             toots
+           (if (or ; we were called via --more*:
+                (mastodon-tl--buffer-property 'hide-replies nil :no-error)
+                ;; loading a tl with a prefix arg:
+                (mastodon-tl--hide-replies-p current-prefix-arg))
+	       (cl-remove-if-not #'mastodon-tl--is-reply toots)
+	     toots))))
+    (mapc (lambda (toot)
+            (mastodon-tl--toot toot nil thread domain))
+          toots)
+    (goto-char (point-min))))
+
+;;; FOLDING
 
 (defun mastodon-tl--fold-body (body)
   "Fold toot BODY if it is very long.

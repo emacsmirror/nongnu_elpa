@@ -203,6 +203,7 @@ Status notifications are given when
 
 (defun mastodon-notifications--format-note (note type)
   "Format for a NOTE of TYPE."
+  ;; FIXME: apply/refactor filtering as per/with `mastodon-tl--toot'
   (let* ((id (alist-get 'id note))
          (profile-note
           (when (equal 'follow-request type)

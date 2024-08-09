@@ -624,6 +624,9 @@ JSON is the filters data."
                  'byline t) ;for goto-next-filter compat
      "\n\n")))
 
+(defvar mastodon-views--filter-types
+  '("home" "notifications" "public" "thread" "profile"))
+
 (defun mastodon-views--create-filter ()
   "Create a filter for a word.
 Prompt for a context, must be a list containting at least one of \"home\",
@@ -638,7 +641,7 @@ Prompt for a context, must be a list containting at least one of \"home\",
               (user-error "You must select at least one word for a filter")
             (completing-read-multiple
              "Contexts to filter [TAB for options]: "
-             '("home" "notifications" "public" "thread")
+             mastodon-views--filter-types
              nil t)))
          (contexts-processed
           (if (equal nil contexts)
@@ -651,9 +654,9 @@ Prompt for a context, must be a list containting at least one of \"home\",
                                              contexts-processed))))
     (mastodon-http--triage response
                            (lambda (_)
-                             (message "Filter created for %s!" word)
                              (when (mastodon-tl--buffer-type-eq 'filters)
-                               (mastodon-views--view-filters))))))
+                               (mastodon-views--view-filters))
+                             (message "Filter created for %s!" word)))))
 
 (defun mastodon-views--delete-filter ()
   "Delete filter at point."
