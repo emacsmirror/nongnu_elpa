@@ -1358,19 +1358,18 @@ OPTIONS is an alist."
 (defun mastodon-tl--read-poll-option ()
   "Read a poll option to vote on a poll."
   (let* ((toot (mastodon-tl--property 'item-json))
-         (poll (mastodon-tl--field 'poll toot))
-         (options (mastodon-tl--field 'options poll))
-         (titles (mastodon-tl--map-alist 'title options))
-         (number-seq (number-sequence 1 (length options)))
-         (numbers (mapcar #'number-to-string number-seq))
-         (options-alist (cl-mapcar #'cons numbers titles))
-
-         (candidates (mastodon-tl--format-read-poll-option options-alist))
-         (choice (completing-read "Poll option to vote for: "
-                                  candidates nil :match)))
+         (poll (mastodon-tl--field 'poll toot)))
     (if (null poll)
         (user-error "No poll here")
-      (list (cdr (assoc choice candidates))))))
+      (let* ((options (mastodon-tl--field 'options poll))
+             (titles (mastodon-tl--map-alist 'title options))
+             (number-seq (number-sequence 1 (length options)))
+             (numbers (mapcar #'number-to-string number-seq))
+             (options-alist (cl-mapcar #'cons numbers titles))
+             (candidates (mastodon-tl--format-read-poll-option options-alist))
+             (choice (completing-read "Poll option to vote for: "
+                                      candidates nil :match)))
+        (list (cdr (assoc choice candidates)))))))
 
 (defun mastodon-tl--poll-vote (option)
   "If there is a poll at point, prompt user for OPTION to vote on it."
