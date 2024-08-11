@@ -294,6 +294,14 @@ Optionally, use  when using multiple months."
 		       (new-tags (cl-substitute new-tag tag tags :test #'string-equal)))
 		  (gnosis-update 'notes `(= tags ',new-tags) `(= id ,note))))))
 
+(defun gnosis-dashboard-rename-deck (&optional deck-id new-name)
+  "Rename deck where DECK-ID with NEW-NAME."
+  (interactive)
+  (let ((deck-id (or deck-id (string-to-number (tabulated-list-get-id))))
+	(new-name (or new-name (read-string "New deck name: "))))
+    (gnosis-update 'decks `(= name ,new-name) `(= id ,deck-id))
+    (gnosis-dashboard-output-decks)))
+
 (defun gnosis-dashboard-suspend-tag (&optional tag)
   "Suspend notes of TAG."
   (interactive)
@@ -346,7 +354,8 @@ Optionally, use  when using multiple months."
 	   collect (format "%s" item)))
 
 (defvar-keymap gnosis-dashboard-decks-mode-map
-  "e" #'gnosis-dashboard-edit-deck
+  "e" #'gnosis-dashboard-rename-deck
+  "r" #'gnosis-dashboard-rename-deck
   "a" #'gnosis-dashboard-decks-add
   "s" #'gnosis-dashboard-decks-suspend-deck
   "d" #'gnosis-dashboard-decks-delete
