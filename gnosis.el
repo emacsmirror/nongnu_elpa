@@ -1849,12 +1849,17 @@ NOTE-COUNT: Total notes to be commited for session."
   (let ((review-type (gnosis-completing-read "Review: " '("Due notes"
 							  "Due notes of deck"
 							  "Due notes of specified tag(s)"
+							  "Overdue notes"
+							  "Due notes (Without Overdue)"
+							  "All notes of deck"
 							  "All notes of tag(s)"))))
     (pcase review-type
       ("Due notes" (gnosis-review-session (gnosis-collect-note-ids :due t) t))
       ("Due notes of deck" (gnosis-review-session
 			    (gnosis-collect-note-ids :due t :deck (gnosis--get-deck-id))))
       ("Due notes of specified tag(s)" (gnosis-review-session (gnosis-collect-note-ids :due t :tags t)))
+      ("Overdue notes" (gnosis-review-session (gnosis-review-get-overdue-notes)))
+      ("Due notes (Without Overdue)" (gnosis-review-session (gnosis-review-get-due-notes--no-overdue)))
       ("All notes of deck" (gnosis-review-session (gnosis-collect-note-ids :deck (gnosis--get-deck-id))))
       ("All notes of tag(s)" (gnosis-review-session (gnosis-collect-note-ids :tags t))))))
 
