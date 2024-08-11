@@ -2232,6 +2232,14 @@ Defaults to current date."
   (let* ((date (or date (gnosis-algorithm-date)))
 	 (reviewed-new (or (car (gnosis-select 'reviewed-new 'activity-log `(= date ',date) t)) 0)))
     reviewed-new))
+;; TODO: Auto tag overdue tags
+(defun gnosis-tags--append (id tag)
+  "Append TAG to the list of tags of note ID."
+  (cl-assert (numberp id) nil "ID must be the note id number")
+  (cl-assert (stringp tag) nil "Tag must a string")
+  (let* ((current-tags (gnosis-get 'tags 'notes `(= id ,id)))
+	 (new-tags (append current-tags (list tag))))
+    (gnosis-update 'notes `(= tags ',new-tags) `(= id ,id))))
 
 (cl-defun gnosis-export-note (id &optional (export-for-deck nil))
   "Export fields for note with value of id ID.
