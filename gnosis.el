@@ -1423,6 +1423,15 @@ QUERY: String value,"
 
 ;; Review
 ;;;;;;;;;;
+
+(defun gnosis-review-note-overdue-p (id)
+  "Return t if note with ID is overdue.
+
+This function is meant to be used with today's due notes, using
+`gnosis-review-get-due-notes'."
+  (let ((due-date (gnosis-get 'next-rev 'review-log `(= id ,id))))
+    (not (equal due-date (gnosis-algorithm-date)))))
+
 (defun gnosis-review-is-due-p (note-id)
   "Check if note with value of NOTE-ID for id is due for review.
 
