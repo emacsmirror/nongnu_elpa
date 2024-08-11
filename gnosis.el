@@ -1464,6 +1464,13 @@ well."
 	(append (cl-subseq new-notes 0 gnosis-new-notes-limit) old-notes)
       (append old-notes (cl-subseq new-notes 0 gnosis-new-notes-limit)))))
 
+(defun gnosis-review-get-overdue-notes (&optional note-ids)
+  "Return overdue notes for current DATE.
+
+Optionally, provide NOTE-IDS of which the overdue ones will be returned."
+  (cl-loop for note in (or note-ids (gnosis-review-get-due-notes))
+	   when (gnosis-review-note-overdue-p note)
+	   collect note))
 (defun gnosis-review-get-due-tags ()
   "Return a list of due note tags."
   (let ((due-notes (gnosis-review-get-due-notes)))
