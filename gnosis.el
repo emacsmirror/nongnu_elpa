@@ -1471,6 +1471,14 @@ Optionally, provide NOTE-IDS of which the overdue ones will be returned."
   (cl-loop for note in (or note-ids (gnosis-review-get-due-notes))
 	   when (gnosis-review-note-overdue-p note)
 	   collect note))
+
+(defun gnosis-review-get-due-notes--no-overdue (&optional note-ids)
+  "Return due notes, without overdue.
+
+Optionally, provide a list for due NOTE-IDS."
+  (let ((note-ids (or note-ids (length (gnosis-review-get-due-notes)))))
+    (cl-set-difference note-ids (gnosis-review-get-overdue-notes note-ids))))
+
 (defun gnosis-review-get-due-tags ()
   "Return a list of due note tags."
   (let ((due-notes (gnosis-review-get-due-notes)))
