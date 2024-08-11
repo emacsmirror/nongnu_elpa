@@ -51,6 +51,7 @@
 (declare-function gnosis-get-tag-notes "gnosis.el")
 (declare-function gnosis-edit-update "gnosis.el")
 (declare-function gnosis-update "gnosis.el")
+(declare-function gnosis-review-get-overdue-notes "gnosis.el")
 
 (defcustom gnosis-dashboard-months 2
   "Number of additional months to display on dashboard."
@@ -520,7 +521,9 @@ DASHBOARD-TYPE: either 'Notes' or 'Decks' to display the respective dashboard."
   [["Actions"
     ("r" "Review" gnosis-review)
     ("a" "Add note" gnosis-add-note)
-    ("q" "Quit" quit-window)]
+    ("A" "Add deck" gnosis-add-deck)
+    ("q" "Quit" quit-window)
+    "\n"]
    ["Notes"
     ("s" "Search" gnosis-dashboard-suffix-query)
     ("n" "Notes" (lambda () (interactive) (gnosis-dashboard-output-notes (gnosis-collect-note-ids))))
@@ -533,7 +536,8 @@ DASHBOARD-TYPE: either 'Notes' or 'Decks' to display the respective dashboard."
   "Test function to create an editable field and a search button."
   (interactive)
   (delete-other-windows)
-  (let ((buffer-name "*Gnosis Dashboard*"))
+  (let ((buffer-name "*Gnosis Dashboard*")
+	(due-notes (gnosis-review-get-due-notes)))
     (when (get-buffer buffer-name)
       (kill-buffer buffer-name))  ;; Kill the existing buffer if it exists
     (let ((buffer (get-buffer-create buffer-name)))
@@ -544,7 +548,7 @@ DASHBOARD-TYPE: either 'Notes' or 'Decks' to display the respective dashboard."
 	(gnosis-insert-separator)
 	;; (widget-insert (gnosis-center-string (propertize "Stats:" 'face 'underline)) "\n\n")
 	(widget-insert (gnosis-center-string
-			(format "Reviewed today: %s | New: %s"
+			(format "Reviewed today: %s (New: %s)"
 				(propertize
 				 (number-to-string (gnosis-get-date-total-notes))
 				 'face
@@ -555,16 +559,19 @@ DASHBOARD-TYPE: either 'Notes' or 'Decks' to display the respective dashboard."
 				 'font-lock-keyword-face))))
 	(insert "\n")
 	(widget-insert (gnosis-center-string
+			 (format "Due notes: %s (Overdue: %s)"
+				(propertize
+				 (number-to-string (length due-notes))
+				 'face 'error)
+				(propertize
+				 (number-to-string (length (gnosis-review-get-overdue-notes due-notes)))
+				 'face 'warning))))
+	(insert "\n\n")
+	(widget-insert (gnosis-center-string
 			(format "Daily Average: %s"
 				(propertize (number-to-string (gnosis-dashboard-output-average-rev))
 					    'face 'font-lock-type-face))))
 	(insert "\n")
-	(widget-insert (gnosis-center-string
-			 (format "Due notes: %s"
-				(propertize
-				 (number-to-string (length (gnosis-review-get-due-notes)))
-				 'face 'error))))
-	(insert "\n\n")
 	(widget-insert (gnosis-center-string
 			(format "Current streak: %s days"
 				(propertize
