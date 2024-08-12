@@ -1232,12 +1232,12 @@ SENSITIVE is a flag from the item's JSON data."
        (if (eq 'hidden (mastodon-tl--property 'sensitive-state :no-move))
            ;; display:
            `( display ,data
-              sensitive-state showing))
+              sensitive-state showing)
        ;; hide:
        `( sensitive-state hidden
           display
           ,(create-image
-            mastodon-media--sensitive-image-data nil t))))))
+            mastodon-media--sensitive-image-data nil t)))))))
 
 
 ;; POLLS
