@@ -3117,7 +3117,8 @@ JSON and http headers, without it just the JSON."
 
 (defun mastodon-tl--init-sync
     (buffer-name endpoint update-function
-                 &optional note-type params headers view-name binding-str)
+                 &optional note-type params headers view-name binding-str
+                 endpoint-version)
   "Initialize BUFFER-NAME with timeline targeted by ENDPOINT.
 UPDATE-FUNCTION is used to receive more toots.
 Runs synchronously.
@@ -3133,7 +3134,7 @@ BINDING-STR is a string explaining any bindins in the view."
                          (mastodon-http--build-array-params-alist
                           "exclude_types[]" exclude-types)))
          (params (append notes-params params))
-         (url (mastodon-http--api endpoint))
+         (url (mastodon-http--api endpoint endpoint-version))
          (buffer (concat "*mastodon-" buffer-name "*"))
          (response (mastodon-http--get-response url params))
          (json (car response))
