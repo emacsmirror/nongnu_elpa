@@ -234,23 +234,23 @@ content generation in the function under test."
   (with-mock
     ;; Don't start any image loading:
     (mock (mastodon-media--inline-images * *) => nil)
-    (if (version< emacs-version "27.1")
-        (mock (image-type-available-p 'imagemagick) => t)
-      (mock (image-transforms-p) => t))
-    (mock (mastodon-http--get-json "https://instance.url/api/v1/accounts/1/statuses" nil)
+    ;; (if (version< emacs-version "27.1")
+    ;; (mock (image-type-available-p 'imagemagick) => t)
+    ;; (mock (image-transforms-p) => t))
+    (mock (mastodon-http--get-json * *) ;"https://instance.url/api/v1/accounts/1/statuses"
           =>
           gargon-statuses-json)
     (mock (mastodon-profile--get-statuses-pinned *)
           =>
-          [])
-    (mock (mastodon-profile--relationships-get "1")
+          ())
+    (mock (mastodon-profile--relationships-get *) ;"1")
           =>
           '(((id . "1") (following . :json-false) (showing_reblogs . :json-false) (notifying . :json-false) (followed_by . :json-false) (blocking . :json-false) (blocked_by . :json-false) (muting . :json-false) (muting_notifications . :json-false) (requested . :json-false) (domain_blocking . :json-false) (endorsed . :json-false) (note . ""))))
     ;; Let's not do formatting as that makes it hard to not rely on
     ;; window width and reflowing the text.
     (mock (shr-render-region * *) => nil)
     ;; Don't perform the actual update call at the end.
-    ;;(mock (mastodon-tl--timeline *))
+    ;; (mock (mastodon-tl--timeline *))
     (mock (mastodon-profile--fetch-server-account-settings)
           => '(max_toot_chars 1312 privacy "public" display_name "Eugen" discoverable t locked :json-false bot :json-false sensitive :json-false language ""))
 
@@ -263,34 +263,41 @@ content generation in the function under test."
 
       (should
        (equal
-        (buffer-substring-no-properties (point-min) (point-max))
+        (with-current-buffer "*mastodon-Gargron-statuses*"
+          (buffer-substring-no-properties (point-min) (point-max)))
         (concat
          "\n"
          "[img] [img] \n"
          "Eugen\n"
          "@Gargron\n"
-         " ------------\n"
+         " ――――――――――――\n"
          "<p>Developer of Mastodon and administrator of mastodon.social. I post service announcements, development updates, and personal stuff.</p>\n"
          "_ Patreon __ :: <a href=\"https://www.patreon.com/mastodon\" rel=\"me nofollow noopener noreferrer\" target=\"_blank\"><span class=\"invisible\">https://www.</span><span class=\"\">patreon.com/mastodon</span><span class=\"invisible\"></span></a>_ Homepage _ :: <a href=\"https://zeonfederated.com\" rel=\"me nofollow noopener noreferrer\" target=\"_blank\"><span class=\"invisible\">https://</span><span class=\"\">zeonfederated.com</span><span class=\"invisible\"></span></a>"
          "\n"
          "Joined March 2016"
-         "\n\n"
-         " ------------\n"
-         " TOOTS: 70741 | FOLLOWERS: 470905 | FOLLOWING: 451\n"
-         " ------------\n"
+         "\n\n "
+         mastodon-tl--horiz-bar
          "\n"
-         " ------------\n"
-         "     TOOTS   \n"
-         " ------------\n"
+         " TOOTS: 70741 | FOLLOWERS: 470905 | FOLLOWING: 451\n "
+         mastodon-tl--horiz-bar
          "\n"
-         "<p>Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor invidunt ut labore et dolore magna aliquyam erat, sed diam voluptua.</p> \n"
-         "  Eugen (@Gargron) 2021-11-11 11:11:11\n"
-         "  ------------\n"
+         "\n "
+         mastodon-tl--horiz-bar
+         "\n"
+         "    TOOTS    \n "
+         mastodon-tl--horiz-bar
          "\n"
          "\n"
-         "<p><span class=\"h-card\"><a href=\"https://social.bau-ha.us/@CCC\" class=\"u-url mention\">@<span>CCC</span></a></span> At vero eos et accusam et justo duo dolores et ea rebum. Stet clita kasd gubergren, no sea takimata sanctus est Lorem ipsum dolor sit amet.</p> \n"
-         "  Eugen (@Gargron) 2021-11-11 00:00:00\n"
-         "  ------------\n"
+         "<p>Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor invidunt ut labore et dolore magna aliquyam erat, sed diam voluptua.</p>\n"
+         "  Eugen (@Gargron) 2021-11-11 12:11:11\n  "
+         mastodon-tl--horiz-bar
+         " 0 ⭐ | 0 🔁 | 0 💬\n"
+         "\n"
+         "\n"
+         "<p><span class=\"h-card\"><a href=\"https://social.bau-ha.us/@CCC\" class=\"u-url mention\">@<span>CCC</span></a></span> At vero eos et accusam et justo duo dolores et ea rebum. Stet clita kasd gubergren, no sea takimata sanctus est Lorem ipsum dolor sit amet.</p>\n"
+         "  Eugen (@Gargron) 2021-11-11 01:00:00\n  "
+         mastodon-tl--horiz-bar
+         " 0 ⭐ | 2 🔁 | 0 💬\n"
          "\n"
          )))
 
