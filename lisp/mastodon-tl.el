@@ -1233,11 +1233,11 @@ SENSITIVE is a flag from the item's JSON data."
            ;; display:
            `( display ,data
               sensitive-state showing)
-       ;; hide:
-       `( sensitive-state hidden
-          display
-          ,(create-image
-            mastodon-media--sensitive-image-data nil t)))))))
+         ;; hide:
+         `( sensitive-state hidden
+            display
+            ,(create-image
+              mastodon-media--sensitive-image-data nil t)))))))
 
 
 ;; POLLS
@@ -2345,7 +2345,7 @@ LANGS is the accumulated array param alist if we re-run recursively."
          (car user-handles)
        (completing-read (cond ((or ; TODO: make this "enable/disable notifications"
                                 (equal action "disable")
-                                   (equal action "enable"))
+                                (equal action "enable"))
                                (format "%s notifications when user posts: " action))
                               ((string-suffix-p "boosts" action)
                                (format "%s by user: " action))
