@@ -15,9 +15,13 @@
 (load-file "lisp/mastodon-async.el")
 
 ;; load tests in bulk to avoid using deprecated `cask exec'
-(let ((tests (cl-remove-if-not (lambda (x)
-                                 (string-suffix-p "-tests.el" x))
-                               (directory-files "test/." t directory-files-no-dot-files-regexp))))
+(let* ((all-test-files
+        (directory-files "test/." t directory-files-no-dot-files-regexp))
+       (tests
+        (cl-remove-if-not
+         (lambda (x)
+           (string-suffix-p "-tests.el" x))
+         all-test-files)))
   (mapc #'load-file tests))
 
 
