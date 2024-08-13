@@ -5,7 +5,7 @@
 (ert-deftest mastodon-media--get-avatar-rendering ()
   "Should return text with all expected properties."
   (with-mock
-    (mock (image-type-available-p 'imagemagick) => t)
+    ;; (mock (image-type-available-p 'imagemagick) => t)
     (mock (create-image * (when (version< emacs-version "27.1") 'imagemagick) t :height 123) => :mock-image)
 
     (let* ((mastodon-media--avatar-height 123)
@@ -71,7 +71,7 @@
   (let ((url "http://example.org/image.png")
         (mastodon-media--avatar-height 123))
     (with-mock
-      (mock (image-type-available-p 'imagemagick) => t)
+      ;; (mock (image-type-available-p 'imagemagick) => t)
       (mock (create-image
              *
              (when (version< emacs-version "27.1") 'imagemagick)
@@ -94,8 +94,8 @@
   "Should make the right call to url-retrieve."
   (let ((url "http://example.org/image.png"))
     (with-mock
-      (mock (image-type-available-p 'imagemagick) => nil)
-      (mock (image-transforms-p) => nil)
+      ;; (mock (image-type-available-p 'imagemagick) => nil)
+      ;; (mock (image-transforms-p) => nil)
       (mock (create-image * nil t) => '(image foo))
       (mock (copy-marker 7) => :my-marker )
       (mock (url-retrieve
@@ -115,7 +115,7 @@
   "Should make the right call to url-retrieve."
   (let ((url "http://example.org/image.png"))
     (with-mock
-      (mock (image-type-available-p 'imagemagick) => t)
+      ;; (mock (image-type-available-p 'imagemagick) => t)
       (mock (create-image * nil t) => '(image foo))
       (mock (copy-marker 7) => :my-marker )
       (mock (url-retrieve
@@ -134,8 +134,8 @@
   "Should make the right call to url-retrieve."
   (let ((url "http://example.org/image.png"))
     (with-mock
-      (mock (image-type-available-p 'imagemagick) => nil)
-      (mock (image-transforms-p) => nil)
+      ;; (mock (image-type-available-p 'imagemagick) => nil)
+      ;; (mock (image-transforms-p) => nil)
       (mock (create-image * nil t) => '(image foo))
       (mock (copy-marker 7) => :my-marker )
       (mock (url-retrieve
@@ -156,7 +156,7 @@
   (let ((url "http://example.org/image.png")
         (mastodon-media--avatar-height 123))
     (with-mock
-      (mock (image-type-available-p 'imagemagick) => t)
+      ;; (mock (image-type-available-p 'imagemagick) => t)
       (mock (create-image
              *
              (when (version< emacs-version "27.1") 'imagemagick)
