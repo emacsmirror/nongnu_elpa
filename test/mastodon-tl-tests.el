@@ -41,9 +41,9 @@
              (following_count . 13)
              (statuses_count . 101)
              (note . "E"))
-    (media_attachments . [])
-    (mentions . [])
-    (tags . [])
+    (media_attachments . ())
+    (mentions . ())
+    (tags . ())
     (uri . "tag:example.space,2017-04-24:objectId=654321:objectType=Status")
     (url . "https://example.space/users/acct42/updates/123456789")
     (content . "<p>Just some text</p>")
@@ -70,9 +70,9 @@
              (following_count . 13)
              (statuses_count . 101)
              (note . "E"))
-    (media_attachments . [])
-    (mentions . [])
-    (tags . [])
+    (media_attachments . ())
+    (mentions . ())
+    (tags . ())
     (uri . "tag:example.space,2017-04-24:objectId=654321:objectType=Status")
     (url . "https://example.space/users/acct42/updates/123456789")
     (reblogs_count . 0)
@@ -95,12 +95,12 @@
                      (following_count . 1)
                      (statuses_count . 1)
                      (note . "Other account"))
-            (media_attachments . [])
-            (mentions . [((url . "https://mastodon.social/@johnson")
+            (media_attachments . ())
+            (mentions . (((url . "https://mastodon.social/@johnson")
                           (acct . "acct42")
                           (id . 42)
-                          (username . "acct42"))])
-            (tags . [])
+                          (username . "acct42"))))
+            (tags . ())
             (uri . "tag:example.space,2017-04-24:objectId=654321:objectType=Status")
             (content . "<p><span class=\"h-card\"><a href=\"https://example.space/@acct42\">@<span>acct42</span></a></span> boost</p>")
             (url . "https://example.space/users/acct42/updates/123456789")
@@ -1014,27 +1014,27 @@ constant."
 
 (ert-deftest mastodon-tl--extract-hashtag-from-url-mastodon-link ()
   "Should extract the hashtag from a tags url."
-  (should (equal (mastodon-tl--extract-hashtag-from-url
+  (should (equal (mastodon-tl--hashtag-from-url
 		  "https://example.org/tags/foo"
 		  "https://example.org")
 		 "foo")))
 
 (ert-deftest mastodon-tl--extract-hashtag-from-url-other-link ()
   "Should extract the hashtag from a tag url."
-  (should (equal (mastodon-tl--extract-hashtag-from-url
+  (should (equal (mastodon-tl--hashtag-from-url
 		  "https://example.org/tag/foo"
 		  "https://example.org")
 		 "foo")))
 
 (ert-deftest mastodon-tl--extract-hashtag-from-url-wrong-instance ()
   "Should not find a tag when the instance doesn't match."
-  (should (null (mastodon-tl--extract-hashtag-from-url
+  (should (null (mastodon-tl--hashtag-from-url
 		 "https://example.org/tags/foo"
 		 "https://other.example.org"))))
 
 (ert-deftest mastodon-tl--extract-hashtag-from-url-not-tag ()
   "Should not find a hashtag when not a tag url"
-  (should (null (mastodon-tl--extract-hashtag-from-url
+  (should (null (mastodon-tl--hashtag-from-url
 		 "https://example.org/@userid"
 		 "https://example.org"))))
 
@@ -1063,20 +1063,20 @@ constant."
 
 (ert-deftest mastodon-tl--extract-userhandle-from-url-correct-case ()
   "Should extract the user handle from url."
-  (should (equal (mastodon-tl--extract-userhandle-from-url
+  (should (equal (mastodon-tl--userhandle-from-url
                   "https://example.org/@someuser"
                   "@SomeUser")
                  "@SomeUser@example.org")))
 
 (ert-deftest mastodon-tl--extract-userhandle-from-url-missing-at-in-text ()
   "Should not extract a user handle from url if the text is wrong."
-  (should (null (mastodon-tl--extract-userhandle-from-url
+  (should (null (mastodon-tl--userhandle-from-url
                  "https://example.org/@someuser"
                  "SomeUser"))))
 
 (ert-deftest mastodon-tl--extract-userhandle-from-url-query-in-url ()
   "Should not extract a user handle from url if there is a query param."
-  (should (null (mastodon-tl--extract-userhandle-from-url
+  (should (null (mastodon-tl--userhandle-from-url
                  "https://example.org/@someuser?shouldnot=behere"
                  "SomeUser"))))
 

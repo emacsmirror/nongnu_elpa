@@ -971,16 +971,20 @@ this should be of the form <at-sign><user id>, e.g. \"@Gargon\"."
           buffer-text ; no instance suffix for local mention
         (concat buffer-text "@" host)))))
 
-(defun mastodon-tl--hashtag-from-url (url _instance-url)
+(defun mastodon-tl--hashtag-from-url (url instance-url)
   "Return the hashtag that URL points to or nil if URL is not a tag link.
 INSTANCE-URL is the url of the instance for the toot that the link
 came from (tag links always point to a page on the instance publishing
 the toot)."
-  ;; FIXME: do we rly need to check it against instance-url?
-  (let* ((parsed (url-generic-parse-url url))
+  ;; TODO: do we rly need to check it against instance-url?
+  ;; test suggests we might
+  (let* ((instance-host (url-host
+                         (url-generic-parse-url instance-url)))
+         (parsed (url-generic-parse-url url))
          (path (url-filename parsed))
          (split (string-split path "/")))
-    (when (string-prefix-p "/tag" path) ;; "/tag/" or "/tags/"
+    (when (and (string= instance-host (url-host parsed))
+               (string-prefix-p "/tag" path)) ;; "/tag/" or "/tags/"
       (nth 2 split))))
 
 
