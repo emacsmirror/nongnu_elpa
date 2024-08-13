@@ -589,7 +589,7 @@ NO-CONFIRM means there is no ask or message, there is only do."
                           nil nil nil
                           "current filters"
                           "c - create filter\n d - delete filter at point\n\
- n/p - go to next/prev filter")
+ n/p - go to next/prev filter" "v2")
   (with-current-buffer "*mastodon-filters*"
     (use-local-map mastodon-views--view-filters-keymap)))
 
@@ -608,18 +608,31 @@ JSON is the filters data."
 
 (defun mastodon-views--insert-filter-string (filter)
   "Insert a single FILTER."
-  (let* ((phrase (alist-get 'phrase filter))
-         (contexts (alist-get 'context filter))
-         (id (alist-get 'id filter))
-         (filter-string (concat "- \"" phrase "\" filtered in: "
-                                (mapconcat #'identity contexts ", "))))
+  (let-alist filter
     (insert
-     (propertize filter-string
-                 'item-id id ;for goto-next-filter compat
-                 'item-type 'filter
-                 'phrase phrase
-                 'byline t) ;for goto-next-filter compat
-     "\n\n")))
+     (mastodon-tl--set-face
+      (concat "\n " mastodon-tl--horiz-bar "\n "
+              (propertize (upcase .title)
+                          'item-id .id
+                          'item-type 'filter
+                          'filter-title .title
+                          'byline t)
+              " " "\n"
+              " " mastodon-tl--horiz-bar "\n")
+      'success))
+    (insert "Context: "
+            (mapconcat #'identity .context ", "))
+    (insert "\n\nType: " .filter_action)
+    (if (not .keywords)
+        ""
+      (insert "\n\nTerms:")
+      (mapc (lambda (kw)
+              (insert
+               (concat (format "\n  %s \"%s\""
+                               (if (char-displayable-p ?―) "―" "-")
+                               (alist-get 'keyword kw)))))
+            .keywords))
+    (insert "\n")))
 
 (defvar mastodon-views--filter-types
   '("home" "notifications" "public" "thread" "profile"))
@@ -633,8 +646,8 @@ Prompt for a context, must be a list containting at least one of \"home\",
   ;; term
   (let* ((url (mastodon-http--api "filters" "v2"))
          (title (read-string "Filter name: "))
-         (terms (read-string "Terms to filter (space separated): "))
-         (terms-split (split-string terms "[ ]"))
+         (terms (read-string "Terms to filter (comma or space separated): "))
+         (terms-split (split-string terms "[, ]"))
          (terms-processed
           (if (not terms)
               (user-error "You must select at least one term to filter")
@@ -644,8 +657,9 @@ Prompt for a context, must be a list containting at least one of \"home\",
           (completing-read "Warn (like CW) or hide? "
                            '("warn" "hide") nil :match))
          (contexts
-          (completing-read-multiple "Filter contexts [TAB for options]: "
-                                    mastodon-views--filter-types nil :match))
+          (completing-read-multiple
+           "Filter contexts [TAB for options, comma separated]: "
+           mastodon-views--filter-types nil :match))
          (contexts-processed
           (if (not contexts)
               (user-error "You must select at least one context for a filter")
@@ -665,17 +679,17 @@ Prompt for a context, must be a list containting at least one of \"home\",
 (defun mastodon-views--delete-filter ()
   "Delete filter at point."
   (interactive)
-  (let* ((filter-id (mastodon-tl--property 'item-id :no-move))
-         (phrase (mastodon-tl--property 'phrase :no-move))
-         (url (mastodon-http--api (format "filters/%s" filter-id))))
-    (if (null phrase)
+  (let* ((id (mastodon-tl--property 'item-id :no-move))
+         (title (mastodon-tl--property 'filter-title :no-move))
+         (url (mastodon-http--api (format "filters/%s" id) "v2")))
+    (if (null id)
         (user-error "No filter at point?")
-      (when (y-or-n-p (format "Delete filter %s? " phrase))
+      (when (y-or-n-p (format "Delete filter %s? " title))
         (let ((response (mastodon-http--delete url)))
           (mastodon-http--triage
            response (lambda (_)
                       (mastodon-views--view-filters)
-                      (message "Filter for \"%s\" deleted!" phrase))))))))
+                      (message "Filter \"%s\" deleted!" title))))))))
 
 
 ;;; FOLLOW SUGGESTIONS
