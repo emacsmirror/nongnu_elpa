@@ -629,30 +629,38 @@ JSON is the filters data."
 Prompt for a context, must be a list containting at least one of \"home\",
 \"notifications\", \"public\", \"thread\"."
   (interactive)
-  (let* ((url (mastodon-http--api "filters"))
-         (word (read-string
-                (format "Word(s) to filter (%s): " (or (current-word) ""))
-                nil nil (or (current-word) "")))
+  ;; FIXME: implement "keywords_attributes[][whole_word]" boolean for each
+  ;; term
+  (let* ((url (mastodon-http--api "filters" "v2"))
+         (title (read-string "Filter name: "))
+         (terms (read-string "Terms to filter (space separated): "))
+         (terms-split (split-string terms "[ ]"))
+         (terms-processed
+          (if (not terms)
+              (user-error "You must select at least one term to filter")
+            (mastodon-http--build-array-params-alist
+             "keywords_attributes[][keyword]" terms-split)))
+         (warn-or-hide
+          (completing-read "Warn (like CW) or hide? "
+                           '("warn" "hide") nil :match))
          (contexts
-          (if (string-empty-p word)
-              (user-error "You must select at least one word for a filter")
-            (completing-read-multiple
-             "Contexts to filter [TAB for options]: "
-             mastodon-views--filter-types
-             nil t)))
+          (completing-read-multiple "Filter contexts [TAB for options]: "
+                                    mastodon-views--filter-types nil :match))
          (contexts-processed
-          (if (equal nil contexts)
+          (if (not contexts)
               (user-error "You must select at least one context for a filter")
-            (cl-loop for c in contexts
-                     collect (cons "context[]" c))))
-         (response (mastodon-http--post url (push
-                                             `("phrase" . ,word)
-                                             contexts-processed))))
+            (mastodon-http--build-array-params-alist "context[]" contexts)))
+         (params (append `(("title" . ,title)
+                           ("filter_action" . ,warn-or-hide))
+                         ;; ("keywords_attributes[][whole_word]" . "false"))
+                         terms-processed
+                         contexts-processed))
+         (response (mastodon-http--post url params)))
     (mastodon-http--triage response
                            (lambda (_)
                              (when (mastodon-tl--buffer-type-eq 'filters)
                                (mastodon-views--view-filters))
-                             (message "Filter created for %s!" word)))))
+                             (message "Filter %s created!" title)))))
 
 (defun mastodon-views--delete-filter ()
   "Delete filter at point."
