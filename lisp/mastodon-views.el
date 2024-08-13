@@ -777,7 +777,7 @@ MISSKEY means the instance is a Misskey or derived server."
     (mastodon-tl--do-if-item
      (let* ((toot (or (and (mastodon-tl--profile-buffer-p)
                            (mastodon-tl--property 'profile-json)) ; either profile
-                      (mastodon-tl--property 'item-json)) ; or toot or user listing
+                      (mastodon-tl--property 'item-json))) ; or toot or user listing
             (reblog (alist-get 'reblog toot))
             (account (or (alist-get 'account reblog)
                          (alist-get 'account toot)
