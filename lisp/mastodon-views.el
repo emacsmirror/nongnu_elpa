@@ -531,7 +531,7 @@ If ID, just return that toot."
   (interactive)
   (let ((id (mastodon-tl--property 'id :no-move)))
     (if (null id)
-        (user-error "no scheduled toot at point?")
+        (user-error "No scheduled toot at point?")
       (mastodon-toot--schedule-toot :reschedule))))
 
 (defun mastodon-views--copy-scheduled-toot-text ()
@@ -549,7 +549,7 @@ NO-CONFIRM means there is no ask or message, there is only do."
   (interactive)
   (let ((id (or id (mastodon-tl--property 'id :no-move))))
     (if (null id)
-        (user-error "no scheduled toot at point?")
+        (user-error "No scheduled toot at point?")
       (when (or no-confirm
                 (y-or-n-p "Cancel scheduled toot?"))
         (let* ((url (mastodon-http--api (format "scheduled_statuses/%s" id)))
@@ -565,7 +565,7 @@ NO-CONFIRM means there is no ask or message, there is only do."
   (interactive)
   (let ((id (mastodon-tl--property 'id :no-move)))
     (if (null id)
-        (user-error "no scheduled toot at point?")
+        (user-error "No scheduled toot at point?")
       (let* ((toot (mastodon-tl--property 'scheduled-json :no-move))
              (scheduled (alist-get 'scheduled_at toot)))
         (let-alist (alist-get 'params toot)
