@@ -513,7 +513,7 @@ JSON is the data returned by the server."
                  'item-type 'scheduled ; so we nav here
                  'face 'font-lock-comment-face
                  'keymap mastodon-views--scheduled-map
-                 'scheduled-json toot
+                 'item-json toot
                  'id .id)
      "\n")))
 
@@ -529,10 +529,8 @@ If ID, just return that toot."
 (defun mastodon-views--reschedule-toot ()
   "Reschedule the scheduled toot at point."
   (interactive)
-  (let ((id (mastodon-tl--property 'id :no-move)))
-    (if (null id)
-        (user-error "No scheduled toot at point?")
-      (mastodon-toot--schedule-toot :reschedule))))
+  (mastodon-tl--do-if-item
+   (mastodon-toot--schedule-toot :reschedule)))
 
 (defun mastodon-views--copy-scheduled-toot-text ()
   "Copy the text of the scheduled toot at point."
@@ -547,36 +545,34 @@ If ID, just return that toot."
 ID is that of the scheduled toot to cancel.
 NO-CONFIRM means there is no ask or message, there is only do."
   (interactive)
-  (let ((id (or id (mastodon-tl--property 'id :no-move))))
-    (if (null id)
-        (user-error "No scheduled toot at point?")
-      (when (or no-confirm
-                (y-or-n-p "Cancel scheduled toot?"))
-        (let* ((url (mastodon-http--api (format "scheduled_statuses/%s" id)))
-               (response (mastodon-http--delete url)))
-          (mastodon-http--triage response
-                                 (lambda (_)
-                                   (mastodon-views--view-scheduled-toots)
-                                   (unless no-confirm
-                                     (message "Toot cancelled!")))))))))
+  (mastodon-tl--do-if-item
+   (when (or no-confirm
+             (y-or-n-p "Cancel scheduled toot?"))
+     (let* ((id (or id (mastodon-tl--property 'id :no-move)))
+            (url (mastodon-http--api (format "scheduled_statuses/%s" id)))
+            (response (mastodon-http--delete url)))
+       (mastodon-http--triage response
+                              (lambda (_)
+                                (mastodon-views--view-scheduled-toots)
+                                (unless no-confirm
+                                  (message "Toot cancelled!"))))))))
 
 (defun mastodon-views--edit-scheduled-as-new ()
   "Edit scheduled status as new toot."
   (interactive)
-  (let ((id (mastodon-tl--property 'id :no-move)))
-    (if (null id)
-        (user-error "No scheduled toot at point?")
-      (let* ((toot (mastodon-tl--property 'scheduled-json :no-move))
-             (scheduled (alist-get 'scheduled_at toot)))
-        (let-alist (alist-get 'params toot)
-          ;; TODO: preserve polls
-          ;; (poll (alist-get 'poll params))
-          (mastodon-toot--compose-buffer nil .in_reply_to_id nil .text :edit)
-          (goto-char (point-max))
-          ;; adopt properties from scheduled toot:
-          (mastodon-toot--set-toot-properties
-           .in_reply_to_id .visibility .spoiler_text .language
-           scheduled id (alist-get 'media_attachments toot)))))))
+  (mastodon-tl--do-if-item
+   (let* ((toot (mastodon-tl--property 'scheduled-json :no-move))
+          (id (mastodon-tl--property 'id :no-move))
+          (scheduled (alist-get 'scheduled_at toot)))
+     (let-alist (alist-get 'params toot)
+       ;; TODO: preserve polls
+       ;; (poll (alist-get 'poll params))
+       (mastodon-toot--compose-buffer nil .in_reply_to_id nil .text :edit)
+       (goto-char (point-max))
+       ;; adopt properties from scheduled toot:
+       (mastodon-toot--set-toot-properties
+        .in_reply_to_id .visibility .spoiler_text .language
+        scheduled id (alist-get 'media_attachments toot))))))
 
 
 ;;; FILTERS
