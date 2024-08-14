@@ -53,6 +53,10 @@ Optionally specify VERSION in format vX."
   (concat mastodon-instance-url "/api/"
           (or version mastodon-http--api-version) "/" endpoint))
 
+(defun mastodon-http--api-v2 (endpoint)
+  "Return Mastodon API v2 URL for ENDPOINT."
+  (mastodon-http--api endpoint "v2"))
+
 (defun mastodon-http--api-search ()
   "Return Mastodon API url for the /search endpoint (v2)."
   (format "%s/api/v2/search" mastodon-instance-url))
