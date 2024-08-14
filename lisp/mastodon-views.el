@@ -700,6 +700,33 @@ Prompt for a context, must be a list containting at least one of \"home\",
                       (mastodon-views--view-filters)
                       (message "Filter \"%s\" deleted!" title))))))))
 
+(defun mastodon-views--get-filter-kw (&optional id)
+  "GET filter with ID."
+  (let* ((id (or id (mastodon-tl--property 'kw-id :no-move)))
+         (url (mastodon-http--api-v2 (format "filters/keywords/%s" id)))
+         (resp (mastodon-http--get-json url)))
+    resp))
+
+(defun mastodon-views--update-filter-kw ()
+  "Update filter keyword at point.
+Prmopt to change the term, and the whole words option.
+When t, whole words means only match whole words."
+  (interactive)
+  (let* ((id (mastodon-tl--property 'kw-id :no-move))
+         (kw (mastodon-views--get-filter-kw id))
+         (keyword (read-string "Keyword: " (alist-get 'keyword kw)))
+         (whole-word (if (y-or-n-p "Match whole words only? ")
+                         "true"
+                       "false"))
+         (params `(("keyword" . ,keyword)
+                   ("whole_word" . ,whole-word)))
+         (url (mastodon-http--api-v2 (format "filters/keywords/%s" id)))
+         (resp (mastodon-http--put url params)))
+    (mastodon-http--triage
+     resp
+     (lambda (resp)
+       (message (format "Keyword %s updated!" keyword))))))
+
 
 ;;; FOLLOW SUGGESTIONS
 ;; No pagination: max 80 results
