@@ -604,11 +604,15 @@ JSON is the filters data."
 
 (defun mastodon-views--insert-filter-kws (kws)
   "Insert filter keywords KWS."
+  ;; FIXME: make this a table (ideally upatable)
+  (insert "\n\nTerms: | whole words only:")
   (mapc (lambda (kw)
-          (let ((whole (alist-get 'whole_word kw)))
+          (let ((whole (if (eq :json-false (alist-get 'whole_word kw))
+                           "nil"
+                         "t")))
             (insert
              (propertize (concat
-                          (format "\n  %s \"%s\" | whole word: %s"
+                          (format "\n  %s \"%s\" | %s"
                                   (if (char-displayable-p ?―) "―" "-")
                                   (alist-get 'keyword kw)
                                   whole))
@@ -637,10 +641,9 @@ JSON is the filters data."
     ;; type (warn or hide):
     (insert "\n\nType: " .filter_action)
     ;; terms list:
-    (if (not .keywords)
+    (if (not .keywords) ;; poss to have a filter sans keywords
         ""
-      (insert "\n\nTerms:")
-      (mastodon-views--insert-filter-kws \.keywords))
+      (mastodon-views--insert-filter-kws .keywords))
     (insert "\n")))
 
 (defvar mastodon-views--filter-types
