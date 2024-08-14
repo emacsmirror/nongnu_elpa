@@ -3226,8 +3226,7 @@ operation of the server to minimize I/O."
 ;;                 :do-retrieves bool &
 ;;                 :save-attributes nil|t|'all & 
 ;;                 :retrieve-attributes bool) -> void
-;; vm-imap-save-attributes: (&optional :interactive bool &
-;;				       :all-flags bool) -> void
+;; vm-imap-save-attributes: (&optional :all-flags bool) -> void
 ;; vm-imap-folder-check-mail: (&optional interactive) -> ?
 ;;
 ;; vm-imap-get-synchronization-data: (&optional bool) -> 
@@ -3886,12 +3885,9 @@ cached tables.  If there is no cached data, return nil.  USR, 2012-10-19"
 (cl-defun vm-imap-save-attributes (&optional &key
 					   ;; (interactive nil)
 					   (all-flags nil))
-  "* Save the attributes of changed messages to the IMAP folder.
-   INTERACTIVE, true if the function was invoked interactively, e.g., as
-   vm-get-spooled-mail.
-   ALL-FLAGS, if true says that the attributes of all messages should
-   be saved to the IMAP folder, not only those of changed messages.
-"
+  "Save the attributes of changed messages to the IMAP folder.
+ALL-FLAGS, if true says that the attributes of all messages should
+be saved to the IMAP folder, not only those of changed messages."
   ;;--------------------------
   (vm-buffer-type:set 'folder)
   ;;--------------------------
@@ -3940,7 +3936,7 @@ This is useful for saving offline work on the cache folder."
       (vm-inform 0 "%s: This is not an IMAP folder" (buffer-name))
     (when (vm-establish-new-folder-imap-session t "general operation" nil)
       (vm-imap-retrieve-uid-and-flags-data)
-      (vm-imap-save-attributes :interactive t :all-flags full)
+      (vm-imap-save-attributes :all-flags full)
       ;; (vm-imap-synchronize-folder :interactive t
       ;; 			:save-attributes (if full 'all t))
       (vm-imap-synchronize-folder :interactive t 
