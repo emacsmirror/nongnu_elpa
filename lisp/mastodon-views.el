@@ -594,17 +594,32 @@ NO-CONFIRM means there is no ask or message, there is only do."
 JSON is what is returned by by the server."
   (mastodon-views--minor-view
    "filters"
-   #'mastodon-views--insert-filter-string-set
+   #'mastodon-views--insert-filters
    json))
 
-(defun mastodon-views--insert-filter-string-set (json)
+(defun mastodon-views--insert-filters (json)
   "Insert a filter string plus a blank line.
 JSON is the filters data."
-  (mapc #'mastodon-views--insert-filter-string json))
+  (mapc #'mastodon-views--insert-filter json))
 
-(defun mastodon-views--insert-filter-string (filter)
+(defun mastodon-views--insert-filter-kws (kws)
+  "Insert filter keywords KWS."
+  (mapc (lambda (kw)
+          (let ((whole (alist-get 'whole_word kw)))
+            (insert
+             (propertize (concat
+                          (format "\n  %s \"%s\" | whole word: %s"
+                                  (if (char-displayable-p ?―) "―" "-")
+                                  (alist-get 'keyword kw)
+                                  whole))
+                         'kw-id (alist-get 'id kw)
+                         'whole-word whole))))
+        kws))
+
+(defun mastodon-views--insert-filter (filter)
   "Insert a single FILTER."
   (let-alist filter
+    ;; heading:
     (insert
      (mastodon-tl--set-face
       (concat "\n " mastodon-tl--horiz-bar "\n "
@@ -616,18 +631,16 @@ JSON is the filters data."
               " " "\n"
               " " mastodon-tl--horiz-bar "\n")
       'success))
+    ;; context:
     (insert "Context: "
             (mapconcat #'identity .context ", "))
+    ;; type (warn or hide):
     (insert "\n\nType: " .filter_action)
+    ;; terms list:
     (if (not .keywords)
         ""
       (insert "\n\nTerms:")
-      (mapc (lambda (kw)
-              (insert
-               (concat (format "\n  %s \"%s\""
-                               (if (char-displayable-p ?―) "―" "-")
-                               (alist-get 'keyword kw)))))
-            .keywords))
+      (mastodon-views--insert-filter-kws \.keywords))
     (insert "\n")))
 
 (defvar mastodon-views--filter-types
@@ -677,7 +690,7 @@ Prompt for a context, must be a list containting at least one of \"home\",
   (interactive)
   (let* ((id (mastodon-tl--property 'item-id :no-move))
          (title (mastodon-tl--property 'filter-title :no-move))
-         (url (mastodon-http--api (format "filters/%s" id) "v2")))
+         (url (mastodon-http--api-v2 (format "filters/%s" id))))
     (if (null id)
         (user-error "No filter at point?")
       (when (y-or-n-p (format "Delete filter %s? " title))
