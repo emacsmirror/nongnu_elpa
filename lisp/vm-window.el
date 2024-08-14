@@ -24,6 +24,7 @@
 (require 'vm-macro)
 (require 'vm-misc)
 (require 'tapestry) ;; FIXME: Use Emacs-24's `frameset'?
+(eval-when-compile (require 'cl-lib))
 
 (declare-function frame-highest-window "vm-xemacs" (frame))
 
