@@ -1,6 +1,6 @@
 #+TEXINFO_DIR_CATEGORY: Emacs
 #+TEXINFO_DIR_TITLE: Mastodon: (mastodon).
-#+TEXINFO_DIR_DESC: Client for Mastodon on ActivityPub networks.
+#+TEXINFO_DIR_DESC: Client for fediverse services using the Mastodon API.
 
 @@html: <a href="https://elpa.nongnu.org/nongnu/mastodon.html"><img alt="ELPA" src="https://elpa.nongnu.org/nongnu/mastodon.svg"></a>@@
 
