@@ -92,6 +92,11 @@
     (define-key map (kbd "d") #'mastodon-views--delete-filter)
     (define-key map (kbd "c") #'mastodon-views--create-filter)
     (define-key map (kbd "g") #'mastodon-views--view-filters)
+    (define-key map (kbd "u") #'mastodon-views--update-filter)
+    (define-key map (kbd "k") #'mastodon-views--delete-filter)
+    (define-key map (kbd "a") #'mastodon-views--add-filter-kw)
+    (define-key map (kbd "r") #'mastodon-views--remove-filter-kw)
+    (define-key map (kbd "U") #'mastodon-views--update-filter-kw)
     map)
   "Keymap for viewing filters.")
 
@@ -584,8 +589,9 @@ NO-CONFIRM means there is no ask or message, there is only do."
                           'mastodon-views--insert-filters
                           nil nil nil
                           "current filters"
-                          "c - create filter\n d - delete filter at point\n\
- n/p - go to next/prev filter" "v2")
+                          "c - create filter | d/k - delete filter at point\n\
+ u - update filter\n a/r/U - add/remove/Update filter keyword\n
+ n/p - next/prev filter" "v2")
   (with-current-buffer "*mastodon-filters*"
     (use-local-map mastodon-views--view-filters-keymap)))
 
@@ -604,7 +610,7 @@ JSON is the filters data."
                                          "–"
                                        "-"))
         (whole-str "whole-words-only:"))
-    (insert (concat "Terms: | " whole-str "\n"))
+    (insert (concat "Keywords: | " whole-str "\n"))
     (mapc (lambda (kw)
             (let ((whole (if (eq :json-false (alist-get 'whole_word kw))
                              "nil"
