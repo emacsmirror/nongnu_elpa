@@ -646,7 +646,7 @@ JSON is the filters data."
        (concat "Context: "
                (mapconcat #'identity .context ", "))
        ;; type (warn or hide):
-       (concat "\n\nType: " .filter_action))
+       (concat "\nType: " .filter_action))
       'item-json filter
       'item-id .id
       'item-type 'filter))
@@ -693,11 +693,8 @@ Prompt for a context, must be a list containting at least one of \"home\",
                          terms-processed
                          contexts-processed))
          (response (mastodon-http--post url params)))
-    (mastodon-http--triage response
-                           (lambda (_)
-                             (when (mastodon-tl--buffer-type-eq 'filters)
-                               (mastodon-views--view-filters))
-                             (message "Filter %s created!" title)))))
+    (mastodon-views--filters-triage
+     (message "Filter %s created!" title))))
 
 (defun mastodon-views--delete-filter ()
   "Delete filter at point."
@@ -708,11 +705,10 @@ Prompt for a context, must be a list containting at least one of \"home\",
     (if (not (eq 'filter (mastodon-tl--property 'item-type)))
         (user-error "No filter at point?")
       (when (y-or-n-p (format "Delete filter %s? " title))
-        (let ((response (mastodon-http--delete url)))
-          (mastodon-http--triage
-           response (lambda (_)
-                      (mastodon-views--view-filters)
-                      (message "Filter \"%s\" deleted!" title))))))))
+        (let ((resp (mastodon-http--delete url)))
+          (mastodon-views--filters-triage
+           resp
+           (message "Filter \"%s\" deleted!" title)))))))
 
 (defun mastodon-views--get-filter-kw (&optional id)
   "GET filter with ID."
@@ -722,24 +718,36 @@ Prompt for a context, must be a list containting at least one of \"home\",
     resp))
 
 (defun mastodon-views--update-filter-kw ()
-  "Update filter keyword at point.
+  "Update filter keyword.
 Prmopt to change the term, and the whole words option.
 When t, whole words means only match whole words."
   (interactive)
-  (let* ((id (mastodon-tl--property 'kw-id :no-move))
-         (kw (mastodon-views--get-filter-kw id))
-         (keyword (read-string "Keyword: " (alist-get 'keyword kw)))
-         (whole-word (if (y-or-n-p "Match whole words only? ")
-                         "true"
-                       "false"))
-         (params `(("keyword" . ,keyword)
-                   ("whole_word" . ,whole-word)))
-         (url (mastodon-http--api-v2 (format "filters/keywords/%s" id)))
-         (resp (mastodon-http--put url params)))
-    (mastodon-http--triage
-     resp
-     (lambda (_resp)
-       (message (format "Keyword %s updated!" keyword))))))
+  (if (not (eq 'filter (mastodon-tl--property 'item-type)))
+      (user-error "No filter at point?")
+    (let* ((kws (alist-get 'keywords
+                           (mastodon-tl--property 'item-json :no-move)))
+           (alist (mastodon-tl--map-alist-vals-to-alist 'keyword 'id kws))
+           (choice (completing-read "Update keyword: " alist))
+           (updated (read-string "Keyword: " choice))
+           (whole-word (if (y-or-n-p "Match whole words only? ")
+                           "true"
+                         "false"))
+           (params `(("keyword" . ,updated)
+                     ("whole_word" . ,whole-word)))
+           (id (cdr (assoc choice alist #'equal)))
+           (url (mastodon-http--api-v2 (format "filters/keywords/%s" id)))
+           (resp (mastodon-http--put url params)))
+      (mastodon-views--filters-triage resp
+                                      (format "Keyword %s updated!" updated)))))
+
+(defun mastodon-views--filters-triage (resp msg-str)
+  "Triage filter action response RESP, reload filters, message MSG-STR."
+  (mastodon-http--triage
+   resp
+   (lambda (_resp)
+     (when (mastodon-tl--buffer-type-eq 'filters)
+       (mastodon-views--view-filters))
+     (message msg-str))))
 
 (defun mastodon-views--add-filter-kw ()
   "Add a keyword to filter at point."
@@ -755,10 +763,8 @@ When t, whole words means only match whole words."
                      ("whole_word" . ,whole-word)))
            (url (mastodon-http--api-v2 (format "filters/%s/keywords" id)))
            (resp (mastodon-http--post url params)))
-      (mastodon-http--triage
-       resp
-       (lambda (_resp)
-         (message (format "Keyword %s added!" kw)))))))
+      (mastodon-views--filters-triage resp
+                                      (format "Keyword %s added!" kw)))))
 
 (defun mastodon-views--remove-filter-kw ()
   "Remove keyword from filter at point."
@@ -772,10 +778,7 @@ When t, whole words means only match whole words."
            (id (cdr (assoc choice alist #'equal)))
            (url (mastodon-http--api-v2 (format "filters/keywords/%s" id)))
            (resp (mastodon-http--delete url)))
-      (mastodon-http--triage
-       resp
-       (lambda (_resp)
-         (message (format "Keyword %s removed!" choice)))))))
+      (mastodon-views--filters-triage resp (format "Keyword %s removed!" choice)))))
 
 
 ;;; FOLLOW SUGGESTIONS
