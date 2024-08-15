@@ -201,6 +201,7 @@ Status notifications are given when
 
 (defun mastodon-notifications--format-note (note type)
   "Format for a NOTE of TYPE."
+  ;; FIXME: apply/refactor filtering as per/with `mastodon-tl--toot'
   (let* ((id (alist-get 'id note))
          (profile-note
           (when (equal 'follow-request type)
@@ -211,77 +212,85 @@ Status notifications are given when
                   (string-limit str mastodon-notifications--profile-note-in-foll-reqs-max-length)
                 str))))
          (status (mastodon-tl--field 'status note))
-         (follower (alist-get 'username (alist-get 'account note))))
-    (mastodon-tl--insert-status
-     ;; toot
-     (cond ((or (equal type 'follow)
-                (equal type 'follow-request))
-            ;; Using reblog with an empty id will mark this as something
-            ;; non-boostable/non-favable.
-            (cons '(reblog (id . nil)) note))
-           ;; reblogs/faves use 'note' to process their own json
-           ;; not the toot's. this ensures following etc. work on such notifs
-           ((or (equal type 'favourite)
-                (equal type 'boost))
-            note)
-           (t
-            status))
-     ;; body
-     (let ((body (mastodon-tl--clean-tabs-and-nl
-                  (if (mastodon-tl--has-spoiler status)
-                      (mastodon-tl--spoiler status)
-                    (if (equal 'follow-request type)
-                        (mastodon-tl--render-text profile-note)
-                      (mastodon-tl--content status))))))
-       (cond ((or (eq type 'follow)
-                  (eq type 'follow-request))
-              (if (equal type 'follow)
-                  (propertize "Congratulations, you have a new follower!"
-                              'face 'default)
-                (concat
-                 (propertize
-                  (format "You have a follow request from... %s"
-                          follower)
-                  'face 'default)
-                 (when mastodon-notifications--profile-note-in-foll-reqs
-                   (concat
-                    ":\n"
-                    (mastodon-notifications--comment-note-text body))))))
-             ((or (eq type 'favourite)
-                  (eq type 'boost))
-              (mastodon-notifications--comment-note-text body))
-             (t body)))
-     ;; author-byline
-     (if (or (equal type 'follow)
-             (equal type 'follow-request)
-             (equal type 'mention))
-         'mastodon-tl--byline-author
-       (lambda (_status &rest _args) ; unbreak stuff
-         (mastodon-tl--byline-author note)))
-     ;; action-byline
-     (lambda (_status)
-       (mastodon-notifications--byline-concat
-        (cond ((equal type 'boost)
-               "Boosted")
-              ((equal type 'favourite)
-               "Favourited")
-              ((equal type 'follow-request)
-               "Requested to follow")
-              ((equal type 'follow)
-               "Followed")
-              ((equal type 'mention)
-               "Mentioned")
-              ((equal type 'status)
-               "Posted")
-              ((equal type 'poll)
-               "Posted a poll")
-              ((equal type 'edit)
-               "Edited"))))
-     id
-     ;; base toot
-     (when (or (equal type 'favourite)
-               (equal type 'boost))
-       status))))
+         (follower (alist-get 'username (alist-get 'account note)))
+         (toot (alist-get 'status note))
+         (filtered (mastodon-tl--field 'filtered toot))
+         (filters (when filtered
+                    (mastodon-tl--current-filters filtered))))
+    (if (and filtered (assoc "hide" filters))
+        nil
+      (mastodon-tl--insert-status
+       ;; toot
+       (cond ((or (equal type 'follow)
+                  (equal type 'follow-request))
+              ;; Using reblog with an empty id will mark this as something
+              ;; non-boostable/non-favable.
+              (cons '(reblog (id . nil)) note))
+             ;; reblogs/faves use 'note' to process their own json
+             ;; not the toot's. this ensures following etc. work on such notifs
+             ((or (equal type 'favourite)
+                  (equal type 'boost))
+              note)
+             (t
+              status))
+       ;; body
+       (let ((body (if-let ((match (assoc "warn" filters)))
+                       (mastodon-tl--spoiler toot (cadr match))
+                     (mastodon-tl--clean-tabs-and-nl
+                      (if (mastodon-tl--has-spoiler status)
+                          (mastodon-tl--spoiler status)
+                        (if (equal 'follow-request type)
+                            (mastodon-tl--render-text profile-note)
+                          (mastodon-tl--content status)))))))
+         (cond ((or (eq type 'follow)
+                    (eq type 'follow-request))
+                (if (equal type 'follow)
+                    (propertize "Congratulations, you have a new follower!"
+                                'face 'default)
+                  (concat
+                   (propertize
+                    (format "You have a follow request from... %s"
+                            follower)
+                    'face 'default)
+                   (when mastodon-notifications--profile-note-in-foll-reqs
+                     (concat
+                      ":\n"
+                      (mastodon-notifications--comment-note-text body))))))
+               ((or (eq type 'favourite)
+                    (eq type 'boost))
+                (mastodon-notifications--comment-note-text body))
+               (t body)))
+       ;; author-byline
+       (if (or (equal type 'follow)
+               (equal type 'follow-request)
+               (equal type 'mention))
+           'mastodon-tl--byline-author
+         (lambda (_status &rest _args) ; unbreak stuff
+           (mastodon-tl--byline-author note)))
+       ;; action-byline
+       (lambda (_status)
+         (mastodon-notifications--byline-concat
+          (cond ((equal type 'boost)
+                 "Boosted")
+                ((equal type 'favourite)
+                 "Favourited")
+                ((equal type 'follow-request)
+                 "Requested to follow")
+                ((equal type 'follow)
+                 "Followed")
+                ((equal type 'mention)
+                 "Mentioned")
+                ((equal type 'status)
+                 "Posted")
+                ((equal type 'poll)
+                 "Posted a poll")
+                ((equal type 'edit)
+                 "Edited"))))
+       id
+       ;; base toot
+       (when (or (equal type 'favourite)
+                 (equal type 'boost))
+         status)))))
 
 (defun mastodon-notifications--by-type (note)
   "Filter NOTE for those listed in `mastodon-notifications--types-alist'.
