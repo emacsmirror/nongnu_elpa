@@ -600,6 +600,9 @@ JSON is the filters data."
   "Insert filter keywords KWS."
   (insert "\n\n")
   (let ((beg (point))
+        (table-cell-horizontal-chars (if (char-displayable-p ?–) ; ?– ?-)
+                                         "–"
+                                       "-"))
         (whole-str "whole-words-only:"))
     (insert (concat "Terms: | " whole-str "\n"))
     (mapc (lambda (kw)
