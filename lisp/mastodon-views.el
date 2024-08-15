@@ -590,14 +590,6 @@ NO-CONFIRM means there is no ask or message, there is only do."
     (use-local-map mastodon-views--view-filters-keymap)))
 
 (defun mastodon-views--insert-filters (json)
-  "Insert the user's current filters.
-JSON is what is returned by by the server."
-  (mastodon-views--minor-view
-   "filters"
-   #'mastodon-views--insert-filters
-   json))
-
-(defun mastodon-views--insert-filters (json)
   "Insert a filter string plus a blank line.
 JSON is the filters data."
   (mapc #'mastodon-views--insert-filter json))
@@ -618,6 +610,8 @@ JSON is the filters data."
                             (format "\"%s\" | %s\n"
                                     (alist-get 'keyword kw) whole))
                            'kw-id (alist-get 'id kw)
+                           'item-json kw
+                           'mastodon-tab-stop t
                            'whole-word whole))))
           kws)
     ;; table display of kws:
@@ -636,21 +630,28 @@ JSON is the filters data."
   (let-alist filter
     ;; heading:
     (insert
-     (mastodon-tl--set-face
-      (concat "\n " mastodon-tl--horiz-bar "\n "
-              (propertize (upcase .title)
-                          'item-id .id
-                          'item-type 'filter
-                          'filter-title .title
-                          'byline t)
-              " " "\n"
-              " " mastodon-tl--horiz-bar "\n")
-      'success))
-    ;; context:
-    (insert "Context: "
-            (mapconcat #'identity .context ", "))
-    ;; type (warn or hide):
-    (insert "\n\nType: " .filter_action)
+     (propertize
+      (concat
+       (mastodon-tl--set-face
+        (concat "\n " mastodon-tl--horiz-bar "\n "
+                (propertize (upcase .title)
+                            'item-id .id
+                            'item-type 'filter
+                            'filter-title .title
+                            'byline t)
+                " " "\n"
+                " " mastodon-tl--horiz-bar "\n")
+        'success)
+       ;; context:
+       (concat "Context: "
+               (mapconcat #'identity .context ", "))
+       ;; type (warn or hide):
+       (concat "\n\nType: " .filter_action))
+      'item-json filter
+      'item-id .id
+      'item-type 'filter))
+
+    ;; FIXME: return a string so we can propertize/insert in here:
     ;; terms list:
     (if (not .keywords) ;; poss to have a filter sans keywords
         ""
@@ -704,7 +705,7 @@ Prompt for a context, must be a list containting at least one of \"home\",
   (let* ((id (mastodon-tl--property 'item-id :no-move))
          (title (mastodon-tl--property 'filter-title :no-move))
          (url (mastodon-http--api-v2 (format "filters/%s" id))))
-    (if (null id)
+    (if (not (eq 'filter (mastodon-tl--property 'item-type)))
         (user-error "No filter at point?")
       (when (y-or-n-p (format "Delete filter %s? " title))
         (let ((response (mastodon-http--delete url)))
@@ -737,8 +738,44 @@ When t, whole words means only match whole words."
          (resp (mastodon-http--put url params)))
     (mastodon-http--triage
      resp
-     (lambda (resp)
+     (lambda (_resp)
        (message (format "Keyword %s updated!" keyword))))))
+
+(defun mastodon-views--add-filter-kw ()
+  "Add a keyword to filter at point."
+  (interactive)
+  (if (not (eq 'filter (mastodon-tl--property 'item-type)))
+      (user-error "No filter at point?")
+    (let* ((kw (read-string "Keyword: "))
+           (id (mastodon-tl--property 'item-id :no-move))
+           (whole-word (if (y-or-n-p "Match whole words only? ")
+                           "true"
+                         "false"))
+           (params `(("keyword" . ,kw)
+                     ("whole_word" . ,whole-word)))
+           (url (mastodon-http--api-v2 (format "filters/%s/keywords" id)))
+           (resp (mastodon-http--post url params)))
+      (mastodon-http--triage
+       resp
+       (lambda (_resp)
+         (message (format "Keyword %s added!" kw)))))))
+
+(defun mastodon-views--remove-filter-kw ()
+  "Remove keyword from filter at point."
+  (interactive)
+  (if (not (eq 'filter (mastodon-tl--property 'item-type)))
+      (user-error "No filter at point?")
+    (let* ((kws (alist-get 'keywords
+                           (mastodon-tl--property 'item-json :no-move)))
+           (alist (mastodon-tl--map-alist-vals-to-alist 'keyword 'id kws))
+           (choice (completing-read "Remove keyword: " alist))
+           (id (cdr (assoc choice alist #'equal)))
+           (url (mastodon-http--api-v2 (format "filters/keywords/%s" id)))
+           (resp (mastodon-http--delete url)))
+      (mastodon-http--triage
+       resp
+       (lambda (_resp)
+         (message (format "Keyword %s removed!" choice)))))))
 
 
 ;;; FOLLOW SUGGESTIONS
