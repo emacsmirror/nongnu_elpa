@@ -594,9 +594,10 @@ NO-CONFIRM means there is no ask or message, there is only do."
 JSON is the filters data."
   (mapc #'mastodon-views--insert-filter json))
 
+(require 'table)
+
 (defun mastodon-views--insert-filter-kws (kws)
   "Insert filter keywords KWS."
-  ;; FIXME: make this a table (ideally upatable)
   (insert "\n\n")
   (let ((beg (point))
         (whole-str "whole-words-only:"))
@@ -628,10 +629,10 @@ JSON is the filters data."
 (defun mastodon-views--insert-filter (filter)
   "Insert a single FILTER."
   (let-alist filter
-    ;; heading:
     (insert
      (propertize
       (concat
+       ;; heading:
        (mastodon-tl--set-face
         (concat "\n " mastodon-tl--horiz-bar "\n "
                 (propertize (upcase .title)
@@ -650,8 +651,6 @@ JSON is the filters data."
       'item-json filter
       'item-id .id
       'item-type 'filter))
-
-    ;; FIXME: return a string so we can propertize/insert in here:
     ;; terms list:
     (if (not .keywords) ;; poss to have a filter sans keywords
         ""
@@ -665,8 +664,6 @@ JSON is the filters data."
 Prompt for a context, must be a list containting at least one of \"home\",
 \"notifications\", \"public\", \"thread\"."
   (interactive)
-  ;; FIXME: implement "keywords_attributes[][whole_word]" boolean for each
-  ;; term
   (let* ((url (mastodon-http--api "filters" "v2"))
          (title (read-string "Filter name: "))
          (terms (read-string "Terms to filter (comma or space separated): "))
@@ -692,8 +689,9 @@ Prompt for a context, must be a list containting at least one of \"home\",
                          ;; ("keywords_attributes[][whole_word]" . "false"))
                          terms-processed
                          contexts-processed))
-         (response (mastodon-http--post url params)))
+         (resp (mastodon-http--post url params)))
     (mastodon-views--filters-triage
+     resp
      (message "Filter %s created!" title))))
 
 (defun mastodon-views--delete-filter ()
