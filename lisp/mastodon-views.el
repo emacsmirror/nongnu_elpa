@@ -659,14 +659,17 @@ JSON is the filters data."
 (defvar mastodon-views--filter-types
   '("home" "notifications" "public" "thread" "profile"))
 
-(defun mastodon-views--create-filter ()
+(defun mastodon-views--create-filter (&optional id title context type terms)
   "Create a filter for a word.
 Prompt for a context, must be a list containting at least one of \"home\",
-\"notifications\", \"public\", \"thread\"."
+\"notifications\", \"public\", \"thread\".
+Optionally, provide ID, TITLE, CONTEXT, TYPE, and TERMS to update a filter."
   (interactive)
-  (let* ((url (mastodon-http--api "filters" "v2"))
-         (title (read-string "Filter name: "))
-         (terms (read-string "Terms to filter (comma or space separated): "))
+  (let* ((url (if id
+                  (mastodon-http--api-v2 (format "filters/%s" id))
+                (mastodon-http--api-v2 "filters")))
+         (title (or title (read-string "Filter name: ")))
+         (terms (or terms (read-string "Terms to filter (comma or space separated): ")))
          (terms-split (split-string terms "[, ]"))
          (terms-processed
           (if (not terms)
@@ -674,12 +677,14 @@ Prompt for a context, must be a list containting at least one of \"home\",
             (mastodon-http--build-array-params-alist
              "keywords_attributes[][keyword]" terms-split)))
          (warn-or-hide
-          (completing-read "Warn (like CW) or hide? "
-                           '("warn" "hide") nil :match))
+          (or type
+              (completing-read "Warn (like CW) or hide? "
+                               '("warn" "hide") nil :match)))
          (contexts
-          (completing-read-multiple
-           "Filter contexts [TAB for options, comma separated]: "
-           mastodon-views--filter-types nil :match))
+          (or context
+              (completing-read-multiple
+               "Filter contexts [TAB for options, comma separated]: "
+               mastodon-views--filter-types nil :match)))
          (contexts-processed
           (if (not contexts)
               (user-error "You must select at least one context for a filter")
@@ -689,10 +694,32 @@ Prompt for a context, must be a list containting at least one of \"home\",
                          ;; ("keywords_attributes[][whole_word]" . "false"))
                          terms-processed
                          contexts-processed))
-         (resp (mastodon-http--post url params)))
+         (resp (if id
+                   (mastodon-http--put url params)
+                 (mastodon-http--post url params))))
     (mastodon-views--filters-triage
      resp
      (message "Filter %s created!" title))))
+
+(defun mastodon-views--update-filter ()
+  "Update filter at point."
+  (interactive)
+  (if (not (eq 'filter (mastodon-tl--property 'item-type)))
+      (user-error "No filter at point?")
+    (let* ((filter (mastodon-tl--property 'item-json))
+           (id (mastodon-tl--property 'item-id))
+           (name (read-string "Name: " (alist-get 'title filter)))
+           (contexts (completing-read-multiple
+                      "Filter contexts [TAB for options, comma separated]: "
+                      mastodon-views--filter-types nil :match
+                      (mapconcat #'identity
+                                 (alist-get 'context filter) ",")))
+           (type (completing-read "Warn (like CW) or hide? "
+                                  '("warn" "hide") nil :match
+                                  (alist-get 'type filter)))
+           (terms (read-string "Terms to add (comma or space separated): ")))
+      (mastodon-views--create-filter id name contexts type terms))))
+
 
 (defun mastodon-views--delete-filter ()
   "Delete filter at point."
