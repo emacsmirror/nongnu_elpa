@@ -605,20 +605,31 @@ JSON is the filters data."
 (defun mastodon-views--insert-filter-kws (kws)
   "Insert filter keywords KWS."
   ;; FIXME: make this a table (ideally upatable)
-  (insert "\n\nTerms: | whole words only:")
-  (mapc (lambda (kw)
-          (let ((whole (if (eq :json-false (alist-get 'whole_word kw))
-                           "nil"
-                         "t")))
-            (insert
-             (propertize (concat
-                          (format "\n  %s \"%s\" | %s"
-                                  (if (char-displayable-p ?―) "―" "-")
-                                  (alist-get 'keyword kw)
-                                  whole))
-                         'kw-id (alist-get 'id kw)
-                         'whole-word whole))))
-        kws))
+  (insert "\n\n")
+  (let ((beg (point))
+        (whole-str "whole-words-only:"))
+    (insert (concat "Terms: | " whole-str "\n"))
+    (mapc (lambda (kw)
+            (let ((whole (if (eq :json-false (alist-get 'whole_word kw))
+                             "nil"
+                           "t")))
+              (insert
+               (propertize (concat
+                            (format "\"%s\" | %s\n"
+                                    (alist-get 'keyword kw) whole))
+                           'kw-id (alist-get 'id kw)
+                           'whole-word whole))))
+          kws)
+    ;; table display of kws:
+    (table-capture beg (point) "|" "\n" nil (+ 2 (length whole-str)))
+    (table-justify-column 'center)
+    (table-forward-cell) ;; col 2
+    (table-justify-column 'center)
+    (while (re-search-forward ;; goto end of table:
+            (concat table-cell-horizontal-chars
+                    (make-string 1 table-cell-intersection-char)
+                    "\n")
+            nil :no-error))))
 
 (defun mastodon-views--insert-filter (filter)
   "Insert a single FILTER."
@@ -643,8 +654,7 @@ JSON is the filters data."
     ;; terms list:
     (if (not .keywords) ;; poss to have a filter sans keywords
         ""
-      (mastodon-views--insert-filter-kws .keywords))
-    (insert "\n")))
+      (mastodon-views--insert-filter-kws .keywords))))
 
 (defvar mastodon-views--filter-types
   '("home" "notifications" "public" "thread" "profile"))
