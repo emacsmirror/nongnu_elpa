@@ -97,46 +97,40 @@ PLIST, COPY."
     ;; HTML so it can call `org-transclusion--insert-org-from-html-with-pandoc'.
 
     ;; - Avoid unnecessarily loading major mode based on content type.
-    (hyperdrive-fill entry
+    (hyperdrive-entry-api 'get entry :noquery t
       :then
-      (lambda (entry)
-        (hyperdrive-fill-latest-version hyperdrive)
-        (hyperdrive-persist hyperdrive)
-        (hyperdrive-api 'get (hyperdrive-entry-url entry) :noquery t :as 'buffer
-          :then
-          (lambda (_buffer)
-            (when-let ((target-buf (marker-buffer target-mkr)))
-              (cond ((org-transclusion-html--html-p (current-buffer)) ; HTML
-                     (let ((dom (libxml-parse-html-region)))
-                       (when (dom-by-id dom (format "\\`%s\\'" target))
-                         ;; Page contains id element matching link target.
-                         (erase-buffer)
-                         (dom-print
-                          (org-transclusion-html--target-content dom target)))
-                       (org-transclusion--insert-org-from-html-with-pandoc)
-                       ;; Use "org"-prefixed `tc-type' since HTML is converted
-                       ;; to Org mode.
-                       (setf tc-type "org-html-hyper")))
-                    ((org-transclusion-org-file-p path) ; Org-mode
-                     (when target
-                       (org-mode)
-                       (let ((org-link-search-must-match-exact-headline t))
-                         (when (with-demoted-errors "hyperdrive-org-transclusion: Transcluding whole file due to %S"
-                                 (org-link-search (format "%s" target)))
-                           (org-narrow-to-subtree))))
-                     (setf tc-type "org-hyper"))
-                    (t   ; All other file types
-                     (setf tc-type "others-hyper")))
-              (let* ((payload-without-type
-                      (org-transclusion-content-org-buffer-or-element
-                       nil plist))
-                     (payload
-                      (append `(:tc-type ,tc-type) payload-without-type)))
-                (with-current-buffer target-buf
-                  (org-with-wide-buffer
-                   (goto-char (marker-position target-mkr))
-                   (org-transclusion-add-payload payload link plist copy))))))
-          :else (apply-partially #'hyperdrive-org-transclusion-error-handler raw-link)))
+      (lambda (_)
+        (when-let ((target-buf (marker-buffer target-mkr)))
+          (cond ((org-transclusion-html--html-p (current-buffer)) ; HTML
+                 (let ((dom (libxml-parse-html-region)))
+                   (when (dom-by-id dom (format "\\`%s\\'" target))
+                     ;; Page contains id element matching link target.
+                     (erase-buffer)
+                     (dom-print
+                      (org-transclusion-html--target-content dom target)))
+                   (org-transclusion--insert-org-from-html-with-pandoc)
+                   ;; Use "org"-prefixed `tc-type' since HTML is converted
+                   ;; to Org mode.
+                   (setf tc-type "org-html-hyper")))
+                ((org-transclusion-org-file-p path) ; Org-mode
+                 (when target
+                   (org-mode)
+                   (let ((org-link-search-must-match-exact-headline t))
+                     (when (with-demoted-errors "hyperdrive-org-transclusion: Transcluding whole file due to %S"
+                             (org-link-search (format "%s" target)))
+                       (org-narrow-to-subtree))))
+                 (setf tc-type "org-hyper"))
+                (t   ; All other file types
+                 (setf tc-type "others-hyper")))
+          (let* ((payload-without-type
+                  (org-transclusion-content-org-buffer-or-element
+                   nil plist))
+                 (payload
+                  (append `(:tc-type ,tc-type) payload-without-type)))
+            (with-current-buffer target-buf
+              (org-with-wide-buffer
+               (goto-char (marker-position target-mkr))
+               (org-transclusion-add-payload payload link plist copy))))))
       :else (apply-partially #'hyperdrive-org-transclusion-error-handler raw-link))))
 
 ;;;; Error handling
