@@ -1806,46 +1806,6 @@ To disable showing the stats, customize
              status)))
       status)))
 
-(defun mastodon-tl--is-reply (toot)
-  "Check if the TOOT is a reply to another one (and not boosted)."
-  (and (null (mastodon-tl--field 'in_reply_to_id toot))
-       (not (mastodon-tl--field 'rebloged toot))))
-
-(defun mastodon-tl--toot (toot &optional detailed-p thread domain
-                               unfolded no-byline)
-  "Format TOOT and insert it into the buffer.
-DETAILED-P means display more detailed info. For now
-this just means displaying toot client.
-THREAD means the status will be displayed in a thread view.
-When DOMAIN, force inclusion of user's domain in their handle.
-UNFOLDED is a boolean meaning whether to unfold or fold item if foldable.
-NO-BYLINE means just insert toot body, used for folding."
-  (mastodon-tl--insert-status
-   toot
-   (mastodon-tl--clean-tabs-and-nl (if (mastodon-tl--has-spoiler toot)
-                                       (mastodon-tl--spoiler toot)
-                                     (mastodon-tl--content toot)))
-   'mastodon-tl--byline-author 'mastodon-tl--byline-boosted
-   nil nil detailed-p thread domain unfolded no-byline))
-
-(defun mastodon-tl--timeline (toots &optional thread domain)
-  "Display each toot in TOOTS.
-This function removes replies if user required.
-THREAD means the status will be displayed in a thread view.
-When DOMAIN, force inclusion of user's domain in their handle."
-  (mapc (lambda (toot)
-          (mastodon-tl--toot toot nil thread domain))
-        ;; hack to *not* filter replies on profiles:
-        (if (eq (mastodon-tl--get-buffer-type) 'profile-statuses)
-            toots
-          (if (or ; we were called via --more*:
-               (mastodon-tl--buffer-property 'hide-replies nil :no-error)
-               ;; loading a tl with a prefix arg:
-               (mastodon-tl--hide-replies-p current-prefix-arg))
-	      (cl-remove-if-not #'mastodon-tl--is-reply toots)
-	    toots)))
-  (goto-char (point-min)))
-
 
 ;;; BUFFER SPEC
 
