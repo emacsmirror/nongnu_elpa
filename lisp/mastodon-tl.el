@@ -971,16 +971,20 @@ this should be of the form <at-sign><user id>, e.g. \"@Gargon\"."
           buffer-text ; no instance suffix for local mention
         (concat buffer-text "@" host)))))
 
-(defun mastodon-tl--hashtag-from-url (url _instance-url)
+(defun mastodon-tl--hashtag-from-url (url instance-url)
   "Return the hashtag that URL points to or nil if URL is not a tag link.
 INSTANCE-URL is the url of the instance for the toot that the link
 came from (tag links always point to a page on the instance publishing
 the toot)."
-  ;; FIXME: do we rly need to check it against instance-url?
-  (let* ((parsed (url-generic-parse-url url))
+  ;; TODO: do we rly need to check it against instance-url?
+  ;; test suggests we might
+  (let* ((instance-host (url-host
+                         (url-generic-parse-url instance-url)))
+         (parsed (url-generic-parse-url url))
          (path (url-filename parsed))
          (split (string-split path "/")))
-    (when (string-prefix-p "/tag" path) ;; "/tag/" or "/tags/"
+    (when (and (string= instance-host (url-host parsed))
+               (string-prefix-p "/tag" path)) ;; "/tag/" or "/tags/"
       (nth 2 split))))
 
 
@@ -1237,12 +1241,12 @@ SENSITIVE is a flag from the item's JSON data."
        (if (eq 'hidden (mastodon-tl--property 'sensitive-state :no-move))
            ;; display:
            `( display ,data
-              sensitive-state showing))
-       ;; hide:
-       `( sensitive-state hidden
-          display
-          ,(create-image
-            mastodon-media--sensitive-image-data nil t))))))
+              sensitive-state showing)
+         ;; hide:
+         `( sensitive-state hidden
+            display
+            ,(create-image
+              mastodon-media--sensitive-image-data nil t)))))))
 
 
 ;; POLLS
@@ -1363,19 +1367,18 @@ OPTIONS is an alist."
 (defun mastodon-tl--read-poll-option ()
   "Read a poll option to vote on a poll."
   (let* ((toot (mastodon-tl--property 'item-json))
-         (poll (mastodon-tl--field 'poll toot))
-         (options (mastodon-tl--field 'options poll))
-         (titles (mastodon-tl--map-alist 'title options))
-         (number-seq (number-sequence 1 (length options)))
-         (numbers (mapcar #'number-to-string number-seq))
-         (options-alist (cl-mapcar #'cons numbers titles))
-
-         (candidates (mastodon-tl--format-read-poll-option options-alist))
-         (choice (completing-read "Poll option to vote for: "
-                                  candidates nil :match)))
+         (poll (mastodon-tl--field 'poll toot)))
     (if (null poll)
         (user-error "No poll here")
-      (list (cdr (assoc choice candidates))))))
+      (let* ((options (mastodon-tl--field 'options poll))
+             (titles (mastodon-tl--map-alist 'title options))
+             (number-seq (number-sequence 1 (length options)))
+             (numbers (mapcar #'number-to-string number-seq))
+             (options-alist (cl-mapcar #'cons numbers titles))
+             (candidates (mastodon-tl--format-read-poll-option options-alist))
+             (choice (completing-read "Poll option to vote for: "
+                                      candidates nil :match)))
+        (list (cdr (assoc choice candidates)))))))
 
 (defun mastodon-tl--poll-vote (option)
   "If there is a poll at point, prompt user for OPTION to vote on it."
@@ -2397,7 +2400,7 @@ LANGS is the accumulated array param alist if we re-run recursively."
          (car user-handles)
        (completing-read (cond ((or ; TODO: make this "enable/disable notifications"
                                 (equal action "disable")
-                                   (equal action "enable"))
+                                (equal action "enable"))
                                (format "%s notifications when user posts: " action))
                               ((string-suffix-p "boosts" action)
                                (format "%s by user: " action))

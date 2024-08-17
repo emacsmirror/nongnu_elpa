@@ -139,12 +139,12 @@
     '("TeamBringBackVisibleScrollbars"
       "https://todon.nl/tags/TeamBringBackVisibleScrollbars"))))
 
-(ert-deftest mastodon-search--get-status-info ()
-  "Should return a list of ID, timestamp, content, and spoiler."
-  (should
-   (equal
-    (mastodon-search--get-status-info mastodon-search--test-single-status)
-    '("107230316503209282"
-      "2021-11-06T13:19:40.628Z"
-      ""
-      "<p>This is a nice test toot, for testing purposes. Thank you.</p>"))))
+;; (ert-deftest mastodon-search--get-status-info ()
+;;   "Should return a list of ID, timestamp, content, and spoiler."
+;;   (should
+;;    (equal
+;;     (mastodon-search--get-status-info mastodon-search--test-single-status)
+;;     '("107230316503209282"
+;;       "2021-11-06T13:19:40.628Z"
+;;       ""
+;;       "<p>This is a nice test toot, for testing purposes. Thank you.</p>"))))

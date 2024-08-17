@@ -127,7 +127,7 @@ It contains details of the current user's account.")
   "Keymap for `mastodon-profile-update-mode'.")
 
 (persist-defvar mastodon-profile-account-settings nil
-                "An alist of account settings saved from the server.
+  "An alist of account settings saved from the server.
 Other clients can change these settings on the server at any
 time, so this list is not the canonical source for settings. It
 is updated on entering mastodon mode and on toggle any setting it
@@ -319,13 +319,13 @@ If value is :json-false, return nil."
 (defun mastodon-profile--update-note-count (&rest _args)
   "Display the character count of the profile note buffer."
   (let* ((inhibit-read-only t)
-        (header-region (mastodon-tl--find-property-range 'note-header
+         (header-region (mastodon-tl--find-property-range 'note-header
+                                                          (point-min)))
+         (count-region (mastodon-tl--find-property-range 'note-counter
                                                          (point-min)))
-        (count-region (mastodon-tl--find-property-range 'note-counter
-                                                        (point-min)))
-        (count (number-to-string (mastodon-toot--count-toot-chars
-                                  (buffer-substring-no-properties
-                                   (cdr header-region) (point-max))))))
+         (count (number-to-string (mastodon-toot--count-toot-chars
+                                   (buffer-substring-no-properties
+                                    (cdr header-region) (point-max))))))
     (add-text-properties (car count-region) (cdr count-region)
                          (list 'display count))))
 
