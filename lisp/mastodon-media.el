@@ -359,7 +359,8 @@ STATUS-PLIST is a plist of status events as per `url-retrieve'."
 
 (defun mastodon-media--image-or-cached (url process-fun args)
   "Fetch URL from cache or fro host.
-Call PROCESS-FUN on it with ARGS."
+Call PROCESS-FUN on it with ARGS, a list of callback args as
+specified by `url-retrieve'."
   (if (and mastodon-media--enable-image-caching
            (url-is-cached url)) ;; if cached, decompress and use:
       (with-current-buffer (url-fetch-from-cache url)
@@ -367,8 +368,9 @@ Call PROCESS-FUN on it with ARGS."
         (goto-char (point-min))
         (zlib-decompress-region
          (goto-char (search-forward "\n\n")) (point-max))
-        (funcall process-fun url args))
-    ;; fetch as usual and process-image-response will cache it
+        (apply process-fun args)) ;; no status-plist arg from cache
+    ;; fetch as usual and process-image-response will cache it:
+    ;; cbargs fun will be called with status-plist by url-retrieve:
     (url-retrieve url process-fun (cdr args))))
 
 (defun mastodon-media--load-image-from-url (url media-type start region-length)
