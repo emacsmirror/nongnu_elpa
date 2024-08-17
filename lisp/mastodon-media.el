@@ -273,7 +273,7 @@ IBCAQICX9F8/bNVInwJ8BAAAAABJRU5ErkJggg==")
   "The PNG data for a sensitive image placeholder.")
 
 (defun mastodon-media--process-image-response
-    (status-plist marker image-options region-length url)
+    (status-plist url marker image-options region-length)
   "Callback function processing the url retrieve response for URL.
 STATUS-PLIST is the usual plist of status events as per `url-retrieve'.
 IMAGE-OPTIONS are the precomputed options to apply to the image.
@@ -390,7 +390,7 @@ REGION-LENGTH is the range from start to propertize."
         (mastodon-media--image-or-cached
          url
          #'mastodon-media--process-image-response
-         (list nil marker image-options region-length url))
+         (list nil url marker image-options region-length))
       (error (with-current-buffer buffer
                ;; TODO: Add retries
                (put-text-property marker (+ marker region-length)
