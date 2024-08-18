@@ -2079,8 +2079,9 @@ Optionally, use CUSTOM-DECK and CUSTOM-VALUES."
 
 Note amnesia should be hte MINIMUM value of deck's & tags' amnesia.
 
-CUSTOM-TAGS: Specify tags for note id.
-CUSTOM-VALUES: Specify values for tags."
+CUSTOM-DECK: Specify custom deck.
+CUSTOM-TAGS: Specify custom tags for note id.
+CUSTOM-VALUES: Specify custom values."
   (let* ((deck-amnesia (gnosis-get-note-deck-amnesia id custom-deck custom-values))
          (tags-amnesia (gnosis-get-note-tag-amnesia id custom-tags custom-values))
 	 (note-amnesia (or tags-amnesia deck-amnesia)))
@@ -2091,19 +2092,26 @@ CUSTOM-VALUES: Specify values for tags."
 (defun gnosis-get-note-tag-epignosis (id &optional custom-tags custom-values)
   "Return tag epignosis for note ID.
 
-CUSTOM-TAGS: Specify tags for note id.
-CUSTOM-VALUES: Specify values for tags."
+CUSTOM-TAGS: Specify custom tags for note id.
+CUSTOM-VALUES: Specify custom values."
   (let* ((epignosis-values (gnosis-get-custom-tag-values id :epignosis custom-tags custom-values)))
     (and epignosis-values (apply #'max epignosis-values))))
 
 (defun gnosis-get-note-deck-epignosis (id &optional custom-deck custom-values)
-  "Return deck epignosis for note ID."
+  "Return deck epignosis for note ID.
+
+CUSTOM-DECK: Specify custom deck.
+CUSTOM-VALUES: Specify custom values."
   (let ((deck (or (gnosis-get-note-deck-name id) custom-deck)))
     (or (gnosis-get-custom-deck-value deck :epignosis custom-values)
 	gnosis-algorithm-epignosis-value)))
 
 (defun gnosis-get-note-epignosis (id &optional custom-deck custom-tags custom-values)
-  "Return epignosis value for note ID."
+  "Return epignosis value for note ID.
+
+CUSTOM-DECK: Specify custom deck.
+CUSTOM-TAGS: Specify custom tags for note id.
+CUSTOM-VALUES: Specify custom values."
   (let* ((deck-epignosis (gnosis-get-note-deck-epignosis id custom-deck custom-values))
          (tag-epignosis (gnosis-get-note-tag-epignosis id custom-tags custom-values))
 	 (note-epignosis (or tag-epignosis deck-epignosis)))
@@ -2112,18 +2120,28 @@ CUSTOM-VALUES: Specify values for tags."
       note-epignosis)))
 
 (defun gnosis-get-note-tag-agnoia (id &optional custom-tags custom-values)
-  "Return agnoia value for note ID."
+  "Return agnoia value for note ID.
+
+CUSTOM-TAGS: Specify custom tags for note id.
+CUSTOM-VALUES: Specify custom values."
   (let ((agnoia-values (gnosis-get-custom-tag-values id :agnoia custom-tags custom-values)))
     (and agnoia-values (apply #'max agnoia-values))))
 
 (defun gnosis-get-note-deck-agnoia (id &optional custom-deck custom-values)
-  "Return agnoia value for note ID."
+  "Return agnoia value for note ID.
+
+CUSTOM-DECK: Specify custom deck.
+CUSTOM-VALUES: Specify custom values."
   (let ((deck (or (gnosis-get-note-deck-name id) custom-deck)))
     (or (gnosis-get-custom-deck-value deck :agnoia custom-values)
 	gnosis-algorithm-agnoia-value)))
 
 (defun gnosis-get-note-agnoia (id &optional custom-deck custom-tags custom-values)
-  "Return agnoia value for note ID."
+  "Return agnoia value for note ID.
+
+CUSTOM-DECK: Specify custom deck.
+CUSTOM-TAGS: Specify custom tags for note id.
+CUSTOM-VALUES: Specify custom values."
   (let* ((deck-agnoia (gnosis-get-note-deck-agnoia id custom-deck custom-values))
          (tag-agnoia (gnosis-get-note-tag-agnoia id custom-tags custom-values))
 	 (note-agnoia (or tag-agnoia deck-agnoia)))
