@@ -645,9 +645,6 @@ JSON is the filters data."
        (mastodon-tl--set-face
         (concat "\n " mastodon-tl--horiz-bar "\n "
                 (propertize (upcase .title)
-                            'item-id .id
-                            'item-type 'filter
-                            'filter-title .title
                             'byline t)
                 " " "\n"
                 " " mastodon-tl--horiz-bar "\n")
@@ -659,6 +656,7 @@ JSON is the filters data."
        (concat "\nType: " .filter_action))
       'item-json filter
       'item-id .id
+      'filter-title .title
       'item-type 'filter))
     ;; terms list:
     (if (not .keywords) ;; poss to have a filter sans keywords
