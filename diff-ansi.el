@@ -133,8 +133,13 @@ It can be useful to show progress when viewing very large diffs."
 ;; Evaluate locally too.
 (eval diff-ansi--code-block-for-multiprocess-defs)
 
+
+;; ---------------------------------------------------------------------------
+;; Forward Declarations
+
 ;; Needed since the the `eval' causes the function to be hidden.
 (declare-function diff-ansi--ansi-color-apply-on-region-with-bg-impl "diff-ansi")
+(declare-function magit-wash-sequence "magit-section")
 
 
 ;; ---------------------------------------------------------------------------
