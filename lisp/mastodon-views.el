@@ -659,8 +659,7 @@ JSON is the filters data."
       'filter-title .title
       'item-type 'filter))
     ;; terms list:
-    (if (not .keywords) ;; poss to have a filter sans keywords
-        ""
+    (when .keywords ;; poss to have no keywords
       (mastodon-views--insert-filter-kws .keywords))))
 
 (defvar mastodon-views--filter-types
