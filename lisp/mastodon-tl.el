@@ -2183,7 +2183,7 @@ Note that you can only (un)mute threads you have posted in."
   (mastodon-tl--mute-or-unmute-thread))
 
 (defun mastodon-tl--unmute-thread ()
-  "Mute the thread displayed in the current buffer.
+  "Unmute the thread displayed in the current buffer.
 Note that you can only (un)mute threads you have posted in."
   (interactive)
   (mastodon-tl--mute-or-unmute-thread :unmute))
@@ -2196,23 +2196,23 @@ If UNMUTE, unmute it."
     (when (or (mastodon-tl--buffer-type-eq 'thread)
               (mastodon-tl--buffer-type-eq 'notifications))
       (let* ((id
+              ;; if in a thread, the id to call `mastodon-tl--user-in-thread-p' on
+              ;; really ought to be the top level item
               (if (mastodon-tl--buffer-type-eq 'notifications)
-                  (get-text-property (point) 'base-item-id)
-                (save-match-data
-                  (string-match "statuses/\\(?2:[[:digit:]]+\\)/context"
-                                endpoint)
-                  (match-string 2 endpoint))))
+                  (mastodon-tl--property 'base-item-id :no-move)
+                (save-excursion
+                  (mastodon-tl--goto-first-item)
+                  (mastodon-tl--property 'base-item-id :no-move))))
              (we-posted-p (mastodon-tl--user-in-thread-p id))
              (url (mastodon-http--api (format "statuses/%s/%s" id mute-str))))
         (if (not we-posted-p)
-            (message "You can only (un)mute a thread you have posted in.")
+            (user-error "You can only (un)mute a thread you have posted in")
           (when (y-or-n-p (format "%s this thread? " (capitalize mute-str)))
             (let ((response (mastodon-http--post url)))
-              (mastodon-http--triage response
-                                     (lambda (_)
-                                       (if unmute
-                                           (message "Thread unmuted!")
-                                         (message "Thread muted!")))))))))))
+              (mastodon-http--triage
+               response
+               (lambda (_)
+                 (message (format "Thread %sd!" mute-str)))))))))))
 
 (defun mastodon-tl--map-account-id-from-toot (statuses)
   "Return a list of the account IDs of the author of each toot in STATUSES."
