@@ -589,8 +589,8 @@ NO-CONFIRM means there is no ask or message, there is only do."
                           'mastodon-views--insert-filters
                           nil nil nil
                           "current filters"
-                          "c - create filter | d/k - delete filter at point\n\
- u - update filter\n a/r/U - add/remove/Update filter keyword\n
+                          "c/u - create/update filter | d/k - delete filter\
+ at point\n a/r/U - add/remove/Update filter keyword\n\
  n/p - next/prev filter" "v2")
   (with-current-buffer "*mastodon-filters*"
     (use-local-map mastodon-views--view-filters-keymap)))
@@ -604,7 +604,7 @@ JSON is the filters data."
 
 (defun mastodon-views--insert-filter-kws (kws)
   "Insert filter keywords KWS."
-  (insert "\n\n")
+  (insert "\n")
   (let ((beg (point))
         (table-cell-horizontal-chars (if (char-displayable-p ?–) ; ?– ?-)
                                          "–"
