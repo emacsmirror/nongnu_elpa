@@ -606,10 +606,10 @@ JSON is the filters data."
   "Insert filter keywords KWS."
   (insert "\n")
   (let ((beg (point))
-        (table-cell-horizontal-chars (if (char-displayable-p ?–) ; ?– ?-)
+        (table-cell-horizontal-chars (if (char-displayable-p ?–)
                                          "–"
                                        "-"))
-        (whole-str "whole-words-only:"))
+        (whole-str "whole words only:"))
     (insert (concat "Keywords: | " whole-str "\n"))
     (mapc (lambda (kw)
             (let ((whole (if (eq :json-false (alist-get 'whole_word kw))
@@ -675,6 +675,7 @@ Prompt for a context, must be a list containting at least one of \"home\",
 \"notifications\", \"public\", \"thread\".
 Optionally, provide ID, TITLE, CONTEXT, TYPE, and TERMS to update a filter."
   (interactive)
+  ;; ID non-nil = we are updating
   (let* ((url (mastodon-http--api-v2
                (if id (format "filters/%s" id) "filters")))
          (title (or title (read-string "Filter name: ")))
@@ -682,26 +683,23 @@ Optionally, provide ID, TITLE, CONTEXT, TYPE, and TERMS to update a filter."
                     (read-string "Terms to filter (comma or space separated): ")))
          (terms-split (split-string terms "[, ]"))
          (terms-processed
-          (if (not terms)
-              (user-error "You must select at least one term to filter")
+          (if (not terms) ;; well actually it is poss to have no terms
+              (user-error "You must select at least one term")
             (mastodon-http--build-array-params-alist
              "keywords_attributes[][keyword]" terms-split)))
          (warn-or-hide
-          (or type
-              (completing-read "Warn (like CW) or hide? "
-                               '("warn" "hide") nil :match)))
+          (or type (completing-read "Warn (like CW) or hide? "
+                                    '("warn" "hide") nil :match)))
          (contexts
-          (or context
-              (completing-read-multiple
-               "Filter contexts [TAB for options, comma separated]: "
-               mastodon-views--filter-types nil :match)))
+          (or context (completing-read-multiple
+                       "Filter contexts [TAB for options, comma separated]: "
+                       mastodon-views--filter-types nil :match)))
          (contexts-processed
           (if (not contexts)
-              (user-error "You must select at least one context for a filter")
+              (user-error "You must select at least one context")
             (mastodon-http--build-array-params-alist "context[]" contexts)))
          (params (append `(("title" . ,title)
                            ("filter_action" . ,warn-or-hide))
-                         ;; ("keywords_attributes[][whole_word]" . "false"))
                          terms-processed
                          contexts-processed))
          (resp (if id
@@ -729,7 +727,6 @@ Optionally, provide ID, TITLE, CONTEXT, TYPE, and TERMS to update a filter."
                                   (alist-get 'type filter)))
            (terms (read-string "Terms to add (comma or space separated): ")))
       (mastodon-views--create-filter id name contexts type terms))))
-
 
 (defun mastodon-views--delete-filter ()
   "Delete filter at point."
