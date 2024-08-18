@@ -7,7 +7,7 @@
 ;; URL: https://thanosapollo.org/projects/gnosis
 ;; Version: 0.4.0
 
-;; Package-Requires: ((emacs "27.2") (emacsql "20240124") (compat "29.1.4.2") (transient "0.7.2"))
+;; Package-Requires: ((emacs "27.2") (emacsql "4.0.0") (compat "29.1.4.2") (transient "0.7.2"))
 
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -1713,6 +1713,7 @@ DATE: Date to log the note review on the activity-log."
   (let ((default-directory dir))
     (vc-push)))
 
+;; FIXME: Fix sync issue delay.
 ;;;###autoload
 (cl-defun gnosis-vc-pull (&optional (dir gnosis-dir))
   "Run `vc-pull' in DIR."
