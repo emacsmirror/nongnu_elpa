@@ -674,11 +674,11 @@ Prompt for a context, must be a list containting at least one of \"home\",
 \"notifications\", \"public\", \"thread\".
 Optionally, provide ID, TITLE, CONTEXT, TYPE, and TERMS to update a filter."
   (interactive)
-  (let* ((url (if id
-                  (mastodon-http--api-v2 (format "filters/%s" id))
-                (mastodon-http--api-v2 "filters")))
+  (let* ((url (mastodon-http--api-v2
+               (if id (format "filters/%s" id) "filters")))
          (title (or title (read-string "Filter name: ")))
-         (terms (or terms (read-string "Terms to filter (comma or space separated): ")))
+         (terms (or terms
+                    (read-string "Terms to filter (comma or space separated): ")))
          (terms-split (split-string terms "[, ]"))
          (terms-processed
           (if (not terms)
@@ -708,7 +708,7 @@ Optionally, provide ID, TITLE, CONTEXT, TYPE, and TERMS to update a filter."
                  (mastodon-http--post url params))))
     (mastodon-views--filters-triage
      resp
-     (message "Filter %s created!" title))))
+     (message "Filter %s %s!" title (if id "updated" "created")))))
 
 (defun mastodon-views--update-filter ()
   "Update filter at point."
