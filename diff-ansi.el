@@ -627,7 +627,7 @@ Optional keywords in KEYWORDS.
      (append
       (list
        "ydiff" "--color=always"
-       (format "--width=%d" (/ (window-body-width (get-buffer-window (current-buffer)) 2))))
+       (format "--width=%d" (/ (window-body-width (get-buffer-window (current-buffer))) 2)))
       diff-ansi-extra-args-for-ydiff))
     ('custom diff-ansi-tool-custom)
     (_ (error "Unknown tool %S" diff-ansi-tool))))

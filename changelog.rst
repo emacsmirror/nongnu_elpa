@@ -3,8 +3,9 @@
 Change Log
 ##########
 
-- Development (2023-05-02)
+- Development (2024-08-19)
 
+  - Fix ``ydiff`` defaulting to 80 column width.
   - Fix an error, attempting to use a closed buffer when ``diff-ansi-method`` is set to ``'progressive``.
 
 - Version 0.2 (2022-07-08)
