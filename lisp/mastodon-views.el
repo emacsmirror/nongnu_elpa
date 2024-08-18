@@ -639,22 +639,26 @@ JSON is the filters data."
   "Insert a single FILTER."
   (let-alist filter
     (insert
+     ;; FIXME: awful hack to fix nav: exclude horiz-bar from propertize then
+     ;; propertize rest of the filter text. if we add only byline prop to
+     ;; title, point will move to end of title, because at that byline-prop
+     ;; change, item-type prop is present.
+     (mastodon-tl--set-face
+      (concat "\n " mastodon-tl--horiz-bar "\n ")
+      'success)
      (propertize
       (concat
        ;; heading:
        (mastodon-tl--set-face
-        (concat "\n " mastodon-tl--horiz-bar "\n "
-                (propertize (upcase .title)
-                            'byline t)
-                " " "\n"
-                " " mastodon-tl--horiz-bar "\n")
+        (concat (upcase .title) " " "\n "
+                mastodon-tl--horiz-bar "\n")
         'success)
        ;; context:
-       (concat "Context: "
-               (mapconcat #'identity .context ", "))
+       (concat "Context: " (mapconcat #'identity .context ", "))
        ;; type (warn or hide):
        (concat "\nType: " .filter_action))
       'item-json filter
+      'byline t
       'item-id .id
       'filter-title .title
       'item-type 'filter))
