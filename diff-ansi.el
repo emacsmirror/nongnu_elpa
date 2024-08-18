@@ -143,7 +143,7 @@ It can be useful to show progress when viewing very large diffs."
 
 
 ;; ---------------------------------------------------------------------------
-;; Generic functions.
+;; Generic Functions
 
 (defmacro diff-ansi--with-advice (advice &rest body)
   "Execute BODY with ADVICE temporarily enabled.
