@@ -108,7 +108,7 @@
 |                  | mastodon-tl--disable-notify-user-posts            | Query for USER-HANDLE and disable notifications when they post.                |
 | m                | mastodon-tl--dm-user                              | Query for USER-HANDLE from current status and compose a message to that user.  |
 |                  | mastodon-tl--do-link-action                       | Do the action of the link at point.                                            |
-|                  | mastodon-tl--do-link-action-at-point              | Do the action of the link at POSITION.                                         |
+|                  | mastodon-tl--do-link-action-at-point              | Do the action of the link at POS.                                              |
 |                  | mastodon-tl--enable-notify-user-posts             | Query for USER-HANDLE and enable notifications when they post.                 |
 |                  | mastodon-tl--filter-user-user-posts-by-language   | Query for USER-HANDLE and filter display of their posts by language.           |
 |                  | mastodon-tl--fold-post                            | Fold post at point, if it is too long.                                         |
@@ -146,7 +146,7 @@
 |                  | mastodon-tl--unfold-post                          | Unfold the toot at point if it is folded (read-more).                          |
 |                  | mastodon-tl--unfollow-tag                         | Prompt for a followed tag, and unfollow it.                                    |
 | C-S-w            | mastodon-tl--unfollow-user                        | Query for USER-HANDLE from current status and unfollow that user.              |
-|                  | mastodon-tl--unmute-thread                        | Mute the thread displayed in the current buffer.                               |
+|                  | mastodon-tl--unmute-thread                        | Unmute the thread displayed in the current buffer.                             |
 | S-RET            | mastodon-tl--unmute-user                          | Query for USER-HANDLE from list of muted users and unmute that user.           |
 | u, g             | mastodon-tl--update                               | Update timeline with new toots.                                                |
 |                  | mastodon-tl--view-full-image                      | Browse full-sized version of image at point in a new window.                   |
@@ -171,8 +171,8 @@
 | e                | mastodon-toot--edit-toot-at-point                 | Edit the user's toot at point.                                                 |
 |                  | mastodon-toot--enable-custom-emoji                | Add `mastodon-instance-url's custom emoji to `emojify'.                        |
 | C-c C-e          | mastodon-toot--insert-emoji                       | Prompt to insert an emoji.                                                     |
-| .                | mastodon-toot--list-boosters                      | List the boosters of toot at point.                                            |
-| ,                | mastodon-toot--list-favouriters                   | List the favouriters of toot at point.                                         |
+| .                | mastodon-toot--list-toot-boosters                 | List the boosters of toot at point.                                            |
+| ,                | mastodon-toot--list-toot-favouriters              | List the favouriters of toot at point.                                         |
 |                  | mastodon-toot--open-draft-toot                    | Prompt for a draft and compose a toot with it.                                 |
 | o                | mastodon-toot--open-toot-url                      | Open URL of toot at point.                                                     |
 | i                | mastodon-toot--pin-toot-toggle                    | Pin or unpin user's toot at point.                                             |
@@ -195,6 +195,7 @@
 |                  | mastodon-url-lookup-force                         | Call `mastodon-url-lookup' without checking if URL is fedi-like.               |
 |                  | mastodon-views--add-account-to-list               | Prompt for a list and for an account, add account to list.                     |
 |                  | mastodon-views--add-account-to-list-at-point      | Prompt for account and add to list at point.                                   |
+|                  | mastodon-views--add-filter-kw                     | Add a keyword to filter at point.                                              |
 |                  | mastodon-views--add-toot-account-at-point-to-list | Prompt for a list, and add the account of the toot at point to it.             |
 |                  | mastodon-views--cancel-scheduled-toot             | Cancel the scheduled toot at point.                                            |
 |                  | mastodon-views--copy-scheduled-toot-text          | Copy the text of the scheduled toot at point.                                  |
@@ -209,7 +210,10 @@
 |                  | mastodon-views--instance-desc-misskey             | Show instance description for a misskey/firefish server.                       |
 |                  | mastodon-views--remove-account-from-list          | Prompt for a list, select an account and remove from list.                     |
 |                  | mastodon-views--remove-account-from-list-at-point | Prompt for account and remove from list at point.                              |
+|                  | mastodon-views--remove-filter-kw                  | Remove keyword from filter at point.                                           |
 |                  | mastodon-views--reschedule-toot                   | Reschedule the scheduled toot at point.                                        |
+|                  | mastodon-views--update-filter                     | Update filter at point.                                                        |
+|                  | mastodon-views--update-filter-kw                  | Update filter keyword.                                                         |
 | I                | mastodon-views--view-filters                      | View the user's filters in a new buffer.                                       |
 | R                | mastodon-views--view-follow-requests              | Open a new buffer displaying the user's follow requests.                       |
 | G                | mastodon-views--view-follow-suggestions           | Display a buffer of suggested accounts to follow.                              |

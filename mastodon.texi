@@ -8,7 +8,7 @@
 
 @dircategory Emacs
 @direntry
-* Mastodon: (mastodon). Client for Mastodon on ActivityPub networks.
+* Mastodon: (mastodon). Client for fediverse services using the Mastodon API.
 @end direntry
 
 @finalout
@@ -703,7 +703,7 @@ Hard dependencies (should all install with @samp{mastodon.el}):
 @item
 @samp{request} (for uploading attachments), @uref{https://github.com/tkf/emacs-request, emacs-request}
 @item
-@samp{persist} for storing some settings across sessions (we now use @samp{multisession.el} for this)
+@samp{persist} for storing some settings across sessions
 @end itemize
 
 Optional dependencies (install yourself, @samp{mastodon.el} can use them):
