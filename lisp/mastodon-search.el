@@ -78,7 +78,7 @@ Returns a nested list containing user handle, display name, and URL."
 (defun mastodon-search--search-tags-query (query)
   "Return an alist containing tag strings plus their URLs.
 QUERY is the string to search."
-  (let* ((url (mastodon-http--api-search))
+  (let* ((url (mastodon-http--api-v2 "search"))
          (params `(("q" . ,query) ("type" . "hashtags")))
          (response (mastodon-http--get-json url params :silent))
          (tags (alist-get 'hashtags response)))
@@ -153,7 +153,7 @@ OFFSET is a number as string, means to skip that many results. It
 is used for pagination."
   ;; TODO: handle no results
   (interactive "sSearch mastodon for: ")
-  (let* ((url (mastodon-http--api-search))
+  (let* ((url (mastodon-http--api-v2 "search"))
          (following (when (or following (equal current-prefix-arg '(4)))
                       "true"))
          (type (or type

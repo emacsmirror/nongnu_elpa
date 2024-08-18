@@ -2687,9 +2687,11 @@ PARAMS is used to send any parameters needed to correctly update
 the current view."
   (let* ((args `(("max_id" . ,(mastodon-tl--as-string id))))
          (args (if params (push (car args) params) args))
-         (url (if (string-suffix-p "search" endpoint)
-                  (mastodon-http--api-search)
-                (mastodon-http--api endpoint))))
+         (url
+          (mastodon-http--api
+           endpoint
+           (when (string-suffix-p "search" endpoint)
+             "v2"))))
     (apply #'mastodon-http--get-json-async url args callback cbargs)))
 
 (defun mastodon-tl--more-json-async-offset (endpoint &optional params
@@ -2710,9 +2712,10 @@ Then run CALLBACK with arguments CBARGS."
                   (+ limit ; limit + old offset = new offset
                      (string-to-number
                       (alist-get "offset" params nil nil #'equal)))))
-         (url (if (string-suffix-p "search" endpoint)
-                  (mastodon-http--api-search)
-                (mastodon-http--api endpoint))))
+         (url (mastodon-http--api
+               endpoint
+               (when (string-suffix-p "search" endpoint)
+                 "v2"))))
     ;; increment:
     (setf (alist-get "offset" params nil nil #'equal) offset)
     (apply #'mastodon-http--get-json-async url params callback cbargs)))
