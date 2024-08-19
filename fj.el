@@ -990,16 +990,17 @@ TYPE is the item type."
   ;; FIXME: this doesn't rly work with ```verbatim``` in md
   ;; NB: this must not break any md, otherwise `markdown-standalone' may
   ;; hang!
-  (while (re-search-forward fj-url-regex nil :no-error)
-    (unless
-        (save-excursion
-          (goto-char (1- (point)))
-          (or (markdown-inside-link-p)
-              ;; bbcode (seen in spam, breaks markdown if url replaced):
-              (let ((regex (concat "\\[url=" markdown-regex-uri "\\/\\]"
-                                   ".*" ; description
-                                   "\\[\\/url\\]")))
-                (thing-at-point-looking-at regex))))
+  (save-match-data
+    (while (re-search-forward fj-url-regex nil :no-error)
+      (unless
+          (save-excursion
+            (goto-char (1- (point)))
+            (or (markdown-inside-link-p)
+                ;; bbcode (seen in spam, breaks markdown if url replaced):
+                (let ((regex (concat "\\[url=" markdown-regex-uri "\\/\\]"
+                                     ".*" ; description
+                                     "\\[\\/url\\]")))
+                  (thing-at-point-looking-at regex)))))
       (replace-match
        (concat "<" (match-string 0) ">")))))
 
