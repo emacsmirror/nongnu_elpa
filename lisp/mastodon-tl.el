@@ -2154,26 +2154,25 @@ view all branches of a thread."
              (user-error "Error: %s" (cdar toot))
            (when (member (alist-get 'type toot) '("reblog" "favourite"))
              (setq toot (alist-get 'status toot)))
-           (if (> (+ (length (alist-get 'ancestors context))
-                     (length (alist-get 'descendants context)))
-                  0)
-               ;; if we have a thread:
-               (with-mastodon-buffer buffer #'mastodon-mode nil
-                 (let ((marker (make-marker)))
-                   (mastodon-tl--set-buffer-spec buffer endpoint
-                                                 #'mastodon-tl--thread)
-                   (mastodon-tl--timeline (alist-get 'ancestors context) :thread)
-                   (goto-char (point-max))
-                   (move-marker marker (point))
-                   ;; print re-fetched toot:
-                   (mastodon-tl--toot toot :detailed-p :thread)
-                   (mastodon-tl--timeline (alist-get 'descendants context)
-                                          :thread)
-                   ;; put point at the toot:
-                   (goto-char (marker-position marker))
-                   (mastodon-tl--goto-next-item)))
-             ;; else just print the lone toot:
-             (mastodon-tl--single-toot id))))))))
+           (if (not (< 0 (+ (length (alist-get 'ancestors context))
+                            (length (alist-get 'descendants context)))))
+               ;; just print the lone toot:
+               (mastodon-tl--single-toot id)
+             ;; we have a thread:
+             (with-mastodon-buffer buffer #'mastodon-mode nil
+               (let ((marker (make-marker)))
+                 (mastodon-tl--set-buffer-spec buffer endpoint
+                                               #'mastodon-tl--thread)
+                 (mastodon-tl--timeline (alist-get 'ancestors context) :thread)
+                 (goto-char (point-max))
+                 (move-marker marker (point))
+                 ;; print re-fetched toot:
+                 (mastodon-tl--toot toot :detailed-p :thread)
+                 (mastodon-tl--timeline (alist-get 'descendants context)
+                                        :thread)
+                 ;; put point at the toot:
+                 (goto-char (marker-position marker))
+                 (mastodon-tl--goto-next-item))))))))))
 
 (defun mastodon-tl--mute-thread ()
   "Mute the thread displayed in the current buffer.
@@ -2190,13 +2189,12 @@ Note that you can only (un)mute threads you have posted in."
 (defun mastodon-tl--mute-or-unmute-thread  (&optional unmute)
   "Mute a thread.
 If UNMUTE, unmute it."
-  (let ((endpoint (mastodon-tl--endpoint))
-        (mute-str (if unmute "unmute" "mute")))
+  (let ((mute-str (if unmute "unmute" "mute")))
     (when (or (mastodon-tl--buffer-type-eq 'thread)
               (mastodon-tl--buffer-type-eq 'notifications))
       (let* ((id
-              ;; if in a thread, the id to call `mastodon-tl--user-in-thread-p' on
-              ;; really ought to be the top level item
+              ;; the id for `mastodon-tl--user-in-thread-p' ought to be the
+              ;; top-level item:
               (if (mastodon-tl--buffer-type-eq 'notifications)
                   (mastodon-tl--property 'base-item-id :no-move)
                 (save-excursion
@@ -2246,8 +2244,7 @@ LANGS is an array parameters alist of languages to filer user's posts by.
 REBLOGS is a boolean string like NOTIFY, enabling or disabling
 display of the user's boosts in your timeline.
 JSON is a flag arg for `mastodon-http--post'."
-  (interactive
-   (list (mastodon-tl--user-handles-get "follow")))
+  (interactive (list (mastodon-tl--user-handles-get "follow")))
   (mastodon-tl--do-if-item
    (mastodon-tl--do-user-action-and-response
     user-handle "follow" nil notify langs reblogs json)))
@@ -2255,22 +2252,19 @@ JSON is a flag arg for `mastodon-http--post'."
 ;; TODO: make this action "enable/disable notifications"
 (defun mastodon-tl--enable-notify-user-posts (user-handle)
   "Query for USER-HANDLE and enable notifications when they post."
-  (interactive
-   (list (mastodon-tl--user-handles-get "enable")))
+  (interactive (list (mastodon-tl--user-handles-get "enable")))
   (mastodon-tl--do-if-item
    (mastodon-tl--follow-user user-handle "true")))
 
 (defun mastodon-tl--disable-notify-user-posts (user-handle)
   "Query for USER-HANDLE and disable notifications when they post."
-  (interactive
-   (list (mastodon-tl--user-handles-get "disable")))
+  (interactive (list (mastodon-tl--user-handles-get "disable")))
   (mastodon-tl--follow-user user-handle "false"))
 
 (defun mastodon-tl--follow-user-disable-boosts (user-handle)
   "Prompt for a USER-HANDLE, and disable display of boosts in home timeline.
 If they are also not yet followed, follow them."
-  (interactive
-   (list (mastodon-tl--user-handles-get "disable boosts")))
+  (interactive (list (mastodon-tl--user-handles-get "disable boosts")))
   (mastodon-tl--follow-user user-handle nil nil "false"))
 
 (defun mastodon-tl--follow-user-enable-boosts (user-handle)
@@ -2278,8 +2272,7 @@ If they are also not yet followed, follow them."
 If they are also not yet followed, follow them.
 You only need to call this if you have previously disabled
 display of boosts."
-  (interactive
-   (list (mastodon-tl--user-handles-get "enable boosts")))
+  (interactive (list (mastodon-tl--user-handles-get "enable boosts")))
   (mastodon-tl--follow-user user-handle nil nil "true"))
 
 (defun mastodon-tl--filter-user-user-posts-by-language (user-handle)
@@ -2288,8 +2281,7 @@ If they are not already followed, they will be too.
 To be filtered, a post has to be marked as in the language given.
 This may mean that you will not see posts that are in your
 desired language if they are not marked as such (or as anything)."
-  (interactive
-   (list (mastodon-tl--user-handles-get "filter by language")))
+  (interactive (list (mastodon-tl--user-handles-get "filter by language")))
   (let ((langs (mastodon-tl--read-filter-langs)))
     (mastodon-tl--do-if-item
      (if (equal "" (cdar langs))
@@ -2300,8 +2292,7 @@ desired language if they are not marked as such (or as anything)."
   "Remove any language filters for USER-HANDLE.
 This means you will receive posts of theirs marked as being in
 any or no language."
-  (interactive
-   (list (mastodon-tl--user-handles-get "filter by language")))
+  (interactive (list (mastodon-tl--user-handles-get "filter by language")))
   (let ((langs "languages[]"))
     (mastodon-tl--do-if-item
      ;; we need "languages[]" as a param, with no "=" and not json-encoded as
@@ -2327,45 +2318,39 @@ LANGS is the accumulated array param alist if we re-run recursively."
 
 (defun mastodon-tl--unfollow-user (user-handle)
   "Query for USER-HANDLE from current status and unfollow that user."
-  (interactive
-   (list (mastodon-tl--user-handles-get "unfollow")))
+  (interactive (list (mastodon-tl--user-handles-get "unfollow")))
   (mastodon-tl--do-if-item
    (mastodon-tl--do-user-action-and-response user-handle "unfollow" t)))
 
 (defun mastodon-tl--block-user (user-handle)
   "Query for USER-HANDLE from current status and block that user."
-  (interactive
-   (list (mastodon-tl--user-handles-get "block")))
+  (interactive (list (mastodon-tl--user-handles-get "block")))
   (mastodon-tl--do-if-item
    (mastodon-tl--do-user-action-and-response user-handle "block")))
 
 (defun mastodon-tl--unblock-user (user-handle)
   "Query for USER-HANDLE from list of blocked users and unblock that user."
-  (interactive
-   (list (mastodon-tl--get-blocks-or-mutes-list "unblock")))
+  (interactive (list (mastodon-tl--get-blocks-or-mutes-list "unblock")))
   (if (not user-handle)
-      (message "Looks like you have no blocks to unblock!")
+      (user-error "Looks like you have no blocks to unblock!")
     (mastodon-tl--do-user-action-and-response user-handle "unblock" t)))
 
 (defun mastodon-tl--mute-user (user-handle)
   "Query for USER-HANDLE from current status and mute that user."
-  (interactive
-   (list (mastodon-tl--user-handles-get "mute")))
+  (interactive (list (mastodon-tl--user-handles-get "mute")))
   (mastodon-tl--do-if-item
    (mastodon-tl--do-user-action-and-response user-handle "mute")))
 
 (defun mastodon-tl--unmute-user (user-handle)
   "Query for USER-HANDLE from list of muted users and unmute that user."
-  (interactive
-   (list (mastodon-tl--get-blocks-or-mutes-list "unmute")))
+  (interactive (list (mastodon-tl--get-blocks-or-mutes-list "unmute")))
   (if (not user-handle)
-      (message "Looks like you have no mutes to unmute!")
+      (user-error "Looks like you have no mutes to unmute!")
     (mastodon-tl--do-user-action-and-response user-handle "unmute" t)))
 
 (defun mastodon-tl--dm-user (user-handle)
   "Query for USER-HANDLE from current status and compose a message to that user."
-  (interactive
-   (list (mastodon-tl--user-handles-get "message")))
+  (interactive (list (mastodon-tl--user-handles-get "message")))
   (mastodon-tl--do-if-item
    (mastodon-toot--compose-buffer (concat "@" user-handle))
    (setq mastodon-toot--visibility "direct")
@@ -2398,8 +2383,8 @@ LANGS is the accumulated array param alist if we re-run recursively."
      (if (eq 1 (length user-handles))
          (car user-handles)
        (completing-read (cond ((or ; TODO: make this "enable/disable notifications"
-                                (equal action "disable")
-                                (equal action "enable"))
+                                (string= action "disable")
+                                (string= action "enable"))
                                (format "%s notifications when user posts: " action))
                               ((string-suffix-p "boosts" action)
                                (format "%s by user: " action))
@@ -2412,16 +2397,16 @@ LANGS is the accumulated array param alist if we re-run recursively."
 (defun mastodon-tl--get-blocks-or-mutes-list (action)
   "Fetch the list of accounts for ACTION from the server.
 Action must be either \"unblock\" or \"unmute\"."
-  (let* ((endpoint (cond ((equal action "unblock")
+  (let* ((endpoint (cond ((string= action "unblock")
                           "blocks")
-                         ((equal action "unmute")
+                         ((string= action "unmute")
                           "mutes")))
          (url (mastodon-http--api endpoint))
          (json (mastodon-http--get-json url))
          (accts (mastodon-tl--map-alist 'acct json)))
     (when accts
       (completing-read (format "Handle of user to %s: " action)
-                       accts nil t)))) ; require match
+                       accts nil :match))))
 
 (defun mastodon-tl--do-user-action-and-response
     (user-handle action &optional negp notify langs reblogs json)
@@ -2436,13 +2421,13 @@ display of the user's boosts in your timeline."
   (let* ((account (if negp
                       ;; unmuting/unblocking, handle from mute/block list
                       (mastodon-profile--search-account-by-handle user-handle)
-                    ;; profile view, use 'profile-json as status:
-                    (if (mastodon-tl--profile-buffer-p)
-                        (mastodon-profile--lookup-account-in-status
-                         user-handle (mastodon-profile--profile-json))
-                      ;; muting/blocking, select from handles in current status
-                      (mastodon-profile--lookup-account-in-status
-                       user-handle (mastodon-profile--item-json)))))
+                    (mastodon-profile--lookup-account-in-status
+                     user-handle
+                     (if (mastodon-tl--profile-buffer-p)
+                         ;; profile view, use 'profile-json as status:
+                         (mastodon-profile--profile-json)
+                       ;; muting/blocking, select from handles in current status
+                       (mastodon-profile--item-json)))))
          (user-id (alist-get 'id account))
          (name (if (string-empty-p (alist-get 'display_name account))
                    (alist-get 'username account)
@@ -2452,12 +2437,12 @@ display of the user's boosts in your timeline."
                      (reblogs `(("reblogs" . ,reblogs)))
                      (t nil)))
          (url (mastodon-http--api (format "accounts/%s/%s" user-id action))))
-    (if account
-        (if (equal action "follow") ; y-or-n for all but follow
-            (mastodon-tl--do-user-action-function url name user-handle action notify args reblogs json)
-          (when (y-or-n-p (format "%s user %s? " action name))
-            (mastodon-tl--do-user-action-function url name user-handle action args)))
-      (message "Cannot find a user with handle %S" user-handle))))
+    (if (not account)
+        (user-error "Cannot find a user with handle %S" user-handle)
+      (when (or (string= action "follow") ;; y-or-n for all but follow
+                (y-or-n-p (format "%s user %s? " action name)))
+        (mastodon-tl--do-user-action-function
+         url name user-handle action notify args reblogs json)))))
 
 (defun mastodon-tl--do-user-action-function
     (url name user-handle action &optional notify args reblogs json)
@@ -2472,24 +2457,24 @@ ARGS is an alist of any parameters to send with the request."
        (let ((json (with-current-buffer response
                      (mastodon-http--process-json))))
          ;; TODO: when > if, with failure msg
-         (cond ((string-equal notify "true")
-                (when (equal 't (alist-get 'notifying json))
+         (cond ((string= notify "true")
+                (when (eq 't (alist-get 'notifying json))
                   (message "Receiving notifications for user %s (@%s)!"
                            name user-handle)))
-               ((string-equal notify "false")
-                (when (equal :json-false (alist-get 'notifying json))
+               ((string= notify "false")
+                (when (eq :json-false (alist-get 'notifying json))
                   (message "Not receiving notifications for user %s (@%s)!"
                            name user-handle)))
-               ((string-equal reblogs "true")
-                (when (equal 't (alist-get 'showing_reblogs json))
+               ((string= reblogs "true")
+                (when (eq 't (alist-get 'showing_reblogs json))
                   (message "Receiving boosts by user %s (@%s)!"
                            name user-handle)))
-               ((string-equal reblogs "false")
-                (when (equal :json-false (alist-get 'showing_reblogs json))
+               ((string= reblogs "false")
+                (when (eq :json-false (alist-get 'showing_reblogs json))
                   (message "Not receiving boosts by user %s (@%s)!"
                            name user-handle)))
-               ((or (string-equal action "mute")
-                    (string-equal action "unmute"))
+               ((or (string= action "mute")
+                    (string= action "unmute"))
                 (message "User %s (@%s) %sd!" name user-handle action))
                ((equal args "languages[]")
                 (message "User %s language filters removed!" name))
@@ -2519,8 +2504,9 @@ If TAG provided, follow it."
   (let* ((tags (unless tag (mastodon-tl--get-tags-list)))
          (tag-at-point
           (unless tag
-            (when (eq 'hashtag (get-text-property (point) 'mastodon-tab-stop))
-              (get-text-property (point) 'mastodon-tag))))
+            (when (eq 'hashtag
+                      (mastodon-tl--property 'mastodon-tab-stop :no-move))
+              (mastodon-tl--property 'mastodon-tag :no-move))))
          (tag (or tag (completing-read
                        (format "Tag to follow [%s]: " tag-at-point)
                        tags nil nil nil nil tag-at-point)))
@@ -2556,7 +2542,7 @@ PREFIX is sent to `mastodon-tl--get-tag-timeline', which see."
          (tags (mastodon-tl--map-alist 'name followed-tags-json))
          (tag (completing-read "Tag: " tags nil)))
     (if (null tag)
-        (message "You have to follow some tags first.")
+        (user-error "You have to follow some tags first")
       (mastodon-tl--get-tag-timeline prefix tag))))
 
 (defun mastodon-tl--followed-tags-timeline (&optional prefix)
@@ -2610,24 +2596,17 @@ ACCOUNT and TOOT are the data to use."
   "Build the parameters alist based on user responses.
 ACCOUNT-ID, COMMENT, ITEM-ID, FORWARD-P, CAT, and RULES are all from
 `mastodon-tl--report-params', which see."
-  (let ((params `(("account_id" . ,account-id)
-                  ,(when comment
-                     `("comment" . ,comment))
-                  ,(when item-id
-                     `("status_ids[]" . ,item-id))
-                  ,(when forward-p
-                     `("forward" . ,forward-p))
-                  ,(when cat
-                     `("category" . ,cat)))))
+  (let ((params (cl-remove
+                 nil
+                 `(("account_id" . ,account-id)
+                   ,(when comment `("comment" . ,comment))
+                   ,(when item-id `("status_ids[]" . ,item-id))
+                   ,(when forward-p `("forward" . ,forward-p))
+                   ,(when cat `("category" . ,cat))))))
     (when rules
       (let ((alist
              (mastodon-http--build-array-params-alist "rule_ids[]" rules)))
-        (mapc (lambda (x)
-                (push x params))
-              alist)))
-    ;; FIXME: the above approach adds nils to your params.
-    (setq params (delete nil params))
-    params))
+        (append alist params)))))
 
 (defun mastodon-tl--report-to-mods ()
   "Report the author of the toot at point to your instance moderators.
@@ -2652,10 +2631,7 @@ report the account for spam."
 
 (defun mastodon-tl--map-rules-alist (rules)
   "Convert RULES text and id fields into an alist."
-  (mapcar (lambda (x)
-            (let-alist x
-              (cons .text .id)))
-          rules))
+  (mastodon-tl--map-alist-vals-to-alist 'text 'id rules))
 
 (defun mastodon-tl--read-rules-ids ()
   "Prompt for a list of instance rules and return a list of selected ids."
@@ -2666,7 +2642,7 @@ report the account for spam."
                    "rules [TAB for options, | to separate]: "
                    alist nil t)))
     (mapcar (lambda (x)
-              (alist-get x alist nil nil #'equal))
+              (alist-get x alist nil nil #'string=))
             choices)))
 
 
@@ -2685,12 +2661,11 @@ Then run CALLBACK with arguments CBARGS.
 PARAMS is used to send any parameters needed to correctly update
 the current view."
   (let* ((args `(("max_id" . ,(mastodon-tl--as-string id))))
-         (args (if params (push (car args) params) args))
-         (url
-          (mastodon-http--api
-           endpoint
-           (when (string-suffix-p "search" endpoint)
-             "v2"))))
+         (args (append args params))
+         (url (mastodon-http--api
+               endpoint
+               (when (string-suffix-p "search" endpoint)
+                 "v2"))))
     (apply #'mastodon-http--get-json-async url args callback cbargs)))
 
 (defun mastodon-tl--more-json-async-offset (endpoint &optional params
@@ -2703,20 +2678,19 @@ PARAMS are the update parameters, see
 `mastodon-tl--update-params'. These (\"limit\" and \"offset\")
 must be set in `mastodon-tl--buffer-spec' for pagination to work.
 Then run CALLBACK with arguments CBARGS."
-  (let* ((params (or params
-                     (mastodon-tl--update-params)))
+  (let* ((params (or params (mastodon-tl--update-params)))
          (limit (string-to-number
-                 (alist-get "limit" params nil nil #'equal)))
+                 (alist-get "limit" params nil nil #'string=)))
          (offset (number-to-string
                   (+ limit ; limit + old offset = new offset
                      (string-to-number
-                      (alist-get "offset" params nil nil #'equal)))))
+                      (alist-get "offset" params nil nil #'string=)))))
          (url (mastodon-http--api
                endpoint
                (when (string-suffix-p "search" endpoint)
                  "v2"))))
     ;; increment:
-    (setf (alist-get "offset" params nil nil #'equal) offset)
+    (setf (alist-get "offset" params nil nil #'string=) offset)
     (apply #'mastodon-http--get-json-async url params callback cbargs)))
 
 (defun mastodon-tl--updated-json (endpoint id &optional params)
@@ -2724,7 +2698,7 @@ Then run CALLBACK with arguments CBARGS."
 PARAMS is used to send any parameters needed to correctly update
 the current view."
   (let* ((args `(("since_id" . ,(mastodon-tl--as-string id))))
-         (args (if params (push (car args) params) args))
+         (args (append args params))
          (url (mastodon-http--api endpoint)))
     (mastodon-http--get-json url args)))
 
@@ -3131,7 +3105,8 @@ Optional arg NOTE-TYPE means only get that type of notification.
 PARAMS is an alist of any params to include in the request.
 HEADERS are any headers to send in the request.
 VIEW-NAME is a string, to be used as a heading for the view.
-BINDING-STR is a string explaining any bindins in the view."
+BINDING-STR is a string explaining any bindins in the view.
+ENDPOINT-VERSION is a string, format Vx, e.g. V2."
   ;; Used by `mastodon-notifications-get' and in views.el
   (let* ((exclude-types (when note-type
                           (mastodon-notifications--filter-types-list note-type)))
