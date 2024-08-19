@@ -249,6 +249,10 @@ Callback to `mastodon-http--get-response-async', usually
                       (string-prefix-p "\n[" json-string)))
              (error "%s" json-string))
             (t
+             ;; instance may return error in JSON e.g. ((error . "Record not
+             ;; found")) for a null endpoint. but we don't error here because
+             ;; sometimes we just want to check for such an error in an
+             ;; if/cond.
              `(,(json-read-from-string json-string) . ,headers))))))
 
 (defun mastodon-http--process-headers ()
