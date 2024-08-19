@@ -83,7 +83,6 @@
 (autoload 'mastodon-toot--set-toot-properties "mastodon-toot")
 (autoload 'mastodon-toot--update-status-fields "mastodon-toot")
 (autoload 'mastodon-search--buf-type "mastodon-search")
-(autoload 'mastodon-http--api-search "mastodon-http")
 (autoload 'mastodon-views--insert-users-propertized-note "mastodon-views") ; for search pagination
 (autoload 'mastodon-http--get-response "mastodon-http")
 (autoload 'mastodon-search--insert-heading "mastodon-search")

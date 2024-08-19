@@ -44,7 +44,6 @@
 (autoload 'mastodon-tl--timeline "mastodon-tl")
 (autoload 'mastodon-tl--toot "mastodon-tl")
 (autoload 'mastodon-tl--buffer-property "mastodon-tl")
-(autoload 'mastodon-http--api-search "mastodon-http")
 
 (defvar mastodon-toot--completion-style-for-mentions)
 (defvar mastodon-instance-url)

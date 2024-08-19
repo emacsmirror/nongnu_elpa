@@ -837,7 +837,8 @@ If the handle does not match a search return then retun NIL."
                    handle))
          (args `(("q" . ,handle)
                  ("type" . "accounts")))
-         (result (mastodon-http--get-json (mastodon-http--api-search) args))
+         (result (mastodon-http--get-json
+                  (mastodon-http--api-v2 "search") args))
          (matching-account (seq-remove
                             (lambda (x)
                               (not (string= handle (alist-get 'acct x))))
