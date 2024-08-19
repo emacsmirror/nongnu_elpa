@@ -3066,16 +3066,16 @@ a timeline from."
                  (concat "https://" instance "/api/v1/" endpoint)
                (mastodon-http--api endpoint)))
         (buffer (concat "*mastodon-" buffer-name "*")))
-    (if headers
-        (mastodon-http--get-response-async
-         url params 'mastodon-tl--init*
-         buffer endpoint update-function headers params hide-replies)
-      (mastodon-http--get-json-async
-       url params 'mastodon-tl--init*
-       buffer endpoint update-function nil params hide-replies instance))))
+    (funcall
+     (if headers
+         #'mastodon-http--get-response-async
+       #'mastodon-http--get-json-async)
+     url params 'mastodon-tl--init*
+     buffer endpoint update-function headers params hide-replies instance)))
 
-(defun mastodon-tl--init* (response buffer endpoint update-function
-                                    &optional headers update-params hide-replies instance)
+(defun mastodon-tl--init*
+    (response buffer endpoint update-function &optional headers
+              update-params hide-replies instance)
   "Initialize BUFFER with timeline targeted by ENDPOINT.
 UPDATE-FUNCTION is used to recieve more toots.
 RESPONSE is the data returned from the server by
