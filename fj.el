@@ -1990,7 +1990,8 @@ Call response and update functions."
              (not (and fj-compose-repo
                        fj-compose-issue-title)))
         (user-error "You need to set a repo and title")
-      (let* ((body (fedi-post--remove-docs))
+      (let* ((body (url-http--encode-string
+                    (fedi-post--remove-docs)))
              (repo fj-compose-repo)
              (response
               (cond ((eq type 'new-comment)
