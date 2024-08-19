@@ -1832,24 +1832,26 @@ If NO-ERROR is non-nil, do not error when property is empty."
 
 (defun mastodon-tl--set-buffer-spec
     (buffer endpoint update-fun
-            &optional link-header update-params hide-replies max-id)
+            &optional link-header update-params hide-replies max-id
+            thread-item-id)
   "Set `mastodon-tl--buffer-spec' for the current buffer.
 BUFFER is buffer name, ENDPOINT is buffer's enpoint,
 UPDATE-FUN is its update function.
 LINK-HEADER is the http Link header if present.
 UPDATE-PARAMS is any http parameters needed for the update function.
 HIDE-REPLIES is a flag indicating if replies are hidden in the current buffer.
-MAX-ID is the pagination parameter."
+MAX-ID is the pagination parameter.
+THREAD-ITEM-ID is the ID of the item in thread that we opened the thread with."
   (setq mastodon-tl--buffer-spec
-        `(account ,(cons mastodon-active-user
-                         mastodon-instance-url)
-                  buffer-name ,buffer
-                  endpoint ,endpoint
-                  update-function ,update-fun
-                  link-header ,link-header
-                  update-params ,update-params
-                  hide-replies ,hide-replies
-                  max-id ,max-id)))
+        `( account ,(cons mastodon-active-user mastodon-instance-url)
+           buffer-name ,buffer
+           endpoint ,endpoint
+           update-function ,update-fun
+           link-header ,link-header
+           update-params ,update-params
+           hide-replies ,hide-replies
+           max-id ,max-id
+           thread-item-id ,thread-item-id)))
 
 
 ;;; BUFFERS
@@ -2162,7 +2164,8 @@ view all branches of a thread."
              (with-mastodon-buffer buffer #'mastodon-mode nil
                (let ((marker (make-marker)))
                  (mastodon-tl--set-buffer-spec buffer endpoint
-                                               #'mastodon-tl--thread)
+                                               #'mastodon-tl--thread
+                                               nil nil nil nil id)
                  (mastodon-tl--timeline (alist-get 'ancestors context) :thread)
                  (goto-char (point-max))
                  (move-marker marker (point))
@@ -2186,6 +2189,12 @@ Note that you can only (un)mute threads you have posted in."
   (interactive)
   (mastodon-tl--mute-or-unmute-thread :unmute))
 
+(defun mastodon-tl--thread-parent-id ()
+  "Return the ID of the top item in a thread."
+  (save-excursion
+    (mastodon-tl--goto-first-item)
+    (mastodon-tl--property 'base-item-id :no-move)))
+
 (defun mastodon-tl--mute-or-unmute-thread  (&optional unmute)
   "Mute a thread.
 If UNMUTE, unmute it."
@@ -2197,9 +2206,7 @@ If UNMUTE, unmute it."
               ;; top-level item:
               (if (mastodon-tl--buffer-type-eq 'notifications)
                   (mastodon-tl--property 'base-item-id :no-move)
-                (save-excursion
-                  (mastodon-tl--goto-first-item)
-                  (mastodon-tl--property 'base-item-id :no-move))))
+                (mastodon-tl--thread-parent-id)))
              (we-posted-p (mastodon-tl--user-in-thread-p id))
              (url (mastodon-http--api (format "statuses/%s/%s" id mute-str))))
         (if (not we-posted-p)
@@ -2728,10 +2735,9 @@ Aims to respect any pagination in effect."
              (goto-char (point-min))
              (mastodon-profile--get-toot-author max-id)))
           ((eq type 'thread)
-           (save-match-data
-             (let ((endpoint (mastodon-tl--endpoint)))
-               (string-match "statuses/\\(?2:[[:digit:]]+\\)/context" endpoint)
-               (mastodon-tl--thread (match-string 2 endpoint))))))
+           (let ((id (mastodon-tl--buffer-property
+                      'thread-item-id (current-buffer) :no-error)))
+             (mastodon-tl--thread id))))
     ;; TODO: sends point to where point was in buffer. This is very rough; we
     ;; may have removed an item , so the buffer will be smaller, point will
     ;; end up past where we were, etc.
@@ -2772,17 +2778,17 @@ and profile pages when showing followers or accounts followed."
       ;; "prev" type!
       (let ((link-header (mastodon-tl--link-header)))
         (if (> 2 (length link-header))
-            (message "No next page")
+            (user-error "No next page")
           (let* ((next (car link-header))
                  ;;(prev (cadr (mastodon-tl--link-header)))
                  (url (mastodon-tl--build-link-header-url next)))
-            (mastodon-http--get-response-async url nil 'mastodon-tl--more* (current-buffer)
-                                               (point) :headers))))
-    (cond ( ; no paginate
+            (mastodon-http--get-response-async
+             url nil 'mastodon-tl--more* (current-buffer) (point) :headers))))
+    (cond (;; no paginate
            (or (mastodon-tl--buffer-type-eq 'follow-suggestions)
                (mastodon-tl--buffer-type-eq 'filters)
                (mastodon-tl--buffer-type-eq 'lists))
-           (message "No more results"))
+           (user-error "No more results"))
           ;; offset paginate (search, trending, user lists, ...?):
           ((or (string-prefix-p "*mastodon-trending-" (buffer-name))
                (mastodon-tl--search-buffer-p))
@@ -2790,7 +2796,7 @@ and profile pages when showing followers or accounts followed."
             (mastodon-tl--endpoint)
             (mastodon-tl--update-params)
             'mastodon-tl--more* (current-buffer) (point)))
-          (t;; max_id paginate (timelines, items with ids/timestamps):
+          (t ;; max_id paginate (timelines, items with ids/timestamps):
            (let ((max-id (mastodon-tl--oldest-id)))
              (mastodon-tl--more-json-async
               (mastodon-tl--endpoint)
@@ -2798,7 +2804,8 @@ and profile pages when showing followers or accounts followed."
               (mastodon-tl--update-params)
               'mastodon-tl--more* (current-buffer) (point) nil max-id))))))
 
-(defun mastodon-tl--more* (response buffer point-before &optional headers max-id)
+(defun mastodon-tl--more* (response buffer point-before
+                                    &optional headers max-id)
   "Append older toots to timeline, asynchronously.
 Runs the timeline's update function on RESPONSE, in BUFFER.
 When done, places point at POINT-BEFORE.
@@ -2806,24 +2813,26 @@ HEADERS is the http headers returned in the response, if any.
 MAX-ID is the pagination parameter, a string."
   (with-current-buffer buffer
     (if (not response)
-        (message "No more results")
+        (user-error "No more results")
       (let* ((inhibit-read-only t)
              (json (if headers (car response) response))
              ;; FIXME: max-id pagination works for statuses only, not other
              ;; search results pages:
-             (json (if (mastodon-tl--search-buffer-p)
-                       (cond ((equal "statuses" (mastodon-search--buf-type))
+             (json (if (not (mastodon-tl--search-buffer-p))
+                       json
+                     (let ((type (mastodon-search--buf-type)))
+                       (cond ((string= "statuses" type)
                               (cdr ; avoid repeat of last status
                                (alist-get 'statuses response)))
-                             ((equal "hashtags" (mastodon-search--buf-type))
+                             ((string= "hashtags" type)
                               (alist-get 'hashtags response))
-                             ((equal "accounts" (mastodon-search--buf-type))
-                              (alist-get 'accounts response)))
-                     json))
+                             ((string= "accounts" type)
+                              (alist-get 'accounts response))))))
              (headers (if headers (cdr response) nil))
-             (link-header (mastodon-tl--get-link-header-from-response headers)))
+             (link-header
+              (mastodon-tl--get-link-header-from-response headers)))
         (goto-char (point-max))
-        (if (eq (mastodon-tl--get-buffer-type) 'thread)
+        (if (eq 'thread (mastodon-tl--get-buffer-type))
             ;; if thread view, call --thread with parent ID
             (progn (goto-char (point-min))
                    (mastodon-tl--goto-next-item)
@@ -2831,7 +2840,7 @@ MAX-ID is the pagination parameter, a string."
                    (goto-char point-before)
                    (message "Loaded full thread."))
           (if (not json)
-              (message "No more results.")
+              (user-error "No more results")
             (funcall (mastodon-tl--update-function) json)
             (goto-char point-before)
             ;; update buffer spec to new link-header or max-id:
@@ -2839,8 +2848,7 @@ MAX-ID is the pagination parameter, a string."
             (mastodon-tl--set-buffer-spec (mastodon-tl--buffer-name)
                                           (mastodon-tl--endpoint)
                                           (mastodon-tl--update-function)
-                                          link-header
-                                          nil nil max-id)
+                                          link-header nil nil max-id)
             (message "Loading... done.")))))))
 
 (defun mastodon-tl--find-property-range (property start-point
@@ -2853,17 +2861,18 @@ before (non-nil) or after (nil)"
   (if (get-text-property start-point property)
       ;; We are within a range, so look backwards for the start:
       (cons (previous-single-property-change
-             (if (equal start-point (point-max)) start-point (1+ start-point))
+             (if (eq start-point (point-max)) start-point (1+ start-point))
              property nil (point-min))
             (next-single-property-change start-point property nil (point-max)))
     (if search-backwards
         (let* ((end (or (previous-single-property-change
-                         (if (equal start-point (point-max))
-                             start-point (1+ start-point))
+                         (if (eq start-point (point-max))
+                             start-point
+                           (1+ start-point))
                          property)
                         ;; we may either be just before the range or there
                         ;; is nothing at all
-                        (and (not (equal start-point (point-min)))
+                        (and (not (eq start-point (point-min)))
                              (get-text-property (1- start-point) property)
                              start-point)))
                (start (and end (previous-single-property-change
@@ -2884,20 +2893,21 @@ from the value at START-POINT if that is set).
 Return nil if no such range exists.
 If SEARCH-BACKWARDS is non-nil it find a region before
 START-POINT otherwise after START-POINT."
-  (if (get-text-property start-point property)
-      ;; We are within a range, we need to start the search from
-      ;; before/after this range:
-      (let ((current-range (mastodon-tl--find-property-range property start-point)))
-        (if search-backwards
-            (unless (equal (car current-range) (point-min))
-              (mastodon-tl--find-property-range
-               property (1- (car current-range)) search-backwards))
-          (unless (equal (cdr current-range) (point-max))
+  (if (not (get-text-property start-point property))
+      ;; If we are not within a range, we can just defer to
+      ;; mastodon-tl--find-property-range directly.
+      (mastodon-tl--find-property-range property start-point search-backwards)
+    ;; We are within a range, we need to start the search from
+    ;; before/after this range:
+    (let ((current-range
+           (mastodon-tl--find-property-range property start-point)))
+      (if search-backwards
+          (unless (eq (car current-range) (point-min))
             (mastodon-tl--find-property-range
-             property (1+ (cdr current-range)) search-backwards))))
-    ;; If we are not within a range, we can just defer to
-    ;; mastodon-tl--find-property-range directly.
-    (mastodon-tl--find-property-range property start-point search-backwards)))
+             property (1- (car current-range)) search-backwards))
+        (unless (eq (cdr current-range) (point-max))
+          (mastodon-tl--find-property-range
+           property (1+ (cdr current-range)) search-backwards))))))
 
 (defun mastodon-tl--consider-timestamp-for-updates (timestamp)
   "Take note that TIMESTAMP is used in buffer and ajust timers as needed.
@@ -3007,7 +3017,7 @@ This location is defined by a non-nil value of
   "Update timeline with new toots."
   (interactive)
   ;; FIXME: actually these buffers should just reload by calling their own
-  ;; load function:
+  ;; load function (actually g is mostly mapped as such):
   (if (or (mastodon-tl--buffer-type-eq 'trending-statuses)
           (mastodon-tl--buffer-type-eq 'trending-tags)
           (mastodon-tl--buffer-type-eq 'follow-suggestions)
@@ -3015,33 +3025,35 @@ This location is defined by a non-nil value of
           (mastodon-tl--buffer-type-eq 'filters)
           (mastodon-tl--buffer-type-eq 'scheduled-statuses)
           (mastodon-tl--search-buffer-p))
-      (message "update not available in this view.")
+      (user-error "Update not available in this view")
     ;; FIXME: handle update for search and trending buffers
     (let* ((endpoint (mastodon-tl--endpoint))
            (update-function (mastodon-tl--update-function)))
       ;; update a thread, without calling `mastodon-tl--updated-json':
       (if (mastodon-tl--buffer-type-eq 'thread)
-          (let ((thread-id (mastodon-tl--property 'item-id)))
-            (funcall update-function thread-id))
+          ;; load whole thread whole thread
+          (let ((thread-id (mastodon-tl--thread-parent-id)))
+            (funcall update-function thread-id)
+            (message "Loaded full thread."))
         ;; update other timelines:
         (let* ((id (mastodon-tl--newest-id))
                (params (mastodon-tl--update-params))
                (json (mastodon-tl--updated-json endpoint id params)))
-          (if json
-              (let ((inhibit-read-only t))
-                (mastodon-tl--set-after-update-marker)
-                (goto-char (or mastodon-tl--update-point (point-min)))
-                (funcall update-function json)
-                (when mastodon-tl--after-update-marker
-                  (goto-char mastodon-tl--after-update-marker)))
-            (message "nothing to update")))))))
+          (if (not json)
+              (user-error "Nothing to update")
+            (let ((inhibit-read-only t))
+              (mastodon-tl--set-after-update-marker)
+              (goto-char (or mastodon-tl--update-point (point-min)))
+              (funcall update-function json)
+              (when mastodon-tl--after-update-marker
+                (goto-char mastodon-tl--after-update-marker)))))))))
 
 
 ;;; LOADING TIMELINES
 
-(defun mastodon-tl--init (buffer-name endpoint update-function
-                                      &optional headers params hide-replies
-                                      instance)
+(defun mastodon-tl--init
+    (buffer-name endpoint update-function &optional headers params
+                 hide-replies instance)
   "Initialize BUFFER-NAME with timeline targeted by ENDPOINT asynchronously.
 UPDATE-FUNCTION is used to recieve more toots.
 HEADERS means to also collect the response headers. Used for paginating
@@ -3086,18 +3098,19 @@ JSON and http headers, without it just the JSON."
            (user-error "Looks like the server bugged out: \"%s\"" (cdar json)))
           (t
            (let* ((headers (if headers (cdr response) nil))
-                  (link-header (mastodon-tl--get-link-header-from-response headers)))
+                  (link-header
+                   (mastodon-tl--get-link-header-from-response headers)))
              (with-mastodon-buffer buffer #'mastodon-mode nil
-               (mastodon-tl--set-buffer-spec buffer endpoint update-function
-                                             link-header update-params hide-replies
-                                             ;; awful hack to fix multiple reloads:
-                                             (alist-get "max_id" update-params nil nil #'equal))
+               (mastodon-tl--set-buffer-spec
+                buffer endpoint update-function
+                link-header update-params hide-replies
+                ;; awful hack to fix multiple reloads:
+                (alist-get "max_id" update-params nil nil #'string=))
                (mastodon-tl--do-init json update-function instance)))))))
 
 (defun mastodon-tl--init-sync
-    (buffer-name endpoint update-function
-                 &optional note-type params headers view-name binding-str
-                 endpoint-version)
+    (buffer-name endpoint update-function &optional note-type params
+                 headers view-name binding-str endpoint-version)
   "Initialize BUFFER-NAME with timeline targeted by ENDPOINT.
 UPDATE-FUNCTION is used to receive more toots.
 Runs synchronously.
@@ -3128,10 +3141,11 @@ ENDPOINT-VERSION is a string, format Vx, e.g. V2."
       (when binding-str
         (insert (mastodon-tl--set-face (concat "[" binding-str "]\n\n")
                                        'font-lock-comment-face)))
-      (mastodon-tl--set-buffer-spec buffer endpoint update-function
-                                    link-header params nil
-                                    ;; awful hack to fix multiple reloads:
-                                    (alist-get "max_id" params nil nil #'equal))
+      (mastodon-tl--set-buffer-spec
+       buffer endpoint update-function
+       link-header params nil
+       ;; awful hack to fix multiple reloads:
+       (alist-get "max_id" params nil nil #'string=))
       (mastodon-tl--do-init json update-function)
       buffer)))
 
@@ -3140,7 +3154,7 @@ ENDPOINT-VERSION is a string, format Vx, e.g. V2."
 JSON is the data to call UPDATE-FUN on.
 When DOMAIN, force inclusion of user's domain in their handle."
   (remove-overlays) ; video overlays
-  (if domain
+  (if domain ;; maybe our update-fun doesn't always have 3 args...:
       (funcall update-fun json nil domain)
     (funcall update-fun json))
   (setq
@@ -3169,8 +3183,7 @@ When DOMAIN, force inclusion of user's domain in their handle."
 RECORD is the bookmark record."
   (let ((id (bookmark-prop-get record 'id)))
     ;; we need to handle thread and single toot for starters
-    (pop-to-buffer
-     (mastodon-tl--thread id))))
+    (pop-to-buffer (mastodon-tl--thread id))))
 
 (defun mastodon-tl--bookmark-make-record ()
   "Return a bookmark record for the current mastodon buffer."
