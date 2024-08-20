@@ -1021,7 +1021,8 @@ Buffer-local variable `fj-previous-window-config' holds the config."
 JSON is the item's data to process the link with."
   ;; NB: make sure this doesn't leak into our issue buffers!
   (let ((buf "*fj-md*")
-        str)
+        str
+        (body (decode-coding-string body 'utf-8)))
     ;; shr.el fucks windows up, so we save and restore:
     (setq fj-previous-window-config
           (list (current-window-configuration)
@@ -1990,8 +1991,7 @@ Call response and update functions."
              (not (and fj-compose-repo
                        fj-compose-issue-title)))
         (user-error "You need to set a repo and title")
-      (let* ((body (url-http--encode-string
-                    (fedi-post--remove-docs)))
+      (let* ((body (fedi-post--remove-docs))
              (repo fj-compose-repo)
              (response
               (cond ((eq type 'new-comment)
