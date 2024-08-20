@@ -153,7 +153,8 @@ json-string PARAMS."
   (let* ((url-request-data
           (when params
             (if json
-                (json-encode params)
+                (encode-coding-string
+                 (json-encode params) 'utf-8)
               (fedi-http--build-params-string params))))
          ;; TODO: perhaps leave these headers to the package now that
          ;; `fedi-request' takes header args?
@@ -283,7 +284,8 @@ If JSON, encode params as JSON."
   (let* ((url-request-data
           (when params
             (if json
-                (json-encode params)
+                (encode-coding-string
+                 (json-encode params) 'utf-8)
               (fedi-http--build-params-string params))))
          (headers (when json
                     (append headers
@@ -307,7 +309,8 @@ Optionally specify the PARAMS to send."
   (let* ((url-request-data
           (when params
             (if json
-                (json-encode params)
+                (encode-coding-string
+                 (json-encode params) 'utf-8)
               (fedi-http--build-params-string params))))
          ;; (url (fedi-http--concat-params-to-url base-url params)))))
          (headers (when json
