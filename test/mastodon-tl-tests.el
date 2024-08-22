@@ -1181,9 +1181,9 @@ correct value for following, as well as notifications enabled or disabled."
           (stub y-or-n-p => t) ; yes to all
           (mock (mastodon-tl--read-rules-ids) => '(1 2 3))
           (should (equal (mastodon-tl--report-params account toot)
-                         '(("rule_ids[]" . 3)
+                         '(("rule_ids[]" . 1)
                            ("rule_ids[]" . 2)
-                           ("rule_ids[]" . 1)
+                           ("rule_ids[]" . 3)
                            ("account_id" . 42)
                            ("comment" . "Dummy complaint")
                            ("status_ids[]" . 61208)
@@ -1194,9 +1194,9 @@ correct value for following, as well as notifications enabled or disabled."
   (should (equal
            (mastodon-tl--report-build-params 42 "Dummy complaint"
                                              61208 "true" nil '(1 2 3))
-           '(("rule_ids[]" . 3)
+           '(("rule_ids[]" . 1)
              ("rule_ids[]" . 2)
-             ("rule_ids[]" . 1)
+             ("rule_ids[]" . 3)
              ("account_id" . 42)
              ("comment" . "Dummy complaint")
              ("status_ids[]" . 61208)
