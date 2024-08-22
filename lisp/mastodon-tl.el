@@ -837,7 +837,8 @@ TIMESTAMP is assumed to be in the past."
   (let* ((time-difference (time-subtract current-time timestamp))
          (seconds-difference (float-time time-difference))
          (tmp (mastodon-tl--human-duration (max 0 seconds-difference))))
-    (cons (concat (car tmp) " ago")
+    ;; revert to old just now style for < 1 min
+    (cons (concat (car tmp) (if (string= "just now" (car tmp)) "" " ago"))
           (time-add current-time (cdr tmp)))))
 
 (defun mastodon-tl--relative-time-description (timestamp &optional current-time)
@@ -1337,8 +1338,10 @@ displayed when the duration is smaller than a minute)."
     (if n2 (setq n2 (truncate n2)))
     (cond
      ((null n2)
-      (cons (format "%d %s%s" n1 unit1 (if (> n1 1) "s" ""))
-            (max resolution res1)))
+      ;; revert to old just now style for < 1 min:
+      (cons "just now" 60))
+     ;; (cons (format "%d %s%s" n1 unit1 (if (> n1 1) "s" ""))
+     ;;       (max resolution res1)))
      ((< (* res2 n2) resolution)
       (cons (format "%d %s%s" n1 unit1 (if (> n1 1) "s" ""))
             (max resolution res2)))
