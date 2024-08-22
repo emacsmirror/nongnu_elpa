@@ -221,7 +221,8 @@ Strict-Transport-Security: max-age=31536000
       (mastodon-tl--updated-json "timelines/foo" "12345"))))
 
 ;; broken by monnier's `mastodon-tl--human-duration', which uses "secs" rather
-;; than "just now"
+;; than "just now". its not just the abbrevs, also the rounding works
+;; differently
 (ert-deftest mastodon-tl--relative-time-description ()
   "Should format relative time as expected"
   (cl-labels ((minutes (n) (* n 60))
@@ -234,32 +235,35 @@ Strict-Transport-Security: max-age=31536000
                   (mastodon-tl--relative-time-description timestamp)))
               (check (seconds expected)
                 (should (string= (format-seconds-since seconds) expected))))
-    (check 1 "just now")
-    (check 59 "just now")
-    (check 60 "1 minute ago")
-    (check 89 "1 minute ago")            ;; rounding down
-    (check 91 "2 minutes ago")             ;; rounding up
-    (check (minutes 3.49) "3 minutes ago") ;; rounding down
-    (check (minutes 3.52) "4 minutes ago")
-    (check (minutes 59) "59 minutes ago")
+    (check 1 "1 sec ago")
+    (check 59 "59 secs ago")
+    (check 60 "1 min ago")
+    (check 89 "1 min ago")            ;; rounding down
+    (check 91 "1 min ago") ;"2 minutes ago")             ;; rounding up
+    (check (minutes 3.49) "3 mins ago") ;; rounding down
+    (check (minutes 3.52) "3 mins ago") ;"4 minutes ago")
+    (check (minutes 59) "59 mins ago")
     (check (minutes 60) "1 hour ago")
-    (check (minutes 89) "1 hour ago")
-    (check (minutes 91) "2 hours ago")
-    (check (hours 3.49) "3 hours ago") ;; rounding down
-    (check (hours 3.51) "4 hours ago") ;; rounding down
-    (check (hours 23.4) "23 hours ago")
-    (check (hours 23.6) "1 day ago") ;; rounding up
-    (check (days 1.48) "1 day ago")  ;; rounding down
-    (check (days 1.52) "2 days ago")   ;; rounding up
-    (check (days 6.6) "1 week ago")  ;; rounding up
-    (check (weeks 2.49) "2 weeks ago") ;; rounding down
-    (check (weeks 2.51) "3 weeks ago") ;; rounding down
-    (check (1- (weeks 52)) "52 weeks ago")
-    (check (weeks 52) "1 year ago")
-    (check (years 2.49) "2 years ago") ;; rounding down
-    (check (years 2.51) "3 years ago") ;; rounding down
+    (check (minutes 89) "1 hour, 29 mins ago")
+    (check (minutes 91) "1 hour, 31 mins ago") ;"2 hours ago")
+    (check (hours 3.49)  "3 hours, 29 mins ago") ; "3 hours ago") ;; rounding down
+    (check (hours 3.51) "3 hours, 30 mins ago") ; "4 hours ago") ;; rounding down
+    (check (hours 23.4) "23 hours, 24 mins ago"); "23 hours ago")
+    (check (hours 23.6) "23 hours, 36 mins ago") ; "1 day ago") ;; rounding up
+    (check (days 1.48) "1 day, 11 hours ago") ; "1 day ago")  ;; rounding down
+    (check (days 1.52)  "1 day, 12 hours ago"); "2 days ago")   ;; rounding up
+    (check (days 6.6) "6 days, 14 hours ago"); "1 week ago")  ;; rounding up
+    (check (weeks 2.49) "2 weeks, 3 days ago"); "2 weeks ago") ;; rounding down
+    (check (weeks 2.51) "2 weeks, 3 days ago"); "3 weeks ago") ;; rounding down
+    (check (1- (weeks 52)) "11 months, 4 weeks ago") ;"52 weeks ago")
+    (check (weeks 52) "11 months, 4 weeks ago") ;"1 year ago")
+    (check (years 2.49) "2 years, 5 months ago"); "2 years ago") ;; rounding down
+    (check (years 2.51) "2 years, 6 months ago"); "3 years ago") ;; rounding down
     ))
 
+;; broken by monnier's `mastodon-tl--human-duration', which uses "secs" rather
+;; than "just now". its not just the abbrevs, also the rounding works
+;; differently
 (ert-deftest mastodon-tl--relative-time-details--next-update ()
   "Should calculate the next update time information as expected"
   (let ((current-time (current-time)))
