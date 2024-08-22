@@ -220,6 +220,8 @@ Strict-Transport-Security: max-age=31536000
                                      '(("since_id" . "12345"))))
       (mastodon-tl--updated-json "timelines/foo" "12345"))))
 
+;; broken by monnier's `mastodon-tl--human-duration', which uses "secs" rather
+;; than "just now"
 (ert-deftest mastodon-tl--relative-time-description ()
   "Should format relative time as expected"
   (cl-labels ((minutes (n) (* n 60))
@@ -536,7 +538,10 @@ Strict-Transport-Security: max-age=31536000
         (should (equal '(22782 21551) (plist-get properties 'timestamp)))
         (should (string-equal ;;"7 minutes ago"
                  ;; "7 mins ago" ;; not sure why its diff now
-                 "7 years, 3 months ago"
+
+                 ;; FIXME: this value has become really relative so we will have to
+                 ;; keep changing it!
+                 "7 years, 4 months ago"
                  (plist-get properties 'display)))))))
 
 (ert-deftest mastodon-tl--consider-timestamp-for-updates-no-active-callback ()
