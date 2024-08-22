@@ -2610,7 +2610,8 @@ ACCOUNT-ID, COMMENT, ITEM-ID, FORWARD-P, CAT, and RULES are all from
                    ,(when item-id `("status_ids[]" . ,item-id))
                    ,(when forward-p `("forward" . ,forward-p))
                    ,(when cat `("category" . ,cat))))))
-    (when rules
+    (if (not rules)
+        params
       (let ((alist
              (mastodon-http--build-array-params-alist "rule_ids[]" rules)))
         (append alist params)))))
