@@ -173,13 +173,13 @@ When ASK is absent return nil."
 Generate/save token if none known yet."
   (cond (mastodon-auth--token-alist
          ;; user variables are known and initialised.
-         (alist-get mastodon-instance-url mastodon-auth--token-alist nil nil #'equal))
+         (alist-get mastodon-instance-url mastodon-auth--token-alist nil nil #'string=))
         ((plist-get (mastodon-client--active-user) :access_token)
          ;; user variables need to be read from plstore.
          (push (cons mastodon-instance-url
                      (plist-get (mastodon-client--active-user) :access_token))
                mastodon-auth--token-alist)
-         (alist-get mastodon-instance-url mastodon-auth--token-alist nil nil #'equal))
+         (alist-get mastodon-instance-url mastodon-auth--token-alist nil nil #'string=))
         ((null mastodon-active-user)
          ;; user not aware of 2FA-related changes and has not set
          ;; `mastodon-active-user'. Make user aware and error out.

@@ -766,7 +766,7 @@ When t, whole words means only match whole words."
                          "false"))
            (params `(("keyword" . ,updated)
                      ("whole_word" . ,whole-word)))
-           (id (cdr (assoc choice alist #'equal)))
+           (id (cdr (assoc choice alist #'string=)))
            (url (mastodon-http--api-v2 (format "filters/keywords/%s" id)))
            (resp (mastodon-http--put url params)))
       (mastodon-views--filters-triage resp
@@ -807,7 +807,7 @@ When t, whole words means only match whole words."
                            (mastodon-tl--property 'item-json :no-move)))
            (alist (mastodon-tl--map-alist-vals-to-alist 'keyword 'id kws))
            (choice (completing-read "Remove keyword: " alist))
-           (id (cdr (assoc choice alist #'equal)))
+           (id (cdr (assoc choice alist #'string=)))
            (url (mastodon-http--api-v2 (format "filters/keywords/%s" id)))
            (resp (mastodon-http--delete url)))
       (mastodon-views--filters-triage resp (format "Keyword %s removed!" choice)))))
@@ -1022,9 +1022,9 @@ IND is the optional indentation level to print at."
           (mastodon-views--print-json-keys
            (cdr el) (if ind (+ ind 4) 4)))
          (t ; basic handling of raw booleans:
-          (let ((val (cond ((equal (cdr el) :json-false)
+          (let ((val (cond ((eq (cdr el) :json-false)
                             "no")
-                           ((equal (cdr el) 't)
+                           ((eq (cdr el) t)
                             "yes")
                            (t
                             (cdr el)))))

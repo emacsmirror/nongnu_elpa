@@ -284,7 +284,7 @@ data about the item boosted or favourited."
 Includes boosts, and notifications that display toots.
 This macro makes the local variable ID available."
   (declare (debug t))
-  `(if (not (equal 'toot (mastodon-tl--property 'item-type :no-move)))
+  `(if (not (eq 'toot (mastodon-tl--property 'item-type :no-move)))
        (user-error "Looks like there's no toot at point?")
      (mastodon-tl--with-toot-helper
       (lambda (id)
@@ -409,12 +409,12 @@ ACTION is a symbol, either `favourite' or `boost.'"
       ;; there's nothing wrong with faving/boosting own toots
       ;; & nothing wrong with faving/boosting own toots from notifs,
       ;; it boosts/faves the base toot, not the notif status
-      ((or (equal n-type "follow")
-           (equal n-type "follow_request"))
+      ((or (string= n-type "follow")
+           (string= n-type "follow_request"))
        (user-error "Can't %s %s notifications" action n-type))
       ((and boost-p
-            (or (equal vis "direct")
-                (equal vis "private")))
+            (or (string= vis "direct")
+                (string= vis "private")))
        (user-error "Can't boost posts with visibility: %s" vis))
       (t
        (let* ((boosted (when byline-region
@@ -491,8 +491,8 @@ SUBTRACT means we are un-favouriting or unboosting, so we decrement."
           (bookmarked-p (when byline-region
                           (get-text-property (car byline-region) 'bookmarked-p)))
           (action (if bookmarked-p "unbookmark" "bookmark")))
-     (cond ((or (equal n-type "follow")
-                (equal n-type "follow_request"))
+     (cond ((or (string= n-type "follow")
+                (string= n-type "follow_request"))
             (user-error "Can't bookmark %s notifications" n-type))
            ((not byline-region)
             (user-error "Nothing to %s here?!?" action))
@@ -595,8 +595,8 @@ Uses `lingva.el'."
   ;; this check needs to allow acting on own toots displayed as boosts, so we
   ;; call `mastodon-tl--toot-or-base'.
   (let ((json (mastodon-tl--toot-or-base toot)))
-    (equal (alist-get 'acct (alist-get 'account json))
-           (mastodon-auth--user-acct))))
+    (string= (alist-get 'acct (alist-get 'account json))
+             (mastodon-auth--user-acct))))
 
 (defun mastodon-toot--pin-toot-toggle ()
   "Pin or unpin user's toot at point."
@@ -717,7 +717,7 @@ CANCEL means the toot was not sent, so we save the toot text as a draft."
     (unless (eq mastodon-toot-current-toot-text nil)
       (when cancel
         (cl-pushnew mastodon-toot-current-toot-text
-                    mastodon-toot-draft-toots-list :test 'equal)))
+                    mastodon-toot-draft-toots-list :test #'string=)))
     ;; prevent some weird bug when cancelling a non-empty toot:
     (delete #'mastodon-toot--save-toot-text after-change-functions)
     (quit-window 'kill)
@@ -931,7 +931,7 @@ instance to edit a toot."
                 ;; (we don't reload in every case as it can be slow and we may
                 ;; lose our place in a timeline.)
                 (when (or edit-id
-                          (equal 'thread (mastodon-tl--get-buffer-type)))
+                          (eq 'thread (mastodon-tl--get-buffer-type)))
                   (let ((pos (marker-position (cadr prev-window-config))))
                     (mastodon-tl--reload-timeline-or-profile pos))))))))))
 
@@ -1175,7 +1175,7 @@ prefixed by >."
                                 (alist-get 'account toot))))
           (mentions
            (cond ((and booster ;; different booster, user and mentions:
-                       (and (not (equal user booster))
+                       (and (not (string= user booster))
                             (not (member booster mentions))))
 	          (mastodon-toot--mentions-to-string
                    (append (list user booster) mentions nil)))
@@ -1228,7 +1228,7 @@ Return its two letter ISO 639 1 code."
   (let* ((choice (completing-read "Language for this toot: "
                                   mastodon-iso-639-1)))
     (setq mastodon-toot--language
-          (alist-get choice mastodon-iso-639-1 nil nil 'equal))
+          (alist-get choice mastodon-iso-639-1 nil nil #'string=))
     (message "Language set to %s" choice)
     (mastodon-toot--update-status-fields)))
 
@@ -1419,7 +1419,7 @@ Return a cons of a human readable string, and a seconds-from-now string."
   (let* ((options (mastodon-toot--poll-expiry-options-alist))
          (response (completing-read "poll ends in [or enter seconds]: "
                                     options nil 'confirm)))
-    (or (assoc response options #'equal)
+    (or (assoc response options #'string=)
         (if (< (string-to-number response) 600)
             (car options))))) ;; min 5 mins
 
@@ -1718,7 +1718,7 @@ REPLY-REGION is a string to be injected into the buffer."
                 (mastodon-toot--render-reply-region-str reply-region)
                 "\n"))
       (setq mastodon-toot--reply-to-id reply-to-id)
-      (unless (equal mastodon-toot--visibility reply-visibility)
+      (unless (string= mastodon-toot--visibility reply-visibility)
         (setq mastodon-toot--visibility reply-visibility))
       (mastodon-toot--set-cw reply-cw))))
 
@@ -1752,7 +1752,7 @@ REPLY-REGION is a string to be injected into the buffer."
       (mastodon-toot--apply-fields-props
        vis-region
        (format "%s"
-               (if (equal "private" mastodon-toot--visibility)
+               (if (string= "private" mastodon-toot--visibility)
                    "followers-only"
                  mastodon-toot--visibility)))
       ;; WHEN clauses don't work here, we need "" as display arg:
@@ -1783,7 +1783,7 @@ REPLY-REGION is a string to be injected into the buffer."
       (mastodon-toot--apply-fields-props
        cw-region
        (if (and mastodon-toot--content-warning
-                (not (equal "" mastodon-toot--content-warning)))
+                (not (string= "" mastodon-toot--content-warning)))
            (format "CW: %s" mastodon-toot--content-warning)
          "  ") ;; hold the blank space
        'mastodon-cw-face))))

@@ -574,7 +574,7 @@ Do so if type of status at poins is not follow_request/follow."
   (let ((type (alist-get 'type
                          (mastodon-tl--property 'item-json :no-move)))
         (echo (mastodon-tl--property 'help-echo :no-move)))
-    (when (not (equal "" echo)) ; not for followers/following in profile
+    (when (not (string= "" echo)) ; not for followers/following in profile
       (unless (or (string= type "follow_request")
                   (string= type "follow")) ; no counts for these
         (message "%s" echo)))))
@@ -682,11 +682,11 @@ The result is added as an attachments property to author-byline."
 (defun mastodon-tl--format-faved-or-boosted-byline (letter)
   "Format the byline marker for a boosted or favourited status.
 LETTER is a string, F for favourited, B for boosted, or K for bookmarked."
-  (let ((help-string (cond ((equal letter "F")
+  (let ((help-string (cond ((string= letter "F")
                             "favourited")
-                           ((equal letter "B")
+                           ((string= letter "B")
                             "boosted")
-                           ((equal letter (or "🔖" "K"))
+                           ((string= letter (or "🔖" "K"))
                             "bookmarked"))))
     (format "(%s) "
             (propertize letter 'face 'mastodon-boost-fave-face
@@ -761,10 +761,10 @@ BASE-TOOT is JSON for the base toot, if any."
        ;; in `mastodon-tl--byline-author'
        (funcall author-byline toot nil domain)
        ;; visibility:
-       (cond ((equal visibility "direct")
+       (cond ((string= visibility "direct")
               (propertize (concat " " (mastodon-tl--symbol 'direct))
                           'help-echo visibility))
-             ((equal visibility "private")
+             ((string= visibility "private")
               (propertize (concat " " (mastodon-tl--symbol 'private))
                           'help-echo visibility)))
        ;;action byline:
@@ -1097,11 +1097,11 @@ content should be hidden."
         (user-error "Not in a thread")
       (save-excursion
         (goto-char (point-min))
-        (while (not (equal "No more items" ; improve this hack test!
+        (while (not (string= "No more items" ; improve this hack test!
                            (mastodon-tl--goto-next-item :no-refresh)))
           (let* ((json (mastodon-tl--property 'item-json :no-move))
                  (cw (alist-get 'spoiler_text json)))
-            (when (not (equal "" cw))
+            (when (not (string= "" cw))
               (mastodon-tl--toggle-spoiler-text-in-toot))))))))
 
 (defun mastodon-tl--spoiler (toot &optional filter)
@@ -1439,8 +1439,8 @@ EVENT is a mouse-click arg."
   "T if mastodon-media-type prop is \"gifv\" or \"video\".
 TYPE is a mastodon media type."
   (let ((type (or type (mastodon-tl--property 'mastodon-media-type :no-move))))
-    (or (equal type "gifv")
-        (equal type "video"))))
+    (or (string= type "gifv")
+        (string= type "video"))))
 
 (defun mastodon-tl--mpv-play-video-at-point (&optional url type)
   "Play the video or gif at point with an mpv process.
@@ -1767,13 +1767,13 @@ To disable showing the stats, customize
            (replies (format "%s %s" .replies_count (mastodon-tl--symbol 'reply)))
            (stats (concat
                    (propertize faves
-                               'favourited-p (eq 't .favourited)
+                               'favourited-p (eq t .favourited)
                                'favourites-field t
                                'help-echo (format "%s favourites" .favourites_count)
                                'face 'font-lock-comment-face)
                    (propertize " | " 'face 'font-lock-comment-face)
                    (propertize boosts
-                               'boosted-p (eq 't .reblogged)
+                               'boosted-p (eq t .reblogged)
                                'boosts-field t
                                'help-echo (format "%s boosts" .reblogs_count)
                                'face 'font-lock-comment-face)
@@ -1929,11 +1929,11 @@ call this function after it is set or use something else."
            'preferences)
           ;; search
           ((mastodon-tl--search-buffer-p)
-           (cond ((equal "accounts" (mastodon-search--buf-type))
+           (cond ((string= "accounts" (mastodon-search--buf-type))
                   'search-accounts)
-                 ((equal "hashtags" (mastodon-search--buf-type))
+                 ((string= "hashtags" (mastodon-search--buf-type))
                   'search-hashtags)
-                 ((equal "statuses" (mastodon-search--buf-type))
+                 ((string= "statuses" (mastodon-search--buf-type))
                   'search-statuses)))
           ;; trends
           ((mastodon-tl--endpoint-str-= "trends/statuses")
@@ -1993,7 +1993,7 @@ We hide replies if user explictly set the
 timeline."
   (and (mastodon-tl--timeline-proper-p) ; Only if we are in a proper timeline
        (or mastodon-tl--hide-replies ; User configured to hide replies
-           (equal '(4) prefix)))) ; Timeline called with C-u prefix
+           (eq '(4) prefix)))) ; Timeline called with C-u prefix
 
 
 ;;; UTILITIES
@@ -2107,7 +2107,7 @@ ID is that of the toot to view."
   (let* ((buffer (format "*mastodon-toot-%s*" id))
          (toot (mastodon-http--get-json
                 (mastodon-http--api (concat "statuses/" id)))))
-    (if (equal (caar toot) 'error)
+    (if (eq (caar toot) 'error)
         (user-error "Error: %s" (cdar toot))
       (with-mastodon-buffer buffer #'mastodon-mode nil
         (mastodon-tl--set-buffer-spec buffer (format "statuses/%s" id)
@@ -2152,7 +2152,7 @@ view all branches of a thread."
                      (mastodon-http--api (concat "statuses/" id))
                      nil :silent))
               (context (mastodon-http--get-json url nil :silent)))
-         (if (equal (caar toot) 'error)
+         (if (eq (caar toot) 'error)
              (user-error "Error: %s" (cdar toot))
            (when (member (alist-get 'type toot) '("reblog" "favourite"))
              (setq toot (alist-get 'status toot)))
@@ -2291,7 +2291,7 @@ desired language if they are not marked as such (or as anything)."
   (interactive (list (mastodon-tl--user-handles-get "filter by language")))
   (let ((langs (mastodon-tl--read-filter-langs)))
     (mastodon-tl--do-if-item
-     (if (equal "" (cdar langs))
+     (if (string= "" (cdar langs))
          (mastodon-tl--unfilter-user-languages user-handle)
        (mastodon-tl--follow-user user-handle nil langs)))))
 
@@ -2465,7 +2465,7 @@ ARGS is an alist of any parameters to send with the request."
                      (mastodon-http--process-json))))
          ;; TODO: when > if, with failure msg
          (cond ((string= notify "true")
-                (when (eq 't (alist-get 'notifying json))
+                (when (eq t (alist-get 'notifying json))
                   (message "Receiving notifications for user %s (@%s)!"
                            name user-handle)))
                ((string= notify "false")
@@ -2473,7 +2473,7 @@ ARGS is an alist of any parameters to send with the request."
                   (message "Not receiving notifications for user %s (@%s)!"
                            name user-handle)))
                ((string= reblogs "true")
-                (when (eq 't (alist-get 'showing_reblogs json))
+                (when (eq t (alist-get 'showing_reblogs json))
                   (message "Receiving boosts by user %s (@%s)!"
                            name user-handle)))
                ((string= reblogs "false")
@@ -2483,14 +2483,14 @@ ARGS is an alist of any parameters to send with the request."
                ((or (string= action "mute")
                     (string= action "unmute"))
                 (message "User %s (@%s) %sd!" name user-handle action))
-               ((equal args "languages[]")
+               ((string= args "languages[]")
                 (message "User %s language filters removed!" name))
-               ((assoc "languages[]" args #'equal)
+               ((assoc "languages[]" args #'string=)
                 (message "User %s filtered by language(s): %s" name
                          (mapconcat #'cdr args " ")))
                ((and (eq notify nil)
                      (eq reblogs nil))
-                (if (and (equal action "follow")
+                (if (and (string= action "follow")
                          (eq t (alist-get 'requested json)))
                     (message "Follow requested for user %s (@%s)!" name user-handle)
                   (message "User %s (@%s) %sed!" name user-handle action)))))))))
@@ -3092,7 +3092,7 @@ JSON and http headers, without it just the JSON."
            ;; so as a fallback, load trending statuses:
            ;; FIXME: this could possibly be a fallback for all timelines not
            ;; just home?
-           (when (equal endpoint "timelines/home")
+           (when (string= endpoint "timelines/home")
              (mastodon-search--trending-statuses)))
           ((eq (caar json) 'error)
            (user-error "Looks like the server bugged out: \"%s\"" (cdar json)))

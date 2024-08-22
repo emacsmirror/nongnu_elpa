@@ -449,8 +449,8 @@ Replace them with the referenced image."
             (put-text-property start end 'media-state 'loading)
             (mastodon-media--load-image-from-url
              image-url media-type start (- end start))
-            (when (or (equal type "gifv")
-                      (equal type "video"))
+            (when (or (string= type "gifv")
+                      (string= type "video"))
               (mastodon-media--moving-image-overlay start end))))))))
 
 ;; (defvar-local mastodon-media--overlays nil
