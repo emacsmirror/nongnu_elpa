@@ -592,7 +592,7 @@ FIELDS means provide a fields vector fetched by other means."
   "T if you have any relationship with the accounts in LIST."
   (let (result)
     (dolist (x list result)
-      (when (not (equal :json-false x))
+      (when (not (eq :json-false x))
         (setq result x)))))
 
 (defun mastodon-profile--render-roles (roles)
@@ -735,7 +735,7 @@ MAX-ID is a flag to include the max_id pagination parameter."
           (setq mastodon-tl--update-point (point))
           (mastodon-media--inline-images (point-min) (point))
           ;; insert pinned toots first
-          (when (and pinned (equal endpoint-type "statuses"))
+          (when (and pinned (string= endpoint-type "statuses"))
             (mastodon-profile--insert-statuses-pinned pinned)
             (setq mastodon-tl--update-point (point))) ; updates after pinned toots
           (funcall update-function json))
@@ -767,7 +767,7 @@ MAX-ID is a flag to include the max_id pagination parameter."
   "Return a avatar image from ACCOUNT.
 IMG-TYPE is the JSON key from the account data."
   (let ((img (alist-get img-type account)))
-    (unless (equal img "/avatars/original/missing.png")
+    (unless (string= img "/avatars/original/missing.png")
       (mastodon-media--get-media-link-rendering img))))
 
 (defun mastodon-profile--show-user (user-handle)
@@ -784,7 +784,7 @@ IMG-TYPE is the JSON key from the account data."
                          nil ; predicate
                          'confirm)))))
   (if (not (or ; own profile has no need for item-json test:
-            (equal user-handle (mastodon-auth--get-account-name))
+            (string= user-handle (mastodon-auth--get-account-name))
             (mastodon-tl--profile-buffer-p)
             (mastodon-tl--property 'item-json :no-move)))
       (user-error "Looks like there's no toot or user at point?")

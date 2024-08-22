@@ -204,7 +204,7 @@ Status notifications are given when
   ;; FIXME: apply/refactor filtering as per/with `mastodon-tl--toot'
   (let* ((id (alist-get 'id note))
          (profile-note
-          (when (equal 'follow-request type)
+          (when (eq 'follow-request type)
             (let ((str (mastodon-tl--field
                         'note
                         (mastodon-tl--field 'account note))))
@@ -221,15 +221,15 @@ Status notifications are given when
         nil
       (mastodon-tl--insert-status
        ;; toot
-       (cond ((or (equal type 'follow)
-                  (equal type 'follow-request))
+       (cond ((or (eq type 'follow)
+                  (eq type 'follow-request))
               ;; Using reblog with an empty id will mark this as something
               ;; non-boostable/non-favable.
               (cons '(reblog (id . nil)) note))
              ;; reblogs/faves use 'note' to process their own json
              ;; not the toot's. this ensures following etc. work on such notifs
-             ((or (equal type 'favourite)
-                  (equal type 'boost))
+             ((or (eq type 'favourite)
+                  (eq type 'boost))
               note)
              (t
               status))
@@ -239,12 +239,12 @@ Status notifications are given when
                      (mastodon-tl--clean-tabs-and-nl
                       (if (mastodon-tl--has-spoiler status)
                           (mastodon-tl--spoiler status)
-                        (if (equal 'follow-request type)
+                        (if (eq 'follow-request type)
                             (mastodon-tl--render-text profile-note)
                           (mastodon-tl--content status)))))))
          (cond ((or (eq type 'follow)
                     (eq type 'follow-request))
-                (if (equal type 'follow)
+                (if (eq type 'follow)
                     (propertize "Congratulations, you have a new follower!"
                                 'face 'default)
                   (concat
@@ -261,35 +261,35 @@ Status notifications are given when
                 (mastodon-notifications--comment-note-text body))
                (t body)))
        ;; author-byline
-       (if (or (equal type 'follow)
-               (equal type 'follow-request)
-               (equal type 'mention))
+       (if (or (eq type 'follow)
+               (eq type 'follow-request)
+               (eq type 'mention))
            'mastodon-tl--byline-author
          (lambda (_status &rest _args) ; unbreak stuff
            (mastodon-tl--byline-author note)))
        ;; action-byline
        (lambda (_status)
          (mastodon-notifications--byline-concat
-          (cond ((equal type 'boost)
+          (cond ((eq type 'boost)
                  "Boosted")
-                ((equal type 'favourite)
+                ((eq type 'favourite)
                  "Favourited")
-                ((equal type 'follow-request)
+                ((eq type 'follow-request)
                  "Requested to follow")
-                ((equal type 'follow)
+                ((eq type 'follow)
                  "Followed")
-                ((equal type 'mention)
+                ((eq type 'mention)
                  "Mentioned")
-                ((equal type 'status)
+                ((eq type 'status)
                  "Posted")
-                ((equal type 'poll)
+                ((eq type 'poll)
                  "Posted a poll")
-                ((equal type 'edit)
+                ((eq type 'edit)
                  "Edited"))))
        id
        ;; base toot
-       (when (or (equal type 'favourite)
-                 (equal type 'boost))
+       (when (or (eq type 'favourite)
+                 (eq type 'boost))
          status)))))
 
 (defun mastodon-notifications--by-type (note)

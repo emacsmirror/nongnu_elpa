@@ -365,7 +365,7 @@ item uploaded, and `mastodon-toot--update-status-fields' is run."
                     ;; this is how the mangane akkoma web client does it
                     ;; and it seems easier than the other options!
                     (when (and caption
-                               (not (equal caption (alist-get 'description data))))
+                               (not (string= caption (alist-get 'description data))))
                       (let ((url (mastodon-http--api (format "media/%s" id))))
                         ;; (message "PUTting image description")
                         (mastodon-http--put url desc)))

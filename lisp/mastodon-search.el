@@ -66,7 +66,7 @@ Returns a nested list containing user handle, display name, and URL."
           (mastodon-http--get-json
            url
            `(("q" . ,query) ;; NB: nil can break params (but works for me)
-             ,(when (equal "following"
+             ,(when (string= "following"
                            mastodon-toot--completion-style-for-mentions)
                 '("following" . "true")))
            :silent)))
@@ -103,7 +103,7 @@ TYPE is a string, either tags, statuses, or links.
 PRINT-FUN is the function used to print the data from the response."
   (let* ((url (mastodon-http--api (format "trends/%s" type)))
          ;; max for statuses = 40, for others = 20
-         (limit (if (equal type "statuses")
+         (limit (if (string= type "statuses")
                     '("limit" . "40")
                   '("limit" . "20")))
          (offset '(("offset" . "0")))
@@ -116,7 +116,7 @@ PRINT-FUN is the function used to print the data from the response."
                                     print-fun nil params)
       (mastodon-search--insert-heading "trending" type)
       (funcall print-fun data)
-      (unless (equal type "statuses")
+      (unless (string= type "statuses")
         (goto-char (point-min))))))
 
 ;; functions for mastodon search
@@ -153,10 +153,10 @@ is used for pagination."
   ;; TODO: handle no results
   (interactive "sSearch mastodon for: ")
   (let* ((url (mastodon-http--api-v2 "search"))
-         (following (when (or following (equal current-prefix-arg '(4)))
+         (following (when (or following (eq current-prefix-arg '(4)))
                       "true"))
          (type (or type
-                   (if (equal current-prefix-arg '(4))
+                   (if (eq current-prefix-arg '(4))
                        "accounts" ; if FOLLOWING, must be "accounts"
                      (completing-read "Search type: "
                                       mastodon-search-types nil :match))))
@@ -175,15 +175,15 @@ is used for pagination."
     (with-mastodon-buffer buffer #'mastodon-mode nil
       (mastodon-search-mode)
       (mastodon-search--insert-heading type)
-      (cond ((equal type "accounts")
+      (cond ((string= type "accounts")
              (mastodon-search--render-response items type buffer params
                                                'mastodon-views--insert-users-propertized-note
                                                'mastodon-views--insert-users-propertized-note))
-            ((equal type "hashtags")
+            ((string= type "hashtags")
              (mastodon-search--render-response items type buffer params
                                                'mastodon-search--print-tags
                                                'mastodon-search--print-tags))
-            ((equal type "statuses")
+            ((string= type "statuses")
              (mastodon-search--render-response items type buffer params
                                                #'mastodon-tl--timeline
                                                #'mastodon-tl--timeline)))
@@ -213,19 +213,19 @@ BUFFER, PARAMS, and UPDATE-FUN are for `mastodon-tl--buffer-spec'."
   "Return search buffer type, a member of `mastodon-search-types'."
   ;; called in `mastodon-tl--get-buffer-type'
   (let* ((spec (mastodon-tl--buffer-property 'update-params)))
-    (alist-get "type" spec nil nil #'equal)))
+    (alist-get "type" spec nil nil #'string=)))
 
 (defun mastodon-search--query-cycle ()
   "Cycle through search types: accounts, hashtags, and statuses."
   (interactive)
   (let* ((spec (mastodon-tl--buffer-property 'update-params))
-         (type (alist-get "type" spec nil nil #'equal))
-         (query (alist-get "q" spec nil nil #'equal)))
-    (cond ((equal type "hashtags")
+         (type (alist-get "type" spec nil nil #'string=))
+         (query (alist-get "q" spec nil nil #'string=)))
+    (cond ((string= type "hashtags")
            (mastodon-search--query query "accounts"))
-          ((equal type "accounts")
+          ((string= type "accounts")
            (mastodon-search--query query "statuses"))
-          ((equal type "statuses")
+          ((string= type "statuses")
            (mastodon-search--query query "hashtags")))))
 
 (defun mastodon-search--query-accounts-followed (query)
