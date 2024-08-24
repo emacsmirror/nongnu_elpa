@@ -99,6 +99,7 @@
 (autoload 'mastodon-tl--human-duration "mastodon-tl")
 (autoload 'mastodon-profile--get-preferences-pref "mastodon-profile")
 (autoload 'mastodon-views--get-own-instance "mastodon-views")
+(autoload 'mastodon-tl--image-trans-check "mastodon-tl")
 
 ;; for mastodon-toot--translate-toot-text
 (autoload 'mastodon-tl--content "mastodon-tl")
