@@ -217,7 +217,7 @@ When nil, review new notes last."
 (defvar gnosis-review-notes nil
   "Review notes.")
 
-;; TODO: Make this as a defcustom
+;; TODO: Make this as a defcustom.
 (defvar gnosis-custom-values
   '((:deck "demo" (:proto (0 1 3) :anagnosis 3 :epignosis 0.5 :agnoia 0.3 :amnesia 0.5 :lethe 3))
     (:tag "demo" (:proto (1 2) :anagnosis 3 :epignosis 0.5 :agnoia 0.3 :amnesia 0.45 :lethe 3)))
@@ -1269,7 +1269,7 @@ Optionally, add cusotm PROMPT."
   (cl-loop for tags in (gnosis-select 'tags 'notes '1=1 t)
            nconc tags into all-tags
            finally return (delete-dups all-tags)))
-;; TODO: Rewrite this using `gnosis-get-tag-notes'.
+;; TODO: Rewrite this using gnosis-get-tag-notes.
 (defun gnosis-select-by-tag (input-tags &optional due suspended-p)
   "Return note ID's for every note with INPUT-TAGS.
 
@@ -1389,8 +1389,8 @@ provided, use it as the default value."
 
 ;; Collecting note ids
 
-;; TODO: Rewrite.  Tags should be an input of strings, interactive
-;; handling should be done by "helper" funcs
+;; TODO: Rewrite this! Tags should be an input of strings,
+;; interactive handling should be done by "helper" funcs
 (cl-defun gnosis-collect-note-ids (&key (tags nil) (due nil) (deck nil) (query nil))
   "Return list of note ids based on TAGS, DUE, DECKS, QUERY.
 
@@ -1739,7 +1739,7 @@ NOTE-COUNT: The number of notes reviewed in the session to be commited."
       (error "Git not found, please install git"))
     (unless (file-exists-p (expand-file-name ".git" gnosis-dir))
       (vc-create-repo 'Git))
-    ;; TODO: Redo this using vc
+    ;; TODO: Redo this using vc.
     (unless gnosis-testing
       (shell-command (format "%s %s %s" git "add" (shell-quote-argument "gnosis.db")))
       (shell-command (format "%s %s %s" git "commit -m"
@@ -1834,7 +1834,7 @@ NOTE-COUNT: Total notes to be commited for session."
 		      (cl-incf note-count)
 		      (gnosis-review-actions success note note-count))
 		 finally
-		 ;; TODO: Add optional arg to repeat for specific deck/tag
+		 ;; TODO: Add optional arg, repeat for specific deck/tag.
 		 ;; Repeat until there are no due notes
 		 (and due (gnosis-review-session (gnosis-collect-note-ids :due t) t note-count))))
       (gnosis-dashboard)
@@ -2251,7 +2251,7 @@ Defaults to current date."
   (let* ((date (or date (gnosis-algorithm-date)))
 	 (reviewed-new (or (car (gnosis-select 'reviewed-new 'activity-log `(= date ',date) t)) 0)))
     reviewed-new))
-;; TODO: Auto tag overdue tags
+;; TODO: Auto tag overdue tags.
 (defun gnosis-tags--append (id tag)
   "Append TAG to the list of tags of note ID."
   (cl-assert (numberp id) nil "ID must be the note id number")
