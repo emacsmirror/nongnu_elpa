@@ -50,6 +50,8 @@
 (require 'gnosis-string-edit)
 (require 'gnosis-dashboard)
 
+(require 'gnosis-org)
+
 (require 'animate)
 
 (defgroup gnosis nil
@@ -2508,6 +2510,19 @@ If STRING-SECTION is nil, apply FACE to the entire STRING."
 					:extra ""
 					:tags note-tags))
       (error "Demo deck already exists"))))
+
+;; Export
+;; This is a demo!
+(defun gnosis-export-deck (&optional deck)
+  "Export contents of DECK."
+  (interactive (list (gnosis--get-deck-id)))
+  (with-current-buffer (get-buffer-create "*test*")
+    (insert (format "#+GNOSIS_DECK: %s\n\n" (gnosis--get-deck-name deck)))
+    (cl-loop for note in (gnosis-select '[main answer id type] 'notes `(= deck-id ,deck))
+	     do (gnosis-org-insert-heading :main (car note)
+					   :answer (cadr note)
+					   :id (number-to-string (caddr note))
+					   :type (cadddr note)))))
 
 ;; Gnosis mode ;;
 ;;;;;;;;;;;;;;;;;
