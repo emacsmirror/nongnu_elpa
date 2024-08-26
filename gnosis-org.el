@@ -64,24 +64,29 @@ BUFFER defaults to the current buffer if not specified."
       (if results (reverse results)
         (message "No custom properties found for %s" property)
         nil))))
-
-(cl-defun gnosis-org-insert-custom-heading (&key main id body type (buffer (current-buffer)))
-  "Insert an Org heading in BUFFER.
+;; TODO: Add support for tags.
+(cl-defun gnosis-org-insert-heading (&key main id answer type)
+  "Insert an Org heading in current buffer.
 
 - MAIN as the title.
-- ID as CUSTOM_ID.
-- BODY as the content.
+- ID as GNOSIS_ID.
+- ANSWER as the subheading.
 - TYPE as the note type.
 
 If BUFFER is not specified, defaults to the current buffer."
   (cl-assert (stringp main) nil "MAIN must be a string representing the heading title.")
-  (cl-assert (stringp id) nil "ID must be a string representing the CUSTOM_ID.")
-  (cl-assert (stringp body) nil "BODY must be a string representing the content.")
+  (cl-assert (stringp id) nil "ID must be a string representing the GNOSIS_ID.")
   (cl-assert (stringp type) nil "TYPE must be a string representing the TYPE property.")
-  (with-current-buffer buffer
+  (let ((main (if (string-match-p "\n" main) (replace-regexp-in-string "\n" "\\\\n" main) main))
+	(answer (cond ((stringp answer)
+		       answer)
+		      ((numberp answer)
+		       (number-to-string answer))
+		      (t (mapconcat 'identity answer ", ")))))
     (goto-char (point-max)) ;; Ensure we're at the end of the buffer
-    (insert (format "* %s\n:PROPERTIES:\n:CUSTOM_ID: %s\n:TYPE: %s\n:END:\n%s\n" main id type body))
-    (message "Inserted heading: %s with CUSTOM_ID %s and TYPE %s" main id type)))
+    (insert (format "* %s\n:PROPERTIES:\n:GNOSIS_ID: %s\n:TYPE: %s\n:END:\n** %s\n"
+		    main id type answer))
+    (message "Inserted heading: %s with GNOSIS_ID %s and TYPE %s" main id type)))
 
 (provide 'gnosis-org)
 ;;; gnosis-org.el ends here.
