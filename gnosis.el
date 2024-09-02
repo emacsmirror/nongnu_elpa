@@ -2027,8 +2027,7 @@ SUSPEND: Suspend note, 0 for unsuspend, 1 for suspend"
                  (stringp (nth 1 entry))
                  (listp (nth 2 entry))) ; Ensure the third element is a plist
       (error "Each entry should a :deck or :tag keyword, a string, and a plist of custom values"))
-    (let ((nested-plist (nth 2 entry))
-          (proto (plist-get (nth 2 entry) :proto))
+    (let ((proto (plist-get (nth 2 entry) :proto))
           (anagnosis (plist-get (nth 2 entry) :anagnosis))
           (epignosis (plist-get (nth 2 entry) :epignosis))
           (agnoia (plist-get (nth 2 entry) :agnoia))
@@ -2046,6 +2045,20 @@ SUSPEND: Suspend note, 0 for unsuspend, 1 for suspend"
         (error "Amnesia should be a number between 0 and 1"))
       (unless (or (null lethe) (and (integerp lethe) (> lethe 0)))
         (error "Lethe should be an integer greater than 0")))))
+
+(defun gnosis-custom-values-watcher (symbol new-value _operation _where)
+  "Watcher for gnosis custom values.
+
+SYMBOL to watch changes for.
+NEW-VALUE is the new value set to the variable.
+OPERATION is the type of operation being performed.
+WHERE is the buffer or object where the change happens."
+  (when (eq symbol 'gnosis-custom-values)
+    (gnosis-validate-custom-values new-value)))
+
+(add-variable-watcher 'gnosis-custom-values 'gnosis-custom-values-watcher)
+
+;; Validate custom values during review process as well.
 (defun gnosis-get-custom-values--validate (plist valid-keywords)
   "Verify that PLIST consists of VALID-KEYWORDS."
   (let ((keys (let (ks)
