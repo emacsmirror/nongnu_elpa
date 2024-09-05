@@ -46,6 +46,7 @@
 (declare-function gnosis-center-string "gnosis.el")
 (declare-function gnosis-get-date-new-notes "gnosis.el")
 (declare-function gnosis-review-get-due-notes "gnosis.el")
+(declare-function gnosis-review "gnosis.el")
 (declare-function gnosis-algorithm-date "gnosis-algorithm.el")
 (declare-function gnosis-get-tags--unique "gnosis.el")
 (declare-function gnosis-get-tag-notes "gnosis.el")
@@ -422,7 +423,14 @@ When called with called with a prefix, unsuspend all notes of deck."
 (defvar-keymap gnosis-dashboard-mode-map
   :doc "gnosis-dashboard keymap"
   "q" #'quit-window
-  "h" #'gnosis-dashboard-menu)
+  "h" #'gnosis-dashboard-menu
+  "r" #'gnosis-review
+  "a" #'gnosis-add-note
+  "A" #'gnosis-add-deck
+  "s" #'gnosis-dashboard-suffix-query
+  "n" #'(lambda () (interactive) (gnosis-dashboard-output-notes (gnosis-collect-note-ids)))
+  "d" #'gnosis-dashboard-suffix-decks
+  "t" #'(lambda () (interactive) (gnosis-dashboard-output-tags)))
 
 (define-derived-mode gnosis-dashboard-mode tabulated-list-mode "Gnosis Dashboard"
   "Major mode for displaying Gnosis dashboard."
