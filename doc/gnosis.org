@@ -4,8 +4,8 @@
 #+language: en
 #+options: ':t toc:nil author:t email:t num:t
 #+startup: content
-#+macro: stable-version 0.4.0
-#+macro: release-date 2024-08-7
+#+macro: stable-version 0.4.2
+#+macro: release-date 2024-09-5
 #+macro: file @@texinfo:@file{@@$1@@texinfo:}@@
 #+macro: space @@texinfo:@: @@
 #+macro: kbd @@texinfo:@kbd{@@$1@@texinfo:}@@
@@ -22,15 +22,16 @@
 #+texinfo_header: @set MAINTAINERCONTACT @uref{mailto:public@thanosapollo.org,contact the maintainer}
 
 
-Gnosis is a customizable spaced repetition system designed to enhance
+Gnosis (GNU-sis) is a customizable spaced repetition system designed to enhance
 memory retention through active recall.  It allows users to set
 specific review intervals for note decks & tags, creating an optimal
-learning environment tailored to each specific topic.
+learning environment tailored to each specific topic/subject.
 
 #+texinfo: @noindent
 This manual is written for Gnosis version {{{stable-version}}}, released on {{{release-date}}}.
 
-+ Official manual: <https://thanosapollo.org/user-manual/gnosis>
++ Official manual:
+  + <https://elpa.nongnu.org/nongnu/doc/gnosis.html>
 + Git repositories:
   + <https://git.thanosapollo.org/gnosis>
 
@@ -260,7 +261,6 @@ name suggests, they rely on =vc= to work properly.
 Depending on your setup, =vc= might require an external package for
 the ssh passphrase dialog, such as ~x11-ssh-askpass~.
 
-
 To automatically push changes after a review session, add this to your configuration:
 #+begin_src emacs-lisp
 (setf gnosis-vc-auto-push t)
@@ -268,44 +268,30 @@ To automatically push changes after a review session, add this to your configura
 #+end_src
 
 * Configuring Note Types
-** Adjust Current Types Entries
+** Custom Note Types
 Each gnosis note type has an /interactive/ function, named
-=gnosis-add-note-TYPE=.  You can set default values for each entry by
-hard coding specific values to their keywords.
+=gnosis-add-note-TYPE= and a "hidden" function
+named =gnosis-add-note--TYPE=.  You can create your own custom interactive
+functions to ignore or hard-code specific values by using already
+defined hidden functions that handle all the logic.
 
 For example:
 
 #+begin_src emacs-lisp
-(defun gnosis-add-note-basic (deck)
-  (gnosis-add-note--basic :deck deck
-			  :question (gnosis-read-string-from-buffer "Question: " "")
-			  :answer (read-string "Answer: ")
-			  :hint (gnosis-hint-prompt gnosis-previous-note-hint)
-			  :extra ""
-			  :images nil
-			  :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))
+  (defun gnosis-add-note-custombasic (deck)
+    (gnosis-add-note--basic :deck deck
+  			  :question (gnosis-read-string-from-buffer "Question: " "")
+  			  :answer (read-string "Answer: ")
+  			  :hint (gnosis-hint-prompt gnosis-previous-note-hint)
+  			  :extra ""
+  			  :images nil
+  			  :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))
+  ;; Add custom note type to gnosis-note-types
+  (add-to-list 'gnosis-note-types "custombasic")
 #+end_src
 
-By evaluating the above code snippet, you won't be prompted to enter
-anything for ~extra~ & ~images~. 
-** Creating Custom Note Types
-
-Creating custom note types for gnosis is a fairly simple thing to do
-
-+ First add your NEW-TYPE to =gnosis-note-types=
-
-    #+begin_src emacs-lisp
-    (add-to-list 'gnosis-note-types "NEW-TYPE")
-  #+end_src
-+ Create an interactive function
-
-Each note type has a =gnosis-add-note-TYPE= that is used interactively
-& a "hidden function" =gnosis-add-note--TYPE= that handles all the
-logic.  You can use one of the =current gnosis-add-note--TYPE=
-functions or create one of your own.
-
-Refer to =gnosis-add-note-basic= & =gnosis-add-note--basic= for a simple
-example of how this is done, as well as =gnosis-add-note-double=.
+Now ~custombasic~ is available as a note type, for which you won't be prompted to enter
+anything for ~extra~ & ~images~.
 
 ** Development
 To make development and customization easier, gnosis comes with
