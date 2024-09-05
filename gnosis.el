@@ -5,9 +5,9 @@
 ;; Author: Thanos Apollo <public@thanosapollo.org>
 ;; Keywords: extensions
 ;; URL: https://thanosapollo.org/projects/gnosis
-;; Version: 0.4.1
+;; Version: 0.4.2
 
-;; Package-Requires: ((emacs "27.2") (emacsql "4.0.0") (compat "29.1.4.2") (transient "0.7.2"))
+;; Package-Requires: ((emacs "27.2") (emacsql "4.0.1") (compat "29.1.4.2") (transient "0.7.2"))
 
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -49,6 +49,8 @@
 (require 'gnosis-algorithm)
 (require 'gnosis-string-edit)
 (require 'gnosis-dashboard)
+
+;; (require 'gnosis-org)
 
 (require 'animate)
 
@@ -217,7 +219,7 @@ When nil, review new notes last."
 (defvar gnosis-review-notes nil
   "Review notes.")
 
-;; TODO: Make this as a defcustom
+;; TODO: Make this as a defcustom.
 (defvar gnosis-custom-values
   '((:deck "demo" (:proto (0 1 3) :anagnosis 3 :epignosis 0.5 :agnoia 0.3 :amnesia 0.5 :lethe 3))
     (:tag "demo" (:proto (1 2) :anagnosis 3 :epignosis 0.5 :agnoia 0.3 :amnesia 0.45 :lethe 3)))
@@ -482,19 +484,21 @@ or =extra-image'.  Instead of using =extra-image' post review, prefer
 =gnosis-display-extra' which displays the =extra-image' as well.
 
 Refer to =gnosis-db-schema-extras' for informations on images stored."
-  (let* ((img (gnosis-get image 'extras `(= id ,id)))
-         (path-to-image (expand-file-name (or img "") (file-name-as-directory gnosis-images-dir)))
-         (image (create-image path-to-image 'png nil :width gnosis-image-width :height gnosis-image-height))
-         (image-width (car (image-size image t)))
-         (frame-width (window-text-width))) ;; Width of the current window in columns
-    (cond ((or (not img) (string-empty-p img))
-           (insert "\n\n"))
-          ((and img (file-exists-p path-to-image))
-           (let* ((padding-cols (/ (- frame-width (floor (/ image-width (frame-char-width)))) 2))
-                  (padding (make-string (max 0 padding-cols) ?\s)))
-             (insert "\n\n" padding)  ;; Insert padding before the image
-             (insert-image image)
-             (insert "\n\n"))))))
+  ;; Only display images on graphical env
+  (when (display-graphic-p)
+    (let* ((img (gnosis-get image 'extras `(= id ,id)))
+           (path-to-image (expand-file-name (or img "") (file-name-as-directory gnosis-images-dir)))
+           (image (create-image path-to-image 'png nil :width gnosis-image-width :height gnosis-image-height))
+           (image-width (car (image-size image t)))
+           (frame-width (window-text-width))) ;; Width of the current window in columns
+      (cond ((or (not img) (string-empty-p img))
+             (insert "\n\n"))
+            ((and img (file-exists-p path-to-image))
+             (let* ((padding-cols (/ (- frame-width (floor (/ image-width (frame-char-width)))) 2))
+                    (padding (make-string (max 0 padding-cols) ?\s)))
+               (insert "\n\n" padding)  ;; Insert padding before the image
+               (insert-image image)
+               (insert "\n\n")))))))
 
 (defun gnosis-display-mcq-options (id)
   "Display answer options for mcq note ID."
@@ -1269,7 +1273,7 @@ Optionally, add cusotm PROMPT."
   (cl-loop for tags in (gnosis-select 'tags 'notes '1=1 t)
            nconc tags into all-tags
            finally return (delete-dups all-tags)))
-;; TODO: Rewrite this using `gnosis-get-tag-notes'.
+;; TODO: Rewrite this using gnosis-get-tag-notes.
 (defun gnosis-select-by-tag (input-tags &optional due suspended-p)
   "Return note ID's for every note with INPUT-TAGS.
 
@@ -1389,8 +1393,8 @@ provided, use it as the default value."
 
 ;; Collecting note ids
 
-;; TODO: Rewrite.  Tags should be an input of strings, interactive
-;; handling should be done by "helper" funcs
+;; TODO: Rewrite this! Tags should be an input of strings,
+;; interactive handling should be done by "helper" funcs
 (cl-defun gnosis-collect-note-ids (&key (tags nil) (due nil) (deck nil) (query nil))
   "Return list of note ids based on TAGS, DUE, DECKS, QUERY.
 
@@ -1739,7 +1743,7 @@ NOTE-COUNT: The number of notes reviewed in the session to be commited."
       (error "Git not found, please install git"))
     (unless (file-exists-p (expand-file-name ".git" gnosis-dir))
       (vc-create-repo 'Git))
-    ;; TODO: Redo this using vc
+    ;; TODO: Redo this using vc.
     (unless gnosis-testing
       (shell-command (format "%s %s %s" git "add" (shell-quote-argument "gnosis.db")))
       (shell-command (format "%s %s %s" git "commit -m"
@@ -1834,7 +1838,7 @@ NOTE-COUNT: Total notes to be commited for session."
 		      (cl-incf note-count)
 		      (gnosis-review-actions success note note-count))
 		 finally
-		 ;; TODO: Add optional arg to repeat for specific deck/tag
+		 ;; TODO: Add optional arg, repeat for specific deck/tag.
 		 ;; Repeat until there are no due notes
 		 (and due (gnosis-review-session (gnosis-collect-note-ids :due t) t note-count))))
       (gnosis-dashboard)
@@ -1982,10 +1986,12 @@ SUSPEND: Suspend note, 0 for unsuspend, 1 for suspend"
 	     "Second-image must be a string, path to image file from `gnosis-images-dir', or nil")
   (cl-assert (or (stringp extra-notes) (null extra-notes)) nil
 	     "Extra-notes must be a string, or nil")
-  (cl-assert (listp tags) nil "Tags must be a list of strings")
-  (cl-assert (and (listp gnosis) (length= gnosis 3)) nil "gnosis must be a list of 3 floats")
-  (cl-assert (or (stringp options) (listp options)) nil "Options must be a string, or a list for MCQ")
-  (cl-assert (or (= suspend 0) (= suspend 1)) nil "Suspend must be either 0 or 1")
+  (cl-assert (and (listp tags) (cl-every #'stringp tags)) nil "Tags must be a list of strings")
+  (cl-assert (and (listp gnosis) (length= gnosis 3) (cl-every #'floatp gnosis))
+	     nil "gnosis must be a list of 3 floats")
+  (cl-assert (or (stringp options) (and (listp options) (cl-every #'stringp options)))
+	     nil "Options must be a string or a list of strings")
+  (cl-assert (and (numberp suspend) (or (= suspend 0) (= suspend 1))) nil "Suspend must be either 0 or 1")
   (when (and (string= (gnosis-get-type id) "cloze")
 	     (not (stringp options)))
     (cl-assert (or (listp options) (stringp options)) nil "Options must be a list or a string.")
@@ -2015,6 +2021,48 @@ SUSPEND: Suspend note, 0 for unsuspend, 1 for suspend"
 		     (gnosis-update 'notes `(= ,field ',value) `(= id ,id)))
 		    (t (gnosis-update 'notes `(= ,field ,value) `(= id ,id))))))
 
+(defun gnosis-validate-custom-values (new-value)
+  "Validate the structure and values of NEW-VALUE for gnosis-custom-values."
+  (unless (listp new-value)
+    (error "GNOSIS-CUSTOM-VALUES should be a list of entries"))
+  (dolist (entry new-value)
+    (unless (and (listp entry) (= (length entry) 3)
+                 (memq (nth 0 entry) '(:deck :tag))
+                 (stringp (nth 1 entry))
+                 (listp (nth 2 entry))) ; Ensure the third element is a plist
+      (error "Each entry should a :deck or :tag keyword, a string, and a plist of custom values"))
+    (let ((proto (plist-get (nth 2 entry) :proto))
+          (anagnosis (plist-get (nth 2 entry) :anagnosis))
+          (epignosis (plist-get (nth 2 entry) :epignosis))
+          (agnoia (plist-get (nth 2 entry) :agnoia))
+          (amnesia (plist-get (nth 2 entry) :amnesia))
+          (lethe (plist-get (nth 2 entry) :lethe)))
+      (unless (listp proto)
+        (error "Proto must be a list of interval integer values"))
+      (unless (or (null anagnosis) (integerp anagnosis))
+        (error "Anagnosis should be an integer"))
+      (unless (or (null epignosis) (numberp epignosis))
+        (error "Epignosis should be a number"))
+      (unless (or (null agnoia) (numberp agnoia))
+        (error "Agnoia should be a number"))
+      (unless (or (null amnesia) (and (numberp amnesia) (<= amnesia 1) (>= amnesia 0)))
+        (error "Amnesia should be a number between 0 and 1"))
+      (unless (or (null lethe) (and (integerp lethe) (> lethe 0)))
+        (error "Lethe should be an integer greater than 0")))))
+
+(defun gnosis-custom-values-watcher (symbol new-value _operation _where)
+  "Watcher for gnosis custom values.
+
+SYMBOL to watch changes for.
+NEW-VALUE is the new value set to the variable.
+OPERATION is the type of operation being performed.
+WHERE is the buffer or object where the change happens."
+  (when (eq symbol 'gnosis-custom-values)
+    (gnosis-validate-custom-values new-value)))
+
+(add-variable-watcher 'gnosis-custom-values 'gnosis-custom-values-watcher)
+
+;; Validate custom values during review process as well.
 (defun gnosis-get-custom-values--validate (plist valid-keywords)
   "Verify that PLIST consists of VALID-KEYWORDS."
   (let ((keys (let (ks)
@@ -2251,7 +2299,7 @@ Defaults to current date."
   (let* ((date (or date (gnosis-algorithm-date)))
 	 (reviewed-new (or (car (gnosis-select 'reviewed-new 'activity-log `(= date ',date) t)) 0)))
     reviewed-new))
-;; TODO: Auto tag overdue tags
+;; TODO: Auto tag overdue tags.
 (defun gnosis-tags--append (id tag)
   "Append TAG to the list of tags of note ID."
   (cl-assert (numberp id) nil "ID must be the note id number")
@@ -2500,7 +2548,7 @@ If STRING-SECTION is nil, apply FACE to the entire STRING."
 	       (gnosis-add-note--cloze :deck deck-name
 				       :note "GNU Emacs is an extensible editor created by {{c1::Richard}} {{c1::Stallman}} in {{c2::1984::year}}"
 				       :tags note-tags
-				       :extra "Emacs was originally implemented in 1976 on the MIT AI Lab's Incompatible Timesharing System (ITS), as a collection of TECO macros.  The name “Emacs” was originally chosen as an abbreviation of “Editor MACroS”. =This version of Emacs=, GNU Emacs, was originally *written in 1984*")
+				       :extra "Emacs was originally implemented in 1976 on the MIT AI Lab's Incompatible Timesharing System (ITS), as a collection of TECO macros.  The name “Emacs” was originally chosen as an abbreviation of “Editor MACroS”. This version of Emacs, =GNU= =Emacs=, was originally written in _1984_")
 	       (gnosis-add-note--y-or-n :deck deck-name
 					:question "Is GNU Emacs the unparalleled pinnacle of all software creation?"
 					:hint "Duh"
@@ -2508,6 +2556,18 @@ If STRING-SECTION is nil, apply FACE to the entire STRING."
 					:extra ""
 					:tags note-tags))
       (error "Demo deck already exists"))))
+
+;; TODO: Add Export funcs
+;; (defun gnosis-export-deck (&optional deck)
+;;   "Export contents of DECK."
+;;   (interactive (list (gnosis--get-deck-id)))
+;;   (with-current-buffer (get-buffer-create "*test*")
+;;     (insert (format "#+GNOSIS_DECK: %s\n\n" (gnosis--get-deck-name deck)))
+;;     (cl-loop for note in (gnosis-select '[main answer id type] 'notes `(= deck-id ,deck))
+;; 	     do (gnosis-org-insert-heading :main (car note)
+;; 					   :answer (cadr note)
+;; 					   :id (number-to-string (caddr note))
+;; 					   :type (cadddr note)))))
 
 ;; Gnosis mode ;;
 ;;;;;;;;;;;;;;;;;
