@@ -2548,7 +2548,7 @@ If STRING-SECTION is nil, apply FACE to the entire STRING."
 	       (gnosis-add-note--cloze :deck deck-name
 				       :note "GNU Emacs is an extensible editor created by {{c1::Richard}} {{c1::Stallman}} in {{c2::1984::year}}"
 				       :tags note-tags
-				       :extra "Emacs was originally implemented in 1976 on the MIT AI Lab's Incompatible Timesharing System (ITS), as a collection of TECO macros.  The name “Emacs” was originally chosen as an abbreviation of “Editor MACroS”. =This version of Emacs=, GNU Emacs, was originally *written in 1984*")
+				       :extra "Emacs was originally implemented in 1976 on the MIT AI Lab's Incompatible Timesharing System (ITS), as a collection of TECO macros.  The name “Emacs” was originally chosen as an abbreviation of “Editor MACroS”. This version of Emacs, =GNU= =Emacs=, was originally written in _1984_")
 	       (gnosis-add-note--y-or-n :deck deck-name
 					:question "Is GNU Emacs the unparalleled pinnacle of all software creation?"
 					:hint "Duh"
