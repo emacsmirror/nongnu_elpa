@@ -37,8 +37,6 @@ config.status
 configure
 release
 snapshot
-CVS
-.cvsignore
 info/version.texinfo
 lisp/version.txt
 /lisp/vm-autoloads.el
