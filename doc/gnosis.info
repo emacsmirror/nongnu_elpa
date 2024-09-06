@@ -12,14 +12,15 @@ File: gnosis.info,  Node: Top,  Next: Introduction,  Up: (dir)
 Gnosis User Manual
 ******************
 
-Gnosis is a customizable spaced repetition system designed to enhance
-memory retention through active recall.  It allows users to set specific
-review intervals for note decks & tags, creating an optimal learning
-environment tailored to each specific topic.
+Gnosis (GNU-sis) is a customizable spaced repetition system designed to
+enhance memory retention through active recall.  It allows users to set
+specific review intervals for note decks & tags, creating an optimal
+learning environment tailored to each specific topic/subject.
 
-This manual is written for Gnosis version 0.4.0, released on 2024-08-7.
+This manual is written for Gnosis version 0.4.2, released on 2024-09-5.
 
-   • Official manual: <https://thanosapollo.org/user-manual/gnosis>
+   • Official manual:
+        • <https://elpa.nongnu.org/nongnu/doc/gnosis.html>
    • Git repositories:
         • <https://git.thanosapollo.org/gnosis>
 
@@ -57,8 +58,7 @@ Gnosis Algorithm
 
 Configuring Note Types
 
-* Adjust Current Types Entries::
-* Creating Custom Note Types::
+* Custom Note Types::
 * Development::
 
 
@@ -384,23 +384,24 @@ File: gnosis.info,  Node: Configuring Note Types,  Prev: Sync between devices,  
 
 * Menu:
 
-* Adjust Current Types Entries::
-* Creating Custom Note Types::
+* Custom Note Types::
 * Development::
 
 
-File: gnosis.info,  Node: Adjust Current Types Entries,  Next: Creating Custom Note Types,  Up: Configuring Note Types
+File: gnosis.info,  Node: Custom Note Types,  Next: Development,  Up: Configuring Note Types
 
-8.1 Adjust Current Types Entries
-================================
+8.1 Custom Note Types
+=====================
 
 Each gnosis note type has an _interactive_ function, named
-‘gnosis-add-note-TYPE’.  You can set default values for each entry by
-hard coding specific values to their keywords.
+‘gnosis-add-note-TYPE’ and a "hidden" function named
+‘gnosis-add-note--TYPE’.  You can create your own custom interactive
+functions to ignore or hard-code specific values by using already
+defined hidden functions that handle all the logic.
 
    For example:
 
-     (defun gnosis-add-note-basic (deck)
+     (defun gnosis-add-note-custombasic (deck)
        (gnosis-add-note--basic :deck deck
                                :question (gnosis-read-string-from-buffer "Question: " "")
                                :answer (read-string "Answer: ")
@@ -408,35 +409,16 @@ hard coding specific values to their keywords.
                                :extra ""
                                :images nil
                                :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))
+     ;; Add custom note type to gnosis-note-types
+     (add-to-list 'gnosis-note-types "custombasic")
 
-   By evaluating the above code snippet, you won't be prompted to enter
-anything for ‘extra’ & ‘images’.
-
-
-File: gnosis.info,  Node: Creating Custom Note Types,  Next: Development,  Prev: Adjust Current Types Entries,  Up: Configuring Note Types
-
-8.2 Creating Custom Note Types
-==============================
-
-Creating custom note types for gnosis is a fairly simple thing to do
-
-   • First add your NEW-TYPE to ‘gnosis-note-types’
-
-          (add-to-list 'gnosis-note-types "NEW-TYPE")
-   • Create an interactive function
-
-   Each note type has a ‘gnosis-add-note-TYPE’ that is used
-interactively & a "hidden function" ‘gnosis-add-note--TYPE’ that handles
-all the logic.  You can use one of the ‘current gnosis-add-note--TYPE’
-functions or create one of your own.
-
-   Refer to ‘gnosis-add-note-basic’ & ‘gnosis-add-note--basic’ for a
-simple example of how this is done, as well as ‘gnosis-add-note-double’.
+   Now ‘custombasic’ is available as a note type, for which you won't be
+prompted to enter anything for ‘extra’ & ‘images’.
 
 
-File: gnosis.info,  Node: Development,  Prev: Creating Custom Note Types,  Up: Configuring Note Types
+File: gnosis.info,  Node: Development,  Prev: Custom Note Types,  Up: Configuring Note Types
 
-8.3 Development
+8.2 Development
 ===============
 
 To make development and customization easier, gnosis comes with
@@ -450,27 +432,26 @@ then enter ‘n’ (no) at the prompt "Start development env?"
 
 Tag Table:
 Node: Top250
-Node: Introduction1350
-Node: Adding notes2363
-Node: Note Types2774
-Node: Cloze2992
-Node: MC-Cloze (Under development)4154
-Node: MCQ5142
-Node: Basic Type5580
-Node: Double5856
-Node: y-or-n6122
-Node: Customization6524
-Node: Image size6709
-Node: Typos | String Comparison6995
-Node: Gnosis Algorithm7770
-Node: Anagnosis Event8417
-Node: Proto9158
-Node: Editing notes9925
-Node: Sync between devices10317
-Node: Configuring Note Types11344
-Node: Adjust Current Types Entries11576
-Node: Creating Custom Note Types12576
-Node: Development13412
+Node: Introduction1341
+Node: Adding notes2354
+Node: Note Types2765
+Node: Cloze2983
+Node: MC-Cloze (Under development)4145
+Node: MCQ5133
+Node: Basic Type5571
+Node: Double5847
+Node: y-or-n6113
+Node: Customization6515
+Node: Image size6700
+Node: Typos | String Comparison6986
+Node: Gnosis Algorithm7761
+Node: Anagnosis Event8408
+Node: Proto9149
+Node: Editing notes9916
+Node: Sync between devices10308
+Node: Configuring Note Types11335
+Node: Custom Note Types11525
+Node: Development12735
 
 End Tag Table
 

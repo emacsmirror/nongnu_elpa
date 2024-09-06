@@ -25,17 +25,21 @@
 @node Top
 @top Gnosis User Manual
 
-Gnosis is a customizable spaced repetition system designed to enhance
+Gnosis (GNU-sis) is a customizable spaced repetition system designed to enhance
 memory retention through active recall.  It allows users to set
 specific review intervals for note decks & tags, creating an optimal
-learning environment tailored to each specific topic.
+learning environment tailored to each specific topic/subject.
 
 @noindent
-This manual is written for Gnosis version 0.4.0, released on 2024-08-7.
+This manual is written for Gnosis version 0.4.2, released on 2024-09-5.
 
 @itemize
 @item
-Official manual: @uref{https://thanosapollo.org/user-manual/gnosis}
+Official manual:
+@itemize
+@item
+@uref{https://elpa.nongnu.org/nongnu/doc/gnosis.html}
+@end itemize
 @item
 Git repositories:
 @itemize
@@ -45,6 +49,7 @@ Git repositories:
 @end itemize
 
 @insertcopying
+
 @end ifnottex
 
 @menu
@@ -81,8 +86,7 @@ Gnosis Algorithm
 
 Configuring Note Types
 
-* Adjust Current Types Entries::
-* Creating Custom Note Types::
+* Custom Note Types::
 * Development::
 
 @end detailmenu
@@ -272,7 +276,7 @@ difference of at most one character edit.
 
 To demonstrate, 'example' and 'examples' will be recognized as
 similar, considering that the latter involves just one additional
-character.``
+character."
 
 @node Gnosis Algorithm
 @chapter Gnosis Algorithm
@@ -370,7 +374,6 @@ name suggests, they rely on @samp{vc} to work properly.
 Depending on your setup, @samp{vc} might require an external package for
 the ssh passphrase dialog, such as @code{x11-ssh-askpass}.
 
-
 To automatically push changes after a review session, add this to your configuration:
 @lisp
 (setf gnosis-vc-auto-push t)
@@ -381,22 +384,23 @@ To automatically push changes after a review session, add this to your configura
 @chapter Configuring Note Types
 
 @menu
-* Adjust Current Types Entries::
-* Creating Custom Note Types::
+* Custom Note Types::
 * Development::
 @end menu
 
-@node Adjust Current Types Entries
-@section Adjust Current Types Entries
+@node Custom Note Types
+@section Custom Note Types
 
 Each gnosis note type has an @emph{interactive} function, named
-@samp{gnosis-add-note-TYPE}.  You can set default values for each entry by
-hard coding specific values to their keywords.
+@samp{gnosis-add-note-TYPE} and a ``hidden'' function
+named @samp{gnosis-add-note--TYPE}.  You can create your own custom interactive
+functions to ignore or hard-code specific values by using already
+defined hidden functions that handle all the logic.
 
 For example:
 
 @lisp
-(defun gnosis-add-note-basic (deck)
+(defun gnosis-add-note-custombasic (deck)
   (gnosis-add-note--basic :deck deck
                           :question (gnosis-read-string-from-buffer "Question: " "")
                           :answer (read-string "Answer: ")
@@ -404,34 +408,12 @@ For example:
                           :extra ""
                           :images nil
                           :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))
+;; Add custom note type to gnosis-note-types
+(add-to-list 'gnosis-note-types "custombasic")
 @end lisp
 
-By evaluating the above code snippet, you won't be prompted to enter
+Now @code{custombasic} is available as a note type, for which you won't be prompted to enter
 anything for @code{extra} & @code{images}.
-
-@node Creating Custom Note Types
-@section Creating Custom Note Types
-
-Creating custom note types for gnosis is a fairly simple thing to do
-
-@itemize
-@item
-First add your NEW-TYPE to @samp{gnosis-note-types}
-
-@lisp
-(add-to-list 'gnosis-note-types "NEW-TYPE")
-@end lisp
-@item
-Create an interactive function
-@end itemize
-
-Each note type has a @samp{gnosis-add-note-TYPE} that is used interactively
-& a ``hidden function'' @samp{gnosis-add-note--TYPE} that handles all the
-logic.  You can use one of the @samp{current gnosis-add-note--TYPE}
-functions or create one of your own.
-
-Refer to @samp{gnosis-add-note-basic} & @samp{gnosis-add-note--basic} for a simple
-example of how this is done, as well as @samp{gnosis-add-note-double}.
 
 @node Development
 @section Development
