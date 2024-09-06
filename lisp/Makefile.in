@@ -251,4 +251,4 @@ clean:
 	-$(RM) -f version.txt *.elc vm-autoloads.el auto-autoloads.el custom-load.el
 
 distclean: clean
-	-$(RM) -f Makefile
+	-$(RM) -f Makefile vm-cus-load.el

@@ -60,6 +60,8 @@ clean:
 
 distclean:
 	@for i in $(SUBDIRS) ; do ($(MAKE) -C $$i distclean) || exit 1; done
+	-$(RM) -f Makefile vm-load.el configure config.status config.log
+	-$(RM) -rf autom4te.cache
 
 push:
 	$(BZR) push
