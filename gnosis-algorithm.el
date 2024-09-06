@@ -25,7 +25,7 @@
 ;;; Commentary:
 
 ;; Module that handles date and interval calculation as well as
-;; gnosis-score for notes.
+;; gnosis-score for gnosis.
 
 ;;; Code:
 
@@ -105,16 +105,15 @@ On lethe events the next interval is set to 0."
 (defun gnosis-algorithm-date (&optional offset)
   "Return the current date in a list (year month day).
 Optional integer OFFSET is a number of days from the current date."
-  (cl-assert (or (numberp offset) (null offset)) nil "Date offset must be an integer or nil")
-  (let* ((now (decode-time))
-         (now (list (decoded-time-month now)
-                    (decoded-time-day now)
-                    (decoded-time-year now))))
-    (let ((date (if (zerop (or offset 0))
-                    now
-                  (calendar-gregorian-from-absolute
-                   (+ offset (calendar-absolute-from-gregorian now))))))
-      (list (nth 2 date) (nth 0 date) (nth 1 date)))))
+  (cl-assert (or (integerp offset) (null offset)) nil "Date offset must be an integer or nil")
+  (let* ((base-time (current-time))
+         (target-time (if offset
+                          (time-add base-time (days-to-time offset))
+                        base-time))
+         (decoded-time (decode-time target-time)))
+    (list (decoded-time-year decoded-time)
+          (decoded-time-month decoded-time)
+          (decoded-time-day decoded-time))))
 
 (defun gnosis-algorithm-date-diff (date &optional date2)
   "Find the difference between DATE2 and DATE.
