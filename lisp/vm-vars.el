@@ -2495,93 +2495,11 @@ non-nil may let your mail get through."
   :group 'vm-mime
   :type 'boolean)
 
-(defcustom vm-mime-base64-decoder-program
-  (vm-locate-executable-file "base64-decode")
-  "*Non-nil value should be a string that names a MIME base64 decoder.
-If the program is in your executable search path, you need not
-specify a full pathname.  The program should expect to read
-base64 data on its standard input and write the converted data
-to its standard output."
-  :group 'vm-helpers
-  :type '(choice (const :tag "None" nil)
-		 file))
+(define-obsolete-variable-alias 'vm-mime-uuencode-decoder-program
+  'uudecode-decoder-program "2024")
 
-(defcustom vm-mime-base64-decoder-switches nil
-  "*List of command line flags passed to the command named by
-`vm-mime-base64-decoder-program'."
-  :group 'vm-helpers
-  :type '(choice (const :tag "None" nil)
-		 (repeat string)))
-
-(defcustom vm-mime-base64-encoder-program
-  (vm-locate-executable-file "base64-encode")
-  "*Non-nil value should be a string that names a MIME base64 encoder.
-If the program is in your executable search path, you need not
-specify a full pathname.  The program should expect arbitrary
-data on its standard input and write base64 data to its standard
-output."
-  :group 'vm-helpers
-  :type '(choice (const :tag "None" nil)
-		 file))
-
-(defcustom vm-mime-base64-encoder-switches nil
-  "*List of command line flags passed to the command named by
-`vm-mime-base64-encoder-program'."
-  :group 'vm-helpers
-  :type '(choice (const :tag "None" nil)
-		 (repeat string)))
-
-(defcustom vm-mime-qp-decoder-program (vm-locate-executable-file "qp-decode")
-  "*Non-nil value should be a string that names a MIME quoted-printable
-decoder.  If the program is in your executable search path, you
-need not specify a full pathname.  The program should expect to
-read quoted-printable data on its standard input and write the
-converted data to its standard output."
-  :group 'vm-helpers
-  :type '(choice (const :tag "None" nil)
-		 file))
-
-(defcustom vm-mime-qp-decoder-switches nil
-  "*List of command line flags passed to the command named by
-`vm-mime-qp-decoder-program'."
-  :group 'vm-helpers
-  :type '(choice (const :tag "None" nil)
-		 (repeat string)))
-
-(defcustom vm-mime-qp-encoder-program (vm-locate-executable-file "qp-encode")
-  "*Non-nil value should be a string that names a MIME quoted-printable
-encoder.  If the program is in your executable search path, you
-need not specify a full pathname.  The program should expect
-arbitrary data on its standard input and write quoted-printable
-data to its standard output."
-  :group 'vm-helpers
-  :type '(choice (const :tag "None" nil)
-		 file))
-
-(defcustom vm-mime-qp-encoder-switches nil
-  "*List of command line flags passed to the command named by
-`vm-mime-qp-encoder-program'."
-  :group 'vm-helpers
-  :type '(choice (const :tag "None" nil)
-		 (repeat string)))
-
-(defcustom vm-mime-uuencode-decoder-program "uudecode"
-  "*Non-nil value should be a string that names UUENCODE decoder.
-If the program is in your executable search path, you need not
-specify a full pathname.  The program should expect to read
-uuencoded data on its standard input and write the converted
-data to the file specified in the ``begin'' line at the start of
-the data."
-  :group 'vm-helpers
-  :type '(choice (const :tag "None" nil)
-		 file))
-
-(defcustom vm-mime-uuencode-decoder-switches nil
-  "*List of command line flags passed to the command named by
-`vm-mime-uuencode-decoder-program'."
-  :group 'vm-helpers
-  :type '(choice (const :tag "None" nil)
-		 (repeat string)))
+(define-obsolete-variable-alias 'vm-mime-uuencode-decoder-switches
+  'uudecode-decoder-switches "2024")
 
 (defcustom vm-auto-next-message t
   "*Non-nil value causes VM to use `vm-next-message' to advance to the next

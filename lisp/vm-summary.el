@@ -721,9 +721,7 @@ Otherwise, it is a string in mime-decoded form with text-properties.
       (setq match (assoc format (symbol-value alist-var))))
     ;; The local variable name `vm-su-message' is mandatory here for
     ;; the format s-expression to work.
-    (let ((vm-su-message message)
-	  (vm-mime-qp-decoder-program nil) ; speed up decoding
-	  (vm-mime-base64-decoder-program nil))
+    (let ((vm-su-message message))
       (if (or tokenize (null vm-display-using-mime))
 	  (eval (cdr match))
 	(vm-decode-mime-encoded-words-in-string (eval (cdr match)))))))
@@ -760,11 +758,9 @@ tokenized summary TOKENS."
       (while tokens
 	(setq token (car tokens))
 	(cond ((stringp token)
-	       (if vm-display-using-mime
-		   (let ((vm-mime-qp-decoder-program nil) ; speed up decoding
-			 (vm-mime-base64-decoder-program nil))
-		     (insert (vm-decode-mime-encoded-words-in-string token)))
-		 (insert token)))
+	       (insert (if vm-display-using-mime
+		           (vm-decode-mime-encoded-words-in-string token)
+		         token)))
 	      ((eq token 'group-begin)
 	       (setq group-list (cons (list (point) (nth 1 tokens)
 					    (nth 2 tokens))
