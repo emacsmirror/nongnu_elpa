@@ -3,9 +3,7 @@
 VM was written by Kyle Jones! Hail Kyle! The last release from Kyle
 was 7.19.
 
-Later versions of VM have been maintained by the user community. For a
-long time VM was hosted in Bazaar on
-[Launchpad](https://launchpad.net/vm).
+Later versions of VM is maintained by the user community.
 
 Since July 2024 the most recent updates are made in the Git repository
 at [Gitlab](https://gitlab.com/emacs-vm/vm) where code and issues have
@@ -19,6 +17,9 @@ not limited to
 - Arik Mitschang
 - Ulrich Müller
 - Mark Diekhans
+- Göran Uddeborg
+- John Stoffel
+- Stefan Monnier
 
 ## Unmaintained web pages
 

@@ -7,23 +7,23 @@ IMPORTANT
 Status
 
   VM is currently being maintained by a 'VM development team' consisting of
-  Uday S Reddy, Ulrich Müller, Tim Cross and Arik Mitschang.  More
-  volunteers to help with the maintenance are quite welcome.
+  Göran Uddeborg, John Stoffel, Mark Diekhans, Stefan Monnier, Ulrich Müller 
 
-  Project home page:       http://www.nongnu.org/viewmail
+  More volunteers to help with the maintenance are quite welcome.
+
+  Project repository:      https://gitlab.com/emacs-vm/vm/
+  Project home page:       http://www.nongnu.org/viewmail/
 
   Mailing list:            viewmail-info@nongnu.org
 
-  Bug reports:             viewmail-bugs@nongnu.org
+  Bug reports (direct):    https://gitlab.com/emacs-vm/vm/-/issues/
+                           
+  Bug reports (email):     viewmail-bugs@nongnu.org
                            (Please use `M-x vm-submit-bug-report' within VM)
 
-  News group:              gmane.emacs.viewmail on news.gmane.org  
-                           (avoid gnu.emacs.vm.info)
-  
-  Please DO NOT use the Usenet newsgroup gnu.emacs.vm.info because it has an
-  unreliable mail link to the mailing list.  You can however browse the
-  archives of the newsgroup at Google Groups.
-  
+VM 8.3.0 <in progress>
+  CHANGES
+
 VM 8.2.0b1
 
   CHANGES
