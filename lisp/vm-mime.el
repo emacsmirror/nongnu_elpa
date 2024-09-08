@@ -425,7 +425,7 @@ freshly parsing the message contents."
   (interactive "r")
   (let ((buffer-read-only nil))
     (subst-char-in-region start end ?_ (string-to-char " ") t)
-    (vm-mime-qp-decode-region start end)))
+    (quoted-printable-decode-region start end)))
 
 (fset 'vm-mime-B-decode-region 'vm-mime-base64-decode-region)
 
@@ -563,7 +563,7 @@ out includes base-64, quoted-printable, uuencode and CRLF conversion."
 	   (vm-mime-base64-decode-region start end crlf))
 	  ((string-match "^quoted-printable$"
 			 (vm-mm-layout-encoding layout))
-	   (vm-mime-qp-decode-region start end))
+	   (quoted-printable-decode-region start end))
 	  ((string-match "^x-uue$\\|^x-uuencode$"
 			 (vm-mm-layout-encoding layout))
 	   (vm-mime-uuencode-decode-region start end crlf)))))
@@ -607,180 +607,31 @@ out includes base-64, quoted-printable, uuencode and CRLF conversion."
 	   (vm-inform 7 "Encoding base64... done"))
       (- end start))))
 
-;; FIXME: Use `quoted-printable-decode-region'!
-(defun vm-mime-qp-decode-region (start end)
-  (and (> (- end start) 10000)
-       (vm-emit-mime-decoding-message "Decoding quoted-printable..."))
-  (let ((work-buffer nil)
-	(buf (current-buffer))
-	(case-fold-search nil)
-	(hex-digit-alist '((?0 .  0)  (?1 .  1)  (?2 .  2)  (?3 .  3)
-			   (?4 .  4)  (?5 .  5)  (?6 .  6)  (?7 .  7)
-			   (?8 .  8)  (?9 .  9)  (?A . 10)  (?B . 11)
-			   (?C . 12)  (?D . 13)  (?E . 14)  (?F . 15)
-			   ;; some mailer uses lower-case hex
-			   ;; digits despite this being forbidden
-			   ;; by the MIME spec.
-			   (?a . 10)  (?b . 11)  (?c . 12)  (?d . 13)
-			   (?e . 14)  (?f . 15)))
-	inputpos stop-point copy-point)
-    (unwind-protect
-	(save-excursion
-	  (setq work-buffer (vm-make-work-buffer))
-	  (if vm-mime-qp-decoder-program
-	      (let* ((binary-process-output t) ; any text already has CRLFs
-		     ;; use binary coding system in FSF Emacs/MULE
-		     (coding-system-for-read (vm-binary-coding-system))
-		     (coding-system-for-write (vm-binary-coding-system))
-		     (status (apply 'vm-run-command-on-region
-				    start end work-buffer
-				    vm-mime-qp-decoder-program
-				    vm-mime-qp-decoder-switches)))
-		(if (not (eq status t))
-		    (vm-mime-error "qp-decode failed: %s" (cdr status))))
-	    (goto-char start)
-	    (setq inputpos start)
-	    (while (< inputpos end)
-	      (skip-chars-forward "^=\n" end)
-	      (setq stop-point (point))
-	      (cond ((looking-at "\n")
-		     ;; spaces or tabs before a hard line break must be ignored
-		     (skip-chars-backward " \t")
-		     (setq copy-point (point))
-		     (goto-char stop-point))
-		    (t (setq copy-point stop-point)))
-	      (with-current-buffer work-buffer
-		(insert-buffer-substring buf inputpos copy-point))
-	      (cond ((= (point) end) t)
-		    ((looking-at "\n")
-		     (vm-insert-char ?\n 1 nil work-buffer)
-		     (forward-char))
-		    (t;; looking at =
-		     (forward-char)
-		     ;; a-f because some mailers use lower case hex
-		     ;; digits despite them being forbidden by the
-		     ;; MIME spec.
-		     (cond ((looking-at "[0-9A-Fa-f][0-9A-Fa-f]")
-			    (vm-insert-char (+ (* (cdr (assq (char-after (point))
-							     hex-digit-alist))
-						  16)
-					       (cdr (assq (char-after
-							   (1+ (point)))
-							  hex-digit-alist)))
-					    1 nil work-buffer)
-			    (forward-char 2))
-			   ((looking-at "\n") ; soft line break
-			    (forward-char))
-			   ((looking-at "\r")
-			    ;; assume the user's goatloving
-			    ;; delivery software didn't convert
-			    ;; from Internet's CRLF newline
-			    ;; convention to the local LF
-			    ;; convention.
-			    (forward-char))
-			   ((looking-at "[ \t]")
-			    ;; garbage added in transit
-			    (skip-chars-forward " \t" end))
-			   (t (vm-mime-error "something other than line break or hex digits after = in quoted-printable encoding")))))
-	      (setq inputpos (point))))
-	  (or (markerp end) (setq end (vm-marker end)))
-	  (goto-char start)
-	  (insert-buffer-substring work-buffer)
-	  (delete-region (point) end))
-      (and work-buffer (kill-buffer work-buffer))))
-  (and (> (- end start) 10000)
-       (vm-emit-mime-decoding-message "Decoding quoted-printable... done")))
+(define-obsolete-function-alias 'vm-mime-qp-decode-region
+  #'quoted-printable-decode-region "2024")
 
 ;; FIXME: Use `quoted-printable-encode-region'!
 (defun vm-mime-qp-encode-region (start end &optional Q-encoding quote-from)
   (and (> (- end start) 200)
        (vm-inform 7 "Encoding quoted-printable..."))
-  (let ((work-buffer nil)
-	;; (buf (current-buffer))
-	(cols 0)
-	(hex-digit-alist '((?0 .  0)  (?1 .  1)  (?2 .  2)  (?3 .  3)
-			   (?4 .  4)  (?5 .  5)  (?6 .  6)  (?7 .  7)
-			   (?8 .  8)  (?9 .  9)  (?A . 10)  (?B . 11)
-			   (?C . 12)  (?D . 13)  (?E . 14)  (?F . 15)))
-	char inputpos)
-
-    (unwind-protect
-	(save-excursion
-	  (setq work-buffer (vm-make-work-buffer))
-	  (if vm-mime-qp-encoder-program
-	      (let* ((binary-process-output t) ; any text already has CRLFs
-		     ;; use binary coding system in FSF Emacs/MULE
-		     (coding-system-for-read (vm-binary-coding-system))
-		     (coding-system-for-write (vm-binary-coding-system))
-		     (status (apply 'vm-run-command-on-region
-				    start end work-buffer
-				    vm-mime-qp-encoder-program
-				    vm-mime-qp-encoder-switches)))
-		(if (not (eq status t))
-		    (vm-mime-error "qp-encode failed: %s" (cdr status)))
-		(if quote-from
-		    (with-current-buffer work-buffer
-		      (goto-char (point-min))
-		      (while (re-search-forward "^From " nil t)
-			(replace-match "=46rom " t t))))
-		(if Q-encoding
-		    (with-current-buffer work-buffer
-		      ;; strip out the line breaks
-		      (goto-char (point-min))
-		      (while (search-forward "=\n" nil t)
-			(delete-char -2))
-		      ;; strip out the soft line breaks
-		      (goto-char (point-min))
-		      (while (search-forward "\n" nil t)
-			(delete-char -1)))))
-	    (setq inputpos start)
-	    (while (< inputpos end)
-	      (setq char (char-after inputpos))
-	      (cond ((= char ?\n)
-		     (vm-insert-char char 1 nil work-buffer)
-		     (setq cols 0))
-		    ((and (= char 32)
-			  (not (= (1+ inputpos) end))
-			  (not (= ?\n (char-after (1+ inputpos)))))
-		     (vm-insert-char char 1 nil work-buffer)
-		     (vm-increment cols))
-		    ((or (< char 33) (> char 126)
-			 ;; =
-			 (= char 61)
-			 ;; ?
-			 (and Q-encoding (= char 63))
-			 ;; _
-			 (and Q-encoding (= char 95))
-			 (and quote-from (= cols 0)
-			      (let ((case-fold-search nil))
-				(looking-at "From ")))
-			 (and (= cols 0) (= char ?.)
-			      (looking-at "\\.\\(\n\\|\\'\\)")))
-		     (vm-insert-char ?= 1 nil work-buffer)
-		     (vm-insert-char (car (rassq (ash (logand char 255) -4)
-						 hex-digit-alist))
-				     1 nil work-buffer)
-		     (vm-insert-char (car (rassq (logand char 15)
-						 hex-digit-alist))
-				     1 nil work-buffer)
-		     (setq cols (+ cols 3)))
-		    (t (vm-insert-char char 1 nil work-buffer)
-		       (vm-increment cols)))
-	      (cond ((> cols 70)
-		     (setq cols 0)
-		     (if Q-encoding
-			 nil
-		       (vm-insert-char ?= 1 nil work-buffer)
-		       (vm-insert-char ?\n 1 nil work-buffer))))
-	      (vm-increment inputpos)))
-	  (or (markerp end) (setq end (vm-marker end)))
-	  (goto-char start)
-	  (insert-buffer-substring work-buffer)
-	  (delete-region (point) end)
-	  (and (> (- end start) 200)
-	       (vm-inform 7 "Encoding quoted-printable... done"))
-	  (- end start))
-      (and work-buffer (kill-buffer work-buffer)))))
+  (setq end (copy-marker end t))
+  (save-excursion
+    (require 'qp) ;; `quoted-printable-encode-region' is not autoloaded :-(
+    (declare-function quoted-printable-encode-region "qp")
+    (defvar mm-use-ultra-safe-encoding)
+    (let ((mm-use-ultra-safe-encoding (if quote-from t nil)))
+      (quoted-printable-encode-region start end))
+    (when Q-encoding
+      (goto-char start)
+      (while (search-forward "=\n" end t)
+	(delete-char -2))
+      ;; strip out the soft line breaks
+      (goto-char start)
+      (while (search-forward "\n" end t)
+	(delete-char -1)))
+    (and (> (- end start) 200)
+	 (vm-inform 7 "Encoding quoted-printable... done"))
+    (- end start)))
 
 (defun vm-mime-uuencode-decode-region (start end &optional crlf)
   (vm-emit-mime-decoding-message "Decoding uuencoded stuff...")
@@ -809,20 +660,7 @@ out includes base-64, quoted-printable, uuencode and CRLF conversion."
 	      (progn
 		(goto-char (point-max))
 		(insert "\n")))
-	  (if (stringp vm-mime-uuencode-decoder-program)
-	      (let* ((binary-process-output t) ; any text already has CRLFs
-		     ;; use binary coding system in FSF Emacs/MULE
-		     (coding-system-for-read (vm-binary-coding-system))
-		     (coding-system-for-write (vm-binary-coding-system))
-		     (status (apply 'vm-run-command-on-region
-				    (point-min) (point-max) nil
-				    vm-mime-uuencode-decoder-program
-				    vm-mime-uuencode-decoder-switches)))
-		(if (not (eq status t))
-		    (vm-mime-error "uuencode failed: %s" (cdr status))))
-	    (vm-mime-error "no uuencode decoder program defined"))
-	  (delete-region (point-min) (point-max))
-	  (insert-file-contents-literally tempfile)
+	  (uudecode-decode-region (point-min) (point-max))
 	  (and crlf
 	       (vm-mime-crlf-to-lf-region (point-min) (point-max)))
 	  (set-buffer region-buffer)
@@ -6360,7 +6198,8 @@ should be included (?)                               USR, 2011-03-27"
 	   (vm-mime-base64-encode-region beg end crlf)
 	   (setq encoding "base64"))
 	  ((and (not armor-from) (not armor-dot)
-		(string-match "^7bit$" encoding)) t)
+	        (string-match "^7bit$" encoding))
+	   t)
 	  ((string-match "^base64$" encoding) t)
 	  ((string-match "^quoted-printable$" encoding) t)
 	  ((eq vm-mime-8bit-text-transfer-encoding 'quoted-printable)

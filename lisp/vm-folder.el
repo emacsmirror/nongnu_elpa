@@ -2128,8 +2128,6 @@ FOR-OTHER-FOLDER indicates <someting unknown>.  USR 2010-03-06"
     (save-restriction
      (widen)
      (let ((old-buffer-modified-p (buffer-modified-p))
-	   (vm-mime-qp-encoder-program nil) ; use internal code
-	   (vm-mime-base64-encoder-program nil) ; for speed
 	   (case-fold-search t)
 	   (buffer-read-only nil)
  	   ;; don't truncate the printing of large Lisp objects
@@ -2240,8 +2238,6 @@ pending input.   So, presumably this is non-interactive.  USR 2012-12-22"
       (save-restriction
        (widen)
        (let ((old-buffer-modified-p (buffer-modified-p))
-	     (vm-mime-qp-encoder-program nil)	  ; use internal code
-	     (vm-mime-base64-encoder-program nil) ; for speed
 	     (case-fold-search t)
 	     (buffer-read-only nil)
 	     ;; don't truncate the printing of large Lisp objects
@@ -2254,8 +2250,8 @@ pending input.   So, presumably this is non-interactive.  USR 2012-12-22"
 	     (buffer-file-name nil))
 	 (unwind-protect
 	     (while (and mp 
-			 (or (not abort-if-input-pending)
-			     (not (input-pending-p))))
+			 (not (and abort-if-input-pending
+			           (input-pending-p))))
 	       (vm-stuff-message-data-internal (car mp))
 	       (setq n (1+ n))
 	       (setq p-last p
