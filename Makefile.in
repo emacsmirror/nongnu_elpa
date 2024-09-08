@@ -15,7 +15,7 @@ srcdir = @srcdir@
 datarootdir = @datarootdir@
 docdir = @docdir@
 
-SUBDIRS = lisp info src pixmaps
+SUBDIRS = lisp info pixmaps
 
 # the list of source (documentation) files
 SOURCES = NEWS
