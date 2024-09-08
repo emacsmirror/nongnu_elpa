@@ -5,7 +5,7 @@
 ;; Author: Thanos Apollo <public@thanosapollo.org>
 ;; Keywords: extensions
 ;; URL: https://thanosapollo.org/projects/gnosis
-;; Version: 0.4.3
+;; Version: 0.4.4-dev
 
 ;; Package-Requires: ((emacs "27.2") (emacsql "4.0.1") (compat "29.1.4.2") (transient "0.7.2"))
 
@@ -50,7 +50,7 @@
 (require 'gnosis-string-edit)
 (require 'gnosis-dashboard)
 
-;; (require 'gnosis-org)
+(require 'gnosis-org)
 
 (require 'animate)
 
@@ -2559,16 +2559,16 @@ If STRING-SECTION is nil, apply FACE to the entire STRING."
       (error "Demo deck already exists"))))
 
 ;; TODO: Add Export funcs
-;; (defun gnosis-export-deck (&optional deck)
-;;   "Export contents of DECK."
-;;   (interactive (list (gnosis--get-deck-id)))
-;;   (with-current-buffer (get-buffer-create "*test*")
-;;     (insert (format "#+GNOSIS_DECK: %s\n\n" (gnosis--get-deck-name deck)))
-;;     (cl-loop for note in (gnosis-select '[main answer id type] 'notes `(= deck-id ,deck))
-;; 	     do (gnosis-org-insert-heading :main (car note)
-;; 					   :answer (cadr note)
-;; 					   :id (number-to-string (caddr note))
-;; 					   :type (cadddr note)))))
+(defun gnosis-export-deck (&optional deck)
+  "Export contents of DECK."
+  (interactive (list (gnosis--get-deck-id)))
+  (with-current-buffer (get-buffer-create "*test*")
+    (insert (format "#+GNOSIS_DECK: %s\n\n" (gnosis--get-deck-name deck)))
+    (cl-loop for note in (gnosis-select '[main answer id type] 'notes `(= deck-id ,deck))
+	     do (gnosis-org-insert-heading :main (car note)
+					   :answer (cadr note)
+					   :id (number-to-string (caddr note))
+					   :type (cadddr note)))))
 
 ;; Gnosis mode ;;
 ;;;;;;;;;;;;;;;;;
