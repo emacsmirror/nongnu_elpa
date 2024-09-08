@@ -1166,7 +1166,7 @@ TYPE: Type of gnosis note, must be one of `gnosis-note-types'"
 
 Works with both single (:), double colons (::), single braces ({}) and
 double braces ({{}})."
-  (let* ((regex "{\\{1,2\\}c[0-9]+:\\{1,2\\}\\([^:}]*\\).*?\\(}\\|::}\\)\\{1,2\\}")
+  (let* ((regex "{\\{1,2\\}c[0-9]+:\\{1,2\\}\\([^{}]*?\\)}\\{1,2\\}")
          (result (replace-regexp-in-string regex "\\1" string)))
     result))
 
