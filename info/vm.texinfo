@@ -1979,16 +1979,6 @@ can be turned off by setting the variable @code{vm-display-using-mime} to
 @code{nil} and VM will then display @acronym{MIME} messages as plain text
 messages.
 
-@vindex vm-mime-base64-decoder-program
-@vindex vm-mime-base64-encoder-program
-@vindex vm-mime-base64-decoder-switches
-@vindex vm-mime-base64-encoder-switches
-@vindex vm-mime-qp-decoder-program
-@vindex vm-mime-qp-decoder-switches
-@vindex vm-mime-qp-encoder-program
-@vindex vm-mime-qp-encoder-switches
-@vindex vm-mime-uuencode-decoder-program
-@vindex vm-mime-uuencode-decoder-switches
 At its most basic level, @acronym{MIME} is a set of transfer encodings used
 to ensure error free transport, and a set of content types.  VM understands
 the two standard @acronym{MIME} transport encodings, @dfn{Quoted-Printable}
@@ -1996,20 +1986,7 @@ and @dfn{BASE64}, and will decode messages that use them as necessary.  VM
 will also try to recognize and decode messages using the UNIX @dfn{uuencode}
 encoding system.  While this is not an official @acronym{MIME} transfer
 encoding and never will be, enough old mailers still use it that it is
-worthwhile to attempt to decode it.  VM has Emacs-Lisp based
-Quoted-Printable and BASE64 encoders and decoders, but you can have VM use
-external programs to perform these tasks and the process will almost
-certainly be faster.  The variables @code{vm-mime-qp-decoder-program},
-@code{vm-mime-qp-decoder-switches}, @code{vm-mime-qp-encoder-program},
-@code{vm-mime-qp-encoder-switches}, @code{vm-mime-base64-decoder-switches},
-@code{vm-mime-base64-encoder-switches},
-@code{vm-mime-base64-decoder-program},
-@code{vm-mime-base64-encoder-program}, tell VM which programs to use and
-what command line switches to pass to them.  There are C programs included
-in the VM distribution to handle BASE64 and Quoted-Printable.  VM does not
-have a built-in ``uuencode'' decoder, so
-@code{vm-mime-uuencode-decoder-program} must be set non-@code{nil} for VM to
-decode uuencoded @acronym{MIME} objects.
+worthwhile to attempt to decode it.
 
 @menu
 * Viewing @acronym{MIME}::                Decoding @acronym{MIME} for viewing
