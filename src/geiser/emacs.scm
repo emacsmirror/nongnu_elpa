@@ -133,10 +133,9 @@
 (define (geiser:eval module form . rest)
   rest
   (let* ((output (open-output-string))
-         (environment (package/environment (find-package (if module
-                                                             module
-                                                             '(user))
-                                                         #t)))
+         (environment (if module
+                          (package/environment (find-package module #t))
+                          (nearest-repl/environment)))
          (result (with-output-to-port output
                    (lambda ()
                      (eval form environment)))))
