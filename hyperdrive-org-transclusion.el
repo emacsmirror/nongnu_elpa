@@ -80,6 +80,18 @@ PLIST, COPY."
                ((cl-struct hyperdrive-entry hyperdrive path etc) entry)
                ((map target) etc)
                (tc-type))
+    (when (eq 'unknown (hyperdrive-safe-p hyperdrive))
+      (let ((hyperdrive-current-entry
+             (hyperdrive-entry-create :hyperdrive hyperdrive)))
+        (call-interactively #'hyperdrive-mark-as-safe)))
+    ;; Check safe-p again after potential call to `hyperdrive-mark-as-safe'.
+    (unless (eq t (hyperdrive-safe-p hyperdrive))
+      (user-error
+       (substitute-command-keys
+        "hyperdrive-org-transclusion:  Refused to transclude hyperdrive content not marked as safe:
+<%s>
+Try \\[hyperdrive-mark-as-safe]")
+       raw-link))
     (when (hyperdrive--entry-directory-p entry)
       (user-error "hyperdrive-org-transclusion:  Directory transclusion not supported: <%s>"
                   raw-link))
