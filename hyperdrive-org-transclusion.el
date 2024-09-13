@@ -95,7 +95,7 @@ Try \\[hyperdrive-mark-as-safe]")
     (when (hyperdrive--entry-directory-p entry)
       (user-error "hyperdrive-org-transclusion:  Directory transclusion not supported: <%s>"
                   raw-link))
-    ;; Use `hyperdrive-fill' with callback instead of `hyperdrive-open':
+    ;; Use `hyperdrive-entry-api' with callback instead of `hyperdrive-open':
 
     ;; - Transclusion source buffers should be different from hyperdrive-mode
     ;; buffers visiting the same hyperdrive file.  Transclusion source buffers
