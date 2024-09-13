@@ -15,3 +15,6 @@
 
 # File not found:  Signal error
 #+transclude: [[hyper://aaj45d88g4eenu76rpmwzjiabsof1w8u6fufq6oogyhjk1ubygxy/nonexistent-file]]
+
+# Non-HTML, Non-Org: Transclude entire file.
+#+transclude: [[hyper://aaj45d88g4eenu76rpmwzjiabsof1w8u6fufq6oogyhjk1ubygxy/css/stylesheet.css]]
