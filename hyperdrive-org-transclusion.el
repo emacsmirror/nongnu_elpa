@@ -123,8 +123,14 @@ PLIST, COPY."
                 (t   ; All other file types
                  (setf tc-type "others-hyper")))
           (let* ((payload-without-type
-                  (org-transclusion-content-org-buffer-or-element
-                   nil plist))
+                  (if (org-transclusion-type-is-org tc-type)
+                      (org-transclusion-content-org-buffer-or-element
+                       nil plist)
+                    ;; NOTE: Leave payload buffer narrowed to response body.
+                    (list :src-content (buffer-string)
+                          :src-buf (current-buffer)
+                          :src-beg (point-min)
+                          :src-end (point-max))))
                  (payload
                   (append `(:tc-type ,tc-type) payload-without-type)))
             (with-current-buffer target-buf
