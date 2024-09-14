@@ -7,7 +7,7 @@
 ;; Maintainer: Joseph Turner <~ushin/ushin@lists.sr.ht>
 ;; Created: 2024
 ;; Version: 0.1-pre
-;; Package-Requires: ((emacs "28.1") (hyperdrive "0.4") (org-transclusion "1.4.0"))
+;; Package-Requires: ((emacs "28.1") (hyperdrive "0.4.1") (org-transclusion "1.4.0"))
 ;; Homepage: https://git.sr.ht/~ushin/hyperdrive-org-transclusion
 
 ;; This program is free software; you can redistribute it and/or
