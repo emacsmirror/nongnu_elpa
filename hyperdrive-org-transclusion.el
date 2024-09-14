@@ -36,6 +36,9 @@
 ;; - TODO: Support :lines
 ;; - TODO: Handle relative links in transcluded content.
 
+;; For more information, see the `hyperdrive' manual:
+;; (info "(hyperdrive)Org-transclusion integration")
+
 ;;; Code:
 
 ;;;; Requirements
