@@ -143,63 +143,6 @@ Skips days where no note was reviewed."
 	       do (setq total (+ total entry)))
       (/ total (max (length (remove 0 entries)) 1))))
 
-;; TODO: Add more conds & faces
-(defun gnosis-dashboard--graph-propertize (string num)
-  "Propertize STRING depending on the NUM of reviews."
-  (cond ((= num 0)
-	 (propertize string 'face 'shadow))
-	((> num 0)
-	 (propertize string 'face 'font-lock-constant-face))))
-
-(defun gnosis-dashboard--add-padding (str-length)
-  "Add padding for STR-LENGTH."
-  (let ((padding (/ (- (window-width) str-length) 2)))
-    (make-string padding ?\s)))
-
-(defun gnosis-dashboard-reviews-graph (dates &optional )
-  "Insert graph for month DATES.
-
-Optionally, use  when using multiple months."
-  (let ((count 0)
-	(row 0)
-	(start-column (current-column))
-	(end-column nil))
-    (cl-loop for day in dates
-	     when (= count 0)
-	     do (let ((current-column (current-column)))
-		  (and (< (move-to-column start-column) start-column)
-		       ;; Add spaces to reach start-column.
-		       (insert (make-string (- start-column current-column) ?\s))))
-	     (insert " ")
-	     do (end-of-line)
-	     (insert (gnosis-dashboard--graph-propertize (format "[%s] " (if (= day 0) "-" "x")) day))
-	     (cl-incf count)
-	     when (= count 7)
-	     do
-	     (setq end-column (current-column))
-	     (setq count 0)
-	     (insert " ")
-	     (cl-incf row)
-	     (end-of-line)
-	     (when (and (/= (forward-line 1) 0) (eobp))
-	       (insert "\n")
-	       (forward-line 0)))
-    (insert (make-string (- end-column (current-column)) ?\s))
-    (insert " ")))
-;; TODO: Refactor this!
-(defun gnosis-dashboard-month-overview (&optional num)
-  "Insert review graph for MONTHS."
-  (gnosis-insert-separator)
-  (let* ((point (point))
-	 (month (car (calendar-current-date))))
-    (insert (gnosis-dashboard--add-padding (min (* (max num 1) 50) (window-width))))
-    (while (<= month (+ (car (calendar-current-date)) num))
-      ;; (insert (format "%d" month))
-      (gnosis-dashboard-reviews-graph (gnosis-dashboard-month-reviews month))
-      (goto-char point)
-      (end-of-line)
-      (cl-incf month))))
-
 (defun gnosis-dashboard-output-note (id)
   "Output contents for note with ID, formatted for gnosis dashboard."
   (cl-loop for item in (append (gnosis-select '[main options answer tags type] 'notes `(= id ,id) t)
