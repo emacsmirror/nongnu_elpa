@@ -1193,7 +1193,8 @@ Valid cloze formats include:
 (defun gnosis-cloze-extract-answers (nested-lst)
   "Extract cloze answers for string clozes inside the NESTED-LST.
 
-This function should be used in combination with `gnosis-cloze-extract-answers'."
+This function should be used in combination with
+`gnosis-cloze-extract-contents'."
   (mapcar (lambda (lst)
             (mapcar (lambda (str)
                       (replace-regexp-in-string "::\\(.*\\)" "" str))
@@ -1203,7 +1204,8 @@ This function should be used in combination with `gnosis-cloze-extract-answers'.
 (defun gnosis-cloze-extract-hints (nested-lst)
   "Extract cloze hints for string clozes inside the NESTED-LST.
 
-This function should be used in combination with `gnosis-cloze-extract-answers'."
+This function should be used in combination with
+`gnosis-cloze-extract-contents'."
   (mapcar (lambda (lst)
             (mapcar (lambda (str)
                       (when (string-match "::\\(.*\\)" str)
