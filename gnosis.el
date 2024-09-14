@@ -1695,6 +1695,12 @@ If NEW? is non-nil, increment new notes log by 1."
     (gnosis-update 'activity-log `(= reviewed-total ,inc-total) `(= date ',date))
     (and new? (gnosis-update 'activity-log `(= reviewed-new ,inc-new) `(= date ',date)))))
 
+(defun gnosis-delete-activity-log ()
+  "Delete all activity log entries."
+  (interactive)
+  (when (y-or-n-p "Delete activity log?")
+    (emacsql gnosis-db [:delete :from activity-log])))
+
 (defun gnosis-review-note (id)
   "Start review for note with value of id ID, if note is unsuspended.
 
