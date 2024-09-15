@@ -2139,46 +2139,47 @@ view all branches of a thread."
 (defun mastodon-tl--thread (&optional thread-id)
   "Open thread buffer for toot at point or with THREAD-ID."
   (interactive)
-  (mastodon-toot--with-toot-item
-   ;; this function's var must not be id as the above macro binds id and even
-   ;; if we provide the arg (e.g. url-lookup), the macro definition overrides
-   ;; it, making the optional arg unusable!
-   (let* ((id (or thread-id (mastodon-tl--property 'base-item-id :no-move)))
-          (type (mastodon-tl--field 'type (mastodon-tl--property 'item-json :no-move))))
-     (if (or (string= type "follow_request")
-             (string= type "follow")) ; no can thread these
-         (user-error "No thread")
-       (let* ((endpoint (format "statuses/%s/context" id))
-              (url (mastodon-http--api endpoint))
-              (buffer (format "*mastodon-thread-%s*" id))
-              (toot (mastodon-http--get-json ; refetch in case we just faved/boosted:
-                     (mastodon-http--api (concat "statuses/" id))
-                     nil :silent))
-              (context (mastodon-http--get-json url nil :silent)))
-         (if (eq (caar toot) 'error)
-             (user-error "Error: %s" (cdar toot))
-           (when (member (alist-get 'type toot) '("reblog" "favourite"))
-             (setq toot (alist-get 'status toot)))
-           (if (not (< 0 (+ (length (alist-get 'ancestors context))
-                            (length (alist-get 'descendants context)))))
-               ;; just print the lone toot:
-               (mastodon-tl--single-toot id)
-             ;; we have a thread:
-             (with-mastodon-buffer buffer #'mastodon-mode nil
-               (let ((marker (make-marker)))
-                 (mastodon-tl--set-buffer-spec buffer endpoint
-                                               #'mastodon-tl--thread
-                                               nil nil nil nil id)
-                 (mastodon-tl--timeline (alist-get 'ancestors context) :thread)
-                 (goto-char (point-max))
-                 (move-marker marker (point))
-                 ;; print re-fetched toot:
-                 (mastodon-tl--toot toot :detailed-p :thread)
-                 (mastodon-tl--timeline (alist-get 'descendants context)
-                                        :thread)
-                 ;; put point at the toot:
-                 (goto-char (marker-position marker))
-                 (mastodon-tl--goto-next-item))))))))))
+  ;; no toot-at-point macro here as we can call this programmatically, eg from
+  ;; `mastodon-url-lookup'
+  ;; this function's var must not be id as the above macro binds id and even
+  ;; if we provide the arg (e.g. url-lookup), the macro definition overrides
+  ;; it, making the optional arg unusable!
+  (let* ((id (or thread-id (mastodon-tl--property 'base-item-id :no-move)))
+         (type (mastodon-tl--field 'type (mastodon-tl--property 'item-json :no-move))))
+    (if (or (string= type "follow_request")
+            (string= type "follow")) ; no can thread these
+        (user-error "No thread")
+      (let* ((endpoint (format "statuses/%s/context" id))
+             (url (mastodon-http--api endpoint))
+             (buffer (format "*mastodon-thread-%s*" id))
+             (toot (mastodon-http--get-json ; refetch in case we just faved/boosted:
+                    (mastodon-http--api (concat "statuses/" id))
+                    nil :silent))
+             (context (mastodon-http--get-json url nil :silent)))
+        (if (eq (caar toot) 'error)
+            (user-error "Error: %s" (cdar toot))
+          (when (member (alist-get 'type toot) '("reblog" "favourite"))
+            (setq toot (alist-get 'status toot)))
+          (if (not (< 0 (+ (length (alist-get 'ancestors context))
+                           (length (alist-get 'descendants context)))))
+              ;; just print the lone toot:
+              (mastodon-tl--single-toot id)
+            ;; we have a thread:
+            (with-mastodon-buffer buffer #'mastodon-mode nil
+              (let ((marker (make-marker)))
+                (mastodon-tl--set-buffer-spec buffer endpoint
+                                              #'mastodon-tl--thread
+                                              nil nil nil nil id)
+                (mastodon-tl--timeline (alist-get 'ancestors context) :thread)
+                (goto-char (point-max))
+                (move-marker marker (point))
+                ;; print re-fetched toot:
+                (mastodon-tl--toot toot :detailed-p :thread)
+                (mastodon-tl--timeline (alist-get 'descendants context)
+                                       :thread)
+                ;; put point at the toot:
+                (goto-char (marker-position marker))
+                (mastodon-tl--goto-next-item)))))))))
 
 (defun mastodon-tl--mute-thread ()
   "Mute the thread displayed in the current buffer.
