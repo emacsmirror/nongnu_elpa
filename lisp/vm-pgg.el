@@ -691,14 +691,15 @@ cleanup here after verification and decoding took place."
   (let ((vm-pgg-cleartext-state nil)
         (start (point))
         end)
-    (apply orig-fun args)
-    (when vm-pgg-cleartext-state
-      (setq end (point))
-      (save-restriction
-        (narrow-to-region start end)
-        (goto-char (point-min))
-        (vm-pgg-cleartext-cleanup vm-pgg-cleartext-state)
-        (widen)))))
+    (let ((ret (apply orig-fun args)))
+      (when vm-pgg-cleartext-state
+	(setq end (point))
+	(save-restriction
+          (narrow-to-region start end)
+          (goto-char (point-min))
+          (vm-pgg-cleartext-cleanup vm-pgg-cleartext-state)
+          (widen)))
+      ret)))
     
 ;;; ###autoload
 (defun vm-pgg-cleartext-verify ()
