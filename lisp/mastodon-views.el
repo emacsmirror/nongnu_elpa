@@ -690,6 +690,7 @@ Optionally, provide ID, TITLE, CONTEXT, TYPE, and TERMS to update a filter."
          (warn-or-hide
           (or type (completing-read "Warn (like CW) or hide? "
                                     '("warn" "hide") nil :match)))
+         ;; TODO: display "home (and lists)" but just use "home" for API
          (contexts
           (or context (completing-read-multiple
                        "Filter contexts [TAB for options, comma separated]: "

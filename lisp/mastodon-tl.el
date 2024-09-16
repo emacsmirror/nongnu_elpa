@@ -1608,6 +1608,8 @@ Returns a member of `mastodon-views--filter-types'."
            "public")
           ((mastodon-tl--profile-buffer-p)
            "profile")
+          ((eq buf 'list-timeline)
+           "home") ;; lists are "home" filter
           (t ;; thread, notifs, home:
            (symbol-name buf)))))
 
