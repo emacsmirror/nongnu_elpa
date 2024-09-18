@@ -458,6 +458,11 @@ and should work without first loading a ‘mastodon.el’ buffer:
 
    • ‘mastodon-switch-to-buffer’: switch between mastodon buffers.
 
+   • ‘mastodon-tl--get-remote-local-timeline’: View a local timeline of
+     a remote instance.
+   • ‘mastodon-tl--remote-tag-timeline’: View a tag timeline on a remote
+     instance.
+
    • ‘mastodon-profile--update-display-name’: Update the display name
      for your account.
    • ‘mastodon-profile--update-user-profile-note’: Update your bio note.
@@ -761,21 +766,21 @@ Ref: Keybindings (1)12789
 Ref: Autocompletion of mentions tags and emoji13324
 Ref: Draft toots14249
 Node: Other commands and account settings14720
-Node: Customization17887
-Node: Commands and variables index18765
-Node: Alternative timeline layout19281
-Node: Live-updating timelines mastodon-async-mode19686
-Node: Translating toots20538
-Node: Bookmarks and mastodonel21720
-Node: Dependencies22262
-Node: Network compatibility22896
-Node: Contributing23778
-Node: Bug reports24274
-Node: Fixes and features25185
-Node: Coding style25686
-Node: Supporting mastodonel26310
-Node: Contributors26877
-Node: screenshots27312
+Node: Customization18084
+Node: Commands and variables index18962
+Node: Alternative timeline layout19478
+Node: Live-updating timelines mastodon-async-mode19883
+Node: Translating toots20735
+Node: Bookmarks and mastodonel21917
+Node: Dependencies22459
+Node: Network compatibility23093
+Node: Contributing23975
+Node: Bug reports24471
+Node: Fixes and features25382
+Node: Coding style25883
+Node: Supporting mastodonel26507
+Node: Contributors27074
+Node: screenshots27509
 
 End Tag Table
 

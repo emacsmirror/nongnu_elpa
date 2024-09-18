@@ -563,6 +563,14 @@ instance.
 
 @itemize
 @item
+@samp{mastodon-tl--get-remote-local-timeline}: View a local timeline of a remote instance.
+@item
+@samp{mastodon-tl--remote-tag-timeline}: View a tag timeline on a remote instance.
+@end itemize
+
+
+@itemize
+@item
 @samp{mastodon-profile--update-display-name}: Update the display name for your
 account.
 @item
