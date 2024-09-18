@@ -2007,7 +2007,7 @@ We hide replies if user explictly set the
 timeline."
   (and (mastodon-tl--timeline-proper-p) ; Only if we are in a proper timeline
        (or mastodon-tl--hide-replies ; User configured to hide replies
-           (eq '(4) prefix)))) ; Timeline called with C-u prefix
+           (equal '(4) prefix)))) ; Timeline called with C-u prefix
 
 
 ;;; UTILITIES
