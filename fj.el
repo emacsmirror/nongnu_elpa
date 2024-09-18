@@ -1711,6 +1711,18 @@ Or if viewing a repo's issues, use its clone_url."
        (kill-new url)
        (message (format "Copied: %s" url))))))
 
+(defun fj-copy-item-url ()
+  "Copy URL of current item, either issue or PR."
+  (interactive)
+  (let ((url
+         ;; issues tl view:
+         (or (fj--property 'fj-url)
+             ;; issue view:
+             (alist-get 'html_url
+                        (fj--property 'fj-item-data)))))
+    (kill-new url)
+    (message (format "Copied: %s" url))))
+
 ;; TODO: star toggle
 
 (defun fj-get-repo-files (repo owner &optional ref)
