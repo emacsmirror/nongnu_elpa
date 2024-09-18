@@ -484,7 +484,7 @@ MAX-ID is a flag to add the max_id pagination parameter."
                        params
                        (when (eq arg 4) t))))
 
-(defun mastodon-tl--get-remote-local-timeline ()
+(defun mastodon-tl--get-remote-local-timeline (&optional endpoint)
   "Prompt for an instance domain and try to display its local timeline.
 You can enter any working instance domain. Domains that you want
 to regularly load can be stored in
@@ -493,7 +493,8 @@ Note that some instances do not make their local timelines public, in
 which case this will not work.
 To interact with any item, you must view it from your own
 instance, which you can do with
-`mastodon-tl--view-item-on-own-instance'."
+`mastodon-tl--view-item-on-own-instance'.
+Optionally, provide API ENDPOINT."
   (interactive)
   (let* ((domain (completing-read "Domain for remote local tl: "
                                   mastodon-tl--remote-local-domains))
@@ -509,8 +510,16 @@ instance, which you can do with
               (y-or-n-p
                "Domain appears unknown to your instance. Proceed?"))
       (mastodon-tl--init buf
-                         "timelines/public" 'mastodon-tl--timeline nil
+                         (or endpoint "timelines/public")
+                         'mastodon-tl--timeline nil
                          params nil domain))))
+
+(defun mastodon-tl--remote-tag-timeline (&optional tag)
+  "Call `mastodon-tl--get-remote-local-timeline' but for a TAG timeline."
+  (interactive)
+  (let* ((tag (or tag (read-string "Tag: ")))
+         (endpoint (format "timelines/tag/%s" tag)))
+    (mastodon-tl--get-remote-local-timeline endpoint)))
 
 (defun mastodon-tl--view-item-on-own-instance ()
   "Load current toot on your own instance.
