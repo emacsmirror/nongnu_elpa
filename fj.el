@@ -100,6 +100,22 @@ Repo, owner, item number, url.")
   "Face for timeline item names (user, issue, PR).
 Not used for items that are links.")
 
+;;; INSTANCE SETTINGS
+;; https://forgejo.org/docs/latest/user/api-usage/#pagination
+;; the description is confusing, saying that max_response_items and
+;; default_paging_num are for the max and default values of the page
+;; parameter, but surely the max and default would be for the limit parameter?
+
+(defun fj-get-api-settings ()
+  "Return API settings from the current instance."
+  (let ((endpoint "/settings/api"))
+    (fj-get endpoint)))
+
+(defun fj-get-max-response-items ()
+  "Return the max response items setting from the current instance."
+  (let ((settings (fj-get-settings)))
+    (alist-get 'max_response_items settings)))
+
 ;;; UTILS
 
 (defun fj--property (prop)
