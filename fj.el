@@ -1207,6 +1207,10 @@ RELOAD mean we reloaded."
            (propertize
             (concat
              "State: " .state
+             (if (string= "closed" .state)
+                 (concat " " (fedi--relative-time-description
+                              (date-to-time .closed_at)))
+               "")
              (if .labels
                  (fj-render-labels .labels)
                "")
