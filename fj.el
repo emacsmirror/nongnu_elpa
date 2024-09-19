@@ -1164,12 +1164,16 @@ OWNER is the repo owner."
   (cl-loop for c in comments
            concat (fj-format-comment c author owner)))
 
+(defun fj-prop-item-flag (str)
+  "Propertize STR as author face in box."
+  (propertize str
+              'face '(:inherit fj-item-author-face :box t)))
+
 (defun fj-author-or-owner-str (username author &optional owner)
   "If USERNAME is equal either AUTHOR or OWNER, return a boxed string."
   (let ((name (or owner author)))
     (if (equal name username)
-        (propertize (if owner "owner" "author")
-                    'face '(:inherit fj-item-author-face :box t))
+        (fj-prop-item-flag (if owner "owner" "author"))
       "")))
 
 (defun fj-render-labels (labels)
