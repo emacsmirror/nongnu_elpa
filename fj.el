@@ -1147,6 +1147,7 @@ AUTHOR is of comment, OWNER is of repo."
         (propertize " "
                     'face 'fj-item-author-face)
         (fj-author-or-owner-str .user.username nil owner)
+        (fj-edited-str-maybe .created_at .updated_at)
         (propertize (fj-issue-right-align-str stamp)
                     'face 'fj-item-author-face)
         "\n\n"
@@ -1183,6 +1184,17 @@ OWNER is the repo owner."
                    concat (concat (propertize (alist-get 'name l)
                                               'face 'fj-issue-label-face)
                                   " "))))
+
+(defun fj-edited-str-maybe (created updated)
+  "If UPDATED timestamp is after CREATED timestamp, return edited str."
+  (let ((c-secs (time-to-seconds
+                 (date-to-time created)))
+        (u-secs (time-to-seconds
+                 (date-to-time updated))))
+    (when (> u-secs c-secs)
+      (concat (propertize " "
+                          'face 'fj-item-author-face)
+              (fj-prop-item-flag "edited")))))
 
 (defun fj-render-item (repo owner item number timeline &optional reload)
   "Render ITEM number NUMBER, in REPO and its TIMELINE.
@@ -1236,6 +1248,9 @@ RELOAD mean we reloaded."
                          'fj-byline t
                          'fj-issue item)
              (fj-author-or-owner-str .user.username nil owner)
+             ;; FIXME: this diffing will mark any issue as edited if it has
+             ;; merely been commented on.
+             ;; (fj-edited-str-maybe .created_at .updated_at)
              (propertize (fj-issue-right-align-str stamp)
                          'face 'fj-item-author-face)
              "\n\n"
