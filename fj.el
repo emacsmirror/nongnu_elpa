@@ -541,6 +541,9 @@ Return the issue number."
                          cands))))
     (cadr item)))
 
+;; /repos/{owner}/{repo}/issues
+;; params: owner, repo, state, labels, q, type, milestones, since, before,
+;; created_by, assigned_by, mentioned_by, page, limit
 (defun fj-repo-get-issues (repo &optional owner state type query)
   "Return issues for REPO by OWNER.
 STATE is for issue status, a string of open, closed or all.
@@ -548,6 +551,7 @@ TYPE is item type: issue pull or all.
 QUERY is a search term to filter by."
   ;; FIXME: how to get issues by number, or get all issues?
   (let* ((endpoint (format "repos/%s/%s/issues" (or owner fj-user) repo))
+         ;; NB: get issues has no sort param!
          (params `(("state" . ,state)
                    ("limit" . "100")
                    ("type" . ,type)
