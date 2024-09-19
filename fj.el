@@ -476,6 +476,27 @@ X Y are tl entries to sort."
                        (lambda ()
                          (message "Repo forked!" repo)))))
 
+(defun fj-delete-repo ()
+  "Delete repo at point, if you are its owner."
+  (interactive)
+  (let* ((repo (fj-get-tl-col 0))
+         (endpoint (format "repos/%s/%s/" fj-user repo))
+         (owner-p
+          ;; FIXME: refactor this with with-own-repo, make valid in all
+          ;; relevant views?
+          (or (eq major-mode 'fj-user-repo-tl-mode)
+              (and (eq major-mode 'fj-repo-tl-mode)
+                   (equal fj-user (fj-get-tl-col 1)))
+              (and (eq major-mode 'fj-issue-tl-mode)
+                   (equal fj-user (fj--get-buffer-spec :owner))))))
+    (if (not owner-p)
+        (user-error "Not your own repo")
+      (when (y-or-n-p (format "Delete repo %s?" repo))
+        (let ((resp (fj-delete endpoint)))
+          (fedi-http--triage resp
+                             (lambda ()
+                               (message "Repo %s deleted!" repo))))))))
+
 ;;; USER REPOS
 
 (defun fj-current-dir-repo ()
