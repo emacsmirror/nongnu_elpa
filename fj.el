@@ -187,6 +187,12 @@ Works in issue view mode or in issues tl."
       (let ((entry (tabulated-list-get-entry)))
         (car (seq-elt entry 0)))))
 
+(defun fj-get-tl-col (num)
+  "Return column number NUM from current tl entry."
+  (let ((entry (tabulated-list-get-entry)))
+    (car
+     (seq-elt entry num))))
+
 ;;; MACROS
 
 (defmacro fj-with-issue (&optional body)
