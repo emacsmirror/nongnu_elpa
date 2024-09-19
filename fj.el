@@ -322,6 +322,37 @@ JSON."
     (fj-authorized-request "DELETE"
       (fedi-http--delete url))))
 
+;;; REPOS TL UTILS
+
+(defun fj--tl-get-elt (number entry)
+  "Return element from column NUMBER from tabulated list ENTRY."
+  (car
+   (seq-elt
+    (cadr entry)
+    number)))
+
+(defun fj-tl-sort-pred (x y col-search col-user)
+  "Predicate function for sorting numeric tl columns.
+X Y are tl entries to sort. COL-SEARCH and COL-USER are numbers,
+corresponding to the (zero-indexed) tl column to search by. The
+first is for `fj-repo-tl-mode', the second for
+`fj-user-repo-tl-mode'."
+  (let* ((col (if (eq major-mode 'fj-repo-tl-mode) col-search col-user))
+         (a (fj--tl-get-elt col x))
+         (b (fj--tl-get-elt col y)))
+    (> (string-to-number a)
+       (string-to-number b))))
+
+(defun fj-tl-sort-by-stars (x y)
+  "Predicate function for sorting repos by stars.
+X Y are tl entries to sort."
+  (fj-tl-sort-pred x y 2 1))
+
+(defun fj-tl-sort-by-issues (x y)
+  "Predicate function for sorting repos by issues count.
+X Y are tl entries to sort."
+  (fj-tl-sort-pred x y 4 3))
+
 ;;; USER REPOS TL
 
 (defun fj-get-repo (repo owner)
@@ -369,9 +400,9 @@ JSON."
         tabulated-list-sort-key '("Updated" . t) ;; default
         tabulated-list-format
         '[("Name" 16 t)
-          ("★" 2 t)
+          ("★" 2 fj-tl-sort-by-stars :right-align t)
           ("" 2 t)
-          ("issues" 5 t)
+          ("issues" 5 fj-tl-sort-by-issues :right-align t)
           ("Lang" 10 t)
           ("Updated" 12 t)
           ("Description" 55 nil)])
@@ -1519,9 +1550,9 @@ If TOPIC, QUERY is a search for topic keywords."
         tabulated-list-format
         '[("Name" 12 t)
           ("Owner" 12 t)
-          ("★" 2 t)
+          ("★" 2 fj-tl-sort-by-stars :right-align t)
           ("" 2 t)
-          ("issues" 5 t)
+          ("issues" 5 fj-tl-sort-by-issues :right-align t)
           ("Lang" 10 t)
           ("Updated" 12 t)
           ("Description" 55 nil)])
