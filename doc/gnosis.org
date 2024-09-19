@@ -30,10 +30,13 @@ learning environment tailored to each specific topic/subject.
 #+texinfo: @noindent
 This manual is written for Gnosis version {{{stable-version}}}, released on {{{release-date}}}.
 
-+ Official manual:
++ Manual:
   + <https://elpa.nongnu.org/nongnu/doc/gnosis.html>
+  + <https://thanosapollo.org/projects/gnosis/> (Mirror)
 + Git repositories:
   + <https://git.thanosapollo.org/gnosis>
+  + <https://codeberg.org/thanosapollo/emacs-gnosis> (Mirror)
+  + <https://git.savannah.gnu.org/cgit/emacs/nongnu.git/?h=elpa/gnosis> (Mirror)
 
 #+texinfo: @insertcopying
 
