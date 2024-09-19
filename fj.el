@@ -116,6 +116,11 @@ Not used for items that are links.")
   (let ((settings (fj-get-settings)))
     (alist-get 'max_response_items settings)))
 
+(defun fj-get-swagger-json ()
+  "Return the full swagger JSON from the current instance."
+  (let ((url (format "%s/swagger.v1.json" fj-host)))
+    (fedi-http--get-json url)))
+
 ;;; UTILS
 
 (defun fj--property (prop)
