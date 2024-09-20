@@ -44,6 +44,7 @@ Forgejo's API is vast. Currently =fj.el= just implements a few basic things:
 
 
 - create new repo
+- delete repo
 
 
 - view your notifications
