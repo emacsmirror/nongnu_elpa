@@ -100,6 +100,27 @@ Repo, owner, item number, url.")
   "Face for timeline item names (user, issue, PR).
 Not used for items that are links.")
 
+;;; INSTANCE SETTINGS
+;; https://forgejo.org/docs/latest/user/api-usage/#pagination
+;; the description is confusing, saying that max_response_items and
+;; default_paging_num are for the max and default values of the page
+;; parameter, but surely the max and default would be for the limit parameter?
+
+(defun fj-get-api-settings ()
+  "Return API settings from the current instance."
+  (let ((endpoint "/settings/api"))
+    (fj-get endpoint)))
+
+(defun fj-get-max-response-items ()
+  "Return the max response items setting from the current instance."
+  (let ((settings (fj-get-settings)))
+    (alist-get 'max_response_items settings)))
+
+(defun fj-get-swagger-json ()
+  "Return the full swagger JSON from the current instance."
+  (let ((url (format "%s/swagger.v1.json" fj-host)))
+    (fedi-http--get-json url)))
+
 ;;; UTILS
 
 (defun fj--property (prop)
@@ -110,11 +131,13 @@ Not used for items that are links.")
   "Get entry for KEY from `fj-buffer-spec', else return nil."
   (plist-get fj-buffer-spec key))
 
-(defun fj-issues-tl-own-repo-p ()
-  "T if repo is owned by `fj-user'."
-  ;; NB: is also T in issues TL!
-  (equal (fj--get-buffer-spec :owner)
-         fj-user))
+(defun fj-own-repo-p ()
+  "T if repo at point, or in current view, is owned by `fj-user'."
+  (or (eq major-mode 'fj-user-repo-tl-mode) ;; own repos listing
+      (and (eq major-mode 'fj-repo-tl-mode)
+           (equal fj-user (fj-get-tl-col 1)))
+      (and (eq major-mode 'fj-issue-tl-mode)
+           (equal fj-user (fj--get-buffer-spec :owner)))))
 
 (defun fj-issue-own-p ()
   "T if issue is authored by `fj-user'.
@@ -123,8 +146,7 @@ Works in issue view mode or in issues tl."
          (equal fj-user
                 (fj--get-buffer-spec :author)))
         ((eq major-mode 'fj-issue-tl-mode)
-         (let* ((entry (tabulated-list-get-entry))
-                (author (car (seq-elt entry 2))))
+         (let* ((author (fj-get-tl-col 2)))
            (equal fj-user author)))))
 
 (defun fj-comment-own-p ()
@@ -154,17 +176,20 @@ Works in issue view mode or in issues tl."
 (defun fj--repo-owner ()
   "Return repo owner, whatever view we are in."
   (if (eq major-mode #'fj-repo-tl-mode)
-      (let ((entry (tabulated-list-get-entry)))
-        (car (seq-elt entry 1)))
-    ;;(eq major-mode #'fj-user-repo-tl-mode)
+      (fj-get-tl-col 1)
     (fj--get-buffer-spec :owner)))
 
 (defun fj--repo-name ()
   "Return repo name, whatever view we are in."
   (or (fj--get-buffer-spec :repo)
       fj-current-repo
-      (let ((entry (tabulated-list-get-entry)))
-        (car (seq-elt entry 0)))))
+      (fj-get-tl-col 0)))
+
+(defun fj-get-tl-col (num)
+  "Return column number NUM from current tl entry."
+  (let ((entry (tabulated-list-get-entry)))
+    (car
+     (seq-elt entry num))))
 
 ;;; MACROS
 
@@ -186,7 +211,7 @@ Works in issue view mode or in issues tl."
 (defmacro fj-with-own-repo (&optional body)
   "Execute BODY if a repo owned by `fj-user'."
   (declare (debug t))
-  `(if (not (fj-issues-tl-own-repo-p))
+  `(if (not (fj-own-repo-p))
        (user-error "Not in a repo you own")
      ,body))
 
@@ -202,7 +227,7 @@ Works in issue view mode or in issues tl."
   "Execute BODY if issue authored or repo owned by `fj-user'."
   (declare (debug t))
   `(if (not (or (fj-issue-own-p)
-                (fj-issues-tl-own-repo-p)))
+                (fj-own-repo-p)))
        (user-error "Not an issue or repo you own")
      ,body))
 
@@ -322,6 +347,52 @@ JSON."
     (fj-authorized-request "DELETE"
       (fedi-http--delete url))))
 
+;;; REPOS TL UTILS
+
+(defun fj--tl-get-elt (number entry)
+  "Return element from column NUMBER from tabulated list ENTRY."
+  ;; this is run by `fj-tl-sort-pred' below, which is called on whole entries
+  ;; (nil [(blah)]) and not just the vector, so we have to cadr the entry.
+  ;; for other uses you prob want `fj-get-tl-col'
+  (car
+   (seq-elt
+    (cadr entry)
+    number)))
+
+(defun fj-tl-sort-pred (x y col &optional col-repo col-user)
+  "Predicate function for sorting numeric tl columns.
+X Y are tl entries to sort. COL, COL-REPO and COL-USER are numbers,
+corresponding to the (zero-indexed) tl column to search by. The
+first is for `fj-repo-tl-mode', the second for
+`fj-user-repo-tl-mode'."
+  ;; FIXME can we handle the col- args better than this?
+  (let* ((col (or col
+                  (if (eq major-mode 'fj-repo-tl-mode) col-repo col-user)))
+         (a (fj--tl-get-elt col x))
+         (b (fj--tl-get-elt col y)))
+    (> (string-to-number a)
+       (string-to-number b))))
+
+(defun fj-tl-sort-by-stars (x y)
+  "Predicate function for sorting repos by stars.
+X Y are tl entries to sort."
+  (fj-tl-sort-pred x y nil 2 1))
+
+(defun fj-tl-sort-by-issue-count (x y)
+  "Predicate function for sorting repos by issues count.
+X Y are tl entries to sort."
+  (fj-tl-sort-pred x y nil 4 3))
+
+(defun fj-tl-sort-by-issues (x y)
+  "Predicate function to sort issues by issue number.
+X and Y are sorting args."
+  (fj-tl-sort-pred x y 0))
+
+(defun fj-tl-sort-by-comment-count (x y)
+  "Predicate function to sort issues by number of comments.
+X and Y are sorting args."
+  (fj-tl-sort-pred x y 1))
+
 ;;; USER REPOS TL
 
 (defun fj-get-repo (repo owner)
@@ -369,9 +440,9 @@ JSON."
         tabulated-list-sort-key '("Updated" . t) ;; default
         tabulated-list-format
         '[("Name" 16 t)
-          ("★" 2 t)
+          ("★" 2 fj-tl-sort-by-stars :right-align t)
           ("" 2 t)
-          ("issues" 5 t)
+          ("issues" 5 fj-tl-sort-by-issue-count :right-align t)
           ("Lang" 10 t)
           ("Updated" 12 t)
           ("Description" 55 nil)])
@@ -423,6 +494,22 @@ JSON."
     (fedi-http--triage resp
                        (lambda ()
                          (message "Repo forked!" repo)))))
+
+(defun fj-delete-repo ()
+  "Delete repo at point, if you are its owner."
+  (interactive)
+  (let* ((repo (or (fj--get-buffer-spec :repo) ;; issues tl
+                   (fj-get-tl-col 0))) ;; own repos/search
+         (endpoint (format "repos/%s/%s/" fj-user repo)))
+    (if (not (fj-own-repo-p))
+        (user-error "Not your own repo")
+      (when (y-or-n-p
+             (format "Delete repo %s? [Permanent and cannot be undone]"
+                     repo))
+        (let ((resp (fj-delete endpoint)))
+          (fedi-http--triage resp
+                             (lambda ()
+                               (message "Repo %s deleted!" repo))))))))
 
 ;;; USER REPOS
 
@@ -510,6 +597,9 @@ Return the issue number."
                          cands))))
     (cadr item)))
 
+;; /repos/{owner}/{repo}/issues
+;; params: owner, repo, state, labels, q, type, milestones, since, before,
+;; created_by, assigned_by, mentioned_by, page, limit
 (defun fj-repo-get-issues (repo &optional owner state type query)
   "Return issues for REPO by OWNER.
 STATE is for issue status, a string of open, closed or all.
@@ -517,6 +607,7 @@ TYPE is item type: issue pull or all.
 QUERY is a search term to filter by."
   ;; FIXME: how to get issues by number, or get all issues?
   (let* ((endpoint (format "repos/%s/%s/issues" (or owner fj-user) repo))
+         ;; NB: get issues has no sort param!
          (params `(("state" . ,state)
                    ("limit" . "100")
                    ("type" . ,type)
@@ -824,8 +915,8 @@ NEW-BODY is the new comment text to send."
         ;; this is changed by `tabulated-list-sort' which sorts by col at point:
         tabulated-list-sort-key '("Updated" . t) ;; default
         tabulated-list-format
-        '[("#" 5 t)
-          ("💬" 3 t)
+        '[("#" 5 fj-tl-sort-by-issues :right-align)
+          ("💬" 3 fj-tl-sort-by-comment-count :right-align)
           ("Author" 10 t)
           ("Updated" 12 t) ;; instead of display, you could use a sort fun here
           ("Issue" 20 t)])
@@ -847,24 +938,28 @@ STATE is a string."
             (updated-str (format-time-string "%s" updated))
             (updated-display (fedi--relative-time-description updated nil :brief))
             (type (if .pull_request 'pull 'issue)))
+       ;; NB: avoid using propertize here as it creates cells with
+       ;; unreadable/hash #(blah) notation:
        `(nil ;; TODO: id
          [(,(number-to-string .number)
            id ,.id
            state ,.state
            type fj-issue-button
            item ,type
-           fj-url ,.html_url)
-          ,(propertize (number-to-string .comments)
-                       'face 'fj-figures-face
-                       'item type)
+           fj-url ,.html_url
+           fj-item-data ,issue)
+          (,(number-to-string .comments)
+           face fj-figures-face
+           item ,type)
           (,.user.username face fj-user-face
                            id ,.id
                            state ,.state
                            type  fj-issues-owner-button
                            item ,type)
-          ,(propertize updated-str
-                       'display updated-display
-                       'item type)
+          (,updated-str
+           display ,updated-display
+           face default
+           item ,type)
           (,.title face ,(if (equal .state "closed")
                              'fj-closed-issue-face
                            'fj-item-face)
@@ -990,16 +1085,17 @@ TYPE is the item type."
   ;; FIXME: this doesn't rly work with ```verbatim``` in md
   ;; NB: this must not break any md, otherwise `markdown-standalone' may
   ;; hang!
-  (while (re-search-forward fj-url-regex nil :no-error)
-    (unless
-        (save-excursion
-          (goto-char (1- (point)))
-          (or (markdown-inside-link-p)
-              ;; bbcode (seen in spam, breaks markdown if url replaced):
-              (let ((regex (concat "\\[url=" markdown-regex-uri "\\/\\]"
-                                   ".*" ; description
-                                   "\\[\\/url\\]")))
-                (thing-at-point-looking-at regex))))
+  (save-match-data
+    (while (re-search-forward fj-url-regex nil :no-error)
+      (unless
+          (save-excursion
+            (goto-char (1- (point)))
+            (or (markdown-inside-link-p)
+                ;; bbcode (seen in spam, breaks markdown if url replaced):
+                (let ((regex (concat "\\[url=" markdown-regex-uri "\\/\\]"
+                                     ".*" ; description
+                                     "\\[\\/url\\]")))
+                  (thing-at-point-looking-at regex)))))
       (replace-match
        (concat "<" (match-string 0) ">")))))
 
@@ -1020,7 +1116,8 @@ Buffer-local variable `fj-previous-window-config' holds the config."
 JSON is the item's data to process the link with."
   ;; NB: make sure this doesn't leak into our issue buffers!
   (let ((buf "*fj-md*")
-        str)
+        str
+        (body (decode-coding-string body 'utf-8)))
     ;; shr.el fucks windows up, so we save and restore:
     (setq fj-previous-window-config
           (list (current-window-configuration)
@@ -1110,6 +1207,7 @@ AUTHOR is of comment, OWNER is of repo."
         (propertize " "
                     'face 'fj-item-author-face)
         (fj-author-or-owner-str .user.username nil owner)
+        (fj-edited-str-maybe .created_at .updated_at)
         (propertize (fj-issue-right-align-str stamp)
                     'face 'fj-item-author-face)
         "\n\n"
@@ -1127,12 +1225,16 @@ OWNER is the repo owner."
   (cl-loop for c in comments
            concat (fj-format-comment c author owner)))
 
+(defun fj-prop-item-flag (str)
+  "Propertize STR as author face in box."
+  (propertize str
+              'face '(:inherit fj-item-author-face :box t)))
+
 (defun fj-author-or-owner-str (username author &optional owner)
   "If USERNAME is equal either AUTHOR or OWNER, return a boxed string."
   (let ((name (or owner author)))
     (if (equal name username)
-        (propertize (if owner "owner" "author")
-                    'face '(:inherit fj-item-author-face :box t))
+        (fj-prop-item-flag (if owner "owner" "author"))
       "")))
 
 (defun fj-render-labels (labels)
@@ -1142,6 +1244,17 @@ OWNER is the repo owner."
                    concat (concat (propertize (alist-get 'name l)
                                               'face 'fj-issue-label-face)
                                   " "))))
+
+(defun fj-edited-str-maybe (created updated)
+  "If UPDATED timestamp is after CREATED timestamp, return edited str."
+  (let ((c-secs (time-to-seconds
+                 (date-to-time created)))
+        (u-secs (time-to-seconds
+                 (date-to-time updated))))
+    (when (> u-secs c-secs)
+      (concat (propertize " "
+                          'face 'fj-item-author-face)
+              (fj-prop-item-flag "edited")))))
 
 (defun fj-render-item (repo owner item number timeline &optional reload)
   "Render ITEM number NUMBER, in REPO and its TIMELINE.
@@ -1166,6 +1279,10 @@ RELOAD mean we reloaded."
            (propertize
             (concat
              "State: " .state
+             (if (string= "closed" .state)
+                 (concat " " (fedi--relative-time-description
+                              (date-to-time .closed_at)))
+               "")
              (if .labels
                  (fj-render-labels .labels)
                "")
@@ -1191,6 +1308,9 @@ RELOAD mean we reloaded."
                          'fj-byline t
                          'fj-issue item)
              (fj-author-or-owner-str .user.username nil owner)
+             ;; FIXME: this diffing will mark any issue as edited if it has
+             ;; merely been commented on.
+             ;; (fj-edited-str-maybe .created_at .updated_at)
              (propertize (fj-issue-right-align-str stamp)
                          'face 'fj-item-author-face)
              "\n\n"
@@ -1517,9 +1637,9 @@ If TOPIC, QUERY is a search for topic keywords."
         tabulated-list-format
         '[("Name" 12 t)
           ("Owner" 12 t)
-          ("★" 2 t)
+          ("★" 2 fj-tl-sort-by-stars :right-align t)
           ("" 2 t)
-          ("issues" 5 t)
+          ("issues" 5 fj-tl-sort-by-issue-count :right-align t)
           ("Lang" 10 t)
           ("Updated" 12 t)
           ("Description" 55 nil)])
@@ -1557,7 +1677,8 @@ NO-OWNER means don't display owner column (user repos view)."
                                id ,.id
                                type fj-user-repo-button
                                item repo
-                               fj-url ,.html_url)
+                               fj-url ,.html_url
+                               fj-item-data ,r)
                        ,(unless no-owner
                           `(,.owner.username face fj-user-face
                                              id ,.id
@@ -1571,12 +1692,13 @@ NO-OWNER means don't display owner column (user repos view)."
                         id ,.id face fj-figures-face
                         item repo)
                        ,.language
-                       ,(propertize updated-str
-                                    'display updated-display
-                                    'item 'repo)
-                       ,(propertize (string-replace "\n" " " .description)
-                                    'face 'fj-comment-face
-                                    'item 'repo)]))))))
+                       (,updated-str
+                        display ,updated-display
+                        face default
+                        item repo)
+                       (,(string-replace "\n" " " .description)
+                        face 'fj-comment-face
+                        item repo)]))))))
 
 (defun fj-repo-search-tl (query &optional topic)
   "Search repos for QUERY, and display a tabulated list of results.
@@ -1601,21 +1723,18 @@ TOPIC, a boolean, means search in repo topics."
 (defun fj-repos-tl-render (buf entries mode)
   "Render a tabulated list in BUF fer, with ENTRIES, in MODE.
 Optionally specify repo OWNER and URL."
-  (with-current-buffer (get-buffer-create buf)
-    (setq tabulated-list-entries entries)
-    (funcall mode)
-    (tabulated-list-init-header)
-    (tabulated-list-print)
-    (cond
-     ;; FIXME: when called by reload, keep no switch:
-     ;; ((string= buf-name prev-buf) ; same repo
-     ;;  nil)
-     ;; ((string-suffix-p "-issues*" prev-buf) ; diff repo
-     ;;  (switch-to-buffer (current-buffer)))
-     ((string-prefix-p "*fj-search" buf) ;; any search
-      (switch-to-buffer (current-buffer)))
-     (t                             ; new buf
-      (switch-to-buffer-other-window (current-buffer))))))
+  (let ((last-buf (buffer-name (current-buffer))))
+    (with-current-buffer (get-buffer-create buf)
+      (setq tabulated-list-entries entries)
+      (funcall mode)
+      (tabulated-list-init-header)
+      (tabulated-list-print)
+      (cond ((or (string= buf last-buf) ;; reloading
+                 (string-prefix-p "*fj-search" buf)) ;; any search
+             ;; (string-suffix-p "-issues*" prev-buf) ; diff repo
+             (switch-to-buffer (current-buffer)))
+            (t ;; new buf
+             (switch-to-buffer-other-window (current-buffer)))))))
 
 ;;; TL ACTIONS
 
@@ -1648,10 +1767,8 @@ Optionally specify repo OWNER and URL."
   (if (eq major-mode #'fj-user-repo-tl-mode)
       (user-error "Already viewing user repos")
     (fj-with-entry
-     (let* ((entry (tabulated-list-get-entry))
-            ;; in issues TL, we want ISSUE author, not REPO owner:
-            (owner (if (eq major-mode #'fj-issue-tl-mode)
-                       (car (seq-elt entry 2))
+     (let* ((owner (if (eq major-mode #'fj-issue-tl-mode)
+                       (fj-get-tl-col 2) ;; ISSUE author not REPO owner
                      (fj--repo-owner))))
        (fj-user-repos-tl owner)))))
 
@@ -1709,6 +1826,18 @@ Or if viewing a repo's issues, use its clone_url."
        (kill-new url)
        (message (format "Copied: %s" url))))))
 
+(defun fj-copy-item-url ()
+  "Copy URL of current item, either issue or PR."
+  (interactive)
+  (let ((url
+         ;; issues tl view:
+         (or (fj--property 'fj-url)
+             ;; issue view:
+             (alist-get 'html_url
+                        (fj--property 'fj-item-data)))))
+    (kill-new url)
+    (message (format "Copied: %s" url))))
+
 ;; TODO: star toggle
 
 (defun fj-get-repo-files (repo owner &optional ref)
@@ -1760,6 +1889,26 @@ Optionally specify REF, a commit, branch, or tag."
         (owner (fj--repo-owner)))
     (fj-repo-readme repo owner)))
 
+(defun fj-repo-tl-stargazers (&optional page limit)
+  "Prompt for a repo stargazer, and view their repos.
+PAGE and LIMIT are for `fj-get-stargazers'."
+  (interactive)
+  (let* ((repo (fj--repo-name))
+         (owner (fj--repo-owner))
+         (gazers (fj-get-stargazers repo owner page limit))
+         (gazers-list (cl-loop for u in gazers
+                               collect (alist-get 'login u)))
+         (choice (completing-read "Stargazer: " gazers-list)))
+    (fj-user-repos-tl choice)))
+
+(defun fj-get-stargazers (repo owner &optional page limit)
+  "Get stargazers for REPO by OWNER.
+Optionally set PAGE and LIMIT."
+  (let ((endpoint (format "repos/%s/%s/stargazers" owner repo))
+        (params `(("page" . ,page)
+                  ("limit" . ,limit))))
+    (fj-get endpoint)))
+
 ;;; TL ACTIONS, ISSUES ONLY
 
 (defun fj-issues-tl-view (&optional _)
@@ -1777,14 +1926,12 @@ Optionally specify REF, a commit, branch, or tag."
   "Edit issue from tabulated issues listing."
   (interactive)
   (fj-with-own-entry
-   (let* ((entry (tabulated-list-get-entry))
-          (number (car (seq-first entry)))
+   (let* ((number (fj-get-tl-col 0))
           (owner (fj--get-buffer-spec :owner))
-          (title (car (seq-elt entry 4)))
+          (title (fj-get-tl-col 4))
           (repo (fj--get-buffer-spec :repo))
           (data (fj-get-item repo owner number))
           (old-body (alist-get 'body data)))
-     ;; (fj-issue-edit fj-current-repo owner number))))
      (fj-issue-compose :edit nil 'issue old-body)
      (setq fj-compose-issue-title title
            fj-compose-repo repo
@@ -1796,14 +1943,10 @@ Optionally specify REF, a commit, branch, or tag."
   "Comment on issue from tabulated issues listing."
   (interactive)
   (fj-with-entry
-   (let* ((entry (tabulated-list-get-entry))
-          (number (car (seq-first entry)))
+   (let* ((number (fj-get-tl-col 0))
           (owner (fj--get-buffer-spec :owner))
           (repo (fj--get-buffer-spec :repo))
-          (title (car (seq-elt entry 4))))
-     ;; (comment (read-string
-     ;; (format "Comment on issue #%s: " number))))
-     ;; (fj-issue-comment fj-current-repo owner number comment))))
+          (title ((fj-get-tl-col 4))))
      ;; TODO: display repo in status fields, but not editable?
      (fj-issue-compose nil #'fj-compose-comment-mode 'comment)
      (setq fj-compose-repo repo
@@ -2159,10 +2302,9 @@ Allow quick jumping to an element in a tabulated list view."
     (save-excursion
       (goto-char (point-min))
       (while (tabulated-list-get-entry)
-        (let* ((entry (tabulated-list-get-entry))
-               (name (if (eq major-mode #'fj-issue-tl-mode)
-                         (car (seq-elt entry 4))
-                       (car (seq-first entry)))))
+        (let* ((name (if (eq major-mode #'fj-issue-tl-mode)
+                         (fj-get-tl-col 4)
+                       (fj-get-tl-col 0))))
           (push `(,name . ,(point)) alist))
         (next-line)))
     alist))
