@@ -503,7 +503,9 @@ X and Y are sorting args."
          (endpoint (format "repos/%s/%s/" fj-user repo)))
     (if (not (fj-own-repo-p))
         (user-error "Not your own repo")
-      (when (y-or-n-p (format "Delete repo %s?" repo))
+      (when (y-or-n-p
+             (format "Delete repo %s? [Permanent and cannot be undone]"
+                     repo))
         (let ((resp (fj-delete endpoint)))
           (fedi-http--triage resp
                              (lambda ()
