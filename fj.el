@@ -144,8 +144,7 @@ Works in issue view mode or in issues tl."
          (equal fj-user
                 (fj--get-buffer-spec :author)))
         ((eq major-mode 'fj-issue-tl-mode)
-         (let* ((entry (tabulated-list-get-entry))
-                (author (car (seq-elt entry 2))))
+         (let* ((author (fj-get-tl-col 2)))
            (equal fj-user author)))))
 
 (defun fj-comment-own-p ()
@@ -175,17 +174,14 @@ Works in issue view mode or in issues tl."
 (defun fj--repo-owner ()
   "Return repo owner, whatever view we are in."
   (if (eq major-mode #'fj-repo-tl-mode)
-      (let ((entry (tabulated-list-get-entry)))
-        (car (seq-elt entry 1)))
-    ;;(eq major-mode #'fj-user-repo-tl-mode)
+      (fj-get-tl-col 1)
     (fj--get-buffer-spec :owner)))
 
 (defun fj--repo-name ()
   "Return repo name, whatever view we are in."
   (or (fj--get-buffer-spec :repo)
       fj-current-repo
-      (let ((entry (tabulated-list-get-entry)))
-        (car (seq-elt entry 0)))))
+      (fj-get-tl-col 0)))
 
 (defun fj-get-tl-col (num)
   "Return column number NUM from current tl entry."
@@ -364,6 +360,7 @@ X Y are tl entries to sort. COL-SEARCH and COL-USER are numbers,
 corresponding to the (zero-indexed) tl column to search by. The
 first is for `fj-repo-tl-mode', the second for
 `fj-user-repo-tl-mode'."
+  ;; FIXME can we handle the col- args better than this?
   (let* ((col (if (eq major-mode 'fj-repo-tl-mode) col-search col-user))
          (a (fj--tl-get-elt col x))
          (b (fj--tl-get-elt col y)))
@@ -1756,10 +1753,8 @@ Optionally specify repo OWNER and URL."
   (if (eq major-mode #'fj-user-repo-tl-mode)
       (user-error "Already viewing user repos")
     (fj-with-entry
-     (let* ((entry (tabulated-list-get-entry))
-            ;; in issues TL, we want ISSUE author, not REPO owner:
-            (owner (if (eq major-mode #'fj-issue-tl-mode)
-                       (car (seq-elt entry 2))
+     (let* ((owner (if (eq major-mode #'fj-issue-tl-mode)
+                       (fj-get-tl-col 2) ;; ISSUE author not REPO owner
                      (fj--repo-owner))))
        (fj-user-repos-tl owner)))))
 
@@ -1917,14 +1912,12 @@ Optionally set PAGE and LIMIT."
   "Edit issue from tabulated issues listing."
   (interactive)
   (fj-with-own-entry
-   (let* ((entry (tabulated-list-get-entry))
-          (number (car (seq-first entry)))
+   (let* ((number (fj-get-tl-col 0))
           (owner (fj--get-buffer-spec :owner))
-          (title (car (seq-elt entry 4)))
+          (title (fj-get-tl-col 4))
           (repo (fj--get-buffer-spec :repo))
           (data (fj-get-item repo owner number))
           (old-body (alist-get 'body data)))
-     ;; (fj-issue-edit fj-current-repo owner number))))
      (fj-issue-compose :edit nil 'issue old-body)
      (setq fj-compose-issue-title title
            fj-compose-repo repo
@@ -1936,14 +1929,10 @@ Optionally set PAGE and LIMIT."
   "Comment on issue from tabulated issues listing."
   (interactive)
   (fj-with-entry
-   (let* ((entry (tabulated-list-get-entry))
-          (number (car (seq-first entry)))
+   (let* ((number (fj-get-tl-col 0))
           (owner (fj--get-buffer-spec :owner))
           (repo (fj--get-buffer-spec :repo))
-          (title (car (seq-elt entry 4))))
-     ;; (comment (read-string
-     ;; (format "Comment on issue #%s: " number))))
-     ;; (fj-issue-comment fj-current-repo owner number comment))))
+          (title ((fj-get-tl-col 4))))
      ;; TODO: display repo in status fields, but not editable?
      (fj-issue-compose nil #'fj-compose-comment-mode 'comment)
      (setq fj-compose-repo repo
@@ -2299,10 +2288,9 @@ Allow quick jumping to an element in a tabulated list view."
     (save-excursion
       (goto-char (point-min))
       (while (tabulated-list-get-entry)
-        (let* ((entry (tabulated-list-get-entry))
-               (name (if (eq major-mode #'fj-issue-tl-mode)
-                         (car (seq-elt entry 4))
-                       (car (seq-first entry)))))
+        (let* ((name (if (eq major-mode #'fj-issue-tl-mode)
+                         (fj-get-tl-col 4)
+                       (fj-get-tl-col 0))))
           (push `(,name . ,(point)) alist))
         (next-line)))
     alist))
