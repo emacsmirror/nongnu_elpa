@@ -131,11 +131,13 @@ Not used for items that are links.")
   "Get entry for KEY from `fj-buffer-spec', else return nil."
   (plist-get fj-buffer-spec key))
 
-(defun fj-issues-tl-own-repo-p ()
-  "T if repo is owned by `fj-user'."
-  ;; NB: is also T in issues TL!
-  (equal (fj--get-buffer-spec :owner)
-         fj-user))
+(defun fj-own-repo-p ()
+  "T if repo at point, or in current view, is owned by `fj-user'."
+  (or (eq major-mode 'fj-user-repo-tl-mode) ;; own repos listing
+      (and (eq major-mode 'fj-repo-tl-mode)
+           (equal fj-user (fj-get-tl-col 1)))
+      (and (eq major-mode 'fj-issue-tl-mode)
+           (equal fj-user (fj--get-buffer-spec :owner)))))
 
 (defun fj-issue-own-p ()
   "T if issue is authored by `fj-user'.
@@ -209,7 +211,7 @@ Works in issue view mode or in issues tl."
 (defmacro fj-with-own-repo (&optional body)
   "Execute BODY if a repo owned by `fj-user'."
   (declare (debug t))
-  `(if (not (fj-issues-tl-own-repo-p))
+  `(if (not (fj-own-repo-p))
        (user-error "Not in a repo you own")
      ,body))
 
@@ -225,7 +227,7 @@ Works in issue view mode or in issues tl."
   "Execute BODY if issue authored or repo owned by `fj-user'."
   (declare (debug t))
   `(if (not (or (fj-issue-own-p)
-                (fj-issues-tl-own-repo-p)))
+                (fj-own-repo-p)))
        (user-error "Not an issue or repo you own")
      ,body))
 
