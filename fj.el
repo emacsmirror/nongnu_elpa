@@ -936,6 +936,8 @@ STATE is a string."
             (updated-str (format-time-string "%s" updated))
             (updated-display (fedi--relative-time-description updated nil :brief))
             (type (if .pull_request 'pull 'issue)))
+       ;; NB: avoid using propertize here as it creates cells with
+       ;; unreadable/hash #(blah) notation:
        `(nil ;; TODO: id
          [(,(number-to-string .number)
            id ,.id
@@ -943,17 +945,18 @@ STATE is a string."
            type fj-issue-button
            item ,type
            fj-url ,.html_url)
-          ,(propertize (number-to-string .comments)
-                       'face 'fj-figures-face
-                       'item type)
+          (,(number-to-string .comments)
+           face fj-figures-face
+           item ,type)
           (,.user.username face fj-user-face
                            id ,.id
                            state ,.state
                            type  fj-issues-owner-button
                            item ,type)
-          ,(propertize updated-str
-                       'display updated-display
-                       'item type)
+          (,updated-str
+           display ,updated-display
+           face default
+           item ,type)
           (,.title face ,(if (equal .state "closed")
                              'fj-closed-issue-face
                            'fj-item-face)
@@ -1685,12 +1688,13 @@ NO-OWNER means don't display owner column (user repos view)."
                         id ,.id face fj-figures-face
                         item repo)
                        ,.language
-                       ,(propertize updated-str
-                                    'display updated-display
-                                    'item 'repo)
-                       ,(propertize (string-replace "\n" " " .description)
-                                    'face 'fj-comment-face
-                                    'item 'repo)]))))))
+                       (,updated-str
+                        display ,updated-display
+                        face default
+                        item repo)
+                       (,(string-replace "\n" " " .description)
+                        face 'fj-comment-face
+                        item repo)]))))))
 
 (defun fj-repo-search-tl (query &optional topic)
   "Search repos for QUERY, and display a tabulated list of results.
