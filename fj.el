@@ -1571,12 +1571,12 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
   (let ((match (string-match "<a[^\n]*>\\(?2:[^\n]*\\)</a>" str)))
     (match-string 2 str))))
 
-(defun fj-propertize-link (str &optional type item)
+(defun fj-propertize-link (str &optional type item face)
   "Propertize a link with text STR.
 Optionally set link TYPE and ITEM number."
   ;; TODO: poss to refactor with `fedi-link-props'?
   (propertize str
-              'face 'shr-link
+              'face (or face 'shr-link)
               'mouse-face 'highlight
               'shr-tabstop t
               'keymap fj-link-keymap
@@ -2235,9 +2235,9 @@ Optionally set LIMIT to results."
 (defun fj-get-notifications (&optional all) ; status-types subject-type)
                                         ; before since page limit
   "GET notifications for `fj-user'.
-ALL is a boolean string, meaning also show read notifications.
-STATUS-TYPES and SUBJECT-TYPE are array strings."
-  (let ((params `(("all" . ,all)))
+ALL is a boolean, meaning also return read notifications."
+  ;; STATUS-TYPES and SUBJECT-TYPE are array strings."
+  (let ((params `(("all" . ,(symbol-name all))))
         (endpoint "notifications"))
     (fj-get endpoint params)))
 
@@ -2246,13 +2246,31 @@ STATUS-TYPES and SUBJECT-TYPE are array strings."
   (alist-get 'new
              (fj-get "notifications/new")))
 
-(defun fj-view-notifications ()
-  "View notifications for `fj-user'."
+(defun fj-view-notifications (&optional all)
+  "View notifications for `fj-user'.
+ALL is a boolean, meaning also show read notifcations."
   (interactive)
-  (let ((buf "*fj-notifications*") ;"*fj-notifications-%s" read-flag)))
-        (data (fj-get-notifications "t")))
+  (let ((buf (format "*fj-notifications-%s*"
+                     (if all "all" "unread")))
+        (data (fj-get-notifications all)))
     (fedi-with-buffer buf 'fj-issue-view-mode nil
       (fj-render-notifications data))))
+
+(defun fj-view-notifications-all ()
+  "View all notifications for `fj-user'."
+  (interactive)
+  (fj-view-notifications t))
+
+(defun fj-view-notifications-unread ()
+  "View unread notifications for `fj-user'."
+  (interactive)
+  (fj-view-notifications))
+
+(defun fj-notifications-unread-toggle ()
+  "Switch between showing all notifications, and only showing unread."
+  (interactive)
+  (fj-view-notifications
+   (not (string-suffix-p "all*" (buffer-name)))))
 
 (defun fj-render-notifications (data)
   "Render notifications DATA."
@@ -2263,19 +2281,23 @@ STATUS-TYPES and SUBJECT-TYPE are array strings."
   "Render NOTIF."
   (let-alist notif
     ;; notifs don't have item #, so we get from URL:
-    (let ((number (car (last (split-string .subject.url "/")))))
+    (let ((number (car (last (split-string .subject.url "/"))))
+          (unread (eq t .unread)))
       (insert
        (propertize (concat "#" number)
                    'face 'fj-comment-face)
        (concat " "
                (propertize
-                (fj-propertize-link .subject.title 'notif number)
+                (fj-propertize-link .subject.title 'notif number
+                                    (unless unread 'fj-comment-face))
                 'fj-repo .repository.name
                 'fj-owner .repository.owner.login
                 'fj-url .subject.html_url
                 'fj-byline t) ; for nav
                "\n"
-               .repository.owner.login "/" .repository.name
+               (propertize
+                (concat .repository.owner.login "/" .repository.name)
+                'face (when (not unread) 'fj-comment-face))
                "\n"
                fedi-horiz-bar fedi-horiz-bar
                "\n\n")))))
