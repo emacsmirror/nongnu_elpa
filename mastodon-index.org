@@ -133,7 +133,7 @@
 | TAB, M-n         | mastodon-tl--next-tab-item                        | Move to the next interesting item.                                             |
 | v                | mastodon-tl--poll-vote                            | If there is a poll at point, prompt user for OPTION to vote on it.             |
 | S-TAB, <backtab> | mastodon-tl--previous-tab-item                    | Move to the previous interesting item.                                         |
-|                  | mastodon-tl--remote-tag-timeline                  | Call `mastodon-tl--get-remote-local-timeline' but for a TAG                    |
+|                  | mastodon-tl--remote-tag-timeline                  | Call `mastodon-tl--get-remote-local-timeline' but for a TAG timeline.          |
 | Z                | mastodon-tl--report-to-mods                       | Report the author of the toot at point to your instance moderators.            |
 | SPC              | mastodon-tl--scroll-up-command                    | Call `scroll-up-command', loading more toots if necessary.                     |
 |                  | mastodon-tl--single-toot                          | View toot at point in separate buffer.                                         |
