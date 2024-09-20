@@ -174,7 +174,7 @@ Otherwise return nil."
   (let ((username (mastodon-client--form-user-from-vars))
         (user-details (mastodon-client--general-read "active-user")))
     (when (and user-details
-               (equal (plist-get user-details :username) username))
+               (string= (plist-get user-details :username) username))
       user-details)))
 
 (defun mastodon-client--active-user ()

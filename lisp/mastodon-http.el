@@ -53,9 +53,9 @@ Optionally specify VERSION in format vX."
   (concat mastodon-instance-url "/api/"
           (or version mastodon-http--api-version) "/" endpoint))
 
-(defun mastodon-http--api-search ()
-  "Return Mastodon API url for the /search endpoint (v2)."
-  (format "%s/api/v2/search" mastodon-instance-url))
+(defun mastodon-http--api-v2 (endpoint)
+  "Return Mastodon API v2 URL for ENDPOINT."
+  (mastodon-http--api endpoint "v2"))
 
 (defun mastodon-http--response ()
   "Capture response buffer content as string."
@@ -137,6 +137,13 @@ Used for API form data parameters that take an array."
   (cl-loop for x in array
            collect (cons param-str x)))
 
+(defun mastodon-http--concat-params-to-url (url params)
+  "Build a query string with PARAMS and concat to URL."
+  (if params
+      (concat url "?"
+              (mastodon-http--build-params-string params))
+    url))
+
 (defun mastodon-http--post (url
                             &optional params headers unauthenticated-p json)
   "POST synchronously to URL, optionally with PARAMS and HEADERS.
@@ -164,13 +171,6 @@ the request data. If it is :raw, just use the plain params."
       (with-temp-buffer
         (mastodon-http--url-retrieve-synchronously url)))
     unauthenticated-p))
-
-(defun mastodon-http--concat-params-to-url (url params)
-  "Build a query string with PARAMS and concat to URL."
-  (if params
-      (concat url "?"
-              (mastodon-http--build-params-string params))
-    url))
 
 (defun mastodon-http--get (url &optional params silent)
   "Make synchronous GET request to URL.
@@ -249,6 +249,10 @@ Callback to `mastodon-http--get-response-async', usually
                       (string-prefix-p "\n[" json-string)))
              (error "%s" json-string))
             (t
+             ;; instance may return error in JSON e.g. ((error . "Record not
+             ;; found")) for a null endpoint. but we don't error here because
+             ;; sometimes we just want to check for such an error in an
+             ;; if/cond.
              `(,(json-read-from-string json-string) . ,headers))))))
 
 (defun mastodon-http--process-headers ()
@@ -361,7 +365,7 @@ item uploaded, and `mastodon-toot--update-status-fields' is run."
                     ;; this is how the mangane akkoma web client does it
                     ;; and it seems easier than the other options!
                     (when (and caption
-                               (not (equal caption (alist-get 'description data))))
+                               (not (string= caption (alist-get 'description data))))
                       (let ((url (mastodon-http--api (format "media/%s" id))))
                         ;; (message "PUTting image description")
                         (mastodon-http--put url desc)))

@@ -8,7 +8,7 @@
 
 @dircategory Emacs
 @direntry
-* Mastodon: (mastodon). Client for Mastodon on ActivityPub networks.
+* Mastodon: (mastodon). Client for fediverse services using the Mastodon API.
 @end direntry
 
 @finalout
@@ -558,6 +558,14 @@ instance.
 @itemize
 @item
 @samp{mastodon-switch-to-buffer}: switch between mastodon buffers.
+@end itemize
+
+
+@itemize
+@item
+@samp{mastodon-tl--get-remote-local-timeline}: View a local timeline of a remote instance.
+@item
+@samp{mastodon-tl--remote-tag-timeline}: View a tag timeline on a remote instance.
 @end itemize
 
 

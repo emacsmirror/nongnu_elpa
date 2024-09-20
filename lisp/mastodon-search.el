@@ -44,7 +44,6 @@
 (autoload 'mastodon-tl--timeline "mastodon-tl")
 (autoload 'mastodon-tl--toot "mastodon-tl")
 (autoload 'mastodon-tl--buffer-property "mastodon-tl")
-(autoload 'mastodon-http--api-search "mastodon-http")
 
 (defvar mastodon-toot--completion-style-for-mentions)
 (defvar mastodon-instance-url)
@@ -64,11 +63,13 @@
 Returns a nested list containing user handle, display name, and URL."
   (let* ((url (mastodon-http--api "accounts/search"))
          (response
-          (if (equal mastodon-toot--completion-style-for-mentions "following")
-              (mastodon-http--get-json
-               url `(("q" . ,query) ("following" . "true"))
-               :silent)
-            (mastodon-http--get-json url `(("q" . ,query)) :silent))))
+          (mastodon-http--get-json
+           url
+           `(("q" . ,query) ;; NB: nil can break params (but works for me)
+             ,(when (string= "following"
+                           mastodon-toot--completion-style-for-mentions)
+                '("following" . "true")))
+           :silent)))
     (mapcar #'mastodon-search--get-user-info-@ response)))
 
 ;; functions for tags completion:
@@ -76,7 +77,7 @@ Returns a nested list containing user handle, display name, and URL."
 (defun mastodon-search--search-tags-query (query)
   "Return an alist containing tag strings plus their URLs.
 QUERY is the string to search."
-  (let* ((url (mastodon-http--api-search))
+  (let* ((url (mastodon-http--api-v2 "search"))
          (params `(("q" . ,query) ("type" . "hashtags")))
          (response (mastodon-http--get-json url params :silent))
          (tags (alist-get 'hashtags response)))
@@ -100,10 +101,9 @@ QUERY is the string to search."
   "Display a list of tags trending on your instance.
 TYPE is a string, either tags, statuses, or links.
 PRINT-FUN is the function used to print the data from the response."
-  (let* ((url (mastodon-http--api
-               (format "trends/%s" type)))
+  (let* ((url (mastodon-http--api (format "trends/%s" type)))
          ;; max for statuses = 40, for others = 20
-         (limit (if (equal type "statuses")
+         (limit (if (string= type "statuses")
                     '("limit" . "40")
                   '("limit" . "20")))
          (offset '(("offset" . "0")))
@@ -113,11 +113,10 @@ PRINT-FUN is the function used to print the data from the response."
     (with-mastodon-buffer buffer #'mastodon-mode nil
       (mastodon-tl--set-buffer-spec (buffer-name buffer)
                                     (format "trends/%s" type)
-                                    print-fun nil
-                                    params)
+                                    print-fun nil params)
       (mastodon-search--insert-heading "trending" type)
       (funcall print-fun data)
-      (unless (equal type "statuses")
+      (unless (string= type "statuses")
         (goto-char (point-min))))))
 
 ;; functions for mastodon search
@@ -134,16 +133,15 @@ Optionally add string TYPE after HEADING."
   (mastodon-tl--set-face
    (concat "\n " mastodon-tl--horiz-bar "\n "
            (upcase str) " "
-           (if type (upcase type) "") "\n"
+           (when type (upcase type)) "\n"
            " " mastodon-tl--horiz-bar (unless no-newline "\n"))
    'success))
 
 (defvar mastodon-search-types
   '("statuses" "accounts" "hashtags"))
 
-(defun mastodon-search--query (query
-                               &optional type limit
-                               following account-id offset)
+(defun mastodon-search--query (query &optional type limit
+                                     following account-id offset)
   "Prompt for a search QUERY and return accounts, statuses, and hashtags.
 TYPE is a member of `mastodon-search-types'.
 LIMIT is a number as string, up to 40, with 40 the default.
@@ -154,16 +152,14 @@ OFFSET is a number as string, means to skip that many results. It
 is used for pagination."
   ;; TODO: handle no results
   (interactive "sSearch mastodon for: ")
-  (let* ((url (mastodon-http--api-search))
-         (following (when (or following
-                              (equal current-prefix-arg '(4)))
+  (let* ((url (mastodon-http--api-v2 "search"))
+         (following (when (or following (eq current-prefix-arg '(4)))
                       "true"))
          (type (or type
-                   (if (equal current-prefix-arg '(4))
+                   (if (eq current-prefix-arg '(4))
                        "accounts" ; if FOLLOWING, must be "accounts"
                      (completing-read "Search type: "
-                                      mastodon-search-types
-                                      nil t))))
+                                      mastodon-search-types nil :match))))
          (limit (or limit "40"))
          (offset (or offset "0"))
          (buffer (format "*mastodon-search-%s-%s*" type query))
@@ -175,26 +171,20 @@ is used for pagination."
                               ,(when following `("following" . ,following))
                               ,(when account-id `("account_id" . ,account-id)))))
          (response (mastodon-http--get-json url params))
-         (accts (when (equal type "accounts")
-                  (alist-get 'accounts response)))
-         (tags (when (equal type "hashtags")
-                 (alist-get 'hashtags response)))
-         (statuses (when (equal type "statuses")
-                     (alist-get 'statuses response))))
+         (items (alist-get (intern type) response)))
     (with-mastodon-buffer buffer #'mastodon-mode nil
       (mastodon-search-mode)
       (mastodon-search--insert-heading type)
-      ;; user results:
-      (cond ((equal type "accounts")
-             (mastodon-search--render-response accts type buffer params
+      (cond ((string= type "accounts")
+             (mastodon-search--render-response items type buffer params
                                                'mastodon-views--insert-users-propertized-note
                                                'mastodon-views--insert-users-propertized-note))
-            ((equal type "hashtags")
-             (mastodon-search--render-response tags type buffer params
+            ((string= type "hashtags")
+             (mastodon-search--render-response items type buffer params
                                                'mastodon-search--print-tags
                                                'mastodon-search--print-tags))
-            ((equal type "statuses")
-             (mastodon-search--render-response statuses type buffer params
+            ((string= type "statuses")
+             (mastodon-search--render-response items type buffer params
                                                #'mastodon-tl--timeline
                                                #'mastodon-tl--timeline)))
       (goto-char (point-min))
@@ -204,7 +194,7 @@ is used for pagination."
 
 (defun mastodon-search-insert-no-results (&optional thing)
   "Insert a no results message for object THING."
-  (let ((thing (or thing "nothing")))
+  (let ((thing (or thing "items")))
     (insert
      (propertize (format "Looks like search returned no %s." thing)
                  'face 'font-lock-comment-face))))
@@ -216,28 +206,26 @@ BUFFER, PARAMS, and UPDATE-FUN are for `mastodon-tl--buffer-spec'."
   (if (not data)
       (mastodon-search-insert-no-results type)
     (funcall insert-fun data))
-  ;; (mapc #'mastodon-tl--toot data))
   (mastodon-tl--set-buffer-spec buffer "search"
-                                update-fun
-                                nil params))
+                                update-fun nil params))
 
 (defun mastodon-search--buf-type ()
   "Return search buffer type, a member of `mastodon-search-types'."
   ;; called in `mastodon-tl--get-buffer-type'
   (let* ((spec (mastodon-tl--buffer-property 'update-params)))
-    (alist-get "type" spec nil nil #'equal)))
+    (alist-get "type" spec nil nil #'string=)))
 
 (defun mastodon-search--query-cycle ()
   "Cycle through search types: accounts, hashtags, and statuses."
   (interactive)
   (let* ((spec (mastodon-tl--buffer-property 'update-params))
-         (type (alist-get "type" spec nil nil #'equal))
-         (query (alist-get "q" spec nil nil #'equal)))
-    (cond ((equal type "hashtags")
+         (type (alist-get "type" spec nil nil #'string=))
+         (query (alist-get "q" spec nil nil #'string=)))
+    (cond ((string= type "hashtags")
            (mastodon-search--query query "accounts"))
-          ((equal type "accounts")
+          ((string= type "accounts")
            (mastodon-search--query query "statuses"))
-          ((equal type "statuses")
+          ((string= type "statuses")
            (mastodon-search--query query "hashtags")))))
 
 (defun mastodon-search--query-accounts-followed (query)
@@ -277,9 +265,8 @@ If NOTE is non-nil, include user's profile note. This is also
                   'mastodon-handle (concat "@" (cadr user))
 		  'help-echo (concat "Browse user profile of @" (cadr user)))
       " : \n"
-      (if note
-          (mastodon-tl--render-text (cadddr user) acct)
-        "")
+      (when note
+        (mastodon-tl--render-text (cadddr user) acct))
       "\n")
      'item-json acct))) ; for compat w other processing functions
 
@@ -319,26 +306,29 @@ If NOTE is non-nil, include user's profile note. This is also
   (list (alist-get 'name tag)
         (alist-get 'url tag)))
 
-(defun mastodon-search--get-status-info (status)
-  "Get ID, timestamp, content, and spoiler from STATUS."
-  (list (alist-get 'id status)
-        (alist-get 'created_at status)
-        (alist-get 'spoiler_text status)
-        (alist-get 'content status)))
+;; These functions are all unused!
 
-(defun mastodon-search--id-from-status (status)
-  "Fetch the id from a STATUS returned by a search call to the server.
-We use this to fetch the complete status from the server."
-  (alist-get 'id status))
+;; (defun mastodon-search--get-status-info (status)
+;;   "Get ID, timestamp, content, and spoiler from STATUS."
+;;   (list (alist-get 'id status)
+;;         (alist-get 'created_at status)
+;;         (alist-get 'spoiler_text status)
+;;         (alist-get 'content status)))
 
-(defun mastodon-search--full-status-from-id (id)
-  "Fetch the full status with id ID from the server.
-This allows us to access the full account etc. details and to
-render them properly."
-  (let* ((url (concat mastodon-instance-url "/api/v1/statuses/" (mastodon-tl--as-string id)))
-         (json (mastodon-http--get-json url)))
-    json))
+;; (defun mastodon-search--id-from-status (status)
+;;   "Fetch the id from a STATUS returned by a search call to the server.
+;; We use this to fetch the complete status from the server."
+;;   (alist-get 'id status))
 
+;; (defun mastodon-search--full-status-from-id (id)
+;;   "Fetch the full status with id ID from the server.
+;; This allows us to access the full account etc. details and to
+;; render them properly."
+;;   (let* ((url (mastodon-http--api (format "statuses/%s" id)))
+;;          ;; (concat mastodon-instance-url "/api/v1/statuses/"
+;;          ;; (mastodon-tl--as-string id)))
+;;          (json (mastodon-http--get-json url)))
+;;     json))
 
 (defvar mastodon-search-mode-map
   (let ((map (make-sparse-keymap)))
@@ -354,7 +344,6 @@ This minor mode is used for mastodon search pages to adds a keybinding."
   :keymap mastodon-search-mode-map
   :group 'mastodon
   :global nil)
-
 
 (provide 'mastodon-search)
 ;;; mastodon-search.el ends here

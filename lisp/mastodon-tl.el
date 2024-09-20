@@ -83,7 +83,6 @@
 (autoload 'mastodon-toot--set-toot-properties "mastodon-toot")
 (autoload 'mastodon-toot--update-status-fields "mastodon-toot")
 (autoload 'mastodon-search--buf-type "mastodon-search")
-(autoload 'mastodon-http--api-search "mastodon-http")
 (autoload 'mastodon-views--insert-users-propertized-note "mastodon-views") ; for search pagination
 (autoload 'mastodon-http--get-response "mastodon-http")
 (autoload 'mastodon-search--insert-heading "mastodon-search")
@@ -91,6 +90,8 @@
 (autoload 'mastodon-search--trending-statuses "mastodon-search")
 (autoload 'mastodon-search--format-heading "mastodon-search")
 (autoload 'mastodon-toot--with-toot-item "mastodon-toot")
+(autoload 'mastodon-media--image-or-cached "mastodon-media")
+(autoload 'mastodon-toot--base-toot-or-item-json "mastodon-toot")
 
 (defvar mastodon-toot--visibility)
 (defvar mastodon-toot-mode)
@@ -98,13 +99,13 @@
 
 (when (require 'mpv nil :no-error)
   (declare-function mpv-start "mpv"))
+(defvar mastodon-mode-map)
 (defvar mastodon-instance-url)
 (defvar mastodon-toot-timestamp-format)
 (defvar shr-use-fonts)  ;; declare it since Emacs24 didn't have this
 (defvar mastodon-media--enable-image-caching)
 (defvar mastodon-media--generic-broken-image-data)
-
-(defvar mastodon-mode-map)
+(defvar mastodon-media--sensitive-image-data)
 
 
 ;;; CUSTOMIZES
@@ -221,7 +222,6 @@ respects the user's `browse-url' settings."
 See `mastodon-tl--get-remote-local-timeline' for view remote local domains."
   :type '(repeat string))
 
-
 (defcustom mastodon-tl--fold-toots-at-length 1200
   "Length, in characters, to fold a toot at.
 Longer toots will be folded and the remainder replaced by a
@@ -294,7 +294,7 @@ types of mastodon links and not just shr.el-generated ones.")
     (define-key map [remap shr-previous-link] #'mastodon-tl--previous-tab-item)
     ;; browse-url loads the preview only, we want browse-image
     ;; on RET to browse full sized image URL
-    (define-key map [remap shr-browse-url] #'mastodon-tl--view-full-image-or-play-video) ;#'shr-browse-image)
+    (define-key map [remap shr-browse-url] #'mastodon-tl--view-full-image-or-play-video)
     ;; remove shr's u binding, as it the maybe-probe-and-copy-url
     ;; is already bound to w also
     (define-key map (kbd "u") #'mastodon-tl--update)
@@ -314,6 +314,7 @@ types of mastodon links and not just shr.el-generated ones.")
     (let ((map (make-sparse-keymap)))
       (define-key map (kbd "<C-return>") #'mastodon-tl--mpv-play-video-from-byline)
       (define-key map (kbd "RET") #'mastodon-profile--get-toot-author)
+      (define-key map (kbd "S") #'mastodon-tl--toggle-sensitive-image)
       map))
   "The keymap to be set for the author byline.
 It is active where point is placed by `mastodon-tl--goto-next-item.'")
@@ -344,7 +345,7 @@ than `pop-to-buffer'."
   (declare (debug t))
   `(if (and (not (mastodon-tl--profile-buffer-p))
             (not (mastodon-tl--property 'item-json))) ; includes users but not tags
-       (message "Looks like there's no item at point?")
+       (user-error "Looks like there's no item at point?")
      ,@body))
 
 
@@ -354,7 +355,7 @@ than `pop-to-buffer'."
   "Call `scroll-up-command', loading more toots if necessary.
 If we hit `point-max', call `mastodon-tl--more' then `scroll-up-command'."
   (interactive)
-  (if (not (equal (point) (point-max)))
+  (if (not (eq (point) (point-max)))
       (scroll-up-command)
     (mastodon-tl--more)
     (scroll-up-command)))
@@ -362,7 +363,7 @@ If we hit `point-max', call `mastodon-tl--more' then `scroll-up-command'."
 (defun mastodon-tl--next-tab-item (&optional previous)
   "Move to the next interesting item.
 This could be the next toot, link, or image; whichever comes first.
-Don't move if nothing else to move to is found, i.e. near the end of the buffer.
+Don't move if nothing to move to is found, i.e. near the end of the buffer.
 This also skips tab items in invisible text, i.e. hidden spoiler text.
 PREVIOUS means move to previous item."
   (interactive)
@@ -378,7 +379,7 @@ PREVIOUS means move to previous item."
       ;; do nothing, all the action is in the while condition
       )
     (if (null next-range)
-        (message "Nothing else here.")
+        (user-error "Nothing else here")
       (goto-char (car next-range))
       (message "%s" (mastodon-tl--property 'help-echo :no-move)))))
 
@@ -401,21 +402,16 @@ Optionally start from POS."
                    ;; FIXME: we need to fix item-type?
                    ;; 'item-type ; breaks nav to last item in a view?
                    'byline
-                   (current-buffer))))
+                   (current-buffer)))
+         (max-lisp-eval-depth 4)) ;; clamp down on endless loops
     (if npos
-        (if (not
-             (get-text-property npos 'item-type)) ; generic
+        (if (not (get-text-property npos 'item-type)) ; generic
             ;; FIXME let's make refresh &optional and only call refresh/recur
             ;; if non-nil:
             (mastodon-tl--goto-item-pos find-pos refresh npos)
           (goto-char npos)
           ;; force display of help-echo on moving to a toot byline:
           (mastodon-tl--message-help-echo))
-      ;; FIXME: doesn't work, the funcall doesn't return if in an endless
-      ;; refresh loop.
-      ;; either let-bind `max-lisp-eval-depth' and try to error handle when it
-      ;; errors, or else set up a counter, and error when it gets to high
-      ;; (like >2 would already be too much)
       (condition-case nil
           (funcall refresh)
         (error "No more items")))))
@@ -426,26 +422,28 @@ Load more items it no next item.
 NO-REFRESH means do no not try to load more items if no next item
 found."
   (interactive)
-  (mastodon-tl--goto-item-pos 'next-single-property-change
-                              (unless no-refresh 'mastodon-tl--more)))
+  (condition-case nil
+      (mastodon-tl--goto-item-pos 'next-single-property-change
+                                  (unless no-refresh 'mastodon-tl--more))
+    (t (error "No more items"))))
 
 (defun mastodon-tl--goto-prev-item ()
   "Jump to previous item.
 Update if no previous items"
   (interactive)
-  (mastodon-tl--goto-item-pos 'previous-single-property-change
-                              'mastodon-tl--update))
+  (condition-case nil
+      (mastodon-tl--goto-item-pos 'previous-single-property-change
+                                  'mastodon-tl--update)
+    (t (error "No more items"))))
 
 (defun mastodon-tl--goto-first-item ()
   "Jump to first toot or item in buffer.
 Used on initializing a timeline or thread."
-  ;; goto-next-item assumes we already have items, and is therefore
-  ;; incompatible with any view where it is possible to have no items.
-  ;; when that is the case the call to goto-toot-pos loops infinitely
   (goto-char (point-min))
-  (mastodon-tl--goto-item-pos 'next-single-property-change
-                              'next-line))
-;; (mastodon-tl--goto-next-item))
+  (condition-case nil
+      (mastodon-tl--goto-item-pos 'next-single-property-change
+                                  'next-line)
+    (t (error "No item"))))
 
 
 ;;; TIMELINES
@@ -456,15 +454,16 @@ If LOCAL, get only local timeline.
 With a single PREFIX arg, hide-replies.
 With a double PREFIX arg, only show posts with media."
   (interactive "p")
-  (let ((params `(("limit" . ,mastodon-tl--timeline-posts-count))))
-    ;; avoid adding 'nil' to our params alist:
-    (when (eq prefix 16)
-      (push '("only_media" . "true") params))
-    (when local
-      (push '("local" . "true") params))
-    (when max-id
-      (push `("max_id" . ,(mastodon-tl--buffer-property 'max-id))
-            params))
+  (let ((params
+         (cl-remove
+          nil
+          `(("limit" . ,mastodon-tl--timeline-posts-count)
+            ,(when (eq prefix 16)
+               '("only_media" . "true"))
+            ,(when local
+               '("local" . "true"))
+            ,(when max-id
+               `("max_id" . ,(mastodon-tl--buffer-property 'max-id)))))))
     (message "Loading federated timeline...")
     (mastodon-tl--init (if local "local" "federated")
                        "timelines/public" 'mastodon-tl--timeline nil
@@ -485,7 +484,7 @@ MAX-ID is a flag to add the max_id pagination parameter."
                        params
                        (when (eq arg 4) t))))
 
-(defun mastodon-tl--get-remote-local-timeline ()
+(defun mastodon-tl--get-remote-local-timeline (&optional endpoint)
   "Prompt for an instance domain and try to display its local timeline.
 You can enter any working instance domain. Domains that you want
 to regularly load can be stored in
@@ -494,7 +493,8 @@ Note that some instances do not make their local timelines public, in
 which case this will not work.
 To interact with any item, you must view it from your own
 instance, which you can do with
-`mastodon-tl--view-item-on-own-instance'."
+`mastodon-tl--view-item-on-own-instance'.
+Optionally, provide API ENDPOINT."
   (interactive)
   (let* ((domain (completing-read "Domain for remote local tl: "
                                   mastodon-tl--remote-local-domains))
@@ -510,8 +510,16 @@ instance, which you can do with
               (y-or-n-p
                "Domain appears unknown to your instance. Proceed?"))
       (mastodon-tl--init buf
-                         "timelines/public" 'mastodon-tl--timeline nil
+                         (or endpoint "timelines/public")
+                         'mastodon-tl--timeline nil
                          params nil domain))))
+
+(defun mastodon-tl--remote-tag-timeline (&optional tag)
+  "Call `mastodon-tl--get-remote-local-timeline' but for a TAG timeline."
+  (interactive)
+  (let* ((tag (or tag (read-string "Tag: ")))
+         (endpoint (format "timelines/tag/%s" tag)))
+    (mastodon-tl--get-remote-local-timeline endpoint)))
 
 (defun mastodon-tl--view-item-on-own-instance ()
   "Load current toot on your own instance.
@@ -549,12 +557,14 @@ With a double PREFIX arg, limit results to your own instance."
 If TAG is a list, show a timeline for all tags.
 With a single PREFIX arg, only show posts with media.
 With a double PREFIX arg, limit results to your own instance."
-  (let ((params `(("limit" . ,mastodon-tl--timeline-posts-count))))
-    ;; avoid adding 'nil' to our params alist:
-    (when (eq prefix 4)
-      (push '("only_media" . "true") params))
-    (when (eq prefix 16)
-      (push '("local" . "true") params))
+  (let ((params
+         (cl-remove
+          nil
+          `(("limit" . ,mastodon-tl--timeline-posts-count)
+            ,(when (eq prefix 4)
+               '("only_media" . "true"))
+            ,(when (eq prefix 16)
+               '("local" . "true"))))))
     (when (listp tag)
       (let ((list (mastodon-http--build-array-params-alist "any[]" (cdr tag))))
         (while list
@@ -562,9 +572,7 @@ With a double PREFIX arg, limit results to your own instance."
     (mastodon-tl--init
      (if (listp tag) "tags-multiple" (concat "tag-" tag))
      (concat "timelines/tag/" (if (listp tag) (car tag) tag)) ; must be /tag/:sth
-     'mastodon-tl--timeline
-     nil
-     params)))
+     'mastodon-tl--timeline nil params)))
 
 
 ;;; BYLINES, etc.
@@ -575,7 +583,7 @@ Do so if type of status at poins is not follow_request/follow."
   (let ((type (alist-get 'type
                          (mastodon-tl--property 'item-json :no-move)))
         (echo (mastodon-tl--property 'help-echo :no-move)))
-    (when (not (equal "" echo)) ; not for followers/following in profile
+    (when (not (string= "" echo)) ; not for followers/following in profile
       (unless (or (string= type "follow_request")
                   (string= type "follow")) ; no counts for these
         (message "%s" echo)))))
@@ -591,9 +599,7 @@ When DOMAIN, force inclusion of user's domain in their handle."
      (when (and avatar ; used by `mastodon-profile--format-user'
                 mastodon-tl--show-avatars
                 mastodon-tl--display-media-p
-                (if (version< emacs-version "27.1")
-                    (image-type-available-p 'imagemagick)
-                  (image-transforms-p)))
+                (mastodon-tl--image-trans-check))
        (mastodon-media--get-avatar-rendering .account.avatar))
      ;; username:
      (propertize (if (not (string-empty-p .account.display_name))
@@ -614,11 +620,10 @@ When DOMAIN, force inclusion of user's domain in their handle."
      ;; handle:
      " ("
      (propertize (concat "@" .account.acct
-                         (if domain
-                             (concat "@"
-                                     (url-host
-                                      (url-generic-parse-url .account.url)))
-                           ""))
+                         (when domain
+                           (concat "@"
+                                   (url-host
+                                    (url-generic-parse-url .account.url)))))
                  'face 'mastodon-handle-face
                  'mouse-face 'highlight
 	         'mastodon-tab-stop 'user-handle
@@ -646,8 +651,9 @@ Used when point is at the start of a byline, i.e. where
              toot)
            (alist-get 'reblog toot) ; boosts
            toot)) ; everything else
-         (fol-req-p (or (string= (alist-get 'type toot-to-count) "follow")
-                        (string= (alist-get 'type toot-to-count) "follow_request"))))
+         (fol-req-p (let ((type (alist-get 'type toot-to-count)))
+                      (or (string= type "follow")
+                          (string= type "follow_request")))))
     (unless fol-req-p
       (let* ((media-types (mastodon-tl--get-media-types toot))
              (format-media (when media-types
@@ -656,8 +662,8 @@ Used when point is at the start of a byline, i.e. where
              (format-media-binding (when (and (or (member "video" media-types)
                                                   (member "gifv" media-types))
                                               (require 'mpv nil :no-error))
-                                     (format " | C-RET to view with mpv"))))
-        (format "%s" (concat format-media format-media-binding))))))
+                                     " | C-RET to view with mpv")))
+        (concat format-media format-media-binding)))))
 
 (defun mastodon-tl--get-media-types (toot)
   "Return a list of the media attachment types of the TOOT at point."
@@ -667,12 +673,12 @@ Used when point is at the start of a byline, i.e. where
 (defun mastodon-tl--get-attachments-for-byline (toot)
   "Return a list of attachment URLs and types for TOOT.
 The result is added as an attachments property to author-byline."
-  (let ((media-attachments (mastodon-tl--field 'media_attachments toot)))
+  (let ((media (mastodon-tl--field 'media_attachments toot)))
     (mapcar (lambda (attachment)
               (let-alist attachment
                 (list :url (or .remote_url .url) ; fallback for notifications
                       :type .type)))
-            media-attachments)))
+            media)))
 
 (defun mastodon-tl--byline-boosted (toot)
   "Add byline for boosted data from TOOT."
@@ -685,11 +691,11 @@ The result is added as an attachments property to author-byline."
 (defun mastodon-tl--format-faved-or-boosted-byline (letter)
   "Format the byline marker for a boosted or favourited status.
 LETTER is a string, F for favourited, B for boosted, or K for bookmarked."
-  (let ((help-string (cond ((equal letter "F")
+  (let ((help-string (cond ((string= letter "F")
                             "favourited")
-                           ((equal letter "B")
+                           ((string= letter "B")
                             "boosted")
-                           ((equal letter (or "🔖" "K"))
+                           ((string= letter (or "🔖" "K"))
                             "bookmarked"))))
     (format "(%s) "
             (propertize letter 'face 'mastodon-boost-fave-face
@@ -697,7 +703,14 @@ LETTER is a string, F for favourited, B for boosted, or K for bookmarked."
                         'help-echo (format "You have %s this status."
                                            help-string)))))
 
-(defun mastodon-tl--byline (toot author-byline action-byline &optional detailed-p domain)
+(defun mastodon-tl--image-trans-check ()
+  "Call `image-transforms-p', or `image-type-available-p' imagemagick."
+  (if (version< emacs-version "27.1")
+      (image-type-available-p 'imagemagick)
+    (image-transforms-p)))
+
+(defun mastodon-tl--byline (toot author-byline action-byline
+                                 &optional detailed-p domain base-toot)
   "Generate byline for TOOT.
 AUTHOR-BYLINE is a function for adding the author portion of
 the byline that takes one variable.
@@ -706,7 +719,8 @@ favouriting and following to the byline. It also takes a single function.
 By default it is `mastodon-tl--byline-boosted'.
 DETAILED-P means display more detailed info. For now
 this just means displaying toot client.
-When DOMAIN, force inclusion of user's domain in their handle."
+When DOMAIN, force inclusion of user's domain in their handle.
+BASE-TOOT is JSON for the base toot, if any."
   (let* ((created-time
           ;; bosts and faves in notifs view
           ;; (makes timestamps be for the original toot not the boost/fave):
@@ -716,14 +730,16 @@ When DOMAIN, force inclusion of user's domain in their handle."
               ;; (mastodon-tl--field auto fetches from reblogs if needed):
               (mastodon-tl--field 'created_at toot)))
          (parsed-time (date-to-time created-time))
-         (faved (equal 't (mastodon-tl--field 'favourited toot)))
-         (boosted (equal 't (mastodon-tl--field 'reblogged toot)))
-         (bookmarked (equal 't (mastodon-tl--field 'bookmarked toot)))
+         (faved (eq t (mastodon-tl--field 'favourited toot)))
+         (boosted (eq t (mastodon-tl--field 'reblogged toot)))
+         (bookmarked (eq t (mastodon-tl--field 'bookmarked toot)))
          (visibility (mastodon-tl--field 'visibility toot))
          (account (alist-get 'account toot))
          (avatar-url (alist-get 'avatar account))
          (type (alist-get 'type toot))
-         (edited-time (alist-get 'edited_at toot))
+         (base-toot-maybe (or base-toot ;; show edits for notifs
+                              (mastodon-tl--toot-or-base toot))) ;; for boosts
+         (edited-time (alist-get 'edited_at base-toot-maybe))
          (edited-parsed (when edited-time (date-to-time edited-time))))
     (concat
      ;; Boosted/favourited markers are not technically part of the byline, so
@@ -746,9 +762,7 @@ When DOMAIN, force inclusion of user's domain in their handle."
      ;; with `mastodon-tl--goto-next-item':
      (when (and mastodon-tl--show-avatars
                 mastodon-tl--display-media-p
-                (if (version< emacs-version "27.1")
-                    (image-type-available-p 'imagemagick)
-                  (image-transforms-p)))
+                (mastodon-tl--image-trans-check))
        (mastodon-media--get-avatar-rendering avatar-url))
      (propertize
       (concat
@@ -756,20 +770,23 @@ When DOMAIN, force inclusion of user's domain in their handle."
        ;; in `mastodon-tl--byline-author'
        (funcall author-byline toot nil domain)
        ;; visibility:
-       (cond ((equal visibility "direct")
+       (cond ((string= visibility "direct")
               (propertize (concat " " (mastodon-tl--symbol 'direct))
                           'help-echo visibility))
-             ((equal visibility "private")
+             ((string= visibility "private")
               (propertize (concat " " (mastodon-tl--symbol 'private))
                           'help-echo visibility)))
+       ;;action byline:
        (funcall action-byline toot)
        " "
+       ;; timestamp:
        (propertize
         (format-time-string mastodon-toot-timestamp-format parsed-time)
         'timestamp parsed-time
         'display (if mastodon-tl--enable-relative-timestamps
                      (mastodon-tl--relative-time-description parsed-time)
                    parsed-time))
+       ;; detailed:
        (when detailed-p
          (let* ((app (alist-get 'application toot))
                 (app-name (alist-get 'name app))
@@ -785,33 +802,34 @@ When DOMAIN, force inclusion of user's domain in their handle."
 		          'shr-url app-url
                           'help-echo app-url
 		          'keymap mastodon-tl--shr-map-replacement)))))
-       (if edited-time
-           (concat
-            " "
-            (mastodon-tl--symbol 'edited)
-            " "
-            (propertize
-             (format-time-string mastodon-toot-timestamp-format
-                                 edited-parsed)
-             'face 'font-lock-comment-face
-             'timestamp edited-parsed
-             'display (if mastodon-tl--enable-relative-timestamps
-                          (mastodon-tl--relative-time-description edited-parsed)
-                        edited-parsed)))
-         "")
+       ;; edited:
+       (when edited-time
+         (concat
+          " "
+          (mastodon-tl--symbol 'edited)
+          " "
+          (propertize
+           (format-time-string mastodon-toot-timestamp-format
+                               edited-parsed)
+           'face 'font-lock-comment-face
+           'timestamp edited-parsed
+           'display (if mastodon-tl--enable-relative-timestamps
+                        (mastodon-tl--relative-time-description edited-parsed)
+                      edited-parsed))))
        (propertize (concat "\n  " mastodon-tl--horiz-bar)
                    'face 'default)
-       (if (and mastodon-tl--show-stats
-                (not (member type '("follow" "follow_request"))))
-           (mastodon-tl--toot-stats toot)
-         "")
+       ;; stats:
+       (when (and mastodon-tl--show-stats
+                  (not (member type '("follow" "follow_request"))))
+         (mastodon-tl--toot-stats toot))
        "\n")
       'favourited-p faved
       'boosted-p    boosted
       'bookmarked-p bookmarked
       'edited edited-time
       'edit-history (when edited-time
-                      (mastodon-toot--get-toot-edits (alist-get 'id toot)))
+                      (mastodon-toot--get-toot-edits
+                       (alist-get 'id base-toot-maybe)))
       'byline       t))))
 
 
@@ -828,7 +846,8 @@ TIMESTAMP is assumed to be in the past."
   (let* ((time-difference (time-subtract current-time timestamp))
          (seconds-difference (float-time time-difference))
          (tmp (mastodon-tl--human-duration (max 0 seconds-difference))))
-    (cons (concat (car tmp) " ago")
+    ;; revert to old just now style for < 1 min
+    (cons (concat (car tmp) (if (string= "just now" (car tmp)) "" " ago"))
           (time-add current-time (cdr tmp)))))
 
 (defun mastodon-tl--relative-time-description (timestamp &optional current-time)
@@ -882,23 +901,19 @@ START and END are the boundaries of the link in the toot."
                                         (url-host toot-url))
                               mastodon-instance-url))
          (link-str (buffer-substring-no-properties start end))
-         (maybe-hashtag (mastodon-tl--extract-hashtag-from-url
+         (maybe-hashtag (mastodon-tl--hashtag-from-url
                          url toot-instance-url))
          (maybe-userhandle
           (if (proper-list-p toot) ; fails for profile buffers?
               (or (mastodon-tl--userhandle-from-mentions toot link-str)
-                  ;; FIXME: if prev always works, cut this:
-                  (mastodon-tl--extract-userhandle-from-url url link-str))
-            (mastodon-tl--extract-userhandle-from-url url link-str))))
-    (cond (;; Hashtags:
-           maybe-hashtag
+                  (mastodon-tl--userhandle-from-url url link-str))
+            (mastodon-tl--userhandle-from-url url link-str))))
+    (cond (maybe-hashtag
            (setq mastodon-tab-stop-type 'hashtag
                  keymap mastodon-tl--link-keymap
                  help-echo (concat "Browse tag #" maybe-hashtag)
                  extra-properties (list 'mastodon-tag maybe-hashtag)))
-          (;; User handles:
-           maybe-userhandle
-           ;; this fails on mentions in profile notes:
+          (maybe-userhandle ;; fails on mentions in profile notes:
            (let ((maybe-userid (when (proper-list-p toot)
                                  (mastodon-tl--extract-userid-toot
                                   toot link-str))))
@@ -909,8 +924,7 @@ START and END are the boundaries of the link in the toot."
                                      (list 'mastodon-handle maybe-userhandle)
                                      (when maybe-userid
                                        (list 'account-id maybe-userid))))))
-          ;; Anything else:
-          (t ; Leave it as a url handled by shr.el.
+          (t ;; Anything else (leave it as a url handled by shr.el):
            (setq keymap (if (eq shr-map (get-text-property start 'keymap))
                             mastodon-tl--shr-map-replacement
                           mastodon-tl--shr-image-map-replacement)
@@ -925,19 +939,18 @@ START and END are the boundaries of the link in the toot."
 (defun mastodon-tl--userhandle-from-mentions (toot link)
   "Extract a user handle from mentions in json TOOT.
 LINK is maybe the `@handle' to search for."
-  (mastodon-tl--extract-el-from-mentions 'acct toot link))
+  (mastodon-tl--el-from-mentions 'acct toot link))
 
 (defun mastodon-tl--extract-userid-toot (toot link)
   "Extract a user id for an ACCT from mentions in a TOOT.
 LINK is maybe the `@handle' to search for."
-  (mastodon-tl--extract-el-from-mentions 'id toot link))
+  (mastodon-tl--el-from-mentions 'id toot link))
 
-(defun mastodon-tl--extract-el-from-mentions (el toot link)
+(defun mastodon-tl--el-from-mentions (el toot link)
   "Extract element EL from TOOT mentions that matches LINK.
 LINK should be a simple handle string with no domain, i.e. \"@user\".
 Return nil if no matching element."
-  ;; Must return nil if nothing found!
-  (let ((mentions (append (alist-get 'mentions toot) nil)))
+  (let ((mentions (alist-get 'mentions toot)))
     (when mentions
       (let* ((mention (pop mentions))
              (name (substring-no-properties link 1 (length link))) ; cull @
@@ -948,37 +961,40 @@ Return nil if no matching element."
           (setq mention (pop mentions)))
         return))))
 
-(defun mastodon-tl--extract-userhandle-from-url (url buffer-text)
+(defun mastodon-tl--userhandle-from-url (url buffer-text)
   "Return the user hande the URL points to or nil if it is not a profile link.
 BUFFER-TEXT is the text covered by the link with URL, for a user profile
 this should be of the form <at-sign><user id>, e.g. \"@Gargon\"."
   (let* ((parsed-url (url-generic-parse-url url))
+         (host (url-host parsed-url))
          (local-p (string=
                    (url-host (url-generic-parse-url mastodon-instance-url))
-                   (url-host parsed-url))))
+                   host))
+         (path (url-filename parsed-url)))
     (when (and (string= "@" (substring buffer-text 0 1))
                ;; don't error on domain only url (rare):
-               (not (string= "" (url-filename parsed-url)))
+               (not (string= "" path))
                (string= (downcase buffer-text)
-                        (downcase (substring (url-filename parsed-url) 1))))
+                        (downcase (substring path 1))))
       (if local-p
           buffer-text ; no instance suffix for local mention
-        (concat buffer-text "@" (url-host parsed-url))))))
+        (concat buffer-text "@" host)))))
 
-(defun mastodon-tl--extract-hashtag-from-url (url instance-url)
+(defun mastodon-tl--hashtag-from-url (url instance-url)
   "Return the hashtag that URL points to or nil if URL is not a tag link.
 INSTANCE-URL is the url of the instance for the toot that the link
 came from (tag links always point to a page on the instance publishing
 the toot)."
-  (cond
-   ;; Mastodon type tag link:
-   ((string-prefix-p (concat instance-url "/tags/") url)
-    (substring url (length (concat instance-url "/tags/"))))
-   ;; Link from some other ostatus site we've encountered:
-   ((string-prefix-p (concat instance-url "/tag/") url)
-    (substring url (length (concat instance-url "/tag/"))))
-   ;; If nothing matches we assume it is not a hashtag link:
-   (t nil)))
+  ;; TODO: do we rly need to check it against instance-url?
+  ;; test suggests we might
+  (let* ((instance-host (url-host
+                         (url-generic-parse-url instance-url)))
+         (parsed (url-generic-parse-url url))
+         (path (url-filename parsed))
+         (split (string-split path "/")))
+    (when (and (string= instance-host (url-host parsed))
+               (string-prefix-p "/tag" path)) ;; "/tag/" or "/tags/"
+      (nth 2 split))))
 
 
 ;;; HYPERLINKS
@@ -998,39 +1014,38 @@ LINK-TYPE is the type of link to produce."
                 'keymap mastodon-tl--link-keymap
                 'help-echo help-text)))
 
-(defun mastodon-tl--do-link-action-at-point (position)
-  "Do the action of the link at POSITION.
+(defun mastodon-tl--do-link-action-at-point (pos)
+  "Do the action of the link at POS.
 Used for hitting RET on a given link."
   (interactive "d")
-  (let ((link-type (get-text-property position 'mastodon-tab-stop)))
+  (let ((link-type (get-text-property pos 'mastodon-tab-stop)))
     (cond ((eq link-type 'content-warning)
-           (mastodon-tl--toggle-spoiler-text position))
+           (mastodon-tl--toggle-spoiler-text pos))
           ((eq link-type 'hashtag)
            (mastodon-tl--show-tag-timeline
-            nil (get-text-property position 'mastodon-tag)))
+            nil (get-text-property pos 'mastodon-tag)))
           ;; 'account / 'account-id is not set for mentions, only bylines
           ((eq link-type 'user-handle)
-           (let ((account-json (get-text-property position 'account))
-                 (account-id (get-text-property position 'account-id)))
+           (let ((account-json (get-text-property pos 'account))
+                 (account-id (get-text-property pos 'account-id)))
              (cond
               (account-json
-               (mastodon-profile--make-author-buffer
-                account-json))
+               (mastodon-profile--make-author-buffer account-json))
               (account-id
                (mastodon-profile--make-author-buffer
                 (mastodon-profile--account-from-id account-id)))
               (t
-               (let ((account
-                      (mastodon-profile--search-account-by-handle
-                       (get-text-property position 'mastodon-handle))))
+               (let ((account (mastodon-profile--search-account-by-handle
+                               (get-text-property pos 'mastodon-handle))))
                  ;; never call make-author-buffer on nil account:
-                 (if account
-                     (mastodon-profile--make-author-buffer account)
-                   ;; optional webfinger lookup:
-                   (if (y-or-n-p
-                        "Search for account returned nothing. Perform URL lookup?")
-                       (mastodon-url-lookup (get-text-property position 'shr-url))
-                     (message "Unable to find account."))))))))
+                 (cond (account
+                        (mastodon-profile--make-author-buffer account))
+                       ;; optional webfinger lookup:
+                       ((y-or-n-p
+                         "Search for account returned nothing. Perform URL lookup?")
+                        (mastodon-url-lookup (get-text-property pos 'shr-url)))
+                       (t
+                        (error "Unable to find account"))))))))
           ((eq link-type 'read-more)
            (mastodon-tl--unfold-post))
           (t
@@ -1055,13 +1070,13 @@ content should be hidden."
 (defun mastodon-tl--toggle-spoiler-text (position)
   "Toggle the visibility of the spoiler text at/after POSITION."
   (let ((inhibit-read-only t)
-        (spoiler-text-region (mastodon-tl--find-property-range
-                              'mastodon-content-warning-body position nil)))
-    (if (not spoiler-text-region)
-        (message "No spoiler text here")
-      (add-text-properties (car spoiler-text-region) (cdr spoiler-text-region)
+        (spoiler-region (mastodon-tl--find-property-range
+                         'mastodon-content-warning-body position nil)))
+    (if (not spoiler-region)
+        (user-error "No spoiler text here")
+      (add-text-properties (car spoiler-region) (cdr spoiler-region)
                            (list 'invisible
-                                 (not (get-text-property (car spoiler-text-region)
+                                 (not (get-text-property (car spoiler-region)
                                                          'invisible)))))))
 
 (defun mastodon-tl--toggle-spoiler-text-in-toot ()
@@ -1076,10 +1091,10 @@ content should be hidden."
                            'mastodon-content-warning-body
                            (car toot-range)))))
     (cond ((null toot-range)
-           (message "No toot here"))
+           (user-error "No toot here"))
           ((or (null spoiler-range)
                (> (car spoiler-range) (cdr toot-range)))
-           (message "No content warning text here"))
+           (user-error "No content warning text here"))
           (t
            (mastodon-tl--toggle-spoiler-text (car spoiler-range))))))
 
@@ -1092,16 +1107,12 @@ content should be hidden."
         (user-error "Not in a thread")
       (save-excursion
         (goto-char (point-min))
-        (while (not (equal "No more items" ; improve this hack test!
-                           (mastodon-tl--goto-next-item :no-refresh)))
+        (while (not (string= "No more items" ; improve this hack test!
+                             (mastodon-tl--goto-next-item :no-refresh)))
           (let* ((json (mastodon-tl--property 'item-json :no-move))
                  (cw (alist-get 'spoiler_text json)))
-            (when (not (equal "" cw))
+            (when (not (string= "" cw))
               (mastodon-tl--toggle-spoiler-text-in-toot))))))))
-
-(defun mastodon-tl--clean-tabs-and-nl (string)
-  "Remove tabs and newlines from STRING."
-  (replace-regexp-in-string "[\t\n ]*\\'" "" string))
 
 (defun mastodon-tl--spoiler (toot &optional filter)
   "Render TOOT with spoiler message.
@@ -1150,36 +1161,38 @@ FILTER is a string to use as a filter warning spoiler instead."
 ;;; MEDIA
 
 (defun mastodon-tl--media (toot)
-  "Retrieve a media attachment link for TOOT if one exists."
-  (let* ((media-attachments (mastodon-tl--field 'media_attachments toot))
+  "Retrieve a media attachment link for TOOT if one exists.
+Else return an empty string."
+  (let* ((attachments (mastodon-tl--field 'media_attachments toot))
          (sensitive (mastodon-tl--field 'sensitive toot))
          (media-string (mapconcat
                         (lambda (x)
                           (mastodon-tl--media-attachment x sensitive))
-                        media-attachments "")))
+                        attachments "")))
     (if (not (and mastodon-tl--display-media-p
                   (string-empty-p media-string)))
         (concat "\n" media-string)
       "")))
 
-(defun mastodon-tl--media-attachment (media-attachment sensitive)
-  "Return a propertized string for MEDIA-ATTACHMENT.
+(defun mastodon-tl--media-attachment (attachment sensitive)
+  "Return a propertized string for ATTACHMENT.
 SENSITIVE is a flag from the item's JSON data."
-  (let-alist media-attachment
+  (let-alist attachment
     (let ((display-str
-           (if (and mastodon-tl--display-caption-not-url-when-no-media
-                    .description)
-               (concat "Media:: " .description)
-             (concat "Media:: " .preview_url))))
+           (concat "Media:: "
+                   (if (and mastodon-tl--display-caption-not-url-when-no-media
+                            .description)
+                       .description)
+                   .preview_url)))
       (if mastodon-tl--display-media-p
           (mastodon-media--get-media-link-rendering ; placeholder: "[img]"
-           .preview_url (or .remote_url .url) .type .description sensitive) ; 2nd arg for shr-browse-url
+           .preview_url (or .remote_url .url) ; for shr-browse-url
+           .type .description sensitive)
         ;; return URL/caption:
         (concat (mastodon-tl--propertize-img-str-or-url
                  (concat "Media:: " .preview_url) ; string
                  .preview_url .remote_url .type .description
-                 display-str ; display
-                 'shr-link .description sensitive)
+                 display-str 'shr-link .description sensitive)
                 "\n")))))
 
 (defun mastodon-tl--propertize-img-str-or-url
@@ -1219,20 +1232,10 @@ SENSITIVE is a flag from the item's JSON data."
     (let* ((url (mastodon-tl--property 'image-url)))
       (if (not mastodon-tl--load-full-sized-images-in-emacs)
           (shr-browse-image)
-        (if (and mastodon-media--enable-image-caching
-                 (url-is-cached url))
-            ;; if image url is cached, decompress and use it
-            (with-current-buffer (url-fetch-from-cache url)
-              (set-buffer-multibyte nil)
-              (goto-char (point-min))
-              (zlib-decompress-region
-               (goto-char (search-forward "\n\n")) (point-max))
-              (mastodon-media--process-full-sized-image-response nil url))
-          ;; else fetch and load:
-          (url-retrieve url #'mastodon-media--process-full-sized-image-response
-                        `(,url)))))))
-
-(defvar mastodon-media--sensitive-image-data)
+        (mastodon-media--image-or-cached
+         url
+         #'mastodon-media--process-full-sized-image-response
+         `(nil ,url))))))
 
 (defun mastodon-tl--toggle-sensitive-image ()
   "Toggle dislay of sensitive image at point."
@@ -1242,26 +1245,26 @@ SENSITIVE is a flag from the item's JSON data."
     (let ((data (mastodon-tl--property 'image-data :no-move))
           (inhibit-read-only t)
           (end (next-single-property-change (point) 'sensitive-state)))
-      (if (equal 'hidden (mastodon-tl--property 'sensitive-state :no-move))
-          ;; display sensitive image:
-          (add-text-properties (point) end
-                               `(display ,data
-                                         sensitive-state showing))
-        ;; hide sensitive image:
-        (add-text-properties (point) end
-                             `( sensitive-state hidden
-                                display
-                                ,(create-image
-                                  mastodon-media--sensitive-image-data nil t)))))))
+      (add-text-properties
+       (point) end
+       (if (eq 'hidden (mastodon-tl--property 'sensitive-state :no-move))
+           ;; display:
+           `( display ,data
+              sensitive-state showing)
+         ;; hide:
+         `( sensitive-state hidden
+            display
+            ,(create-image
+              mastodon-media--sensitive-image-data nil t)))))))
 
 
 ;; POLLS
 
-(defun mastodon-tl--format-poll-option (option option-counter length)
-  "Format poll OPTION. OPTION-COUNTER is just a counter.
+(defun mastodon-tl--format-poll-option (option counter length)
+  "Format poll OPTION. COUNTER is a counter.
 LENGTH is of the longest option, for formatting."
   (format "%s: %s%s%s\n"
-          option-counter
+          counter
           (propertize (alist-get 'title option)
                       'face 'success)
           (make-string (1+ (- length
@@ -1274,26 +1277,24 @@ LENGTH is of the longest option, for formatting."
 (defun mastodon-tl--format-poll (poll)
   "From json poll data POLL, return a display string."
   (let-alist poll
-    (let* ((option-titles (mastodon-tl--map-alist 'title .options))
-           (longest (car (sort (mapcar #'length option-titles) #'>)))
-           (option-counter 0))
+    (let* ((options (mastodon-tl--map-alist 'title .options))
+           (longest (car (sort (mapcar #'length options ) #'>)))
+           (counter 0))
       (concat "\nPoll: \n\n"
               (mapconcat (lambda (option)
-                           (setq option-counter (1+ option-counter))
+                           (setq counter (1+ counter))
                            (mastodon-tl--format-poll-option
-                            option option-counter longest))
+                            option counter longest))
                          .options
                          "\n")
               "\n"
               (propertize
                (cond (.voters_count ; sometimes it is nil
-                      (if (= .voters_count 1)
-                          (format "%s person | " .voters_count)
-                        (format "%s people | " .voters_count)))
+                      (format "%s %s | " .voters_count
+                              (if (= .voters_count 1) "person" "people")))
                      (.vote_count
                       (format "%s votes | " .vote_count))
-                     (t
-                      ""))
+                     (t ""))
                'face 'font-lock-comment-face)
               (let ((str (if (eq .expired :json-false)
                              (if (eq .expires_at nil)
@@ -1304,7 +1305,7 @@ LENGTH is of the longest option, for formatting."
               "\n"))))
 
 (defconst mastodon-tl--time-units
-  '("sec"   60.0                          ;Use a float to convert `n' to float.
+  '("sec"   60.0 ;; Use a float to convert `n' to float.
     "min"   60
     "hour"  24
     "day"   7
@@ -1313,8 +1314,9 @@ LENGTH is of the longest option, for formatting."
     "year"))
 
 (defun mastodon-tl--format-poll-expiry (timestamp)
-  "Convert poll expiry TIMESTAMP into a descriptive string."
-  ;; FIXME: Could we document the format of TIMESTAMP here?
+  "Convert poll expiry TIMESTAMP into a descriptive string.
+TIMESTAMP is from the expires_at field of a poll's JSON data, and
+is in ISO 8601 Datetime format."
   (let* ((ts (encode-time (parse-time-string timestamp)))
          (seconds (time-to-seconds (time-subtract ts nil))))
     ;; FIXME: Use the `cdr' to update poll expiry times?
@@ -1345,8 +1347,10 @@ displayed when the duration is smaller than a minute)."
     (if n2 (setq n2 (truncate n2)))
     (cond
      ((null n2)
-      (cons (format "%d %s%s" n1 unit1 (if (> n1 1) "s" ""))
-            (max resolution res1)))
+      ;; revert to old just now style for < 1 min:
+      (cons "just now" 60))
+     ;; (cons (format "%d %s%s" n1 unit1 (if (> n1 1) "s" ""))
+     ;;       (max resolution res1)))
      ((< (* res2 n2) resolution)
       (cons (format "%d %s%s" n1 unit1 (if (> n1 1) "s" ""))
             (max resolution res2)))
@@ -1362,47 +1366,49 @@ displayed when the duration is smaller than a minute)."
                     n2 unit2 (if (> n2 1) "s" ""))
             (max res2 resolution))))))
 
+(defun mastodon-tl--format-read-poll-option (options)
+  "Format poll OPTIONS for `completing-read'.
+OPTIONS is an alist."
+  ;; we display option number and the option title
+  ;; but also store both as a cons cell as the cdr, as we need it later
+  (cl-loop for cell in options
+           collect (cons (format "%s | %s" (car cell) (cdr cell))
+                         cell)))
+
 (defun mastodon-tl--read-poll-option ()
   "Read a poll option to vote on a poll."
   (let* ((toot (mastodon-tl--property 'item-json))
-         (poll (mastodon-tl--field 'poll toot))
-         (options (mastodon-tl--field 'options poll))
-         (options-titles (mastodon-tl--map-alist 'title options))
-         (options-number-seq (number-sequence 1 (length options)))
-         (options-numbers (mapcar #'number-to-string options-number-seq))
-         (options-alist (cl-mapcar #'cons options-numbers options-titles))
-         ;; we display both option number and the option title
-         ;; but also store both as cons cell as cdr, as we need it below
-         (candidates (mapcar (lambda (cell)
-                               (cons (format "%s | %s" (car cell) (cdr cell))
-                                     cell))
-                             options-alist)))
+         (poll (mastodon-tl--field 'poll toot)))
     (if (null poll)
         (user-error "No poll here")
-      (list
-       ;; var "option" = just the cdr, a cons of option number and desc
-       (cdr (assoc (completing-read "Poll option to vote for: "
-                                    candidates
-                                    nil t) ; require match
-                   candidates))))))
+      (let* ((options (mastodon-tl--field 'options poll))
+             (titles (mastodon-tl--map-alist 'title options))
+             (number-seq (number-sequence 1 (length options)))
+             (numbers (mapcar #'number-to-string number-seq))
+             (options-alist (cl-mapcar #'cons numbers titles))
+             (candidates (mastodon-tl--format-read-poll-option options-alist))
+             (choice (completing-read "Poll option to vote for: "
+                                      candidates nil :match)))
+        (list (cdr (assoc choice candidates)))))))
 
 (defun mastodon-tl--poll-vote (option)
   "If there is a poll at point, prompt user for OPTION to vote on it."
   (interactive (mastodon-tl--read-poll-option))
-  (if (null (mastodon-tl--field 'poll (mastodon-tl--property 'item-json)))
-      (user-error "No poll here")
-    (let* ((toot (mastodon-tl--property 'item-json))
-           (poll (mastodon-tl--field 'poll toot))
-           (poll-id (alist-get 'id poll))
-           (url (mastodon-http--api (format "polls/%s/votes" poll-id)))
-           ;; need to zero-index our option:
-           (option-as-arg (number-to-string (1- (string-to-number (car option)))))
-           (arg `(("choices[]" . ,option-as-arg)))
-           (response (mastodon-http--post url arg)))
-      (mastodon-http--triage response
-                             (lambda (_)
-                               (message "You voted for option %s: %s!"
-                                        (car option) (cdr option)))))))
+  (let ((toot (mastodon-tl--property 'item-json)))
+    (if (null (mastodon-tl--field 'poll toot))
+        (user-error "No poll here")
+      (let* ((poll (mastodon-tl--field 'poll toot))
+             (id (alist-get 'id poll))
+             (url (mastodon-http--api (format "polls/%s/votes" id)))
+             ;; zero-index our option:
+             (option-arg (number-to-string
+                          (1- (string-to-number (car option)))))
+             (arg `(("choices[]" . ,option-arg)))
+             (response (mastodon-http--post url arg)))
+        (mastodon-http--triage response
+                               (lambda (_)
+                                 (message "You voted for option %s: %s!"
+                                          (car option) (cdr option))))))))
 
 
 ;; VIDEOS / MPV
@@ -1427,26 +1433,26 @@ displayed when the duration is smaller than a minute)."
          (type (plist-get video :type)))
     (mastodon-tl--mpv-play-video-at-point url type)))
 
-(defun mastodon-tl--view-full-image-or-play-video ()
+(defun mastodon-tl--view-full-image-or-play-video (_pos)
   "View full sized version of image at point, or try to play video."
-  (interactive)
+  (interactive "d")
   (if (mastodon-tl--media-video-p)
       (mastodon-tl--mpv-play-video-at-point)
     (mastodon-tl--view-full-image)))
 
-(defun mastodon-tl--click-image-or-video (_event)
-  "Click to play video with `mpv.el'."
+(defun mastodon-tl--click-image-or-video (event)
+  "Click to play video with `mpv.el'.
+EVENT is a mouse-click arg."
   (interactive "e")
-  (if (mastodon-tl--media-video-p)
-      (mastodon-tl--mpv-play-video-at-point)
-    (mastodon-tl--view-full-image)))
+  (mastodon-tl--view-full-image-or-play-video
+   (posn-point (event-end event))))
 
 (defun mastodon-tl--media-video-p (&optional type)
   "T if mastodon-media-type prop is \"gifv\" or \"video\".
 TYPE is a mastodon media type."
   (let ((type (or type (mastodon-tl--property 'mastodon-media-type :no-move))))
-    (or (equal type "gifv")
-        (equal type "video"))))
+    (or (string= type "gifv")
+        (string= type "video"))))
 
 (defun mastodon-tl--mpv-play-video-at-point (&optional url type)
   "Play the video or gif at point with an mpv process.
@@ -1455,20 +1461,15 @@ in which case play first video or gif from current toot."
   (interactive)
   (let ((url (or url ; point in byline:
                  (mastodon-tl--property 'image-url :no-move)))) ; point in toot
-    ;; (type (or type ; in byline
-    ;; point in toot:
-    ;; (mastodon-tl--property 'mastodon-media-type :no-move))))
-    (if url
-        (if (mastodon-tl--media-video-p type)
-            (progn
-              (message "'q' to kill mpv.")
-              (condition-case x
-                  (mpv-start "--loop" url)
-                (void-function
-                 (message "Looks like mpv.el not installed. Error: %s"
-                          (error-message-string x)))))
-          (message "no moving image here?"))
-      (message "no moving image here?"))))
+    (if (or (not url)
+            (not (mastodon-tl--media-video-p type)))
+        (user-error "No moving image here?")
+      (message "'q' to kill mpv.")
+      (condition-case x
+          (mpv-start "--loop" url)
+        (void-function
+         (message "Looks like mpv.el not installed. Error: %s"
+                  (error-message-string x)))))))
 
 (defun mastodon-tl--copy-image-caption ()
   "Copy the caption of the image at point."
@@ -1500,8 +1501,7 @@ Runs `mastodon-tl--render-text' and fetches poll or media."
   (let* ((prev-change
           (save-excursion
             (previous-single-property-change (point) 'base-item-id)))
-         (prev-pos
-          (when prev-change (1- prev-change))))
+         (prev-pos (when prev-change (1- prev-change))))
     (when prev-pos
       (get-text-property prev-pos 'base-item-id))))
 
@@ -1510,9 +1510,9 @@ Runs `mastodon-tl--render-text' and fetches poll or media."
   (let ((prev-id (mastodon-tl--prev-item-id)))
     (string= reply-to-id prev-id)))
 
-(defun mastodon-tl--insert-status (toot body author-byline action-byline
-                                        &optional id base-toot detailed-p
-                                        thread domain unfolded no-byline)
+(defun mastodon-tl--insert-status
+    (toot body author-byline action-byline &optional id base-toot
+          detailed-p thread domain unfolded no-byline)
   "Display the content and byline of timeline element TOOT.
 BODY will form the section of the toot above the byline.
 AUTHOR-BYLINE is an optional function for adding the author
@@ -1542,16 +1542,15 @@ NO-BYLINE means just insert toot body, used for folding."
           (and mastodon-tl--fold-toots-at-length
                (length> body mastodon-tl--fold-toots-at-length))))
     (insert
-     (propertize
+     (propertize ;; body + byline:
       (concat
-       (propertize
+       (propertize ;; body only:
         (concat
          "\n"
          ;; relpy symbol (broken):
-         (if (and after-reply-status-p thread)
-             (concat (mastodon-tl--symbol 'replied)
-                     "\n")
-           "")
+         (when (and after-reply-status-p thread)
+           (concat (mastodon-tl--symbol 'replied)
+                   "\n"))
          ;; actual body:
          (let ((bar (mastodon-tl--symbol 'reply-bar))
                (body (if (and toot-foldable (not unfolded))
@@ -1565,10 +1564,9 @@ NO-BYLINE means just insert toot body, used for folding."
         'toot-body t) ;; includes newlines etc. for folding
        ;; byline:
        "\n"
-       (if no-byline
-           ""
+       (unless no-byline
          (mastodon-tl--byline toot author-byline action-byline
-                              detailed-p domain)))
+                              detailed-p domain base-toot)))
       'item-type    'toot
       'item-id      (or id ; notification's own id
                         (alist-get 'id toot)) ; toot id
@@ -1584,6 +1582,7 @@ NO-BYLINE means just insert toot body, used for folding."
       'toot-foldable toot-foldable
       'toot-folded (and toot-foldable (not unfolded)))
      (if no-byline "" "\n"))
+    ;; media:
     (when mastodon-tl--display-media-p
       (mastodon-media--inline-images start-pos (point)))))
 
@@ -1618,6 +1617,8 @@ Returns a member of `mastodon-views--filter-types'."
            "public")
           ((mastodon-tl--profile-buffer-p)
            "profile")
+          ((eq buf 'list-timeline)
+           "home") ;; lists are "home" filter
           (t ;; thread, notifs, home:
            (symbol-name buf)))))
 
@@ -1691,7 +1692,7 @@ Folding decided by `mastodon-tl--fold-toots-at-length'."
 
 (defun mastodon-tl--unfold-post (&optional fold)
   "Unfold the toot at point if it is folded (read-more).
-FOLD means to fold it instead"
+FOLD means to fold it instead."
   (interactive)
   (let ((at-byline (mastodon-tl--property 'byline :no-move)))
     (if (save-excursion
@@ -1711,16 +1712,13 @@ FOLD means to fold it instead"
              (point-after-fold (> last-point
                                   (+ beg mastodon-tl--fold-toots-at-length))))
         ;; save-excursion here useless actually:
-
         ;; FIXME: because point goes to top of item, the screen gets scrolled
         ;; by insertion
         (goto-char beg)
         (delete-region beg end)
         (delete-char 1) ;; prevent newlines accumulating
         ;; insert toot body:
-        (mastodon-tl--toot toot nil nil nil
-                           (not fold) ;; (if fold :folded :unfolded)
-                           :no-byline)
+        (mastodon-tl--toot toot nil nil nil (not fold) :no-byline)
         ;; set toot-folded prop on entire toot (not just body):
         (let ((toot-range ;; post fold action range:
                (mastodon-tl--find-property-range 'item-json
@@ -1730,20 +1728,19 @@ FOLD means to fold it instead"
                                `(toot-folded ,fold)))
         ;; try to leave point somewhere sane:
         (cond ((or at-byline
-                   (and fold
-                        point-after-fold)) ;; point was in area now folded
-               (ignore-errors (forward-line -1)) ;; in case we are btw
+                   (and fold point-after-fold)) ;; point was in area now folded
+               (ignore-errors (forward-line -1)) ;; in case we are between
                (mastodon-tl--goto-next-item)) ;; goto byline
               (t
                (goto-char last-point)
                (when point-after-fold ;; point was in READ MORE heading:
                  (beginning-of-line))))
-        (message (format "%s" (if fold "Fold" "Unfold")))))))
+        (message (format "%s toot" (if fold "Fold" "Unfold")))))))
 
 (defun mastodon-tl--fold-post ()
   "Fold post at point, if it is too long."
   (interactive)
-  (mastodon-tl--unfold-post t))
+  (mastodon-tl--unfold-post :fold))
 
 (defun mastodon-tl--fold-post-toggle ()
   "Toggle the folding status of the toot at point."
@@ -1751,7 +1748,9 @@ FOLD means to fold it instead"
   (let* ((folded (mastodon-tl--property 'toot-folded :no-move)))
     (mastodon-tl--unfold-post (not folded))))
 
-;; from mastodon-alt.el:
+;;; TOOT STATS
+
+;; calqued off mastodon-alt.el:
 (defun mastodon-tl--toot-for-stats (&optional toot)
   "Return the TOOT on which we want to extract stats.
 If no TOOT is given, the one at point is considered."
@@ -1780,31 +1779,29 @@ To disable showing the stats, customize
            (faves (format "%s %s" faves-prop (mastodon-tl--symbol 'favourite)))
            (boosts (format "%s %s" boosts-prop (mastodon-tl--symbol 'boost)))
            (replies (format "%s %s" .replies_count (mastodon-tl--symbol 'reply)))
-           (status (concat
-                    (propertize faves
-                                'favourited-p (eq 't .favourited)
-                                'favourites-field t
-                                'help-echo (format "%s favourites" .favourites_count)
-                                'face 'font-lock-comment-face)
-                    (propertize " | " 'face 'font-lock-comment-face)
-                    (propertize boosts
-                                'boosted-p (eq 't .reblogged)
-                                'boosts-field t
-                                'help-echo (format "%s boosts" .reblogs_count)
-                                'face 'font-lock-comment-face)
-                    (propertize " | " 'face 'font-lock-comment-face)
-                    (propertize replies
-                                'replies-field t
-                                'replies-count .replies_count
-                                'help-echo (format "%s replies" .replies_count)
-                                'face 'font-lock-comment-face)))
-           (status
-            (concat
-             (propertize " "
-                         'display
-                         `(space :align-to (- right ,(+ (length status) 7))))
-             status)))
-      status)))
+           (stats (concat
+                   (propertize faves
+                               'favourited-p (eq t .favourited)
+                               'favourites-field t
+                               'help-echo (format "%s favourites" .favourites_count)
+                               'face 'font-lock-comment-face)
+                   (propertize " | " 'face 'font-lock-comment-face)
+                   (propertize boosts
+                               'boosted-p (eq t .reblogged)
+                               'boosts-field t
+                               'help-echo (format "%s boosts" .reblogs_count)
+                               'face 'font-lock-comment-face)
+                   (propertize " | " 'face 'font-lock-comment-face)
+                   (propertize replies
+                               'replies-field t
+                               'replies-count .replies_count
+                               'help-echo (format "%s replies" .replies_count)
+                               'face 'font-lock-comment-face)))
+           (right-spacing
+            (propertize " "
+                        'display
+                        `(space :align-to (- right ,(+ (length stats) 7))))))
+      (concat right-spacing stats))))
 
 
 ;;; BUFFER SPEC
@@ -1849,24 +1846,26 @@ If NO-ERROR is non-nil, do not error when property is empty."
 
 (defun mastodon-tl--set-buffer-spec
     (buffer endpoint update-fun
-            &optional link-header update-params hide-replies max-id)
+            &optional link-header update-params hide-replies max-id
+            thread-item-id)
   "Set `mastodon-tl--buffer-spec' for the current buffer.
 BUFFER is buffer name, ENDPOINT is buffer's enpoint,
 UPDATE-FUN is its update function.
 LINK-HEADER is the http Link header if present.
 UPDATE-PARAMS is any http parameters needed for the update function.
 HIDE-REPLIES is a flag indicating if replies are hidden in the current buffer.
-MAX-ID is the pagination parameter."
+MAX-ID is the pagination parameter.
+THREAD-ITEM-ID is the ID of the item in thread that we opened the thread with."
   (setq mastodon-tl--buffer-spec
-        `(account ,(cons mastodon-active-user
-                         mastodon-instance-url)
-                  buffer-name ,buffer
-                  endpoint ,endpoint
-                  update-function ,update-fun
-                  link-header ,link-header
-                  update-params ,update-params
-                  hide-replies ,hide-replies
-                  max-id ,max-id)))
+        `( account ,(cons mastodon-active-user mastodon-instance-url)
+           buffer-name ,buffer
+           endpoint ,endpoint
+           update-function ,update-fun
+           link-header ,link-header
+           update-params ,update-params
+           hide-replies ,hide-replies
+           max-id ,max-id
+           thread-item-id ,thread-item-id)))
 
 
 ;;; BUFFERS
@@ -1890,7 +1889,7 @@ to be set. It is set for almost all buffers, but you still have to
 call this function after it is set or use something else."
   (let ((buffer-name (mastodon-tl--buffer-name nil :no-error)))
     (cond (mastodon-toot-mode
-           ;; composing/editing:
+           ;; composing/editing (no buffer spec):
            (if (string= "*edit toot*" (buffer-name))
                'edit-toot
              'new-toot))
@@ -1944,11 +1943,11 @@ call this function after it is set or use something else."
            'preferences)
           ;; search
           ((mastodon-tl--search-buffer-p)
-           (cond ((equal (mastodon-search--buf-type) "accounts")
+           (cond ((string= "accounts" (mastodon-search--buf-type))
                   'search-accounts)
-                 ((equal (mastodon-search--buf-type) "hashtags")
+                 ((string= "hashtags" (mastodon-search--buf-type))
                   'search-hashtags)
-                 ((equal (mastodon-search--buf-type) "statuses")
+                 ((string= "statuses" (mastodon-search--buf-type))
                   'search-statuses)))
           ;; trends
           ((mastodon-tl--endpoint-str-= "trends/statuses")
@@ -2013,6 +2012,10 @@ timeline."
 
 ;;; UTILITIES
 
+(defun mastodon-tl--clean-tabs-and-nl (string)
+  "Remove tabs and newlines from STRING."
+  (replace-regexp-in-string "[\t\n ]*\\'" "" string))
+
 (defun mastodon-tl--map-alist (key alists &optional testfn)
   "Return a list of values extracted from ALISTS with KEY.
 Key is a symbol, as with `alist-get', or else compatible with TESTFN.
@@ -2046,6 +2049,12 @@ NAME is not part of the symbol table, '?' is returned."
   "Return FIELD from TOOT.
 Return value from boosted content if available."
   (or (alist-get field (alist-get 'reblog toot))
+      (alist-get field toot)))
+
+(defun mastodon-tl--field-status (field toot)
+  "Return FIELD from TOOT.
+Return value from status field if available."
+  (or (alist-get field (alist-get 'status toot))
       (alist-get field toot)))
 
 (defun mastodon-tl--remove-html (toot)
@@ -2086,7 +2095,7 @@ BACKWARD means move backward (up) the timeline."
   (cond ((numberp numeric)
          (number-to-string numeric))
         ((stringp numeric) numeric)
-        (t (error "Numeric:%s must be either a string or a number"
+        (t (error "Numeric: %s must be either a string or a number"
                   numeric))))
 
 (defun mastodon-tl--item-id (json)
@@ -2112,7 +2121,7 @@ ID is that of the toot to view."
   (let* ((buffer (format "*mastodon-toot-%s*" id))
          (toot (mastodon-http--get-json
                 (mastodon-http--api (concat "statuses/" id)))))
-    (if (equal (caar toot) 'error)
+    (if (eq (caar toot) 'error)
         (user-error "Error: %s" (cdar toot))
       (with-mastodon-buffer buffer #'mastodon-mode nil
         (mastodon-tl--set-buffer-spec buffer (format "statuses/%s" id)
@@ -2141,46 +2150,47 @@ view all branches of a thread."
 (defun mastodon-tl--thread (&optional thread-id)
   "Open thread buffer for toot at point or with THREAD-ID."
   (interactive)
-  (mastodon-toot--with-toot-item
-   ;; this function's var must not be id as the above macro binds id and even
-   ;; if we provide the arg (e.g. url-lookup), the macro definition overrides
-   ;; it, making the optional arg unusable!
-   (let* ((id (or thread-id (mastodon-tl--property 'base-item-id :no-move)))
-          (type (mastodon-tl--field 'type (mastodon-tl--property 'item-json :no-move))))
-     (if (or (string= type "follow_request")
-             (string= type "follow")) ; no can thread these
-         (user-error "No thread")
-       (let* ((endpoint (format "statuses/%s/context" id))
-              (url (mastodon-http--api endpoint))
-              (buffer (format "*mastodon-thread-%s*" id))
-              (toot (mastodon-http--get-json ; refetch in case we just faved/boosted:
-                     (mastodon-http--api (concat "statuses/" id))
-                     nil :silent))
-              (context (mastodon-http--get-json url nil :silent)))
-         (if (equal (caar toot) 'error)
-             (user-error "Error: %s" (cdar toot))
-           (when (member (alist-get 'type toot) '("reblog" "favourite"))
-             (setq toot (alist-get 'status toot)))
-           (if (> (+ (length (alist-get 'ancestors context))
-                     (length (alist-get 'descendants context)))
-                  0)
-               ;; if we have a thread:
-               (with-mastodon-buffer buffer #'mastodon-mode nil
-                 (let ((marker (make-marker)))
-                   (mastodon-tl--set-buffer-spec buffer endpoint
-                                                 #'mastodon-tl--thread)
-                   (mastodon-tl--timeline (alist-get 'ancestors context) :thread)
-                   (goto-char (point-max))
-                   (move-marker marker (point))
-                   ;; print re-fetched toot:
-                   (mastodon-tl--toot toot :detailed-p :thread)
-                   (mastodon-tl--timeline (alist-get 'descendants context)
-                                          :thread)
-                   ;; put point at the toot:
-                   (goto-char (marker-position marker))
-                   (mastodon-tl--goto-next-item)))
-             ;; else just print the lone toot:
-             (mastodon-tl--single-toot id))))))))
+  ;; no toot-at-point macro here as we can call this programmatically, eg from
+  ;; `mastodon-url-lookup'
+  ;; this function's var must not be id as the above macro binds id and even
+  ;; if we provide the arg (e.g. url-lookup), the macro definition overrides
+  ;; it, making the optional arg unusable!
+  (let* ((id (or thread-id (mastodon-tl--property 'base-item-id :no-move)))
+         (type (mastodon-tl--field 'type (mastodon-tl--property 'item-json :no-move))))
+    (if (or (string= type "follow_request")
+            (string= type "follow")) ; no can thread these
+        (user-error "No thread")
+      (let* ((endpoint (format "statuses/%s/context" id))
+             (url (mastodon-http--api endpoint))
+             (buffer (format "*mastodon-thread-%s*" id))
+             (toot (mastodon-http--get-json ; refetch in case we just faved/boosted:
+                    (mastodon-http--api (concat "statuses/" id))
+                    nil :silent))
+             (context (mastodon-http--get-json url nil :silent)))
+        (if (eq (caar toot) 'error)
+            (user-error "Error: %s" (cdar toot))
+          (when (member (alist-get 'type toot) '("reblog" "favourite"))
+            (setq toot (alist-get 'status toot)))
+          (if (not (< 0 (+ (length (alist-get 'ancestors context))
+                           (length (alist-get 'descendants context)))))
+              ;; just print the lone toot:
+              (mastodon-tl--single-toot id)
+            ;; we have a thread:
+            (with-mastodon-buffer buffer #'mastodon-mode nil
+              (let ((marker (make-marker)))
+                (mastodon-tl--set-buffer-spec buffer endpoint
+                                              #'mastodon-tl--thread
+                                              nil nil nil nil id)
+                (mastodon-tl--timeline (alist-get 'ancestors context) :thread)
+                (goto-char (point-max))
+                (move-marker marker (point))
+                ;; print re-fetched toot:
+                (mastodon-tl--toot toot :detailed-p :thread)
+                (mastodon-tl--timeline (alist-get 'descendants context)
+                                       :thread)
+                ;; put point at the toot:
+                (goto-char (marker-position marker))
+                (mastodon-tl--goto-next-item)))))))))
 
 (defun mastodon-tl--mute-thread ()
   "Mute the thread displayed in the current buffer.
@@ -2189,36 +2199,39 @@ Note that you can only (un)mute threads you have posted in."
   (mastodon-tl--mute-or-unmute-thread))
 
 (defun mastodon-tl--unmute-thread ()
-  "Mute the thread displayed in the current buffer.
+  "Unmute the thread displayed in the current buffer.
 Note that you can only (un)mute threads you have posted in."
   (interactive)
   (mastodon-tl--mute-or-unmute-thread :unmute))
 
+(defun mastodon-tl--thread-parent-id ()
+  "Return the ID of the top item in a thread."
+  (save-excursion
+    (mastodon-tl--goto-first-item)
+    (mastodon-tl--property 'base-item-id :no-move)))
+
 (defun mastodon-tl--mute-or-unmute-thread  (&optional unmute)
   "Mute a thread.
 If UNMUTE, unmute it."
-  (let ((endpoint (mastodon-tl--endpoint))
-        (mute-str (if unmute "unmute" "mute")))
+  (let ((mute-str (if unmute "unmute" "mute")))
     (when (or (mastodon-tl--buffer-type-eq 'thread)
               (mastodon-tl--buffer-type-eq 'notifications))
       (let* ((id
+              ;; the id for `mastodon-tl--user-in-thread-p' ought to be the
+              ;; top-level item:
               (if (mastodon-tl--buffer-type-eq 'notifications)
-                  (get-text-property (point) 'base-item-id)
-                (save-match-data
-                  (string-match "statuses/\\(?2:[[:digit:]]+\\)/context"
-                                endpoint)
-                  (match-string 2 endpoint))))
+                  (mastodon-tl--property 'base-item-id :no-move)
+                (mastodon-tl--thread-parent-id)))
              (we-posted-p (mastodon-tl--user-in-thread-p id))
              (url (mastodon-http--api (format "statuses/%s/%s" id mute-str))))
         (if (not we-posted-p)
-            (message "You can only (un)mute a thread you have posted in.")
+            (user-error "You can only (un)mute a thread you have posted in")
           (when (y-or-n-p (format "%s this thread? " (capitalize mute-str)))
             (let ((response (mastodon-http--post url)))
-              (mastodon-http--triage response
-                                     (lambda (_)
-                                       (if unmute
-                                           (message "Thread unmuted!")
-                                         (message "Thread muted!")))))))))))
+              (mastodon-http--triage
+               response
+               (lambda (_)
+                 (message (format "Thread %sd!" mute-str)))))))))))
 
 (defun mastodon-tl--map-account-id-from-toot (statuses)
   "Return a list of the account IDs of the author of each toot in STATUSES."
@@ -2253,8 +2266,7 @@ LANGS is an array parameters alist of languages to filer user's posts by.
 REBLOGS is a boolean string like NOTIFY, enabling or disabling
 display of the user's boosts in your timeline.
 JSON is a flag arg for `mastodon-http--post'."
-  (interactive
-   (list (mastodon-tl--user-handles-get "follow")))
+  (interactive (list (mastodon-tl--user-handles-get "follow")))
   (mastodon-tl--do-if-item
    (mastodon-tl--do-user-action-and-response
     user-handle "follow" nil notify langs reblogs json)))
@@ -2262,22 +2274,19 @@ JSON is a flag arg for `mastodon-http--post'."
 ;; TODO: make this action "enable/disable notifications"
 (defun mastodon-tl--enable-notify-user-posts (user-handle)
   "Query for USER-HANDLE and enable notifications when they post."
-  (interactive
-   (list (mastodon-tl--user-handles-get "enable")))
+  (interactive (list (mastodon-tl--user-handles-get "enable")))
   (mastodon-tl--do-if-item
    (mastodon-tl--follow-user user-handle "true")))
 
 (defun mastodon-tl--disable-notify-user-posts (user-handle)
   "Query for USER-HANDLE and disable notifications when they post."
-  (interactive
-   (list (mastodon-tl--user-handles-get "disable")))
+  (interactive (list (mastodon-tl--user-handles-get "disable")))
   (mastodon-tl--follow-user user-handle "false"))
 
 (defun mastodon-tl--follow-user-disable-boosts (user-handle)
   "Prompt for a USER-HANDLE, and disable display of boosts in home timeline.
 If they are also not yet followed, follow them."
-  (interactive
-   (list (mastodon-tl--user-handles-get "disable boosts")))
+  (interactive (list (mastodon-tl--user-handles-get "disable boosts")))
   (mastodon-tl--follow-user user-handle nil nil "false"))
 
 (defun mastodon-tl--follow-user-enable-boosts (user-handle)
@@ -2285,8 +2294,7 @@ If they are also not yet followed, follow them."
 If they are also not yet followed, follow them.
 You only need to call this if you have previously disabled
 display of boosts."
-  (interactive
-   (list (mastodon-tl--user-handles-get "enable boosts")))
+  (interactive (list (mastodon-tl--user-handles-get "enable boosts")))
   (mastodon-tl--follow-user user-handle nil nil "true"))
 
 (defun mastodon-tl--filter-user-user-posts-by-language (user-handle)
@@ -2295,11 +2303,10 @@ If they are not already followed, they will be too.
 To be filtered, a post has to be marked as in the language given.
 This may mean that you will not see posts that are in your
 desired language if they are not marked as such (or as anything)."
-  (interactive
-   (list (mastodon-tl--user-handles-get "filter by language")))
+  (interactive (list (mastodon-tl--user-handles-get "filter by language")))
   (let ((langs (mastodon-tl--read-filter-langs)))
     (mastodon-tl--do-if-item
-     (if (equal "" (cdar langs))
+     (if (string= "" (cdar langs))
          (mastodon-tl--unfilter-user-languages user-handle)
        (mastodon-tl--follow-user user-handle nil langs)))))
 
@@ -2307,8 +2314,7 @@ desired language if they are not marked as such (or as anything)."
   "Remove any language filters for USER-HANDLE.
 This means you will receive posts of theirs marked as being in
 any or no language."
-  (interactive
-   (list (mastodon-tl--user-handles-get "filter by language")))
+  (interactive (list (mastodon-tl--user-handles-get "filter by language")))
   (let ((langs "languages[]"))
     (mastodon-tl--do-if-item
      ;; we need "languages[]" as a param, with no "=" and not json-encoded as
@@ -2334,45 +2340,39 @@ LANGS is the accumulated array param alist if we re-run recursively."
 
 (defun mastodon-tl--unfollow-user (user-handle)
   "Query for USER-HANDLE from current status and unfollow that user."
-  (interactive
-   (list (mastodon-tl--user-handles-get "unfollow")))
+  (interactive (list (mastodon-tl--user-handles-get "unfollow")))
   (mastodon-tl--do-if-item
    (mastodon-tl--do-user-action-and-response user-handle "unfollow" t)))
 
 (defun mastodon-tl--block-user (user-handle)
   "Query for USER-HANDLE from current status and block that user."
-  (interactive
-   (list (mastodon-tl--user-handles-get "block")))
+  (interactive (list (mastodon-tl--user-handles-get "block")))
   (mastodon-tl--do-if-item
    (mastodon-tl--do-user-action-and-response user-handle "block")))
 
 (defun mastodon-tl--unblock-user (user-handle)
   "Query for USER-HANDLE from list of blocked users and unblock that user."
-  (interactive
-   (list (mastodon-tl--get-blocks-or-mutes-list "unblock")))
+  (interactive (list (mastodon-tl--get-blocks-or-mutes-list "unblock")))
   (if (not user-handle)
-      (message "Looks like you have no blocks to unblock!")
+      (user-error "Looks like you have no blocks to unblock!")
     (mastodon-tl--do-user-action-and-response user-handle "unblock" t)))
 
 (defun mastodon-tl--mute-user (user-handle)
   "Query for USER-HANDLE from current status and mute that user."
-  (interactive
-   (list (mastodon-tl--user-handles-get "mute")))
+  (interactive (list (mastodon-tl--user-handles-get "mute")))
   (mastodon-tl--do-if-item
    (mastodon-tl--do-user-action-and-response user-handle "mute")))
 
 (defun mastodon-tl--unmute-user (user-handle)
   "Query for USER-HANDLE from list of muted users and unmute that user."
-  (interactive
-   (list (mastodon-tl--get-blocks-or-mutes-list "unmute")))
+  (interactive (list (mastodon-tl--get-blocks-or-mutes-list "unmute")))
   (if (not user-handle)
-      (message "Looks like you have no mutes to unmute!")
+      (user-error "Looks like you have no mutes to unmute!")
     (mastodon-tl--do-user-action-and-response user-handle "unmute" t)))
 
 (defun mastodon-tl--dm-user (user-handle)
   "Query for USER-HANDLE from current status and compose a message to that user."
-  (interactive
-   (list (mastodon-tl--user-handles-get "message")))
+  (interactive (list (mastodon-tl--user-handles-get "message")))
   (mastodon-tl--do-if-item
    (mastodon-toot--compose-buffer (concat "@" user-handle))
    (setq mastodon-toot--visibility "direct")
@@ -2405,8 +2405,8 @@ LANGS is the accumulated array param alist if we re-run recursively."
      (if (eq 1 (length user-handles))
          (car user-handles)
        (completing-read (cond ((or ; TODO: make this "enable/disable notifications"
-                                (equal action "disable")
-                                   (equal action "enable"))
+                                (string= action "disable")
+                                (string= action "enable"))
                                (format "%s notifications when user posts: " action))
                               ((string-suffix-p "boosts" action)
                                (format "%s by user: " action))
@@ -2419,16 +2419,16 @@ LANGS is the accumulated array param alist if we re-run recursively."
 (defun mastodon-tl--get-blocks-or-mutes-list (action)
   "Fetch the list of accounts for ACTION from the server.
 Action must be either \"unblock\" or \"unmute\"."
-  (let* ((endpoint (cond ((equal action "unblock")
+  (let* ((endpoint (cond ((string= action "unblock")
                           "blocks")
-                         ((equal action "unmute")
+                         ((string= action "unmute")
                           "mutes")))
          (url (mastodon-http--api endpoint))
          (json (mastodon-http--get-json url))
          (accts (mastodon-tl--map-alist 'acct json)))
     (when accts
       (completing-read (format "Handle of user to %s: " action)
-                       accts nil t)))) ; require match
+                       accts nil :match))))
 
 (defun mastodon-tl--do-user-action-and-response
     (user-handle action &optional negp notify langs reblogs json)
@@ -2443,13 +2443,13 @@ display of the user's boosts in your timeline."
   (let* ((account (if negp
                       ;; unmuting/unblocking, handle from mute/block list
                       (mastodon-profile--search-account-by-handle user-handle)
-                    ;; profile view, use 'profile-json as status:
-                    (if (mastodon-tl--profile-buffer-p)
-                        (mastodon-profile--lookup-account-in-status
-                         user-handle (mastodon-profile--profile-json))
-                      ;; muting/blocking, select from handles in current status
-                      (mastodon-profile--lookup-account-in-status
-                       user-handle (mastodon-profile--item-json)))))
+                    (mastodon-profile--lookup-account-in-status
+                     user-handle
+                     (if (mastodon-tl--profile-buffer-p)
+                         ;; profile view, use 'profile-json as status:
+                         (mastodon-profile--profile-json)
+                       ;; muting/blocking, select from handles in current status
+                       (mastodon-profile--item-json)))))
          (user-id (alist-get 'id account))
          (name (if (string-empty-p (alist-get 'display_name account))
                    (alist-get 'username account)
@@ -2459,12 +2459,12 @@ display of the user's boosts in your timeline."
                      (reblogs `(("reblogs" . ,reblogs)))
                      (t nil)))
          (url (mastodon-http--api (format "accounts/%s/%s" user-id action))))
-    (if account
-        (if (equal action "follow") ; y-or-n for all but follow
-            (mastodon-tl--do-user-action-function url name user-handle action notify args reblogs json)
-          (when (y-or-n-p (format "%s user %s? " action name))
-            (mastodon-tl--do-user-action-function url name user-handle action args)))
-      (message "Cannot find a user with handle %S" user-handle))))
+    (if (not account)
+        (user-error "Cannot find a user with handle %S" user-handle)
+      (when (or (string= action "follow") ;; y-or-n for all but follow
+                (y-or-n-p (format "%s user %s? " action name)))
+        (mastodon-tl--do-user-action-function
+         url name user-handle action notify args reblogs json)))))
 
 (defun mastodon-tl--do-user-action-function
     (url name user-handle action &optional notify args reblogs json)
@@ -2479,33 +2479,33 @@ ARGS is an alist of any parameters to send with the request."
        (let ((json (with-current-buffer response
                      (mastodon-http--process-json))))
          ;; TODO: when > if, with failure msg
-         (cond ((string-equal notify "true")
-                (when (equal 't (alist-get 'notifying json))
+         (cond ((string= notify "true")
+                (when (eq t (alist-get 'notifying json))
                   (message "Receiving notifications for user %s (@%s)!"
                            name user-handle)))
-               ((string-equal notify "false")
-                (when (equal :json-false (alist-get 'notifying json))
+               ((string= notify "false")
+                (when (eq :json-false (alist-get 'notifying json))
                   (message "Not receiving notifications for user %s (@%s)!"
                            name user-handle)))
-               ((string-equal reblogs "true")
-                (when (equal 't (alist-get 'showing_reblogs json))
+               ((string= reblogs "true")
+                (when (eq t (alist-get 'showing_reblogs json))
                   (message "Receiving boosts by user %s (@%s)!"
                            name user-handle)))
-               ((string-equal reblogs "false")
-                (when (equal :json-false (alist-get 'showing_reblogs json))
+               ((string= reblogs "false")
+                (when (eq :json-false (alist-get 'showing_reblogs json))
                   (message "Not receiving boosts by user %s (@%s)!"
                            name user-handle)))
-               ((or (string-equal action "mute")
-                    (string-equal action "unmute"))
+               ((or (string= action "mute")
+                    (string= action "unmute"))
                 (message "User %s (@%s) %sd!" name user-handle action))
-               ((equal args "languages[]")
+               ((string= args "languages[]")
                 (message "User %s language filters removed!" name))
-               ((assoc "languages[]" args #'equal)
+               ((assoc "languages[]" args #'string=)
                 (message "User %s filtered by language(s): %s" name
                          (mapconcat #'cdr args " ")))
                ((and (eq notify nil)
                      (eq reblogs nil))
-                (if (and (equal action "follow")
+                (if (and (string= action "follow")
                          (eq t (alist-get 'requested json)))
                     (message "Follow requested for user %s (@%s)!" name user-handle)
                   (message "User %s (@%s) %sed!" name user-handle action)))))))))
@@ -2515,8 +2515,7 @@ ARGS is an alist of any parameters to send with the request."
 
 (defun mastodon-tl--get-tags-list ()
   "Return the list of tags of the toot at point."
-  (let* ((toot (or (mastodon-tl--property 'base-toot :no-move) ; fave/boost notifs
-                   (mastodon-tl--property 'item-json :no-move)))
+  (let* ((toot (mastodon-toot--base-toot-or-item-json))
          (tags (mastodon-tl--field 'tags toot)))
     (mastodon-tl--map-alist 'name tags)))
 
@@ -2527,8 +2526,9 @@ If TAG provided, follow it."
   (let* ((tags (unless tag (mastodon-tl--get-tags-list)))
          (tag-at-point
           (unless tag
-            (when (eq 'hashtag (get-text-property (point) 'mastodon-tab-stop))
-              (get-text-property (point) 'mastodon-tag))))
+            (when (eq 'hashtag
+                      (mastodon-tl--property 'mastodon-tab-stop :no-move))
+              (mastodon-tl--property 'mastodon-tag :no-move))))
          (tag (or tag (completing-read
                        (format "Tag to follow [%s]: " tag-at-point)
                        tags nil nil nil nil tag-at-point)))
@@ -2564,7 +2564,7 @@ PREFIX is sent to `mastodon-tl--get-tag-timeline', which see."
          (tags (mastodon-tl--map-alist 'name followed-tags-json))
          (tag (completing-read "Tag: " tags nil)))
     (if (null tag)
-        (message "You have to follow some tags first.")
+        (user-error "You have to follow some tags first")
       (mastodon-tl--get-tag-timeline prefix tag))))
 
 (defun mastodon-tl--followed-tags-timeline (&optional prefix)
@@ -2618,24 +2618,18 @@ ACCOUNT and TOOT are the data to use."
   "Build the parameters alist based on user responses.
 ACCOUNT-ID, COMMENT, ITEM-ID, FORWARD-P, CAT, and RULES are all from
 `mastodon-tl--report-params', which see."
-  (let ((params `(("account_id" . ,account-id)
-                  ,(when comment
-                     `("comment" . ,comment))
-                  ,(when item-id
-                     `("status_ids[]" . ,item-id))
-                  ,(when forward-p
-                     `("forward" . ,forward-p))
-                  ,(when cat
-                     `("category" . ,cat)))))
-    (when rules
+  (let ((params (cl-remove
+                 nil
+                 `(("account_id" . ,account-id)
+                   ,(when comment `("comment" . ,comment))
+                   ,(when item-id `("status_ids[]" . ,item-id))
+                   ,(when forward-p `("forward" . ,forward-p))
+                   ,(when cat `("category" . ,cat))))))
+    (if (not rules)
+        params
       (let ((alist
              (mastodon-http--build-array-params-alist "rule_ids[]" rules)))
-        (mapc (lambda (x)
-                (push x params))
-              alist)))
-    ;; FIXME: the above approach adds nils to your params.
-    (setq params (delete nil params))
-    params))
+        (append alist params)))))
 
 (defun mastodon-tl--report-to-mods ()
   "Report the author of the toot at point to your instance moderators.
@@ -2660,10 +2654,7 @@ report the account for spam."
 
 (defun mastodon-tl--map-rules-alist (rules)
   "Convert RULES text and id fields into an alist."
-  (mapcar (lambda (x)
-            (let-alist x
-              (cons .text .id)))
-          rules))
+  (mastodon-tl--map-alist-vals-to-alist 'text 'id rules))
 
 (defun mastodon-tl--read-rules-ids ()
   "Prompt for a list of instance rules and return a list of selected ids."
@@ -2674,7 +2665,7 @@ report the account for spam."
                    "rules [TAB for options, | to separate]: "
                    alist nil t)))
     (mapcar (lambda (x)
-              (alist-get x alist nil nil #'equal))
+              (alist-get x alist nil nil #'string=))
             choices)))
 
 
@@ -2693,10 +2684,11 @@ Then run CALLBACK with arguments CBARGS.
 PARAMS is used to send any parameters needed to correctly update
 the current view."
   (let* ((args `(("max_id" . ,(mastodon-tl--as-string id))))
-         (args (if params (push (car args) params) args))
-         (url (if (string-suffix-p "search" endpoint)
-                  (mastodon-http--api-search)
-                (mastodon-http--api endpoint))))
+         (args (append args params))
+         (url (mastodon-http--api
+               endpoint
+               (when (string-suffix-p "search" endpoint)
+                 "v2"))))
     (apply #'mastodon-http--get-json-async url args callback cbargs)))
 
 (defun mastodon-tl--more-json-async-offset (endpoint &optional params
@@ -2709,19 +2701,19 @@ PARAMS are the update parameters, see
 `mastodon-tl--update-params'. These (\"limit\" and \"offset\")
 must be set in `mastodon-tl--buffer-spec' for pagination to work.
 Then run CALLBACK with arguments CBARGS."
-  (let* ((params (or params
-                     (mastodon-tl--update-params)))
+  (let* ((params (or params (mastodon-tl--update-params)))
          (limit (string-to-number
-                 (alist-get "limit" params nil nil #'equal)))
+                 (alist-get "limit" params nil nil #'string=)))
          (offset (number-to-string
                   (+ limit ; limit + old offset = new offset
                      (string-to-number
-                      (alist-get "offset" params nil nil #'equal)))))
-         (url (if (string-suffix-p "search" endpoint)
-                  (mastodon-http--api-search)
-                (mastodon-http--api endpoint))))
+                      (alist-get "offset" params nil nil #'string=)))))
+         (url (mastodon-http--api
+               endpoint
+               (when (string-suffix-p "search" endpoint)
+                 "v2"))))
     ;; increment:
-    (setf (alist-get "offset" params nil nil #'equal) offset)
+    (setf (alist-get "offset" params nil nil #'string=) offset)
     (apply #'mastodon-http--get-json-async url params callback cbargs)))
 
 (defun mastodon-tl--updated-json (endpoint id &optional params)
@@ -2729,7 +2721,7 @@ Then run CALLBACK with arguments CBARGS."
 PARAMS is used to send any parameters needed to correctly update
 the current view."
   (let* ((args `(("since_id" . ,(mastodon-tl--as-string id))))
-         (args (if params (push (car args) params) args))
+         (args (append args params))
          (url (mastodon-http--api endpoint)))
     (mastodon-http--get-json url args)))
 
@@ -2759,10 +2751,9 @@ Aims to respect any pagination in effect."
              (goto-char (point-min))
              (mastodon-profile--get-toot-author max-id)))
           ((eq type 'thread)
-           (save-match-data
-             (let ((endpoint (mastodon-tl--endpoint)))
-               (string-match "statuses/\\(?2:[[:digit:]]+\\)/context" endpoint)
-               (mastodon-tl--thread (match-string 2 endpoint))))))
+           (let ((id (mastodon-tl--buffer-property
+                      'thread-item-id (current-buffer) :no-error)))
+             (mastodon-tl--thread id))))
     ;; TODO: sends point to where point was in buffer. This is very rough; we
     ;; may have removed an item , so the buffer will be smaller, point will
     ;; end up past where we were, etc.
@@ -2803,17 +2794,17 @@ and profile pages when showing followers or accounts followed."
       ;; "prev" type!
       (let ((link-header (mastodon-tl--link-header)))
         (if (> 2 (length link-header))
-            (message "No next page")
+            (user-error "No next page")
           (let* ((next (car link-header))
                  ;;(prev (cadr (mastodon-tl--link-header)))
                  (url (mastodon-tl--build-link-header-url next)))
-            (mastodon-http--get-response-async url nil 'mastodon-tl--more* (current-buffer)
-                                               (point) :headers))))
-    (cond ( ; no paginate
+            (mastodon-http--get-response-async
+             url nil 'mastodon-tl--more* (current-buffer) (point) :headers))))
+    (cond (;; no paginate
            (or (mastodon-tl--buffer-type-eq 'follow-suggestions)
                (mastodon-tl--buffer-type-eq 'filters)
                (mastodon-tl--buffer-type-eq 'lists))
-           (message "No more results"))
+           (user-error "No more results"))
           ;; offset paginate (search, trending, user lists, ...?):
           ((or (string-prefix-p "*mastodon-trending-" (buffer-name))
                (mastodon-tl--search-buffer-p))
@@ -2821,7 +2812,7 @@ and profile pages when showing followers or accounts followed."
             (mastodon-tl--endpoint)
             (mastodon-tl--update-params)
             'mastodon-tl--more* (current-buffer) (point)))
-          (t;; max_id paginate (timelines, items with ids/timestamps):
+          (t ;; max_id paginate (timelines, items with ids/timestamps):
            (let ((max-id (mastodon-tl--oldest-id)))
              (mastodon-tl--more-json-async
               (mastodon-tl--endpoint)
@@ -2829,7 +2820,8 @@ and profile pages when showing followers or accounts followed."
               (mastodon-tl--update-params)
               'mastodon-tl--more* (current-buffer) (point) nil max-id))))))
 
-(defun mastodon-tl--more* (response buffer point-before &optional headers max-id)
+(defun mastodon-tl--more* (response buffer point-before
+                                    &optional headers max-id)
   "Append older toots to timeline, asynchronously.
 Runs the timeline's update function on RESPONSE, in BUFFER.
 When done, places point at POINT-BEFORE.
@@ -2837,24 +2829,26 @@ HEADERS is the http headers returned in the response, if any.
 MAX-ID is the pagination parameter, a string."
   (with-current-buffer buffer
     (if (not response)
-        (message "No more results")
+        (user-error "No more results")
       (let* ((inhibit-read-only t)
              (json (if headers (car response) response))
              ;; FIXME: max-id pagination works for statuses only, not other
              ;; search results pages:
-             (json (if (mastodon-tl--search-buffer-p)
-                       (cond ((equal "statuses" (mastodon-search--buf-type))
+             (json (if (not (mastodon-tl--search-buffer-p))
+                       json
+                     (let ((type (mastodon-search--buf-type)))
+                       (cond ((string= "statuses" type)
                               (cdr ; avoid repeat of last status
                                (alist-get 'statuses response)))
-                             ((equal "hashtags" (mastodon-search--buf-type))
+                             ((string= "hashtags" type)
                               (alist-get 'hashtags response))
-                             ((equal "accounts" (mastodon-search--buf-type))
-                              (alist-get 'accounts response)))
-                     json))
+                             ((string= "accounts" type)
+                              (alist-get 'accounts response))))))
              (headers (if headers (cdr response) nil))
-             (link-header (mastodon-tl--get-link-header-from-response headers)))
+             (link-header
+              (mastodon-tl--get-link-header-from-response headers)))
         (goto-char (point-max))
-        (if (eq (mastodon-tl--get-buffer-type) 'thread)
+        (if (eq 'thread (mastodon-tl--get-buffer-type))
             ;; if thread view, call --thread with parent ID
             (progn (goto-char (point-min))
                    (mastodon-tl--goto-next-item)
@@ -2862,7 +2856,7 @@ MAX-ID is the pagination parameter, a string."
                    (goto-char point-before)
                    (message "Loaded full thread."))
           (if (not json)
-              (message "No more results.")
+              (user-error "No more results")
             (funcall (mastodon-tl--update-function) json)
             (goto-char point-before)
             ;; update buffer spec to new link-header or max-id:
@@ -2870,8 +2864,7 @@ MAX-ID is the pagination parameter, a string."
             (mastodon-tl--set-buffer-spec (mastodon-tl--buffer-name)
                                           (mastodon-tl--endpoint)
                                           (mastodon-tl--update-function)
-                                          link-header
-                                          nil nil max-id)
+                                          link-header nil nil max-id)
             (message "Loading... done.")))))))
 
 (defun mastodon-tl--find-property-range (property start-point
@@ -2884,17 +2877,18 @@ before (non-nil) or after (nil)"
   (if (get-text-property start-point property)
       ;; We are within a range, so look backwards for the start:
       (cons (previous-single-property-change
-             (if (equal start-point (point-max)) start-point (1+ start-point))
+             (if (eq start-point (point-max)) start-point (1+ start-point))
              property nil (point-min))
             (next-single-property-change start-point property nil (point-max)))
     (if search-backwards
         (let* ((end (or (previous-single-property-change
-                         (if (equal start-point (point-max))
-                             start-point (1+ start-point))
+                         (if (eq start-point (point-max))
+                             start-point
+                           (1+ start-point))
                          property)
                         ;; we may either be just before the range or there
                         ;; is nothing at all
-                        (and (not (equal start-point (point-min)))
+                        (and (not (eq start-point (point-min)))
                              (get-text-property (1- start-point) property)
                              start-point)))
                (start (and end (previous-single-property-change
@@ -2915,20 +2909,21 @@ from the value at START-POINT if that is set).
 Return nil if no such range exists.
 If SEARCH-BACKWARDS is non-nil it find a region before
 START-POINT otherwise after START-POINT."
-  (if (get-text-property start-point property)
-      ;; We are within a range, we need to start the search from
-      ;; before/after this range:
-      (let ((current-range (mastodon-tl--find-property-range property start-point)))
-        (if search-backwards
-            (unless (equal (car current-range) (point-min))
-              (mastodon-tl--find-property-range
-               property (1- (car current-range)) search-backwards))
-          (unless (equal (cdr current-range) (point-max))
+  (if (not (get-text-property start-point property))
+      ;; If we are not within a range, we can just defer to
+      ;; mastodon-tl--find-property-range directly.
+      (mastodon-tl--find-property-range property start-point search-backwards)
+    ;; We are within a range, we need to start the search from
+    ;; before/after this range:
+    (let ((current-range
+           (mastodon-tl--find-property-range property start-point)))
+      (if search-backwards
+          (unless (eq (car current-range) (point-min))
             (mastodon-tl--find-property-range
-             property (1+ (cdr current-range)) search-backwards))))
-    ;; If we are not within a range, we can just defer to
-    ;; mastodon-tl--find-property-range directly.
-    (mastodon-tl--find-property-range property start-point search-backwards)))
+             property (1- (car current-range)) search-backwards))
+        (unless (eq (cdr current-range) (point-max))
+          (mastodon-tl--find-property-range
+           property (1+ (cdr current-range)) search-backwards))))))
 
 (defun mastodon-tl--consider-timestamp-for-updates (timestamp)
   "Take note that TIMESTAMP is used in buffer and ajust timers as needed.
@@ -3038,7 +3033,7 @@ This location is defined by a non-nil value of
   "Update timeline with new toots."
   (interactive)
   ;; FIXME: actually these buffers should just reload by calling their own
-  ;; load function:
+  ;; load function (actually g is mostly mapped as such):
   (if (or (mastodon-tl--buffer-type-eq 'trending-statuses)
           (mastodon-tl--buffer-type-eq 'trending-tags)
           (mastodon-tl--buffer-type-eq 'follow-suggestions)
@@ -3046,33 +3041,35 @@ This location is defined by a non-nil value of
           (mastodon-tl--buffer-type-eq 'filters)
           (mastodon-tl--buffer-type-eq 'scheduled-statuses)
           (mastodon-tl--search-buffer-p))
-      (message "update not available in this view.")
+      (user-error "Update not available in this view")
     ;; FIXME: handle update for search and trending buffers
     (let* ((endpoint (mastodon-tl--endpoint))
            (update-function (mastodon-tl--update-function)))
       ;; update a thread, without calling `mastodon-tl--updated-json':
       (if (mastodon-tl--buffer-type-eq 'thread)
-          (let ((thread-id (mastodon-tl--property 'item-id)))
-            (funcall update-function thread-id))
+          ;; load whole thread whole thread
+          (let ((thread-id (mastodon-tl--thread-parent-id)))
+            (funcall update-function thread-id)
+            (message "Loaded full thread."))
         ;; update other timelines:
         (let* ((id (mastodon-tl--newest-id))
                (params (mastodon-tl--update-params))
                (json (mastodon-tl--updated-json endpoint id params)))
-          (if json
-              (let ((inhibit-read-only t))
-                (mastodon-tl--set-after-update-marker)
-                (goto-char (or mastodon-tl--update-point (point-min)))
-                (funcall update-function json)
-                (when mastodon-tl--after-update-marker
-                  (goto-char mastodon-tl--after-update-marker)))
-            (message "nothing to update")))))))
+          (if (not json)
+              (user-error "Nothing to update")
+            (let ((inhibit-read-only t))
+              (mastodon-tl--set-after-update-marker)
+              (goto-char (or mastodon-tl--update-point (point-min)))
+              (funcall update-function json)
+              (when mastodon-tl--after-update-marker
+                (goto-char mastodon-tl--after-update-marker)))))))))
 
 
 ;;; LOADING TIMELINES
 
-(defun mastodon-tl--init (buffer-name endpoint update-function
-                                      &optional headers params hide-replies
-                                      instance)
+(defun mastodon-tl--init
+    (buffer-name endpoint update-function &optional headers params
+                 hide-replies instance)
   "Initialize BUFFER-NAME with timeline targeted by ENDPOINT asynchronously.
 UPDATE-FUNCTION is used to recieve more toots.
 HEADERS means to also collect the response headers. Used for paginating
@@ -3085,16 +3082,16 @@ a timeline from."
                  (concat "https://" instance "/api/v1/" endpoint)
                (mastodon-http--api endpoint)))
         (buffer (concat "*mastodon-" buffer-name "*")))
-    (if headers
-        (mastodon-http--get-response-async
-         url params 'mastodon-tl--init*
-         buffer endpoint update-function headers params hide-replies)
-      (mastodon-http--get-json-async
-       url params 'mastodon-tl--init*
-       buffer endpoint update-function nil params hide-replies instance))))
+    (funcall
+     (if headers
+         #'mastodon-http--get-response-async
+       #'mastodon-http--get-json-async)
+     url params 'mastodon-tl--init*
+     buffer endpoint update-function headers params hide-replies instance)))
 
-(defun mastodon-tl--init* (response buffer endpoint update-function
-                                    &optional headers update-params hide-replies instance)
+(defun mastodon-tl--init*
+    (response buffer endpoint update-function &optional headers
+              update-params hide-replies instance)
   "Initialize BUFFER with timeline targeted by ENDPOINT.
 UPDATE-FUNCTION is used to recieve more toots.
 RESPONSE is the data returned from the server by
@@ -3111,23 +3108,25 @@ JSON and http headers, without it just the JSON."
            ;; so as a fallback, load trending statuses:
            ;; FIXME: this could possibly be a fallback for all timelines not
            ;; just home?
-           (when (equal endpoint "timelines/home")
+           (when (string= endpoint "timelines/home")
              (mastodon-search--trending-statuses)))
           ((eq (caar json) 'error)
            (user-error "Looks like the server bugged out: \"%s\"" (cdar json)))
           (t
            (let* ((headers (if headers (cdr response) nil))
-                  (link-header (mastodon-tl--get-link-header-from-response headers)))
+                  (link-header
+                   (mastodon-tl--get-link-header-from-response headers)))
              (with-mastodon-buffer buffer #'mastodon-mode nil
-               (mastodon-tl--set-buffer-spec buffer endpoint update-function
-                                             link-header update-params hide-replies
-                                             ;; awful hack to fix multiple reloads:
-                                             (alist-get "max_id" update-params nil nil #'equal))
+               (mastodon-tl--set-buffer-spec
+                buffer endpoint update-function
+                link-header update-params hide-replies
+                ;; awful hack to fix multiple reloads:
+                (alist-get "max_id" update-params nil nil #'string=))
                (mastodon-tl--do-init json update-function instance)))))))
 
 (defun mastodon-tl--init-sync
-    (buffer-name endpoint update-function
-                 &optional note-type params headers view-name binding-str)
+    (buffer-name endpoint update-function &optional note-type params
+                 headers view-name binding-str endpoint-version)
   "Initialize BUFFER-NAME with timeline targeted by ENDPOINT.
 UPDATE-FUNCTION is used to receive more toots.
 Runs synchronously.
@@ -3135,7 +3134,8 @@ Optional arg NOTE-TYPE means only get that type of notification.
 PARAMS is an alist of any params to include in the request.
 HEADERS are any headers to send in the request.
 VIEW-NAME is a string, to be used as a heading for the view.
-BINDING-STR is a string explaining any bindins in the view."
+BINDING-STR is a string explaining any bindins in the view.
+ENDPOINT-VERSION is a string, format Vx, e.g. V2."
   ;; Used by `mastodon-notifications-get' and in views.el
   (let* ((exclude-types (when note-type
                           (mastodon-notifications--filter-types-list note-type)))
@@ -3143,7 +3143,7 @@ BINDING-STR is a string explaining any bindins in the view."
                          (mastodon-http--build-array-params-alist
                           "exclude_types[]" exclude-types)))
          (params (append notes-params params))
-         (url (mastodon-http--api endpoint))
+         (url (mastodon-http--api endpoint endpoint-version))
          (buffer (concat "*mastodon-" buffer-name "*"))
          (response (mastodon-http--get-response url params))
          (json (car response))
@@ -3157,10 +3157,11 @@ BINDING-STR is a string explaining any bindins in the view."
       (when binding-str
         (insert (mastodon-tl--set-face (concat "[" binding-str "]\n\n")
                                        'font-lock-comment-face)))
-      (mastodon-tl--set-buffer-spec buffer endpoint update-function
-                                    link-header params nil
-                                    ;; awful hack to fix multiple reloads:
-                                    (alist-get "max_id" params nil nil #'equal))
+      (mastodon-tl--set-buffer-spec
+       buffer endpoint update-function
+       link-header params nil
+       ;; awful hack to fix multiple reloads:
+       (alist-get "max_id" params nil nil #'string=))
       (mastodon-tl--do-init json update-function)
       buffer)))
 
@@ -3169,7 +3170,7 @@ BINDING-STR is a string explaining any bindins in the view."
 JSON is the data to call UPDATE-FUN on.
 When DOMAIN, force inclusion of user's domain in their handle."
   (remove-overlays) ; video overlays
-  (if domain
+  (if domain ;; maybe our update-fun doesn't always have 3 args...:
       (funcall update-fun json nil domain)
     (funcall update-fun json))
   (setq
@@ -3198,8 +3199,7 @@ When DOMAIN, force inclusion of user's domain in their handle."
 RECORD is the bookmark record."
   (let ((id (bookmark-prop-get record 'id)))
     ;; we need to handle thread and single toot for starters
-    (pop-to-buffer
-     (mastodon-tl--thread id))))
+    (pop-to-buffer (mastodon-tl--thread id))))
 
 (defun mastodon-tl--bookmark-make-record ()
   "Return a bookmark record for the current mastodon buffer."

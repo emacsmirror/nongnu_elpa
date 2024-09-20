@@ -15,4 +15,5 @@ File: dir,	Node: Top	This is the top of the INFO tree
 * Menu:
 
 Emacs
-* Mastodon: (mastodon).         Client for Mastodon on ActivityPub networks.
+* Mastodon: (mastodon).         Client for fediverse services using the 
+                                  Mastodon API.

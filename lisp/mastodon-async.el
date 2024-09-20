@@ -88,7 +88,7 @@
     (delete-process (get-buffer-process mastodon-async--http-buffer))
     (kill-buffer mastodon-async--http-buffer)
     (setq mastodon-async--http-buffer "")
-    (when (not (equal "" mastodon-async--queue)) ; error handle on kill async buffer
+    (when (not (string= "" mastodon-async--queue)) ; error handle on kill async buffer
       (kill-buffer mastodon-async--queue))))
 
 (defun mastodon-async--stream-notifications ()
@@ -207,8 +207,8 @@ ENDPOINT is the endpoint for the stream and timeline."
         ;; if user stream, we need "timelines/home" not "timelines/user"
         ;; if notifs, we need "notifications" not "timelines/notifications"
         (endpoint (cond
-                   ((equal name "notifications") "notifications")
-                   ((equal name "home") "timelines/home")
+                   ((string= name "notifications") "notifications")
+                   ((string= name "home") "timelines/home")
                    (t (format "timelines/%s" endpoint)))))
     (mastodon-async--set-local-variables buffer-name http-buffer
                                          buffer-name queue-name)
@@ -218,7 +218,7 @@ ENDPOINT is the endpoint for the stream and timeline."
       (make-local-variable 'mastodon-tl--enable-relative-timestamps)
       (make-local-variable 'mastodon-tl--display-media-p)
       (message (mastodon-http--api endpoint))
-      (if (equal name "notifications")
+      (if (string= name "notifications")
           (mastodon-notifications--timeline
            (mastodon-http--get-json
             (mastodon-http--api "notifications")))
@@ -227,7 +227,7 @@ ENDPOINT is the endpoint for the stream and timeline."
       (mastodon-mode)
       (mastodon-tl--set-buffer-spec buffer-name
                                     endpoint
-                                    (if (equal name "notifications")
+                                    (if (string= name "notifications")
                                         'mastodon-notifications--timeline
                                       'mastodon-tl--timeline))
       (setq-local mastodon-tl--enable-relative-timestamps nil)
@@ -275,7 +275,7 @@ NAME is used for the queue and display buffer."
                          (car split-strings)))
             (data (replace-regexp-in-string
                    "^data: " "" (cadr split-strings))))
-        (when (equal "update" event-type)
+        (when (string= "update" event-type)
           ;; in some casses the data is not fully formed
           ;; for now return nil if malformed using `ignore-errors'
           (ignore-errors (json-read-from-string data)))))))
@@ -289,7 +289,7 @@ NAME is used for the queue and display buffer."
                       (car split-strings)))
          (data (replace-regexp-in-string
                 "^data: " "" (cadr split-strings))))
-    (when (equal "notification" event-type)
+    (when (string= "notification" event-type)
       ;; in some casses the data is not fully formed
       ;; for now return nil if malformed using `ignore-errors'
       (ignore-errors (json-read-from-string data)))))
@@ -324,7 +324,7 @@ NAME is used for the queue and display buffer."
                              mastodon-instance-url "*"))
               (mastodon-notifications--timeline (list toot))
 	    (mastodon-tl--timeline (list toot)))
-          (if (equal previous 1)
+          (if (eq previous 1)
 	      (goto-char 1)
             (goto-char (+ previous (- (point-max) old-max)))))))))
 

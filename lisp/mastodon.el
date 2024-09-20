@@ -33,7 +33,7 @@
 ;; API. See <https://github.com/mastodon/mastodon>.
 
 ;; For set up and usage details, see the Info documentation, or the readme
-;; file at https://codeberg.org/martianh/mastodon.el.
+;; file at <https://codeberg.org/martianh/mastodon.el>.
 
 ;;; Code:
 (require 'cl-lib) ; for `cl-some' call in mastodon
@@ -200,8 +200,8 @@ while emojify,el has this feature and mastodon.el implements it.")
     (define-key map (kbd "m") #'mastodon-tl--dm-user)
     (when (require 'lingva nil :no-error)
       (define-key map (kbd "a") #'mastodon-toot--translate-toot-text))
-    (define-key map (kbd ",") #'mastodon-toot--list-toot-favouriters)
-    (define-key map (kbd ".") #'mastodon-toot--list-toot-boosters)
+    (define-key map (kbd ",") #'mastodon-toot--list-favouriters)
+    (define-key map (kbd ".") #'mastodon-toot--list-boosters)
     (define-key map (kbd ";") #'mastodon-views--view-instance-description)
     ;; override special mode binding
     (define-key map (kbd "g") #'undefined)
@@ -282,7 +282,9 @@ See `mastodon-toot-display-orig-in-reply-buffer'.")
 
 ;;;###autoload
 (defun mastodon ()
-  "Connect client to `mastodon-instance-url' instance."
+  "Connect client to `mastodon-instance-url' instance.
+If there are any open mastodon.el buffers, switch to one instead.
+Prority in switching is given to timeline views."
   (interactive)
   (let* ((tls (list "home"
                     "local"
@@ -294,13 +296,15 @@ See `mastodon-toot-display-orig-in-reply-buffer'.")
                                 (get-buffer (concat "*mastodon-" el "*")))
                               tls) ; return first buff that exists
                      (cl-some (lambda (x)
-                                (when
-                                    (string-prefix-p "*mastodon-" (buffer-name x))
+                                (when (string-prefix-p "*mastodon-"
+                                                       (buffer-name x))
                                   (get-buffer x)))
                               (buffer-list))))) ; catch any other masto buffer
-    (mastodon-return-credential-account :force)
     (if buffer
         (pop-to-buffer buffer '(display-buffer-same-window))
+      ;; we need to update credential-account in case setting have been changed
+      ;; outside mastodon.el in the meantime:
+      (mastodon-return-credential-account :force)
       (mastodon-tl--get-home-timeline)
       (message "Loading fediverse account %s on %s..."
                (mastodon-auth--user-acct)
@@ -309,30 +313,25 @@ See `mastodon-toot-display-orig-in-reply-buffer'.")
 (defvar mastodon-profile-credential-account nil)
 
 ;; TODO: the get request in mastodon-http--get-response often returns nil
-;; after waking pc from sleep, not sure how to fix, or if just my pc
+;; after waking from sleep, not sure how to fix, or if just my pc.
 ;; interestingly it only happens with this function tho.
-;;we have to use :force to update the credential-account object in case things
-;; have been changed via another client.
 (defun mastodon-return-credential-account (&optional force)
   "Return the CredentialAccount entity.
 Either from `mastodon-profile-credential-account' or from the
-server.
-FORCE means to fetch from the server and update
+server if that var is nil.
+FORCE means to fetch from the server in any case and update
 `mastodon-profile-credential-account'."
-  (let ((req '(mastodon-http--get-json
-               (mastodon-http--api "accounts/verify_credentials")
-               nil :silent)))
-    (if force
-        (setq mastodon-profile-credential-account
-              ;; TODO: we should also signal a quit condition after like 5
-              ;; secs here
-              (condition-case nil
-                  (eval req)
-                (t ; req fails, return old value
-                 mastodon-profile-credential-account)))
-      (or mastodon-profile-credential-account
-          (setq mastodon-profile-credential-account
-                (eval req))))))
+  (if (or force (not mastodon-profile-credential-account))
+      (setq mastodon-profile-credential-account
+            ;; TODO: we should signal a quit condition after 5 secs here
+            (condition-case nil
+                (mastodon-http--get-json
+                 (mastodon-http--api "accounts/verify_credentials")
+                 nil :silent)
+              (t ; req fails, return old value
+               mastodon-profile-credential-account)))
+    ;; else just return the var:
+    mastodon-profile-credential-account))
 
 ;;;###autoload
 (defun mastodon-toot (&optional user reply-to-id reply-json)
@@ -351,20 +350,19 @@ BUFFER-NAME is added to \"*mastodon-\" to create the buffer name.
 FORCE means do not try to update an existing buffer, but fetch
 from the server and load anew."
   (interactive)
-  (let ((buffer (if buffer-name
-                    (concat "*mastodon-" buffer-name "*")
-                  "*mastodon-notifications*")))
-    (if (and (not force)
-             (get-buffer buffer))
+  (let* ((buffer-name (or buffer-name "notifications"))
+         (buffer (concat "*mastodon-" buffer-name "*")))
+    (if (and (not force) (get-buffer buffer))
         (progn (pop-to-buffer buffer '(display-buffer-same-window))
                (mastodon-tl--update))
       (message "Loading your notifications...")
-      (mastodon-tl--init-sync (or buffer-name "notifications")
-                              "notifications"
-                              'mastodon-notifications--timeline
-                              type
-                              (when max-id
-                                `(("max_id" . ,(mastodon-tl--buffer-property 'max-id)))))
+      (mastodon-tl--init-sync
+       buffer-name
+       "notifications"
+       'mastodon-notifications--timeline
+       type
+       (when max-id
+         `(("max_id" . ,(mastodon-tl--buffer-property 'max-id)))))
       (with-current-buffer buffer
         (use-local-map mastodon-notifications--map)))))
 
@@ -372,8 +370,8 @@ from the server and load anew."
 
 ;;;###autoload
 (defun mastodon-url-lookup (&optional query-url force)
-  "If a URL resembles a mastodon link, try to load in `mastodon.el'.
-Does a WebFinger lookup.
+  "If a URL resembles a fediverse link, try to load in `mastodon.el'.
+Does a WebFinger lookup on the server.
 URL can be arg QUERY-URL, or URL at point, or provided by the user.
 If a status or account is found, load it in `mastodon.el', if
 not, just browse the URL in the normal fashion."
@@ -385,24 +383,24 @@ not, just browse the URL in the normal fashion."
     (if (and (not force)
              (not (mastodon--fedi-url-p query)))
         ;; (shr-browse-url query) ; doesn't work (keep our shr keymap)
-        (browse-url query)
+        (progn (message "Using external browser")
+               (browse-url query))
       (message "Performing lookup...")
       (let* ((url (format "%s/api/v2/search" mastodon-instance-url))
              (params `(("q" . ,query)
                        ("resolve" . "t"))) ; webfinger
              (response (mastodon-http--get-json url params :silent)))
-        (cond ((not (seq-empty-p
-                     (alist-get 'statuses response)))
+        (cond ((not (seq-empty-p (alist-get 'statuses response)))
                (let* ((statuses (assoc 'statuses response))
                       (status (seq-first (cdr statuses)))
                       (status-id (alist-get 'id status)))
                  (mastodon-tl--thread status-id)))
-              ((not (seq-empty-p
-                     (alist-get 'accounts response)))
+              ((not (seq-empty-p (alist-get 'accounts response)))
                (let* ((accounts (assoc 'accounts response))
                       (account (seq-first (cdr accounts))))
                  (mastodon-profile--make-author-buffer account)))
               (t
+               (message "Lookup failed. Using external browser")
                (browse-url query)))))))
 
 (defun mastodon-url-lookup-force ()
@@ -434,6 +432,7 @@ not, just browse the URL in the normal fashion."
           (string-match "^/c/[[:alnum:]_]+$" query)
           (string-match "^/post/[[:digit:]]+$" query)
           (string-match "^/comment/[[:digit:]]+$" query) ; lemmy
+          (string-match "^/@[^/]+/statuses/[[:alnum:]]" query) ; GTS
           (string-match "^/user[s]?/[[:alnum:]_]+/statuses/[[:digit:]]+$" query) ; hometown
           (string-match "^/notes/[[:alnum:]]+$" query))))) ; misskey post
 
@@ -459,12 +458,10 @@ Calls `mastodon-tl--get-buffer-type', which see."
 (defun mastodon-switch-to-buffer ()
   "Switch to a live mastodon buffer."
   (interactive)
-  (let ((choice (read-buffer
-                 "Switch to mastodon buffer: " nil t
-                 (lambda (cand)
-                   (with-current-buffer
-                       (if (stringp cand) cand (car cand))
-                     (mastodon-tl--get-buffer-type))))))
+  (let ((choice (completing-read
+                 "Switch to mastodon buffer: "
+                 (mapcar #'buffer-name (mastodon-live-buffers))
+                 nil :match)))
     (switch-to-buffer choice)))
 
 (defun mastodon--url-at-point ()

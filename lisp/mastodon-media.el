@@ -273,7 +273,7 @@ IBCAQICX9F8/bNVInwJ8BAAAAABJRU5ErkJggg==")
   "The PNG data for a sensitive image placeholder.")
 
 (defun mastodon-media--process-image-response
-    (status-plist marker image-options region-length url)
+    (status-plist url marker image-options region-length)
   "Callback function processing the url retrieve response for URL.
 STATUS-PLIST is the usual plist of status events as per `url-retrieve'.
 IMAGE-OPTIONS are the precomputed options to apply to the image.
@@ -288,10 +288,9 @@ with the image."
                      (search-forward "\n\n")
                      (buffer-substring (point) (point-max))))
              (image (when data
-                      (apply #'create-image data
-                             (if (version< emacs-version "27.1")
-                                 (when image-options 'imagemagick)
-                               nil)     ; inbuilt scaling in 27.1
+                      (apply #'create-image data ;; inbuilt scaling in 27.1:
+                             (when (version< emacs-version "27.1")
+                               (when image-options 'imagemagick))
                              t image-options))))
         (when mastodon-media--enable-image-caching
           (unless (url-is-cached url)   ; cache if not already cached
@@ -307,7 +306,8 @@ with the image."
                 ;; We only set the image to display if we could load
                 ;; it; we already have set a default image when we
                 ;; added the tag.
-                (mastodon-media--display-image-or-sensitive marker region-length image))
+                (mastodon-media--display-image-or-sensitive
+                 marker region-length image))
               ;; We are done with the marker; release it:
               (set-marker marker nil)))
           (kill-buffer url-buffer))))))
@@ -318,7 +318,7 @@ MARKER, REGION-LENGTH and IMAGE are from
 `mastodon-media--process-image-response'.
 If the image is marked sensitive, the image is stored in
 image-data prop so it can be toggled."
-  (if (or (not (equal t (get-text-property marker 'sensitive)))
+  (if (or (not (eq t (get-text-property marker 'sensitive)))
           (not mastodon-media--hide-sensitive-media))
       ;; display image
       (put-text-property marker (+ marker region-length)
@@ -327,9 +327,9 @@ image-data prop so it can be toggled."
     (add-text-properties marker (+ marker region-length)
                          `(display
                            ;; (image :type png :data ,mastodon-media--sensitive-image-data)
-                           ,(create-image mastodon-media--sensitive-image-data nil t)
-                           sensitive-state hidden
-                           image-data ,image))))
+                           ,(create-image
+                             mastodon-media--sensitive-image-data nil t)
+                           sensitive-state hidden image-data ,image))))
 
 (defun mastodon-media--process-full-sized-image-response (status-plist url)
   ;; FIXME: refactor this with but not into
@@ -338,7 +338,7 @@ image-data prop so it can be toggled."
 URL is a full-sized image URL attached to a timeline image.
 STATUS-PLIST is a plist of status events as per `url-retrieve'."
   (if-let (error-response (plist-get status-plist :error))
-      (message "error in loading image: %S" error-response)
+      (user-error "error in loading image: %S" error-response)
     (when mastodon-media--enable-image-caching
       (unless (url-is-cached url) ;; cache if not already cached
         (url-store-in-cache)))
@@ -347,8 +347,6 @@ STATUS-PLIST is a plist of status events as per `url-retrieve'."
     (let* ((handle (mm-dissect-buffer t))
            (image (mm-get-image handle))
            (str (image-property image :data)))
-      ;; (setf (image-property image :max-width)
-      ;; (window-pixel-width))
       (with-current-buffer (get-buffer-create "*masto-image*")
         (let ((inhibit-read-only t))
           (erase-buffer)
@@ -359,43 +357,46 @@ STATUS-PLIST is a plist of status events as per `url-retrieve'."
           (switch-to-buffer-other-window (current-buffer))
           (image-transform-fit-both))))))
 
+(defun mastodon-media--image-or-cached (url process-fun args)
+  "Fetch URL from cache or fro host.
+Call PROCESS-FUN on it with ARGS, a list of callback args as
+specified by `url-retrieve'."
+  (if (and mastodon-media--enable-image-caching
+           (url-is-cached url)) ;; if cached, decompress and use:
+      (with-current-buffer (url-fetch-from-cache url)
+        (set-buffer-multibyte nil)
+        (goto-char (point-min))
+        (zlib-decompress-region
+         (goto-char (search-forward "\n\n")) (point-max))
+        (apply process-fun args)) ;; no status-plist arg from cache
+    ;; fetch as usual and process-image-response will cache it:
+    ;; cbargs fun will be called with status-plist by url-retrieve:
+    (url-retrieve url process-fun (cdr args))))
+
 (defun mastodon-media--load-image-from-url (url media-type start region-length)
   "Take a URL and MEDIA-TYPE and load the image asynchronously.
 MEDIA-TYPE is a symbol and either `avatar' or `media-link'.
 START is the position where we start loading the image.
 REGION-LENGTH is the range from start to propertize."
   (let ((image-options
-         (when (or (image-type-available-p 'imagemagick)
-                   (image-transforms-p)) ; inbuilt scaling in 27.1
+         (when (mastodon-tl--image-trans-check)
            (cond ((eq media-type 'avatar)
                   `(:height ,mastodon-media--avatar-height))
                  ((eq media-type 'media-link)
                   `(:max-height ,mastodon-media--preview-max-height)))))
         (buffer (current-buffer))
         (marker (copy-marker start))
-	(url-show-status nil)) ; stop url.el from spamming us about connecting
+        (url-show-status nil)) ; stop url.el from spamming us about connecting
     (condition-case nil
-        ;; catch any errors in url-retrieve so as to not abort
-        ;; whatever called us
-        (if (and mastodon-media--enable-image-caching
-                 (url-is-cached url))
-            ;; if image url is cached, decompress and use it
-            (with-current-buffer (url-fetch-from-cache url)
-              (set-buffer-multibyte nil)
-              (goto-char (point-min))
-              (zlib-decompress-region
-               (goto-char (search-forward "\n\n")) (point-max))
-              (mastodon-media--process-image-response
-               nil marker image-options region-length url))
-          ;; else fetch as usual and process-image-response will cache it
-          (url-retrieve url #'mastodon-media--process-image-response
-                        (list marker image-options region-length url)))
+        ;; catch errors in url-retrieve to not break our caller
+        (mastodon-media--image-or-cached
+         url
+         #'mastodon-media--process-image-response
+         (list nil url marker image-options region-length))
       (error (with-current-buffer buffer
-               ;; TODO: Consider adding retries
-               (put-text-property marker
-                                  (+ marker region-length)
-                                  'media-state
-                                  'loading-failed)
+               ;; TODO: Add retries
+               (put-text-property marker (+ marker region-length)
+                                  'media-state 'loading-failed)
                :loading-failed)))))
 
 (defun mastodon-media--select-next-media-line (end-pos)
@@ -441,7 +442,6 @@ Replace them with the referenced image."
                (media-type (cadr (cdr line-details)))
                (type (get-text-property start 'mastodon-media-type))
                (image-url (get-text-property start 'media-url)))
-          ;; (sensitive (get-text-property start 'sensitive)))
           (if (not (mastodon-media--valid-link-p image-url))
               ;; mark it at least as not needing loading any more
               (put-text-property start end 'media-state 'invalid-url)
@@ -449,8 +449,8 @@ Replace them with the referenced image."
             (put-text-property start end 'media-state 'loading)
             (mastodon-media--load-image-from-url
              image-url media-type start (- end start))
-            (when (or (equal type "gifv")
-                      (equal type "video"))
+            (when (or (string= type "gifv")
+                      (string= type "video"))
               (mastodon-media--moving-image-overlay start end))))))))
 
 ;; (defvar-local mastodon-media--overlays nil
@@ -474,19 +474,19 @@ START and END are the beginning and end of the media item to overlay."
   ;; We use just an empty space as the textual representation.
   ;; This is what a user will see on a non-graphical display
   ;; where not showing an avatar at all is preferable.
-  (let ((image-options (when (or (image-type-available-p 'imagemagick)
-                                 (image-transforms-p)) ; inbuilt scaling in 27.1
+  (let ((image-options (when (mastodon-tl--image-trans-check)
                          `(:height ,mastodon-media--avatar-height))))
     (concat
      (propertize " "
                  'media-url avatar-url
                  'media-state 'needs-loading
                  'media-type 'avatar
-                 'display (apply #'create-image mastodon-media--generic-avatar-data
-                                 (if (version< emacs-version "27.1")
-                                     (when image-options 'imagemagick)
-                                   nil) ; inbuilt scaling in 27.1
-                                 t image-options))
+                 'display
+                 (apply #'create-image mastodon-media--generic-avatar-data
+                        ;; inbuilt scaling in 27.1
+                        (when (version< emacs-version "27.1")
+                          (when image-options 'imagemagick))
+                        t image-options))
      " ")))
 
 (defun mastodon-media--get-media-link-rendering
@@ -500,9 +500,8 @@ SENSITIVE is a flag from the item's JSON data."
           (substitute-command-keys
            (concat "\\`RET'/\\`i': load full image (prefix: copy URL), \\`+'/\\`-': zoom,\
  \\`r': rotate, \\`o': save preview"
-                   (if (not (eq sensitive :json-false))
-                       ", \\`S': toggle sensitive media"
-                     ""))))
+                   (when (not (eq sensitive :json-false))
+                     ", \\`S': toggle sensitive media"))))
          (help-echo (if caption
                         (concat help-echo-base
                                 "\n\"" caption "\"")

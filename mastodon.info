@@ -3,7 +3,7 @@ mastodon.texi.
 
 INFO-DIR-SECTION Emacs
 START-INFO-DIR-ENTRY
-* Mastodon: (mastodon). Client for Mastodon on ActivityPub networks.
+* Mastodon: (mastodon). Client for fediverse services using the Mastodon API.
 END-INFO-DIR-ENTRY
 
 
@@ -458,6 +458,11 @@ and should work without first loading a ‘mastodon.el’ buffer:
 
    • ‘mastodon-switch-to-buffer’: switch between mastodon buffers.
 
+   • ‘mastodon-tl--get-remote-local-timeline’: View a local timeline of
+     a remote instance.
+   • ‘mastodon-tl--remote-tag-timeline’: View a tag timeline on a remote
+     instance.
+
    • ‘mastodon-profile--update-display-name’: Update the display name
      for your account.
    • ‘mastodon-profile--update-user-profile-note’: Update your bio note.
@@ -743,39 +748,39 @@ Here’s a (federated) timeline:
 
 
 Tag Table:
-Node: Top210
-Node: README978
-Node: Installation1628
-Node: ELPA1917
-Node: MELPA2145
-Node: Repo2525
-Node: Emoji3018
-Node: Discover3612
-Node: Usage4164
-Node: Logging in to your instance4607
-Node: Timelines5604
-Ref: Keybindings6079
-Ref: Toot byline legend10919
-Node: Composing toots11228
-Ref: Keybindings (1)12780
-Ref: Autocompletion of mentions tags and emoji13315
-Ref: Draft toots14240
-Node: Other commands and account settings14711
-Node: Customization17878
-Node: Commands and variables index18756
-Node: Alternative timeline layout19272
-Node: Live-updating timelines mastodon-async-mode19677
-Node: Translating toots20529
-Node: Bookmarks and mastodonel21711
-Node: Dependencies22253
-Node: Network compatibility22887
-Node: Contributing23769
-Node: Bug reports24265
-Node: Fixes and features25176
-Node: Coding style25677
-Node: Supporting mastodonel26301
-Node: Contributors26868
-Node: screenshots27303
+Node: Top219
+Node: README987
+Node: Installation1637
+Node: ELPA1926
+Node: MELPA2154
+Node: Repo2534
+Node: Emoji3027
+Node: Discover3621
+Node: Usage4173
+Node: Logging in to your instance4616
+Node: Timelines5613
+Ref: Keybindings6088
+Ref: Toot byline legend10928
+Node: Composing toots11237
+Ref: Keybindings (1)12789
+Ref: Autocompletion of mentions tags and emoji13324
+Ref: Draft toots14249
+Node: Other commands and account settings14720
+Node: Customization18084
+Node: Commands and variables index18962
+Node: Alternative timeline layout19478
+Node: Live-updating timelines mastodon-async-mode19883
+Node: Translating toots20735
+Node: Bookmarks and mastodonel21917
+Node: Dependencies22459
+Node: Network compatibility23093
+Node: Contributing23975
+Node: Bug reports24471
+Node: Fixes and features25382
+Node: Coding style25883
+Node: Supporting mastodonel26507
+Node: Contributors27074
+Node: screenshots27509
 
 End Tag Table
 

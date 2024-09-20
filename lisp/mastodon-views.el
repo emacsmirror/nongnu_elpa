@@ -75,7 +75,7 @@
 ;; switch to timlines without closing the minor view.
 
 ;; copying the mode map however means we need to avoid/unbind/override any
-;; functions that might cause interfere with the minor view.
+;; functions that might interfere with the minor view.
 
 ;; this is not redundant, as while the buffer -init function calls
 ;; `mastodon-mode', it gets overridden in some but not all cases.
@@ -92,6 +92,11 @@
     (define-key map (kbd "d") #'mastodon-views--delete-filter)
     (define-key map (kbd "c") #'mastodon-views--create-filter)
     (define-key map (kbd "g") #'mastodon-views--view-filters)
+    (define-key map (kbd "u") #'mastodon-views--update-filter)
+    (define-key map (kbd "k") #'mastodon-views--delete-filter)
+    (define-key map (kbd "a") #'mastodon-views--add-filter-kw)
+    (define-key map (kbd "r") #'mastodon-views--remove-filter-kw)
+    (define-key map (kbd "U") #'mastodon-views--update-filter-kw)
     map)
   "Keymap for viewing filters.")
 
@@ -121,6 +126,7 @@
     (define-key map (kbd "a") #'mastodon-views--add-account-to-list-at-point)
     (define-key map (kbd "r") #'mastodon-views--remove-account-from-list-at-point)
     (define-key map (kbd "e") #'mastodon-views--edit-list-at-point)
+    (define-key map (kbd "g") #'mastodon-views--view-lists)
     map)
   "Keymap for when point is on list name.")
 
@@ -131,6 +137,7 @@
     (define-key map (kbd "c") #'mastodon-views--cancel-scheduled-toot)
     (define-key map (kbd "e") #'mastodon-views--edit-scheduled-as-new)
     (define-key map (kbd "RET") #'mastodon-views--edit-scheduled-as-new)
+    (define-key map (kbd "g") #'mastodon-views--view-scheduled-toots)
     map)
   "Keymap for when point is on a scheduled toot.")
 
@@ -158,15 +165,9 @@ request.
 This function is used as the update-function to
 `mastodon-tl--init-sync', which initializes a buffer for us and
 provides the JSON data."
-  ;; FIXME: this is not an update function as it inserts a heading and
-  ;; possible bindings string
-  ;; either it should go in init-sync, or possibly in each view function
-  ;; but either way, this function does almost nothing for us.
-  ;; could we call init-sync in here pehaps?
-  ;; (mastodon-search--insert-heading view-name)
-  ;; (when bindings-string
-  ;;   (insert (mastodon-tl--set-face (concat "[" bindings-string "]\n\n")
-  ;;                                  'font-lock-comment-face)))
+  ;; FIXME not tecnically an update-fun for init-sync, but just a simple way
+  ;; to set up the empty buffer or else call the insert-fun. not sure if we cd
+  ;; improve by eg calling init-sync in here, making this a real view function.
   (if (seq-empty-p data)
       (insert (propertize
                (format "Looks like you have no %s for now." view-name)
@@ -326,8 +327,7 @@ If ID is provided, use that list."
          (name (mastodon-views--get-list-name id))
          (buffer-name (format "list-%s" name)))
     (mastodon-tl--init buffer-name endpoint
-                       'mastodon-tl--timeline
-                       nil
+                       'mastodon-tl--timeline nil
                        `(("limit" . ,mastodon-tl--timeline-posts-count)))))
 
 (defun mastodon-views--create-list ()
@@ -393,8 +393,11 @@ If ACCOUNT-ID and HANDLE are provided use them rather than prompting."
                       (completing-read list-prompt
                                        (mastodon-views--get-lists-names) nil t)))
          (list-id (or id (mastodon-views--get-list-id list-name)))
-         (followings (mastodon-views--get-users-followings))
-         (handles (mastodon-tl--map-alist-vals-to-alist 'acct 'id followings))
+         (followings (unless handle
+                       (mastodon-views--get-users-followings)))
+         (handles (unless handle
+                    (mastodon-tl--map-alist-vals-to-alist
+                     'acct 'id followings)))
          (account (or handle (completing-read "Account to add: "
                                               handles nil t)))
          (account-id (or account-id (alist-get account handles)))
@@ -429,8 +432,7 @@ If ID is provided, use that list."
          (list-id (or id (mastodon-views--get-list-id list-name)))
          (accounts (mastodon-views--accounts-in-list list-id))
          (handles (mastodon-tl--map-alist-vals-to-alist 'acct 'id accounts))
-         (account (completing-read "Account to remove: "
-                                   handles nil t))
+         (account (completing-read "Account to remove: " handles nil t))
          (account-id (alist-get account handles))
          (url (mastodon-http--api (format "lists/%s/accounts" list-id)))
          (args (mastodon-http--build-array-params-alist "account_ids[]" `(,account-id)))
@@ -516,7 +518,7 @@ JSON is the data returned by the server."
                  'item-type 'scheduled ; so we nav here
                  'face 'font-lock-comment-face
                  'keymap mastodon-views--scheduled-map
-                 'scheduled-json toot
+                 'item-json toot
                  'id .id)
      "\n")))
 
@@ -532,10 +534,8 @@ If ID, just return that toot."
 (defun mastodon-views--reschedule-toot ()
   "Reschedule the scheduled toot at point."
   (interactive)
-  (let ((id (mastodon-tl--property 'id :no-move)))
-    (if (null id)
-        (message "no scheduled toot at point?")
-      (mastodon-toot--schedule-toot :reschedule))))
+  (mastodon-tl--do-if-item
+   (mastodon-toot--schedule-toot :reschedule)))
 
 (defun mastodon-views--copy-scheduled-toot-text ()
   "Copy the text of the scheduled toot at point."
@@ -550,36 +550,34 @@ If ID, just return that toot."
 ID is that of the scheduled toot to cancel.
 NO-CONFIRM means there is no ask or message, there is only do."
   (interactive)
-  (let ((id (or id (mastodon-tl--property 'id :no-move))))
-    (if (null id)
-        (message "no scheduled toot at point?")
-      (when (or no-confirm
-                (y-or-n-p "Cancel scheduled toot?"))
-        (let* ((url (mastodon-http--api (format "scheduled_statuses/%s" id)))
-               (response (mastodon-http--delete url)))
-          (mastodon-http--triage response
-                                 (lambda (_)
-                                   (mastodon-views--view-scheduled-toots)
-                                   (unless no-confirm
-                                     (message "Toot cancelled!")))))))))
+  (mastodon-tl--do-if-item
+   (when (or no-confirm
+             (y-or-n-p "Cancel scheduled toot?"))
+     (let* ((id (or id (mastodon-tl--property 'id :no-move)))
+            (url (mastodon-http--api (format "scheduled_statuses/%s" id)))
+            (response (mastodon-http--delete url)))
+       (mastodon-http--triage response
+                              (lambda (_)
+                                (mastodon-views--view-scheduled-toots)
+                                (unless no-confirm
+                                  (message "Toot cancelled!"))))))))
 
 (defun mastodon-views--edit-scheduled-as-new ()
   "Edit scheduled status as new toot."
   (interactive)
-  (let ((id (mastodon-tl--property 'id :no-move)))
-    (if (null id)
-        (message "no scheduled toot at point?")
-      (let* ((toot (mastodon-tl--property 'scheduled-json :no-move))
-             (scheduled (alist-get 'scheduled_at toot)))
-        (let-alist (alist-get 'params toot)
-          ;; TODO: preserve polls
-          ;; (poll (alist-get 'poll params))
-          (mastodon-toot--compose-buffer nil .in_reply_to_id nil .text :edit)
-          (goto-char (point-max))
-          ;; adopt properties from scheduled toot:
-          (mastodon-toot--set-toot-properties
-           .in_reply_to_id .visibility .spoiler_text .language
-           scheduled id (alist-get 'media_attachments toot)))))))
+  (mastodon-tl--do-if-item
+   (let* ((toot (mastodon-tl--property 'scheduled-json :no-move))
+          (id (mastodon-tl--property 'id :no-move))
+          (scheduled (alist-get 'scheduled_at toot)))
+     (let-alist (alist-get 'params toot)
+       ;; TODO: preserve polls
+       ;; (poll (alist-get 'poll params))
+       (mastodon-toot--compose-buffer nil .in_reply_to_id nil .text :edit)
+       (goto-char (point-max))
+       ;; adopt properties from scheduled toot:
+       (mastodon-toot--set-toot-properties
+        .in_reply_to_id .visibility .spoiler_text .language
+        scheduled id (alist-get 'media_attachments toot))))))
 
 
 ;;; FILTERS
@@ -591,87 +589,229 @@ NO-CONFIRM means there is no ask or message, there is only do."
                           'mastodon-views--insert-filters
                           nil nil nil
                           "current filters"
-                          "c - create filter\n d - delete filter at point\n\
- n/p - go to next/prev filter")
+                          "c/u - create/update filter | d/k - delete filter\
+ at point\n a/r/U - add/remove/Update filter keyword\n\
+ n/p - next/prev filter" "v2")
   (with-current-buffer "*mastodon-filters*"
     (use-local-map mastodon-views--view-filters-keymap)))
 
 (defun mastodon-views--insert-filters (json)
-  "Insert the user's current filters.
-JSON is what is returned by by the server."
-  (mastodon-views--minor-view
-   "filters"
-   #'mastodon-views--insert-filter-string-set
-   json))
-
-(defun mastodon-views--insert-filter-string-set (json)
   "Insert a filter string plus a blank line.
 JSON is the filters data."
-  (mapc #'mastodon-views--insert-filter-string json))
+  (mapc #'mastodon-views--insert-filter json))
 
-(defun mastodon-views--insert-filter-string (filter)
+(require 'table)
+
+(defun mastodon-views--insert-filter-kws (kws)
+  "Insert filter keywords KWS."
+  (insert "\n")
+  (let ((beg (point))
+        (table-cell-horizontal-chars (if (char-displayable-p ?–)
+                                         "–"
+                                       "-"))
+        (whole-str "whole words only:"))
+    (insert (concat "Keywords: | " whole-str "\n"))
+    (mapc (lambda (kw)
+            (let ((whole (if (eq :json-false (alist-get 'whole_word kw))
+                             "nil"
+                           "t")))
+              (insert
+               (propertize (concat
+                            (format "\"%s\" | %s\n"
+                                    (alist-get 'keyword kw) whole))
+                           'kw-id (alist-get 'id kw)
+                           'item-json kw
+                           'mastodon-tab-stop t
+                           'whole-word whole))))
+          kws)
+    ;; table display of kws:
+    (table-capture beg (point) "|" "\n" nil (+ 2 (length whole-str)))
+    (table-justify-column 'center)
+    (table-forward-cell) ;; col 2
+    (table-justify-column 'center)
+    (while (re-search-forward ;; goto end of table:
+            (concat table-cell-horizontal-chars
+                    (make-string 1 table-cell-intersection-char)
+                    "\n")
+            nil :no-error))))
+
+(defun mastodon-views--insert-filter (filter)
   "Insert a single FILTER."
-  (let* ((phrase (alist-get 'phrase filter))
-         (contexts (alist-get 'context filter))
-         (id (alist-get 'id filter))
-         (filter-string (concat "- \"" phrase "\" filtered in: "
-                                (mapconcat #'identity contexts ", "))))
+  (let-alist filter
     (insert
-     (propertize filter-string
-                 'item-id id ;for goto-next-filter compat
-                 'item-type 'filter
-                 'phrase phrase
-                 'byline t) ;for goto-next-filter compat
-     "\n\n")))
+     ;; FIXME: awful hack to fix nav: exclude horiz-bar from propertize then
+     ;; propertize rest of the filter text. if we add only byline prop to
+     ;; title, point will move to end of title, because at that byline-prop
+     ;; change, item-type prop is present.
+     (mastodon-tl--set-face
+      (concat "\n " mastodon-tl--horiz-bar "\n ")
+      'success)
+     (propertize
+      (concat
+       ;; heading:
+       (mastodon-tl--set-face
+        (concat (upcase .title) " " "\n "
+                mastodon-tl--horiz-bar "\n")
+        'success)
+       ;; context:
+       (concat "Context: " (mapconcat #'identity .context ", "))
+       ;; type (warn or hide):
+       (concat "\nType: " .filter_action))
+      'item-json filter
+      'byline t
+      'item-id .id
+      'filter-title .title
+      'item-type 'filter))
+    ;; terms list:
+    (when .keywords ;; poss to have no keywords
+      (mastodon-views--insert-filter-kws .keywords))))
 
 (defvar mastodon-views--filter-types
   '("home" "notifications" "public" "thread" "profile"))
 
-(defun mastodon-views--create-filter ()
+(defun mastodon-views--create-filter (&optional id title context type terms)
   "Create a filter for a word.
 Prompt for a context, must be a list containting at least one of \"home\",
-\"notifications\", \"public\", \"thread\"."
+\"notifications\", \"public\", \"thread\".
+Optionally, provide ID, TITLE, CONTEXT, TYPE, and TERMS to update a filter."
   (interactive)
-  (let* ((url (mastodon-http--api "filters"))
-         (word (read-string
-                (format "Word(s) to filter (%s): " (or (current-word) ""))
-                nil nil (or (current-word) "")))
+  ;; ID non-nil = we are updating
+  (let* ((url (mastodon-http--api-v2
+               (if id (format "filters/%s" id) "filters")))
+         (title (or title (read-string "Filter name: ")))
+         (terms (or terms
+                    (read-string "Terms to filter (comma or space separated): ")))
+         (terms-split (split-string terms "[, ]"))
+         (terms-processed
+          (if (not terms) ;; well actually it is poss to have no terms
+              (user-error "You must select at least one term")
+            (mastodon-http--build-array-params-alist
+             "keywords_attributes[][keyword]" terms-split)))
+         (warn-or-hide
+          (or type (completing-read "Warn (like CW) or hide? "
+                                    '("warn" "hide") nil :match)))
+         ;; TODO: display "home (and lists)" but just use "home" for API
          (contexts
-          (if (string-empty-p word)
-              (user-error "You must select at least one word for a filter")
-            (completing-read-multiple
-             "Contexts to filter [TAB for options]: "
-             mastodon-views--filter-types
-             nil t)))
+          (or context (completing-read-multiple
+                       "Filter contexts [TAB for options, comma separated]: "
+                       mastodon-views--filter-types nil :match)))
          (contexts-processed
-          (if (equal nil contexts)
-              (user-error "You must select at least one context for a filter")
-            (mapcar (lambda (x)
-                      (cons "context[]" x))
-                    contexts)))
-         (response (mastodon-http--post url (push
-                                             `("phrase" . ,word)
-                                             contexts-processed))))
-    (mastodon-http--triage response
-                           (lambda (_)
-                             (when (mastodon-tl--buffer-type-eq 'filters)
-                               (mastodon-views--view-filters))
-                             (message "Filter created for %s!" word)))))
+          (if (not contexts)
+              (user-error "You must select at least one context")
+            (mastodon-http--build-array-params-alist "context[]" contexts)))
+         (params (append `(("title" . ,title)
+                           ("filter_action" . ,warn-or-hide))
+                         terms-processed
+                         contexts-processed))
+         (resp (if id
+                   (mastodon-http--put url params)
+                 (mastodon-http--post url params))))
+    (mastodon-views--filters-triage
+     resp
+     (message "Filter %s %s!" title (if id "updated" "created")))))
+
+(defun mastodon-views--update-filter ()
+  "Update filter at point."
+  (interactive)
+  (if (not (eq 'filter (mastodon-tl--property 'item-type)))
+      (user-error "No filter at point?")
+    (let* ((filter (mastodon-tl--property 'item-json))
+           (id (mastodon-tl--property 'item-id))
+           (name (read-string "Name: " (alist-get 'title filter)))
+           (contexts (completing-read-multiple
+                      "Filter contexts [TAB for options, comma separated]: "
+                      mastodon-views--filter-types nil :match
+                      (mapconcat #'identity
+                                 (alist-get 'context filter) ",")))
+           (type (completing-read "Warn (like CW) or hide? "
+                                  '("warn" "hide") nil :match
+                                  (alist-get 'type filter)))
+           (terms (read-string "Terms to add (comma or space separated): ")))
+      (mastodon-views--create-filter id name contexts type terms))))
 
 (defun mastodon-views--delete-filter ()
   "Delete filter at point."
   (interactive)
-  (let* ((filter-id (mastodon-tl--property 'item-id :no-move))
-         (phrase (mastodon-tl--property 'phrase :no-move))
-         (url (mastodon-http--api (format "filters/%s" filter-id))))
-    (if (null phrase)
+  (let* ((id (mastodon-tl--property 'item-id :no-move))
+         (title (mastodon-tl--property 'filter-title :no-move))
+         (url (mastodon-http--api-v2 (format "filters/%s" id))))
+    (if (not (eq 'filter (mastodon-tl--property 'item-type)))
         (user-error "No filter at point?")
-      (when (y-or-n-p (format "Delete filter %s? " phrase))
-        (let ((response (mastodon-http--delete url)))
-          (mastodon-http--triage
-           response (lambda (_)
-                      (mastodon-views--view-filters)
-                      (message "Filter for \"%s\" deleted!" phrase))))))))
+      (when (y-or-n-p (format "Delete filter %s? " title))
+        (let ((resp (mastodon-http--delete url)))
+          (mastodon-views--filters-triage
+           resp
+           (message "Filter \"%s\" deleted!" title)))))))
+
+(defun mastodon-views--get-filter-kw (&optional id)
+  "GET filter with ID."
+  (let* ((id (or id (mastodon-tl--property 'kw-id :no-move)))
+         (url (mastodon-http--api-v2 (format "filters/keywords/%s" id)))
+         (resp (mastodon-http--get-json url)))
+    resp))
+
+(defun mastodon-views--update-filter-kw ()
+  "Update filter keyword.
+Prmopt to change the term, and the whole words option.
+When t, whole words means only match whole words."
+  (interactive)
+  (if (not (eq 'filter (mastodon-tl--property 'item-type)))
+      (user-error "No filter at point?")
+    (let* ((kws (alist-get 'keywords
+                           (mastodon-tl--property 'item-json :no-move)))
+           (alist (mastodon-tl--map-alist-vals-to-alist 'keyword 'id kws))
+           (choice (completing-read "Update keyword: " alist))
+           (updated (read-string "Keyword: " choice))
+           (whole-word (if (y-or-n-p "Match whole words only? ")
+                           "true"
+                         "false"))
+           (params `(("keyword" . ,updated)
+                     ("whole_word" . ,whole-word)))
+           (id (cdr (assoc choice alist #'string=)))
+           (url (mastodon-http--api-v2 (format "filters/keywords/%s" id)))
+           (resp (mastodon-http--put url params)))
+      (mastodon-views--filters-triage resp
+                                      (format "Keyword %s updated!" updated)))))
+
+(defun mastodon-views--filters-triage (resp msg-str)
+  "Triage filter action response RESP, reload filters, message MSG-STR."
+  (mastodon-http--triage
+   resp
+   (lambda (_resp)
+     (when (mastodon-tl--buffer-type-eq 'filters)
+       (mastodon-views--view-filters))
+     (message msg-str))))
+
+(defun mastodon-views--add-filter-kw ()
+  "Add a keyword to filter at point."
+  (interactive)
+  (if (not (eq 'filter (mastodon-tl--property 'item-type)))
+      (user-error "No filter at point?")
+    (let* ((kw (read-string "Keyword: "))
+           (id (mastodon-tl--property 'item-id :no-move))
+           (whole-word (if (y-or-n-p "Match whole words only? ")
+                           "true"
+                         "false"))
+           (params `(("keyword" . ,kw)
+                     ("whole_word" . ,whole-word)))
+           (url (mastodon-http--api-v2 (format "filters/%s/keywords" id)))
+           (resp (mastodon-http--post url params)))
+      (mastodon-views--filters-triage resp
+                                      (format "Keyword %s added!" kw)))))
+
+(defun mastodon-views--remove-filter-kw ()
+  "Remove keyword from filter at point."
+  (interactive)
+  (if (not (eq 'filter (mastodon-tl--property 'item-type)))
+      (user-error "No filter at point?")
+    (let* ((kws (alist-get 'keywords
+                           (mastodon-tl--property 'item-json :no-move)))
+           (alist (mastodon-tl--map-alist-vals-to-alist 'keyword 'id kws))
+           (choice (completing-read "Remove keyword: " alist))
+           (id (cdr (assoc choice alist #'string=)))
+           (url (mastodon-http--api-v2 (format "filters/keywords/%s" id)))
+           (resp (mastodon-http--delete url)))
+      (mastodon-views--filters-triage resp (format "Keyword %s removed!" choice)))))
 
 
 ;;; FOLLOW SUGGESTIONS
@@ -726,8 +866,7 @@ BRIEF means show fewer details."
   "Return an instance base url from a user account URL.
 USERNAME is the name to cull.
 If INSTANCE is given, use that."
-  (cond (instance
-         (concat "https://" instance))
+  (cond (instance (concat "https://" instance))
         ;; pleroma URL is https://instance.com/users/username
         ((string-suffix-p "users/" (url-basepath url))
          (string-remove-suffix "/users/"
@@ -741,6 +880,11 @@ If INSTANCE is given, use that."
          (string-remove-suffix (concat "/@" username)
                                url))))
 
+(defun mastodon-views--get-own-instance ()
+  "Return JSON of `mastodon-active-user's instance."
+  (mastodon-http--get-json
+   (mastodon-http--api "instance" "v2") nil nil :vector))
+
 (defun mastodon-views--view-instance-description
     (&optional user brief instance misskey)
   "View the details of the instance the current post's author is on.
@@ -750,17 +894,12 @@ INSTANCE is an instance domain name.
 MISSKEY means the instance is a Misskey or derived server."
   (interactive)
   (if user
-      (let ((response (mastodon-http--get-json
-                       (mastodon-http--api "instance" "v2") nil nil :vector)))
+      (let ((response (mastodon-views--get-own-instance)))
         (mastodon-views--instance-response-fun response brief instance))
     (mastodon-tl--do-if-item
-     (let* ((toot (if (mastodon-tl--profile-buffer-p)
-                      ;; we may be on profile description itself:
-                      (or (mastodon-tl--property 'profile-json)
-                          ;; or on profile account listings, or just toots:
-                          (mastodon-tl--property 'item-json))
-                    ;; normal timeline/account listing:
-                    (mastodon-tl--property 'item-json)))
+     (let* ((toot (or (and (mastodon-tl--profile-buffer-p)
+                           (mastodon-tl--property 'profile-json)) ; either profile
+                      (mastodon-tl--property 'item-json))) ; or toot or user listing
             (reblog (alist-get 'reblog toot))
             (account (or (alist-get 'account reblog)
                          (alist-get 'account toot)
@@ -884,9 +1023,9 @@ IND is the optional indentation level to print at."
           (mastodon-views--print-json-keys
            (cdr el) (if ind (+ ind 4) 4)))
          (t ; basic handling of raw booleans:
-          (let ((val (cond ((equal (cdr el) :json-false)
+          (let ((val (cond ((eq (cdr el) :json-false)
                             "no")
-                           ((equal (cdr el) 't)
+                           ((eq (cdr el) t)
                             "yes")
                            (t
                             (cdr el)))))
