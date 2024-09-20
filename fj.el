@@ -944,7 +944,8 @@ STATE is a string."
            state ,.state
            type fj-issue-button
            item ,type
-           fj-url ,.html_url)
+           fj-url ,.html_url
+           fj-item-data ,issue)
           (,(number-to-string .comments)
            face fj-figures-face
            item ,type)
@@ -1674,7 +1675,8 @@ NO-OWNER means don't display owner column (user repos view)."
                                id ,.id
                                type fj-user-repo-button
                                item repo
-                               fj-url ,.html_url)
+                               fj-url ,.html_url
+                               fj-item-data ,r)
                        ,(unless no-owner
                           `(,.owner.username face fj-user-face
                                              id ,.id
