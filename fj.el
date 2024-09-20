@@ -351,19 +351,23 @@ JSON."
 
 (defun fj--tl-get-elt (number entry)
   "Return element from column NUMBER from tabulated list ENTRY."
+  ;; this is run by `fj-tl-sort-pred' below, which is called on whole entries
+  ;; (nil [(blah)]) and not just the vector, so we have to cadr the entry.
+  ;; for other uses you prob want `fj-get-tl-col'
   (car
    (seq-elt
     (cadr entry)
     number)))
 
-(defun fj-tl-sort-pred (x y col-search col-user)
+(defun fj-tl-sort-pred (x y col &optional col-repo col-user)
   "Predicate function for sorting numeric tl columns.
-X Y are tl entries to sort. COL-SEARCH and COL-USER are numbers,
+X Y are tl entries to sort. COL, COL-REPO and COL-USER are numbers,
 corresponding to the (zero-indexed) tl column to search by. The
 first is for `fj-repo-tl-mode', the second for
 `fj-user-repo-tl-mode'."
   ;; FIXME can we handle the col- args better than this?
-  (let* ((col (if (eq major-mode 'fj-repo-tl-mode) col-search col-user))
+  (let* ((col (or col
+                  (if (eq major-mode 'fj-repo-tl-mode) col-repo col-user)))
          (a (fj--tl-get-elt col x))
          (b (fj--tl-get-elt col y)))
     (> (string-to-number a)
@@ -372,12 +376,22 @@ first is for `fj-repo-tl-mode', the second for
 (defun fj-tl-sort-by-stars (x y)
   "Predicate function for sorting repos by stars.
 X Y are tl entries to sort."
-  (fj-tl-sort-pred x y 2 1))
+  (fj-tl-sort-pred x y nil 2 1))
 
-(defun fj-tl-sort-by-issues (x y)
+(defun fj-tl-sort-by-issue-count (x y)
   "Predicate function for sorting repos by issues count.
 X Y are tl entries to sort."
-  (fj-tl-sort-pred x y 4 3))
+  (fj-tl-sort-pred x y nil 4 3))
+
+(defun fj-tl-sort-by-issues (x y)
+  "Predicate function to sort issues by issue number.
+X and Y are sorting args."
+  (fj-tl-sort-pred x y 0))
+
+(defun fj-tl-sort-by-comment-count (x y)
+  "Predicate function to sort issues by number of comments.
+X and Y are sorting args."
+  (fj-tl-sort-pred x y 1))
 
 ;;; USER REPOS TL
 
@@ -428,7 +442,7 @@ X Y are tl entries to sort."
         '[("Name" 16 t)
           ("★" 2 fj-tl-sort-by-stars :right-align t)
           ("" 2 t)
-          ("issues" 5 fj-tl-sort-by-issues :right-align t)
+          ("issues" 5 fj-tl-sort-by-issue-count :right-align t)
           ("Lang" 10 t)
           ("Updated" 12 t)
           ("Description" 55 nil)])
@@ -899,8 +913,8 @@ NEW-BODY is the new comment text to send."
         ;; this is changed by `tabulated-list-sort' which sorts by col at point:
         tabulated-list-sort-key '("Updated" . t) ;; default
         tabulated-list-format
-        '[("#" 5 t)
-          ("💬" 3 t)
+        '[("#" 5 fj-tl-sort-by-issues :right-align)
+          ("💬" 3 fj-tl-sort-by-comment-count :right-align)
           ("Author" 10 t)
           ("Updated" 12 t) ;; instead of display, you could use a sort fun here
           ("Issue" 20 t)])
@@ -1619,7 +1633,7 @@ If TOPIC, QUERY is a search for topic keywords."
           ("Owner" 12 t)
           ("★" 2 fj-tl-sort-by-stars :right-align t)
           ("" 2 t)
-          ("issues" 5 fj-tl-sort-by-issues :right-align t)
+          ("issues" 5 fj-tl-sort-by-issue-count :right-align t)
           ("Lang" 10 t)
           ("Updated" 12 t)
           ("Description" 55 nil)])
