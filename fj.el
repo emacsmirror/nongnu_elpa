@@ -2280,6 +2280,30 @@ Optionally set LIMIT to results."
 
 ;;; NOTIFICATIONS
 
+(defvar fj-notifications-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "C-c C-c") #'fj-notifications-unread-toggle)
+    (define-key map (kbd "n") #'fj-issue-next)
+    (define-key map (kbd "p") #'fj-issue-prev)
+    (define-key map [?\t] #'fj-next-tab-item)
+    (define-key map [backtab] #'fj-prev-tab-item)
+    (define-key map (kbd "g") #'fj-item-view-reload)
+    (define-key map (kbd "s") #'fj-list-issues-search)
+    (define-key map (kbd "I") #'fj-list-issues)
+    (define-key map (kbd "S") #'fj-repo-search-tl)
+    (define-key map (kbd "O") #'fj-list-own-repos)
+    (define-key map (kbd "b") #'fj-browse-view)
+    (define-key map (kbd "N") #'fj-view-notifications)
+    (define-key map (kbd "M-C-q") #'fj-kill-all-buffers)
+    (define-key map (kbd "/") #'fj-switch-to-buffer)
+    map)
+  "Keymap for `fj-notifications-mode'.")
+
+(define-derived-mode fj-notifications-mode special-mode "fj-notifs"
+  "Major mode for viewing notifications."
+  :group 'fj
+  (read-only-mode 1))
+
 (defvar fj-notifications-status-types
   '("unread" "read" "pinned")
   "List of possible status types for getting notifications.")
@@ -2309,7 +2333,7 @@ ALL is a boolean, meaning also show read notifcations."
   (let ((buf (format "*fj-notifications-%s*"
                      (if all "all" "unread")))
         (data (fj-get-notifications all)))
-    (fedi-with-buffer buf 'fj-item-view-mode nil
+    (fedi-with-buffer buf 'fj-notifications-mode nil
       (fj-render-notifications data))))
 
 (defun fj-view-notifications-all ()
