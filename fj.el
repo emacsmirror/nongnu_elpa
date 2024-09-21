@@ -263,7 +263,7 @@ Works in issue view mode or in issues tl."
      ,body))
 
 (defmacro fj-with-pull (&optional body)
-  "Execute BODY if we are in an PR view or if issue at point."
+  "Execute BODY if we are in an PR view or if pull request at point."
   (declare (debug t))
   `(if (not (or (eq (fj--get-buffer-spec :type) :pull)
                 (eq 'pull (fj--property 'item))))
@@ -1188,6 +1188,7 @@ JSON is the item's data to process the link with."
     (define-key map (kbd "O") #'fj-list-own-repos)
     (define-key map (kbd "b") #'fj-browse-view)
     (define-key map (kbd "N") #'fj-view-notifications)
+    (define-key map (kbd "D") #'fj-view-pull-diff)
     (define-key map (kbd "M-C-q") #'fj-kill-all-buffers)
     (define-key map (kbd "/") #'fj-switch-to-buffer)
     map)
@@ -1449,6 +1450,54 @@ RELOAD means we are reloading, so don't open in other window."
 
 ;;; PR VIEWS
 
+(defun fj-view-commit-diff (&optional sha)
+  "View a diff of a commit at point.
+Optionally, provide the commit's SHA."
+  (interactive)
+  (let* ((repo (fj--get-buffer-spec :repo))
+         (owner (fj--get-buffer-spec :owner))
+         (sha (or sha
+                  (fj--property 'item) ;; commit at point
+                  (fj--get-buffer-spec :item))) ;; item view? FIXME: remove?
+         (endpoint (format "repos/%s/%s/git/commits/%s.diff"
+                           owner repo sha)))
+    (fj-view-item-diff endpoint)))
+
+(defun fj-view-pull-diff ()
+  "View a diff of the entire current PR."
+  (interactive)
+  (fj-with-pull
+   (let* ((repo (fj--get-buffer-spec :repo))
+          (owner (fj--get-buffer-spec :owner))
+          (id (fj--get-buffer-spec :item))
+          (endpoint (format "repos/%s/%s/pulls/%s.diff"
+                            owner repo id)))
+     (fj-view-item-diff endpoint))))
+
+(defun fj-view-item-diff (endpoint)
+  "View a diff of an item, commit or pull diff."
+  (interactive)
+  (let* ((resp (fj-get endpoint nil :no-json))
+         (buf "*fj-diff*"))
+    (with-current-buffer (get-buffer-create buf)
+      (erase-buffer)
+      (insert resp)
+      (goto-char (point-min))
+      (switch-to-buffer-other-window (current-buffer))
+      ;; FIXME: make this work like special-mode, easy bindings and read-only:
+      (diff-mode))))
+
+(defun fj-get-pull-commits ()
+  "Return the data for the commits of the current pull."
+  (interactive)
+  (fj-with-pull
+   (let* ((repo (fj--get-buffer-spec :repo))
+          (owner (fj--get-buffer-spec :owner))
+          (id (fj--get-buffer-spec :item))
+          (endpoint (format "/repos/%s/%s/pulls/%s/commits"
+                            owner repo id))
+          (fj-get endpoint)))))
+
 (defun fj-merge-pull ()
   "Merge pull request of current view or at point."
   (interactive)
@@ -1546,9 +1595,10 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
                           (length commits) ts)
                   ;; FIXME: display commit msg here too:
                   (cl-loop for c in commits
+                           for short = (substring c 0 7)
                            concat
                            (concat "\n"
-                                   (fj-propertize-link (substring c 0 7)
+                                   (fj-propertize-link short
                                                        'commit-ref c))))))
               ((equal .type "merge_pull")
                ;; FIXME: get commit and branch for merge:
@@ -2355,7 +2405,7 @@ Used for hitting RET on a given link."
            (fj-user-repos-tl item))
           ((or (eq type 'commit)
                (eq type 'commit-ref))
-           (fj-view-commit repo owner item))
+           (fj-view-commit-diff  item))
           ((eq type 'notif)
            (let ((repo (fj--property 'fj-repo))
                  (owner (fj--property 'fj-owner)))
@@ -2398,13 +2448,12 @@ etc.")
          (format "repos/%s/%s/git/commits/%s" owner repo sha)))
     (fj-get endpoint)))
 
-(defun fj-view-commit (repo owner sha)
-  "View commit with SHA in REPO by OWNER.
-Currently we just `browse-url' it."
+(defun fj-browse-commit (&optional repo owner sha)
+  "Browse commit with SHA in REPO by OWNER."
   (interactive)
+  ;; FIXME: make for commit at point
   (let* ((resp (fj-get-commit repo owner sha))
          (url (alist-get 'html_url resp)))
-    ;; TODO: view commit
     (browse-url-generic url)))
 
 (provide 'fj)
