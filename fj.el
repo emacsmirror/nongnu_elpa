@@ -1008,6 +1008,7 @@ QUERY is a search query to filter by."
          (url (concat (alist-get 'html_url repo-data)
                       "/issues"))
          (prev-buf (buffer-name (current-buffer)))
+         (prev-mode major-mode)
          (state-str (or state "open"))
          (buf-name (format "*fj-%s-%s-%s*" repo state-str type)))
     (with-current-buffer (get-buffer-create buf-name)
@@ -1020,13 +1021,27 @@ QUERY is a search query to filter by."
       (setq fj-buffer-spec
             `(:repo ,repo :state ,state-str :owner ,owner :url ,url
                     :type ,type))
-      (cond ((string= buf-name prev-buf) ; same repo
-             nil)
-            ;; FIXME: don't use buffer names (pulls/state):
-            ((string-suffix-p "-issues*" prev-buf) ; diff repo
-             (switch-to-buffer (current-buffer)))
-            (t                             ; new buf
-             (switch-to-buffer-other-window (current-buffer)))))))
+      (fj-other-window-maybe
+       prev-buf "-issues*" #'string-suffix-p prev-mode))))
+
+(defun fj-other-window-maybe (prev-buf string suffix-or-prefix
+                                       &optional prev-mode)
+  "Conditionally call `switch-to-buffer' or `switch-to-buffer-other-window'.
+Depending on where we are. PREV-BUFFER is the name of the
+previous buffer. STRING is a buffer name string to be checked by
+SUFFIX-OR-PREFIX, ie `string-suffix-p' or `string-prefix-p'.
+PREV-MODE is the major mode active in the previous buffer."
+  ;; TODO: it is reasonable to keep same window if same mode?
+  ;; else it seems to be just a mess using buffer names, as they can often be
+  ;; used to add detail precisely about the current view
+  (cond ((string= (buffer-name) prev-buf) ; same repo
+         nil)
+        ;; FIXME: don't use buffer names (pulls/state):
+        ((or (equal prev-mode major-mode)
+             (funcall suffix-or-prefix string prev-buf)) ; diff repo
+         (switch-to-buffer (current-buffer)))
+        (t                             ; new buf
+         (switch-to-buffer-other-window (current-buffer)))))
 
 (defun fj-list-issues-search (query &optional state type)
   "Search current repo issues for QUERY.
@@ -1783,18 +1798,20 @@ TOPIC, a boolean, means search in repo topics."
 (defun fj-repos-tl-render (buf entries mode)
   "Render a tabulated list in BUF fer, with ENTRIES, in MODE.
 Optionally specify repo OWNER and URL."
-  (let ((last-buf (buffer-name (current-buffer))))
+  (let ((prev-buf (buffer-name (current-buffer))))
     (with-current-buffer (get-buffer-create buf)
       (setq tabulated-list-entries entries)
       (funcall mode)
       (tabulated-list-init-header)
       (tabulated-list-print)
-      (cond ((or (string= buf last-buf) ;; reloading
-                 (string-prefix-p "*fj-search" buf)) ;; any search
-             ;; (string-suffix-p "-issues*" prev-buf) ; diff repo
-             (switch-to-buffer (current-buffer)))
-            (t ;; new buf
-             (switch-to-buffer-other-window (current-buffer)))))))
+      (fj-other-window-maybe prev-buf "*fj-search" #'string-prefix-p))))
+
+;; (cond ((or (string= buf prev-buf) ;; reloading
+;;            (string-prefix-p "*fj-search" buf)) ;; any search
+;;        ;; (string-suffix-p "-issues*" prev-buf) ; diff repo
+;;        (switch-to-buffer (current-buffer)))
+;;       (t ;; new buf
+;;        (switch-to-buffer-other-window (current-buffer)))))))
 
 ;;; TL ACTIONS
 
