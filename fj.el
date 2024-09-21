@@ -421,6 +421,7 @@ X and Y are sorting args."
     (define-key map (kbd "g") #'fj-repo-tl-reload)
     (define-key map (kbd "N") #'fj-view-notifications)
     (define-key map (kbd "M-C-q") #'fj-kill-all-buffers)
+    (define-key map (kbd "/") #'fj-switch-to-buffer)
     map)
   "Map for `fj-repo-tl-mode' and `fj-user-repo-tl-mode' to inherit.")
 
@@ -903,6 +904,7 @@ NEW-BODY is the new comment text to send."
     (define-key map (kbd "L") #'fj-repo-copy-clone-url)
     (define-key map (kbd "j") #'imenu)
     (define-key map (kbd "M-C-q") #'fj-kill-all-buffers)
+    (define-key map (kbd "/") #'fj-switch-to-buffer)
     map)
   "Map for `fj-issue-tl-mode', a tabluated list of issues.")
 
@@ -1183,6 +1185,7 @@ JSON is the item's data to process the link with."
     (define-key map (kbd "b") #'fj-browse-view)
     (define-key map (kbd "N") #'fj-view-notifications)
     (define-key map (kbd "M-C-q") #'fj-kill-all-buffers)
+    (define-key map (kbd "/") #'fj-switch-to-buffer)
     map)
   "Keymap for `fj-issue-view-mode'.")
 
@@ -2028,6 +2031,7 @@ Optionally set PAGE and LIMIT."
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "C-c C-k") #'fj-compose-cancel)
     (define-key map (kbd "C-c C-c") #'fj-compose-send)
+    (define-key map (kbd "/") #'fj-switch-to-buffer)
     map)
   "Keymap for `fj-compose-comment-mode'.")
 
@@ -2042,6 +2046,7 @@ Optionally set PAGE and LIMIT."
     (define-key map (kbd "C-c C-r") #'fj-compose-read-repo)
     (define-key map (kbd "C-c C-k") #'fj-compose-cancel)
     (define-key map (kbd "C-c C-c") #'fj-compose-send)
+    (define-key map (kbd "/") #'fj-switch-to-buffer)
     map)
   "Keymap for `fj-compose-mode'.")
 
