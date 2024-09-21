@@ -308,7 +308,11 @@ NO-JSON means return the raw response."
                      (fedi-http--get url params)
                    (fedi-http--get-json url params)))))
     (if no-json
-        resp
+        ;; return response as string:
+        (with-current-buffer resp
+          (goto-char (point-min))
+          (re-search-forward "^$" nil 'move)
+          (buffer-substring (point) (point-max)))
       (cond ((or (eq (caar resp) 'errors)
                  (eq (caar resp) 'message))
              (user-error "I am Error: %s Endpoint: %s"
@@ -1865,11 +1869,7 @@ Optionally specify REF, a commit, branch, or tag."
           (car (or (cl-member "readme" names :test #'string-prefix-p)
                    (cl-member "README" names :test #'string-prefix-p))))
          (suffix (file-name-extension readme-name))
-         (file  (fj-get-repo-file repo owner readme-name))
-         (file-str (with-current-buffer file
-                     (goto-char (point-min))
-                     (re-search-forward "^$" nil 'move)
-                     (buffer-substring (point) (point-max))))
+         (file-str  (fj-get-repo-file repo owner readme-name))
          (buf (format "*fj-%s-%s*" repo readme-name)))
     (with-current-buffer (get-buffer-create buf)
       (let ((inhibit-read-only t)) ;; in case already open
