@@ -906,6 +906,8 @@ NEW-BODY is the new comment text to send."
     (define-key map (kbd "b") #'fj-browse-view)
     (define-key map (kbd "N") #'fj-view-notifications)
     (define-key map (kbd "L") #'fj-repo-copy-clone-url)
+    (define-key map (kbd "I") #'fj-list-issues)
+    (define-key map (kbd "P") #'fj-list-pulls)
     (define-key map (kbd "j") #'imenu)
     (define-key map (kbd "M-C-q") #'fj-kill-all-buffers)
     (define-key map (kbd "/") #'fj-switch-to-buffer)
