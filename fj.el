@@ -142,7 +142,7 @@ Not used for items that are links.")
 (defun fj-issue-own-p ()
   "T if issue is authored by `fj-user'.
 Works in issue view mode or in issues tl."
-  (cond ((eq major-mode 'fj-issue-view-mode)
+  (cond ((eq major-mode 'fj-item-view-mode)
          (equal fj-user
                 (fj--get-buffer-spec :author)))
         ((eq major-mode 'fj-issue-tl-mode)
@@ -151,7 +151,7 @@ Works in issue view mode or in issues tl."
 
 (defun fj-comment-own-p ()
   "T if comment is authored by `fj-user'."
-  (and (eq major-mode 'fj-issue-view-mode)
+  (and (eq major-mode 'fj-item-view-mode)
        (equal fj-user (fj--property 'fj-comment-author))))
 
 (defun fj-kill-all-buffers ()
@@ -201,8 +201,8 @@ Works in issue view mode or in issues tl."
        (user-error "Not issue here?")
      ,body))
 
-(defmacro fj-with-issue-view (&optional body)
-  "Execute BODY if we are in an issue view."
+(defmacro fj-with-item-view (&optional body)
+  "Execute BODY if we are in an item view."
   (declare (debug t))
   `(if (not (fj--get-buffer-spec :item))
        (user-error "Not in an issue view?")
@@ -1171,18 +1171,18 @@ JSON is the item's data to process the link with."
     (fj-restore-previous-window-config fj-previous-window-config)
     str))
 
-(defvar fj-issue-view-mode-map
+(defvar fj-item-view-mode-map
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "n") #'fj-issue-next)
     (define-key map (kbd "p") #'fj-issue-prev)
     (define-key map [?\t] #'fj-next-tab-item)
     (define-key map [backtab] #'fj-prev-tab-item)
-    (define-key map (kbd "g") #'fj-issue-view-reload)
-    (define-key map (kbd "e") #'fj-issue-view-edit-item-at-point)
-    (define-key map (kbd "c") #'fj-issue-view-comment)
-    (define-key map (kbd "k") #'fj-issue-view-close)
-    (define-key map (kbd "o") #'fj-issue-view-reopen)
-    (define-key map (kbd "K") #'fj-issue-view-comment-delete)
+    (define-key map (kbd "g") #'fj-item-view-reload)
+    (define-key map (kbd "e") #'fj-item-view-edit-item-at-point)
+    (define-key map (kbd "c") #'fj-item-view-comment)
+    (define-key map (kbd "k") #'fj-item-view-close)
+    (define-key map (kbd "o") #'fj-item-view-reopen)
+    (define-key map (kbd "K") #'fj-item-view-comment-delete)
     (define-key map (kbd "s") #'fj-list-issues-search)
     (define-key map (kbd "S") #'fj-repo-search-tl)
     (define-key map (kbd "O") #'fj-list-own-repos)
@@ -1192,10 +1192,10 @@ JSON is the item's data to process the link with."
     (define-key map (kbd "M-C-q") #'fj-kill-all-buffers)
     (define-key map (kbd "/") #'fj-switch-to-buffer)
     map)
-  "Keymap for `fj-issue-view-mode'.")
+  "Keymap for `fj-item-view-mode'.")
 
-(define-derived-mode fj-issue-view-mode special-mode "fj-issue"
-  "Major mode for viewing an issue."
+(define-derived-mode fj-item-view-mode special-mode "fj-issue"
+  "Major mode for viewing items."
   :group 'fj
   (read-only-mode 1))
 
@@ -1268,7 +1268,7 @@ OWNER is the repo owner."
   "Render ITEM number NUMBER, in REPO and its TIMELINE.
 OWNER is the repo owner.
 RELOAD mean we reloaded."
-  (fedi-with-buffer (format "*fj-issue-%s" number) 'fj-issue-view-mode
+  (fedi-with-buffer (format "*fj-item-%s" number) 'fj-item-view-mode
                     (not reload)
     (let ((header-line-indent " "))
       (header-line-indent-mode 1) ; broken?
@@ -1348,7 +1348,7 @@ RELOAD means we are reloading, so don't open in other window."
          (timeline (fj-issue-get-comments-timeline repo owner number)))
     (fj-render-item repo owner item number timeline reload)))
 
-;; (defun fj-issue-view-comment ()
+;; (defun fj-item-view-comment ()
 ;;   "Comment on the issue currently being viewed."
 ;;   (interactive)
 ;;   (fj-with-issue
@@ -1357,10 +1357,10 @@ RELOAD means we are reloading, so don't open in other window."
 ;;          (repo (fj--get-buffer-spec :repo)))
 ;;      (fj-issue-comment repo number))))
 
-(defun fj-issue-view-reload ()
-  "Reload the current issue view."
+(defun fj-item-view-reload ()
+  "Reload the current item view."
   (interactive)
-  (fj-with-issue-view
+  (fj-with-item-view
    (let ((number (fj--get-buffer-spec :item))
          (owner (fj--get-buffer-spec :owner))
          (type (fj--get-buffer-spec :type)))
@@ -1369,30 +1369,30 @@ RELOAD means we are reloading, so don't open in other window."
                    number :reload type))))
 
 ;; TODO: merge simple action functions
-(defun fj-issue-view-close (&optional state)
-  "Close issue being viewed, or set to STATE."
+(defun fj-item-view-close (&optional state)
+  "Close item being viewed, or set to STATE."
   (interactive)
-  (fj-with-issue-view
+  (fj-with-item-view
    (let ((number (fj--get-buffer-spec :item))
          (owner (fj--get-buffer-spec :owner))
          (repo (fj--get-buffer-spec :repo)))
      (fj-issue-close repo owner number state)
-     (fj-issue-view-reload))))
+     (fj-item-view-reload))))
 
-(defun fj-issue-view-reopen ()
-  "Reopen issue being viewed."
+(defun fj-item-view-reopen ()
+  "Reopen item being viewed."
   (interactive)
-  (fj-issue-view-close "open"))
+  (fj-item-view-close "open"))
 
-(defun fj-issue-view-edit-item-at-point ()
-  "Edit issue or comment at point in issue view mode."
+(defun fj-item-view-edit-item-at-point ()
+  "Edit issue or comment at point in item view mode."
   (interactive)
   (if (fj--property 'fj-comment)
-      (fj-issue-view-edit-comment)
-    (fj-issue-view-edit)))
+      (fj-item-view-edit-comment)
+    (fj-item-view-edit)))
 
-(defun fj-issue-view-edit ()
-  "Edit the issue currently being viewed."
+(defun fj-item-view-edit ()
+  "Edit the item currently being viewed."
   (interactive)
   (fj-with-own-issue
    (let ((number (fj--get-buffer-spec :item))
@@ -1407,8 +1407,8 @@ RELOAD means we are reloading, so don't open in other window."
            fj-compose-issue-number number)
      (fedi-post--update-status-fields))))
 
-(defun fj-issue-view-comment ()
-  "Comment on the issue currently being viewed."
+(defun fj-item-view-comment ()
+  "Comment on the item currently being viewed."
   (interactive)
   (let ((number (fj--get-buffer-spec :item))
         (repo (fj--get-buffer-spec :repo))
@@ -1421,7 +1421,7 @@ RELOAD means we are reloading, so don't open in other window."
           fj-compose-issue-number number)
     (fedi-post--update-status-fields)))
 
-(defun fj-issue-view-edit-comment ()
+(defun fj-item-view-edit-comment ()
   "Edit the comment at point."
   (interactive)
   (fj-with-own-comment
@@ -1436,7 +1436,7 @@ RELOAD means we are reloading, so don't open in other window."
            fj-compose-comment-id id)
      (fedi-post--update-status-fields))))
 
-(defun fj-issue-view-comment-delete ()
+(defun fj-item-view-comment-delete ()
   "Delete comment at point."
   (interactive)
   (fj-with-own-comment
@@ -1446,7 +1446,7 @@ RELOAD means we are reloading, so don't open in other window."
           (endpoint (format "repos/%s/%s/issues/comments/%s" owner repo id)))
      (when (yes-or-no-p "Delete comment?")
        (fj-delete endpoint)
-       (fj-issue-view-reload)))))
+       (fj-item-view-reload)))))
 
 ;;; PR VIEWS
 
@@ -2197,7 +2197,7 @@ Call response and update functions."
               ;; FIXME: we may have been in issues TL or issue view.
               ;; we we need prev-buffer arg?
               ;; else generic reload function
-              (fj-issue-view-reload)
+              (fj-item-view-reload)
             (fj-list-issues repo)))))))
 
 (defun fj-search-users (query &optional limit)
@@ -2308,7 +2308,7 @@ ALL is a boolean, meaning also show read notifcations."
   (let ((buf (format "*fj-notifications-%s*"
                      (if all "all" "unread")))
         (data (fj-get-notifications all)))
-    (fedi-with-buffer buf 'fj-issue-view-mode nil
+    (fedi-with-buffer buf 'fj-item-view-mode nil
       (fj-render-notifications data))))
 
 (defun fj-view-notifications-all ()
