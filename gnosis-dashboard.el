@@ -62,6 +62,8 @@
 (defvar gnosis-dashboard-note-ids nil
   "Store note ids for dashboard.")
 
+(defvar gnosis-dashboard-buffer-name "*Gnosis Dashboard*")
+
 (defvar gnosis-dashboard-search-value nil
   "Store search value.")
 
@@ -194,8 +196,8 @@ Skips days where no note was reviewed."
 (defun gnosis-dashboard-output-notes (note-ids)
   "Return NOTE-IDS contents on gnosis dashboard."
   (cl-assert (listp note-ids) t "`note-ids' must be a list of note ids.")
-  (pop-to-buffer-same-window "*gnosis-dashboard*")
-  (gnosis-dashboard-mode)
+  (pop-to-buffer-same-window gnosis-dashboard-buffer-name)
+  (gnosis-dashboard-enable-mode)
   (gnosis-dashboard-notes-mode)
   (setf tabulated-list-format `[("Main" ,(/ (window-width) 4) t)
 				("Options" ,(/ (window-width) 6) t)
@@ -276,8 +278,8 @@ Skips days where no note was reviewed."
 (defun gnosis-dashboard-output-tags (&optional tags)
   "Format gnosis dashboard with output of TAGS."
   (let ((tags (or tags (gnosis-get-tags--unique))))
-    (pop-to-buffer-same-window "*gnosis-dashboard*")
-    (gnosis-dashboard-mode)
+    (pop-to-buffer-same-window gnosis-dashboard-buffer-name)
+    (gnosis-dashboard-enable-mode)
     (gnosis-dashboard-tags-mode)
     (setf gnosis-dashboard--current '(:type 'tags))
     (setq tabulated-list-format [("Name" 35 t)
@@ -312,8 +314,8 @@ Skips days where no note was reviewed."
 
 (defun gnosis-dashboard-output-decks ()
   "Return deck contents for gnosis dashboard."
-  (pop-to-buffer-same-window "*gnosis-dashboard*")
-  (gnosis-dashboard-mode)
+  (pop-to-buffer-same-window gnosis-dashboard-buffer-name)
+  (gnosis-dashboard-enable-mode)
   (gnosis-dashboard-decks-mode)
   (setq tabulated-list-format [("Name" 15 t)
 			       ("Total Notes" 10 gnosis-dashboard-sort-total-notes)])
@@ -378,6 +380,7 @@ When called with called with a prefix, unsuspend all notes of deck."
 (define-derived-mode gnosis-dashboard-mode tabulated-list-mode "Gnosis Dashboard"
   "Major mode for displaying Gnosis dashboard."
   :keymap gnosis-dashboard-mode-map
+  :interactive nil
   (setq tabulated-list-padding 2
 	tabulated-list-sort-key nil
 	gnosis-dashboard--selected-ids nil)
@@ -494,7 +497,7 @@ DASHBOARD-TYPE: either 'Notes' or 'Decks' to display the respective dashboard."
   "Test function to create an editable field and a search button."
   (interactive)
   (delete-other-windows)
-  (let ((buffer-name "*Gnosis Dashboard*")
+  (let ((buffer-name gnosis-dashboard-buffer-name)
 	(due-notes (gnosis-review-get-due-notes)))
     (when (get-buffer buffer-name)
       (kill-buffer buffer-name))  ;; Kill the existing buffer if it exists
@@ -543,7 +546,7 @@ DASHBOARD-TYPE: either 'Notes' or 'Decks' to display the respective dashboard."
         (widget-setup))
       (pop-to-buffer-same-window buffer)
       (goto-char (point-min))
-      (gnosis-dashboard-mode)
+      (gnosis-dashboard-enable-mode)
       (gnosis-dashboard-menu))))
 
 (provide 'gnosis-dashboard)
