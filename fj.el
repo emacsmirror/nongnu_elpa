@@ -263,7 +263,7 @@ Works in issue view mode or in issues tl."
      ,body))
 
 (defmacro fj-with-pull (&optional body)
-  "Execute BODY if we are in an PR view or if issue at point."
+  "Execute BODY if we are in an PR view or if pull request at point."
   (declare (debug t))
   `(if (not (or (eq (fj--get-buffer-spec :type) :pull)
                 (eq 'pull (fj--property 'item))))
@@ -308,7 +308,11 @@ NO-JSON means return the raw response."
                      (fedi-http--get url params)
                    (fedi-http--get-json url params)))))
     (if no-json
-        resp
+        ;; return response as string:
+        (with-current-buffer resp
+          (goto-char (point-min))
+          (re-search-forward "^$" nil 'move)
+          (buffer-substring (point) (point-max)))
       (cond ((or (eq (caar resp) 'errors)
                  (eq (caar resp) 'message))
              (user-error "I am Error: %s Endpoint: %s"
@@ -421,6 +425,7 @@ X and Y are sorting args."
     (define-key map (kbd "g") #'fj-repo-tl-reload)
     (define-key map (kbd "N") #'fj-view-notifications)
     (define-key map (kbd "M-C-q") #'fj-kill-all-buffers)
+    (define-key map (kbd "/") #'fj-switch-to-buffer)
     map)
   "Map for `fj-repo-tl-mode' and `fj-user-repo-tl-mode' to inherit.")
 
@@ -504,7 +509,7 @@ X and Y are sorting args."
     (if (not (fj-own-repo-p))
         (user-error "Not your own repo")
       (when (y-or-n-p
-             (format "Delete repo %s? [Permanent and cannot be undone]"
+             (format "Delete repo %s [Permanent and cannot be undone]?"
                      repo))
         (let ((resp (fj-delete endpoint)))
           (fedi-http--triage resp
@@ -903,6 +908,7 @@ NEW-BODY is the new comment text to send."
     (define-key map (kbd "L") #'fj-repo-copy-clone-url)
     (define-key map (kbd "j") #'imenu)
     (define-key map (kbd "M-C-q") #'fj-kill-all-buffers)
+    (define-key map (kbd "/") #'fj-switch-to-buffer)
     map)
   "Map for `fj-issue-tl-mode', a tabluated list of issues.")
 
@@ -1182,7 +1188,9 @@ JSON is the item's data to process the link with."
     (define-key map (kbd "O") #'fj-list-own-repos)
     (define-key map (kbd "b") #'fj-browse-view)
     (define-key map (kbd "N") #'fj-view-notifications)
+    (define-key map (kbd "D") #'fj-view-pull-diff)
     (define-key map (kbd "M-C-q") #'fj-kill-all-buffers)
+    (define-key map (kbd "/") #'fj-switch-to-buffer)
     map)
   "Keymap for `fj-issue-view-mode'.")
 
@@ -1442,6 +1450,54 @@ RELOAD means we are reloading, so don't open in other window."
 
 ;;; PR VIEWS
 
+(defun fj-view-commit-diff (&optional sha)
+  "View a diff of a commit at point.
+Optionally, provide the commit's SHA."
+  (interactive)
+  (let* ((repo (fj--get-buffer-spec :repo))
+         (owner (fj--get-buffer-spec :owner))
+         (sha (or sha
+                  (fj--property 'item) ;; commit at point
+                  (fj--get-buffer-spec :item))) ;; item view? FIXME: remove?
+         (endpoint (format "repos/%s/%s/git/commits/%s.diff"
+                           owner repo sha)))
+    (fj-view-item-diff endpoint)))
+
+(defun fj-view-pull-diff ()
+  "View a diff of the entire current PR."
+  (interactive)
+  (fj-with-pull
+   (let* ((repo (fj--get-buffer-spec :repo))
+          (owner (fj--get-buffer-spec :owner))
+          (id (fj--get-buffer-spec :item))
+          (endpoint (format "repos/%s/%s/pulls/%s.diff"
+                            owner repo id)))
+     (fj-view-item-diff endpoint))))
+
+(defun fj-view-item-diff (endpoint)
+  "View a diff of an item, commit or pull diff.
+ENDPOINT is the API endpoint to hit."
+  (let* ((resp (fj-get endpoint nil :no-json))
+         (buf "*fj-diff*"))
+    (with-current-buffer (get-buffer-create buf)
+      (erase-buffer)
+      (insert resp)
+      (goto-char (point-min))
+      (switch-to-buffer-other-window (current-buffer))
+      ;; FIXME: make this work like special-mode, easy bindings and read-only:
+      (diff-mode))))
+
+(defun fj-get-pull-commits ()
+  "Return the data for the commits of the current pull."
+  (interactive)
+  (fj-with-pull
+   (let* ((repo (fj--get-buffer-spec :repo))
+          (owner (fj--get-buffer-spec :owner))
+          (id (fj--get-buffer-spec :item))
+          (endpoint (format "/repos/%s/%s/pulls/%s/commits"
+                            owner repo id))
+          (fj-get endpoint)))))
+
 (defun fj-merge-pull ()
   "Merge pull request of current view or at point."
   (interactive)
@@ -1539,9 +1595,10 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
                           (length commits) ts)
                   ;; FIXME: display commit msg here too:
                   (cl-loop for c in commits
+                           for short = (substring c 0 7)
                            concat
                            (concat "\n"
-                                   (fj-propertize-link (substring c 0 7)
+                                   (fj-propertize-link short
                                                        'commit-ref c))))))
               ((equal .type "merge_pull")
                ;; FIXME: get commit and branch for merge:
@@ -1571,12 +1628,12 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
   (let ((match (string-match "<a[^\n]*>\\(?2:[^\n]*\\)</a>" str)))
     (match-string 2 str))))
 
-(defun fj-propertize-link (str &optional type item)
+(defun fj-propertize-link (str &optional type item face)
   "Propertize a link with text STR.
-Optionally set link TYPE and ITEM number."
+Optionally set link TYPE and ITEM number and FACE."
   ;; TODO: poss to refactor with `fedi-link-props'?
   (propertize str
-              'face 'shr-link
+              'face (or face 'shr-link)
               'mouse-face 'highlight
               'shr-tabstop t
               'keymap fj-link-keymap
@@ -1862,11 +1919,7 @@ Optionally specify REF, a commit, branch, or tag."
           (car (or (cl-member "readme" names :test #'string-prefix-p)
                    (cl-member "README" names :test #'string-prefix-p))))
          (suffix (file-name-extension readme-name))
-         (file  (fj-get-repo-file repo owner readme-name))
-         (file-str (with-current-buffer file
-                     (goto-char (point-min))
-                     (re-search-forward "^$" nil 'move)
-                     (buffer-substring (point) (point-max))))
+         (file-str  (fj-get-repo-file repo owner readme-name))
          (buf (format "*fj-%s-%s*" repo readme-name)))
     (with-current-buffer (get-buffer-create buf)
       (let ((inhibit-read-only t)) ;; in case already open
@@ -2028,6 +2081,7 @@ Optionally set PAGE and LIMIT."
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "C-c C-k") #'fj-compose-cancel)
     (define-key map (kbd "C-c C-c") #'fj-compose-send)
+    (define-key map (kbd "/") #'fj-switch-to-buffer)
     map)
   "Keymap for `fj-compose-comment-mode'.")
 
@@ -2042,6 +2096,7 @@ Optionally set PAGE and LIMIT."
     (define-key map (kbd "C-c C-r") #'fj-compose-read-repo)
     (define-key map (kbd "C-c C-k") #'fj-compose-cancel)
     (define-key map (kbd "C-c C-c") #'fj-compose-send)
+    (define-key map (kbd "/") #'fj-switch-to-buffer)
     map)
   "Keymap for `fj-compose-mode'.")
 
@@ -2235,9 +2290,9 @@ Optionally set LIMIT to results."
 (defun fj-get-notifications (&optional all) ; status-types subject-type)
                                         ; before since page limit
   "GET notifications for `fj-user'.
-ALL is a boolean string, meaning also show read notifications.
-STATUS-TYPES and SUBJECT-TYPE are array strings."
-  (let ((params `(("all" . ,all)))
+ALL is a boolean, meaning also return read notifications."
+  ;; STATUS-TYPES and SUBJECT-TYPE are array strings."
+  (let ((params `(("all" . ,(symbol-name all))))
         (endpoint "notifications"))
     (fj-get endpoint params)))
 
@@ -2246,13 +2301,31 @@ STATUS-TYPES and SUBJECT-TYPE are array strings."
   (alist-get 'new
              (fj-get "notifications/new")))
 
-(defun fj-view-notifications ()
-  "View notifications for `fj-user'."
+(defun fj-view-notifications (&optional all)
+  "View notifications for `fj-user'.
+ALL is a boolean, meaning also show read notifcations."
   (interactive)
-  (let ((buf "*fj-notifications*") ;"*fj-notifications-%s" read-flag)))
-        (data (fj-get-notifications "t")))
+  (let ((buf (format "*fj-notifications-%s*"
+                     (if all "all" "unread")))
+        (data (fj-get-notifications all)))
     (fedi-with-buffer buf 'fj-issue-view-mode nil
       (fj-render-notifications data))))
+
+(defun fj-view-notifications-all ()
+  "View all notifications for `fj-user'."
+  (interactive)
+  (fj-view-notifications t))
+
+(defun fj-view-notifications-unread ()
+  "View unread notifications for `fj-user'."
+  (interactive)
+  (fj-view-notifications))
+
+(defun fj-notifications-unread-toggle ()
+  "Switch between showing all notifications, and only showing unread."
+  (interactive)
+  (fj-view-notifications
+   (not (string-suffix-p "all*" (buffer-name)))))
 
 (defun fj-render-notifications (data)
   "Render notifications DATA."
@@ -2263,19 +2336,23 @@ STATUS-TYPES and SUBJECT-TYPE are array strings."
   "Render NOTIF."
   (let-alist notif
     ;; notifs don't have item #, so we get from URL:
-    (let ((number (car (last (split-string .subject.url "/")))))
+    (let ((number (car (last (split-string .subject.url "/"))))
+          (unread (eq t .unread)))
       (insert
        (propertize (concat "#" number)
                    'face 'fj-comment-face)
        (concat " "
                (propertize
-                (fj-propertize-link .subject.title 'notif number)
+                (fj-propertize-link .subject.title 'notif number
+                                    (unless unread 'fj-comment-face))
                 'fj-repo .repository.name
                 'fj-owner .repository.owner.login
                 'fj-url .subject.html_url
                 'fj-byline t) ; for nav
                "\n"
-               .repository.owner.login "/" .repository.name
+               (propertize
+                (concat .repository.owner.login "/" .repository.name)
+                'face (when (not unread) 'fj-comment-face))
                "\n"
                fedi-horiz-bar fedi-horiz-bar
                "\n\n")))))
@@ -2328,7 +2405,7 @@ Used for hitting RET on a given link."
            (fj-user-repos-tl item))
           ((or (eq type 'commit)
                (eq type 'commit-ref))
-           (fj-view-commit repo owner item))
+           (fj-view-commit-diff  item))
           ((eq type 'notif)
            (let ((repo (fj--property 'fj-repo))
                  (owner (fj--property 'fj-owner)))
@@ -2371,13 +2448,12 @@ etc.")
          (format "repos/%s/%s/git/commits/%s" owner repo sha)))
     (fj-get endpoint)))
 
-(defun fj-view-commit (repo owner sha)
-  "View commit with SHA in REPO by OWNER.
-Currently we just `browse-url' it."
+(defun fj-browse-commit (&optional repo owner sha)
+  "Browse commit with SHA in REPO by OWNER."
   (interactive)
+  ;; FIXME: make for commit at point
   (let* ((resp (fj-get-commit repo owner sha))
          (url (alist-get 'html_url resp)))
-    ;; TODO: view commit
     (browse-url-generic url)))
 
 (provide 'fj)
