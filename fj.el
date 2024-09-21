@@ -509,7 +509,7 @@ X and Y are sorting args."
     (if (not (fj-own-repo-p))
         (user-error "Not your own repo")
       (when (y-or-n-p
-             (format "Delete repo %s? [Permanent and cannot be undone]"
+             (format "Delete repo %s [Permanent and cannot be undone]?"
                      repo))
         (let ((resp (fj-delete endpoint)))
           (fedi-http--triage resp
@@ -1475,8 +1475,8 @@ Optionally, provide the commit's SHA."
      (fj-view-item-diff endpoint))))
 
 (defun fj-view-item-diff (endpoint)
-  "View a diff of an item, commit or pull diff."
-  (interactive)
+  "View a diff of an item, commit or pull diff.
+ENDPOINT is the API endpoint to hit."
   (let* ((resp (fj-get endpoint nil :no-json))
          (buf "*fj-diff*"))
     (with-current-buffer (get-buffer-create buf)
@@ -1630,7 +1630,7 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
 
 (defun fj-propertize-link (str &optional type item face)
   "Propertize a link with text STR.
-Optionally set link TYPE and ITEM number."
+Optionally set link TYPE and ITEM number and FACE."
   ;; TODO: poss to refactor with `fedi-link-props'?
   (propertize str
               'face (or face 'shr-link)

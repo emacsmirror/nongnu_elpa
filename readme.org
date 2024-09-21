@@ -101,6 +101,7 @@ Repo search listing:
 #+RESULTS:
 | Binding | Command                          | Description                                                         |
 |---------+----------------------------------+---------------------------------------------------------------------|
+|         | fj-browse-commit                 | Browse commit with SHA in REPO by OWNER.                            |
 |         | fj-browse-view                   | Brose URL of view at point.                                         |
 |         | fj-compose-cancel                | Kill new-post buffer/window. Does not POST content.                 |
 |         | fj-compose-comment-mode          | Minor mode for composing comments.                                  |
@@ -113,6 +114,7 @@ Repo search listing:
 |         | fj-delete-repo                   | Delete repo at point, if you are its owner.                         |
 |         | fj-do-link-action                | Do the action of the link at POS.                                   |
 |         | fj-do-link-action-mouse          | Do the action of the link at point.                                 |
+|         | fj-get-pull-commits              | Return the data for the commits of the current pull.                |
 |         | fj-issue-close                   | Close ISSUE in REPO or set to STATE.                                |
 |         | fj-issue-comment                 | Add COMMENT to ISSUE in REPO.                                       |
 |         | fj-issue-comment-edit            | Edit comment with ID in REPO.                                       |
@@ -154,6 +156,7 @@ Repo search listing:
 |         | fj-list-user-repos               | View repos of current entry user from tabulated repos listing.      |
 |         | fj-merge-pull                    | Merge pull request of current view or at point.                     |
 |         | fj-next-tab-item                 | Jump to next tab item.                                              |
+|         | fj-notifications-unread-toggle   | Switch between showing all notifications, and only showing unread.  |
 |         | fj-prev-tab-item                 | Jump to prev tab item.                                              |
 |         | fj-pull-req-comment              | Add comment to PULL in REPO.                                        |
 |         | fj-repo-copy-clone-url           | Add the clone_url of repo at point to the kill ring.                |
@@ -174,4 +177,8 @@ Repo search listing:
 |         | fj-user-repo-tl-mode             | Mode for displaying a tabulated list of user repos.                 |
 |         | fj-user-repos-tl                 | View a tabulated list of respos for USER.                           |
 |         | fj-view-commit                   | View commit with SHA in REPO by OWNER.                              |
+|         | fj-view-commit-diff              | View a diff of a commit at point.                                   |
 |         | fj-view-notifications            | View notifications for `fj-user'.                                   |
+|         | fj-view-notifications-all        | View all notifications for `fj-user'.                               |
+|         | fj-view-notifications-unread     | View unread notifications for `fj-user'.                            |
+|         | fj-view-pull-diff                | View a diff of the entire current PR.                               |
