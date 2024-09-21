@@ -10,6 +10,8 @@ It just aims to cover a few of the bread and butter functions that will save you
 
 To get going, first set =fj-host=,  =fj-user=, and =fj-token=. You can obtain a token from your profile settings on your Forgejo instance.
 
+Once you have done so, try =fj-list-own-repos= to view your repos, or =fj-list-issues= to view issues of the current repo, or with completing-read of a repo is no repo is found. If you are already viewing a repo and want to force the prompt to choose another, call =fj-list-issues= with a prefix arg (=C-u=).
+
 * repositories
 
 Current repository detection should work partially automatically. If you find you are still being asked for the repo when calling a command from inside a repo with a Forgejo remote, check to make sure the local root directory matches the name of the Forgejo repo!
@@ -18,38 +20,44 @@ Current repository detection should work partially automatically. If you find yo
 
 Forgejo's API is vast. Currently =fj.el= just implements a few basic things:
 
+** repos and repo listings:
+- create new repo
+- delete a repo
+
+
 - search and list instance repos
 - list a user's repos
-- fork or star a repo from repos listing
-- copy clone URL of repo at point
+- fork a repo
+- star a repo
+- copy clone URL of repo
+- view a repo's readme
 
+** rich create/edit issue/comment interface.
 
-- rich create/edit issue/comment interface.
-
-
-- list repo issues/PRs
-- act on an issue/PR from the listing (edit, edit title, comment, close, reopen, delete)
-- search in repo issues/PRs
+** issues/PRs as listings
+- list repo issues and PRs
 - cycle between issues/PRs/all
 - cycle between open/closed/all issues/PRs
-
 - quick jump to any issue/PR or repo in a listing with imenu.
+- search in repo issues/PRs
 
 
-- view issue/PR discussion (reply or delete comment, or act on issue as above)
-- viewing issue/PR, jump to mentioned user, issue or commit.
+- act on an issue/PR from the listing (edit, edit title, comment, close, reopen, delete)
+
+** viewing issues/PRs
+- view issue/PR discussion
+- act on issue/PR (as above, plus reply or delete comment)
+- jump to mentioned user, issue or commit.
 - display all issue/PR timeline items (references, commits, merges, close/reopen, edit, etc.)
 - display diff of any commit
 - display diff of entire PR
 - merge PR
 - browse URL of view or entry at point
 
-
-- create new repo
-- delete repo
-
-
+** notifications
 - view your notifications
+- jump to relevant item
+- toggle between viewing unread and all notifications
 
 * dependencies
 - =magit-post=, =magit-process= (for obtaining current repo)
