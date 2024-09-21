@@ -2081,7 +2081,6 @@ Optionally set PAGE and LIMIT."
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "C-c C-k") #'fj-compose-cancel)
     (define-key map (kbd "C-c C-c") #'fj-compose-send)
-    (define-key map (kbd "/") #'fj-switch-to-buffer)
     map)
   "Keymap for `fj-compose-comment-mode'.")
 
@@ -2096,7 +2095,6 @@ Optionally set PAGE and LIMIT."
     (define-key map (kbd "C-c C-r") #'fj-compose-read-repo)
     (define-key map (kbd "C-c C-k") #'fj-compose-cancel)
     (define-key map (kbd "C-c C-c") #'fj-compose-send)
-    (define-key map (kbd "/") #'fj-switch-to-buffer)
     map)
   "Keymap for `fj-compose-mode'.")
 
