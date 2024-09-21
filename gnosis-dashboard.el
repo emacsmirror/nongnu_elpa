@@ -383,6 +383,13 @@ When called with called with a prefix, unsuspend all notes of deck."
 	gnosis-dashboard--selected-ids nil)
   (display-line-numbers-mode 0))
 
+(defun gnosis-dashboard-enable-mode ()
+  "Enable `gnosis-dashboard-mode'.
+
+This should only be enabled in a gnosis dashboard buffer."
+  (when (string= (buffer-name) gnosis-dashboard-buffer-name)
+    (gnosis-dashboard-mode)))
+
 (cl-defun gnosis-dashboard--search (&optional dashboard-type (note-ids nil))
   "Display gnosis dashboard.
 
