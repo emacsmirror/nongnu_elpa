@@ -1484,6 +1484,7 @@ ENDPOINT is the API endpoint to hit."
     (with-current-buffer (get-buffer-create buf)
       (erase-buffer)
       (insert resp)
+      (setq buffer-read-only t)
       (goto-char (point-min))
       (switch-to-buffer-other-window (current-buffer))
       ;; FIXME: make this work like special-mode, easy bindings and read-only:
