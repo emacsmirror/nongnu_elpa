@@ -2569,8 +2569,10 @@ etc.")
          'fj-item-data commit
          'fj-byline t) ; for nav
         "\n"
+        ;; we just use author name and username here
+        ;; need to look into author/committer difference
         (fj-propertize-link .commit.author.name
-                            'user nil 'fj-name-face)
+                            'handle .author.username 'fj-name-face)
         " committed "
         (propertize cr-display
                     'help-echo .created)
