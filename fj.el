@@ -41,6 +41,7 @@
 (require 'shr)
 
 ;;; VARIABLES
+;; ours
 
 (defvar fj-token nil)
 
@@ -57,6 +58,23 @@ Repo, owner, item number, url.")
 (defun fj-api (endpoint)
   "Return a URL for ENDPOINT."
   (fedi-http--api endpoint fj-host "v1"))
+
+;; instance
+
+(defvar fj-commit-status-types
+  '("pending" "success" "error" "failure"))
+
+(defvar fj-merge-types
+  '("merge" "rebase" "rebase-merge" "squash"
+    "fast-forward-only" "manually-merged"))
+
+(defvar fj-notifications-status-types
+  '("unread" "read" "pinned")
+  "List of possible status types for getting notifications.")
+
+(defvar fj-notifications-subject-types
+  '("issue" "pull" "commit" "repository")
+  "List of possible subject types for getting notifications.")
 
 ;;; FACES
 
@@ -755,10 +773,6 @@ STATE should be \"open\", \"closed\", or \"all\"."
   (let* ((repo (fj-read-user-repo repo))
          (pull (or pull (fj-read-repo-pull-req repo))))
     (fj-issue-comment repo pull)))
-
-(defvar fj-merge-types
-  '("merge" "rebase" "rebase-merge" "squash"
-    "fast-forward-only" "manually-merged"))
 
 ;; FIXME: we need to post DO body param containing one of `fj-merge-types'
 (defun fj-pull-merge-post (repo owner number merge-type)
@@ -2320,14 +2334,6 @@ Optionally set LIMIT to results."
   "Major mode for viewing notifications."
   :group 'fj
   (read-only-mode 1))
-
-(defvar fj-notifications-status-types
-  '("unread" "read" "pinned")
-  "List of possible status types for getting notifications.")
-
-(defvar fj-notifications-subject-types
-  '("issue" "pull" "commit" "repository")
-  "List of possible subject types for getting notifications.")
 
 (defun fj-get-notifications (&optional all) ; status-types subject-type)
                                         ; before since page limit
