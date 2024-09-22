@@ -1041,7 +1041,7 @@ QUERY is a search query to filter by."
 (defun fj-other-window-maybe (prev-buf string suffix-or-prefix
                                        &optional prev-mode)
   "Conditionally call `switch-to-buffer' or `switch-to-buffer-other-window'.
-Depending on where we are. PREV-BUFFER is the name of the
+Depending on where we are. PREV-BUF is the name of the
 previous buffer. STRING is a buffer name string to be checked by
 SUFFIX-OR-PREFIX, ie `string-suffix-p' or `string-prefix-p'.
 PREV-MODE is the major mode active in the previous buffer."
@@ -2453,7 +2453,7 @@ Used for hitting RET on a given link."
            (fj-user-repos-tl item))
           ((or (eq type 'commit)
                (eq type 'commit-ref))
-           (fj-view-commit-diff  item))
+           (fj-view-commit-diff item))
           ((eq type 'notif)
            (let ((repo (fj--property 'fj-repo))
                  (owner (fj--property 'fj-owner)))
@@ -2492,8 +2492,7 @@ etc.")
 
 (defun fj-get-commit (repo owner sha)
   "Get a commit with SHA in REPO by OWNER."
-  (let ((endpoint
-         (format "repos/%s/%s/git/commits/%s" owner repo sha)))
+  (let ((endpoint (format "repos/%s/%s/git/commits/%s" owner repo sha)))
     (fj-get endpoint)))
 
 (defun fj-browse-commit (&optional repo owner sha)
