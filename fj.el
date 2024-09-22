@@ -2694,5 +2694,18 @@ Fetch users by calling FETCH-FUN with two args, REPO and OWNER."
           (concat (string-clean-whitespace .description) "\n"))))
       (insert "\n" fedi-horiz-bar fedi-horiz-bar "\n\n"))))
 
+(defun fj-watch-repo ()
+  "Watch repo at point or in current view"
+  (interactive)
+  (let* ((owner (or (fj--get-buffer-spec :owner)
+                    (fj-get-tl-col 1)))
+         (repo (or (fj--get-buffer-spec :repo)
+                   (fj-get-tl-col 0)))
+         (endpoint (format "repos/%s/%s/subscription" owner repo))
+         (resp (fj-put endpoint)))
+    (fedi-http--triage resp
+                       (lambda ()
+                         (message "Repo %s watched!" repo)))))
+
 (provide 'fj)
 ;;; fj.el ends here
