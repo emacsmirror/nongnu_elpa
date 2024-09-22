@@ -2624,11 +2624,39 @@ etc.")
   :group 'fj
   (read-only-mode 1))
 
+(defun fj-repo-users (fetch-fun buf-str &optional repo owner)
+  "Render users for REPO by OWNER.
+Fetch users by calling FETCH-FUN with two args, REPO and OWNER."
+  (let* ((repo (or repo (fj--get-buffer-spec :repo)))
+         (owner (or owner (fj--get-buffer-spec :owner)))
+         (buf (format "*fj-%s-%s*" repo buf-str))
+         (data (funcall fetch-fun repo owner)))
+    (fedi-with-buffer buf 'fj-users-mode nil
+      (fj-render-users data)
+      (setq fj-current-repo repo)
+      (setq fj-buffer-spec `(:repo ,repo :owner ,owner)))))
+
 (defun fj-get-repo-stargazers (repo owner) ;; page limit
   "Get stargazers of REPO by OWNER."
   (let ((endpoint (format "/repos/%s/%s/stargazers" owner repo))
         (params '()))
     (fj-get endpoint params)))
+
+(defun fj-repo-stargazers (&optional repo owner)
+  "Render stargazers for REPO by OWNER."
+  (interactive)
+  (fj-repo-users #'fj-get-stargazers "stargazers"))
+
+(defun fj-get-watchers (repo owner) ;; page limit
+  "Get watchers of REPO by OWNER."
+  (let ((endpoint (format "/repos/%s/%s/subscribers" owner repo))
+        (params '()))
+    (fj-get endpoint params)))
+
+(defun fj-repo-watchers (&optional repo owner)
+  "Render watchers for REPO by OWNER."
+  (interactive)
+  (fj-repo-users #'fj-get-watchers "watchers"))
 
 (defun fj-render-users (users)
   "Render USERS."
@@ -2665,19 +2693,6 @@ etc.")
         (unless (string-empty-p .description)
           (concat (string-clean-whitespace .description) "\n"))))
       (insert "\n" fedi-horiz-bar fedi-horiz-bar "\n\n"))))
-
-(defun fj-repo-stargazers (&optional repo owner)
-  "Render stargazers for REPO by OWNER."
-  (interactive)
-  (let* ((repo (or repo (fj--get-buffer-spec :repo)))
-         (owner (or owner (fj--get-buffer-spec :owner)))
-         (buf (format "*fj-%s-stargazers*" repo))
-         (data (fj-get-repo-stargazers repo owner)))
-    (fedi-with-buffer buf 'fj-users-mode nil
-      (fj-render-users data)
-      (setq fj-current-repo repo)
-      (setq fj-buffer-spec `(:repo ,repo :owner ,owner)))))
-
 
 (provide 'fj)
 ;;; fj.el ends here
