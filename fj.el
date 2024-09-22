@@ -1666,6 +1666,9 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
   "Propertize a link with text STR.
 Optionally set link TYPE and ITEM number and FACE."
   ;; TODO: poss to refactor with `fedi-link-props'?
+  ;; make plain links work:
+  (when (eq type 'shr)
+    (setq str (propertize str 'shr-url str)))
   (propertize str
               'face (or face 'shr-link)
               'mouse-face 'highlight
@@ -2460,6 +2463,9 @@ Used for hitting RET on a given link."
            (let ((repo (fj--property 'fj-repo))
                  (owner (fj--property 'fj-owner)))
              (fj-item-view repo owner item)))
+          ((eq type 'shr)
+           (let ((url (fj--property 'shr-url)))
+             (shr-browse-url url)))
           (t
            (error "Unknown link type %s" type)))))
 
