@@ -2503,5 +2503,87 @@ etc.")
          (url (alist-get 'html_url resp)))
     (browse-url-generic url)))
 
+(defvar fj-commits-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "n") #'fj-issue-next)
+    (define-key map (kbd "p") #'fj-issue-prev)
+    (define-key map [?\t] #'fj-next-tab-item)
+    (define-key map [backtab] #'fj-prev-tab-item)
+    (define-key map (kbd "g") #'fj-item-view-reload)
+    (define-key map (kbd "s") #'fj-list-issues-search)
+    (define-key map (kbd "I") #'fj-list-issues)
+    (define-key map (kbd "S") #'fj-repo-search-tl)
+    (define-key map (kbd "O") #'fj-list-own-repos)
+    (define-key map (kbd "b") #'fj-browse-view)
+    (define-key map (kbd "N") #'fj-view-notifications)
+    (define-key map (kbd "M-C-q") #'fj-kill-all-buffers)
+    (define-key map (kbd "/") #'fj-switch-to-buffer)
+    map)
+  "Keymap for `fj-commits-mode'.")
+
+(define-derived-mode fj-commits-mode special-mode "fj-commits"
+  "Major mode for viewing repo commits."
+  :group 'fj
+  (read-only-mode 1))
+
+(defun fj-repo-commit-log (&optional repo owner)
+  "Render log of commits for REPO by OWNER."
+  (interactive)
+  (let* ((repo (or repo (fj--get-buffer-spec :repo)))
+         (owner (or owner (fj--get-buffer-spec :owner)))
+         (buf (format "*fj-%s-commit-log*" repo))
+         (data (fj-get-repo-commits repo owner)))
+    (fedi-with-buffer buf 'fj-commits-mode nil
+      (fj-render-commits data)
+      (setq fj-current-repo repo)
+      (setq fj-buffer-spec `(:repo ,repo :owner ,owner)))))
+
+(defun fj-get-repo-commits (repo owner) ;; TODO: &optional sha path page limit not)
+  ;; stat (diffs), verification, files, (optional, disable for speed)
+  "Get commits of REPO by OWNER."
+  (let ((endpoint (format "/repos/%s/%s/commits" owner repo))
+        (params '()))
+    (fj-get endpoint params)))
+
+(defun fj-render-commits (commits)
+  "Remder COMMITS."
+  (cl-loop for c in commits
+           do (fj-render-commit c)))
+
+(defun fj-render-commit (commit)
+  "Render COMMIT."
+  (let-alist commit
+    (let* ((cr (date-to-time .created))
+           (cr-str (format-time-string "%s" cr))
+           (cr-display (fedi--relative-time-description cr nil :brief)))
+      (insert
+       (concat
+        (propertize
+         (fj-propertize-link (car (string-lines .commit.message))
+                             'commit)
+         'item .sha
+         'fj-url .html_url
+         'fj-item-data commit
+         'fj-byline t) ; for nav
+        "\n"
+        (fj-propertize-link .commit.author.name
+                            'user nil 'fj-name-face)
+        " committed "
+        (propertize cr-display
+                    'help-echo .created)
+        (propertize
+         (concat " | " (substring .sha 0 7))
+         'face 'fj-comment-face
+         'help-echo .sha)
+        "\n"
+        fedi-horiz-bar fedi-horiz-bar
+        "\n\n")))))
+
+;; GET /repos/{owner}/{repo}/activities/feeds
+(defun fj-repo-get-feed (repo owner)
+  "Get te activity feed of REPO by OWNER."
+  (let ((endpoint (format "repos/%s/%s/activities/feeds" owner repo)))
+    (fj-get endpoint)))
+
 (provide 'fj)
 ;;; fj.el ends here
