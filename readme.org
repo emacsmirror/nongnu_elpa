@@ -31,6 +31,7 @@ Forgejo's API is vast. Currently =fj.el= just implements a few basic things:
 - star a repo
 - copy clone URL of repo
 - view a repo's readme
+- view a repo's commit log
 
 ** rich create/edit issue/comment interface.
 
