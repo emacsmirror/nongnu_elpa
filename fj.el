@@ -41,6 +41,7 @@
 (require 'shr)
 
 ;;; VARIABLES
+;; ours
 
 (defvar fj-token nil)
 
@@ -57,6 +58,23 @@ Repo, owner, item number, url.")
 (defun fj-api (endpoint)
   "Return a URL for ENDPOINT."
   (fedi-http--api endpoint fj-host "v1"))
+
+;; instance
+
+(defvar fj-commit-status-types
+  '("pending" "success" "error" "failure"))
+
+(defvar fj-merge-types
+  '("merge" "rebase" "rebase-merge" "squash"
+    "fast-forward-only" "manually-merged"))
+
+(defvar fj-notifications-status-types
+  '("unread" "read" "pinned")
+  "List of possible status types for getting notifications.")
+
+(defvar fj-notifications-subject-types
+  '("issue" "pull" "commit" "repository")
+  "List of possible subject types for getting notifications.")
 
 ;;; FACES
 
@@ -756,10 +774,6 @@ STATE should be \"open\", \"closed\", or \"all\"."
          (pull (or pull (fj-read-repo-pull-req repo))))
     (fj-issue-comment repo pull)))
 
-(defvar fj-merge-types
-  '("merge" "rebase" "rebase-merge" "squash"
-    "fast-forward-only" "manually-merged"))
-
 ;; FIXME: we need to post DO body param containing one of `fj-merge-types'
 (defun fj-pull-merge-post (repo owner number merge-type)
   "POST a merge pull request REPO by OWNER.
@@ -905,9 +919,10 @@ NEW-BODY is the new comment text to send."
     (define-key map (kbd "B") #'fj-tl-browse-entry)
     (define-key map (kbd "b") #'fj-browse-view)
     (define-key map (kbd "N") #'fj-view-notifications)
-    (define-key map (kbd "L") #'fj-repo-copy-clone-url)
+    (define-key map (kbd "U") #'fj-repo-copy-clone-url)
     (define-key map (kbd "I") #'fj-list-issues)
     (define-key map (kbd "P") #'fj-list-pulls)
+    (define-key map (kbd "L") #'fj-repo-commit-log)
     (define-key map (kbd "j") #'imenu)
     (define-key map (kbd "M-C-q") #'fj-kill-all-buffers)
     (define-key map (kbd "/") #'fj-switch-to-buffer)
@@ -1008,6 +1023,7 @@ QUERY is a search query to filter by."
          (url (concat (alist-get 'html_url repo-data)
                       "/issues"))
          (prev-buf (buffer-name (current-buffer)))
+         (prev-mode major-mode)
          (state-str (or state "open"))
          (buf-name (format "*fj-%s-%s-%s*" repo state-str type)))
     (with-current-buffer (get-buffer-create buf-name)
@@ -1020,13 +1036,27 @@ QUERY is a search query to filter by."
       (setq fj-buffer-spec
             `(:repo ,repo :state ,state-str :owner ,owner :url ,url
                     :type ,type))
-      (cond ((string= buf-name prev-buf) ; same repo
-             nil)
-            ;; FIXME: don't use buffer names (pulls/state):
-            ((string-suffix-p "-issues*" prev-buf) ; diff repo
-             (switch-to-buffer (current-buffer)))
-            (t                             ; new buf
-             (switch-to-buffer-other-window (current-buffer)))))))
+      (fj-other-window-maybe
+       prev-buf "-issues*" #'string-suffix-p prev-mode))))
+
+(defun fj-other-window-maybe (prev-buf string suffix-or-prefix
+                                       &optional prev-mode)
+  "Conditionally call `switch-to-buffer' or `switch-to-buffer-other-window'.
+Depending on where we are. PREV-BUF is the name of the
+previous buffer. STRING is a buffer name string to be checked by
+SUFFIX-OR-PREFIX, ie `string-suffix-p' or `string-prefix-p'.
+PREV-MODE is the major mode active in the previous buffer."
+  ;; TODO: it is reasonable to keep same window if same mode?
+  ;; else it seems to be just a mess using buffer names, as they can often be
+  ;; used to add detail precisely about the current view
+  (cond ((string= (buffer-name) prev-buf) ; same repo
+         nil)
+        ;; FIXME: don't use buffer names (pulls/state):
+        ((or (equal prev-mode major-mode)
+             (funcall suffix-or-prefix string prev-buf)) ; diff repo
+         (switch-to-buffer (current-buffer)))
+        (t                             ; new buf
+         (switch-to-buffer-other-window (current-buffer)))))
 
 (defun fj-list-issues-search (query &optional state type)
   "Search current repo issues for QUERY.
@@ -1193,6 +1223,7 @@ JSON is the item's data to process the link with."
     (define-key map (kbd "D") #'fj-view-pull-diff)
     (define-key map (kbd "M-C-q") #'fj-kill-all-buffers)
     (define-key map (kbd "/") #'fj-switch-to-buffer)
+    (define-key map (kbd "L") #'fj-repo-commit-log)
     map)
   "Keymap for `fj-item-view-mode'.")
 
@@ -1484,6 +1515,7 @@ ENDPOINT is the API endpoint to hit."
     (with-current-buffer (get-buffer-create buf)
       (erase-buffer)
       (insert resp)
+      (setq buffer-read-only t)
       (goto-char (point-min))
       (switch-to-buffer-other-window (current-buffer))
       ;; FIXME: make this work like special-mode, easy bindings and read-only:
@@ -1782,18 +1814,20 @@ TOPIC, a boolean, means search in repo topics."
 (defun fj-repos-tl-render (buf entries mode)
   "Render a tabulated list in BUF fer, with ENTRIES, in MODE.
 Optionally specify repo OWNER and URL."
-  (let ((last-buf (buffer-name (current-buffer))))
+  (let ((prev-buf (buffer-name (current-buffer))))
     (with-current-buffer (get-buffer-create buf)
       (setq tabulated-list-entries entries)
       (funcall mode)
       (tabulated-list-init-header)
       (tabulated-list-print)
-      (cond ((or (string= buf last-buf) ;; reloading
-                 (string-prefix-p "*fj-search" buf)) ;; any search
-             ;; (string-suffix-p "-issues*" prev-buf) ; diff repo
-             (switch-to-buffer (current-buffer)))
-            (t ;; new buf
-             (switch-to-buffer-other-window (current-buffer)))))))
+      (fj-other-window-maybe prev-buf "*fj-search" #'string-prefix-p))))
+
+;; (cond ((or (string= buf prev-buf) ;; reloading
+;;            (string-prefix-p "*fj-search" buf)) ;; any search
+;;        ;; (string-suffix-p "-issues*" prev-buf) ; diff repo
+;;        (switch-to-buffer (current-buffer)))
+;;       (t ;; new buf
+;;        (switch-to-buffer-other-window (current-buffer)))))))
 
 ;;; TL ACTIONS
 
@@ -2279,13 +2313,29 @@ Optionally set LIMIT to results."
 
 ;;; NOTIFICATIONS
 
-(defvar fj-notifications-status-types
-  '("unread" "read" "pinned")
-  "List of possible status types for getting notifications.")
+(defvar fj-notifications-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "C-c C-c") #'fj-notifications-unread-toggle)
+    (define-key map (kbd "n") #'fj-issue-next)
+    (define-key map (kbd "p") #'fj-issue-prev)
+    (define-key map [?\t] #'fj-next-tab-item)
+    (define-key map [backtab] #'fj-prev-tab-item)
+    (define-key map (kbd "g") #'fj-item-view-reload)
+    (define-key map (kbd "s") #'fj-list-issues-search)
+    (define-key map (kbd "I") #'fj-list-issues)
+    (define-key map (kbd "S") #'fj-repo-search-tl)
+    (define-key map (kbd "O") #'fj-list-own-repos)
+    (define-key map (kbd "b") #'fj-browse-view)
+    (define-key map (kbd "N") #'fj-view-notifications)
+    (define-key map (kbd "M-C-q") #'fj-kill-all-buffers)
+    (define-key map (kbd "/") #'fj-switch-to-buffer)
+    map)
+  "Keymap for `fj-notifications-mode'.")
 
-(defvar fj-notifications-subject-types
-  '("issue" "pull" "commit" "repository")
-  "List of possible subject types for getting notifications.")
+(define-derived-mode fj-notifications-mode special-mode "fj-notifs"
+  "Major mode for viewing notifications."
+  :group 'fj
+  (read-only-mode 1))
 
 (defun fj-get-notifications (&optional all) ; status-types subject-type)
                                         ; before since page limit
@@ -2308,7 +2358,7 @@ ALL is a boolean, meaning also show read notifcations."
   (let ((buf (format "*fj-notifications-%s*"
                      (if all "all" "unread")))
         (data (fj-get-notifications all)))
-    (fedi-with-buffer buf 'fj-item-view-mode nil
+    (fedi-with-buffer buf 'fj-notifications-mode nil
       (fj-render-notifications data))))
 
 (defun fj-view-notifications-all ()
@@ -2405,7 +2455,7 @@ Used for hitting RET on a given link."
            (fj-user-repos-tl item))
           ((or (eq type 'commit)
                (eq type 'commit-ref))
-           (fj-view-commit-diff  item))
+           (fj-view-commit-diff item))
           ((eq type 'notif)
            (let ((repo (fj--property 'fj-repo))
                  (owner (fj--property 'fj-owner)))
@@ -2444,8 +2494,7 @@ etc.")
 
 (defun fj-get-commit (repo owner sha)
   "Get a commit with SHA in REPO by OWNER."
-  (let ((endpoint
-         (format "repos/%s/%s/git/commits/%s" owner repo sha)))
+  (let ((endpoint (format "repos/%s/%s/git/commits/%s" owner repo sha)))
     (fj-get endpoint)))
 
 (defun fj-browse-commit (&optional repo owner sha)
@@ -2455,6 +2504,91 @@ etc.")
   (let* ((resp (fj-get-commit repo owner sha))
          (url (alist-get 'html_url resp)))
     (browse-url-generic url)))
+
+(defvar fj-commits-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "n") #'fj-issue-next)
+    (define-key map (kbd "p") #'fj-issue-prev)
+    (define-key map [?\t] #'fj-next-tab-item)
+    (define-key map [backtab] #'fj-prev-tab-item)
+    (define-key map (kbd "g") #'fj-item-view-reload)
+    (define-key map (kbd "s") #'fj-list-issues-search)
+    (define-key map (kbd "I") #'fj-list-issues)
+    (define-key map (kbd "S") #'fj-repo-search-tl)
+    (define-key map (kbd "O") #'fj-list-own-repos)
+    (define-key map (kbd "b") #'fj-browse-view)
+    (define-key map (kbd "N") #'fj-view-notifications)
+    (define-key map (kbd "M-C-q") #'fj-kill-all-buffers)
+    (define-key map (kbd "L") #'fj-repo-commit-log)
+    (define-key map (kbd "/") #'fj-switch-to-buffer)
+    map)
+  "Keymap for `fj-commits-mode'.")
+
+(define-derived-mode fj-commits-mode special-mode "fj-commits"
+  "Major mode for viewing repo commits."
+  :group 'fj
+  (read-only-mode 1))
+
+(defun fj-repo-commit-log (&optional repo owner)
+  "Render log of commits for REPO by OWNER."
+  (interactive)
+  (let* ((repo (or repo (fj--get-buffer-spec :repo)))
+         (owner (or owner (fj--get-buffer-spec :owner)))
+         (buf (format "*fj-%s-commit-log*" repo))
+         (data (fj-get-repo-commits repo owner)))
+    (fedi-with-buffer buf 'fj-commits-mode nil
+      (fj-render-commits data)
+      (setq fj-current-repo repo)
+      (setq fj-buffer-spec `(:repo ,repo :owner ,owner)))))
+
+(defun fj-get-repo-commits (repo owner) ;; TODO: &optional sha path page limit not)
+  ;; stat (diffs), verification, files, (optional, disable for speed)
+  "Get commits of REPO by OWNER."
+  (let ((endpoint (format "/repos/%s/%s/commits" owner repo))
+        (params '()))
+    (fj-get endpoint params)))
+
+(defun fj-render-commits (commits)
+  "Remder COMMITS."
+  (cl-loop for c in commits
+           do (fj-render-commit c)))
+
+(defun fj-render-commit (commit)
+  "Render COMMIT."
+  (let-alist commit
+    (let* ((cr (date-to-time .created))
+           (cr-str (format-time-string "%s" cr))
+           (cr-display (fedi--relative-time-description cr nil :brief)))
+      (insert
+       (concat
+        (propertize
+         (fj-propertize-link (car (string-lines .commit.message))
+                             'commit)
+         'item .sha
+         'fj-url .html_url
+         'fj-item-data commit
+         'fj-byline t) ; for nav
+        "\n"
+        ;; we just use author name and username here
+        ;; need to look into author/committer difference
+        (fj-propertize-link .commit.author.name
+                            'handle .author.username 'fj-name-face)
+        " committed "
+        (propertize cr-display
+                    'help-echo .created)
+        (propertize
+         (concat " | " (substring .sha 0 7))
+         'face 'fj-comment-face
+         'help-echo .sha)
+        "\n"
+        fedi-horiz-bar fedi-horiz-bar
+        "\n\n")))))
+
+;; GET /repos/{owner}/{repo}/activities/feeds
+(defun fj-repo-get-feed (repo owner)
+  "Get te activity feed of REPO by OWNER."
+  (let ((endpoint (format "repos/%s/%s/activities/feeds" owner repo)))
+    (fj-get endpoint)))
 
 (provide 'fj)
 ;;; fj.el ends here
