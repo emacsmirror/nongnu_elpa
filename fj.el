@@ -118,6 +118,10 @@ Repo, owner, item number, url.")
   "Face for timeline item names (user, issue, PR).
 Not used for items that are links.")
 
+(defface fj-simple-link-face
+  '((t :underline t))
+  "Face for links in v simple displays.")
+
 ;;; INSTANCE SETTINGS
 ;; https://forgejo.org/docs/latest/user/api-usage/#pagination
 ;; the description is confusing, saying that max_response_items and
@@ -2586,15 +2590,94 @@ etc.")
          (concat " | " (substring .sha 0 7))
          'face 'fj-comment-face
          'help-echo .sha)
-        "\n"
-        fedi-horiz-bar fedi-horiz-bar
-        "\n\n")))))
+        "\n" fedi-horiz-bar fedi-horiz-bar "\n\n")))))
 
 ;; GET /repos/{owner}/{repo}/activities/feeds
 (defun fj-repo-get-feed (repo owner)
   "Get te activity feed of REPO by OWNER."
   (let ((endpoint (format "repos/%s/%s/activities/feeds" owner repo)))
     (fj-get endpoint)))
+
+;;; USERS
+
+(defvar fj-users-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "n") #'fj-issue-next)
+    (define-key map (kbd "p") #'fj-issue-prev)
+    (define-key map [?\t] #'fj-next-tab-item)
+    (define-key map [backtab] #'fj-prev-tab-item)
+    (define-key map (kbd "g") #'fj-item-view-reload)
+    (define-key map (kbd "s") #'fj-list-issues-search)
+    (define-key map (kbd "I") #'fj-list-issues)
+    (define-key map (kbd "S") #'fj-repo-search-tl)
+    (define-key map (kbd "O") #'fj-list-own-repos)
+    (define-key map (kbd "b") #'fj-browse-view)
+    (define-key map (kbd "N") #'fj-view-notifications)
+    (define-key map (kbd "M-C-q") #'fj-kill-all-buffers)
+    (define-key map (kbd "L") #'fj-repo-commit-log)
+    (define-key map (kbd "/") #'fj-switch-to-buffer)
+    map)
+  "Keymap for `fj-users-mode'.")
+
+(define-derived-mode fj-users-mode special-mode "fj-users"
+  "Major mode for viewing users."
+  :group 'fj
+  (read-only-mode 1))
+
+(defun fj-get-repo-stargazers (repo owner) ;; page limit
+  "Get stargazers of REPO by OWNER."
+  (let ((endpoint (format "/repos/%s/%s/stargazers" owner repo))
+        (params '()))
+    (fj-get endpoint params)))
+
+(defun fj-render-users (users)
+  "Render USERS."
+  (cl-loop for u in users
+           do (fj-render-user u)))
+
+(defun fj-render-user (user)
+  "Render USER."
+  (let-alist user
+    (let* ((cr (date-to-time .created))
+           (cr-str (format-time-string "%s" cr))
+           (cr-display (fedi--relative-time-description cr nil :brief)))
+      ;; username:
+      (insert
+       (propertize
+        (fj-propertize-link .login 'handle .login)
+        'fj-url .html_url
+        'fj-item-data .login_name
+        'fj-byline t)) ; for nav
+      ;; timestamp:
+      (insert
+       (propertize (concat " joined " cr-display)
+                   'face 'fj-comment-face))
+      (insert
+       (concat
+        "\n"
+        ;; website:
+        (unless (string-empty-p .website)
+          (concat (fj-propertize-link .website 'shr nil
+                                      'fj-simple-link-face)
+                  "\n"))
+        ;; description:
+        ;; TODO: render links here:
+        (unless (string-empty-p .description)
+          (concat (string-clean-whitespace .description) "\n"))))
+      (insert "\n" fedi-horiz-bar fedi-horiz-bar "\n\n"))))
+
+(defun fj-repo-stargazers (&optional repo owner)
+  "Render stargazers for REPO by OWNER."
+  (interactive)
+  (let* ((repo (or repo (fj--get-buffer-spec :repo)))
+         (owner (or owner (fj--get-buffer-spec :owner)))
+         (buf (format "*fj-%s-stargazers*" repo))
+         (data (fj-get-repo-stargazers repo owner)))
+    (fedi-with-buffer buf 'fj-users-mode nil
+      (fj-render-users data)
+      (setq fj-current-repo repo)
+      (setq fj-buffer-spec `(:repo ,repo :owner ,owner)))))
+
 
 (provide 'fj)
 ;;; fj.el ends here
