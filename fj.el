@@ -668,7 +668,7 @@ If both return nil, also prompt."
     "wiki_branch"
     "mirror_interval")) ; sha
 
-(defun fj-update-repo-settings (repo params)
+(defun fj-repo-settings-patch (repo params)
   "Update settings for REPO.
 PARAMS is an alist of any settings to be changed."
   ;; NB: we only need params that we are updating
@@ -723,11 +723,11 @@ If SIMPLE, then check against `fj-repo-settings-editable-simple'."
   "Update current repo settings."
   :transient 'transient--do-exit
   ;; interactive receives args from the prefix:
-  (interactive (list (transient-args 'fj-repo-settings-simple)))
+  (interactive (list (transient-args 'fj-repo-update-settings)))
   (let* (;;(args (transient-args (oref transient-current-prefix command)))
          (alist (fj-transient-to-alist args)))
     (message "%s %s %s" args alist (json-encode alist))
-    (fj-update-repo-settings
+    (fj-repo-settings-patch
      ;; FIXME: need to use global vars in transients?:
      fj-current-repo alist)))
 
@@ -735,7 +735,7 @@ If SIMPLE, then check against `fj-repo-settings-editable-simple'."
 
 (defun fj-repo-defaults ()
   "Return the current repo setting values.
-Used for default values in `fj-repo-settings-simple'."
+Used for default values in `fj-repo-update-settings'."
   ;; FIXME: looks like the only way we can access data is through
   ;; global varaibles? we need to access repo JSON in transients
   ;; (for defaults)
@@ -747,15 +747,15 @@ Used for default values in `fj-repo-settings-simple'."
       (fj-alist-to-transient editable))))
 
 (defun fj-repo-settings-str-reader (&optional prompt initial-input history)
-  "Reader function for `fj-repo-settings-simple' string options.
+  "Reader function for `fj-repo-update-settings' string options.
 We populate the minibuffer with an initial input taken from the
 transient's default value.
 PROMPT, INITIAL-INPUT and HISTORY are default transient reader args."
-  (let ((list (transient-args 'fj-repo-settings-simple)))
+  (let ((list (transient-args 'fj-repo-update-settings)))
     (read-string prompt
                  (transient-arg-value prompt list))))
 
-(transient-define-prefix fj-repo-settings-simple ()
+(transient-define-prefix fj-repo-update-settings ()
   "A transient for setting current repo settings."
   :value (lambda ()
            (fj-repo-defaults))
