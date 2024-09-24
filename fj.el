@@ -601,6 +601,229 @@ If both return nil, also prompt."
                        (lambda ()
                          (message "Repo %s created!" name)))))
 
+;; UPDATE REPO SETTINGS (TRANSIENT MENU)
+
+(defvar fj-repo-settings-editable
+  '( ;; boolean:
+    "allow_fast_forward_only_merge"
+    "allow_manual_merge"
+    "allow_merge_commits"
+    "allow_rebase"
+    "allow_rebase_explicit"
+    "allow_rebase_update"
+    "allow_squash_merge"
+    "archived"
+    "autodetect_manual_merge"
+    "default_allow_maintainer_edit"
+    "default_delete_branch_after_merge"
+    "enable_prune"
+    "globally_editable_wiki"
+    "has_actions"
+    "has_issues"
+    "has_packages"
+    "has_projects"
+    "has_pull_requests"
+    "has_releases"
+    "has_wiki"
+    "ignore_whitespace_conflicts"
+    "private"
+    "template"
+    ;; complex ones (skip for now):
+    ;; "external_tracker" ; complex
+    ;; "external_wiki" ; complex
+    ;; "internal_tracker" ; complex
+    ;; strings:
+    "name"
+    "website"
+    "description"
+    "default_branch"
+    "wiki_branch"
+    "mirror_interval" ; sha
+    "default_merge_style")) ;; member `fj-merge-types'
+
+(defvar fj-repo-settings-editable-simple
+  '( ;; boolean:
+    "archived"
+    "has_issues"
+    "has_projects"
+    "has_pull_requests"
+    "has_releases"
+    "has_wiki"
+    ;; "private"
+    ;; "template"
+    ;; strings:
+    "name"
+    "website"
+    "description"
+    "default_branch"
+    ;; "wiki_branch"
+    ;; "mirror_interval" ; sha
+    "default_merge_style")) ;; member `fj-merge-types'
+
+(defvar fj-repo-settings-strings
+  '("name"
+    "website"
+    "description"
+    "default_branch"
+    "wiki_branch"
+    "mirror_interval")) ; sha
+
+(defun fj-update-repo-settings (repo params)
+  "Update settings for REPO.
+PARAMS is an alist of any settings to be changed."
+  ;; NB: we only need params that we are updating
+  (let* ((endpoint (format "repos/%s/%s" fj-user repo))
+         (resp (fj-patch endpoint params :json)))
+    (fedi-http--triage resp
+                       (lambda ()
+                         (message "Repo settings updated!:\n%s"
+                                  params)))))
+
+(defun fj-transient-to-alist (args)
+  "Convert list of transient ARGS into an alist.
+This currently assumes arguments are of the form \"key=value\"."
+  (cl-loop for a in args
+           for split = (split-string a "=")
+           for key = (if (= (length split) 1) ; we didn't split = boolean
+                         (car split)
+                       (concat (car split) "="))
+           for val = (transient-arg-value key args)
+           for value = (cond ((member val fj-choice-booleans)
+                              (intern val))
+                             ((equal val "\"\"")
+                              "") ;; POSTable empty string
+                             (t
+                              val))
+           collect (cons (car split) value)))
+
+(defun fj-alist-to-transient (alist)
+  "Convert ALIST to a list of transient args.
+This currently assumes arguments are of the form \"key=value\"."
+  (cl-loop for a in alist
+           for key = (symbol-name (car a))
+           for v = (cdr a)
+           for val = (cond ((numberp v) (number-to-string v))
+                           ((symbolp v) (symbol-name v))
+                           ((listp v) nil) ;; don't handle nesting yet
+                           (t v))
+           collect (concat key "=" val)))
+
+(defun fj-repo-editable (repo-alist &optional simple)
+  "Remove any un-editable items from REPO-ALIST.
+Checking is done against `fj-repo-settings-editable'.
+If SIMPLE, then check against `fj-repo-settings-editable-simple'."
+  (cl-remove-if-not
+   (lambda (x)
+     (member (symbol-name (car x))
+             (if simple fj-repo-settings-editable-simple
+               fj-repo-settings-editable)))
+   repo-alist))
+
+(transient-define-suffix fj-update-repo (&optional args)
+  "Update current repo settings."
+  :transient 'transient--do-exit
+  ;; interactive receives args from the prefix:
+  (interactive (list (transient-args 'fj-repo-settings-simple)))
+  (let* (;;(args (transient-args (oref transient-current-prefix command)))
+         (alist (fj-transient-to-alist args)))
+    (message "%s %s %s" args alist (json-encode alist))
+    (fj-update-repo-settings
+     ;; FIXME: need to use global vars in transients?:
+     fj-current-repo alist)))
+
+(defvar fj-choice-booleans '("t" ":json-false")) ;; add "" or nil to unset?
+
+(defun fj-repo-defaults ()
+  "Return the current repo setting values.
+Used for default values in `fj-repo-settings-simple'."
+  ;; FIXME: looks like the only way we can access data is through
+  ;; global varaibles? we need to access repo JSON in transients
+  ;; (for defaults)
+  (with-current-buffer (car (buffer-list)) ; last buffer
+    (let* ((repo (fj--get-buffer-spec :repo))
+           (owner (fj--get-buffer-spec :owner))
+           (data (fj-get-repo repo owner))
+           (editable (fj-repo-editable data :simple)))
+      (fj-alist-to-transient editable))))
+
+(defun fj-repo-settings-str-reader (&optional prompt initial-input history)
+  "Reader function for `fj-repo-settings-simple' string options.
+We populate the minibuffer with an initial input taken from the
+transient's default value.
+PROMPT, INITIAL-INPUT and HISTORY are default transient reader args."
+  (let ((list (transient-args 'fj-repo-settings-simple)))
+    (read-string prompt
+                 (transient-arg-value prompt list))))
+
+(transient-define-prefix fj-repo-settings-simple ()
+  "A transient for setting current repo settings."
+  :value (lambda ()
+           (fj-repo-defaults))
+  ["Repo settings"
+   (:info (lambda () (format "Owner: %s" fj-user)))
+   (:info (lambda () "Note: use the empty string (\"\") to remove a value from an option."))]
+  ;; strings
+  ["Repo info"
+   ("-n" "name" "name="
+    :always-read t
+    :reader (lambda (prompt initial-input history)
+              (fj-repo-settings-str-reader prompt initial-input history)))
+   ("-d" "description" "description="
+    :always-read t
+    :reader (lambda (prompt initial-input history)
+              (fj-repo-settings-str-reader prompt initial-input history)))
+   ("-w" "website" "website="
+    :always-read t
+    :reader (lambda (prompt initial-input history)
+              (fj-repo-settings-str-reader prompt initial-input history)))
+   ("-b" "default_branch" "default_branch="
+    :choices (lambda ()
+               (fj-repo-branches-list fj-current-repo fj-user))
+    :always-read t)]
+  ;; "choice" booleans (so we can PATCH :json-false explicitly):
+  ["Repo options"
+   ("-a" "archived" "archived="
+    :choices (lambda ()
+               fj-choice-booleans)
+    :always-read t)
+   ("-i" "has_issues" "has_issues="
+    :always-read t
+    :choices (lambda ()
+               fj-choice-booleans))
+   ("-k" "has_wiki" "has_wiki="
+    :always-read t
+    :choices (lambda ()
+               fj-choice-booleans))
+   ("-pr" "has_pull_requests" "has_pull_requests="
+    :always-read t
+    :choices (lambda ()
+               fj-choice-booleans))
+   ("-hj" "has_projects" "has_projects="
+    :always-read t
+    :choices (lambda ()
+               fj-choice-booleans))
+   ("-hr" "has_releases" "has_releases="
+    :always-read t
+    :choices (lambda ()
+               fj-choice-booleans))
+   ("-s" "default_merge_style" "default_merge_style="
+    :always-read t
+    :choices (lambda ()
+               fj-merge-types))]
+  ["Update"
+   ("C-c C-c" "Save settings" fj-update-repo)
+   (:info (lambda ()
+            "C-c C-k to revert all changes"))])
+
+(defun fj-repo-get-branches (repo owner)
+  (let ((endpoint (format "/repos/%s/%s/branches" owner repo)))
+    (fj-get endpoint)))
+
+(defun fj-repo-branches-list (repo owner)
+  (let ((branches (fj-repo-get-branches repo owner)))
+    (cl-loop for b in branches
+             collect (alist-get 'name b))))
+
 ;;; ISSUES
 
 (defun fj-get-item-candidates (items)
@@ -777,6 +1000,10 @@ STATE should be \"open\", \"closed\", or \"all\"."
   (let* ((repo (fj-read-user-repo repo))
          (pull (or pull (fj-read-repo-pull-req repo))))
     (fj-issue-comment repo pull)))
+
+(defvar fj-merge-types
+  '("merge" "rebase" "rebase-merge" "squash"
+    "fast-forward-only")) ; "manually-merged")) ??
 
 ;; FIXME: we need to post DO body param containing one of `fj-merge-types'
 (defun fj-pull-merge-post (repo owner number merge-type)
@@ -1007,6 +1234,8 @@ STATE is a string."
   (let* ((repo (fj-read-user-repo repo)))
     (fj-list-issues repo owner state "pulls")))
 
+(defvar fj-repo-data nil) ;; for transients for now
+
 (defun fj-list-issues (repo &optional owner state type query)
   "Display ISSUES in a tabulated list view.
 Either for `fj-current-repo' or REPO, a string, owned by OWNER.
@@ -1036,8 +1265,9 @@ QUERY is a search query to filter by."
       (fj-issue-tl-mode)
       (tabulated-list-init-header)
       (tabulated-list-print)
-      (setq fj-current-repo repo)
-      (setq fj-buffer-spec
+      (setq fj-current-repo repo
+            fj-repo-data repo-data
+            fj-buffer-spec
             `(:repo ,repo :state ,state-str :owner ,owner :url ,url
                     :type ,type))
       (fj-other-window-maybe
@@ -2343,6 +2573,10 @@ Optionally set LIMIT to results."
   "Major mode for viewing notifications."
   :group 'fj
   (read-only-mode 1))
+
+(defvar fj-notifications-status-types
+  '("unread" "read" "pinned")
+  "List of possible status types for getting notifications.")
 
 (defun fj-get-notifications (&optional all) ; status-types subject-type)
                                         ; before since page limit
