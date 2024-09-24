@@ -798,7 +798,7 @@ PROMPT, INITIAL-INPUT and HISTORY are default transient reader args."
     :always-read t
     :choices (lambda ()
                fj-choice-booleans))
-   ("-hj" "has_projects" "has_projects="
+   ("-hp" "has_projects" "has_projects="
     :always-read t
     :choices (lambda ()
                fj-choice-booleans))
