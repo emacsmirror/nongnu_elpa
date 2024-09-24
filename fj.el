@@ -816,10 +816,12 @@ PROMPT, INITIAL-INPUT and HISTORY are default transient reader args."
             "C-c C-k to revert all changes"))])
 
 (defun fj-repo-get-branches (repo owner)
+  "Get branches data for REPO by OWNER."
   (let ((endpoint (format "/repos/%s/%s/branches" owner repo)))
     (fj-get endpoint)))
 
 (defun fj-repo-branches-list (repo owner)
+  "Return a list of branch names in REPO by OWNER."
   (let ((branches (fj-repo-get-branches repo owner)))
     (cl-loop for b in branches
              collect (alist-get 'name b))))
@@ -2860,7 +2862,8 @@ etc.")
 
 (defun fj-repo-users (fetch-fun buf-str &optional repo owner)
   "Render users for REPO by OWNER.
-Fetch users by calling FETCH-FUN with two args, REPO and OWNER."
+Fetch users by calling FETCH-FUN with two args, REPO and OWNER.
+BUF-STR is the name of the buffer string to use."
   (let* ((repo (or repo (fj--get-buffer-spec :repo)))
          (owner (or owner (fj--get-buffer-spec :owner)))
          (buf (format "*fj-%s-%s*" repo buf-str))
@@ -2929,7 +2932,7 @@ Fetch users by calling FETCH-FUN with two args, REPO and OWNER."
       (insert "\n" fedi-horiz-bar fedi-horiz-bar "\n\n"))))
 
 (defun fj-watch-repo ()
-  "Watch repo at point or in current view"
+  "Watch repo at point or in current view."
   (interactive)
   (let* ((owner (or (fj--get-buffer-spec :owner)
                     (fj-get-tl-col 1)))
