@@ -40,6 +40,8 @@
   ["Repo info"
    :class transient-column
    :setup-children
+   ;; FIXME: changes to options created by these fuctions are not registered
+   ;; in`transient-args'!
    (lambda (_)
      (fj-setup-children-strings))]
   ["Repo options"
