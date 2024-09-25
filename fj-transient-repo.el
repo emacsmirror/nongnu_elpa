@@ -36,7 +36,6 @@
 (autoload 'fj-get-repo-data "fj")
 (autoload 'fj-alist-to-transient "fj")
 (autoload 'fj-repo-editable "fj")
-(autoload 'fj-opt-inits "fj")
 (autoload 'fj-patch "fj")
 (autoload 'fedi-http--triage "fedi-http")
 (autoload 'fj--get-buffer-spec "fj")
@@ -117,6 +116,18 @@
     "default_branch"
     "wiki_branch"
     "mirror_interval")) ; sha
+
+(defvar fj-repo-settings-simple-booleans
+  '( ;; boolean:
+    "archived"
+    "has_issues"
+    "has_projects"
+    "has_pull_requests"
+    "has_releases"
+    "has_wiki"
+    ;; "private"
+    ;; "template"
+    ))
 
 ;;; UTILS
 
@@ -222,7 +233,7 @@ PROMPT, INITIAL-INPUT and HISTORY are default transient reader args."
 We fetch repo data ourselves, convert it into transient options,
 then parse it."
   (let* (;; not sure if this is rly needed?
-         (objs (cl-loop for x in fj-repo-settings-strings
+         (objs (cl-loop for x in fj-repo-settings-simple-strings
                         collect (eval `(fj-gen-transient-infix
                                         ,x nil
                                         'transient-option nil
@@ -254,6 +265,33 @@ then parse it."
         :description (oref opt description)
         :class (eieio-object-class opt)
         :argument (oref opt argument)))
+
+(defun fj-key-initials (key &optional separator)
+  "Return a string of the first letters of each word in KEY.
+KEY is split using SEPARATOR."
+  (let* ((split (split-string key (or separator "_"))))
+    (mapconcat (lambda (x)
+                 (char-to-string
+                  (seq-elt x 0)))
+               split)))
+
+(defun fj-opt-inits (key &optional separator)
+  "Return a string keybinding from KEY.
+IF IT IS multiple words separated by SEPARATOR, concat the
+initial letters of each. If it is a single word, return its first
+three letters."
+  (let* ((split (split-string key (or separator "_"))))
+    (concat
+     "-"
+     (if (> (length split) 1)
+         ;; first letter of each word in opt:
+         (let ((inits (fj-key-initials key)))
+           ;; pad it with x if necessary:
+           (when (< (length inits) 3)
+             (setq inits (string-pad inits 3 ?x)))
+           inits)
+       ;; first three letters of single word opt:
+       (substring (car split) 0 3)))))
 
 ;;; TRANSIENTS
 
