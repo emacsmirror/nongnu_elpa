@@ -106,25 +106,25 @@
     ;; "mirror_interval" ; sha
     "default_merge_style")) ;; member `fj-merge-types'
 
-(defvar fj-repo-settings-simple-strings
-  '("name"
-    "website"
-    "description"
-    "default_branch"
-    "wiki_branch"
-    "mirror_interval")) ; sha
+;; (defvar fj-repo-settings-simple-strings
+;;   '("name"
+;;     "website"
+;;     "description"
+;;     "default_branch"
+;;     "wiki_branch"
+;;     "mirror_interval")) ; sha
 
-(defvar fj-repo-settings-simple-booleans
-  '( ;; boolean:
-    "archived"
-    "has_issues"
-    "has_projects"
-    "has_pull_requests"
-    "has_releases"
-    "has_wiki"
-    ;; "private"
-    ;; "template"
-    ))
+;; (defvar fj-repo-settings-simple-booleans
+;;   '( ;; boolean:
+;;     "archived"
+;;     "has_issues"
+;;     "has_projects"
+;;     "has_pull_requests"
+;;     "has_releases"
+;;     "has_wiki"
+;;     ;; "private"
+;;     ;; "template"
+;;     ))
 
 ;;; UTILS
 
@@ -210,11 +210,11 @@ Used for default values in `fj-repo-update-settings'."
 
 ;;; TRANSIENT FUNCTIONS
 
-(defun fj-repo-value-fun ()
-  "Return current (editable) repo settings as transient values."
-  (let ((data (fj-get-repo-data)))
-    (fj-alist-to-transient
-     (fj-repo-editable data :simple))))
+;; (defun fj-repo-value-fun ()
+;;   "Return current (editable) repo settings as transient values."
+;;   (let ((data (fj-get-repo-data)))
+;;     (fj-alist-to-transient
+;;      (fj-repo-editable data :simple))))
 
 (defun fj-repo-settings-str-reader (&optional prompt _initial-input _history)
   "Reader function for `fj-repo-update-settings' string options.
@@ -225,70 +225,70 @@ PROMPT, INITIAL-INPUT and HISTORY are default transient reader args."
     (read-string prompt
                  (transient-arg-value prompt list))))
 
-(defun fj-setup-children-strings ()
-  "Return a setup-children function for a transient.
-We fetch repo data ourselves, convert it into transient options,
-then parse it."
-  (let* (;; not sure if this is rly needed?
-         (objs (cl-loop for x in fj-repo-settings-simple-strings
-                        collect (eval `(fj-gen-transient-infix
-                                        ,x nil
-                                        'transient-option nil
-                                        'fj-repo-settings-str-reader))))
-         (list (fj-return-options-list objs)))
-    (transient-parse-suffixes 'transient--prefix list)))
+;; (defun fj-setup-children-strings ()
+;;   "Return a setup-children function for a transient.
+;; We fetch repo data ourselves, convert it into transient options,
+;; then parse it."
+;;   (let* (;; not sure if this is rly needed?
+;;          (objs (cl-loop for x in fj-repo-settings-simple-strings
+;;                         collect (eval `(fj-gen-transient-infix
+;;                                         ,x nil
+;;                                         'transient-option nil
+;;                                         'fj-repo-settings-str-reader))))
+;;          (list (fj-return-options-list objs)))
+;;     (transient-parse-suffixes 'transient--prefix list)))
 
-(defun fj-setup-children-bools ()
-  "Return a setup-children function for a transient.
-We fetch repo data ourselves, convert it into transient options,
-then parse it."
-  (let* ((objs (cl-loop for x in fj-repo-settings-simple-booleans
-                        collect (eval `(fj-gen-transient-infix
-                                        ,x nil
-                                        'transient-option fj-choice-booleans))))
-         (list (fj-return-options-list objs)))
-    (transient-parse-suffixes 'transient--prefix list)))
+;; (defun fj-setup-children-bools ()
+;;   "Return a setup-children function for a transient.
+;; We fetch repo data ourselves, convert it into transient options,
+;; then parse it."
+;;   (let* ((objs (cl-loop for x in fj-repo-settings-simple-booleans
+;;                         collect (eval `(fj-gen-transient-infix
+;;                                         ,x nil
+;;                                         'transient-option fj-choice-booleans))))
+;;          (list (fj-return-options-list objs)))
+;;     (transient-parse-suffixes 'transient--prefix list)))
 
-(defun fj-return-options-list (list)
-  "Return a list of options for each object in LIST."
-  (cl-loop for x in list
-           collect (fj-return-option-list x)))
+;; (defun fj-return-options-list (list)
+;;   "Return a list of options for each object in LIST."
+;;   (cl-loop for x in list
+;;            collect (fj-return-option-list x)))
 
-(defun fj-return-option-list (opt)
-  "Return a list of transient suffix options for object OPT."
-  (list (oref opt command)
-        ;; these really only need to be set if they are not set in the object OPT:
-        :key (oref opt key)
-        :description (oref opt description)
-        :class (eieio-object-class opt)
-        :argument (oref opt argument)))
+;; (defun fj-return-option-list (opt)
+;;   "Return a list of transient suffix options for object OPT."
+;;   (list (oref opt command)
+;;         ;; these really only need to be set if they are not set in the object OPT:
+;;         :key (oref opt key)
+;;         :description (oref opt description)
+;;         :class (eieio-object-class opt)
+;;         :argument (oref opt argument)))
 
-(defun fj-key-initials (key &optional separator)
-  "Return a string of the first letters of each word in KEY.
-KEY is split using SEPARATOR."
-  (let* ((split (split-string key (or separator "_"))))
-    (mapconcat (lambda (x)
-                 (char-to-string
-                  (seq-elt x 0)))
-               split)))
+;; (defun fj-key-initials (key &optional separator)
+;;   "Return a string of the first letters of each word in KEY.
+;; KEY is split using SEPARATOR."
+;;   (let* ((split (split-string key (or separator "_"))))
+;;     (mapconcat (lambda (x)
+;;                  (char-to-string
+;;                   (seq-elt x 0)))
+;;                split)))
 
-(defun fj-opt-inits (key &optional separator)
-  "Return a string keybinding from KEY.
-IF IT IS multiple words separated by SEPARATOR, concat the
-initial letters of each. If it is a single word, return its first
-three letters."
-  (let* ((split (split-string key (or separator "_"))))
-    (concat
-     "-"
-     (if (> (length split) 1)
-         ;; first letter of each word in opt:
-         (let ((inits (fj-key-initials key)))
-           ;; pad it with x if necessary:
-           (when (< (length inits) 3)
-             (setq inits (string-pad inits 3 ?x)))
-           inits)
-       ;; first three letters of single word opt:
-       (substring (car split) 0 3)))))
+;; (defun fj-opt-inits (key &optional separator)
+;;   "Return a string keybinding from KEY.
+;; IF IT IS multiple words separated by SEPARATOR, concat the
+;; initial letters of each. If it is a single word, return its first
+;; three letters."
+;;   (let* ((split (split-string key (or separator "_"))))
+;;     (concat
+;;      "-"
+;;      (if (> (length split) 1)
+;;          ;; first letter of each word in opt:
+;;          (let ((inits (fj-key-initials key)))
+;;            ;; pad it with x if necessary:
+;;            (when (< (length inits) 3)
+;;              (setq inits (string-pad inits 3 ?x)))
+;;            inits)
+;;        ;; first three letters of single word opt:
+;;        (substring (car split) 0 3)))))
 
 ;;; TRANSIENTS
 
@@ -366,47 +366,47 @@ three letters."
             "C-c C-k to revert all changes"))])
 
 ;; using :setup-children:
-(transient-define-prefix fj-repo-settings '()
-  "A prefix for setting repo settings."
-  :value (lambda ()
-           (fj-repo-value-fun))
-  ["Repo info"
-   :class transient-column
-   :setup-children
-   ;; FIXME: changes to options created by these fuctions are not registered
-   ;; in `transient-args'!
-   (lambda (_)
-     (fj-setup-children-strings))]
-  ["Repo options"
-   :class transient-column
-   :setup-children
-   (lambda (_)
-     (fj-setup-children-bools))]
-  ["Update"
-   ("C-c C-c" "Update settings on server" fj-update-repo)
-   (:info (lambda ()
-            "C-c C-k to revert all changes"))])
+;; (transient-define-prefix fj-repo-settings '()
+;;   "A prefix for setting repo settings."
+;;   :value (lambda ()
+;;            (fj-repo-value-fun))
+;;   ["Repo info"
+;;    :class transient-column
+;;    :setup-children
+;;    ;; FIXME: changes to options created by these fuctions are not registered
+;;    ;; in `transient-args'!
+;;    (lambda (_)
+;;      (fj-setup-children-strings))]
+;;   ["Repo options"
+;;    :class transient-column
+;;    :setup-children
+;;    (lambda (_)
+;;      (fj-setup-children-bools))]
+;;   ["Update"
+;;    ("C-c C-c" "Update settings on server" fj-update-repo)
+;;    (:info (lambda ()
+;;             "C-c C-k to revert all changes"))])
 
-(defmacro fj-gen-transient-infix (name &optional binding class
-                                       choices reader-fun no-always-read)
-  "Generate a transient infix based on NAME, a string.
-Optionally provide BINDING, CLASS, CHOICES, a READER-FUN, and
-specify NO-ALWAYS-READ."
-  (declare (debug t))
-  `(transient-define-infix ,(intern name) ()
-     "A prefix for setting repo settings."
-     :class ,(or class 'transient-option)
-     :transient t
-     :key ,(or binding (fj-opt-inits name))
-     :argument ,(concat name "=")
-     :description ,name
-     ,@(when choices
-         `(:choices (lambda () ,choices)))
-     ,@(when reader-fun
-         `(:reader (lambda (prompt initial-input history)
-                     (funcall ,reader-fun prompt initial-input history))))
-     ,@(unless no-always-read
-         `(:always-read t))))
+;; (defmacro fj-gen-transient-infix (name &optional binding class
+;;                                        choices reader-fun no-always-read)
+;;   "Generate a transient infix based on NAME, a string.
+;; Optionally provide BINDING, CLASS, CHOICES, a READER-FUN, and
+;; specify NO-ALWAYS-READ."
+;;   (declare (debug t))
+;;   `(transient-define-infix ,(intern name) ()
+;;      "A prefix for setting repo settings."
+;;      :class ,(or class 'transient-option)
+;;      :transient t
+;;      :key ,(or binding (fj-opt-inits name))
+;;      :argument ,(concat name "=")
+;;      :description ,name
+;;      ,@(when choices
+;;          `(:choices (lambda () ,choices)))
+;;      ,@(when reader-fun
+;;          `(:reader (lambda (prompt initial-input history)
+;;                      (funcall ,reader-fun prompt initial-input history))))
+;;      ,@(unless no-always-read
+;;          `(:always-read t))))
 
 (provide 'fj-transient-repo)
 ;;; fj-transient-repo.el ends here
