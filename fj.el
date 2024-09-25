@@ -61,7 +61,34 @@ Repo, owner, item number, url.")
   "Return a URL for ENDPOINT."
   (fedi-http--api endpoint fj-host "v1"))
 
-;; instance
+(defvar fj-link-keymap
+  (let ((map (make-sparse-keymap)))
+    (define-key map [return] #'fj-do-link-action)
+    (define-key map [mouse-2] #'fj-do-link-action-mouse)
+    (define-key map [follow-link] 'mouse-face)
+    map)
+  "The keymap for link-like things in buffer (except for shr.el links).
+This will make the region of text act like like a link with mouse
+highlighting, mouse click action tabbing to next/previous link
+etc.")
+
+;; composing vars
+
+(defvar fj-compose-last-buffer nil)
+
+(defvar-local fj-compose-repo nil)
+
+(defvar-local fj-compose-repo-owner nil)
+
+(defvar-local fj-compose-issue-title nil)
+
+(defvar-local fj-compose-item-type nil)
+
+(defvar-local fj-compose-spec nil)
+
+(defvar-local fj-compose-issue-number nil)
+
+;; instance vars
 
 (defvar fj-commit-status-types
   '("pending" "success" "error" "failure"))
@@ -137,7 +164,7 @@ Not used for items that are links.")
 
 (defun fj-get-max-response-items ()
   "Return the max response items setting from the current instance."
-  (let ((settings (fj-get-settings)))
+  (let ((settings (fj-get-api-settings)))
     (alist-get 'max_response_items settings)))
 
 (defun fj-get-swagger-json ()
@@ -522,7 +549,7 @@ X and Y are sorting args."
          (resp (fj-post endpoint params)))
     (fedi-http--triage resp
                        (lambda ()
-                         (message "Repo forked!" repo)))))
+                         (message "Repo %s forked!" repo)))))
 
 (defun fj-delete-repo ()
   "Delete repo at point, if you are its owner."
@@ -1147,9 +1174,9 @@ TYPE is the item type."
                 (let ((regex (concat "\\[url=" markdown-regex-uri "\\/\\]"
                                      ".*" ; description
                                      "\\[\\/url\\]")))
-                  (thing-at-point-looking-at regex)))))
-      (replace-match
-       (concat "<" (match-string 0) ">")))))
+                  (thing-at-point-looking-at regex))))
+        (replace-match
+         (concat "<" (match-string 0) ">"))))))
 
 (defvar fj-previous-window-config nil
   "A list of window configuration prior to composing a toot.
@@ -1481,7 +1508,7 @@ RELOAD means we are reloading, so don't open in other window."
      (fj-issue-compose :edit 'fj-compose-comment-mode 'comment body)
      (setq fj-compose-repo repo
            fj-compose-repo-owner owner
-           fj-compose-comment-id id)
+           fj-compose-issue-number id)
      (fedi-post--update-status-fields))))
 
 (defun fj-item-view-comment-delete ()
@@ -1544,8 +1571,8 @@ ENDPOINT is the API endpoint to hit."
           (owner (fj--get-buffer-spec :owner))
           (id (fj--get-buffer-spec :item))
           (endpoint (format "/repos/%s/%s/pulls/%s/commits"
-                            owner repo id))
-          (fj-get endpoint)))))
+                            owner repo id)))
+     (fj-get endpoint))))
 
 (defun fj-merge-pull ()
   "Merge pull request of current view or at point."
@@ -1674,8 +1701,8 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
 (defun fj-get-html-link-desc (str)
 "Return a description string from HTML link STR."
 (save-match-data
-  (let ((match (string-match "<a[^\n]*>\\(?2:[^\n]*\\)</a>" str)))
-    (match-string 2 str))))
+  (string-match "<a[^\n]*>\\(?2:[^\n]*\\)</a>" str)
+  (match-string 2 str)))
 
 (defun fj-propertize-link (str &optional type item face)
   "Propertize a link with text STR.
@@ -1853,7 +1880,7 @@ Optionally specify repo OWNER and URL."
 (defun fj-create-issue (&optional _)
   "Create issue in current repo or repo at point in tabulated listing."
   (interactive)
-  (let* ((entry (tabulated-list-get-entry))
+  (let* (;(entry (tabulated-list-get-entry))
          (owner (fj--repo-owner))
          (repo (fj--repo-name)))
     (fj-issue-compose)
@@ -1951,9 +1978,9 @@ Or if viewing a repo's issues, use its clone_url."
 
 ;; TODO: star toggle
 
-(defun fj-get-repo-files (repo owner &optional ref)
+(defun fj-get-repo-files (repo owner)
   "Get files for REPO of OWNER.
-REF is a commiit, branch or tag."
+REF is a commit, branch or tag."
   (let ((endpoint (format"repos/%s/%s/contents" owner repo)))
     (fj-get endpoint)))
 
@@ -1963,10 +1990,10 @@ FILE is a string, including type suffix, and is case-sensitive."
   (let ((endpoint (format "repos/%s/%s/raw/%s" owner repo file)))
     (fj-get endpoint nil :no-json)))
 
-(defun fj-repo-readme (&optional repo owner ref)
+(defun fj-repo-readme (&optional repo owner)
   "Display readme file of REPO by OWNER.
 Optionally specify REF, a commit, branch, or tag."
-  (let* ((files (fj-get-repo-files repo owner ref))
+  (let* ((files (fj-get-repo-files repo owner))
          (names (cl-loop for f in files
                          collect (alist-get 'name f)))
          (readme-name
@@ -2014,7 +2041,7 @@ Optionally set PAGE and LIMIT."
   (let ((endpoint (format "repos/%s/%s/stargazers" owner repo))
         (params `(("page" . ,page)
                   ("limit" . ,limit))))
-    (fj-get endpoint)))
+    (fj-get endpoint params)))
 
 ;;; TL ACTIONS, ISSUES ONLY
 
@@ -2053,7 +2080,7 @@ Optionally set PAGE and LIMIT."
    (let* ((number (fj-get-tl-col 0))
           (owner (fj--get-buffer-spec :owner))
           (repo (fj--get-buffer-spec :repo))
-          (title ((fj-get-tl-col 4))))
+          (title (fj-get-tl-col 4)))
      ;; TODO: display repo in status fields, but not editable?
      (fj-issue-compose nil #'fj-compose-comment-mode 'comment)
      (setq fj-compose-repo repo
@@ -2114,20 +2141,6 @@ Optionally set PAGE and LIMIT."
      (fj-issues-tl-reload))))
 
 ;;; COMPOSING
-
-(defvar fj-compose-last-buffer nil)
-
-(defvar-local fj-compose-repo nil)
-
-(defvar-local fj-compose-repo-owner nil)
-
-(defvar-local fj-compose-issue-title nil)
-
-(defvar-local fj-compose-item-type nil)
-
-(defvar-local fj-compose-spec nil)
-
-(defvar-local fj-compose-issue-number nil)
 
 (defalias 'fj-compose-cancel #'fedi-post-cancel)
 
@@ -2230,7 +2243,7 @@ Call response and update functions."
                     ((eq type 'edit-comment)
                      (fj-issue-comment-edit repo
                                             fj-compose-repo-owner
-                                            fj-compose-comment-id
+                                            fj-compose-issue-number
                                             body))
                     ((eq type 'edit-issue)
                      (fj-issue-patch repo
@@ -2260,18 +2273,18 @@ Optionally set LIMIT to results."
                   ("limit" . ,limit))))
     (fj-get "users/search" params)))
 
-(defun fj-users-alist (data)
-  "Return an alist of users' DATA, containing handle and id."
+(defun fj-users-list (data)
+  "Return an list of handles from users' DATA."
   ;; users have no html_url, just concat it to `fj-host'
   (cl-loop for u in data
-           for id = (alist-get 'id u)
+           ;; for id = (alist-get 'id u)
            for name = (alist-get 'login u)
            collect (concat "@" name))) ;; @ needed to match for display!
 
 (defun fj-compose-handle-exit-fun (str _status)
   "Turn completion STR into a markdown link."
   (save-excursion
-    (delete-backward-char (length str))
+    (delete-char (- 0 (length str)))
     (insert
      ;; FIXME: doesn't work with markdown-mode!
      (propertize str
@@ -2285,7 +2298,7 @@ Optionally set LIMIT to results."
                                                 end)
                 "25")) ; limit
          (data (alist-get 'data resp)))
-    (fj-users-alist data)))
+    (fj-users-list data)))
 
 (defun fj-compose-mentions-capf ()
   "Build a mentions completion backend for `completion-at-point-functions'."
@@ -2305,7 +2318,8 @@ Optionally set LIMIT to results."
                                   (alist-get 'number i)))
                          (alist-get 'title i))))
 
-(defun fj-compose-issues-fun (start end)
+;; FIXME: start end not used?
+(defun fj-compose-issues-fun (_start _end)
   "Given prefix str between START and END, return an alist of issues for capf."
   (let ((resp (fj-repo-get-issues fj-compose-repo fj-compose-repo-owner
                                   "all")))
@@ -2455,7 +2469,7 @@ Allow quick jumping to an element in a tabulated list view."
                          (fj-get-tl-col 4)
                        (fj-get-tl-col 0))))
           (push `(,name . ,(point)) alist))
-        (next-line)))
+        (forward-line)))
     alist))
 
 ;;; ITEMS: RENDERING HANDLES, etc.
@@ -2493,17 +2507,6 @@ Used for hitting RET on a given link."
 Used for a mouse-click EVENT on a link."
   (interactive "e")
   (fj-do-link-action (posn-point (event-end event))))
-
-(defvar fj-link-keymap
-  (let ((map (make-sparse-keymap)))
-    (define-key map [return] #'fj-do-link-action)
-    (define-key map [mouse-2] #'fj-do-link-action-mouse)
-    (define-key map [follow-link] 'mouse-face)
-    map)
-  "The keymap for link-like things in buffer (except for shr.el links).
-This will make the region of text act like like a link with mouse
-highlighting, mouse click action tabbing to next/previous link
-etc.")
 
 (defun fj-next-tab-item ()
   "Jump to next tab item."
@@ -2583,7 +2586,7 @@ etc.")
   "Render COMMIT."
   (let-alist commit
     (let* ((cr (date-to-time .created))
-           (cr-str (format-time-string "%s" cr))
+           ;; (cr-str (format-time-string "%s" cr))
            (cr-display (fedi--relative-time-description cr nil :brief)))
       (insert
        (concat
@@ -2663,7 +2666,7 @@ BUF-STR is the name of the buffer string to use."
 (defun fj-repo-stargazers (&optional repo owner)
   "Render stargazers for REPO by OWNER."
   (interactive)
-  (fj-repo-users #'fj-get-stargazers "stargazers"))
+  (fj-repo-users #'fj-get-stargazers "stargazers" repo owner))
 
 (defun fj-get-watchers (repo owner) ;; page limit
   "Get watchers of REPO by OWNER."
@@ -2674,7 +2677,7 @@ BUF-STR is the name of the buffer string to use."
 (defun fj-repo-watchers (&optional repo owner)
   "Render watchers for REPO by OWNER."
   (interactive)
-  (fj-repo-users #'fj-get-watchers "watchers"))
+  (fj-repo-users #'fj-get-watchers "watchers" repo owner))
 
 (defun fj-render-users (users)
   "Render USERS."
@@ -2685,7 +2688,7 @@ BUF-STR is the name of the buffer string to use."
   "Render USER."
   (let-alist user
     (let* ((cr (date-to-time .created))
-           (cr-str (format-time-string "%s" cr))
+           ;; (cr-str (format-time-string "%s" cr))
            (cr-display (fedi--relative-time-description cr nil :brief)))
       ;; username:
       (insert
