@@ -33,9 +33,6 @@
 
 ;;; AUTOLOADS
 
-(autoload 'fj-get-repo-data "fj")
-(autoload 'fj-alist-to-transient "fj")
-(autoload 'fj-repo-editable "fj")
 (autoload 'fj-patch "fj")
 (autoload 'fedi-http--triage "fedi-http")
 (autoload 'fj--get-buffer-spec "fj")
