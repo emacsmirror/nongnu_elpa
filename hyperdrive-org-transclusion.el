@@ -139,8 +139,10 @@ Try \\[hyperdrive-mark-as-safe]")
                  (setf tc-type "others-hyper")))
           (let* ((payload-without-type
                   (if (org-transclusion-type-is-org tc-type)
-                      (org-transclusion-content-org-buffer-or-element
-                       nil plist)
+                      (progn
+                        (org-mode)
+                        (org-transclusion-content-org-buffer-or-element
+                         nil plist))
                     ;; NOTE: Leave payload buffer narrowed to response body.
                     (list :src-content (buffer-string)
                           :src-buf (current-buffer)
