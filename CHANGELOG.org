@@ -4,9 +4,9 @@
 # All notable changes to [[https://ushin.org/hyperdrive/hyperdrive-manual.html][hyperdrive-org-transclusion]] will be documented
 # in this file.  This project adheres to [[https://semver.org/spec/v2.0.0.html][Semantic Versioning]].
 
-* 0.2-pre
+* 0.2
 
-Nothing yet...
+- Fix transcluding Org files
 
 * 0.1 [2024-09-14 Sat]
 
