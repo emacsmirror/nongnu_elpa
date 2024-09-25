@@ -48,7 +48,9 @@
    (lambda (_)
      (fj-setup-children-bools))]
   ["Update"
-   ("C-c C-c" "send" fj-update-repo)])
+   ("C-c C-c" "Update settings on server" fj-update-repo)
+   (:info (lambda ()
+            "C-c C-k to revert all changes"))])
 
 (defun fj-repo-value-fun ()
   "Return current (editable) repo settings as transient values."
