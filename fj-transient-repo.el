@@ -1,4 +1,4 @@
-;;; fj-transient-repo.el --- Transient for updating repo settings -*- lexical-binding: t; -*-
+;;; fj-transient-repo.el --- Transients for fj.el -*- lexical-binding: t; -*-
 
 ;; Author: Marty Hiatt <martianhiatus AT riseup.net>
 ;; Copyright (C) 2024 Marty Hiatt <martianhiatus AT riseup.net>
@@ -24,7 +24,7 @@
 
 ;;; Commentary:
 
-;; A transient menu for updating repository settings
+;; Transient menus for updating repository and user settings.
 
 ;;; Code:
 
@@ -408,5 +408,25 @@ PROMPT, INITIAL-INPUT and HISTORY are default transient reader args."
 ;;      ,@(unless no-always-read
 ;;          `(:always-read t))))
 
-(provide 'fj-transient-repo)
+;; USER SETTINGS TRANSIENT
+;; GET/PATCH /user/settings
+
+(defvar fj-user-settings-editable
+  '(;; strings:
+    "description"
+    "full_name"
+    "language"
+    "location"
+    "pronouns"
+    ;; "theme" ;; web UI
+    "website"
+    ;; booleans:
+    "enable_repo_unit_hints"
+    "hide_activity"
+    "hide_email"
+    ;; enums:
+    "diff_view_style" ;; enum, but what? not in API docs
+    ))
+  
+  (provide 'fj-transient-repo)
 ;;; fj-transient-repo.el ends here
