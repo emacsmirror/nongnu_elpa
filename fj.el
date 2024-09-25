@@ -750,18 +750,23 @@ If SIMPLE, then check against `fj-repo-settings-simple'."
 
 (defvar fj-choice-booleans '("t" ":json-false")) ;; add "" or nil to unset?
 
+(defun fj-get-repo-data ()
+  "Return repo data from previous buffer spec.
+Designed to be used in a transient called from the repo."
+  (with-current-buffer (car (buffer-list)) ; last buffer
+    (let* ((repo (fj--get-buffer-spec :repo))
+           (owner (fj--get-buffer-spec :owner)))
+      (fj-get-repo repo owner))))
+
 (defun fj-repo-defaults ()
   "Return the current repo setting values.
 Used for default values in `fj-repo-update-settings'."
   ;; FIXME: looks like the only way we can access data is through
   ;; global varaibles? we need to access repo JSON in transients
   ;; (for defaults)
-  (with-current-buffer (car (buffer-list)) ; last buffer
-    (let* ((repo (fj--get-buffer-spec :repo))
-           (owner (fj--get-buffer-spec :owner))
-           (data (fj-get-repo repo owner))
-           (editable (fj-repo-editable data :simple)))
-      (fj-alist-to-transient editable))))
+  (let* ((data (fj-get-repo-data))
+         (editable (fj-repo-editable data :simple)))
+    (fj-alist-to-transient editable)))
 
 (defun fj-repo-settings-str-reader (&optional prompt initial-input history)
   "Reader function for `fj-repo-update-settings' string options.
