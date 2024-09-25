@@ -641,7 +641,7 @@ If both return nil, also prompt."
     "mirror_interval" ; sha
     "default_merge_style")) ;; member `fj-merge-types'
 
-(defvar fj-repo-settings-editable-simple
+(defvar fj-repo-settings-simple
   '( ;; boolean:
     "archived"
     "has_issues"
@@ -660,13 +660,30 @@ If both return nil, also prompt."
     ;; "mirror_interval" ; sha
     "default_merge_style")) ;; member `fj-merge-types'
 
-(defvar fj-repo-settings-strings
+(defvar fj-repo-settings-simple-strings
   '("name"
     "website"
     "description"
     "default_branch"
     "wiki_branch"
     "mirror_interval")) ; sha
+
+(defvar fj-repo-settings-simple-booleans
+  '( ;; boolean:
+    "archived"
+    "has_issues"
+    "has_projects"
+    "has_pull_requests"
+    "has_releases"
+    "has_wiki"
+    ;; "private"
+    ;; "template"
+    ))
+
+;; (defvar fj-repo-settings-booleans
+;;   (cl-remove-if (lambda (x)
+;;                   (member x fj-repo-settings-simple-strings))
+;;                 fj-repo-settings-simple))
 
 (defun fj-repo-settings-patch (repo params)
   "Update settings for REPO.
@@ -711,11 +728,11 @@ This currently assumes arguments are of the form \"key=value\"."
 (defun fj-repo-editable (repo-alist &optional simple)
   "Remove any un-editable items from REPO-ALIST.
 Checking is done against `fj-repo-settings-editable'.
-If SIMPLE, then check against `fj-repo-settings-editable-simple'."
+If SIMPLE, then check against `fj-repo-settings-simple'."
   (cl-remove-if-not
    (lambda (x)
      (member (symbol-name (car x))
-             (if simple fj-repo-settings-editable-simple
+             (if simple fj-repo-settings-simple
                fj-repo-settings-editable)))
    repo-alist))
 
