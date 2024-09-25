@@ -38,11 +38,12 @@
   :value (lambda ()
            (fj-repo-value-fun))
   ["Repo info"
-   ;; :class transient-group
+   :class transient-column
    :setup-children
    (lambda (_)
      (fj-setup-children-strings))]
   ["Repo options"
+   :class transient-column
    :setup-children
    (lambda (_)
      (fj-setup-children-bools))]
@@ -90,7 +91,7 @@ then parse it."
         ;; these really only need to be set if they are not set in the object OPT:
         :key (oref opt key)
         :description (oref opt description)
-        :class transient-option
+        :class (object-class opt)
         :argument (oref opt argument)))
 
 (defmacro fj-gen-transient-infix (name &optional binding class
@@ -101,7 +102,7 @@ specify NO-ALWAYS-READ."
   (declare (debug t))
   `(transient-define-infix ,(intern name) ()
      "A prefix for setting repo settings."
-     :class ,(or class transient option)
+     :class ,(or class transient-option)
      :transient t
      :key ,(or binding (fj-opt-inits name))
      :argument ,(concat name "=")
