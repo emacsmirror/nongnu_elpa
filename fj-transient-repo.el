@@ -1,4 +1,4 @@
-;;; fj-transient-repo.el --- Generate a transient from repo JSON -*- lexical-binding: t; -*-
+;;; fj-transient-repo.el --- Transient for updating repo settings -*- lexical-binding: t; -*-
 
 ;; Author: Marty Hiatt <martianhiatus AT riseup.net>
 ;; Copyright (C) 2024 Marty Hiatt <martianhiatus AT riseup.net>
@@ -24,41 +24,198 @@
 
 ;;; Commentary:
 
+;; A transient menu for updating repository settings
+
 ;;; Code:
-(autoload 'fj-get-repo-data "fj.el")
-(autoload 'fj-alist-to-transient "fj.el")
-(autoload 'fj-repo-editable "fj.el")
-(autoload 'fj-opt-inits "fj.el")
+
+(require 'transient)
+(require 'json)
+
+;;; AUTOLOADS
+
+(autoload 'fj-get-repo-data "fj")
+(autoload 'fj-alist-to-transient "fj")
+(autoload 'fj-repo-editable "fj")
+(autoload 'fj-opt-inits "fj")
+(autoload 'fj-patch "fj")
+(autoload 'fedi-http--triage "fedi-http")
+(autoload 'fj--get-buffer-spec "fj")
+(autoload 'fj-get-repo "fj")
+(autoload 'fj-get "fj")
+
+(defvar fj-current-repo nil)
+(defvar fj-user nil)
 
 (defvar fj-repo-settings-strings nil)
 (defvar fj-repo-settings-simple-booleans nil)
+(defvar fj-choice-booleans '("t" ":json-false")) ;; add "" or nil to unset?
+(defvar fj-merge-types)
 
-(transient-define-prefix fj-repo-settings '()
-  "A prefix for setting repo settings."
-  :value (lambda ()
-           (fj-repo-value-fun))
-  ["Repo info"
-   :class transient-column
-   :setup-children
-   ;; FIXME: changes to options created by these fuctions are not registered
-   ;; in`transient-args'!
-   (lambda (_)
-     (fj-setup-children-strings))]
-  ["Repo options"
-   :class transient-column
-   :setup-children
-   (lambda (_)
-     (fj-setup-children-bools))]
-  ["Update"
-   ("C-c C-c" "Update settings on server" fj-update-repo)
-   (:info (lambda ()
-            "C-c C-k to revert all changes"))])
+;;; VARIABLES
+
+(defvar fj-repo-settings-editable
+  '( ;; boolean:
+    "allow_fast_forward_only_merge"
+    "allow_manual_merge"
+    "allow_merge_commits"
+    "allow_rebase"
+    "allow_rebase_explicit"
+    "allow_rebase_update"
+    "allow_squash_merge"
+    "archived"
+    "autodetect_manual_merge"
+    "default_allow_maintainer_edit"
+    "default_delete_branch_after_merge"
+    "enable_prune"
+    "globally_editable_wiki"
+    "has_actions"
+    "has_issues"
+    "has_packages"
+    "has_projects"
+    "has_pull_requests"
+    "has_releases"
+    "has_wiki"
+    "ignore_whitespace_conflicts"
+    "private"
+    "template"
+    ;; complex ones (skip for now):
+    ;; "external_tracker" ; complex
+    ;; "external_wiki" ; complex
+    ;; "internal_tracker" ; complex
+    ;; strings:
+    "name"
+    "website"
+    "description"
+    "default_branch"
+    "wiki_branch"
+    "mirror_interval" ; sha
+    "default_merge_style")) ;; member `fj-merge-types'
+
+(defvar fj-repo-settings-simple
+  '( ;; boolean:
+    "archived"
+    "has_issues"
+    "has_projects"
+    "has_pull_requests"
+    "has_releases"
+    "has_wiki"
+    ;; "private"
+    ;; "template"
+    ;; strings:
+    "name"
+    "website"
+    "description"
+    "default_branch"
+    ;; "wiki_branch"
+    ;; "mirror_interval" ; sha
+    "default_merge_style")) ;; member `fj-merge-types'
+
+(defvar fj-repo-settings-simple-strings
+  '("name"
+    "website"
+    "description"
+    "default_branch"
+    "wiki_branch"
+    "mirror_interval")) ; sha
+
+;;; UTILS
+
+(defun fj-repo-settings-patch (repo params)
+  "Update settings for REPO, sending a PATCH request.
+PARAMS is an alist of any settings to be changed."
+  ;; NB: we only need params that we are updating
+  (let* ((endpoint (format "repos/%s/%s" fj-user repo))
+         (resp (fj-patch endpoint params :json)))
+    (fedi-http--triage resp
+                       (lambda ()
+                         (message "Repo settings updated!:\n%s"
+                                  params)))))
+
+(defun fj-transient-to-alist (args)
+  "Convert list of transient ARGS into an alist.
+This currently assumes arguments are of the form \"key=value\"."
+  (cl-loop for a in args
+           for split = (split-string a "=")
+           for key = (if (= (length split) 1) ; we didn't split = boolean
+                         (car split)
+                       (concat (car split) "="))
+           for val = (transient-arg-value key args)
+           for value = (cond ((member val fj-choice-booleans)
+                              (intern val))
+                             ((equal val "\"\"")
+                              "") ;; POSTable empty string
+                             (t
+                              val))
+           collect (cons (car split) value)))
+
+(defun fj-alist-to-transient (alist)
+  "Convert ALIST to a list of transient args.
+This currently assumes arguments are of the form \"key=value\"."
+  (cl-loop for a in alist
+           for key = (symbol-name (car a))
+           for v = (cdr a)
+           for val = (cond ((numberp v) (number-to-string v))
+                           ((symbolp v) (symbol-name v))
+                           ((listp v) nil) ;; don't handle nesting yet
+                           (t v))
+           collect (concat key "=" val)))
+
+(defun fj-repo-editable (repo-alist &optional simple)
+  "Remove any un-editable items from REPO-ALIST.
+Checking is done against `fj-repo-settings-editable'.
+If SIMPLE, then check against `fj-repo-settings-simple'."
+  (cl-remove-if-not
+   (lambda (x)
+     (member (symbol-name (car x))
+             (if simple fj-repo-settings-simple
+               fj-repo-settings-editable)))
+   repo-alist))
+
+(defun fj-get-repo-data ()
+  "Return repo data from previous buffer spec.
+Designed to be used in a transient called from the repo."
+  (with-current-buffer (car (buffer-list)) ; last buffer
+    (let* ((repo (fj--get-buffer-spec :repo))
+           (owner (fj--get-buffer-spec :owner)))
+      (fj-get-repo repo owner))))
+
+(defun fj-repo-defaults ()
+  "Return the current repo setting values.
+Used for default values in `fj-repo-update-settings'."
+  ;; FIXME: looks like the only way we can access data is through
+  ;; global varaibles? we need to access repo JSON in transients
+  ;; (for defaults)
+  (let* ((data (fj-get-repo-data))
+         (editable (fj-repo-editable data :simple)))
+    (fj-alist-to-transient editable)))
+
+(defun fj-repo-get-branches (repo owner)
+  "Get branches data for REPO by OWNER."
+  (let ((endpoint (format "/repos/%s/%s/branches" owner repo)))
+    (fj-get endpoint)))
+
+(defun fj-repo-branches-list (repo owner)
+  "Return a list of branch names in REPO by OWNER."
+  (let ((branches (fj-repo-get-branches repo owner)))
+    (cl-loop for b in branches
+             collect (alist-get 'name b))))
+
+;;; TRANSIENT FUNCTIONS
 
 (defun fj-repo-value-fun ()
   "Return current (editable) repo settings as transient values."
   (let ((data (fj-get-repo-data)))
     (fj-alist-to-transient
      (fj-repo-editable data :simple))))
+
+(defun fj-repo-settings-str-reader (&optional prompt _initial-input _history)
+  "Reader function for `fj-repo-update-settings' string options.
+We populate the minibuffer with an initial input taken from the
+transient's default value.
+PROMPT, INITIAL-INPUT and HISTORY are default transient reader args."
+  (let ((list (transient-args 'fj-repo-update-settings)))
+    (read-string prompt
+                 (transient-arg-value prompt list))))
 
 (defun fj-setup-children-strings ()
   "Return a setup-children function for a transient.
@@ -95,8 +252,105 @@ then parse it."
         ;; these really only need to be set if they are not set in the object OPT:
         :key (oref opt key)
         :description (oref opt description)
-        :class (object-class opt)
+        :class (eieio-object-class opt)
         :argument (oref opt argument)))
+
+;;; TRANSIENTS
+
+(transient-define-suffix fj-update-repo (&optional args)
+  "Update current repo settings."
+  :transient 'transient--do-exit
+  ;; interactive receives args from the prefix:
+  (interactive (list (transient-args 'fj-repo-update-settings)))
+  (let* (;;(args (transient-args (oref transient-current-prefix command)))
+         (alist (fj-transient-to-alist args)))
+    (message "%s %s %s" args alist (json-encode alist))
+    (fj-repo-settings-patch
+     ;; FIXME: need to use global vars in transients?:
+     fj-current-repo alist)))
+
+;; handwritten:
+(transient-define-prefix fj-repo-update-settings ()
+  "A transient for setting current repo settings."
+  :value (lambda ()
+           (fj-repo-defaults))
+  ["Repo settings"
+   (:info (lambda () (format "Owner: %s" fj-user)))
+   (:info (lambda () "Note: use the empty string (\"\") to remove a value from an option."))]
+  ;; strings
+  ["Repo info"
+   ("-n" "name" "name="
+    :always-read t
+    :reader (lambda (prompt initial-input history)
+              (fj-repo-settings-str-reader prompt initial-input history)))
+   ("-d" "description" "description="
+    :always-read t
+    :reader (lambda (prompt initial-input history)
+              (fj-repo-settings-str-reader prompt initial-input history)))
+   ("-w" "website" "website="
+    :always-read t
+    :reader (lambda (prompt initial-input history)
+              (fj-repo-settings-str-reader prompt initial-input history)))
+   ("-b" "default_branch" "default_branch="
+    :choices (lambda ()
+               (fj-repo-branches-list fj-current-repo fj-user))
+    :always-read t)]
+  ;; "choice" booleans (so we can PATCH :json-false explicitly):
+  ["Repo options"
+   ("-a" "archived" "archived="
+    :choices (lambda ()
+               fj-choice-booleans)
+    :always-read t)
+   ("-i" "has_issues" "has_issues="
+    :always-read t
+    :choices (lambda ()
+               fj-choice-booleans))
+   ("-k" "has_wiki" "has_wiki="
+    :always-read t
+    :choices (lambda ()
+               fj-choice-booleans))
+   ("-pr" "has_pull_requests" "has_pull_requests="
+    :always-read t
+    :choices (lambda ()
+               fj-choice-booleans))
+   ("-hp" "has_projects" "has_projects="
+    :always-read t
+    :choices (lambda ()
+               fj-choice-booleans))
+   ("-hr" "has_releases" "has_releases="
+    :always-read t
+    :choices (lambda ()
+               fj-choice-booleans))
+   ("-s" "default_merge_style" "default_merge_style="
+    :always-read t
+    :choices (lambda ()
+               fj-merge-types))]
+  ["Update"
+   ("C-c C-c" "Save settings" fj-update-repo)
+   (:info (lambda ()
+            "C-c C-k to revert all changes"))])
+
+;; using :setup-children:
+(transient-define-prefix fj-repo-settings '()
+  "A prefix for setting repo settings."
+  :value (lambda ()
+           (fj-repo-value-fun))
+  ["Repo info"
+   :class transient-column
+   :setup-children
+   ;; FIXME: changes to options created by these fuctions are not registered
+   ;; in `transient-args'!
+   (lambda (_)
+     (fj-setup-children-strings))]
+  ["Repo options"
+   :class transient-column
+   :setup-children
+   (lambda (_)
+     (fj-setup-children-bools))]
+  ["Update"
+   ("C-c C-c" "Update settings on server" fj-update-repo)
+   (:info (lambda ()
+            "C-c C-k to revert all changes"))])
 
 (defmacro fj-gen-transient-infix (name &optional binding class
                                        choices reader-fun no-always-read)
@@ -106,7 +360,7 @@ specify NO-ALWAYS-READ."
   (declare (debug t))
   `(transient-define-infix ,(intern name) ()
      "A prefix for setting repo settings."
-     :class ,(or class transient-option)
+     :class ,(or class 'transient-option)
      :transient t
      :key ,(or binding (fj-opt-inits name))
      :argument ,(concat name "=")
