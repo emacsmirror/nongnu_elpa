@@ -49,6 +49,9 @@
 
 ;;; VARIABLES
 
+(defvar fj-server-settings nil
+  "User or repo settings data (editable) as returned by the instance.")
+
 (defvar fj-repo-settings-editable
   '( ;; boolean:
     "allow_fast_forward_only_merge"
@@ -226,12 +229,14 @@ Used for default values in `fj-repo-update-settings'."
   ;; (for defaults)
   (let* ((data (fj-get-repo-data))
          (editable (fj-repo-editable data :simple)))
+    (setq fj-server-settings editable)
     (fj-alist-to-transient editable)))
 
 (defun fj-user-settings-current ()
   "Return current user settings that are editable."
   (let* ((data (fj-get-current-user-settings))
          (editable (fj-user-editable data)))
+    (setq fj-server-settings editable)
     (fj-alist-to-transient editable)))
 
 (defun fj-repo-get-branches (repo owner)
@@ -244,6 +249,17 @@ Used for default values in `fj-repo-update-settings'."
   (let ((branches (fj-repo-get-branches repo owner)))
     (cl-loop for b in branches
              collect (alist-get 'name b))))
+
+(defun fj-only-changed-args (alist)
+  "Remove elts from ALIST if the value is equal to that in `fj-server-settings'.
+Nil values are removed if they match the empty string."
+  (cl-remove-if
+   (lambda (x)
+     (let ((server-val (alist-get (intern (car x))
+                                  fj-server-settings)))
+       (cond ((not (cdr x)) (equal "" server-val))
+             (t (equal (cdr x) server-val)))))
+   alist))
 
 ;;; TRANSIENT FUNCTIONS
 
@@ -265,11 +281,11 @@ PROMPT, INITIAL-INPUT and HISTORY are default transient reader args."
   ;; interactive receives args from the prefix:
   (interactive (list (transient-args 'fj-repo-update-settings)))
   (let* (;;(args (transient-args (oref transient-current-prefix command)))
-         (alist (fj-transient-to-alist args)))
-    (message "%s %s %s" args alist (json-encode alist))
+         (alist (fj-transient-to-alist args))
+         (only-changed (fj-only-changed-args alist)))
     (fj-repo-settings-patch
      ;; FIXME: need to use global vars in transients?:
-     fj-current-repo alist)))
+     fj-current-repo only-changed)))
 
 (transient-define-prefix fj-repo-update-settings ()
   "A transient for setting current repo settings."
@@ -308,10 +324,9 @@ PROMPT, INITIAL-INPUT and HISTORY are default transient reader args."
   :transient 'transient--do-exit
   ;; interactive receives args from the prefix:
   (interactive (list (transient-args 'fj-user-update-settings)))
-  (let* (;;(args (transient-args (oref transient-current-prefix command)))
-         (alist (fj-transient-to-alist args)))
-    (message "%s %s %s" args alist (json-encode alist))
-    (fj-user-settings-patch alist)))
+  (let* ((alist (fj-transient-to-alist args))
+         (only-changed (fj-only-changed-args alist)))
+    (fj-user-settings-patch only-changed)))
 
 (transient-define-prefix fj-user-update-settings ()
   "A transient for setting current user settings."
