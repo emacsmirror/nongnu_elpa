@@ -508,6 +508,10 @@ X and Y are sorting args."
   "Return the data for the current user."
   (fj-get "user"))
 
+(defun fj-get-current-user-settings ()
+  "Return settings for the current user."
+  (fj-get "user/settings"))
+
 (defun fj-get-user-repos (user)
   "GET request repos for USER."
   (let ((params '(("limit" . "100")))
