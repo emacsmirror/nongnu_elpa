@@ -290,8 +290,9 @@ PROMPT, INITIAL-INPUT and HISTORY are default transient reader args."
 (transient-define-prefix fj-repo-update-settings ()
   "A transient for setting current repo settings."
   :value (lambda () (fj-repo-defaults))
-  ["Repo settings"
-   (:info (lambda () (format "Owner: %s" fj-user)))
+  [:description
+   (lambda ()
+     (format "Repo settings for %s/%s" fj-user fj-current-repo))
    (:info (lambda () "Note: use the empty string (\"\") to remove a value from an option."))]
   ;; strings
   ["Repo info"
@@ -335,8 +336,9 @@ PROMPT, INITIAL-INPUT and HISTORY are default transient reader args."
 (transient-define-prefix fj-user-update-settings ()
   "A transient for setting current user settings."
   :value (lambda () (fj-user-settings-current))
-  ["User settings"
-   (:info (lambda () (format "for %s" fj-user)))
+  [:description
+   (lambda ()
+     (format "User settings for %s" fj-user))
    (:info (lambda () "Note: use the empty string (\"\") to remove a value from an option."))]
   ;; strings
   ["User info"
