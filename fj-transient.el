@@ -138,27 +138,28 @@
 
 ;;; UTILS
 
+(defun fj-transient-patch (endpoint params)
+  "Send a patch request to ENDPOINT with json PARAMS."
+  (let* ((resp (fj-patch endpoint params :json))
+         (item-str (if (string-prefix-p "user" endpoint) "User" "Repo")))
+    (fedi-http--triage resp
+                       (lambda ()
+                         (message "%s settings updated!:\n%s"
+                                  item-str params)))))
+
 (defun fj-repo-settings-patch (repo params)
   "Update settings for REPO, sending a PATCH request.
 PARAMS is an alist of any settings to be changed."
   ;; NB: we only need params that we are updating
-  (let* ((endpoint (format "repos/%s/%s" fj-user repo))
-         (resp (fj-patch endpoint params :json)))
-    (fedi-http--triage resp
-                       (lambda ()
-                         (message "Repo settings updated!:\n%s"
-                                  params)))))
+  (let* ((endpoint (format "repos/%s/%s" fj-user repo)))
+    (fj-transient-patch (format "repos/%s/%s" fj-user repo)
+                        params)))
 
 (defun fj-user-settings-patch (params)
   "Update user settings, sending a PATCH request.
 PARAMS is an alist of any settings to be changed."
   ;; NB: we only need params that we are updating
-  (let* ((endpoint "user/settings")
-         (resp (fj-patch endpoint params :json)))
-    (fedi-http--triage resp
-                       (lambda ()
-                         (message "User settings updated!:\n%s"
-                                  params)))))
+  (fj-transient-patch "user/settings" params))
 
 (defun fj-transient-to-alist (args)
   "Convert list of transient ARGS into an alist.
