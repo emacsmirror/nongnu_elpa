@@ -146,6 +146,17 @@ PARAMS is an alist of any settings to be changed."
                          (message "Repo settings updated!:\n%s"
                                   params)))))
 
+(defun fj-user-settings-patch (params)
+  "Update user settings, sending a PATCH request.
+PARAMS is an alist of any settings to be changed."
+  ;; NB: we only need params that we are updating
+  (let* ((endpoint "user/settings")
+         (resp (fj-patch endpoint params :json)))
+    (fedi-http--triage resp
+                       (lambda ()
+                         (message "User settings updated!:\n%s"
+                                  params)))))
+
 (defun fj-transient-to-alist (args)
   "Convert list of transient ARGS into an alist.
 This currently assumes arguments are of the form \"key=value\"."
@@ -218,9 +229,8 @@ Used for default values in `fj-repo-update-settings'."
     (fj-alist-to-transient editable)))
 
 (defun fj-user-settings-current ()
-  "Return the current user setting values.
-Used for default values in `fj-user-update-settings'."
-  (let* ((data (fj-get-current-user))
+  "Return current user settings that are editable."
+  (let* ((data (fj-get-current-user-settings))
          (editable (fj-user-editable data)))
     (fj-alist-to-transient editable)))
 
@@ -261,7 +271,6 @@ PROMPT, INITIAL-INPUT and HISTORY are default transient reader args."
      ;; FIXME: need to use global vars in transients?:
      fj-current-repo alist)))
 
-;; handwritten:
 (transient-define-prefix fj-repo-update-settings ()
   "A transient for setting current repo settings."
   :value (lambda () (fj-repo-defaults))
@@ -294,20 +303,6 @@ PROMPT, INITIAL-INPUT and HISTORY are default transient reader args."
    (:info (lambda ()
             "C-c C-k to revert all changes"))])
 
-;; USER SETTINGS TRANSIENT
-;; GET/PATCH /user/settings
-
-(defun fj-user-settings-patch (params)
-  "Update user settings, sending a PATCH request.
-PARAMS is an alist of any settings to be changed."
-  ;; NB: we only need params that we are updating
-  (let* ((endpoint "user/settings")
-         (resp (fj-patch endpoint params :json)))
-    (fedi-http--triage resp
-                       (lambda ()
-                         (message "User settings updated!:\n%s"
-                                  params)))))
-
 (transient-define-suffix fj-update-user-settings (&optional args)
   "Update current user settings."
   :transient 'transient--do-exit
@@ -317,12 +312,6 @@ PARAMS is an alist of any settings to be changed."
          (alist (fj-transient-to-alist args)))
     (message "%s %s %s" args alist (json-encode alist))
     (fj-user-settings-patch alist)))
-
-(defun fj-user-settings-current ()
-  "Return current user settings that are editable."
-  (let* ((data (fj-get-current-user-settings))
-         (editable (fj-user-editable data)))
-    (fj-alist-to-transient editable)))
 
 (transient-define-prefix fj-user-update-settings ()
   "A transient for setting current user settings."
@@ -348,6 +337,8 @@ PARAMS is an alist of any settings to be changed."
    ("C-c C-c" "Save settings" fj-update-user-settings)
    (:info (lambda ()
             "C-c C-k to revert all changes"))])
+
+;; CLASSES
 
 (defclass fj-option (transient-option)
   ((reader :initarg :reader :initform
