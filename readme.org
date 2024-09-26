@@ -60,6 +60,10 @@ Forgejo's API is vast. Currently =fj.el= just implements a few basic things:
 - jump to relevant item
 - toggle between viewing unread and all notifications
 
+** user/repo settings
+- update repo settings transient menu
+- update user settings transient menu
+
 * dependencies
 - =magit-post=, =magit-process= (for obtaining current repo)
 - [[https://codeberg.org/martianh/fedi.el][fedi.el]]
@@ -192,8 +196,10 @@ Repo search listing:
 |         | fj-switch-to-buffer             | Switch to a live fj buffer.                                         |
 |         | fj-tl-browse-entry              | Browse URL of tabulated list entry at point.                        |
 |         | fj-update-repo                  | Update current repo settings.                                       |
+|         | fj-update-user-settings         |                                                                     |
 |         | fj-user-repo-tl-mode            | Mode for displaying a tabulated list of user repos.                 |
 |         | fj-user-repos-tl                | View a tabulated list of respos for USER.                           |
+|         | fj-user-update-settings         | A transient for setting current user settings.                      |
 |         | fj-users-mode                   | Major mode for viewing users.                                       |
 |         | fj-view-commit-diff             | View a diff of a commit at point.                                   |
 |         | fj-view-notifications           | View notifications for `fj-user'.                                   |
