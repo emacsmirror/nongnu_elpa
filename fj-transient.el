@@ -126,6 +126,34 @@
 ;;     ;; "template"
 ;;     ))
 
+
+(defvar fj-user-settings-editable
+  '(;; strings:
+    "description"
+    "full_name"
+    "language"
+    "location"
+    "pronouns"
+    ;; "theme" ;; web UI
+    "website"
+    ;; booleans:
+    "enable_repo_unit_hints"
+    "hide_activity"
+    "hide_email"
+    ;; enums:
+    "diff_view_style" ;; enum, but what? not in API docs
+    ;; "unified" is my current setting, can't find it in web UI to change.
+    ))
+
+(defvar fj-user-settings-editable-strings
+  '("description"
+    "full_name"
+    "language"
+    "location"
+    "pronouns"
+    ;; "theme" ;; web UI
+    "website"))
+
 ;;; UTILS
 
 (defun fj-repo-settings-patch (repo params)
@@ -169,7 +197,8 @@ This currently assumes arguments are of the form \"key=value\"."
            collect (concat key "=" val)))
 
 (defun fj-remove-not-editable (alist editable-var &optional simple-var)
-  ""
+  "Remove non-editable fields from ALIST.
+Check against EDITABLE-VAR, or, if present, SIMPLE-VAR."
   (cl-remove-if-not
    (lambda (x)
      (member (symbol-name (car x))
@@ -186,7 +215,8 @@ If SIMPLE, then check against `fj-repo-settings-simple'."
                           (when simple fj-repo-settings-simple)))
 
 (defun fj-user-editable (alist)
-  ""
+  "Return editable fields from ALIST.
+Checked against `fj-user-settings-editable'."
   (fj-remove-not-editable alist
                           fj-user-settings-editable))
 
@@ -211,11 +241,8 @@ Used for default values in `fj-repo-update-settings'."
 (defun fj-user-settings-current ()
   "Return the current user setting values.
 Used for default values in `fj-user-update-settings'."
-  ;; FIXME: looks like the only way we can access data is through
-  ;; global varaibles? we need to access repo JSON in transients
-  ;; (for defaults)
   (let* ((data (fj-get-current-user))
-         (editable (fj-user-editable data :simple)))
+         (editable (fj-user-editable data)))
     (fj-alist-to-transient editable)))
 
 (defun fj-repo-get-branches (repo owner)
@@ -415,33 +442,6 @@ PROMPT, INITIAL-INPUT and HISTORY are default transient reader args."
 ;; USER SETTINGS TRANSIENT
 ;; GET/PATCH /user/settings
 
-(defvar fj-user-settings-editable
-  '(;; strings:
-    "description"
-    "full_name"
-    "language"
-    "location"
-    "pronouns"
-    ;; "theme" ;; web UI
-    "website"
-    ;; booleans:
-    "enable_repo_unit_hints"
-    "hide_activity"
-    "hide_email"
-    ;; enums:
-    "diff_view_style" ;; enum, but what? not in API docs
-    ;; "unified" is my current setting, can't find it in web UI to change.
-    ))
-
-(defvar fj-user-settings-editable-strings
-  '("description"
-    "full_name"
-    "language"
-    "location"
-    "pronouns"
-    ;; "theme" ;; web UI
-    "website"))
-
 (defun fj-user-settings-patch (params)
   "Update user settings, sending a PATCH request.
 PARAMS is an alist of any settings to be changed."
@@ -464,11 +464,9 @@ PARAMS is an alist of any settings to be changed."
     (fj-user-settings-patch alist)))
 
 (defun fj-user-settings-current ()
-  ""
+  "Return current user settings that are editable."
   (let* ((data (fj-get-current-user-settings))
          (editable (fj-user-editable data)))
-    (setq fj-user-editable-data editable)
-    (setq fj-user-json data)
     (fj-alist-to-transient editable)))
 
 (transient-define-prefix fj-user-update-settings ()
@@ -522,5 +520,5 @@ We always read, and our reader provides initial input from default values.")
 We implement this class because we need to be able to explicitly
 send nil values to the server, not just ignore nil values")
 
-(provide 'fj-transient-repo)
-;;; fj-transient-repo.el ends here
+(provide 'fj-transient)
+;;; fj-transient.el ends here
