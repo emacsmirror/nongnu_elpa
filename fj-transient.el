@@ -317,7 +317,11 @@ PROMPT, INITIAL-INPUT and HISTORY are default transient reader args."
   ["Update"
    ("C-c C-c" "Save settings" fj-update-repo)
    (:info (lambda ()
-            "C-c C-k to revert all changes"))])
+            "C-c C-k to revert all changes"))]
+  (interactive)
+  (if (not fj-current-repo)
+      (user-error "No repo. Call from a repo view or set `fj-current-repo'.")
+    (transient-setup 'fj-repo-update-settings)))
 
 (transient-define-suffix fj-update-user-settings (&optional args)
   "Update current user settings."
@@ -352,7 +356,12 @@ PROMPT, INITIAL-INPUT and HISTORY are default transient reader args."
   ["Update"
    ("C-c C-c" "Save settings" fj-update-user-settings)
    (:info (lambda ()
-            "C-c C-k to revert all changes"))])
+            "C-c C-k to revert all changes"))]
+  (interactive)
+  (interactive)
+  (if (not fj-user)
+      (user-error "No user. Set `fj-user'.")
+    (transient-setup 'fj-user-update-settings)))
 
 ;; CLASSES
 
