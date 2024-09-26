@@ -344,11 +344,11 @@ PROMPT, INITIAL-INPUT and HISTORY are default transient reader args."
    ("-l" "location" "location=" :class fj-option)]
   ;; "choice" booleans (so we can PATCH :json-false explicitly):
   ["User options"
-   ("-ha" "hide_activity" "hide_activity=" :class fj-choice-boolean)
-   ("-he" "hide_email" "hide_email=" :class fj-choice-boolean)
-   ("-vs"  "diff_view_style" "diff_view_style=" :class fj-choice-boolean
+   ("-a" "hide_activity" "hide_activity=" :class fj-choice-boolean)
+   ("-e" "hide_email" "hide_email=" :class fj-choice-boolean)
+   ("-v"  "diff_view_style" "diff_view_style=" :class fj-choice-boolean
     :choices ("unified" "split"))
-   ("-ruh" "enable_repo_unit_hints" "enable_repo_unit_hints=" :class fj-choice-boolean)]
+   ("-u" "enable_repo_unit_hints" "enable_repo_unit_hints=" :class fj-choice-boolean)]
   ["Update"
    ("C-c C-c" "Save settings" fj-update-user-settings)
    (:info (lambda ()
