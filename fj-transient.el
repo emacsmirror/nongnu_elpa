@@ -123,8 +123,7 @@
     "hide_activity"
     "hide_email"
     ;; enums:
-    "diff_view_style" ;; enum, but what? not in API docs
-    ;; "unified" is my current setting, can't find it in web UI to change.
+    "diff_view_style" ;; "unified" or "split"
     ))
 
 (defvar fj-user-settings-editable-strings
@@ -347,7 +346,8 @@ PROMPT, INITIAL-INPUT and HISTORY are default transient reader args."
   ["User options"
    ("-ha" "hide_activity" "hide_activity=" :class fj-choice-boolean)
    ("-he" "hide_email" "hide_email=" :class fj-choice-boolean)
-   ("-vs"  "diff_view_style" "diff_view_style=" :class fj-choice-boolean)
+   ("-vs"  "diff_view_style" "diff_view_style=" :class fj-choice-boolean
+    :choices ("unified" "split"))
    ("-ruh" "enable_repo_unit_hints" "enable_repo_unit_hints=" :class fj-choice-boolean)]
   ["Update"
    ("C-c C-c" "Save settings" fj-update-user-settings)
