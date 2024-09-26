@@ -307,9 +307,9 @@ PROMPT, INITIAL-INPUT and HISTORY are default transient reader args."
    ("-a" "archived" "archived=" :class fj-choice-boolean)
    ("-i" "has_issues" "has_issues=" :class fj-choice-boolean)
    ("-k" "has_wiki" "has_wiki=" :class fj-choice-boolean)
-   ("-pr" "has_pull_requests" "has_pull_requests=" :class fj-choice-boolean)
-   ("-hp" "has_projects" "has_projects=" :class fj-choice-boolean)
-   ("-hr" "has_releases" "has_releases=" :class fj-choice-boolean)
+   ("-p" "has_pull_requests" "has_pull_requests=" :class fj-choice-boolean)
+   ("-o" "has_projects" "has_projects=" :class fj-choice-boolean)
+   ("-r" "has_releases" "has_releases=" :class fj-choice-boolean)
    ("-s" "default_merge_style" "default_merge_style="
     :always-read t
     :choices (lambda ()
