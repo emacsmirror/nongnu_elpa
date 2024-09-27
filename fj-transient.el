@@ -358,15 +358,15 @@ Provide current topics for adding/removing."
   ["User options"
    ("-a" "hide_activity" "hide_activity=" :class fj-infix-choice-bool)
    ("-e" "hide_email" "hide_email=" :class fj-infix-choice-bool)
-   ("-v"  "diff_view_style" "diff_view_style=" :class fj-infix-choice-bool ;fj-choice-boolean
-    ;; FIXME: using fj-infix-choice-bool with these choices doesn't work here:
-    :choices (lambda () ("unified" "split")))
+   ("-v"  "diff_view_style" "diff_view_style=" :class fj-infix-choice-bool
+    ;; FIXME: can't use a lambda here so how to get choices from a var?:
+    :choices ;; (lambda ()
+    ("unified" "split"))
    ("-u" "enable_repo_unit_hints" "enable_repo_unit_hints=" :class fj-infix-choice-bool)]
   ["Update"
    ("C-c C-c" "Save settings" fj-update-user-settings)
    (:info (lambda ()
             "C-c C-k to revert all changes"))]
-  (interactive)
   (interactive)
   (if (not fj-user)
       (user-error "No user. Set `fj-user'")
@@ -392,11 +392,13 @@ send nil values to the server, not just ignore nil values")
 (defclass fj-infix-choice-bool (transient-infix)
   ((format :initform " %k %d %v")
    (always-read :initarg :always-read :initform t)
-   (choices :initarg :choices :initform (lambda ()
-                                          fj-choice-booleans))))
+   ;; FIXME: the lambda isn't evaluated so when we retreive the value its a closure!:
+   (choices :initarg :choices :initform ;; (lambda () fj-choice-booleans)))
+            ("t" ":json-false"))))
 
 ;;; METHODS FOR FJ-INFIX-CHOICE-BOOL
-;; we define our own infix option that displays [t|:json-false] like exclusive switches. activating the infix just moves to the next option.
+;; we define our own infix option that displays [t|:json-false] like exclusive
+;; switches. activating the infix just moves to the next option.
 
 (cl-defmethod transient-infix-read ((obj fj-infix-choice-bool))
   "Read an infix OBJ value by cycling through options."
@@ -417,6 +419,7 @@ Format should be like \"arg=[opt1|op2]\"."
   (let ((value (transient-infix-value obj))
         (arg (oref obj argument)))
     (concat
+     ;; TODO: activate ARG if it is not equal to current server value
      (propertize (format "%s[" arg)
                  'face 'transient-inactive-value)
      (mapconcat
@@ -425,19 +428,22 @@ Format should be like \"arg=[opt1|op2]\"."
                     'face (if (equal (concat arg choice) value)
                               'transient-value
                             'transient-inactive-value)))
-      fj-choice-booleans
+      (oref obj choices)
       (propertize "|" 'face 'transient-inactive-value))
      (propertize "]" 'face 'transient-inactive-value))))
 
 (cl-defmethod transient-infix-read ((obj fj-infix-choice-bool))
   "Cycle through the possible values of OBJ.
-Currently just toggle betweeen string \"t\" and \":json-false\"."
-  (let ((val (transient-infix-value obj))
-        (arg (oref obj argument)))
+Currently just toggle betweeen the first and second items of OBJs choices."
+  ;; TODO: actually cycle through lists
+  (let* ((pair (transient-infix-value obj))
+         (arg (oref obj argument))
+         (val (cadr (split-string pair "=")))
+         (choices (oref obj choices)))
     (concat arg
-            (if (equal val (concat arg "t"))
-                ":json-false"
-              "t"))))
+            (if (equal val (car (last choices)))
+                (car choices)
+              (cadr (member val choices))))))
 
 (provide 'fj-transient)
 ;;; fj-transient.el ends here
