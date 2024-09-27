@@ -310,21 +310,12 @@ Provide current topics for adding/removing."
     :always-read t)]
   ;; "choice" booleans (so we can PATCH :json-false explicitly):
   ["Repo options"
-   ("-a" "archived" "archived=" :class fj-choice-boolean)
-   ("-i" "has_issues" "has_issues=" :class fj-choice-boolean)
+   ("-a" "archived" "archived=" :class fj-infix-choice-bool)
+   ("-i" "has_issues" "has_issues=" :class fj-infix-choice-bool)
    ("-k" "has_wiki" "has_wiki=" :class fj-infix-choice-bool)
-   ;;  :init-value (lambda (obj)
-   ;;                (let* ((arg (oref obj argument))
-   ;;                       (val
-   ;;                        (transient-arg-value arg
-   ;;                                             (transient-args transient-current-command))))
-   ;;                  (message "bool init val: %s" val)
-   ;;                  (oset obj value val))))
-   ;; ;; (fj-repo-has-wiki)
-   ;; (reverso--transient-grammar-language)
-   ("-p" "has_pull_requests" "has_pull_requests=" :class fj-choice-boolean)
-   ("-o" "has_projects" "has_projects=" :class fj-choice-boolean)
-   ("-r" "has_releases" "has_releases=" :class fj-choice-boolean)
+   ("-p" "has_pull_requests" "has_pull_requests=" :class fj-infix-choice-bool)
+   ("-o" "has_projects" "has_projects=" :class fj-infix-choice-bool)
+   ("-r" "has_releases" "has_releases=" :class fj-infix-choice-bool)
    ("-s" "default_merge_style" "default_merge_style="
     :always-read t
     :choices (lambda () fj-merge-types))]
@@ -336,7 +327,7 @@ Provide current topics for adding/removing."
             "C-c C-k to revert all changes"))]
   (interactive)
   (if (not fj-current-repo)
-      (user-error "No repo. Call from a repo view or set `fj-current-repo'.")
+      (user-error "No repo. Call from a repo view or set `fj-current-repo'")
     (transient-setup 'fj-repo-update-settings)))
 
 (transient-define-suffix fj-update-user-settings (&optional args)
@@ -365,11 +356,12 @@ Provide current topics for adding/removing."
    ("-l" "location" "location=" :class fj-option)]
   ;; "choice" booleans (so we can PATCH :json-false explicitly):
   ["User options"
-   ("-a" "hide_activity" "hide_activity=" :class fj-choice-boolean)
-   ("-e" "hide_email" "hide_email=" :class fj-choice-boolean)
-   ("-v"  "diff_view_style" "diff_view_style=" :class fj-choice-boolean
-    :choices ("unified" "split"))
-   ("-u" "enable_repo_unit_hints" "enable_repo_unit_hints=" :class fj-choice-boolean)]
+   ("-a" "hide_activity" "hide_activity=" :class fj-infix-choice-bool)
+   ("-e" "hide_email" "hide_email=" :class fj-infix-choice-bool)
+   ("-v"  "diff_view_style" "diff_view_style=" :class fj-infix-choice-bool ;fj-choice-boolean
+    ;; FIXME: using fj-infix-choice-bool with these choices doesn't work here:
+    :choices (lambda () ("unified" "split")))
+   ("-u" "enable_repo_unit_hints" "enable_repo_unit_hints=" :class fj-infix-choice-bool)]
   ["Update"
    ("C-c C-c" "Save settings" fj-update-user-settings)
    (:info (lambda ()
@@ -377,7 +369,7 @@ Provide current topics for adding/removing."
   (interactive)
   (interactive)
   (if (not fj-user)
-      (user-error "No user. Set `fj-user'.")
+      (user-error "No user. Set `fj-user'")
     (transient-setup 'fj-user-update-settings)))
 
 ;; CLASSES
@@ -397,52 +389,55 @@ We always read, and our reader provides initial input from default values.")
 We implement this class because we need to be able to explicitly
 send nil values to the server, not just ignore nil values")
 
-(defclass fj-infix-choice-bool (transient-option)
-  ""
+(defclass fj-infix-choice-bool (transient-infix)
   ((format :initform " %k %d %v")
-   ;; FIXME init-value only seems to be called if given in the body of the
-   ;; prefix. maybe a better to define a `transient-init-value' method like
-   ;; reverso.el does
-   (init-value :initarg :init-value :initform
-               ;; not sure how to pull in the parent's value?
-               (lambda (obj)
-                 (let* ((arg (oref obj argument))
-                        (val
-                         (transient-arg-value arg
-                                              (transient-args transient-current-command))))
-                   (message "bool init val: %s" val)
-                   (oset obj value val))))
-   ;; (fj-choice-bool-init obj)))
    (always-read :initarg :always-read :initform t)
    (choices :initarg :choices :initform (lambda ()
                                           fj-choice-booleans))))
 
+;;; METHODS FOR FJ-INFIX-CHOICE-BOOL
+;; we define our own infix option that displays [t|:json-false] like exclusive switches. activating the infix just moves to the next option.
+
+(cl-defmethod transient-infix-read ((obj fj-infix-choice-bool))
+  "Read an infix OBJ value by cycling through options."
+  (let ((choices (oref obj choices)))
+    (if-let ((value (oref obj value)))
+        (cadr (member value choices))
+      (car choices))))
+
+(cl-defmethod transient-init-value ((obj fj-infix-choice-bool))
+  "Initiate the value of OBJ, fetching the value from the parent prefix."
+  (let* ((arg (oref obj argument))
+         (val (transient-arg-value arg (oref transient--prefix value))))
+    (oset obj value (concat arg val))))
+
 (cl-defmethod transient-format-value ((obj fj-infix-choice-bool))
-  "Format the value of OBJ, an instance of `fj-infix-choice-bool'."
-  (let ((value (transient-infix-value obj)) ; nil on init!
+  "Format the value of OBJ.
+Format should be like \"arg=[opt1|op2]\"."
+  (let ((value (transient-infix-value obj))
         (arg (oref obj argument)))
-    ;; (message "bool format val: %s" value)
     (concat
      (propertize (format "%s[" arg)
                  'face 'transient-inactive-value)
      (mapconcat
       (lambda (choice)
-        (propertize ;(symbol-name
-         choice 'face
-         (if (eq choice value)
-             'transient-value
-           'transient-inactive-value)))
-      ;; (reverso--get-available-languages obj)
+        (propertize choice
+                    'face (if (equal (concat arg choice) value)
+                              'transient-value
+                            'transient-inactive-value)))
       fj-choice-booleans
       (propertize "|" 'face 'transient-inactive-value))
      (propertize "]" 'face 'transient-inactive-value))))
 
-(transient-define-infix fj-repo-has-wiki ()
-  :class fj-infix-choice-bool
-  :description "has_wiki"
-  :key "-k"
-  :argument "has_wiki="
-  )
+(cl-defmethod transient-infix-read ((obj fj-infix-choice-bool))
+  "Cycle through the possible values of OBJ.
+Currently just toggle betweeen string \"t\" and \":json-false\"."
+  (let ((val (transient-infix-value obj))
+        (arg (oref obj argument)))
+    (concat arg
+            (if (equal val (concat arg "t"))
+                ":json-false"
+              "t"))))
 
 (provide 'fj-transient)
 ;;; fj-transient.el ends here
