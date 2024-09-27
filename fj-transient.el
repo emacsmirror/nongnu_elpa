@@ -41,13 +41,11 @@
 
 (defvar fj-current-repo nil)
 (defvar fj-user nil)
-
-(defvar fj-repo-settings-strings nil)
-(defvar fj-repo-settings-simple-booleans nil)
-(defvar fj-choice-booleans '("t" ":json-false")) ;; add "" or nil to unset?
 (defvar fj-merge-types)
 
 ;;; VARIABLES
+
+(defvar fj-choice-booleans '("t" ":json-false")) ;; add "" or nil to unset?
 
 (defvar fj-server-settings nil
   "User or repo settings data (editable) as returned by the instance.")
@@ -123,17 +121,8 @@
     "hide_activity"
     "hide_email"
     ;; enums:
-    "diff_view_style" ;; "unified" or "split"
+    "diff_view_style" ;; "unified" or "split" (undocumented?)
     ))
-
-(defvar fj-user-settings-editable-strings
-  '("description"
-    "full_name"
-    "language"
-    "location"
-    "pronouns"
-    ;; "theme" ;; web UI
-    "website"))
 
 ;;; UTILS
 
@@ -151,8 +140,7 @@
 PARAMS is an alist of any settings to be changed."
   ;; NB: we only need params that we are updating
   (let* ((endpoint (format "repos/%s/%s" fj-user repo)))
-    (fj-transient-patch (format "repos/%s/%s" fj-user repo)
-                        params)))
+    (fj-transient-patch endpoint params)))
 
 (defun fj-user-settings-patch (params)
   "Update user settings, sending a PATCH request.
@@ -195,8 +183,7 @@ Check against EDITABLE-VAR, or, if present, SIMPLE-VAR."
   (cl-remove-if-not
    (lambda (x)
      (member (symbol-name (car x))
-             (or simple-var
-                 editable-var)))
+             (or simple-var editable-var)))
    alist))
 
 (defun fj-repo-editable (repo-alist &optional simple)
@@ -210,8 +197,7 @@ If SIMPLE, then check against `fj-repo-settings-simple'."
 (defun fj-user-editable (alist)
   "Return editable fields from ALIST.
 Checked against `fj-user-settings-editable'."
-  (fj-remove-not-editable alist
-                          fj-user-settings-editable))
+  (fj-remove-not-editable alist fj-user-settings-editable))
 
 (defun fj-get-repo-data ()
   "Return repo data from previous buffer spec.
@@ -224,10 +210,12 @@ Designed to be used in a transient called from the repo."
 (defun fj-repo-defaults ()
   "Return the current repo setting values.
 Used for default values in `fj-repo-update-settings'."
-  ;; FIXME: looks like the only way we can access data is through
-  ;; global varaibles? we need to access repo JSON in transients
-  ;; (for defaults)
-  (let* ((data (fj-get-repo-data))
+  ;; FIXME: eventually replace `fj-get-repo-data' by relying on global
+  ;; variables `fj-user' and `fj-current-repo'. we just need to ensure the
+  ;; latter is up to date anywhere that the transient might be invoked:
+  (let* ((data (if (and fj-user fj-current-repo)
+                   (fj-get-repo fj-current-repo fj-user)
+                 (fj-get-repo-data))) ;; GET repo JSON data
          (editable (fj-repo-editable data :simple)))
     (setq fj-server-settings editable)
     (fj-alist-to-transient editable)))
@@ -266,7 +254,7 @@ Nil values are removed if they match the empty string."
 (defun fj-str-reader (&optional prompt _initial-input _history)
   "Reader function for `fj-repo-update-settings' string options.
 We populate the minibuffer with an initial input taken from the
-transient's default value.
+transient's default (current) value.
 PROMPT, INITIAL-INPUT and HISTORY are default transient reader args."
   (let ((vals (oref transient--prefix value)))
     ;; (list (transient-args (or prefix transient-current-command))))
@@ -313,8 +301,7 @@ PROMPT, INITIAL-INPUT and HISTORY are default transient reader args."
    ("-r" "has_releases" "has_releases=" :class fj-choice-boolean)
    ("-s" "default_merge_style" "default_merge_style="
     :always-read t
-    :choices (lambda ()
-               fj-merge-types))]
+    :choices (lambda () fj-merge-types))]
   ["Update"
    ("C-c C-c" "Save settings" fj-update-repo)
    (:info (lambda ()
