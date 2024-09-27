@@ -331,7 +331,7 @@ Provide current topics for adding/removing."
     (transient-setup 'fj-repo-update-settings)))
 
 (transient-define-suffix fj-update-user-settings (&optional args)
-  "Update current user settings."
+  "Update current user settings on the server."
   :transient 'transient--do-exit
   ;; interactive receives args from the prefix:
   (interactive (list (transient-args 'fj-user-update-settings)))

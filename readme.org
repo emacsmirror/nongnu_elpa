@@ -196,7 +196,8 @@ Repo search listing:
 |         | fj-switch-to-buffer             | Switch to a live fj buffer.                                         |
 |         | fj-tl-browse-entry              | Browse URL of tabulated list entry at point.                        |
 |         | fj-update-repo                  | Update current repo settings.                                       |
-|         | fj-update-user-settings         |                                                                     |
+|         | fj-update-topics                | Update repo topics on the server.                                   |
+|         | fj-update-user-settings         | Update current user settings on the server.                         |
 |         | fj-user-repo-tl-mode            | Mode for displaying a tabulated list of user repos.                 |
 |         | fj-user-repos-tl                | View a tabulated list of respos for USER.                           |
 |         | fj-user-update-settings         | A transient for setting current user settings.                      |
