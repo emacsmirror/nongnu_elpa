@@ -2562,23 +2562,32 @@ Used for a mouse-click EVENT on a link."
   :group 'fj
   (read-only-mode 1))
 
-(defun fj-repo-commit-log (&optional repo owner)
-  "Render log of commits for REPO by OWNER."
-  (interactive)
+(defun fj-repo-commit-log (&optional prefix repo owner)
+  "Render log of commits for REPO by OWNER.
+If PREFIX arg, prompt for branch to show commits of."
+  (interactive "P")
   (let* ((repo (or repo (fj--get-buffer-spec :repo)))
          (owner (or owner (fj--get-buffer-spec :owner)))
-         (buf (format "*fj-%s-commit-log*" repo))
-         (data (fj-get-repo-commits repo owner)))
+         (branch (when prefix
+                   (completing-read "Branch: "
+                                    (fj-repo-branches-list repo owner))))
+         (data (fj-get-repo-commits repo owner branch))
+         (buf (format "*fj-%s-commit-log%s*" repo
+                      (when branch (format "-branch-%s" branch)))))
     (fedi-with-buffer buf 'fj-commits-mode nil
+      ;; FIXME: use `fj-other-window-maybe'
+      (setq-local header-line-format (format "Commits in branch: %s"
+                                             (or branch "default")))
       (fj-render-commits data)
       (setq fj-current-repo repo)
       (setq fj-buffer-spec `(:repo ,repo :owner ,owner)))))
 
-(defun fj-get-repo-commits (repo owner) ;; TODO: &optional sha path page limit not)
+(defun fj-get-repo-commits (repo owner &optional branch) ;; TODO: &optional sha path page limit not)
   ;; stat (diffs), verification, files, (optional, disable for speed)
-  "Get commits of REPO by OWNER."
+  "Get commits of REPO by OWNER.
+Optionally specify BRANCH to show commits from."
   (let ((endpoint (format "/repos/%s/%s/commits" owner repo))
-        (params '()))
+        (params `(("sha" . ,branch))))
     (fj-get endpoint params)))
 
 (defun fj-render-commits (commits)
