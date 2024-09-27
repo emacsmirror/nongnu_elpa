@@ -2742,6 +2742,7 @@ BUF-STR is the name of the buffer string to use."
                          (message "Repo %s watched!" repo)))))
 
 ;;; TOPICS
+;; topics are set in fj-transient.el
 
 (defun fj-get-repo-topics ()
   "GET repo topics from the instance."
@@ -2749,23 +2750,6 @@ BUF-STR is the name of the buffer string to use."
          (owner (fj--get-buffer-spec :owner))
          (endpoint (format "repos/%s/%s/topics" owner repo)))
     (alist-get 'topics (fj-get endpoint))))
-
-(defun fj-set-repo-topics ()
-  "Set current repo's topics.
-Prompt with the repo's current topics."
-  (interactive)
-  (let* ((repo (fj--get-buffer-spec :repo))
-         (owner (fj--get-buffer-spec :owner))
-         (endpoint (format "repos/%s/%s/topics" owner repo))
-         (current-topics
-          (mapconcat #'identity (fj-get-repo-topics) ","))
-         (topics (read-string
-                  ;; (completing-read-multiple
-                  "Set repo topics [comma or space separated]: "
-                  current-topics))
-         (list (split-string topics "[, ]"))
-         (params `(("topics" . ,list))))
-    (fj-put endpoint params :json)))
 
 (provide 'fj)
 ;;; fj.el ends here

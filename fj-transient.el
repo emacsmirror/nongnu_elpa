@@ -275,6 +275,23 @@ PROMPT, INITIAL-INPUT and HISTORY are default transient reader args."
      ;; FIXME: need to use global vars in transients?:
      fj-current-repo only-changed)))
 
+(transient-define-suffix fj-update-topics ()
+  "Update repo topics on the server.
+Provide current topics for adding/removing."
+  :transient 'transient--do-exit
+  (interactive)
+  (let* ((endpoint (format "repos/%s/%s/topics" fj-user fj-current-repo))
+         (current-topics (mapconcat #'identity (fj-get-repo-topics) " "))
+         (topics (read-string
+                  "Set repo topics [space separated, no spaces in topics]: "
+                  current-topics))
+         (list (split-string topics))
+         (params `(("topics" . ,list)))
+         (resp (fj-put endpoint params :json)))
+    (fedi-http--triage resp
+                       (lambda ()
+                         (message "Topics updated!\n%s" list)))))
+
 (transient-define-prefix fj-repo-update-settings ()
   "A transient for setting current repo settings."
   :value (lambda () (fj-repo-defaults))
@@ -302,6 +319,8 @@ PROMPT, INITIAL-INPUT and HISTORY are default transient reader args."
    ("-s" "default_merge_style" "default_merge_style="
     :always-read t
     :choices (lambda () fj-merge-types))]
+  ["Topics"
+   ("t" "update topics" fj-update-topics)]
   ["Update"
    ("C-c C-c" "Save settings" fj-update-repo)
    (:info (lambda ()
