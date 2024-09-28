@@ -420,7 +420,7 @@ Format should be like \"arg=[opt1|op2]\"."
         (arg (oref obj argument)))
     (concat
      ;; TODO: activate ARG if it is not equal to current server value
-     (propertize (format "%s[" arg)
+     (propertize "["
                  'face 'transient-inactive-value)
      (mapconcat
       (lambda (choice)
