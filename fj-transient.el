@@ -316,9 +316,9 @@ Provide current topics for adding/removing."
    ("d" "description" "description=" :class fj-option)
    ("w" "website" "website=" :class fj-option)
    ("b" "default_branch" "default_branch="
+    :class fj-enum
     :choices (lambda ()
-               (fj-repo-branches-list fj-current-repo fj-user))
-    :always-read t)]
+               (fj-repo-branches-list fj-current-repo fj-user)))]
   ;; "choice" booleans (so we can PATCH :json-false explicitly):
   ["Repo options"
    ("a" "archived" "archived=" :class fj-infix-choice-bool)
@@ -328,7 +328,7 @@ Provide current topics for adding/removing."
    ("o" "has_projects" "has_projects=" :class fj-infix-choice-bool)
    ("r" "has_releases" "has_releases=" :class fj-infix-choice-bool)
    ("s" "default_merge_style" "default_merge_style="
-    :always-read t
+    :class fj-enum
     :choices (lambda () fj-merge-types))]
   ["Topics"
    ("t" "update topics" fj-update-topics)]
@@ -391,6 +391,10 @@ Provide current topics for adding/removing."
   "An infix option class for our options.
 We always read, and our reader provides initial input from default values.")
 
+(defclass fj-enum (transient-option)
+  ((always-read :initarg :always-read :initform t))
+  "An infix option class for our enumerables.")
+
 (defclass fj-infix-choice-bool (transient-infix)
   ((format :initform " %k %d %v")
    (always-read :initarg :always-read :initform t)
@@ -440,6 +444,17 @@ The value currently on the server should be underlined."
      (propertize "]" 'face 'transient-inactive-value))))
 
 (cl-defmethod transient-format-value ((obj fj-option))
+  "Format the value of OBJ, an `fj-option'.
+Format should just be a string, highlighted green if it has been changed from the server value."
+  (let* ((argument (transient-infix-value obj))
+         (value (cadr (split-string argument "="))))
+    (propertize value
+                'face (if (fj-arg-changed-p argument)
+                          'transient-value
+                        'transient-inactive-value))))
+
+;; FIXME: this is identical to that of `fj-option' above. in order to use it for our enums, we would need to work out how they could use `fj-option' class, but not use its special reader. instead they should use the default `transient-option' reader.
+(cl-defmethod transient-format-value ((obj fj-enum))
   "Format the value of OBJ, an `fj-option'.
 Format should just be a string, highlighted green if it has been changed from the server value."
   (let* ((argument (transient-infix-value obj))
