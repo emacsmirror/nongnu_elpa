@@ -260,18 +260,6 @@ Nil values are removed if they match the empty string."
              (t (equal (cdr x) server-val)))))
    alist))
 
-;;; TRANSIENT FUNCTIONS
-
-(defun fj-str-reader (&optional prompt _initial-input _history)
-  "Reader function for `fj-repo-update-settings' string options.
-We populate the minibuffer with an initial input taken from the
-transient's default (current) value.
-PROMPT, INITIAL-INPUT and HISTORY are default transient reader args."
-  (let ((vals (oref transient--prefix value)))
-    ;; (list (transient-args (or prefix transient-current-command))))
-    (read-string prompt
-                 (transient-arg-value prompt vals))))
-
 ;;; TRANSIENTS
 
 (transient-define-suffix fj-update-repo (&optional args)
@@ -312,11 +300,11 @@ Provide current topics for adding/removing."
    (:info (lambda () "Note: use the empty string (\"\") to remove a value from an option."))]
   ;; strings
   ["Repo info"
-   ("n" "name" "name=" :class fj-option)
-   ("d" "description" "description=" :class fj-option)
-   ("w" "website" "website=" :class fj-option)
+   ("n" "name" "name=" :class fj-option-str)
+   ("d" "description" "description=" :class fj-option-str)
+   ("w" "website" "website=" :class fj-option-str)
    ("b" "default_branch" "default_branch="
-    :class fj-enum
+    :class fj-option
     :choices (lambda ()
                (fj-repo-branches-list fj-current-repo fj-user)))]
   ;; "choice" booleans (so we can PATCH :json-false explicitly):
@@ -328,7 +316,7 @@ Provide current topics for adding/removing."
    ("o" "has_projects" "has_projects=" :class fj-infix-choice-bool)
    ("r" "has_releases" "has_releases=" :class fj-infix-choice-bool)
    ("s" "default_merge_style" "default_merge_style="
-    :class fj-enum
+    :class fj-option
     :choices (lambda () fj-merge-types))]
   ["Topics"
    ("t" "update topics" fj-update-topics)]
@@ -358,12 +346,12 @@ Provide current topics for adding/removing."
    (:info (lambda () "Note: use the empty string (\"\") to remove a value from an option."))]
   ;; strings
   ["User info"
-   ("n" "full name" "full_name=" :class fj-option)
-   ("d" "description" "description=" :class fj-option)
-   ("w" "website" "website=" :class fj-option)
-   ("p" "pronouns" "pronouns=" :class fj-option)
-   ("g" "language" "language=" :class fj-option)
-   ("l" "location" "location=" :class fj-option)]
+   ("n" "full name" "full_name=" :class fj-option-str)
+   ("d" "description" "description=" :class fj-option-str)
+   ("w" "website" "website=" :class fj-option-str)
+   ("p" "pronouns" "pronouns=" :class fj-option-str)
+   ("g" "language" "language=" :class fj-option-str)
+   ("l" "location" "location=" :class fj-option-str)]
   ;; "choice" booleans (so we can PATCH :json-false explicitly):
   ["User options"
    ("a" "hide_activity" "hide_activity=" :class fj-infix-choice-bool)
@@ -384,23 +372,26 @@ Provide current topics for adding/removing."
 ;; CLASSES
 
 (defclass fj-option (transient-option)
-  ((reader :initarg :reader :initform
-           (lambda (prompt initial-input history)
-             (funcall 'fj-str-reader prompt initial-input history)))
-   (always-read :initarg :always-read :initform t))
-  "An infix option class for our options.
-We always read, and our reader provides initial input from default values.")
-
-(defclass fj-enum (transient-option)
   ((always-read :initarg :always-read :initform t))
-  "An infix option class for our enumerables.")
+  "An infix option class for our options.
+We always read.")
 
-(defclass fj-infix-choice-bool (transient-infix)
+(defclass fj-option-str (fj-option)
+  ()
+  "An infix option class for our options.
+We always read and our reader provides initial input from
+default/current values.")
+
+(defclass fj-infix-choice-bool (fj-option)
   ((format :initform " %k %d %v")
-   (always-read :initarg :always-read :initform t)
-   ;; FIXME: the lambda isn't evaluated so when we retreive the value its a closure!:
+   ;; FIXME: the lambda isn't evaluated so when we retreive the value its a
+   ;; closure!:
    (choices :initarg :choices :initform ;; (lambda () fj-choice-booleans)))
-            ("t" ":json-false"))))
+            ("t" ":json-false")))
+  "An option class for our choice booleans. We implement this
+as an option because we need to be able to explicitly send
+true/false values to the server, whereas transient ignores
+false/nil values.")
 
 ;;; METHODS
 ;; for `fj-infix-choice-bool' we define our own infix option that displays
@@ -445,18 +436,8 @@ The value currently on the server should be underlined."
 
 (cl-defmethod transient-format-value ((obj fj-option))
   "Format the value of OBJ, an `fj-option'.
-Format should just be a string, highlighted green if it has been changed from the server value."
-  (let* ((argument (transient-infix-value obj))
-         (value (cadr (split-string argument "="))))
-    (propertize value
-                'face (if (fj-arg-changed-p argument)
-                          'transient-value
-                        'transient-inactive-value))))
-
-;; FIXME: this is identical to that of `fj-option' above. in order to use it for our enums, we would need to work out how they could use `fj-option' class, but not use its special reader. instead they should use the default `transient-option' reader.
-(cl-defmethod transient-format-value ((obj fj-enum))
-  "Format the value of OBJ, an `fj-option'.
-Format should just be a string, highlighted green if it has been changed from the server value."
+Format should just be a string, highlighted green if it has been
+changed from the server value."
   (let* ((argument (transient-infix-value obj))
          (value (cadr (split-string argument "="))))
     (propertize value
@@ -474,6 +455,16 @@ Format should just be a string, highlighted green if it has been changed from th
             (if (equal val (car (last choices)))
                 (car choices)
               (cadr (member val choices))))))
+
+;; FIXME: see the `transient-infix-read' method's docstring:
+;; we should preserve history, follow it. maybe just mod it.
+(cl-defmethod transient-infix-read ((obj fj-option-str))
+  "Reader function for `fj-option-str'.
+We add the current value as initial input."
+  (let* ((value (transient-infix-value obj))
+         (list (split-string value "="))
+         (prompt (concat (car list) "=")))
+    (read-string prompt (cadr list))))
 
 (provide 'fj-transient)
 ;;; fj-transient.el ends here
