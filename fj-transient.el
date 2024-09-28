@@ -411,13 +411,6 @@ send nil values to the server, not just ignore nil values")
 ;; we define our own infix option that displays [t|:json-false] like exclusive
 ;; switches. activating the infix just moves to the next option.
 
-(cl-defmethod transient-infix-read ((obj fj-infix-choice-bool))
-  "Read an infix OBJ value by cycling through options."
-  (let ((choices (oref obj choices)))
-    (if-let ((value (oref obj value)))
-        (cadr (member value choices))
-      (car choices))))
-
 (cl-defmethod transient-init-value ((obj fj-infix-choice-bool))
   "Initiate the value of OBJ, fetching the value from the parent prefix."
   (let* ((arg (oref obj argument))
@@ -455,9 +448,7 @@ The value currently on the server should be underlined."
      (propertize "]" 'face 'transient-inactive-value))))
 
 (cl-defmethod transient-infix-read ((obj fj-infix-choice-bool))
-  "Cycle through the possible values of OBJ.
-Currently just toggle betweeen the first and second items of OBJs choices."
-  ;; TODO: actually cycle through lists
+  "Cycle through the possible values of OBJ."
   (let* ((pair (transient-infix-value obj))
          (arg (oref obj argument))
          (val (cadr (split-string pair "=")))
