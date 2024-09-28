@@ -393,13 +393,6 @@ Provide current topics for adding/removing."
   "An infix option class for our options.
 We always read, and our reader provides initial input from default values.")
 
-(defclass fj-choice-boolean (transient-option)
-  ((choices :initarg :choices :initform (lambda () fj-choice-booleans))
-   (always-read :initarg :always-read :initform t))
-  "An infix option class for our choice booleans.
-We implement this class because we need to be able to explicitly
-send nil values to the server, not just ignore nil values")
-
 (defclass fj-infix-choice-bool (transient-infix)
   ((format :initform " %k %d %v")
    (always-read :initarg :always-read :initform t)
