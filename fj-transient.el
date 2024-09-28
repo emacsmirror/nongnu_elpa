@@ -238,6 +238,17 @@ Used for default values in `fj-repo-update-settings'."
     (cl-loop for b in branches
              collect (alist-get 'name b))))
 
+(defun fj-arg-changed-p (arg)
+  "T if ARG pair is different to the value in `fj-server-settings'.
+The format of ARG is a transient pair, ie \"key=val\".
+Nil values are considered to match if they match the empty string."
+  (let* ((arg (split-string arg "="))
+         (server-val (alist-get (intern (car arg))
+                                fj-server-settings))
+         (server-str (if (symbolp server-val) (symbol-name server-val) server-val)))
+    (cond ((not (cadr arg)) (not (equal "" server-str)))
+          (t (not (equal (cadr arg) server-str))))))
+
 (defun fj-only-changed-args (alist)
   "Remove elts from ALIST if the value is equal to that in `fj-server-settings'.
 Nil values are removed if they match the empty string."
@@ -415,19 +426,30 @@ send nil values to the server, not just ignore nil values")
 
 (cl-defmethod transient-format-value ((obj fj-infix-choice-bool))
   "Format the value of OBJ.
-Format should be like \"arg=[opt1|op2]\"."
+Format should be like \"[opt1|op2]\", with the active option highlighted.
+The value currently on the server should be underlined."
   (let ((value (transient-infix-value obj))
         (arg (oref obj argument)))
     (concat
-     ;; TODO: activate ARG if it is not equal to current server value
      (propertize "["
                  'face 'transient-inactive-value)
      (mapconcat
       (lambda (choice)
-        (propertize choice
-                    'face (if (equal (concat arg choice) value)
-                              'transient-value
-                            'transient-inactive-value)))
+        (propertize
+         choice
+         'face (let ((active-p (equal (concat arg choice) value))
+                     (changed-p (fj-arg-changed-p (concat arg choice))))
+                 ;; FIXME: differentiate init server value
+                 ;; from switching to other value then switching
+                 ;; back to server value?
+                 (cond ((and active-p changed-p)
+                        'transient-value)
+                       ((and active-p (not changed-p))
+                        '(:inherit transient-value :underline t))
+                       ((and (not active-p) (not changed-p))
+                        '(:inherit transient-inactive-value :underline t))
+                       (t
+                        'transient-inactive-value)))))
       (oref obj choices)
       (propertize "|" 'face 'transient-inactive-value))
      (propertize "]" 'face 'transient-inactive-value))))
