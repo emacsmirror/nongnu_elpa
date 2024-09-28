@@ -334,8 +334,7 @@ Provide current topics for adding/removing."
    ("t" "update topics" fj-update-topics)]
   ["Update"
    ("C-c C-c" "Save settings" fj-update-repo)
-   (:info (lambda ()
-            "C-c C-k to revert all changes"))]
+   ("C-c C-k" :info "to revert all changes")]
   (interactive)
   (if (not fj-current-repo)
       (user-error "No repo. Call from a repo view or set `fj-current-repo'")
@@ -376,8 +375,7 @@ Provide current topics for adding/removing."
    ("u" "enable_repo_unit_hints" "enable_repo_unit_hints=" :class fj-infix-choice-bool)]
   ["Update"
    ("C-c C-c" "Save settings" fj-update-user-settings)
-   (:info (lambda ()
-            "C-c C-k to revert all changes"))]
+   ("C-c C-k" :info "to revert all changes")]
   (interactive)
   (if (not fj-user)
       (user-error "No user. Set `fj-user'")
