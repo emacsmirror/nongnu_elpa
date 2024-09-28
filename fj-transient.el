@@ -138,14 +138,12 @@
 (defun fj-repo-settings-patch (repo params)
   "Update settings for REPO, sending a PATCH request.
 PARAMS is an alist of any settings to be changed."
-  ;; NB: we only need params that we are updating
   (let* ((endpoint (format "repos/%s/%s" fj-user repo)))
     (fj-transient-patch endpoint params)))
 
 (defun fj-user-settings-patch (params)
   "Update user settings, sending a PATCH request.
 PARAMS is an alist of any settings to be changed."
-  ;; NB: we only need params that we are updating
   (fj-transient-patch "user/settings" params))
 
 (defun fj-transient-to-alist (args)
@@ -267,8 +265,7 @@ Nil values are removed if they match the empty string."
   :transient 'transient--do-exit
   ;; interactive receives args from the prefix:
   (interactive (list (transient-args 'fj-repo-update-settings)))
-  (let* (;;(args (transient-args (oref transient-current-prefix command)))
-         (alist (fj-transient-to-alist args))
+  (let* ((alist (fj-transient-to-alist args))
          (only-changed (fj-only-changed-args alist)))
     (fj-repo-settings-patch
      ;; FIXME: need to use global vars in transients?:
@@ -297,7 +294,8 @@ Provide current topics for adding/removing."
   [:description
    (lambda ()
      (format "Repo settings for %s/%s" fj-user fj-current-repo))
-   (:info (lambda () "Note: use the empty string (\"\") to remove a value from an option."))]
+   (:info
+    "Note: use the empty string (\"\") to remove a value from an option.")]
   ;; strings
   ["Repo info"
    ("n" "name" "name=" :class fj-option-str)
@@ -343,7 +341,8 @@ Provide current topics for adding/removing."
   [:description
    (lambda ()
      (format "User settings for %s" fj-user))
-   (:info (lambda () "Note: use the empty string (\"\") to remove a value from an option."))]
+   (:info
+    "Note: use the empty string (\"\") to remove a value from an option.")]
   ;; strings
   ["User info"
    ("n" "full name" "full_name=" :class fj-option-str)
@@ -360,7 +359,8 @@ Provide current topics for adding/removing."
     ;; FIXME: can't use a lambda here so how to get choices from a var?:
     :choices ;; (lambda ()
     ("unified" "split"))
-   ("u" "enable_repo_unit_hints" "enable_repo_unit_hints=" :class fj-infix-choice-bool)]
+   ("u" "enable_repo_unit_hints" "enable_repo_unit_hints="
+    :class fj-infix-choice-bool)]
   ["Update"
    ("C-c C-c" "Save settings" fj-update-user-settings)
    ("C-c C-k" :info "to revert all changes")]
