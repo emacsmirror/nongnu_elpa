@@ -398,9 +398,10 @@ We always read, and our reader provides initial input from default values.")
    (choices :initarg :choices :initform ;; (lambda () fj-choice-booleans)))
             ("t" ":json-false"))))
 
-;;; METHODS FOR FJ-INFIX-CHOICE-BOOL
-;; we define our own infix option that displays [t|:json-false] like exclusive
-;; switches. activating the infix just moves to the next option.
+;;; METHODS
+;; for `fj-infix-choice-bool' we define our own infix option that displays
+;; [t|:json-false] like exclusive switches. activating the infix just moves to
+;; the next option.
 
 (cl-defmethod transient-init-value ((obj fj-infix-choice-bool))
   "Initiate the value of OBJ, fetching the value from the parent prefix."
@@ -437,6 +438,16 @@ The value currently on the server should be underlined."
       (oref obj choices)
       (propertize "|" 'face 'transient-inactive-value))
      (propertize "]" 'face 'transient-inactive-value))))
+
+(cl-defmethod transient-format-value ((obj fj-option))
+  "Format the value of OBJ, an `fj-option'.
+Format should just be a string, highlighted green if it has been changed from the server value."
+  (let* ((argument (transient-infix-value obj))
+         (value (cadr (split-string argument "="))))
+    (propertize value
+                'face (if (fj-arg-changed-p argument)
+                          'transient-value
+                        'transient-inactive-value))))
 
 (cl-defmethod transient-infix-read ((obj fj-infix-choice-bool))
   "Cycle through the possible values of OBJ."
