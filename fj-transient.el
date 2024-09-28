@@ -301,22 +301,22 @@ Provide current topics for adding/removing."
    (:info (lambda () "Note: use the empty string (\"\") to remove a value from an option."))]
   ;; strings
   ["Repo info"
-   ("-n" "name" "name=" :class fj-option)
-   ("-d" "description" "description=" :class fj-option)
-   ("-w" "website" "website=" :class fj-option)
-   ("-b" "default_branch" "default_branch="
+   ("n" "name" "name=" :class fj-option)
+   ("d" "description" "description=" :class fj-option)
+   ("w" "website" "website=" :class fj-option)
+   ("b" "default_branch" "default_branch="
     :choices (lambda ()
                (fj-repo-branches-list fj-current-repo fj-user))
     :always-read t)]
   ;; "choice" booleans (so we can PATCH :json-false explicitly):
   ["Repo options"
-   ("-a" "archived" "archived=" :class fj-infix-choice-bool)
-   ("-i" "has_issues" "has_issues=" :class fj-infix-choice-bool)
-   ("-k" "has_wiki" "has_wiki=" :class fj-infix-choice-bool)
-   ("-p" "has_pull_requests" "has_pull_requests=" :class fj-infix-choice-bool)
-   ("-o" "has_projects" "has_projects=" :class fj-infix-choice-bool)
-   ("-r" "has_releases" "has_releases=" :class fj-infix-choice-bool)
-   ("-s" "default_merge_style" "default_merge_style="
+   ("a" "archived" "archived=" :class fj-infix-choice-bool)
+   ("i" "has_issues" "has_issues=" :class fj-infix-choice-bool)
+   ("k" "has_wiki" "has_wiki=" :class fj-infix-choice-bool)
+   ("p" "has_pull_requests" "has_pull_requests=" :class fj-infix-choice-bool)
+   ("o" "has_projects" "has_projects=" :class fj-infix-choice-bool)
+   ("r" "has_releases" "has_releases=" :class fj-infix-choice-bool)
+   ("s" "default_merge_style" "default_merge_style="
     :always-read t
     :choices (lambda () fj-merge-types))]
   ["Topics"
@@ -348,21 +348,21 @@ Provide current topics for adding/removing."
    (:info (lambda () "Note: use the empty string (\"\") to remove a value from an option."))]
   ;; strings
   ["User info"
-   ("-n" "full name" "full_name=" :class fj-option)
-   ("-d" "description" "description=" :class fj-option)
-   ("-w" "website" "website=" :class fj-option)
-   ("-p" "pronouns" "pronouns=" :class fj-option)
-   ("-g" "language" "language=" :class fj-option)
-   ("-l" "location" "location=" :class fj-option)]
+   ("n" "full name" "full_name=" :class fj-option)
+   ("d" "description" "description=" :class fj-option)
+   ("w" "website" "website=" :class fj-option)
+   ("p" "pronouns" "pronouns=" :class fj-option)
+   ("g" "language" "language=" :class fj-option)
+   ("l" "location" "location=" :class fj-option)]
   ;; "choice" booleans (so we can PATCH :json-false explicitly):
   ["User options"
-   ("-a" "hide_activity" "hide_activity=" :class fj-infix-choice-bool)
-   ("-e" "hide_email" "hide_email=" :class fj-infix-choice-bool)
-   ("-v"  "diff_view_style" "diff_view_style=" :class fj-infix-choice-bool
+   ("a" "hide_activity" "hide_activity=" :class fj-infix-choice-bool)
+   ("e" "hide_email" "hide_email=" :class fj-infix-choice-bool)
+   ("v"  "diff_view_style" "diff_view_style=" :class fj-infix-choice-bool
     ;; FIXME: can't use a lambda here so how to get choices from a var?:
     :choices ;; (lambda ()
     ("unified" "split"))
-   ("-u" "enable_repo_unit_hints" "enable_repo_unit_hints=" :class fj-infix-choice-bool)]
+   ("u" "enable_repo_unit_hints" "enable_repo_unit_hints=" :class fj-infix-choice-bool)]
   ["Update"
    ("C-c C-c" "Save settings" fj-update-user-settings)
    (:info (lambda ()
