@@ -315,7 +315,7 @@ Provide current topics for adding/removing."
    ("r" "has_releases" "has_releases=" :class fj-infix-choice-bool)
    ("s" "default_merge_style" "default_merge_style="
     :class fj-option
-    :choices (lambda () fj-merge-types))]
+    :choices (lambda () fj-merge-types))] ;; FIXME: broken?
   ["Topics"
    ("t" "update topics" fj-update-topics)]
   ["Update"
@@ -356,9 +356,7 @@ Provide current topics for adding/removing."
    ("a" "hide_activity" "hide_activity=" :class fj-infix-choice-bool)
    ("e" "hide_email" "hide_email=" :class fj-infix-choice-bool)
    ("v"  "diff_view_style" "diff_view_style=" :class fj-infix-choice-bool
-    ;; FIXME: can't use a lambda here so how to get choices from a var?:
-    :choices ;; (lambda ()
-    ("unified" "split"))
+    :choices ("unified" "split")) ;; FIXME: lambdas don't work here?
    ("u" "enable_repo_unit_hints" "enable_repo_unit_hints="
     :class fj-infix-choice-bool)]
   ["Update"
@@ -384,14 +382,13 @@ default/current values.")
 
 (defclass fj-infix-choice-bool (fj-option)
   ((format :initform " %k %d %v")
-   ;; FIXME: the lambda isn't evaluated so when we retreive the value its a
-   ;; closure!:
-   (choices :initarg :choices :initform ;; (lambda () fj-choice-booleans)))
-            ("t" ":json-false")))
-  "An option class for our choice booleans. We implement this
-as an option because we need to be able to explicitly send
-true/false values to the server, whereas transient ignores
-false/nil values.")
+   (choices :initarg :choices :initform
+            ;; quote lambda here and funcall the slot as needed:
+            '(lambda () fj-choice-booleans)))
+  "An option class for our choice booleans.
+We implement this as an option because we need to be able to
+explicitly send true/false values to the server, whereas
+transient ignores false/nil values.")
 
 ;;; METHODS
 ;; for `fj-infix-choice-bool' we define our own infix option that displays
@@ -408,8 +405,12 @@ false/nil values.")
   "Format the value of OBJ.
 Format should be like \"[opt1|op2]\", with the active option highlighted.
 The value currently on the server should be underlined."
-  (let ((value (transient-infix-value obj))
-        (arg (oref obj argument)))
+  (let* ((value (transient-infix-value obj))
+         (arg (oref obj argument))
+         (choices-slot (oref obj choices))
+         (choices (if (eq (car choices-slot) 'lambda)
+                      (funcall choices-slot)
+                    choices-slot)))
     (concat
      (propertize "["
                  'face 'transient-inactive-value)
@@ -430,7 +431,7 @@ The value currently on the server should be underlined."
                         '(:inherit transient-inactive-value :underline t))
                        (t
                         'transient-inactive-value)))))
-      (oref obj choices)
+      choices
       (propertize "|" 'face 'transient-inactive-value))
      (propertize "]" 'face 'transient-inactive-value))))
 
@@ -450,7 +451,10 @@ changed from the server value."
   (let* ((pair (transient-infix-value obj))
          (arg (oref obj argument))
          (val (cadr (split-string pair "=")))
-         (choices (oref obj choices)))
+         (choices-slot (oref obj choices))
+         (choices (if (eq (car choices-slot) 'lambda)
+                      (funcall choices-slot)
+                    choices-slot)))
     (concat arg
             (if (equal val (car (last choices)))
                 (car choices)
@@ -459,7 +463,7 @@ changed from the server value."
 ;; FIXME: see the `transient-infix-read' method's docstring:
 ;; we should preserve history, follow it. maybe just mod it.
 (cl-defmethod transient-infix-read ((obj fj-option-str))
-  "Reader function for `fj-option-str'.
+  "Reader function for OBJ, a `fj-option-str'.
 We add the current value as initial input."
   (let* ((value (transient-infix-value obj))
          (list (split-string value "="))
