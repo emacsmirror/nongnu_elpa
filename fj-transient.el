@@ -39,8 +39,8 @@
 (autoload 'fj-get-repo "fj")
 (autoload 'fj-get "fj")
 
-(defvar fj-current-repo nil)
-(defvar fj-user nil)
+(defvar fj-current-repo)
+(defvar fj-user)
 (defvar fj-merge-types)
 
 ;;; VARIABLES
