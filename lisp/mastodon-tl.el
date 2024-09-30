@@ -1054,7 +1054,7 @@ Used for hitting RET on a given link."
 (defun mastodon-tl--do-link-action (event)
   "Do the action of the link at point.
 Used for a mouse-click EVENT on a link."
-  (interactive "e")
+  (interactive "@e")
   (mastodon-tl--do-link-action-at-point (posn-point (event-end event))))
 
 
@@ -1443,7 +1443,7 @@ OPTIONS is an alist."
 (defun mastodon-tl--click-image-or-video (event)
   "Click to play video with `mpv.el'.
 EVENT is a mouse-click arg."
-  (interactive "e")
+  (interactive "@e")
   (mastodon-tl--view-full-image-or-play-video
    (posn-point (event-end event))))
 
