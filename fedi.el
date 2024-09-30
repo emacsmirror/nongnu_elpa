@@ -228,7 +228,8 @@ PROP is the text property to search for."
       ;; do nothing, all the action is in the while condition
       )
     (if (null next-range)
-        (message "Nothing else here.")
+        (prog1 nil ;; return nil if nothing (so we can use in or clause)
+          (message "Nothing else here."))
       (goto-char (car next-range))
       (if-let ((hecho (fedi--property 'help-echo)))
           (message "%s" hecho)))))
