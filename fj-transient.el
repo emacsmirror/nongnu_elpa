@@ -189,10 +189,11 @@ Designed to be used in a transient called from the repo."
   ;; interactive receives args from the prefix:
   (interactive (list (transient-args 'fj-repo-update-settings)))
   (let* ((alist (transient-post-transient-to-alist args))
-         (only-changed (transient-post-only-changed-args alist)))
+         (only-changed (transient-post-only-changed-args alist))
+         (bools-converted (transient-post-bool-strs-to-json only-changed)))
     (fj-repo-settings-patch
      ;; FIXME: need to use global vars in transients?:
-     fj-current-repo only-changed)))
+     fj-current-repo bools-converted)))
 
 (transient-define-suffix fj-update-topics ()
   "Update repo topics on the server.
