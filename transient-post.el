@@ -3,7 +3,7 @@
 ;; Author: Marty Hiatt <martianhiatus AT riseup.net>
 ;; Copyright (C) 2024 Marty Hiatt <martianhiatus AT riseup.net>
 ;; Version: 0.1
-;; Package Reqires: ((emacs "27.1"))
+;; Package Reqires: ((emacs "27.1") (dash "2"))
 ;; Keywords: convenience, api, requests
 ;; URL: https://codeberg.org/martianh/transient-post.el
 
@@ -29,6 +29,7 @@
 
 (require 'transient)
 (require 'json)
+(require 'dash)
 
 ;;; OPTIONS
 
@@ -179,40 +180,31 @@ match the empty string."
              (t (equal (cdr x) server-val)))))
    alist))
 
-;; TODO: reverse this operation, so a suffix can parse data back to elisp
-;; JSON:
-(defun transient-post-bool-to-str (val)
-  "Convert VAL, into a string boolean if it is either t or :json-false.
-Otherwise just return VAL."
-  (cond ((eq :json-false val) "false")
-        ((eq t val) "true")
-        (t val)))
+(defun transient-post-bool-to-str (cons)
+  "Convert CONS, into a string boolean if it is either t or :json-false.
+Otherwise just return CONS."
+  (cons (car cons)
+        (cond ((equal :json-false (cdr cons)) "false")
+              ((equal t (cdr cons)) "true")
+              (t (cdr cons)))))
+
+(defun transient-post-bool-str-to-json (cons)
+  "Convert CONS, into a string boolean if it is either t or :json-false.
+Otherwise just return CONS."
+  (cons (car cons)
+        (cond ((equal "false" (cdr cons)) :json-false)
+              ((equal "true" (cdr cons)) t)
+              (t (cdr cons)))))
 
 (defun transient-post-bools-to-strs (alist)
   "Convert values in ALIST to string booleans if they are JSON booleans."
-  (cl-loop for a in alist
-           ;; car recur if:
-           if (and (proper-list-p (seq-first a)) ;; car isn't just a json cons
-                   (> (length (seq-first a)) 1)) ;; car's cdr isn't nil
-           do (transient-post-bools-to-strs (seq-first a))
-           else
-           for v = (cdr a)
-           for val =
-           (cond
-            ;; cdr recur if:
-            ((and (or (vectorp v)
-                      (proper-list-p v))
-                  (> (length v) 1))
-             (if (or (vectorp (seq-first v))
-                     (proper-list-p (seq-first v)))
-                 ;; recur on cdr as nested list or vector:
-                 (cl-loop for x in v
-                          collect (transient-post-bools-to-strs x))
-               ;; recur on cdr normal list:
-               (transient-post-bools-to-strs v)))
-            (t ;; no recur:
-             (transient-post-bool-to-str (cdr a))))
-           collect (cons (car a) val)))
+  (-tree-map
+   #'transient-post-bool-to-str alist))
+
+(defun transient-post-bool-strs-to-json (alist)
+  "Convert values in ALIST to string booleans if they are JSON booleans."
+  (-tree-map
+   #'transient-post-bool-str-to-json alist))
 
 (defun transient-post-dots-to-arrays (alist)
   "Convert keys in ALIST transient-post dot annotation to array[key] annotation."
