@@ -3,7 +3,7 @@
 ;; Author: Marty Hiatt <martianhiatus AT riseup.net>
 ;; Copyright (C) 2024 Marty Hiatt <martianhiatus AT riseup.net>
 ;; Version: 0.1
-;; Package Reqires: ((emacs "27.1") (fedi "0.2"))
+;; Package Reqires: ((emacs "27.1"))
 ;; Keywords: convenience, api, requests
 ;; URL: https://codeberg.org/martianh/transient-post.el
 
@@ -27,7 +27,6 @@
 
 ;;; Code:
 
-(require 'fedi-http)
 (require 'transient)
 (require 'json)
 
@@ -53,14 +52,6 @@ will be converted into the strings \"true\" and \"false\"."
   "Settings data (editable) as returned by the server.")
 
 ;;; UTILS
-
-(defun transient-post-transient-patch (endpoint params)
-  "Send a patch request to ENDPOINT with JSON PARAMS."
-  (let* ((url (fedi-http--api endpoint))
-         (resp (fedi-http--patch url params :json)))
-    (fedi-http--triage resp
-                       (lambda ()
-                         (message "Settings updated!:\n%s" params)))))
 
 (defun transient-post-transient-to-alist (args)
   "Convert list of transient ARGS into an alist.
