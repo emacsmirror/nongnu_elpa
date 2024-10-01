@@ -151,9 +151,11 @@ PARAMS is an alist of any settings to be changed."
   "Remove any un-editable items from REPO-ALIST.
 Checking is done against `fj-repo-settings-editable'.
 If SIMPLE, then check against `fj-repo-settings-simple'."
-  (transient-post-remove-not-editable repo-alist
-                                      fj-repo-settings-editable
-                                      (when simple fj-repo-settings-simple)))
+  (transient-post-remove-not-editable
+   repo-alist
+   (if simple
+       fj-repo-settings-simple
+     fj-repo-settings-editable)))
 
 (defun fj-user-editable (alist)
   "Return editable fields from ALIST.
