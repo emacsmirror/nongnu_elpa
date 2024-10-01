@@ -298,11 +298,26 @@ Optionally specify the PARAMS to send."
   (with-current-buffer (mastodon-http--patch url params)
     (mastodon-http--process-json)))
 
-(defun mastodon-http--patch (base-url &optional params)
-  "Make synchronous PATCH request to BASE-URL.
+(defun mastodon-http--patch (url &optional params json)
+  "Make synchronous PATCH request to URL.
 Optionally specify the PARAMS to send."
   (mastodon-http--authorized-request "PATCH"
-    (let ((url (mastodon-http--concat-params-to-url base-url params)))
+    ;; NB: unlike POST, PATCHing only works if we use query params!
+    ;; so here, unless JSON arg, we use query params and do not set
+    ;; `url-request-data'. this is probably an error, i don't understand it.
+    (let* ((url-request-data
+            (when (and params json)
+              (encode-coding-string
+               (json-encode params) 'utf-8)))
+           ;; (mastodon-http--build-params-string params))))
+           (url (unless json
+                  (mastodon-http--concat-params-to-url url params)))
+           (headers (when json
+                      '(("Content-Type" . "application/json")
+                        ("Accept" . "application/json"))))
+           (url-request-extra-headers
+            (append url-request-extra-headers headers)))
+      (message "Data: %s" url-request-data)
       (mastodon-http--url-retrieve-synchronously url))))
 
  ;; Asynchronous functions
