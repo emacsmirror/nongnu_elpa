@@ -30,6 +30,7 @@
 
 (require 'transient)
 (require 'json)
+(require 'transient-post)
 
 ;;; AUTOLOADS
 
@@ -146,64 +147,28 @@ PARAMS is an alist of any settings to be changed."
 PARAMS is an alist of any settings to be changed."
   (fj-transient-patch "user/settings" params))
 
-(defun fj-transient-to-alist (args)
-  "Convert list of transient ARGS into an alist.
-This currently assumes arguments are of the form \"key=value\"."
-  (cl-loop for a in args
-           for split = (split-string a "=")
-           for key = (if (= (length split) 1) ; we didn't split = boolean
-                         (car split)
-                       (concat (car split) "="))
-           for val = (transient-arg-value key args)
-           for value = (cond ((member val fj-choice-booleans)
-                              (intern val))
-                             ((equal val "\"\"")
-                              "") ;; POSTable empty string
-                             (t
-                              val))
-           collect (cons (car split) value)))
-
-(defun fj-alist-to-transient (alist)
-  "Convert ALIST to a list of transient args.
-This currently assumes arguments are of the form \"key=value\"."
-  (cl-loop for a in alist
-           for key = (symbol-name (car a))
-           for v = (cdr a)
-           for val = (cond ((numberp v) (number-to-string v))
-                           ((symbolp v) (symbol-name v))
-                           ((listp v) nil) ;; don't handle nesting yet
-                           (t v))
-           collect (concat key "=" val)))
-
-(defun fj-remove-not-editable (alist editable-var &optional simple-var)
-  "Remove non-editable fields from ALIST.
-Check against EDITABLE-VAR, or, if present, SIMPLE-VAR."
-  (cl-remove-if-not
-   (lambda (x)
-     (member (symbol-name (car x))
-             (or simple-var editable-var)))
-   alist))
-
 (defun fj-repo-editable (repo-alist &optional simple)
   "Remove any un-editable items from REPO-ALIST.
 Checking is done against `fj-repo-settings-editable'.
 If SIMPLE, then check against `fj-repo-settings-simple'."
-  (fj-remove-not-editable repo-alist
-                          fj-repo-settings-editable
-                          (when simple fj-repo-settings-simple)))
+  (transient-post-remove-not-editable repo-alist
+                                      fj-repo-settings-editable
+                                      (when simple fj-repo-settings-simple)))
 
 (defun fj-user-editable (alist)
   "Return editable fields from ALIST.
 Checked against `fj-user-settings-editable'."
-  (fj-remove-not-editable alist fj-user-settings-editable))
+  (transient-post-remove-not-editable alist fj-user-settings-editable))
 
 (defun fj-get-repo-data ()
   "Return repo data from previous buffer spec.
 Designed to be used in a transient called from the repo."
-  (with-current-buffer (car (buffer-list)) ; last buffer
-    (let* ((repo (fj--get-buffer-spec :repo))
-           (owner (fj--get-buffer-spec :owner)))
-      (fj-get-repo repo owner))))
+  (if (and fj-user fj-current-repo)
+      (fj-get-repo fj-current-repo fj-user)
+    (with-current-buffer (car (buffer-list)) ; last buffer
+      (let* ((repo (fj--get-buffer-spec :repo))
+             (owner (fj--get-buffer-spec :owner)))
+        (fj-get-repo repo owner)))))
 
 (defun fj-repo-defaults ()
   "Return the current repo setting values.
@@ -235,28 +200,6 @@ Used for default values in `fj-repo-update-settings'."
   (let ((branches (fj-repo-get-branches repo owner)))
     (cl-loop for b in branches
              collect (alist-get 'name b))))
-
-(defun fj-arg-changed-p (arg)
-  "T if ARG pair is different to the value in `fj-server-settings'.
-The format of ARG is a transient pair, ie \"key=val\".
-Nil values are considered to match if they match the empty string."
-  (let* ((arg (split-string arg "="))
-         (server-val (alist-get (intern (car arg))
-                                fj-server-settings))
-         (server-str (if (symbolp server-val) (symbol-name server-val) server-val)))
-    (cond ((not (cadr arg)) (not (equal "" server-str)))
-          (t (not (equal (cadr arg) server-str))))))
-
-(defun fj-only-changed-args (alist)
-  "Remove elts from ALIST if the value is equal to that in `fj-server-settings'.
-Nil values are removed if they match the empty string."
-  (cl-remove-if
-   (lambda (x)
-     (let ((server-val (alist-get (intern (car x))
-                                  fj-server-settings)))
-       (cond ((not (cdr x)) (equal "" server-val))
-             (t (equal (cdr x) server-val)))))
-   alist))
 
 ;;; TRANSIENTS
 
@@ -290,7 +233,9 @@ Provide current topics for adding/removing."
 
 (transient-define-prefix fj-repo-update-settings ()
   "A transient for setting current repo settings."
-  :value (lambda () (fj-repo-defaults))
+  :value (lambda ()
+           (transient-post-return-data
+            #'fj-get-repo-data fj-repo-settings-simple))
   [:description
    (lambda ()
      (format "Repo settings for %s/%s" fj-user fj-current-repo))
@@ -298,21 +243,21 @@ Provide current topics for adding/removing."
     "Note: use the empty string (\"\") to remove a value from an option.")]
   ;; strings
   ["Repo info"
-   ("n" "name" "name=" :class fj-option-str)
-   ("d" "description" "description=" :class fj-option-str)
-   ("w" "website" "website=" :class fj-option-str)
+   ("n" "name" "name=" :class transient-post-option-str)
+   ("d" "description" "description=" :class transient-post-option-str)
+   ("w" "website" "website=" :class transient-post-option-str)
    ("b" "default_branch" "default_branch="
     :class fj-option
     :choices (lambda ()
                (fj-repo-branches-list fj-current-repo fj-user)))]
   ;; "choice" booleans (so we can PATCH :json-false explicitly):
   ["Repo options"
-   ("a" "archived" "archived=" :class fj-infix-choice-bool)
-   ("i" "has_issues" "has_issues=" :class fj-infix-choice-bool)
-   ("k" "has_wiki" "has_wiki=" :class fj-infix-choice-bool)
-   ("p" "has_pull_requests" "has_pull_requests=" :class fj-infix-choice-bool)
-   ("o" "has_projects" "has_projects=" :class fj-infix-choice-bool)
-   ("r" "has_releases" "has_releases=" :class fj-infix-choice-bool)
+   ("a" "archived" "archived=" :class transient-post-choice-bool)
+   ("i" "has_issues" "has_issues=" :class transient-post-choice-bool)
+   ("k" "has_wiki" "has_wiki=" :class transient-post-choice-bool)
+   ("p" "has_pull_requests" "has_pull_requests=" :class transient-post-choice-bool)
+   ("o" "has_projects" "has_projects=" :class transient-post-choice-bool)
+   ("r" "has_releases" "has_releases=" :class transient-post-choice-bool)
    ("s" "default_merge_style" "default_merge_style="
     :class fj-option
     :choices (lambda () fj-merge-types))] ;; FIXME: broken?
@@ -332,33 +277,36 @@ Provide current topics for adding/removing."
   ;; interactive receives args from the prefix:
   (interactive (list (transient-args 'fj-user-update-settings)))
   (let* ((alist (fj-transient-to-alist args))
-         (only-changed (fj-only-changed-args alist)))
-    (fj-user-settings-patch only-changed)))
+         (only-changed (fj-only-changed-args alist))
+         (bools-converted (transient-post-bool-strs-to-json only-changed)))
+    (fj-user-settings-patch ;;only-changed)))
+     bools-converted)))
 
 (transient-define-prefix fj-user-update-settings ()
   "A transient for setting current user settings."
-  :value (lambda () (fj-user-settings-current))
+  :value (lambda ()
+           (transient-post-return-data #'fj-get-current-user-settings
+                                       fj-user-settings-editable))
   [:description
-   (lambda ()
-     (format "User settings for %s" fj-user))
+   (lambda () (format "User settings for %s" fj-user))
    (:info
     "Note: use the empty string (\"\") to remove a value from an option.")]
   ;; strings
   ["User info"
-   ("n" "full name" "full_name=" :class fj-option-str)
-   ("d" "description" "description=" :class fj-option-str)
-   ("w" "website" "website=" :class fj-option-str)
-   ("p" "pronouns" "pronouns=" :class fj-option-str)
-   ("g" "language" "language=" :class fj-option-str)
-   ("l" "location" "location=" :class fj-option-str)]
+   ("n" "full name" "full_name=" :class transient-post-option-str)
+   ("d" "description" "description=" :class transient-post-option-str)
+   ("w" "website" "website=" :class transient-post-option-str)
+   ("p" "pronouns" "pronouns=" :class transient-post-option-str)
+   ("g" "language" "language=" :class transient-post-option-str)
+   ("l" "location" "location=" :class transient-post-option-str)]
   ;; "choice" booleans (so we can PATCH :json-false explicitly):
   ["User options"
-   ("a" "hide_activity" "hide_activity=" :class fj-infix-choice-bool)
-   ("e" "hide_email" "hide_email=" :class fj-infix-choice-bool)
-   ("v"  "diff_view_style" "diff_view_style=" :class fj-infix-choice-bool
+   ("a" "hide_activity" "hide_activity=" :class transient-post-choice-bool)
+   ("e" "hide_email" "hide_email=" :class transient-post-choice-bool)
+   ("v"  "diff_view_style" "diff_view_style=" :class transient-post-choice-bool
     :choices ("unified" "split")) ;; FIXME: lambdas don't work here?
    ("u" "enable_repo_unit_hints" "enable_repo_unit_hints="
-    :class fj-infix-choice-bool)]
+    :class transient-post-choice-bool)]
   ["Update"
    ("C-c C-c" "Save settings" fj-update-user-settings)
    ("C-c C-k" :info "to revert all changes")]
@@ -366,109 +314,6 @@ Provide current topics for adding/removing."
   (if (not fj-user)
       (user-error "No user. Set `fj-user'")
     (transient-setup 'fj-user-update-settings)))
-
-;; CLASSES
-
-(defclass fj-option (transient-option)
-  ((always-read :initarg :always-read :initform t))
-  "An infix option class for our options.
-We always read.")
-
-(defclass fj-option-str (fj-option)
-  ()
-  "An infix option class for our options.
-We always read and our reader provides initial input from
-default/current values.")
-
-(defclass fj-infix-choice-bool (fj-option)
-  ((format :initform " %k %d %v")
-   (choices :initarg :choices :initform
-            ;; quote lambda here and funcall the slot as needed:
-            '(lambda () fj-choice-booleans)))
-  "An option class for our choice booleans.
-We implement this as an option because we need to be able to
-explicitly send true/false values to the server, whereas
-transient ignores false/nil values.")
-
-;;; METHODS
-;; for `fj-infix-choice-bool' we define our own infix option that displays
-;; [t|:json-false] like exclusive switches. activating the infix just moves to
-;; the next option.
-
-(cl-defmethod transient-init-value ((obj fj-infix-choice-bool))
-  "Initiate the value of OBJ, fetching the value from the parent prefix."
-  (let* ((arg (oref obj argument))
-         (val (transient-arg-value arg (oref transient--prefix value))))
-    (oset obj value (concat arg val))))
-
-(cl-defmethod transient-format-value ((obj fj-infix-choice-bool))
-  "Format the value of OBJ.
-Format should be like \"[opt1|op2]\", with the active option highlighted.
-The value currently on the server should be underlined."
-  (let* ((value (transient-infix-value obj))
-         (arg (oref obj argument))
-         (choices-slot (oref obj choices))
-         (choices (if (eq (car choices-slot) 'lambda)
-                      (funcall choices-slot)
-                    choices-slot)))
-    (concat
-     (propertize "["
-                 'face 'transient-inactive-value)
-     (mapconcat
-      (lambda (choice)
-        (propertize
-         choice
-         'face (let ((active-p (equal (concat arg choice) value))
-                     (changed-p (fj-arg-changed-p (concat arg choice))))
-                 ;; FIXME: differentiate init server value
-                 ;; from switching to other value then switching
-                 ;; back to server value?
-                 (cond ((and active-p changed-p)
-                        'transient-value)
-                       ((and active-p (not changed-p))
-                        '(:inherit transient-value :underline t))
-                       ((and (not active-p) (not changed-p))
-                        '(:inherit transient-inactive-value :underline t))
-                       (t
-                        'transient-inactive-value)))))
-      choices
-      (propertize "|" 'face 'transient-inactive-value))
-     (propertize "]" 'face 'transient-inactive-value))))
-
-(cl-defmethod transient-format-value ((obj fj-option))
-  "Format the value of OBJ, an `fj-option'.
-Format should just be a string, highlighted green if it has been
-changed from the server value."
-  (let* ((argument (transient-infix-value obj))
-         (value (cadr (split-string argument "="))))
-    (propertize value
-                'face (if (fj-arg-changed-p argument)
-                          'transient-value
-                        'transient-inactive-value))))
-
-(cl-defmethod transient-infix-read ((obj fj-infix-choice-bool))
-  "Cycle through the possible values of OBJ."
-  (let* ((pair (transient-infix-value obj))
-         (arg (oref obj argument))
-         (val (cadr (split-string pair "=")))
-         (choices-slot (oref obj choices))
-         (choices (if (eq (car choices-slot) 'lambda)
-                      (funcall choices-slot)
-                    choices-slot)))
-    (concat arg
-            (if (equal val (car (last choices)))
-                (car choices)
-              (cadr (member val choices))))))
-
-;; FIXME: see the `transient-infix-read' method's docstring:
-;; we should preserve history, follow it. maybe just mod it.
-(cl-defmethod transient-infix-read ((obj fj-option-str))
-  "Reader function for OBJ, a `fj-option-str'.
-We add the current value as initial input."
-  (let* ((value (transient-infix-value obj))
-         (list (split-string value "="))
-         (prompt (concat (car list) "=")))
-    (read-string prompt (cadr list))))
 
 (provide 'fj-transient)
 ;;; fj-transient.el ends here
