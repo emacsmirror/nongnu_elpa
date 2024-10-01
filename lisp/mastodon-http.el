@@ -157,16 +157,18 @@ the request data. If it is :raw, just use the plain params."
     (let* ((url-request-data
             (when params
               (cond ((eq json :json)
-                     (json-encode
-                      params))
+                     (json-encode params))
                     ((eq json :raw)
                      params)
                     (t
                      (mastodon-http--build-params-string params)))))
            (url-request-extra-headers
             (append url-request-extra-headers ; auth set in macro
-                    (unless (assoc "Content-Type" headers) ; pleroma compat:
-                      '(("Content-Type" . "application/x-www-form-urlencoded")))
+                    (if json
+                        '(("Content-Type" . "application/json")
+                          ("Accept" . "application/json"))
+                      (unless (assoc "Content-Type" headers) ; pleroma compat:
+                        '(("Content-Type" . "application/x-www-form-urlencoded"))))
                     headers)))
       (with-temp-buffer
         (mastodon-http--url-retrieve-synchronously url)))

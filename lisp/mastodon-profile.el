@@ -386,6 +386,8 @@ This is done after changing the setting on the server."
 Only do so if `mastodon-profile-account-settings' is nil."
   (mastodon-profile--fetch-server-account-settings :no-force))
 
+;; FIXME: this does one request per setting! should just do one request then
+;; parse
 (defun mastodon-profile--fetch-server-account-settings (&optional no-force)
   "Fetch basic account settings from the server.
 Store the values in `mastodon-profile-account-settings'.
