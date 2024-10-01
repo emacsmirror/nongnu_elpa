@@ -223,6 +223,21 @@ Otherwise just return VAL."
              (transient-post-bool-to-str (cdr a))))
            collect (cons (car a) val)))
 
+(defun transient-post-dots-to-arrays (alist)
+  "Convert keys in ALIST transient-post dot annotation to array[key] annotation."
+  ;; FIXME: handle multi dots?
+  (cl-loop for a in alist
+           collect (cons (transient-post-dot-to-array (car a))
+                         (cdr a))))
+
+(defun transient-post-dot-to-array (key)
+  "Convert KEY from transient-post dot annotation to array[key] annotation."
+  ;; FIXME: for multi dots, just return secondlast[last]?
+  (let* ((split (split-string key "\\.")))
+    (if (< 1 (length split))
+        (concat (car (last split 2)) "[" (car (last split)) "]")
+      key)))
+
 ;; CLASSES
 
 (defclass transient-post-option (transient-option)
