@@ -188,8 +188,8 @@ Designed to be used in a transient called from the repo."
   :transient 'transient--do-exit
   ;; interactive receives args from the prefix:
   (interactive (list (transient-args 'fj-repo-update-settings)))
-  (let* ((alist (fj-transient-to-alist args))
-         (only-changed (fj-only-changed-args alist)))
+  (let* ((alist (transient-post-transient-to-alist args))
+         (only-changed (transient-post-only-changed-args alist)))
     (fj-repo-settings-patch
      ;; FIXME: need to use global vars in transients?:
      fj-current-repo only-changed)))
@@ -256,8 +256,8 @@ Provide current topics for adding/removing."
   :transient 'transient--do-exit
   ;; interactive receives args from the prefix:
   (interactive (list (transient-args 'fj-user-update-settings)))
-  (let* ((alist (fj-transient-to-alist args))
-         (only-changed (fj-only-changed-args alist))
+  (let* ((alist (transient-post-transient-to-alist args))
+         (only-changed (transient-post-only-changed-args alist))
          (bools-converted (transient-post-bool-strs-to-json only-changed)))
     (fj-user-settings-patch ;;only-changed)))
      bools-converted)))
