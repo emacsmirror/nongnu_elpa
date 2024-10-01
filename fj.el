@@ -40,7 +40,7 @@
 (require 'markdown-mode)
 (require 'shr)
 
-(require 'fj-transient-repo)
+(require 'fj-transient)
 
 ;;; VARIABLES
 ;; ours
@@ -2515,7 +2515,9 @@ Used for a mouse-click EVENT on a link."
 (defun fj-next-tab-item ()
   "Jump to next tab item."
   (interactive)
-  (fedi-next-tab-item nil 'fj-tab-stop))
+  ;; FIXME: some links only have 'shr-tab-stop!
+  (or (fedi-next-tab-item nil 'fj-tab-stop)
+      (fedi-next-tab-item nil 'shr-tab-stop)))
 
 (defun fj-prev-tab-item ()
   "Jump to prev tab item."
