@@ -178,6 +178,11 @@ width fonts"))
   '(direct private unlisted public)
   "A list of the available toot visibility settings.")
 
+(defvar mastodon-toot-visibility-settings-list
+  '("public" "unlisted" "private")
+  "A list of the available default toot visibility settings.
+Like `mastodon-toot-visibility-list' but without 'direct.")
+
 (defvar-local mastodon-toot--visibility nil
   "A string indicating the visibility of the toot being composed.
 Valid values are \"direct\", \"private\" (followers-only),
