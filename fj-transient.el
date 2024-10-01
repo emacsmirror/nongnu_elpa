@@ -170,26 +170,6 @@ Designed to be used in a transient called from the repo."
              (owner (fj--get-buffer-spec :owner)))
         (fj-get-repo repo owner)))))
 
-(defun fj-repo-defaults ()
-  "Return the current repo setting values.
-Used for default values in `fj-repo-update-settings'."
-  ;; FIXME: eventually replace `fj-get-repo-data' by relying on global
-  ;; variables `fj-user' and `fj-current-repo'. we just need to ensure the
-  ;; latter is up to date anywhere that the transient might be invoked:
-  (let* ((data (if (and fj-user fj-current-repo)
-                   (fj-get-repo fj-current-repo fj-user)
-                 (fj-get-repo-data))) ;; GET repo JSON data
-         (editable (fj-repo-editable data :simple)))
-    (setq fj-server-settings editable)
-    (fj-alist-to-transient editable)))
-
-(defun fj-user-settings-current ()
-  "Return current user settings that are editable."
-  (let* ((data (fj-get-current-user-settings))
-         (editable (fj-user-editable data)))
-    (setq fj-server-settings editable)
-    (fj-alist-to-transient editable)))
-
 (defun fj-repo-get-branches (repo owner)
   "Get branches data for REPO by OWNER."
   (let ((endpoint (format "/repos/%s/%s/branches" owner repo)))
