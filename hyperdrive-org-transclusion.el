@@ -159,6 +159,7 @@ Try \\[hyperdrive-mark-as-safe]")
 ;;;; Error handling
 
 (defun hyperdrive-org-transclusion-error-handler (url err)
+  "Say formatted ERR for URL and link to buffer with details."
   (let ((buf (get-buffer-create (format "*hyperdrive-org-transclusion-error <%s>" url))))
     (with-current-buffer buf
       (erase-buffer)
