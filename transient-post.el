@@ -31,9 +31,23 @@
 (require 'transient)
 (require 'json)
 
+;;; OPTIONS
+
+(defvar transient-post-convert-json-booleans-to-strings t
+  "Whether to convert JSON booleans.
+When fetching data, parsed JSON booleans, e.g. t and :json-false,
+will be converted into the strings \"true\" and \"false\"."
+  ;; NB: need to also work out how to then POST as parsed JSON data.
+  )
+
 ;;; VARIABLES
 
-(defvar transient-post-choice-booleans '("t" ":json-false")) ;; add "" or nil to unset?
+(defvar transient-post-choice-booleans-json '("t" ":json-false")
+  ;; add "" or nil to unset?
+  "JSON Booleans formatted as parsed elisp and into a string.")
+
+(defvar transient-post-choice-booleans '("true" "false")
+  "Boolean strings for sending non-JSON requests.") ;; add "" or nil to unset?
 
 (defvar transient-post-server-settings nil
   "Settings data (editable) as returned by the server.")
@@ -58,12 +72,11 @@ Should return an alist that can be parsed as JSON data."
                          (car split)
                        (concat (car split) "="))
            for val = (transient-arg-value key args)
-           for value = (cond ((member val transient-post-choice-booleans)
+           for value = (cond ((member val transient-post-choice-booleans-json)
                               (intern val))
                              ((equal val "\"\"")
                               "") ;; POSTable empty string
-                             (t
-                              val))
+                             (t val))
            collect (cons (car split) value)))
 
 (defun transient-post-alist-to-transient (alist &optional prefix)
@@ -80,16 +93,7 @@ Should work with JSON arrays as both lists and vectors."
             else
             for key = (symbol-name (seq-first a))
             for k = (if prefix
-                        ;; transient should only need to see one level of
-                        ;; nesting of arrays, so if we already have an array
-                        ;; prefix, pull out the key, scrap the top level part,
-                        ;; and replace it with the key, ie "source[key]"
-                        ;; becomes key[newkey]:
-                        (let ((split (split-string prefix "[][]")))
-                          (if (< 1 (length split))
-                              (concat (cadr split) ;; 2nd elt
-                                      "[" key "]")
-                            (concat prefix "[" key "]")))
+                        (concat prefix "." key)
                       key)
             for v = (seq-rest a)
             for val =
@@ -102,8 +106,6 @@ Should work with JSON arrays as both lists and vectors."
                    (if (or (vectorp (seq-first v))
                            (proper-list-p (seq-first v)))
                        ;; recur on cdr as nested list or vector:
-                       ;; or does nest[prefix][key]=val work?
-                       ;; FIXME: maybe nesting should be nest.prefix[key]=val?
                        (cl-loop for x in v
                                 collect (transient-post-alist-to-transient x k))
                      ;; recur on cdr normal list:
@@ -134,19 +136,32 @@ See `transient-post-remove-not-editable'."
   (let* ((data (funcall fetch-fun))
          (editable (if editable-var
                        (transient-post-remove-not-editable data editable-var)
-                     data)))
+                     data))
+         (bools-parsed (if transient-post-convert-json-booleans-to-strings
+                           (transient-post-bools-to-strs editable)
+                         editable)))
     ;; used in `transient-post-arg-changed-p' and `transient-post-only-changed-args'
-    (setq transient-post-server-settings editable)
+    (setq transient-post-server-settings bools-parsed)
     (setq transient-post-settings-as-transient
-          (transient-post-alist-to-transient editable))))
+          (transient-post-alist-to-transient bools-parsed))))
+
+(defun transient-post-get-server-val (arg)
+  "Return the server value for ARG.
+If ARG has dotted notation, drill down into the alist."
+  (let ((split (split-string arg "\\.")))
+    (if (< 1 (length split)) ;; 1 level of nesting:
+        (alist-get (intern (cadr split))
+                   (alist-get (intern (car split))
+                              transient-post-server-settings))
+      (alist-get (intern arg) ;; no dotted nesting:
+                 transient-post-server-settings))))
 
 (defun transient-post-arg-changed-p (arg-pair)
   "T if ARG-PAIR is different to the value in `transient-post-server-settings'.
 The format of ARG is a transient pair as a string, ie \"key=val\".
 Nil values will also match the empty string."
   (let* ((arg (split-string arg-pair "="))
-         (server-val (alist-get (intern (car arg))
-                                transient-post-server-settings))
+         (server-val (transient-post-get-server-val (car arg)))
          (server-str (if (symbolp server-val)
                          (symbol-name server-val)
                        server-val)))
@@ -160,11 +175,53 @@ Values are considered changed if they do not match those in
 match the empty string."
   (cl-remove-if
    (lambda (x)
-     (let ((server-val (alist-get (intern (car x))
-                                  transient-post-server-settings)))
+     (let* ((split (split-string (car x) "\\."))
+            (server-val
+             (if (< 1 (length split))
+                 ;; FIXME: handle arbitrary nesting:
+                 (alist-get (intern (cadr split))
+                            (alist-get (intern (car split))
+                                       transient-post-server-settings))
+               (alist-get (intern (car x))
+                          transient-post-server-settings))))
        (cond ((not (cdr x)) (equal "" server-val))
              (t (equal (cdr x) server-val)))))
    alist))
+
+;; TODO: reverse this operation, so a suffix can parse data back to elisp
+;; JSON:
+(defun transient-post-bool-to-str (val)
+  "Convert VAL, into a string boolean if it is either t or :json-false.
+Otherwise just return VAL."
+  (cond ((eq :json-false val) "false")
+        ((eq t val) "true")
+        (t val)))
+
+(defun transient-post-bools-to-strs (alist)
+  "Convert values in ALIST to string booleans if they are JSON booleans."
+  (cl-loop for a in alist
+           ;; car recur if:
+           if (and (proper-list-p (seq-first a)) ;; car isn't just a json cons
+                   (> (length (seq-first a)) 1)) ;; car's cdr isn't nil
+           do (transient-post-bools-to-strs (seq-first a))
+           else
+           for v = (cdr a)
+           for val =
+           (cond
+            ;; cdr recur if:
+            ((and (or (vectorp v)
+                      (proper-list-p v))
+                  (> (length v) 1))
+             (if (or (vectorp (seq-first v))
+                     (proper-list-p (seq-first v)))
+                 ;; recur on cdr as nested list or vector:
+                 (cl-loop for x in v
+                          collect (transient-post-bools-to-strs x))
+               ;; recur on cdr normal list:
+               (transient-post-bools-to-strs v)))
+            (t ;; no recur:
+             (transient-post-bool-to-str (cdr a))))
+           collect (cons (car a) val)))
 
 ;; CLASSES
 
