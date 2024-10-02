@@ -38,12 +38,14 @@
 ;;; Code:
 (require 'cl-lib) ; for `cl-some' call in mastodon
 (eval-when-compile (require 'subr-x))
-(require 'mastodon-http)
-(require 'mastodon-toot)
-(require 'mastodon-search)
 (require 'url)
 (require 'thingatpt)
 (require 'shr)
+
+(require 'mastodon-http)
+(require 'mastodon-toot)
+(require 'mastodon-search)
+(require 'mastodon-transient)
 
 (declare-function discover-add-context-menu "discover")
 (declare-function emojify-mode "emojify")
