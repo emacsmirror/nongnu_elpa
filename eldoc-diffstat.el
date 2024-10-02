@@ -52,7 +52,11 @@ Intended for `eldoc-documentation-functions'."
                                (boundp 'log-view-vc-backend)
                                (eq log-view-vc-backend 'Git)
                                (log-view-current-tag)))))
-    (eldoc-diffstat--docstring-1 commit callback)))
+    (if-let* (((processp eldoc-diffstat--process))
+              (result (process-get eldoc-diffstat--process :result))
+              ((equal commit (car result))))
+        (funcall callback (cdr result))
+      (eldoc-diffstat--docstring-1 commit callback))))
 
 (defun eldoc-diffstat--docstring-1 (commit callback &rest _ignored)
   "Display diffstat for COMMIT by calling CALLBACK."
@@ -73,6 +77,7 @@ Intended for `eldoc-documentation-functions'."
     (append eldoc-diffstat--command (list commit))
     :sentinel
     (apply-partially #'eldoc-diffstat--sentinel callback)))
+  (process-put eldoc-diffstat--process :commit commit)
 
   ;; Signal that the doc string is computed asynchronously.
   t)
@@ -100,7 +105,10 @@ Intended for `eldoc-documentation-functions'."
                          'face 'italic)
       (forward-line)
       (reverse-region (point) (point-max))
-      (funcall callback (buffer-string)))))
+      (let ((result (buffer-string))
+            (commit (process-get eldoc-diffstat--process :commit)))
+        (process-put eldoc-diffstat--process :result (cons commit result))
+        (funcall callback result)))))
 
 (provide 'eldoc-diffstat)
 ;;; eldoc-diffstat.el ends here
