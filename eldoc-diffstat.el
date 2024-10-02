@@ -29,7 +29,7 @@
 (defvar eldoc-diffstat--process nil)
 (defconst eldoc-diffstat--command
   (list "git" "--no-pager" "show" "--color=always"
-        "--format=format:%an <%ae>, %aD" "--stat=80"))
+        "--format=format:%an <%ae>, %aD:%n%s" "--stat=80"))
 
 ;;;###autoload
 (defun eldoc-diffstat-setup ()
@@ -96,6 +96,10 @@ Intended for `eldoc-documentation-functions'."
       (put-text-property (point)
                          (line-end-position)
                          'face 'bold)
+
+      ;; Join second line.
+      (forward-line)
+      (join-line)
 
       ;; Move summary to the top and make it italic.
       (forward-line)
