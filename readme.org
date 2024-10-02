@@ -1,3 +1,3 @@
-* =transient-post.el=
+* =tp.el=
 
 Some functions, classes and methods to make it easier to create transients that send complex POST, PUT, or PATCH requests to JSON APIs.

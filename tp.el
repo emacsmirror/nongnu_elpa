@@ -1,4 +1,4 @@
-;;; transient-post.el --- Transient utilities for posting to an API -*- lexical-binding: t; -*-
+;;; tp.el --- Transient utilities for posting to an API -*- lexical-binding: t; -*-
 
 ;; Author: Marty Hiatt <martianhiatus AT riseup.net>
 ;; Copyright (C) 2024 Marty Hiatt <martianhiatus AT riseup.net>
@@ -33,7 +33,7 @@
 
 ;;; OPTIONS
 
-(defvar transient-post-convert-json-booleans-to-strings t
+(defvar tp-convert-json-booleans-to-strings t
   "Whether to convert JSON booleans.
 When fetching data, parsed JSON booleans, e.g. t and :json-false,
 will be converted into the strings \"true\" and \"false\"."
@@ -42,19 +42,19 @@ will be converted into the strings \"true\" and \"false\"."
 
 ;;; VARIABLES
 
-(defvar transient-post-choice-booleans-json '("t" ":json-false")
+(defvar tp-choice-booleans-json '("t" ":json-false")
   ;; add "" or nil to unset?
   "JSON Booleans formatted as parsed elisp and into a string.")
 
-(defvar transient-post-choice-booleans '("true" "false")
+(defvar tp-choice-booleans '("true" "false")
   "Boolean strings for sending non-JSON requests.") ;; add "" or nil to unset?
 
-(defvar transient-post-server-settings nil
+(defvar tp-server-settings nil
   "Settings data (editable) as returned by the server.")
 
 ;;; UTILS
 
-(defun transient-post-transient-to-alist (args)
+(defun tp-transient-to-alist (args)
   "Convert list of transient ARGS into an alist.
 This currently assumes arguments are of the form \"key=value\".
 Should return an alist that can be parsed as JSON data."
@@ -64,14 +64,14 @@ Should return an alist that can be parsed as JSON data."
                          (car split)
                        (concat (car split) "="))
            for val = (transient-arg-value key args)
-           for value = (cond ((member val transient-post-choice-booleans-json)
+           for value = (cond ((member val tp-choice-booleans-json)
                               (intern val))
                              ((equal val "\"\"")
                               "") ;; POSTable empty string
                              (t val))
            collect (cons (car split) value)))
 
-(defun transient-post-alist-to-transient (alist &optional prefix)
+(defun tp-alist-to-transient (alist &optional prefix)
   "Convert ALIST to a list of transient args.
 Returns transient arguments in the form \"key=value\".
 PREFIX is a string and is used during recursion.
@@ -81,7 +81,7 @@ Should work with JSON arrays as both lists and vectors."
             ;; car recur if:
             if (and (proper-list-p (seq-first a)) ;; car isn't just a json cons
                     (> (length (seq-first a)) 1)) ;; car's cdr isn't nil
-            do (transient-post-alist-to-transient (seq-first a) prefix)
+            do (tp-alist-to-transient (seq-first a) prefix)
             else
             for key = (symbol-name (seq-first a))
             for k = (if prefix
@@ -99,15 +99,15 @@ Should work with JSON arrays as both lists and vectors."
                            (proper-list-p (seq-first v)))
                        ;; recur on cdr as nested list or vector:
                        (cl-loop for x in v
-                                collect (transient-post-alist-to-transient x k))
+                                collect (tp-alist-to-transient x k))
                      ;; recur on cdr normal list:
-                     (transient-post-alist-to-transient v k)))
+                     (tp-alist-to-transient v k)))
                   (t v))
             collect (if (stringp val)
                         (concat k "=" val)
                       val))))
 
-(defun transient-post-remove-not-editable (alist var)
+(defun tp-remove-not-editable (alist var)
   "Remove non-editable fields from ALIST.
 Check against the fields in VAR, which should be a list of strings."
   (cl-remove-if-not
@@ -116,54 +116,54 @@ Check against the fields in VAR, which should be a list of strings."
              var))
    alist))
 
-(defun transient-post-return-data (fetch-fun &optional editable-var)
+(defun tp-return-data (fetch-fun &optional editable-var)
   "Return data to populate current settings.
 Call FETCH-FUN with zero arguments to GET the data. Cull the data
-with `transient-post-remove-not-editable', bind the result to
-`transient-post-server-settings', then call
-`transient-post-alist-to-transient' on it and return the result.
+with `tp-remove-not-editable', bind the result to
+`tp-server-settings', then call
+`tp-alist-to-transient' on it and return the result.
 EDITABLE-VAR is a variable containing a list of strings
 corresponding to the editable fields of the JSON data returned.
-See `transient-post-remove-not-editable'."
+See `tp-remove-not-editable'."
   (let* ((data (funcall fetch-fun))
          (editable (if editable-var
-                       (transient-post-remove-not-editable data editable-var)
+                       (tp-remove-not-editable data editable-var)
                      data))
-         (bools-parsed (if transient-post-convert-json-booleans-to-strings
-                           (transient-post-bools-to-strs editable)
+         (bools-parsed (if tp-convert-json-booleans-to-strings
+                           (tp-bools-to-strs editable)
                          editable)))
-    ;; used in `transient-post-arg-changed-p' and `transient-post-only-changed-args'
-    (setq transient-post-server-settings bools-parsed)
-    (setq transient-post-settings-as-transient
-          (transient-post-alist-to-transient bools-parsed))))
+    ;; used in `tp-arg-changed-p' and `tp-only-changed-args'
+    (setq tp-server-settings bools-parsed)
+    (setq tp-settings-as-transient
+          (tp-alist-to-transient bools-parsed))))
 
-(defun transient-post-get-server-val (arg)
+(defun tp-get-server-val (arg)
   "Return the server value for ARG.
 If ARG has dotted notation, drill down into the alist."
   (let ((split (split-string arg "\\.")))
     (if (< 1 (length split)) ;; 1 level of nesting:
         (alist-get (intern (cadr split))
                    (alist-get (intern (car split))
-                              transient-post-server-settings))
+                              tp-server-settings))
       (alist-get (intern arg) ;; no dotted nesting:
-                 transient-post-server-settings))))
+                 tp-server-settings))))
 
-(defun transient-post-arg-changed-p (arg-pair)
-  "T if ARG-PAIR is different to the value in `transient-post-server-settings'.
+(defun tp-arg-changed-p (arg-pair)
+  "T if ARG-PAIR is different to the value in `tp-server-settings'.
 The format of ARG is a transient pair as a string, ie \"key=val\".
 Nil values will also match the empty string."
   (let* ((arg (split-string arg-pair "="))
-         (server-val (transient-post-get-server-val (car arg)))
+         (server-val (tp-get-server-val (car arg)))
          (server-str (if (symbolp server-val)
                          (symbol-name server-val)
                        server-val)))
     (cond ((not (cadr arg)) (not (equal "" server-str)))
           (t (not (equal (cadr arg) server-str))))))
 
-(defun transient-post-only-changed-args (alist)
+(defun tp-only-changed-args (alist)
   "Remove elts from ALIST if value is changed.
 Values are considered changed if they do not match those in
-`transient-post-server-settings'. Nil values are also removed if they
+`tp-server-settings'. Nil values are also removed if they
 match the empty string."
   (cl-remove-if
    (lambda (x)
@@ -173,48 +173,64 @@ match the empty string."
                  ;; FIXME: handle arbitrary nesting:
                  (alist-get (intern (cadr split))
                             (alist-get (intern (car split))
-                                       transient-post-server-settings))
+                                       tp-server-settings))
                (alist-get (intern (car x))
-                          transient-post-server-settings))))
+                          tp-server-settings))))
        (cond ((not (cdr x)) (equal "" server-val))
              (t (equal (cdr x) server-val)))))
    alist))
 
-(defun transient-post-bool-to-str (cons)
+(defun tp-bool-to-str (cons)
   "Convert CONS, into a string boolean if it is either t or :json-false.
 Otherwise just return CONS."
-  (cons (car cons)
-        (cond ((equal :json-false (cdr cons)) "false")
-              ((equal t (cdr cons)) "true")
-              (t (cdr cons)))))
+  (if (not (consp cons))
+      cons
+    (cons (car cons)
+          (cond ((eq :json-false (cdr cons)) "false")
+                ((eq t (cdr cons)) "true")
+                (t (cdr cons))))))
 
-(defun transient-post-bool-str-to-json (cons)
+(defun tp-bool-str-to-json (cons)
   "Convert CONS, into a string boolean if it is either t or :json-false.
 Otherwise just return CONS."
-  (cons (car cons)
-        (cond ((equal "false" (cdr cons)) :json-false)
-              ((equal "true" (cdr cons)) t)
-              (t (cdr cons)))))
+  ;; do nothing if not a cons: `-tree-map' doesn't handle parsed JSON well
+  (if (not (consp cons))
+      cons
+    (cons (car cons)
+          (cond ((equal "false" (cdr cons)) :json-false)
+                ((equal "true" (cdr cons)) t)
+                (t (cdr cons))))))
 
-(defun transient-post-bools-to-strs (alist)
+(defun tp-tree-map (fn tree)
+  "Apply FN to each element of TREE while preserving the tree structure.
+This is a patched `-tree-map'."
+  (declare (important-return-value t))
+  (cond
+   ((null tree) ())
+   ((-cons-pair? tree) (funcall fn tree))
+   ((consp tree)
+    (mapcar (lambda (x) (tp-tree-map fn x)) tree))
+   ((funcall fn tree))))
+
+(defun tp-bools-to-strs (alist)
+  "Convert values in ALIST to string booleans if they are JSON booleans."
+  (tp-tree-map
+   #'tp-bool-to-str alist))
+
+(defun tp-bool-strs-to-json (alist)
   "Convert values in ALIST to string booleans if they are JSON booleans."
   (-tree-map
-   #'transient-post-bool-to-str alist))
+   #'tp-bool-str-to-json alist))
 
-(defun transient-post-bool-strs-to-json (alist)
-  "Convert values in ALIST to string booleans if they are JSON booleans."
-  (-tree-map
-   #'transient-post-bool-str-to-json alist))
-
-(defun transient-post-dots-to-arrays (alist)
-  "Convert keys in ALIST transient-post dot annotation to array[key] annotation."
+(defun tp-dots-to-arrays (alist)
+  "Convert keys in ALIST tp dot annotation to array[key] annotation."
   ;; FIXME: handle multi dots?
   (cl-loop for a in alist
-           collect (cons (transient-post-dot-to-array (car a))
+           collect (cons (tp-dot-to-array (car a))
                          (cdr a))))
 
-(defun transient-post-dot-to-array (key)
-  "Convert KEY from transient-post dot annotation to array[key] annotation."
+(defun tp-dot-to-array (key)
+  "Convert KEY from tp dot annotation to array[key] annotation."
   ;; FIXME: for multi dots, just return secondlast[last]?
   (let* ((split (split-string key "\\.")))
     (if (< 1 (length split))
@@ -223,32 +239,33 @@ Otherwise just return CONS."
 
 ;; CLASSES
 
-(defclass transient-post-option (transient-option)
+(defclass tp-option (transient-option)
   ((always-read :initarg :always-read :initform t))
   "An infix option class for our options.
 We always read.")
 
-(defclass transient-post-option-str (transient-post-option)
+(defclass tp-option-str (tp-option)
   ((format :initform " %k %d %v"))
   "An infix option class for our option strings.
 We always read, and our reader provides initial input from
 default/current values.")
 
-(defclass transient-post-choice-bool (transient-post-option)
+(defclass tp-choice-bool (tp-option)
   ((format :initform " %k %d %v")
    (choices :initarg :choices :initform
-            '(lambda () transient-post-choice-booleans)))
+            '(lambda ()
+               tp-choice-booleans)))
   "An option class for our choice booleans.
 We implement this as an option because we need to be able to
 explicitly send true/false values to the server, whereas
 transient ignores false/nil values.")
 
 ;;; METHODS
-;; for `transient-post-choice-bool' we define our own infix option that displays
+;; for `tp-choice-bool' we define our own infix option that displays
 ;; [t|:json-false] like exclusive switches. activating the infix just moves to
 ;; the next option.
 
-(cl-defmethod transient-init-value ((obj transient-post-choice-bool))
+(cl-defmethod transient-init-value ((obj tp-choice-bool))
   "Initiate the value of OBJ, fetching the value from the parent prefix."
   (let* ((arg (oref obj argument))
          (val (transient-arg-value arg (oref transient--prefix value))))
@@ -257,8 +274,8 @@ transient ignores false/nil values.")
     (oset obj value ;; (concat arg "=" val))))
           val)))
 
-(cl-defmethod transient-format-value ((obj transient-post-option))
-  "Format the value of OBJ, a `transient-post-option'.
+(cl-defmethod transient-format-value ((obj tp-option))
+  "Format the value of OBJ, a `tp-option'.
 Format should just be a string, highlighted green if it has been
 changed from the server value."
   (let* ((pair (transient-infix-value obj))
@@ -266,14 +283,14 @@ changed from the server value."
     (if (not pair)
         ""
       (propertize value
-                  'face (if (transient-post-arg-changed-p pair)
+                  'face (if (tp-arg-changed-p pair)
                             'transient-value
                           'transient-inactive-value)))))
 
-(defun transient-post-active-face-maybe (pair value)
+(defun tp-active-face-maybe (pair value)
   "Return a face spec based on PAIR and VALUE."
   (let ((active-p (equal pair value))
-        (changed-p (transient-post-arg-changed-p pair)))
+        (changed-p (tp-arg-changed-p pair)))
     ;; FIXME: differentiate init server value
     ;; from switching to other value then switching
     ;; back to server value?
@@ -286,7 +303,7 @@ changed from the server value."
           (t
            'transient-inactive-value))))
 
-(cl-defmethod transient-format-value ((obj transient-post-choice-bool))
+(cl-defmethod transient-format-value ((obj tp-choice-bool))
   "Format the value of OBJ.
 Format should be like \"[opt1|op2]\", with the active option highlighted.
 The value currently on the server should be underlined."
@@ -304,12 +321,12 @@ The value currently on the server should be underlined."
         (let ((pair (concat arg choice)))
           (propertize
            choice
-           'face (transient-post-active-face-maybe pair value))))
+           'face (tp-active-face-maybe pair value))))
       choices
       (propertize "|" 'face 'transient-inactive-value))
      (propertize "]" 'face 'transient-inactive-value))))
 
-(cl-defmethod transient-infix-read ((obj transient-post-choice-bool))
+(cl-defmethod transient-infix-read ((obj tp-choice-bool))
   "Cycle through the possible values of OBJ."
   (let* ((pair (transient-infix-value obj))
          ;; (arg (oref obj argument))
@@ -327,13 +344,13 @@ The value currently on the server should be underlined."
 
 ;; FIXME: see the `transient-infix-read' method's docstring:
 ;; we should preserve history, follow it. maybe just mod it.
-(cl-defmethod transient-infix-read ((obj transient-post-option-str))
-  "Reader function for OBJ, a `transient-post-option-str'.
+(cl-defmethod transient-infix-read ((obj tp-option-str))
+  "Reader function for OBJ, a `tp-option-str'.
 We add the current value as initial input."
   (let* ((value (transient-infix-value obj))
          (list (split-string value "="))
          (prompt (concat (car list) "=")))
     (read-string prompt (cadr list))))
 
-(provide 'transient-post)
-;;; transient-post.el ends here
+(provide 'tp)
+;;; tp.el ends here
