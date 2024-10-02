@@ -30,7 +30,7 @@
 
 (require 'transient)
 (require 'json)
-(require 'transient-post)
+(require 'tp)
 
 ;;; AUTOLOADS
 
@@ -151,7 +151,7 @@ PARAMS is an alist of any settings to be changed."
   "Remove any un-editable items from REPO-ALIST.
 Checking is done against `fj-repo-settings-editable'.
 If SIMPLE, then check against `fj-repo-settings-simple'."
-  (transient-post-remove-not-editable
+  (tp-remove-not-editable
    repo-alist
    (if simple
        fj-repo-settings-simple
@@ -160,7 +160,7 @@ If SIMPLE, then check against `fj-repo-settings-simple'."
 (defun fj-user-editable (alist)
   "Return editable fields from ALIST.
 Checked against `fj-user-settings-editable'."
-  (transient-post-remove-not-editable alist fj-user-settings-editable))
+  (tp-remove-not-editable alist fj-user-settings-editable))
 
 (defun fj-get-repo-data ()
   "Return repo data from previous buffer spec.
@@ -190,9 +190,9 @@ Designed to be used in a transient called from the repo."
   :transient 'transient--do-exit
   ;; interactive receives args from the prefix:
   (interactive (list (transient-args 'fj-repo-update-settings)))
-  (let* ((alist (transient-post-transient-to-alist args))
-         (only-changed (transient-post-only-changed-args alist))
-         (bools-converted (transient-post-bool-strs-to-json only-changed)))
+  (let* ((alist (tp-transient-to-alist args))
+         (only-changed (tp-only-changed-args alist))
+         (bools-converted (tp-bool-strs-to-json only-changed)))
     (fj-repo-settings-patch
      ;; FIXME: need to use global vars in transients?:
      fj-current-repo bools-converted)))
@@ -217,7 +217,7 @@ Provide current topics for adding/removing."
 (transient-define-prefix fj-repo-update-settings ()
   "A transient for setting current repo settings."
   :value (lambda ()
-           (transient-post-return-data
+           (tp-return-data
             #'fj-get-repo-data fj-repo-settings-simple))
   [:description
    (lambda ()
@@ -226,23 +226,23 @@ Provide current topics for adding/removing."
     "Note: use the empty string (\"\") to remove a value from an option.")]
   ;; strings
   ["Repo info"
-   ("n" "name" "name=" :class transient-post-option-str)
-   ("d" "description" "description=" :class transient-post-option-str)
-   ("w" "website" "website=" :class transient-post-option-str)
+   ("n" "name" "name=" :class tp-option-str)
+   ("d" "description" "description=" :class tp-option-str)
+   ("w" "website" "website=" :class tp-option-str)
    ("b" "default_branch" "default_branch="
-    :class fj-option
+    :class tp-option
     :choices (lambda ()
                (fj-repo-branches-list fj-current-repo fj-user)))]
   ;; "choice" booleans (so we can PATCH :json-false explicitly):
   ["Repo options"
-   ("a" "archived" "archived=" :class transient-post-choice-bool)
-   ("i" "has_issues" "has_issues=" :class transient-post-choice-bool)
-   ("k" "has_wiki" "has_wiki=" :class transient-post-choice-bool)
-   ("p" "has_pull_requests" "has_pull_requests=" :class transient-post-choice-bool)
-   ("o" "has_projects" "has_projects=" :class transient-post-choice-bool)
-   ("r" "has_releases" "has_releases=" :class transient-post-choice-bool)
+   ("a" "archived" "archived=" :class tp-choice-bool)
+   ("i" "has_issues" "has_issues=" :class tp-choice-bool)
+   ("k" "has_wiki" "has_wiki=" :class tp-choice-bool)
+   ("p" "has_pull_requests" "has_pull_requests=" :class tp-choice-bool)
+   ("o" "has_projects" "has_projects=" :class tp-choice-bool)
+   ("r" "has_releases" "has_releases=" :class tp-choice-bool)
    ("s" "default_merge_style" "default_merge_style="
-    :class fj-option
+    :class tp-option
     :choices (lambda () fj-merge-types))] ;; FIXME: broken?
   ["Topics"
    ("t" "update topics" fj-update-topics)]
@@ -259,37 +259,37 @@ Provide current topics for adding/removing."
   :transient 'transient--do-exit
   ;; interactive receives args from the prefix:
   (interactive (list (transient-args 'fj-user-update-settings)))
-  (let* ((alist (transient-post-transient-to-alist args))
-         (only-changed (transient-post-only-changed-args alist))
-         (bools-converted (transient-post-bool-strs-to-json only-changed)))
+  (let* ((alist (tp-transient-to-alist args))
+         (only-changed (tp-only-changed-args alist))
+         (bools-converted (tp-bool-strs-to-json only-changed)))
     (fj-user-settings-patch ;;only-changed)))
      bools-converted)))
 
 (transient-define-prefix fj-user-update-settings ()
   "A transient for setting current user settings."
   :value (lambda ()
-           (transient-post-return-data #'fj-get-current-user-settings
-                                       fj-user-settings-editable))
+           (tp-return-data #'fj-get-current-user-settings
+                           fj-user-settings-editable))
   [:description
    (lambda () (format "User settings for %s" fj-user))
    (:info
     "Note: use the empty string (\"\") to remove a value from an option.")]
   ;; strings
   ["User info"
-   ("n" "full name" "full_name=" :class transient-post-option-str)
-   ("d" "description" "description=" :class transient-post-option-str)
-   ("w" "website" "website=" :class transient-post-option-str)
-   ("p" "pronouns" "pronouns=" :class transient-post-option-str)
-   ("g" "language" "language=" :class transient-post-option-str)
-   ("l" "location" "location=" :class transient-post-option-str)]
+   ("n" "full name" "full_name=" :class tp-option-str)
+   ("d" "description" "description=" :class tp-option-str)
+   ("w" "website" "website=" :class tp-option-str)
+   ("p" "pronouns" "pronouns=" :class tp-option-str)
+   ("g" "language" "language=" :class tp-option-str)
+   ("l" "location" "location=" :class tp-option-str)]
   ;; "choice" booleans (so we can PATCH :json-false explicitly):
   ["User options"
-   ("a" "hide_activity" "hide_activity=" :class transient-post-choice-bool)
-   ("e" "hide_email" "hide_email=" :class transient-post-choice-bool)
-   ("v"  "diff_view_style" "diff_view_style=" :class transient-post-choice-bool
+   ("a" "hide_activity" "hide_activity=" :class tp-choice-bool)
+   ("e" "hide_email" "hide_email=" :class tp-choice-bool)
+   ("v"  "diff_view_style" "diff_view_style=" :class tp-choice-bool
     :choices ("unified" "split")) ;; FIXME: lambdas don't work here?
    ("u" "enable_repo_unit_hints" "enable_repo_unit_hints="
-    :class transient-post-choice-bool)]
+    :class tp-choice-bool)]
   ["Update"
    ("C-c C-c" "Save settings" fj-update-user-settings)
    ("C-c C-k" :info "to revert all changes")]
