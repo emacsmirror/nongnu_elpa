@@ -165,20 +165,24 @@ Nil values will also match the empty string."
 Values are considered changed if they do not match those in
 `tp-server-settings'. Nil values are also removed if they
 match the empty string."
-  (cl-remove-if
-   (lambda (x)
-     (let* ((split (split-string (car x) "\\."))
-            (server-val
-             (if (< 1 (length split))
-                 ;; FIXME: handle arbitrary nesting:
-                 (alist-get (intern (cadr split))
-                            (alist-get (intern (car split))
-                                       tp-server-settings))
-               (alist-get (intern (car x))
-                          tp-server-settings))))
-       (cond ((not (cdr x)) (equal "" server-val))
-             (t (equal (cdr x) server-val)))))
-   alist))
+  (prog1
+      (cl-remove-if
+       (lambda (x)
+         (let* ((split (split-string (car x) "\\."))
+                (server-val
+                 (if (< 1 (length split))
+                     ;; FIXME: handle arbitrary nesting:
+                     (alist-get (intern (cadr split))
+                                (alist-get (intern (car split))
+                                           tp-server-settings))
+                   (alist-get (intern (car x))
+                              tp-server-settings))))
+           (cond ((not (cdr x)) (equal "" server-val))
+                 (t (equal (cdr x) server-val)))))
+       alist)
+    ;; unset our vars (comment if need to inspect):
+    (setq tp-server-settings nil
+          tp-settings-as-transient nil)))
 
 (defun tp-bool-to-str (cons)
   "Convert CONS, into a string boolean if it is either t or :json-false.
