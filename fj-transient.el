@@ -203,7 +203,7 @@ Designed to be used in a transient called from the repo."
 (transient-define-suffix fj-update-topics ()
   "Update repo topics on the server.
 Provide current topics for adding/removing."
-  :transient 'transient--do-exit
+  :transient 'transient--do-return
   (interactive)
   (let* ((endpoint (format "repos/%s/%s/topics" fj-user fj-current-repo))
          (current-topics (mapconcat #'identity (fj-get-repo-topics) " "))
@@ -231,6 +231,7 @@ Provide current topics for adding/removing."
   ["Repo info"
    ("n" "name" "name=" :class tp-option-str)
    ("d" "description" "description=" :class tp-option-str)
+   ("t" "topics" fj-update-topics)
    ("w" "website" "website=" :class tp-option-str)
    ("b" "default branch" "default_branch="
     :class tp-option
@@ -247,8 +248,6 @@ Provide current topics for adding/removing."
    ("s" "default merge style" "default_merge_style="
     :class tp-option
     :choices fj-merge-types)] ;; FIXME: broken?
-  ["Topics"
-   ("t" "update topics" fj-update-topics)]
   ["Update"
    ("C-c C-c" "Save settings" fj-update-repo)
    ("C-c C-k" :info "to revert all changes")]
