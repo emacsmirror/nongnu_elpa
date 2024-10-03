@@ -276,7 +276,7 @@ We implement this as an option because we need to be able to
 explicitly send true/false values to the server, whereas
 transient ignores false/nil values.")
 
-;;; METHODS
+;;; TRANSIENT METHODS
 ;; for `tp-bool' we define our own infix option that displays
 ;; [t|:json-false] like exclusive switches. activating the infix just
 ;; moves to the next option.
@@ -289,33 +289,6 @@ transient ignores false/nil values.")
     ;; while in fj-transient.el we set it as a key=val
     (oset obj value ;; (concat arg "=" val))))
           val)))
-
-(cl-defgeneric tp-arg-changed-p (obj pair)
-  "T if value of OBJ is different to the value in `tp-server-settings'.
-The format of the value is a transient pair as a string, ie \"key=val\".
-Nil values will also match the empty string.
-PAIR")
-
-(cl-defmethod tp-arg-changed-p ((_obj tp-option) pair)
-  "OBJ. PAIR."
-  (let* ((split (split-string pair "="))
-         (server-val (tp-get-server-val (car split)))
-         (server-str (if (and server-val
-                              (symbolp server-val))
-                         (symbol-name server-val)
-                       server-val)))
-    (cond ((not (cadr split))
-           (not (equal "" server-str)))
-          ;; NB: it is better to return false positive here rather than
-          ;; false negative, so we do not check that we successfully
-          ;; fetched server-str. for if we check for the string and it's
-          ;; nil, we will always return nil, meaning that even after a
-          ;; value is changed it will not be propertized. better to
-          ;; propertize values whether or not they're changed rather than
-          ;; to not propertize changed values.
-          (t ;; (and server-str
-           (not (equal (cadr split)
-                       server-str))))))
 
 (cl-defmethod transient-format-value ((obj tp-option))
   "Format the value of OBJ.
@@ -398,6 +371,38 @@ We add the current value as initial input."
     ;; (concat arg
     (completing-read (concat (car split) "=")
                      choices nil :match)))
+
+;;; OUR METHODS
+
+(cl-defgeneric tp-arg-changed-p (obj pair)
+  "T if value of PAIR is different to the value in `tp-server-settings'.
+The format of the value is a transient pair as a string, ie \"key=val\".
+Nil values will also match the empty string.
+OBJ is the object whose args are being checked.")
+
+(cl-defmethod tp-arg-changed-p ((_obj tp-option) pair)
+  "T if value of PAIR is different to the value in `tp-server-settings'.
+The format of the value is a transient pair as a string, ie \"key=val\".
+Nil values will also match the empty string.
+OBJ is the object whose args are being checked."
+  (let* ((split (split-string pair "="))
+         (server-val (tp-get-server-val (car split)))
+         (server-str (if (and server-val
+                              (symbolp server-val))
+                         (symbol-name server-val)
+                       server-val)))
+    (cond ((not (cadr split))
+           (not (equal "" server-str)))
+          ;; NB: it is better to return false positive here rather than
+          ;; false negative, so we do not check that we successfully
+          ;; fetched server-str. for if we check for the string and it's
+          ;; nil, we will always return nil, meaning that even after a
+          ;; value is changed it will not be propertized. better to
+          ;; propertize values whether or not they're changed rather than
+          ;; to not propertize changed values.
+          (t ;; (and server-str
+           (not (equal (cadr split)
+                       server-str))))))
 
 (provide 'tp)
 ;;; tp.el ends here
