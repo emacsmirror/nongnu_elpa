@@ -143,7 +143,7 @@ the inner key part."
     :choices mastodon-iso-639-regional)]
   ["Update"
    ("C-c C-c" "Save settings" mastodon-user-settings-update)
-   ("C-c C-k" :info "to revert all changes")]
+   ("C-c C-k" :info "Revert all changes")]
   (interactive)
   (if (not mastodon-active-user)
       (user-error "User not set")
@@ -195,7 +195,7 @@ the inner key part."
    ("4v" "value:" "fields.4.value=" :class mastodon-transient-field)]
   ["Update"
    ("C-c C-c" "Save settings" mastodon-profile-fields-update)
-   ("C-c C-k" :info "to revert all changes")]
+   ("C-c C-k" :info "Revert all changes")]
   (interactive)
   (if (not mastodon-active-user)
       (user-error "User not set")
