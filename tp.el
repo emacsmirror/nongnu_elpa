@@ -359,5 +359,17 @@ We add the current value as initial input."
          (prompt (concat (car list) "=")))
     (read-string prompt (cadr list))))
 
+(cl-defmethod transient-infix-read ((obj tp-option))
+  "Cycle through the possible values of OBJ."
+  (let* ((pair (transient-infix-value obj))
+         ;; (arg (oref obj argument))
+         (split (split-string pair "="))
+         (choices (tp--return-choices-val obj)))
+    ;; FIXME: don't understand why we don't want to set a key=val pair here:
+    ;; while in fj-transient.el we set it as a key=val:
+    ;; (concat arg
+    (completing-read (concat (car split) "=")
+                     choices nil :match)))
+
 (provide 'tp)
 ;;; tp.el ends here
