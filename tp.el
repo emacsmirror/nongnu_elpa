@@ -35,9 +35,7 @@
 (defvar tp-convert-json-booleans-to-strings t
   "Whether to convert JSON booleans.
 When fetching data, parsed JSON booleans, e.g. t and :json-false,
-will be converted into the strings \"true\" and \"false\"."
-  ;; NB: need to also work out how to then POST as parsed JSON data.
-  )
+will be converted into the strings \"true\" and \"false\".")
 
 ;;; VARIABLES
 
@@ -50,6 +48,9 @@ will be converted into the strings \"true\" and \"false\"."
 
 (defvar tp-server-settings nil
   "Settings data (editable) as returned by the server.")
+
+(defvar tp-settings-as-transient nil
+  "Settings data converted to transient args.")
 
 ;;; UTILS
 
@@ -268,8 +269,8 @@ transient ignores false/nil values.")
 
 ;;; METHODS
 ;; for `tp-choice-bool' we define our own infix option that displays
-;; [t|:json-false] like exclusive switches. activating the infix just moves to
-;; the next option.
+;; [t|:json-false] like exclusive switches. activating the infix just
+;; moves to the next option.
 
 (cl-defmethod transient-init-value ((obj tp-choice-bool))
   "Initiate the value of OBJ, fetching the value from the parent prefix."
