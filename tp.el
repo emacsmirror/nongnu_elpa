@@ -237,6 +237,13 @@ which case call it. else just return it."
            (eval slot))
           (t slot))))
 
+(defun tp-parse-transient-args-for-send (args)
+  "Parse args, a list of transient args, into an alist for sending."
+  (thread-first
+    (tp-transient-to-alist args)
+    (tp-only-changed-args)
+    (tp-bool-strs-to-json))) ;; FIXME: make optional?
+
 ;; CLASSES
 
 (defclass tp-option (transient-option)
