@@ -3,7 +3,7 @@
 ;; Author: Marty Hiatt <martianhiatus AT riseup.net>
 ;; Copyright (C) 2024 Marty Hiatt <martianhiatus AT riseup.net>
 ;; Version: 0.1
-;; Package Reqires: ((emacs "27.1") (dash "2"))
+;; Package Reqires: ((emacs "27.1"))
 ;; Keywords: convenience, api, requests
 ;; URL: https://codeberg.org/martianh/transient-post.el
 
@@ -29,7 +29,6 @@
 
 (require 'transient)
 (require 'json)
-(require 'dash)
 
 ;;; OPTIONS
 
@@ -207,11 +206,14 @@ Otherwise just return CONS."
 
 (defun tp-tree-map (fn tree)
   "Apply FN to each element of TREE while preserving the tree structure.
-This is a patched `-tree-map'."
+This is just `-tree-map'."
   (declare (important-return-value t))
   (cond
    ((null tree) ())
-   ((-cons-pair? tree) (funcall fn tree))
+   ;; the smallest element this operates on is not a list item, but a cons
+   ;; pair, e.g. (a . b):
+   ((nlistp (cdr-safe tree)) ;; ie `-cons-pair?'
+    (funcall fn tree))
    ((consp tree)
     (mapcar (lambda (x) (tp-tree-map fn x)) tree))
    ((funcall fn tree))))
@@ -223,7 +225,7 @@ This is a patched `-tree-map'."
 
 (defun tp-bool-strs-to-json (alist)
   "Convert values in ALIST to string booleans if they are JSON booleans."
-  (-tree-map
+  (tp-tree-map
    #'tp-bool-str-to-json alist))
 
 (defun tp-dots-to-arrays (alist)
