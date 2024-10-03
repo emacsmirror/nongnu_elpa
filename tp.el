@@ -116,7 +116,7 @@ Check against the fields in VAR, which should be a list of strings."
              var))
    alist))
 
-(defun tp-return-data (fetch-fun &optional editable-var)
+(defun tp-return-data (fetch-fun &optional editable-var field)
   "Return data to populate current settings.
 Call FETCH-FUN with zero arguments to GET the data. Cull the data
 with `tp-remove-not-editable', bind the result to
@@ -133,20 +133,28 @@ See `tp-remove-not-editable'."
                            (tp-bools-to-strs editable)
                          editable)))
     ;; used in `tp-arg-changed-p' and `tp-only-changed-args'
-    (setq tp-server-settings bools-parsed)
-    (setq tp-settings-as-transient
+    (setq tp-server-settings
+          (if field
+              (alist-get field bools-parsed)
+            bools-parsed)
+          tp-settings-as-transient
           (tp-alist-to-transient bools-parsed))))
 
 (defun tp-get-server-val (arg)
   "Return the server value for ARG.
-If ARG has dotted notation, drill down into the alist."
+If ARG has dotted notation, drill down into the alist. Currently
+only one level of nesting is supported, ie \"top.next=val\"."
+  ;; TODO: perhaps a way to fix this us is for it to take an let-alist
+  ;; .dotted.notation argument?
   (let ((split (split-string arg "\\.")))
-    (if (< 1 (length split)) ;; 1 level of nesting:
-        (alist-get (intern (cadr split))
-                   (alist-get (intern (car split))
-                              tp-server-settings))
-      (alist-get (intern arg) ;; no dotted nesting:
-                 tp-server-settings))))
+    (cond ((= 1 (length split))
+           (alist-get (intern arg) ;; no dotted nesting:
+                      tp-server-settings))
+          ((= 2 (length split)) ;; 1 level of nesting:
+           (alist-get (intern (cadr split))
+                      (alist-get (intern (car split))
+                                 tp-server-settings)))
+          (t nil)))) ;; (message "Unable to compare value with server.")))))
 
 (defun tp-arg-changed-p (arg-pair)
   "T if ARG-PAIR is different to the value in `tp-server-settings'.
@@ -154,11 +162,20 @@ The format of ARG is a transient pair as a string, ie \"key=val\".
 Nil values will also match the empty string."
   (let* ((arg (split-string arg-pair "="))
          (server-val (tp-get-server-val (car arg)))
-         (server-str (if (symbolp server-val)
+         (server-str (if (and server-val
+                              (symbolp server-val))
                          (symbol-name server-val)
                        server-val)))
     (cond ((not (cadr arg)) (not (equal "" server-str)))
-          (t (not (equal (cadr arg) server-str))))))
+          ;; NB: it is better to return false positive here rather than
+          ;; false negative, so we do not check that we successfully
+          ;; fetched server-str. for if we check for the string and it's nil,
+          ;; we will always return nil, meaning that even after a value is
+          ;; changed it will not be propertized. better to propertize
+          ;; values whether or not they're changed rather than to not
+          ;; propertize changed values.
+          (t ;; (and server-str
+           (not (equal (cadr arg) server-str))))))
 
 (defun tp-only-changed-args (alist)
   "Remove elts from ALIST if value is changed.
@@ -244,6 +261,17 @@ This is just `-tree-map'."
         (concat (car (last split 2)) "[" (car (last split)) "]")
       key)))
 
+(defun tp--return-choices-val (obj)
+  "Return the value contained in OBJ's choices-slot.
+It might be a symbol, in which case evaluate it, a function, in
+which case call it. else just return it."
+  (let ((slot (oref obj choices)))
+    (cond ((functionp slot)
+           (funcall slot))
+          ((symbolp slot)
+           (eval slot))
+          (t slot))))
+
 ;; CLASSES
 
 (defclass tp-option (transient-option)
@@ -260,8 +288,8 @@ default/current values.")
 (defclass tp-choice-bool (tp-option)
   ((format :initform " %k %d %v")
    (choices :initarg :choices :initform
-            '(lambda ()
-               tp-choice-booleans)))
+            ;; '(lambda ()
+            'tp-choice-booleans))
   "An option class for our choice booleans.
 We implement this as an option because we need to be able to
 explicitly send true/false values to the server, whereas
@@ -316,10 +344,7 @@ Format should be like \"[opt1|op2]\", with the active option highlighted.
 The value currently on the server should be underlined."
   (let* ((value (transient-infix-value obj))
          (arg (oref obj argument))
-         (choices-slot (oref obj choices))
-         (choices (if (eq (car choices-slot) 'lambda)
-                      (funcall choices-slot)
-                    choices-slot)))
+         (choices (tp--return-choices-val obj)))
     (concat
      (propertize "["
                  'face 'transient-inactive-value)
@@ -338,10 +363,7 @@ The value currently on the server should be underlined."
   (let* ((pair (transient-infix-value obj))
          ;; (arg (oref obj argument))
          (val (cadr (split-string pair "=")))
-         (choices-slot (oref obj choices))
-         (choices (if (eq (car choices-slot) 'lambda)
-                      (funcall choices-slot)
-                    choices-slot)))
+         (choices (tp--return-choices-val obj)))
     ;; FIXME: don't understand why we don't want to set a key=val pair here:
     ;; while in fj-transient.el we set it as a key=val:
     ;; (concat arg
@@ -358,6 +380,18 @@ We add the current value as initial input."
          (list (split-string value "="))
          (prompt (concat (car list) "=")))
     (read-string prompt (cadr list))))
+
+(cl-defmethod transient-infix-read ((obj tp-option))
+  "Cycle through the possible values of OBJ."
+  (let* ((pair (transient-infix-value obj))
+         ;; (arg (oref obj argument))
+         (split (split-string pair "="))
+         (choices (tp--return-choices-val obj)))
+    ;; FIXME: don't understand why we don't want to set a key=val pair here:
+    ;; while in fj-transient.el we set it as a key=val:
+    ;; (concat arg
+    (completing-read (concat (car split) "=")
+                     choices nil :match)))
 
 (provide 'tp)
 ;;; tp.el ends here
