@@ -1,3 +1,55 @@
 * =tp.el=
 
-Some functions, classes and methods to make it easier to create transients that send complex POST, PUT, or PATCH requests to JSON APIs.
+Some functions, classes and methods to make it easier to create transient menus that send complex POST, PUT, or PATCH requests to JSON APIs.
+
+For more about transient, see https://github.com/magit/transient.
+
+A typical use-case is where you have a single endpoint that takes many different parameters. It's handy for a user to be able to set all the options, then make a single request to change all the settings on the server.
+
+The classes and methods define some transient behaviours that make sense for dealing with APIs:
+
+- We handle fetching and saving current server settings, and initialize our transients with the values fetched
+- We compare the state of a current transient option against the server values
+- When reading a string from the user, we provide the server setting as default input
+- We distinguish the formatting of server settings and current transient setting
+- We can seemlessly handle making requests with arrays, i.e. =source[key]=, or =field[1][name]= parameters
+- We can easily fetch an infix's allowed values for =completing-read=.
+
+* classes
+
+We define three classes for our infixes, all subclassed off =transient-option=.
+
+** =tp-option=
+
+Our generic option class, from which our other classes inherit.
+
+This can be used as is for choice-based (e.g. =completing-read=) option selection.
+
+By default we always read, which means calling an infix never unsets it, but always switches the value or prompts to update it.
+
+** =tp-option-str=
+
+A class for reading strings.
+
+We provide the current value from the server as default input.
+
+** =tp-boolean=
+
+We implement a boolean off =transient-option= rather than using transient's switches because we need to be able to explicitly send request with either boolean value, whereas transient's switches are ignored if set to nil.
+
+- =tp-boolean= objects are also formatted so that the true/false state is shown directly
+- calling a =trp-boolean= option directly switches its value
+
+=tp-booleans= aren't strictly boolean, they can be used to cycle through longer lists of options.
+
+* tp methods
+
+Apart from modifying existing transient methods, we define some of our own.
+
+** =tp-get-server-val=
+
+Fetches the current value from the server. This can be reimplemented if the data to fetch is in some funky JSON rabbit hole.
+
+** =tp-arg-changed-p=
+
+Compares the option provided against the current value on the server.
