@@ -93,6 +93,8 @@
 | K                | mastodon-profile--view-bookmarks                  | Open a new buffer displaying the user's bookmarks.                             |
 | V                | mastodon-profile--view-favourites                 | Open a new buffer displaying the user's favourites.                            |
 |                  | mastodon-profile--view-preferences                | View user preferences in another window.                                       |
+|                  | mastodon-profile-fields                           | A transient for setting profile fields.                                        |
+|                  | mastodon-profile-fields-update                    | Update current user profile fields.                                            |
 |                  | mastodon-profile-mode                             | Toggle mastodon profile minor mode.                                            |
 |                  | mastodon-profile-update-mode                      | Minor mode to update user profile.                                             |
 | s                | mastodon-search--query                            | Prompt for a search QUERY and return accounts, statuses, and hashtags.         |
@@ -190,10 +192,12 @@
 | C-c C-n          | mastodon-toot--toggle-nsfw                        | Toggle `mastodon-toot--content-nsfw'.                                          |
 | a                | mastodon-toot--translate-toot-text                | Translate text of toot at point.                                               |
 | E                | mastodon-toot--view-toot-edits                    | View editing history of the toot at point in a popup buffer.                   |
-|                  | mastodon-turn-on-discover                         | Turns on discover support                                                      |
 |                  | mastodon-toot-mode                                | Minor mode for composing toots.                                                |
+|                  | mastodon-update-profile-note                      | Update current user profile note.                                              |
 |                  | mastodon-url-lookup                               | If a URL resembles a fediverse link, try to load in `mastodon.el'.             |
 |                  | mastodon-url-lookup-force                         | Call `mastodon-url-lookup' without checking if URL is fedi-like.               |
+|                  | mastodon-user-settings                            | A transient for setting current user settings.                                 |
+|                  | mastodon-user-settings-update                     | Update current user settings on the server.                                    |
 |                  | mastodon-views--add-account-to-list               | Prompt for a list and for an account, add account to list.                     |
 |                  | mastodon-views--add-account-to-list-at-point      | Prompt for account and add to list at point.                                   |
 |                  | mastodon-views--add-filter-kw                     | Add a keyword to filter at point.                                              |
