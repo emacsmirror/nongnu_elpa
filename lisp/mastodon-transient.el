@@ -204,28 +204,30 @@ the inner key part."
   "An infix option class for our options.
 We always read.")
 
-(defun mastodon-transient-field-changed-p (value key num)
-  "T if VALUE is not equal corresponding value in `tp-server-settings'.
-The latter is fetched from alist number NUM, using KEY, a symbol."
-  (let ((elt (nth num) tp-server-settings))
-    (not (equal value (alist-get key elt)))))
+(cl-defmethod tp-arg-changed-p ((_obj mastodon-transient-field) pair)
+  "T if value of OBJ is changed.
+PAIR is a transient arg of the form \"fields.1.name=val\"."
+  (let* ((pair-split (split-string pair "="))
+         (keys-split (split-string (car pair-split) "\\."))
+         (num (1- (string-to-number (nth 1 keys-split))))
+         (server-key (intern (nth 2 keys-split)))
+         (server-elt (nth num tp-server-settings))
+         (value (when pair (cadr pair-split))))
+    (not (equal value (alist-get server-key server-elt)))))
 
 (cl-defmethod transient-format-value ((obj mastodon-transient-field))
   "Format the value of OBJ.
 Format should just be a string, highlighted green if it has been
 changed from the server value."
   (let* ((pair (transient-infix-value obj))
-         (arg (oref obj argument))
-         (value (when pair (cadr (split-string pair "="))))
-         (split (split-string arg "\\."))
-         (num (1- (string-to-number (nth 1 split))))
-         (key (intern (substring (nth 2 split) nil -1))))
+         (value (when pair (cadr (split-string pair "=")))))
     (if (not pair)
         ""
-      (propertize value
-                  'face (if (mastodon-transient-field-changed-p value key num)
-                            'transient-value
-                          'transient-inactive-value)))))
+      (propertize
+       value
+       'face (if (tp-arg-changed-p obj pair)
+                 'transient-value
+               'transient-inactive-value)))))
 
 (provide 'mastodon-transient)
 ;;; mastodon-transient.el ends here
