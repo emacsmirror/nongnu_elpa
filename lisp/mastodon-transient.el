@@ -54,19 +54,18 @@ the inner key part."
 ;; fields utils:
 ;; to PATCH fields, we just need fields[x][name] and fields[x][value]
 
-(defun mastodon-transient-fields-to-transient ()
-  "Convert fields in `tp-server-settings' to transient key=val args."
+(defun mastodon-transient-fields-to-transient (fields)
+  "Convert fields in FIELDS to transient key=val args."
   (flatten-tree
-   (let-alist tp-server-settings
-     (cl-loop
-      for f in .source.fields
-      for count from 1 to 5
-      collect
-      (cl-loop for x in f
-               collect
-               (concat "fields." (number-to-string count)
-                       "." (symbol-name (car x))
-                       "=" (cdr x)))))))
+   (cl-loop
+    for f in fields
+    for count from 1 to 5
+    collect
+    (cl-loop for x in f
+             collect
+             (concat "fields." (number-to-string count)
+                     "." (symbol-name (car x))
+                     "=" (cdr x))))))
 
 (defun mastodon-transient-field-dot-to-array (key)
   "Convert KEY from tp dot annotation to array[key] annotation."
@@ -208,18 +207,26 @@ the inner key part."
   "An infix option class for our options.
 We always read.")
 
+(defun mastodon-transient-field-changed-p (value key num)
+  "T if VALUE is not equal corresponding value in `tp-server-settings'.
+The latter is fetched from alist number NUM, using KEY, a symbol."
+  (let ((elt (nth num) tp-server-settings))
+    (not (equal value (alist-get key elt)))))
+
 (cl-defmethod transient-format-value ((obj mastodon-transient-field))
   "Format the value of OBJ.
 Format should just be a string, highlighted green if it has been
 changed from the server value."
   (let* ((pair (transient-infix-value obj))
-         (value (when pair (cadr (split-string pair "=")))))
+         (arg (oref obj argument))
+         (value (when pair (cadr (split-string pair "="))))
+         (split (split-string arg "\\."))
+         (num (1- (string-to-number (nth 1 split))))
+         (key (intern (substring (nth 2 split) nil -1))))
     (if (not pair)
         ""
-      ;; FIXME: not sure how to compare with server, as fields are not
-      ;; numbered in the JSON?
       (propertize value
-                  'face (if (tp-arg-changed-p pair)
+                  'face (if (mastodon-transient-field-changed-p value key num)
                             'transient-value
                           'transient-inactive-value)))))
 
