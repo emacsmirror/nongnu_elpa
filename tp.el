@@ -244,6 +244,17 @@ This is just `-tree-map'."
         (concat (car (last split 2)) "[" (car (last split)) "]")
       key)))
 
+(defun tp--return-choices-val (obj)
+  "Return the value contained in OBJ's choices-slot.
+It might be a symbol, in which case evaluate it, a function, in
+which case call it. else just return it."
+  (let ((slot (oref obj choices)))
+    (cond ((functionp slot)
+           (funcall slot))
+          ((symbolp slot)
+           (eval slot))
+          (t slot))))
+
 ;; CLASSES
 
 (defclass tp-option (transient-option)
@@ -260,8 +271,8 @@ default/current values.")
 (defclass tp-choice-bool (tp-option)
   ((format :initform " %k %d %v")
    (choices :initarg :choices :initform
-            '(lambda ()
-               tp-choice-booleans)))
+            ;; '(lambda ()
+            'tp-choice-booleans))
   "An option class for our choice booleans.
 We implement this as an option because we need to be able to
 explicitly send true/false values to the server, whereas
@@ -316,10 +327,7 @@ Format should be like \"[opt1|op2]\", with the active option highlighted.
 The value currently on the server should be underlined."
   (let* ((value (transient-infix-value obj))
          (arg (oref obj argument))
-         (choices-slot (oref obj choices))
-         (choices (if (eq (car choices-slot) 'lambda)
-                      (funcall choices-slot)
-                    choices-slot)))
+         (choices (tp--return-choices-val obj)))
     (concat
      (propertize "["
                  'face 'transient-inactive-value)
@@ -338,10 +346,7 @@ The value currently on the server should be underlined."
   (let* ((pair (transient-infix-value obj))
          ;; (arg (oref obj argument))
          (val (cadr (split-string pair "=")))
-         (choices-slot (oref obj choices))
-         (choices (if (eq (car choices-slot) 'lambda)
-                      (funcall choices-slot)
-                    choices-slot)))
+         (choices (tp--return-choices-val obj)))
     ;; FIXME: don't understand why we don't want to set a key=val pair here:
     ;; while in fj-transient.el we set it as a key=val:
     ;; (concat arg
