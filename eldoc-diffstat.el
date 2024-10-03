@@ -39,6 +39,7 @@
 ;;; Code:
 
 (require 'ansi-color)
+(require 'eieio)
 
 (defvar eldoc-diffstat--process nil
   "The latest async process used for fetching diffstat information.
@@ -83,6 +84,12 @@ a string identifying the specific revision."
    ((when-let (((fboundp 'magit-commit-at-point))
                (revision (magit-commit-at-point)))
       (cons 'Git revision)))
+   ((and (derived-mode-p 'git-rebase-mode)
+         (fboundp 'git-rebase-current-line)
+         (with-slots (action-type target)
+             (git-rebase-current-line)
+           (and (eq action-type 'commit)
+                (cons 'Git target)))))
    ((and (derived-mode-p 'vc-annotate-mode)
          (boundp 'vc-annotate-backend)
          (fboundp 'vc-annotate-extract-revision-at-line))
