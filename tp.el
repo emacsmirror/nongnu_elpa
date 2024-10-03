@@ -124,7 +124,9 @@ with `tp-remove-not-editable', bind the result to
 `tp-alist-to-transient' on it and return the result.
 EDITABLE-VAR is a variable containing a list of strings
 corresponding to the editable fields of the JSON data returned.
-See `tp-remove-not-editable'."
+See `tp-remove-not-editable'.
+FIELD is a JSON field to set `tp-server-settings' to, fetched
+with `alist-get'."
   (let* ((data (funcall fetch-fun))
          (editable (if editable-var
                        (tp-remove-not-editable data editable-var)
@@ -310,7 +312,7 @@ transient ignores false/nil values.")
           val)))
 
 (cl-defmethod transient-format-value ((obj tp-option))
-  "Format the value of OBJ, a `tp-option'.
+  "Format the value of OBJ.
 Format should just be a string, highlighted green if it has been
 changed from the server value."
   (let* ((pair (transient-infix-value obj))
@@ -364,8 +366,8 @@ The value currently on the server should be underlined."
          ;; (arg (oref obj argument))
          (val (cadr (split-string pair "=")))
          (choices (tp--return-choices-val obj)))
-    ;; FIXME: don't understand why we don't want to set a key=val pair here:
-    ;; while in fj-transient.el we set it as a key=val:
+    ;; FIXME: don't understand why we don't want to set a key=val pair
+    ;; here: while in fj-transient.el we set it as a key=val:
     ;; (concat arg
     (if (equal val (car (last choices)))
         (car choices)
@@ -374,7 +376,7 @@ The value currently on the server should be underlined."
 ;; FIXME: see the `transient-infix-read' method's docstring:
 ;; we should preserve history, follow it. maybe just mod it.
 (cl-defmethod transient-infix-read ((obj tp-option-str))
-  "Reader function for OBJ, a `tp-option-str'.
+  "Reader function for OBJ.
 We add the current value as initial input."
   (let* ((value (transient-infix-value obj))
          (list (split-string value "="))
@@ -384,11 +386,10 @@ We add the current value as initial input."
 (cl-defmethod transient-infix-read ((obj tp-option))
   "Cycle through the possible values of OBJ."
   (let* ((pair (transient-infix-value obj))
-         ;; (arg (oref obj argument))
          (split (split-string pair "="))
          (choices (tp--return-choices-val obj)))
-    ;; FIXME: don't understand why we don't want to set a key=val pair here:
-    ;; while in fj-transient.el we set it as a key=val:
+    ;; FIXME: don't understand why we don't want to set a key=val pair
+    ;; here: while in fj-transient.el we set it as a key=val:
     ;; (concat arg
     (completing-read (concat (car split) "=")
                      choices nil :match)))
