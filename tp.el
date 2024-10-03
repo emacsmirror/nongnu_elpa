@@ -158,27 +158,6 @@ only one level of nesting is supported, ie \"top.next=val\"."
                                  tp-server-settings)))
           (t nil)))) ;; (message "Unable to compare value with server.")))))
 
-(defun tp-arg-changed-p (arg-pair)
-  "T if ARG-PAIR is different to the value in `tp-server-settings'.
-The format of ARG is a transient pair as a string, ie \"key=val\".
-Nil values will also match the empty string."
-  (let* ((arg (split-string arg-pair "="))
-         (server-val (tp-get-server-val (car arg)))
-         (server-str (if (and server-val
-                              (symbolp server-val))
-                         (symbol-name server-val)
-                       server-val)))
-    (cond ((not (cadr arg)) (not (equal "" server-str)))
-          ;; NB: it is better to return false positive here rather than
-          ;; false negative, so we do not check that we successfully
-          ;; fetched server-str. for if we check for the string and it's nil,
-          ;; we will always return nil, meaning that even after a value is
-          ;; changed it will not be propertized. better to propertize
-          ;; values whether or not they're changed rather than to not
-          ;; propertize changed values.
-          (t ;; (and server-str
-           (not (equal (cadr arg) server-str))))))
-
 (defun tp-only-changed-args (alist)
   "Remove elts from ALIST if value is changed.
 Values are considered changed if they do not match those in
@@ -311,6 +290,32 @@ transient ignores false/nil values.")
     (oset obj value ;; (concat arg "=" val))))
           val)))
 
+(cl-defgeneric tp-arg-changed-p (obj pair)
+  "T if value of OBJ is different to the value in `tp-server-settings'.
+The format of the value is a transient pair as a string, ie \"key=val\".
+Nil values will also match the empty string.
+PAIR")
+
+(cl-defmethod tp-arg-changed-p ((_obj tp-option) pair)
+  (let* ((split (split-string pair "="))
+         (server-val (tp-get-server-val (car split)))
+         (server-str (if (and server-val
+                              (symbolp server-val))
+                         (symbol-name server-val)
+                       server-val)))
+    (cond ((not (cadr split)) ;; obj-key)
+           (not (equal "" server-str)))
+          ;; NB: it is better to return false positive here rather than
+          ;; false negative, so we do not check that we successfully
+          ;; fetched server-str. for if we check for the string and it's
+          ;; nil, we will always return nil, meaning that even after a
+          ;; value is changed it will not be propertized. better to
+          ;; propertize values whether or not they're changed rather than
+          ;; to not propertize changed values.
+          (t ;; (and server-str
+           (not (equal (cadr split)
+                       server-str))))))
+
 (cl-defmethod transient-format-value ((obj tp-option))
   "Format the value of OBJ.
 Format should just be a string, highlighted green if it has been
@@ -320,14 +325,15 @@ changed from the server value."
     (if (not pair)
         ""
       (propertize value
-                  'face (if (tp-arg-changed-p pair)
+                  'face (if (tp-arg-changed-p obj pair)
                             'transient-value
                           'transient-inactive-value)))))
 
-(defun tp-active-face-maybe (pair value)
-  "Return a face spec based on PAIR and VALUE."
-  (let ((active-p (equal pair value))
-        (changed-p (tp-arg-changed-p pair)))
+(defun tp-active-face-maybe (obj pair)
+  "Return a face spec based on OBJ's value and PAIR."
+  (let* ((value (transient-infix-value obj))
+         (active-p (equal pair value))
+         (changed-p (tp-arg-changed-p obj pair)))
     ;; FIXME: differentiate init server value
     ;; from switching to other value then switching
     ;; back to server value?
@@ -344,8 +350,7 @@ changed from the server value."
   "Format the value of OBJ.
 Format should be like \"[opt1|op2]\", with the active option highlighted.
 The value currently on the server should be underlined."
-  (let* ((value (transient-infix-value obj))
-         (arg (oref obj argument))
+  (let* ((arg (oref obj argument))
          (choices (tp--return-choices-val obj)))
     (concat
      (propertize "["
@@ -355,7 +360,7 @@ The value currently on the server should be underlined."
         (let ((pair (concat arg choice)))
           (propertize
            choice
-           'face (tp-active-face-maybe pair value))))
+           'face (tp-active-face-maybe obj pair))))
       choices
       (propertize "|" 'face 'transient-inactive-value))
      (propertize "]" 'face 'transient-inactive-value))))
@@ -363,7 +368,6 @@ The value currently on the server should be underlined."
 (cl-defmethod transient-infix-read ((obj tp-bool))
   "Cycle through the possible values of OBJ."
   (let* ((pair (transient-infix-value obj))
-         ;; (arg (oref obj argument))
          (val (cadr (split-string pair "=")))
          (choices (tp--return-choices-val obj)))
     ;; FIXME: don't understand why we don't want to set a key=val pair
