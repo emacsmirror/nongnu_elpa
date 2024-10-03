@@ -508,3 +508,11 @@ Here's a (federated) timeline:
 Here's a notifcations view plus a compose buffer:
 
 [[file:screenshot-notifs+compose.png]]
+
+Here's a user settings transient (active values green, current server values commented and if boolean, also underlined):
+
+[[file:screenshot-transient-1.jpg]]
+
+Here's a user profile fields transient (changed fields green, current server values commented):
+
+[[file:screenshot-transient-2.jpg]]
