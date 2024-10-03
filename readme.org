@@ -53,3 +53,8 @@ Fetches the current value from the server. This can be reimplemented if the data
 ** =tp-arg-changed-p=
 
 Compares the option provided against the current value on the server.
+
+* examples
+
+- https://codeberg.org/martianh/fj.el/src/branch/main/fj-transient.el
+- https://codeberg.org/martianh/mastodon.el/src/branch/transient/lisp/mastodon-transient.el
