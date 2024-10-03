@@ -139,14 +139,17 @@ See `tp-remove-not-editable'."
 
 (defun tp-get-server-val (arg)
   "Return the server value for ARG.
-If ARG has dotted notation, drill down into the alist."
+If ARG has dotted notation, drill down into the alist. Currently
+only one level of nesting is supported, ie \"top.next=val\"."
   (let ((split (split-string arg "\\.")))
-    (if (< 1 (length split)) ;; 1 level of nesting:
-        (alist-get (intern (cadr split))
-                   (alist-get (intern (car split))
-                              tp-server-settings))
-      (alist-get (intern arg) ;; no dotted nesting:
-                 tp-server-settings))))
+    (cond ((= 1 (length split))
+           (alist-get (intern arg) ;; no dotted nesting:
+                      tp-server-settings))
+          ((= 2 (length split)) ;; 1 level of nesting:
+           (alist-get (intern (cadr split))
+                      (alist-get (intern (car split))
+                                 tp-server-settings)))
+          (t nil)))) ;; (message "Unable to compare value with server.")))))
 
 (defun tp-arg-changed-p (arg-pair)
   "T if ARG-PAIR is different to the value in `tp-server-settings'.
@@ -154,11 +157,20 @@ The format of ARG is a transient pair as a string, ie \"key=val\".
 Nil values will also match the empty string."
   (let* ((arg (split-string arg-pair "="))
          (server-val (tp-get-server-val (car arg)))
-         (server-str (if (symbolp server-val)
+         (server-str (if (and server-val
+                              (symbolp server-val))
                          (symbol-name server-val)
                        server-val)))
     (cond ((not (cadr arg)) (not (equal "" server-str)))
-          (t (not (equal (cadr arg) server-str))))))
+          ;; NB: it is better to return false positive here rather than
+          ;; false negative, so we do not check that we successfully
+          ;; fetched server-str. for if we check for the string and it's nil,
+          ;; we will always return nil, meaning that even after a value is
+          ;; changed it will not be propertized. better to propertize
+          ;; values whether or not they're changed rather than to not
+          ;; propertize changed values.
+          (t ;; (and server-str
+           (not (equal (cadr arg) server-str))))))
 
 (defun tp-only-changed-args (alist)
   "Remove elts from ALIST if value is changed.
