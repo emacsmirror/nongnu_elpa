@@ -285,7 +285,7 @@ We always read.")
 We always read, and our reader provides initial input from
 default/current values.")
 
-(defclass tp-choice-bool (tp-option)
+(defclass tp-bool (tp-option)
   ((format :initform " %k %d %v")
    (choices :initarg :choices :initform
             ;; '(lambda ()
@@ -296,11 +296,11 @@ explicitly send true/false values to the server, whereas
 transient ignores false/nil values.")
 
 ;;; METHODS
-;; for `tp-choice-bool' we define our own infix option that displays
+;; for `tp-bool' we define our own infix option that displays
 ;; [t|:json-false] like exclusive switches. activating the infix just
 ;; moves to the next option.
 
-(cl-defmethod transient-init-value ((obj tp-choice-bool))
+(cl-defmethod transient-init-value ((obj tp-bool))
   "Initiate the value of OBJ, fetching the value from the parent prefix."
   (let* ((arg (oref obj argument))
          (val (transient-arg-value arg (oref transient--prefix value))))
@@ -338,7 +338,7 @@ changed from the server value."
           (t
            'transient-inactive-value))))
 
-(cl-defmethod transient-format-value ((obj tp-choice-bool))
+(cl-defmethod transient-format-value ((obj tp-bool))
   "Format the value of OBJ.
 Format should be like \"[opt1|op2]\", with the active option highlighted.
 The value currently on the server should be underlined."
@@ -358,7 +358,7 @@ The value currently on the server should be underlined."
       (propertize "|" 'face 'transient-inactive-value))
      (propertize "]" 'face 'transient-inactive-value))))
 
-(cl-defmethod transient-infix-read ((obj tp-choice-bool))
+(cl-defmethod transient-infix-read ((obj tp-bool))
   "Cycle through the possible values of OBJ."
   (let* ((pair (transient-infix-value obj))
          ;; (arg (oref obj argument))
