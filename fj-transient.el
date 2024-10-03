@@ -190,15 +190,13 @@ Designed to be used in a transient called from the repo."
   :transient 'transient--do-exit
   ;; interactive receives args from the prefix:
   (interactive (list (transient-args 'fj-repo-update-settings)))
-  (let* ((alist (tp-transient-to-alist args))
-         (only-changed (tp-only-changed-args alist))
-         (bools-converted (tp-bool-strs-to-json only-changed)))
+  (let* ((parsed (tp-parse-transient-args-for-send args)))
     ;; FIXME: this is how to do it using transient, but perhaps we want
     ;; `fj-user' and `fj-current-repo' to be global after all
     (with-current-buffer transient--original-buffer
       (let* ((repo (fj--get-buffer-spec :repo))
              (owner (fj--get-buffer-spec :owner)))
-        (fj-repo-settings-patch repo owner bools-converted)))))
+        (fj-repo-settings-patch repo owner parsed)))))
 
 (transient-define-suffix fj-update-topics ()
   "Update repo topics on the server.
@@ -261,11 +259,8 @@ Provide current topics for adding/removing."
   :transient 'transient--do-exit
   ;; interactive receives args from the prefix:
   (interactive (list (transient-args 'fj-user-update-settings)))
-  (let* ((alist (tp-transient-to-alist args))
-         (only-changed (tp-only-changed-args alist))
-         (bools-converted (tp-bool-strs-to-json only-changed)))
-    (fj-user-settings-patch ;;only-changed)))
-     bools-converted)))
+  (let* ((parsed (tp-parse-transient-args-for-send args)))
+    (fj-user-settings-patch parsed)))
 
 (transient-define-prefix fj-user-update-settings ()
   "A transient for setting current user settings."
