@@ -228,7 +228,8 @@ Works in issue view mode or in issues tl."
   "Return repo owner, whatever view we are in."
   (if (eq major-mode #'fj-repo-tl-mode)
       (fj-get-tl-col 1)
-    (fj--get-buffer-spec :owner)))
+    (or (fj--get-buffer-spec :owner)
+        fj-user))) ;; FIXME: fallback hack
 
 (defun fj--repo-name ()
   "Return repo name, whatever view we are in."
@@ -1883,9 +1884,20 @@ Optionally specify repo OWNER and URL."
 ;; in repo's issues TL, or for repo entry at point:
 (defun fj-create-issue (&optional _)
   "Create issue in current repo or repo at point in tabulated listing."
+  ;; for this to work simply from eg a code file not an fj.el buffer,
+  ;; we need `fj--repo-owner' to work.
+  
+  ;; we cd fall back to `fj-user' but that's assuming we are creating an
+  ;; issue in a repo that's ours, not that we are contributing to.
+  ;; otherwise, maybe we cd prompt for "owner/repo" format rather than
+  ;; just repo name, allowing user to choose from their own repos but also
+  ;; forks, upstreams?
+
+  ;; maybe we allow the fallback to `fj-user' but also allow interactive
+  ;; modifying of it like repo name? cd format like "owner/repo" in
+  ;; compose buffer.
   (interactive)
-  (let* (;(entry (tabulated-list-get-entry))
-         (owner (fj--repo-owner))
+  (let* ((owner (fj--repo-owner))
          (repo (fj--repo-name)))
     (fj-issue-compose)
     (setq fj-compose-repo repo
@@ -2228,6 +2240,8 @@ Inject INIT-TEXT into the buffer, for editing."
 (defun fj-compose-send ()
   "Submit the issue or comment to your Forgejo instance.
 Call response and update functions."
+  ;; FIXME: handle `fj-compose-repo-owner' being unset?
+  ;; if we want to error about it, we also need a way to set it.
   (interactive)
   (let ((buf (buffer-name))
         (type fj-compose-item-type))
