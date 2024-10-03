@@ -238,15 +238,15 @@ Provide current topics for adding/removing."
                (fj-repo-branches-list fj-current-repo fj-user)))]
   ;; "choice" booleans (so we can PATCH :json-false explicitly):
   ["Repo options"
-   ("a" "archived" "archived=" :class tp-choice-bool)
-   ("i" "has_issues" "has_issues=" :class tp-choice-bool)
-   ("k" "has_wiki" "has_wiki=" :class tp-choice-bool)
-   ("p" "has_pull_requests" "has_pull_requests=" :class tp-choice-bool)
-   ("o" "has_projects" "has_projects=" :class tp-choice-bool)
-   ("r" "has_releases" "has_releases=" :class tp-choice-bool)
+   ("a" "archived" "archived=" :class tp-bool)
+   ("i" "has_issues" "has_issues=" :class tp-bool)
+   ("k" "has_wiki" "has_wiki=" :class tp-bool)
+   ("p" "has_pull_requests" "has_pull_requests=" :class tp-bool)
+   ("o" "has_projects" "has_projects=" :class tp-bool)
+   ("r" "has_releases" "has_releases=" :class tp-bool)
    ("s" "default_merge_style" "default_merge_style="
     :class tp-option
-    :choices (lambda () fj-merge-types))] ;; FIXME: broken?
+    :choices fj-merge-types)] ;; FIXME: broken?
   ["Topics"
    ("t" "update topics" fj-update-topics)]
   ["Update"
@@ -287,12 +287,12 @@ Provide current topics for adding/removing."
    ("l" "location" "location=" :class tp-option-str)]
   ;; "choice" booleans (so we can PATCH :json-false explicitly):
   ["User options"
-   ("a" "hide_activity" "hide_activity=" :class tp-choice-bool)
-   ("e" "hide_email" "hide_email=" :class tp-choice-bool)
-   ("v"  "diff_view_style" "diff_view_style=" :class tp-choice-bool
+   ("a" "hide_activity" "hide_activity=" :class tp-bool)
+   ("e" "hide_email" "hide_email=" :class tp-bool)
+   ("v"  "diff_view_style" "diff_view_style=" :class tp-bool
     :choices ("unified" "split")) ;; FIXME: lambdas don't work here?
    ("u" "enable_repo_unit_hints" "enable_repo_unit_hints="
-    :class tp-choice-bool)]
+    :class tp-bool)]
   ["Update"
    ("C-c C-c" "Save settings" fj-update-user-settings)
    ("C-c C-k" :info "to revert all changes")]
