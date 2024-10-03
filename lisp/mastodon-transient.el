@@ -127,17 +127,17 @@ the inner key part."
    ("f" "update profile fields" mastodon-profile-fields)]
   ;; "choice" booleans (so we can PATCH :json-false explicitly):
   ["Account options"
-   ("l" "locked" "locked=" :class tp-choice-bool)
-   ("b" "bot" "bot=" :class tp-choice-bool)
-   ("d"  "discoverable" "discoverable=" :class tp-choice-bool)
-   ("c" "hide follower/following lists" "source.hide_collections=" :class tp-choice-bool)
-   ("i" "indexable" "source.indexable=" :class tp-choice-bool)]
+   ("l" "locked" "locked=" :class tp-bool)
+   ("b" "bot" "bot=" :class tp-bool)
+   ("d"  "discoverable" "discoverable=" :class tp-bool)
+   ("c" "hide follower/following lists" "source.hide_collections=" :class tp-bool)
+   ("i" "indexable" "source.indexable=" :class tp-bool)]
   ["Tooting options"
    ("p" "default privacy" "source.privacy=" :class tp-option
     :choices mastodon-toot-visibility-settings-list)
    ;; ("public" "unlisted" "private"))
    ;; (lambda () mastodon-toot-visibility-settings-list))
-   ("s" "mark sensitive" "source.sensitive=" :class tp-choice-bool)
+   ("s" "mark sensitive" "source.sensitive=" :class tp-bool)
    ("g" "default language" "source.language=" :class tp-option
     :choices mastodon-iso-639-regional)]
   ["Update"
