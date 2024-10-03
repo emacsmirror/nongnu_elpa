@@ -156,7 +156,7 @@ the inner key part."
 
 (transient-define-suffix mastodon-profile-fields-update (args)
   "Update current user profile fields."
-  :transient 'transient--do-exit
+  :transient 'transient--do-return
   (interactive (list (transient-args 'mastodon-profile-fields)))
   (let* ((alist (tp-transient-to-alist args))
          ;; FIXME: maybe only changed also won't work with fields, as
@@ -167,9 +167,7 @@ the inner key part."
          (url (mastodon-http--api endpoint))
          (resp (mastodon-http--patch url arrays))) ; :json)))
     (mastodon-http--triage
-     resp
-     (lambda (_)
-       (message "Fields updated!\n%s" (pp-to-string arrays))))))
+     resp (lambda (_) (message "Fields updated!")))))
 
 (transient-define-prefix mastodon-profile-fields ()
   "A transient for setting profile fields."
