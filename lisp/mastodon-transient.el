@@ -173,25 +173,39 @@ the inner key part."
 
 (transient-define-prefix mastodon-profile-fields ()
   "A transient for setting profile fields."
-  :value (lambda ()
-           (tp-return-data #'mastodon-transient-get-creds)
-           (mastodon-transient-fields-to-transient))
-  ["Field 1"
-   :class transient-row
-   ("1n" "name:" "fields.1.name=" :class mastodon-transient-field)
-   ("1v" "value:" "fields.1.value=" :class mastodon-transient-field)]
-  ["Field 2"
-   :class transient-row
-   ("2n" "name:" "fields.2.name=" :class mastodon-transient-field)
-   ("2v" "value:" "fields.2.value=" :class mastodon-transient-field)]
-  ["Field 3"
-   :class transient-row
-   ("3n" "name:" "fields.3.name=" :class mastodon-transient-field)
-   ("3v" "value:" "fields.3.value=" :class mastodon-transient-field)]
-  ["Field 4"
-   :class transient-row
-   ("4n" "name:" "fields.4.name=" :class mastodon-transient-field)
-   ("4v" "value:" "fields.4.value=" :class mastodon-transient-field)]
+  :value
+  (lambda ()
+    (tp-return-data #'mastodon-transient-get-creds nil 'fields)
+    (setq tp-settings-as-transient
+          (mastodon-transient-fields-to-transient
+           tp-server-settings)))
+  [:description
+   "Fields"
+   ["Name"
+    ;; :class transient-row
+    ("n1" "" "fields.1.name=" :class mastodon-transient-field)
+    ("n2" "" "fields.2.name=" :class mastodon-transient-field)
+    ("n3" "" "fields.3.name=" :class mastodon-transient-field)
+    ("n4" "" "fields.4.name=" :class mastodon-transient-field)]
+   ["Value"
+    ("v1" "" "fields.1.value=" :class mastodon-transient-field)
+    ("v2" "" "fields.2.value=" :class mastodon-transient-field)
+    ("v3" "" "fields.3.value=" :class mastodon-transient-field)
+    ("v4" "" "fields.4.value=" :class mastodon-transient-field)]]
+  ;; ["Field"
+  ;;  :class transient-row
+  ;;  :pad-keys t
+  ;;  ;; ("2n" "name:" "fields.2.name=" :class mastodon-transient-field)
+  ;;  ("2v" "value:" "fields.2.value=" :class mastodon-transient-field)]
+  ;; ["Field 3"
+  ;;  :class transient-row
+  ;;  :pad-keys t
+  ;;  ;; ("3n" "name:" "fields.3.name=" :class mastodon-transient-field)
+  ;;  ("3v" "value:" "fields.3.value=" :class mastodon-transient-field)]
+  ;; ["Field 4"
+  ;;  :class transient-row
+  ;;  ;; ("4n" "name:" "fields.4.name=" :class mastodon-transient-field)
+  ;;  ("4v" "value:" "fields.4.value=" :class mastodon-transient-field)]
   ["Update"
    ("C-c C-c" "Save settings" mastodon-profile-fields-update)
    ("C-c C-k" :info "Revert all changes")]
