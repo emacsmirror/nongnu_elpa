@@ -136,10 +136,10 @@
                          (message "%s settings updated!:\n%s"
                                   item-str params)))))
 
-(defun fj-repo-settings-patch (repo params)
+(defun fj-repo-settings-patch (repo owner params)
   "Update settings for REPO, sending a PATCH request.
 PARAMS is an alist of any settings to be changed."
-  (let* ((endpoint (format "repos/%s/%s" fj-user repo)))
+  (let* ((endpoint (format "repos/%s/%s" owner repo)))
     (fj-transient-patch endpoint params)))
 
 (defun fj-user-settings-patch (params)
@@ -167,7 +167,7 @@ Checked against `fj-user-settings-editable'."
 Designed to be used in a transient called from the repo."
   (if (and fj-user fj-current-repo)
       (fj-get-repo fj-current-repo fj-user)
-    (with-current-buffer (car (buffer-list)) ; last buffer
+    (with-current-buffer transient--original-buffer
       (let* ((repo (fj--get-buffer-spec :repo))
              (owner (fj--get-buffer-spec :owner)))
         (fj-get-repo repo owner)))))
@@ -193,9 +193,12 @@ Designed to be used in a transient called from the repo."
   (let* ((alist (tp-transient-to-alist args))
          (only-changed (tp-only-changed-args alist))
          (bools-converted (tp-bool-strs-to-json only-changed)))
-    (fj-repo-settings-patch
-     ;; FIXME: need to use global vars in transients?:
-     fj-current-repo bools-converted)))
+    ;; FIXME: this is how to do it using transient, but perhaps we want
+    ;; `fj-user' and `fj-current-repo' to be global after all
+    (with-current-buffer transient--original-buffer
+      (let* ((repo (fj--get-buffer-spec :repo))
+             (owner (fj--get-buffer-spec :owner)))
+        (fj-repo-settings-patch repo owner bools-converted)))))
 
 (transient-define-suffix fj-update-topics ()
   "Update repo topics on the server.
