@@ -116,7 +116,7 @@ Check against the fields in VAR, which should be a list of strings."
              var))
    alist))
 
-(defun tp-return-data (fetch-fun &optional editable-var)
+(defun tp-return-data (fetch-fun &optional editable-var field)
   "Return data to populate current settings.
 Call FETCH-FUN with zero arguments to GET the data. Cull the data
 with `tp-remove-not-editable', bind the result to
@@ -133,14 +133,19 @@ See `tp-remove-not-editable'."
                            (tp-bools-to-strs editable)
                          editable)))
     ;; used in `tp-arg-changed-p' and `tp-only-changed-args'
-    (setq tp-server-settings bools-parsed)
-    (setq tp-settings-as-transient
+    (setq tp-server-settings
+          (if field
+              (alist-get field bools-parsed)
+            bools-parsed)
+          tp-settings-as-transient
           (tp-alist-to-transient bools-parsed))))
 
 (defun tp-get-server-val (arg)
   "Return the server value for ARG.
 If ARG has dotted notation, drill down into the alist. Currently
 only one level of nesting is supported, ie \"top.next=val\"."
+  ;; TODO: perhaps a way to fix this us is for it to take an let-alist
+  ;; .dotted.notation argument?
   (let ((split (split-string arg "\\.")))
     (cond ((= 1 (length split))
            (alist-get (intern arg) ;; no dotted nesting:
