@@ -242,7 +242,7 @@ This is just `-tree-map'."
         (concat (car (last split 2)) "[" (car (last split)) "]")
       key)))
 
-(defun tp--return-choices-val (obj)
+(defun tp--get-choices (obj)
   "Return the value contained in OBJ's choices-slot.
 It might be a symbol, in which case evaluate it, a function, in
 which case call it. else just return it."
@@ -297,13 +297,14 @@ Nil values will also match the empty string.
 PAIR")
 
 (cl-defmethod tp-arg-changed-p ((_obj tp-option) pair)
+  "OBJ. PAIR."
   (let* ((split (split-string pair "="))
          (server-val (tp-get-server-val (car split)))
          (server-str (if (and server-val
                               (symbolp server-val))
                          (symbol-name server-val)
                        server-val)))
-    (cond ((not (cadr split)) ;; obj-key)
+    (cond ((not (cadr split))
            (not (equal "" server-str)))
           ;; NB: it is better to return false positive here rather than
           ;; false negative, so we do not check that we successfully
@@ -351,7 +352,7 @@ changed from the server value."
 Format should be like \"[opt1|op2]\", with the active option highlighted.
 The value currently on the server should be underlined."
   (let* ((arg (oref obj argument))
-         (choices (tp--return-choices-val obj)))
+         (choices (tp--get-choices obj)))
     (concat
      (propertize "["
                  'face 'transient-inactive-value)
@@ -369,7 +370,7 @@ The value currently on the server should be underlined."
   "Cycle through the possible values of OBJ."
   (let* ((pair (transient-infix-value obj))
          (val (cadr (split-string pair "=")))
-         (choices (tp--return-choices-val obj)))
+         (choices (tp--get-choices obj)))
     ;; FIXME: don't understand why we don't want to set a key=val pair
     ;; here: while in fj-transient.el we set it as a key=val:
     ;; (concat arg
@@ -391,7 +392,7 @@ We add the current value as initial input."
   "Cycle through the possible values of OBJ."
   (let* ((pair (transient-infix-value obj))
          (split (split-string pair "="))
-         (choices (tp--return-choices-val obj)))
+         (choices (tp--get-choices obj)))
     ;; FIXME: don't understand why we don't want to set a key=val pair
     ;; here: while in fj-transient.el we set it as a key=val:
     ;; (concat arg
