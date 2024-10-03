@@ -509,7 +509,7 @@ Here's a notifcations view plus a compose buffer:
 
 [[file:screenshot-notifs+compose.png]]
 
-Here's a user settings transient (active values green, current server values commented and if boolean, also underlined):
+Here's a user settings transient (active values green, current server values commented and, if a boolean, underlined):
 
 [[file:screenshot-transient-1.jpg]]
 
