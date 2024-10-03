@@ -142,22 +142,6 @@ with `alist-get'."
           tp-settings-as-transient
           (tp-alist-to-transient bools-parsed))))
 
-(defun tp-get-server-val (arg)
-  "Return the server value for ARG.
-If ARG has dotted notation, drill down into the alist. Currently
-only one level of nesting is supported, ie \"top.next=val\"."
-  ;; TODO: perhaps a way to fix this us is for it to take an let-alist
-  ;; .dotted.notation argument?
-  (let ((split (split-string arg "\\.")))
-    (cond ((= 1 (length split))
-           (alist-get (intern arg) ;; no dotted nesting:
-                      tp-server-settings))
-          ((= 2 (length split)) ;; 1 level of nesting:
-           (alist-get (intern (cadr split))
-                      (alist-get (intern (car split))
-                                 tp-server-settings)))
-          (t nil)))) ;; (message "Unable to compare value with server.")))))
-
 (defun tp-only-changed-args (alist)
   "Remove elts from ALIST if value is changed.
 Values are considered changed if they do not match those in
@@ -380,13 +364,13 @@ The format of the value is a transient pair as a string, ie \"key=val\".
 Nil values will also match the empty string.
 OBJ is the object whose args are being checked.")
 
-(cl-defmethod tp-arg-changed-p ((_obj tp-option) pair)
+(cl-defmethod tp-arg-changed-p ((obj tp-option) pair)
   "T if value of PAIR is different to the value in `tp-server-settings'.
 The format of the value is a transient pair as a string, ie \"key=val\".
 Nil values will also match the empty string.
 OBJ is the object whose args are being checked."
   (let* ((split (split-string pair "="))
-         (server-val (tp-get-server-val (car split)))
+         (server-val (tp-get-server-val obj (car split)))
          (server-str (if (and server-val
                               (symbolp server-val))
                          (symbol-name server-val)
@@ -403,6 +387,27 @@ OBJ is the object whose args are being checked."
           (t ;; (and server-str
            (not (equal (cadr split)
                        server-str))))))
+
+(cl-defgeneric tp-get-server-val (obj arg)
+  "Return the server value for ARG.
+CALLED on OBJ.")
+
+(cl-defmethod tp-get-server-val ((_obj tp-option) arg)
+  "Return the server value for ARG.
+If ARG has dotted notation, drill down into the alist. Currently
+only one level of nesting is supported, ie \"top.next=val\".
+CALLED on OBJ."
+  ;; TODO: perhaps a way to fix this us is for it to take an let-alist
+  ;; .dotted.notation argument?
+  (let ((split (split-string arg "\\.")))
+    (cond ((= 1 (length split))
+           (alist-get (intern arg) ;; no dotted nesting:
+                      tp-server-settings))
+          ((= 2 (length split)) ;; 1 level of nesting:
+           (alist-get (intern (cadr split))
+                      (alist-get (intern (car split))
+                                 tp-server-settings)))
+          (t nil))))
 
 (provide 'tp)
 ;;; tp.el ends here
