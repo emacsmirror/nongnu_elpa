@@ -70,6 +70,10 @@ If unset, profile notes of any size will be displayed, which may
 make them unweildy."
   :type '(integer))
 
+(defcustom mastodon-notifications--images-in-notifs nil
+  "Whether to display attached images in notifications."
+  :type '(boolean))
+
 (defvar mastodon-tl--buffer-spec)
 (defvar mastodon-tl--display-media-p)
 
@@ -301,6 +305,8 @@ Call its function in that list on NOTE."
     (when fun
       (funcall fun note)
       (when mastodon-tl--display-media-p
+        ;; images-in-notifs custom is handeld in
+        ;; `mastodon-tl--media-attachment', not here
         (mastodon-media--inline-images start-pos (point))))))
 
 (defun mastodon-notifications--timeline (json)
