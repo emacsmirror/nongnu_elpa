@@ -51,6 +51,8 @@
 (defvar fj-server-settings nil
   "User or repo settings data (editable) as returned by the instance.")
 
+(defvar fj-diff-style-types '("unified" "split"))
+
 (defvar fj-repo-settings-editable
   '( ;; boolean:
     "allow_fast_forward_only_merge"
@@ -284,7 +286,7 @@ Provide current topics for adding/removing."
    ("a" "hide activity" "hide_activity=" :class tp-bool)
    ("e" "hide email" "hide_email=" :class tp-bool)
    ("v"  "diff view style" "diff_view_style=" :class tp-bool
-    :choices ("unified" "split")) ;; FIXME: lambdas don't work here?
+    :choices (lambda () fj-diff-style-types)) ;; FIXME: lambdas don't work here?
    ("u" "enable repo unit hints" "enable_repo_unit_hints="
     :class tp-bool)]
   ["Update"
