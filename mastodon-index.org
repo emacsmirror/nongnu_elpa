@@ -262,6 +262,7 @@
 | mastodon-media--hide-sensitive-media                         | Whether media marked as sensitive should be hidden.                           |
 | mastodon-media--preview-max-height                           | Max height of any media attachment preview to be shown in timelines.          |
 | mastodon-mode-hook                                           | Hook run when entering Mastodon mode.                                         |
+| mastodon-notifications--images-in-notifs                     | Whether to display attached images in notifications.                          |
 | mastodon-notifications--profile-note-in-foll-reqs            | If non-nil, show a user's profile note in follow request notifications.       |
 | mastodon-notifications--profile-note-in-foll-reqs-max-length | The max character length for user profile note in follow requests.            |
 | mastodon-profile-mode-hook                                   | Hook run after entering or leaving `mastodon-profile-mode'.                   |
