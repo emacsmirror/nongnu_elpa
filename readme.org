@@ -32,6 +32,8 @@ Forgejo's API is vast. Currently =fj.el= just implements a few basic things:
 - copy clone URL of repo
 - view a repo's readme
 - view a repo's commit log
+- list repo's stargazers
+- list repo's watchers
 
 ** rich create/edit issue/comment interface.
 
@@ -63,6 +65,10 @@ Forgejo's API is vast. Currently =fj.el= just implements a few basic things:
 ** user/repo settings
 - update repo settings transient menu
 - update user settings transient menu
+
+
+- view followers
+- view users followed
 
 * dependencies
 - =magit-post=, =magit-process= (for obtaining current repo)
@@ -193,11 +199,14 @@ Repo search listing:
 |         | fj-repo-tl-unstar-repo          | Unstar current repo from tabulated user repos listing.              |
 |         | fj-repo-update-settings         | A transient for setting current repo settings.                      |
 |         | fj-repo-watchers                | Render watchers for REPO by OWNER.                                  |
+|         | fj-starred-repos                | List your starred repos.                                            |
 |         | fj-switch-to-buffer             | Switch to a live fj buffer.                                         |
 |         | fj-tl-browse-entry              | Browse URL of tabulated list entry at point.                        |
 |         | fj-update-repo                  | Update current repo settings.                                       |
 |         | fj-update-topics                | Update repo topics on the server.                                   |
 |         | fj-update-user-settings         | Update current user settings on the server.                         |
+|         | fj-user-followers               | View users who follow you.                                          |
+|         | fj-user-following               | View users you are following.                                       |
 |         | fj-user-repo-tl-mode            | Mode for displaying a tabulated list of user repos.                 |
 |         | fj-user-repos-tl                | View a tabulated list of respos for USER.                           |
 |         | fj-user-update-settings         | A transient for setting current user settings.                      |
@@ -208,3 +217,4 @@ Repo search listing:
 |         | fj-view-notifications-unread    | View unread notifications for `fj-user'.                            |
 |         | fj-view-pull-diff               | View a diff of the entire current PR.                               |
 |         | fj-watch-repo                   | Watch repo at point or in current view.                             |
+|         | fj-watched-repos                | List your watched repos.                                            |
