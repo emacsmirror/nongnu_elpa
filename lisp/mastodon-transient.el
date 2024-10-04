@@ -69,18 +69,7 @@ the inner key part."
 
 (defun mastodon-transient-field-dot-to-array (key)
   "Convert KEY from tp dot annotation to array[key] annotation."
-  (let* ((split (split-string key "\\."))
-         (count (length split)))
-    (cond ((not key) nil)
-          ((= 1 count) key)
-          (t
-           (concat ;; first item
-            (car split)
-            "_attributes"
-            ;; but last item
-            "[" (car (last split (1- count)))
-            ;; last item:
-            "][" (car (last split)) "]")))))
+  (tp-dot-to-array key nil "_attributes"))
 
 (defun mastodon-transient-dot-fields-to-arrays (alist)
   "Parse fields ALIST in dot notation to array notation."
