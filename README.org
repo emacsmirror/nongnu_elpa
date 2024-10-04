@@ -381,6 +381,11 @@ for =mastodon.el=.
 
 The repo is at [[https://github.com/rougier/mastodon-alt][mastodon-alt]].
 
+*** mastodon hydra
+
+A user made a hydra for handling basic mastodon.el commands. It's available at
+https://holgerschurig.github.io/en/emacs-mastodon-hydra/.
+
 *** Live-updating timelines: =mastodon-async-mode=
 
 (code taken from [[https://github.com/alexjgriffith/mastodon-future.el][mastodon-future]].)
