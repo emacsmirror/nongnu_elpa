@@ -260,8 +260,8 @@ default/current values.")
 (defclass tp-bool (tp-option)
   ((format :initform " %k %d %v")
    (choices :initarg :choices :initform
-            ;; '(lambda ()
-            'tp-choice-booleans))
+            (lambda ()
+              tp-choice-booleans)))
   "An option class for our choice booleans.
 We implement this as an option because we need to be able to
 explicitly send true/false values to the server, whereas
