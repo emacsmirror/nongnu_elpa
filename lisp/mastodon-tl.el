@@ -1538,8 +1538,7 @@ THREAD means the status will be displayed in a thread view.
 When DOMAIN, force inclusion of user's domain in their handle.
 UNFOLDED is a boolean meaning whether to unfold or fold item if foldable.
 NO-BYLINE means just insert toot body, used for folding."
-  (let* ((start-pos (point))
-         (reply-to-id (alist-get 'in_reply_to_id toot))
+  (let* ((reply-to-id (alist-get 'in_reply_to_id toot))
          (after-reply-status-p
           (when (and thread reply-to-id)
             (mastodon-tl--after-reply-status reply-to-id)))
@@ -1587,10 +1586,7 @@ NO-BYLINE means just insert toot body, used for folding."
       'notification-type type
       'toot-foldable toot-foldable
       'toot-folded (and toot-foldable (not unfolded)))
-     (if no-byline "" "\n"))
-    ;; media:
-    (when mastodon-tl--display-media-p
-      (mastodon-media--inline-images start-pos (point)))))
+     (if no-byline "" "\n"))))
 
 (defun mastodon-tl--is-reply (toot)
   "Check if the TOOT is a reply to another one (and not boosted).
@@ -1668,7 +1664,8 @@ NO-BYLINE means just insert toot body, used for folding."
 This function removes replies if user required.
 THREAD means the status will be displayed in a thread view.
 When DOMAIN, force inclusion of user's domain in their handle."
-  (let ((toots ;; hack to *not* filter replies on profiles:
+  (let ((start-pos (point))
+        (toots ;; hack to *not* filter replies on profiles:
          (if (eq (mastodon-tl--get-buffer-type) 'profile-statuses)
              toots
            (if (or ; we were called via --more*:
@@ -1680,6 +1677,9 @@ When DOMAIN, force inclusion of user's domain in their handle."
     (mapc (lambda (toot)
             (mastodon-tl--toot toot nil thread domain))
           toots)
+    ;; media:
+    (when mastodon-tl--display-media-p
+      (mastodon-media--inline-images start-pos (point)))
     (goto-char (point-min))))
 
 ;;; FOLDING
