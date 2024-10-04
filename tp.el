@@ -74,6 +74,7 @@ Should return an alist that can be parsed as JSON data."
 (defun tp-alist-to-transient (alist &optional prefix)
   "Convert ALIST to a list of transient args.
 Returns transient arguments in the form \"key=value\".
+Nested values are of the form \"parent.child=value\".
 PREFIX is a string and is used during recursion.
 Should work with JSON arrays as both lists and vectors."
   (flatten-tree
@@ -133,14 +134,14 @@ with `alist-get'."
                      data))
          (bools-parsed (if tp-convert-json-booleans-to-strings
                            (tp-bools-to-strs editable)
-                         editable)))
+                         editable))
+         (transient-list (tp-alist-to-transient bools-parsed)))
     ;; used in `tp-arg-changed-p' and `tp-only-changed-args'
     (setq tp-server-settings
           (if field
               (alist-get field bools-parsed)
             bools-parsed)
-          tp-settings-as-transient
-          (tp-alist-to-transient bools-parsed))))
+          tp-settings-as-transient transient-list)))
 
 (defun tp-only-changed-args (alist)
   "Remove elts from ALIST if value is changed.
