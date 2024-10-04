@@ -30,7 +30,7 @@
 
 ;;; Code:
 
-(require 'mastodon)
+(eval-when-compile (require 'subr-x))
 
 (autoload 'mastodon-http--api "mastodon-http")
 (autoload 'mastodon-http--get-params-async-json "mastodon-http")
@@ -52,6 +52,10 @@
 (autoload 'mastodon-tl--item-id "mastodon-tl")
 (autoload 'mastodon-tl--update "mastodon-tl")
 (autoload 'mastodon-views--view-follow-requests "mastodon-views")
+(autoload 'mastodon-tl--current-filters "mastodon-views")
+(autoload 'mastodon-tl--render-text "mastodon-tl")
+(autoload 'mastodon-notifications-get "mastodon")
+
 
 (defgroup mastodon-tl nil
   "Nofications in mastodon.el."
@@ -76,6 +80,7 @@ make them unweildy."
 
 (defvar mastodon-tl--buffer-spec)
 (defvar mastodon-tl--display-media-p)
+(defvar mastodon-mode-map)
 
 (defvar mastodon-notifications--types-alist
   '(("follow" . mastodon-notifications--follow)
