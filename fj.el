@@ -2283,7 +2283,7 @@ Inject INIT-TEXT into the buffer, for editing."
      ((name . ,(if (eq type 'comment) "issue ""title"))
       (prop . compose-title)
       (item-var . fj-compose-issue-title)
-      (face . lem-post-title-face)))
+      (face . fj-post-title-face)))
    init-text)
   (setq fj-compose-item-type
         (if edit
