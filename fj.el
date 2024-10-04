@@ -572,6 +572,30 @@ X and Y are sorting args."
                              (lambda ()
                                (message "Repo %s deleted!" repo))))))))
 
+(defun fj-starred-repos ()
+  "List your starred repos."
+  (interactive)
+  (fj--list-user-repos "starred" "starred" "?tab=stars"))
+
+(defun fj-watched-repos ()
+  "List your watched repos."
+  (interactive)
+  (fj--list-user-repos "subscriptions" "watched"))
+
+(defun fj--list-user-repos (endpoint buf-str &optional url-str)
+  "Fetch user data at /user/ENDPOINT and list them.
+BUF-STR is to name the buffer, URL-STR is for the buffer-spec."
+  (let* ((endpoint (format "/user/%s" endpoint))
+         (repos (fj-get endpoint))
+         (entries (fj-repo-tl-entries repos))
+         (buf (format "*fj-%s-repos*" buf-str)))
+    (with-current-buffer
+        (fj-repos-tl-render buf entries #'fj-repo-tl-mode)
+      (setq fj-buffer-spec
+            `( :owner fj-user
+               :url (when url-str
+                      ,(concat fj-host "/" fj-user url-str)))))))
+
 ;;; USER REPOS
 
 (defun fj-current-dir-repo ()
@@ -2710,10 +2734,26 @@ BUF-STR is the name of the buffer string to use."
          (owner (or owner (fj--get-buffer-spec :owner)))
          (buf (format "*fj-%s-%s*" repo buf-str))
          (data (funcall fetch-fun repo owner)))
-    (fedi-with-buffer buf 'fj-users-mode nil
-      (fj-render-users data)
-      (setq fj-current-repo repo)
-      (setq fj-buffer-spec `(:repo ,repo :owner ,owner)))))
+    (fj-render-users-do data buf repo owner)))
+
+(defun fj-account-users (fetch-fun buf-str &optional user)
+  "Render users linked somehow to USER.
+Fetch users by calling FETCH-FUN with no args.
+BUF-STR is the name of the `buffer-string' to use."
+  (let* ((user (or user fj-user))
+         (buf (format "*fj-%s" buf-str))
+         (data (funcall fetch-fun)))
+    (fj-render-users-do data buf nil user)))
+
+(defun fj-render-users-do (data buf-str &optional repo owner)
+  "Render DATA, a list of users.
+Fetch users by calling FETCH-FUN with two args, REPO and OWNER.
+BUF-STR is the name of the buffer string to use."
+  (fedi-with-buffer buf-str 'fj-users-mode nil
+    (fj-render-users data)
+    (when repo (setq fj-current-repo repo))
+    (setq fj-buffer-spec
+          `(:repo ,repo :owner ,owner))))
 
 (defun fj-get-repo-stargazers (repo owner) ;; page limit
   "Get stargazers of REPO by OWNER."
@@ -2736,6 +2776,26 @@ BUF-STR is the name of the buffer string to use."
   "Render watchers for REPO by OWNER."
   (interactive)
   (fj-repo-users #'fj-get-watchers "watchers" repo owner))
+
+(defun fj-get-user-followers ()
+  "Get users you `fj-user' is followed by."
+  (let* ((endpoint "/user/followers"))
+    (fj-get endpoint)))
+
+(defun fj-user-followers ()
+  "View users who follow you."
+  (interactive)
+  (fj-account-users #'fj-get-user-followers "followers"))
+
+(defun fj-get-user-following ()
+  "Get users you `fj-user' is following."
+  (let* ((endpoint "/user/following"))
+    (fj-get endpoint)))
+
+(defun fj-user-following ()
+  "View users you are following."
+  (interactive)
+  (fj-account-users #'fj-get-user-following "followers"))
 
 (defun fj-render-users (users)
   "Render USERS."
