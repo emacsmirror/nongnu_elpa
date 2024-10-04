@@ -74,6 +74,7 @@ Should return an alist that can be parsed as JSON data."
 (defun tp-alist-to-transient (alist &optional prefix)
   "Convert ALIST to a list of transient args.
 Returns transient arguments in the form \"key=value\".
+Nested values are of the form \"parent.child=value\".
 PREFIX is a string and is used during recursion.
 Should work with JSON arrays as both lists and vectors."
   (flatten-tree
@@ -133,14 +134,14 @@ with `alist-get'."
                      data))
          (bools-parsed (if tp-convert-json-booleans-to-strings
                            (tp-bools-to-strs editable)
-                         editable)))
+                         editable))
+         (transient-list (tp-alist-to-transient bools-parsed)))
     ;; used in `tp-arg-changed-p' and `tp-only-changed-args'
     (setq tp-server-settings
           (if field
               (alist-get field bools-parsed)
             bools-parsed)
-          tp-settings-as-transient
-          (tp-alist-to-transient bools-parsed))))
+          tp-settings-as-transient transient-list)))
 
 (defun tp-only-changed-args (alist)
   "Remove elts from ALIST if value is changed.
@@ -237,6 +238,14 @@ which case call it. else just return it."
            (eval slot))
           (t slot))))
 
+(defun tp-parse-transient-args-for-send (args)
+  "Parse args, a list of transient args, into an alist for sending."
+  (thread-first
+    (tp-transient-to-alist args)
+    (tp-only-changed-args)
+    (tp-dots-to-arrays)
+    (tp-bool-strs-to-json))) ;; FIXME: make optional?
+
 ;; CLASSES
 
 (defclass tp-option (transient-option)
@@ -253,8 +262,8 @@ default/current values.")
 (defclass tp-bool (tp-option)
   ((format :initform " %k %d %v")
    (choices :initarg :choices :initform
-            ;; '(lambda ()
-            'tp-choice-booleans))
+            (lambda ()
+              tp-choice-booleans)))
   "An option class for our choice booleans.
 We implement this as an option because we need to be able to
 explicitly send true/false values to the server, whereas

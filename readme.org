@@ -1,31 +1,48 @@
 * =tp.el=
 
-Some functions, classes and methods to make it easier to create transient menus that send complex POST, PUT, or PATCH requests to JSON APIs.
+Some functions, classes and methods to make it easier to create transient
+menus that send complex POST, PUT, or PATCH requests to JSON APIs.
 
 For more about transient, see https://github.com/magit/transient.
 
-A typical use-case is where you have a single endpoint that takes many different parameters. It's handy for a user to be able to set all the options, then make a single request to change all the settings on the server.
+NB: the code is very green so there'll likely be breaking changes.
 
-The classes and methods define some transient behaviours that make sense for dealing with APIs:
+A typical use-case is where you have a single endpoint that takes many
+different parameters. It's handy for a user to be able to set all the
+options, then make a single request to change all the settings on the
+server. It's also expected that they'll be able to view all the current
+settings on the server, and make modifications to them.
 
-- We handle fetching and saving current server settings, and initialize our transients with the values fetched
-- We compare the state of a current transient option against the server values
-- When reading a string from the user, we provide the server setting as default input
-- We distinguish the formatting of server settings and current transient setting
-- We can seemlessly handle making requests with arrays, i.e. =source[key]=, or =field[1][name]= parameters
-- We can easily fetch an infix's allowed values for =completing-read=.
+The classes and methods define some transient behaviours that make sense
+for dealing with APIs:
+
+- We handle fetching and saving current server settings, and initialize
+  our transients with the values fetched
+- We compare the state of a current transient option against the server
+  values
+- We distinguish the formatting of server settings and current transient
+  setting
+- When reading a string from the user, we provide the server setting as
+  default input
+- We can seemlessly handle making requests with arrays, i.e. =source[key]=,
+  or =field[1][name]= parameters
+- We can easily fetch an infix's allowed values for =completing-read=
+- We (ususally) only send changed values to the server.
 
 * classes
 
-We define three classes for our infixes, all subclassed off =transient-option=.
+We define three classes for our infixes, all subclassed off
+=transient-option=.
 
 ** =tp-option=
 
 Our generic option class, from which our other classes inherit.
 
-This can be used as is for choice-based (e.g. =completing-read=) option selection.
+This can be used as is for choice-based (e.g. =completing-read=) option
+selection.
 
-By default we always read, which means calling an infix never unsets it, but always switches the value or prompts to update it.
+By default we always read, which means calling an infix never unsets it,
+but always switches the value or prompts to update it.
 
 ** =tp-option-str=
 
@@ -35,26 +52,81 @@ We provide the current value from the server as default input.
 
 ** =tp-boolean=
 
-We implement a boolean off =transient-option= rather than using transient's switches because we need to be able to explicitly send request with either boolean value, whereas transient's switches are ignored if set to nil.
+We implement a boolean off =transient-option= rather than using transient's
+switches because we need to be able to explicitly send request with either
+boolean value, whereas transient's switches are ignored if set to nil.
 
-- =tp-boolean= objects are also formatted so that the true/false state is shown directly
+- =tp-boolean= objects are also formatted so that the true/false state is
+  shown directly
 - calling a =trp-boolean= option directly switches its value
 
-=tp-booleans= aren't strictly boolean, they can be used to cycle through longer lists of options.
+=tp-booleans= aren't strictly boolean, they can be used to cycle through
+longer lists of options.
 
 * tp methods
 
-Apart from modifying existing transient methods, we define some of our own.
+Apart from modifying existing transient methods, we define some of our
+own.
 
 ** =tp-get-server-val=
 
-Fetches the current value from the server. This can be reimplemented if the data to fetch is in some funky JSON rabbit hole.
+Fetches the current value from the server. This can be reimplemented if
+the data to fetch is in some funky JSON rabbit hole.
 
 ** =tp-arg-changed-p=
 
 Compares the option provided against the current value on the server.
 
+* parsing
+
+=tp.el= currently parses JSON data into transient ="key=value= pairs. Nested
+values are in =parent.child=value= pairs.
+
+This may change if we implement alist arguments in transient.
+
+JSON data can be complex, and =tp.el= doesn't aim to implement a general
+parser. It's also possible that the way to obtain data and the way to send
+it to the server are different in terms of nesting and field names, which
+makes automating or abstracting away the parsing aspect improbable.
+
+** JSON > transient
+
+When setting initial values of the transient, we fetch and parse data from
+the server:
+
+=tp-return-data= takes 3 argumements:
+- =fetch-fun=, a data fetching function as its first argument, this should
+  return JSON data parsed into elisp
+- =editable-var=, a list of strings, the names of the JSON fields that
+  should be retained. this allows us to parse a limited set of our JSON
+  into the transient (eg user settings, where the JSON is the whole user
+  object, but not all sections can be edited)
+- =field=, the name of a JSON field whose cdr contains the data we want to
+  retain.
+
+In addition, this function calls utility functions to convert boolean
+values to strings (if =tp-convert-json-booleans-to-strings= is non-nil), and
+to actually convert the alist to a list of transient args.
+
+** transient > JSON
+
+This step has to be done in a transient's suffix function before sending
+data to the server.
+
+=tp-parse-transient-args-for-send= calls three utility functions on a list
+of transient arguments for parsing them back into an alist for sending as
+parameters. If you don't want all of them to be called you can implement
+them manually.
+
+The two primary functions here are =tp-transient-to-alist= and
+=tp-only-changed-args=.
+
+There are also functions for converting lists containing nested argument
+keys (ie =parent.child== into =parent[child]==) and lists containing string
+booleans back to elisp JSON ones.
+
 * examples
 
 - https://codeberg.org/martianh/fj.el/src/branch/main/fj-transient.el
 - https://codeberg.org/martianh/mastodon.el/src/branch/transient/lisp/mastodon-transient.el
+
