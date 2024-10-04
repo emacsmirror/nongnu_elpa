@@ -81,6 +81,9 @@ The returned record should be a cons cell of the form (BACKEND . REVISION) where
 BACKEND is a symbol representing the version control system and REVISION is
 a string identifying the specific revision."
   (cond
+   ((when-let (((fboundp 'magit-stash-at-point))
+               (revision (magit-stash-at-point)))
+      (cons 'Git revision)))
    ((when-let (((fboundp 'magit-commit-at-point))
                (revision (magit-commit-at-point)))
       (cons 'Git revision)))
