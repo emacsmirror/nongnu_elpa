@@ -40,7 +40,7 @@
 (require 'markdown-mode)
 (require 'shr)
 
-(require 'fj-transient-repo)
+(require 'fj-transient)
 
 ;;; VARIABLES
 ;; ours
@@ -133,10 +133,6 @@ etc.")
      :extend t))
   "Face for item authors.")
 
-(defface fj-issue-label-face
-  '((t :inherit font-lock-keyword-face :box t))
-  "Face for issue labels.")
-
 (defface fj-issue-commit-face
   '((t :inherit (link ;font-lock-comment-face
                  highlight)))
@@ -150,6 +146,10 @@ Not used for items that are links.")
 (defface fj-simple-link-face
   '((t :underline t))
   "Face for links in v simple displays.")
+
+(defface fj-label-face
+  `((t :inherit secondary-selection :slant italic))
+  "Face for issue labels.")
 
 ;;; INSTANCE SETTINGS
 ;; https://forgejo.org/docs/latest/user/api-usage/#pagination
@@ -228,7 +228,8 @@ Works in issue view mode or in issues tl."
   "Return repo owner, whatever view we are in."
   (if (eq major-mode #'fj-repo-tl-mode)
       (fj-get-tl-col 1)
-    (fj--get-buffer-spec :owner)))
+    (or (fj--get-buffer-spec :owner)
+        fj-user))) ;; FIXME: fallback hack
 
 (defun fj--repo-name ()
   "Return repo name, whatever view we are in."
@@ -1025,13 +1026,39 @@ STATE is a string."
            display ,updated-display
            face default
            item ,type)
-          (,.title face ,(if (equal .state "closed")
-                             'fj-closed-issue-face
-                           'fj-item-face)
-                   id ,.id
-                   state ,.state
-                   type fj-issue-button
-                   item ,type)])))))
+          (,(concat
+             (propertize .title
+                         'face (if (equal .state "closed")
+                                   'fj-closed-issue-face
+                                 'fj-item-face))
+             (fj-plain-space)
+             (fj-propertize-labels .labels))
+           id ,.id
+           state ,.state
+           type fj-issue-button
+           item ,type)])))))
+
+(defun fj-plain-space ()
+  "Return a space with default face."
+  (propertize " "
+              'face 'default))
+
+(defun fj-propertize-labels (data)
+  "Propertize and concat labels in DATA."
+  (if (null data)
+      ""
+    (mapconcat
+     (lambda (l)
+       (let-alist l
+         (let ((bg (concat "#" .color)))
+           (propertize .name
+                       'face
+                       `( :inherit fj-label-face
+                          :background ,bg
+                          :foreground ,(readable-foreground-color bg))
+                       'help-echo .description))))
+     data
+     (fj-plain-space))))
 
 (defun fj-list-issues-+-pulls (repo &optional owner state)
   "List issues and pulls for REPO by OWNER, filtered by STATE."
@@ -1327,10 +1354,7 @@ OWNER is the repo owner."
 (defun fj-render-labels (labels)
   "Render LABELS, a list of issue labels."
   (concat "\nLabels: "
-          (cl-loop for l in labels
-                   concat (concat (propertize (alist-get 'name l)
-                                              'face 'fj-issue-label-face)
-                                  " "))))
+          (fj-propertize-labels labels)))
 
 (defun fj-edited-str-maybe (created updated)
   "If UPDATED timestamp is after CREATED timestamp, return edited str."
@@ -1610,7 +1634,10 @@ ENDPOINT is the API endpoint to hit."
     ("pull_push" . "%s %s %d commits %s")
     ("merge_pull" . "%s merged this pull request %s")
     ("pull_ref" . "%s referenced a PR that will close this %s")
-    ("delete_branch" . "%s deleted branch %s %s")))
+    ("delete_branch" . "%s deleted branch %s %s")
+    ("review" . "%s approved these changes %s")
+    ;; FIXME: add a request for changes review? not just approval?
+    ))
 
 (defun fj-render-timeline (data &optional author owner)
   "Render timeline DATA.
@@ -1697,6 +1724,9 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
                        (propertize .old_ref
                                    'face 'fj-name-face)
                        ts))
+              ;; reviews
+              ((equal .type "review")
+               (format format-str user ts))
               (t ;; just so we never break the rest of the view:
                (format "%s did unknown action %s" user ts)))
         'fj-item-data item)
@@ -1883,9 +1913,20 @@ Optionally specify repo OWNER and URL."
 ;; in repo's issues TL, or for repo entry at point:
 (defun fj-create-issue (&optional _)
   "Create issue in current repo or repo at point in tabulated listing."
+  ;; for this to work simply from eg a code file not an fj.el buffer,
+  ;; we need `fj--repo-owner' to work.
+  
+  ;; we cd fall back to `fj-user' but that's assuming we are creating an
+  ;; issue in a repo that's ours, not that we are contributing to.
+  ;; otherwise, maybe we cd prompt for "owner/repo" format rather than
+  ;; just repo name, allowing user to choose from their own repos but also
+  ;; forks, upstreams?
+
+  ;; maybe we allow the fallback to `fj-user' but also allow interactive
+  ;; modifying of it like repo name? cd format like "owner/repo" in
+  ;; compose buffer.
   (interactive)
-  (let* (;(entry (tabulated-list-get-entry))
-         (owner (fj--repo-owner))
+  (let* ((owner (fj--repo-owner))
          (repo (fj--repo-name)))
     (fj-issue-compose)
     (setq fj-compose-repo repo
@@ -2228,6 +2269,8 @@ Inject INIT-TEXT into the buffer, for editing."
 (defun fj-compose-send ()
   "Submit the issue or comment to your Forgejo instance.
 Call response and update functions."
+  ;; FIXME: handle `fj-compose-repo-owner' being unset?
+  ;; if we want to error about it, we also need a way to set it.
   (interactive)
   (let ((buf (buffer-name))
         (type fj-compose-item-type))
@@ -2515,7 +2558,9 @@ Used for a mouse-click EVENT on a link."
 (defun fj-next-tab-item ()
   "Jump to next tab item."
   (interactive)
-  (fedi-next-tab-item nil 'fj-tab-stop))
+  ;; FIXME: some links only have 'shr-tab-stop!
+  (or (fedi-next-tab-item nil 'fj-tab-stop)
+      (fedi-next-tab-item nil 'shr-tab-stop)))
 
 (defun fj-prev-tab-item ()
   "Jump to prev tab item."
@@ -2562,23 +2607,32 @@ Used for a mouse-click EVENT on a link."
   :group 'fj
   (read-only-mode 1))
 
-(defun fj-repo-commit-log (&optional repo owner)
-  "Render log of commits for REPO by OWNER."
-  (interactive)
+(defun fj-repo-commit-log (&optional prefix repo owner)
+  "Render log of commits for REPO by OWNER.
+If PREFIX arg, prompt for branch to show commits of."
+  (interactive "P")
   (let* ((repo (or repo (fj--get-buffer-spec :repo)))
          (owner (or owner (fj--get-buffer-spec :owner)))
-         (buf (format "*fj-%s-commit-log*" repo))
-         (data (fj-get-repo-commits repo owner)))
+         (branch (when prefix
+                   (completing-read "Branch: "
+                                    (fj-repo-branches-list repo owner))))
+         (data (fj-get-repo-commits repo owner branch))
+         (buf (format "*fj-%s-commit-log%s*" repo
+                      (when branch (format "-branch-%s" branch)))))
     (fedi-with-buffer buf 'fj-commits-mode nil
+      ;; FIXME: use `fj-other-window-maybe'
+      (setq-local header-line-format (format "Commits in branch: %s"
+                                             (or branch "default")))
       (fj-render-commits data)
       (setq fj-current-repo repo)
       (setq fj-buffer-spec `(:repo ,repo :owner ,owner)))))
 
-(defun fj-get-repo-commits (repo owner) ;; TODO: &optional sha path page limit not)
+(defun fj-get-repo-commits (repo owner &optional branch) ;; TODO: &optional sha path page limit not)
   ;; stat (diffs), verification, files, (optional, disable for speed)
-  "Get commits of REPO by OWNER."
+  "Get commits of REPO by OWNER.
+Optionally specify BRANCH to show commits from."
   (let ((endpoint (format "/repos/%s/%s/commits" owner repo))
-        (params '()))
+        (params `(("sha" . ,branch))))
     (fj-get endpoint params)))
 
 (defun fj-render-commits (commits)
@@ -2731,6 +2785,16 @@ BUF-STR is the name of the buffer string to use."
     (fedi-http--triage resp
                        (lambda ()
                          (message "Repo %s watched!" repo)))))
+
+;;; TOPICS
+;; topics are set in fj-transient.el
+
+(defun fj-get-repo-topics ()
+  "GET repo topics from the instance."
+  (let* ((repo (fj--get-buffer-spec :repo))
+         (owner (fj--get-buffer-spec :owner))
+         (endpoint (format "repos/%s/%s/topics" owner repo)))
+    (alist-get 'topics (fj-get endpoint))))
 
 (provide 'fj)
 ;;; fj.el ends here
