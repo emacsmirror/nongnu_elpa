@@ -230,6 +230,7 @@ while emojify,el has this feature and mastodon.el implements it.")
     (define-key map (kbd "U") #'mastodon-profile--update-user-profile-note)
     (define-key map (kbd "V") #'mastodon-profile--view-favourites)
     (define-key map (kbd "K") #'mastodon-profile--view-bookmarks)
+    (define-key map (kbd ":") #'mastodon-user-settings)
     ;; minor views
     (define-key map (kbd "R") #'mastodon-views--view-follow-requests)
     (define-key map (kbd "S") #'mastodon-views--view-scheduled-toots)
