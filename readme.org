@@ -134,5 +134,5 @@ booleans back to elisp JSON ones.
 * examples
 
 - https://codeberg.org/martianh/fj.el/src/branch/main/fj-transient.el
-- https://codeberg.org/martianh/mastodon.el/src/branch/transient/lisp/mastodon-transient.el
+- https://codeberg.org/martianh/mastodon.el/src/branch/develop/lisp/mastodon-transient.el
 
