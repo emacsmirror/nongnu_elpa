@@ -148,8 +148,12 @@ Not used for items that are links.")
   "Face for links in v simple displays.")
 
 (defface fj-label-face
-  `((t :inherit secondary-selection :slant italic))
+  '((t :inherit secondary-selection :slant italic))
   "Face for issue labels.")
+
+(defface fj-post-title-face
+  '((t :inherit font-lock-comment-face :weight bold))
+  "Face for post title in compose buffer.")
 
 ;;; INSTANCE SETTINGS
 ;; https://forgejo.org/docs/latest/user/api-usage/#pagination
@@ -2850,11 +2854,31 @@ BUF-STR is the name of the buffer string to use."
 ;; topics are set in fj-transient.el
 
 (defun fj-get-repo-topics ()
-  "GET repo topics from the instance."
+  "GET repo topics from the instance.
+Returns a list of strings."
   (let* ((repo (fj--get-buffer-spec :repo))
          (owner (fj--get-buffer-spec :owner))
          (endpoint (format "repos/%s/%s/topics" owner repo)))
     (alist-get 'topics (fj-get endpoint))))
+
+(defun fj-propertize-repo-topics ()
+  "Propertize topics of current repo."
+  (let ((topics (fj-get-repo-topics)))
+    (cl-loop for t in topics
+             concat (fj-propertize-topic t))))
+
+(defun fj-propertize-topic (topic)
+  "Propertize topic, a string."
+  (propertize topic
+              'face fj-topic-face))
+
+(defface fj-topic-face
+  `((t :box t :background ,(internal-get-lisp-face-attribute
+                            'default :foreground)
+       :foreground ,(readable-foreground-color
+                     (internal-get-lisp-face-attribute
+                      'default :foreground))))
+  "Face for repo topics.")
 
 (provide 'fj)
 ;;; fj.el ends here
