@@ -11,7 +11,7 @@ A typical use-case is where you have a single endpoint that takes many
 different parameters. It's handy for a user to be able to set all the
 options, then make a single request to change all the settings on the
 server. It's also expected that they'll be able to view all the current
-settings on the server, and make modifications to them.
+settings on the server, and make modifications to them for sending.
 
 The classes and methods define some transient behaviours that make sense
 for dealing with APIs:
@@ -124,6 +124,12 @@ The two primary functions here are =tp-transient-to-alist= and
 There are also functions for converting lists containing nested argument
 keys (ie =parent.child== into =parent[child]==) and lists containing string
 booleans back to elisp JSON ones.
+
+* requests
+
+=tp.el= doesn't actually implement any requests. if you want a library for requests, check out https://codeberg.org/martianh/fedi.el. 
+
+=fedi.el= also contains functions for converting the JSON alists that =tp.el= returns into request parameters.
 
 * examples
 
