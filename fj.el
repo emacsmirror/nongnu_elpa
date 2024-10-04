@@ -1611,7 +1611,10 @@ ENDPOINT is the API endpoint to hit."
     ("pull_push" . "%s %s %d commits %s")
     ("merge_pull" . "%s merged this pull request %s")
     ("pull_ref" . "%s referenced a PR that will close this %s")
-    ("delete_branch" . "%s deleted branch %s %s")))
+    ("delete_branch" . "%s deleted branch %s %s")
+    ("review" . "%s approved these changes %s")
+    ;; FIXME: add a request for changes review? not just approval?
+    ))
 
 (defun fj-render-timeline (data &optional author owner)
   "Render timeline DATA.
@@ -1698,6 +1701,9 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
                        (propertize .old_ref
                                    'face 'fj-name-face)
                        ts))
+              ;; reviews
+              ((equal .type "review")
+               (format format-str user ts))
               (t ;; just so we never break the rest of the view:
                (format "%s did unknown action %s" user ts)))
         'fj-item-data item)
