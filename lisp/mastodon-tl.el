@@ -1183,8 +1183,9 @@ SENSITIVE is a flag from the item's JSON data."
            (concat "Media:: "
                    (if (and mastodon-tl--display-caption-not-url-when-no-media
                             .description)
-                       .description)
-                   .preview_url)))
+                       .description
+                     .preview_url)))
+          (remote-url (or .remote_url .url)))
       (if (and mastodon-tl--display-media-p
                ;; if in notifs, also check notifs images custom:
                (if (or (mastodon-tl--buffer-type-eq 'notifications)
@@ -1192,12 +1193,12 @@ SENSITIVE is a flag from the item's JSON data."
                    mastodon-notifications--images-in-notifs
                  t))
           (mastodon-media--get-media-link-rendering ; placeholder: "[img]"
-           .preview_url (or .remote_url .url) ; for shr-browse-url
+           .preview_url remote-url ; for shr-browse-url
            .type .description sensitive)
         ;; return URL/caption:
         (concat (mastodon-tl--propertize-img-str-or-url
                  (concat "Media:: " .preview_url) ; string
-                 .preview_url .remote_url .type .description
+                 .preview_url remote-url .type .description
                  display-str 'shr-link .description sensitive)
                 "\n")))))
 
@@ -1220,7 +1221,7 @@ SENSITIVE is a flag from the item's JSON data."
               'face face
               'mouse-face 'highlight
               'mastodon-tab-stop 'image ; for do-link-action-at-point
-              'image-url full-remote-url ; for shr-browse-image
+              'image-url (or full-remote-url media-url) ; for shr-browse-image
               'keymap mastodon-tl--shr-image-map-replacement
               'image-description caption
               'sensitive sensitive
