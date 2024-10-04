@@ -229,7 +229,8 @@ Works in issue view mode or in issues tl."
    str))
 
 (defun fj--repo-owner ()
-  "Return repo owner, whatever view we are in."
+  "Return repo owner, whatever view we are in.
+If we fail, return `fj-user'." ;; poss insane
   (if (eq major-mode #'fj-repo-tl-mode)
       (fj-get-tl-col 1)
     (or (fj--get-buffer-spec :owner)
