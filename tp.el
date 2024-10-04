@@ -243,6 +243,7 @@ which case call it. else just return it."
   (thread-first
     (tp-transient-to-alist args)
     (tp-only-changed-args)
+    (tp-dots-to-arrays)
     (tp-bool-strs-to-json))) ;; FIXME: make optional?
 
 ;; CLASSES
