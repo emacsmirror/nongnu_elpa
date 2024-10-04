@@ -133,10 +133,6 @@ etc.")
      :extend t))
   "Face for item authors.")
 
-(defface fj-issue-label-face
-  '((t :inherit font-lock-keyword-face :box t))
-  "Face for issue labels.")
-
 (defface fj-issue-commit-face
   '((t :inherit (link ;font-lock-comment-face
                  highlight)))
@@ -150,6 +146,10 @@ Not used for items that are links.")
 (defface fj-simple-link-face
   '((t :underline t))
   "Face for links in v simple displays.")
+
+(defface fj-label-face
+  `((t :inherit secondary-selection :slant italic))
+  "Face for issue labels.")
 
 ;;; INSTANCE SETTINGS
 ;; https://forgejo.org/docs/latest/user/api-usage/#pagination
@@ -1026,13 +1026,39 @@ STATE is a string."
            display ,updated-display
            face default
            item ,type)
-          (,.title face ,(if (equal .state "closed")
-                             'fj-closed-issue-face
-                           'fj-item-face)
-                   id ,.id
-                   state ,.state
-                   type fj-issue-button
-                   item ,type)])))))
+          (,(concat
+             (propertize .title
+                         'face (if (equal .state "closed")
+                                   'fj-closed-issue-face
+                                 'fj-item-face))
+             (fj-plain-space)
+             (fj-propertize-labels .labels))
+           id ,.id
+           state ,.state
+           type fj-issue-button
+           item ,type)])))))
+
+(defun fj-plain-space ()
+  "Return a space with default face."
+  (propertize " "
+              'face 'default))
+
+(defun fj-propertize-labels (data)
+  "Propertize and concat labels in DATA."
+  (if (null data)
+      ""
+    (mapconcat
+     (lambda (l)
+       (let-alist l
+         (let ((bg (concat "#" .color)))
+           (propertize .name
+                       'face
+                       `( :inherit fj-label-face
+                          :background ,bg
+                          :foreground ,(readable-foreground-color bg))
+                       'help-echo .description))))
+     data
+     (fj-plain-space))))
 
 (defun fj-list-issues-+-pulls (repo &optional owner state)
   "List issues and pulls for REPO by OWNER, filtered by STATE."
@@ -1328,10 +1354,7 @@ OWNER is the repo owner."
 (defun fj-render-labels (labels)
   "Render LABELS, a list of issue labels."
   (concat "\nLabels: "
-          (cl-loop for l in labels
-                   concat (concat (propertize (alist-get 'name l)
-                                              'face 'fj-issue-label-face)
-                                  " "))))
+          (fj-propertize-labels labels)))
 
 (defun fj-edited-str-maybe (created updated)
   "If UPDATED timestamp is after CREATED timestamp, return edited str."
