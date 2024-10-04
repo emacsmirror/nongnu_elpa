@@ -219,13 +219,33 @@ This is just `-tree-map'."
            collect (cons (tp-dot-to-array (car a))
                          (cdr a))))
 
-(defun tp-dot-to-array (key)
-  "Convert KEY from tp dot annotation to array[key] annotation."
-  ;; FIXME: for multi dots, just return secondlast[last]?
+(defun tp-dot-to-array (key &optional only-last-two parent-suffix)
+  "Convert KEY from tp dot annotation to array[key] annotation.
+Handles multiple values by calling `tp-dot-to-array-multi', which
+see.
+If ONLY-LAST-TWO is non-nil, return only seconlast[last] from
+KEY."
   (let* ((split (split-string key "\\.")))
-    (if (< 1 (length split))
-        (concat (car (last split 2)) "[" (car (last split)) "]")
-      key)))
+    (cond ((not key) nil)
+          ((= 1 (length split)) key)
+          (only-last-two
+           (concat ;; but last item
+            (car (last split 2))
+            ;; last item
+            "[" (car (last split)) "]"))
+          (t (tp-dot-to-array-multi split parent-suffix)))))
+
+(defun tp-dot-to-array-multi (list parent-suffix)
+  "Wrap all elements of LIST in [square][brackets] save the first.
+Concatenate the results together."
+  (mapconcat
+   (lambda (x)
+     (if (equal x (car list))
+         (if parent-suffix
+             (concat x parent-suffix)
+           x)
+       (concat"[" x "]")))
+   list))
 
 (defun tp--get-choices (obj)
   "Return the value contained in OBJ's choices-slot.
