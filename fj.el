@@ -2828,13 +2828,8 @@ Returns a list of strings."
 (defun fj-propertize-repo-topics ()
   "Propertize topics of current repo."
   (let ((topics (fj-get-repo-topics)))
-    (cl-loop for t in topics
-             concat (fj-propertize-topic t))))
-
-(defun fj-propertize-topic (topic)
-  "Propertize topic, a string."
-  (propertize topic
-              'face fj-topic-face))
+    (cl-loop for top in topics
+             concat (fj-propertize-topic top))))
 
 (defface fj-topic-face
   `((t :box t :background ,(internal-get-lisp-face-attribute
@@ -2843,6 +2838,11 @@ Returns a list of strings."
                      (internal-get-lisp-face-attribute
                       'default :foreground))))
   "Face for repo topics.")
+
+(defun fj-propertize-topic (topic)
+  "Propertize TOPIC, a string."
+  (propertize topic
+              'face 'fj-topic-face))
 
 (provide 'fj)
 ;;; fj.el ends here
