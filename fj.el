@@ -61,16 +61,14 @@ Repo, owner, item number, url.")
   "Return a URL for ENDPOINT."
   (fedi-http--api endpoint fj-host "v1"))
 
-(defvar fj-link-keymap
-  (let ((map (make-sparse-keymap)))
-    (define-key map [return] #'fj-do-link-action)
-    (define-key map [mouse-2] #'fj-do-link-action-mouse)
-    (define-key map [follow-link] 'mouse-face)
-    map)
-  "The keymap for link-like things in buffer (except for shr.el links).
+(defvar-keymap fj-link-keymap
+  :doc "The keymap for link-like things in buffer (except for shr.el links).
 This will make the region of text act like like a link with mouse
 highlighting, mouse click action tabbing to next/previous link
-etc.")
+etc."
+  "<return>" #'fj-do-link-action
+  "<mouse-2>" #'fj-do-link-action-mouse
+  "<remap> <follow-link>" #'mouse-face)
 
 ;; composing vars
 
@@ -513,12 +511,9 @@ X and Y are sorting args."
   "L" #'fj-repo-copy-clone-url
   "j" #'imenu)
 
-(defvar fj-user-repo-tl-mode-map
-  (let ((map (make-sparse-keymap)))
-    (set-keymap-parent map fj-repo-tl-map)
-    ;; (define-key map (kbd "g") #'fj-repo-tl-reload)
-    map)
-  "Map for `fj-user-repo-tl-mode', a tabluated list of repos.")
+(defvar-keymap fj-user-repo-tl-mode-map
+  :doc "Map for `fj-user-repo-tl-mode', a tabluated list of repos."
+  :parent fj-repo-tl-map)
 
 (define-derived-mode fj-user-repo-tl-mode tabulated-list-mode
   "fj-user-repos"
@@ -1828,11 +1823,9 @@ If TOPIC, QUERY is a search for topic keywords."
 
 ;;; SEARCH REPOS TL
 
-(defvar fj-repo-tl-mode-map
-  (let ((map (make-sparse-keymap)))
-    (set-keymap-parent map fj-repo-tl-map)
-    map)
-  "Map for `fj-repo-tl-mode', a tabluated list of repos.")
+(defvar-keymap fj-repo-tl-mode-map
+  :doc   "Map for `fj-repo-tl-mode', a tabluated list of repos."
+  :parent fj-repo-tl-map)
 
 (define-derived-mode fj-repo-tl-mode tabulated-list-mode
   "fj-repo-search"
