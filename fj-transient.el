@@ -139,7 +139,7 @@
                                   item-str params)))))
 
 (defun fj-repo-settings-patch (repo owner params)
-  "Update settings for REPO, sending a PATCH request.
+  "Update settings for REPO by OWNER, sending a PATCH request.
 PARAMS is an alist of any settings to be changed."
   (let* ((endpoint (format "repos/%s/%s" owner repo)))
     (fj-transient-patch endpoint params)))
