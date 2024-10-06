@@ -1694,7 +1694,7 @@ If NEW? is non-nil, increment new notes log by 1."
 DATE: Date to log the note review on the activity-log."
   (when (gnosis-suspended-p id)
     (message "Suspended note with id: %s" id)
-    (sit-for 0.3)) ;; this should only occur in testing/dev cases
+    (sit-for 0.3)) ;; this should only occur in testing
   (let* ((type (gnosis-get 'type 'notes `(= id ,id)))
          (func-name (intern (format "gnosis-review-%s" (downcase type)))))
     (if (fboundp func-name)
@@ -2532,7 +2532,7 @@ If STRING-SECTION is nil, apply FACE to the entire STRING."
 				     :question "Which one is the capital of Greece?"
 				     :choices '("Athens" "Sparta" "Rome" "Berlin")
 				     :correct-answer 1
-				     :extra "Athens (Αθήνα) is the largest city of Greece & one of the world's oldest cities, with it's recorded history spanning over 3,500 years."
+				     :extra "Athens (Ἀθήνα) is the largest city of Greece & one of the world's oldest cities, with it's recorded history spanning over 3,500 years."
 				     :tags note-tags)
 	       (gnosis-add-note--cloze :deck deck-name
 				       :note "GNU Emacs is an extensible editor created by {{c1::Richard}} {{c1::Stallman}} in {{c2::1984::year}}"
