@@ -115,19 +115,6 @@ When nil, the image will be displayed at its original size."
   :type 'integer
   :group 'gnosis)
 
-(defcustom gnosis-review-keybindings
-  '((?n . "next")
-    (?o . "override")
-    (?s . "suspend")
-    (?e . "edit")
-    (?q . "quit"))
-  "List of action bindings for `gnosis-review-actions'.
-
-Each element should be a list of a single character (the key),
-a string describing the action."
-  :type '(alist :key-type character :value-type string)
-  :group 'gnosis)
-
 (defvar gnosis-images-dir (expand-file-name "images" gnosis-dir)
   "Gnosis images directory.")
 
