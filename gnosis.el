@@ -1797,18 +1797,21 @@ NOTE: Note ID
 NOTE-COUNT: Total notes reviewed
 
 To customize the keybindings, adjust `gnosis-review-keybindings'."
-  (gnosis-validate-actions-keys)
-  (let* ((choices (mapcar (lambda (pair)
-                            (list (car pair) (cdr pair)))
-                          gnosis-review-keybindings))
-         (choice (car (read-multiple-choice "Note actions" choices)))
-         (action (alist-get choice gnosis-review-keybindings)))
-    (pcase action
-      ("next" (gnosis-review-result note success))
-      ("override" (gnosis-review-action--override success note note-count))
-      ("suspend" (gnosis-review-action--suspend success note note-count))
-      ("edit" (gnosis-review-action--edit success note note-count))
-      ("quit" (gnosis-review-action--quit success note)))))
+  (let* ((choice
+	  (read-char-choice
+	   (format "Action: %sext gnosis, %sverride result, %suspend note, %sdit note, %suit review session"
+		   (propertize "n" 'face 'match)
+		   (propertize "o" 'face 'match)
+		   (propertize "s" 'face 'match)
+		   (propertize "e" 'face 'match)
+		   (propertize "q" 'face 'match))
+	   '(?n ?o ?s ?e ?q))))
+    (pcase choice
+      (?n (gnosis-review-result note success))
+      (?o (gnosis-review-action--override success note note-count))
+      (?s (gnosis-review-action--suspend success note note-count))
+      (?e (gnosis-review-action--edit success note note-count))
+      (?q (gnosis-review-action--quit success note)))))
 
 (defun gnosis-review-session (notes &optional due note-count)
   "Start review session for NOTES.
