@@ -1,4 +1,4 @@
-This is gnosis.info, produced by .texi2any-real version 7.1 from
+This is gnosis.info, produced by .texi2any-real version 7.1.1 from
 gnosis.texi.
 
 INFO-DIR-SECTION Emacs misc features
@@ -19,10 +19,15 @@ learning environment tailored to each specific topic/subject.
 
 This manual is written for Gnosis version 0.4.2, released on 2024-09-5.
 
-   • Official manual:
+   • Manual:
         • <https://elpa.nongnu.org/nongnu/doc/gnosis.html>
+        • <https://thanosapollo.org/projects/gnosis/> (Mirror)
    • Git repositories:
         • <https://git.thanosapollo.org/gnosis>
+        • <https://codeberg.org/thanosapollo/emacs-gnosis> (Mirror)
+        • 
+          <https://git.savannah.gnu.org/cgit/emacs/nongnu.git/?h=elpa/gnosis>
+          (Mirror)
 
 * Menu:
 
@@ -32,8 +37,9 @@ This manual is written for Gnosis version 0.4.2, released on 2024-09-5.
 * Customization::
 * Gnosis Algorithm::
 * Editing notes::
-* Sync between devices::
 * Configuring Note Types::
+* Sync between devices::
+* Interactions with other software::
 
 -- The Detailed Node Listing --
 
@@ -60,6 +66,10 @@ Configuring Note Types
 
 * Custom Note Types::
 * Development::
+
+Interactions with other software
+
+* emacs-no-littering::
 
 
 
@@ -336,7 +346,7 @@ next interval value: 0 days (0), 1 day later (1), 2 days later (2), and
 successful reviews, it's next review date will be on the same date.
 
 
-File: gnosis.info,  Node: Editing notes,  Next: Sync between devices,  Prev: Gnosis Algorithm,  Up: Top
+File: gnosis.info,  Node: Editing notes,  Next: Configuring Note Types,  Prev: Gnosis Algorithm,  Up: Top
 
 6 Editing notes
 ***************
@@ -348,38 +358,9 @@ File: gnosis.info,  Node: Editing notes,  Next: Sync between devices,  Prev: Gno
           note you want to edit and press ‘e’
 
 
-File: gnosis.info,  Node: Sync between devices,  Next: Configuring Note Types,  Prev: Editing notes,  Up: Top
+File: gnosis.info,  Node: Configuring Note Types,  Next: Sync between devices,  Prev: Editing notes,  Up: Top
 
-7 Sync between devices
-**********************
-
-Gnosis uses git to maintain data integrity and facilitate
-synchronization across devices.
-
-   You will need to configure your remote manually.
-
-   Example:
-
-     cd ~/.emacs.d/gnosis # default location for gnosis
-     git init # After completing your first review session, a git repo should have been initialized automatically.
-     git remote add origin <remote_url>
-     git push --set-upstream origin master
-
-   You can interactively use ‘gnosis-vc-push’ & ‘gnosis-vc-pull’.  As
-the name suggests, they rely on ‘vc’ to work properly.
-
-   Depending on your setup, ‘vc’ might require an external package for
-the ssh passphrase dialog, such as ‘x11-ssh-askpass’.
-
-   To automatically push changes after a review session, add this to
-your configuration:
-     (setf gnosis-vc-auto-push t)
-     (gnosis-vc-pull) ;; Run vc-pull for gnosis on startup
-
-
-File: gnosis.info,  Node: Configuring Note Types,  Prev: Sync between devices,  Up: Top
-
-8 Configuring Note Types
+7 Configuring Note Types
 ************************
 
 * Menu:
@@ -390,7 +371,7 @@ File: gnosis.info,  Node: Configuring Note Types,  Prev: Sync between devices,  
 
 File: gnosis.info,  Node: Custom Note Types,  Next: Development,  Up: Configuring Note Types
 
-8.1 Custom Note Types
+7.1 Custom Note Types
 =====================
 
 Each gnosis note type has an _interactive_ function, named
@@ -418,7 +399,7 @@ prompted to enter anything for ‘extra’ & ‘images’.
 
 File: gnosis.info,  Node: Development,  Prev: Custom Note Types,  Up: Configuring Note Types
 
-8.2 Development
+7.2 Development
 ===============
 
 To make development and customization easier, gnosis comes with
@@ -428,30 +409,87 @@ for testing.
    To exit the testing environment, rerun ‘M-x gnosis-test-start’ and
 then enter ‘n’ (no) at the prompt "Start development env?"
 
+
+File: gnosis.info,  Node: Sync between devices,  Next: Interactions with other software,  Prev: Configuring Note Types,  Up: Top
+
+8 Sync between devices
+**********************
+
+Gnosis uses git to maintain data integrity and facilitate
+synchronization across devices.
+
+   You will need to configure your remote manually.
+
+   Example:
+
+     cd ~/.emacs.d/gnosis # default location for gnosis, no-littering is ~/.emacs.d/var/gnosis
+     git init # After completing your first review session, a git repo should have been initialized automatically.
+     git remote add origin <remote_url>
+     git push --set-upstream origin master
+
+   You can interactively use ‘gnosis-vc-push’ & ‘gnosis-vc-pull’.  As
+the name suggests, they rely on ‘vc’ to work properly.
+
+   Depending on your setup, ‘vc’ might require an external package for
+the ssh passphrase dialog, such as ‘x11-ssh-askpass’.
+
+   To automatically push changes after a review session, add this to
+your configuration:
+     (setf gnosis-vc-auto-push t)
+     (gnosis-vc-pull) ;; Run vc-pull for gnosis on startup
+
+
+File: gnosis.info,  Node: Interactions with other software,  Prev: Sync between devices,  Up: Top
+
+9 Interactions with other software
+**********************************
+
+* Menu:
+
+* emacs-no-littering::
+
+
+File: gnosis.info,  Node: emacs-no-littering,  Up: Interactions with other software
+
+9.1 emacs-no-littering
+======================
+
+If you are a user of emacs-no-littering
+(https://github.com/emacscollective/no-littering), you can theme Gnosis
+to fit its standards by adding the following snippet to your
+configuration:
+
+     (setq gnosis-dir (no-littering-expand-var-file-name "gnosis/"))
+
+   This sets ‘gnosis-dir’ to ‘~/.emacs.d/var/gnosis’, in line with the
+folders of other packages.
+
 
 
 Tag Table:
-Node: Top250
-Node: Introduction1341
-Node: Adding notes2354
-Node: Note Types2765
-Node: Cloze2983
-Node: MC-Cloze (Under development)4145
-Node: MCQ5133
-Node: Basic Type5571
-Node: Double5847
-Node: y-or-n6113
-Node: Customization6515
-Node: Image size6700
-Node: Typos | String Comparison6986
-Node: Gnosis Algorithm7761
-Node: Anagnosis Event8408
-Node: Proto9149
-Node: Editing notes9916
-Node: Sync between devices10308
-Node: Configuring Note Types11335
-Node: Custom Note Types11525
-Node: Development12735
+Node: Top252
+Node: Introduction1674
+Node: Adding notes2687
+Node: Note Types3098
+Node: Cloze3316
+Node: MC-Cloze (Under development)4478
+Node: MCQ5466
+Node: Basic Type5904
+Node: Double6180
+Node: y-or-n6446
+Node: Customization6848
+Node: Image size7033
+Node: Typos | String Comparison7319
+Node: Gnosis Algorithm8094
+Node: Anagnosis Event8741
+Node: Proto9482
+Node: Editing notes10249
+Node: Configuring Note Types10643
+Node: Custom Note Types10855
+Node: Development12065
+Node: Sync between devices12484
+Node: Interactions with other software13569
+Node: emacs-no-littering13774
 
 End Tag Table
 

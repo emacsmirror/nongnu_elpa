@@ -62,6 +62,8 @@
 (defvar gnosis-dashboard-note-ids nil
   "Store note ids for dashboard.")
 
+(defvar gnosis-dashboard-buffer-name "*Gnosis Dashboard*")
+
 (defvar gnosis-dashboard-search-value nil
   "Store search value.")
 
@@ -143,63 +145,6 @@ Skips days where no note was reviewed."
 	       do (setq total (+ total entry)))
       (/ total (max (length (remove 0 entries)) 1))))
 
-;; TODO: Add more conds & faces
-(defun gnosis-dashboard--graph-propertize (string num)
-  "Propertize STRING depending on the NUM of reviews."
-  (cond ((= num 0)
-	 (propertize string 'face 'shadow))
-	((> num 0)
-	 (propertize string 'face 'font-lock-constant-face))))
-
-(defun gnosis-dashboard--add-padding (str-length)
-  "Add padding for STR-LENGTH."
-  (let ((padding (/ (- (window-width) str-length) 2)))
-    (make-string padding ?\s)))
-
-(defun gnosis-dashboard-reviews-graph (dates &optional )
-  "Insert graph for month DATES.
-
-Optionally, use  when using multiple months."
-  (let ((count 0)
-	(row 0)
-	(start-column (current-column))
-	(end-column nil))
-    (cl-loop for day in dates
-	     when (= count 0)
-	     do (let ((current-column (current-column)))
-		  (and (< (move-to-column start-column) start-column)
-		       ;; Add spaces to reach start-column.
-		       (insert (make-string (- start-column current-column) ?\s))))
-	     (insert " ")
-	     do (end-of-line)
-	     (insert (gnosis-dashboard--graph-propertize (format "[%s] " (if (= day 0) "-" "x")) day))
-	     (cl-incf count)
-	     when (= count 7)
-	     do
-	     (setq end-column (current-column))
-	     (setq count 0)
-	     (insert " ")
-	     (cl-incf row)
-	     (end-of-line)
-	     (when (and (/= (forward-line 1) 0) (eobp))
-	       (insert "\n")
-	       (forward-line 0)))
-    (insert (make-string (- end-column (current-column)) ?\s))
-    (insert " ")))
-;; TODO: Refactor this!
-(defun gnosis-dashboard-month-overview (&optional num)
-  "Insert review graph for MONTHS."
-  (gnosis-insert-separator)
-  (let* ((point (point))
-	 (month (car (calendar-current-date))))
-    (insert (gnosis-dashboard--add-padding (min (* (max num 1) 50) (window-width))))
-    (while (<= month (+ (car (calendar-current-date)) num))
-      ;; (insert (format "%d" month))
-      (gnosis-dashboard-reviews-graph (gnosis-dashboard-month-reviews month))
-      (goto-char point)
-      (end-of-line)
-      (cl-incf month))))
-
 (defun gnosis-dashboard-output-note (id)
   "Output contents for note with ID, formatted for gnosis dashboard."
   (cl-loop for item in (append (gnosis-select '[main options answer tags type] 'notes `(= id ,id) t)
@@ -251,8 +196,8 @@ Optionally, use  when using multiple months."
 (defun gnosis-dashboard-output-notes (note-ids)
   "Return NOTE-IDS contents on gnosis dashboard."
   (cl-assert (listp note-ids) t "`note-ids' must be a list of note ids.")
-  (pop-to-buffer-same-window "*gnosis-dashboard*")
-  (gnosis-dashboard-mode)
+  (pop-to-buffer-same-window gnosis-dashboard-buffer-name)
+  (gnosis-dashboard-enable-mode)
   (gnosis-dashboard-notes-mode)
   (setf tabulated-list-format `[("Main" ,(/ (window-width) 4) t)
 				("Options" ,(/ (window-width) 6) t)
@@ -333,8 +278,8 @@ Optionally, use  when using multiple months."
 (defun gnosis-dashboard-output-tags (&optional tags)
   "Format gnosis dashboard with output of TAGS."
   (let ((tags (or tags (gnosis-get-tags--unique))))
-    (pop-to-buffer-same-window "*gnosis-dashboard*")
-    (gnosis-dashboard-mode)
+    (pop-to-buffer-same-window gnosis-dashboard-buffer-name)
+    (gnosis-dashboard-enable-mode)
     (gnosis-dashboard-tags-mode)
     (setf gnosis-dashboard--current '(:type 'tags))
     (setq tabulated-list-format [("Name" 35 t)
@@ -369,8 +314,8 @@ Optionally, use  when using multiple months."
 
 (defun gnosis-dashboard-output-decks ()
   "Return deck contents for gnosis dashboard."
-  (pop-to-buffer-same-window "*gnosis-dashboard*")
-  (gnosis-dashboard-mode)
+  (pop-to-buffer-same-window gnosis-dashboard-buffer-name)
+  (gnosis-dashboard-enable-mode)
   (gnosis-dashboard-decks-mode)
   (setq tabulated-list-format [("Name" 15 t)
 			       ("Total Notes" 10 gnosis-dashboard-sort-total-notes)])
@@ -435,10 +380,18 @@ When called with called with a prefix, unsuspend all notes of deck."
 (define-derived-mode gnosis-dashboard-mode tabulated-list-mode "Gnosis Dashboard"
   "Major mode for displaying Gnosis dashboard."
   :keymap gnosis-dashboard-mode-map
+  :interactive nil
   (setq tabulated-list-padding 2
 	tabulated-list-sort-key nil
 	gnosis-dashboard--selected-ids nil)
   (display-line-numbers-mode 0))
+
+(defun gnosis-dashboard-enable-mode ()
+  "Enable `gnosis-dashboard-mode'.
+
+This should only be enabled in a gnosis dashboard buffer."
+  (when (string= (buffer-name) gnosis-dashboard-buffer-name)
+    (gnosis-dashboard-mode)))
 
 (cl-defun gnosis-dashboard--search (&optional dashboard-type (note-ids nil))
   "Display gnosis dashboard.
@@ -544,7 +497,7 @@ DASHBOARD-TYPE: either 'Notes' or 'Decks' to display the respective dashboard."
   "Test function to create an editable field and a search button."
   (interactive)
   (delete-other-windows)
-  (let ((buffer-name "*Gnosis Dashboard*")
+  (let ((buffer-name gnosis-dashboard-buffer-name)
 	(due-notes (gnosis-review-get-due-notes)))
     (when (get-buffer buffer-name)
       (kill-buffer buffer-name))  ;; Kill the existing buffer if it exists
@@ -593,7 +546,7 @@ DASHBOARD-TYPE: either 'Notes' or 'Decks' to display the respective dashboard."
         (widget-setup))
       (pop-to-buffer-same-window buffer)
       (goto-char (point-min))
-      (gnosis-dashboard-mode)
+      (gnosis-dashboard-enable-mode)
       (gnosis-dashboard-menu))))
 
 (provide 'gnosis-dashboard)

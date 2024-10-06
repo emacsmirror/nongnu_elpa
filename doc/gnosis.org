@@ -4,8 +4,8 @@
 #+language: en
 #+options: ':t toc:nil author:t email:t num:t
 #+startup: content
-#+macro: stable-version 0.4.2
-#+macro: release-date 2024-09-5
+#+macro: stable-version 0.4.4
+#+macro: release-date 2024-10-06
 #+macro: file @@texinfo:@file{@@$1@@texinfo:}@@
 #+macro: space @@texinfo:@: @@
 #+macro: kbd @@texinfo:@kbd{@@$1@@texinfo:}@@
@@ -30,10 +30,13 @@ learning environment tailored to each specific topic/subject.
 #+texinfo: @noindent
 This manual is written for Gnosis version {{{stable-version}}}, released on {{{release-date}}}.
 
-+ Official manual:
++ Manual:
   + <https://elpa.nongnu.org/nongnu/doc/gnosis.html>
+  + <https://thanosapollo.org/projects/gnosis/> (Mirror)
 + Git repositories:
   + <https://git.thanosapollo.org/gnosis>
+  + <https://codeberg.org/thanosapollo/emacs-gnosis> (Mirror)
+  + <https://git.savannah.gnu.org/cgit/emacs/nongnu.git/?h=elpa/gnosis> (Mirror)
 
 #+texinfo: @insertcopying
 
@@ -185,7 +188,6 @@ difference of at most one character edit.
 To demonstrate, 'example' and 'examples' will be recognized as
 similar, considering that the latter involves just one additional
 character."
-
 * Gnosis Algorithm
 
 Each gnosis note has a gnosis score, which is a list of 3 values,
@@ -238,35 +240,6 @@ it's next review date will be on the same date.
 
     + You can edit a note after review by pressing ~e~
     + Open =gnosis-dashboard= with =M-x gnosis-dashboard=, find the note you want to edit and press ~e~
-* Sync between devices
-
-Gnosis uses git to maintain data integrity and facilitate
-synchronization across devices.
-
-You will need to configure your remote manually.
-
-Example:
-
-#+begin_src bash
- cd ~/.emacs.d/gnosis # default location for gnosis
- git init # After completing your first review session, a git repo should have been initialized automatically.
- git remote add origin <remote_url>
- git push --set-upstream origin master
-#+end_src
-
-
-You can interactively use =gnosis-vc-push= & =gnosis-vc-pull=. As the
-name suggests, they rely on =vc= to work properly.
-
-Depending on your setup, =vc= might require an external package for
-the ssh passphrase dialog, such as ~x11-ssh-askpass~.
-
-To automatically push changes after a review session, add this to your configuration:
-#+begin_src emacs-lisp
-(setf gnosis-vc-auto-push t)
-(gnosis-vc-pull) ;; Run vc-pull for gnosis on startup
-#+end_src
-
 * Configuring Note Types
 ** Custom Note Types
 Each gnosis note type has an /interactive/ function, named
@@ -300,3 +273,44 @@ testing.
 
 To exit the testing environment, rerun =M-x gnosis-test-start= and
 then enter =n= (no) at the prompt "Start development env?"
+
+* Sync between devices
+
+Gnosis uses git to maintain data integrity and facilitate
+synchronization across devices.
+
+You will need to configure your remote manually.
+
+Example:
+
+#+begin_src bash
+ cd ~/.emacs.d/gnosis # default location for gnosis, no-littering is ~/.emacs.d/var/gnosis
+ git init # After completing your first review session, a git repo should have been initialized automatically.
+ git remote add origin <remote_url>
+ git push --set-upstream origin master
+#+end_src
+
+
+You can interactively use =gnosis-vc-push= & =gnosis-vc-pull=. As the
+name suggests, they rely on =vc= to work properly.
+
+Depending on your setup, =vc= might require an external package for
+the ssh passphrase dialog, such as ~x11-ssh-askpass~.
+
+To automatically push changes after a review session, add this to your configuration:
+#+begin_src emacs-lisp
+(setf gnosis-vc-auto-push t)
+(gnosis-vc-pull) ;; Run vc-pull for gnosis on startup
+#+end_src
+
+* Interactions with other software
+** emacs-no-littering
+
+If you are a user of [[https://github.com/emacscollective/no-littering][emacs-no-littering]], you can theme Gnosis to fit
+its standards by adding the following snippet to your configuration:
+
+#+begin_src emacs-lisp
+(setq gnosis-dir (no-littering-expand-var-file-name "gnosis/"))
+#+end_src
+
+This sets =gnosis-dir= to =~/.emacs.d/var/gnosis=, in line with the folders of other packages.

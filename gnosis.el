@@ -5,7 +5,7 @@
 ;; Author: Thanos Apollo <public@thanosapollo.org>
 ;; Keywords: extensions
 ;; URL: https://thanosapollo.org/projects/gnosis
-;; Version: 0.4.4-dev
+;; Version: 0.4.4
 
 ;; Package-Requires: ((emacs "27.2") (emacsql "4.0.1") (compat "29.1.4.2") (transient "0.7.2"))
 
@@ -113,19 +113,6 @@ When nil, the image will be displayed at its original size."
 
 When nil, the image will be displayed at its original size."
   :type 'integer
-  :group 'gnosis)
-
-(defcustom gnosis-review-keybindings
-  '((?n . "next")
-    (?o . "override")
-    (?s . "suspend")
-    (?e . "edit")
-    (?q . "quit"))
-  "List of action bindings for `gnosis-review-actions'.
-
-Each element should be a list of a single character (the key),
-a string describing the action."
-  :type '(alist :key-type character :value-type string)
   :group 'gnosis)
 
 (defvar gnosis-images-dir (expand-file-name "images" gnosis-dir)
@@ -1193,7 +1180,8 @@ Valid cloze formats include:
 (defun gnosis-cloze-extract-answers (nested-lst)
   "Extract cloze answers for string clozes inside the NESTED-LST.
 
-This function should be used in combination with `gnosis-cloze-extract-answers'."
+This function should be used in combination with
+`gnosis-cloze-extract-contents'."
   (mapcar (lambda (lst)
             (mapcar (lambda (str)
                       (replace-regexp-in-string "::\\(.*\\)" "" str))
@@ -1203,7 +1191,8 @@ This function should be used in combination with `gnosis-cloze-extract-answers'.
 (defun gnosis-cloze-extract-hints (nested-lst)
   "Extract cloze hints for string clozes inside the NESTED-LST.
 
-This function should be used in combination with `gnosis-cloze-extract-answers'."
+This function should be used in combination with
+`gnosis-cloze-extract-contents'."
   (mapcar (lambda (lst)
             (mapcar (lambda (str)
                       (when (string-match "::\\(.*\\)" str)
@@ -1693,13 +1682,19 @@ If NEW? is non-nil, increment new notes log by 1."
     (gnosis-update 'activity-log `(= reviewed-total ,inc-total) `(= date ',date))
     (and new? (gnosis-update 'activity-log `(= reviewed-new ,inc-new) `(= date ',date)))))
 
+(defun gnosis-history-clear ()
+  "Delete all activity log entries."
+  (interactive)
+  (when (y-or-n-p "Delete all activity log?")
+    (emacsql gnosis-db [:delete :from activity-log])))
+
 (defun gnosis-review-note (id)
   "Start review for note with value of id ID, if note is unsuspended.
 
 DATE: Date to log the note review on the activity-log."
   (when (gnosis-suspended-p id)
     (message "Suspended note with id: %s" id)
-    (sit-for 0.3)) ;; this should only occur in testing/dev cases
+    (sit-for 0.3)) ;; this should only occur in testing
   (let* ((type (gnosis-get 'type 'notes `(= id ,id)))
          (func-name (intern (format "gnosis-review-%s" (downcase type)))))
     (if (fboundp func-name)
@@ -1794,13 +1789,6 @@ be called with new SUCCESS value plus NOTE & NOTE-COUNT."
   (gnosis-display-next-review note success)
   (gnosis-review-actions success note note-count))
 
-(defun gnosis-validate-actions-keys ()
-  "Ensure all actions in `gnosis-review-actions-keys` are valid."
-  (let ((valid-actions '("next" "override" "suspend" "edit" "quit")))
-    (dolist (entry gnosis-review-keybindings)
-      (cl-assert (member (cdr entry) valid-actions) nil
-                 "Invalid action: %s" (cdr entry)))))
-
 (defun gnosis-review-actions (success note note-count)
   "Specify action during review of note.
 
@@ -1809,18 +1797,21 @@ NOTE: Note ID
 NOTE-COUNT: Total notes reviewed
 
 To customize the keybindings, adjust `gnosis-review-keybindings'."
-  (gnosis-validate-actions-keys)
-  (let* ((choices (mapcar (lambda (pair)
-                            (list (car pair) (cdr pair)))
-                          gnosis-review-keybindings))
-         (choice (car (read-multiple-choice "Note actions" choices)))
-         (action (alist-get choice gnosis-review-keybindings)))
-    (pcase action
-      ("next" (gnosis-review-result note success))
-      ("override" (gnosis-review-action--override success note note-count))
-      ("suspend" (gnosis-review-action--suspend success note note-count))
-      ("edit" (gnosis-review-action--edit success note note-count))
-      ("quit" (gnosis-review-action--quit success note)))))
+  (let* ((choice
+	  (read-char-choice
+	   (format "Action: %sext gnosis, %sverride result, %suspend note, %sdit note, %suit review session"
+		   (propertize "n" 'face 'match)
+		   (propertize "o" 'face 'match)
+		   (propertize "s" 'face 'match)
+		   (propertize "e" 'face 'match)
+		   (propertize "q" 'face 'match))
+	   '(?n ?o ?s ?e ?q))))
+    (pcase choice
+      (?n (gnosis-review-result note success))
+      (?o (gnosis-review-action--override success note note-count))
+      (?s (gnosis-review-action--suspend success note note-count))
+      (?e (gnosis-review-action--edit success note note-count))
+      (?q (gnosis-review-action--quit success note)))))
 
 (defun gnosis-review-session (notes &optional due note-count)
   "Start review session for NOTES.
@@ -2544,7 +2535,7 @@ If STRING-SECTION is nil, apply FACE to the entire STRING."
 				     :question "Which one is the capital of Greece?"
 				     :choices '("Athens" "Sparta" "Rome" "Berlin")
 				     :correct-answer 1
-				     :extra "Athens (Αθήνα) is the largest city of Greece & one of the world's oldest cities, with it's recorded history spanning over 3,500 years."
+				     :extra "Athens (Ἀθήνα) is the largest city of Greece & one of the world's oldest cities, with it's recorded history spanning over 3,500 years."
 				     :tags note-tags)
 	       (gnosis-add-note--cloze :deck deck-name
 				       :note "GNU Emacs is an extensible editor created by {{c1::Richard}} {{c1::Stallman}} in {{c2::1984::year}}"
@@ -2580,10 +2571,11 @@ If STRING-SECTION is nil, apply FACE to the entire STRING."
   :group 'gnosis
   :lighter nil
   (setq gnosis-due-notes-total (length (gnosis-review-get-due-notes)))
-  (if gnosis-modeline-mode
+  (if (and gnosis-modeline-mode gnosis-due-notes-total)
       (progn
-        (add-to-list 'global-mode-string '(:eval
-					   (format " G:%d" gnosis-due-notes-total)))
+        (add-to-list 'global-mode-string
+		     '(:eval
+		       (format " G:%d" gnosis-due-notes-total) 'face 'warning))
         (force-mode-line-update))
     (setq global-mode-string
           (seq-remove (lambda (item)
