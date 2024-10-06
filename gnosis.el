@@ -5,7 +5,7 @@
 ;; Author: Thanos Apollo <public@thanosapollo.org>
 ;; Keywords: extensions
 ;; URL: https://thanosapollo.org/projects/gnosis
-;; Version: 0.4.4-dev
+;; Version: 0.4.4
 
 ;; Package-Requires: ((emacs "27.2") (emacsql "4.0.1") (compat "29.1.4.2") (transient "0.7.2"))
 
@@ -2571,10 +2571,11 @@ If STRING-SECTION is nil, apply FACE to the entire STRING."
   :group 'gnosis
   :lighter nil
   (setq gnosis-due-notes-total (length (gnosis-review-get-due-notes)))
-  (if gnosis-modeline-mode
+  (if (and gnosis-modeline-mode gnosis-due-notes-total)
       (progn
-        (add-to-list 'global-mode-string '(:eval
-					   (format " G:%d" gnosis-due-notes-total)))
+        (add-to-list 'global-mode-string
+		     '(:eval
+		       (format " G:%d" gnosis-due-notes-total) 'face 'warning))
         (force-mode-line-update))
     (setq global-mode-string
           (seq-remove (lambda (item)

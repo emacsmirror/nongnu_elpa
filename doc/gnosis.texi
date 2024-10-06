@@ -35,16 +35,22 @@ This manual is written for Gnosis version 0.4.2, released on 2024-09-5.
 
 @itemize
 @item
-Official manual:
+Manual:
 @itemize
 @item
 @uref{https://elpa.nongnu.org/nongnu/doc/gnosis.html}
+@item
+@uref{https://thanosapollo.org/projects/gnosis/} (Mirror)
 @end itemize
 @item
 Git repositories:
 @itemize
 @item
 @uref{https://git.thanosapollo.org/gnosis}
+@item
+@uref{https://codeberg.org/thanosapollo/emacs-gnosis} (Mirror)
+@item
+@uref{https://git.savannah.gnu.org/cgit/emacs/nongnu.git/?h=elpa/gnosis} (Mirror)
 @end itemize
 @end itemize
 
@@ -59,8 +65,9 @@ Git repositories:
 * Customization::
 * Gnosis Algorithm::
 * Editing notes::
-* Sync between devices::
 * Configuring Note Types::
+* Sync between devices::
+* Interactions with other software::
 
 @detailmenu
 --- The Detailed Node Listing ---
@@ -88,6 +95,10 @@ Configuring Note Types
 
 * Custom Note Types::
 * Development::
+
+Interactions with other software
+
+* emacs-no-littering::
 
 @end detailmenu
 @end menu
@@ -350,36 +361,6 @@ Open @samp{gnosis-dashboard} with @samp{M-x gnosis-dashboard}, find the note you
 @end itemize
 @end itemize
 
-@node Sync between devices
-@chapter Sync between devices
-
-Gnosis uses git to maintain data integrity and facilitate
-synchronization across devices.
-
-You will need to configure your remote manually.
-
-Example:
-
-@example
-cd ~/.emacs.d/gnosis # default location for gnosis
-git init # After completing your first review session, a git repo should have been initialized automatically.
-git remote add origin <remote_url>
-git push --set-upstream origin master
-@end example
-
-
-You can interactively use @samp{gnosis-vc-push} & @samp{gnosis-vc-pull}. As the
-name suggests, they rely on @samp{vc} to work properly.
-
-Depending on your setup, @samp{vc} might require an external package for
-the ssh passphrase dialog, such as @code{x11-ssh-askpass}.
-
-To automatically push changes after a review session, add this to your configuration:
-@lisp
-(setf gnosis-vc-auto-push t)
-(gnosis-vc-pull) ;; Run vc-pull for gnosis on startup
-@end lisp
-
 @node Configuring Note Types
 @chapter Configuring Note Types
 
@@ -424,5 +405,54 @@ testing.
 
 To exit the testing environment, rerun @samp{M-x gnosis-test-start} and
 then enter @samp{n} (no) at the prompt ``Start development env?''
+
+@node Sync between devices
+@chapter Sync between devices
+
+Gnosis uses git to maintain data integrity and facilitate
+synchronization across devices.
+
+You will need to configure your remote manually.
+
+Example:
+
+@example
+cd ~/.emacs.d/gnosis # default location for gnosis, no-littering is ~/.emacs.d/var/gnosis
+git init # After completing your first review session, a git repo should have been initialized automatically.
+git remote add origin <remote_url>
+git push --set-upstream origin master
+@end example
+
+
+You can interactively use @samp{gnosis-vc-push} & @samp{gnosis-vc-pull}. As the
+name suggests, they rely on @samp{vc} to work properly.
+
+Depending on your setup, @samp{vc} might require an external package for
+the ssh passphrase dialog, such as @code{x11-ssh-askpass}.
+
+To automatically push changes after a review session, add this to your configuration:
+@lisp
+(setf gnosis-vc-auto-push t)
+(gnosis-vc-pull) ;; Run vc-pull for gnosis on startup
+@end lisp
+
+@node Interactions with other software
+@chapter Interactions with other software
+
+@menu
+* emacs-no-littering::
+@end menu
+
+@node emacs-no-littering
+@section emacs-no-littering
+
+If you are a user of @uref{https://github.com/emacscollective/no-littering, emacs-no-littering}, you can theme Gnosis to fit
+its standards by adding the following snippet to your configuration:
+
+@lisp
+(setq gnosis-dir (no-littering-expand-var-file-name "gnosis/"))
+@end lisp
+
+This sets @samp{gnosis-dir} to @samp{~/.emacs.d/var/gnosis}, in line with the folders of other packages.
 
 @bye
