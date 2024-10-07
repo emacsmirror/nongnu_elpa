@@ -560,7 +560,9 @@ X and Y are sorting args."
 (defun fj-list-own-repos ()
   "List repos for `fj-user'."
   (interactive)
-  (fj-user-repos-tl fj-user))
+  (if (not fj-user)
+      (user-error "Set `fj-user' to run this command.")
+    (fj-user-repos-tl fj-user)))
 
 (defun fj-star-repo (repo owner &optional unstar)
   "Star or UNSTAR REPO owned by OWNER."
