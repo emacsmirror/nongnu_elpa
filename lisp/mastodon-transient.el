@@ -88,17 +88,15 @@ the inner key part."
   :transient 'transient--do-exit
   ;; interactive receives args from the prefix:
   (interactive (list (transient-args 'mastodon-user-settings)))
-  (let* ((alist (tp-transient-to-alist args))
-         (only-changed (tp-only-changed-args alist))
+  (let* ((only-changed (tp-only-changed-args args))
          (arrays (tp-dots-to-arrays only-changed))
-         (parsed-source (mastodon-transient-parse-source-keys arrays))
-         (endpoint "accounts/update_credentials")
-         (url (mastodon-http--api endpoint))
-         (resp (mastodon-http--patch url parsed-source))) ; :json)))
+         (strs (tp-bools-to-strs arrays)) ;; we can't PATCH json
+         (url (mastodon-http--api "accounts/update_credentials"))
+         (resp (mastodon-http--patch url strs))) ;; :json fails
     (mastodon-http--triage
      resp
      (lambda (_)
-       (message "Settings updated!\n%s" (pp-to-string parsed-source))))))
+       (message "Settings updated!\n%s" (pp-to-string strs))))))
 
 (transient-define-prefix mastodon-user-settings ()
   "A transient for setting current user settings."
@@ -111,29 +109,33 @@ the inner key part."
     "Note: use the empty string (\"\") to remove a value from an option.")]
   ;; strings
   ["Account info"
-   ("n" "display name" "display_name=" :class tp-option-str)
+   ("n" "display name" "display_name" :alist-key display_name :class tp-option-str)
    ("t" "update profile note" mastodon-update-profile-note)
    ("f" "update profile fields" mastodon-profile-fields)]
   ;; "choice" booleans (so we can PATCH :json-false explicitly):
   ["Account options"
-   ("l" "locked" "locked=" :class tp-bool)
-   ("b" "bot" "bot=" :class tp-bool)
-   ("d"  "discoverable" "discoverable=" :class tp-bool)
-   ("c" "hide follower/following lists" "source.hide_collections=" :class tp-bool)
-   ("i" "indexable" "source.indexable=" :class tp-bool)]
+   ("l" "locked" "locked" :alist-key locked :class tp-bool)
+   ("b" "bot" "bot" :alist-key bot :class tp-bool)
+   ("d"  "discoverable" "discoverable" :alist-key discoverable :class tp-bool)
+   ("c" "hide follower/following lists" "source.hide_collections"
+    :alist-key source.hide_collections :class tp-bool)
+   ("i" "indexable" "source.indexable" :alist-key source.indexable :class tp-bool)
+   ]
   ["Tooting options"
-   ("p" "default privacy" "source.privacy=" :class tp-option
+   ("p" "default privacy" "source.privacy" :alist-key source.privacy
+    :class tp-option
     :choices (lambda () mastodon-toot-visibility-settings-list))
-   ;; ("public" "unlisted" "private"))
-   ;; (lambda () mastodon-toot-visibility-settings-list))
-   ("s" "mark sensitive" "source.sensitive=" :class tp-bool)
-   ("g" "default language" "source.language=" :class tp-option
-    :choices (lambda () mastodon-iso-639-regional))]
+   ("s" "mark sensitive" "source.sensitive" :alist-key source.sensitive :class tp-bool)
+   ("g" "default language" "source.language" :alist-key source.language :class tp-option
+    :choices (lambda () mastodon-iso-639-regional))
+   ]
   ["Update"
+   ("C-c g" "Show args" masto-show-args)
    ("C-c C-c" "Save settings" mastodon-user-settings-update)
    ("C-c C-k" :info "Revert all changes")]
   (interactive)
-  (if (not mastodon-active-user)
+  (if (or (not (boundp 'mastodon-active-user))
+          (not mastodon-active-user))
       (user-error "User not set")
     (transient-setup 'mastodon-user-settings)))
 
