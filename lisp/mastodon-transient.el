@@ -171,15 +171,15 @@ the inner key part."
   [:description
    "Fields"
    ["Name"
-    ("1 n" "" "fields.1.name=" :class mastodon-transient-field)
-    ("2 n" "" "fields.2.name=" :class mastodon-transient-field)
-    ("3 n" "" "fields.3.name=" :class mastodon-transient-field)
-    ("4 n" "" "fields.4.name=" :class mastodon-transient-field)]
+    ("1 n" "" "fields.1.name" :alist-key fields.1.name :class mastodon-transient-field)
+    ("2 n" "" "fields.2.name" :alist-key fields.2.name :class mastodon-transient-field)
+    ("3 n" "" "fields.3.name" :alist-key fields.3.name :class mastodon-transient-field)
+    ("4 n" "" "fields.4.name" :alist-key fields.4.name :class mastodon-transient-field)]
    ["Value"
-    ("1 v" "" "fields.1.value=" :class mastodon-transient-field)
-    ("2 v" "" "fields.2.value=" :class mastodon-transient-field)
-    ("3 v" "" "fields.3.value=" :class mastodon-transient-field)
-    ("4 v" "" "fields.4.value=" :class mastodon-transient-field)]]
+    ("1 v" "" "fields.1.value" :alist-key fields.1.value :class mastodon-transient-field)
+    ("2 v" "" "fields.2.value" :alist-key fields.2.value :class mastodon-transient-field)
+    ("3 v" "" "fields.3.value" :alist-key fields.3.value :class mastodon-transient-field)
+    ("4 v" "" "fields.4.value" :alist-key fields.4.value :class mastodon-transient-field)]]
   ["Update"
    ("C-c C-c" "Save settings" mastodon-profile-fields-update)
    ("C-c C-k" :info "Revert all changes")]
@@ -205,20 +205,6 @@ PAIR is a transient arg of the form \"fields.1.name=val\"."
          (server-elt (nth num tp-server-settings))
          (value (when pair (cadr pair-split))))
     (not (equal value (alist-get server-key server-elt)))))
-
-(cl-defmethod transient-format-value ((obj mastodon-transient-field))
-  "Format the value of OBJ.
-Format should just be a string, highlighted green if it has been
-changed from the server value."
-  (let* ((pair (transient-infix-value obj))
-         (value (when pair (cadr (split-string pair "=")))))
-    (if (not pair)
-        ""
-      (propertize
-       value
-       'face (if (tp-arg-changed-p obj pair)
-                 'transient-value
-               'transient-inactive-value)))))
 
 (provide 'mastodon-transient)
 ;;; mastodon-transient.el ends here
