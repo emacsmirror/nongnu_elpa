@@ -192,10 +192,10 @@ Designed to be used in a transient called from the repo."
   :transient 'transient--do-exit
   ;; interactive receives args from the prefix:
   (interactive (list (transient-args 'fj-repo-update-settings)))
-  (let* ((parsed (tp-parse-transient-args-for-send args)))
+  (let ((parsed (tp-parse-transient-args-for-send args)))
     ;; FIXME: this is how to do it using transient, but perhaps we want
     ;; `fj-user' and `fj-current-repo' to be global after all
-    (with-current-buffer transient--original-buffer
+    (with-current-buffer (car (buffer-list)) ;transient--original-buffer
       (let* ((repo (fj--get-buffer-spec :repo))
              (owner (fj--get-buffer-spec :owner)))
         (fj-repo-settings-patch repo owner parsed)))))
@@ -229,24 +229,27 @@ Provide current topics for adding/removing."
     "Note: use the empty string (\"\") to remove a value from an option.")]
   ;; strings
   ["Repo info"
-   ("n" "name" "name=" :class tp-option-str)
-   ("d" "description" "description=" :class tp-option-str)
+   ("n" "name" "name" :alist-key name :class tp-option-str)
+   ("d" "description" "description" :alist-key description :class tp-option-str)
    ("t" "topics" fj-update-topics)
-   ("w" "website" "website=" :class tp-option-str)
-   ("b" "default branch" "default_branch="
+   ("w" "website" "website" :alist-key website :class tp-option-str)
+   ("b" "default branch" "default_branch"
     :class tp-option
+    :alist-key default_branch
     :choices (lambda ()
                (fj-repo-branches-list fj-current-repo fj-user)))]
   ;; "choice" booleans (so we can PATCH :json-false explicitly):
   ["Repo options"
-   ("a" "archived" "archived=" :class tp-bool)
-   ("i" "has issues" "has_issues=" :class tp-bool)
-   ("k" "has wiki" "has_wiki=" :class tp-bool)
-   ("p" "has pull_requests" "has_pull_requests=" :class tp-bool)
-   ("o" "has projects" "has_projects=" :class tp-bool)
-   ("r" "has releases" "has_releases=" :class tp-bool)
-   ("s" "default merge style" "default_merge_style="
+   ("a" "archived" "archived" :alist-key archived :class tp-bool)
+   ("i" "has issues" "has_issues" :alist-key has_issues :class tp-bool)
+   ("k" "has wiki" "has_wiki" :alist-key has_wiki :class tp-bool)
+   ("p" "has pull_requests" "has_pull_requests"
+    :alist-key has_pull_requests :class tp-bool)
+   ("o" "has projects" "has_projects" :alist-key has_projects :class tp-bool)
+   ("r" "has releases" "has_releases" :alist-key has_releases :class tp-bool)
+   ("s" "default merge style" "default_merge_style"
     :class tp-option
+    :alist-key default_merge_style
     :choices fj-merge-types)] ;; FIXME: broken?
   ["Update"
    ("C-c C-c" "Save settings" fj-update-repo)
@@ -275,19 +278,20 @@ Provide current topics for adding/removing."
     "Note: use the empty string (\"\") to remove a value from an option.")]
   ;; strings
   ["User info"
-   ("n" "full name" "full_name=" :class tp-option-str)
-   ("d" "description" "description=" :class tp-option-str)
-   ("w" "website" "website=" :class tp-option-str)
-   ("p" "pronouns" "pronouns=" :class tp-option-str)
-   ("g" "language" "language=" :class tp-option-str)
-   ("l" "location" "location=" :class tp-option-str)]
+   ("n" "full name" "full_name" :alist-key full_name :class tp-option-str)
+   ("d" "description" "description" :alist-key description :class tp-option-str)
+   ("w" "website" "website" :alist-key website :class tp-option-str)
+   ("p" "pronouns" "pronouns" :alist-key pronouns :class tp-option-str)
+   ("g" "language" "language" :alist-key language :class tp-option-str)
+   ("l" "location" "location" :alist-key location :class tp-option-str)]
   ;; "choice" booleans (so we can PATCH :json-false explicitly):
   ["User options"
-   ("a" "hide activity" "hide_activity=" :class tp-bool)
-   ("e" "hide email" "hide_email=" :class tp-bool)
-   ("v"  "diff view style" "diff_view_style=" :class tp-bool
+   ("a" "hide activity" "hide_activity" :alist-key hide_activity :class tp-bool)
+   ("e" "hide email" "hide_email" :alist-key hide_email :class tp-bool)
+   ("v"  "diff view style" "diff_view_style" :alist-key diff_view_style :class tp-bool
     :choices (lambda () fj-diff-style-types)) ;; FIXME: lambdas don't work here?
-   ("u" "enable repo unit hints" "enable_repo_unit_hints="
+   ("u" "enable repo unit hints" "enable_repo_unit_hints"
+    :alist-key enable_repo_unit_hints
     :class tp-bool)]
   ["Update"
    ("C-c C-c" "Save settings" fj-update-user-settings)
