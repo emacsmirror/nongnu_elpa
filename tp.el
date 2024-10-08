@@ -191,12 +191,14 @@ which case call it. else just return it."
            (eval slot))
           (t slot))))
 
-(defun tp-parse-transient-args-for-send (args)
-  "Parse ARGS, a list of transient args, into an alist for sending."
-  (thread-first
-    (tp-only-changed-args args)
-    (tp-dots-to-arrays)
-    (tp-bool-strs-to-json))) ;; FIXME: make optional
+(defun tp-parse-transient-args-for-send (args &optional strings)
+  "Parse ARGS, a list of transient args, into an alist for sending.
+If STRINGS is non-nil, don't convert boolean strings into elisp JSON."
+  (let ((changed (tp-only-changed-args args))
+        (arrays (tp-dots-to-arrays changed)))
+    (if strings
+        arrays
+      (tp-bool-strs-to-json arrays))))
 
 ;; CLASSES
 
