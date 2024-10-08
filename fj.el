@@ -556,8 +556,8 @@ X and Y are sorting args."
   (let* ((repos (fj-get-user-repos user))
          (entries (fj-repo-tl-entries repos :no-owner))
          (buf (format "*fj-repos-%s*" user)))
-    (with-current-buffer
-        (fj-repos-tl-render buf entries #'fj-user-repo-tl-mode)
+    (fj-repos-tl-render buf entries #'fj-user-repo-tl-mode)
+    (with-current-buffer (get-buffer-create buf)
       (setq fj-buffer-spec
             `(:owner ,user :url ,(concat fj-host "/" user))))))
 
@@ -622,12 +622,12 @@ BUF-STR is to name the buffer, URL-STR is for the buffer-spec."
          (repos (fj-get endpoint))
          (entries (fj-repo-tl-entries repos))
          (buf (format "*fj-%s-repos*" buf-str)))
+    (fj-repos-tl-render buf entries #'fj-repo-tl-mode)
     (with-current-buffer
-        (fj-repos-tl-render buf entries #'fj-repo-tl-mode)
-      (setq fj-buffer-spec
-            `( :owner fj-user
-               :url (when url-str
-                      ,(concat fj-host "/" fj-user url-str)))))))
+        (setq fj-buffer-spec
+              `( :owner fj-user
+                 :url (when url-str
+                        ,(concat fj-host "/" fj-user url-str)))))))
 
 ;;; USER REPOS
 
@@ -1916,12 +1916,11 @@ TOPIC, a boolean, means search in repo topics."
   (interactive "sSearch for repos: ")
   (let* ((resp (fj-repo-search-do query topic))
          (buf (format "*fj-search-%s*" query))
-         (url ;(fedi-http--concat-params-to-url
-          (concat fj-host "/explore/repos"))
+         (url (concat fj-host "/explore/repos"))
          (data (alist-get 'data resp))
          (entries (fj-repo-tl-entries data)))
-    (with-current-buffer
-        (fj-repos-tl-render buf entries #'fj-repo-tl-mode)
+    (fj-repos-tl-render buf entries #'fj-repo-tl-mode)
+    (with-current-buffer (get-buffer-create buf)
       (setq fj-buffer-spec
             `(:url ,url :query ,query)))))
 
