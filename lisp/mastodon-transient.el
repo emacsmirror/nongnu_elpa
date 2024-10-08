@@ -130,7 +130,6 @@ the inner key part."
     :choices (lambda () mastodon-iso-639-regional))
    ]
   ["Update"
-   ("C-c g" "Show args" masto-show-args)
    ("C-c C-c" "Save settings" mastodon-user-settings-update)
    ("C-c C-k" :info "Revert all changes")]
   (interactive)
