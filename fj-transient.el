@@ -39,6 +39,9 @@
 (autoload 'fj--get-buffer-spec "fj")
 (autoload 'fj-get-repo "fj")
 (autoload 'fj-get "fj")
+(autoload 'fj-put "fj")
+(autoload 'fj-get-repo-topics "fj")
+(autoload 'fj-get-current-user-settings "fj")
 
 (defvar fj-current-repo)
 (defvar fj-user)
