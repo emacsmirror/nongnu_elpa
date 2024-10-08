@@ -509,6 +509,7 @@ X and Y are sorting args."
   "*" #'fj-repo-tl-star-repo
   "c" #'fj-create-issue
   "s" #'fj-repo-search-tl
+  "r" #'fj-repo-tl-readme
   "g" #'fj-list-user-repos
   "B" #'fj-tl-browse-entry
   "L" #'fj-repo-copy-clone-url
@@ -2095,6 +2096,7 @@ Optionally specify REF, a commit, branch, or tag."
           (org-mode)
         (markdown-mode))
       (read-only-mode 1)
+      (keymap-local-set "q" #'quit-window)
       ;; TODO: setq a quick q kill-buffer with (local keymap)
       ;; (quit-window)
       ;; (kill-buffer buffer)
