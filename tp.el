@@ -205,7 +205,7 @@ which case call it. else just return it."
   (thread-first
     (tp-only-changed-args args)
     (tp-dots-to-arrays)
-    (tp-bool-strs-to-json))) ;; FIXME: make optional?
+    (tp-bool-strs-to-json))) ;; FIXME: make optional
 
 ;; CLASSES
 
@@ -310,8 +310,8 @@ The value currently on the server should be underlined."
 
 (cl-defmethod transient-infix-read ((obj tp-bool))
   "Cycle through the possible values of OBJ."
-  (let* ((pair (transient-infix-value obj))
-         (val (tp-get-bool-str (cdr pair)))
+  (let* ((cons (transient-infix-value obj))
+         (val (tp-get-bool-str (cdr cons)))
          (choices (tp--get-choices obj))
          (str (if (equal val (car (last choices)))
                   (car choices)
