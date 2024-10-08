@@ -39,22 +39,14 @@ will be converted into the strings \"true\" and \"false\".")
 
 ;;; VARIABLES
 
-(defvar tp-choice-booleans-json '("t" ":json-false")
-  ;; add "" or nil to unset?
-  "JSON Booleans formatted as parsed elisp and into a string.")
-
 (defvar tp-choice-booleans '("true" "false")
-  "Boolean strings for sending non-JSON requests.") ;; add "" or nil to unset?
+  "Boolean strings for sending non-JSON requests.")
 
 (defvar tp-server-settings nil
   "Settings data (editable) as returned by the server.")
 
-(defvar tp-settings-as-transient nil
-  "Settings data converted to transient args.")
-
 ;;; UTILS
 
-;; FIXME
 (defun tp-remove-not-editable (alist var)
   "Remove non-editable fields from ALIST.
 Check against the fields in VAR, which should be a list of strings."
@@ -106,8 +98,7 @@ If ALIST contains dotted.notation keys, we drill down into
                  (t (equal (cdr x) server-val)))))
        alist)
     ;; unset our vars (comment if need to inspect):
-    (setq tp-server-settings nil
-          tp-settings-as-transient nil)))
+    (setq tp-server-settings nil)))
 
 (defun tp-bool-to-str (cons)
   "Convert CONS, into a string boolean if it is either t or :json-false.
@@ -224,8 +215,7 @@ default/current values.")
 (defclass tp-bool (tp-option)
   ((format :initform " %k %d %v")
    (choices :initarg :choices :initform
-            (lambda ()
-              tp-choice-booleans)))
+            (lambda () tp-choice-booleans)))
   "An option class for our choice booleans.
 We implement this as an option because we need to be able to
 explicitly send true/false values to the server, whereas
