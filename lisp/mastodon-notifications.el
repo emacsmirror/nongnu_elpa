@@ -380,5 +380,12 @@ Status notifications are created when you call
                   (mastodon-tl--reload-timeline-or-profile))
                 (message "Notification dismissed!")))))
 
+(defun mastodon-notifications--get-unread-count ()
+  "Return the number of unread notifications for the current account."
+  ;; params: limit - max 1000, default 100, types[], exclude_types[], account_id
+  (let* ((endpoint "notifications/unread_count")
+         (url (mastodon-http--api endpoint)))
+    (mastodon-http--get-json url)))
+
 (provide 'mastodon-notifications)
 ;;; mastodon-notifications.el ends here
