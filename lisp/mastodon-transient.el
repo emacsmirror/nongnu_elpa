@@ -164,7 +164,7 @@ the inner key part."
   :value
   (lambda ()
     (tp-return-data #'mastodon-transient-get-creds nil 'fields)
-    (setq tp-settings-as-transient
+    (setq tp-server-settings
           (mastodon-transient-fields-to-transient
            tp-server-settings)))
   [:description
