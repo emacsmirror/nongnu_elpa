@@ -340,22 +340,24 @@ If we fail, return `fj-user'." ;; poss insane
   ;; really oughta be universal:
   "O" #'fj-list-own-repos
   "N" #'fj-view-notifications
+  "U" #'fj-update-user-settings
   "b" #'fj-browse-view
   "n" #'fj-issue-next
   "p" #'fj-issue-prev)
 
 (defvar-keymap fj-generic-tl-map
-  :doc "Generic keymap."
+  :doc "Generic timeline keymap."
   :parent tabulated-list-mode-map
   ;; should actually be universal:
   "<tab>" #'fj-next-tab-item
   "S-<tab>" #'fj-prev-tab-item
-  "g" #'fj-item-view-reload
+  "g" #'fj-item-view-reload ;; FIXME: tl reload fun
   "C-M-q" #'fj-kill-all-buffers
   "/" #'fj-switch-to-buffer
   ;; really oughta be universal:
   "O" #'fj-list-own-repos
   "N" #'fj-view-notifications
+  "U" #'fj-update-user-settings
   "b" #'fj-browse-view
   "n" #'fj-issue-next
   "p" #'fj-issue-prev)
@@ -506,7 +508,7 @@ X and Y are sorting args."
   "*" #'fj-repo-tl-star-repo
   "c" #'fj-create-issue
   "s" #'fj-repo-search-tl
-  "u" #'fj-list-user-repos
+  "g" #'fj-list-user-repos
   "B" #'fj-tl-browse-entry
   "L" #'fj-repo-copy-clone-url
   "j" #'imenu)
@@ -1008,9 +1010,8 @@ NEW-BODY is the new comment text to send."
   "o" #'fj-issues-tl-reopen
   "s" #'fj-list-issues-search
   "S" #'fj-repo-search-tl
-  "u" #'fj-list-user-repos
   "B" #'fj-tl-browse-entry
-  "U" #'fj-repo-copy-clone-url
+  "u" #'fj-repo-copy-clone-url
   "I" #'fj-list-issues
   "P" #'fj-list-pulls
   "L" #'fj-repo-commit-log
