@@ -28,6 +28,9 @@
 
 ;;; UTILS
 
+;; some JSON fields that are returned under the "source" field need to be
+;; sent back in the format source[key], while some others are sent kust as
+;; key:
 (defun mastodon-transient-parse-source-key (key)
   "Parse mastodon source KEY.
 If KEY needs to be source[key], format like so, else just return
@@ -54,7 +57,7 @@ the inner key part."
 ;; fields utils:
 ;; to PATCH fields, we just need fields[x][name] and fields[x][value]
 
-(defun mastodon-transient-fields-to-transient (fields)
+(defun mastodon-transient--fields-alist (fields)
   "Convert fields in FIELDS to numbered conses.
 The keys in the data are not numbered, so we convert the key into
 the format fields.X.keyname."
@@ -161,7 +164,7 @@ the format fields.X.keyname."
   "Fetch profile fields (metadata)."
   (tp-return-data #'mastodon-transient-get-creds nil 'fields)
   (setq tp-server-settings
-        (mastodon-transient-fields-to-transient tp-server-settings)))
+        (mastodon-transient--fields-alist tp-server-settings)))
 
 (transient-define-prefix mastodon-profile-fields ()
   "A transient for setting profile fields."
