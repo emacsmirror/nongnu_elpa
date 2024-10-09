@@ -306,6 +306,14 @@ When nil, review new notes last."
   "Face for review action *quit*."
   :group 'gnosis-face)
 
+(defface gnosis-face-dashboard-header
+  '((t :foreground "#ff0a6a" :weight bold))
+  "Face for dashboard header.
+
+Avoid using an increased height value as this messes up with
+`gnosis-center-string' implementation"
+  :group 'gnosis-face)
+
 (cl-defun gnosis-select (value table &optional (restrictions '1=1) (flatten nil))
   "Select VALUE from TABLE, optionally with RESTRICTIONS.
 
@@ -2592,10 +2600,6 @@ If STRING-SECTION is nil, apply FACE to the entire STRING."
 ;; Dashboard
 ;;;;;;;;;;;;
 
-(defface gnosis-dashboard-header-face
-  '((t :foreground "#ff0a6a" :weight bold))
-  "My custom face for both light and dark backgrounds.")
-
 (defvar gnosis-dashboard-note-ids nil
   "Store note ids for dashboard.")
 
@@ -3033,7 +3037,8 @@ DASHBOARD-TYPE: either 'Notes' or 'Decks' to display the respective dashboard."
       (with-current-buffer buffer
         (widget-insert "\n"
 		       (gnosis-center-string
-			(format "%s" (propertize "Gnosis Dashboard" 'face 'gnosis-dashboard-header-face))))
+			(format "%s" (propertize "Gnosis Dashboard" 'face
+						 'gnosis-face-dashboard-header))))
 	(gnosis-insert-separator)
 	;; (widget-insert (gnosis-center-string (propertize "Stats:" 'face 'underline)) "\n\n")
 	(widget-insert (gnosis-center-string
