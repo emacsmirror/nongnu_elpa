@@ -145,11 +145,15 @@ This is just `-tree-map'."
   (tp-tree-map
    #'tp-bool-str-to-json alist))
 
-(defun tp-dots-to-arrays (alist)
-  "Convert keys in ALIST tp dot annotation to array[key] annotation."
+(defun tp-dots-to-arrays (alist &optional only-last-two parent-suffix)
+  "Convert keys in ALIST tp dot annotation to array[key] annotation.
+If ONLY-LAST-TWO is non-nil, return only secondlast[last] from
+KEY.
+PARENT-SUFFIX is appended to the first element."
   ;; FIXME: handle multi dots?
   (cl-loop for a in alist
-           collect (cons (tp-dot-to-array (symbol-name (car a)))
+           collect (cons (tp-dot-to-array (symbol-name (car a))
+                                          only-last-two parent-suffix)
                          (cdr a))))
 
 (defun tp-dot-to-array (key &optional only-last-two parent-suffix)
@@ -157,7 +161,8 @@ This is just `-tree-map'."
 Handles multiple values by calling `tp-dot-to-array-multi', which
 see.
 If ONLY-LAST-TWO is non-nil, return only secondlast[last] from
-KEY."
+KEY.
+PARENT-SUFFIX is appended to the first element."
   (let* ((split (split-string key "\\.")))
     (cond ((not key) nil)
           ((= 1 (length split)) key)
@@ -170,7 +175,8 @@ KEY."
 
 (defun tp-dot-to-array-multi (list parent-suffix)
   "Wrap all elements of LIST in [square][brackets] save the first.
-Concatenate the results together."
+Concatenate the results together.
+PARENT-SUFFIX is appended to the first element."
   (mapconcat
    (lambda (x)
      (if (equal x (car list))
@@ -323,6 +329,7 @@ We add the current value as initial input."
     (read-string prompt (cdr value))))
 
 (cl-defmethod transient-prompt ((obj tp-option))
+  "Format a prompt for OBJ."
   (let* ((key (oref obj alist-key))
          (split (split-string (symbol-name key) "\\."))
          (str (string-replace "_" " " (car (last split)))))
