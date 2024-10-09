@@ -314,3 +314,24 @@ its standards by adding the following snippet to your configuration:
 #+end_src
 
 This sets =gnosis-dir= to =~/.emacs.d/var/gnosis=, in line with the folders of other packages.
+* Contributing
+
+Thank you for considering contributing back to gnosis.  You can
+contribute by submitting a pull request on the codeberg mirror
+repository, or directly sending me patch via email.
+
+** How to create a patch
+
+/Example:/
+
+#+begin_src bash
+$ git clone https://git.thanosapollo.com/gnosis.git && cd gnosis
+$ emacs something
+$ git add something
+$ git commit -m "Fix something"
+$ git format-patch HEAD^1
+0001-Fix-something.patch
+#+end_src
+
+You can sent the patch to "Thanos Apollo", the email of which you can
+find on the git log.
