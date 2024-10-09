@@ -89,9 +89,7 @@ the format fields.X.keyname."
   :transient 'transient--do-exit
   ;; interactive receives args from the prefix:
   (interactive (list (transient-args 'mastodon-user-settings)))
-  (let* ((only-changed (tp-only-changed-args args))
-         (arrays (tp-dots-to-arrays only-changed))
-         (strs (tp-bools-to-strs arrays)) ;; we can't PATCH json
+  (let* ((strs (tp-parse-args-for-send args :strings))
          (url (mastodon-http--api "accounts/update_credentials"))
          (resp (mastodon-http--patch url strs))) ;; :json fails
     (mastodon-http--triage
