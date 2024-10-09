@@ -319,7 +319,6 @@ Optionally specify the PARAMS to send."
                         ("Accept" . "application/json"))))
            (url-request-extra-headers
             (append url-request-extra-headers headers)))
-      (message "Data: %s" url-request-data)
       (mastodon-http--url-retrieve-synchronously url))))
 
  ;; Asynchronous functions
