@@ -30,13 +30,6 @@
 (require 'transient)
 (require 'json)
 
-;;; OPTIONS
-
-(defvar tp-convert-json-booleans-to-strings t
-  "Whether to convert JSON booleans.
-When fetching data, parsed JSON booleans, e.g. t and :json-false,
-will be converted into the strings \"true\" and \"false\".")
-
 ;;; VARIABLES
 
 (defvar tp-choice-booleans '("true" "false")
