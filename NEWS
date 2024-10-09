@@ -1,5 +1,10 @@
 -*- mode: org -*-
 
+* 0.4.5
++ Fix cloze hint removal issues.
++ Update documentation
+  + Add Contributing section
++ Refactor gnosis-dashboard module as part of gnosis.el
 
 * 0.4.4
 + Add clear-history.
