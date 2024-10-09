@@ -1,0 +1,42 @@
+-*- mode: org -*-
+
+
+* 0.4.4
++ Add clear-history.
++ *Refactor* review actions to use read-char-choice.
+  + This is done to allow users to switch buffers during review,
+    something that couldn't be done with read-multiple-choice
++ Add documentation for interactions with other software
+  + Add documentation for using gnosis with =emacs-no-literring=.
+
+* 0.4.3
++ Fix breaking changes for editing cloze notes.
++ Refactor calculation of dates in gnosis algorithm.
+
+* 0.4.2.
+
++ Fix display issues on non-grapical interface.
++ Add variable watchers for custom algorithm values.
++ Update assertions for editing notes
+
+* 0.4.1
++  Update to emacsql-4.0.0
+
+* 0.4.0
+
++ Major rewrite on gnosis algorithm.
+  + Add gnosis-score
+  + Add epignosis and agnoia
+  + Add lethe and anagnosis events
+    + Anagnosis events adjust gnosis-score
+      depending on review performance, using epignosis
+      and agnoia
+    + Lethe resets next interval to 0
+  + Refactor calculations of next interval and gnosis-score
++ Add custom variables for tags and decks, configured using emacs
+  lisp.
++ Rewrite gnosis database.
+  + Remove deck specific values.
+  + Use new algorithm variables.
+
+
