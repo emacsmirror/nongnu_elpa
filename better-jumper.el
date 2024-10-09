@@ -298,7 +298,7 @@ Uses current context if CONTEXT is nil."
                (marker (gethash marker-key marker-table)))
           (setq better-jumper--jumping t)
           (when better-jumper-use-evil-jump-advice
-            (setq evil--jumps-jumping-backward t))
+            (setq evil--jumps-jump-command t))
           (if (string-match-p better-jumper--buffer-targets file-name)
               (switch-to-buffer file-name)
             (find-file file-name))
