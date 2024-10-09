@@ -1173,13 +1173,15 @@ TYPE: Type of gnosis note, must be one of `gnosis-note-types'"
       (unless (string-match-p cloze sentence)
         (throw 'not-found nil)))
     t))
-
+;; TODO: use a better name to indicate that it also removes hints from STRING.
 (defun gnosis-cloze-remove-tags (string)
   "Replace cloze tags and hints in STRING.
 
 Works with both single (:), double colons (::), single braces ({}) and
-double braces ({{}})."
-  (let* ((regex "{\\{1,2\\}c[0-9]+:\\{1,2\\}\\([^{}]*?\\)}\\{1,2\\}")
+double braces ({{}}).
+
+Also removes content after a double semicolon (::), which indicate a hint."
+  (let* ((regex "{\\{1,2\\}c[0-9]+:\\{1,2\\}\\([^:{}]*?\\)\\(::[^{}]*\\)?}\\{1,2\\}")
          (result (replace-regexp-in-string regex "\\1" string)))
     result))
 
