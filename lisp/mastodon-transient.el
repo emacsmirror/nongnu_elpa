@@ -90,9 +90,9 @@ the format fields.X.keyname."
 (transient-define-suffix mastodon-user-settings-update (&optional args)
   "Update current user settings on the server."
   :transient 'transient--do-exit
-  ;; interactive receives args from the prefix:
   (interactive (list (transient-args 'mastodon-user-settings)))
-  (let* ((strs (tp-parse-args-for-send args :strings))
+  (let* ((parsed (tp-parse-args-for-send args :strings))
+         (strs (mastodon-transient-parse-source-keys parsed))
          (url (mastodon-http--api "accounts/update_credentials"))
          (resp (mastodon-http--patch url strs))) ;; :json fails
     (mastodon-http--triage
