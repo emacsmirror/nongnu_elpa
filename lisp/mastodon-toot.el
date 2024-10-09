@@ -1686,22 +1686,17 @@ The default is given by `mastodon-toot--default-reply-visibility'."
 	  mastodon-toot--default-reply-visibility
         reply-visibility))))
 
-(defun mastodon-toot--fill-buffer ()
-  "Mark buffer, call `fill-region'."
-  (mark-whole-buffer) ; lisp code should not set mark
-  ;; (fill-region (point-min) (point-max)) ; but this doesn't work
-  (fill-region (region-beginning) (region-end)))
-
 (defun mastodon-toot--render-reply-region-str (str)
   "Refill STR and prefix all lines with >, as reply-quote text."
   (with-temp-buffer
     (insert str)
     ;; unfill first:
     (let ((fill-column (point-max)))
-      (mastodon-toot--fill-buffer))
+      (fill-region (point-min) (point-max)))
     ;; then fill:
-    (mastodon-toot--fill-buffer)
+    (fill-region (point-min) (point-max))
     ;; add our own prefix, pauschal:
+    (goto-char (point-min))
     (save-match-data
       (while (re-search-forward "^" nil t)
         (replace-match " > ")))
