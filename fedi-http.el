@@ -48,7 +48,7 @@
 ;; (defvar fedi-toot--media-attachment-filenames)
 
 (defvar fedi-instance-url)
-(defvar fedi-http--api-version)
+(defvar fedi-http--api-version "v1")
 
 (defconst fedi-http--timeout 15
   "HTTP request timeout, in seconds.  Has no effect on Emacs < 26.1.")
