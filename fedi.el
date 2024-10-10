@@ -172,6 +172,9 @@ than `switch-to-buffer'."
        (erase-buffer)
        (unless (equal major-mode ,mode-fun)
          (funcall ,mode-fun))
+       ;; FIXME: make this conditional: if prev buffer is same as new one,
+       ;; then no other window, if different, then other window. that makes it
+       ;; so that if we are reloading the same view, we don't other-window
        (if ,other-window
            (switch-to-buffer-other-window ,buffer)
          ;; (switch-to-buffer ,buffer))
@@ -678,6 +681,7 @@ should be called with at least 1 arg: the item's json."
 We roll our own `replace-region-contents' because it is as
 non-destructive as possible, whereas we need to always replace
 the whole likes count in order to propertize it fully."
+  ;; can replace this w data arg, as we also get it in `fedi-update-item-from-json'?
   (let ((json (fedi--property 'json)))
     (save-excursion
       (goto-char beg)
