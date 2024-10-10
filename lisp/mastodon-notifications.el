@@ -384,8 +384,9 @@ Status notifications are created when you call
   "Return the number of unread notifications for the current account."
   ;; params: limit - max 1000, default 100, types[], exclude_types[], account_id
   (let* ((endpoint "notifications/unread_count")
-         (url (mastodon-http--api endpoint)))
-    (mastodon-http--get-json url)))
+         (url (mastodon-http--api endpoint))
+         (resp (mastodon-http--get-json url)))
+    (alist-get 'count resp)))
 
 (provide 'mastodon-notifications)
 ;;; mastodon-notifications.el ends here
