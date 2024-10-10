@@ -61,16 +61,15 @@ Repo, owner, item number, url.")
   "Return a URL for ENDPOINT."
   (fedi-http--api endpoint fj-host "v1"))
 
-(defvar fj-link-keymap
-  (let ((map (make-sparse-keymap)))
-    (define-key map [return] #'fj-do-link-action)
-    (define-key map [mouse-2] #'fj-do-link-action-mouse)
-    (define-key map [follow-link] 'mouse-face)
-    map)
-  "The keymap for link-like things in buffer (except for shr.el links).
+(defvar-keymap fj-link-keymap
+  :doc "The keymap for link-like things in buffer (except for shr.el links).
 This will make the region of text act like like a link with mouse
 highlighting, mouse click action tabbing to next/previous link
-etc.")
+etc."
+  "<return>" #'fj-do-link-action
+  "<mouse-2>" #'fj-do-link-action-mouse
+  ;; "<remap> <follow-link>" #'mouse-face ???
+  )
 
 ;; composing vars
 
@@ -148,8 +147,12 @@ Not used for items that are links.")
   "Face for links in v simple displays.")
 
 (defface fj-label-face
-  `((t :inherit secondary-selection :slant italic))
+  '((t :inherit secondary-selection :slant italic))
   "Face for issue labels.")
+
+(defface fj-post-title-face
+  '((t :inherit font-lock-comment-face :weight bold))
+  "Face for post title in compose buffer.")
 
 ;;; INSTANCE SETTINGS
 ;; https://forgejo.org/docs/latest/user/api-usage/#pagination
@@ -225,7 +228,8 @@ Works in issue view mode or in issues tl."
    str))
 
 (defun fj--repo-owner ()
-  "Return repo owner, whatever view we are in."
+  "Return repo owner, whatever view we are in.
+If we fail, return `fj-user'." ;; poss insane
   (if (eq major-mode #'fj-repo-tl-mode)
       (fj-get-tl-col 1)
     (or (fj--get-buffer-spec :owner)
@@ -321,6 +325,43 @@ Works in issue view mode or in issues tl."
                 (eq 'pull (fj--property 'item))))
        (user-error "No PR here?")
      ,body))
+
+;;; MAP
+
+;; FIXME: we need 1 derived from tl, one from special?
+(defvar-keymap fj-generic-map
+  :doc "Generic keymap."
+  :parent special-mode-map
+  ;; should actually be universal:
+  "<tab>" #'fj-next-tab-item
+  "S-<tab>" #'fj-prev-tab-item
+  "g" #'fj-item-view-reload
+  "C-M-q" #'fj-kill-all-buffers
+  "/" #'fj-switch-to-buffer
+  ;; really oughta be universal:
+  "O" #'fj-list-own-repos
+  "N" #'fj-view-notifications
+  "U" #'fj-update-user-settings
+  "b" #'fj-browse-view
+  "n" #'fj-issue-next
+  "p" #'fj-issue-prev)
+
+(defvar-keymap fj-generic-tl-map
+  :doc "Generic timeline keymap."
+  :parent tabulated-list-mode-map
+  ;; should actually be universal:
+  "<tab>" #'fj-next-tab-item
+  "S-<tab>" #'fj-prev-tab-item
+  "g" #'fj-item-view-reload ;; FIXME: tl reload fun
+  "C-M-q" #'fj-kill-all-buffers
+  "/" #'fj-switch-to-buffer
+  ;; really oughta be universal:
+  "O" #'fj-list-own-repos
+  "N" #'fj-view-notifications
+  "U" #'fj-update-user-settings
+  "b" #'fj-browse-view
+  "n" #'fj-issue-next
+  "p" #'fj-issue-prev)
 
 ;;; NAV
 
@@ -461,32 +502,22 @@ X and Y are sorting args."
   'action 'fj-repo-tl-list-issues
   'help-echo "RET: View this repo's issues.")
 
-(defvar fj-repo-tl-map
-  (let ((map (make-sparse-keymap)))
-    (set-keymap-parent map tabulated-list-mode-map)
-    (define-key map (kbd "RET") #'fj-repo-tl-list-issues)
-    (define-key map (kbd "*") #'fj-repo-tl-star-repo)
-    (define-key map (kbd "c") #'fj-create-issue)
-    (define-key map (kbd "O") #'fj-list-own-repos)
-    (define-key map (kbd "s") #'fj-repo-search-tl)
-    (define-key map (kbd "u") #'fj-list-user-repos)
-    (define-key map (kbd "B") #'fj-tl-browse-entry)
-    (define-key map (kbd "L") #'fj-repo-copy-clone-url)
-    (define-key map (kbd "b") #'fj-browse-view)
-    (define-key map (kbd "j") #'imenu)
-    (define-key map (kbd "g") #'fj-repo-tl-reload)
-    (define-key map (kbd "N") #'fj-view-notifications)
-    (define-key map (kbd "M-C-q") #'fj-kill-all-buffers)
-    (define-key map (kbd "/") #'fj-switch-to-buffer)
-    map)
-  "Map for `fj-repo-tl-mode' and `fj-user-repo-tl-mode' to inherit.")
+(defvar-keymap fj-repo-tl-map
+  :doc "Map for `fj-repo-tl-mode' and `fj-user-repo-tl-mode' to inherit."
+  :parent fj-generic-tl-map
+  "RET" #'fj-repo-tl-list-issues
+  "*" #'fj-repo-tl-star-repo
+  "c" #'fj-create-issue
+  "s" #'fj-repo-search-tl
+  "r" #'fj-repo-tl-readme
+  "g" #'fj-list-user-repos
+  "B" #'fj-tl-browse-entry
+  "L" #'fj-repo-copy-clone-url
+  "j" #'imenu)
 
-(defvar fj-user-repo-tl-mode-map
-  (let ((map (make-sparse-keymap)))
-    (set-keymap-parent map fj-repo-tl-map)
-    ;; (define-key map (kbd "g") #'fj-repo-tl-reload)
-    map)
-  "Map for `fj-user-repo-tl-mode', a tabluated list of repos.")
+(defvar-keymap fj-user-repo-tl-mode-map
+  :doc "Map for `fj-user-repo-tl-mode', a tabluated list of repos."
+  :parent fj-repo-tl-map)
 
 (define-derived-mode fj-user-repo-tl-mode tabulated-list-mode
   "fj-user-repos"
@@ -525,15 +556,17 @@ X and Y are sorting args."
   (let* ((repos (fj-get-user-repos user))
          (entries (fj-repo-tl-entries repos :no-owner))
          (buf (format "*fj-repos-%s*" user)))
-    (with-current-buffer
-        (fj-repos-tl-render buf entries #'fj-user-repo-tl-mode)
+    (fj-repos-tl-render buf entries #'fj-user-repo-tl-mode)
+    (with-current-buffer (get-buffer-create buf)
       (setq fj-buffer-spec
             `(:owner ,user :url ,(concat fj-host "/" user))))))
 
 (defun fj-list-own-repos ()
   "List repos for `fj-user'."
   (interactive)
-  (fj-user-repos-tl fj-user))
+  (if (not fj-user)
+      (user-error "Set `fj-user' to run this command.")
+    (fj-user-repos-tl fj-user)))
 
 (defun fj-star-repo (repo owner &optional unstar)
   "Star or UNSTAR REPO owned by OWNER."
@@ -589,12 +622,12 @@ BUF-STR is to name the buffer, URL-STR is for the buffer-spec."
          (repos (fj-get endpoint))
          (entries (fj-repo-tl-entries repos))
          (buf (format "*fj-%s-repos*" buf-str)))
+    (fj-repos-tl-render buf entries #'fj-repo-tl-mode)
     (with-current-buffer
-        (fj-repos-tl-render buf entries #'fj-repo-tl-mode)
-      (setq fj-buffer-spec
-            `( :owner fj-user
-               :url (when url-str
-                      ,(concat fj-host "/" fj-user url-str)))))))
+        (setq fj-buffer-spec
+              `( :owner fj-user
+                 :url (when url-str
+                        ,(concat fj-host "/" fj-user url-str)))))))
 
 ;;; USER REPOS
 
@@ -964,37 +997,28 @@ NEW-BODY is the new comment text to send."
 ;;     "nearduedate"
 ;;     "farduedate"))
 
-(defvar fj-issue-tl-mode-map
-  (let ((map (make-sparse-keymap)))
-    (set-keymap-parent map tabulated-list-mode-map) ; has nav
-    (define-key map (kbd "C") #'fj-issues-tl-comment)
-    (define-key map (kbd "e") #'fj-issues-tl-edit)
-    (define-key map (kbd "t") #'fj-issues-tl-edit-title)
-    (define-key map (kbd "v") #'fj-issues-tl-view)
-    (define-key map (kbd "k") #'fj-issues-tl-close)
-    (define-key map (kbd "K") #'fj-issues-tl-delete)
-    (define-key map (kbd "c") #'fj-create-issue)
-    (define-key map (kbd "g") #'fj-issues-tl-reload)
-    (define-key map (kbd "C-c C-c") #'fj-list-issues-cycle)
-    (define-key map (kbd "C-c C-s") #'fj-issues-item-cycle)
-    (define-key map (kbd "o") #'fj-issues-tl-reopen)
-    (define-key map (kbd "s") #'fj-list-issues-search)
-    (define-key map (kbd "S") #'fj-repo-search-tl)
-    (define-key map (kbd "u") #'fj-list-user-repos)
-    (define-key map (kbd "O") #'fj-list-own-repos)
-    (define-key map (kbd "B") #'fj-tl-browse-entry)
-    (define-key map (kbd "b") #'fj-browse-view)
-    (define-key map (kbd "N") #'fj-view-notifications)
-    (define-key map (kbd "U") #'fj-repo-copy-clone-url)
-    (define-key map (kbd "I") #'fj-list-issues)
-    (define-key map (kbd "P") #'fj-list-pulls)
-    (define-key map (kbd "L") #'fj-repo-commit-log)
-    (define-key map (kbd "R") #'fj-repo-update-settings)
-    (define-key map (kbd "j") #'imenu)
-    (define-key map (kbd "M-C-q") #'fj-kill-all-buffers)
-    (define-key map (kbd "/") #'fj-switch-to-buffer)
-    map)
-  "Map for `fj-issue-tl-mode', a tabluated list of issues.")
+(defvar-keymap fj-issue-tl-mode-map
+  :doc "Map for `fj-issue-tl-mode', a tabluated list of issues."
+  :parent fj-generic-tl-map ; has nav
+  "C" #'fj-issues-tl-comment
+  "e" #'fj-issues-tl-edit
+  "t" #'fj-issues-tl-edit-title
+  "v" #'fj-issues-tl-view
+  "k" #'fj-issues-tl-close
+  "K" #'fj-issues-tl-delete
+  "c" #'fj-create-issue
+  "C-c C-c" #'fj-list-issues-cycle
+  "C-c C-s" #'fj-issues-item-cycle
+  "o" #'fj-issues-tl-reopen
+  "s" #'fj-list-issues-search
+  "S" #'fj-repo-search-tl
+  "B" #'fj-tl-browse-entry
+  "u" #'fj-repo-copy-clone-url
+  "I" #'fj-list-issues
+  "P" #'fj-list-pulls
+  "L" #'fj-repo-commit-log
+  "R" #'fj-repo-update-settings
+  "j" #'imenu)
 
 (define-derived-mode fj-issue-tl-mode tabulated-list-mode
   "fj-issues"
@@ -1037,7 +1061,8 @@ STATE is a string."
            type fj-issue-button
            item ,type
            fj-url ,.html_url
-           fj-item-data ,issue)
+           fj-item-data ,issue
+           fj-tab-stop t)
           (,(number-to-string .comments)
            face fj-figures-face
            item ,type)
@@ -1045,7 +1070,8 @@ STATE is a string."
                            id ,.id
                            state ,.state
                            type  fj-issues-owner-button
-                           item ,type)
+                           item ,type
+                           fj-tab-stop t)
           (,updated-str
            display ,updated-display
            face default
@@ -1299,30 +1325,19 @@ JSON is the item's data to process the link with."
     (fj-restore-previous-window-config fj-previous-window-config)
     str))
 
-(defvar fj-item-view-mode-map
-  (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "n") #'fj-issue-next)
-    (define-key map (kbd "p") #'fj-issue-prev)
-    (define-key map [?\t] #'fj-next-tab-item)
-    (define-key map [backtab] #'fj-prev-tab-item)
-    (define-key map (kbd "g") #'fj-item-view-reload)
-    (define-key map (kbd "e") #'fj-item-view-edit-item-at-point)
-    (define-key map (kbd "c") #'fj-item-view-comment)
-    (define-key map (kbd "k") #'fj-item-view-close)
-    (define-key map (kbd "o") #'fj-item-view-reopen)
-    (define-key map (kbd "K") #'fj-item-view-comment-delete)
-    (define-key map (kbd "s") #'fj-list-issues-search)
-    (define-key map (kbd "S") #'fj-repo-search-tl)
-    (define-key map (kbd "O") #'fj-list-own-repos)
-    (define-key map (kbd "b") #'fj-browse-view)
-    (define-key map (kbd "N") #'fj-view-notifications)
-    (define-key map (kbd "D") #'fj-view-pull-diff)
-    (define-key map (kbd "M-C-q") #'fj-kill-all-buffers)
-    (define-key map (kbd "/") #'fj-switch-to-buffer)
-    (define-key map (kbd "R") #'fj-repo-update-settings)
-    (define-key map (kbd "L") #'fj-repo-commit-log)
-    map)
-  "Keymap for `fj-item-view-mode'.")
+(defvar-keymap fj-item-view-mode-map
+  :doc "Keymap for `fj-item-view-mode'."
+  :parent  fj-generic-map
+  "e" #'fj-item-view-edit-item-at-point
+  "c" #'fj-item-view-comment
+  "k" #'fj-item-view-close
+  "o" #'fj-item-view-reopen
+  "K" #'fj-item-view-comment-delete
+  "s" #'fj-list-issues-search
+  "S" #'fj-repo-search-tl
+  "D" #'fj-view-pull-diff
+  "R" #'fj-repo-update-settings
+  "L" #'fj-repo-commit-log)
 
 (define-derived-mode fj-item-view-mode special-mode "fj-issue"
   "Major mode for viewing items."
@@ -1815,11 +1830,9 @@ If TOPIC, QUERY is a search for topic keywords."
 
 ;;; SEARCH REPOS TL
 
-(defvar fj-repo-tl-mode-map
-  (let ((map (make-sparse-keymap)))
-    (set-keymap-parent map fj-repo-tl-map)
-    map)
-  "Map for `fj-repo-tl-mode', a tabluated list of repos.")
+(defvar-keymap fj-repo-tl-mode-map
+  :doc   "Map for `fj-repo-tl-mode', a tabluated list of repos."
+  :parent fj-repo-tl-map)
 
 (define-derived-mode fj-repo-tl-mode tabulated-list-mode
   "fj-repo-search"
@@ -1866,33 +1879,36 @@ NO-OWNER means don't display owner column (user repos view)."
             (updated-str (format-time-string "%s" updated))
             (updated-display (fedi--relative-time-description updated nil :brief)))
        `(nil ;; TODO: id
-         ,(cl-remove 'nil
-                     `[(,.name face fj-item-face
-                               id ,.id
-                               type fj-user-repo-button
-                               item repo
-                               fj-url ,.html_url
-                               fj-item-data ,r)
-                       ,(unless no-owner
-                          `(,.owner.username face fj-user-face
-                                             id ,.id
-                                             type fj-search-owner-button
-                                             item repo))
-                       (,(number-to-string .stars_count)
-                        id ,.id face fj-figures-face
-                        item repo)
-                       (,fork id ,.id face fj-figures-face item repo)
-                       (,(number-to-string .open_issues_count)
-                        id ,.id face fj-figures-face
-                        item repo)
-                       ,.language
-                       (,updated-str
-                        display ,updated-display
-                        face default
-                        item repo)
-                       (,(string-replace "\n" " " .description)
-                        face 'fj-comment-face
-                        item repo)]))))))
+         ,(cl-remove
+           'nil
+           `[(,.name face fj-item-face
+                     id ,.id
+                     type fj-user-repo-button
+                     item repo
+                     fj-url ,.html_url
+                     fj-item-data ,r
+                     fj-tab-stop t)
+             ,(unless no-owner
+                `(,.owner.username face fj-user-face
+                                   id ,.id
+                                   type fj-search-owner-button
+                                   item repo
+                                   fj-tab-stop t))
+             (,(number-to-string .stars_count)
+              id ,.id face fj-figures-face
+              item repo)
+             (,fork id ,.id face fj-figures-face item repo)
+             (,(number-to-string .open_issues_count)
+              id ,.id face fj-figures-face
+              item repo)
+             ,.language
+             (,updated-str
+              display ,updated-display
+              face default
+              item repo)
+             (,(string-replace "\n" " " .description)
+              face 'fj-comment-face
+              item repo)]))))))
 
 (defun fj-repo-search-tl (query &optional topic)
   "Search repos for QUERY, and display a tabulated list of results.
@@ -1900,12 +1916,11 @@ TOPIC, a boolean, means search in repo topics."
   (interactive "sSearch for repos: ")
   (let* ((resp (fj-repo-search-do query topic))
          (buf (format "*fj-search-%s*" query))
-         (url ;(fedi-http--concat-params-to-url
-          (concat fj-host "/explore/repos"))
+         (url (concat fj-host "/explore/repos"))
          (data (alist-get 'data resp))
          (entries (fj-repo-tl-entries data)))
-    (with-current-buffer
-        (fj-repos-tl-render buf entries #'fj-repo-tl-mode)
+    (fj-repos-tl-render buf entries #'fj-repo-tl-mode)
+    (with-current-buffer (get-buffer-create buf)
       (setq fj-buffer-spec
             `(:url ,url :query ,query)))))
 
@@ -2080,6 +2095,7 @@ Optionally specify REF, a commit, branch, or tag."
           (org-mode)
         (markdown-mode))
       (read-only-mode 1)
+      (keymap-local-set "q" #'quit-window)
       ;; TODO: setq a quick q kill-buffer with (local keymap)
       ;; (quit-window)
       ;; (kill-buffer buffer)
@@ -2213,26 +2229,21 @@ Optionally set PAGE and LIMIT."
 
 (defalias 'fj-compose-cancel #'fedi-post-cancel)
 
-(defvar fj-compose-comment-mode-map
-  (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "C-c C-k") #'fj-compose-cancel)
-    (define-key map (kbd "C-c C-c") #'fj-compose-send)
-    map)
-  "Keymap for `fj-compose-comment-mode'.")
+(defvar-keymap fj-compose-comment-mode-map
+  :doc "Keymap for `fj-compose-comment-mode'."
+  "C-c C-k" #'fj-compose-cancel
+  "C-c C-c" #'fj-compose-send)
 
 (define-minor-mode fj-compose-comment-mode
   "Minor mode for composing comments."
   :keymap fj-compose-comment-mode-map
   :global nil)
 
-(defvar fj-compose-mode-map
-  (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "C-c C-t") #'fj-compose-read-title)
-    (define-key map (kbd "C-c C-r") #'fj-compose-read-repo)
-    (define-key map (kbd "C-c C-k") #'fj-compose-cancel)
-    (define-key map (kbd "C-c C-c") #'fj-compose-send)
-    map)
-  "Keymap for `fj-compose-mode'.")
+(defvar-keymap fj-compose-mode-map
+  :doc "Keymap for `fj-compose-mode'."
+  :parent fj-compose-comment-mode-map
+  "C-c C-t" #'fj-compose-read-title
+  "C-c C-r" #'fj-compose-read-repo)
 
 (define-minor-mode fj-compose-mode
   "Minor mode for composing issues and comments."
@@ -2279,7 +2290,7 @@ Inject INIT-TEXT into the buffer, for editing."
      ((name . ,(if (eq type 'comment) "issue ""title"))
       (prop . compose-title)
       (item-var . fj-compose-issue-title)
-      (face . lem-post-title-face)))
+      (face . fj-post-title-face)))
    init-text)
   (setq fj-compose-item-type
         (if edit
@@ -2416,24 +2427,13 @@ Optionally set LIMIT to results."
 
 ;;; NOTIFICATIONS
 
-(defvar fj-notifications-mode-map
-  (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "C-c C-c") #'fj-notifications-unread-toggle)
-    (define-key map (kbd "n") #'fj-issue-next)
-    (define-key map (kbd "p") #'fj-issue-prev)
-    (define-key map [?\t] #'fj-next-tab-item)
-    (define-key map [backtab] #'fj-prev-tab-item)
-    (define-key map (kbd "g") #'fj-item-view-reload)
-    (define-key map (kbd "s") #'fj-list-issues-search)
-    (define-key map (kbd "I") #'fj-list-issues)
-    (define-key map (kbd "S") #'fj-repo-search-tl)
-    (define-key map (kbd "O") #'fj-list-own-repos)
-    (define-key map (kbd "b") #'fj-browse-view)
-    (define-key map (kbd "N") #'fj-view-notifications)
-    (define-key map (kbd "M-C-q") #'fj-kill-all-buffers)
-    (define-key map (kbd "/") #'fj-switch-to-buffer)
-    map)
-  "Keymap for `fj-notifications-mode'.")
+(defvar-keymap fj-notifications-mode-map
+  :doc "Keymap for `fj-notifications-mode'."
+  :parent fj-generic-map
+  "C-c C-c" #'fj-notifications-unread-toggle
+  "s" #'fj-list-issues-search
+  "I" #'fj-list-issues
+  "S" #'fj-repo-search-tl)
 
 (define-derived-mode fj-notifications-mode special-mode "fj-notifs"
   "Major mode for viewing notifications."
@@ -2606,25 +2606,14 @@ Used for a mouse-click EVENT on a link."
          (url (alist-get 'html_url resp)))
     (browse-url-generic url)))
 
-(defvar fj-commits-mode-map
-  (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "n") #'fj-issue-next)
-    (define-key map (kbd "p") #'fj-issue-prev)
-    (define-key map [?\t] #'fj-next-tab-item)
-    (define-key map [backtab] #'fj-prev-tab-item)
-    (define-key map (kbd "g") #'fj-item-view-reload)
-    (define-key map (kbd "s") #'fj-list-issues-search)
-    (define-key map (kbd "I") #'fj-list-issues)
-    (define-key map (kbd "S") #'fj-repo-search-tl)
-    (define-key map (kbd "O") #'fj-list-own-repos)
-    (define-key map (kbd "b") #'fj-browse-view)
-    (define-key map (kbd "N") #'fj-view-notifications)
-    (define-key map (kbd "R") #'fj-repo-update-settings)
-    (define-key map (kbd "M-C-q") #'fj-kill-all-buffers)
-    (define-key map (kbd "L") #'fj-repo-commit-log)
-    (define-key map (kbd "/") #'fj-switch-to-buffer)
-    map)
-  "Keymap for `fj-commits-mode'.")
+(defvar-keymap fj-commits-mode-map
+  :doc "Keymap for `fj-commits-mode'."
+  :parent fj-generic-map
+  "s" #'fj-list-issues-search
+  "I" #'fj-list-issues
+  "S" #'fj-repo-search-tl
+  "R" #'fj-repo-update-settings
+  "L" #'fj-repo-commit-log)
 
 (define-derived-mode fj-commits-mode special-mode "fj-commits"
   "Major mode for viewing repo commits."
@@ -2701,25 +2690,14 @@ Optionally specify BRANCH to show commits from."
 
 ;;; USERS
 
-(defvar fj-users-mode-map
-  (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "n") #'fj-issue-next)
-    (define-key map (kbd "p") #'fj-issue-prev)
-    (define-key map [?\t] #'fj-next-tab-item)
-    (define-key map [backtab] #'fj-prev-tab-item)
-    (define-key map (kbd "g") #'fj-item-view-reload)
-    (define-key map (kbd "s") #'fj-list-issues-search)
-    (define-key map (kbd "I") #'fj-list-issues)
-    (define-key map (kbd "S") #'fj-repo-search-tl)
-    (define-key map (kbd "O") #'fj-list-own-repos)
-    (define-key map (kbd "b") #'fj-browse-view)
-    (define-key map (kbd "N") #'fj-view-notifications)
-    (define-key map (kbd "M-C-q") #'fj-kill-all-buffers)
-    (define-key map (kbd "L") #'fj-repo-commit-log)
-    (define-key map (kbd "R") #'fj-repo-update-settings)
-    (define-key map (kbd "/") #'fj-switch-to-buffer)
-    map)
-  "Keymap for `fj-users-mode'.")
+(defvar-keymap fj-users-mode-map
+  :doc "Keymap for `fj-users-mode'."
+  :parent fj-generic-map
+  "s" #'fj-list-issues-search
+  "I" #'fj-list-issues
+  "S" #'fj-repo-search-tl
+  "L" #'fj-repo-commit-log
+  "R" #'fj-repo-update-settings)
 
 (define-derived-mode fj-users-mode special-mode "fj-users"
   "Major mode for viewing users."
@@ -2850,11 +2828,31 @@ BUF-STR is the name of the buffer string to use."
 ;; topics are set in fj-transient.el
 
 (defun fj-get-repo-topics ()
-  "GET repo topics from the instance."
+  "GET repo topics from the instance.
+Returns a list of strings."
   (let* ((repo (fj--get-buffer-spec :repo))
          (owner (fj--get-buffer-spec :owner))
          (endpoint (format "repos/%s/%s/topics" owner repo)))
     (alist-get 'topics (fj-get endpoint))))
+
+(defun fj-propertize-repo-topics ()
+  "Propertize topics of current repo."
+  (let ((topics (fj-get-repo-topics)))
+    (cl-loop for top in topics
+             concat (fj-propertize-topic top))))
+
+(defface fj-topic-face
+  `((t :box t :background ,(internal-get-lisp-face-attribute
+                            'default :foreground)
+       :foreground ,(readable-foreground-color
+                     (internal-get-lisp-face-attribute
+                      'default :foreground))))
+  "Face for repo topics.")
+
+(defun fj-propertize-topic (topic)
+  "Propertize TOPIC, a string."
+  (propertize topic
+              'face 'fj-topic-face))
 
 (provide 'fj)
 ;;; fj.el ends here
