@@ -180,7 +180,7 @@ Can be called in notifications view or in follow-requests view."
 
 (defun mastodon-notifications--reblog (note)
   "Format for a `boost' NOTE."
-  (mastodon-notifications--format-note note 'boost))
+  (mastodon-notifications--format-note note 'reblog))
 
 (defun mastodon-notifications--status (note)
   "Format for a `status' NOTE.
@@ -207,6 +207,16 @@ Status notifications are given when
                              (prop-match-end prop)
                              '(face (font-lock-comment-face shr-text)))))
     (buffer-string)))
+
+(defvar mastodon-notifications--action-alist
+  '((reblog . "Boosted")
+    (favourite . "Favourited")
+    (follow-request . "Requested to follow")
+    (follow . "Followed")
+    (mention . "Mentioned")
+    (status . "Posted")
+    (poll . "Posted a poll")
+    (edit . "Edited")))
 
 (defun mastodon-notifications--format-note (note type)
   "Format for a NOTE of TYPE."
@@ -238,7 +248,7 @@ Status notifications are given when
              ;; reblogs/faves use 'note' to process their own json
              ;; not the toot's. this ensures following etc. work on such notifs
              ((or (eq type 'favourite)
-                  (eq type 'boost))
+                  (eq type 'reblog))
               note)
              (t
               status))
@@ -266,7 +276,7 @@ Status notifications are given when
                       ":\n"
                       (mastodon-notifications--comment-note-text body))))))
                ((or (eq type 'favourite)
-                    (eq type 'boost))
+                    (eq type 'reblog))
                 (mastodon-notifications--comment-note-text body))
                (t body)))
        ;; author-byline
@@ -279,26 +289,11 @@ Status notifications are given when
        ;; action-byline
        (lambda (_status)
          (mastodon-notifications--byline-concat
-          (cond ((eq type 'boost)
-                 "Boosted")
-                ((eq type 'favourite)
-                 "Favourited")
-                ((eq type 'follow-request)
-                 "Requested to follow")
-                ((eq type 'follow)
-                 "Followed")
-                ((eq type 'mention)
-                 "Mentioned")
-                ((eq type 'status)
-                 "Posted")
-                ((eq type 'poll)
-                 "Posted a poll")
-                ((eq type 'edit)
-                 "Edited"))))
+          (alist-get type mastodon-notifications--action-alist)))
        id
        ;; base toot
        (when (or (eq type 'favourite)
-                 (eq type 'boost))
+                 (eq type 'reblog))
          status)))))
 
 (defun mastodon-notifications--by-type (note)
