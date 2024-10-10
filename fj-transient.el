@@ -195,7 +195,7 @@ Designed to be used in a transient called from the repo."
   :transient 'transient--do-exit
   ;; interactive receives args from the prefix:
   (interactive (list (transient-args 'fj-repo-update-settings)))
-  (let ((parsed (tp-parse-transient-args-for-send args)))
+  (let ((parsed (tp-parse-args-for-send args)))
     ;; FIXME: this is how to do it using transient, but perhaps we want
     ;; `fj-user' and `fj-current-repo' to be global after all
     (with-current-buffer (car (buffer-list)) ;transient--original-buffer
@@ -267,7 +267,7 @@ Provide current topics for adding/removing."
   :transient 'transient--do-exit
   ;; interactive receives args from the prefix:
   (interactive (list (transient-args 'fj-user-update-settings)))
-  (let* ((parsed (tp-parse-transient-args-for-send args)))
+  (let* ((parsed (tp-parse-args-for-send args)))
     (fj-user-settings-patch parsed)))
 
 (transient-define-prefix fj-user-update-settings ()
