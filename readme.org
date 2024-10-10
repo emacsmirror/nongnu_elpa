@@ -2,14 +2,14 @@
 
 A library to make writing clients for APIs easier.
 
-It uses code ported from [[https://codeberg.org/martianh/mastodon.el][mastodon.el]] to make it easy to write requests for
+It uses code originally ported from [[https://codeberg.org/martianh/mastodon.el][mastodon.el]] to make it easy to write requests for
 JSON APIs and build client interfaces.
 
 * http layer
 
 The example macro =fedi-request= allows you to quickly create HTTP requests to
 API endpoints, with parameters automatically constructed and sent as form data
-or JSON payloads (for POST, PUT, DELETE, and probably PATCH). You should write
+or JSON payloads (for POST, PUT, DELETE, and PATCH). You should write
 your own similar macro in your package. For a working example, see the
 [[https://codeberg.org/martianh/lem.el/src/commit/25def6d187caa2bfac238469de81dbaecef757ec/lisp/lem-request.el#L36][lem-request]] macro. That way you can handle package-specific parameters such as
 authentication.
@@ -44,6 +44,10 @@ service also does, you can handle them too.
 - pretty display of available bindings
 - toggling post flags like NSFW
 - completion of items like handles and tags.
+
+* transient menus
+
+If you want to create transient menus to POST, PUT or PATCH complex data to a server, take a look at =tp.el=.
 
 * clients using =fedi.el=
 
