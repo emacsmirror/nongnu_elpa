@@ -1318,6 +1318,10 @@ JSON is the item's data to process the link with."
                                  fj-link-keymap 1 2 nil nil
                                  '(fj-tab-stop t)))
     (setq str
+          (fedi-propertize-items str fedi-post-url-regex 'link json
+                                 fj-link-keymap 1 1 nil nil
+                                 '(fj-tab-stop t)))
+    (setq str
           (fedi-propertize-items str fedi-post-commit-regex 'commit json
                                  fj-link-keymap 1 1 nil nil
                                  '(fj-tab-stop t)
