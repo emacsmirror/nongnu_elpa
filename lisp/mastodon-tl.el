@@ -875,16 +875,45 @@ links in the text. If TOOT is nil no parsing occurs."
                              0
                            (- (window-width) 3)))))
         (shr-render-region (point-min) (point-max)))
-      ;; Make all links a tab stop recognized by our own logic, make things point
-      ;; to our own logic (e.g. hashtags), and update keymaps where needed:
+      ;; Make all links a tab stop recognized by our own logic, make
+      ;; things point to our own logic (e.g. hashtags), and update keymaps
+      ;; where needed:
       (when toot
         (let (region)
           (while (setq region (mastodon-tl--find-property-range
                                'shr-url (or (cdr region) (point-min))))
             (mastodon-tl--process-link toot
                                        (car region) (cdr region)
-                                       (get-text-property (car region) 'shr-url)))))
+                                       (get-text-property (car region) 'shr-url))
+            (when (proper-list-p toot) ;; not on profile fields cons cells
+              (let* ((card (alist-get 'card toot))
+                     (card-url (alist-get 'url card))
+                     (authors (alist-get 'authors card))
+                     (url (buffer-substring (car region) (cdr region)))
+                     (url-no-query (car (split-string url "?"))))
+                (when (and (string= url-no-query card-url)
+                           ;; only if we have an account's data:
+                           (alist-get 'account (car authors)))
+                  (goto-char (point-max)) ;;(cdr region))
+                  (mastodon-tl--insert-card-authors authors)))))))
       (buffer-string))))
+
+(defun mastodon-tl--insert-card-authors (authors)
+  "Insert a string of card AUTHORS."
+  (insert
+   (concat
+    "\n(Authors: "
+    (cl-loop for x in authors
+             concat
+             (mastodon-tl--format-card-author x))
+    ")\n")))
+
+(defun mastodon-tl--format-card-author (data)
+  "Render card author DATA."
+  ;; FIXME: update as needed, data contains "name" "url" and "account"
+  (let-alist data
+    (when .account
+      (mastodon-search--propertize-user .account))))
 
 (defun mastodon-tl--process-link (toot start end url)
   "Process link URL in TOOT as hashtag, userhandle, or normal link.
@@ -1553,7 +1582,7 @@ NO-BYLINE means just insert toot body, used for folding."
        (propertize ;; body only:
         (concat
          "\n"
-         ;; relpy symbol (broken):
+         ;; relpy symbol:
          (when (and after-reply-status-p thread)
            (concat (mastodon-tl--symbol 'replied)
                    "\n"))
