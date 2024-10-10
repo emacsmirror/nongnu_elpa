@@ -240,18 +240,15 @@ Status notifications are given when
         nil
       (mastodon-tl--insert-status
        ;; toot
-       (cond ((or (eq type 'follow)
-                  (eq type 'follow-request))
+       (cond ((member type '(follow follow-request))
               ;; Using reblog with an empty id will mark this as something
               ;; non-boostable/non-favable.
               (cons '(reblog (id . nil)) note))
              ;; reblogs/faves use 'note' to process their own json
              ;; not the toot's. this ensures following etc. work on such notifs
-             ((or (eq type 'favourite)
-                  (eq type 'reblog))
+             ((member type '(favourite reblog))
               note)
-             (t
-              status))
+             (t status))
        ;; body
        (let ((body (if-let ((match (assoc "warn" filters)))
                        (mastodon-tl--spoiler toot (cadr match))
@@ -261,28 +258,25 @@ Status notifications are given when
                         (if (eq 'follow-request type)
                             (mastodon-tl--render-text profile-note)
                           (mastodon-tl--content status)))))))
-         (cond ((or (eq type 'follow)
-                    (eq type 'follow-request))
-                (if (eq type 'follow)
-                    (propertize "Congratulations, you have a new follower!"
-                                'face 'default)
-                  (concat
-                   (propertize
-                    (format "You have a follow request from... %s"
-                            follower)
-                    'face 'default)
-                   (when mastodon-notifications--profile-note-in-foll-reqs
+         (cond ((eq type 'follow)
+                (propertize "Congratulations, you have a new follower!"
+                            'face 'default))
+               ((eq type 'follow-request)
+                (concat
+                 (propertize
+                  (format "You have a follow request from... %s"
+                          follower)
+                  'face 'default)
+                 (if mastodon-notifications--profile-note-in-foll-reqs
                      (concat
                       ":\n"
-                      (mastodon-notifications--comment-note-text body))))))
-               ((or (eq type 'favourite)
-                    (eq type 'reblog))
+                      (mastodon-notifications--comment-note-text body))
+                   "")))
+               ((member type '(favourite reblog))
                 (mastodon-notifications--comment-note-text body))
                (t body)))
        ;; author-byline
-       (if (or (eq type 'follow)
-               (eq type 'follow-request)
-               (eq type 'mention))
+       (if (member type '(follow follow-request mention))
            'mastodon-tl--byline-author
          (lambda (_status &rest _args) ; unbreak stuff
            (mastodon-tl--byline-author note)))
@@ -292,8 +286,7 @@ Status notifications are given when
           (alist-get type mastodon-notifications--action-alist)))
        id
        ;; base toot
-       (when (or (eq type 'favourite)
-                 (eq type 'reblog))
+       (when (member type '(favourite reblog))
          status)))))
 
 (defun mastodon-notifications--by-type (note)
