@@ -334,7 +334,7 @@ If we fail, return `fj-user'." ;; poss insane
   :parent special-mode-map
   ;; should actually be universal:
   "<tab>" #'fj-next-tab-item
-  "S-<tab>" #'fj-prev-tab-item
+  "<backtab>" #'fj-prev-tab-item
   "g" #'fj-item-view-reload
   "C-M-q" #'fj-kill-all-buffers
   "/" #'fj-switch-to-buffer
@@ -351,7 +351,7 @@ If we fail, return `fj-user'." ;; poss insane
   :parent tabulated-list-mode-map
   ;; should actually be universal:
   "<tab>" #'fj-next-tab-item
-  "S-<tab>" #'fj-prev-tab-item
+  "<backtab>" #'fj-prev-tab-item
   "g" #'fj-item-view-reload ;; FIXME: tl reload fun
   "C-M-q" #'fj-kill-all-buffers
   "/" #'fj-switch-to-buffer
