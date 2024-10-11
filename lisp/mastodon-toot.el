@@ -522,21 +522,33 @@ SUBTRACT means we are un-favouriting or unboosting, so we decrement."
 (defun mastodon-toot--list-boosters ()
   "List the boosters of toot at point."
   (interactive)
-  (mastodon-toot--list-boosters-or-favers))
+  ;; use grouped notifs data if present:
+  ;; only send accounts as arg if type matches notif type we are acting
+  ;; on, to prevent showing accounts for a boost notif when asking for
+  ;; favers, and vice versa.
+  (let* ((type (mastodon-tl--property 'notification-type :no-move))
+         (accounts (when (string= type "reblog")
+                     (mastodon-tl--property 'notification-accounts :no-move))))
+    (mastodon-toot--list-boosters-or-favers nil accounts)))
 
 (defun mastodon-toot--list-favouriters ()
   "List the favouriters of toot at point."
   (interactive)
-  (mastodon-toot--list-boosters-or-favers :favourite))
+  (let* ((type (mastodon-tl--property 'notification-type :no-move))
+         (accounts (when (string= type "favourite")
+                     (mastodon-tl--property 'notification-accounts :no-move))))
+    (mastodon-toot--list-boosters-or-favers :favourite accounts)))
 
-(defun mastodon-toot--list-boosters-or-favers (&optional favourite)
+(defun mastodon-toot--list-boosters-or-favers (&optional favourite accounts)
   "List the favouriters or boosters of toot at point.
 With FAVOURITE, list favouriters, else list boosters."
   (mastodon-toot--with-toot-item
-   (let* ((endpoint (if favourite "favourited_by" "reblogged_by"))
-          (url (mastodon-http--api (format "statuses/%s/%s" id endpoint)))
-          (params '(("limit" . "80")))
-          (json (mastodon-http--get-json url params)))
+   (let* ((endpoint (unless accounts
+                      (if favourite "favourited_by" "reblogged_by")))
+          (url (unless accounts
+                 (mastodon-http--api (format "statuses/%s/%s" id endpoint))))
+          (params (unless accounts '(("limit" . "80"))))
+          (json (or accounts (mastodon-http--get-json url params))))
      (if (eq (caar json) 'error)
          (user-error "%s (Status does not exist or is private)"
                      (alist-get 'error json))
