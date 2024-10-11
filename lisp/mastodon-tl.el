@@ -1522,7 +1522,7 @@ Runs `mastodon-tl--render-text' and fetches poll or media."
 
 (defun mastodon-tl--insert-status
     (toot body author-byline action-byline &optional id base-toot
-          detailed-p thread domain unfolded no-byline group)
+          detailed-p thread domain unfolded no-byline group accounts)
   "Display the content and byline of timeline element TOOT.
 BODY will form the section of the toot above the byline.
 AUTHOR-BYLINE is an optional function for adding the author
@@ -1549,7 +1549,7 @@ NO-BYLINE means just insert toot body, used for folding."
          (after-reply-status-p
           (when (and thread reply-to-id)
             (mastodon-tl--after-reply-status reply-to-id)))
-         (type (alist-get 'type toot))
+         (type (alist-get 'type (or group toot)))
          (toot-foldable
           (and mastodon-tl--fold-toots-at-length
                (length> body mastodon-tl--fold-toots-at-length))))
@@ -1590,9 +1590,11 @@ NO-BYLINE means just insert toot body, used for folding."
       'item-json    toot
       'base-toot    base-toot
       'cursor-face 'mastodon-cursor-highlight-face
-      'notification-type type
       'toot-foldable toot-foldable
-      'toot-folded (and toot-foldable (not unfolded)))
+      'toot-folded (and toot-foldable (not unfolded))
+      'notification-type type
+      'notification-group group
+      'notification-accounts accounts)
      (if no-byline "" "\n"))))
 
 (defun mastodon-tl--is-reply (toot)

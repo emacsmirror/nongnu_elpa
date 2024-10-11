@@ -214,14 +214,13 @@ JSON is the full notifications JSON."
     (let* ((type .type)
            (type-sym (intern .type))
            (profile-note
-            (when (eq type-sym 'follow-request)
-              (let ((str (mastodon-tl--field
-                          'note
-                          (car accounts))))
+            (when (eq type-sym 'follow_request)
+              (let ((str (mastodon-tl--field 'note (car accounts))))
                 (if mastodon-notifications--profile-note-in-foll-reqs-max-length
                     (string-limit str mastodon-notifications--profile-note-in-foll-reqs-max-length)
                   str))))
            (follower (car .sample_account_ids))
+           (follower-name (mastodon-tl--field 'username (car accounts)))
            (filtered (mastodon-tl--field 'filtered status)) ;;toot))
            (filters (when filtered
                       (mastodon-tl--current-filters filtered))))
@@ -242,17 +241,17 @@ JSON is the full notifications JSON."
                        (mastodon-tl--clean-tabs-and-nl
                         (if (mastodon-tl--has-spoiler status)
                             (mastodon-tl--spoiler status)
-                          (if (eq type 'follow-request)
+                          (if (eq type-sym 'follow_request)
                               (mastodon-tl--render-text profile-note)
                             (mastodon-tl--content status)))))))
            (cond ((eq type-sym 'follow)
                   (propertize "Congratulations, you have a new follower!"
                               'face 'default))
-                 ((eq type-sym 'follow-request)
+                 ((eq type-sym 'follow_request)
                   (concat
                    (propertize
                     (format "You have a follow request from... %s"
-                            follower)
+                            follower-name)
                     'face 'default)
                    (when mastodon-notifications--profile-note-in-foll-reqs
                      (concat
@@ -273,7 +272,7 @@ JSON is the full notifications JSON."
          (when (member type-sym '(favourite boost))
            status)
          nil nil nil nil
-         nil group))))) ;; insert status still needs our group data
+         nil group accounts))))) ;; insert status still needs our group data
 
 ;; FIXME: REFACTOR with -tl--byline:
 ;; we provide account directly, rather than let-alisting toot
