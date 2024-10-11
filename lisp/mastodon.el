@@ -347,29 +347,25 @@ If REPLY-JSON is the json of the toot being replied to."
   (mastodon-toot--compose-buffer user reply-to-id reply-json))
 
 ;;;###autoload
-(defun mastodon-notifications-get (&optional type buffer-name force max-id)
+(defun mastodon-notifications-get (&optional type buffer-name max-id)
   "Display NOTIFICATIONS in buffer.
 Optionally only print notifications of type TYPE, a string.
 BUFFER-NAME is added to \"*mastodon-\" to create the buffer name.
-FORCE means do not try to update an existing buffer, but fetch
-from the server and load anew."
+MAX-ID is a request parameter for pagination."
   (interactive)
   (let* ((buffer-name (or buffer-name "notifications"))
          (buffer (concat "*mastodon-" buffer-name "*")))
-    (if (and (not force) (get-buffer buffer))
-        (progn (pop-to-buffer buffer '(display-buffer-same-window))
-               (mastodon-tl--update))
-      (message "Loading your notifications...")
-      (mastodon-tl--init-sync
-       buffer-name
-       "notifications"
-       'mastodon-notifications--timeline
-       type
-       (when max-id
-         `(("max_id" . ,(mastodon-tl--buffer-property 'max-id))))
-       nil nil nil "v2")
-      (with-current-buffer buffer
-        (use-local-map mastodon-notifications--map)))))
+    (message "Loading your notifications...")
+    (mastodon-tl--init-sync
+     buffer-name
+     "notifications"
+     'mastodon-notifications--timeline
+     type
+     (when max-id
+       `(("max_id" . ,(mastodon-tl--buffer-property 'max-id))))
+     nil nil nil "v2")
+    (with-current-buffer (get-buffer-create buffer)
+      (use-local-map mastodon-notifications--map))))
 
 ;; URL lookup: should be available even if `mastodon.el' not loaded:
 
@@ -379,7 +375,8 @@ from the server and load anew."
 Does a WebFinger lookup on the server.
 URL can be arg QUERY-URL, or URL at point, or provided by the user.
 If a status or account is found, load it in `mastodon.el', if
-not, just browse the URL in the normal fashion."
+not, just browse the URL in the normal fashion.
+If FORCE, do a lookup regardless of the result of `mastodon--fedi-url-p'."
   (interactive)
   (let* ((query (or query-url
                     (mastodon-tl--property 'shr-url :no-move)
