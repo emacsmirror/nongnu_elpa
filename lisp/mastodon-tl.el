@@ -2757,7 +2757,7 @@ Aims to respect any pagination in effect."
           ((eq type 'mentions)
            (mastodon-notifications--get-mentions))
           ((eq type 'notifications)
-           (mastodon-notifications-get nil nil :force max-id))
+           (mastodon-notifications-get nil nil max-id))
           ((eq type 'profile-statuses-no-boosts)
            ;; TODO: max-id arg needed here also
            (mastodon-profile--open-statuses-no-reblogs))
