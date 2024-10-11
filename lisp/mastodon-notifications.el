@@ -175,7 +175,7 @@ Can be called in notifications view or in follow-requests view."
     (buffer-string)))
 
 (defvar mastodon-notifications-grouped-types
-  '(follow boost favourite)
+  '(follow reblog favourite)
   "List of notification types for which grouping is implemented.")
 
 (defvar mastodon-notifications--action-alist
@@ -257,7 +257,7 @@ JSON is the full notifications JSON."
                      (concat
                       ":\n"
                       (mastodon-notifications--comment-note-text body)))))
-                 ((member type-sym '(favourite boost))
+                 ((member type-sym '(favourite reblog))
                   (mastodon-notifications--comment-note-text body))
                  (t body)))
          ;; author-byline
@@ -269,7 +269,7 @@ JSON is the full notifications JSON."
             (alist-get type-sym mastodon-notifications--action-alist)))
          .status_id
          ;; base toot
-         (when (member type-sym '(favourite boost))
+         (when (member type-sym '(favourite reblog))
            status)
          nil nil nil nil
          nil group accounts))))) ;; insert status still needs our group data
