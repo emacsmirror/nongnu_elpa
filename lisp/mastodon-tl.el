@@ -711,7 +711,8 @@ LETTER is a string, F for favourited, B for boosted, or K for bookmarked."
     (image-transforms-p)))
 
 (defun mastodon-tl--byline (toot author-byline action-byline
-                                 &optional detailed-p domain base-toot)
+                                 &optional detailed-p domain base-toot
+                                 group)
   "Generate byline for TOOT.
 AUTHOR-BYLINE is a function for adding the author portion of
 the byline that takes one variable.
@@ -723,13 +724,15 @@ this just means displaying toot client.
 When DOMAIN, force inclusion of user's domain in their handle.
 BASE-TOOT is JSON for the base toot, if any."
   (let* ((created-time
-          ;; bosts and faves in notifs view
-          ;; (makes timestamps be for the original toot not the boost/fave):
-          (or (mastodon-tl--field 'created_at
-                                  (mastodon-tl--field 'status toot))
-              ;; all other toots, inc. boosts/faves in timelines:
-              ;; (mastodon-tl--field auto fetches from reblogs if needed):
-              (mastodon-tl--field 'created_at toot)))
+          (if group
+              (mastodon-tl--field 'latest_page_notification_at group)
+            ;; bosts and faves in notifs view
+            ;; (makes timestamps be for the original toot not the boost/fave):
+            (or (mastodon-tl--field 'created_at
+                                    (mastodon-tl--field 'status toot))
+                ;; all other toots, inc. boosts/faves in timelines:
+                ;; (mastodon-tl--field auto fetches from reblogs if needed):
+                (mastodon-tl--field 'created_at toot))))
          (parsed-time (date-to-time created-time))
          (faved (eq t (mastodon-tl--field 'favourited toot)))
          (boosted (eq t (mastodon-tl--field 'reblogged toot)))
@@ -1519,7 +1522,7 @@ Runs `mastodon-tl--render-text' and fetches poll or media."
 
 (defun mastodon-tl--insert-status
     (toot body author-byline action-byline &optional id base-toot
-          detailed-p thread domain unfolded no-byline)
+          detailed-p thread domain unfolded no-byline group)
   "Display the content and byline of timeline element TOOT.
 BODY will form the section of the toot above the byline.
 AUTHOR-BYLINE is an optional function for adding the author
@@ -1539,7 +1542,10 @@ THREAD means the status will be displayed in a thread view.
 When DOMAIN, force inclusion of user's domain in their handle.
 UNFOLDED is a boolean meaning whether to unfold or fold item if foldable.
 NO-BYLINE means just insert toot body, used for folding."
-  (let* ((reply-to-id (alist-get 'in_reply_to_id toot))
+  (let* ((reply-to-id
+          (if group
+              (alist-get 'status_id group)
+            (alist-get 'in_reply_to_id toot)))
          (after-reply-status-p
           (when (and thread reply-to-id)
             (mastodon-tl--after-reply-status reply-to-id)))
@@ -1572,7 +1578,7 @@ NO-BYLINE means just insert toot body, used for folding."
        "\n"
        (unless no-byline
          (mastodon-tl--byline toot author-byline action-byline
-                              detailed-p domain base-toot)))
+                              detailed-p domain base-toot group)))
       'item-type    'toot
       'item-id      (or id ; notification's own id
                         (alist-get 'id toot)) ; toot id
