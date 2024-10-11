@@ -181,12 +181,14 @@ Can be called in notifications view or in follow-requests view."
 (defvar mastodon-notifications--action-alist
   '((reblog . "Boosted")
     (favourite . "Favourited")
-    (follow-request . "Requested to follow")
+    (follow_request . "Requested to follow")
     (follow . "Followed")
     (mention . "Mentioned")
     (status . "Posted")
     (poll . "Posted a poll")
-    (edit . "Edited")))
+    (update . "Edited"))
+  "Action strings keyed by notification type.
+Types are those of the Mastodon API.")
 
 (defun mastodon-notifications--alist-by-value (str field json)
   "From JSON, return the alist whose FIELD value matches STR.
