@@ -162,40 +162,6 @@ Can be called in notifications view or in follow-requests view."
   (interactive)
   (mastodon-notifications--follow-request-process :reject))
 
-(defun mastodon-notifications--mention (group json)
-  "Format for a `mention' NOTE."
-  (mastodon-notifications--format-note group json 'mention))
-
-(defun mastodon-notifications--follow (group json)
-  "Format for a `follow' NOTE."
-  (mastodon-notifications--format-note group json 'follow))
-
-(defun mastodon-notifications--follow-request (group json)
-  "Format for a `follow-request' NOTE."
-  (mastodon-notifications--format-note group json 'follow-request))
-
-(defun mastodon-notifications--favourite (group json)
-  "Format for a `favourite' NOTE."
-  (mastodon-notifications--format-note group json 'favourite))
-
-(defun mastodon-notifications--reblog (group json)
-  "Format for a `boost' NOTE."
-  (mastodon-notifications--format-note group json 'reblog))
-
-(defun mastodon-notifications--status (group json)
-  "Format for a `status' NOTE.
-Status notifications are given when
-`mastodon-tl--enable-notify-user-posts' has been set."
-  (mastodon-notifications--format-note group json 'status))
-
-(defun mastodon-notifications--poll (group json)
-  "Format for a `poll' NOTE."
-  (mastodon-notifications--format-note group json 'poll))
-
-(defun mastodon-notifications--edit (group json)
-  "Format for an `edit' NOTE."
-  (mastodon-notifications--format-note group json 'edit))
-
 (defun mastodon-notifications--comment-note-text (str)
   "Add comment face to all text in STR with `shr-text' face only."
   (with-temp-buffer
