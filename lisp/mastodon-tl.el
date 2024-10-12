@@ -589,6 +589,11 @@ Do so if type of status at poins is not follow_request/follow."
                   (string= type "follow")) ; no counts for these
         (message "%s" echo)))))
 
+;; FIXME: now that this can also be used for non byline rendering, let's remove
+;; the toot arg, and deal with attachments higher up (on real author
+;; byline only)
+;; removing toot arg makes it easier to render notifs that have no status
+;; (foll_reqs)
 (defun mastodon-tl--byline-username (toot &optional account)
   "Format a byline username from account in TOOT."
   (let-alist (or account (alist-get 'account toot))
@@ -627,6 +632,11 @@ DOMAIN is optionally added to the handle."
                 'mastodon-handle (concat "@" .acct)
 	        'help-echo (concat "Browse user profile of @" .acct))))
 
+(defun mastodon-tl--byline-uname-+-handle (data &optional domain account)
+  ""
+  (concat (mastodon-tl--byline-username data account)
+          " (" (mastodon-tl--byline-handle data domain account) ")"))
+
 (defun mastodon-tl--byline-author (toot &optional avatar domain base)
   "Propertize author of TOOT.
 If TOOT contains a reblog, return author of reblogged item.
@@ -649,8 +659,7 @@ If BASE is nil, we are a boosted byline, so show less info."
                    (alist-get 'account data))))
      (if (not base)
          (mastodon-tl--byline-handle data domain)
-       (concat (mastodon-tl--byline-username data)
-               " (" (mastodon-tl--byline-handle data domain) ")")))))
+       (mastodon-tl--byline-uname-+-handle data domain)))))
 
 (defun mastodon-tl--format-byline-help-echo (toot)
   "Format a help-echo for byline of TOOT.

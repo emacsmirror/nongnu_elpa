@@ -231,6 +231,7 @@ JSON is the full notifications JSON."
          (if (member type-sym '(follow follow_request))
              ;; Using reblog with an empty id will mark this as something
              ;; non-boostable/non-favable.
+             ;; status
              (cons '(reblog (id . nil)) status) ;;note))
            ;; reblogs/faves use 'note' to process their own json not the
            ;; toot's. this ensures following etc. work on such notifs
@@ -261,10 +262,16 @@ JSON is the full notifications JSON."
                   (mastodon-notifications--comment-note-text body))
                  (t body)))
          ;; author-byline
-         (lambda (&rest _args)
-           (mastodon-notifications--byline-account accounts status))
+         (cond ((member type-sym '(favourite reblog mention))
+                (lambda (&rest _args)
+                  (mastodon-notifications--byline-accounts accounts status group)))
+               ((eq type-sym 'follow_request)
+                (lambda (&rest _args)
+                  (mastodon-tl--byline-uname-+-handle status nil (car accounts))))
+               (t #'mastodon-tl--byline-author))
+         ;; #'mastodon-tl--byline-author
          ;; action-byline
-         (lambda (_status)
+         (lambda (&rest _args)
            (mastodon-notifications--byline-concat
             (alist-get type-sym mastodon-notifications--action-alist)))
          .status_id
