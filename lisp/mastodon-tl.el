@@ -589,9 +589,9 @@ Do so if type of status at poins is not follow_request/follow."
                   (string= type "follow")) ; no counts for these
         (message "%s" echo)))))
 
-(defun mastodon-tl--byline-username (toot)
+(defun mastodon-tl--byline-username (toot &optional account)
   "Format a byline username from account in TOOT."
-  (let-alist (alist-get 'account toot)
+  (let-alist (or account (alist-get 'account toot))
     (propertize (if (not (string-empty-p .display_name))
                     .display_name
                   .username)
@@ -609,10 +609,10 @@ Do so if type of status at poins is not follow_request/follow."
                             (string-suffix-p "-following*" (buffer-name)))
                   (mastodon-tl--format-byline-help-echo toot)))))
 
-(defun mastodon-tl--byline-handle (toot &optional domain)
+(defun mastodon-tl--byline-handle (toot &optional domain account)
   "Format a byline handle from account in TOOT.
 DOMAIN is optionally added to the handle."
-  (let-alist (alist-get 'account toot)
+  (let-alist (or account (alist-get 'account toot))
     (propertize (concat "@" .acct
                         (when domain
                           (concat "@"
@@ -621,7 +621,7 @@ DOMAIN is optionally added to the handle."
                 'face 'mastodon-handle-face
                 'mouse-face 'highlight
 	        'mastodon-tab-stop 'user-handle
-                'account .account
+                'account account
 	        'shr-url .url
 	        'keymap mastodon-tl--link-keymap
                 'mastodon-handle (concat "@" .acct)

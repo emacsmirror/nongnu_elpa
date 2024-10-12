@@ -278,56 +278,33 @@ JSON is the full notifications JSON."
 ;; we provide account directly, rather than let-alisting toot
 ;; almost everything is .account.field anyway
 ;; but toot still needed also, for attachments, etc.
-(defun mastodon-notifications--byline-account
-    (accounts toot &optional avatar domain)
+(defun mastodon-notifications--byline-accounts
+    (accounts toot group &optional avatar domain)
   "Propertize author byline ACCOUNT for TOOT, the item responded to.
 With arg AVATAR, include the account's avatar image.
 When DOMAIN, force inclusion of user's domain in their handle."
-  (cl-loop
-   for account in accounts
-   concat
-   (let-alist account
-     (concat
-      ;; avatar insertion moved up to `mastodon-tl--byline' by default to
-      ;; be outside 'byline propt.
-      (when (and avatar ; used by `mastodon-profile--format-user'
-                 mastodon-tl--show-avatars
-                 mastodon-tl--display-media-p
-                 (mastodon-tl--image-trans-check))
-        (mastodon-media--get-avatar-rendering .avatar))
-      ;; username:
-      (propertize (if (not (string-empty-p .display_name))
-                      .display_name
-                    .username)
-                  'face 'mastodon-display-name-face
-                  ;; enable playing of videos when point is on byline:
-                  'attachments (mastodon-tl--get-attachments-for-byline toot)
-                  'keymap mastodon-tl--byline-link-keymap
-                  ;; echo faves count when point on post author name:
-                  ;; which is where --goto-next-toot puts point.
-                  'help-echo
-                  ;; but don't add it to "following"/"follows" on profile views:
-                  ;; we don't have a tl--buffer-spec yet:
-                  (unless (or (string-suffix-p "-followers*" (buffer-name))
-                              (string-suffix-p "-following*" (buffer-name)))
-                    (mastodon-tl--format-byline-help-echo toot)))
-      ;; handle:
-      " ("
-      (propertize (concat "@" .acct
-                          (when domain
-                            (concat "@"
-                                    (url-host
-                                     (url-generic-parse-url .url)))))
-                  'face 'mastodon-handle-face
-                  'mouse-face 'highlight
-	          'mastodon-tab-stop 'user-handle
-                  'account account
-	          'shr-url .url
-	          'keymap mastodon-tl--link-keymap
-                  'mastodon-handle (concat "@" .acct)
-	          'help-echo (concat "Browse user profile of @" .acct))
-      ")"
-      (if (< 1 (length accounts)) "\n" "")))))
+  (let ((others-count (- (alist-get 'notifications_count group)
+                         (length accounts))))
+    (concat
+     (cl-loop
+      for account in accounts
+      concat
+      (let-alist account
+        (concat
+         ;; avatar insertion moved up to `mastodon-tl--byline' by default to
+         ;; be outside 'byline propt.
+         (when (and avatar ; used by `mastodon-profile--format-user'
+                    mastodon-tl--show-avatars
+                    mastodon-tl--display-media-p
+                    (mastodon-tl--image-trans-check))
+           (mastodon-media--get-avatar-rendering .avatar))
+         ;; username:
+         (mastodon-tl--byline-username toot account)
+         ;; handle:
+         " (" (mastodon-tl--byline-handle toot nil account) ")"
+         (if (< 1 (length accounts)) "\n" ""))))
+     (if (< 0 others-count)
+         (format "and %s others" others-count)))))
 
 (defun mastodon-notifications--by-type (groups json)
   "Filter NOTE for those listed in `mastodon-notifications--types-alist'.
