@@ -589,51 +589,68 @@ Do so if type of status at poins is not follow_request/follow."
                   (string= type "follow")) ; no counts for these
         (message "%s" echo)))))
 
-(defun mastodon-tl--byline-author (toot &optional avatar domain)
+(defun mastodon-tl--byline-username (toot)
+  "Format a byline username from account in TOOT."
+  (let-alist (alist-get 'account toot)
+    (propertize (if (not (string-empty-p .display_name))
+                    .display_name
+                  .username)
+                'face 'mastodon-display-name-face
+                ;; enable playing of videos when point is on byline:
+                'attachments (mastodon-tl--get-attachments-for-byline toot)
+                'keymap mastodon-tl--byline-link-keymap
+                ;; echo faves count when point on post author name:
+                ;; which is where --goto-next-toot puts point.
+                'help-echo
+                ;; but don't add it to "following"/"follows" on
+                ;; profile views: we don't have a tl--buffer-spec
+                ;; yet:
+                (unless (or (string-suffix-p "-followers*" (buffer-name))
+                            (string-suffix-p "-following*" (buffer-name)))
+                  (mastodon-tl--format-byline-help-echo toot)))))
+
+(defun mastodon-tl--byline-handle (toot &optional domain)
+  "Format a byline handle from account in TOOT.
+DOMAIN is optionally added to the handle."
+  (let-alist (alist-get 'account toot)
+    (propertize (concat "@" .acct
+                        (when domain
+                          (concat "@"
+                                  (url-host
+                                   (url-generic-parse-url .url)))))
+                'face 'mastodon-handle-face
+                'mouse-face 'highlight
+	        'mastodon-tab-stop 'user-handle
+                'account .account
+	        'shr-url .url
+	        'keymap mastodon-tl--link-keymap
+                'mastodon-handle (concat "@" .acct)
+	        'help-echo (concat "Browse user profile of @" .acct))))
+
+(defun mastodon-tl--byline-author (toot &optional avatar domain base)
   "Propertize author of TOOT.
+If TOOT contains a reblog, return author of reblogged item.
 With arg AVATAR, include the account's avatar image.
-When DOMAIN, force inclusion of user's domain in their handle."
-  (let-alist toot
+When DOMAIN, force inclusion of user's domain in their handle.
+BASE means to use data from the base item (reblog slot) if possible.
+If BASE is nil, we are a boosted byline, so show less info."
+  (let* ((data (if base
+                   (mastodon-tl--toot-or-base toot)
+                 toot)))
     (concat
-     ;; avatar insertion moved up to `mastodon-tl--byline' by default to be
-     ;; outside 'byline propt.
+     ;; avatar insertion moved up to `mastodon-tl--byline' by default to
+     ;; be outside 'byline propt.
      (when (and avatar ; used by `mastodon-profile--format-user'
                 mastodon-tl--show-avatars
                 mastodon-tl--display-media-p
                 (mastodon-tl--image-trans-check))
-       (mastodon-media--get-avatar-rendering .account.avatar))
-     ;; username:
-     (propertize (if (not (string-empty-p .account.display_name))
-                     .account.display_name
-                   .account.username)
-                 'face 'mastodon-display-name-face
-                 ;; enable playing of videos when point is on byline:
-                 'attachments (mastodon-tl--get-attachments-for-byline toot)
-                 'keymap mastodon-tl--byline-link-keymap
-                 ;; echo faves count when point on post author name:
-                 ;; which is where --goto-next-toot puts point.
-                 'help-echo
-                 ;; but don't add it to "following"/"follows" on profile views:
-                 ;; we don't have a tl--buffer-spec yet:
-                 (unless (or (string-suffix-p "-followers*" (buffer-name))
-                             (string-suffix-p "-following*" (buffer-name)))
-                   (mastodon-tl--format-byline-help-echo toot)))
-     ;; handle:
-     " ("
-     (propertize (concat "@" .account.acct
-                         (when domain
-                           (concat "@"
-                                   (url-host
-                                    (url-generic-parse-url .account.url)))))
-                 'face 'mastodon-handle-face
-                 'mouse-face 'highlight
-	         'mastodon-tab-stop 'user-handle
-                 'account .account
-	         'shr-url .account.url
-	         'keymap mastodon-tl--link-keymap
-                 'mastodon-handle (concat "@" .account.acct)
-	         'help-echo (concat "Browse user profile of @" .account.acct))
-     ")")))
+       (mastodon-media--get-avatar-rendering
+        (alist-get 'avatar
+                   (alist-get 'account data))))
+     (if (not base)
+         (mastodon-tl--byline-handle data domain)
+       (concat (mastodon-tl--byline-username data)
+               " (" (mastodon-tl--byline-handle data domain) ")")))))
 
 (defun mastodon-tl--format-byline-help-echo (toot)
   "Format a help-echo for byline of TOOT.
@@ -681,13 +698,28 @@ The result is added as an attachments property to author-byline."
                       :type .type)))
             media)))
 
-(defun mastodon-tl--byline-boosted (toot)
-  "Add byline for boosted data from TOOT."
+(defun mastodon-tl--byline-booster (toot)
+  "Add author byline for booster from TOOT.
+Only return something if TOOT contains a reblog."
   (let ((reblog (alist-get 'reblog toot)))
-    (when reblog
-      (concat
-       "\n  " (propertize "Boosted" 'face 'mastodon-boosted-face)
-       " " (mastodon-tl--byline-author reblog)))))
+    (if reblog
+        (concat
+         " " (mastodon-tl--byline-author toot))
+      "")))
+
+(defun mastodon-tl--byline-booster-str (toot)
+  "Format boosted string for action byline.
+Only return string if TOOT contains a reblog."
+  (let ((reblog (alist-get 'reblog toot)))
+    (if reblog
+        (concat
+         " " (propertize "boosted" 'face 'mastodon-boosted-face) "\n")
+      "")))
+
+(defun mastodon-tl--byline-boost (toot)
+  "Format a boost action-byline element for TOOT."
+  (concat (mastodon-tl--byline-booster toot)
+          (mastodon-tl--byline-booster-str toot)))
 
 (defun mastodon-tl--format-faved-or-boosted-byline (letter)
   "Format the byline marker for a boosted or favourited status.
@@ -710,9 +742,8 @@ LETTER is a string, F for favourited, B for boosted, or K for bookmarked."
       (image-type-available-p 'imagemagick)
     (image-transforms-p)))
 
-(defun mastodon-tl--byline (toot author-byline action-byline
-                                 &optional detailed-p domain base-toot
-                                 group)
+(defun mastodon-tl--byline (toot author-byline &optional detailed-p
+                                 domain base-toot group)
   "Generate byline for TOOT.
 AUTHOR-BYLINE is a function for adding the author portion of
 the byline that takes one variable.
@@ -738,11 +769,11 @@ BASE-TOOT is JSON for the base toot, if any."
          (boosted (eq t (mastodon-tl--field 'reblogged toot)))
          (bookmarked (eq t (mastodon-tl--field 'bookmarked toot)))
          (visibility (mastodon-tl--field 'visibility toot))
-         (account (alist-get 'account toot))
-         (avatar-url (alist-get 'avatar account))
          (type (alist-get 'type toot))
          (base-toot-maybe (or base-toot ;; show edits for notifs
                               (mastodon-tl--toot-or-base toot))) ;; for boosts
+         (account (alist-get 'account base-toot-maybe))
+         (avatar-url (alist-get 'avatar account))
          (edited-time (alist-get 'edited_at base-toot-maybe))
          (edited-parsed (when edited-time (date-to-time edited-time))))
     (concat
@@ -762,17 +793,16 @@ BASE-TOOT is JSON for the base toot, if any."
              (when bookmarked
                (mastodon-tl--format-faved-or-boosted-byline
                 (mastodon-tl--symbol 'bookmark))))
-     ;; we remove avatars from the byline also, so that they also do not mess
-     ;; with `mastodon-tl--goto-next-item':
+     ;; we remove avatars from the byline also, so that they also do not
+     ;; mess with `mastodon-tl--goto-next-item':
      (when (and mastodon-tl--show-avatars
                 mastodon-tl--display-media-p
                 (mastodon-tl--image-trans-check))
        (mastodon-media--get-avatar-rendering avatar-url))
      (propertize
       (concat
-       ;; we propertize help-echo format faves for author name
-       ;; in `mastodon-tl--byline-author'
-       (funcall author-byline toot nil domain)
+       ;; NB: action-byline (boost) is now added in insert-status, so no
+       ;; longer part of the byline.
        ;; visibility:
        (cond ((string= visibility "direct")
               (propertize (concat " " (mastodon-tl--symbol 'direct))
@@ -780,8 +810,8 @@ BASE-TOOT is JSON for the base toot, if any."
              ((string= visibility "private")
               (propertize (concat " " (mastodon-tl--symbol 'private))
                           'help-echo visibility)))
-       ;;action byline:
-       (funcall action-byline toot)
+       ;; (base) author byline:
+       (funcall author-byline toot nil domain :base)
        " "
        ;; timestamp:
        (propertize
@@ -1112,7 +1142,7 @@ content should be hidden."
       (save-excursion
         (goto-char (point-min))
         (while (not (string= "No more items" ; improve this hack test!
-                           (mastodon-tl--goto-next-item :no-refresh)))
+                             (mastodon-tl--goto-next-item :no-refresh)))
           (let* ((json (mastodon-tl--property 'item-json :no-move))
                  (cw (alist-get 'spoiler_text json)))
             (when (not (string= "" cw))
@@ -1576,9 +1606,11 @@ NO-BYLINE means just insert toot body, used for folding."
         'toot-body t) ;; includes newlines etc. for folding
        ;; byline:
        "\n"
-       (unless no-byline
-         (mastodon-tl--byline toot author-byline action-byline
-                              detailed-p domain base-toot group)))
+       (if no-byline
+           ""
+         (concat (funcall action-byline toot)
+                 (mastodon-tl--byline toot author-byline detailed-p
+                                      domain base-toot group))))
       'item-type    'toot
       'item-id      (or id ; notification's own id
                         (alist-get 'id toot)) ; toot id
@@ -1665,7 +1697,7 @@ NO-BYLINE means just insert toot body, used for folding."
       (mastodon-tl--insert-status
        toot
        (mastodon-tl--clean-tabs-and-nl spoiler-or-content)
-       'mastodon-tl--byline-author 'mastodon-tl--byline-boosted
+       #'mastodon-tl--byline-author #'mastodon-tl--byline-boost
        nil nil detailed-p thread domain unfolded no-byline))))
 
 (defun mastodon-tl--timeline (toots &optional thread domain)
