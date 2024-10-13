@@ -173,15 +173,15 @@ the format fields.X.keyname."
   [:description
    "Fields"
    ["Name"
-    ("1 n" "" "fields.1.name" :alist-key fields.1.name :class mastodon-transient-field)
-    ("2 n" "" "fields.2.name" :alist-key fields.2.name :class mastodon-transient-field)
-    ("3 n" "" "fields.3.name" :alist-key fields.3.name :class mastodon-transient-field)
-    ("4 n" "" "fields.4.name" :alist-key fields.4.name :class mastodon-transient-field)]
+    ("1 n" "" mastodon-transient-field-infix :alist-key fields.1.name)
+    ("2 n" "" mastodon-transient-field-infix :alist-key fields.2.name)
+    ("3 n" "" mastodon-transient-field-infix :alist-key fields.3.name)
+    ("4 n" "" mastodon-transient-field-infix :alist-key fields.4.name)]
    ["Value"
-    ("1 v" "" "fields.1.value" :alist-key fields.1.value :class mastodon-transient-field)
-    ("2 v" "" "fields.2.value" :alist-key fields.2.value :class mastodon-transient-field)
-    ("3 v" "" "fields.3.value" :alist-key fields.3.value :class mastodon-transient-field)
-    ("4 v" "" "fields.4.value" :alist-key fields.4.value :class mastodon-transient-field)]]
+    ("1 v" "" mastodon-transient-field-infix :alist-key fields.1.value)
+    ("2 v" "" mastodon-transient-field-infix :alist-key fields.2.value)
+    ("3 v" "" mastodon-transient-field-infix :alist-key fields.3.value)
+    ("4 v" "" mastodon-transient-field-infix :alist-key fields.4.value)]]
   ["Update"
    ("C-c C-c" "Save settings" mastodon-profile-fields-update)
    ("C-c C-k" :info "Revert all changes")]
@@ -193,9 +193,12 @@ the format fields.X.keyname."
 ;;; CLASSES
 
 (defclass mastodon-transient-field (tp-option-str)
-  ((always-read :initarg :always-read :initform t))
-  "An infix option class for our options.
-We always read.")
+  ()
+  "An infix for our fields options.")
+
+(transient-define-infix mastodon-transient-field-infix ()
+  :class 'mastodon-transient-field
+  :argument "junk")
 
 (cl-defmethod transient-init-value ((obj mastodon-transient-field))
   "Initialize value of OBJ."
