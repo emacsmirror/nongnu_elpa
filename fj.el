@@ -334,8 +334,7 @@ If we fail, return `fj-user'." ;; poss insane
   :parent special-mode-map
   ;; should actually be universal:
   "<tab>" #'fj-next-tab-item
-  "S-<tab>" #'fj-prev-tab-item
-  "g" #'fj-item-view-reload
+  "<backtab>" #'fj-prev-tab-item
   "C-M-q" #'fj-kill-all-buffers
   "/" #'fj-switch-to-buffer
   ;; really oughta be universal:
@@ -343,6 +342,7 @@ If we fail, return `fj-user'." ;; poss insane
   "N" #'fj-view-notifications
   "U" #'fj-update-user-settings
   "b" #'fj-browse-view
+  "C" #'fj-copy-item-url
   "n" #'fj-issue-next
   "p" #'fj-issue-prev)
 
@@ -351,8 +351,7 @@ If we fail, return `fj-user'." ;; poss insane
   :parent tabulated-list-mode-map
   ;; should actually be universal:
   "<tab>" #'fj-next-tab-item
-  "S-<tab>" #'fj-prev-tab-item
-  "g" #'fj-item-view-reload ;; FIXME: tl reload fun
+  "<backtab>" #'fj-prev-tab-item
   "C-M-q" #'fj-kill-all-buffers
   "/" #'fj-switch-to-buffer
   ;; really oughta be universal:
@@ -510,7 +509,7 @@ X and Y are sorting args."
   "c" #'fj-create-issue
   "s" #'fj-repo-search-tl
   "r" #'fj-repo-tl-readme
-  "g" #'fj-list-user-repos
+  "g" #'fj-repo-tl-reload
   "B" #'fj-tl-browse-entry
   "L" #'fj-repo-copy-clone-url
   "j" #'imenu)
@@ -1001,6 +1000,7 @@ NEW-BODY is the new comment text to send."
   :doc "Map for `fj-issue-tl-mode', a tabluated list of issues."
   :parent fj-generic-tl-map ; has nav
   "C" #'fj-issues-tl-comment
+  "g" #'fj-issues-tl-reload
   "e" #'fj-issues-tl-edit
   "t" #'fj-issues-tl-edit-title
   "v" #'fj-issues-tl-view
@@ -1318,6 +1318,10 @@ JSON is the item's data to process the link with."
                                  fj-link-keymap 1 2 nil nil
                                  '(fj-tab-stop t)))
     (setq str
+          (fedi-propertize-items str fedi-post-url-regex 'link json
+                                 fj-link-keymap 1 1 nil nil
+                                 '(fj-tab-stop t)))
+    (setq str
           (fedi-propertize-items str fedi-post-commit-regex 'commit json
                                  fj-link-keymap 1 1 nil nil
                                  '(fj-tab-stop t)
@@ -1330,6 +1334,7 @@ JSON is the item's data to process the link with."
   :parent  fj-generic-map
   "e" #'fj-item-view-edit-item-at-point
   "c" #'fj-item-view-comment
+  "g" #'fj-item-view-reload
   "k" #'fj-item-view-close
   "o" #'fj-item-view-reopen
   "K" #'fj-item-view-comment-delete
