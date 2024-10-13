@@ -335,7 +335,6 @@ If we fail, return `fj-user'." ;; poss insane
   ;; should actually be universal:
   "<tab>" #'fj-next-tab-item
   "<backtab>" #'fj-prev-tab-item
-  "g" #'fj-item-view-reload
   "C-M-q" #'fj-kill-all-buffers
   "/" #'fj-switch-to-buffer
   ;; really oughta be universal:
@@ -353,7 +352,6 @@ If we fail, return `fj-user'." ;; poss insane
   ;; should actually be universal:
   "<tab>" #'fj-next-tab-item
   "<backtab>" #'fj-prev-tab-item
-  "g" #'fj-item-view-reload ;; FIXME: tl reload fun
   "C-M-q" #'fj-kill-all-buffers
   "/" #'fj-switch-to-buffer
   ;; really oughta be universal:
@@ -511,7 +509,7 @@ X and Y are sorting args."
   "c" #'fj-create-issue
   "s" #'fj-repo-search-tl
   "r" #'fj-repo-tl-readme
-  "g" #'fj-list-user-repos
+  "g" #'fj-repo-tl-reload
   "B" #'fj-tl-browse-entry
   "L" #'fj-repo-copy-clone-url
   "j" #'imenu)
@@ -1002,6 +1000,7 @@ NEW-BODY is the new comment text to send."
   :doc "Map for `fj-issue-tl-mode', a tabluated list of issues."
   :parent fj-generic-tl-map ; has nav
   "C" #'fj-issues-tl-comment
+  "g" #'fj-issues-tl-reload
   "e" #'fj-issues-tl-edit
   "t" #'fj-issues-tl-edit-title
   "v" #'fj-issues-tl-view
@@ -1335,6 +1334,7 @@ JSON is the item's data to process the link with."
   :parent  fj-generic-map
   "e" #'fj-item-view-edit-item-at-point
   "c" #'fj-item-view-comment
+  "g" #'fj-item-view-reload
   "k" #'fj-item-view-close
   "o" #'fj-item-view-reopen
   "K" #'fj-item-view-comment-delete
