@@ -886,6 +886,7 @@ links in the text. If TOOT is nil no parsing occurs."
                                        (car region) (cdr region)
                                        (get-text-property (car region) 'shr-url))
             (when (proper-list-p toot) ;; not on profile fields cons cells
+              ;; render card author maybe:
               (let* ((card (alist-get 'card toot))
                      (card-url (alist-get 'url card))
                      (authors (alist-get 'authors card))
@@ -894,7 +895,7 @@ links in the text. If TOOT is nil no parsing occurs."
                 (when (and (string= url-no-query card-url)
                            ;; only if we have an account's data:
                            (alist-get 'account (car authors)))
-                  (goto-char (point-max)) ;;(cdr region))
+                  (goto-char (point-max))
                   (mastodon-tl--insert-card-authors authors)))))))
       (buffer-string))))
 
@@ -903,17 +904,30 @@ links in the text. If TOOT is nil no parsing occurs."
   (insert
    (concat
     "\n(Authors: "
-    (cl-loop for x in authors
-             concat
-             (mastodon-tl--format-card-author x))
+    (mapconcat #'mastodon-tl--format-card-author authors "\n")
     ")\n")))
 
 (defun mastodon-tl--format-card-author (data)
   "Render card author DATA."
   ;; FIXME: update as needed, data contains "name" "url" and "account"
-  (let-alist data
-    (when .account
-      (mastodon-search--propertize-user .account))))
+  (when (alist-get 'account data) ;.account
+    (let-alist (alist-get 'account data) ;.account
+      ;; FIXME: replace with refactored handle render fun
+      ;; in byline refactor branch:
+      (concat
+       (propertize .username
+                   'face 'mastodon-display-name-face
+                   'byline t
+                   'item-type 'user
+                   'item-id .id)
+       " "
+       (propertize (concat "@" .acct)
+                   'face 'mastodon-handle-face
+                   'mouse-face 'highlight
+		   'mastodon-tab-stop 'user-handle
+		   'keymap mastodon-tl--link-keymap
+                   'mastodon-handle (concat "@" .acct)
+		   'help-echo (concat "Browse user profile of @" .acct))))))
 
 (defun mastodon-tl--process-link (toot start end url)
   "Process link URL in TOOT as hashtag, userhandle, or normal link.
