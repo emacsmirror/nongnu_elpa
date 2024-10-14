@@ -279,6 +279,7 @@ etc.")
     ;; is already bound to w also
     (define-key map (kbd "u") #'mastodon-tl--update)
     (define-key map [remap shr-browse-url] #'mastodon-url-lookup)
+    (define-key map (kbd "M-RET") #'mastodon-search--load-link-posts)
     map)
   "The keymap to be set for shr.el generated links that are not images.
 We need to override the keymap so tabbing will navigate to all
@@ -574,6 +575,14 @@ With a double PREFIX arg, limit results to your own instance."
      (if (listp tag) "tags-multiple" (concat "tag-" tag))
      (concat "timelines/tag/" (if (listp tag) (car tag) tag)) ; must be /tag/:sth
      'mastodon-tl--timeline nil params)))
+
+(defun mastodon-tl--link-timeline (url)
+  "Load a link timeline, displaying posts containing URL."
+  (let ((endpoint (mastodon-http--api "timelines/link"))
+        (params `(("url" . ,url))))
+    (mastodon-tl--init "links" "timelines/link"
+                       'mastodon-tl--timeline nil
+                       params)))
 
 
 ;;; BYLINES, etc.
@@ -1987,7 +1996,9 @@ call this function after it is set or use something else."
           ((string= "*mastodon-toot-edits*" buffer-name)
            'toot-edits)
           ((string= "*masto-image*" (buffer-name))
-           'mastodon-image))))
+           'mastodon-image)
+          ((mastodon-tl--endpoint-str-= "timelines/link")
+           'link-timeline))))
 
 (defun mastodon-tl--buffer-type-eq (type)
   "Return t if current buffer type is equal to symbol TYPE."
