@@ -901,17 +901,18 @@ links in the text. If TOOT is nil no parsing occurs."
 
 (defun mastodon-tl--insert-card-authors (authors)
   "Insert a string of card AUTHORS."
-  (insert
-   (concat
-    "\n(Authors: "
-    (mapconcat #'mastodon-tl--format-card-author authors "\n")
-    ")\n")))
+  (let ((authors-str (format "Author%s: "
+                             (if (< 1 (length authors)) "s" ""))))
+    (insert
+     (concat
+      "\n(" authors-str
+      (mapconcat #'mastodon-tl--format-card-author authors "\n")
+      ")\n"))))
 
 (defun mastodon-tl--format-card-author (data)
   "Render card author DATA."
-  ;; FIXME: update as needed, data contains "name" "url" and "account"
-  (when (alist-get 'account data) ;.account
-    (let-alist (alist-get 'account data) ;.account
+  (when-let ((account (alist-get 'account data))) ;.account
+    (let-alist account ;.account
       ;; FIXME: replace with refactored handle render fun
       ;; in byline refactor branch:
       (concat
