@@ -564,7 +564,7 @@ X and Y are sorting args."
   "List repos for `fj-user'."
   (interactive)
   (if (not fj-user)
-      (user-error "Set `fj-user' to run this command.")
+      (user-error "Set `fj-user' to run this command")
     (fj-user-repos-tl fj-user)))
 
 (defun fj-star-repo (repo owner &optional unstar)
