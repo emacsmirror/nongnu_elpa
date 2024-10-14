@@ -781,12 +781,15 @@ BASE-TOOT is JSON for the base toot, if any."
        (funcall action-byline toot)
        " "
        ;; timestamp:
-       (propertize
-        (format-time-string mastodon-toot-timestamp-format parsed-time)
-        'timestamp parsed-time
-        'display (if mastodon-tl--enable-relative-timestamps
-                     (mastodon-tl--relative-time-description parsed-time)
-                   parsed-time))
+       (let ((ts (format-time-string
+                  mastodon-toot-timestamp-format parsed-time)))
+         (propertize ts
+                     'timestamp parsed-time
+                     'display
+                     (if mastodon-tl--enable-relative-timestamps
+                         (mastodon-tl--relative-time-description parsed-time)
+                       parsed-time)
+                     'help-echo ts))
        ;; detailed:
        (when detailed-p
          (let* ((app (alist-get 'application toot))
