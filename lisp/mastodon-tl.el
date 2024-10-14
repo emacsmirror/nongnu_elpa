@@ -917,7 +917,6 @@ links in the text. If TOOT is nil no parsing occurs."
       (concat
        (propertize .username
                    'face 'mastodon-display-name-face
-                   'byline t
                    'item-type 'user
                    'item-id .id)
        " "
