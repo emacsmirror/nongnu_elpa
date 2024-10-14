@@ -116,8 +116,8 @@ Otherwise just return CONS."
 
 (defun tp-tree-map (fn tree)
   "Apply FN to each element of TREE while preserving the tree structure.
-This is just `-tree-map'."
-  (declare (important-return-value t))
+This is just `-tree-map' from the dash library."
+  ;; (declare (important-return-value t)) ;; commented for older emacsen
   (cond
    ((null tree) ())
    ;; the smallest element this operates on is not a list item, but a cons
