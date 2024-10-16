@@ -598,11 +598,10 @@ Do so if type of status at poins is not follow_request/follow."
                   (string= type "follow")) ; no counts for these
         (message "%s" echo)))))
 
-;; FIXME: now that this can also be used for non byline rendering, let's remove
-;; the toot arg, and deal with attachments higher up (on real author
-;; byline only)
-;; removing toot arg makes it easier to render notifs that have no status
-;; (foll_reqs)
+;; FIXME: now that this can also be used for non byline rendering, let's
+;; remove the toot arg, and deal with attachments higher up (on real
+;; author byline only) removing toot arg makes it easier to render notifs
+;; that have no status (foll_reqs)
 (defun mastodon-tl--byline-username (toot &optional account)
   "Format a byline username from account in TOOT."
   (let-alist (or account (alist-get 'account toot))
@@ -634,12 +633,12 @@ DOMAIN is optionally added to the handle."
                                    (url-generic-parse-url .url)))))
                 'face 'mastodon-handle-face
                 'mouse-face 'highlight
-	        'mastodon-tab-stop 'user-handle
+	            'mastodon-tab-stop 'user-handle
                 'account account
-	        'shr-url .url
-	        'keymap mastodon-tl--link-keymap
+	            'shr-url .url
+	            'keymap mastodon-tl--link-keymap
                 'mastodon-handle (concat "@" .acct)
-	        'help-echo (concat "Browse user profile of @" .acct))))
+	            'help-echo (concat "Browse user profile of @" .acct))))
 
 (defun mastodon-tl--byline-uname-+-handle (data &optional domain account)
   ""

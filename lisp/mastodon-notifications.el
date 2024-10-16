@@ -31,6 +31,7 @@
 ;;; Code:
 
 (eval-when-compile (require 'subr-x))
+(require 'cl-lib)
 
 (autoload 'mastodon-http--api "mastodon-http")
 (autoload 'mastodon-http--get-params-async-json "mastodon-http")
@@ -55,7 +56,12 @@
 (autoload 'mastodon-tl--current-filters "mastodon-views")
 (autoload 'mastodon-tl--render-text "mastodon-tl")
 (autoload 'mastodon-notifications-get "mastodon")
-
+(autoload 'mastodon-tl--byline-uname-+-handle "mastodon-tl")
+(autoload 'mastodon-tl--byline-username "mastodon-tl")
+(autoload 'mastodon-tl--byline-handle "mastodon-tl")
+(autoload 'mastodon-http--get-json "mastodon-http")
+(autoload 'mastodon-media--get-avatar-rendering "mastodon-media")
+(autoload 'mastodon-tl--image-trans-check "mastodon-tl")
 
 (defgroup mastodon-tl nil
   "Nofications in mastodon.el."
@@ -81,6 +87,8 @@ make them unweildy."
 (defvar mastodon-tl--buffer-spec)
 (defvar mastodon-tl--display-media-p)
 (defvar mastodon-mode-map)
+(defvar mastodon-tl--fold-toots-at-length)
+(defvar mastodon-tl--show-avatars)
 
 (defvar mastodon-notifications--types-alist
   '(("follow" . mastodon-notifications--follow)
@@ -95,13 +103,13 @@ make them unweildy."
 
 (defvar mastodon-notifications--response-alist
   '(("Followed" . "you")
-    ("Favourited" . "your status from")
-    ("Boosted" . "your status from")
+    ("Favourited" . "your post")
+    ("Boosted" . "your post")
     ("Mentioned" . "you")
     ("Posted a poll" . "that has now ended")
     ("Requested to follow" . "you")
     ("Posted" . "a post")
-    ("Edited" . "a post from"))
+    ("Edited" . "their post"))
   "Alist of subjects for notification types.")
 
 (defvar mastodon-notifications--map
@@ -115,8 +123,9 @@ make them unweildy."
 
 (defun mastodon-notifications--byline-concat (message)
   "Add byline for TOOT with MESSAGE."
-  (concat " " (propertize message 'face 'highlight)
-          " " (cdr (assoc message mastodon-notifications--response-alist))))
+  (concat "\n " (propertize message 'face 'highlight)
+          " " (cdr (assoc message mastodon-notifications--response-alist))
+          "\n"))
 
 (defun mastodon-notifications--follow-request-process (&optional reject)
   "Process the follow request at point.
@@ -206,141 +215,204 @@ JSON is a list of alists."
 
 (defun mastodon-notifications--format-note (group status accounts)
   "Format for a GROUP notification.
-JSON is the full notifications JSON."
-  ;; FIXME: apply/refactor filtering as per/with `mastodon-tl--toot'
-  (let-alist group
-    ;; .sample_account_ids .status_id .notifications_count
-    ;; .most_recent_notifiation_id
-    (let* ((type .type)
-           (type-sym (intern .type))
-           (profile-note
-            (when (eq type-sym 'follow_request)
-              (let ((str (mastodon-tl--field 'note (car accounts))))
-                (if mastodon-notifications--profile-note-in-foll-reqs-max-length
-                    (string-limit str mastodon-notifications--profile-note-in-foll-reqs-max-length)
-                  str))))
-           (follower (car .sample_account_ids))
-           (follower-name (mastodon-tl--field 'username (car accounts)))
-           (filtered (mastodon-tl--field 'filtered status)) ;;toot))
-           (filters (when filtered
-                      (mastodon-tl--current-filters filtered))))
-      (if (and filtered (assoc "hide" filters))
-          nil
-        (mastodon-tl--insert-status
-         ;; toot
-         (if (member type-sym '(follow follow_request))
-             ;; Using reblog with an empty id will mark this as something
-             ;; non-boostable/non-favable.
-             ;; status
-             (cons '(reblog (id . nil)) status) ;;note))
-           ;; reblogs/faves use 'note' to process their own json not the
-           ;; toot's. this ensures following etc. work on such notifs
-           status) ;; FIXME: fix following on these notifs
-         ;; body
-         (let ((body (if-let ((match (assoc "warn" filters)))
-                         (mastodon-tl--spoiler toot (cadr match))
-                       (mastodon-tl--clean-tabs-and-nl
-                        (if (mastodon-tl--has-spoiler status)
-                            (mastodon-tl--spoiler status)
-                          (if (eq type-sym 'follow_request)
-                              (mastodon-tl--render-text profile-note)
-                            (mastodon-tl--content status)))))))
-           (cond ((eq type-sym 'follow)
-                  (propertize "Congratulations, you have a new follower!"
-                              'face 'default))
-                 ((eq type-sym 'follow_request)
-                  (concat
-                   (propertize
-                    (format "You have a follow request from... %s"
-                            follower-name)
-                    'face 'default)
-                   (when mastodon-notifications--profile-note-in-foll-reqs
-                     (concat
-                      ":\n"
-                      (mastodon-notifications--comment-note-text body)))))
-                 ((member type-sym '(favourite reblog))
-                  (mastodon-notifications--comment-note-text body))
-                 (t body)))
-         ;; author-byline
-         (cond ((member type-sym '(favourite reblog mention))
-                (lambda (&rest _args)
-                  (mastodon-notifications--byline-accounts accounts status group)))
-               ((eq type-sym 'follow_request)
-                (lambda (&rest _args)
-                  (mastodon-tl--byline-uname-+-handle status nil (car accounts))))
-               (t #'mastodon-tl--byline-author))
-         ;; #'mastodon-tl--byline-author
-         ;; action-byline
-         (lambda (&rest _args)
-           (mastodon-notifications--byline-concat
-            (alist-get type-sym mastodon-notifications--action-alist)))
-         .status_id
-         ;; base toot
-         (when (member type-sym '(favourite reblog))
-           status)
-         nil nil nil nil
-         nil group accounts))))) ;; insert status still needs our group data
+STATUS is the status's JSON.
+ACCOUNTS is data of the accounts that have reacted to the notification."
+  (let ((folded nil))
+    ;; FIXME: apply/refactor filtering as per/with `mastodon-tl--toot'
+    (let-alist group
+      ;; .sample_account_ids .status_id .notifications_count
+      ;; .most_recent_notifiation_id
+      (let* (;(type .type)
+             (type-sym (intern .type))
+             (profile-note
+              (when (eq type-sym 'follow_request)
+                (let ((str (mastodon-tl--field 'note (car accounts))))
+                  (if mastodon-notifications--profile-note-in-foll-reqs-max-length
+                      (string-limit str mastodon-notifications--profile-note-in-foll-reqs-max-length)
+                    str))))
+             ;; (follower (car .sample_account_ids))
+             (follower-name (mastodon-tl--field 'username (car accounts)))
+             (filtered (mastodon-tl--field 'filtered status)) ;;toot))
+             (filters (when filtered
+                        (mastodon-tl--current-filters filtered))))
+        (unless (and filtered (assoc "hide" filters))
+          (if (member type-sym '(follow follow_request))
+              ;; FIXME: handle follow requests, polls
+              (insert "TODO: follow-req\n")
+            (mastodon-notifications--insert-note
+             ;; toot
+             (if (member type-sym '(follow follow_request))
+                 ;; Using reblog with an empty id will mark this as something
+                 ;; non-boostable/non-favable.
+                 ;; status
+                 status
+               ;; (cons '(reblog (id . nil)) status) ;;note))
+               ;; reblogs/faves use 'note' to process their own json not the
+               ;; toot's. this ensures following etc. work on such notifs
+               status) ;; FIXME: fix following on these notifs
+             ;; body
+             (let ((body (if-let ((match (assoc "warn" filters)))
+                             (mastodon-tl--spoiler status (cadr match))
+                           (mastodon-tl--clean-tabs-and-nl
+                            (if (mastodon-tl--has-spoiler status)
+                                (mastodon-tl--spoiler status)
+                              (if (eq type-sym 'follow_request)
+                                  (mastodon-tl--render-text profile-note)
+                                (mastodon-tl--content status)))))))
+               (cond ((eq type-sym 'follow)
+                      (propertize "Congratulations, you have a new follower!"
+                                  'face 'default))
+                     ((eq type-sym 'follow_request)
+                      (concat
+                       (propertize
+                        (format "You have a follow request from... %s"
+                                follower-name)
+                        'face 'default)
+                       (when mastodon-notifications--profile-note-in-foll-reqs
+                         (concat
+                          ":\n"
+                          (mastodon-notifications--comment-note-text body)))))
+                     ((member type-sym '(favourite reblog))
+                      (mastodon-notifications--comment-note-text body))
+                     (t body)))
+             ;; author-byline
+             #'mastodon-tl--byline-author
+             ;; action-byline
+             (unless (member type-sym '(mention))
+               (mastodon-notifications--byline-concat
+                (alist-get type-sym mastodon-notifications--action-alist)))
+             ;; action authors
+             (cond ((member type-sym '(mention))
+                    "") ;; mentions are normal statuses
+                   ((member type-sym '(favourite reblog update))
+                    (mastodon-notifications--byline-accounts accounts status group))
+                   ((eq type-sym 'follow_request)
+                    (mastodon-tl--byline-uname-+-handle status nil (car accounts))))
+             .status_id
+             ;; base toot
+             (when (member type-sym '(favourite reblog))
+               status)
+             folded group accounts))))))) ;; insert status still needs our group data
 
-;; FIXME: REFACTOR with -tl--byline:
+;; FIXME: this is copied from `mastodon-tl--insert-status'
+;; we could probably cull a lot of the code so its just for notifs
+(defun mastodon-notifications--insert-note
+    (toot body author-byline action-byline action-authors
+          &optional id base-toot unfolded group accounts)
+  "Display the content and byline of timeline element TOOT.
+BODY will form the section of the toot above the byline.
+AUTHOR-BYLINE is an optional function for adding the author
+portion of the byline that takes one variable. By default it is
+`mastodon-tl--byline-author'.
+ACTION-BYLINE is also an optional function for adding an action,
+such as boosting favouriting and following to the byline. It also
+takes a single function. By default it is
+`mastodon-tl--byline-boosted'.
+ID is that of the status if it is a notification, which is
+attached as a `item-id' property if provided. If the
+status is a favourite or boost notification, BASE-TOOT is the
+JSON of the toot responded to.
+UNFOLDED is a boolean meaning whether to unfold or fold item if foldable.
+NO-BYLINE means just insert toot body, used for folding."
+  (let* ((type (alist-get 'type (or group toot)))
+         (toot-foldable
+          (and mastodon-tl--fold-toots-at-length
+               (length> body mastodon-tl--fold-toots-at-length))))
+    (insert
+     (propertize ;; body + byline:
+      (concat
+       (concat action-authors
+               action-byline)
+       (propertize ;; body only:
+        body
+        'toot-body t) ;; includes newlines etc. for folding
+       ;; byline:
+       "\n"
+       (mastodon-tl--byline toot author-byline nil nil
+                            base-toot group))
+      'item-type    'toot
+      'item-id      (or id ; notification's own id
+                        (alist-get 'id toot)) ; toot id
+      'base-item-id (mastodon-tl--item-id
+                     ;; if status is a notif, get id from base-toot
+                     ;; (-tl--item-id toot) will not work here:
+                     (or base-toot
+                         toot)) ; else normal toot with reblog check
+      'item-json    toot
+      'base-toot    base-toot
+      'cursor-face 'mastodon-cursor-highlight-face
+      'toot-foldable toot-foldable
+      'toot-folded (and toot-foldable (not unfolded))
+      'notification-type type
+      'notification-group group
+      'notification-accounts accounts)
+     "\n")))
+
+;; FIXME: REFACTOR with -tl--byline?:
 ;; we provide account directly, rather than let-alisting toot
 ;; almost everything is .account.field anyway
 ;; but toot still needed also, for attachments, etc.
 (defun mastodon-notifications--byline-accounts
-    (accounts toot group &optional avatar domain)
-  "Propertize author byline ACCOUNT for TOOT, the item responded to.
+    (accounts toot group &optional avatar compact)
+  "Propertize author byline ACCOUNTS for TOOT, the item responded to.
 With arg AVATAR, include the account's avatar image.
 When DOMAIN, force inclusion of user's domain in their handle."
-  (let ((others-count (- (alist-get 'notifications_count group)
-                         (length accounts))))
+  (let ((total (alist-get 'notifications_count group))
+        (accts 2))
     (concat
      (cl-loop
       for account in accounts
+      repeat accts
       concat
       (let-alist account
         (concat
-         ;; avatar insertion moved up to `mastodon-tl--byline' by default to
-         ;; be outside 'byline propt.
+         ;; avatar insertion moved up to `mastodon-tl--byline' by
+         ;; default to be outside 'byline propt.
          (when (and avatar ; used by `mastodon-profile--format-user'
                     mastodon-tl--show-avatars
                     mastodon-tl--display-media-p
                     (mastodon-tl--image-trans-check))
            (mastodon-media--get-avatar-rendering .avatar))
-         ;; username:
-         (mastodon-tl--byline-username toot account)
-         ;; handle:
-         " (" (mastodon-tl--byline-handle toot nil account) ")"
-         (if (< 1 (length accounts)) "\n" ""))))
-     (if (< 0 others-count)
-         (format "and %s others" others-count)))))
+         (let ((uname (mastodon-tl--byline-username toot account))
+               (handle (concat
+                        "("
+                        (mastodon-tl--byline-handle toot nil account)
+                        ")")))
+           (if compact
+               ;; FIXME: this doesn't work to make a link from a username:
+               (propertize handle 'display uname)
+             (concat uname handle)))
+         "\n"))) ;; FIXME: only if not last handle
+     (if (< accts total)
+         (let ((diff (- total accts)))
+           ;; FIXME: help echo all remaining accounts?
+           (format "\nand %s other%s" diff (if (= 1 diff) "" "s")))))))
 
-(defun mastodon-notifications--by-type (groups json)
-  "Filter NOTE for those listed in `mastodon-notifications--types-alist'.
-Call its function in that list on NOTE."
-  (setq masto-grouped-notifs json)
-  (cl-loop
-   for g in groups
-   for start-pos = (point)
-   for accounts = (mastodon-notifications--group-accounts
-                   (alist-get 'sample_account_ids g)
-                   (alist-get 'accounts json))
-   for status = (mastodon-notifications--alist-by-value
-                 (alist-get 'status_id g) 'id
-                 (alist-get 'statuses json))
-   do (mastodon-notifications--format-note g status accounts)
-   (when mastodon-tl--display-media-p
-     ;; images-in-notifs custom is handeld in
-     ;; `mastodon-tl--media-attachment', not here
-     (mastodon-media--inline-images start-pos (point)))))
+(defun mastodon-notifications--render (json)
+  "Display grouped notifications in JSON."
+  ;; (setq masto-grouped-notifs json)
+  (let ((groups (alist-get 'notification_groups json)))
+    (cl-loop
+     for g in groups
+     for start-pos = (point)
+     for accounts = (mastodon-notifications--group-accounts
+                     (alist-get 'sample_account_ids g)
+                     (alist-get 'accounts json))
+     for status = (mastodon-notifications--alist-by-value
+                   (alist-get 'status_id g) 'id
+                   (alist-get 'statuses json))
+     do (mastodon-notifications--format-note g status accounts)
+     (when mastodon-tl--display-media-p
+       ;; images-in-notifs custom is handeld in
+       ;; `mastodon-tl--media-attachment', not here
+       (mastodon-media--inline-images start-pos (point))))))
 
 (defun mastodon-notifications--timeline (json)
   "Format JSON in Emacs buffer."
   (if (seq-empty-p json)
       (user-error "Looks like you have no (more) notifications for now")
-    (let ((groups (alist-get 'notification_groups json)))
-      ;; (mapc (lambda (x)
-      (mastodon-notifications--by-type groups json)
-      ;; grouped)
-      (goto-char (point-min)))))
+    (mastodon-notifications--render json)
+    (goto-char (point-min))))
 
 (defun mastodon-notifications--get-mentions ()
   "Display mention notifications in buffer."
