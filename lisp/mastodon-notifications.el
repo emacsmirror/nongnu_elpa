@@ -232,77 +232,80 @@ ACCOUNTS is data of the accounts that have reacted to the notification."
     (let-alist group
       ;; .sample_account_ids .status_id .notifications_count
       ;; .most_recent_notifiation_id
-      (let* (;(type .type)
-             (type-sym (intern .type))
+      (let* ((type-sym (intern .type))
              (profile-note
-              (when (eq type-sym 'follow_request)
+              (when (member type-sym '(follow follow_request))
                 (let ((str (mastodon-tl--field 'note (car accounts))))
                   (if mastodon-notifications--profile-note-in-foll-reqs-max-length
                       (string-limit str mastodon-notifications--profile-note-in-foll-reqs-max-length)
                     str))))
-             ;; (follower (car .sample_account_ids))
-             (follower-name (mastodon-tl--field 'username (car accounts)))
-             (filtered (mastodon-tl--field 'filtered status)) ;;toot))
+             (follower (when (member type-sym
+                                     '(reblog favourite follow follow_request))
+                         (car accounts)))
+             (follower-name (mastodon-tl--field 'username follower))
+             (filtered (mastodon-tl--field 'filtered status))
              (filters (when filtered
                         (mastodon-tl--current-filters filtered))))
         (unless (and filtered (assoc "hide" filters))
-          (if (member type-sym '(follow follow_request))
-              ;; FIXME: handle follow requests, polls
-              (insert "TODO: follow-req\n")
-            (mastodon-notifications--insert-note
-             ;; toot
-             (if (member type-sym '(follow follow_request))
-                 ;; Using reblog with an empty id will mark this as something
-                 ;; non-boostable/non-favable.
-                 ;; status
-                 status
-               ;; (cons '(reblog (id . nil)) status) ;;note))
-               ;; reblogs/faves use 'note' to process their own json not the
-               ;; toot's. this ensures following etc. work on such notifs
-               status) ;; FIXME: fix following on these notifs
-             ;; body
-             (let ((body (if-let ((match (assoc "warn" filters)))
-                             (mastodon-tl--spoiler status (cadr match))
-                           (mastodon-tl--clean-tabs-and-nl
-                            (if (mastodon-tl--has-spoiler status)
-                                (mastodon-tl--spoiler status)
-                              (if (eq type-sym 'follow_request)
-                                  (mastodon-tl--render-text profile-note)
-                                (mastodon-tl--content status)))))))
-               (cond ((eq type-sym 'follow)
-                      (propertize "Congratulations, you have a new follower!"
-                                  'face 'default))
-                     ((eq type-sym 'follow_request)
-                      (concat
-                       (propertize
-                        (format "You have a follow request from... %s"
-                                follower-name)
-                        'face 'default)
-                       (when mastodon-notifications--profile-note-in-foll-reqs
-                         (concat
-                          ":\n"
-                          (mastodon-notifications--comment-note-text body)))))
-                     ((member type-sym '(favourite reblog))
-                      (mastodon-notifications--comment-note-text body))
-                     (t body)))
-             ;; author-byline
-             #'mastodon-tl--byline-author
-             ;; action-byline
-             (unless (member type-sym '(mention))
-               (mastodon-notifications--byline-concat
-                (alist-get type-sym mastodon-notifications--action-alist)))
-             ;; action authors
-             (cond ((member type-sym '(mention))
-                    "") ;; mentions are normal statuses
-                   ((member type-sym '(favourite reblog update))
-                    (mastodon-notifications--byline-accounts accounts status group))
+          (mastodon-notifications--insert-note
+           ;; toot
+           ;; FIXME: fix following on grouped notifs
+           ;; FIXME: block boost/fave on boost/fave notifs?
+           (if (member type-sym
+                       ;; reblogs/faves use 'note' to process their own
+                       ;; json not the toot's. this ensures following etc.
+                       ;; work on such notifs
+                       '(reblog favourite follow follow_request))
+               ;; FIXME: breaks item stats!
+               follower
+             ;; Using reblog with an empty id will mark this as something
+             ;; non-boostable/non-favable.
+             ;; (cons '(reblog (id . nil)) status) ;;note))
+             status)
+           ;; body
+           (let ((body (if-let ((match (assoc "warn" filters)))
+                           (mastodon-tl--spoiler status (cadr match))
+                         (mastodon-tl--clean-tabs-and-nl
+                          (if (mastodon-tl--has-spoiler status)
+                              (mastodon-tl--spoiler status)
+                            (if (eq type-sym 'follow_request)
+                                (mastodon-tl--render-text profile-note)
+                              (mastodon-tl--content status)))))))
+             (cond ((eq type-sym 'follow)
+                    (propertize "Congratulations, you have a new follower!"
+                                'face 'default))
                    ((eq type-sym 'follow_request)
-                    (mastodon-tl--byline-uname-+-handle status nil (car accounts))))
-             .status_id
-             ;; base toot
-             (when (member type-sym '(favourite reblog))
-               status)
-             folded group accounts))))))) ;; insert status still needs our group data
+                    (concat
+                     (propertize
+                      (format "You have a follow request from... %s"
+                              follower-name)
+                      'face 'default)
+                     (when mastodon-notifications--profile-note-in-foll-reqs
+                       (concat
+                        ":\n"
+                        (mastodon-notifications--comment-note-text body)))))
+                   ((member type-sym '(favourite reblog))
+                    (mastodon-notifications--comment-note-text body))
+                   (t body)))
+           ;; author-byline
+           #'mastodon-tl--byline-author
+           ;; action-byline
+           (unless (member type-sym '(follow follow_request mention))
+             (mastodon-notifications--byline-concat
+              (alist-get type-sym mastodon-notifications--action-alist)))
+           ;; action authors
+           (cond
+            ((member type-sym '(follow_request mention))
+             "") ;; mentions are normal statuses
+            ((member type-sym '(favourite reblog update))
+             (mastodon-notifications--byline-accounts accounts status group))
+            ((eq type-sym 'follow_request)
+             (mastodon-tl--byline-uname-+-handle status nil (car accounts))))
+           .status_id
+           ;; base toot
+           (when (member type-sym '(favourite reblog))
+             status)
+           folded group accounts))))))
 
 ;; FIXME: this is copied from `mastodon-tl--insert-status'
 ;; we could probably cull a lot of the code so its just for notifs
@@ -314,16 +317,19 @@ BODY will form the section of the toot above the byline.
 AUTHOR-BYLINE is an optional function for adding the author
 portion of the byline that takes one variable. By default it is
 `mastodon-tl--byline-author'.
-ACTION-BYLINE is also an optional function for adding an action,
-such as boosting favouriting and following to the byline. It also
-takes a single function. By default it is
-`mastodon-tl--byline-boosted'.
+ACTION-BYLINE is a string, obtained by calling
+`mastodon-notifications--byline-concat'.
+ACTION-AUTHORS is a string of those who have responded to the
+current item, obtained by calling
+`mastodon-notifications--byline-accounts'
 ID is that of the status if it is a notification, which is
 attached as a `item-id' property if provided. If the
 status is a favourite or boost notification, BASE-TOOT is the
 JSON of the toot responded to.
-UNFOLDED is a boolean meaning whether to unfold or fold item if foldable.
-NO-BYLINE means just insert toot body, used for folding."
+UNFOLDED is a boolean meaning whether to unfold or fold item if
+foldable.
+GROUP is the notification group data.
+ACCOUNTS is the notification accounts data."
   (let* ((type (alist-get 'type (or group toot)))
          (toot-foldable
           (and mastodon-tl--fold-toots-at-length
@@ -339,7 +345,9 @@ NO-BYLINE means just insert toot body, used for folding."
        ;; byline:
        "\n"
        (mastodon-tl--byline toot author-byline nil nil
-                            base-toot group))
+                            base-toot group
+                            (if (member type '("follow" "follow_request"))
+                                toot))) ;; account data!
       'item-type    'toot
       'item-id      (or id ; notification's own id
                         (alist-get 'id toot)) ; toot id
@@ -365,8 +373,10 @@ NO-BYLINE means just insert toot body, used for folding."
 (defun mastodon-notifications--byline-accounts
     (accounts toot group &optional avatar compact)
   "Propertize author byline ACCOUNTS for TOOT, the item responded to.
-With arg AVATAR, include the account's avatar image.
-When DOMAIN, force inclusion of user's domain in their handle."
+GROUP is the group notification data.
+When AVATAR, include the account's avatar image.
+When DOMAIN, force inclusion of user's domain in their handle.
+When COMPACT, just display username, not also handle."
   (let ((total (alist-get 'notifications_count group))
         (accts 2))
     (concat
@@ -385,7 +395,7 @@ When DOMAIN, force inclusion of user's domain in their handle."
            (mastodon-media--get-avatar-rendering .avatar))
          (let ((uname (mastodon-tl--byline-username toot account))
                (handle (concat
-                        "("
+                        " ("
                         (mastodon-tl--byline-handle toot nil account)
                         ")")))
            (if compact

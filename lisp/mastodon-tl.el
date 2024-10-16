@@ -645,7 +645,7 @@ DOMAIN is optionally added to the handle."
   (concat (mastodon-tl--byline-username data account)
           " (" (mastodon-tl--byline-handle data domain account) ")"))
 
-(defun mastodon-tl--byline-author (toot &optional avatar domain base)
+(defun mastodon-tl--byline-author (toot &optional avatar domain base account)
   "Propertize author of TOOT.
 If TOOT contains a reblog, return author of reblogged item.
 With arg AVATAR, include the account's avatar image.
@@ -666,8 +666,8 @@ If BASE is nil, we are a boosted byline, so show less info."
         (alist-get 'avatar
                    (alist-get 'account data))))
      (if (not base)
-         (mastodon-tl--byline-handle data domain)
-       (mastodon-tl--byline-uname-+-handle data domain)))))
+         (mastodon-tl--byline-handle data domain account)
+       (mastodon-tl--byline-uname-+-handle data domain account)))))
 
 (defun mastodon-tl--format-byline-help-echo (toot)
   "Format a help-echo for byline of TOOT.
@@ -760,7 +760,7 @@ LETTER is a string, F for favourited, B for boosted, or K for bookmarked."
     (image-transforms-p)))
 
 (defun mastodon-tl--byline (toot author-byline &optional detailed-p
-                                 domain base-toot group)
+                                 domain base-toot group account)
   "Generate byline for TOOT.
 AUTHOR-BYLINE is a function for adding the author portion of
 the byline that takes one variable.
@@ -789,7 +789,8 @@ BASE-TOOT is JSON for the base toot, if any."
          (type (alist-get 'type toot))
          (base-toot-maybe (or base-toot ;; show edits for notifs
                               (mastodon-tl--toot-or-base toot))) ;; for boosts
-         (account (alist-get 'account base-toot-maybe))
+         (account (or account
+                      (alist-get 'account base-toot-maybe)))
          (avatar-url (alist-get 'avatar account))
          (edited-time (alist-get 'edited_at base-toot-maybe))
          (edited-parsed (when edited-time (date-to-time edited-time))))
@@ -828,7 +829,7 @@ BASE-TOOT is JSON for the base toot, if any."
               (propertize (concat " " (mastodon-tl--symbol 'private))
                           'help-echo visibility)))
        ;; (base) author byline:
-       (funcall author-byline toot nil domain :base)
+       (funcall author-byline toot nil domain :base account)
        " "
        ;; timestamp:
        (let ((ts (format-time-string
@@ -852,10 +853,10 @@ BASE-TOOT is JSON for the base toot, if any."
                           'face 'mastodon-display-name-face
                           'follow-link t
                           'mouse-face 'highlight
-		          'mastodon-tab-stop 'shr-url
-		          'shr-url app-url
+		                  'mastodon-tab-stop 'shr-url
+		                  'shr-url app-url
                           'help-echo app-url
-		          'keymap mastodon-tl--shr-map-replacement)))))
+		                  'keymap mastodon-tl--shr-map-replacement)))))
        ;; edited:
        (when edited-time
          (concat
