@@ -97,6 +97,41 @@ QUERY is the string to search."
   (mastodon-search--view-trending "statuses"
                                   #'mastodon-tl--timeline))
 
+(defun mastodon-search--trending-links ()
+  "Display a list of links trending on your instance."
+  (interactive)
+  (mastodon-search--view-trending "links"
+                                  #'mastodon-search--render-links))
+
+(defun mastodon-search--render-links (links)
+  "Render trending LINKS."
+  (cl-loop for l in links
+           do (mastodon-search--render-link l)))
+
+(defun mastodon-search--render-link (link)
+  "Render a trending LINK."
+  (let-alist link
+    (insert
+     (propertize
+      (mastodon-tl--render-text
+       (concat "<a href=\"" .url "\">" .url "</a>\n" .title)
+       link)
+      'item-type 'link
+      'item-json link
+      'shr-url .url
+      'byline t ;; nav
+      'help-echo
+      (substitute-command-keys
+       "\\[`mastodon-search--load-link-posts'] to view a link's timeline"))
+     ;; TODO: display card link author here
+     "\n\n")))
+
+(defun mastodon-search--load-link-posts ()
+  "Load timeline of posts containing link at point."
+  (interactive)
+  (let* ((url (mastodon-tl--property 'shr-url)))
+    (mastodon-tl--link-timeline url)))
+
 (defun mastodon-search--view-trending (type print-fun)
   "Display a list of tags trending on your instance.
 TYPE is a string, either tags, statuses, or links.
@@ -109,7 +144,8 @@ PRINT-FUN is the function used to print the data from the response."
          (offset '(("offset" . "0")))
          (params (push limit offset))
          (data (mastodon-http--get-json url params))
-         (buffer (get-buffer-create (format "*mastodon-trending-%s*" type))))
+         (buffer (get-buffer-create
+                  (format "*mastodon-trending-%s*" type))))
     (with-mastodon-buffer buffer #'mastodon-mode nil
       (mastodon-tl--set-buffer-spec (buffer-name buffer)
                                     (format "trends/%s" type)

@@ -1,7 +1,6 @@
-;;; Directory Local Variables
+;;; Directory Local Variables            -*- no-byte-compile: t -*-
 ;;; For more information see (info "(emacs) Directory Variables")
 
-;; Preferred indentation style:
 ((nil . ((indent-tabs-mode . nil)))
- ;; setting this makes package-lint look in the main file for deps:
- (emacs-lisp-mode . ((package-lint-main-file . "mastodon.el"))))
+ (emacs-lisp-mode . ((elisp-flymake-byte-compile-load-path . load-path)
+                     (package-lint-main-file . "mastodon.el"))))

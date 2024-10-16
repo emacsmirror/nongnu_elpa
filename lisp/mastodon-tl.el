@@ -279,6 +279,7 @@ etc.")
     ;; is already bound to w also
     (define-key map (kbd "u") #'mastodon-tl--update)
     (define-key map [remap shr-browse-url] #'mastodon-url-lookup)
+    (define-key map (kbd "M-RET") #'mastodon-search--load-link-posts)
     map)
   "The keymap to be set for shr.el generated links that are not images.
 We need to override the keymap so tabbing will navigate to all
@@ -575,6 +576,14 @@ With a double PREFIX arg, limit results to your own instance."
      (concat "timelines/tag/" (if (listp tag) (car tag) tag)) ; must be /tag/:sth
      'mastodon-tl--timeline nil params)))
 
+(defun mastodon-tl--link-timeline (url)
+  "Load a link timeline, displaying posts containing URL."
+  (let ((endpoint (mastodon-http--api "timelines/link"))
+        (params `(("url" . ,url))))
+    (mastodon-tl--init "links" "timelines/link"
+                       'mastodon-tl--timeline nil
+                       params)))
+
 
 ;;; BYLINES, etc.
 
@@ -823,12 +832,15 @@ BASE-TOOT is JSON for the base toot, if any."
        (funcall author-byline toot nil domain :base)
        " "
        ;; timestamp:
-       (propertize
-        (format-time-string mastodon-toot-timestamp-format parsed-time)
-        'timestamp parsed-time
-        'display (if mastodon-tl--enable-relative-timestamps
-                     (mastodon-tl--relative-time-description parsed-time)
-                   parsed-time))
+       (let ((ts (format-time-string
+                  mastodon-toot-timestamp-format parsed-time)))
+         (propertize ts
+                     'timestamp parsed-time
+                     'display
+                     (if mastodon-tl--enable-relative-timestamps
+                         (mastodon-tl--relative-time-description parsed-time)
+                       parsed-time)
+                     'help-echo ts))
        ;; detailed:
        (when detailed-p
          (let* ((app (alist-get 'application toot))
@@ -917,16 +929,59 @@ links in the text. If TOOT is nil no parsing occurs."
                              0
                            (- (window-width) 3)))))
         (shr-render-region (point-min) (point-max)))
-      ;; Make all links a tab stop recognized by our own logic, make things point
-      ;; to our own logic (e.g. hashtags), and update keymaps where needed:
+      ;; Make all links a tab stop recognized by our own logic, make
+      ;; things point to our own logic (e.g. hashtags), and update keymaps
+      ;; where needed:
       (when toot
         (let (region)
           (while (setq region (mastodon-tl--find-property-range
                                'shr-url (or (cdr region) (point-min))))
             (mastodon-tl--process-link toot
                                        (car region) (cdr region)
-                                       (get-text-property (car region) 'shr-url)))))
+                                       (get-text-property (car region) 'shr-url))
+            (when (proper-list-p toot) ;; not on profile fields cons cells
+              ;; render card author maybe:
+              (let* ((card (alist-get 'card toot))
+                     (card-url (alist-get 'url card))
+                     (authors (alist-get 'authors card))
+                     (url (buffer-substring (car region) (cdr region)))
+                     (url-no-query (car (split-string url "?"))))
+                (when (and (string= url-no-query card-url)
+                           ;; only if we have an account's data:
+                           (alist-get 'account (car authors)))
+                  (goto-char (point-max))
+                  (mastodon-tl--insert-card-authors authors)))))))
       (buffer-string))))
+
+(defun mastodon-tl--insert-card-authors (authors)
+  "Insert a string of card AUTHORS."
+  (let ((authors-str (format "Author%s: "
+                             (if (< 1 (length authors)) "s" ""))))
+    (insert
+     (concat
+      "\n(" authors-str
+      (mapconcat #'mastodon-tl--format-card-author authors "\n")
+      ")\n"))))
+
+(defun mastodon-tl--format-card-author (data)
+  "Render card author DATA."
+  (when-let ((account (alist-get 'account data))) ;.account
+    (let-alist account ;.account
+      ;; FIXME: replace with refactored handle render fun
+      ;; in byline refactor branch:
+      (concat
+       (propertize .username
+                   'face 'mastodon-display-name-face
+                   'item-type 'user
+                   'item-id .id)
+       " "
+       (propertize (concat "@" .acct)
+                   'face 'mastodon-handle-face
+                   'mouse-face 'highlight
+		   'mastodon-tab-stop 'user-handle
+		   'keymap mastodon-tl--link-keymap
+                   'mastodon-handle (concat "@" .acct)
+		   'help-echo (concat "Browse user profile of @" .acct))))))
 
 (defun mastodon-tl--process-link (toot start end url)
   "Process link URL in TOOT as hashtag, userhandle, or normal link.
@@ -1598,7 +1653,7 @@ NO-BYLINE means just insert toot body, used for folding."
        (propertize ;; body only:
         (concat
          "\n"
-         ;; relpy symbol (broken):
+         ;; relpy symbol:
          (when (and after-reply-status-p thread)
            (concat (mastodon-tl--symbol 'replied)
                    "\n"))
@@ -2033,7 +2088,9 @@ call this function after it is set or use something else."
           ((string= "*mastodon-toot-edits*" buffer-name)
            'toot-edits)
           ((string= "*masto-image*" (buffer-name))
-           'mastodon-image))))
+           'mastodon-image)
+          ((mastodon-tl--endpoint-str-= "timelines/link")
+           'link-timeline))))
 
 (defun mastodon-tl--buffer-type-eq (type)
   "Return t if current buffer type is equal to symbol TYPE."
