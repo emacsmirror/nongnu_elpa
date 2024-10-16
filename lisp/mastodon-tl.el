@@ -766,7 +766,7 @@ AUTHOR-BYLINE is a function for adding the author portion of
 the byline that takes one variable.
 ACTION-BYLINE is a function for adding an action, such as boosting,
 favouriting and following to the byline. It also takes a single function.
-By default it is `mastodon-tl--byline-boosted'.
+By default it is `mastodon-tl--byline-author'
 DETAILED-P means display more detailed info. For now
 this just means displaying toot client.
 When DOMAIN, force inclusion of user's domain in their handle.
@@ -1625,7 +1625,7 @@ portion of the byline that takes one variable. By default it is
 ACTION-BYLINE is also an optional function for adding an action,
 such as boosting favouriting and following to the byline. It also
 takes a single function. By default it is
-`mastodon-tl--byline-boosted'.
+`mastodon-tl--byline-boost'.
 ID is that of the status if it is a notification, which is
 attached as a `item-id' property if provided. If the
 status is a favourite or boost notification, BASE-TOOT is the
