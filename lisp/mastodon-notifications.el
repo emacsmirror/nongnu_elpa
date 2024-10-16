@@ -240,7 +240,7 @@ ACCOUNTS is data of the accounts that have reacted to the notification."
                       (string-limit str mastodon-notifications--profile-note-in-foll-reqs-max-length)
                     str))))
              (follower (when (member type-sym
-                                     '(reblog favourite follow follow_request))
+                                     '(follow follow_request))
                          (car accounts)))
              (follower-name (mastodon-tl--field 'username follower))
              (filtered (mastodon-tl--field 'filtered status))
@@ -249,18 +249,14 @@ ACCOUNTS is data of the accounts that have reacted to the notification."
         (unless (and filtered (assoc "hide" filters))
           (mastodon-notifications--insert-note
            ;; toot
-           ;; FIXME: fix following on grouped notifs
+           ;; FIXME: fix following etc. on action authors
            ;; FIXME: block boost/fave on boost/fave notifs?
            (if (member type-sym
                        ;; reblogs/faves use 'note' to process their own
                        ;; json not the toot's. this ensures following etc.
                        ;; work on such notifs
-                       '(reblog favourite follow follow_request))
-               ;; FIXME: breaks item stats!
+                       '(follow follow_request))
                follower
-             ;; Using reblog with an empty id will mark this as something
-             ;; non-boostable/non-favable.
-             ;; (cons '(reblog (id . nil)) status) ;;note))
              status)
            ;; body
            (let ((body (if-let ((match (assoc "warn" filters)))
