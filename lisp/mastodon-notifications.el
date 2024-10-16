@@ -390,15 +390,12 @@ When COMPACT, just display username, not also handle."
                      mastodon-tl--display-media-p
                      (mastodon-tl--image-trans-check))
             (mastodon-media--get-avatar-rendering .avatar))
-          (let ((uname (mastodon-tl--byline-username toot account))
-                (handle (concat
-                         " ("
-                         (mastodon-tl--byline-handle toot nil account)
-                         ")")))
-            (if compact
-                ;; FIXME: this doesn't work to make a link from a username:
-                (propertize handle 'display uname)
-              (concat uname handle)))
+          (let ((uname
+                 (if (not (string-empty-p (alist-get 'display_name account)))
+                     (alist-get 'display_name account)
+                   (alist-get 'username account))))
+            (mastodon-tl--byline-handle toot nil account
+                                        uname 'mastodon-display-name-face))
           "\n"))))
      (if (< accts total)
          (let ((diff (- total accts)))
