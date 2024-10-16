@@ -62,6 +62,7 @@
 (autoload 'mastodon-http--get-json "mastodon-http")
 (autoload 'mastodon-media--get-avatar-rendering "mastodon-media")
 (autoload 'mastodon-tl--image-trans-check "mastodon-tl")
+(autoload 'mastodon-tl--symbol "mastodon-tl")
 
 (defgroup mastodon-tl nil
   "Nofications in mastodon.el."
@@ -123,7 +124,16 @@ make them unweildy."
 
 (defun mastodon-notifications--byline-concat (message)
   "Add byline for TOOT with MESSAGE."
-  (concat "\n " (propertize message 'face 'highlight)
+  (concat "\n "
+          (mastodon-tl--symbol
+           (cond ((string= message "Favourited")
+                  'favourite)
+                 ((string= message "Boosted")
+                  'boost)
+                 ((string= message "Edited")
+                  'edited)))
+          " "
+          (propertize message 'face 'highlight)
           " " (cdr (assoc message mastodon-notifications--response-alist))
           "\n"))
 
