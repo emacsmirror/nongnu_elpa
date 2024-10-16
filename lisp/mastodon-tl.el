@@ -829,6 +829,8 @@ BASE-TOOT is JSON for the base toot, if any."
       (concat
        ;; NB: action-byline (boost) is now added in insert-status, so no
        ;; longer part of the byline.
+       ;; (base) author byline:
+       (funcall author-byline toot nil domain :base account)
        ;; visibility:
        (cond ((string= visibility "direct")
               (propertize (concat " " (mastodon-tl--symbol 'direct))
@@ -836,8 +838,6 @@ BASE-TOOT is JSON for the base toot, if any."
              ((string= visibility "private")
               (propertize (concat " " (mastodon-tl--symbol 'private))
                           'help-echo visibility)))
-       ;; (base) author byline:
-       (funcall author-byline toot nil domain :base account)
        " "
        ;; timestamp:
        (let ((ts (format-time-string
