@@ -380,29 +380,30 @@ When COMPACT, just display username, not also handle."
   (let ((total (alist-get 'notifications_count group))
         (accts 2))
     (concat
-     (cl-loop
-      for account in accounts
-      repeat accts
-      concat
-      (let-alist account
-        (concat
-         ;; avatar insertion moved up to `mastodon-tl--byline' by
-         ;; default to be outside 'byline propt.
-         (when (and avatar ; used by `mastodon-profile--format-user'
-                    mastodon-tl--show-avatars
-                    mastodon-tl--display-media-p
-                    (mastodon-tl--image-trans-check))
-           (mastodon-media--get-avatar-rendering .avatar))
-         (let ((uname (mastodon-tl--byline-username toot account))
-               (handle (concat
-                        " ("
-                        (mastodon-tl--byline-handle toot nil account)
-                        ")")))
-           (if compact
-               ;; FIXME: this doesn't work to make a link from a username:
-               (propertize handle 'display uname)
-             (concat uname handle)))
-         "\n"))) ;; FIXME: only if not last handle
+     (string-trim ;; remove trailing newline
+      (cl-loop
+       for account in accounts
+       repeat accts
+       concat
+       (let-alist account
+         (concat
+          ;; avatar insertion moved up to `mastodon-tl--byline' by
+          ;; default to be outside 'byline propt.
+          (when (and avatar ; used by `mastodon-profile--format-user'
+                     mastodon-tl--show-avatars
+                     mastodon-tl--display-media-p
+                     (mastodon-tl--image-trans-check))
+            (mastodon-media--get-avatar-rendering .avatar))
+          (let ((uname (mastodon-tl--byline-username toot account))
+                (handle (concat
+                         " ("
+                         (mastodon-tl--byline-handle toot nil account)
+                         ")")))
+            (if compact
+                ;; FIXME: this doesn't work to make a link from a username:
+                (propertize handle 'display uname)
+              (concat uname handle)))
+          "\n"))))
      (if (< accts total)
          (let ((diff (- total accts)))
            ;; FIXME: help echo all remaining accounts?
