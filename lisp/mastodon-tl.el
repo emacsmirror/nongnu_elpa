@@ -610,7 +610,7 @@ Do so if type of status at poins is not follow_request/follow."
                   .username)
                 'face 'mastodon-display-name-face
                 ;; enable playing of videos when point is on byline:
-                'attachments (mastodon-tl--get-attachments-for-byline toot)
+                ;; 'attachments (mastodon-tl--get-attachments-for-byline toot)
                 'keymap mastodon-tl--byline-link-keymap
                 ;; echo faves count when point on post author name:
                 ;; which is where --goto-next-toot puts point.
@@ -633,12 +633,12 @@ DOMAIN is optionally added to the handle."
                                    (url-generic-parse-url .url)))))
                 'face 'mastodon-handle-face
                 'mouse-face 'highlight
-	            'mastodon-tab-stop 'user-handle
+	        'mastodon-tab-stop 'user-handle
                 'account account
-	            'shr-url .url
-	            'keymap mastodon-tl--link-keymap
+	        'shr-url .url
+	        'keymap mastodon-tl--link-keymap
                 'mastodon-handle (concat "@" .acct)
-	            'help-echo (concat "Browse user profile of @" .acct))))
+	        'help-echo (concat "Browse user profile of @" .acct))))
 
 (defun mastodon-tl--byline-uname-+-handle (data &optional domain account)
   ""
@@ -853,10 +853,10 @@ BASE-TOOT is JSON for the base toot, if any."
                           'face 'mastodon-display-name-face
                           'follow-link t
                           'mouse-face 'highlight
-		                  'mastodon-tab-stop 'shr-url
-		                  'shr-url app-url
+		          'mastodon-tab-stop 'shr-url
+		          'shr-url app-url
                           'help-echo app-url
-		                  'keymap mastodon-tl--shr-map-replacement)))))
+		          'keymap mastodon-tl--shr-map-replacement)))))
        ;; edited:
        (when edited-time
          (concat
@@ -881,6 +881,8 @@ BASE-TOOT is JSON for the base toot, if any."
       'favourited-p faved
       'boosted-p    boosted
       'bookmarked-p bookmarked
+      ;; enable playing of videos when point is on byline:
+      'attachments (mastodon-tl--get-attachments-for-byline toot)
       'edited edited-time
       'edit-history (when edited-time
                       (mastodon-toot--get-toot-edits
