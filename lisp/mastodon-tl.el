@@ -626,12 +626,13 @@ Do so if type of status at poins is not follow_request/follow."
   "Format a byline handle from account in TOOT.
 DOMAIN is optionally added to the handle."
   (let-alist (or account (alist-get 'account toot))
-    (propertize (concat "@" .acct
-                        (when domain
-                          (concat "@"
-                                  (url-host
-                                   (url-generic-parse-url .url)))))
-                'face 'mastodon-handle-face
+    (propertize (or string
+                    (concat "@" .acct
+                            (when domain
+                              (concat "@"
+                                      (url-host
+                                       (url-generic-parse-url .url))))))
+                'face (or face 'mastodon-handle-face)
                 'mouse-face 'highlight
 	        'mastodon-tab-stop 'user-handle
                 'account account
@@ -654,7 +655,11 @@ BASE means to use data from the base item (reblog slot) if possible.
 If BASE is nil, we are a boosted byline, so show less info."
   (let* ((data (if base
                    (mastodon-tl--toot-or-base toot)
-                 toot)))
+                 toot))
+         (account (or account (alist-get 'account data)))
+         (uname (if (not (string-empty-p (alist-get 'display_name account)))
+                    (alist-get 'display_name account)
+                  (alist-get 'username account))))
     (concat
      ;; avatar insertion moved up to `mastodon-tl--byline' by default to
      ;; be outside 'byline propt.
@@ -666,7 +671,10 @@ If BASE is nil, we are a boosted byline, so show less info."
         (alist-get 'avatar
                    (alist-get 'account data))))
      (if (not base)
-         (mastodon-tl--byline-handle data domain account)
+         (mastodon-tl--byline-handle
+          data domain account
+          ;; display uname not handle (for boosts):
+          uname 'mastodon-display-name-face)
        (mastodon-tl--byline-uname-+-handle data domain account)))))
 
 (defun mastodon-tl--format-byline-help-echo (toot)
