@@ -887,16 +887,59 @@ links in the text. If TOOT is nil no parsing occurs."
                              0
                            (- (window-width) 3)))))
         (shr-render-region (point-min) (point-max)))
-      ;; Make all links a tab stop recognized by our own logic, make things point
-      ;; to our own logic (e.g. hashtags), and update keymaps where needed:
+      ;; Make all links a tab stop recognized by our own logic, make
+      ;; things point to our own logic (e.g. hashtags), and update keymaps
+      ;; where needed:
       (when toot
         (let (region)
           (while (setq region (mastodon-tl--find-property-range
                                'shr-url (or (cdr region) (point-min))))
             (mastodon-tl--process-link toot
                                        (car region) (cdr region)
-                                       (get-text-property (car region) 'shr-url)))))
+                                       (get-text-property (car region) 'shr-url))
+            (when (proper-list-p toot) ;; not on profile fields cons cells
+              ;; render card author maybe:
+              (let* ((card (alist-get 'card toot))
+                     (card-url (alist-get 'url card))
+                     (authors (alist-get 'authors card))
+                     (url (buffer-substring (car region) (cdr region)))
+                     (url-no-query (car (split-string url "?"))))
+                (when (and (string= url-no-query card-url)
+                           ;; only if we have an account's data:
+                           (alist-get 'account (car authors)))
+                  (goto-char (point-max))
+                  (mastodon-tl--insert-card-authors authors)))))))
       (buffer-string))))
+
+(defun mastodon-tl--insert-card-authors (authors)
+  "Insert a string of card AUTHORS."
+  (let ((authors-str (format "Author%s: "
+                             (if (< 1 (length authors)) "s" ""))))
+    (insert
+     (concat
+      "\n(" authors-str
+      (mapconcat #'mastodon-tl--format-card-author authors "\n")
+      ")\n"))))
+
+(defun mastodon-tl--format-card-author (data)
+  "Render card author DATA."
+  (when-let ((account (alist-get 'account data))) ;.account
+    (let-alist account ;.account
+      ;; FIXME: replace with refactored handle render fun
+      ;; in byline refactor branch:
+      (concat
+       (propertize .username
+                   'face 'mastodon-display-name-face
+                   'item-type 'user
+                   'item-id .id)
+       " "
+       (propertize (concat "@" .acct)
+                   'face 'mastodon-handle-face
+                   'mouse-face 'highlight
+		   'mastodon-tab-stop 'user-handle
+		   'keymap mastodon-tl--link-keymap
+                   'mastodon-handle (concat "@" .acct)
+		   'help-echo (concat "Browse user profile of @" .acct))))))
 
 (defun mastodon-tl--process-link (toot start end url)
   "Process link URL in TOOT as hashtag, userhandle, or normal link.
@@ -1565,7 +1608,7 @@ NO-BYLINE means just insert toot body, used for folding."
        (propertize ;; body only:
         (concat
          "\n"
-         ;; relpy symbol (broken):
+         ;; relpy symbol:
          (when (and after-reply-status-p thread)
            (concat (mastodon-tl--symbol 'replied)
                    "\n"))
