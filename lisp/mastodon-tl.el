@@ -92,6 +92,7 @@
 (autoload 'mastodon-toot--with-toot-item "mastodon-toot")
 (autoload 'mastodon-media--image-or-cached "mastodon-media")
 (autoload 'mastodon-toot--base-toot-or-item-json "mastodon-toot")
+(autoload 'mastodon-search--load-link-posts "mastodon-search")
 
 (defvar mastodon-toot--visibility)
 (defvar mastodon-toot-mode)
@@ -578,8 +579,7 @@ With a double PREFIX arg, limit results to your own instance."
 
 (defun mastodon-tl--link-timeline (url)
   "Load a link timeline, displaying posts containing URL."
-  (let ((endpoint (mastodon-http--api "timelines/link"))
-        (params `(("url" . ,url))))
+  (let ((params `(("url" . ,url))))
     (mastodon-tl--init "links" "timelines/link"
                        'mastodon-tl--timeline nil
                        params)))
@@ -603,7 +603,8 @@ Do so if type of status at poins is not follow_request/follow."
 ;; author byline only) removing toot arg makes it easier to render notifs
 ;; that have no status (foll_reqs)
 (defun mastodon-tl--byline-username (toot &optional account)
-  "Format a byline username from account in TOOT."
+  "Format a byline username from account in TOOT.
+ACCOUNT is optionally acccount data to use."
   (let-alist (or account (alist-get 'account toot))
     (propertize (if (not (string-empty-p .display_name))
                     .display_name
@@ -622,9 +623,14 @@ Do so if type of status at poins is not follow_request/follow."
                             (string-suffix-p "-following*" (buffer-name)))
                   (mastodon-tl--format-byline-help-echo toot)))))
 
-(defun mastodon-tl--byline-handle (toot &optional domain account)
+(defun mastodon-tl--byline-handle (toot &optional domain account string face)
   "Format a byline handle from account in TOOT.
-DOMAIN is optionally added to the handle."
+DOMAIN is optionally added to the handle.
+ACCOUNT is optionally acccount data to use.
+STRING is optionally the string to propertize.
+FACE is optionally the face to use.
+The last two args allow for display a username as a clickable
+handle."
   (let-alist (or account (alist-get 'account toot))
     (propertize (or string
                     (concat "@" .acct
@@ -642,7 +648,10 @@ DOMAIN is optionally added to the handle."
 	        'help-echo (concat "Browse user profile of @" .acct))))
 
 (defun mastodon-tl--byline-uname-+-handle (data &optional domain account)
-  ""
+  "Concatenate a byline username and handle.
+DATA is the (toot) data to use.
+DOMAIN is optionally a domain for the handle.
+ACCOUNT is optionally acccount data to use."
   (concat (mastodon-tl--byline-username data account)
           " (" (mastodon-tl--byline-handle data domain account) ")"))
 
@@ -652,7 +661,8 @@ If TOOT contains a reblog, return author of reblogged item.
 With arg AVATAR, include the account's avatar image.
 When DOMAIN, force inclusion of user's domain in their handle.
 BASE means to use data from the base item (reblog slot) if possible.
-If BASE is nil, we are a boosted byline, so show less info."
+If BASE is nil, we are a boosted byline, so show less info.
+ACCOUNT is optionally acccount data to use."
   (let* ((data (if base
                    (mastodon-tl--toot-or-base toot)
                  toot))
