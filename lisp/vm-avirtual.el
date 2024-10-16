@@ -141,8 +141,7 @@
         (error
          (if (load (format "%s\n" (car feature-list)) t)
              (message "Library %s loaded!" (car feature-list))
-           (message "Could not load feature %S.  Related functions may not work correctly!" (car feature-list))
-           (beep 1))))
+           (message "Could not load feature %S.  Related functions may not work correctly!" (car feature-list)))))
       (setq feature-list (cdr feature-list)))))
 
 (defvar bbdb-get-addresses-headers)	; dummy declaration
