@@ -861,13 +861,15 @@ These include the author, author of reblogged entries and any user mentioned."
                             status)) ; status is a user listing
 	  (mentions (mastodon-tl--field-status 'mentions status))
 	  (reblog (mastodon-tl--field-status 'reblog status)))
-      (seq-filter #'stringp
-                  (seq-uniq
-                   (seq-concatenate
-                    'list
-                    (list (alist-get 'acct this-account))
-                    (mastodon-profile--extract-users-handles reblog)
-                    (mastodon-tl--map-alist 'acct mentions)))))))
+      (seq-remove
+       (lambda (x) (string= x mastodon-active-user))
+       (seq-filter #'stringp
+                   (seq-uniq
+                    (seq-concatenate
+                     'list
+                     (list (alist-get 'acct this-account))
+                     (mastodon-profile--extract-users-handles reblog)
+                     (mastodon-tl--map-alist 'acct mentions))))))))
 
 (defun mastodon-profile--lookup-account-in-status (handle status)
   "Return account for HANDLE using hints in STATUS if possible."
