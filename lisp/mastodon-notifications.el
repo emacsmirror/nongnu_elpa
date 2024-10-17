@@ -275,9 +275,13 @@ ACCOUNTS is data of the accounts that have reacted to the notification."
                    ((member type-sym '(favourite reblog))
                     (propertize
                      (mastodon-notifications--comment-note-text body)
-                     ;; indent faves/boosts (maybe remove):
-                     'line-prefix "  "
-                     'wrap-prefix "  "))
+                     ;; indent faves/boosts (maybe remove, as it makes
+                     ;; cursor highlight ugly)
+                     ;; but it's nice to be able to differentiate top
+                     ;; byline a little from body of item acted on
+                     ;; 'line-prefix ""
+                     ;; 'wrap-prefix ""
+                     ))
                    (t body)))
            ;; author-byline
            #'mastodon-tl--byline-author
