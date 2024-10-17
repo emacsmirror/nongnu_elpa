@@ -155,6 +155,7 @@ nil."
 (defcustom mastodon-tl--symbols
   '((reply     . ("💬" . "R"))
     (boost     . ("🔁" . "B"))
+    (reblog     . ("🔁" . "B")) ;; server compat
     (favourite . ("⭐" . "F"))
     (bookmark  . ("🔖" . "K"))
     (media     . ("📹" . "[media]"))
@@ -163,6 +164,7 @@ nil."
     (private   . ("🔒" . "[followers]"))
     (direct    . ("✉" . "[direct]"))
     (edited    . ("✍" . "[edited]"))
+    (update    . ("✍" . "[edited]")) ;; server compat
     (replied   . ("⬇" . "↓"))
     (reply-bar . ("┃" . "|")))
   "A set of symbols (and fallback strings) to be used in timeline.

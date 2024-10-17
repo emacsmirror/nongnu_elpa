@@ -124,16 +124,8 @@ make them unweildy."
 
 (defun mastodon-notifications--byline-concat (message)
   "Add byline for TOOT with MESSAGE."
-  (concat "\n "
-          (mastodon-tl--symbol
-           (cond ((string= message "Favourited")
-                  'favourite)
-                 ((string= message "Boosted")
-                  'boost)
-                 ((string= message "Edited")
-                  'edited)))
-          " "
-          (propertize message 'face 'highlight)
+  (concat " "
+          (propertize message 'face 'mastodon-boosted-face)
           " " (cdr (assoc message mastodon-notifications--response-alist))
           "\n"))
 
@@ -281,22 +273,31 @@ ACCOUNTS is data of the accounts that have reacted to the notification."
                         ":\n"
                         (mastodon-notifications--comment-note-text body)))))
                    ((member type-sym '(favourite reblog))
-                    (mastodon-notifications--comment-note-text body))
+                    (propertize
+                     (mastodon-notifications--comment-note-text body)
+                     ;; indent faves/boosts (maybe remove):
+                     'line-prefix "  "
+                     'wrap-prefix "  "))
                    (t body)))
            ;; author-byline
            #'mastodon-tl--byline-author
            ;; action-byline
            (unless (member type-sym '(follow follow_request mention))
-             (mastodon-notifications--byline-concat
-              (alist-get type-sym mastodon-notifications--action-alist)))
+             (downcase
+              (mastodon-notifications--byline-concat
+               (alist-get type-sym mastodon-notifications--action-alist))))
            ;; action authors
            (cond
             ((member type-sym '(follow_request mention))
              "") ;; mentions are normal statuses
             ((member type-sym '(favourite reblog update))
-             (mastodon-notifications--byline-accounts accounts status group))
+             (mastodon-notifications--byline-accounts
+              accounts status group))
             ((eq type-sym 'follow_request)
              (mastodon-tl--byline-uname-+-handle status nil (car accounts))))
+           ;; action symbol:
+           (when (member type-sym '(favourite reblog update))
+             (mastodon-tl--symbol type-sym))
            .status_id
            ;; base toot
            (when (member type-sym '(favourite reblog))
@@ -306,7 +307,7 @@ ACCOUNTS is data of the accounts that have reacted to the notification."
 ;; FIXME: this is copied from `mastodon-tl--insert-status'
 ;; we could probably cull a lot of the code so its just for notifs
 (defun mastodon-notifications--insert-note
-    (toot body author-byline action-byline action-authors
+    (toot body author-byline action-byline action-authors action-symbol
           &optional id base-toot unfolded group accounts)
   "Display the content and byline of timeline element TOOT.
 BODY will form the section of the toot above the byline.
@@ -331,15 +332,17 @@ ACCOUNTS is the notification accounts data."
           (and mastodon-tl--fold-toots-at-length
                (length> body mastodon-tl--fold-toots-at-length))))
     (insert
-     (propertize ;; body + byline:
+     (propertize ;; top byline, body + byline:
       (concat
-       (concat action-authors
-               action-byline)
-       (propertize ;; body only:
+       (propertize ;; top byline
+        (concat action-symbol " " action-authors
+                action-byline)
+        'byline-top t)
+       (propertize ;; body only
         body
         'toot-body t) ;; includes newlines etc. for folding
-       ;; byline:
        "\n"
+       ;; actual byline:
        (mastodon-tl--byline toot author-byline nil nil
                             base-toot group
                             (if (member type '("follow" "follow_request"))
@@ -396,11 +399,12 @@ When COMPACT, just display username, not also handle."
                    (alist-get 'username account))))
             (mastodon-tl--byline-handle toot nil account
                                         uname 'mastodon-display-name-face))
-          "\n"))))
+          ", ")))
+      nil ", ")
      (if (< accts total)
          (let ((diff (- total accts)))
            ;; FIXME: help echo all remaining accounts?
-           (format "\nand %s other%s" diff (if (= 1 diff) "" "s")))))))
+           (format " and %s other%s" diff (if (= 1 diff) "" "s")))))))
 
 (defun mastodon-notifications--render (json)
   "Display grouped notifications in JSON."
