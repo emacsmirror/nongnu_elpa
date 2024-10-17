@@ -324,7 +324,8 @@ ACTION-BYLINE is a string, obtained by calling
 `mastodon-notifications--byline-concat'.
 ACTION-AUTHORS is a string of those who have responded to the
 current item, obtained by calling
-`mastodon-notifications--byline-accounts'
+`mastodon-notifications--byline-accounts'.
+ACTION-SYMBOL is a symbol indicating a favourite, boost, or edit.
 ID is that of the status if it is a notification, which is
 attached as a `item-id' property if provided. If the
 status is a favourite or boost notification, BASE-TOOT is the
@@ -376,12 +377,11 @@ ACCOUNTS is the notification accounts data."
 ;; almost everything is .account.field anyway
 ;; but toot still needed also, for attachments, etc.
 (defun mastodon-notifications--byline-accounts
-    (accounts toot group &optional avatar compact)
+    (accounts toot group &optional avatar)
   "Propertize author byline ACCOUNTS for TOOT, the item responded to.
 GROUP is the group notification data.
 When AVATAR, include the account's avatar image.
-When DOMAIN, force inclusion of user's domain in their handle.
-When COMPACT, just display username, not also handle."
+When DOMAIN, force inclusion of user's domain in their handle."
   (let ((total (alist-get 'notifications_count group))
         (accts 2))
     (concat
