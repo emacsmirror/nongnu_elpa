@@ -806,7 +806,9 @@ BASE-TOOT is JSON for the base toot, if any."
          (boosted (eq t (mastodon-tl--field 'reblogged toot)))
          (bookmarked (eq t (mastodon-tl--field 'bookmarked toot)))
          (visibility (mastodon-tl--field 'visibility toot))
-         (type (alist-get 'type toot))
+         (type (if group
+                   (alist-get 'type group)
+                 (alist-get 'type toot)))
          (base-toot-maybe (or base-toot ;; show edits for notifs
                               (mastodon-tl--toot-or-base toot))) ;; for boosts
          (account (or account
