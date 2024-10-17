@@ -2216,16 +2216,28 @@ BACKWARD means move backward (up) the timeline."
           (get-text-property (point) prop)))))
 
 (defun mastodon-tl--newest-id ()
-  "Return item-id from the top of the buffer."
+  "Return item-id from the top of the buffer.
+If we are in a notifications view, return `notifications-max-id'."
   (save-excursion
     (goto-char (point-min))
-    (mastodon-tl--property 'item-id)))
+    (mastodon-tl--property
+     (if (eq (mastodon-tl--get-buffer-type)
+             (member (mastodon-tl--get-buffer-type)
+                     '(mentions notifications)))
+         'notifications-max-id
+       'item-id))))
 
 (defun mastodon-tl--oldest-id ()
-  "Return item-id from the bottom of the buffer."
+  "Return item-id from the bottom of the buffer.
+If we are in a notifications view, return `notifications-min-id'."
   (save-excursion
     (goto-char (point-max))
-    (mastodon-tl--property 'item-id nil :backward)))
+    (mastodon-tl--property
+     (if (member (mastodon-tl--get-buffer-type)
+                 '(mentions notifications))
+         'notifications-min-id
+       'item-id)
+     nil :backward)))
 
 (defun mastodon-tl--as-string (numeric)
   "Convert NUMERIC to string."

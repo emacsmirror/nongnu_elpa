@@ -355,11 +355,8 @@ ACCOUNTS is the notification accounts data."
                             (if (member type '("follow" "follow_request"))
                                 toot))) ;; account data!
       'item-type     'toot ;; for nav, actions, etc.
-      'item-id       (or
-                      ;; grouped notifications pagination max_id:
-                      ;; NB: their min id used for our max id param
-                      (alist-get 'page_min_id group)
-                      (alist-get 'id toot)) ; toot id
+      'item-id       (or (alist-get 'page_max_id group) ;; newest notif
+                         (alist-get 'id toot)) ; toot id
       'base-item-id  (mastodon-tl--item-id
                       ;; if status is a notif, get id from base-toot
                       ;; (-tl--item-id toot) will not work here:
@@ -373,7 +370,10 @@ ACCOUNTS is the notification accounts data."
       ;; grouped notifs data:
       'notification-type type
       'notification-group group
-      'notification-accounts accounts)
+      'notification-accounts accounts
+      ;; for pagination:
+      'notifications-min-id (alist-get 'page_min_id group)
+      'notifications-max-id (alist-get 'page_max_id group))
      "\n")))
 
 ;; FIXME: REFACTOR with -tl--byline?:
