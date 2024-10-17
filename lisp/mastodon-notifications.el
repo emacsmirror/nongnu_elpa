@@ -354,19 +354,23 @@ ACCOUNTS is the notification accounts data."
                             base-toot group
                             (if (member type '("follow" "follow_request"))
                                 toot))) ;; account data!
-      'item-type    'toot
-      'item-id      (or id ; notification's own id
-                        (alist-get 'id toot)) ; toot id
-      'base-item-id (mastodon-tl--item-id
-                     ;; if status is a notif, get id from base-toot
-                     ;; (-tl--item-id toot) will not work here:
-                     (or base-toot
-                         toot)) ; else normal toot with reblog check
-      'item-json    toot
-      'base-toot    base-toot
-      'cursor-face 'mastodon-cursor-highlight-face
+      'item-type     'notification
+      'item-id       (or
+                      ;; grouped notifications pagination max_id:
+                      ;; NB: their min id used for our max id param
+                      (alist-get 'page_min_id group)
+                      (alist-get 'id toot)) ; toot id
+      'base-item-id  (mastodon-tl--item-id
+                      ;; if status is a notif, get id from base-toot
+                      ;; (-tl--item-id toot) will not work here:
+                      (or base-toot
+                          toot)) ; else normal toot with reblog check
+      'item-json     toot
+      'base-toot     base-toot
+      'cursor-face   'mastodon-cursor-highlight-face
       'toot-foldable toot-foldable
-      'toot-folded (and toot-foldable (not unfolded))
+      'toot-folded   (and toot-foldable (not unfolded))
+      ;; grouped notifs data:
       'notification-type type
       'notification-group group
       'notification-accounts accounts)
