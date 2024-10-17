@@ -218,17 +218,14 @@ ACCOUNTS is data of the accounts that have reacted to the notification."
   (let ((folded nil))
     ;; FIXME: apply/refactor filtering as per/with `mastodon-tl--toot'
     (let-alist group
-      ;; .sample_account_ids .status_id .notifications_count
-      ;; .most_recent_notifiation_id
       (let* ((type-sym (intern .type))
              (profile-note
-              (when (member type-sym '(follow follow_request))
+              (when (member type-sym '(follow_request))
                 (let ((str (mastodon-tl--field 'note (car accounts))))
                   (if mastodon-notifications--profile-note-in-foll-reqs-max-length
                       (string-limit str mastodon-notifications--profile-note-in-foll-reqs-max-length)
                     str))))
-             (follower (when (member type-sym
-                                     '(follow follow_request))
+             (follower (when (member type-sym '(follow follow_request))
                          (car accounts)))
              (follower-name (mastodon-tl--field 'username follower))
              (filtered (mastodon-tl--field 'filtered status))
@@ -238,47 +235,35 @@ ACCOUNTS is data of the accounts that have reacted to the notification."
           (mastodon-notifications--insert-note
            ;; toot
            ;; FIXME: fix following etc. on action authors
-           ;; FIXME: block boost/fave on boost/fave notifs?
-           (if (member type-sym
-                       ;; reblogs/faves use 'note' to process their own
-                       ;; json not the toot's. this ensures following etc.
-                       ;; work on such notifs
-                       '(follow follow_request))
+           (if (member type-sym '(follow follow_request))
                follower
              status)
            ;; body
            (let ((body (if-let ((match (assoc "warn" filters)))
                            (mastodon-tl--spoiler status (cadr match))
                          (mastodon-tl--clean-tabs-and-nl
-                          (if (mastodon-tl--has-spoiler status)
-                              (mastodon-tl--spoiler status)
-                            (if (eq type-sym 'follow_request)
-                                (mastodon-tl--render-text profile-note)
-                              (mastodon-tl--content status)))))))
-             (cond ((eq type-sym 'follow)
-                    (propertize "Congratulations, you have a new follower!"
-                                'face 'default))
-                   ((eq type-sym 'follow_request)
-                    (concat
-                     (propertize
-                      (format "You have a follow request from... %s"
-                              follower-name)
-                      'face 'default)
-                     (when mastodon-notifications--profile-note-in-foll-reqs
-                       (concat
-                        ":\n"
-                        (mastodon-notifications--comment-note-text body)))))
-                   ((member type-sym '(favourite reblog))
-                    (propertize
-                     (mastodon-notifications--comment-note-text body)
-                     ;; indent faves/boosts (maybe remove, as it makes
-                     ;; cursor highlight ugly)
-                     ;; but it's nice to be able to differentiate top
-                     ;; byline a little from body of item acted on
-                     ;; 'line-prefix ""
-                     ;; 'wrap-prefix ""
-                     ))
-                   (t body)))
+                          (cond ((mastodon-tl--has-spoiler status)
+                                 (mastodon-tl--spoiler status))
+                                ((eq type-sym 'follow_request)
+                                 (mastodon-tl--render-text profile-note))
+                                (t (mastodon-tl--content status)))))))
+             (cond
+              ((eq type-sym 'follow)
+               (propertize "Congratulations, you have a new follower!"
+                           'face 'default))
+              ((eq type-sym 'follow_request)
+               (concat
+                (propertize (format "You have a follow request from %s"
+                                    follower-name)
+                            'face 'default)
+                (when mastodon-notifications--profile-note-in-foll-reqs
+                  (concat
+                   ":\n"
+                   (mastodon-notifications--comment-note-text body)))))
+              ((member type-sym '(favourite reblog))
+               (propertize
+                (mastodon-notifications--comment-note-text body)))
+              (t body)))
            ;; author-byline
            #'mastodon-tl--byline-author
            ;; action-byline
