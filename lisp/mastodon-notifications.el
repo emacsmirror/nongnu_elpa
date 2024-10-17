@@ -139,7 +139,9 @@ follow-requests view."
     (let* ((item-json (mastodon-tl--property 'item-json))
            (f-reqs-view-p (string= "follow_requests"
                                    (plist-get mastodon-tl--buffer-spec 'endpoint)))
-           (f-req-p (or (string= "follow_request" (alist-get 'type item-json)) ;notifs
+           (f-req-p (or (string= "follow_request"
+                                 (mastodon-tl--property 'notification-type
+                                                        :no-move))
                         f-reqs-view-p)))
       (if (not f-req-p)
           (user-error "No follow request at point?")
