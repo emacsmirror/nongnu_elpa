@@ -2824,7 +2824,8 @@ the current view."
          (args (append args params))
          (url (mastodon-http--api
                endpoint
-               (when (string-suffix-p "search" endpoint)
+               (when (or (string= endpoint "notifications")
+                         (string-suffix-p "search" endpoint))
                  "v2"))))
     (apply #'mastodon-http--get-json-async url args callback cbargs)))
 
