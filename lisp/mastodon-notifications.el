@@ -387,8 +387,12 @@ When DOMAIN, force inclusion of user's domain in their handle."
       nil ", ")
      (if (< accts total)
          (let ((diff (- total accts)))
-           ;; FIXME: help echo all remaining accounts?
-           (format " and %s other%s" diff (if (= 1 diff) "" "s")))))))
+           (propertize ;; help-echo remaining notifs authors:
+            (format " and %s other%s" diff (if (= 1 diff) "" "s"))
+            'help-echo (mapconcat (lambda (a)
+                                    (alist-get 'username a))
+                                  (cddr accounts) ;; not first two
+                                  " ")))))))
 
 (defun mastodon-notifications--render (json)
   "Display grouped notifications in JSON."
