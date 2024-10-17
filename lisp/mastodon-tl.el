@@ -3184,12 +3184,13 @@ This location is defined by a non-nil value of
   (interactive)
   ;; FIXME: actually these buffers should just reload by calling their own
   ;; load function (actually g is mostly mapped as such):
-  (if (or (mastodon-tl--buffer-type-eq 'trending-statuses)
-          (mastodon-tl--buffer-type-eq 'trending-tags)
-          (mastodon-tl--buffer-type-eq 'follow-suggestions)
-          (mastodon-tl--buffer-type-eq 'lists)
-          (mastodon-tl--buffer-type-eq 'filters)
-          (mastodon-tl--buffer-type-eq 'scheduled-statuses)
+  (if (or (member (mastodon-tl--get-buffer-type)
+                  '(trending-statuses
+                    trending-tags
+                    follow-suggestions
+                    lists
+                    filters
+                    scheduled-statuses))
           (mastodon-tl--search-buffer-p))
       (user-error "Update not available in this view")
     ;; FIXME: handle update for search and trending buffers
@@ -3197,7 +3198,7 @@ This location is defined by a non-nil value of
            (update-function (mastodon-tl--update-function)))
       ;; update a thread, without calling `mastodon-tl--updated-json':
       (if (mastodon-tl--buffer-type-eq 'thread)
-          ;; load whole thread whole thread
+          ;; load whole thread:
           (let ((thread-id (mastodon-tl--thread-parent-id)))
             (funcall update-function thread-id)
             (message "Loaded full thread."))
@@ -3211,8 +3212,9 @@ This location is defined by a non-nil value of
               (mastodon-tl--set-after-update-marker)
               (goto-char (or mastodon-tl--update-point (point-min)))
               (funcall update-function json)
-              (when mastodon-tl--after-update-marker
-                (goto-char mastodon-tl--after-update-marker)))))))))
+              (if mastodon-tl--after-update-marker
+                  (goto-char mastodon-tl--after-update-marker)
+                (mastodon-tl--goto-next-item)))))))))
 
 
 ;;; LOADING TIMELINES
