@@ -279,7 +279,6 @@ ACCOUNTS is data of the accounts that have reacted to the notification."
            ;; action symbol:
            (unless (eq type-sym 'mention)
              (mastodon-tl--symbol type-sym))
-           .status_id
            ;; base toot (no need for update/poll/?)
            (when (member type-sym '(favourite reblog))
              status)
@@ -289,7 +288,7 @@ ACCOUNTS is data of the accounts that have reacted to the notification."
 ;; we could probably cull a lot of the code so its just for notifs
 (defun mastodon-notifications--insert-note
     (toot body author-byline action-byline action-authors action-symbol
-          &optional id base-toot unfolded group accounts)
+          &optional base-toot unfolded group accounts)
   "Display the content and byline of timeline element TOOT.
 BODY will form the section of the toot above the byline.
 AUTHOR-BYLINE is an optional function for adding the author
