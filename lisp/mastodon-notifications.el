@@ -284,8 +284,6 @@ ACCOUNTS is data of the accounts that have reacted to the notification."
              status)
            folded group accounts))))))
 
-;; FIXME: this is copied from `mastodon-tl--insert-status'
-;; we could probably cull a lot of the code so its just for notifs
 (defun mastodon-notifications--insert-note
     (toot body author-byline action-byline action-authors action-symbol
           &optional base-toot unfolded group accounts)
