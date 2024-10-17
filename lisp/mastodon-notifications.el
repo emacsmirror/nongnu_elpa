@@ -293,19 +293,15 @@ ACCOUNTS is data of the accounts that have reacted to the notification."
               (mastodon-notifications--byline-concat
                (alist-get type-sym mastodon-notifications--action-alist))))
            ;; action authors
-           (cond
-            ((member type-sym '(follow_request mention))
-             "") ;; mentions are normal statuses
-            ((member type-sym '(favourite reblog update))
-             (mastodon-notifications--byline-accounts
-              accounts status group))
-            ((eq type-sym 'follow_request)
-             (mastodon-tl--byline-uname-+-handle status nil (car accounts))))
+           (cond ((member type-sym '(follow_request mention))
+                  "") ;; mentions are normal statuses
+                 (t (mastodon-notifications--byline-accounts
+                     accounts status group)))
            ;; action symbol:
            (when (member type-sym '(favourite reblog update))
              (mastodon-tl--symbol type-sym))
            .status_id
-           ;; base toot
+           ;; base toot (no need for update/poll/?)
            (when (member type-sym '(favourite reblog))
              status)
            folded group accounts))))))
