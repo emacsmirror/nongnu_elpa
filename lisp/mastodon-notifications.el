@@ -354,7 +354,7 @@ ACCOUNTS is the notification accounts data."
                             base-toot group
                             (if (member type '("follow" "follow_request"))
                                 toot))) ;; account data!
-      'item-type     'notification
+      'item-type     'toot ;; for nav, actions, etc.
       'item-id       (or
                       ;; grouped notifications pagination max_id:
                       ;; NB: their min id used for our max id param
