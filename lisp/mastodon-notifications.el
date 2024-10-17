@@ -292,7 +292,7 @@ ACCOUNTS is data of the accounts that have reacted to the notification."
                  (t (mastodon-notifications--byline-accounts
                      accounts status group)))
            ;; action symbol:
-           (when (member type-sym '(favourite reblog update))
+           (unless (eq type-sym 'mention)
              (mastodon-tl--symbol type-sym))
            .status_id
            ;; base toot (no need for update/poll/?)
