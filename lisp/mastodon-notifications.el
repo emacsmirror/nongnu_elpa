@@ -91,16 +91,10 @@ make them unweildy."
 (defvar mastodon-tl--fold-toots-at-length)
 (defvar mastodon-tl--show-avatars)
 
-(defvar mastodon-notifications--types-alist
-  '(("follow" . mastodon-notifications--follow)
-    ("favourite" . mastodon-notifications--favourite)
-    ("reblog" . mastodon-notifications--reblog)
-    ("mention" . mastodon-notifications--mention)
-    ("poll" . mastodon-notifications--poll)
-    ("follow_request" . mastodon-notifications--follow-request)
-    ("status" . mastodon-notifications--status)
-    ("update" . mastodon-notifications--edit))
-  "Alist of notification types and their corresponding function.")
+(defvar mastodon-notifications--types
+  '("favourite" "reblog" "mention" "poll"
+    "follow_request" "follow" "status" "update")
+  "A list of notification types according to their name on the server.")
 
 (defvar mastodon-notifications--response-alist
   '(("Followed" . "you")
@@ -293,7 +287,7 @@ ACCOUNTS is data of the accounts that have reacted to the notification."
               (mastodon-notifications--byline-concat
                (alist-get type-sym mastodon-notifications--action-alist))))
            ;; action authors
-           (cond ((member type-sym '(follow_request mention))
+           (cond ((member type-sym '(follow follow_request mention))
                   "") ;; mentions are normal statuses
                  (t (mastodon-notifications--byline-accounts
                      accounts status group)))
@@ -467,8 +461,7 @@ Status notifications are created when you call
 
 (defun mastodon-notifications--filter-types-list (type)
   "Return a list of notification types with TYPE removed."
-  (let ((types (mapcar #'car mastodon-notifications--types-alist)))
-    (remove type types)))
+  (remove type mastodon-notifications--types))
 
 (defun mastodon-notifications--clear-all ()
   "Clear all notifications."
