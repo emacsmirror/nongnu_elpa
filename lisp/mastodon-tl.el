@@ -2551,23 +2551,29 @@ LANGS is the accumulated array param alist if we re-run recursively."
                       (get-text-property (point) 'profile-json))
                  (list (alist-get 'acct
                                   (mastodon-profile--profile-json))))
+                ;; (grouped) notifications:
+                ((member (mastodon-tl--get-buffer-type) '(mentions notifications))
+                 (append ;; those acting on item:
+                  (cl-remove-duplicates
+                   (cl-loop for a in (mastodon-tl--property 'notification-accounts :no-move)
+                            collect (alist-get 'acct a)))
+                  ;; mentions in item:
+                  (mastodon-profile--extract-users-handles
+                   (mastodon-profile--item-json))))
                 (t
                  (mastodon-profile--extract-users-handles
                   (mastodon-profile--item-json))))))
-     ;; return immediately if only 1 handle:
-     (if (eq 1 (length user-handles))
-         (car user-handles)
-       (completing-read (cond ((or ; TODO: make this "enable/disable notifications"
-                                (string= action "disable")
-                                (string= action "enable"))
-                               (format "%s notifications when user posts: " action))
-                              ((string-suffix-p "boosts" action)
-                               (format "%s by user: " action))
-                              (t
-                               (format "Handle of user to %s: " action)))
-                        user-handles
-                        nil ; predicate
-                        'confirm)))))
+     (completing-read (cond ((or ; TODO: make this "enable/disable notifications"
+                              (string= action "disable")
+                              (string= action "enable"))
+                             (format "%s notifications when user posts: " action))
+                            ((string-suffix-p "boosts" action)
+                             (format "%s by user: " action))
+                            (t
+                             (format "Handle of user to %s: " action)))
+                      user-handles
+                      nil ; predicate
+                      'confirm))))
 
 (defun mastodon-tl--get-blocks-or-mutes-list (action)
   "Fetch the list of accounts for ACTION from the server.
