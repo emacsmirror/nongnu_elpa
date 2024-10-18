@@ -2847,11 +2847,15 @@ Returns a list of strings."
              concat (fj-propertize-topic top))))
 
 (defface fj-topic-face
-  `((t :box t :background ,(internal-get-lisp-face-attribute
-                            'default :foreground)
+  `((t :box t
+       :background ,(face-foreground 'default)
+       ;; FIXME: `internal-get-lisp-face-attribute' and `face-foreground'
+       ;; don't work when loading with use-package, i think because we
+       ;; have no frame and and 'default face is then undefined!
+       ;; we hardcode a fallback to white here, but we shouldn't have to
        :foreground ,(readable-foreground-color
-                     (internal-get-lisp-face-attribute
-                      'default :foreground))))
+                     (or (face-foreground 'default nil 'default)
+                         "white"))))
   "Face for repo topics.")
 
 (defun fj-propertize-topic (topic)
