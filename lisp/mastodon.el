@@ -6,7 +6,7 @@
 ;; Author: Johnson Denen <johnson.denen@gmail.com>
 ;;         Marty Hiatt <martianhiatus@riseup.net>
 ;; Maintainer: Marty Hiatt <martianhiatus@riseup.net>
-;; Version: 1.0.27
+;; Version: 1.1.0
 ;; Package-Requires: ((emacs "27.1") (request "0.3.0")
 ;;                    (persist "0.4") (tp "0.1"))
 ;; Homepage: https://codeberg.org/martianh/mastodon.el

@@ -1,7 +1,7 @@
 ;;; mastodon-toot.el --- Minor mode for sending Mastodon toots  -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2017-2019 Johnson Denen
-;; Copyright (C) 2020-2022 Marty Hiatt
+;; Copyright (C) 2020-2024 Marty Hiatt
 ;; Author: Johnson Denen <johnson.denen@gmail.com>
 ;;         Marty Hiatt <martianhiatus@riseup.net>
 ;; Maintainer: Marty Hiatt <martianhiatus@riseup.net>

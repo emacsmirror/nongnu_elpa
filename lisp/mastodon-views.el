@@ -1,6 +1,6 @@
 ;;; mastodon-views.el --- Minor views functions for mastodon.el  -*- lexical-binding: t -*-
 
-;; Copyright (C) 2020-2022 Marty Hiatt
+;; Copyright (C) 2020-2024 Marty Hiatt
 ;; Author: Marty Hiatt <martianhiatus@riseup.net>
 ;; Maintainer: Marty Hiatt <martianhiatus@riseup.net>
 ;; Homepage: https://codeberg.org/martianh/mastodon.el
