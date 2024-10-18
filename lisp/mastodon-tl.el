@@ -687,10 +687,15 @@ ACCOUNT is optionally acccount data to use."
         (alist-get 'avatar
                    (alist-get 'account data))))
      (if (not base)
-         (mastodon-tl--byline-handle
-          data domain account
-          ;; display uname not handle (for boosts):
-          uname 'mastodon-display-name-face)
+         ;; boost symbol:
+         (concat (mastodon-tl--symbol 'boost)
+                 " "
+                 ;; username as button:
+                 (mastodon-tl--byline-handle
+                  data domain account
+                  ;; display uname not handle (for boosts):
+                  uname 'mastodon-display-name-face))
+       ;; normal combo author byline:
        (mastodon-tl--byline-uname-+-handle data domain account)))))
 
 (defun mastodon-tl--format-byline-help-echo (toot)
