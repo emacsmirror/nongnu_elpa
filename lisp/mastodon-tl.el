@@ -2674,8 +2674,7 @@ ARGS is an alist of any parameters to send with the request."
                ((assoc "languages[]" args #'string=)
                 (message "User %s filtered by language(s): %s" name
                          (mapconcat #'cdr args " ")))
-               ((and (eq notify nil)
-                     (eq reblogs nil))
+               ((not (or notify reblogs))
                 (if (and (string= action "follow")
                          (eq t (alist-get 'requested json)))
                     (message "Follow requested for user %s (@%s)!" name user-handle)
