@@ -2281,6 +2281,9 @@ ID is that of the toot to view."
                                       #'mastodon-tl--update-toot)
         (mastodon-tl--toot toot :detailed-p)
         (goto-char (point-min))
+        (when mastodon-tl--display-media-p
+          (mastodon-media--inline-images (point-min)
+                                         (point-max)))
         (mastodon-tl--goto-next-item :no-refresh)))))
 
 (defun mastodon-tl--update-toot (json)
@@ -2339,6 +2342,11 @@ view all branches of a thread."
                 (move-marker marker (point))
                 ;; print re-fetched toot:
                 (mastodon-tl--toot toot :detailed-p :thread)
+                ;; inline images only for the toot
+                ;; (`mastodon-tl--timeline' handles the rest):
+                (when mastodon-tl--display-media-p
+                  (mastodon-media--inline-images marker ;start-pos
+                                                 (point)))
                 (mastodon-tl--timeline (alist-get 'descendants context)
                                        :thread)
                 ;; put point at the toot:
