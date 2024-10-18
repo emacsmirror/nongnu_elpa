@@ -2535,45 +2535,44 @@ LANGS is the accumulated array param alist if we re-run recursively."
   "Get the list of user-handles for ACTION from the current toot."
   (mastodon-tl--do-if-item
    (let ((user-handles
-          (cond ((or ; follow suggests / search / foll requests compat:
-                  (mastodon-tl--buffer-type-eq 'follow-suggestions)
-                  (mastodon-tl--buffer-type-eq 'search)
-                  (mastodon-tl--buffer-type-eq 'follow-requests)
-                  ;; profile follows/followers but not statuses:
-                  (mastodon-tl--buffer-type-eq 'profile-followers)
-                  (mastodon-tl--buffer-type-eq 'profile-following))
-                 ;; fetch 'item-json:
-                 (list (alist-get 'acct
-                                  (mastodon-tl--property 'item-json :no-move))))
-                ;; profile view, point in profile details, poss no toots
-                ;; needed for e.g. gup.pe groups which show no toots publically:
-                ((and (mastodon-tl--profile-buffer-p)
-                      (get-text-property (point) 'profile-json))
-                 (list (alist-get 'acct
-                                  (mastodon-profile--profile-json))))
-                ;; (grouped) notifications:
-                ((member (mastodon-tl--get-buffer-type) '(mentions notifications))
-                 (append ;; those acting on item:
-                  (cl-remove-duplicates
-                   (cl-loop for a in (mastodon-tl--property 'notification-accounts :no-move)
-                            collect (alist-get 'acct a)))
-                  ;; mentions in item:
-                  (mastodon-profile--extract-users-handles
-                   (mastodon-profile--item-json))))
-                (t
-                 (mastodon-profile--extract-users-handles
-                  (mastodon-profile--item-json))))))
-     (completing-read (cond ((or ; TODO: make this "enable/disable notifications"
-                              (string= action "disable")
-                              (string= action "enable"))
-                             (format "%s notifications when user posts: " action))
-                            ((string-suffix-p "boosts" action)
-                             (format "%s by user: " action))
-                            (t
-                             (format "Handle of user to %s: " action)))
-                      user-handles
-                      nil ; predicate
-                      'confirm))))
+          (cond
+           ((or ; follow suggests / search / foll requests compat:
+             (member (mastodon-tl--get-buffer-type)
+                     '( follow-suggestions search follow-requests
+                        ;; profile follows/followers but not statuses:
+                        profile-followers profile-following)))
+            ;; fetch 'item-json:
+            (list (alist-get 'acct
+                             (mastodon-tl--property 'item-json :no-move))))
+           ;; profile view, point in profile details, poss no toots
+           ;; needed for e.g. gup.pe groups which show no toots publically:
+           ((and (mastodon-tl--profile-buffer-p)
+                 (get-text-property (point) 'profile-json))
+            (list (alist-get 'acct
+                             (mastodon-profile--profile-json))))
+           ;; (grouped) notifications:
+           ((member (mastodon-tl--get-buffer-type) '(mentions notifications))
+            (append ;; those acting on item:
+             (cl-remove-duplicates
+              (cl-loop for a in (mastodon-tl--property
+                                 'notification-accounts :no-move)
+                       collect (alist-get 'acct a)))
+             ;; mentions in item:
+             (mastodon-profile--extract-users-handles
+              (mastodon-profile--item-json))))
+           (t
+            (mastodon-profile--extract-users-handles
+             (mastodon-profile--item-json))))))
+     (completing-read
+      (cond ((or ; TODO: make this "enable/disable notifications"
+              (string= action "disable")
+              (string= action "enable"))
+             (format "%s notifications when user posts: " action))
+            ((string-suffix-p "boosts" action)
+             (format "%s by user: " action))
+            (t (format "Handle of user to %s: " action)))
+      user-handles nil ; predicate
+      'confirm))))
 
 (defun mastodon-tl--get-blocks-or-mutes-list (action)
   "Fetch the list of accounts for ACTION from the server.
@@ -2599,16 +2598,29 @@ NOTIFY is only non-nil when called by `mastodon-tl--follow-user'.
 LANGS is an array parameters alist of languages to filer user's posts by.
 REBLOGS is a boolean string like NOTIFY, enabling or disabling
 display of the user's boosts in your timeline."
-  (let* ((account (if negp
-                      ;; unmuting/unblocking, handle from mute/block list
-                      (mastodon-profile--search-account-by-handle user-handle)
-                    (mastodon-profile--lookup-account-in-status
-                     user-handle
-                     (if (mastodon-tl--profile-buffer-p)
-                         ;; profile view, use 'profile-json as status:
-                         (mastodon-profile--profile-json)
-                       ;; muting/blocking, select from handles in current status
-                       (mastodon-profile--item-json)))))
+  (let* ((account
+          (cond
+           (negp ;; unmuting/unblocking, use mute/block list
+            (mastodon-profile--search-account-by-handle user-handle))
+           ;; (grouped) notifications:
+           ((member (mastodon-tl--get-buffer-type)
+                    '(mentions notifications))
+            (let ((accounts (mastodon-tl--property 'notification-accounts)))
+              (or (cl-some (lambda (x)
+                             (when (string= user-handle (alist-get 'acct x))
+                               x))
+                           accounts)
+                  (mastodon-profile--lookup-account-in-status
+                   user-handle
+                   (mastodon-profile--item-json)))))
+           (t
+            (mastodon-profile--lookup-account-in-status
+             user-handle
+             (if (mastodon-tl--profile-buffer-p)
+                 ;; profile view, use 'profile-json as status:
+                 (mastodon-profile--profile-json)
+               ;; muting/blocking, select from handles in current status
+               (mastodon-profile--item-json))))))
          (user-id (alist-get 'id account))
          (name (if (string-empty-p (alist-get 'display_name account))
                    (alist-get 'username account)
