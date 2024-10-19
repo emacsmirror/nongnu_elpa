@@ -28,8 +28,7 @@
 
 ;;; Code:
 (require 'json)
-(eval-when-compile
-  (require 'mastodon-tl))
+(require 'mastodon-tl)
 
 (autoload 'mastodon-auth--access-token "mastodon-auth")
 (autoload 'mastodon-http--api "mastodon-http")
@@ -44,6 +43,7 @@
 (autoload 'mastodon-tl--timeline "mastodon-tl")
 (autoload 'mastodon-tl--toot "mastodon-tl")
 (autoload 'mastodon-tl--buffer-property "mastodon-tl")
+(autoload 'mastodon-http--api-v2 "mastodon-http")
 
 (defvar mastodon-toot--completion-style-for-mentions)
 (defvar mastodon-instance-url)
@@ -165,7 +165,8 @@ Optionally add string TYPE after HEADING."
 
 (defun mastodon-search--format-heading (str &optional type no-newline)
   "Format STR as a heading.
-Optionally add string TYPE after HEADING."
+Optionally add string TYPE after HEADING.
+NO-NEWLINE means don't add add a newline at end."
   (mastodon-tl--set-face
    (concat "\n " mastodon-tl--horiz-bar "\n "
            (upcase str) " "
@@ -189,7 +190,7 @@ is used for pagination."
   ;; TODO: handle no results
   (interactive "sSearch mastodon for: ")
   (let* ((url (mastodon-http--api-v2 "search"))
-         (following (when (or following (eq current-prefix-arg '(4)))
+         (following (when (or following (equal current-prefix-arg '(4)))
                       "true"))
          (type (or type
                    (if (eq current-prefix-arg '(4))

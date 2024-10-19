@@ -38,6 +38,7 @@
 (require 'image-mode)
 
 (autoload 'mastodon-tl--propertize-img-str-or-url "mastodon-tl")
+(autoload 'mastodon-tl--image-trans-check "mastodon-tl")
 
 (defvar url-show-status)
 

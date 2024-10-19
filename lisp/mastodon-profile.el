@@ -84,6 +84,7 @@
 (autoload 'mastodon-search--query "mastodon-search")
 (autoload 'mastodon-tl--field-status "mastodon-tl")
 
+(defvar mastodon-active-user)
 (defvar mastodon-tl--horiz-bar)
 (defvar mastodon-tl--update-point)
 (defvar mastodon-toot--max-toot-chars)

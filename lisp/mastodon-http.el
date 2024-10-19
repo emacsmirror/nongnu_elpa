@@ -302,7 +302,8 @@ Optionally specify the PARAMS to send."
 
 (defun mastodon-http--patch (url &optional params json)
   "Make synchronous PATCH request to URL.
-Optionally specify the PARAMS to send."
+Optionally specify the PARAMS to send.
+JSON means send params as JSON data."
   (mastodon-http--authorized-request "PATCH"
     ;; NB: unlike POST, PATCHing only works if we use query params!
     ;; so here, unless JSON arg, we use query params and do not set
