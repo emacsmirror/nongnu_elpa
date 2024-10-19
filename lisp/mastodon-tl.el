@@ -749,8 +749,7 @@ The result is added as an attachments property to author-byline."
 Only return something if TOOT contains a reblog."
   (let ((reblog (alist-get 'reblog toot)))
     (if reblog
-        (concat
-         " " (mastodon-tl--byline-author toot))
+        (mastodon-tl--byline-author toot)
       "")))
 
 (defun mastodon-tl--byline-booster-str (toot)
