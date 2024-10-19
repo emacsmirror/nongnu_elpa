@@ -181,7 +181,7 @@ width fonts"))
 (defvar mastodon-toot-visibility-settings-list
   '("public" "unlisted" "private")
   "A list of the available default toot visibility settings.
-Like `mastodon-toot-visibility-list' but without 'direct.")
+Like `mastodon-toot-visibility-list' but without direct.")
 
 (defvar-local mastodon-toot--visibility nil
   "A string indicating the visibility of the toot being composed.
@@ -541,7 +541,8 @@ SUBTRACT means we are un-favouriting or unboosting, so we decrement."
 
 (defun mastodon-toot--list-boosters-or-favers (&optional favourite accounts)
   "List the favouriters or boosters of toot at point.
-With FAVOURITE, list favouriters, else list boosters."
+With FAVOURITE, list favouriters, else list boosters.
+ACCOUNTS is notfications accounts if any."
   (mastodon-toot--with-toot-item
    (let* ((endpoint (unless accounts
                       (if favourite "favourited_by" "reblogged_by")))
