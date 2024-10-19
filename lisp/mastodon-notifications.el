@@ -314,8 +314,10 @@ ACCOUNTS is the notification accounts data."
      (propertize ;; top byline, body + byline:
       (concat
        (propertize ;; top byline
-        (concat action-symbol " " action-authors
-                action-byline)
+        (if (equal type "mention")
+            ""
+          (concat action-symbol " " action-authors
+                  action-byline))
         'byline-top t)
        (propertize ;; body only
         body
