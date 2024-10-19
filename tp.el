@@ -2,7 +2,7 @@
 
 ;; Author: Marty Hiatt <martianhiatus@riseup.net>
 ;; Copyright (C) 2024 Marty Hiatt <martianhiatus@riseup.net>
-;; Version: 0.1
+;; Version: 0.2
 ;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: convenience, api, requests
 ;; URL: https://codeberg.org/martianh/transient-post.el
