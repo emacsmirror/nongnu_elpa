@@ -1686,6 +1686,7 @@ NO-BYLINE means just insert toot body, used for folding."
        (propertize ;; body only:
         (concat
          "\n"
+         (funcall action-byline toot)
          ;; relpy symbol:
          (when (and after-reply-status-p thread)
            (concat (mastodon-tl--symbol 'replied)
@@ -1705,9 +1706,8 @@ NO-BYLINE means just insert toot body, used for folding."
        "\n"
        (if no-byline
            ""
-         (concat (funcall action-byline toot)
-                 (mastodon-tl--byline toot author-byline detailed-p
-                                      domain base-toot group))))
+         (mastodon-tl--byline toot author-byline detailed-p
+                              domain base-toot group)))
       'item-type    'toot
       'item-id      (or id ; notification's own id
                         (alist-get 'id toot)) ; toot id
