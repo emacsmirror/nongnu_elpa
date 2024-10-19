@@ -187,7 +187,7 @@ which case call it. else just return it."
     (cond ((functionp slot)
            (funcall slot))
           ((symbolp slot)
-           (eval slot))
+           (symbol-value slot))
           (t slot))))
 
 (defun tp-parse-args-for-send (args &optional strings)
@@ -225,7 +225,7 @@ transient ignores false/nil values.")
 
 ;;; TRANSIENT METHODS
 ;; for `tp-bool' we define our own infix option that displays
-;; [t|:json-false] like exclusive switches. activating the infix just
+;; [true|false] like exclusive switches. activating the infix
 ;; moves to the next option.
 
 (cl-defmethod transient-infix-value ((obj tp-option))

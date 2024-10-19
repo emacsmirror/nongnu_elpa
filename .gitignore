@@ -1,0 +1,5 @@
+*.elc
+
+# ELPA-generated files.
+/tp-autoloads.el
+/tp-pkg.el
