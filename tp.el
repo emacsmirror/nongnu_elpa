@@ -2,10 +2,10 @@
 
 ;; Author: Marty Hiatt <martianhiatus@riseup.net>
 ;; Copyright (C) 2024 Marty Hiatt <martianhiatus@riseup.net>
-;; Version: 0.2
+;; Version: 0.3
 ;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: convenience, api, requests
-;; URL: https://codeberg.org/martianh/transient-post.el
+;; URL: https://codeberg.org/martianh/tp.el
 
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
