@@ -798,7 +798,9 @@ By default it is `mastodon-tl--byline-author'
 DETAILED-P means display more detailed info. For now
 this just means displaying toot client.
 When DOMAIN, force inclusion of user's domain in their handle.
-BASE-TOOT is JSON for the base toot, if any."
+BASE-TOOT is JSON for the base toot, if any.
+GROUP is the notification group if any.
+ACCOUNT is the notification account if any."
   (let* ((created-time
           (if group
               (mastodon-tl--field 'latest_page_notification_at group)
@@ -814,9 +816,7 @@ BASE-TOOT is JSON for the base toot, if any."
          (boosted (eq t (mastodon-tl--field 'reblogged toot)))
          (bookmarked (eq t (mastodon-tl--field 'bookmarked toot)))
          (visibility (mastodon-tl--field 'visibility toot))
-         (type (if group
-                   (alist-get 'type group)
-                 (alist-get 'type toot)))
+         (type (alist-get 'type (or group toot)))
          (base-toot-maybe (or base-toot ;; show edits for notifs
                               (mastodon-tl--toot-or-base toot))) ;; for boosts
          (account (or account
@@ -1648,7 +1648,7 @@ Runs `mastodon-tl--render-text' and fetches poll or media."
 
 (defun mastodon-tl--insert-status
     (toot body author-byline action-byline &optional id base-toot
-          detailed-p thread domain unfolded no-byline group accounts)
+          detailed-p thread domain unfolded no-byline)
   "Display the content and byline of timeline element TOOT.
 BODY will form the section of the toot above the byline.
 AUTHOR-BYLINE is an optional function for adding the author
@@ -1668,14 +1668,11 @@ THREAD means the status will be displayed in a thread view.
 When DOMAIN, force inclusion of user's domain in their handle.
 UNFOLDED is a boolean meaning whether to unfold or fold item if foldable.
 NO-BYLINE means just insert toot body, used for folding."
-  (let* ((reply-to-id
-          (if group
-              (alist-get 'status_id group)
-            (alist-get 'in_reply_to_id toot)))
+  (let* ((reply-to-id (alist-get 'in_reply_to_id toot))
          (after-reply-status-p
           (when (and thread reply-to-id)
             (mastodon-tl--after-reply-status reply-to-id)))
-         (type (alist-get 'type (or group toot)))
+         ;; (type (alist-get 'type toot))
          (toot-foldable
           (and mastodon-tl--fold-toots-at-length
                (length> body mastodon-tl--fold-toots-at-length))))
@@ -1706,7 +1703,7 @@ NO-BYLINE means just insert toot body, used for folding."
        (if no-byline
            ""
          (mastodon-tl--byline toot author-byline detailed-p
-                              domain base-toot group)))
+                              domain base-toot)))
       'item-type    'toot
       'item-id      (or id ; notification's own id
                         (alist-get 'id toot)) ; toot id
@@ -1719,10 +1716,7 @@ NO-BYLINE means just insert toot body, used for folding."
       'base-toot    base-toot
       'cursor-face 'mastodon-cursor-highlight-face
       'toot-foldable toot-foldable
-      'toot-folded (and toot-foldable (not unfolded))
-      'notification-type type
-      'notification-group group
-      'notification-accounts accounts)
+      'toot-folded (and toot-foldable (not unfolded)))
      (if no-byline "" "\n"))))
 
 (defun mastodon-tl--is-reply (toot)

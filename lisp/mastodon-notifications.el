@@ -46,7 +46,6 @@
 (autoload 'mastodon-tl--find-property-range "mastodon-tl")
 (autoload 'mastodon-tl--has-spoiler "mastodon-tl")
 (autoload 'mastodon-tl--init "mastodon-tl")
-(autoload 'mastodon-tl--insert-status "mastodon-tl")
 (autoload 'mastodon-tl--property "mastodon-tl")
 (autoload 'mastodon-tl--reload-timeline-or-profile "mastodon-tl")
 (autoload 'mastodon-tl--spoiler "mastodon-tl")
