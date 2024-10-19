@@ -1,7 +1,7 @@
 ;;; tp.el --- Transient utilities for posting to an API -*- lexical-binding: t; -*-
 
-;; Author: Marty Hiatt <martianhiatus AT riseup.net>
-;; Copyright (C) 2024 Marty Hiatt <martianhiatus AT riseup.net>
+;; Author: Marty Hiatt <martianhiatus@riseup.net>
+;; Copyright (C) 2024 Marty Hiatt <martianhiatus@riseup.net>
 ;; Version: 0.1
 ;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: convenience, api, requests
