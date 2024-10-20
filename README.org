@@ -60,7 +60,7 @@ Or, with =use-package=:
     :ensure t)
 #+END_SRC
 
-The minimum Emacs version is now 27.1. But if you are running an older version
+The minimum Emacs version is now 28.1. But if you are running an older version
 it shouldn't be very hard to get it working.
 
 *** Emoji
