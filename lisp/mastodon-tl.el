@@ -661,6 +661,12 @@ ACCOUNT is optionally acccount data to use."
   (concat (mastodon-tl--byline-username data account)
           " (" (mastodon-tl--byline-handle data domain account) ")"))
 
+(defun mastodon-tl--display-or-uname (account)
+  "Return display name or username from ACCOUNT data."
+  (if (not (string-empty-p (alist-get 'display_name account)))
+      (alist-get 'display_name account)
+    (alist-get 'username account)))
+
 (defun mastodon-tl--byline-author (toot &optional avatar domain base account)
   "Propertize author of TOOT.
 If TOOT contains a reblog, return author of reblogged item.
@@ -673,9 +679,7 @@ ACCOUNT is optionally acccount data to use."
                    (mastodon-tl--toot-or-base toot)
                  toot))
          (account (or account (alist-get 'account data)))
-         (uname (if (not (string-empty-p (alist-get 'display_name account)))
-                    (alist-get 'display_name account)
-                  (alist-get 'username account))))
+         (uname (mastodon-tl--display-or-uname account)))
     (concat
      ;; avatar insertion moved up to `mastodon-tl--byline' by default to
      ;; be outside 'byline propt.
@@ -684,8 +688,7 @@ ACCOUNT is optionally acccount data to use."
                 mastodon-tl--display-media-p
                 (mastodon-tl--image-trans-check))
        (mastodon-media--get-avatar-rendering
-        (alist-get 'avatar
-                   (alist-get 'account data))))
+        (map-nested-elt data '(account avatar))))
      (if (not base)
          ;; boost symbol:
          (concat (mastodon-tl--symbol 'boost)
@@ -873,10 +876,9 @@ ACCOUNT is the notification account if any."
                      'help-echo ts))
        ;; detailed:
        (when detailed-p
-         (let* ((app (alist-get 'application toot))
-                (app-name (alist-get 'name app))
-                (app-url (alist-get 'website app)))
-           (when app
+         (let* ((app-name (map-nested-elt toot '(application name)))
+                (app-url (map-nested-elt toot '(application website))))
+           (when app-name
              (concat
               (propertize " via " 'face 'default)
               (propertize app-name
@@ -973,9 +975,8 @@ links in the text. If TOOT is nil no parsing occurs."
                                        (get-text-property (car region) 'shr-url))
             (when (proper-list-p toot) ;; not on profile fields cons cells
               ;; render card author maybe:
-              (let* ((card (alist-get 'card toot))
-                     (card-url (alist-get 'url card))
-                     (authors (alist-get 'authors card))
+              (let* ((card-url (map-nested-elt toot '(card url)))
+                     (authors (map-nested-elt toot '(card authors)))
                      (url (buffer-substring (car region) (cdr region)))
                      (url-no-query (car (split-string url "?"))))
                 (when (and (string= url-no-query card-url)
@@ -1121,7 +1122,7 @@ the toot)."
                          (url-generic-parse-url instance-url)))
          (parsed (url-generic-parse-url url))
          (path (url-filename parsed))
-         (split (string-split path "/")))
+         (split (split-string path "/")))
     (when (and (string= instance-host (url-host parsed))
                (string-prefix-p "/tag" path)) ;; "/tag/" or "/tags/"
       (nth 2 split))))
@@ -2395,8 +2396,7 @@ If UNMUTE, unmute it."
 (defun mastodon-tl--map-account-id-from-toot (statuses)
   "Return a list of the account IDs of the author of each toot in STATUSES."
   (mapcar (lambda (status)
-            (alist-get 'id
-                       (alist-get 'account status)))
+            (map-nested-elt status '(account id)))
           statuses))
 
 (defun mastodon-tl--user-in-thread-p (id)
@@ -2628,9 +2628,7 @@ display of the user's boosts in your timeline."
                ;; muting/blocking, select from handles in current status
                (mastodon-profile--item-json))))))
          (user-id (alist-get 'id account))
-         (name (if (string-empty-p (alist-get 'display_name account))
-                   (alist-get 'username account)
-                 (alist-get 'display_name account)))
+         (name (mastodon-tl--display-or-uname account))
          (args (cond (notify `(("notify" . ,notify)))
                      (langs langs)
                      (reblogs `(("reblogs" . ,reblogs)))

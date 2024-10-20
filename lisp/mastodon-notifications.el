@@ -375,10 +375,7 @@ When DOMAIN, force inclusion of user's domain in their handle."
                      mastodon-tl--display-media-p
                      (mastodon-tl--image-trans-check))
             (mastodon-media--get-avatar-rendering .avatar))
-          (let ((uname
-                 (if (not (string-empty-p (alist-get 'display_name account)))
-                     (alist-get 'display_name account)
-                   (alist-get 'username account))))
+          (let ((uname (mastodon-tl--display-or-uname account)))
             (mastodon-tl--byline-handle toot nil account
                                         uname 'mastodon-display-name-face))
           ", ")))
