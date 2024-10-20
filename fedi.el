@@ -1,7 +1,7 @@
 ;;; fedi.el --- Helper functions for fediverse clients  -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2020-2023 Marty Hiatt and mastodon.el authors
-;; Author: Marty Hiatt <martianhiatus@riseup.net>
+;; Author: Marty Hiatt <mousebot@disroot.org>
 ;; Version: 0.2
 ;; Package-Requires: ((emacs "28.1") (markdown-mode "2.5"))
 ;; Homepage: https://codeberg.org/martianh/fedi.el

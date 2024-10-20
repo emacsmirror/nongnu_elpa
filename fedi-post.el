@@ -1,7 +1,7 @@
 ;;; fedi-post.el --- Minor mode for posting to fediverse services  -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2020-2023 Marty Hiatt
-;; Author: Marty Hiatt <martianhiatus@riseup.net> and mastodon.el authors
+;; Author: Marty Hiatt <mousebot@disroot.org> and mastodon.el authors
 ;; Version: 1.0.0
 ;; Homepage: https://codeberg.org/martianh/fedi.el
 
