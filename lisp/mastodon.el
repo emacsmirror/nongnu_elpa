@@ -4,8 +4,8 @@
 ;; Copyright (C) 2020-2022 Marty Hiatt
 ;; Copyright (C) 2021 Abhiseck Paira <abhiseckpaira@disroot.org>
 ;; Author: Johnson Denen <johnson.denen@gmail.com>
-;;         Marty Hiatt <martianhiatus@riseup.net>
-;; Maintainer: Marty Hiatt <martianhiatus@riseup.net>
+;;         Marty Hiatt <mousebot@disroot.org>
+;; Maintainer: Marty Hiatt <mousebot@disroot.org>
 ;; Version: 1.1.0
 ;; Package-Requires: ((emacs "28.1") (request "0.3.0")
 ;;                    (persist "0.4") (tp "0.1"))

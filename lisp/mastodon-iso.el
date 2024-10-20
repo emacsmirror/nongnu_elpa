@@ -1,7 +1,7 @@
 ;;; mastodon-iso.el --- ISO language code lists for mastodon.el  -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2022 Marty Hiatt
-;; Author: Marty Hiatt <martianhiatus@riseup.net>
+;; Author: Marty Hiatt <mousebot@disroot.org>
 ;; Homepage: https://codeberg.org/martianh/mastodon.el
 
 ;; This file is not part of GNU Emacs.

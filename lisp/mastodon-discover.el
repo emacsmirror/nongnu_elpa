@@ -3,8 +3,8 @@
 ;; Copyright (C) 2019 Johnson Denen
 ;; Copyright (C) 2020-2024 Marty Hiatt
 ;; Author: Johnson Denen <johnson.denen@gmail.com>
-;;         Marty Hiatt <martianhiatus@riseup.net>
-;; Maintainer: Marty Hiatt <martianhiatus@riseup.net>
+;;         Marty Hiatt <mousebot@disroot.org>
+;; Maintainer: Marty Hiatt <mousebot@disroot.org>
 ;; Homepage: https://codeberg.org/martianh/mastodon.el
 
 ;; This file is not part of GNU Emacs.

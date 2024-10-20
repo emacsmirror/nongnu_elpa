@@ -1,8 +1,8 @@
 ;;; mastodon-views.el --- Minor views functions for mastodon.el  -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2020-2024 Marty Hiatt
-;; Author: Marty Hiatt <martianhiatus@riseup.net>
-;; Maintainer: Marty Hiatt <martianhiatus@riseup.net>
+;; Author: Marty Hiatt <mousebot@disroot.org>
+;; Maintainer: Marty Hiatt <mousebot@disroot.org>
 ;; Homepage: https://codeberg.org/martianh/mastodon.el
 
 ;; This file is not part of GNU Emacs.
