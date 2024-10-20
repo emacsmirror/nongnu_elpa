@@ -331,9 +331,7 @@ If NOTE is non-nil, include user's profile note. This is also
 
 (defun mastodon-search--get-user-info (account)
   "Get user handle, display name, account URL and profile note from ACCOUNT."
-  (list (if (not (string-empty-p (alist-get 'display_name account)))
-            (alist-get 'display_name account)
-          (alist-get 'username account))
+  (list (mastodon-tl--display-or-uname account)
         (alist-get 'acct account)
         (alist-get 'url account)
         (alist-get 'note account)))
