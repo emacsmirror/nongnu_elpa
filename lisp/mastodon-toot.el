@@ -175,7 +175,7 @@ width fonts"))
   "A flag indicating whether the toot should be marked as NSFW.")
 
 (defvar mastodon-toot-visibility-list
-  '(direct private unlisted public)
+  '(public unlisted private direct)
   "A list of the available toot visibility settings.")
 
 (defvar mastodon-toot-visibility-settings-list
