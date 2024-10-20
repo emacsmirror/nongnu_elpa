@@ -1,7 +1,7 @@
 ;;; fj-transient-repo.el --- Transients for fj.el -*- lexical-binding: t; -*-
 
-;; Author: Marty Hiatt <martianhiatus AT riseup.net>
-;; Copyright (C) 2024 Marty Hiatt <martianhiatus AT riseup.net>
+;; Author: Marty Hiatt <mousebot@disroot.org>
+;; Copyright (C) 2024 Marty Hiatt <mousebot@disroot.org>
 ;;
 ;; Package-Requires: ((emacs "28.1") (fedi "0.2"))
 ;; Keywords: git, convenience
