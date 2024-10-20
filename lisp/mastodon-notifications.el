@@ -233,7 +233,6 @@ ACCOUNTS is data of the accounts that have reacted to the notification."
         (unless (and filtered (assoc "hide" filters))
           (mastodon-notifications--insert-note
            ;; toot
-           ;; FIXME: fix following etc. on action authors
            (if (member type-sym '(follow follow_request))
                follower
              status)
