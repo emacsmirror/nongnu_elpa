@@ -114,7 +114,7 @@ RESPONSE if unsuccessful."
                   (wrong-type-argument
                    "Looks like we got no response from the server."))))
     (cond ((string-prefix-p "2" status)
-           (funcall success))
+           (funcall success response))
           ((string-prefix-p "404" status)
            (message "Error %s: page not found" status))
           (t
