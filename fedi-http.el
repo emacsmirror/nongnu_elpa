@@ -150,7 +150,8 @@ Used for API form data parameters that take an array."
   "POST synchronously to URL, optionally with PARAMS and HEADERS.
 JSON means we are posting a JSON payload, so we add headers and
 json-string PARAMS."
-  (let* ((url-request-data
+  (let* ((url-request-method "POST")
+         (url-request-data
           (when params
             (if json
                 (encode-coding-string
@@ -272,7 +273,8 @@ Callback to `fedi-http--get-response-async'."
   "Make DELETE request to URL.
 PARAMS is an alist of any extra parameters to send with the request."
   ;; url-request-data only works with POST requests?
-  (let ((url (fedi-http--concat-params-to-url url params)))
+  (let ((url-request-method "DELETE")
+        (url (fedi-http--concat-params-to-url url params)))
     (with-temp-buffer
       (fedi-http--url-retrieve-synchronously url))))
 
@@ -281,7 +283,8 @@ PARAMS is an alist of any extra parameters to send with the request."
 PARAMS is an alist of any extra parameters to send with the request.
 HEADERS is an alist of any extra headers to send with the request.
 If JSON, encode params as JSON."
-  (let* ((url-request-data
+  (let* ((url-request-method "PUT")
+         (url-request-data
           (when params
             (if json
                 (encode-coding-string
@@ -306,7 +309,8 @@ Optionally specify the PARAMS to send."
 (defun fedi-http--patch (url &optional params json)
   "Make synchronous PATCH request to BASE-URL.
 Optionally specify the PARAMS to send."
-  (let* ((url-request-data
+  (let* ((url-request-method "PATCH")
+         (url-request-data
           (when params
             (if json
                 (encode-coding-string
@@ -354,6 +358,7 @@ PARAMS is an alist of any extra parameters to send with the request."
   "POST asynchronously to URL with PARAMS and HEADERS.
 Then run function CALLBACK with arguements CBARGS."
   (let (;(request-timeout 5)
+        (url-request-method "POST")
         (url-request-data (when params
                             (fedi-http--build-params-string params))))
     (with-temp-buffer
