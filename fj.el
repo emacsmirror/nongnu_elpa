@@ -271,60 +271,60 @@ If we fail, return `fj-user'." ;; poss insane
        (user-error "Not in a repo you own")
      ,body))
 
-(defmacro fj-with-own-issue (&optional body)
+(defmacro fj-with-own-issue (&rest body)
   "Execute BODY if issue is authored by `fj-user'."
   (declare (debug t))
   `(fj-with-issue
     (if (not (fj-issue-own-p))
         (user-error "Not an issue you own")
-      ,body)))
+      ,@body)))
 
-(defmacro fj-with-own-issue-or-repo (&optional body)
+(defmacro fj-with-own-issue-or-repo (&rest body)
   "Execute BODY if issue authored or repo owned by `fj-user'."
   (declare (debug t))
   `(if (not (or (fj-issue-own-p)
                 (fj-own-repo-p)))
        (user-error "Not an issue or repo you own")
-     ,body))
+     ,@body))
 
-(defmacro fj-with-own-comment (&optional body)
+(defmacro fj-with-own-comment (&rest body)
   "Execute BODY if comment at point is authored by `fj-user'."
   (declare (debug t))
   `(fj-with-issue
     (if (not (fj-comment-own-p))
         (user-error "No comment of yours at point")
-      ,body)))
+      ,@body)))
 
-(defmacro fj-with-entry (&optional body)
+(defmacro fj-with-entry (&rest body)
   "Execute BODY if we have a tabulated list entry at point."
   (declare (debug t))
   `(if (not (tabulated-list-get-entry))
        (user-error "No entry at point")
-     ,body))
+     ,@body))
 
-(defmacro fj-with-own-entry (&optional body)
+(defmacro fj-with-own-entry (&rest body)
   "Execute BODY if the tabulated list entry at point is owned by `fj-user'."
   (declare (debug t))
   `(fj-with-entry
     (if (not (fj-issue-own-p))
         (user-error "No an entry you own")
-      ,body)))
+      ,@body)))
 
-(defmacro fj-with-repo-entry (&optional body)
+(defmacro fj-with-repo-entry (&rest body)
   "Execute BODY if we have a repo tabulated list entry at point."
   (declare (debug t))
   `(if (or (not (tabulated-list-get-entry))
            (eq major-mode #'fj-issue-tl-mode))
        (user-error "No repo entry at point")
-     ,body))
+     ,@body))
 
-(defmacro fj-with-pull (&optional body)
+(defmacro fj-with-pull (&rest body)
   "Execute BODY if we are in an PR view or if pull request at point."
   (declare (debug t))
   `(if (not (or (eq (fj--get-buffer-spec :type) :pull)
                 (eq 'pull (fj--property 'item))))
        (user-error "No PR here?")
-     ,body))
+     ,@body))
 
 ;;; MAP
 
