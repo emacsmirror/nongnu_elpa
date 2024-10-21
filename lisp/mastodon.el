@@ -7,8 +7,7 @@
 ;;         Marty Hiatt <mousebot@disroot.org>
 ;; Maintainer: Marty Hiatt <mousebot@disroot.org>
 ;; Version: 1.1.0
-;; Package-Requires: ((emacs "28.1") (request "0.3.0")
-;;                    (persist "0.4") (tp "0.1"))
+;; Package-Requires: ((emacs "28.1") (request "0.3.0") (persist "0.4") (tp "0.1"))
 ;; Homepage: https://codeberg.org/martianh/mastodon.el
 
 ;; This file is not part of GNU Emacs.
@@ -151,7 +150,8 @@ Use. e.g. \"%c\" for your locale's date and time format."
   "Whether to use emojify.el to display emojis.
 From version 28, Emacs can display emojis natively. But
 currently, it doesn't seem to have a way to handle custom emoji,
-while emojify,el has this feature and mastodon.el implements it.")
+while emojify,el has this feature and mastodon.el implements it."
+  :type 'boolean)
 
 (defun mastodon-kill-window ()
   "Quit window and delete helper."
