@@ -358,6 +358,7 @@ If we fail, return `fj-user'." ;; poss insane
   "O" #'fj-list-own-repos
   "N" #'fj-view-notifications
   "U" #'fj-update-user-settings
+  "C" #'fj-copy-item-url
   "b" #'fj-browse-view
   "n" #'fj-issue-next
   "p" #'fj-issue-prev)
