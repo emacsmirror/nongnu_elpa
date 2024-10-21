@@ -3,7 +3,7 @@
 ;; Author: Marty Hiatt <mousebot@disroot.org>
 ;; Copyright (C) 2023 Marty Hiatt <mousebot@disroot.org>
 ;;
-;; Package-Requires: ((emacs "28.1") (fedi "0.2") (tp "0.1"))
+;; Package-Requires: ((emacs "29.1") (fedi "0.2") (tp "0.1"))
 ;; Keywords: git, convenience
 ;; URL: https://codeberg.org/martianh/fj.el
 ;; Version: 0.2
@@ -1730,8 +1730,7 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
                 (format format-str user ts)
                 "\n"
                 (fj-propertize-link (fj-get-html-link-desc .body)
-                                    'commit-ref .ref_commit_sha)
-                ))
+                                    'commit-ref .ref_commit_sha)))
               ((equal .type "issue_ref")
                (format format-str user .repository.full_name ts))
               ((equal .type "label")
