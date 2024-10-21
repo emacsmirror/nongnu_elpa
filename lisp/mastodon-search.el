@@ -1,8 +1,8 @@
 ;;; mastodon-search.el --- Search functions for mastodon.el  -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2017-2019 Marty Hiatt
-;; Author: Marty Hiatt <martianhiatus@riseup.net>
-;; Maintainer: Marty Hiatt <martianhiatus@riseup.net>
+;; Author: Marty Hiatt <mousebot@disroot.org>
+;; Maintainer: Marty Hiatt <mousebot@disroot.org>
 ;; Homepage: https://codeberg.org/martianh/mastodon.el
 
 ;; This file is not part of GNU Emacs.
@@ -28,8 +28,7 @@
 
 ;;; Code:
 (require 'json)
-(eval-when-compile
-  (require 'mastodon-tl))
+(require 'mastodon-tl)
 
 (autoload 'mastodon-auth--access-token "mastodon-auth")
 (autoload 'mastodon-http--api "mastodon-http")
@@ -44,6 +43,7 @@
 (autoload 'mastodon-tl--timeline "mastodon-tl")
 (autoload 'mastodon-tl--toot "mastodon-tl")
 (autoload 'mastodon-tl--buffer-property "mastodon-tl")
+(autoload 'mastodon-http--api-v2 "mastodon-http")
 
 (defvar mastodon-toot--completion-style-for-mentions)
 (defvar mastodon-instance-url)
@@ -97,6 +97,41 @@ QUERY is the string to search."
   (mastodon-search--view-trending "statuses"
                                   #'mastodon-tl--timeline))
 
+(defun mastodon-search--trending-links ()
+  "Display a list of links trending on your instance."
+  (interactive)
+  (mastodon-search--view-trending "links"
+                                  #'mastodon-search--render-links))
+
+(defun mastodon-search--render-links (links)
+  "Render trending LINKS."
+  (cl-loop for l in links
+           do (mastodon-search--render-link l)))
+
+(defun mastodon-search--render-link (link)
+  "Render a trending LINK."
+  (let-alist link
+    (insert
+     (propertize
+      (mastodon-tl--render-text
+       (concat "<a href=\"" .url "\">" .url "</a>\n" .title)
+       link)
+      'item-type 'link
+      'item-json link
+      'shr-url .url
+      'byline t ;; nav
+      'help-echo
+      (substitute-command-keys
+       "\\[`mastodon-search--load-link-posts'] to view a link's timeline"))
+     ;; TODO: display card link author here
+     "\n\n")))
+
+(defun mastodon-search--load-link-posts ()
+  "Load timeline of posts containing link at point."
+  (interactive)
+  (let* ((url (mastodon-tl--property 'shr-url)))
+    (mastodon-tl--link-timeline url)))
+
 (defun mastodon-search--view-trending (type print-fun)
   "Display a list of tags trending on your instance.
 TYPE is a string, either tags, statuses, or links.
@@ -109,7 +144,8 @@ PRINT-FUN is the function used to print the data from the response."
          (offset '(("offset" . "0")))
          (params (push limit offset))
          (data (mastodon-http--get-json url params))
-         (buffer (get-buffer-create (format "*mastodon-trending-%s*" type))))
+         (buffer (get-buffer-create
+                  (format "*mastodon-trending-%s*" type))))
     (with-mastodon-buffer buffer #'mastodon-mode nil
       (mastodon-tl--set-buffer-spec (buffer-name buffer)
                                     (format "trends/%s" type)
@@ -129,7 +165,8 @@ Optionally add string TYPE after HEADING."
 
 (defun mastodon-search--format-heading (str &optional type no-newline)
   "Format STR as a heading.
-Optionally add string TYPE after HEADING."
+Optionally add string TYPE after HEADING.
+NO-NEWLINE means don't add add a newline at end."
   (mastodon-tl--set-face
    (concat "\n " mastodon-tl--horiz-bar "\n "
            (upcase str) " "
@@ -153,7 +190,7 @@ is used for pagination."
   ;; TODO: handle no results
   (interactive "sSearch mastodon for: ")
   (let* ((url (mastodon-http--api-v2 "search"))
-         (following (when (or following (eq current-prefix-arg '(4)))
+         (following (when (or following (equal current-prefix-arg '(4)))
                       "true"))
          (type (or type
                    (if (eq current-prefix-arg '(4))
@@ -294,9 +331,7 @@ If NOTE is non-nil, include user's profile note. This is also
 
 (defun mastodon-search--get-user-info (account)
   "Get user handle, display name, account URL and profile note from ACCOUNT."
-  (list (if (not (string-empty-p (alist-get 'display_name account)))
-            (alist-get 'display_name account)
-          (alist-get 'username account))
+  (list (mastodon-tl--display-or-uname account)
         (alist-get 'acct account)
         (alist-get 'url account)
         (alist-get 'note account)))

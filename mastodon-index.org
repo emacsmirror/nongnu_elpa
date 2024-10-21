@@ -93,11 +93,15 @@
 | K                | mastodon-profile--view-bookmarks                  | Open a new buffer displaying the user's bookmarks.                             |
 | V                | mastodon-profile--view-favourites                 | Open a new buffer displaying the user's favourites.                            |
 |                  | mastodon-profile--view-preferences                | View user preferences in another window.                                       |
+|                  | mastodon-profile-fields                           | A transient for setting profile fields.                                        |
+|                  | mastodon-profile-fields-update                    | Update current user profile fields.                                            |
 |                  | mastodon-profile-mode                             | Toggle mastodon profile minor mode.                                            |
 |                  | mastodon-profile-update-mode                      | Minor mode to update user profile.                                             |
+|                  | mastodon-search--load-link-posts                  | Load timeline of posts containing link at point.                               |
 | s                | mastodon-search--query                            | Prompt for a search QUERY and return accounts, statuses, and hashtags.         |
 |                  | mastodon-search--query-accounts-followed          | Run an accounts search QUERY, limited to your followers.                       |
 |                  | mastodon-search--query-cycle                      | Cycle through search types: accounts, hashtags, and statuses.                  |
+|                  | mastodon-search--trending-links                   | Display a list of links trending on your instance.                             |
 |                  | mastodon-search--trending-statuses                | Display a list of statuses trending on your instance.                          |
 |                  | mastodon-search--trending-tags                    | Display a list of tags trending on your instance.                              |
 |                  | mastodon-search-mode                              | Toggle mastodon search minor mode.                                             |
@@ -190,10 +194,12 @@
 | C-c C-n          | mastodon-toot--toggle-nsfw                        | Toggle `mastodon-toot--content-nsfw'.                                          |
 | a                | mastodon-toot--translate-toot-text                | Translate text of toot at point.                                               |
 | E                | mastodon-toot--view-toot-edits                    | View editing history of the toot at point in a popup buffer.                   |
-|                  | mastodon-turn-on-discover                         | Turns on discover support                                                      |
 |                  | mastodon-toot-mode                                | Minor mode for composing toots.                                                |
+|                  | mastodon-update-profile-note                      | Update current user profile note.                                              |
 |                  | mastodon-url-lookup                               | If a URL resembles a fediverse link, try to load in `mastodon.el'.             |
 |                  | mastodon-url-lookup-force                         | Call `mastodon-url-lookup' without checking if URL is fedi-like.               |
+| :                | mastodon-user-settings                            | A transient for setting current user settings.                                 |
+|                  | mastodon-user-settings-update                     | Update current user settings on the server.                                    |
 |                  | mastodon-views--add-account-to-list               | Prompt for a list and for an account, add account to list.                     |
 |                  | mastodon-views--add-account-to-list-at-point      | Prompt for account and add to list at point.                                   |
 |                  | mastodon-views--add-filter-kw                     | Add a keyword to filter at point.                                              |
@@ -258,6 +264,7 @@
 | mastodon-media--hide-sensitive-media                         | Whether media marked as sensitive should be hidden.                           |
 | mastodon-media--preview-max-height                           | Max height of any media attachment preview to be shown in timelines.          |
 | mastodon-mode-hook                                           | Hook run when entering Mastodon mode.                                         |
+| mastodon-notifications--images-in-notifs                     | Whether to display attached images in notifications.                          |
 | mastodon-notifications--profile-note-in-foll-reqs            | If non-nil, show a user's profile note in follow request notifications.       |
 | mastodon-notifications--profile-note-in-foll-reqs-max-length | The max character length for user profile note in follow requests.            |
 | mastodon-profile-mode-hook                                   | Hook run after entering or leaving `mastodon-profile-mode'.                   |

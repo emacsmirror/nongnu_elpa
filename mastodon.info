@@ -43,6 +43,7 @@ Usage
 * Customization::
 * Commands and variables index::
 * Alternative timeline layout::
+* mastodon hydra::
 * Live-updating timelines mastodon-async-mode::
 * Translating toots::
 * Bookmarks and ‘mastodon.el’: Bookmarks and mastodonel.
@@ -143,7 +144,7 @@ Then, require it and go.
      (use-package mastodon
        :ensure t)
 
-   The minimum Emacs version is now 27.1.  But if you are running an
+   The minimum Emacs version is now 28.1.  But if you are running an
 older version it shouldn’t be very hard to get it working.
 
 
@@ -198,6 +199,7 @@ File: mastodon.info,  Node: Usage,  Next: Dependencies,  Prev: Installation,  Up
 * Customization::
 * Commands and variables index::
 * Alternative timeline layout::
+* mastodon hydra::
 * Live-updating timelines mastodon-async-mode::
 * Translating toots::
 * Bookmarks and ‘mastodon.el’: Bookmarks and mastodonel.
@@ -523,7 +525,7 @@ bindings, or run ‘M-X’ (upper-case ‘X’) to view all commands in the
 buffer with completion, and call one.
 
 
-File: mastodon.info,  Node: Alternative timeline layout,  Next: Live-updating timelines mastodon-async-mode,  Prev: Commands and variables index,  Up: Usage
+File: mastodon.info,  Node: Alternative timeline layout,  Next: mastodon hydra,  Prev: Commands and variables index,  Up: Usage
 
 1.2.7 Alternative timeline layout
 ---------------------------------
@@ -535,9 +537,18 @@ layout for ‘mastodon.el’.
 (https://github.com/rougier/mastodon-alt).
 
 
-File: mastodon.info,  Node: Live-updating timelines mastodon-async-mode,  Next: Translating toots,  Prev: Alternative timeline layout,  Up: Usage
+File: mastodon.info,  Node: mastodon hydra,  Next: Live-updating timelines mastodon-async-mode,  Prev: Alternative timeline layout,  Up: Usage
 
-1.2.8 Live-updating timelines: ‘mastodon-async-mode’
+1.2.8 mastodon hydra
+--------------------
+
+A user made a hydra for handling basic mastodon.el commands.  It’s
+available at <https://holgerschurig.github.io/en/emacs-mastodon-hydra/>.
+
+
+File: mastodon.info,  Node: Live-updating timelines mastodon-async-mode,  Next: Translating toots,  Prev: mastodon hydra,  Up: Usage
+
+1.2.9 Live-updating timelines: ‘mastodon-async-mode’
 ----------------------------------------------------
 
 (code taken from mastodon-future
@@ -556,8 +567,8 @@ Then you can view a timeline with one of the commands that begin with
 
 File: mastodon.info,  Node: Translating toots,  Next: Bookmarks and mastodonel,  Prev: Live-updating timelines mastodon-async-mode,  Up: Usage
 
-1.2.9 Translating toots
------------------------
+1.2.10 Translating toots
+------------------------
 
 You can translate toots with ‘mastodon-toot--translate-toot-text’ (‘a’
 in a timeline).  At the moment this requires lingva.el
@@ -583,7 +594,7 @@ looks like:
 
 File: mastodon.info,  Node: Bookmarks and mastodonel,  Prev: Translating toots,  Up: Usage
 
-1.2.10 Bookmarks and ‘mastodon.el’
+1.2.11 Bookmarks and ‘mastodon.el’
 ----------------------------------
 
 ‘mastodon.el’ implements a basic bookmark record and handler.
@@ -745,42 +756,55 @@ Here’s a (federated) timeline:
  [image src="screenshot-notifs+compose.png" ]
 
 
+   Here’s a user settings transient (active values green, current server
+values commented and, if a boolean, underlined):
+
+ [image src="screenshot-transient-1.jpg" ]
+
+
+   Here’s a user profile fields transient (changed fields green, current
+server values commented):
+
+ [image src="screenshot-transient-2.jpg" ]
+
+
 
 
 Tag Table:
 Node: Top219
-Node: README987
-Node: Installation1637
-Node: ELPA1926
-Node: MELPA2154
-Node: Repo2534
-Node: Emoji3027
-Node: Discover3621
-Node: Usage4173
-Node: Logging in to your instance4616
-Node: Timelines5613
-Ref: Keybindings6088
-Ref: Toot byline legend10928
-Node: Composing toots11237
-Ref: Keybindings (1)12789
-Ref: Autocompletion of mentions tags and emoji13324
-Ref: Draft toots14249
-Node: Other commands and account settings14720
-Node: Customization18084
-Node: Commands and variables index18962
-Node: Alternative timeline layout19478
-Node: Live-updating timelines mastodon-async-mode19883
-Node: Translating toots20735
-Node: Bookmarks and mastodonel21917
-Node: Dependencies22459
-Node: Network compatibility23093
-Node: Contributing23975
-Node: Bug reports24471
-Node: Fixes and features25382
-Node: Coding style25883
-Node: Supporting mastodonel26507
-Node: Contributors27074
-Node: screenshots27509
+Node: README1006
+Node: Installation1656
+Node: ELPA1945
+Node: MELPA2173
+Node: Repo2553
+Node: Emoji3046
+Node: Discover3640
+Node: Usage4192
+Node: Logging in to your instance4654
+Node: Timelines5651
+Ref: Keybindings6126
+Ref: Toot byline legend10966
+Node: Composing toots11275
+Ref: Keybindings (1)12827
+Ref: Autocompletion of mentions tags and emoji13362
+Ref: Draft toots14287
+Node: Other commands and account settings14758
+Node: Customization18122
+Node: Commands and variables index19000
+Node: Alternative timeline layout19516
+Node: mastodon hydra19892
+Node: Live-updating timelines mastodon-async-mode20224
+Node: Translating toots21063
+Node: Bookmarks and mastodonel22247
+Node: Dependencies22789
+Node: Network compatibility23423
+Node: Contributing24305
+Node: Bug reports24801
+Node: Fixes and features25712
+Node: Coding style26213
+Node: Supporting mastodonel26837
+Node: Contributors27404
+Node: screenshots27839
 
 End Tag Table
 

@@ -1,10 +1,10 @@
 ;;; mastodon-profile.el --- Functions for inspecting Mastodon profiles -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2017-2019 Johnson Denen
-;; Copyright (C) 2020-2022 Marty Hiatt
+;; Copyright (C) 2020-2024 Marty Hiatt
 ;; Author: Johnson Denen <johnson.denen@gmail.com>
-;;         Marty Hiatt <martianhiatus@riseup.net>
-;; Maintainer: Marty Hiatt <martianhiatus@riseup.net>
+;;         Marty Hiatt <mousebot@disroot.org>
+;; Maintainer: Marty Hiatt <mousebot@disroot.org>
 ;; Homepage: https://codeberg.org/martianh/mastodon.el
 
 ;; This file is not part of GNU Emacs.
@@ -84,6 +84,7 @@
 (autoload 'mastodon-search--query "mastodon-search")
 (autoload 'mastodon-tl--field-status "mastodon-tl")
 
+(defvar mastodon-active-user)
 (defvar mastodon-tl--horiz-bar)
 (defvar mastodon-tl--update-point)
 (defvar mastodon-toot--max-toot-chars)
@@ -386,6 +387,8 @@ This is done after changing the setting on the server."
 Only do so if `mastodon-profile-account-settings' is nil."
   (mastodon-profile--fetch-server-account-settings :no-force))
 
+;; FIXME: this does one request per setting! should just do one request then
+;; parse
 (defun mastodon-profile--fetch-server-account-settings (&optional no-force)
   "Fetch basic account settings from the server.
 Store the values in `mastodon-profile-account-settings'.
@@ -859,13 +862,15 @@ These include the author, author of reblogged entries and any user mentioned."
                             status)) ; status is a user listing
 	  (mentions (mastodon-tl--field-status 'mentions status))
 	  (reblog (mastodon-tl--field-status 'reblog status)))
-      (seq-filter #'stringp
-                  (seq-uniq
-                   (seq-concatenate
-                    'list
-                    (list (alist-get 'acct this-account))
-                    (mastodon-profile--extract-users-handles reblog)
-                    (mastodon-tl--map-alist 'acct mentions)))))))
+      (seq-remove
+       (lambda (x) (string= x mastodon-active-user))
+       (seq-filter #'stringp
+                   (seq-uniq
+                    (seq-concatenate
+                     'list
+                     (list (alist-get 'acct this-account))
+                     (mastodon-profile--extract-users-handles reblog)
+                     (mastodon-tl--map-alist 'acct mentions))))))))
 
 (defun mastodon-profile--lookup-account-in-status (handle status)
   "Return account for HANDLE using hints in STATUS if possible."

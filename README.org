@@ -60,7 +60,7 @@ Or, with =use-package=:
     :ensure t)
 #+END_SRC
 
-The minimum Emacs version is now 27.1. But if you are running an older version
+The minimum Emacs version is now 28.1. But if you are running an older version
 it shouldn't be very hard to get it working.
 
 *** Emoji
@@ -381,6 +381,11 @@ for =mastodon.el=.
 
 The repo is at [[https://github.com/rougier/mastodon-alt][mastodon-alt]].
 
+*** mastodon hydra
+
+A user made a hydra for handling basic mastodon.el commands. It's available at
+https://holgerschurig.github.io/en/emacs-mastodon-hydra/.
+
 *** Live-updating timelines: =mastodon-async-mode=
 
 (code taken from [[https://github.com/alexjgriffith/mastodon-future.el][mastodon-future]].)
@@ -482,7 +487,7 @@ If you prefer emailing patches to the process described below, feel free to send
 
 If you'd like to support continued development of =mastodon.el=, I accept
 donations via paypal: [[https://paypal.me/martianh][paypal.me/martianh]]. If you would prefer a different
-payment method, please write to me at <martianhiatus [at] riseup [dot] net> and I can
+payment method, please write to me at <mousebot@disroot.org> and I can
 provide IBAN or other bank account details.
 
 I don't have a tech worker's income, so even a small tip would help out.
@@ -508,3 +513,11 @@ Here's a (federated) timeline:
 Here's a notifcations view plus a compose buffer:
 
 [[file:screenshot-notifs+compose.png]]
+
+Here's a user settings transient (active values green, current server values commented and, if a boolean, underlined):
+
+[[file:screenshot-transient-1.jpg]]
+
+Here's a user profile fields transient (changed fields green, current server values commented):
+
+[[file:screenshot-transient-2.jpg]]

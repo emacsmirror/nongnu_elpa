@@ -1,10 +1,10 @@
 ;;; mastodon-http.el --- HTTP request/response functions for mastodon.el  -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2017-2019 Johnson Denen
-;; Copyright (C) 2020-2022 Marty Hiatt
+;; Copyright (C) 2020-2024 Marty Hiatt
 ;; Author: Johnson Denen <johnson.denen@gmail.com>
-;;         Marty Hiatt <martianhiatus@riseup.net>
-;; Maintainer: Marty Hiatt <martianhiatus@riseup.net>
+;;         Marty Hiatt <mousebot@disroot.org>
+;; Maintainer: Marty Hiatt <mousebot@disroot.org>
 ;; Homepage: https://codeberg.org/martianh/mastodon.el
 
 ;; This file is not part of GNU Emacs.
@@ -157,16 +157,18 @@ the request data. If it is :raw, just use the plain params."
     (let* ((url-request-data
             (when params
               (cond ((eq json :json)
-                     (json-encode
-                      params))
+                     (json-encode params))
                     ((eq json :raw)
                      params)
                     (t
                      (mastodon-http--build-params-string params)))))
            (url-request-extra-headers
             (append url-request-extra-headers ; auth set in macro
-                    (unless (assoc "Content-Type" headers) ; pleroma compat:
-                      '(("Content-Type" . "application/x-www-form-urlencoded")))
+                    (if json
+                        '(("Content-Type" . "application/json")
+                          ("Accept" . "application/json"))
+                      (unless (assoc "Content-Type" headers) ; pleroma compat:
+                        '(("Content-Type" . "application/x-www-form-urlencoded"))))
                     headers)))
       (with-temp-buffer
         (mastodon-http--url-retrieve-synchronously url)))
@@ -298,11 +300,26 @@ Optionally specify the PARAMS to send."
   (with-current-buffer (mastodon-http--patch url params)
     (mastodon-http--process-json)))
 
-(defun mastodon-http--patch (base-url &optional params)
-  "Make synchronous PATCH request to BASE-URL.
-Optionally specify the PARAMS to send."
+(defun mastodon-http--patch (url &optional params json)
+  "Make synchronous PATCH request to URL.
+Optionally specify the PARAMS to send.
+JSON means send params as JSON data."
   (mastodon-http--authorized-request "PATCH"
-    (let ((url (mastodon-http--concat-params-to-url base-url params)))
+    ;; NB: unlike POST, PATCHing only works if we use query params!
+    ;; so here, unless JSON arg, we use query params and do not set
+    ;; `url-request-data'. this is probably an error, i don't understand it.
+    (let* ((url-request-data
+            (when (and params json)
+              (encode-coding-string
+               (json-encode params) 'utf-8)))
+           ;; (mastodon-http--build-params-string params))))
+           (url (unless json
+                  (mastodon-http--concat-params-to-url url params)))
+           (headers (when json
+                      '(("Content-Type" . "application/json")
+                        ("Accept" . "application/json"))))
+           (url-request-extra-headers
+            (append url-request-extra-headers headers)))
       (mastodon-http--url-retrieve-synchronously url))))
 
  ;; Asynchronous functions

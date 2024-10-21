@@ -4,10 +4,11 @@
 ;; Copyright (C) 2020-2022 Marty Hiatt
 ;; Copyright (C) 2021 Abhiseck Paira <abhiseckpaira@disroot.org>
 ;; Author: Johnson Denen <johnson.denen@gmail.com>
-;;         Marty Hiatt <martianhiatus@riseup.net>
-;; Maintainer: Marty Hiatt <martianhiatus@riseup.net>
-;; Version: 1.0.27
-;; Package-Requires: ((emacs "27.1") (request "0.3.0") (persist "0.4"))
+;;         Marty Hiatt <mousebot@disroot.org>
+;; Maintainer: Marty Hiatt <mousebot@disroot.org>
+;; Version: 1.1.0
+;; Package-Requires: ((emacs "28.1") (request "0.3.0")
+;;                    (persist "0.4") (tp "0.1"))
 ;; Homepage: https://codeberg.org/martianh/mastodon.el
 
 ;; This file is not part of GNU Emacs.
@@ -38,12 +39,14 @@
 ;;; Code:
 (require 'cl-lib) ; for `cl-some' call in mastodon
 (eval-when-compile (require 'subr-x))
-(require 'mastodon-http)
-(require 'mastodon-toot)
-(require 'mastodon-search)
 (require 'url)
 (require 'thingatpt)
 (require 'shr)
+
+(require 'mastodon-http)
+(require 'mastodon-toot)
+(require 'mastodon-search)
+(require 'mastodon-transient)
 
 (declare-function discover-add-context-menu "discover")
 (declare-function emojify-mode "emojify")
@@ -227,6 +230,7 @@ while emojify,el has this feature and mastodon.el implements it.")
     (define-key map (kbd "U") #'mastodon-profile--update-user-profile-note)
     (define-key map (kbd "V") #'mastodon-profile--view-favourites)
     (define-key map (kbd "K") #'mastodon-profile--view-bookmarks)
+    (define-key map (kbd ":") #'mastodon-user-settings)
     ;; minor views
     (define-key map (kbd "R") #'mastodon-views--view-follow-requests)
     (define-key map (kbd "S") #'mastodon-views--view-scheduled-toots)
@@ -343,28 +347,25 @@ If REPLY-JSON is the json of the toot being replied to."
   (mastodon-toot--compose-buffer user reply-to-id reply-json))
 
 ;;;###autoload
-(defun mastodon-notifications-get (&optional type buffer-name force max-id)
+(defun mastodon-notifications-get (&optional type buffer-name max-id)
   "Display NOTIFICATIONS in buffer.
 Optionally only print notifications of type TYPE, a string.
 BUFFER-NAME is added to \"*mastodon-\" to create the buffer name.
-FORCE means do not try to update an existing buffer, but fetch
-from the server and load anew."
+MAX-ID is a request parameter for pagination."
   (interactive)
   (let* ((buffer-name (or buffer-name "notifications"))
          (buffer (concat "*mastodon-" buffer-name "*")))
-    (if (and (not force) (get-buffer buffer))
-        (progn (pop-to-buffer buffer '(display-buffer-same-window))
-               (mastodon-tl--update))
-      (message "Loading your notifications...")
-      (mastodon-tl--init-sync
-       buffer-name
-       "notifications"
-       'mastodon-notifications--timeline
-       type
-       (when max-id
-         `(("max_id" . ,(mastodon-tl--buffer-property 'max-id)))))
-      (with-current-buffer buffer
-        (use-local-map mastodon-notifications--map)))))
+    (message "Loading your notifications...")
+    (mastodon-tl--init-sync
+     buffer-name
+     "notifications"
+     'mastodon-notifications--timeline
+     type
+     (when max-id
+       `(("max_id" . ,(mastodon-tl--buffer-property 'max-id))))
+     nil nil nil "v2")
+    (with-current-buffer (get-buffer-create buffer)
+      (use-local-map mastodon-notifications--map))))
 
 ;; URL lookup: should be available even if `mastodon.el' not loaded:
 
@@ -374,7 +375,8 @@ from the server and load anew."
 Does a WebFinger lookup on the server.
 URL can be arg QUERY-URL, or URL at point, or provided by the user.
 If a status or account is found, load it in `mastodon.el', if
-not, just browse the URL in the normal fashion."
+not, just browse the URL in the normal fashion.
+If FORCE, do a lookup regardless of the result of `mastodon--fedi-url-p'."
   (interactive)
   (let* ((query (or query-url
                     (mastodon-tl--property 'shr-url :no-move)

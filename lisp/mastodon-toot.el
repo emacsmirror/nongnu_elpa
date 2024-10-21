@@ -1,10 +1,10 @@
 ;;; mastodon-toot.el --- Minor mode for sending Mastodon toots  -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2017-2019 Johnson Denen
-;; Copyright (C) 2020-2022 Marty Hiatt
+;; Copyright (C) 2020-2024 Marty Hiatt
 ;; Author: Johnson Denen <johnson.denen@gmail.com>
-;;         Marty Hiatt <martianhiatus@riseup.net>
-;; Maintainer: Marty Hiatt <martianhiatus@riseup.net>
+;;         Marty Hiatt <mousebot@disroot.org>
+;; Maintainer: Marty Hiatt <mousebot@disroot.org>
 ;; Homepage: https://codeberg.org/martianh/mastodon.el
 
 ;; This file is not part of GNU Emacs.
@@ -175,8 +175,13 @@ width fonts"))
   "A flag indicating whether the toot should be marked as NSFW.")
 
 (defvar mastodon-toot-visibility-list
-  '(direct private unlisted public)
+  '(public unlisted private direct)
   "A list of the available toot visibility settings.")
+
+(defvar mastodon-toot-visibility-settings-list
+  '("public" "unlisted" "private")
+  "A list of the available default toot visibility settings.
+Like `mastodon-toot-visibility-list' but without direct.")
 
 (defvar-local mastodon-toot--visibility nil
   "A string indicating the visibility of the toot being composed.
@@ -517,21 +522,34 @@ SUBTRACT means we are un-favouriting or unboosting, so we decrement."
 (defun mastodon-toot--list-boosters ()
   "List the boosters of toot at point."
   (interactive)
-  (mastodon-toot--list-boosters-or-favers))
+  ;; use grouped notifs data if present:
+  ;; only send accounts as arg if type matches notif type we are acting
+  ;; on, to prevent showing accounts for a boost notif when asking for
+  ;; favers, and vice versa.
+  (let* ((type (mastodon-tl--property 'notification-type :no-move))
+         (accounts (when (string= type "reblog")
+                     (mastodon-tl--property 'notification-accounts :no-move))))
+    (mastodon-toot--list-boosters-or-favers nil accounts)))
 
 (defun mastodon-toot--list-favouriters ()
   "List the favouriters of toot at point."
   (interactive)
-  (mastodon-toot--list-boosters-or-favers :favourite))
+  (let* ((type (mastodon-tl--property 'notification-type :no-move))
+         (accounts (when (string= type "favourite")
+                     (mastodon-tl--property 'notification-accounts :no-move))))
+    (mastodon-toot--list-boosters-or-favers :favourite accounts)))
 
-(defun mastodon-toot--list-boosters-or-favers (&optional favourite)
+(defun mastodon-toot--list-boosters-or-favers (&optional favourite accounts)
   "List the favouriters or boosters of toot at point.
-With FAVOURITE, list favouriters, else list boosters."
+With FAVOURITE, list favouriters, else list boosters.
+ACCOUNTS is notfications accounts if any."
   (mastodon-toot--with-toot-item
-   (let* ((endpoint (if favourite "favourited_by" "reblogged_by"))
-          (url (mastodon-http--api (format "statuses/%s/%s" id endpoint)))
-          (params '(("limit" . "80")))
-          (json (mastodon-http--get-json url params)))
+   (let* ((endpoint (unless accounts
+                      (if favourite "favourited_by" "reblogged_by")))
+          (url (unless accounts
+                 (mastodon-http--api (format "statuses/%s/%s" id endpoint))))
+          (params (unless accounts '(("limit" . "80"))))
+          (json (or accounts (mastodon-http--get-json url params))))
      (if (eq (caar json) 'error)
          (user-error "%s (Status does not exist or is private)"
                      (alist-get 'error json))
@@ -1668,7 +1686,7 @@ REPLY-TEXT is the text of the toot being replied to."
        'read-only "Edit your message below."
        'toot-post-header t))
      ;; allow us to enter text after read-only header:
-     (propertize "\n"
+     (propertize "\n\n"
                  'rear-nonsticky t))))
 
 (defun mastodon-toot--most-restrictive-visibility (reply-visibility)
@@ -1681,22 +1699,17 @@ The default is given by `mastodon-toot--default-reply-visibility'."
 	  mastodon-toot--default-reply-visibility
         reply-visibility))))
 
-(defun mastodon-toot--fill-buffer ()
-  "Mark buffer, call `fill-region'."
-  (mark-whole-buffer) ; lisp code should not set mark
-  ;; (fill-region (point-min) (point-max)) ; but this doesn't work
-  (fill-region (region-beginning) (region-end)))
-
 (defun mastodon-toot--render-reply-region-str (str)
   "Refill STR and prefix all lines with >, as reply-quote text."
   (with-temp-buffer
     (insert str)
     ;; unfill first:
     (let ((fill-column (point-max)))
-      (mastodon-toot--fill-buffer))
+      (fill-region (point-min) (point-max)))
     ;; then fill:
-    (mastodon-toot--fill-buffer)
+    (fill-region (point-min) (point-max))
     ;; add our own prefix, pauschal:
+    (goto-char (point-min))
     (save-match-data
       (while (re-search-forward "^" nil t)
         (replace-match " > ")))
