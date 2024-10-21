@@ -574,7 +574,7 @@ X and Y are sorting args."
                    (fj-delete endpoint)
                  (fj-put endpoint))))
     (fedi-http--triage resp
-                       (lambda ()
+                       (lambda (_)
                          (message "Repo %s %s!" repo
                                   (if unstar "unstarred" "starred"))))))
 
@@ -585,7 +585,7 @@ X and Y are sorting args."
          ;; ("organization" . ,org)))
          (resp (fj-post endpoint params)))
     (fedi-http--triage resp
-                       (lambda ()
+                       (lambda (_)
                          (message "Repo %s forked!" repo)))))
 
 (defun fj-delete-repo ()
@@ -601,7 +601,7 @@ X and Y are sorting args."
                      repo))
         (let ((resp (fj-delete endpoint)))
           (fedi-http--triage resp
-                             (lambda ()
+                             (lambda (_)
                                (message "Repo %s deleted!" repo))))))))
 
 (defun fj-starred-repos ()
@@ -688,7 +688,7 @@ If both return nil, also prompt."
                    ("description" . ,desc)))
          (response (fj-post "user/repos" params)))
     (fedi-http--triage response
-                       (lambda ()
+                       (lambda (_)
                          (message "Repo %s created!" name)))))
 
 ;;; ISSUES
@@ -807,7 +807,7 @@ OWNER is the repo owner."
          (new-title (read-string "Edit issue title: " old-title))
          (response (fj-issue-patch repo owner issue new-title)))
     (fedi-http--triage response
-                       (lambda ()
+                       (lambda (_)
                          (message "issue title edited!")))))
 
 (defun fj-issue-close (&optional repo owner issue state)
@@ -959,7 +959,7 @@ OWNER is the repo owner."
          (params `(("body" . ,body)))
          (response (fj-post url params)))
     (fedi-http--triage response
-                       (lambda ()
+                       (lambda (_)
                          (message "comment created!")))))
 
 (defun fj-comment-patch (repo owner id &optional params issue)
@@ -980,7 +980,7 @@ NEW-BODY is the new comment text to send."
          (response (fj-comment-patch repo owner id
                                      `(("body" . ,new-body)))))
     (fedi-http--triage response
-                       (lambda ()
+                       (lambda (_)
                          (message "comment edited!")))))
 
 ;;; ISSUES TL
