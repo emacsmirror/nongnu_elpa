@@ -1696,8 +1696,8 @@ The default is given by `mastodon-toot--default-reply-visibility'."
     (let ((less-restrictive (member (intern mastodon-toot--default-reply-visibility)
 				    mastodon-toot-visibility-list)))
       (if (member (intern reply-visibility) less-restrictive)
-	  mastodon-toot--default-reply-visibility
-        reply-visibility))))
+	  reply-visibility
+        mastodon-toot--default-reply-visibility))))
 
 (defun mastodon-toot--render-reply-region-str (str)
   "Refill STR and prefix all lines with >, as reply-quote text."
