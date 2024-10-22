@@ -718,8 +718,8 @@ File: mastodon.info,  Node: Supporting mastodonel,  Next: Contributors,  Prev: C
 If you’d like to support continued development of ‘mastodon.el’, I
 accept donations via paypal: paypal.me/martianh
 (https://paypal.me/martianh).  If you would prefer a different payment
-method, please write to me at <martianhiatus [at] riseup [dot] net> and
-I can provide IBAN or other bank account details.
+method, please write to me at <mousebot@disroot.org> and I can provide
+IBAN or other bank account details.
 
    I don’t have a tech worker’s income, so even a small tip would help
 out.
@@ -803,8 +803,8 @@ Node: Bug reports24801
 Node: Fixes and features25712
 Node: Coding style26213
 Node: Supporting mastodonel26837
-Node: Contributors27404
-Node: screenshots27839
+Node: Contributors27389
+Node: screenshots27824
 
 End Tag Table
 
