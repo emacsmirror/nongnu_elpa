@@ -6,7 +6,7 @@
 ;; Author: Johnson Denen <johnson.denen@gmail.com>
 ;;         Marty Hiatt <mousebot@disroot.org>
 ;; Maintainer: Marty Hiatt <mousebot@disroot.org>
-;; Version: 1.1.0
+;; Version: 1.1.1
 ;; Package-Requires: ((emacs "28.1") (request "0.3.0") (persist "0.4") (tp "0.1"))
 ;; Homepage: https://codeberg.org/martianh/mastodon.el
 
