@@ -6,7 +6,7 @@
 ;; Author: Adam Porter <adam@alphapapa.net>
 ;; Maintainer: Joseph Turner <~ushin/ushin@lists.sr.ht>
 ;; Created: 2024
-;; Version: 0.3-pre
+;; Version: 0.3
 ;; Package-Requires: ((emacs "28.1") (hyperdrive "0.4.2") (org-transclusion "1.4.0"))
 ;; Homepage: https://git.sr.ht/~ushin/hyperdrive-org-transclusion
 
