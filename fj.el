@@ -2855,5 +2855,32 @@ Returns a list of strings."
   (propertize topic
               'face 'fj-topic-face))
 
+;;; TAGS
+;; we can create and push tags with magit, but can't delete them on the
+;; server
+
+(defun fj-get-repo-tags ()
+  "Return tags data for current repo."
+  (let* ((repo (fj--get-buffer-spec :repo))
+         (owner (fj--get-buffer-spec :owner))
+         (endpoint (format "repos/%s/%s/tags" owner repo)))
+    (fj-get endpoint)))
+
+(defun fj-delete-repo-tag ()
+  "Prompt for a repo tag and delete it on the server."
+  (interactive)
+  (let* ((repo (fj--get-buffer-spec :repo))
+         (owner (fj--get-buffer-spec :owner))
+         (tags (fj-get-repo-tags))
+         (list (cl-loop for x in tags
+                        collect (alist-get 'name x)))
+         (choice (completing-read "Delete tag: " list))
+         (endpoint (format "repos/%s/%s/tags/%s" owner repo choice))
+         (resp (fj-delete endpoint)))
+    (fedi-http--triage
+     resp
+     (lambda (_)
+       (message "Tag %s deleted!" choice)))))
+
 (provide 'fj)
 ;;; fj.el ends here
