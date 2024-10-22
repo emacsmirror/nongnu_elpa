@@ -137,7 +137,7 @@
   (let* ((resp (fj-patch endpoint params :json))
          (item-str (if (string-prefix-p "user" endpoint) "User" "Repo")))
     (fedi-http--triage resp
-                       (lambda ()
+                       (lambda (_)
                          (message "%s settings updated!:\n%s"
                                   item-str params)))))
 
@@ -217,7 +217,7 @@ Provide current topics for adding/removing."
          (params `(("topics" . ,list)))
          (resp (fj-put endpoint params :json)))
     (fedi-http--triage resp
-                       (lambda ()
+                       (lambda (_)
                          (message "Topics updated!\n%s" list)))))
 
 (transient-define-prefix fj-repo-update-settings ()

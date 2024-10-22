@@ -3,7 +3,7 @@
 ;; Author: Marty Hiatt <mousebot@disroot.org>
 ;; Copyright (C) 2023 Marty Hiatt <mousebot@disroot.org>
 ;;
-;; Package-Requires: ((emacs "28.1") (fedi "0.2") (tp "0.1"))
+;; Package-Requires: ((emacs "29.1") (fedi "0.2") (tp "0.1"))
 ;; Keywords: git, convenience
 ;; URL: https://codeberg.org/martianh/fj.el
 ;; Version: 0.2
@@ -271,60 +271,60 @@ If we fail, return `fj-user'." ;; poss insane
        (user-error "Not in a repo you own")
      ,body))
 
-(defmacro fj-with-own-issue (&optional body)
+(defmacro fj-with-own-issue (&rest body)
   "Execute BODY if issue is authored by `fj-user'."
   (declare (debug t))
   `(fj-with-issue
     (if (not (fj-issue-own-p))
         (user-error "Not an issue you own")
-      ,body)))
+      ,@body)))
 
-(defmacro fj-with-own-issue-or-repo (&optional body)
+(defmacro fj-with-own-issue-or-repo (&rest body)
   "Execute BODY if issue authored or repo owned by `fj-user'."
   (declare (debug t))
   `(if (not (or (fj-issue-own-p)
                 (fj-own-repo-p)))
        (user-error "Not an issue or repo you own")
-     ,body))
+     ,@body))
 
-(defmacro fj-with-own-comment (&optional body)
+(defmacro fj-with-own-comment (&rest body)
   "Execute BODY if comment at point is authored by `fj-user'."
   (declare (debug t))
   `(fj-with-issue
     (if (not (fj-comment-own-p))
         (user-error "No comment of yours at point")
-      ,body)))
+      ,@body)))
 
-(defmacro fj-with-entry (&optional body)
+(defmacro fj-with-entry (&rest body)
   "Execute BODY if we have a tabulated list entry at point."
   (declare (debug t))
   `(if (not (tabulated-list-get-entry))
        (user-error "No entry at point")
-     ,body))
+     ,@body))
 
-(defmacro fj-with-own-entry (&optional body)
+(defmacro fj-with-own-entry (&rest body)
   "Execute BODY if the tabulated list entry at point is owned by `fj-user'."
   (declare (debug t))
   `(fj-with-entry
     (if (not (fj-issue-own-p))
         (user-error "No an entry you own")
-      ,body)))
+      ,@body)))
 
-(defmacro fj-with-repo-entry (&optional body)
+(defmacro fj-with-repo-entry (&rest body)
   "Execute BODY if we have a repo tabulated list entry at point."
   (declare (debug t))
   `(if (or (not (tabulated-list-get-entry))
            (eq major-mode #'fj-issue-tl-mode))
        (user-error "No repo entry at point")
-     ,body))
+     ,@body))
 
-(defmacro fj-with-pull (&optional body)
+(defmacro fj-with-pull (&rest body)
   "Execute BODY if we are in an PR view or if pull request at point."
   (declare (debug t))
   `(if (not (or (eq (fj--get-buffer-spec :type) :pull)
                 (eq 'pull (fj--property 'item))))
        (user-error "No PR here?")
-     ,body))
+     ,@body))
 
 ;;; MAP
 
@@ -358,6 +358,7 @@ If we fail, return `fj-user'." ;; poss insane
   "O" #'fj-list-own-repos
   "N" #'fj-view-notifications
   "U" #'fj-update-user-settings
+  "C" #'fj-copy-item-url
   "b" #'fj-browse-view
   "n" #'fj-issue-next
   "p" #'fj-issue-prev)
@@ -574,7 +575,7 @@ X and Y are sorting args."
                    (fj-delete endpoint)
                  (fj-put endpoint))))
     (fedi-http--triage resp
-                       (lambda ()
+                       (lambda (_)
                          (message "Repo %s %s!" repo
                                   (if unstar "unstarred" "starred"))))))
 
@@ -585,7 +586,7 @@ X and Y are sorting args."
          ;; ("organization" . ,org)))
          (resp (fj-post endpoint params)))
     (fedi-http--triage resp
-                       (lambda ()
+                       (lambda (_)
                          (message "Repo %s forked!" repo)))))
 
 (defun fj-delete-repo ()
@@ -601,7 +602,7 @@ X and Y are sorting args."
                      repo))
         (let ((resp (fj-delete endpoint)))
           (fedi-http--triage resp
-                             (lambda ()
+                             (lambda (_)
                                (message "Repo %s deleted!" repo))))))))
 
 (defun fj-starred-repos ()
@@ -688,7 +689,7 @@ If both return nil, also prompt."
                    ("description" . ,desc)))
          (response (fj-post "user/repos" params)))
     (fedi-http--triage response
-                       (lambda ()
+                       (lambda (_)
                          (message "Repo %s created!" name)))))
 
 ;;; ISSUES
@@ -807,7 +808,7 @@ OWNER is the repo owner."
          (new-title (read-string "Edit issue title: " old-title))
          (response (fj-issue-patch repo owner issue new-title)))
     (fedi-http--triage response
-                       (lambda ()
+                       (lambda (_)
                          (message "issue title edited!")))))
 
 (defun fj-issue-close (&optional repo owner issue state)
@@ -959,7 +960,7 @@ OWNER is the repo owner."
          (params `(("body" . ,body)))
          (response (fj-post url params)))
     (fedi-http--triage response
-                       (lambda ()
+                       (lambda (_)
                          (message "comment created!")))))
 
 (defun fj-comment-patch (repo owner id &optional params issue)
@@ -980,7 +981,7 @@ NEW-BODY is the new comment text to send."
          (response (fj-comment-patch repo owner id
                                      `(("body" . ,new-body)))))
     (fedi-http--triage response
-                       (lambda ()
+                       (lambda (_)
                          (message "comment edited!")))))
 
 ;;; ISSUES TL
@@ -1729,8 +1730,7 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
                 (format format-str user ts)
                 "\n"
                 (fj-propertize-link (fj-get-html-link-desc .body)
-                                    'commit-ref .ref_commit_sha)
-                ))
+                                    'commit-ref .ref_commit_sha)))
               ((equal .type "issue_ref")
                (format format-str user .repository.full_name ts))
               ((equal .type "label")
@@ -2847,17 +2847,40 @@ Returns a list of strings."
              concat (fj-propertize-topic top))))
 
 (defface fj-topic-face
-  `((t :box t :background ,(internal-get-lisp-face-attribute
-                            'default :foreground)
-       :foreground ,(readable-foreground-color
-                     (internal-get-lisp-face-attribute
-                      'default :foreground))))
+  `((t :inherit region))
   "Face for repo topics.")
 
 (defun fj-propertize-topic (topic)
   "Propertize TOPIC, a string."
   (propertize topic
               'face 'fj-topic-face))
+
+;;; TAGS
+;; we can create and push tags with magit, but can't delete them on the
+;; server
+
+(defun fj-get-repo-tags ()
+  "Return tags data for current repo."
+  (let* ((repo (fj--get-buffer-spec :repo))
+         (owner (fj--get-buffer-spec :owner))
+         (endpoint (format "repos/%s/%s/tags" owner repo)))
+    (fj-get endpoint)))
+
+(defun fj-delete-repo-tag ()
+  "Prompt for a repo tag and delete it on the server."
+  (interactive)
+  (let* ((repo (fj--get-buffer-spec :repo))
+         (owner (fj--get-buffer-spec :owner))
+         (tags (fj-get-repo-tags))
+         (list (cl-loop for x in tags
+                        collect (alist-get 'name x)))
+         (choice (completing-read "Delete tag: " list))
+         (endpoint (format "repos/%s/%s/tags/%s" owner repo choice))
+         (resp (fj-delete endpoint)))
+    (fedi-http--triage
+     resp
+     (lambda (_)
+       (message "Tag %s deleted!" choice)))))
 
 (provide 'fj)
 ;;; fj.el ends here
