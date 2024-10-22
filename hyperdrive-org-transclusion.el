@@ -67,8 +67,6 @@ see for descriptions of arguments LINK and PLIST."
                            (point) (org-current-line))
        #'hyperdrive-org-transclusion-add-file))
 
-(add-hook 'org-transclusion-add-functions #'hyperdrive-org-transclusion-add)
-
 (defun hyperdrive-org-transclusion-add-file (link plist copy)
   "Load hyperdrive file at LINK.
 Then call `org-transclusion-add-payload' with PAYLOAD, LINK,
@@ -166,6 +164,20 @@ Try \\[hyperdrive-mark-as-safe]")
       (princ err (current-buffer)))
     (message "hyperdrive-org-transclusion: Unable to transclude content at <%s>.  Please open %S for details."
              url buf)))
+
+;;;; Minor mode
+
+;;;###autoload
+(define-minor-mode hyperdrive-org-transclusion-mode
+  "Minor mode for transcluding hyperdrive content."
+  :global t
+  :group 'hyperdrive
+  :lighter " hyperdrive-org-transclusion"
+  (if hyperdrive-org-transclusion-mode
+      (add-hook 'org-transclusion-add-functions
+                #'hyperdrive-org-transclusion-add)
+    (remove-hook 'org-transclusion-add-functions
+                 #'hyperdrive-org-transclusion-add)))
 
 ;;;; Footer
 
