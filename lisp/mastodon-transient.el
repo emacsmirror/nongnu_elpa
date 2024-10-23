@@ -217,7 +217,7 @@ the format fields.X.keyname."
   (let ((instance (mastodon-instance-data)))
     (mastodon-toot--fetch-max-poll-option-chars instance)))
 
-(transient-define-prefix mastodon-toot--create-poll ()
+(transient-define-prefix mastodon-create-poll ()
   "A transient for creating a poll."
   ;; FIXME: handle existing polls when editing a toot
   ;; FIXME: handle editing poll in same toot!
@@ -245,12 +245,12 @@ the format fields.X.keyname."
   (interactive)
   (if (not mastodon-active-user)
       (user-error "User not set")
-    (transient-setup 'mastodon-toot--create-poll)))
+    (transient-setup 'mastodon-create-poll)))
 
 (transient-define-suffix mastodon-create-poll-done (args)
   "Update current user profile fields."
   :transient 'transient--do-exit
-  (interactive (list (transient-args 'mastodon-toot--create-poll)))
+  (interactive (list (transient-args 'mastodon-create-poll)))
   ;; (message "Done!\n%s" args)
   ;; this is a mess, but we are just plugging our transient data into the
   ;; existing variable, as we already have code to post that. we don't

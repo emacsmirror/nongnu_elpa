@@ -168,6 +168,10 @@ By default fixed width fonts are used."
   :type '(boolean :tag "Enable using proportional rather than fixed \
 width fonts"))
 
+(defcustom mastodon-toot-poll-use-transient t
+  "Whether to use the transient menu to create a poll."
+  :type '(boolean))
+
 (defvar-local mastodon-toot--content-warning nil
   "The content warning of the current toot.")
 
@@ -1401,6 +1405,12 @@ MAX is the maximum number set by their instance."
 (defun mastodon-toot--create-poll ()
   "Prompt for new poll options and return as a list."
   (interactive)
+  (if mastodon-toot-poll-use-transient
+      (mastodon-create-poll)
+    (mastodon-toot--read-poll)))
+
+(defun mastodon-toot--read-poll ()
+  "Read poll options."
   (let* ((instance (mastodon-instance-data))
          (max-options (mastodon-toot--fetch-max-poll-options instance))
          (count (mastodon-toot--read-poll-options-count max-options))
