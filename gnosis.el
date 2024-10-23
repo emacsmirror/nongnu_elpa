@@ -2717,10 +2717,17 @@ Skips days where no note was reviewed."
     (gnosis-dashboard-output-notes gnosis-dashboard-note-ids)
     (revert-buffer t t t)))
 
+(defun gnosis-dashboard-search-note (&optional str)
+  "Search for notes with STR."
+  (interactive)
+  (gnosis-dashboard-output-notes
+   (gnosis-collect-note-ids :query (or str (read-string "Search for note: ")))))
+
 (defvar-keymap gnosis-dashboard-notes-mode-map
   :doc "Keymap for notes dashboard."
   "e" #'gnosis-dashboard-edit-note
   "s" #'gnosis-dashboard-suspend-note
+  "C-s" #'gnosis-dashboard-search-note
   "a" #'gnosis-add-note
   "r" #'gnosis-dashboard-return
   "g" #'gnosis-dashboard-return
@@ -2946,8 +2953,7 @@ DASHBOARD-TYPE: either 'Notes' or 'Decks' to display the respective dashboard."
 	("notes" (gnosis-dashboard-output-notes (gnosis-collect-note-ids)))
 	("decks" (gnosis-dashboard-output-decks))
 	("tags"  (gnosis-dashboard-output-notes (gnosis-collect-note-ids :tags t)))
-	("search" (gnosis-dashboard-output-notes
-		   (gnosis-collect-note-ids :query (read-string "Search for note: "))))))
+	("search" (gnosis-dashboard-search-note))))
     (tabulated-list-print t)))
 
 (defun gnosis-dashboard-mark-toggle ()
@@ -2964,16 +2970,13 @@ DASHBOARD-TYPE: either 'Notes' or 'Decks' to display the respective dashboard."
               (if (cl-some (lambda (ov) (overlay-get ov 'gnosis-mark)) overlays)
                   (progn
                     (remove-overlays beg end 'gnosis-mark t)
-		    (setq gnosis-dashboard--selected-ids (remove id gnosis-dashboard--selected-ids))
-                    ;; (message "Unmarked: %s" (aref entry 0))
-		    )
+		    (setq gnosis-dashboard--selected-ids
+			  (remove id gnosis-dashboard--selected-ids)))
                 (let ((ov (make-overlay beg end)))
 		  (setf gnosis-dashboard--selected-ids
 			(append gnosis-dashboard--selected-ids (list id)))
                   (overlay-put ov 'face 'highlight)
-                  (overlay-put ov 'gnosis-mark t)
-                  ;; (message "Marked: %s" (aref entry 0))
-		  )))
+                  (overlay-put ov 'gnosis-mark t))))
           (message "No entry at point"))
       (message "Not in a tabulated-list-mode"))))
 
