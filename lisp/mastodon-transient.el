@@ -190,6 +190,70 @@ the format fields.X.keyname."
       (user-error "User not set")
     (transient-setup 'mastodon-profile-fields)))
 
+(defun mastodon-transient-max-poll-opts ()
+  "Return max poll options of user's instance."
+  (let ((instance (mastodon-instance-data)))
+    (mastodon-toot--fetch-max-poll-options instance)))
+
+(defun mastodon-transient-max-poll-opt-chars ()
+  "Return max poll option characters of user's instance."
+  (let ((instance (mastodon-instance-data)))
+    (mastodon-toot--fetch-max-poll-option-chars instance)))
+
+(transient-define-prefix mastodon-toot--create-poll ()
+  "A transient for creating a poll."
+  ;; FIXME: handle existing polls when editing a toot
+  ;; FIXME: handle editing poll in same toot!
+  ;; :value (lambda () (mastodon-transient-init-poll))
+  ["Create poll"
+   (:info (lambda ()
+            (format "Max options: %s"
+                    (mastodon-transient-max-poll-opts))))
+   (:info (lambda ()
+            (format "Max option length: %s"
+                    (mastodon-transient-max-poll-opt-chars))))]
+  ["Options"
+   ("m" "Multiple choice?" "multi" :alist-key multi :class tp-bool)
+   ("h" "Hide vote count till expiry?" "hide" :alist-key hide :class tp-bool)
+   ("e" "Expiry" "expiry" :alist-key expiry :class mastodon-transient-expiry)]
+  ["Choices"
+   ("1" "" "1" :alist-key one :class tp-option-str)
+   ("2" "" "2" :alist-key two :class tp-option-str)
+   ("3" "" "3" :alist-key three :class tp-option-str)
+   ("4" "" "4" :alist-key four :class tp-option-str)]
+  ;; TODO: display the max number of options or add options cmd
+  ["Update"
+   ("C-c C-c" "Done" mastodon-create-poll-done)
+   ("C-c C-k" :info "Revert all")]
+  (interactive)
+  (if (not mastodon-active-user)
+      (user-error "User not set")
+    (transient-setup 'mastodon-toot--create-poll)))
+
+(transient-define-suffix mastodon-create-poll-done (args)
+  "Update current user profile fields."
+  :transient 'transient--do-exit
+  (interactive (list (transient-args 'mastodon-toot--create-poll)))
+  ;; (message "Done!\n%s" args)
+  ;; this is a mess, but we are just plugging our transient data into the
+  ;; existing variable, as we already have code to post that. we don't
+  ;; want to post the poll in our suffix, just set the variable and send
+  ;; the data when the toot is sent
+
+  ;; FIXME: if
+  ;; - no options filled in
+  ;; - no expiry
+  ;; then offer to cancel or warn / return to transient
+  (let-alist args
+    (setq mastodon-toot-poll
+          `( :options ,(list .one .two .three .four)
+             ;; :length ,length
+             ;; :expiry-readable ,expiry-human
+             :multi ,.multi
+             :hide ,.hide
+             :expiry ,.expiry)))
+  (mastodon-toot--update-status-fields))
+
 ;;; CLASSES
 
 (defclass mastodon-transient-field (tp-option-str)
@@ -225,6 +289,28 @@ CONS is a cons of the form \"(fields.1.name . val)\"."
          (server-elt (nth num tp-server-settings)))
     (not (equal (cdr cons)
                 (alist-get server-key server-elt nil nil #'string=)))))
+
+(defclass mastodon-transient-expiry (tp-option)
+  ((always-read :initarg :always-read :initform t)))
+
+(cl-defmethod transient-infix-read ((_obj mastodon-transient-expiry))
+  "Reader function for OBJ, a poll expiry."
+  (cdr (mastodon-toot--read-poll-expiry)))
+
+(cl-defmethod transient-format-value ((obj mastodon-transient-expiry))
+  "Format function for OBJ, a poll expiry."
+  (let* ((cons (transient-infix-value obj))
+         (value (when cons (cdr cons))))
+    (if (not value)
+        ""
+      (let ((readable
+             (car
+              (rassoc value
+                      (mastodon-toot--poll-expiry-options-alist)))))
+        (propertize readable
+                    'face (if (tp-arg-changed-p obj cons)
+                              'transient-value
+                            'transient-inactive-value))))))
 
 (provide 'mastodon-transient)
 ;;; mastodon-transient.el ends here
