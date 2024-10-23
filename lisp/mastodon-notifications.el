@@ -385,9 +385,10 @@ When DOMAIN, force inclusion of user's domain in their handle."
            (propertize ;; help-echo remaining notifs authors:
             (format " and %s other%s" diff (if (= 1 diff) "" "s"))
             'help-echo (mapconcat (lambda (a)
-                                    (alist-get 'username a))
+                                    (propertize (alist-get 'username a)
+                                                'face 'mastodon-display-name-face))
                                   (cddr accounts) ;; not first two
-                                  " ")))))))
+                                  ", ")))))))
 
 (defun mastodon-notifications--render (json)
   "Display grouped notifications in JSON."
