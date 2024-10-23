@@ -199,7 +199,7 @@ change the setting on the server, see
   "A list of any media attachment ids of the toot being composed.")
 
 (defvar-local mastodon-toot-poll nil
-  "A list of poll options for the toot being composed.")
+  "A plist of poll options for the toot being composed.")
 
 (defvar-local mastodon-toot--language nil
   "The language of the toot being composed, in ISO 639 (two-letter).")
@@ -892,16 +892,18 @@ instance to edit a toot."
          (endpoint (mastodon-http--api (if edit-id ; we are sending an edit:
                                            (format "statuses/%s" edit-id)
                                          "statuses")))
-         (args-no-media (append `(("status" . ,toot)
-                                  ("in_reply_to_id" . ,mastodon-toot--reply-to-id)
-                                  ("visibility" . ,mastodon-toot--visibility)
-                                  ("sensitive" . ,(when mastodon-toot--content-nsfw
-                                                    (symbol-name t)))
-                                  ("spoiler_text" . ,mastodon-toot--content-warning)
-                                  ("language" . ,mastodon-toot--language))
-                                ;; Pleroma instances can't handle null-valued
-                                ;; scheduled_at args, so only add if non-nil
-                                (when scheduled `(("scheduled_at" . ,scheduled)))))
+         (args-no-media
+          (append
+           `(("status" . ,toot)
+             ("in_reply_to_id" . ,mastodon-toot--reply-to-id)
+             ("visibility" . ,mastodon-toot--visibility)
+             ("sensitive" . ,(when mastodon-toot--content-nsfw
+                               (symbol-name t)))
+             ("spoiler_text" . ,mastodon-toot--content-warning)
+             ("language" . ,mastodon-toot--language))
+           ;; Pleroma instances can't handle null-valued
+           ;; scheduled_at args, so only add if non-nil
+           (when scheduled `(("scheduled_at" . ,scheduled)))))
          (args-media (when mastodon-toot--media-attachment-ids
                        (mastodon-http--build-array-params-alist
                         "media_ids[]"
@@ -1399,7 +1401,7 @@ MAX is the maximum number set by their instance."
 (defun mastodon-toot--create-poll ()
   "Prompt for new poll options and return as a list."
   (interactive)
-  (let* ((instance (mastodon-http--get-json (mastodon-http--api "instance")))
+  (let* ((instance (mastodon-instance-data))
          (max-options (mastodon-toot--fetch-max-poll-options instance))
          (count (mastodon-toot--read-poll-options-count max-options))
          (length (mastodon-toot--fetch-max-poll-option-chars instance))
@@ -1424,12 +1426,11 @@ LENGTH is the maximum character length allowed for a poll option."
                             (format "Poll option [%s/%s] [max %s chars]: "
                                     x count length))))
          (longest (apply #'max (mapcar #'length choices))))
-    (if (> longest length)
-        (progn
-          (user-error "Looks like you went over the max length. Try again")
-          (sleep-for 2)
-          (mastodon-toot--read-poll-options count length))
-      choices)))
+    (if (not (> longest length))
+        choices
+      (user-error "Looks like you went over the max length. Try again")
+      (sleep-for 2)
+      (mastodon-toot--read-poll-options count length))))
 
 (defun mastodon-toot--read-poll-expiry ()
   "Prompt for a poll expiry time.
