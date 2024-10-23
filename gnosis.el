@@ -5,7 +5,7 @@
 ;; Author: Thanos Apollo <public@thanosapollo.org>
 ;; Keywords: extensions
 ;; URL: https://thanosapollo.org/projects/gnosis
-;; Version: 0.4.5
+;; Version: 0.4.6
 
 ;; Package-Requires: ((emacs "27.2") (emacsql "4.0.1") (compat "29.1.4.2") (transient "0.7.2"))
 
@@ -53,7 +53,7 @@
 
 (require 'gnosis-algorithm)
 (require 'gnosis-string-edit)
-;; (require 'gnosis-org)
+(require 'gnosis-org)
 
 (defgroup gnosis nil
   "Spaced Repetition System For Note Taking & Self Testing."

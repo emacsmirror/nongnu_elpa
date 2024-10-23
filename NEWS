@@ -1,5 +1,9 @@
 -*- mode: org -*-
 
+* 0.4.6
++ Refactor gnosis-dashboard without using widgets
++ Improve searching of gnosis notes within dashboard
+
 * 0.4.5
 + Fix cloze hint removal issues.
 + Update documentation
@@ -28,7 +32,6 @@
 +  Update to emacsql-4.0.0
 
 * 0.4.0
-
 + Major rewrite on gnosis algorithm.
   + Add gnosis-score
   + Add epignosis and agnoia
