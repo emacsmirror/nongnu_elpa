@@ -26,6 +26,24 @@
 
 (require 'tp)
 
+(defvar mastodon-active-user)
+(defvar mastodon-toot-visibility-settings-list)
+(defvar mastodon-iso-639-regional)
+(defvar mastodon-toot-poll)
+
+(autoload 'mastodon-toot-visibility-settings-list "mastodon-toot")
+(autoload 'mastodon-http--get-json "mastodon-http")
+(autoload 'mastodon-http--api "mastodon-http")
+(autoload 'mastodon-http--triage "mastodon-http")
+(autoload 'mastodon-http--patch "mastodon-http")
+(autoload 'mastodon-profile--update-user-profile-note "mastodon-profile")
+(autoload 'mastodon-toot--fetch-max-poll-options "mastodon-toot")
+(autoload 'mastodon-toot--fetch-max-poll-option-chars "mastodon-toot")
+(autoload 'mastodon-instance-data "mastodon")
+(autoload 'mastodon-toot--update-status-fields "mastodon-toot")
+(autoload 'mastodon-toot--read-poll-expiry "mastodon-toot")
+(autoload 'mastodon-toot--poll-expiry-options-alist "mastodon-toot")
+
 ;;; UTILS
 
 ;; some JSON fields that are returned under the "source" field need to be
@@ -168,8 +186,7 @@ the format fields.X.keyname."
 
 (transient-define-prefix mastodon-profile-fields ()
   "A transient for setting profile fields."
-  :value
-  (lambda () (mastodon-transient-fetch-fields))
+  :value (lambda () (mastodon-transient-fetch-fields))
   [:description
    "Fields"
    ["Name"
@@ -263,8 +280,8 @@ We always read.")
 
 (cl-defmethod transient-init-value ((obj mastodon-transient-field))
   "Initialize value of OBJ."
-  (let* ((prefix-val (oref transient--prefix value))
-         (arg (oref obj alist-key)))
+  (let* ((prefix-val (oref transient--prefix value)))
+    ;; (arg (oref obj alist-key)))
     (oset obj value
           (tp-get-server-val obj prefix-val))))
 
@@ -283,7 +300,7 @@ only one level of nesting is supported."
   "T if value of OBJ is changed from the server value.
 CONS is a cons of the form \"(fields.1.name . val)\"."
   (let* ((key-split (split-string
-                     (symbol-to-string (car cons)) "\\."))
+                     (symbol-name (car cons)) "\\."))
          (num (1- (string-to-number (nth 1 key-split))))
          (server-key (symbol-name (car cons)))
          (server-elt (nth num tp-server-settings)))
