@@ -791,7 +791,7 @@ OWNER is the repo owner."
           (new-body (read-string "Edit issue body: " old-body))
           (response (fj-issue-patch repo owner issue nil new-body)))
      (fedi-http--triage response
-                        (lambda ()
+                        (lambda (_)
                           (message "issue edited!"))))))
 
 (defun fj-issue-edit-title (&optional repo owner issue)
@@ -822,7 +822,7 @@ OWNER is the repo owner."
     (when (y-or-n-p (format "%s issue #%s?" action-str issue))
       (let ((response (fj-issue-patch repo owner issue nil nil state)))
         (fedi-http--triage response
-                           (lambda ()
+                           (lambda (_)
                              (message "Issue %s %s!" issue state)))))))
 
 (defun fj-issue-delete (&optional repo owner issue no-confirm)
@@ -836,7 +836,7 @@ Optionally, NO-CONFIRM means don't ask before deleting."
       (let* ((url (format "repos/%s/%s/issues/%s" owner repo issue))
              (response (fj-delete url)))
         (fedi-http--triage response
-                           (lambda ()
+                           (lambda (_)
                              (message "issue deleted!")))))))
 
 ;;; PULL REQUESTS
@@ -1661,7 +1661,7 @@ ENDPOINT is the API endpoint to hit."
      (when (y-or-n-p (format "Merge PR #%s into %s?" number repo))
        (let ((resp (fj-pull-merge-post repo owner number merge-type)))
          (fedi-http--triage resp
-                            (lambda ()
+                            (lambda (_)
                               (message "Merged!"))))))))
 
 ;;; TIMELINE ITEMS
@@ -2826,7 +2826,7 @@ BUF-STR is the name of the buffer string to use."
          (endpoint (format "repos/%s/%s/subscription" owner repo))
          (resp (fj-put endpoint)))
     (fedi-http--triage resp
-                       (lambda ()
+                       (lambda (_)
                          (message "Repo %s watched!" repo)))))
 
 ;;; TOPICS
