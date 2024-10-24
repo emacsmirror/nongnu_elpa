@@ -1510,9 +1510,18 @@ Sets `mastodon-toot-poll' to nil."
                           (mastodon-tl--human-duration expiry-seconds-rel)))
            (options (mastodon-tl--map-alist 'title .options))
            (multiple (if (eq :json-false .multiple) nil t)))
-      (setq mastodon-toot-poll
-            `( :options ,options :expiry-readable ,expiry-human
-               :expiry ,expiry-str :multi ,multiple)))))
+      (if mastodon-toot-poll-use-transient
+          (setq tp-transient-settings
+                `((multi . ,multiple)
+                  (expiry . ,expiry-str)
+                  ;; (hide . ,hide)
+                  (one . ,(nth 0 options))
+                  (two . ,(nth 1 options))
+                  (three . ,(nth 2 options))
+                  (four . ,(nth 3 options))))
+        (setq mastodon-toot-poll
+              `( :options ,options :expiry-readable ,expiry-human
+                 :expiry ,expiry-str :multi ,multiple))))))
 
 
 ;;; SCHEDULE

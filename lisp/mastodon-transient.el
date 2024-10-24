@@ -337,9 +337,10 @@ Pull value from `mastodon-tool-poll' if possible.'"
     (if (not value)
         ""
       (let ((readable
-             (car
-              (rassoc value
-                      (mastodon-toot--poll-expiry-options-alist)))))
+             (or (car
+                  (rassoc value
+                          (mastodon-toot--poll-expiry-options-alist)))
+                 (concat value " secs")))) ;; editing a poll wont match expiry list
         (propertize readable
                     'face (if (tp-arg-changed-p obj cons)
                               'transient-value
