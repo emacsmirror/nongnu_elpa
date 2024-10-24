@@ -238,10 +238,10 @@ the format fields.X.keyname."
    ("e" "Expiry" "expiry" :alist-key expiry
     :class mastodon-transient-expiry)]
   ["Choices"
-   ("1" "" "1" :alist-key one :class tp-option-str)
-   ("2" "" "2" :alist-key two :class tp-option-str)
-   ("3" "" "3" :alist-key three :class tp-option-str)
-   ("4" "" "4" :alist-key four :class tp-option-str)]
+   ("1" "" "1" :alist-key one :class mastodon-transient-poll-choice)
+   ("2" "" "2" :alist-key two :class mastodon-transient-poll-choice)
+   ("3" "" "3" :alist-key three :class mastodon-transient-poll-choice)
+   ("4" "" "4" :alist-key four :class mastodon-transient-poll-choice)]
   ;; TODO: display the max number of options or add options cmd
   ["Update"
    ("C-c C-c" "Save and done" mastodon-create-poll-done)
@@ -311,8 +311,18 @@ CONS is a cons of the form \"(fields.1.name . val)\"."
   ())
 
 (cl-defmethod transient-init-value ((obj mastodon-transient-poll-bool))
+  "Initialize OBJ, a poll option.
+Pull value from `tp-transient-settings' if possible.'"
+  (let ((key (oref obj alist-key)))
+    (oset obj value
+          (alist-get key tp-transient-settings))))
+
+(defclass mastodon-transient-poll-choice (tp-option-str)
+  ())
+
+(cl-defmethod transient-init-value ((obj mastodon-transient-poll-choice))
   "Initialize OBJ, an expiry option.
-Pull value from `mastodon-tool-poll' if possible.'"
+Pull value from `tp-transient-settings' if possible.'"
   (let ((key (oref obj alist-key)))
     (oset obj value
           (alist-get key tp-transient-settings))))
@@ -322,7 +332,7 @@ Pull value from `mastodon-tool-poll' if possible.'"
 
 (cl-defmethod transient-init-value ((obj mastodon-transient-expiry))
   "Initialize OBJ, an expiry option.
-Pull value from `mastodon-tool-poll' if possible.'"
+Pull value from `tp-transient-settings' if possible.'"
   (oset obj value
         (alist-get 'expiry tp-transient-settings)))
 
