@@ -92,7 +92,8 @@ make them unweildy."
 
 (defvar mastodon-notifications--types
   '("favourite" "reblog" "mention" "poll"
-    "follow_request" "follow" "status" "update")
+    "follow_request" "follow" "status" "update"
+    "severed_relationships" "moderation_warning")
   "A list of notification types according to their name on the server.")
 
 (defvar mastodon-notifications--response-alist
@@ -210,6 +211,25 @@ JSON is a list of alists."
    for x in ids
    collect (mastodon-notifications--alist-by-value x 'id json)))
 
+(defun mastodon-notifications--severance-body (group)
+  "Return a body for a severance notification GROUP."
+  ;; FIXME: actually implement this when we encounter one in the wild!
+  (let-alist (alist-get 'event group)
+    (concat .description ": "
+            .target_name
+            "\nRelationships affected: "
+            .relationships_count)))
+
+(defun mastodon-notifications--mod-warning-body (group)
+  "Return a body for a moderation warning notification GROUP."
+  (let-alist (alist-get )
+    (concat .description ": "
+            .text
+            "\nStatuses: "
+            .status_ids
+            "\nfor account: "
+            .target_account)))
+
 (defun mastodon-notifications--format-note (group status accounts)
   "Format for a GROUP notification.
 STATUS is the status's JSON.
@@ -258,6 +278,10 @@ ACCOUNTS is data of the accounts that have reacted to the notification."
                   (concat
                    ":\n"
                    (mastodon-notifications--comment-note-text body)))))
+              ((eq type-sym 'severed_relationships)
+               (mastodon-notifications--severance-body group))
+              ((eq type-sym 'moderation_warning)
+               (mastodon-notifications--mod-warning-body group))
               ((member type-sym '(favourite reblog))
                (propertize
                 (mastodon-notifications--comment-note-text body)))
