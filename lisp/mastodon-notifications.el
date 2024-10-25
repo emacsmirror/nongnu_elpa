@@ -365,6 +365,7 @@ ACCOUNTS is the notification accounts data."
       'toot-folded   (and toot-foldable (not unfolded))
       ;; grouped notifs data:
       'notification-type type
+      'notification-id (alist-get 'group_key group)
       'notification-group group
       'notification-accounts accounts
       ;; for pagination:
@@ -486,17 +487,35 @@ Status notifications are created when you call
 (defun mastodon-notifications--clear-current ()
   "Dismiss the notification at point."
   (interactive)
-  (let* ((id (or (mastodon-tl--property 'item-id)
-                 (mastodon-tl--field 'id
-                                     (mastodon-tl--property 'item-json))))
-         (response
-          (mastodon-http--post (mastodon-http--api
-                                (format "notifications/%s/dismiss" id)))))
+  (let* ((id (or (or (mastodon-tl--property 'notification-id) ;; grouped
+                     (mastodon-tl--property 'item-id)
+                     (mastodon-tl--field
+                      'id
+                      (mastodon-tl--property 'item-json)))))
+         (endpoint (mastodon-http--api
+                    (format "notifications/%s/dismiss" id)
+                    "v2"))
+         (response (mastodon-http--post endpoint)))
     (mastodon-http--triage
      response (lambda (_)
                 (when mastodon-tl--buffer-spec
                   (mastodon-tl--reload-timeline-or-profile))
                 (message "Notification dismissed!")))))
+
+(defun mastodon-notifications--get-single-notif ()
+  "Return a single notification JSON for v2 notifs."
+  (interactive)
+  (let* ((id (mastodon-tl--property
+              'notification-id)) ;; grouped, doesn't work for ungrouped!
+         ;; (key (format "ungrouped-%s"
+         ;;              (mastodon-tl--property 'item-id)))
+         (endpoint (mastodon-http--api
+                    (format "notifications/%s" id)
+                    "v2"))
+         (response (mastodon-http--get-json endpoint)))
+    (mastodon-http--triage
+     response (lambda (_)
+                (message "%s" (prin1-to-string response))))))
 
 (defun mastodon-notifications--get-unread-count ()
   "Return the number of unread notifications for the current account."
