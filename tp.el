@@ -391,5 +391,27 @@ only one level of nesting is supported."
            (alist-get (intern (cadr split))
                       (alist-get (intern (car split)) data))))))
 
+;;; VARIABLE CLASS
+
+;; a class used to implement `transient-init-value' in a way that doesn't
+;; fetch from a server, but merely gets data from `tp-transient-settings'.
+;; this hopefully means you can multi-inherit from this class and another,
+;; and not have to implement `transient-init-value' for each of your
+;; class(es).
+
+;; it seems like for this to work right, tp-option-var should be the
+;; second, not first, superclass. e.g. (defclass your-tp-option (tp-option
+;; tp-option-var) (()))
+
+(defclass tp-option-var (tp-option)
+  (()))
+
+(cl-defmethod transient-init-value ((obj tp-option-var))
+  "Initialize OBJ, an option.
+Pull value from `tp-transient-settings' if possible.'"
+  (let ((key (oref obj alist-key)))
+    (oset obj value
+          (alist-get key tp-transient-settings))))
+
 (provide 'tp)
 ;;; tp.el ends here
