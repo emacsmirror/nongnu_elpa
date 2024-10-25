@@ -290,7 +290,9 @@ data about the item boosted or favourited."
 Includes boosts, and notifications that display toots.
 This macro makes the local variable ID available."
   (declare (debug t))
-  `(if (not (eq 'toot (mastodon-tl--property 'item-type :no-move)))
+  `(if (or (not (eq 'toot (mastodon-tl--property 'item-type :no-move)))
+           (member (mastodon-tl--property 'notification-type)
+                   '("follow" "follow_request")))
        (user-error "Looks like there's no toot at point?")
      (mastodon-tl--with-toot-helper
       (lambda (id)
