@@ -278,6 +278,18 @@ the format fields.X.keyname."
   "An infix option class for our options.
 We always read.")
 
+(defclass mastodon-transient-opt (tp-option tp-option-var)
+  (()))
+
+(defclass mastodon-transient-poll-bool (tp-bool tp-option-var)
+  ())
+
+(defclass mastodon-transient-poll-choice (tp-option-str tp-option-var)
+  ())
+
+(defclass mastodon-transient-expiry (tp-option tp-option-var)
+  ())
+
 (cl-defmethod transient-init-value ((obj mastodon-transient-field))
   "Initialize value of OBJ."
   (let* ((prefix-val (oref transient--prefix value)))
@@ -306,35 +318,6 @@ CONS is a cons of the form \"(fields.1.name . val)\"."
          (server-elt (nth num tp-transient-settings)))
     (not (equal (cdr cons)
                 (alist-get server-key server-elt nil nil #'string=)))))
-
-(defclass mastodon-transient-poll-bool (tp-bool)
-  ())
-
-(cl-defmethod transient-init-value ((obj mastodon-transient-poll-bool))
-  "Initialize OBJ, a poll option.
-Pull value from `tp-transient-settings' if possible.'"
-  (let ((key (oref obj alist-key)))
-    (oset obj value
-          (alist-get key tp-transient-settings))))
-
-(defclass mastodon-transient-poll-choice (tp-option-str)
-  ())
-
-(cl-defmethod transient-init-value ((obj mastodon-transient-poll-choice))
-  "Initialize OBJ, an expiry option.
-Pull value from `tp-transient-settings' if possible.'"
-  (let ((key (oref obj alist-key)))
-    (oset obj value
-          (alist-get key tp-transient-settings))))
-
-(defclass mastodon-transient-expiry (tp-option)
-  ())
-
-(cl-defmethod transient-init-value ((obj mastodon-transient-expiry))
-  "Initialize OBJ, an expiry option.
-Pull value from `tp-transient-settings' if possible.'"
-  (oset obj value
-        (alist-get 'expiry tp-transient-settings)))
 
 (cl-defmethod transient-infix-read ((_obj mastodon-transient-expiry))
   "Reader function for OBJ, a poll expiry."
