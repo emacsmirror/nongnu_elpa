@@ -1243,7 +1243,7 @@ re-filling lines longer than the value of
                  (const :tag "Window width" window-width)
                  (integer :tag "Fill column")))
 
-(defcustom vm-use-presentation-minor-modes t
+(defcustom vm-use-presentation-minor-modes nil
   "*Asks VM to use minor modes for the message presentation text
 when appropriate, e.g., when the text is prepared using the
 emacs-w3m package.
