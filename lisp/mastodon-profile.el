@@ -737,6 +737,16 @@ MAX-ID is a flag to include the max_id pagination parameter."
                                   'success))
           (setq mastodon-tl--update-point (point))
           (mastodon-media--inline-images (point-min) (point))
+          ;; widgets
+          (mastodon-profile--widget-create
+           (plist-get mastodon-profile--views-plist :kind)
+           ;; (car mastodon-profile--views-plist)
+           (plist-get mastodon-profile--views-plist :types)
+           ;; TODO: hand current view to the widget:
+           (or (mastodon-profile--current-view-type
+                endpoint-type no-reblogs no-replies only-media)
+               (plist-get mastodon-profile--views-plist :default)))
+          (insert "\n\n")
           ;; insert pinned toots first
           (when (and pinned (string= endpoint-type "statuses"))
             (mastodon-profile--insert-statuses-pinned pinned)
@@ -749,6 +759,17 @@ MAX-ID is a flag to include the max_id pagination parameter."
           "\\`C-c C-c' to cycle profile views: toots, no replies, no boosts,\
  only media, followers, following.
 \\`C-c C-s' to search user's toots, \\`C-c \#' to search user's posts for a hashtag."))))))
+
+(defun mastodon-profile--current-view-type (type no-reblogs no-replies only-media)
+  "Return the type of current profile view.
+Return a member of `mastodon-profile--view-types', based on TYPE,
+NO-REBLOGS, NO-REPLIES and ONLY-MEDIA."
+  (cond (no-reblogs 'no-boosts)
+        (no-replies 'no-replies)
+        (only-media 'only-media)
+        ;; (tag
+        ;;  (format "  TOOTS (containing #%s)" tag))
+        (t (intern type))))
 
 (defun mastodon-profile--format-joined-date-string (joined)
   "Format a human-readable Joined string from timestamp JOINED.
@@ -1034,6 +1055,102 @@ the given account."
         (user-error "Looks like there are no familiar followers for this account")
       (let ((choice (completing-read "Show profile of user: " handles)))
         (mastodon-profile--show-user choice)))))
+
+
+;;; PROFILE WIDGET (ported from lem-ui.el)
+
+(defvar mastodon-profile-widget-keymap
+  (let ((map (make-sparse-keymap)))
+    (define-key map [down-mouse-2] 'widget-button-click)
+    (define-key map [down-mouse-1] 'widget-button-click)
+    (define-key map [touchscreen-begin] 'widget-button-click)
+    ;; The following definition needs to avoid using escape sequences that
+    ;; might get converted to ^M when building loaddefs.el
+    (define-key map [(control ?m)] 'widget-button-press)
+    map)
+  "Keymap containing useful binding for buffers containing widgets.
+Recommended as a parent keymap for modes using widgets.
+Note that such modes will need to require wid-edit.")
+
+(defface mastodon-profile-widget-face
+  '((t :inherit font-lock-function-name-face :weight bold :underline t))
+  "Face for widgets.")
+
+(defvar mastodon-profile--views-plist
+  `(:kind "View" :types mastodon-profile--view-types :default statuses))
+
+(defvar mastodon-profile--view-types
+  ;; there's also tags, but it has to be a partic tag
+  '(statuses no-boosts no-replies only-media followers following))
+
+(defvar mastodon-profile--load-funs-alist
+  `((statuses    . mastodon-profile--open-statuses)
+    (no-boosts   . mastodon-profile--open-statuses-no-reblogs)
+    (no-replies  . mastodon-profile--open-statuses-no-replies)
+    (only-media  . mastodon-profile--open-statuses-only-media)
+    (followers   . mastodon-profile--open-followers)
+    (following   . mastodon-profile--open-following)))
+
+(defun mastodon-profile--view-fun-call (type)
+  "Call the function associated with TYPE.
+Fetched from `mastodon-profile--load-funs-alist'."
+  (funcall
+   (alist-get type mastodon-profile--load-funs-alist)))
+
+(defun mastodon-profile--open-statuses ()
+  "Open a profile showing statuses."
+  (mastodon-profile--make-author-buffer mastodon-profile--account))
+
+(defun mastodon-profile--return-item-widgets (list)
+  "Return a list of item widgets for each item, a string, in LIST."
+  (cl-loop for x in list
+           collect `(choice-item :value ,x :format "%[%v%] ")))
+
+(defun mastodon-profile--widget-format (str &optional padding)
+  "Return a widget format string for STR, its name.
+PADDING is an integer, for how much right-side padding to add."
+  (concat "%[" (propertize str
+                           'face 'mastodon-profile-widget-face
+                           'mastodon-tab-stop t)
+          "%]: %v"
+          (make-string padding ? )))
+
+(defun mastodon-profile--widget-notify-fun (_old-value)
+  "Return a widget notify function.
+OLD-VALUE is the widget's value before being changed."
+  `(lambda (widget &rest ignore)
+     (let ((value (widget-value widget))
+           (tag (widget-get widget :tag)))
+       (pcase tag
+         ("views" (mastodon-profile--view-fun-call value))
+         (_ (message "Widget kind not implemented yet"))))))
+
+(defun mastodon-profile--widget-create (kind type value)
+  "Return a widget of KIND, with TYPE-LIST elements, and default VALUE.
+KIND is a string, either Listing, Sort, Items, or Inbox, and will
+be used for the widget's tag.
+VALUE is a string, a member of TYPE."
+  (let* ((val-length (length (if (symbolp value)
+                                 (symbol-name value)
+                               value)))
+         (type-list (symbol-value type))
+         (longest (apply #'max
+                         (mapcar #'length
+                                 (if (symbolp (car type-list))
+                                     (mapcar #'symbol-name type-list)
+                                   type-list))))
+         (padding (- longest val-length)))
+    (if (not (member value type-list))
+        (user-error "%s is not a member of %s" value type-list)
+      (widget-create
+       'menu-choice
+       :tag kind
+       :value value
+       :args (mastodon-profile--return-item-widgets type-list)
+       :help-echo (format "Select a %s kind" kind)
+       :format (mastodon-profile--widget-format kind padding)
+       :notify (mastodon-profile--widget-notify-fun value)
+       :keymap mastodon-profile-widget-keymap))))
 
 (provide 'mastodon-profile)
 ;;; mastodon-profile.el ends here
