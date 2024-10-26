@@ -663,21 +663,7 @@ MAX-ID is a flag to include the max_id pagination parameter."
         (setq mastodon-profile--account account)
         (mastodon-tl--set-buffer-spec buffer endpoint update-function
                                       link-header args nil max-id-str)
-        (let* ((inhibit-read-only t)
-               (endpoint-name
-                (cond ((string= endpoint-type "statuses")
-                       (cond (no-reblogs
-                              "  TOOTS (no boosts)")
-                             (no-replies
-                              "  TOOTS (no replies)")
-                             (only-media
-                              "  TOOTS (media only)")
-                             (tag
-                              (format "  TOOTS (containing #%s)" tag))
-                             (t
-                              "    TOOTS    ")))
-                      ((string= endpoint-type "followers") "  FOLLOWERS  ")
-                      ((string= endpoint-type "following") "  FOLLOWING  "))))
+        (let* ((inhibit-read-only t))
           (insert
            (propertize
             (concat
@@ -688,8 +674,7 @@ MAX-ID is a flag to include the max_id pagination parameter."
              (propertize .display_name 'face 'mastodon-display-name-face)
              ;; roles
              (when .roles
-               (concat " "
-                       (mastodon-profile--render-roles .roles)))
+               (concat " " (mastodon-profile--render-roles .roles)))
              "\n"
              (propertize (concat "@" .acct) 'face 'default)
              (when (eq .locked t)
@@ -737,15 +722,10 @@ MAX-ID is a flag to include the max_id pagination parameter."
                               " | REQUESTED TO FOLLOW YOU")
                             "\n\n")
                     'success)
-                 ""))) ; for insert call
-           ;; insert endpoint
-           (mastodon-tl--set-face (concat " " mastodon-tl--horiz-bar "\n"
-                                          endpoint-name "\n"
-                                          " " mastodon-tl--horiz-bar "\n")
-                                  'success))
+                 "")))) ; for insert call
           (setq mastodon-tl--update-point (point))
           (mastodon-media--inline-images (point-min) (point))
-          ;; widgets
+          ;; widget items description
           (mastodon-profile--widget-create
            (plist-get mastodon-profile--views-plist :kind)
            ;; (car mastodon-profile--views-plist)
