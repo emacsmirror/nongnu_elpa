@@ -139,9 +139,10 @@ Repo search listing:
 | C-c C-r   | fj-compose-read-repo            | Read a repo for composing a issue or comment.                       |
 | C-c C-t   | fj-compose-read-title           | Read an issue title.                                                |
 |           | fj-compose-send                 | Submit the issue or comment to your Forgejo instance.               |
-|           | fj-copy-item-url                | Copy URL of current item, either issue or PR.                       |
+| C         | fj-copy-item-url                | Copy URL of current item, either issue or PR.                       |
 | c         | fj-create-issue                 | Create issue in current repo or repo at point in tabulated listing. |
 |           | fj-delete-repo                  | Delete repo at point, if you are its owner.                         |
+|           | fj-delete-repo-tag              | Prompt for a repo tag and delete it on the server.                  |
 | <return>  | fj-do-link-action               | Do the action of the link at POS.                                   |
 | <mouse-2> | fj-do-link-action-mouse         | Do the action of the link at point.                                 |
 |           | fj-get-pull-commits             | Return the data for the commits of the current pull.                |
@@ -152,12 +153,12 @@ Repo search listing:
 |           | fj-issue-delete                 | Delete ISSUE in REPO of OWNER.                                      |
 |           | fj-issue-edit                   | Edit ISSUE body in REPO.                                            |
 |           | fj-issue-edit-title             | Edit ISSUE title in REPO.                                           |
-|           | fj-issue-next                   | Go to next issue or comment.                                        |
-|           | fj-issue-prev                   | Goto previous issue or comment.                                     |
+| n         | fj-issue-next                   | Go to next issue or comment.                                        |
+| p         | fj-issue-prev                   | Goto previous issue or comment.                                     |
 |           | fj-issue-tl-mode                | Major mode for browsing a tabulated list of issues.                 |
 | C-c C-s   | fj-issues-item-cycle            | Cycle item type listing of issues, pulls, and all.                  |
 | k         | fj-issues-tl-close              | Close current issue from tabulated issues listing.                  |
-| C         | fj-issues-tl-comment            | Comment on issue from tabulated issues listing.                     |
+|           | fj-issues-tl-comment            | Comment on issue from tabulated issues listing.                     |
 | K         | fj-issues-tl-delete             | Delete current issue from tabulated issues listing.                 |
 | e         | fj-issues-tl-edit               | Edit issue from tabulated issues listing.                           |
 | t         | fj-issues-tl-edit-title         | Edit issue title from issues tabulatd list view.                    |
@@ -183,15 +184,15 @@ Repo search listing:
 |           | fj-list-issues-search           | Search current repo issues for QUERY.                               |
 | O         | fj-list-own-repos               | List repos for `fj-user'.                                           |
 | P         | fj-list-pulls                   | List pulls for REPO by OWNER, filtered by STATE.                    |
-| u         | fj-list-user-repos              | View repos of current entry user from tabulated repos listing.      |
+|           | fj-list-user-repos              | View repos of current entry user from tabulated repos listing.      |
 |           | fj-merge-pull                   | Merge pull request of current view or at point.                     |
-|           | fj-next-tab-item                | Jump to next tab item.                                              |
+| <tab>     | fj-next-tab-item                | Jump to next tab item.                                              |
 |           | fj-notifications-mode           | Major mode for viewing notifications.                               |
 |           | fj-notifications-unread-toggle  | Switch between showing all notifications, and only showing unread.  |
-|           | fj-prev-tab-item                | Jump to prev tab item.                                              |
+| <backtab> | fj-prev-tab-item                | Jump to prev tab item.                                              |
 |           | fj-pull-req-comment             | Add comment to PULL in REPO.                                        |
 |           | fj-repo-commit-log              | Render log of commits for REPO by OWNER.                            |
-| L, U      | fj-repo-copy-clone-url          | Add the clone_url of repo at point to the kill ring.                |
+| L, u      | fj-repo-copy-clone-url          | Add the clone_url of repo at point to the kill ring.                |
 |           | fj-repo-create                  | Create a new repo.                                                  |
 |           | fj-repo-search                  | Search repos for QUERY.                                             |
 | s         | fj-repo-search-tl               | Search repos for QUERY, and display a tabulated list of results.    |
@@ -200,7 +201,7 @@ Repo search listing:
 |           | fj-repo-tl-fork                 | Fork repo entry at point.                                           |
 | RET       | fj-repo-tl-list-issues          | View issues of current repo from tabulated repos listing.           |
 |           | fj-repo-tl-mode                 | Mode for displaying a tabulated list of repo search results.        |
-|           | fj-repo-tl-readme               | Display readme file of current repo.                                |
+| r         | fj-repo-tl-readme               | Display readme file of current repo.                                |
 | g         | fj-repo-tl-reload               | Reload current user repos tl.                                       |
 | *         | fj-repo-tl-star-repo            | Star or UNSTAR current repo from tabulated user repos listing.      |
 |           | fj-repo-tl-stargazers           | Prompt for a repo stargazer, and view their repos.                  |
@@ -212,7 +213,7 @@ Repo search listing:
 | B         | fj-tl-browse-entry              | Browse URL of tabulated list entry at point.                        |
 |           | fj-update-repo                  | Update current repo settings.                                       |
 |           | fj-update-topics                | Update repo topics on the server.                                   |
-|           | fj-update-user-settings         | Update current user settings on the server.                         |
+| U         | fj-update-user-settings         | Update current user settings on the server.                         |
 |           | fj-user-followers               | View users who follow you.                                          |
 |           | fj-user-following               | View users you are following.                                       |
 |           | fj-user-repo-tl-mode            | Mode for displaying a tabulated list of user repos.                 |
