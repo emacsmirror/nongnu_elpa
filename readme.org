@@ -12,6 +12,8 @@ To get going, first set =fj-host=,  =fj-user=, and =fj-token=. You can obtain a 
 
 Once you have done so, try =fj-list-own-repos= to view your repos, or =fj-list-issues= to view issues of the current repo, or with completing-read of a repo is no repo is found. If you are already viewing a repo and want to force the prompt to choose another, call =fj-list-issues= with a prefix arg (=C-u=).
 
+To use a different instance for a given repo, set =fj-host=,  =fj-user=, and =fj-token= in your =.dir-locals.el= file.
+
 * repositories
 
 Current repository detection should work partially automatically. If you find you are still being asked for the repo when calling a command from inside a repo with a Forgejo remote, check to make sure the local root directory matches the name of the Forgejo repo!
