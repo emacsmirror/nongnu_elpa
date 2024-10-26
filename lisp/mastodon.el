@@ -337,6 +337,15 @@ FORCE means to fetch from the server in any case and update
     ;; else just return the var:
     mastodon-profile-credential-account))
 
+(defvar mastodon-instance-data nil
+  "Instance data from the instance endpoint.")
+
+(defun mastodon-instance-data ()
+  "Return `mastodon-instnace-data' or else fetch from instance endpoint."
+  (or mastodon-instance-data
+      (setq mastodon-instance-data
+            (mastodon-http--get-json (mastodon-http--api "instance")))))
+
 ;;;###autoload
 (defun mastodon-toot (&optional user reply-to-id reply-json)
   "Update instance with new toot. Content is captured in a new buffer.
