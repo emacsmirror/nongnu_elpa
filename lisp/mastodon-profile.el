@@ -754,19 +754,23 @@ MAX-ID is a flag to include the max_id pagination parameter."
            (or (mastodon-profile--current-view-type
                 endpoint-type no-reblogs no-replies only-media)
                (plist-get mastodon-profile--views-plist :default)))
-          (insert "\n\n")
+          (insert "\n\n")))
+      ;; split insert of items from insert of profile:
+      (with-current-buffer buffer
+        (let* ((inhibit-read-only t))
           ;; insert pinned toots first
           (when (and pinned (string= endpoint-type "statuses"))
             (mastodon-profile--insert-statuses-pinned pinned)
             (setq mastodon-tl--update-point (point))) ; updates after pinned toots
-          (funcall update-function json))
-        (goto-char (point-min))
-        (message
-         (substitute-command-keys
-          ;; "\\[mastodon-profile--account-view-cycle]" ; not always bound?
-          "\\`C-c C-c' to cycle profile views: toots, no replies, no boosts,\
+          ;; insert items
+          (funcall update-function json)
+          (goto-char (point-min))
+          (message
+           (substitute-command-keys
+            ;; "\\[mastodon-profile--account-view-cycle]" ; not always bound?
+            "\\`C-c C-c' to cycle profile views: toots, no replies, no boosts,\
  only media, followers, following.
-\\`C-c C-s' to search user's toots, \\`C-c \#' to search user's posts for a hashtag."))))))
+\\`C-c C-s' to search user's toots, \\`C-c \#' to search user's posts for a hashtag.")))))))
 
 (defun mastodon-profile--current-view-type (type no-reblogs no-replies only-media)
   "Return the type of current profile view.
