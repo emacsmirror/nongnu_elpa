@@ -41,10 +41,10 @@
 ;;; Code:
 
 
-(eval-when-compile
-  (require 'cl-lib)
-  (require 'calendar)
-  (require 'subr-x))
+
+(require 'cl-lib)
+(require 'calendar)
+(require 'subr-x)
 
 (require 'vc)
 (require 'emacsql-sqlite)
