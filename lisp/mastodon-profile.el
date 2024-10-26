@@ -178,8 +178,16 @@ MAX-ID is a flag to include the max_id pagination parameter."
         ((mastodon-tl--buffer-type-eq 'profile-following)
          (mastodon-profile--make-author-buffer mastodon-profile--account))))
 
+(defun mastodon-profile--open-statuses ()
+  "Open a profile showing statuses."
+  (interactive)
+  (if mastodon-profile--account
+      (mastodon-profile--make-author-buffer
+       mastodon-profile--account)
+    (user-error "Not in a mastodon profile")))
+
 (defun mastodon-profile--open-statuses-no-replies ()
-  "Open a profile buffer showing statuses including replies."
+  "Open a profile buffer showing statuses without replies."
   (interactive)
   (if mastodon-profile--account
       (mastodon-profile--make-author-buffer
@@ -1096,10 +1104,6 @@ Note that such modes will need to require wid-edit.")
 Fetched from `mastodon-profile--load-funs-alist'."
   (funcall
    (alist-get type mastodon-profile--load-funs-alist)))
-
-(defun mastodon-profile--open-statuses ()
-  "Open a profile showing statuses."
-  (mastodon-profile--make-author-buffer mastodon-profile--account))
 
 (defun mastodon-profile--return-item-widgets (list)
   "Return a list of item widgets for each item, a string, in LIST."
