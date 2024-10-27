@@ -50,7 +50,8 @@ Note that such modes will need to require wid-edit.")
 (defun mastodon-widget--return-item-widgets (list)
   "Return a list of item widgets for each item, a string, in LIST."
   (cl-loop for x in list
-           collect `(choice-item :value ,x :format "%[%v%] ")))
+           collect `(choice-item :value ,x :format "%[%v%] "
+                                 :keymap ,mastodon-widget-keymap)))
 
 (defun mastodon-widget--format (str &optional padding)
   "Return a widget format string for STR, its name.
