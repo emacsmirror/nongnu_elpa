@@ -194,7 +194,7 @@ is used for pagination."
          (following (when (or following (equal current-prefix-arg '(4)))
                       "true"))
          (type (or type
-                   (if (eq current-prefix-arg '(4))
+                   (if (equal current-prefix-arg '(4))
                        "accounts" ; if FOLLOWING, must be "accounts"
                      (completing-read "Search type: "
                                       mastodon-search-types nil :match))))
