@@ -70,7 +70,9 @@ NOTIFY-FUN is the widget's notify function."
   (let* ((val-length (length (if (symbolp value)
                                  (symbol-name value)
                                value)))
-         (type-list (symbol-value type))
+         (type-list (if (symbolp type)
+                        (symbol-value type)
+                      type))
          (longest (apply #'max
                          (mapcar #'length
                                  (if (symbolp (car type-list))

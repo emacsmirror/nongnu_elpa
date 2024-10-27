@@ -554,9 +554,6 @@ The endpoint only holds a few preferences. For others, see
 
 ;;; PROFILE WIDGET
 
-(defvar mastodon-profile--views-plist
-  `(:kind "View" :types mastodon-profile--view-types :default statuses))
-
 (defvar mastodon-profile--view-types
   '(statuses no-boosts no-replies only-media followers following tag))
 
@@ -752,12 +749,10 @@ MAX-ID is a flag to include the max_id pagination parameter."
           (mastodon-media--inline-images (point-min) (point))
           ;; widget items description
           (mastodon-widget--create
-           (plist-get mastodon-profile--views-plist :kind)
-           (plist-get mastodon-profile--views-plist :types)
-           ;; TODO: hand current view to the widget:
+           "View" mastodon-profile--view-types
            (or (mastodon-profile--current-view-type
                 endpoint-type no-reblogs no-replies only-media tag)
-               (plist-get mastodon-profile--views-plist :default))
+               'statuses)
            (lambda (widget &rest _ignore)
              (let ((value (widget-value widget)))
                (mastodon-profile--view-fun-call value))))
