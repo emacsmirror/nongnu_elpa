@@ -215,15 +215,15 @@ JSON is a list of alists."
   "Return a body for a severance notification GROUP."
   ;; FIXME: actually implement this when we encounter one in the wild!
   (let-alist (alist-get 'event group)
-    (concat .description ": "
+    (concat .type ": "
             .target_name
             "\nRelationships affected: "
             .relationships_count)))
 
 (defun mastodon-notifications--mod-warning-body (group)
   "Return a body for a moderation warning notification GROUP."
-  (let-alist (alist-get )
-    (concat .description ": "
+  (let-alist (alist-get 'moderation_warning group)
+    (concat .action ": "
             .text
             "\nStatuses: "
             .status_ids
