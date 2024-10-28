@@ -48,6 +48,20 @@
 
 ;;; UTILS
 
+(transient-define-suffix mastodon-transient--prefix-inspect ()
+  "Inspect a transient prefix's arguments and scope."
+  (interactive)
+  :transient 'transient--do-return
+  (let ((args (transient-args (oref transient-current-prefix command)))
+        (scope (oref transient-current-prefix scope)))
+    (message "prefix's scope: %s \ntransient-args: %s\n last: %s"
+             scope args
+             (length
+              (cl-member-if
+               (lambda (x)
+                 (equal (car x) 'one))
+               args)))))
+
 ;; some JSON fields that are returned under the "source" field need to be
 ;; sent back in the format source[key], while some others are sent kust as
 ;; key:
