@@ -174,9 +174,8 @@ Try \\[hyperdrive-mark-as-safe]")
   :group 'hyperdrive
   :lighter " hyperdrive-org-transclusion"
   (if hyperdrive-org-transclusion-mode
-      (with-eval-after-load 'org-transclusion
-        (add-hook 'org-transclusion-add-functions
-                  #'hyperdrive-org-transclusion-add))
+      (add-hook 'org-transclusion-add-functions
+                #'hyperdrive-org-transclusion-add)
     (remove-hook 'org-transclusion-add-functions
                  #'hyperdrive-org-transclusion-add)))
 
