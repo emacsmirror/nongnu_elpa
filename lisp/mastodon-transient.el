@@ -233,6 +233,37 @@ the format fields.X.keyname."
   (let ((instance (mastodon-instance-data)))
     (mastodon-toot--fetch-max-poll-option-chars instance)))
 
+(transient-define-suffix mastodon-transient--choice-add ()
+  "docstring"
+  (interactive)
+  :transient 'transient--do-stay
+  (let* ((args (transient-args (oref transient-current-prefix command)))
+         (choice-count (length
+                        (cl-member-if
+                         (lambda (x)
+                           (equal (car x) 'one))
+                         args)))
+         (inc (1+ choice-count))
+         (next (number-to-string inc))
+         (next-symbol (pcase inc
+                        (5 'five)
+                        (6 'six)
+                        (7 'seven)
+                        (8 'eight)
+                        (9 'nine))))
+    (if (or ;(>= choice-count (mastodon-transient-max-poll-opts))
+         (= choice-count 9))
+        ;; FIXME when we hit '10', we get a binding clash with '1'. :/
+        (message "Max choices reached")
+      (transient-append-suffix
+        'mastodon-create-poll
+        '(2 -1)
+        `(,next "" ,next
+                :class mastodon-transient-poll-choice
+                :alist-key ,next-symbol
+                :transient t))))
+  (transient-setup 'mastodon-create-poll))
+
 (transient-define-prefix mastodon-create-poll ()
   "A transient for creating a poll."
   ;; FIXME: handle existing polls when editing a toot
@@ -260,6 +291,7 @@ the format fields.X.keyname."
   ["Update"
    ("C-c C-c" "Save and done" mastodon-create-poll-done)
    ("C-c C-k" "Delete all" mastodon-clear-poll)
+   ("C-c C-s" "Add another poll choice" mastodon-transient--choice-add)
    ("C-x C-k" :info "Revert all")]
   (interactive)
   (if (not mastodon-active-user)
