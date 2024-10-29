@@ -614,7 +614,7 @@ FIELDS means provide a fields vector fetched by other means."
   "Insert each of the PINNED-STATUSES for a given account."
   (mapc (lambda (pinned-status)
           (insert
-           (concat "   "
+           (concat "\n   "
                    (propertize " pinned "
                                'face '(:inherit success :box t))
                    "   "))
