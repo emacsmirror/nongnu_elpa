@@ -62,6 +62,7 @@
 (autoload 'mastodon-media--get-avatar-rendering "mastodon-media")
 (autoload 'mastodon-tl--image-trans-check "mastodon-tl")
 (autoload 'mastodon-tl--symbol "mastodon-tl")
+(autoload 'mastodon-tl--display-or-uname "mastodon-tl")
 
 (defgroup mastodon-tl nil
   "Nofications in mastodon.el."

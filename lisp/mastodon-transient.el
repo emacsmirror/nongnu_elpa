@@ -234,7 +234,9 @@ the format fields.X.keyname."
     (mastodon-toot--fetch-max-poll-option-chars instance)))
 
 (transient-define-suffix mastodon-transient--choice-add ()
-  "docstring"
+  "Add another poll choice if possible.
+Do not add more than 9 choices.
+Do not add more than the server's maximum setting."
   (interactive)
   :transient 'transient--do-stay
   (let* ((args (transient-args (oref transient-current-prefix command)))
