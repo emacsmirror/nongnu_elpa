@@ -64,7 +64,7 @@
 (autoload 'mastodon-tl--symbol "mastodon-tl")
 (autoload 'mastodon-tl--display-or-uname "mastodon-tl")
 
-(defgroup mastodon-tl nil
+(defgroup mastodon-notifications nil
   "Nofications in mastodon.el."
   :prefix "mastodon-notifications-"
   :group 'mastodon)
