@@ -372,7 +372,10 @@ MAX-ID is a request parameter for pagination."
      type
      (when max-id
        `(("max_id" . ,(mastodon-tl--buffer-property 'max-id))))
-     nil nil nil "v2")
+     nil nil nil
+     (if (not mastodon-notifications--group-notifications)
+         "v1"
+       "v2"))
     (with-current-buffer (get-buffer-create buffer)
       (use-local-map mastodon-notifications--map))))
 
