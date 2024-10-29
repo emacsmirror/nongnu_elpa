@@ -251,8 +251,8 @@ the format fields.X.keyname."
                         (7 'seven)
                         (8 'eight)
                         (9 'nine))))
-    (if (or ;(>= choice-count (mastodon-transient-max-poll-opts))
-         (= choice-count 9))
+    (if (or (>= choice-count (mastodon-transient-max-poll-opts))
+            (= choice-count 9))
         ;; FIXME when we hit '10', we get a binding clash with '1'. :/
         (message "Max choices reached")
       (transient-append-suffix
