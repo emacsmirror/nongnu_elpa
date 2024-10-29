@@ -40,6 +40,7 @@
 (require 'mastodon-http)
 (eval-when-compile
   (require 'mastodon-tl))
+(require 'mastodon-widget)
 
 (autoload 'mastodon-auth--get-account-id "mastodon-auth")
 (autoload 'mastodon-auth--get-account-name "mastodon-auth.el")
@@ -178,8 +179,16 @@ MAX-ID is a flag to include the max_id pagination parameter."
         ((mastodon-tl--buffer-type-eq 'profile-following)
          (mastodon-profile--make-author-buffer mastodon-profile--account))))
 
+(defun mastodon-profile--open-statuses ()
+  "Open a profile showing statuses."
+  (interactive)
+  (if mastodon-profile--account
+      (mastodon-profile--make-author-buffer
+       mastodon-profile--account)
+    (user-error "Not in a mastodon profile")))
+
 (defun mastodon-profile--open-statuses-no-replies ()
-  "Open a profile buffer showing statuses including replies."
+  "Open a profile buffer showing statuses without replies."
   (interactive)
   (if mastodon-profile--account
       (mastodon-profile--make-author-buffer
@@ -542,6 +551,27 @@ The endpoint only holds a few preferences. For others, see
                 "\n\n"))
       (goto-char (point-min)))))
 
+
+;;; PROFILE WIDGET
+
+(defvar mastodon-profile--view-types
+  '(statuses no-boosts no-replies only-media followers following tag))
+
+(defvar mastodon-profile--load-funs-alist
+  `((statuses    . mastodon-profile--open-statuses)
+    (no-boosts   . mastodon-profile--open-statuses-no-reblogs)
+    (no-replies  . mastodon-profile--open-statuses-no-replies)
+    (only-media  . mastodon-profile--open-statuses-only-media)
+    (followers   . mastodon-profile--open-followers)
+    (following   . mastodon-profile--open-following)
+    (tag         . mastodon-profile--open-statuses-tagged)))
+
+(defun mastodon-profile--view-fun-call (type)
+  "Call the function associated with TYPE.
+Fetched from `mastodon-profile--load-funs-alist'."
+  (funcall
+   (alist-get type mastodon-profile--load-funs-alist)))
+
 
 ;;; PROFILE VIEW DETAILS
 
@@ -655,21 +685,7 @@ MAX-ID is a flag to include the max_id pagination parameter."
         (setq mastodon-profile--account account)
         (mastodon-tl--set-buffer-spec buffer endpoint update-function
                                       link-header args nil max-id-str)
-        (let* ((inhibit-read-only t)
-               (endpoint-name
-                (cond ((string= endpoint-type "statuses")
-                       (cond (no-reblogs
-                              "  TOOTS (no boosts)")
-                             (no-replies
-                              "  TOOTS (no replies)")
-                             (only-media
-                              "  TOOTS (media only)")
-                             (tag
-                              (format "  TOOTS (containing #%s)" tag))
-                             (t
-                              "    TOOTS    ")))
-                      ((string= endpoint-type "followers") "  FOLLOWERS  ")
-                      ((string= endpoint-type "following") "  FOLLOWING  "))))
+        (let* ((inhibit-read-only t))
           (insert
            (propertize
             (concat
@@ -680,8 +696,7 @@ MAX-ID is a flag to include the max_id pagination parameter."
              (propertize .display_name 'face 'mastodon-display-name-face)
              ;; roles
              (when .roles
-               (concat " "
-                       (mastodon-profile--render-roles .roles)))
+               (concat " " (mastodon-profile--render-roles .roles)))
              "\n"
              (propertize (concat "@" .acct) 'face 'default)
              (when (eq .locked t)
@@ -729,26 +744,46 @@ MAX-ID is a flag to include the max_id pagination parameter."
                               " | REQUESTED TO FOLLOW YOU")
                             "\n\n")
                     'success)
-                 ""))) ; for insert call
-           ;; insert endpoint
-           (mastodon-tl--set-face (concat " " mastodon-tl--horiz-bar "\n"
-                                          endpoint-name "\n"
-                                          " " mastodon-tl--horiz-bar "\n")
-                                  'success))
+                 "")))) ; for insert call
           (setq mastodon-tl--update-point (point))
           (mastodon-media--inline-images (point-min) (point))
+          ;; widget items description
+          (mastodon-widget--create
+           "View" mastodon-profile--view-types
+           (or (mastodon-profile--current-view-type
+                endpoint-type no-reblogs no-replies only-media tag)
+               'statuses)
+           (lambda (widget &rest _ignore)
+             (let ((value (widget-value widget)))
+               (mastodon-profile--view-fun-call value))))
+          (insert "\n")))
+      ;; split insert of items from insert of profile:
+      (with-current-buffer buffer
+        (let* ((inhibit-read-only t))
           ;; insert pinned toots first
           (when (and pinned (string= endpoint-type "statuses"))
             (mastodon-profile--insert-statuses-pinned pinned)
             (setq mastodon-tl--update-point (point))) ; updates after pinned toots
-          (funcall update-function json))
-        (goto-char (point-min))
-        (message
-         (substitute-command-keys
-          ;; "\\[mastodon-profile--account-view-cycle]" ; not always bound?
-          "\\`C-c C-c' to cycle profile views: toots, no replies, no boosts,\
+          ;; insert items
+          (funcall update-function json)
+          (goto-char (point-min))
+          (message
+           (substitute-command-keys
+            ;; "\\[mastodon-profile--account-view-cycle]" ; not always bound?
+            "\\`C-c C-c' to cycle profile views: toots, no replies, no boosts,\
  only media, followers, following.
-\\`C-c C-s' to search user's toots, \\`C-c \#' to search user's posts for a hashtag."))))))
+\\`C-c C-s' to search user's toots, \\`C-c \#' to search user's posts for a hashtag.")))))))
+
+(defun mastodon-profile--current-view-type (type no-reblogs no-replies
+                                                 only-media tag)
+  "Return the type of current profile view.
+Return a member of `mastodon-profile--view-types', based on TYPE,
+NO-REBLOGS, NO-REPLIES, ONLY-MEDIA and TAG."
+  (cond (no-reblogs 'no-boosts)
+        (no-replies 'no-replies)
+        (only-media 'only-media)
+        (tag 'tag)
+        (t (intern type))))
 
 (defun mastodon-profile--format-joined-date-string (joined)
   "Format a human-readable Joined string from timestamp JOINED.

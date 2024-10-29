@@ -6,7 +6,7 @@
 ;; Author: Johnson Denen <johnson.denen@gmail.com>
 ;;         Marty Hiatt <mousebot@disroot.org>
 ;; Maintainer: Marty Hiatt <mousebot@disroot.org>
-;; Version: 1.1.1
+;; Version: 1.1.2
 ;; Package-Requires: ((emacs "28.1") (request "0.3.0") (persist "0.4") (tp "0.1"))
 ;; Homepage: https://codeberg.org/martianh/mastodon.el
 
@@ -336,6 +336,15 @@ FORCE means to fetch from the server in any case and update
                mastodon-profile-credential-account)))
     ;; else just return the var:
     mastodon-profile-credential-account))
+
+(defvar mastodon-instance-data nil
+  "Instance data from the instance endpoint.")
+
+(defun mastodon-instance-data ()
+  "Return `mastodon-instnace-data' or else fetch from instance endpoint."
+  (or mastodon-instance-data
+      (setq mastodon-instance-data
+            (mastodon-http--get-json (mastodon-http--api "instance")))))
 
 ;;;###autoload
 (defun mastodon-toot (&optional user reply-to-id reply-json)

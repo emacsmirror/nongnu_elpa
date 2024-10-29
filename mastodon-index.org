@@ -50,6 +50,8 @@
 |------------------+---------------------------------------------------+--------------------------------------------------------------------------------|
 |                  | mastodon                                          | Connect client to `mastodon-instance-url' instance.                            |
 |                  | mastodon-async-mode                               | Async Mastodon.                                                                |
+| C-c C-p          | mastodon-create-poll                              | A transient for creating a poll.                                               |
+|                  | mastodon-create-poll-done                         | Update current user profile fields.                                            |
 | C-M-q            | mastodon-kill-all-buffers                         | Kill any and all open mastodon buffers, hopefully.                             |
 | Q                | mastodon-kill-window                              | Quit window and delete helper.                                                 |
 |                  | mastodon-mode                                     | Major mode for fediverse services using the Mastodon API.                      |
@@ -61,6 +63,7 @@
 |                  | mastodon-notifications--get-favourites            | Display favourite notifications in buffer.                                     |
 | @                | mastodon-notifications--get-mentions              | Display mention notifications in buffer.                                       |
 |                  | mastodon-notifications--get-polls                 | Display poll notifications in buffer.                                          |
+|                  | mastodon-notifications--get-single-notif          | Return a single notification JSON for v2 notifs.                               |
 |                  | mastodon-notifications--get-statuses              | Display status notifications in buffer.                                        |
 | N                | mastodon-notifications-get                        | Display NOTIFICATIONS in buffer.                                               |
 |                  | mastodon-profile--account-bot-toggle              | Toggle the bot status of your account.                                         |
@@ -75,8 +78,9 @@
 | O                | mastodon-profile--my-profile                      | Show the profile of the currently signed in user.                              |
 |                  | mastodon-profile--open-followers                  | Open a profile buffer showing the accounts following the current profile.      |
 |                  | mastodon-profile--open-following                  | Open a profile buffer showing the accounts that current profile follows.       |
+|                  | mastodon-profile--open-statuses                   | Open a profile showing statuses.                                               |
 |                  | mastodon-profile--open-statuses-no-reblogs        | Open a profile buffer showing statuses without reblogs.                        |
-|                  | mastodon-profile--open-statuses-no-replies        | Open a profile buffer showing statuses including replies.                      |
+|                  | mastodon-profile--open-statuses-no-replies        | Open a profile buffer showing statuses without replies.                        |
 |                  | mastodon-profile--open-statuses-only-media        | Open a profile buffer showing only statuses with media.                        |
 | C-c #            | mastodon-profile--open-statuses-tagged            | Prompt for a hashtag and display a profile with only statuses containing it.   |
 |                  | mastodon-profile--remove-from-followers-at-point  | Prompt for a user in the item at point and remove from followers.              |
@@ -106,6 +110,7 @@
 |                  | mastodon-search--trending-tags                    | Display a list of tags trending on your instance.                              |
 |                  | mastodon-search-mode                              | Toggle mastodon search minor mode.                                             |
 | /                | mastodon-switch-to-buffer                         | Switch to a live mastodon buffer.                                              |
+|                  | mastodon-tl--announcements                        | Display announcements from your instance.                                      |
 | B                | mastodon-tl--block-user                           | Query for USER-HANDLE from current status and block that user.                 |
 | <mouse-2>        | mastodon-tl--click-image-or-video                 | Click to play video with `mpv.el'.                                             |
 |                  | mastodon-tl--copy-image-caption                   | Copy the caption of the image at point.                                        |
@@ -298,5 +303,6 @@
 | mastodon-toot-display-orig-in-reply-buffer                   | Display a copy of the toot replied to in the compose buffer.                  |
 | mastodon-toot-mode-hook                                      | Hook run after entering or leaving `mastodon-toot-mode'.                      |
 | mastodon-toot-orig-in-reply-length                           | Length to crop toot replied to in the compose buffer to.                      |
+| mastodon-toot-poll-use-transient                             | Whether to use the transient menu to create a poll.                           |
 | mastodon-toot-timestamp-format                               | Format to use for timestamps.                                                 |
 | mastodon-use-emojify                                         | Whether to use emojify.el to display emojis.                                  |

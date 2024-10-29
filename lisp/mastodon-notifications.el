@@ -62,6 +62,7 @@
 (autoload 'mastodon-media--get-avatar-rendering "mastodon-media")
 (autoload 'mastodon-tl--image-trans-check "mastodon-tl")
 (autoload 'mastodon-tl--symbol "mastodon-tl")
+(autoload 'mastodon-tl--display-or-uname "mastodon-tl")
 
 (defgroup mastodon-tl nil
   "Nofications in mastodon.el."
@@ -92,7 +93,8 @@ make them unweildy."
 
 (defvar mastodon-notifications--types
   '("favourite" "reblog" "mention" "poll"
-    "follow_request" "follow" "status" "update")
+    "follow_request" "follow" "status" "update"
+    "severed_relationships" "moderation_warning")
   "A list of notification types according to their name on the server.")
 
 (defvar mastodon-notifications--response-alist
@@ -210,6 +212,25 @@ JSON is a list of alists."
    for x in ids
    collect (mastodon-notifications--alist-by-value x 'id json)))
 
+(defun mastodon-notifications--severance-body (group)
+  "Return a body for a severance notification GROUP."
+  ;; FIXME: actually implement this when we encounter one in the wild!
+  (let-alist (alist-get 'event group)
+    (concat .type ": "
+            .target_name
+            "\nRelationships affected: "
+            .relationships_count)))
+
+(defun mastodon-notifications--mod-warning-body (group)
+  "Return a body for a moderation warning notification GROUP."
+  (let-alist (alist-get 'moderation_warning group)
+    (concat .action ": "
+            .text
+            "\nStatuses: "
+            .status_ids
+            "\nfor account: "
+            .target_account)))
+
 (defun mastodon-notifications--format-note (group status accounts)
   "Format for a GROUP notification.
 STATUS is the status's JSON.
@@ -258,6 +279,10 @@ ACCOUNTS is data of the accounts that have reacted to the notification."
                   (concat
                    ":\n"
                    (mastodon-notifications--comment-note-text body)))))
+              ((eq type-sym 'severed_relationships)
+               (mastodon-notifications--severance-body group))
+              ((eq type-sym 'moderation_warning)
+               (mastodon-notifications--mod-warning-body group))
               ((member type-sym '(favourite reblog))
                (propertize
                 (mastodon-notifications--comment-note-text body)))
@@ -322,10 +347,14 @@ ACCOUNTS is the notification accounts data."
         'toot-body t) ;; includes newlines etc. for folding
        "\n"
        ;; actual byline:
-       (mastodon-tl--byline toot author-byline nil nil
-                            base-toot group
-                            (if (member type '("follow" "follow_request"))
-                                toot))) ;; account data!
+       (mastodon-tl--byline
+        toot author-byline nil nil base-toot group
+        (when (member type '("follow" "follow_request"))
+          toot) ;; account data!
+        ;; types listed here use base item timestamp, else we use group's
+        ;; latest timestamp:
+        (when (not (member type '("favourite" "reblog" "edit" "poll")))
+          (mastodon-tl--field 'latest_page_notification_at group))))
       'item-type     'toot ;; for nav, actions, etc.
       'item-id       (or (alist-get 'page_max_id group) ;; newest notif
                          (alist-get 'id toot)) ; toot id
@@ -341,6 +370,7 @@ ACCOUNTS is the notification accounts data."
       'toot-folded   (and toot-foldable (not unfolded))
       ;; grouped notifs data:
       'notification-type type
+      'notification-id (alist-get 'group_key group)
       'notification-group group
       'notification-accounts accounts
       ;; for pagination:
@@ -385,9 +415,10 @@ When DOMAIN, force inclusion of user's domain in their handle."
            (propertize ;; help-echo remaining notifs authors:
             (format " and %s other%s" diff (if (= 1 diff) "" "s"))
             'help-echo (mapconcat (lambda (a)
-                                    (alist-get 'username a))
+                                    (propertize (alist-get 'username a)
+                                                'face 'mastodon-display-name-face))
                                   (cddr accounts) ;; not first two
-                                  " ")))))))
+                                  ", ")))))))
 
 (defun mastodon-notifications--render (json)
   "Display grouped notifications in JSON."
@@ -461,17 +492,35 @@ Status notifications are created when you call
 (defun mastodon-notifications--clear-current ()
   "Dismiss the notification at point."
   (interactive)
-  (let* ((id (or (mastodon-tl--property 'item-id)
-                 (mastodon-tl--field 'id
-                                     (mastodon-tl--property 'item-json))))
-         (response
-          (mastodon-http--post (mastodon-http--api
-                                (format "notifications/%s/dismiss" id)))))
+  (let* ((id (or (or (mastodon-tl--property 'notification-id) ;; grouped
+                     (mastodon-tl--property 'item-id)
+                     (mastodon-tl--field
+                      'id
+                      (mastodon-tl--property 'item-json)))))
+         (endpoint (mastodon-http--api
+                    (format "notifications/%s/dismiss" id)
+                    "v2"))
+         (response (mastodon-http--post endpoint)))
     (mastodon-http--triage
      response (lambda (_)
                 (when mastodon-tl--buffer-spec
                   (mastodon-tl--reload-timeline-or-profile))
                 (message "Notification dismissed!")))))
+
+(defun mastodon-notifications--get-single-notif ()
+  "Return a single notification JSON for v2 notifs."
+  (interactive)
+  (let* ((id (mastodon-tl--property
+              'notification-id)) ;; grouped, doesn't work for ungrouped!
+         ;; (key (format "ungrouped-%s"
+         ;;              (mastodon-tl--property 'item-id)))
+         (endpoint (mastodon-http--api
+                    (format "notifications/%s" id)
+                    "v2"))
+         (response (mastodon-http--get-json endpoint)))
+    (mastodon-http--triage
+     response (lambda (_)
+                (message "%s" (prin1-to-string response))))))
 
 (defun mastodon-notifications--get-unread-count ()
   "Return the number of unread notifications for the current account."

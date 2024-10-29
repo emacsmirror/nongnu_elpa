@@ -29,6 +29,7 @@
 ;;; Code:
 (require 'json)
 (require 'mastodon-tl)
+(require 'mastodon-widget)
 
 (autoload 'mastodon-auth--access-token "mastodon-auth")
 (autoload 'mastodon-http--api "mastodon-http")
@@ -193,7 +194,7 @@ is used for pagination."
          (following (when (or following (equal current-prefix-arg '(4)))
                       "true"))
          (type (or type
-                   (if (eq current-prefix-arg '(4))
+                   (if (equal current-prefix-arg '(4))
                        "accounts" ; if FOLLOWING, must be "accounts"
                      (completing-read "Search type: "
                                       mastodon-search-types nil :match))))
@@ -211,7 +212,15 @@ is used for pagination."
          (items (alist-get (intern type) response)))
     (with-mastodon-buffer buffer #'mastodon-mode nil
       (mastodon-search-mode)
-      (mastodon-search--insert-heading type)
+      (mastodon-search--insert-heading "search")
+      (mastodon-widget--create
+       "Results"
+       '(accounts hashtags statuses)
+       (intern type)
+       (lambda (widget &rest _ignore)
+         (let ((value (widget-value widget)))
+           (mastodon-search--query query (symbol-name value)))))
+      (insert "\n\n")
       (cond ((string= type "accounts")
              (mastodon-search--render-response items type buffer params
                                                'mastodon-views--insert-users-propertized-note

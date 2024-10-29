@@ -590,6 +590,12 @@ With a double PREFIX arg, limit results to your own instance."
                        'mastodon-tl--timeline nil
                        params)))
 
+(defun mastodon-tl--announcements ()
+  "Display announcements from your instance."
+  (interactive)
+  (mastodon-tl--init "announcements" "announcements"
+                     'mastodon-tl--timeline nil nil nil nil :no-byline))
+
 
 ;;; BYLINES, etc.
 
@@ -791,7 +797,7 @@ LETTER is a string, F for favourited, B for boosted, or K for bookmarked."
     (image-transforms-p)))
 
 (defun mastodon-tl--byline (toot author-byline &optional detailed-p
-                                 domain base-toot group account)
+                                 domain base-toot group account ts)
   "Generate byline for TOOT.
 AUTHOR-BYLINE is a function for adding the author portion of
 the byline that takes one variable.
@@ -803,18 +809,19 @@ this just means displaying toot client.
 When DOMAIN, force inclusion of user's domain in their handle.
 BASE-TOOT is JSON for the base toot, if any.
 GROUP is the notification group if any.
-ACCOUNT is the notification account if any."
-  (let* ((created-time
-          (if group
-              (mastodon-tl--field 'latest_page_notification_at group)
-            ;; bosts and faves in notifs view
-            ;; (makes timestamps be for the original toot not the boost/fave):
-            (or (mastodon-tl--field 'created_at
-                                    (mastodon-tl--field 'status toot))
-                ;; all other toots, inc. boosts/faves in timelines:
-                ;; (mastodon-tl--field auto fetches from reblogs if needed):
-                (mastodon-tl--field 'created_at toot))))
-         (parsed-time (date-to-time created-time))
+ACCOUNT is the notification account if any.
+TS is a timestamp from the server, if any."
+  (let* ((type (alist-get 'type group))
+         (created-time
+          (or ts ;; mentions, statuses, folls/foll-reqs
+              ;; bosts, faves, edits, polls in notifs view use base item
+              ;; timestamp:
+              (mastodon-tl--field 'created_at
+                                  (mastodon-tl--field 'status toot))
+              ;; all other toots, inc. boosts/faves in timelines:
+              ;; (mastodon-tl--field auto fetches from reblogs if needed):
+              (mastodon-tl--field 'created_at toot)))
+         (parsed-time (when created-time (date-to-time created-time)))
          (faved (eq t (mastodon-tl--field 'favourited toot)))
          (boosted (eq t (mastodon-tl--field 'reblogged toot)))
          (bookmarked (eq t (mastodon-tl--field 'bookmarked toot)))
@@ -1185,7 +1192,7 @@ Used for hitting RET on a given link."
 (defun mastodon-tl--do-link-action (event)
   "Do the action of the link at point.
 Used for a mouse-click EVENT on a link."
-  (interactive "e")
+  (interactive "@e")
   (mastodon-tl--do-link-action-at-point (posn-point (event-end event))))
 
 
@@ -1580,7 +1587,7 @@ OPTIONS is an alist."
 (defun mastodon-tl--click-image-or-video (event)
   "Click to play video with `mpv.el'.
 EVENT is a mouse-click arg."
-  (interactive "e")
+  (interactive "@e")
   (mastodon-tl--view-full-image-or-play-video
    (posn-point (event-end event))))
 
@@ -1791,7 +1798,7 @@ NO-BYLINE means just insert toot body, used for folding."
        #'mastodon-tl--byline-author #'mastodon-tl--byline-boost
        nil nil detailed-p thread domain unfolded no-byline))))
 
-(defun mastodon-tl--timeline (toots &optional thread domain)
+(defun mastodon-tl--timeline (toots &optional thread domain no-byline)
   "Display each toot in TOOTS.
 This function removes replies if user required.
 THREAD means the status will be displayed in a thread view.
@@ -1807,7 +1814,7 @@ When DOMAIN, force inclusion of user's domain in their handle."
 	       (cl-remove-if-not #'mastodon-tl--is-reply toots)
 	     toots))))
     (mapc (lambda (toot)
-            (mastodon-tl--toot toot nil thread domain))
+            (mastodon-tl--toot toot nil thread domain nil no-byline))
           toots)
     ;; media:
     (when mastodon-tl--display-media-p
@@ -2117,7 +2124,9 @@ call this function after it is set or use something else."
           ((string= "*masto-image*" (buffer-name))
            'mastodon-image)
           ((mastodon-tl--endpoint-str-= "timelines/link")
-           'link-timeline))))
+           'link-timeline)
+          ((mastodon-tl--endpoint-str-= "announcements")
+           'announcements))))
 
 (defun mastodon-tl--buffer-type-eq (type)
   "Return t if current buffer type is equal to symbol TYPE."
@@ -3246,7 +3255,7 @@ This location is defined by a non-nil value of
 
 (defun mastodon-tl--init
     (buffer-name endpoint update-function &optional headers params
-                 hide-replies instance)
+                 hide-replies instance no-byline)
   "Initialize BUFFER-NAME with timeline targeted by ENDPOINT asynchronously.
 UPDATE-FUNCTION is used to recieve more toots.
 HEADERS means to also collect the response headers. Used for paginating
@@ -3264,11 +3273,12 @@ a timeline from."
          #'mastodon-http--get-response-async
        #'mastodon-http--get-json-async)
      url params 'mastodon-tl--init*
-     buffer endpoint update-function headers params hide-replies instance)))
+     buffer endpoint update-function headers params hide-replies
+     instance no-byline)))
 
 (defun mastodon-tl--init*
     (response buffer endpoint update-function &optional headers
-              update-params hide-replies instance)
+              update-params hide-replies instance no-byline)
   "Initialize BUFFER with timeline targeted by ENDPOINT.
 UPDATE-FUNCTION is used to recieve more toots.
 RESPONSE is the data returned from the server by
@@ -3299,7 +3309,7 @@ JSON and http headers, without it just the JSON."
                 link-header update-params hide-replies
                 ;; awful hack to fix multiple reloads:
                 (alist-get "max_id" update-params nil nil #'string=))
-               (mastodon-tl--do-init json update-function instance)))))))
+               (mastodon-tl--do-init json update-function instance no-byline)))))))
 
 (defun mastodon-tl--init-sync
     (buffer-name endpoint update-function &optional note-type params
@@ -3342,14 +3352,15 @@ ENDPOINT-VERSION is a string, format Vx, e.g. V2."
       (mastodon-tl--do-init json update-function)
       buffer)))
 
-(defun mastodon-tl--do-init (json update-fun &optional domain)
+(defun mastodon-tl--do-init (json update-fun &optional domain no-byline)
   "Utility function for `mastodon-tl--init*' and `mastodon-tl--init-sync'.
 JSON is the data to call UPDATE-FUN on.
 When DOMAIN, force inclusion of user's domain in their handle."
   (remove-overlays) ; video overlays
-  (if domain ;; maybe our update-fun doesn't always have 3 args...:
-      (funcall update-fun json nil domain)
-    (funcall update-fun json))
+  (cond (domain ;; maybe our update-fun doesn't always have 3 args...:
+         (funcall update-fun json nil domain))
+        (no-byline (funcall update-fun json nil nil no-byline))
+        (t (funcall update-fun json)))
   (setq
    ;; Initialize with a minimal interval; we re-scan at least once
    ;; every 5 minutes to catch any timestamps we may have missed

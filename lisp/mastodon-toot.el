@@ -53,6 +53,7 @@
 (defvar mastodon-tl--enable-proportional-fonts)
 (defvar mastodon-profile-account-settings)
 (defvar mastodon-profile-acccount-preferences-data)
+(defvar tp-transient-settings)
 
 (autoload 'iso8601-parse "iso8601")
 (autoload 'mastodon-auth--user-acct "mastodon-auth")
@@ -100,6 +101,8 @@
 (autoload 'mastodon-profile--get-preferences-pref "mastodon-profile")
 (autoload 'mastodon-views--get-own-instance "mastodon-views")
 (autoload 'mastodon-tl--image-trans-check "mastodon-tl")
+(autoload 'mastodon-instance-data "mastodon")
+(autoload 'mastodon-create-poll "mastodon-transient")
 
 ;; for mastodon-toot--translate-toot-text
 (autoload 'mastodon-tl--content "mastodon-tl")
@@ -168,6 +171,10 @@ By default fixed width fonts are used."
   :type '(boolean :tag "Enable using proportional rather than fixed \
 width fonts"))
 
+(defcustom mastodon-toot-poll-use-transient t
+  "Whether to use the transient menu to create a poll."
+  :type '(boolean))
+
 (defvar-local mastodon-toot--content-warning nil
   "The content warning of the current toot.")
 
@@ -198,8 +205,8 @@ change the setting on the server, see
 (defvar-local mastodon-toot--media-attachment-ids nil
   "A list of any media attachment ids of the toot being composed.")
 
-(defvar-local mastodon-toot-poll nil
-  "A list of poll options for the toot being composed.")
+(defvar mastodon-toot-poll nil
+  "A plist of poll options for the toot being composed.")
 
 (defvar-local mastodon-toot--language nil
   "The language of the toot being composed, in ISO 639 (two-letter).")
@@ -290,7 +297,9 @@ data about the item boosted or favourited."
 Includes boosts, and notifications that display toots.
 This macro makes the local variable ID available."
   (declare (debug t))
-  `(if (not (eq 'toot (mastodon-tl--property 'item-type :no-move)))
+  `(if (or (not (eq 'toot (mastodon-tl--property 'item-type :no-move)))
+           (member (mastodon-tl--property 'notification-type)
+                   '("follow" "follow_request")))
        (user-error "Looks like there's no toot at point?")
      (mastodon-tl--with-toot-helper
       (lambda (id)
@@ -756,9 +765,9 @@ If toot is not empty, prompt to save text as a draft."
 Pushes `mastodon-toot-current-toot-text' to
 `mastodon-toot-draft-toots-list'."
   (interactive)
-  (unless (eq mastodon-toot-current-toot-text nil)
+  (unless (string= mastodon-toot-current-toot-text nil)
     (cl-pushnew mastodon-toot-current-toot-text
-                mastodon-toot-draft-toots-list :test 'equal)
+                mastodon-toot-draft-toots-list :test 'string=)
     (message "Draft saved!")))
 
 (defun mastodon-toot--empty-p (&optional text-only)
@@ -767,7 +776,7 @@ TEXT-ONLY means don't check for attachments or polls."
   (and (if text-only
            t
          (and (not mastodon-toot--media-attachments)
-              (not mastodon-toot-poll)))
+              (not (mastodon-toot-poll-var))))
        (string-empty-p (mastodon-tl--clean-tabs-and-nl
                         (mastodon-toot--remove-docs)))))
 
@@ -867,13 +876,22 @@ to `emojify-user-emojis', and the emoji data is updated."
 
 (defun mastodon-toot--build-poll-params ()
   "Return an alist of parameters for POSTing a poll status."
-  (append
-   (mastodon-http--build-array-params-alist
-    "poll[options][]"
-    (plist-get mastodon-toot-poll :options))
-   `(("poll[expires_in]" .  ,(plist-get mastodon-toot-poll :expiry)))
-   `(("poll[multiple]" . ,(symbol-name (plist-get mastodon-toot-poll :multi))))
-   `(("poll[hide_totals]" . ,(symbol-name (plist-get mastodon-toot-poll :hide))))))
+  (if mastodon-toot-poll-use-transient
+      (let-alist tp-transient-settings
+        (append
+         (mastodon-http--build-array-params-alist
+          "poll[options][]"
+          (list .one .two .three .four))
+         (list (cons "poll[expires_in]" .expiry)
+               (cons "poll[multiple]" .multi)
+               (cons "poll[hide_totals]" .hide))))
+    (append
+     (mastodon-http--build-array-params-alist
+      "poll[options][]"
+      (plist-get mastodon-toot-poll :options))
+     `(("poll[expires_in]" .  ,(plist-get mastodon-toot-poll :expiry)))
+     `(("poll[multiple]" . ,(symbol-name (plist-get mastodon-toot-poll :multi))))
+     `(("poll[hide_totals]" . ,(symbol-name (plist-get mastodon-toot-poll :hide)))))))
 
 
 ;;; SEND TOOT FUNCTION
@@ -892,26 +910,29 @@ instance to edit a toot."
          (endpoint (mastodon-http--api (if edit-id ; we are sending an edit:
                                            (format "statuses/%s" edit-id)
                                          "statuses")))
-         (args-no-media (append `(("status" . ,toot)
-                                  ("in_reply_to_id" . ,mastodon-toot--reply-to-id)
-                                  ("visibility" . ,mastodon-toot--visibility)
-                                  ("sensitive" . ,(when mastodon-toot--content-nsfw
-                                                    (symbol-name t)))
-                                  ("spoiler_text" . ,mastodon-toot--content-warning)
-                                  ("language" . ,mastodon-toot--language))
-                                ;; Pleroma instances can't handle null-valued
-                                ;; scheduled_at args, so only add if non-nil
-                                (when scheduled `(("scheduled_at" . ,scheduled)))))
+         (args-no-media
+          (append
+           `(("status" . ,toot)
+             ("in_reply_to_id" . ,mastodon-toot--reply-to-id)
+             ("visibility" . ,mastodon-toot--visibility)
+             ("sensitive" . ,(when mastodon-toot--content-nsfw
+                               (symbol-name t)))
+             ("spoiler_text" . ,mastodon-toot--content-warning)
+             ("language" . ,mastodon-toot--language))
+           ;; Pleroma instances can't handle null-valued
+           ;; scheduled_at args, so only add if non-nil
+           (when scheduled `(("scheduled_at" . ,scheduled)))))
          (args-media (when mastodon-toot--media-attachment-ids
                        (mastodon-http--build-array-params-alist
                         "media_ids[]"
                         mastodon-toot--media-attachment-ids)))
-         (args-poll (when mastodon-toot-poll
+         (poll-var (mastodon-toot-poll-var))
+         (args-poll (when poll-var
                       (mastodon-toot--build-poll-params)))
          ;; media || polls:
          (args (if mastodon-toot--media-attachment-ids
                    (append args-media args-no-media)
-                 (if mastodon-toot-poll
+                 (if poll-var
                      (append args-no-media args-poll)
                    args-no-media)))
          (prev-window-config mastodon-toot-previous-window-config))
@@ -938,6 +959,8 @@ instance to edit a toot."
               (lambda (_)
                 ;; kill buffer:
                 (mastodon-toot--kill)
+                ;; nil our poll var:
+                (set poll-var nil)
                 (message "Toot %s!" (if scheduled "scheduled" "toot"))
                 ;; cancel scheduled toot if we were editing it:
                 (when scheduled-id
@@ -1368,6 +1391,12 @@ which is used to attach it to a toot when posting."
 
 ;;; POLL
 
+(defun mastodon-toot-poll-var ()
+  "Return the correct poll var."
+  (if mastodon-toot-poll-use-transient
+      'tp-transient-settings
+    'mastodon-toot-poll))
+
 (defun mastodon-toot--fetch-max-poll-options (instance)
   "Return the maximum number of poll options from JSON data INSTANCE."
   (mastodon-toot--fetch-poll-field 'max_options instance))
@@ -1399,7 +1428,13 @@ MAX is the maximum number set by their instance."
 (defun mastodon-toot--create-poll ()
   "Prompt for new poll options and return as a list."
   (interactive)
-  (let* ((instance (mastodon-http--get-json (mastodon-http--api "instance")))
+  (if mastodon-toot-poll-use-transient
+      (mastodon-create-poll)
+    (mastodon-toot--read-poll)))
+
+(defun mastodon-toot--read-poll ()
+  "Read poll options."
+  (let* ((instance (mastodon-instance-data))
          (max-options (mastodon-toot--fetch-max-poll-options instance))
          (count (mastodon-toot--read-poll-options-count max-options))
          (length (mastodon-toot--fetch-max-poll-option-chars instance))
@@ -1424,12 +1459,11 @@ LENGTH is the maximum character length allowed for a poll option."
                             (format "Poll option [%s/%s] [max %s chars]: "
                                     x count length))))
          (longest (apply #'max (mapcar #'length choices))))
-    (if (> longest length)
-        (progn
-          (user-error "Looks like you went over the max length. Try again")
-          (sleep-for 2)
-          (mastodon-toot--read-poll-options count length))
-      choices)))
+    (if (not (> longest length))
+        choices
+      (user-error "Looks like you went over the max length. Try again")
+      (sleep-for 2)
+      (mastodon-toot--read-poll-options count length))))
 
 (defun mastodon-toot--read-poll-expiry ()
   "Prompt for a poll expiry time.
@@ -1458,10 +1492,11 @@ Return a cons of a human readable string, and a seconds-from-now string."
   "Remove poll from toot compose buffer.
 Sets `mastodon-toot-poll' to nil."
   (interactive)
-  (if (not mastodon-toot-poll)
-      (user-error "No poll?")
-    (setq mastodon-toot-poll nil)
-    (mastodon-toot--update-status-fields)))
+  (let ((var (mastodon-toot-poll-var)))
+    (if (not var)
+        (user-error "No poll?")
+      (set var nil)
+      (mastodon-toot--update-status-fields))))
 
 (defun mastodon-toot--server-poll-to-local (json)
   "Convert server poll data JSON to a `mastodon-toot-poll' plist."
@@ -1477,9 +1512,18 @@ Sets `mastodon-toot-poll' to nil."
                           (mastodon-tl--human-duration expiry-seconds-rel)))
            (options (mastodon-tl--map-alist 'title .options))
            (multiple (if (eq :json-false .multiple) nil t)))
-      (setq mastodon-toot-poll
-            `( :options ,options :expiry-readable ,expiry-human
-               :expiry ,expiry-str :multi ,multiple)))))
+      (if mastodon-toot-poll-use-transient
+          (setq tp-transient-settings
+                `((multi . ,multiple)
+                  (expiry . ,expiry-str)
+                  ;; (hide . ,hide)
+                  (one . ,(nth 0 options))
+                  (two . ,(nth 1 options))
+                  (three . ,(nth 2 options))
+                  (four . ,(nth 3 options))))
+        (setq mastodon-toot-poll
+              `( :options ,options :expiry-readable ,expiry-human
+                 :expiry ,expiry-str :multi ,multiple))))))
 
 
 ;;; SCHEDULE
@@ -1757,7 +1801,8 @@ REPLY-REGION is a string to be injected into the buffer."
            (poll-region (mastodon-tl--find-property-range 'toot-post-poll-flag
                                                           (point-min)))
            (toot-string (buffer-substring-no-properties (cdr header-region)
-                                                        (point-max))))
+                                                        (point-max)))
+           (poll-var (mastodon-toot-poll-var)))
       (mastodon-toot--apply-fields-props
        count-region
        (format "%s/%s chars"
@@ -1791,9 +1836,11 @@ REPLY-REGION is a string to be injected into the buffer."
        'mastodon-cw-face)
       (mastodon-toot--apply-fields-props
        poll-region
-       (if mastodon-toot-poll "POLL" "")
+       (if (symbol-value poll-var)
+           "POLL"
+         "")
        'mastodon-cw-face
-       (prin1-to-string mastodon-toot-poll))
+       (prin1-to-string (symbol-value poll-var)))
       (mastodon-toot--apply-fields-props
        cw-region
        (if (and mastodon-toot--content-warning
