@@ -243,7 +243,9 @@ Callback to `mastodon-http--get-response-async', usually
             ;; ideally we should handle the status code in here rather than
             ;; this crappy hack?
             ((string-prefix-p "\n<" json-string) ; html hack
-             (mastodon-http--render-html-err json-string))
+             ;; NB: in this case, process-response returns t!:
+             (mastodon-http--render-html-err json-string)
+             nil) ;; return nil instead of t
             ;; if no json or html, maybe we have a plain string error message
             ;; (misskey does this, but there are probably better ways to do
             ;; this):
