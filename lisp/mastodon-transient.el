@@ -289,7 +289,8 @@ the format fields.X.keyname."
    ("4" "" "4" :alist-key four :class mastodon-transient-poll-choice)]
   ;; TODO: display the max number of options or add options cmd
   ["Update"
-   ("C-c C-s" "Add another poll choice" mastodon-transient--choice-add)
+   ("C-c C-s" "Add another poll choice" mastodon-transient--choice-add
+    :if (lambda () (< 4 (mastodon-transient-max-poll-opts))))
    ("C-c C-c" "Save and done" mastodon-create-poll-done)
    ("C-x C-k" :info "Revert all")
    ("C-c C-k" "Delete all" mastodon-clear-poll)]
