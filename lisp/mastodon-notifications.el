@@ -236,12 +236,11 @@ JSON is a list of alists."
             .target_account)))
 
 (defun mastodon-notifications--format-note (note)
-  "Format for a NOTE of TYPE."
-  ;; FIXME: apply/refactor filtering as per/with `mastodon-tl--toot'
+  "Format for a NOTE, a non-grouped notification."
   (let* ((id (alist-get 'id note))
          (type (intern (alist-get 'type note)))
          (profile-note
-          (when (eq 'follow-request type)
+          (when (eq 'follow_request type)
             (let ((str (mastodon-tl--field
                         'note
                         (mastodon-tl--field 'account note))))
@@ -249,85 +248,69 @@ JSON is a list of alists."
                   (string-limit str mastodon-notifications--profile-note-in-foll-reqs-max-length)
                 str))))
          (status (mastodon-tl--field 'status note))
-         (follower (alist-get 'username (alist-get 'account note)))
-         (toot (alist-get 'status note))
-         (filtered (mastodon-tl--field 'filtered toot))
+         (follower (alist-get 'account note))
+         (follower-name (alist-get 'username follower))
+         (filtered (mastodon-tl--field 'filtered status))
          (filters (when filtered
                     (mastodon-tl--current-filters filtered))))
     (if (and filtered (assoc "hide" filters))
         nil
-      (mastodon-tl--insert-status
+      (mastodon-notifications--insert-note
        ;; toot
-       (cond ((or (eq type 'follow)
-                  (eq type 'follow-request))
-              ;; Using reblog with an empty id will mark this as something
-              ;; non-boostable/non-favable.
-              (cons '(reblog (id . nil)) note))
-             ;; reblogs/faves use 'note' to process their own json
-             ;; not the toot's. this ensures following etc. work on such notifs
-             ((or (eq type 'favourite)
-                  (eq type 'boost))
-              note)
-             (t
-              status))
+       (if (member type '(follow follow_request))
+           follower
+         status)
        ;; body
-       (let ((body (if-let ((match (assoc "warn" filters)))
-                       (mastodon-tl--spoiler toot (cadr match))
-                     (mastodon-tl--clean-tabs-and-nl
-                      (if (mastodon-tl--has-spoiler status)
-                          (mastodon-tl--spoiler status)
-                        (if (eq 'follow-request type)
-                            (mastodon-tl--render-text profile-note)
-                          (mastodon-tl--content status)))))))
-         (cond ((or (eq type 'follow)
-                    (eq type 'follow-request))
-                (if (eq type 'follow)
-                    (propertize "Congratulations, you have a new follower!"
-                                'face 'default)
-                  (concat
-                   (propertize
-                    (format "You have a follow request from... %s"
-                            follower)
-                    'face 'default)
-                   (when mastodon-notifications--profile-note-in-foll-reqs
-                     (concat
-                      ":\n"
-                      (mastodon-notifications--comment-note-text body))))))
-               ((or (eq type 'favourite)
-                    (eq type 'boost))
-                (mastodon-notifications--comment-note-text body))
-               (t body)))
+       (let ((body
+              (if-let ((match (assoc "warn" filters)))
+                  (mastodon-tl--spoiler status (cadr match))
+                (mastodon-tl--clean-tabs-and-nl
+                 (cond ((mastodon-tl--has-spoiler status)
+                        (mastodon-tl--spoiler status))
+                       ((eq type 'follow_request)
+                        (mastodon-tl--render-text profile-note))
+                       (t (mastodon-tl--content status)))))))
+         (cond
+          ((eq type 'follow)
+           (propertize "Congratulations, you have a new follower!"
+                       'face 'default))
+          ((eq type 'follow_request)
+           (concat
+            (propertize (format "You have a follow request from %s"
+                                follower-name)
+                        'face 'default)
+            (when mastodon-notifications--profile-note-in-foll-reqs
+              (concat
+               ":\n"
+               (mastodon-notifications--comment-note-text body)))))
+          ;; ((eq type-sym 'severed_relationships)
+          ;; (mastodon-notifications--severance-body group))
+          ;; ((eq type-sym 'moderation_warning)
+          ;; (mastodon-notifications--mod-warning-body group))
+          ((member type '(favourite reblog))
+           (propertize
+            (mastodon-notifications--comment-note-text body)))
+          (t body)))
        ;; author-byline
-       (if (or (eq type 'follow)
-               (eq type 'follow-request)
-               (eq type 'mention))
-           'mastodon-tl--byline-author
-         (lambda (_status &rest _args) ; unbreak stuff
-           (mastodon-tl--byline-author note)))
+       #'mastodon-tl--byline-author
        ;; action-byline
-       (lambda (_status)
-         (mastodon-notifications--byline-concat
-          (cond ((eq type 'reblog)
-                 "Boosted")
-                ((eq type 'favourite)
-                 "Favourited")
-                ((eq type 'follow_request)
-                 "Requested to follow")
-                ((eq type 'follow)
-                 "Followed")
-                ((eq type 'mention)
-                 "Mentioned")
-                ((eq type 'status)
-                 "Posted")
-                ((eq type 'poll)
-                 "Posted a poll")
-                ((eq type 'update)
-                 "Edited"))))
-       id
+       (unless (member type '(follow follow_request mention))
+         (downcase
+          (mastodon-notifications--byline-concat
+           (alist-get type mastodon-notifications--action-alist))))
+       ;; action authors
+       (cond ((member type '(follow follow_request mention))
+              "") ;; mentions are normal statuses
+             (t (mastodon-tl--byline-username
+                 note (alist-get 'account note))))
+       ;; action symbol:
+       (unless (eq type 'mention)
+         (mastodon-tl--symbol type))
        ;; base toot
        (when (or (eq type 'favourite)
                  (eq type 'boost))
-         status)))))
+         status)
+       nil nil nil type))))
 
 (defun mastodon-notifications--format-group-note (group status accounts)
   "Format for a GROUP notification.
@@ -407,7 +390,7 @@ ACCOUNTS is data of the accounts that have reacted to the notification."
 
 (defun mastodon-notifications--insert-note
     (toot body author-byline action-byline action-authors action-symbol
-          &optional base-toot unfolded group accounts)
+          &optional base-toot unfolded group accounts type)
   "Display the content and byline of timeline element TOOT.
 BODY will form the section of the toot above the byline.
 AUTHOR-BYLINE is an optional function for adding the author
@@ -427,7 +410,9 @@ UNFOLDED is a boolean meaning whether to unfold or fold item if
 foldable.
 GROUP is the notification group data.
 ACCOUNTS is the notification accounts data."
-  (let* ((type (alist-get 'type (or group toot)))
+  (let* ((type (if type
+                   (symbol-name type)
+                 (alist-get 'type group)))
          (toot-foldable
           (and mastodon-tl--fold-toots-at-length
                (length> body mastodon-tl--fold-toots-at-length))))
@@ -452,7 +437,8 @@ ACCOUNTS is the notification accounts data."
         ;; types listed here use base item timestamp, else we use group's
         ;; latest timestamp:
         (when (not (member type '("favourite" "reblog" "edit" "poll")))
-          (mastodon-tl--field 'latest_page_notification_at group))))
+          (mastodon-tl--field 'latest_page_notification_at group))
+        type))
       'item-type     'toot ;; for nav, actions, etc.
       'item-id       (or (alist-get 'page_max_id group) ;; newest notif
                          (alist-get 'id toot)) ; toot id

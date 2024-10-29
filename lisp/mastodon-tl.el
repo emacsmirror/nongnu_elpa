@@ -797,7 +797,7 @@ LETTER is a string, F for favourited, B for boosted, or K for bookmarked."
     (image-transforms-p)))
 
 (defun mastodon-tl--byline (toot author-byline &optional detailed-p
-                                 domain base-toot group account ts)
+                                 domain base-toot group account ts type)
   "Generate byline for TOOT.
 AUTHOR-BYLINE is a function for adding the author portion of
 the byline that takes one variable.
@@ -811,7 +811,7 @@ BASE-TOOT is JSON for the base toot, if any.
 GROUP is the notification group if any.
 ACCOUNT is the notification account if any.
 TS is a timestamp from the server, if any."
-  (let* ((type (alist-get 'type group))
+  (let* ((type (or type (alist-get 'type (or group toot))))
          (created-time
           (or ts ;; mentions, statuses, folls/foll-reqs
               ;; bosts, faves, edits, polls in notifs view use base item
@@ -826,7 +826,6 @@ TS is a timestamp from the server, if any."
          (boosted (eq t (mastodon-tl--field 'reblogged toot)))
          (bookmarked (eq t (mastodon-tl--field 'bookmarked toot)))
          (visibility (mastodon-tl--field 'visibility toot))
-         (type (alist-get 'type (or group toot)))
          (base-toot-maybe (or base-toot ;; show edits for notifs
                               (mastodon-tl--toot-or-base toot))) ;; for boosts
          (account (or account
