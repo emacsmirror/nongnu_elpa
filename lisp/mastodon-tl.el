@@ -97,7 +97,7 @@
 (defvar mastodon-toot--visibility)
 (defvar mastodon-toot-mode)
 (defvar mastodon-active-user)
-(defvar mastodon-notifications--images-in-notifs)
+(defvar mastodon-images-in-notifs)
 
 (when (require 'mpv nil :no-error)
   (declare-function mpv-start "mpv"))
@@ -1326,7 +1326,7 @@ SENSITIVE is a flag from the item's JSON data."
                ;; if in notifs, also check notifs images custom:
                (if (or (mastodon-tl--buffer-type-eq 'notifications)
                        (mastodon-tl--buffer-type-eq 'mentions))
-                   mastodon-notifications--images-in-notifs
+                   mastodon-images-in-notifs
                  t))
           (mastodon-media--get-media-link-rendering ; placeholder: "[img]"
            .preview_url remote-url ; for shr-browse-url

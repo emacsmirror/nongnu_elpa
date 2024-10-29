@@ -64,30 +64,8 @@
 (autoload 'mastodon-tl--symbol "mastodon-tl")
 (autoload 'mastodon-tl--display-or-uname "mastodon-tl")
 
-(defgroup mastodon-notifications nil
-  "Nofications in mastodon.el."
-  :prefix "mastodon-notifications-"
-  :group 'mastodon)
-
-(defcustom mastodon-notifications--profile-note-in-foll-reqs t
-  "If non-nil, show a user's profile note in follow request notifications."
-  :type '(boolean))
-
-(defcustom mastodon-notifications--profile-note-in-foll-reqs-max-length nil
-  "The max character length for user profile note in follow requests.
-Profile notes are only displayed if
-`mastodon-notifications--profile-note-in-foll-reqs' is non-nil.
-If unset, profile notes of any size will be displayed, which may
-make them unweildy."
-  :type '(integer))
-
-(defcustom mastodon-notifications--images-in-notifs nil
-  "Whether to display attached images in notifications."
-  :type '(boolean))
-
-(defcustom mastodon-notifications--group-notifications t
-  "Whether to use grouped notifications."
-  :type '(boolean))
+;; notifications defcustoms moved into mastodon.el
+;; as some need to be available without loading this file
 
 (defvar mastodon-tl--buffer-spec)
 (defvar mastodon-tl--display-media-p)
@@ -244,8 +222,8 @@ JSON is a list of alists."
             (let ((str (mastodon-tl--field
                         'note
                         (mastodon-tl--field 'account note))))
-              (if mastodon-notifications--profile-note-in-foll-reqs-max-length
-                  (string-limit str mastodon-notifications--profile-note-in-foll-reqs-max-length)
+              (if mastodon-profile-note-in-foll-reqs-max-length
+                  (string-limit str mastodon-profile-note-in-foll-reqs-max-length)
                 str))))
          (status (mastodon-tl--field 'status note))
          (follower (alist-get 'account note))
@@ -279,7 +257,7 @@ JSON is a list of alists."
             (propertize (format "You have a follow request from %s"
                                 follower-name)
                         'face 'default)
-            (when mastodon-notifications--profile-note-in-foll-reqs
+            (when mastodon-profile-note-in-foll-reqs
               (concat
                ":\n"
                (mastodon-notifications--comment-note-text body)))))
@@ -323,8 +301,8 @@ ACCOUNTS is data of the accounts that have reacted to the notification."
              (profile-note
               (when (member type-sym '(follow_request))
                 (let ((str (mastodon-tl--field 'note (car accounts))))
-                  (if mastodon-notifications--profile-note-in-foll-reqs-max-length
-                      (string-limit str mastodon-notifications--profile-note-in-foll-reqs-max-length)
+                  (if mastodon-profile-note-in-foll-reqs-max-length
+                      (string-limit str mastodon-profile-note-in-foll-reqs-max-length)
                     str))))
              (follower (when (member type-sym '(follow follow_request))
                          (car accounts)))
@@ -356,7 +334,7 @@ ACCOUNTS is data of the accounts that have reacted to the notification."
                 (propertize (format "You have a follow request from %s"
                                     follower-name)
                             'face 'default)
-                (when mastodon-notifications--profile-note-in-foll-reqs
+                (when mastodon-profile-note-in-foll-reqs
                   (concat
                    ":\n"
                    (mastodon-notifications--comment-note-text body)))))
@@ -530,7 +508,7 @@ When DOMAIN, force inclusion of user's domain in their handle."
   "Format JSON in Emacs buffer."
   (if (seq-empty-p json)
       (user-error "Looks like you have no (more) notifications for now")
-    (mastodon-notifications--render json (not mastodon-notifications--group-notifications))
+    (mastodon-notifications--render json (not mastodon-group-notifications))
     (goto-char (point-min))))
 
 (defun mastodon-notifications--get-mentions ()
