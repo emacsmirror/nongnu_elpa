@@ -346,10 +346,14 @@ ACCOUNTS is the notification accounts data."
         'toot-body t) ;; includes newlines etc. for folding
        "\n"
        ;; actual byline:
-       (mastodon-tl--byline toot author-byline nil nil
-                            base-toot group
-                            (if (member type '("follow" "follow_request"))
-                                toot))) ;; account data!
+       (mastodon-tl--byline
+        toot author-byline nil nil base-toot group
+        (when (member type '("follow" "follow_request"))
+          toot) ;; account data!
+        ;; types listed here use base item timestamp, else we use group's
+        ;; latest timestamp:
+        (when (not (member type '("favourite" "reblog" "edit" "poll")))
+          (mastodon-tl--field 'latest_page_notification_at group))))
       'item-type     'toot ;; for nav, actions, etc.
       'item-id       (or (alist-get 'page_max_id group) ;; newest notif
                          (alist-get 'id toot)) ; toot id

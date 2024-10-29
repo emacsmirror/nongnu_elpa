@@ -797,7 +797,7 @@ LETTER is a string, F for favourited, B for boosted, or K for bookmarked."
     (image-transforms-p)))
 
 (defun mastodon-tl--byline (toot author-byline &optional detailed-p
-                                 domain base-toot group account)
+                                 domain base-toot group account ts)
   "Generate byline for TOOT.
 AUTHOR-BYLINE is a function for adding the author portion of
 the byline that takes one variable.
@@ -809,17 +809,18 @@ this just means displaying toot client.
 When DOMAIN, force inclusion of user's domain in their handle.
 BASE-TOOT is JSON for the base toot, if any.
 GROUP is the notification group if any.
-ACCOUNT is the notification account if any."
-  (let* ((created-time
-          (if group
-              (mastodon-tl--field 'latest_page_notification_at group)
-            ;; bosts and faves in notifs view
-            ;; (makes timestamps be for the original toot not the boost/fave):
-            (or (mastodon-tl--field 'created_at
-                                    (mastodon-tl--field 'status toot))
-                ;; all other toots, inc. boosts/faves in timelines:
-                ;; (mastodon-tl--field auto fetches from reblogs if needed):
-                (mastodon-tl--field 'created_at toot))))
+ACCOUNT is the notification account if any.
+TS is a timestamp from the server, if any."
+  (let* ((type (alist-get 'type group))
+         (created-time
+          (or ts ;; mentions, statuses, folls/foll-reqs
+              ;; bosts, faves, edits, polls in notifs view use base item
+              ;; timestamp:
+              (mastodon-tl--field 'created_at
+                                  (mastodon-tl--field 'status toot))
+              ;; all other toots, inc. boosts/faves in timelines:
+              ;; (mastodon-tl--field auto fetches from reblogs if needed):
+              (mastodon-tl--field 'created_at toot)))
          (parsed-time (when created-time (date-to-time created-time)))
          (faved (eq t (mastodon-tl--field 'favourited toot)))
          (boosted (eq t (mastodon-tl--field 'reblogged toot)))
