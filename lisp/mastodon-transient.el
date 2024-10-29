@@ -48,6 +48,20 @@
 
 ;;; UTILS
 
+(transient-define-suffix mastodon-transient--prefix-inspect ()
+  "Inspect a transient prefix's arguments and scope."
+  (interactive)
+  :transient 'transient--do-return
+  (let ((args (transient-args (oref transient-current-prefix command)))
+        (scope (oref transient-current-prefix scope)))
+    (message "prefix's scope: %s \ntransient-args: %s\n last: %s"
+             scope args
+             (length
+              (cl-member-if
+               (lambda (x)
+                 (equal (car x) 'one))
+               args)))))
+
 ;; some JSON fields that are returned under the "source" field need to be
 ;; sent back in the format source[key], while some others are sent kust as
 ;; key:
@@ -219,6 +233,37 @@ the format fields.X.keyname."
   (let ((instance (mastodon-instance-data)))
     (mastodon-toot--fetch-max-poll-option-chars instance)))
 
+(transient-define-suffix mastodon-transient--choice-add ()
+  "docstring"
+  (interactive)
+  :transient 'transient--do-stay
+  (let* ((args (transient-args (oref transient-current-prefix command)))
+         (choice-count (length
+                        (cl-member-if
+                         (lambda (x)
+                           (equal (car x) 'one))
+                         args)))
+         (inc (1+ choice-count))
+         (next (number-to-string inc))
+         (next-symbol (pcase inc
+                        (5 'five)
+                        (6 'six)
+                        (7 'seven)
+                        (8 'eight)
+                        (9 'nine))))
+    (if (or (>= choice-count (mastodon-transient-max-poll-opts))
+            (= choice-count 9))
+        ;; FIXME when we hit '10', we get a binding clash with '1'. :/
+        (message "Max choices reached")
+      (transient-append-suffix
+        'mastodon-create-poll
+        '(2 -1)
+        `(,next "" ,next
+                :class mastodon-transient-poll-choice
+                :alist-key ,next-symbol
+                :transient t))))
+  (transient-setup 'mastodon-create-poll))
+
 (transient-define-prefix mastodon-create-poll ()
   "A transient for creating a poll."
   ;; FIXME: handle existing polls when editing a toot
@@ -244,9 +289,11 @@ the format fields.X.keyname."
    ("4" "" "4" :alist-key four :class mastodon-transient-poll-choice)]
   ;; TODO: display the max number of options or add options cmd
   ["Update"
+   ("C-c C-s" "Add another poll choice" mastodon-transient--choice-add
+    :if (lambda () (< 4 (mastodon-transient-max-poll-opts))))
    ("C-c C-c" "Save and done" mastodon-create-poll-done)
-   ("C-c C-k" "Delete all" mastodon-clear-poll)
-   ("C-x C-k" :info "Revert all")]
+   ("C-x C-k" :info "Revert all")
+   ("C-c C-k" "Delete all" mastodon-clear-poll)]
   (interactive)
   (if (not mastodon-active-user)
       (user-error "User not set")
@@ -263,13 +310,32 @@ the format fields.X.keyname."
   "Update current user profile fields."
   :transient 'transient--do-exit
   (interactive (list (transient-args 'mastodon-create-poll)))
-  ;; FIXME: if
-  ;; - no options filled in
-  ;; - no expiry
-  ;; then offer to cancel or warn / return to transient
-  (setq tp-transient-settings
-        (tp-bools-to-strs args))
-  (mastodon-toot--update-status-fields))
+  (let* ((options (cl-member-if (lambda (x)
+                                  (eq (car x) 'one))
+                                args))
+         (opt-vals (cl-loop for x in options
+                            collect (cdr x)))
+         (lengths (mapcar #'length opt-vals))
+         (vals (cl-remove 'nil
+                          (cl-loop for x in args
+                                   collect (cdr x))))
+         (opts-count (length (cl-remove 'nil opt-vals))))
+    ;; this way of checking gets annoying if we want to just cancel out of
+    ;; the poll (but to actually cancel user should C-g, not C-c C-c):
+    (if (or (and (< 50 (apply #'max lengths))
+                 (not (y-or-n-p "Options longer than server max. Proceed? ")))
+            (and (not (alist-get 'expiry args))
+                 (not (y-or-n-p "No expiry. Proceed? ")))
+            (and (not (< 1 opts-count))
+                 (not (y-or-n-p "Need more than one option. Proceed? ")))
+            (and (> opts-count (mastodon-transient-max-poll-opts))
+                 (not (y-or-n-p "More options than server max. Proceed? "))))
+        (mastodon-create-poll)
+      ;; if we are called with no poll data, do not set:
+      (unless (not vals)
+        (setq tp-transient-settings
+              (tp-bools-to-strs args)))
+      (mastodon-toot--update-status-fields))))
 
 ;;; CLASSES
 
@@ -277,18 +343,6 @@ the format fields.X.keyname."
   ((always-read :initarg :always-read :initform t))
   "An infix option class for our options.
 We always read.")
-
-(defclass mastodon-transient-opt (tp-option tp-option-var)
-  (()))
-
-(defclass mastodon-transient-poll-bool (tp-bool tp-option-var)
-  ())
-
-(defclass mastodon-transient-poll-choice (tp-option-str tp-option-var)
-  ())
-
-(defclass mastodon-transient-expiry (tp-option tp-option-var)
-  ())
 
 (cl-defmethod transient-init-value ((obj mastodon-transient-field))
   "Initialize value of OBJ."
@@ -318,6 +372,34 @@ CONS is a cons of the form \"(fields.1.name . val)\"."
          (server-elt (nth num tp-transient-settings)))
     (not (equal (cdr cons)
                 (alist-get server-key server-elt nil nil #'string=)))))
+
+(defclass mastodon-transient-opt (tp-option tp-option-var)
+  (()))
+
+(defclass mastodon-transient-poll-bool (tp-bool tp-option-var)
+  ())
+
+(defclass mastodon-transient-poll-choice (tp-option-str tp-option-var)
+  ())
+
+(cl-defmethod transient-infix-read ((obj mastodon-transient-poll-choice))
+  "Reader function for OBJ, a poll expiry."
+  (let* ((value (transient-infix-value obj))
+         (prompt (transient-prompt obj))
+         (str (read-string prompt (cdr value)))
+         (max (mastodon-transient-max-poll-opt-chars)))
+    (if (not (> (length str) max))
+        str
+      (if (not
+           (y-or-n-p
+            (format "Poll option too long for server (%s/%s chars), retry?"
+                    (length str) max)))
+          str
+        (oset obj value str)
+        (transient-infix-read obj)))))
+
+(defclass mastodon-transient-expiry (tp-option tp-option-var)
+  ())
 
 (cl-defmethod transient-infix-read ((_obj mastodon-transient-expiry))
   "Reader function for OBJ, a poll expiry."
