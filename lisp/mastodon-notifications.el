@@ -273,8 +273,6 @@ JSON is a list of alists."
        ;;     (propertize
        ;;      (mastodon-notifications--comment-note-text body)))
        ;;    (t body)))
-       ;; author-byline
-       #'mastodon-tl--byline-author
        ;; action-byline
        (unless (member type '(follow follow_request mention))
          (downcase
@@ -323,8 +321,6 @@ ACCOUNTS is data of the accounts that have reacted to the notification."
            ;; body
            (mastodon-notifiations--body-arg
             type filters status profile-note follower-name group)
-           ;; author-byline
-           #'mastodon-tl--byline-author
            ;; action-byline
            (unless (member type '(follow follow_request mention))
              (downcase
@@ -379,7 +375,7 @@ FILTERS STATUS PROFILE-NOTE FOLLOWER-NAME GROUP."
      (t body))))
 
 (defun mastodon-notifications--insert-note
-    (toot body author-byline action-byline action-authors action-symbol
+    (toot body action-byline action-authors action-symbol
           &optional base-toot unfolded group accounts type)
   "Display the content and byline of timeline element TOOT.
 BODY will form the section of the toot above the byline.
@@ -420,7 +416,10 @@ ACCOUNTS is the notification accounts data."
        "\n"
        ;; actual byline:
        (mastodon-tl--byline
-        toot author-byline nil nil base-toot group
+        toot nil nil base-toot group
+        ;; FIXME: remove account arg (esp. if we have type). maybe we need
+        ;; type arg when we step from notifs (here); to tl--byline land
+        ;; (there):
         (when (member type '("follow" "follow_request"))
           toot) ;; account data!
         ;; types listed here use base item timestamp, else we use group's

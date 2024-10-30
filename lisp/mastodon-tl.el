@@ -796,7 +796,7 @@ LETTER is a string, F for favourited, B for boosted, or K for bookmarked."
       (image-type-available-p 'imagemagick)
     (image-transforms-p)))
 
-(defun mastodon-tl--byline (toot author-byline &optional detailed-p
+(defun mastodon-tl--byline (toot &optional detailed-p
                                  domain base-toot group account ts type)
   "Generate byline for TOOT.
 AUTHOR-BYLINE is a function for adding the author portion of
@@ -861,7 +861,7 @@ TS is a timestamp from the server, if any."
        ;; NB: action-byline (boost) is now added in insert-status, so no
        ;; longer part of the byline.
        ;; (base) author byline:
-       (funcall author-byline toot nil domain :base account)
+       (mastodon-tl--byline-author toot nil domain :base account)
        ;; visibility:
        (cond ((string= visibility "direct")
               (propertize (concat " " (mastodon-tl--symbol 'direct))
@@ -1654,7 +1654,7 @@ Runs `mastodon-tl--render-text' and fetches poll or media."
     (string= reply-to-id prev-id)))
 
 (defun mastodon-tl--insert-status
-    (toot body author-byline action-byline &optional id base-toot
+    (toot body action-byline &optional id base-toot
           detailed-p thread domain unfolded no-byline)
   "Display the content and byline of timeline element TOOT.
 BODY will form the section of the toot above the byline.
@@ -1709,8 +1709,7 @@ NO-BYLINE means just insert toot body, used for folding."
        "\n"
        (if no-byline
            ""
-         (mastodon-tl--byline toot author-byline detailed-p
-                              domain base-toot)))
+         (mastodon-tl--byline toot detailed-p domain base-toot)))
       'item-type    'toot
       'item-id      (or id ; notification's own id
                         (alist-get 'id toot)) ; toot id
@@ -1792,10 +1791,9 @@ NO-BYLINE means just insert toot body, used for folding."
     (if (and filtered (assoc "hide" filters))
         nil ;; no insert
       (mastodon-tl--insert-status
-       toot
-       (mastodon-tl--clean-tabs-and-nl spoiler-or-content)
-       #'mastodon-tl--byline-author #'mastodon-tl--byline-boost
-       nil nil detailed-p thread domain unfolded no-byline))))
+       toot (mastodon-tl--clean-tabs-and-nl spoiler-or-content)
+       #'mastodon-tl--byline-boost nil nil detailed-p
+       thread domain unfolded no-byline))))
 
 (defun mastodon-tl--timeline (toots &optional thread domain no-byline)
   "Display each toot in TOOTS.
