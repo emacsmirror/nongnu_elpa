@@ -2,7 +2,7 @@
 
 ;; Author: Marty Hiatt <mousebot@disroot.org>
 ;; Copyright (C) 2024 Marty Hiatt <mousebot@disroot.org>
-;; Version: 0.4
+;; Version: 0.5
 ;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: convenience, api, requests
 ;; URL: https://codeberg.org/martianh/tp.el
