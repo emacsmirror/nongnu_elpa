@@ -1429,7 +1429,7 @@ MAX is the maximum number set by their instance."
   "Prompt for new poll options and return as a list."
   (interactive)
   (if mastodon-toot-poll-use-transient
-      (mastodon-create-poll)
+      (call-interactively #'mastodon-create-poll)
     (mastodon-toot--read-poll)))
 
 (defun mastodon-toot--read-poll ()
