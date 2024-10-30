@@ -442,7 +442,7 @@ When DOMAIN, force inclusion of user's domain in their handle."
                      (mastodon-tl--image-trans-check))
             (mastodon-media--get-avatar-rendering .avatar))
           (let ((uname (mastodon-tl--display-or-uname account)))
-            (mastodon-tl--byline-handle toot nil
+            (mastodon-tl--byline-handle account nil
                                         uname 'mastodon-display-name-face))
           ", ")))
       nil ", ")
