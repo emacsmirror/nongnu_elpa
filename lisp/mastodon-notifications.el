@@ -243,36 +243,6 @@ JSON is a list of alists."
        ;; body
        (mastodon-notifiations--body-arg
         type filters status profile-note follower-name)
-       ;; (let ((body
-       ;;        (if-let ((match (assoc "warn" filters)))
-       ;;            (mastodon-tl--spoiler status (cadr match))
-       ;;          (mastodon-tl--clean-tabs-and-nl
-       ;;           (cond ((mastodon-tl--has-spoiler status)
-       ;;                  (mastodon-tl--spoiler status))
-       ;;                 ((eq type 'follow_request)
-       ;;                  (mastodon-tl--render-text profile-note))
-       ;;                 (t (mastodon-tl--content status)))))))
-       ;;   (cond
-       ;;    ((eq type 'follow)
-       ;;     (propertize "Congratulations, you have a new follower!"
-       ;;                 'face 'default))
-       ;;    ((eq type 'follow_request)
-       ;;     (concat
-       ;;      (propertize (format "You have a follow request from %s"
-       ;;                          follower-name)
-       ;;                  'face 'default)
-       ;;      (when mastodon-profile-note-in-foll-reqs
-       ;;        (concat
-       ;;         ":\n"
-       ;;         (mastodon-notifications--comment-note-text body)))))
-       ;;    ;; ((eq type 'severed_relationships)
-       ;;    ;; (mastodon-notifications--severance-body group))
-       ;;    ;; ((eq type 'moderation_warning)
-       ;;    ;; (mastodon-notifications--mod-warning-body group))
-       ;;    ((member type '(favourite reblog))
-       ;;     (propertize
-       ;;      (mastodon-notifications--comment-note-text body)))
-       ;;    (t body)))
        ;; action-byline
        (unless (member type '(follow follow_request mention))
          (downcase
