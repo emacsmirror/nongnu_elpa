@@ -801,9 +801,6 @@ LETTER is a string, F for favourited, B for boosted, or K for bookmarked."
   "Generate byline for TOOT.
 AUTHOR-BYLINE is a function for adding the author portion of
 the byline that takes one variable.
-ACTION-BYLINE is a function for adding an action, such as boosting,
-favouriting and following to the byline. It also takes a single function.
-By default it is `mastodon-tl--byline-author'
 DETAILED-P means display more detailed info. For now
 this just means displaying toot client.
 When DOMAIN, force inclusion of user's domain in their handle.
