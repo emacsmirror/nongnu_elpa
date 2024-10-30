@@ -159,7 +159,7 @@ nil."
     (favourite       . ("⭐" . "F"))
     (bookmark        . ("🔖" . "K"))
     (media           . ("📹" . "[media]"))
-    (verified        . ("" . "V"))
+    (verified        . ("✓" . "V"))
     (locked          . ("🔒" . "[locked]"))
     (private         . ("🔒" . "[followers]"))
     (direct          . ("✉" . "[direct]"))
