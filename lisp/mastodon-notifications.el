@@ -414,8 +414,8 @@ TYPE is notification type, used for non-group notifs."
 ;; almost everything is .account.field anyway
 ;; but toot still needed also, for attachments, etc.
 (defun mastodon-notifications--byline-accounts
-    (accounts toot group &optional avatar)
-  "Propertize author byline ACCOUNTS for TOOT, the item responded to.
+    (accounts group &optional avatar)
+  "Propertize author byline ACCOUNTS.
 GROUP is the group notification data.
 When AVATAR, include the account's avatar image.
 When DOMAIN, force inclusion of user's domain in their handle."
