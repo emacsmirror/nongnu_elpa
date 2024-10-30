@@ -610,14 +610,12 @@ Do so if type of status at poins is not follow_request/follow."
                   (string= type "follow")) ; no counts for these
         (message "%s" echo)))))
 
-;; FIXME: now that this can also be used for non byline rendering, let's
-;; remove the toot arg, and deal with attachments higher up (on real
-;; author byline only) removing toot arg makes it easier to render notifs
-;; that have no status (foll_reqs)
-(defun mastodon-tl--byline-username (toot &optional account)
+(defun mastodon-tl--byline-username (toot)
   "Format a byline username from account in TOOT.
-ACCOUNT is optionally acccount data to use."
-  (let-alist (or account (alist-get 'account toot))
+TOOT may be account data, or toot data, in which case acount data
+is extracted from it."
+  (let-alist (or (alist-get 'account toot)
+                 toot) ;; grouped nofifs use account data directly
     (propertize (if (not (string-empty-p .display_name))
                     .display_name
                   .username)
@@ -635,7 +633,7 @@ ACCOUNT is optionally acccount data to use."
                             (string-suffix-p "-following*" (buffer-name)))
                   (mastodon-tl--format-byline-help-echo toot)))))
 
-(defun mastodon-tl--byline-handle (toot &optional domain account string face)
+(defun mastodon-tl--byline-handle (toot &optional domain string face)
   "Format a byline handle from account in TOOT.
 DOMAIN is optionally added to the handle.
 ACCOUNT is optionally acccount data to use.
@@ -643,7 +641,8 @@ STRING is optionally the string to propertize.
 FACE is optionally the face to use.
 The last two args allow for display a username as a clickable
 handle."
-  (let-alist (or account (alist-get 'account toot))
+  (let-alist (or (alist-get 'account toot)
+                 toot) ;; grouped notifs
     (propertize (or string
                     (concat "@" .acct
                             (when domain
@@ -653,19 +652,18 @@ handle."
                 'face (or face 'mastodon-handle-face)
                 'mouse-face 'highlight
 	        'mastodon-tab-stop 'user-handle
-                'account account
 	        'shr-url .url
 	        'keymap mastodon-tl--link-keymap
                 'mastodon-handle (concat "@" .acct)
 	        'help-echo (concat "Browse user profile of @" .acct))))
 
-(defun mastodon-tl--byline-uname-+-handle (data &optional domain account)
+(defun mastodon-tl--byline-uname-+-handle (data &optional domain)
   "Concatenate a byline username and handle.
 DATA is the (toot) data to use.
 DOMAIN is optionally a domain for the handle.
 ACCOUNT is optionally acccount data to use."
-  (concat (mastodon-tl--byline-username data account)
-          " (" (mastodon-tl--byline-handle data domain account) ")"))
+  (concat (mastodon-tl--byline-username data)
+          " (" (mastodon-tl--byline-handle data domain) ")"))
 
 (defun mastodon-tl--display-or-uname (account)
   "Return display name or username from ACCOUNT data."
@@ -673,7 +671,7 @@ ACCOUNT is optionally acccount data to use."
       (alist-get 'display_name account)
     (alist-get 'username account)))
 
-(defun mastodon-tl--byline-author (toot &optional avatar domain base account)
+(defun mastodon-tl--byline-author (toot &optional avatar domain base)
   "Propertize author of TOOT.
 If TOOT contains a reblog, return author of reblogged item.
 With arg AVATAR, include the account's avatar image.
@@ -684,7 +682,7 @@ ACCOUNT is optionally acccount data to use."
   (let* ((data (if base
                    (mastodon-tl--toot-or-base toot)
                  toot))
-         (account (or account (alist-get 'account data)))
+         (account (alist-get 'account data))
          (uname (mastodon-tl--display-or-uname account)))
     (concat
      ;; avatar insertion moved up to `mastodon-tl--byline' by default to
@@ -701,11 +699,11 @@ ACCOUNT is optionally acccount data to use."
                  " "
                  ;; username as button:
                  (mastodon-tl--byline-handle
-                  data domain account
+                  data domain
                   ;; display uname not handle (for boosts):
                   uname 'mastodon-display-name-face))
        ;; normal combo author byline:
-       (mastodon-tl--byline-uname-+-handle data domain account)))))
+       (mastodon-tl--byline-uname-+-handle data domain)))))
 
 (defun mastodon-tl--format-byline-help-echo (toot)
   "Format a help-echo for byline of TOOT.
@@ -797,7 +795,7 @@ LETTER is a string, F for favourited, B for boosted, or K for bookmarked."
     (image-transforms-p)))
 
 (defun mastodon-tl--byline (toot &optional detailed-p
-                                 domain base-toot group account ts type)
+                                 domain base-toot group ts)
   "Generate byline for TOOT.
 AUTHOR-BYLINE is a function for adding the author portion of
 the byline that takes one variable.
@@ -811,7 +809,7 @@ BASE-TOOT is JSON for the base toot, if any.
 GROUP is the notification group if any.
 ACCOUNT is the notification account if any.
 TS is a timestamp from the server, if any."
-  (let* ((type (or type (alist-get 'type (or group toot))))
+  (let* ((type (alist-get 'type (or group toot)))
          (created-time
           (or ts ;; mentions, statuses, folls/foll-reqs
               ;; bosts, faves, edits, polls in notifs view use base item
@@ -828,8 +826,7 @@ TS is a timestamp from the server, if any."
          (visibility (mastodon-tl--field 'visibility toot))
          (base-toot-maybe (or base-toot ;; show edits for notifs
                               (mastodon-tl--toot-or-base toot))) ;; for boosts
-         (account (or account
-                      (alist-get 'account base-toot-maybe)))
+         (account (alist-get 'account base-toot-maybe))
          (avatar-url (alist-get 'avatar account))
          (edited-time (alist-get 'edited_at base-toot-maybe))
          (edited-parsed (when edited-time (date-to-time edited-time))))
@@ -861,7 +858,7 @@ TS is a timestamp from the server, if any."
        ;; NB: action-byline (boost) is now added in insert-status, so no
        ;; longer part of the byline.
        ;; (base) author byline:
-       (mastodon-tl--byline-author toot nil domain :base account)
+       (mastodon-tl--byline-author toot nil domain :base)
        ;; visibility:
        (cond ((string= visibility "direct")
               (propertize (concat " " (mastodon-tl--symbol 'direct))

@@ -238,7 +238,7 @@ JSON is a list of alists."
       (mastodon-notifications--insert-note
        ;; toot
        (if (member type '(follow follow_request))
-           follower
+           note ;; full notif, not just follower acct?
          status)
        ;; body
        (mastodon-notifiations--body-arg
@@ -281,8 +281,7 @@ JSON is a list of alists."
        ;; action authors
        (cond ((member type '(follow follow_request mention))
               "") ;; mentions are normal statuses
-             (t (mastodon-tl--byline-username
-                 note (alist-get 'account note))))
+             (t (mastodon-tl--byline-username note)))
        ;; action symbol:
        (unless (eq type 'mention)
          (mastodon-tl--symbol type))
@@ -395,7 +394,8 @@ JSON of the toot responded to.
 UNFOLDED is a boolean meaning whether to unfold or fold item if
 foldable.
 GROUP is the notification group data.
-ACCOUNTS is the notification accounts data."
+ACCOUNTS is the notification accounts data.
+TYPE is notification type, used for non-group notifs."
   (let* ((type (if type
                    (symbol-name type) ;; non-group
                  (alist-get 'type group)))
@@ -417,16 +417,10 @@ ACCOUNTS is the notification accounts data."
        ;; actual byline:
        (mastodon-tl--byline
         toot nil nil base-toot group
-        ;; FIXME: remove account arg (esp. if we have type). maybe we need
-        ;; type arg when we step from notifs (here); to tl--byline land
-        ;; (there):
-        (when (member type '("follow" "follow_request"))
-          toot) ;; account data!
         ;; types listed here use base item timestamp, else we use group's
         ;; latest timestamp:
         (when (not (member type '("favourite" "reblog" "edit" "poll")))
-          (mastodon-tl--field 'latest_page_notification_at group))
-        type))
+          (mastodon-tl--field 'latest_page_notification_at group))))
       'item-type     'toot ;; for nav, actions, etc.
       'item-id       (or (alist-get 'page_max_id group) ;; newest notif
                          (alist-get 'id toot)) ; toot id
@@ -478,7 +472,7 @@ When DOMAIN, force inclusion of user's domain in their handle."
                      (mastodon-tl--image-trans-check))
             (mastodon-media--get-avatar-rendering .avatar))
           (let ((uname (mastodon-tl--display-or-uname account)))
-            (mastodon-tl--byline-handle toot nil account
+            (mastodon-tl--byline-handle toot nil
                                         uname 'mastodon-display-name-face))
           ", ")))
       nil ", ")
