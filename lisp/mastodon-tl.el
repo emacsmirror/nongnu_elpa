@@ -1796,7 +1796,8 @@ NO-BYLINE means just insert toot body, used for folding."
   "Display each toot in TOOTS.
 This function removes replies if user required.
 THREAD means the status will be displayed in a thread view.
-When DOMAIN, force inclusion of user's domain in their handle."
+When DOMAIN, force inclusion of user's domain in their handle.
+NO-BYLINE means just insert toot body, used for folding."
   (let ((start-pos (point))
         (toots ;; hack to *not* filter replies on profiles:
          (if (eq (mastodon-tl--get-buffer-type) 'profile-statuses)
@@ -3257,7 +3258,8 @@ favourites and bookmarks.
 PARAMS is any parameters to send with the request.
 HIDE-REPLIES is a flag indicating if replies are hidden in the current buffer.
 INSTANCE is a string of another instance domain we are displaying
-a timeline from."
+a timeline from.
+NO-BYLINE means just insert toot body, used for announcements."
   (let ((url (if instance
                  (concat "https://" instance "/api/v1/" endpoint)
                (mastodon-http--api endpoint)))
@@ -3277,7 +3279,8 @@ a timeline from."
 UPDATE-FUNCTION is used to recieve more toots.
 RESPONSE is the data returned from the server by
 `mastodon-http--process-json', with arg HEADERS a cons cell of
-JSON and http headers, without it just the JSON."
+JSON and http headers, without it just the JSON.
+NO-BYLINE means just insert toot body, used for announcements."
   (let ((json (if headers (car response) response)))
     (cond ((not json) ; praying this is right here, else try "\n[]"
            ;; this means that whatever tl was inited won't load, which is not
@@ -3349,7 +3352,8 @@ ENDPOINT-VERSION is a string, format Vx, e.g. V2."
 (defun mastodon-tl--do-init (json update-fun &optional domain no-byline)
   "Utility function for `mastodon-tl--init*' and `mastodon-tl--init-sync'.
 JSON is the data to call UPDATE-FUN on.
-When DOMAIN, force inclusion of user's domain in their handle."
+When DOMAIN, force inclusion of user's domain in their handle.
+NO-BYLINE means just insert toot body, used for announcements."
   (remove-overlays) ; video overlays
   (cond (domain ;; maybe our update-fun doesn't always have 3 args...:
          (funcall update-fun json nil domain))
