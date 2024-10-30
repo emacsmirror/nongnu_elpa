@@ -236,9 +236,9 @@ JSON is a list of alists."
         nil
       (mastodon-notifications--insert-note
        ;; toot
-       (if (member type '(follow follow_request))
-           note ;; full notif, not just follower acct?
-         status)
+       ;; should always be note, otherwise notif data not avail
+       ;; later on:
+       note
        ;; body
        (mastodon-notifiations--body-arg
         type filters status profile-note follower-name)
@@ -253,10 +253,8 @@ JSON is a list of alists."
              (t (mastodon-tl--byline-handle note nil
                                             follower-name
                                             'mastodon-display-name-face)))
-       ;; base toot
-       (when (or (eq type 'favourite)
-                 (eq type 'boost))
-         status)
+       ;; base toot (always provide)
+       status
        nil nil nil type))))
 
 (defun mastodon-notifications--format-group-note (group status accounts)

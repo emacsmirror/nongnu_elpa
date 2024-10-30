@@ -860,7 +860,10 @@ TS is a timestamp from the server, if any."
        ;; NB: action-byline (boost) is now added in insert-status, so no
        ;; longer part of the byline.
        ;; (base) author byline:
-       (mastodon-tl--byline-author toot nil domain :base)
+       ;; we use base-toot if poss for fave/boost notifs that need to show
+       ;; base item in author byline
+       (mastodon-tl--byline-author (or base-toot toot)
+                                   nil domain :base)
        ;; visibility:
        (cond ((string= visibility "direct")
               (propertize (concat " " (mastodon-tl--symbol 'direct))
