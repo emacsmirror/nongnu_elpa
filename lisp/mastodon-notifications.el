@@ -228,7 +228,8 @@ JSON is a list of alists."
                 str))))
          (status (mastodon-tl--field 'status note))
          (follower (alist-get 'account note))
-         (follower-name (alist-get 'username follower))
+         (follower-name (or (alist-get 'display_name follower)
+                            (alist-get 'username follower)))
          (filtered (mastodon-tl--field 'filtered status))
          (filters (when filtered
                     (mastodon-tl--current-filters filtered))))
