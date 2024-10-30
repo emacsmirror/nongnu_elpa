@@ -59,8 +59,12 @@
 (defvar tp-choice-booleans '("true" "false")
   "Boolean strings for sending non-JSON requests.")
 
-(defvar tp-server-settings nil
-  "Settings data (editable) as returned by the server.")
+(defvar tp-transient-settings nil
+  "Settings for the current transient prefix.
+This can hold either the default settings data (editable) as
+returned by a server, or alternatively the transient's current
+settings if it is only stored when completed, and may be edited
+again before being sent.")
 
 ;;; UTILS
 
@@ -77,17 +81,17 @@ Check against the fields in VAR, which should be a list of strings."
   "Return data to populate current settings.
 Call FETCH-FUN with zero arguments to GET the data. Cull the data
 with `tp-remove-not-editable', bind the result to
-`tp-server-settings' and return it.
+`tp-transient-settings' and return it.
 EDITABLE-VAR is a variable containing a list of strings
 corresponding to the editable fields of the JSON data returned.
 See `tp-remove-not-editable'.
-FIELD is a JSON field to set `tp-server-settings' to, fetched
+FIELD is a JSON field to set `tp-transient-settings' to, fetched
 with `alist-get'."
   (let* ((data (funcall fetch-fun))
          (editable (if editable-var
                        (tp-remove-not-editable data editable-var)
                      data)))
-    (setq tp-server-settings
+    (setq tp-transient-settings
           (if field
               (alist-get field editable)
             editable))))
@@ -95,10 +99,10 @@ with `alist-get'."
 (defun tp-only-changed-args (alist)
   "Remove elts from ALIST if value is changed.
 Values are considered changed if they do not match those in
-`tp-server-settings'. Nil values are also removed if they
+`tp-transient-settings'. Nil values are also removed if they
 match the empty string.
 If ALIST contains dotted.notation keys, we drill down into
-`tp-server-settings' to check the value."
+`tp-transient-settings' to check the value."
   (prog1
       (cl-remove-if
        (lambda (x)
@@ -108,14 +112,14 @@ If ALIST contains dotted.notation keys, we drill down into
                      ;; FIXME: handle arbitrary nesting:
                      (alist-get (intern (cadr split))
                                 (alist-get (intern (car split))
-                                           tp-server-settings))
+                                           tp-transient-settings))
                    (alist-get (car x)
-                              tp-server-settings))))
+                              tp-transient-settings))))
            (cond ((not (cdr x)) (equal "" server-val))
                  (t (equal (cdr x) server-val)))))
        alist)
     ;; unset our vars (comment if need to inspect):
-    (setq tp-server-settings nil)))
+    (setq tp-transient-settings nil)))
 
 (defun tp-bool-to-str (cons)
   "Convert CONS, into a string boolean if it is either t or :json-false.
@@ -329,7 +333,8 @@ The value currently on the server should be underlined."
   (let* ((cons (transient-infix-value obj))
          (val (tp-get-bool-str (cdr cons)))
          (choices (tp--get-choices obj))
-         (str (if (equal val (car (last choices)))
+         (str (if (or (not val) ;; handle nil value
+                      (equal val (car (last choices))))
                   (car choices)
                 (cadr (member val choices)))))
     ;; return JSON bool:
@@ -361,7 +366,7 @@ We add the current value as initial input."
 ;;; OUR METHODS
 
 (cl-defmethod tp-arg-changed-p ((obj tp-option) cons)
-  "T if value of CONS is different to the value in `tp-server-settings'.
+  "T if value of CONS is different to the value in `tp-transient-settings'.
 The format of the value is a transient pair as a string, ie \"key=val\".
 Nil values will also match the empty string.
 OBJ is the object whose args are being checked."
@@ -385,6 +390,28 @@ only one level of nesting is supported."
           ((= 2 (length split))
            (alist-get (intern (cadr split))
                       (alist-get (intern (car split)) data))))))
+
+;;; VARIABLE CLASS
+
+;; a class used to implement `transient-init-value' in a way that doesn't
+;; fetch from a server, but merely gets data from `tp-transient-settings'.
+;; this hopefully means you can multi-inherit from this class and another,
+;; and not have to implement `transient-init-value' for each of your
+;; class(es).
+
+;; it seems like for this to work right, tp-option-var should be the
+;; second, not first, superclass. e.g. (defclass your-tp-option (tp-option
+;; tp-option-var) (()))
+
+(defclass tp-option-var (tp-option)
+  (()))
+
+(cl-defmethod transient-init-value ((obj tp-option-var))
+  "Initialize OBJ, an option.
+Pull value from `tp-transient-settings' if possible.'"
+  (let ((key (oref obj alist-key)))
+    (oset obj value
+          (alist-get key tp-transient-settings))))
 
 (provide 'tp)
 ;;; tp.el ends here
