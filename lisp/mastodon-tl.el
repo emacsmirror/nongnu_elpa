@@ -98,6 +98,7 @@
 (defvar mastodon-toot-mode)
 (defvar mastodon-active-user)
 (defvar mastodon-images-in-notifs)
+(defvar mastodon-group-notifications)
 
 (when (require 'mpv nil :no-error)
   (declare-function mpv-start "mpv"))
@@ -2240,8 +2241,9 @@ If we are in a notifications view, return `notifications-min-id'."
   (save-excursion
     (goto-char (point-max))
     (mastodon-tl--property
-     (if (member (mastodon-tl--get-buffer-type)
-                 '(mentions notifications))
+     (if (and mastodon-group-notifications
+              (member (mastodon-tl--get-buffer-type)
+                      '(mentions notifications)))
          'notifications-min-id
        'item-id)
      nil :backward)))
@@ -2865,7 +2867,8 @@ the current view."
          (args (append args params))
          (url (mastodon-http--api
                endpoint
-               (when (or (string= endpoint "notifications")
+               (when (or (and mastodon-group-notifications
+                              (string= endpoint "notifications"))
                          (string-suffix-p "search" endpoint))
                  "v2"))))
     (apply #'mastodon-http--get-json-async url args callback cbargs)))
