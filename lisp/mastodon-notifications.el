@@ -56,7 +56,6 @@
 (autoload 'mastodon-tl--render-text "mastodon-tl")
 (autoload 'mastodon-notifications-get "mastodon")
 (autoload 'mastodon-tl--byline-uname-+-handle "mastodon-tl")
-(autoload 'mastodon-tl--byline-username "mastodon-tl")
 (autoload 'mastodon-tl--byline-handle "mastodon-tl")
 (autoload 'mastodon-http--get-json "mastodon-http")
 (autoload 'mastodon-media--get-avatar-rendering "mastodon-media")
@@ -243,7 +242,7 @@ JSON is a list of alists."
        ;; body
        (mastodon-notifiations--body-arg
         type filters status profile-note follower-name)
-       ;; action-byline
+       ;; action-byline (top)
        (unless (member type '(follow follow_request mention))
          (downcase
           (mastodon-notifications--byline-concat
@@ -251,10 +250,9 @@ JSON is a list of alists."
        ;; action authors
        (cond ((member type '(follow follow_request mention))
               "") ;; mentions are normal statuses
-             (t (mastodon-tl--byline-username note)))
-       ;; action symbol:
-       (unless (eq type 'mention)
-         (mastodon-tl--symbol type))
+             (t (mastodon-tl--byline-handle note nil
+                                            follower-name
+                                            'mastodon-display-name-face)))
        ;; base toot
        (when (or (eq type 'favourite)
                  (eq type 'boost))
@@ -300,9 +298,6 @@ ACCOUNTS is data of the accounts that have reacted to the notification."
                   "") ;; mentions are normal statuses
                  (t (mastodon-notifications--byline-accounts
                      accounts status group)))
-           ;; action symbol:
-           (unless (eq type 'mention)
-             (mastodon-tl--symbol type))
            ;; base toot (no need for update/poll/?)
            (when (member type '(favourite reblog))
              status)
@@ -344,7 +339,7 @@ FILTERS STATUS PROFILE-NOTE FOLLOWER-NAME GROUP."
      (t body))))
 
 (defun mastodon-notifications--insert-note
-    (toot body action-byline action-authors action-symbol
+    (toot body action-byline action-authors
           &optional base-toot unfolded group accounts type)
   "Display the content and byline of timeline element TOOT.
 BODY will form the section of the toot above the byline.
@@ -369,18 +364,19 @@ TYPE is notification type, used for non-group notifs."
   (let* ((type (if type
                    (symbol-name type) ;; non-group
                  (alist-get 'type group)))
+         (action-symbol (unless (eq type 'mention)
+                          (mastodon-tl--symbol (intern type))))
          (toot-foldable
           (and mastodon-tl--fold-toots-at-length
                (length> body mastodon-tl--fold-toots-at-length))))
     (insert
      (propertize ;; top byline, body + byline:
       (concat
-       (propertize ;; top byline
-        (if (equal type "mention")
-            ""
-          (concat action-symbol " " action-authors
-                  action-byline))
-        'byline-top t)
+       (if (equal type "mention")
+           ""
+         (propertize ;; top byline
+          (concat action-symbol " " action-authors action-byline)
+          'byline-top t))
        (propertize body ;; body only
                    'toot-body t) ;; includes newlines etc. for folding
        "\n"
