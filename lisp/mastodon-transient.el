@@ -332,7 +332,7 @@ Do not add more than the server's maximum setting."
                  (not (y-or-n-p "Need more than one option. Proceed? ")))
             (and (> opts-count (mastodon-transient-max-poll-opts))
                  (not (y-or-n-p "More options than server max. Proceed? "))))
-        (mastodon-create-poll)
+        (call-interactively #'mastodon-create-poll)
       ;; if we are called with no poll data, do not set:
       (unless (not vals)
         (setq tp-transient-settings

@@ -45,7 +45,8 @@ Note that such modes will need to require wid-edit.")
 
 (defface mastodon-widget-face
   '((t :inherit font-lock-function-name-face :weight bold :underline t))
-  "Face for widgets.")
+  "Face for widgets."
+  :group 'mastodon)
 
 (defun mastodon-widget--return-item-widgets (list)
   "Return a list of item widgets for each item, a string, in LIST."
