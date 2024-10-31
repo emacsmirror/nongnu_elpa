@@ -36,14 +36,18 @@
 (require 'emojify nil :noerror)
 (declare-function emojify-insert-emoji "emojify")
 (declare-function emojify-set-emoji-data "emojify")
+(declare-function emojify-mode "emojify")
+(declare-function emojify-emojis-each "emojify")
 (defvar emojify-emojis-dir)
 (defvar emojify-user-emojis)
+(defvar emojify-emoji-styles)
 
 (require 'cl-lib)
 (require 'persist)
 (require 'mastodon-iso)
 (require 'facemenu)
 (require 'text-property-search)
+(require 'ht)
 
 (eval-when-compile
   (require 'mastodon-tl))
