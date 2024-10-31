@@ -348,7 +348,7 @@ FILTERS STATUS PROFILE-NOTE FOLLOWER-NAME GROUP."
 (defun mastodon-notifications--insert-note
     (toot body action-byline
           &optional base-toot unfolded group accounts type)
-"Display the content and byline of timeline element TOOT.
+  "Display the content and byline of timeline element TOOT.
 BODY will form the section of the toot above the byline.
 AUTHOR-BYLINE is an optional function for adding the author
 portion of the byline that takes one variable. By default it is
@@ -368,55 +368,54 @@ foldable.
 GROUP is the notification group data.
 ACCOUNTS is the notification accounts data.
 TYPE is notification type, used for non-group notifs."
-(let* ((type (if type
-                 (symbol-name type) ;; non-group
-               (alist-get 'type group)))
-       (toot-foldable
-        (and mastodon-tl--fold-toots-at-length
-             (length> body mastodon-tl--fold-toots-at-length)))
-       (follower (alist-get 'account toot))
-       (follower-name (or (alist-get 'display_name follower)
-                          (alist-get 'username follower))))
-  (insert
-   (propertize ;; top byline, body + byline:
-    (concat
-     (if (equal type "mention") ;; top (action) byline
-         ""
-       action-byline)
-     ;; (mastodon-notifications--action-byline
-     ;; (intern type) accounts group toot follower-name))
-     (propertize body ;; body only
-                 'toot-body t) ;; includes newlines etc. for folding
-     "\n"
-     ;; actual byline:
-     (mastodon-tl--byline
-      toot nil nil base-toot group
-      ;; types listed here use base item timestamp, else we use group's
-      ;; latest timestamp:
-      (when (not (member type '("favourite" "reblog" "edit" "poll")))
-        (mastodon-tl--field 'latest_page_notification_at group))))
-    'item-type     'toot ;; for nav, actions, etc.
-    'item-id       (or (alist-get 'page_max_id group) ;; newest notif
-                       (alist-get 'id toot)) ; toot id
-    'base-item-id  (mastodon-tl--item-id
-                    ;; if status is a notif, get id from base-toot
-                    ;; (-tl--item-id toot) will not work here:
-                    (or base-toot
-                        toot)) ; else normal toot with reblog check
-    'item-json     toot
-    'base-toot     base-toot
-    'cursor-face   'mastodon-cursor-highlight-face
-    'toot-foldable toot-foldable
-    'toot-folded   (and toot-foldable (not unfolded))
-    ;; grouped notifs data:
-    'notification-type type
-    'notification-id (alist-get 'group_key group)
-    'notification-group group
-    'notification-accounts accounts
-    ;; for pagination:
-    'notifications-min-id (alist-get 'page_min_id group)
-    'notifications-max-id (alist-get 'page_max_id group))
-   "\n")))
+  (let* ((type (if type
+                   (symbol-name type) ;; non-group
+                 (alist-get 'type group)))
+         (toot-foldable
+          (and mastodon-tl--fold-toots-at-length
+               (length> body mastodon-tl--fold-toots-at-length)))
+         (follower (alist-get 'account toot))
+         (follower-name (or (alist-get 'display_name follower)
+                            (alist-get 'username follower)))
+         (ts ;; types listed here use base item timestamp, else we use
+          ;; group's latest timestamp:
+          (when (and group
+                     (not
+                      (member type '("favourite" "reblog" "edit" "poll"))))
+            (mastodon-tl--field 'latest_page_notification_at group))))
+    (insert
+     (propertize ;; top byline, body + byline:
+      (concat
+       (if (equal type "mention") ;; top (action) byline
+           ""
+         action-byline)
+       (propertize body ;; body only
+                   'toot-body t) ;; includes newlines etc. for folding
+       "\n"
+       ;; actual byline:
+       (mastodon-tl--byline toot nil nil base-toot group ts))
+      'item-type     'toot ;; for nav, actions, etc.
+      'item-id       (or (alist-get 'page_max_id group) ;; newest notif
+                         (alist-get 'id toot)) ; toot id
+      'base-item-id  (mastodon-tl--item-id
+                      ;; if status is a notif, get id from base-toot
+                      ;; (-tl--item-id toot) will not work here:
+                      (or base-toot
+                          toot)) ; else normal toot with reblog check
+      'item-json     toot
+      'base-toot     base-toot
+      'cursor-face   'mastodon-cursor-highlight-face
+      'toot-foldable toot-foldable
+      'toot-folded   (and toot-foldable (not unfolded))
+      ;; grouped notifs data:
+      'notification-type type
+      'notification-id (alist-get 'group_key group)
+      'notification-group group
+      'notification-accounts accounts
+      ;; for pagination:
+      'notifications-min-id (alist-get 'page_min_id group)
+      'notifications-max-id (alist-get 'page_max_id group))
+     "\n")))
 
 (defun mastodon-notifications--byline-accounts
     (accounts group &optional avatar)
