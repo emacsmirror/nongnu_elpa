@@ -46,7 +46,7 @@
 (require 'calendar)
 (require 'subr-x)
 
-(require 'vc)
+(require 'vc-git)
 (require 'emacsql-sqlite)
 (require 'transient)
 (require 'animate)
@@ -1760,29 +1760,26 @@ DATE: Date to log the note review on the activity-log."
     ;; Reopen gnosis-db after pull
     (setf gnosis-db (emacsql-sqlite-open (expand-file-name "gnosis.db" dir)))))
 
-(defun gnosis-review-commit (note-count)
+(defun gnosis-review-commit (note-num)
   "Commit review session on git repository.
 
 This function initializes the `gnosis-dir' as a Git repository if it is not
 already one.  It then adds the gnosis.db file to the repository and commits
 the changes with a message containing the reviewed number of notes.
 
-NOTE-COUNT: The number of notes reviewed in the session to be commited."
+NOTE-NUM: The number of notes reviewed in the session."
   (let ((git (executable-find "git"))
 	(default-directory gnosis-dir))
     (unless git
       (error "Git not found, please install git"))
     (unless (file-exists-p (expand-file-name ".git" gnosis-dir))
-      (vc-create-repo 'Git))
-    ;; TODO: Redo this using vc.
+      (vc-git-create-repo))
     (unless gnosis-testing
-      (shell-command (format "%s %s %s" git "add" (shell-quote-argument "gnosis.db")))
-      (shell-command (format "%s %s %s" git "commit -m"
-			     (shell-quote-argument
-			      (format "Reviewed %d notes." note-count)))))
+      (vc-git-command nil 0 nil "add" "gnosis.db")
+      (vc-git-command nil 0 nil "commit" "-m" (format "Total notes reviewed: %d" note-num)))
     (when (and gnosis-vc-auto-push (not gnosis-testing))
       (gnosis-vc-push))
-    (message "Review session finished.")))
+    (message "Review session finished.  %d notes reviewed." note-num)))
 
 (defun gnosis-review-action--edit (success note note-count)
   "Edit NOTE during review.
