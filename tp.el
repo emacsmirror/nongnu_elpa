@@ -1,9 +1,9 @@
-;;; tp.el ---  Utilities for transient menu that POST to an API. -*- lexical-binding: t; -*-
+;;; tp.el ---  Utilities for transient menus that POST to an API -*- lexical-binding: t; -*-
 
 ;; Author: Marty Hiatt <mousebot@disroot.org>
 ;; Copyright (C) 2024 Marty Hiatt <mousebot@disroot.org>
-;; Version: 0.5
-;; Package-Requires: ((emacs "28.1"))
+;; Version: 0.6
+;; Package-Requires: ((emacs "28.1") (transient "0.5.0"))
 ;; Keywords: convenience, api, requests
 ;; URL: https://codeberg.org/martianh/tp.el
 
