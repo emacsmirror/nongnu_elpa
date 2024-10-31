@@ -244,16 +244,8 @@ JSON is a list of alists."
        (mastodon-notifiations--body-arg
         type filters status profile-note follower-name)
        ;; action-byline (top)
-       (unless (member type '(follow follow_request mention))
-         (downcase
-          (mastodon-notifications--byline-concat
-           (alist-get type mastodon-notifications--action-alist))))
-       ;; action authors
-       (cond ((member type '(follow follow_request mention))
-              "") ;; mentions are normal statuses
-             (t (mastodon-tl--byline-handle note nil
-                                            follower-name
-                                            'mastodon-display-name-face)))
+       (mastodon-notifications--action-byline
+        type nil nil note follower-name)
        ;; base toot (always provide)
        status
        nil nil nil type))))
@@ -288,19 +280,35 @@ ACCOUNTS is data of the accounts that have reacted to the notification."
            (mastodon-notifiations--body-arg
             type filters status profile-note follower-name group)
            ;; action-byline
-           (unless (member type '(follow follow_request mention))
-             (downcase
-              (mastodon-notifications--byline-concat
-               (alist-get type mastodon-notifications--action-alist))))
-           ;; action authors
-           (cond ((member type '(follow follow_request mention))
-                  "") ;; mentions are normal statuses
-                 (t (mastodon-notifications--byline-accounts
-                     accounts status group)))
+           (mastodon-notifications--action-byline
+            type accounts group)
            ;; base toot (no need for update/poll/?)
            (when (member type '(favourite reblog))
              status)
            folded group accounts))))))
+
+(defun mastodon-notifications--action-byline
+    (type &optional accounts group note follower-name)
+  "TYPE ACCOUNTS GROUP NOTE FOLLOWER-NAME."
+  (let ((action-str
+         (unless (member type '(follow follow_request mention))
+           (downcase
+            (mastodon-notifications--byline-concat
+             (alist-get type mastodon-notifications--action-alist)))))
+        (action-symbol (if (eq type 'mention)
+                           ""
+                         (mastodon-tl--symbol type)))
+        (action-authors
+         (if (member type '(follow follow_request mention))
+             "" ;; mentions are normal statuses
+           (if group
+               (mastodon-notifications--byline-accounts accounts group)
+             (mastodon-tl--byline-handle note nil
+                                         follower-name
+                                         'mastodon-display-name-face)))))
+    (propertize
+     (concat action-symbol " " action-authors action-str)
+     'byline-top t)))
 
 (defun mastodon-notifiations--body-arg
     (type &optional filters status profile-note follower-name group)
@@ -338,9 +346,9 @@ FILTERS STATUS PROFILE-NOTE FOLLOWER-NAME GROUP."
      (t body))))
 
 (defun mastodon-notifications--insert-note
-    (toot body action-byline action-authors
+    (toot body action-byline
           &optional base-toot unfolded group accounts type)
-  "Display the content and byline of timeline element TOOT.
+"Display the content and byline of timeline element TOOT.
 BODY will form the section of the toot above the byline.
 AUTHOR-BYLINE is an optional function for adding the author
 portion of the byline that takes one variable. By default it is
@@ -360,59 +368,56 @@ foldable.
 GROUP is the notification group data.
 ACCOUNTS is the notification accounts data.
 TYPE is notification type, used for non-group notifs."
-  (let* ((type (if type
-                   (symbol-name type) ;; non-group
-                 (alist-get 'type group)))
-         (action-symbol (unless (eq type 'mention)
-                          (mastodon-tl--symbol (intern type))))
-         (toot-foldable
-          (and mastodon-tl--fold-toots-at-length
-               (length> body mastodon-tl--fold-toots-at-length))))
-    (insert
-     (propertize ;; top byline, body + byline:
-      (concat
-       (if (equal type "mention")
-           ""
-         (propertize ;; top byline
-          (concat action-symbol " " action-authors action-byline)
-          'byline-top t))
-       (propertize body ;; body only
-                   'toot-body t) ;; includes newlines etc. for folding
-       "\n"
-       ;; actual byline:
-       (mastodon-tl--byline
-        toot nil nil base-toot group
-        ;; types listed here use base item timestamp, else we use group's
-        ;; latest timestamp:
-        (when (not (member type '("favourite" "reblog" "edit" "poll")))
-          (mastodon-tl--field 'latest_page_notification_at group))))
-      'item-type     'toot ;; for nav, actions, etc.
-      'item-id       (or (alist-get 'page_max_id group) ;; newest notif
-                         (alist-get 'id toot)) ; toot id
-      'base-item-id  (mastodon-tl--item-id
-                      ;; if status is a notif, get id from base-toot
-                      ;; (-tl--item-id toot) will not work here:
-                      (or base-toot
-                          toot)) ; else normal toot with reblog check
-      'item-json     toot
-      'base-toot     base-toot
-      'cursor-face   'mastodon-cursor-highlight-face
-      'toot-foldable toot-foldable
-      'toot-folded   (and toot-foldable (not unfolded))
-      ;; grouped notifs data:
-      'notification-type type
-      'notification-id (alist-get 'group_key group)
-      'notification-group group
-      'notification-accounts accounts
-      ;; for pagination:
-      'notifications-min-id (alist-get 'page_min_id group)
-      'notifications-max-id (alist-get 'page_max_id group))
-     "\n")))
+(let* ((type (if type
+                 (symbol-name type) ;; non-group
+               (alist-get 'type group)))
+       (toot-foldable
+        (and mastodon-tl--fold-toots-at-length
+             (length> body mastodon-tl--fold-toots-at-length)))
+       (follower (alist-get 'account toot))
+       (follower-name (or (alist-get 'display_name follower)
+                          (alist-get 'username follower))))
+  (insert
+   (propertize ;; top byline, body + byline:
+    (concat
+     (if (equal type "mention") ;; top (action) byline
+         ""
+       action-byline)
+     ;; (mastodon-notifications--action-byline
+     ;; (intern type) accounts group toot follower-name))
+     (propertize body ;; body only
+                 'toot-body t) ;; includes newlines etc. for folding
+     "\n"
+     ;; actual byline:
+     (mastodon-tl--byline
+      toot nil nil base-toot group
+      ;; types listed here use base item timestamp, else we use group's
+      ;; latest timestamp:
+      (when (not (member type '("favourite" "reblog" "edit" "poll")))
+        (mastodon-tl--field 'latest_page_notification_at group))))
+    'item-type     'toot ;; for nav, actions, etc.
+    'item-id       (or (alist-get 'page_max_id group) ;; newest notif
+                       (alist-get 'id toot)) ; toot id
+    'base-item-id  (mastodon-tl--item-id
+                    ;; if status is a notif, get id from base-toot
+                    ;; (-tl--item-id toot) will not work here:
+                    (or base-toot
+                        toot)) ; else normal toot with reblog check
+    'item-json     toot
+    'base-toot     base-toot
+    'cursor-face   'mastodon-cursor-highlight-face
+    'toot-foldable toot-foldable
+    'toot-folded   (and toot-foldable (not unfolded))
+    ;; grouped notifs data:
+    'notification-type type
+    'notification-id (alist-get 'group_key group)
+    'notification-group group
+    'notification-accounts accounts
+    ;; for pagination:
+    'notifications-min-id (alist-get 'page_min_id group)
+    'notifications-max-id (alist-get 'page_max_id group))
+   "\n")))
 
-;; FIXME: REFACTOR with -tl--byline?:
-;; we provide account directly, rather than let-alisting toot
-;; almost everything is .account.field anyway
-;; but toot still needed also, for attachments, etc.
 (defun mastodon-notifications--byline-accounts
     (accounts group &optional avatar)
   "Propertize author byline ACCOUNTS.
