@@ -3,7 +3,7 @@
 ;; Author: Marty Hiatt <mousebot@disroot.org>
 ;; Copyright (C) 2023 Marty Hiatt <mousebot@disroot.org>
 ;;
-;; Package-Requires: ((emacs "29.1") (fedi "0.2") (tp "0.5"))
+;; Package-Requires: ((emacs "29.1") (fedi "0.2") (tp "0.5") (transient "0.5.0"))
 ;; Keywords: git, convenience
 ;; URL: https://codeberg.org/martianh/fj.el
 ;; Version: 0.3
