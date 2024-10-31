@@ -819,15 +819,17 @@ TS is a timestamp from the server, if any."
               ;; (mastodon-tl--field auto fetches from reblogs if needed):
               (mastodon-tl--field 'created_at toot)))
          (parsed-time (when created-time (date-to-time created-time)))
-         (faved (eq t (mastodon-tl--field 'favourited toot)))
-         (boosted (eq t (mastodon-tl--field 'reblogged toot)))
-         (bookmarked (eq t (mastodon-tl--field 'bookmarked toot)))
-         (visibility (mastodon-tl--field 'visibility toot))
-         (base-toot-maybe (or base-toot ;; show edits for notifs
-                              (mastodon-tl--toot-or-base toot))) ;; for boosts
-         (account (alist-get 'account base-toot-maybe))
+         ;; non-grouped notifs now need to pull the following data from
+         ;; base toot:
+         (base-maybe (or base-toot ;; show edits for notifs
+                         (mastodon-tl--toot-or-base toot))) ;; for boosts
+         (faved (eq t (mastodon-tl--field 'favourited base-maybe)))
+         (boosted (eq t (mastodon-tl--field 'reblogged base-maybe)))
+         (bookmarked (eq t (mastodon-tl--field 'bookmarked base-maybe)))
+         (visibility (mastodon-tl--field 'visibility base-maybe))
+         (account (alist-get 'account base-maybe))
          (avatar-url (alist-get 'avatar account))
-         (edited-time (alist-get 'edited_at base-toot-maybe))
+         (edited-time (alist-get 'edited_at base-maybe))
          (edited-parsed (when edited-time (date-to-time edited-time))))
     (concat
      ;; Boosted/favourited markers are not technically part of the byline, so
@@ -923,7 +925,7 @@ TS is a timestamp from the server, if any."
       'edited edited-time
       'edit-history (when edited-time
                       (mastodon-toot--get-toot-edits
-                       (alist-get 'id base-toot-maybe)))
+                       (alist-get 'id base-maybe)))
       'byline       t))))
 
 
