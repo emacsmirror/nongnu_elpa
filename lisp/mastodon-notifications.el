@@ -374,9 +374,6 @@ TYPE is notification type, used for non-group notifs."
          (toot-foldable
           (and mastodon-tl--fold-toots-at-length
                (length> body mastodon-tl--fold-toots-at-length)))
-         (follower (alist-get 'account toot))
-         (follower-name (or (alist-get 'display_name follower)
-                            (alist-get 'username follower)))
          (ts ;; types listed here use base item timestamp, else we use
           ;; group's latest timestamp:
           (when (and group
