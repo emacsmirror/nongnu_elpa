@@ -127,10 +127,16 @@ etc."
   "Face for item names.")
 
 (defface fj-item-author-face
-  `((t ;:background ,(face-attribute 'magit-diff-hunk-heading :background)
-     :inherit magit-diff-hunk-heading
-     :extend t))
-  "Face for item authors.")
+  `((t :inherit magit-diff-hunk-heading
+       :underline t
+       :foreground
+       ,(face-attribute 'font-lock-function-name-face :foreground)
+       :weight bold))
+  "Face for item authors")
+
+(defface fj-item-byline-face
+  `((t :inherit magit-diff-hunk-heading))
+  "Face for item author bylines.")
 
 (defface fj-issue-commit-face
   '((t :inherit (link ;font-lock-comment-face
@@ -1351,28 +1357,27 @@ JSON is the item's data to process the link with."
   (read-only-mode 1))
 
 (defun fj-format-comment (comment &optional author owner)
-  "Render COMMENT.
+  "Format COMMENT.
 AUTHOR is of comment, OWNER is of repo."
   (let-alist comment
     (let ((stamp (fedi--relative-time-description
                   (date-to-time .created_at))))
       (propertize
        (concat
-        ;; TODO: improve this?
-        (propertize (concat .user.username " ")
-                    'face 'fj-item-author-face
-                    'fj-byline t)
+        (fj-render-item-user (concat .user.username))
+        (propertize " "
+                    'face 'fj-item-byline-face)
         (fj-author-or-owner-str .user.username author)
         (propertize " "
-                    'face 'fj-item-author-face)
+                    'face 'fj-item-byline-face)
         (fj-author-or-owner-str .user.username nil owner)
         (fj-edited-str-maybe .created_at .updated_at)
         (propertize (fj-issue-right-align-str stamp)
-                    'face 'fj-item-author-face)
+                    'face 'fj-item-byline-face)
         "\n\n"
         (fj-render-body .body comment)
         "\n"
-        fedi-horiz-bar fedi-horiz-bar) ; "\n")
+        fedi-horiz-bar fedi-horiz-bar)
        'fj-comment comment
        'fj-comment-author .user.username
        'fj-comment-id .id))))
@@ -1387,7 +1392,7 @@ OWNER is the repo owner."
 (defun fj-prop-item-flag (str)
   "Propertize STR as author face in box."
   (propertize str
-              'face '(:inherit fj-item-author-face :box t)))
+              'face '(:inherit fj-item-byline-face :box t)))
 
 (defun fj-author-or-owner-str (username author &optional owner)
   "If USERNAME is equal either AUTHOR or OWNER, return a boxed string."
@@ -1409,7 +1414,7 @@ OWNER is the repo owner."
                  (date-to-time updated))))
     (when (> u-secs c-secs)
       (concat (propertize " "
-                          'face 'fj-item-author-face)
+                          'face 'fj-item-byline-face)
               (fj-prop-item-flag "edited")))))
 
 (defun fj-render-item (repo owner item number timeline &optional reload)
@@ -1457,18 +1462,17 @@ RELOAD mean we reloaded."
                   (fj-propertize-link .base.label 'branch))
                "")
              "\n\n"
-             ;; item stuff:
+             ;; item byline:
              ;; FIXME: :extend t doesn't work here whatever i do
-             (propertize (concat .user.username " ")
-                         'face 'fj-item-author-face
-                         'fj-byline t
-                         'fj-issue item)
+             (fj-render-item-user (concat .user.username))
+             (propertize " "
+                         'face 'fj-item-byline-face)
              (fj-author-or-owner-str .user.username nil owner)
              ;; FIXME: this diffing will mark any issue as edited if it has
              ;; merely been commented on.
              ;; (fj-edited-str-maybe .created_at .updated_at)
              (propertize (fj-issue-right-align-str stamp)
-                         'face 'fj-item-author-face)
+                         'face 'fj-item-byline-face)
              "\n\n"
              (fj-render-body .body item)
              "\n"
@@ -1476,8 +1480,7 @@ RELOAD mean we reloaded."
             'fj-item-number number
             'fj-repo repo
             'fj-item-data item))
-          ;; comments
-          ;; (fj-render-comments comments .user.username owner))
+          ;; timeline items:
           (fj-render-timeline timeline .user.username owner)
           (setq fj-current-repo repo)
           (setq fj-buffer-spec
@@ -2549,6 +2552,19 @@ Allow quick jumping to an element in a tabulated list view."
     alist))
 
 ;;; ITEMS: RENDERING HANDLES, etc.
+
+(defun fj-render-item-user (str)
+  "Render item user STR as a clickable hyperlink."
+  (propertize str
+              'face 'fj-item-author-face
+              'fj-byline t
+              'fj-tab-stop t
+              'keymap fj-link-keymap
+              'button t
+              'mouse-face 'highlight
+              'follow-link t
+              'type 'handle
+              'item str)) ; for links
 
 (defun fj-do-link-action (pos)
   "Do the action of the link at POS.
