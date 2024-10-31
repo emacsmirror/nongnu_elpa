@@ -3,11 +3,8 @@
 ;; Author: Marty Hiatt <mousebot@disroot.org>
 ;; Copyright (C) 2024 Marty Hiatt <mousebot@disroot.org>
 ;;
-;; Package-Requires: ((emacs "28.1") (fedi "0.2"))
 ;; Keywords: git, convenience
 ;; URL: https://codeberg.org/martianh/fj.el
-;; Version: 0.2
-;; Separator: -
 
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
