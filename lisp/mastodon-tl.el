@@ -3038,7 +3038,7 @@ MAX-ID is the pagination parameter, a string."
                               (alist-get 'hashtags response))
                              ((string= "accounts" type)
                               (alist-get 'accounts response))))))
-             (headers (if headers (cdr response) nil))
+             (headers (when headers (cdr response)))
              (link-header
               (mastodon-tl--get-link-header-from-response headers)))
         (goto-char (point-max))
@@ -3312,7 +3312,7 @@ NO-BYLINE means just insert toot body, used for announcements."
           ((eq (caar json) 'error)
            (user-error "Looks like the server bugged out: \"%s\"" (cdar json)))
           (t
-           (let* ((headers (if headers (cdr response) nil))
+           (let* ((headers (when headers (cdr response)))
                   (link-header
                    (mastodon-tl--get-link-header-from-response headers)))
              (with-mastodon-buffer buffer #'mastodon-mode nil
