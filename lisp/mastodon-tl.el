@@ -799,7 +799,7 @@ LETTER is a string, F for favourited, B for boosted, or K for bookmarked."
 
 (defun mastodon-tl--byline (toot &optional detailed-p
                                  domain base-toot group ts)
-  "Generate byline for TOOT.
+  "Generate (bottom) byline for TOOT.
 AUTHOR-BYLINE is a function for adding the author portion of
 the byline that takes one variable.
 DETAILED-P means display more detailed info. For now
@@ -1653,21 +1653,9 @@ Runs `mastodon-tl--render-text' and fetches poll or media."
     (string= reply-to-id prev-id)))
 
 (defun mastodon-tl--insert-status
-    (toot body action-byline &optional id base-toot
-          detailed-p thread domain unfolded no-byline)
+    (toot body &optional detailed-p thread domain unfolded no-byline)
   "Display the content and byline of timeline element TOOT.
 BODY will form the section of the toot above the byline.
-AUTHOR-BYLINE is an optional function for adding the author
-portion of the byline that takes one variable. By default it is
-`mastodon-tl--byline-author'.
-ACTION-BYLINE is also an optional function for adding an action,
-such as boosting favouriting and following to the byline. It also
-takes a single function. By default it is
-`mastodon-tl--byline-boost'.
-ID is that of the status if it is a notification, which is
-attached as a `item-id' property if provided. If the
-status is a favourite or boost notification, BASE-TOOT is the
-JSON of the toot responded to.
 DETAILED-P means display more detailed info. For now
 this just means displaying toot client.
 THREAD means the status will be displayed in a thread view.
@@ -1688,7 +1676,7 @@ NO-BYLINE means just insert toot body, used for folding."
        (propertize ;; body only:
         (concat
          "\n"
-         (funcall action-byline toot)
+         (mastodon-tl--byline-boost toot) ;; top byline (boost)
          ;; relpy symbol:
          (when (and after-reply-status-p thread)
            (concat (mastodon-tl--symbol 'replied)
@@ -1708,17 +1696,11 @@ NO-BYLINE means just insert toot body, used for folding."
        "\n"
        (if no-byline
            ""
-         (mastodon-tl--byline toot detailed-p domain base-toot)))
+         (mastodon-tl--byline toot detailed-p domain)))
       'item-type    'toot
-      'item-id      (or id ; notification's own id
-                        (alist-get 'id toot)) ; toot id
-      'base-item-id (mastodon-tl--item-id
-                     ;; if status is a notif, get id from base-toot
-                     ;; (-tl--item-id toot) will not work here:
-                     (or base-toot
-                         toot)) ; else normal toot with reblog check
+      'item-id (alist-get 'id toot) ; toot id
+      'base-item-id (mastodon-tl--item-id toot) ; with reblog check
       'item-json    toot
-      'base-toot    base-toot
       'cursor-face 'mastodon-cursor-highlight-face
       'toot-foldable toot-foldable
       'toot-folded (and toot-foldable (not unfolded)))
@@ -1793,8 +1775,7 @@ NO-CW means treat content warnings as unfolded."
     (unless (and filtered (assoc "hide" filters)) ;; no insert
       (mastodon-tl--insert-status
        toot (mastodon-tl--clean-tabs-and-nl spoiler-or-content)
-       #'mastodon-tl--byline-boost nil nil detailed-p
-       thread domain unfolded no-byline))))
+       detailed-p thread domain unfolded no-byline))))
 
 (defun mastodon-tl--timeline (toots &optional thread domain no-byline)
   "Display each toot in TOOTS.
