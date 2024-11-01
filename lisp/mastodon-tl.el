@@ -640,7 +640,8 @@ is extracted from it."
   "Format a byline handle from account in TOOT.
 DOMAIN is optionally added to the handle.
 ACCOUNT is optionally acccount data to use.
-STRING is optionally the string to propertize.
+STRING is optionally the string to propertize, it is used to make
+username rather than handle buttons.
 FACE is optionally the face to use.
 The last two args allow for display a username as a clickable
 handle."
@@ -676,7 +677,6 @@ ACCOUNT is optionally acccount data to use."
 
 (defun mastodon-tl--byline-author (toot &optional avatar domain base)
   "Propertize author of TOOT.
-If TOOT contains a reblog, return author of reblogged item.
 With arg AVATAR, include the account's avatar image.
 When DOMAIN, force inclusion of user's domain in their handle.
 BASE means to use data from the base item (reblog slot) if possible.

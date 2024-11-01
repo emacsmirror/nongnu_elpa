@@ -101,8 +101,8 @@
     map)
   "Keymap for viewing notifications.")
 
-(defun mastodon-notifications--byline-concat (message)
-  "Add byline for TOOT with MESSAGE."
+(defun mastodon-notifications--byline-action-str (message)
+  "Return an action (top) byline string for TOOT with MESSAGE."
   (concat " "
           (propertize message 'face 'mastodon-boosted-face)
           " " (cdr (assoc message mastodon-notifications--response-alist))
@@ -289,11 +289,13 @@ ACCOUNTS is data of the accounts that have reacted to the notification."
 
 (defun mastodon-notifications--action-byline
     (type &optional accounts group note follower-name)
-  "TYPE ACCOUNTS GROUP NOTE FOLLOWER-NAME."
+  "Return an action (top) byline for notification of TYPE.
+ACCOUNTS and GROUP group are used by grouped notifications.
+NOTE and FOLLOWER-NAME are used for non-grouped notifs."
   (let ((action-str
          (unless (member type '(follow follow_request mention))
            (downcase
-            (mastodon-notifications--byline-concat
+            (mastodon-notifications--byline-action-str
              (alist-get type mastodon-notifications--action-alist)))))
         (action-symbol (if (eq type 'mention)
                            ""
@@ -354,15 +356,8 @@ AUTHOR-BYLINE is an optional function for adding the author
 portion of the byline that takes one variable. By default it is
 `mastodon-tl--byline-author'.
 ACTION-BYLINE is a string, obtained by calling
-`mastodon-notifications--byline-concat'.
-ACTION-AUTHORS is a string of those who have responded to the
-current item, obtained by calling
-`mastodon-notifications--byline-accounts'.
-ACTION-SYMBOL is a symbol indicating a favourite, boost, or edit.
-ID is that of the status if it is a notification, which is
-attached as a `item-id' property if provided. If the
-status is a favourite or boost notification, BASE-TOOT is the
-JSON of the toot responded to.
+`mastodon-notifications--action-byline'.
+BASE-TOOT is the JSON of the toot responded to.
 UNFOLDED is a boolean meaning whether to unfold or fold item if
 foldable.
 GROUP is the notification group data.
