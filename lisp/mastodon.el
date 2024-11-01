@@ -153,6 +153,30 @@ currently, it doesn't seem to have a way to handle custom emoji,
 while emojify,el has this feature and mastodon.el implements it."
   :type 'boolean)
 
+;; notifications customizes
+;; moved here because we can load notifs without first loading mastodon.el
+;; or mastodon-notifications.el
+
+(defcustom mastodon-profile-note-in-foll-reqs t
+  "If non-nil, show a user's profile note in follow request notifications."
+  :type '(boolean))
+
+(defcustom mastodon-profile-note-in-foll-reqs-max-length nil
+  "The max character length for user profile note in follow requests.
+Profile notes are only displayed if
+`mastodon-profile-note-in-foll-reqs' is non-nil.
+If unset, profile notes of any size will be displayed, which may
+make them unweildy."
+  :type '(integer))
+
+(defcustom mastodon-images-in-notifs nil
+  "Whether to display attached images in notifications."
+  :type '(boolean))
+
+(defcustom mastodon-group-notifications t
+  "Whether to use grouped notifications."
+  :type '(boolean))
+
 (defun mastodon-kill-window ()
   "Quit window and delete helper."
   (interactive)
@@ -372,7 +396,10 @@ MAX-ID is a request parameter for pagination."
      type
      (when max-id
        `(("max_id" . ,(mastodon-tl--buffer-property 'max-id))))
-     nil nil nil "v2")
+     nil nil nil
+     (if (not mastodon-group-notifications)
+         "v1"
+       "v2"))
     (with-current-buffer (get-buffer-create buffer)
       (use-local-map mastodon-notifications--map))))
 
