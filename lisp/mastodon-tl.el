@@ -1771,15 +1771,18 @@ title, and context."
     (mastodon-tl--filter-by-context context filters-no-context)))
 
 (defun mastodon-tl--toot (toot &optional detailed-p thread domain
-                               unfolded no-byline)
+                               unfolded no-byline no-cw)
   "Format TOOT and insert it into the buffer.
 DETAILED-P means display more detailed info. For now
 this just means displaying toot client.
 THREAD means the status will be displayed in a thread view.
 When DOMAIN, force inclusion of user's domain in their handle.
 UNFOLDED is a boolean meaning whether to unfold or fold item if foldable.
-NO-BYLINE means just insert toot body, used for folding."
-  (let* ((filtered (mastodon-tl--field 'filtered toot))
+NO-BYLINE means just insert toot body, used for folding.
+NO-CW means treat content warnings as unfolded."
+  (let* ((mastodon-tl--expand-content-warnings
+          (or no-cw mastodon-tl--expand-content-warnings))
+         (filtered (mastodon-tl--field 'filtered toot))
          (filters (when filtered
                     (mastodon-tl--current-filters filtered)))
          (spoiler-or-content (if-let ((match (assoc "warn" filters)))
@@ -1825,9 +1828,14 @@ NO-BYLINE means just insert toot body, used for folding."
 (defun mastodon-tl--fold-body (body)
   "Fold toot BODY if it is very long.
 Folding decided by `mastodon-tl--fold-toots-at-length'."
-  (let* ((heading (mastodon-search--format-heading
-                   (mastodon-tl--make-link "READ MORE" 'read-more)
-                   nil :no-newline))
+  (let* ((invis (get-text-property (1- (length body)) 'invisible body))
+         (spoiler (get-text-property (1- (length body))
+                                     'mastodon-content-warning-body body))
+         (heading (propertize (mastodon-search--format-heading
+                               (mastodon-tl--make-link "READ MORE" 'read-more)
+                               nil :no-newline)
+                              'mastodon-content-warning-body spoiler
+                              'invisible invis))
          (display (concat (substring body 0
                                      mastodon-tl--fold-toots-at-length)
                           heading)))
@@ -1847,6 +1855,10 @@ FOLD means to fold it instead."
       (let* ((inhibit-read-only t)
              (body-range (mastodon-tl--find-property-range 'toot-body
                                                            (point) :backward))
+             (cw-range (mastodon-tl--find-property-range
+                        'mastodon-content-warning-body
+                        (point) :backward))
+             (cw-invis (get-text-property (car cw-range) 'invisible))
              (toot (mastodon-tl--property 'item-json :no-move))
              ;; `replace-region-contents' is much too slow, our hack from
              ;; fedi.el is much simpler and much faster:
@@ -1862,7 +1874,8 @@ FOLD means to fold it instead."
         (delete-region beg end)
         (delete-char 1) ;; prevent newlines accumulating
         ;; insert toot body:
-        (mastodon-tl--toot toot nil nil nil (not fold) :no-byline)
+        (mastodon-tl--toot toot nil nil nil (not fold) :no-byline
+                           (unless cw-invis :no-cw)) ;; respect CW state
         ;; set toot-folded prop on entire toot (not just body):
         (let ((toot-range ;; post fold action range:
                (mastodon-tl--find-property-range 'item-json
