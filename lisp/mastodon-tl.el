@@ -163,6 +163,7 @@ nil."
     (verified        . ("✓" . "V"))
     (locked          . ("🔒" . "[locked]"))
     (private         . ("🔒" . "[followers]"))
+    (mention         . ("@"  . "[mention]"))
     (direct          . ("✉" . "[direct]"))
     (edited          . ("✍" . "[edited]"))
     (update          . ("✍" . "[edited]")) ;; server compat
