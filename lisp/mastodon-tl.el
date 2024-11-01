@@ -1275,25 +1275,22 @@ FILTER is a string to use as a filter warning spoiler instead."
          (cw (mastodon-tl--set-face message 'mastodon-cw-face)))
     (concat
      cw
-     (propertize (mastodon-tl--content toot)
-                 'invisible
-                 (if filter
-                     t
-                   (let ((cust mastodon-tl--expand-content-warnings))
-                     (cond ((eq t cust)
-                            nil)
-                           ((eq nil cust)
-                            t)
-                           ((eq 'server cust)
-                            (unless (eq t
-                                        ;; If something goes wrong reading prefs,
-                                        ;; just return nil so CWs show by default.
-                                        (condition-case nil
-                                            (mastodon-profile--get-preferences-pref
-                                             'reading:expand:spoilers)
-                                          (error nil)))
-                              t)))))
-                 'mastodon-content-warning-body t))))
+     (propertize
+      (mastodon-tl--content toot)
+      'invisible
+      (or filter ;; filters = invis
+          (let ((cust mastodon-tl--expand-content-warnings))
+            (if (not (eq 'server cust))
+                (not cust) ;; opp to setting
+              ;; respect server setting:
+              (not
+               ;; If something goes wrong reading prefs,
+               ;; just return nil so CWs show by default.
+               (condition-case nil
+                   (mastodon-profile--get-preferences-pref
+                    'reading:expand:spoilers)
+                 (error nil))))))
+      'mastodon-content-warning-body t))))
 
 
 ;;; MEDIA
@@ -1793,8 +1790,7 @@ NO-CW means treat content warnings as unfolded."
                                  (mastodon-tl--content toot)))))
     ;; If any filters are "hide", then we hide,
     ;; even though item may also have a "warn" filter:
-    (if (and filtered (assoc "hide" filters))
-        nil ;; no insert
+    (unless (and filtered (assoc "hide" filters)) ;; no insert
       (mastodon-tl--insert-status
        toot
        (mastodon-tl--clean-tabs-and-nl spoiler-or-content)
