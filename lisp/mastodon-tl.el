@@ -97,7 +97,8 @@
 (defvar mastodon-toot--visibility)
 (defvar mastodon-toot-mode)
 (defvar mastodon-active-user)
-(defvar mastodon-notifications--images-in-notifs)
+(defvar mastodon-images-in-notifs)
+(defvar mastodon-group-notifications)
 
 (when (require 'mpv nil :no-error)
   (declare-function mpv-start "mpv"))
@@ -162,6 +163,7 @@ nil."
     (verified        . ("✓" . "V"))
     (locked          . ("🔒" . "[locked]"))
     (private         . ("🔒" . "[followers]"))
+    (mention         . ("@"  . "[mention]"))
     (direct          . ("✉" . "[direct]"))
     (edited          . ("✍" . "[edited]"))
     (update          . ("✍" . "[edited]")) ;; server compat
@@ -610,40 +612,41 @@ Do so if type of status at poins is not follow_request/follow."
                   (string= type "follow")) ; no counts for these
         (message "%s" echo)))))
 
-;; FIXME: now that this can also be used for non byline rendering, let's
-;; remove the toot arg, and deal with attachments higher up (on real
-;; author byline only) removing toot arg makes it easier to render notifs
-;; that have no status (foll_reqs)
-(defun mastodon-tl--byline-username (toot &optional account)
+(defun mastodon-tl--byline-username (toot)
   "Format a byline username from account in TOOT.
-ACCOUNT is optionally acccount data to use."
-  (let-alist (or account (alist-get 'account toot))
-    (propertize (if (not (string-empty-p .display_name))
-                    .display_name
-                  .username)
-                'face 'mastodon-display-name-face
-                ;; enable playing of videos when point is on byline:
-                ;; 'attachments (mastodon-tl--get-attachments-for-byline toot)
-                'keymap mastodon-tl--byline-link-keymap
-                ;; echo faves count when point on post author name:
-                ;; which is where --goto-next-toot puts point.
-                'help-echo
-                ;; but don't add it to "following"/"follows" on
-                ;; profile views: we don't have a tl--buffer-spec
-                ;; yet:
-                (unless (or (string-suffix-p "-followers*" (buffer-name))
-                            (string-suffix-p "-following*" (buffer-name)))
-                  (mastodon-tl--format-byline-help-echo toot)))))
+TOOT may be account data, or toot data, in which case acount data
+is extracted from it."
+  (let ((data (or (alist-get 'account toot)
+                  toot))) ;; grouped nofifs use account data directly
+    (let-alist data
+      (propertize (if (not (string-empty-p .display_name))
+                      .display_name
+                    .username)
+                  'face 'mastodon-display-name-face
+                  ;; enable playing of videos when point is on byline:
+                  ;; 'attachments (mastodon-tl--get-attachments-for-byline toot)
+                  'keymap mastodon-tl--byline-link-keymap
+                  ;; echo faves count when point on post author name:
+                  ;; which is where --goto-next-toot puts point.
+                  'help-echo
+                  ;; but don't add it to "following"/"follows" on
+                  ;; profile views: we don't have a tl--buffer-spec
+                  ;; yet:
+                  (unless (or (string-suffix-p "-followers*" (buffer-name))
+                              (string-suffix-p "-following*" (buffer-name)))
+                    (mastodon-tl--format-byline-help-echo data))))))
 
-(defun mastodon-tl--byline-handle (toot &optional domain account string face)
+(defun mastodon-tl--byline-handle (toot &optional domain string face)
   "Format a byline handle from account in TOOT.
 DOMAIN is optionally added to the handle.
 ACCOUNT is optionally acccount data to use.
-STRING is optionally the string to propertize.
+STRING is optionally the string to propertize, it is used to make
+username rather than handle buttons.
 FACE is optionally the face to use.
 The last two args allow for display a username as a clickable
 handle."
-  (let-alist (or account (alist-get 'account toot))
+  (let-alist (or (alist-get 'account toot)
+                 toot) ;; grouped notifs
     (propertize (or string
                     (concat "@" .acct
                             (when domain
@@ -653,19 +656,18 @@ handle."
                 'face (or face 'mastodon-handle-face)
                 'mouse-face 'highlight
 	        'mastodon-tab-stop 'user-handle
-                'account account
 	        'shr-url .url
 	        'keymap mastodon-tl--link-keymap
                 'mastodon-handle (concat "@" .acct)
 	        'help-echo (concat "Browse user profile of @" .acct))))
 
-(defun mastodon-tl--byline-uname-+-handle (data &optional domain account)
+(defun mastodon-tl--byline-uname-+-handle (data &optional domain)
   "Concatenate a byline username and handle.
 DATA is the (toot) data to use.
 DOMAIN is optionally a domain for the handle.
 ACCOUNT is optionally acccount data to use."
-  (concat (mastodon-tl--byline-username data account)
-          " (" (mastodon-tl--byline-handle data domain account) ")"))
+  (concat (mastodon-tl--byline-username data)
+          " (" (mastodon-tl--byline-handle data domain) ")"))
 
 (defun mastodon-tl--display-or-uname (account)
   "Return display name or username from ACCOUNT data."
@@ -673,9 +675,8 @@ ACCOUNT is optionally acccount data to use."
       (alist-get 'display_name account)
     (alist-get 'username account)))
 
-(defun mastodon-tl--byline-author (toot &optional avatar domain base account)
+(defun mastodon-tl--byline-author (toot &optional avatar domain base)
   "Propertize author of TOOT.
-If TOOT contains a reblog, return author of reblogged item.
 With arg AVATAR, include the account's avatar image.
 When DOMAIN, force inclusion of user's domain in their handle.
 BASE means to use data from the base item (reblog slot) if possible.
@@ -684,7 +685,7 @@ ACCOUNT is optionally acccount data to use."
   (let* ((data (if base
                    (mastodon-tl--toot-or-base toot)
                  toot))
-         (account (or account (alist-get 'account data)))
+         (account (alist-get 'account data))
          (uname (mastodon-tl--display-or-uname account)))
     (concat
      ;; avatar insertion moved up to `mastodon-tl--byline' by default to
@@ -701,11 +702,11 @@ ACCOUNT is optionally acccount data to use."
                  " "
                  ;; username as button:
                  (mastodon-tl--byline-handle
-                  data domain account
+                  data domain
                   ;; display uname not handle (for boosts):
                   uname 'mastodon-display-name-face))
        ;; normal combo author byline:
-       (mastodon-tl--byline-uname-+-handle data domain account)))))
+       (mastodon-tl--byline-uname-+-handle data domain)))))
 
 (defun mastodon-tl--format-byline-help-echo (toot)
   "Format a help-echo for byline of TOOT.
@@ -796,14 +797,11 @@ LETTER is a string, F for favourited, B for boosted, or K for bookmarked."
       (image-type-available-p 'imagemagick)
     (image-transforms-p)))
 
-(defun mastodon-tl--byline (toot author-byline &optional detailed-p
-                                 domain base-toot group account ts)
-  "Generate byline for TOOT.
+(defun mastodon-tl--byline (toot &optional detailed-p
+                                 domain base-toot group ts)
+  "Generate (bottom) byline for TOOT.
 AUTHOR-BYLINE is a function for adding the author portion of
 the byline that takes one variable.
-ACTION-BYLINE is a function for adding an action, such as boosting,
-favouriting and following to the byline. It also takes a single function.
-By default it is `mastodon-tl--byline-author'
 DETAILED-P means display more detailed info. For now
 this just means displaying toot client.
 When DOMAIN, force inclusion of user's domain in their handle.
@@ -811,7 +809,7 @@ BASE-TOOT is JSON for the base toot, if any.
 GROUP is the notification group if any.
 ACCOUNT is the notification account if any.
 TS is a timestamp from the server, if any."
-  (let* ((type (alist-get 'type group))
+  (let* ((type (alist-get 'type (or group toot)))
          (created-time
           (or ts ;; mentions, statuses, folls/foll-reqs
               ;; bosts, faves, edits, polls in notifs view use base item
@@ -822,17 +820,17 @@ TS is a timestamp from the server, if any."
               ;; (mastodon-tl--field auto fetches from reblogs if needed):
               (mastodon-tl--field 'created_at toot)))
          (parsed-time (when created-time (date-to-time created-time)))
-         (faved (eq t (mastodon-tl--field 'favourited toot)))
-         (boosted (eq t (mastodon-tl--field 'reblogged toot)))
-         (bookmarked (eq t (mastodon-tl--field 'bookmarked toot)))
-         (visibility (mastodon-tl--field 'visibility toot))
-         (type (alist-get 'type (or group toot)))
-         (base-toot-maybe (or base-toot ;; show edits for notifs
-                              (mastodon-tl--toot-or-base toot))) ;; for boosts
-         (account (or account
-                      (alist-get 'account base-toot-maybe)))
+         ;; non-grouped notifs now need to pull the following data from
+         ;; base toot:
+         (base-maybe (or base-toot ;; show edits for notifs
+                         (mastodon-tl--toot-or-base toot))) ;; for boosts
+         (faved (eq t (mastodon-tl--field 'favourited base-maybe)))
+         (boosted (eq t (mastodon-tl--field 'reblogged base-maybe)))
+         (bookmarked (eq t (mastodon-tl--field 'bookmarked base-maybe)))
+         (visibility (mastodon-tl--field 'visibility base-maybe))
+         (account (alist-get 'account base-maybe))
          (avatar-url (alist-get 'avatar account))
-         (edited-time (alist-get 'edited_at base-toot-maybe))
+         (edited-time (alist-get 'edited_at base-maybe))
          (edited-parsed (when edited-time (date-to-time edited-time))))
     (concat
      ;; Boosted/favourited markers are not technically part of the byline, so
@@ -862,7 +860,10 @@ TS is a timestamp from the server, if any."
        ;; NB: action-byline (boost) is now added in insert-status, so no
        ;; longer part of the byline.
        ;; (base) author byline:
-       (funcall author-byline toot nil domain :base account)
+       ;; we use base-toot if poss for fave/boost notifs that need to show
+       ;; base item in author byline
+       (mastodon-tl--byline-author (or base-toot toot)
+                                   nil domain :base)
        ;; visibility:
        (cond ((string= visibility "direct")
               (propertize (concat " " (mastodon-tl--symbol 'direct))
@@ -925,7 +926,7 @@ TS is a timestamp from the server, if any."
       'edited edited-time
       'edit-history (when edited-time
                       (mastodon-toot--get-toot-edits
-                       (alist-get 'id base-toot-maybe)))
+                       (alist-get 'id base-maybe)))
       'byline       t))))
 
 
@@ -1142,7 +1143,8 @@ the toot)."
 LINK-TYPE is the type of link to produce."
   (let ((help-text (cond ((eq link-type 'content-warning)
                           "Toggle hidden text")
-                         ((eq link-type 'read-more)
+                         ((or (eq link-type 'read-more)
+                              (eq link-type 'read-less))
                           "Toggle full post")
                          (t
                           (error "Unknown link type %s" link-type)))))
@@ -1186,6 +1188,8 @@ Used for hitting RET on a given link."
                         (error "Unable to find account"))))))))
           ((eq link-type 'read-more)
            (mastodon-tl--unfold-post))
+          ((eq link-type 'read-less)
+           (mastodon-tl--fold-post))
           (t
            (error "Unknown link type %s" link-type)))))
 
@@ -1275,25 +1279,22 @@ FILTER is a string to use as a filter warning spoiler instead."
          (cw (mastodon-tl--set-face message 'mastodon-cw-face)))
     (concat
      cw
-     (propertize (mastodon-tl--content toot)
-                 'invisible
-                 (if filter
-                     t
-                   (let ((cust mastodon-tl--expand-content-warnings))
-                     (cond ((eq t cust)
-                            nil)
-                           ((eq nil cust)
-                            t)
-                           ((eq 'server cust)
-                            (unless (eq t
-                                        ;; If something goes wrong reading prefs,
-                                        ;; just return nil so CWs show by default.
-                                        (condition-case nil
-                                            (mastodon-profile--get-preferences-pref
-                                             'reading:expand:spoilers)
-                                          (error nil)))
-                              t)))))
-                 'mastodon-content-warning-body t))))
+     (propertize
+      (mastodon-tl--content toot)
+      'invisible
+      (or filter ;; filters = invis
+          (let ((cust mastodon-tl--expand-content-warnings))
+            (if (not (eq 'server cust))
+                (not cust) ;; opp to setting
+              ;; respect server setting:
+              (not
+               ;; If something goes wrong reading prefs,
+               ;; just return nil so CWs show by default.
+               (condition-case nil
+                   (mastodon-profile--get-preferences-pref
+                    'reading:expand:spoilers)
+                 (error nil))))))
+      'mastodon-content-warning-body t))))
 
 
 ;;; MEDIA
@@ -1327,7 +1328,7 @@ SENSITIVE is a flag from the item's JSON data."
                ;; if in notifs, also check notifs images custom:
                (if (or (mastodon-tl--buffer-type-eq 'notifications)
                        (mastodon-tl--buffer-type-eq 'mentions))
-                   mastodon-notifications--images-in-notifs
+                   mastodon-images-in-notifs
                  t))
           (mastodon-media--get-media-link-rendering ; placeholder: "[img]"
            .preview_url remote-url ; for shr-browse-url
@@ -1655,21 +1656,10 @@ Runs `mastodon-tl--render-text' and fetches poll or media."
     (string= reply-to-id prev-id)))
 
 (defun mastodon-tl--insert-status
-    (toot body author-byline action-byline &optional id base-toot
-          detailed-p thread domain unfolded no-byline)
+    (toot body &optional detailed-p thread domain unfolded no-byline
+          cw-expanded)
   "Display the content and byline of timeline element TOOT.
 BODY will form the section of the toot above the byline.
-AUTHOR-BYLINE is an optional function for adding the author
-portion of the byline that takes one variable. By default it is
-`mastodon-tl--byline-author'.
-ACTION-BYLINE is also an optional function for adding an action,
-such as boosting favouriting and following to the byline. It also
-takes a single function. By default it is
-`mastodon-tl--byline-boost'.
-ID is that of the status if it is a notification, which is
-attached as a `item-id' property if provided. If the
-status is a favourite or boost notification, BASE-TOOT is the
-JSON of the toot responded to.
 DETAILED-P means display more detailed info. For now
 this just means displaying toot client.
 THREAD means the status will be displayed in a thread view.
@@ -1683,14 +1673,17 @@ NO-BYLINE means just insert toot body, used for folding."
          ;; (type (alist-get 'type toot))
          (toot-foldable
           (and mastodon-tl--fold-toots-at-length
-               (length> body mastodon-tl--fold-toots-at-length))))
+               (length> body mastodon-tl--fold-toots-at-length)))
+         (cw-p (not
+                (string-empty-p
+                 (alist-get 'spoiler_text toot)))))
     (insert
      (propertize ;; body + byline:
       (concat
        (propertize ;; body only:
         (concat
          "\n"
-         (funcall action-byline toot)
+         (mastodon-tl--byline-boost toot) ;; top byline (boost)
          ;; relpy symbol:
          (when (and after-reply-status-p thread)
            (concat (mastodon-tl--symbol 'replied)
@@ -1704,24 +1697,21 @@ NO-BYLINE means just insert toot body, used for folding."
                (propertize body
                            'line-prefix bar
                            'wrap-prefix bar)
-             body)))
+             body))
+         (if (and toot-foldable unfolded cw-expanded)
+             (mastodon-tl--read-more-or-less
+              "LESS" cw-p (not cw-expanded))
+           ""))
         'toot-body t) ;; includes newlines etc. for folding
        ;; byline:
        "\n"
        (if no-byline
            ""
-         (mastodon-tl--byline toot author-byline detailed-p
-                              domain base-toot)))
+         (mastodon-tl--byline toot detailed-p domain)))
       'item-type    'toot
-      'item-id      (or id ; notification's own id
-                        (alist-get 'id toot)) ; toot id
-      'base-item-id (mastodon-tl--item-id
-                     ;; if status is a notif, get id from base-toot
-                     ;; (-tl--item-id toot) will not work here:
-                     (or base-toot
-                         toot)) ; else normal toot with reblog check
+      'item-id (alist-get 'id toot) ; toot id
+      'base-item-id (mastodon-tl--item-id toot) ; with reblog check
       'item-json    toot
-      'base-toot    base-toot
       'cursor-face 'mastodon-cursor-highlight-face
       'toot-foldable toot-foldable
       'toot-folded (and toot-foldable (not unfolded)))
@@ -1772,15 +1762,18 @@ title, and context."
     (mastodon-tl--filter-by-context context filters-no-context)))
 
 (defun mastodon-tl--toot (toot &optional detailed-p thread domain
-                               unfolded no-byline)
+                               unfolded no-byline cw-expanded)
   "Format TOOT and insert it into the buffer.
 DETAILED-P means display more detailed info. For now
 this just means displaying toot client.
 THREAD means the status will be displayed in a thread view.
 When DOMAIN, force inclusion of user's domain in their handle.
 UNFOLDED is a boolean meaning whether to unfold or fold item if foldable.
-NO-BYLINE means just insert toot body, used for folding."
-  (let* ((filtered (mastodon-tl--field 'filtered toot))
+NO-BYLINE means just insert toot body, used for folding.
+NO-CW means treat content warnings as unfolded."
+  (let* ((mastodon-tl--expand-content-warnings
+          (or cw-expanded mastodon-tl--expand-content-warnings))
+         (filtered (mastodon-tl--field 'filtered toot))
          (filters (when filtered
                     (mastodon-tl--current-filters filtered)))
          (spoiler-or-content (if-let ((match (assoc "warn" filters)))
@@ -1790,19 +1783,17 @@ NO-BYLINE means just insert toot body, used for folding."
                                  (mastodon-tl--content toot)))))
     ;; If any filters are "hide", then we hide,
     ;; even though item may also have a "warn" filter:
-    (if (and filtered (assoc "hide" filters))
-        nil ;; no insert
+    (unless (and filtered (assoc "hide" filters)) ;; no insert
       (mastodon-tl--insert-status
-       toot
-       (mastodon-tl--clean-tabs-and-nl spoiler-or-content)
-       #'mastodon-tl--byline-author #'mastodon-tl--byline-boost
-       nil nil detailed-p thread domain unfolded no-byline))))
+       toot (mastodon-tl--clean-tabs-and-nl spoiler-or-content)
+       detailed-p thread domain unfolded no-byline cw-expanded))))
 
 (defun mastodon-tl--timeline (toots &optional thread domain no-byline)
   "Display each toot in TOOTS.
 This function removes replies if user required.
 THREAD means the status will be displayed in a thread view.
-When DOMAIN, force inclusion of user's domain in their handle."
+When DOMAIN, force inclusion of user's domain in their handle.
+NO-BYLINE means just insert toot body, used for folding."
   (let ((start-pos (point))
         (toots ;; hack to *not* filter replies on profiles:
          (if (eq (mastodon-tl--get-buffer-type) 'profile-statuses)
@@ -1823,12 +1814,26 @@ When DOMAIN, force inclusion of user's domain in their handle."
 
 ;;; FOLDING
 
+(defun mastodon-tl--read-more-or-less (str cw invis)
+  "Return a read more or read less heading.
+The heading is a link to toggle the fold status of the toot.
+CW and INVIS are boolean values for the properties invisible and
+mastodon-content-warning-body."
+  (let ((type (if (string= str "MORE") 'read-more 'read-less)))
+    (propertize
+     (mastodon-search--format-heading
+      (mastodon-tl--make-link (format "READ %s" str) type)
+      nil :no-newline)
+     'mastodon-content-warning-body cw
+     'invisible invis)))
+
 (defun mastodon-tl--fold-body (body)
   "Fold toot BODY if it is very long.
 Folding decided by `mastodon-tl--fold-toots-at-length'."
-  (let* ((heading (mastodon-search--format-heading
-                   (mastodon-tl--make-link "READ MORE" 'read-more)
-                   nil :no-newline))
+  (let* ((invis (get-text-property (1- (length body)) 'invisible body))
+         (cw (get-text-property (1- (length body))
+                                'mastodon-content-warning-body body))
+         (heading (mastodon-tl--read-more-or-less "MORE" cw invis))
          (display (concat (substring body 0
                                      mastodon-tl--fold-toots-at-length)
                           heading)))
@@ -1848,6 +1853,10 @@ FOLD means to fold it instead."
       (let* ((inhibit-read-only t)
              (body-range (mastodon-tl--find-property-range 'toot-body
                                                            (point) :backward))
+             (cw-range (mastodon-tl--find-property-range
+                        'mastodon-content-warning-body
+                        (point) :backward))
+             (cw-invis (get-text-property (car cw-range) 'invisible))
              (toot (mastodon-tl--property 'item-json :no-move))
              ;; `replace-region-contents' is much too slow, our hack from
              ;; fedi.el is much simpler and much faster:
@@ -1863,7 +1872,8 @@ FOLD means to fold it instead."
         (delete-region beg end)
         (delete-char 1) ;; prevent newlines accumulating
         ;; insert toot body:
-        (mastodon-tl--toot toot nil nil nil (not fold) :no-byline)
+        (mastodon-tl--toot toot nil nil nil (not fold) :no-byline
+                           (unless cw-invis :cw-expanded)) ;; respect CW state
         ;; set toot-folded prop on entire toot (not just body):
         (let ((toot-range ;; post fold action range:
                (mastodon-tl--find-property-range 'item-json
@@ -2245,8 +2255,9 @@ If we are in a notifications view, return `notifications-min-id'."
   (save-excursion
     (goto-char (point-max))
     (mastodon-tl--property
-     (if (member (mastodon-tl--get-buffer-type)
-                 '(mentions notifications))
+     (if (and mastodon-group-notifications
+              (member (mastodon-tl--get-buffer-type)
+                      '(mentions notifications)))
          'notifications-min-id
        'item-id)
      nil :backward)))
@@ -2870,7 +2881,8 @@ the current view."
          (args (append args params))
          (url (mastodon-http--api
                endpoint
-               (when (or (string= endpoint "notifications")
+               (when (or (and mastodon-group-notifications
+                              (string= endpoint "notifications"))
                          (string-suffix-p "search" endpoint))
                  "v2"))))
     (apply #'mastodon-http--get-json-async url args callback cbargs)))
@@ -3028,7 +3040,7 @@ MAX-ID is the pagination parameter, a string."
                               (alist-get 'hashtags response))
                              ((string= "accounts" type)
                               (alist-get 'accounts response))))))
-             (headers (if headers (cdr response) nil))
+             (headers (when headers (cdr response)))
              (link-header
               (mastodon-tl--get-link-header-from-response headers)))
         (goto-char (point-max))
@@ -3263,7 +3275,8 @@ favourites and bookmarks.
 PARAMS is any parameters to send with the request.
 HIDE-REPLIES is a flag indicating if replies are hidden in the current buffer.
 INSTANCE is a string of another instance domain we are displaying
-a timeline from."
+a timeline from.
+NO-BYLINE means just insert toot body, used for announcements."
   (let ((url (if instance
                  (concat "https://" instance "/api/v1/" endpoint)
                (mastodon-http--api endpoint)))
@@ -3283,7 +3296,8 @@ a timeline from."
 UPDATE-FUNCTION is used to recieve more toots.
 RESPONSE is the data returned from the server by
 `mastodon-http--process-json', with arg HEADERS a cons cell of
-JSON and http headers, without it just the JSON."
+JSON and http headers, without it just the JSON.
+NO-BYLINE means just insert toot body, used for announcements."
   (let ((json (if headers (car response) response)))
     (cond ((not json) ; praying this is right here, else try "\n[]"
            ;; this means that whatever tl was inited won't load, which is not
@@ -3300,7 +3314,7 @@ JSON and http headers, without it just the JSON."
           ((eq (caar json) 'error)
            (user-error "Looks like the server bugged out: \"%s\"" (cdar json)))
           (t
-           (let* ((headers (if headers (cdr response) nil))
+           (let* ((headers (when headers (cdr response)))
                   (link-header
                    (mastodon-tl--get-link-header-from-response headers)))
              (with-mastodon-buffer buffer #'mastodon-mode nil
@@ -3355,7 +3369,8 @@ ENDPOINT-VERSION is a string, format Vx, e.g. V2."
 (defun mastodon-tl--do-init (json update-fun &optional domain no-byline)
   "Utility function for `mastodon-tl--init*' and `mastodon-tl--init-sync'.
 JSON is the data to call UPDATE-FUN on.
-When DOMAIN, force inclusion of user's domain in their handle."
+When DOMAIN, force inclusion of user's domain in their handle.
+NO-BYLINE means just insert toot body, used for announcements."
   (remove-overlays) ; video overlays
   (cond (domain ;; maybe our update-fun doesn't always have 3 args...:
          (funcall update-fun json nil domain))

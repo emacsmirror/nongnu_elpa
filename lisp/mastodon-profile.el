@@ -745,7 +745,6 @@ MAX-ID is a flag to include the max_id pagination parameter."
                             "\n\n")
                     'success)
                  "")))) ; for insert call
-          (setq mastodon-tl--update-point (point))
           (mastodon-media--inline-images (point-min) (point))
           ;; widget items description
           (mastodon-widget--create
@@ -756,7 +755,8 @@ MAX-ID is a flag to include the max_id pagination parameter."
            (lambda (widget &rest _ignore)
              (let ((value (widget-value widget)))
                (mastodon-profile--view-fun-call value))))
-          (insert "\n")))
+          (insert "\n")
+          (setq mastodon-tl--update-point (point))))
       ;; split insert of items from insert of profile:
       (with-current-buffer buffer
         (let* ((inhibit-read-only t))

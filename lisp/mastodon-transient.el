@@ -268,8 +268,12 @@ Do not add more than the server's maximum setting."
 
 (transient-define-prefix mastodon-create-poll ()
   "A transient for creating a poll."
-  ;; FIXME: handle existing polls when editing a toot
-  :value (lambda () tp-transient-settings)
+  :value (lambda ()
+           ;; we set `tp-transient-settings' here to the poll value poss
+           ;; pulled from the server by
+           ;; `mastodon-toot--server-poll-to-local'. when we are done with
+           ;; the transient, we set `mastodon-toot-poll' again
+           (setq tp-transient-settings mastodon-toot-poll))
   ["Create poll"
    (:info (lambda ()
             (format "Max options: %s"
@@ -305,11 +309,11 @@ Do not add more than the server's maximum setting."
   "Clear current poll data."
   :transient 'transient--do-stay
   (interactive)
-  (mastodon-toot--clear-poll)
+  (mastodon-toot--clear-poll :transient)
   (transient-reset))
 
 (transient-define-suffix mastodon-create-poll-done (args)
-  "Update current user profile fields."
+  "Finish setting poll details."
   :transient 'transient--do-exit
   (interactive (list (transient-args 'mastodon-create-poll)))
   (let* ((options (cl-member-if (lambda (x)
@@ -335,7 +339,9 @@ Do not add more than the server's maximum setting."
         (call-interactively #'mastodon-create-poll)
       ;; if we are called with no poll data, do not set:
       (unless (not vals)
-        (setq tp-transient-settings
+        ;; we set `mastodon-toot-poll' here not `tp-transient-settings'
+        ;; as that is our var outside of our transient:
+        (setq mastodon-toot-poll
               (tp-bools-to-strs args)))
       (mastodon-toot--update-status-fields))))
 
