@@ -1699,11 +1699,8 @@ NO-BYLINE means just insert toot body, used for folding."
                            'wrap-prefix bar)
              body))
          (if (and toot-foldable unfolded cw-expanded)
-             (propertize (mastodon-search--format-heading
-                          (mastodon-tl--make-link "READ LESS" 'read-less)
-                          nil :no-newline)
-                         'mastodon-content-warning-body cw-p
-                         'invisible (not cw-expanded))
+             (mastodon-tl--read-more-or-less
+              "LESS" cw-p (not cw-expanded))
            ""))
         'toot-body t) ;; includes newlines etc. for folding
        ;; byline:
@@ -1817,17 +1814,26 @@ NO-BYLINE means just insert toot body, used for folding."
 
 ;;; FOLDING
 
+(defun mastodon-tl--read-more-or-less (str cw invis)
+  "Return a read more or read less heading.
+The heading is a link to toggle the fold status of the toot.
+CW and INVIS are boolean values for the properties invisible and
+mastodon-content-warning-body."
+  (let ((type (if (string= str "MORE") 'read-more 'read-less)))
+    (propertize
+     (mastodon-search--format-heading
+      (mastodon-tl--make-link (format "READ %s" str) type)
+      nil :no-newline)
+     'mastodon-content-warning-body cw
+     'invisible invis)))
+
 (defun mastodon-tl--fold-body (body)
   "Fold toot BODY if it is very long.
 Folding decided by `mastodon-tl--fold-toots-at-length'."
   (let* ((invis (get-text-property (1- (length body)) 'invisible body))
-         (spoiler (get-text-property (1- (length body))
-                                     'mastodon-content-warning-body body))
-         (heading (propertize (mastodon-search--format-heading
-                               (mastodon-tl--make-link "READ MORE" 'read-more)
-                               nil :no-newline)
-                              'mastodon-content-warning-body spoiler
-                              'invisible invis))
+         (cw (get-text-property (1- (length body))
+                                'mastodon-content-warning-body body))
+         (heading (mastodon-tl--read-more-or-less "MORE" cw invis))
          (display (concat (substring body 0
                                      mastodon-tl--fold-toots-at-length)
                           heading)))
