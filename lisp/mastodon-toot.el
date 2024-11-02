@@ -47,7 +47,6 @@
 (require 'mastodon-iso)
 (require 'facemenu)
 (require 'text-property-search)
-(require 'ht)
 
 (eval-when-compile
   (require 'mastodon-tl))
@@ -60,6 +59,7 @@
 (defvar tp-transient-settings)
 
 (autoload 'iso8601-parse "iso8601")
+(autoload 'ht-get "ht")
 (autoload 'mastodon-auth--user-acct "mastodon-auth")
 (autoload 'mastodon-http--api "mastodon-http")
 (autoload 'mastodon-http--build-array-params-alist "mastodon-http")
