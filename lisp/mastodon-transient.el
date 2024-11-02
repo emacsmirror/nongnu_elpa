@@ -313,7 +313,7 @@ Do not add more than the server's maximum setting."
   (transient-reset))
 
 (transient-define-suffix mastodon-create-poll-done (args)
-  "Update current user profile fields."
+  "Finish setting poll details."
   :transient 'transient--do-exit
   (interactive (list (transient-args 'mastodon-create-poll)))
   (let* ((options (cl-member-if (lambda (x)
