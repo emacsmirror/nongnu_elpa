@@ -57,7 +57,6 @@
 (defvar mastodon-tl--enable-proportional-fonts)
 (defvar mastodon-profile-account-settings)
 (defvar mastodon-profile-acccount-preferences-data)
-(defvar tp-transient-settings)
 
 (autoload 'iso8601-parse "iso8601")
 (autoload 'mastodon-auth--user-acct "mastodon-auth")
@@ -780,7 +779,7 @@ TEXT-ONLY means don't check for attachments or polls."
   (and (if text-only
            t
          (and (not mastodon-toot--media-attachments)
-              (not (mastodon-toot-poll-var))))
+              (not mastodon-toot-poll)))
        (string-empty-p (mastodon-tl--clean-tabs-and-nl
                         (mastodon-toot--remove-docs)))))
 
@@ -881,7 +880,7 @@ to `emojify-user-emojis', and the emoji data is updated."
 (defun mastodon-toot--build-poll-params ()
   "Return an alist of parameters for POSTing a poll status."
   (if mastodon-toot-poll-use-transient
-      (let-alist tp-transient-settings
+      (let-alist mastodon-toot-poll
         (append
          (mastodon-http--build-array-params-alist
           "poll[options][]"
@@ -930,13 +929,12 @@ instance to edit a toot."
                        (mastodon-http--build-array-params-alist
                         "media_ids[]"
                         mastodon-toot--media-attachment-ids)))
-         (poll-var (mastodon-toot-poll-var))
-         (args-poll (when poll-var
+         (args-poll (when mastodon-toot-poll
                       (mastodon-toot--build-poll-params)))
          ;; media || polls:
          (args (if mastodon-toot--media-attachment-ids
                    (append args-media args-no-media)
-                 (if poll-var
+                 (if mastodon-toot-poll
                      (append args-no-media args-poll)
                    args-no-media)))
          (prev-window-config mastodon-toot-previous-window-config))
@@ -951,7 +949,9 @@ instance to edit a toot."
                 (> (mastodon-toot--count-toot-chars toot mastodon-toot--content-warning)
                    mastodon-toot--max-toot-chars))
            (user-error "Looks like your toot (inc. CW) is longer than that maximum allowed length"))
-          ((mastodon-toot--empty-p)
+          ;; polls must have text, so we use poll as flag for text-only
+          ;; check here:
+          ((mastodon-toot--empty-p mastodon-toot-poll)
            (user-error "Empty toot. Cowardly refusing to post this"))
           (t
            (let ((response (funcall (if edit-id ; we are sending an edit:
@@ -964,7 +964,7 @@ instance to edit a toot."
                 ;; kill buffer:
                 (mastodon-toot--kill)
                 ;; nil our poll var:
-                (set poll-var nil)
+                (setq mastodon-toot-poll nil)
                 (message "Toot %s!" (if scheduled "scheduled" "toot"))
                 ;; cancel scheduled toot if we were editing it:
                 (when scheduled-id
@@ -1395,12 +1395,6 @@ which is used to attach it to a toot when posting."
 
 ;;; POLL
 
-(defun mastodon-toot-poll-var ()
-  "Return the correct poll var."
-  (if mastodon-toot-poll-use-transient
-      'tp-transient-settings
-    'mastodon-toot-poll))
-
 (defun mastodon-toot--fetch-max-poll-options (instance)
   "Return the maximum number of poll options from JSON data INSTANCE."
   (mastodon-toot--fetch-poll-field 'max_options instance))
@@ -1492,14 +1486,20 @@ Return a cons of a human readable string, and a seconds-from-now string."
     ("14 days" . ,(number-to-string (* 60 60 24 14)))
     ("30 days" . ,(number-to-string (* 60 60 24 30)))))
 
-(defun mastodon-toot--clear-poll ()
+(defun mastodon-toot--clear-poll (&optional transient)
   "Remove poll from toot compose buffer.
-Sets `mastodon-toot-poll' to nil."
+Sets `mastodon-toot-poll' to nil.
+If TRANSIENT, we are called from a transient, so nil
+`tp-transient-settings' too."
   (interactive)
-  (let ((var (mastodon-toot-poll-var)))
-    (if (not var)
+  (let ((var (if transient
+                 'tp-transient-settings
+               'mastodon-toot-poll)))
+    (if (not (symbol-value var))
         (user-error "No poll?")
       (set var nil)
+      (when transient
+        (setq mastodon-toot-poll nil))
       (mastodon-toot--update-status-fields))))
 
 (defun mastodon-toot--server-poll-to-local (json)
@@ -1517,7 +1517,7 @@ Sets `mastodon-toot-poll' to nil."
            (options (mastodon-tl--map-alist 'title .options))
            (multiple (if (eq :json-false .multiple) nil t)))
       (if mastodon-toot-poll-use-transient
-          (setq tp-transient-settings
+          (setq mastodon-toot-poll
                 `((multi . ,multiple)
                   (expiry . ,expiry-str)
                   ;; (hide . ,hide)
@@ -1805,8 +1805,7 @@ REPLY-REGION is a string to be injected into the buffer."
            (poll-region (mastodon-tl--find-property-range 'toot-post-poll-flag
                                                           (point-min)))
            (toot-string (buffer-substring-no-properties (cdr header-region)
-                                                        (point-max)))
-           (poll-var (mastodon-toot-poll-var)))
+                                                        (point-max))))
       (mastodon-toot--apply-fields-props
        count-region
        (format "%s/%s chars"
@@ -1840,11 +1839,11 @@ REPLY-REGION is a string to be injected into the buffer."
        'mastodon-cw-face)
       (mastodon-toot--apply-fields-props
        poll-region
-       (if (symbol-value poll-var)
+       (if mastodon-toot-poll
            "POLL"
          "")
        'mastodon-cw-face
-       (prin1-to-string (symbol-value poll-var)))
+       (prin1-to-string mastodon-toot-poll))
       (mastodon-toot--apply-fields-props
        cw-region
        (if (and mastodon-toot--content-warning
