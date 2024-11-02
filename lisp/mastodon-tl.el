@@ -1143,7 +1143,8 @@ the toot)."
 LINK-TYPE is the type of link to produce."
   (let ((help-text (cond ((eq link-type 'content-warning)
                           "Toggle hidden text")
-                         ((eq link-type 'read-more)
+                         ((or (eq link-type 'read-more)
+                              (eq link-type 'read-less))
                           "Toggle full post")
                          (t
                           (error "Unknown link type %s" link-type)))))
@@ -1187,6 +1188,8 @@ Used for hitting RET on a given link."
                         (error "Unable to find account"))))))))
           ((eq link-type 'read-more)
            (mastodon-tl--unfold-post))
+          ((eq link-type 'read-less)
+           (mastodon-tl--fold-post))
           (t
            (error "Unknown link type %s" link-type)))))
 
@@ -1653,7 +1656,8 @@ Runs `mastodon-tl--render-text' and fetches poll or media."
     (string= reply-to-id prev-id)))
 
 (defun mastodon-tl--insert-status
-    (toot body &optional detailed-p thread domain unfolded no-byline)
+    (toot body &optional detailed-p thread domain unfolded no-byline
+          cw-expanded)
   "Display the content and byline of timeline element TOOT.
 BODY will form the section of the toot above the byline.
 DETAILED-P means display more detailed info. For now
@@ -1669,7 +1673,10 @@ NO-BYLINE means just insert toot body, used for folding."
          ;; (type (alist-get 'type toot))
          (toot-foldable
           (and mastodon-tl--fold-toots-at-length
-               (length> body mastodon-tl--fold-toots-at-length))))
+               (length> body mastodon-tl--fold-toots-at-length)))
+         (cw-p (not
+                (string-empty-p
+                 (alist-get 'spoiler_text toot)))))
     (insert
      (propertize ;; body + byline:
       (concat
@@ -1690,7 +1697,11 @@ NO-BYLINE means just insert toot body, used for folding."
                (propertize body
                            'line-prefix bar
                            'wrap-prefix bar)
-             body)))
+             body))
+         (if (and toot-foldable unfolded cw-expanded)
+             (mastodon-tl--read-more-or-less
+              "LESS" cw-p (not cw-expanded))
+           ""))
         'toot-body t) ;; includes newlines etc. for folding
        ;; byline:
        "\n"
@@ -1751,7 +1762,7 @@ title, and context."
     (mastodon-tl--filter-by-context context filters-no-context)))
 
 (defun mastodon-tl--toot (toot &optional detailed-p thread domain
-                               unfolded no-byline no-cw)
+                               unfolded no-byline cw-expanded)
   "Format TOOT and insert it into the buffer.
 DETAILED-P means display more detailed info. For now
 this just means displaying toot client.
@@ -1761,7 +1772,7 @@ UNFOLDED is a boolean meaning whether to unfold or fold item if foldable.
 NO-BYLINE means just insert toot body, used for folding.
 NO-CW means treat content warnings as unfolded."
   (let* ((mastodon-tl--expand-content-warnings
-          (or no-cw mastodon-tl--expand-content-warnings))
+          (or cw-expanded mastodon-tl--expand-content-warnings))
          (filtered (mastodon-tl--field 'filtered toot))
          (filters (when filtered
                     (mastodon-tl--current-filters filtered)))
@@ -1775,7 +1786,7 @@ NO-CW means treat content warnings as unfolded."
     (unless (and filtered (assoc "hide" filters)) ;; no insert
       (mastodon-tl--insert-status
        toot (mastodon-tl--clean-tabs-and-nl spoiler-or-content)
-       detailed-p thread domain unfolded no-byline))))
+       detailed-p thread domain unfolded no-byline cw-expanded))))
 
 (defun mastodon-tl--timeline (toots &optional thread domain no-byline)
   "Display each toot in TOOTS.
@@ -1803,17 +1814,26 @@ NO-BYLINE means just insert toot body, used for folding."
 
 ;;; FOLDING
 
+(defun mastodon-tl--read-more-or-less (str cw invis)
+  "Return a read more or read less heading.
+The heading is a link to toggle the fold status of the toot.
+CW and INVIS are boolean values for the properties invisible and
+mastodon-content-warning-body."
+  (let ((type (if (string= str "MORE") 'read-more 'read-less)))
+    (propertize
+     (mastodon-search--format-heading
+      (mastodon-tl--make-link (format "READ %s" str) type)
+      nil :no-newline)
+     'mastodon-content-warning-body cw
+     'invisible invis)))
+
 (defun mastodon-tl--fold-body (body)
   "Fold toot BODY if it is very long.
 Folding decided by `mastodon-tl--fold-toots-at-length'."
   (let* ((invis (get-text-property (1- (length body)) 'invisible body))
-         (spoiler (get-text-property (1- (length body))
-                                     'mastodon-content-warning-body body))
-         (heading (propertize (mastodon-search--format-heading
-                               (mastodon-tl--make-link "READ MORE" 'read-more)
-                               nil :no-newline)
-                              'mastodon-content-warning-body spoiler
-                              'invisible invis))
+         (cw (get-text-property (1- (length body))
+                                'mastodon-content-warning-body body))
+         (heading (mastodon-tl--read-more-or-less "MORE" cw invis))
          (display (concat (substring body 0
                                      mastodon-tl--fold-toots-at-length)
                           heading)))
@@ -1853,7 +1873,7 @@ FOLD means to fold it instead."
         (delete-char 1) ;; prevent newlines accumulating
         ;; insert toot body:
         (mastodon-tl--toot toot nil nil nil (not fold) :no-byline
-                           (unless cw-invis :no-cw)) ;; respect CW state
+                           (unless cw-invis :cw-expanded)) ;; respect CW state
         ;; set toot-folded prop on entire toot (not just body):
         (let ((toot-range ;; post fold action range:
                (mastodon-tl--find-property-range 'item-json
