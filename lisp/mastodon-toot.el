@@ -301,7 +301,7 @@ Includes boosts, and notifications that display toots.
 This macro makes the local variable ID available."
   (declare (debug t))
   `(if (or (not (eq 'toot (mastodon-tl--property 'item-type :no-move)))
-           (member (mastodon-tl--property 'notification-type)
+           (member (mastodon-tl--property 'notification-type :no-move)
                    '("follow" "follow_request")))
        (user-error "Looks like there's no toot at point?")
      (mastodon-tl--with-toot-helper
