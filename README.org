@@ -12,7 +12,7 @@
 
 * README
 
-=mastodon.el= is an Emacs client for the AcitivityPub social networks that
+=mastodon.el= is an Emacs client for the ActivityPub social networks that
 implement the Mastodon API. For info see [[https://joinmastodon.org/][joinmastodon.org]].
 
 NB: =mastodon.el= now ships this readme as an .info file, so if you have it installed you should be able to browse this readme inside emacs. =C-h i= for info, then =m masto RET= should load it for you.
