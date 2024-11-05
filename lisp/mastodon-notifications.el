@@ -266,7 +266,8 @@ ACCOUNTS is data of the accounts that have reacted to the notification."
                     str))))
              (follower (when (member type '(follow follow_request))
                          (car accounts)))
-             (follower-name (mastodon-tl--field 'username follower))
+             (follower-name (or (alist-get 'display_name follower)
+                                (alist-get 'username follower)))
              (filtered (mastodon-tl--field 'filtered status))
              (filters (when filtered
                         (mastodon-tl--current-filters filtered))))
