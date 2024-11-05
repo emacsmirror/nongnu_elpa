@@ -1856,7 +1856,8 @@ FOLD means to fold it instead."
              (cw-range (mastodon-tl--find-property-range
                         'mastodon-content-warning-body
                         (point) :backward))
-             (cw-invis (get-text-property (car cw-range) 'invisible))
+             (cw-invis (when cw-range
+                         (get-text-property (car cw-range) 'invisible)))
              (toot (mastodon-tl--property 'item-json :no-move))
              ;; `replace-region-contents' is much too slow, our hack from
              ;; fedi.el is much simpler and much faster:
