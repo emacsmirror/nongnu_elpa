@@ -1287,13 +1287,15 @@ FILTER is a string to use as a filter warning spoiler instead."
             (if (not (eq 'server cust))
                 (not cust) ;; opp to setting
               ;; respect server setting:
-              (not
-               ;; If something goes wrong reading prefs,
-               ;; just return nil so CWs show by default.
-               (condition-case nil
-                   (mastodon-profile--get-preferences-pref
-                    'reading:expand:spoilers)
-                 (error nil))))))
+              ;; If something goes wrong reading prefs,
+              ;; just return t so CWs fold by default.
+              (condition-case nil
+                  (if (eq :json-false
+                          (mastodon-profile--get-preferences-pref
+                           'reading:expand:spoilers))
+                      t
+                    nil)
+                (error t)))))
       'mastodon-content-warning-body t))))
 
 
