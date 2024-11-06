@@ -30,7 +30,7 @@
 
 ;;; Code:
 
-(eval-when-compile (require 'subr-x))
+(require 'subr-x)
 (require 'cl-lib)
 
 (autoload 'mastodon-http--api "mastodon-http")
@@ -74,7 +74,7 @@
 (defvar mastodon-profile-note-in-foll-reqs)
 (defvar mastodon-profile-note-in-foll-reqs-max-length)
 (defvar mastodon-group-notifications)
-
+(defvar mastodon-notifications-grouped-names-count)
 (defvar mastodon-notifications--types
   '("favourite" "reblog" "mention" "poll"
     "follow_request" "follow" "status" "update"
@@ -417,7 +417,7 @@ GROUP is the group notification data.
 When AVATAR, include the account's avatar image.
 When DOMAIN, force inclusion of user's domain in their handle."
   (let ((total (alist-get 'notifications_count group))
-        (accts 2))
+        (accts mastodon-notifications-grouped-names-count))
     (concat
      (string-trim ;; remove trailing newline
       (cl-loop

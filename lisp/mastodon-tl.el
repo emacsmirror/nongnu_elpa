@@ -1674,7 +1674,8 @@ this just means displaying toot client.
 THREAD means the status will be displayed in a thread view.
 When DOMAIN, force inclusion of user's domain in their handle.
 UNFOLDED is a boolean meaning whether to unfold or fold item if foldable.
-NO-BYLINE means just insert toot body, used for folding."
+NO-BYLINE means just insert toot body, used for folding.
+CW-EXPANDED means treat content warnings as unfolded."
   (let* ((reply-to-id (alist-get 'in_reply_to_id toot))
          (after-reply-status-p
           (when (and thread reply-to-id)
@@ -1779,7 +1780,7 @@ THREAD means the status will be displayed in a thread view.
 When DOMAIN, force inclusion of user's domain in their handle.
 UNFOLDED is a boolean meaning whether to unfold or fold item if foldable.
 NO-BYLINE means just insert toot body, used for folding.
-NO-CW means treat content warnings as unfolded."
+CW-EXPANDED means treat content warnings as unfolded."
   (let* ((mastodon-tl--expand-content-warnings
           (or cw-expanded mastodon-tl--expand-content-warnings))
          (filtered (mastodon-tl--field 'filtered toot))
@@ -1825,6 +1826,7 @@ NO-BYLINE means just insert toot body, used for folding."
 
 (defun mastodon-tl--read-more-or-less (str cw invis)
   "Return a read more or read less heading.
+STR is an uppercase string, either MORE or LESS.
 The heading is a link to toggle the fold status of the toot.
 CW and INVIS are boolean values for the properties invisible and
 mastodon-content-warning-body."

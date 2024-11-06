@@ -102,6 +102,7 @@
 (autoload 'mastodon-tl--dm-user "mastodon-tl")
 (autoload 'mastodon-tl--scroll-up-command "mastodon-tl")
 (autoload 'special-mode "simple")
+(autoload 'mastodon-tl--thread-do "mastodon-tl")
 
 (defvar mastodon-tl--highlight-current-toot)
 (defvar mastodon-notifications--map)
@@ -176,6 +177,12 @@ make them unweildy."
 (defcustom mastodon-group-notifications t
   "Whether to use grouped notifications."
   :type '(boolean))
+
+(defcustom mastodon-notifications-grouped-names-count 2
+  "The number of notification authors to display.
+A count of 2 for example means to display like so: \"Bob, Jenny
+and X others...\"."
+  :type '(integer))
 
 (defun mastodon-kill-window ()
   "Quit window and delete helper."
