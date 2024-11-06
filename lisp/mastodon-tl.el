@@ -1256,8 +1256,10 @@ content should be hidden."
                  (cw (alist-get 'spoiler_text json)))
             (when (not (string= "" cw))
               (let ((new-state
-                     (not
-                      (mastodon-tl--toggle-spoiler-text-in-toot))))
+                     (pcase
+                         (mastodon-tl--toggle-spoiler-text-in-toot)
+                       ('t 'folded)
+                       ('nil 'unfolded))))
                 (plist-put mastodon-tl--buffer-spec
                            'thread-unfolded new-state)))))))))
 
@@ -2353,9 +2355,12 @@ programmatically and not crash into
   (let* ((id (or thread-id (mastodon-tl--property 'base-item-id :no-move)))
          (type (mastodon-tl--field 'type
                                    (mastodon-tl--property 'item-json :no-move)))
-         ;; if reloading and thread was fully unfolded, respect it:
          (mastodon-tl--expand-content-warnings
-          (or unfolded-state mastodon-tl--expand-content-warnings)))
+          ;; if reloading and thread was explicitly (un)folded, respect it:
+          (or (pcase unfolded-state
+                ('folded nil)
+                ('unfolded t)
+                (_ mastodon-tl--expand-content-warnings)))))
     (if (or (string= type "follow_request")
             (string= type "follow")) ; no can thread these
         (user-error "No thread")
