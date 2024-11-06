@@ -245,7 +245,8 @@ If we fail, return `fj-user'." ;; poss insane
   "Return repo name, whatever view we are in."
   (or (fj--get-buffer-spec :repo)
       fj-current-repo
-      (fj-get-tl-col 0)))
+      (fj-get-tl-col 0)
+      (fj-current-dir-repo)))
 
 (defun fj-get-tl-col (num)
   "Return column number NUM from current tl entry."
@@ -638,18 +639,26 @@ BUF-STR is to name the buffer, URL-STR is for the buffer-spec."
 ;;; USER REPOS
 
 (defun fj-current-dir-repo ()
-  "If we are in a `fj-host' repository, return its name."
+  "If we are in a `fj-host' repository, return its name.
+Also set `fj-current-repo' to the name."
   ;; NB: fails if remote url is diff to root dir!
   (ignore-errors
     (when (magit-inside-worktree-p)
+      ;; FIXME: this is slow, as we just fetch all our repos. why not repo
+      ;; search, with dir name, and search repos with exclusive param set
+      ;; to `fj-user's UID. unfortunately tho, we can't guess mode, so we
+      ;; can't be sure of our result:
+      ;; (let ((id (alist-get 'id
+      ;;                      (fj-get-current-user)))
+      ;;       (repo (fj-repo-search-do query nil id mode))))
       (let* ((repos (fj-get-repos))
              (names (cl-loop for r in repos
                              collect (alist-get 'name r)))
              (dir (file-name-nondirectory
                    (directory-file-name
                     (magit-toplevel)))))
-        (when (member dir names)
-          dir))))) ; nil if dir no match any remotes
+        (when (member dir names) ;; nil if dir no match any remotes
+          (setq fj-current-repo dir))))))
 
 (defun fj-get-repos ()
   "Return the user's repos."
