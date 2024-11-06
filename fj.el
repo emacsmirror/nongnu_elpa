@@ -1815,20 +1815,32 @@ Optionally set link TYPE and ITEM number and FACE."
 
 ;;; SEARCH
 
-(defun fj-repo-search-do (query &optional topic)
-  "Search for QUERY, optionally flag it as a TOPIC."
+(defvar fj-search-modes
+  '("source" "fork" "mirror" "collaborative")
+  "Types of repositories in foregejo search.")
+
+(defun fj-repo-search-do (query &optional topic id mode)
+  "Search for QUERY, optionally flag it as a TOPIC.
+ID is a user ID, which if given must own the repo.
+MODE must be a member of `fj-search-modes', else it is silently
+ignored."
   (let* ((params `(("q" . ,query)
                    ("limit" . "100")
                    ("sort" . "updated")
+                   ,(when id
+                      `("exclusive" . ,id))
+                   ,(when (and mode
+                               (member mode fj-search-modes))
+                      `("mode" . ,mode))
                    ,(when topic
                       '("topic" . "t")))))
     (fj-get "/repos/search" params)))
 
-(defun fj-repo-search (query &optional topic)
+(defun fj-repo-search (query &optional topic id mode)
   "Search repos for QUERY.
 If TOPIC, QUERY is a search for topic keywords."
   (interactive "sSearch for repo: ")
-  (let* ((resp (fj-repo-search-do query topic))
+  (let* ((resp (fj-repo-search-do query topic id mode))
          (data (alist-get 'data resp))
          (cands (fj-get-repo-candidates data))
          (completion-extra-properties
