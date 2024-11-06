@@ -432,7 +432,7 @@ If FORCE, do a lookup regardless of the result of `mastodon--fedi-url-p'."
                (let* ((statuses (assoc 'statuses response))
                       (status (seq-first (cdr statuses)))
                       (status-id (alist-get 'id status)))
-                 (mastodon-tl--thread status-id)))
+                 (mastodon-tl--thread-do status-id)))
               ((not (seq-empty-p (alist-get 'accounts response)))
                (let* ((accounts (assoc 'accounts response))
                       (account (seq-first (cdr accounts))))

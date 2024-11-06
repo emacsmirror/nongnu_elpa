@@ -2336,8 +2336,12 @@ UNFOLDED STATE is a boolean of whether the thread (we are
 reloading) is fully unfolded or folded, i.e. via
 `mastodon-tl--toggle-spoiler-in-thread'."
   (interactive)
-  ;; no toot-at-point macro here as we can call this programmatically, eg from
-  ;; `mastodon-url-lookup'
+  (mastodon-toot--with-toot-item
+   (mastodon-tl--thread-do thread-id unfolded-state)))
+
+(defun mastodon-tl--thread-do (&optional thread-id unfolded-state)
+  "Load a thread.
+Non-interactive version, so we can call it programmatically and not crash into `mastodon-toot--with-toot-item'."
   ;; this function's var must not be id as the above macro binds id and even
   ;; if we provide the arg (e.g. url-lookup), the macro definition overrides
   ;; it, making the optional arg unusable!
