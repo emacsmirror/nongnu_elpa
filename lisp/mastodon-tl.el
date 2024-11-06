@@ -2332,7 +2332,7 @@ view all branches of a thread."
 
 (defun mastodon-tl--thread (&optional thread-id unfolded-state)
   "Open thread buffer for toot at point or with THREAD-ID.
-UNFOLDED STATE is a boolean of whether the thread (we are
+UNFOLDED STATE is a boolean of whether the thread (that we are
 reloading) is fully unfolded or folded, i.e. via
 `mastodon-tl--toggle-spoiler-in-thread'."
   (interactive)
@@ -2340,8 +2340,13 @@ reloading) is fully unfolded or folded, i.e. via
    (mastodon-tl--thread-do thread-id unfolded-state)))
 
 (defun mastodon-tl--thread-do (&optional thread-id unfolded-state)
-  "Load a thread.
-Non-interactive version, so we can call it programmatically and not crash into `mastodon-toot--with-toot-item'."
+  "Open thread buffer for toot at point or with THREAD-ID.
+UNFOLDED STATE is a boolean of whether the thread (that we are
+reloading) is fully unfolded or folded, i.e. via
+`mastodon-tl--toggle-spoiler-in-thread'.
+This is the non-interactive version, so we can call it
+programmatically and not crash into
+`mastodon-toot--with-toot-item'."
   ;; this function's var must not be id as the above macro binds id and even
   ;; if we provide the arg (e.g. url-lookup), the macro definition overrides
   ;; it, making the optional arg unusable!
@@ -2349,7 +2354,8 @@ Non-interactive version, so we can call it programmatically and not crash into `
          (type (mastodon-tl--field 'type
                                    (mastodon-tl--property 'item-json :no-move)))
          ;; if reloading and thread was fully unfolded, respect it:
-         (mastodon-tl--expand-content-warnings unfolded-state))
+         (mastodon-tl--expand-content-warnings
+          (or unfolded-state mastodon-tl--expand-content-warnings)))
     (if (or (string= type "follow_request")
             (string= type "follow")) ; no can thread these
         (user-error "No thread")
