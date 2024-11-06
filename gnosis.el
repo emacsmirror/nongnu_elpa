@@ -2055,7 +2055,8 @@ SUSPEND: Suspend note, 0 for unsuspend, 1 for suspend"
                  (memq (nth 0 entry) '(:deck :tag))
                  (stringp (nth 1 entry))
                  (listp (nth 2 entry))) ; Ensure the third element is a plist
-      (error "Each entry should a have :deck or :tag keyword, a string, and a plist of custom values"))
+      (error
+       "Each entry should a have :deck or :tag keyword, a string, and a plist of custom values"))
     (let ((proto (plist-get (nth 2 entry) :proto))
           (anagnosis (plist-get (nth 2 entry) :anagnosis))
           (epignosis (plist-get (nth 2 entry) :epignosis))
@@ -2063,7 +2064,7 @@ SUSPEND: Suspend note, 0 for unsuspend, 1 for suspend"
           (amnesia (plist-get (nth 2 entry) :amnesia))
           (lethe (plist-get (nth 2 entry) :lethe)))
       (unless (and (listp proto) (cl-every #'integerp proto))
-        (error "Proto must be a list of interval integer values"))
+        (error "Proto must be a list of integer values"))
       (unless (or (null anagnosis) (integerp anagnosis))
         (error "Anagnosis should be an integer"))
       (unless (or (null epignosis) (numberp epignosis))
