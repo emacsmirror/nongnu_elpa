@@ -1499,9 +1499,9 @@ well."
   "Return overdue notes for current DATE.
 
 Optionally, provide NOTE-IDS of which the overdue ones will be returned."
-  (cl-loop for note in (or note-ids (gnosis-review-get-due-notes))
-	   when (gnosis-review-note-overdue-p note)
-	   collect note))
+  (cl-loop for note in (or note-ids (gnosis-review-get--due-notes))
+	   when (not (equal (cadr note) (gnosis-algorithm-date)))
+	   collect (car note)))
 
 (defun gnosis-review-get-due-notes--no-overdue (&optional note-ids)
   "Return due notes, without overdue.
@@ -2310,8 +2310,11 @@ If entry for DATE does not exist, it will be created.
 Defaults to current date."
   (cl-assert (listp date) nil "Date must be a list.")
   (let* ((date (or date (gnosis-algorithm-date)))
-	 (reviewed-total (car (gnosis-select 'reviewed-total 'activity-log `(= date ',date) t)))
-	 (reviewed-new (or (car (gnosis-select 'reviewed-new 'activity-log `(= date ',date) t)) 0)))
+	 (date-log (gnosis-select
+		    '[date reviewed-total reviewed-new] 'activity-log
+		    `(= date ',(gnosis-algorithm-date)) t))
+	 (reviewed-total (cadr date-log))
+	 (reviewed-new (or (caddr date-log) 0)))
     (or reviewed-total
 	(progn
 	  ;; Using reviewed-new instead of hardcoding 0 just to not mess up tests.
@@ -2687,7 +2690,8 @@ Skips days where no note was reviewed."
 
 (defun gnosis-dashboard-output-note (id)
   "Output contents for note with ID, formatted for gnosis dashboard."
-  (cl-loop for item in (append (gnosis-select '[main options answer tags type] 'notes `(= id ,id) t)
+  (cl-loop for item in (append (gnosis-select
+				'[main options answer tags type] 'notes `(= id ,id) t)
 			       (gnosis-select 'suspend 'review-log `(= id ,id) t))
            if (listp item)
            collect (mapconcat #'identity item ",")
@@ -3033,8 +3037,9 @@ DASHBOARD-TYPE: either 'Notes' or 'Decks' to display the respective dashboard."
   "Launch gnosis dashboard."
   (interactive)
   (delete-other-windows)
-  (let ((buffer-name gnosis-dashboard-buffer-name)
-	(due-notes (gnosis-review-get-due-notes)))
+  (let* ((buffer-name gnosis-dashboard-buffer-name)
+	 (due-log (gnosis-review-get--due-notes))
+	 (due-note-ids (mapcar #'car due-log)))
     (when (get-buffer buffer-name)
       (kill-buffer buffer-name))  ;; Kill the existing buffer if it exists
     (let ((buffer (get-buffer-create buffer-name)))
@@ -3058,26 +3063,26 @@ DASHBOARD-TYPE: either 'Notes' or 'Decks' to display the respective dashboard."
 	(insert (gnosis-center-string
 		 (format "Due notes: %s (Overdue: %s)"
 			 (propertize
-			  (number-to-string (length due-notes))
+			  (number-to-string (length due-note-ids))
 			  'face 'error)
 			 (propertize
 			  (number-to-string
-			   (length (gnosis-review-get-overdue-notes due-notes)))
+			   (length (gnosis-review-get-overdue-notes)))
 			  'face 'warning))))
 	(insert "\n\n")
 	(insert (gnosis-center-string
-			(format "Daily Average: %s"
-				(propertize
-				 (number-to-string (gnosis-dashboard-output-average-rev))
-				 'face 'font-lock-type-face))))
+		 (format "Daily Average: %s"
+			 (propertize
+			  (number-to-string (gnosis-dashboard-output-average-rev))
+			  'face 'font-lock-type-face))))
 	(insert "\n")
 	(insert (gnosis-center-string
-			(format "Current streak: %s days"
-				(propertize
-				 (number-to-string
-				  (gnosis-dashboard--streak
-				   (gnosis-select 'date 'activity-log '1=1 t)))
-				 'face 'success))))
+		 (format "Current streak: %s days"
+			 (propertize
+			  (number-to-string
+			   (gnosis-dashboard--streak
+			    (gnosis-select 'date 'activity-log '1=1 t)))
+			  'face 'success))))
 	(insert "\n\n"))
       (pop-to-buffer-same-window buffer)
       (goto-char (point-min))
