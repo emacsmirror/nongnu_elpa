@@ -252,7 +252,7 @@ When nil, review new notes last."
   :group 'gnosis-face)
 
 (defface gnosis-face-cloze
-  '((t :inherit (ffap italic)))
+  '((t :inherit (highlight italic)))
   "Face for clozes."
   :group 'gnosis-face)
 
@@ -588,7 +588,8 @@ First item of answers will be marked as false, while the rest unanswered."
 Applies highlighting for CORRECT & FALSE."
   (let* ((cloze-str (gnosis-cloze-create str clozes))
 	 (str-with-hints (gnosis-cloze-add-hints cloze-str hints))
-	 (str-with-c-answers (gnosis-cloze-mark-answers str-with-hints correct 'gnosis-face-correct))
+	 (str-with-c-answers
+	  (gnosis-cloze-mark-answers str-with-hints correct 'gnosis-face-correct))
 	 (final (gnosis-cloze-mark-false str-with-c-answers false)))
     (erase-buffer)
     (insert "\n" (gnosis-center-string final))
