@@ -1469,21 +1469,29 @@ well."
   (let ((next-rev (gnosis-get 'next-rev 'review-log `(= id ,id))))
     (gnosis-past-or-present-p next-rev)))
 
-(defun gnosis-review-get-due-notes ()
-  "Return a list due notes id for current date."
-  (let* ((old-notes (cl-loop for note in (gnosis-select 'id 'review-log '(and (> n 0)
-									      (= suspend 0))
-							t)
-			     when (gnosis-review-is-due-p note)
+(defun gnosis-review-get--due-notes ()
+  "Return due note IDs & due dates."
+  (let* ((old-notes (cl-loop for note in
+			     (gnosis-select '[id next-rev] 'review-log
+					    '(and (> n 0)
+						  (= suspend 0))
+					    nil)
+			     when (gnosis-past-or-present-p (cadr note))
 			     collect note))
-	 (new-notes (cl-loop for note in (gnosis-select 'id 'review-log '(and (= n 0)
-									      (= suspend 0))
-							t)
-			     when (gnosis-review-is-due-today-p note)
+	 (new-notes (cl-loop for note in
+			     (gnosis-select '[id next-rev] 'review-log
+					    '(and (= n 0)
+						  (= suspend 0))
+					    nil)
+			     when (gnosis-past-or-present-p (cadr note))
 			     collect note)))
     (if gnosis-review-new-first
 	(append (cl-subseq new-notes 0 gnosis-new-notes-limit) old-notes)
       (append old-notes (cl-subseq new-notes 0 gnosis-new-notes-limit)))))
+
+(defun gnosis-review-get-due-notes ()
+  "Return all due note IDs."
+  (mapcar #'car (gnosis-review-get--due-notes)))
 
 (defun gnosis-review-get-overdue-notes (&optional note-ids)
   "Return overdue notes for current DATE.
