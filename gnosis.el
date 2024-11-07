@@ -1427,7 +1427,9 @@ TAGS: boolean value, t to specify tags.
 DUE: boolean value, t to specify due notes.
 DECK: Integer, specify deck id.
 QUERY: String value,"
-  (cl-assert (and (booleanp due) (booleanp tags) (or (numberp deck) (null deck)) (or (stringp query) (null query)))
+  (cl-assert (and (booleanp due) (booleanp tags)
+		  (or (numberp deck) (null deck))
+		  (or (stringp query) (null query)))
 	     nil "Incorrect value passed to `gnosis-collect-note-ids'")
   (cond ((and (null tags) (null due) (null deck) (null query))
 	 (gnosis-select 'id 'notes '1=1 t))
@@ -2323,7 +2325,8 @@ Defaults to current date."
 Defaults to current date."
   (cl-assert (listp date) nil "Date must be a list.")
   (let* ((date (or date (gnosis-algorithm-date)))
-	 (reviewed-new (or (car (gnosis-select 'reviewed-new 'activity-log `(= date ',date) t)) 0)))
+	 (reviewed-new (or (car (gnosis-select 'reviewed-new 'activity-log `(= date ',date) t))
+			   0)))
     reviewed-new))
 ;; TODO: Auto tag overdue tags.
 (defun gnosis-tags--append (id tag)
