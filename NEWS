@@ -1,4 +1,7 @@
 -*- mode: org -*-
+* 0.4.7
++ Optimized performance for dashboard homepage
++ Fix face issues on emacs-30
 
 * 0.4.6
 + Refactor gnosis-dashboard without using widgets
