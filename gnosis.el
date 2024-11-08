@@ -573,7 +573,9 @@ Refer to =gnosis-db-schema-extras' for informations on images stored."
 First item of answers will be marked as false, while the rest unanswered."
   (let* ((false (car answers))
 	 (unanswered (cdr answers))
-         (str-with-false (and answers (gnosis-cloze-mark-answers str (list false) 'gnosis-face-false)))
+         (str-with-false (and answers
+			      (gnosis-cloze-mark-answers str (list false)
+							 'gnosis-face-false)))
 	 final)
     (if unanswered
 	(setq final (gnosis-cloze-mark-answers str-with-false (if (listp unanswered) unanswered
@@ -1136,13 +1138,14 @@ answer."
 	 (options (gnosis-mc-cloze-extract-options input)))
     ;; Create a note for each option extracted
     (cl-loop for option in options
-	     do (gnosis-add-note--mc-cloze :deck deck
-					   :question question
-					   :options option
-					   :answer (car option)
-					   :extra (gnosis-read-string-from-buffer "Extra" "")
-					   :images (gnosis-select-images)
-					   :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))))
+	     do (gnosis-add-note--mc-cloze
+		 :deck deck
+		 :question question
+		 :options option
+		 :answer (car option)
+		 :extra (gnosis-read-string-from-buffer "Extra" "")
+		 :images (gnosis-select-images)
+		 :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))))
 
 ;;;###autoload
 (defun gnosis-add-note (&optional deck type)
@@ -1728,9 +1731,7 @@ If NEW? is non-nil, increment new notes log by 1."
     (emacsql gnosis-db [:delete :from activity-log])))
 
 (defun gnosis-review-note (id)
-  "Start review for note with value of id ID, if note is unsuspended.
-
-DATE: Date to log the note review on the activity-log."
+  "Start review for note with value of id ID, if note is unsuspended."
   (when (gnosis-suspended-p id)
     (message "Suspended note with id: %s" id)
     (sit-for 0.3)) ;; this should only occur in testing
@@ -2635,23 +2636,6 @@ If STRING-SECTION is nil, apply FACE to the entire STRING."
 	  ((eq type 'tags )
 	   (gnosis-dashboard-output-tags)))))
 
-(defun gnosis-dashboard-generate-dates (&optional year)
-  "Return a list of all dates (year month day) for YEAR."
-  (let* ((current-year (or (decoded-time-year (decode-time)) year))
-         (result '()))
-    (dotimes (month 12)
-      (let ((days-in-month (calendar-last-day-of-month (+ month 1) current-year)))
-        (dotimes (day days-in-month)
-          (push (list current-year (+ month 1) (+ day 1)) result))))
-    (nreverse result)))
-
-(defun gnosis-dashboard-year-stats (&optional year)
-  "Return YEAR review stats."
-  (let ((notes nil))
-    (cl-loop for date in (gnosis-dashboard-generate-dates (and year))
-	     do (setq notes (append notes (list (gnosis-get-date-total-notes date)))))
-    notes))
-
 (defun gnosis-dashboard--streak (dates &optional num date)
   "Return current review streak.
 
@@ -2664,30 +2648,14 @@ DATE: Integer, used with `gnosis-algorithm-date' to get previous dates."
 	(gnosis-dashboard--streak dates (cl-incf num) (- date 1))
       num)))
 
-(defun gnosis-dashboard-month-reviews (month)
-  "Return reviewes for MONTH in current year."
-  (cl-assert (and (integerp month)
-		  (< month 12))
-	     nil "Month must be an integer, lower than 12.")
-  (let* ((month-dates (cl-loop for date in (gnosis-dashboard-generate-dates)
-			       if (and (= (nth 1 date) month)
-				       (= (nth 0 date) (decoded-time-year (decode-time))))
-			       collect date))
-	 (month-reviews (cl-loop for date in month-dates
-				 collect (gnosis-get-date-total-notes date))))
-    month-reviews))
-
 ;; TODO: Optionally, add dates where no review was made.
 (defun gnosis-dashboard-output-average-rev ()
   "Output the average daily notes reviewed for current year.
 
 Skips days where no note was reviewed."
-    (let ((total 0)
-	  (entries (gnosis-dashboard-year-stats)))
-      (cl-loop for entry in entries
-	       when (not (= entry 0))
-	       do (setq total (+ total entry)))
-      (/ total (max (length (remove 0 entries)) 1))))
+  (let ((reviews (gnosis-select 'reviewed-total 'activity-log '1=1 t)))
+    (if (null reviews) 0
+      (format "%.2f" (/ (apply '+ reviews) (float (length reviews)))))))
 
 (defun gnosis-dashboard-output-note (id)
   "Output contents for note with ID, formatted for gnosis dashboard."
@@ -2945,7 +2913,7 @@ This should only be enabled in a gnosis dashboard buffer."
 NOTE-IDS: List of note ids to display on dashboard.  When nil, prompt
 for dashboard type.
 
-DASHBOARD-TYPE: either 'Notes' or 'Decks' to display the respective dashboard."
+DASHBOARD-TYPE: either Notes or Decks to display the respective dashboard."
   (interactive)
   (let ((dashboard-type (or dashboard-type
 			    (cadr (read-multiple-choice
@@ -3074,7 +3042,7 @@ DASHBOARD-TYPE: either 'Notes' or 'Decks' to display the respective dashboard."
 	(insert (gnosis-center-string
 		 (format "Daily Average: %s"
 			 (propertize
-			  (number-to-string (gnosis-dashboard-output-average-rev))
+			  (gnosis-dashboard-output-average-rev)
 			  'face 'font-lock-type-face))))
 	(insert "\n")
 	(insert (gnosis-center-string
