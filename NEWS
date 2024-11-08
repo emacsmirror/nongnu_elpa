@@ -1,4 +1,7 @@
 -*- mode: org -*-
+* 0.4.8
++ Refactor average review output
+
 * 0.4.7
 + Optimized performance for dashboard homepage
 + Fix face issues on emacs-30
