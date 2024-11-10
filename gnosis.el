@@ -95,7 +95,8 @@ framework's minibuffer."
 (defcustom gnosis-completing-read-function
   (cond ((or (bound-and-true-p ivy-mode)
 	     (bound-and-true-p helm-mode)
-	     (bound-and-true-p vertico-mode))
+	     (bound-and-true-p vertico-mode)
+	     (bound-and-true-p fido-mode))
 	 #'completing-read)
 	(t #'ido-completing-read))
   "Function to use for `completing-read'."
@@ -699,7 +700,8 @@ Also see `gnosis-string-edit'."
   (let* ((interval (car (gnosis-review-algorithm id success)))
 	 (next-review-msg (format "\n\n%s %s"
 				  (propertize "Next review:" 'face 'gnosis-face-directions)
-				  (propertize (format "%s" interval) 'face 'gnosis-face-next-review))))
+				  (propertize (format "%s" interval) 'face
+					      'gnosis-face-next-review))))
     (if (search-backward "Next review" nil t)
 	;; Delete previous result, and override with new this should
 	;; occur only when used for overriding review result.
@@ -2648,7 +2650,6 @@ DATE: Integer, used with `gnosis-algorithm-date' to get previous dates."
 	(gnosis-dashboard--streak dates (cl-incf num) (- date 1))
       num)))
 
-;; TODO: Optionally, add dates where no review was made.
 (defun gnosis-dashboard-output-average-rev ()
   "Output the average daily notes reviewed for current year.
 
