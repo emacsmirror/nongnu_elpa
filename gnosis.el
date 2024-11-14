@@ -509,8 +509,10 @@ Refer to =gnosis-db-schema-extras' for informations on images stored."
   ;; Only display images on graphical env
   (when (display-graphic-p)
     (let* ((img (gnosis-get image 'extras `(= id ,id)))
-           (path-to-image (expand-file-name (or img "") (file-name-as-directory gnosis-images-dir)))
-           (image (create-image path-to-image 'png nil :width gnosis-image-width :height gnosis-image-height))
+           (path-to-image (expand-file-name (or img "")
+					    (file-name-as-directory gnosis-images-dir)))
+           (image (create-image path-to-image 'png nil
+				:width gnosis-image-width :height gnosis-image-height))
            (image-width (car (image-size image t)))
            (frame-width (window-text-width))) ;; Width of the current window in columns
       (cond ((or (not img) (string-empty-p img))
@@ -3006,7 +3008,9 @@ DASHBOARD-TYPE: either Notes or Decks to display the respective dashboard."
 (defun gnosis-dashboard ()
   "Launch gnosis dashboard."
   (interactive)
-  (delete-other-windows)
+  ;; Refresh gnosis-db
+  (unless gnosis-testing
+    (setf gnosis-db (emacsql-sqlite-open (expand-file-name "gnosis.db" gnosis-dir))))
   (let* ((buffer-name gnosis-dashboard-buffer-name)
 	 (due-log (gnosis-review-get--due-notes))
 	 (due-note-ids (mapcar #'car due-log)))
