@@ -1306,7 +1306,14 @@ Optionally, add cusotm PROMPT."
   (cl-loop for tags in (gnosis-select 'tags 'notes '1=1 t)
            nconc tags into all-tags
            finally return (delete-dups all-tags)))
-;; TODO: Rewrite this using gnosis-get-tag-notes.
+
+(defun gnosis-collect-tag-note-ids (tags &optional ids)
+  "Collect note IDS for TAGS."
+  (cl-assert (listp tags))
+  (if (null tags) ids
+    (gnosis-collect-tag-note-ids (cdr tags)
+                                 (append ids (gnosis-get-tag-notes (car tags))))))
+
 (defun gnosis-select-by-tag (input-tags &optional due suspended-p)
   "Return note ID's for every note with INPUT-TAGS.
 
@@ -1314,11 +1321,12 @@ If DUE, return only due notes.
 If SUSPENDED-P, return suspended notes as well."
   (cl-assert (listp input-tags) t "Input tags must be a list")
   (cl-assert (booleanp due) "Due value must be a boolean")
-  (cl-loop for (id tags) in (gnosis-select '[id tags] 'notes)
-           when (and (cl-every (lambda (tag) (member tag tags)) input-tags)
-		     (or (not suspended-p) (not (gnosis-suspended-p id)))
-		     (if due (gnosis-review-is-due-p id) t))
-           collect id))
+  (let ((ids (gnosis-collect-tag-note-ids input-tags)))
+    ;; Filter the collected IDs based on due and suspension status
+    (cl-loop for id in ids
+             when (and (or (not suspended-p) (not (gnosis-suspended-p id)))
+                       (if due (gnosis-review-is-due-p id) t))
+             collect id)))
 
 (defun gnosis-get-tag-notes (tag)
   "Return note ids for TAG."
@@ -1763,7 +1771,7 @@ If NEW? is non-nil, increment new notes log by 1."
   (interactive)
   (let ((default-directory dir))
     (vc-pull)
-    ;; Fix sync by adding a small delay
+    ;; Fix sync by adding a small delay, `vc-pull' is async.
     (sit-for 0.3)
     ;; Reopen gnosis-db after pull
     (setf gnosis-db (emacsql-sqlite-open (expand-file-name "gnosis.db" dir)))))
@@ -1773,9 +1781,7 @@ If NEW? is non-nil, increment new notes log by 1."
 
 This function initializes the `gnosis-dir' as a Git repository if it is not
 already one.  It then adds the gnosis.db file to the repository and commits
-the changes with a message containing the reviewed number of notes.
-
-NOTE-NUM: The number of notes reviewed in the session."
+the changes with a message containing the reviewed number NOTE-NUM."
   (let ((git (executable-find "git"))
 	(default-directory gnosis-dir))
     (unless git
