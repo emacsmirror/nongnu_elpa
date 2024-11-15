@@ -2466,7 +2466,7 @@ Return note ids for notes that match QUERY."
     (emacsql gnosis-db [:alter-table decks :add ef-decrease])
     (emacsql gnosis-db [:alter-table decks :add ef-threshold])
     (emacsql gnosis-db [:alter-table decks :add initial-interval])
-    (emacsql gnosis-db (format "PRAGMA user_version = 2"))
+    (emacsql gnosis-db [:pragma (= user-version 2)])
     (gnosis--create-table 'activity-log gnosis-db-schema-activity-log)
     ;; Update to most recent gnosis db version.
     (gnosis-db-update-v3)))
@@ -2486,17 +2486,18 @@ Return note ids for notes that match QUERY."
     ;; Add activity log
     (gnosis--create-table 'activity-log gnosis-db-schema-activity-log)
     ;; Update version
-    (emacsql gnosis-db (format "PRAGMA user_version = %s" gnosis-db-version))))
+    (emacsql gnosis-db [:pragma (= user-version gnosis-db-version)])))
 
 (defun gnosis-db-init ()
   "Create essential directories & database."
-  (let ((gnosis-curr-version (caar (emacsql gnosis-db (format "PRAGMA user_version")))))
-    (unless (length> (emacsql gnosis-db [:select name :from sqlite-master :where (= type table)]) 3)
+  (let ((gnosis-curr-version (caar (emacsql gnosis-db  [:pragma user-version]))))
+    (unless (length> (emacsql gnosis-db [:select name :from sqlite-master :where (= type table)])
+		     3)
       (emacsql-with-transaction gnosis-db
 	;; Enable foreign keys
-	(emacsql gnosis-db "PRAGMA foreign_keys = ON")
+	(emacsql gnosis-db [:pragma (= foreign-keys 1)])
 	;; Gnosis version
-	(emacsql gnosis-db (format "PRAGMA user_version = %s" gnosis-db-version))
+	(emacsql gnosis-db [:pragma (= user-version gnosis-db-version)])
 	;; Create decks table
 	(gnosis--create-table 'decks gnosis-db-schema-decks)
 	;; Create notes table
