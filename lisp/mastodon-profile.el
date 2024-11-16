@@ -84,6 +84,7 @@
 (autoload 'mastodon-tl--buffer-property "mastodon-tl")
 (autoload 'mastodon-search--query "mastodon-search")
 (autoload 'mastodon-tl--field-status "mastodon-tl")
+(autoload 'mastodon-toot--with-toot-item "mastodon-toot" nil nil 'macro)
 
 (defvar mastodon-active-user)
 (defvar mastodon-tl--horiz-bar)

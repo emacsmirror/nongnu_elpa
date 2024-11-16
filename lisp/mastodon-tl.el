@@ -89,7 +89,7 @@
 (autoload 'mastodon-media--process-full-sized-image-response "mastodon-media")
 (autoload 'mastodon-search--trending-statuses "mastodon-search")
 (autoload 'mastodon-search--format-heading "mastodon-search")
-(autoload 'mastodon-toot--with-toot-item "mastodon-toot")
+(autoload 'mastodon-toot--with-toot-item "mastodon-toot" nil nil 'macro)
 (autoload 'mastodon-media--image-or-cached "mastodon-media")
 (autoload 'mastodon-toot--base-toot-or-item-json "mastodon-toot")
 (autoload 'mastodon-search--load-link-posts "mastodon-search")
