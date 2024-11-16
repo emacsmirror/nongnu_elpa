@@ -377,6 +377,10 @@ FORCE means to fetch from the server in any case and update
       (setq mastodon-instance-data
             (mastodon-http--get-json (mastodon-http--api "instance")))))
 
+(defun mastodon-instance-version ()
+  "Return the version string of user's instance."
+  (alist-get 'version (mastodon-instance-data)))
+
 ;;;###autoload
 (defun mastodon-toot (&optional user reply-to-id reply-json)
   "Update instance with new toot. Content is captured in a new buffer.
@@ -404,7 +408,10 @@ MAX-ID is a request parameter for pagination."
      (when max-id
        `(("max_id" . ,(mastodon-tl--buffer-property 'max-id))))
      nil nil nil
-     (if (not mastodon-group-notifications)
+     (if (or (not mastodon-group-notifications)
+             ;; if version less than 1st grouped notifs release:
+             (> 4.3 (string-to-number
+                     (mastodon-instance-version))))
          "v1"
        "v2"))
     (with-current-buffer (get-buffer-create buffer)
