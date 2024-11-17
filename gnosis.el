@@ -2648,16 +2648,18 @@ If STRING-SECTION is nil, apply FACE to the entire STRING."
 	   (gnosis-dashboard-output-tags)))))
 
 (defun gnosis-dashboard--streak (dates &optional num date)
-  "Return current review streak.
+  "Return current review streak number as a string.
 
-DATES: Dates in the activity log.
+DATES: Dates in the activity log, a list of dates in (YYYY MM DD).
 NUM: Streak number.
 DATE: Integer, used with `gnosis-algorithm-date' to get previous dates."
   (let ((num (or num 0))
 	(date (or date 0)))
-    (if (member (gnosis-algorithm-date date) dates)
-	(gnosis-dashboard--streak dates (cl-incf num) (- date 1))
-      num)))
+    (cond ((> num 666)
+	   "+666") ;; do not go over 666, avoiding `max-lisp-eval-depth'
+	  ((member (gnosis-algorithm-date date) dates)
+	   (gnosis-dashboard--streak dates (cl-incf num) (- date 1)))
+	  (t (number-to-string num)))))
 
 (defun gnosis-dashboard-output-average-rev ()
   "Output the average daily notes reviewed for current year.
@@ -3060,9 +3062,8 @@ DASHBOARD-TYPE: either Notes or Decks to display the respective dashboard."
 	(insert (gnosis-center-string
 		 (format "Current streak: %s days"
 			 (propertize
-			  (number-to-string
-			   (gnosis-dashboard--streak
-			    (gnosis-select 'date 'activity-log '1=1 t)))
+			  (gnosis-dashboard--streak
+			   (gnosis-select 'date 'activity-log '1=1 t))
 			  'face 'success))))
 	(insert "\n\n"))
       (pop-to-buffer-same-window buffer)
