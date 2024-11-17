@@ -89,7 +89,6 @@
 (autoload 'mastodon-media--process-full-sized-image-response "mastodon-media")
 (autoload 'mastodon-search--trending-statuses "mastodon-search")
 (autoload 'mastodon-search--format-heading "mastodon-search")
-(autoload 'mastodon-toot--with-toot-item "mastodon-toot" nil nil 'macro)
 (autoload 'mastodon-media--image-or-cached "mastodon-media")
 (autoload 'mastodon-toot--base-toot-or-item-json "mastodon-toot")
 (autoload 'mastodon-search--load-link-posts "mastodon-search")
@@ -2340,8 +2339,9 @@ UNFOLDED STATE is a boolean of whether the thread (that we are
 reloading) is fully unfolded or folded, i.e. via
 `mastodon-tl--toggle-spoiler-in-thread'."
   (interactive)
-  (mastodon-toot--with-toot-item
-   (mastodon-tl--thread-do thread-id)))
+  (if (not (eq 'toot (mastodon-tl--property 'item-type :no-move)))
+      (user-error "Looks like there's no toot at point?")
+    (mastodon-tl--thread-do thread-id)))
 
 (defun mastodon-tl--thread-do (&optional thread-id)
   "Open thread buffer for toot at point or with THREAD-ID.
