@@ -84,6 +84,7 @@
 (autoload 'mastodon-tl--buffer-property "mastodon-tl")
 (autoload 'mastodon-search--query "mastodon-search")
 (autoload 'mastodon-tl--field-status "mastodon-tl")
+(autoload 'mastodon-toot--with-toot-item "mastodon-toot" nil nil 'macro)
 
 (defvar mastodon-active-user)
 (defvar mastodon-tl--horiz-bar)
@@ -797,9 +798,10 @@ the format \"2000-01-31T00:00:00.000Z\"."
 If toot is a boost, opens the profile of the booster.
 MAX-ID is a flag to include the max_id pagination parameter."
   (interactive)
-  (mastodon-profile--make-author-buffer
-   (alist-get 'account (mastodon-profile--item-json))
-   nil nil nil nil max-id))
+  (mastodon-toot--with-toot-item
+   (mastodon-profile--make-author-buffer
+    (alist-get 'account (mastodon-profile--item-json))
+    nil nil nil nil max-id)))
 
 (defun mastodon-profile--image-from-account (account img-type)
   "Return a avatar image from ACCOUNT.

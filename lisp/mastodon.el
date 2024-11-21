@@ -102,6 +102,7 @@
 (autoload 'mastodon-tl--dm-user "mastodon-tl")
 (autoload 'mastodon-tl--scroll-up-command "mastodon-tl")
 (autoload 'special-mode "simple")
+(autoload 'mastodon-tl--thread-do "mastodon-tl")
 
 (defvar mastodon-tl--highlight-current-toot)
 (defvar mastodon-notifications--map)
@@ -173,9 +174,17 @@ make them unweildy."
   "Whether to display attached images in notifications."
   :type '(boolean))
 
-(defcustom mastodon-group-notifications t
-  "Whether to use grouped notifications."
+(defcustom mastodon-group-notifications nil
+  "Whether to use grouped notifications.
+Requires that your instance actually implements grouped notifications.
+Mastodon implemented them in 4.3."
   :type '(boolean))
+
+(defcustom mastodon-notifications-grouped-names-count 2
+  "The number of notification authors to display.
+A count of 2 for example means to display like so: \"Bob, Jenny
+and X others...\"."
+  :type '(integer))
 
 (defun mastodon-kill-window ()
   "Quit window and delete helper."
@@ -403,7 +412,7 @@ MAX-ID is a request parameter for pagination."
      nil nil nil
      (if (or (not mastodon-group-notifications)
              ;; if version less than 1st grouped notifs release:
-             (< 4.3 (string-to-number
+             (> 4.3 (string-to-number
                      (mastodon-instance-version))))
          "v1"
        "v2"))
@@ -439,7 +448,7 @@ If FORCE, do a lookup regardless of the result of `mastodon--fedi-url-p'."
                (let* ((statuses (assoc 'statuses response))
                       (status (seq-first (cdr statuses)))
                       (status-id (alist-get 'id status)))
-                 (mastodon-tl--thread status-id)))
+                 (mastodon-tl--thread-do status-id)))
               ((not (seq-empty-p (alist-get 'accounts response)))
                (let* ((accounts (assoc 'accounts response))
                       (account (seq-first (cdr accounts))))
