@@ -163,22 +163,37 @@ MAX-ID is a flag to include the max_id pagination parameter."
 
 ;;; PROFILE VIEW COMMANDS
 
+(defvar mastodon-profile--account-view-alist
+  '(("statuses"     . mastodon-profile--open-statuses)
+    ("no boosts"   . mastodon-profile--open-statuses-no-reblogs)
+    ("no replies"    . mastodon-profile--open-statuses-no-replies)
+    ("only media"   . mastodon-profile--open-statuses-only-media)
+    ("followers"    . mastodon-profile--open-followers)
+    ("following"    . mastodon-profile--open-following)))
+
 ;; TODO: we shd just load all views' data then switch coz this is slow af:
-(defun mastodon-profile--account-view-cycle ()
+(defun mastodon-profile--account-view-cycle (&optional prefix)
   "Cycle through profile view: toots, toot sans boosts, followers, and following."
-  (interactive)
-  (cond ((mastodon-tl--buffer-type-eq 'profile-statuses)
-         (mastodon-profile--open-statuses-no-reblogs))
-        ((mastodon-tl--buffer-type-eq 'profile-statuses-no-boosts)
-         (mastodon-profile--open-statuses-no-replies))
-        ((mastodon-tl--buffer-type-eq 'profile-statuses-no-replies)
-         (mastodon-profile--open-statuses-only-media))
-        ((mastodon-tl--buffer-type-eq 'profile-statuses-only-media)
-         (mastodon-profile--open-followers))
-        ((mastodon-tl--buffer-type-eq 'profile-followers)
-         (mastodon-profile--open-following))
-        ((mastodon-tl--buffer-type-eq 'profile-following)
-         (mastodon-profile--make-author-buffer mastodon-profile--account))))
+  (interactive "P")
+  (if prefix
+      (let* ((choice
+              (completing-read "Profile view:"
+                               mastodon-profile--account-view-alist))
+             (fun (alist-get choice mastodon-profile--account-view-alist
+                             nil nil #'equal)))
+        (funcall fun))
+    (cond ((mastodon-tl--buffer-type-eq 'profile-statuses)
+           (mastodon-profile--open-statuses-no-reblogs))
+          ((mastodon-tl--buffer-type-eq 'profile-statuses-no-boosts)
+           (mastodon-profile--open-statuses-no-replies))
+          ((mastodon-tl--buffer-type-eq 'profile-statuses-no-replies)
+           (mastodon-profile--open-statuses-only-media))
+          ((mastodon-tl--buffer-type-eq 'profile-statuses-only-media)
+           (mastodon-profile--open-followers))
+          ((mastodon-tl--buffer-type-eq 'profile-followers)
+           (mastodon-profile--open-following))
+          ((mastodon-tl--buffer-type-eq 'profile-following)
+           (mastodon-profile--open-statuses)))))
 
 (defun mastodon-profile--open-statuses ()
   "Open a profile showing statuses."
