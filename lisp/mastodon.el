@@ -174,8 +174,10 @@ make them unweildy."
   "Whether to display attached images in notifications."
   :type '(boolean))
 
-(defcustom mastodon-group-notifications t
-  "Whether to use grouped notifications."
+(defcustom mastodon-group-notifications nil
+  "Whether to use grouped notifications.
+Requires that your instance actually implements grouped notifications.
+Mastodon implemented them in 4.3."
   :type '(boolean))
 
 (defcustom mastodon-notifications-grouped-names-count 2
