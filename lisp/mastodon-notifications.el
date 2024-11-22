@@ -241,7 +241,7 @@ JSON is a list of alists."
        ;; later on:
        note
        ;; body
-       (mastodon-notifiations--body-arg
+       (mastodon-notifications--body-arg
         type filters status profile-note follower-name)
        ;; action-byline (top)
        (mastodon-notifications--action-byline
@@ -278,7 +278,7 @@ ACCOUNTS is data of the accounts that have reacted to the notification."
                follower
              status)
            ;; body
-           (mastodon-notifiations--body-arg
+           (mastodon-notifications--body-arg
             type filters status profile-note follower-name group)
            ;; action-byline
            (mastodon-notifications--action-byline
@@ -313,7 +313,7 @@ NOTE and FOLLOWER-NAME are used for non-grouped notifs."
      (concat action-symbol " " action-authors action-str)
      'byline-top t)))
 
-(defun mastodon-notifiations--body-arg
+(defun mastodon-notifications--body-arg
     (type &optional filters status profile-note follower-name group)
   "TYPE is a symbol, a member of `mastodon-notifiations--types'.
 FILTERS STATUS PROFILE-NOTE FOLLOWER-NAME GROUP."
