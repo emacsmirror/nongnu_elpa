@@ -81,15 +81,28 @@
     "severed_relationships" "moderation_warning")
   "A list of notification types according to their name on the server.")
 
+(defvar mastodon-notifications--filter-types-alist
+  '(("all"                    . mastodon-notifications--get)
+    ("favourite"              . mastodon-notifications--get-favourites)
+    ("reblog"                 . mastodon-notifications--get-boosts)
+    ("mention"                . mastodon-notifications--get-mentions)
+    ("poll"                   . mastodon-notifications--get-polls)
+    ("follow_request"         . mastodon-notifications--get-follow-requests)
+    ("follow"                 . mastodon-notifications--get-follows)
+    ("status"                 . mastodon-notifications--get-statuses)
+    ("update"                 . mastodon-notifications--get-edits))
+  "An alist of notification types and their corresponding load functions.
+Notification types are named according to their name on the server.")
+
 (defvar mastodon-notifications--response-alist
-  '(("Followed" . "you")
-    ("Favourited" . "your post")
-    ("Boosted" . "your post")
-    ("Mentioned" . "you")
-    ("Posted a poll" . "that has now ended")
-    ("Requested to follow" . "you")
-    ("Posted" . "a post")
-    ("Edited" . "their post"))
+  '(("Followed"             . "you")
+    ("Favourited"           . "your post")
+    ("Boosted"              . "your post")
+    ("Mentioned"            . "you")
+    ("Posted a poll"        . "that has now ended")
+    ("Requested to follow"  . "you")
+    ("Posted"               . "a post")
+    ("Edited"               . "their post"))
   "Alist of subjects for notification types.")
 
 (defvar mastodon-notifications--map
@@ -171,14 +184,14 @@ Can be called in notifications view or in follow-requests view."
   "List of notification types for which grouping is implemented.")
 
 (defvar mastodon-notifications--action-alist
-  '((reblog . "Boosted")
-    (favourite . "Favourited")
-    (follow_request . "Requested to follow")
-    (follow . "Followed")
-    (mention . "Mentioned")
-    (status . "Posted")
-    (poll . "Posted a poll")
-    (update . "Edited"))
+  '((reblog          . "Boosted")
+    (favourite       . "Favourited")
+    (follow_request  . "Requested to follow")
+    (follow          . "Followed")
+    (mention         . "Mentioned")
+    (status          . "Posted")
+    (poll            . "Posted a poll")
+    (update          . "Edited"))
   "Action strings keyed by notification type.
 Types are those of the Mastodon API.")
 
@@ -478,6 +491,15 @@ NO-GROUP means don't render grouped notifications."
     (mastodon-notifications--render json (not mastodon-group-notifications))
     (goto-char (point-min))))
 
+(defun mastodon-notifications--get-type ()
+  "Read a notification type and load its timeline."
+  (interactive)
+  (let ((choice (completing-read "View notifications: "
+                                 mastodon-notifications--filter-types-alist)))
+    (funcall (alist-get
+              choice mastodon-notifications--filter-types-alist
+              nil nil #'equal))))
+
 (defun mastodon-notifications--get-mentions ()
   "Display mention notifications in buffer."
   (interactive)
@@ -504,6 +526,21 @@ Status notifications are created when you call
 `mastodon-tl--enable-notify-user-posts'."
   (interactive)
   (mastodon-notifications-get "status" "statuses"))
+
+(defun mastodon-notifications--get-follows ()
+  "Display follow notifications in buffer."
+  (interactive)
+  (mastodon-notifications-get "follow" "follows"))
+
+(defun mastodon-notifications--get-follow-requests ()
+  "Display follow request notifications in buffer."
+  (interactive)
+  (mastodon-notifications-get "follow_request" "follow-requests"))
+
+(defun mastodon-notifications--get-edits ()
+  "Display edited post notifications in buffer."
+  (interactive)
+  (mastodon-notifications-get "update" "edits"))
 
 (defun mastodon-notifications--filter-types-list (type)
   "Return a list of notification types with TYPE removed."
