@@ -476,7 +476,12 @@ NO-GROUP means don't render grouped notifications."
                        (alist-get 'sample_account_ids g)
                        (alist-get 'accounts json))
        for status = (mastodon-notifications--alist-by-value
-                     (alist-get 'status_id g) 'id
+                     (or (alist-get 'status_id g)
+                         ;; if no status_id, just try the first item?
+                         (alist-get 'id
+                                    (car
+                                     (alist-get 'statuses json))))
+                     'id
                      (alist-get 'statuses json))
        do (mastodon-notifications--format-group-note g status accounts)
        (when mastodon-tl--display-media-p
