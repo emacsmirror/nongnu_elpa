@@ -85,6 +85,7 @@
 (autoload 'mastodon-search--query "mastodon-search")
 (autoload 'mastodon-tl--field-status "mastodon-tl")
 (autoload 'mastodon-toot--with-toot-item "mastodon-toot" nil nil 'macro)
+(autoload 'mastodon-tl--toot-or-base "mastodon-tl")
 
 (defvar mastodon-active-user)
 (defvar mastodon-tl--horiz-bar)
@@ -810,13 +811,15 @@ the format \"2000-01-31T00:00:00.000Z\"."
 
 (defun mastodon-profile--get-toot-author (&optional max-id)
   "Open profile of author of toot under point.
-If toot is a boost, opens the profile of the booster.
+If toot is a boost, load the profile of the author of the original item.
 MAX-ID is a flag to include the max_id pagination parameter."
   (interactive)
   (mastodon-toot--with-toot-item
-   (mastodon-profile--make-author-buffer
-    (alist-get 'account (mastodon-profile--item-json))
-    nil nil nil nil max-id)))
+   (let ((json (mastodon-tl--toot-or-base
+                (mastodon-profile--item-json))))
+     (mastodon-profile--make-author-buffer
+      (alist-get 'account json)
+      nil nil nil nil max-id))))
 
 (defun mastodon-profile--image-from-account (account img-type)
   "Return a avatar image from ACCOUNT.
