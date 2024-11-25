@@ -43,8 +43,9 @@
 
 ;;;###autoload
 (defgroup webpaste nil
-  "Configuration options for webpaste.el where you can define paste providers,
-provider priority for which order which provider should be tried when used."
+  "Configuration options for webpaste.el.
+You can define paste providers, provider priority for which order which provider
+should be tried when used."
   :group 'web)
 
 
@@ -382,9 +383,9 @@ Optional params:
                         use to the provider.
 
 :lang-overrides    Alist defining overrides for languages for this provider.  If
-                   a mode is set to nil, it will use fundamental-mode\\='s
-                   value as fallback.  Fundamental-mode\\='s value can also be
-                   overridden.
+                   a mode is set to nil, it will use the value of
+                   `fundamental-mode' as fallback.  The value of
+                   `fundamental-mode' can also be overridden.
 
 :lang-uri-separator   Lang URI separator.  This is used for providers that
                       appends the language to the end of the resulting URI and
@@ -402,7 +403,7 @@ Optional params:
 :post-field-lambda Function that builds and returns the post data that should be
                    sent to the provider.  It should accept named parameters by
                    the names TEXT, POST-FIELD and POST-DATA.  POST-DATA should
-                   default to `nil' or empty list.  It also takes the option
+                   default to nil or empty list.  It also takes the option
                    LANG-OVERRIDES which is a list that enables overriding of
                    `webpaste--default-lang-alist'.
 
