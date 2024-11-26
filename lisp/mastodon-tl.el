@@ -2985,7 +2985,7 @@ Aims to respect any pagination in effect."
           ((eq type 'thread)
            (let ((id (mastodon-tl--buffer-property
                       'thread-item-id (current-buffer) :no-error)))
-             (mastodon-tl--thread id))))
+             (mastodon-tl--thread-do id))))
     ;; TODO: sends point to where point was in buffer. This is very rough; we
     ;; may have removed an item , so the buffer will be smaller, point will
     ;; end up past where we were, etc.
@@ -3438,7 +3438,8 @@ NO-BYLINE means just insert toot body, used for announcements."
 RECORD is the bookmark record."
   (let ((id (bookmark-prop-get record 'id)))
     ;; we need to handle thread and single toot for starters
-    (pop-to-buffer (mastodon-tl--thread id))))
+    (pop-to-buffer
+     (mastodon-tl--thread-do id))))
 
 (defun mastodon-tl--bookmark-make-record ()
   "Return a bookmark record for the current mastodon buffer."
