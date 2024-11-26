@@ -814,7 +814,7 @@ the format \"2000-01-31T00:00:00.000Z\"."
 If toot is a boost, load the profile of the author of the original item.
 MAX-ID is a flag to include the max_id pagination parameter."
   (interactive)
-  (mastodon-toot--with-toot-item
+  (mastodon-tl--do-if-item
    (let ((json (mastodon-tl--toot-or-base
                 (mastodon-profile--item-json))))
      (mastodon-profile--make-author-buffer
