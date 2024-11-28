@@ -54,16 +54,18 @@ Note that such modes will need to require wid-edit.")
            collect `(choice-item :value ,x :format "%[%v%] "
                                  :keymap ,mastodon-widget-keymap)))
 
-(defun mastodon-widget--format (str &optional padding)
+(defun mastodon-widget--format (str &optional padding newline)
   "Return a widget format string for STR, its name.
 PADDING is an integer, for how much right-side padding to add."
   (concat "%[" (propertize str
                            'face 'mastodon-widget-face
                            'mastodon-tab-stop t)
           "%]: %v"
-          (make-string padding ? )))
+          (make-string padding ? )
+          (if newline "\n" "")))
 
-(defun mastodon-widget--create (kind type value notify-fun)
+(defun mastodon-widget--create (kind type value notify-fun
+                                     &optional newline)
   "Return a widget of KIND, with TYPE elements, and default VALUE.
 KIND is a string, either Listing, Sort, Items, or Inbox, and will
 be used for the widget's tag.
@@ -89,7 +91,7 @@ NOTIFY-FUN is the widget's notify function."
        :value value
        :args (mastodon-widget--return-item-widgets type-list)
        :help-echo (format "Select a %s kind" kind)
-       :format (mastodon-widget--format kind padding)
+       :format (mastodon-widget--format kind padding newline)
        :notify notify-fun
        ;; eg format of notify-fun:
        ;; (lambda (widget &rest ignore)

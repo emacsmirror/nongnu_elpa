@@ -3399,10 +3399,10 @@ ENDPOINT-VERSION is a string, format Vx, e.g. V2."
        link-header params nil
        ;; awful hack to fix multiple reloads:
        (alist-get "max_id" params nil nil #'string=))
-      (mastodon-tl--do-init json update-function)
+      (mastodon-tl--do-init json update-function nil nil note-type)
       buffer)))
 
-(defun mastodon-tl--do-init (json update-fun &optional domain no-byline)
+(defun mastodon-tl--do-init (json update-fun &optional domain no-byline type)
   "Utility function for `mastodon-tl--init*' and `mastodon-tl--init-sync'.
 JSON is the data to call UPDATE-FUN on.
 When DOMAIN, force inclusion of user's domain in their handle.
@@ -3410,6 +3410,7 @@ NO-BYLINE means just insert toot body, used for announcements."
   (remove-overlays) ; video overlays
   (cond (domain ;; maybe our update-fun doesn't always have 3 args...:
          (funcall update-fun json nil domain))
+        (type (funcall update-fun json type)) ;; notif types
         (no-byline (funcall update-fun json nil nil no-byline))
         (t (funcall update-fun json)))
   (setq

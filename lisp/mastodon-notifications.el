@@ -75,11 +75,12 @@
 (defvar mastodon-profile-note-in-foll-reqs-max-length)
 (defvar mastodon-group-notifications)
 (defvar mastodon-notifications-grouped-names-count)
+
 (defvar mastodon-notifications--types
-  '("favourite" "reblog" "mention" "poll"
-    "follow_request" "follow" "status" "update"
-    "severed_relationships" "moderation_warning")
-  "A list of notification types according to their name on the server.")
+  '("all" "favourite" "reblog" "mention" "poll"
+    "follow_request" "follow" "status" "update")
+  ;; "severed_relationships" "moderation_warning")
+  "A list of notification types according to their name on the server, plus \"all\".")
 
 (defvar mastodon-notifications--filter-types-alist
   '(("all"                    . mastodon-notifications--get)
@@ -489,18 +490,28 @@ NO-GROUP means don't render grouped notifications."
          ;; `mastodon-tl--media-attachment', not here
          (mastodon-media--inline-images start-pos (point)))))))
 
-(defun mastodon-notifications--timeline (json)
+(defun mastodon-notifications--timeline (json &optional type)
   "Format JSON in Emacs buffer."
   (if (seq-empty-p json)
       (user-error "Looks like you have no (more) notifications for now")
+    (mastodon-widget--create
+     "Filter" mastodon-notifications--types
+     (or type "all")
+     (lambda (widget &rest _ignore)
+       (let ((value (widget-value widget)))
+         (mastodon-notifications--get-type value)))
+     :newline)
+    (insert "\n")
     (mastodon-notifications--render json (not mastodon-group-notifications))
     (goto-char (point-min))))
 
-(defun mastodon-notifications--get-type ()
+(defun mastodon-notifications--get-type (&optional type)
   "Read a notification type and load its timeline."
   (interactive)
-  (let ((choice (completing-read "View notifications: "
-                                 mastodon-notifications--filter-types-alist)))
+  (let ((choice (or type
+                    (completing-read
+                     "View notifications: "
+                     mastodon-notifications--filter-types-alist))))
     (funcall (alist-get
               choice mastodon-notifications--filter-types-alist
               nil nil #'equal))))
