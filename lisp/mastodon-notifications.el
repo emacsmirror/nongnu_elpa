@@ -83,7 +83,7 @@
   "A list of notification types according to their name on the server, plus \"all\".")
 
 (defvar mastodon-notifications--filter-types-alist
-  '(("all"                    . mastodon-notifications--get)
+  '(("all"                    . mastodon-notifications-get)
     ("favourite"              . mastodon-notifications--get-favourites)
     ("reblog"                 . mastodon-notifications--get-boosts)
     ("mention"                . mastodon-notifications--get-mentions)
@@ -112,6 +112,7 @@ Notification types are named according to their name on the server.")
     (define-key map (kbd "a") #'mastodon-notifications--follow-request-accept)
     (define-key map (kbd "j") #'mastodon-notifications--follow-request-reject)
     (define-key map (kbd "C-k") #'mastodon-notifications--clear-current)
+    (define-key map (kbd "C-c C-c") #'mastodon-notifications--cycle-type)
     map)
   "Keymap for viewing notifications.")
 
@@ -503,7 +504,8 @@ NO-GROUP means don't render grouped notifications."
      :newline)
     (insert "\n")
     (mastodon-notifications--render json (not mastodon-group-notifications))
-    (goto-char (point-min))))
+    (goto-char (point-min))
+    (mastodon-tl--goto-next-item)))
 
 (defun mastodon-notifications--get-type (&optional type)
   "Read a notification type and load its timeline."
@@ -515,6 +517,20 @@ NO-GROUP means don't render grouped notifications."
     (funcall (alist-get
               choice mastodon-notifications--filter-types-alist
               nil nil #'equal))))
+
+(defun mastodon-notifications--cycle-type ()
+  "Cycle the current notifications view."
+  (interactive)
+  (let* ((update-params (mastodon-tl--buffer-property
+                         'update-params nil :no-error))
+         (type (alist-get "types[]" update-params nil nil #'equal))
+         (next (if (not update-params)
+                   (cadr mastodon-notifications--types)
+                 (or (cadr (member type mastodon-notifications--types))
+                     (car mastodon-notifications--types))))
+         (fun (alist-get next mastodon-notifications--filter-types-alist
+                         nil nil #'equal)))
+    (funcall fun)))
 
 (defun mastodon-notifications--get-mentions ()
   "Display mention notifications in buffer."
