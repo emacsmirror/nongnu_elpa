@@ -3374,11 +3374,9 @@ VIEW-NAME is a string, to be used as a heading for the view.
 BINDING-STR is a string explaining any bindins in the view.
 ENDPOINT-VERSION is a string, format Vx, e.g. V2."
   ;; Used by `mastodon-notifications-get' and in views.el
-  (let* ((exclude-types (when note-type
-                          (mastodon-notifications--filter-types-list note-type)))
-         (notes-params (when note-type
+  (let* ((notes-params (when note-type
                          (mastodon-http--build-array-params-alist
-                          "exclude_types[]" exclude-types)))
+                          "types[]" (list note-type))))
          (params (append notes-params params))
          (url (mastodon-http--api endpoint endpoint-version))
          (buffer (concat "*mastodon-" buffer-name "*"))
