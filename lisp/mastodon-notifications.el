@@ -509,7 +509,6 @@ NO-GROUP means don't render grouped notifications."
 
 (defun mastodon-notifications--get-type (&optional type)
   "Read a notification type and load its timeline."
-  (interactive)
   (let ((choice (or type
                     (completing-read
                      "View notifications: "
@@ -518,19 +517,31 @@ NO-GROUP means don't render grouped notifications."
               choice mastodon-notifications--filter-types-alist
               nil nil #'equal))))
 
-(defun mastodon-notifications--cycle-type ()
-  "Cycle the current notifications view."
-  (interactive)
+(defun mastodon-notifications--cycle-type (&optional prefix)
+  "Cycle the current notifications view.
+With a prefix arg, completing-read a type and load it."
+  (interactive "P")
+  ;; FIXME: do we need a sept buffer-type result for all notifs views?
+  (if (not (mastodon-tl--buffer-type-eq 'notifications))
+      (user-error "Not in a notifications view.")
+    (let* ((choice
+            (if prefix
+                (completing-read "Notifs by type: "
+                                 mastodon-notifications--types)
+              (mastodon-notifications--get-next-type)))
+           (fun (alist-get choice mastodon-notifications--filter-types-alist
+                           nil nil #'equal)))
+      (funcall fun))))
+
+(defun mastodon-notifications--get-next-type ()
+  "Return the next notif type based on current buffer spec."
   (let* ((update-params (mastodon-tl--buffer-property
                          'update-params nil :no-error))
-         (type (alist-get "types[]" update-params nil nil #'equal))
-         (next (if (not update-params)
-                   (cadr mastodon-notifications--types)
-                 (or (cadr (member type mastodon-notifications--types))
-                     (car mastodon-notifications--types))))
-         (fun (alist-get next mastodon-notifications--filter-types-alist
-                         nil nil #'equal)))
-    (funcall fun)))
+         (type (alist-get "types[]" update-params nil nil #'equal)))
+    (if (not update-params)
+        (cadr mastodon-notifications--types)
+      (or (cadr (member type mastodon-notifications--types))
+          (car mastodon-notifications--types)))))
 
 (defun mastodon-notifications--get-mentions ()
   "Display mention notifications in buffer."
