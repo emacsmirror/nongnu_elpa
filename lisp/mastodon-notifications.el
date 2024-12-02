@@ -32,6 +32,7 @@
 
 (require 'subr-x)
 (require 'cl-lib)
+(require 'mastodon-widget)
 
 (autoload 'mastodon-http--api "mastodon-http")
 (autoload 'mastodon-http--get-params-async-json "mastodon-http")
