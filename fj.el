@@ -704,8 +704,10 @@ If both return nil, also prompt."
                    ("description" . ,desc)))
          (response (fj-post "user/repos" params)))
     (fedi-http--triage response
-                       (lambda (_)
-                         (message "Repo %s created!" name)))))
+                       (lambda (response)
+                         (let ((url (alist-get 'html_url response)))
+                           (message "Repo %s created! %s" name url))
+                         (kill-new url)))))
 
 ;;; ISSUES
 
