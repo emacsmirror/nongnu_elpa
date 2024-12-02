@@ -63,6 +63,9 @@
 (autoload 'mastodon-tl--image-trans-check "mastodon-tl")
 (autoload 'mastodon-tl--symbol "mastodon-tl")
 (autoload 'mastodon-tl--display-or-uname "mastodon-tl")
+(autoload 'mastodon-tl--goto-next-item "mastodon-tl")
+(autoload 'mastodon-tl--buffer-type-eq "mastodon-tl")
+(autoload 'mastodon-tl--buffer-property "mastodon-tl")
 
 ;; notifications defcustoms moved into mastodon.el
 ;; as some need to be available without loading this file
@@ -493,7 +496,8 @@ NO-GROUP means don't render grouped notifications."
          (mastodon-media--inline-images start-pos (point)))))))
 
 (defun mastodon-notifications--timeline (json &optional type)
-  "Format JSON in Emacs buffer."
+  "Format JSON in Emacs buffer.
+Optionally specify TYPE."
   (if (seq-empty-p json)
       (user-error "Looks like you have no (more) notifications for now")
     (mastodon-widget--create
@@ -509,7 +513,8 @@ NO-GROUP means don't render grouped notifications."
     (mastodon-tl--goto-next-item)))
 
 (defun mastodon-notifications--get-type (&optional type)
-  "Read a notification type and load its timeline."
+  "Read a notification type and load its timeline.
+Optionally specify TYPE."
   (let ((choice (or type
                     (completing-read
                      "View notifications: "
@@ -520,11 +525,11 @@ NO-GROUP means don't render grouped notifications."
 
 (defun mastodon-notifications--cycle-type (&optional prefix)
   "Cycle the current notifications view.
-With a prefix arg, completing-read a type and load it."
+With arg PREFIX, `completing-read' a type and load it."
   (interactive "P")
   ;; FIXME: do we need a sept buffer-type result for all notifs views?
   (if (not (mastodon-tl--buffer-type-eq 'notifications))
-      (user-error "Not in a notifications view.")
+      (user-error "Not in a notifications view")
     (let* ((choice
             (if prefix
                 (completing-read "Notifs by type: "
