@@ -528,7 +528,8 @@ Optionally specify TYPE."
 With arg PREFIX, `completing-read' a type and load it."
   (interactive "P")
   ;; FIXME: do we need a sept buffer-type result for all notifs views?
-  (if (not (mastodon-tl--buffer-type-eq 'notifications))
+  (if (not (or (mastodon-tl--buffer-type-eq 'notifications)
+               (mastodon-tl--buffer-type-eq 'mentions)))
       (user-error "Not in a notifications view")
     (let* ((choice
             (if prefix
