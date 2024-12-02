@@ -57,14 +57,19 @@
 |                  | mastodon-mode                                     | Major mode for fediverse services using the Mastodon API.                      |
 |                  | mastodon-notifications--clear-all                 | Clear all notifications.                                                       |
 | C-k              | mastodon-notifications--clear-current             | Dismiss the notification at point.                                             |
+|                  | mastodon-notifications--cycle-type                | Cycle the current notifications view.                                          |
 |                  | mastodon-notifications--follow-request-accept     | Accept a follow request.                                                       |
 | j                | mastodon-notifications--follow-request-reject     | Reject a follow request.                                                       |
 |                  | mastodon-notifications--get-boosts                | Display boost notifications in buffer.                                         |
+|                  | mastodon-notifications--get-edits                 | Display edited post notifications in buffer.                                   |
 |                  | mastodon-notifications--get-favourites            | Display favourite notifications in buffer.                                     |
+|                  | mastodon-notifications--get-follow-requests       | Display follow request notifications in buffer.                                |
+|                  | mastodon-notifications--get-follows               | Display follow notifications in buffer.                                        |
 | @                | mastodon-notifications--get-mentions              | Display mention notifications in buffer.                                       |
 |                  | mastodon-notifications--get-polls                 | Display poll notifications in buffer.                                          |
 |                  | mastodon-notifications--get-single-notif          | Return a single notification JSON for v2 notifs.                               |
 |                  | mastodon-notifications--get-statuses              | Display status notifications in buffer.                                        |
+|                  | mastodon-notifications--get-type                  | Read a notification type and load its timeline.                                |
 | N                | mastodon-notifications-get                        | Display NOTIFICATIONS in buffer.                                               |
 |                  | mastodon-profile--account-bot-toggle              | Toggle the bot status of your account.                                         |
 |                  | mastodon-profile--account-discoverable-toggle     | Toggle the discoverable status of your account.                                |

@@ -85,6 +85,7 @@
 (autoload 'mastodon-search--query "mastodon-search")
 (autoload 'mastodon-tl--field-status "mastodon-tl")
 (autoload 'mastodon-toot--with-toot-item "mastodon-toot" nil nil 'macro)
+(autoload 'mastodon-tl--toot-or-base "mastodon-tl")
 
 (defvar mastodon-active-user)
 (defvar mastodon-tl--horiz-bar)
@@ -163,22 +164,37 @@ MAX-ID is a flag to include the max_id pagination parameter."
 
 ;;; PROFILE VIEW COMMANDS
 
+(defvar mastodon-profile--account-view-alist
+  '(("statuses"     . mastodon-profile--open-statuses)
+    ("no boosts"   . mastodon-profile--open-statuses-no-reblogs)
+    ("no replies"    . mastodon-profile--open-statuses-no-replies)
+    ("only media"   . mastodon-profile--open-statuses-only-media)
+    ("followers"    . mastodon-profile--open-followers)
+    ("following"    . mastodon-profile--open-following)))
+
 ;; TODO: we shd just load all views' data then switch coz this is slow af:
-(defun mastodon-profile--account-view-cycle ()
+(defun mastodon-profile--account-view-cycle (&optional prefix)
   "Cycle through profile view: toots, toot sans boosts, followers, and following."
-  (interactive)
-  (cond ((mastodon-tl--buffer-type-eq 'profile-statuses)
-         (mastodon-profile--open-statuses-no-reblogs))
-        ((mastodon-tl--buffer-type-eq 'profile-statuses-no-boosts)
-         (mastodon-profile--open-statuses-no-replies))
-        ((mastodon-tl--buffer-type-eq 'profile-statuses-no-replies)
-         (mastodon-profile--open-statuses-only-media))
-        ((mastodon-tl--buffer-type-eq 'profile-statuses-only-media)
-         (mastodon-profile--open-followers))
-        ((mastodon-tl--buffer-type-eq 'profile-followers)
-         (mastodon-profile--open-following))
-        ((mastodon-tl--buffer-type-eq 'profile-following)
-         (mastodon-profile--make-author-buffer mastodon-profile--account))))
+  (interactive "P")
+  (if prefix
+      (let* ((choice
+              (completing-read "Profile view:"
+                               mastodon-profile--account-view-alist))
+             (fun (alist-get choice mastodon-profile--account-view-alist
+                             nil nil #'equal)))
+        (funcall fun))
+    (cond ((mastodon-tl--buffer-type-eq 'profile-statuses)
+           (mastodon-profile--open-statuses-no-reblogs))
+          ((mastodon-tl--buffer-type-eq 'profile-statuses-no-boosts)
+           (mastodon-profile--open-statuses-no-replies))
+          ((mastodon-tl--buffer-type-eq 'profile-statuses-no-replies)
+           (mastodon-profile--open-statuses-only-media))
+          ((mastodon-tl--buffer-type-eq 'profile-statuses-only-media)
+           (mastodon-profile--open-followers))
+          ((mastodon-tl--buffer-type-eq 'profile-followers)
+           (mastodon-profile--open-following))
+          ((mastodon-tl--buffer-type-eq 'profile-following)
+           (mastodon-profile--open-statuses)))))
 
 (defun mastodon-profile--open-statuses ()
   "Open a profile showing statuses."
@@ -795,13 +811,15 @@ the format \"2000-01-31T00:00:00.000Z\"."
 
 (defun mastodon-profile--get-toot-author (&optional max-id)
   "Open profile of author of toot under point.
-If toot is a boost, opens the profile of the booster.
+If toot is a boost, load the profile of the author of the original item.
 MAX-ID is a flag to include the max_id pagination parameter."
   (interactive)
-  (mastodon-toot--with-toot-item
-   (mastodon-profile--make-author-buffer
-    (alist-get 'account (mastodon-profile--item-json))
-    nil nil nil nil max-id)))
+  (mastodon-tl--do-if-item
+   (let ((json (mastodon-tl--toot-or-base
+                (mastodon-profile--item-json))))
+     (mastodon-profile--make-author-buffer
+      (alist-get 'account json)
+      nil nil nil nil max-id))))
 
 (defun mastodon-profile--image-from-account (account img-type)
   "Return a avatar image from ACCOUNT.

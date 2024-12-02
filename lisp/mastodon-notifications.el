@@ -32,6 +32,7 @@
 
 (require 'subr-x)
 (require 'cl-lib)
+(require 'mastodon-widget)
 
 (autoload 'mastodon-http--api "mastodon-http")
 (autoload 'mastodon-http--get-params-async-json "mastodon-http")
@@ -62,6 +63,9 @@
 (autoload 'mastodon-tl--image-trans-check "mastodon-tl")
 (autoload 'mastodon-tl--symbol "mastodon-tl")
 (autoload 'mastodon-tl--display-or-uname "mastodon-tl")
+(autoload 'mastodon-tl--goto-next-item "mastodon-tl")
+(autoload 'mastodon-tl--buffer-type-eq "mastodon-tl")
+(autoload 'mastodon-tl--buffer-property "mastodon-tl")
 
 ;; notifications defcustoms moved into mastodon.el
 ;; as some need to be available without loading this file
@@ -75,21 +79,35 @@
 (defvar mastodon-profile-note-in-foll-reqs-max-length)
 (defvar mastodon-group-notifications)
 (defvar mastodon-notifications-grouped-names-count)
+
 (defvar mastodon-notifications--types
-  '("favourite" "reblog" "mention" "poll"
-    "follow_request" "follow" "status" "update"
-    "severed_relationships" "moderation_warning")
-  "A list of notification types according to their name on the server.")
+  '("all" "favourite" "reblog" "mention" "poll"
+    "follow_request" "follow" "status" "update")
+  ;; "severed_relationships" "moderation_warning")
+  "A list of notification types according to their name on the server, plus \"all\".")
+
+(defvar mastodon-notifications--filter-types-alist
+  '(("all"                    . mastodon-notifications-get)
+    ("favourite"              . mastodon-notifications--get-favourites)
+    ("reblog"                 . mastodon-notifications--get-boosts)
+    ("mention"                . mastodon-notifications--get-mentions)
+    ("poll"                   . mastodon-notifications--get-polls)
+    ("follow_request"         . mastodon-notifications--get-follow-requests)
+    ("follow"                 . mastodon-notifications--get-follows)
+    ("status"                 . mastodon-notifications--get-statuses)
+    ("update"                 . mastodon-notifications--get-edits))
+  "An alist of notification types and their corresponding load functions.
+Notification types are named according to their name on the server.")
 
 (defvar mastodon-notifications--response-alist
-  '(("Followed" . "you")
-    ("Favourited" . "your post")
-    ("Boosted" . "your post")
-    ("Mentioned" . "you")
-    ("Posted a poll" . "that has now ended")
-    ("Requested to follow" . "you")
-    ("Posted" . "a post")
-    ("Edited" . "their post"))
+  '(("Followed"             . "you")
+    ("Favourited"           . "your post")
+    ("Boosted"              . "your post")
+    ("Mentioned"            . "you")
+    ("Posted a poll"        . "that has now ended")
+    ("Requested to follow"  . "you")
+    ("Posted"               . "a post")
+    ("Edited"               . "their post"))
   "Alist of subjects for notification types.")
 
 (defvar mastodon-notifications--map
@@ -98,6 +116,7 @@
     (define-key map (kbd "a") #'mastodon-notifications--follow-request-accept)
     (define-key map (kbd "j") #'mastodon-notifications--follow-request-reject)
     (define-key map (kbd "C-k") #'mastodon-notifications--clear-current)
+    (define-key map (kbd "C-c C-c") #'mastodon-notifications--cycle-type)
     map)
   "Keymap for viewing notifications.")
 
@@ -171,14 +190,14 @@ Can be called in notifications view or in follow-requests view."
   "List of notification types for which grouping is implemented.")
 
 (defvar mastodon-notifications--action-alist
-  '((reblog . "Boosted")
-    (favourite . "Favourited")
-    (follow_request . "Requested to follow")
-    (follow . "Followed")
-    (mention . "Mentioned")
-    (status . "Posted")
-    (poll . "Posted a poll")
-    (update . "Edited"))
+  '((reblog          . "Boosted")
+    (favourite       . "Favourited")
+    (follow_request  . "Requested to follow")
+    (follow          . "Followed")
+    (mention         . "Mentioned")
+    (status          . "Posted")
+    (poll            . "Posted a poll")
+    (update          . "Edited"))
   "Action strings keyed by notification type.
 Types are those of the Mastodon API.")
 
@@ -241,7 +260,7 @@ JSON is a list of alists."
        ;; later on:
        note
        ;; body
-       (mastodon-notifiations--body-arg
+       (mastodon-notifications--body-arg
         type filters status profile-note follower-name)
        ;; action-byline (top)
        (mastodon-notifications--action-byline
@@ -278,7 +297,7 @@ ACCOUNTS is data of the accounts that have reacted to the notification."
                follower
              status)
            ;; body
-           (mastodon-notifiations--body-arg
+           (mastodon-notifications--body-arg
             type filters status profile-note follower-name group)
            ;; action-byline
            (mastodon-notifications--action-byline
@@ -313,7 +332,7 @@ NOTE and FOLLOWER-NAME are used for non-grouped notifs."
      (concat action-symbol " " action-authors action-str)
      'byline-top t)))
 
-(defun mastodon-notifiations--body-arg
+(defun mastodon-notifications--body-arg
     (type &optional filters status profile-note follower-name group)
   "TYPE is a symbol, a member of `mastodon-notifiations--types'.
 FILTERS STATUS PROFILE-NOTE FOLLOWER-NAME GROUP."
@@ -463,7 +482,12 @@ NO-GROUP means don't render grouped notifications."
                        (alist-get 'sample_account_ids g)
                        (alist-get 'accounts json))
        for status = (mastodon-notifications--alist-by-value
-                     (alist-get 'status_id g) 'id
+                     (or (alist-get 'status_id g)
+                         ;; if no status_id, just try the first item?
+                         (alist-get 'id
+                                    (car
+                                     (alist-get 'statuses json))))
+                     'id
                      (alist-get 'statuses json))
        do (mastodon-notifications--format-group-note g status accounts)
        (when mastodon-tl--display-media-p
@@ -471,12 +495,60 @@ NO-GROUP means don't render grouped notifications."
          ;; `mastodon-tl--media-attachment', not here
          (mastodon-media--inline-images start-pos (point)))))))
 
-(defun mastodon-notifications--timeline (json)
-  "Format JSON in Emacs buffer."
+(defun mastodon-notifications--timeline (json &optional type)
+  "Format JSON in Emacs buffer.
+Optionally specify TYPE."
   (if (seq-empty-p json)
       (user-error "Looks like you have no (more) notifications for now")
+    (mastodon-widget--create
+     "Filter" mastodon-notifications--types
+     (or type "all")
+     (lambda (widget &rest _ignore)
+       (let ((value (widget-value widget)))
+         (mastodon-notifications--get-type value)))
+     :newline)
+    (insert "\n")
     (mastodon-notifications--render json (not mastodon-group-notifications))
-    (goto-char (point-min))))
+    (goto-char (point-min))
+    (mastodon-tl--goto-next-item)))
+
+(defun mastodon-notifications--get-type (&optional type)
+  "Read a notification type and load its timeline.
+Optionally specify TYPE."
+  (let ((choice (or type
+                    (completing-read
+                     "View notifications: "
+                     mastodon-notifications--filter-types-alist))))
+    (funcall (alist-get
+              choice mastodon-notifications--filter-types-alist
+              nil nil #'equal))))
+
+(defun mastodon-notifications--cycle-type (&optional prefix)
+  "Cycle the current notifications view.
+With arg PREFIX, `completing-read' a type and load it."
+  (interactive "P")
+  ;; FIXME: do we need a sept buffer-type result for all notifs views?
+  (if (not (or (mastodon-tl--buffer-type-eq 'notifications)
+               (mastodon-tl--buffer-type-eq 'mentions)))
+      (user-error "Not in a notifications view")
+    (let* ((choice
+            (if prefix
+                (completing-read "Notifs by type: "
+                                 mastodon-notifications--types)
+              (mastodon-notifications--get-next-type)))
+           (fun (alist-get choice mastodon-notifications--filter-types-alist
+                           nil nil #'equal)))
+      (funcall fun))))
+
+(defun mastodon-notifications--get-next-type ()
+  "Return the next notif type based on current buffer spec."
+  (let* ((update-params (mastodon-tl--buffer-property
+                         'update-params nil :no-error))
+         (type (alist-get "types[]" update-params nil nil #'equal)))
+    (if (not update-params)
+        (cadr mastodon-notifications--types)
+      (or (cadr (member type mastodon-notifications--types))
+          (car mastodon-notifications--types)))))
 
 (defun mastodon-notifications--get-mentions ()
   "Display mention notifications in buffer."
@@ -504,6 +576,21 @@ Status notifications are created when you call
 `mastodon-tl--enable-notify-user-posts'."
   (interactive)
   (mastodon-notifications-get "status" "statuses"))
+
+(defun mastodon-notifications--get-follows ()
+  "Display follow notifications in buffer."
+  (interactive)
+  (mastodon-notifications-get "follow" "follows"))
+
+(defun mastodon-notifications--get-follow-requests ()
+  "Display follow request notifications in buffer."
+  (interactive)
+  (mastodon-notifications-get "follow_request" "follow-requests"))
+
+(defun mastodon-notifications--get-edits ()
+  "Display edited post notifications in buffer."
+  (interactive)
+  (mastodon-notifications-get "update" "edits"))
 
 (defun mastodon-notifications--filter-types-list (type)
   "Return a list of notification types with TYPE removed."
