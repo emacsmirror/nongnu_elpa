@@ -535,7 +535,7 @@ X and Y are sorting args."
         tabulated-list-sort-key '("Updated" . t) ;; default
         tabulated-list-format
         '[("Name" 16 t)
-          ("★" 2 fj-tl-sort-by-stars :right-align t)
+          ("★" 3 fj-tl-sort-by-stars :right-align t)
           ("" 2 t)
           ("issues" 5 fj-tl-sort-by-issue-count :right-align t)
           ("Lang" 10 t)
@@ -1875,7 +1875,7 @@ If TOPIC, QUERY is a search for topic keywords."
         tabulated-list-format
         '[("Name" 12 t)
           ("Owner" 12 t)
-          ("★" 2 fj-tl-sort-by-stars :right-align t)
+          ("★" 3 fj-tl-sort-by-stars :right-align t)
           ("" 2 t)
           ("issues" 5 fj-tl-sort-by-issue-count :right-align t)
           ("Lang" 10 t)
