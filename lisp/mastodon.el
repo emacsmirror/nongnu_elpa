@@ -228,7 +228,7 @@ and X others...\"."
     (define-key map (kbd "k")      #'mastodon-toot--toggle-bookmark)
     (define-key map (kbd "r")      #'mastodon-toot--reply)
     (define-key map (kbd "C")      #'mastodon-toot--copy-toot-url)
-    (define-key map (kbd "o")      #'mastodon-toot--open-toot-url)
+    (define-key map (kbd "o")      #'mastodon-toot--browse-toot-url)
     (define-key map (kbd "v")      #'mastodon-tl--poll-vote)
     (define-key map (kbd "E")      #'mastodon-toot--view-toot-edits)
     (define-key map (kbd "T")      #'mastodon-tl--thread)

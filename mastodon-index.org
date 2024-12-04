@@ -189,7 +189,7 @@
 | .                | mastodon-toot--list-boosters                      | List the boosters of toot at point.                                            |
 | ,                | mastodon-toot--list-favouriters                   | List the favouriters of toot at point.                                         |
 |                  | mastodon-toot--open-draft-toot                    | Prompt for a draft and compose a toot with it.                                 |
-| o                | mastodon-toot--open-toot-url                      | Open URL of toot at point.                                                     |
+| o                | mastodon-toot--browse-toot-url                    | Open URL of toot at point.                                                     |
 | i                | mastodon-toot--pin-toot-toggle                    | Pin or unpin user's toot at point.                                             |
 | r                | mastodon-toot--reply                              | Reply to toot at `point'.                                                      |
 |                  | mastodon-toot--save-draft                         | Save the current compose toot text as a draft.                                 |
