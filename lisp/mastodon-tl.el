@@ -3293,7 +3293,9 @@ This location is defined by a non-nil value of
             (let ((inhibit-read-only t))
               (mastodon-tl--set-after-update-marker)
               (goto-char (or mastodon-tl--update-point (point-min)))
-              (funcall update-function json)
+              (if (eq update-function 'mastodon-notifications--timeline)
+                  (funcall update-function json nil :no-widget)
+                (funcall update-function json))
               (if mastodon-tl--after-update-marker
                   (goto-char mastodon-tl--after-update-marker)
                 (mastodon-tl--goto-next-item)))))))))

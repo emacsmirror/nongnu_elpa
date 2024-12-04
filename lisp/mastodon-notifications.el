@@ -495,19 +495,20 @@ NO-GROUP means don't render grouped notifications."
          ;; `mastodon-tl--media-attachment', not here
          (mastodon-media--inline-images start-pos (point)))))))
 
-(defun mastodon-notifications--timeline (json &optional type)
+(defun mastodon-notifications--timeline (json &optional type no-widget)
   "Format JSON in Emacs buffer.
 Optionally specify TYPE."
   (if (seq-empty-p json)
       (user-error "Looks like you have no (more) notifications for now")
-    (mastodon-widget--create
-     "Filter" mastodon-notifications--types
-     (or type "all")
-     (lambda (widget &rest _ignore)
-       (let ((value (widget-value widget)))
-         (mastodon-notifications--get-type value)))
-     :newline)
-    (insert "\n")
+    (unless no-widget
+      (mastodon-widget--create
+       "Filter" mastodon-notifications--types
+       (or type "all")
+       (lambda (widget &rest _ignore)
+         (let ((value (widget-value widget)))
+           (mastodon-notifications--get-type value)))
+       :newline)
+      (insert "\n"))
     (mastodon-notifications--render json (not mastodon-group-notifications))
     (goto-char (point-min))
     (mastodon-tl--goto-next-item)))
