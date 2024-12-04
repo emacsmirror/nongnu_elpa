@@ -3406,7 +3406,8 @@ ENDPOINT-VERSION is a string, format Vx, e.g. V2."
   "Utility function for `mastodon-tl--init*' and `mastodon-tl--init-sync'.
 JSON is the data to call UPDATE-FUN on.
 When DOMAIN, force inclusion of user's domain in their handle.
-NO-BYLINE means just insert toot body, used for announcements."
+NO-BYLINE means just insert toot body, used for announcements.
+TYPE is a notification type."
   (remove-overlays) ; video overlays
   (cond (domain ;; maybe our update-fun doesn't always have 3 args...:
          (funcall update-fun json nil domain))
