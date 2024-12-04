@@ -1010,7 +1010,7 @@ links in the text. If TOOT is nil no parsing occurs."
       ;; FIXME: replace with refactored handle render fun
       ;; in byline refactor branch:
       (concat
-       (propertize .username
+       (propertize (or .display_name .username)
                    'face 'mastodon-display-name-face
                    'item-type 'user
                    'item-id .id)
