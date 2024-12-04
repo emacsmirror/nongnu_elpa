@@ -3294,7 +3294,7 @@ This location is defined by a non-nil value of
               (mastodon-tl--set-after-update-marker)
               (goto-char (or mastodon-tl--update-point (point-min)))
               (if (eq update-function 'mastodon-notifications--timeline)
-                  (funcall update-function json nil :no-widget)
+                  (funcall update-function json nil :update)
                 (funcall update-function json))
               (if mastodon-tl--after-update-marker
                   (goto-char mastodon-tl--after-update-marker)
