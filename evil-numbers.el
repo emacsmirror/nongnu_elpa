@@ -435,7 +435,6 @@ replacing it by the result of NUMBER-XFORM-FN and return non-nil."
                (or (null range-check-fn)
                    (funcall range-check-fn (match-beginning 0) (match-end 0))))
 
-      (goto-char (match-end num-group))
       (let* ((sep-char (nth 2 (nth (1- num-group) match-chars)))
              (str-prev
               (funcall decode-fn
@@ -480,6 +479,13 @@ replacing it by the result of NUMBER-XFORM-FN and return non-nil."
                   (evil-numbers--strip-chars-apply
                    str-prev str-next sep-char))))
 
+        ;; Replace number then sign, workaround emacs bug #74666.
+        ;; The order replace runs isn't really important anyway,
+        ;; the order may be restored once the bug is resolved in emacs.
+
+        ;; Replace the number.
+        (replace-match (funcall encode-fn str-next) t t nil num-group)
+
         ;; Replace the sign (as needed).
         (cond
          ;; From negative to positive.
@@ -489,8 +495,7 @@ replacing it by the result of NUMBER-XFORM-FN and return non-nil."
          ((and (not (< num-prev 0)) (< num-next 0))
           (replace-match (funcall encode-fn "-") t t nil sign-group)))
 
-        ;; Replace the number.
-        (replace-match (funcall encode-fn str-next) t t nil num-group))
+        (goto-char (match-end num-group)))
 
       t)))
 
