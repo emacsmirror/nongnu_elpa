@@ -113,30 +113,6 @@ see `advice-add' documentation."
                ,@body)
            ,@body-advice-remove))))))
 
-;; Back-ported from emacs-29.1 (remove once older versions have beeen dropped).
-(defmacro recomplete--with-undo-amalgamate (&rest body)
-  "Like `progn' but perform BODY with amalgamated undo barriers.
-
-This allows multiple operations to be undone in a single step.
-When undo is disabled this behaves like `progn'."
-  (declare (indent 0) (debug t))
-  (let ((handle (make-symbol "--change-group-handle--")))
-    `(let ((,handle (prepare-change-group))
-           ;; Don't truncate any undo data in the middle of this,
-           ;; otherwise Emacs might truncate part of the resulting
-           ;; undo step: we want to mimic the behavior we'd get if the
-           ;; undo-boundaries were never added in the first place.
-           (undo-outer-limit nil)
-           (undo-limit most-positive-fixnum)
-           (undo-strong-limit most-positive-fixnum))
-       (unwind-protect
-           (progn
-             (activate-change-group ,handle)
-             ,@body)
-         (progn
-           (accept-change-group ,handle)
-           (undo-amalgamate-change-group ,handle))))))
-
 (defmacro recomplete--with-messages-as-list (message-list &rest body)
   "Run BODY adding any message call to the MESSAGE-LIST list."
   (declare (indent 1))
@@ -624,7 +600,7 @@ step onto the next item)."
                  ;; Without storing these in a list we get an unsightly flicker.
                  (recomplete--with-messages-as-list message-list
                    ;; Needed in case the operation does multiple undo pushes.
-                   (recomplete--with-undo-amalgamate
+                   (with-undo-amalgamate
                      (apply (symbol-function fn-symbol) (list cycle-index fn-cache))))))
 
       (cond
