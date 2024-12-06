@@ -1244,7 +1244,7 @@ content should be hidden."
   "Toggler content warning for all posts in current thread."
   (interactive)
   (let ((thread-p (eq (mastodon-tl--buffer-property 'update-function)
-                      'mastodon-tl--thread)))
+                      'mastodon-tl--thread-do)))
     (if (not thread-p)
         (user-error "Not in a thread")
       (save-excursion
@@ -2331,7 +2331,7 @@ view all branches of a thread."
       (user-error "You need to be viewing a thread to call this")
     (goto-char (point-min))
     (let ((id (mastodon-tl--property 'base-item-id)))
-      (mastodon-tl--thread id))))
+      (mastodon-tl--thread-do id))))
 
 (defun mastodon-tl--thread (&optional thread-id)
   "Open thread buffer for toot at point or with THREAD-ID.
@@ -2387,12 +2387,13 @@ programmatically and not crash into
             (with-mastodon-buffer buffer #'mastodon-mode nil
               (let ((marker (make-marker)))
                 (mastodon-tl--set-buffer-spec buffer endpoint
-                                              #'mastodon-tl--thread
+                                              #'mastodon-tl--thread-do
                                               nil nil nil nil id)
                 (when unfolded-state
                   (plist-put mastodon-tl--buffer-spec
                              'thread-unfolded unfolded-state))
-                (mastodon-tl--timeline (alist-get 'ancestors context) :thread)
+                (mastodon-tl--timeline (alist-get 'ancestors context)
+                                       :thread)
                 (goto-char (point-max))
                 (move-marker marker (point))
                 ;; print re-fetched toot:
@@ -3082,10 +3083,10 @@ MAX-ID is the pagination parameter, a string."
         (goto-char (point-max))
         (if (eq 'thread (mastodon-tl--get-buffer-type))
             ;; if thread fully unfolded, respect it:
-            ;; if thread view, call --thread with parent ID
+            ;; if thread view, call --thread-do with parent ID
             (progn (goto-char (point-min))
                    (mastodon-tl--goto-next-item)
-                   (mastodon-tl--thread)
+                   (mastodon-tl--thread-do)
                    (goto-char point-before)
                    (message "Loaded full thread."))
           (if (not json)
@@ -3282,7 +3283,7 @@ This location is defined by a non-nil value of
       ;; update a thread, without calling `mastodon-tl--updated-json':
       (if (mastodon-tl--buffer-type-eq 'thread)
           ;; load whole thread:
-          (progn (mastodon-tl--thread)
+          (progn (mastodon-tl--thread-do)
                  (message "Loaded full thread."))
         ;; update other timelines:
         (let* ((id (mastodon-tl--newest-id))
