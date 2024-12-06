@@ -437,13 +437,13 @@ found."
                                   (unless no-refresh 'mastodon-tl--more))
     (t (error "No more items"))))
 
-(defun mastodon-tl--goto-prev-item ()
+(defun mastodon-tl--goto-prev-item (&optional no-refresh)
   "Jump to previous item.
-Update if no previous items"
+Update if no previous items."
   (interactive)
   (condition-case nil
       (mastodon-tl--goto-item-pos 'previous-single-property-change
-                                  'mastodon-tl--update)
+                                  (unless no-refresh 'mastodon-tl--update))
     (t (error "No more items"))))
 
 (defun mastodon-tl--goto-first-item ()
@@ -2406,7 +2406,7 @@ programmatically and not crash into
                                        :thread)
                 ;; put point at the toot:
                 (goto-char (marker-position marker))
-                (mastodon-tl--goto-next-item)))))))))
+                (mastodon-tl--goto-next-item :no-refresh)))))))))
 
 (defun mastodon-tl--mute-thread ()
   "Mute the thread displayed in the current buffer.
@@ -2991,7 +2991,7 @@ Aims to respect any pagination in effect."
     ;; end up past where we were, etc.
     (when pos
       (goto-char pos)
-      (mastodon-tl--goto-prev-item))))
+      (mastodon-tl--goto-prev-item :no-refresh))))
 
 (defun mastodon-tl--build-link-header-url (str)
   "Return a URL from STR, an http Link header."
