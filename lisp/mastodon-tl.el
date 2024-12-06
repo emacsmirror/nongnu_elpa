@@ -2982,7 +2982,9 @@ Aims to respect any pagination in effect."
           ((eq type 'profile-statuses)
            (save-excursion
              (goto-char (point-min))
-             (mastodon-profile--get-toot-author max-id)))
+             (mastodon-profile--make-author-buffer
+              ;; (mastodon-profile--get-toot-author max-id)))
+              (mastodon-profile--profile-json))))
           ((eq type 'thread)
            (let ((id (mastodon-tl--buffer-property
                       'thread-item-id (current-buffer) :no-error)))
