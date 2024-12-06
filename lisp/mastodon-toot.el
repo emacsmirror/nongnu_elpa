@@ -1253,20 +1253,23 @@ prefixed by >."
   (message "NSFW flag is now %s" (if mastodon-toot--content-nsfw "on" "off"))
   (mastodon-toot--update-status-fields))
 
-(defun mastodon-toot--change-visibility ()
+(defun mastodon-toot--change-visibility (&optional arg)
   "Change the current visibility to the next valid value."
-  (interactive)
+  (interactive "P")
   (if (mastodon-tl--buffer-type-eq 'edit-toot)
       (user-error "You can't change visibility when editing toots")
     (setq mastodon-toot--visibility
-          (cond ((string= mastodon-toot--visibility "public")
-                 "unlisted")
-                ((string= mastodon-toot--visibility "unlisted")
-                 "private")
-                ((string= mastodon-toot--visibility "private")
-                 "direct")
-                (t
-                 "public")))
+          (if arg
+              (completing-read "Visibility: "
+                               mastodon-toot-visibility-list)
+            (cond ((string= mastodon-toot--visibility "public")
+                   "unlisted")
+                  ((string= mastodon-toot--visibility "unlisted")
+                   "private")
+                  ((string= mastodon-toot--visibility "private")
+                   "direct")
+                  (t
+                   "public"))))
     (mastodon-toot--update-status-fields)))
 
 (defun mastodon-toot--set-toot-language ()
