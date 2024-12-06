@@ -322,11 +322,13 @@ NOTE and FOLLOWER-NAME are used for non-grouped notifs."
                            ""
                          (mastodon-tl--symbol type)))
         (action-authors
-         (if (member type '(follow follow_request mention))
-             "" ;; mentions are normal statuses
-           (if group
-               (mastodon-notifications--byline-accounts accounts group)
-             (mastodon-tl--byline-handle note nil
+         (cond
+          ((member type
+                   '(follow follow_request mention severed_relationships))
+           "") ;; mentions are normal statuses
+          (group
+           (mastodon-notifications--byline-accounts accounts group))
+          (t (mastodon-tl--byline-handle note nil
                                          follower-name
                                          'mastodon-display-name-face)))))
     (propertize
