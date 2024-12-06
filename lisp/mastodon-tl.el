@@ -153,25 +153,26 @@ nil."
   :type 'boolean)
 
 (defcustom mastodon-tl--symbols
-  '((reply           . ("💬" . "R"))
-    (boost           . ("🔁" . "B"))
-    (reblog          . ("🔁" . "B")) ;; server compat
-    (favourite       . ("⭐" . "F"))
-    (bookmark        . ("🔖" . "K"))
-    (media           . ("📹" . "[media]"))
-    (verified        . ("✓" . "V"))
-    (locked          . ("🔒" . "[locked]"))
-    (private         . ("🔒" . "[followers]"))
-    (mention         . ("@"  . "[mention]"))
-    (direct          . ("✉" . "[direct]"))
-    (edited          . ("✍" . "[edited]"))
-    (update          . ("✍" . "[edited]")) ;; server compat
-    (status          . ("✍" . "[posted]"))
-    (replied         . ("⬇" . "↓"))
-    (reply-bar       . ("┃" . "|"))
-    (poll            . ("📊" . ""))
-    (follow          . ("👤" . "+"))
-    (follow_request  . ("👤" . "+")))
+  '((reply                . ("💬" . "R"))
+    (boost                . ("🔁" . "B"))
+    (reblog               . ("🔁" . "B")) ;; server compat
+    (favourite            . ("⭐" . "F"))
+    (bookmark             . ("🔖" . "K"))
+    (media                . ("📹" . "[media]"))
+    (verified             . ("✓" . "V"))
+    (locked               . ("🔒" . "[locked]"))
+    (private              . ("🔒" . "[followers]"))
+    (mention              . ("@"  . "[mention]"))
+    (direct               . ("✉" . "[direct]"))
+    (edited               . ("✍" . "[edited]"))
+    (update               . ("✍" . "[edited]")) ;; server compat
+    (status               . ("✍" . "[posted]"))
+    (replied              . ("⬇" . "↓"))
+    (reply-bar            . ("┃" . "|"))
+    (poll                 . ("📊" . ""))
+    (follow               . ("👤" . "+"))
+    (follow_request       . ("👤" . "+"))
+    (severed_relationships . ("🔗" . "//")))
   "A set of symbols (and fallback strings) to be used in timeline.
 If a symbol does not look right (tofu), it means your
 font settings do not support it."
