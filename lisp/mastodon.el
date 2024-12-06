@@ -36,7 +36,7 @@
 ;; file at <https://codeberg.org/martianh/mastodon.el>.
 
 ;;; Code:
-(require 'cl-lib) ; for `cl-some' call in mastodon
+(require 'cl-lib) ; for `cl-some' call in `mastodon'
 (eval-when-compile (require 'subr-x))
 (require 'url)
 (require 'thingatpt)

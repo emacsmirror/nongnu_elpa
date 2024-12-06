@@ -793,7 +793,7 @@ TEXT-ONLY means don't check for attachments or polls."
   (interactive)
   (if mastodon-use-emojify
       (emojify-insert-emoji)
-    (emoji-search)))
+    (emoji-search))) ;; 29.1
 
 (defun mastodon-toot--emoji-dir ()
   "Return the file path for the mastodon custom emojis directory."
@@ -976,8 +976,8 @@ instance to edit a toot."
                 (mastodon-toot--restore-previous-window-config prev-window-config)
                 ;; reload: - when we have been editing
                 ;;         - when we are in thread view
-                ;; (we don't reload in every case as it can be slow and we may
-                ;; lose our place in a timeline.)
+                ;; (we don't reload in every case as it can be slow and we
+                ;; may lose our place in a timeline.)
                 (when (or edit-id
                           (eq 'thread (mastodon-tl--get-buffer-type)))
                   (let ((pos (marker-position (cadr prev-window-config))))
@@ -1254,7 +1254,8 @@ prefixed by >."
   (mastodon-toot--update-status-fields))
 
 (defun mastodon-toot--change-visibility (&optional arg)
-  "Change the current visibility to the next valid value."
+  "Change the current visibility to the next valid value.
+With prefix ARG, read a visibility type in the minibuffer."
   (interactive "P")
   (if (mastodon-tl--buffer-type-eq 'edit-toot)
       (user-error "You can't change visibility when editing toots")

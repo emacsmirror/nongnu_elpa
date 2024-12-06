@@ -439,7 +439,9 @@ found."
 
 (defun mastodon-tl--goto-prev-item (&optional no-refresh)
   "Jump to previous item.
-Update if no previous items."
+Update if no previous items.
+NO-REFRESH means do no not try to load more items if no next item
+found."
   (interactive)
   (condition-case nil
       (mastodon-tl--goto-item-pos 'previous-single-property-change
