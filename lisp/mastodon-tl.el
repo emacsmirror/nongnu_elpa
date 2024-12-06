@@ -2743,6 +2743,37 @@ ARGS is an alist of any parameters to send with the request."
                     (message "Follow requested for user %s (@%s)!" name user-handle)
                   (message "User %s (@%s) %sed!" name user-handle action)))))))))
 
+(defun mastodon-tl--get-domain-blocks ()
+  "Return a list of current domain blocks."
+  (mastodon-http--get-json
+   (mastodon-http--api "domain_blocks")))
+
+(defun mastodon-tl--block-domain ()
+  "Read a domain and block it."
+  (interactive)
+  (let* ((domain (read-string "Block domain: "))
+         (params `(("domain" . ,domain)))
+         (url (mastodon-http--api "domain_blocks"))
+         (resp (mastodon-http--post url params)))
+    (mastodon-http--triage
+     resp
+     (lambda (_)
+       (message "Domain blocked!")))))
+
+(defun mastodon-tl--unblock-domain ()
+  "Read a blocked domain and unblock it."
+  (interactive)
+  (let* ((blocks (mastodon-tl--get-domain-blocks))
+         (domain (completing-read "Unblock domain: "
+                                  blocks))
+         (params `(("domain" . ,domain)))
+         (url (mastodon-http--api "domain_blocks"))
+         (resp (mastodon-http--delete url params)))
+    (mastodon-http--triage
+     resp
+     (lambda (_)
+       (message "Domain unblocked!")))))
+
 
 ;; FOLLOW TAGS
 
