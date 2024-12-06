@@ -190,14 +190,15 @@ Can be called in notifications view or in follow-requests view."
   "List of notification types for which grouping is implemented.")
 
 (defvar mastodon-notifications--action-alist
-  '((reblog          . "Boosted")
-    (favourite       . "Favourited")
-    (follow_request  . "Requested to follow")
-    (follow          . "Followed")
-    (mention         . "Mentioned")
-    (status          . "Posted")
-    (poll            . "Posted a poll")
-    (update          . "Edited"))
+  '((reblog                . "Boosted")
+    (favourite             . "Favourited")
+    (follow_request        . "Requested to follow")
+    (follow                . "Followed")
+    (mention               . "Mentioned")
+    (status                . "Posted")
+    (poll                  . "Posted a poll")
+    (update                . "Edited")
+    (severed_relationships . "Relationships severed"))
   "Action strings keyed by notification type.
 Types are those of the Mastodon API.")
 
@@ -217,12 +218,12 @@ JSON is a list of alists."
 
 (defun mastodon-notifications--severance-body (group)
   "Return a body for a severance notification GROUP."
-  ;; FIXME: actually implement this when we encounter one in the wild!
   (let-alist (alist-get 'event group)
     (concat .type ": "
             .target_name
             "\nRelationships affected: "
-            .relationships_count)))
+            "\nFollowers: " (number-to-string .followers_count)
+            "\nFollowing: " (number-to-string .following_count))))
 
 (defun mastodon-notifications--mod-warning-body (group)
   "Return a body for a moderation warning notification GROUP."
@@ -405,7 +406,9 @@ TYPE is notification type, used for non-group notifs."
                    'toot-body t) ;; includes newlines etc. for folding
        "\n"
        ;; actual byline:
-       (mastodon-tl--byline toot nil nil base-toot group ts))
+       (if (equal type "severed_relationships")
+           (concat mastodon-tl--horiz-bar "\n")
+         (mastodon-tl--byline toot nil nil base-toot group ts)))
       'item-type     'toot ;; for nav, actions, etc.
       'item-id       (or (alist-get 'page_max_id group) ;; newest notif
                          (alist-get 'id toot)) ; toot id
