@@ -218,6 +218,7 @@ JSON is a list of alists."
 
 (defun mastodon-notifications--severance-body (group)
   "Return a body for a severance notification GROUP."
+  ;; https://docs.joinmastodon.org/entities/RelationshipSeveranceEvent/
   (let-alist (alist-get 'event group)
     (concat .type ": "
             .target_name
@@ -227,13 +228,17 @@ JSON is a list of alists."
 
 (defun mastodon-notifications--mod-warning-body (group)
   "Return a body for a moderation warning notification GROUP."
-  (let-alist (alist-get 'moderation_warning group)
+  ;; https://docs.joinmastodon.org/entities/AccountWarning/
+  (let-alist (alist-get ;; unsure what the actual object is called:
+              'moderation_warning group)
     (concat .action ": "
             .text
             "\nStatuses: "
             .status_ids
             "\nfor account: "
-            .target_account)))
+            .target_account
+            "\nappealed?: "
+            .appeal)))
 
 (defun mastodon-notifications--format-note (note)
   "Format for a NOTE, a non-grouped notification."
