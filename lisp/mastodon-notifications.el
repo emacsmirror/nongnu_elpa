@@ -231,17 +231,46 @@ JSON is a list of alists."
   "Return a body for a moderation warning notification GROUP."
   ;; https://docs.joinmastodon.org/entities/AccountWarning/
   (let-alist (alist-get 'moderation_warning group)
-    (concat .action ": "
-            .text
+    (concat .action ": \"" (string-trim .text) "\""
             "\nStatuses: "
-            (mastodon-notifiations--render-mod-links .status_ids)
+            (mastodon-notifications--render-mod-status-links .status_ids)
             "\nfor account: "
             .target_account.acct
-            "\nappealed?: "
-            (or .appeal "")))) ;; appealed is nil not :json-false in the data
+            (if .appeal
+                (concat "\nYour appeal: \""
+                        (alist-get 'text .appeal)
+                        "\"")
+              "")
+            "\nMore info/appeal: "
+            (mastodon-notifications--render-mod-link .id))))
 
-(defun mastodon-notifications--render-mod-links (ids)
-  (mapconcat #'identity ids ", "))
+(defun mastodon-notifications--propertize-link (url help-echo)
+  "Render a plain URL link with HELP-ECHO."
+  (propertize
+   url
+   'face 'shr-link ;; mastodon-display-name-face
+   'keymap mastodon-tl--shr-map-replacement
+   'mastodon-tab-stop 'shr-url
+   'help-echo help-echo
+   'follow-link t
+   'mouse-face 'highlight
+   'shr-url url
+   'keymap mastodon-tl--shr-map-replacement))
+
+(defun mastodon-notifications--render-mod-status-links (ids)
+  "Render moderation status IDS as URLs."
+  (mapconcat (lambda (id)
+               (let ((str (format "%s/@%s/%s"
+                                  mastodon-instance-url
+                                  mastodon-active-user id)))
+                 (mastodon-notifications--propertize-link str "view toot")))
+             ids ", "))
+
+(defun mastodon-notifications--render-mod-link (id)
+  "Render a moderation link."
+  (let ((str (format "%s/disputes/strikes/%s"
+                     mastodon-instance-url id)))
+    (mastodon-notifications--propertize-link str "View mod warning")))
 
 (defun mastodon-notifications--format-note (note)
   "Format for a NOTE, a non-grouped notification."
