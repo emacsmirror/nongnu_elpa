@@ -198,7 +198,8 @@ Can be called in notifications view or in follow-requests view."
     (status                . "Posted")
     (poll                  . "Posted a poll")
     (update                . "Edited")
-    (severed_relationships . "Relationships severed"))
+    (severed_relationships . "Relationships severed")
+    (moderation_warning    . "Moderation warning"))
   "Action strings keyed by notification type.
 Types are those of the Mastodon API.")
 
@@ -229,16 +230,18 @@ JSON is a list of alists."
 (defun mastodon-notifications--mod-warning-body (group)
   "Return a body for a moderation warning notification GROUP."
   ;; https://docs.joinmastodon.org/entities/AccountWarning/
-  (let-alist (alist-get ;; unsure what the actual object is called:
-              'moderation_warning group)
+  (let-alist (alist-get 'moderation_warning group)
     (concat .action ": "
             .text
             "\nStatuses: "
-            .status_ids
+            (mastodon-notifiations--render-mod-links .status_ids)
             "\nfor account: "
-            .target_account
+            .target_account.acct
             "\nappealed?: "
-            .appeal)))
+            (or .appeal "")))) ;; appealed is nil not :json-false in the data
+
+(defun mastodon-notifications--render-mod-links (ids)
+  (mapconcat #'identity ids ", "))
 
 (defun mastodon-notifications--format-note (note)
   "Format for a NOTE, a non-grouped notification."
@@ -329,7 +332,7 @@ NOTE and FOLLOWER-NAME are used for non-grouped notifs."
         (action-authors
          (cond
           ((member type
-                   '(follow follow_request mention severed_relationships))
+                   '(follow follow_request mention severed_relationships moderation_warning))
            "") ;; mentions are normal statuses
           (group
            (mastodon-notifications--byline-accounts accounts group))
