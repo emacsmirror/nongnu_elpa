@@ -374,7 +374,9 @@ NOTE and FOLLOWER-NAME are used for non-grouped notifs."
 
 (defun mastodon-notifications--body-arg
     (type &optional filters status profile-note follower-name group)
-  "TYPE is a symbol, a member of `mastodon-notifiations--types'.
+  "Prepare a notification body argument.
+The string returned is passed to `mastodon-notifications--insert-note'.
+TYPE is a symbol, a member of `mastodon-notifiations--types'.
 FILTERS STATUS PROFILE-NOTE FOLLOWER-NAME GROUP."
   (let ((body
          (if-let ((match (assoc "warn" filters)))
