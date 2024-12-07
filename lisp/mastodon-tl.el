@@ -2764,16 +2764,18 @@ ARGS is an alist of any parameters to send with the request."
 (defun mastodon-tl--unblock-domain ()
   "Read a blocked domain and unblock it."
   (interactive)
-  (let* ((blocks (mastodon-tl--get-domain-blocks))
-         (domain (completing-read "Unblock domain: "
-                                  blocks))
-         (params `(("domain" . ,domain)))
-         (url (mastodon-http--api "domain_blocks"))
-         (resp (mastodon-http--delete url params)))
-    (mastodon-http--triage
-     resp
-     (lambda (_)
-       (message "Domain unblocked!")))))
+  (let ((blocks (mastodon-tl--get-domain-blocks)))
+    (if (not blocks)
+        (user-error "No blocked domains?")
+      (let* ((domain (completing-read "Unblock domain: "
+                                      blocks))
+             (params `(("domain" . ,domain)))
+             (url (mastodon-http--api "domain_blocks"))
+             (resp (mastodon-http--delete url params)))
+        (mastodon-http--triage
+         resp
+         (lambda (_)
+           (message "Domain unblocked!")))))))
 
 
 ;; FOLLOW TAGS
