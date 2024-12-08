@@ -1335,10 +1335,11 @@ JSON is the item's data to process the link with."
           (fedi-propertize-items str fedi-post-tag-regex 'tag json
                                  fj-link-keymap 1 2 nil nil
                                  '(fj-tab-stop t)))
-    (setq str
-          (fedi-propertize-items str fedi-post-url-regex 'link json
-                                 fj-link-keymap 1 1 nil nil
-                                 '(fj-tab-stop t)))
+    ;; FIXME: is this required? it breaks shr links
+    ;; (setq str
+    ;;       (fedi-propertize-items str fedi-post-url-regex 'link json
+    ;;                              fj-link-keymap 1 1 nil nil
+    ;;                              '(fj-tab-stop t)))
     (setq str
           (fedi-propertize-items str fedi-post-commit-regex 'commit json
                                  fj-link-keymap 1 1 nil nil
