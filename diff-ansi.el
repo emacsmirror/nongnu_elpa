@@ -305,7 +305,7 @@ Additional keyword arguments may also be passed in.
                    (type-of arg-current)
                    arg-current)))))
 
-      (setq args (reverse args-no-keywords)))
+      (setq args (nreverse args-no-keywords)))
 
     ;; Setup two temporary buffers for source and destination,
     ;; looping over arguments, executing and piping contents.
@@ -804,7 +804,7 @@ Store the result in TARGET-BUF when non-nil."
                   (push (list emacs-bin "--batch" output "--eval" emacs-eval-arg) per-chunk-args))
                 (setq i (1+ i)))
 
-              (setq per-chunk-args (reverse per-chunk-args))))
+              (setq per-chunk-args (nreverse per-chunk-args))))
 
           ;; Out of the temp buffer.
           (setq beg (point))
