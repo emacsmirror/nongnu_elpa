@@ -597,8 +597,10 @@ Argument XREF-BACKEND is used to avoid multiple calls to `xref-find-backend'."
                       (push text text-results))))))))))
 
     (cond
-     (text-results ; Add a blank item so there is a trailing newline when joining.
-      (let ((text (string-join (reverse (cons "" text-results)) "\n")))
+     (text-results
+      ;; Add a blank item so there is a trailing newline when joining.
+      (setq text-results (nreverse (cons "" text-results)))
+      (let ((text (string-join text-results "\n")))
         (add-face-text-property 0 (length text) 'doc-show-inline-face t text)
         text))
      (t
