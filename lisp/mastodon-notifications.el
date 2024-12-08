@@ -237,20 +237,20 @@ JSON is a list of alists."
    for x in ids
    collect (mastodon-notifications--alist-by-value x 'id json)))
 
-(defun mastodon-notifications--severance-body (group)
-  "Return a body for a severance notification GROUP."
+(defun mastodon-notifications--severance-body (json)
+  "Return a body for a severance notification JSON."
   ;; https://docs.joinmastodon.org/entities/RelationshipSeveranceEvent/
-  (let-alist (alist-get 'event group)
+  (let-alist json
     (concat .type ": "
             .target_name
             "\nRelationships affected: "
             "\nFollowers: " (number-to-string .followers_count)
             "\nFollowing: " (number-to-string .following_count))))
 
-(defun mastodon-notifications--mod-warning-body (group)
-  "Return a body for a moderation warning notification GROUP."
+(defun mastodon-notifications--mod-warning-body (json)
+  "Return a body for a moderation warning notification JSON."
   ;; https://docs.joinmastodon.org/entities/AccountWarning/
-  (let-alist (alist-get 'moderation_warning group)
+  (let-alist json
     (concat .action ": \"" (string-trim .text) "\""
             "\nStatuses: "
             (mastodon-notifications--render-mod-status-links .status_ids)
@@ -319,7 +319,7 @@ JSON is a list of alists."
        note
        ;; body
        (mastodon-notifications--body-arg
-        type filters status profile-note follower-name)
+        type filters status profile-note follower-name nil note)
        ;; action-byline (top)
        (mastodon-notifications--action-byline
         type nil nil note follower-name)
@@ -398,11 +398,11 @@ NOTE and FOLLOWER-NAME are used for non-grouped notifs."
      'byline-top t)))
 
 (defun mastodon-notifications--body-arg
-    (type &optional filters status profile-note follower-name group)
+    (type &optional filters status profile-note follower-name group note)
   "Prepare a notification body argument.
 The string returned is passed to `mastodon-notifications--insert-note'.
 TYPE is a symbol, a member of `mastodon-notifiations--types'.
-FILTERS STATUS PROFILE-NOTE FOLLOWER-NAME GROUP."
+FILTERS STATUS PROFILE-NOTE FOLLOWER-NAME GROUP NOTE."
   (let ((body
          (if-let ((match (assoc "warn" filters)))
              (mastodon-tl--spoiler status (cadr match))
@@ -429,9 +429,11 @@ FILTERS STATUS PROFILE-NOTE FOLLOWER-NAME GROUP."
           ":\n"
           (mastodon-notifications--comment-note-text body)))))
      ((eq type 'severed_relationships)
-      (mastodon-notifications--severance-body group))
+      (mastodon-notifications--severance-body
+       (alist-get 'event (or group note))))
      ((eq type 'moderation_warning)
-      (mastodon-notifications--mod-warning-body group))
+      (mastodon-notifications--mod-warning-body
+       (alist-get 'moderation_warning (or group note))))
      ((member type '(favourite reblog))
       (propertize
        (mastodon-notifications--comment-note-text body)))
