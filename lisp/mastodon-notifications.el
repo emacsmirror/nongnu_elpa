@@ -70,6 +70,10 @@
 ;; notifications defcustoms moved into mastodon.el
 ;; as some need to be available without loading this file
 
+(defvar mastodon-tl--shr-map-replacement)
+(defvar mastodon-tl--horiz-bar)
+(defvar mastodon-active-user)
+(defvar mastodon-instance-url)
 (defvar mastodon-tl--buffer-spec)
 (defvar mastodon-tl--display-media-p)
 (defvar mastodon-mode-map)
@@ -82,8 +86,8 @@
 
 (defvar mastodon-notifications--types
   '("all" "favourite" "reblog" "mention" "poll"
-    "follow_request" "follow" "status" "update")
-  ;; "severed_relationships" "moderation_warning")
+    "follow_request" "follow" "status" "update"
+    "severed_relationships" "moderation_warning")
   "A list of notification types according to their name on the server, plus \"all\".")
 
 (defvar mastodon-notifications--filter-types-alist
@@ -110,6 +114,40 @@ Notification types are named according to their name on the server.")
     ("Edited"               . "their post"))
   "Alist of subjects for notification types.")
 
+(defvar mastodon-notifications-grouped-types
+  '(follow reblog favourite)
+  "List of notification types for which grouping is implemented.")
+
+(defvar mastodon-notifications--action-alist
+  '((reblog                . "Boosted")
+    (favourite             . "Favourited")
+    (follow_request        . "Requested to follow")
+    (follow                . "Followed")
+    (mention               . "Mentioned")
+    (status                . "Posted")
+    (poll                  . "Posted a poll")
+    (update                . "Edited")
+    (severed_relationships . "Relationships severed")
+    (moderation_warning    . "Moderation warning"))
+  "Action strings keyed by notification type.
+Types are those of the Mastodon API.")
+
+(defun mastodon-notifications--action-alist-get (type)
+  "Return an action string for notification TYPE.
+Fetch from `mastodon-notifications--action-alist'.
+If no match, return empty string."
+  (or (alist-get type mastodon-notifications--action-alist)
+      ""))
+
+(defun mastodon-notifications--response-alist-get (message)
+  "Return a response string for MESSAGE.
+Fetch from `mastodon-notifications--response-alist'.
+If no match, return empty string."
+  (or (alist-get
+       message
+       mastodon-notifications--response-alist nil nil #'equal)
+      ""))
+
 (defvar mastodon-notifications--map
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map mastodon-mode-map)
@@ -122,10 +160,10 @@ Notification types are named according to their name on the server.")
 
 (defun mastodon-notifications--byline-action-str (message)
   "Return an action (top) byline string for TOOT with MESSAGE."
-  (concat " "
-          (propertize message 'face 'mastodon-boosted-face)
-          " " (cdr (assoc message mastodon-notifications--response-alist))
-          "\n"))
+  (let ((resp (mastodon-notifications--response-alist-get message)))
+    (concat " "
+            (propertize message 'face 'mastodon-boosted-face)
+            " " resp "\n")))
 
 (defun mastodon-notifications--follow-request-process (&optional reject)
   "Process the follow request at point.
@@ -184,24 +222,6 @@ Can be called in notifications view or in follow-requests view."
                              (prop-match-end prop)
                              '(face (font-lock-comment-face shr-text)))))
     (buffer-string)))
-
-(defvar mastodon-notifications-grouped-types
-  '(follow reblog favourite)
-  "List of notification types for which grouping is implemented.")
-
-(defvar mastodon-notifications--action-alist
-  '((reblog                . "Boosted")
-    (favourite             . "Favourited")
-    (follow_request        . "Requested to follow")
-    (follow                . "Followed")
-    (mention               . "Mentioned")
-    (status                . "Posted")
-    (poll                  . "Posted a poll")
-    (update                . "Edited")
-    (severed_relationships . "Relationships severed")
-    (moderation_warning    . "Moderation warning"))
-  "Action strings keyed by notification type.
-Types are those of the Mastodon API.")
 
 (defun mastodon-notifications--alist-by-value (str field json)
   "From JSON, return the alist whose FIELD value matches STR.
@@ -267,7 +287,7 @@ JSON is a list of alists."
              ids ", "))
 
 (defun mastodon-notifications--render-mod-link (id)
-  "Render a moderation link."
+  "Render a moderation link for item with ID."
   (let ((str (format "%s/disputes/strikes/%s"
                      mastodon-instance-url id)))
     (mastodon-notifications--propertize-link str "View mod warning")))
@@ -350,24 +370,29 @@ ACCOUNTS is data of the accounts that have reacted to the notification."
   "Return an action (top) byline for notification of TYPE.
 ACCOUNTS and GROUP group are used by grouped notifications.
 NOTE and FOLLOWER-NAME are used for non-grouped notifs."
-  (let ((action-str
-         (unless (member type '(follow follow_request mention))
-           (downcase
-            (mastodon-notifications--byline-action-str
-             (alist-get type mastodon-notifications--action-alist)))))
-        (action-symbol (if (eq type 'mention)
-                           ""
-                         (mastodon-tl--symbol type)))
-        (action-authors
-         (cond
-          ((member type
-                   '(follow follow_request mention severed_relationships moderation_warning))
-           "") ;; mentions are normal statuses
-          (group
-           (mastodon-notifications--byline-accounts accounts group))
-          (t (mastodon-tl--byline-handle note nil
-                                         follower-name
-                                         'mastodon-display-name-face)))))
+  (let* ((str-prefix (mastodon-notifications--action-alist-get type))
+         (action-str
+          (unless (member type '(follow follow_request mention))
+            (downcase
+             (mastodon-notifications--byline-action-str
+              str-prefix))))
+         (action-symbol (if (eq type 'mention)
+                            ""
+                          (mastodon-tl--symbol type)))
+         (action-authors
+          (cond
+           ((not (member (symbol-name type)
+                         mastodon-notifications--types))
+            "")
+           ((member type
+                    '(follow follow_request mention
+                             severed_relationships moderation_warning))
+            "") ;; mentions are normal statuses
+           (group
+            (mastodon-notifications--byline-accounts accounts group))
+           (t (mastodon-tl--byline-handle note nil
+                                          follower-name
+                                          'mastodon-display-name-face)))))
     (propertize
      (concat action-symbol " " action-authors action-str)
      'byline-top t)))
@@ -388,6 +413,9 @@ FILTERS STATUS PROFILE-NOTE FOLLOWER-NAME GROUP."
                    (mastodon-tl--render-text profile-note))
                   (t (mastodon-tl--content status)))))))
     (cond
+     ((not (member (symbol-name type)
+                   mastodon-notifications--types))
+      "Unknown notification type.")
      ((eq type 'follow)
       (propertize "Congratulations, you have a new follower!"
                   'face 'default))
@@ -447,7 +475,7 @@ TYPE is notification type, used for non-group notifs."
                    'toot-body t) ;; includes newlines etc. for folding
        "\n"
        ;; actual byline:
-       (if (equal type "severed_relationships")
+       (if (member type '("severed_relationships" "moderation_warning"))
            (concat mastodon-tl--horiz-bar "\n")
          (mastodon-tl--byline toot nil nil base-toot group ts)))
       'item-type     'toot ;; for nav, actions, etc.
