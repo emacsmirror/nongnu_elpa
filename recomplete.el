@@ -128,7 +128,7 @@ see `advice-add' documentation."
            (progn
              ,@body)
          ;; Protected.
-         (setq ,message-list (append ,message-list (reverse temp-message-list)))))))
+         (setq ,message-list (append ,message-list (nreverse temp-message-list)))))))
 
 (defun recomplete--rotate-list-by-elt-and-remove (seq elt)
   "Split SEQ at ELT, removing it, so the elements after it are positioned first."
