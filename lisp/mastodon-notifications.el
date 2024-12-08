@@ -539,6 +539,12 @@ When DOMAIN, force inclusion of user's domain in their handle."
                                   (cddr accounts) ;; not first two
                                   ", ")))))))
 
+(defvar mastodon-notifications--no-status-notif-alist
+  '(("moderation_warning"    . moderation_warning)
+    ("severed_relationships" . event)
+    ("follow"                . follow)
+    ("follow_request"        . follow_request)))
+
 (defun mastodon-notifications--render (json no-group)
   "Display grouped notifications in JSON.
 NO-GROUP means don't render grouped notifications."
@@ -553,19 +559,27 @@ NO-GROUP means don't render grouped notifications."
        for accounts = (mastodon-notifications--group-accounts
                        (alist-get 'sample_account_ids g)
                        (alist-get 'accounts json))
-       for status = (mastodon-notifications--alist-by-value
-                     (or (alist-get 'status_id g)
-                         ;; if no status_id, just try the first item?
-                         (alist-get 'id
-                                    (car
-                                     (alist-get 'statuses json))))
-                     'id
-                     (alist-get 'statuses json))
+       for type = (alist-get 'type g)
+       for status = (mastodon-notifications--status-or-event g type json)
        do (mastodon-notifications--format-group-note g status accounts)
        (when mastodon-tl--display-media-p
          ;; images-in-notifs custom is handeld in
          ;; `mastodon-tl--media-attachment', not here
          (mastodon-media--inline-images start-pos (point)))))))
+
+(defun mastodon-notifications--status-or-event (group type json)
+  "GROUP TYPE JSON."
+  (if (member type
+              (mapcar #'car
+                      mastodon-notifications--no-status-notif-alist))
+      ;; notifs w no status data:
+      (let ((key (alist-get type mastodon-notifications--no-status-notif-alist
+                            nil nil #'equal)))
+        (alist-get key group))
+    (mastodon-notifications--alist-by-value
+     (alist-get 'status_id group)
+     'id
+     (alist-get 'statuses json))))
 
 (defun mastodon-notifications--timeline (json &optional type update)
   "Format JSON in Emacs buffer.
