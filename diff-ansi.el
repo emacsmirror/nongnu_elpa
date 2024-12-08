@@ -301,10 +301,9 @@ Additional keyword arguments may also be passed in.
            ((listp arg-current)
             (push arg-current args-no-keywords))
            (t
-            (error
-             "Arguments must be keyword, value pairs or lists of strings, found %S = %S"
-             (type-of arg-current)
-             arg-current)))))
+            (error "Arguments must be keyword, value pairs or lists of strings, found %S = %S"
+                   (type-of arg-current)
+                   arg-current)))))
 
       (setq args (reverse args-no-keywords)))
 
@@ -461,10 +460,9 @@ Optional keywords in KEYWORDS.
 
               (_ (error "Unknown argument %S" arg-current)))))
          (t
-          (error
-           "Optional arguments must be keyword, value pairs, found %S = %S"
-           (type-of arg-current)
-           arg-current)))))
+          (error "Optional arguments must be keyword, value pairs, found %S = %S"
+                 (type-of arg-current)
+                 arg-current)))))
 
     ;; Set defaults when unset.
     (unless idle
@@ -911,10 +909,9 @@ Return the buffer used to write data into on success."
                (setq preserve-point v))
               (_ (error "Unknown argument %S" arg-current)))))
          (t
-          (error
-           "All arguments must be keyword, value pairs, found %S = %S"
-           (type-of arg-current)
-           arg-current)))))
+          (error "All arguments must be keyword, value pairs, found %S = %S"
+                 (type-of arg-current)
+                 arg-current)))))
 
     (when preserve-point
       (setq lines-to-beg (count-lines (point) beg))
