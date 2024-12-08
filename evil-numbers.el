@@ -356,14 +356,12 @@ Each item in MATCH-CHARS is a cons pair.
 
       ;; Match 0 for the full range (expected at the beginning).
       (when do-match
-        (cond
-         (is-forward
-          (setq match-list (nreverse match-list))
-          (push (point) match-list)
-          (push point-init match-list))
-         (t
-          (push point-init match-list)
-          (push (point) match-list)))
+        (setq match-list
+              (cond ; `point-init' `point' `match-list'.
+               (is-forward
+                (cons point-init (cons (point) (nreverse match-list))))
+               (t ; `point' `point-init' `match-list'.
+                (cons (point) (cons point-init match-list)))))
 
         (set-match-data match-list)))
     t))
