@@ -33,6 +33,7 @@
 (require 'subr-x)
 (require 'cl-lib)
 (require 'mastodon-widget)
+(require 'map)
 
 (autoload 'mastodon-http--api "mastodon-http")
 (autoload 'mastodon-http--get-params-async-json "mastodon-http")
@@ -571,10 +572,9 @@ NO-GROUP means don't render grouped notifications."
          (mastodon-media--inline-images start-pos (point)))))))
 
 (defun mastodon-notifications--status-or-event (group type json)
-  "GROUP TYPE JSON."
-  (if (member type
-              (mapcar #'car
-                      mastodon-notifications--no-status-notif-alist))
+  "Return a notification's status or event data.
+Using GROUP data, notification TYPE, and overall notifs JSON."
+  (if (member type (map-keys mastodon-notifications--no-status-notif-alist))
       ;; notifs w no status data:
       (let ((key (alist-get type mastodon-notifications--no-status-notif-alist
                             nil nil #'equal)))
