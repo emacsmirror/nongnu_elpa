@@ -139,7 +139,7 @@ caching the result, see `eldoc-diffstat--get-cache' for details."
   t)
 
 (defun eldoc-diffstat--sentinel (callback proc _event)
-  "Display output of PROC by calling CALLBACK if EVENT indicates success."
+  "Display output of PROC after its exit by calling CALLBACK."
   (when (eq (process-status proc) 'exit)
     (with-current-buffer (process-buffer proc)
       (eldoc-diffstat--format-output-buffer)

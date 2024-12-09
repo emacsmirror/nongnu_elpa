@@ -5,7 +5,7 @@ It supports Git and Mercurial repositories.
 
 ![A screenshot showing diffstat information in the echo area of a magit-log buffer.](screenshot.webp "diffstat information is available in the echo area.")
 
-To use, call `eldoc-diffstat-setup  in the desired buffer or mode hook.
+To use, call `eldoc-diffstat-setup` in the desired buffer or mode hook.
 You might also want to add the following to your config:
 
 ```elisp
