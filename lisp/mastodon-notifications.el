@@ -132,6 +132,12 @@ Notification types are named according to their name on the server.")
   "Action strings keyed by notification type.
 Types are those of the Mastodon API.")
 
+(defvar mastodon-notifications--no-status-notif-alist
+  '(("moderation_warning"    . moderation_warning)
+    ("severed_relationships" . event)
+    ("follow"                . follow)
+    ("follow_request"        . follow_request)))
+
 (defun mastodon-notifications--action-alist-get (type)
   "Return an action string for notification TYPE.
 Fetch from `mastodon-notifications--action-alist'.
@@ -509,8 +515,7 @@ TYPE is notification type, used for non-group notifs."
     (accounts group &optional avatar)
   "Propertize author byline ACCOUNTS.
 GROUP is the group notification data.
-When AVATAR, include the account's avatar image.
-When DOMAIN, force inclusion of user's domain in their handle."
+When AVATAR, include the account's avatar image."
   (let ((total (alist-get 'notifications_count group))
         (accts mastodon-notifications-grouped-names-count))
     (concat
@@ -542,12 +547,6 @@ When DOMAIN, force inclusion of user's domain in their handle."
                                                 'face 'mastodon-display-name-face))
                                   (cddr accounts) ;; not first two
                                   ", ")))))))
-
-(defvar mastodon-notifications--no-status-notif-alist
-  '(("moderation_warning"    . moderation_warning)
-    ("severed_relationships" . event)
-    ("follow"                . follow)
-    ("follow_request"        . follow_request)))
 
 (defun mastodon-notifications--render (json no-group)
   "Display grouped notifications in JSON.
@@ -609,6 +608,7 @@ UPDATE means we are updating, so skip some things."
 (defun mastodon-notifications--get-type (&optional type)
   "Read a notification type and load its timeline.
 Optionally specify TYPE."
+  (interactive)
   (let ((choice (or type
                     (completing-read
                      "View notifications: "
@@ -732,7 +732,7 @@ Status notifications are created when you call
                     "v2"))
          (response (mastodon-http--get-json endpoint)))
     (mastodon-http--triage
-     response (lambda (_)
+     response (lambda (response)
                 (message "%s" (prin1-to-string response))))))
 
 (defun mastodon-notifications--get-unread-count ()
