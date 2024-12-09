@@ -478,7 +478,9 @@ TYPE is notification type, used for non-group notifs."
        "\n"
        ;; actual byline:
        (if (member type '("severed_relationships" "moderation_warning"))
-           (concat mastodon-tl--horiz-bar "\n")
+           (propertize
+            (concat mastodon-tl--horiz-bar "\n")
+            'byline t)
          (mastodon-tl--byline toot nil nil base-toot group ts)))
       'item-type     'toot ;; for nav, actions, etc.
       'item-id       (or (alist-get 'page_max_id group) ;; newest notif
