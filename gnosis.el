@@ -2754,7 +2754,7 @@ Skips days where no note was reviewed."
                                 ("Options" ,(/ (window-width) 6) t)
                                 ("Answer" ,(/ (window-width) 6) t)
                                 ("Tags" ,(/ (window-width) 5) t)
-                                ("Type" ,(/ (window-width) 10) T)
+                                ("Type" ,(/ (window-width) 10) t)
                                 ("Suspend" ,(/ (window-width) 6) t)]
         gnosis-dashboard-note-ids note-ids
         tabulated-list-entries nil)
