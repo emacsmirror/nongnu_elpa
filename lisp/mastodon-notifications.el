@@ -769,13 +769,25 @@ Status notifications are created when you call
          (resp (mastodon-http--get-json url)))
     (alist-get 'count resp)))
 
+(defvar mastodon-notifications--policy-vals
+  '("accept" "filter" "drop"))
+
 (defun mastodon-notifications--get-policy ()
   "Return the notification filtering policy."
   (interactive)
-  (let ((endpoint
+  (let ((url
          (mastodon-http--api "notifications/policy"
-                             (if mastodon-group-notifications "v2"))))
-    (mastodon-http--get-json endpoint)))
+                             (when mastodon-group-notifications "v2"))))
+    (mastodon-http--get-json url)))
+
+(defun mastodon-notifications--update-policy (&optional params)
+  "Update notifications filtering policy.
+PARAMS is an alist of parameters."
+  ;; https://docs.joinmastodon.org/methods/notifications/#update-the-filtering-policy-for-notifications
+  (let ((url
+         (mastodon-http--api "notifications/policy"
+                             (when mastodon-group-notifications "v2"))))
+    (mastodon-http--patch url params)))
 
 (provide 'mastodon-notifications)
 ;;; mastodon-notifications.el ends here
