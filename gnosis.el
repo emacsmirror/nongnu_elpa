@@ -2678,20 +2678,10 @@ Skips days where no note was reviewed."
     (if (null reviews) 0
       (format "%.2f" (/ (apply '+ reviews) (float (length reviews)))))))
 
-(defun gnosis-dashboard-output-note (id)
-  "Output contents for note with ID, formatted for gnosis dashboard."
-  (cl-loop for item in (append (gnosis-select
-				'[main options answer tags type] 'notes `(= id ,id) t)
-			       (gnosis-select 'suspend 'review-log `(= id ,id) t))
-           if (listp item)
-           collect (mapconcat #'identity item ",")
-           else
-           collect (replace-regexp-in-string "\n" " " (format "%s" item))))
-
-(defun gnosis-dashboard-edit-note (&optional id)
+(defun gnosis-dashboard-edit-note ()
   "Edit note with ID."
   (interactive)
-  (let ((id (or id (string-to-number (tabulated-list-get-id)))))
+  (let ((id (tabulated-list-get-id)))
     (gnosis-edit-note id)))
 
 (defun gnosis-dashboard-suspend-note ()
@@ -2734,6 +2724,26 @@ Skips days where no note was reviewed."
   "Minor mode for gnosis dashboard notes output."
   :keymap gnosis-dashboard-notes-mode-map)
 
+(defun gnosis-dashboard--output-notes (note-ids)
+  "Output tabulated-list format for NOTE-IDS."
+  (cl-assert (listp note-ids))
+  (let ((entries (emacsql gnosis-db
+			  `[:select
+			    [notes:id notes:main notes:options notes:answer
+				      notes:tags notes:type review-log:suspend]
+			    :from notes
+			    :join review-log :on (= notes:id review-log:id)
+			    :where (in notes:id ,(vconcat note-ids))])))
+    (cl-loop for sublist in entries
+             collect
+	     (list (car sublist)
+                   (vconcat 
+		    (cl-loop for item in (cdr sublist)
+			     if (listp item)
+			     collect (mapconcat #'identity item ",")
+			     else
+			     collect (replace-regexp-in-string "\n" " " (format "%s" item))))))))
+
 (defun gnosis-dashboard-output-notes (note-ids)
   "Return NOTE-IDS contents on gnosis dashboard."
   (cl-assert (listp note-ids) t "`note-ids' must be a list of note ids.")
@@ -2752,14 +2762,10 @@ Skips days where no note was reviewed."
   (tabulated-list-init-header)
   (let ((inhibit-read-only t))
     (erase-buffer)
-    (insert "Loading notes..."))
+    (insert (format "Loading %s notes..." (length note-ids))))
   (run-with-timer 0.1 nil
                   (lambda ()
-                    (let ((entries
-                           (cl-loop for id in note-ids
-                                    for output = (gnosis-dashboard-output-note id)
-                                    when output
-                                    collect (list (number-to-string id) (vconcat output)))))
+                    (let ((entries (gnosis-dashboard--output-notes note-ids)))
                       (with-current-buffer gnosis-dashboard-buffer-name
                         (setq tabulated-list-entries entries)
                         (tabulated-list-print t)
