@@ -417,7 +417,8 @@ MAX-ID is a request parameter for pagination."
          "v1"
        "v2"))
     (with-current-buffer (get-buffer-create buffer)
-      (use-local-map mastodon-notifications--map))))
+      (use-local-map mastodon-notifications--map))
+    (message "Loading your notifications... Done")))
 
 ;; URL lookup: should be available even if `mastodon.el' not loaded:
 
