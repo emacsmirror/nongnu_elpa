@@ -41,6 +41,12 @@
 (require 'ansi-color)
 (require 'eieio)
 
+(declare-function log-view-current-tag "log-view")
+(declare-function magit-commit-at-point "magit-git")
+(declare-function magit-stash-at-point "magit-git")
+;; These slots are used in git-rebase-action (see git-rebase.el).
+(eieio-declare-slots action-type target)
+
 (defvar eldoc-diffstat--process nil
   "The latest async process used for fetching diffstat information.
 Only one active process at a time; new requests terminate previous ones.
