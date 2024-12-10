@@ -2337,21 +2337,15 @@ view all branches of a thread."
     (let ((id (mastodon-tl--property 'base-item-id)))
       (mastodon-tl--thread-do id))))
 
-(defun mastodon-tl--thread (&optional thread-id)
-  "Open thread buffer for toot at point or with THREAD-ID.
-UNFOLDED STATE is a boolean of whether the thread (that we are
-reloading) is fully unfolded or folded, i.e. via
-`mastodon-tl--toggle-spoiler-in-thread'."
+(defun mastodon-tl--thread ()
+  "Open thread buffer for toot at point."
   (interactive)
   (if (not (eq 'toot (mastodon-tl--property 'item-type :no-move)))
       (user-error "Looks like there's no toot at point?")
-    (mastodon-tl--thread-do thread-id)))
+    (mastodon-tl--thread-do)))
 
 (defun mastodon-tl--thread-do (&optional thread-id)
   "Open thread buffer for toot at point or with THREAD-ID.
-UNFOLDED STATE is a boolean of whether the thread (that we are
-reloading) is fully unfolded or folded, i.e. via
-`mastodon-tl--toggle-spoiler-in-thread'.
 This is the non-interactive version, so we can call it
 programmatically and not crash into
 `mastodon-toot--with-toot-item'."
