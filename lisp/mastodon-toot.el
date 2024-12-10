@@ -978,10 +978,12 @@ instance to edit a toot."
                 ;;         - when we are in thread view
                 ;; (we don't reload in every case as it can be slow and we
                 ;; may lose our place in a timeline.)
-                (when (or edit-id
-                          (eq 'thread (mastodon-tl--get-buffer-type)))
-                  (let ((pos (marker-position (cadr prev-window-config))))
-                    (mastodon-tl--reload-timeline-or-profile pos))))))))))
+                (let ((type (mastodon-tl--get-buffer-type)))
+                  (when (or edit-id
+                            (eq 'single-status type)
+                            (eq 'thread type))
+                    (let ((pos (marker-position (cadr prev-window-config))))
+                      (mastodon-tl--reload-timeline-or-profile pos)))))))))))
 
 
 ;;; EDITING TOOTS:

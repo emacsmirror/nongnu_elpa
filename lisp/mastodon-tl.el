@@ -2312,7 +2312,9 @@ ID is that of the toot to view."
         (user-error "Error: %s" (cdar toot))
       (with-mastodon-buffer buffer #'mastodon-mode nil
         (mastodon-tl--set-buffer-spec buffer (format "statuses/%s" id)
-                                      #'mastodon-tl--update-toot)
+                                      #'mastodon-tl--update-toot
+                                      ;; id for reload on reply:
+                                      nil nil nil nil id)
         (mastodon-tl--toot toot :detailed-p)
         (goto-char (point-min))
         (when mastodon-tl--display-media-p
@@ -3016,7 +3018,8 @@ Aims to respect any pagination in effect."
              (mastodon-profile--make-author-buffer
               ;; (mastodon-profile--get-toot-author max-id)))
               (mastodon-profile--profile-json))))
-          ((eq type 'thread)
+          ((or (eq type 'single-status)
+               (eq type 'thread))
            (let ((id (mastodon-tl--buffer-property
                       'thread-item-id (current-buffer) :no-error)))
              (mastodon-tl--thread-do id))))
