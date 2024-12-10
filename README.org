@@ -336,7 +336,7 @@ work without first loading a =mastodon.el= buffer:
 
 *** Notifications
 
-Mastodon from 4.3 supports grouped notifications. These are implemented by =mastodon.el=. If you are on an instance that doesn't implement grouped notifications, set =mastodon-group-notifications= to nil.
+Mastodon from 4.3 supports grouped notifications. These are implemented by =mastodon.el= but disabled by default out of consideration to users on instances that don't support them. If you are on an instance that implements grouped notifications, set =mastodon-group-notifications= to =t= to enable them.
 
 *** Customization
 
