@@ -19,6 +19,8 @@ doc:	$(ORG)
 
 test:
 	$(EMACS) --batch \
+	rm *.elc \
+	-q \
 	--load $(TEST_FILE) \
 	--eval "(ert-run-tests-batch-and-exit)"
 
