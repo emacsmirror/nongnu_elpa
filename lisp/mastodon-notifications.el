@@ -382,12 +382,14 @@ FILTERS STATUS PROFILE-NOTE FOLLOWER-NAME GROUP NOTE."
       "Unknown notification type.")
      ((eq type 'follow)
       (propertize "Congratulations, you have a new follower!"
-                  'face 'default))
+                  'face 'default
+                  'item-type 'follow-request)) ;; nav
      ((eq type 'follow_request)
       (concat
        (propertize (format "You have a follow request from %s"
                            follower-name)
-                   'face 'default)
+                   'face 'default
+                   'item-type 'follow-request) ;; nav
        (when mastodon-profile-note-in-foll-reqs
          (concat
           ":\n"
