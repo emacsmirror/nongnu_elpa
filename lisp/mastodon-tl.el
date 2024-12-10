@@ -3115,9 +3115,14 @@ MAX-ID is the pagination parameter, a string."
                               (alist-get 'accounts response))))))
              (headers (when headers (cdr response)))
              (link-header
-              (mastodon-tl--get-link-header-from-response headers)))
+              (mastodon-tl--get-link-header-from-response headers))
+             (buf-type (mastodon-tl--get-buffer-type))
+             (notifs-p (or (eq buf-type 'notifications)
+                           (eq buf-type 'mentions)))
+             (notif-type (when notifs-p
+                           (mastodon-notifications--current-type))))
         (goto-char (point-max))
-        (if (eq 'thread (mastodon-tl--get-buffer-type))
+        (if (eq 'thread buf-type)
             ;; if thread fully unfolded, respect it:
             ;; if thread view, call --thread-do with parent ID
             (progn (goto-char (point-min))
@@ -3127,7 +3132,9 @@ MAX-ID is the pagination parameter, a string."
                    (message "Loaded full thread."))
           (if (not json)
               (user-error "No more results")
-            (funcall (mastodon-tl--update-function) json)
+            (if notifs-p
+                (mastodon-notifications--timeline json notif-type :update)
+              (funcall (mastodon-tl--update-function) json))
             (goto-char point-before)
             ;; update buffer spec to new link-header or max-id:
             ;; (other values should just remain as they were)
