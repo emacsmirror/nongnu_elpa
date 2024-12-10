@@ -2689,7 +2689,7 @@ Skips days where no note was reviewed."
   (interactive)
   (if gnosis-dashboard--selected-ids
       (gnosis-dashboard-marked-suspend)
-    (gnosis-suspend-note (string-to-number (tabulated-list-get-id)))
+    (gnosis-suspend-note (tabulated-list-get-id))
     (gnosis-dashboard-output-notes gnosis-dashboard-note-ids)
     (revert-buffer t t t)))
 
@@ -2698,7 +2698,7 @@ Skips days where no note was reviewed."
   (interactive)
   (if gnosis-dashboard--selected-ids
       (gnosis-dashboard-marked-delete)
-    (gnosis-delete-note (string-to-number (tabulated-list-get-id)))
+    (gnosis-delete-note (tabulated-list-get-id))
     (gnosis-dashboard-output-notes gnosis-dashboard-note-ids)
     (revert-buffer t t t)))
 
@@ -3004,7 +3004,7 @@ DASHBOARD-TYPE: either Notes or Decks to display the respective dashboard."
   (interactive)
   (when (y-or-n-p "Delete selected notes?")
     (cl-loop for note in gnosis-dashboard--selected-ids
-	     do (gnosis-delete-note (string-to-number note) t))
+	     do (gnosis-delete-note note t))
     (gnosis-dashboard-return)))
 
 (defun gnosis-dashboard-marked-suspend ()
@@ -3012,7 +3012,7 @@ DASHBOARD-TYPE: either Notes or Decks to display the respective dashboard."
   (interactive)
   (when (y-or-n-p "Toggle SUSPEND on selected notes?")
     (cl-loop for note in gnosis-dashboard--selected-ids
-	     do (gnosis-suspend-note (string-to-number note) t))
+	     do (gnosis-suspend-note note t))
     (gnosis-dashboard-return)))
 
 (transient-define-suffix gnosis-dashboard-suffix-query (query)
