@@ -1,4 +1,11 @@
 -*- mode: org -*-
+* 0.4.10
++ Implement major performance improvements in gnosis-dashboard.
+  
+* 0.4.9
+- Implement asynchronous dashboard creation
+- Minor bug fixes
+  
 * 0.4.8
 + Refactor average review output
 
