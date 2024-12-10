@@ -1,3 +1,3 @@
 ;;
 (specifications->manifest
-  (list "make" "texinfo" "emacs-minimal" "emacs-org" "emacs-emacsql"))
+  (list "make" "texinfo" "emacs-next-pgtk" "emacs-org" "emacs-emacsql"))
