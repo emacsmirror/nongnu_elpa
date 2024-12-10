@@ -882,7 +882,8 @@ is the image to display post review
   (when (or (not (numberp correct-answer))
 	    (equal correct-answer 0))
     (error "Correct answer value must be the index number of the correct answer"))
-  (gnosis-add-note-fields deck "mcq" question choices correct-answer extra tags suspend (car images) (cdr images)))
+  (gnosis-add-note-fields deck "mcq" question choices correct-answer extra tags suspend
+			  (car images) (cdr images)))
 
 (defun gnosis-add-note-mcq (deck)
   "Add note(s) of type `MCQ' interactively to selected deck.
@@ -1846,7 +1847,7 @@ NOTE-COUNT: Total notes reviewed
 To customize the keybindings, adjust `gnosis-review-keybindings'."
   (let* ((choice
 	  (read-char-choice
-	   (format "Action: %sext gnosis, %sverride result, %suspend note, %sdit note, %suit review session"
+	   (format "Action: %sext gnosis, %sverride result, %suspend note, %sdit note, %suit"
 		   (propertize "n" 'face 'gnosis-face-review-action-next)
 		   (propertize "o" 'face 'gnosis-face-review-action-override)
 		   (propertize "s" 'face 'gnosis-face-review-action-suspend)
@@ -1889,21 +1890,26 @@ NOTE-COUNT: Total notes to be commited for session."
   ;; Refresh modeline
   (setq gnosis-due-notes-total (length (gnosis-review-get-due-notes)))
   ;; Select review type
-  (let ((review-type (gnosis-completing-read "Review: " '("Due notes"
-							  "Due notes of deck"
-							  "Due notes of specified tag(s)"
-							  "Overdue notes"
-							  "Due notes (Without Overdue)"
-							  "All notes of deck"
-							  "All notes of tag(s)"))))
+  (let ((review-type
+	 (gnosis-completing-read "Review: "
+				 '("Due notes" 
+				   "Due notes of deck"
+				   "Due notes of specified tag(s)"
+				   "Overdue notes"
+				   "Due notes (Without Overdue)"
+				   "All notes of deck"
+				   "All notes of tag(s)"))))
     (pcase review-type
       ("Due notes" (gnosis-review-session (gnosis-collect-note-ids :due t) t))
       ("Due notes of deck" (gnosis-review-session
 			    (gnosis-collect-note-ids :due t :deck (gnosis--get-deck-id))))
-      ("Due notes of specified tag(s)" (gnosis-review-session (gnosis-collect-note-ids :due t :tags t)))
+      ("Due notes of specified tag(s)" (gnosis-review-session
+					(gnosis-collect-note-ids :due t :tags t)))
       ("Overdue notes" (gnosis-review-session (gnosis-review-get-overdue-notes)))
-      ("Due notes (Without Overdue)" (gnosis-review-session (gnosis-review-get-due-notes--no-overdue)))
-      ("All notes of deck" (gnosis-review-session (gnosis-collect-note-ids :deck (gnosis--get-deck-id))))
+      ("Due notes (Without Overdue)" (gnosis-review-session
+				      (gnosis-review-get-due-notes--no-overdue)))
+      ("All notes of deck" (gnosis-review-session
+			    (gnosis-collect-note-ids :deck (gnosis--get-deck-id))))
       ("All notes of tag(s)" (gnosis-review-session (gnosis-collect-note-ids :tags t))))))
 
 
@@ -2547,12 +2553,14 @@ If STRING-SECTION is nil, apply FACE to the entire STRING."
   (erase-buffer)
   (gnosis-animate-string "Welcome to the Gnosis demo!" 2 nil "Gnosis demo" 'underline)
   (sit-for 1)
-  (gnosis-animate-string "Gnosis is a tool designed to create a gnostikon" 3 nil "gnostikon" 'bold-italic)
+  (gnosis-animate-string "Gnosis is a tool designed to create a gnosiotheke"
+			 3 nil "gnosiotheke" 'bold-italic)
   (sit-for 1.5)
   (gnosis-animate-string "--A place to store & test your knowledge--" 4 nil nil 'italic)
   (sit-for 1)
-  (gnosis-animate-string "The objective of gnosis is to maximize memory retention, through repetition." 6 nil
-			 "maximize memory retention" 'underline)
+  (gnosis-animate-string
+   "The objective of gnosis is to maximize memory retention, through repetition." 6 nil
+   "maximize memory retention" 'underline)
   (sit-for 1)
   (gnosis-animate-string "Remember, repetitio est mater memoriae" 8 nil
 			 "repetitio est mater memoriae" 'bold-italic)
@@ -2560,7 +2568,8 @@ If STRING-SECTION is nil, apply FACE to the entire STRING."
   (gnosis-animate-string "-- repetition is the mother of memory --" 9 nil
 			 "repetition is the mother of memory" 'italic)
   (sit-for 1)
-  (gnosis-animate-string "Consistency is key; be sure to do your daily reviews!" 11 nil "Consistency is key" 'bold)
+  (gnosis-animate-string "Consistency is key; be sure to do your daily reviews!"
+			 11 nil "Consistency is key" 'bold)
   (sit-for 1)
   (when (y-or-n-p "Try out demo gnosis review session?")
     (gnosis-demo-create-deck)
@@ -2586,7 +2595,7 @@ If STRING-SECTION is nil, apply FACE to the entire STRING."
 					  :tags note-tags)
 	       (gnosis-add-note--mcq :deck deck-name
 				     :question "Which one is the capital of Greece?"
-				     :choices '("Athens" "Sparta" "Rome" "Berlin")
+				     :choices '("Athens" "Sparta" "Nafplio" "Constantinople")
 				     :correct-answer 1
 				     :extra "Athens (Ἀθήνα) is the largest city of Greece & one of the world's oldest cities, with it's recorded history spanning over 3,500 years."
 				     :tags note-tags)
@@ -2732,19 +2741,29 @@ Skips days where no note was reviewed."
   (gnosis-dashboard-enable-mode)
   (gnosis-dashboard-notes-mode)
   (setf tabulated-list-format `[("Main" ,(/ (window-width) 4) t)
-				("Options" ,(/ (window-width) 6) t)
-				("Answer" ,(/ (window-width) 6) t)
-				("Tags" ,(/ (window-width) 5) t)
-				("Type" ,(/ (window-width) 10) T)
-				("Suspend" ,(/ (window-width) 6) t)]
-	tabulated-list-entries (cl-loop for id in note-ids
-					for output = (gnosis-dashboard-output-note id)
-					when output
-					collect (list (number-to-string id) (vconcat output)))
-	gnosis-dashboard-note-ids note-ids)
+                                ("Options" ,(/ (window-width) 6) t)
+                                ("Answer" ,(/ (window-width) 6) t)
+                                ("Tags" ,(/ (window-width) 5) t)
+                                ("Type" ,(/ (window-width) 10) T)
+                                ("Suspend" ,(/ (window-width) 6) t)]
+        gnosis-dashboard-note-ids note-ids
+        tabulated-list-entries nil)
+  (make-local-variable 'tabulated-list-entries)
   (tabulated-list-init-header)
-  (tabulated-list-print t)
-  (setf gnosis-dashboard--current `(:type notes :ids ,note-ids)))
+  (let ((inhibit-read-only t))
+    (erase-buffer)
+    (insert "Loading notes..."))
+  (run-with-timer 0.1 nil
+                  (lambda ()
+                    (let ((entries
+                           (cl-loop for id in note-ids
+                                    for output = (gnosis-dashboard-output-note id)
+                                    when output
+                                    collect (list (number-to-string id) (vconcat output)))))
+                      (with-current-buffer gnosis-dashboard-buffer-name
+                        (setq tabulated-list-entries entries)
+                        (tabulated-list-print t)
+                        (setf gnosis-dashboard--current `(:type notes :ids ,note-ids)))))))
 
 (defun gnosis-dashboard-deck-note-count (id)
   "Return total note count for deck with ID."
