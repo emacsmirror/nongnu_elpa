@@ -14,8 +14,8 @@
 #+macro: kbd @@texinfo:@kbd{@@$1@@texinfo:}@@
 #+texinfo_filename: gnosis.info
 #+texinfo_dir_category: Emacs misc features
-#+texinfo_dir_title: Gnosis (γνῶσις): (gnosis) 
-#+texinfo_dir_desc: Spaced Repetition System For Note Taking & Self-Testing
+#+texinfo_dir_title: Gnosis: (gnosis) 
+#+texinfo_dir_desc: Spaced Repetition Note Taking System 
 #+texinfo_header: @set MAINTAINERSITE @uref{https://thanosapollo.org,maintainer webpage}
 #+texinfo_header: @set MAINTAINER Thanos Apollo
 #+texinfo_header: @set MAINTAINEREMAIL @email{public@thanosapollo.org}

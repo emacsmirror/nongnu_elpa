@@ -3,7 +3,7 @@ gnosis.texi.
 
 INFO-DIR-SECTION Emacs misc features
 START-INFO-DIR-ENTRY
-* Gnosis (γνῶσις): (gnosis). Spaced Repetition System For Note Taking & Self-Testing.
+* Gnosis: (gnosis).     Spaced Repetition Note Taking System.
 END-INFO-DIR-ENTRY
 
 
@@ -17,7 +17,7 @@ enhance memory retention through active recall.  It allows users to set
 specific review intervals for note decks & tags, creating an optimal
 learning environment tailored to each specific topic/subject.
 
-This manual is written for Gnosis version 0.4.2, released on 2024-09-5.
+This manual is written for Gnosis version 0.4.4, released on 2024-10-06.
 
    • Manual:
         • <https://elpa.nongnu.org/nongnu/doc/gnosis.html>
@@ -40,6 +40,7 @@ This manual is written for Gnosis version 0.4.2, released on 2024-09-5.
 * Configuring Note Types::
 * Sync between devices::
 * Interactions with other software::
+* Contributing::
 
 -- The Detailed Node Listing --
 
@@ -70,6 +71,10 @@ Configuring Note Types
 Interactions with other software
 
 * emacs-no-littering::
+
+Contributing
+
+* How to create a patch::
 
 
 
@@ -439,7 +444,7 @@ your configuration:
      (gnosis-vc-pull) ;; Run vc-pull for gnosis on startup
 
 
-File: gnosis.info,  Node: Interactions with other software,  Prev: Sync between devices,  Up: Top
+File: gnosis.info,  Node: Interactions with other software,  Next: Contributing,  Prev: Sync between devices,  Up: Top
 
 9 Interactions with other software
 **********************************
@@ -464,32 +469,66 @@ configuration:
    This sets ‘gnosis-dir’ to ‘~/.emacs.d/var/gnosis’, in line with the
 folders of other packages.
 
+
+File: gnosis.info,  Node: Contributing,  Prev: Interactions with other software,  Up: Top
+
+10 Contributing
+***************
+
+Thank you for considering contributing back to gnosis.  You can
+contribute by submitting a pull request on the codeberg mirror
+repository, or directly sending me patch via email.
+
+* Menu:
+
+* How to create a patch::
+
+
+File: gnosis.info,  Node: How to create a patch,  Up: Contributing
+
+10.1 How to create a patch
+==========================
+
+_Example:_
+
+     $ git clone https://git.thanosapollo.com/gnosis.git && cd gnosis
+     $ emacs something
+     $ git add something
+     $ git commit -m "Fix something"
+     $ git format-patch HEAD^1
+     0001-Fix-something.patch
+
+   You can sent the patch to "Thanos Apollo", the email of which you can
+find on the git log.
+
 
 
 Tag Table:
-Node: Top252
-Node: Introduction1674
-Node: Adding notes2687
-Node: Note Types3098
-Node: Cloze3316
-Node: MC-Cloze (Under development)4478
-Node: MCQ5466
-Node: Basic Type5904
-Node: Double6180
-Node: y-or-n6446
-Node: Customization6848
-Node: Image size7033
-Node: Typos | String Comparison7319
-Node: Gnosis Algorithm8094
-Node: Anagnosis Event8741
-Node: Proto9482
-Node: Editing notes10249
-Node: Configuring Note Types10643
-Node: Custom Note Types10855
-Node: Development12065
-Node: Sync between devices12484
-Node: Interactions with other software13569
-Node: emacs-no-littering13774
+Node: Top221
+Node: Introduction1702
+Node: Adding notes2715
+Node: Note Types3126
+Node: Cloze3344
+Node: MC-Cloze (Under development)4506
+Node: MCQ5494
+Node: Basic Type5932
+Node: Double6208
+Node: y-or-n6474
+Node: Customization6876
+Node: Image size7061
+Node: Typos | String Comparison7347
+Node: Gnosis Algorithm8122
+Node: Anagnosis Event8769
+Node: Proto9510
+Node: Editing notes10277
+Node: Configuring Note Types10671
+Node: Custom Note Types10883
+Node: Development12093
+Node: Sync between devices12512
+Node: Interactions with other software13597
+Node: emacs-no-littering13823
+Node: Contributing14323
+Node: How to create a patch14665
 
 End Tag Table
 

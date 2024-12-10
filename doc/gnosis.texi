@@ -12,7 +12,7 @@
 
 @dircategory Emacs misc features
 @direntry
-* Gnosis (γνῶσις): (gnosis). Spaced Repetition System For Note Taking & Self-Testing.
+* Gnosis: (gnosis).     Spaced Repetition Note Taking System.
 @end direntry
 
 @finalout
@@ -31,7 +31,7 @@ specific review intervals for note decks & tags, creating an optimal
 learning environment tailored to each specific topic/subject.
 
 @noindent
-This manual is written for Gnosis version 0.4.2, released on 2024-09-5.
+This manual is written for Gnosis version 0.4.4, released on 2024-10-06.
 
 @itemize
 @item
@@ -68,6 +68,7 @@ Git repositories:
 * Configuring Note Types::
 * Sync between devices::
 * Interactions with other software::
+* Contributing::
 
 @detailmenu
 --- The Detailed Node Listing ---
@@ -99,6 +100,10 @@ Configuring Note Types
 Interactions with other software
 
 * emacs-no-littering::
+
+Contributing
+
+* How to create a patch::
 
 @end detailmenu
 @end menu
@@ -454,5 +459,33 @@ its standards by adding the following snippet to your configuration:
 @end lisp
 
 This sets @samp{gnosis-dir} to @samp{~/.emacs.d/var/gnosis}, in line with the folders of other packages.
+
+@node Contributing
+@chapter Contributing
+
+Thank you for considering contributing back to gnosis.  You can
+contribute by submitting a pull request on the codeberg mirror
+repository, or directly sending me patch via email.
+
+@menu
+* How to create a patch::
+@end menu
+
+@node How to create a patch
+@section How to create a patch
+
+@emph{Example:}
+
+@example
+$ git clone https://git.thanosapollo.com/gnosis.git && cd gnosis
+$ emacs something
+$ git add something
+$ git commit -m "Fix something"
+$ git format-patch HEAD^1
+0001-Fix-something.patch
+@end example
+
+You can sent the patch to ``Thanos Apollo'', the email of which you can
+find on the git log.
 
 @bye
