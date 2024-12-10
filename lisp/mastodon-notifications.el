@@ -652,12 +652,16 @@ With arg PREFIX, `completing-read' a type and load it."
                            nil nil #'equal)))
       (funcall fun))))
 
+(defun mastodon-notifications--current-type ()
+  "Return the current notification type or nil."
+  (let* ((update-params (mastodon-tl--buffer-property
+                         'update-params nil :no-error)))
+    (alist-get "types[]" update-params nil nil #'equal)))
+
 (defun mastodon-notifications--get-next-type ()
   "Return the next notif type based on current buffer spec."
-  (let* ((update-params (mastodon-tl--buffer-property
-                         'update-params nil :no-error))
-         (type (alist-get "types[]" update-params nil nil #'equal)))
-    (if (not update-params)
+  (let* ((type (mastodon-notifications--current-type)))
+    (if (not type)
         (cadr mastodon-notifications--types)
       (or (cadr (member type mastodon-notifications--types))
           (car mastodon-notifications--types)))))
