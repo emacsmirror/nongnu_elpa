@@ -650,19 +650,18 @@ The last two args allow for display a username as a clickable
 handle."
   (let-alist (or (alist-get 'account toot)
                  toot) ;; grouped notifs
-    (propertize (or string
-                    (concat "@" .acct
-                            (when domain
-                              (concat "@"
-                                      (url-host
-                                       (url-generic-parse-url .url))))))
-                'face (or face 'mastodon-handle-face)
-                'mouse-face 'highlight
-	        'mastodon-tab-stop 'user-handle
-	        'shr-url .url
-	        'keymap mastodon-tl--link-keymap
-                'mastodon-handle (concat "@" .acct)
-	        'help-echo (concat "Browse user profile of @" .acct))))
+    (mastodon-tl--buttonify-link
+     (or string
+         (concat "@" .acct
+                 (when domain
+                   (concat "@"
+                           (url-host
+                            (url-generic-parse-url .url))))))
+     'face (or face 'mastodon-handle-face)
+     'mastodon-tab-stop 'user-handle
+     'shr-url .url
+     'mastodon-handle (concat "@" .acct)
+     'help-echo (concat "Browse user profile of @" .acct))))
 
 (defun mastodon-tl--byline-uname-+-handle (data &optional domain)
   "Concatenate a byline username and handle.
@@ -972,8 +971,12 @@ links in the text. If TOOT is nil no parsing occurs."
             (shr-width (when mastodon-tl--enable-proportional-fonts
                          (if mastodon-tl--no-fill-on-render
                              0
-                           (- (window-width) 3)))))
-        (shr-render-region (point-min) (point-max)))
+                           (- (window-width) 3))))
+            (cat (get 'mastodon-tl-link 'button-category-symbol)))
+        (shr-render-region (point-min) (point-max))
+        (alter-text-property
+         (point-min) (point-max) 'category
+         (lambda (type) (when type cat))))
       ;; Make all links a tab stop recognized by our own logic, make
       ;; things point to our own logic (e.g. hashtags), and update keymaps
       ;; where needed:
@@ -1141,6 +1144,23 @@ the toot)."
 
 ;;; HYPERLINKS
 
+(define-button-type 'mastodon-tl-link
+  'action #'mastodon-tl--push-button
+  'keymap mastodon-tl--link-keymap
+  'mouse-face 'highlight)
+
+(defun mastodon-tl--push-button (button)
+  "Do the appropriate action for BUTTON."
+  (mastodon-tl--do-link-action-at-point (button-start button)))
+
+(defun mastodon-tl--buttonify-link (string &rest properties)
+  "Make STRING a `mastodon-tl-link' type button.
+PROPERTIES are additional properties to attach to string."
+  (apply #'propertize string
+         'button t
+         'category (get 'mastodon-tl-link 'button-category-symbol)
+         properties))
+
 (defun mastodon-tl--make-link (string link-type)
   "Return a propertized version of STRING that will act like link.
 LINK-TYPE is the type of link to produce."
@@ -1151,11 +1171,9 @@ LINK-TYPE is the type of link to produce."
                           "Toggle full post")
                          (t
                           (error "Unknown link type %s" link-type)))))
-    (propertize string
-                'mastodon-tab-stop link-type
-                'mouse-face 'highlight
-                'keymap mastodon-tl--link-keymap
-                'help-echo help-text)))
+    (mastodon-tl--buttonify-link string
+                                 'mastodon-tab-stop link-type
+                                 'help-echo help-text)))
 
 (defun mastodon-tl--do-link-action-at-point (pos)
   "Do the action of the link at POS.
@@ -1189,6 +1207,8 @@ Used for hitting RET on a given link."
                         (mastodon-url-lookup (get-text-property pos 'shr-url)))
                        (t
                         (error "Unable to find account"))))))))
+          ((eq link-type 'shr-url)
+           (mastodon-url-lookup (get-text-property pos 'shr-url)))
           ((eq link-type 'read-more)
            (mastodon-tl--unfold-post))
           ((eq link-type 'read-less)
