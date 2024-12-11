@@ -1751,21 +1751,38 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
               ((equal .type "label")
                (format format-str user .label.name ts))
               ;; PRs:
+              ;; FIXME: reimplement "pull_push" force-push and non-force
+              ;; format strings
               ((equal .type "pull_push")
                (let* ((json-array-type 'list)
                       (json (json-read-from-string .body))
                       (commits (alist-get 'commit_ids json))
-                      (force (equal (alist-get 'is_force_push json) "t")))
+                      (force
+                       (not
+                        (eq :json-false
+                            (alist-get 'is_force_push json)))))
                  (concat
                   (format format-str user (if force "force pushed" "added")
-                          (length commits) ts)
-                  ;; FIXME: display commit msg here too:
-                  (cl-loop for c in commits
-                           for short = (substring c 0 7)
-                           concat
-                           (concat "\n"
-                                   (fj-propertize-link short
-                                                       'commit-ref c))))))
+                          (if force (1- (length commits))
+                            (length commits))
+                          ts)
+                  ;; FIXME: fix force format string:
+                  ;; (format "%s force-pushed %s from %s to %s %s"
+                  ;; user branch c1 c2 ts)
+                  (if force
+                      (concat ": from "
+                              (fj-propertize-link
+                               (substring (car commits) 0 7))
+                              " to "
+                              (fj-propertize-link
+                               (substring (cadr commits) 0 7)))
+                    (cl-loop
+                     for c in commits
+                     for short = (substring c 0 7)
+                     concat
+                     (concat " "
+                             (fj-propertize-link short
+                                                 'commit-ref c)))))))
               ((equal .type "merge_pull")
                ;; FIXME: get commit and branch for merge:
                ;; Commit is the *merge* commit, created by actually merging
