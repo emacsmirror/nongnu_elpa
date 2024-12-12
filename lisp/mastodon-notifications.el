@@ -989,12 +989,18 @@ Also nil the variable."
 
 (defun mastodon-notifications-update-with-timer ()
   "Run a timer to update notifications. Added to `mastodon-mode-hook'."
-  (when mastodon-notifications-check-for-updates
+  ;; if no buffers: cancel our timer:
+  ;; FIXME: fails on load first masto buffer!
+  ;; `mastodon-mode' loads before we populate the buffer via an update fun
+  ;; do we need an after-update hook?
+  (if (not (mastodon-live-buffers))
+      (mastodon-notifications-cancel-timer)
+    (when mastodon-notifications-check-for-updates
       ;; set new timer if we don't have one:
-    (unless mastodon-notifications-timer
-      (setq mastodon-notifications-timer
-            (run-at-time mastodon-notifications-updates-interval
-                         nil #'mastodon-notifications-update-check)))))
+      (unless mastodon-notifications-timer
+        (setq mastodon-notifications-timer
+              (run-at-time mastodon-notifications-updates-interval
+                           nil #'mastodon-notifications-update-check))))))
 
 (defun mastodon-notifications-update-check ()
   "Function called by `mastodon-notifications-update-with-timer'.
