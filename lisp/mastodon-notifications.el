@@ -983,26 +983,27 @@ NOTE means to include a profile note."
 (defun mastodon-notifications-update-with-timer ()
   "Run a timer to update notifications. Added to `mastodon-mode-hook'."
   (when mastodon-notifications-check-for-updates
-    ;; cancel existing timer:
-    (when mastodon-notifications-timer
-      (cancel-timer mastodon-notifications-timer))
-    ;; set new timer:
-    (setq mastodon-notifications-timer
-          (run-at-time mastodon-notifications-updates-interval
-                       nil #'mastodon-notifications-update-check))))
+      ;; set new timer if we don't have one:
+    (unless mastodon-notifications-timer
+      (setq mastodon-notifications-timer
+            (run-at-time mastodon-notifications-updates-interval
+                         nil #'mastodon-notifications-update-check)))))
 
 (defun mastodon-notifications-update-check ()
   "Function called by `mastodon-notifications-update-with-timer'.
 Calls `mastodon-tl--update'."
   (let ((count (mastodon-notifications--get-unread-count)))
-    (when (> count 0)
-      (if (not (mastodon-tl--buffer-type-eq 'notifications))
-          (message "New mastodon.el notification(s): %s" count)
-        ;; run updates if in notifs buffer:
-        (message "Updating mastodon.el notifications...")
-        (mastodon-tl--update)
-        (message "Updating mastodon.el notifications... Done.")))
-    ;; set new timer:
+    (if (> count 0)
+        (if (not (mastodon-tl--buffer-type-eq 'notifications))
+            (message "New mastodon.el notification(s): %s" count)
+          ;; run updates if in notifs buffer:
+          (message "Updating mastodon.el notifications...")
+          (mastodon-tl--update)
+          (message "Updating mastodon.el notifications... Done."))
+      (message "No new mastodon.el notifications")) ;; just to show we ran
+    ;; cancel and set new timer:
+    (cancel-timer mastodon-notifications-timer)
+    (setq mastodon-notifications-timer nil)
     (mastodon-notifications-update-with-timer)))
 
 (add-hook 'mastodon-mode-hook
