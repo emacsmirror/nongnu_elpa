@@ -980,6 +980,13 @@ NOTE means to include a profile note."
 (defvar mastodon-notifications-timer nil
   "Timer to update the notifs buffer.")
 
+(defun mastodon-notifications-cancel-timer ()
+  "Cancel `mastodon-notifications-timer'.
+Also nil the variable."
+  (when (timerp mastodon-notifications-timer)
+    (cancel-timer mastodon-notifications-timer))
+  (setq mastodon-notifications-timer nil))
+
 (defun mastodon-notifications-update-with-timer ()
   "Run a timer to update notifications. Added to `mastodon-mode-hook'."
   (when mastodon-notifications-check-for-updates
@@ -1002,8 +1009,7 @@ Calls `mastodon-tl--update'."
           (message "Updating mastodon.el notifications... Done."))
       (message "No new mastodon.el notifications")) ;; just to show we ran
     ;; cancel and set new timer:
-    (cancel-timer mastodon-notifications-timer)
-    (setq mastodon-notifications-timer nil)
+    (mastodon-notifications-cancel-timer)
     (mastodon-notifications-update-with-timer)))
 
 (add-hook 'mastodon-mode-hook
