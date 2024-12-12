@@ -7,7 +7,7 @@
 ;; URL: https://thanosapollo.org/projects/gnosis
 ;; Version: 0.4.10
 
-;; Package-Requires: ((emacs "27.2") (emacsql "4.0.1") (compat "29.1.4.2") (transient "0.7.2"))
+;; Package-Requires: ((emacs "27.2") (emacsql "4.1.0") (compat "29.1.4.2") (transient "0.7.2"))
 
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -1089,8 +1089,9 @@ the full note, with the cloze(s) extracted & used as the \"answer\".
 
 See `gnosis-add-note--cloze' for more reference."
   (gnosis-add-note--cloze :deck deck
-			  :note (gnosis-read-string-from-buffer (or (car gnosis-cloze-guidance) "")
-								(or (cdr gnosis-cloze-guidance) ""))
+			  :note (gnosis-read-string-from-buffer
+				 (or (car gnosis-cloze-guidance) "")
+				 (or (cdr gnosis-cloze-guidance) ""))
 			  :extra (gnosis-read-string-from-buffer "Extra" "")
 			  :images (gnosis-select-images)
 			  :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))
