@@ -627,6 +627,11 @@ UPDATE means we are updating, so skip some things."
     (mastodon-notifications--render json
                                     (not mastodon-group-notifications))
     (goto-char (point-min))
+    ;; set last read notif ID:
+    (save-excursion
+      (mastodon-tl--goto-next-item :no-refresh)
+      (let ((id (mastodon-tl--property 'item-id))) ;; notif not base
+        (mastodon-notifications--set-last-read id)))
     (unless update ;; already in tl--update
       (mastodon-tl--goto-next-item))))
 
@@ -754,6 +759,19 @@ Status notifications are created when you call
                 (message "Notification dismissed!")))))
 
 ;;; MISC
+
+(defun mastodon-notifications--set-last-read (id)
+  "Set the last read notification ID on the server."
+  (let ((endpoint (mastodon-http--api "markers"))
+        (params `(("notifications[last_read_id]" . ,id))))
+    (mastodon-http--post endpoint params)))
+
+(defun mastodon-notifications--get-last-read ()
+  "Return the last read notification ID from the server."
+  (let* ((params '(("timeline[]" . "notifications")))
+         (endpoint (mastodon-http--api "markers"))
+         (resp (mastodon-http--get-json endpoint params)))
+    (map-nested-elt resp '(notifications last_read_id))))
 
 (defun mastodon-notifications--get-single-notif ()
   "Return a single notification JSON for v2 notifs."
