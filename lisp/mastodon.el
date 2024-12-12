@@ -193,6 +193,14 @@ A count of 2 for example means to display like so: \"Bob, Jenny
 and X others...\"."
   :type '(integer))
 
+(defcustom mastodon-notifications-check-for-updates t
+  "Whether to regularly check for new notifications."
+  :type '(boolean))
+
+(defcustom mastodon-notifications-updates-interval 60
+  "How often to check for new notifications, in seconds."
+  :type '(integer))
+
 (defun mastodon-kill-window ()
   "Quit window and delete helper."
   (interactive)

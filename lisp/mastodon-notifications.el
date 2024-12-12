@@ -982,12 +982,14 @@ NOTE means to include a profile note."
 
 (defun mastodon-notifications-update-with-timer ()
   "Run a timer to update notifications. Added to `mastodon-mode-hook'."
-  ;; cancel existing timer:
-  (when mastodon-notifications-timer
-    (cancel-timer mastodon-notifications-timer))
-  ;; set new timer:
-  (setq mastodon-notifications-timer
-        (run-at-time 60 nil #'mastodon-notifications-update-check)))
+  (when mastodon-notifications-check-for-updates
+    ;; cancel existing timer:
+    (when mastodon-notifications-timer
+      (cancel-timer mastodon-notifications-timer))
+    ;; set new timer:
+    (setq mastodon-notifications-timer
+          (run-at-time mastodon-notifications-updates-interval
+                       nil #'mastodon-notifications-update-check))))
 
 (defun mastodon-notifications-update-check ()
   "Function called by `mastodon-notifications-update-with-timer'.
