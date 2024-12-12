@@ -67,6 +67,7 @@
 (autoload 'mastodon-tl--goto-next-item "mastodon-tl")
 (autoload 'mastodon-tl--buffer-type-eq "mastodon-tl")
 (autoload 'mastodon-tl--buffer-property "mastodon-tl")
+(autoload 'mastodon-http--patch "mastodon-http")
 
 ;; notifications defcustoms moved into mastodon.el
 ;; as some need to be available without loading this file
