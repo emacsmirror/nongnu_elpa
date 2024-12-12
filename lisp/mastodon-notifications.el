@@ -995,7 +995,7 @@ Calls `mastodon-tl--update'."
   (let ((count (mastodon-notifications--get-unread-count)))
     (when (> count 0)
       (if (not (mastodon-tl--buffer-type-eq 'notifications))
-          (message "New mastodon.el notification(s)")
+          (message "New mastodon.el notification(s): %s" count)
         ;; run updates if in notifs buffer:
         (message "Updating mastodon.el notifications...")
         (mastodon-tl--update)
