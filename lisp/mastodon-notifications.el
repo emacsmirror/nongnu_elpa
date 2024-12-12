@@ -170,6 +170,14 @@ If no match, return empty string."
        mastodon-notifications--response-alist nil nil #'equal)
       ""))
 
+;;; UTILS
+
+(defun mastodon-notifications--api (endpoint)
+  "Return a notifications API ENDPOINT.
+If `mastodon-group-notifications' is non-nil, use API v2."
+  (mastodon-http--api endpoint
+                      (when mastodon-group-notifications "v2")))
+
 ;;; FOLL REQS
 
 (defun mastodon-notifications--follow-request-process (&optional reject)
@@ -720,7 +728,8 @@ Status notifications are created when you call
   (interactive)
   (when (y-or-n-p "Clear all notifications?")
     (let ((response
-           (mastodon-http--post (mastodon-http--api "notifications/clear"))))
+           (mastodon-http--post
+            (mastodon-notifications--api "notifications/clear"))))
       (mastodon-http--triage
        response (lambda (_)
                   (when mastodon-tl--buffer-spec
@@ -735,9 +744,8 @@ Status notifications are created when you call
                      (mastodon-tl--field
                       'id
                       (mastodon-tl--property 'item-json)))))
-         (endpoint (mastodon-http--api
-                    (format "notifications/%s/dismiss" id)
-                    "v2"))
+         (endpoint (mastodon-notifications--api
+                    (format "notifications/%s/dismiss" id)))
          (response (mastodon-http--post endpoint)))
     (mastodon-http--triage
      response (lambda (_)
@@ -754,9 +762,8 @@ Status notifications are created when you call
               'notification-id)) ;; grouped, doesn't work for ungrouped!
          ;; (key (format "ungrouped-%s"
          ;;              (mastodon-tl--property 'item-id)))
-         (endpoint (mastodon-http--api
-                    (format "notifications/%s" id)
-                    "v2"))
+         (endpoint (mastodon-notifications--api
+                    (format "notifications/%s" id)))
          (response (mastodon-http--get-json endpoint)))
     (mastodon-http--triage
      response (lambda (response)
@@ -766,7 +773,8 @@ Status notifications are created when you call
   "Return the number of unread notifications for the current account."
   ;; params: limit - max 1000, default 100, types[], exclude_types[], account_id
   (let* ((endpoint "notifications/unread_count")
-         (url (mastodon-http--api endpoint))
+         (url (mastodon-http--api endpoint
+                                  (when mastodon-group-notifications "v2")))
          (resp (mastodon-http--get-json url)))
     (alist-get 'count resp)))
 
@@ -777,8 +785,7 @@ Status notifications are created when you call
   "Return the notification filtering policy."
   (interactive)
   (let ((url
-         (mastodon-http--api "notifications/policy"
-                             (when mastodon-group-notifications "v2"))))
+         (mastodon-notifications--api "notifications/policy")))
     (mastodon-http--get-json url)))
 
 (defun mastodon-notifications--update-policy (&optional params)
@@ -786,8 +793,7 @@ Status notifications are created when you call
 PARAMS is an alist of parameters."
   ;; https://docs.joinmastodon.org/methods/notifications/#update-the-filtering-policy-for-notifications
   (let ((url
-         (mastodon-http--api "notifications/policy"
-                             (when mastodon-group-notifications "v2"))))
+         (mastodon-notifications--api "notifications/policy")))
     (mastodon-http--patch url params)))
 
 (provide 'mastodon-notifications)
