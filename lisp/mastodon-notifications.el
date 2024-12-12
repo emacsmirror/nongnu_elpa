@@ -813,7 +813,7 @@ Status notifications are created when you call
          (resp (mastodon-http--get-json endpoint params)))
     (map-nested-elt resp '(notifications last_read_id))))
 
-(defun mastodon-notifications-get-single-notif ()
+(defun mastodon-notifications--get-single-notif ()
   "Return a single notification JSON for v2 notifs."
   (interactive)
   (let* ((id ;; grouped (should work for ungrouped items):
