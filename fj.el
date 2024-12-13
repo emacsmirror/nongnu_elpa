@@ -1687,7 +1687,7 @@ ENDPOINT is the API endpoint to hit."
     ("reopen" . "%s reopened this issue %s")
     ("comment_ref" . "%s referenced this issue %s")
     ("change_title" . "%s changed title from \"%s\" to \"%s\" %s")
-    ("commit_ref" . "%s referenced this issue from a commit %s")
+    ("commit_ref" . "%s referenced this item from a commit %s")
     ("issue_ref" . "%s referenced this issue from %s %s")
     ("label" . "%s added the %s label %s")
     ;; PRs:
