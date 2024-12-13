@@ -165,14 +165,18 @@ MAX-ID is a flag to include the max_id pagination parameter."
 ;;; PROFILE VIEW COMMANDS
 
 (defvar mastodon-profile--account-view-alist
-  '(("statuses"     . mastodon-profile--open-statuses)
-    ("no boosts"   . mastodon-profile--open-statuses-no-reblogs)
-    ("no replies"    . mastodon-profile--open-statuses-no-replies)
-    ("only media"   . mastodon-profile--open-statuses-only-media)
-    ("followers"    . mastodon-profile--open-followers)
-    ("following"    . mastodon-profile--open-following)))
+  '((statuses   . mastodon-profile--open-statuses)
+    (no-boosts  . mastodon-profile--open-statuses-no-reblogs)
+    (no-replies . mastodon-profile--open-statuses-no-replies)
+    (only-media . mastodon-profile--open-statuses-only-media)
+    (followers  . mastodon-profile--open-followers)
+    (following  . mastodon-profile--open-following)
+    (tag        . mastodon-profile--open-statuses-tagged)))
 
-;; TODO: we shd just load all views' data then switch coz this is slow af:
+(defun mastodon-profile--view-types ()
+  "Return the keys of `mastodon-profile--account-view-alist' as a list."
+  (map-keys mastodon-profile--account-view-alist))
+
 (defun mastodon-profile--account-view-cycle (&optional prefix)
   "Cycle through profile view: toots, toot sans boosts, followers, and following."
   (interactive "P")
@@ -180,8 +184,7 @@ MAX-ID is a flag to include the max_id pagination parameter."
       (let* ((choice
               (completing-read "Profile view:"
                                mastodon-profile--account-view-alist))
-             (fun (alist-get choice mastodon-profile--account-view-alist
-                             nil nil #'equal)))
+             (fun (alist-get choice mastodon-profile--account-view-alist)))
         (funcall fun))
     (cond ((mastodon-tl--buffer-type-eq 'profile-statuses)
            (mastodon-profile--open-statuses-no-reblogs))
@@ -568,27 +571,6 @@ The endpoint only holds a few preferences. For others, see
                 "\n\n"))
       (goto-char (point-min)))))
 
-
-;;; PROFILE WIDGET
-
-(defvar mastodon-profile--view-types
-  '(statuses no-boosts no-replies only-media followers following tag))
-
-(defvar mastodon-profile--load-funs-alist
-  `((statuses    . mastodon-profile--open-statuses)
-    (no-boosts   . mastodon-profile--open-statuses-no-reblogs)
-    (no-replies  . mastodon-profile--open-statuses-no-replies)
-    (only-media  . mastodon-profile--open-statuses-only-media)
-    (followers   . mastodon-profile--open-followers)
-    (following   . mastodon-profile--open-following)
-    (tag         . mastodon-profile--open-statuses-tagged)))
-
-(defun mastodon-profile--view-fun-call (type)
-  "Call the function associated with TYPE.
-Fetched from `mastodon-profile--load-funs-alist'."
-  (funcall
-   (alist-get type mastodon-profile--load-funs-alist)))
-
 
 ;;; PROFILE VIEW DETAILS
 
@@ -765,13 +747,16 @@ MAX-ID is a flag to include the max_id pagination parameter."
           (mastodon-media--inline-images (point-min) (point))
           ;; widget items description
           (mastodon-widget--create
-           "View" mastodon-profile--view-types
+           "View" (mastodon-profile--view-types)
            (or (mastodon-profile--current-view-type
                 endpoint-type no-reblogs no-replies only-media tag)
                'statuses)
            (lambda (widget &rest _ignore)
              (let ((value (widget-value widget)))
-               (mastodon-profile--view-fun-call value))))
+               (funcall
+                (alist-get type
+                           mastodon-profile--account-view-alist)
+                value))))
           (insert "\n")
           (setq mastodon-tl--update-point (point))))
       ;; split insert of items from insert of profile:
@@ -800,7 +785,7 @@ NO-REBLOGS, NO-REPLIES, ONLY-MEDIA and TAG."
         (no-replies 'no-replies)
         (only-media 'only-media)
         (tag 'tag)
-        (t (intern type))))
+        (t (if (stringp type) (intern type) type))))
 
 (defun mastodon-profile--format-joined-date-string (joined)
   "Format a human-readable Joined string from timestamp JOINED.
