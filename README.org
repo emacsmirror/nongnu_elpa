@@ -139,8 +139,8 @@ For a full list of commands and variables, see [[file:mastodon-index.org][mastod
 |                | *Timeline actions*                                                                |
 | =n=              | Go to next item (toot, notification, user)                                      |
 | =p=              | Go to previous item (toot, notification, user)                                  |
-| =M-n=/=<tab>=    | Go to the next interesting thing that has an action                             |
-| =M-p=/=<S-tab>=  | Go to the previous interesting thing that has an action                         |
+| =M-n/<tab>=      | Go to the next interesting thing that has an action                             |
+| =M-p/<S-tab>=    | Go to the previous interesting thing that has an action                         |
 | =F=              | Open federated timeline (1 prefix arg: hide-replies, 2 prefix args: media only) |
 | =H=              | Open home timeline  (1 prefix arg: hide-replies)                                |
 | =L=              | Open local timeline (1 prefix arg: hide-replies, 2 prefix args: media only)     |
@@ -193,11 +193,12 @@ For a full list of commands and variables, see [[file:mastodon-index.org][mastod
 |----------------+---------------------------------------------------------------------------------|
 |                | *Profile view*                                                                    |
 | =C-c C-c=        | cycle between statuses, statuses without boosts, followers, and following       |
-|                | =mastodon-profile--add-account-to-list= (see lists view)                             |
+|                | =mastodon-profile--add-account-to-list= (see lists view)                          |
 |----------------+---------------------------------------------------------------------------------|
 |                | *Notifications view*                                                              |
 | =a=, =j=           | accept/reject follow request                                                    |
 | =C-k=            | clear notification at point                                                     |
+| =C-c C-c=        | cycle between notification types                                                |
 |                | see =mastodon-notifications--get-*= functions for filtered views                  |
 |----------------+---------------------------------------------------------------------------------|
 |                | *Quitting*                                                                        |
@@ -213,7 +214,7 @@ For a full list of commands and variables, see [[file:mastodon-index.org][mastod
 |---------------+------------------------|
 | =(🔁)= (or =(B)=) | I boosted this toot    |
 | =(⭐)= (or =(F)=) | I favourited this toot |
-| =(🔖)= (or (=K=)) | I bookmarked this toot |
+| =(🔖)= (or =(K)=) | I bookmarked this toot |
 |---------------+------------------------|
 
 *** Composing toots
@@ -361,6 +362,7 @@ See =M-x customize-group RET mastodon= to view all customize options.
 
 - Nofitication options:
    - Display user's profile note in follow requests
+   - Group notifications
 
 *** Commands and variables index
 
