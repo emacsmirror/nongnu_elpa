@@ -998,10 +998,13 @@ Also nil the variable."
   ;; `mastodon-mode' loads before we populate the buffer via an update fun
   ;; do we need an after-update hook?
   (if (not (mastodon-live-buffers))
+      ;; if not masto buffers: cancel everything:
       (mastodon-notifications-cancel-timer)
     (when mastodon-notifications-check-for-updates
-      ;; set new timer if we don't have one:
+      ;; FIXME: it is poss for this var to be non-nil but no such timer in
+      ;; `list-timers':
       (unless mastodon-notifications-timer
+        ;; set new timer if we don't have one:
         (setq mastodon-notifications-timer
               (run-at-time mastodon-notifications-updates-interval
                            nil #'mastodon-notifications--update-check))))))
