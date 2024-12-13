@@ -254,6 +254,13 @@ If we fail, return `fj-user'." ;; poss insane
     (car
      (seq-elt entry num))))
 
+(defun fj-map-alist-key (list key)
+  "Return the values of KEY in LIST, a list of alists."
+  (let ((test-fun (when (stringp key) #'equal)))
+    (mapcar (lambda (x)
+              (alist-get key x nil nil test-fun))
+            list)))
+
 ;;; MACROS
 
 (defmacro fj-with-issue (&optional body)
@@ -1001,6 +1008,53 @@ NEW-BODY is the new comment text to send."
                        (lambda (_)
                          (message "comment edited!")))))
 
+;;; ISSUE LABELS
+;; TODO: - reload issue on add label
+;;       - display label desc help-echo
+;;       - add label from issues TL and from issue timeline
+
+(defun fj-repo-get-labels (&optional repo owner)
+  "Return labels JSON for REPO by OWNER."
+  (interactive "P")
+  (let* ((repo (fj-read-user-repo repo))
+         (owner (or owner fj-user))
+         (endpoint (format "repos/%s/%s/labels" owner repo)))
+    (fj-get endpoint)))
+
+(defun fj-issue-get-labels (&optional repo owner issue)
+  "Get labels on ISSUE in REPO by OWNER."
+  (interactive "P")
+  (let* ((repo (fj-read-user-repo repo))
+         (issue (or issue (fj-read-repo-issue repo)))
+         (owner (or owner fj-user))
+         (url (format "repos/%s/%s/issues/%s/labels" owner repo issue)))
+    (fj-get url)))
+
+(defun fj-issue-label-add (&optional repo owner issue)
+  "Add a label to ISSUE in REPO by OWNER."
+  (interactive "P")
+  (let* ((repo (fj-read-user-repo repo))
+         (issue (or issue
+                    (fj--get-buffer-spec :item)
+                    (fj-read-repo-issue repo)))
+         (owner (or owner fj-user)) ;; FIXME owner
+         (url (format "repos/%s/%s/issues/%s/labels" owner repo issue))
+         (repo-labels (fj-map-alist-key
+                       (fj-repo-get-labels repo owner)
+                       'name))
+         (issue-labels (fj-map-alist-key
+                        (fj-issue-get-labels repo owner issue)
+                        'name))
+         (choice (completing-read
+                  (format "Add label to #%s: " issue)
+                  repo-labels))
+         (params `(("labels" . ,(cl-pushnew choice issue-labels))))
+         (resp (fj-post url params)))
+    (fedi-http--triage
+     resp
+     (lambda (resp)
+       (message "Label %s added to #%s!" choice issue)))))
+
 ;;; ISSUES TL
 
 ;; webUI sort options:
@@ -1124,6 +1178,7 @@ STATE is a string."
                        `( :inherit fj-label-face
                           :background ,bg
                           :foreground ,(readable-foreground-color bg))
+                       ;; FIXME: in label data for an issue, desc is empty
                        'help-echo .description))))
      data
      (fj-plain-space))))
