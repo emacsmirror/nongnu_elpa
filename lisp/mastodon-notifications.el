@@ -1024,7 +1024,9 @@ Calls `mastodon-tl--update'."
             (message "New mastodon.el notification(s): %s" count)
           ;; run updates if in notifs buffer:
           (message "Updating mastodon.el notifications...")
+          (undo-boundary)
           (mastodon-tl--update)
+          (undo-boundary)
           (message "Updating mastodon.el notifications... Done."))
       (message "No new mastodon.el notifications")) ;; just to show we ran
     ;; cancel and set new timer:
