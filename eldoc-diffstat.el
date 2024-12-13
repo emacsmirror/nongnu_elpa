@@ -129,17 +129,15 @@ caching the result, see `eldoc-diffstat--get-cache' for details."
         (kill-process eldoc-diffstat--process)))
     (kill-buffer (process-buffer eldoc-diffstat--process)))
 
-  (setq
-   eldoc-diffstat--process
-   (make-process
-    :name "eldoc-diffstat"
-    :buffer (generate-new-buffer " *eldoc-diffstat*")
-    :noquery t
-    :command command
-    :sentinel
-    (lambda (&rest args)
-      (apply #'eldoc-diffstat--sentinel callback args))))
-  (process-put eldoc-diffstat--process :revision-info revision-info)
+  (let ((proc (make-process
+               :name "eldoc-diffstat"
+               :buffer (generate-new-buffer " *eldoc-diffstat*")
+               :noquery t
+               :command command
+               :sentinel
+               (apply-partially #'eldoc-diffstat--sentinel callback))))
+    (process-put proc :revision-info revision-info)
+    (setq eldoc-diffstat--process proc))
 
   ;; Signal that the doc string is computed asynchronously.
   t)
@@ -150,8 +148,8 @@ caching the result, see `eldoc-diffstat--get-cache' for details."
     (with-current-buffer (process-buffer proc)
       (eldoc-diffstat--format-output-buffer)
       (let ((result (buffer-string))
-            (revision-info (process-get eldoc-diffstat--process :revision-info)))
-        (process-put eldoc-diffstat--process :cached-result
+            (revision-info (process-get proc :revision-info)))
+        (process-put proc :cached-result
                      (cons revision-info result))
         (funcall callback result)))))
 
