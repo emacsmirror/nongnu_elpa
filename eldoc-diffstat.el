@@ -52,6 +52,18 @@
   :group 'eldoc
   :group 'vc)
 
+(defcustom eldoc-diffstat-lines nil
+  "If non-nil, truncate echo area output after this many lines.
+
+If the value is a negative number, force output to exactly the absolute
+value number of lines, either by truncating or padding with empty lines
+as needed.
+
+See also `eldoc-echo-area-use-multiline-p'."
+  :type '(choice (const :tag "No limit" nil)
+                 (integer :tag "Maximum number of lines (positive values)" 5)
+                 (integer :tag "Fixed number of lines (negative values)" -5)))
+
 (defvar eldoc-diffstat--process nil
   "The latest async process used for fetching diffstat information.
 Only one active process at a time; new requests terminate previous ones.
@@ -221,7 +233,18 @@ caching the result, see `eldoc-diffstat--get-cache' for details."
     (let ((summary (delete-and-extract-region
                     (match-beginning 4) (match-end 4))))
       (replace-match
-       (propertize summary 'face 'italic) nil nil nil 3))))
+       (propertize summary 'face 'italic) nil nil nil 3)))
+
+  ;; Optionally truncate / pad output.
+  (when eldoc-diffstat-lines
+    (goto-char (point-min))
+    (let ((remaining (forward-line (abs eldoc-diffstat-lines))))
+      (delete-region (point) (point-max))
+      (when (and (< eldoc-diffstat-lines 0) (> remaining 0))
+        (newline remaining)
+        ;; eldoc skips backwards over spaces, tabs, and newlines, so insert any
+        ;; unobstrusive character to work around that, e.g., a no-break space.
+        (backward-char) (insert ?\xA0)))))
 
 (provide 'eldoc-diffstat)
 ;;; eldoc-diffstat.el ends here
