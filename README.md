@@ -1,5 +1,7 @@
 # eldoc-diffstat — Make VCS diffstat available via eldoc
 
+[![NonGNU ELPA](https://elpa.nongnu.org/nongnu/eldoc-diffstat.svg)][NonGNU ELPA]
+
 This package provides a way to display VCS diffstat information via eldoc.
 It supports Git and Mercurial repositories.
 
@@ -13,3 +15,4 @@ Adapted from Tassilo Horn's 2022 blog post “[Using Eldoc with Magit
 (asynchronously!)][tsdh-blog-post]”.
 
 [tsdh-blog-post]: https://www.tsdh.org/posts/2022-07-20-using-eldoc-with-magit-async.html
+[NonGNU ELPA]: https://elpa.nongnu.org/nongnu/eldoc-diffstat.html

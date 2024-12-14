@@ -3,8 +3,10 @@
 ;; Copyright (C) 2024  Johann Klähn
 
 ;; Author: Johann Klähn <johann@jklaehn.de>
+;; Maintainer: Johann Klähn <johann@jklaehn.de>
 ;; Keywords: vc, docs
-;; Version: 0.1
+;; Version: 1.0
+;; URL: https://github.com/kljohann/eldoc-diffstat/
 ;; Package-Requires: ((emacs "29.1"))
 
 ;; This program is free software; you can redistribute it and/or modify
