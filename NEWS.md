@@ -6,3 +6,5 @@
   all supported major modes.
 - `eldoc-diffstat-lines` can be used to truncate/pad output to a specific number
   of lines.
+- When this package is loaded, relevant buffer-navigating commands in magit
+  buffers are set up to trigger eldoc.

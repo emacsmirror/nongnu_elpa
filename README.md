@@ -9,15 +9,6 @@ To turn on diffstat output in all supported major modes, enable
 `global-eldoc-diffstat-mode`.  You can instead also enable
 `eldoc-diffstat-mode` in individual buffers or via mode hooks.
 
-You might also want to add the following to your config:
-
-```elisp
-(eldoc-add-command
- 'magit-next-line 'magit-previous-line
- 'magit-section-forward 'magit-section-backward
- 'magit-section-forward-sibling 'magit-section-backward-sibling)
-```
-
 Adapted from Tassilo Horn's 2022 blog post “[Using Eldoc with Magit
 (asynchronously!)][tsdh-blog-post]”.
 

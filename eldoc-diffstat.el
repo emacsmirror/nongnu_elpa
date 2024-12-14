@@ -47,6 +47,13 @@
 ;; These slots are used in git-rebase-action (see git-rebase.el).
 (eieio-declare-slots action-type target)
 
+;; Extend the list of commands on which eldoc triggers.
+(with-eval-after-load 'eldoc
+  (eldoc-add-command
+   'magit-next-line 'magit-previous-line
+   'magit-section-forward 'magit-section-backward
+   'magit-section-forward-sibling 'magit-section-backward-sibling))
+
 (defgroup eldoc-diffstat nil
   "Show VCS diffstat information in echo area."
   :group 'eldoc
