@@ -47,6 +47,11 @@
 ;; These slots are used in git-rebase-action (see git-rebase.el).
 (eieio-declare-slots action-type target)
 
+(defgroup eldoc-diffstat nil
+  "Show VCS diffstat information in echo area."
+  :group 'eldoc
+  :group 'vc)
+
 (defvar eldoc-diffstat--process nil
   "The latest async process used for fetching diffstat information.
 Only one active process at a time; new requests terminate previous ones.
@@ -79,13 +84,38 @@ a property to the process object.")
 Has to match `eldoc-diffstat--commands'.")
 
 ;;;###autoload
-(defun eldoc-diffstat-setup ()
-  "Configure eldoc buffer-locally to display diffstat for revision at point."
-  (interactive)
-  (add-hook 'eldoc-documentation-functions
-            #'eldoc-diffstat--docstring nil 'local)
-  (unless (bound-and-true-p eldoc-mode)
-    (eldoc-mode)))
+(define-obsolete-function-alias 'eldoc-diffstat-setup 'eldoc-diffstat-mode
+  "1.0" "Configure eldoc buffer-locally to display diffstat for revision at point.")
+
+;;;###autoload
+(define-minor-mode eldoc-diffstat-mode
+  "Toggle echo area display of VCS diffstat information in the local buffer.
+
+When enabled, diffstat information is shown in supported major modes if
+point is on a revision."
+  :group 'eldoc-diffstat
+  :lighter nil
+  (if eldoc-diffstat-mode
+      (progn
+        (add-hook 'eldoc-documentation-functions
+                  #'eldoc-diffstat--docstring nil 'local)
+        (eldoc-mode))
+    (remove-hook 'eldoc-documentation-functions
+                 #'eldoc-diffstat--docstring 'local)
+    ;; Disable eldoc if diffstat was the only information source.
+    (unless (eldoc--supported-p)
+      (eldoc-mode -1))))
+
+;;;###autoload
+(define-globalized-minor-mode global-eldoc-diffstat-mode
+  eldoc-diffstat-mode eldoc-diffstat-mode
+  :group 'eldoc-diffstat
+  :predicate
+  '(git-rebase-mode
+    log-view-mode
+    magit-log-mode
+    magit-status-mode
+    vc-annotate-mode))
 
 (defun eldoc-diffstat--docstring (callback &rest _ignored)
   "Display diffstat for revision at point by calling CALLBACK.

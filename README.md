@@ -5,15 +5,9 @@ It supports Git and Mercurial repositories.
 
 ![A screenshot showing diffstat information in the echo area of a magit-log buffer.](screenshot.webp "diffstat information is available in the echo area.")
 
-To use, call `eldoc-diffstat-setup` in the desired buffer or mode hook, e.g.:
-
-```elisp
-(add-hook 'git-rebase-mode-hook #'eldoc-diffstat-setup)
-(add-hook 'log-view-mode-hook #'eldoc-diffstat-setup)
-(add-hook 'magit-log-mode-hook #'eldoc-diffstat-setup)
-(add-hook 'magit-status-mode-hook #'eldoc-diffstat-setup)
-(add-hook 'vc-annotate-mode-hook #'eldoc-diffstat-setup)
-```
+To turn on diffstat output in all supported major modes, enable
+`global-eldoc-diffstat-mode`.  You can instead also enable
+`eldoc-diffstat-mode` in individual buffers or via mode hooks.
 
 You might also want to add the following to your config:
 
