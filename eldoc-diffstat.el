@@ -61,6 +61,23 @@ a property to the process object.")
         "--stat" "--rev"))
   "Alist mapping VCS backend to the command to use for computing the diffstat.")
 
+(defconst eldoc-diffstat--output-regex
+  (rx buffer-start
+      ;; 1: commit author and date
+      ;; 2: newline between author info and subject (will be removed)
+      (group-n 1 (+ not-newline)) (group-n 2 ?\n)
+      ;; subject / first line of commit message
+      (+ not-newline) ?\n
+      ;; 3: point after subject / before diffstat (shortstat will be moved here)
+      (group-n 3)
+      ;; diffstat for individual files
+      (+? anything)
+      ;; 4: shortstat, i.e., total # of modified files + added/deleted lines
+      (group-n 4 (+ not-newline) ?\n)
+      (* space) buffer-end)
+  "Regular expression used to rewrite and apply faces to diffstat output.
+Has to match `eldoc-diffstat--commands'.")
+
 ;;;###autoload
 (defun eldoc-diffstat-setup ()
   "Configure eldoc buffer-locally to display diffstat for revision at point."
@@ -77,7 +94,7 @@ Intended for `eldoc-documentation-functions'."
               (backend (car info))
               (revision (cdr info))
               (command (alist-get backend eldoc-diffstat--commands)))
-    (if-let ((result (eldoc-diffstat--get-cache info)))
+    (if-let* ((result (eldoc-diffstat--get-cache info)))
         (funcall callback result)
       (eldoc-diffstat--docstring-1 (append command (list revision)) callback info))))
 
@@ -87,11 +104,11 @@ The returned record should be a cons cell of the form (BACKEND . REVISION) where
 BACKEND is a symbol representing the version control system and REVISION is
 a string identifying the specific revision."
   (cond
-   ((when-let (((fboundp 'magit-stash-at-point))
-               (revision (magit-stash-at-point)))
+   ((when-let* (((fboundp 'magit-stash-at-point))
+                (revision (magit-stash-at-point)))
       (cons 'Git revision)))
-   ((when-let (((fboundp 'magit-commit-at-point))
-               (revision (magit-commit-at-point)))
+   ((when-let* (((fboundp 'magit-commit-at-point))
+                (revision (magit-commit-at-point)))
       (cons 'Git revision)))
    ((and (derived-mode-p 'git-rebase-mode)
          (fboundp 'git-rebase-current-line)
@@ -154,35 +171,27 @@ caching the result, see `eldoc-diffstat--get-cache' for details."
         (funcall callback result)))))
 
 (defun eldoc-diffstat--format-output-buffer ()
-  "Format the diffstat output."
+  "Format the diffstat output in the current buffer."
   ;; Translate color control sequences into text properties.
   (let ((ansi-color-apply-face-function
          (lambda (beg end face)
            (put-text-property beg end 'face face))))
     (ansi-color-apply-on-region (point-min) (point-max)))
 
-  ;; Delete trailing blank lines.
-  (goto-char (point-max))
-  (delete-blank-lines)
-
-  ;; Make first line bold.
   (goto-char (point-min))
-  (put-text-property (point)
-                     (line-end-position)
-                     'face 'bold)
+  (when (looking-at eldoc-diffstat--output-regex)
+    ;; Make commit author and date bold.
+    (put-text-property
+     (match-beginning 1) (match-end 1) 'face 'bold)
 
-  ;; Join second line.
-  (forward-line)
-  (join-line)
+    ;; Join the first two lines.
+    (replace-match " " nil nil nil 2)
 
-  ;; Move summary to the top and make it italic.
-  (forward-line)
-  (reverse-region (point) (point-max))
-  (put-text-property (point)
-                     (line-end-position)
-                     'face 'italic)
-  (forward-line)
-  (reverse-region (point) (point-max)))
+    ;; Move summary to the second line and make it italic.
+    (let ((summary (delete-and-extract-region
+                    (match-beginning 4) (match-end 4))))
+      (replace-match
+       (propertize summary 'face 'italic) nil nil nil 3))))
 
 (provide 'eldoc-diffstat)
 ;;; eldoc-diffstat.el ends here
