@@ -531,7 +531,8 @@ Calls `mastodon-tl--get-buffer-type', which see."
     (when mastodon-toot--enable-custom-instance-emoji
       (mastodon-toot--enable-custom-emoji)))
   (mastodon-profile--fetch-server-account-settings)
-  (when mastodon-tl--highlight-current-toot
+  (when (and mastodon-tl--highlight-current-toot
+             (fboundp #'cursor-face-highlight-mode))
     (cursor-face-highlight-mode)) ; 29.1
   ;; make `thing-at-point' functions work:
   (setq-local thing-at-point-provider-alist
