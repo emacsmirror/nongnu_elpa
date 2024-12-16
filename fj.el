@@ -3,7 +3,7 @@
 ;; Author: Marty Hiatt <mousebot@disroot.org>
 ;; Copyright (C) 2023 Marty Hiatt <mousebot@disroot.org>
 ;;
-;; Package-Requires: ((emacs "29.1") (fedi "0.2") (tp "0.5") (transient "0.5.0"))
+;; Package-Requires: ((emacs "29.1") (fedi "0.2") (tp "0.5") (transient) (magit))
 ;; Keywords: git, convenience
 ;; URL: https://codeberg.org/martianh/fj.el
 ;; Version: 0.3
@@ -132,7 +132,7 @@ etc."
        :foreground
        ,(face-attribute 'font-lock-function-name-face :foreground)
        :weight bold))
-  "Face for item authors")
+  "Face for item authors.")
 
 (defface fj-item-byline-face
   `((t :inherit magit-diff-hunk-heading))
@@ -1929,7 +1929,10 @@ ignored."
 
 (defun fj-repo-search (query &optional topic id mode)
   "Search repos for QUERY.
-If TOPIC, QUERY is a search for topic keywords."
+If TOPIC, QUERY is a search for topic keywords.
+ID is a user ID, which if given must own the repo.
+MODE must be a member of `fj-search-modes', else it is silently
+ignored."
   (interactive "sSearch for repo: ")
   (let* ((resp (fj-repo-search-do query topic id mode))
          (data (alist-get 'data resp))
