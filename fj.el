@@ -428,13 +428,24 @@ NO-JSON means return the raw response."
             (t
              resp)))))
 
+(defun fj-resp-json (resp)
+  "Parse JSON from RESP, a buffer."
+  (let ((json-array-type 'list))
+    (with-current-buffer resp
+      (goto-char (point-min))
+      (re-search-forward "^$" nil 'move)
+      (let ((str
+             (decode-coding-string
+              (buffer-substring-no-properties (point) (point-max))
+              'utf-8)))
+        (json-read-from-string str)))))
+
 (defun fj-post (endpoint &optional params)
   "Make a POST request to ENDPOINT.
 PARAMS."
   (let ((url (fj-api endpoint)))
     (fj-authorized-request "POST"
       (fedi-http--post url params nil :json))))
-
 
 (defun fj-put (endpoint &optional params json)
   "Make a PUT request to ENDPOINT.
@@ -703,18 +714,20 @@ If both return nil, also prompt."
         (fj-read-user-repo-do))))
 
 (defun fj-repo-create ()
-  "Create a new repo."
+  "Create a new repo.
+Save its URL to the kill ring."
   (interactive)
   (let* ((name (read-string "Repo name: "))
          (desc (read-string "Repo description: "))
          (params `(("name" . ,name)
                    ("description" . ,desc)))
-         (response (fj-post "user/repos" params)))
-    (fedi-http--triage response
-                       (lambda (response)
-                         (let ((url (alist-get 'html_url response)))
-                           (message "Repo %s created! %s" name url))
-                         (kill-new url)))))
+         (resp (fj-post "user/repos" params)))
+    (fedi-http--triage resp
+                       (lambda (resp)
+                         (let* ((json (fj-resp-json resp))
+                                (url (alist-get 'html_url json)))
+                           (message "Repo %s created! %s" name url)
+                           (kill-new url))))))
 
 ;;; ISSUES
 
@@ -1048,12 +1061,15 @@ NEW-BODY is the new comment text to send."
          (choice (completing-read
                   (format "Add label to #%s: " issue)
                   repo-labels))
-         (params `(("labels" . ,(cl-pushnew choice issue-labels))))
+         (params `(("labels" . ,(cl-pushnew choice issue-labels
+                                            :test #'equal))))
          (resp (fj-post url params)))
     (fedi-http--triage
      resp
-     (lambda (resp)
-       (message "Label %s added to #%s!" choice issue)))))
+     (lambda (_resp)
+       (let ((json (fj-resp-json resp)))
+         (message "%s" (prin1-to-string json))
+         (message "Label %s added to #%s!" choice issue))))))
 
 ;;; ISSUES TL
 
