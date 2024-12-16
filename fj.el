@@ -3,7 +3,7 @@
 ;; Author: Marty Hiatt <mousebot@disroot.org>
 ;; Copyright (C) 2023 Marty Hiatt <mousebot@disroot.org>
 ;;
-;; Package-Requires: ((emacs "29.1") (fedi "0.2") (tp "0.5") (transient "0.5.0"))
+;; Package-Requires: ((emacs "29.1") (fedi "0.2") (tp "0.5") (transient) (magit))
 ;; Keywords: git, convenience
 ;; URL: https://codeberg.org/martianh/fj.el
 ;; Version: 0.3
@@ -132,7 +132,7 @@ etc."
        :foreground
        ,(face-attribute 'font-lock-function-name-face :foreground)
        :weight bold))
-  "Face for item authors")
+  "Face for item authors.")
 
 (defface fj-item-byline-face
   `((t :inherit magit-diff-hunk-heading))
@@ -245,13 +245,21 @@ If we fail, return `fj-user'." ;; poss insane
   "Return repo name, whatever view we are in."
   (or (fj--get-buffer-spec :repo)
       fj-current-repo
-      (fj-get-tl-col 0)))
+      (fj-get-tl-col 0)
+      (fj-current-dir-repo)))
 
 (defun fj-get-tl-col (num)
   "Return column number NUM from current tl entry."
   (let ((entry (tabulated-list-get-entry)))
     (car
      (seq-elt entry num))))
+
+(defun fj-map-alist-key (list key)
+  "Return the values of KEY in LIST, a list of alists."
+  (let ((test-fun (when (stringp key) #'equal)))
+    (mapcar (lambda (x)
+              (alist-get key x nil nil test-fun))
+            list)))
 
 ;;; MACROS
 
@@ -420,13 +428,24 @@ NO-JSON means return the raw response."
             (t
              resp)))))
 
+(defun fj-resp-json (resp)
+  "Parse JSON from RESP, a buffer."
+  (let ((json-array-type 'list))
+    (with-current-buffer resp
+      (goto-char (point-min))
+      (re-search-forward "^$" nil 'move)
+      (let ((str
+             (decode-coding-string
+              (buffer-substring-no-properties (point) (point-max))
+              'utf-8)))
+        (json-read-from-string str)))))
+
 (defun fj-post (endpoint &optional params)
   "Make a POST request to ENDPOINT.
 PARAMS."
   (let ((url (fj-api endpoint)))
     (fj-authorized-request "POST"
       (fedi-http--post url params nil :json))))
-
 
 (defun fj-put (endpoint &optional params json)
   "Make a PUT request to ENDPOINT.
@@ -534,7 +553,7 @@ X and Y are sorting args."
         tabulated-list-sort-key '("Updated" . t) ;; default
         tabulated-list-format
         '[("Name" 16 t)
-          ("★" 2 fj-tl-sort-by-stars :right-align t)
+          ("★" 3 fj-tl-sort-by-stars :right-align t)
           ("" 2 t)
           ("issues" 5 fj-tl-sort-by-issue-count :right-align t)
           ("Lang" 10 t)
@@ -638,18 +657,26 @@ BUF-STR is to name the buffer, URL-STR is for the buffer-spec."
 ;;; USER REPOS
 
 (defun fj-current-dir-repo ()
-  "If we are in a `fj-host' repository, return its name."
+  "If we are in a `fj-host' repository, return its name.
+Also set `fj-current-repo' to the name."
   ;; NB: fails if remote url is diff to root dir!
   (ignore-errors
     (when (magit-inside-worktree-p)
+      ;; FIXME: this is slow, as we just fetch all our repos. why not repo
+      ;; search, with dir name, and search repos with exclusive param set
+      ;; to `fj-user's UID. unfortunately tho, we can't guess mode, so we
+      ;; can't be sure of our result:
+      ;; (let ((id (alist-get 'id
+      ;;                      (fj-get-current-user)))
+      ;;       (repo (fj-repo-search-do query nil id mode))))
       (let* ((repos (fj-get-repos))
              (names (cl-loop for r in repos
                              collect (alist-get 'name r)))
              (dir (file-name-nondirectory
                    (directory-file-name
                     (magit-toplevel)))))
-        (when (member dir names)
-          dir))))) ; nil if dir no match any remotes
+        (when (member dir names) ;; nil if dir no match any remotes
+          (setq fj-current-repo dir))))))
 
 (defun fj-get-repos ()
   "Return the user's repos."
@@ -687,16 +714,20 @@ If both return nil, also prompt."
         (fj-read-user-repo-do))))
 
 (defun fj-repo-create ()
-  "Create a new repo."
+  "Create a new repo.
+Save its URL to the kill ring."
   (interactive)
   (let* ((name (read-string "Repo name: "))
          (desc (read-string "Repo description: "))
          (params `(("name" . ,name)
                    ("description" . ,desc)))
-         (response (fj-post "user/repos" params)))
-    (fedi-http--triage response
-                       (lambda (_)
-                         (message "Repo %s created!" name)))))
+         (resp (fj-post "user/repos" params)))
+    (fedi-http--triage resp
+                       (lambda (resp)
+                         (let* ((json (fj-resp-json resp))
+                                (url (alist-get 'html_url json)))
+                           (message "Repo %s created! %s" name url)
+                           (kill-new url))))))
 
 ;;; ISSUES
 
@@ -990,6 +1021,56 @@ NEW-BODY is the new comment text to send."
                        (lambda (_)
                          (message "comment edited!")))))
 
+;;; ISSUE LABELS
+;; TODO: - reload issue on add label
+;;       - display label desc help-echo
+;;       - add label from issues TL and from issue timeline
+
+(defun fj-repo-get-labels (&optional repo owner)
+  "Return labels JSON for REPO by OWNER."
+  (interactive "P")
+  (let* ((repo (fj-read-user-repo repo))
+         (owner (or owner fj-user))
+         (endpoint (format "repos/%s/%s/labels" owner repo)))
+    (fj-get endpoint)))
+
+(defun fj-issue-get-labels (&optional repo owner issue)
+  "Get labels on ISSUE in REPO by OWNER."
+  (interactive "P")
+  (let* ((repo (fj-read-user-repo repo))
+         (issue (or issue (fj-read-repo-issue repo)))
+         (owner (or owner fj-user))
+         (url (format "repos/%s/%s/issues/%s/labels" owner repo issue)))
+    (fj-get url)))
+
+(defun fj-issue-label-add (&optional repo owner issue)
+  "Add a label to ISSUE in REPO by OWNER."
+  (interactive "P")
+  (let* ((repo (fj-read-user-repo repo))
+         (issue (or issue
+                    (fj--get-buffer-spec :item)
+                    (fj-read-repo-issue repo)))
+         (owner (or owner fj-user)) ;; FIXME owner
+         (url (format "repos/%s/%s/issues/%s/labels" owner repo issue))
+         (repo-labels (fj-map-alist-key
+                       (fj-repo-get-labels repo owner)
+                       'name))
+         (issue-labels (fj-map-alist-key
+                        (fj-issue-get-labels repo owner issue)
+                        'name))
+         (choice (completing-read
+                  (format "Add label to #%s: " issue)
+                  repo-labels))
+         (params `(("labels" . ,(cl-pushnew choice issue-labels
+                                            :test #'equal))))
+         (resp (fj-post url params)))
+    (fedi-http--triage
+     resp
+     (lambda (_resp)
+       (let ((json (fj-resp-json resp)))
+         (message "%s" (prin1-to-string json))
+         (message "Label %s added to #%s!" choice issue))))))
+
 ;;; ISSUES TL
 
 ;; webUI sort options:
@@ -1113,6 +1194,7 @@ STATE is a string."
                        `( :inherit fj-label-face
                           :background ,bg
                           :foreground ,(readable-foreground-color bg))
+                       ;; FIXME: in label data for an issue, desc is empty
                        'help-echo .description))))
      data
      (fj-plain-space))))
@@ -1324,10 +1406,11 @@ JSON is the item's data to process the link with."
           (fedi-propertize-items str fedi-post-tag-regex 'tag json
                                  fj-link-keymap 1 2 nil nil
                                  '(fj-tab-stop t)))
-    (setq str
-          (fedi-propertize-items str fedi-post-url-regex 'link json
-                                 fj-link-keymap 1 1 nil nil
-                                 '(fj-tab-stop t)))
+    ;; FIXME: is this required? it breaks shr links
+    ;; (setq str
+    ;;       (fedi-propertize-items str fedi-post-url-regex 'link json
+    ;;                              fj-link-keymap 1 1 nil nil
+    ;;                              '(fj-tab-stop t)))
     (setq str
           (fedi-propertize-items str fedi-post-commit-regex 'commit json
                                  fj-link-keymap 1 1 nil nil
@@ -1421,7 +1504,7 @@ OWNER is the repo owner."
   "Render ITEM number NUMBER, in REPO and its TIMELINE.
 OWNER is the repo owner.
 RELOAD mean we reloaded."
-  (fedi-with-buffer (format "*fj-item-%s" number) 'fj-item-view-mode
+  (fedi-with-buffer (format "*fj-item-%s*" number) 'fj-item-view-mode
                     (not reload)
     (let ((header-line-indent " "))
       (header-line-indent-mode 1) ; broken?
@@ -1675,7 +1758,7 @@ ENDPOINT is the API endpoint to hit."
     ("reopen" . "%s reopened this issue %s")
     ("comment_ref" . "%s referenced this issue %s")
     ("change_title" . "%s changed title from \"%s\" to \"%s\" %s")
-    ("commit_ref" . "%s referenced this issue from a commit %s")
+    ("commit_ref" . "%s referenced this item from a commit %s")
     ("issue_ref" . "%s referenced this issue from %s %s")
     ("label" . "%s added the %s label %s")
     ;; PRs:
@@ -1739,21 +1822,38 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
               ((equal .type "label")
                (format format-str user .label.name ts))
               ;; PRs:
+              ;; FIXME: reimplement "pull_push" force-push and non-force
+              ;; format strings
               ((equal .type "pull_push")
                (let* ((json-array-type 'list)
                       (json (json-read-from-string .body))
                       (commits (alist-get 'commit_ids json))
-                      (force (equal (alist-get 'is_force_push json) "t")))
+                      (force
+                       (not
+                        (eq :json-false
+                            (alist-get 'is_force_push json)))))
                  (concat
                   (format format-str user (if force "force pushed" "added")
-                          (length commits) ts)
-                  ;; FIXME: display commit msg here too:
-                  (cl-loop for c in commits
-                           for short = (substring c 0 7)
-                           concat
-                           (concat "\n"
-                                   (fj-propertize-link short
-                                                       'commit-ref c))))))
+                          (if force (1- (length commits))
+                            (length commits))
+                          ts)
+                  ;; FIXME: fix force format string:
+                  ;; (format "%s force-pushed %s from %s to %s %s"
+                  ;; user branch c1 c2 ts)
+                  (if force
+                      (concat ": from "
+                              (fj-propertize-link
+                               (substring (car commits) 0 7))
+                              " to "
+                              (fj-propertize-link
+                               (substring (cadr commits) 0 7)))
+                    (cl-loop
+                     for c in commits
+                     for short = (substring c 0 7)
+                     concat
+                     (concat " "
+                             (fj-propertize-link short
+                                                 'commit-ref c)))))))
               ((equal .type "merge_pull")
                ;; FIXME: get commit and branch for merge:
                ;; Commit is the *merge* commit, created by actually merging
@@ -1806,20 +1906,35 @@ Optionally set link TYPE and ITEM number and FACE."
 
 ;;; SEARCH
 
-(defun fj-repo-search-do (query &optional topic)
-  "Search for QUERY, optionally flag it as a TOPIC."
+(defvar fj-search-modes
+  '("source" "fork" "mirror" "collaborative")
+  "Types of repositories in foregejo search.")
+
+(defun fj-repo-search-do (query &optional topic id mode)
+  "Search for QUERY, optionally flag it as a TOPIC.
+ID is a user ID, which if given must own the repo.
+MODE must be a member of `fj-search-modes', else it is silently
+ignored."
   (let* ((params `(("q" . ,query)
                    ("limit" . "100")
                    ("sort" . "updated")
+                   ,(when id
+                      `("exclusive" . ,id))
+                   ,(when (and mode
+                               (member mode fj-search-modes))
+                      `("mode" . ,mode))
                    ,(when topic
                       '("topic" . "t")))))
     (fj-get "/repos/search" params)))
 
-(defun fj-repo-search (query &optional topic)
+(defun fj-repo-search (query &optional topic id mode)
   "Search repos for QUERY.
-If TOPIC, QUERY is a search for topic keywords."
+If TOPIC, QUERY is a search for topic keywords.
+ID is a user ID, which if given must own the repo.
+MODE must be a member of `fj-search-modes', else it is silently
+ignored."
   (interactive "sSearch for repo: ")
-  (let* ((resp (fj-repo-search-do query topic))
+  (let* ((resp (fj-repo-search-do query topic id mode))
          (data (alist-get 'data resp))
          (cands (fj-get-repo-candidates data))
          (completion-extra-properties
@@ -1852,7 +1967,7 @@ If TOPIC, QUERY is a search for topic keywords."
         tabulated-list-format
         '[("Name" 12 t)
           ("Owner" 12 t)
-          ("★" 2 fj-tl-sort-by-stars :right-align t)
+          ("★" 3 fj-tl-sort-by-stars :right-align t)
           ("" 2 t)
           ("issues" 5 fj-tl-sort-by-issue-count :right-align t)
           ("Lang" 10 t)
@@ -2155,7 +2270,8 @@ Optionally set PAGE and LIMIT."
   (fj-with-own-entry
    (let* ((number (fj-get-tl-col 0))
           (owner (fj--get-buffer-spec :owner))
-          (title (fj-get-tl-col 4))
+          (title (substring-no-properties
+                  (fj-get-tl-col 4)))
           (repo (fj--get-buffer-spec :repo))
           (data (fj-get-item repo owner number))
           (old-body (alist-get 'body data)))

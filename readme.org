@@ -76,6 +76,12 @@ Forgejo's API is vast. Currently =fj.el= just implements a few basic things:
 - =magit-post=, =magit-process= (for obtaining current repo)
 - [[https://codeberg.org/martianh/fedi.el][fedi.el]]
 
+* contributions
+
+Contributions are welcome, as is feedback about your needs.
+
+Currently the project has just evolved organically out of my own needs (and my own libraries), which are likely different to yours.
+
 * screenshots
 
 User repos listing:
@@ -155,6 +161,8 @@ Repo search listing:
 |           | fj-issue-delete                 | Delete ISSUE in REPO of OWNER.                                      |
 |           | fj-issue-edit                   | Edit ISSUE body in REPO.                                            |
 |           | fj-issue-edit-title             | Edit ISSUE title in REPO.                                           |
+|           | fj-issue-get-labels             | Get labels on ISSUE in REPO by OWNER.                               |
+|           | fj-issue-label-add              | Add a label to ISSUE in REPO by OWNER.                              |
 | n         | fj-issue-next                   | Go to next issue or comment.                                        |
 | p         | fj-issue-prev                   | Goto previous issue or comment.                                     |
 |           | fj-issue-tl-mode                | Major mode for browsing a tabulated list of issues.                 |
@@ -196,6 +204,7 @@ Repo search listing:
 |           | fj-repo-commit-log              | Render log of commits for REPO by OWNER.                            |
 | L, u      | fj-repo-copy-clone-url          | Add the clone_url of repo at point to the kill ring.                |
 |           | fj-repo-create                  | Create a new repo.                                                  |
+|           | fj-repo-get-labels              | Return labels JSON for REPO by OWNER.                               |
 |           | fj-repo-search                  | Search repos for QUERY.                                             |
 | s         | fj-repo-search-tl               | Search repos for QUERY, and display a tabulated list of results.    |
 |           | fj-repo-search-tl-topic         | Search repo topics for QUERY, and display a tabulated list.         |
