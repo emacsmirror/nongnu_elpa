@@ -2270,7 +2270,8 @@ Optionally set PAGE and LIMIT."
   (fj-with-own-entry
    (let* ((number (fj-get-tl-col 0))
           (owner (fj--get-buffer-spec :owner))
-          (title (fj-get-tl-col 4))
+          (title (substring-no-properties
+                  (fj-get-tl-col 4)))
           (repo (fj--get-buffer-spec :repo))
           (data (fj-get-item repo owner number))
           (old-body (alist-get 'body data)))
