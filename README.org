@@ -451,6 +451,8 @@ Apart from Mastodon itself, it is currently known to work with:
 
 It does not support the non-Mastodon API servers Misskey ([[https://misskey.io/][misskey.io]]), Firefish ([[https://joinfirefish.org/][joinfirefish.org]], formerly Calkey) and Friendica, but it should fully support displaying and interacting with posts and users on those platforms.
 
+Sharkey ([[https://joinsharkey.org][joinsharkey.org]]) by contast, claims to indeed implement the Mastodon API, so it should work.
+
 If you attempt to use =mastodon.el= with a server and run into problems, feel
 free to open an issue.
 
