@@ -261,6 +261,14 @@ If we fail, return `fj-user'." ;; poss insane
               (alist-get key x nil nil test-fun))
             list)))
 
+(defun fj-map-alist-to-cons (list k1 k2)
+  "Return an alist of values of K1 and K2 from LIST."
+  (let ((test-fun (when (stringp k1) #'equal)))
+    (mapcar (lambda (x)
+              (cons (alist-get k1 x nil nil test-fun)
+                    (alist-get k2 x nil nil test-fun)))
+            list)))
+
 ;;; MACROS
 
 (defmacro fj-with-issue (&rest body)
@@ -1045,7 +1053,7 @@ NEW-BODY is the new comment text to send."
 
 (defun fj-issue-label-add (&optional repo owner issue)
   "Add a label to ISSUE in REPO by OWNER."
-  (interactive "P")
+  (interactive)
   (let* ((repo (fj-read-user-repo repo))
          (issue (or issue
                     (fj--get-buffer-spec :item)
@@ -1066,10 +1074,36 @@ NEW-BODY is the new comment text to send."
          (resp (fj-post url params)))
     (fedi-http--triage
      resp
-     (lambda (_resp)
+     (lambda (resp)
        (let ((json (fj-resp-json resp)))
          (message "%s" (prin1-to-string json))
+         (fj-item-view-reload)
          (message "Label %s added to #%s!" choice issue))))))
+
+(defun fj-issue-label-remove (&optional repo owner issue)
+  "Remove label from ISSUE in REPO by OWNER."
+  (interactive)
+  (let* ((repo (fj-read-user-repo repo))
+         (issue (or issue
+                    (fj--get-buffer-spec :item)
+                    (fj-read-repo-issue repo)))
+         (owner (or owner fj-user)) ;; FIXME owner
+         (issue-labels (fj-issue-get-labels repo owner issue)))
+    (if (not issue-labels)
+        (user-error "No labels to remove")
+      (let* ((labels-alist (fj-map-alist-to-cons issue-labels 'name 'id))
+             (choice (completing-read
+                      (format "Remove label from #%s: " issue)
+                      labels-alist))
+             (id (cdr (assoc choice labels-alist #'string=)))
+             (url (format "repos/%s/%s/issues/%s/labels/%s"
+                          owner repo issue id))
+             (resp (fj-delete url)))
+        (fedi-http--triage
+         resp
+         (lambda (_)
+           (fj-item-view-reload)
+           (message "Label %s removed from #%s!" choice issue)))))))
 
 ;;; ISSUES TL
 
