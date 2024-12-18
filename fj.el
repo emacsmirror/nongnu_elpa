@@ -1347,7 +1347,10 @@ TYPE is the item type."
   (pcase major-mode
     ('fj-issue-tl-mode (fj-issues-tl-reload))
     ('fj-item-view-mode (fj-item-view-reload))
-    ('fj-tl-repo-mode (fj-repo-tl-reload))
+    ((or 'fj-tl-repo-mode 'fj-user-repo-tl-mode)
+     (fj-repo-tl-reload))
+    ;; TODO: notifs-mode, commits-mode, users-mode (they don't have reload
+    ;; funs)
     (_ (user-error "Reload not implemented yet"))))
 
 (defun fj-issues-tl-reload ()
