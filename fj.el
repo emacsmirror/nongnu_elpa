@@ -2657,7 +2657,11 @@ ALL is a boolean, meaning also show read notifcations."
                      (if all "all" "unread")))
         (data (fj-get-notifications all)))
     (fedi-with-buffer buf 'fj-notifications-mode nil
-      (fj-render-notifications data))))
+      (fj-render-notifications data))
+    ;; FIXME: make this an option in `fedi-with-buffer'?
+    ;; else it just goes to point-min:
+    (with-current-buffer buf
+      (fj-item-next))))
 
 (defun fj-view-notifications-all ()
   "View all notifications for `fj-user'."
