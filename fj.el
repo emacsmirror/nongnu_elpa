@@ -114,6 +114,10 @@ etc."
   '((t :inherit font-lock-comment-face :weight bold))
   "Face for the title of a closed issue.")
 
+(defface fj-closed-issue-notif-face
+  '((t :inherit fj-closed-issue-face :underline t))
+  "Face for the title of a closed issue in notifications view.")
+
 (defface fj-user-face
   '((t :inherit font-lock-function-name-face))
   "User face.")
@@ -2685,21 +2689,21 @@ ALL is a boolean, meaning also show read notifcations."
       (insert
        (propertize (concat "#" number)
                    'face 'fj-comment-face)
-       (concat " "
-               (propertize
-                (fj-propertize-link .subject.title 'notif number
-                                    (unless unread 'fj-comment-face))
-                'fj-repo .repository.name
-                'fj-owner .repository.owner.login
-                'fj-url .subject.html_url
-                'fj-byline t) ; for nav
-               "\n"
-               (propertize
-                (concat .repository.owner.login "/" .repository.name)
-                'face (when (not unread) 'fj-comment-face))
-               "\n"
-               fedi-horiz-bar fedi-horiz-bar
-               "\n\n")))))
+       " "
+       (propertize
+        (fj-propertize-link .subject.title 'notif number
+                            (unless unread 'fj-closed-issue-notif-face))
+        'fj-repo .repository.name
+        'fj-owner .repository.owner.login
+        'fj-url .subject.html_url
+        'fj-byline t) ; for nav
+       "\n"
+       (propertize
+        (concat .repository.owner.login "/" .repository.name)
+        'face (when (not unread) 'fj-comment-face))
+       "\n"
+       fedi-horiz-bar fedi-horiz-bar
+       "\n\n"))))
 
 ;;; BROWSE
 
