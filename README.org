@@ -476,9 +476,9 @@ open an issue and ask, as it's trivial to expand the bookmarking code.
 ** Dependencies
 
 Hard dependencies (should all install with =mastodon.el=):
-- =request= (for uploading attachments), [[https://github.com/tkf/emacs-request][emacs-request]]
-- =persist= for storing some settings across sessions
-- =tp.el= for transient menus
+- =request= (for uploading attachments, [[https://github.com/tkf/emacs-request][emacs-request]])
+- =persist= (for storing some settings across sessions, [[https://elpa.gnu.org/packages/persist.html][persist]])
+- =tp.el= (for transient menus, [[https://codeberg.org/martianh/tp.el][tp.el]])
 
 Optional dependencies (install yourself, =mastodon.el= can use them):
 - =emojify= to use custom emoji (else we use builtin =emoji.el=)
