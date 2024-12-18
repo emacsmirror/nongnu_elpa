@@ -365,8 +365,8 @@ If we fail, return `fj-user'." ;; poss insane
   "U" #'fj-update-user-settings
   "b" #'fj-browse-view
   "C" #'fj-copy-item-url
-  "n" #'fj-issue-next
-  "p" #'fj-issue-prev
+  "n" #'fj-item-next
+  "p" #'fj-item-prev
   "g" #'fj-view-reload)
 
 (defvar-keymap fj-generic-tl-map
@@ -383,20 +383,21 @@ If we fail, return `fj-user'." ;; poss insane
   "U" #'fj-update-user-settings
   "C" #'fj-copy-item-url
   "b" #'fj-browse-view
-  "n" #'fj-issue-next
-  "p" #'fj-issue-prev
+  "n" #'fj-item-next
+  "p" #'fj-item-prev
   "g" #'fj-view-reload)
 
 ;;; NAV
 
-(defun fj-issue-next ()
-  "Go to next issue or comment."
+(defun fj-item-next ()
+  "Go to next item or notification.
+Should work for anything with an fj-byline property."
   (interactive)
   (fedi--goto-pos #'next-single-property-change 'fj-byline))
 
-
-(defun fj-issue-prev ()
-  "Goto previous issue or comment."
+(defun fj-item-prev ()
+  "Goto previous item or notification.
+Should work for anything with an fj-byline property."
   (interactive)
   (fedi--goto-pos #'previous-single-property-change 'fj-byline))
 
