@@ -2712,6 +2712,17 @@ ALL is a boolean, meaning also show read notifcations."
        fedi-horiz-bar fedi-horiz-bar
        "\n\n"))))
 
+(defun fj-mark-notifs-read ()
+  ""
+  (interactive)
+  (let ((endpoint "notifications")
+        (params '(("all" . "true")))
+        (resp (fj-put endpoint params)))
+    (fedi-http--triage
+     resp
+     (lambda (_)
+       (message "All notifications read!")))))
+
 ;;; BROWSE
 
 (defun fj-tl-browse-entry ()
