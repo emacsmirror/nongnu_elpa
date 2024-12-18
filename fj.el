@@ -1428,6 +1428,7 @@ JSON is the item's data to process the link with."
   "k" #'fj-item-view-close
   "o" #'fj-item-view-reopen
   "K" #'fj-item-view-comment-delete
+  "t" #'fj-issue-view-edit-title
   "s" #'fj-list-issues-search
   "S" #'fj-repo-search-tl
   "D" #'fj-view-pull-diff
@@ -1640,6 +1641,16 @@ RELOAD means we are reloading, so don't open in other window."
            fj-compose-repo-owner owner
            fj-compose-issue-number number)
      (fedi-post--update-status-fields))))
+
+(defun fj-issue-view-edit-title ()
+  "Edit the title of the item being viewed."
+  (interactive)
+  (fj-with-own-issue-or-repo
+   (let ((repo (fj--get-buffer-spec :repo))
+         (owner (fj--get-buffer-spec :owner))
+         (item (fj--get-buffer-spec :item)))
+     (fj-issue-edit-title repo owner item)
+     (fj-item-view-reload))))
 
 (defun fj-item-view-comment ()
   "Comment on the item currently being viewed."
