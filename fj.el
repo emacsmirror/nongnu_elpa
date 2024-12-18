@@ -366,7 +366,8 @@ If we fail, return `fj-user'." ;; poss insane
   "b" #'fj-browse-view
   "C" #'fj-copy-item-url
   "n" #'fj-issue-next
-  "p" #'fj-issue-prev)
+  "p" #'fj-issue-prev
+  "g" #'fj-view-reload)
 
 (defvar-keymap fj-generic-tl-map
   :doc "Generic timeline keymap."
@@ -383,7 +384,8 @@ If we fail, return `fj-user'." ;; poss insane
   "C" #'fj-copy-item-url
   "b" #'fj-browse-view
   "n" #'fj-issue-next
-  "p" #'fj-issue-prev)
+  "p" #'fj-issue-prev
+  "g" #'fj-view-reload)
 
 ;;; NAV
 
@@ -543,7 +545,6 @@ X and Y are sorting args."
   "c" #'fj-create-issue
   "s" #'fj-repo-search-tl
   "r" #'fj-repo-tl-readme
-  "g" #'fj-repo-tl-reload
   "B" #'fj-tl-browse-entry
   "L" #'fj-repo-copy-clone-url
   "j" #'imenu)
@@ -1077,7 +1078,7 @@ NEW-BODY is the new comment text to send."
      (lambda (resp)
        (let ((json (fj-resp-json resp)))
          (message "%s" (prin1-to-string json))
-         (fj-item-view-reload)
+         (fj-view-reload)
          (message "Label %s added to #%s!" choice issue))))))
 
 (defun fj-issue-label-remove (&optional repo owner issue)
@@ -1102,7 +1103,7 @@ NEW-BODY is the new comment text to send."
         (fedi-http--triage
          resp
          (lambda (_)
-           (fj-item-view-reload)
+           (fj-view-reload)
            (message "Label %s removed from #%s!" choice issue)))))))
 
 ;;; ISSUES TL
@@ -1122,7 +1123,6 @@ NEW-BODY is the new comment text to send."
   :doc "Map for `fj-issue-tl-mode', a tabluated list of issues."
   :parent fj-generic-tl-map ; has nav
   "C" #'fj-issues-tl-comment
-  "g" #'fj-issues-tl-reload
   "e" #'fj-issues-tl-edit
   "t" #'fj-issues-tl-edit-title
   "v" #'fj-issues-tl-view
@@ -1336,6 +1336,15 @@ TYPE is the item type."
           (t ; open is default
            (fj-list-issues-closed repo owner type)))))
 
+(defun fj-view-reload ()
+  "Try to reload the current view based on its major-mode."
+  (interactive)
+  (pcase major-mode
+    ('fj-issue-tl-mode (fj-issues-tl-reload))
+    ('fj-item-view-mode (fj-item-view-reload))
+    ('fj-tl-repo-mode (fj-repo-tl-reload))
+    (_ (user-error "Reload not implemented yet"))))
+
 (defun fj-issues-tl-reload ()
   "Reload current issues tabulated list view."
   (interactive)
@@ -1458,7 +1467,6 @@ JSON is the item's data to process the link with."
   :parent  fj-generic-map
   "e" #'fj-item-view-edit-item-at-point
   "c" #'fj-item-view-comment
-  "g" #'fj-item-view-reload
   "k" #'fj-item-view-close
   "o" #'fj-item-view-reopen
   "K" #'fj-item-view-comment-delete
