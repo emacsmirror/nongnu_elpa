@@ -725,25 +725,29 @@ MAX-ID is a flag to include the max_id pagination parameter."
             'success)
            ;; insert relationship (follows)
            (let-alist relationships
-             (let* ((followsp (mastodon-profile--follows-p
-                               (list .requested_by .following .followed_by)))
-                    (rels (mastodon-profile--relationships-get .id))
-                    (langs-filtered (if-let ((langs (alist-get 'languages rels)))
-                                        (concat " ("
-                                                (mapconcat #'identity langs " ")
-                                                ")")
-                                      "")))
-               (if followsp
-                   (mastodon-tl--set-face
-                    (concat (when (eq .following t)
-                              (format " | FOLLOWED BY YOU%s" langs-filtered))
-                            (when (eq .followed_by t)
-                              " | FOLLOWS YOU")
-                            (when (eq .requested_by t)
-                              " | REQUESTED TO FOLLOW YOU")
-                            "\n\n")
-                    'success)
-                 "")))) ; for insert call
+             (if (not .id)
+                 ;; sharkey has no relationships endpoint, returns 500.
+                 ;; or poss it has a different endpoint
+                 ""
+                 (let* ((followsp (mastodon-profile--follows-p
+                                   (list .requested_by .following .followed_by)))
+                        (rels (mastodon-profile--relationships-get .id))
+                        (langs-filtered (if-let ((langs (alist-get 'languages rels)))
+                                            (concat " ("
+                                                    (mapconcat #'identity langs " ")
+                                                    ")")
+                                          "")))
+                   (if followsp
+                       (mastodon-tl--set-face
+                        (concat (when (eq .following t)
+                                  (format " | FOLLOWED BY YOU%s" langs-filtered))
+                                (when (eq .followed_by t)
+                                  " | FOLLOWS YOU")
+                                (when (eq .requested_by t)
+                                  " | REQUESTED TO FOLLOW YOU")
+                                "\n\n")
+                        'success)
+                     ""))))) ; for insert call
           (mastodon-media--inline-images (point-min) (point))
           ;; widget items description
           (mastodon-widget--create
