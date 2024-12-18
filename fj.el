@@ -2402,6 +2402,15 @@ Optionally set PAGE and LIMIT."
      (fj-issue-edit-title repo owner number)
      (fj-issues-tl-reload))))
 
+(defun fj-issues-tl-add-label ()
+  "Add label to issue from tabulated issues listing."
+  (interactive)
+  (fj-with-entry
+   (let* ((number (fj-get-tl-col 0))
+          (owner (fj--get-buffer-spec :owner))
+          (repo (fj--get-buffer-spec :repo)))
+     (fj-issue-label-add repo owner number))))
+
 ;;; COMPOSING
 
 (defalias 'fj-compose-cancel #'fedi-post-cancel)
