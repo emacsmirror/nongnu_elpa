@@ -263,27 +263,27 @@ If we fail, return `fj-user'." ;; poss insane
 
 ;;; MACROS
 
-(defmacro fj-with-issue (&optional body)
+(defmacro fj-with-issue (&rest body)
   "Execute BODY if we are in an issue view or if issue at point."
   (declare (debug t))
   `(if (not (or (fj--get-buffer-spec :item)
                 (eq 'issue (fj--property 'item))))
        (user-error "Not issue here?")
-     ,body))
+     ,@body))
 
-(defmacro fj-with-item-view (&optional body)
+(defmacro fj-with-item-view (&rest body)
   "Execute BODY if we are in an item view."
   (declare (debug t))
   `(if (not (fj--get-buffer-spec :item))
        (user-error "Not in an issue view?")
-     ,body))
+     ,@body))
 
-(defmacro fj-with-own-repo (&optional body)
+(defmacro fj-with-own-repo (&rest body)
   "Execute BODY if a repo owned by `fj-user'."
   (declare (debug t))
   `(if (not (fj-own-repo-p))
        (user-error "Not in a repo you own")
-     ,body))
+     ,@body))
 
 (defmacro fj-with-own-issue (&rest body)
   "Execute BODY if issue is authored by `fj-user'."
