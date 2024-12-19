@@ -114,6 +114,10 @@ etc."
   '((t :inherit font-lock-comment-face :weight bold))
   "Face for the title of a closed issue.")
 
+(defface fj-closed-issue-notif-face
+  '((t :inherit fj-closed-issue-face :underline t))
+  "Face for the title of a closed issue in notifications view.")
+
 (defface fj-user-face
   '((t :inherit font-lock-function-name-face))
   "User face.")
@@ -202,12 +206,13 @@ Not used for items that are links.")
 (defun fj-issue-own-p ()
   "T if issue is authored by `fj-user'.
 Works in issue view mode or in issues tl."
-  (cond ((eq major-mode 'fj-item-view-mode)
-         (equal fj-user
-                (fj--get-buffer-spec :author)))
-        ((eq major-mode 'fj-issue-tl-mode)
-         (let* ((author (fj-get-tl-col 2)))
-           (equal fj-user author)))))
+  (pcase major-mode
+    ('fj-item-view-mode
+     (equal fj-user
+            (fj--get-buffer-spec :author)))
+    ('fj-issue-tl-mode
+     (let* ((author (fj-get-tl-col 2)))
+       (equal fj-user author)))))
 
 (defun fj-comment-own-p ()
   "T if comment is authored by `fj-user'."
@@ -261,29 +266,37 @@ If we fail, return `fj-user'." ;; poss insane
               (alist-get key x nil nil test-fun))
             list)))
 
+(defun fj-map-alist-to-cons (list k1 k2)
+  "Return an alist of values of K1 and K2 from LIST."
+  (let ((test-fun (when (stringp k1) #'equal)))
+    (mapcar (lambda (x)
+              (cons (alist-get k1 x nil nil test-fun)
+                    (alist-get k2 x nil nil test-fun)))
+            list)))
+
 ;;; MACROS
 
-(defmacro fj-with-issue (&optional body)
+(defmacro fj-with-issue (&rest body)
   "Execute BODY if we are in an issue view or if issue at point."
   (declare (debug t))
   `(if (not (or (fj--get-buffer-spec :item)
                 (eq 'issue (fj--property 'item))))
        (user-error "Not issue here?")
-     ,body))
+     ,@body))
 
-(defmacro fj-with-item-view (&optional body)
+(defmacro fj-with-item-view (&rest body)
   "Execute BODY if we are in an item view."
   (declare (debug t))
   `(if (not (fj--get-buffer-spec :item))
        (user-error "Not in an issue view?")
-     ,body))
+     ,@body))
 
-(defmacro fj-with-own-repo (&optional body)
+(defmacro fj-with-own-repo (&rest body)
   "Execute BODY if a repo owned by `fj-user'."
   (declare (debug t))
   `(if (not (fj-own-repo-p))
        (user-error "Not in a repo you own")
-     ,body))
+     ,@body))
 
 (defmacro fj-with-own-issue (&rest body)
   "Execute BODY if issue is authored by `fj-user'."
@@ -357,8 +370,9 @@ If we fail, return `fj-user'." ;; poss insane
   "U" #'fj-update-user-settings
   "b" #'fj-browse-view
   "C" #'fj-copy-item-url
-  "n" #'fj-issue-next
-  "p" #'fj-issue-prev)
+  "n" #'fj-item-next
+  "p" #'fj-item-prev
+  "g" #'fj-view-reload)
 
 (defvar-keymap fj-generic-tl-map
   :doc "Generic timeline keymap."
@@ -374,19 +388,21 @@ If we fail, return `fj-user'." ;; poss insane
   "U" #'fj-update-user-settings
   "C" #'fj-copy-item-url
   "b" #'fj-browse-view
-  "n" #'fj-issue-next
-  "p" #'fj-issue-prev)
+  "n" #'fj-item-next
+  "p" #'fj-item-prev
+  "g" #'fj-view-reload)
 
 ;;; NAV
 
-(defun fj-issue-next ()
-  "Go to next issue or comment."
+(defun fj-item-next ()
+  "Go to next item or notification.
+Should work for anything with an fj-byline property."
   (interactive)
   (fedi--goto-pos #'next-single-property-change 'fj-byline))
 
-
-(defun fj-issue-prev ()
-  "Goto previous issue or comment."
+(defun fj-item-prev ()
+  "Goto previous item or notification.
+Should work for anything with an fj-byline property."
   (interactive)
   (fedi--goto-pos #'previous-single-property-change 'fj-byline))
 
@@ -535,7 +551,6 @@ X and Y are sorting args."
   "c" #'fj-create-issue
   "s" #'fj-repo-search-tl
   "r" #'fj-repo-tl-readme
-  "g" #'fj-repo-tl-reload
   "B" #'fj-tl-browse-entry
   "L" #'fj-repo-copy-clone-url
   "j" #'imenu)
@@ -1045,7 +1060,7 @@ NEW-BODY is the new comment text to send."
 
 (defun fj-issue-label-add (&optional repo owner issue)
   "Add a label to ISSUE in REPO by OWNER."
-  (interactive "P")
+  (interactive)
   (let* ((repo (fj-read-user-repo repo))
          (issue (or issue
                     (fj--get-buffer-spec :item)
@@ -1066,10 +1081,36 @@ NEW-BODY is the new comment text to send."
          (resp (fj-post url params)))
     (fedi-http--triage
      resp
-     (lambda (_resp)
+     (lambda (resp)
        (let ((json (fj-resp-json resp)))
          (message "%s" (prin1-to-string json))
+         (fj-view-reload)
          (message "Label %s added to #%s!" choice issue))))))
+
+(defun fj-issue-label-remove (&optional repo owner issue)
+  "Remove label from ISSUE in REPO by OWNER."
+  (interactive)
+  (let* ((repo (fj-read-user-repo repo))
+         (issue (or issue
+                    (fj--get-buffer-spec :item)
+                    (fj-read-repo-issue repo)))
+         (owner (or owner fj-user)) ;; FIXME owner
+         (issue-labels (fj-issue-get-labels repo owner issue)))
+    (if (not issue-labels)
+        (user-error "No labels to remove")
+      (let* ((labels-alist (fj-map-alist-to-cons issue-labels 'name 'id))
+             (choice (completing-read
+                      (format "Remove label from #%s: " issue)
+                      labels-alist))
+             (id (cdr (assoc choice labels-alist #'string=)))
+             (url (format "repos/%s/%s/issues/%s/labels/%s"
+                          owner repo issue id))
+             (resp (fj-delete url)))
+        (fedi-http--triage
+         resp
+         (lambda (_)
+           (fj-view-reload)
+           (message "Label %s removed from #%s!" choice issue)))))))
 
 ;;; ISSUES TL
 
@@ -1088,7 +1129,6 @@ NEW-BODY is the new comment text to send."
   :doc "Map for `fj-issue-tl-mode', a tabluated list of issues."
   :parent fj-generic-tl-map ; has nav
   "C" #'fj-issues-tl-comment
-  "g" #'fj-issues-tl-reload
   "e" #'fj-issues-tl-edit
   "t" #'fj-issues-tl-edit-title
   "v" #'fj-issues-tl-view
@@ -1295,12 +1335,23 @@ TYPE is the item type."
         (owner (fj--get-buffer-spec :owner))
         (repo (fj--get-buffer-spec :repo))
         (type (fj--get-buffer-spec :type)))
-    (cond ((string= state "closed")
-           (fj-list-issues-all repo owner type))
-          ((string= state "all")
-           (fj-list-issues repo owner nil type))
-          (t ; open is default
-           (fj-list-issues-closed repo owner type)))))
+    (pcase state
+      ("closed" (fj-list-issues-all repo owner type))
+      ("all" (fj-list-issues repo owner nil type))
+      (_ ; open is default
+       (fj-list-issues-closed repo owner type)))))
+
+(defun fj-view-reload ()
+  "Try to reload the current view based on its major-mode."
+  (interactive)
+  (pcase major-mode
+    ('fj-issue-tl-mode (fj-issues-tl-reload))
+    ('fj-item-view-mode (fj-item-view-reload))
+    ((or 'fj-tl-repo-mode 'fj-user-repo-tl-mode)
+     (fj-repo-tl-reload))
+    ('fj-notifications-mode (fj-notifications-reload))
+    ;; TODO: commits-mode, users-mode (they don't have reload funs)
+    (_ (user-error "Reload not implemented yet"))))
 
 (defun fj-issues-tl-reload ()
   "Reload current issues tabulated list view."
@@ -1319,12 +1370,11 @@ TYPE is the item type."
         (owner (fj--get-buffer-spec :owner))
         (repo (fj--get-buffer-spec :repo))
         (type (fj--get-buffer-spec :type)))
-    (cond ((string= type "pulls")
-           (fj-list-issues repo owner state "all"))
-          ((string= type "all")
-           (fj-list-issues repo owner state "issues"))
-          (t ; issues default
-           (fj-list-issues repo owner state "pulls")))))
+    (pcase type
+      ("pulls" (fj-list-issues repo owner state "all"))
+      ("all" (fj-list-issues repo owner state "issues"))
+      (_ ; issues default
+       (fj-list-issues repo owner state "pulls")))))
 
 ;;; ISSUE VIEW
 (defvar fj-url-regex fedi-post-url-regex)
@@ -1424,10 +1474,10 @@ JSON is the item's data to process the link with."
   :parent  fj-generic-map
   "e" #'fj-item-view-edit-item-at-point
   "c" #'fj-item-view-comment
-  "g" #'fj-item-view-reload
   "k" #'fj-item-view-close
   "o" #'fj-item-view-reopen
   "K" #'fj-item-view-comment-delete
+  "t" #'fj-issue-view-edit-title
   "s" #'fj-list-issues-search
   "S" #'fj-repo-search-tl
   "D" #'fj-view-pull-diff
@@ -1460,6 +1510,8 @@ AUTHOR is of comment, OWNER is of repo."
         "\n\n"
         (fj-render-body .body comment)
         "\n"
+        (fj-render-reactions .id)
+        "\n"
         fedi-horiz-bar fedi-horiz-bar)
        'fj-comment comment
        'fj-comment-author .user.username
@@ -1471,6 +1523,28 @@ AUTHOR is the author of the parent issue.
 OWNER is the repo owner."
   (cl-loop for c in comments
            concat (fj-format-comment c author owner)))
+
+(defun fj-render-reactions (id)
+  "Render reactions for comment with ID."
+  (mapconcat (lambda (x)
+               (let ((user (map-nested-elt x '(user login))))
+                 (propertize
+                  (concat ":"
+                          (alist-get 'content x)
+                          ":")
+                  'help-echo user))) ;; broken by emojify
+             (fj-get-comment-reactions id)
+             " "))
+
+(defun fj-get-comment-reactions (id)
+  "Return reactions data for comment with ID."
+  ;; GET /repos/{owner}/{repo}/issues/comments/{id}/reactions
+  (fj-with-item-view
+   (let* ((repo (fj--get-buffer-spec :repo))
+          (owner (fj--get-buffer-spec :owner))
+          (endpoint (format "repos/%s/%s/issues/comments/%s/reactions"
+                            owner repo id)))
+     (fj-get endpoint))))
 
 (defun fj-prop-item-flag (str)
   "Propertize STR as author face in box."
@@ -1563,14 +1637,15 @@ RELOAD mean we reloaded."
             'fj-item-number number
             'fj-repo repo
             'fj-item-data item))
-          ;; timeline items:
-          (fj-render-timeline timeline .user.username owner)
+          ;; set vars before timeline so they're avail:
           (setq fj-current-repo repo)
           (setq fj-buffer-spec
                 `(:repo ,repo :owner ,owner :item ,number
                         :type ,(if pull-p :pull :issue)
                         :author ,.user.username :title ,.title
-                        :body ,.body :url ,.html_url)))))))
+                        :body ,.body :url ,.html_url))
+          ;; timeline items:
+          (fj-render-timeline timeline .user.username owner))))))
 
 (defun fj-item-view (&optional repo owner number reload pull)
   "View item NUMBER from REPO of OWNER.
@@ -1590,6 +1665,8 @@ RELOAD means we are reloading, so don't open in other window."
 ;;          (owner (fj--get-buffer-spec :owner))
 ;;          (repo (fj--get-buffer-spec :repo)))
 ;;      (fj-issue-comment repo number))))
+
+;;; ITEM VIEW ACTIONS
 
 (defun fj-item-view-reload ()
   "Reload the current item view."
@@ -1640,6 +1717,16 @@ RELOAD means we are reloading, so don't open in other window."
            fj-compose-repo-owner owner
            fj-compose-issue-number number)
      (fedi-post--update-status-fields))))
+
+(defun fj-issue-view-edit-title ()
+  "Edit the title of the item being viewed."
+  (interactive)
+  (fj-with-own-issue-or-repo
+   (let ((repo (fj--get-buffer-spec :repo))
+         (owner (fj--get-buffer-spec :owner))
+         (item (fj--get-buffer-spec :item)))
+     (fj-issue-edit-title repo owner item)
+     (fj-item-view-reload))))
 
 (defun fj-item-view-comment ()
   "Comment on the item currently being viewed."
@@ -1790,92 +1877,89 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
                             'face 'fj-name-face)))
       (insert
        (propertize
-        (cond ((equal .type "comment")
-               (fj-format-comment item author owner))
-              ((equal .type "close")
-               (format format-str user ts))
-              ((equal .type "reopen")
-               (format format-str user ts))
-              ((equal .type "change_title")
-               (format format-str user
-                       (propertize .old_title
-                                   'face '(:strike-through t))
-                       (propertize .new_title
-                                   'face 'fj-name-face)
-                       ts))
-              ((equal .type "comment_ref")
-               (let ((number (number-to-string
-                              .ref_issue.number)))
-                 (concat
-                  (format format-str user ts)
-                  "\n"
-                  (fj-propertize-link (concat .ref_issue.title " #" number)
-                                      'comment-ref number))))
-              ((equal .type "commit_ref")
-               (concat
-                (format format-str user ts)
-                "\n"
-                (fj-propertize-link (fj-get-html-link-desc .body)
-                                    'commit-ref .ref_commit_sha)))
-              ((equal .type "issue_ref")
-               (format format-str user .repository.full_name ts))
-              ((equal .type "label")
-               (format format-str user .label.name ts))
-              ;; PRs:
-              ;; FIXME: reimplement "pull_push" force-push and non-force
-              ;; format strings
-              ((equal .type "pull_push")
-               (let* ((json-array-type 'list)
-                      (json (json-read-from-string .body))
-                      (commits (alist-get 'commit_ids json))
-                      (force
-                       (not
-                        (eq :json-false
-                            (alist-get 'is_force_push json)))))
-                 (concat
-                  (format format-str user (if force "force pushed" "added")
-                          (if force (1- (length commits))
-                            (length commits))
-                          ts)
-                  ;; FIXME: fix force format string:
-                  ;; (format "%s force-pushed %s from %s to %s %s"
-                  ;; user branch c1 c2 ts)
-                  (if force
-                      (concat ": from "
-                              (fj-propertize-link
-                               (substring (car commits) 0 7))
-                              " to "
-                              (fj-propertize-link
-                               (substring (cadr commits) 0 7)))
-                    (cl-loop
-                     for c in commits
-                     for short = (substring c 0 7)
-                     concat
-                     (concat " "
-                             (fj-propertize-link short
-                                                 'commit-ref c)))))))
-              ((equal .type "merge_pull")
-               ;; FIXME: get commit and branch for merge:
-               ;; Commit is the *merge* commit, created by actually merging
-               ;; the proposed commits
-               ;; branch etc. details should be given at top, diff details to
-               ;; plain issue
-               (format format-str user ts))
-              ((equal .type "pull_ref")
-               (concat
-                (format format-str user ts)
-                "\n"
-                (fj-propertize-link .ref_issue.title 'comment-ref .ref_issue.number)))
-              ((equal .type "delete_branch")
-               (format format-str user
-                       (propertize .old_ref
-                                   'face 'fj-name-face)
-                       ts))
-              ;; reviews
-              ((equal .type "review")
-               (format format-str user ts))
-              (t ;; just so we never break the rest of the view:
-               (format "%s did unknown action %s" user ts)))
+        (pcase .type
+          ("comment" (fj-format-comment item author owner))
+          ("close" (format format-str user ts))
+          ("reopen" (format format-str user ts))
+          ("change_title"
+           (format format-str user
+                   (propertize .old_title
+                               'face '(:strike-through t))
+                   (propertize .new_title
+                               'face 'fj-name-face)
+                   ts))
+          ("comment_ref"
+           (let ((number (number-to-string
+                          .ref_issue.number)))
+             (concat
+              (format format-str user ts)
+              "\n"
+              (fj-propertize-link (concat .ref_issue.title " #" number)
+                                  'comment-ref number))))
+          ("commit_ref"
+           (concat
+            (format format-str user ts)
+            "\n"
+            (fj-propertize-link (fj-get-html-link-desc .body)
+                                'commit-ref .ref_commit_sha)))
+          ("issue_ref"
+           (format format-str user .repository.full_name ts))
+          ("label"
+           (format format-str user .label.name ts))
+          ;; PRs:
+          ;; FIXME: reimplement "pull_push" force-push and non-force
+          ;; format strings
+          ("pull_push"
+           (let* ((json-array-type 'list)
+                  (json (json-read-from-string .body))
+                  (commits (alist-get 'commit_ids json))
+                  (force
+                   (not
+                    (eq :json-false
+                        (alist-get 'is_force_push json)))))
+             (concat
+              (format format-str user (if force "force pushed" "added")
+                      (if force (1- (length commits))
+                        (length commits))
+                      ts)
+              ;; FIXME: fix force format string:
+              ;; (format "%s force-pushed %s from %s to %s %s"
+              ;; user branch c1 c2 ts)
+              (if force
+                  (concat ": from "
+                          (fj-propertize-link
+                           (substring (car commits) 0 7))
+                          " to "
+                          (fj-propertize-link
+                           (substring (cadr commits) 0 7)))
+                (cl-loop
+                 for c in commits
+                 for short = (substring c 0 7)
+                 concat
+                 (concat " "
+                         (fj-propertize-link short
+                                             'commit-ref c)))))))
+          ("merge_pull"
+           ;; FIXME: get commit and branch for merge:
+           ;; Commit is the *merge* commit, created by actually merging
+           ;; the proposed commits
+           ;; branch etc. details should be given at top, diff details to
+           ;; plain issue
+           (format format-str user ts))
+          ("pull_ref"
+           (concat
+            (format format-str user ts)
+            "\n"
+            (fj-propertize-link .ref_issue.title 'comment-ref .ref_issue.number)))
+          ("delete_branch"
+           (format format-str user
+                   (propertize .old_ref
+                               'face 'fj-name-face)
+                   ts))
+          ;; reviews
+          ("review" (format format-str user ts))
+          (_ ;; just so we never break the rest of the view:
+           (format "%s did unknown action %s" user ts)))
         'fj-item-data item)
        "\n\n"))))
 
@@ -2349,6 +2433,15 @@ Optionally set PAGE and LIMIT."
      (fj-issue-edit-title repo owner number)
      (fj-issues-tl-reload))))
 
+(defun fj-issues-tl-add-label ()
+  "Add label to issue from tabulated issues listing."
+  (interactive)
+  (fj-with-entry
+   (let* ((number (fj-get-tl-col 0))
+          (owner (fj--get-buffer-spec :owner))
+          (repo (fj--get-buffer-spec :repo)))
+     (fj-issue-label-add repo owner number))))
+
 ;;; COMPOSING
 
 (defalias 'fj-compose-cancel #'fedi-post-cancel)
@@ -2441,26 +2534,27 @@ Call response and update functions."
       (let* ((body (fedi-post--remove-docs))
              (repo fj-compose-repo)
              (response
-              (cond ((eq type 'new-comment)
-                     (fj-issue-comment repo
-                                       fj-compose-repo-owner
-                                       fj-compose-issue-number
-                                       body))
-                    ((eq type 'edit-comment)
-                     (fj-issue-comment-edit repo
-                                            fj-compose-repo-owner
-                                            fj-compose-issue-number
-                                            body))
-                    ((eq type 'edit-issue)
-                     (fj-issue-patch repo
-                                     fj-compose-repo-owner
-                                     fj-compose-issue-number
-                                     fj-compose-issue-title
-                                     body))
-                    (t ; new issue
-                     (fj-issue-post repo
-                                    fj-compose-repo-owner
-                                    fj-compose-issue-title body)))))
+              (pcase type
+                ('new-comment
+                 (fj-issue-comment repo
+                                   fj-compose-repo-owner
+                                   fj-compose-issue-number
+                                   body))
+                ('edit-comment
+                 (fj-issue-comment-edit repo
+                                        fj-compose-repo-owner
+                                        fj-compose-issue-number
+                                        body))
+                ('edit-issue
+                 (fj-issue-patch repo
+                                 fj-compose-repo-owner
+                                 fj-compose-issue-number
+                                 fj-compose-issue-title
+                                 body))
+                (_ ; new issue
+                 (fj-issue-post repo
+                                fj-compose-repo-owner
+                                fj-compose-issue-title body)))))
         (when response
           (with-current-buffer buf
             (fedi-post-kill))
@@ -2573,7 +2667,7 @@ Optionally set LIMIT to results."
   "GET notifications for `fj-user'.
 ALL is a boolean, meaning also return read notifications."
   ;; STATUS-TYPES and SUBJECT-TYPE are array strings."
-  (let ((params `(("all" . ,(symbol-name all))))
+  (let ((params `(("all" . ,all)))
         (endpoint "notifications"))
     (fj-get endpoint params)))
 
@@ -2582,31 +2676,42 @@ ALL is a boolean, meaning also return read notifications."
   (alist-get 'new
              (fj-get "notifications/new")))
 
-(defun fj-view-notifications (&optional all)
+(defun fj-view-notifications (&optional type)
   "View notifications for `fj-user'.
 ALL is a boolean, meaning also show read notifcations."
   (interactive)
-  (let ((buf (format "*fj-notifications-%s*"
-                     (if all "all" "unread")))
-        (data (fj-get-notifications all)))
-    (fedi-with-buffer buf 'fj-notifications-mode nil
-      (fj-render-notifications data))))
+  (let ((buf (format "*fj-notifications-%s*" (or type "unread")))
+        (data (fj-get-notifications
+               (if (string= type "all")
+                   "true" "false"))))
+    (if (not data)
+        ;; (progn
+        (when (y-or-n-p "No unread notifications. Load all?")
+          (fj-view-notifications-all))
+      (fedi-with-buffer buf 'fj-notifications-mode nil
+        (fj-render-notifications data))
+      ;; FIXME: make this an option in `fedi-with-buffer'?
+      ;; else it just goes to point-min:
+      (with-current-buffer buf
+        (setq fj-buffer-spec `(:type ,type))
+        (fj-item-next)))))
 
 (defun fj-view-notifications-all ()
   "View all notifications for `fj-user'."
   (interactive)
-  (fj-view-notifications t))
+  (fj-view-notifications "all"))
 
 (defun fj-view-notifications-unread ()
   "View unread notifications for `fj-user'."
   (interactive)
-  (fj-view-notifications))
+  (fj-view-notifications "unread"))
 
 (defun fj-notifications-unread-toggle ()
   "Switch between showing all notifications, and only showing unread."
   (interactive)
-  (fj-view-notifications
-   (not (string-suffix-p "all*" (buffer-name)))))
+  (let ((type (fj--get-buffer-spec :type)))
+    (fj-view-notifications
+     (if (string= type "all") "unread" "all"))))
 
 (defun fj-render-notifications (data)
   "Render notifications DATA."
@@ -2622,21 +2727,53 @@ ALL is a boolean, meaning also show read notifcations."
       (insert
        (propertize (concat "#" number)
                    'face 'fj-comment-face)
-       (concat " "
-               (propertize
-                (fj-propertize-link .subject.title 'notif number
-                                    (unless unread 'fj-comment-face))
-                'fj-repo .repository.name
-                'fj-owner .repository.owner.login
-                'fj-url .subject.html_url
-                'fj-byline t) ; for nav
-               "\n"
-               (propertize
-                (concat .repository.owner.login "/" .repository.name)
-                'face (when (not unread) 'fj-comment-face))
-               "\n"
-               fedi-horiz-bar fedi-horiz-bar
-               "\n\n")))))
+       " "
+       (propertize
+        (fj-propertize-link .subject.title 'notif number
+                            (unless unread 'fj-closed-issue-notif-face))
+        'fj-repo .repository.name
+        'fj-owner .repository.owner.login
+        'fj-url .subject.html_url
+        'fj-byline t) ; for nav
+       "\n"
+       (propertize
+        (concat .repository.owner.login "/" .repository.name)
+        'face (when (not unread) 'fj-comment-face))
+       "\n"
+       fedi-horiz-bar fedi-horiz-bar
+       "\n\n"))))
+
+(defun fj-mark-notifs-read ()
+  "Mark all notifications read."
+  (interactive)
+  (let ((endpoint "notifications")
+        (params '(("all" . "true")))
+        (resp (fj-put endpoint params)))
+    (fedi-http--triage
+     resp
+     (lambda (_)
+       (message "All notifications read!")
+       (fj-view-notifications-all)))))
+
+(defun fj-mark-notification-read (&optional id)
+  "Mark notification at point as read.
+Use ID if provided."
+  (interactive)
+  ;; PATCH /notifications/threads/{id}
+  (let* ((id (or id (fj--property 'item)))
+         (endpoint (format "notifications/threads/%s" id))
+         (resp (fj-patch endpoint)))
+    (fedi-http--triage
+     resp
+     (lambda (_)
+       (message "Notification %s read!" id)
+       (fj-notifications-reload)))))
+
+(defun fj-notifications-reload ()
+  "Reload current notifications view."
+  (interactive)
+  (let* ((type (fj--get-buffer-spec :type)))
+    (fj-view-notifications type)))
 
 ;;; BROWSE
 
@@ -2690,25 +2827,24 @@ Used for hitting RET on a given link."
         (owner (fj--get-buffer-spec :owner))
         (repo (fj--get-buffer-spec :repo))
         (item (fj--property 'item)))
-    (cond ((or (eq type 'tag)
-               (eq type 'comment-ref))
-           (fj-item-view repo owner item))
-          ;; ((eq type 'pull)
-          ;; (fj-item-view repo owner item nil :pull))
-          ((eq type 'handle)
-           (fj-user-repos-tl item))
-          ((or (eq type 'commit)
-               (eq type 'commit-ref))
-           (fj-view-commit-diff item))
-          ((eq type 'notif)
-           (let ((repo (fj--property 'fj-repo))
-                 (owner (fj--property 'fj-owner)))
-             (fj-item-view repo owner item)))
-          ((eq type 'shr)
-           (let ((url (fj--property 'shr-url)))
-             (shr-browse-url url)))
-          (t
-           (error "Unknown link type %s" type)))))
+    (pcase type
+      ((or 'tag 'comment-ref)
+       (fj-item-view repo owner item))
+      ;; ((eq type 'pull)
+      ;; (fj-item-view repo owner item nil :pull))
+      ('handle (fj-user-repos-tl item))
+      ((or  'commit 'commit-ref)
+       (fj-view-commit-diff item))
+      ('notif
+       (let ((repo (fj--property 'fj-repo))
+             (owner (fj--property 'fj-owner)))
+         (fj-item-view repo owner item)
+         (fj-mark-notification-read item)))
+      ('shr
+       (let ((url (fj--property 'shr-url)))
+         (shr-browse-url url)))
+      (_
+       (error "Unknown link type %s" type)))))
 
 (defun fj-do-link-action-mouse (event)
   "Do the action of the link at point.
