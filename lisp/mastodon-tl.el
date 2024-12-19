@@ -3322,15 +3322,15 @@ This location is defined by a non-nil value of
       (user-error "Update not available in this view")
     ;; FIXME: handle update for search and trending buffers
     (let* ((endpoint (mastodon-tl--endpoint))
-           (update-function (mastodon-tl--update-function)))
+           (update-function (mastodon-tl--update-function))
+           (id (mastodon-tl--newest-id)))
       ;; update a thread, without calling `mastodon-tl--updated-json':
       (if (mastodon-tl--buffer-type-eq 'thread)
           ;; load whole thread:
-          (progn (mastodon-tl--thread-do)
+          (progn (mastodon-tl--thread-do id)
                  (message "Loaded full thread."))
         ;; update other timelines:
-        (let* ((id (mastodon-tl--newest-id))
-               (params (mastodon-tl--update-params))
+        (let* ((params (mastodon-tl--update-params))
                (json (mastodon-tl--updated-json endpoint id params)))
           (if (not json)
               (user-error "Nothing to update")
