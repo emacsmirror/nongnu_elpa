@@ -2392,8 +2392,8 @@ programmatically and not crash into
                 (when unfolded-state
                   (plist-put mastodon-tl--buffer-spec
                              'thread-unfolded unfolded-state))
-                (mastodon-tl--timeline (alist-get 'ancestors context)
-                                       :thread)
+                (when-let ((ancestors (alist-get 'ancestors context)))
+                  (mastodon-tl--timeline ancestors :thread))
                 (goto-char (point-max))
                 (move-marker marker (point))
                 ;; print re-fetched toot:
@@ -2403,8 +2403,8 @@ programmatically and not crash into
                 (when mastodon-tl--display-media-p
                   (mastodon-media--inline-images marker ;start-pos
                                                  (point)))
-                (mastodon-tl--timeline (alist-get 'descendants context)
-                                       :thread)
+                (when-let ((descendants (alist-get 'descendants context)))
+                  (mastodon-tl--timeline descendants :thread))
                 ;; put point at the toot:
                 (goto-char (marker-position marker))
                 (mastodon-tl--goto-next-item :no-refresh)))))))))
