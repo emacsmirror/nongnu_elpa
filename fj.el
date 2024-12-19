@@ -206,12 +206,13 @@ Not used for items that are links.")
 (defun fj-issue-own-p ()
   "T if issue is authored by `fj-user'.
 Works in issue view mode or in issues tl."
-  (cond ((eq major-mode 'fj-item-view-mode)
-         (equal fj-user
-                (fj--get-buffer-spec :author)))
-        ((eq major-mode 'fj-issue-tl-mode)
-         (let* ((author (fj-get-tl-col 2)))
-           (equal fj-user author)))))
+  (pcase major-mode
+    ('fj-item-view-mode
+     (equal fj-user
+            (fj--get-buffer-spec :author)))
+    ('fj-issue-tl-mode
+     (let* ((author (fj-get-tl-col 2)))
+       (equal fj-user author)))))
 
 (defun fj-comment-own-p ()
   "T if comment is authored by `fj-user'."
@@ -1334,12 +1335,11 @@ TYPE is the item type."
         (owner (fj--get-buffer-spec :owner))
         (repo (fj--get-buffer-spec :repo))
         (type (fj--get-buffer-spec :type)))
-    (cond ((string= state "closed")
-           (fj-list-issues-all repo owner type))
-          ((string= state "all")
-           (fj-list-issues repo owner nil type))
-          (t ; open is default
-           (fj-list-issues-closed repo owner type)))))
+    (pcase state
+      ("closed" (fj-list-issues-all repo owner type))
+      ("all" (fj-list-issues repo owner nil type))
+      (_ ; open is default
+       (fj-list-issues-closed repo owner type)))))
 
 (defun fj-view-reload ()
   "Try to reload the current view based on its major-mode."
@@ -1370,12 +1370,11 @@ TYPE is the item type."
         (owner (fj--get-buffer-spec :owner))
         (repo (fj--get-buffer-spec :repo))
         (type (fj--get-buffer-spec :type)))
-    (cond ((string= type "pulls")
-           (fj-list-issues repo owner state "all"))
-          ((string= type "all")
-           (fj-list-issues repo owner state "issues"))
-          (t ; issues default
-           (fj-list-issues repo owner state "pulls")))))
+    (pcase type
+      ("pulls" (fj-list-issues repo owner state "all"))
+      ("all" (fj-list-issues repo owner state "issues"))
+      (_ ; issues default
+       (fj-list-issues repo owner state "pulls")))))
 
 ;;; ISSUE VIEW
 (defvar fj-url-regex fedi-post-url-regex)
@@ -2511,26 +2510,27 @@ Call response and update functions."
       (let* ((body (fedi-post--remove-docs))
              (repo fj-compose-repo)
              (response
-              (cond ((eq type 'new-comment)
-                     (fj-issue-comment repo
-                                       fj-compose-repo-owner
-                                       fj-compose-issue-number
-                                       body))
-                    ((eq type 'edit-comment)
-                     (fj-issue-comment-edit repo
-                                            fj-compose-repo-owner
-                                            fj-compose-issue-number
-                                            body))
-                    ((eq type 'edit-issue)
-                     (fj-issue-patch repo
-                                     fj-compose-repo-owner
-                                     fj-compose-issue-number
-                                     fj-compose-issue-title
-                                     body))
-                    (t ; new issue
-                     (fj-issue-post repo
-                                    fj-compose-repo-owner
-                                    fj-compose-issue-title body)))))
+              (pcase type
+                ('new-comment
+                 (fj-issue-comment repo
+                                   fj-compose-repo-owner
+                                   fj-compose-issue-number
+                                   body))
+                ('edit-comment
+                 (fj-issue-comment-edit repo
+                                        fj-compose-repo-owner
+                                        fj-compose-issue-number
+                                        body))
+                ('edit-issue
+                 (fj-issue-patch repo
+                                 fj-compose-repo-owner
+                                 fj-compose-issue-number
+                                 fj-compose-issue-title
+                                 body))
+                (_ ; new issue
+                 (fj-issue-post repo
+                                fj-compose-repo-owner
+                                fj-compose-issue-title body)))))
         (when response
           (with-current-buffer buf
             (fedi-post-kill))
@@ -2779,25 +2779,23 @@ Used for hitting RET on a given link."
         (owner (fj--get-buffer-spec :owner))
         (repo (fj--get-buffer-spec :repo))
         (item (fj--property 'item)))
-    (cond ((or (eq type 'tag)
-               (eq type 'comment-ref))
-           (fj-item-view repo owner item))
-          ;; ((eq type 'pull)
-          ;; (fj-item-view repo owner item nil :pull))
-          ((eq type 'handle)
-           (fj-user-repos-tl item))
-          ((or (eq type 'commit)
-               (eq type 'commit-ref))
-           (fj-view-commit-diff item))
-          ((eq type 'notif)
-           (let ((repo (fj--property 'fj-repo))
-                 (owner (fj--property 'fj-owner)))
-             (fj-item-view repo owner item)))
-          ((eq type 'shr)
-           (let ((url (fj--property 'shr-url)))
-             (shr-browse-url url)))
-          (t
-           (error "Unknown link type %s" type)))))
+    (pcase type
+      ((or 'tag 'comment-ref)
+       (fj-item-view repo owner item))
+      ;; ((eq type 'pull)
+      ;; (fj-item-view repo owner item nil :pull))
+      ('handle (fj-user-repos-tl item))
+      ((or  'commit 'commit-ref)
+       (fj-view-commit-diff item))
+      ('notif
+       (let ((repo (fj--property 'fj-repo))
+             (owner (fj--property 'fj-owner)))
+         (fj-item-view repo owner item)))
+      ('shr
+       (let ((url (fj--property 'shr-url)))
+         (shr-browse-url url)))
+      (_
+       (error "Unknown link type %s" type)))))
 
 (defun fj-do-link-action-mouse (event)
   "Do the action of the link at point.
