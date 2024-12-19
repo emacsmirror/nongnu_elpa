@@ -1349,8 +1349,8 @@ TYPE is the item type."
     ('fj-item-view-mode (fj-item-view-reload))
     ((or 'fj-tl-repo-mode 'fj-user-repo-tl-mode)
      (fj-repo-tl-reload))
-    ;; TODO: notifs-mode, commits-mode, users-mode (they don't have reload
-    ;; funs)
+    ('fj-notifications-mode (fj-notifications-reload))
+    ;; TODO: commits-mode, users-mode (they don't have reload funs)
     (_ (user-error "Reload not implemented yet"))))
 
 (defun fj-issues-tl-reload ()
@@ -2643,7 +2643,7 @@ Optionally set LIMIT to results."
   "GET notifications for `fj-user'.
 ALL is a boolean, meaning also return read notifications."
   ;; STATUS-TYPES and SUBJECT-TYPE are array strings."
-  (let ((params `(("all" . ,(symbol-name all))))
+  (let ((params `(("all" . ,all)))
         (endpoint "notifications"))
     (fj-get endpoint params)))
 
@@ -2652,39 +2652,42 @@ ALL is a boolean, meaning also return read notifications."
   (alist-get 'new
              (fj-get "notifications/new")))
 
-(defun fj-view-notifications (&optional all)
+(defun fj-view-notifications (&optional type)
   "View notifications for `fj-user'.
 ALL is a boolean, meaning also show read notifcations."
   (interactive)
-  (let ((buf (format "*fj-notifications-%s*"
-                     (if all "all" "unread")))
-        (data (fj-get-notifications all)))
+  (let ((buf (format "*fj-notifications-%s*" (or type "unread")))
+        (data (fj-get-notifications
+               (if (string= type "all")
+                   "true" "false"))))
     (if (not data)
-        (progn
-          (message "No unread notifications, loading all")
-          (fj-view-notifications t))
+        ;; (progn
+        (when (y-or-n-p "No unread notifications. Load all?")
+          (fj-view-notifications-all))
       (fedi-with-buffer buf 'fj-notifications-mode nil
         (fj-render-notifications data))
       ;; FIXME: make this an option in `fedi-with-buffer'?
       ;; else it just goes to point-min:
       (with-current-buffer buf
+        (setq fj-buffer-spec `(:type ,type))
         (fj-item-next)))))
 
 (defun fj-view-notifications-all ()
   "View all notifications for `fj-user'."
   (interactive)
-  (fj-view-notifications t))
+  (fj-view-notifications "all"))
 
 (defun fj-view-notifications-unread ()
   "View unread notifications for `fj-user'."
   (interactive)
-  (fj-view-notifications))
+  (fj-view-notifications "unread"))
 
 (defun fj-notifications-unread-toggle ()
   "Switch between showing all notifications, and only showing unread."
   (interactive)
-  (fj-view-notifications
-   (not (string-suffix-p "all*" (buffer-name)))))
+  (let ((type (fj--get-buffer-spec :type)))
+    (fj-view-notifications
+     (if (string= type "all") "unread" "all"))))
 
 (defun fj-render-notifications (data)
   "Render notifications DATA."
@@ -2717,7 +2720,7 @@ ALL is a boolean, meaning also show read notifcations."
        "\n\n"))))
 
 (defun fj-mark-notifs-read ()
-  ""
+  "Mark all notifications read."
   (interactive)
   (let ((endpoint "notifications")
         (params '(("all" . "true")))
@@ -2725,7 +2728,28 @@ ALL is a boolean, meaning also show read notifcations."
     (fedi-http--triage
      resp
      (lambda (_)
-       (message "All notifications read!")))))
+       (message "All notifications read!")
+       (fj-view-notifications-all)))))
+
+(defun fj-mark-notification-read (&optional id)
+  "Mark notification at point as read.
+Use ID if provided."
+  (interactive)
+  ;; PATCH /notifications/threads/{id}
+  (let* ((id (or id (fj--property 'item)))
+         (endpoint (format "notifications/threads/%s" id))
+         (resp (fj-patch endpoint)))
+    (fedi-http--triage
+     resp
+     (lambda (_)
+       (message "Notification %s read!" id)
+       (fj-notifications-reload)))))
+
+(defun fj-notifications-reload ()
+  "Reload current notifications view."
+  (interactive)
+  (let* ((type (fj--get-buffer-spec :type)))
+    (fj-view-notifications type)))
 
 ;;; BROWSE
 
@@ -2790,7 +2814,8 @@ Used for hitting RET on a given link."
       ('notif
        (let ((repo (fj--property 'fj-repo))
              (owner (fj--property 'fj-owner)))
-         (fj-item-view repo owner item)))
+         (fj-item-view repo owner item)
+         (fj-mark-notification-read item)))
       ('shr
        (let ((url (fj--property 'shr-url)))
          (shr-browse-url url)))
