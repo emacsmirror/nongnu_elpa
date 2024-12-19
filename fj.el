@@ -1666,6 +1666,8 @@ RELOAD means we are reloading, so don't open in other window."
 ;;          (repo (fj--get-buffer-spec :repo)))
 ;;      (fj-issue-comment repo number))))
 
+;;; ITEM VIEW ACTIONS
+
 (defun fj-item-view-reload ()
   "Reload the current item view."
   (interactive)
