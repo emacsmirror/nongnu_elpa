@@ -1877,92 +1877,89 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
                             'face 'fj-name-face)))
       (insert
        (propertize
-        (cond ((equal .type "comment")
-               (fj-format-comment item author owner))
-              ((equal .type "close")
-               (format format-str user ts))
-              ((equal .type "reopen")
-               (format format-str user ts))
-              ((equal .type "change_title")
-               (format format-str user
-                       (propertize .old_title
-                                   'face '(:strike-through t))
-                       (propertize .new_title
-                                   'face 'fj-name-face)
-                       ts))
-              ((equal .type "comment_ref")
-               (let ((number (number-to-string
-                              .ref_issue.number)))
-                 (concat
-                  (format format-str user ts)
-                  "\n"
-                  (fj-propertize-link (concat .ref_issue.title " #" number)
-                                      'comment-ref number))))
-              ((equal .type "commit_ref")
-               (concat
-                (format format-str user ts)
-                "\n"
-                (fj-propertize-link (fj-get-html-link-desc .body)
-                                    'commit-ref .ref_commit_sha)))
-              ((equal .type "issue_ref")
-               (format format-str user .repository.full_name ts))
-              ((equal .type "label")
-               (format format-str user .label.name ts))
-              ;; PRs:
-              ;; FIXME: reimplement "pull_push" force-push and non-force
-              ;; format strings
-              ((equal .type "pull_push")
-               (let* ((json-array-type 'list)
-                      (json (json-read-from-string .body))
-                      (commits (alist-get 'commit_ids json))
-                      (force
-                       (not
-                        (eq :json-false
-                            (alist-get 'is_force_push json)))))
-                 (concat
-                  (format format-str user (if force "force pushed" "added")
-                          (if force (1- (length commits))
-                            (length commits))
-                          ts)
-                  ;; FIXME: fix force format string:
-                  ;; (format "%s force-pushed %s from %s to %s %s"
-                  ;; user branch c1 c2 ts)
-                  (if force
-                      (concat ": from "
-                              (fj-propertize-link
-                               (substring (car commits) 0 7))
-                              " to "
-                              (fj-propertize-link
-                               (substring (cadr commits) 0 7)))
-                    (cl-loop
-                     for c in commits
-                     for short = (substring c 0 7)
-                     concat
-                     (concat " "
-                             (fj-propertize-link short
-                                                 'commit-ref c)))))))
-              ((equal .type "merge_pull")
-               ;; FIXME: get commit and branch for merge:
-               ;; Commit is the *merge* commit, created by actually merging
-               ;; the proposed commits
-               ;; branch etc. details should be given at top, diff details to
-               ;; plain issue
-               (format format-str user ts))
-              ((equal .type "pull_ref")
-               (concat
-                (format format-str user ts)
-                "\n"
-                (fj-propertize-link .ref_issue.title 'comment-ref .ref_issue.number)))
-              ((equal .type "delete_branch")
-               (format format-str user
-                       (propertize .old_ref
-                                   'face 'fj-name-face)
-                       ts))
-              ;; reviews
-              ((equal .type "review")
-               (format format-str user ts))
-              (t ;; just so we never break the rest of the view:
-               (format "%s did unknown action %s" user ts)))
+        (pcase .type
+          ("comment" (fj-format-comment item author owner))
+          ("close" (format format-str user ts))
+          ("reopen" (format format-str user ts))
+          ("change_title"
+           (format format-str user
+                   (propertize .old_title
+                               'face '(:strike-through t))
+                   (propertize .new_title
+                               'face 'fj-name-face)
+                   ts))
+          ("comment_ref"
+           (let ((number (number-to-string
+                          .ref_issue.number)))
+             (concat
+              (format format-str user ts)
+              "\n"
+              (fj-propertize-link (concat .ref_issue.title " #" number)
+                                  'comment-ref number))))
+          ("commit_ref"
+           (concat
+            (format format-str user ts)
+            "\n"
+            (fj-propertize-link (fj-get-html-link-desc .body)
+                                'commit-ref .ref_commit_sha)))
+          ("issue_ref"
+           (format format-str user .repository.full_name ts))
+          ("label"
+           (format format-str user .label.name ts))
+          ;; PRs:
+          ;; FIXME: reimplement "pull_push" force-push and non-force
+          ;; format strings
+          ("pull_push"
+           (let* ((json-array-type 'list)
+                  (json (json-read-from-string .body))
+                  (commits (alist-get 'commit_ids json))
+                  (force
+                   (not
+                    (eq :json-false
+                        (alist-get 'is_force_push json)))))
+             (concat
+              (format format-str user (if force "force pushed" "added")
+                      (if force (1- (length commits))
+                        (length commits))
+                      ts)
+              ;; FIXME: fix force format string:
+              ;; (format "%s force-pushed %s from %s to %s %s"
+              ;; user branch c1 c2 ts)
+              (if force
+                  (concat ": from "
+                          (fj-propertize-link
+                           (substring (car commits) 0 7))
+                          " to "
+                          (fj-propertize-link
+                           (substring (cadr commits) 0 7)))
+                (cl-loop
+                 for c in commits
+                 for short = (substring c 0 7)
+                 concat
+                 (concat " "
+                         (fj-propertize-link short
+                                             'commit-ref c)))))))
+          ("merge_pull"
+           ;; FIXME: get commit and branch for merge:
+           ;; Commit is the *merge* commit, created by actually merging
+           ;; the proposed commits
+           ;; branch etc. details should be given at top, diff details to
+           ;; plain issue
+           (format format-str user ts))
+          ("pull_ref"
+           (concat
+            (format format-str user ts)
+            "\n"
+            (fj-propertize-link .ref_issue.title 'comment-ref .ref_issue.number)))
+          ("delete_branch"
+           (format format-str user
+                   (propertize .old_ref
+                               'face 'fj-name-face)
+                   ts))
+          ;; reviews
+          ("review" (format format-str user ts))
+          (_ ;; just so we never break the rest of the view:
+           (format "%s did unknown action %s" user ts)))
         'fj-item-data item)
        "\n\n"))))
 
