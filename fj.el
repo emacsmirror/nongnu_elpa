@@ -1510,6 +1510,8 @@ AUTHOR is of comment, OWNER is of repo."
         "\n\n"
         (fj-render-body .body comment)
         "\n"
+        (fj-render-reactions .id)
+        "\n"
         fedi-horiz-bar fedi-horiz-bar)
        'fj-comment comment
        'fj-comment-author .user.username
@@ -1521,6 +1523,28 @@ AUTHOR is the author of the parent issue.
 OWNER is the repo owner."
   (cl-loop for c in comments
            concat (fj-format-comment c author owner)))
+
+(defun fj-render-reactions (id)
+  "Render reactions for comment with ID."
+  (mapconcat (lambda (x)
+               (let ((user (map-nested-elt x '(user login))))
+                 (propertize
+                  (concat ":"
+                          (alist-get 'content x)
+                          ":")
+                  'help-echo user))) ;; broken by emojify
+             (fj-get-comment-reactions id)
+             " "))
+
+(defun fj-get-comment-reactions (id)
+  "Return reactions data for comment with ID."
+  ;; GET /repos/{owner}/{repo}/issues/comments/{id}/reactions
+  (fj-with-item-view
+   (let* ((repo (fj--get-buffer-spec :repo))
+          (owner (fj--get-buffer-spec :owner))
+          (endpoint (format "repos/%s/%s/issues/comments/%s/reactions"
+                            owner repo id)))
+     (fj-get endpoint))))
 
 (defun fj-prop-item-flag (str)
   "Propertize STR as author face in box."
@@ -1613,14 +1637,15 @@ RELOAD mean we reloaded."
             'fj-item-number number
             'fj-repo repo
             'fj-item-data item))
-          ;; timeline items:
-          (fj-render-timeline timeline .user.username owner)
+          ;; set vars before timeline so they're avail:
           (setq fj-current-repo repo)
           (setq fj-buffer-spec
                 `(:repo ,repo :owner ,owner :item ,number
                         :type ,(if pull-p :pull :issue)
                         :author ,.user.username :title ,.title
-                        :body ,.body :url ,.html_url)))))))
+                        :body ,.body :url ,.html_url))
+          ;; timeline items:
+          (fj-render-timeline timeline .user.username owner))))))
 
 (defun fj-item-view (&optional repo owner number reload pull)
   "View item NUMBER from REPO of OWNER.
