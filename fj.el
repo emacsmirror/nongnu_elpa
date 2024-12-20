@@ -1351,7 +1351,17 @@ TYPE is the item type."
      (fj-repo-tl-reload))
     ('fj-notifications-mode (fj-notifications-reload))
     ;; TODO: commits-mode, users-mode (they don't have reload funs)
+    ('fj-users-mode (fj-users-reload))
     (_ (user-error "Reload not implemented yet"))))
+
+(defun fj-users-reload ()
+  "Reload a users listing view.
+Repo's stargazers or watchers."
+  (let ((repo (fj--get-buffer-spec :repo))
+        (owner (fj--get-buffer-spec :owner)))
+    (if (string-suffix-p "stargazers*" (buffer-name))
+        (fj-repo-stargazers repo owner)
+      (fj-repo-watchers repo owner))))
 
 (defun fj-issues-tl-reload ()
   "Reload current issues tabulated list view."
