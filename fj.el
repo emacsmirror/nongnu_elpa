@@ -1847,7 +1847,7 @@ ENDPOINT is the API endpoint to hit."
     ("change_title" . "%s changed title from \"%s\" to \"%s\" %s")
     ("commit_ref" . "%s referenced this item from a commit %s")
     ("issue_ref" . "%s referenced this issue from %s %s")
-    ("label" . "%s added the %s label %s")
+    ("label" . "%s %s the %s label %s")
     ;; PRs:
     ("pull_push" . "%s %s %d commits %s")
     ("merge_pull" . "%s merged this pull request %s")
@@ -1905,7 +1905,8 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
           ("issue_ref"
            (format format-str user .repository.full_name ts))
           ("label"
-           (format format-str user .label.name ts))
+           (let ((action (if (string= .body "1") "added" "removed")))
+             (format format-str user action .label.name ts)))
           ;; PRs:
           ;; FIXME: reimplement "pull_push" force-push and non-force
           ;; format strings
