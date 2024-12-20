@@ -2708,7 +2708,8 @@ ALL is a boolean, meaning also return read notifications."
 
 (defun fj-view-notifications (&optional type)
   "View notifications for `fj-user'.
-ALL is a boolean, meaning also show read notifcations."
+TYPE is either \"all\" or \"unread\", meaning which set of notifs
+to display."
   (interactive)
   (let ((buf (format "*fj-notifications-%s*" (or type "unread")))
         (data (fj-get-notifications
@@ -2776,9 +2777,9 @@ ALL is a boolean, meaning also show read notifcations."
 (defun fj-mark-notifs-read ()
   "Mark all notifications read."
   (interactive)
-  (let ((endpoint "notifications")
-        (params '(("all" . "true")))
-        (resp (fj-put endpoint params)))
+  (let* ((endpoint "notifications")
+         (params '(("all" . "true")))
+         (resp (fj-put endpoint params)))
     (fedi-http--triage
      resp
      (lambda (_)
