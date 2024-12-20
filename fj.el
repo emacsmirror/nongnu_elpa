@@ -1853,7 +1853,7 @@ ENDPOINT is the API endpoint to hit."
     ("merge_pull" . "%s merged this pull request %s")
     ("pull_ref" . "%s referenced a PR that will close this %s")
     ("delete_branch" . "%s deleted branch %s %s")
-    ("review" . "%s approved these changes %s")
+    ("review" . "%s %s changes %s")
     ;; FIXME: add a request for changes review? not just approval?
     ))
 
@@ -1958,17 +1958,36 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
                                'face 'fj-name-face)
                    ts))
           ;; reviews
-          ("review" (format format-str user ts))
+          ("review"
+           (let ((review (fj-get-review .review_id)))
+             (let-alist review
+               ;; FIXME: actually render reviews
+               (let ((state (pcase .state
+                              ("APPROVED"
+                               (concat (downcase .state) " these"))
+                              ("REQUEST_CHANGES"
+                               "requested"))))
+                 (format format-str user state ts)))))
           (_ ;; just so we never break the rest of the view:
            (format "%s did unknown action %s" user ts)))
         'fj-item-data item)
        "\n\n"))))
 
+(defun fj-get-review (review-id)
+  "Get review data for REVIEW-ID."
+  ;; /repos/{owner}/{repo}/pulls/{index}/reviews/{id}
+  (let* ((repo (fj--get-buffer-spec :repo))
+         (owner (fj--get-buffer-spec :owner))
+         (item-id (fj--get-buffer-spec :item))
+         (endpoint (format "repos/%s/%s/pulls/%s/reviews/%s"
+                           owner repo item-id review-id)))
+    (fj-get endpoint)))
+
 (defun fj-get-html-link-desc (str)
-"Return a description string from HTML link STR."
-(save-match-data
-  (string-match "<a[^\n]*>\\(?2:[^\n]*\\)</a>" str)
-  (match-string 2 str)))
+  "Return a description string from HTML link STR."
+  (save-match-data
+    (string-match "<a[^\n]*>\\(?2:[^\n]*\\)</a>" str)
+    (match-string 2 str)))
 
 (defun fj-propertize-link (str &optional type item face)
   "Propertize a link with text STR.
