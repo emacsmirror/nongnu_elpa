@@ -1592,8 +1592,9 @@ OWNER is the repo owner."
   "Render ITEM number NUMBER, in REPO and its TIMELINE.
 OWNER is the repo owner.
 RELOAD mean we reloaded."
-  (fedi-with-buffer (format "*fj-item-%s*" number) 'fj-item-view-mode
-                    (not reload)
+  (fedi-with-buffer (format "*fj-%s-item-%s*" repo number)
+      'fj-item-view-mode
+      (not reload)
     (let ((header-line-indent " "))
       (header-line-indent-mode 1) ; broken?
       (let-alist item
