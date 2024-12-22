@@ -1607,7 +1607,8 @@ RELOAD mean we reloaded."
                            (propertize .title
                                        'face 'fj-item-face))))
           (insert
-           ;; header stuff (forge has: state, status, milestone, labels, marks, assignees):
+           ;; header stuff
+           ;; (forge has: state, status, milestone, labels, marks, assignees):
            (propertize
             (concat
              "State: " .state
@@ -1620,6 +1621,7 @@ RELOAD mean we reloaded."
                "")
              ;; PR stuff:
              (if pull-p
+                 ;; FIXME: format string for merged PRs
                  (format
                   "\n%s wants to merge from %s into %s"
                   (propertize .user.username
@@ -1845,6 +1847,8 @@ ENDPOINT is the API endpoint to hit."
                        (car (seq-first entry)))
                    (fj--get-buffer-spec :item)))
          (merge-type (completing-read "Merge type: " fj-merge-types)))
+     ;; FIXME: add branch to prompt:
+     ;; (it is not provided in the pull tl listing data :/ )
      (when (y-or-n-p (format "Merge PR #%s into %s?" number repo))
        (let ((resp (fj-pull-merge-post repo owner number merge-type)))
          (fedi-http--triage resp
