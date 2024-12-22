@@ -432,10 +432,7 @@ NO-JSON means return the raw response."
                    (fedi-http--get-json url params)))))
     (if no-json
         ;; return response as string:
-        (with-current-buffer resp
-          (goto-char (point-min))
-          (re-search-forward "^$" nil 'move)
-          (buffer-substring (point) (point-max)))
+        (fj-resp-str resp)
       (cond ((or (eq (caar resp) 'errors)
                  (eq (caar resp) 'message))
              (user-error "I am Error: %s Endpoint: %s"
@@ -443,6 +440,13 @@ NO-JSON means return the raw response."
                          endpoint))
             (t
              resp)))))
+
+(defun fj-resp-str (resp)
+  "Return the response string from RESP, an HTTP response buffer."
+  (with-current-buffer resp
+    (goto-char (point-min))
+    (re-search-forward "^$" nil 'move)
+    (buffer-substring (point) (point-max))))
 
 (defun fj-resp-json (resp)
   "Parse JSON from RESP, a buffer."
