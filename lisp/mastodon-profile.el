@@ -730,7 +730,7 @@ MAX-ID is a flag to include the max_id pagination parameter."
                  ;; or poss it has a different endpoint
                  ""
                  (let* ((followsp (mastodon-profile--follows-p
-                                   (list .requested_by .following .followed_by)))
+                                   (list .requested_by .following .followed_by .blocked_by)))
                         (rels (mastodon-profile--relationships-get .id))
                         (langs-filtered (if-let ((langs (alist-get 'languages rels)))
                                             (concat " ("
@@ -745,6 +745,8 @@ MAX-ID is a flag to include the max_id pagination parameter."
                                   " | FOLLOWS YOU")
                                 (when (eq .requested_by t)
                                   " | REQUESTED TO FOLLOW YOU")
+                                (when (eq .blocked_by t)
+                                  " | BLOCKS YOU")
                                 "\n\n")
                         'success)
                      ""))))) ; for insert call
