@@ -92,6 +92,8 @@
 (autoload 'mastodon-media--image-or-cached "mastodon-media")
 (autoload 'mastodon-toot--base-toot-or-item-json "mastodon-toot")
 (autoload 'mastodon-search--load-link-posts "mastodon-search")
+(autoload 'mastodon-notifications--current-type "mastodon-notifications")
+(autoload 'mastodon-notifications--timeline "mastodon-notifications")
 
 (defvar mastodon-toot--visibility)
 (defvar mastodon-toot-mode)
