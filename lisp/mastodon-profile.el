@@ -758,9 +758,8 @@ MAX-ID is a flag to include the max_id pagination parameter."
            (lambda (widget &rest _ignore)
              (let ((value (widget-value widget)))
                (funcall
-                (alist-get type
-                           mastodon-profile--account-view-alist)
-                value))))
+                (alist-get value
+                           mastodon-profile--account-view-alist)))))
           (insert "\n")
           (setq mastodon-tl--update-point (point))))
       ;; split insert of items from insert of profile:
