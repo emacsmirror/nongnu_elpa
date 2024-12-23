@@ -1622,9 +1622,10 @@ RELOAD mean we reloaded."
                "")
              ;; PR stuff:
              (if pull-p
-                 ;; FIXME: format string for merged PRs
                  (format
-                  "\n%s wants to merge from %s into %s"
+                  (if (eq :json-false .merged)
+                      "\n%s wants to merge from %s into %s"
+                    "\n%s merged from %s into %s")
                   (propertize .user.username
                               'face 'fj-name-face)
                   ;; FIXME: make links work! data doesn't have branch URLs
