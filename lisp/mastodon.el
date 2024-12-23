@@ -6,7 +6,7 @@
 ;; Author: Johnson Denen <johnson.denen@gmail.com>
 ;;         Marty Hiatt <mousebot@disroot.org>
 ;; Maintainer: Marty Hiatt <mousebot@disroot.org>
-;; Version: 1.1.7
+;; Version: 1.1.8
 ;; Package-Requires: ((emacs "28.1") (request "0.3.0") (persist "0.4") (tp "0.6"))
 ;; Homepage: https://codeberg.org/martianh/mastodon.el
 
@@ -36,7 +36,7 @@
 ;; file at <https://codeberg.org/martianh/mastodon.el>.
 
 ;;; Code:
-(require 'cl-lib) ; for `cl-some' call in mastodon
+(require 'cl-lib) ; for `cl-some' call in `mastodon'
 (eval-when-compile (require 'subr-x))
 (require 'url)
 (require 'thingatpt)
@@ -228,7 +228,7 @@ and X others...\"."
     (define-key map (kbd "k")      #'mastodon-toot--toggle-bookmark)
     (define-key map (kbd "r")      #'mastodon-toot--reply)
     (define-key map (kbd "C")      #'mastodon-toot--copy-toot-url)
-    (define-key map (kbd "o")      #'mastodon-toot--open-toot-url)
+    (define-key map (kbd "o")      #'mastodon-toot--browse-toot-url)
     (define-key map (kbd "v")      #'mastodon-tl--poll-vote)
     (define-key map (kbd "E")      #'mastodon-toot--view-toot-edits)
     (define-key map (kbd "T")      #'mastodon-tl--thread)
@@ -417,7 +417,8 @@ MAX-ID is a request parameter for pagination."
          "v1"
        "v2"))
     (with-current-buffer (get-buffer-create buffer)
-      (use-local-map mastodon-notifications--map))))
+      (use-local-map mastodon-notifications--map))
+    (message "Loading your notifications... Done")))
 
 ;; URL lookup: should be available even if `mastodon.el' not loaded:
 
@@ -530,7 +531,8 @@ Calls `mastodon-tl--get-buffer-type', which see."
     (when mastodon-toot--enable-custom-instance-emoji
       (mastodon-toot--enable-custom-emoji)))
   (mastodon-profile--fetch-server-account-settings)
-  (when mastodon-tl--highlight-current-toot
+  (when (and mastodon-tl--highlight-current-toot
+             (fboundp #'cursor-face-highlight-mode))
     (cursor-face-highlight-mode)) ; 29.1
   ;; make `thing-at-point' functions work:
   (setq-local thing-at-point-provider-alist

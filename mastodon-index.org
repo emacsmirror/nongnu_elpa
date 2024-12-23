@@ -66,6 +66,7 @@
 |                  | mastodon-notifications--get-follow-requests       | Display follow request notifications in buffer.                                |
 |                  | mastodon-notifications--get-follows               | Display follow notifications in buffer.                                        |
 | @                | mastodon-notifications--get-mentions              | Display mention notifications in buffer.                                       |
+|                  | mastodon-notifications--get-policy                | Return the notification filtering policy.                                      |
 |                  | mastodon-notifications--get-polls                 | Display poll notifications in buffer.                                          |
 |                  | mastodon-notifications--get-single-notif          | Return a single notification JSON for v2 notifs.                               |
 |                  | mastodon-notifications--get-statuses              | Display status notifications in buffer.                                        |
@@ -116,6 +117,7 @@
 |                  | mastodon-search-mode                              | Toggle mastodon search minor mode.                                             |
 | /                | mastodon-switch-to-buffer                         | Switch to a live mastodon buffer.                                              |
 |                  | mastodon-tl--announcements                        | Display announcements from your instance.                                      |
+|                  | mastodon-tl--block-domain                         | Read a domain and block it.                                                    |
 | B                | mastodon-tl--block-user                           | Query for USER-HANDLE from current status and block that user.                 |
 | <mouse-2>        | mastodon-tl--click-image-or-video                 | Click to play video with `mpv.el'.                                             |
 |                  | mastodon-tl--copy-image-caption                   | Copy the caption of the image at point.                                        |
@@ -152,10 +154,11 @@
 | SPC              | mastodon-tl--scroll-up-command                    | Call `scroll-up-command', loading more toots if necessary.                     |
 |                  | mastodon-tl--single-toot                          | View toot at point in separate buffer.                                         |
 |                  | mastodon-tl--some-followed-tags-timeline          | Prompt for some tags, and open a timeline for them.                            |
-| RET, T           | mastodon-tl--thread                               | Open thread buffer for toot at point or with THREAD-ID.                        |
+| RET, T           | mastodon-tl--thread                               | Open thread buffer for toot at point.                                          |
 |                  | mastodon-tl--toggle-sensitive-image               | Toggle dislay of sensitive image at point.                                     |
 |                  | mastodon-tl--toggle-spoiler-in-thread             | Toggler content warning for all posts in current thread.                       |
 | c                | mastodon-tl--toggle-spoiler-text-in-toot          | Toggle the visibility of the spoiler text in the current toot.                 |
+|                  | mastodon-tl--unblock-domain                       | Read a blocked domain and unblock it.                                          |
 | C-S-b            | mastodon-tl--unblock-user                         | Query for USER-HANDLE from list of blocked users and unblock that user.        |
 |                  | mastodon-tl--unfilter-user-languages              | Remove any language filters for USER-HANDLE.                                   |
 |                  | mastodon-tl--unfold-post                          | Unfold the toot at point if it is folded (read-more).                          |
@@ -170,6 +173,7 @@
 |                  | mastodon-tl--view-whole-thread                    | From a thread view, view entire thread.                                        |
 | t                | mastodon-toot                                     | Update instance with new toot. Content is captured in a new buffer.            |
 | C-c C-a          | mastodon-toot--attach-media                       | Prompt for an attachment FILE with DESCRIPTION.                                |
+| o                | mastodon-toot--browse-toot-url                    | Browse URL of toot at point.                                                   |
 | C-c C-k          | mastodon-toot--cancel                             | Kill new-toot buffer/window. Does not POST content.                            |
 | C-c C-v          | mastodon-toot--change-visibility                  | Change the current visibility to the next valid value.                         |
 | C-c !            | mastodon-toot--clear-all-attachments              | Remove all attachments from a toot draft.                                      |
@@ -189,7 +193,6 @@
 | .                | mastodon-toot--list-boosters                      | List the boosters of toot at point.                                            |
 | ,                | mastodon-toot--list-favouriters                   | List the favouriters of toot at point.                                         |
 |                  | mastodon-toot--open-draft-toot                    | Prompt for a draft and compose a toot with it.                                 |
-| o                | mastodon-toot--open-toot-url                      | Open URL of toot at point.                                                     |
 | i                | mastodon-toot--pin-toot-toggle                    | Pin or unpin user's toot at point.                                             |
 | r                | mastodon-toot--reply                              | Reply to toot at `point'.                                                      |
 |                  | mastodon-toot--save-draft                         | Save the current compose toot text as a draft.                                 |
@@ -277,6 +280,9 @@
 | mastodon-media--hide-sensitive-media               | Whether media marked as sensitive should be hidden.                           |
 | mastodon-media--preview-max-height                 | Max height of any media attachment preview to be shown in timelines.          |
 | mastodon-mode-hook                                 | Hook run when entering Mastodon mode.                                         |
+| mastodon-notifications-check-for-updates           | Whether to regularly check for new notifications.                             |
+| mastodon-notifications-grouped-names-count         | The number of notification authors to display.                                |
+| mastodon-notifications-updates-interval            | How often to check for new notifications, in seconds.                         |
 | mastodon-profile-mode-hook                         | Hook run after entering or leaving `mastodon-profile-mode'.                   |
 | mastodon-profile-note-in-foll-reqs                 | If non-nil, show a user's profile note in follow request notifications.       |
 | mastodon-profile-note-in-foll-reqs-max-length      | The max character length for user profile note in follow requests.            |
