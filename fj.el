@@ -1979,7 +1979,14 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
                    ts))
           ;; reviews
           ("review"
-           (let ((review (fj-get-review .review_id)))
+           (let* ((repo (fj--get-buffer-spec :repo))
+                  (owner (fj--get-buffer-spec :owner))
+                  (review (fj-get-review repo owner
+                                         .ref_issue.number
+                                         .review_id))
+                  (comments (fj-get-review-comments repo owner
+                                                    .ref_issue.number
+                                                    .review_id)))
              (let-alist review
                ;; FIXME: actually render reviews
                (let ((state (pcase .state
@@ -1993,13 +2000,18 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
         'fj-item-data item)
        "\n\n"))))
 
-(defun fj-get-review (review-id)
+(defun fj-get-review (repo owner item-id review-id)
   "Get review data for REVIEW-ID."
   ;; /repos/{owner}/{repo}/pulls/{index}/reviews/{id}
-  (let* ((repo (fj--get-buffer-spec :repo))
-         (owner (fj--get-buffer-spec :owner))
-         (item-id (fj--get-buffer-spec :item))
-         (endpoint (format "repos/%s/%s/pulls/%s/reviews/%s"
+  (let* ((endpoint (format "repos/%s/%s/pulls/%s/reviews/%s"
+                           owner repo item-id review-id)))
+    (fj-get endpoint)))
+
+(defun fj-get-review-comments (repo owner item-id review-id)
+  "Get review comments.
+Use REVIEW-ID for ITEM-ID in REPO by OWNER."
+  ;; /repos/{owner}/{repo}/pulls/{index}/reviews/{id}/comments
+  (let ((endpoint (format  "repos/%s/%s/pulls/%s/reviews/%s/comments"
                            owner repo item-id review-id)))
     (fj-get endpoint)))
 
