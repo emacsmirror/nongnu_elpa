@@ -1979,29 +1979,44 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
                    ts))
           ;; reviews
           ("review"
-           (let* ((repo (fj--get-buffer-spec :repo))
-                  (owner (fj--get-buffer-spec :owner))
-                  (review (fj-get-review repo owner
-                                         .ref_issue.number
-                                         .review_id))
-                  (comments (fj-get-review-comments repo owner
-                                                    .ref_issue.number
-                                                    .review_id)))
-             (let-alist review
-               ;; FIXME: actually render reviews
-               (let ((state (pcase .state
-                              ("APPROVED"
-                               (concat (downcase .state) " these"))
-                              ("REQUEST_CHANGES"
-                               "requested"))))
-                 (format format-str user state ts)))))
+           (fj-render-review .review_id ts format-str user))
           (_ ;; just so we never break the rest of the view:
            (format "%s did unknown action %s" user ts)))
         'fj-item-data item)
        "\n\n"))))
 
+(defun fj-render-review (review-id ts format-str user)
+  "Render code review with REVIEW-ID.
+TS, FORMAT-STR and USER are from `fj-render-timeline-item', which see.
+Renders a review heading and review comments."
+  (let* ((repo (fj--get-buffer-spec :repo))
+         (owner (fj--get-buffer-spec :owner))
+         (item-id (fj--get-buffer-spec :item))
+         (review (fj-get-review repo owner
+                                item-id review-id))
+         (comments (fj-get-review-comments repo owner
+                                           item-id review-id)))
+    (let-alist review
+      (let ((state (pcase .state
+                     ("APPROVED"
+                      (concat (downcase .state) " these"))
+                     ("REQUEST_CHANGES"
+                      "requested"))))
+        (concat
+         (format format-str user state ts)
+         ;; FIXME: display mini-diff here:
+         (cl-loop for c in comments
+                  concat
+                  (let-alist c
+                    ;; FIXME: this should be a normal comment header line:
+                    (format "\n%s commented %s:\n%s"
+                            (propertize .user.login
+                                        'face 'fj-name-face)
+                            ts .body))))))))
+
 (defun fj-get-review (repo owner item-id review-id)
-  "Get review data for REVIEW-ID."
+  "Get review data for REVIEW-ID.
+In ITEM-ID in REPO by OWNER."
   ;; /repos/{owner}/{repo}/pulls/{index}/reviews/{id}
   (let* ((endpoint (format "repos/%s/%s/pulls/%s/reviews/%s"
                            owner repo item-id review-id)))
