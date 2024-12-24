@@ -1511,25 +1511,34 @@ AUTHOR is of comment, OWNER is of repo."
                   (date-to-time .created_at))))
       (propertize
        (concat
-        (fj-render-item-user (concat .user.username))
-        (propertize " "
-                    'face 'fj-item-byline-face)
-        (fj-author-or-owner-str .user.username author)
-        (propertize " "
-                    'face 'fj-item-byline-face)
-        (fj-author-or-owner-str .user.username nil owner)
-        (fj-edited-str-maybe .created_at .updated_at)
-        (propertize (fj-issue-right-align-str stamp)
-                    'face 'fj-item-byline-face)
+        (fj-format-comment-header
+         .user.username author owner
+         (fj-edited-str-maybe .created_at .updated_at)
+         stamp)
         "\n\n"
-        (fj-render-body .body comment)
-        "\n"
-        (fj-render-reactions .id)
-        "\n"
+        (fj-render-body .body comment) "\n"
+        (fj-render-reactions .id) "\n"
         fedi-horiz-bar fedi-horiz-bar)
        'fj-comment comment
        'fj-comment-author .user.username
        'fj-comment-id .id))))
+
+(defun fj-format-comment-header (username author owner edited ts)
+  "Format a comment header line.
+USERNAME is the commenter, AUTHOR is of the item, OWNER of the repo.
+EDITED is a formatted string if the item is edited.
+TS is a formatted timestamp."
+  (concat
+   (fj-render-item-user username)
+   (propertize " "
+               'face 'fj-item-byline-face)
+   (fj-author-or-owner-str username author)
+   (propertize " "
+               'face 'fj-item-byline-face)
+   (fj-author-or-owner-str username nil owner)
+   edited ;; (fj-edited-str-maybe .created_at .updated_at)
+   (propertize (fj-issue-right-align-str ts)
+               'face 'fj-item-byline-face)))
 
 (defun fj-render-comments (comments &optional author owner)
   "Render a list of COMMENTS.
@@ -2002,17 +2011,30 @@ Renders a review heading and review comments."
                       (concat (downcase .state) " these"))
                      ("REQUEST_CHANGES"
                       "requested"))))
-        (concat
-         (format format-str user state ts)
-         ;; FIXME: display mini-diff here:
-         (cl-loop for c in comments
-                  concat
-                  (let-alist c
-                    ;; FIXME: this should be a normal comment header line:
-                    (format "\n%s commented %s:\n%s"
-                            (propertize .user.login
-                                        'face 'fj-name-face)
-                            ts .body))))))))
+        (propertize
+         (concat
+          (format format-str user state ts)
+          ;; FIXME: display mini-diff here:
+          (cl-loop for c in comments
+                   concat
+                   (fj-format-review-comment c nil ;; FIXME: author
+                                             owner ts)))
+         'fj-review review)))))
+
+(defun fj-format-review-comment (comment author owner ts)
+  "Format a review COMMENT.
+AUTHOR of item, OWNER of repo, TS is a timestamp."
+  (let-alist comment
+    (propertize
+     (concat
+      "\n"
+      (fj-format-comment-header
+       .user.login author
+       owner "" ;; FIXME: (fj-edited-str-maybe .created_at .updated_at)
+       ts)
+      "\n" .body)
+     'fj-review-comment comment
+     'line-prefix "  "))) ;; indent
 
 (defun fj-get-review (repo owner item-id review-id)
   "Get review data for REVIEW-ID.
