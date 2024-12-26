@@ -202,18 +202,18 @@ notification to be tested."
     (with-temp-buffer (funcall fun sample)
                       (buffer-substring-no-properties (point-min) (point-max)))))
 
-(ert-deftest mastodon-notifications--test-byline-concat ()
+(ert-deftest mastodon-notifications--test-byline-action-str ()
   "Ensure proper suffix is appended to action."
   (should (and
-           (string= " Mentioned you"
-                    (mastodon-notifications--byline-concat "Mentioned"))
-           (string= " Followed you"
-                    (mastodon-notifications--byline-concat "Followed"))
-           (string= " Favourited your status from"
-                    (mastodon-notifications--byline-concat "Favourited"))
-           (string= " Boosted your status from"
-                    (mastodon-notifications--byline-concat "Boosted"))
-           (string= " Posted a post"
-                    (mastodon-notifications--byline-concat "Posted")))))
+           (string= " Mentioned you\n"
+                    (mastodon-notifications--byline-action-str "Mentioned"))
+           (string= " Followed you\n"
+                    (mastodon-notifications--byline-action-str "Followed"))
+           (string= " Favourited your post\n"
+                    (mastodon-notifications--byline-action-str "Favourited"))
+           (string= " Boosted your post\n"
+                    (mastodon-notifications--byline-action-str "Boosted"))
+           (string= " Posted a post\n"
+                    (mastodon-notifications--byline-action-str "Posted")))))
 
 
