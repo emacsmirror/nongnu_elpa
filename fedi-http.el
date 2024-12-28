@@ -106,8 +106,8 @@ SILENT means don't message."
 
 (defun fedi-http--triage (response success)
   "Determine if RESPONSE was successful.
-Call SUCCESS if successful. Message status and JSON error from
-RESPONSE if unsuccessful."
+If successful, call SUCCESS with single arg RESPONSE.
+If unsuccessful, message status and JSON error from RESPONSE."
   (let ((status (condition-case err
                     (with-current-buffer response
                       (fedi-http--status))
