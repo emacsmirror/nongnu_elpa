@@ -104,6 +104,8 @@
   nil :interactive)
 
 (autoload 'special-mode "simple")
+(autoload 'mastodon-tl--thread-do "mastodon-tl")
+(autoload 'mastodon-notifications--get-unread-count "mastodon-notifications")
 
 (defvar mastodon-tl--highlight-current-toot)
 (defvar mastodon-notifications--map)
@@ -460,6 +462,13 @@ MAX-ID is a request parameter for pagination."
     (with-current-buffer (get-buffer-create buffer)
       (use-local-map mastodon-notifications--map))
     (message "Loading your notifications... Done")))
+
+;;;###autoload
+(defun mastodon-notifications-check ()
+  "Check for the number of unread notifications."
+  (interactive)
+  (let ((count (mastodon-notifications--get-unread-count)))
+    (message "Unread notifications: %s" count)))
 
 ;; URL lookup: should be available even if `mastodon.el' not loaded:
 
