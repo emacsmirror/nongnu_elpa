@@ -790,6 +790,20 @@ QUERY is a search term to filter by."
         (fj-get endpoint params)
       (t (format "%s" (error-message-string err))))))
 
+(defun fj-issues-search (query &optional owner state type)
+  "Make a GET request for issues matching QUERY.
+Optionally limit search by OWNER, STATE, or TYPE."
+  ;; GET /repos/issues/search
+  (let* ((endpoint "repos/issues/search")
+         (params `(("q" . ,query)
+                   ("limit" . "100")
+                   ("owner" . ,owner)
+                   ("state" . ,state)
+                   ("type" . ,type))))
+    (condition-case err
+        (fj-get endpoint params)
+      (t (format "%s" (error-message-string err))))))
+
 (defun fj-get-item (repo &optional owner number type)
   "GET ISSUE NUMBER, in REPO by OWNER.
 If TYPE is :pull, get a pull request, not issue."
