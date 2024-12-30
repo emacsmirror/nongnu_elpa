@@ -235,8 +235,8 @@ Strict-Transport-Security: max-age=31536000
                   (mastodon-tl--relative-time-description timestamp)))
               (check (seconds expected)
                 (should (string= (format-seconds-since seconds) expected))))
-    (check 1 "1 sec ago")
-    (check 59 "59 secs ago")
+    (check 1 "just now")
+    (check 59 "just now")
     (check 60 "1 min ago")
     (check 89 "1 min ago")            ;; rounding down
     (check 91 "1 min ago") ;"2 minutes ago")             ;; rounding up
