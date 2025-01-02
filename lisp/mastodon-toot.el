@@ -611,7 +611,7 @@ base toot."
 Uses `lingva.el'."
   (interactive)
   (if mastodon-tl--buffer-spec
-      (if-let ((toot (mastodon-tl--property 'item-json)))
+      (if-let* ((toot (mastodon-tl--property 'item-json)))
           (condition-case x
               (lingva-translate nil
                                 (mastodon-tl--content toot)
@@ -1979,7 +1979,7 @@ Added to `after-change-functions'."
     (save-match-data
       (let* ((fill-column 67))
         (goto-char (point-min))
-        (when-let ((prop (text-property-search-forward 'toot-reply)))
+        (when-let* ((prop (text-property-search-forward 'toot-reply)))
           (fill-region (prop-match-beginning prop)
                        (point)))))))
 

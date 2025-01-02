@@ -377,7 +377,7 @@ The string returned is passed to `mastodon-notifications--insert-note'.
 TYPE is a symbol, a member of `mastodon-notifiations--types'.
 FILTERS STATUS PROFILE-NOTE FOLLOWER-NAME GROUP NOTE."
   (let ((body
-         (if-let ((match (assoc "warn" filters)))
+         (if-let* ((match (assoc "warn" filters)))
              (mastodon-tl--spoiler status (cadr match))
            (mastodon-tl--clean-tabs-and-nl
             (cond ((mastodon-tl--has-spoiler status)

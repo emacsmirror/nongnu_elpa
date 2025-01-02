@@ -338,7 +338,7 @@ image-data prop so it can be toggled."
   "Callback function processing the `url-retrieve' response for URL.
 URL is a full-sized image URL attached to a timeline image.
 STATUS-PLIST is a plist of status events as per `url-retrieve'."
-  (if-let (error-response (plist-get status-plist :error))
+  (if-let* (error-response (plist-get status-plist :error))
       (user-error "error in loading image: %S" error-response)
     (when mastodon-media--enable-image-caching
       (unless (url-is-cached url) ;; cache if not already cached
