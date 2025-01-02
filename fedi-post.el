@@ -582,7 +582,7 @@ Added to `after-change-functions'."
     (save-match-data
       (let* ((fill-column 67))
         (goto-char (point-min))
-        (when-let ((prop (text-property-search-forward 'post-reply)))
+        (when-let* ((prop (text-property-search-forward 'post-reply)))
           (fill-region (prop-match-beginning prop)
                        (point)))))))
 
