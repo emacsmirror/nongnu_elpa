@@ -702,8 +702,9 @@ Set SPLIT to t to split all input given."
 
 (defun gnosis--get-deck-name (&optional id)
   "Get deck name for ID, or prompt for deck name when ID is nil."
-  (when (equal (gnosis-select 'name 'decks) nil)
-    (error "No decks found.  Please create a deck first with `gnosis-add-deck'"))
+  (when (and (equal (gnosis-select 'name 'decks) nil)
+	     (y-or-n-p "No decks found, create deck?"))
+    (gnosis-add-deck (read-string "Deck name: ")))
   (if id
       (gnosis-get 'name 'decks `(= id ,id))
     (funcall gnosis-completing-read-function "Deck: " (gnosis-select 'name 'decks))))
@@ -786,33 +787,6 @@ LENGTH: length of id, default to a random number between 10-15."
         (gnosis-generate-id length)
       id)))
 
-(defun gnosis-add-note-fields (deck type main options answer extra tags suspend image second-image)
-  "Insert fields for new note.
-
-DECK: Deck NAME, as a string, for new note.
-TYPE: Note type e.g \"mcq\"
-MAIN: Note's main part
-OPTIONS: Note's options, e.g choices for mcq for OR hints for
-cloze/basic type
-ANSWER: Correct answer for note, for MCQ is an integer while for
-cloze/basic a string/list of the right answer(s)
-EXTRA: Extra information to display after answering note
-TAGS: Tags to organize notes
-SUSPEND: Integer value of 1 or 0, where 1 suspends the card
-IMAGE: Image to display during review.
-SECOND-IMAGE: Image to display after user-input.
-
-If a gnosis--insert-into fails, the whole transaction will be."
-  (let* ((deck-id (gnosis--get-deck-id deck))
-	 (note-id (gnosis-generate-id)))
-    (emacsql-with-transaction gnosis-db
-      ;; Refer to `gnosis-db-schema-SCHEMA' e.g `gnosis-db-schema-review-log'
-      (gnosis--insert-into 'notes `([,note-id ,type ,main ,options ,answer ,tags ,deck-id]))
-      (gnosis--insert-into 'review  `([,note-id ,gnosis-algorithm-gnosis-value
-						,gnosis-algorithm-amnesia-value]))
-      (gnosis--insert-into 'review-log `([,note-id ,(gnosis-algorithm-date)
-						   ,(gnosis-algorithm-date) 0 0 0 0 ,suspend 0]))
-      (gnosis--insert-into 'extras `([,note-id ,extra ,image ,second-image])))))
 
 ;; Adding note(s) consists firstly of a hidden 'gnosis-add-note--TYPE'
 ;; function that does the computation & error checking to generate a
@@ -969,7 +943,6 @@ Refer to `gnosis-add-note--y-or-n' for more information about keyword values."
 			   :images (gnosis-select-images)
 			   :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))
 
-
 (cl-defun gnosis-add-note--cloze (&key deck note tags (suspend 0) extra (images nil))
   "Add cloze type note.
 
@@ -1014,43 +987,8 @@ EXTRA: Extra information displayed after user-input."
 	 (hints (gnosis-cloze-extract-hints cloze-contents)))
     (cl-loop for cloze in clozes
 	     for hint in hints
-	     do (gnosis-add-note-fields deck "cloze" notags-note hint cloze extra tags suspend
-					(car images) (cdr images)))))
-
-(defun gnosis-add-note-cloze (deck)
-  "Add note(s) of type cloze interactively to selected deck.
-
-DECK: Deck name to add gnosis
-
-Note with clozes, format for clozes is as follows:
-      This is a {c1:cloze} note type.
-      This is a {{c1::cloze}} note type.
-
-Anki like syntax is supported with double brackes and colon, as well
-as single brackets({}) and colon(:), or even a mix.
-
-One cloze note may have multiple clozes
-Example:
-      {c1:Streptococcus agalactiae (GBS)} and {c1:Listeria
-      monocytogenes} are CAMP test positive
-
-For each cX: tag, there will be gerenated a cloze note type.
-Example:
-      {c1:Preformed enterotoxins} from
-      {c2:Staphylococcus aureus} causes {c3:rapid} onset
-      food poisoning
-
-Generates 3 cloze note types.  Where the \"main\" part of the note is
-the full note, with the cloze(s) extracted & used as the \"answer\".
-
-See `gnosis-add-note--cloze' for more reference."
-  (gnosis-add-note--cloze :deck deck
-			  :note (gnosis-read-string-from-buffer
-				 (or (car gnosis-cloze-guidance) "")
-				 (or (cdr gnosis-cloze-guidance) ""))
-			  :extra (gnosis-read-string-from-buffer "Extra" "")
-			  :images (gnosis-select-images)
-			  :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))
+	     do (gnosis-add-thema-fields deck "cloze" notags-note hint cloze extra tags suspend
+				         nil))))
 
 (cl-defun gnosis-mc-cloze-extract-options (str &optional (char gnosis-mc-cloze-separator))
   "Extract options for MC-CLOZE note type from STR.
@@ -1109,34 +1047,9 @@ answer."
 		 :images (gnosis-select-images)
 		 :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))))
 
-;;;###autoload
-(defun gnosis-add-note (&optional deck type)
-  "Create note(s) as TYPE interactively.
-
-DECK: Deck name to add gnosis
-TYPE: Type of gnosis note, must be one of `gnosis-note-types'"
-  (interactive)
-  (when gnosis-testing
-    (unless (y-or-n-p "You are using a testing environment! Continue?")
-      (error "Aborted")))
-  (let* ((deck (or deck (gnosis--get-deck-name)))
-	 (type (or type (completing-read "Type: " gnosis-note-types nil t)))
-	 (func-name (intern (format "gnosis-add-note-%s" (downcase type)))))
-    (if (fboundp func-name)
-	(progn (funcall func-name deck)
-	       (pcase (cadr (read-multiple-choice
-			     "Add more gnosis?"
-			     '((?y "yes")
-			       (?r "repeat")
-			       (?n "no"))))
-		 ("yes" (gnosis-add-note))
-		 ("repeat" (gnosis-add-note deck type))
-		 ("no" nil)))
-      (message "No such type"))))
-
 (defun gnosis-mcq-answer (id)
   "Choose the correct answer, from mcq choices for question ID."
-  (let ((choices (gnosis-get 'options 'notes `(= id ,id)))
+  (let ((choices (gnosis-get 'hypothesis 'notes `(= id ,id)))
 	(history-add-new-input nil)) ;; Disable history
     (gnosis-completing-read "Answer: " choices)))
 
@@ -1220,48 +1133,9 @@ Compare 2 strings, ignoring case and whitespace."
 	     (downcase (replace-regexp-in-string "\\s-" "" str1))
 	     (downcase (replace-regexp-in-string "\\s-" "" str2)))))
 
-
-(defun gnosis-directory-files (&optional dir regex)
-  "Return a list of file paths, relative to DIR directory.
-
-DIR is the base directory path from which to start the recursive search.
-REGEX is the regular expression pattern to match the file names against.
-
-This function traverses the subdirectories of DIR recursively,
-collecting file paths that match the regular expression.  The file
-paths are returned as a list of strings, with each string representing
-a relative file path to DIR.
-
-By default, DIR value is `gnosis-images-dir' & REGEX value is \"^[^.]\""
-  (let ((dir (or dir gnosis-images-dir))
-	(regex (or regex "^[^.]")))
-    (apply #'append
-           (cl-loop for path in (directory-files dir t directory-files-no-dot-files-regexp)
-                    if (file-directory-p path)
-                    collect (mapcar (lambda (file) (concat (file-relative-name path dir) "/" file))
-                                    (gnosis-directory-files path regex))
-                    else if (string-match-p regex (file-name-nondirectory path))
-                    collect (list (file-relative-name path dir))))))
-
-(defun gnosis-select-images (&optional prompt)
-  "Return PATH for file in `gnosis-images-dir'.
-
-Optionally, add cusotm PROMPT."
-  (if (y-or-n-p "Include images?")
-      (let* ((prompt (or prompt "Select image: "))
-	     (image (if (y-or-n-p "Add review image?")
-			(gnosis-completing-read prompt
-						(cons nil (gnosis-directory-files gnosis-images-dir)))
-		      nil))
-	     (extra-image (if (y-or-n-p "Add post review image?")
-			      (gnosis-completing-read prompt
-						      (cons nil (gnosis-directory-files gnosis-images-dir))))))
-	(cons image extra-image))
-    nil))
-
 (defun gnosis-get-tags--unique ()
   "Return a list of unique strings for tags in `gnosis-db'."
-  (cl-loop for tags in (gnosis-select 'tags 'notes '1=1 t)
+  (cl-loop for tags in (apply 'append (emacsql gnosis-db [:select :distinct tags :from notes]))
            nconc tags into all-tags
            finally return (delete-dups all-tags)))
 
