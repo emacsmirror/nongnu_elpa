@@ -522,17 +522,20 @@ If FILL-PARAGRAPH-P, insert question using `fill-paragraph'."
       (buffer-string))))
 
 (defun gnosis-cloze-add-hints (str hints &optional cloze-string)
-  "Replace CLOZE-STRING in STR with HINTS."
+  "Replace CLOZE-STRING in STR with HINTS, skipping empty hints."
   (cl-assert (listp hints) nil "Hints must be a list.")
-  (let ((cloze-string (or cloze-string gnosis-cloze-string))
-        (count 0))
+  (let ((cloze-string (or cloze-string gnosis-cloze-string)))
     (with-temp-buffer
       (insert str)
       (goto-char (point-min))
-      (while (search-forward cloze-string nil t)
-        (when (and (nth count hints) (search-backward cloze-string nil t))
-          (replace-match (propertize (format "[%s]" (nth count hints)) 'face 'gnosis-face-cloze)))
-        (setq count (1+ count)))
+      (cl-loop for hint in hints
+               while (search-forward cloze-string nil t)
+               do
+	       (when (and hint (not (string-empty-p hint)) (not (string= hint "nil"))
+			  (search-backward cloze-string nil t))
+                 (replace-match (propertize (format "[%s]" hint) 'face 'gnosis-face-cloze))
+                 (goto-char (match-end 0)))) ; Move point to end of match
+      
       (buffer-string))))
 
 (defun gnosis-cloze-mark-answers (str answers face)
