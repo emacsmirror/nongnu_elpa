@@ -5,7 +5,8 @@
 ;; Author: Thanos Apollo <public@thanosapollo.org>
 ;; Keywords: extensions
 ;; URL: https://thanosapollo.org/projects/gnosis
-;; Version: 0.4.10
+
+;; Version: 0.5.0
 
 ;; Package-Requires: ((emacs "27.2") (emacsql "4.1.0") (compat "29.1.4.2") (transient "0.7.2"))
 
@@ -116,8 +117,12 @@ framework's minibuffer."
 (defconst gnosis-db-version 3
   "Gnosis database version.")
 
-(defvar gnosis-note-types '("MCQ" "Cloze" "Basic" "Double" "y-or-n")
-  "Gnosis available note types.")
+(defvar gnosis-thema-types
+  '(("Basic" . gnosis-add-thema--basic)
+    ("MCQ" .  gnosis-add-thema--mcq)
+    ("Double" .  gnosis-add-thema--double)
+    ("Cloze" . gnosis-add-thema--cloze))
+  "Mapping of Themas & their respective functions.")
 
 (defvar gnosis-previous-note-tags '()
   "Tags input from previously added note.")
@@ -143,11 +148,6 @@ car value is the prompt, cdr is the prewritten string.")
 
 (defvar gnosis-mc-cloze-guidance
   '("MC-Cloze Example: This is an example answer&&option2&&option3" . ""))
-
-(defcustom gnosis-mc-cloze-separator "&&"
-  "Sseparator for choices on multiple choice clozes."
-  :type 'string
-  :group 'gnosis)
 
 (defcustom gnosis-mcq-separator "\n--\n"
   "Separator for stem field and options in mcq note type.
@@ -190,6 +190,9 @@ When nil, review new notes last."
 (defvar gnosis-review-notes nil
   "Review notes.")
 
+(defvar gnosis-org-separator "\n- "
+  "Separator for values in `org-mode'.")
+
 ;; TODO: Make this as a defcustom.
 (defvar gnosis-custom-values
   '((:deck "demo" (:proto (0 1 3) :anagnosis 3 :epignosis 0.5 :agnoia 0.3 :amnesia 0.5 :lethe 3))
@@ -199,6 +202,9 @@ When nil, review new notes last."
 (defvar gnosis-custom--valid-values
   '(:proto :anagnosis :epignosis :agnoia :amnesia :lethe))
 
+(defvar gnosis-review-editing-p nil
+  "Boolean value to check if user is currently in a review edit.")
+
 ;;; Faces
 
 (defgroup gnosis-faces nil
@@ -207,12 +213,12 @@ When nil, review new notes last."
   :tag "Gnosis Faces"
   :prefix 'gnosis-face)
 
-(defface gnosis-face-extra
+(defface gnosis-face-parathema
   '((t :inherit font-lock-doc-face))
   "Face for extra-notes."
   :group 'gnosis-faces)
 
-(defface gnosis-face-main
+(defface gnosis-face-keimenon
   '((t :inherit default))
   "Face for the main section from note."
   :group 'gnosis-face-faces)
@@ -338,7 +344,7 @@ Optional argument FLATTEN, when non-nil, flattens the result."
   "Update records in TABLE with to new VALUE based on the given WHERE condition.
 
 Example:
- (gnosis-update ='notes ='(= main \"NEW VALUE\") ='(= id 12))"
+ (gnosis-update ='notes ='(= keimenon \"NEW VALUE\") ='(= id 12))"
   (emacsql gnosis-db `[:update ,table :set ,value :where ,where]))
 
 (cl-defun gnosis-get (value table &optional (restrictions '1=1))
@@ -448,67 +454,55 @@ This will not be applied to sentences that start with double space."
       (forward-line 1))))
 
 (defun gnosis-apply-syntax-overlay ()
-  "Apply custom font overlays for syntax highlighting, and remove delimiters."
-  (let ((syntax-highlights '(("\\*\\([^*[:space:]][^*\n]*[^*[:space:]]\\)\\*" . bold)
-                             ("/\\([^/[:space:]][^/\n]*[^/[:space:]]\\)/" . italic)
-                             ("=\\([^=[:space:]][^=\n]*[^=[:space:]]\\)=" . font-lock-constant-face)
-                             ("~\\([^~[:space:]][^~\n]*[^~[:space:]]\\)~" . font-lock-keyword-face)
-                             ("_\\([^_[:space:]][^_\n]*[^_[:space:]]\\)_" . underline))))
+  "Apply custom font overlays for syntax highlighting."
+  (let ((syntax-highlights
+         '(("\\*\\([^*[:space:]][^*\n]*[^*[:space:]]\\)\\*" . bold)
+           ("/\\([^/[:space:]][^/\n]*[^/[:space:]]\\)/" . italic)
+           ("=\\([^=[:space:]][^=\n]*[^=[:space:]]\\)=" . font-lock-constant-face)
+           ("~\\([^~[:space:]][^~\n]*[^~[:space:]]\\)~" . font-lock-keyword-face)
+           ("_\\([^_[:space:]][^_\n]*[^_[:space:]]\\)_" . underline)
+           ("\\[\\[\\([^]]+\\)\\]\\[\\([^]]+\\)\\]\\]" . link) ;; [[link][description]]
+	   )))
     (when gnosis-apply-highlighting-p
       (save-excursion
-	(cl-loop for (regex . face) in syntax-highlights
-		 do (progn
+        (cl-loop for (regex . face) in syntax-highlights
+                 do (progn
                       (goto-char (point-min))
                       (while (re-search-forward regex nil t)
-			(let ((start (match-beginning 1))
-                              (end (match-end 1)))
-			  (overlay-put (make-overlay start end) 'face face)
-			  (delete-region end (match-end 0))
-			  (delete-region (match-beginning 0) start)))))))))
+                        (if (eq face 'link)
+                            (let* ((link (match-string 1))
+                                   (desc (or (match-string 2) link))
+                                   (start (match-beginning 0))
+                                   (end (match-end 0)))
+                              (delete-region start end)
+                              (insert desc)
+                              (let ((ol (make-overlay start (+ start (length desc)))))
+                                (overlay-put ol 'face 'link)
+                                (overlay-put ol 'gnosis-link link)
+                                (overlay-put ol 'mouse-face 'highlight)
+                                (overlay-put ol 'help-echo link)))
+                          (let ((start (match-beginning 1))
+                                (end (match-end 1)))
+                            (overlay-put (make-overlay start end) 'face face)
+                            (delete-region end (match-end 0))
+                            (delete-region (match-beginning 0) start))))))))))
 
-(defun gnosis-display-question (id &optional fill-paragraph-p)
-  "Display main row for note ID.
+(defun gnosis-display-keimenon (str &optional fill-paragraph-p)
+  "Display STR as keimenon.
 
 If FILL-PARAGRAPH-P, insert question using `fill-paragraph'."
-  (let ((question (gnosis-get 'main 'notes `(= id ,id)))
-	(fill-paragraph-p (or fill-paragraph-p t)))
+  (let ((fill-paragraph-p (or fill-paragraph-p t)))
     (erase-buffer)
     (if fill-paragraph-p
-	(fill-paragraph (insert "\n"  (propertize question 'face 'gnosis-face-main)))
-      (insert "\n"  (propertize question 'face 'gnosis-face-main)))
+	(fill-paragraph (insert "\n"  (propertize str 'face 'gnosis-face-keimenon)))
+      (insert "\n"  (propertize str 'face 'gnosis-face-keimenon)))
     (gnosis-insert-separator)
     (gnosis-apply-center-buffer-overlay)
     (gnosis-apply-syntax-overlay)))
 
-(cl-defun gnosis-display-image (id &optional (image 'images))
-  "Display image for note ID.
-
-IMAGE is the image type to display, usually should be either =images'
-or =extra-image'.  Instead of using =extra-image' post review, prefer
-=gnosis-display-extra' which displays the =extra-image' as well.
-
-Refer to =gnosis-db-schema-extras' for informations on images stored."
-  ;; Only display images on graphical env
-  (when (display-graphic-p)
-    (let* ((img (gnosis-get image 'extras `(= id ,id)))
-           (path-to-image (expand-file-name (or img "")
-					    (file-name-as-directory gnosis-images-dir)))
-           (image (create-image path-to-image 'png nil
-				:width gnosis-image-width :height gnosis-image-height))
-           (image-width (car (image-size image t)))
-           (frame-width (window-text-width))) ;; Width of the current window in columns
-      (cond ((or (not img) (string-empty-p img))
-             (insert "\n\n"))
-            ((and img (file-exists-p path-to-image))
-             (let* ((padding-cols (/ (- frame-width (floor (/ image-width (frame-char-width)))) 2))
-                    (padding (make-string (max 0 padding-cols) ?\s)))
-               (insert "\n\n" padding)  ;; Insert padding before the image
-               (insert-image image)
-               (insert "\n\n")))))))
-
 (defun gnosis-display-mcq-options (id)
   "Display answer options for mcq note ID."
-  (let ((options (apply #'append (gnosis-select 'options 'notes `(= id ,id) t)))
+  (let ((options (apply #'append (gnosis-select 'hypothesis 'notes `(= id ,id) t)))
 	(option-num 1))
     (insert "\n" (propertize "Options:" 'face 'gnosis-face-directions))
     (cl-loop for option in options
