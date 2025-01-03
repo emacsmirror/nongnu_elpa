@@ -65,6 +65,9 @@
   :type 'directory
   :group 'gnosis)
 
+(unless (file-directory-p gnosis-dir)
+  (make-directory gnosis-dir))
+
 (defcustom gnosis-cloze-string "[...]"
   "Gnosis string to represent a cloze."
   :type 'string
@@ -102,27 +105,6 @@ framework's minibuffer."
   "Function to use for `completing-read'."
   :type 'function
   :group 'gnosis)
-
-(defcustom gnosis-image-height nil
-  "Height of image to display during review.
-
-When nil, the image will be displayed at its original size."
-  :type 'integer
-  :group 'gnosis)
-
-(defcustom gnosis-image-width nil
-  "Width of image to display during review.
-
-When nil, the image will be displayed at its original size."
-  :type 'integer
-  :group 'gnosis)
-
-(defvar gnosis-images-dir (expand-file-name "images" gnosis-dir)
-  "Gnosis images directory.")
-
-(unless (file-directory-p gnosis-dir)
-  (make-directory gnosis-dir)
-  (make-directory gnosis-images-dir))
 
 (defvar gnosis-db
   (emacsql-sqlite-open (expand-file-name "gnosis.db" gnosis-dir))
@@ -2359,96 +2341,6 @@ Defaults to current date."
 	 (new-tags (append current-tags (list tag))))
     (gnosis-update 'notes `(= tags ',new-tags) `(= id ,id))))
 
-(cl-defun gnosis-export-note (id &optional (export-for-deck nil))
-  "Export fields for note with value of id ID.
-
-ID: Identifier of the note to export.
-EXPORT-FOR-DECK: If t, add type field and remove review fields
-
-This function retrieves the fields of a note with the given ID and
-inserts them into the current buffer.  Each field is represented as a
-property list entry.  The following fields are exported: type, main,
-options, answer, tags, extra-notes, image, and second-image.
-
-The exported fields are formatted as key-value pairs with a colon,
-e.g., :field value.  The fields are inserted sequentially into the
-buffer.  For certain field values, like lists or nil, special
-formatting is applied.
-
-If the value is a list, the elements are formatted as strings and
-enclosed in double quotes.
-
-If the value is nil, the field is exported as :field nil.
-
-All other values are treated as strings and exported with double
-quotes.
-
-The final exported note is indented using the `indent-region' function
-to improve readability."
-  (let ((values (append (gnosis-select '[id main options answer tags] 'notes `(= id ,id) t)
-			(gnosis-select '[extra-notes images extra-image] 'extras `(= id ,id) t)
-			(gnosis-select '[gnosis amnesia] 'review `(= id ,id) t)
-			(gnosis-select 'suspend 'review-log `(= id ,id) t)))
-	(fields (list :id :main :options :answer :tags
-		      :extra-notes :image :second-image :gnosis :amnesia :suspend)))
-    (when export-for-deck
-      (setf values (append (gnosis-select 'type 'notes `(= id ,id) t)
-			   (butlast (cdr values) 3)))
-      (setf fields (append '(:type) (butlast (cdr fields) 3))))
-    (cl-loop for value in values
-             for field in fields
-             do (insert
-		 (cond ((listp value)
-			(format "\n%s '%s" (symbol-name field) (prin1-to-string value)))
-		       (t (format "\n%s %s" (symbol-name field) (prin1-to-string value))))))))
-
-;;; Database Schemas
-(defvar gnosis-db-schema-decks '([(id integer :primary-key :autoincrement)
-				  (name text :not-null)]))
-
-(defvar gnosis-db-schema-notes '([(id integer :primary-key :autoincrement)
-				  (type text :not-null)
-				  (main text :not-null)
-				  (options text :not-null)
-				  (answer text :not-null)
-				  (tags text :default untagged)
-				  (deck-id integer :not-null)]
-				 (:foreign-key [deck-id] :references decks [id]
-					       :on-delete :cascade)))
-
-(defvar gnosis-db-schema-review '([(id integer :primary-key :not-null) ;; note-id
-				   (gnosis integer :not-null)
-				   (amnesia integer :not-null)]
-				  (:foreign-key [id] :references notes [id]
-						:on-delete :cascade)))
-
-(defvar gnosis-db-schema-review-log '([(id integer :primary-key :not-null) ;; note-id
-				       (last-rev integer :not-null)  ;; Last review date
-				       (next-rev integer :not-null)  ;; Next review date
-				       (c-success integer :not-null) ;; Consecutive successful reviews
-				       (t-success integer :not-null) ;; Total successful reviews
-				       (c-fails integer :not-null)   ;; Consecutive failed reviewss
-				       (t-fails integer :not-null)   ;; Total failed reviews
-				       (suspend integer :not-null)   ;; Binary value, 1=suspended
-				       (n integer :not-null)]        ;; Number of reviews
-				      (:foreign-key [id] :references notes [id]
-						    :on-delete :cascade)))
-
-(defvar gnosis-db-schema-activity-log '([(date text :not-null)
-					 (reviewed-total integer :not-null)
-					 (reviewed-new integer :not-null)]))
-
-(defvar gnosis-db-schema-extras '([(id integer :primary-key :not-null)
-				   (extra-notes string)
-				   (images string)
-				   ;; Extra image path to show after review
-				   (extra-image string)]
-				  ;; Note that the value of the images
-				  ;; above is PATH inside
-				  ;; `gnosis-images-dir'
-				  (:foreign-key [id] :references notes [id]
-						:on-delete :cascade)))
-
 (defun gnosis-search-note (&optional query)
   "Search for note QUERY.
 
@@ -2456,14 +2348,82 @@ Return note ids for notes that match QUERY."
   (cl-assert (or (stringp query) (eq query nil)))
   (let* ((query (or query (read-string "Search for note: ")))
          (words (split-string query))
-         (clause-main `(and ,@(mapcar (lambda (word)
-					`(like main ,(format "%%%s%%" word)))
+         (clause-keimenon `(and ,@(mapcar (lambda (word)
+					`(like keimenon ,(format "%%%s%%" word)))
                                       words)))
-	 (clause-answer `(and ,@(mapcar (lambda (word)
-					  `(like answer ,(format "%%%s%%" word)))
+	 (clause-apocalypse `(and ,@(mapcar (lambda (word)
+					  `(like apocalypse ,(format "%%%s%%" word)))
 					words))))
-    (append (gnosis-select 'id 'notes clause-main t)
-	    (gnosis-select 'id 'notes clause-answer t))))
+    (append (gnosis-select 'id 'notes clause-keimenon t)
+	    (gnosis-select 'id 'notes clause-apocalypse t))))
+
+;;; Database Schemas
+(defconst gnosis-db--schemata
+  '((decks
+     ([(id integer :primary-key :autoincrement)
+       (name text :not-null)]
+      (:unique [name])))
+    (notes
+     ([(id integer :primary-key :autoincrement)
+       (type text :not-null)
+       (keimenon text :not-null)
+       (hypothesis text :not-null)
+       (apocalypse text :not-null)
+       (tags text :default untagged)
+       (deck-id integer :not-null)]
+      (:foreign-key [deck-id] :references decks [id]
+		    :on-delete :cascade)))
+    (review
+     ([(id integer :primary-key :not-null) ;; note-id
+       (gnosis integer :not-null)
+       (amnesia integer :not-null)]
+      (:foreign-key [id] :references notes [id]
+		    :on-delete :cascade)))
+    (review-log
+     ([(id integer :primary-key :not-null) ;; note-id
+       (last-rev integer :not-null)  ;; Last review date
+       (next-rev integer :not-null)  ;; Next review date
+       (c-success integer :not-null) ;; Consecutive successful reviews
+       (t-success integer :not-null) ;; Total successful reviews
+       (c-fails integer :not-null)   ;; Consecutive failed reviewss
+       (t-fails integer :not-null)   ;; Total failed reviews
+       (suspend integer :not-null)   ;; Binary value, 1=suspended
+       (n integer :not-null)]        ;; Number of reviews
+      (:foreign-key [id] :references notes [id]
+		    :on-delete :cascade)))
+    (activity-log
+     ([(date text :not-null)
+       (reviewed-total integer :not-null)
+       (reviewed-new integer :not-null)]))
+    (extras
+     ([(id integer :primary-key :not-null)
+       (parathema string)]
+      (:foreign-key [id] :references notes [id]
+		    :on-delete :cascade)))
+     (tags
+      ([(tag text :primary-key)]
+       (:unique [tag])))
+     (links
+      ([(source text)
+	(dest text)]
+       (:foreign-key [source] :references notes [id]
+		     :on-delete :cascade)
+       (:unique [source dest])))))
+
+(defun gnosis-update--make-list (column)
+  "Make COLUMN values into a list."
+  (let ((results (emacsql gnosis-db `[:select [id ,column] :from notes])))
+    (dolist (row results)
+      (let ((id (car row))
+            (old-value (cadr row)))
+	;; Update each entry, converting the value to a list representation
+	(unless (listp old-value)
+	  (emacsql gnosis-db `[:update notes
+				       :set (= ,column $s1)
+				       :where (= id $s2)]
+		   (list old-value)
+		   id)
+	  (message "Update Note: %d" id))))))
 
 (defun gnosis-db-update-v2 ()
   "Update to first gnosis-db version."
@@ -2479,21 +2439,64 @@ Return note ids for notes that match QUERY."
     (gnosis-db-update-v3)))
 
 (defun gnosis-db-update-v3 ()
-  "Upgrade database to version 3."
-  (emacsql-with-transaction gnosis-db
-    (emacsql gnosis-db [:alter-table decks :drop-column failure-factor])
-    (emacsql gnosis-db [:alter-table decks :drop-column ef-increase])
-    (emacsql gnosis-db [:alter-table decks :drop-column ef-threshold])
-    (emacsql gnosis-db [:alter-table decks :drop-column ef-decrease])
-    (emacsql gnosis-db [:alter-table decks :drop-column initial-interval])
-    ;; Review changes
-    (emacsql gnosis-db [:alter-table review :rename ef :to gnosis])
-    (emacsql gnosis-db [:alter-table review :rename ff :to amnesia])
-    (emacsql gnosis-db [:alter-table review :drop-column interval])
-    ;; Add activity log
-    (gnosis--create-table 'activity-log gnosis-db-schema-activity-log)
-    ;; Update version
-    (emacsql gnosis-db [:pragma (= user-version gnosis-db-version)])))
+  "Update database to version 3."
+  (ignore-errors
+    (emacsql-with-transaction gnosis-db
+      (emacsql gnosis-db [:alter-table decks :drop-column failure-factor])
+      (emacsql gnosis-db [:alter-table decks :drop-column ef-increase])
+      (emacsql gnosis-db [:alter-table decks :drop-column ef-threshold])
+      (emacsql gnosis-db [:alter-table decks :drop-column ef-decrease])
+      (emacsql gnosis-db [:alter-table decks :drop-column initial-interval])
+      ;; Review changes
+      (emacsql gnosis-db [:alter-table review :rename ef :to gnosis])
+      (emacsql gnosis-db [:alter-table review :rename ff :to amnesia])
+      (emacsql gnosis-db [:alter-table review :drop-column interval])
+      ;; Add activity log
+      (gnosis--create-table 'activity-log gnosis-db-schema-activity-log)
+      ;; Update version
+      (emacsql gnosis-db [:pragma (= user-version gnosis-db-version)]))))
+
+(defun gnosis-db-update-v4 ()
+  "Update to databse version v4.
+
+Add tags & links tables"
+  (let ((tags (gnosis-get-tags--unique)))
+    (pcase-dolist (`(,table ,schema) (seq-filter (lambda (schema)
+						   (member (car schema) '(tags links)))
+						 gnosis-db--schemata))
+      (emacsql gnosis-db [:create-table $i1 $S2] table schema))
+    (cl-loop for tag in tags
+	     do (gnosis--insert-into 'tags `[,tag]))
+    (emacsql gnosis-db [:alter-table notes :rename-column main :to keimenon])
+    (emacsql gnosis-db [:alter-table notes :rename-column options :to hypothesis])
+    (emacsql gnosis-db [:alter-table notes :rename-column answer :to apocalypse])
+    (emacsql gnosis-db [:alter-table extras :rename-column extra-notes :to parathema])
+    (emacsql gnosis-db [:alter-table extras :drop-column images])
+    (emacsql gnosis-db [:alter-table extras :drop-column extra-image])
+    ;; Make sure all hypothesis & apocalypse values are lists
+    (gnosis-update--make-list 'hypothesis)
+    (gnosis-update--make-list 'apocalypse)
+    ;; Fix MCQs
+    (cl-loop for note in (gnosis-select 'id 'notes '(= type "mcq") t)
+	     do (funcall
+		 (lambda (id)
+		   (let* ((data (gnosis-select '[hypothesis apocalypse] 'notes `(= id ,id) t))
+			  (hypothesis (nth 0 data))
+			  (old-apocalypse (car (nth 1 data)))
+			  (new-apocalypse (list (nth (- 1 old-apocalypse) hypothesis))))
+		     (gnosis-update 'notes `(= apocalypse ',new-apocalypse) `(= id ,id))))
+		 note))
+    ;; Replace y-or-n with MCQ
+    (cl-loop for note in (gnosis-select 'id 'notes '(= type "y-or-n") t)
+	     do (funcall (lambda (id)
+			   (let ((data (gnosis-select '[type hypothesis apocalypse] 'notes `(= id ,id) t)))
+			     (when (string= (nth 0 data) "y-or-n")
+			       (gnosis-update 'notes '(= type "mcq") `(= id ,id))
+			       (gnosis-update 'notes '(= hypothesis '("Yes" "No")) `(= id ,id))
+			       (if (= (car (nth 2 data)) 121)
+				   (gnosis-update 'notes '(= apocalypse '("Yes")) `(= id ,id))
+				 (gnosis-update 'notes '(= apocalypse '("No")) `(= id ,id))))))
+			 note))))
 
 (defun gnosis-db-init ()
   "Create essential directories & database."
@@ -2501,28 +2504,15 @@ Return note ids for notes that match QUERY."
     (unless (length> (emacsql gnosis-db [:select name :from sqlite-master :where (= type table)])
 		     3)
       (emacsql-with-transaction gnosis-db
-	;; Enable foreign keys
-	(emacsql gnosis-db [:pragma (= foreign-keys 1)])
-	;; Gnosis version
-	(emacsql gnosis-db [:pragma (= user-version gnosis-db-version)])
-	;; Create decks table
-	(gnosis--create-table 'decks gnosis-db-schema-decks)
-	;; Create notes table
-	(gnosis--create-table 'notes gnosis-db-schema-notes)
-	;; Create review table
-	(gnosis--create-table 'review gnosis-db-schema-review)
-	;; Create review-log table
-	(gnosis--create-table 'review-log gnosis-db-schema-review-log)
-	;; Create extras table
-	(gnosis--create-table 'extras gnosis-db-schema-extras)
-	;; Create activity-log table
-	(gnosis--create-table 'activity-log gnosis-db-schema-activity-log)))
+	(pcase-dolist (`(,table ,schema) gnosis-db--schemata)
+	  (emacsql gnosis-db [:create-table $i1 $S2] table schema))
+        (emacsql gnosis-db [:pragma (= user-version org-gnosis-db-version)])))
     ;; Update database schema for version
+    ;; TODO: Adjust for new version
     (cond ((= gnosis-curr-version 2)
 	   (gnosis-db-update-v3)))))
 
 (gnosis-db-init)
-
 ;;;; Gnosis Demo ;;;;
 ;;;;;;;;;;;;;;;;;;;;;
 
