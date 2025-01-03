@@ -104,6 +104,11 @@ etc."
   '("issue" "pull" "commit" "repository")
   "List of possible subject types for getting notifications.")
 
+(defgroup fj nil
+  "Fj.el, a Forgejo client."
+  :group 'external
+  :prefix "fj-")
+
 ;;; FACES
 
 (defface fj-comment-face
