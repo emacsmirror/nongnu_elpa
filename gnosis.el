@@ -1022,7 +1022,7 @@ SUSPEND: whether to suspend not"
   (cl-assert (listp images) nil "Images must be a list of string paths")
   (cl-assert (listp tags) nil "Tags value must be a list of tags as strings")
   (cl-assert (or (= suspend 1) (= suspend 0)) nil "Suspend value must be either 0 or 1")
-  (gnosis-add-note-fields deck "mc-cloze" question options answer extra tags (or suspend 0)
+  (gnosis-add-thema-fields deck "mc-cloze" question options answer extra tags (or suspend 0)
 			  (car images) (cdr images)))
 
 (defun gnosis-add-note-mc-cloze (deck)
@@ -1190,81 +1190,60 @@ DATE is a list of the form (year month day)."
          (time-date (encode-time 0 0 0 (nth 2 date) (nth 1 date) (nth 0 date))))
     (not (time-less-p time-now time-date))))
 
-(cl-defun gnosis-tag-prompt (&key (prompt "Selected tags:") (due nil))
-  "PROMPT user to select tags, until they enter `q'.
+(defun gnosis-tags--update (tags)
+  "Update db for TAGS."
+  (emacsql-with-transaction gnosis-db
+    (cl-loop for tag in tags
+	     do (gnosis--insert-into 'tags `[,tag]))))
 
-Prompt user to select tags, generated from `gnosis-get-tags--unique'.
-PROMPT: Prompt string value
-MATCH: Require match, t or nil value
-DUE: if t, return tags for due notes from `gnosis-due-tags'."
-  (let ((tags '()))
-    (cl-loop for tag = (completing-read
-			(concat prompt (format " (%s) (q for quit): " (mapconcat #'identity tags " ")))
-			(cons "q" (if due (gnosis-review-get-due-tags)
-				    (gnosis-get-tags--unique)))
-			nil t)
-	     until (string= tag "q")
-	     unless (member tag tags)
-	     do (push tag tags))
-    tags))
+(cl-defun gnosis-tags--prompt (&key (prompt "Tags (seperated by ,): ")
+				    (predicate nil)
+				    (require-match nil)
+				    (initial-input nil))
+  "Prompt user for tags.
 
-(defun gnosis-hint-prompt (previous-hint &optional prompt)
-  "Prompt user for hint.
+Outputs only unique tags."
+  (gnosis-tags-refresh)
+  (let* ((tags (gnosis-tags-get-all))
+	 (input (delete-dups
+		 (completing-read-multiple
+		  prompt tags predicate require-match initial-input))))
+    input))
 
-PROMPT: Prompt string value
-PREVIOUS-HINT: Previous hint value, if any.  If nil, use PROMPT as
-default value."
-  (let* ((prompt (or prompt "Hint: "))
-	 (hint (read-string prompt previous-hint)))
-    (setf gnosis-previous-note-hint hint)
-    hint))
+(cl-defun gnosis-tags-prompt ()
+  "Tag prompt for adding notes.
 
-(defun gnosis-prompt-mcq-input (&optional prompt string)
-  "PROMPT for MCQ note content.
+If you only require a tag prompt, refer to `gnosis-tags--prompt'."
+  (let ((input (gnosis-tags--prompt)))
+    (when input
+      (gnosis-tags--update input)
+      (setf gnosis-previous-note-tags input))
+    (or input '("untagged"))))
 
-STRING: Guidance string."
-  (let ((user-input (gnosis-read-string-from-buffer (or prompt (car gnosis-mcq-guidance) "")
-						    (or string (cdr gnosis-mcq-guidance) ""))))
-    (cond ((not (string-match-p gnosis-mcq-separator user-input))
-	   (gnosis-prompt-mcq-input (format "`gnosis-mcq-separator': %s not found!" gnosis-mcq-separator)
-				    user-input))
-	  ((not (string-match "{.*}" user-input))
-	   (gnosis-prompt-mcq-input (format "Please wrap the right option with {}")
-				    user-input))
-	  (t (gnosis-mcq-process-input user-input)))))
+(defun gnosis-tags-get-all ()
+  "Output all tags from database."
+  (gnosis-select '* 'tags '1=1 t))
 
-(defun gnosis-mcq-process-input (user-input &optional stem-separator option-separator)
-  "Process USER-INPUT for MCQ note.
+(defun gnosis-tags-refresh ()
+  "Refresh tags value."
+  (let ((tags (gnosis-get-tags--unique)))
+    ;; Delete all values from tags table.
+    (gnosis--delete 'tags '1=1)
+    ;; Insert all unique tags from notes.
+    (emacsql-with-transaction gnosis-db
+      (cl-loop for tag in tags
+	       do (gnosis--insert-into 'tags `[,tag])))))
 
-STEM-SEPARATOR: Separator of question stem & options
-OPTION-SEPARATOR: Separator of each option
+;; Links
+(defun gnosis-extract-id-links (input &optional start)
+  "Extract all link IDs from INPUT string and return them as a list.
 
-Return ((QUESTION CHOICES) CORRECT-CHOICE-INDEX)"
-  (let* ((stem-separator (or stem-separator gnosis-mcq-separator))
-	 (option-separator (or option-separator gnosis-mcq-option-separator))
-	 (input-separated (split-string user-input stem-separator t "[\s\n]"))
-	 (stem (car input-separated))
-	 (input (split-string
-		 (mapconcat 'identity (cdr input-separated) "\n")
-		 option-separator t "[\s\n]"))
-	 (correct-choice-index
-	  ;; Make sure correct choice is given
-	  (or (cl-position-if (lambda (string) (string-match "{.*}" string)) input)
-	      (error "Correct choice not found.  Use {} to indicate the correct option")))
-	 (choices (mapcar (lambda (string) (replace-regexp-in-string "{\\|}" "" string)) input)))
-    (list (cons stem choices) (+ correct-choice-index 1))))
-
-(defun gnosis-prompt-tags--split (&optional previous-note-tags)
-  "Prompt user for tags, split string by space.
-
-Return a list of tags, split by space.  If PREVIOUS-NOTE-TAGS is
-provided, use it as the default value."
-  (let* ((previous-note-tags (or nil previous-note-tags))
-	 (tags (split-string (read-from-minibuffer "Tags: " (mapconcat #'identity previous-note-tags " ")) " ")))
-    (setf gnosis-previous-note-tags tags)
-    (if (equal tags '("")) '("untagged") tags)))
-
-;; Collecting note ids
+START is the search starting position, used internally for recursion."
+  (let ((start (or start 0)))
+    (if (string-match "\\[\\[id:\\([^]]+\\)\\]\\[" input start)
+        (cons (match-string 1 input)
+              (gnosis-extract-id-links input (match-end 0)))
+      nil)))
 
 ;; TODO: Rewrite this! Tags should be an input of strings,
 ;; interactive handling should be done by "helper" funcs
@@ -1286,10 +1265,10 @@ QUERY: String value,"
 	 (gnosis-review-get-due-notes))
 	;; All notes for tags
 	((and tags (null due) (null deck))
-	 (gnosis-select-by-tag (gnosis-tag-prompt)))
+	 (gnosis-select-by-tag (gnosis-tags--prompt :require-match t)))
 	;; All due notes for tags
 	((and tags due (null deck))
-	 (gnosis-select-by-tag (gnosis-tag-prompt) t))
+	 (gnosis-select-by-tag (gnosis-tags--prompt :require-match t) t))
 	;; All notes for deck
 	((and (null tags) (null due) deck)
 	 (gnosis-get-deck-notes deck nil))
@@ -1447,45 +1426,31 @@ SUCCESS is a boolean value, t for success, nil for failure."
   (setf gnosis-due-notes-total (length (gnosis-review-get-due-notes))))
 
 (defun gnosis-review-mcq (id)
-  "Display multiple choice answers for question ID."
-  (gnosis-display-question id)
-  (gnosis-display-image id)
-  (when gnosis-mcq-display-choices
-    (gnosis-display-mcq-options id))
-  (let* ((choices (gnosis-get 'options 'notes `(= id ,id)))
-	 (answer (nth (- (gnosis-get 'answer 'notes `(= id ,id)) 1) choices))
+  "Review MCQ thema with ID."
+  (gnosis-display-keimenon (gnosis-get 'keimenon 'notes `(= id ,id)))
+  (let* ((answer (car (gnosis-get 'apocalypse 'notes `(= id ,id))))
 	 (user-choice (gnosis-mcq-answer id))
 	 (success (string= answer user-choice)))
     (gnosis-display-correct-answer-mcq answer user-choice)
-    (gnosis-display-extra id)
+    (gnosis-display-parathema (gnosis-get 'parathema 'extras '(= id ,id)))
     (gnosis-display-next-review id success)
     success))
 
 (defun gnosis-review-basic (id)
   "Review basic type note for ID."
-  (gnosis-display-question id)
-  (gnosis-display-image id)
-  (gnosis-display-hint (gnosis-get 'options 'notes `(= id ,id)))
-  (let* ((answer (gnosis-get 'answer 'notes `(= id ,id)))
-	 (user-input (read-string "Answer: "))
-	 (success (gnosis-compare-strings answer user-input)))
-    (gnosis-display-basic-answer answer success user-input)
-    (gnosis-display-extra id)
-    (gnosis-display-next-review id success)
-    success))
-
-(defun gnosis-review-y-or-n (id)
-  "Review y-or-n type note for ID."
-  (gnosis-display-question id)
-  (gnosis-display-image id)
-  (gnosis-display-hint (gnosis-get 'options 'notes `(= id ,id)))
-  (let* ((answer (gnosis-get 'answer 'notes `(= id ,id)))
-	 (user-input (read-char-choice "[y]es or [n]o: " '(?y ?n)))
-	 (success (equal answer user-input)))
-    (gnosis-display-y-or-n-answer :answer answer :success success)
-    (gnosis-display-extra id)
-    (gnosis-display-next-review id success)
-    success))
+  (let* ((hypothesis (car (gnosis-get 'hypothesis 'notes `(= id ,id))))
+	 (parathema (gnosis-get 'parathema 'extras `(= id ,id)))
+	 (keimenon (gnosis-get 'keimenon 'notes `(= id ,id)))
+	 (apocalypse (car (gnosis-get 'apocalypse 'notes `(= id ,id)))))
+    (gnosis-display-keimenon keimenon)
+    (gnosis-display-hint hypothesis)
+    (let* ((answer apocalypse)
+	   (user-input (read-string "Answer: "))
+	   (success (gnosis-compare-strings answer user-input)))
+      (gnosis-display-basic-answer answer success user-input)
+      (gnosis-display-parathema parathema)
+      (gnosis-display-next-review id success)
+      success)))
 
 (defun gnosis-review-cloze--input (cloze)
   "Prompt for user input during cloze review.
@@ -1496,10 +1461,11 @@ If user-input is equal to CLOZE, return t."
 
 (defun gnosis-review-cloze (id)
   "Review cloze type note for ID."
-  (let* ((main (gnosis-get 'main 'notes `(= id ,id)))
-	 (clozes (gnosis-get 'answer 'notes `(= id ,id)))
+  (let* ((main (gnosis-get 'keimenon 'notes `(= id ,id)))
+	 (clozes (gnosis-get 'apocalypse 'notes `(= id ,id)))
 	 (num 0) ;; Number of clozes revealed
-	 (hints (gnosis-get 'options 'notes `(= id ,id)))
+	 (hints (gnosis-get 'hypothesis 'notes `(= id ,id)))
+	 (parathema (gnosis-get 'parathema 'extras `(= id ,id)))
 	 (success nil))
     ;; Quick fix for old cloze note versions.
     (cond ((and (stringp hints) (string-empty-p hints))
@@ -1526,19 +1492,18 @@ If user-input is equal to CLOZE, return t."
 		    (cl-return)))
 	     ;; Update note after all clozes are revealed successfully
 	     finally (setq success t))
-    (gnosis-display-extra id)
+    (gnosis-display-parathema parathema)
     (gnosis-display-next-review id success)
     success))
 
 (defun gnosis-review-mc-cloze (id)
   "Review MC-CLOZE note of ID."
-  (let ((main (gnosis-get 'main 'notes `(= id ,id)))
+  (let ((main (gnosis-get 'keimenon 'notes `(= id ,id)))
 	;; Cloze needs to be a list, we take car as the answer
-	(cloze (list (gnosis-get 'answer 'notes `(= id ,id))))
+	(cloze (list (gnosis-get 'hypothesis 'notes `(= id ,id))))
 	(user-choice nil)
 	(success nil))
     (gnosis-display-cloze-string main cloze nil nil nil)
-    (gnosis-display-image id)
     (setf user-choice (gnosis-mcq-answer id)
 	  success (string= user-choice (car cloze)))
     (if success
@@ -1606,7 +1571,7 @@ If NEW? is non-nil, increment new notes log by 1."
     ;; Fix sync by adding a small delay, `vc-pull' is async.
     (sit-for 0.3)
     ;; Reopen gnosis-db after pull
-    (setf gnosis-db (emacsql-sqlite-open (expand-file-name "gnosis.db" dir)))))
+    (setf gnosis-db gnosis-db)))
 
 (defun gnosis-review-commit (note-num)
   "Commit review session on git repository.
@@ -1635,8 +1600,8 @@ editing NOTE with it's new contents.
 
 After done editing, call `gnosis-review-actions' with SUCCESS NOTE
 NOTE-COUNT."
-  (gnosis-edit-save-exit)
-  (gnosis-edit-note note)
+  (gnosis-edit-thema note)
+  (setf gnosis-review-editing-p t)
   (recursive-edit)
   (gnosis-review-actions success note note-count))
 
@@ -1667,6 +1632,13 @@ be called with new SUCCESS value plus NOTE & NOTE-COUNT."
   (setf success (if success nil t))
   (gnosis-display-next-review note success)
   (gnosis-review-actions success note note-count))
+
+;; (defun gnosis-review-action--read (id)
+;;   "Open link for note at extras."
+;;   (let* ((extras (gnosis-get 'extra-notes 'extras `(= id ,id)))
+;; 	 (ids (gnosis-extract-id-links extras))
+;; 	 ())
+;;     )
 
 (defun gnosis-review-actions (success note note-count)
   "Specify action during review of note.
@@ -1723,7 +1695,7 @@ NOTE-COUNT: Total notes to be commited for session."
   ;; Select review type
   (let ((review-type
 	 (gnosis-completing-read "Review: "
-				 '("Due notes" 
+				 '("Due notes"
 				   "Due notes of deck"
 				   "Due notes of specified tag(s)"
 				   "Overdue notes"
@@ -1743,159 +1715,262 @@ NOTE-COUNT: Total notes to be commited for session."
 			    (gnosis-collect-note-ids :deck (gnosis--get-deck-id))))
       ("All notes of tag(s)" (gnosis-review-session (gnosis-collect-note-ids :tags t))))))
 
+(defun gnosis-add-thema-fields (deck-id type keimenon hypothesis apocalypse parathema tags suspend links)
+  "Insert fields for new note.
 
-;; Editing notes
-(defun gnosis-edit-read-only-values (&rest values)
-  "Make the provided VALUES read-only in the whole buffer."
-  (goto-char (point-min))
-  (dolist (value values)
-    (while (search-forward value nil t)
-      (put-text-property (match-beginning 0) (match-end 0) 'read-only t)))
-  (goto-char (point-min)))
+DECK-ID: Deck ID for new thema.
+TYPE: Note type e.g \"mcq\"
+KEIMENON: Note's keimenon
+HYPOTHESIS: Thema hypothesis, e.g choices for mcq for OR hints for
+cloze/basic thema
+APOCALYPSE: Correct answer for note, for MCQ is an integer while for
+cloze/basic a string/list of the right answer(s)
+PARATHEMA: Parathema information to display after the apocalypse
+TAGS: Tags to organize notes
+SUSPEND: Integer value of 1 or 0, where 1 suspends the card.
+LINKS: List of id links."
+  (cl-assert (integerp deck-id) nil "Deck ID must be an integer")
+  (cl-assert (stringp type) nil "Type must be a string")
+  (cl-assert (stringp keimenon) nil "Keimenon must be a string")
+  (cl-assert (listp hypothesis) nil "Hypothesis value must be a list")
+  (cl-assert (listp apocalypse) nil "Apocalypse value must be a list")
+  (cl-assert (stringp parathema) nil "Parathema must be a string")
+  (cl-assert (listp tags) nil "Tags must be a list")
+  (cl-assert (listp links) nil "Links must be a list")
+  (let* ((note-id (gnosis-generate-id)))
+    (emacsql-with-transaction gnosis-db
+      ;; Refer to `gnosis-db-schema-SCHEMA' e.g `gnosis-db-schema-review-log'
+      (gnosis--insert-into 'notes `([,note-id ,(downcase type) ,keimenon ,hypothesis ,apocalypse ,tags ,deck-id]))
+      (gnosis--insert-into 'review  `([,note-id ,gnosis-algorithm-gnosis-value
+						,gnosis-algorithm-amnesia-value]))
+      (gnosis--insert-into 'review-log `([,note-id ,(gnosis-algorithm-date)
+						   ,(gnosis-algorithm-date) 0 0 0 0 ,suspend 0]))
+      (gnosis--insert-into 'extras `([,note-id ,parathema]))
+      (cl-loop for link in links
+	       do (gnosis--insert-into 'links `([,note-id ,link]))))))
 
-(cl-defun gnosis-edit-note (id)
-  "Edit the contents of a note with the given ID.
+(defun gnosis-update-thema (id keimenon hypothesis apocalypse parathema tags links)
+  "Update thema entry for ID."
+  (let ((id (if (stringp id) (string-to-number id) id))) ;; Make sure we provided the id as a number.
+    (emacsql-with-transaction gnosis-db
+      (gnosis-update 'notes `(= keimenon ,keimenon) `(= id ,id))
+      (gnosis-update 'notes `(= hypothesis ',hypothesis) `(= id ,id))
+      (gnosis-update 'notes `(= apocalypse ',apocalypse) `(= id ,id))
+      (gnosis-update 'extras `(= parathema ,parathema) `(= id ,id))
+      (gnosis-update 'notes `(= tags ',tags) `(= id ,id))
+      (cl-loop for link in links
+	       do (gnosis-update 'links `(= dest ,link) `(= source ,id))))))
 
-This function creates an Emacs Lisp buffer named *gnosis-edit* on the
-same window and populates it with the values of the note identified by
-the specified ID using `gnosis-export-note'.  The note values are
-inserted as keywords for the `gnosis-edit-update-note' function.
+;;;;;;;;;;;;;;;;;;;;;; THEMA HELPERS ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; These functions provide assertions depending on the type of thema.
+;;
+;; Each thema should use a helper function that calls to provide
+;; assertions, such as length of hypothesis and apocalypse, for said
+;; thema.
+;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-To make changes, edit the values in the buffer, and then evaluate the
-`gnosis-edit-update-note' expression to save the changes.
+(defun gnosis-add-thema--basic (id deck-id type keimenon hypothesis apocalypse parathema tags suspend links)
+  "Default format for adding a thema.
 
-RECURSIVE-EDIT: If t, exit `recursive-edit' after finishing editing.
-It should only be t when starting a recursive edit, when editing a
-note during a review session.
+DECK-ID: Integer value of deck-id.
+TYPE: String representing the type of note.
+KEIMENON: String for the thema text.
+HYPOTHESIS: List of a signle string.
+APOCALYPSE: List of a single string.
+PARATHEMA: String for the parathema text.
+TAGS: List of thema tags.
+SUSPEND: Integer value of 0 for nil and 1 for true (suspended).
+LINKS: List of id links in PARATHEMA."
+  (cl-assert (integerp deck-id) nil "Deck-id value must be an integer.")
+  (cl-assert (stringp type) nil "Type must be an integer.")
+  (cl-assert (stringp keimenon) nil "Keimenon must be an integer.")
+  (cl-assert (or (null hypothesis)
+		 (and (listp hypothesis)
+		      (= (length hypothesis) 1)))
+	     nil "Hypothesis value must be a list of a single item or nil.")
+  (cl-assert (and (listp apocalypse)
+		  (= (length apocalypse) 1))
+	     nil "Apocalypse value must be a list of a signle item")
+  (cl-assert (listp tags) nil "Tags must be a list.")
+  (cl-assert (or (= suspend 0)
+		 (= suspend 1))
+	     nil "Suspend value must either 0 or 1")
+  (cl-assert (listp links) nil "Links must be a list")
+  (if (equal id "NEW")
+      (gnosis-add-thema-fields deck-id type keimenon (or hypothesis (list "")) apocalypse parathema tags suspend links)
+    (gnosis-update-thema id keimenon hypothesis apocalypse parathema tags links)))
 
-The buffer automatically indents the expressions for readability.
-After finishing editing, evaluate the entire expression to apply the
-changes."
-  (pop-to-buffer-same-window (get-buffer-create "*gnosis-edit*"))
-  (gnosis-edit-mode)
-  (erase-buffer)
-  (insert ";;\n;; You are editing a gnosis note.\n\n")
-  (insert "(gnosis-edit-update-note ")
-  (gnosis-export-note id)
-  (insert ")")
-  (insert "\n\n;; After finishing editing, save changes with `<C-c> <C-c>'\n;; Avoid exiting without saving.")
-  (indent-region (point-min) (point-max))
-  ;; Insert id & fields as read-only values
-  (gnosis-edit-read-only-values (format ":id %s" id) ":main" ":options" ":answer"
-				":tags" ":extra-notes" ":image" ":second-image"
-				":gnosis" ":amensia" ":suspend")
-  (local-set-key (kbd "C-c C-c") (lambda () (interactive) (gnosis-edit-note-save-exit))))
+(defun gnosis-add-thema--double (id deck-id type keimenon hypothesis apocalypse parathema tags suspend links)
+  "Double thema format.
 
-(defun gnosis-assert-int-or-nil (value description)
-  "Assert that VALUE is an integer or nil.
+Changes TYPE to basic & inserts a second basic thema with APOCALYPSE
+and KEIMENON reversed."
+  (cl-assert (integerp deck-id) nil "Deck-id value must be an integer.")
+  (cl-assert (stringp type) nil "Type must be an integer.")
+  (cl-assert (stringp keimenon) nil "Keimenon must be an integer.")
+  (cl-assert (listp hypothesis) nil "Hypothesis value must be a list.")
+  (cl-assert (and (listp apocalypse) (= (length apocalypse) 1))
+	     nil "Apocalypse value must be a list of a signle item")
+  (cl-assert (listp tags) nil "Tags must be a list.")
+  (cl-assert (or (= suspend 0) (= suspend 1)) nil "Suspend value must either 0 or 1")
+  (cl-assert (listp links) nil "Links must be a list")
+  ;; Change type to basic
+  (let ((type "basic")
+	(hypothesis (or hypothesis (list ""))))
+    (if (equal id "NEW")
+	(progn
+	  (gnosis-add-thema-fields deck-id type keimenon hypothesis apocalypse parathema tags suspend links)
+	  (gnosis-add-thema-fields deck-id type (car apocalypse) hypothesis (list keimenon) parathema tags suspend links))
+      ;; There should not be a double type thema in database to
+      ;; update.  This is used for testing purposes.
+      (gnosis-update-thema id keimenon hypothesis apocalypse parathema tags links))))
 
-DESCRIPTION is a string that describes the value."
-  (unless (or (null value) (integerp value))
-    (error "Invalid value: %s, %s" value description)))
+(defun gnosis-add-thema--mcq (id deck-id type keimenon hypothesis apocalypse parathema tags suspend links)
+  "Default format for adding a thema.
 
-(defun gnosis-assert-float-or-nil (value description &optional less-than-1)
-  "Assert that VALUE is a float or nil.
+ID: Thema ID, either an integer value or NEW.
+DECK-ID: Integer value of deck-id.
+TYPE: String representing the type of note.
+KEIMENON: String for the thema text.
+HYPOTHESIS: List of a signle string.
+APOCALYPSE: List of a single string.
+PARATHEMA: String for the parathema text.
+TAGS: List of thema tags.
+SUSPEND: Integer value of 0 for nil and 1 for true (suspended).
+LINKS: List of id links in PARATHEMA."
+  (cl-assert (integerp deck-id) nil "Deck-id value must be an integer.")
+  (cl-assert (stringp type) nil "Type must be an integer.")
+  (cl-assert (stringp keimenon) nil "Keimenon must be an integer.")
+  (cl-assert (and (listp hypothesis)
+		  (> (length hypothesis) 1))
+	     nil "Hypothesis value must be a list greater than 1 item.")
+  (cl-assert (and (listp apocalypse)
+		  (= (length apocalypse) 1)
+		  (member (car apocalypse) hypothesis))
+	     nil "Apocalypse value must be a single item, member of the Hypothesis")
+  (cl-assert (listp tags) nil "Tags must be a list.")
+  (cl-assert (or (= suspend 0)
+		 (= suspend 1))
+	     nil "Suspend value must either 0 or 1")
+  (cl-assert (listp links) nil "Links must be a list")
+  (if (equal id "NEW")
+      (gnosis-add-thema-fields deck-id type keimenon (or hypothesis (list "")) apocalypse parathema tags suspend links)
+    (gnosis-update-thema id keimenon hypothesis apocalypse parathema tags links)))
 
-DESCRIPTION is a string that describes the value.
-LESS-THAN-1: If t, assert that VALUE is a float less than 1."
-  (if less-than-1
-      (unless (or (null value) (and (floatp value) (< value 1)))
-	(error "Invalid value: %s, %s" value description))
-    (unless (or (null value) (floatp value))
-      (error "Invalid value: %s, %s" value description))))
+(defun gnosis-add-thema--cloze (id deck-id type keimenon hypothesis apocalypse parathema tags suspend links)
+  "Add cloze type thema."
+  (cl-assert (integerp deck-id) nil "Deck-id value must be an integer.")
+  (cl-assert (stringp type) nil "Type must be an integer.")
+  (cl-assert (stringp keimenon) nil "Keimenon must be an integer.")
+  (cl-assert (or (= (length apocalypse) (length hypothesis))
+		 (null hypothesis))
+	     nil "Hypothesis value must be a list or nil, equal in length of Apocalypse.")
+  (cl-assert (listp apocalypse) nil "Apocalypse value must be a list.")
+  (cl-assert (listp tags) nil "Tags must be a list.")
+  (cl-assert (or (= suspend 0)
+		 (= suspend 1))
+	     nil "Suspend value must either 0 or 1")
+  (cl-assert (listp links) nil "Links must be a list")
+  (cl-assert (gnosis-cloze-check keimenon apocalypse) nil "Clozes (apocalypse) values are not part of keimenon")
+  (if (equal id "NEW")
+      (gnosis-add-thema-fields deck-id type keimenon (or hypothesis (list "")) apocalypse parathema tags suspend links)
+    (gnosis-update-thema id keimenon hypothesis apocalypse parathema tags links)))
 
-(defun gnosis-assert-number-or-nil (value description)
-  "Assert that VALUE is a number or nil.
+(defun gnosis-save-thema (thema deck)
+  "Save THEMA for DECK."
+  (let* ((id (nth 0 thema))
+	 (type (nth 1 thema))
+	 (keimenon (nth 2 thema))
+	 (hypothesis (and (nth 3 thema) (mapcar (lambda (item) (string-remove-prefix "- " item))
+						(split-string (nth 3 thema) gnosis-org-separator))))
+	 (apocalypse (and (nth 4 thema) (mapcar (lambda (item)
+						  "Replace `gnosis-org-separator'."
+						  (string-remove-prefix "- " item))
+						(split-string (nth 4 thema) gnosis-org-separator))))
+	 (parathema (or (nth 5 thema) ""))
+	 (tags (nth 6 thema))
+	 (links (gnosis-extract-id-links parathema))
+	 (thema-func (cdr (assoc (downcase type)
+				  (mapcar (lambda (pair) (cons (downcase (car pair))
+							  (cdr pair)))
+					  gnosis-thema-types)))))
+    ;; (message "asdfs")
+    (funcall thema-func id deck type keimenon hypothesis apocalypse parathema tags 0 links)))
 
-DESCRIPTION is a string that describes the value."
-  (unless (or (null value) (numberp value))
-    (error "Invalid value: %s, %s" value description)))
+;;;###autoload
+(defun gnosis-add-thema (deck type &optional keimenon hypothesis apocalypse parathema tags example)
+  "Add thema with TYPE in DECK."
+  (interactive (list
+		(gnosis--get-deck-name)
+		(downcase (completing-read "Select type: " gnosis-thema-types))))
+  (pop-to-buffer "*Gnosis NEW*")
+  (with-current-buffer "*Gnosis NEW*"
+    (let ((inhibit-read-only 1))
+      (erase-buffer))
+    (insert "#+DECK: " deck)
+    (gnosis-edit-mode)
+    (gnosis-org--insert-thema "NEW" type keimenon hypothesis apocalypse parathema tags example))
+  (search-backward "keimenon")
+  (forward-line))
 
-(cl-defun gnosis-edit-save-exit ()
-  "Save edits and exit using EXIT-FUNC, with ARGS."
+(defun gnosis-export-note (id)
+  "Export note with ID."
+  (let ((note-data (append (gnosis-select '[type keimenon hypothesis apocalypse tags] 'notes `(= id ,id) t)
+			   (gnosis-select 'parathema 'extras `(= id ,id) t))))
+      (gnosis-org--insert-thema (number-to-string id)
+				(nth 0 note-data)
+				(nth 1 note-data)
+				(concat (string-remove-prefix "\n" gnosis-org-separator)
+					(mapconcat 'identity (nth 2 note-data) gnosis-org-separator))
+				(concat (string-remove-prefix "\n" gnosis-org-separator)
+					(mapconcat 'identity (nth 3 note-data) gnosis-org-separator))
+				(nth 5 note-data)
+				(nth 4 note-data))))
+
+(defun gnosis-edit-thema (id)
+  "Edit note with ID."
+  (with-current-buffer (pop-to-buffer "*Gnosis Edit*")
+    (let ((inhibit-read-only 1)
+	  (deck-name (gnosis--get-deck-name
+		      (gnosis-get 'deck-id 'notes `(= id ,id)))))
+      (erase-buffer)
+      (insert "#+DECK: " deck-name))
+    (gnosis-edit-mode)
+    (gnosis-export-note id)
+    (search-backward "keimenon")
+    (forward-line)))
+
+(defun gnosis-save ()
+  "Save themas in current buffer."
   (interactive)
-  (when (get-buffer "*gnosis-edit*")
-    (switch-to-buffer "*gnosis-edit*")
-    (eval-buffer)
-    (quit-window t)
-    (gnosis-dashboard-return)))
+  (let ((themas (gnosis-org-parse-themas))
+	(deck (gnosis--get-deck-id (gnosis-org-parse--deck-name))))
+    (cl-loop for thema in themas
+	     do (gnosis-save-thema thema deck))
+    (gnosis-edit-quit)))
 
-(cl-defun gnosis-edit-note-save-exit ()
-  "Save edits and exit using EXIT-FUNC, with ARGS."
+(defun gnosis-edit-quit ()
+  "Quit recrusive edit & kill current buffer."
   (interactive)
-  (when (get-buffer "*gnosis-edit*")
-    (switch-to-buffer "*gnosis-edit*")
-    (eval-buffer)
-    (quit-window t)
+  (kill-buffer-and-window)
+  (when gnosis-review-editing-p
+    (setf gnosis-review-editing-p nil)
     (exit-recursive-edit)))
 
 (defvar-keymap gnosis-edit-mode-map
-  :doc "gnosis-edit keymap"
-  "C-c C-c" #'gnosis-edit-save-exit)
+  :doc "gnosis org mode map"
+  "C-c C-c" #'gnosis-save
+  "C-c C-k" #'gnosis-edit-quit)
 
-(define-derived-mode gnosis-edit-mode emacs-lisp-mode "Gnosis EDIT"
-  "Gnosis Edit Mode."
+(define-derived-mode gnosis-edit-mode org-mode "Gnosis Org"
+  "Gnosis Org Mode."
   :interactive nil
   :lighter " Gnosis Edit"
-  :keymap gnosis-edit-mode-map)
-
-(cl-defun gnosis-edit-update-note (&key id main options answer tags (extra-notes nil) (image nil)
-					(second-image nil) gnosis amnesia suspend)
-  "Update note with id value of ID.
-
-ID: Note id
-MAIN: Main part of note, the stem part of MCQ, question for basic, etc.
-OPTIONS: Options for mcq type notes/Hint for basic & cloze type notes
-ANSWER: Answer for MAIN
-TAGS: Tags for note, used to organize & differentiate between notes
-EXTRA-NOTES: Notes to display after user-input
-IMAGE: Image to display before user-input
-SECOND-IMAGE: Image to display after user-input
-GNOSIS: Gnosis score
-AMNESIA: Amnesia value
-SUSPEND: Suspend note, 0 for unsuspend, 1 for suspend"
-  (cl-assert (stringp main) nil "Main must be a string")
-  (cl-assert (or (stringp image) (null image)) nil
-	     "Image must be a string, path to image file from `gnosis-images-dir', or nil")
-  (cl-assert (or (stringp second-image) (null second-image)) nil
-	     "Second-image must be a string, path to image file from `gnosis-images-dir', or nil")
-  (cl-assert (or (stringp extra-notes) (null extra-notes)) nil
-	     "Extra-notes must be a string, or nil")
-  (cl-assert (and (listp tags) (cl-every #'stringp tags)) nil "Tags must be a list of strings")
-  (cl-assert (and (listp gnosis) (length= gnosis 3) (cl-every #'floatp gnosis))
-	     nil "gnosis must be a list of 3 floats")
-  (cl-assert (or (stringp options) (and (listp options) (cl-every #'(lambda (x) (or (stringp x) (null x)))
-								  options)))
-	     nil "Options must be a string or a list of strings")
-  (cl-assert (and (numberp suspend) (or (= suspend 0) (= suspend 1))) nil "Suspend must be either 0 or 1")
-  (when (and (string= (gnosis-get-type id) "cloze")
-	     (not (stringp options)))
-    (cl-assert (or (listp options) (stringp options)) nil "Options must be a list or a string.")
-    (cl-assert (gnosis-cloze-check main answer) nil "Clozes are not part of the question (main).")
-    (cl-assert (>= (length answer) (length options)) nil
-	       "Hints (options) must be equal or less than clozes (answer).")
-    (cl-assert (cl-every (lambda (item) (or (null item) (stringp item))) options) nil "Hints (options) must be either nil or a string."))
-  ;; Construct the update clause for the emacsql update statement.
-  (cl-loop for (field . value) in `((main . ,main)
-				    (options . ,options)
-				    (answer . ,answer)
-				    (tags . ,tags)
-				    (extra-notes . ,extra-notes)
-				    (images . ,image)
-				    (extra-image . ,second-image)
-				    (gnosis . ',gnosis)
-				    (amnesia . ,amnesia)
-				    (suspend . ,suspend))
-           when value
-           do (cond ((memq field '(extra-notes images extra-image))
-		     (gnosis-update 'extras `(= ,field ,value) `(= id ,id)))
-		    ((memq field '(gnosis amnesia))
-		     (gnosis-update 'review `(= ,field ,value) `(= id ,id)))
-		    ((eq field 'suspend)
-		     (gnosis-update 'review-log `(= ,field ,value) `(= id ,id)))
-		    ((listp value)
-		     (gnosis-update 'notes `(= ,field ',value) `(= id ,id)))
-		    (t (gnosis-update 'notes `(= ,field ,value) `(= id ,id))))))
+  :keymap gnosis-edit-mode-map
+  (setq header-line-format (format " Save thema by running %s or %s to quit"
+				   (propertize "C-c C-c" 'face 'help-key-binding)
+				   (propertize "C-c C-k" 'face 'help-key-binding))))
 
 (defun gnosis-validate-custom-values (new-value)
   "Validate the structure and values of NEW-VALUE for gnosis-custom-values."
@@ -2434,7 +2509,7 @@ If STRING-SECTION is nil, apply FACE to the entire STRING."
 					  :tags note-tags)
 	       (gnosis-add-note--mcq :deck deck-name
 				     :question "Which one is the capital of Greece?"
-				     :choices '("Athens" "Sparta" "Nafplio" "Constantinople")
+				     :choices '("Athens" "Sparta" "Rome" "Constantinople")
 				     :correct-answer 1
 				     :extra "Athens (Ἀθήνα) is the largest city of Greece & one of the world's oldest cities, with it's recorded history spanning over 3,500 years."
 				     :tags note-tags)
@@ -2513,7 +2588,7 @@ DATE: Integer, used with `gnosis-algorithm-date' to get previous dates."
   "Output the average daily notes reviewed for current year.
 
 Skips days where no note was reviewed."
-  (let ((reviews (gnosis-select 'reviewed-total 'activity-log '1=1 t)))
+  (let ((reviews (gnosis-select 'reviewed-total 'activity-log '(> reviewed-total 0) t)))
     (if (null reviews) 0
       (format "%.2f" (/ (apply '+ reviews) (float (length reviews)))))))
 
@@ -2521,7 +2596,7 @@ Skips days where no note was reviewed."
   "Edit note with ID."
   (interactive)
   (let ((id (tabulated-list-get-id)))
-    (gnosis-edit-note id)))
+    (gnosis-edit-thema id)))
 
 (defun gnosis-dashboard-suspend-note ()
   "Suspend note."
@@ -2551,8 +2626,8 @@ Skips days where no note was reviewed."
   :doc "Keymap for notes dashboard."
   "e" #'gnosis-dashboard-edit-note
   "s" #'gnosis-dashboard-suspend-note
-  "C-s" #'gnosis-dashboard-search-note
-  "a" #'gnosis-add-note
+  "SPC" #'gnosis-dashboard-search-note
+  "a" #'gnosis-add-thema
   "r" #'gnosis-dashboard-return
   "g" #'gnosis-dashboard-return
   "d" #'gnosis-dashboard-delete
@@ -2568,7 +2643,7 @@ Skips days where no note was reviewed."
   (cl-assert (listp note-ids))
   (let ((entries (emacsql gnosis-db
 			  `[:select
-			    [notes:id notes:main notes:options notes:answer
+			    [notes:id notes:keimenon notes:hypothesis notes:apocalypse
 				      notes:tags notes:type review-log:suspend]
 			    :from notes
 			    :join review-log :on (= notes:id review-log:id)
@@ -2589,9 +2664,9 @@ Skips days where no note was reviewed."
   (pop-to-buffer-same-window gnosis-dashboard-buffer-name)
   (gnosis-dashboard-enable-mode)
   (gnosis-dashboard-notes-mode)
-  (setf tabulated-list-format `[("Main" ,(/ (window-width) 4) t)
-                                ("Options" ,(/ (window-width) 6) t)
-                                ("Answer" ,(/ (window-width) 6) t)
+  (setf tabulated-list-format `[("Keimenon" ,(/ (window-width) 4) t)
+                                ("Hypothesis" ,(/ (window-width) 6) t)
+                                ("Apocalypse" ,(/ (window-width) 6) t)
                                 ("Tags" ,(/ (window-width) 5) t)
                                 ("Type" ,(/ (window-width) 10) t)
                                 ("Suspend" ,(/ (window-width) 6) t)]
@@ -2630,12 +2705,31 @@ Skips days where no note was reviewed."
 (defun gnosis-dashboard-rename-tag (&optional tag new-tag )
   "Rename TAG to NEW-TAG."
   (interactive)
-  (let ((new-tag (or new-tag (read-string "News tag name: ")))
+  (let ((new-tag (or new-tag (read-string "New tag name: ")))
 	(tag (or tag (tabulated-list-get-id))))
     (cl-loop for note in (gnosis-get-tag-notes tag)
 	     do (let* ((tags (car (gnosis-select '[tags] 'notes `(= id ,note) t)))
 		       (new-tags (cl-substitute new-tag tag tags :test #'string-equal)))
-		  (gnosis-update 'notes `(= tags ',new-tags) `(= id ,note))))))
+		  (gnosis-update 'notes `(= tags ',new-tags) `(= id ,note))))
+    ;; Update tags in database
+    (gnosis-tags--update (gnosis-tags-get-all))
+    ;; Output tags anew
+    (gnosis-dashboard-output-tags)))
+
+(defun gnosis-dashboard-delete-tag (&optional tag)
+  "Rename TAG to NEW-TAG."
+  (interactive)
+  (let ((tag (or tag (tabulated-list-get-id))))
+    (when (y-or-n-p (format "Delete tag %s?" (propertize tag 'face 'font-lock-keyword-face)))
+      (cl-loop for note in (gnosis-get-tag-notes tag)
+	       do (let* ((tags (car (gnosis-select '[tags] 'notes `(= id ,note) t)))
+			 (new-tags (remove tag tags)))
+		    (gnosis-update 'notes `(= tags ',new-tags) `(= id ,note))))
+      ;; Update tags in database
+      (gnosis-tags--update (gnosis-tags-get-all))
+      ;; Output tags anew
+      (gnosis-dashboard-output-tags))))
+
 
 (defun gnosis-dashboard-rename-deck (&optional deck-id new-name)
   "Rename deck where DECK-ID with NEW-NAME."
@@ -2665,6 +2759,7 @@ Skips days where no note was reviewed."
   "e" #'gnosis-dashboard-rename-tag
   "s" #'gnosis-dashboard-suspend-tag
   "r" #'gnosis-dashboard-rename-tag
+  "d" #'gnosis-dashboard-delete-tag
   "g" #'gnosis-dashboard-return)
 
 (define-minor-mode gnosis-dashboard-tags-mode
@@ -2673,7 +2768,8 @@ Skips days where no note was reviewed."
 
 (defun gnosis-dashboard-output-tags (&optional tags)
   "Format gnosis dashboard with output of TAGS."
-  (let ((tags (or tags (gnosis-get-tags--unique))))
+  (gnosis-tags-refresh) ;; Refresh tags
+  (let ((tags (or tags (gnosis-tags-get-all))))
     (pop-to-buffer-same-window gnosis-dashboard-buffer-name)
     (gnosis-dashboard-enable-mode)
     (gnosis-dashboard-tags-mode)
@@ -2760,7 +2856,7 @@ When called with called with a prefix, unsuspend all notes of deck."
   "q" #'quit-window
   "h" #'gnosis-dashboard-menu
   "r" #'gnosis-review
-  "a" #'gnosis-add-note
+  "a" #'gnosis-add-thema
   "A" #'gnosis-add-deck
   "s" #'gnosis-dashboard-suffix-query
   "n" #'(lambda () (interactive) (gnosis-dashboard-output-notes (gnosis-collect-note-ids)))
@@ -2826,7 +2922,8 @@ DASHBOARD-TYPE: either Notes or Decks to display the respective dashboard."
 		  (setf gnosis-dashboard--selected-ids
 			(append gnosis-dashboard--selected-ids (list id)))
                   (overlay-put ov 'face 'highlight)
-                  (overlay-put ov 'gnosis-mark t))))
+                  (overlay-put ov 'gnosis-mark t)))
+	      (forward-line))
           (message "No entry at point"))
       (message "Not in a tabulated-list-mode"))))
 
@@ -2882,8 +2979,7 @@ DASHBOARD-TYPE: either Notes or Decks to display the respective dashboard."
   "Launch gnosis dashboard."
   (interactive)
   ;; Refresh gnosis-db
-  (unless gnosis-testing
-    (setf gnosis-db (emacsql-sqlite-open (expand-file-name "gnosis.db" gnosis-dir))))
+  (setf gnosis-db gnosis-db)
   (let* ((buffer-name gnosis-dashboard-buffer-name)
 	 (due-log (gnosis-review-get--due-notes))
 	 (due-note-ids (mapcar #'car due-log)))
