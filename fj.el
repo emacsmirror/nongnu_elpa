@@ -3015,7 +3015,7 @@ If PREFIX arg, prompt for branch to show commits of."
                                     (fj-repo-branches-list repo owner))))
          (data (fj-get-repo-commits repo owner branch))
          (buf (format "*fj-%s-commit-log%s*" repo
-                      (when branch (format "-branch-%s" branch)))))
+                      (if branch (format "-branch-%s" branch) ""))))
     (fedi-with-buffer buf 'fj-commits-mode nil
       ;; FIXME: use `fj-other-window-maybe'
       (setq-local header-line-format (format "Commits in branch: %s"
