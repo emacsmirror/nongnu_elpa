@@ -288,7 +288,7 @@ Provide current topics for adding/removing."
   ["User options"
    ("a" "hide activity" "hide_activity" :alist-key hide_activity :class tp-bool)
    ("e" "hide email" "hide_email" :alist-key hide_email :class tp-bool)
-   ("v"  "diff view style" "diff_view_style" :alist-key diff_view_style :class tp-bool
+   ("v"  "diff view style" "diff_view_style" :alist-key diff_view_style :class tp-cycle
     :choices (lambda () fj-diff-style-types)) ;; FIXME: lambdas don't work here?
    ("u" "enable repo unit hints" "enable_repo_unit_hints"
     :alist-key enable_repo_unit_hints
