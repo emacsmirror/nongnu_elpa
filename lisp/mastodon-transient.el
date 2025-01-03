@@ -343,6 +343,46 @@ Do not add more than the server's maximum setting."
               (tp-bools-to-strs args)))
       (mastodon-toot--update-status-fields))))
 
+(transient-define-prefix mastodon-notifications-policy ()
+  "Set notifications policy options."
+  ;; https://docs.joinmastodon.org/methods/notifications/#get-policy
+  :value (lambda () (tp-return-data #'mastodon-notifications--get-policy))
+  ["Notification policy options"
+   ;; FIXME: it would be nice to display our three options and cycle, but
+   ;; tp-bool no longer works that way so we would have to implement
+   ;; subclasses / methods:
+   ("f" "for not following" "for_not_following"
+    :alist-key for_not_following :class tp-cycle
+    :choices (lambda () mastodon-notifications-policy-vals))
+   ("F" "for not followers" "for_not_followers"
+    :alist-key for_not_followers :class tp-cycle
+    :choices (lambda () mastodon-notifications-policy-vals))
+   ("n" "for new accounts" "for_new_accounts"
+    :alist-key for_new_accounts :class tp-cycle
+    :choices (lambda () mastodon-notifications-policy-vals))
+   ("p" "for private mentions" "for_private_mentions"
+    :alist-key for_private_mentions :class tp-cycle
+    :choices (lambda () mastodon-notifications-policy-vals))
+   ("l" "for limited accounts" "for_limited_accounts"
+    :alist-key for_limited_accounts :class tp-cycle
+    :choices (lambda () mastodon-notifications-policy-vals))]
+  ["Update"
+   ("C-c C-c" "Save settings" ;; mastodon-transient--prefix-inspect)
+    mastodon-notifications-policy-update)
+   ("C-c C-k" :info "Revert all changes")])
+
+(transient-define-suffix mastodon-notifications-policy-update (args)
+  "Update"
+  :transient 'transient--do-exit
+  ;; TODO:
+  (interactive (list (transient-args 'mastodon-notifications-policy)))
+  (let* ((parsed (tp-parse-args-for-send args))
+         (resp (mastodon-notifications--update-policy parsed)))
+    (mastodon-http--triage
+     resp
+     (lambda (resp)
+       (message "Settings updated!\n%s" (pp-to-string parsed))))))
+
 ;;; CLASSES
 
 (defclass mastodon-transient-field (tp-option-str)

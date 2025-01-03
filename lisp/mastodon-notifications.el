@@ -796,7 +796,7 @@ Status notifications are created when you call
          (resp (mastodon-http--get-json url)))
     (alist-get 'count resp)))
 
-(defvar mastodon-notifications--policy-vals
+(defvar mastodon-notifications-policy-vals
   '("accept" "filter" "drop"))
 
 (defun mastodon-notifications--get-policy ()
