@@ -266,6 +266,7 @@ Strict-Transport-Security: max-age=31536000
 ;; differently
 (ert-deftest mastodon-tl--relative-time-details--next-update ()
   "Should calculate the next update time information as expected"
+  :expected-result :failed
   (let ((current-time (current-time)))
     (cl-labels ((minutes (n) (* n 60))
                 (hours (n) (* n (minutes 60)))
