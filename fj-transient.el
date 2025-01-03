@@ -253,7 +253,7 @@ Provide current topics for adding/removing."
     :choices fj-merge-types)] ;; FIXME: broken?
   ["Update"
    ("C-c C-c" "Save settings" fj-update-repo)
-   ("C-c C-k" :info "to revert all changes")]
+   ("C-x C-k" :info "to revert all changes")]
   (interactive)
   (if (not fj-current-repo)
       (user-error "No repo. Call from a repo view or set `fj-current-repo'")
@@ -295,7 +295,7 @@ Provide current topics for adding/removing."
     :class tp-bool)]
   ["Update"
    ("C-c C-c" "Save settings" fj-update-user-settings)
-   ("C-c C-k" :info "to revert all changes")]
+   ("C-x C-k" :info "to revert all changes")]
   (interactive)
   (if (not fj-user)
       (user-error "No user. Set `fj-user'")
