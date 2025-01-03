@@ -251,6 +251,12 @@ We implement this as an option because we need to be able to
 explicitly send true/false values to the server, whereas
 transient ignores false/nil values.")
 
+(defclass tp-cycle (tp-bool)
+  ()
+  "A class to cycle through options.
+Like `tp-bool', but supports arbitrary multiple options.
+Values to send will not be JSON booleans, but plain strings.")
+
 ;;; TRANSIENT METHODS
 ;; for `tp-bool' we define our own infix option that displays
 ;; [true|false] like exclusive switches. activating the infix
@@ -338,8 +344,17 @@ The value currently on the server should be underlined."
                   (car choices)
                 (cadr (member val choices)))))
     ;; return JSON bool:
-    ;; FIXME: breaks using `tp-bool' for cycling other items!
     (car (rassoc str tp-json-bool-alist))))
+
+(cl-defmethod transient-infix-read ((obj tp-cycle))
+  "Cycle through the possible values of OBJ."
+  (let* ((cons (transient-infix-value obj))
+         (val (cdr cons))
+         (choices (tp--get-choices obj)))
+    (if (or (not val) ;; handle nil value
+            (equal val (car (last choices))))
+        (car choices)
+      (cadr (member val choices)))))
 
 ;; FIXME: see the `transient-infix-read' method's docstring:
 ;; we should preserve history, follow it. maybe just mod it.
