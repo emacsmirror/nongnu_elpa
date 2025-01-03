@@ -131,7 +131,7 @@ the format fields.X.keyname."
          (resp (mastodon-http--patch url strs))) ;; :json fails
     (mastodon-http--triage
      resp
-     (lambda (_)
+     (lambda (resp)
        (message "Settings updated!\n%s" (pp-to-string strs))))))
 
 (transient-define-prefix mastodon-user-settings ()
@@ -155,16 +155,14 @@ the format fields.X.keyname."
    ("d"  "discoverable" "discoverable" :alist-key discoverable :class tp-bool)
    ("c" "hide follower/following lists" "source.hide_collections"
     :alist-key source.hide_collections :class tp-bool)
-   ("i" "indexable" "source.indexable" :alist-key source.indexable :class tp-bool)
-   ]
+   ("i" "indexable" "source.indexable" :alist-key source.indexable :class tp-bool)]
   ["Tooting options"
    ("p" "default privacy" "source.privacy" :alist-key source.privacy
     :class tp-option
     :choices (lambda () mastodon-toot-visibility-settings-list))
    ("s" "mark sensitive" "source.sensitive" :alist-key source.sensitive :class tp-bool)
    ("g" "default language" "source.language" :alist-key source.language :class tp-option
-    :choices (lambda () mastodon-iso-639-regional))
-   ]
+    :choices (lambda () mastodon-iso-639-regional))]
   ["Update"
    ("C-c C-c" "Save settings" mastodon-user-settings-update)
    ("C-c C-k" :info "Revert all changes")]
@@ -192,7 +190,7 @@ the format fields.X.keyname."
          (url (mastodon-http--api endpoint))
          (resp (mastodon-http--patch url arrays))) ; :json)))
     (mastodon-http--triage
-     resp (lambda (_) (message "Fields updated!")))))
+     resp (lambda (resp) (message "Fields updated!")))))
 
 (defun mastodon-transient-fetch-fields ()
   "Fetch profile fields (metadata)."
