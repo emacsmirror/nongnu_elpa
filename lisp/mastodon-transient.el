@@ -165,7 +165,7 @@ the format fields.X.keyname."
     :choices (lambda () mastodon-iso-639-regional))]
   ["Update"
    ("C-c C-c" "Save settings" mastodon-user-settings-update)
-   ("C-c C-k" :info "Revert all changes")]
+   ("C-x C-k" :info "Revert all changes")]
   (interactive)
   (if (or (not (boundp 'mastodon-active-user))
           (not mastodon-active-user))
@@ -215,7 +215,7 @@ the format fields.X.keyname."
     ("4 v" "" "fields.4.value" :alist-key fields.4.value :class mastodon-transient-field)]]
   ["Update"
    ("C-c C-c" "Save settings" mastodon-profile-fields-update)
-   ("C-c C-k" :info "Revert all changes")]
+   ("C-x C-k" :info "Revert all changes")]
   (interactive)
   (if (not mastodon-active-user)
       (user-error "User not set")
@@ -369,7 +369,7 @@ Do not add more than the server's maximum setting."
   ["Update"
    ("C-c C-c" "Save settings" ;; mastodon-transient--prefix-inspect)
     mastodon-notifications-policy-update)
-   ("C-c C-k" :info "Revert all changes")])
+   ("C-x C-k" :info "Revert all changes")])
 
 (transient-define-suffix mastodon-notifications-policy-update (args)
   "Update"
