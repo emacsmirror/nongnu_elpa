@@ -650,7 +650,6 @@ If FALSE t, use gnosis-face-false face"
   "Display PARATHEMA."
   (goto-char (point-max))
   (and parathema (gnosis-center-string parathema))
-  ;; (and parathema (insert "\n\n" (propertize parathema 'face 'gnosis-face-parathema)))
   (gnosis-apply-syntax-overlay)
   (gnosis-center-current-line))
 
