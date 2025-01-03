@@ -62,58 +62,7 @@ DECK: Deck to add the inputs to."
 	(testing-deck (or deck "testing")))
     (unless (gnosis-get 'name 'decks `(= name ,testing-deck))
       (gnosis-add-deck testing-deck))
-    (when (y-or-n-p "Add MCQ type?")
-      (emacsql-with-transaction gnosis-db
-	(dotimes (_ num)
-	  (gnosis-add-note--mcq :deck testing-deck
-				:question "A *37-year-old* man is admitted to the
-emergency department after a severe car crash. /After/ examining the
-patient the emergency medicine physician concludes *that* the serratus
-anterior muscle is damaged. ~Which~ of the following nerves innervates
-the =serratus anterior muscle=?"
-				:choices '("Long thoracic" "Axillary" "Spinal accessory" "Dorsal scapular" "Thoracodorsal")
-				:correct-answer 1
-				:extra "The long thoracic is the only nerve that
-innervates the serratus anterior. The axillary nerve innervates the
-deltoid, the spinal accessory nerve innervates the sternocleidomastoid
-and trapezius, the dorsal scapular nerve supplies the rhomboid muscles
-and levator scapulae, and the latissimus dorsi is the muscle supplied
-by the thoracodorsal nerve."
-				:images (cons gnosis-test-image gnosis-test-image)
-				:tags (gnosis-test-random-items gnosis-test-tags 2))))
-      (when (y-or-n-p "Add Basic type questions?")
-	(dotimes (_ num)
-	  (gnosis-add-note--basic :deck testing-deck
-				  :question "A question"
-				  :hint "hint"
-				  :answer "answer"
-				  :extra "extra"
-				  :images (cons gnosis-test-image gnosis-test-image)
-				  :tags (gnosis-test-random-items gnosis-test-tags 2))))
-      (when (y-or-n-p "Add single Cloze type?")
-	(dotimes (_ num)
-	  ;; TODO: Update tests for include hints.
-	  (gnosis-add-note--cloze :deck testing-deck
-				  :note "this is a {c1:note}"
-				  :tags (gnosis-test-random-items gnosis-test-tags 2)
-				  :images (cons gnosis-test-image gnosis-test-image)
-				  :extra "extra")))
-      (when (y-or-n-p "Add multimple Clozes note?")
-	(dotimes (_ num)
-	  (gnosis-add-note--cloze :deck testing-deck
-				  :note "this is a {c1:note}, a note with multiple {c1:clozes::what}"
-				  :tags (gnosis-test-random-items gnosis-test-tags 2)
-				  :images (cons gnosis-test-image gnosis-test-image)
-				  :extra "extra")))
-      (when (y-or-n-p "Add y-or-n note type?")
-	(dotimes (_ num)
-	  (gnosis-add-note--y-or-n :deck testing-deck
-				   :question "Is Codeine recommended in breastfeeding mothers?"
-				   :hint "hint"
-				   :answer 110
-				   :extra "extra"
-				   :images (cons gnosis-test-image gnosis-test-image)
-				   :tags (gnosis-test-random-items gnosis-test-tags 2)))))))
+    num))
 
 (defun gnosis-test-start (&optional note-num)
   "Begin/End testing env.
@@ -128,7 +77,7 @@ If ask nil, leave testing env"
 	  (unless (file-exists-p testing-dir)
 	    (make-directory testing-dir))
 	  (setf gnosis-db (emacsql-sqlite-open testing-db))
-	  (dolist (table '(decks notes review review-log extras activity-log))
+	  (dolist (table '(decks notes review review-log extras activity-log tags links))
 	    (condition-case nil
 		(gnosis--drop-table table)
 	      (error (message "No %s table to drop." table))))
