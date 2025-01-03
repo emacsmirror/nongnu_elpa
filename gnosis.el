@@ -646,35 +646,13 @@ If FALSE t, use gnosis-face-false face"
 	  "\n")
   (gnosis-insert-separator))
 
-(defun gnosis-display-extra (id)
-  "Display extra information & extra-image for note ID."
-  (let ((extras (or (gnosis-get 'extra-notes 'extras `(= id ,id)) "")))
-    (goto-char (point-max))
-    (gnosis-display-image id 'extra-image)
-    (insert "\n" (gnosis-center-string
-		  (propertize extras 'face 'gnosis-face-extra))
-	    "\n")
-    (gnosis-apply-syntax-overlay)))
-
-;;;###autoload
-(defun gnosis-read-string-from-buffer (prompt string)
-  "Switch to a new buffer to edit STRING in a recursive edit.
-The user finishes editing with \\<gnosis-string-edit-mode-map>\\[gnosis-string-edit-done], or aborts with \\<gnosis-string-edit-mode-map>\\[gnosis-string-edit-abort]).
-
-PROMPT will be inserted at the start of the buffer, but won't be
-included in the resulting string.  If nil, no prompt will be
-inserted in the buffer.
-
-Also see `gnosis-string-edit'."
-  (gnosis-string-edit prompt  string
-		      (lambda (edited)
-			(setq string (substring-no-properties edited))
-			(exit-recursive-edit))
-		      :abort-callback (lambda ()
-					(exit-recursive-edit)
-					(error "Aborted edit")))
-  (recursive-edit)
-  string)
+(defun gnosis-display-parathema (parathema)
+  "Display PARATHEMA."
+  (goto-char (point-max))
+  (and parathema (gnosis-center-string parathema))
+  ;; (and parathema (insert "\n\n" (propertize parathema 'face 'gnosis-face-parathema)))
+  (gnosis-apply-syntax-overlay)
+  (gnosis-center-current-line))
 
 (defun gnosis-display-next-review (id success)
   "Display next interval of note ID for SUCCESS."
