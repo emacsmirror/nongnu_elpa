@@ -96,6 +96,10 @@ Repo search listing:
 
 [[file:Screenshot-search.png]]
 
+Repo settings transient:
+
+[[file:Screenshot-transient.png]]
+
 * commands index
 
 #+BEGIN_SRC emacs-lisp :results table :colnames '("Binding" "Command" "Description") :exports results
