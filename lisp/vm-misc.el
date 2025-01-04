@@ -1333,7 +1333,8 @@ encoding/decoding, conversions, subprocess communication etc."
 (defun vm-collapse-whitespace ()
   (goto-char (point-min))
   (while (re-search-forward "[ \t\n]+" nil 0)
-    (replace-match " " t t)))
+    (replace-match
+     (apply #'propertize " " (text-properties-at (match-beginning 0))) t t)))
 
 (defvar vm-paragraph-prefix-regexp "^[ >]*"
   "A regexp used by `vm-forward-paragraph' to match paragraph prefixes.")
