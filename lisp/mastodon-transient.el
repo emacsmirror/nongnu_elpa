@@ -131,7 +131,7 @@ the format fields.X.keyname."
          (resp (mastodon-http--patch url strs))) ;; :json fails
     (mastodon-http--triage
      resp
-     (lambda (resp)
+     (lambda (_resp)
        (message "Settings updated!\n%s" (pp-to-string strs))))))
 
 (transient-define-prefix mastodon-user-settings ()
@@ -190,7 +190,7 @@ the format fields.X.keyname."
          (url (mastodon-http--api endpoint))
          (resp (mastodon-http--patch url arrays))) ; :json)))
     (mastodon-http--triage
-     resp (lambda (resp) (message "Fields updated!")))))
+     resp (lambda (_resp) (message "Fields updated!")))))
 
 (defun mastodon-transient-fetch-fields ()
   "Fetch profile fields (metadata)."
@@ -345,6 +345,7 @@ Do not add more than the server's maximum setting."
 
 (defvar mastodon-notifications-policy-vals)
 (declare-function mastodon-notifications--get-policy "mastodon-notifications")
+(declare-function mastodon-notifications--update-policy "mastodon-notifications")
 
 (transient-define-prefix mastodon-notifications-policy ()
   "Set notifications policy options."
@@ -363,21 +364,28 @@ Do not add more than the server's maximum setting."
     :alist-key for_limited_accounts :class mastodon-transient-policy)]
   ["Notification requests"
    (:info #'mastodon-notifications-requests-count)
-   ;; (:info #'mastodon-notifications-count)
-   ]
+   (:info #'mastodon-notifications-filtered-count)]
   ["Update"
    ("C-c C-c" "Save settings" ;; mastodon-transient--prefix-inspect)
     mastodon-notifications-policy-update)
    ("C-x C-k" :info "Revert all changes")])
 
 (defun mastodon-notifications-requests-count ()
-  ""
-  ;; FIXME: val doesn't contain summary, though `tp-return-data' returns it
-  (let ((val (transient-args 'mastodon-notifications-policy)))
+  "Format a string for pending requests."
+  (let ((val (oref transient--prefix value)))
     (format "Pending requests: %d"
             (or (map-nested-elt
                  val
                  '(summary pending_requests_count))
+                0))))
+
+(defun mastodon-notifications-filtered-count ()
+  "Format a string for pending notifications."
+  (let ((val (oref transient--prefix value)))
+    (format "Pending notifications: %d"
+            (or (map-nested-elt
+                 val
+                 '(summary pending_notifications_count))
                 0))))
 
 (transient-define-suffix mastodon-notifications-policy-update (args)
@@ -395,8 +403,8 @@ Do not add more than the server's maximum setting."
 ;;; CLASSES
 
 (defclass mastodon-transient-policy (tp-cycle)
-  ((choices :initarg :choices :initform mastodon-notifications-policy-vals))
-  "")
+  ((choices :initarg :choices :initform 'mastodon-notifications-policy-vals))
+  "An option class for mastodon notification policy options.")
 
 (defclass mastodon-transient-field (tp-option-str)
   ((always-read :initarg :always-read :initform t))
