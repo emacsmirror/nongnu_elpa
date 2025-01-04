@@ -68,6 +68,9 @@
 (autoload 'mastodon-tl--buffer-type-eq "mastodon-tl")
 (autoload 'mastodon-tl--buffer-property "mastodon-tl")
 (autoload 'mastodon-http--patch "mastodon-http")
+(autoload 'mastodon-views--minor-view "mastodon-views")
+(autoload 'mastodon-tl--goto-first-item "mastodon-tl")
+(autoload 'mastodon-tl--init-sync "mastodon-tl")
 
 ;; notifications defcustoms moved into mastodon.el
 ;; as some need to be available without loading this file
@@ -85,6 +88,7 @@
 (defvar mastodon-profile-note-in-foll-reqs-max-length)
 (defvar mastodon-group-notifications)
 (defvar mastodon-notifications-grouped-names-count)
+(defvar mastodon-tl--link-keymap)
 
 ;;; VARIABLES
 
@@ -797,11 +801,6 @@ Status notifications are created when you call
     (alist-get 'count resp)))
 
 ;;; NOTIFICATION REQUESTS / FILTERING / POLICY
-
-(declare-function mastodon-tl--init-sync "mastodon-tl")
-(declare-function mastodon-views--minor-view "mastodon-views")
-(declare-function mastodon-tl--goto-first-item "mastodon-tl")
-(defvar mastodon-tl--link-keymap)
 
 (defvar mastodon-notifications--requests-map
   (let ((map (make-sparse-keymap)))
