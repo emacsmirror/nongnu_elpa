@@ -361,7 +361,11 @@ Do not add more than the server's maximum setting."
    ("p" "Unsolicited private mentions" "for_private_mentions"
     :alist-key for_private_mentions :class mastodon-transient-policy)
    ("l" "Moderated accounts" "for_limited_accounts"
-    :alist-key for_limited_accounts :class mastodon-transient-policy)]
+    :alist-key for_limited_accounts :class mastodon-transient-policy)
+   (:info "")
+   (:info "\"accept\" = receive notifications")
+   (:info "\"filter\" = mark as filtered")
+   (:info "\"drop\" = do not receive any notifications")]
   ["Notification requests"
    (:info #'mastodon-notifications-requests-count)
    (:info #'mastodon-notifications-filtered-count)]
