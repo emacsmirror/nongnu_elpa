@@ -71,7 +71,12 @@
 |                  | mastodon-notifications--get-single-notif          | Return a single notification JSON for v2 notifs.                               |
 |                  | mastodon-notifications--get-statuses              | Display status notifications in buffer.                                        |
 |                  | mastodon-notifications--get-type                  | Read a notification type and load its timeline.                                |
+|                  | mastodon-notifications--request-accept            | Accept a notification request for a user.                                      |
+|                  | mastodon-notifications--request-reject            | Reject a notification request for a user.                                      |
+| C-S-n            | mastodon-notifications--requests                  | Open a new buffer displaying the user's notification requests.                 |
 | N                | mastodon-notifications-get                        | Display NOTIFICATIONS in buffer.                                               |
+|                  | mastodon-notifications-policy                     | A transient to set notifications policy options.                               |
+|                  | mastodon-notifications-policy-update              | Send updated notification policy settings.                                     |
 |                  | mastodon-profile--account-bot-toggle              | Toggle the bot status of your account.                                         |
 |                  | mastodon-profile--account-discoverable-toggle     | Toggle the discoverable status of your account.                                |
 |                  | mastodon-profile--account-locked-toggle           | Toggle the locked status of your account.                                      |
