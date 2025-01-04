@@ -348,24 +348,16 @@ Do not add more than the server's maximum setting."
   ;; https://docs.joinmastodon.org/methods/notifications/#get-policy
   :value (lambda () (tp-return-data #'mastodon-notifications--get-policy))
   ["Notification policy options"
-   ;; FIXME: it would be nice to display our three options and cycle, but
-   ;; tp-bool no longer works that way so we would have to implement
-   ;; subclasses / methods:
    ("f" "for not following" "for_not_following"
-    :alist-key for_not_following :class tp-cycle
-    :choices (lambda () mastodon-notifications-policy-vals))
+    :alist-key for_not_following :class mastodon-transient-policy)
    ("F" "for not followers" "for_not_followers"
-    :alist-key for_not_followers :class tp-cycle
-    :choices (lambda () mastodon-notifications-policy-vals))
+    :alist-key for_not_followers :class mastodon-transient-policy)
    ("n" "for new accounts" "for_new_accounts"
-    :alist-key for_new_accounts :class tp-cycle
-    :choices (lambda () mastodon-notifications-policy-vals))
+    :alist-key for_new_accounts :class mastodon-transient-policy)
    ("p" "for private mentions" "for_private_mentions"
-    :alist-key for_private_mentions :class tp-cycle
-    :choices (lambda () mastodon-notifications-policy-vals))
+    :alist-key for_private_mentions :class mastodon-transient-policy)
    ("l" "for limited accounts" "for_limited_accounts"
-    :alist-key for_limited_accounts :class tp-cycle
-    :choices (lambda () mastodon-notifications-policy-vals))]
+    :alist-key for_limited_accounts :class mastodon-transient-policy)]
   ["Update"
    ("C-c C-c" "Save settings" ;; mastodon-transient--prefix-inspect)
     mastodon-notifications-policy-update)
@@ -384,6 +376,10 @@ Do not add more than the server's maximum setting."
        (message "Settings updated!\n%s" (pp-to-string parsed))))))
 
 ;;; CLASSES
+
+(defclass mastodon-transient-policy (tp-cycle)
+  ((choices :initarg :choices :initform mastodon-notifications-policy-vals))
+  "")
 
 (defclass mastodon-transient-field (tp-option-str)
   ((always-read :initarg :always-read :initform t))
