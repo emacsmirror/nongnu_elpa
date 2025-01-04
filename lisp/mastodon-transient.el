@@ -348,7 +348,7 @@ Do not add more than the server's maximum setting."
 (declare-function mastodon-notifications--update-policy "mastodon-notifications")
 
 (transient-define-prefix mastodon-notifications-policy ()
-  "Set notifications policy options."
+  "A transient to set notifications policy options."
   ;; https://docs.joinmastodon.org/methods/notifications/#get-policy
   :value (lambda () (tp-return-data #'mastodon-notifications--get-policy))
   ["Notification policy options"
@@ -370,8 +370,7 @@ Do not add more than the server's maximum setting."
    (:info #'mastodon-notifications-requests-count)
    (:info #'mastodon-notifications-filtered-count)]
   ["Update"
-   ("C-c C-c" "Save settings" ;; mastodon-transient--prefix-inspect)
-    mastodon-notifications-policy-update)
+   ("C-c C-c" "Save settings" mastodon-notifications-policy-update)
    ("C-x C-k" :info "Revert all changes")])
 
 (defun mastodon-notifications-requests-count ()
@@ -393,7 +392,7 @@ Do not add more than the server's maximum setting."
                 0))))
 
 (transient-define-suffix mastodon-notifications-policy-update (args)
-  "Update"
+  "Send updated notification policy settings."
   :transient 'transient--do-exit
   ;; TODO:
   (interactive (list (transient-args 'mastodon-notifications-policy)))
