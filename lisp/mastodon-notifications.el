@@ -812,27 +812,28 @@ Status notifications are created when you call
     map)
   "Keymap for viewing follow requests.")
 
+;; FIXME: these are only for grouped notifs, else the fields are JSON bools
 (defvar mastodon-notifications-policy-vals
   '("accept" "filter" "drop"))
 
 (defun mastodon-notifications--get-policy ()
   "Return the notification filtering policy."
   (interactive)
-  (let ((url (mastodon-http--api "notifications/policy")))
+  (let ((url (mastodon-notifications--api "notifications/policy")))
     (mastodon-http--get-json url)))
 
 (defun mastodon-notifications--update-policy (&optional params)
   "Update notifications filtering policy.
 PARAMS is an alist of parameters."
   ;; https://docs.joinmastodon.org/methods/notifications/#update-the-filtering-policy-for-notifications
-  (let ((url (mastodon-http--api "notifications/policy")))
+  (let ((url (mastodon-notifications--api "notifications/policy")))
     (mastodon-http--patch url params)))
 
 (defun mastodon-notifications--get-requests (&optional params)
   "Get a list of notification requests data from the server.
 PARAMS is an alist of parameters."
   ;; NB: link header pagination
-  (let ((url (mastodon-http--api "notifications/requests")))
+  (let ((url (mastodon-notifications--api "notifications/requests")))
     (mastodon-http--get-json url params)))
 
 (defun mastodon-notifications--request-accept (&optional reject)

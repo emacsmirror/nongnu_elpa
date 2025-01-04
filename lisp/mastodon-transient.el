@@ -343,6 +343,9 @@ Do not add more than the server's maximum setting."
               (tp-bools-to-strs args)))
       (mastodon-toot--update-status-fields))))
 
+(defvar mastodon-notifications-policy-vals)
+(declare-function mastodon-notifications--get-policy "mastodon-notifications")
+
 (transient-define-prefix mastodon-notifications-policy ()
   "Set notifications policy options."
   ;; https://docs.joinmastodon.org/methods/notifications/#get-policy
@@ -386,7 +389,7 @@ Do not add more than the server's maximum setting."
          (resp (mastodon-notifications--update-policy parsed)))
     (mastodon-http--triage
      resp
-     (lambda (resp)
+     (lambda (_resp)
        (message "Settings updated!\n%s" (pp-to-string parsed))))))
 
 ;;; CLASSES
