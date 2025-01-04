@@ -358,10 +358,24 @@ Do not add more than the server's maximum setting."
     :alist-key for_private_mentions :class mastodon-transient-policy)
    ("l" "for limited accounts" "for_limited_accounts"
     :alist-key for_limited_accounts :class mastodon-transient-policy)]
+  ["Notification requests"
+   (:info #'mastodon-notifications-requests-count)
+   ;; (:info #'mastodon-notifications-count)
+   ]
   ["Update"
    ("C-c C-c" "Save settings" ;; mastodon-transient--prefix-inspect)
     mastodon-notifications-policy-update)
    ("C-x C-k" :info "Revert all changes")])
+
+(defun mastodon-notifications-requests-count ()
+  ""
+  ;; FIXME: val doesn't contain summary, though `tp-return-data' returns it
+  (let ((val (transient-args 'mastodon-notifications-policy)))
+    (format "Pending requests: %d"
+            (or (map-nested-elt
+                 val
+                 '(summary pending_requests_count))
+                0))))
 
 (transient-define-suffix mastodon-notifications-policy-update (args)
   "Update"
