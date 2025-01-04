@@ -265,6 +265,7 @@ and X others...\"."
     (define-key map (kbd "V")      #'mastodon-profile--view-favourites)
     (define-key map (kbd "K")      #'mastodon-profile--view-bookmarks)
     (define-key map (kbd ":")      #'mastodon-user-settings)
+    (define-key map (kbd "C-:")    #'mastodon-notifications-policy)
     ;; minor views
     (define-key map (kbd "R")      #'mastodon-views--view-follow-requests)
     (define-key map (kbd "S")      #'mastodon-views--view-scheduled-toots)
