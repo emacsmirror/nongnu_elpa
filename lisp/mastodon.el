@@ -212,6 +212,7 @@ and X others...\"."
     (define-key map (kbd "H")      #'mastodon-tl--get-home-timeline)
     (define-key map (kbd "L")      #'mastodon-tl--get-local-timeline)
     (define-key map (kbd "N")      #'mastodon-notifications-get)
+    (define-key map (kbd "S-C-n")  #'mastodon-notifications--requests)
     (define-key map (kbd "@")      #'mastodon-notifications--get-mentions)
     (define-key map (kbd "P")      #'mastodon-profile--show-user)
     (define-key map (kbd "s")      #'mastodon-search--query)

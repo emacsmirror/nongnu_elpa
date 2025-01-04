@@ -2101,6 +2101,8 @@ call this function after it is set or use something else."
            'mentions)
           ((mastodon-tl--endpoint-str-= "notifications")
            'notifications)
+          ((mastodon-tl--endpoint-str-= "notifications/requests")
+           'notification-requests)
           ;; threads:
           ((mastodon-tl--endpoint-str-= "context" :suffix)
            'thread)
