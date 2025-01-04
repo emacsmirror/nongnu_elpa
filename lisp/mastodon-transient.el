@@ -352,15 +352,15 @@ Do not add more than the server's maximum setting."
   ;; https://docs.joinmastodon.org/methods/notifications/#get-policy
   :value (lambda () (tp-return-data #'mastodon-notifications--get-policy))
   ["Notification policy options"
-   ("f" "for not following" "for_not_following"
+   ("f" "people you don't follow" "for_not_following"
     :alist-key for_not_following :class mastodon-transient-policy)
-   ("F" "for not followers" "for_not_followers"
+   ("F" "people not following you" "for_not_followers"
     :alist-key for_not_followers :class mastodon-transient-policy)
-   ("n" "for new accounts" "for_new_accounts"
+   ("n" "New accounts" "for_new_accounts"
     :alist-key for_new_accounts :class mastodon-transient-policy)
-   ("p" "for private mentions" "for_private_mentions"
+   ("p" "Unsolicited private mentions" "for_private_mentions"
     :alist-key for_private_mentions :class mastodon-transient-policy)
-   ("l" "for limited accounts" "for_limited_accounts"
+   ("l" "Moderated accounts" "for_limited_accounts"
     :alist-key for_limited_accounts :class mastodon-transient-policy)]
   ["Notification requests"
    (:info #'mastodon-notifications-requests-count)
