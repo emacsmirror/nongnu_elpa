@@ -2879,6 +2879,25 @@ PREFIX is for `mastodon-tl--show-tag-timeline', which see."
                      tags)))
     (mastodon-tl--show-tag-timeline prefix selection)))
 
+(defcustom mastodon-tl--tags-groups nil
+  "A list containing lists of up to four tags each.
+You can load a tag timeline list with one of these by calling
+`mastodon-tl--tag-group-timeline'."
+  :group 'mastodon-tl
+  :type '(repeat (list string string string string)))
+
+(defun mastodon-tl--tag-group-timeline (&optional prefix)
+  "Load a timeline of a tag group from `mastodon-tl--tags-groups'.
+PREFIX is for `mastodon-tl--show-tag-timeline', which see."
+  (interactive "P")
+  (let* ((list-strs (mapcar (lambda (x)
+                              ;; cons of list-as-string and list:
+                              (cons (prin1-to-string x) x))
+                            mastodon-tl--tags-groups))
+         (choice (completing-read "Tag group: " list-strs))
+         (choice-list (cdr (assoc choice list-strs #'equal))))
+    (mastodon-tl--show-tag-timeline prefix choice-list)))
+
 
 ;;; REPORT TO MODERATORS
 
