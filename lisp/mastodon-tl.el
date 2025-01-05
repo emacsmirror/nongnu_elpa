@@ -897,10 +897,10 @@ TS is a timestamp from the server, if any."
                           'face 'mastodon-display-name-face
                           'follow-link t
                           'mouse-face 'highlight
-		          'mastodon-tab-stop 'shr-url
-		          'shr-url app-url
+		                  'mastodon-tab-stop 'shr-url
+		                  'shr-url app-url
                           'help-echo app-url
-		          'keymap mastodon-tl--shr-map-replacement)))))
+		                  'keymap mastodon-tl--shr-map-replacement)))))
        ;; edited:
        (when edited-time
          (concat
@@ -1027,10 +1027,10 @@ links in the text. If TOOT is nil no parsing occurs."
        (propertize (concat "@" .acct)
                    'face 'mastodon-handle-face
                    'mouse-face 'highlight
-		   'mastodon-tab-stop 'user-handle
-		   'keymap mastodon-tl--link-keymap
+		           'mastodon-tab-stop 'user-handle
+		           'keymap mastodon-tl--link-keymap
                    'mastodon-handle (concat "@" .acct)
-		   'help-echo (concat "Browse user profile of @" .acct))))))
+		           'help-echo (concat "Browse user profile of @" .acct))))))
 
 (defun mastodon-tl--process-link (toot start end url)
   "Process link URL in TOOT as hashtag, userhandle, or normal link.
@@ -1837,8 +1837,8 @@ NO-BYLINE means just insert toot body, used for folding."
                 (mastodon-tl--buffer-property 'hide-replies nil :no-error)
                 ;; loading a tl with a prefix arg:
                 (mastodon-tl--hide-replies-p current-prefix-arg))
-	       (cl-remove-if-not #'mastodon-tl--is-reply toots)
-	     toots))))
+	           (cl-remove-if-not #'mastodon-tl--is-reply toots)
+	         toots))))
     (mapc (lambda (toot)
             (mastodon-tl--toot toot nil thread domain nil no-byline))
           toots)
