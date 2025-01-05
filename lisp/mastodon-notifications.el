@@ -821,6 +821,13 @@ Status notifications are created when you call
   (let ((url (mastodon-notifications--api "notifications/policy")))
     (mastodon-http--get-json url)))
 
+(defun mastodon-notifications--pending-p ()
+  "Non-nil if there are any pending requests or notifications."
+  (let* ((json (mastodon-notifications--get-policy))
+         (summary (alist-get 'summary json)))
+    (or (not (= 0 (alist-get 'pending_requests_count summary)))
+        (not (= 0 (alist-get 'pending_notifications_count summary))))))
+
 (defun mastodon-notifications--update-policy (&optional params)
   "Update notifications filtering policy.
 PARAMS is an alist of parameters."
