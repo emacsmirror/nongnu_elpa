@@ -467,7 +467,7 @@ START and END are the beginning and end of the media item to overlay."
      (propertize ""
                  'help-echo "Video"
                  'face
-                 '((:height 3.5 :inherit font-lock-comment-face))))))
+                 '((:height 3.5 :inherit mastodon-toot-docs-face))))))
 ;; (cl-pushnew ov mastodon-media--overlays)))
 
 (defun mastodon-media--get-avatar-rendering (avatar-url)

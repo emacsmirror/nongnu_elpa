@@ -371,7 +371,7 @@ ACCOUNTS is data of the accounts that have reacted to the notification."
       (while (setq prop (text-property-search-forward 'face 'shr-text t))
         (add-text-properties (prop-match-beginning prop)
                              (prop-match-end prop)
-                             '(face (font-lock-comment-face shr-text)))))
+                             '(face (mastodon-toot-docs-face shr-text)))))
     (buffer-string)))
 
 (defun mastodon-notifications--body-arg

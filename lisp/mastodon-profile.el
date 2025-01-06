@@ -335,7 +335,7 @@ If value is :json-false, return nil."
                                      'display nil)
                          "/500 characters")
                         'read-only t
-                        'face 'font-lock-comment-face
+                        'face 'mastodon-toot-docs-face
                         'note-header t)
             "\n")
     (make-local-variable 'after-change-functions)

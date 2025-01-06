@@ -308,7 +308,7 @@ and X others...\"."
   "Face used for content warning.")
 
 (defface mastodon-toot-docs-face
-  `((t :inherit font-lock-comment-face))
+  `((t :inherit shadow))
   "Face used for documentation in toot compose buffer.
 If `mastodon-tl--enable-proportional-fonts' is changed,
 mastodon.el needs to be re-loaded for this to be correctly set.")

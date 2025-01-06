@@ -910,7 +910,7 @@ TS is a timestamp from the server, if any."
           (propertize
            (format-time-string mastodon-toot-timestamp-format
                                edited-parsed)
-           'face 'font-lock-comment-face
+           'face 'mastodon-toot-docs-face
            'timestamp edited-parsed
            'display (if mastodon-tl--enable-relative-timestamps
                         (mastodon-tl--relative-time-description edited-parsed)
@@ -1474,13 +1474,13 @@ LENGTH is of the longest option, for formatting."
                      (.vote_count
                       (format "%s votes | " .vote_count))
                      (t ""))
-               'face 'font-lock-comment-face)
+               'face 'mastodon-toot-docs-face)
               (let ((str (if (eq .expired :json-false)
                              (if (eq .expires_at nil)
                                  ""
                                (mastodon-tl--format-poll-expiry .expires_at))
                            "Poll expired.")))
-                (propertize str 'face 'font-lock-comment-face))
+                (propertize str 'face 'mastodon-toot-docs-face))
               "\n"))))
 
 (defconst mastodon-tl--time-units
@@ -1976,19 +1976,19 @@ To disable showing the stats, customize
                                'favourited-p (eq t .favourited)
                                'favourites-field t
                                'help-echo (format "%s favourites" .favourites_count)
-                               'face 'font-lock-comment-face)
-                   (propertize " | " 'face 'font-lock-comment-face)
+                               'face 'mastodon-toot-docs-face)
+                   (propertize " | " 'face 'mastodon-toot-docs-face)
                    (propertize boosts
                                'boosted-p (eq t .reblogged)
                                'boosts-field t
                                'help-echo (format "%s boosts" .reblogs_count)
-                               'face 'font-lock-comment-face)
-                   (propertize " | " 'face 'font-lock-comment-face)
+                               'face 'mastodon-toot-docs-face)
+                   (propertize " | " 'face 'mastodon-toot-docs-face)
                    (propertize replies
                                'replies-field t
                                'replies-count .replies_count
                                'help-echo (format "%s replies" .replies_count)
-                               'face 'font-lock-comment-face)))
+                               'face 'mastodon-toot-docs-face)))
            (right-spacing
             (propertize " "
                         'display
@@ -3483,7 +3483,7 @@ ENDPOINT-VERSION is a string, format Vx, e.g. V2."
         (mastodon-search--insert-heading view-name))
       (when binding-str
         (insert (mastodon-tl--set-face (concat "[" binding-str "]\n\n")
-                                       'font-lock-comment-face)))
+                                       'mastodon-toot-docs-face)))
       (mastodon-tl--set-buffer-spec
        buffer endpoint update-function
        link-header params nil

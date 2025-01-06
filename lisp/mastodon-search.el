@@ -243,7 +243,7 @@ is used for pagination."
   (let ((thing (or thing "items")))
     (insert
      (propertize (format "Looks like search returned no %s." thing)
-                 'face 'font-lock-comment-face))))
+                 'face 'mastodon-toot-docs-face))))
 
 (defun mastodon-search--render-response (data type buffer params
                                               insert-fun update-fun)
