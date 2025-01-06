@@ -1627,7 +1627,7 @@ e.g. `mastodon-toot--send' -> Send."
     (substitute-command-keys
      (format
       (concat (mastodon-toot--comment "    ")
-              "%s"
+              "%-10s"
               (mastodon-toot--comment " - %s"))
       key command))))
 
