@@ -45,6 +45,7 @@
 (autoload 'mastodon-toot--read-poll-expiry "mastodon-toot")
 (autoload 'mastodon-toot--poll-expiry-options-alist "mastodon-toot")
 (autoload 'mastodon-toot--clear-poll "mastodon-toot")
+(autoload 'mastodon-notifications--get-policy "mastodon-notifications")
 
 ;;; UTILS
 
