@@ -103,6 +103,9 @@
 (autoload 'mastodon-tl--scroll-up-command "mastodon-tl")
 (autoload 'special-mode "simple")
 (autoload 'mastodon-tl--thread-do "mastodon-tl")
+(autoload 'mastodon-notifications-policy "mastodon-notifications")
+(autoload 'mastodon-notifications--requests "mastodon-notifications")
+(autoload 'mastodon-tl--tag-group-timeline "mastodon-tl")
 
 (defvar mastodon-tl--highlight-current-toot)
 (defvar mastodon-notifications--map)
