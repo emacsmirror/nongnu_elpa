@@ -696,7 +696,7 @@ out includes base-64, quoted-printable, uuencode and CRLF conversion."
               need-conversion nil
 	      encoding (buffer-substring (match-beginning 4) (match-end 4))
 	      start (match-beginning 5)
-	      end (vm-marker (match-end 5)))
+	      end (copy-marker (match-end 5) t))
 	;; don't change anything if we can't display the
 	;; character set properly.
 	(if (and (not (vm-mime-charset-internally-displayable-p charset))
@@ -6448,7 +6448,7 @@ If none is specified, quoted-printable is used."
         start end charset coding)
     (while (re-search-forward vm-mime-encode-headers-words-regexp (point-max) t)
       (setq start (match-beginning 1)
-            end   (vm-marker (match-end 0))
+            end   (copy-marker (match-end 0) t)
             charset (or (vm-determine-proper-charset start end)
                         vm-mime-8bit-composition-charset)
             coding (vm-mime-charset-to-coding charset))
