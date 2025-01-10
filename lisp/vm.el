@@ -1363,6 +1363,7 @@ summary buffer to select a folder."
 (defvar vm-bug-pop-auto-expunge-alist nil)
 (defvar vm-bug-imap-account-alist nil)
 (defvar vm-bug-pop-folder-alist nil)
+(defvar vm-bug-primary-inbox nil)
 (defvar vm-bug-spool-files nil)
 
 ;;;###autoload
@@ -1413,6 +1414,7 @@ summary buffer to select a folder."
 	     vm-imap-server-list
 	     ;; sanitized versions included later
 	     vm-spool-files
+             vm-primary-inbox
 	     vm-pop-folder-alist
 	     vm-imap-account-alist
 	     vm-pop-auto-expunge-alist
@@ -1429,6 +1431,11 @@ summary buffer to select a folder."
 		 (vm-mapcar (function vm-maildrop-sans-personal-info)
 			    vm-spool-files))
 	     (error (vm-increment errors) vm-spool-files)))
+	  (vm-bug-primary-inbox
+	   (condition-case nil
+	       (vm-maildrop-sans-personal-info
+		vm-primary-inbox)
+	     (error (vm-increment errors) vm-primary-inbox)))
 	  (vm-bug-pop-folder-alist
 	   (condition-case nil
 	       (vm-maildrop-alist-sans-personal-info
@@ -1462,6 +1469,7 @@ summary buffer to select a folder."
       (setq varlist
 	    (append (list 'features)
 		    (list 'vm-bug-spool-files
+                          'vm-bug-primary-inbox
 			  'vm-bug-pop-folder-alist
 			  'vm-bug-imap-account-alist
 			  'vm-bug-pop-auto-expunge-alist
