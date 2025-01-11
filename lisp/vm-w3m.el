@@ -33,7 +33,7 @@
 (require 'vm-mime)
 (require 'vm-version)
 
-(eval-and-compile (vm-load-features '(w3m)))
+(eval-and-compile (vm-load-features '(w3m) byte-compile-current-file))
 
 (declare-function w3m-region 
 		  "ext:w3m" (start end &optional url charset))
