@@ -3,9 +3,11 @@
 ##############################################################################
 # no csh please
 SHELL = /bin/sh
+GIT = git
 
 # the version of this package
 PACKAGE_VERSION = @PACKAGE_VERSION@
+GIT_DIR = "@top_srcdir@/.git"
 
 # the list of source files
 SOURCES = vm.el
@@ -74,7 +76,7 @@ xemacs_OBJECTS = auto-autoloads.elc custom-load.elc
 
 OBJECTS = ${@EMACS_FLAVOR@_OBJECTS} $(SOURCES:.el=.elc)
 
-AUX_FILES = version.txt
+AUX_FILES = version.txt commit.txt
 
 INSTALL_FILES += $(OBJECTS:.elc=.el) $(OBJECTS)
 INSTALL_FILES += $(AUX_FILES)
@@ -126,12 +128,19 @@ $(OBJECTS): $(AUTOLOADS)
 install: install-el install-elc install-aux
 
 ##############################################################################
-vm-version.elc: vm-version.el version.txt
+vm-version.elc: vm-version.el version.txt commit.txt
 
 version.txt:
-	echo "\"$(PACKAGE_VERSION)\"" > $@
+	echo "$(PACKAGE_VERSION)" > $@
 
-##############################################################################
+commit.txt:
+	if [ -d "$(GIT_DIR)" ]; then \
+		$(GIT) --git-dir="$(GIT_DIR)" rev-parse HEAD > $@; \
+	else \
+		echo "unknown" > $@; \
+	fi
+
+#############################################################################
 # GNU Emacs's vm-autoload file
 # We use tr -d because Emacs under Cygwin apparently outputs CRLF
 # under Windows.  We remove the CRs.
@@ -248,7 +257,7 @@ Makefile: @srcdir@/Makefile.in
 
 ##############################################################################
 clean:
-	-$(RM) -f version.txt *.elc vm-autoloads.el auto-autoloads.el custom-load.el
+	-$(RM) -f version.txt commit.txt *.elc vm-autoloads.el auto-autoloads.el custom-load.el
 
 distclean: clean
 	-$(RM) -f Makefile vm-cus-load.el

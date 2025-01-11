@@ -25,15 +25,21 @@
 (declare-function device-type "vm-xemacs" ())
 (declare-function device-matching-specifier-tag-list "vm-xemacs" ())
 
-(defconst vm-version
-  (condition-case nil
-      (with-temp-buffer
-	(insert-file-contents-literally
-	 (expand-file-name
-	  "version.txt"
-	  (and load-file-name (file-name-directory load-file-name))))
-	(read (current-buffer)))
-    (file-error "undefined"))
+(defun vm-read-version-file (file-name)
+  "Read the contents of FILE-NAME, remove all whitespace, and return it as a string.
+Returns \"undefined\" if the file cannot be read."
+  (let ((file-path (expand-file-name
+                    file-name
+                    (and load-file-name (file-name-directory load-file-name)))))
+    (condition-case nil
+        (with-temp-buffer
+          (insert-file-contents-literally file-path)
+          (replace-regexp-in-string "\\s-" "" ; Remove all whitespace
+                                    (buffer-substring-no-properties
+                                     (point-min) (point-max))))
+      (file-error "undefined"))))
+
+(defconst vm-version (vm-read-version-file "version.txt")
   "Version number of VM.")
 
 (defun vm-version ()
@@ -45,6 +51,19 @@
 	(error "Cannot determine VM version!"))
     (message "VM version is: %s" vm-version))
   vm-version)
+
+(defconst vm-commit (vm-read-version-file "commit.txt")
+  "git commit number of VM.")
+
+(defun vm-commit ()
+  "Return the value of the variable `vm-commit'."
+  (interactive)
+  (when (vm-interactive-p)
+    (or (and (stringp vm-commit)
+	     (string-match "[a-f0-9]+" vm-commit))
+	(error "Cannot determine VM commit!"))
+    (message "VM commit is: %s" vm-commit))
+  vm-commit)
 
 (defun vm-menu-can-eval-item-name ()
   (and (featurep 'xemacs)

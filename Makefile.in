@@ -1,7 +1,7 @@
 @SET_MAKE@
 
 # location of required programms
-BZR = bzr --no-plugins
+GIT = git
 MKDIR = @MKDIR@
 TAR = @TAR@
 RM   = @RM@
@@ -23,6 +23,9 @@ SOURCES += CHANGES
 SOURCES += README
 SOURCES += TODO
 SOURCES += example.vm
+
+# the version of this package
+PACKAGE_VERSION = @PACKAGE_VERSION@
 
 
 ##############################################################################
@@ -81,8 +84,8 @@ xemacs-package:
 	cd src && $(make) infodir=$(PKGDIR)/bin install-pkg
 	echo ";;;###autoload" > $(PKGINFO)
 	echo "(package-provide 'vm'" > $(PKGINFO)
-	echo "         :version 0.7" >> $(PKGINFO)
-	echo '         :author-version "'`$(BZR) revno "@top_srcdir@"`'"' >> $(PKGINFO)
+	echo "         :version $(PACKAGE_VERSION)" >> $(PKGINFO)
+	echo '         :author-version "'`$(GIT) --git-dir="@top_srcdir@/.git" rev-parse HEAD`'"' >> $(PKGINFO)
 	echo "         :type 'regular)" >> $(PKGINFO)
 	mkdir $(PKGDIR)/pkginfo;
 	touch $(PKGDIR)/pkginfo/MANIFEST.vm;
