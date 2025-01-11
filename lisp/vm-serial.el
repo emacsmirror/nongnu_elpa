@@ -71,6 +71,7 @@
 ;; 
 ;;; Code:
 
+(require 'vm-version)
 (require 'vm-reply)
 (require 'vm-macro)
 (require 'vm-misc)
@@ -98,16 +99,7 @@
 ;; The following function is erroneously called in fsfemacs too
 ;; (declare-function read-expression "vm-xemacs" 
 ;; 		  (prompt &optional initial-contents history default))
-
-(let ((feature-list '(bbdb bbdb-sc)))
-  (while feature-list
-    (condition-case nil
-        (require (car feature-list))
-      (error
-       (if (load (format "%s" (car feature-list)) t)
-           (message "Library %s loaded!" (car feature-list))
-         (message "Could not load feature %S.  Related functions may not work correctly!" (car feature-list)))))
-    (setq feature-list (cdr feature-list))))
+(vm-load-features '(bbdb bbdb-sc) byte-compile-current-file)
 
 (defvar vm-reply-list nil)
 (defvar vm-redistribute-list nil)

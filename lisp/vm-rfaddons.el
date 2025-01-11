@@ -97,7 +97,7 @@
 (declare-function esmtpmail-via-smtp-server "ext:esmtpmail" ())
 (declare-function vm-folder-buffers "ext:vm" (&optional non-virtual))
 
-(eval-when-compile (vm-load-features '(regexp-opt bbdb bbdb-vm)))
+(eval-when-compile (vm-load-features '(regexp-opt bbdb bbdb-vm) byte-compile-current-file))
 
 (require 'sendmail)
 (vm-load-features '(bbdb))

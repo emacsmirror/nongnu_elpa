@@ -131,18 +131,11 @@
 
 ;;----------------------------------------------------------------------------
 (eval-and-compile
+  (require 'vm-version)
   (require 'regexp-opt)
   (require 'time-date)
-                           
-  (let ((feature-list '(bbdb bbdb-autoloads bbdb-com)))
-    (while feature-list
-      (condition-case nil
-          (require (car feature-list))
-        (error
-         (if (load (format "%s\n" (car feature-list)) t)
-             (message "Library %s loaded!" (car feature-list))
-           (message "Could not load feature %S.  Related functions may not work correctly!" (car feature-list)))))
-      (setq feature-list (cdr feature-list)))))
+
+  (vm-load-features '(bbdb bbdb-autoloads bbdb-com) byte-compile-current-file))
 
 (defvar bbdb-get-addresses-headers)	; dummy declaration
 (defvar bbdb-user-mail-names)

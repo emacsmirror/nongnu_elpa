@@ -29,7 +29,7 @@
 
 (eval-and-compile
   (require 'vm-version)
-  (vm-load-features '(w3)))
+  (vm-load-features '(w3) byte-compile-current-file))
 
 (declare-function w3-region "ext:w3-display.el" (st nd))
 
