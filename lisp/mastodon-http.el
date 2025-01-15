@@ -379,7 +379,12 @@ item uploaded, and `mastodon-toot--update-status-fields' is run."
                 (when data
                   (let* ((id (alist-get 'id data)))
                     ;; update ids:
-                    (push id mastodon-toot--media-attachment-ids)
+                    (if (not mastodon-toot--media-attachment-ids)
+                        ;; add first id:
+                        (push id mastodon-toot--media-attachment-ids)
+                      ;; add new id to end of list to preserve order:
+                      (push id (cdr
+                                (last mastodon-toot--media-attachment-ids))))
                     ;; pleroma, PUT the description:
                     ;; this is how the mangane akkoma web client does it
                     ;; and it seems easier than the other options!
