@@ -1006,7 +1006,8 @@ instance to edit a toot."
              ;; adopt reply-to-id, visibility, CW, language, and media:
              (mastodon-toot--set-toot-properties .in_reply_to_id .visibility
                                                  source-cw .language nil nil
-                                                 .media_attachments .poll)
+                                                 ;; maintain media order:
+                                                 (reverse .media_attachments) .poll)
              (setq mastodon-toot--edit-item-id id))))))))
 
 (defun mastodon-toot--get-toot-source (id)
