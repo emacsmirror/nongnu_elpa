@@ -1478,7 +1478,8 @@ summary buffer to select a folder."
       (delete-other-windows)
       (reporter-submit-bug-report
        vm-maintainer-address		; address
-       (concat "VM " (vm-version))	; pkgname
+       (concat "VM " (vm-version)	; pkgname
+               " commit: " (vm-commit))
        varlist				; varlist
        pre-hooks			; pre-hooks
        post-hooks			; post-hooks
