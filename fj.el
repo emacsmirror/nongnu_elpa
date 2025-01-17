@@ -1849,6 +1849,8 @@ Optionally, provide the commit's SHA."
 ENDPOINT is the API endpoint to hit."
   (let* ((resp (fj-get endpoint nil :no-json))
          (buf "*fj-diff*"))
+    (when (get-buffer buf)
+      (kill-buffer buf))
     (with-current-buffer (get-buffer-create buf)
       (erase-buffer)
       (insert resp)
