@@ -1477,6 +1477,7 @@ JSON is the item's data to process the link with."
           (shr-render-buffer (current-buffer))))
       ;; 4 collect result
       (with-current-buffer "*html*"
+	(goto-char (point-min))
         (re-search-forward "\n\n" nil :no-error)
         (setq str (buffer-substring (point) (point-max)))
         (kill-buffer-and-window)        ; shr's *html*
