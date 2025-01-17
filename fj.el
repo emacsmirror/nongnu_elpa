@@ -1466,11 +1466,11 @@ JSON is the item's data to process the link with."
         (condition-case nil
             (markdown-standalone buf)
           (t ; if rendering fails, return unrendered body:
-           (with-current-buffer buf
+           (with-current-buffer (get-buffer-create buf)
              (erase-buffer)
              (insert old-buf)))))
       ;; 3: shr-render the md
-      (with-current-buffer (get-buffer-create buf)
+      (with-current-buffer buf
         (let ((shr-width (window-width))
               (shr-discard-aria-hidden t)) ; for pandoc md image output
           ;; shr render:
