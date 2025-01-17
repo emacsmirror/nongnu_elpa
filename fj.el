@@ -1661,10 +1661,10 @@ RELOAD mean we reloaded."
                   ;; FIXME: make links work! data doesn't have branch URLs
                   ;; and gitnex doesn't linkify them
                   ;; webUI uses $fork-repo/src/branch/$name:
-                  (fj-propertize-link
+                  (propertize
                    (format "%s:%s".head.repo.full_name .head.label)
-                   'branch)
-                  (fj-propertize-link .base.label 'branch))
+                   'face 'fj-name-face)
+                  (propertize .base.label 'face 'fj-name-face))
                "")
              "\n\n"
              ;; item byline:
