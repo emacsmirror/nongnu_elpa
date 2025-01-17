@@ -1466,17 +1466,18 @@ JSON is the item's data to process the link with."
         (condition-case nil
             (markdown-standalone buf)
           (t ; if rendering fails, return unrendered body:
-           (with-current-buffer buf
+           (with-current-buffer (get-buffer-create buf)
              (erase-buffer)
              (insert old-buf)))))
       ;; 3: shr-render the md
-      (with-current-buffer (get-buffer-create buf)
+      (with-current-buffer buf
         (let ((shr-width (window-width))
               (shr-discard-aria-hidden t)) ; for pandoc md image output
           ;; shr render:
           (shr-render-buffer (current-buffer))))
       ;; 4 collect result
       (with-current-buffer "*html*"
+	(goto-char (point-min))
         (re-search-forward "\n\n" nil :no-error)
         (setq str (buffer-substring (point) (point-max)))
         (kill-buffer-and-window)        ; shr's *html*
@@ -1848,6 +1849,8 @@ Optionally, provide the commit's SHA."
 ENDPOINT is the API endpoint to hit."
   (let* ((resp (fj-get endpoint nil :no-json))
          (buf "*fj-diff*"))
+    (when (get-buffer buf)
+      (kill-buffer buf))
     (with-current-buffer (get-buffer-create buf)
       (erase-buffer)
       (insert resp)
