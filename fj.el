@@ -1979,10 +1979,12 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
               (if force
                   (concat ": from "
                           (fj-propertize-link
-                           (substring (car commits) 0 7))
+                           (substring (car commits) 0 7)
+                           'commit-ref (car commits))
                           " to "
                           (fj-propertize-link
-                           (substring (cadr commits) 0 7)))
+                           (substring (cadr commits) 0 7)
+                           'commit-ref (cadr commits)))
                 (cl-loop
                  for c in commits
                  for short = (substring c 0 7)
