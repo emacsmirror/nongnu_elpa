@@ -2874,19 +2874,31 @@ to display."
        (message "All notifications read!")
        (fj-view-notifications-all)))))
 
+(defun fj-mark-notification (status &optional id)
+  "Mark notification at point as STATUS.
+Use ID if provided."
+  ;; PATCH /notifications/threads/{id}
+  (let* ((id (or id (fj--property 'fj-notification)))
+         (endpoint (format "notifications/threads/%s" id))
+         (params `(("to-status" . ,status)))
+         (resp (fj-patch endpoint params)))
+    (fedi-http--triage
+     resp
+     (lambda (_)
+       (message "Notification %s marked %s!" id status)
+       (fj-notifications-reload)))))
+
 (defun fj-mark-notification-read (&optional id)
   "Mark notification at point as read.
 Use ID if provided."
   (interactive)
-  ;; PATCH /notifications/threads/{id}
-  (let* ((id (or id (fj--property 'item)))
-         (endpoint (format "notifications/threads/%s" id))
-         (resp (fj-patch endpoint)))
-    (fedi-http--triage
-     resp
-     (lambda (_)
-       (message "Notification %s read!" id)
-       (fj-notifications-reload)))))
+  (fj-mark-notification "read" id))
+
+(defun fj-mark-notification-unread (&optional id)
+  "Mark notification at point as unread.
+Use ID if provided."
+  (interactive)
+  (fj-mark-notification "unread" id))
 
 (defun fj-notifications-reload ()
   "Reload current notifications view."
