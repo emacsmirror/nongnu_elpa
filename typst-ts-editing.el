@@ -477,13 +477,33 @@ When there is no section it will insert a heading below point."
     (unless (eq execute-result 'success)
       (call-interactively (global-key-binding (kbd "TAB"))))))
 
-(defun typst-ts-mode-auto-fill-function ()
-  "Function for `auto-fill-mode'.
+(defun typst-ts-editing-calculate-fill-prefix ()
+  "Calculate fill prefix."
+  (let ((fill-prefix nil))
+    (setq
+     fill-prefix
+     (catch 'fill-prefix
+       (let* ((cur-pos (point))
+              (cur-node (treesit-node-at cur-pos))
+              (cur-node-type (treesit-node-type cur-node))
+              (parent-node (treesit-node-parent cur-node))  ; could be nil
+              (parent-node-type (treesit-node-type parent-node))
+              node)
+         (cond
+          ((setq node (typst-ts-core-parent-util-type
+                       (typst-ts-core-get-parent-of-node-at-bol-nonwhite)
+                       "item" t t))
+           (throw 'fill-prefix (fill-context-prefix (line-beginning-position) (line-end-position)))))
+         )))
+    fill-prefix))
 
-Inserts newline and indents according to context."
+(defun typst-ts-editing-auto-fill-function ()
+  "Auto Fill Function for `auto-fill-mode'."
   (when (>= (current-column) (current-fill-column))
-    (insert "\n")
-    (typst-ts-mode-indent-line-function)))
+    (let* ((fill-prefix (typst-ts-editing-calculate-fill-prefix))
+	         (adaptive-fill-mode (null fill-prefix)))
+	    (when fill-prefix (do-auto-fill)))))
+
 
 (provide 'typst-ts-editing)
 
