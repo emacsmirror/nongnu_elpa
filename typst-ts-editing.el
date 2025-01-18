@@ -479,6 +479,8 @@ When there is no section it will insert a heading below point."
 
 (defun typst-ts-editing-calculate-fill-prefix ()
   "Calculate fill prefix."
+  ;; see `do-auto-fill' function and `;; Choose a fill-prefix automatically.'
+  ;; for default automatical fill-prefix finding algorithm
   (let ((fill-prefix nil))
     (setq
      fill-prefix
@@ -490,6 +492,7 @@ When there is no section it will insert a heading below point."
               (parent-node-type (treesit-node-type parent-node))
               node)
          (cond
+          ;; for condition that there are closely aligned line above
           ((setq node (typst-ts-core-parent-util-type
                        (typst-ts-core-get-parent-of-node-at-bol-nonwhite)
                        "item" t t))
