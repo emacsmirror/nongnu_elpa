@@ -2841,20 +2841,23 @@ to display."
     (let ((number (car (last (split-string .subject.url "/"))))
           (unread (eq t .unread)))
       (insert
-       (propertize (concat "#" number)
-                   'face 'fj-comment-face)
-       " "
        (propertize
-        (fj-propertize-link .subject.title 'notif number
-                            (unless unread 'fj-closed-issue-notif-face))
+        (concat
+         (propertize (concat "#" number)
+                     'face 'fj-comment-face)
+         " "
+         (fj-propertize-link .subject.title 'notif number
+                             (unless unread 'fj-closed-issue-notif-face))
+         "\n"
+         (propertize
+          (concat .repository.owner.login "/" .repository.name)
+          'face (when (not unread) 'fj-comment-face)))
         'fj-repo .repository.name
         'fj-owner .repository.owner.login
         'fj-url .subject.html_url
+        'fj-notification .id
         'fj-byline t) ; for nav
-       "\n"
-       (propertize
-        (concat .repository.owner.login "/" .repository.name)
-        'face (when (not unread) 'fj-comment-face))
+
        "\n"
        fedi-horiz-bar fedi-horiz-bar
        "\n\n"))))
