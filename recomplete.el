@@ -441,6 +441,10 @@ Argument FN-CACHE stores the result for reuse."
   "Utility to replace region from BEG to END with STR.
 Return the region replaced."
   (declare (important-return-value nil))
+  ;; While not needed for replacement, setting the mark allows
+  ;; the whole word that was replaced to be re-selected (C-x C-x).
+  (set-mark beg)
+
   (let ((len (length str))
         (i-beg nil)
         (i-end nil)
