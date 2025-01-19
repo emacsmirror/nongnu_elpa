@@ -302,8 +302,7 @@ Can be called in notifications view or in follow-requests view."
                 str))))
          (status (mastodon-tl--field 'status note))
          (follower (alist-get 'account note))
-         (follower-name (or (alist-get 'display_name follower)
-                            (alist-get 'username follower)))
+         (follower-name (mastodon-notifications--follower-name follower))
          (filtered (mastodon-tl--field 'filtered status))
          (filters (when filtered
                     (mastodon-tl--current-filters filtered))))
@@ -340,8 +339,7 @@ ACCOUNTS is data of the accounts that have reacted to the notification."
                     str))))
              (follower (when (member type '(follow follow_request))
                          (car accounts)))
-             (follower-name (or (alist-get 'display_name follower)
-                                (alist-get 'username follower)))
+             (follower-name (mastodon-notifications--follower-name follower))
              (filtered (mastodon-tl--field 'filtered status))
              (filters (when filtered
                         (mastodon-tl--current-filters filtered))))
@@ -361,6 +359,12 @@ ACCOUNTS is data of the accounts that have reacted to the notification."
            (when (member type '(favourite reblog))
              status)
            folded group accounts))))))
+
+(defun mastodon-notifications--follower-name (follower)
+  "Return display_name or username of FOLLOWER."
+  (if (not (string= "" (alist-get 'display_name follower)))
+      (alist-get 'display_name follower)
+    (alist-get 'username follower)))
 
 (defun mastodon-notifications--comment-note-text (str)
   "Add comment face to all text in STR with `shr-text' face only."
