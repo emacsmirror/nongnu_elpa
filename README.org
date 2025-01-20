@@ -418,6 +418,10 @@ layout for =mastodon.el=.
 
 The repo is at [[https://github.com/rougier/mastodon-alt][mastodon-alt]].
 
+**** Org links, archive search
+
+[[https://codeberg.org/chrmoe/toot-suite][toot-suite]] implements an org link type for fediverse posts, and also provides a way to browse an offline archive of your account.
+
 **** Mastodon hydra
 
 A user made a hydra for handling basic =mastodon.el= commands. It's
