@@ -104,10 +104,12 @@ SILENT means don't message."
       (url-retrieve-synchronously url)
     (url-retrieve-synchronously url (or silent nil) nil fedi-http--timeout)))
 
-(defun fedi-http--triage (response success)
+(defun fedi-http--triage (response success &optional error-fun)
   "Determine if RESPONSE was successful.
 If successful, call SUCCESS with single arg RESPONSE.
-If unsuccessful, message status and JSON error from RESPONSE."
+If unsuccessful, message status and JSON error from RESPONSE.
+Optionally, provide an ERROR-FUN, called on the process JSON response,
+to returnany error message needed."
   (let ((status (condition-case err
                     (with-current-buffer response
                       (fedi-http--status))
@@ -121,7 +123,9 @@ If unsuccessful, message status and JSON error from RESPONSE."
            (let ((json-response (with-current-buffer response
                                   (fedi-http--process-json))))
              (user-error "Error %s: %s" status
-                         (or (alist-get 'error json-response)
+                         (or (when error-fun
+                               (funcall error-fun json-response))
+                             (alist-get 'error json-response)
                              (alist-get 'message json-response))))))))
 
 (defun fedi-http--read-file-as-string (filename)
