@@ -1209,7 +1209,8 @@ NEW-BODY is the new comment text to send."
   "L" #'fj-repo-commit-log
   "R" #'fj-repo-update-settings
   "j" #'imenu
-  "l" #'fj-issues-tl-label-add)
+  "l" #'fj-issues-tl-label-add
+  "U" #'fj-copy-pr-url)
 
 (define-derived-mode fj-issue-tl-mode tabulated-list-mode
   "fj-issues"
@@ -2471,6 +2472,31 @@ Or if viewing a repo's issues, use its clone_url."
                         (fj--property 'fj-item-data)))))
     (kill-new url)
     (message (format "Copied: %s" url))))
+
+(defun fj-copy-pr-url ()
+  "Copy upstream Pull Request URL with branch name."
+  (interactive)
+  (let* ((owner (fj--get-buffer-spec :owner))
+         (repo (fj--get-buffer-spec :repo))
+         (number (fj--get-buffer-spec :item))
+         (author (fj--get-buffer-spec :author))
+
+         (endpoint (format "repos/%s/%s/pulls/%s" owner repo number))
+         (pr (fj-get endpoint))
+         (data (alist-get 'head pr))
+         (branch (alist-get 'ref data))
+         (author+repo (alist-get 'full_name
+                                 (alist-get 'repo data)))
+
+         (str (concat fj-host "/" author+repo
+                      "  "
+                      (format "%s:pr-%s-%s-%s"
+                              branch
+                              number
+                              author
+                              branch))))
+    (kill-new str)
+    (message (format "Copied: %s" str))))
 
 ;; TODO: star toggle
 
