@@ -556,6 +556,7 @@ X and Y are sorting args."
   :doc "Map for `fj-repo-tl-mode' and `fj-user-repo-tl-mode' to inherit."
   :parent fj-generic-tl-map
   "RET" #'fj-repo-tl-list-issues
+  "M-RET" #'fj-repo-tl-list-pulls
   "*" #'fj-repo-tl-star-repo
   "c" #'fj-create-issue
   "s" #'fj-repo-search-tl
@@ -2383,6 +2384,15 @@ Optionally specify repo OWNER and URL."
           (name (car (seq-first entry)))
           (owner (fj--repo-owner)))
      (fj-list-issues name owner))))
+
+(defun fj-repo-tl-list-pulls (&optional _)
+  "View issues of current repo from tabulated repos listing."
+  (interactive)
+  (fj-with-repo-entry
+   (let* ((entry (tabulated-list-get-entry))
+          (name (car (seq-first entry)))
+          (owner (fj--repo-owner)))
+     (fj-list-pulls name owner))))
 
 ;; author/owner button, in search or issues TL, not user repo TL
 (defun fj-list-user-repos (&optional _)
