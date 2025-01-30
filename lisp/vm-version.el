@@ -25,8 +25,8 @@
 (declare-function device-type "vm-xemacs" ())
 (declare-function device-matching-specifier-tag-list "vm-xemacs" ())
 
-(defun vm-read-version-file (file-name)
-  "Read the contents of FILE-NAME, remove all whitespace, and return it as a string.
+(defun vm-read-version-file (file-name line-number)
+  "Read the a line from of FILE-NAME, remove all whitespace, and return it as a string.
 Returns \"undefined\" if the file cannot be read."
   (let ((file-path (expand-file-name
                     file-name
@@ -34,12 +34,14 @@ Returns \"undefined\" if the file cannot be read."
     (condition-case nil
         (with-temp-buffer
           (insert-file-contents-literally file-path)
+          (goto-char (point-min))
+          (forward-line (1- line-number))
           (replace-regexp-in-string "\\s-" "" ; Remove all whitespace
                                     (buffer-substring-no-properties
-                                     (point-min) (point-max))))
+                                      (line-beginning-position) (line-end-position))))
       (file-error "undefined"))))
 
-(defconst vm-version (vm-read-version-file "version.txt")
+(defconst vm-version (vm-read-version-file "version.txt" 1)
   "Version number of VM.")
 
 (defun vm-version ()
@@ -52,18 +54,18 @@ Returns \"undefined\" if the file cannot be read."
     (message "VM version is: %s" vm-version))
   vm-version)
 
-(defconst vm-commit (vm-read-version-file "commit.txt")
+(defconst vm-version-commit (vm-read-version-file "version.txt" 2)
   "git commit number of VM.")
 
-(defun vm-commit ()
-  "Return the value of the variable `vm-commit'."
+(defun vm-version-commit ()
+  "Return the value of the variable `vm-version-commit'."
   (interactive)
   (when (vm-interactive-p)
-    (or (and (stringp vm-commit)
-	     (string-match "[a-f0-9]+" vm-commit))
+    (or (and (stringp vm-version-commit)
+	     (string-match "[a-f0-9]+" vm-version-commit))
 	(error "Cannot determine VM commit!"))
-    (message "VM commit is: %s" vm-commit))
-  vm-commit)
+    (message "VM commit is: %s" vm-version-commit))
+  vm-version-commit)
 
 (defun vm-menu-can-eval-item-name ()
   (and (featurep 'xemacs)

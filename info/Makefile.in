@@ -1,10 +1,11 @@
 @SET_MAKE@
 
-# no csh please
 SHELL = /bin/sh
+GIT = git
 
 # the version of this package
 PACKAGE_VERSION = @PACKAGE_VERSION@
+GIT_DIR = "@top_srcdir@/.git"
 
 ##############################################################################
 # location of required programms
@@ -35,7 +36,14 @@ LINKPATH = @LINKPATH@
 all: info
 
 version.texinfo:
-	echo @set VERSION $(PACKAGE_VERSION) > $@
+	echo @set VERSION $(PACKAGE_VERSION) > $@.tmp
+	if [ -d "$(GIT_DIR)" ]; then \
+		echo @set COMMIT `$(GIT) --git-dir="$(GIT_DIR)" rev-parse HEAD` >> $@.tmp; \
+	else \
+		echo "@set COMMIT unknown" >> $@.tmp; \
+	fi
+	mv -f $@.tmp $@
+
 
 vm.info:: version.texinfo
 

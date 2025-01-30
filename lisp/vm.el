@@ -1479,7 +1479,7 @@ summary buffer to select a folder."
       (reporter-submit-bug-report
        vm-maintainer-address		; address
        (concat "VM " (vm-version)	; pkgname
-               " commit: " (vm-commit))
+               " commit: " (vm-commit-version))
        varlist				; varlist
        pre-hooks			; pre-hooks
        post-hooks			; post-hooks
