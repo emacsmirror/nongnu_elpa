@@ -875,6 +875,10 @@ If INSTANCE is given, use that."
         ((string-suffix-p "profile/" (url-basepath url))
          (string-remove-suffix "/profile/"
                                (url-basepath url)))
+        ;; snac is https://instance.com/user
+        ((not (string-match-p "@" url))
+         ;; cull trailing slash:
+         (string-trim-right (url-basepath url) "/"))
         ;; mastodon is https://instance.com/@user
         (t
          (string-remove-suffix (concat "/@" username)
