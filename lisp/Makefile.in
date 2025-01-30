@@ -1,7 +1,6 @@
 @SET_MAKE@
 
 ##############################################################################
-# no csh please
 SHELL = /bin/sh
 GIT = git
 
@@ -76,7 +75,7 @@ xemacs_OBJECTS = auto-autoloads.elc custom-load.elc
 
 OBJECTS = ${@EMACS_FLAVOR@_OBJECTS} $(SOURCES:.el=.elc)
 
-AUX_FILES = version.txt commit.txt
+AUX_FILES = version.txt
 
 INSTALL_FILES += $(OBJECTS:.elc=.el) $(OBJECTS)
 INSTALL_FILES += $(AUX_FILES)
@@ -128,17 +127,16 @@ $(OBJECTS): $(AUTOLOADS)
 install: install-el install-elc install-aux
 
 ##############################################################################
-vm-version.elc: vm-version.el version.txt commit.txt
+vm-version.elc: vm-version.el version.txt
 
 version.txt:
-	echo "$(PACKAGE_VERSION)" > $@
-
-commit.txt:
+	echo "$(PACKAGE_VERSION)" > $@.tmp
 	if [ -d "$(GIT_DIR)" ]; then \
-		$(GIT) --git-dir="$(GIT_DIR)" rev-parse HEAD > $@; \
+		$(GIT) --git-dir="$(GIT_DIR)" rev-parse HEAD >> $@.tmp; \
 	else \
-		echo "unknown" > $@; \
+		echo "unknown" >> $@.tp; \
 	fi
+	mv -f $@.tmp $@
 
 #############################################################################
 # GNU Emacs's vm-autoload file
@@ -257,7 +255,7 @@ Makefile: @srcdir@/Makefile.in
 
 ##############################################################################
 clean:
-	-$(RM) -f version.txt commit.txt *.elc vm-autoloads.el auto-autoloads.el custom-load.el
+	-$(RM) -f version.txt *.elc vm-autoloads.el auto-autoloads.el custom-load.el
 
 distclean: clean
 	-$(RM) -f Makefile vm-cus-load.el
