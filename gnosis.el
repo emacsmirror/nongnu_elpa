@@ -440,8 +440,7 @@ Acts only when CENTER? is t."
                   (concat (make-string padding ? ) line)))
               lines
               "\n")))
-	 (split-string input-string "\n")
-	 "\n")
+	 (split-string input-string "\n") "\n")
       input-string)))
 
 (defun gnosis-apply-center-buffer-overlay (&optional point)
@@ -461,8 +460,7 @@ This will not be applied to sentences that start with double space."
            ("=\\([^=[:space:]][^=\n]*[^=[:space:]]\\)=" . font-lock-constant-face)
            ("~\\([^~[:space:]][^~\n]*[^~[:space:]]\\)~" . font-lock-keyword-face)
            ("_\\([^_[:space:]][^_\n]*[^_[:space:]]\\)_" . underline)
-           ("\\[\\[\\([^]]+\\)\\]\\[\\([^]]+\\)\\]\\]" . link) ;; [[link][description]]
-	   )))
+           ("\\[\\[\\([^]]+\\)\\]\\[\\([^]]+\\)\\]\\]" . link))))
     (when gnosis-apply-highlighting-p
       (save-excursion
         (cl-loop for (regex . face) in syntax-highlights
@@ -2380,9 +2378,7 @@ Return note ids for notes that match QUERY."
       (emacsql gnosis-db [:pragma (= user-version gnosis-db-version)]))))
 
 (defun gnosis-db-update-v4 ()
-  "Update to databse version v4.
-
-Add tags & links tables"
+  "Update to databse version v4."
   (let ((tags (gnosis-get-tags--unique)))
     (pcase-dolist (`(,table ,schema) (seq-filter (lambda (schema)
 						   (member (car schema) '(tags links)))
@@ -2406,25 +2402,31 @@ Add tags & links tables"
 		   (let* ((data (gnosis-select '[hypothesis apocalypse] 'notes `(= id ,id) t))
 			  (hypothesis (nth 0 data))
 			  (old-apocalypse (car (nth 1 data)))
-			  (new-apocalypse (list (nth (- 1 old-apocalypse) hypothesis))))
-		     (gnosis-update 'notes `(= apocalypse ',new-apocalypse) `(= id ,id))))
+			  (new-apocalypse (when (integerp hypothesis) (list (nth (- 1 old-apocalypse) hypothesis)))))
+		     (when (integerp hypothesis)
+		       (gnosis-update 'notes `(= apocalypse ',new-apocalypse) `(= id ,id)))))
 		 note))
     ;; Replace y-or-n with MCQ
     (cl-loop for note in (gnosis-select 'id 'notes '(= type "y-or-n") t)
 	     do (funcall (lambda (id)
-			   (let ((data (gnosis-select '[type hypothesis apocalypse] 'notes `(= id ,id) t)))
+			   (let ((data (gnosis-select '[type hypothesis apocalypse]
+						      'notes `(= id ,id) t)))
 			     (when (string= (nth 0 data) "y-or-n")
 			       (gnosis-update 'notes '(= type "mcq") `(= id ,id))
-			       (gnosis-update 'notes '(= hypothesis '("Yes" "No")) `(= id ,id))
+			       (gnosis-update 'notes '(= hypothesis '("Yes" "No"))
+					      `(= id ,id))
 			       (if (= (car (nth 2 data)) 121)
-				   (gnosis-update 'notes '(= apocalypse '("Yes")) `(= id ,id))
-				 (gnosis-update 'notes '(= apocalypse '("No")) `(= id ,id))))))
+				   (gnosis-update 'notes '(= apocalypse '("Yes"))
+						  `(= id ,id))
+				 (gnosis-update 'notes '(= apocalypse '("No"))
+						`(= id ,id))))))
 			 note))))
 
 (defun gnosis-db-init ()
   "Create essential directories & database."
   (let ((gnosis-curr-version (caar (emacsql gnosis-db  [:pragma user-version]))))
-    (unless (length> (emacsql gnosis-db [:select name :from sqlite-master :where (= type table)])
+    (unless (length> (emacsql gnosis-db [:select name :from sqlite-master
+						 :where (= type table)])
 		     3)
       (emacsql-with-transaction gnosis-db
 	(pcase-dolist (`(,table ,schema) gnosis-db--schemata)
@@ -2720,7 +2722,8 @@ Skips days where no note was reviewed."
   "Rename TAG to NEW-TAG."
   (interactive)
   (let ((tag (or tag (tabulated-list-get-id))))
-    (when (y-or-n-p (format "Delete tag %s?" (propertize tag 'face 'font-lock-keyword-face)))
+    (when (y-or-n-p (format "Delete tag %s?"
+			    (propertize tag 'face 'font-lock-keyword-face)))
       (cl-loop for note in (gnosis-get-tag-notes tag)
 	       do (let* ((tags (car (gnosis-select '[tags] 'notes `(= id ,note) t)))
 			 (new-tags (remove tag tags)))
@@ -3026,7 +3029,7 @@ DASHBOARD-TYPE: either Notes or Decks to display the respective dashboard."
 		 (format "Current streak: %s days"
 			 (propertize
 			  (gnosis-dashboard--streak
-			   (gnosis-select 'date 'activity-log '1=1 t))
+			   (gnosis-select 'date 'activity-log '(> reviewed-total 0) t))
 			  'face 'success))))
 	(insert "\n\n"))
       (pop-to-buffer-same-window buffer)

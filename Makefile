@@ -17,7 +17,9 @@ doc:	$(ORG)
 	--eval "(with-current-buffer (find-file \"$(ORG)\") (org-texinfo-export-to-texinfo) (org-texinfo-export-to-info) (save-buffer))" \
 	--kill
 
-test:	
+
+test:
+	rm -f *.elc
 	$(EMACS) --batch \
 	-q \
 	--load $(TEST_FILE) \
