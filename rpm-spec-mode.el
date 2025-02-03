@@ -98,7 +98,7 @@
 
 (defcustom rpm-spec-short-circuit nil
   "Skip straight to specified stage.
-\(ie, skip all stages leading up to the specified stage).  Only valid
+\(I.e., skip all stages leading up to the specified stage).  Only valid
 in \"%build\" and \"%install\" stage."
   :type 'boolean
   :group 'rpm-spec)
