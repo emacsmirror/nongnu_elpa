@@ -2201,36 +2201,34 @@ NO-OWNER means don't display owner column (user repos view)."
             (updated-str (format-time-string "%s" updated))
             (updated-display (fedi--relative-time-description updated nil :brief)))
        `(nil ;; TODO: id
-         ,(cl-remove
-           'nil
-           `[(,.name face fj-item-face
-                     id ,.id
-                     type fj-user-repo-button
-                     item repo
-                     fj-url ,.html_url
-                     fj-item-data ,r
-                     fj-tab-stop t)
-             ,(unless no-owner
-                `(,.owner.username face fj-user-face
-                                   id ,.id
-                                   type fj-search-owner-button
-                                   item repo
-                                   fj-tab-stop t))
-             (,(number-to-string .stars_count)
-              id ,.id face fj-figures-face
-              item repo)
-             (,fork id ,.id face fj-figures-face item repo)
-             (,(number-to-string .open_issues_count)
-              id ,.id face fj-figures-face
-              item repo)
-             ,.language
-             (,updated-str
-              display ,updated-display
-              face default
-              item repo)
-             (,(string-replace "\n" " " .description)
-              face 'fj-comment-face
-              item repo)]))))))
+         [(,.name face fj-item-face
+                  id ,.id
+                  type fj-user-repo-button
+                  item repo
+                  fj-url ,.html_url
+                  fj-item-data ,r
+                  fj-tab-stop t)
+          ,@(unless no-owner
+              `((,.owner.username face fj-user-face
+                                  id ,.id
+                                  type fj-search-owner-button
+                                  item repo
+                                  fj-tab-stop t)))
+          (,(number-to-string .stars_count)
+           id ,.id face fj-figures-face
+           item repo)
+          (,fork id ,.id face fj-figures-face item repo)
+          (,(number-to-string .open_issues_count)
+           id ,.id face fj-figures-face
+           item repo)
+          ,.language
+          (,updated-str
+           display ,updated-display
+           face default
+           item repo)
+          (,(string-replace "\n" " " .description)
+           face 'fj-comment-face
+           item repo)])))))
 
 (defun fj-repo-search-tl (query &optional topic)
   "Search repos for QUERY, and display a tabulated list of results.
@@ -2801,7 +2799,6 @@ to display."
                (if (string= type "all")
                    "true" "false"))))
     (if (not data)
-        ;; (progn
         (when (y-or-n-p "No unread notifications. Load all?")
           (fj-view-notifications-all))
       (fedi-with-buffer buf 'fj-notifications-mode nil
