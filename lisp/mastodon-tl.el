@@ -471,15 +471,13 @@ With a single PREFIX arg, hide-replies.
 With a double PREFIX arg, only show posts with media."
   (interactive "p")
   (let ((params
-         (cl-remove
-          nil
-          `(("limit" . ,mastodon-tl--timeline-posts-count)
-            ,(when (eq prefix 16)
-               '("only_media" . "true"))
-            ,(when local
-               '("local" . "true"))
-            ,(when max-id
-               `("max_id" . ,(mastodon-tl--buffer-property 'max-id)))))))
+         `(("limit" . ,mastodon-tl--timeline-posts-count)
+           ,@(when (eq prefix 16)
+               '(("only_media" . "true")))
+           ,@(when local
+               '(("local" . "true")))
+           ,@(when max-id
+               `(("max_id" . ,(mastodon-tl--buffer-property 'max-id)))))))
     (message "Loading federated timeline...")
     (mastodon-tl--init (if local "local" "federated")
                        "timelines/public" 'mastodon-tl--timeline nil
@@ -574,13 +572,11 @@ If TAG is a list, show a timeline for all tags.
 With a single PREFIX arg, only show posts with media.
 With a double PREFIX arg, limit results to your own instance."
   (let ((params
-         (cl-remove
-          nil
-          `(("limit" . ,mastodon-tl--timeline-posts-count)
-            ,(when (eq prefix 4)
-               '("only_media" . "true"))
-            ,(when (eq prefix 16)
-               '("local" . "true"))))))
+         `(("limit" . ,mastodon-tl--timeline-posts-count)
+           ,@(when (eq prefix 4)
+               '(("only_media" . "true")))
+           ,@(when (eq prefix 16)
+               '(("local" . "true"))))))
     (when (listp tag)
       (let ((list (mastodon-http--build-array-params-alist "any[]" (cdr tag))))
         (while list
@@ -2928,13 +2924,12 @@ ACCOUNT and TOOT are the data to use."
   "Build the parameters alist based on user responses.
 ACCOUNT-ID, COMMENT, ITEM-ID, FORWARD-P, CAT, and RULES are all from
 `mastodon-tl--report-params', which see."
-  (let ((params (cl-remove
-                 nil
-                 `(("account_id" . ,account-id)
-                   ,(when comment `("comment" . ,comment))
-                   ,(when item-id `("status_ids[]" . ,item-id))
-                   ,(when forward-p `("forward" . ,forward-p))
-                   ,(when cat `("category" . ,cat))))))
+  (let ((params
+         `(("account_id" . ,account-id)
+           ,@(when comment `(("comment" . ,comment)))
+           ,@(when item-id `(("status_ids[]" . ,item-id)))
+           ,@(when forward-p `(("forward" . ,forward-p)))
+           ,@(when cat `(("category" . ,cat))))))
     (if (not rules)
         params
       (let ((alist
