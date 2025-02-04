@@ -799,15 +799,16 @@ QUERY is a search term to filter by."
                                    created assigned mentioned)
   "Make a GET request for issues matching QUERY.
 Optionally limit search by OWNER, STATE, or TYPE.
+Either QUERY or OWNER must be provided.
+Optionally filter results for those you have CREATED,
+been ASSIGNED to, or MENTIONED in.
 STATE defaults to open."
   ;; GET /repos/issues/search
-  ;; WEB UI https://codeberg.org/issues allows for browsing (no query) but
-  ;; the API errors with "" or nil for QUERY, even if we provide other
-  ;; params
-  ;; this endpoint is also painfully slow
+  ;; TODO: params: page, reviewed, review_requested, team, before, since,
+  ;; priority_repo_id, milestones (c s list), labels (c s list)
+  ;; NB: this endpoint can be painfully slow
   (let* ((endpoint "repos/issues/search")
-         (params `(("limit" . "50")
-                   ("state" . "open")
+         (params `(("limit" . "50") ;; max
                    ,@(when query      `(("q" . ,query)))
                    ,@(when owner      `(("owner" . ,owner)))
                    ,@(when state      `(("state" . ,state)))
