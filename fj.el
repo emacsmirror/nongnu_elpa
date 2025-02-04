@@ -795,16 +795,26 @@ QUERY is a search term to filter by."
         (fj-get endpoint params)
       (t (format "%s" (error-message-string err))))))
 
-(defun fj-issues-search (query &optional owner state type)
+(defun fj-issues-search (&optional query owner state type
+                                   created assigned mentioned)
   "Make a GET request for issues matching QUERY.
-Optionally limit search by OWNER, STATE, or TYPE."
+Optionally limit search by OWNER, STATE, or TYPE.
+STATE defaults to open."
   ;; GET /repos/issues/search
+  ;; WEB UI https://codeberg.org/issues allows for browsing (no query) but
+  ;; the API errors with "" or nil for QUERY, even if we provide other
+  ;; params
+  ;; this endpoint is also painfully slow
   (let* ((endpoint "repos/issues/search")
-         (params `(("q" . ,query)
-                   ("limit" . "100")
-                   ("owner" . ,owner)
-                   ("state" . ,state)
-                   ("type" . ,type))))
+         (params `(("limit" . "50")
+                   ("state" . "open")
+                   ,@(when query      `(("q" . ,query)))
+                   ,@(when owner      `(("owner" . ,owner)))
+                   ,@(when state      `(("state" . ,state)))
+                   ,@(when type       `(("type" . ,type)))
+                   ,@(when created    '(("created" . "true")))
+                   ,@(when assigned   '(("assigned" . "true")))
+                   ,@(when mentioned  '(("mentioned" . "true"))))))
     (condition-case err
         (fj-get endpoint params)
       (t (format "%s" (error-message-string err))))))
