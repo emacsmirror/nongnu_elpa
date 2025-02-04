@@ -820,6 +820,31 @@ STATE defaults to open."
         (fj-get endpoint params)
       (t (format "%s" (error-message-string err))))))
 
+(defun fj-own-repos-issues (&optional query state type
+                                      created assigned mentioned)
+  "Query issues in repo's owned by `fj-user'.
+QUERY, STATE, TYPE, CREATED, ASSIGNED, and MENTIONED are all for
+`fj-issuecs-search'."
+  (interactive)
+  (let ((issues
+         (fj-issues-search query fj-user state type
+                           created assigned mentioned))
+        (buf-name "*fj-user-repos-issues")
+        (prev-buf (buffer-name (current-buffer)))
+        (prev-mode major-mode))
+    ;; FIXME refactor with `fj-list-issues'? just tab list entries fun and
+    ;; the buffer spec settings change
+    (with-current-buffer (get-buffer-create buf-name)
+      (setq tabulated-list-entries
+            (fj-issue-tl-entries issues :repo))
+      (fj-owned-issues-tl-mode)
+      (tabulated-list-init-header)
+      (tabulated-list-print)
+      (setq fj-buffer-spec
+            `(:state ,state :owner ,fj-user :type ,type))
+      (fj-other-window-maybe
+       prev-buf "-issues*" #'string-suffix-p prev-mode))))
+
 (defun fj-get-item (repo &optional owner number type)
   "GET ISSUE NUMBER, in REPO by OWNER.
 If TYPE is :pull, get a pull request, not issue."
@@ -1204,7 +1229,40 @@ NEW-BODY is the new comment text to send."
   'action 'fj-issues-tl-view
   'help-echo "RET: View this issue.")
 
-(defun fj-issue-tl-entries (issues)
+;; FIXME: refactor with tl-issues mode?
+;; this just adds Repo header
+(define-derived-mode fj-owned-issues-tl-mode tabulated-list-mode
+  "fj-own-issues"
+  "Major mode for browsing a tabulated list of issues."
+  :group 'fj
+  (hl-line-mode 1)
+  (setq tabulated-list-padding 0 ;2) ; point directly on issue
+        ;; this is changed by `tabulated-list-sort' which sorts by col at point:
+        tabulated-list-sort-key '("Updated" . t) ;; default
+        tabulated-list-format
+        '[("#" 5 fj-tl-sort-by-issues :right-align)
+          ("💬" 3 fj-tl-sort-by-comment-count :right-align)
+          ("Repo" 10 t)
+          ("Author" 10 t)
+          ("Updated" 12 t) ;; instead of display, you could use a sort fun here
+          ("Issue" 20 t)])
+  (setq imenu-create-index-function #'fj-tl-imenu-index-fun))
+
+(define-button-type 'fj-owned-issues-repo-button
+  'follow-link t
+  'action 'fj-owned-issues-list-repo-issues
+  'help-echo "RET: View this repo's issues.")
+
+;; FIXME: refactor with `fj-issue-tl-mode'? just the name seq elt changes
+(defun fj-owned-issues-list-repo-issues (&optional _)
+  "View issues of current repo from tabulated repos listing."
+  (interactive)
+  (fj-with-repo-entry
+   (let* ((entry (tabulated-list-get-entry))
+          (name (car (seq-elt entry 2)))
+          (owner (fj--repo-owner)))
+     (fj-list-issues name owner))))
+
 (defun fj-issue-tl-entries (issues &optional repo)
   "Return tabluated list entries for ISSUES.
 STATE is a string."
