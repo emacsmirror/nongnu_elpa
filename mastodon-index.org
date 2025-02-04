@@ -75,7 +75,7 @@
 |                  | mastodon-notifications--request-reject            | Reject a notification request for a user.                                      |
 | C-S-n            | mastodon-notifications--requests                  | Open a new buffer displaying the user's notification requests.                 |
 | N                | mastodon-notifications-get                        | Display NOTIFICATIONS in buffer.                                               |
-|                  | mastodon-notifications-policy                     | A transient to set notifications policy options.                               |
+| C-:              | mastodon-notifications-policy                     | A transient to set notifications policy options.                               |
 |                  | mastodon-notifications-policy-update              | Send updated notification policy settings.                                     |
 |                  | mastodon-profile--account-bot-toggle              | Toggle the bot status of your account.                                         |
 |                  | mastodon-profile--account-discoverable-toggle     | Toggle the discoverable status of your account.                                |
@@ -159,6 +159,7 @@
 | SPC              | mastodon-tl--scroll-up-command                    | Call `scroll-up-command', loading more toots if necessary.                     |
 |                  | mastodon-tl--single-toot                          | View toot at point in separate buffer.                                         |
 |                  | mastodon-tl--some-followed-tags-timeline          | Prompt for some tags, and open a timeline for them.                            |
+| C-'              | mastodon-tl--tag-group-timeline                   | Load a timeline of a tag group from `mastodon-tl--tags-groups'.                |
 | RET, T           | mastodon-tl--thread                               | Open thread buffer for toot at point.                                          |
 |                  | mastodon-tl--toggle-sensitive-image               | Toggle dislay of sensitive image at point.                                     |
 |                  | mastodon-tl--toggle-spoiler-in-thread             | Toggler content warning for all posts in current thread.                       |
@@ -285,9 +286,7 @@
 | mastodon-media--hide-sensitive-media               | Whether media marked as sensitive should be hidden.                           |
 | mastodon-media--preview-max-height                 | Max height of any media attachment preview to be shown in timelines.          |
 | mastodon-mode-hook                                 | Hook run when entering Mastodon mode.                                         |
-| mastodon-notifications-check-for-updates           | Whether to regularly check for new notifications.                             |
 | mastodon-notifications-grouped-names-count         | The number of notification authors to display.                                |
-| mastodon-notifications-updates-interval            | How often to check for new notifications, in seconds.                         |
 | mastodon-profile-mode-hook                         | Hook run after entering or leaving `mastodon-profile-mode'.                   |
 | mastodon-profile-note-in-foll-reqs                 | If non-nil, show a user's profile note in follow request notifications.       |
 | mastodon-profile-note-in-foll-reqs-max-length      | The max character length for user profile note in follow requests.            |
@@ -308,6 +307,7 @@
 | mastodon-tl--show-stats                            | Whether to show toot stats (faves, boosts, replies counts).                   |
 | mastodon-tl--symbols                               | A set of symbols (and fallback strings) to be used in timeline.               |
 | mastodon-tl--tag-timeline-tags                     | A list of up to four tags for use with `mastodon-tl--followed-tags-timeline'. |
+| mastodon-tl--tags-groups                           | A list containing lists of up to four tags each.                              |
 | mastodon-tl--timeline-posts-count                  | Number of posts to display when loading a timeline.                           |
 | mastodon-tl-position-after-update                  | Defines where `point' should be located after a timeline update.              |
 | mastodon-toot--attachment-height                   | Height of the attached images preview in the toot draft buffer.               |
