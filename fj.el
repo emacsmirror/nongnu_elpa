@@ -800,8 +800,10 @@ QUERY is a search term to filter by."
   "Make a GET request for issues matching QUERY.
 Optionally limit search by OWNER, STATE, or TYPE.
 Either QUERY or OWNER must be provided.
-Optionally filter results for those you have CREATED,
-been ASSIGNED to, or MENTIONED in.
+STATE is \"open\" or \"closed\".
+TYPE is \"issues\" or \"pulls\".
+Optionally filter results for those you have CREATED, been ASSIGNED to,
+or MENTIONED in.
 STATE defaults to open."
   ;; GET /repos/issues/search
   ;; TODO: params: page, reviewed, review_requested, team, before, since,
@@ -820,11 +822,11 @@ STATE defaults to open."
         (fj-get endpoint params)
       (t (format "%s" (error-message-string err))))))
 
-(defun fj-own-repos-issues (&optional query state type
-                                      created assigned mentioned)
-  "Query issues in repo's owned by `fj-user'.
+(defun fj-list-own-issues (&optional query state type
+                                     created assigned mentioned)
+  "List issues in repos owned by `fj-user'.
 QUERY, STATE, TYPE, CREATED, ASSIGNED, and MENTIONED are all for
-`fj-issuecs-search'."
+`fj-issues-search'."
   (interactive)
   (let ((issues
          (fj-issues-search query fj-user state type
