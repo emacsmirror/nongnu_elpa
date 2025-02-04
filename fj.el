@@ -1205,6 +1205,7 @@ NEW-BODY is the new comment text to send."
   'help-echo "RET: View this issue.")
 
 (defun fj-issue-tl-entries (issues)
+(defun fj-issue-tl-entries (issues &optional repo)
   "Return tabluated list entries for ISSUES.
 STATE is a string."
   (cl-loop
@@ -1229,6 +1230,13 @@ STATE is a string."
           (,(number-to-string .comments)
            face fj-figures-face
            item ,type)
+          ,@(when repo
+              `((,.repository.name face fj-user-face
+                                   id ,.repository.name
+                                   state ,.state
+                                   type fj-owned-issues-repo-button
+                                   item ,type
+                                   fj-tab-stop t)))
           (,.user.username face fj-user-face
                            id ,.id
                            state ,.state
