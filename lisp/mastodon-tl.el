@@ -2888,7 +2888,7 @@ PREFIX is for `mastodon-tl--show-tag-timeline', which see."
   (interactive "P")
   (if (not mastodon-tl--tags-groups)
       (user-error
-       "Set `mastodon-tl--tags-groups' to view tag group timelines.")
+       "Set `mastodon-tl--tags-groups' to view tag group timelines")
     (let* ((list-strs (mapcar (lambda (x)
                                 ;; cons of list-as-string and list:
                                 (cons (prin1-to-string x) x))

@@ -178,7 +178,8 @@ MAX-ID is a flag to include the max_id pagination parameter."
   (map-keys mastodon-profile--account-view-alist))
 
 (defun mastodon-profile--account-view-cycle (&optional prefix)
-  "Cycle through profile view: toots, toot sans boosts, followers, and following."
+  "Cycle through profile view: toots, toot sans boosts, followers, and following.
+If a PREFIX argument is provided, prompt for a view type and load."
   (interactive "P")
   (if prefix
       (let* ((choice
