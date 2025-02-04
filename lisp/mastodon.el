@@ -6,7 +6,7 @@
 ;; Author: Johnson Denen <johnson.denen@gmail.com>
 ;;         Marty Hiatt <mousebot@disroot.org>
 ;; Maintainer: Marty Hiatt <mousebot@disroot.org>
-;; Version: 1.1.8
+;; Version: 1.1.9
 ;; Package-Requires: ((emacs "28.1") (request "0.3.0") (persist "0.4") (tp "0.6"))
 ;; Homepage: https://codeberg.org/martianh/mastodon.el
 
@@ -103,6 +103,9 @@
 (autoload 'mastodon-tl--scroll-up-command "mastodon-tl")
 (autoload 'special-mode "simple")
 (autoload 'mastodon-tl--thread-do "mastodon-tl")
+(autoload 'mastodon-notifications-policy "mastodon-notifications")
+(autoload 'mastodon-notifications--requests "mastodon-notifications")
+(autoload 'mastodon-tl--tag-group-timeline "mastodon-tl")
 
 (defvar mastodon-tl--highlight-current-toot)
 (defvar mastodon-notifications--map)
@@ -207,11 +210,13 @@ and X others...\"."
     (define-key map (kbd "#")      #'mastodon-tl--get-tag-timeline)
     (define-key map (kbd "\"")     #'mastodon-tl--list-followed-tags)
     (define-key map (kbd "'")      #'mastodon-tl--followed-tags-timeline)
+    (define-key map (kbd "C-'")   #'mastodon-tl--tag-group-timeline)
     (define-key map (kbd "A")      #'mastodon-profile--get-toot-author)
     (define-key map (kbd "F")      #'mastodon-tl--get-federated-timeline)
     (define-key map (kbd "H")      #'mastodon-tl--get-home-timeline)
     (define-key map (kbd "L")      #'mastodon-tl--get-local-timeline)
     (define-key map (kbd "N")      #'mastodon-notifications-get)
+    (define-key map (kbd "S-C-n")  #'mastodon-notifications--requests)
     (define-key map (kbd "@")      #'mastodon-notifications--get-mentions)
     (define-key map (kbd "P")      #'mastodon-profile--show-user)
     (define-key map (kbd "s")      #'mastodon-search--query)
@@ -264,6 +269,7 @@ and X others...\"."
     (define-key map (kbd "V")      #'mastodon-profile--view-favourites)
     (define-key map (kbd "K")      #'mastodon-profile--view-bookmarks)
     (define-key map (kbd ":")      #'mastodon-user-settings)
+    (define-key map (kbd "C-:")    #'mastodon-notifications-policy)
     ;; minor views
     (define-key map (kbd "R")      #'mastodon-views--view-follow-requests)
     (define-key map (kbd "S")      #'mastodon-views--view-scheduled-toots)
@@ -302,7 +308,7 @@ and X others...\"."
   "Face used for content warning.")
 
 (defface mastodon-toot-docs-face
-  `((t :inherit font-lock-comment-face))
+  `((t :inherit shadow))
   "Face used for documentation in toot compose buffer.
 If `mastodon-tl--enable-proportional-fonts' is changed,
 mastodon.el needs to be re-loaded for this to be correctly set.")

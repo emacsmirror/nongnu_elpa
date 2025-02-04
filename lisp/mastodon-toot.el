@@ -611,7 +611,7 @@ base toot."
 Uses `lingva.el'."
   (interactive)
   (if mastodon-tl--buffer-spec
-      (if-let ((toot (mastodon-tl--property 'item-json)))
+      (if-let* ((toot (mastodon-tl--property 'item-json)))
           (condition-case x
               (lingva-translate nil
                                 (mastodon-tl--content toot)
@@ -1006,7 +1006,8 @@ instance to edit a toot."
              ;; adopt reply-to-id, visibility, CW, language, and media:
              (mastodon-toot--set-toot-properties .in_reply_to_id .visibility
                                                  source-cw .language nil nil
-                                                 .media_attachments .poll)
+                                                 ;; maintain media order:
+                                                 (reverse .media_attachments) .poll)
              (setq mastodon-toot--edit-item-id id))))))))
 
 (defun mastodon-toot--get-toot-source (id)
@@ -1033,7 +1034,7 @@ instance to edit a toot."
                  do (insert (propertize (if (= count 1)
                                             (format "%s [original]:\n" count)
                                           (format "%s:\n" count))
-                                        'face 'font-lock-comment-face)
+                                        'face 'mastodon-toot-docs-face)
                             (mastodon-toot--insert-toot-iter x)
                             "\n"))
         (goto-char (point-min))
@@ -1042,7 +1043,7 @@ instance to edit a toot."
                      (format "Edits to toot by %s:"
                              (alist-get 'username
                                         (alist-get 'account (car history))))
-                     'face 'font-lock-comment-face))
+                     'face 'mastodon-toot-docs-face))
         (mastodon-tl--set-buffer-spec (buffer-name (current-buffer))
                                       (format "statuses/%s/history" id)
                                       nil)))))
@@ -1627,7 +1628,7 @@ e.g. `mastodon-toot--send' -> Send."
     (substitute-command-keys
      (format
       (concat (mastodon-toot--comment "    ")
-              "%s"
+              "%-10s"
               (mastodon-toot--comment " - %s"))
       key command))))
 
@@ -1979,7 +1980,7 @@ Added to `after-change-functions'."
     (save-match-data
       (let* ((fill-column 67))
         (goto-char (point-min))
-        (when-let ((prop (text-property-search-forward 'toot-reply)))
+        (when-let* ((prop (text-property-search-forward 'toot-reply)))
           (fill-region (prop-match-beginning prop)
                        (point)))))))
 

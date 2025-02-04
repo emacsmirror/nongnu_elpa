@@ -471,15 +471,13 @@ With a single PREFIX arg, hide-replies.
 With a double PREFIX arg, only show posts with media."
   (interactive "p")
   (let ((params
-         (cl-remove
-          nil
-          `(("limit" . ,mastodon-tl--timeline-posts-count)
-            ,(when (eq prefix 16)
-               '("only_media" . "true"))
-            ,(when local
-               '("local" . "true"))
-            ,(when max-id
-               `("max_id" . ,(mastodon-tl--buffer-property 'max-id)))))))
+         `(("limit" . ,mastodon-tl--timeline-posts-count)
+           ,@(when (eq prefix 16)
+               '(("only_media" . "true")))
+           ,@(when local
+               '(("local" . "true")))
+           ,@(when max-id
+               `(("max_id" . ,(mastodon-tl--buffer-property 'max-id)))))))
     (message "Loading federated timeline...")
     (mastodon-tl--init (if local "local" "federated")
                        "timelines/public" 'mastodon-tl--timeline nil
@@ -574,13 +572,11 @@ If TAG is a list, show a timeline for all tags.
 With a single PREFIX arg, only show posts with media.
 With a double PREFIX arg, limit results to your own instance."
   (let ((params
-         (cl-remove
-          nil
-          `(("limit" . ,mastodon-tl--timeline-posts-count)
-            ,(when (eq prefix 4)
-               '("only_media" . "true"))
-            ,(when (eq prefix 16)
-               '("local" . "true"))))))
+         `(("limit" . ,mastodon-tl--timeline-posts-count)
+           ,@(when (eq prefix 4)
+               '(("only_media" . "true")))
+           ,@(when (eq prefix 16)
+               '(("local" . "true"))))))
     (when (listp tag)
       (let ((list (mastodon-http--build-array-params-alist "any[]" (cdr tag))))
         (while list
@@ -897,10 +893,10 @@ TS is a timestamp from the server, if any."
                           'face 'mastodon-display-name-face
                           'follow-link t
                           'mouse-face 'highlight
-		          'mastodon-tab-stop 'shr-url
-		          'shr-url app-url
+		                  'mastodon-tab-stop 'shr-url
+		                  'shr-url app-url
                           'help-echo app-url
-		          'keymap mastodon-tl--shr-map-replacement)))))
+		                  'keymap mastodon-tl--shr-map-replacement)))))
        ;; edited:
        (when edited-time
          (concat
@@ -910,7 +906,7 @@ TS is a timestamp from the server, if any."
           (propertize
            (format-time-string mastodon-toot-timestamp-format
                                edited-parsed)
-           'face 'font-lock-comment-face
+           'face 'mastodon-toot-docs-face
            'timestamp edited-parsed
            'display (if mastodon-tl--enable-relative-timestamps
                         (mastodon-tl--relative-time-description edited-parsed)
@@ -1014,7 +1010,7 @@ links in the text. If TOOT is nil no parsing occurs."
 
 (defun mastodon-tl--format-card-author (data)
   "Render card author DATA."
-  (when-let ((account (alist-get 'account data))) ;.account
+  (when-let* ((account (alist-get 'account data))) ;.account
     (let-alist account ;.account
       ;; FIXME: replace with refactored handle render fun
       ;; in byline refactor branch:
@@ -1027,10 +1023,10 @@ links in the text. If TOOT is nil no parsing occurs."
        (propertize (concat "@" .acct)
                    'face 'mastodon-handle-face
                    'mouse-face 'highlight
-		   'mastodon-tab-stop 'user-handle
-		   'keymap mastodon-tl--link-keymap
+		           'mastodon-tab-stop 'user-handle
+		           'keymap mastodon-tl--link-keymap
                    'mastodon-handle (concat "@" .acct)
-		   'help-echo (concat "Browse user profile of @" .acct))))))
+		           'help-echo (concat "Browse user profile of @" .acct))))))
 
 (defun mastodon-tl--process-link (toot start end url)
   "Process link URL in TOOT as hashtag, userhandle, or normal link.
@@ -1474,13 +1470,13 @@ LENGTH is of the longest option, for formatting."
                      (.vote_count
                       (format "%s votes | " .vote_count))
                      (t ""))
-               'face 'font-lock-comment-face)
+               'face 'mastodon-toot-docs-face)
               (let ((str (if (eq .expired :json-false)
                              (if (eq .expires_at nil)
                                  ""
                                (mastodon-tl--format-poll-expiry .expires_at))
                            "Poll expired.")))
-                (propertize str 'face 'font-lock-comment-face))
+                (propertize str 'face 'mastodon-toot-docs-face))
               "\n"))))
 
 (defconst mastodon-tl--time-units
@@ -1653,7 +1649,7 @@ in which case play first video or gif from current toot."
 (defun mastodon-tl--copy-image-caption ()
   "Copy the caption of the image at point."
   (interactive)
-  (if-let ((desc (get-text-property (point) 'image-description)))
+  (if-let* ((desc (get-text-property (point) 'image-description)))
       (progn
         (kill-new desc)
         (message "Image caption copied."))
@@ -1811,7 +1807,7 @@ CW-EXPANDED means treat content warnings as unfolded."
          (filtered (mastodon-tl--field 'filtered toot))
          (filters (when filtered
                     (mastodon-tl--current-filters filtered)))
-         (spoiler-or-content (if-let ((match (assoc "warn" filters)))
+         (spoiler-or-content (if-let* ((match (assoc "warn" filters)))
                                  (mastodon-tl--spoiler toot (cadr match))
                                (if (mastodon-tl--has-spoiler toot)
                                    (mastodon-tl--spoiler toot)
@@ -1837,8 +1833,8 @@ NO-BYLINE means just insert toot body, used for folding."
                 (mastodon-tl--buffer-property 'hide-replies nil :no-error)
                 ;; loading a tl with a prefix arg:
                 (mastodon-tl--hide-replies-p current-prefix-arg))
-	       (cl-remove-if-not #'mastodon-tl--is-reply toots)
-	     toots))))
+	           (cl-remove-if-not #'mastodon-tl--is-reply toots)
+	         toots))))
     (mapc (lambda (toot)
             (mastodon-tl--toot toot nil thread domain nil no-byline))
           toots)
@@ -1976,19 +1972,19 @@ To disable showing the stats, customize
                                'favourited-p (eq t .favourited)
                                'favourites-field t
                                'help-echo (format "%s favourites" .favourites_count)
-                               'face 'font-lock-comment-face)
-                   (propertize " | " 'face 'font-lock-comment-face)
+                               'face 'mastodon-toot-docs-face)
+                   (propertize " | " 'face 'mastodon-toot-docs-face)
                    (propertize boosts
                                'boosted-p (eq t .reblogged)
                                'boosts-field t
                                'help-echo (format "%s boosts" .reblogs_count)
-                               'face 'font-lock-comment-face)
-                   (propertize " | " 'face 'font-lock-comment-face)
+                               'face 'mastodon-toot-docs-face)
+                   (propertize " | " 'face 'mastodon-toot-docs-face)
                    (propertize replies
                                'replies-field t
                                'replies-count .replies_count
                                'help-echo (format "%s replies" .replies_count)
-                               'face 'font-lock-comment-face)))
+                               'face 'mastodon-toot-docs-face)))
            (right-spacing
             (propertize " "
                         'display
@@ -2101,6 +2097,8 @@ call this function after it is set or use something else."
            'mentions)
           ((mastodon-tl--endpoint-str-= "notifications")
            'notifications)
+          ((mastodon-tl--endpoint-str-= "notifications/requests")
+           'notification-requests)
           ;; threads:
           ((mastodon-tl--endpoint-str-= "context" :suffix)
            'thread)
@@ -2414,7 +2412,7 @@ programmatically and not crash into
                 (when unfolded-state
                   (plist-put mastodon-tl--buffer-spec
                              'thread-unfolded unfolded-state))
-                (when-let ((ancestors (alist-get 'ancestors context)))
+                (when-let* ((ancestors (alist-get 'ancestors context)))
                   (mastodon-tl--timeline ancestors :thread))
                 (goto-char (point-max))
                 (move-marker marker (point))
@@ -2425,7 +2423,7 @@ programmatically and not crash into
                 (when mastodon-tl--display-media-p
                   (mastodon-media--inline-images marker ;start-pos
                                                  (point)))
-                (when-let ((descendants (alist-get 'descendants context)))
+                (when-let* ((descendants (alist-get 'descendants context)))
                   (mastodon-tl--timeline descendants :thread))
                 ;; put point at the toot:
                 (goto-char (marker-position marker))
@@ -2877,6 +2875,28 @@ PREFIX is for `mastodon-tl--show-tag-timeline', which see."
                      tags)))
     (mastodon-tl--show-tag-timeline prefix selection)))
 
+(defcustom mastodon-tl--tags-groups nil
+  "A list containing lists of up to four tags each.
+You can load a tag timeline list with one of these by calling
+`mastodon-tl--tag-group-timeline'."
+  :group 'mastodon-tl
+  :type '(repeat (list string string string string)))
+
+(defun mastodon-tl--tag-group-timeline (&optional prefix)
+  "Load a timeline of a tag group from `mastodon-tl--tags-groups'.
+PREFIX is for `mastodon-tl--show-tag-timeline', which see."
+  (interactive "P")
+  (if (not mastodon-tl--tags-groups)
+      (user-error
+       "Set `mastodon-tl--tags-groups' to view tag group timelines")
+    (let* ((list-strs (mapcar (lambda (x)
+                                ;; cons of list-as-string and list:
+                                (cons (prin1-to-string x) x))
+                              mastodon-tl--tags-groups))
+           (choice (completing-read "Tag group: " list-strs))
+           (choice-list (cdr (assoc choice list-strs #'equal))))
+      (mastodon-tl--show-tag-timeline prefix choice-list))))
+
 
 ;;; REPORT TO MODERATORS
 
@@ -2904,13 +2924,12 @@ ACCOUNT and TOOT are the data to use."
   "Build the parameters alist based on user responses.
 ACCOUNT-ID, COMMENT, ITEM-ID, FORWARD-P, CAT, and RULES are all from
 `mastodon-tl--report-params', which see."
-  (let ((params (cl-remove
-                 nil
-                 `(("account_id" . ,account-id)
-                   ,(when comment `("comment" . ,comment))
-                   ,(when item-id `("status_ids[]" . ,item-id))
-                   ,(when forward-p `("forward" . ,forward-p))
-                   ,(when cat `("category" . ,cat))))))
+  (let ((params
+         `(("account_id" . ,account-id)
+           ,@(when comment `(("comment" . ,comment)))
+           ,@(when item-id `(("status_ids[]" . ,item-id)))
+           ,@(when forward-p `(("forward" . ,forward-p)))
+           ,@(when cat `(("category" . ,cat))))))
     (if (not rules)
         params
       (let ((alist
@@ -3072,7 +3091,7 @@ and profile pages when showing followers or accounts followed."
 (defun mastodon-tl--get-link-header-from-response (headers)
   "Get http Link header from list of http HEADERS."
   ;; pleroma uses "link", so case-insensitive match required:
-  (when-let ((link-headers (alist-get "Link" headers nil nil #'cl-equalp)))
+  (when-let* ((link-headers (alist-get "Link" headers nil nil #'cl-equalp)))
     (split-string link-headers ", ")))
 
 (defun mastodon-tl--more ()
@@ -3459,7 +3478,7 @@ ENDPOINT-VERSION is a string, format Vx, e.g. V2."
         (mastodon-search--insert-heading view-name))
       (when binding-str
         (insert (mastodon-tl--set-face (concat "[" binding-str "]\n\n")
-                                       'font-lock-comment-face)))
+                                       'mastodon-toot-docs-face)))
       (mastodon-tl--set-buffer-spec
        buffer endpoint update-function
        link-header params nil

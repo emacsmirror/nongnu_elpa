@@ -201,13 +201,12 @@ is used for pagination."
          (limit (or limit "40"))
          (offset (or offset "0"))
          (buffer (format "*mastodon-search-%s-%s*" type query))
-         (params (cl-remove nil
-                            `(("q" . ,query)
-                              ,(when type `("type" . ,type))
-                              ,(when limit `("limit" . ,limit))
-                              ,(when offset `("offset" . ,offset))
-                              ,(when following `("following" . ,following))
-                              ,(when account-id `("account_id" . ,account-id)))))
+         (params `(("q" . ,query)
+                   ,@(when type `(("type" . ,type)))
+                   ,@(when limit `(("limit" . ,limit)))
+                   ,@(when offset `(("offset" . ,offset)))
+                   ,@(when following `(("following" . ,following)))
+                   ,@(when account-id `(("account_id" . ,account-id)))))
          (response (mastodon-http--get-json url params))
          (items (alist-get (intern type) response)))
     (with-mastodon-buffer buffer #'mastodon-mode nil
@@ -243,7 +242,7 @@ is used for pagination."
   (let ((thing (or thing "items")))
     (insert
      (propertize (format "Looks like search returned no %s." thing)
-                 'face 'font-lock-comment-face))))
+                 'face 'mastodon-toot-docs-face))))
 
 (defun mastodon-search--render-response (data type buffer params
                                               insert-fun update-fun)

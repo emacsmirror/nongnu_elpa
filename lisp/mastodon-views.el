@@ -171,7 +171,7 @@ provides the JSON data."
   (if (seq-empty-p data)
       (insert (propertize
                (format "Looks like you have no %s for now." view-name)
-               'face 'font-lock-comment-face
+               'face 'mastodon-toot-docs-face
                'byline t
                'item-type 'no-item ; for nav
                'item-id "0")) ; so point can move here when no item
@@ -232,7 +232,7 @@ a: add account to this list, r: remove account from this list"
        (propertize (format " [replies: %s, exclusive %s]"
                            .replies_policy
                            (when (eq t .exclusive) "true"))
-                   'face 'font-lock-comment-face)
+                   'face 'mastodon-toot-docs-face)
        (propertize "\n\n"
                    'list t
                    'keymap mastodon-views--list-name-keymap
@@ -516,7 +516,7 @@ JSON is the data returned by the server."
                          (mastodon-toot--iso-to-human .scheduled_at))
                  'byline t ; so we nav here
                  'item-type 'scheduled ; so we nav here
-                 'face 'font-lock-comment-face
+                 'face 'mastodon-toot-docs-face
                  'keymap mastodon-views--scheduled-map
                  'item-json toot
                  'id .id)
@@ -875,6 +875,10 @@ If INSTANCE is given, use that."
         ((string-suffix-p "profile/" (url-basepath url))
          (string-remove-suffix "/profile/"
                                (url-basepath url)))
+        ;; snac is https://instance.com/user
+        ((not (string-match-p "@" url))
+         ;; cull trailing slash:
+         (string-trim-right (url-basepath url) "/"))
         ;; mastodon is https://instance.com/@user
         (t
          (string-remove-suffix (concat "/@" username)
