@@ -80,6 +80,8 @@ Forgejo's API is vast. Currently =fj.el= just implements a few basic things:
 
 Contributions are welcome, as is feedback about your needs.
 
+Please PR into branch =dev= (=main= is for releases), and let me know if you're hacking on something.
+
 Currently the project has just evolved organically out of my own needs (and my own libraries), which are likely different to yours.
 
 * screenshots
