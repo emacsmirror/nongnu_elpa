@@ -14,6 +14,11 @@ Documentation License.''
 @end quotation
 @end copying
 
+@dircategory Emacs
+@direntry
+* Radio: (radio). Listen to Internet radio.
+@end direntry
+
 @titlepage
 @title Radio Manual
 @author Roi Martin (@email{jroi.martin@@gmail.com})
