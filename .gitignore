@@ -1,10 +1,11 @@
 *.elc
 
-/doc/*_html/
-/doc/*.aux
 /doc/*.info
-/doc/*.log
 /doc/*.pdf
+/doc/*.html
+
+/doc/*.aux
+/doc/*.log
 /doc/*.toc
 /doc/*.cp
 /doc/*.cps
