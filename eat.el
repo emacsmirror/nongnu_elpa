@@ -151,6 +151,11 @@ This is the default name used when running Eat."
   :type 'boolean
   :group 'eat-ui)
 
+(defcustom eat-show-title-on-mode-line t
+  "Non-nil means show terminal title on mode line."
+  :type 'boolean
+  :group 'eat-ui)
+
 (defcustom eat-term-scrollback-size 131072 ; 128 K
   "Size of scrollback area in characters.  nil means unlimited."
   :type '(choice natnum (const nil))
@@ -6703,19 +6708,21 @@ mouse-3: Switch to char mode"
                        (down-mouse-3 . eat-char-mode)))))
                  "]")))))
           ":%s"))
-  (setq mode-line-buffer-identification
-        `(12 (""
-              ,(nconc
-                (propertized-buffer-identification "%b")
-                '(" "
-                  (:propertize
-                   (:eval
-                    (when-let* ((eat-terminal)
-                                (title (eat-term-title eat-terminal))
-                                ((not (string-empty-p title))))
-                      (format "(%s)" (string-replace "%" "%%"
-                                                     title))))
-                   help-echo "Title"))))))
+  (when eat-show-title-on-mode-line
+    (setq mode-line-buffer-identification
+          `(12 (""
+                ,(nconc
+                  (propertized-buffer-identification "%b")
+                  '(" "
+                    (:propertize
+                     (:eval
+                      (when-let*
+                          ((eat-terminal)
+                           (title (eat-term-title eat-terminal))
+                           ((not (string-empty-p title))))
+                        (format "(%s)" (string-replace "%" "%%"
+                                                       title))))
+                     help-echo "Title")))))))
   (eat-emacs-mode)
   ;; Make sure glyphless character don't display a huge box glyph,
   ;; that would break the display.
