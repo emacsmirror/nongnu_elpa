@@ -1,1 +1,14 @@
 *.elc
+
+/doc/*_html/
+/doc/*.aux
+/doc/*.info
+/doc/*.log
+/doc/*.pdf
+/doc/*.toc
+/doc/*.cp
+/doc/*.cps
+/doc/*.fn
+/doc/*.fns
+/doc/*.vr
+/doc/*.vrs
