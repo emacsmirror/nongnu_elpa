@@ -504,9 +504,53 @@ When there is no section it will insert a heading below point."
   "Auto Fill Function for `auto-fill-mode'."
   (when (>= (current-column) (current-fill-column))
     (let* ((fill-prefix (typst-ts-editing-calculate-fill-prefix))
-	         (adaptive-fill-mode (null fill-prefix)))
-	    (when fill-prefix (do-auto-fill)))))
+           (adaptive-fill-mode (null fill-prefix)))
+      (when fill-prefix (do-auto-fill)))))
 
+(defun typst-ts-mode-symbol-picker ()
+  "Insert elements from `typst-ts-mode-symbol-alist' `typst-ts-mode-emoji-alist'.
+
+In markup mode, it will prefix the selection with \"#\"
+and its corresponding module (\"sym.\", \"emoji.\").
+In math mode, symbols do not need a \"#\" prefix and \"sym.\" prefix.
+In code mode, the selection needs to be prefixed with the module."
+  (interactive)
+  (let* ((all-symbols (append typst-ts-mode-symbol-alist typst-ts-mode-emoji-alist))
+         (completion-extra-properties
+          '(:annotation-function
+            (lambda (key)
+              (concat " " (cdr (assoc key minibuffer-completion-table))))))
+         (value (completing-read
+                 "Pick: " all-symbols
+                 nil t))
+         (node (treesit-node-at (point)))
+         (inside-math (treesit-parent-until node
+                                            (lambda (x)
+                                              (string= (treesit-node-type x)
+                                                       "math"))))
+         (inside-code (treesit-parent-until node
+                                            (lambda (x)
+                                              (or
+                                               (string= (treesit-node-type x)
+                                                        "code")
+                                               (string= (treesit-node-type x)
+                                                        "content")))))
+         (is-symbol-p (assoc value typst-ts-mode-symbol-alist))
+         (is-emoji-p (assoc value typst-ts-mode-emoji-alist))
+         (to-insert value))
+    (cond
+     ((string= (treesit-node-type inside-code) "code")
+      (setq to-insert (concat
+                       (if is-symbol-p "sym." "emoji.")
+                       to-insert)))
+     ((and is-symbol-p
+           (not inside-math)
+           (not (string= (treesit-node-type inside-code) "code")))
+      (setq to-insert (concat "#sym." to-insert)))
+     ((and is-emoji-p
+           (not (string= (treesit-node-type inside-code) "code")))
+      (setq to-insert (concat "#emoji." to-insert))))
+    (insert to-insert)))
 
 (provide 'typst-ts-editing)
 
