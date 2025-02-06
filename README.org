@@ -1,4 +1,4 @@
-#+title: radio.el
+#+title: radio
 
-radio.el is a GNU Emacs package that enables users to listen to
-Internet radio stations.
+radio is a GNU Emacs package that enables users to listen to Internet
+radio stations.

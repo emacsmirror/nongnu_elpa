@@ -4,7 +4,7 @@
 
 ;; Author: Roi Martin <jroi.martin@gmail.com>
 ;; Maintainer: Roi Martin <jroi.martin@gmail.com>
-;; URL: https://github.com/jroimartin/radio.el
+;; URL: https://github.com/jroimartin/radio
 ;; Version: 0.1.0
 ;; Package-Requires: ((emacs "29.1"))
 ;; Keywords: radio
@@ -26,7 +26,7 @@
 
 ;;; Commentary:
 
-;; radio.el is a GNU Emacs package that enables users to listen to
+;; radio is a GNU Emacs package that enables users to listen to
 ;; Internet radio stations.
 
 ;;; Code:
