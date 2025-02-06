@@ -1,0 +1,44 @@
+Copyright (C) 2025 Roi Martin
+See the end of the file for license conditions.
+
+
+This directory tree holds Radio, a GNU Emacs package that enables
+users to listen to Internet radio stations.
+
+You may encounter bugs in this release.  If you do, please report
+them; your bug reports are valuable contributions, since they allow us
+to notice and fix problems on machines we don't have, or in code we
+don't use often.  Please send bug reports using the bug tracking
+system of the project at https://github.com/jroimartin/radio/issues.
+
+There are several subdirectories:
+
+'lisp' holds the Emacs Lisp code for Radio.
+'doc'  holds the source code for the Radio Manual.  If you modify the
+       manual sources, you will need the 'makeinfo' program to produce
+       an updated manual.  'makeinfo' is part of the GNU Texinfo
+       package; you need a suitably recent version of Texinfo.
+
+
+NOTE ON COPYRIGHT YEARS
+
+In copyright notices where the copyright holder is Roi Martin, then
+where a range of years appears, this is an inclusive range that
+applies to every year in the range.  For example: 2005-2008 represents
+the years 2005, 2006, 2007, and 2008.
+
+
+This file is NOT part of GNU Emacs.
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.

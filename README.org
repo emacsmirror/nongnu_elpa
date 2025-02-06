@@ -1,4 +1,0 @@
-#+title: radio
-
-radio is a GNU Emacs package that enables users to listen to Internet
-radio stations.
