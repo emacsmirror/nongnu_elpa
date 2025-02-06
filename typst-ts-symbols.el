@@ -365,8 +365,17 @@
     ("UU" . "𝕌") ("VV" . "𝕍") ("WW" . "𝕎") ("XX" . "𝕏") ("YY" . "𝕐")
     ("ZZ" . "ℤ") ("ell" . "ℓ") ("planck" . "ℎ") ("planck.reduce" . "ℏ")
     ("angstrom" . "Å") ("kelvin" . "K") ("Re" . "ℜ") ("Im" . "ℑ")
-    ("dotless.i" . "𝚤") ("dotless.j" . "𝚥")
-    ("abacus" . "🧮")
+    ("dotless.i" . "𝚤") ("dotless.j" . "𝚥"))
+  "An alist of names and their corresponding symbol.
+
+https://typst.app/docs/reference/symbols/sym/"
+  :group 'typst-ts-editing
+  :type '(repeat
+          (cons (string :tag "Name")
+                (string :tag "Symbol"))))
+
+(defcustom typst-ts-mode-emoji-alist
+  '(("abacus" . "🧮")
     ("abc" . "🔤")
     ("abcd" . "🔡")
     ("ABCD" . "🔠")
@@ -1721,14 +1730,13 @@
     ("zodiac.virgo" . "♍")
     ("zombie" . "🧟")
     ("zzz" . "💤"))
-  "An alist of names and their corresponding Symbol/Emoji.
+  "An alist of name and corresponding emoji.
 
-Symbols: https://typst.app/docs/reference/symbols/sym/
 Emojis: https://typst.app/docs/reference/symbols/emoji/"
   :group 'typst-ts-editing
   :type '(repeat
           (cons (string :tag "Name")
-                (string :tag "Symbol/Emoji"))))
+                (string :tag "Emoji"))))
 
 (provide 'typst-ts-symbols)
 
