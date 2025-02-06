@@ -1,4 +1,4 @@
-;;; typst-ts-editing.el --- Symbol and Emoji menu -*- lexical-binding: t; -*-
+;;; typst-ts-symbols.el --- Symbol and Emoji menu -*- lexical-binding: t; -*-
 ;; Copyright (C) 2023-2024 The typst-ts-mode Project Contributors
 
 ;; This file is NOT part of Emacs.
