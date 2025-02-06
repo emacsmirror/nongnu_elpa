@@ -123,8 +123,8 @@ effect."
 
 ;;;###autoload
 (defun radio-list-stations ()
-  (interactive)
   "Display a list of all radio stations."
+  (interactive)
   (let ((buf (get-buffer-create "*Station List*")))
     (with-current-buffer buf
       (radio-mode)
