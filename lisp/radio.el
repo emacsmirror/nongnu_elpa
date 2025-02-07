@@ -1,4 +1,4 @@
-;;; radio.el --- listen to Internet radio -*- lexical-binding: t -*-
+;;; radio.el --- Listen to Internet radio -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2025 Roi Martin
 
@@ -7,7 +7,7 @@
 ;; URL: https://github.com/jroimartin/radio
 ;; Version: 0.1.0
 ;; Package-Requires: ((emacs "29.1"))
-;; Keywords: radio
+;; Keywords: multimedia
 
 ;; This file is NOT part of GNU Emacs.
 
