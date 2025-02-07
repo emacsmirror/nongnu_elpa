@@ -36,15 +36,14 @@ This manual is for Radio, a GNU Emacs package that enables users to
 listen to Internet radio stations.
 
 @menu
-* Configuration:: Configuration variables.
-* Commands:: Commands to control the radio stations.
-* Station List:: Tabulated list mode.
-* Example Configuration:: Example configuration file.
+* Overview:: An overview of Radio.
+* Configuration:: How to configure Radio.
+* Usage:: How to use Radio.
 
 Appendices
 * Copying:: The GNU General Public License gives you permission to
-  redistribute GNU Emacs on certain terms; it also explains that there
-  is no warranty.
+  redistribute this program on certain terms; it also explains that
+  there is no warranty.
 * GNU Free Documentation License:: The license for this documentation.
 
 Indexes
@@ -52,6 +51,22 @@ Indexes
 * Variable Index:: An item for each variable documented in this manual.
 * Concept Index:: An item for concepts and other general subjects.
 @end menu
+
+@node Overview
+@chapter Overview
+
+Radio is a GNU Emacs package that enables users to listen to Internet
+radio stations.  Its main focus is in simplicity.  It exposes the
+minimum required interface to interact with a list of radio stations
+and offloads media playing to an external program configured by the
+user.
+
+@itemize @bullet
+@item
+Source code repository: https://github.com/jroimartin/radio
+@item
+Bug tracker: https://github.com/jroimartin/radio/issues
+@end itemize
 
 @node Configuration
 @chapter Configuration
@@ -69,50 +84,12 @@ of the package:
 @code{radio-stations-alist}: List of radio stations.
 @end itemize
 
-The customize interface can be used to configure these variables.  The
-@code{radio} group contains all the relevant settings.
+The customize interface can be used to configure these variables.
+Specifically, the @code{radio} group contains all the relevant
+settings.
 
-@node Commands
-@chapter Commands
-
-Radio exposes the following command to control the configured radio
-stations:
-
-@itemize @bullet
-@item
-@findex radio
-@code{radio}: Play a radio station.
-
-@item
-@findex radio-stop
-@code{radio-stop}: Stop playing current radio station.
-
-@item
-@findex radio-list-stations
-@code{radio-list-stations}: Display a list of all radio stations.
-@end itemize
-
-@node Station List
-@chapter Station List
-
-@cindex Tabulated view
-@cindex Station list
-
-The @code{radio-list-stations} command opens the tabulated view.  It
-provides the following key bindings:
-
-@itemize @bullet
-@item
-@kbd{@key{RET}}: Play the selected radio station.
-
-@item
-@kbd{s}: Stop playing the current radio station.
-@end itemize
-
-@node Example Configuration
-@chapter Example Configuration
-
-The following is an example configuration file:
+However, if you prefer to add the configuration into your init file,
+then the following code can serve as an example:
 
 @lisp
 (customize-set-variable 'radio-command "mpv --terminal=no --video=no")
@@ -120,6 +97,48 @@ The following is an example configuration file:
 (customize-set-variable 'radio-stations-alist '(("First station" . "https://example.com/first.aac")
                                                 ("Second station" . "https://example.com/second.aac")))
 @end lisp
+
+It sets @code{mpv} as media player and registers two radio stations
+called ``First station'' and ``Second station'' with their respective
+URLs.
+
+@node Usage
+@chapter Usage
+
+Radio is mainly controlled by two commands:
+
+@itemize @bullet
+@item
+@findex radio
+@code{radio}: Play a radio station.
+@item
+@findex radio-stop
+@code{radio-stop}: Stop playing current radio station.
+@end itemize
+
+When invoked interactively, @code{radio} reads the station name from
+the minibuffer, with completion.  Modes like @code{fido-mode} can
+greatly improve user experience.
+
+For users that prefer a more visual interface, there exists a third
+command:
+
+@itemize @bullet
+@item
+@findex radio-list-stations
+@code{radio-list-stations}: Display a list of all radio stations.
+@end itemize
+
+It opens Radio's tabulated view, which shows the list of configured
+radio stations as well as the @t{▶} symbol next to the one being
+played.  It is controlled through the following key bindings:
+
+@itemize @bullet
+@item
+@kbd{@key{RET}}: Play the selected radio station.
+@item
+@kbd{s}: Stop playing the current radio station.
+@end itemize
 
 @node Copying
 @appendix GNU General Public License
