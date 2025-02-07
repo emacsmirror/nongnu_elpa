@@ -79,10 +79,8 @@ of the package:
 @defopt radio-stations-alist
 List of radio stations.
 
-Elements are of the form @code{(@var{name} . @var{url})}.
-
-@var{name} is the name of the radio station and @var{url} is the URL
-of the radio station.
+Elements are of the form @code{(@var{name} . @var{url})}.  A cons with
+the @var{name} and @var{url} of the radio station.
 @end defopt
 
 @defopt radio-command
