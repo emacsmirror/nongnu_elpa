@@ -2590,7 +2590,7 @@ DATE: Integer, used with `gnosis-algorithm-date' to get previous dates."
 
 Skips days where no note was reviewed."
   (let ((reviews (gnosis-select 'reviewed-total 'activity-log '(> reviewed-total 0) t)))
-    (if (null reviews) 0
+    (if (null reviews) "0"
       (format "%.2f" (/ (apply '+ reviews) (float (length reviews)))))))
 
 (defun gnosis-dashboard-edit-note ()
