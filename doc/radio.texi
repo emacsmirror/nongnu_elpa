@@ -63,6 +63,8 @@ user.
 
 @itemize @bullet
 @item
+Package name: @code{radio}
+@item
 Source code repository: https://github.com/jroimartin/radio
 @item
 Bug tracker: https://github.com/jroimartin/radio/issues
