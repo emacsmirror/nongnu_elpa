@@ -78,7 +78,6 @@ of the package:
 @item
 @vindex radio-command
 @code{radio-command}: Command used to play a radio station.
-
 @item
 @vindex radio-stations-alist
 @code{radio-stations-alist}: List of radio stations.
@@ -129,6 +128,8 @@ command:
 @code{radio-list-stations}: Display a list of all radio stations.
 @end itemize
 
+@cindex Tabulated view
+@cindex Station list
 It opens Radio's tabulated view, which shows the list of configured
 radio stations as well as the @t{▶} symbol next to the one being
 played.  It is controlled through the following key bindings:
