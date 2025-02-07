@@ -2,14 +2,14 @@
 
 /doc/*.info
 /doc/*.pdf
-/doc/*.html
+/doc/*-html
 
-/doc/*.aux
 /doc/*.log
+/doc/*.aux
 /doc/*.toc
-/doc/*.cp
-/doc/*.cps
 /doc/*.fn
 /doc/*.fns
 /doc/*.vr
 /doc/*.vrs
+/doc/*.cp
+/doc/*.cps
