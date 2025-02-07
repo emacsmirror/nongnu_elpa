@@ -76,28 +76,35 @@ Bug tracker: @url{https://github.com/jroimartin/radio/issues}
 The following configuration variables allow to customize the behavior
 of the package:
 
-@table @code
-@vindex radio-command
-@item radio-command
-Command used to play a radio station.
-
-@vindex radio-stations-alist
-@item radio-stations-alist
+@defopt radio-stations-alist
 List of radio stations.
-@end table
 
-The customize interface can be used to configure these variables.
-Specifically, the @code{radio} group contains all the relevant
-settings.
+Elements are of the form @code{(@var{name} . @var{url})}.
+
+@var{name} is the name of the radio station and @var{url} is the URL
+of the radio station.
+@end defopt
+
+@defopt radio-command
+Command used to play a radio station.
+@end defopt
+
+The @code{customize} interface can be used to configure these
+variables.  Specifically, the @code{radio} group contains all the
+relevant settings.
 
 However, if you prefer to add the configuration into your init file,
 then the following code can serve as an example:
 
 @lisp
-(customize-set-variable 'radio-command "mpv --terminal=no --video=no")
+(customize-set-variable
+ 'radio-command
+ "mpv --terminal=no --video=no")
 
-(customize-set-variable 'radio-stations-alist '(("First station" . "https://example.com/first.aac")
-                                                ("Second station" . "https://example.com/second.aac")))
+(customize-set-variable
+ 'radio-stations-alist
+ '(("First station" . "https://example.com/first.aac")
+   ("Second station" . "https://example.com/second.aac")))
 @end lisp
 
 It sets @code{mpv} as media player and registers two radio stations
@@ -109,15 +116,19 @@ URLs.
 
 Radio is mainly controlled by two commands:
 
-@table @code
-@findex radio
-@item radio
+@defun radio station-name
 Play a radio station.
 
-@findex radio-stop
-@item radio-stop
+When called from Lisp, @var{station-name} must be the name of one of
+the stations defined in @code{radio-stations-alist}.
+@end defun
+
+@defun radio-stop
 Stop playing current radio station.
-@end table
+
+If no station is being played, calling this function has no
+effect.
+@end defun
 
 When invoked interactively, @code{radio} reads the station name from
 the minibuffer, with completion.  Modes like @code{fido-mode} can
@@ -126,16 +137,14 @@ greatly improve user experience.
 For users that prefer a more visual interface, there exists a third
 command:
 
-@table @code
-@findex radio-list-stations
-@item radio-list-stations
-Display a list of all radio stations.
-@end table
-
 @cindex Tabulated view
 @cindex Station list
+@defun radio-list-stations
+Display a list of all radio stations.
+@end defun
+
 It opens Radio's tabulated view, which shows the list of configured
-radio stations as well as the @t{▶} symbol next to the one being
+radio stations as well as the play symbol next to the one being
 played.  It is controlled through the following key bindings:
 
 @table @kbd
