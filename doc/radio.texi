@@ -76,14 +76,15 @@ Bug tracker: https://github.com/jroimartin/radio/issues
 The following configuration variables allow to customize the behavior
 of the package:
 
-@itemize @bullet
-@item
+@table @code
 @vindex radio-command
-@code{radio-command}: Command used to play a radio station.
-@item
+@item radio-command
+Command used to play a radio station.
+
 @vindex radio-stations-alist
-@code{radio-stations-alist}: List of radio stations.
-@end itemize
+@item radio-stations-alist
+List of radio stations.
+@end table
 
 The customize interface can be used to configure these variables.
 Specifically, the @code{radio} group contains all the relevant
@@ -108,14 +109,15 @@ URLs.
 
 Radio is mainly controlled by two commands:
 
-@itemize @bullet
-@item
+@table @code
 @findex radio
-@code{radio}: Play a radio station.
-@item
+@item radio
+Play a radio station.
+
 @findex radio-stop
-@code{radio-stop}: Stop playing current radio station.
-@end itemize
+@item radio-stop
+Stop playing current radio station.
+@end table
 
 When invoked interactively, @code{radio} reads the station name from
 the minibuffer, with completion.  Modes like @code{fido-mode} can
@@ -124,11 +126,11 @@ greatly improve user experience.
 For users that prefer a more visual interface, there exists a third
 command:
 
-@itemize @bullet
-@item
+@table @code
 @findex radio-list-stations
-@code{radio-list-stations}: Display a list of all radio stations.
-@end itemize
+@item radio-list-stations
+Display a list of all radio stations.
+@end table
 
 @cindex Tabulated view
 @cindex Station list
@@ -136,12 +138,13 @@ It opens Radio's tabulated view, which shows the list of configured
 radio stations as well as the @t{▶} symbol next to the one being
 played.  It is controlled through the following key bindings:
 
-@itemize @bullet
-@item
-@kbd{@key{RET}}: Play the selected radio station.
-@item
-@kbd{s}: Stop playing the current radio station.
-@end itemize
+@table @kbd
+@item @key{RET}
+Play the selected radio station.
+
+@item s
+Stop playing the current radio station.
+@end table
 
 @node Copying
 @appendix GNU General Public License
