@@ -65,9 +65,9 @@ user.
 @item
 Package name: @code{radio}
 @item
-Source code repository: https://github.com/jroimartin/radio
+Source code repository: @url{https://github.com/jroimartin/radio}
 @item
-Bug tracker: https://github.com/jroimartin/radio/issues
+Bug tracker: @url{https://github.com/jroimartin/radio/issues}
 @end itemize
 
 @node Configuration
