@@ -83,19 +83,19 @@ BUFFER defaults to the current buffer if not specified."
       (put-text-property (match-beginning 0) (match-end 0) 'read-only t)))
   (goto-char (point-min)))
 
-(cl-defun gnosis-org--insert-thema (id type &optional keimenon hypothesis apocalypse parathema tags example)
+(cl-defun gnosis-org--insert-thema (id type &optional keimenon hypothesis answer parathema tags example)
   "Insert thema for note ID.
 
 TYPE: Thema type, refer to `gnosis-thema-types'
 KEIMENON: Text user is first presented with.
-HYPOTHESIS: Hypothesis for what the APOCALYPSE is
-APOCALYPSE: The revelation after KEIMENON
+HYPOTHESIS: Hypothesis for what the ANSWER is
+ANSWER: The revelation after KEIMENON
 PARATHEMA: The text where THEMA is derived from.
 TAGS: List of THEMA tags
 EXAMPLE: Boolean value, if non-nil do not add properties for thema."
   (let ((components `(("** Keimenon" . ,keimenon)
                       ("** Hypothesis" . ,hypothesis)
-                      ("** Apocalypse" . ,apocalypse)
+                      ("** Answer" . ,answer)
                       ("** Parathema" . ,parathema))))
     (insert "\n* Thema")
     (org-set-tags tags)
@@ -153,7 +153,7 @@ EXAMPLE: Boolean value, if non-nil do not add properties for thema."
 ;;   (interactive (list (gnosis--get-deck-id)))
 ;;   ;; (find-file (read-file-name "File: "))
 ;;   ;; TODO: Retrieve all values instead of just ids and then insert them async
-;;   (let* ((notes (append (gnosis-select '[type keimenon hypothesis apocalypse tags] 'notes `(= deck-id ,deck))
+;;   (let* ((notes (append (gnosis-select '[type keimenon hypothesis answer tags] 'notes `(= deck-id ,deck))
 ;; 			;; (gnosis-select 'parathema 'extras `(= deck-id ,deck) t)
 ;; 			nil))
 ;; 	 (deck-name (car (gnosis-select 'name 'decks `(= id ,deck) t))))

@@ -1426,7 +1426,7 @@ SUCCESS is a boolean value, t for success, nil for failure."
 (defun gnosis-review-mcq (id)
   "Review MCQ thema with ID."
   (gnosis-display-keimenon (gnosis-get 'keimenon 'notes `(= id ,id)))
-  (let* ((answer (car (gnosis-get 'apocalypse 'notes `(= id ,id))))
+  (let* ((answer (car (gnosis-get 'answer 'notes `(= id ,id))))
 	 (user-choice (gnosis-mcq-answer id))
 	 (success (string= answer user-choice)))
     (gnosis-display-correct-answer-mcq answer user-choice)
@@ -1439,10 +1439,10 @@ SUCCESS is a boolean value, t for success, nil for failure."
   (let* ((hypothesis (car (gnosis-get 'hypothesis 'notes `(= id ,id))))
 	 (parathema (gnosis-get 'parathema 'extras `(= id ,id)))
 	 (keimenon (gnosis-get 'keimenon 'notes `(= id ,id)))
-	 (apocalypse (car (gnosis-get 'apocalypse 'notes `(= id ,id)))))
+	 (answer (car (gnosis-get 'answer 'notes `(= id ,id)))))
     (gnosis-display-keimenon keimenon)
     (gnosis-display-hint hypothesis)
-    (let* ((answer apocalypse)
+    (let* ((answer answer)
 	   (user-input (read-string "Answer: "))
 	   (success (gnosis-compare-strings answer user-input)))
       (gnosis-display-basic-answer answer success user-input)
@@ -1460,7 +1460,7 @@ If user-input is equal to CLOZE, return t."
 (defun gnosis-review-cloze (id)
   "Review cloze type note for ID."
   (let* ((main (gnosis-get 'keimenon 'notes `(= id ,id)))
-	 (clozes (gnosis-get 'apocalypse 'notes `(= id ,id)))
+	 (clozes (gnosis-get 'answer 'notes `(= id ,id)))
 	 (num 0) ;; Number of clozes revealed
 	 (hints (gnosis-get 'hypothesis 'notes `(= id ,id)))
 	 (parathema (gnosis-get 'parathema 'extras `(= id ,id)))
@@ -1713,7 +1713,7 @@ NOTE-COUNT: Total notes to be commited for session."
 			    (gnosis-collect-note-ids :deck (gnosis--get-deck-id))))
       ("All notes of tag(s)" (gnosis-review-session (gnosis-collect-note-ids :tags t))))))
 
-(defun gnosis-add-thema-fields (deck-id type keimenon hypothesis apocalypse parathema tags suspend links)
+(defun gnosis-add-thema-fields (deck-id type keimenon hypothesis answer parathema tags suspend links)
   "Insert fields for new note.
 
 DECK-ID: Deck ID for new thema.
@@ -1721,9 +1721,9 @@ TYPE: Note type e.g \"mcq\"
 KEIMENON: Note's keimenon
 HYPOTHESIS: Thema hypothesis, e.g choices for mcq for OR hints for
 cloze/basic thema
-APOCALYPSE: Correct answer for note, for MCQ is an integer while for
+ANSWER: Correct answer for note, for MCQ is an integer while for
 cloze/basic a string/list of the right answer(s)
-PARATHEMA: Parathema information to display after the apocalypse
+PARATHEMA: Parathema information to display after the answer
 TAGS: Tags to organize notes
 SUSPEND: Integer value of 1 or 0, where 1 suspends the card.
 LINKS: List of id links."
@@ -1731,14 +1731,14 @@ LINKS: List of id links."
   (cl-assert (stringp type) nil "Type must be a string")
   (cl-assert (stringp keimenon) nil "Keimenon must be a string")
   (cl-assert (listp hypothesis) nil "Hypothesis value must be a list")
-  (cl-assert (listp apocalypse) nil "Apocalypse value must be a list")
+  (cl-assert (listp answer) nil "Answer value must be a list")
   (cl-assert (stringp parathema) nil "Parathema must be a string")
   (cl-assert (listp tags) nil "Tags must be a list")
   (cl-assert (listp links) nil "Links must be a list")
   (let* ((note-id (gnosis-generate-id)))
     (emacsql-with-transaction gnosis-db
       ;; Refer to `gnosis-db-schema-SCHEMA' e.g `gnosis-db-schema-review-log'
-      (gnosis--insert-into 'notes `([,note-id ,(downcase type) ,keimenon ,hypothesis ,apocalypse ,tags ,deck-id]))
+      (gnosis--insert-into 'notes `([,note-id ,(downcase type) ,keimenon ,hypothesis ,answer ,tags ,deck-id]))
       (gnosis--insert-into 'review  `([,note-id ,gnosis-algorithm-gnosis-value
 						,gnosis-algorithm-amnesia-value]))
       (gnosis--insert-into 'review-log `([,note-id ,(gnosis-algorithm-date)
@@ -1747,13 +1747,13 @@ LINKS: List of id links."
       (cl-loop for link in links
 	       do (gnosis--insert-into 'links `([,note-id ,link]))))))
 
-(defun gnosis-update-thema (id keimenon hypothesis apocalypse parathema tags links)
+(defun gnosis-update-thema (id keimenon hypothesis answer parathema tags links)
   "Update thema entry for ID."
   (let ((id (if (stringp id) (string-to-number id) id))) ;; Make sure we provided the id as a number.
     (emacsql-with-transaction gnosis-db
       (gnosis-update 'notes `(= keimenon ,keimenon) `(= id ,id))
       (gnosis-update 'notes `(= hypothesis ',hypothesis) `(= id ,id))
-      (gnosis-update 'notes `(= apocalypse ',apocalypse) `(= id ,id))
+      (gnosis-update 'notes `(= answer ',answer) `(= id ,id))
       (gnosis-update 'extras `(= parathema ,parathema) `(= id ,id))
       (gnosis-update 'notes `(= tags ',tags) `(= id ,id))
       (cl-loop for link in links
@@ -1763,19 +1763,19 @@ LINKS: List of id links."
 ;; These functions provide assertions depending on the type of thema.
 ;;
 ;; Each thema should use a helper function that calls to provide
-;; assertions, such as length of hypothesis and apocalypse, for said
+;; assertions, such as length of hypothesis and answer, for said
 ;; thema.
 ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defun gnosis-add-thema--basic (id deck-id type keimenon hypothesis apocalypse parathema tags suspend links)
+(defun gnosis-add-thema--basic (id deck-id type keimenon hypothesis answer parathema tags suspend links)
   "Default format for adding a thema.
 
 DECK-ID: Integer value of deck-id.
 TYPE: String representing the type of note.
 KEIMENON: String for the thema text.
 HYPOTHESIS: List of a signle string.
-APOCALYPSE: List of a single string.
+ANSWER: List of a single string.
 PARATHEMA: String for the parathema text.
 TAGS: List of thema tags.
 SUSPEND: Integer value of 0 for nil and 1 for true (suspended).
@@ -1787,29 +1787,29 @@ LINKS: List of id links in PARATHEMA."
 		 (and (listp hypothesis)
 		      (= (length hypothesis) 1)))
 	     nil "Hypothesis value must be a list of a single item or nil.")
-  (cl-assert (and (listp apocalypse)
-		  (= (length apocalypse) 1))
-	     nil "Apocalypse value must be a list of a signle item")
+  (cl-assert (and (listp answer)
+		  (= (length answer) 1))
+	     nil "Answer value must be a list of a signle item")
   (cl-assert (listp tags) nil "Tags must be a list.")
   (cl-assert (or (= suspend 0)
 		 (= suspend 1))
 	     nil "Suspend value must either 0 or 1")
   (cl-assert (listp links) nil "Links must be a list")
   (if (equal id "NEW")
-      (gnosis-add-thema-fields deck-id type keimenon (or hypothesis (list "")) apocalypse parathema tags suspend links)
-    (gnosis-update-thema id keimenon hypothesis apocalypse parathema tags links)))
+      (gnosis-add-thema-fields deck-id type keimenon (or hypothesis (list "")) answer parathema tags suspend links)
+    (gnosis-update-thema id keimenon hypothesis answer parathema tags links)))
 
-(defun gnosis-add-thema--double (id deck-id type keimenon hypothesis apocalypse parathema tags suspend links)
+(defun gnosis-add-thema--double (id deck-id type keimenon hypothesis answer parathema tags suspend links)
   "Double thema format.
 
-Changes TYPE to basic & inserts a second basic thema with APOCALYPSE
+Changes TYPE to basic & inserts a second basic thema with ANSWER
 and KEIMENON reversed."
   (cl-assert (integerp deck-id) nil "Deck-id value must be an integer.")
   (cl-assert (stringp type) nil "Type must be an integer.")
   (cl-assert (stringp keimenon) nil "Keimenon must be an integer.")
   (cl-assert (listp hypothesis) nil "Hypothesis value must be a list.")
-  (cl-assert (and (listp apocalypse) (= (length apocalypse) 1))
-	     nil "Apocalypse value must be a list of a signle item")
+  (cl-assert (and (listp answer) (= (length answer) 1))
+	     nil "Answer value must be a list of a signle item")
   (cl-assert (listp tags) nil "Tags must be a list.")
   (cl-assert (or (= suspend 0) (= suspend 1)) nil "Suspend value must either 0 or 1")
   (cl-assert (listp links) nil "Links must be a list")
@@ -1818,13 +1818,13 @@ and KEIMENON reversed."
 	(hypothesis (or hypothesis (list ""))))
     (if (equal id "NEW")
 	(progn
-	  (gnosis-add-thema-fields deck-id type keimenon hypothesis apocalypse parathema tags suspend links)
-	  (gnosis-add-thema-fields deck-id type (car apocalypse) hypothesis (list keimenon) parathema tags suspend links))
+	  (gnosis-add-thema-fields deck-id type keimenon hypothesis answer parathema tags suspend links)
+	  (gnosis-add-thema-fields deck-id type (car answer) hypothesis (list keimenon) parathema tags suspend links))
       ;; There should not be a double type thema in database to
       ;; update.  This is used for testing purposes.
-      (gnosis-update-thema id keimenon hypothesis apocalypse parathema tags links))))
+      (gnosis-update-thema id keimenon hypothesis answer parathema tags links))))
 
-(defun gnosis-add-thema--mcq (id deck-id type keimenon hypothesis apocalypse parathema tags suspend links)
+(defun gnosis-add-thema--mcq (id deck-id type keimenon hypothesis answer parathema tags suspend links)
   "Default format for adding a thema.
 
 ID: Thema ID, either an integer value or NEW.
@@ -1832,7 +1832,7 @@ DECK-ID: Integer value of deck-id.
 TYPE: String representing the type of note.
 KEIMENON: String for the thema text.
 HYPOTHESIS: List of a signle string.
-APOCALYPSE: List of a single string.
+ANSWER: List of a single string.
 PARATHEMA: String for the parathema text.
 TAGS: List of thema tags.
 SUSPEND: Integer value of 0 for nil and 1 for true (suspended).
@@ -1843,37 +1843,37 @@ LINKS: List of id links in PARATHEMA."
   (cl-assert (and (listp hypothesis)
 		  (> (length hypothesis) 1))
 	     nil "Hypothesis value must be a list greater than 1 item.")
-  (cl-assert (and (listp apocalypse)
-		  (= (length apocalypse) 1)
-		  (member (car apocalypse) hypothesis))
-	     nil "Apocalypse value must be a single item, member of the Hypothesis")
+  (cl-assert (and (listp answer)
+		  (= (length answer) 1)
+		  (member (car answer) hypothesis))
+	     nil "Answer value must be a single item, member of the Hypothesis")
   (cl-assert (listp tags) nil "Tags must be a list.")
   (cl-assert (or (= suspend 0)
 		 (= suspend 1))
 	     nil "Suspend value must either 0 or 1")
   (cl-assert (listp links) nil "Links must be a list")
   (if (equal id "NEW")
-      (gnosis-add-thema-fields deck-id type keimenon (or hypothesis (list "")) apocalypse parathema tags suspend links)
-    (gnosis-update-thema id keimenon hypothesis apocalypse parathema tags links)))
+      (gnosis-add-thema-fields deck-id type keimenon (or hypothesis (list "")) answer parathema tags suspend links)
+    (gnosis-update-thema id keimenon hypothesis answer parathema tags links)))
 
-(defun gnosis-add-thema--cloze (id deck-id type keimenon hypothesis apocalypse parathema tags suspend links)
+(defun gnosis-add-thema--cloze (id deck-id type keimenon hypothesis answer parathema tags suspend links)
   "Add cloze type thema."
   (cl-assert (integerp deck-id) nil "Deck-id value must be an integer.")
   (cl-assert (stringp type) nil "Type must be an integer.")
   (cl-assert (stringp keimenon) nil "Keimenon must be an integer.")
-  (cl-assert (or (= (length apocalypse) (length hypothesis))
+  (cl-assert (or (= (length answer) (length hypothesis))
 		 (null hypothesis))
-	     nil "Hypothesis value must be a list or nil, equal in length of Apocalypse.")
-  (cl-assert (listp apocalypse) nil "Apocalypse value must be a list.")
+	     nil "Hypothesis value must be a list or nil, equal in length of Answer.")
+  (cl-assert (listp answer) nil "Answer value must be a list.")
   (cl-assert (listp tags) nil "Tags must be a list.")
   (cl-assert (or (= suspend 0)
 		 (= suspend 1))
 	     nil "Suspend value must either 0 or 1")
   (cl-assert (listp links) nil "Links must be a list")
-  (cl-assert (gnosis-cloze-check keimenon apocalypse) nil "Clozes (apocalypse) values are not part of keimenon")
+  (cl-assert (gnosis-cloze-check keimenon answer) nil "Clozes (answer) values are not part of keimenon")
   (if (equal id "NEW")
-      (gnosis-add-thema-fields deck-id type keimenon (or hypothesis (list "")) apocalypse parathema tags suspend links)
-    (gnosis-update-thema id keimenon hypothesis apocalypse parathema tags links)))
+      (gnosis-add-thema-fields deck-id type keimenon (or hypothesis (list "")) answer parathema tags suspend links)
+    (gnosis-update-thema id keimenon hypothesis answer parathema tags links)))
 
 (defun gnosis-save-thema (thema deck)
   "Save THEMA for DECK."
@@ -1882,7 +1882,7 @@ LINKS: List of id links in PARATHEMA."
 	 (keimenon (nth 2 thema))
 	 (hypothesis (and (nth 3 thema) (mapcar (lambda (item) (string-remove-prefix "- " item))
 						(split-string (nth 3 thema) gnosis-org-separator))))
-	 (apocalypse (and (nth 4 thema) (mapcar (lambda (item)
+	 (answer (and (nth 4 thema) (mapcar (lambda (item)
 						  "Replace `gnosis-org-separator'."
 						  (string-remove-prefix "- " item))
 						(split-string (nth 4 thema) gnosis-org-separator))))
@@ -1894,10 +1894,10 @@ LINKS: List of id links in PARATHEMA."
 							  (cdr pair)))
 					  gnosis-thema-types)))))
     ;; (message "asdfs")
-    (funcall thema-func id deck type keimenon hypothesis apocalypse parathema tags 0 links)))
+    (funcall thema-func id deck type keimenon hypothesis answer parathema tags 0 links)))
 
 ;;;###autoload
-(defun gnosis-add-thema (deck type &optional keimenon hypothesis apocalypse parathema tags example)
+(defun gnosis-add-thema (deck type &optional keimenon hypothesis answer parathema tags example)
   "Add thema with TYPE in DECK."
   (interactive (list
 		(gnosis--get-deck-name)
@@ -1908,13 +1908,13 @@ LINKS: List of id links in PARATHEMA."
       (erase-buffer))
     (insert "#+DECK: " deck)
     (gnosis-edit-mode)
-    (gnosis-org--insert-thema "NEW" type keimenon hypothesis apocalypse parathema tags example))
+    (gnosis-org--insert-thema "NEW" type keimenon hypothesis answer parathema tags example))
   (search-backward "keimenon")
   (forward-line))
 
 (defun gnosis-export-note (id)
   "Export note with ID."
-  (let ((note-data (append (gnosis-select '[type keimenon hypothesis apocalypse tags] 'notes `(= id ,id) t)
+  (let ((note-data (append (gnosis-select '[type keimenon hypothesis answer tags] 'notes `(= id ,id) t)
 			   (gnosis-select 'parathema 'extras `(= id ,id) t))))
       (gnosis-org--insert-thema (number-to-string id)
 				(nth 0 note-data)
@@ -2272,11 +2272,11 @@ Return note ids for notes that match QUERY."
          (clause-keimenon `(and ,@(mapcar (lambda (word)
 					`(like keimenon ,(format "%%%s%%" word)))
                                       words)))
-	 (clause-apocalypse `(and ,@(mapcar (lambda (word)
-					  `(like apocalypse ,(format "%%%s%%" word)))
+	 (clause-answer `(and ,@(mapcar (lambda (word)
+					  `(like answer ,(format "%%%s%%" word)))
 					words))))
     (append (gnosis-select 'id 'notes clause-keimenon t)
-	    (gnosis-select 'id 'notes clause-apocalypse t))))
+	    (gnosis-select 'id 'notes clause-answer t))))
 
 ;;; Database Schemas
 (defconst gnosis-db--schemata
@@ -2289,7 +2289,7 @@ Return note ids for notes that match QUERY."
        (type text :not-null)
        (keimenon text :not-null)
        (hypothesis text :not-null)
-       (apocalypse text :not-null)
+       (answer text :not-null)
        (tags text :default untagged)
        (deck-id integer :not-null)]
       (:foreign-key [deck-id] :references decks [id]
@@ -2388,37 +2388,36 @@ Return note ids for notes that match QUERY."
 	     do (gnosis--insert-into 'tags `[,tag]))
     (emacsql gnosis-db [:alter-table notes :rename-column main :to keimenon])
     (emacsql gnosis-db [:alter-table notes :rename-column options :to hypothesis])
-    (emacsql gnosis-db [:alter-table notes :rename-column answer :to apocalypse])
     (emacsql gnosis-db [:alter-table extras :rename-column extra-notes :to parathema])
     (emacsql gnosis-db [:alter-table extras :drop-column images])
     (emacsql gnosis-db [:alter-table extras :drop-column extra-image])
-    ;; Make sure all hypothesis & apocalypse values are lists
+    ;; Make sure all hypothesis & answer values are lists
     (gnosis-update--make-list 'hypothesis)
-    (gnosis-update--make-list 'apocalypse)
+    (gnosis-update--make-list 'answer)
     ;; Fix MCQs
     (cl-loop for note in (gnosis-select 'id 'notes '(= type "mcq") t)
 	     do (funcall
 		 (lambda (id)
-		   (let* ((data (gnosis-select '[hypothesis apocalypse] 'notes `(= id ,id) t))
+		   (let* ((data (gnosis-select '[hypothesis answer] 'notes `(= id ,id) t))
 			  (hypothesis (nth 0 data))
-			  (old-apocalypse (car (nth 1 data)))
-			  (new-apocalypse (when (integerp hypothesis) (list (nth (- 1 old-apocalypse) hypothesis)))))
+			  (old-answer (car (nth 1 data)))
+			  (new-answer (when (integerp hypothesis) (list (nth (- 1 old-answer) hypothesis)))))
 		     (when (integerp hypothesis)
-		       (gnosis-update 'notes `(= apocalypse ',new-apocalypse) `(= id ,id)))))
+		       (gnosis-update 'notes `(= answer ',new-answer) `(= id ,id)))))
 		 note))
     ;; Replace y-or-n with MCQ
     (cl-loop for note in (gnosis-select 'id 'notes '(= type "y-or-n") t)
 	     do (funcall (lambda (id)
-			   (let ((data (gnosis-select '[type hypothesis apocalypse]
+			   (let ((data (gnosis-select '[type hypothesis answer]
 						      'notes `(= id ,id) t)))
 			     (when (string= (nth 0 data) "y-or-n")
 			       (gnosis-update 'notes '(= type "mcq") `(= id ,id))
 			       (gnosis-update 'notes '(= hypothesis '("Yes" "No"))
 					      `(= id ,id))
 			       (if (= (car (nth 2 data)) 121)
-				   (gnosis-update 'notes '(= apocalypse '("Yes"))
+				   (gnosis-update 'notes '(= answer '("Yes"))
 						  `(= id ,id))
-				 (gnosis-update 'notes '(= apocalypse '("No"))
+				 (gnosis-update 'notes '(= answer '("No"))
 						`(= id ,id))))))
 			 note))))
 
@@ -2645,7 +2644,7 @@ Skips days where no note was reviewed."
   (cl-assert (listp note-ids))
   (let ((entries (emacsql gnosis-db
 			  `[:select
-			    [notes:id notes:keimenon notes:hypothesis notes:apocalypse
+			    [notes:id notes:keimenon notes:hypothesis notes:answer
 				      notes:tags notes:type review-log:suspend]
 			    :from notes
 			    :join review-log :on (= notes:id review-log:id)
@@ -2668,7 +2667,7 @@ Skips days where no note was reviewed."
   (gnosis-dashboard-notes-mode)
   (setf tabulated-list-format `[("Keimenon" ,(/ (window-width) 4) t)
                                 ("Hypothesis" ,(/ (window-width) 6) t)
-                                ("Apocalypse" ,(/ (window-width) 6) t)
+                                ("Answer" ,(/ (window-width) 6) t)
                                 ("Tags" ,(/ (window-width) 5) t)
                                 ("Type" ,(/ (window-width) 10) t)
                                 ("Suspend" ,(/ (window-width) 6) t)]
