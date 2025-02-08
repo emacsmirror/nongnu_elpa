@@ -20,10 +20,11 @@
 @ifinfo
 This file documents the VM mail reader.
 @table @asis
-@item Copyright (C) 1989, 1991, 1999 Kyle E. Jones
-@item Copyright (C) 2003 - 2008 Robert Widhopf-Fenk
-@item Copyright (C) 2008 - 2012 Uday S. Reddy
-@end table
+@item Copyright @copyright{} 1989, 1991, 1999 Kyle E. Jones
+@item Copyright @copyright{} 2003 - 2008 Robert Widhopf-Fenk
+@item Copyright @copyright{} 2008 - 2012 Uday S. Reddy
+@item Copyright @copyright{} 2024-2025 The VM Developers
+o@end table
 
 Permission is granted to make and distribute verbatim copies of
 this manual provided the copyright notice and this permission notice
@@ -50,6 +51,7 @@ notice identical to this one except for the removal of this paragraph
 Copyright @copyright{} 1989, 1991, 1999, 2002, 2003 Kyle E. Jones
 Copyright @copyright{} 2003 - 2008 Robert Widhopf-Fenk
 Copyright @copyright{} 2008 - 2009 Uday S. Reddy
+Copyright @copyright{} 2024-2025 The VM Developers
 
 Permission is granted to make and distribute verbatim copies of
 this manual provided the copyright notice and this permission notice

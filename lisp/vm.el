@@ -4,6 +4,7 @@
 ;;
 ;; Copyright (C) 1994-1998, 2003 Kyle E. Jones
 ;; Copyright (C) 2003-2006 Robert Widhopf-Fenk
+;; Copyright (C) 2024-2025 The VM Developers
 ;;
 ;; Version: 8.3.0snapshot
 ;; Maintainer: viewmail-info@nongnu.org

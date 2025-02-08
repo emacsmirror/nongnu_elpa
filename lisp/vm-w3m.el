@@ -3,7 +3,8 @@
 ;; This file is part of VM
 ;;
 ;; Copyright (C) 2003, 2005, 2006 Katsumi Yamaoka,
-;; Copyright (C)             2007 Robert Widhopf-Fenk
+;; Copyright (C) 2007 Robert Widhopf-Fenk
+;; Copyright (C) 2024-2025 The VM Developers
 
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by

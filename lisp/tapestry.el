@@ -3,6 +3,7 @@
 ;; This file is part of VM
 ;;
 ;; Copyright (C) 1991, 1993, 1994, 1995, 1997 Kyle E. Jones
+;; Copyright (C) 2024-2025 The VM Developers
 ;;
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by

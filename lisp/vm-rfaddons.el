@@ -3,6 +3,7 @@
 ;; This file is an add-on for VM
 ;; 
 ;; Copyright (C) 1999-2006 Robert Widhopf-Fenk
+;; Copyright (C) 2024-2025 The VM Developers
 ;;
 ;; Author:      Robert Widhopf-Fenk
 ;; Status:      Integrated into View Mail (aka VM), 8.0.x

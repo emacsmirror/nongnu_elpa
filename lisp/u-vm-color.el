@@ -2,7 +2,8 @@
 ;;
 ;; This file is an add-on for VM
 
-;;  Copyright (C) 2001-2007 by Ulf Jasper
+;; Copyright (C) 2001-2007 by Ulf Jasper
+;; Copyright (C) 2024-2025 The VM Developers
 
 ;;  Emacs Lisp Archive Entry
 ;;  Author:     Ulf Jasper <ulf.jasper@web.de>

@@ -3,6 +3,7 @@
 ;; This file is an add-on for VM
 ;; 
 ;; Copyright (C) 1998-2006 Robert Fenk
+;; Copyright (C) 2024-2025 The VM Developers
 ;;
 ;; Author:      Robert Fenk
 ;; Status:      Tested with XEmacs 21.4.19 & VM 7.19

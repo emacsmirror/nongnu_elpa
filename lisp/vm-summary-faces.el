@@ -4,6 +4,7 @@
 ;; 
 ;; Copyright (C) 2001 Robert Fenk
 ;; Copyright (C) 2010 Uday S Reddy
+;; Copyright (C) 2024-2025 The VM Developers
 ;;
 ;; Author:      Robert Fenk
 ;; Status:      Tested with XEmacs 21.4.15 & VM 7.18

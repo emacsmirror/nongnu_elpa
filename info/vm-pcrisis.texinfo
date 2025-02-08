@@ -21,9 +21,10 @@ mail reader VM which allows you to manage personality profiles
 automatically when you compose new mail messages or replies.
 
 @table @asis
-@item Copyright (C) 1999  Rob Hodges
-@item Copyright (C) 2006-2008 Robert Widhopf-Fenk
-@item Copyright (C) 2011 Uday S. Reddy
+@item Copyright @copyright{} 1999  Rob Hodges
+@item Copyright @copyright{} 2006-2008 Robert Widhopf-Fenk
+@item Copyright @copyright{} 2011 Uday S. Reddy
+@item Copyright @copyright{} 2024-2025 The VM Developers
 @end table
 
 Permission is granted to make and distribute verbatim copies of
@@ -51,6 +52,7 @@ notice identical to this one except for the removal of this paragraph
 Copyright @copyright{} 1999  Rob Hodges
 Copyright @copyright{} 2006-2008 Robert Widhopf-Fenk
 Copyright @copyright{} 2011 Uday S. Reddy
+Copyright @copyright{} 2024-2025 The VM Developers
 
 Permission is granted to make and distribute verbatim copies of
 this manual provided the copyright notice and this permission notice

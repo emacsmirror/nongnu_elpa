@@ -1,4 +1,5 @@
 ;; Copyright © 2008  Eric Schulte  -*- lexical-binding: t; -*-
+;; Copyright © 2024-2025 The VM Developers
 ;;
 ;; WYSWYG, html mail composition using orgmode
 ;;
