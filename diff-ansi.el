@@ -801,7 +801,10 @@ Store the result in TARGET-BUF when non-nil."
 
                 (let ((output (concat temp-dir (number-to-string i))))
                   (write-region point-prev (point) output nil 0)
-                  (push (list emacs-bin "--batch" output "--eval" emacs-eval-arg) per-chunk-args))
+                  ;; The "site-file" can cause messages that break our logic
+                  ;; which requires predictable process output, see: #4.
+                  (push (list emacs-bin "--no-site-file" "--batch" output "--eval" emacs-eval-arg)
+                        per-chunk-args))
                 (setq i (1+ i)))
 
               (setq per-chunk-args (nreverse per-chunk-args))))
