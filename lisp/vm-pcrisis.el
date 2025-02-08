@@ -3,8 +3,9 @@
 ;; This file is an add-on for VM
 ;;
 ;; Copyright (C) 1999 Rob Hodges,
-;;               2006 Robert Widhopf, Robert P. Goldman
-;;		 2011-2012 Uday S. Reddy
+;; Copyright (C) 2006 Robert Widhopf, Robert P. Goldman
+;; Copyright (C) 2011-2012 Uday S. Reddy
+;; Copyright (C) 2024-2025 The VM Developers
 ;;
 ;; Package: Personality Crisis for VM
 ;; Author: Rob Hodges

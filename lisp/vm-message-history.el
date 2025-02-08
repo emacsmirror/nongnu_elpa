@@ -3,6 +3,7 @@
 ;; This file is an add-on for VM
 
 ;; Copyright © 2003 Kevin Rodgers, 2008 Robert Widhopf-Fenk
+;; Copyright (C) 2024-2025 The VM Developers
 
 ;; Author: Kevin Rodgers <ihs_4664@yahoo.com>
 ;; Created: 6 Oct 2003

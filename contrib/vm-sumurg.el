@@ -4,6 +4,7 @@
 ;; This file is an add-on for VM
 ;; 
 ;; Copyright (C) 2011 Julian Bradfield
+;; Copyright (C) 2024-2025 The VM Developers
 ;;
 ;; Author:      Julian Bradfield
 ;; Status:      Tested for VM 8.2.x running under XEmacs

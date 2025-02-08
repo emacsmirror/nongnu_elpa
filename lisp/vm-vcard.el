@@ -3,6 +3,7 @@
 ;; This file is an add-on for VM
 
 ;; Copyright (C) 1997, 2000 Noah S. Friedman
+;; Copyright (C) 2024-2025 The VM Developers
 
 ;; Author: Noah Friedman <friedman@splode.com>
 ;; Maintainer: friedman@splode.com

@@ -1,6 +1,7 @@
 ;;; vm-mime-display-internal-application.el --- Display application attachments  -*- lexical-binding: t; -*-
 
 ;; Copyright © 2004 Kevin Rodgers
+;; Copyright © 2024-2025 The VM Developers
 
 ;; Author: Kevin Rodgers <ihs_4664@yahoo.com>
 ;; Created: 11 Jun 2004

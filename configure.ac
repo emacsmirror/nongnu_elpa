@@ -4,6 +4,7 @@
 
 # Copyright (C) 2006-2007  Robert Widhopf-Fenk <hack@robf.de>
 # Copyright (C) 2010       Uday S Reddy <reddyuday@launchpad.net>
+# Copyright (C) 2024-2025  The VM Developers
 
 # VM is free software; you can redistribute it and/or modify it under the
 # terms of the GNU Library General Public License as published by the Free
@@ -241,7 +242,7 @@ AC_INIT([VM],[8.3.x],[viewmail-info@nongnu.org])
 # Version (release) number
 # Contact address
 
-AC_COPYRIGHT([Copyright (C) 2009-2010 VM Development Team <vm@lists.launchpad.net>])
+AC_COPYRIGHT([Copyright (C) 2024-2025 The VM Developers])
 
 AC_CONFIG_SRCDIR([configure.ac])
 AC_CONFIG_FILES([Makefile lisp/Makefile info/Makefile pixmaps/Makefile vm-load.el])
