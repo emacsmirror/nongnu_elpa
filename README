@@ -8,8 +8,8 @@ users to listen to Internet radio stations.
 You may encounter bugs in this release.  If you do, please report
 them; your bug reports are valuable contributions, since they allow us
 to notice and fix problems on machines we don't have, or in code we
-don't use often.  Please send bug reports using the bug tracking
-system of the project at https://github.com/jroimartin/radio/issues.
+don't use often.  Please send bug reports using the bug tracker of the
+project at <https://github.com/jroimartin/radio/issues>.
 
 There are several subdirectories:
 
