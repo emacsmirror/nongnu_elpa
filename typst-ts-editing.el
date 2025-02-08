@@ -24,6 +24,7 @@
 
 (require 'outline)
 (require 'typst-ts-core)
+(require 'seq)
 
 (defun typst-ts-mode-heading-up ()
   "Switch the current heading with the heading above."
@@ -56,6 +57,97 @@ Return the heading node when yes otherwise nil."
     (if (string= (treesit-node-type node) "heading")
         node
       nil)))
+
+(defun typst-ts-mode-grid-cell--move (direction)
+  "Move grid cell at point depending on DIRECTION up/down, left/right.
+DIRECTION one of following symbols:
+`left', `right', `up', `down'.
+
+Up and down refers to moving the cell to another row while keeping the column index."
+  )
+
+(defun typst-ts-mode-grid--at-point-p ()
+  "Whether the current point is on a grid/table.
+Return the call node if yes, otherwise return nil."
+  (treesit-parent-until
+   (point)
+   (lambda (n)
+     (and (string= "call" (treesit-node-type n))
+          (let ((ident (treesit-node-text
+                        (treesit-node-child-by-field-name
+                         n "item"))))
+            (or (string= "table" ident)
+                (string= "grid" ident)))))
+   t))
+
+(defun typst-ts-mode-grid-cell--at-point-p ()
+  "Whether the current point is on a grid cell or not.
+Return a list (cell-node grid-node) if yes, otherwise return nil."
+  ;; A grid cell is a node inside a grid node that is not a tagged node.
+  (let* ((node (treesit-node-at (point)))
+         (node-begin (treesit-node-start node))
+         (node-end (treesit-node-end node))
+         (inside-grid-p (typst-ts-mode-grid--at-point-p))
+         (grid-cells
+          (mapcar
+           (lambda (n)
+             (list (treesit-node-start n) (treesit-node-end n) n))
+           (treesit-filter-child
+            ;; the child number 1 is the argument list
+            (treesit-node-child inside-grid-p 1)
+            ;; a cell is not a tagged node
+            (lambda (n)
+              (not (string= "tagged"
+                            (treesit-node-type n)))))))
+         (cell-at-point (caddr (seq-find (lambda (range)
+                                           (let (begin end _)
+                                             (seq-setq (begin end _) range)
+                                             (and (>= node-begin begin)
+                                                  (<= node-end end))))
+                                         grid-cells))))
+    (when (and inside-grid-p cell-at-point)
+      (list inside-grid-p cell-at-point))))
+
+(defun typst-ts-mode-grid--column-number (node)
+  "Return the number of columns the grid has.
+NODE must be a call node with ident being grid or  table.
+When there is no columns field or the semantic meaning makes no sense return 1."
+  (let* (
+         ;; grammar guarantees that the child number 1 is group
+         (group (treesit-node-child node 1))
+         (columns-node (car (treesit-filter-child
+                             group
+                             (lambda (n)
+                               (string= (treesit-node-text
+                                         (treesit-node-child-by-field-name n "field"))
+                                        "columns")))))
+         ;; 0:field 1:':' 2:value from grammar
+         (columns-value (treesit-node-child columns-node 2))
+         (columns-value-type (treesit-node-type columns-value))
+         (column-number nil))
+    (cond
+     ((and (string= "number" columns-value-type)
+           (= (treesit-node-child-count columns-value) 0))
+      (progn
+        (setq column-number (string-to-number (treesit-node-text columns-value)))
+        ;; it makes no sense to have columns: 0 or columns: 23% unit whatever
+        (when (or (not (integerp column-number))
+                  (= column-number 0))
+          (setq column-number 1))))
+     ((string= "group" columns-value-type)
+      (setq column-number
+            ;; discard punctuation nodes
+            (length
+             (treesit-filter-child columns-value
+                                   (lambda (n)
+                                     (let ((text (treesit-node-text n)))
+                                       (and (not (string= "," text))
+                                            (not (string= ":" text))
+                                            (not (string= "(" text))
+                                            (not (string= ")" text)))))))))
+     ;; when there is no columns field or the column value is a number with fraction
+     (t (setq column-number 1)))
+    column-number))
 
 (defun typst-ts-mode-item--at-point-p ()
   "Return item node when point is on item.
