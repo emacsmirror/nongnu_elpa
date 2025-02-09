@@ -266,18 +266,19 @@ When point is not on an item node return nil."
                  node-numbered-p)))))
 
 (defun typst-ts-mode--swap-regions (start1 end1 start2 end2)
-  "Swap region between START1 and END1 with region between START2 and END2."
+  "Swap region between START1 and END1 with region between START2 and END2.
+START1 END1 is the region where the point should be after swapping."
   (let ((text1 (buffer-substring start1 end1))
         (text2 (buffer-substring start2 end2))
         (marker1-start (make-marker))
         (marker1-end (make-marker))
         (marker2-start (make-marker))
-        (marker2-end (make-marker)))
+        (marker2-end (make-marker))
+        (point (point)))
     (set-marker marker1-start start1)
     (set-marker marker1-end end1)
     (set-marker marker2-start start2)
     (set-marker marker2-end end2)
-
     (delete-region marker1-start marker1-end)
     (delete-region marker2-start marker2-end)
 
@@ -286,7 +287,11 @@ When point is not on an item node return nil."
 
     (goto-char marker2-start)
     (insert text1)
-
+    ;; move point to original position if possible
+    (when (and (<= start1 point)
+               (>= end1 point))
+      (forward-char (- point end1)))
+    ;; clean markers
     (set-marker marker1-start nil)
     (set-marker marker1-end nil)
     (set-marker marker2-start nil)
