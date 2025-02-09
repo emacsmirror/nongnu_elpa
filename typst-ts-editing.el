@@ -58,59 +58,126 @@ Return the heading node when yes otherwise nil."
         node
       nil)))
 
+(defun typst-ts-mode-grid-cell--index (cell grid-cells amount-of-columns)
+  "Return a list in form of (row-index column-index) of CELL in GRID-CELLS.
+AMOUNT-OF-COLUMNS specifies how many columns one row has."
+  (let ((index (seq-position grid-cells cell #'treesit-node-eq)))
+    (list (/ index amount-of-columns)
+          (mod index amount-of-columns))))
+
 (defun typst-ts-mode-grid-cell--move (direction)
   "Move grid cell at point depending on DIRECTION up/down, left/right.
 DIRECTION one of following symbols:
 `left', `right', `up', `down'.
 
-Up and down refers to moving the cell to another row while keeping the column index."
-  )
+Up/down means moving the cell to another row while keeping the column index."
+  ;; inside table.header is different from the rest
+  (let (grid
+        grid-cells)
+    (seq-setq (grid cell grid-cells) (typst-ts-mode-grid-cell--at-point-p))
+    (unless (and grid cell)
+      (user-error "Not inside a grid cell"))
+    (setq to-switch
+          (pcase direction
+            ((guard (and (memq direction '(down up))
+                         (string= "table.header"
+                                  (treesit-node-text
+                                   (treesit-node-child-by-field-name grid "item")))))
+             (user-error "A table.header only has one row"))
+            ('left
+             ;; skip the , prev twice
+             (treesit-node-prev-sibling (treesit-node-prev-sibling cell)))
+            ('right
+             ;; skip the , that's why next twice
+             (treesit-node-next-sibling (treesit-node-next-sibling cell)))
+            ((or 'up 'down)
+             (let ((amount-of-columns
+                    (typst-ts-mode-grid--column-number grid))
+                   (select-cell
+                    (lambda (row column)
+                      (seq-elt
+                       (seq-elt
+                        (seq-partition
+                         grid-cells
+                         (typst-ts-mode-grid--column-number grid))
+                        row)
+                       column)))
+                   row column)
+               (seq-setq (row column)
+                         (typst-ts-mode-grid-cell--index
+                          cell grid-cells amount-of-columns))
+               (if (eq direction 'up)
+                   (progn
+                     (when (= 0 row)
+                       (user-error "Already on first row"))
+                     (funcall select-cell (1- row) column))
+                 (when (= row amount-of-columns)
+                   (user-error "Already on last row"))
+                 (funcall select-cell (1+ row) column))))
+            (_ (error "DIRECTION: %s is not one of: `right' `left', `up', `down'"
+                      direction))))
+    (when (or (not to-switch)
+              (string= "tagged" (treesit-node-type to-switch))
+              (string= "(" (treesit-node-text to-switch))
+              (string= ")" (treesit-node-text to-switch)))
+      (user-error "There is no cell in the %s direction" direction))
+    (typst-ts-mode--swap-regions (treesit-node-start cell) (treesit-node-end cell)
+                                 (treesit-node-start to-switch) (treesit-node-end to-switch))))
 
 (defun typst-ts-mode-grid--at-point-p ()
   "Whether the current point is on a grid/table.
 Return the call node if yes, otherwise return nil."
   (treesit-parent-until
-   (point)
+   (treesit-node-at (point))
    (lambda (n)
      (and (string= "call" (treesit-node-type n))
           (let ((ident (treesit-node-text
                         (treesit-node-child-by-field-name
                          n "item"))))
             (or (string= "table" ident)
-                (string= "grid" ident)))))
+                (string= "grid" ident)
+                (string= "table.header" ident)))))
    t))
 
 (defun typst-ts-mode-grid-cell--at-point-p ()
   "Whether the current point is on a grid cell or not.
-Return a list (cell-node grid-node) if yes, otherwise return nil."
+Return a list (cell-node grid-node grid-cells) if yes, otherwise return nil."
   ;; A grid cell is a node inside a grid node that is not a tagged node.
   (let* ((node (treesit-node-at (point)))
          (node-begin (treesit-node-start node))
          (node-end (treesit-node-end node))
          (inside-grid-p (typst-ts-mode-grid--at-point-p))
          (grid-cells
+          (treesit-filter-child
+           ;; the child number 1 is the argument list
+           (treesit-node-child inside-grid-p 1)
+           ;; a cell is not a tagged node, a comma or a parenthesis
+           (lambda (n)
+             (let ((type (treesit-node-type n)))
+               (and (not (string= "tagged" type))
+                    (not (string= "(" type))
+                    (not (string= ")" type))
+                    (not (string= "," type)))))))
+         ;; a list of (cell-begin cell-end)
+         (grid-cell-regions
           (mapcar
            (lambda (n)
              (list (treesit-node-start n) (treesit-node-end n) n))
-           (treesit-filter-child
-            ;; the child number 1 is the argument list
-            (treesit-node-child inside-grid-p 1)
-            ;; a cell is not a tagged node
-            (lambda (n)
-              (not (string= "tagged"
-                            (treesit-node-type n)))))))
-         (cell-at-point (caddr (seq-find (lambda (range)
-                                           (let (begin end _)
-                                             (seq-setq (begin end _) range)
-                                             (and (>= node-begin begin)
-                                                  (<= node-end end))))
-                                         grid-cells))))
+           grid-cells))
+         (cell-at-point
+          ;; (begin end node)
+          (caddr (seq-find (lambda (range)
+                             (let (begin end _)
+                               (seq-setq (begin end _) range)
+                               (and (>= node-begin begin)
+                                    (<= node-end end))))
+                           grid-cell-regions))))
     (when (and inside-grid-p cell-at-point)
-      (list inside-grid-p cell-at-point))))
+      (list inside-grid-p cell-at-point grid-cells))))
 
 (defun typst-ts-mode-grid--column-number (node)
   "Return the number of columns the grid has.
-NODE must be a call node with ident being grid or  table.
+NODE must be a call node with ident being grid or table.
 When there is no columns field or the semantic meaning makes no sense return 1."
   (let* (
          ;; grammar guarantees that the child number 1 is group
