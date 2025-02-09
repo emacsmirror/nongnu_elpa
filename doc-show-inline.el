@@ -704,7 +704,7 @@ XREF-BACKEND is the back-end used to find this symbol."
   "Handle all queued ranges."
   (declare (important-return-value nil))
   ;; First remove any overlays.
-  (when-let ((overlays-in-view (doc-show-inline--idle-overlays (point-min) (point-max))))
+  (when-let* ((overlays-in-view (doc-show-inline--idle-overlays (point-min) (point-max))))
     (let ((overlays-beg (point-max))
           (overlays-end (point-min)))
 
