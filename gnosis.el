@@ -2401,8 +2401,9 @@ Return note ids for notes that match QUERY."
 		   (let* ((data (gnosis-select '[hypothesis answer] 'notes `(= id ,id) t))
 			  (hypothesis (nth 0 data))
 			  (old-answer (car (nth 1 data)))
-			  (new-answer (when (integerp hypothesis) (list (nth (- 1 old-answer) hypothesis)))))
-		     (when (integerp hypothesis)
+			  (new-answer (when (integerp old-answer)
+					(list (nth (- 1 old-answer) hypothesis)))))
+		     (when (integerp old-answer)
 		       (gnosis-update 'notes `(= answer ',new-answer) `(= id ,id)))))
 		 note))
     ;; Replace y-or-n with MCQ
