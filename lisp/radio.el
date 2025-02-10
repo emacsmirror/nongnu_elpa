@@ -6,7 +6,7 @@
 ;; Maintainer: Roi Martin <jroi.martin@gmail.com>
 ;; URL: https://github.com/jroimartin/radio
 ;; Version: 0.1.3
-;; Package-Requires: ((emacs "29.1"))
+;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: multimedia
 
 ;; This file is NOT part of GNU Emacs.
@@ -31,31 +31,32 @@
 
 ;;; Code:
 
+(defgroup radio ()
+  "Listen to Internet radio."
+  :group 'multimedia)
+
 (defcustom radio-stations-alist nil
-  "List of radio stations.
+  "Alist of radio stations.
 
-Elements are of the form (NAME . URL).
+Elements are of the form (NAME . URL), where NAME is the name of
+the radio station and URL is the URL of the radio station."
+  :risky t
+  :type '(alist :key-type string :value-type string))
 
-NAME is the name of the radio station.
-URL  is the URL of the radio station."
-  :type '(alist :key-type string :value-type string)
-  :group 'radio)
+(defcustom radio-command "mpv --terminal=no --video=no %s"
+  "Command used to play a radio station.
 
-(defcustom radio-command "mpv --terminal=no --video=no"
-  "Command used to play a radio station."
-  :type 'string
-  :group 'radio)
-
-(defvar radio--current-station nil
-  "Radio station currently being played.")
+The string %s is replaced with the URL of the radio station."
+  :risky t
+  :type 'string)
 
 (defvar radio--current-proc nil
   "Current media player process.")
 
-;; From tabulated-list.el
-(defvar tabulated-list-entries)
-(defvar tabulated-list-format)
-(defvar tabulated-list-sort-key)
+(defvar radio-line-mode--string nil
+  "The string (optionally) displayed in the mode line.")
+
+(put 'radio-line-mode--string 'risky-local-variable t)
 
 (defun radio--play (station)
   "Play radio station.
@@ -63,14 +64,25 @@ URL  is the URL of the radio station."
 STATION must be a cons of the form (NAME . URL).  If a station is
 being played, it is stopped first."
   (radio-stop)
-  (setq radio--current-station station)
-  (let* ((url (cdr station))
-	 (cmd (split-string-shell-command radio-command))
+  (let* ((cmd (split-string-shell-command (format radio-command (cdr station))))
 	 (program (car cmd))
-	 (program-args `(,@(cdr cmd) ,url))
-	 (start-process-args `(,program nil ,program ,@program-args))
-	 (proc (apply #'start-process start-process-args)))
-    (setq radio--current-proc proc)))
+	 (start-process-args `(,program nil ,program ,@(cdr cmd))))
+    (setq radio--current-proc (apply #'start-process start-process-args))
+    (process-put radio--current-proc :radio-station station)
+    (radio-line-mode--set (format "[Station: %s]" (car station)))))
+
+;;;###autoload
+(defun radio (station-name)
+  "Play a radio station.
+
+When called from Lisp, STATION-NAME must be the name of one of
+the stations defined in `radio-stations-alist'."
+  (interactive (list (completing-read "Play radio station: "
+				      radio-stations-alist
+				      nil t)))
+  (radio--play
+   (or (assoc station-name radio-stations-alist)
+       (user-error "Unknown station `%s'" station-name))))
 
 ;;;###autoload
 (defun radio-stop ()
@@ -79,15 +91,15 @@ being played, it is stopped first."
 If no station is being played, calling this function has no
 effect."
   (interactive)
-  (setq radio--current-station nil)
   (when radio--current-proc
     (delete-process radio--current-proc))
-  (setq radio--current-proc nil))
+  (setq radio--current-proc nil)
+  (radio-line-mode--set ""))
 
 (defun radio-list-stations--play ()
   "Play the selected radio station and refresh the station list."
   (interactive)
-  (when-let ((station (tabulated-list-get-id)))
+  (when-let* ((station (tabulated-list-get-id)))
     (radio--play station)
     (tabulated-list-revert)))
 
@@ -97,16 +109,17 @@ effect."
   (radio-stop)
   (tabulated-list-revert))
 
-(defun radio-list-stations--refresh ()
-  "Refresh the radio station list."
-  (setq tabulated-list-entries nil)
-  (dolist (station radio-stations-alist)
-    (let ((name (car station))
-	  (url (cdr station))
-	  (status (if (equal station radio--current-station) "▶" "")))
-      (push (list station (vector status name url))
-	    tabulated-list-entries)))
-  (tabulated-list-init-header))
+(defun radio-list-stations--generate ()
+  "Generate the radio station list for `tabulated-list-mode'."
+  (let ((current-station
+	 (and radio--current-proc
+	      (process-get radio--current-proc :radio-station))))
+    (mapcar
+     (lambda (station)
+       `(,station [,(if (equal station current-station) "▶" "")
+		   ,(car station)
+		   ,(cdr station)]))
+     radio-stations-alist)))
 
 (defvar-keymap radio-mode-map
   :doc "Keymap used by `radio-mode'."
@@ -119,31 +132,33 @@ effect."
 			       ("Station" 30 t)
 			       ("URL" 0 t)])
   (setq tabulated-list-sort-key '("Station" . nil))
-  (add-hook 'tabulated-list-revert-hook #'radio-list-stations--refresh nil t))
+  (setq tabulated-list-entries #'radio-list-stations--generate))
 
 ;;;###autoload
 (defun radio-list-stations ()
   "Display a list of all radio stations."
   (interactive)
-  (let ((buf (get-buffer-create "*Station List*")))
-    (with-current-buffer buf
-      (radio-mode)
-      (radio-list-stations--refresh)
-      (tabulated-list-print))
-    (pop-to-buffer-same-window buf)))
+  (with-current-buffer (get-buffer-create "*Station List*")
+    (radio-mode)
+    (tabulated-list-print)
+    (pop-to-buffer-same-window (current-buffer))))
+
+(defun radio-line-mode--set (string)
+  "Set mode line status and force update."
+  (setq radio-line-mode--string string)
+  (force-mode-line-update))
 
 ;;;###autoload
-(defun radio (station-name)
-  "Play a radio station.
-
-When called from Lisp, STATION-NAME must be the name of one of
-the stations defined in `radio-stations-alist'."
-  (interactive (list (completing-read "Play radio station: "
-				      (mapcar #'car radio-stations-alist)
-				      nil t)))
-  (if-let ((station (assoc station-name radio-stations-alist)))
-      (radio--play station)
-    (message "Unknown station `%s'" station-name)))
+(define-minor-mode radio-line-mode
+  "Toggle radio status display in mode line."
+  :global t
+  (or global-mode-string (setq global-mode-string '("")))
+  (if radio-line-mode
+      (or (memq 'radio-line-mode--string global-mode-string)
+	  (setq global-mode-string
+		(append global-mode-string '(radio-line-mode--string))))
+    (setq global-mode-string
+          (delq 'radio-line-mode--string global-mode-string))))
 
 (provide 'radio)
 
