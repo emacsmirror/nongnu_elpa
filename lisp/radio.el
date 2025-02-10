@@ -132,7 +132,8 @@ effect."
 			       ("Station" 30 t)
 			       ("URL" 0 t)])
   (setq tabulated-list-sort-key '("Station" . nil))
-  (setq tabulated-list-entries #'radio-list-stations--generate))
+  (setq tabulated-list-entries #'radio-list-stations--generate)
+  (tabulated-list-init-header))
 
 ;;;###autoload
 (defun radio-list-stations ()
