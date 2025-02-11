@@ -6,7 +6,7 @@
 ;; Maintainer: Roi Martin <jroi.martin@gmail.com>
 ;; URL: https://github.com/jroimartin/radio
 ;; Version: 0.1.3
-;; Package-Requires: ((emacs "28.1"))
+;; Package-Requires: ((emacs "29.1"))
 ;; Keywords: multimedia
 
 ;; This file is NOT part of GNU Emacs.
@@ -30,6 +30,8 @@
 ;; Internet radio stations.
 
 ;;; Code:
+
+(require 'tabulated-list)
 
 (defgroup radio ()
   "Listen to Internet radio."
@@ -91,7 +93,7 @@ the stations defined in `radio-stations-alist'."
 If no station is being played, calling this function has no
 effect."
   (interactive)
-  (when radio--current-proc
+  (when (process-live-p radio--current-proc)
     (delete-process radio--current-proc))
   (setq radio--current-proc nil)
   (radio-line-mode--set ""))
@@ -116,9 +118,12 @@ effect."
 	      (process-get radio--current-proc :radio-station))))
     (mapcar
      (lambda (station)
-       `(,station [,(if (equal station current-station) "▶" "")
-		   ,(car station)
-		   ,(cdr station)]))
+       (let* ((is-current (equal station current-station))
+	      (face (if is-current 'bold 'default))
+	      (status (if is-current "▶" "")))
+	 `(,station [,status
+		     ,(propertize (car station) 'face face)
+		     ,(propertize (cdr station) 'face face)])))
      radio-stations-alist)))
 
 (defvar-keymap radio-mode-map
