@@ -2195,14 +2195,15 @@ MODE must be a member of `fj-search-modes', else it is silently
 ignored."
   (let* ((params `(("q" . ,query)
                    ("limit" . "100")
+                   ("includeDesc" . "true")
                    ("sort" . "updated")
-                   ,(when id
-                      `("exclusive" . ,id))
-                   ,(when (and mode
-                               (member mode fj-search-modes))
-                      `("mode" . ,mode))
-                   ,(when topic
-                      '("topic" . "t")))))
+                   ,@(when id
+                       `(("exclusive" . ,id)))
+                   ,@(when (and mode
+                                (member mode fj-search-modes))
+                       `(("mode" . ,mode)))
+                   ,@(when topic
+                       '(("topic" . "true"))))))
     (fj-get "/repos/search" params)))
 
 (defun fj-repo-search (query &optional topic id mode)
