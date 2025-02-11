@@ -85,6 +85,8 @@ the @var{name} and @var{url} of the radio station.
 
 @defopt radio-command
 Command used to play a radio station.
+
+The string %s is replaced with the URL of the radio station.
 @end defopt
 
 The @code{customize} interface can be used to configure these
@@ -97,7 +99,7 @@ then the following code can serve as an example:
 @lisp
 (customize-set-variable
  'radio-command
- "mpv --terminal=no --video=no")
+ "mpv --terminal=no --video=no %s")
 
 (customize-set-variable
  'radio-stations-alist
