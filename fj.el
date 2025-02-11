@@ -1438,6 +1438,7 @@ QUERY is a search query to filter by."
          (prev-buf (buffer-name (current-buffer)))
          (prev-mode major-mode)
          (state-str (or state "open"))
+         (wd default-directory)
          (buf-name (format "*fj-%s-%s-%s*" repo state-str type)))
     (with-current-buffer (get-buffer-create buf-name)
       (setq tabulated-list-entries
@@ -1450,6 +1451,11 @@ QUERY is a search query to filter by."
             fj-buffer-spec
             `(:repo ,repo :state ,state-str :owner ,owner :url ,url
                     :type ,type))
+      ;; ensure our .dir-locals.el settings take effect:
+      ;; via https://emacs.stackexchange.com/questions/13080/reloading-directory-local-variables
+      (setq default-directory wd)
+      (let ((enable-local-variables :all))
+        (hack-dir-local-variables-non-file-buffer))
       (fj-other-window-maybe
        prev-buf "-issues*" #'string-suffix-p prev-mode))))
 
