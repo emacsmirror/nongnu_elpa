@@ -1404,6 +1404,16 @@ If REPO is provided, also include a repo column."
 
 (defvar fj-repo-data nil) ;; for transients for now
 
+(defun fj-list-issues* ()
+  "List issues for current repo.
+Doesn't assume that `fj-user' owns the repo."
+  ;; FIXME: make this the default for `fj-list-issues'?
+  (interactive)
+  (let* ((remote (magit-get "branch.main.remote"))
+         (url (magit-get (format "remote.%s.url" remote)))
+         (owner (car (last (split-string url "/") 2))))
+    (fj-list-issues nil owner)))
+
 (defun fj-list-issues (repo &optional owner state type query)
   "Display ISSUES in a tabulated list view.
 Either for `fj-current-repo' or REPO, a string, owned by OWNER.
