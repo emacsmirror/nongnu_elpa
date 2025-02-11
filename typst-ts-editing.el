@@ -60,10 +60,45 @@ Return the heading node when yes otherwise nil."
 
 (defun typst-ts-mode-grid-cell--index (cell grid-cells amount-of-columns)
   "Return a list in form of (row-index column-index) of CELL in GRID-CELLS.
-AMOUNT-OF-COLUMNS specifies how many columns one row has."
+AMOUNT-OF-COLUMNS specifies how many columns one row has.
+Indeces are given in 0 index."
   (let ((index (seq-position grid-cells cell #'treesit-node-eq)))
     (list (/ index amount-of-columns)
           (mod index amount-of-columns))))
+
+(defun typts-ts-mode-grid-row--move (direction)
+  "Move grid row at point depending on DIRECTION up/down.
+DIRECTION is one of following symbols:
+`up', `down'."
+  (let (to-switch current grid grid-cells row-index rows amount-of-columns cell)
+    (seq-setq (grid cell grid-cells) (typst-ts-mode-grid-cell--at-point-p))
+    (unless (and grid cell)
+      (user-error "Not inside a grid with rows"))
+    (setq amount-of-columns (typst-ts-mode-grid--column-number grid))
+    (setq row-index
+          (car (typst-ts-mode-grid-cell--index
+                cell grid-cells amount-of-columns)))
+    (setq rows (seq-partition grid-cells amount-of-columns))
+    (setq current (seq-elt rows row-index))
+    (setq to-switch
+          (pcase direction
+            ('up
+             (progn
+               (when (= row-index 0)
+                 (user-error "Already on first row"))
+               (seq-elt rows (1- row-index))))
+            ('down
+             (progn
+               (when (= (length rows) (1+ row-index))
+                 (user-error "Already on last row"))
+               (seq-elt rows (1+ row-index))))
+            (_
+             (error "DIRECTION: %s is not one of: `up', `down'" direction))))
+    (let ((start1 (treesit-node-start (car current)))
+          (end1 (treesit-node-end (car (last current))))
+          (start2 (treesit-node-start (car to-switch)))
+          (end2 (treesit-node-end (car (last to-switch)))))
+      (typst-ts-mode--swap-regions start1 end1 start2 end2))))
 
 (defun typst-ts-mode-grid-cell--move (direction)
   "Move grid cell at point depending on DIRECTION up/down, left/right.
