@@ -140,7 +140,7 @@ Return the call node if yes, otherwise return nil."
 
 (defun typst-ts-mode-grid-cell--at-point-p ()
   "Whether the current point is on a grid cell or not.
-Return a list (cell-node grid-node grid-cells) if yes, otherwise return nil."
+Return a list (grid-node cell-node grid-cells) if yes, otherwise return nil."
   ;; A grid cell is a node inside a grid node that is not a tagged node.
   (let* ((node (treesit-node-at (point)))
          (node-begin (treesit-node-start node))
