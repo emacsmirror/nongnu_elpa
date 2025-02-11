@@ -67,13 +67,12 @@ AMOUNT-OF-COLUMNS specifies how many columns one row has."
 
 (defun typst-ts-mode-grid-cell--move (direction)
   "Move grid cell at point depending on DIRECTION up/down, left/right.
-DIRECTION one of following symbols:
+DIRECTION is one of following symbols:
 `left', `right', `up', `down'.
 
 Up/down means moving the cell to another row while keeping the column index."
   ;; inside table.header is different from the rest
-  (let (grid
-        grid-cells)
+  (let (grid grid-cells cell to-switch)
     (seq-setq (grid cell grid-cells) (typst-ts-mode-grid-cell--at-point-p))
     (unless (and grid cell)
       (user-error "Not inside a grid cell"))
