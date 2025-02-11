@@ -45,12 +45,12 @@ the radio station and URL is the URL of the radio station."
   :risky t
   :type '(alist :key-type string :value-type string))
 
-(defcustom radio-command "mpv --terminal=no --video=no %s"
+(defcustom radio-command '("mpv" "--terminal=no" "--video=no" ":url")
   "Command used to play a radio station.
 
-The string %s is replaced with the URL of the radio station."
+The string :url is replaced with the URL of the radio station."
   :risky t
-  :type 'string)
+  :type '(repeat string))
 
 (defvar radio--current-proc nil
   "Current media player process.")
@@ -60,13 +60,20 @@ The string %s is replaced with the URL of the radio station."
 
 (put 'radio-line-mode--string 'risky-local-variable t)
 
+(defun radio-command--replace-url (url)
+  "Replace the station URL in `radio-command'."
+  (mapcar
+   (lambda (arg)
+     (if (equal arg ":url") url arg))
+   radio-command))
+
 (defun radio--play (station)
   "Play radio station.
 
 STATION must be a cons of the form (NAME . URL).  If a station is
 being played, it is stopped first."
   (radio-stop)
-  (let* ((cmd (split-string-shell-command (format radio-command (cdr station))))
+  (let* ((cmd (radio-command--replace-url (cdr station)))
 	 (program (car cmd))
 	 (start-process-args `(,program nil ,program ,@(cdr cmd))))
     (setq radio--current-proc (apply #'start-process start-process-args))
@@ -150,7 +157,7 @@ effect."
     (pop-to-buffer-same-window (current-buffer))))
 
 (defun radio-line-mode--set (string)
-  "Set mode line status and force update."
+  "Set mode line status to STRING and force update."
   (setq radio-line-mode--string string)
   (force-mode-line-update))
 
