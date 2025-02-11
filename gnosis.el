@@ -53,7 +53,6 @@
 (require 'animate)
 
 (require 'gnosis-algorithm)
-(require 'gnosis-string-edit)
 (require 'gnosis-org)
 
 (defgroup gnosis nil
