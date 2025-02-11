@@ -1267,7 +1267,7 @@ NEW-BODY is the new comment text to send."
 
 (defun fj-issue-tl-entries (issues &optional repo)
   "Return tabluated list entries for ISSUES.
-STATE is a string."
+If REPO is provided, also include a repo column."
   (cl-loop
    for issue in issues
    collect
