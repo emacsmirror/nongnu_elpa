@@ -2615,9 +2615,9 @@ Optionally set PAGE and LIMIT."
        (fj-issues-tl-reload)))))
 
 (defun fj-issues-tl-edit-title ()
-  "Edit issue title from issues tabulatd list view."
+  "Edit issue title from issues tabulated list view."
   (interactive)
-  (fj-with-own-issue
+  (fj-with-own-issue-or-repo
    (let* ((entry (tabulated-list-get-entry))
           (repo (fj--get-buffer-spec :repo))
           (owner (fj--get-buffer-spec :owner))
