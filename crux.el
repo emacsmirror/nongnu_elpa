@@ -4,7 +4,7 @@
 ;;
 ;; Author: Bozhidar Batsov <bozhidar@batsov.dev>
 ;; URL: https://github.com/bbatsov/crux
-;; Version: 0.5.0
+;; Version: 0.6.0-snapshot
 ;; Keywords: convenience
 ;; Package-Requires: ((emacs "26.1"))
 
