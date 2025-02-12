@@ -126,9 +126,8 @@ effect."
     (mapcar
      (lambda (station)
        (let* ((is-current (equal station current-station))
-	      (face (if is-current 'bold 'default))
-	      (status (if is-current "▶" "")))
-	 `(,station [,status
+	      (face (if is-current 'bold 'default)))
+	 `(,station [,(if is-current "▶" "")
 		     ,(propertize (car station) 'face face)
 		     ,(propertize (cdr station) 'face face)])))
      radio-stations-alist)))
