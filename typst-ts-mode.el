@@ -1,12 +1,12 @@
 ;;; typst-ts-mode.el --- Tree Sitter support for Typst  -*- lexical-binding: t; -*-
-;; Copyright (C) 2023-2024 The typst-ts-mode Project Contributors
+;; Copyright (C) 2023-2025 The typst-ts-mode Project Contributors
 
 ;; Version: 0.10.0
 ;; Author: Ziqi Yang <mr.meowking@anche.no>
 ;; Maintainer: Ziqi Yang <mr.meowking@anche.no>
 ;;   Huan Nguyen <nguyenthieuhuan@gmail.com>
 ;; Keywords: typst languages tree-sitter
-;; URL: https://git.sr.ht/~meow_king/typst-ts-mode
+;; URL: https://codeberg.org/meow_king/typst-ts-mode
 ;; License: GNU General Public License >= 3
 ;; Package-Requires: ((emacs "29.1"))
 
@@ -92,12 +92,12 @@ NOTE this option must be set before the first loading(opening typst file)"
    :language 'typst
    :feature 'markup-basic  ; part 1
    '((ref) @typst-ts-markup-reference-face)
-   
+
    :language 'typst
    :feature 'common
    '((shorthand) @typst-ts-shorthand-face
      (ERROR) @typst-ts-error-face)
-   
+
    :language 'typst
    :feature 'markup-basic  ; part 2
    `(,@(if typst-ts-markup-header-same-height
@@ -150,7 +150,7 @@ NOTE this option must be set before the first loading(opening typst file)"
    '((linebreak) @typst-ts-markup-linebreak-face
      (url) @typst-ts-markup-url-face
      (quote) @typst-ts-markup-quote-face)
-   
+
    ;; please note that some feature there also in the math mode
    :language 'typst
    :feature 'code-basic
@@ -222,7 +222,7 @@ NOTE this option must be set before the first loading(opening typst file)"
      (fac "!" @font-lock-operator-face)
      (attach ["^" "_"] @font-lock-operator-face)
      (align) @font-lock-operator-face))
-  
+
   "Font lock rules for `typst-ts-mode'.
 If you want to enable/disable specific font lock feature, please change
 `treesit-font-lock-level' or modify `typst-ts-mode-font-lock-feature-list'.")
@@ -328,7 +328,7 @@ NODE, PARENT and BOL see `treesit-simple-indent-rules'."
      ;; item - child item
      ((and (node-is "item") (parent-is "item")) parent-bol
       typst-ts-mode-indent-offset)
-     
+
      ;; multi-line item
      ;; -  #[hi] foo
      ;;    bar
@@ -336,7 +336,7 @@ NODE, PARENT and BOL see `treesit-simple-indent-rules'."
      ;; `adaptive-fill-regexp'
      ((match nil "item" nil 2 nil)
       typst-ts-mode--indentation-multiline-item-get-anchor 0)
-     
+
      ;; item - new item content should follow its previous line's indentation
      ;; level
      ;; e.g.
