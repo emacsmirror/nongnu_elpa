@@ -5,7 +5,7 @@
 ;; Author: Roi Martin <jroi.martin@gmail.com>
 ;; Maintainer: Roi Martin <jroi.martin@gmail.com>
 ;; URL: https://github.com/jroimartin/radio
-;; Version: 0.1.3
+;; Version: 0.2.0
 ;; Package-Requires: ((emacs "29.1"))
 ;; Keywords: multimedia
 
