@@ -1943,8 +1943,9 @@ LINKS: List of id links in PARATHEMA."
 				(nth 5 note-data)
 				(nth 4 note-data))))
 
-(defun gnosis-edit-thema (id)
+(defun gnosis-edit-note (id)
   "Edit note with ID."
+  (window-configuration-to-register :gnosis-edit)
   (with-current-buffer (pop-to-buffer "*Gnosis Edit*")
     (let ((inhibit-read-only 1)
 	  (deck-name (gnosis--get-deck-name
@@ -1957,18 +1958,19 @@ LINKS: List of id links in PARATHEMA."
     (forward-line)))
 
 (defun gnosis-save ()
-  "Save themas in current buffer."
+  "Save notes in current buffer."
   (interactive)
-  (let ((themas (gnosis-org-parse-themas))
+  (let ((notes (gnosis-org-parse-notes))
 	(deck (gnosis--get-deck-id (gnosis-org-parse--deck-name))))
-    (cl-loop for thema in themas
-	     do (gnosis-save-thema thema deck))
+    (cl-loop for note in notes
+	     do (gnosis-save-note note deck))
     (gnosis-edit-quit)))
 
 (defun gnosis-edit-quit ()
   "Quit recrusive edit & kill current buffer."
   (interactive)
-  (kill-buffer-and-window)
+  (kill-buffer)
+  (jump-to-register :gnosis-edit)
   (when gnosis-review-editing-p
     (setf gnosis-review-editing-p nil)
     (exit-recursive-edit)))
