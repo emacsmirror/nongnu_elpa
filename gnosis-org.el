@@ -83,16 +83,16 @@ BUFFER defaults to the current buffer if not specified."
       (put-text-property (match-beginning 0) (match-end 0) 'read-only t)))
   (goto-char (point-min)))
 
-(cl-defun gnosis-org--insert-thema (id type &optional keimenon hypothesis answer parathema tags example)
-  "Insert thema for note ID.
+(cl-defun gnosis-org--insert-note (id type &optional keimenon hypothesis answer parathema tags example)
+  "Insert note for note ID.
 
-TYPE: Thema type, refer to `gnosis-thema-types'
+TYPE: Note type, refer to `gnosis-note-types'
 KEIMENON: Text user is first presented with.
 HYPOTHESIS: Hypothesis for what the ANSWER is
 ANSWER: The revelation after KEIMENON
-PARATHEMA: The text where THEMA is derived from.
-TAGS: List of THEMA tags
-EXAMPLE: Boolean value, if non-nil do not add properties for thema."
+PARATHEMA: The text where NOTE is derived from.
+TAGS: List of NOTE tags
+EXAMPLE: Boolean value, if non-nil do not add properties for note."
   (let ((components `(("** Keimenon" . ,keimenon)
                       ("** Hypothesis" . ,hypothesis)
                       ("** Answer" . ,answer)
@@ -121,8 +121,8 @@ EXAMPLE: Boolean value, if non-nil do not add properties for thema."
 		  nil t)))
     title))
 
-(defun gnosis-org-parse-themas ()
-  "Extract content for each level-2 heading for thema headings with a GNOSIS_ID."
+(defun gnosis-org-parse-notes ()
+  "Extract content for each level-2 heading for note headings with a GNOSIS_ID."
   (let (results)
     (org-element-map (org-element-parse-buffer) 'headline
       (lambda (headline)
