@@ -24,8 +24,8 @@
 
 ;;; Code:
 
-(require 'tp)
 (require 'transient)
+(require 'tp)
 
 (defvar mastodon-active-user)
 (defvar mastodon-toot-visibility-settings-list)

@@ -189,13 +189,13 @@ PARAMS is an alist of any extra parameters to send with the request.
 SILENT means don't message.
 NO-HEADERS means don't collect http response headers.
 VECTOR means return json arrays as vectors."
-(let ((buf (mastodon-http--get url params silent)))
-  ;; --get can return nil if instance unresponsive:
-  (if (not buf)
-      (user-error "Looks like the server response borked. \
+  (let ((buf (mastodon-http--get url params silent)))
+    ;; --get can return nil if instance unresponsive:
+    (if (not buf)
+        (user-error "Looks like the server response borked. \
 Is your instance up?")
-    (with-current-buffer buf
-      (mastodon-http--process-response no-headers vector)))))
+      (with-current-buffer buf
+        (mastodon-http--process-response no-headers vector)))))
 
 (defun mastodon-http--get-json (url &optional params silent vector)
   "Return only JSON data from URL request.
@@ -413,10 +413,10 @@ item uploaded, and `mastodon-toot--update-status-fields' is run."
                  ;; because the '=' test below fails for them
                  ;; they have the form (error . error message 24)
                  ((not (proper-list-p error-thrown)) ; not dotted list
-		  (message "Got error: %s. Shit went south." (cdr error-thrown)))
+		          (message "Got error: %s. Shit went south." (cdr error-thrown)))
                  ;; handle mastodon api errors
                  ;; they have the form (error http 401)
-		 ((= (car (last error-thrown)) 401)
+		         ((= (car (last error-thrown)) 401)
                   (message "Got error: %s Unauthorized: The access token is invalid"
                            error-thrown))
                  ((= (car (last error-thrown)) 422)
