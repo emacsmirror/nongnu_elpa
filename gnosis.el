@@ -532,8 +532,10 @@ If FILL-PARAGRAPH-P, insert question using `fill-paragraph'."
                while (search-forward cloze-string nil t)
                do
 	       (when (and hint (not (string-empty-p hint)) (not (string= hint "nil"))
+			  (not (string= "\"\"" hint))
 			  (search-backward cloze-string nil t))
-                 (replace-match (propertize (format "[%s]" hint) 'face 'gnosis-face-cloze))
+                 (replace-match (propertize (format "[%s]" hint)
+					    'face 'gnosis-face-cloze))
                  (goto-char (match-end 0)))) ; Move point to end of match
       
       (buffer-string))))
