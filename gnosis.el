@@ -120,7 +120,8 @@ framework's minibuffer."
   '(("Basic" . gnosis-add-note--basic)
     ("MCQ" .  gnosis-add-note--mcq)
     ("Double" .  gnosis-add-note--double)
-    ("Cloze" . gnosis-add-note--cloze))
+    ("Cloze" . gnosis-add-note--cloze)
+    ("MC-cloze" . gnosis-add-note--mc-cloze))
   "Mapping of Notes & their respective functions.")
 
 (defvar gnosis-previous-note-tags '()
@@ -1494,22 +1495,23 @@ If user-input is equal to CLOZE, return t."
     success))
 
 (defun gnosis-review-mc-cloze (id)
-  "Review MC-CLOZE note of ID."
-  (let ((main (gnosis-get 'keimenon 'notes `(= id ,id)))
-	;; Cloze needs to be a list, we take car as the answer
-	(cloze (list (gnosis-get 'hypothesis 'notes `(= id ,id))))
-	(user-choice nil)
-	(success nil))
-    (gnosis-display-cloze-string main cloze nil nil nil)
-    (setf user-choice (gnosis-mcq-answer id)
-	  success (string= user-choice (car cloze)))
-    (if success
-	(gnosis-display-cloze-string main nil nil cloze nil)
-      (gnosis-display-cloze-string main nil nil nil cloze))
-    ;; Display user answer only upon failure
-    (unless success
-      (gnosis-display-cloze-user-answer user-choice))
-    (gnosis-display-extra id)
+  "Review mc-cloze type note for ID."
+  (let* ((keimenon (gnosis-get 'keimenon 'notes `(= id ,id)))
+	 (cloze (gnosis-get 'answer 'notes `(= id ,id)))
+	 (options (gnosis-get 'hypothesis 'notes `(= id ,id)))
+	 (parathema (gnosis-get 'parathema 'extras `(= id ,id)))
+	 (user-input)
+	 (success))
+    (gnosis-display-cloze-string keimenon cloze nil nil nil)
+    (setq user-input (funcall gnosis-completing-read-function
+			      "Select answer: "
+			      options))
+    (if (string= user-input (car cloze))
+	(progn
+	  (gnosis-display-cloze-string keimenon nil nil cloze nil)
+	  (setq success t))
+      (gnosis-display-cloze-string keimenon nil nil nil cloze))
+    (gnosis-display-parathema parathema)
     (gnosis-display-next-review id success)
     success))
 
