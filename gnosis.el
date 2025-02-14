@@ -1052,12 +1052,13 @@ answer."
     (gnosis-completing-read "Answer: " choices)))
 
 (defun gnosis-cloze-check (sentence clozes)
-  "Check if CLOZES are found in SENTENCE."
-  (catch 'not-found
-    (dolist (cloze clozes)
-      (unless (string-match-p cloze sentence)
-        (throw 'not-found nil)))
-    t))
+  "Return t if all CLOZES are found in SENTENCE."
+  (cl-every (lambda (cloze)
+              (string-match-p
+               (regexp-quote
+		(string-remove-prefix "\"" (string-remove-suffix "\"" cloze)))
+               sentence))
+            clozes))
 ;; TODO: use a better name to indicate that it also removes hints from STRING.
 (defun gnosis-cloze-remove-tags (string)
   "Replace cloze tags and hints in STRING.
