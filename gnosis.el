@@ -462,28 +462,30 @@ This will not be applied to sentences that start with double space."
            ("_\\([^_[:space:]][^_\n]*[^_[:space:]]\\)_" . underline)
            ("\\[\\[\\([^]]+\\)\\]\\[\\([^]]+\\)\\]\\]" . link))))
     (when gnosis-apply-highlighting-p
-      (save-excursion
-        (cl-loop for (regex . face) in syntax-highlights
-                 do (progn
-                      (goto-char (point-min))
-                      (while (re-search-forward regex nil t)
-                        (if (eq face 'link)
-                            (let* ((link (match-string 1))
-                                   (desc (or (match-string 2) link))
-                                   (start (match-beginning 0))
-                                   (end (match-end 0)))
-                              (delete-region start end)
-                              (insert desc)
-                              (let ((ol (make-overlay start (+ start (length desc)))))
-                                (overlay-put ol 'face 'link)
-                                (overlay-put ol 'gnosis-link link)
-                                (overlay-put ol 'mouse-face 'highlight)
-                                (overlay-put ol 'help-echo link)))
-                          (let ((start (match-beginning 1))
-                                (end (match-end 1)))
-                            (overlay-put (make-overlay start end) 'face face)
-                            (delete-region end (match-end 0))
-                            (delete-region (match-beginning 0) start))))))))))
+      (with-silent-modifications
+	(save-excursion
+          (cl-loop for (regex . face) in syntax-highlights
+                   do
+		   (goto-char (point-min))
+		   (while (re-search-forward regex nil t)
+		     (when (null (get-text-property (match-beginning 1) 'face))
+                       (if (eq face 'link)
+			   (let* ((link (match-string 1))
+                                  (desc (or (match-string 2) link))
+                                  (start (match-beginning 0))
+                                  (end (match-end 0)))
+			     (delete-region start end)
+			     (insert desc)
+			     (let ((ol (make-overlay start (+ start (length desc)))))
+                               (overlay-put ol 'face 'link)
+                               (overlay-put ol 'gnosis-link link)
+                               (overlay-put ol 'mouse-face 'highlight)
+                               (overlay-put ol 'help-echo link)))
+                         (let ((start (match-beginning 1))
+                               (end (match-end 1)))
+			   (overlay-put (make-overlay start end) 'face face)
+			   (delete-region end (match-end 0))
+			   (delete-region (match-beginning 0) start)))))))))))
 
 (defun gnosis-display-keimenon (str &optional fill-paragraph-p)
   "Display STR as keimenon.
