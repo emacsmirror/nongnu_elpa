@@ -488,7 +488,9 @@ This will not be applied to sentences that start with double space."
 If FILL-PARAGRAPH-P, insert question using `fill-paragraph'."
   (let ((fill-paragraph-p (or fill-paragraph-p t)))
     (erase-buffer)
-    (if fill-paragraph-p (fill-paragraph (insert "\n" str))
+    (if fill-paragraph-p
+	(fill-paragraph
+	 (insert "\n" (replace-regexp-in-string "\n" "" str)))
       (insert "\n"  str))
     (gnosis-insert-separator)
     (gnosis-apply-center-buffer-overlay)
