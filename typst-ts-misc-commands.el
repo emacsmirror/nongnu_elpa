@@ -49,9 +49,12 @@
   (let* ((base-path (file-name-directory buffer-file-name))
          (file-name (file-relative-name buffer-file-name base-path))
          (output-file-name
-          (file-name-with-extension file-name "md")))
-    (start-process "pandoc" shell-command-buffer-name
-                   "pandoc" "-o" output-file-name file-name)))
+          (file-name-with-extension file-name "md"))
+         (buffer-name (format "*pandoc %s*" file-name)))
+    (start-process "pandoc"
+                   buffer-name
+                   "pandoc" "-o" output-file-name file-name)
+    (display-buffer buffer-name)))
 
 (defun typst-ts-mc-search-typst-symbol ()
   (interactive)
