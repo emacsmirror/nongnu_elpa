@@ -36,11 +36,12 @@
       (typst-ts-watch-start)
     (typst-ts-watch-stop)))
 
-(defcustom typst-ts-watch-options ""
+(defcustom typst-ts-watch-options '()
   "User defined compile options for `typst-ts-watch'.
 The compile options will be passed to the
 `<typst-executable> watch <current-file>' sub-command."
-  :type 'string)
+  :type '(choice (repeat string)
+                 (const :tag "Empty list" nil)))
 
 (defcustom typst-ts-watch-process-name "*Typst-Watch*"
   "Process name for `typst watch' sub-command."
@@ -122,16 +123,14 @@ PROC: process; OUTPUT: new output from PROC."
       (typst-ts-compilation-mode)
       (read-only-mode -1)))
   (set-process-filter
-   ;; FIXME: Do we really need a shell, with the associated need to
-   ;; `shell-quote-argument'?
-   (start-process-shell-command
+   (apply
+    start-process
     typst-ts-watch-process-name typst-ts-watch-process-buffer-name
-    (format "%s watch %s %s"
-            (shell-quote-argument typst-ts-compile-executable-location)
-            (shell-quote-argument (file-name-nondirectory buffer-file-name))
-            typst-ts-watch-options))
+    typst-ts-compile-executable-location "watch"
+    (file-name-nondirectory buffer-file-name)
+    typst-ts-watch-options)
    #'typst-ts--watch-process-filter)
-  (message "Start Watch")) ;; FIXME: ":3"?
+  (message "Start Watch"))
 
 ;;;###autoload
 (defun typst-ts-watch-stop ()
