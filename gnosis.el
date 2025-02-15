@@ -218,11 +218,6 @@ When nil, review new notes last."
   "Face for extra-notes."
   :group 'gnosis-faces)
 
-(defface gnosis-face-keimenon
-  '((t :inherit default))
-  "Face for the main section from note."
-  :group 'gnosis-face-faces)
-
 (defface gnosis-face-separator
   '((default :inherit org-hide)
     (((background light)) :strike-through "gray70")
@@ -493,9 +488,8 @@ This will not be applied to sentences that start with double space."
 If FILL-PARAGRAPH-P, insert question using `fill-paragraph'."
   (let ((fill-paragraph-p (or fill-paragraph-p t)))
     (erase-buffer)
-    (if fill-paragraph-p
-	(fill-paragraph (insert "\n"  (propertize str 'face 'gnosis-face-keimenon)))
-      (insert "\n"  (propertize str 'face 'gnosis-face-keimenon)))
+    (if fill-paragraph-p (fill-paragraph (insert "\n" str))
+      (insert "\n"  str))
     (gnosis-insert-separator)
     (gnosis-apply-center-buffer-overlay)
     (gnosis-apply-syntax-overlay)))
