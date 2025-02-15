@@ -26,18 +26,17 @@
   :prefix "typst-ts-faces"
   :group 'typst-ts)
 
+
 (defcustom typst-ts-markup-header-same-height t
   "Whether to make header face in markup context share the same height."
-  :type 'boolean
-  :group 'typst-ts-faces)
+  :type 'boolean)
 
 (defcustom typst-ts-markup-header-scale
   '(2.0 1.7 1.4 1.1 1.0 1.0)
   "Header Scale."
-  :type '(list number number number number number number)
-  :group 'typst-ts-faces)
+  :type '(list number number number number number number))
 
-;; Face =========================================================================
+;; Face  =========================================================================
 (defface typst-ts-watch-modeline-indicator-face
   '((t :inherit (underline bold)))
   "Face for typst watch modeline indicator.")

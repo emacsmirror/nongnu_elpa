@@ -26,29 +26,25 @@
   :group 'typst-ts)
 
 (defcustom typst-ts-compile-executable-location "typst"
-  "The location or name(if in variable `exec-path') for Typst executable."
-  :type 'string
-  :group 'typst-ts-compile)
+  "The location or name (if in variable `exec-path') for Typst executable."
+  :type 'string)
 
 (defcustom typst-ts-compile-options ""
   "User defined compile options for `typst-ts-compile'.
 The compile options will be passed to the end of
 `<typst-executable> compile <current-file>' command."
-  :type 'string
-  :group 'typst-ts)
+  :type 'string)
 
 (defcustom typst-ts-compile-before-compilation-hook nil
   "Hook runs after compile."
-  :type 'hook
-  :group 'typst-ts)
+  :type 'hook)
 
 (defcustom typst-ts-compile-after-compilation-hook nil
   "Hook runs after compile.
 Note the requirement of this hook is the same as `compilation-finish-functions'.
 Also note that this hook runs with typst buffer(the buffer you are editing) as
 the current buffer."
-  :type 'hook
-  :group 'typst-ts)
+  :type 'hook)
 
 (defun typst-ts-compile--compilation-finish-function (cur-buffer)
   "Compilation finish function.
@@ -92,7 +88,7 @@ If BUFFER is nil, it means use the current buffer.
 CHECK: non-nil mean check the file existence.
 Return nil if the BUFFER has not associated file or the there is
 no compiled pdf file when CHECK is non-nil."
-  (when-let ((typst-file (buffer-file-name buffer)))
+  (when-let* ((typst-file (buffer-file-name buffer)))
     (let ((res (concat (file-name-base typst-file) ".pdf")))
       (if check
           (when (file-exists-p res)
@@ -120,8 +116,7 @@ Assuming the compile output file name is in default style."
 
 (defcustom typst-ts-mode-preview-function 'browse-url
   "Function that opens PDF documents for preview."
-  :type 'function
-  :group 'typst-ts)
+  :type 'function)
 
 ;;;###autoload
 (defun typst-ts-preview (&optional buffer)

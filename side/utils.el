@@ -24,6 +24,8 @@
 
 ;;; Code:
 
+(require 'treesit)
+
 (defun typst-ts/util/setup-indent-debug-environment ()
   (interactive)
   (setq debug-on-error t

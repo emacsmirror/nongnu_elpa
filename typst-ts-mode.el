@@ -57,8 +57,7 @@ This is used for grammar minimum version check.  The modified time of the
 grammar file is used for comparing.
 This variable is used in `typst-ts-mode-check-grammar-version'."
   :type '(choice (string :tag "typst tree sitter grammar file location")
-                 (const :tag "Don't enable grammar version check" nil))
-  :group 'typst-ts)
+                 (const :tag "Don't enable grammar version check" nil)))
 
 ;; `git log -n1 --date=raw` or `git log -n1 --format="%at"`
 (defvar typst-ts-mode--grammar-minimum-version-timestamp 1713791627
@@ -67,10 +66,9 @@ This variable is used in `typst-ts-mode-check-grammar-version'."
 (defcustom typst-ts-mode-enable-raw-blocks-highlight nil
   "Whether to enable raw block highlighting.
 NOTE this option must be set before the first loading(opening typst file)"
-  :type 'boolean
-  :group 'typst-ts)
+  :type 'boolean)
 
-;; ==============================================================================
+;;  ==============================================================================
 ;; TODO typst has three modes (namely 'markup', 'code' and 'math')
 ;; Currently only add common settings to syntax table
 (defvar typst-ts-mode-syntax-table
@@ -534,9 +532,11 @@ typst tree sitter grammar (at least %s)!" (current-time-string min-time))
   ;; patch `electric-pair-post-self-insert-function' function
   (when electric-pair-mode
     ;; add-function :override buffer-locally doesn't work, so we do this...
-    (remove-hook 'post-self-insert-hook 'electric-pair-post-self-insert-function t)
+    ;; FIXME: Try and find a better way (maybe by changing electric-pair).
+    (remove-hook 'post-self-insert-hook
+                 'electric-pair-post-self-insert-function t)
     (add-hook 'post-self-insert-hook
-              'typst-ts-mode-electric-pair-open-newline-between-pairs-psif
+              #'typst-ts-mode-electric-pair-open-newline-between-pairs-psif
               t))
 
   ;; Set Compile Command

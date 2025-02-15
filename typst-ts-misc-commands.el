@@ -50,8 +50,10 @@
          (file-name (file-relative-name buffer-file-name base-path))
          (output-file-name
           (file-name-with-extension file-name "md")))
+    ;; FIXME: Use `start-process' so we don't need to `shell-quote-argument'?
     (async-shell-command
-     (concat "pandoc -o " output-file-name " " file-name))))
+     (concat "pandoc -o " (shell-quote-argument output-file-name)
+             " " (shell-quote-argument file-name)))))
 
 (defun typst-ts-mc-search-typst-symbol ()
   (interactive)

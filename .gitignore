@@ -8,3 +8,7 @@ makem.sh
 # Added by cargo
 
 /target
+
+# ELPA-generated files.
+/typst-ts-mode-autoloads.el
+/typst-ts-mode-pkg.el

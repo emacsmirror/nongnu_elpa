@@ -40,39 +40,33 @@
   "User defined compile options for `typst-ts-watch'.
 The compile options will be passed to the
 `<typst-executable> watch <current-file>' sub-command."
-  :type 'string
-  :group 'typst-ts-watch)
+  :type 'string)
 
 (defcustom typst-ts-watch-process-name "*Typst-Watch*"
   "Process name for `typst watch' sub-command."
-  :type 'string
-  :group 'typst-ts-watch)
+  :type 'string)
 
 (defcustom typst-ts-watch-process-buffer-name "*Typst-Watch*"
   "Process buffer name for `typst watch' sub-command."
-  :type 'string
-  :group 'typst-ts-watch)
+  :type 'string)
 
 (defcustom typst-ts-watch-auto-display-compilation-error t
   "Whether the typst watch process buffer should be displayed automatically.
 This means the buffer will be displayed when error occurs, hide when error
 is eliminated."
-  :type 'boolean
-  :group 'typst-ts-watch)
+  :type 'boolean)
 
 (defcustom typst-ts-watch-display-buffer-parameters
   '(display-buffer-at-bottom
     (window-height . fit-window-to-buffer))
   "Display buffer parameters.
-Note that since the major mode of typst watch buffer is derived from compilation
+Note that since the major mode of typst watch buffer is derived from  compilation
  mode. If you have a rule like `((derived-mode . compilation-mode) ...)' in
 your `display-buffer-alist', then this option will be covered by that rule."
-  :type 'symbol
-  :group 'typst-ts-watch)
+  :type 'symbol)
 
 (defvar typst-ts-before-watch-hook nil
   "Hook runs before compile.")
-
 (defvar typst-ts-after-watch-hook nil
   "Hook runs after compile.")
 
@@ -124,18 +118,20 @@ PROC: process; OUTPUT: new output from PROC."
   (run-hooks typst-ts-before-watch-hook)
   (with-current-buffer (get-buffer-create typst-ts-watch-process-buffer-name)
     (erase-buffer)
-    (unless (eq major-mode 'typst-ts-compilation-mode)
+    (unless (derived-mode-p 'typst-ts-compilation-mode)
       (typst-ts-compilation-mode)
       (read-only-mode -1)))
   (set-process-filter
+   ;; FIXME: Do we really need a shell, with the associated need to
+   ;; `shell-quote-argument'?
    (start-process-shell-command
     typst-ts-watch-process-name typst-ts-watch-process-buffer-name
     (format "%s watch %s %s"
-            typst-ts-compile-executable-location
-            (file-name-nondirectory buffer-file-name)
+            (shell-quote-argument typst-ts-compile-executable-location)
+            (shell-quote-argument (file-name-nondirectory buffer-file-name))
             typst-ts-watch-options))
-   'typst-ts--watch-process-filter)
-  (message "Start Watch :3"))
+   #'typst-ts--watch-process-filter)
+  (message "Start Watch")) ;; FIXME: ":3"?
 
 ;;;###autoload
 (defun typst-ts-watch-stop ()
@@ -148,7 +144,7 @@ PROC: process; OUTPUT: new output from PROC."
     (when window
       (delete-window window)))
   (run-hooks typst-ts-after-watch-hook)
-  (message "Stop Watch :‑."))
+  (message "Stop Watch"))
 
 (provide 'typst-ts-watch-mode)
 ;;; typst-ts-watch-mode.el ends here

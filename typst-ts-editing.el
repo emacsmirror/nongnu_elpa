@@ -268,72 +268,49 @@ Using ARG argument will ignore the context and it will insert a heading instead.
   "Handle RET depends on condition.
 When prefix ARG is non-nil, call global return function."
   (interactive "P")
-  (let (execute-result)
-    (unless current-prefix-arg
-      (setq
-       execute-result
-       (catch 'execute-result
-         (let* ((cur-pos (point))
-                (cur-node (treesit-node-at cur-pos))
-                (cur-node-type (treesit-node-type cur-node))
-                (parent-node (treesit-node-parent cur-node))  ; could be nil
-                (parent-node-type (treesit-node-type parent-node))
-                node)
-           ;; (message "%s %s" cur-node parent-node)
-           (cond
-            ;; on item node end
-            ((and (eolp)
-                  (setq node (typst-ts-core-parent-util-type
-                              (typst-ts-core-get-parent-of-node-at-bol-nonwhite)
-                              "item" t t)))
-             (let* ((item-node node)
-                    (has-children (treesit-node-child item-node 1))
-                    (next-line-pos
-                     (save-excursion
-                       (forward-line 1)
-                       (point)))
-                    (next-line-node
-                     (typst-ts-core-get-parent-of-node-at-bol-nonwhite
-                      next-line-pos))
-                    (next-line-top-node  ; get container type or `item' type node
+  (or
+   ;; FIXME: This kind of magic/electric behavior should probably be
+   ;; controllable via a custom var (and described in the docstring).
+   (when (and (null arg) (eolp))
+     (let* (;; (cur-pos (point))
+            ;; (cur-node (treesit-node-at cur-pos))
+            ;; (cur-node-type (treesit-node-type cur-node))
+            ;; (parent-node (treesit-node-parent cur-node)) ; could be nil
+            ;; (parent-node-type (treesit-node-type parent-node))
+            (node (typst-ts-core-parent-util-type
+                   (typst-ts-core-get-parent-of-node-at-bol-nonwhite)
+                   "item" t t)))
+       ;; (message "%s %s" cur-node parent-node)
+       (cond
+        ;; on item node end
+        (node
+         (let* ((has-children (treesit-node-child node 1))
+                (next-line-pos (line-beginning-position 2))
+                (next-line-node
+                 (typst-ts-core-get-parent-of-node-at-bol-nonwhite
+                  next-line-pos))
+                (next-line-top-node    ; get container type or `item' type node
+                 (typst-ts-core-parent-util-type
+                  next-line-node
+                  (regexp-opt '("code" "item"))
+                  t)))
+           (if has-children
+               ;; example:
+               ;; - #[| <- return
+               ;; ]
+               (if (and next-line-top-node
+                        ;; end of buffer situation (or next line is the end
+                        ;; line (and no newline character))
+                        (not (equal
+                              (line-number-at-pos next-line-pos)
+                              (line-number-at-pos (point-max)))))
+                   (call-interactively #'newline)
+                 (typst-ts-mode-insert--item node))
+             ;; no text means delete the item on current line: (item -)
+             (delete-region (line-beginning-position) (line-end-position))
+             ;; whether the previous line is in an item
+             (let* ((prev-line-item-node
                      (typst-ts-core-parent-util-type
-                      next-line-node
-                      (regexp-opt '("code" "item"))
-                      t)))
-               (if has-children
-                   ;; example:
-                   ;; - #[| <- return
-                   ;; ]
-                   (if (and next-line-top-node
-                            ;; end of buffer situation (or next line is the end
-                            ;; line (and no newline character))
-                            (not (equal
-                                  (line-number-at-pos next-line-pos)
-                                  (line-number-at-pos (point-max)))))
-                       (call-interactively #'newline)
-                     (typst-ts-mode-insert--item item-node))
-                 ;; no text means delete the item on current line: (item -)
-                 (delete-region (line-beginning-position) (line-end-position))
-                 ;; whether the previous line is in an item
-                 (let* ((prev-line-item-node
-                         (typst-ts-core-parent-util-type
-                          (typst-ts-core-get-parent-of-node-at-bol-nonwhite
-                           (save-excursion
-                             (forward-line -1)
-                             (point)))
-                          "item" t t)))
-                   (if prev-line-item-node
-                       (progn
-                         (delete-line)
-                         (forward-line -1)
-                         (end-of-line)
-                         (call-interactively #'newline))
-                     (indent-according-to-mode)))))
-             (throw 'execute-result 'success))
-            )))))
-    ;; execute default action if not successful
-    (unless (eq execute-result 'success)
-      ;; we only need to look for global keybinding, see `(elisp) Active Keymaps'
       (let ((global-ret-function (global-key-binding (kbd "RET"))))
         (if (not current-prefix-arg)
             (call-interactively global-ret-function)
@@ -407,52 +384,46 @@ When there is no section it will insert a heading below point."
 (defun typst-ts-mode-cycle (&optional _arg)
   "Cycle."
   (interactive "P")
-  (let (execute-result node)
-    (setq
-     execute-result
-     ;; plz manually throw `\'success' to `execute-result'
-     (catch 'execute-result
-       (when-let* ((cur-pos (point))
-                   (cur-node (treesit-node-at cur-pos))
-                   (cur-node-type (treesit-node-type cur-node))
-                   (cur-line-nonwhite-bol-node
-                    (typst-ts-core-get-node-at-bol-nonwhite))
-                   (cur-line-nonwhite-bol-node-type
-                    (treesit-node-type cur-line-nonwhite-bol-node))
-                   (parent-node (treesit-node-parent cur-node))  ; could be nil
-                   (parent-node-type (treesit-node-type parent-node)))
-         (cond
-          ((equal parent-node-type "raw_blck")
-           (insert-tab)
-           (throw 'execute-result 'success))
+  (let (node)
+    (or
+     (when-let* ((cur-pos (point))
+                 (cur-node (treesit-node-at cur-pos))
+                 (cur-node-type (treesit-node-type cur-node))
+                 (cur-line-nonwhite-bol-node
+                  (typst-ts-core-get-node-at-bol-nonwhite))
+                 (_ (treesit-node-type cur-line-nonwhite-bol-node))
+                 (parent-node (treesit-node-parent cur-node)) ; could be nil
+                 (parent-node-type (treesit-node-type parent-node)))
+       (cond
+        ((equal parent-node-type "raw_blck")
+         (insert-tab)
+         'success)
 
 
-          ((setq node
-                 (typst-ts-core-parent-util-type
-                  cur-line-nonwhite-bol-node "item" t t))
-           (let* ((cur-item-node node)
-                  (prev-significant-node
-                   (typst-ts-core-prev-sibling-ignore-types
-                    cur-item-node
-                    "parbreak"))
-                  (prev-significant-node-type
-                   (treesit-node-type prev-significant-node))
-                  prev-item-node)
+        ((setq node
+               (typst-ts-core-parent-util-type
+                cur-line-nonwhite-bol-node "item" t t))
+         (let* ((cur-item-node node)
+                (prev-significant-node
+                 (typst-ts-core-prev-sibling-ignore-types
+                  cur-item-node
+                  "parbreak"))
+                (prev-significant-node-type
+                 (treesit-node-type prev-significant-node))
+                prev-item-node)
 
-             (if (equal prev-significant-node-type "item")
-                 (setq prev-item-node prev-significant-node)
-               (if (equal
-                    "item"
-                    (treesit-node-type
-                     (treesit-node-parent prev-significant-node)))
-                   (setq prev-item-node (treesit-node-parent
-                                         prev-significant-node))))
+           (if (equal prev-significant-node-type "item")
+               (setq prev-item-node prev-significant-node)
+             (if (equal
+                  "item"
+                  (treesit-node-type
+                   (treesit-node-parent prev-significant-node)))
+                 (setq prev-item-node (treesit-node-parent
+                                       prev-significant-node))))
 
-             ;; (message "%s, %s" cur-item-node prev-item-node)
+           ;; (message "%s, %s" cur-item-node prev-item-node)
 
-             (unless prev-item-node
-               (throw 'execute-result 'default))
-
+           (when prev-item-node
              (let* ((cur-item-node-start-column
                      (typst-ts-core-column-at-pos
                       (treesit-node-start cur-item-node)))
@@ -470,20 +441,17 @@ When there is no section it will insert a heading below point."
                   cur-item-node
                   (- typst-ts-mode-indent-offset (abs offset)))))
 
-             (throw 'execute-result 'success)))
+             'success)))))
+     ;; execute default action if not successful
+     (call-interactively (global-key-binding (kbd "TAB"))))))
 
-          (t nil)))))
-    ;; execute default action if not successful
-    (unless (eq execute-result 'success)
-      (call-interactively (global-key-binding (kbd "TAB"))))))
-
-(defun typst-ts-mode-auto-fill-function ()
+(defun typst-ts-mode-auto-fill-function () ;FIXME: Unused?
   "Function for `auto-fill-mode'.
 
 Inserts newline and indents according to context."
   (when (>= (current-column) (current-fill-column))
     (insert "\n")
-    (typst-ts-mode-indent-line-function)))
+    (indent-according-to-mode)))
 
 (provide 'typst-ts-editing)
 
