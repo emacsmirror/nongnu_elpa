@@ -45,12 +45,14 @@ the radio station and URL is the URL of the radio station."
   :risky t
   :type '(alist :key-type string :value-type string))
 
-(defcustom radio-command '("mpv" "--terminal=no" "--video=no" ":url")
+(defcustom radio-command '("mpv" "--terminal=no" "--video=no" :url)
   "Command used to play a radio station.
 
-The string :url is replaced with the URL of the radio station."
+The `:url' keyword is replaced with the URL of the radio station."
   :risky t
-  :type '(repeat string))
+  :type '(repeat
+	  (choice (const :tag "URL placeholder" :url)
+		  string)))
 
 (defvar radio--current-proc nil
   "Current media player process.")
@@ -64,7 +66,7 @@ The string :url is replaced with the URL of the radio station."
   "Replace the station URL in `radio-command'."
   (mapcar
    (lambda (arg)
-     (if (equal arg ":url") url arg))
+     (if (eq arg :url) url arg))
    radio-command))
 
 (defun radio--play (station)
