@@ -51,6 +51,11 @@
 
 (defvar fj-host "https://codeberg.org")
 
+(defvar fj-extra-repos nil
+  ;; list of "owner/repo"
+  ;; TODO: (owner . repo)
+  )
+
 (defvar-local fj-current-repo nil)
 
 (defvar-local fj-buffer-spec nil
@@ -617,6 +622,24 @@ X and Y are sorting args."
   (if (not fj-user)
       (user-error "Set `fj-user' to run this command")
     (fj-user-repos-tl fj-user)))
+
+(defun fj-list-repos ()
+  "List repos for `fj-user' extended by `fj-extra-repos'."
+  (interactive)
+  (let* ((buf (format "*fj-repos-%s*" fj-user))
+         (own-repos (and fj-user
+                         (fj-get-user-repos fj-user)))
+         (extra-repos (mapcar (lambda (repo)
+                                (fj-get (format "repos/%s/" repo)))
+                              fj-extra-repos))
+         (repos (append own-repos extra-repos))
+         (entries (fj-repo-tl-entries repos)))
+    (if (not repos)
+        (user-error "Set `fj-user' or `fj-extra-repos'")
+        (fj-repos-tl-render buf entries #'fj-repo-tl-mode)
+        (with-current-buffer (get-buffer-create buf)
+          (setq fj-buffer-spec
+                `(:owner ,fj-user :url ,(concat fj-host "/" fj-user)))))))
 
 (defun fj-star-repo (repo owner &optional unstar)
   "Star or UNSTAR REPO owned by OWNER."
