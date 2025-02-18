@@ -632,6 +632,13 @@ UPDATE means we are updating, so skip some things."
            (mastodon-notifications--get-type value)))
        :newline)
       (insert "\n"))
+    ;; filtered/requests message:
+    (when (mastodon-notifications--notif-requests)
+      (insert
+       (substitute-command-keys
+        "You have filtered notifications. \
+\\[mastodon-notifications--requests] to view requests.\n\n")))
+    ;; render:
     (mastodon-notifications--render json
                                     (not mastodon-group-notifications))
     (goto-char (point-min))
@@ -821,9 +828,16 @@ Status notifications are created when you call
 
 (defun mastodon-notifications--get-policy ()
   "Return the notification filtering policy."
-  (interactive)
   (let ((url (mastodon-notifications--api "notifications/policy")))
     (mastodon-http--get-json url)))
+
+(defun mastodon-notifications--notif-requests ()
+  "Non-nil if the user currently has pending/filtered notifications.
+Returns"
+  (let* ((policy (mastodon-notifications--get-policy))
+         (count (map-nested-elt policy '(summary pending_notifications_count))))
+    (if (and count (> count 0))
+        count)))
 
 (defun mastodon-notifications--pending-p ()
   "Non-nil if there are any pending requests or notifications."
