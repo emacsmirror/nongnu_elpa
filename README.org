@@ -20,8 +20,8 @@ user.
 
 The package is available as ~radio~ in NonGNU ELPA.  Since the NonGNU
 package archive is enabled by default, you can easily install it by
-executing ~M-x package-install RET radio~.  Alternatively, you can use
-~M-x list-packages~.
+executing =M-x package-install RET radio=.  Alternatively, you can use
+=M-x list-packages=.
 
 * Configuration
 
