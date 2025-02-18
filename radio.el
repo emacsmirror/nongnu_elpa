@@ -43,7 +43,7 @@
 Elements are of the form (NAME . URL), where NAME is the name of
 the radio station and URL is the URL of the radio station."
   :risky t
-  :type '(alist :key-type string :value-type string))
+  :type '(alist :key-type (string :tag "Name") :value-type (string :tag "URL")))
 
 (defcustom radio-command '("mpv" "--terminal=no" "--video=no" :url)
   "Command used to play a radio station.
