@@ -1644,28 +1644,26 @@ be called with new SUCCESS value plus NOTE & NOTE-COUNT."
 ;; 	 ())
 ;;     )
 
-(defun gnosis-review-actions (success note note-count)
+(defun gnosis-review-actions (success id note-count)
   "Specify action during review of note.
 
 SUCCESS: Review result
-NOTE: Note ID
+ID: Note ID
 NOTE-COUNT: Total notes reviewed
 
 To customize the keybindings, adjust `gnosis-review-keybindings'."
-  (let* ((choice
-	  (read-char-choice
-	   (format "Action: %sext gnosis, %sverride result, %suspend note, %sdit note, %suit"
-		   (propertize "n" 'face 'gnosis-face-review-action-next)
-		   (propertize "o" 'face 'gnosis-face-review-action-override)
-		   (propertize "s" 'face 'gnosis-face-review-action-suspend)
-		   (propertize "e" 'face 'gnosis-face-review-action-edit)
-		   (propertize "q" 'face 'gnosis-face-review-action-quit))
-	   '(?n ?o ?s ?e ?q))))
+  (let* ((prompt
+	  "Action: %sext gnosis, %sverride result, %suspend note, %sdit note, %suit: ")
+	 (choice (read-char-choice
+		  (apply #'format prompt
+			 (mapcar
+			  (lambda (str) (propertize str 'face 'match)) '("n" "o" "s" "e" "q")))
+		  '(?n ?o ?s ?e ?q))))
     (pcase choice
-      (?n (gnosis-review-result note success))
-      (?o (gnosis-review-action--override success note note-count))
-      (?s (gnosis-review-action--suspend success note note-count))
-      (?e (gnosis-review-action--edit success note note-count))
+      (?n (gnosis-review-result id success))
+      (?o (gnosis-review-action--override success id note-count))
+      (?s (gnosis-review-action--suspend success id note-count))
+      (?e (gnosis-review-action--edit success id note-count))
       (?q (gnosis-review-action--quit success note)))))
 
 (defun gnosis-review-session (notes &optional due note-count)
