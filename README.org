@@ -16,6 +16,13 @@ user.
 -  Source code repository: <https://github.com/jroimartin/radio>
 -  Bug tracker: <https://github.com/jroimartin/radio/issues>
 
+* Installation
+
+The package is available as ~radio~ in NonGNU ELPA.  Since the NonGNU
+package archive is enabled by default, you can easily install it by
+executing ~M-x package-install RET radio~.  Alternatively, you can use
+~M-x list-packages~.
+
 * Configuration
 
 The following configuration variables allow to customize the behavior
@@ -76,7 +83,7 @@ It opens Radio's tabulated view, which shows the list of configured
 radio stations as well as the play symbol next to the one being
 played.  It is controlled through the following key bindings:
 
-- =<RET>= :: Play the selected radio station.
+- =RET= :: Play the selected radio station.
 - =s= :: Stop playing the current radio station.
 
 * Mode Line
