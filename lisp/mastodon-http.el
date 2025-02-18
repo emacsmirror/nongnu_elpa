@@ -315,8 +315,9 @@ JSON means send params as JSON data."
               (encode-coding-string
                (json-encode params) 'utf-8)))
            ;; (mastodon-http--build-params-string params))))
-           (url (unless json
-                  (mastodon-http--concat-params-to-url url params)))
+           (url (if (not json)
+                    (mastodon-http--concat-params-to-url url params)
+                  url))
            (headers (when json
                       '(("Content-Type" . "application/json")
                         ("Accept" . "application/json"))))
