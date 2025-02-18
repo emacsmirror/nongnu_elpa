@@ -161,19 +161,18 @@ When nil, review new notes last."
   "Face for next review.")
 
 (defface gnosis-face-dashboard-header
-  '((t :inherit (bold diary)))
+  '((t :inherit (bold font-lock-constant-face)))
   "Face for dashboard header.
 
 Avoid using an increased height value as this messes up with
-`gnosis-center-string' implementation"
-  :group 'gnosis-face)
+`gnosis-center-string' implementation")
 
 (defconst gnosis-db
   (emacsql-sqlite-open (expand-file-name "gnosis.db" gnosis-dir))
-  "Gnosis database file.")
+  "Gnosis database.")
 
 (defvar gnosis-testing nil
-  "When t, warn user he is in a testing environment.")
+  "Change this to non-nil when running manual tests.")
 
 (defconst gnosis-db-version 3
   "Gnosis database version.")
