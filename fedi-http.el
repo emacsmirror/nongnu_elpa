@@ -311,16 +311,19 @@ Optionally specify the PARAMS to send."
     (fedi-http--process-json)))
 
 (defun fedi-http--patch (url &optional params json)
-  "Make synchronous PATCH request to BASE-URL.
-Optionally specify the PARAMS to send."
+  "Make synchronous PATCH request to URL.
+Optionally specify the PARAMS to send.
+If JSON, encode request data as JSON."
+  ;; NB: unless JSON arg, we use query params and do not set
+  ;; `url-request-data'.
   (let* ((url-request-method "PATCH")
          (url-request-data
-          (when params
-            (if json
-                (encode-coding-string
-                 (json-encode params) 'utf-8)
-              (fedi-http--build-params-string params))))
-         ;; (url (fedi-http--concat-params-to-url base-url params)))))
+          (when (and params json)
+            (encode-coding-string
+             (json-encode params) 'utf-8)))
+         (url (if (not json)
+                  (fedi-http--concat-params-to-url url params)
+                url))
          (headers (when json
                     '(("Content-Type" . "application/json")
                       ("Accept" . "application/json"))))
