@@ -41,10 +41,7 @@
 
 ;;; Code:
 
-
-
 (require 'cl-lib)
-(require 'calendar)
 (require 'subr-x)
 
 (require 'vc-git)
@@ -62,29 +59,25 @@
 
 (defcustom gnosis-dir (locate-user-emacs-file "gnosis")
   "Gnosis directory."
-  :type 'directory
-  :group 'gnosis)
+  :type 'directory)
 
 (unless (file-directory-p gnosis-dir)
   (make-directory gnosis-dir))
 
 (defcustom gnosis-cloze-string "[...]"
   "Gnosis string to represent a cloze."
-  :type 'string
-  :group 'gnosis)
+  :type 'string)
 
 (defcustom gnosis-string-difference 1
   "Threshold value for string comparison in Gnosis.
 
 This variable determines the maximum acceptable Levenshtein distance
 between two strings to consider them as similar."
-  :type 'integer
-  :group 'gnosis)
+  :type 'integer)
 
 (defcustom gnosis-vc-auto-push nil
   "Run `vc-push' at the end of every review session."
-  :type 'boolean
-  :group 'gnosis)
+  :type 'boolean)
 
 (defcustom gnosis-mcq-display-choices nil
   "When t, display choices for mcq notes during review.
@@ -92,8 +85,7 @@ between two strings to consider them as similar."
 Users that use a completion framework like ivy/helm/vertico may want
 to set this to nil, as the choices will be displayed in the completion
 framework's minibuffer."
-  :type 'boolean
-  :group 'gnosis)
+  :type 'boolean)
 
 (defcustom gnosis-completing-read-function
   (cond ((or (bound-and-true-p ivy-mode)
@@ -103,10 +95,80 @@ framework's minibuffer."
 	 #'completing-read)
 	(t #'ido-completing-read))
   "Function to use for `completing-read'."
-  :type 'function
-  :group 'gnosis)
+  :type 'function)
 
-(defvar gnosis-db
+(defcustom gnosis-center-content-p t
+  "Non-nil means center content."
+  :type 'boolean)
+
+(defcustom gnosis-apply-highlighting-p t
+  "Non-nil means apply syntax highlighting."
+  :type 'boolean)
+
+(defcustom gnosis-new-notes-limit nil
+  "Total new notes limit."
+  :type '(choice (const :tag "None" nil)
+		 (integer :tag "Number")))
+
+(defcustom gnosis-review-new-first t
+  "Review new notes first.
+
+When nil, review new notes last."
+  :type 'bolean)
+
+;;; Faces
+
+(defface gnosis-face-parathema
+  '((t :inherit font-lock-doc-face))
+  "Face for extra-notes.")
+
+(defface gnosis-face-separator
+  '((default :inherit org-hide)
+    (((background light)) :strike-through "gray70")
+    (t :strike-through "gray30"))
+  "Face for section separator.")
+
+(defface gnosis-face-directions
+  '((t :inherit underline))
+  "Face for gnosis directions.")
+
+(defface gnosis-face-correct
+  '((t :inherit match))
+  "Face for user choice.")
+
+(defface gnosis-face-cloze
+  '((t :inherit (highlight italic)))
+  "Face for clozes.")
+
+(defface gnosis-face-false
+  '((t :inherit error))
+  "Face for user choice.")
+
+(defface gnosis-face-unanswered
+  '((t :inherit (italic underline)))
+  "Face for unanswered clozes.")
+
+(defface gnosis-face-hint
+  '((t :inherit warning))
+  "Face for user choice.")
+
+(defface gnosis-face-cloze-unanswered
+  '((t :inherit underline))
+  "Face for user choice.")
+
+(defface gnosis-face-next-review
+  '((t :inherit bold))
+  "Face for next review.")
+
+(defface gnosis-face-dashboard-header
+  '((t :inherit (bold diary)))
+  "Face for dashboard header.
+
+Avoid using an increased height value as this messes up with
+`gnosis-center-string' implementation"
+  :group 'gnosis-face)
+
+(defconst gnosis-db
   (emacsql-sqlite-open (expand-file-name "gnosis.db" gnosis-dir))
   "Gnosis database file.")
 
@@ -124,65 +186,12 @@ framework's minibuffer."
     ("MC-cloze" . gnosis-add-note--mc-cloze))
   "Mapping of Notes & their respective functions.")
 
+
 (defvar gnosis-previous-note-tags '()
   "Tags input from previously added note.")
 
 (defvar gnosis-previous-note-hint nil
   "Hint input from previously added note.")
-
-(defvar gnosis-cloze-guidance
-  '("Cloze questions are formatted like this:\n
-{c1:Cyproheptadine} is a(n) {c2:5-HT2} receptor antagonist used to treat {c2:serotonin syndrome}
-
-- For each `cX`-tag there will be created a cloze type note, the above
-  example creates 2 cloze type notes.)" . "")
-  "Guidance for cloze note type.
-
-car value is the prompt, cdr is the prewritten string.")
-
-(defvar gnosis-mcq-guidance
-  '("Write question options after the `--'.  Each `-' corresponds to an option\n-Example Option 1\n-{Correct Option}\nCorrect Option must be inside {}" . "Question\n--\n- Option\n- {Correct Option}")
-  "Guidance for MCQ note type.
-
-car value is the prompt, cdr is the prewritten string.")
-
-(defvar gnosis-mc-cloze-guidance
-  '("MC-Cloze Example: This is an example answer&&option2&&option3" . ""))
-
-(defcustom gnosis-mcq-separator "\n--\n"
-  "Separator for stem field and options in mcq note type.
-
-Seperate the question/stem from options."
-  :type 'string
-  :group 'gnosis)
-
-(defcustom gnosis-mcq-option-separator "-"
-  "Separator for options in mcq note type."
-  :type 'string
-  :group 'gnosis)
-
-(defcustom gnosis-center-content-p t
-  "Non-nil means center content."
-  :type 'boolean
-  :group 'gnosis)
-
-(defcustom gnosis-apply-highlighting-p t
-  "Non-nil means apply syntax highlighting."
-  :type 'boolean
-  :group 'gnosis)
-
-(defcustom gnosis-new-notes-limit nil
-  "Total new notes limit."
-  :type '(choice (const :tag "None" nil)
-		 (integer :tag "Number"))
-  :group 'gnosis)
-
-(defcustom gnosis-review-new-first t
-  "Review new notes first.
-
-When nil, review new notes last."
-  :type 'bolean
-  :group 'gnosis)
 
 (defvar gnosis-due-notes-total nil
   "Total due notes.")
@@ -190,13 +199,12 @@ When nil, review new notes last."
 (defvar gnosis-review-notes nil
   "Review notes.")
 
-(defvar gnosis-org-separator "\n- "
-  "Separator for values in `org-mode'.")
-
 ;; TODO: Make this as a defcustom.
 (defvar gnosis-custom-values
-  '((:deck "demo" (:proto (0 1 3) :anagnosis 3 :epignosis 0.5 :agnoia 0.3 :amnesia 0.5 :lethe 3))
-    (:tag "demo" (:proto (1 2) :anagnosis 3 :epignosis 0.5 :agnoia 0.3 :amnesia 0.45 :lethe 3)))
+  '((:deck "demo" (:proto (0 1 3) :anagnosis 3 :epignosis 0.5 :agnoia 0.3
+			  :amnesia 0.5 :lethe 3))
+    (:tag "demo" (:proto (1 2) :anagnosis 3 :epignosis 0.5 :agnoia 0.3
+			 :amnesia 0.45 :lethe 3)))
   "Custom review values for adjusting gnosis algorithm.")
 
 (defvar gnosis-custom--valid-values
@@ -205,98 +213,6 @@ When nil, review new notes last."
 (defvar gnosis-review-editing-p nil
   "Boolean value to check if user is currently in a review edit.")
 
-;;; Faces
-
-(defgroup gnosis-faces nil
-  "Faces used by gnosis."
-  :group 'gnosis
-  :tag "Gnosis Faces"
-  :prefix 'gnosis-face)
-
-(defface gnosis-face-parathema
-  '((t :inherit font-lock-doc-face))
-  "Face for extra-notes."
-  :group 'gnosis-faces)
-
-(defface gnosis-face-separator
-  '((default :inherit org-hide)
-    (((background light)) :strike-through "gray70")
-    (t :strike-through "gray30"))
-  "Face for section separator."
-  :group 'gnosis-face)
-
-(defface gnosis-face-directions
-  '((t :inherit underline))
-  "Face for gnosis directions."
-  :group 'gnosis-face)
-
-(defface gnosis-face-correct
-  '((t :inherit match))
-  "Face for user choice."
-  :group 'gnosis-face)
-
-(defface gnosis-face-cloze
-  '((t :inherit (highlight italic)))
-  "Face for clozes."
-  :group 'gnosis-face)
-
-(defface gnosis-face-false
-  '((t :inherit error))
-  "Face for user choice."
-  :group 'gnosis-face)
-
-(defface gnosis-face-unanswered
-  '((t :inherit (italic underline)))
-  "Face for unanswered clozes."
-  :group 'gnosis-face)
-
-(defface gnosis-face-hint
-  '((t :inherit warning))
-  "Face for user choice."
-  :group 'gnosis-face)
-
-(defface gnosis-face-cloze-unanswered
-  '((t :inherit underline))
-  "Face for user choice."
-  :group 'gnosis-face)
-
-(defface gnosis-face-next-review
-  '((t :inherit bold))
-  "Face for next review."
-  :group 'gnosis-face)
-
-(defface gnosis-face-review-action-next
-  '((t :inherit match))
-  "Face for review action *next*."
-  :group 'gnosis-face)
-
-(defface gnosis-face-review-action-override
-  '((t :inherit match))
-  "Face for review action *override*."
-  :group 'gnosis-face)
-
-(defface gnosis-face-review-action-suspend
-  '((t :inherit match))
-  "Face for review action *suspend*."
-  :group 'gnosis-face)
-
-(defface gnosis-face-review-action-edit
-  '((t :inherit match))
-  "Face for review action *edit*."
-  :group 'gnosis-face)
-
-(defface gnosis-face-review-action-quit
-  '((t :inherit match))
-  "Face for review action *quit*."
-  :group 'gnosis-face)
-
-(defface gnosis-face-dashboard-header
-  '((t :foreground "#ff0a6a" :weight bold))
-  "Face for dashboard header.
-
-Avoid using an increased height value as this messes up with
-`gnosis-center-string' implementation"
-  :group 'gnosis-face)
 
 (cl-defun gnosis-select (value table &optional (restrictions '1=1) (flatten nil))
   "Select VALUE from TABLE, optionally with RESTRICTIONS.
