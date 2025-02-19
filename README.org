@@ -2,7 +2,7 @@
 #+author: Roi Martin
 #+email: jroi.martin@gmail.com
 #+language: en
-#+options: ':t toc:nil num:t author:t email:t
+#+options: ':t toc:t num:t author:t email:t
 
 * Overview
 
