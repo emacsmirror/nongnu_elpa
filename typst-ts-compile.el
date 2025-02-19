@@ -37,6 +37,11 @@ The compile options will be passed to the end of
   :type 'string
   :group 'typst-ts)
 
+(defcustom typst-ts-output-directory ""
+  "User defined output directory for `typst-ts-compile` and `typst-ts-watch`."
+  :type 'string
+  :group 'typst-ts)
+
 (defcustom typst-ts-compile-before-compilation-hook nil
   "Hook runs after compile."
   :type 'hook
@@ -80,9 +85,10 @@ When using a prefix argument or the optional argument PREVIEW,
   (add-hook 'compilation-finish-functions
             (typst-ts-compile--compilation-finish-function (current-buffer)))
   (compile
-   (format "%s compile %s %s"
+   (format "%s compile %s %s %s"
            typst-ts-compile-executable-location
            (file-name-nondirectory buffer-file-name)
+           (typst-ts-compile-get-result-pdf-filename)
            typst-ts-compile-options)
    'typst-ts-compilation-mode))
 
@@ -93,7 +99,7 @@ CHECK: non-nil mean check the file existence.
 Return nil if the BUFFER has not associated file or the there is
 no compiled pdf file when CHECK is non-nil."
   (when-let ((typst-file (buffer-file-name buffer)))
-    (let ((res (concat (file-name-base typst-file) ".pdf")))
+    (let ((res (concat (file-name-as-directory typst-ts-output-directory) (file-name-base typst-file) ".pdf")))
       (if check
           (when (file-exists-p res)
             res)
