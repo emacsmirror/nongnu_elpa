@@ -130,9 +130,10 @@ PROC: process; OUTPUT: new output from PROC."
   (set-process-filter
    (start-process-shell-command
     typst-ts-watch-process-name typst-ts-watch-process-buffer-name
-    (format "%s watch %s %s"
+    (format "%s watch %s %s %s"
             typst-ts-compile-executable-location
             (file-name-nondirectory buffer-file-name)
+            (typst-ts-compile-get-result-pdf-filename)
             typst-ts-watch-options))
    'typst-ts--watch-process-filter)
   (message "Start Watch :3"))
