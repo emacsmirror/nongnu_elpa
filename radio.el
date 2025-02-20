@@ -26,7 +26,7 @@
 
 ;;; Commentary:
 
-;; radio is a GNU Emacs package that enables users to listen to
+;; Radio is a GNU Emacs package that enables users to listen to
 ;; Internet radio stations.
 
 ;;; Code:
