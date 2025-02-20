@@ -626,6 +626,10 @@ typst tree sitter grammar (at least %s)!" (current-time-string min-time))
     (setq-local outline-level #'typst-ts-mode-outline-level))
   (setq-local outline-heading-alist typst-ts-mode-outline-heading-alist)
 
+
+  ;; auto fill function
+  (setq-local normal-auto-fill-function 'typst-ts-editing-auto-fill-function)
+
   (treesit-major-mode-setup)
 
   (setq-local indent-line-function #'typst-ts-mode-indent-line-function))

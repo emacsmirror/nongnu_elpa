@@ -24,6 +24,7 @@
 
 (require 'outline)
 (require 'typst-ts-core)
+(require 'seq)
 
 (defun typst-ts-mode-heading-up ()
   "Switch the current heading with the heading above."
@@ -56,6 +57,198 @@ Return the heading node when yes otherwise nil."
     (if (string= (treesit-node-type node) "heading")
         node
       nil)))
+
+(defun typst-ts-mode-grid-cell--index (cell grid-cells amount-of-columns)
+  "Return a list in form of (row-index column-index) of CELL in GRID-CELLS.
+AMOUNT-OF-COLUMNS specifies how many columns one row has.
+Indeces are given in 0 index."
+  (let ((index (seq-position grid-cells cell #'treesit-node-eq)))
+    (list (/ index amount-of-columns)
+          (mod index amount-of-columns))))
+
+(defun typts-ts-mode-grid-row--move (direction)
+  "Move grid row at point depending on DIRECTION up/down.
+DIRECTION is one of following symbols:
+`up', `down'."
+  (let (to-switch current grid grid-cells row-index rows amount-of-columns cell)
+    (seq-setq (grid cell grid-cells) (typst-ts-mode-grid-cell--at-point-p))
+    (unless (and grid cell)
+      (user-error "Not inside a grid with rows"))
+    (setq amount-of-columns (typst-ts-mode-grid--column-number grid))
+    (setq row-index
+          (car (typst-ts-mode-grid-cell--index
+                cell grid-cells amount-of-columns)))
+    (setq rows (seq-partition grid-cells amount-of-columns))
+    (setq current (seq-elt rows row-index))
+    (setq to-switch
+          (pcase direction
+            ('up
+             (progn
+               (when (= row-index 0)
+                 (user-error "Already on first row"))
+               (seq-elt rows (1- row-index))))
+            ('down
+             (progn
+               (when (= (length rows) (1+ row-index))
+                 (user-error "Already on last row"))
+               (seq-elt rows (1+ row-index))))
+            (_
+             (error "DIRECTION: %s is not one of: `up', `down'" direction))))
+    (let ((start1 (treesit-node-start (car current)))
+          (end1 (treesit-node-end (car (last current))))
+          (start2 (treesit-node-start (car to-switch)))
+          (end2 (treesit-node-end (car (last to-switch)))))
+      (typst-ts-mode--swap-regions start1 end1 start2 end2))))
+
+(defun typst-ts-mode-grid-cell--move (direction)
+  "Move grid cell at point depending on DIRECTION up/down, left/right.
+DIRECTION is one of following symbols:
+`left', `right', `up', `down'.
+
+Up/down means moving the cell to another row while keeping the column index."
+  ;; inside table.header is different from the rest
+  (let (grid grid-cells cell to-switch)
+    (seq-setq (grid cell grid-cells) (typst-ts-mode-grid-cell--at-point-p))
+    (unless (and grid cell)
+      (user-error "Not inside a grid cell"))
+    (setq to-switch
+          (pcase direction
+            ((guard (and (memq direction '(down up))
+                         (string= "table.header"
+                                  (treesit-node-text
+                                   (treesit-node-child-by-field-name grid "item")))))
+             (user-error "A table.header only has one row"))
+            ('left
+             ;; skip the , prev twice
+             (treesit-node-prev-sibling (treesit-node-prev-sibling cell)))
+            ('right
+             ;; skip the , that's why next twice
+             (treesit-node-next-sibling (treesit-node-next-sibling cell)))
+            ((or 'up 'down)
+             (let ((amount-of-columns
+                    (typst-ts-mode-grid--column-number grid))
+                   (select-cell
+                    (lambda (row column)
+                      (seq-elt
+                       (seq-elt
+                        (seq-partition
+                         grid-cells
+                         (typst-ts-mode-grid--column-number grid))
+                        row)
+                       column)))
+                   row column)
+               (seq-setq (row column)
+                         (typst-ts-mode-grid-cell--index
+                          cell grid-cells amount-of-columns))
+               (if (eq direction 'up)
+                   (progn
+                     (when (= 0 row)
+                       (user-error "Already on first row"))
+                     (funcall select-cell (1- row) column))
+                 (when (= row amount-of-columns)
+                   (user-error "Already on last row"))
+                 (funcall select-cell (1+ row) column))))
+            (_ (error "DIRECTION: %s is not one of: `right' `left', `up', `down'"
+                      direction))))
+    (when (or (not to-switch)
+              (string= "tagged" (treesit-node-type to-switch))
+              (string= "(" (treesit-node-text to-switch))
+              (string= ")" (treesit-node-text to-switch)))
+      (user-error "There is no cell in the %s direction" direction))
+    (typst-ts-mode--swap-regions (treesit-node-start cell) (treesit-node-end cell)
+                                 (treesit-node-start to-switch) (treesit-node-end to-switch))))
+
+(defun typst-ts-mode-grid--at-point-p ()
+  "Whether the current point is on a grid/table.
+Return the call node if yes, otherwise return nil."
+  (treesit-parent-until
+   (treesit-node-at (point))
+   (lambda (n)
+     (and (string= "call" (treesit-node-type n))
+          (let ((ident (treesit-node-text
+                        (treesit-node-child-by-field-name
+                         n "item"))))
+            (or (string= "table" ident)
+                (string= "grid" ident)
+                (string= "table.header" ident)))))
+   t))
+
+(defun typst-ts-mode-grid-cell--at-point-p ()
+  "Whether the current point is on a grid cell or not.
+Return a list (grid-node cell-node grid-cells) if yes, otherwise return nil."
+  ;; A grid cell is a node inside a grid node that is not a tagged node.
+  (let* ((node (treesit-node-at (point)))
+         (node-begin (treesit-node-start node))
+         (node-end (treesit-node-end node))
+         (inside-grid-p (typst-ts-mode-grid--at-point-p))
+         (grid-cells
+          (treesit-filter-child
+           ;; the child number 1 is the argument list
+           (treesit-node-child inside-grid-p 1)
+           ;; a cell is not a tagged node, a comma or a parenthesis
+           (lambda (n)
+             (let ((type (treesit-node-type n)))
+               (and (not (string= "tagged" type))
+                    (not (string= "(" type))
+                    (not (string= ")" type))
+                    (not (string= "," type)))))))
+         ;; a list of (cell-begin cell-end)
+         (grid-cell-regions
+          (mapcar
+           (lambda (n)
+             (list (treesit-node-start n) (treesit-node-end n) n))
+           grid-cells))
+         (cell-at-point
+          ;; (begin end node)
+          (caddr (seq-find (lambda (range)
+                             (let (begin end _)
+                               (seq-setq (begin end _) range)
+                               (and (>= node-begin begin)
+                                    (<= node-end end))))
+                           grid-cell-regions))))
+    (when (and inside-grid-p cell-at-point)
+      (list inside-grid-p cell-at-point grid-cells))))
+
+(defun typst-ts-mode-grid--column-number (node)
+  "Return the number of columns the grid has.
+NODE must be a call node with ident being grid or table.
+When there is no columns field or the semantic meaning makes no sense return 1."
+  (let* (
+         ;; grammar guarantees that the child number 1 is group
+         (group (treesit-node-child node 1))
+         (columns-node (car (treesit-filter-child
+                             group
+                             (lambda (n)
+                               (string= (treesit-node-text
+                                         (treesit-node-child-by-field-name n "field"))
+                                        "columns")))))
+         ;; 0:field 1:':' 2:value from grammar
+         (columns-value (treesit-node-child columns-node 2))
+         (columns-value-type (treesit-node-type columns-value))
+         (column-number nil))
+    (cond
+     ((and (string= "number" columns-value-type)
+           (= (treesit-node-child-count columns-value) 0))
+      (progn
+        (setq column-number (string-to-number (treesit-node-text columns-value)))
+        ;; it makes no sense to have columns: 0 or columns: 23% unit whatever
+        (when (or (not (integerp column-number))
+                  (= column-number 0))
+          (setq column-number 1))))
+     ((string= "group" columns-value-type)
+      (setq column-number
+            ;; discard punctuation nodes
+            (length
+             (treesit-filter-child columns-value
+                                   (lambda (n)
+                                     (let ((text (treesit-node-text n)))
+                                       (and (not (string= "," text))
+                                            (not (string= ":" text))
+                                            (not (string= "(" text))
+                                            (not (string= ")" text)))))))))
+     ;; when there is no columns field or the column value is a number with fraction
+     (t (setq column-number 1)))
+    column-number))
 
 (defun typst-ts-mode-item--at-point-p ()
   "Return item node when point is on item.
@@ -107,18 +300,19 @@ When point is not on an item node return nil."
                  node-numbered-p)))))
 
 (defun typst-ts-mode--swap-regions (start1 end1 start2 end2)
-  "Swap region between START1 and END1 with region between START2 and END2."
+  "Swap region between START1 and END1 with region between START2 and END2.
+START1 END1 is the region where the point should be after swapping."
   (let ((text1 (buffer-substring start1 end1))
         (text2 (buffer-substring start2 end2))
         (marker1-start (make-marker))
         (marker1-end (make-marker))
         (marker2-start (make-marker))
-        (marker2-end (make-marker)))
+        (marker2-end (make-marker))
+        (point (point)))
     (set-marker marker1-start start1)
     (set-marker marker1-end end1)
     (set-marker marker2-start start2)
     (set-marker marker2-end end2)
-
     (delete-region marker1-start marker1-end)
     (delete-region marker2-start marker2-end)
 
@@ -127,7 +321,11 @@ When point is not on an item node return nil."
 
     (goto-char marker2-start)
     (insert text1)
-
+    ;; move point to original position if possible
+    (when (and (<= start1 point)
+               (>= end1 point))
+      (forward-char (- point end1)))
+    ;; clean markers
     (set-marker marker1-start nil)
     (set-marker marker1-end nil)
     (set-marker marker2-start nil)
@@ -477,13 +675,80 @@ When there is no section it will insert a heading below point."
     (unless (eq execute-result 'success)
       (call-interactively (global-key-binding (kbd "TAB"))))))
 
-(defun typst-ts-mode-auto-fill-function ()
-  "Function for `auto-fill-mode'.
+(defun typst-ts-editing-calculate-fill-prefix ()
+  "Calculate fill prefix."
+  ;; see `do-auto-fill' function and `;; Choose a fill-prefix automatically.'
+  ;; for default automatical fill-prefix finding algorithm
+  (let ((fill-prefix nil))
+    (setq
+     fill-prefix
+     (catch 'fill-prefix
+       (let* ((cur-pos (point))
+              (cur-node (treesit-node-at cur-pos))
+              (cur-node-type (treesit-node-type cur-node))
+              (parent-node (treesit-node-parent cur-node))  ; could be nil
+              (parent-node-type (treesit-node-type parent-node))
+              node)
+         (cond
+          ;; for condition that there are closely aligned line above
+          ((setq node (typst-ts-core-parent-util-type
+                       (typst-ts-core-get-parent-of-node-at-bol-nonwhite)
+                       "item" t t))
+           (throw 'fill-prefix (fill-context-prefix (line-beginning-position) (line-end-position)))))
+         )))
+    fill-prefix))
 
-Inserts newline and indents according to context."
+(defun typst-ts-editing-auto-fill-function ()
+  "Auto Fill Function for `auto-fill-mode'."
   (when (>= (current-column) (current-fill-column))
-    (insert "\n")
-    (typst-ts-mode-indent-line-function)))
+    (let* ((fill-prefix (typst-ts-editing-calculate-fill-prefix))
+           (adaptive-fill-mode (null fill-prefix)))
+      (when fill-prefix (do-auto-fill)))))
+
+(defun typst-ts-mode-symbol-picker ()
+  "Insert elements from `typst-ts-mode-symbol-alist' `typst-ts-mode-emoji-alist'.
+
+In markup mode, it will prefix the selection with \"#\"
+and its corresponding module (\"sym.\", \"emoji.\").
+In math mode, symbols do not need a \"#\" prefix and \"sym.\" prefix.
+In code mode, the selection needs to be prefixed with the module."
+  (interactive)
+  (let* ((all-symbols (append typst-ts-mode-symbol-alist typst-ts-mode-emoji-alist))
+         (completion-extra-properties
+          '(:annotation-function
+            (lambda (key)
+              (concat " " (cdr (assoc key minibuffer-completion-table))))))
+         (value (completing-read
+                 "Pick: " all-symbols
+                 nil t))
+         (node (treesit-node-at (point)))
+         (inside-math (treesit-parent-until node
+                                            (lambda (x)
+                                              (string= (treesit-node-type x)
+                                                       "math"))))
+         (inside-code (treesit-parent-until node
+                                            (lambda (x)
+                                              (or
+                                               (string= (treesit-node-type x)
+                                                        "code")
+                                               (string= (treesit-node-type x)
+                                                        "content")))))
+         (is-symbol-p (assoc value typst-ts-mode-symbol-alist))
+         (is-emoji-p (assoc value typst-ts-mode-emoji-alist))
+         (to-insert value))
+    (cond
+     ((string= (treesit-node-type inside-code) "code")
+      (setq to-insert (concat
+                       (if is-symbol-p "sym." "emoji.")
+                       to-insert)))
+     ((and is-symbol-p
+           (not inside-math)
+           (not (string= (treesit-node-type inside-code) "code")))
+      (setq to-insert (concat "#sym." to-insert)))
+     ((and is-emoji-p
+           (not (string= (treesit-node-type inside-code) "code")))
+      (setq to-insert (concat "#emoji." to-insert))))
+    (insert to-insert)))
 
 (provide 'typst-ts-editing)
 
