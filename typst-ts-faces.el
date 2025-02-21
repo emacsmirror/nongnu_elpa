@@ -46,177 +46,245 @@
 
 (defface typst-ts-shorthand-face
   '((t :inherit shadow))
-  "Face for linebreak.")
+  "Face for linebreak."
+  :group 'typst-ts-faces)
 
 (defface typst-ts-error-face
   '((t :inherit font-lock-warning-face))
-  "Face for linebreak.")
+  "Face for linebreak."
+  :group 'typst-ts-faces)
 
 ;; Markup Faces =================================================================
 
 (defface typst-ts-markup-header-indicator-face
   '((t :weight bold))
-  "Face for Typst ts markup header indicator.")
+  "Face for Typst ts markup header indicator."
+  :group 'typst-ts-faces)
 
 (defface typst-ts-markup-header-face
   '((t :weight bold))
-  "Face for Typst ts markup headers text.")
+  "Face for Typst ts markup headers text."
+  :group 'typst-ts-faces)
 
 (defface typst-ts-markup-header-indicator-face-1
   `((t :inherit typst-ts-markup-header-indicator-face
        :height ,(nth 0 typst-ts-markup-header-scale)))
-  "See `typst-ts-markup-header-indicator-face'.")
+  "See `typst-ts-markup-header-indicator-face'."
+  :group 'typst-ts-faces)
 
 (defface typst-ts-markup-header-face-1
   `((t :inherit typst-ts-markup-header-face
        :height ,(nth 0 typst-ts-markup-header-scale)))
-  "See `typst-ts-markup-header-face'.")
+  "See `typst-ts-markup-header-face'."
+  :group 'typst-ts-faces)
 
 (defface typst-ts-markup-header-indicator-face-2
   `((t :inherit typst-ts-markup-header-indicator-face
        :height ,(nth 1 typst-ts-markup-header-scale)))
-  "See `typst-ts-markup-header-indicator-face'.")
+  "See `typst-ts-markup-header-indicator-face'."
+  :group 'typst-ts-faces)
 
 (defface typst-ts-markup-header-face-2
   `((t :inherit typst-ts-markup-header-face
        :height ,(nth 1 typst-ts-markup-header-scale)))
-  "See `typst-ts-markup-header-face'.")
+  "See `typst-ts-markup-header-face'."
+  :group 'typst-ts-faces)
 
 (defface typst-ts-markup-header-indicator-face-3
   `((t :inherit typst-ts-markup-header-indicator-face
        :height ,(nth 2 typst-ts-markup-header-scale)))
-  "See `typst-ts-markup-header-indicator-face'.")
+  "See `typst-ts-markup-header-indicator-face'."
+  :group 'typst-ts-faces)
 
 (defface typst-ts-markup-header-face-3
   `((t :inherit typst-ts-markup-header-face
        :height ,(nth 2 typst-ts-markup-header-scale)))
-  "See `typst-ts-markup-header-face'.")
+  "See `typst-ts-markup-header-face'."
+  :group 'typst-ts-faces)
 
 (defface typst-ts-markup-header-indicator-face-4
   `((t :inherit typst-ts-markup-header-indicator-face
        :height ,(nth 3 typst-ts-markup-header-scale)))
-  "See `typst-ts-markup-header-indicator-face'.")
+  "See `typst-ts-markup-header-indicator-face'."
+  :group 'typst-ts-faces)
 
 (defface typst-ts-markup-header-face-4
   `((t :inherit typst-ts-markup-header-face
        :height ,(nth 3 typst-ts-markup-header-scale)))
-  "See `typst-ts-markup-header-face'.")
+  "See `typst-ts-markup-header-face'."
+  :group 'typst-ts-faces)
 
 (defface typst-ts-markup-header-indicator-face-5
   `((t :inherit typst-ts-markup-header-indicator-face
        :height ,(nth 4 typst-ts-markup-header-scale)))
-  "See `typst-ts-markup-header-indicator-face'.")
+  "See `typst-ts-markup-header-indicator-face'."
+  :group 'typst-ts-faces)
 
 (defface typst-ts-markup-header-face-5
   `((t :inherit typst-ts-markup-header-face
        :height ,(nth 4 typst-ts-markup-header-scale)))
-  "See `typst-ts-markup-header-face'.")
+  "See `typst-ts-markup-header-face'."
+  :group 'typst-ts-faces)
 
 (defface typst-ts-markup-header-indicator-face-6
   `((t :inherit typst-ts-markup-header-indicator-face
        :height ,(nth 5 typst-ts-markup-header-scale)))
-  "See `typst-ts-markup-header-indicator-face'.")
+  "See `typst-ts-markup-header-indicator-face'."
+  :group 'typst-ts-faces)
 
 (defface typst-ts-markup-header-face-6
   `((t :inherit typst-ts-markup-header-face
        :height ,(nth 5 typst-ts-markup-header-scale)))
-  "See `typst-ts-markup-header-face'.")
+  "See `typst-ts-markup-header-face'."
+  :group 'typst-ts-faces)
 
 (defface typst-ts-markup-url-face
   '((t :inherit link))
-  "Face for url.")
+  "Face for url."
+  :group 'typst-ts-faces)
 
 (defface typst-ts-markup-emphasis-indicator-face
   '((t :inherit italic))
-  "Face for emphasis.")
+  "Face for emphasis."
+  :group 'typst-ts-faces)
 
 (defface typst-ts-markup-emphasis-face
   '((t :inherit italic))
-  "Face for emphasis.")
+  "Face for emphasis."
+  :group 'typst-ts-faces)
 
 (defface typst-ts-markup-strong-indicator-face
   '((t :inherit bold))
-  "Face for strong.")
+  "Face for strong."
+  :group 'typst-ts-faces)
 
 (defface typst-ts-markup-strong-face
   '((t :inherit bold))
-  "Face for strong.")
+  "Face for strong."
+  :group 'typst-ts-faces)
 
 (defface typst-ts-markup-item-indicator-face
   '((t :inherit shadow))
-  "Face for item.")
+  "Face for item."
+  :group 'typst-ts-faces)
 
 (defface typst-ts-markup-term-indicator-face
   '((t :inherit shadow))
-  "Face for term indicator.")
+  "Face for term indicator."
+  :group 'typst-ts-faces)
 
 (defface typst-ts-markup-term-term-face
   '((t :inherit bold))
-  "Face for term text.")
+  "Face for term text."
+  :group 'typst-ts-faces)
 
 (defface typst-ts-markup-term-description-face
   '((t :inherit italic))
-  "Face for term description.")
+  "Face for term description."
+  :group 'typst-ts-faces)
 
 (defface typst-ts-markup-quote-face
   '((t :inherit shadow))
-  "Face for quote.")
+  "Face for quote."
+  :group 'typst-ts-faces)
 
 (defface typst-ts-markup-linebreak-face
   '((t :inherit escape-glyph))
-  "Face for linebreak.")
+  "Face for linebreak."
+  :group 'typst-ts-faces)
 
 (defface typst-ts-markup-escape-face
   '((t :inherit escape-glyph))
-  "Face for linebreak.")
+  "Face for linebreak."
+  :group 'typst-ts-faces)
 
 (defface typst-ts-markup-raw-indicator-face
   '((t :inherit shadow))
-  "Face for rawblock and rawspan indicator.")
+  "Face for rawblock and rawspan indicator."
+  :group 'typst-ts-faces)
 
 (defface typst-ts-markup-raw-blob-face
   '((t :inherit shadow))
-  "Face for rawblock and rawspan blob.")
+  "Face for rawblock and rawspan blob."
+  :group 'typst-ts-faces)
 
 (defface typst-ts-markup-rawblock-indicator-face
   '((t :inherit typst-ts-markup-raw-indicator-face))
-  "Face for rawblock indicator.")
+  "Face for rawblock indicator."
+  :group 'typst-ts-faces)
 
 (defface typst-ts-markup-rawblock-lang-face
   '((t :inherit font-lock-type-face))
-  "Face for rawspan ident.")
+  "Face for rawspan ident."
+  :group 'typst-ts-faces)
 
 (defface typst-ts-markup-rawblock-blob-face
   '((t :inherit typst-ts-markup-raw-blob-face))
-  "Face for rawblock blob.")
+  "Face for rawblock blob."
+  :group 'typst-ts-faces)
 
 (defface typst-ts-markup-rawspan-indicator-face
   '((t :inherit typst-ts-markup-raw-indicator-face))
-  "Face for rawspan indicator.")
+  "Face for rawspan indicator."
+  :group 'typst-ts-faces)
 
 (defface typst-ts-markup-rawspan-blob-face
   '((t :inherit typst-ts-markup-raw-blob-face))
-  "Face for rawspan blob.")
+  "Face for rawspan blob."
+  :group 'typst-ts-faces)
 
 (defface typst-ts-markup-label-face
   '((t :inherit homoglyph))
-  "Face for label.")
+  "Face for label."
+  :group 'typst-ts-faces)
 
 (defface typst-ts-markup-reference-face
   '((t :inherit homoglyph))
-  "Face for reference.")
+  "Face for reference."
+  :group 'typst-ts-faces)
 
 ;; Code Faces ===================================================================
 
 (defface typst-ts-code-indicator-face
   '((t :inherit shadow))
-  "Face for code indicator #.")
+  "Face for code indicator #."
+  :group 'typst-ts-faces)
 
 ;; Math Faces ===================================================================
 
 (defface typst-ts-math-indicator-face
   '((t :inherit shadow))
-  "Face for math indicator $.")
+  "Face for math indicator $."
+  :group 'typst-ts-faces)
+
+;; code from Auctex 
+(defface typst-ts-superscript-face
+  '((t (:height 0.85)))
+  "Face used for superscripts."
+  :group 'typst-ts-faces)
+
+;; code from Auctex 
+(defface typst-ts-subscript-face
+  '((t (:height 0.85)))
+  "Face used for subscripts."
+  :group 'typst-ts-faces)
+
+;; code from Auctex 
+(defface typst-ts-script-char-face
+  (let ((font '(:inherit underline)))
+    `((((class grayscale) (background light))
+       (:foreground "gray25" ,@font))
+      (((class grayscale) (background dark))
+       (:foreground "gray" ,@font))
+      (((class color) (background light))
+       (:foreground "DarkRed"))
+      (((class color) (background dark))
+       (:foreground "salmon"))
+      (t (,@font))))
+  "Face used for the script chars ^ and _."
+  :group 'typst-ts-faces)
+
+
 
 (provide 'typst-ts-faces)
 
