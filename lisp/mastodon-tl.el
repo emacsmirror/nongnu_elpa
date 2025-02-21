@@ -3458,7 +3458,8 @@ Optional arg NOTE-TYPE means only get that type of notification.
 PARAMS is an alist of any params to include in the request.
 HEADERS are any headers to send in the request.
 VIEW-NAME is a string, to be used as a heading for the view.
-BINDING-STR is a string explaining any bindins in the view.
+BINDING-STR is a string explaining any bindins in the view, it can have
+formatting for `substitute-command-keys'.
 ENDPOINT-VERSION is a string, format Vx, e.g. V2."
   ;; Used by `mastodon-notifications-get' and in views.el
   (let* ((notes-params (when note-type
@@ -3477,8 +3478,10 @@ ENDPOINT-VERSION is a string, format Vx, e.g. V2."
       (when view-name
         (mastodon-search--insert-heading view-name))
       (when binding-str
-        (insert (mastodon-tl--set-face (concat "[" binding-str "]\n\n")
-                                       'mastodon-toot-docs-face)))
+        (insert
+         (substitute-command-keys
+          (mastodon-tl--set-face (concat "[" binding-str "]\n\n")
+                                 'mastodon-toot-docs-face))))
       (mastodon-tl--set-buffer-spec
        buffer endpoint update-function
        link-header params nil

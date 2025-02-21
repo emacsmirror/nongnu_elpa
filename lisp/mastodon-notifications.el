@@ -899,7 +899,8 @@ be filtered."
    :headers
    "notification requests"
    "a/j - accept/reject request at point\n\
- n/p - go to next/prev request")
+ n/p - go to next/prev request\n\
+ \\[mastodon-notifications-policy] - set filtering policy")
   (mastodon-tl--goto-first-item)
   (with-current-buffer "*mastodon-notification-requests*"
     (use-local-map mastodon-notifications--requests-map)))
