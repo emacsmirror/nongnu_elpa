@@ -877,7 +877,9 @@ REJECT means reject notifications instead."
      resp
      (lambda (_resp)
        (message "%s notifications from %s"
-                (if reject "Not accepting" "Accepting") user)))))
+                (if reject "Not accepting" "Accepting") user)
+       ;; reload view:
+       (mastodon-notifications--requests)))))
 
 (defun mastodon-notifications--request-reject ()
   "Reject a notification request for a user.
