@@ -557,7 +557,7 @@ Optional keywords in KEYWORDS.
                       (redisplay))))
 
                 ;; Check if exiting is needed.
-                (and no-error (not (eq count-complete args-len))))
+                (and no-error (/= count-complete args-len)))
 
          ;; Fill the queue.
          (while (and jobs-pending (< count-running jobs))
