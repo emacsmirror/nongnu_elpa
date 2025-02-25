@@ -759,11 +759,14 @@ Status notifications are created when you call
 (defun mastodon-notifications--clear-current ()
   "Dismiss the notification at point."
   (interactive)
-  (let* ((id (or (or (mastodon-tl--property 'notification-id) ;; grouped
-                     (mastodon-tl--property 'item-id)
-                     (mastodon-tl--field
-                      'id
-                      (mastodon-tl--property 'item-json)))))
+  (let* ((id (or ;; grouping enabled
+              ;; (*should* also work for ungrouped items):
+              (mastodon-tl--property 'notification-id)
+              ;; FIXME: are these all required?
+              (mastodon-tl--property 'item-id)
+              (mastodon-tl--field
+               'id
+               (mastodon-tl--property 'item-json))))
          (endpoint (mastodon-notifications--api
                     (format "notifications/%s/dismiss" id)))
          (response (mastodon-http--post endpoint)))
@@ -791,10 +794,8 @@ Status notifications are created when you call
 (defun mastodon-notifications--get-single-notif ()
   "Return a single notification JSON for v2 notifs."
   (interactive)
-  (let* ((id (mastodon-tl--property
-              'notification-id)) ;; grouped, doesn't work for ungrouped!
-         ;; (key (format "ungrouped-%s"
-         ;;              (mastodon-tl--property 'item-id)))
+  (let* ((id ;; grouped (should work for ungrouped items):
+          (mastodon-tl--property 'notification-id))
          (endpoint (mastodon-notifications--api
                     (format "notifications/%s" id)))
          (response (mastodon-http--get-json endpoint)))
