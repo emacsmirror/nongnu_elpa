@@ -46,6 +46,7 @@
 (require 'mastodon-toot)
 (require 'mastodon-search)
 (require 'mastodon-transient)
+(require 'mastodon-tl)
 
 (declare-function discover-add-context-menu "discover")
 (declare-function emojify-mode "emojify")
@@ -58,6 +59,9 @@
 (autoload 'mastodon-notifications--follow-request-reject "mastodon-notifications")
 (autoload 'mastodon-notifications--get-mentions "mastodon-notifications")
 (autoload 'mastodon-notifications--timeline "mastodon-notifications")
+(autoload 'mastodon-notifications-policy "mastodon-notifications")
+(autoload 'mastodon-notifications--requests "mastodon-notifications")
+
 (autoload 'mastodon-profile--fetch-server-account-settings "mastodon-profile")
 (autoload 'mastodon-profile--get-toot-author "mastodon-profile")
 (autoload 'mastodon-profile--make-author-buffer "mastodon-profile")
@@ -66,46 +70,28 @@
 (autoload 'mastodon-profile--update-user-profile-note "mastodon-profile")
 (autoload 'mastodon-profile--view-bookmarks "mastodon-profile")
 (autoload 'mastodon-profile--view-favourites "mastodon-profile")
-(autoload 'mastodon-tl--block-user "mastodon-tl")
-(autoload 'mastodon-tl--follow-user "mastodon-tl")
-(autoload 'mastodon-tl--followed-tags-timeline "mastodon-tl")
-(autoload 'mastodon-tl--get-buffer-type "mastodon-tl")
-(autoload 'mastodon-tl--get-federated-timeline "mastodon-tl")
-(autoload 'mastodon-tl--get-home-timeline "mastodon-tl")
-(autoload 'mastodon-tl--get-local-timeline "mastodon-tl")
-(autoload 'mastodon-tl--get-tag-timeline "mastodon-tl")
-(autoload 'mastodon-tl--goto-next-item "mastodon-tl")
-(autoload 'mastodon-tl--goto-prev-item "mastodon-tl")
-(autoload 'mastodon-tl--init-sync "mastodon-tl")
-(autoload 'mastodon-tl--list-followed-tags "mastodon-tl")
-(autoload 'mastodon-tl--mute-user "mastodon-tl")
-(autoload 'mastodon-tl--next-tab-item "mastodon-tl")
-(autoload 'mastodon-tl--poll-vote "mastodon-http")
-(autoload 'mastodon-tl--previous-tab-item "mastodon-tl")
-(autoload 'mastodon-tl--thread "mastodon-tl")
-(autoload 'mastodon-tl--toggle-spoiler-text-in-toot "mastodon-tl")
-(autoload 'mastodon-tl--unblock-user "mastodon-tl")
-(autoload 'mastodon-tl--unfollow-user "mastodon-tl")
-(autoload 'mastodon-tl--unmute-user "mastodon-tl")
-(autoload 'mastodon-tl--report-to-mods "mastodon-tl")
-(autoload 'mastodon-tl--update "mastodon-tl")
+
 (autoload 'mastodon-toot--edit-toot-at-point "mastodon-toot")
 (when (require 'lingva nil :no-error)
   (autoload 'mastodon-toot--translate-toot-text "mastodon-toot"))
 (autoload 'mastodon-toot--view-toot-history "mastodon-tl")
-(autoload 'mastodon-views--view-follow-suggestions "mastodon-views")
-(autoload 'mastodon-views--view-filters "mastodon-views")
-(autoload 'mastodon-views--view-follow-requests "mastodon-views")
-(autoload 'mastodon-views--view-instance-description "mastodon-views")
-(autoload 'mastodon-views--view-lists "mastodon-views")
-(autoload 'mastodon-views--view-scheduled-toots "mastodon-views")
-(autoload 'mastodon-tl--dm-user "mastodon-tl")
-(autoload 'mastodon-tl--scroll-up-command "mastodon-tl")
+
+(autoload 'mastodon-views--view-follow-suggestions "mastodon-views"
+  nil :interactive) ;; for M-x visibility
+(autoload 'mastodon-views--view-filters "mastodon-views"
+  nil :interactive)
+(autoload 'mastodon-views--view-follow-requests "mastodon-views"
+  nil :interactive)
+(autoload 'mastodon-views--view-own-instance "mastodon-views"
+  nil :interactive)
+(autoload 'mastodon-views--view-instance-description "mastodon-views"
+  nil :interactive)
+(autoload 'mastodon-views--view-lists "mastodon-views"
+  nil :interactive)
+(autoload 'mastodon-views--view-scheduled-toots "mastodon-views"
+  nil :interactive)
+
 (autoload 'special-mode "simple")
-(autoload 'mastodon-tl--thread-do "mastodon-tl")
-(autoload 'mastodon-notifications-policy "mastodon-notifications")
-(autoload 'mastodon-notifications--requests "mastodon-notifications")
-(autoload 'mastodon-tl--tag-group-timeline "mastodon-tl")
 
 (defvar mastodon-tl--highlight-current-toot)
 (defvar mastodon-notifications--map)
