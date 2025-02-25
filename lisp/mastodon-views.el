@@ -483,6 +483,7 @@ JSON is the data returned by the server."
 
 ;;; SCHEDULED TOOTS
 
+;;;###autoload
 (defun mastodon-views--view-scheduled-toots ()
   "Show the user's scheduled toots in a new buffer."
   (interactive)
@@ -582,6 +583,7 @@ NO-CONFIRM means there is no ask or message, there is only do."
 
 ;;; FILTERS
 
+;;;###autoload
 (defun mastodon-views--view-filters ()
   "View the user's filters in a new buffer."
   (interactive)
