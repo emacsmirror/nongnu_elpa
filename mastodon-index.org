@@ -2,7 +2,7 @@
 * mastodon commands index
 
 #+BEGIN_SRC emacs-lisp :results table :colnames '("Binding" "Command" "Description") :exports results
-  (let ((rows))
+  (let (rows)
     (mapatoms
      (lambda (symbol)
        (when (and (string-match "^mastodon"
@@ -256,7 +256,7 @@
 * mastodon custom variables index
  
 #+BEGIN_SRC emacs-lisp :results table :colnames '("Custom variable" "Description") :exports results
-  (let ((rows))
+  (let (rows)
     (mapatoms
      (lambda (symbol)
        (when (and (string-match "^mastodon"
