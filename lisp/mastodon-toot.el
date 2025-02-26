@@ -440,9 +440,11 @@ ACTION is a symbol, either `favourite' or `boost.'"
               (faved (when byline-region
                        (get-text-property (car byline-region) 'favourited-p)))
               (str-api (if boost-p "reblog" action-str))
-              (action-str-api (mastodon-toot--str-negify str-api faved boosted))
+              (action-str-api (mastodon-toot--str-negify str-api faved boosted
+                                                         action))
               (action-pp (concat
-                          (mastodon-toot--str-negify action-str faved boosted)
+                          (mastodon-toot--str-negify action-str faved boosted
+                                                     action)
                           (if boost-p "ed" "d")))
               (remove-p (if boost-p boosted faved)))
          (mastodon-toot--action
@@ -459,11 +461,14 @@ ACTION is a symbol, either `favourite' or `boost.'"
                                              byline-region remove-p item-json))
             (message "%s #%s" action-pp id)))))))))
 
-(defun mastodon-toot--str-negify (str faved boosted)
-  "Add \"un\" to STR if FAVED or BOOSTED is non-nil."
-  (if (or faved boosted)
-      (concat "un" str)
-    str))
+(defun mastodon-toot--str-negify (str faved boosted action)
+  "Add \"un\" to STR if item is already FAVED or BOOSTED.
+ACTION is the action currently being taken."
+  (if (eq action 'boost)
+      (if boosted (concat "un" str) str)
+    (if faved
+        (concat "un" str)
+      str)))
 
 (defun mastodon-toot--update-stats-on-action (action &optional subtract)
   "Increment the toot stats display upon ACTION.
