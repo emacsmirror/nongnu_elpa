@@ -420,7 +420,7 @@ ACTION is a symbol, either `favourite' or `boost.'"
           (boost-p (eq action 'boost))
           (action-str (symbol-name action))
           (item-json (mastodon-tl--property 'item-json))
-          (vis (mastodon-tl--field 'vis item-json)))
+          (vis (mastodon-tl--field 'visibility item-json)))
      (cond
       ((not byline-region)
        (user-error "Nothing to %s here?!?" action-str))
