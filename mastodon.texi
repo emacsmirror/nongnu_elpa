@@ -403,7 +403,7 @@ Replies preserve visibility status/content warnings, and include boosters by def
 Server's max toot length, with running char count, and attachment previews, are shown.
 
 You can download and use your instance's custom emoji
-(@samp{mastodon-toot--download-custom-emoji}, @samp{mastodon-toot--enable-custom-emoji}).
+(@samp{mastodon-toot-download-custom-emoji}, @samp{mastodon-toot-enable-custom-emoji}).
 
 If you want to view some of the toot being replied to in the compose buffer, set @samp{mastodon-toot-display-orig-in-reply-buffer} to non-nil.
 
@@ -477,13 +477,13 @@ combination is @samp{consult} and @samp{corfu}.
 @item
 Compose buffer text is saved as you type, kept in @samp{mastodon-toot-current-toot-text}.
 @item
-@samp{mastodon-toot--save-draft}: save the current toot as a draft.
+@samp{mastodon-toot-save-draft}: save the current toot as a draft.
 @item
-@samp{mastodon-toot--open-draft-toot}: Open a compose buffer and insert one of your draft toots.
+@samp{mastodon-toot-open-draft-toot}: Open a compose buffer and insert one of your draft toots.
 @item
-@samp{mastodon-toot--delete-draft-toot}: Delete a draft toot.
+@samp{mastodon-toot-delete-draft-toot}: Delete a draft toot.
 @item
-@samp{mastodon-toot--delete-all-drafts}: Delete all your drafts.
+@samp{mastodon-toot-delete-all-drafts}: Delete all your drafts.
 @end itemize
 @end enumerate
 
@@ -510,10 +510,10 @@ that the author of the toot at point is on.
 @item
 @samp{mastodon-tl--view-own-instance}: View information about your own instance.
 @item
-@samp{mastodon-search--trending-tags}: View a list of trending hashtags on your
+@samp{mastodon-search-trending-tags}: View a list of trending hashtags on your
 instance.
 @item
-@samp{mastodon-search--trending-statuses}: View a list of trending statuses on your instance.
+@samp{mastodon-search-trending-statuses}: View a list of trending statuses on your instance.
 @end itemize
 
 
@@ -525,33 +525,33 @@ instance.
 
 @itemize
 @item
-@samp{mastodon-tl--dm-user}: Send a direct message to one of the users at point.
+@samp{mastodon-tl-dm-user}: Send a direct message to one of the users at point.
 @end itemize
 
 
 @itemize
 @item
-@samp{mastodon-profile--add-private-note-to-account}: Add a private note to another user’s account.
+@samp{mastodon-profile-add-private-note-to-account}: Add a private note to another user’s account.
 @item
-@samp{mastodon-profile--view-account-private-note}: View a private note on a user’s account.
+@samp{mastodon-profile-view-account-private-note}: View a private note on a user’s account.
 @end itemize
 
 
 @itemize
 @item
-@samp{mastodon-profile--show-familiar-followers}: Show a list of “familiar followers” for a given account. Familiar followers are accounts that you follow, and that follow the account.
+@samp{mastodon-profile-show-familiar-followers}: Show a list of “familiar followers” for a given account. Familiar followers are accounts that you follow, and that follow the account.
 @end itemize
 
 
 @itemize
 @item
-@samp{mastodon-tl--follow-tag}: Follow a tag (works like following a user)
+@samp{mastodon-tl-follow-tag}: Follow a tag (works like following a user)
 @item
-@samp{mastodon-tl--unfollow-tag}: Unfollow a tag
+@samp{mastodon-tl-unfollow-tag}: Unfollow a tag
 @item
-@samp{mastodon-tl--list-followed-tags}: View a list of tags you're following.
+@samp{mastodon-tl-list-followed-tags}: View a list of tags you're following.
 @item
-@samp{mastodon-tl--followed-tags-timeline}: View a timeline of all your followed tags.
+@samp{mastodon-tl-followed-tags-timeline}: View a timeline of all your followed tags.
 @item
 @samp{mastodon-tl--some-followed-tags-timleine}: View a timeline of multiple tags, from your followed tags or any other.
 @end itemize
@@ -565,35 +565,35 @@ instance.
 
 @itemize
 @item
-@samp{mastodon-tl--get-remote-local-timeline}: View a local timeline of a remote instance.
+@samp{mastodon-tl-get-remote-local-timeline}: View a local timeline of a remote instance.
 @item
-@samp{mastodon-tl--remote-tag-timeline}: View a tag timeline on a remote instance.
+@samp{mastodon-tl-remote-tag-timeline}: View a tag timeline on a remote instance.
 @end itemize
 
 
 @itemize
 @item
-@samp{mastodon-profile--update-display-name}: Update the display name for your
+@samp{mastodon-profile-update-display-name}: Update the display name for your
 account.
 @item
-@samp{mastodon-profile--update-user-profile-note}: Update your bio note.
+@samp{mastodon-profile-update-user-profile-note}: Update your bio note.
 @item
-@samp{mastodon-profile--update-meta-fields}: Update your metadata fields.
+@samp{mastodon-profile-update-meta-fields}: Update your metadata fields.
 @item
 @samp{mastodon-profile--set-default-toot-visibility}: Set the default visibility
 for your toots.
 @item
-@samp{mastodon-profile--account-locked-toggle}: Toggle the locked status of your
+@samp{mastodon-profile-account-locked-toggle}: Toggle the locked status of your
 account. Locked accounts have to manually approve follow requests.
 @item
-@samp{mastodon-profile--account-discoverable-toggle}: Toggle the discoverable
+@samp{mastodon-profile-account-discoverable-toggle}: Toggle the discoverable
 status of your account. Non-discoverable accounts are not listed in the
 profile directory.
 @item
-@samp{mastodon-profile--account-bot-toggle}: Toggle whether your account is flagged
+@samp{mastodon-profile-account-bot-toggle}: Toggle whether your account is flagged
 as a bot.
 @item
-@samp{mastodon-profile--account-sensitive-toggle}: Toggle whether your posts are
+@samp{mastodon-profile-account-sensitive-toggle}: Toggle whether your posts are
 marked as sensitive (nsfw) by default.
 @end itemize
 
@@ -685,7 +685,7 @@ view a timeline with one of the commands that begin with
 @node Translating toots
 @subsection Translating toots
 
-You can translate toots with @samp{mastodon-toot--translate-toot-text} (@samp{a} in a
+You can translate toots with @samp{mastodon-toot-translate-toot-text} (@samp{a} in a
 timeline). At the moment this requires @uref{https://codeberg.org/martianh/lingva.el, lingva.el}, a little interface I wrote
 to @uref{https://lingva.ml, lingva.ml}, to be installed to work.
 
@@ -693,10 +693,10 @@ You could easily modify the simple function to use your Emacs translator of
 choice (@samp{libretrans.el} , @samp{google-translate}, @samp{babel}, @samp{go-translate}, etc.), you just
 need to fetch the toot's content with @samp{(mastodon-tl--content toot)} and pass it
 to your translator function as its text argument. Here's what
-@samp{mastodon-toot--translate-toot-text} looks like:
+@samp{mastodon-toot-translate-toot-text} looks like:
 
 @lisp
-(defun mastodon-toot--translate-toot-text ()
+(defun mastodon-toot-translate-toot-text ()
   "Translate text of toot at point.
   Uses `lingva.el'."
     (interactive)

@@ -805,11 +805,11 @@ Strict-Transport-Security: max-age=31536000
                   (expected-prev (cl-third test))
                   (expected-next (cl-fourth test)))
               (goto-char test-start)
-              (mastodon-tl--previous-tab-item)
+              (mastodon-tl-previous-tab-item)
               (should (equal (list 'prev test-name expected-prev)
                              (list 'prev test-name (point))))
               (goto-char test-start)
-              (mastodon-tl--next-tab-item)
+              (mastodon-tl-next-tab-item)
               (should (equal (list 'next test-name expected-next)
                              (list 'next test-name (point)))))))))))
 
@@ -853,11 +853,11 @@ Strict-Transport-Security: max-age=31536000
                   (expected-prev (cl-third test))
                   (expected-next (cl-fourth test)))
               (goto-char test-start)
-              (mastodon-tl--previous-tab-item)
+              (mastodon-tl-previous-tab-item)
               (should (equal (list 'prev test-name expected-prev)
                              (list 'prev test-name (point))))
               (goto-char test-start)
-              (mastodon-tl--next-tab-item)
+              (mastodon-tl-next-tab-item)
               (should (equal (list 'next test-name expected-next)
                              (list 'next test-name (point)))))))))))
 
@@ -970,13 +970,13 @@ constant."
       (should (eq t (get-text-property body-position 'invisible)))
 
       ;; Click the link:
-      (mastodon-tl--do-link-action-at-point (car link-region))
+      (mastodon-tl-do-link-action-at-point (car link-region))
 
       ;; The body is now visible:
       (should (eq nil (get-text-property body-position 'invisible)))
 
       ;; Click the link once more:
-      (mastodon-tl--do-link-action-at-point (car link-region))
+      (mastodon-tl-do-link-action-at-point (car link-region))
 
       ;; The body is invisible again:
       (should (eq t (get-text-property body-position 'invisible)))
@@ -984,14 +984,14 @@ constant."
       ;; Go back to the toot's beginning
       (goto-char toot-start)
       ;; Press 'c' and the body is visible again and point hasn't changed:
-      (mastodon-tl--toggle-spoiler-text-in-toot)
+      (mastodon-tl-toggle-spoiler-text-in-toot)
       (should (eq nil (get-text-property body-position 'invisible)))
       (should (eq toot-start (point)))
 
       ;; Go to the toot's end
       (goto-char toot-end)
       ;; Press 'c' and the body is invisible again and point hasn't changed:
-      (mastodon-tl--toggle-spoiler-text-in-toot)
+      (mastodon-tl-toggle-spoiler-text-in-toot)
       (should (eq t (get-text-property body-position 'invisible)))
       (should (eq toot-end (point)))
       )))
