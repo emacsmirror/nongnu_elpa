@@ -1297,6 +1297,8 @@ If REPO is provided, also include a repo column."
    for issue in issues
    collect
    (let-alist issue
+     ;; FIXME: GET full item data and set to fj-item-data?
+     ;; e.g. pulls listed don't have full base/head data (e.g. branch)
      (let* ((updated (date-to-time .updated_at))
             (updated-str (format-time-string "%s" updated))
             (updated-display (fedi--relative-time-description updated nil :brief))
@@ -1981,16 +1983,22 @@ ENDPOINT is the API endpoint to hit."
   "Merge pull request of current view or at point."
   (interactive)
   (fj-with-pull
-   (let ((repo (fj--get-buffer-spec :repo))
-         (owner (fj--get-buffer-spec :owner))
-         (number (if (eq major-mode 'fj-issue-tl-mode)
-                     (let* ((entry (tabulated-list-get-entry)))
-                       (car (seq-first entry)))
-                   (fj--get-buffer-spec :item)))
-         (merge-type (completing-read "Merge type: " fj-merge-types)))
-     ;; FIXME: add branch to prompt:
-     ;; (it is not provided in the pull tl listing data :/ )
-     (when (y-or-n-p (format "Merge PR #%s into %s?" number repo))
+   (let* ((repo (fj--get-buffer-spec :repo))
+          (owner (fj--get-buffer-spec :owner))
+          (data (save-excursion
+                  (goto-char (point-min))
+                  (fedi--property 'fj-item-data)))
+          (number (if (eq major-mode 'fj-issue-tl-mode)
+                      (let* ((entry (tabulated-list-get-entry)))
+                        (car (seq-first entry)))
+                    (fj--get-buffer-spec :item)))
+          ;; FIXME: branch is not provided in the tl data :/
+          (branch (unless (eq major-mode 'fj-issue-tl-mode)
+                    (map-nested-elt data '(base label))))
+          (branchs-str (if branch (concat " " branch) ""))
+          (merge-type (completing-read "Merge type: " fj-merge-types)))
+     (when (y-or-n-p
+            (format "Merge PR #%s into %s/%s%s?" number owner repo branch))
        (let ((resp (fj-pull-merge-post repo owner number merge-type)))
          (fedi-http--triage resp
                             (lambda (_)
