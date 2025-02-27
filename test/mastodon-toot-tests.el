@@ -133,7 +133,7 @@ mention string."
         (mastodon-instance-url "https://local.social"))
     (should (equal (mastodon-toot--mentions mastodon-toot-no-mention) nil))))
 
-;; TODO: test y-or-no-p with mastodon-toot--cancel
+;; TODO: test y-or-no-p with mastodon-toot-cancel
 ;; This test is useless, commenting
 ;; (ert-deftest mastodon-toot--kill ()
 ;;   "Should kill the buffer when cancelling the toot."
@@ -173,10 +173,10 @@ mention string."
 ;;       ;; (mock (mastodon-toot--own-toot-p toot) => nil)
 ;;       (mock (mastodon-tl--property 'item-json) => mastodon-toot-test-base-toot)
 ;;       (mock (mastodon-tl--property 'base-toot) => toot)
-;;       (should (equal (mastodon-toot--delete-toot)
+;;       (should (equal (mastodon-toot-delete-toot)
 ;;                      "You can only delete (and redraft) your own toots.")))))
 
-;; (ert-deftest mastodon-toot--delete-toot ()
+;; (ert-deftest mastodon-toot-delete-toot ()
 ;;   "Should return correct triaged response to a legitimate DELETE request."
 ;;   (with-temp-buffer
 ;;     (insert mastodon-toot--200-html)
@@ -198,11 +198,11 @@ mention string."
 ;;          => t)
 ;;         (mock (mastodon-http--delete "https://example.space/statuses/61208")
 ;;               => delete-response)
-;;         (should (equal (mastodon-toot--delete-toot :no-redraft)
+;;         (should (equal (mastodon-toot-delete-toot :no-redraft)
 ;;                        "Toot deleted!"))))))
 
 (ert-deftest mastodon-toot-action-pin ()
-  "Should return callback provided by `mastodon-toot--pin-toot-toggle'."
+  "Should return callback provided by `mastodon-toot-pin-toot-toggle'."
   (with-temp-buffer
     (insert mastodon-toot--200-html)
     (let ((pin-response (current-buffer))
@@ -230,5 +230,5 @@ mention string."
 ;;        (mock (mastodon-tl--property 'item-json) => toot)
 ;;        (mock (mastodon-tl--property 'base-toot) => toot)
 ;;        (mock (mastodon-auth--user-acct) => "joebogus@example.space")
-;;        (should (equal (mastodon-toot--pin-toot-toggle)
+;;        (should (equal (mastodon-toot-pin-toot-toggle)
 ;;                       "You can only pin your own toots"))))))

@@ -86,19 +86,19 @@ QUERY is the string to search."
 
 ;; trending tags
 
-(defun mastodon-search--trending-tags ()
+(defun mastodon-search-trending-tags ()
   "Display a list of tags trending on your instance."
   (interactive)
   (mastodon-search--view-trending "tags"
                                   #'mastodon-search--print-tags))
 
-(defun mastodon-search--trending-statuses ()
+(defun mastodon-search-trending-statuses ()
   "Display a list of statuses trending on your instance."
   (interactive)
   (mastodon-search--view-trending "statuses"
                                   #'mastodon-tl--timeline))
 
-(defun mastodon-search--trending-links ()
+(defun mastodon-search-trending-links ()
   "Display a list of links trending on your instance."
   (interactive)
   (mastodon-search--view-trending "links"
@@ -123,11 +123,11 @@ QUERY is the string to search."
       'byline t ;; nav
       'help-echo
       (substitute-command-keys
-       "\\[`mastodon-search--load-link-posts'] to view a link's timeline"))
+       "\\[`mastodon-search-load-link-posts'] to view a link's timeline"))
      ;; TODO: display card link author here
      "\n\n")))
 
-(defun mastodon-search--load-link-posts ()
+(defun mastodon-search-load-link-posts ()
   "Load timeline of posts containing link at point."
   (interactive)
   (let* ((url (mastodon-tl--property 'shr-url)))
@@ -178,7 +178,7 @@ NO-NEWLINE means don't add add a newline at end."
 (defvar mastodon-search-types
   '("statuses" "accounts" "hashtags"))
 
-(defun mastodon-search--query (query &optional type limit
+(defun mastodon-search-query (query &optional type limit
                                      following account-id offset)
   "Prompt for a search QUERY and return accounts, statuses, and hashtags.
 TYPE is a member of `mastodon-search-types'.
@@ -218,7 +218,7 @@ is used for pagination."
        (intern type)
        (lambda (widget &rest _ignore)
          (let ((value (widget-value widget)))
-           (mastodon-search--query query (symbol-name value)))))
+           (mastodon-search-query query (symbol-name value)))))
       (insert "\n\n")
       (cond ((string= type "accounts")
              (mastodon-search--render-response items type buffer params
@@ -235,7 +235,7 @@ is used for pagination."
       (goto-char (point-min))
       (message
        (substitute-command-keys
-        "\\[mastodon-search--query-cycle] to cycle result types.")))))
+        "\\[mastodon-search-query-cycle] to cycle result types.")))))
 
 (defun mastodon-search-insert-no-results (&optional thing)
   "Insert a no results message for object THING."
@@ -260,23 +260,23 @@ BUFFER, PARAMS, and UPDATE-FUN are for `mastodon-tl--buffer-spec'."
   (let* ((spec (mastodon-tl--buffer-property 'update-params)))
     (alist-get "type" spec nil nil #'string=)))
 
-(defun mastodon-search--query-cycle ()
+(defun mastodon-search-query-cycle ()
   "Cycle through search types: accounts, hashtags, and statuses."
   (interactive)
   (let* ((spec (mastodon-tl--buffer-property 'update-params))
          (type (alist-get "type" spec nil nil #'string=))
          (query (alist-get "q" spec nil nil #'string=)))
     (cond ((string= type "hashtags")
-           (mastodon-search--query query "accounts"))
+           (mastodon-search-query query "accounts"))
           ((string= type "accounts")
-           (mastodon-search--query query "statuses"))
+           (mastodon-search-query query "statuses"))
           ((string= type "statuses")
-           (mastodon-search--query query "hashtags")))))
+           (mastodon-search-query query "hashtags")))))
 
-(defun mastodon-search--query-accounts-followed (query)
+(defun mastodon-search-query-accounts-followed (query)
   "Run an accounts search QUERY, limited to your followers."
   (interactive "sSearch mastodon for: ")
-  (mastodon-search--query query "accounts" :following))
+  (mastodon-search-query query "accounts" :following))
 
 (defun mastodon-search--insert-users-propertized (json &optional note)
   "Insert users list into the buffer.
@@ -375,7 +375,7 @@ If NOTE is non-nil, include user's profile note. This is also
 
 (defvar mastodon-search-mode-map
   (let ((map (make-sparse-keymap)))
-    (define-key map (kbd "C-c C-c") #'mastodon-search--query-cycle)
+    (define-key map (kbd "C-c C-c") #'mastodon-search-query-cycle)
     map)
   "Keymap for `mastodon-search-mode'.")
 

@@ -37,15 +37,15 @@
 (autoload 'mastodon-http--api "mastodon-http")
 (autoload 'mastodon-http--triage "mastodon-http")
 (autoload 'mastodon-http--patch "mastodon-http")
-(autoload 'mastodon-profile--update-user-profile-note "mastodon-profile")
+(autoload 'mastodon-profile-update-user-profile-note "mastodon-profile")
 (autoload 'mastodon-toot--fetch-max-poll-options "mastodon-toot")
 (autoload 'mastodon-toot--fetch-max-poll-option-chars "mastodon-toot")
 (autoload 'mastodon-instance-data "mastodon")
 (autoload 'mastodon-toot--update-status-fields "mastodon-toot")
 (autoload 'mastodon-toot--read-poll-expiry "mastodon-toot")
 (autoload 'mastodon-toot--poll-expiry-options-alist "mastodon-toot")
-(autoload 'mastodon-toot--clear-poll "mastodon-toot")
-(autoload 'mastodon-notifications--get-policy "mastodon-notifications")
+(autoload 'mastodon-toot-clear-poll "mastodon-toot")
+(autoload 'mastodon-notifications-get-policy "mastodon-notifications")
 
 ;;; UTILS
 
@@ -177,7 +177,7 @@ the format fields.X.keyname."
   "Update current user profile note."
   :transient 'transient--do-exit
   (interactive)
-  (mastodon-profile--update-user-profile-note))
+  (mastodon-profile-update-user-profile-note))
 
 (transient-define-suffix mastodon-profile-fields-update (args)
   "Update current user profile fields."
@@ -232,7 +232,7 @@ the format fields.X.keyname."
   (let ((instance (mastodon-instance-data)))
     (mastodon-toot--fetch-max-poll-option-chars instance)))
 
-(transient-define-suffix mastodon-transient--choice-add ()
+(transient-define-suffix mastodon-transient-choice-add ()
   "Add another poll choice if possible.
 Do not add more than 9 choices.
 Do not add more than the server's maximum setting."
@@ -294,7 +294,7 @@ Do not add more than the server's maximum setting."
    ("4" "" "4" :alist-key four :class mastodon-transient-poll-choice)]
   ;; TODO: display the max number of options or add options cmd
   ["Update"
-   ("C-c C-s" "Add another poll choice" mastodon-transient--choice-add
+   ("C-c C-s" "Add another poll choice" mastodon-transient-choice-add
     :if (lambda () (< 4 (mastodon-transient-max-poll-opts))))
    ("C-c C-c" "Save and done" mastodon-create-poll-done)
    ("C-x C-k" :info "Revert all")
@@ -308,7 +308,7 @@ Do not add more than the server's maximum setting."
   "Clear current poll data."
   :transient 'transient--do-stay
   (interactive)
-  (mastodon-toot--clear-poll :transient)
+  (mastodon-toot-clear-poll :transient)
   (transient-reset))
 
 (transient-define-suffix mastodon-create-poll-done (args)
@@ -345,13 +345,13 @@ Do not add more than the server's maximum setting."
       (mastodon-toot--update-status-fields))))
 
 (defvar mastodon-notifications-policy-vals)
-(declare-function mastodon-notifications--get-policy "mastodon-notifications")
+(declare-function mastodon-notifications-get-policy "mastodon-notifications")
 (declare-function mastodon-notifications--update-policy "mastodon-notifications")
 
 (transient-define-prefix mastodon-notifications-policy ()
   "A transient to set notifications policy options."
   ;; https://docs.joinmastodon.org/methods/notifications/#get-policy
-  :value (lambda () (tp-return-data #'mastodon-notifications--get-policy))
+  :value (lambda () (tp-return-data #'mastodon-notifications-get-policy))
   ["Notification policy options"
    ("f" "people you don't follow" "for_not_following"
     :alist-key for_not_following :class mastodon-transient-policy)
