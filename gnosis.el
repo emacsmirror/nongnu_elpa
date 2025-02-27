@@ -665,7 +665,10 @@ When called with a prefix, unsuspends all notes in deck."
   (let* ((notes (gnosis-select 'id 'notes `(= deck-id ,deck) t))
 	 (suspend (if current-prefix-arg 0 1))
 	 (note-count 0)
-	 (confirm (y-or-n-p (if (= suspend 0) "Unsuspend all notes for deck? " "Suspend all notes for deck? "))))
+	 (confirm
+	  (y-or-n-p
+	   (if (= suspend 0)
+	       "Unsuspend all notes for deck? " "Suspend all notes for deck? "))))
     (when confirm
       (cl-loop for note in notes
 	       do (gnosis-update 'review-log `(= suspend ,suspend) `(= id ,note))
@@ -1750,16 +1753,8 @@ LINKS: List of id links in PARATHEMA."
   (let* ((id (nth 0 note))
 	 (type (nth 1 note))
 	 (keimenon (nth 2 note))
-	 (hypothesis (and (nth 3 note)
-			  (mapcar (lambda (item) (if (string= (string-trim item) "-")
-						""
-					      (string-remove-prefix "- " item)))
-				  (split-string (nth 3 note) gnosis-org-separator))))
-	 (answer (and (nth 4 note)
-		      (mapcar (lambda (item) (if (string= (string-trim item) "-")
-					    ""
-					  (string-remove-prefix "- " item)))
-			      (split-string (nth 3 note) gnosis-org-separator))))
+	 (hypothesis (nth 3 note))
+	 (answer (nth 4 note))
 	 (parathema (or (nth 5 note) ""))
 	 (tags (nth 6 note))
 	 (links (gnosis-extract-id-links parathema))
