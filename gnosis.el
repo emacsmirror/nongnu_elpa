@@ -1281,39 +1281,40 @@ SUCCESS is a boolean value, t for success, nil for failure."
       (gnosis-display-next-review id success)
       success)))
 
-(defun gnosis-review-cloze--input (cloze)
+(defun gnosis-review-cloze--input (cloze &optional user-input)
   "Prompt for user input during cloze review.
 
-If user-input is equal to CLOZE, return t."
-  (let ((user-input (read-string "Answer: ")))
+Returns a cons, t or nil depending on success of review and the cloze
+string."
+  (let ((user-input (or user-input (read-string "Answer: "))))
     (cons (gnosis-compare-strings user-input cloze) user-input)))
 
 (defun gnosis-review-cloze (id)
   "Review cloze type note for ID."
-  (let* ((main (gnosis-get 'keimenon 'notes `(= id ,id)))
+  (let* ((keimenon (gnosis-get 'keimenon 'notes `(= id ,id)))
 	 (clozes (gnosis-get 'answer 'notes `(= id ,id)))
 	 (num 0) ;; Number of clozes revealed
 	 (hints (gnosis-get 'hypothesis 'notes `(= id ,id)))
 	 (parathema (gnosis-get 'parathema 'extras `(= id ,id)))
-	 (success nil))
+	 (success))
     ;; Quick fix for old cloze note versions.
     (cond ((and (stringp hints) (string-empty-p hints))
 	   (setq hints nil))
 	  ((and (not (listp hints)) (not (string-empty-p hints)))
 	   (setq hints (list hints))))
     ;; Initially display the sentence with no reveals
-    (gnosis-display-cloze-string main clozes hints nil nil)
+    (gnosis-display-cloze-string keimenon clozes hints nil nil)
     (cl-loop for cloze in clozes
 	     do (let ((input (gnosis-review-cloze--input cloze)))
 		  (if (equal (car input) t)
 		      ;; Correct answer -> reveal the current cloze
 		      (progn (cl-incf num)
-			     (gnosis-display-cloze-string main (nthcdr num clozes)
+			     (gnosis-display-cloze-string keimenon (nthcdr num clozes)
 							  (nthcdr num hints)
 							  (cl-subseq clozes 0 num)
 							  nil))
 		    ;; Incorrect answer
-		    (gnosis-display-cloze-string main nil nil
+		    (gnosis-display-cloze-string keimenon nil nil
 						 (cl-subseq clozes 0 num)
 						 (member cloze clozes))
 		    (gnosis-display-cloze-user-answer (cdr input))
@@ -1494,7 +1495,7 @@ To customize the keybindings, adjust `gnosis-review-keybindings'."
       (?o (gnosis-review-action--override success id note-count))
       (?s (gnosis-review-action--suspend success id note-count))
       (?e (gnosis-review-action--edit success id note-count))
-      (?q (gnosis-review-action--quit success note)))))
+      (?q (gnosis-review-action--quit success id)))))
 
 (defun gnosis-review-session (notes &optional due note-count)
   "Start review session for NOTES.
@@ -1619,8 +1620,8 @@ TAGS: List of note tags.
 SUSPEND: Integer value of 0 for nil and 1 for true (suspended).
 LINKS: List of id links in PARATHEMA."
   (cl-assert (integerp deck-id) nil "Deck-id value must be an integer.")
-  (cl-assert (stringp type) nil "Type must be an integer.")
-  (cl-assert (stringp keimenon) nil "Keimenon must be an integer.")
+  (cl-assert (stringp type) nil "Type must be a string.")
+  (cl-assert (stringp keimenon) nil "Keimenon must be a string.")
   (cl-assert (or (null hypothesis)
 		 (and (listp hypothesis)
 		      (= (length hypothesis) 1)))
@@ -1645,8 +1646,8 @@ LINKS: List of id links in PARATHEMA."
 Changes TYPE to basic & inserts a second basic note with ANSWER
 and KEIMENON reversed."
   (cl-assert (integerp deck-id) nil "Deck-id value must be an integer.")
-  (cl-assert (stringp type) nil "Type must be an integer.")
-  (cl-assert (stringp keimenon) nil "Keimenon must be an integer.")
+  (cl-assert (stringp type) nil "Type must be a string.")
+  (cl-assert (stringp keimenon) nil "Keimenon must be a string.")
   (cl-assert (listp hypothesis) nil "Hypothesis value must be a list.")
   (cl-assert (and (listp answer) (= (length answer) 1))
 	     nil "Answer value must be a list of a signle item")
@@ -1666,7 +1667,8 @@ and KEIMENON reversed."
       ;; update.  This is used for testing purposes.
       (gnosis-update-note id keimenon hypothesis answer parathema tags links))))
 
-(defun gnosis-add-note--mcq (id deck-id type keimenon hypothesis answer parathema tags suspend links)
+(defun gnosis-add-note--mcq (id deck-id type keimenon hypothesis
+				answer parathema tags suspend links)
   "Default format for adding a note.
 
 ID: Note ID, either an integer value or NEW.
@@ -1680,8 +1682,8 @@ TAGS: List of note tags.
 SUSPEND: Integer value of 0 for nil and 1 for true (suspended).
 LINKS: List of id links in PARATHEMA."
   (cl-assert (integerp deck-id) nil "Deck-id value must be an integer.")
-  (cl-assert (stringp type) nil "Type must be an integer.")
-  (cl-assert (stringp keimenon) nil "Keimenon must be an integer.")
+  (cl-assert (stringp type) nil "Type must be a string.")
+  (cl-assert (stringp keimenon) nil "Keimenon must be a string.")
   (cl-assert (and (listp hypothesis)
 		  (> (length hypothesis) 1))
 	     nil "Hypothesis value must be a list greater than 1 item.")
@@ -1695,14 +1697,16 @@ LINKS: List of id links in PARATHEMA."
 	     nil "Suspend value must either 0 or 1")
   (cl-assert (listp links) nil "Links must be a list")
   (if (equal id "NEW")
-      (gnosis-add-note-fields deck-id type keimenon (or hypothesis (list "")) answer parathema tags suspend links)
+      (gnosis-add-note-fields deck-id type keimenon (or hypothesis (list ""))
+			      answer parathema tags suspend links)
     (gnosis-update-note id keimenon hypothesis answer parathema tags links)))
 
-(defun gnosis-add-note--cloze (id deck-id type keimenon hypothesis answer parathema tags suspend links)
+(defun gnosis-add-note--cloze (id deck-id type keimenon hypothesis
+				  answer parathema tags suspend links)
   "Add cloze type note."
   (cl-assert (integerp deck-id) nil "Deck-id value must be an integer.")
-  (cl-assert (stringp type) nil "Type must be an integer.")
-  (cl-assert (stringp keimenon) nil "Keimenon must be an integer.")
+  (cl-assert (stringp type) nil "Type must be a string.")
+  (cl-assert (stringp keimenon) nil "Keimenon must be a string.")
   (cl-assert (or (= (length answer) (length hypothesis))
 		 (null hypothesis))
 	     nil "Hypothesis value must be a list or nil, equal in length of Answer.")
@@ -1712,9 +1716,33 @@ LINKS: List of id links in PARATHEMA."
 		 (= suspend 1))
 	     nil "Suspend value must either 0 or 1")
   (cl-assert (listp links) nil "Links must be a list")
-  (cl-assert (gnosis-cloze-check keimenon answer) nil "Clozes (answer) values are not part of keimenon")
+  (cl-assert (gnosis-cloze-check keimenon answer) nil
+	     "Clozes (answer) values are not part of keimenon")
   (if (equal id "NEW")
-      (gnosis-add-note-fields deck-id type keimenon (or hypothesis (list "")) answer parathema tags suspend links)
+      (gnosis-add-note-fields deck-id type keimenon (or hypothesis (list ""))
+			      answer parathema tags suspend links)
+    (gnosis-update-note id keimenon hypothesis answer parathema tags links)))
+
+(defun gnosis-add-note--mc-cloze (id deck-id type keimenon hypothesis
+				  answer parathema tags suspend links)
+  "Add cloze type note."
+  (cl-assert (integerp deck-id) nil "Deck-id value must be an integer.")
+  (cl-assert (stringp type) nil "Type must be a string.")
+  (cl-assert (stringp keimenon) nil "Keimenon must be a string.")
+  (cl-assert (listp hypothesis)
+	     nil "Hypothesis value must be a list or nil, equal in length of Answer.")
+  (cl-assert (and (listp answer) (length= answer 1)) nil
+	     "Answer value must be a list of one item.")
+  (cl-assert (listp tags) nil "Tags must be a list.")
+  (cl-assert (or (= suspend 0)
+		 (= suspend 1))
+	     nil "Suspend value must either 0 or 1")
+  (cl-assert (listp links) nil "Links must be a list")
+  (cl-assert (gnosis-cloze-check keimenon answer) nil
+	     "Clozes (answer) values are not part of keimenon")
+  (if (equal id "NEW")
+      (gnosis-add-note-fields deck-id type keimenon (or hypothesis (list ""))
+			      answer parathema tags suspend links)
     (gnosis-update-note id keimenon hypothesis answer parathema tags links)))
 
 (defun gnosis-save-note (note deck)
