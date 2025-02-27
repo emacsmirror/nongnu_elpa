@@ -959,8 +959,8 @@ Compare 2 strings, ignoring case and whitespace."
 				 #'(lambda (str1 str2) (<= (string-distance str1 str2) gnosis-string-difference))
 			       #'string=)))
     (funcall string-compare-func
-	     (downcase (replace-regexp-in-string "\\s-" "" str1))
-	     (downcase (replace-regexp-in-string "\\s-" "" str2)))))
+	     (downcase (replace-regexp-in-string "\\s-" "" (gnosis-trim-quotes str1)))
+	     (downcase (replace-regexp-in-string "\\s-" "" (gnosis-trim-quotes str2))))))
 
 (defun gnosis-get-tags--unique ()
   "Return a list of unique strings for tags in `gnosis-db'."
