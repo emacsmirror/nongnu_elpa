@@ -864,53 +864,6 @@ Refer to `gnosis-add-note--y-or-n' for more information about keyword values."
 			   :images (gnosis-select-images)
 			   :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))
 
-(cl-defun gnosis-add-note--cloze (&key deck note tags (suspend 0) extra (images nil))
-  "Add cloze type note.
-
-DECK: Deck name for note.
-NOTE: Note with clozes, format for clozes is as follows:
-      This is a {c1:cloze} note type.
-      This is a {{c1::cloze}} note type.
-
-Anki like syntax is supported with double brackets & double colon, as
-well as single brackets({}) and colon(:), or even a mix.
-
-For each cX: tag, there will be gerenated a cloze note type.
-Example:
-      {c1:Preformed enterotoxins} from
-      {c2:Staphylococcus aureus} causes {c3:rapid} onset
-      food poisoning
-
-Generates 3 cloze note types.  Where the \"main\" part of the note is the full
-note, with the cloze(s) extracted & used as the \"answer\".
-
-One cloze note may have multiple clozes
-Example:
-      {c1:Streptococcus agalactiae (GBS)} and {c1:Listeria
-      monocytogenes} are CAMP test positive
-   
-HINT: Hint to display during review, before user-input.
-
-   NOTE: In gnosis-db, hint is referred to as `options', same column
-   options used in mcq.
-
-IMAGES: Cons cell, where car is the image to display before user-input
-	and cdr is the image to display post review.
-
-TAGS: Tags used to organize notes
-
-SUSPEND: When t, note will be ignored.
-
-EXTRA: Extra information displayed after user-input."
-  (let* ((notags-note (gnosis-cloze-remove-tags note))
-	 (cloze-contents (gnosis-cloze-extract-contents note))
-	 (clozes (gnosis-cloze-extract-answers cloze-contents))
-	 (hints (gnosis-cloze-extract-hints cloze-contents)))
-    (cl-loop for cloze in clozes
-	     for hint in hints
-	     do (gnosis-add-note-fields deck "cloze" notags-note hint cloze extra tags suspend
-				         nil))))
-
 (cl-defun gnosis-mc-cloze-extract-options (str &optional (char gnosis-mc-cloze-separator))
   "Extract options for MC-CLOZE note type from STR.
 
@@ -921,52 +874,6 @@ CHAR: separator for mc-cloze, default to `gnosis-mc-cloze-separator'"
              (when (string-match-p (regexp-quote char) s)
                (split-string s (regexp-quote char))))
            (split-string str " "))))
-
-(cl-defun gnosis-add-note--mc-cloze (&key deck question options answer
-					  extra (images nil) tags (suspend 0))
-  "Add MC-CLOZE note type to DECK.
-
-Refer to `gnosis-add-note-mc-cloze' for how this procedure should be used
-
-DECK: Deck to add note to
-QUESTION: Question, a string
-OPTIONS: Answer options, a list of strings
-ANSWER: the correct string, from OPTIONS.
-EXTRA: Extra notes
-IMAGES: Images to display during & after review
-TAGS: Tags for note
-SUSPEND: whether to suspend not"
-  (cl-assert (stringp deck) nil "Deck name must be a string")
-  (cl-assert (stringp question) nil "Question must be a string")
-  (cl-assert (listp options) nil "Options must be a list")
-  (cl-assert (stringp extra) nil "Extra value must be a string")
-  (cl-assert (listp images) nil "Images must be a list of string paths")
-  (cl-assert (listp tags) nil "Tags value must be a list of tags as strings")
-  (cl-assert (or (= suspend 1) (= suspend 0)) nil "Suspend value must be either 0 or 1")
-  (gnosis-add-note-fields deck "mc-cloze" question options answer extra tags (or suspend 0)
-			  (car images) (cdr images)))
-
-(defun gnosis-add-note-mc-cloze (deck)
-  "Add MC-CLOZE note type to DECK.
-
-MC-CLOZE (Multiple Choice Cloze) note type consists of a sentence with a
-single cloze, for which the user will be prompted to select the correct
-answer."
-  (interactive)
-  (let* ((input (gnosis-read-string-from-buffer (or (car gnosis-mc-cloze-guidance) "")
-						(or (cdr gnosis-mc-cloze-guidance) "")))
-	 (question (gnosis-mc-cloze-remove-separator input))
-	 (options (gnosis-mc-cloze-extract-options input)))
-    ;; Create a note for each option extracted
-    (cl-loop for option in options
-	     do (gnosis-add-note--mc-cloze
-		 :deck deck
-		 :question question
-		 :options option
-		 :answer (car option)
-		 :extra (gnosis-read-string-from-buffer "Extra" "")
-		 :images (gnosis-select-images)
-		 :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))))
 
 (defun gnosis-mcq-answer (id)
   "Choose the correct answer, from mcq choices for question ID."
