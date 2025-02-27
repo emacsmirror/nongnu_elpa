@@ -51,6 +51,11 @@
 
 (defvar fj-host "https://codeberg.org")
 
+(defvar fj-extra-repos nil
+  ;; list of "owner/repo"
+  ;; TODO: (owner . repo)
+  )
+
 (defvar-local fj-current-repo nil)
 
 (defvar-local fj-buffer-spec nil
@@ -556,6 +561,7 @@ X and Y are sorting args."
   :doc "Map for `fj-repo-tl-mode' and `fj-user-repo-tl-mode' to inherit."
   :parent fj-generic-tl-map
   "RET" #'fj-repo-tl-list-issues
+  "M-RET" #'fj-repo-tl-list-pulls
   "*" #'fj-repo-tl-star-repo
   "c" #'fj-create-issue
   "s" #'fj-repo-search-tl
@@ -616,6 +622,24 @@ X and Y are sorting args."
   (if (not fj-user)
       (user-error "Set `fj-user' to run this command")
     (fj-user-repos-tl fj-user)))
+
+(defun fj-list-repos ()
+  "List repos for `fj-user' extended by `fj-extra-repos'."
+  (interactive)
+  (let* ((buf (format "*fj-repos-%s*" fj-user))
+         (own-repos (and fj-user
+                         (fj-get-user-repos fj-user)))
+         (extra-repos (mapcar (lambda (repo)
+                                (fj-get (format "repos/%s/" repo)))
+                              fj-extra-repos))
+         (repos (append own-repos extra-repos))
+         (entries (fj-repo-tl-entries repos)))
+    (if (not repos)
+        (user-error "Set `fj-user' or `fj-extra-repos'")
+        (fj-repos-tl-render buf entries #'fj-repo-tl-mode)
+        (with-current-buffer (get-buffer-create buf)
+          (setq fj-buffer-spec
+                `(:owner ,fj-user :url ,(concat fj-host "/" fj-user)))))))
 
 (defun fj-star-repo (repo owner &optional unstar)
   "Star or UNSTAR REPO owned by OWNER."
@@ -1208,7 +1232,8 @@ NEW-BODY is the new comment text to send."
   "L" #'fj-repo-commit-log
   "R" #'fj-repo-update-settings
   "j" #'imenu
-  "l" #'fj-issues-tl-label-add)
+  "l" #'fj-issues-tl-label-add
+  "U" #'fj-copy-pr-url)
 
 (define-derived-mode fj-issue-tl-mode tabulated-list-mode
   "fj-issues"
@@ -1267,11 +1292,13 @@ NEW-BODY is the new comment text to send."
 
 (defun fj-issue-tl-entries (issues &optional repo)
   "Return tabluated list entries for ISSUES.
-STATE is a string."
+If REPO is provided, also include a repo column."
   (cl-loop
    for issue in issues
    collect
    (let-alist issue
+     ;; FIXME: GET full item data and set to fj-item-data?
+     ;; e.g. pulls listed don't have full base/head data (e.g. branch)
      (let* ((updated (date-to-time .updated_at))
             (updated-str (format-time-string "%s" updated))
             (updated-display (fedi--relative-time-description updated nil :brief))
@@ -1597,7 +1624,9 @@ JSON is the item's data to process the link with."
   "D" #'fj-view-pull-diff
   "R" #'fj-repo-update-settings
   "L" #'fj-repo-commit-log
-  "l" #'fj-issue-label-add)
+  "l" #'fj-issue-label-add
+  "I" #'fj-list-issues
+  "P" #'fj-list-pulls)
 
 (define-derived-mode fj-item-view-mode special-mode "fj-issue"
   "Major mode for viewing items."
@@ -1954,16 +1983,22 @@ ENDPOINT is the API endpoint to hit."
   "Merge pull request of current view or at point."
   (interactive)
   (fj-with-pull
-   (let ((repo (fj--get-buffer-spec :repo))
-         (owner (fj--get-buffer-spec :owner))
-         (number (if (eq major-mode 'fj-issue-tl-mode)
-                     (let* ((entry (tabulated-list-get-entry)))
-                       (car (seq-first entry)))
-                   (fj--get-buffer-spec :item)))
-         (merge-type (completing-read "Merge type: " fj-merge-types)))
-     ;; FIXME: add branch to prompt:
-     ;; (it is not provided in the pull tl listing data :/ )
-     (when (y-or-n-p (format "Merge PR #%s into %s?" number repo))
+   (let* ((repo (fj--get-buffer-spec :repo))
+          (owner (fj--get-buffer-spec :owner))
+          (data (save-excursion
+                  (goto-char (point-min))
+                  (fedi--property 'fj-item-data)))
+          (number (if (eq major-mode 'fj-issue-tl-mode)
+                      (let* ((entry (tabulated-list-get-entry)))
+                        (car (seq-first entry)))
+                    (fj--get-buffer-spec :item)))
+          ;; FIXME: branch is not provided in the tl data :/
+          (branch (unless (eq major-mode 'fj-issue-tl-mode)
+                    (map-nested-elt data '(base label))))
+          (branchs-str (if branch (concat " " branch) ""))
+          (merge-type (completing-read "Merge type: " fj-merge-types)))
+     (when (y-or-n-p
+            (format "Merge PR #%s into %s/%s%s?" number owner repo branch))
        (let ((resp (fj-pull-merge-post repo owner number merge-type)))
          (fedi-http--triage resp
                             (lambda (_)
@@ -2195,14 +2230,15 @@ MODE must be a member of `fj-search-modes', else it is silently
 ignored."
   (let* ((params `(("q" . ,query)
                    ("limit" . "100")
+                   ("includeDesc" . "true")
                    ("sort" . "updated")
-                   ,(when id
-                      `("exclusive" . ,id))
-                   ,(when (and mode
-                               (member mode fj-search-modes))
-                      `("mode" . ,mode))
-                   ,(when topic
-                      '("topic" . "t")))))
+                   ,@(when id
+                       `(("exclusive" . ,id)))
+                   ,@(when (and mode
+                                (member mode fj-search-modes))
+                       `(("mode" . ,mode)))
+                   ,@(when topic
+                       '(("topic" . "true"))))))
     (fj-get "/repos/search" params)))
 
 (defun fj-repo-search (query &optional topic id mode)
@@ -2381,6 +2417,15 @@ Optionally specify repo OWNER and URL."
           (owner (fj--repo-owner)))
      (fj-list-issues name owner))))
 
+(defun fj-repo-tl-list-pulls (&optional _)
+  "View issues of current repo from tabulated repos listing."
+  (interactive)
+  (fj-with-repo-entry
+   (let* ((entry (tabulated-list-get-entry))
+          (name (car (seq-first entry)))
+          (owner (fj--repo-owner)))
+     (fj-list-pulls name owner))))
+
 ;; author/owner button, in search or issues TL, not user repo TL
 (defun fj-list-user-repos (&optional _)
   "View repos of current entry user from tabulated repos listing."
@@ -2458,6 +2503,31 @@ Or if viewing a repo's issues, use its clone_url."
                         (fj--property 'fj-item-data)))))
     (kill-new url)
     (message (format "Copied: %s" url))))
+
+(defun fj-copy-pr-url ()
+  "Copy upstream Pull Request URL with branch name."
+  (interactive)
+  (let* ((owner (fj--get-buffer-spec :owner))
+         (repo (fj--get-buffer-spec :repo))
+         (number (fj--get-buffer-spec :item))
+         (author (fj--get-buffer-spec :author))
+
+         (endpoint (format "repos/%s/%s/pulls/%s" owner repo number))
+         (pr (fj-get endpoint))
+         (data (alist-get 'head pr))
+         (branch (alist-get 'ref data))
+         (author+repo (alist-get 'full_name
+                                 (alist-get 'repo data)))
+
+         (str (concat fj-host "/" author+repo
+                      "  "
+                      (format "%s:pr-%s-%s-%s"
+                              branch
+                              number
+                              author
+                              branch))))
+    (kill-new str)
+    (message (format "Copied: %s" str))))
 
 ;; TODO: star toggle
 
@@ -2615,9 +2685,9 @@ Optionally set PAGE and LIMIT."
        (fj-issues-tl-reload)))))
 
 (defun fj-issues-tl-edit-title ()
-  "Edit issue title from issues tabulatd list view."
+  "Edit issue title from issues tabulated list view."
   (interactive)
-  (fj-with-own-issue
+  (fj-with-own-issue-or-repo
    (let* ((entry (tabulated-list-get-entry))
           (repo (fj--get-buffer-spec :repo))
           (owner (fj--get-buffer-spec :owner))
@@ -2950,7 +3020,7 @@ to display."
        (message "All notifications read!")
        (fj-view-notifications-all)))))
 
-(defun fj-mark-notification (status &optional id)
+(defun fj-mark-notification (status &optional id reload)
   "Mark notification at point as STATUS.
 Use ID if provided."
   ;; PATCH /notifications/threads/{id}
@@ -2962,7 +3032,10 @@ Use ID if provided."
      resp
      (lambda (_)
        (message "Notification %s marked %s!" id status)
-       (fj-notifications-reload)))))
+       ;; FIXME: needs to be optional, as `fj-mark-notification-read'
+       ;; is also called when we load an item from notifs view:
+       (when reload
+         (fj-notifications-reload))))))
 
 (defun fj-mark-notification-read (&optional id)
   "Mark notification at point as read.
