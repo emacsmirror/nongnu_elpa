@@ -420,6 +420,10 @@ If FILL-PARAGRAPH-P, insert question using `fill-paragraph'."
 	     do (insert (format "\n%s.  %s" option-num option))
 	     (setf option-num (1+ option-num)))))
 
+(defun gnosis-trim-quotes (str)
+  "Remove prefix and suffxi quotes for STR."
+  (string-remove-prefix "\"" (string-remove-suffix "\"" str)))
+
 (defun gnosis-cloze-create (str clozes &optional cloze-string)
   "Replace CLOZES in STR with CLOZE-STRING."
   (cl-assert (listp clozes) nil "Adding clozes: Clozes need to be a list.")
@@ -428,7 +432,8 @@ If FILL-PARAGRAPH-P, insert question using `fill-paragraph'."
       (insert str)
       (goto-char (point-min))
       (dolist (cloze clozes)
-        (when (search-forward cloze nil t)
+        (when (search-forward
+	       (gnosis-trim-quotes cloze) nil t)
           (replace-match (propertize cloze-string 'face 'gnosis-face-cloze) nil t)))
       (buffer-string))))
 
@@ -448,7 +453,6 @@ If FILL-PARAGRAPH-P, insert question using `fill-paragraph'."
                  (replace-match (propertize (format "[%s]" hint)
 					    'face 'gnosis-face-cloze))
                  (goto-char (match-end 0)))) ; Move point to end of match
-      
       (buffer-string))))
 
 (defun gnosis-cloze-mark-answers (str answers face)
@@ -561,10 +565,14 @@ If FALSE t, use gnosis-face-false face"
 
 (defun gnosis-display-parathema (parathema)
   "Display PARATHEMA."
-  (goto-char (point-max))
-  (and parathema (gnosis-center-string parathema))
-  (gnosis-apply-syntax-overlay)
-  (gnosis-center-current-line))
+  (when parathema
+    (search-backward "----") ; search back for separator
+    (forward-line 1)
+    (insert "\n"
+	    (propertize (gnosis-center-string parathema) 'face 'gnosis-face-parathema)
+	    "\n")
+    (gnosis-apply-syntax-overlay)
+    (gnosis-center-current-line)))
 
 (defun gnosis-display-next-review (id success)
   "Display next interval of note ID for SUCCESS."
