@@ -3020,7 +3020,7 @@ to display."
        (message "All notifications read!")
        (fj-view-notifications-all)))))
 
-(defun fj-mark-notification (status &optional id)
+(defun fj-mark-notification (status &optional id reload)
   "Mark notification at point as STATUS.
 Use ID if provided."
   ;; PATCH /notifications/threads/{id}
@@ -3032,7 +3032,10 @@ Use ID if provided."
      resp
      (lambda (_)
        (message "Notification %s marked %s!" id status)
-       (fj-notifications-reload)))))
+       ;; FIXME: needs to be optional, as `fj-mark-notification-read'
+       ;; is also called when we load an item from notifs view:
+       (when reload
+         (fj-notifications-reload))))))
 
 (defun fj-mark-notification-read (&optional id)
   "Mark notification at point as read.
