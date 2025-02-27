@@ -1618,7 +1618,7 @@ With RESCHEDULE, reschedule the scheduled toot at point without editing."
   "Format CMD to be more readable.
 e.g. `mastodon-toot-send' -> Send."
   (let* ((str (symbol-name cmd))
-         (re "--\\(.*\\)$")
+         (re "mastodon-toot-\\(.*\\)$")
          (str2 (save-match-data
                  (string-match re str)
                  (match-string 1 str))))
