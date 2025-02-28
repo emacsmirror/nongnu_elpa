@@ -1422,7 +1422,9 @@ QUERY is a search query to filter by."
          (repo-data (fj-get-repo repo owner))
          ;; FIXME: pulls:
          (url (concat (alist-get 'html_url repo-data)
-                      "/issues"))
+                      (if (equal type "pulls")
+                          "/pulls"
+                        "/issues"))) ;; all is also issues
          (prev-buf (buffer-name (current-buffer)))
          (prev-mode major-mode)
          (state-str (or state "open"))
