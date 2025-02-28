@@ -770,8 +770,10 @@ MAX-ID is a flag to include the max_id pagination parameter."
         (let* ((inhibit-read-only t))
           ;; insert pinned toots first
           (when (and pinned (string= endpoint-type "statuses"))
-            (mastodon-profile--insert-statuses-pinned pinned)
-            (setq mastodon-tl--update-point (point))) ; updates after pinned toots
+            (let ((beg (point)))
+              (mastodon-profile--insert-statuses-pinned pinned)
+              (setq mastodon-tl--update-point (point))
+              (mastodon-media--inline-images beg (point)))) ; updates after pinned toots
           ;; insert items
           (funcall update-function json)
           (goto-char (point-min))
