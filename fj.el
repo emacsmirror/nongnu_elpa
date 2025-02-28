@@ -205,15 +205,16 @@ Not used for items that are links.")
   "Get entry for KEY from `fj-buffer-spec', else return nil."
   (plist-get fj-buffer-spec key))
 
-(defun fj-own-repo-p ()
+(defun fj--own-repo-p ()
   "T if repo at point, or in current view, is owned by `fj-user'."
   (or (eq major-mode 'fj-user-repo-tl-mode) ;; own repos listing
+      (eq major-mode 'fj-owned-issues-tl-mode) ;; own issues listing
       (and (eq major-mode 'fj-repo-tl-mode)
-           (equal fj-user (fj-get-tl-col 1)))
+           (equal fj-user (fj--get-tl-col 1)))
       (and (eq major-mode 'fj-issue-tl-mode)
            (equal fj-user (fj--get-buffer-spec :owner)))))
 
-(defun fj-issue-own-p ()
+(defun fj--issue-own-p ()
   "T if issue is authored by `fj-user'.
 Works in issue view mode or in issues tl."
   (pcase major-mode
@@ -221,10 +222,13 @@ Works in issue view mode or in issues tl."
      (equal fj-user
             (fj--get-buffer-spec :author)))
     ('fj-issue-tl-mode
-     (let* ((author (fj-get-tl-col 2)))
+     (let ((author (fj--get-tl-col 2)))
+       (equal fj-user author)))
+    ('fj-owned-issues-tl-mode
+     (let ((author (fj--get-tl-col 3)))
        (equal fj-user author)))))
 
-(defun fj-comment-own-p ()
+(defun fj--comment-own-p ()
   "T if comment is authored by `fj-user'."
   (and (eq major-mode 'fj-item-view-mode)
        (equal fj-user (fj--property 'fj-comment-author))))
@@ -239,7 +243,7 @@ Works in issue view mode or in issues tl."
   (interactive)
   (fedi-switch-to-buffer "*fj-"))
 
-(defun fj-issue-right-align-str (str)
+(defun fj--issue-right-align-str (str)
   "Right align STR and return it."
   (concat
    (propertize
@@ -252,7 +256,7 @@ Works in issue view mode or in issues tl."
   "Return repo owner, whatever view we are in.
 If we fail, return `fj-user'." ;; poss insane
   (if (eq major-mode #'fj-repo-tl-mode)
-      (fj-get-tl-col 1)
+      (fj--get-tl-col 1)
     (or (fj--get-buffer-spec :owner)
         fj-user))) ;; FIXME: fallback hack
 
@@ -260,29 +264,41 @@ If we fail, return `fj-user'." ;; poss insane
   "Return repo name, whatever view we are in."
   (or (fj--get-buffer-spec :repo)
       fj-current-repo
-      (fj-get-tl-col 0)
+      (fj--get-tl-col 0)
       (fj-current-dir-repo)))
 
-(defun fj-get-tl-col (num)
-  "Return column number NUM from current tl entry."
-  (let ((entry (tabulated-list-get-entry)))
-    (car
-     (seq-elt entry num))))
-
-(defun fj-map-alist-key (list key)
+(defun fj--map-alist-key (list key)
   "Return the values of KEY in LIST, a list of alists."
   (let ((test-fun (when (stringp key) #'equal)))
     (mapcar (lambda (x)
               (alist-get key x nil nil test-fun))
             list)))
 
-(defun fj-map-alist-to-cons (list k1 k2)
+(defun fj--map-alist-to-cons (list k1 k2)
   "Return an alist of values of K1 and K2 from LIST."
   (let ((test-fun (when (stringp k1) #'equal)))
     (mapcar (lambda (x)
               (cons (alist-get k1 x nil nil test-fun)
                     (alist-get k2 x nil nil test-fun)))
             list)))
+
+;;; TL ENTRIES
+
+(defun fj--get-tl-col (num)
+  "Return column number NUM from current tl entry."
+  (let ((entry (tabulated-list-get-entry)))
+    (car (seq-elt entry num))))
+
+(defun fj--repo-col-or-buf-spec (&optional current-repo)
+  "Try to return a repo name.
+If `fj-owned-issues-tl-mode', return column 3 of entry at point.
+Else get repo from `fj-buffer-spec'.
+If CURRENT-REPO, get from `fj-current-repo' instead."
+  (if (eq major-mode 'fj-owned-issues-tl-mode)
+      (fj--get-tl-col 2)
+    (if current-repo
+        fj-current-repo
+      (fj--get-buffer-spec :repo))))
 
 ;;; MACROS
 
@@ -304,7 +320,7 @@ If we fail, return `fj-user'." ;; poss insane
 (defmacro fj-with-own-repo (&rest body)
   "Execute BODY if a repo owned by `fj-user'."
   (declare (debug t))
-  `(if (not (fj-own-repo-p))
+  `(if (not (fj--own-repo-p))
        (user-error "Not in a repo you own")
      ,@body))
 
@@ -312,15 +328,15 @@ If we fail, return `fj-user'." ;; poss insane
   "Execute BODY if issue is authored by `fj-user'."
   (declare (debug t))
   `(fj-with-issue
-    (if (not (fj-issue-own-p))
+    (if (not (fj--issue-own-p))
         (user-error "Not an issue you own")
       ,@body)))
 
 (defmacro fj-with-own-issue-or-repo (&rest body)
   "Execute BODY if issue authored or repo owned by `fj-user'."
   (declare (debug t))
-  `(if (not (or (fj-issue-own-p)
-                (fj-own-repo-p)))
+  `(if (not (or (fj--issue-own-p)
+                (fj--own-repo-p)))
        (user-error "Not an issue or repo you own")
      ,@body))
 
@@ -328,7 +344,7 @@ If we fail, return `fj-user'." ;; poss insane
   "Execute BODY if comment at point is authored by `fj-user'."
   (declare (debug t))
   `(fj-with-issue
-    (if (not (fj-comment-own-p))
+    (if (not (fj--comment-own-p))
         (user-error "No comment of yours at point")
       ,@body)))
 
@@ -343,7 +359,7 @@ If we fail, return `fj-user'." ;; poss insane
   "Execute BODY if the tabulated list entry at point is owned by `fj-user'."
   (declare (debug t))
   `(fj-with-entry
-    (if (not (fj-issue-own-p))
+    (if (not (fj--issue-own-p))
         (user-error "No an entry you own")
       ,@body)))
 
@@ -505,7 +521,7 @@ JSON."
   "Return element from column NUMBER from tabulated list ENTRY."
   ;; this is run by `fj-tl-sort-pred' below, which is called on whole entries
   ;; (nil [(blah)]) and not just the vector, so we have to cadr the entry.
-  ;; for other uses you prob want `fj-get-tl-col'
+  ;; for other uses you prob want `fj--get-tl-col'
   (car
    (seq-elt
     (cadr entry)
@@ -666,9 +682,9 @@ X and Y are sorting args."
   "Delete repo at point, if you are its owner."
   (interactive)
   (let* ((repo (or (fj--get-buffer-spec :repo) ;; issues tl
-                   (fj-get-tl-col 0))) ;; own repos/search
+                   (fj--get-tl-col 0))) ;; own repos/search
          (endpoint (format "repos/%s/%s/" fj-user repo)))
-    (if (not (fj-own-repo-p))
+    (if (not (fj--own-repo-p))
         (user-error "Not your own repo")
       (when (y-or-n-p
              (format "Delete repo %s [Permanent and cannot be undone]?"
@@ -1152,10 +1168,10 @@ NEW-BODY is the new comment text to send."
                     (fj-read-repo-issue repo)))
          (owner (or owner fj-user)) ;; FIXME owner
          (url (format "repos/%s/%s/issues/%s/labels" owner repo issue))
-         (repo-labels (fj-map-alist-key
+         (repo-labels (fj--map-alist-key
                        (fj-repo-get-labels repo owner)
                        'name))
-         (issue-labels (fj-map-alist-key
+         (issue-labels (fj--map-alist-key
                         (fj-issue-get-labels repo owner issue)
                         'name))
          (choice (completing-read
@@ -1183,7 +1199,7 @@ NEW-BODY is the new comment text to send."
          (issue-labels (fj-issue-get-labels repo owner issue)))
     (if (not issue-labels)
         (user-error "No labels to remove")
-      (let* ((labels-alist (fj-map-alist-to-cons issue-labels 'name 'id))
+      (let* ((labels-alist (fj--map-alist-to-cons issue-labels 'name 'id))
              (choice (completing-read
                       (format "Remove label from #%s: " issue)
                       labels-alist))
@@ -1256,9 +1272,14 @@ NEW-BODY is the new comment text to send."
   'action 'fj-issues-tl-view
   'help-echo "RET: View this issue.")
 
-;; FIXME: refactor with tl-issues mode?
-;; this just adds Repo header
-(define-derived-mode fj-owned-issues-tl-mode tabulated-list-mode
+(defvar-keymap fj-owned-issues-tl-mode-map
+  :doc "Map for `fj-owned-issues-tl-mode', a tabluated list of issues."
+  :parent fj-issue-tl-mode-map ; has nav
+  )
+
+;; FIXME: refactor with `fj-issue-tl-mode' mode?
+;; this just adds Repo col
+(define-derived-mode fj-owned-issues-tl-mode fj-issue-tl-mode
   "fj-own-issues"
   "Major mode for browsing a tabulated list of issues."
   :group 'fj
@@ -1667,7 +1688,7 @@ TS is a formatted timestamp."
                'face 'fj-item-byline-face)
    (fj-author-or-owner-str username nil owner)
    edited ;; (fj-edited-str-maybe .created_at .updated_at)
-   (propertize (fj-issue-right-align-str ts)
+   (propertize (fj--issue-right-align-str ts)
                'face 'fj-item-byline-face)))
 
 (defun fj-render-comments (comments &optional author owner)
@@ -1785,7 +1806,7 @@ RELOAD mean we reloaded."
              ;; FIXME: this diffing will mark any issue as edited if it has
              ;; merely been commented on.
              ;; (fj-edited-str-maybe .created_at .updated_at)
-             (propertize (fj-issue-right-align-str stamp)
+             (propertize (fj--issue-right-align-str stamp)
                          'face 'fj-item-byline-face)
              "\n\n"
              (fj-render-body .body item)
@@ -2434,7 +2455,7 @@ Optionally specify repo OWNER and URL."
       (user-error "Already viewing user repos")
     (fj-with-entry
      (let* ((owner (if (eq major-mode #'fj-issue-tl-mode)
-                       (fj-get-tl-col 2) ;; ISSUE author not REPO owner
+                       (fj--get-tl-col 2) ;; ISSUE author not REPO owner
                      (fj--repo-owner))))
        (fj-user-repos-tl owner)))))
 
@@ -2603,22 +2624,22 @@ Optionally set PAGE and LIMIT."
   "View current issue from tabulated issues listing."
   (interactive)
   (fj-with-entry
-   (let* ((entry (tabulated-list-get-entry))
-          (number (car (seq-first entry)))
+   (let* ((number (fj--get-tl-col 0))
           (owner (fj--get-buffer-spec :owner))
+          (repo (fj--repo-col-or-buf-spec))
           (item (fj--property 'item)))
-     (fj-item-view fj-current-repo owner number nil
+     (fj-item-view repo owner number nil
                    (when (eq item 'pull) :pull)))))
 
 (defun fj-issues-tl-edit ()
   "Edit issue from tabulated issues listing."
   (interactive)
   (fj-with-own-entry
-   (let* ((number (fj-get-tl-col 0))
+   (let* ((number (fj--get-tl-col 0))
           (owner (fj--get-buffer-spec :owner))
           (title (substring-no-properties
-                  (fj-get-tl-col 4)))
-          (repo (fj--get-buffer-spec :repo))
+                  (fj--get-tl-col 4)))
+          (repo (fj--repo-col-or-buf-spec))
           (data (fj-get-item repo owner number))
           (old-body (alist-get 'body data)))
      (fj-issue-compose :edit nil 'issue old-body)
@@ -2632,10 +2653,10 @@ Optionally set PAGE and LIMIT."
   "Comment on issue from tabulated issues listing."
   (interactive)
   (fj-with-entry
-   (let* ((number (fj-get-tl-col 0))
+   (let* ((number (fj--get-tl-col 0))
           (owner (fj--get-buffer-spec :owner))
-          (repo (fj--get-buffer-spec :repo))
-          (title (fj-get-tl-col 4)))
+          (repo (fj--repo-col-or-buf-spec))
+          (title (fj--get-tl-col 4)))
      ;; TODO: display repo in status fields, but not editable?
      (fj-issue-compose nil #'fj-compose-comment-mode 'comment)
      (setq fj-compose-repo repo
@@ -2654,8 +2675,9 @@ Optionally set PAGE and LIMIT."
         (user-error "Issue already closed")
       (let* ((entry (tabulated-list-get-entry))
              (number (car (seq-first entry)))
-             (owner (fj--get-buffer-spec :owner)))
-        (fj-issue-close fj-current-repo owner number)
+             (owner (fj--get-buffer-spec :owner))
+             (repo (fj--repo-col-or-buf-spec)))
+        (fj-issue-close repo owner number)
         (fj-issues-tl-reload))))))
 
 (defun fj-issues-tl-delete (&optional _)
@@ -2665,9 +2687,10 @@ Optionally set PAGE and LIMIT."
    (fj-with-own-repo
     (let* ((entry (tabulated-list-get-entry))
            (number (car (seq-first entry)))
-           (owner (fj--get-buffer-spec :owner)))
+           (owner (fj--get-buffer-spec :owner))
+           (repo (fj--repo-col-or-buf-spec)))
       (when (y-or-n-p (format "Delete issue %s?" number))
-        (fj-issue-delete fj-current-repo owner number :no-confirm)
+        (fj-issue-delete repo owner number :no-confirm)
         (fj-issues-tl-reload))))))
 
 (defun fj-issues-tl-reopen (&optional _)
@@ -2676,12 +2699,11 @@ Optionally set PAGE and LIMIT."
   (fj-with-entry
    (if (string= (fj--property 'state) "open")
        (user-error "Issue already open")
-     ;; (if (string= (fj--get-buffer-spec :state) "open")
-     ;; (user-error "Viewing open issues?")
      (let* ((entry (tabulated-list-get-entry))
             (number (car (seq-first entry)))
-            (owner (fj--get-buffer-spec :owner)))
-       (fj-issue-close fj-current-repo owner number "open")
+            (owner (fj--get-buffer-spec :owner))
+            (repo (fj--repo-col-or-buf-spec)))
+       (fj-issue-close repo owner number "open")
        (fj-issues-tl-reload)))))
 
 (defun fj-issues-tl-edit-title ()
@@ -2689,7 +2711,7 @@ Optionally set PAGE and LIMIT."
   (interactive)
   (fj-with-own-issue-or-repo
    (let* ((entry (tabulated-list-get-entry))
-          (repo (fj--get-buffer-spec :repo))
+          (repo (fj--repo-col-or-buf-spec))
           (owner (fj--get-buffer-spec :owner))
           (number (car (seq-first entry))))
      (fj-issue-edit-title repo owner number)
@@ -2699,9 +2721,9 @@ Optionally set PAGE and LIMIT."
   "Add label to issue from tabulated issues listing."
   (interactive)
   (fj-with-entry
-   (let* ((number (fj-get-tl-col 0))
+   (let* ((number (fj--get-tl-col 0))
           (owner (fj--get-buffer-spec :owner))
-          (repo (fj--get-buffer-spec :repo)))
+          (repo (fj--repo-col-or-buf-spec)))
      (fj-issue-label-add repo owner number))))
 
 ;;; COMPOSING
@@ -3078,8 +3100,8 @@ Allow quick jumping to an element in a tabulated list view."
       (goto-char (point-min))
       (while (tabulated-list-get-entry)
         (let* ((name (if (eq major-mode #'fj-issue-tl-mode)
-                         (fj-get-tl-col 4)
-                       (fj-get-tl-col 0))))
+                         (fj--get-tl-col 4)
+                       (fj--get-tl-col 0))))
           (push `(,name . ,(point)) alist))
         (forward-line)))
     alist))
@@ -3368,9 +3390,9 @@ BUF-STR is the name of the buffer string to use."
   "Watch repo at point or in current view."
   (interactive)
   (let* ((owner (or (fj--get-buffer-spec :owner)
-                    (fj-get-tl-col 1)))
+                    (fj--get-tl-col 1)))
          (repo (or (fj--get-buffer-spec :repo)
-                   (fj-get-tl-col 0)))
+                   (fj--get-tl-col 0)))
          (endpoint (format "repos/%s/%s/subscription" owner repo))
          (resp (fj-put endpoint)))
     (fedi-http--triage resp
