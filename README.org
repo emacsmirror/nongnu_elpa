@@ -459,7 +459,7 @@ and pass it to your translator function as its text argument. Here's what
 =mastodon-toot--translate-toot-text= looks like:
 
 #+begin_src emacs-lisp
-  (defun mastodon-toot--translate-toot-text ()
+  (defun mastodon-toot-translate-toot-text ()
     "Translate text of toot at point.
     Uses `lingva.el'."
       (interactive)
