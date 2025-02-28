@@ -1592,12 +1592,11 @@ OPTIONS is an alist."
   "Return the first media attachment that is a moving image."
   (let ((attachments (mastodon-tl--property 'attachments))
         vids)
-    (mapc (lambda (x)
-            (let ((att-type (plist-get x :type)))
-              (when (or (string= "video" att-type)
-                        (string= "gifv" att-type))
-                (push x vids))))
-          attachments)
+    (cl-loop for x in attachments
+             do (let ((att-type (plist-get x :type)))
+                  (when (or (string= "video" att-type)
+                            (string= "gifv" att-type))
+                    (push x vids))))
     (car vids)))
 
 (defun mastodon-tl-mpv-play-video-from-byline ()
@@ -1833,11 +1832,10 @@ NO-BYLINE means just insert toot body, used for folding."
                 (mastodon-tl--buffer-property 'hide-replies nil :no-error)
                 ;; loading a tl with a prefix arg:
                 (mastodon-tl--hide-replies-p current-prefix-arg))
-	           (cl-remove-if-not #'mastodon-tl--is-reply toots)
-	         toots))))
-    (mapc (lambda (toot)
-            (mastodon-tl--toot toot nil thread domain nil no-byline))
-          toots)
+	       (cl-remove-if-not #'mastodon-tl--is-reply toots)
+	     toots))))
+    (cl-loop for toot in toots
+             do (mastodon-tl--toot toot nil thread domain nil no-byline))
     ;; media:
     (when mastodon-tl--display-media-p
       (mastodon-media--inline-images start-pos (point)))

@@ -612,14 +612,14 @@ FIELDS means provide a fields vector fetched by other means."
 
 (defun mastodon-profile--insert-statuses-pinned (pinned-statuses)
   "Insert each of the PINNED-STATUSES for a given account."
-  (mapc (lambda (pinned-status)
-          (insert
-           (concat "\n   "
-                   (propertize " pinned "
-                               'face '(:inherit success :box t))
-                   "   "))
-          (mastodon-tl--toot pinned-status))
-        pinned-statuses))
+  (cl-loop for s in pinned-statuses
+           do (progn
+                (insert
+                 (concat "\n   "
+                         (propertize " pinned "
+                                     'face '(:inherit success :box t))
+                         "   "))
+                (mastodon-tl--toot s))))
 
 (defun mastodon-profile--follows-p (list)
   "T if you have any relationship with the accounts in LIST."
