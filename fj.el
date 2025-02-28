@@ -208,6 +208,7 @@ Not used for items that are links.")
 (defun fj-own-repo-p ()
   "T if repo at point, or in current view, is owned by `fj-user'."
   (or (eq major-mode 'fj-user-repo-tl-mode) ;; own repos listing
+      (eq major-mode 'fj-owned-issues-tl-mode) ;; own issues listing
       (and (eq major-mode 'fj-repo-tl-mode)
            (equal fj-user (fj-get-tl-col 1)))
       (and (eq major-mode 'fj-issue-tl-mode)
@@ -221,7 +222,10 @@ Works in issue view mode or in issues tl."
      (equal fj-user
             (fj--get-buffer-spec :author)))
     ('fj-issue-tl-mode
-     (let* ((author (fj-get-tl-col 2)))
+     (let ((author (fj-get-tl-col 2)))
+       (equal fj-user author)))
+    ('fj-owned-issues-tl-mode
+     (let ((author (fj-get-tl-col 3)))
        (equal fj-user author)))))
 
 (defun fj-comment-own-p ()
@@ -263,12 +267,6 @@ If we fail, return `fj-user'." ;; poss insane
       (fj-get-tl-col 0)
       (fj-current-dir-repo)))
 
-(defun fj-get-tl-col (num)
-  "Return column number NUM from current tl entry."
-  (let ((entry (tabulated-list-get-entry)))
-    (car
-     (seq-elt entry num))))
-
 (defun fj-map-alist-key (list key)
   "Return the values of KEY in LIST, a list of alists."
   (let ((test-fun (when (stringp key) #'equal)))
@@ -283,6 +281,24 @@ If we fail, return `fj-user'." ;; poss insane
               (cons (alist-get k1 x nil nil test-fun)
                     (alist-get k2 x nil nil test-fun)))
             list)))
+
+;;; TL ENTRIES
+
+(defun fj-get-tl-col (num)
+  "Return column number NUM from current tl entry."
+  (let ((entry (tabulated-list-get-entry)))
+    (car (seq-elt entry num))))
+
+(defun fj--repo-col-or-buf-spec (&optional current-repo)
+  "Try to return a repo name.
+If `fj-owned-issues-tl-mode', return column 3 of entry at point.
+Else get repo from `fj-buffer-spec'.
+If CURRENT-REPO, get from `fj-current-repo' instead."
+  (if (eq major-mode 'fj-owned-issues-tl-mode)
+      (fj-get-tl-col 2)
+    (if current-repo
+        fj-current-repo
+      (fj--get-buffer-spec :repo))))
 
 ;;; MACROS
 
@@ -1256,9 +1272,14 @@ NEW-BODY is the new comment text to send."
   'action 'fj-issues-tl-view
   'help-echo "RET: View this issue.")
 
-;; FIXME: refactor with tl-issues mode?
-;; this just adds Repo header
-(define-derived-mode fj-owned-issues-tl-mode tabulated-list-mode
+(defvar-keymap fj-owned-issues-tl-mode-map
+  :doc "Map for `fj-owned-issues-tl-mode', a tabluated list of issues."
+  :parent fj-issue-tl-mode-map ; has nav
+  )
+
+;; FIXME: refactor with `fj-issue-tl-mode' mode?
+;; this just adds Repo col
+(define-derived-mode fj-owned-issues-tl-mode fj-issue-tl-mode
   "fj-own-issues"
   "Major mode for browsing a tabulated list of issues."
   :group 'fj
@@ -2603,11 +2624,11 @@ Optionally set PAGE and LIMIT."
   "View current issue from tabulated issues listing."
   (interactive)
   (fj-with-entry
-   (let* ((entry (tabulated-list-get-entry))
-          (number (car (seq-first entry)))
+   (let* ((number (fj-get-tl-col 0))
           (owner (fj--get-buffer-spec :owner))
+          (repo (fj--repo-col-or-buf-spec))
           (item (fj--property 'item)))
-     (fj-item-view fj-current-repo owner number nil
+     (fj-item-view repo owner number nil
                    (when (eq item 'pull) :pull)))))
 
 (defun fj-issues-tl-edit ()
@@ -2618,7 +2639,7 @@ Optionally set PAGE and LIMIT."
           (owner (fj--get-buffer-spec :owner))
           (title (substring-no-properties
                   (fj-get-tl-col 4)))
-          (repo (fj--get-buffer-spec :repo))
+          (repo (fj--repo-col-or-buf-spec))
           (data (fj-get-item repo owner number))
           (old-body (alist-get 'body data)))
      (fj-issue-compose :edit nil 'issue old-body)
@@ -2634,7 +2655,7 @@ Optionally set PAGE and LIMIT."
   (fj-with-entry
    (let* ((number (fj-get-tl-col 0))
           (owner (fj--get-buffer-spec :owner))
-          (repo (fj--get-buffer-spec :repo))
+          (repo (fj--repo-col-or-buf-spec))
           (title (fj-get-tl-col 4)))
      ;; TODO: display repo in status fields, but not editable?
      (fj-issue-compose nil #'fj-compose-comment-mode 'comment)
@@ -2654,8 +2675,9 @@ Optionally set PAGE and LIMIT."
         (user-error "Issue already closed")
       (let* ((entry (tabulated-list-get-entry))
              (number (car (seq-first entry)))
-             (owner (fj--get-buffer-spec :owner)))
-        (fj-issue-close fj-current-repo owner number)
+             (owner (fj--get-buffer-spec :owner))
+             (repo (fj--repo-col-or-buf-spec)))
+        (fj-issue-close repo owner number)
         (fj-issues-tl-reload))))))
 
 (defun fj-issues-tl-delete (&optional _)
@@ -2665,9 +2687,10 @@ Optionally set PAGE and LIMIT."
    (fj-with-own-repo
     (let* ((entry (tabulated-list-get-entry))
            (number (car (seq-first entry)))
-           (owner (fj--get-buffer-spec :owner)))
+           (owner (fj--get-buffer-spec :owner))
+           (repo (fj--repo-col-or-buf-spec)))
       (when (y-or-n-p (format "Delete issue %s?" number))
-        (fj-issue-delete fj-current-repo owner number :no-confirm)
+        (fj-issue-delete repo owner number :no-confirm)
         (fj-issues-tl-reload))))))
 
 (defun fj-issues-tl-reopen (&optional _)
@@ -2676,12 +2699,11 @@ Optionally set PAGE and LIMIT."
   (fj-with-entry
    (if (string= (fj--property 'state) "open")
        (user-error "Issue already open")
-     ;; (if (string= (fj--get-buffer-spec :state) "open")
-     ;; (user-error "Viewing open issues?")
      (let* ((entry (tabulated-list-get-entry))
             (number (car (seq-first entry)))
-            (owner (fj--get-buffer-spec :owner)))
-       (fj-issue-close fj-current-repo owner number "open")
+            (owner (fj--get-buffer-spec :owner))
+            (repo (fj--repo-col-or-buf-spec)))
+       (fj-issue-close repo owner number "open")
        (fj-issues-tl-reload)))))
 
 (defun fj-issues-tl-edit-title ()
@@ -2689,7 +2711,7 @@ Optionally set PAGE and LIMIT."
   (interactive)
   (fj-with-own-issue-or-repo
    (let* ((entry (tabulated-list-get-entry))
-          (repo (fj--get-buffer-spec :repo))
+          (repo (fj--repo-col-or-buf-spec))
           (owner (fj--get-buffer-spec :owner))
           (number (car (seq-first entry))))
      (fj-issue-edit-title repo owner number)
@@ -2701,7 +2723,7 @@ Optionally set PAGE and LIMIT."
   (fj-with-entry
    (let* ((number (fj-get-tl-col 0))
           (owner (fj--get-buffer-spec :owner))
-          (repo (fj--get-buffer-spec :repo)))
+          (repo (fj--repo-col-or-buf-spec)))
      (fj-issue-label-add repo owner number))))
 
 ;;; COMPOSING
