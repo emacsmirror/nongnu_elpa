@@ -799,9 +799,7 @@ Status notifications are created when you call
          (endpoint (mastodon-notifications--api
                     (format "notifications/%s" id)))
          (response (mastodon-http--get-json endpoint)))
-    (mastodon-http--triage
-     response (lambda (response)
-                (message "%s" (prin1-to-string response))))))
+    (message "%s" (prin1-to-string response))))
 
 (defun mastodon-notifications--get-unread-count ()
   "Return the number of unread notifications for the current account."
