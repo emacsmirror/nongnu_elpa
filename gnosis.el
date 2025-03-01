@@ -185,7 +185,6 @@ Avoid using an increased height value as this messes up with
     ("MC-cloze" . gnosis-add-note--mc-cloze))
   "Mapping of Notes & their respective functions.")
 
-
 (defvar gnosis-previous-note-tags '()
   "Tags input from previously added note.")
 
@@ -570,9 +569,7 @@ If FALSE t, use gnosis-face-false face"
     (forward-line 1)
     (insert "\n"
 	    (propertize (gnosis-center-string parathema) 'face 'gnosis-face-parathema)
-	    "\n")
-    (gnosis-apply-syntax-overlay)
-    (gnosis-center-current-line)))
+	    "\n")))
 
 (defun gnosis-display-next-review (id success)
   "Display next interval of note ID for SUCCESS."
@@ -586,7 +583,8 @@ If FALSE t, use gnosis-face-false face"
 	;; occur only when used for overriding review result.
         (progn (delete-region (point) (progn (end-of-line) (point)))
 	       (insert (propertize (replace-regexp-in-string "\n" "" next-review-msg)
-				   'face (if success 'gnosis-face-correct 'gnosis-face-false))))
+				   'face (if success 'gnosis-face-correct
+					   'gnosis-face-false))))
       ;; Default behaviour
       (goto-char (point-max))
       (insert (gnosis-center-string next-review-msg)))))
@@ -1785,15 +1783,18 @@ LINKS: List of id links in PARATHEMA."
 
 (defun gnosis-export-note (id)
   "Export note with ID."
-  (let ((note-data (append (gnosis-select '[type keimenon hypothesis answer tags] 'notes `(= id ,id) t)
+  (let ((note-data (append (gnosis-select '[type keimenon hypothesis answer tags]
+					  'notes `(= id ,id) t)
 			   (gnosis-select 'parathema 'extras `(= id ,id) t))))
       (gnosis-org--insert-note (number-to-string id)
 				(nth 0 note-data)
 				(nth 1 note-data)
 				(concat (string-remove-prefix "\n" gnosis-org-separator)
-					(mapconcat 'identity (nth 2 note-data) gnosis-org-separator))
+					(mapconcat 'identity (nth 2 note-data)
+						   gnosis-org-separator))
 				(concat (string-remove-prefix "\n" gnosis-org-separator)
-					(mapconcat 'identity (nth 3 note-data) gnosis-org-separator))
+					(mapconcat 'identity (nth 3 note-data)
+						   gnosis-org-separator))
 				(nth 5 note-data)
 				(nth 4 note-data))))
 
@@ -2219,37 +2220,6 @@ Return note ids for notes that match QUERY."
 		   (list old-value)
 		   id)
 	  (message "Update Note: %d" id))))))
-
-(defun gnosis-db-update-v2 ()
-  "Update to first gnosis-db version."
-  (emacsql-with-transaction gnosis-db
-    (emacsql gnosis-db [:alter-table decks :add failure-factor])
-    (emacsql gnosis-db [:alter-table decks :add ef-increase])
-    (emacsql gnosis-db [:alter-table decks :add ef-decrease])
-    (emacsql gnosis-db [:alter-table decks :add ef-threshold])
-    (emacsql gnosis-db [:alter-table decks :add initial-interval])
-    (emacsql gnosis-db [:pragma (= user-version 2)])
-    (gnosis--create-table 'activity-log gnosis-db-schema-activity-log)
-    ;; Update to most recent gnosis db version.
-    (gnosis-db-update-v3)))
-
-(defun gnosis-db-update-v3 ()
-  "Update database to version 3."
-  (ignore-errors
-    (emacsql-with-transaction gnosis-db
-      (emacsql gnosis-db [:alter-table decks :drop-column failure-factor])
-      (emacsql gnosis-db [:alter-table decks :drop-column ef-increase])
-      (emacsql gnosis-db [:alter-table decks :drop-column ef-threshold])
-      (emacsql gnosis-db [:alter-table decks :drop-column ef-decrease])
-      (emacsql gnosis-db [:alter-table decks :drop-column initial-interval])
-      ;; Review changes
-      (emacsql gnosis-db [:alter-table review :rename ef :to gnosis])
-      (emacsql gnosis-db [:alter-table review :rename ff :to amnesia])
-      (emacsql gnosis-db [:alter-table review :drop-column interval])
-      ;; Add activity log
-      (gnosis--create-table 'activity-log gnosis-db-schema-activity-log)
-      ;; Update version
-      (emacsql gnosis-db [:pragma (= user-version gnosis-db-version)]))))
 
 (defun gnosis-db-update-v4 ()
   "Update to databse version v4."
