@@ -123,9 +123,12 @@ EXAMPLE: Boolean value, if non-nil do not add properties for note."
 		  nil t)))
     title))
 
-(defun gnosis-org-parse-notes ()
-  "Extract content for each level-2 heading for note headings with a GNOSIS_ID."
-  (let (results)
+(defun gnosis-org-parse-notes (&optional separator)
+  "Extract content for each level-2 heading for note headings with a GNOSIS_ID.
+
+Split content of Hypothesis and Answer headings using SEPARATOR."
+  (let ((sep (or separator gnosis-org-separator))
+        results)
     (org-element-map (org-element-parse-buffer) 'headline
       (lambda (headline)
         (let* ((level (org-element-property :level headline))
@@ -138,12 +141,24 @@ EXAMPLE: Boolean value, if non-nil do not add properties for note."
               (push gnosis-type entry)
               (dolist (child (org-element-contents headline))
                 (when (eq 'headline (org-element-type child))
-                  (let ((child-text (org-element-interpret-data (org-element-contents child))))
-                    (setq child-text (string-trim child-text))
-                    (if (string-empty-p child-text)
-                        (push nil entry) ; Push nil if the content is empty
-                      (push (substring-no-properties child-text) entry)))))
-              (push tags entry) ;; Add tags last
+                  (let* ((child-title (org-element-property :raw-value child))
+                         (child-text (substring-no-properties
+                                    (string-trim
+                                     (org-element-interpret-data
+                                      (org-element-contents child)))))
+                         (processed-text
+                          (cond
+                           ((and (member child-title '("Hypothesis" "Answer"))
+                                 (not (string-empty-p child-text)))
+                            (mapcar (lambda (s)
+                                    (string-trim
+                                     (string-remove-prefix "-"
+                                      (string-remove-prefix sep s))))
+                                  (split-string child-text sep t "[ \t\n]+")))
+                           ((string-empty-p child-text) nil)
+                           (t child-text))))
+                    (push processed-text entry))))
+              (push tags entry)
               (push (nreverse entry) results)))))
       nil nil)
     results))
