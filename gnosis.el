@@ -212,14 +212,14 @@ Avoid using an increased height value as this messes up with
   "Boolean value to check if user is currently in a review edit.")
 
 
-(cl-defun gnosis-select (value table &optional (restrictions '1=1) (flatten nil))
+(defun gnosis-select (value table &optional restrictions flatten)
   "Select VALUE from TABLE, optionally with RESTRICTIONS.
 
 Optional argument FLATTEN, when non-nil, flattens the result."
-  (let ((output (emacsql gnosis-db `[:select ,value :from ,table :where ,restrictions])))
-    (if flatten
-	(apply #'append output)
-      output)))
+  (let* ((restrictions (or restrictions '(= 1 1)))
+	 (flatten (or flatten nil))
+	 (output (emacsql gnosis-db `[:select ,value :from ,table :where ,restrictions])))
+    (if flatten (apply #'append output) output)))
 
 (defun gnosis-select-id (value table id)
   "Select VALUE from TABLE for note ID."
@@ -476,8 +476,9 @@ First item of answers will be marked as false, while the rest unanswered."
 							 'gnosis-face-false)))
 	 final)
     (if unanswered
-	(setq final (gnosis-cloze-mark-answers str-with-false (if (listp unanswered) unanswered
-								(list unanswered))
+	(setq final (gnosis-cloze-mark-answers str-with-false
+					       (if (listp unanswered) unanswered
+						 (list unanswered))
 					       'gnosis-face-unanswered))
       (setq final (or str-with-false str)))
     final))
@@ -545,7 +546,8 @@ If FALSE t, use gnosis-face-false face"
   (insert "\n\n"
 	  (propertize "Your answer:" 'face 'gnosis-face-directions)
 	  " "
-	  (propertize user-input 'face (if false 'gnosis-face-false 'gnosis-face-correct)))
+	  (propertize user-input 'face
+		      (if false 'gnosis-face-false 'gnosis-face-correct)))
   (gnosis-center-current-line)
   (newline))
 
@@ -703,8 +705,8 @@ LENGTH: length of id, default to a random number between 10-15."
          (max-val (expt 10 length))
          (min-val (expt 10 (1- length)))
          (id (+ (random (- max-val min-val)) min-val))
-	 (current-ids (if deck-p (gnosis-select 'id 'decks '1=1 t)
-			(gnosis-select 'id 'notes '1=1 t))))
+	 (current-ids (if deck-p (gnosis-select 'id 'decks nil t)
+			(gnosis-select 'id 'notes nil t))))
     (if (member id current-ids)
         (gnosis-generate-id length)
       id)))
@@ -1052,13 +1054,13 @@ If you only require a tag prompt, refer to `gnosis-tags--prompt'."
 
 (defun gnosis-tags-get-all ()
   "Output all tags from database."
-  (gnosis-select '* 'tags '1=1 t))
+  (gnosis-select '* 'tags nil t))
 
 (defun gnosis-tags-refresh ()
   "Refresh tags value."
   (let ((tags (gnosis-get-tags--unique)))
     ;; Delete all values from tags table.
-    (gnosis--delete 'tags '1=1)
+    (gnosis--delete 'tags nil)
     ;; Insert all unique tags from notes.
     (emacsql-with-transaction gnosis-db
       (cl-loop for tag in tags
@@ -1089,7 +1091,7 @@ QUERY: String value,"
 		  (or (stringp query) (null query)))
 	     nil "Incorrect value passed to `gnosis-collect-note-ids'")
   (cond ((and (null tags) (null due) (null deck) (null query))
-	 (gnosis-select 'id 'notes '1=1 t))
+	 (gnosis-select 'id 'notes nil t))
 	;; All due notes
 	((and (null tags) due (null deck))
 	 (gnosis-review-get-due-notes))
@@ -2669,12 +2671,12 @@ Skips days where no note was reviewed."
 			       ("Total Notes" 10 gnosis-dashboard-sort-total-notes)])
   (tabulated-list-init-header)
   (setq tabulated-list-entries
-	(cl-loop for id in (gnosis-select 'id 'decks '1=1 t)
+	(cl-loop for id in (gnosis-select 'id 'decks nil t)
 		 for output = (gnosis-dashboard-output-deck id)
 		 when output
 		 collect (list (number-to-string id) (vconcat output))))
   (tabulated-list-print t)
-  (setf gnosis-dashboard--current `(:type decks :ids ,(gnosis-select 'id 'decks '1=1 t))))
+  (setf gnosis-dashboard--current `(:type decks :ids ,(gnosis-select 'id 'decks nil t))))
 
 (defun gnosis-dashboard-decks-add ()
   "Add deck & refresh."
