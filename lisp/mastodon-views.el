@@ -335,15 +335,17 @@ If ID is provided, use that list."
 Prompt for name and replies policy."
   (interactive)
   (let* ((title (read-string "New list name: "))
-         (replies-policy (completing-read "Replies policy: " ; give this a proper name
-                                          '("followed" "list" "none")
-                                          nil t nil nil "list")) ; default
+         (replies-policy
+          (completing-read "Replies policy: " ; give this a proper name
+                           '("followed" "list" "none")
+                           nil t nil nil "list")) ; default
          (exclusive (when (y-or-n-p "Exclude items from home timeline? ")
                       "true"))
-         (response (mastodon-http--post (mastodon-http--api "lists")
-                                        `(("title" . ,title)
-                                          ("replies_policy" . ,replies-policy)
-                                          ("exclusive" . ,exclusive)))))
+         (response (mastodon-http--post
+                    (mastodon-http--api "lists")
+                    `(("title" . ,title)
+                      ("replies_policy" . ,replies-policy)
+                      ("exclusive" . ,exclusive)))))
     (mastodon-views--list-action-triage
      response "list %s created!" title)))
 

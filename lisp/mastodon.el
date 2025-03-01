@@ -76,8 +76,10 @@
   (autoload 'mastodon-toot-translate-toot-text "mastodon-toot"))
 (autoload 'mastodon-toot--view-toot-history "mastodon-tl")
 
+;; for M-x visibility
+;; (views.el uses `mastodon-mode-map', so we can't easily require it)
 (autoload 'mastodon-views-view-follow-suggestions "mastodon-views"
-  nil :interactive) ;; for M-x visibility
+  nil :interactive)
 (autoload 'mastodon-views-view-filters "mastodon-views"
   nil :interactive)
 (autoload 'mastodon-views-view-follow-requests "mastodon-views"
@@ -89,6 +91,16 @@
 (autoload 'mastodon-views-view-lists "mastodon-views"
   nil :interactive)
 (autoload 'mastodon-views-view-scheduled-toots "mastodon-views"
+  nil :interactive)
+(autoload 'mastodon-views-add-account-to-list "mastodon-views"
+  nil :interactive)
+(autoload 'mastodon-views-add-toot-account-at-point-to-list "mastodon-views"
+  nil :interactive)
+(autoload 'mastodon-views-create-list "mastodon-views"
+  nil :interactive)
+(autoload 'mastodon-views-create-filter "mastodon-views"
+  nil :interactive)
+(autoload 'mastodon-views-view-list-timeline "mastodon-views"
   nil :interactive)
 
 (autoload 'special-mode "simple")
