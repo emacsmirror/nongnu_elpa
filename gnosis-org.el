@@ -32,6 +32,8 @@
 (require 'org)
 (require 'org-element)
 
+(defvar gnosis-org-separator "\n- ")
+
 (defun gnosis-org--global-props (name &optional buffer)
   "Get the plists of global org properties by NAME in BUFFER.
 
