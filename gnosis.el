@@ -231,32 +231,32 @@ Optional argument FLATTEN, when non-nil, flattens the result."
 			(cdr (gnosis-select 'name 'sqlite-master '(= type table) t)))))
     (member (symbol-name table) tables)))
 
-(cl-defun gnosis--create-table (table &optional values)
+(defun gnosis--create-table (table &optional values)
   "Create TABLE for VALUES."
   (unless (gnosis-table-exists-p table)
     (emacsql gnosis-db `[:create-table ,table ,values])))
 
-(cl-defun gnosis--drop-table (table)
+(defun gnosis--drop-table (table)
   "Drop TABLE from `gnosis-db'."
   (emacsql gnosis-db `[:drop-table ,table]))
 
-(cl-defun gnosis-drop-table (table)
+(defun gnosis-drop-table (table)
   "Drop TABLE from `gnosis-db'."
   (when (gnosis-table-exists-p table)
     (gnosis--drop-table table)))
 
-(cl-defun gnosis--insert-into (table values)
+(defun gnosis--insert-into (table values)
   "Insert VALUES to TABLE."
   (emacsql gnosis-db `[:insert :into ,table :values ,values]))
 
-(cl-defun gnosis-update (table value where)
+(defun gnosis-update (table value where)
   "Update records in TABLE with to new VALUE based on the given WHERE condition.
 
 Example:
  (gnosis-update ='notes ='(= keimenon \"NEW VALUE\") ='(= id 12))"
   (emacsql gnosis-db `[:update ,table :set ,value :where ,where]))
 
-(cl-defun gnosis-get (value table &optional (restrictions '1=1))
+(defun gnosis-get (value table &optional restrictions)
   "Return caar of VALUE from TABLE, optionally with where RESTRICTIONS."
   (caar (gnosis-select value table restrictions)))
 
