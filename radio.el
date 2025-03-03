@@ -69,6 +69,12 @@ The `:url' keyword is replaced with the URL of the radio station."
      (if (eq arg :url) url arg))
    radio-command))
 
+(defun radio--current-proc-sentinel (_process event)
+  "Sentinel for the current media player process.
+
+EVENT is a string describing the type of event."
+  (radio-line-mode--set (format "[Station: <%s>]" (string-trim event))))
+
 (defun radio--play (station)
   "Play radio station.
 
@@ -79,6 +85,7 @@ being played, it is stopped first."
 	 (program (car cmd))
 	 (start-process-args `(,program nil ,program ,@(cdr cmd))))
     (setq radio--current-proc (apply #'start-process start-process-args))
+    (set-process-sentinel radio--current-proc #'radio--current-proc-sentinel)
     (process-put radio--current-proc :radio-station station)
     (radio-line-mode--set (format "[Station: %s]" (car station)))))
 
@@ -122,9 +129,8 @@ effect."
 
 (defun radio-list-stations--generate ()
   "Generate the radio station list for `tabulated-list-mode'."
-  (let ((current-station
-	 (and radio--current-proc
-	      (process-get radio--current-proc :radio-station))))
+  (let ((current-station (and (process-live-p radio--current-proc)
+			      (process-get radio--current-proc :radio-station))))
     (mapcar
      (lambda (station)
        (let* ((is-current (equal station current-station))
