@@ -845,7 +845,7 @@ If `rpm-change-log-uses-utc' is nil, \"today\" means the local time zone."
 					   (funcall rpm-spec-user-full-name)
 					 rpm-spec-user-full-name))
          (system-time-locale "C")
-         (change-log-header (format "* %s %s  <%s> - %s"
+         (change-log-header (format "* %s %s <%s> - %s"
                                     (rpm-change-log-date-string)
                                     fullname
                                     address
