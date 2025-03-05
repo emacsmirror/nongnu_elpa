@@ -166,7 +166,7 @@ effect."
 (defun radio-line-mode--set (string)
   "Set mode line status to STRING and force update."
   (setq radio-line-mode--string string)
-  (force-mode-line-update))
+  (force-mode-line-update 'all))
 
 ;;;###autoload
 (define-minor-mode radio-line-mode
