@@ -61,7 +61,6 @@
 (autoload 'mastodon-notifications--timeline "mastodon-notifications")
 (autoload 'mastodon-notifications-policy "mastodon-notifications")
 (autoload 'mastodon-notifications-requests "mastodon-notifications")
-
 (autoload 'mastodon-profile--fetch-server-account-settings "mastodon-profile")
 (autoload 'mastodon-profile-get-toot-author "mastodon-profile")
 (autoload 'mastodon-profile--make-author-buffer "mastodon-profile")
@@ -70,7 +69,6 @@
 (autoload 'mastodon-profile-update-user-profile-note "mastodon-profile")
 (autoload 'mastodon-profile-view-bookmarks "mastodon-profile")
 (autoload 'mastodon-profile-view-favourites "mastodon-profile")
-
 (autoload 'mastodon-toot-edit-toot-at-point "mastodon-toot")
 (when (require 'lingva nil :no-error)
   (autoload 'mastodon-toot-translate-toot-text "mastodon-toot"))
@@ -107,6 +105,7 @@
 
 (defvar mastodon-tl--highlight-current-toot)
 (defvar mastodon-notifications--map)
+(defvar mastodon-notifications-grouped-types)
 
 (defgroup mastodon nil
   "Interface with Mastodon."
@@ -411,8 +410,11 @@ MAX-ID is a request parameter for pagination."
      "notifications"
      'mastodon-notifications--timeline
      type
-     (when max-id
-       `(("max_id" . ,(mastodon-tl--buffer-property 'max-id))))
+     `(,@(when mastodon-group-notifications
+           (mastodon-http--build-array-params-alist
+            "grouped_types[]" mastodon-notifications-grouped-types))
+       ,@(when max-id
+           `(("max_id" . ,(mastodon-tl--buffer-property 'max-id)))))
      nil nil nil
      (if (or (not mastodon-group-notifications)
              ;; if version less than 1st grouped notifs release:

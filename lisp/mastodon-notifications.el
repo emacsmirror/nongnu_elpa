@@ -133,8 +133,9 @@ Notification types are named according to their name on the server.")
   "Alist of subjects for notification types.")
 
 (defvar mastodon-notifications-grouped-types
-  '(follow reblog favourite)
-  "List of notification types for which grouping is implemented.")
+  '("reblog" "favourite") ;; TODO: implement follow!
+  "List of notification types for which grouping is implemented.
+Used in `mastodon-notifications-get'")
 
 (defvar mastodon-notifications--action-alist
   '((reblog                . "Boosted")
