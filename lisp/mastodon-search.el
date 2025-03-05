@@ -284,11 +284,10 @@ JSON is the data from the server.
 If NOTE is non-nil, include user's profile note. This is also
  called by `mastodon-tl--get-follow-suggestions' and
  `mastodon-profile--insert-follow-requests'."
-  (mapc (lambda (acct)
-          (insert (concat (mastodon-search--propertize-user acct note)
-                          mastodon-tl--horiz-bar
-                          "\n\n")))
-        json))
+  (cl-loop for acct in json
+           do (insert (concat (mastodon-search--propertize-user acct note)
+                              mastodon-tl--horiz-bar
+                              "\n\n"))))
 
 (defun mastodon-search--propertize-user (acct &optional note)
   "Propertize display string for ACCT, optionally including profile NOTE."
@@ -322,20 +321,19 @@ If NOTE is non-nil, include user's profile note. This is also
 
 (defun mastodon-search--print-tags-list (tags-list)
   "Insert a propertized list of TAGS-LIST."
-  (mapc (lambda (el)
-          (insert
-           " : "
-           (propertize (concat "#" (car el))
-                       'face '(:box t)
-                       'mouse-face 'highlight
-                       'mastodon-tag (car el)
-                       'mastodon-tab-stop 'hashtag
-                       'item-type 'tag ; for next/prev nav
-                       'byline t ; for next/prev nav
-                       'help-echo (concat "Browse tag #" (car el))
-                       'keymap mastodon-tl--link-keymap)
-           " : \n\n"))
-        tags-list))
+  (cl-loop for el in tags-list
+           do (insert
+               " : "
+               (propertize (concat "#" (car el))
+                           'face '(:box t)
+                           'mouse-face 'highlight
+                           'mastodon-tag (car el)
+                           'mastodon-tab-stop 'hashtag
+                           'item-type 'tag ; for next/prev nav
+                           'byline t ; for next/prev nav
+                           'help-echo (concat "Browse tag #" (car el))
+                           'keymap mastodon-tl--link-keymap)
+               " : \n\n")))
 
 (defun mastodon-search--get-user-info (account)
   "Get user handle, display name, account URL and profile note from ACCOUNT."

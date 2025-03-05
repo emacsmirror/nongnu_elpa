@@ -207,11 +207,11 @@ provides the JSON data."
 
 (defun mastodon-views--print-list-set (lists)
   "Print each account plus a separator for each list in LISTS."
-  (mapc (lambda (x)
-          (mastodon-views--print-list-accounts x)
-          (insert (propertize (concat " " mastodon-tl--horiz-bar "\n\n")
-                              'face 'success)))
-        lists))
+  (cl-loop for x in lists
+           do (progn
+                (mastodon-views--print-list-accounts x)
+                (insert (propertize (concat " " mastodon-tl--horiz-bar "\n\n")
+                                    'face 'success)))))
 
 (defun mastodon-views--print-list-accounts (list)
   "Insert the accounts in list named LIST, an alist."
@@ -335,15 +335,17 @@ If ID is provided, use that list."
 Prompt for name and replies policy."
   (interactive)
   (let* ((title (read-string "New list name: "))
-         (replies-policy (completing-read "Replies policy: " ; give this a proper name
-                                          '("followed" "list" "none")
-                                          nil t nil nil "list")) ; default
+         (replies-policy
+          (completing-read "Replies policy: " ; give this a proper name
+                           '("followed" "list" "none")
+                           nil t nil nil "list")) ; default
          (exclusive (when (y-or-n-p "Exclude items from home timeline? ")
                       "true"))
-         (response (mastodon-http--post (mastodon-http--api "lists")
-                                        `(("title" . ,title)
-                                          ("replies_policy" . ,replies-policy)
-                                          ("exclusive" . ,exclusive)))))
+         (response (mastodon-http--post
+                    (mastodon-http--api "lists")
+                    `(("title" . ,title)
+                      ("replies_policy" . ,replies-policy)
+                      ("exclusive" . ,exclusive)))))
     (mastodon-views--list-action-triage
      response "list %s created!" title)))
 
@@ -613,19 +615,18 @@ JSON is the filters data."
                                        "-"))
         (whole-str "whole words only:"))
     (insert (concat "Keywords: | " whole-str "\n"))
-    (mapc (lambda (kw)
-            (let ((whole (if (eq :json-false (alist-get 'whole_word kw))
-                             "nil"
-                           "t")))
-              (insert
-               (propertize (concat
-                            (format "\"%s\" | %s\n"
-                                    (alist-get 'keyword kw) whole))
-                           'kw-id (alist-get 'id kw)
-                           'item-json kw
-                           'mastodon-tab-stop t
-                           'whole-word whole))))
-          kws)
+    (cl-loop for kw in kws
+             do (let ((whole (if (eq :json-false (alist-get 'whole_word kw))
+                                 "nil"
+                               "t")))
+                  (insert
+                   (propertize (concat
+                                (format "\"%s\" | %s\n"
+                                        (alist-get 'keyword kw) whole))
+                               'kw-id (alist-get 'id kw)
+                               'item-json kw
+                               'mastodon-tab-stop t
+                               'whole-word whole))))
     ;; table display of kws:
     (table-capture beg (point) "|" "\n" nil (+ 2 (length whole-str)))
     (table-justify-column 'center)

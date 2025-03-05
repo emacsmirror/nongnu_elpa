@@ -612,14 +612,14 @@ FIELDS means provide a fields vector fetched by other means."
 
 (defun mastodon-profile--insert-statuses-pinned (pinned-statuses)
   "Insert each of the PINNED-STATUSES for a given account."
-  (mapc (lambda (pinned-status)
-          (insert
-           (concat "\n   "
-                   (propertize " pinned "
-                               'face '(:inherit success :box t))
-                   "   "))
-          (mastodon-tl--toot pinned-status))
-        pinned-statuses))
+  (cl-loop for s in pinned-statuses
+           do (progn
+                (insert
+                 (concat "\n   "
+                         (propertize " pinned "
+                                     'face '(:inherit success :box t))
+                         "   "))
+                (mastodon-tl--toot s))))
 
 (defun mastodon-profile--follows-p (list)
   "T if you have any relationship with the accounts in LIST."
@@ -770,8 +770,10 @@ MAX-ID is a flag to include the max_id pagination parameter."
         (let* ((inhibit-read-only t))
           ;; insert pinned toots first
           (when (and pinned (string= endpoint-type "statuses"))
-            (mastodon-profile--insert-statuses-pinned pinned)
-            (setq mastodon-tl--update-point (point))) ; updates after pinned toots
+            (let ((beg (point)))
+              (mastodon-profile--insert-statuses-pinned pinned)
+              (setq mastodon-tl--update-point (point))
+              (mastodon-media--inline-images beg (point)))) ; updates after pinned toots
           ;; insert items
           (funcall update-function json)
           (goto-char (point-min))

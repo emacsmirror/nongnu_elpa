@@ -133,8 +133,9 @@ Notification types are named according to their name on the server.")
   "Alist of subjects for notification types.")
 
 (defvar mastodon-notifications-grouped-types
-  '(follow reblog favourite)
-  "List of notification types for which grouping is implemented.")
+  '("reblog" "favourite") ;; TODO: implement follow!
+  "List of notification types for which grouping is implemented.
+Used in `mastodon-notifications-get'")
 
 (defvar mastodon-notifications--action-alist
   '((reblog                . "Boosted")
@@ -920,12 +921,11 @@ JSON is the data returned by the server."
 JSON is the data from the server."
   ;; calqued off `mastodon-views--insert-users-propertized-note'
   ;; and `mastodon-search--insert-users-propertized'
-  (mapc (lambda (req)
-          (insert
-           (concat
-            (mastodon-notifications--format-req-user req)
-            mastodon-tl--horiz-bar "\n\n")))
-        json))
+  (cl-loop for req in json
+           do (insert
+               (concat
+                (mastodon-notifications--format-req-user req)
+                mastodon-tl--horiz-bar "\n\n"))))
 
 (defun mastodon-notifications--format-req-user (req &optional note)
   "Format a notification request user, REQ.

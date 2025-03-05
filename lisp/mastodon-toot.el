@@ -817,20 +817,19 @@ To use the downloaded emoji, run `mastodon-toot-enable-custom-emoji'."
         (user-error "Looks like you need to set up emojify first")
       (unless (file-directory-p mastodon-custom-emoji-dir)
         (make-directory mastodon-custom-emoji-dir nil)) ; no add parent
-      (mapc (lambda (x)
-              (let ((url (alist-get 'url x))
-                    (shortcode (alist-get 'shortcode x)))
-                ;; skip anything that contains unexpected characters
-                (when (and url shortcode
-                           (string-match-p "^[a-zA-Z0-9-_]+$" shortcode)
-                           (string-match-p "^[a-zA-Z]+$" (file-name-extension url)))
-                  (url-copy-file url
-                                 (concat mastodon-custom-emoji-dir
-                                         shortcode
-                                         "."
-                                         (file-name-extension url))
-                                 t))))
-            custom-emoji)
+      (cl-loop for x in custom-emoji
+               do (let ((url (alist-get 'url x))
+                        (shortcode (alist-get 'shortcode x)))
+                    ;; skip anything that contains unexpected characters
+                    (when (and url shortcode
+                               (string-match-p "^[a-zA-Z0-9-_]+$" shortcode)
+                               (string-match-p "^[a-zA-Z]+$" (file-name-extension url)))
+                      (url-copy-file url
+                                     (concat mastodon-custom-emoji-dir
+                                             shortcode
+                                             "."
+                                             (file-name-extension url))
+                                     t))))
       (message "Custom emoji for %s downloaded to %s"
                mastodon-instance-url
                mastodon-custom-emoji-dir))))
@@ -843,15 +842,14 @@ The list is formatted for `emojify-user-emojis', which see."
                                               nil ; not full path
                                               "^[^.]")) ; no dot files
          mastodon-emojify-user-emojis)
-    (mapc (lambda (x)
-            (push
-             `(,(concat ":"
-                        (file-name-base x) ":")
-               . (("name" . ,(file-name-base x))
-                  ("image" . ,(concat mastodon-custom-emojis-dir x))
-                  ("style" . "github")))
-             mastodon-emojify-user-emojis))
-          custom-emoji-files)
+    (cl-loop for x in custom-emoji-files
+             do (push
+                 `(,(concat ":"
+                            (file-name-base x) ":")
+                   . (("name" . ,(file-name-base x))
+                      ("image" . ,(concat mastodon-custom-emojis-dir x))
+                      ("style" . "github")))
+                 mastodon-emojify-user-emojis))
     (reverse mastodon-emojify-user-emojis)))
 
 (defun mastodon-toot-enable-custom-emoji ()
