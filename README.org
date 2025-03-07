@@ -432,6 +432,10 @@ available at https://holgerschurig.github.io/en/emacs-mastodon-hydra/.
 A simple code snippet to enable narrowing to current item in timelines:
 http://takeonrules.com/2024/10/31/hacking-on-mastodon-emacs-package-to-narrow-viewing/
 
+**** Sachac's config goodies
+
+The incomparable sachac has a bunch of =mastodon.el= extensions and goodies in their literate config, available here: https://sachachua.com/dotemacs/index.html#mastodon.
+
 *** Live-updating timelines: =mastodon-async-mode=
 
 (code taken from [[https://github.com/alexjgriffith/mastodon-future.el][mastodon-future]].)
