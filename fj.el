@@ -750,10 +750,10 @@ Also set `fj-current-repo' to the name."
         (when (member dir names) ;; nil if dir no match any remotes
           (setq fj-current-repo dir))))))
 
-(defun fj-get-repos ()
+(defun fj-get-repos (&optional limit)
   "Return the user's repos."
   (let ((endpoint "user/repos"))
-    (fj-get endpoint '(("limit" . "100")))))
+    (fj-get endpoint '(("limit" . ,(or limit "100"))))))
 
 (defun fj-get-repo-candidates (repos)
   "Return REPOS as completion candidates."
@@ -1055,7 +1055,7 @@ MERGE-TYPE is one of `fj-merge-types'."
 ;;   (interactive "P")
 ;;   (let* ((repo (fj-read-user-repo repo))
 ;;          (prs (fj-repo-get-pull-reqs repo)))
-;;     (fj-list-issues repo nil prs))) ;; FIXME: owner
+;;     (fj-list-issues-do repo nil prs))) ;; FIXME: owner
 
 ;;; COMMENTS
 
@@ -1314,7 +1314,7 @@ NEW-BODY is the new comment text to send."
    (let* ((entry (tabulated-list-get-entry))
           (name (car (seq-elt entry 2)))
           (owner (fj--repo-owner)))
-     (fj-list-issues name owner))))
+     (fj-list-issues-do name owner))))
 
 (defun fj-issue-tl-entries (issues &optional repo)
   "Return tabluated list entries for ISSUES.
@@ -1399,13 +1399,13 @@ If REPO is provided, also include a repo column."
   "List issues and pulls for REPO by OWNER, filtered by STATE."
   (interactive "P")
   (let* ((repo (fj-read-user-repo repo)))
-    (fj-list-issues repo owner state "all")))
+    (fj-list-issues-do repo owner state "all")))
 
 (defun fj-list-pulls (repo &optional owner state)
   "List pulls for REPO by OWNER, filtered by STATE."
   (interactive "P")
   (let* ((repo (fj-read-user-repo repo)))
-    (fj-list-issues repo owner state "pulls")))
+    (fj-list-issues-do repo owner state "pulls")))
 
 (defvar fj-repo-data nil) ;; for transients for now
 
@@ -1493,22 +1493,22 @@ PREV-MODE is the major mode active in the previous buffer."
 
 (defun fj-list-issues-search (query &optional state type)
   "Search current repo issues for QUERY.
-STATE and TYPE as for `fj-list-issues'."
+STATE and TYPE as for `fj-list-issues-do'."
   (interactive "sSearch issues in repo: ")
   (let ((owner (fj--get-buffer-spec :owner)))
-    (fj-list-issues nil owner (or state "all") type query)))
+    (fj-list-issues-do nil owner (or state "all") type query)))
 
 (defun fj-list-issues-closed (&optional repo owner type)
   "Display closed ISSUES for REPO by OWNER in tabulated list view.
 TYPE is the item type."
   (interactive "P")
-  (fj-list-issues repo owner "closed" type))
+  (fj-list-issues-do repo owner "closed" type))
 
 (defun fj-list-issues-all (&optional repo owner type)
   "Display all ISSUES for REPO by OWNER in tabulated list view.
 TYPE is the item type."
   (interactive "P")
-  (fj-list-issues repo owner "all" type))
+  (fj-list-issues-do repo owner "all" type))
 
 (defun fj-list-issues-cycle ()
   "Cycle between listing of open, closed, and all issues."
@@ -1516,7 +1516,7 @@ TYPE is the item type."
   (fj-destructure-buf-spec (state owner repo type)
     (pcase state
       ("closed" (fj-list-issues-all repo owner type))
-      ("all" (fj-list-issues repo owner nil type))
+      ("all" (fj-list-issues-do repo owner nil type))
       (_ ; open is default
        (fj-list-issues-closed repo owner type)))))
 
@@ -1546,17 +1546,17 @@ Repo's stargazers or watchers."
   (interactive)
   (when (eq major-mode #'fj-issue-tl-mode)
     (fj-destructure-buf-spec (state owner repo type)
-      (fj-list-issues repo owner state type))))
+      (fj-list-issues-do repo owner state type))))
 
 (defun fj-issues-item-cycle ()
   "Cycle item type listing of issues, pulls, and all."
   (interactive)
   (fj-destructure-buf-spec (state owner repo type)
     (pcase type
-      ("pulls" (fj-list-issues repo owner state "all"))
-      ("all" (fj-list-issues repo owner state "issues"))
+      ("pulls" (fj-list-issues-do repo owner state "all"))
+      ("all" (fj-list-issues-do repo owner state "issues"))
       (_ ; issues default
-       (fj-list-issues repo owner state "pulls")))))
+       (fj-list-issues-do repo owner state "pulls")))))
 
 ;;; ISSUE VIEW
 (defvar fj-url-regex fedi-post-url-regex)
@@ -2277,7 +2277,7 @@ ignored."
          (choice (completing-read "Repo: " cands))
          (user (cl-fourth
                 (assoc choice cands #'equal))))
-    (fj-list-issues choice user)))
+    (fj-list-issues-do choice user)))
 
 ;; doesn't work
 (defun fj-repo-candidates-annot-fun (cand)
@@ -2436,7 +2436,7 @@ Optionally specify repo OWNER and URL."
    (let* ((entry (tabulated-list-get-entry))
           (name (car (seq-first entry)))
           (owner (fj--repo-owner)))
-     (fj-list-issues name owner))))
+     (fj-list-issues-do name owner))))
 
 (defun fj-repo-tl-list-pulls (&optional _)
   "View issues of current repo from tabulated repos listing."
@@ -2846,7 +2846,7 @@ Call response and update functions."
               ;; we we need prev-buffer arg?
               ;; else generic reload function
               (fj-item-view-reload)
-            (fj-list-issues repo)))))))
+            (fj-list-issues-do repo)))))))
 
 (defun fj-search-users (query &optional limit)
   "Search instance users for QUERY.
