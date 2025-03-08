@@ -772,7 +772,7 @@ DEFAULT is initial input for `completing-read'."
     (completing-read "Repo: " cands
                      nil nil default)))
 
-(defun fj-read-user-repo (arg)
+(defun fj-read-user-repo (&optional arg)
   "Return a user repo.
 If ARG is a prefix, prompt with `completing-read'.
 If it is a string, return it.
@@ -1409,22 +1409,25 @@ If REPO is provided, also include a repo column."
 
 (defvar fj-repo-data nil) ;; for transients for now
 
-(defun fj-list-issues* ()
+(defun fj-list-issues ()
   "List issues for current repo.
 Doesn't assume that `fj-user' owns the repo."
-  ;; FIXME: make this the default for `fj-list-issues'?
+  ;; FIXME: make work from non-repo buffer
   (interactive)
-  (let* ((remote ;; maybe works for own repo, as you gotta push:
-          (or (magit-get-push-remote)
-              ;; nice for not own repo:
-              (magit-read-remote "Remote:" nil :use-only)))
-         (url (magit-get (format "remote.%s.url" remote)))
-         (repo-+-owner (last (split-string url "/") 2))
-         (owner (car repo-+-owner))
-         (repo (cadr repo-+-owner)))
-    (fj-list-issues repo owner)))
+  (if (not (magit-inside-worktree-p :noerror))
+      ;; if not in repo, fall back to `fj-user' repos
+      (fj-list-issues-do)
+    (let* ((remote ;; maybe works for own repo, as you gotta push:
+            (or (magit-get-push-remote)
+                ;; nice for not own repo:
+                (magit-read-remote "Remote:" nil :use-only)))
+           (url (magit-get (format "remote.%s.url" remote)))
+           (repo-+-owner (last (split-string url "/") 2))
+           (owner (car repo-+-owner))
+           (repo (cadr repo-+-owner)))
+      (fj-list-issues-do repo owner))))
 
-(defun fj-list-issues (repo &optional owner state type query)
+(defun fj-list-issues-do (&optional repo owner state type query)
   "Display ISSUES in a tabulated list view.
 Either for `fj-current-repo' or REPO, a string, owned by OWNER.
 With a prefix arg, or if REPO and `fj-current-repo' are nil,
