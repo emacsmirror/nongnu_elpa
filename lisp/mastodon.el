@@ -105,7 +105,11 @@
 
 (defvar mastodon-tl--highlight-current-toot)
 (defvar mastodon-notifications--map)
-(defvar mastodon-notifications-grouped-types)
+
+(defvar mastodon-notifications-grouped-types
+  '("reblog" "favourite") ;; TODO: implement follow!
+  "List of notification types for which grouping is implemented.
+Used in `mastodon-notifications-get'")
 
 (defgroup mastodon nil
   "Interface with Mastodon."
