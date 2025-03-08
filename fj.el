@@ -1536,6 +1536,8 @@ TYPE is the item type."
     ('fj-notifications-mode (fj-notifications-reload))
     ;; TODO: commits-mode, users-mode (they don't have reload funs)
     ('fj-users-mode (fj-users-reload))
+    ('fj-owned-issues-tl-mode
+     (fj-list-own-issues))
     (_ (user-error "Reload not implemented yet"))))
 
 (defun fj-users-reload ()
