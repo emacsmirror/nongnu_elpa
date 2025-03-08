@@ -1104,24 +1104,30 @@ Return nil if no matching element."
           (setq mention (pop mentions)))
         return))))
 
-(defun mastodon-tl--userhandle-from-url (url buffer-text)
+(defun mastodon-tl--userhandle-from-url (url &optional buffer-text)
   "Return the user hande the URL points to or nil if it is not a profile link.
 BUFFER-TEXT is the text covered by the link with URL, for a user profile
-this should be of the form <at-sign><user id>, e.g. \"@Gargon\"."
+this should be of the form <at-sign><user id>, e.g. \"@Gargon\".
+This is called on all post URLs, so needs to handle non profile URLs
+gracefully."
   (let* ((parsed-url (url-generic-parse-url url))
          (host (url-host parsed-url))
          (local-p (string=
                    (url-host (url-generic-parse-url mastodon-instance-url))
                    host))
-         (path (url-filename parsed-url)))
-    (when (and (string= "@" (substring buffer-text 0 1))
-               ;; don't error on domain only url (rare):
-               (not (string= "" path))
-               (string= (downcase buffer-text)
-                        (downcase (substring path 1))))
-      (if local-p
-          buffer-text ; no instance suffix for local mention
-        (concat buffer-text "@" host)))))
+         (path-raw (url-filename parsed-url)))
+    (unless (string-empty-p path-raw)
+      (let ((path (substring path-raw 1))) ;; remove "/" prefix
+        (if (not buffer-text)
+            (when (string-prefix-p "@" path)
+              (if local-p path (concat "@" host)))
+          (when (and (string= "@" (substring buffer-text 0 1))
+                     ;; don't error on domain only url (rare):
+                     (string= (downcase buffer-text)
+                              (downcase path)))
+            (if local-p
+                buffer-text ; no instance suffix for local mention
+              (concat buffer-text "@" host))))))))
 
 (defun mastodon-tl--hashtag-from-url (url instance-url)
   "Return the hashtag that URL points to or nil if URL is not a tag link.
@@ -2491,7 +2497,7 @@ ID is that of the post the context is currently displayed for."
 ;;; FOLLOW/BLOCK/MUTE, ETC
 
 (defun mastodon-tl-follow-user (user-handle
-                                 &optional notify langs reblogs json)
+                                &optional notify langs reblogs json)
   "Query for USER-HANDLE from current status and follow that user.
 If NOTIFY is \"true\", enable notifications when that user posts.
 If NOTIFY is \"false\", disable notifications when that user posts.
@@ -2504,6 +2510,32 @@ JSON is a flag arg for `mastodon-http--post'."
   (mastodon-tl--do-if-item
    (mastodon-tl--do-user-action-and-response
     user-handle "follow" nil notify langs reblogs json)))
+
+(defun mastodon-tl-follow-user-by-handle (user-handle)
+  "Prompt for a USER-HANDLE and follow that user.
+USER-HANDLE can also be a URL to a user profile page."
+  ;; code adapted from sachac:
+  ;; https://sachachua.com/dotemacs/index.html#mastodon. thanks sachac!
+  (interactive "MHandle: ")
+  (when (string-match "https?://\\(.+?\\)/\\(@.+\\)" user-handle)
+    (setq user-handle
+          ;; sachac's model doesn't work with local user handles in URL,
+          ;; meaning the search below will fail, so we use our own
+          ;; URL-to-handle function, modified for the purpose:
+          ;; (concat (match-string 2 user-handle) "@" (match-string 1 user-handle))))
+          (mastodon-tl--userhandle-from-url user-handle)))
+  (let* ((account (mastodon-profile--search-account-by-handle
+                   user-handle))
+         (user-id (alist-get 'id account))
+         (name (if (not (string-empty-p
+                         (alist-get 'display_name account)))
+                   (alist-get 'display_name account)
+                 (alist-get 'username account)))
+         (url (mastodon-http--api (format "accounts/%s/%s" user-id "follow"))))
+    (if account
+        (mastodon-tl--do-user-action-function url name
+                                              (substring user-handle 1) "follow")
+      (user-error "Cannot find a user with handle %S" user-handle))))
 
 ;; TODO: make this action "enable/disable notifications"
 (defun mastodon-tl-enable-notify-user-posts (user-handle)
