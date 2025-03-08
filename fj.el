@@ -1030,12 +1030,8 @@ STATE should be \"open\", \"closed\", or \"all\"."
          (pull (or pull (fj-read-repo-pull-req repo))))
     (fj-issue-comment repo pull)))
 
-(defvar fj-merge-types
-  '("merge" "rebase" "rebase-merge" "squash"
-    "fast-forward-only")) ; "manually-merged")) ??
-
-;; FIXME: we need to post DO body param containing one of `fj-merge-types'
-(defun fj-pull-merge-post (repo owner number merge-type)
+(defun fj-pull-merge-post (repo owner number merge-type
+                                &optional merge-commit)
   "POST a merge pull request REPO by OWNER.
 NUMBER is that of the PR.
 MERGE-TYPE is one of `fj-merge-types'."
@@ -1043,7 +1039,8 @@ MERGE-TYPE is one of `fj-merge-types'."
         (params `(("owner" . ,owner)
                   ("repo" . ,repo)
                   ("index" . ,number)
-                  ("Do" . ,merge-type))))
+                  ("Do" . ,merge-type)
+                  ("MergeCommitId" . ,merge-commit))))
     (fj-post url params)))
 
 ;; (defun fj-pull-req-comment-edit (&optional repo pull)
@@ -2005,8 +2002,7 @@ ENDPOINT is the API endpoint to hit."
   (interactive)
   (fj-with-pull
    (fj-destructure-buf-spec (repo owner item)
-     (let* (
-            (data (save-excursion
+     (let* ((data (save-excursion
                     (goto-char (point-min))
                     (fedi--property 'fj-item-data)))
             (number (if (eq major-mode 'fj-issue-tl-mode)
@@ -2017,10 +2013,13 @@ ENDPOINT is the API endpoint to hit."
             (branch (unless (eq major-mode 'fj-issue-tl-mode)
                       (map-nested-elt data '(base label))))
             (branch-str (if branch (concat " " branch) ""))
-            (merge-type (completing-read "Merge type: " fj-merge-types)))
+            (merge-type (completing-read "Merge type: " fj-merge-types))
+            (merge-commit (when (equal merge-type "manually-merged")
+                            (completing-read "Merge commit: "))))
        (when (y-or-n-p
               (format "Merge PR #%s into %s/%s%s?" number owner repo branch-str))
-         (let ((resp (fj-pull-merge-post repo owner number merge-type)))
+         (let ((resp (fj-pull-merge-post repo owner number
+                                         merge-type merge-commit)))
            (fedi-http--triage resp
                               (lambda (_)
                                 (message "Merged!")))))))))
