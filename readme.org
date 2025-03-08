@@ -198,11 +198,12 @@ Repo settings transient:
 |           | fj-item-view-reload              | Reload the current item view.                                       |
 |           | fj-item-view-reopen              | Reopen item being viewed.                                           |
 | C-M-q     | fj-kill-all-buffers              | Kill all fj buffers.                                                |
-| I         | fj-list-issues                   | Display ISSUES in a tabulated list view.                            |
+| I         | fj-list-issues                   | List issues for current repo.                                       |
 |           | fj-list-issues-+-pulls           | List issues and pulls for REPO by OWNER, filtered by STATE.         |
 |           | fj-list-issues-all               | Display all ISSUES for REPO by OWNER in tabulated list view.        |
 |           | fj-list-issues-closed            | Display closed ISSUES for REPO by OWNER in tabulated list view.     |
 | C-c C-c   | fj-list-issues-cycle             | Cycle between listing of open, closed, and all issues.              |
+|           | fj-list-issues-do                | Display ISSUES in a tabulated list view.                            |
 |           | fj-list-issues-search            | Search current repo issues for QUERY.                               |
 |           | fj-list-own-issues               | List issues in repos owned by `fj-user'.                            |
 | O         | fj-list-own-repos                | List repos for `fj-user'.                                           |
