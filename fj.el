@@ -751,9 +751,10 @@ Also set `fj-current-repo' to the name."
           (setq fj-current-repo dir))))))
 
 (defun fj-get-repos (&optional limit)
-  "Return the user's repos."
+  "Return the user's repos.
+Return LIMIT repos, LIMIT is a string."
   (let ((endpoint "user/repos"))
-    (fj-get endpoint '(("limit" . ,(or limit "100"))))))
+    (fj-get endpoint `(("limit" . ,(or limit "100"))))))
 
 (defun fj-get-repo-candidates (repos)
   "Return REPOS as completion candidates."
@@ -1034,7 +1035,8 @@ STATE should be \"open\", \"closed\", or \"all\"."
                                 &optional merge-commit)
   "POST a merge pull request REPO by OWNER.
 NUMBER is that of the PR.
-MERGE-TYPE is one of `fj-merge-types'."
+MERGE-TYPE is one of `fj-merge-types'.
+MERGE-COMMIT is the merge commit ID, used for type manually-merged."
   (let ((url (format "repos/%s/%s/pulls/%s/merge" owner repo number))
         (params `(("owner" . ,owner)
                   ("repo" . ,repo)
@@ -2021,7 +2023,7 @@ ENDPOINT is the API endpoint to hit."
             (branch-str (if branch (concat " " branch) ""))
             (merge-type (completing-read "Merge type: " fj-merge-types))
             (merge-commit (when (equal merge-type "manually-merged")
-                            (completing-read "Merge commit: "))))
+                            (read-string "Merge commit: "))))
        (when (y-or-n-p
               (format "Merge PR #%s into %s/%s%s?" number owner repo branch-str))
          (let ((resp (fj-pull-merge-post repo owner number
@@ -3046,7 +3048,8 @@ to display."
 
 (defun fj-mark-notification (status &optional id reload)
   "Mark notification at point as STATUS.
-Use ID if provided."
+Use ID if provided.
+If RELOAD, also reload the notications view."
   ;; PATCH /notifications/threads/{id}
   (let* ((id (or id (fj--property 'fj-notification)))
          (endpoint (format "notifications/threads/%s" id))
