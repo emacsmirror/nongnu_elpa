@@ -1411,7 +1411,10 @@ If REPO is provided, also include a repo column."
 
 (defun fj-list-issues ()
   "List issues for current repo.
-Doesn't assume that `fj-user' owns the repo."
+If we are in a repo, don't assume `fj-user' owns it. In that case we
+fetch owner/repo from git config.
+If we are not in a repo, call `fj-list-issues-do' without using git
+config."
   ;; FIXME: make work from non-repo buffer
   (interactive)
   (if (not (magit-inside-worktree-p :noerror))
