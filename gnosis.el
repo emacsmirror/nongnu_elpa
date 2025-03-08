@@ -97,10 +97,6 @@ framework's minibuffer."
   "Function to use for `completing-read'."
   :type 'function)
 
-(defcustom gnosis-center-content-p t
-  "Non-nil means center content."
-  :type 'boolean)
-
 (defcustom gnosis-apply-highlighting-p t
   "Non-nil means apply syntax highlighting."
   :type 'boolean)
@@ -316,41 +312,36 @@ History is disabled."
 (defun gnosis-center-current-line (&optional center?)
   "Centers text in the current line ignoring leading spaces.
 
-Acts only when CENTER? is t."
+Acts only when CENTER? is non-nil."
   (interactive)
   (let* ((start (line-beginning-position))
          (end (line-end-position))
          (text (string-trim (buffer-substring start end)))
          (padding (max (/ (- (window-width) (length text)) 2) 0))
-	 (center? (or center? gnosis-center-content-p)))
+	 (center? (or center? t)))
     (if center?
 	(progn (delete-region start end)
 	       (insert (make-string padding ? ) text))
       (insert text))))
 
-(defun gnosis-center-string (input-string &optional center?)
-  "Center each line of the given INPUT-STRING in the current window width.
-
-Acts only when CENTER? is t."
-  (let ((window-width (window-width))
-	(center? (or center? gnosis-center-content-p)))
-    (if center?
-	(mapconcat
-	 (lambda (line)
-           (let* ((text (string-trim line))
-                  (wrapped (with-temp-buffer
-                             (insert text)
-                             (fill-region (point-min) (point-max))
-                             (buffer-string)))
-                  (lines (split-string wrapped "\n")))
-             (mapconcat
-              (lambda (line)
-		(let ((padding (max (/ (- window-width (length line)) 2) 0)))
-                  (concat (make-string padding ? ) line)))
-              lines
-              "\n")))
-	 (split-string input-string "\n") "\n")
-      input-string)))
+(defun gnosis-center-string (string)
+  "Center each line of STRING in current window width."
+  (let ((width (window-width)))
+    (mapconcat
+     (lambda (line)
+       (let ((trimmed (string-trim line)))
+         (mapconcat
+          (lambda (wrapped)
+            (concat (make-string (max 0 (/ (- width (length wrapped)) 2)) ?\s)
+                    wrapped))
+          (split-string (with-temp-buffer
+                         (insert trimmed)
+                         (fill-region (point-min) (point-max))
+                         (buffer-string))
+                       "\n")
+          "\n")))
+     (split-string string "\n")
+     "\n")))
 
 (defun gnosis-apply-center-buffer-overlay (&optional point)
   "Center text in buffer starting at POINT using `gnosis-center-current-line'.
@@ -1788,17 +1779,17 @@ LINKS: List of id links in PARATHEMA."
   (let ((note-data (append (gnosis-select '[type keimenon hypothesis answer tags]
 					  'notes `(= id ,id) t)
 			   (gnosis-select 'parathema 'extras `(= id ,id) t))))
-      (gnosis-org--insert-note (number-to-string id)
-				(nth 0 note-data)
-				(nth 1 note-data)
-				(concat (string-remove-prefix "\n" gnosis-org-separator)
-					(mapconcat 'identity (nth 2 note-data)
-						   gnosis-org-separator))
-				(concat (string-remove-prefix "\n" gnosis-org-separator)
-					(mapconcat 'identity (nth 3 note-data)
-						   gnosis-org-separator))
-				(nth 5 note-data)
-				(nth 4 note-data))))
+    (gnosis-org--insert-note (number-to-string id)
+			     (nth 0 note-data)
+			     (nth 1 note-data)
+			     (concat (string-remove-prefix "\n" gnosis-org-separator)
+				     (mapconcat 'identity (nth 2 note-data)
+						gnosis-org-separator))
+			     (concat (string-remove-prefix "\n" gnosis-org-separator)
+				     (mapconcat 'identity (nth 3 note-data)
+						gnosis-org-separator))
+			     (nth 5 note-data)
+			     (nth 4 note-data))))
 
 (defun gnosis-edit-note (id)
   "Edit note with ID."
