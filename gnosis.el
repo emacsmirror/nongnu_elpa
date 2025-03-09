@@ -2425,12 +2425,14 @@ DATES: Dates in the activity log, a list of dates in (YYYY MM DD).
 NUM: Streak number.
 DATE: Integer, used with `gnosis-algorithm-date' to get previous dates."
   (let ((num (or num 0))
-	(date (or date 0)))
+	(date (or date -1)))
     (cond ((> num 666)
 	   "+666") ;; do not go over 666, avoiding `max-lisp-eval-depth'
 	  ((member (gnosis-algorithm-date date) dates)
 	   (gnosis-dashboard--streak dates (cl-incf num) (- date 1)))
-	  (t (number-to-string num)))))
+	  (t (number-to-string (if (member (gnosis-algorithm-date) dates)
+				   (+ 1 num)
+				 num))))))
 
 (defun gnosis-dashboard-output-average-rev ()
   "Output the average daily notes reviewed for current year.
