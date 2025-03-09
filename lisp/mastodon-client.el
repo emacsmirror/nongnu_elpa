@@ -44,6 +44,14 @@
   :group 'mastodon
   :type 'file)
 
+(defcustom mastodon-client-encrypt-access-token t
+  "Whether to encrypt the user's authentication token in the plstore.
+If you set this to non-nil, you also likely need to set
+`plstore-encrypt-to' to your GPG key ID for decryption.
+If you change the value of this variable, you need to also delete
+`mastodon-client--token-file' and log in again."
+  :type 'boolean)
+
 (defvar mastodon-client--client-details-alist nil
   "An alist of Client id and secrets keyed by the instance url.")
 
@@ -135,7 +143,10 @@ Return the plist after the operation."
          (key (concat "user-" username))
          (print-length nil)
          (print-level nil))
-    (plstore-put plstore key user-details `(:access_token ,token))
+    (if mastodon-client-encrypt-access-token
+        (plstore-put plstore key user-details `(:access_token ,token))
+      (plstore-put plstore key
+                   (append user-details `(:access_token ,token)) nil))
     (plstore-save plstore)
     (plstore-close plstore)
     (cdr (plstore-get plstore key))))
@@ -144,14 +155,17 @@ Return the plist after the operation."
   "USER-DETAILS is a plist consisting of user details.
 Save it to plstore under key \"active-user\", with the :access_token
 value encrypted."
-  (let ((plstore (plstore-open (mastodon-client--token-file)))
-        (token (plist-get user-details :access_token))
-        (sans-token (progn ;; remove acces_token from user-details
-                      (cl-remf user-details :access_token)
-                      user-details))
-        (print-length nil)
-        (print-level nil))
-    (plstore-put plstore "active-user" sans-token `(:access_token ,token))
+  (let ((plstore (plstore-open (mastodon-client--token-file))))
+    (if (not mastodon-client-encrypt-access-token)
+        (plstore-put plstore "active-user" user-details nil)
+      (let ((token (plist-get user-details :access_token))
+            (sans-token (progn ;; remove acces_token from user-details
+                          (cl-remf user-details :access_token)
+                          user-details))
+            (print-length nil)
+            (print-level nil))
+        (plstore-put plstore "active-user"
+                     sans-token `(:access_token ,token))))
     (plstore-save plstore)
     (plstore-close plstore)))
 
