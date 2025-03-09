@@ -282,6 +282,19 @@ If we fail, return `fj-user'." ;; poss insane
                     (alist-get k2 x nil nil test-fun)))
             list)))
 
+;;; GIT CONFIG
+
+(defun fj-git-config-remote-url ()
+  "Return a remote's URL.
+Either get push default or call `magit-read-remote'."
+  ;; used in `fj-list-issues' and `fj-issue-compose'
+  ;; FIXME: use everywhere?
+  (let* ((remote ;; maybe works for own repo, as you gotta push:
+          (or (magit-get-push-remote)
+              ;; nice for not own repo:
+              (magit-read-remote "Remote:" nil :use-only))))
+    (magit-get (format "remote.%s.url" remote))))
+
 ;;; TL ENTRIES
 
 (defun fj--get-tl-col (num)
@@ -660,10 +673,10 @@ X and Y are sorting args."
          (entries (fj-repo-tl-entries repos)))
     (if (not repos)
         (user-error "Set `fj-user' or `fj-extra-repos'")
-        (fj-repos-tl-render buf entries #'fj-repo-tl-mode)
-        (with-current-buffer (get-buffer-create buf)
-          (setq fj-buffer-spec
-                `(:owner ,fj-user :url ,(concat fj-host "/" fj-user)))))))
+      (fj-repos-tl-render buf entries #'fj-repo-tl-mode)
+      (with-current-buffer (get-buffer-create buf)
+        (setq fj-buffer-spec
+              `(:owner ,fj-user :url ,(concat fj-host "/" fj-user)))))))
 
 (defun fj-star-repo (repo owner &optional unstar)
   "Star or UNSTAR REPO owned by OWNER."
@@ -1422,11 +1435,7 @@ config."
   (if (not (magit-inside-worktree-p :noerror))
       ;; if not in repo, fall back to `fj-user' repos
       (fj-list-issues-do)
-    (let* ((remote ;; maybe works for own repo, as you gotta push:
-            (or (magit-get-push-remote)
-                ;; nice for not own repo:
-                (magit-read-remote "Remote:" nil :use-only)))
-           (url (magit-get (format "remote.%s.url" remote)))
+    (let* ((url (fj-git-config-remote-url))
            (repo-+-owner (last (split-string url "/") 2))
            (owner (car repo-+-owner))
            (repo (cadr repo-+-owner)))
@@ -2781,32 +2790,35 @@ TYPE is a symbol of what we are composing, it may be issue or comment.
 Inject INIT-TEXT into the buffer, for editing."
   (interactive)
   (setq fj-compose-last-buffer (buffer-name (current-buffer)))
-  (fedi-post--compose-buffer
-   edit
-   #'markdown-mode
-   (or mode #'fj-compose-mode)
-   (when mode "fj-compose")
-   (or type 'issue)
-   (list #'fj-compose-mentions-capf
-         #'fj-compose-issues-capf)
-   ;; TODO: why not have a compose-buffer-spec rather than 10 separate vars?
-   `(((name . "repo")
-      (prop . compose-repo)
-      (item-var . fj-compose-repo)
-      (face . link))
-     ((name . ,(if (eq type 'comment) "issue ""title"))
-      (prop . compose-title)
-      (item-var . fj-compose-issue-title)
-      (face . fj-post-title-face)))
-   init-text)
-  (setq fj-compose-item-type
-        (if edit
+  ;; grab current repo from git config:
+  (let* ((url (fj-git-config-remote-url))
+         (repo (car (last (split-string url "/")))))
+    (fedi-post--compose-buffer
+     edit
+     #'markdown-mode
+     (or mode #'fj-compose-mode)
+     (when mode "fj-compose")
+     (or type 'issue)
+     (list #'fj-compose-mentions-capf
+           #'fj-compose-issues-capf)
+     ;; TODO: why not have a compose-buffer-spec rather than 10 separate vars?
+     `(((name . "repo")
+        (prop . compose-repo)
+        (item-var . ,(or repo fj-compose-repo))
+        (face . link))
+       ((name . ,(if (eq type 'comment) "issue ""title"))
+        (prop . compose-title)
+        (item-var . fj-compose-issue-title)
+        (face . fj-post-title-face)))
+     init-text)
+    (setq fj-compose-item-type
+          (if edit
+              (if (eq type 'comment)
+                  'edit-comment
+                'edit-issue)
             (if (eq type 'comment)
-                'edit-comment
-              'edit-issue)
-          (if (eq type 'comment)
-              'new-comment
-            'new-issue))))
+                'new-comment
+              'new-issue)))))
 
 (defun fj-compose-send ()
   "Submit the issue or comment to your Forgejo instance.
