@@ -127,26 +127,31 @@ Return plist without the KEY."
               :client_secret ,(plist-get (mastodon-client) :client_secret)))
 
 (defun mastodon-client--store-access-token (token)
-  "Save TOKEN as :access_token in plstore of the current user.
+  "Save TOKEN as :access_token, encrypted, in plstore of the current user.
 Return the plist after the operation."
   (let* ((user-details (mastodon-client--make-user-details-plist))
          (plstore (plstore-open (mastodon-client--token-file)))
          (username (plist-get user-details :username))
-         (plstore-value (setq user-details
-                              (plist-put user-details :access_token token)))
+         (key (concat "user-" username))
          (print-length nil)
          (print-level nil))
-    (plstore-put plstore (concat "user-" username) plstore-value nil)
+    (plstore-put plstore key user-details `(:access_token ,token))
     (plstore-save plstore)
     (plstore-close plstore)
-    plstore-value))
+    (cdr (plstore-get plstore key))))
 
 (defun mastodon-client--make-user-active (user-details)
-  "USER-DETAILS is a plist consisting of user details."
+  "USER-DETAILS is a plist consisting of user details.
+Save it to plstore under key \"active-user\", with the :access_token
+value encrypted."
   (let ((plstore (plstore-open (mastodon-client--token-file)))
+        (token (plist-get user-details :access_token))
+        (sans-token (progn ;; remove acces_token from user-details
+                      (cl-remf user-details :access_token)
+                      user-details))
         (print-length nil)
         (print-level nil))
-    (plstore-put plstore "active-user" user-details nil)
+    (plstore-put plstore "active-user" sans-token `(:access_token ,token))
     (plstore-save plstore)
     (plstore-close plstore)))
 
