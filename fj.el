@@ -6,7 +6,7 @@
 ;; Package-Requires: ((emacs "29.1") (fedi "0.2") (tp "0.5") (transient) (magit))
 ;; Keywords: git, convenience
 ;; URL: https://codeberg.org/martianh/fj.el
-;; Version: 0.3
+;; Version: 0.4
 ;; Separator: -
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -26,7 +26,9 @@
 
 ;; Some bare-bones commands for interacting with Forgejo instances.
 
-;; To use these functions, first set `fj-token' and `fj-user', and `fj-host'.
+;; To use these functions, first set `fj-token' and `fj-user'.
+;; Then either set your Forgejo access token in your auth-source file or
+;; set `fj-host' to it.
 
 ;;; Code:
 
