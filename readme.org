@@ -8,9 +8,11 @@ It just aims to cover a few of the bread and butter functions that will save you
 
 * getting started
 
-To get going, first set =fj-host=,  =fj-user=, and =fj-token=. You can obtain a token from your profile settings on your Forgejo instance.
+To get going, first set =fj-host=, and =fj-user=.
 
-Once you have done so, try =fj-list-own-repos= to view your repos, or =fj-list-issues= to view issues of the current repo, or with completing-read of a repo is no repo is found. If you are already viewing a repo and want to force the prompt to choose another, call =fj-list-issues= with a prefix arg (=C-u=).
+Then obtain an access from your profile settings on your Forgejo instance, and either set =fj-token= to it (unencrypted option) or save it as an entry in your auth-sources file (encrypted option, =~/.authinfo.gpg= or similar; see variable =auth-sources=. If you don't want to use the encrypted option, you can also set =fj-token-use-auth-source= to nil.
+
+Once you have done so, try =fj-list-own-repos= to view your repos, or =fj-list-issues= to view issues of the current repo, or with completing-read of a repo is no repo is found. If you are already viewing a repo and want to force the prompt to choose another, call =fj-list-issues= with a prefix arg (=C-u=). You can also call =fj-list-own-issues= to view a listing of all issues across your repos.
 
 To use a different instance for a given repo, set =fj-host=,  =fj-user=, and =fj-token= in your =.dir-locals.el= file.
 
@@ -41,6 +43,7 @@ Forgejo's API is vast. Currently =fj.el= just implements a few basic things:
 
 ** issues/PRs as listings
 - list repo issues and PRs
+- list issues in any repo you own
 - cycle between issues/PRs/all
 - cycle between open/closed/all issues/PRs
 - quick jump to any issue/PR or repo in a listing with imenu.
