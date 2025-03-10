@@ -109,10 +109,20 @@ etc."
   '("issue" "pull" "commit" "repository")
   "List of possible subject types for getting notifications.")
 
+
+;;; CUSTOMIZES
+
 (defgroup fj nil
   "Fj.el, a Forgejo client."
   :group 'external
   :prefix "fj-")
+
+(defcustom fj-token-use-auth-source t
+  "Whether to use an auth-source file.
+If non-nil, use an auth-source file such as ~/,authinfo.gpg for the user
+authorization token of the foregejo instance.
+If set to nil, you need to set `fj-token' to your user token."
+  :type 'boolean)
 
 ;;; FACES
 
@@ -455,6 +465,27 @@ Should work for anything with an fj-byline property."
 
 ;;; REQUESTS
 
+(defun fj-token ()
+  "Fetch user acces token from auth source.
+If nothing found, fallback to `fj-token'.
+If `fj-token-use-auth-source' is nil, use `fj-token'."
+  ;; FIXME: save to auth-source if not found (see the docs)
+  (if (not fj-token-use-auth-source)
+      fj-token
+    (or
+     (let* ((host (url-host (url-generic-parse-url fj-host)))
+            (source
+             (auth-source-search :host host :user fj-user
+                                 :require '(:user :secret)))
+            (secret
+             (plist-get (car source) :secret)))
+       (if (functionp secret)
+           (funcall secret)
+         secret))
+     fj-token ;; unencrypted fallback.
+     (user-error
+      "No token. Set token in auth-source file or `fj-token'."))))
+
 (defmacro fj-authorized-request (method body &optional unauthenticated-p)
   "Make a METHOD type request using BODY, with token authorization.
 Unless UNAUTHENTICATED-P is non-nil.
@@ -465,7 +496,7 @@ Requires `fj-token' to be set."
          (url-request-extra-headers
           (unless ,unauthenticated-p
             (list (cons "Authorization"
-                        (concat "token " fj-token))))))
+                        (concat "token " (fj-token)))))))
      ,body))
 
 (defun fj-get (endpoint &optional params no-json)
