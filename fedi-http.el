@@ -255,7 +255,7 @@ If successful, call SUCCESS with single arg RESPONSE.
 If unsuccessful, message status and JSON error from RESPONSE.
 Optionally, provide an ERROR-FUN, called on the process JSON response,
 to returnany error message needed."
-  (let ((status (condition-case err
+  (let ((status (condition-case _err
                     (with-current-buffer response
                       (fedi-http--status))
                   (wrong-type-argument
@@ -288,7 +288,7 @@ VECTOR means return json arrays as vectors."
         (user-error "No response. Server borked?"))
     (with-current-buffer buf
       (fedi-http--process-response no-headers vector))))
-;; (t (error "I am Error. Looks like server borked."))))
+;; (t (error "I am Error. Looks like server borked"))))
 
 (defun fedi-http--process-json ()
   "Return only JSON data from async URL request.
@@ -390,7 +390,8 @@ Then run function CALLBACK with arguements CBARGS."
 (defun fedi-http--basic-auth-request (req-fun url user
                                               &optional pwd &rest args)
   "Do a BasicAuth request.
-Call REQ-FUN, a request function, on URL, providing USER and PASSWORD.
+Call REQ-FUN, a request function, on URL, providing USER and password
+PWD.
 ARGS is any addition arguments for REQ-FUN, after the URL.
 REQ-FUN can be a fedi.el request function such as `fedi-http--post'."
   (let* ((pwd (or pwd (read-passwd (format "Password: "))))
