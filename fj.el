@@ -198,13 +198,9 @@ Copies the token to the kill ring and returns it."
                    ("scopes" . ("all"))))
          (endpoint (format "users/%s/tokens" fj-user))
          (password (read-passwd (format "%s password: " fj-host)))
-         (auth (base64-encode-string
-                (format "%s:%s" fj-user password)))
-         (url-request-extra-headers
-          (list (cons "Authorization"
-                      (format "Basic %s" auth))))
          (url (fj-api endpoint))
-         (resp (fedi-http--post url params nil :json)))
+         (resp (fedi-http--basic-auth-request
+                #'fedi-http--post url fj-user password params nil :json)))
     (fedi-http--triage
      resp
      (lambda (resp)
