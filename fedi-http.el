@@ -71,6 +71,8 @@
   "User-Agents to use for reverso.el requests.
 A random one is picked at package initialization.")
 
+;;; UTILS
+
 (defun fedi-http--api (endpoint &optional url ver-str)
   "Return Fedi API URL for ENDPOINT."
   (concat (or url fedi-instance-url) "/api/"
@@ -94,6 +96,22 @@ A random one is picked at package initialization.")
     (string-match "[0-9][0-9][0-9]" status-line)
     (match-string 0 status-line)))
 
+(defun fedi-http--render-html-err (string)
+  "Render STRING as HTML in a temp buffer.
+STRING should be HTML for a 404 errror."
+  (with-temp-buffer
+    (insert string)
+    (shr-render-buffer (current-buffer))
+    (view-mode))) ; for 'q' to kill buffer and window
+;; FIXME: this is awful, it pops up also:
+;; (error ""))) ; stop subsequent processing
+
+(defun fedi-http--read-file-as-string (filename)
+  "Read a file FILENAME as a string. Used to generate image preview."
+  (with-temp-buffer
+    (insert-file-contents filename)
+    (string-to-unibyte (buffer-string))))
+
 (defun fedi-http--url-retrieve-synchronously (url &optional silent)
   "Retrieve URL asynchronously.
 This is a thin abstraction over the system
@@ -104,35 +122,7 @@ SILENT means don't message."
       (url-retrieve-synchronously url)
     (url-retrieve-synchronously url (or silent nil) nil fedi-http--timeout)))
 
-(defun fedi-http--triage (response success &optional error-fun)
-  "Determine if RESPONSE was successful.
-If successful, call SUCCESS with single arg RESPONSE.
-If unsuccessful, message status and JSON error from RESPONSE.
-Optionally, provide an ERROR-FUN, called on the process JSON response,
-to returnany error message needed."
-  (let ((status (condition-case err
-                    (with-current-buffer response
-                      (fedi-http--status))
-                  (wrong-type-argument
-                   "Looks like we got no response from the server."))))
-    (cond ((string-prefix-p "2" status)
-           (funcall success response))
-          ((string-prefix-p "404" status)
-           (message "Error %s: page not found" status))
-          (t
-           (let ((json-response (with-current-buffer response
-                                  (fedi-http--process-json))))
-             (user-error "Error %s: %s" status
-                         (or (when error-fun
-                               (funcall error-fun json-response))
-                             (alist-get 'error json-response)
-                             (alist-get 'message json-response))))))))
-
-(defun fedi-http--read-file-as-string (filename)
-  "Read a file FILENAME as a string. Used to generate image preview."
-  (with-temp-buffer
-    (insert-file-contents filename)
-    (string-to-unibyte (buffer-string))))
+;;; PARAMS
 
 (defun fedi-http--build-params-string (params)
   "Build a request parameters string from parameters alist PARAMS."
@@ -149,6 +139,32 @@ to returnany error message needed."
 Used for API form data parameters that take an array."
   (cl-loop for x in array
            collect (cons param-str x)))
+
+(defun fedi-http--concat-params-to-url (url params)
+  "Build a query string with PARAMS and concat to URL."
+  (if params
+      (concat url "?"
+              (fedi-http--build-params-string params))
+    url))
+
+;;; BASIC REQUESTS
+
+(defun fedi-http--get (url &optional params silent)
+  "Make synchronous GET request to URL.
+PARAMS is an alist of any extra parameters to send with the request.
+SILENT means don't message."
+  (let ((url (fedi-http--concat-params-to-url url params)))
+    (condition-case err
+        (fedi-http--url-retrieve-synchronously url silent)
+      (t (error "I am Error. Request borked. %s"
+                (error-message-string err))))))
+
+(defun fedi-http--get-json (url &optional params silent vector)
+  "Return only JSON data from URL request.
+PARAMS is an alist of any extra parameters to send with the request.
+SILENT means don't message.
+VECTOR means return json arrays as vectors."
+  (car (fedi-http--get-response url params :no-headers silent vector)))
 
 (defun fedi-http--post (url &optional params headers json)
   "POST synchronously to URL, optionally with PARAMS and HEADERS.
@@ -172,106 +188,6 @@ json-string PARAMS."
                   headers)))
     (with-temp-buffer
       (fedi-http--url-retrieve-synchronously url))))
-
-(defun fedi-http--concat-params-to-url (url params)
-  "Build a query string with PARAMS and concat to URL."
-  (if params
-      (concat url "?"
-              (fedi-http--build-params-string params))
-    url))
-
-(defun fedi-http--get (url &optional params silent)
-  "Make synchronous GET request to URL.
-PARAMS is an alist of any extra parameters to send with the request.
-SILENT means don't message."
-  (let ((url (fedi-http--concat-params-to-url url params)))
-    (condition-case err
-        (fedi-http--url-retrieve-synchronously url silent)
-      (t (error "I am Error. Request borked. %s"
-                (error-message-string err))))))
-
-(defun fedi-http--get-response (url &optional params no-headers silent vector)
-  "Make synchronous GET request to URL. Return JSON and response headers.
-PARAMS is an alist of any extra parameters to send with the request.
-SILENT means don't message.
-NO-HEADERS means don't collect http response headers.
-VECTOR means return json arrays as vectors."
-  ;; some APIs return nil if no data, so we can't just error
-  ;; (condition-case err
-  (with-current-buffer (fedi-http--get url params silent)
-    (fedi-http--process-response no-headers vector)))
-  ;; (t (error "I am Error. Looks like server borked."))))
-
-(defun fedi-http--get-json (url &optional params silent vector)
-  "Return only JSON data from URL request.
-PARAMS is an alist of any extra parameters to send with the request.
-SILENT means don't message.
-VECTOR means return json arrays as vectors."
-  (car (fedi-http--get-response url params :no-headers silent vector)))
-
-(defun fedi-http--process-json ()
-  "Return only JSON data from async URL request.
-Callback to `fedi-http--get-json-async', usually
-`fedi-tl--init*', is run on the result."
-  (car (fedi-http--process-response :no-headers)))
-
-(defun fedi-http--render-html-err (string)
-  "Render STRING as HTML in a temp buffer.
-STRING should be HTML for a 404 errror."
-  (with-temp-buffer
-    (insert string)
-    (shr-render-buffer (current-buffer))
-    (view-mode))) ; for 'q' to kill buffer and window
-;; FIXME: this is awful, it pops up also:
-;; (error ""))) ; stop subsequent processing
-
-(defun fedi-http--process-response (&optional no-headers vector)
-  "Process http response.
-Return a cons of JSON list and http response headers.
-If response is HTML, it's likely an error so render it with shr.
-If NO-HEADERS is non-nil, just return the JSON.
-VECTOR means return json arrays as vectors.
-Callback to `fedi-http--get-response-async'."
-  ;; view raw response:
-  ;; (switch-to-buffer (current-buffer))
-  (let ((headers (unless no-headers
-                   (fedi-http--process-headers))))
-    (goto-char (point-min))
-    (re-search-forward "^$" nil 'move)
-    (let ((json-array-type (if vector 'vector 'list))
-          (json-string (decode-coding-string
-                        (buffer-substring-no-properties (point) (point-max))
-                        'utf-8)))
-      (kill-buffer)
-      (cond ((or (string-empty-p json-string) (null json-string)
-                 (string= "\nnull\n" json-string))
-             nil)
-            ;; if we get html, just render it and error:
-            ;; ideally we should handle the status code in here rather than
-            ;; this crappy hack?
-            ((string-prefix-p "\n<" json-string) ; html hack
-             (fedi-http--render-html-err json-string))
-            ;; if no json or html, maybe we have a plain string error message
-            ;; (misskey does this, but there are probably better ways to do
-            ;; this):
-            ((not (or (string-prefix-p "\n{" json-string)
-                      (string-prefix-p "\n[" json-string)))
-             (error "%s" json-string))
-            (t
-             `(,(json-read-from-string json-string) . ,headers))))))
-
-(defun fedi-http--process-headers ()
-  "Return an alist of http response headers."
-  ;; (switch-to-buffer (current-buffer))
-  (goto-char (point-min))
-  (let* ((head-str (buffer-substring-no-properties
-                    (point-min)
-                    (re-search-forward "^$" nil 'move)))
-         (head-list (split-string head-str "\n")))
-    (mapcar (lambda (x)
-              (let ((list (split-string x ": ")))
-                (cons (car list) (cadr list))))
-            head-list)))
 
 (defun fedi-http--delete (url &optional params)
   "Make DELETE request to URL.
@@ -331,7 +247,105 @@ If JSON, encode request data as JSON."
           (append url-request-extra-headers headers)))
     (fedi-http--url-retrieve-synchronously url)))
 
- ;; Asynchronous functions
+;;; RESPONSES
+
+(defun fedi-http--triage (response success &optional error-fun)
+  "Determine if RESPONSE was successful.
+If successful, call SUCCESS with single arg RESPONSE.
+If unsuccessful, message status and JSON error from RESPONSE.
+Optionally, provide an ERROR-FUN, called on the process JSON response,
+to returnany error message needed."
+  (let ((status (condition-case err
+                    (with-current-buffer response
+                      (fedi-http--status))
+                  (wrong-type-argument
+                   "Looks like we got no response from the server."))))
+    (cond ((string-prefix-p "2" status)
+           (funcall success response))
+          ((string-prefix-p "404" status)
+           (message "Error %s: page not found" status))
+          (t
+           (let ((json-response (with-current-buffer response
+                                  (fedi-http--process-json))))
+             (user-error "Error %s: %s" status
+                         (or (when error-fun
+                               (funcall error-fun json-response))
+                             (alist-get 'error json-response)
+                             (alist-get 'message json-response))))))))
+
+(defun fedi-http--get-response (url &optional params no-headers silent vector)
+  "Make synchronous GET request to URL.
+Return JSON and response headers.
+PARAMS is an alist of any extra parameters to send with the request.
+SILENT means don't message.
+NO-HEADERS means don't collect http response headers.
+VECTOR means return json arrays as vectors."
+  ;; some APIs return nil if no data, so we can't just error
+  ;; Really? but then the `with-current-buffer' call would error!
+  ;; (condition-case err
+  (let ((buf (fedi-http--get url params silent)))
+    (if (not buf)
+        (user-error "No response. Server borked?"))
+    (with-current-buffer buf
+      (fedi-http--process-response no-headers vector))))
+;; (t (error "I am Error. Looks like server borked."))))
+
+(defun fedi-http--process-json ()
+  "Return only JSON data from async URL request.
+Callback to `fedi-http--get-json-async', usually
+`fedi-tl--init*', is run on the result."
+  (car (fedi-http--process-response :no-headers)))
+
+(defun fedi-http--process-response (&optional no-headers vector)
+  "Process http response.
+Return a cons of JSON list and http response headers.
+If response is HTML, it's likely an error so render it with shr.
+If NO-HEADERS is non-nil, just return the JSON.
+VECTOR means return json arrays as vectors.
+Callback to `fedi-http--get-response-async'."
+  ;; view raw response:
+  ;; (switch-to-buffer (current-buffer))
+  (let ((headers (unless no-headers
+                   (fedi-http--process-headers))))
+    (goto-char (point-min))
+    (re-search-forward "^$" nil 'move)
+    (let ((json-array-type (if vector 'vector 'list))
+          (json-string (decode-coding-string
+                        (buffer-substring-no-properties (point) (point-max))
+                        'utf-8)))
+      (kill-buffer)
+      (cond ((or (string-empty-p json-string) (null json-string)
+                 (string= "\nnull\n" json-string))
+             nil)
+            ;; if we get html, just render it and error:
+            ;; ideally we should handle the status code in here rather than
+            ;; this crappy hack?
+            ((string-prefix-p "\n<" json-string) ; html hack
+             (fedi-http--render-html-err json-string))
+            ;; if no json or html, maybe we have a plain string error message
+            ;; (misskey does this, but there are probably better ways to do
+            ;; this):
+            ((not (or (string-prefix-p "\n{" json-string)
+                      (string-prefix-p "\n[" json-string)))
+             (error "%s" json-string))
+            (t
+             `(,(json-read-from-string json-string) . ,headers))))))
+
+(defun fedi-http--process-headers ()
+  "Return an alist of http response headers."
+  ;; (switch-to-buffer (current-buffer))
+  (goto-char (point-min))
+  (let* ((head-str (buffer-substring-no-properties
+                    (point-min)
+                    (re-search-forward "^$" nil 'move)))
+         (head-list (split-string head-str "\n")))
+    (mapcar (lambda (x)
+              (let ((list (split-string x ": ")))
+                (cons (car list) (cadr list))))
+            head-list)))
+
+
+;;; ASYNCHRONOUS FUNCTIONS
 
 (defun fedi-http--get-async (url &optional params callback &rest cbargs)
   "Make GET request to URL.
