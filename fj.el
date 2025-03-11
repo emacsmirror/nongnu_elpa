@@ -2823,35 +2823,32 @@ TYPE is a symbol of what we are composing, it may be issue or comment.
 Inject INIT-TEXT into the buffer, for editing."
   (interactive)
   (setq fj-compose-last-buffer (buffer-name (current-buffer)))
-  ;; grab current repo from git config:
-  (let* ((url (fj-git-config-remote-url))
-         (repo (car (last (split-string url "/")))))
-    (fedi-post--compose-buffer
-     edit
-     #'markdown-mode
-     (or mode #'fj-compose-mode)
-     (when mode "fj-compose")
-     (or type 'issue)
-     (list #'fj-compose-mentions-capf
-           #'fj-compose-issues-capf)
-     ;; TODO: why not have a compose-buffer-spec rather than 10 separate vars?
-     `(((name . "repo")
-        (prop . compose-repo)
-        (item-var . ,(or repo fj-compose-repo))
-        (face . link))
-       ((name . ,(if (eq type 'comment) "issue ""title"))
-        (prop . compose-title)
-        (item-var . fj-compose-issue-title)
-        (face . fj-post-title-face)))
-     init-text)
-    (setq fj-compose-item-type
-          (if edit
-              (if (eq type 'comment)
-                  'edit-comment
-                'edit-issue)
+  (fedi-post--compose-buffer
+   edit
+   #'markdown-mode
+   (or mode #'fj-compose-mode)
+   (when mode "fj-compose")
+   (or type 'issue)
+   (list #'fj-compose-mentions-capf
+         #'fj-compose-issues-capf)
+   ;; TODO: why not have a compose-buffer-spec rather than 10 separate vars?
+   `(((name . "repo")
+      (prop . compose-repo)
+      (item-var . fj-compose-repo)
+      (face . link))
+     ((name . ,(if (eq type 'comment) "issue ""title"))
+      (prop . compose-title)
+      (item-var . fj-compose-issue-title)
+      (face . fj-post-title-face)))
+   init-text)
+  (setq fj-compose-item-type
+        (if edit
             (if (eq type 'comment)
-                'new-comment
-              'new-issue)))))
+                'edit-comment
+              'edit-issue)
+          (if (eq type 'comment)
+              'new-comment
+            'new-issue))))
 
 (defun fj-compose-send ()
   "Submit the issue or comment to your Forgejo instance.
