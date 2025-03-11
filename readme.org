@@ -8,11 +8,27 @@ It just aims to cover a few of the bread and butter functions that will save you
 
 * getting started
 
+** authentication
+
 To get going, first set =fj-host=, and =fj-user=.
 
-Then obtain an access from your profile settings on your Forgejo instance, and either set =fj-token= to it (unencrypted option) or save it as an entry in your auth-sources file (encrypted option, =~/.authinfo.gpg= or similar; see variable =auth-sources=. If you don't want to use the encrypted option, you can also set =fj-token-use-auth-source= to nil.
+To authorize your account, call =fj-create-token=, which will prompt you for your password, create an API access token, and copy it to your kill ring. Alternatively you can obtain an access token from your profile settings on your Forgejo instance (in user settings, under "applications").
 
-Once you have done so, try =fj-list-own-repos= to view your repos, or =fj-list-issues= to view issues of the current repo, or with completing-read of a repo is no repo is found. If you are already viewing a repo and want to force the prompt to choose another, call =fj-list-issues= with a prefix arg (=C-u=). You can also call =fj-list-own-issues= to view a listing of all issues across your repos.
+Once you have your token, call =fj-token= (or any interactive function such as =fj-list-issues=). You will be prompted for your access token, and when you enter it, =fj.el= will also offer to save it in your auth-sources file (=~/.authinfo.gpg= or similar; see variable =auth-sources=). Once saved, you should be good to go.
+
+Alternatively, you can set =fj-token-use-auth-source= to =nil= and simply set =fj-token= to your token (unencrypted option).
+
+Finally, if you were previously using the unencrypted =fj-token= method and want to use auth sources, simply remove the code that sets =fj-token= in your init config, and follow the steps above.
+
+If you run into any auth issues, feel free to open an issue or contact me.
+
+** basic views
+
+Once you are authenticated, try =fj-list-own-repos= to view your repos, or =fj-list-issues= to view issues of the current repo, or with completing-read of a repo is no repo is found.
+
+If you are already viewing a repo and want to force the prompt to choose another, call =fj-list-issues= with a prefix arg (=C-u=).
+
+You can also call =fj-list-own-issues= to view all issues across your repos, and =fj-watched-repos= to see your watched repos.
 
 To use a different instance for a given repo, set =fj-host=,  =fj-user=, and =fj-token= in your =.dir-locals.el= file.
 

@@ -186,6 +186,149 @@ Not used for items that are links.")
   '((t :inherit font-lock-comment-face :weight bold))
   "Face for post title in compose buffer.")
 
+;;; AUTH / TOKENS
+
+(defun fj-create-token ()
+  "Create an access token for `fj-user' on `fj-host'.
+Reads a token name and reads a user password for BasicAuth.
+Copies the token to the kill ring and returns it."
+  (interactive)
+  (let* ((name (read-string "Token name: "))
+         (params `(("name" . ,name)
+                   ("scopes" . ("all"))))
+         (endpoint (format "users/%s/tokens" fj-user))
+         (password (read-passwd (format "%s password: " fj-host)))
+         (auth (base64-encode-string
+                (format "%s:%s" fj-user password)))
+         (url-request-extra-headers
+          (list (cons "Authorization"
+                      (format "Basic %s" auth))))
+         (url (fj-api endpoint))
+         (resp (fedi-http--post url params nil :json)))
+    (fedi-http--triage
+     resp
+     (lambda (resp)
+       (let* ((json (fj-resp-json resp))
+              (token (alist-get 'sha1 json))
+              (name (alist-get 'name json)))
+         (kill-new token)
+         (message "Token %s copied to kill ring." name)
+         token)))))
+
+(defun fj-auth-source-get ()
+  "Fetch an auth source token.
+Optionally prompt for a token and save it if needed."
+  (let* ((auth-source-creation-prompts
+          '((secret . "Access token: ")))
+         (host (url-host (url-generic-parse-url fj-host)))
+         (source
+          (car
+           (auth-source-search :host host :user fj-user
+                               :require '(:user :secret)
+                               :create t))))
+    (when source
+      (let ((creds
+             (list (plist-get source :user)
+                   (auth-info-password source)
+                   (plist-get source :save-function))))
+        (when (functionp (nth 2 creds))
+          (funcall (nth 2 creds)))
+        creds))))
+
+(defun fj-token ()
+  "Fetch user access token from auth source, or try to add one.
+If `fj-token-use-auth-source' is nil, use `fj-token' instead."
+  (interactive)
+  (if (not fj-token-use-auth-source)
+      fj-token
+    (or (nth 1 (fj-auth-source-get))
+        (user-error
+         "No token. Call `fj-create-token' and try again,\
+ set token in auth-source file, or set `fj-token'"))))
+
+;;; REQUESTS
+
+(defmacro fj-authorized-request (method body &optional unauthenticated-p)
+  "Make a METHOD type request using BODY, with token authorization.
+Unless UNAUTHENTICATED-P is non-nil.
+Requires `fj-token' to be set."
+  (declare (debug 'body)
+           (indent 1))
+  `(let ((url-request-method ,method)
+         (url-request-extra-headers
+          (unless ,unauthenticated-p
+            (list (cons "Authorization"
+                        (concat "token " (fj-token)))))))
+     ,body))
+
+(defun fj-get (endpoint &optional params no-json)
+  "Make a GET request to ENDPOINT.
+PARAMS is any parameters to send with the request.
+NO-JSON means return the raw response."
+  (let* ((url (fj-api endpoint))
+         (resp (fj-authorized-request "GET"
+                 (if no-json
+                     (fedi-http--get url params)
+                   (fedi-http--get-json url params)))))
+    (if no-json
+        ;; return response as string:
+        (fj-resp-str resp)
+      (cond ((or (eq (caar resp) 'errors)
+                 (eq (caar resp) 'message))
+             (user-error "I am Error: %s Endpoint: %s"
+                         (alist-get 'message resp)
+                         endpoint))
+            (t
+             resp)))))
+
+(defun fj-resp-str (resp)
+  "Return the response string from RESP, an HTTP response buffer."
+  (with-current-buffer resp
+    (goto-char (point-min))
+    (re-search-forward "^$" nil 'move)
+    (buffer-substring (point) (point-max))))
+
+(defun fj-resp-json (resp)
+  "Parse JSON from RESP, a buffer."
+  (let ((json-array-type 'list))
+    (with-current-buffer resp
+      (goto-char (point-min))
+      (re-search-forward "^$" nil 'move)
+      (let ((str
+             (decode-coding-string
+              (buffer-substring-no-properties (point) (point-max))
+              'utf-8)))
+        (json-read-from-string str)))))
+
+(defun fj-post (endpoint &optional params)
+  "Make a POST request to ENDPOINT.
+PARAMS."
+  (let ((url (fj-api endpoint)))
+    (fj-authorized-request "POST"
+      (fedi-http--post url params nil :json))))
+
+(defun fj-put (endpoint &optional params json)
+  "Make a PUT request to ENDPOINT.
+PARAMS.
+JSON."
+  (let ((url (fj-api endpoint)))
+    (fj-authorized-request "PUT"
+      (fedi-http--put url params nil json))))
+
+(defun fj-patch (endpoint &optional params json)
+  "Make a PATCH request to ENDPOINT.
+PARAMS.
+JSON."
+  (let ((url (fj-api endpoint)))
+    (fj-authorized-request "PATCH"
+      (fedi-http--patch url params json))))
+
+(defun fj-delete (endpoint)
+  "Make a DELETE request to ENDPOINT."
+  (let ((url (fj-api endpoint)))
+    (fj-authorized-request "DELETE"
+      (fedi-http--delete url))))
+
 ;;; INSTANCE SETTINGS
 ;; https://forgejo.org/docs/latest/user/api-usage/#pagination
 ;; the description is confusing, saying that max_response_items and
@@ -464,110 +607,6 @@ Should work for anything with an fj-byline property."
 Should work for anything with an fj-byline property."
   (interactive)
   (fedi--goto-pos #'previous-single-property-change 'fj-byline))
-
-;;; REQUESTS
-
-(defun fj-token ()
-  "Fetch user acces token from auth source.
-If nothing found, fallback to `fj-token'.
-If `fj-token-use-auth-source' is nil, use `fj-token'."
-  ;; FIXME: save to auth-source if not found (see the docs)
-  (if (not fj-token-use-auth-source)
-      fj-token
-    (or
-     (let* ((host (url-host (url-generic-parse-url fj-host)))
-            (source
-             (auth-source-search :host host :user fj-user
-                                 :require '(:user :secret)))
-            (secret
-             (plist-get (car source) :secret)))
-       (if (functionp secret)
-           (funcall secret)
-         secret))
-     fj-token ;; unencrypted fallback.
-     (user-error
-      "No token. Set token in auth-source file or `fj-token'."))))
-
-(defmacro fj-authorized-request (method body &optional unauthenticated-p)
-  "Make a METHOD type request using BODY, with token authorization.
-Unless UNAUTHENTICATED-P is non-nil.
-Requires `fj-token' to be set."
-  (declare (debug 'body)
-           (indent 1))
-  `(let ((url-request-method ,method)
-         (url-request-extra-headers
-          (unless ,unauthenticated-p
-            (list (cons "Authorization"
-                        (concat "token " (fj-token)))))))
-     ,body))
-
-(defun fj-get (endpoint &optional params no-json)
-  "Make a GET request to ENDPOINT.
-PARAMS is any parameters to send with the request.
-NO-JSON means return the raw response."
-  (let* ((url (fj-api endpoint))
-         (resp (fj-authorized-request "GET"
-                 (if no-json
-                     (fedi-http--get url params)
-                   (fedi-http--get-json url params)))))
-    (if no-json
-        ;; return response as string:
-        (fj-resp-str resp)
-      (cond ((or (eq (caar resp) 'errors)
-                 (eq (caar resp) 'message))
-             (user-error "I am Error: %s Endpoint: %s"
-                         (alist-get 'message resp)
-                         endpoint))
-            (t
-             resp)))))
-
-(defun fj-resp-str (resp)
-  "Return the response string from RESP, an HTTP response buffer."
-  (with-current-buffer resp
-    (goto-char (point-min))
-    (re-search-forward "^$" nil 'move)
-    (buffer-substring (point) (point-max))))
-
-(defun fj-resp-json (resp)
-  "Parse JSON from RESP, a buffer."
-  (let ((json-array-type 'list))
-    (with-current-buffer resp
-      (goto-char (point-min))
-      (re-search-forward "^$" nil 'move)
-      (let ((str
-             (decode-coding-string
-              (buffer-substring-no-properties (point) (point-max))
-              'utf-8)))
-        (json-read-from-string str)))))
-
-(defun fj-post (endpoint &optional params)
-  "Make a POST request to ENDPOINT.
-PARAMS."
-  (let ((url (fj-api endpoint)))
-    (fj-authorized-request "POST"
-      (fedi-http--post url params nil :json))))
-
-(defun fj-put (endpoint &optional params json)
-  "Make a PUT request to ENDPOINT.
-PARAMS.
-JSON."
-  (let ((url (fj-api endpoint)))
-    (fj-authorized-request "PUT"
-      (fedi-http--put url params nil json))))
-
-(defun fj-patch (endpoint &optional params json)
-  "Make a PATCH request to ENDPOINT.
-PARAMS.
-JSON."
-  (let ((url (fj-api endpoint)))
-    (fj-authorized-request "PATCH"
-      (fedi-http--patch url params json))))
-
-(defun fj-delete (endpoint)
-  "Make a DELETE request to ENDPOINT."
-  (let ((url (fj-api endpoint)))
-    (fj-authorized-request "DELETE"
-      (fedi-http--delete url))))
 
 ;;; REPOS TL UTILS
 
