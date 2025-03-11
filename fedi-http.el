@@ -371,6 +371,22 @@ Then run function CALLBACK with arguements CBARGS."
     (with-temp-buffer
       (url-retrieve url callback cbargs))))
 
+;;; BASIC AUTH REQUEST
+
+(defun fedi-http--basic-auth-request (req-fun url user
+                                              &optional pwd &rest args)
+  "Do a BasicAuth request.
+Call REQ-FUN, a request function, on URL, providing USER and PASSWORD.
+ARGS is any addition arguments for REQ-FUN, after the URL.
+REQ-FUN can be a fedi.el request function such as `fedi-http--post'."
+  (let* ((pwd (or pwd (read-passwd (format "Password: "))))
+         (auth (base64-encode-string
+                (format "%s:%s" user pwd)))
+         (url-request-extra-headers
+          (list (cons "Authorization"
+                      (format "Basic %s" auth)))))
+    (apply req-fun url args)))
+
 ;; ;; TODO: test for curl first?
 ;; (defun fedi-http--post-media-attachment (url filename caption)
 ;;   "Make POST request to upload FILENAME with CAPTION to the server's media URL.
