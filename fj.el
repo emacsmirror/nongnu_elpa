@@ -34,6 +34,7 @@
 
 (require 'fedi)
 (require 'fedi-post)
+(require 'fedi-auth)
 
 (require 'magit-git)
 (require 'magit-process)
@@ -110,7 +111,6 @@ etc."
 (defvar fj-notifications-subject-types
   '("issue" "pull" "commit" "repository")
   "List of possible subject types for getting notifications.")
-
 
 ;;; CUSTOMIZES
 
@@ -214,22 +214,9 @@ Copies the token to the kill ring and returns it."
 (defun fj-auth-source-get ()
   "Fetch an auth source token.
 Optionally prompt for a token and save it if needed."
-  (let* ((auth-source-creation-prompts
-          '((secret . "Access token: ")))
-         (host (url-host (url-generic-parse-url fj-host)))
-         (source
-          (car
-           (auth-source-search :host host :user fj-user
-                               :require '(:user :secret)
-                               :create t))))
-    (when source
-      (let ((creds
-             (list (plist-get source :user)
-                   (auth-info-password source)
-                   (plist-get source :save-function))))
-        (when (functionp (nth 2 creds))
-          (funcall (nth 2 creds)))
-        creds))))
+  (let ((host (url-host (url-generic-parse-url fj-host))))
+    (nth 1
+         (fedi-auth-source-get fj-user host :create))))
 
 (defun fj-token ()
   "Fetch user access token from auth source, or try to add one.
@@ -237,7 +224,7 @@ If `fj-token-use-auth-source' is nil, use `fj-token' instead."
   (interactive)
   (if (not fj-token-use-auth-source)
       fj-token
-    (or (nth 1 (fj-auth-source-get))
+    (or (fj-auth-source-get)
         (user-error
          "No token. Call `fj-create-token' and try again,\
  set token in auth-source file, or set `fj-token'"))))
