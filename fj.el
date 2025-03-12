@@ -2393,12 +2393,13 @@ ignored."
                 (assoc choice cands #'equal))))
     (fj-list-issues-do choice user)))
 
-;; doesn't work
 (defun fj-repo-candidates-annot-fun (cand)
-  "CAND."
-  (cl-fourth
-   (assoc cand minibuffer-completion-table
-          #'equal)))
+  "Annocation function for `fj-repo-search'.
+Returns annotation for CAND, a candidate."
+  (if-let ((entry (assoc cand minibuffer-completion-table
+                         #'equal)))
+      (concat " " (cl-fourth entry))
+    ""))
 
 ;;; SEARCH REPOS TL
 
