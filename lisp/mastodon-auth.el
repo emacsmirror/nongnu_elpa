@@ -215,6 +215,39 @@ Handle any errors from the server."
      (error "Mastodon-auth--access-token: %s: %s" class error))
     (_ (error "Unknown response from mastodon-auth--get-token!"))))
 
+(defun mastodon-auth-source-get (user host &optional token create)
+  "Fetch an auth source token.
+If CREATE, prompt for a token and save it if there is no such entry.
+Return a list of user, password/secret, and the item's save-function."
+  (let* ((auth-source-creation-prompts
+          '((secret . "%u access token: ")))
+         (source
+          (car
+           (auth-source-search :host host :user user
+                               :require '(:user :secret)
+                               :secret (if token token nil)
+                               ;; "create" alone doesn't work here!:
+                               :create (if create t nil)))))
+    (when source
+      (let ((creds
+             `(,(plist-get source :user)
+               ,(auth-info-password source)
+               ,(plist-get source :save-function))))
+        ;; FIXME: is this ok to be here?
+        (when create ;; call save function:
+          (when (functionp (nth 2 creds))
+            (funcall (nth 2 creds))))
+        creds))))
+
+(defun mastodon-auth-source-token (url handle &optional token create)
+  "Parse URL, search auth sourced with it, USERNAME and TOKEN.
+Calls `mastodon-auth-source-get', returns only the token."
+  (let ((host (url-host
+               (url-generic-parse-url url)))
+        (username (car (split-string handle "@"))))
+    (nth 1
+         (mastodon-auth-source-get username host token create))))
+
 (defun mastodon-auth--get-account-name ()
   "Request user credentials and return an account name."
   (alist-get 'acct
