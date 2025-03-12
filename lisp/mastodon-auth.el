@@ -55,6 +55,12 @@
   :prefix "mastodon-auth-"
   :group 'mastodon)
 
+(defcustom mastodon-auth-use-auth-source t
+  "Whether to use auth sources for user credentials.
+If t, save and read user access token in the user's auth source
+file (see `auth-sources'). If nil, use `mastodon-client--token-file'
+instead.")
+
 (defvar mastodon-auth-source-file nil
   "This variable is obsolete.
 This variable currently serves no purpose and will be removed in
@@ -171,25 +177,28 @@ When ASK is absent return nil."
 (defun mastodon-auth--access-token ()
   "Return the access token to use with `mastodon-instance-url'.
 Generate/save token if none known yet."
-  (cond (mastodon-auth--token-alist
-         ;; user variables are known and initialised.
-         (alist-get mastodon-instance-url mastodon-auth--token-alist nil nil #'string=))
-        ((plist-get (mastodon-client--active-user) :access_token)
-         ;; user variables need to be read from plstore.
-         (push (cons mastodon-instance-url
-                     (plist-get (mastodon-client--active-user) :access_token))
-               mastodon-auth--token-alist)
-         (alist-get mastodon-instance-url mastodon-auth--token-alist nil nil #'string=))
-        ((null mastodon-active-user)
-         ;; user not aware of 2FA-related changes and has not set
-         ;; `mastodon-active-user'. Make user aware and error out.
-         (mastodon-auth--show-notice mastodon-auth--user-unaware
-                                     "*mastodon-notice*")
-         (error "Variables not set properly"))
-        (t
-         ;; user access-token needs to fetched from the server and
-         ;; stored and variables initialised.
-         (mastodon-auth--handle-token-response (mastodon-auth--get-token)))))
+  (cond
+   (mastodon-auth--token-alist
+    ;; user variables are known and initialised.
+    (alist-get mastodon-instance-url
+               mastodon-auth--token-alist nil nil #'string=))
+   ((plist-get (mastodon-client--active-user) :access_token)
+    ;; user variables need to be read from plstore.
+    (push (cons mastodon-instance-url
+                (plist-get (mastodon-client--active-user) :access_token))
+          mastodon-auth--token-alist)
+    (alist-get mastodon-instance-url
+               mastodon-auth--token-alist nil nil #'string=))
+   ((null mastodon-active-user)
+    ;; user not aware of 2FA-related changes and has not set
+    ;; `mastodon-active-user'. Make user aware and error out.
+    (mastodon-auth--show-notice mastodon-auth--user-unaware
+                                "*mastodon-notice*")
+    (error "Variables not set properly"))
+   (t
+    ;; user access-token needs to fetched from the server and
+    ;; stored and variables initialised.
+    (mastodon-auth--handle-token-response (mastodon-auth--get-token)))))
 
 (defun mastodon-auth--handle-token-response (response)
   "Add token RESPONSE to `mastodon-auth--token-alist'.

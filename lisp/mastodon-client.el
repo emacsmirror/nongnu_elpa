@@ -39,7 +39,8 @@
 (autoload 'mastodon-http--api "mastodon-http")
 (autoload 'mastodon-http--post "mastodon-http")
 
-(defcustom mastodon-client--token-file (concat user-emacs-directory "mastodon.plstore")
+(defcustom mastodon-client--token-file
+  (concat user-emacs-directory "mastodon.plstore")
   "File path where Mastodon access tokens are stored."
   :group 'mastodon
   :type 'file)
@@ -85,7 +86,8 @@ If you change the value of this variable, you need to also delete
     (let ((json-object-type 'plist)
           (json-key-type 'keyword)
           (json-array-type 'vector)
-          (json-string (buffer-substring-no-properties (point) (point-max))))
+          (json-string
+           (buffer-substring-no-properties (point) (point-max))))
       (json-read-from-string json-string))))
 
 (defun mastodon-client--token-file ()
@@ -103,7 +105,8 @@ Make `mastodon-client--fetch' call to determine client values."
 	;; seems to ensure this cannot happen so let's do that ourselves:
 	(print-length nil)
 	(print-level nil))
-    (plstore-put plstore (concat "mastodon-" mastodon-instance-url) client nil)
+    (plstore-put plstore
+                 (concat "mastodon-" mastodon-instance-url) client nil)
     (plstore-save plstore)
     (plstore-close plstore)
     client))
@@ -117,7 +120,9 @@ Make `mastodon-client--fetch' call to determine client values."
 (defun mastodon-client--read ()
   "Retrieve client_id and client_secret from `mastodon-client--token-file'."
   (let* ((plstore (plstore-open (mastodon-client--token-file)))
-         (mastodon (plstore-get plstore (concat "mastodon-" mastodon-instance-url))))
+         (mastodon
+          (plstore-get plstore
+                       (concat "mastodon-" mastodon-instance-url))))
     (mastodon-client--remove-key-from-plstore mastodon)))
 
 (defun mastodon-client--general-read (key)
@@ -213,7 +218,8 @@ Details is a plist."
 Read plist from `mastodon-client--token-file' if variable is nil.
 Fetch and store plist if `mastodon-client--read' returns nil."
   (let ((client-details
-         (cdr (assoc mastodon-instance-url mastodon-client--client-details-alist))))
+         (cdr (assoc mastodon-instance-url
+                     mastodon-client--client-details-alist))))
     (unless client-details
       (setq client-details
             (or (mastodon-client--read)
