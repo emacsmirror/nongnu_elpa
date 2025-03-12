@@ -939,30 +939,51 @@ STATE defaults to open."
         (fj-get endpoint params)
       (t (format "%s" (error-message-string err))))))
 
-(defun fj-list-own-issues (&optional query state type
+
+(defun fj-list-own-pulls (&optional query state
+                                    created assigned mentioned)
+  "List pulls in repos owned by `fj-user'.
+QUERY, STATE, TYPE, CREATED, ASSIGNED, and MENTIONED are all for
+`fj-issues-search'."
+  (interactive)
+  (fj-list-own-items
+   query state "pulls" created assigned mentioned))
+
+(defun fj-list-own-issues (&optional query state
                                      created assigned mentioned)
   "List issues in repos owned by `fj-user'.
 QUERY, STATE, TYPE, CREATED, ASSIGNED, and MENTIONED are all for
 `fj-issues-search'."
   (interactive)
-  (let ((issues
+  (fj-list-own-items
+   query state "issues" created assigned mentioned))
+
+(defun fj-list-own-items (&optional query state type
+                                    created assigned mentioned)
+  "List items of TYPE in repos owned by `fj-user'.
+QUERY, STATE, TYPE, CREATED, ASSIGNED, and MENTIONED are all for
+`fj-issues-search'."
+  (interactive)
+  (let ((items
          (fj-issues-search query fj-user state type
                            created assigned mentioned))
-        (buf-name "*fj-user-repos-issues")
+        (buf-name (format "*fj-user-repos-%s" type))
         (prev-buf (buffer-name (current-buffer)))
         (prev-mode major-mode))
     ;; FIXME refactor with `fj-list-issues'? just tab list entries fun and
     ;; the buffer spec settings change
     (with-current-buffer (get-buffer-create buf-name)
       (setq tabulated-list-entries
-            (fj-issue-tl-entries issues :repo))
+            (fj-issue-tl-entries items :repo))
       (fj-owned-issues-tl-mode)
       (tabulated-list-init-header)
       (tabulated-list-print)
       (setq fj-buffer-spec
-            `(:state ,state :owner ,fj-user :type ,type))
+            `( :state ,state :owner ,fj-user :type ,type
+               :query ,query :created ,created
+               :assiged ,assigned :mentioned ,mentioned))
       (fj-other-window-maybe
-       prev-buf "-issues*" #'string-suffix-p prev-mode))))
+       prev-buf (format "-%s*" type) #'string-suffix-p prev-mode))))
 
 (defun fj-get-item (repo &optional owner number type)
   "GET ISSUE NUMBER, in REPO by OWNER.
@@ -1350,7 +1371,8 @@ NEW-BODY is the new comment text to send."
 (defvar-keymap fj-owned-issues-tl-mode-map
   :doc "Map for `fj-owned-issues-tl-mode', a tabluated list of issues."
   :parent fj-issue-tl-mode-map ; has nav
-  )
+  "C-c C-c" #'fj-list-own-items-state-cycle
+  "C-c C-s" #'fj-list-own-items-type-cycle)
 
 ;; FIXME: refactor with `fj-issue-tl-mode' mode?
 ;; this just adds Repo col
@@ -1588,6 +1610,27 @@ TYPE is the item type."
       ("all" (fj-list-issues-do repo owner nil type))
       (_ ; open is default
        (fj-list-issues-closed repo owner type)))))
+
+(defun fj-list-own-items-state-cycle ()
+  "Cycle item state listing of open, closed, and all."
+  (interactive)
+  ;; FIXME: implement other own-issues params (add to buffer-spec)
+  (fj-destructure-buf-spec (state type)
+    (pcase state
+      ("closed" (fj-list-own-items nil "all" type))
+      ("all" (fj-list-own-items nil "open" type))
+      (_ (fj-list-own-items nil "closed" type)))))
+
+(defun fj-list-own-items-type-cycle ()
+  "Cycle item type listing of issues, pulls, and all."
+  (interactive)
+  ;; FIXME: implement other own-issues params (add to buffer-spec)
+  (fj-destructure-buf-spec (state type)
+    (pcase type
+      ("pulls" (fj-list-own-items nil state "all"))
+      ("all" (fj-list-own-items nil state "issues"))
+      (_ ; issues default
+       (fj-list-own-items nil state "pulls")))))
 
 (defun fj-view-reload ()
   "Try to reload the current view based on its major-mode."
