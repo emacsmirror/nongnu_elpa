@@ -499,8 +499,8 @@ CAPTION is the image caption if provided.
 SENSITIVE is a flag from the item's JSON data."
   (let* ((help-echo-base
           (substitute-command-keys
-           (concat "\\`RET'/\\`i': load full image (prefix: copy URL), \\`+'/\\`-': zoom,\
- \\`r': rotate, \\`o': save preview"
+           (concat "\\`RET': load full image or play video,\
+ \\`i' for image options"
                    (when (not (eq sensitive :json-false))
                      ", \\`S': toggle sensitive media"))))
          (help-echo (if caption
