@@ -300,8 +300,7 @@ JSON."
 
 (defun fj-patch (endpoint &optional params json)
   "Make a PATCH request to ENDPOINT.
-PARAMS.
-JSON."
+PARAMS are query params unless JSON."
   (let ((url (fj-api endpoint)))
     (fj-authorized-request "PATCH"
       (fedi-http--patch url params json))))
