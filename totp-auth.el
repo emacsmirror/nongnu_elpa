@@ -396,10 +396,11 @@ same, ie probably intended for the same target."
        (equal (assq :user    a) (assq :user    b))))
 
 (defun totp-auth-get-backend-for-secret (s)
-  "Return the backend in which secret S is store, or the default backend."
+  "Return the backend in which secret S is stored,
+or the default encrypted backend, or nil."
   (let (backends vault default target secrets)
     (setq backends (totp-auth-storage-backends)
-          default  (car backends))
+          default  (car (totp-auth-storage-backends :encrypted)))
     (while (and (not target) backends)
       (setq vault    (car backends)
             secrets  (totp-auth-get-secrets-from-backend vault)
