@@ -216,11 +216,10 @@ Generate/save token if none known yet."
    ;; if auth source enabled, but we have an access token in plstore,
    ;; error out, tell user to remove plstore and start over:
    ((and mastodon-auth-use-auth-source
-         (let* ((plstore (plstore-open mastodon-client--token-file))
-                (entry
-                 (plstore-get plstore
-                              (format "user-%s" mastodon-active-user))))
-           (plist-get (cdr entry) :access_token)))
+         (let ((entry (mastodon-client--general-read
+                       (concat "user-"
+                               (mastodon-client--form-user-from-vars)))))
+           (plist-get entry :access_token)))
     (user-error "You have enabled auth source, but there is an access token\
  in your plstore. Call `mastodon-forget-all-logins', and try again.\
  If you believe this message is in error, please contact us on the\
