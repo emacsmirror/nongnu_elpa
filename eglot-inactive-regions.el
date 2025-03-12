@@ -239,15 +239,15 @@ If the correspondend \"eglot-inactive\" face doesn't not exist yet create it."
             (save-restriction
               (widen)
               (goto-char from)
-              (while (<= (point) to)
-                (goto-char (next-single-property-change (point) 'face))
+              (while (< (point) to)
+                (goto-char (or (next-single-property-change (point) 'face) to))
                 (let* ((cur-face (eglot-inactive-regions--get-face (1- (point))))
                        (eglot-inactive-face (eglot-inactive-regions--make-darken-face cur-face))
                        (ov (make-overlay beg (point))))
                   (overlay-put ov 'face eglot-inactive-face)
                   (push ov eglot-inactive-regions--overlays)))
               (setq beg (point)))))
-        (setq start to)))))
+          (setq start to)))))
 
 (defun eglot-inactive-regions-refresh ()
   "Force a refresh of known inactive regions.
