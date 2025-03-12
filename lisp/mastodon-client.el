@@ -45,14 +45,6 @@
   :group 'mastodon
   :type 'file)
 
-(defcustom mastodon-client-encrypt-access-token t
-  "Whether to encrypt the user's authentication token in the plstore.
-If you set this to non-nil, you also likely need to set
-`plstore-encrypt-to' to your GPG key ID for decryption.
-If you change the value of this variable, you need to also delete
-`mastodon-client--token-file' and log in again."
-  :type 'boolean)
-
 (defvar mastodon-client--client-details-alist nil
   "An alist of Client id and secrets keyed by the instance url.")
 
@@ -140,10 +132,13 @@ Return plist without the KEY."
      :client_secret ,(plist-get (mastodon-client) :client_secret)))
 
 (defun mastodon-client--store-access-token (token)
-  "Save TOKEN as :access_token, encrypted, in plstore of the current user.
-Return the plist after the operation."
+  "Save TOKEN as :access_token in plstore of the current user.
+Return the plist after the operation.
+If `mastodon-auth-encrypt-access-token', encrypt it in the plstore.
+If `mastodon-auth-use-auth-source', encrypt it in auth source file."
   (let* ((user-details (mastodon-client--make-user-details-plist))
          (plstore (plstore-open (mastodon-client--token-file)))
+         (username (plist-get user-details :username))
          (key (concat "user-" username))
          (print-length nil)
          (print-level nil))
@@ -154,7 +149,7 @@ Return the plist after the operation."
               mastodon-instance-url handle token :create)
              (plstore-put plstore key user-details nil)))
           ;; plstore encrypted:
-          (mastodon-client-encrypt-access-token
+          (mastodon-auth-encrypt-access-token
            (plstore-put plstore key user-details `(:access_token ,token)))
           (t ;; plstore sans encryption:
            ;; (kept only because changing from this disrupts users):
@@ -166,27 +161,28 @@ Return the plist after the operation."
 
 (defun mastodon-client--make-user-active (user-details)
   "USER-DETAILS is a plist consisting of user details.
-Save it to plstore under key \"active-user\", with the :access_token
-value encrypted."
-  (let ((plstore (plstore-open (mastodon-client--token-file)))
-        (handle (plist-get user-details :username))
-        (token
-         (if mastodon-auth-use-auth-source
-             (mastodon-auth-source-token mastodon-instance-url handle)
-           (plist-get user-details :access_token)))
-        (sans-token (if mastodon-auth-use-auth-source
-                        user-details
-                      ;; remove acces_token from user-details:
-                      (cl-remf user-details :access_token)
-                      user-details))
-        (print-length nil)
-        (print-level nil))
-    (if (not mastodon-client-encrypt-access-token)
+Save it to plstore under key \"active-user\".
+If `mastodon-auth-use-auth-source' is non-nil, fetch the access token
+from the user's auth source file and add it to the active user entry."
+  (let* ((plstore (plstore-open (mastodon-client--token-file)))
+         (handle (plist-get user-details :username))
+         (token
+          (if mastodon-auth-use-auth-source
+              (mastodon-auth-source-token mastodon-instance-url handle)
+            (plist-get user-details :access_token)))
+         (sans-token (if mastodon-auth-use-auth-source
+                         user-details
+                       ;; remove acces_token from user-details:
+                       (cl-remf user-details :access_token)
+                       user-details))
+         (print-length nil)
+         (print-level nil))
+    (if (not mastodon-auth-encrypt-access-token)
         (plstore-put plstore "active-user" user-details nil)
       (plstore-put plstore "active-user"
-                   sans-token `(:access_token ,token))))
-  (plstore-save plstore)
-  (plstore-close plstore))
+                   sans-token `(:access_token ,token)))
+    (plstore-save plstore)
+    (plstore-close plstore)))
 
 (defun mastodon-client--form-user-from-vars ()
   "Create a username from user variable.  Return that username.

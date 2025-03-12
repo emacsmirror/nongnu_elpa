@@ -59,7 +59,21 @@
   "Whether to use auth sources for user credentials.
 If t, save and read user access token in the user's auth source
 file (see `auth-sources'). If nil, use `mastodon-client--token-file'
-instead.")
+instead.
+If you change the value of this variable, call
+`mastodon-forget-all-logins' and log in again."
+  :type 'boolean)
+
+;; FIXME: remove this! either we auth-source encrypt or plstore encrypt.
+;; the only unencrypted shall be people who don't update.
+;; but fetching from plstore is agnostic, so we don't need to sweat it.
+(defcustom mastodon-auth-encrypt-access-token t
+  "Whether to encrypt the user's authentication token in the plstore.
+If you set this to non-nil, you also likely need to set
+`plstore-encrypt-to' to your GPG key ID for decryption.
+If you change the value of this variable, call
+`mastodon-forget-all-logins' and log in again."
+  :type 'boolean)
 
 (defvar mastodon-auth-source-file nil
   "This variable is obsolete.
@@ -195,6 +209,18 @@ Generate/save token if none known yet."
     (mastodon-auth--show-notice mastodon-auth--user-unaware
                                 "*mastodon-notice*")
     (user-error "Variables not set properly"))
+   ;; if auth source enabled, but we have an access token in plstore,
+   ;; error out, tell user to remove plstore and start over:
+   ((and mastodon-auth-use-auth-source
+         (let* ((plstore (plstore-open mastodon-client--token-file))
+                (entry
+                 (plstore-get plstore
+                              (format "user-%s" mastodon-active-user))))
+           (plist-get (cdr entry) :access_token)))
+    (user-error "You have enabled auth source, but there is an access token\
+ in your plstore. Call `mastodon-forget-all-logins', and try again.\
+ If you believe this message is in error, please contact us on the\
+ mastodon.el repo."))
    (t
     ;; user access-token needs to fetched from the server and
     ;; stored and variables initialised.
