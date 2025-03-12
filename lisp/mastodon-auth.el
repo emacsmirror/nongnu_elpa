@@ -65,7 +65,11 @@ If t, save and read user access token in the user's auth source
 file (see `auth-sources'). If nil, use `mastodon-client--token-file'
 instead.
 If you change the value of this variable, call
-`mastodon-forget-all-logins' and log in again."
+`mastodon-forget-all-logins' and log in again.
+If for some reason you generate a new token, you'll have to update your
+auth souce file manually, or at least remove the entry and authenticate
+again, as auth-source.el only provides unreliable tools for updating
+entries."
   :type 'boolean)
 
 ;; FIXME: remove this! either we auth-source encrypt or plstore encrypt.
