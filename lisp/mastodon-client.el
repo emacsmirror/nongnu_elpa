@@ -142,16 +142,15 @@ If `mastodon-auth-encrypt-access-token', encrypt it in the plstore.
 If `mastodon-auth-use-auth-source', encrypt it in auth source file."
   (let* ((user-details (mastodon-client--make-user-details-plist))
          (plstore (plstore-open (mastodon-client--token-file)))
-         (username (plist-get user-details :username))
+         (username (mastodon-client--form-user-from-vars))
          (key (concat "user-" username))
          (print-length nil)
          (print-level nil))
     (cond (mastodon-auth-use-auth-source
            ;; auth-source:
-           (let ((handle (plist-get user-details :username)))
-             (mastodon-auth-source-token
-              mastodon-instance-url handle token :create)
-             (plstore-put plstore key user-details nil)))
+           (mastodon-auth-source-token
+            mastodon-instance-url username token :create)
+           (plstore-put plstore key user-details nil))
           ;; plstore encrypted:
           (mastodon-auth-encrypt-access-token
            (plstore-put plstore key user-details `(:access_token ,token)))
