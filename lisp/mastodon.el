@@ -195,6 +195,13 @@ and X others...\"."
   (interactive)
   (quit-window 'kill))
 
+(defun mastodon-forget-all-logins ()
+  "Delete `mastodon-client--token-file'."
+  (interactive)
+  (when (y-or-n-p "Remove all saved login data?")
+    (delete-file mastodon-client--token-file)
+    (message "File %s deleted." mastodon-client--token-file)))
+
 (defvar mastodon-mode-map
   (let ((map (make-sparse-keymap)))
     ;; navigation inside a timeline
