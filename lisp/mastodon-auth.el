@@ -194,7 +194,7 @@ Generate/save token if none known yet."
     ;; `mastodon-active-user'. Make user aware and error out.
     (mastodon-auth--show-notice mastodon-auth--user-unaware
                                 "*mastodon-notice*")
-    (error "Variables not set properly"))
+    (user-error "Variables not set properly"))
    (t
     ;; user access-token needs to fetched from the server and
     ;; stored and variables initialised.
