@@ -2,6 +2,7 @@
 
 ;; Copyright (C) 2017-2019 Johnson Denen
 ;; Copyright (C) 2021 Abhiseck Paira <abhiseckpaira@disroot.org>
+;; Copyright (C) 2025 Marty Hiatt <mousebot@disroot.org>
 ;; Author: Johnson Denen <johnson.denen@gmail.com>
 ;; Maintainer: Marty Hiatt <mousebot@disroot.org>
 ;; Homepage: https://codeberg.org/martianh/mastodon.el
@@ -35,9 +36,12 @@
 
 (defvar mastodon-instance-url)
 (defvar mastodon-active-user)
+(defvar mastodon-auth-use-auth-source)
+(defvar mastodon-auth-encrypt-access-token)
 
 (autoload 'mastodon-http--api "mastodon-http")
 (autoload 'mastodon-http--post "mastodon-http")
+(autoload 'mastodon-auth-source-token "mastodon-auth")
 
 (defcustom mastodon-client--token-file
   (concat user-emacs-directory "mastodon.plstore")

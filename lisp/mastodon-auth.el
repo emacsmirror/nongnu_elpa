@@ -2,6 +2,7 @@
 
 ;; Copyright (C) 2017-2019 Johnson Denen
 ;; Copyright (C) 2021 Abhiseck Paira <abhiseckpaira@disroot.org>
+;; Copyright (C) 2025 Marty Hiatt <mousebot@disroot.org>
 ;; Author: Johnson Denen <johnson.denen@gmail.com>
 ;; Maintainer: Marty Hiatt <mousebot@disroot.org>
 ;; Homepage: https://codeberg.org/martianh/mastodon.el
@@ -32,6 +33,8 @@
 (require 'plstore)
 (require 'auth-source)
 (require 'json)
+(require 'url)
+
 (eval-when-compile (require 'subr-x)) ; for if-let*
 
 (autoload 'mastodon-client "mastodon-client")
@@ -49,6 +52,7 @@
 (defvar mastodon-client-scopes)
 (defvar mastodon-client-redirect-uri)
 (defvar mastodon-active-user)
+(defvar mastodon-client--token-file)
 
 (defgroup mastodon-auth nil
   "Authenticate with Mastodon."
@@ -220,7 +224,7 @@ Generate/save token if none known yet."
     (user-error "You have enabled auth source, but there is an access token\
  in your plstore. Call `mastodon-forget-all-logins', and try again.\
  If you believe this message is in error, please contact us on the\
- mastodon.el repo."))
+ mastodon.el repo"))
    (t
     ;; user access-token needs to fetched from the server and
     ;; stored and variables initialised.
@@ -242,8 +246,8 @@ Handle any errors from the server."
     (_ (error "Unknown response from mastodon-auth--get-token!"))))
 
 (defun mastodon-auth-source-get (user host &optional token create)
-  "Fetch an auth source token.
-If CREATE, prompt for a token and save it if there is no such entry.
+  "Fetch an auth source token, searching by USER and HOST.
+If CREATE, use TOKEN or prompt for it, and save it if there is no such entry.
 Return a list of user, password/secret, and the item's save-function."
   (let* ((auth-source-creation-prompts
           '((secret . "%u access token: ")))
@@ -266,8 +270,9 @@ Return a list of user, password/secret, and the item's save-function."
         creds))))
 
 (defun mastodon-auth-source-token (url handle &optional token create)
-  "Parse URL, search auth sourced with it, USERNAME and TOKEN.
-Calls `mastodon-auth-source-get', returns only the token."
+  "Parse URL, search auth sources with it, user HANDLE and TOKEN.
+Calls `mastodon-auth-source-get', returns only the token.
+If CREATE, create an entry is none is found."
   (let ((host (url-host
                (url-generic-parse-url url)))
         (username (car (split-string handle "@"))))
