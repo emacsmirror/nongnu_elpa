@@ -200,8 +200,20 @@ Generate/save token if none known yet."
     ;; user variables are known and initialised.
     (alist-get mastodon-instance-url
                mastodon-auth--token-alist nil nil #'string=))
+   ;; if auth source enabled, but we have an access token in plstore,
+   ;; error out, tell user to remove plstore and start over:
+   ((and mastodon-auth-use-auth-source
+         (let ((entry (mastodon-client--general-read
+                       (concat "user-"
+                               (mastodon-client--form-user-from-vars)))))
+           (plist-get entry :access_token)))
+    (user-error "Auth source storage of tokens is enabled,\
+ but there is also an access token in your plstore.\
+ Call `mastodon-forget-all-logins', and try again.\
+ If you this message is in error, please contact us on the\
+ mastodon.el repo"))
    ((plist-get (mastodon-client--active-user) :access_token)
-    ;; user variables need to be read from plstore.
+    ;; user variables need to be read from plstore active-user entry.
     (push (cons mastodon-instance-url
                 (plist-get (mastodon-client--active-user) :access_token))
           mastodon-auth--token-alist)
@@ -213,17 +225,6 @@ Generate/save token if none known yet."
     (mastodon-auth--show-notice mastodon-auth--user-unaware
                                 "*mastodon-notice*")
     (user-error "Variables not set properly"))
-   ;; if auth source enabled, but we have an access token in plstore,
-   ;; error out, tell user to remove plstore and start over:
-   ((and mastodon-auth-use-auth-source
-         (let ((entry (mastodon-client--general-read
-                       (concat "user-"
-                               (mastodon-client--form-user-from-vars)))))
-           (plist-get entry :access_token)))
-    (user-error "You have enabled auth source, but there is an access token\
- in your plstore. Call `mastodon-forget-all-logins', and try again.\
- If you believe this message is in error, please contact us on the\
- mastodon.el repo"))
    (t
     ;; user access-token needs to fetched from the server and
     ;; stored and variables initialised.
@@ -262,7 +263,6 @@ Return a list of user, password/secret, and the item's save-function."
              `(,(plist-get source :user)
                ,(auth-info-password source)
                ,(plist-get source :save-function))))
-        ;; FIXME: is this ok to be here?
         (when create ;; call save function:
           (when (functionp (nth 2 creds))
             (funcall (nth 2 creds))))
