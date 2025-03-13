@@ -47,6 +47,7 @@
 (autoload 'mastodon-http--get-json "mastodon-http")
 (autoload 'mastodon-http--post "mastodon-http")
 (autoload 'mastodon-return-credential-account "mastodon")
+(autoload 'mastodon-client--general-read "mastodon-client")
 
 (defvar mastodon-instance-url)
 (defvar mastodon-client-scopes)
@@ -70,17 +71,6 @@ If for some reason you generate a new token, you'll have to update your
 auth souce file manually, or at least remove the entry and authenticate
 again, as auth-source.el only provides unreliable tools for updating
 entries."
-  :type 'boolean)
-
-;; FIXME: remove this! either we auth-source encrypt or plstore encrypt.
-;; the only unencrypted shall be people who don't update.
-;; but fetching from plstore is agnostic, so we don't need to sweat it.
-(defcustom mastodon-auth-encrypt-access-token t
-  "Whether to encrypt the user's authentication token in the plstore.
-If you set this to non-nil, you also likely need to set
-`plstore-encrypt-to' to your GPG key ID for decryption.
-If you change the value of this variable, call
-`mastodon-forget-all-logins' and log in again."
   :type 'boolean)
 
 (defvar mastodon-auth-source-file nil
@@ -111,12 +101,15 @@ We apologize for the inconvenience.
 
 (defun mastodon-auth--get-browser-login-url ()
   "Return properly formed browser login url."
-  (mastodon-http--concat-params-to-url
-   (concat mastodon-instance-url "/oauth/authorize/")
-   `(("response_type" . "code")
-     ("redirect_uri" . ,mastodon-client-redirect-uri)
-     ("scope" . ,mastodon-client-scopes)
-     ("client_id" . ,(plist-get (mastodon-client) :client_id)))))
+  (let ((client-id (plist-get (mastodon-client) :client_id)))
+    (if (not client-id)
+        (error "Failed to set up client id")
+      (mastodon-http--concat-params-to-url
+       (concat mastodon-instance-url "/oauth/authorize/")
+       `(("response_type" . "code")
+         ("redirect_uri" . ,mastodon-client-redirect-uri)
+         ("scope" . ,mastodon-client-scopes)
+         ("client_id" . ,client-id))))))
 
 (defvar mastodon-auth--explanation
   (format
