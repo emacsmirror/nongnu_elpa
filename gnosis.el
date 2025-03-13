@@ -1378,15 +1378,26 @@ If NEW? is non-nil, increment new notes log by 1."
           (funcall func-name id))
       (error "Malformed note type: '%s'" type))))
 
+(defun gnosis--shell-cmd-with-password (command)
+  "Run COMMAND and watch for password prompt."
+  (let ((process (start-process-shell-command "shell-cmd" nil command)))
+    (set-process-filter
+     process
+     (lambda (proc output)
+       (when (string-match-p "password:" output)
+         (process-send-string proc
+			      (concat (read-passwd "Password: ") "\n")))
+       (message "%s" output)))))
 
 ;;;###autoload
 (cl-defun gnosis-vc-push (&optional (dir gnosis-dir))
-  "Run `vc-push' in DIR."
+  "Run `git push' in DIR."
   (interactive)
-  (let ((default-directory dir))
-    (vc-push)))
+  (let ((default-directory dir)
+	(git (executable-find "git")))
+    (gnosis--shell-cmd-with-password
+     (format "%s push" git))))
 
-;; FIXME: Fix sync issue delay.
 ;;;###autoload
 (cl-defun gnosis-vc-pull (&optional (dir gnosis-dir))
   "Run `vc-pull' in DIR."
@@ -1415,10 +1426,11 @@ the changes with a message containing the reviewed number NOTE-NUM."
     (unless (file-exists-p (expand-file-name ".git" gnosis-dir))
       (vc-git-create-repo))
     (unless gnosis-testing
-      (vc-git-command nil 0 nil "add" "gnosis.db")
-      (vc-git-command nil 0 nil "commit" "-m" (format "Total notes reviewed: %d" note-num)))
-    (when (and gnosis-vc-auto-push (not gnosis-testing))
-      (gnosis-vc-push))
+      (shell-command
+       (format "%s add gnosis.db" git))
+      (gnosis--shell-cmd-with-password
+       (format "%s commit -m 'Total notes reviewed: %d'" git note-num)))
+    (and gnosis-vc-auto-push (not gnosis-testing) (gnosis-vc-push))
     (message "Review session finished.  %d notes reviewed." note-num)))
 
 (defun gnosis-review-action--edit (success note note-count)
