@@ -181,7 +181,7 @@ from the user's auth source file and add it to the active user entry."
           (if mastodon-auth-use-auth-source
               (mastodon-auth-source-token mastodon-instance-url handle)
             (plist-get user-details :access_token)))
-         (secrets `( :access-token ,token
+         (secrets `( :access_token ,token
                      :client_id ,(plist-get user-details :client_id)
                      :client_secret ,(plist-get user-details :client_secret)))
          (sans-secrets
