@@ -1500,17 +1500,16 @@ If REPO is provided, also include a repo column."
 
 (defvar fj-repo-data nil) ;; for transients for now
 
-(defun fj-list-issues ()
+(defun fj-list-issues (&optional repo)
   "List issues for current repo.
 If we are in a repo, don't assume `fj-user' owns it. In that case we
 fetch owner/repo from git config.
 If we are not in a repo, call `fj-list-issues-do' without using git
 config."
-  ;; FIXME: make work from non-repo buffer
-  (interactive)
-  (if (not (magit-inside-worktree-p :noerror))
-      ;; if not in repo, fall back to `fj-user' repos
-      (fj-list-issues-do)
+  (interactive "P")
+  (if (or current-prefix-arg ;; still allow completing-read a repo
+          (not (magit-inside-worktree-p :noerror)))
+      (fj-list-issues-do repo) ;; fall back to `fj-user' repos
     (let* ((url (fj-git-config-remote-url))
            (repo-+-owner (last (split-string url "/") 2))
            (owner (car repo-+-owner))
