@@ -195,6 +195,7 @@ and X others...\"."
   (interactive)
   (quit-window 'kill))
 
+;;;###autoload
 (defun mastodon-forget-all-logins ()
   "Delete `mastodon-client--token-file'."
   (interactive)
