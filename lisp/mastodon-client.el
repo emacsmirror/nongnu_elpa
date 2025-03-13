@@ -110,9 +110,8 @@ Make `mastodon-client--fetch' call to determine client values."
                  sans-secrets secrets)
     (plstore-save plstore)
     (plstore-close plstore)
-    ;; FIXME: why did we not have to do this before?
-    ;; maybe we never ran into this bug?
-    (mastodon-client--remove-key-from-plstore client)))
+    ;; FIXME: why does client vary here?
+    (append secrets sans-secrets)))
 
 (defun mastodon-client--remove-key-from-plstore (plstore)
   "Remove KEY from PLSTORE."
