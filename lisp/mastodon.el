@@ -105,6 +105,7 @@
 
 (defvar mastodon-tl--highlight-current-toot)
 (defvar mastodon-notifications--map)
+(defvar mastodon-client--token-file)
 
 (defvar mastodon-notifications-grouped-types
   '("reblog" "favourite") ;; TODO: implement follow!
