@@ -206,9 +206,9 @@ Generate/save token if none known yet."
            (plist-get entry :access_token)))
     (user-error "Auth source storage of tokens is enabled,\
  but there is also an access token in your plstore.\
- Call `mastodon-forget-all-logins', and try again.\
- If you this message is in error, please contact us on the\
- mastodon.el repo"))
+ Either set `mastodon-auth-use-auth-source' to nil or call\
+ `mastodon-forget-all-logins', and try again.\
+ If this message is in error, contact us on the\ mastodon.el repo"))
    ((plist-get (mastodon-client--active-user) :access_token)
     ;; user variables need to be read from plstore active-user entry.
     (push (cons mastodon-instance-url
