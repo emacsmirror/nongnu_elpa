@@ -245,9 +245,9 @@ If the correspondend \"eglot-inactive\" face doesn't not exist yet create it."
                        (eglot-inactive-face (eglot-inactive-regions--make-darken-face cur-face))
                        (ov (make-overlay beg (point))))
                   (overlay-put ov 'face eglot-inactive-face)
-                  (push ov eglot-inactive-regions--overlays)))
-              (setq beg (point)))))
-          (setq start to)))))
+                  (push ov eglot-inactive-regions--overlays))
+                (setq beg (point))))))
+        (setq start to)))))
 
 (defun eglot-inactive-regions-refresh ()
   "Force a refresh of known inactive regions.
