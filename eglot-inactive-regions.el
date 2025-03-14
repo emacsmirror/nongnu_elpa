@@ -241,7 +241,7 @@ If the correspondend \"eglot-inactive\" face doesn't not exist yet create it."
           (save-excursion
             (goto-char from)
             (while (< (point) to)
-              (goto-char (min to (or (next-single-property-change (point) 'face) to)))
+              (goto-char (next-single-property-change (point) 'face nil to))
               (let* ((cur-face (eglot-inactive-regions--get-face (1- (point))))
                      (eglot-inactive-face (eglot-inactive-regions--make-darken-face cur-face))
                      (ov (make-overlay from (point))))
