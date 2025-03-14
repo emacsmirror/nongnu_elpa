@@ -75,15 +75,19 @@
 
 (defun mastodon-client--fetch ()
   "Return JSON from `mastodon-client--register' call."
-  (with-current-buffer (mastodon-client--register)
-    (goto-char (point-min))
-    (re-search-forward "^$" nil 'move)
-    (let ((json-object-type 'plist)
-          (json-key-type 'keyword)
-          (json-array-type 'vector)
-          (json-string
-           (buffer-substring-no-properties (point) (point-max))))
-      (json-read-from-string json-string))))
+  (let ((buf (mastodon-client--register)))
+    (if (not buf)
+        (user-error "Client registration failed.\
+ Is `mastodon-instance-url' correct?")
+      (with-current-buffer buf
+        (goto-char (point-min))
+        (re-search-forward "^$" nil 'move)
+        (let ((json-object-type 'plist)
+              (json-key-type 'keyword)
+              (json-array-type 'vector)
+              (json-string
+               (buffer-substring-no-properties (point) (point-max))))
+          (json-read-from-string json-string))))))
 
 (defun mastodon-client--token-file ()
   "Return `mastodon-client--token-file'."
