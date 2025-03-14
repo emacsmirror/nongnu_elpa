@@ -79,23 +79,6 @@ A random one is picked at package initialization.")
           (or ver-str fedi-http--api-version)
           "/" endpoint))
 
-(defun fedi-http--response ()
-  "Capture response buffer content as string."
-  (with-current-buffer (current-buffer)
-    (buffer-substring-no-properties (point-min) (point-max))))
-
-(defun fedi-http--response-body (pattern)
-  "Return substring matching PATTERN from `fedi-http--response'."
-  (let ((resp (fedi-http--response)))
-    (string-match pattern resp)
-    (match-string 0 resp)))
-
-(defun fedi-http--status ()
-  "Return HTTP Response Status Code from `fedi-http--response'."
-  (let* ((status-line (fedi-http--response-body "^HTTP/1.*$")))
-    (string-match "[0-9][0-9][0-9]" status-line)
-    (match-string 0 status-line)))
-
 (defun fedi-http--render-html-err (string)
   "Render STRING as HTML in a temp buffer.
 STRING should be HTML for a 404 errror."
@@ -257,12 +240,13 @@ Optionally, provide an ERROR-FUN, called on the process JSON response,
 to returnany error message needed."
   (let ((status (condition-case _err
                     (with-current-buffer response
-                      (fedi-http--status))
+                      (url-http-parse-response))
                   (wrong-type-argument
                    "Looks like we got no response from the server."))))
-    (cond ((string-prefix-p "2" status)
+    (cond ((and (>= status 200)
+                (<= status 299))
            (funcall success response))
-          ((string-prefix-p "404" status)
+          ((= 404 status)
            (message "Error %s: page not found" status))
           (t
            (let ((json-response (with-current-buffer response
