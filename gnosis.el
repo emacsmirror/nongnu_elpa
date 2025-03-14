@@ -391,15 +391,12 @@ This will not be applied to sentences that start with double space."
   "Display STR as keimenon.
 
 If FILL-PARAGRAPH-P, insert question using `fill-paragraph'."
-  (let ((fill-paragraph-p (or fill-paragraph-p t)))
-    (erase-buffer)
-    (if fill-paragraph-p
-	(fill-paragraph
-	 (insert "\n" (replace-regexp-in-string "\n" "" str)))
-      (insert "\n"  str))
-    (gnosis-insert-separator)
-    (gnosis-apply-center-buffer-overlay)
-    (gnosis-apply-syntax-overlay)))
+  (erase-buffer)
+  (insert "\n" (replace-regexp-in-string "\n" "" str))
+  (fill-paragraph)
+  (gnosis-insert-separator)
+  (gnosis-apply-center-buffer-overlay)
+  (gnosis-apply-syntax-overlay))
 
 (defun gnosis-display-mcq-options (id)
   "Display answer options for mcq note ID."
