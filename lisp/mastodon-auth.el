@@ -87,16 +87,12 @@ the future.")
 (defvar mastodon-auth--user-unaware
   "          ** MASTODON.EL - NOTICE **
 
-It appears that you are not aware of the recent developments in
-mastodon.el.  In short we now require that you also set the
-variable `mastodon-active-user' in your init file in addition to
-`mastodon-instance-url'.
+User variables not set: mastodon.el requires that you set both
+`mastodon-active-user' and `mastodon-instance-url' in your init file.
 
 Please see its documentation to understand what value it accepts
 by running M-x describe-variable on it or visiting our web page:
-https://codeberg.org/martianh/mastodon.el
-
-We apologize for the inconvenience.
+https://codeberg.org/martianh/mastodon.el.
 ")
 
 (defun mastodon-auth--get-browser-login-url ()
