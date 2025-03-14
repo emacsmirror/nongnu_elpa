@@ -192,7 +192,7 @@ Avoid using an increased height value as this messes up with
 (defvar gnosis-review-notes nil
   "Review notes.")
 
-(defvar gnosis-separator "\n- ")
+(defvar gnosis-export-separator "\n- ")
 
 ;; TODO: Make this as a defcustom.
 (defvar gnosis-custom-values
