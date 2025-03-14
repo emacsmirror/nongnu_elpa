@@ -206,14 +206,14 @@ If the correspondend \"eglot-inactive\" face doesn't not exist yet create it."
 
 (defun eglot-inactive-regions--fontify (start end &optional verbose)
   "Fontify inactive region (START END) with semitransparent faces."
-  ;; sometimes font lock fontifies in chunks and each fontification
-  ;; functions takes care of extending the region to something
-  ;; syntactically relevant... guess we need to do the same, extend to
-  ;; cover whole lines seems to work with c modes
   (ignore verbose)
   (when (and eglot-inactive-regions-mode
              eglot-inactive-regions--active
              (eq eglot-inactive-regions-style 'darken-foreground))
+    ;; sometimes font lock fontifies in chunks and each fontification
+    ;; functions takes care of extending the region to something
+    ;; syntactically relevant... guess we need to do the same, extend to
+    ;; cover whole lines seems to work with c modes
     (save-excursion
       (save-restriction
         (widen)
@@ -228,8 +228,7 @@ If the correspondend \"eglot-inactive\" face doesn't not exist yet create it."
     ;; find the inactive region inside the region to fontify
     (while (and start (< start end))
       (let* ((from (or (text-property-any start end 'eglot-inactive-region t) end))
-             (to (or (text-property-any from end 'eglot-inactive-region nil) end))
-             (beg from))
+             (to (or (text-property-any from end 'eglot-inactive-region nil) end)))
         ;; the idea here is to iterate through the region by syntax
         ;; blocks, derive a new face from current one with dimmed
         ;; foreground and apply the new face with an overlay
@@ -240,17 +239,15 @@ If the correspondend \"eglot-inactive\" face doesn't not exist yet create it."
         ;; an eye on it while I find a solution
         (when (> to from)
           (save-excursion
-            (save-restriction
-              (widen)
-              (goto-char from)
-              (while (< (point) to)
-                (goto-char (or (next-single-property-change (point) 'face) to))
-                (let* ((cur-face (eglot-inactive-regions--get-face (1- (point))))
-                       (eglot-inactive-face (eglot-inactive-regions--make-darken-face cur-face))
-                       (ov (make-overlay beg (point))))
-                  (overlay-put ov 'face eglot-inactive-face)
-                  (push ov eglot-inactive-regions--overlays))
-                (setq beg (point))))))
+            (goto-char from)
+            (while (< (point) to)
+              (goto-char (min to (or (next-single-property-change (point) 'face) to)))
+              (let* ((cur-face (eglot-inactive-regions--get-face (1- (point))))
+                     (eglot-inactive-face (eglot-inactive-regions--make-darken-face cur-face))
+                     (ov (make-overlay from (point))))
+                (overlay-put ov 'face eglot-inactive-face)
+                (push ov eglot-inactive-regions--overlays))
+              (setq from (point)))))
         (setq start to)))))
 
 (defun eglot-inactive-regions-refresh ()
