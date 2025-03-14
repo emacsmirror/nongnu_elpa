@@ -50,7 +50,6 @@
 (require 'animate)
 
 (require 'gnosis-algorithm)
-(require 'gnosis-org)
 
 (defgroup gnosis nil
   "Spaced Repetition System For Note Taking & Self Testing."
@@ -192,6 +191,8 @@ Avoid using an increased height value as this messes up with
 
 (defvar gnosis-review-notes nil
   "Review notes.")
+
+(defvar gnosis-separator "\n- ")
 
 ;; TODO: Make this as a defcustom.
 (defvar gnosis-custom-values
@@ -387,7 +388,7 @@ This will not be applied to sentences that start with double space."
 			   (delete-region end (match-end 0))
 			   (delete-region (match-beginning 0) start)))))))))))
 
-(defun gnosis-display-keimenon (str &optional fill-paragraph-p)
+(defun gnosis-display-keimenon (str)
   "Display STR as keimenon.
 
 If FILL-PARAGRAPH-P, insert question using `fill-paragraph'."
@@ -1748,6 +1749,120 @@ LINKS: List of id links in PARATHEMA."
 			      answer parathema tags suspend links)
     (gnosis-update-note id keimenon hypothesis answer parathema tags links)))
 
+(defun gnosis-export--insert-read-only (string)
+  "Insert STRING as read-only."
+  (let ((start (point)))
+    (insert string)
+    ;; Set the just inserted string as read-only
+    (add-text-properties start (point) '(read-only t))
+    ;; Since the space is inserted outside of the read-only region, it's editable
+    (let ((inhibit-read-only t))
+      (insert " "))))
+
+(defun gnosis-export-make-read-only (&rest values)
+  "Make the provided VALUES read-only in the whole buffer."
+  (goto-char (point-min))
+  (dolist (value values)
+    (while (search-forward value nil t)
+      (put-text-property (match-beginning 0) (match-end 0) 'read-only t)))
+  (goto-char (point-min)))
+
+(cl-defun gnosis-export--insert-note (id type &optional keimenon hypothesis
+				      answer parathema tags example)
+  "Insert note for note ID.
+
+TYPE: Note type, refer to `gnosis-note-types'
+KEIMENON: Text user is first presented with.
+HYPOTHESIS: Hypothesis for what the ANSWER is
+ANSWER: The revelation after KEIMENON
+PARATHEMA: The text where NOTE is derived from.
+TAGS: List of NOTE tags
+EXAMPLE: Boolean value, if non-nil do not add properties for note."
+  (let ((components `(("** Keimenon" . ,keimenon)
+                      ("** Hypothesis" . ,hypothesis)
+                      ("** Answer" . ,answer)
+                      ("** Parathema" . ,parathema))))
+    (insert "\n* Thema")
+    (org-set-tags tags)
+    (unless example
+      (org-set-property "GNOSIS_ID" id)
+      (org-set-property "GNOSIS_TYPE" type)
+      (gnosis-export-make-read-only ":PROPERTIES:"
+				 (format "GNOSIS_ID: %s" id)
+				 (format "GNOSIS_TYPE: %s" type)
+				 ":END:"))
+    (dolist (comp components)
+      (goto-char (point-max))
+      (gnosis-export--insert-read-only (car comp))
+      (insert "\n" (or (cdr comp) "") "\n\n"))))
+
+(defun gnosis-export-parse--deck-name (&optional parsed-data)
+  "Retrieve deck name from PARSED-DATA."
+  (let* ((parsed-data (or parsed-data (org-element-parse-buffer)))
+	 (title (org-element-map parsed-data 'keyword
+		  (lambda (kw)
+		    (when (string= (org-element-property :key kw) "DECK")
+                      (org-element-property :value kw)))
+		  nil t)))
+    title))
+
+(defun gnosis-export-parse-notes (&optional separator)
+  "Extract content for each level-2 heading for note headings with a GNOSIS_ID.
+
+Split content of Hypothesis and Answer headings using SEPARATOR."
+  (let ((sep (or separator gnosis-separator))
+        results)
+    (org-element-map (org-element-parse-buffer) 'headline
+      (lambda (headline)
+        (let* ((level (org-element-property :level headline))
+               (gnosis-id (org-element-property :GNOSIS_ID headline))
+               (gnosis-type (org-element-property :GNOSIS_TYPE headline))
+               (tags (org-element-property :tags headline)))
+          (when (and (= level 1) gnosis-id gnosis-type)
+            (let (entry)
+              (push gnosis-id entry)
+              (push gnosis-type entry)
+              (dolist (child (org-element-contents headline))
+                (when (eq 'headline (org-element-type child))
+                  (let* ((child-title (org-element-property :raw-value child))
+                         (child-text (substring-no-properties
+                                    (string-trim
+                                     (org-element-interpret-data
+                                      (org-element-contents child)))))
+                         (processed-text
+                          (cond
+                           ((and (member child-title '("Hypothesis" "Answer"))
+                                 (not (string-empty-p child-text)))
+                            (mapcar (lambda (s)
+                                    (string-trim
+                                     (string-remove-prefix "-"
+                                      (string-remove-prefix sep s))))
+                                  (split-string child-text sep t "[ \t\n]+")))
+                           ((string-empty-p child-text) nil)
+                           (t child-text))))
+                    (push processed-text entry))))
+              (push tags entry)
+              (push (nreverse entry) results)))))
+      nil nil)
+    results))
+
+(defun gnosis-export-note (id)
+  "Export note with ID."
+  (let ((note-data (append (gnosis-select '[type keimenon hypothesis answer tags]
+					  'notes `(= id ,id) t)
+			   (gnosis-select 'parathema 'extras `(= id ,id) t))))
+    (gnosis-export--insert-note (number-to-string id)
+			     (nth 0 note-data)
+			     (nth 1 note-data)
+			     (concat (string-remove-prefix "\n" gnosis-export-separator)
+				     (mapconcat 'identity (nth 2 note-data)
+						gnosis-export-separator))
+			     (concat (string-remove-prefix "\n" gnosis-export-separator)
+				     (mapconcat 'identity (nth 3 note-data)
+						gnosis-export-separator))
+			     (nth 5 note-data)
+			     (nth 4 note-data))))
+
 (defun gnosis-save-note (note deck)
   "Save NOTE for DECK."
   (let* ((id (nth 0 note))
@@ -1778,27 +1893,10 @@ LINKS: List of id links in PARATHEMA."
       (erase-buffer))
     (insert "#+DECK: " deck)
     (gnosis-edit-mode)
-    (gnosis-org--insert-note "NEW" type keimenon hypothesis
+    (gnosis-export--insert-note "NEW" type keimenon hypothesis
 			      answer parathema tags example))
   (search-backward "keimenon")
   (forward-line))
-
-(defun gnosis-export-note (id)
-  "Export note with ID."
-  (let ((note-data (append (gnosis-select '[type keimenon hypothesis answer tags]
-					  'notes `(= id ,id) t)
-			   (gnosis-select 'parathema 'extras `(= id ,id) t))))
-    (gnosis-org--insert-note (number-to-string id)
-			     (nth 0 note-data)
-			     (nth 1 note-data)
-			     (concat (string-remove-prefix "\n" gnosis-org-separator)
-				     (mapconcat 'identity (nth 2 note-data)
-						gnosis-org-separator))
-			     (concat (string-remove-prefix "\n" gnosis-org-separator)
-				     (mapconcat 'identity (nth 3 note-data)
-						gnosis-org-separator))
-			     (nth 5 note-data)
-			     (nth 4 note-data))))
 
 (defun gnosis-edit-note (id)
   "Edit note with ID."
@@ -1817,8 +1915,8 @@ LINKS: List of id links in PARATHEMA."
 (defun gnosis-save ()
   "Save notes in current buffer."
   (interactive)
-  (let ((notes (gnosis-org-parse-notes))
-	(deck (gnosis--get-deck-id (gnosis-org-parse--deck-name))))
+  (let ((notes (gnosis-export-parse-notes))
+	(deck (gnosis--get-deck-id (gnosis-export-parse--deck-name))))
     (cl-loop for note in notes
 	     do (gnosis-save-note note deck))
     (gnosis-edit-quit)))
@@ -1927,7 +2025,8 @@ VALUES: Defaults to `gnosis-custom-values'."
     (cl-loop for tag in tags
 	     ;; Only collect non-nil values
 	     when (plist-get (gnosis-get-custom-values :tag tag custom-values) keyword)
-	     collect (plist-get (gnosis-get-custom-values :tag tag custom-values) keyword))))
+	     collect (plist-get (gnosis-get-custom-values :tag tag custom-values)
+				keyword))))
 
 (defun gnosis-get-note-tag-amnesia (id &optional custom-tags custom-values)
   "Return tag MINIMUM amnesia for note ID.
@@ -1937,7 +2036,8 @@ amnesia i.e next interval to be 0.
 
 CUSTOM-TAGS: Specify tags for note id.
 CUSTOM-VALUES: Specify values for tags."
-  (let ((amnesia-values (gnosis-get-custom-tag-values id :amnesia custom-tags custom-values)))
+  (let ((amnesia-values (gnosis-get-custom-tag-values id :amnesia
+						      custom-tags custom-values)))
     (and amnesia-values (apply #'max amnesia-values))))
 
 (defun gnosis-get-note-deck-amnesia (id &optional custom-deck custom-values)
@@ -2382,7 +2482,7 @@ If STRING-SECTION is nil, apply FACE to the entire STRING."
     (insert (format "#+GNOSIS_DECK: %s\n\n" (gnosis--get-deck-name deck)))
     (cl-loop for note in (gnosis-select '[keimenon type answer id]
 					'notes `(= deck-id ,deck))
-	     do (gnosis-org--insert-note (number-to-string (car (last note)))
+	     do (gnosis-export--insert-note (number-to-string (car (last note)))
 					  (cadr note)
 					  (car note)
 					  "hypo"
