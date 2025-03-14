@@ -33,6 +33,7 @@
 (require 'json)
 (require 'request) ; for attachments upload
 (require 'url)
+(require 'url-http)
 (require 'shr)
 
 (defvar mastodon-instance-url)
@@ -57,23 +58,6 @@ Optionally specify VERSION in format vX."
   "Return Mastodon API v2 URL for ENDPOINT."
   (mastodon-http--api endpoint "v2"))
 
-(defun mastodon-http--response ()
-  "Capture response buffer content as string."
-  (with-current-buffer (current-buffer)
-    (buffer-substring-no-properties (point-min) (point-max))))
-
-(defun mastodon-http--response-body (pattern)
-  "Return substring matching PATTERN from `mastodon-http--response'."
-  (let ((resp (mastodon-http--response)))
-    (string-match pattern resp)
-    (match-string 0 resp)))
-
-(defun mastodon-http--status ()
-  "Return HTTP Response Status Code from `mastodon-http--response'."
-  (let* ((status-line (mastodon-http--response-body "^HTTP/1.*$")))
-    (string-match "[0-9][0-9][0-9]" status-line)
-    (match-string 0 status-line)))
-
 (defun mastodon-http--url-retrieve-synchronously (url &optional silent)
   "Retrieve URL asynchronously.
 This is a thin abstraction over the system
@@ -86,13 +70,16 @@ SILENT means don't message."
 
 (defun mastodon-http--triage (response success)
   "Determine if RESPONSE was successful.
-Call SUCCESS if successful. Message status and JSON error from
-RESPONSE if unsuccessful."
+Call SUCCESS on RESPONSE if successful. Message status and JSON error
+from RESPONSE if unsuccessful."
   (let ((status (with-current-buffer response
-                  (mastodon-http--status))))
-    (if (string-prefix-p "2" status)
+                  ;; FIXME: breaks tests, as url-http-end-of-headers not set
+                  (url-http-parse-response))))
+    (if (and (>= 200 status)
+             (<= status 299))
+        ;; (string-prefix-p "2" (number-to-string status))
         (funcall success response)
-      (if (string-prefix-p "404" status)
+      (if (= 404 status)
           (message "Error %s: page not found" status)
         (let ((json-response (with-current-buffer response
                                (mastodon-http--process-json))))
