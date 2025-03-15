@@ -209,12 +209,12 @@ variables `mastodon-instance-url' and `mastodon-active-user'."
 (defun mastodon-client--make-current-user-active ()
   "Make the user specified by user variables active user.
 Return the details (plist)."
-  (let ((username (mastodon-client--form-user-from-vars))
-        user-plist)
-    (when (setq user-plist
-                (mastodon-client--general-read (concat "user-" username)))
-      (mastodon-client--make-user-active user-plist))
-    user-plist))
+  (let* ((username (mastodon-client--form-user-from-vars))
+         (user-plist (mastodon-client--general-read
+                      (concat "user-" username))))
+    (when user-plist
+      (mastodon-client--make-user-active user-plist)
+      user-plist)))
 
 (defun mastodon-client--current-user-active-p ()
   "Return user-details if the current user is active.
@@ -228,30 +228,26 @@ Otherwise return nil."
 (defun mastodon-client--active-user ()
   "Return the details of the currently active user.
 Details is a plist."
-  (let ((active-user-details mastodon-client--active-user-details-plist))
-    (unless active-user-details
-      (setq active-user-details
-            (or (mastodon-client--current-user-active-p)
-                (mastodon-client--make-current-user-active)))
+  (or mastodon-client--active-user-details-plist
       (setq mastodon-client--active-user-details-plist
-            active-user-details))
-    active-user-details))
+            (or (mastodon-client--current-user-active-p)
+                (mastodon-client--make-current-user-active)))))
 
 (defun mastodon-client ()
   "Return variable client secrets to use for `mastodon-instance-url'.
-Read plist from `mastodon-client--token-file' if
-`mastodon-client--client-details-alist' is nil.
-Fetch and store plist if `mastodon-client--read' returns nil."
+If `mastodon-client--client-details-alist' is nil, read plist from
+`mastodon-client--token-file'.
+Fetch and store plist if `mastodon-client--read' returns nil.
+Return a plist."
   (let ((client-details
          (cdr (assoc mastodon-instance-url
                      mastodon-client--client-details-alist))))
-    (unless client-details
-      (setq client-details
-            (or (mastodon-client--read)
-                (mastodon-client--store)))
-      (push (cons mastodon-instance-url client-details)
-            mastodon-client--client-details-alist))
-    client-details))
+    (or client-details
+        (let ((client-details (or (mastodon-client--read)
+                                  (mastodon-client--store))))
+          (push (cons mastodon-instance-url client-details)
+                mastodon-client--client-details-alist)
+          client-details))))
 
 (provide 'mastodon-client)
 ;;; mastodon-client.el ends here
