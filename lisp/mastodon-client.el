@@ -82,12 +82,16 @@
       (with-current-buffer buf
         (goto-char (point-min))
         (re-search-forward "^$" nil 'move)
-        (let ((json-object-type 'plist)
-              (json-key-type 'keyword)
-              (json-array-type 'vector)
-              (json-string
-               (buffer-substring-no-properties (point) (point-max))))
-          (json-read-from-string json-string))))))
+        (let* ((json-object-type 'plist)
+               (json-key-type 'keyword)
+               (json-array-type 'vector)
+               (json-string
+                (buffer-substring-no-properties (point) (point-max)))
+               (parsed
+                (json-read-from-string json-string)))
+          (if (eq :error (car parsed))
+              (error "Error: %s" (cadr parsed))
+            parsed))))))
 
 (defun mastodon-client--token-file ()
   "Return `mastodon-client--token-file'."
