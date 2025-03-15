@@ -129,6 +129,7 @@ Make `mastodon-client--fetch' call to determine client values."
          (mastodon
           (plstore-get plstore
                        (concat "mastodon-" mastodon-instance-url))))
+    (plstore-close plstore)
     (mastodon-client--remove-key-from-plstore mastodon)))
 
 (defun mastodon-client--general-read (key)
@@ -136,6 +137,7 @@ Make `mastodon-client--fetch' call to determine client values."
 Return plist without the KEY."
   (let* ((plstore (plstore-open (mastodon-client--token-file)))
          (plstore-item (plstore-get plstore key)))
+    (plstore-close plstore)
     (mastodon-client--remove-key-from-plstore plstore-item)))
 
 (defun mastodon-client--make-user-details-plist ()
