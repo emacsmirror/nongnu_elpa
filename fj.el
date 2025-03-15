@@ -2394,8 +2394,8 @@ ignored."
 (defun fj-repo-candidates-annot-fun (cand)
   "Annocation function for `fj-repo-search'.
 Returns annotation for CAND, a candidate."
-  (if-let ((entry (assoc cand minibuffer-completion-table
-                         #'equal)))
+  (if-let* ((entry (assoc cand minibuffer-completion-table
+                          #'equal)))
       (concat " " (cl-fourth entry))
     ""))
 
