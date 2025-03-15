@@ -127,16 +127,22 @@ follow the steps again.
 **** encrypted access tokens (from 1.2.0)
 
 By default, user access tokens are now stored in the user's auth source
-file (typically =~/.authinfo.gpg=). When you first update to 1.2.0, or if
-you encounter issues due to old credentials, call
-=(mastodon-forget-all-logins)= and then authenticate again. If you don't
-want this behaviour, set =mastodon-auth-use-auth-source= to nil. Entries
-will be stored in =mastodon-client--token-file= instead.
+file (typically =~/.authinfo.gpg=, check the value of =auth-sources=). When
+you first update to 2.0.0, or if you encounter issues due to old
+credentials, call =(mastodon-forget-all-logins)= and then authenticate
+again. If you don't want this behaviour, set =mastodon-auth-use-auth-source=
+to nil. Entries will be stored encrypted in =mastodon-client--token-file= instead.
 
 And if for some reason you reauthenticate, you'll need to either remove the
 entry in your auth sources file, or manually update the token in it after
 doing so, as mastodon.el is unable to reliably update (or even remove)
 entires.
+
+Finally, if you find you're asked for your key passphrase too often while
+authenticating, consider setting =epa-file-encrypt-to= (for auth-source
+encryption) and =plstore-encrypt-to= (for plstore encryption) to your
+preferred key ID.
+
 
 *** Timelines
 
