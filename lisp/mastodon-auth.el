@@ -185,6 +185,38 @@ When ASK is absent return nil."
           (json-string (buffer-substring-no-properties (point) (point-max))))
       (json-read-from-string json-string))))
 
+(defun mastodon-auth--plstore-token-check (&optional auth-source)
+  "Return non-nil if plstore contains unencrypted access-token.
+If AUTH-SOURCE, and if `mastodon-auth-use-auth-source' is non-nil,
+return non-nil if it contains any access token.
+Used to help users switch to the new encrypted auth token flow."
+  ;; FIXME: is it poss to move this plstore read to have one less read?
+  ;; e.g. inside of `mastodon-client--active-user'? the issue is that
+  ;; ideally we want to test "user-" entry, even if fetching "active-user"
+  ;; entry, so we would have to re-do the plstore read functions.
+  (let* ((plstore (plstore-open (mastodon-client--token-file)))
+         (name (concat "user-" (mastodon-client--form-user-from-vars)))
+         ;; get alist like plstore.el does, so that keys will display with
+         ;; ":secret-" prefix if encrypted:
+         (alist (assoc name (plstore--get-merged-alist plstore))))
+    ;; if auth source, we should have no access token at all:
+    (if (and auth-source mastodon-auth-use-auth-source)
+        (if (or (member :access_token alist)
+                (member :secret-access_token alist))
+            (user-error "Auth source storage of tokens is enabled,\
+ but there is also an access token in your plstore.\
+ If you're seeing this message after updating,\
+ call `mastodon-forget-all-logins', and try again.
+ If you don't want to use auth sources,\
+ also set `mastodon-auth-use-auth-source' to nil.\
+ If this message is in error, contact us on the mastodon.el repo"))
+      ;; else we just want to check if we have an unencrypted token:
+      (if (member :access_token alist)
+          (user-error "Unencrypted access token in your plstore.\
+ If you're seeing this message after updating,\
+ call `mastodon-forget-all-logins', and log in again.
+ If this message is in error, contact us on the mastodon.el repo")))))
+
 (defun mastodon-auth--access-token ()
   "Return the access token to use with `mastodon-instance-url'.
 Generate/save token if none known yet."
@@ -194,22 +226,9 @@ Generate/save token if none known yet."
     (alist-get mastodon-instance-url
                mastodon-auth--token-alist nil nil #'string=))
    ;; if auth source enabled, but we have an access token in plstore,
-   ;; error out, tell user to remove plstore and start over:
-   ;; FIXME: is it poss to move this plstore read to have one less read?
-   ;; e.g. inside of `mastodon-client--active-user'? the poss issue then
-   ;; would be having a have completed activate user process.
-   ((and mastodon-auth-use-auth-source
-         (let ((entry (mastodon-client--general-read
-                       (concat "user-"
-                               (mastodon-client--form-user-from-vars)))))
-           (plist-get entry :access_token)))
-    (user-error "Auth source storage of tokens is enabled,\
- but there is also an access token in your plstore.\
- If you're seeing this message after updating,\
- call `mastodon-forget-all-logins', and try again.
- If you don want to use auth sources,\
- also set `mastodon-auth-use-auth-source' to nil.\
- If this message is in error, contact us on the\ mastodon.el repo"))
+   ;; error out and tell user to remove plstore and start over or disable
+   ;; auth source:
+   ((mastodon-auth--plstore-token-check))
    ((plist-get (mastodon-client--active-user) :access_token)
     ;; user variables need to be read from plstore active-user entry.
     (push (cons mastodon-instance-url
