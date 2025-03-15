@@ -95,7 +95,8 @@
 
 (defun mastodon-client--store ()
   "Store client_id and client_secret in `mastodon-client--token-file'.
-Make `mastodon-client--fetch' call to determine client values."
+Make `mastodon-client--fetch' call to determine client values.
+Return a plist of secret and non-secret key/val pairs."
   (let* ((plstore (plstore-open (mastodon-client--token-file)))
 	 (client (mastodon-client--fetch))
          (secrets `( :client_id ,(plist-get client :client_id)
@@ -112,9 +113,9 @@ Make `mastodon-client--fetch' call to determine client values."
     (plstore-put plstore
                  (concat "mastodon-" mastodon-instance-url)
                  sans-secrets secrets)
+    ;; FIXME: breaks tests: prompts for gpg passphrase
     (plstore-save plstore)
     (plstore-close plstore)
-    ;; FIXME: why does client vary here?
     (append secrets sans-secrets)))
 
 (defun mastodon-client--remove-key-from-plstore (plstore)
@@ -179,7 +180,8 @@ If `mastodon-auth-use-auth-source', encrypt it in auth source file."
   "USER-DETAILS is a plist consisting of user details.
 Save it to plstore under key \"active-user\".
 If `mastodon-auth-use-auth-source' is non-nil, fetch the access token
-from the user's auth source file and add it to the active user entry."
+from the user's auth source file and add it to the active user entry.
+Return a plist of secret and non-secret key/val pairs."
   (let* ((plstore (plstore-open (mastodon-client--token-file)))
          (handle (plist-get user-details :username))
          (token
@@ -189,14 +191,16 @@ from the user's auth source file and add it to the active user entry."
          (secrets `( :access_token ,token
                      :client_id ,(plist-get user-details :client_id)
                      :client_secret ,(plist-get user-details :client_secret)))
+         (deets (copy-sequence user-details))
          (sans-secrets
-          (dolist (x '(:client_id :client_secret :access_token) user-details)
-            (cl-remf user-details x)))
+          (dolist (x '(:client_id :client_secret :access_token) deets)
+            (cl-remf deets x)))
          (print-length nil)
          (print-level nil))
     (plstore-put plstore "active-user" sans-secrets secrets)
     (plstore-save plstore)
-    (plstore-close plstore)))
+    (plstore-close plstore)
+    (append secrets sans-secrets)))
 
 (defun mastodon-client--form-user-from-vars ()
   "Create a username from user variable.  Return that username.
