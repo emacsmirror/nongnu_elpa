@@ -1,6 +1,8 @@
 ;;; mastodon-client-test.el --- Tests for mastodon-client.el  -*- lexical-binding: nil -*-
 
 (require 'el-mock)
+(require 'mastodon-client)
+(require 'mastodon-http)
 
 (ert-deftest mastodon-client--register ()
   "Should POST to /apps."
@@ -24,6 +26,9 @@
                                              (current-buffer)))
       (should (equal (mastodon-client--fetch) '(:foo "bar"))))))
 
+;; FIXME: broken by new encrypted plstore flow
+;; (asks for gpg passphrase)
+;; otherwise test passes
 (ert-deftest mastodon-client--store ()
   "Test the value `mastodon-client--store' returns/stores."
   (let ((mastodon-instance-url "http://mastodon.example")
@@ -142,14 +147,18 @@
       (mock (mastodon-client--general-read "active-user") => '(:username "user@other.example" :client_id "id1"))
       (should (null (mastodon-client--current-user-active-p))))))
 
+;; FIXME: broken by new encrypted plstore flow
+;; (asks for gpg passphrase)
+;; otherwise test passes
 (ert-deftest mastodon-client--store-access-token ()
   (let ((mastodon-instance-url "https://mastodon.example")
         (mastodon-active-user "test8000")
-        (user-details
-         '(:username "test8000@mastodon.example"
-                     :instance "https://mastodon.example"
-                     :client_id "id" :client_secret "secret"
-                     :access_token "token")))
+        (user-details ;; order changed for new encrypted auth flow:
+         '( :client_id "id" :client_secret "secret"
+            :access_token "token"
+            :username "test8000@mastodon.example"
+            :instance "https://mastodon.example"))
+        (mastodon-auth-use-auth-source nil)) ;; FIXME: test auth source
     ;; test if mastodon-client--store-access-token /returns/ right
     ;; value
     (with-mock
@@ -165,10 +174,19 @@
                      user-details)))
     (delete-file "stubfile.plstore")))
 
+;; FIXME: broken by new encrypted plstore flow
+;; (asks for gpg passphrase)
+;; otherwise test passes
 (ert-deftest mastodon-client--make-user-active ()
-  (let ((user-details '(:username "test@mastodon.example")))
+  ;; match new encrypted plstore return value:
+  (let ((user-details '( :access_token nil
+                         :client_id nil
+                         :client_secret nil
+                         :username "test@mastodon.example"))
+        (mastodon-auth-use-auth-source nil)) ;; FIXME: test auth source
     (with-mock
       (mock (mastodon-client--token-file) => "stubfile.plstore")
       (mastodon-client--make-user-active user-details)
       (should (equal (mastodon-client--general-read "active-user")
-                     user-details)))))
+                     user-details)))
+    (delete-file "stubfile.plstore")))
