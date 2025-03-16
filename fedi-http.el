@@ -162,10 +162,11 @@ json-string PARAMS."
               (fedi-http--build-params-string params))))
          ;; TODO: perhaps leave these headers to the package now that
          ;; `fedi-request' takes header args?
-         (headers (when json
-                    (append headers
-                            '(("Content-Type" . "application/json")
-                              ("Accept" . "application/json")))))
+         (headers (if json
+                      (append headers
+                              '(("Content-Type" . "application/json")
+                                ("Accept" . "application/json")))
+                    '(("Content-Type" . "application/x-www-form-urlencoded"))))
          (url-request-extra-headers
           (append url-request-extra-headers ; set in macro
                   headers)))
