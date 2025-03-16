@@ -283,12 +283,13 @@ NO-JSON means return the raw response."
               'utf-8)))
         (json-read-from-string str)))))
 
-(defun fj-post (endpoint &optional params)
+(defun fj-post (endpoint &optional params json)
   "Make a POST request to ENDPOINT.
-PARAMS."
+PARAMS.
+If JSON, encode request data as JSON. else encode like query params."
   (let ((url (fj-api endpoint)))
     (fj-authorized-request "POST"
-      (fedi-http--post url params nil :json))))
+      (fedi-http--post url params nil json))))
 
 (defun fj-put (endpoint &optional params json)
   "Make a PUT request to ENDPOINT.
@@ -748,7 +749,7 @@ X and Y are sorting args."
   (let* ((endpoint (format "repos/%s/%s/forks" owner repo))
          (params `(("name" . ,name)))
          ;; ("organization" . ,org)))
-         (resp (fj-post endpoint params)))
+         (resp (fj-post endpoint params :json)))
     (fedi-http--triage resp
                        (lambda (_)
                          (message "Repo %s forked!" repo)))))
@@ -861,7 +862,7 @@ Save its URL to the kill ring."
          (desc (read-string "Repo description: "))
          (params `(("name" . ,name)
                    ("description" . ,desc)))
-         (resp (fj-post "user/repos" params)))
+         (resp (fj-post "user/repos" params :json)))
     (fedi-http--triage resp
                        (lambda (resp)
                          (let* ((json (fj-resp-json resp))
@@ -1131,7 +1132,7 @@ MERGE-COMMIT is the merge commit ID, used for type manually-merged."
                   ("index" . ,number)
                   ("Do" . ,merge-type)
                   ("MergeCommitId" . ,merge-commit))))
-    (fj-post url params)))
+    (fj-post url params :json)))
 
 ;; (defun fj-pull-req-comment-edit (&optional repo pull)
 ;;   "Edit a comment on PULL in REPO."
@@ -1274,7 +1275,7 @@ NEW-BODY is the new comment text to send."
                   repo-labels))
          (params `(("labels" . ,(cl-pushnew choice issue-labels
                                             :test #'equal))))
-         (resp (fj-post url params)))
+         (resp (fj-post url params :json)))
     (fedi-http--triage
      resp
      (lambda (resp)
