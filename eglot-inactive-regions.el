@@ -280,8 +280,10 @@ Useful to update colors after a face or theme change."
         (run-hook-with-args 'eglot-inactive-regions-refresh-hook beg end)))))
 
 (defun eglot-inactive-regions-refresh-all ()
-  "Refresh all buffers where this mode is enabled."
+  "Invalidate face cache and refresh all buffers where mode is enabled."
+  (interactive)
   (when eglot-inactive-regions-mode
+    (clrhash eglot-inactive-regions-opacity-table)
     (dolist (buffer (buffer-list))
       (with-current-buffer buffer
         (eglot-inactive-regions-refresh)))))
