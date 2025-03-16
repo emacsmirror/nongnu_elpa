@@ -61,28 +61,32 @@ Strict-Transport-Security: max-age=31536000
   "Should run success function for 200 HTML response."
   (let ((response-buffer
          (get-buffer-create "mastodon-http--triage-buffer")))
-    (with-current-buffer response-buffer
-      (erase-buffer)
-      (insert mastodon-http--example-200))
-    (should (equal (mastodon-http--triage
-                    response-buffer
-                    (lambda (_)
-                      (message "success call")))
-                   "success call"))))
+    (with-mock
+      (mock (url-http-parse-response) => 200)
+      (with-current-buffer response-buffer
+        (erase-buffer)
+        (insert mastodon-http--example-200))
+      (should (equal (mastodon-http--triage
+                      response-buffer
+                      (lambda (_)
+                        (message "success call")))
+                     "success call")))))
 
 (ert-deftest mastodon-http--triage-failure ()
   "Should return formatted JSON error from bad HTML response buffer.
   Should not run success function."
   (let ((response-buffer
          (get-buffer-create "mastodon-http--triage-buffer")))
-    (with-current-buffer response-buffer
-      (erase-buffer)
-      (insert mastodon-http--example-400))
-    (should (equal (mastodon-http--triage
-                    response-buffer
-                    (lambda (_)
-                      (message "success call")))
-                   "Error 444: some unhappy complaint"))))
+    (with-mock
+      (mock (url-http-parse-response) => 444)
+      (with-current-buffer response-buffer
+        (erase-buffer)
+        (insert mastodon-http--example-400))
+      (should (equal (mastodon-http--triage
+                      response-buffer
+                      (lambda (_)
+                        (message "success call")))
+                     "Error 444: some unhappy complaint")))))
 
 (ert-deftest mastodon-http-params-build ()
   "Should correctly format parameters from an alist."
