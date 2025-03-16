@@ -71,28 +71,29 @@
   "User-Agents to use for reverso.el requests.
 A random one is picked at package initialization.")
 
+;;; UTILS
+
 (defun fedi-http--api (endpoint &optional url ver-str)
   "Return Fedi API URL for ENDPOINT."
   (concat (or url fedi-instance-url) "/api/"
           (or ver-str fedi-http--api-version)
           "/" endpoint))
 
-(defun fedi-http--response ()
-  "Capture response buffer content as string."
-  (with-current-buffer (current-buffer)
-    (buffer-substring-no-properties (point-min) (point-max))))
+(defun fedi-http--render-html-err (string)
+  "Render STRING as HTML in a temp buffer.
+STRING should be HTML for a 404 errror."
+  (with-temp-buffer
+    (insert string)
+    (shr-render-buffer (current-buffer))
+    (view-mode))) ; for 'q' to kill buffer and window
+;; FIXME: this is awful, it pops up also:
+;; (error ""))) ; stop subsequent processing
 
-(defun fedi-http--response-body (pattern)
-  "Return substring matching PATTERN from `fedi-http--response'."
-  (let ((resp (fedi-http--response)))
-    (string-match pattern resp)
-    (match-string 0 resp)))
-
-(defun fedi-http--status ()
-  "Return HTTP Response Status Code from `fedi-http--response'."
-  (let* ((status-line (fedi-http--response-body "^HTTP/1.*$")))
-    (string-match "[0-9][0-9][0-9]" status-line)
-    (match-string 0 status-line)))
+(defun fedi-http--read-file-as-string (filename)
+  "Read a file FILENAME as a string. Used to generate image preview."
+  (with-temp-buffer
+    (insert-file-contents filename)
+    (string-to-unibyte (buffer-string))))
 
 (defun fedi-http--url-retrieve-synchronously (url &optional silent)
   "Retrieve URL asynchronously.
@@ -104,31 +105,7 @@ SILENT means don't message."
       (url-retrieve-synchronously url)
     (url-retrieve-synchronously url (or silent nil) nil fedi-http--timeout)))
 
-(defun fedi-http--triage (response success)
-  "Determine if RESPONSE was successful.
-If successful, call SUCCESS with single arg RESPONSE.
-If unsuccessful, message status and JSON error from RESPONSE."
-  (let ((status (condition-case err
-                    (with-current-buffer response
-                      (fedi-http--status))
-                  (wrong-type-argument
-                   "Looks like we got no response from the server."))))
-    (cond ((string-prefix-p "2" status)
-           (funcall success response))
-          ((string-prefix-p "404" status)
-           (message "Error %s: page not found" status))
-          (t
-           (let ((json-response (with-current-buffer response
-                                  (fedi-http--process-json))))
-             (user-error "Error %s: %s" status
-                         (or (alist-get 'error json-response)
-                             (alist-get 'message json-response))))))))
-
-(defun fedi-http--read-file-as-string (filename)
-  "Read a file FILENAME as a string. Used to generate image preview."
-  (with-temp-buffer
-    (insert-file-contents filename)
-    (string-to-unibyte (buffer-string))))
+;;; PARAMS
 
 (defun fedi-http--build-params-string (params)
   "Build a request parameters string from parameters alist PARAMS."
@@ -145,6 +122,32 @@ If unsuccessful, message status and JSON error from RESPONSE."
 Used for API form data parameters that take an array."
   (cl-loop for x in array
            collect (cons param-str x)))
+
+(defun fedi-http--concat-params-to-url (url params)
+  "Build a query string with PARAMS and concat to URL."
+  (if params
+      (concat url "?"
+              (fedi-http--build-params-string params))
+    url))
+
+;;; BASIC REQUESTS
+
+(defun fedi-http--get (url &optional params silent)
+  "Make synchronous GET request to URL.
+PARAMS is an alist of any extra parameters to send with the request.
+SILENT means don't message."
+  (let ((url (fedi-http--concat-params-to-url url params)))
+    (condition-case err
+        (fedi-http--url-retrieve-synchronously url silent)
+      (t (error "I am Error. Request borked. %s"
+                (error-message-string err))))))
+
+(defun fedi-http--get-json (url &optional params silent vector)
+  "Return only JSON data from URL request.
+PARAMS is an alist of any extra parameters to send with the request.
+SILENT means don't message.
+VECTOR means return json arrays as vectors."
+  (car (fedi-http--get-response url params :no-headers silent vector)))
 
 (defun fedi-http--post (url &optional params headers json)
   "POST synchronously to URL, optionally with PARAMS and HEADERS.
@@ -169,57 +172,113 @@ json-string PARAMS."
     (with-temp-buffer
       (fedi-http--url-retrieve-synchronously url))))
 
-(defun fedi-http--concat-params-to-url (url params)
-  "Build a query string with PARAMS and concat to URL."
-  (if params
-      (concat url "?"
-              (fedi-http--build-params-string params))
-    url))
+(defun fedi-http--delete (url &optional params)
+  "Make DELETE request to URL.
+PARAMS is an alist of any extra parameters to send with the request."
+  ;; url-request-data only works with POST requests?
+  (let ((url-request-method "DELETE")
+        (url (fedi-http--concat-params-to-url url params)))
+    (with-temp-buffer
+      (fedi-http--url-retrieve-synchronously url))))
 
-(defun fedi-http--get (url &optional params silent)
-  "Make synchronous GET request to URL.
+(defun fedi-http--put (url &optional params headers json)
+  "Make PUT request to URL.
 PARAMS is an alist of any extra parameters to send with the request.
-SILENT means don't message."
-  (let ((url (fedi-http--concat-params-to-url url params)))
-    (condition-case err
-        (fedi-http--url-retrieve-synchronously url silent)
-      (t (error "I am Error. Request borked. %s"
-                (error-message-string err))))))
+HEADERS is an alist of any extra headers to send with the request.
+If JSON, encode params as JSON."
+  (let* ((url-request-method "PUT")
+         (url-request-data
+          (when params
+            (if json
+                (encode-coding-string
+                 (json-encode params) 'utf-8)
+              (fedi-http--build-params-string params))))
+         (headers (when json
+                    (append headers
+                            '(("Content-Type" . "application/json")
+                              ("Accept" . "application/json")))))
+         (url-request-extra-headers
+          (append url-request-extra-headers ; auth set in macro
+                  headers)))
+    (with-temp-buffer
+      (fedi-http--url-retrieve-synchronously url))))
+
+(defun fedi-http--patch-json (url &optional params json)
+  "Make synchronous PATCH request to URL. Return JSON response.
+Optionally specify the PARAMS to send."
+  (with-current-buffer (fedi-http--patch url params json)
+    (fedi-http--process-json)))
+
+(defun fedi-http--patch (url &optional params json)
+  "Make synchronous PATCH request to URL.
+Optionally specify the PARAMS to send.
+If JSON, encode request data as JSON."
+  ;; NB: unless JSON arg, we use query params and do not set
+  ;; `url-request-data'.
+  (let* ((url-request-method "PATCH")
+         (url-request-data
+          (when (and params json)
+            (encode-coding-string
+             (json-encode params) 'utf-8)))
+         (url (if (not json)
+                  (fedi-http--concat-params-to-url url params)
+                url))
+         (headers (when json
+                    '(("Content-Type" . "application/json")
+                      ("Accept" . "application/json"))))
+         (url-request-extra-headers
+          (append url-request-extra-headers headers)))
+    (fedi-http--url-retrieve-synchronously url)))
+
+;;; RESPONSES
+
+(defun fedi-http--triage (response success &optional error-fun)
+  "Determine if RESPONSE was successful.
+If successful, call SUCCESS with single arg RESPONSE.
+If unsuccessful, message status and JSON error from RESPONSE.
+Optionally, provide an ERROR-FUN, called on the process JSON response,
+to returnany error message needed."
+  (let ((status (condition-case _err
+                    (with-current-buffer response
+                      (url-http-parse-response))
+                  (wrong-type-argument
+                   "Looks like we got no response from the server."))))
+    (cond ((and (>= status 200)
+                (<= status 299))
+           (funcall success response))
+          ((= 404 status)
+           (message "Error %s: page not found" status))
+          (t
+           (let ((json-response (with-current-buffer response
+                                  (fedi-http--process-json))))
+             (user-error "Error %s: %s" status
+                         (or (when error-fun
+                               (funcall error-fun json-response))
+                             (alist-get 'error json-response)
+                             (alist-get 'message json-response))))))))
 
 (defun fedi-http--get-response (url &optional params no-headers silent vector)
-  "Make synchronous GET request to URL. Return JSON and response headers.
+  "Make synchronous GET request to URL.
+Return JSON and response headers.
 PARAMS is an alist of any extra parameters to send with the request.
 SILENT means don't message.
 NO-HEADERS means don't collect http response headers.
 VECTOR means return json arrays as vectors."
   ;; some APIs return nil if no data, so we can't just error
+  ;; Really? but then the `with-current-buffer' call would error!
   ;; (condition-case err
-  (with-current-buffer (fedi-http--get url params silent)
-    (fedi-http--process-response no-headers vector)))
-  ;; (t (error "I am Error. Looks like server borked."))))
-
-(defun fedi-http--get-json (url &optional params silent vector)
-  "Return only JSON data from URL request.
-PARAMS is an alist of any extra parameters to send with the request.
-SILENT means don't message.
-VECTOR means return json arrays as vectors."
-  (car (fedi-http--get-response url params :no-headers silent vector)))
+  (let ((buf (fedi-http--get url params silent)))
+    (if (not buf)
+        (user-error "No response. Server borked?"))
+    (with-current-buffer buf
+      (fedi-http--process-response no-headers vector))))
+;; (t (error "I am Error. Looks like server borked"))))
 
 (defun fedi-http--process-json ()
   "Return only JSON data from async URL request.
 Callback to `fedi-http--get-json-async', usually
 `fedi-tl--init*', is run on the result."
   (car (fedi-http--process-response :no-headers)))
-
-(defun fedi-http--render-html-err (string)
-  "Render STRING as HTML in a temp buffer.
-STRING should be HTML for a 404 errror."
-  (with-temp-buffer
-    (insert string)
-    (shr-render-buffer (current-buffer))
-    (view-mode))) ; for 'q' to kill buffer and window
-;; FIXME: this is awful, it pops up also:
-;; (error ""))) ; stop subsequent processing
 
 (defun fedi-http--process-response (&optional no-headers vector)
   "Process http response.
@@ -269,62 +328,8 @@ Callback to `fedi-http--get-response-async'."
                 (cons (car list) (cadr list))))
             head-list)))
 
-(defun fedi-http--delete (url &optional params)
-  "Make DELETE request to URL.
-PARAMS is an alist of any extra parameters to send with the request."
-  ;; url-request-data only works with POST requests?
-  (let ((url-request-method "DELETE")
-        (url (fedi-http--concat-params-to-url url params)))
-    (with-temp-buffer
-      (fedi-http--url-retrieve-synchronously url))))
-
-(defun fedi-http--put (url &optional params headers json)
-  "Make PUT request to URL.
-PARAMS is an alist of any extra parameters to send with the request.
-HEADERS is an alist of any extra headers to send with the request.
-If JSON, encode params as JSON."
-  (let* ((url-request-method "PUT")
-         (url-request-data
-          (when params
-            (if json
-                (encode-coding-string
-                 (json-encode params) 'utf-8)
-              (fedi-http--build-params-string params))))
-         (headers (when json
-                    (append headers
-                            '(("Content-Type" . "application/json")
-                              ("Accept" . "application/json")))))
-         (url-request-extra-headers
-          (append url-request-extra-headers ; auth set in macro
-                  headers)))
-    (with-temp-buffer
-      (fedi-http--url-retrieve-synchronously url))))
-
-(defun fedi-http--patch-json (url &optional params json)
-  "Make synchronous PATCH request to URL. Return JSON response.
-Optionally specify the PARAMS to send."
-  (with-current-buffer (fedi-http--patch url params json)
-    (fedi-http--process-json)))
-
-(defun fedi-http--patch (url &optional params json)
-  "Make synchronous PATCH request to BASE-URL.
-Optionally specify the PARAMS to send."
-  (let* ((url-request-method "PATCH")
-         (url-request-data
-          (when params
-            (if json
-                (encode-coding-string
-                 (json-encode params) 'utf-8)
-              (fedi-http--build-params-string params))))
-         ;; (url (fedi-http--concat-params-to-url base-url params)))))
-         (headers (when json
-                    '(("Content-Type" . "application/json")
-                      ("Accept" . "application/json"))))
-         (url-request-extra-headers
-          (append url-request-extra-headers headers)))
-    (fedi-http--url-retrieve-synchronously url)))
-
- ;; Asynchronous functions
+
+;;; ASYNCHRONOUS FUNCTIONS
 
 (defun fedi-http--get-async (url &optional params callback &rest cbargs)
   "Make GET request to URL.
@@ -363,6 +368,23 @@ Then run function CALLBACK with arguements CBARGS."
                             (fedi-http--build-params-string params))))
     (with-temp-buffer
       (url-retrieve url callback cbargs))))
+
+;;; BASIC AUTH REQUEST
+
+(defun fedi-http--basic-auth-request (req-fun url user
+                                              &optional pwd &rest args)
+  "Do a BasicAuth request.
+Call REQ-FUN, a request function, on URL, providing USER and password
+PWD.
+ARGS is any addition arguments for REQ-FUN, after the URL.
+REQ-FUN can be a fedi.el request function such as `fedi-http--post'."
+  (let* ((pwd (or pwd (read-passwd (format "Password: "))))
+         (auth (base64-encode-string
+                (format "%s:%s" user pwd)))
+         (url-request-extra-headers
+          (list (cons "Authorization"
+                      (format "Basic %s" auth)))))
+    (apply req-fun url args)))
 
 ;; ;; TODO: test for curl first?
 ;; (defun fedi-http--post-media-attachment (url filename caption)

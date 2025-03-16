@@ -586,12 +586,27 @@ Added to `after-change-functions'."
           (fill-region (prop-match-beginning prop)
                        (point)))))))
 
+(defun fedi-post--render-reply-region-str (str)
+  "Refill STR and prefix all lines with >, as reply-quote text."
+  (with-temp-buffer
+    (insert str)
+    ;; unfill first:
+    (let ((fill-column (point-max)))
+      (fill-region (point-min) (point-max)))
+    ;; then fill:
+    (fill-region (point-min) (point-max))
+    ;; add our own prefix, pauschal:
+    (goto-char (point-min))
+    (save-match-data
+      (while (re-search-forward "^" nil t)
+        (replace-match " > ")))
+    (buffer-substring-no-properties (point-min) (point-max))))
 
 
 ;;; COMPOSE BUFFER FUNCTION
 
 (defun fedi-post--compose-buffer
-    (&optional edit major minor prefix type capf-funs fields init-text)
+    (&optional edit major minor prefix type capf-funs fields init-text reply-text)
   "Create a new buffer to capture text for a new post.
 EDIT means we are editing an existing post, not composing a new one.
 MAJOR is the major mode to enable.
@@ -666,7 +681,11 @@ string, the other elements should be symbols."
       (cl-pushnew #'fedi-post-fontify-body-region after-change-functions))
     (when init-text
       (insert init-text)
-      (delete-trailing-whitespace))))
+      (delete-trailing-whitespace))
+    (when reply-text
+      (insert "\n"
+              (fedi-post--render-reply-region-str reply-text)
+              "\n"))))
 
 (defun fedi-post-fontify-body-region (&rest _args)
   "Call `font-lock-fontify-region' on post body.
