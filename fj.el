@@ -254,8 +254,10 @@ NO-JSON means return the raw response."
                      (fedi-http--get url params)
                    (fedi-http--get-json url params)))))
     (if no-json
-        ;; return response as string:
-        (fj-resp-str resp)
+        ;; return response buffer, not resulting string. the idea is to then
+        ;; call --triage on the result, in case we don't get a 200 response.
+        ;; (fj-resp-str resp)
+        resp
       (cond ((or (eq (caar resp) 'errors)
                  (eq (caar resp) 'message))
              (user-error "I am Error: %s Endpoint: %s"
@@ -2093,16 +2095,20 @@ Optionally, provide the commit's SHA."
 ENDPOINT is the API endpoint to hit."
   (let* ((resp (fj-get endpoint nil :no-json))
          (buf "*fj-diff*"))
-    (when (get-buffer buf)
-      (kill-buffer buf))
-    (with-current-buffer (get-buffer-create buf)
-      (erase-buffer)
-      (insert resp)
-      (setq buffer-read-only t)
-      (goto-char (point-min))
-      (switch-to-buffer-other-window (current-buffer))
-      ;; FIXME: make this work like special-mode, easy bindings and read-only:
-      (diff-mode))))
+    (fedi-http--triage
+     resp
+     (lambda (resp)
+       (when (get-buffer buf)
+         (kill-buffer buf))
+       (with-current-buffer (get-buffer-create buf)
+         (erase-buffer)
+         (insert resp)
+         (setq buffer-read-only t)
+         (goto-char (point-min))
+         (switch-to-buffer-other-window (current-buffer))
+         ;; FIXME: make this work like special-mode, easy bindings and
+         ;; read-only:
+         (diff-mode))))))
 
 (defun fj-get-pull-commits ()
   "Return the data for the commits of the current pull."
@@ -2674,8 +2680,11 @@ REF is a commit, branch or tag."
 (defun fj-get-repo-file (repo owner file)
   "Return FILE from REPO of OWNER.
 FILE is a string, including type suffix, and is case-sensitive."
-  (let ((endpoint (format "repos/%s/%s/raw/%s" owner repo file)))
-    (fj-get endpoint nil :no-json)))
+  (let* ((endpoint (format "repos/%s/%s/raw/%s" owner repo file))
+         (resp (fj-get endpoint nil :no-json)))
+    (fedi-http--triage resp
+                       (lambda (resp)
+                         (fj-resp-str resp)))))
 
 (defun fj-repo-readme (&optional repo owner)
   "Display readme file of REPO by OWNER.
