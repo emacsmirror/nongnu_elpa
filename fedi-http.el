@@ -81,13 +81,12 @@ A random one is picked at package initialization.")
 
 (defun fedi-http--render-html-err (string)
   "Render STRING as HTML in a temp buffer.
-STRING should be HTML for a 404 errror."
+STRING should be HTML for a 404 or 429 etc. errror."
   (with-temp-buffer
     (insert string)
     (shr-render-buffer (current-buffer))
-    (view-mode))) ; for 'q' to kill buffer and window
-;; FIXME: this is awful, it pops up also:
-;; (error ""))) ; stop subsequent processing
+    (view-mode) ;; for 'q' to kill buffer and window
+    (user-error "HTML response")))
 
 (defun fedi-http--read-file-as-string (filename)
   "Read a file FILENAME as a string. Used to generate image preview."
