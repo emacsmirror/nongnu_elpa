@@ -6,7 +6,7 @@
 ;; Package-Requires: ((emacs "29.1") (fedi "0.2") (tp "0.5") (transient) (magit))
 ;; Keywords: git, convenience
 ;; URL: https://codeberg.org/martianh/fj.el
-;; Version: 0.3
+;; Version: 0.4
 ;; Separator: -
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -26,12 +26,15 @@
 
 ;; Some bare-bones commands for interacting with Forgejo instances.
 
-;; To use these functions, first set `fj-token' and `fj-user', and `fj-host'.
+;; To use these functions, first set `fj-token' and `fj-user'.
+;; Then either set your Forgejo access token in your auth-source file or
+;; set `fj-host' to it.
 
 ;;; Code:
 
 (require 'fedi)
 (require 'fedi-post)
+(require 'fedi-auth)
 
 (require 'magit-git)
 (require 'magit-process)
@@ -109,10 +112,19 @@ etc."
   '("issue" "pull" "commit" "repository")
   "List of possible subject types for getting notifications.")
 
+;;; CUSTOMIZES
+
 (defgroup fj nil
   "Fj.el, a Forgejo client."
   :group 'external
   :prefix "fj-")
+
+(defcustom fj-token-use-auth-source t
+  "Whether to use an auth-source file.
+If non-nil, use an auth-source file such as ~/,authinfo.gpg for the user
+authorization token of the foregejo instance.
+If set to nil, you need to set `fj-token' to your user token."
+  :type 'boolean)
 
 ;;; FACES
 
@@ -173,6 +185,134 @@ Not used for items that are links.")
 (defface fj-post-title-face
   '((t :inherit font-lock-comment-face :weight bold))
   "Face for post title in compose buffer.")
+
+;;; AUTH / TOKENS
+
+(defun fj-create-token ()
+  "Create an access token for `fj-user' on `fj-host'.
+Reads a token name and reads a user password for BasicAuth.
+Copies the token to the kill ring and returns it."
+  (interactive)
+  (let* ((name (read-string "Token name: "))
+         (params `(("name" . ,name)
+                   ("scopes" . ("all"))))
+         (endpoint (format "users/%s/tokens" fj-user))
+         (password (read-passwd (format "%s password: " fj-host)))
+         (url (fj-api endpoint))
+         (resp (fedi-http--basic-auth-request
+                #'fedi-http--post url fj-user password params nil :json)))
+    (fedi-http--triage
+     resp
+     (lambda (resp)
+       (let* ((json (fj-resp-json resp))
+              (token (alist-get 'sha1 json))
+              (name (alist-get 'name json)))
+         (kill-new token)
+         (message "Token %s copied to kill ring." name)
+         token)))))
+
+(defun fj-auth-source-get ()
+  "Fetch an auth source token.
+Optionally prompt for a token and save it if needed."
+  (let ((host (url-host (url-generic-parse-url fj-host))))
+    (nth 1
+         (fedi-auth-source-get fj-user host :create))))
+
+(defun fj-token ()
+  "Fetch user access token from auth source, or try to add one.
+If `fj-token-use-auth-source' is nil, use `fj-token' instead."
+  (interactive)
+  (if (not fj-token-use-auth-source)
+      fj-token
+    (or (fj-auth-source-get)
+        (user-error
+         "No token. Call `fj-create-token' and try again,\
+ set token in auth-source file, or set `fj-token'"))))
+
+;;; REQUESTS
+
+(defmacro fj-authorized-request (method body &optional unauthenticated-p)
+  "Make a METHOD type request using BODY, with token authorization.
+Unless UNAUTHENTICATED-P is non-nil.
+Requires `fj-token' to be set."
+  (declare (debug 'body)
+           (indent 1))
+  `(let ((url-request-method ,method)
+         (url-request-extra-headers
+          (unless ,unauthenticated-p
+            (list (cons "Authorization"
+                        (concat "token " (fj-token)))))))
+     ,body))
+
+(defun fj-get (endpoint &optional params no-json)
+  "Make a GET request to ENDPOINT.
+PARAMS is any parameters to send with the request.
+NO-JSON means return the raw response."
+  (let* ((url (fj-api endpoint))
+         (resp (fj-authorized-request "GET"
+                 (if no-json
+                     (fedi-http--get url params)
+                   (fedi-http--get-json url params)))))
+    (if no-json
+        ;; return response buffer, not resulting string. the idea is to then
+        ;; call --triage on the result, in case we don't get a 200 response.
+        ;; (fj-resp-str resp)
+        resp
+      (cond ((or (eq (caar resp) 'errors)
+                 (eq (caar resp) 'message))
+             (user-error "I am Error: %s Endpoint: %s"
+                         (alist-get 'message resp)
+                         endpoint))
+            (t
+             resp)))))
+
+(defun fj-resp-str (resp)
+  "Return the response string from RESP, an HTTP response buffer."
+  (with-current-buffer resp
+    (goto-char (point-min))
+    (re-search-forward "^$" nil 'move)
+    (buffer-substring (point) (point-max))))
+
+(defun fj-resp-json (resp)
+  "Parse JSON from RESP, a buffer."
+  (let ((json-array-type 'list))
+    (with-current-buffer resp
+      (goto-char (point-min))
+      (re-search-forward "^$" nil 'move)
+      (let ((str
+             (decode-coding-string
+              (buffer-substring-no-properties (point) (point-max))
+              'utf-8)))
+        (json-read-from-string str)))))
+
+(defun fj-post (endpoint &optional params json)
+  "Make a POST request to ENDPOINT.
+PARAMS.
+If JSON, encode request data as JSON. else encode like query params."
+  (let ((url (fj-api endpoint)))
+    (fj-authorized-request "POST"
+      (fedi-http--post url params nil json))))
+
+(defun fj-put (endpoint &optional params json)
+  "Make a PUT request to ENDPOINT.
+PARAMS.
+JSON."
+  (let ((url (fj-api endpoint)))
+    (fj-authorized-request "PUT"
+      (fedi-http--put url params nil json))))
+
+(defun fj-patch (endpoint &optional params json)
+  "Make a PATCH request to ENDPOINT.
+PARAMS are query params unless JSON."
+  (let ((url (fj-api endpoint)))
+    (fj-authorized-request "PATCH"
+      (fedi-http--patch url params json))))
+
+(defun fj-delete (endpoint)
+  "Make a DELETE request to ENDPOINT."
+  (let ((url (fj-api endpoint)))
+    (fj-authorized-request "DELETE"
+      (fedi-http--delete url))))
 
 ;;; INSTANCE SETTINGS
 ;; https://forgejo.org/docs/latest/user/api-usage/#pagination
@@ -282,6 +422,19 @@ If we fail, return `fj-user'." ;; poss insane
                     (alist-get k2 x nil nil test-fun)))
             list)))
 
+;;; GIT CONFIG
+
+(defun fj-git-config-remote-url ()
+  "Return a remote's URL.
+Either get push default or call `magit-read-remote'."
+  ;; used in `fj-list-issues' and `fj-issue-compose'
+  ;; FIXME: use everywhere?
+  (let* ((remote ;; maybe works for own repo, as you gotta push:
+          (or (magit-get-push-remote)
+              ;; nice for not own repo:
+              (magit-read-remote "Remote:" nil :use-only))))
+    (magit-get (format "remote.%s.url" remote))))
+
 ;;; TL ENTRIES
 
 (defun fj--get-tl-col (num)
@@ -379,6 +532,14 @@ If CURRENT-REPO, get from `fj-current-repo' instead."
        (user-error "No PR here?")
      ,@body))
 
+(defmacro fj-destructure-buf-spec (parameters &rest body)
+  "Destructure `fj-buffer-spec' with keyword PARAMETERS and call BODY."
+  (declare (debug t)
+           (indent 1))
+  `(cl-destructuring-bind (&key ,@parameters &allow-other-keys)
+       fj-buffer-spec
+     ,@body))
+
 ;;; MAP
 
 ;; FIXME: we need 1 derived from tl, one from special?
@@ -431,89 +592,6 @@ Should work for anything with an fj-byline property."
 Should work for anything with an fj-byline property."
   (interactive)
   (fedi--goto-pos #'previous-single-property-change 'fj-byline))
-
-;;; REQUESTS
-
-(defmacro fj-authorized-request (method body &optional unauthenticated-p)
-  "Make a METHOD type request using BODY, with token authorization.
-Unless UNAUTHENTICATED-P is non-nil.
-Requires `fj-token' to be set."
-  (declare (debug 'body)
-           (indent 1))
-  `(let ((url-request-method ,method)
-         (url-request-extra-headers
-          (unless ,unauthenticated-p
-            (list (cons "Authorization"
-                        (concat "token " fj-token))))))
-     ,body))
-
-(defun fj-get (endpoint &optional params no-json)
-  "Make a GET request to ENDPOINT.
-PARAMS is any parameters to send with the request.
-NO-JSON means return the raw response."
-  (let* ((url (fj-api endpoint))
-         (resp (fj-authorized-request "GET"
-                 (if no-json
-                     (fedi-http--get url params)
-                   (fedi-http--get-json url params)))))
-    (if no-json
-        ;; return response as string:
-        (fj-resp-str resp)
-      (cond ((or (eq (caar resp) 'errors)
-                 (eq (caar resp) 'message))
-             (user-error "I am Error: %s Endpoint: %s"
-                         (alist-get 'message resp)
-                         endpoint))
-            (t
-             resp)))))
-
-(defun fj-resp-str (resp)
-  "Return the response string from RESP, an HTTP response buffer."
-  (with-current-buffer resp
-    (goto-char (point-min))
-    (re-search-forward "^$" nil 'move)
-    (buffer-substring (point) (point-max))))
-
-(defun fj-resp-json (resp)
-  "Parse JSON from RESP, a buffer."
-  (let ((json-array-type 'list))
-    (with-current-buffer resp
-      (goto-char (point-min))
-      (re-search-forward "^$" nil 'move)
-      (let ((str
-             (decode-coding-string
-              (buffer-substring-no-properties (point) (point-max))
-              'utf-8)))
-        (json-read-from-string str)))))
-
-(defun fj-post (endpoint &optional params)
-  "Make a POST request to ENDPOINT.
-PARAMS."
-  (let ((url (fj-api endpoint)))
-    (fj-authorized-request "POST"
-      (fedi-http--post url params nil :json))))
-
-(defun fj-put (endpoint &optional params json)
-  "Make a PUT request to ENDPOINT.
-PARAMS.
-JSON."
-  (let ((url (fj-api endpoint)))
-    (fj-authorized-request "PUT"
-      (fedi-http--put url params nil json))))
-
-(defun fj-patch (endpoint &optional params json)
-  "Make a PATCH request to ENDPOINT.
-PARAMS.
-JSON."
-  (let ((url (fj-api endpoint)))
-    (fj-authorized-request "PATCH"
-      (fedi-http--patch url params json))))
-
-(defun fj-delete (endpoint)
-  "Make a DELETE request to ENDPOINT."
-  (let ((url (fj-api endpoint)))
-    (fj-authorized-request "DELETE"
-      (fedi-http--delete url))))
 
 ;;; REPOS TL UTILS
 
@@ -652,10 +730,10 @@ X and Y are sorting args."
          (entries (fj-repo-tl-entries repos)))
     (if (not repos)
         (user-error "Set `fj-user' or `fj-extra-repos'")
-        (fj-repos-tl-render buf entries #'fj-repo-tl-mode)
-        (with-current-buffer (get-buffer-create buf)
-          (setq fj-buffer-spec
-                `(:owner ,fj-user :url ,(concat fj-host "/" fj-user)))))))
+      (fj-repos-tl-render buf entries #'fj-repo-tl-mode)
+      (with-current-buffer (get-buffer-create buf)
+        (setq fj-buffer-spec
+              `(:owner ,fj-user :url ,(concat fj-host "/" fj-user)))))))
 
 (defun fj-star-repo (repo owner &optional unstar)
   "Star or UNSTAR REPO owned by OWNER."
@@ -673,7 +751,7 @@ X and Y are sorting args."
   (let* ((endpoint (format "repos/%s/%s/forks" owner repo))
          (params `(("name" . ,name)))
          ;; ("organization" . ,org)))
-         (resp (fj-post endpoint params)))
+         (resp (fj-post endpoint params :json)))
     (fedi-http--triage resp
                        (lambda (_)
                          (message "Repo %s forked!" repo)))))
@@ -742,10 +820,11 @@ Also set `fj-current-repo' to the name."
         (when (member dir names) ;; nil if dir no match any remotes
           (setq fj-current-repo dir))))))
 
-(defun fj-get-repos ()
-  "Return the user's repos."
+(defun fj-get-repos (&optional limit)
+  "Return the user's repos.
+Return LIMIT repos, LIMIT is a string."
   (let ((endpoint "user/repos"))
-    (fj-get endpoint '(("limit" . "100")))))
+    (fj-get endpoint `(("limit" . ,(or limit "100"))))))
 
 (defun fj-get-repo-candidates (repos)
   "Return REPOS as completion candidates."
@@ -764,7 +843,7 @@ DEFAULT is initial input for `completing-read'."
     (completing-read "Repo: " cands
                      nil nil default)))
 
-(defun fj-read-user-repo (arg)
+(defun fj-read-user-repo (&optional arg)
   "Return a user repo.
 If ARG is a prefix, prompt with `completing-read'.
 If it is a string, return it.
@@ -785,7 +864,7 @@ Save its URL to the kill ring."
          (desc (read-string "Repo description: "))
          (params `(("name" . ,name)
                    ("description" . ,desc)))
-         (resp (fj-post "user/repos" params)))
+         (resp (fj-post "user/repos" params :json)))
     (fedi-http--triage resp
                        (lambda (resp)
                          (let* ((json (fj-resp-json resp))
@@ -862,30 +941,51 @@ STATE defaults to open."
         (fj-get endpoint params)
       (t (format "%s" (error-message-string err))))))
 
-(defun fj-list-own-issues (&optional query state type
+
+(defun fj-list-own-pulls (&optional query state
+                                    created assigned mentioned)
+  "List pulls in repos owned by `fj-user'.
+QUERY, STATE, TYPE, CREATED, ASSIGNED, and MENTIONED are all for
+`fj-issues-search'."
+  (interactive)
+  (fj-list-own-items
+   query state "pulls" created assigned mentioned))
+
+(defun fj-list-own-issues (&optional query state
                                      created assigned mentioned)
   "List issues in repos owned by `fj-user'.
 QUERY, STATE, TYPE, CREATED, ASSIGNED, and MENTIONED are all for
 `fj-issues-search'."
   (interactive)
-  (let ((issues
+  (fj-list-own-items
+   query state "issues" created assigned mentioned))
+
+(defun fj-list-own-items (&optional query state type
+                                    created assigned mentioned)
+  "List items of TYPE in repos owned by `fj-user'.
+QUERY, STATE, TYPE, CREATED, ASSIGNED, and MENTIONED are all for
+`fj-issues-search'."
+  (interactive)
+  (let ((items
          (fj-issues-search query fj-user state type
                            created assigned mentioned))
-        (buf-name "*fj-user-repos-issues")
+        (buf-name (format "*fj-user-repos-%s" type))
         (prev-buf (buffer-name (current-buffer)))
         (prev-mode major-mode))
     ;; FIXME refactor with `fj-list-issues'? just tab list entries fun and
     ;; the buffer spec settings change
     (with-current-buffer (get-buffer-create buf-name)
       (setq tabulated-list-entries
-            (fj-issue-tl-entries issues :repo))
+            (fj-issue-tl-entries items :repo))
       (fj-owned-issues-tl-mode)
       (tabulated-list-init-header)
       (tabulated-list-print)
       (setq fj-buffer-spec
-            `(:state ,state :owner ,fj-user :type ,type))
+            `( :state ,state :owner ,fj-user :type ,type
+               :query ,query :created ,created
+               :assiged ,assigned :mentioned ,mentioned))
       (fj-other-window-maybe
-       prev-buf "-issues*" #'string-suffix-p prev-mode))))
+       prev-buf (format "-%s*" type) #'string-suffix-p prev-mode))))
 
 (defun fj-get-item (repo &optional owner number type)
   "GET ISSUE NUMBER, in REPO by OWNER.
@@ -958,8 +1058,9 @@ OWNER is the repo owner."
                     fj-user))
          (data (fj-get-item repo owner issue))
          (old-title (alist-get 'title data))
+         (body (alist-get 'body data))
          (new-title (read-string "Edit issue title: " old-title))
-         (response (fj-issue-patch repo owner issue new-title)))
+         (response (fj-issue-patch repo owner issue new-title body)))
     (fedi-http--triage response
                        (lambda (_)
                          (message "issue title edited!")))))
@@ -1022,21 +1123,19 @@ STATE should be \"open\", \"closed\", or \"all\"."
          (pull (or pull (fj-read-repo-pull-req repo))))
     (fj-issue-comment repo pull)))
 
-(defvar fj-merge-types
-  '("merge" "rebase" "rebase-merge" "squash"
-    "fast-forward-only")) ; "manually-merged")) ??
-
-;; FIXME: we need to post DO body param containing one of `fj-merge-types'
-(defun fj-pull-merge-post (repo owner number merge-type)
+(defun fj-pull-merge-post (repo owner number merge-type
+                                &optional merge-commit)
   "POST a merge pull request REPO by OWNER.
 NUMBER is that of the PR.
-MERGE-TYPE is one of `fj-merge-types'."
+MERGE-TYPE is one of `fj-merge-types'.
+MERGE-COMMIT is the merge commit ID, used for type manually-merged."
   (let ((url (format "repos/%s/%s/pulls/%s/merge" owner repo number))
         (params `(("owner" . ,owner)
                   ("repo" . ,repo)
                   ("index" . ,number)
-                  ("Do" . ,merge-type))))
-    (fj-post url params)))
+                  ("Do" . ,merge-type)
+                  ("MergeCommitId" . ,merge-commit))))
+    (fj-post url params :json)))
 
 ;; (defun fj-pull-req-comment-edit (&optional repo pull)
 ;;   "Edit a comment on PULL in REPO."
@@ -1050,7 +1149,7 @@ MERGE-TYPE is one of `fj-merge-types'."
 ;;   (interactive "P")
 ;;   (let* ((repo (fj-read-user-repo repo))
 ;;          (prs (fj-repo-get-pull-reqs repo)))
-;;     (fj-list-issues repo nil prs))) ;; FIXME: owner
+;;     (fj-list-issues-do repo nil prs))) ;; FIXME: owner
 
 ;;; COMMENTS
 
@@ -1179,7 +1278,7 @@ NEW-BODY is the new comment text to send."
                   repo-labels))
          (params `(("labels" . ,(cl-pushnew choice issue-labels
                                             :test #'equal))))
-         (resp (fj-post url params)))
+         (resp (fj-post url params :json)))
     (fedi-http--triage
      resp
      (lambda (resp)
@@ -1275,7 +1374,8 @@ NEW-BODY is the new comment text to send."
 (defvar-keymap fj-owned-issues-tl-mode-map
   :doc "Map for `fj-owned-issues-tl-mode', a tabluated list of issues."
   :parent fj-issue-tl-mode-map ; has nav
-  )
+  "C-c C-c" #'fj-list-own-items-state-cycle
+  "C-c C-s" #'fj-list-own-items-type-cycle)
 
 ;; FIXME: refactor with `fj-issue-tl-mode' mode?
 ;; this just adds Repo col
@@ -1309,7 +1409,7 @@ NEW-BODY is the new comment text to send."
    (let* ((entry (tabulated-list-get-entry))
           (name (car (seq-elt entry 2)))
           (owner (fj--repo-owner)))
-     (fj-list-issues name owner))))
+     (fj-list-issues-do name owner))))
 
 (defun fj-issue-tl-entries (issues &optional repo)
   "Return tabluated list entries for ISSUES.
@@ -1394,17 +1494,53 @@ If REPO is provided, also include a repo column."
   "List issues and pulls for REPO by OWNER, filtered by STATE."
   (interactive "P")
   (let* ((repo (fj-read-user-repo repo)))
-    (fj-list-issues repo owner state "all")))
+    (fj-list-issues-do repo owner state "all")))
 
 (defun fj-list-pulls (repo &optional owner state)
   "List pulls for REPO by OWNER, filtered by STATE."
   (interactive "P")
   (let* ((repo (fj-read-user-repo repo)))
-    (fj-list-issues repo owner state "pulls")))
+    (fj-list-issues-do repo owner state "pulls")))
 
 (defvar fj-repo-data nil) ;; for transients for now
 
-(defun fj-list-issues (repo &optional owner state type query)
+(defun fj-list-issues (&optional repo)
+  "List issues for current repo.
+If we are in a repo, don't assume `fj-user' owns it. In that case we
+fetch owner/repo from git config.
+If we are not in a repo, call `fj-list-issues-do' without using git
+config."
+  (interactive "P")
+  (if (or current-prefix-arg ;; still allow completing-read a repo
+          (not (magit-inside-worktree-p :noerror)))
+      (fj-list-issues-do repo) ;; fall back to `fj-user' repos
+    ;; FIXME: should we not have a fallback for when this fails?
+    (let* ((repo-+-owner (fj-repo-+-owner-from-git))
+           (owner (car repo-+-owner))
+           (repo (cadr repo-+-owner)))
+      (fj-list-issues-do repo owner))))
+
+(defun fj-repo-+-owner-from-git ()
+  "Return repo and owner from git config.
+Nil if we fail to parse."
+  ;; https://git-scm.com/book/en/v2/Git-on-the-Server-The-Protocols
+  ;; docs are unclear on how to distinguish these!
+  (let ((remote (fj-git-config-remote-url)))
+    (cond
+     ((string-prefix-p "http" remote) ;; http(s)
+      (last (split-string remote "/") 2))
+     ;; git protocol: git:// or git@...?
+     ;; can't just be prefix "git" because that matches ssh gitea@...
+     ((string-prefix-p "git://" remote) ;; git maybe
+      nil) ;;  TODO: git protocol
+     (t ;; ssh (can omit ssh:// prefix)
+      ;; “sshuser@domain.com:username/repo.git”
+      ;; nb sshuser is not the foregejo user!
+      (let* ((split (split-string remote "[@:/]"))
+             (repo (string-trim-right (nth 3 split) ".git")))
+        (list (nth 2 split) repo))))))
+
+(defun fj-list-issues-do (&optional repo owner state type query)
   "Display ISSUES in a tabulated list view.
 Either for `fj-current-repo' or REPO, a string, owned by OWNER.
 With a prefix arg, or if REPO and `fj-current-repo' are nil,
@@ -1422,10 +1558,13 @@ QUERY is a search query to filter by."
          (repo-data (fj-get-repo repo owner))
          ;; FIXME: pulls:
          (url (concat (alist-get 'html_url repo-data)
-                      "/issues"))
+                      (if (equal type "pulls")
+                          "/pulls"
+                        "/issues"))) ;; all is also issues
          (prev-buf (buffer-name (current-buffer)))
          (prev-mode major-mode)
          (state-str (or state "open"))
+         (wd default-directory)
          (buf-name (format "*fj-%s-%s-%s*" repo state-str type)))
     (with-current-buffer (get-buffer-create buf-name)
       (setq tabulated-list-entries
@@ -1438,6 +1577,11 @@ QUERY is a search query to filter by."
             fj-buffer-spec
             `(:repo ,repo :state ,state-str :owner ,owner :url ,url
                     :type ,type))
+      ;; ensure our .dir-locals.el settings take effect:
+      ;; via https://emacs.stackexchange.com/questions/13080/reloading-directory-local-variables
+      (setq default-directory wd)
+      (let ((enable-local-variables :all))
+        (hack-dir-local-variables-non-file-buffer))
       (fj-other-window-maybe
        prev-buf "-issues*" #'string-suffix-p prev-mode))))
 
@@ -1462,35 +1606,53 @@ PREV-MODE is the major mode active in the previous buffer."
 
 (defun fj-list-issues-search (query &optional state type)
   "Search current repo issues for QUERY.
-STATE and TYPE as for `fj-list-issues'."
+STATE and TYPE as for `fj-list-issues-do'."
   (interactive "sSearch issues in repo: ")
   (let ((owner (fj--get-buffer-spec :owner)))
-    (fj-list-issues nil owner (or state "all") type query)))
+    (fj-list-issues-do nil owner (or state "all") type query)))
 
 (defun fj-list-issues-closed (&optional repo owner type)
   "Display closed ISSUES for REPO by OWNER in tabulated list view.
 TYPE is the item type."
   (interactive "P")
-  (fj-list-issues repo owner "closed" type))
+  (fj-list-issues-do repo owner "closed" type))
 
 (defun fj-list-issues-all (&optional repo owner type)
   "Display all ISSUES for REPO by OWNER in tabulated list view.
 TYPE is the item type."
   (interactive "P")
-  (fj-list-issues repo owner "all" type))
+  (fj-list-issues-do repo owner "all" type))
 
 (defun fj-list-issues-cycle ()
   "Cycle between listing of open, closed, and all issues."
   (interactive)
-  (let ((state (fj--get-buffer-spec :state))
-        (owner (fj--get-buffer-spec :owner))
-        (repo (fj--get-buffer-spec :repo))
-        (type (fj--get-buffer-spec :type)))
+  (fj-destructure-buf-spec (state owner repo type)
     (pcase state
       ("closed" (fj-list-issues-all repo owner type))
-      ("all" (fj-list-issues repo owner nil type))
+      ("all" (fj-list-issues-do repo owner nil type))
       (_ ; open is default
        (fj-list-issues-closed repo owner type)))))
+
+(defun fj-list-own-items-state-cycle ()
+  "Cycle item state listing of open, closed, and all."
+  (interactive)
+  ;; FIXME: implement other own-issues params (add to buffer-spec)
+  (fj-destructure-buf-spec (state type)
+    (pcase state
+      ("closed" (fj-list-own-items nil "all" type))
+      ("all" (fj-list-own-items nil "open" type))
+      (_ (fj-list-own-items nil "closed" type)))))
+
+(defun fj-list-own-items-type-cycle ()
+  "Cycle item type listing of issues, pulls, and all."
+  (interactive)
+  ;; FIXME: implement other own-issues params (add to buffer-spec)
+  (fj-destructure-buf-spec (state type)
+    (pcase type
+      ("pulls" (fj-list-own-items nil state "all"))
+      ("all" (fj-list-own-items nil state "issues"))
+      (_ ; issues default
+       (fj-list-own-items nil state "pulls")))))
 
 (defun fj-view-reload ()
   "Try to reload the current view based on its major-mode."
@@ -1503,13 +1665,14 @@ TYPE is the item type."
     ('fj-notifications-mode (fj-notifications-reload))
     ;; TODO: commits-mode, users-mode (they don't have reload funs)
     ('fj-users-mode (fj-users-reload))
+    ('fj-owned-issues-tl-mode
+     (fj-list-own-issues))
     (_ (user-error "Reload not implemented yet"))))
 
 (defun fj-users-reload ()
   "Reload a users listing view.
 Repo's stargazers or watchers."
-  (let ((repo (fj--get-buffer-spec :repo))
-        (owner (fj--get-buffer-spec :owner)))
+  (fj-destructure-buf-spec (repo owner)
     (if (string-suffix-p "stargazers*" (buffer-name))
         (fj-repo-stargazers repo owner)
       (fj-repo-watchers repo owner))))
@@ -1518,24 +1681,18 @@ Repo's stargazers or watchers."
   "Reload current issues tabulated list view."
   (interactive)
   (when (eq major-mode #'fj-issue-tl-mode)
-    (let ((state (fj--get-buffer-spec :state))
-          (owner (fj--get-buffer-spec :owner))
-          (repo (fj--get-buffer-spec :repo))
-          (type (fj--get-buffer-spec :type)))
-      (fj-list-issues repo owner state type))))
+    (fj-destructure-buf-spec (state owner repo type)
+      (fj-list-issues-do repo owner state type))))
 
 (defun fj-issues-item-cycle ()
   "Cycle item type listing of issues, pulls, and all."
   (interactive)
-  (let ((state (fj--get-buffer-spec :state))
-        (owner (fj--get-buffer-spec :owner))
-        (repo (fj--get-buffer-spec :repo))
-        (type (fj--get-buffer-spec :type)))
+  (fj-destructure-buf-spec (state owner repo type)
     (pcase type
-      ("pulls" (fj-list-issues repo owner state "all"))
-      ("all" (fj-list-issues repo owner state "issues"))
+      ("pulls" (fj-list-issues-do repo owner state "all"))
+      ("all" (fj-list-issues-do repo owner state "issues"))
       (_ ; issues default
-       (fj-list-issues repo owner state "pulls")))))
+       (fj-list-issues-do repo owner state "pulls")))))
 
 ;;; ISSUE VIEW
 (defvar fj-url-regex fedi-post-url-regex)
@@ -1714,11 +1871,10 @@ OWNER is the repo owner."
   "Return reactions data for comment with ID."
   ;; GET /repos/{owner}/{repo}/issues/comments/{id}/reactions
   (fj-with-item-view
-   (let* ((repo (fj--get-buffer-spec :repo))
-          (owner (fj--get-buffer-spec :owner))
-          (endpoint (format "repos/%s/%s/issues/comments/%s/reactions"
-                            owner repo id)))
-     (fj-get endpoint))))
+   (fj-destructure-buf-spec (owner repo)
+     (let ((endpoint (format "repos/%s/%s/issues/comments/%s/reactions"
+                             owner repo id)))
+       (fj-get endpoint)))))
 
 (defun fj-prop-item-flag (str)
   "Propertize STR as author face in box."
@@ -1850,22 +2006,18 @@ RELOAD means we are reloading, so don't open in other window."
   "Reload the current item view."
   (interactive)
   (fj-with-item-view
-   (let ((number (fj--get-buffer-spec :item))
-         (owner (fj--get-buffer-spec :owner))
-         (type (fj--get-buffer-spec :type)))
+   (fj-destructure-buf-spec (item owner type)
      ;; FIXME: handle pull view:
      (fj-item-view fj-current-repo owner
-                   number :reload type))))
+                   item :reload type))))
 
 ;; TODO: merge simple action functions
 (defun fj-item-view-close (&optional state)
   "Close item being viewed, or set to STATE."
   (interactive)
   (fj-with-item-view
-   (let ((number (fj--get-buffer-spec :item))
-         (owner (fj--get-buffer-spec :owner))
-         (repo (fj--get-buffer-spec :repo)))
-     (fj-issue-close repo owner number state)
+   (fj-destructure-buf-spec (item owner repo)
+     (fj-issue-close repo owner item state)
      (fj-item-view-reload))))
 
 (defun fj-item-view-reopen ()
@@ -1884,68 +2036,57 @@ RELOAD means we are reloading, so don't open in other window."
   "Edit the item currently being viewed."
   (interactive)
   (fj-with-own-issue
-   (let ((number (fj--get-buffer-spec :item))
-         (repo (fj--get-buffer-spec :repo))
-         (owner (fj--get-buffer-spec :owner))
-         (title (fj--get-buffer-spec :title))
-         (body (fj--get-buffer-spec :body)))
+   (fj-destructure-buf-spec (item repo owner title body)
      (fj-issue-compose :edit nil 'issue body)
      (setq fj-compose-issue-title title
            fj-compose-repo repo
            fj-compose-repo-owner owner
-           fj-compose-issue-number number)
+           fj-compose-issue-number item)
      (fedi-post--update-status-fields))))
 
 (defun fj-issue-view-edit-title ()
   "Edit the title of the item being viewed."
   (interactive)
   (fj-with-own-issue-or-repo
-   (let ((repo (fj--get-buffer-spec :repo))
-         (owner (fj--get-buffer-spec :owner))
-         (item (fj--get-buffer-spec :item)))
+   (fj-destructure-buf-spec (repo owner item)
      (fj-issue-edit-title repo owner item)
      (fj-item-view-reload))))
 
 (defun fj-item-view-comment ()
   "Comment on the item currently being viewed."
   (interactive)
-  (let ((number (fj--get-buffer-spec :item))
-        (repo (fj--get-buffer-spec :repo))
-        (owner (fj--get-buffer-spec :owner))
-        (title (fj--get-buffer-spec :title)))
+  (fj-destructure-buf-spec (item repo owner title)
     (fj-issue-compose nil 'fj-compose-comment-mode 'comment)
     (setq fj-compose-repo repo
           fj-compose-issue-title title
           fj-compose-repo-owner owner
-          fj-compose-issue-number number)
+          fj-compose-issue-number item)
     (fedi-post--update-status-fields)))
 
 (defun fj-item-view-edit-comment ()
   "Edit the comment at point."
   (interactive)
   (fj-with-own-comment
-   (let ((id (fj--property 'fj-comment-id))
-         (repo (fj--get-buffer-spec :repo))
-         (owner (fj--get-buffer-spec :owner))
-         (body (alist-get 'body
-                          (fj--property 'fj-comment))))
-     (fj-issue-compose :edit 'fj-compose-comment-mode 'comment body)
-     (setq fj-compose-repo repo
-           fj-compose-repo-owner owner
-           fj-compose-issue-number id)
-     (fedi-post--update-status-fields))))
+   (fj-destructure-buf-spec (repo owner)
+     (let ((id (fj--property 'fj-comment-id))
+           (body (alist-get 'body
+                            (fj--property 'fj-comment))))
+       (fj-issue-compose :edit 'fj-compose-comment-mode 'comment body)
+       (setq fj-compose-repo repo
+             fj-compose-repo-owner owner
+             fj-compose-issue-number id)
+       (fedi-post--update-status-fields)))))
 
 (defun fj-item-view-comment-delete ()
   "Delete comment at point."
   (interactive)
   (fj-with-own-comment
-   (let* ((id (fj--property 'fj-comment-id))
-          (repo (fj--get-buffer-spec :repo))
-          (owner (fj--get-buffer-spec :owner))
-          (endpoint (format "repos/%s/%s/issues/comments/%s" owner repo id)))
-     (when (yes-or-no-p "Delete comment?")
-       (fj-delete endpoint)
-       (fj-item-view-reload)))))
+   (fj-destructure-buf-spec (repo owner)
+     (let* ((id (fj--property 'fj-comment-id))
+            (endpoint (format "repos/%s/%s/issues/comments/%s" owner repo id)))
+       (when (yes-or-no-p "Delete comment?")
+         (fj-delete endpoint)
+         (fj-item-view-reload))))))
 
 ;;; PR VIEWS
 
@@ -1953,77 +2094,78 @@ RELOAD means we are reloading, so don't open in other window."
   "View a diff of a commit at point.
 Optionally, provide the commit's SHA."
   (interactive)
-  (let* ((repo (fj--get-buffer-spec :repo))
-         (owner (fj--get-buffer-spec :owner))
-         (sha (or sha
-                  (fj--property 'item) ;; commit at point
-                  (fj--get-buffer-spec :item))) ;; item view? FIXME: remove?
-         (endpoint (format "repos/%s/%s/git/commits/%s.diff"
-                           owner repo sha)))
-    (fj-view-item-diff endpoint)))
+  (fj-destructure-buf-spec (repo owner item)
+    (let* ((sha (or sha
+                    (fj--property 'item) ;; commit at point
+                    item)) ;; item view? FIXME: remove?
+           (endpoint (format "repos/%s/%s/git/commits/%s.diff"
+                             owner repo sha)))
+      (fj-view-item-diff endpoint))))
 
 (defun fj-view-pull-diff ()
   "View a diff of the entire current PR."
   (interactive)
   (fj-with-pull
-   (let* ((repo (fj--get-buffer-spec :repo))
-          (owner (fj--get-buffer-spec :owner))
-          (id (fj--get-buffer-spec :item))
-          (endpoint (format "repos/%s/%s/pulls/%s.diff"
-                            owner repo id)))
-     (fj-view-item-diff endpoint))))
+   (fj-destructure-buf-spec (repo owner id)
+     (let* ((endpoint (format "repos/%s/%s/pulls/%s.diff"
+                              owner repo id)))
+       (fj-view-item-diff endpoint)))))
 
 (defun fj-view-item-diff (endpoint)
   "View a diff of an item, commit or pull diff.
 ENDPOINT is the API endpoint to hit."
   (let* ((resp (fj-get endpoint nil :no-json))
          (buf "*fj-diff*"))
-    (when (get-buffer buf)
-      (kill-buffer buf))
-    (with-current-buffer (get-buffer-create buf)
-      (erase-buffer)
-      (insert resp)
-      (setq buffer-read-only t)
-      (goto-char (point-min))
-      (switch-to-buffer-other-window (current-buffer))
-      ;; FIXME: make this work like special-mode, easy bindings and read-only:
-      (diff-mode))))
+    (fedi-http--triage
+     resp
+     (lambda (resp)
+       (when (get-buffer buf)
+         (kill-buffer buf))
+       (with-current-buffer (get-buffer-create buf)
+         (erase-buffer)
+         (insert resp)
+         (setq buffer-read-only t)
+         (goto-char (point-min))
+         (switch-to-buffer-other-window (current-buffer))
+         ;; FIXME: make this work like special-mode, easy bindings and
+         ;; read-only:
+         (diff-mode))))))
 
 (defun fj-get-pull-commits ()
   "Return the data for the commits of the current pull."
   (interactive)
   (fj-with-pull
-   (let* ((repo (fj--get-buffer-spec :repo))
-          (owner (fj--get-buffer-spec :owner))
-          (id (fj--get-buffer-spec :item))
-          (endpoint (format "/repos/%s/%s/pulls/%s/commits"
-                            owner repo id)))
-     (fj-get endpoint))))
+   (fj-destructure-buf-spec (repo owner id)
+     (let* ((endpoint (format "/repos/%s/%s/pulls/%s/commits"
+                              owner repo id)))
+       (fj-get endpoint)))))
 
 (defun fj-merge-pull ()
   "Merge pull request of current view or at point."
   (interactive)
   (fj-with-pull
-   (let* ((repo (fj--get-buffer-spec :repo))
-          (owner (fj--get-buffer-spec :owner))
-          (data (save-excursion
-                  (goto-char (point-min))
-                  (fedi--property 'fj-item-data)))
-          (number (if (eq major-mode 'fj-issue-tl-mode)
-                      (let* ((entry (tabulated-list-get-entry)))
-                        (car (seq-first entry)))
-                    (fj--get-buffer-spec :item)))
-          ;; FIXME: branch is not provided in the tl data :/
-          (branch (unless (eq major-mode 'fj-issue-tl-mode)
-                    (map-nested-elt data '(base label))))
-          (branchs-str (if branch (concat " " branch) ""))
-          (merge-type (completing-read "Merge type: " fj-merge-types)))
-     (when (y-or-n-p
-            (format "Merge PR #%s into %s/%s%s?" number owner repo branch))
-       (let ((resp (fj-pull-merge-post repo owner number merge-type)))
-         (fedi-http--triage resp
-                            (lambda (_)
-                              (message "Merged!"))))))))
+   (fj-destructure-buf-spec (repo owner item)
+     (let* ((data (save-excursion
+                    (goto-char (point-min))
+                    (fedi--property 'fj-item-data)))
+            (number (if (eq major-mode 'fj-issue-tl-mode)
+                        (let* ((entry (tabulated-list-get-entry)))
+                          (car (seq-first entry)))
+                      item))
+            ;; FIXME: branch is not provided in the tl data :/
+            (branch (unless (eq major-mode 'fj-issue-tl-mode)
+                      (map-nested-elt data '(base label))))
+            (branch-str (if branch (concat " " branch) ""))
+            (merge-type (completing-read "Merge type: " fj-merge-types))
+            (merge-commit (when (equal merge-type "manually-merged")
+                            (read-string "Merge commit: "))))
+       (when (y-or-n-p
+              (format "Merge PR #%s into %s/%s%s?" number owner repo branch-str))
+         (let ((resp (fj-pull-merge-post repo owner number
+                                         merge-type merge-commit)))
+           (fedi-http--triage resp
+                              (lambda (_)
+                                (message "Merged!")))))))))
 
 ;;; TIMELINE ITEMS
 
@@ -2159,28 +2301,26 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
   "Render code review with REVIEW-ID.
 TS, FORMAT-STR and USER are from `fj-render-timeline-item', which see.
 Renders a review heading and review comments."
-  (let* ((repo (fj--get-buffer-spec :repo))
-         (owner (fj--get-buffer-spec :owner))
-         (item-id (fj--get-buffer-spec :item))
-         (review (fj-get-review repo owner
-                                item-id review-id))
-         (comments (fj-get-review-comments repo owner
-                                           item-id review-id)))
-    (let-alist review
-      (let ((state (pcase .state
-                     ("APPROVED"
-                      (concat (downcase .state) " these"))
-                     ("REQUEST_CHANGES"
-                      "requested"))))
-        (propertize
-         (concat
-          (format format-str user state ts)
-          ;; FIXME: display mini-diff here:
-          (cl-loop for c in comments
-                   concat
-                   (fj-format-review-comment c nil ;; FIXME: author
-                                             owner ts)))
-         'fj-review review)))))
+  (fj-destructure-buf-spec (repo owner item)
+    (let ((review (fj-get-review repo owner
+                                 item review-id))
+          (comments (fj-get-review-comments repo owner
+                                            item review-id)))
+      (let-alist review
+        (let ((state (pcase .state
+                       ("APPROVED"
+                        (concat (downcase .state) " these"))
+                       ("REQUEST_CHANGES"
+                        "requested"))))
+          (propertize
+           (concat
+            (format format-str user state ts)
+            ;; FIXME: display mini-diff here:
+            (cl-loop for c in comments
+                     concat
+                     (fj-format-review-comment c nil ;; FIXME: author
+                                               owner ts)))
+           'fj-review review))))))
 
 (defun fj-format-review-comment (comment author owner ts)
   "Format a review COMMENT.
@@ -2209,8 +2349,8 @@ In ITEM-ID in REPO by OWNER."
   "Get review comments.
 Use REVIEW-ID for ITEM-ID in REPO by OWNER."
   ;; /repos/{owner}/{repo}/pulls/{index}/reviews/{id}/comments
-  (let ((endpoint (format  "repos/%s/%s/pulls/%s/reviews/%s/comments"
-                           owner repo item-id review-id)))
+  (let ((endpoint (format "repos/%s/%s/pulls/%s/reviews/%s/comments"
+                          owner repo item-id review-id)))
     (fj-get endpoint)))
 
 (defun fj-get-html-link-desc (str)
@@ -2277,14 +2417,15 @@ ignored."
          (choice (completing-read "Repo: " cands))
          (user (cl-fourth
                 (assoc choice cands #'equal))))
-    (fj-list-issues choice user)))
+    (fj-list-issues-do choice user)))
 
-;; doesn't work
 (defun fj-repo-candidates-annot-fun (cand)
-  "CAND."
-  (cl-fourth
-   (assoc cand minibuffer-completion-table
-          #'equal)))
+  "Annocation function for `fj-repo-search'.
+Returns annotation for CAND, a candidate."
+  (if-let* ((entry (assoc cand minibuffer-completion-table
+                          #'equal)))
+      (concat " " (cl-fourth entry))
+    ""))
 
 ;;; SEARCH REPOS TL
 
@@ -2436,7 +2577,7 @@ Optionally specify repo OWNER and URL."
    (let* ((entry (tabulated-list-get-entry))
           (name (car (seq-first entry)))
           (owner (fj--repo-owner)))
-     (fj-list-issues name owner))))
+     (fj-list-issues-do name owner))))
 
 (defun fj-repo-tl-list-pulls (&optional _)
   "View issues of current repo from tabulated repos listing."
@@ -2498,12 +2639,11 @@ Or if viewing a repo's issues, use its clone_url."
   ;; FIXME: refactor - we don't want `fj-with-entry' in issues tl, as there it
   ;; is anywhere in buffer while in repos tl it is for repo at point.
   (if (equal major-mode #'fj-issue-tl-mode)
-      (let* ((repo (fj--get-buffer-spec :repo))
-             (owner (fj--get-buffer-spec :owner))
-             (resp (fj-get-repo repo owner))
-             (url (alist-get 'clone_url resp)))
-        (kill-new url)
-        (message (format "Copied: %s" url)))
+      (fj-destructure-buf-spec (repo owner)
+        (let* ((resp (fj-get-repo repo owner))
+               (url (alist-get 'clone_url resp)))
+          (kill-new url)
+          (message (format "Copied: %s" url))))
     (fj-with-repo-entry
      (let* ((entry (tabulated-list-get-entry))
             (repo (car (seq-first entry)))
@@ -2561,8 +2701,11 @@ REF is a commit, branch or tag."
 (defun fj-get-repo-file (repo owner file)
   "Return FILE from REPO of OWNER.
 FILE is a string, including type suffix, and is case-sensitive."
-  (let ((endpoint (format "repos/%s/%s/raw/%s" owner repo file)))
-    (fj-get endpoint nil :no-json)))
+  (let* ((endpoint (format "repos/%s/%s/raw/%s" owner repo file))
+         (resp (fj-get endpoint nil :no-json)))
+    (fedi-http--triage resp
+                       (lambda (resp)
+                         (fj-resp-str resp)))))
 
 (defun fj-repo-readme (&optional repo owner)
   "Display readme file of REPO by OWNER.
@@ -2775,32 +2918,35 @@ TYPE is a symbol of what we are composing, it may be issue or comment.
 Inject INIT-TEXT into the buffer, for editing."
   (interactive)
   (setq fj-compose-last-buffer (buffer-name (current-buffer)))
-  (fedi-post--compose-buffer
-   edit
-   #'markdown-mode
-   (or mode #'fj-compose-mode)
-   (when mode "fj-compose")
-   (or type 'issue)
-   (list #'fj-compose-mentions-capf
-         #'fj-compose-issues-capf)
-   ;; TODO: why not have a compose-buffer-spec rather than 10 separate vars?
-   `(((name . "repo")
-      (prop . compose-repo)
-      (item-var . fj-compose-repo)
-      (face . link))
-     ((name . ,(if (eq type 'comment) "issue ""title"))
-      (prop . compose-title)
-      (item-var . fj-compose-issue-title)
-      (face . fj-post-title-face)))
-   init-text)
-  (setq fj-compose-item-type
-        (if edit
+  (let ((quote (when (region-active-p)
+                 (buffer-substring (region-beginning)
+                                   (region-end)))))
+    (fedi-post--compose-buffer
+     edit
+     #'markdown-mode
+     (or mode #'fj-compose-mode)
+     (when mode "fj-compose")
+     (or type 'issue)
+     (list #'fj-compose-mentions-capf
+           #'fj-compose-issues-capf)
+     ;; TODO: why not have a compose-buffer-spec rather than 10 separate vars?
+     `(((name . "repo")
+        (prop . compose-repo)
+        (item-var . fj-compose-repo)
+        (face . link))
+       ((name . ,(if (eq type 'comment) "issue ""title"))
+        (prop . compose-title)
+        (item-var . fj-compose-issue-title)
+        (face . fj-post-title-face)))
+     init-text quote)
+    (setq fj-compose-item-type
+          (if edit
+              (if (eq type 'comment)
+                  'edit-comment
+                'edit-issue)
             (if (eq type 'comment)
-                'edit-comment
-              'edit-issue)
-          (if (eq type 'comment)
-              'new-comment
-            'new-issue))))
+                'new-comment
+              'new-issue)))))
 
 (defun fj-compose-send ()
   "Submit the issue or comment to your Forgejo instance.
@@ -2847,7 +2993,7 @@ Call response and update functions."
               ;; we we need prev-buffer arg?
               ;; else generic reload function
               (fj-item-view-reload)
-            (fj-list-issues repo)))))))
+            (fj-list-issues-do repo)))))))
 
 (defun fj-search-users (query &optional limit)
   "Search instance users for QUERY.
@@ -3044,7 +3190,8 @@ to display."
 
 (defun fj-mark-notification (status &optional id reload)
   "Mark notification at point as STATUS.
-Use ID if provided."
+Use ID if provided.
+If RELOAD, also reload the notications view."
   ;; PATCH /notifications/threads/{id}
   (let* ((id (or id (fj--property 'fj-notification)))
          (endpoint (format "notifications/threads/%s" id))
@@ -3125,28 +3272,27 @@ Allow quick jumping to an element in a tabulated list view."
   "Do the action of the link at POS.
 Used for hitting RET on a given link."
   (interactive "d")
-  (let ((type (get-text-property pos 'type))
-        (owner (fj--get-buffer-spec :owner))
-        (repo (fj--get-buffer-spec :repo))
-        (item (fj--property 'item)))
-    (pcase type
-      ((or 'tag 'comment-ref)
-       (fj-item-view repo owner item))
-      ;; ((eq type 'pull)
-      ;; (fj-item-view repo owner item nil :pull))
-      ('handle (fj-user-repos-tl item))
-      ((or  'commit 'commit-ref)
-       (fj-view-commit-diff item))
-      ('notif
-       (let ((repo (fj--property 'fj-repo))
-             (owner (fj--property 'fj-owner)))
-         (fj-item-view repo owner item)
-         (fj-mark-notification-read item)))
-      ('shr
-       (let ((url (fj--property 'shr-url)))
-         (shr-browse-url url)))
-      (_
-       (error "Unknown link type %s" type)))))
+  (fj-destructure-buf-spec (repo owner)
+    (let ((type (get-text-property pos 'type))
+          (item (fj--property 'item)))
+      (pcase type
+        ((or 'tag 'comment-ref)
+         (fj-item-view repo owner item))
+        ;; ((eq type 'pull)
+        ;; (fj-item-view repo owner item nil :pull))
+        ('handle (fj-user-repos-tl item))
+        ((or  'commit 'commit-ref)
+         (fj-view-commit-diff item))
+        ('notif
+         (let ((repo (fj--property 'fj-repo))
+               (owner (fj--property 'fj-owner)))
+           (fj-item-view repo owner item)
+           (fj-mark-notification-read item)))
+        ('shr
+         (let ((url (fj--property 'shr-url)))
+           (shr-browse-url url)))
+        (_
+         (error "Unknown link type %s" type))))))
 
 (defun fj-do-link-action-mouse (event)
   "Do the action of the link at point.
@@ -3405,10 +3551,9 @@ BUF-STR is the name of the buffer string to use."
 (defun fj-get-repo-topics ()
   "GET repo topics from the instance.
 Returns a list of strings."
-  (let* ((repo (fj--get-buffer-spec :repo))
-         (owner (fj--get-buffer-spec :owner))
-         (endpoint (format "repos/%s/%s/topics" owner repo)))
-    (alist-get 'topics (fj-get endpoint))))
+  (fj-destructure-buf-spec (repo owner)
+    (let ((endpoint (format "repos/%s/%s/topics" owner repo)))
+      (alist-get 'topics (fj-get endpoint)))))
 
 (defun fj-propertize-repo-topics ()
   "Propertize topics of current repo."
@@ -3431,26 +3576,24 @@ Returns a list of strings."
 
 (defun fj-get-repo-tags ()
   "Return tags data for current repo."
-  (let* ((repo (fj--get-buffer-spec :repo))
-         (owner (fj--get-buffer-spec :owner))
-         (endpoint (format "repos/%s/%s/tags" owner repo)))
-    (fj-get endpoint)))
+  (fj-destructure-buf-spec (repo owner)
+    (let ((endpoint (format "repos/%s/%s/tags" owner repo)))
+      (fj-get endpoint))))
 
 (defun fj-delete-repo-tag ()
   "Prompt for a repo tag and delete it on the server."
   (interactive)
-  (let* ((repo (fj--get-buffer-spec :repo))
-         (owner (fj--get-buffer-spec :owner))
-         (tags (fj-get-repo-tags))
-         (list (cl-loop for x in tags
-                        collect (alist-get 'name x)))
-         (choice (completing-read "Delete tag: " list))
-         (endpoint (format "repos/%s/%s/tags/%s" owner repo choice))
-         (resp (fj-delete endpoint)))
-    (fedi-http--triage
-     resp
-     (lambda (_)
-       (message "Tag %s deleted!" choice)))))
+  (fj-destructure-buf-spec (repo owner)
+    (let* ((tags (fj-get-repo-tags))
+           (list (cl-loop for x in tags
+                          collect (alist-get 'name x)))
+           (choice (completing-read "Delete tag: " list))
+           (endpoint (format "repos/%s/%s/tags/%s" owner repo choice))
+           (resp (fj-delete endpoint)))
+      (fedi-http--triage
+       resp
+       (lambda (_)
+         (message "Tag %s deleted!" choice))))))
 
 (provide 'fj)
 ;;; fj.el ends here
