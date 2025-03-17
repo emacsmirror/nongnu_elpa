@@ -788,11 +788,11 @@ BUF-STR is to name the buffer, URL-STR is for the buffer-spec."
          (entries (fj-repo-tl-entries repos))
          (buf (format "*fj-%s-repos*" buf-str)))
     (fj-repos-tl-render buf entries #'fj-repo-tl-mode)
-    (with-current-buffer
-        (setq fj-buffer-spec
-              `( :owner fj-user
-                 :url (when url-str
-                        ,(concat fj-host "/" fj-user url-str)))))))
+    (with-current-buffer buf
+      (setq fj-buffer-spec
+            `( :owner fj-user
+               :url (when url-str
+                      ,(concat fj-host "/" fj-user url-str)))))))
 
 ;;; USER REPOS
 
