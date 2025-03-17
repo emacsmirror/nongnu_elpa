@@ -1025,7 +1025,7 @@ OWNER is the repo owner."
                    ("title" . ,title)
                    ("state" . ,state)))
          (endpoint (format "repos/%s/%s/issues/%s" owner repo issue)))
-    (fj-patch endpoint params :json)))
+    (fj-patch endpoint params)))
 
 (defun fj-issue-edit (&optional repo owner issue)
   "Edit ISSUE body in REPO.
@@ -1212,12 +1212,12 @@ OWNER is the repo owner."
                        (lambda (_)
                          (message "comment created!")))))
 
-(defun fj-comment-patch (repo owner id &optional params issue)
+(defun fj-comment-patch (repo owner id &optional params issue json)
   "Edit comment with ID in REPO owned by OWNER.
 PARAMS."
   (let* ((id (or id (fj-read-item-comment repo owner issue)))
          (endpoint (format "repos/%s/%s/issues/comments/%s" owner repo id)))
-    (fj-patch endpoint params :json)))
+    (fj-patch endpoint params json)))
 
 (defun fj-issue-comment-edit (&optional repo owner id new-body)
   "Edit comment with ID in REPO.
