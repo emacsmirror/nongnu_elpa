@@ -1058,8 +1058,9 @@ OWNER is the repo owner."
                     fj-user))
          (data (fj-get-item repo owner issue))
          (old-title (alist-get 'title data))
+         (body (alist-get 'body data))
          (new-title (read-string "Edit issue title: " old-title))
-         (response (fj-issue-patch repo owner issue new-title)))
+         (response (fj-issue-patch repo owner issue new-title body)))
     (fedi-http--triage response
                        (lambda (_)
                          (message "issue title edited!")))))
