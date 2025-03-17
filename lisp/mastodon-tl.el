@@ -2186,6 +2186,16 @@ call this function after it is set or use something else."
 This includes the update profile note buffer, but not the preferences one."
   (string-prefix-p "accounts" (mastodon-tl--endpoint nil :no-error)))
 
+(defun mastodon-tl--own-profile-buffer-p ()
+  "Return t if we are viewing our own profile buffer.
+We check that our account credientials id matches the endpoint id in the buffer spec, which if in a profile buffer is of the form \"accounts/$id/statuses\"."
+  (and (mastodon-tl--profile-buffer-p)
+       (let ((endpoint-id
+              (nth 1
+                   (split-string (mastodon-tl--endpoint) "/")))))
+       (string= (mastodon-auth--get-account-id)
+                endpoint-id)))
+
 (defun mastodon-tl--search-buffer-p ()
   "T if current buffer is a search buffer."
   (string-suffix-p "search" (mastodon-tl--endpoint nil :no-error)))
