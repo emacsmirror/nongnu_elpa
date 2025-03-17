@@ -75,3 +75,39 @@
     (with-mock
       (mock (mastodon-client--active-user))
       (should-error (mastodon-auth--access-token)))))
+
+(ert-deftest mastodon-auth-plstore-token-check ()
+  (let ((mastodon-instance-url "https://mastodon.example")
+        (mastodon-active-user "test8000")
+        (user-details ;; order changed for new encrypted auth flow:
+         '( :client_id "id" :client_secret "secret"
+            :access_token "token"
+            :username "test8000@mastodon.example"
+            :instance "https://mastodon.example"))
+        ;; save token to plstore encrypted:
+        (mastodon-auth-use-auth-source nil)) ;; FIXME: test auth source
+    ;; setup plstore: store access token
+    (with-mock
+      (mock (mastodon-client) => '(:client_id "id" :client_secret "secret"))
+      (mock (mastodon-client--token-file) => "stubfile.plstore")
+      (should
+       (equal (mastodon-client--store-access-token "token")
+              user-details))
+      ;; should non-nil if we check with auth-source:
+      ;; because we saved with non auth-source:
+      (should
+       (equal
+        (let ((mastodon-auth-use-auth-source t))
+          (mastodon-auth--plstore-access-token-member :auth-source))
+        '(:secret-access_token t :username "test8000@mastodon.example"
+                               :instance "https://mastodon.example")))
+      ;; should nil if we don't check with auth source:
+      (should
+       (equal
+        (mastodon-auth--plstore-access-token-member)
+        nil)))
+    ;; FIXME: ideally we would also mock up a non-encrypted plstore and
+    ;; test against it too, as that's the work we really want
+    ;; `mastodon-auth--plstore-access-token-member' to do
+    ;; but we don't currently have a way to mock one up.
+    (delete-file "stubfile.plstore")))

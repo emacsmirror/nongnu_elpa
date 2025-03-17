@@ -105,6 +105,7 @@
 
 (defvar mastodon-tl--highlight-current-toot)
 (defvar mastodon-notifications--map)
+(defvar mastodon-client--token-file)
 
 (defvar mastodon-notifications-grouped-types
   '("reblog" "favourite") ;; TODO: implement follow!
@@ -194,6 +195,20 @@ and X others...\"."
   "Quit window and delete helper."
   (interactive)
   (quit-window 'kill))
+
+;;;###autoload
+(defun mastodon-forget-all-logins ()
+  "Delete `mastodon-client--token-file'.
+Also nil `mastodon-auth--token-alist'."
+  (interactive)
+  (when (y-or-n-p "Remove all saved login data?")
+    (if (not (file-exists-p mastodon-client--token-file))
+        (message "No plstore file")
+      (delete-file mastodon-client--token-file)
+      (message "File %s deleted." mastodon-client--token-file))
+    ;; nil some vars too:
+    (setq mastodon-client--active-user-details-plist nil)
+    (setq mastodon-auth--token-alist nil)))
 
 (defvar mastodon-mode-map
   (let ((map (make-sparse-keymap)))
