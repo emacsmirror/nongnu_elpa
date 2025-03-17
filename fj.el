@@ -1514,13 +1514,31 @@ config."
   (if (or current-prefix-arg ;; still allow completing-read a repo
           (not (magit-inside-worktree-p :noerror)))
       (fj-list-issues-do repo) ;; fall back to `fj-user' repos
-    (let* ((url (fj-git-config-remote-url))
-           ;; FIXME: breaks on "gitea@domain.com:username/repo.git":
-           ;; also should we not have a fall back in such cases?
-           (repo-+-owner (last (split-string url "/") 2))
+    ;; FIXME: should we not have a fallback for when this fails?
+    (let* ((repo-+-owner (fj-repo-+-owner-from-git))
            (owner (car repo-+-owner))
            (repo (cadr repo-+-owner)))
       (fj-list-issues-do repo owner))))
+
+(defun fj-repo-+-owner-from-git ()
+  "Return repo and owner from git config.
+Nil if we fail to parse."
+  ;; https://git-scm.com/book/en/v2/Git-on-the-Server-The-Protocols
+  ;; docs are unclear on how to distinguish these!
+  (let ((remote (fj-git-config-remote-url)))
+    (cond
+     ((string-prefix-p "http" remote) ;; http(s)
+      (last (split-string remote "/") 2))
+     ;; git protocol: git:// or git@...?
+     ;; can't just be prefix "git" because that matches ssh gitea@...
+     ((string-prefix-p "git://" remote) ;; git maybe
+      nil) ;;  TODO: git protocol
+     (t ;; ssh (can omit ssh:// prefix)
+      ;; “sshuser@domain.com:username/repo.git”
+      ;; nb sshuser is not the foregejo user!
+      (let* ((split (split-string remote "[@:/]"))
+             (repo (string-trim-right (nth 3 split) ".git")))
+        (list (nth 2 split) repo))))))
 
 (defun fj-list-issues-do (&optional repo owner state type query)
   "Display ISSUES in a tabulated list view.
