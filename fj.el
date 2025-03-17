@@ -1514,6 +1514,8 @@ config."
           (not (magit-inside-worktree-p :noerror)))
       (fj-list-issues-do repo) ;; fall back to `fj-user' repos
     (let* ((url (fj-git-config-remote-url))
+           ;; FIXME: breaks on "gitea@domain.com:username/repo.git":
+           ;; also should we not have a fall back in such cases?
            (repo-+-owner (last (split-string url "/") 2))
            (owner (car repo-+-owner))
            (repo (cadr repo-+-owner)))
