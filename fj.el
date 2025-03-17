@@ -2204,7 +2204,8 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
           (ts (fedi--relative-time-description
                (date-to-time .updated_at)))
           (user (propertize .user.username
-                            'face 'fj-name-face)))
+                            'face 'fj-name-face))
+          (body (mm-url-decode-entities-string .body)))
       (insert
        (propertize
         (pcase .type
@@ -2230,19 +2231,20 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
            (concat
             (format format-str user ts)
             "\n"
-            (fj-propertize-link (fj-get-html-link-desc .body)
-                                'commit-ref .ref_commit_sha)))
+            (fj-propertize-link
+             (url-unhex-string (fj-get-html-link-desc body))
+             'commit-ref .ref_commit_sha)))
           ("issue_ref"
            (format format-str user .repository.full_name ts))
           ("label"
-           (let ((action (if (string= .body "1") "added" "removed")))
+           (let ((action (if (string= body "1") "added" "removed")))
              (format format-str user action .label.name ts)))
           ;; PRs:
           ;; FIXME: reimplement "pull_push" force-push and non-force
           ;; format strings
           ("pull_push"
            (let* ((json-array-type 'list)
-                  (json (json-read-from-string .body))
+                  (json (json-read-from-string body))
                   (commits (alist-get 'commit_ids json))
                   (force
                    (not
