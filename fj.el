@@ -1551,11 +1551,9 @@ QUERY is a search query to filter by."
   (let* ((repo (fj-read-user-repo repo))
          (owner (or owner fj-user))
          (type (or type "issues"))
-         ;; (alist-get 'owner
-         ;; (alist-get 'repository (car issues)))))
          (issues (fj-repo-get-issues repo owner state type query))
          (repo-data (fj-get-repo repo owner))
-         ;; FIXME: pulls:
+         (has-issues (fj-repo-has-items-p type repo-data))
          (url (concat (alist-get 'html_url repo-data)
                       (if (equal type "pulls")
                           "/pulls"
@@ -1565,24 +1563,34 @@ QUERY is a search query to filter by."
          (state-str (or state "open"))
          (wd default-directory)
          (buf-name (format "*fj-%s-%s-%s*" repo state-str type)))
-    (with-current-buffer (get-buffer-create buf-name)
-      (setq tabulated-list-entries
-            (fj-issue-tl-entries issues))
-      (fj-issue-tl-mode)
-      (tabulated-list-init-header)
-      (tabulated-list-print)
-      (setq fj-current-repo repo
-            fj-repo-data repo-data
-            fj-buffer-spec
-            `(:repo ,repo :state ,state-str :owner ,owner :url ,url
-                    :type ,type))
-      ;; ensure our .dir-locals.el settings take effect:
-      ;; via https://emacs.stackexchange.com/questions/13080/reloading-directory-local-variables
-      (setq default-directory wd)
-      (let ((enable-local-variables :all))
-        (hack-dir-local-variables-non-file-buffer))
-      (fj-other-window-maybe
-       prev-buf "-issues*" #'string-suffix-p prev-mode))))
+    (if (not has-issues)
+        (user-error "Repo does not have %s" type)
+      (with-current-buffer (get-buffer-create buf-name)
+        (setq tabulated-list-entries
+              (fj-issue-tl-entries issues))
+        (fj-issue-tl-mode)
+        (tabulated-list-init-header)
+        (tabulated-list-print)
+        (setq fj-current-repo repo
+              fj-repo-data repo-data
+              fj-buffer-spec
+              `(:repo ,repo :state ,state-str :owner ,owner :url ,url
+                      :type ,type))
+        ;; ensure our .dir-locals.el settings take effect:
+        ;; via https://emacs.stackexchange.com/questions/13080/reloading-directory-local-variables
+        (setq default-directory wd)
+        (let ((enable-local-variables :all))
+          (hack-dir-local-variables-non-file-buffer))
+        (fj-other-window-maybe
+         prev-buf "-issues*" #'string-suffix-p prev-mode)))))
+
+(defun fj-repo-has-items-p (type data)
+  "Return t if repo DATA has items of TYPE enabled."
+  (let ((key (if (equal type "pulls")
+                 'has_pull_requests
+               'has_issues)))
+    (eq t ;; i.e. not :json-false
+        (alist-get key data))))
 
 (defun fj-other-window-maybe (prev-buf string suffix-or-prefix
                                        &optional prev-mode)
