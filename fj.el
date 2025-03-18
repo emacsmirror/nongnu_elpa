@@ -258,13 +258,12 @@ NO-JSON means return the raw response."
         ;; call --triage on the result, in case we don't get a 200 response.
         ;; (fj-resp-str resp)
         resp
-      (cond ((or (eq (caar resp) 'errors)
-                 (eq (caar resp) 'message))
-             (user-error "I am Error: %s Endpoint: %s"
-                         (alist-get 'message resp)
-                         endpoint))
-            (t
-             resp)))))
+      (if (or (eq (caar resp) 'errors)
+              (eq (caar resp) 'message))
+          (user-error "I am Error: %s Endpoint: %s"
+                      (alist-get 'message resp)
+                      endpoint)
+        resp))))
 
 (defun fj-resp-str (resp)
   "Return the response string from RESP, an HTTP response buffer."
