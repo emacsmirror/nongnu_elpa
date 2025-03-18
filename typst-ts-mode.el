@@ -223,10 +223,14 @@ The car is used for subscript, the cdr is used for superscripts."
    '((math "$" @typst-ts-math-indicator-face))
 
    :language 'typst
-   :feature 'math-standard
+   :feature 'math-standard  ; part 1
    '((symbol) @font-lock-constant-face
-     (letter) @font-lock-constant-face
-     (attach
+     (letter) @font-lock-constant-face)
+   
+   :language 'typst
+   :feature 'math-standard  ; part 2
+   :override 'append
+   '((attach
       ["^" "_"] @typst-ts-script-char-face
       (_) @typst-ts-mode-render-math-scripts-fn))
 
@@ -268,8 +272,10 @@ If you want to enable/disable specific font lock feature, please change
      ns ne
      `(
        rear-nonsticky (display)
-       display ,display-properties
-       face ,face))))
+       display ,display-properties))
+    (add-face-text-property
+     ns ne
+     face)))
 
 (defun typst-ts-mode-highlight-raw-block-fn (blob-node _override _start _end)
   "A function used in function `typst-ts-mode-font-lock-rules'.
