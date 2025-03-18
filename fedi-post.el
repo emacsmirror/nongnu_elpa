@@ -657,7 +657,11 @@ string, the other elements should be symbols."
         (declare-function company-mode-on "company")
         (set (make-local-variable 'company-backends)
              (add-to-list 'company-backends 'company-capf))
-        (company-mode-on)))
+        (company-mode-on))
+      ;; corfu
+      (when (require 'corfu nil :no-error)
+        (setq-local corfu-auto t)
+        (corfu--on)))
     ;; after-change:
     (make-local-variable 'after-change-functions)
     ;; (cl-pushnew #'fedi-post--save-post-text after-change-functions)
