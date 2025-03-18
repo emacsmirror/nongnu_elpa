@@ -413,16 +413,22 @@ If FILL-PARAGRAPH-P, insert question using `fill-paragraph'."
   (string-remove-prefix "\"" (string-remove-suffix "\"" str)))
 
 (defun gnosis-cloze-create (str clozes &optional cloze-string)
-  "Replace CLOZES in STR with CLOZE-STRING."
+  "Replace CLOZES in STR with CLOZE-STRING, preserving whitespace pattern."
   (cl-assert (listp clozes) nil "Adding clozes: Clozes need to be a list.")
   (let ((cloze-string (or cloze-string gnosis-cloze-string)))
     (with-temp-buffer
       (insert str)
-      (goto-char (point-min))
       (dolist (cloze clozes)
-        (when (search-forward
-	       (gnosis-trim-quotes cloze) nil t)
-          (replace-match (propertize cloze-string 'face 'gnosis-face-cloze) nil t)))
+        (let* ((cloze-text (gnosis-trim-quotes cloze))
+               (replacement (concat
+                             (and (string-match "^\\s-+" cloze-text)
+				  (match-string 0 cloze-text))
+                             (propertize cloze-string 'face 'gnosis-face-cloze)
+                             (and (string-match "\\s-+$" cloze-text)
+				  (match-string 0 cloze-text)))))
+          (goto-char (point-min))
+          (when (search-forward cloze-text nil t)
+            (replace-match replacement t t))))
       (buffer-string))))
 
 (defun gnosis-cloze-add-hints (str hints &optional cloze-string)
