@@ -126,6 +126,11 @@ authorization token of the foregejo instance.
 If set to nil, you need to set `fj-token' to your user token."
   :type 'boolean)
 
+(defcustom fj-use-emojify t
+  "Whether to enable `emojify-mode' in item views.
+This will not install emojify for you, you have to do that yourself."
+  :type 'boolean)
+
 ;;; FACES
 
 (defface fj-comment-face
@@ -1986,7 +1991,10 @@ RELOAD mean we reloaded."
                         :author ,.user.username :title ,.title
                         :body ,.body :url ,.html_url))
           ;; timeline items:
-          (fj-render-timeline timeline .user.username owner))))))
+          (fj-render-timeline timeline .user.username owner)
+          (when (and fj-use-emojify
+                     (require 'emojify nil :noerror))
+            (emojify-mode t)))))))
 
 (defun fj-item-view (&optional repo owner number reload pull)
   "View item NUMBER from REPO of OWNER.
