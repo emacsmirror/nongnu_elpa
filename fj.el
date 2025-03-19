@@ -246,7 +246,9 @@ Requires `fj-token' to be set."
          (url-request-extra-headers
           (unless ,unauthenticated-p
             (list (cons "Authorization"
-                        (concat "token " (fj-token)))))))
+                        (concat "token "
+                                (encode-coding-string
+                                 (fj-token) 'utf-8)))))))
      ,body))
 
 (defun fj-get (endpoint &optional params no-json)
