@@ -95,6 +95,8 @@ etc."
 
 (defvar-local fj-compose-issue-number nil)
 
+(defvar-local fj-compose-issue-labels nil)
+
 ;; instance vars
 
 (defvar fj-commit-status-types
@@ -1017,13 +1019,16 @@ If TYPE is :pull, get a pull request, not issue."
 ;;                          (message "issue %s created!" title)
 ;;                          (fj-issues-tl-reload)))))
 
-(defun fj-issue-post (repo user title body)
+(defun fj-issue-post (repo user title body &optional labels)
   "POST a new issue to REPO owned by USER.
-TITLE and BODY are the parts of the issue to send."
+TITLE and BODY are the parts of the issue to send.
+LABELS is a list of label names."
   (let ((url (format "repos/%s/%s/issues" user repo))
         (params `(("body" . ,body)
-                  ("title" . ,title))))
-    (fj-post url params)))
+                  ("title" . ,title)
+                  ("labels" . ,(cl-loop for x in labels
+                                        collect (cdr x))))))
+    (fj-post url params :json)))
 
 (defun fj-issue-patch (repo owner issue &optional title body state)
   "PATCH/Edit ISSUE in REPO.
@@ -1264,6 +1269,22 @@ NEW-BODY is the new comment text to send."
          (url (format "repos/%s/%s/issues/%s/labels" owner repo issue)))
     (fj-get url)))
 
+(defun fj-issue-read-label (&optional repo owner issue id)
+  "Read a label in the minibuffer and return it.
+Labels for REPO by OWNER.
+Return its name, or if ID, return a cons of its name and id."
+  (let* ((labels (fj-repo-get-labels repo owner))
+         (pairs (fj--map-alist-to-cons labels 'name 'id))
+         (choice
+          (if issue
+              (completing-read
+               (format "Add label to #%s: " issue)
+               pairs)
+            (completing-read "Add label: " pairs))))
+    (if id
+        (assoc choice pairs #'string=)
+      choice)))
+
 (defun fj-issue-label-add (&optional repo owner issue)
   "Add a label to ISSUE in REPO by OWNER."
   (interactive)
@@ -1273,15 +1294,10 @@ NEW-BODY is the new comment text to send."
                     (fj-read-repo-issue repo)))
          (owner (or owner fj-user)) ;; FIXME owner
          (url (format "repos/%s/%s/issues/%s/labels" owner repo issue))
-         (repo-labels (fj--map-alist-key
-                       (fj-repo-get-labels repo owner)
-                       'name))
          (issue-labels (fj--map-alist-key
                         (fj-issue-get-labels repo owner issue)
                         'name))
-         (choice (completing-read
-                  (format "Add label to #%s: " issue)
-                  repo-labels))
+         (choice (fj-issue-read-label repo owner issue))
          (params `(("labels" . ,(cl-pushnew choice issue-labels
                                             :test #'equal))))
          (resp (fj-post url params :json)))
@@ -2906,7 +2922,8 @@ Optionally set PAGE and LIMIT."
   :doc "Keymap for `fj-compose-mode'."
   :parent fj-compose-comment-mode-map
   "C-c C-t" #'fj-compose-read-title
-  "C-c C-r" #'fj-compose-read-repo)
+  "C-c C-r" #'fj-compose-read-repo
+  "C-c C-l" #'fj-compose-read-labels)
 
 (define-minor-mode fj-compose-mode
   "Minor mode for composing issues and comments."
@@ -2927,6 +2944,16 @@ Optionally set PAGE and LIMIT."
   (setq fj-compose-issue-title
         (read-string "Title: "
                      fj-compose-issue-title))
+  (fedi-post--update-status-fields))
+
+(defun fj-compose-read-labels ()
+  "Read a label in the issue compose buffer."
+  (interactive)
+  ;; FIXME: we need to store conses of (name . id), then patch fedi.el to
+  ;; display the in the compose docs but submit the latter to the server.
+  (cl-pushnew (fj-issue-read-label nil nil nil :id)
+              fj-compose-issue-labels
+              :test #'equal)
   (fedi-post--update-status-fields))
 
 (defun fj-issue-compose (&optional edit mode type init-text)
@@ -2956,6 +2983,10 @@ Inject INIT-TEXT into the buffer, for editing."
        ((name . ,(if (eq type 'comment) "issue ""title"))
         (prop . compose-title)
         (item-var . fj-compose-issue-title)
+        (face . fj-post-title-face))
+       ((name . "labels")
+        (prop . compose-labels)
+        (item-var . fj-compose-issue-labels)
         (face . fj-post-title-face)))
      init-text quote)
     (setq fj-compose-item-type
@@ -3003,7 +3034,8 @@ Call response and update functions."
                 (_ ; new issue
                  (fj-issue-post repo
                                 fj-compose-repo-owner
-                                fj-compose-issue-title body)))))
+                                fj-compose-issue-title body
+                                fj-compose-issue-labels)))))
         (when response
           (with-current-buffer buf
             (fedi-post-kill))
