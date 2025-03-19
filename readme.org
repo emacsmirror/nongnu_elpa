@@ -40,7 +40,7 @@ Current repository detection should work partially automatically. If you find yo
 
 Forgejo's API is vast. Currently =fj.el= just implements a few basic things:
 
-** repos and repo listings:
+** repos and repo listings
 - create new repo
 - delete a repo
 
@@ -55,8 +55,7 @@ Forgejo's API is vast. Currently =fj.el= just implements a few basic things:
 - list repo's stargazers
 - list repo's watchers
 
-** rich create/edit issue/comment interface.
-
+** rich create/edit issue/comment interface
 ** issues/PRs as listings
 - list repo issues and PRs
 - list issues in any repo you own
@@ -175,12 +174,14 @@ Repo settings transient:
 | C-c C-k   | fj-compose-cancel                | Kill new-post buffer/window. Does not POST content.                 |
 |           | fj-compose-comment-mode          | Minor mode for composing comments.                                  |
 |           | fj-compose-mode                  | Minor mode for composing issues and comments.                       |
+| C-c C-l   | fj-compose-read-labels           | Read a label in the issue compose buffer.                           |
 | C-c C-r   | fj-compose-read-repo             | Read a repo for composing a issue or comment.                       |
 | C-c C-t   | fj-compose-read-title            | Read an issue title.                                                |
 |           | fj-compose-send                  | Submit the issue or comment to your Forgejo instance.               |
 | C         | fj-copy-item-url                 | Copy URL of current item, either issue or PR.                       |
 |           | fj-copy-pr-url                   | Copy upstream Pull Request URL with branch name.                    |
 | c         | fj-create-issue                  | Create issue in current repo or repo at point in tabulated listing. |
+|           | fj-create-token                  | Create an access token for `fj-user' on `fj-host'.                  |
 |           | fj-delete-repo                   | Delete repo at point, if you are its owner.                         |
 |           | fj-delete-repo-tag               | Prompt for a repo tag and delete it on the server.                  |
 | <return>  | fj-do-link-action                | Do the action of the link at POS.                                   |
@@ -229,6 +230,10 @@ Repo settings transient:
 |           | fj-list-issues-do                | Display ISSUES in a tabulated list view.                            |
 |           | fj-list-issues-search            | Search current repo issues for QUERY.                               |
 |           | fj-list-own-issues               | List issues in repos owned by `fj-user'.                            |
+|           | fj-list-own-items                | List items of TYPE in repos owned by `fj-user'.                     |
+|           | fj-list-own-items-state-cycle    | Cycle item state listing of open, closed, and all.                  |
+|           | fj-list-own-items-type-cycle     | Cycle item type listing of issues, pulls, and all.                  |
+|           | fj-list-own-pulls                | List pulls in repos owned by `fj-user'.                             |
 | O         | fj-list-own-repos                | List repos for `fj-user'.                                           |
 | P         | fj-list-pulls                    | List pulls for REPO by OWNER, filtered by STATE.                    |
 |           | fj-list-repos                    | List repos for `fj-user' extended by `fj-extra-repos'.              |
@@ -267,6 +272,7 @@ Repo settings transient:
 |           | fj-starred-repos                 | List your starred repos.                                            |
 | /         | fj-switch-to-buffer              | Switch to a live fj buffer.                                         |
 | B         | fj-tl-browse-entry               | Browse URL of tabulated list entry at point.                        |
+|           | fj-token                         | Fetch user access token from auth source, or try to add one.        |
 |           | fj-update-repo                   | Update current repo settings.                                       |
 |           | fj-update-topics                 | Update repo topics on the server.                                   |
 | U         | fj-update-user-settings          | Update current user settings on the server.                         |
