@@ -1247,6 +1247,76 @@ NEW-BODY is the new comment text to send."
                        (lambda (_)
                          (message "comment edited!")))))
 
+;;; ISSUE/COMMENT REACTIONS
+
+(defun fj-get-issue-reactions (id)
+  "Return reactions data for comment with ID."
+  ;; GET /repos/{owner}/{repo}/issues/{index}/reactions
+  (fj-with-item-view
+   (fj-destructure-buf-spec (owner repo)
+     (let ((endpoint (format "repos/%s/%s/issues/%s/reactions"
+                             owner repo id)))
+       (fj-get endpoint)))))
+
+(defun fj-get-comment-reactions (id)
+  "Return reactions data for comment with ID."
+  ;; GET /repos/{owner}/{repo}/issues/comments/{id}/reactions
+  (fj-with-item-view
+   (fj-destructure-buf-spec (owner repo)
+     (let ((endpoint (format "repos/%s/%s/issues/comments/%s/reactions"
+                             owner repo id)))
+       (fj-get endpoint)))))
+
+(defun fj-render-issue-reactions (id)
+  "Render reactions for issue with ID.
+If none, return emptry string."
+  (if-let* ((reactions (fj-get-issue-reactions id))
+            (grouped (fj-group-reactions reactions)))
+      (concat fedi-horiz-bar "\n"
+              (mapconcat #'fj-render-grouped-reaction
+                         grouped " "))
+    ""))
+
+(defun fj-render-comment-reactions (id)
+  "Render reactions for comment with ID.
+If none, return emptry string."
+  (if-let* ((reactions (fj-get-comment-reactions id))
+            (grouped (fj-group-reactions reactions)))
+      (concat fedi-horiz-bar "\n"
+              (mapconcat #'fj-render-grouped-reaction
+                         grouped " "))
+    ""))
+
+(defun fj-group-reactions (data)
+  "Return an alist of reacting users keyed by emoji.
+DATA is a list of single reactions."
+  (let ((emoji (cl-remove-duplicates
+                (cl-loop for x in data
+                         collect (alist-get 'content x))
+                :test #'string=)))
+    (cl-loop
+     for x in emoji
+     collect
+     (cons x
+           (cl-loop
+            for y in data
+            when (equal x (alist-get 'content y))
+            collect (map-nested-elt y '(user username)))))))
+
+(defun fj-render-grouped-reaction (group)
+  "Render a grouped reaction GROUP."
+  (let ((count (number-to-string
+                (length (cdr group)))))
+    (propertize
+     (format
+      ":%s:%s"
+      (car group)
+      (propertize
+       (concat " " count)
+       'help-echo
+       (mapconcat #'identity
+                  (cdr group) " "))))))
+
 ;;; ISSUE LABELS
 ;; TODO: - reload issue on add label
 ;;       - display label desc help-echo
@@ -1856,7 +1926,7 @@ AUTHOR is of comment, OWNER is of repo."
          stamp)
         "\n\n"
         (fj-render-body .body comment) "\n"
-        (fj-render-reactions .id) "\n"
+        (fj-render-comment-reactions .id) "\n"
         fedi-horiz-bar fedi-horiz-bar)
        'fj-comment comment
        'fj-comment-author .user.username
@@ -1885,32 +1955,6 @@ AUTHOR is the author of the parent issue.
 OWNER is the repo owner."
   (cl-loop for c in comments
            concat (fj-format-comment c author owner)))
-
-(defun fj-render-reactions (id)
-  "Render reactions for comment with ID."
-  (when-let* ((reactions (fj-get-comment-reactions id)))
-    (concat fedi-horiz-bar "\n"
-            (mapconcat #'fj-render-reaction
-                       reactions
-                       " "))))
-
-(defun fj-render-reaction (reaction)
-  "Render REACTION as a string."
-  (let ((user (map-nested-elt reaction '(user login))))
-    (propertize
-     (concat ":"
-             (alist-get 'content reaction)
-             ":")
-     'help-echo user))) ;; broken by emojify
-
-(defun fj-get-comment-reactions (id)
-  "Return reactions data for comment with ID."
-  ;; GET /repos/{owner}/{repo}/issues/comments/{id}/reactions
-  (fj-with-item-view
-   (fj-destructure-buf-spec (owner repo)
-     (let ((endpoint (format "repos/%s/%s/issues/comments/%s/reactions"
-                             owner repo id)))
-       (fj-get endpoint)))))
 
 (defun fj-prop-item-flag (str)
   "Propertize STR as author face in box."
@@ -1953,7 +1997,14 @@ RELOAD mean we reloaded."
         (let ((stamp (fedi--relative-time-description
                       (date-to-time .created_at)))
               (pull-p .base)) ;; rough PR check!
-          .is_locked
+          ;; set vars before timeline so they're avail:
+          (setq fj-current-repo repo)
+          (setq fj-buffer-spec
+                `(:repo ,repo :owner ,owner :item ,number
+                        :type ,(if pull-p :pull :issue)
+                        :author ,.user.username :title ,.title
+                        :body ,.body :url ,.html_url))
+          ;; .is_locked
           (setq header-line-format
                 `("" header-line-indent
                   ,(concat "#" (number-to-string .number) " "
@@ -2003,17 +2054,12 @@ RELOAD mean we reloaded."
              "\n\n"
              (fj-render-body .body item)
              "\n"
-             fedi-horiz-bar "\n\n")
+             (fj-render-issue-reactions .number)
+             "\n"
+             fedi-horiz-bar fedi-horiz-bar "\n\n")
             'fj-item-number number
             'fj-repo repo
             'fj-item-data item))
-          ;; set vars before timeline so they're avail:
-          (setq fj-current-repo repo)
-          (setq fj-buffer-spec
-                `(:repo ,repo :owner ,owner :item ,number
-                        :type ,(if pull-p :pull :issue)
-                        :author ,.user.username :title ,.title
-                        :body ,.body :url ,.html_url))
           ;; timeline items:
           (fj-render-timeline timeline .user.username owner)
           (when (and fj-use-emojify
