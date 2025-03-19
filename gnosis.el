@@ -487,10 +487,7 @@ Applies highlighting for CORRECT & FALSE."
 	 (str-with-c-answers
 	  (gnosis-cloze-mark-answers str-with-hints correct 'gnosis-face-correct))
 	 (final (gnosis-cloze-mark-false str-with-c-answers false)))
-    (erase-buffer)
-    (insert "\n" (gnosis-center-string final))
-    (gnosis-insert-separator)
-    (gnosis-apply-syntax-overlay)))
+    (gnosis-display-keimenon final)))
 
 (defun gnosis-display-basic-answer (answer success user-input)
   "Display ANSWER.
