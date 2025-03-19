@@ -1887,15 +1887,20 @@ OWNER is the repo owner."
 
 (defun fj-render-reactions (id)
   "Render reactions for comment with ID."
-  (mapconcat (lambda (x)
-               (let ((user (map-nested-elt x '(user login))))
-                 (propertize
-                  (concat ":"
-                          (alist-get 'content x)
-                          ":")
-                  'help-echo user))) ;; broken by emojify
-             (fj-get-comment-reactions id)
-             " "))
+  (when-let* ((reactions (fj-get-comment-reactions id)))
+    (concat fedi-horiz-bar "\n"
+            (mapconcat #'fj-render-reaction
+                       reactions
+                       " "))))
+
+(defun fj-render-reaction (reaction)
+  "Render REACTION as a string."
+  (let ((user (map-nested-elt reaction '(user login))))
+    (propertize
+     (concat ":"
+             (alist-get 'content reaction)
+             ":")
+     'help-echo user))) ;; broken by emojify
 
 (defun fj-get-comment-reactions (id)
   "Return reactions data for comment with ID."
