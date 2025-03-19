@@ -393,7 +393,7 @@ This will not be applied to sentences that start with double space."
 
 If FILL-PARAGRAPH-P, insert question using `fill-paragraph'."
   (erase-buffer)
-  (insert "\n" (replace-regexp-in-string "\n" "" str))
+  (insert "\n" (replace-regexp-in-string "\n" " " str))
   (fill-paragraph)
   (gnosis-insert-separator)
   (gnosis-apply-center-buffer-overlay)
