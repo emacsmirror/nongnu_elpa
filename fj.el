@@ -1697,6 +1697,7 @@ TYPE is the item type."
     ('fj-users-mode (fj-users-reload))
     ('fj-owned-issues-tl-mode
      (fj-list-own-issues))
+    ('fj-commits-mode (fj-repo-commit-log))
     (_ (user-error "Reload not implemented yet"))))
 
 (defun fj-users-reload ()
