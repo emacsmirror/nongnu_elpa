@@ -2243,6 +2243,12 @@ ENDPOINT is the API endpoint to hit."
             (branch (unless (eq major-mode 'fj-issue-tl-mode)
                       (map-nested-elt data '(base label))))
             (branch-str (if branch (concat " " branch) ""))
+            ;; FIXME: If not mergeable, then must do manual merge. but if
+            ;; manual/local merge gets done and pushed, does foregejo
+            ;; update the status of mergeable? if so we can user-error on
+            ;; not merbeable, else we have to y-or-n-p only, but also only
+            ;; allow merge-type to be manually-merged
+            (mergeable (not (eq :json-false (alist-get 'mergeable data))))
             (merge-type (completing-read "Merge type: " fj-merge-types))
             (merge-commit (when (equal merge-type "manually-merged")
                             (read-string "Merge commit: "))))
