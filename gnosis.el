@@ -2517,10 +2517,12 @@ If STRING-SECTION is nil, apply FACE to the entire STRING."
 	 (ids (plist-get current-values :ids)))
     (cond ((eq type 'notes)
 	   (gnosis-dashboard-output-notes ids))
-	  ((eq type 'decks )
+	  ((eq type 'decks)
 	   (gnosis-dashboard-output-decks))
-	  ((eq type 'tags )
-	   (gnosis-dashboard-output-tags)))))
+	  ((eq type 'tags)
+	   (gnosis-dashboard-output-tags))
+	  ((eq type 'history)
+	   (gnosis-dashboard-history)))))
 
 (defun gnosis-dashboard--streak (dates &optional num date)
   "Return current review streak number as a string.
@@ -2806,10 +2808,44 @@ When called with called with a prefix, unsuspend all notes of deck."
   (let ((deck-id (or deck-id (string-to-number (tabulated-list-get-id)))))
     (gnosis-dashboard-output-notes (gnosis-collect-note-ids :deck deck-id))))
 
+(defun gnosis-dashboard-history (&optional history)
+  "Display review HISTORY."
+  (interactive)
+  (let* ((history (or history
+		      (gnosis-select '[date reviewed-total reviewed-new]
+				     'activity-log)))
+	 (buffer (get-buffer-create "*Gnosis History*")))
+    (with-current-buffer buffer
+      (let ((inhibit-read-only t))
+	(erase-buffer))
+      (tabulated-list-mode)
+      (setq tabulated-list-format
+            `[("Date" ,(/ (window-width) 6) t)
+              ("Total Reviews" ,(/ (window-width) 6) gnosis-dashboard-sort-total-notes)
+              ("New" ,(/ (window-width) 6) gnosis-dashboard-sort-total-notes)])
+      (make-local-variable 'tabulated-list-entries)
+      (setq tabulated-list-entries
+            (cl-loop for entry in history
+                     collect (list (car entry)
+                                   (vector (propertize
+					    (format "%04d/%02d/%02d"
+						    (nth 0 (car entry))
+						    (nth 1 (car entry))
+						    (nth 2 (car entry)))
+					    'face 'org-date)
+                                           (number-to-string (cadr entry))
+                                           (number-to-string (caddr entry))))))
+      (tabulated-list-init-header)
+      (tabulated-list-print t)
+      (setq gnosis-dashboard--current
+	    '(:type history)))
+    (pop-to-buffer buffer)))
+
 (defvar-keymap gnosis-dashboard-mode-map
   :doc "gnosis-dashboard keymap"
   "q" #'quit-window
   "h" #'gnosis-dashboard-menu
+  "H" #'gnosis-dashboard-history
   "r" #'gnosis-review
   "a" #'gnosis-add-note
   "A" #'gnosis-add-deck
@@ -2930,7 +2966,9 @@ DASHBOARD-TYPE: either Notes or Decks to display the respective dashboard."
 		    (gnosis-collect-note-ids))))
     ("d" "Decks" gnosis-dashboard-suffix-decks)
     ("t" "Tags" (lambda () (interactive)
-		  (gnosis-dashboard-output-tags)))]])
+		  (gnosis-dashboard-output-tags)))]
+   ["History"
+    ("H" "View Review History" gnosis-dashboard-history)]])
 
 ;;;###autoload
 (defun gnosis-dashboard ()
