@@ -2191,9 +2191,9 @@ Optionally, provide the commit's SHA."
   "View a diff of the entire current PR."
   (interactive)
   (fj-with-pull
-   (fj-destructure-buf-spec (repo owner id)
+   (fj-destructure-buf-spec (repo owner item)
      (let* ((endpoint (format "repos/%s/%s/pulls/%s.diff"
-                              owner repo id)))
+                              owner repo item)))
        (fj-view-item-diff endpoint)))))
 
 (defun fj-view-item-diff (endpoint)
@@ -2208,7 +2208,7 @@ ENDPOINT is the API endpoint to hit."
          (kill-buffer buf))
        (with-current-buffer (get-buffer-create buf)
          (erase-buffer)
-         (insert resp)
+         (insert (fj-resp-str resp))
          (setq buffer-read-only t)
          (goto-char (point-min))
          (switch-to-buffer-other-window (current-buffer))
@@ -2220,9 +2220,9 @@ ENDPOINT is the API endpoint to hit."
   "Return the data for the commits of the current pull."
   (interactive)
   (fj-with-pull
-   (fj-destructure-buf-spec (repo owner id)
+   (fj-destructure-buf-spec (repo owner item)
      (let* ((endpoint (format "/repos/%s/%s/pulls/%s/commits"
-                              owner repo id)))
+                              owner repo item)))
        (fj-get endpoint)))))
 
 (defun fj-merge-pull ()
