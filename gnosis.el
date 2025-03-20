@@ -2628,16 +2628,14 @@ Skips days where no note was reviewed."
         tabulated-list-entries nil)
   (make-local-variable 'tabulated-list-entries)
   (tabulated-list-init-header)
-  (let ((inhibit-read-only t))
+  (let ((inhibit-read-only t)
+	(entries (gnosis-dashboard--output-notes note-ids)))
     (erase-buffer)
-    (insert (format "Loading %s notes..." (length note-ids))))
-  (run-with-timer 0.1 nil
-                  (lambda ()
-                    (let ((entries (gnosis-dashboard--output-notes note-ids)))
-                      (with-current-buffer gnosis-dashboard-buffer-name
-                        (setq tabulated-list-entries entries)
-                        (tabulated-list-print t)
-                        (setf gnosis-dashboard--current `(:type notes :ids ,note-ids)))))))
+    (insert (format "Loading %s notes..." (length note-ids)))
+    (setq tabulated-list-entries entries)
+    (tabulated-list-print t)
+    (setf gnosis-dashboard--current
+	  `(:type notes :ids ,note-ids))))
 
 (defun gnosis-dashboard-deck-note-count (id)
   "Return total note count for deck with ID."
