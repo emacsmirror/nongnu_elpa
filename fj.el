@@ -2968,6 +2968,18 @@ Optionally set PAGE and LIMIT."
 
 (defalias 'fj-compose-cancel #'fedi-post-cancel)
 
+(defun fj-match-next-issue (limit)
+  "A match function for `fj-add-font-lock-keywords'.
+LIMIT is for `re-search-forward''s bound argument."
+  (re-search-forward "#[[:digit:]]+" limit :no-error))
+
+(defun fj-add-font-lock-keywords ()
+  "Add a font-lock keyword to highlight #123 as issue ref."
+  (font-lock-add-keywords
+   nil ;; = current buffer
+   '((fj-match-next-issue 0 ; limit (actually match number?!)
+                          'markdown-html-tag-name-face))))
+
 (defvar-keymap fj-compose-comment-mode-map
   :doc "Keymap for `fj-compose-comment-mode'."
   "C-c C-k" #'fj-compose-cancel
@@ -2976,7 +2988,8 @@ Optionally set PAGE and LIMIT."
 (define-minor-mode fj-compose-comment-mode
   "Minor mode for composing comments."
   :keymap fj-compose-comment-mode-map
-  :global nil)
+  :global nil
+  (fj-add-font-lock-keywords))
 
 (defvar-keymap fj-compose-mode-map
   :doc "Keymap for `fj-compose-mode'."
@@ -2986,9 +2999,10 @@ Optionally set PAGE and LIMIT."
   "C-c C-l" #'fj-compose-read-labels)
 
 (define-minor-mode fj-compose-mode
-  "Minor mode for composing issues and comments."
+  "Minor mode for composing issues."
   :keymap fj-compose-mode-map
-  :global nil)
+  :global nil
+  (fj-add-font-lock-keywords))
 
 (defun fj-compose-read-repo ()
   "Read a repo for composing a issue or comment."
