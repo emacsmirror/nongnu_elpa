@@ -2062,6 +2062,8 @@ RELOAD mean we reloaded."
             'fj-item-data item))
           ;; timeline items:
           (fj-render-timeline timeline .user.username owner)
+          (when (eq :json-false .mergeable)
+            (insert "This PR has changes conflicting with the target branch."))
           (when (and fj-use-emojify
                      (require 'emojify nil :noerror))
             (emojify-mode t)))))))
