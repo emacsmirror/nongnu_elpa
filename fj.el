@@ -1313,6 +1313,7 @@ DATA is a list of single reactions."
       (car group)
       (propertize
        (concat " " count)
+       'face 'fj-user-face
        'help-echo
        (mapconcat #'identity
                   (cdr group) " "))))))
