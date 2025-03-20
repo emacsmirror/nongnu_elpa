@@ -316,11 +316,11 @@ PARAMS are query params unless JSON."
     (fj-authorized-request "PATCH"
       (fedi-http--patch url params json))))
 
-(defun fj-delete (endpoint)
+(defun fj-delete (endpoint &optional params json)
   "Make a DELETE request to ENDPOINT."
   (let ((url (fj-api endpoint)))
     (fj-authorized-request "DELETE"
-      (fedi-http--delete url))))
+      (fedi-http--delete url params json))))
 
 ;;; INSTANCE SETTINGS
 ;; https://forgejo.org/docs/latest/user/api-usage/#pagination
@@ -1317,6 +1317,67 @@ DATA is a list of single reactions."
        'help-echo
        (mapconcat #'identity
                   (cdr group) " "))))))
+
+;; create reactions
+
+(defvar fj-base-reactions
+  ;; TODO: render these during completion (:rocket: style emoji)
+  '("laugh" "hooray" "+1" "-1" "confused" "heart" "rocket" "eyes")
+  "Reactions as per the WebUI.
+ Not sure what the server actually accepts.")
+
+(defun fj-add-reaction ()
+  "Add reaction to issue, PR or comment at point."
+  ;; POST /repos/{owner}/{repo}/issues/[comments/]{id}/reactions
+  (interactive)
+  (fj-with-item-view
+   (fj-destructure-buf-spec (owner repo)
+     (let ((data (fedi--property 'fj-item-data)))
+       (let-alist data
+         (let* ((reac (completing-read "Reaction: " fj-base-reactions))
+                (endpoint
+                 (format (if (string= "comment" .type)
+                             "repos/%s/%s/issues/comments/%s/reactions"
+                           "repos/%s/%s/issues/%s/reactions")
+                         owner repo .id))
+                (params `(("content" . ,reac)))
+                (resp (fj-post endpoint params :json)))
+           (fedi-http--triage
+            resp
+            (lambda (_resp)
+              (message "Reaction %s created!" reac)))))))))
+
+(defun fj-item-own-reactions ()
+  "Return a list of `fj-user's reactions of the item at point."
+  (cl-loop for x in (fedi--property 'fj-reactions)
+           when (string= fj-user
+                         (map-nested-elt x '(user username)))
+           collect (alist-get 'content x)))
+
+(defun fj-remove-reaction ()
+  "Remove a reaction from issue, PR or comment at point."
+  ;; DELETE /repos/{owner}/{repo}/issues/[comments/]{id}/reactions
+  ;; FIXME: deletes all `fj-user's reactions. poss API issue?
+  (interactive)
+  (fj-with-item-view
+   (fj-destructure-buf-spec (owner repo)
+     (let ((data (fedi--property 'fj-item-data))
+           (own (fj-item-own-reactions)))
+       (if (not own)
+           (user-error "No own reactions here?")
+         (let-alist data
+           (let* ((reac (completing-read "Reaction: " own))
+                  (endpoint
+                   (format (if (string= "comment" .type)
+                               "repos/%s/%s/issues/comments/%s/reactions"
+                             "repos/%s/%s/issues/%s/reactions")
+                           owner repo .id))
+                  (params `(("content" . ,reac)))
+                  (resp (fj-delete endpoint params :json)))
+             (fedi-http--triage
+              resp
+              (lambda (_resp)
+                (message "Reaction %s removed!" reac))))))))))
 
 ;;; ISSUE LABELS
 ;; TODO: - reload issue on add label
