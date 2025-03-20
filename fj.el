@@ -3047,8 +3047,8 @@ Inject INIT-TEXT into the buffer, for editing."
      (or mode #'fj-compose-mode)
      (when mode "fj-compose")
      (or type 'issue)
-     (list #'fj-compose-mentions-capf
-           #'fj-compose-issues-capf)
+     (list #'fj-compose-mentions-capf)
+     ;; #'fj-compose-issues-capf
      ;; TODO: why not have a compose-buffer-spec rather than 10 separate vars?
      `(((name . "repo")
         (prop . compose-repo)
@@ -3180,23 +3180,23 @@ Optionally set LIMIT to results."
                                   "all")))
     (fj-issues-alist resp)))
 
-(defun fj-compose-issues-capf ()
-  "Build an issues completion backend for `completion-at-point-functions'."
-  (fedi-post--return-capf fedi-post-tag-regex
-                          #'fj-compose-issues-fun
-                          #'fj--issues-annot-fun nil
-                          #'fj-compose-issue-exit-fun))
+;; (defun fj-compose-issues-capf ()
+;;   "Build an issues completion backend for `completion-at-point-functions'."
+;;   (fedi-post--return-capf fedi-post-tag-regex
+;;                           #'fj-compose-issues-fun
+;;                           #'fj--issues-annot-fun nil
+;;                           #'fj-compose-issue-exit-fun))
 
-(defun fj--issues-annot-fun (candidate)
-  "Given an issues completion CANDIDATE, return its annotation."
-  (concat " " (cdr (assoc candidate fedi-post-completions #'equal))))
+;; (defun fj--issues-annot-fun (candidate)
+;;   "Given an issues completion CANDIDATE, return its annotation."
+;;   (concat " " (cdr (assoc candidate fedi-post-completions #'equal))))
 
-(defun fj-compose-issue-exit-fun (str _status)
-  "Mark completion STR as verbatim."
-  (save-excursion
-    (backward-char (length str))
-    (insert "`"))
-  (insert "`"))
+;; (defun fj-compose-issue-exit-fun (str _status)
+;;   "Mark completion STR as verbatim."
+;;   (save-excursion
+;;     (backward-char (length str))
+;;     (insert "`"))
+;;   (insert "`"))
 
 ;;; NOTIFICATIONS
 
