@@ -3706,5 +3706,24 @@ Returns a list of strings."
        (lambda (_)
          (message "Tag %s deleted!" choice))))))
 
+;;; BROWSE DATA
+
+(defun fj-browse-item-data (&optional property)
+  "Browse the JSON data of item at point.
+Browse PROPERTY or else fj-item-data."
+  (interactive)
+  (let* ((prop (or property 'fj-item-data))
+         (data (fedi--property prop)))
+    (if (not data)
+        (user-error "No property found: %s" prop)
+      (with-current-buffer (get-buffer-create "*fj.el-json*")
+        (insert
+         (prin1-to-string data))
+        (emacs-lisp-mode)
+        (pp-buffer)
+        (setq buffer-read-only t)
+        (goto-char (point-min))
+        (switch-to-buffer (current-buffer))))))
+
 (provide 'fj)
 ;;; fj.el ends here
