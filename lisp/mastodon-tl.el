@@ -171,7 +171,7 @@ nil."
     (status                . ("✍" . "[posted]"))
     (replied               . ("⬇" . "↓"))
     (reply-bar             . ("┃" . "|"))
-    (poll                  . ("📊" . ""))
+    (poll                  . ("📊" . "[poll]"))
     (follow                . ("👤" . "+"))
     (follow_request        . ("👤" . "+"))
     (severed_relationships . ("🔗" . "//"))
@@ -1461,7 +1461,9 @@ LENGTH is of the longest option, for formatting."
     (let* ((options (mastodon-tl--map-alist 'title .options))
            (longest (car (sort (mapcar #'length options ) #'>)))
            (counter 0))
-      (concat "\nPoll: \n\n"
+      (concat "\n"
+              (mastodon-tl--symbol 'poll)
+              "\n\n"
               (mapconcat (lambda (option)
                            (setq counter (1+ counter))
                            (mastodon-tl--format-poll-option
