@@ -78,14 +78,6 @@ between two strings to consider them as similar."
   "Run `vc-push' at the end of every review session."
   :type 'boolean)
 
-(defcustom gnosis-mcq-display-choices nil
-  "When t, display choices for mcq notes during review.
-
-Users that use a completion framework like ivy/helm/vertico may want
-to set this to nil, as the choices will be displayed in the completion
-framework's minibuffer."
-  :type 'boolean)
-
 (defcustom gnosis-completing-read-function
   (cond ((or (bound-and-true-p ivy-mode)
 	     (bound-and-true-p helm-mode)
