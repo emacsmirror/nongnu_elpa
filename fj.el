@@ -2969,7 +2969,7 @@ Optionally set PAGE and LIMIT."
 (defalias 'fj-compose-cancel #'fedi-post-cancel)
 
 (defun fj-match-next-issue (limit)
-  "A match function for `fj-add-font-lock-keywords'.
+  "A font-lock match function for issue references.
 LIMIT is for `re-search-forward''s bound argument."
   (re-search-forward "#[[:digit:]]+" limit :no-error))
 
@@ -2977,8 +2977,14 @@ LIMIT is for `re-search-forward''s bound argument."
   "Add a font-lock keyword to highlight #123 as issue ref."
   (font-lock-add-keywords
    nil ;; = current buffer
-   '((fj-match-next-issue 0 ; limit (actually match number?!)
-                          'fj-item-face))))
+   '((fj-match-next-issue 0 ; = limit (actually match number?!)
+                          'fj-item-face)
+     (fj-match-next-handle 0 'fj-user-face))))
+
+(defun fj-match-next-handle (limit)
+  "A font-lock match function for handles.
+LIMIT is for `re-search-forward''s bound argument."
+  (re-search-forward "@[[:alnum:]_-]+" limit :no-error))
 
 (defvar-keymap fj-compose-comment-mode-map
   :doc "Keymap for `fj-compose-comment-mode'."
