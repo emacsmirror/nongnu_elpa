@@ -1248,6 +1248,7 @@ NEW-BODY is the new comment text to send."
                          (message "comment edited!")))))
 
 ;;; ISSUE/COMMENT REACTIONS
+;; render reactions
 
 (defun fj-get-issue-reactions (id)
   "Return reactions data for comment with ID."
@@ -1277,11 +1278,10 @@ If none, return emptry string."
                          grouped " "))
     ""))
 
-(defun fj-render-comment-reactions (id)
+(defun fj-render-comment-reactions (reactions)
   "Render reactions for comment with ID.
 If none, return emptry string."
-  (if-let* ((reactions (fj-get-comment-reactions id))
-            (grouped (fj-group-reactions reactions)))
+  (if-let* ((grouped (fj-group-reactions reactions)))
       (concat fedi-horiz-bar "\n"
               (mapconcat #'fj-render-grouped-reaction
                          grouped " "))
@@ -1918,7 +1918,8 @@ JSON is the item's data to process the link with."
 AUTHOR is of comment, OWNER is of repo."
   (let-alist comment
     (let ((stamp (fedi--relative-time-description
-                  (date-to-time .created_at))))
+                  (date-to-time .created_at)))
+          (reactions (fj-get-comment-reactions .id)))
       (propertize
        (concat
         (fj-format-comment-header
@@ -1927,11 +1928,12 @@ AUTHOR is of comment, OWNER is of repo."
          stamp)
         "\n\n"
         (fj-render-body .body comment) "\n"
-        (fj-render-comment-reactions .id) "\n"
+        (fj-render-comment-reactions reactions) "\n"
         fedi-horiz-bar fedi-horiz-bar)
        'fj-comment comment
        'fj-comment-author .user.username
-       'fj-comment-id .id))))
+       'fj-comment-id .id
+       'fj-reactions reactions))))
 
 (defun fj-format-comment-header (username author owner edited ts)
   "Format a comment header line.
