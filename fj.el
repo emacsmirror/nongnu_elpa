@@ -2978,7 +2978,7 @@ LIMIT is for `re-search-forward''s bound argument."
   (font-lock-add-keywords
    nil ;; = current buffer
    '((fj-match-next-issue 0 ; limit (actually match number?!)
-                          'markdown-html-tag-name-face))))
+                          'fj-item-face))))
 
 (defvar-keymap fj-compose-comment-mode-map
   :doc "Keymap for `fj-compose-comment-mode'."
