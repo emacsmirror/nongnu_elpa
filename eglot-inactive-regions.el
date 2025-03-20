@@ -279,7 +279,7 @@ Useful to update colors after a face or theme change."
             (push ov eglot-inactive-regions--overlays))))
         (run-hook-with-args 'eglot-inactive-regions-refresh-hook beg end)))))
 
-(defun eglot-inactive-regions-refresh-all ()
+(defun eglot-inactive-regions-refresh-all (&rest args)
   "Invalidate face cache and refresh all buffers where mode is enabled."
   (interactive)
   (when eglot-inactive-regions-mode
@@ -292,6 +292,7 @@ Useful to update colors after a face or theme change."
   "Helper method to enable inactive regions minor mode."
   (add-function :after (default-value 'font-lock-fontify-region-function)
                 #'eglot-inactive-regions--fontify)
+  (advice-add #'load-theme :after #'eglot-inactive-regions-refresh-all)
   (add-hook 'change-major-mode-hook #'eglot-inactive-regions-cleanup))
 
 (defun eglot-inactive-regions--disable ()
@@ -303,6 +304,7 @@ Useful to update colors after a face or theme change."
       (eglot-inactive-regions-cleanup)
       (setq eglot-inactive-regions--ranges '())
       (setq eglot-inactive-regions--active nil)))
+  (advice-remove #'load-theme :after #'eglot-inactive-regions-refresh-all)
   (remove-hook 'change-major-mode-hook #'eglot-inactive-regions-cleanup))
 
 (defun eglot-inactive-regions--uri-to-path (uri)
