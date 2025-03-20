@@ -2610,7 +2610,8 @@ Skips days where no note was reviewed."
 			     if (listp item)
 			     collect (mapconcat (lambda (x) (format "%s" x)) item ",")
 			     else
-			     collect (replace-regexp-in-string "\n" " " (format "%s" item))))))))
+			     collect
+			     (replace-regexp-in-string "\n" " " (format "%s" item))))))))
 
 (defun gnosis-dashboard-output-notes (note-ids)
   "Return NOTE-IDS contents on gnosis dashboard."
@@ -2740,7 +2741,8 @@ Skips days where no note was reviewed."
   "Output contents from deck with ID, formatted for gnosis dashboard."
   (cl-loop for item in (append (gnosis-select 'name
 				'decks `(= id ,id) t)
-			       (mapcar 'string-to-number (gnosis-dashboard-deck-note-count id)))
+			       (mapcar 'string-to-number
+				       (gnosis-dashboard-deck-note-count id)))
 	   when (listp item)
 	   do (cl-remove-if (lambda (x) (and (vectorp x) (zerop (length x)))) item)
 	   collect (format "%s" item)))
