@@ -2194,9 +2194,9 @@ We check that our account credientials id matches the endpoint id in the buffer 
   (and (mastodon-tl--profile-buffer-p)
        (let ((endpoint-id
               (nth 1
-                   (split-string (mastodon-tl--endpoint) "/")))))
-       (string= (mastodon-auth--get-account-id)
-                endpoint-id)))
+                   (split-string (mastodon-tl--endpoint) "/"))))
+         (string= (mastodon-auth--get-account-id)
+                  endpoint-id))))
 
 (defun mastodon-tl--search-buffer-p ()
   "T if current buffer is a search buffer."
