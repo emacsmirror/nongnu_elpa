@@ -3790,9 +3790,9 @@ Returns a list of strings."
        (lambda (_)
          (message "Tag %s deleted!" choice))))))
 
-;;; BROWSE DATA
+;;; INSPECT DATA
 
-(defun fj-browse-item-data (&optional property)
+(defun fj-inspect-item-data (&optional property)
   "Browse the JSON data of item at point.
 Browse PROPERTY or else fj-item-data."
   (interactive)
