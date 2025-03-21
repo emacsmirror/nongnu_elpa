@@ -2450,67 +2450,11 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
                    ts))
           ;; reviews
           ("review"
-           (fj-render-review .review_id ts format-str user))
+           (fj-format-review .review_id ts format-str user))
           (_ ;; just so we never break the rest of the view:
            (format "%s did unknown action %s" user ts)))
         'fj-item-data item)
        "\n\n"))))
-
-(defun fj-render-review (review-id ts format-str user)
-  "Render code review with REVIEW-ID.
-TS, FORMAT-STR and USER are from `fj-render-timeline-item', which see.
-Renders a review heading and review comments."
-  (fj-destructure-buf-spec (repo owner item)
-    (let ((review (fj-get-review repo owner
-                                 item review-id))
-          (comments (fj-get-review-comments repo owner
-                                            item review-id)))
-      (let-alist review
-        (let ((state (pcase .state
-                       ("APPROVED"
-                        (concat (downcase .state) " these"))
-                       ("REQUEST_CHANGES"
-                        "requested"))))
-          (propertize
-           (concat
-            (format format-str user state ts)
-            ;; FIXME: display mini-diff here:
-            (cl-loop for c in comments
-                     concat
-                     (fj-format-review-comment c nil ;; FIXME: author
-                                               owner ts)))
-           'fj-review review))))))
-
-(defun fj-format-review-comment (comment author owner ts)
-  "Format a review COMMENT.
-AUTHOR of item, OWNER of repo, TS is a timestamp."
-  (let-alist comment
-    (propertize
-     (concat
-      "\n"
-      (fj-format-comment-header
-       .user.login author
-       owner "" ;; FIXME: (fj-edited-str-maybe .created_at .updated_at)
-       ts)
-      "\n" .body)
-     'fj-review-comment comment
-     'line-prefix "  "))) ;; indent
-
-(defun fj-get-review (repo owner item-id review-id)
-  "Get review data for REVIEW-ID.
-In ITEM-ID in REPO by OWNER."
-  ;; /repos/{owner}/{repo}/pulls/{index}/reviews/{id}
-  (let* ((endpoint (format "repos/%s/%s/pulls/%s/reviews/%s"
-                           owner repo item-id review-id)))
-    (fj-get endpoint)))
-
-(defun fj-get-review-comments (repo owner item-id review-id)
-  "Get review comments.
-Use REVIEW-ID for ITEM-ID in REPO by OWNER."
-  ;; /repos/{owner}/{repo}/pulls/{index}/reviews/{id}/comments
-  (let ((endpoint (format "repos/%s/%s/pulls/%s/reviews/%s/comments"
-                          owner repo item-id review-id)))
-    (fj-get endpoint)))
 
 (defun fj-get-html-link-desc (str)
   "Return a description string from HTML link STR."
@@ -2536,6 +2480,103 @@ Optionally set link TYPE and ITEM number and FACE."
               'fj-tab-stop t
               'category 'shr
               'follow-link t))
+
+;;; REVIEWS (PRS)
+
+(defun fj-format-review (review-id ts format-str user)
+  "Render code review with REVIEW-ID.
+TS, FORMAT-STR and USER are from `fj-render-timeline-item', which see.
+Renders a review heading and review comments."
+  (fj-destructure-buf-spec (repo owner item)
+    (let ((review (fj-get-review repo owner
+                                 item review-id))
+          (comments (fj-get-review-comments repo owner
+                                            item review-id)))
+      (let-alist review
+        (let ((state (pcase .state
+                       ("APPROVED"
+                        (concat (downcase .state) " these"))
+                       ("REQUEST_CHANGES"
+                        "requested"))))
+          (propertize
+           (concat
+            (format format-str user state ts)
+            (fj-format-grouped-review-comments comments owner ts))
+           'fj-review review))))))
+
+(defun fj-format-grouped-review-comments (comments owner ts)
+  "Build an alist where each cons is a diff hunk and its comments.
+Then format the hunk followed by its comments."
+  (let* ((hunks (cl-remove-duplicates
+                 (cl-loop for c in comments
+                          collect (alist-get 'diff_hunk c))
+                 :test #'string=))
+         (alist
+          (cl-loop for x in hunks
+                   collect
+                   (cons x
+                         (cl-loop for c in comments
+                                  when (equal x (alist-get 'diff_hunk c))
+                                  collect c)))))
+    (cl-loop for x in alist
+             concat (fj-format-diff-+-comments x nil owner ts))))
+
+(defun fj-format-diff-+-comments (data author owner ts)
+  "Format a diff hunk followed by its comments.
+DATA is a cons from `fj-format-grouped-review-comments'.
+AUTHOR, OWNER, and TS are for header formatting."
+  ;; (diff-minor-mode 1)
+  (concat
+   "\n" fedi-horiz-bar "\n"
+   (fj-format-review-diff (car data)) ;; diff hunk
+   "\n"
+   (cl-loop for c in (cdr data)
+            concat (fj-format-review-comment c nil ;; FIXME: author
+                                             owner ts))))
+
+(defun fj-format-review-diff (diff)
+  "Return a formatted diff hunk."
+  ;; FIXME: propertize this diff somehow
+  ;; (diff-mode uses overlays we can can't copy them)
+  ;; magit (wash/paint hunk) replies on its own classes, and wants a file
+  ;; ansi color apply wants color codes
+  (with-temp-buffer
+    (insert diff)
+    (goto-char (point-min))
+    ;; (magit-diff-wash-hunk)
+    (buffer-string)))
+
+(defun fj-format-review-comment (comment author owner ts)
+  "Format a review COMMENT.
+AUTHOR of item, OWNER of repo, TS is a timestamp."
+  (let-alist comment
+    (propertize
+     (concat
+      "\n"
+      (fj-format-comment-header
+       .user.login author
+       owner "" ;; FIXME: (fj-edited-str-maybe .created_at .updated_at)
+       ts)
+      "\n"
+      (fj-render-body .body))
+     'fj-review-comment comment
+     'line-prefix "  "))) ;; indent
+
+(defun fj-get-review (repo owner item-id review-id)
+  "Get review data for REVIEW-ID.
+In ITEM-ID in REPO by OWNER."
+  ;; /repos/{owner}/{repo}/pulls/{index}/reviews/{id}
+  (let* ((endpoint (format "repos/%s/%s/pulls/%s/reviews/%s"
+                           owner repo item-id review-id)))
+    (fj-get endpoint)))
+
+(defun fj-get-review-comments (repo owner item-id review-id)
+  "Get review comments.
+Use REVIEW-ID for ITEM-ID in REPO by OWNER."
+  ;; /repos/{owner}/{repo}/pulls/{index}/reviews/{id}/comments
+  (let ((endpoint (format "repos/%s/%s/pulls/%s/reviews/%s/comments"
+                          owner repo item-id review-id)))
+    (fj-get endpoint)))
 
 ;;; SEARCH
 
