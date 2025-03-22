@@ -117,9 +117,5 @@ If there is no fitting mode or no lang it will be `normal-mode'."
         (goto-char (point-min))
         (delete-char 1)))))
 
-(add-hook 'typst-ts-mode-hook (lambda ()
-                                (setq-local edit-indirect-guess-mode-function
-                                            #'typst-ts-edit-indirect--guess-mode)))
-
 (provide 'typst-ts-edit-indirect)
 ;;; typst-ts-edit-indirect.el ends here

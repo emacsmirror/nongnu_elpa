@@ -27,7 +27,7 @@
 
 ;;; Code:
 
-(defgroup typs-ts-lsp nil
+(defgroup typst-ts-lsp nil
   "Typst TS eglot integration with tinymist."
   :prefix "typst-ts-compile"
   :group 'typst-ts)

@@ -222,8 +222,7 @@
       "authorized_keys2" authorized_keys "authorized_keys" authorized_keys "known_hosts" known_hosts
       "known_hosts.old" known_hosts "ssh_config" ssh_config "sshd_config" sshd_config
       "syslog" syslog "varlink" varlink "typ" typst
-      "typc" typst "typst" typst
-      ))
+      "typc" typst "typst" typst))
   "Raw block tag -> tree sitter language map.")
 
 
@@ -233,7 +232,7 @@
 LANG is a string, and the returned major mode is a symbol."
   (let ((lang-norm (downcase lang)))
     (cl-find-if
-     #'(lambda (mode) (and mode (fboundp mode)))
+     (lambda (mode) (and mode (fboundp mode)))
      (list
       (and (treesit-language-available-p (intern lang-norm))
            (intern (concat lang-norm "-ts-mode")))

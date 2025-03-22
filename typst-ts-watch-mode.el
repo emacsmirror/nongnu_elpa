@@ -61,17 +61,18 @@ is eliminated."
   '(display-buffer-at-bottom
     (window-height . fit-window-to-buffer))
   "Display buffer parameters.
-Note that since the major mode of typst watch buffer is derived from  compilation
- mode. If you have a rule like `((derived-mode . compilation-mode) ...)' in
-your `display-buffer-alist', then this option will be covered by that rule."
+Note that since the major mode of typst watch buffer is derived from
+compilation mode.
+If you have a rule like `((derived-mode . `compilation-mode') ...)'
+in your `display-buffer-alist', then this option will be covered by that rule."
   :type 'symbol)
 
-(defvar typst-ts-before-watch-hook nil
+(defvar typst-ts-watch-before-watch-hook nil
   "Hook runs before compile.")
-(defvar typst-ts-after-watch-hook nil
+(defvar typst-ts-watch-after-watch-hook nil
   "Hook runs after compile.")
 
-(defun typst-ts--watch-process-filter (proc output)
+(defun typst-ts-watch--process-filter (proc output)
   "Filter the `typst watch' process output.
 Only error will be transported to the process buffer.
 See `(info \"(elisp) Filter Functions\")'.
@@ -116,7 +117,7 @@ PROC: process; OUTPUT: new output from PROC."
 (defun typst-ts-watch-start ()
   "Watch(hot compile) current typst file."
   (interactive)
-  (run-hooks typst-ts-before-watch-hook)
+  (run-hooks typst-ts-watch-before-watch-hook)
   (with-current-buffer (get-buffer-create typst-ts-watch-process-buffer-name)
     (erase-buffer)
     (unless (derived-mode-p 'typst-ts-compilation-mode)
@@ -131,7 +132,7 @@ PROC: process; OUTPUT: new output from PROC."
             (file-name-nondirectory buffer-file-name)
             (typst-ts-compile-get-result-pdf-filename)
             typst-ts-watch-options))
-   'typst-ts--watch-process-filter)
+   'typst-ts-watch--process-filter)
   (message "Start Watch"))
 
 ;;;###autoload
@@ -144,7 +145,7 @@ PROC: process; OUTPUT: new output from PROC."
     (kill-buffer typst-ts-watch-process-buffer-name)
     (when window
       (delete-window window)))
-  (run-hooks typst-ts-after-watch-hook)
+  (run-hooks typst-ts-watch-after-watch-hook)
   (message "Stop Watch"))
 
 (provide 'typst-ts-watch-mode)

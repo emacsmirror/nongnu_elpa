@@ -683,12 +683,15 @@ typst tree sitter grammar (at least %s)!" (current-time-string min-time))
 
 
   ;; auto fill function
-  (setq-local normal-auto-fill-function 'typst-ts-editing-auto-fill-function)
+  (setq-local normal-auto-fill-function #'typst-ts-editing-auto-fill-function)
 
   (treesit-major-mode-setup)
 
   (setq-local font-lock-unfontify-region-function #'typst-ts-mode-unfontify-region)
-  (setq-local indent-line-function #'typst-ts-mode-indent-line-function))
+  (setq-local indent-line-function #'typst-ts-mode-indent-line-function)
+  (add-hook 'typst-ts-mode-hook (lambda ()
+                                  (setq-local edit-indirect-guess-mode-function
+                                              #'typst-ts-edit-indirect--guess-mode))))
 
 ;;;###autoload
 (add-to-list 'auto-mode-alist '("\\.typ\\'" . typst-ts-mode))
