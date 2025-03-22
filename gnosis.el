@@ -49,6 +49,9 @@
 (require 'transient)
 (require 'animate)
 
+(require 'org)
+(require 'org-element)
+
 (require 'gnosis-algorithm)
 
 (defgroup gnosis nil
@@ -1820,7 +1823,7 @@ EXAMPLE: Boolean value, if non-nil do not add properties for note."
   "Extract content for each level-2 heading for note headings with a GNOSIS_ID.
 
 Split content of Hypothesis and Answer headings using SEPARATOR."
-  (let ((sep (or separator gnosis-separator))
+  (let ((sep (or separator gnosis-export-separator))
         results)
     (org-element-map (org-element-parse-buffer) 'headline
       (lambda (headline)
