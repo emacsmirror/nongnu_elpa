@@ -2613,7 +2613,8 @@ Skips days where no note was reviewed."
   "g" #'gnosis-dashboard-return
   "d" #'gnosis-dashboard-delete
   "m" #'gnosis-dashboard-mark-toggle
-  "u" #'gnosis-dashboard-mark-toggle)
+  "u" #'gnosis-dashboard-mark-toggle
+  "U" #'gnosis-dashboard-unmark-all)
 
 (define-minor-mode gnosis-dashboard-notes-mode
   "Minor mode for gnosis dashboard notes output."
