@@ -1900,6 +1900,7 @@ Split content of Hypothesis and Answer headings using SEPARATOR."
   (interactive (list
 		(gnosis--get-deck-name)
 		(downcase (completing-read "Select type: " gnosis-note-types))))
+  (window-configuration-to-register :gnosis-edit)
   (pop-to-buffer "*Gnosis NEW*")
   (with-current-buffer "*Gnosis NEW*"
     (let ((inhibit-read-only 1))
