@@ -126,10 +126,12 @@ PROC: process; OUTPUT: new output from PROC."
    (apply
     start-process
     typst-ts-watch-process-name typst-ts-watch-process-buffer-name
-    typst-ts-compile-executable-location "watch"
-    (file-name-nondirectory buffer-file-name)
-    typst-ts-watch-options)
-   #'typst-ts--watch-process-filter)
+    (format "%s watch %s %s %s"
+            typst-ts-compile-executable-location
+            (file-name-nondirectory buffer-file-name)
+            (typst-ts-compile-get-result-pdf-filename)
+            typst-ts-watch-options))
+   'typst-ts--watch-process-filter)
   (message "Start Watch"))
 
 ;;;###autoload

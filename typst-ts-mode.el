@@ -73,6 +73,18 @@ NOTE this option must be set before the first loading(opening typst file)"
   :type 'boolean)
 
 ;;  ==============================================================================
+;; code from Auctex
+(defcustom typst-ts-mode-math-script-display '((raise -0.5) . (raise 0.5))
+  "Display specification for subscript and superscript content.
+The car is used for subscript, the cdr is used for superscripts."
+  :type '(cons (choice (sexp :tag "Subscript form")
+                       (const :tag "No lowering" nil))
+               (choice (sexp :tag "Superscript form")
+                       (const :tag "No raising" nil)))
+  :group 'typst-ts)
+
+
+;; ==============================================================================
 ;; TODO typst has three modes (namely 'markup', 'code' and 'math')
 ;; Currently only add common settings to syntax table
 (defvar typst-ts-mode-syntax-table
@@ -214,9 +226,16 @@ NOTE this option must be set before the first loading(opening typst file)"
    '((math "$" @typst-ts-math-indicator-face))
 
    :language 'typst
-   :feature 'math-standard
+   :feature 'math-standard  ; part 1
    '((symbol) @font-lock-constant-face
      (letter) @font-lock-constant-face)
+   
+   :language 'typst
+   :feature 'math-standard  ; part 2
+   :override 'append
+   '((attach
+      ["^" "_"] @typst-ts-script-char-face
+      (_) @typst-ts-mode-render-math-scripts-fn))
 
    :language 'typst
    :feature 'math-extended
@@ -228,6 +247,38 @@ NOTE this option must be set before the first loading(opening typst file)"
   "Font lock rules for `typst-ts-mode'.
 If you want to enable/disable specific font lock feature, please change
 `treesit-font-lock-level' or modify `typst-ts-mode-font-lock-feature-list'.")
+
+;; modified from Auctex
+(defun typst-ts-mode-unfontify-region (beg end &rest _ignored)
+  "Unfontify region from BEG to END."
+  (font-lock-default-unfontify-region beg end)
+  (while (< beg end)
+    (let ((next (next-single-property-change beg 'display nil end))
+          (prop (get-text-property beg 'display)))
+      (when (and (eq (car-safe prop) 'raise)
+                 (null (cddr prop)))
+        (remove-text-properties beg next '(display rear-nonsticky)))
+      (setq beg next))))
+
+
+(defun typst-ts-mode-render-math-scripts-fn (node override start end)
+  (let* ((ns (treesit-node-start node))
+         (ne (treesit-node-end node))
+         (prev-node-text (treesit-node-text (treesit-node-prev-sibling node)))
+         (display-properties (pcase prev-node-text
+                               ("_" (car typst-ts-mode-math-script-display))
+                               ("^" (cdr typst-ts-mode-math-script-display))))
+         (face (pcase prev-node-text
+                 ("_" 'typst-ts-subscript-face)
+                 ("^" 'typst-ts-superscript-face))))
+    (add-text-properties
+     ns ne
+     `(
+       rear-nonsticky (display)
+       display ,display-properties))
+    (add-face-text-property
+     ns ne
+     face)))
 
 (defun typst-ts-mode-highlight-raw-block-fn (blob-node _override _start _end)
   "A function used in function `typst-ts-mode-font-lock-rules'.
@@ -636,6 +687,7 @@ typst tree sitter grammar (at least %s)!" (current-time-string min-time))
 
   (treesit-major-mode-setup)
 
+  (setq-local font-lock-unfontify-region-function #'typst-ts-mode-unfontify-region)
   (setq-local indent-line-function #'typst-ts-mode-indent-line-function))
 
 ;;;###autoload
