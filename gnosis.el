@@ -2755,14 +2755,14 @@ Skips days where no note was reviewed."
     (tabulated-list-print t)))
 
 (defun gnosis-dashboard-output-deck (id)
-  "Output contents from deck with ID, formatted for gnosis dashboard."
-  (cl-loop for item in (append (gnosis-select 'name
-				'decks `(= id ,id) t)
-			       (mapcar 'string-to-number
-				       (gnosis-dashboard-deck-note-count id)))
-	   when (listp item)
-	   do (cl-remove-if (lambda (x) (and (vectorp x) (zerop (length x)))) item)
-	   collect (format "%s" item)))
+  "Output contents from deck ID, formatted for gnosis dashboard."
+  (let* ((deck-name (gnosis-select 'name 'decks `(= id ,id) t))
+         (note-count (gnosis-dashboard-deck-note-count id))
+         (combined-data (append deck-name (mapcar #'string-to-number note-count))))
+    (mapcar (lambda (item) (format "%s" item))
+            (seq-filter (lambda (item)
+                         (not (and (vectorp item) (seq-empty-p item))))
+                       combined-data))))
 
 (defvar-keymap gnosis-dashboard-decks-mode-map
   "e" #'gnosis-dashboard-rename-deck
