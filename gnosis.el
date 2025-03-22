@@ -1812,7 +1812,8 @@ EXAMPLE: Boolean value, if non-nil do not add properties for note."
     (dolist (comp components)
       (goto-char (point-max))
       (gnosis-export--insert-read-only (car comp))
-      (insert "\n" (or (cdr comp) "") "\n\n"))))
+      (insert "\n" (or (cdr comp) "") "\n\n")
+      (org-fill-element))))
 
 (defun gnosis-export-parse--deck-name (&optional parsed-data)
   "Retrieve deck name from PARSED-DATA."
