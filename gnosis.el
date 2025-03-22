@@ -1604,15 +1604,17 @@ LINKS: List of id links."
 
 (defun gnosis-update-note (id keimenon hypothesis answer parathema tags links)
   "Update note entry for ID."
-  (let ((id (if (stringp id) (string-to-number id) id))) ;; Make sure we provided the id as a number.
+  ;; Make sure we provided the id as a number.
+  (let ((id (if (stringp id) (string-to-number id) id)))
     (emacsql-with-transaction gnosis-db
       (gnosis-update 'notes `(= keimenon ,keimenon) `(= id ,id))
       (gnosis-update 'notes `(= hypothesis ',hypothesis) `(= id ,id))
       (gnosis-update 'notes `(= answer ',answer) `(= id ,id))
       (gnosis-update 'extras `(= parathema ,parathema) `(= id ,id))
       (gnosis-update 'notes `(= tags ',tags) `(= id ,id))
+      (gnosis--delete 'links `(= source ,id))
       (cl-loop for link in links
-	       do (gnosis-update 'links `(= dest ,link) `(= source ,id))))))
+	       do (gnosis--insert-into 'links `([,id ,link]))))))
 
 ;;;;;;;;;;;;;;;;;;;;;; NOTE HELPERS ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; These functions provide assertions depending on the type of note.
