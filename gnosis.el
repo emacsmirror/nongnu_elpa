@@ -2843,6 +2843,8 @@ When called with called with a prefix, unsuspend all notes of deck."
               ("Total Reviews" ,(/ (window-width) 6) gnosis-dashboard-sort-total-notes)
               ("New" ,(/ (window-width) 6) gnosis-dashboard-sort-total-notes)])
       (make-local-variable 'tabulated-list-entries)
+      ;; Sort for date
+      (setq tabulated-list-sort-key (cons "Date" t))
       (setq tabulated-list-entries
             (cl-loop for entry in history
                      collect (list (car entry)
