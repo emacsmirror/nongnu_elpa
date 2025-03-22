@@ -321,21 +321,28 @@ Acts only when CENTER? is non-nil."
       (insert text))))
 
 (defun gnosis-center-string (string)
-  "Center each line of STRING in current window width."
+  "Center each line of STRING in current window width.
+
+Removes source from links, returns only link descriptions."
   (let ((width (window-width)))
     (mapconcat
      (lambda (line)
        (let ((trimmed (string-trim line)))
-         (mapconcat
-          (lambda (wrapped)
-            (concat (make-string (max 0 (/ (- width (length wrapped)) 2)) ?\s)
-                    wrapped))
-          (split-string (with-temp-buffer
-                         (insert trimmed)
-                         (fill-region (point-min) (point-max))
-                         (buffer-string))
-                       "\n")
-          "\n")))
+         (let ((adjusted-line
+                (replace-regexp-in-string 
+                 "\\[\\[\\([^]]+\\)\\]\\[\\([^]]+\\)\\]\\]"
+                 "\\2"  ; Keep only description part
+                 trimmed)))
+           (mapconcat
+            (lambda (wrapped)
+              (concat (make-string (max 0 (/ (- width (length wrapped)) 2)) ?\s)
+                      wrapped))
+            (split-string (with-temp-buffer
+                          (insert adjusted-line)
+                          (fill-region (point-min) (point-max))
+                          (buffer-string))
+                        "\n")
+            "\n"))))
      (split-string string "\n")
      "\n")))
 
