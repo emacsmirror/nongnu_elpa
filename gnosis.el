@@ -951,7 +951,8 @@ Compare 2 strings, ignoring case and whitespace."
 
 (defun gnosis-get-tags--unique ()
   "Return a list of unique strings for tags in `gnosis-db'."
-  (cl-loop for tags in (apply 'append (emacsql gnosis-db [:select :distinct tags :from notes]))
+  (cl-loop for tags in (apply 'append
+			      (emacsql gnosis-db [:select :distinct tags :from notes]))
            nconc tags into all-tags
            finally return (delete-dups all-tags)))
 
@@ -1016,29 +1017,27 @@ DATE is a list of the form (year month day)."
 				    (predicate nil)
 				    (require-match nil)
 				    (initial-input nil))
-  "Prompt user for tags.
-
-Outputs only unique tags."
+  "Prompt to select tags with PROMPT."
   (gnosis-tags-refresh)
-  (let* ((tags (gnosis-tags-get-all))
+  (let* ((tags (gnosis-get-tags--unique))
 	 (input (delete-dups
 		 (completing-read-multiple
 		  prompt tags predicate require-match initial-input))))
     input))
 
-(cl-defun gnosis-tags-prompt ()
+(defun gnosis-tags-prompt ()
   "Tag prompt for adding notes.
 
 If you only require a tag prompt, refer to `gnosis-tags--prompt'."
-  (let ((input (gnosis-tags--prompt)))
-    (when input
-      (gnosis-tags--update input)
-      (setf gnosis-previous-note-tags input))
-    (or input '("untagged"))))
-
-(defun gnosis-tags-get-all ()
-  "Output all tags from database."
-  (gnosis-select '* 'tags nil t))
+  (interactive)
+  (save-excursion
+    (let ((input (gnosis-tags--prompt))
+	  (current-tags (org-get-tags)))
+      (outline-up-heading 99)
+      (when input
+	(gnosis-tags--update input)
+	(setf gnosis-previous-note-tags input)
+        (org-set-tags (append input current-tags))))))
 
 (defun gnosis-tags-refresh ()
   "Refresh tags value."
@@ -1049,6 +1048,22 @@ If you only require a tag prompt, refer to `gnosis-tags--prompt'."
     (emacsql-with-transaction gnosis-db
       (cl-loop for tag in tags
 	       do (gnosis--insert-into 'tags `[,tag])))))
+
+(defun gnosis-tag-rename (tag &optional new-tag)
+  "Rename TAG to NEW-TAG.
+
+Replace dashes (-) to underscores (_) for NEW-TAG, as org currently
+does not accept heading tags with dashes."
+  (let ((new-tag (or new-tag
+		     (replace-regexp-in-string
+		      "-" "_" (read-string "New tag name: ")))))
+    (cl-loop for note in (gnosis-get-tag-notes tag)
+	     do (let* ((tags (car (gnosis-select '[tags] 'notes `(= id ,note) t)))
+		       (new-tags (cl-substitute new-tag tag tags :test #'string-equal)))
+		  (gnosis-update 'notes `(= tags ',new-tags) `(= id ,note))))
+    ;; Update tags in database
+    (gnosis-tags-refresh)
+    (message "Renamed tag '%s' to '%s'" tag new-tag)))
 
 ;; Links
 (defun gnosis-extract-id-links (input &optional start)
@@ -2361,7 +2376,13 @@ Return note ids for notes that match QUERY."
 						  `(= id ,id))
 				 (gnosis-update 'notes '(= answer '("No"))
 						`(= id ,id))))))
-			 note))))
+			 note))
+    ;; Replace - with _, org does not support tags with dash.
+    (cl-loop for tag in (gnosis-get-tags--unique)
+	     ;; Replaces dashes to underscores.
+	     if (string-match-p "-" tag)
+	     do (gnosis-tag-rename tag
+				   (replace-regexp-in-string "-" "_" tag)))))
 
 (defun gnosis-db-init ()
   "Create essential directories & database."
@@ -2660,16 +2681,10 @@ Skips days where no note was reviewed."
 (defun gnosis-dashboard-rename-tag (&optional tag new-tag )
   "Rename TAG to NEW-TAG."
   (interactive)
-  (let ((new-tag (or new-tag (read-string "New tag name: ")))
-	(tag (or tag (tabulated-list-get-id))))
-    (cl-loop for note in (gnosis-get-tag-notes tag)
-	     do (let* ((tags (car (gnosis-select '[tags] 'notes `(= id ,note) t)))
-		       (new-tags (cl-substitute new-tag tag tags :test #'string-equal)))
-		  (gnosis-update 'notes `(= tags ',new-tags) `(= id ,note))))
-    ;; Update tags in database
-    (gnosis-tags--update (gnosis-tags-get-all))
-    ;; Output tags anew
-    (gnosis-dashboard-output-tags)))
+  (let ((current-line (line-number-at-pos)))
+    (gnosis-tag-rename (tabulated-list-get-id))
+    (gnosis-dashboard-output-tags)
+    (forward-line (- (max current-line 1) 1))))
 
 (defun gnosis-dashboard-delete-tag (&optional tag)
   "Rename TAG to NEW-TAG."
@@ -2682,7 +2697,7 @@ Skips days where no note was reviewed."
 			 (new-tags (remove tag tags)))
 		    (gnosis-update 'notes `(= tags ',new-tags) `(= id ,note))))
       ;; Update tags in database
-      (gnosis-tags--update (gnosis-tags-get-all))
+      (gnosis-tags-refresh)
       ;; Output tags anew
       (gnosis-dashboard-output-tags))))
 
@@ -2725,7 +2740,7 @@ Skips days where no note was reviewed."
 (defun gnosis-dashboard-output-tags (&optional tags)
   "Format gnosis dashboard with output of TAGS."
   (gnosis-tags-refresh) ;; Refresh tags
-  (let ((tags (or tags (gnosis-tags-get-all))))
+  (let ((tags (or tags (gnosis-get-tags--unique))))
     (pop-to-buffer-same-window gnosis-dashboard-buffer-name)
     (gnosis-dashboard-enable-mode)
     (gnosis-dashboard-tags-mode)
