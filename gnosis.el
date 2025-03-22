@@ -390,12 +390,9 @@ This will not be applied to sentences that start with double space."
 			   (delete-region (match-beginning 0) start)))))))))))
 
 (defun gnosis-display-keimenon (str)
-  "Display STR as keimenon.
-
-If FILL-PARAGRAPH-P, insert question using `fill-paragraph'."
+  "Display STR as keimenon."
   (erase-buffer)
-  (insert "\n" (replace-regexp-in-string "\n" " " str))
-  (fill-paragraph)
+  (insert "\n" (gnosis-center-string (replace-regexp-in-string "\n" " " str)))
   (gnosis-insert-separator)
   (gnosis-apply-center-buffer-overlay)
   (gnosis-apply-syntax-overlay))
