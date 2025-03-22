@@ -2582,20 +2582,24 @@ Skips days where no note was reviewed."
 (defun gnosis-dashboard-suspend-note ()
   "Suspend note."
   (interactive)
-  (if gnosis-dashboard--selected-ids
-      (gnosis-dashboard-marked-suspend)
-    (gnosis-suspend-note (tabulated-list-get-id))
-    (gnosis-dashboard-output-notes gnosis-dashboard-note-ids)
-    (revert-buffer t t t)))
+  (let ((current-line (line-number-at-pos)))
+    (if gnosis-dashboard--selected-ids
+	(gnosis-dashboard-marked-suspend)
+      (gnosis-suspend-note (tabulated-list-get-id))
+      (gnosis-dashboard-output-notes gnosis-dashboard-note-ids)
+      (revert-buffer t t t))
+    (forward-line (- current-line 1))))
 
 (defun gnosis-dashboard-delete ()
   "Delete note."
   (interactive)
-  (if gnosis-dashboard--selected-ids
-      (gnosis-dashboard-marked-delete)
-    (gnosis-delete-note (tabulated-list-get-id))
-    (gnosis-dashboard-output-notes gnosis-dashboard-note-ids)
-    (revert-buffer t t t)))
+  (let ((current-line (line-number-at-pos)))
+    (if gnosis-dashboard--selected-ids
+	(gnosis-dashboard-marked-delete)
+      (gnosis-delete-note (tabulated-list-get-id))
+      (gnosis-dashboard-output-notes gnosis-dashboard-note-ids)
+      (revert-buffer t t t))
+    (forward-line (- current-line 1))))
 
 (defun gnosis-dashboard-search-note (&optional str)
   "Search for notes with STR."
@@ -2683,13 +2687,13 @@ Skips days where no note was reviewed."
         (total2 (string-to-number (elt (cadr entry2) 1))))
     (< total1 total2)))
 
-(defun gnosis-dashboard-rename-tag (&optional tag new-tag )
+(defun gnosis-dashboard-rename-tag ()
   "Rename TAG to NEW-TAG."
   (interactive)
   (let ((current-line (line-number-at-pos)))
     (gnosis-tag-rename (tabulated-list-get-id))
     (gnosis-dashboard-output-tags)
-    (forward-line (- (max current-line 1) 1))))
+    (forward-line (- current-line 1))))
 
 (defun gnosis-dashboard-delete-tag (&optional tag)
   "Rename TAG to NEW-TAG."
