@@ -8,7 +8,7 @@
 
 ;; Version: 0.5.0
 
-;; Package-Requires: ((emacs "27.2") (emacsql "4.1.0") (compat "29.1.4.2") (transient "0.7.2"))
+;; Package-Requires: ((emacs "27.2") (emacsql "4.1.0") (compat "29.1.4.2") (transient "0.7.2") (org-gnosis "0.0.9"))
 
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -362,8 +362,7 @@ This will not be applied to sentences that start with double space."
            ("/\\([^/[:space:]][^/\n]*[^/[:space:]]\\)/" . italic)
            ("=\\([^=[:space:]][^=\n]*[^=[:space:]]\\)=" . font-lock-constant-face)
            ("~\\([^~[:space:]][^~\n]*[^~[:space:]]\\)~" . font-lock-keyword-face)
-           ("_\\([^_[:space:]][^_\n]*[^_[:space:]]\\)_" . underline)
-           ("\\[\\[\\([^]]+\\)\\]\\[\\([^]]+\\)\\]\\]" . link))))
+           ("_\\([^_[:space:]][^_\n]*[^_[:space:]]\\)_" . underline))))
     (when gnosis-apply-highlighting-p
       (with-silent-modifications
 	(save-excursion
