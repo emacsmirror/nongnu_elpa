@@ -68,6 +68,10 @@ This variable is used in `typst-ts-mode-check-grammar-version'."
 NOTE this option must be set before the first loading(opening typst file)"
   :type 'boolean)
 
+(defcustom typst-ts-mode-electric-return t
+  "Whether `typst-ts-mode-return' auto inserts list items or not."
+  :type 'boolean)
+
 ;;  ==============================================================================
 ;; TODO typst has three modes (namely 'markup', 'code' and 'math')
 ;; Currently only add common settings to syntax table

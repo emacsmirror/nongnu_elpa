@@ -462,66 +462,40 @@ Using ARG argument will ignore the context and it will insert a heading instead.
      (t
       (typst-ts-mode-insert--heading node)))))
 
-(defun typst-ts-mode-retun (&optional _arg)
-  "Stub")
+(defun typst-ts-mode-return (&optional arg)
+  "RET behavior depending context.
+Can be turned off by setting `typst-ts-mode-electric-return' to nil.
+When point is on end of line of a list item with content,
+it will insert a list item without content on the next line.
 
-;; (defun typst-ts-mode-return (&optional arg)
-;;   "Handle RET depends on condition.
-;; When prefix ARG is non-nil, call global return function."
-;;   (interactive "P")
-;;   (or
-;;    ;; FIXME: This kind of magic/electric behavior should probably be
-;;    ;; controllable via a custom var (and described in the docstring).
-;;    (when (and (null arg) (eolp))
-;;      (let* (;; (cur-pos (point))
-;;             ;; (cur-node (treesit-node-at cur-pos))
-;;             ;; (cur-node-type (treesit-node-type cur-node))
-;;             ;; (parent-node (treesit-node-parent cur-node)) ; could be nil
-;;             ;; (parent-node-type (treesit-node-type parent-node))
-;;             (node (typst-ts-core-parent-util-type
-;;                    (typst-ts-core-get-parent-of-node-at-bol-nonwhite)
-;;                    "item" t t)))
-;;        ;; (message "%s %s" cur-node parent-node)
-;;        (cond
-;;         ;; on item node end
-;;         (node
-;;          (let* ((has-children (treesit-node-child node 1))
-;;                 (next-line-pos (line-beginning-position 2))
-;;                 (next-line-node
-;;                  (typst-ts-core-get-parent-of-node-at-bol-nonwhite
-;;                   next-line-pos))
-;;                 (next-line-top-node    ; get container type or `item' type node
-;;                  (typst-ts-core-parent-util-type
-;;                   next-line-node
-;;                   (regexp-opt '("code" "item"))
-;;                   t)))
-;;            (if has-children
-;;                ;; example:
-;;                ;; - #[| <- return
-;;                ;; ]
-;;                (if (and next-line-top-node
-;;                         ;; end of buffer situation (or next line is the end
-;;                         ;; line (and no newline character))
-;;                         (not (equal
-;;                               (line-number-at-pos next-line-pos)
-;;                               (line-number-at-pos (point-max)))))
-;;                    (call-interactively #'newline)
-;;                  (typst-ts-mode-insert--item node))
-;;              ;; no text means delete the item on current line: (item -)
-;;              (delete-region (line-beginning-position) (line-end-position))
-;;              ;; whether the previous line is in an item
-;;              (let* ((prev-line-item-node
-;;                      (typst-ts-core-parent-util-type
-;;       (let ((global-ret-function (global-key-binding (kbd "RET"))))
-;;         (if (not current-prefix-arg)
-;;             (call-interactively global-ret-function)
-;;           (if (yes-or-no-p
-;;                (format
-;;                 "Execute function `%s' without/with the given prefix argument?"
-;;                 global-ret-function))
-;;               (let ((current-prefix-arg nil))
-;;                 (call-interactively global-ret-function))
-;;             (call-interactively global-ret-function))))))))))))))))
+When point is on a list item without content,
+it will delete the list item.
+
+When using prefix argument ARG, `typst-ts-mode-electric-return' is nil,
+ or no special context, call global RET function"
+  (interactive "P")
+  (let ((default-call
+         (lambda ()
+           (let ((global-ret-function (global-key-binding (kbd "RET"))))
+             (if (not arg)
+                 (call-interactively global-ret-function)
+               (if (yes-or-no-p
+                    (format
+                     "Execute function `%s' without/with the given prefix argument?"
+                     global-ret-function))
+                   (let ((current-prefix-arg nil))
+                     (call-interactively global-ret-function))
+                 (call-interactively global-ret-function))))))
+        (node (typst-ts-core-parent-util-type
+                   (typst-ts-core-get-parent-of-node-at-bol-nonwhite)
+                   "item" t t)))
+    (cond
+     ((or (not typst-ts-mode-electric-return) arg) (funcall default-call))
+     ((and node (eolp))
+      (if (> (treesit-node-child-count node) 1)
+          (typst-ts-mode-insert--item node)
+        (delete-region (treesit-node-start node) (treesit-node-end node))))
+     (t (funcall default-call)))))
 
 (defun typst-ts-mode-insert--item (node)
   "Insert an item after NODE.
