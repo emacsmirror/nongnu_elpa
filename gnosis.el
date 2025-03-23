@@ -53,6 +53,7 @@
 (require 'org-element)
 
 (require 'gnosis-algorithm)
+(require 'org-gnosis)
 
 (defgroup gnosis nil
   "Spaced Repetition System For Note Taking & Self Testing."
@@ -1567,6 +1568,19 @@ NOTE-COUNT: Total notes to be commited for session."
       ("All notes of deck" (gnosis-review-session
 			    (gnosis-collect-note-ids :deck (gnosis--get-deck-id))))
       ("All notes of tag(s)" (gnosis-review-session (gnosis-collect-note-ids :tags t))))))
+
+(defun gnosis-review-topic (&optional node-id)
+  "Review gnosis notes for topic with NODE-ID."
+  (interactive)
+  (let* ((node-id (or node-id (org-gnosis-get-id)))
+	 (node-title (car (org-gnosis-select 'title 'nodes `(= id ,node-id) t)))
+	 (gnosis-questions (gnosis-select 'source 'links `(= dest ,node-id) t)))
+    (if (and gnosis-questions
+	     (y-or-n-p (format "Review %s note(s) for '%s'?"
+			       (length gnosis-questions)
+			       node-title)))
+	(gnosis-review-session gnosis-questions)
+      (message "No notes for node id: %s" node-id))))
 
 (defun gnosis-add-note-fields (deck-id type keimenon hypothesis answer
 					parathema tags suspend links)
