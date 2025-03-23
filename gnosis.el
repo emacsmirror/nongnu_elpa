@@ -1346,7 +1346,7 @@ If NEW? is non-nil, increment new notes log by 1."
 
 ;;;###autoload
 (cl-defun gnosis-vc-pull (&optional (dir gnosis-dir))
-  "Run `vc-pull' in DIR."
+  "Run `git pull' in DIR."
   (interactive)
   (let ((default-directory dir))
     ;; TODO: Try to use a vc instead of shell-command
@@ -1376,7 +1376,9 @@ the changes with a message containing the reviewed number NOTE-NUM."
        (format "%s add gnosis.db" git))
       (gnosis--shell-cmd-with-password
        (format "%s commit -m 'Total notes reviewed: %d'" git note-num)))
-    (and gnosis-vc-auto-push (not gnosis-testing) (gnosis-vc-push))
+    (sit-for 0.1)
+    (when (and gnosis-vc-auto-push (not gnosis-testing))
+      (gnosis-vc-push))
     (message "Review session finished.  %d notes reviewed." note-num)))
 
 (defun gnosis-review-action--edit (success note note-count)
