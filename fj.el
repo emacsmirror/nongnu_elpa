@@ -2324,6 +2324,26 @@ ENDPOINT is the API endpoint to hit."
                               (lambda (_)
                                 (message "Merged!")))))))))
 
+(defun fj-fetch-pull-as-branch ()
+  "From a PR view, fetch it as a new git branch using magit."
+  ;; WIP, needs testing on a fresh PR!
+  (interactive)
+  (fj-with-pull
+   (let* ((pull (fedi--property 'fj-item-number))
+          (data (fedi--property 'fj-item-data))
+          ;; remote in this case is the PR base, what we will merge into
+          ;; (not the PR creator's fork):
+          (remote (map-nested-elt data '(base repo html_url)))
+          (head (map-nested-elt data '(head repo full_name)))
+          ;; fetch the PR head's branch as default branch name:
+          (branch (read-string "Pull branch name: "
+                               (map-nested-elt data '(head label))))
+          (refspec (format "refs/pull/%s/head:%s" pull branch)))
+     (when (y-or-n-p
+            (format "Fetch %s from %s as new branch?" branch head))
+       ;; mayb we want to check out PR, and magit-status or sth?:
+       (magit-fetch-refspec remote refspec nil)))))
+
 ;;; TIMELINE ITEMS
 
 (defvar fj-issue-timeline-action-str-alist
