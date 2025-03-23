@@ -288,17 +288,15 @@ Useful to update colors after a face or theme change."
       (with-current-buffer buffer
         (eglot-inactive-regions-refresh)))))
 
-(defun eglot-inactive-regions-refresh-after-theme (&rest args)
-  "Refresh all on theme changes."
-  (unless (cl-third args)
-    (eglot-inactive-regions-refresh-all)))
-
-
 (defun eglot-inactive-regions--enable ()
   "Helper method to enable inactive regions minor mode."
   (add-function :after (default-value 'font-lock-fontify-region-function)
                 #'eglot-inactive-regions--fontify)
-  (advice-add #'load-theme :after #'eglot-inactive-regions-refresh-after-theme)
+  ;; enable hook will always fire twice after a `load-theme' or
+  ;; `enable-theme' as the latter always enable user theme too. Should
+  ;; not be an issue as fontification will only happen once anyway.
+  (add-hook 'enable-theme-functions #'eglot-inactive-regions-refresh-all)
+  (add-hook 'disable-theme-functions #'eglot-inactive-regions-refresh-all)
   (add-hook 'change-major-mode-hook #'eglot-inactive-regions-cleanup))
 
 (defun eglot-inactive-regions--disable ()
@@ -310,7 +308,8 @@ Useful to update colors after a face or theme change."
       (eglot-inactive-regions-cleanup)
       (setq eglot-inactive-regions--ranges '())
       (setq eglot-inactive-regions--active nil)))
-  (advice-remove #'load-theme :after #'eglot-inactive-regions-refresh-after-theme)
+  (remove-hook 'enable-theme-functions #'eglot-inactive-regions-refresh-all)
+  (remove-hook 'disable-theme-functions #'eglot-inactive-regions-refresh-all)
   (remove-hook 'change-major-mode-hook #'eglot-inactive-regions-cleanup))
 
 (defun eglot-inactive-regions--uri-to-path (uri)
