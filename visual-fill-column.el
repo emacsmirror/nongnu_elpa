@@ -173,6 +173,12 @@ Use this mode to activate and deactivate `visual-line-mode' and
 	 (visual-fill-column-mode -1)
 	 (visual-line-mode -1))))
 
+(defun visual-fill-column-toggle-center-text ()
+  "Toggle centering of text in the current buffer."
+  (interactive)
+  (setq visual-fill-column-center-text (not visual-fill-column-center-text))
+  (visual-fill-column-adjust))
+
 (defun turn-on-visual-fill-column-mode ()
   "Turn on `visual-fill-column-mode'.
 Note that `visual-fill-column-mode' is only turned on in buffers

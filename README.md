@@ -38,11 +38,9 @@ Another use case for `visual-fill-column` is to centre the text in a window:
 
 ![screenshot after](centred.png)
 
-This effect is achieved by setting the user option `visual-fill-column-center-text`. Note that `visual-fill-column-mode` is not dependent on `visual-line-mode`, so it can be used to centre text in buffers that use `auto-fill-mode` or in programming modes.
+This effect is achieved by setting the user option `visual-fill-column-center-text`. You can use the Customize interface or `setopt` to set a default value. In addition, the effect can also be toggled on a per-buffer basis using the command: `visual-fill-column-toggle-center-text`. 
 
-Note that `visual-fill-column-center-text` automatically becomes buffer-local when it is set. Therefore, if you wish to make this the default, either use the Customize interface or use `setq-default` in your init file, rather than `setq`:
-
-    (setq-default visual-fill-column-center-text t)
+Keep in mind that `visual-fill-column-mode` is not dependent on `visual-line-mode`, so it can be used to center text in buffers that use `auto-fill-mode` or in programming modes.
 
 Note: If you are interested in a fully distraction-free writing environment, that not only centres the text but also removes the window decorations, the mode line etc., take a look at [`writeroom-mode`](https://github.com/joostkremers/writeroom-mode).
 
