@@ -730,30 +730,6 @@ is the image to display post review
   (gnosis-add-note-fields deck "mcq" question choices correct-answer extra tags suspend
 			  (car images) (cdr images)))
 
-(defun gnosis-add-note-mcq (deck)
-  "Add note(s) of type `MCQ' interactively to selected deck.
-
-DECK: Deck to add gnosis
-
-Prompt user for input to create a note of type `MCQ'.
-
-Stem field is seperated from options by `gnosis-mcq-separator', and
-each option is seperated by `gnosis-mcq-option-separator'.  The correct
-answer is surrounded by curly braces, e.g {Correct Answer}.
-
-Refer to `gnosis-add-note--mcq' & `gnosis-prompt-mcq-input' for more."
-  (let* ((input (gnosis-prompt-mcq-input))
-	 (stem (caar input))
-	 (choices (cdr (car input)))
-	 (correct-choice (cadr input)))
-    (gnosis-add-note--mcq :deck deck
-			  :question stem
-			  :choices choices
-			  :correct-answer correct-choice
-			  :extra (gnosis-read-string-from-buffer "Extra" "")
-			  :images (gnosis-select-images)
-			  :tags (gnosis-prompt-tags--split gnosis-previous-note-tags))))
-
 (cl-defun gnosis-add-note--basic (&key deck question hint answer
 				       extra (images nil) (tags) (suspend 0))
   "Add Basic type note.
@@ -767,25 +743,8 @@ IMAGES: Cons cell, where car is the image to display before user-input
 	and cdr is the image to display post review.
 TAGS: Tags used to organize notes
 SUSPEND: Binary value of 0 & 1, when 1 note will be ignored."
-  (gnosis-add-note-fields deck "basic" question hint answer extra tags suspend (car images) (cdr images)))
-
-(defun gnosis-add-note-basic (deck)
-  "Add note(s) of type `Basic' interactively to selected deck.
-
-DECK: Deck name to add gnosis
-
-Basic note type is a simple question/answer note, where user first
-sees a \"main\" part, which is usually a question, and he is prompted
-to input the answer.
-
-Refer to `gnosis-add-note--basic' for more."
-  (gnosis-add-note--basic :deck deck
-			  :question (gnosis-read-string-from-buffer "Question: " "")
-			  :answer (read-string "Answer: ")
-			  :hint (gnosis-hint-prompt gnosis-previous-note-hint)
-			  :extra (gnosis-read-string-from-buffer "Extra: " "")
-			  :images (gnosis-select-images)
-			  :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))
+  (gnosis-add-note-fields deck "basic" question hint answer extra tags suspend
+			  (car images) (cdr images)))
 
 (cl-defun gnosis-add-note--double (&key deck question hint answer extra (images nil) tags (suspend 0))
   "Add Double type note.
@@ -802,25 +761,10 @@ IMAGES: Cons cell, where car is the image to display before user-input
 	and cdr is the image to display post review.
 TAGS: Tags used to organize notes
 SUSPEND: Binary value of 0 & 1, when 1 note will be ignored."
-  (gnosis-add-note-fields deck "basic" question hint answer extra tags suspend (car images) (cdr images))
-  (gnosis-add-note-fields deck "basic" answer hint question extra tags suspend (car images) (cdr images)))
-
-(defun gnosis-add-note-double (deck)
-  "Add note(s) of type double interactively to selected deck.
-
-DECK: Deck name to add gnosis
-
-Essentially, a \"note\" that generates 2 basic notes.  The second one
-reverses question/answer.
-
-Refer to `gnosis-add-note--double' for more."
-  (gnosis-add-note--double :deck deck
-			   :question (read-string "Question: ")
-			   :answer (read-string "Answer: ")
-			   :hint (gnosis-hint-prompt gnosis-previous-note-hint)
-			   :extra (gnosis-read-string-from-buffer "Extra" "")
-			   :images (gnosis-select-images)
-			   :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))
+  (gnosis-add-note-fields deck "basic" question hint answer extra tags suspend
+			  (car images) (cdr images))
+  (gnosis-add-note-fields deck "basic" answer hint question extra tags suspend
+			  (car images) (cdr images)))
 
 (cl-defun gnosis-add-note--y-or-n (&key deck question hint answer extra (images nil) tags (suspend 0))
   "Add y-or-n type note.
@@ -842,21 +786,8 @@ IMAGES: Cons cell, where car is the image to display before user-input
 TAGS: Tags used to organize notes
 
 SUSSPEND: Binary value of 0 & 1, when 1 note will be ignored."
-  (gnosis-add-note-fields deck "y-or-n" question hint answer extra tags suspend (car images) (cdr images)))
-
-(defun gnosis-add-note-y-or-n (deck)
-  "Add note(s) of type `y-or-n'.
-
-DECK: Deck name to add gnosis
-
-Refer to `gnosis-add-note--y-or-n' for more information about keyword values."
-  (gnosis-add-note--y-or-n :deck deck
-			   :question (gnosis-read-string-from-buffer "Question: " "")
-			   :answer (read-char-choice "Answer: [y] or [n]? " '(?y ?n))
-			   :hint (gnosis-hint-prompt gnosis-previous-note-hint)
-			   :extra (gnosis-read-string-from-buffer "Extra" "")
-			   :images (gnosis-select-images)
-			   :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))
+  (gnosis-add-note-fields deck "y-or-n" question hint answer extra tags suspend
+			  (car images) (cdr images)))
 
 (cl-defun gnosis-mc-cloze-extract-options (str &optional (char gnosis-mc-cloze-separator))
   "Extract options for MC-CLOZE note type from STR.
@@ -1536,7 +1467,8 @@ NOTE-COUNT: Total notes to be commited for session."
 		 finally
 		 ;; TODO: Add optional arg, repeat for specific deck/tag.
 		 ;; Repeat until there are no due notes
-		 (and due (gnosis-review-session (gnosis-collect-note-ids :due t) t note-count))))
+		 (and due (gnosis-review-session
+			   (gnosis-collect-note-ids :due t) t note-count))))
       (gnosis-dashboard)
       (gnosis-review-commit note-count))))
 
