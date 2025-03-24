@@ -366,7 +366,11 @@ STATUS-PLIST is a plist of status events as per `url-retrieve'."
           (setq-local mastodon-media--attachments (cons url attachments))))
       ;; switch to buf if not already viewing it:
       (unless (equal buf prev-buf)
-        (switch-to-buffer-other-window buf)))))
+        (switch-to-buffer-other-window buf))
+      ;; display bindings if multiple images:
+      (when (< 1 (length (cdr mastodon-media--attachments)))
+        (message (substitute-command-keys
+                  "\\`.'/\\`>'/\\`<right>' to cycle images"))))))
 
 (defun mastodon-media--image-or-cached (url process-fun args)
   "Fetch URL from cache or fro host.
