@@ -333,6 +333,14 @@ types of mastodon links and not just shr.el-generated ones.")
   "The keymap to be set for the author byline.
 It is active where point is placed by `mastodon-tl-goto-next-item.'")
 
+(defvar mastodon-image-mode-map
+  (let ((map (make-sparse-keymap)))
+    (set-keymap-parent map image-mode-map)
+    (define-key map (kbd ">") #'mastodon-tl-next-full-image)
+    (define-key map (kbd ".") #'mastodon-tl-next-full-image)
+    (define-key map (kbd "<right>") #'mastodon-tl-next-full-image)
+    map))
+
 
 ;;; MACROS
 
@@ -750,8 +758,10 @@ The result is added as an attachments property to author-byline."
   (let ((media (mastodon-tl--field 'media_attachments toot)))
     (mapcar (lambda (attachment)
               (let-alist attachment
-                (list :url (or .remote_url .url) ; fallback for notifications
-                      :type .type)))
+                (list :id .id
+                      :type .type
+                      ;; fallback for notifications:
+                      :url (or .remote_url .url))))
             media)))
 
 (defun mastodon-tl--byline-booster (toot)
@@ -1405,18 +1415,80 @@ SENSITIVE is a flag from the item's JSON data."
                              help-echo
                            (concat help-echo "\nC-RET: play " type " with mpv"))))
 
-(defun mastodon-tl-view-full-image ()
+;;; FULL IMAGE VIEW
+
+(define-derived-mode mastodon-image-mode image-mode
+  "mastodon-image"
+  :group 'mastodon)
+
+;; patch `shr-browse-image' to accept url arg:
+(defun mastodon-tl-shr-browse-image (&optional image-url copy-url)
+  "Browse the image under point.
+If COPY-URL (the prefix if called interactively) is non-nil, copy
+the URL of the image to the kill buffer instead."
+  (interactive "sP")
+  (let ((url (or image-url (get-text-property (point) 'image-url))))
+    (cond
+     ((not url)
+      (message "No image under point"))
+     (copy-url
+      (with-temp-buffer
+        (insert url)
+        (copy-region-as-kill (point-min) (point-max))
+        (message "Copied %s" url)))
+     (t
+      (message "Browsing %s..." url)
+      (browse-url url)))))
+
+(defun mastodon-tl--view-image-url (url attachments)
+  "View image URL. Set ATTACHMENTS metadata in image buffer."
+  (if (not url)
+      (user-error "No url found")
+    (if (not mastodon-tl--load-full-sized-images-in-emacs)
+        (mastodon-tl-shr-browse-image url)
+      (mastodon-media--image-or-cached
+       url #'mastodon-media--process-full-sized-image-response
+       `(nil ,url ,attachments ,(buffer-name))))))
+
+(defun mastodon-tl-view-full-image-at-point ()
   "Browse full-sized version of image at point in a new window."
   (interactive)
   (if (not (eq (mastodon-tl--property 'mastodon-tab-stop) 'image))
       (user-error "No image at point?")
-    (let* ((url (mastodon-tl--property 'image-url)))
-      (if (not mastodon-tl--load-full-sized-images-in-emacs)
-          (shr-browse-image)
-        (mastodon-media--image-or-cached
-         url
-         #'mastodon-media--process-full-sized-image-response
-         `(nil ,url))))))
+    (let* ((url (mastodon-tl--property 'image-url))
+           (attachments (mastodon-tl--property 'attachments)))
+      (mastodon-tl--view-image-url url attachments))))
+
+(defun mastodon-tl-view-first-full-image ()
+  "From item byline, fetch load its first full image."
+  (interactive)
+  (let* ((attachments (mastodon-tl--property 'attachments))
+         (url (plist-get (car attachments) :url)))
+    (mastodon-tl--view-image-url url attachments)))
+
+(defun mastodon-tl--get-next-image-url ()
+  "Return the url for the next image to load.
+Cycles through values in `mastodon-media--attachments'."
+  (cl-loop for attachment in (cdr mastodon-media--attachments)
+           for url = (car mastodon-media--attachments)
+           ;; match url against our plists:
+           for current = (cl-member-if
+                          (lambda (attachment)
+                            (equal url (plist-get attachment :url)))
+                          (cdr mastodon-media--attachments))
+           ;; fetch from next item in current or use first item if current
+           ;; has only 1 item:
+           return (plist-get (if (= 1 (length current))
+                                 (cadr mastodon-media--attachments)
+                               (cadr current))
+                             :url)))
+
+(defun mastodon-tl-next-full-image ()
+  "From full image view buffer, load the toot's next image."
+  (interactive)
+  (let* ((next-url (mastodon-tl--get-next-image-url)))
+    (mastodon-tl--view-image-url next-url
+                                 (cdr mastodon-media--attachments))))
 
 (defun mastodon-tl-toggle-sensitive-image ()
   "Toggle dislay of sensitive image at point."
