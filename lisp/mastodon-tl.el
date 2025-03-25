@@ -1692,7 +1692,7 @@ OPTIONS is an alist."
   (interactive "d")
   (if (mastodon-tl--media-video-p)
       (mastodon-tl-mpv-play-video-at-point)
-    (mastodon-tl-view-full-image)))
+    (mastodon-tl-view-full-image-at-point)))
 
 (defun mastodon-tl-click-image-or-video (event)
   "Click to play video with `mpv.el'.
