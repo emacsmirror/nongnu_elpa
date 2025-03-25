@@ -25,6 +25,7 @@
 (require 'outline)
 (require 'typst-ts-core)
 (require 'typst-ts-variables)
+(require 'typst-ts-symbols)
 (require 'seq)
 
 (defun typst-ts-mode-heading-up ()
@@ -625,23 +626,16 @@ When there is no section it will insert a heading below point."
   "Calculate fill prefix."
   ;; see `do-auto-fill' function and `;; Choose a fill-prefix automatically.'
   ;; for default automatical fill-prefix finding algorithm
-  (let ((fill-prefix nil))
+  (let (fill-prefix)
     (setq
      fill-prefix
      (catch 'fill-prefix
-       (let* ((cur-pos (point))
-              (cur-node (treesit-node-at cur-pos))
-              (cur-node-type (treesit-node-type cur-node))
-              (parent-node (treesit-node-parent cur-node))  ; could be nil
-              (parent-node-type (treesit-node-type parent-node))
-              node)
-         (cond
-          ;; for condition that there are closely aligned line above
-          ((setq node (typst-ts-core-parent-util-type
-                       (typst-ts-core-get-parent-of-node-at-bol-nonwhite)
-                       "item" t t))
-           (throw 'fill-prefix (fill-context-prefix (line-beginning-position) (line-end-position)))))
-         )))
+       (cond
+        ;; for condition that there are closely aligned line above
+        ((typst-ts-core-parent-util-type
+          (typst-ts-core-get-parent-of-node-at-bol-nonwhite)
+          "item" t t)
+         (throw 'fill-prefix (fill-context-prefix (line-beginning-position) (line-end-position)))))))
     fill-prefix))
 
 (defun typst-ts-editing-auto-fill-function ()

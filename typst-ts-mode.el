@@ -223,7 +223,7 @@ If you want to enable/disable specific font lock feature, please change
       (setq beg next))))
 
 
-(defun typst-ts-mode-render-math-scripts-fn (node override start end)
+(defun typst-ts-mode-render-math-scripts-fn (node _override _start _end)
   (let* ((ns (treesit-node-start node))
          (ne (treesit-node-end node))
          (prev-node-text (treesit-node-text (treesit-node-prev-sibling node)))
