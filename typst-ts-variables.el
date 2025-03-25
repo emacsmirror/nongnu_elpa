@@ -85,6 +85,13 @@ The compile options will be passed to the end of
   :type 'string
   :group 'typst-ts)
 
+
+(defcustom typst-ts-mode-preview-function 'browse-url
+  "Function that opens PDF documents for preview."
+  :type 'function
+  :group 'typst-ts)
+
+
 (defcustom typst-ts-compile-before-compilation-hook nil
   "Hook runs after compile."
   :type 'hook
@@ -101,11 +108,11 @@ the current buffer."
 
 ;;; Watch Mode =================================================================
 
-(defcustom typst-ts-watch-options ""
+(defcustom typst-ts-watch-options '()
   "User defined compile options for `typst-ts-watch'.
 The compile options will be passed to the
 `<typst-executable> watch <current-file>' sub-command."
-  :type 'string
+  :type '(list string)
   :group 'typst-ts-watch)
 
 (defcustom typst-ts-watch-process-name "*Typst-Watch*"

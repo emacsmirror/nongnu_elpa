@@ -64,7 +64,7 @@ If BUFFER is nil, it means use the current buffer.
 CHECK: non-nil mean check the file existence.
 Return nil if the BUFFER has not associated file or the there is
 no compiled pdf file when CHECK is non-nil."
-  (when-let ((typst-file (buffer-file-name buffer)))
+  (when-let* ((typst-file (buffer-file-name buffer)))
     (let ((res (concat (file-name-as-directory typst-ts-output-directory) (file-name-base typst-file) ".pdf")))
       (if check
           (when (file-exists-p res)
@@ -89,10 +89,6 @@ buffer before compilation."
 Assuming the compile output file name is in default style."
   (interactive)
   (typst-ts-compile t))
-
-(defcustom typst-ts-mode-preview-function 'browse-url
-  "Function that opens PDF documents for preview."
-  :type 'function)
 
 ;;;###autoload
 (defun typst-ts-preview (&optional buffer)

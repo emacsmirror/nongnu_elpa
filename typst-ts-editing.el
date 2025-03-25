@@ -24,6 +24,7 @@
 
 (require 'outline)
 (require 'typst-ts-core)
+(require 'typst-ts-variables)
 (require 'seq)
 
 (defun typst-ts-mode-heading-up ()
@@ -487,8 +488,8 @@ When using prefix argument ARG, `typst-ts-mode-electric-return' is nil,
                      (call-interactively global-ret-function))
                  (call-interactively global-ret-function))))))
         (node (typst-ts-core-parent-util-type
-                   (typst-ts-core-get-parent-of-node-at-bol-nonwhite)
-                   "item" t t)))
+               (typst-ts-core-get-parent-of-node-at-bol-nonwhite)
+               "item" t t)))
     (cond
      ((or (not typst-ts-mode-electric-return) arg) (funcall default-call))
      ((and node (eolp))
