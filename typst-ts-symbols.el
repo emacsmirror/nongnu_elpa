@@ -19,7 +19,7 @@
 
 ;;; Code:
 
-(defcustom typst-ts-mode-symbol-alist
+(defcustom typst-ts-symbol-alist
   '(("wj" . "wjoin") ("zwj" . "zwj") ("zwnj" . "zwnj") ("zws" . "zwsp")
     ("lrm" . "‎") ("rlm" . "‏") ("space" . "␣")
     ("space.nobreak" . "nbsp") ("space.nobreak.narrow" . " ")
@@ -374,7 +374,7 @@ https://typst.app/docs/reference/symbols/sym/"
           (cons (string :tag "Name")
                 (string :tag "Symbol"))))
 
-(defcustom typst-ts-mode-emoji-alist
+(defcustom typst-ts-emoji-alist
   '(("abacus" . "🧮")
     ("abc" . "🔤")
     ("abcd" . "🔡")

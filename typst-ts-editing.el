@@ -28,27 +28,27 @@
 (require 'typst-ts-symbols)
 (require 'seq)
 
-(defun typst-ts-mode-heading-up ()
+(defun typst-ts-editing-heading-up ()
   "Switch the current heading with the heading above."
   (interactive)
   (call-interactively #'outline-move-subtree-up))
 
-(defun typst-ts-mode-heading-down ()
+(defun typst-ts-editing-heading-down ()
   "Switch the current heading with the heading below."
   (interactive)
   (call-interactively #'outline-move-subtree-down))
 
-(defun typst-ts-mode-heading-left ()
+(defun typst-ts-editing-heading-left ()
   "Increase the heading level."
   (interactive)
   (call-interactively #'outline-promote))
 
-(defun typst-ts-mode-heading-right ()
+(defun typst-ts-editing-heading-right ()
   "Decrease heading level."
   (interactive)
   (call-interactively #'outline-demote))
 
-(defun typst-ts-mode-heading--at-point-p ()
+(defun typst-ts-editing-heading--at-point-p ()
   "Whether the current line is a heading.
 Return the heading node when yes otherwise nil."
   (let ((node (treesit-node-parent
@@ -60,7 +60,7 @@ Return the heading node when yes otherwise nil."
         node
       nil)))
 
-(defun typst-ts-mode-grid-cell--index (cell grid-cells amount-of-columns)
+(defun typst-ts-editing-grid-cell--index (cell grid-cells amount-of-columns)
   "Return a list in form of (row-index column-index) of CELL in GRID-CELLS.
 AMOUNT-OF-COLUMNS specifies how many columns one row has.
 Indeces are given in 0 index."
@@ -68,17 +68,17 @@ Indeces are given in 0 index."
     (list (/ index amount-of-columns)
           (mod index amount-of-columns))))
 
-(defun typts-ts-mode-grid-row--move (direction)
+(defun typst-ts-grid-row--move (direction)
   "Move grid row at point depending on DIRECTION up/down.
 DIRECTION is one of following symbols:
 `up', `down'."
   (let (to-switch current grid grid-cells row-index rows amount-of-columns cell)
-    (seq-setq (grid cell grid-cells) (typst-ts-mode-grid-cell--at-point-p))
+    (seq-setq (grid cell grid-cells) (typst-ts-editing-grid-cell--at-point-p))
     (unless (and grid cell)
       (user-error "Not inside a grid with rows"))
-    (setq amount-of-columns (typst-ts-mode-grid--column-number grid))
+    (setq amount-of-columns (typst-ts-editing-grid--column-number grid))
     (setq row-index
-          (car (typst-ts-mode-grid-cell--index
+          (car (typst-ts-editing-grid-cell--index
                 cell grid-cells amount-of-columns)))
     (setq rows (seq-partition grid-cells amount-of-columns))
     (setq current (seq-elt rows row-index))
@@ -100,9 +100,9 @@ DIRECTION is one of following symbols:
           (end1 (treesit-node-end (car (last current))))
           (start2 (treesit-node-start (car to-switch)))
           (end2 (treesit-node-end (car (last to-switch)))))
-      (typst-ts-mode--swap-regions start1 end1 start2 end2))))
+      (transpose-regions start1 end1 start2 end2))))
 
-(defun typst-ts-mode-grid-cell--move (direction)
+(defun typst-ts-editing-grid-cell--move (direction)
   "Move grid cell at point depending on DIRECTION up/down, left/right.
 DIRECTION is one of following symbols:
 `left', `right', `up', `down'.
@@ -110,7 +110,7 @@ DIRECTION is one of following symbols:
 Up/down means moving the cell to another row while keeping the column index."
   ;; inside table.header is different from the rest
   (let (grid grid-cells cell to-switch)
-    (seq-setq (grid cell grid-cells) (typst-ts-mode-grid-cell--at-point-p))
+    (seq-setq (grid cell grid-cells) (typst-ts-editing-grid-cell--at-point-p))
     (unless (and grid cell)
       (user-error "Not inside a grid cell"))
     (setq to-switch
@@ -128,19 +128,19 @@ Up/down means moving the cell to another row while keeping the column index."
              (treesit-node-next-sibling (treesit-node-next-sibling cell)))
             ((or 'up 'down)
              (let ((amount-of-columns
-                    (typst-ts-mode-grid--column-number grid))
+                    (typst-ts-editing-grid--column-number grid))
                    (select-cell
                     (lambda (row column)
                       (seq-elt
                        (seq-elt
                         (seq-partition
                          grid-cells
-                         (typst-ts-mode-grid--column-number grid))
+                         (typst-ts-editing-grid--column-number grid))
                         row)
                        column)))
                    row column)
                (seq-setq (row column)
-                         (typst-ts-mode-grid-cell--index
+                         (typst-ts-editing-grid-cell--index
                           cell grid-cells amount-of-columns))
                (if (eq direction 'up)
                    (progn
@@ -157,10 +157,10 @@ Up/down means moving the cell to another row while keeping the column index."
               (string= "(" (treesit-node-text to-switch))
               (string= ")" (treesit-node-text to-switch)))
       (user-error "There is no cell in the %s direction" direction))
-    (typst-ts-mode--swap-regions (treesit-node-start cell) (treesit-node-end cell)
-                                 (treesit-node-start to-switch) (treesit-node-end to-switch))))
+    (transpose-regions (treesit-node-start cell) (treesit-node-end cell)
+                       (treesit-node-start to-switch) (treesit-node-end to-switch))))
 
-(defun typst-ts-mode-grid--at-point-p ()
+(defun typst-ts-editing-grid--at-point-p ()
   "Whether the current point is on a grid/table.
 Return the call node if yes, otherwise return nil."
   (treesit-parent-until
@@ -175,14 +175,14 @@ Return the call node if yes, otherwise return nil."
                 (string= "table.header" ident)))))
    t))
 
-(defun typst-ts-mode-grid-cell--at-point-p ()
+(defun typst-ts-editing-grid-cell--at-point-p ()
   "Whether the current point is on a grid cell or not.
 Return a list (grid-node cell-node grid-cells) if yes, otherwise return nil."
   ;; A grid cell is a node inside a grid node that is not a tagged node.
   (let* ((node (treesit-node-at (point)))
          (node-begin (treesit-node-start node))
          (node-end (treesit-node-end node))
-         (inside-grid-p (typst-ts-mode-grid--at-point-p))
+         (inside-grid-p (typst-ts-editing-grid--at-point-p))
          (grid-cells
           (treesit-filter-child
            ;; the child number 1 is the argument list
@@ -211,7 +211,7 @@ Return a list (grid-node cell-node grid-cells) if yes, otherwise return nil."
     (when (and inside-grid-p cell-at-point)
       (list inside-grid-p cell-at-point grid-cells))))
 
-(defun typst-ts-mode-grid--column-number (node)
+(defun typst-ts-editing-grid--column-number (node)
   "Return the number of columns the grid has.
 NODE must be a call node with ident being grid or table.
 When there is no columns field or the semantic meaning makes no sense return 1."
@@ -252,7 +252,7 @@ When there is no columns field or the semantic meaning makes no sense return 1."
      (t (setq column-number 1)))
     column-number))
 
-(defun typst-ts-mode-item--at-point-p ()
+(defun typst-ts-editing-item--at-point-p ()
   "Return item node when point is on item.
 Otherwise nil."
   (treesit-parent-until
@@ -264,7 +264,7 @@ Otherwise nil."
    (lambda (x) (string= (treesit-node-type x)
                         "item"))))
 
-(defun typst-ts-mode-item--with-siblings ()
+(defun typst-ts-editing-item--with-siblings ()
   "Return (prev current next numbered-p) items.
 
 The last item in the last tells you if the list is numbered (t) or not (nil).
@@ -277,7 +277,7 @@ Being a different item type does not count as sibling, ex:
 - bar
 
 When point is not on an item node return nil."
-  (when-let* ((node (typst-ts-mode-item--at-point-p))
+  (when-let* ((node (typst-ts-editing-item--at-point-p))
               (get-item-type (lambda (x)
                                (treesit-node-text (treesit-node-child x 0))))
               (item-type (funcall get-item-type node))
@@ -301,39 +301,7 @@ When point is not on an item node return nil."
                  (funcall only-if (treesit-node-next-sibling node))
                  node-numbered-p)))))
 
-(defun typst-ts-mode--swap-regions (start1 end1 start2 end2)
-  "Swap region between START1 and END1 with region between START2 and END2.
-START1 END1 is the region where the point should be after swapping."
-  (let ((text1 (buffer-substring start1 end1))
-        (text2 (buffer-substring start2 end2))
-        (marker1-start (make-marker))
-        (marker1-end (make-marker))
-        (marker2-start (make-marker))
-        (marker2-end (make-marker))
-        (point (point)))
-    (set-marker marker1-start start1)
-    (set-marker marker1-end end1)
-    (set-marker marker2-start start2)
-    (set-marker marker2-end end2)
-    (delete-region marker1-start marker1-end)
-    (delete-region marker2-start marker2-end)
-
-    (goto-char marker1-start)
-    (insert text2)
-
-    (goto-char marker2-start)
-    (insert text1)
-    ;; move point to original position if possible
-    (when (and (<= start1 point)
-               (>= end1 point))
-      (forward-char (- point end1)))
-    ;; clean markers
-    (set-marker marker1-start nil)
-    (set-marker marker1-end nil)
-    (set-marker marker2-start nil)
-    (set-marker marker2-end nil)))
-
-(defun typst-ts-mode-item--move (direction)
+(defun typst-ts-editing-item--move (direction)
   "Move item node up or down (swap).
 DIRECTION should be `up' or `down'."
   (let* ( previous current next swap-with numbered-p
@@ -345,7 +313,7 @@ DIRECTION should be `up' or `down'."
                      (setq swap-with next))
                     (_ (error "%s is not one of: `up' `down'" direction))))))
     (seq-setq (previous current next numbered-p)
-              (typst-ts-mode-item--with-siblings))
+              (typst-ts-editing-item--with-siblings))
     (unless current
       (error "Point is not on an item"))
     (funcall bind)
@@ -361,70 +329,70 @@ DIRECTION should be `up' or `down'."
              (other-begin (treesit-node-start number2))
              (other-end (treesit-node-end number2)))
         (save-excursion
-          (typst-ts-mode--swap-regions current-begin current-end
-                                       other-begin other-end))))
+          (transpose-regions current-begin current-end
+                             other-begin other-end))))
     ;; the nodes must be reinitialized
     (seq-setq (previous current next numbered-p)
-              (typst-ts-mode-item--with-siblings))
+              (typst-ts-editing-item--with-siblings))
     (funcall bind)
     (let ((current-begin (treesit-node-start current))
           (current-end (treesit-node-end current))
           (other-begin (treesit-node-start swap-with))
           (other-end (treesit-node-end swap-with))
           (column (current-column)))
-      (typst-ts-mode--swap-regions current-begin current-end
-                                   other-begin other-end)
+      (transpose-regions current-begin current-end
+                         other-begin other-end)
       (move-to-column column))))
 
-(defun typst-ts-mode-item-up ()
+(defun typst-ts-editing-item-up ()
   "Move the item at point up."
   (interactive)
-  (typst-ts-mode-item--move 'up))
+  (typst-ts-editing-item--move 'up))
 
-(defun typst-ts-mode-item-down ()
+(defun typst-ts-editing-item-down ()
   "Move the item at point down."
   (interactive)
-  (typst-ts-mode-item--move 'down))
+  (typst-ts-editing-item--move 'down))
 
-(defun typst-ts-mode-meta-up ()
-  "See `typst-ts-mode-meta--dwim'."
+(defun typst-ts-editing-meta-up ()
+  "See `typst-ts-editing-meta--dwim'."
   (interactive)
-  (call-interactively (typst-ts-mode-meta--dwim 'up)))
+  (call-interactively (typst-ts-editing-meta--dwim 'up)))
 
-(defun typst-ts-mode-meta-down ()
-  "See `typst-ts-mode-meta--dwim'."
+(defun typst-ts-editing-meta-down ()
+  "See `typst-ts-editing-meta--dwim'."
   (interactive)
-  (call-interactively (typst-ts-mode-meta--dwim 'down)))
+  (call-interactively (typst-ts-editing-meta--dwim 'down)))
 
-(defun typst-ts-mode-meta-left ()
-  "See `typst-ts-mode-meta--dwim'."
+(defun typst-ts-editing-meta-left ()
+  "See `typst-ts-editing-meta--dwim'."
   (interactive)
-  (call-interactively (typst-ts-mode-meta--dwim 'left)))
+  (call-interactively (typst-ts-editing-meta--dwim 'left)))
 
-(defun typst-ts-mode-meta-right ()
-  "See `typst-ts-mode-meta--dwim'."
+(defun typst-ts-editing-meta-right ()
+  "See `typst-ts-editing-meta--dwim'."
   (interactive)
-  (call-interactively (typst-ts-mode-meta--dwim 'right)))
+  (call-interactively (typst-ts-editing-meta--dwim 'right)))
 
-(defun typst-ts-mode-meta--dwim (direction)
+(defun typst-ts-editing-meta--dwim (direction)
   "Return function depending on the context with meta key + DIRECTION.
 
 When point is at heading:
-`left': `typst-ts-mode-heading-decrease',
-`right': `typst-ts-mode-heading-increase',
-`up': `typst-ts-mode-heading-up',
-`down': `typst-ts-mode-heading-down'.
+`left': `typst-ts-editing-heading-decrease',
+`right': `typst-ts-editing-heading-increase',
+`up': `typst-ts-editing-heading-up',
+`down': `typst-ts-editing-heading-down'.
 
 When point is at item list:
-`up': `typst-ts-mode-item-up'
-`down': `typst-ts-mode-item-down'
+`up': `typst-ts-editing-item-up'
+`down': `typst-ts-editing-item-down'
 
 When there is no relevant action to do it will return the relevant function in
 the `GLOBAL-MAP' (example: `right-word')."
-  (let* ((prefix "typst-ts-mode-")
+  (let* ((prefix "typst-ts-editing-")
          (mid (cond
-               ((typst-ts-mode-heading--at-point-p) "heading")
-               ((and (typst-ts-mode-item--at-point-p)
+               ((typst-ts-editing-heading--at-point-p) "heading")
+               ((and (typst-ts-editing-item--at-point-p)
                      ;; does not exist, maybe will exist at some point
                      (not (or (eq 'left direction)
                               (eq 'right direction))))
@@ -447,7 +415,7 @@ the `GLOBAL-MAP' (example: `right-word')."
                                    (concat "\\[" prefix "meta" end "]")))
       (intern-soft (concat prefix mid end)))))
 
-(defun typst-ts-mode-meta-return (&optional arg)
+(defun typst-ts-editing-meta-return (&optional arg)
   "Depending on context, insert a heading or insert an item.
 The new heading is created after the ending of current heading.
 Using ARG argument will ignore the context and it will insert a heading instead."
@@ -458,22 +426,22 @@ Using ARG argument will ignore the context and it will insert a heading instead.
                       (string= "item" (treesit-node-type node)))))
         (node (typst-ts-core-get-parent-of-node-at-bol-nonwhite)))
     (cond
-     (arg (typst-ts-mode-insert--heading nil))
+     (arg (typst-ts-editing-insert--heading nil))
      (item-node
-      (typst-ts-mode-insert--item item-node))
+      (typst-ts-editing-insert--item item-node))
      (t
-      (typst-ts-mode-insert--heading node)))))
+      (typst-ts-editing-insert--heading node)))))
 
-(defun typst-ts-mode-return (&optional arg)
+(defun typst-ts-editing-return (&optional arg)
   "RET behavior depending context.
-Can be turned off by setting `typst-ts-mode-electric-return' to nil.
+Can be turned off by setting `typst-ts-electric-return' to nil.
 When point is on end of line of a list item with content,
 it will insert a list item without content on the next line.
 
 When point is on a list item without content,
 it will delete the list item.
 
-When using prefix argument ARG, `typst-ts-mode-electric-return' is nil,
+When using prefix argument ARG, `typst-ts-electric-return' is nil,
  or no special context, call global RET function"
   (interactive "P")
   (let ((default-call
@@ -492,14 +460,14 @@ When using prefix argument ARG, `typst-ts-mode-electric-return' is nil,
                (typst-ts-core-get-parent-of-node-at-bol-nonwhite)
                "item" t t)))
     (cond
-     ((or (not typst-ts-mode-electric-return) arg) (funcall default-call))
+     ((or (not typst-ts-electric-return) arg) (funcall default-call))
      ((and node (eolp))
       (if (> (treesit-node-child-count node) 1)
-          (typst-ts-mode-insert--item node)
+          (typst-ts-editing-insert--item node)
         (delete-region (treesit-node-start node) (treesit-node-end node))))
      (t (funcall default-call)))))
 
-(defun typst-ts-mode-insert--item (node)
+(defun typst-ts-editing-insert--item (node)
   "Insert an item after NODE.
 NODE must be an item node!
 This function respects indentation."
@@ -518,7 +486,7 @@ This function respects indentation."
               (concat (number-to-string (1+ item-number)) "."))
             " ")))
 
-(defun typst-ts-mode-insert--heading (node)
+(defun typst-ts-editing-insert--heading (node)
   "Insert a heading after the section that NODE is part of.
 When there is no section it will insert a heading below point."
   (let* ((section
@@ -558,7 +526,7 @@ When there is no section it will insert a heading below point."
             (typst-ts-core-line-bol-nonwhite-pos))
            offset))))))
 
-(defun typst-ts-mode-cycle (&optional _arg)
+(defun typst-ts-editing-cycle (&optional _arg)
   "Cycle."
   (interactive "P")
   (let (node)
@@ -610,13 +578,13 @@ When there is no section it will insert a heading below point."
                     (offset
                      (- cur-item-node-start-column
                         prev-item-node-start-column)))
-               (if (>= offset typst-ts-mode-indent-offset)
+               (if (>= offset typst-ts-editing-indent-offset)
                    (typst-ts-editing--indent-item-node-lines
                     cur-item-node
-                    (- (+ offset typst-ts-mode-indent-offset)))
+                    (- (+ offset typst-ts-editing-indent-offset)))
                  (typst-ts-editing--indent-item-node-lines
                   cur-item-node
-                  (- typst-ts-mode-indent-offset (abs offset)))))
+                  (- typst-ts-editing-indent-offset (abs offset)))))
 
              'success)))))
      ;; execute default action if not successful
@@ -645,15 +613,15 @@ When there is no section it will insert a heading below point."
            (adaptive-fill-mode (null fill-prefix)))
       (when fill-prefix (do-auto-fill)))))
 
-(defun typst-ts-mode-symbol-picker ()
-  "Insert elements from `typst-ts-mode-symbol-alist' `typst-ts-mode-emoji-alist'.
+(defun typst-ts-editing-symbol-picker ()
+  "Insert elements from `typst-ts-editing-symbol-alist' `typst-ts-editing-emoji-alist'.
 
 In markup mode, it will prefix the selection with \"#\"
 and its corresponding module (\"sym.\", \"emoji.\").
 In math mode, symbols do not need a \"#\" prefix and \"sym.\" prefix.
 In code mode, the selection needs to be prefixed with the module."
   (interactive)
-  (let* ((all-symbols (append typst-ts-mode-symbol-alist typst-ts-mode-emoji-alist))
+  (let* ((all-symbols (append typst-ts-editing-symbol-alist typst-ts-editing-emoji-alist))
          (completion-extra-properties
           '(:annotation-function
             (lambda (key)
@@ -673,8 +641,8 @@ In code mode, the selection needs to be prefixed with the module."
                                                         "code")
                                                (string= (treesit-node-type x)
                                                         "content")))))
-         (is-symbol-p (assoc value typst-ts-mode-symbol-alist))
-         (is-emoji-p (assoc value typst-ts-mode-emoji-alist))
+         (is-symbol-p (assoc value typst-ts-editing-symbol-alist))
+         (is-emoji-p (assoc value typst-ts-editing-emoji-alist))
          (to-insert value))
     (cond
      ((string= (treesit-node-type inside-code) "code")

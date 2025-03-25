@@ -41,7 +41,7 @@ When using a prefix argument or the optional argument PREVIEW,
   (interactive "P")
   (when preview
     (add-hook 'compilation-finish-functions
-              (typst-ts-mode-compile-and-preview--compilation-finish-function
+              (typst-ts-compile-and-preview--compilation-finish-function
                (current-buffer))))
   (run-hooks typst-ts-compile-before-compilation-hook)
 
@@ -72,7 +72,7 @@ no compiled pdf file when CHECK is non-nil."
         res))))
 
 
-(defun typst-ts-mode-compile-and-preview--compilation-finish-function (cur-buffer)
+(defun typst-ts-compile-and-preview--compilation-finish-function (cur-buffer)
   "For `typst-ts-compile-and-preview' and `compilation-finish-functions'.
 CUR-BUFFER: original typst buffer, in case user set
 `display-buffer-alist' option for compilation buffer to switch to compilation
@@ -81,7 +81,7 @@ buffer before compilation."
     (unwind-protect
         (typst-ts-preview cur-buffer)
       (remove-hook 'compilation-finish-functions
-                   (typst-ts-mode-compile-and-preview--compilation-finish-function cur-buffer)))))
+                   (typst-ts-compile-and-preview--compilation-finish-function cur-buffer)))))
 
 ;;;###autoload
 (defun typst-ts-compile-and-preview ()
@@ -95,7 +95,7 @@ Assuming the compile output file name is in default style."
   "Preview the typst document output.
 If BUFFER is passed, preview its output, otherwise use current buffer."
   (interactive)
-  (funcall typst-ts-mode-preview-function (typst-ts-compile-get-result-pdf-filename buffer)))
+  (funcall typst-ts-preview-function (typst-ts-compile-get-result-pdf-filename buffer)))
 
 (defvar typst-ts-compilation-mode-error
   (cons (rx bol "error:" (+ not-newline) "\n" (+ blank) "┌─ "

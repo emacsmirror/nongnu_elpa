@@ -49,7 +49,7 @@
 ;; ==============================================================================
 ;; TODO typst has three modes (namely 'markup', 'code' and 'math')
 ;; Currently only add common settings to syntax table
-(defvar typst-ts-mode-syntax-table
+(defvar typst-ts-syntax-table
   (let ((st (make-syntax-table)))
     ;; comment
     (modify-syntax-entry  ?/     ". 124b"  st)
@@ -57,7 +57,7 @@
     (modify-syntax-entry  ?\n    "> b"     st)
     st))
 
-(defvar typst-ts-mode-font-lock-settings
+(defvar typst-ts-font-lock-settings
   (treesit-font-lock-rules
    :language 'typst
    :feature 'comment
@@ -114,8 +114,8 @@
       "```" @typst-ts-markup-rawblock-indicator-face
       (ident) :? @typst-ts-markup-rawblock-lang-face
       ;; NOTE let embedded language fontify blob
-      ,@(if typst-ts-mode-enable-raw-blocks-highlight
-            '((blob) @typst-ts-mode-highlight-raw-block-fn)
+      ,@(if typst-ts-enable-raw-blocks-highlight
+            '((blob) @typst-ts-highlight-raw-block-fn)
           '((blob) @typst-ts-markup-rawblock-blob-face))
       "```" @typst-ts-markup-rawblock-indicator-face)
      (label) @typst-ts-markup-label-face  ; TODO more precise highlight (upstream)
@@ -197,7 +197,7 @@
    :override 'append
    '((attach
       ["^" "_"] @typst-ts-script-char-face
-      (_) @typst-ts-mode-render-math-scripts-fn))
+      (_) @typst-ts-render-math-scripts-fn))
 
    :language 'typst
    :feature 'math-extended
@@ -208,10 +208,10 @@
 
   "Font lock rules for `typst-ts-mode'.
 If you want to enable/disable specific font lock feature, please change
-`treesit-font-lock-level' or modify `typst-ts-mode-font-lock-feature-list'.")
+`treesit-font-lock-level' or modify `typst-ts-font-lock-feature-list'.")
 
 ;; modified from Auctex
-(defun typst-ts-mode-unfontify-region (beg end &rest _ignored)
+(defun typst-ts-unfontify-region (beg end &rest _ignored)
   "Unfontify region from BEG to END."
   (font-lock-default-unfontify-region beg end)
   (while (< beg end)
@@ -223,13 +223,13 @@ If you want to enable/disable specific font lock feature, please change
       (setq beg next))))
 
 
-(defun typst-ts-mode-render-math-scripts-fn (node _override _start _end)
+(defun typst-ts-render-math-scripts-fn (node _override _start _end)
   (let* ((ns (treesit-node-start node))
          (ne (treesit-node-end node))
          (prev-node-text (treesit-node-text (treesit-node-prev-sibling node)))
          (display-properties (pcase prev-node-text
-                               ("_" (car typst-ts-mode-math-script-display))
-                               ("^" (cdr typst-ts-mode-math-script-display))))
+                               ("_" (car typst-ts-math-script-display))
+                               ("^" (cdr typst-ts-math-script-display))))
          (face (pcase prev-node-text
                  ("_" 'typst-ts-subscript-face)
                  ("^" 'typst-ts-superscript-face))))
@@ -242,8 +242,8 @@ If you want to enable/disable specific font lock feature, please change
      ns ne
      face)))
 
-(defun typst-ts-mode-highlight-raw-block-fn (blob-node _override _start _end)
-  "A function used in function `typst-ts-mode-font-lock-rules'.
+(defun typst-ts-highlight-raw-block-fn (blob-node _override _start _end)
+  "A function used in function `typst-ts-font-lock-rules'.
 This function assign `typst-ts-markup-rawblock-blob-face' to those raw block
 whose language cannot be found or be loaded.
 BLOB-NODE."
@@ -266,14 +266,14 @@ BLOB-NODE."
         (typst-ts-els-fontify-raw-block lang-mode bns bne)
       (put-text-property bns bne 'face 'typst-ts-markup-rawblock-blob-face))))
 
-(defconst typst-ts-mode-font-lock-feature-list
+(defconst typst-ts-font-lock-feature-list
   '((comment common)
     (markup-basic code-basic math-basic)
     (markup-standard code-standard math-standard)
     (code-extended math-extended)))
 
 
-(defun typst-ts-mode-indent--grand-parent-bol (_node parent _bol)
+(defun typst-ts-indent--grand-parent-bol (_node parent _bol)
   "Return the grand parent beginning of line position.
 NODE, PARENT and BOL see `treesit-simple-indent-rules'."
   (save-excursion
@@ -281,7 +281,7 @@ NODE, PARENT and BOL see `treesit-simple-indent-rules'."
     (back-to-indentation)
     (point)))
 
-(defun typst-ts-mode-indent--no-node-section-container-p (node parent _bol)
+(defun typst-ts-indent--no-node-section-container-p (node parent _bol)
   "Whether the current structure is nil -> parbreak -> container -> section.
 NODE, PARENT and BOL see `treesit-simple-indent-rules'."
   (unless node
@@ -291,10 +291,10 @@ NODE, PARENT and BOL see `treesit-simple-indent-rules'."
            (ggp-node-type (treesit-node-type (treesit-node-parent gp-node))))
       (and
        (equal "parbreak" parent-type)
-       (string-match-p typst-ts-mode--container-node-types-regexp gp-node-type)
+       (string-match-p typst-ts--container-node-types-regexp gp-node-type)
        (equal "section" ggp-node-type)))))
 
-(defvar typst-ts-mode-indent-rules
+(defvar typst-ts-indent-rules
   ;; debug tips:
   ;; use `typst-ts/util/setup-indent-debug-environment' function in `side/utils.el'
   ;; it basically does these (with some extra trivial stuffs):
@@ -305,11 +305,11 @@ NODE, PARENT and BOL see `treesit-simple-indent-rules'."
   ;; `indentation-test.typ' file is used for testing indentation.
 
   ;; no-node situation: often in insert mode > hit return at the line ending
-  ;; `typst-ts-mode-indent-line-function' is created for handling end of buffer
+  ;; `typst-ts-indent-line-function' is created for handling end of buffer
   ;;  edge cases
 
   ;; Note electric-pair-mode will auto insert newline character when condition meets
-  ;; see `typst-ts-mode-electric-pair-open-newline-between-pairs-psif'
+  ;; see `typst-ts-electric-pair-open-newline-between-pairs-psif'
   ;; It may be better to turn off `electric-pair-open-newline-between-pairs'
   `((typst
      ;; ((lambda (node parent bol)  ; NOTE
@@ -323,7 +323,7 @@ NODE, PARENT and BOL see `treesit-simple-indent-rules'."
      ((parent-is "source_file") column-0 0)
 
      ((n-p-gp ,(regexp-opt '(")" "]" "}" "$"))
-              ,typst-ts-mode--container-node-types-regexp
+              ,typst-ts--container-node-types-regexp
               nil)
       parent-bol 0)
 
@@ -331,18 +331,18 @@ NODE, PARENT and BOL see `treesit-simple-indent-rules'."
      ;; math align, example:
      ;; sum_(k=0)^n k
      ;;   &= 1 + ... + n \
-     ((node-is "align") parent-bol typst-ts-mode-indent-offset)
+     ((node-is "align") parent-bol typst-ts-indent-offset)
 
      ;; code field, example:
      ;; "a b c"
      ;;   .split(" ")
-     ((n-p-gp "." "field" nil) parent-bol typst-ts-mode-indent-offset)
+     ((n-p-gp "." "field" nil) parent-bol typst-ts-indent-offset)
 
      ((parent-is "comment") prev-adaptive-prefix 0)
 
      ;; item - child item
      ((and (node-is "item") (parent-is "item")) parent-bol
-      typst-ts-mode-indent-offset)
+      typst-ts-indent-offset)
 
      ;; multi-line item
      ;; -  #[hi] foo
@@ -350,22 +350,22 @@ NODE, PARENT and BOL see `treesit-simple-indent-rules'."
      ;; my try with `prev-adaptive-prefix' failed even after set the
      ;; `adaptive-fill-regexp'
      ((match nil "item" nil 2 nil)
-      typst-ts-mode--indentation-multiline-item-get-anchor 0)
+      typst-ts--indentation-multiline-item-get-anchor 0)
 
      ;; item - new item content should follow its previous line's indentation
      ;; level
      ;; e.g.
      ;; -  hi | <- return (newline command)
      ((and no-node
-           typst-ts-mode--indentation-prev-line-is-item-p
+           typst-ts--indentation-prev-line-is-item-p
            ;; not in container
            ;; example:
            ;; - hi
            ;;   hi #[
            ;;     - hello | <- return
            ;;   ]
-           typst-ts-mode--indentation-editing-not-inside-code-container-p)
-      typst-ts-mode--indentation-multiline-item-get-anchor_ 0)
+           typst-ts--indentation-editing-not-inside-code-container-p)
+      typst-ts--indentation-multiline-item-get-anchor_ 0)
 
      ;; raw block
      ;; whether normally or in insertion, the current node is always nil...
@@ -376,16 +376,16 @@ NODE, PARENT and BOL see `treesit-simple-indent-rules'."
       parent-bol 0)
 
      ;; inside container && container is direct child of "section" (headline)
-     (typst-ts-mode-indent--no-node-section-container-p
+     (typst-ts-indent--no-node-section-container-p
       great-grand-parent 0)
-     ((n-p-gp nil ,typst-ts-mode--container-node-types-regexp "section")
+     ((n-p-gp nil ,typst-ts--container-node-types-regexp "section")
       grand-parent 0)
 
      ;; inside container
-     ((and no-node (n-p-gp nil "parbreak" ,typst-ts-mode--container-node-types-regexp))
-      typst-ts-mode-indent--grand-parent-bol typst-ts-mode-indent-offset)
-     ((parent-is ,typst-ts-mode--container-node-types-regexp)
-      parent-bol typst-ts-mode-indent-offset)
+     ((and no-node (n-p-gp nil "parbreak" ,typst-ts--container-node-types-regexp))
+      typst-ts-indent--grand-parent-bol typst-ts-indent-offset)
+     ((parent-is ,typst-ts--container-node-types-regexp)
+      parent-bol typst-ts-indent-offset)
 
      (no-node parent-bol 0)
 
@@ -395,11 +395,11 @@ NODE, PARENT and BOL see `treesit-simple-indent-rules'."
      (catch-all prev-line 0)))
   "Tree-sitter indent rules for `typst-ts-mode'.")
 
-(defun typst-ts-mode--indentation-multiline-item-get-anchor (_node parent _bol)
+(defun typst-ts--indentation-multiline-item-get-anchor (_node parent _bol)
   "Return the start of second child of PARENT."
   (treesit-node-start (treesit-node-child parent 1)))
 
-(defun typst-ts-mode--indentation-multiline-item-get-anchor_ (_node _parent _bol)
+(defun typst-ts--indentation-multiline-item-get-anchor_ (_node _parent _bol)
   "Return the start of second child of the current item.
 This function is meant to be used when user hits a return key."
   (treesit-node-start
@@ -413,7 +413,7 @@ This function is meant to be used when user hits a return key."
      "item" t)
     1)))
 
-(defun typst-ts-mode--indentation-prev-line-is-item-p (_node _parent _bol)
+(defun typst-ts--indentation-prev-line-is-item-p (_node _parent _bol)
   (save-excursion
     (forward-line -1)
     (back-to-indentation)
@@ -421,7 +421,7 @@ This function is meant to be used when user hits a return key."
      (treesit-node-at (point))
      "item" t)))
 
-(defun typst-ts-mode--indentation-editing-not-inside-code-container-p
+(defun typst-ts--indentation-editing-not-inside-code-container-p
     (node parent _bol)
   "NODE, PARENT and BOL see `treesit-simple-indent-rules'."
   (let* ((gp-node (treesit-node-parent parent))
@@ -433,7 +433,7 @@ This function is meant to be used when user hits a return key."
           (equal (treesit-node-type ggp-node) "code")))))
 
 
-(defun typst-ts-mode-comment-setup()
+(defun typst-ts-comment-setup()
   "Setup comment related stuffs for `typst-ts-mode'."
   ;; stolen from `c-ts-common-comment-setup'
   (setq-local comment-start "// ")
@@ -446,7 +446,7 @@ This function is meant to be used when user hits a return key."
                   (group (or (syntax comment-end)
                              (seq (+ "*") "/"))))))
 
-(defun typst-ts-mode--imenu-function-defintion-p (node)
+(defun typst-ts--imenu-function-defintion-p (node)
   "Whether NODE is a function defintion node."
   (let* ((parent-node (treesit-node-parent node))
          (grandparent-node (treesit-node-parent parent-node)))
@@ -455,23 +455,23 @@ This function is meant to be used when user hits a return key."
          (equal (treesit-node-field-name parent-node) "pattern")
          (equal (treesit-node-type grandparent-node) "let"))))
 
-(defun typst-ts-mode--imenu-name-function (node)
+(defun typst-ts--imenu-name-function (node)
   "Generate name of NODE for displaying in Imenu."
   (treesit-node-text node))
 
 ;; outline-minor-mode
-(defconst typst-ts-mode-outline-regexp "^[[:space:]]*\\(=+\\)"
+(defconst typst-ts-outline-regexp "^[[:space:]]*\\(=+\\)"
   "Regexp identifying Typst header.")
 
-(defconst typst-ts-mode-outline-heading-alist
+(defconst typst-ts-outline-heading-alist
   '(("=" . 1) ("==" . 2) ("===" . 3) ("====" . 4) ("=====" . 5) ("======" . 6))
   "See `outline-heading-alist'.")
 
-(defun typst-ts-mode-outline-level ()
+(defun typst-ts-outline-level ()
   "Return the level of the heading at point."
   (save-excursion
     (end-of-line)
-    (if (re-search-backward typst-ts-mode-outline-regexp nil t)
+    (if (re-search-backward typst-ts-outline-regexp nil t)
         (- (match-end 1) (match-beginning 1))
       0)))
 
@@ -483,23 +483,23 @@ This function is meant to be used when user hits a return key."
   "C-c C-w" #'typst-ts-watch-mode
   "C-c C-p" #'typst-ts-preview
 
-  "M-<left>" #'typst-ts-mode-meta-left
-  "M-<right>" #'typst-ts-mode-meta-right
-  "M-<down>" #'typst-ts-mode-meta-down
-  "M-<up>" #'typst-ts-mode-meta-up
-  "M-<return>" #'typst-ts-mode-meta-return
+  "M-<left>" #'typst-ts-editing-meta-left
+  "M-<right>" #'typst-ts-editing-meta-right
+  "M-<down>" #'typst-ts-editing-meta-down
+  "M-<up>" #'typst-ts-editing-meta-up
+  "M-<return>" #'typst-ts-editing-meta-return
 
   ;; don't bind <return>
   ;; Binding a command to "<return>" is generally a bug.
   ;; Emacs will first look for a binding for `return` and if it finds one
   ;; it'll use it in preference to a binding for `RET`, regardless of the
   ;; relative precedence of the keymaps involved.
-  "TAB" #'typst-ts-mode-cycle
-  "RET" #'typst-ts-mode-return
+  "TAB" #'typst-ts-editing-cycle
+  "RET" #'typst-ts-editing-return
   "C-c '" #'typst-ts-edit-indirect)
 
 
-(defun typst-ts-mode-indent-line-function ()
+(defun typst-ts-indent-line-function ()
   "A simple wrapper of `treesit-indent' for handle indentation edge cases.
 It is useful to handle end of buffer situation (please turn on `whitespace-mode'
 to see that it's actually end of buffer).  Basically, if we are at the end of
@@ -512,7 +512,7 @@ nil and parbreak."
     (backward-char))
   (treesit-indent))
 
-(defun typst-ts-mode-electric-pair-open-newline-between-pairs-psif ()
+(defun typst-ts-electric-pair-open-newline-between-pairs-psif ()
   "Custom version of `electric-pair-open-newline-between-pairs-psif'.
 It provide the ability to automatically open a new line for '$' character."
   (when (and (if (functionp electric-pair-open-newline-between-pairs)
@@ -528,15 +528,15 @@ It provide the ability to automatically open a new line for '$' character."
                    (and (eq cb ?\$) (eq ca ?\$)))))
     (save-excursion (newline 1 t))))
 
-(defun typst-ts-mode-check-grammar-version ()
+(defun typst-ts-check-grammar-version ()
   "Check typst tree sitter grammar version.
 May not be correct(modified time can be the download time, copied time, etc.),
 but it does help prevent some error cases."
-  (when typst-ts-mode-grammar-location
-    (let ((min-time (time-convert typst-ts-mode--grammar-minimum-version-timestamp nil))
+  (when typst-ts-grammar-location
+    (let ((min-time (time-convert typst-ts--grammar-minimum-version-timestamp nil))
           (mod-time
            (file-attribute-modification-time
-            (file-attributes typst-ts-mode-grammar-location))))
+            (file-attributes typst-ts-grammar-location))))
       (when (time-less-p mod-time min-time)
         (message
          (propertize
@@ -544,8 +544,8 @@ but it does help prevent some error cases."
 typst tree sitter grammar (at least %s)!" (current-time-string min-time))
           'face '(:weight bold :foreground "firebrick")))))))
 
-(defun typst-ts-mode-after-hook-function ()
-  "Run after all hooks in `typst-ts-mode-hook'."
+(defun typst-ts-after-hook-function ()
+  "Run after all hooks in `typst-ts-hook'."
   ;; patch `electric-pair-post-self-insert-function' function
   (when electric-pair-mode
     ;; add-function :override buffer-locally doesn't work, so we do this...
@@ -553,7 +553,7 @@ typst tree sitter grammar (at least %s)!" (current-time-string min-time))
     (remove-hook 'post-self-insert-hook
                  'electric-pair-post-self-insert-function t)
     (add-hook 'post-self-insert-hook
-              #'typst-ts-mode-electric-pair-open-newline-between-pairs-psif
+              #'typst-ts-electric-pair-open-newline-between-pairs-psif
               t))
 
   ;; Set Compile Command
@@ -572,20 +572,20 @@ typst tree sitter grammar (at least %s)!" (current-time-string min-time))
 
   ;; FIXME
   ;; necessary for
-  ;; `typst-ts-mode-cycle'(`typst-ts-editing--indent-item-node-lines')
+  ;; `typst-ts-cycle'(`typst-ts-editing--indent-item-node-lines')
   ;; since it calculate offset based on character
   ;; (maybe also some indentation rules)
   (indent-tabs-mode -1)
 
-  (typst-ts-mode-check-grammar-version))
+  (typst-ts-check-grammar-version))
 
 ;;;###autoload
 (define-derived-mode typst-ts-mode text-mode "Typst"
   "Major mode for editing Typst, powered by tree-sitter."
   :group 'typst
-  :syntax-table typst-ts-mode-syntax-table
+  :syntax-table typst-ts-syntax-table
   :after-hook
-  (typst-ts-mode-after-hook-function)
+  (typst-ts-after-hook-function)
 
   (unless (treesit-ready-p 'typst)
     (user-error "Tree-sitter for Typst isn't available"))
@@ -593,7 +593,7 @@ typst tree sitter grammar (at least %s)!" (current-time-string min-time))
   (setq-local treesit-primary-parser (treesit-parser-create 'typst))
 
   ;; Comments.
-  (typst-ts-mode-comment-setup)
+  (typst-ts-comment-setup)
 
   ;; Electric
   (setq-local
@@ -607,11 +607,11 @@ typst tree sitter grammar (at least %s)!" (current-time-string min-time))
                          (?\$ . ?\$)))
 
   ;; Font Lock
-  (setq-local treesit-font-lock-settings typst-ts-mode-font-lock-settings)
-  (setq-local treesit-font-lock-feature-list typst-ts-mode-font-lock-feature-list)
+  (setq-local treesit-font-lock-settings typst-ts-font-lock-settings)
+  (setq-local treesit-font-lock-feature-list typst-ts-font-lock-feature-list)
 
   ;; Indentation
-  (setq-local treesit-simple-indent-rules typst-ts-mode-indent-rules)
+  (setq-local treesit-simple-indent-rules typst-ts-indent-rules)
 
   ;; Imenu
   (setq-local treesit-simple-imenu-settings
@@ -623,9 +623,9 @@ typst tree sitter grammar (at least %s)!" (current-time-string min-time))
               ;; regexp string) when you use default settings for outline
               ;; (outline from imenu) see `treesit-major-mode-setup' and
               ;; `treesit-outline-predicate'
-              `(("Functions" typst-ts-mode--imenu-function-defintion-p nil
-                 typst-ts-mode--imenu-name-function)
-                ("Headings" "^heading$" nil typst-ts-mode--imenu-name-function)))
+              `(("Functions" typst-ts--imenu-function-defintion-p nil
+                 typst-ts--imenu-name-function)
+                ("Headings" "^heading$" nil typst-ts--imenu-name-function)))
 
   (setq-local treesit-defun-type-regexp
               (regexp-opt '("let" "math")))
@@ -639,9 +639,9 @@ typst tree sitter grammar (at least %s)!" (current-time-string min-time))
   (if nil  ; (>= emacs-major-version 30)
       ;; FIXME maybe it's a upstream bug. Circle top-level section will cycle all the content below
       (setq treesit-outline-predicate (regexp-opt '("section" "source_file")))
-    (setq-local outline-regexp typst-ts-mode-outline-regexp)
-    (setq-local outline-level #'typst-ts-mode-outline-level))
-  (setq-local outline-heading-alist typst-ts-mode-outline-heading-alist)
+    (setq-local outline-regexp typst-ts-outline-regexp)
+    (setq-local outline-level #'typst-ts-outline-level))
+  (setq-local outline-heading-alist typst-ts-outline-heading-alist)
 
 
   ;; auto fill function
@@ -649,8 +649,8 @@ typst tree sitter grammar (at least %s)!" (current-time-string min-time))
 
   (treesit-major-mode-setup)
 
-  (setq-local font-lock-unfontify-region-function #'typst-ts-mode-unfontify-region)
-  (setq-local indent-line-function #'typst-ts-mode-indent-line-function)
+  (setq-local font-lock-unfontify-region-function #'typst-ts-unfontify-region)
+  (setq-local indent-line-function #'typst-ts-indent-line-function)
   (add-hook 'typst-ts-mode-hook (lambda ()
                                   (setq-local edit-indirect-guess-mode-function
                                               #'typst-ts-edit-indirect--guess-mode))))

@@ -27,7 +27,7 @@
 ;; code from Emacs binary
 (declare-function treesit-parser-list "treesit" t t)
 
-(defcustom typst-ts-mode-indent-offset 4
+(defcustom typst-ts-indent-offset 4
   "Number of spaces for each indentation step in `typst-ts-mode'."
   :type 'natnum
   :group 'typst-ts)
@@ -37,7 +37,7 @@
   ;; TODO file a bug
   '("block" "content" "group" "math" "_math_group"))
 
-(defconst typst-ts-mode--container-node-types-regexp
+(defconst typst-ts--container-node-types-regexp
   (regexp-opt typst-ts-core--container-node-types)
   "Container node types regexp.")
 
@@ -113,7 +113,7 @@ NODE TYPE INCLUDE-NODE see `treesit-parent-until'."
             (let ((node-type (treesit-node-type node)))
               (or (and same-context
                        (string-match-p
-                        typst-ts-mode--container-node-types-regexp node-type))
+                        typst-ts--container-node-types-regexp node-type))
                   (string-match-p type node-type))))
           include-node)))
     (when (and matched-node

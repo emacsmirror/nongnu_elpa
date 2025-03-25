@@ -26,7 +26,7 @@
 (require 'typst-ts-misc-commands)
 
 (transient-define-prefix typst-ts-tmenu ()
-  "Typst-ts-mode transient menu."
+  "`typst-ts-mode' transient menu."
   [["Compile"
     ("c" "compile & preview" typst-ts-compile-and-preview)
     ("C" "compile" typst-ts-compile)
