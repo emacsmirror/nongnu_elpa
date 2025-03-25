@@ -19,37 +19,7 @@
 
 ;;; Code:
 (require 'compile)
-
-(defgroup typst-ts-compile nil
-  "Typst TS Compilation."
-  :prefix "typst-ts-compile"
-  :group 'typst-ts)
-
-(defcustom typst-ts-compile-executable-location "typst"
-  "The location or name (if in variable `exec-path') for Typst executable."
-  :type 'string)
-
-(defcustom typst-ts-compile-options ""
-  "User defined compile options for `typst-ts-compile'.
-The compile options will be passed to the end of
-`<typst-executable> compile <current-file>' command."
-  :type 'string)
-
-(defcustom typst-ts-output-directory ""
-  "User defined output directory for `typst-ts-compile` and `typst-ts-watch`."
-  :type 'string
-  :group 'typst-ts)
-
-(defcustom typst-ts-compile-before-compilation-hook nil
-  "Hook runs after compile."
-  :type 'hook)
-
-(defcustom typst-ts-compile-after-compilation-hook nil
-  "Hook runs after compile.
-Note the requirement of this hook is the same as `compilation-finish-functions'.
-Also note that this hook runs with typst buffer(the buffer you are editing) as
-the current buffer."
-  :type 'hook)
+(require 'typst-ts-variables)
 
 (defun typst-ts-compile--compilation-finish-function (cur-buffer)
   "Compilation finish function.

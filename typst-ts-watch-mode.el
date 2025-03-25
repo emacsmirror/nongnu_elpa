@@ -22,6 +22,7 @@
 ;;; Code:
 
 (require 'typst-ts-compile)
+(require 'typst-ts-variables)
 
 (defgroup typst-ts-watch nil
   "Typst TS Watch."
@@ -36,41 +37,6 @@
       (typst-ts-watch-start)
     (typst-ts-watch-stop)))
 
-(defcustom typst-ts-watch-options '()
-  "User defined compile options for `typst-ts-watch'.
-The compile options will be passed to the
-`<typst-executable> watch <current-file>' sub-command."
-  :type '(choice (repeat string)
-                 (const :tag "Empty list" nil)))
-
-(defcustom typst-ts-watch-process-name "*Typst-Watch*"
-  "Process name for `typst watch' sub-command."
-  :type 'string)
-
-(defcustom typst-ts-watch-process-buffer-name "*Typst-Watch*"
-  "Process buffer name for `typst watch' sub-command."
-  :type 'string)
-
-(defcustom typst-ts-watch-auto-display-compilation-error t
-  "Whether the typst watch process buffer should be displayed automatically.
-This means the buffer will be displayed when error occurs, hide when error
-is eliminated."
-  :type 'boolean)
-
-(defcustom typst-ts-watch-display-buffer-parameters
-  '(display-buffer-at-bottom
-    (window-height . fit-window-to-buffer))
-  "Display buffer parameters.
-Note that since the major mode of typst watch buffer is derived from
-compilation mode.
-If you have a rule like `((derived-mode . `compilation-mode') ...)'
-in your `display-buffer-alist', then this option will be covered by that rule."
-  :type 'symbol)
-
-(defvar typst-ts-watch-before-watch-hook nil
-  "Hook runs before compile.")
-(defvar typst-ts-watch-after-watch-hook nil
-  "Hook runs after compile.")
 
 (defun typst-ts-watch--process-filter (proc output)
   "Filter the `typst watch' process output.

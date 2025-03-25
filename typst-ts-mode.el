@@ -43,45 +43,7 @@
 (require 'typst-ts-lsp)
 (require 'typst-ts-misc-commands)
 (require 'typst-ts-transient)
-
-(defgroup typst-ts nil
-  "Tree Sitter enabled Typst Writing."
-  :prefix "typst-ts"
-  :group 'text
-  :group 'languages)
-
-
-(defcustom typst-ts-mode-grammar-location nil
-  "Specify typst tree sitter grammar file location.
-This is used for grammar minimum version check.  The modified time of the
-grammar file is used for comparing.
-This variable is used in `typst-ts-mode-check-grammar-version'."
-  :type '(choice (string :tag "typst tree sitter grammar file location")
-                 (const :tag "Don't enable grammar version check" nil)))
-
-;; `git log -n1 --date=raw` or `git log -n1 --format="%at"`
-(defvar typst-ts-mode--grammar-minimum-version-timestamp 1713791627
-  "Timestamp for the minimum supported typst tree sitter grammar version.")
-
-(defcustom typst-ts-mode-enable-raw-blocks-highlight nil
-  "Whether to enable raw block highlighting.
-NOTE this option must be set before the first loading(opening typst file)"
-  :type 'boolean)
-
-(defcustom typst-ts-mode-electric-return t
-  "Whether `typst-ts-mode-return' auto inserts list items or not."
-  :type 'boolean)
-
-;;  ==============================================================================
-;; code from Auctex
-(defcustom typst-ts-mode-math-script-display '((raise -0.5) . (raise 0.5))
-  "Display specification for subscript and superscript content.
-The car is used for subscript, the cdr is used for superscripts."
-  :type '(cons (choice (sexp :tag "Subscript form")
-                       (const :tag "No lowering" nil))
-               (choice (sexp :tag "Superscript form")
-                       (const :tag "No raising" nil)))
-  :group 'typst-ts)
+(require 'typst-ts-variables)
 
 
 ;; ==============================================================================
