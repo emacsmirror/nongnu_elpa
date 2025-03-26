@@ -352,7 +352,7 @@ Authorization header is included by default unless UNAUTHENTICED-P is non-nil."
       (with-temp-buffer
         (url-retrieve url callback cbargs)))))
 
-(defun mastodon-http--post-callback (status file caption buffer)
+(defun mastodon-http--post-media-callback (status file caption buffer)
   "Callback function called after posting FILE as an attachment with CAPTION.
 The toot is being composed in BUFFER. See `url-retrieve' for STATUS."
   (unwind-protect
@@ -394,7 +394,7 @@ The toot is being composed in BUFFER. See `url-retrieve' for STATUS."
                 (mastodon-toot--update-status-fields))))))
     (kill-buffer (current-buffer))))
 
-(defun mastodon-http--post-prep-file (filename)
+(defun mastodon-http--post-media-prep-file (filename)
   "Return the request data to upload FILENAME."
   (with-temp-buffer
     (set-buffer-multibyte nil)
@@ -413,7 +413,7 @@ The toot is being composed in BUFFER. See `url-retrieve' for STATUS."
 The upload is asynchronous. On succeeding,
 `mastodon-toot--media-attachment-ids' is set to the id(s) of the
 item uploaded, and `mastodon-toot--update-status-fields' is run."
-  (let* ((data (mastodon-http--post-prep-file filename))
+  (let* ((data (mastodon-http--post-media-prep-file filename))
          (url-request-method "POST")
          (url-request-extra-headers
           `(("Authorization" . ,(string-to-unibyte
@@ -422,7 +422,7 @@ item uploaded, and `mastodon-toot--update-status-fields' is run."
                                        (car data)))))
          (url-request-data (cdr data)))
     (url-retrieve (format "%s?description=%s" url (url-hexify-string caption))
-                  #'mastodon-http--post-callback
+                  #'mastodon-http--post-media-callback
                   `(,filename ,caption ,(current-buffer)))))
 
 (provide 'mastodon-http)
