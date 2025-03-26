@@ -1464,7 +1464,9 @@ the URL of the image to the kill buffer instead."
   (interactive)
   (let* ((attachments (mastodon-tl--property 'attachments))
          (url (plist-get (car attachments) :url)))
-    (mastodon-tl--view-image-url url attachments)))
+    (if (not attachments)
+        (user-error "Toot has no attachments")
+      (mastodon-tl--view-image-url url attachments))))
 
 (defun mastodon-tl--get-next-image-url ()
   "Return the url for the next image to load.
