@@ -110,6 +110,7 @@
 (defvar mastodon-media--enable-image-caching)
 (defvar mastodon-media--generic-broken-image-data)
 (defvar mastodon-media--sensitive-image-data)
+(defvar mastodon-media--attachments)
 
 
 ;;; CUSTOMIZES
@@ -332,6 +333,8 @@ types of mastodon links and not just shr.el-generated ones.")
       map))
   "The keymap to be set for the author byline.
 It is active where point is placed by `mastodon-tl-goto-next-item.'")
+
+(defvar image-mode-map)
 
 (defvar mastodon-image-mode-map
   (let ((map (make-sparse-keymap)))
@@ -1427,7 +1430,8 @@ SENSITIVE is a flag from the item's JSON data."
 (defun mastodon-tl-shr-browse-image (&optional image-url copy-url)
   "Browse the image under point.
 If COPY-URL (the prefix if called interactively) is non-nil, copy
-the URL of the image to the kill buffer instead."
+the URL of the image to the kill buffer instead.
+Optionally use IMAGE-URL rather than the image-url property at point."
   (interactive "sP")
   (let ((url (or image-url (get-text-property (point) 'image-url))))
     (cond
@@ -2265,7 +2269,9 @@ This includes the update profile note buffer, but not the preferences one."
 
 (defun mastodon-tl--own-profile-buffer-p ()
   "Return t if we are viewing our own profile buffer.
-We check that our account credientials id matches the endpoint id in the buffer spec, which if in a profile buffer is of the form \"accounts/$id/statuses\"."
+We check that our account credientials id matches the endpoint id in the
+buffer spec, which if in a profile buffer is of the form
+\"accounts/$id/statuses\"."
   (and (mastodon-tl--profile-buffer-p)
        (let ((endpoint-id
               (nth 1
