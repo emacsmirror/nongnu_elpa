@@ -339,6 +339,8 @@ It is active where point is placed by `mastodon-tl-goto-next-item.'")
     (define-key map (kbd ">") #'mastodon-tl-next-full-image)
     (define-key map (kbd ".") #'mastodon-tl-next-full-image)
     (define-key map (kbd "<right>") #'mastodon-tl-next-full-image)
+    ;; matches view full image binding in main keymap:
+    (define-key map (kbd "=") #'mastodon-tl-next-full-image)
     map))
 
 
