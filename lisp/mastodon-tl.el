@@ -1473,19 +1473,18 @@ the URL of the image to the kill buffer instead."
 (defun mastodon-tl--get-next-image-url ()
   "Return the url for the next image to load.
 Cycles through values in `mastodon-media--attachments'."
-  (cl-loop for attachment in (cdr mastodon-media--attachments)
-           for url = (car mastodon-media--attachments)
-           ;; match url against our plists:
-           for current = (cl-member-if
-                          (lambda (attachment)
-                            (equal url (plist-get attachment :url)))
-                          (cdr mastodon-media--attachments))
-           ;; fetch from next item in current or use first item if current
-           ;; has only 1 item:
-           return (plist-get (if (= 1 (length current))
-                                 (cadr mastodon-media--attachments)
-                               (cadr current))
-                             :url)))
+  (let* ((url (car mastodon-media--attachments))
+         ;; match url against our plists:
+         (current  (cl-member-if
+                    (lambda (attachment)
+                      (equal url (plist-get attachment :url)))
+                    (cdr mastodon-media--attachments))))
+    ;; fetch from next item in current or use first item if current has
+    ;; only 1 item:
+    (plist-get (if (= 1 (length current))
+                   (cadr mastodon-media--attachments)
+                 (cadr current))
+               :url)))
 
 (defun mastodon-tl-next-full-image ()
   "From full image view buffer, load the toot's next image."
