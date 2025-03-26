@@ -413,17 +413,17 @@ The toot is being composed in BUFFER. See `url-retrieve' for STATUS."
 The upload is asynchronous. On succeeding,
 `mastodon-toot--media-attachment-ids' is set to the id(s) of the
 item uploaded, and `mastodon-toot--update-status-fields' is run."
-  (let* ((data (mastodon-http--post-media-prep-file filename))
-         (url-request-method "POST")
-         (url-request-extra-headers
-          `(("Authorization" . ,(string-to-unibyte
-                                 (concat "Bearer " (mastodon-auth--access-token))))
-            ("Content-Type" . ,(format "multipart/form-data; boundary=%s"
-                                       (car data)))))
-         (url-request-data (cdr data)))
-    (url-retrieve (format "%s?description=%s" url (url-hexify-string caption))
-                  #'mastodon-http--post-media-callback
-                  `(,filename ,caption ,(current-buffer)))))
+  (mastodon-http--authorized-request "POST"
+    (let* ((data (mastodon-http--post-media-prep-file filename))
+           (url-request-extra-headers
+            (append url-request-extra-headers ; auth set in macro
+                    `(("Content-Type" . ,(format "multipart/form-data; boundary=%s"
+                                                 (car data))))))
+           (url-request-data (cdr data))
+           (params `(("description" . ,caption)))
+           (url (mastodon-http--concat-params-to-url url params)))
+      (url-retrieve url #'mastodon-http--post-media-callback
+                    `(,filename ,caption ,(current-buffer))))))
 
 (provide 'mastodon-http)
 ;;; mastodon-http.el ends here
