@@ -357,16 +357,16 @@ Authorization header is included by default unless UNAUTHENTICED-P is non-nil."
 The toot is being composed in BUFFER. See `url-retrieve' for STATUS."
   (unwind-protect
       (if-let* ((error-thrown (plist-get status :error)))
-          (cond
-           ((= (car (last error-thrown)) 401)
-            (message "Got error: %S Unauthorized: The access token is invalid"
-                     error-thrown))
-           ((= (car (last error-thrown)) 422)
-            (message "Got error: %S Unprocessable entity: file or file type is unsupported or invalid"
-                     error-thrown))
-           (t
-            (message "Got error: %S Shit went south"
-                     error-thrown)))
+          (pcase (car (last error-thrown))
+            (401
+             (message "Got error: %S Unauthorized: The access token is invalid"
+                      error-thrown))
+            (422
+             (message "Got error: %S Unprocessable entity: file or file type is unsupported or invalid"
+                      error-thrown))
+            (_
+             (message "Got error: %S Shit went south"
+                      error-thrown)))
         (let* ((buf (current-buffer))
                (data (with-temp-buffer
                        (url-insert buf)
