@@ -136,8 +136,8 @@ is eliminated."
   '(display-buffer-at-bottom
     (window-height . fit-window-to-buffer))
   "Display buffer parameters.
-Note that since the major mode of typst watch buffer is derived from compilation
- mode. If you have a rule like `((derived-mode . compilation-mode) ...)' in
+Note that since the major mode of Typst watch buffer is derived from compilation
+ mode.  If you have a rule like \='((derived-mode . compilation-mode) ...)\=' in
 your `display-buffer-alist', then this option will be covered by that rule."
   :type 'symbol
   :group 'typst-ts-watch)

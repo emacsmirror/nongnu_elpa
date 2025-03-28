@@ -32,6 +32,7 @@
 
 (require 'treesit)
 (require 'outline)
+(require 'elec-pair)
 
 (require 'typst-ts-embedding-lang-settings)
 (require 'typst-ts-core)
@@ -224,6 +225,8 @@ If you want to enable/disable specific font lock feature, please change
 
 
 (defun typst-ts-render-math-scripts-fn (node _override _start _end)
+  "Font lock function for math scripts.
+NODE: see `treesit-font-lock-rules'."
   (let* ((ns (treesit-node-start node))
          (ne (treesit-node-end node))
          (prev-node-text (treesit-node-text (treesit-node-prev-sibling node)))
@@ -414,6 +417,7 @@ This function is meant to be used when user hits a return key."
     1)))
 
 (defun typst-ts--indentation-prev-line-is-item-p (_node _parent _bol)
+  "Detect whether the previous line is a item."
   (save-excursion
     (forward-line -1)
     (back-to-indentation)
@@ -551,7 +555,7 @@ typst tree sitter grammar (at least %s)!" (current-time-string min-time))
     ;; add-function :override buffer-locally doesn't work, so we do this...
     ;; FIXME: Try and find a better way (maybe by changing electric-pair).
     (remove-hook 'post-self-insert-hook
-                 'electric-pair-post-self-insert-function t)
+                 #'electric-pair-post-self-insert-function t)
     (add-hook 'post-self-insert-hook
               #'typst-ts-electric-pair-open-newline-between-pairs-psif
               t))

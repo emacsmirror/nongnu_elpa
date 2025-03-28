@@ -256,19 +256,19 @@
   "Face for math indicator $."
   :group 'typst-ts-faces)
 
-;; code from Auctex 
+;; code from Auctex
 (defface typst-ts-superscript-face
   '((t (:height 0.85)))
   "Face used for superscripts."
   :group 'typst-ts-faces)
 
-;; code from Auctex 
+;; code from Auctex
 (defface typst-ts-subscript-face
   '((t (:height 0.85)))
   "Face used for subscripts."
   :group 'typst-ts-faces)
 
-;; code from Auctex 
+;; code from Auctex
 (defface typst-ts-script-char-face
   (let ((font '(:inherit underline)))
     `((((class grayscale) (background light))

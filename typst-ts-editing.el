@@ -512,6 +512,7 @@ When there is no section it will insert a heading below point."
     (indent-according-to-mode)))
 
 (defun typst-ts-editing--indent-item-node-lines (node offset)
+  "Indent lines covered by NODE by OFFSET."
   (let ((item-node-min-column
          (typst-ts-core-column-at-pos
           (typst-ts-core-line-bol-nonwhite-pos
@@ -578,13 +579,13 @@ When there is no section it will insert a heading below point."
                     (offset
                      (- cur-item-node-start-column
                         prev-item-node-start-column)))
-               (if (>= offset typst-ts-editing-indent-offset)
+               (if (>= offset typst-ts-indent-offset)
                    (typst-ts-editing--indent-item-node-lines
                     cur-item-node
-                    (- (+ offset typst-ts-editing-indent-offset)))
+                    (- (+ offset typst-ts-indent-offset)))
                  (typst-ts-editing--indent-item-node-lines
                   cur-item-node
-                  (- typst-ts-editing-indent-offset (abs offset)))))
+                  (- typst-ts-indent-offset (abs offset)))))
 
              'success)))))
      ;; execute default action if not successful
@@ -614,14 +615,14 @@ When there is no section it will insert a heading below point."
       (when fill-prefix (do-auto-fill)))))
 
 (defun typst-ts-editing-symbol-picker ()
-  "Insert elements from `typst-ts-editing-symbol-alist' `typst-ts-editing-emoji-alist'.
-
+  "Insert typst symbols.
+Symbols are from `typst-ts-symbol-alist' `typst-ts-emoji-alist'.
 In markup mode, it will prefix the selection with \"#\"
 and its corresponding module (\"sym.\", \"emoji.\").
 In math mode, symbols do not need a \"#\" prefix and \"sym.\" prefix.
 In code mode, the selection needs to be prefixed with the module."
   (interactive)
-  (let* ((all-symbols (append typst-ts-editing-symbol-alist typst-ts-editing-emoji-alist))
+  (let* ((all-symbols (append typst-ts-symbol-alist typst-ts-emoji-alist))
          (completion-extra-properties
           '(:annotation-function
             (lambda (key)
@@ -641,8 +642,8 @@ In code mode, the selection needs to be prefixed with the module."
                                                         "code")
                                                (string= (treesit-node-type x)
                                                         "content")))))
-         (is-symbol-p (assoc value typst-ts-editing-symbol-alist))
-         (is-emoji-p (assoc value typst-ts-editing-emoji-alist))
+         (is-symbol-p (assoc value typst-ts-symbol-alist))
+         (is-emoji-p (assoc value typst-ts-emoji-alist))
          (to-insert value))
     (cond
      ((string= (treesit-node-type inside-code) "code")

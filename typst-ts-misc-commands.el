@@ -29,6 +29,7 @@
 ;;   :group 'typst-ts)
 
 (defun typst-ts-mc-install-grammar ()
+  "Install Typst grammar."
   (interactive)
   (let ((treesit-language-source-alist treesit-language-source-alist))
     (add-to-list 'treesit-language-source-alist
@@ -37,6 +38,8 @@
 
 
 (defun typst-ts-mc-export-to-markdown ()
+  "Export current file to markdown.
+Require pandoc to be installed."
   (interactive)
 
   ;; for simplicity
@@ -57,14 +60,17 @@
     (display-buffer buffer-name)))
 
 (defun typst-ts-mc-search-typst-symbol ()
+  "Search typst symbols through website."
   (interactive)
   (browse-url "https://typst.app/docs/reference/symbols/sym/"))
 
 (defun typst-ts-mc-recognize-typst-symbol ()
+  "Recognize hand-written symbols through website."
   (interactive)
   (browse-url "https://detypify.quarticcat.com/"))
 
 (defun typst-ts-mc-search-package ()
+  "Search typst packages through website."
   (interactive)
   (browse-url "https://typst.app/universe"))
 
