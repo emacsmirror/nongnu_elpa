@@ -334,7 +334,7 @@ types of mastodon links and not just shr.el-generated ones.")
   "The keymap to be set for the author byline.
 It is active where point is placed by `mastodon-tl-goto-next-item.'")
 
-(defvar image-mode-map)
+(require 'image-mode)
 
 (defvar mastodon-image-mode-map
   (let ((map (make-sparse-keymap)))
