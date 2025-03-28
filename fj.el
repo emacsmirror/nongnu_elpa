@@ -3307,7 +3307,7 @@ Optionally set LIMIT to results."
   (let* ((resp (fj-search-users
                 (buffer-substring-no-properties (1+ start) ; cull '@'
                                                 end)
-                "25")) ; limit
+                "50")) ; limit
          (data (alist-get 'data resp)))
     (fj-users-list data)))
 
