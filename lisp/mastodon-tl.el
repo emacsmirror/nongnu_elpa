@@ -340,10 +340,14 @@ It is active where point is placed by `mastodon-tl-goto-next-item.'")
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map image-mode-map)
     (define-key map (kbd ">") #'mastodon-tl-next-full-image)
+    (define-key map (kbd "<") #'mastodon-tl-prev-full-image)
     (define-key map (kbd ".") #'mastodon-tl-next-full-image)
-    (define-key map (kbd "<right>") #'mastodon-tl-next-full-image)
+    (define-key map (kbd ",") #'mastodon-tl-prev-full-image)
     ;; matches view full image binding in main keymap:
     (define-key map (kbd "=") #'mastodon-tl-next-full-image)
+    (define-key map (kbd "-") #'mastodon-tl-prev-full-image)
+    (define-key map (kbd "<right>") #'mastodon-tl-next-full-image)
+    (define-key map (kbd "<left>") #'mastodon-tl-prev-full-image)
     map))
 
 
@@ -1479,10 +1483,7 @@ Optionally use IMAGE-URL rather than the image-url property at point."
 Cycles through values in `mastodon-media--attachments'."
   (let* ((url (car mastodon-media--attachments))
          ;; match url against our plists:
-         (current  (cl-member-if
-                    (lambda (attachment)
-                      (equal url (plist-get attachment :url)))
-                    (cdr mastodon-media--attachments))))
+         (current (mastodon-tl--current-image-url url)))
     ;; fetch from next item in current or use first item if current has
     ;; only 1 item:
     (plist-get (if (= 1 (length current))
@@ -1490,11 +1491,35 @@ Cycles through values in `mastodon-media--attachments'."
                  (cadr current))
                :url)))
 
+(defun mastodon-tl--current-image-url (url)
+  "Try to fetch URL from `mastodon-media--attachments'.
+The return value is that of `cl-member-if', ie if a match is found, it
+returns the match and the list of which it is the car."
+  (cl-member-if
+   (lambda (attachment)
+     (equal url (plist-get attachment :url)))
+   (cdr mastodon-media--attachments)))
+
+(defun mastodon-tl--get-prev-image-url ()
+  "Return the URL of the previous item in `mastodon-media--attachments'."
+  (let* ((url (car mastodon-media--attachments))
+         (current (mastodon-tl--current-image-url url)))
+    (plist-get (nth (1- (length current))
+                    (cdr mastodon-media--attachments))
+               :url)))
+
 (defun mastodon-tl-next-full-image ()
   "From full image view buffer, load the toot's next image."
   (interactive)
   (let* ((next-url (mastodon-tl--get-next-image-url)))
     (mastodon-tl--view-image-url next-url
+                                 (cdr mastodon-media--attachments))))
+
+(defun mastodon-tl-prev-full-image ()
+  "From full image view buffer, load the toot's prev image."
+  (interactive)
+  (let* ((prev-url (mastodon-tl--get-prev-image-url)))
+    (mastodon-tl--view-image-url prev-url
                                  (cdr mastodon-media--attachments))))
 
 (defun mastodon-tl-toggle-sensitive-image ()
