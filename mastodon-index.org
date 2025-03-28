@@ -152,12 +152,15 @@
 |                  | mastodon-tl-mpv-play-video-from-byline           | Run `mastodon-tl-mpv-play-video-at-point' on first moving image in post.       |
 |                  | mastodon-tl-mute-thread                          | Mute the thread displayed in the current buffer.                               |
 | M                | mastodon-tl-mute-user                            | Query for USER-HANDLE from current status and mute that user.                  |
+|                  | mastodon-tl-next-full-image                      | From full image view buffer, load the toot's next image.                       |
 | TAB, M-n         | mastodon-tl-next-tab-item                        | Move to the next interesting item.                                             |
 | v                | mastodon-tl-poll-vote                            | If there is a poll at point, prompt user for OPTION to vote on it.             |
+|                  | mastodon-tl-prev-full-image                      | From full image view buffer, load the toot's prev image.                       |
 | S-TAB, <backtab> | mastodon-tl-previous-tab-item                    | Move to the previous interesting item.                                         |
 |                  | mastodon-tl-remote-tag-timeline                  | Call `mastodon-tl-get-remote-local-timeline' but for a TAG timeline.           |
 | Z                | mastodon-tl-report-to-mods                       | Report the author of the toot at point to your instance moderators.            |
 | SPC              | mastodon-tl-scroll-up-command                    | Call `scroll-up-command', loading more toots if necessary.                     |
+|                  | mastodon-tl-shr-browse-image                     | Browse the image under point.                                                  |
 |                  | mastodon-tl-single-toot                          | View toot at point in separate buffer.                                         |
 |                  | mastodon-tl-some-followed-tags-timeline          | Prompt for some tags, and open a timeline for them.                            |
 | C-'              | mastodon-tl-tag-group-timeline                   | Load a timeline of a tag group from `mastodon-tl--tags-groups'.                |
@@ -174,7 +177,8 @@
 |                  | mastodon-tl-unmute-thread                        | Unmute the thread displayed in the current buffer.                             |
 | S-RET            | mastodon-tl-unmute-user                          | Query for USER-HANDLE from list of muted users and unmute that user.           |
 | u, g             | mastodon-tl-update                               | Update timeline with new toots.                                                |
-|                  | mastodon-tl-view-full-image                      | Browse full-sized version of image at point in a new window.                   |
+| =                | mastodon-tl-view-first-full-image                | From item byline, fetch load its first full image.                             |
+|                  | mastodon-tl-view-full-image-at-point             | Browse full-sized version of image at point in a new window.                   |
 |                  | mastodon-tl-view-full-image-or-play-video        | View full sized version of image at point, or try to play video.               |
 |                  | mastodon-tl-view-item-on-own-instance            | Load current toot on your own instance.                                        |
 |                  | mastodon-tl-view-whole-thread                    | From a thread view, view entire thread.                                        |
@@ -279,7 +283,6 @@
 | Custom variable                                    | Description                                                                  |
 |----------------------------------------------------+------------------------------------------------------------------------------|
 | mastodon-active-user                               | Username of the active user.                                                 |
-| mastodon-auth-encrypt-access-token                 | Whether to encrypt the user's authentication token in the plstore.           |
 | mastodon-auth-use-auth-source                      | Whether to use auth sources for user credentials.                            |
 | mastodon-client--token-file                        | File path where Mastodon access tokens are stored.                           |
 | mastodon-group-notifications                       | Whether to use grouped notifications.                                        |
