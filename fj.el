@@ -2362,7 +2362,7 @@ ENDPOINT is the API endpoint to hit."
     ("delete_branch" . "%s deleted branch %s %s")
     ("review" . "%s %s changes %s")
     ;; FIXME: add a request for changes review? not just approval?
-    ))
+    ("milestone" . "%s added milestone %s %s")))
 
 (defun fj-render-timeline (data &optional author owner)
   "Render timeline DATA.
@@ -2471,6 +2471,12 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
           ;; reviews
           ("review"
            (fj-format-review .review_id ts format-str user))
+          ;; milestones:
+          ("milestone"
+           (format format-str user
+                   (propertize .milestone.title
+                               'face 'fj-name-face)
+                   ts))
           (_ ;; just so we never break the rest of the view:
            (format "%s did unknown action %s" user ts)))
         'fj-item-data item)
