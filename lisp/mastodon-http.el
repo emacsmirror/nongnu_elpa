@@ -352,46 +352,43 @@ Authorization header is included by default unless UNAUTHENTICED-P is non-nil."
       (with-temp-buffer
         (url-retrieve url callback cbargs)))))
 
+(defun mastodon-http--get-data (status)
+  "Return data using `json-read' after a successful request.
+If STATUS includes an error emit a message describing it and return nil."
+  (let* ((buf (current-buffer))
+         (data (with-temp-buffer
+                 (url-insert buf)
+                 (goto-char (point-min))
+                 (json-read))))
+    (if-let* ((error-thrown (plist-get status :error)))
+        (prog1 nil
+          (message "%S %s" error-thrown (alist-get 'error data)))
+      data)))
+
 (defun mastodon-http--post-media-callback (status file caption buffer)
   "Callback function called after posting FILE as an attachment with CAPTION.
 The toot is being composed in BUFFER. See `url-retrieve' for STATUS."
   (unwind-protect
-      (if-let* ((error-thrown (plist-get status :error)))
-          (pcase (car (last error-thrown))
-            (401
-             (message "Got error: %S Unauthorized: The access token is invalid"
-                      error-thrown))
-            (422
-             (message "Got error: %S Unprocessable entity: file or file type is unsupported or invalid"
-                      error-thrown))
-            (_
-             (message "Got error: %S Shit went south"
-                      error-thrown)))
-        (let* ((buf (current-buffer))
-               (data (with-temp-buffer
-                       (url-insert buf)
-                       (goto-char (point-min))
-                       (json-read))))
-          (when data
-            (with-current-buffer buffer
-              (let ((id (alist-get 'id data)))
-                ;; update ids:
-                (if (not mastodon-toot--media-attachment-ids)
-                    ;; add first id:
-                    (push id mastodon-toot--media-attachment-ids)
-                  ;; add new id to end of list to preserve order:
-                  (push id (cdr
-                            (last mastodon-toot--media-attachment-ids))))
-                ;; pleroma, PUT the description:
-                ;; this is how the mangane akkoma web client does it
-                ;; and it seems easier than the other options!
-                (when (and caption
-                           (not (string= caption (alist-get 'description data))))
-                  (let ((url (mastodon-http--api (format "media/%s" id))))
-                    ;; (message "PUTting image description")
-                    (mastodon-http--put url `(("description" . ,caption)))))
-                (message "Uploading %s... (done)" file)
-                (mastodon-toot--update-status-fields))))))
+      (when-let* ((data (mastodon-http--get-data status)))
+        (with-current-buffer buffer
+          (let ((id (alist-get 'id data)))
+            ;; update ids:
+            (if (not mastodon-toot--media-attachment-ids)
+                ;; add first id:
+                (push id mastodon-toot--media-attachment-ids)
+              ;; add new id to end of list to preserve order:
+              (push id (cdr
+                        (last mastodon-toot--media-attachment-ids))))
+            ;; pleroma, PUT the description:
+            ;; this is how the mangane akkoma web client does it
+            ;; and it seems easier than the other options!
+            (when (and caption
+                       (not (string= caption (alist-get 'description data))))
+              (let ((url (mastodon-http--api (format "media/%s" id))))
+                ;; (message "PUTting image description")
+                (mastodon-http--put url `(("description" . ,caption)))))
+            (message "Uploading %s... (done)" file)
+            (mastodon-toot--update-status-fields))))
     (kill-buffer (current-buffer))))
 
 (defun mastodon-http--post-media-prep-file (filename)
