@@ -2321,13 +2321,15 @@ ENDPOINT is the API endpoint to hit."
             (merge-type (completing-read "Merge type: " fj-merge-types))
             (merge-commit (when (equal merge-type "manually-merged")
                             (read-string "Merge commit: "))))
-       (when (y-or-n-p
-              (format "Merge PR #%s into %s/%s%s?" number owner repo branch-str))
-         (let ((resp (fj-pull-merge-post repo owner number
-                                         merge-type merge-commit)))
-           (fedi-http--triage resp
-                              (lambda (_)
-                                (message "Merged!")))))))))
+       (if (not mergeable)
+           (user-error "PR not mergeable")
+         (when (y-or-n-p
+                (format "Merge PR #%s into %s/%s%s?" number owner repo branch-str))
+           (let ((resp (fj-pull-merge-post repo owner number
+                                           merge-type merge-commit)))
+             (fedi-http--triage resp
+                                (lambda (_)
+                                  (message "Merged!"))))))))))
 
 (defun fj-fetch-pull-as-branch ()
   "From a PR view, fetch it as a new git branch using magit."
