@@ -124,7 +124,7 @@ If you were using mastodon.el before 2FA was implemented and the above
 steps do not work, call =(mastodon-forget-all-logins)=, restart Emacs and
 follow the steps again.
 
-**** encrypted access tokens (from 1.2.0)
+**** encrypted access tokens (from 2.0.0)
 
 By default, user access tokens are now stored in the user's auth source
 file (typically =~/.authinfo.gpg=, check the value of =auth-sources=). When
