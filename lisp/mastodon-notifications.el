@@ -582,23 +582,23 @@ When AVATAR, include the account's avatar image."
   "Display grouped notifications in JSON.
 NO-GROUP means don't render grouped notifications."
   ;; (setq masto-grouped-notifs json)
-  (if no-group
-      (cl-loop for x in json
-               do (mastodon-notifications--format-note x))
-    (let ((groups (alist-get 'notification_groups json)))
+  (let ((start-pos (point)))
+    (if no-group
+        (cl-loop for x in json
+                 do (mastodon-notifications--format-note x))
       (cl-loop
-       for g in groups
+       for g in (alist-get 'notification_groups json)
        for start-pos = (point)
        for accounts = (mastodon-notifications--group-accounts
                        (alist-get 'sample_account_ids g)
                        (alist-get 'accounts json))
        for type = (alist-get 'type g)
        for status = (mastodon-notifications--status-or-event g type json)
-       do (mastodon-notifications--format-group-note g status accounts)
-       (when mastodon-tl--display-media-p
-         ;; images-in-notifs custom is handeld in
-         ;; `mastodon-tl--media-attachment', not here
-         (mastodon-media--inline-images start-pos (point)))))))
+       do (mastodon-notifications--format-group-note g status accounts)))
+    (when mastodon-tl--display-media-p
+      ;; images-in-notifs custom is handeld in
+      ;; `mastodon-tl--media-attachment', not here
+      (mastodon-media--inline-images start-pos (point)))))
 
 (defun mastodon-notifications--status-or-event (group type json)
   "Return a notification's status or event data.
