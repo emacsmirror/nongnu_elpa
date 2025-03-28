@@ -7,7 +7,7 @@
 ;;         Marty Hiatt <mousebot@disroot.org>
 ;; Maintainer: Marty Hiatt <mousebot@disroot.org>
 ;; Version: 1.1.12
-;; Package-Requires: ((emacs "28.1") (request "0.3.0") (persist "0.4") (tp "0.7"))
+;; Package-Requires: ((emacs "28.1") (persist "0.4") (tp "0.7"))
 ;; Homepage: https://codeberg.org/martianh/mastodon.el
 
 ;; This file is not part of GNU Emacs.
