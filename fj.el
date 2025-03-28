@@ -1971,7 +1971,8 @@ JSON is the item's data to process the link with."
   "L" #'fj-repo-commit-log
   "l" #'fj-issue-label-add
   "I" #'fj-list-issues
-  "P" #'fj-list-pulls)
+  "P" #'fj-list-pulls
+  "M" #'fj-merge-pull)
 
 (define-derived-mode fj-item-view-mode special-mode "fj-issue"
   "Major mode for viewing items."
