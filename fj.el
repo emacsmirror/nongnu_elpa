@@ -2362,7 +2362,8 @@ ENDPOINT is the API endpoint to hit."
     ("delete_branch" . "%s deleted branch %s %s")
     ("review" . "%s %s changes %s")
     ;; FIXME: add a request for changes review? not just approval?
-    ("milestone" . "%s added milestone %s %s")))
+    ("milestone" . "%s added milestone %s %s")
+    ("assignees" . "%s %sassigned this%s %s")))
 
 (defun fj-render-timeline (data &optional author owner)
   "Render timeline DATA.
@@ -2477,10 +2478,23 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
                    (propertize .milestone.title
                                'face 'fj-name-face)
                    ts))
+          ("assignees"
+           (fj-format-assignee format-str
+                               .user.username .assignee.username ts))
           (_ ;; just so we never break the rest of the view:
            (format "%s did unknown action %s" user ts)))
         'fj-item-data item)
        "\n\n"))))
+
+(defun fj-format-assignee (format-str user assignee ts)
+  "Format an assignee timeline item.
+FORMAT STR is the base string. USER is the agent, ASSIGNEE is the user
+assigned to. TS is a timeline timestamp."
+  (let ((user (propertize user 'face 'fj-name-face))
+        (assignee (propertize assignee 'face 'fj-name-face)))
+    (if (string= user assignee)
+        (format format-str user "self-" "" ts)
+      (format format-str user assignee ts))))
 
 (defun fj-get-html-link-desc (str)
   "Return a description string from HTML link STR."
