@@ -39,9 +39,11 @@
 (require 'magit-git)
 (require 'magit-process)
 (require 'magit-diff)
+(require 'magit-fetch)
 
 (require 'markdown-mode)
 (require 'shr)
+(require 'mm-url)
 
 (require 'fj-transient)
 
@@ -317,7 +319,8 @@ PARAMS are query params unless JSON."
       (fedi-http--patch url params json))))
 
 (defun fj-delete (endpoint &optional params json)
-  "Make a DELETE request to ENDPOINT."
+  "Make a DELETE request to ENDPOINT.
+PARAMS and JSON are for `fedi-http--delete'."
   (let ((url (fj-api endpoint)))
     (fj-authorized-request "DELETE"
       (fedi-http--delete url params json))))
@@ -1279,7 +1282,7 @@ If none, return emptry string."
     ""))
 
 (defun fj-render-comment-reactions (reactions)
-  "Render reactions for comment with ID.
+  "Render REACTIONS for comment with ID.
 If none, return emptry string."
   (if-let* ((grouped (fj-group-reactions reactions)))
       (concat fedi-horiz-bar "\n"
@@ -1324,7 +1327,7 @@ DATA is a list of single reactions."
   ;; TODO: render these during completion (:rocket: style emoji)
   '("laugh" "hooray" "+1" "-1" "confused" "heart" "rocket" "eyes")
   "Reactions as per the WebUI.
- Not sure what the server actually accepts.")
+Not sure what the server actually accepts.")
 
 (defun fj-add-reaction ()
   "Add reaction to issue, PR or comment at point."
@@ -1403,7 +1406,7 @@ DATA is a list of single reactions."
 
 (defun fj-issue-read-label (&optional repo owner issue id)
   "Read a label in the minibuffer and return it.
-Labels for REPO by OWNER.
+Label is for ISSUE in REPO by OWNER.
 Return its name, or if ID, return a cons of its name and id."
   (let* ((labels (fj-repo-get-labels repo owner))
          (pairs (fj--map-alist-to-cons labels 'name 'id))
@@ -1659,7 +1662,7 @@ If REPO is provided, also include a repo column."
 (defvar fj-repo-data nil) ;; for transients for now
 
 (defun fj-list-issues (&optional repo)
-  "List issues for current repo.
+  "List issues for current REPO.
 If we are in a repo, don't assume `fj-user' owns it. In that case we
 fetch owner/repo from git config.
 If we are not in a repo, call `fj-list-issues-do' without using git
@@ -1669,6 +1672,7 @@ config."
           (not (magit-inside-worktree-p :noerror)))
       (fj-list-issues-do repo) ;; fall back to `fj-user' repos
     ;; FIXME: should we not have a fallback for when this fails?
+    ;; FIXME: this fails in a non-foregejo git repo.
     (let* ((repo-+-owner (fj-repo-+-owner-from-git))
            (owner (car repo-+-owner))
            (repo (cadr repo-+-owner)))
@@ -2342,6 +2346,7 @@ ENDPOINT is the API endpoint to hit."
      (when (y-or-n-p
             (format "Fetch %s from %s as new branch?" branch head))
        ;; mayb we want to check out PR, and magit-status or sth?:
+       ;; FIXME: assumes we are in repo:
        (magit-fetch-refspec remote refspec nil)))))
 
 ;;; TIMELINE ITEMS
@@ -2488,7 +2493,7 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
 
 (defun fj-format-assignee (format-str user assignee ts)
   "Format an assignee timeline item.
-FORMAT STR is the base string. USER is the agent, ASSIGNEE is the user
+FORMAT-STR is the base string. USER is the agent, ASSIGNEE is the user
 assigned to. TS is a timeline timestamp."
   (let ((user (propertize user 'face 'fj-name-face))
         (assignee (propertize assignee 'face 'fj-name-face)))
@@ -2546,7 +2551,8 @@ Renders a review heading and review comments."
 
 (defun fj-format-grouped-review-comments (comments owner ts)
   "Build an alist where each cons is a diff hunk and its comments.
-Then format the hunk followed by its comments."
+Then format the hunk followed by its comments. COMMENTS is the comments
+data, OWNER is the repo owner, and TS is a timestamp."
   (let* ((hunks (cl-remove-duplicates
                  (cl-loop for c in comments
                           collect (alist-get 'diff_hunk c))
@@ -2571,11 +2577,10 @@ AUTHOR, OWNER, and TS are for header formatting."
    (fj-format-review-diff (car data)) ;; diff hunk
    "\n"
    (cl-loop for c in (cdr data)
-            concat (fj-format-review-comment c nil ;; FIXME: author
-                                             owner ts))))
+            concat (fj-format-review-comment c author owner ts))))
 
 (defun fj-format-review-diff (diff)
-  "Return a formatted diff hunk."
+  "Return a formatted diff hunk for DIFF."
   ;; FIXME: propertize this diff somehow
   ;; (diff-mode uses overlays we can can't copy them)
   ;; magit (wash/paint hunk) replies on its own classes, and wants a file
