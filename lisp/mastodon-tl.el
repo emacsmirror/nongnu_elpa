@@ -3518,20 +3518,22 @@ This location is defined by a non-nil value of
           ;; load whole thread:
           (progn (mastodon-tl--thread-do id)
                  (message "Loaded full thread."))
-        ;; update other timelines:
-        (let* ((params (mastodon-tl--update-params))
-               (json (mastodon-tl--updated-json endpoint id params)))
-          (if (not json)
-              (user-error "Nothing to update")
-            (let ((inhibit-read-only t))
-              (mastodon-tl--set-after-update-marker)
-              (goto-char (or mastodon-tl--update-point (point-min)))
-              (if (eq update-function 'mastodon-notifications--timeline)
-                  (funcall update-function json nil :update)
-                (funcall update-function json))
-              (if mastodon-tl--after-update-marker
-                  (goto-char mastodon-tl--after-update-marker)
-                (mastodon-tl-goto-next-item)))))))))
+        (if (not id) ;; if e.g. notifs all cleared:
+            (user-error "No last id")
+          ;; update other timelines:
+          (let* ((params (mastodon-tl--update-params))
+                 (json (mastodon-tl--updated-json endpoint id params)))
+            (if (not json)
+                (user-error "Nothing to update")
+              (let ((inhibit-read-only t))
+                (mastodon-tl--set-after-update-marker)
+                (goto-char (or mastodon-tl--update-point (point-min)))
+                (if (eq update-function 'mastodon-notifications--timeline)
+                    (funcall update-function json nil :update)
+                  (funcall update-function json))
+                (if mastodon-tl--after-update-marker
+                    (goto-char mastodon-tl--after-update-marker)
+                  (mastodon-tl-goto-next-item))))))))))
 
 
 ;;; LOADING TIMELINES
