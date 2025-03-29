@@ -634,6 +634,8 @@ UPDATE means we are updating, so skip some things."
        (substitute-command-keys
         "You have filtered notifications. \
 \\[mastodon-notifications-requests] to view requests.\n\n")))
+    ;; set update point:
+    (setq mastodon-tl--update-point (point))
     ;; render:
     (mastodon-notifications--render json
                                     (not mastodon-group-notifications))

@@ -3171,13 +3171,13 @@ Then run CALLBACK with arguments CBARGS."
     (setf (alist-get "offset" params nil nil #'string=) offset)
     (apply #'mastodon-http--get-json-async url params callback cbargs)))
 
-(defun mastodon-tl--updated-json (endpoint id &optional params)
+(defun mastodon-tl--updated-json (endpoint id &optional params version)
   "Return JSON for timeline ENDPOINT since ID.
 PARAMS is used to send any parameters needed to correctly update
 the current view."
   (let* ((args `(("since_id" . ,(mastodon-tl--as-string id))))
          (args (append args params))
-         (url (mastodon-http--api endpoint)))
+         (url (mastodon-http--api endpoint version)))
     (mastodon-http--get-json url args)))
 
 ;; TODO: add this to new posts in some cases, e.g. in thread view.
@@ -3511,7 +3511,7 @@ This location is defined by a non-nil value of
       (user-error "Update not available in this view")
     ;; FIXME: handle update for search and trending buffers
     (let* ((endpoint (mastodon-tl--endpoint))
-           (update-function (mastodon-tl--update-function))
+           (update-fun (mastodon-tl--update-function))
            (id (mastodon-tl--newest-id)))
       ;; update a thread, without calling `mastodon-tl--updated-json':
       (if (mastodon-tl--buffer-type-eq 'thread)
@@ -3522,15 +3522,23 @@ This location is defined by a non-nil value of
             (user-error "No last id")
           ;; update other timelines:
           (let* ((params (mastodon-tl--update-params))
-                 (json (mastodon-tl--updated-json endpoint id params)))
-            (if (not json)
+                 (notifs-p
+                  (eq update-fun 'mastodon-notifications--timeline))
+                 (json (mastodon-tl--updated-json
+                        endpoint id params
+                        (when (and notifs-p mastodon-group-notifications)
+                          "v2"))))
+            (if (not
+                 (if (and notifs-p mastodon-group-notifications)
+                     (alist-get 'statuses json)
+                   json))
                 (user-error "Nothing to update")
               (let ((inhibit-read-only t))
                 (mastodon-tl--set-after-update-marker)
                 (goto-char (or mastodon-tl--update-point (point-min)))
-                (if (eq update-function 'mastodon-notifications--timeline)
-                    (funcall update-function json nil :update)
-                  (funcall update-function json))
+                (if notifs-p
+                    (funcall update-fun json nil :update)
+                  (funcall update-fun json))
                 (if mastodon-tl--after-update-marker
                     (goto-char mastodon-tl--after-update-marker)
                   (mastodon-tl-goto-next-item))))))))))
