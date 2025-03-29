@@ -1,7 +1,8 @@
 ;;; typst-ts-core.el --- core functions for typst-ts-mode -*- lexical-binding: t; -*-
-;; Copyright (C) 2023-2024 The typst-ts-mode Project Contributors
 
-;; This file is NOT part of Emacs.
+;; Copyright (C) 2023-2025 The typst-ts-mode Project Contributors
+
+;; This file is NOT part of GNU Emacs.
 ;; This program is free software: you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
 ;; the Free Software Foundation, either version 3 of the License, or
@@ -55,7 +56,7 @@
     (point)))
 
 (defun typst-ts-core-line-bol-nonwhite-pos (&optional pos)
-  "POS."
+  "Get the point of beginning of line or first nonwhite character at POS."
   (save-excursion
     (when pos
       (goto-char pos))
@@ -86,6 +87,8 @@ Currently the effect of FN shouldn't change line number."
         (ne-line-num (line-number-at-pos (treesit-node-end node))))
     (save-excursion
       (goto-char ns)
+      ;; TODO, `line-number-at-pos' on every line is expensive
+      ;; rewrite this to narrow the buffer
       (while (< (line-number-at-pos) ne-line-num)
         (funcall fn)
         (forward-line 1))

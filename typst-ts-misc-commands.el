@@ -1,7 +1,8 @@
 ;;; typst-ts-misc-commands.el --- Miscellaneous commands for typst-ts-mode -*- lexical-binding: t; -*-
-;; Copyright (C) 2023-2024 The typst-ts-mode Project Contributors
 
-;; This file is NOT part of Emacs.
+;; Copyright (C) 2023-2025 The typst-ts-mode Project Contributors
+
+;; This file is NOT part of GNU Emacs.
 ;; This program is free software: you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
 ;; the Free Software Foundation, either version 3 of the License, or
@@ -23,17 +24,12 @@
 
 (require 'treesit)
 
-;; (defgroup typst-ts-mc nil
-;;   "Typst ts miscellaneous commands."
-;;   :prefix "typst-ts-misc-commands"
-;;   :group 'typst-ts)
-
 (defun typst-ts-mc-install-grammar ()
   "Install Typst grammar."
   (interactive)
-  (let ((treesit-language-source-alist treesit-language-source-alist))
-    (add-to-list 'treesit-language-source-alist
-                 '(typst "https://github.com/Ziqi-Yang/tree-sitter-typst"))
+  (let ((treesit-language-source-alist
+         (cons '(typst "https://github.com/Ziqi-Yang/tree-sitter-typst")
+               treesit-language-source-alist)))
     (treesit-install-language-grammar 'typst)))
 
 
@@ -43,6 +39,7 @@ Require pandoc to be installed."
   (interactive)
 
   ;; for simplicity
+  ;; TODO: suggest saving the buffer
   (unless buffer-file-name
     (user-error "You should save the file first!"))
 
@@ -54,6 +51,7 @@ Require pandoc to be installed."
          (output-file-name
           (file-name-with-extension file-name "md"))
          (buffer-name (format "*pandoc %s*" file-name)))
+    ;; TODO: check if installed pandoc supports typst
     (start-process "pandoc"
                    buffer-name
                    "pandoc" "-o" output-file-name file-name)
@@ -73,7 +71,6 @@ Require pandoc to be installed."
   "Search typst packages through website."
   (interactive)
   (browse-url "https://typst.app/universe"))
-
 
 (provide 'typst-ts-misc-commands)
 

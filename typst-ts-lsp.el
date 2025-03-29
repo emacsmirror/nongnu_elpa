@@ -1,7 +1,8 @@
 ;;; typst-ts-lsp.el --- Eglot tinymist integration  -*- lexical-binding: t; -*-
-;; Copyright (C) 2023-2024 The typst-ts-mode Project Contributors
 
-;; This file is NOT part of Emacs.
+;; Copyright (C) 2023-2025 The typst-ts-mode Project Contributors
+
+;; This file is NOT part of GNU Emacs.
 ;; This program is free software: you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
 ;; the Free Software Foundation, either version 3 of the License, or
@@ -32,12 +33,12 @@
   :prefix "typst-ts-compile"
   :group 'typst-ts)
 
-(defcustom typst-ts-lsp-download-path (file-name-concat (locate-user-emacs-file ".cache") "lsp" "tinymist" "tinymist")
+(defcustom typst-ts-lsp-download-path
+  (file-name-concat (locate-user-emacs-file ".cache")
+                    "lsp" "tinymist" "tinymist")
   "Install path for the language server."
-  :group 'tools
-  :group 'typst-ts-lsp
-  :type 'file)
-
+  :type 'file
+  :group 'typst-ts-lsp)
 
 ;;;###autoload
 (defun typst-ts-lsp-download-binary ()
@@ -46,18 +47,18 @@ Will override old versions."
   (interactive)
   (unless (file-exists-p typst-ts-lsp-download-path)
     (make-directory (file-name-directory typst-ts-lsp-download-path) t))
-  (url-copy-file
-   (concat "https://github.com/Myriad-Dreamin/tinymist/releases/latest/download/tinymist-"
-           (pcase system-type
-             ('gnu/linux "linux")
-             ('darwin "darwin")
-             ('windows-nt "win32")
-             (_ "linux"))
-           ;; TODO too lazy to find out all the arch suffixes
-           "-x64")
-   typst-ts-lsp-download-path t)
-  (set-file-modes typst-ts-lsp-download-path
-                  (logior (file-modes typst-ts-lsp-download-path) #o100)))
+  (with-file-modes (logior (file-modes typst-ts-lsp-download-path) #o100)
+    (url-copy-file
+     (concat
+      "https://github.com/Myriad-Dreamin/tinymist/releases/latest/download/tinymist-"
+      (pcase system-type
+        ('gnu/linux "linux")
+        ('darwin "darwin")
+        ('windows-nt "win32")
+        (_ "linux"))
+      ;; TODO too lazy to find out all the arch suffixes
+      "-x64")
+     typst-ts-lsp-download-path t)))
 
 (provide 'typst-ts-lsp)
 ;;; typst-ts-lsp.el ends here

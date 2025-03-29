@@ -1,7 +1,8 @@
 ;;; typst-ts-compile.el --- Compile Typst Files  -*- lexical-binding: t; -*-
-;; Copyright (C) 2023-2024 The typst-ts-mode Project Contributors
 
-;; This file is NOT part of Emacs.
+;; Copyright (C) 2023-2025 The typst-ts-mode Project Contributors
+
+;; This file is NOT part of GNU Emacs.
 ;; This program is free software: you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
 ;; the Free Software Foundation, either version 3 of the License, or
@@ -18,6 +19,7 @@
 ;;; Commentary:
 
 ;;; Code:
+
 (require 'compile)
 (require 'typst-ts-variables)
 
@@ -64,12 +66,10 @@ If BUFFER is nil, it means use the current buffer.
 CHECK: non-nil mean check the file existence.
 Return nil if the BUFFER has not associated file or the there is
 no compiled pdf file when CHECK is non-nil."
-  (when-let* ((typst-file (buffer-file-name buffer)))
+  (and-let* ((typst-file (buffer-file-name buffer)))
     (let ((res (concat (file-name-as-directory typst-ts-output-directory) (file-name-base typst-file) ".pdf")))
-      (if check
-          (when (file-exists-p res)
-            res)
-        res))))
+      (and (or (not check) (file-exists-p res))
+           res))))
 
 
 (defun typst-ts-compile-and-preview--compilation-finish-function (cur-buffer)

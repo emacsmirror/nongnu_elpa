@@ -1,7 +1,8 @@
 ;;; typst-ts-editing.el --- Helper functions for editing Typst documents -*- lexical-binding: t; -*-
-;; Copyright (C) 2023-2024 The typst-ts-mode Project Contributors
 
-;; This file is NOT part of Emacs.
+;; Copyright (C) 2023-2025 The typst-ts-mode Project Contributors
+
+;; This file is NOT part of GNU Emacs.
 ;; This program is free software: you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
 ;; the Free Software Foundation, either version 3 of the License, or
@@ -91,7 +92,7 @@ DIRECTION is one of following symbols:
                (seq-elt rows (1- row-index))))
             ('down
              (progn
-               (when (= (length rows) (1+ row-index))
+               (when (length= rows (1+ row-index))
                  (user-error "Already on last row"))
                (seq-elt rows (1+ row-index))))
             (_
@@ -112,83 +113,83 @@ DIRECTION is one of following symbols:
   (interactive)
   (typst-ts-editing-grid-row--move 'up))
 
-  (defun typst-ts-editing-grid-cell--move (direction)
-    "Move grid cell at point depending on DIRECTION up/down, left/right.
+(defun typst-ts-editing-grid-cell--move (direction)
+  "Move grid cell at point depending on DIRECTION up/down, left/right.
 DIRECTION is one of following symbols:
 `left', `right', `up', `down'.
 
 Up/down means moving the cell to another row while keeping the column index."
-    ;; inside table.header is different from the rest
-    (let (grid grid-cells cell to-switch)
-      (seq-setq (grid cell grid-cells) (typst-ts-editing-grid-cell--at-point-p))
-      (unless (and grid cell)
-        (user-error "Not inside a grid cell"))
-      (setq to-switch
-            (pcase direction
-              ((guard (and (memq direction '(down up))
-                           (string= "table.header"
-                                    (treesit-node-text
-                                     (treesit-node-child-by-field-name grid "item")))))
-               (user-error "A table.header only has one row"))
-              ('left
-               ;; skip the , prev twice
-               (treesit-node-prev-sibling (treesit-node-prev-sibling cell)))
-              ('right
-               ;; skip the , that's why next twice
-               (treesit-node-next-sibling (treesit-node-next-sibling cell)))
-              ((or 'up 'down)
-               (let ((amount-of-columns
-                      (typst-ts-editing-grid--column-number grid))
-                     (select-cell
-                      (lambda (row column)
-                        (seq-elt
-                         (seq-elt
-                          (seq-partition
-                           grid-cells
-                           (typst-ts-editing-grid--column-number grid))
-                          row)
-                         column)))
-                     row column)
-                 (seq-setq (row column)
-                           (typst-ts-editing-grid-cell--index
-                            cell grid-cells amount-of-columns))
-                 (if (eq direction 'up)
-                     (progn
-                       (when (= 0 row)
-                         (user-error "Already on first row"))
-                       (funcall select-cell (1- row) column))
-                   (when (= row amount-of-columns)
-                     (user-error "Already on last row"))
-                   (funcall select-cell (1+ row) column))))
-              (_ (error "DIRECTION: %s is not one of: `right' `left', `up', `down'"
-                        direction))))
-      (when (or (not to-switch)
-                (string= "tagged" (treesit-node-type to-switch))
-                (string= "(" (treesit-node-text to-switch))
-                (string= ")" (treesit-node-text to-switch)))
-        (user-error "There is no cell in the %s direction" direction))
-      (transpose-regions (treesit-node-start cell) (treesit-node-end cell)
-                         (treesit-node-start to-switch) (treesit-node-end to-switch))))
+  ;; inside table.header is different from the rest
+  (let (grid grid-cells cell to-switch)
+    (seq-setq (grid cell grid-cells) (typst-ts-editing-grid-cell--at-point-p))
+    (unless (and grid cell)
+      (user-error "Not inside a grid cell"))
+    (setq to-switch
+          (pcase direction
+            ((guard (and (memq direction '(down up))
+                         (string= "table.header"
+                                  (treesit-node-text
+                                   (treesit-node-child-by-field-name grid "item")))))
+             (user-error "A table.header only has one row"))
+            ('left
+             ;; skip the , prev twice
+             (treesit-node-prev-sibling (treesit-node-prev-sibling cell)))
+            ('right
+             ;; skip the , that's why next twice
+             (treesit-node-next-sibling (treesit-node-next-sibling cell)))
+            ((or 'up 'down)
+             (let ((amount-of-columns
+                    (typst-ts-editing-grid--column-number grid))
+                   (select-cell
+                    (lambda (row column)
+                      (seq-elt
+                       (seq-elt
+                        (seq-partition
+                         grid-cells
+                         (typst-ts-editing-grid--column-number grid))
+                        row)
+                       column)))
+                   row column)
+               (seq-setq (row column)
+                         (typst-ts-editing-grid-cell--index
+                          cell grid-cells amount-of-columns))
+               (if (eq direction 'up)
+                   (progn
+                     (when (= 0 row)
+                       (user-error "Already on first row"))
+                     (funcall select-cell (1- row) column))
+                 (when (= row amount-of-columns)
+                   (user-error "Already on last row"))
+                 (funcall select-cell (1+ row) column))))
+            (_ (error "DIRECTION: %s is not one of: `right' `left', `up', `down'"
+                      direction))))
+    (when (or (not to-switch)
+              (string= "tagged" (treesit-node-type to-switch))
+              (string= "(" (treesit-node-text to-switch))
+              (string= ")" (treesit-node-text to-switch)))
+      (user-error "There is no cell in the %s direction" direction))
+    (transpose-regions (treesit-node-start cell) (treesit-node-end cell)
+                       (treesit-node-start to-switch) (treesit-node-end to-switch))))
 
-  (defun typst-ts-editing-grid-cell-down ()
-    "See `typst-ts-editing-grid-cell--move'."
-    (interactive)
-    (typst-ts-editing-grid-cell--move 'down))
+(defun typst-ts-editing-grid-cell-down ()
+  "See `typst-ts-editing-grid-cell--move'."
+  (interactive)
+  (typst-ts-editing-grid-cell--move 'down))
 
-  (defun typst-ts-editing-grid-cell-up ()
-    "See `typst-ts-editing-grid-cell--move'."
-    (interactive)
-    (typst-ts-editing-grid-cell--move 'up))
+(defun typst-ts-editing-grid-cell-up ()
+  "See `typst-ts-editing-grid-cell--move'."
+  (interactive)
+  (typst-ts-editing-grid-cell--move 'up))
 
-  (defun typst-ts-editing-grid-cell-left ()
-    "See `typst-ts-editing-grid-cell--move'."
-    (interactive)
-    (typst-ts-editing-grid-cell--move 'left))
+(defun typst-ts-editing-grid-cell-left ()
+  "See `typst-ts-editing-grid-cell--move'."
+  (interactive)
+  (typst-ts-editing-grid-cell--move 'left))
 
-  (defun typst-ts-editing-grid-cell-right ()
-    "See `typst-ts-editing-grid-cell--move'."
-    (interactive)
-    (typst-ts-editing-grid-cell--move 'right))
+(defun typst-ts-editing-grid-cell-right ()
+  "See `typst-ts-editing-grid-cell--move'."
+  (interactive)
+  (typst-ts-editing-grid-cell--move 'right))
 
 (defun typst-ts-editing-grid--at-point-p ()
   "Whether the current point is on a grid/table.
@@ -274,6 +275,7 @@ When there is no columns field or the semantic meaning makes no sense return 1."
              (treesit-filter-child columns-value
                                    (lambda (n)
                                      (let ((text (treesit-node-text n)))
+                                       ;; TODO: use a regex instead
                                        (and (not (string= "," text))
                                             (not (string= ":" text))
                                             (not (string= "(" text))
@@ -336,12 +338,11 @@ When point is not on an item node return nil."
 DIRECTION should be `up' or `down'."
   (let* ( previous current next swap-with numbered-p
           (bind (lambda ()
-                  (pcase direction
+                  (pcase-exhaustive direction
                     ('up
                      (setq swap-with previous))
                     ('down
-                     (setq swap-with next))
-                    (_ (error "%s is not one of: `up' `down'" direction))))))
+                     (setq swap-with next))))))
     (seq-setq (previous current next numbered-p)
               (typst-ts-editing-item--with-siblings))
     (unless current
@@ -441,7 +442,7 @@ the `GLOBAL-MAP' (example: `right-word')."
                ((typst-ts-editing-grid-cell--at-point-p) "grid-cell")
                (t nil)))
          (end
-          (pcase direction
+          (pcase-exhaustive direction
             ('left
              "-left")
             ('right
@@ -449,9 +450,7 @@ the `GLOBAL-MAP' (example: `right-word')."
             ('up
              "-up")
             ('down
-             "-down")
-            (_ (error "DIRECTION: %s is not one of: `right' `left', `up', `down'"
-                      direction)))))
+             "-down"))))
     (if (not mid)
         (keymap-lookup global-map (substitute-command-keys
                                    (concat "\\[" prefix "meta" end "]")))
@@ -587,7 +586,6 @@ When there is no section it will insert a heading below point."
          (insert-tab)
          'success)
 
-
         ((setq node
                (typst-ts-core-parent-util-type
                 cur-line-nonwhite-bol-node "item" t t))
@@ -638,6 +636,7 @@ When there is no section it will insert a heading below point."
   ;; see `do-auto-fill' function and `;; Choose a fill-prefix automatically.'
   ;; for default automatical fill-prefix finding algorithm
   (let (fill-prefix)
+    ;; TODO: why is the variable bound and then returned?
     (setq
      fill-prefix
      (catch 'fill-prefix
@@ -651,10 +650,10 @@ When there is no section it will insert a heading below point."
 
 (defun typst-ts-editing-auto-fill-function ()
   "Auto Fill Function for `auto-fill-mode'."
-  (when (>= (current-column) (current-fill-column))
-    (let* ((fill-prefix (typst-ts-editing-calculate-fill-prefix))
-           (adaptive-fill-mode (null fill-prefix)))
-      (when fill-prefix (do-auto-fill)))))
+  (when-let* (((>= (current-column) (current-fill-column)))
+              (fill-prefix (typst-ts-editing-calculate-fill-prefix))
+              (adaptive-fill-mode (null fill-prefix)))
+    (do-auto-fill)))
 
 (defun typst-ts-editing-symbol-picker ()
   "Insert typst symbols.
