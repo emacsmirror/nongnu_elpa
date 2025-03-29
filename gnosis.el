@@ -323,28 +323,33 @@ Acts only when CENTER? is non-nil."
 
 (defun gnosis-center-string (string)
   "Center each line of STRING in current window width.
-
-Removes source from links, returns only link descriptions."
-  (let ((width (window-width)))
+Replaces links [[source][description]] with =description=."
+  (let* ((width (window-width))
+         (lines (split-string string "\n")))
     (mapconcat
      (lambda (line)
-       (let ((trimmed (string-trim line)))
-         (let ((adjusted-line
-                (replace-regexp-in-string 
-                 "\\[\\[\\([^]]+\\)\\]\\[\\([^]]+\\)\\]\\]"
-                 "\\2"  ; Keep only description part
-                 trimmed)))
+       (if (string-blank-p line)
+           ""  ;; Preserve blank lines
+         (let* ((trimmed (string-trim line))
+                ;; Replace links with just the description part
+                (processed (replace-regexp-in-string
+                            "\\[\\[\\([^]]+\\)\\]\\[\\([^]]+\\)\\]\\]"
+                            "=\\2="
+                            trimmed))
+                ;; Fill the text to wrap it properly
+                (wrapped (with-temp-buffer
+                           (insert processed)
+                           (fill-region (point-min) (point-max))
+                           (buffer-string)))
+                ;; Process each wrapped line with proper centering
+                (wrapped-lines (split-string wrapped "\n")))
            (mapconcat
-            (lambda (wrapped)
-              (concat (make-string (max 0 (/ (- width (length wrapped)) 2)) ?\s)
-                      wrapped))
-            (split-string (with-temp-buffer
-                          (insert adjusted-line)
-                          (fill-region (point-min) (point-max))
-                          (buffer-string))
-                        "\n")
+            (lambda (wline)
+              (let ((padding (max 0 (/ (- width (string-width wline)) 2))))
+                (concat (make-string padding ?\s) wline)))
+            wrapped-lines
             "\n"))))
-     (split-string string "\n")
+     lines
      "\n")))
 
 (defun gnosis-apply-center-buffer-overlay (&optional point)
