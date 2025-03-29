@@ -564,6 +564,7 @@ If CURRENT-REPO, get from `fj-current-repo' instead."
   "/" #'fj-switch-to-buffer
   ;; really oughta be universal:
   "O" #'fj-list-own-repos
+  "W" #'fj-list-own-issues
   "N" #'fj-view-notifications
   "U" #'fj-update-user-settings
   "b" #'fj-browse-view
@@ -582,6 +583,7 @@ If CURRENT-REPO, get from `fj-current-repo' instead."
   "/" #'fj-switch-to-buffer
   ;; really oughta be universal:
   "O" #'fj-list-own-repos
+  "W" #'fj-list-own-issues
   "N" #'fj-view-notifications
   "U" #'fj-update-user-settings
   "C" #'fj-copy-item-url
