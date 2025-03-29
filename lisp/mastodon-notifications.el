@@ -89,7 +89,7 @@
 (defvar mastodon-group-notifications)
 (defvar mastodon-notifications-grouped-names-count)
 (defvar mastodon-tl--link-keymap)
-
+(defvar mastodon-tl--update-point)
 ;;; VARIABLES
 
 (defvar mastodon-notifications--map
@@ -611,6 +611,10 @@ Using GROUP data, notification TYPE, and overall notifs JSON."
      (alist-get 'status_id group)
      'id
      (alist-get 'statuses json))))
+
+(defun mastodon-notifications--empty-group-json-p (json)
+  "Non-nil if JSON is empty grouped notifs data."
+  (equal json '((accounts) (statuses) (notification_groups))))
 
 (defun mastodon-notifications--timeline (json &optional type update)
   "Format JSON in Emacs buffer.

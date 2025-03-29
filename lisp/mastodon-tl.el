@@ -94,7 +94,7 @@
 (autoload 'mastodon-search-load-link-posts "mastodon-search")
 (autoload 'mastodon-notifications--current-type "mastodon-notifications")
 (autoload 'mastodon-notifications--timeline "mastodon-notifications")
-
+(autoload 'mastodon-notifications--empty-group-json-p "mastodon-notifications")
 (defvar mastodon-toot--visibility)
 (defvar mastodon-toot-mode)
 (defvar mastodon-active-user)
@@ -3124,6 +3124,13 @@ report the account for spam."
 
 ;;; UPDATING, etc.
 
+(defun mastodon-tl--no-json (json)
+  "Nil if JSON is nil or empty group notif data."
+  (if (and (mastodon-tl--buffer-type-eq 'notifications)
+           mastodon-group-notifications)
+      (mastodon-notifications--empty-group-json-p json)
+    (not json)))
+
 (defun mastodon-tl--more-json (endpoint id)
   "Return JSON for timeline ENDPOINT before ID."
   (let* ((args `(("max_id" . ,(mastodon-tl--as-string id))))
@@ -3174,7 +3181,8 @@ Then run CALLBACK with arguments CBARGS."
 (defun mastodon-tl--updated-json (endpoint id &optional params version)
   "Return JSON for timeline ENDPOINT since ID.
 PARAMS is used to send any parameters needed to correctly update
-the current view."
+the current view.
+VERSION is the API version to use, as grouped notifs use v2."
   (let* ((args `(("since_id" . ,(mastodon-tl--as-string id))))
          (args (append args params))
          (url (mastodon-http--api endpoint version)))
@@ -3319,7 +3327,7 @@ MAX-ID is the pagination parameter, a string."
                    (mastodon-tl--thread-do)
                    (goto-char point-before)
                    (message "Loaded full thread."))
-          (if (not json)
+          (if (mastodon-tl--no-json json)
               (user-error "No more results")
             (if notifs-p
                 (mastodon-notifications--timeline json notif-type :update)
@@ -3528,10 +3536,7 @@ This location is defined by a non-nil value of
                         endpoint id params
                         (when (and notifs-p mastodon-group-notifications)
                           "v2"))))
-            (if (not
-                 (if (and notifs-p mastodon-group-notifications)
-                     (alist-get 'statuses json)
-                   json))
+            (if (mastodon-tl--no-json json)
                 (user-error "Nothing to update")
               (let ((inhibit-read-only t))
                 (mastodon-tl--set-after-update-marker)
