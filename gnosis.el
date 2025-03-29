@@ -421,7 +421,7 @@ This will not be applied to sentences that start with double space."
   (cl-assert (listp clozes) nil "Adding clozes: Clozes need to be a list.")
   (let ((cloze-string (or cloze-string gnosis-cloze-string)))
     (with-temp-buffer
-      (insert str)
+      (insert (gnosis-center-string str))
       (dolist (cloze clozes)
         (let* ((cloze-text (gnosis-trim-quotes cloze))
                (replacement (concat
