@@ -588,7 +588,6 @@ NO-GROUP means don't render grouped notifications."
                  do (mastodon-notifications--format-note x))
       (cl-loop
        for g in (alist-get 'notification_groups json)
-       for start-pos = (point)
        for accounts = (mastodon-notifications--group-accounts
                        (alist-get 'sample_account_ids g)
                        (alist-get 'accounts json))
