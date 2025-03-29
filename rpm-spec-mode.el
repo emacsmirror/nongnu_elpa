@@ -272,7 +272,7 @@ Can be either a string or a function."
     "changelog")
   "Partial list of section names.")
 (defconst rpm-scripts
-  ;; trigger, filetrigger, transfiletrigger no found in build/parseScript.c
+  ;; See: docs/manual/spec.md section "Runtime scriptlets"
   '("pre"
     "post"
     "preun"
