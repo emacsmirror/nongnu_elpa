@@ -48,12 +48,12 @@
 (autoload 'mastodon-http--post "mastodon-http")
 (autoload 'mastodon-return-credential-account "mastodon")
 (autoload 'mastodon-client--general-read "mastodon-client")
+(autoload 'mastodon-client--token-file "mastodon-client")
 
 (defvar mastodon-instance-url)
 (defvar mastodon-client-scopes)
 (defvar mastodon-client-redirect-uri)
 (defvar mastodon-active-user)
-(defvar mastodon-client--token-file)
 
 (defgroup mastodon-auth nil
   "Authenticate with Mastodon."
