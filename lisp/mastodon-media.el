@@ -332,7 +332,12 @@ image-data prop so it can be toggled."
                              mastodon-media--sensitive-image-data nil t)
                            sensitive-state hidden image-data ,image))))
 
-(defun mastodon-media--process-full-sized-image-response (status-plist url)
+(defvar mastodon-media--attachments nil
+  "A list attachment details for full sized image view buffer.
+The first element is the URL of the image displayed, followed by plists of details of all of a toot's attachments.")
+
+(defun mastodon-media--process-full-sized-image-response
+    (status-plist url attachments &optional prev-buf)
   ;; FIXME: refactor this with but not into
   ;; `mastodon-media--process-image-response'.
   "Callback function processing the `url-retrieve' response for URL.
@@ -347,16 +352,25 @@ STATUS-PLIST is a plist of status events as per `url-retrieve'."
     ;; https://codeberg.org/martianh/mastodon.el/issues/540
     (let* ((handle (mm-dissect-buffer t))
            (image (mm-get-image handle))
-           (str (image-property image :data)))
-      (with-current-buffer (get-buffer-create "*masto-image*")
+           (str (image-property image :data))
+           (buf "*masto-image*"))
+      (with-current-buffer (get-buffer-create buf)
         (let ((inhibit-read-only t))
           (erase-buffer)
           (insert-image image str)
           (special-mode) ; prevent image-mode loop bug
-          (image-mode)
+          (mastodon-image-mode) ;; for our keymap
           (goto-char (point-min))
-          (switch-to-buffer-other-window (current-buffer))
-          (image-transform-fit-both))))))
+          (image-transform-fit-both)
+          ;; set image metadata for view cycling:
+          (setq-local mastodon-media--attachments (cons url attachments))))
+      ;; switch to buf if not already viewing it:
+      (unless (equal buf prev-buf)
+        (switch-to-buffer-other-window buf))
+      ;; display bindings if multiple images:
+      (when (< 1 (length (cdr mastodon-media--attachments)))
+        (message (substitute-command-keys
+                  "\\`.'/\\`>'/\\`<right>' to cycle images"))))))
 
 (defun mastodon-media--image-or-cached (url process-fun args)
   "Fetch URL from cache or fro host.
@@ -499,8 +513,8 @@ CAPTION is the image caption if provided.
 SENSITIVE is a flag from the item's JSON data."
   (let* ((help-echo-base
           (substitute-command-keys
-           (concat "\\`RET'/\\`i': load full image (prefix: copy URL), \\`+'/\\`-': zoom,\
- \\`r': rotate, \\`o': save preview"
+           (concat "\\`RET': load full image or play video,\
+ \\`i' for image options"
                    (when (not (eq sensitive :json-false))
                      ", \\`S': toggle sensitive media"))))
          (help-echo (if caption

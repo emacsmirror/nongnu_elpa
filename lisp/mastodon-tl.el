@@ -94,7 +94,7 @@
 (autoload 'mastodon-search-load-link-posts "mastodon-search")
 (autoload 'mastodon-notifications--current-type "mastodon-notifications")
 (autoload 'mastodon-notifications--timeline "mastodon-notifications")
-
+(autoload 'mastodon-notifications--empty-group-json-p "mastodon-notifications")
 (defvar mastodon-toot--visibility)
 (defvar mastodon-toot-mode)
 (defvar mastodon-active-user)
@@ -110,6 +110,7 @@
 (defvar mastodon-media--enable-image-caching)
 (defvar mastodon-media--generic-broken-image-data)
 (defvar mastodon-media--sensitive-image-data)
+(defvar mastodon-media--attachments)
 
 
 ;;; CUSTOMIZES
@@ -171,7 +172,7 @@ nil."
     (status                . ("✍" . "[posted]"))
     (replied               . ("⬇" . "↓"))
     (reply-bar             . ("┃" . "|"))
-    (poll                  . ("📊" . ""))
+    (poll                  . ("📊" . "[poll]"))
     (follow                . ("👤" . "+"))
     (follow_request        . ("👤" . "+"))
     (severed_relationships . ("🔗" . "//"))
@@ -332,6 +333,22 @@ types of mastodon links and not just shr.el-generated ones.")
       map))
   "The keymap to be set for the author byline.
 It is active where point is placed by `mastodon-tl-goto-next-item.'")
+
+(require 'image-mode)
+
+(defvar mastodon-image-mode-map
+  (let ((map (make-sparse-keymap)))
+    (set-keymap-parent map image-mode-map)
+    (define-key map (kbd ">") #'mastodon-tl-next-full-image)
+    (define-key map (kbd "<") #'mastodon-tl-prev-full-image)
+    (define-key map (kbd ".") #'mastodon-tl-next-full-image)
+    (define-key map (kbd ",") #'mastodon-tl-prev-full-image)
+    ;; matches view full image binding in main keymap:
+    (define-key map (kbd "=") #'mastodon-tl-next-full-image)
+    (define-key map (kbd "-") #'mastodon-tl-prev-full-image)
+    (define-key map (kbd "<right>") #'mastodon-tl-next-full-image)
+    (define-key map (kbd "<left>") #'mastodon-tl-prev-full-image)
+    map))
 
 
 ;;; MACROS
@@ -750,8 +767,10 @@ The result is added as an attachments property to author-byline."
   (let ((media (mastodon-tl--field 'media_attachments toot)))
     (mapcar (lambda (attachment)
               (let-alist attachment
-                (list :url (or .remote_url .url) ; fallback for notifications
-                      :type .type)))
+                (list :id .id
+                      :type .type
+                      ;; fallback for notifications:
+                      :url (or .remote_url .url))))
             media)))
 
 (defun mastodon-tl--byline-booster (toot)
@@ -1104,24 +1123,30 @@ Return nil if no matching element."
           (setq mention (pop mentions)))
         return))))
 
-(defun mastodon-tl--userhandle-from-url (url buffer-text)
+(defun mastodon-tl--userhandle-from-url (url &optional buffer-text)
   "Return the user hande the URL points to or nil if it is not a profile link.
 BUFFER-TEXT is the text covered by the link with URL, for a user profile
-this should be of the form <at-sign><user id>, e.g. \"@Gargon\"."
+this should be of the form <at-sign><user id>, e.g. \"@Gargon\".
+This is called on all post URLs, so needs to handle non profile URLs
+gracefully."
   (let* ((parsed-url (url-generic-parse-url url))
          (host (url-host parsed-url))
          (local-p (string=
                    (url-host (url-generic-parse-url mastodon-instance-url))
                    host))
-         (path (url-filename parsed-url)))
-    (when (and (string= "@" (substring buffer-text 0 1))
-               ;; don't error on domain only url (rare):
-               (not (string= "" path))
-               (string= (downcase buffer-text)
-                        (downcase (substring path 1))))
-      (if local-p
-          buffer-text ; no instance suffix for local mention
-        (concat buffer-text "@" host)))))
+         (path-raw (url-filename parsed-url)))
+    (unless (string-empty-p path-raw)
+      (let ((path (substring path-raw 1))) ;; remove "/" prefix
+        (if (not buffer-text)
+            (when (string-prefix-p "@" path)
+              (if local-p path (concat "@" host)))
+          (when (and (string= "@" (substring buffer-text 0 1))
+                     ;; don't error on domain only url (rare):
+                     (string= (downcase buffer-text)
+                              (downcase path)))
+            (if local-p
+                buffer-text ; no instance suffix for local mention
+              (concat buffer-text "@" host))))))))
 
 (defun mastodon-tl--hashtag-from-url (url instance-url)
   "Return the hashtag that URL points to or nil if URL is not a tag link.
@@ -1399,18 +1424,103 @@ SENSITIVE is a flag from the item's JSON data."
                              help-echo
                            (concat help-echo "\nC-RET: play " type " with mpv"))))
 
-(defun mastodon-tl-view-full-image ()
+;;; FULL IMAGE VIEW
+
+(define-derived-mode mastodon-image-mode image-mode
+  "mastodon-image"
+  :group 'mastodon)
+
+;; patch `shr-browse-image' to accept url arg:
+(defun mastodon-tl-shr-browse-image (&optional image-url copy-url)
+  "Browse the image under point.
+If COPY-URL (the prefix if called interactively) is non-nil, copy
+the URL of the image to the kill buffer instead.
+Optionally use IMAGE-URL rather than the image-url property at point."
+  (interactive "sP")
+  (let ((url (or image-url (get-text-property (point) 'image-url))))
+    (cond
+     ((not url)
+      (message "No image under point"))
+     (copy-url
+      (with-temp-buffer
+        (insert url)
+        (copy-region-as-kill (point-min) (point-max))
+        (message "Copied %s" url)))
+     (t
+      (message "Browsing %s..." url)
+      (browse-url url)))))
+
+(defun mastodon-tl--view-image-url (url attachments)
+  "View image URL. Set ATTACHMENTS metadata in image buffer."
+  (if (not url)
+      (user-error "No url found")
+    (if (not mastodon-tl--load-full-sized-images-in-emacs)
+        (mastodon-tl-shr-browse-image url)
+      (mastodon-media--image-or-cached
+       url #'mastodon-media--process-full-sized-image-response
+       `(nil ,url ,attachments ,(buffer-name))))))
+
+(defun mastodon-tl-view-full-image-at-point ()
   "Browse full-sized version of image at point in a new window."
   (interactive)
   (if (not (eq (mastodon-tl--property 'mastodon-tab-stop) 'image))
       (user-error "No image at point?")
-    (let* ((url (mastodon-tl--property 'image-url)))
-      (if (not mastodon-tl--load-full-sized-images-in-emacs)
-          (shr-browse-image)
-        (mastodon-media--image-or-cached
-         url
-         #'mastodon-media--process-full-sized-image-response
-         `(nil ,url))))))
+    (let* ((url (mastodon-tl--property 'image-url))
+           (attachments (mastodon-tl--property 'attachments)))
+      (mastodon-tl--view-image-url url attachments))))
+
+(defun mastodon-tl-view-first-full-image ()
+  "From item byline, fetch load its first full image."
+  (interactive)
+  (let* ((attachments (mastodon-tl--property 'attachments))
+         (url (plist-get (car attachments) :url)))
+    (if (not attachments)
+        (user-error "Toot has no attachments")
+      (mastodon-tl--view-image-url url attachments))))
+
+(defun mastodon-tl--get-next-image-url ()
+  "Return the url for the next image to load.
+Cycles through values in `mastodon-media--attachments'."
+  (let* ((url (car mastodon-media--attachments))
+         ;; match url against our plists:
+         (current (mastodon-tl--current-image-url url)))
+    ;; fetch from next item in current or use first item if current has
+    ;; only 1 item:
+    (plist-get (if (= 1 (length current))
+                   (cadr mastodon-media--attachments)
+                 (cadr current))
+               :url)))
+
+(defun mastodon-tl--current-image-url (url)
+  "Try to fetch URL from `mastodon-media--attachments'.
+The return value is that of `cl-member-if', ie if a match is found, it
+returns the match and the list of which it is the car."
+  (cl-member-if
+   (lambda (attachment)
+     (equal url (plist-get attachment :url)))
+   (cdr mastodon-media--attachments)))
+
+(defun mastodon-tl--get-prev-image-url ()
+  "Return the URL of the previous item in `mastodon-media--attachments'."
+  (let* ((url (car mastodon-media--attachments))
+         (current (mastodon-tl--current-image-url url)))
+    (plist-get (nth (1- (length current))
+                    (cdr mastodon-media--attachments))
+               :url)))
+
+(defun mastodon-tl-next-full-image ()
+  "From full image view buffer, load the toot's next image."
+  (interactive)
+  (let* ((next-url (mastodon-tl--get-next-image-url)))
+    (mastodon-tl--view-image-url next-url
+                                 (cdr mastodon-media--attachments))))
+
+(defun mastodon-tl-prev-full-image ()
+  "From full image view buffer, load the toot's prev image."
+  (interactive)
+  (let* ((prev-url (mastodon-tl--get-prev-image-url)))
+    (mastodon-tl--view-image-url prev-url
+                                 (cdr mastodon-media--attachments))))
 
 (defun mastodon-tl-toggle-sensitive-image ()
   "Toggle dislay of sensitive image at point."
@@ -1455,7 +1565,9 @@ LENGTH is of the longest option, for formatting."
     (let* ((options (mastodon-tl--map-alist 'title .options))
            (longest (car (sort (mapcar #'length options ) #'>)))
            (counter 0))
-      (concat "\nPoll: \n\n"
+      (concat "\n"
+              (mastodon-tl--symbol 'poll)
+              "\n\n"
               (mapconcat (lambda (option)
                            (setq counter (1+ counter))
                            (mastodon-tl--format-poll-option
@@ -1612,7 +1724,7 @@ OPTIONS is an alist."
   (interactive "d")
   (if (mastodon-tl--media-video-p)
       (mastodon-tl-mpv-play-video-at-point)
-    (mastodon-tl-view-full-image)))
+    (mastodon-tl-view-full-image-at-point)))
 
 (defun mastodon-tl-click-image-or-video (event)
   "Click to play video with `mpv.el'.
@@ -2180,6 +2292,18 @@ call this function after it is set or use something else."
 This includes the update profile note buffer, but not the preferences one."
   (string-prefix-p "accounts" (mastodon-tl--endpoint nil :no-error)))
 
+(defun mastodon-tl--own-profile-buffer-p ()
+  "Return t if we are viewing our own profile buffer.
+We check that our account credientials id matches the endpoint id in the
+buffer spec, which if in a profile buffer is of the form
+\"accounts/$id/statuses\"."
+  (and (mastodon-tl--profile-buffer-p)
+       (let ((endpoint-id
+              (nth 1
+                   (split-string (mastodon-tl--endpoint) "/"))))
+         (string= (mastodon-auth--get-account-id)
+                  endpoint-id))))
+
 (defun mastodon-tl--search-buffer-p ()
   "T if current buffer is a search buffer."
   (string-suffix-p "search" (mastodon-tl--endpoint nil :no-error)))
@@ -2491,7 +2615,7 @@ ID is that of the post the context is currently displayed for."
 ;;; FOLLOW/BLOCK/MUTE, ETC
 
 (defun mastodon-tl-follow-user (user-handle
-                                 &optional notify langs reblogs json)
+                                &optional notify langs reblogs json)
   "Query for USER-HANDLE from current status and follow that user.
 If NOTIFY is \"true\", enable notifications when that user posts.
 If NOTIFY is \"false\", disable notifications when that user posts.
@@ -2504,6 +2628,32 @@ JSON is a flag arg for `mastodon-http--post'."
   (mastodon-tl--do-if-item
    (mastodon-tl--do-user-action-and-response
     user-handle "follow" nil notify langs reblogs json)))
+
+(defun mastodon-tl-follow-user-by-handle (user-handle)
+  "Prompt for a USER-HANDLE and follow that user.
+USER-HANDLE can also be a URL to a user profile page."
+  ;; code adapted from sachac:
+  ;; https://sachachua.com/dotemacs/index.html#mastodon. thanks sachac!
+  (interactive "MHandle: ")
+  (when (string-match "https?://\\(.+?\\)/\\(@.+\\)" user-handle)
+    (setq user-handle
+          ;; sachac's model doesn't work with local user handles in URL,
+          ;; meaning the search below will fail, so we use our own
+          ;; URL-to-handle function, modified for the purpose:
+          ;; (concat (match-string 2 user-handle) "@" (match-string 1 user-handle))))
+          (mastodon-tl--userhandle-from-url user-handle)))
+  (let* ((account (mastodon-profile--search-account-by-handle
+                   user-handle))
+         (user-id (alist-get 'id account))
+         (name (if (not (string-empty-p
+                         (alist-get 'display_name account)))
+                   (alist-get 'display_name account)
+                 (alist-get 'username account)))
+         (url (mastodon-http--api (format "accounts/%s/%s" user-id "follow"))))
+    (if account
+        (mastodon-tl--do-user-action-function url name
+                                              (substring user-handle 1) "follow")
+      (user-error "Cannot find a user with handle %S" user-handle))))
 
 ;; TODO: make this action "enable/disable notifications"
 (defun mastodon-tl-enable-notify-user-posts (user-handle)
@@ -2974,6 +3124,13 @@ report the account for spam."
 
 ;;; UPDATING, etc.
 
+(defun mastodon-tl--no-json (json)
+  "Nil if JSON is nil or empty group notif data."
+  (if (and (mastodon-tl--buffer-type-eq 'notifications)
+           mastodon-group-notifications)
+      (mastodon-notifications--empty-group-json-p json)
+    (not json)))
+
 (defun mastodon-tl--more-json (endpoint id)
   "Return JSON for timeline ENDPOINT before ID."
   (let* ((args `(("max_id" . ,(mastodon-tl--as-string id))))
@@ -3021,13 +3178,14 @@ Then run CALLBACK with arguments CBARGS."
     (setf (alist-get "offset" params nil nil #'string=) offset)
     (apply #'mastodon-http--get-json-async url params callback cbargs)))
 
-(defun mastodon-tl--updated-json (endpoint id &optional params)
+(defun mastodon-tl--updated-json (endpoint id &optional params version)
   "Return JSON for timeline ENDPOINT since ID.
 PARAMS is used to send any parameters needed to correctly update
-the current view."
+the current view.
+VERSION is the API version to use, as grouped notifs use v2."
   (let* ((args `(("since_id" . ,(mastodon-tl--as-string id))))
          (args (append args params))
-         (url (mastodon-http--api endpoint)))
+         (url (mastodon-http--api endpoint version)))
     (mastodon-http--get-json url args)))
 
 ;; TODO: add this to new posts in some cases, e.g. in thread view.
@@ -3169,7 +3327,7 @@ MAX-ID is the pagination parameter, a string."
                    (mastodon-tl--thread-do)
                    (goto-char point-before)
                    (message "Loaded full thread."))
-          (if (not json)
+          (if (mastodon-tl--no-json json)
               (user-error "No more results")
             (if notifs-p
                 (mastodon-notifications--timeline json notif-type :update)
@@ -3361,27 +3519,34 @@ This location is defined by a non-nil value of
       (user-error "Update not available in this view")
     ;; FIXME: handle update for search and trending buffers
     (let* ((endpoint (mastodon-tl--endpoint))
-           (update-function (mastodon-tl--update-function))
+           (update-fun (mastodon-tl--update-function))
            (id (mastodon-tl--newest-id)))
       ;; update a thread, without calling `mastodon-tl--updated-json':
       (if (mastodon-tl--buffer-type-eq 'thread)
           ;; load whole thread:
           (progn (mastodon-tl--thread-do id)
                  (message "Loaded full thread."))
-        ;; update other timelines:
-        (let* ((params (mastodon-tl--update-params))
-               (json (mastodon-tl--updated-json endpoint id params)))
-          (if (not json)
-              (user-error "Nothing to update")
-            (let ((inhibit-read-only t))
-              (mastodon-tl--set-after-update-marker)
-              (goto-char (or mastodon-tl--update-point (point-min)))
-              (if (eq update-function 'mastodon-notifications--timeline)
-                  (funcall update-function json nil :update)
-                (funcall update-function json))
-              (if mastodon-tl--after-update-marker
-                  (goto-char mastodon-tl--after-update-marker)
-                (mastodon-tl-goto-next-item)))))))))
+        (if (not id) ;; if e.g. notifs all cleared:
+            (user-error "No last id")
+          ;; update other timelines:
+          (let* ((params (mastodon-tl--update-params))
+                 (notifs-p
+                  (eq update-fun 'mastodon-notifications--timeline))
+                 (json (mastodon-tl--updated-json
+                        endpoint id params
+                        (when (and notifs-p mastodon-group-notifications)
+                          "v2"))))
+            (if (mastodon-tl--no-json json)
+                (user-error "Nothing to update")
+              (let ((inhibit-read-only t))
+                (mastodon-tl--set-after-update-marker)
+                (goto-char (or mastodon-tl--update-point (point-min)))
+                (if notifs-p
+                    (funcall update-fun json nil :update)
+                  (funcall update-fun json))
+                (if mastodon-tl--after-update-marker
+                    (goto-char mastodon-tl--after-update-marker)
+                  (mastodon-tl-goto-next-item))))))))))
 
 
 ;;; LOADING TIMELINES

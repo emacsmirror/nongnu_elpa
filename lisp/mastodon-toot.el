@@ -106,6 +106,7 @@
 (autoload 'mastodon-tl--image-trans-check "mastodon-tl")
 (autoload 'mastodon-instance-data "mastodon")
 (autoload 'mastodon-create-poll "mastodon-transient")
+(autoload 'mastodon-tl--own-profile-buffer-p "mastodon-tl")
 
 ;; for mastodon-toot-translate-toot-text
 (autoload 'mastodon-tl--content "mastodon-tl")
@@ -647,11 +648,13 @@ Uses `lingva.el'."
     (if (not pinnable-p)
         (user-error "You can only pin your own toots")
       (when (y-or-n-p (format "%s this toot? " (capitalize action)))
-        (mastodon-toot--action action
-                               (lambda (_)
-                                 (when mastodon-tl--buffer-spec
-                                   (mastodon-tl--reload-timeline-or-profile))
-                                 (message "Toot %s!" msg)))))))
+        (mastodon-toot--action
+         action
+         (lambda (_)
+           ;; let's only reload when in own profile view:
+           (when (mastodon-tl--own-profile-buffer-p)
+             (mastodon-tl--reload-timeline-or-profile))
+           (message "Toot %s!" msg)))))))
 
 
 ;;; DELETE, DRAFT, REDRAFT

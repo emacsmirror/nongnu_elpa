@@ -89,7 +89,7 @@
 (defvar mastodon-group-notifications)
 (defvar mastodon-notifications-grouped-names-count)
 (defvar mastodon-tl--link-keymap)
-
+(defvar mastodon-tl--update-point)
 ;;; VARIABLES
 
 (defvar mastodon-notifications--map
@@ -131,11 +131,6 @@ Notification types are named according to their name on the server.")
     ("Posted"               . "a post")
     ("Edited"               . "their post"))
   "Alist of subjects for notification types.")
-
-(defvar mastodon-notifications-grouped-types
-  '("reblog" "favourite") ;; TODO: implement follow!
-  "List of notification types for which grouping is implemented.
-Used in `mastodon-notifications-get'")
 
 (defvar mastodon-notifications--action-alist
   '((reblog                . "Boosted")
@@ -587,23 +582,22 @@ When AVATAR, include the account's avatar image."
   "Display grouped notifications in JSON.
 NO-GROUP means don't render grouped notifications."
   ;; (setq masto-grouped-notifs json)
-  (if no-group
-      (cl-loop for x in json
-               do (mastodon-notifications--format-note x))
-    (let ((groups (alist-get 'notification_groups json)))
+  (let ((start-pos (point)))
+    (if no-group
+        (cl-loop for x in json
+                 do (mastodon-notifications--format-note x))
       (cl-loop
-       for g in groups
-       for start-pos = (point)
+       for g in (alist-get 'notification_groups json)
        for accounts = (mastodon-notifications--group-accounts
                        (alist-get 'sample_account_ids g)
                        (alist-get 'accounts json))
        for type = (alist-get 'type g)
        for status = (mastodon-notifications--status-or-event g type json)
-       do (mastodon-notifications--format-group-note g status accounts)
-       (when mastodon-tl--display-media-p
-         ;; images-in-notifs custom is handeld in
-         ;; `mastodon-tl--media-attachment', not here
-         (mastodon-media--inline-images start-pos (point)))))))
+       do (mastodon-notifications--format-group-note g status accounts)))
+    (when mastodon-tl--display-media-p
+      ;; images-in-notifs custom is handeld in
+      ;; `mastodon-tl--media-attachment', not here
+      (mastodon-media--inline-images start-pos (point)))))
 
 (defun mastodon-notifications--status-or-event (group type json)
   "Return a notification's status or event data.
@@ -617,6 +611,10 @@ Using GROUP data, notification TYPE, and overall notifs JSON."
      (alist-get 'status_id group)
      'id
      (alist-get 'statuses json))))
+
+(defun mastodon-notifications--empty-group-json-p (json)
+  "Non-nil if JSON is empty grouped notifs data."
+  (equal json '((accounts) (statuses) (notification_groups))))
 
 (defun mastodon-notifications--timeline (json &optional type update)
   "Format JSON in Emacs buffer.
@@ -639,6 +637,8 @@ UPDATE means we are updating, so skip some things."
        (substitute-command-keys
         "You have filtered notifications. \
 \\[mastodon-notifications-requests] to view requests.\n\n")))
+    ;; set update point:
+    (setq mastodon-tl--update-point (point))
     ;; render:
     (mastodon-notifications--render json
                                     (not mastodon-group-notifications))

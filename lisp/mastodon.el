@@ -6,8 +6,8 @@
 ;; Author: Johnson Denen <johnson.denen@gmail.com>
 ;;         Marty Hiatt <mousebot@disroot.org>
 ;; Maintainer: Marty Hiatt <mousebot@disroot.org>
-;; Version: 1.1.12
-;; Package-Requires: ((emacs "28.1") (request "0.3.0") (persist "0.4") (tp "0.7"))
+;; Version: 2.0.0
+;; Package-Requires: ((emacs "28.1") (persist "0.4") (tp "0.7"))
 ;; Homepage: https://codeberg.org/martianh/mastodon.el
 
 ;; This file is not part of GNU Emacs.
@@ -105,7 +105,12 @@
 
 (defvar mastodon-tl--highlight-current-toot)
 (defvar mastodon-notifications--map)
-(defvar mastodon-notifications-grouped-types)
+(defvar mastodon-client--token-file)
+
+(defvar mastodon-notifications-grouped-types
+  '("reblog" "favourite") ;; TODO: implement follow!
+  "List of notification types for which grouping is implemented.
+Used in `mastodon-notifications-get'")
 
 (defgroup mastodon nil
   "Interface with Mastodon."
@@ -191,6 +196,23 @@ and X others...\"."
   (interactive)
   (quit-window 'kill))
 
+(defvar mastodon-client--active-user-details-plist)
+(defvar mastodon-auth--token-alist)
+
+;;;###autoload
+(defun mastodon-forget-all-logins ()
+  "Delete `mastodon-client--token-file'.
+Also nil `mastodon-auth--token-alist'."
+  (interactive)
+  (when (y-or-n-p "Remove all saved login data?")
+    (if (not (file-exists-p mastodon-client--token-file))
+        (message "No plstore file")
+      (delete-file mastodon-client--token-file)
+      (message "File %s deleted." mastodon-client--token-file))
+    ;; nil some vars too:
+    (setq mastodon-client--active-user-details-plist nil)
+    (setq mastodon-auth--token-alist nil)))
+
 (defvar mastodon-mode-map
   (let ((map (make-sparse-keymap)))
     ;; navigation inside a timeline
@@ -236,6 +258,7 @@ and X others...\"."
     (define-key map (kbd "T")      #'mastodon-tl-thread)
     (define-key map (kbd "RET")    #'mastodon-tl-thread)
     (define-key map (kbd "m")      #'mastodon-tl-dm-user)
+    (define-key map (kbd "=")      #'mastodon-tl-view-first-full-image)
     (when (require 'lingva nil :no-error)
       (define-key map (kbd "a")    #'mastodon-toot-translate-toot-text))
     (define-key map (kbd ",")      #'mastodon-toot-list-favouriters)
