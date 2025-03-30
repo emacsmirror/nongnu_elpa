@@ -196,6 +196,9 @@ and X others...\"."
   (interactive)
   (quit-window 'kill))
 
+(defvar mastodon-client--active-user-details-plist)
+(defvar mastodon-auth--token-alist)
+
 ;;;###autoload
 (defun mastodon-forget-all-logins ()
   "Delete `mastodon-client--token-file'.
