@@ -39,6 +39,7 @@
 
 (autoload 'mastodon-tl--propertize-img-str-or-url "mastodon-tl")
 (autoload 'mastodon-tl--image-trans-check "mastodon-tl")
+(autoload 'mastodon-image-mode "mastodon-tl")
 
 (defvar url-show-status)
 
@@ -334,7 +335,8 @@ image-data prop so it can be toggled."
 
 (defvar mastodon-media--attachments nil
   "A list attachment details for full sized image view buffer.
-The first element is the URL of the image displayed, followed by plists of details of all of a toot's attachments.")
+The first element is the URL of the image displayed, followed by plists
+of details of all of a toot's attachments.")
 
 (defun mastodon-media--process-full-sized-image-response
     (status-plist url attachments &optional prev-buf)
