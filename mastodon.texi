@@ -1,7 +1,7 @@
 \input texinfo    @c -*- texinfo -*-
 @c %**start of header
 @setfilename mastodon.info
-@settitle 
+@settitle A Mastodon client
 @documentencoding UTF-8
 @documentlanguage en
 @c %**end of header
@@ -13,14 +13,14 @@
 
 @finalout
 @titlepage
-@title 
+@title A Mastodon client
 @end titlepage
 
 @contents
 
 @ifnottex
 @node Top
-@top 
+@top A Mastodon client
 @end ifnottex
 
 @menu
@@ -38,7 +38,7 @@ README
 * Contributing::
 * Supporting @samp{mastodon.el}: Supporting @samp{mastodonel}. 
 * Contributors::
-* screenshots::
+* Screenshots::
 
 Installation
 
@@ -54,10 +54,10 @@ Usage
 * Timelines::
 * Composing toots::
 * Other commands and account settings::
+* Notifications::
 * Customization::
 * Commands and variables index::
-* Alternative timeline layout::
-* mastodon hydra::
+* Packages related to @samp{mastodon.el}: Packages related to @samp{mastodonel}. 
 * Live-updating timelines @samp{mastodon-async-mode}::
 * Translating toots::
 * Bookmarks and @samp{mastodon.el}: Bookmarks and @samp{mastodonel}. 
@@ -74,10 +74,12 @@ Contributing
 @node README
 @chapter README
 
-@samp{mastodon.el} is an Emacs client for the AcitivityPub social networks that
+@samp{mastodon.el} is an Emacs client for the ActivityPub social networks that
 implement the Mastodon API@. For info see @uref{https://joinmastodon.org/, joinmastodon.org}.
 
-NB: @samp{mastodon.el} now ships this readme as an .info file, so if you have it installed you should be able to browse this readme inside emacs. @samp{C-h i} for info, then @samp{m masto RET} should load it for you.
+NB: @samp{mastodon.el} now ships this readme as an .info file, so if you have it
+installed you should be able to browse this readme inside emacs. @samp{C-h i} for
+info, then @samp{m masto RET} should load it for you.
 
 @menu
 * Installation::
@@ -87,13 +89,14 @@ NB: @samp{mastodon.el} now ships this readme as an .info file, so if you have it
 * Contributing::
 * Supporting @samp{mastodon.el}: Supporting @samp{mastodonel}. 
 * Contributors::
-* screenshots::
+* Screenshots::
 @end menu
 
 @node Installation
 @section Installation
 
-You can install @samp{mastodon.el} from ELPA, MELPA, or directly from this repo. It is also available as a GUIX package.
+You can install @samp{mastodon.el} from ELPA, MELPA, or directly from this repo.
+It is also available as a GUIX package.
 
 @menu
 * ELPA::
@@ -132,8 +135,8 @@ Update and install:
 @node Repo
 @subsection Repo
 
-Clone this repository and add the lisp directory to your load path.
-Then, require it and go.
+Clone this repository and add the lisp directory to your load path. Then,
+require it and go.
 
 @lisp
 (add-to-list 'load-path "/path/to/mastodon.el/lisp")
@@ -147,19 +150,24 @@ Or, with @samp{use-package}:
   :ensure t)
 @end lisp
 
-The minimum Emacs version is now 28.1. But if you are running an older version
-it shouldn't be very hard to get it working.
+The minimum Emacs version is now 28.1. But if you are running an older
+version it shouldn't be very hard to get it working.
 
 @node Emoji
 @subsection Emoji
 
-Since Emacs 28, it has builtin emoji support with @samp{emoji.el}. If you prefer to use @uref{https://github.com/iqbalansari/emacs-emojify, Emojify}, @samp{require} it and set @samp{mastodon-use-emojify} to non-nil to display emoji in timelines and to use it when composing toots. @samp{Emoji.el} is the better option, but for now only @samp{emojify} supports downloading and using custom emoji from your instance. From personal experience, @samp{emojify} also tends to result in less TOFU@.
+Since Emacs 28, it has builtin emoji support with @samp{emoji.el}. If you prefer
+to use @uref{https://github.com/iqbalansari/emacs-emojify, Emojify}, @samp{require} it and set @samp{mastodon-use-emojify} to non-nil to
+display emoji in timelines and to use it when composing toots. @samp{Emoji.el} is
+the better option, but for now only @samp{emojify} supports downloading and using
+custom emoji from your instance. From personal experience, @samp{emojify} also
+tends to result in less TOFU@.
 
 @node Discover
 @subsection Discover
 
-@samp{mastodon-mode} can provide a context menu for its keybindings if @uref{https://github.com/mickeynp/discover.el, Discover} is
-installed. It is not required.
+@samp{mastodon-mode} can provide a context menu for its keybindings if @uref{https://github.com/mickeynp/discover.el, Discover}
+is installed. It is not required.
 
 if you have Discover, add the following to your Emacs init configuration:
 
@@ -185,10 +193,10 @@ Or, with @samp{use-package}:
 * Timelines::
 * Composing toots::
 * Other commands and account settings::
+* Notifications::
 * Customization::
 * Commands and variables index::
-* Alternative timeline layout::
-* mastodon hydra::
+* Packages related to @samp{mastodon.el}: Packages related to @samp{mastodonel}. 
 * Live-updating timelines @samp{mastodon-async-mode}::
 * Translating toots::
 * Bookmarks and @samp{mastodon.el}: Bookmarks and @samp{mastodonel}. 
@@ -206,33 +214,64 @@ You need to set 2 variables in your init file to get started:
 @samp{mastodon-active-user}
 @end enumerate
 
-(see their doc strings for details). For example If you want to post
-toots as "example@math{_user}@@social.instance.org", then put this in your init
-file:
+(see their doc strings for details). For example If you want to post toots
+as "example@math{_user}@@social.instance.org", then put this in your init file:
 
 @lisp
 (setq mastodon-instance-url "https://social.instance.org"
       mastodon-active-user "example_user")
 @end lisp
 
-Then @strong{restart} Emacs and run @samp{M-x mastodon}. Make sure you are connected
-to internet before you do this. If you have multiple mastodon accounts
-you can activate one at a time by changing those two variables and
-restarting Emacs.
+Then @strong{restart} Emacs and run @samp{M-x mastodon}. Make sure you are connected to
+internet before you do this. If you have multiple mastodon accounts you
+can activate one at a time by changing those two variables and restarting
+Emacs.
 
-If you were using mastodon.el before 2FA was implemented and the above steps
-do not work, delete the old file specified by @samp{mastodon-client--token-file} and
-restart Emacs and follow the steps again.
+If you were using mastodon.el before 2FA was implemented and the above
+steps do not work, call @samp{(mastodon-forget-all-logins)}, restart Emacs and
+follow the steps again.
+
+@enumerate
+@item
+@anchor{encrypted access tokens (from 200)}encrypted access tokens (from 2.0.0)
+
+
+By default, user access tokens are now stored in the user's auth source
+file (typically @samp{~/.authinfo.gpg}, check the value of @samp{auth-sources}). When
+you first update to 2.0.0, or if you encounter issues due to old
+credentials, call @samp{(mastodon-forget-all-logins)} to remove the old
+mastodon.el plstore, and then authenticate again. If you don't want to use
+the auth source file, set @samp{mastodon-auth-use-auth-source} to nil. Entries
+will instead be stored encrypted in @samp{mastodon-client--token-file}, a plstore.
+
+If for some reason you reauthenticate, you'll need to either remove the
+entry in your auth sources file, or manually update the token in it after
+doing so, as mastodon.el is unable to reliably update (or even remove)
+entires.
+
+The format for a mastodon.el auth source entry is as follows:
+
+@samp{machine INSTANCE login USERNAME password AUTHTOKEN}
+
+with the token being what you copy from the browser when authenticating.
+If you have @samp{auth-source-save-behavior} set to nil, you'll also need to add
+such an entry manually.
+
+Finally, if you find you're asked for your key passphrase too often while
+authenticating, consider setting @samp{epa-file-encrypt-to} (for auth-source
+encryption) and @samp{plstore-encrypt-to} (for plstore encryption) to your
+preferred key ID@.
+@end enumerate
 
 @node Timelines
 @subsection Timelines
 
 @samp{M-x mastodon}
 
-Opens a @samp{*mastodon-home*} buffer in the major mode and displays toots. If your
-credentials are not yet saved, you will be prompted for email and password.
-The app registration process will take place if your @samp{mastodon-token-file} does
-not contain @samp{:client_id} and @samp{:client_secret}.
+Opens a @samp{*mastodon-home*} buffer in the major mode and displays toots. If
+your credentials are not yet saved, you will be prompted for email and
+password. The app registration process will take place if your
+@samp{mastodon-token-file} does not contain @samp{:client_id} and @samp{:client_secret}.
 
 @enumerate
 @item
@@ -254,9 +293,9 @@ For a full list of commands and variables, see @uref{mastodon-index.org, mastodo
 @tab Go to next item (toot, notification, user)
 @item @samp{p}
 @tab Go to previous item (toot, notification, user)
-@item @samp{M-n=/=<tab>}
+@item @samp{M-n/<tab>}
 @tab Go to the next interesting thing that has an action
-@item @samp{M-p=/=<S-tab>}
+@item @samp{M-p/<S-tab>}
 @tab Go to the previous interesting thing that has an action
 @item @samp{F}
 @tab Open federated timeline (1 prefix arg: hide-replies, 2 prefix args: media only)
@@ -316,6 +355,8 @@ For a full list of commands and variables, see @uref{mastodon-index.org, mastodo
 @tab view/edit/create/delete lists
 @item @samp{S}
 @tab view your scheduled toots
+@item @samp{S-:}
+@tab view profile/account settings transient menu
 @item 
 @tab @strong{Toot actions}
 @item @samp{t}
@@ -355,13 +396,15 @@ For a full list of commands and variables, see @uref{mastodon-index.org, mastodo
 @item @samp{C-c C-c}
 @tab cycle between statuses, statuses without boosts, followers, and following
 @item 
-@tab @samp{mastodon-profile--account-account-to-list} (see lists view)
+@tab @samp{mastodon-profile--add-account-to-list} (see lists view)
 @item 
 @tab @strong{Notifications view}
 @item @samp{a}, @samp{j}
 @tab accept/reject follow request
 @item @samp{C-k}
 @tab clear notification at point
+@item @samp{C-c C-c}
+@tab cycle between notification types
 @item 
 @tab see @samp{mastodon-notifications--get-*} functions for filtered views
 @item 
@@ -385,7 +428,7 @@ For a full list of commands and variables, see @uref{mastodon-index.org, mastodo
 @tab I boosted this toot
 @item @samp{(⭐)} (or @samp{(F)})
 @tab I favourited this toot
-@item @samp{(🔖)} (or (@samp{K}))
+@item @samp{(🔖)} (or @samp{(K)})
 @tab I bookmarked this toot
 @end multitable
 @end enumerate
@@ -393,24 +436,31 @@ For a full list of commands and variables, see @uref{mastodon-index.org, mastodo
 @node Composing toots
 @subsection Composing toots
 
-@samp{M-x mastodon-toot} (or @samp{t} from a mastodon.el buffer) opens a new buffer/window
-in @samp{text-mode} and @samp{mastodon-toot} minor mode. Enter the contents of your toot
-here. @samp{C-c C-c} sends the toot. @samp{C-c C-k} cancels. Both actions kill the buffer
-and window. Further keybindings are displayed in the buffer, and in the following subsection.
+@samp{M-x mastodon-toot} (or @samp{t} from a mastodon.el buffer) opens a new
+buffer/window in @samp{text-mode} and @samp{mastodon-toot} minor mode. Enter the
+contents of your toot here. @samp{C-c C-c} sends the toot. @samp{C-c C-k} cancels. Both
+actions kill the buffer and window. Further keybindings are displayed in
+the buffer, and in the following subsection.
 
-Replies preserve visibility status/content warnings, and include boosters by default. If the region is active when you start a reply, it will be yanked into the compose buffer prefixed with @samp{>} to form a rough reply quote.
+Replies preserve visibility status/content warnings, and include boosters
+by default. If the region is active when you start a reply, it will be
+yanked into the compose buffer prefixed with @samp{>} to form a rough reply
+quote.
 
-Server's max toot length, with running char count, and attachment previews, are shown.
+Server's max toot length, with running char count, and attachment
+previews, are shown.
 
 You can download and use your instance's custom emoji
-(@samp{mastodon-toot-download-custom-emoji}, @samp{mastodon-toot-enable-custom-emoji}).
+(@samp{mastodon-toot--download-custom-emoji},
+@samp{mastodon-toot--enable-custom-emoji}).
 
-If you want to view some of the toot being replied to in the compose buffer, set @samp{mastodon-toot-display-orig-in-reply-buffer} to non-nil.
+If you want to view some of the toot being replied to in the compose
+buffer, set @samp{mastodon-toot-display-orig-in-reply-buffer} to non-nil.
 
-The compose buffer uses @samp{text-mode} so any configuration you have for that mode
-will be enabled. If any of your existing config conflicts with @samp{mastodon-toot},
-you can disable it in the @samp{mastodon-toot-mode-hook}. For example, the default
-value of that hook is as follows:
+The compose buffer uses @samp{text-mode} so any configuration you have for that
+mode will be enabled. If any of your existing config conflicts with
+@samp{mastodon-toot}, you can disable it in the @samp{mastodon-toot-mode-hook}. For
+example, the default value of that hook is as follows:
 
 @lisp
 (add-hook 'mastodon-toot-mode-hook
@@ -423,7 +473,7 @@ value of that hook is as follows:
 @anchor{Keybindings (1)}Keybindings
 
 
-@multitable {aaaaaaaaaa} {aaaaaaaaaaaaaaaaaaaaaaaaaaaaa}
+@multitable {aaaaaaaaa} {aaaaaaaaaaaaaaaaaaaaaaaaaaaaa}
 @headitem Key
 @tab Action
 @item @samp{C-c C-c}
@@ -444,9 +494,11 @@ value of that hook is as follows:
 @tab Insert emoji
 @item @samp{C-c C-p}
 @tab Create a poll
+@item @samp{C-c C-o}
+@tab Cancel poll
 @item @samp{C-c C-l}
 @tab Set toot language
-@item @samp{-C-c C-s}
+@item @samp{C-c C-s}
 @tab Schedule toot
 @end multitable
 
@@ -459,15 +511,17 @@ Autocompletion of mentions, tags, and emojis is provided by
 @samp{mastodon-toot--enable-completion} is enabled by default.
 
 To trigger completion, type a prefix followed by a few letters, @samp{@@} for
-mentions, @samp{#} for tags, and @samp{:} for emoji (for now this only works when using @samp{emojify.el}).
+mentions, @samp{#} for tags, and @samp{:} for emoji (for now this only works when using
+@samp{emojify.el}).
 
 If you want to enable @samp{company-mode} in the toot compose buffer, set
-@samp{mastodon-toot--use-company-for-completion} to @samp{t}. (@samp{mastodon.el} used to run its
-own native company backends, but these have been removed in favour of capfs.)
+@samp{mastodon-toot--use-company-for-completion} to @samp{t}. (@samp{mastodon.el} used to run
+its own native company backends, but these have been removed in favour of
+capfs.)
 
-If you don’t run @samp{company} and want immediate, keyless completion, you’ll need
-to have another completion engine running that handles capfs. A common
-combination is @samp{consult} and @samp{corfu}.
+If you don’t run @samp{company} and want immediate, keyless completion, you’ll
+need to have another completion engine running that handles capfs. A
+common combination is @samp{consult} and @samp{corfu}.
 
 @item
 @anchor{Draft toots}Draft toots
@@ -475,23 +529,25 @@ combination is @samp{consult} and @samp{corfu}.
 
 @itemize
 @item
-Compose buffer text is saved as you type, kept in @samp{mastodon-toot-current-toot-text}.
+Compose buffer text is saved as you type, kept in
+@samp{mastodon-toot-current-toot-text}.
 @item
-@samp{mastodon-toot-save-draft}: save the current toot as a draft.
+@samp{mastodon-toot--save-draft}: save the current toot as a draft.
 @item
-@samp{mastodon-toot-open-draft-toot}: Open a compose buffer and insert one of your draft toots.
+@samp{mastodon-toot--open-draft-toot}: Open a compose buffer and insert one of
+your draft toots.
 @item
-@samp{mastodon-toot-delete-draft-toot}: Delete a draft toot.
+@samp{mastodon-toot--delete-draft-toot}: Delete a draft toot.
 @item
-@samp{mastodon-toot-delete-all-drafts}: Delete all your drafts.
+@samp{mastodon-toot--delete-all-drafts}: Delete all your drafts.
 @end itemize
 @end enumerate
 
 @node Other commands and account settings
 @subsection Other commands and account settings:
 
-In addition to @samp{mastodon}, the following three functions are autoloaded and should
-work without first loading a @samp{mastodon.el} buffer:
+In addition to @samp{mastodon}, the following three functions are autoloaded and
+should work without first loading a @samp{mastodon.el} buffer:
 @itemize
 @item
 @samp{mastodon-toot}: Compose new toot
@@ -505,55 +561,65 @@ point or provided in the minibuffer.
 
 @itemize
 @item
-@samp{mastodon-tl--view-instance-description}: View information about the instance
-that the author of the toot at point is on.
+@samp{mastodon-tl--view-instance-description}: View information about the
+instance that the author of the toot at point is on.
 @item
-@samp{mastodon-tl--view-own-instance}: View information about your own instance.
-@item
-@samp{mastodon-search-trending-tags}: View a list of trending hashtags on your
+@samp{mastodon-tl--view-own-instance}: View information about your own
 instance.
 @item
-@samp{mastodon-search-trending-statuses}: View a list of trending statuses on your instance.
+@samp{mastodon-search--trending-tags}: View a list of trending hashtags on your
+instance.
+@item
+@samp{mastodon-search--trending-statuses}: View a list of trending statuses on
+your instance.
+@item
+@samp{mastodon-search--trending-links}: View a list of trending links on your
+instance (+ click through to a timeline of posts featuring a given link)
+
+@item
+@samp{mastodon-tl--add-toot-account-at-point-to-list}: Add the account of the
+toot at point to a list.
 @end itemize
 
 
 @itemize
 @item
-@samp{mastodon-tl--add-toot-account-at-point-to-list}: Add the account of the toot at point to a list.
+@samp{mastodon-tl--dm-user}: Send a direct message to one of the users at
+point.
 @end itemize
 
 
 @itemize
 @item
-@samp{mastodon-tl-dm-user}: Send a direct message to one of the users at point.
+@samp{mastodon-profile--add-private-note-to-account}: Add a private note to
+another user’s account.
+@item
+@samp{mastodon-profile--view-account-private-note}: View a private note on a
+user’s account.
 @end itemize
 
 
 @itemize
 @item
-@samp{mastodon-profile-add-private-note-to-account}: Add a private note to another user’s account.
-@item
-@samp{mastodon-profile-view-account-private-note}: View a private note on a user’s account.
+@samp{mastodon-profile--show-familiar-followers}: Show a list of “familiar
+followers” for a given account. Familiar followers are accounts that you
+follow, and that follow the account.
 @end itemize
 
 
 @itemize
 @item
-@samp{mastodon-profile-show-familiar-followers}: Show a list of “familiar followers” for a given account. Familiar followers are accounts that you follow, and that follow the account.
-@end itemize
-
-
-@itemize
+@samp{mastodon-tl--follow-tag}: Follow a tag (works like following a user)
 @item
-@samp{mastodon-tl-follow-tag}: Follow a tag (works like following a user)
+@samp{mastodon-tl--unfollow-tag}: Unfollow a tag
 @item
-@samp{mastodon-tl-unfollow-tag}: Unfollow a tag
+@samp{mastodon-tl--list-followed-tags}: View a list of tags you're following.
 @item
-@samp{mastodon-tl-list-followed-tags}: View a list of tags you're following.
+@samp{mastodon-tl--followed-tags-timeline}: View a timeline of all your
+followed tags.
 @item
-@samp{mastodon-tl-followed-tags-timeline}: View a timeline of all your followed tags.
-@item
-@samp{mastodon-tl--some-followed-tags-timleine}: View a timeline of multiple tags, from your followed tags or any other.
+@samp{mastodon-tl--some-followed-tags-timleine}: View a timeline of multiple
+tags, from your followed tags or any other.
 @end itemize
 
 
@@ -565,37 +631,28 @@ instance.
 
 @itemize
 @item
-@samp{mastodon-tl-get-remote-local-timeline}: View a local timeline of a remote instance.
+@samp{mastodon-tl--get-remote-local-timeline}: View a local timeline of a
+remote instance.
 @item
-@samp{mastodon-tl-remote-tag-timeline}: View a tag timeline on a remote instance.
+@samp{mastodon-tl--remote-tag-timeline}: View a tag timeline on a remote
+instance.
 @end itemize
 
 
 @itemize
 @item
-@samp{mastodon-profile-update-display-name}: Update the display name for your
-account.
-@item
-@samp{mastodon-profile-update-user-profile-note}: Update your bio note.
-@item
-@samp{mastodon-profile-update-meta-fields}: Update your metadata fields.
-@item
-@samp{mastodon-profile--set-default-toot-visibility}: Set the default visibility
-for your toots.
-@item
-@samp{mastodon-profile-account-locked-toggle}: Toggle the locked status of your
-account. Locked accounts have to manually approve follow requests.
-@item
-@samp{mastodon-profile-account-discoverable-toggle}: Toggle the discoverable
-status of your account. Non-discoverable accounts are not listed in the
-profile directory.
-@item
-@samp{mastodon-profile-account-bot-toggle}: Toggle whether your account is flagged
-as a bot.
-@item
-@samp{mastodon-profile-account-sensitive-toggle}: Toggle whether your posts are
-marked as sensitive (nsfw) by default.
+@samp{mastodon-user-settings}: Launch a transient menu to update various
+account settings.
 @end itemize
+
+@node Notifications
+@subsection Notifications
+
+Mastodon from 4.3 supports grouped notifications. These are implemented by
+@samp{mastodon.el} but disabled by default out of consideration to users on
+instances that don't support them. If you are on an instance that
+implements grouped notifications, set @samp{mastodon-group-notifications} to @samp{t} to
+enable them.
 
 @node Customization
 @subsection Customization
@@ -644,39 +701,71 @@ Nofitication options:
 @itemize
 @item
 Display user's profile note in follow requests
+@item
+Group notifications
 @end itemize
 @end itemize
 
 @node Commands and variables index
 @subsection Commands and variables index
 
-An index of all user-facing commands and custom variables is available here: @uref{mastodon-index.org, mastodon-index.org}.
+An index of all user-facing commands and custom variables is available
+here: @uref{mastodon-index.org, mastodon-index.org}.
 
-You can also hit @samp{?} in any @samp{mastodon.el} buffer to see the available bindings, or run @samp{M-X} (upper-case @samp{X}) to view all commands in the buffer with completion, and call one.
+You can also hit @samp{?} in any @samp{mastodon.el} buffer to see the available
+bindings, or run @samp{M-X} (upper-case @samp{X}) to view all commands in the buffer
+with completion, and call one.
 
-@node Alternative timeline layout
-@subsection Alternative timeline layout
+@node Packages related to @samp{mastodonel}
+@subsection Packages related to @samp{mastodon.el}
 
-The incomparable Nicholas Rougier has written an alternative timeline layout
-for @samp{mastodon.el}.
+@enumerate
+@item
+@anchor{Alternative timeline layout}Alternative timeline layout
+
+
+The incomparable Nicholas Rougier has written an alternative timeline
+layout for @samp{mastodon.el}.
 
 The repo is at @uref{https://github.com/rougier/mastodon-alt, mastodon-alt}.
 
-@node mastodon hydra
-@subsection mastodon hydra
+@item
+@anchor{Org links archive search}Org links, archive search
 
-A user made a hydra for handling basic mastodon.el commands. It's available at
-@uref{https://holgerschurig.github.io/en/emacs-mastodon-hydra/}.
+
+@uref{https://codeberg.org/chrmoe/toot-suite, toot-suite} implements an org link type for fediverse posts, and also provides a way to browse an offline archive of your account.
+
+@item
+@anchor{Mastodon hydra}Mastodon hydra
+
+
+A user made a hydra for handling basic @samp{mastodon.el} commands. It's
+available at @uref{https://holgerschurig.github.io/en/emacs-mastodon-hydra/}.
+
+@item
+@anchor{Narrow to timeline item}Narrow to timeline item
+
+
+A simple code snippet to enable narrowing to current item in timelines:
+@uref{http://takeonrules.com/2024/10/31/hacking-on-mastodon-emacs-package-to-narrow-viewing/}
+
+@item
+@anchor{Sachac's config goodies}Sachac's config goodies
+
+
+The incomparable sachac has a bunch of @samp{mastodon.el} extensions and goodies in their literate config, available here: @uref{https://sachachua.com/dotemacs/index.html#mastodon}.
+@end enumerate
 
 @node Live-updating timelines @samp{mastodon-async-mode}
 @subsection Live-updating timelines: @samp{mastodon-async-mode}
 
 (code taken from @uref{https://github.com/alexjgriffith/mastodon-future.el, mastodon-future}.)
 
-Works for federated, local, and home timelines and for notifications. It's a
-little touchy, one thing to avoid is trying to load a timeline more than once
-at a time. It can go off the rails a bit, but it's still pretty cool. The
-current maintainer of @samp{mastodon.el} is unable to debug or improve this feature.
+Works for federated, local, and home timelines and for notifications. It's
+a little touchy, one thing to avoid is trying to load a timeline more than
+once at a time. It can go off the rails a bit, but it's still pretty cool.
+The current maintainer of @samp{mastodon.el} is unable to debug or improve this
+feature.
 
 To enable, it, add @samp{(require 'mastodon-async)} to your @samp{init.el}. Then you can
 view a timeline with one of the commands that begin with
@@ -685,15 +774,15 @@ view a timeline with one of the commands that begin with
 @node Translating toots
 @subsection Translating toots
 
-You can translate toots with @samp{mastodon-toot-translate-toot-text} (@samp{a} in a
-timeline). At the moment this requires @uref{https://codeberg.org/martianh/lingva.el, lingva.el}, a little interface I wrote
-to @uref{https://lingva.ml, lingva.ml}, to be installed to work.
+You can translate toots with @samp{mastodon-toot--translate-toot-text} (@samp{a} in a
+timeline). At the moment this requires @uref{https://codeberg.org/martianh/lingva.el, lingva.el}, a little interface I
+wrote to @uref{https://lingva.ml, lingva.ml}, to be installed to work.
 
-You could easily modify the simple function to use your Emacs translator of
-choice (@samp{libretrans.el} , @samp{google-translate}, @samp{babel}, @samp{go-translate}, etc.), you just
-need to fetch the toot's content with @samp{(mastodon-tl--content toot)} and pass it
-to your translator function as its text argument. Here's what
-@samp{mastodon-toot-translate-toot-text} looks like:
+You could easily modify the simple function to use your Emacs translator
+of choice (@samp{libretrans.el} , @samp{google-translate}, @samp{babel}, @samp{go-translate}, etc.),
+you just need to fetch the toot's content with @samp{(mastodon-tl--content toot)}
+and pass it to your translator function as its text argument. Here's what
+@samp{mastodon-toot--translate-toot-text} looks like:
 
 @lisp
 (defun mastodon-toot-translate-toot-text ()
@@ -709,7 +798,11 @@ to your translator function as its text argument. Here's what
 @node Bookmarks and @samp{mastodonel}
 @subsection Bookmarks and @samp{mastodon.el}
 
-@samp{mastodon.el} implements a basic bookmark record and handler. Currently, this means that you can bookmark a post item and later load it in thread view. This could be expanded to any item with an id, but probably not to things like timeline views. If you want to be able to bookmark something, open an issue and ask, as it's trivial to expand the bookmarking code.
+@samp{mastodon.el} implements a basic bookmark record and handler. Currently,
+this means that you can bookmark a post item and later load it in thread
+view. This could be expanded to any item with an id, but probably not to
+things like timeline views. If you want to be able to bookmark something,
+open an issue and ask, as it's trivial to expand the bookmarking code.
 
 @node Dependencies
 @section Dependencies
@@ -717,9 +810,11 @@ to your translator function as its text argument. Here's what
 Hard dependencies (should all install with @samp{mastodon.el}):
 @itemize
 @item
-@samp{request} (for uploading attachments), @uref{https://github.com/tkf/emacs-request, emacs-request}
+@samp{request} (for uploading attachments, @uref{https://github.com/tkf/emacs-request, emacs-request})
 @item
-@samp{persist} for storing some settings across sessions
+@samp{persist} (for storing some settings across sessions, @uref{https://elpa.gnu.org/packages/persist.html, persist})
+@item
+@samp{tp.el} (for transient menus, @uref{https://codeberg.org/martianh/tp.el, tp.el})
 @end itemize
 
 Optional dependencies (install yourself, @samp{mastodon.el} can use them):
@@ -735,7 +830,8 @@ Optional dependencies (install yourself, @samp{mastodon.el} can use them):
 @node Network compatibility
 @section Network compatibility
 
-@samp{mastodon.el} should work with ActivityPub servers that implement the Mastodon API@.
+@samp{mastodon.el} should work with ActivityPub servers that implement the
+Mastodon API@.
 
 Apart from Mastodon itself, it is currently known to work with:
 @itemize
@@ -745,19 +841,26 @@ Pleroma (@uref{https://pleroma.social/, pleroma.social})
 Akkoma (@uref{https://akkoma.social/, akkoma.social})
 @item
 Gotosocial (@uref{https://gotosocial.org/, gotosocial.org})
+@item
+Sharkey (@uref{https://joinsharkey.org, joinsharkey.org})
 @end itemize
 
-It does not support the non-Mastodon API servers Misskey (@uref{https://misskey.io/, misskey.io}), Firefish (@uref{https://joinfirefish.org/, joinfirefish.org}, formerly Calkey) and Friendica, but it should fully support displaying and interacting with posts and users on those platforms.
+It does not support the non-Mastodon API servers Misskey (@uref{https://misskey.io/, misskey.io}),
+Firefish (@uref{https://joinfirefish.org/, joinfirefish.org}, formerly Calkey) and Friendica, but it should
+fully support displaying and interacting with posts and users on those
+platforms.
 
-If you attempt to use @samp{mastodon.el} with a server and run into problems, feel
-free to open an issue.
+If you attempt to use @samp{mastodon.el} with a server and run into problems,
+feel free to open an issue.
 
 @node Contributing
 @section Contributing
 
 PRs, issues, feature requests, and general feedback are very welcome!
 
-If you prefer emailing patches to the process described below, feel free to send them on. Ideally they'd be patches that can be applied with @samp{git am}, if you want to actually contribute a commit.
+If you prefer emailing patches to the process described below, feel free
+to send them on. Ideally they'd be patches that can be applied with @samp{git
+am}, if you want to actually contribute a commit.
 
 @menu
 * Bug reports::
@@ -772,17 +875,19 @@ If you prefer emailing patches to the process described below, feel free to send
 @item
 @samp{mastodon.el} has bugs, as well as lots of room for improvement.
 @item
-I receive very little feedback, so if I don't run into the bug it often doesn't get fixed.
+I receive very little feedback, so if I don't run into the bug it often
+doesn't get fixed.
 @item
-If you run into something that seems broken, first try running @samp{mastodon.el}
-in emacs with no init file (i.e. @samp{emacs -q} (instructions and code for doing
-this are @uref{https://codeberg.org/martianh/mastodon.el/issues/300, here}) to see if it also happens independently of your own config
-(it probably does).
+If you run into something that seems broken, first try running
+@samp{mastodon.el} in emacs with no init file (i.e. @samp{emacs -q} (instructions and
+code for doing this are @uref{https://codeberg.org/martianh/mastodon.el/issues/300, here}) to see if it also happens independently
+of your own config (it probably does).
 @item
-Else enable debug on error (@samp{toggle-debug-on-error}), make the bug happen again,
-and copy the backtrace that appears.
+Else enable debug on error (@samp{toggle-debug-on-error}), make the bug happen
+again, and copy the backtrace that appears.
 @item
-Open an issue here and explain what is going on. Provide your emacs version and what kind of server your account is on.
+Open an issue here and explain what is going on. Provide your emacs
+version and what kind of server your account is on.
 @end enumerate
 
 @node Fixes and features
@@ -796,7 +901,8 @@ Fork the repository and create a branch off of @samp{develop}.
 @item
 Run the tests and ensure that your code doesn't break any of them.
 @item
-Create a pull request (to develop) referencing the issue created in step 1.
+Create a pull request (to develop) referencing the issue created in
+step 1.
 @end enumerate
 
 @node Coding style
@@ -804,13 +910,16 @@ Create a pull request (to develop) referencing the issue created in step 1.
 
 @itemize
 @item
-This library uses an unconvential double dash (@samp{--}) between file namespaces and function names, which contradicts normal Elisp style. This needs to be respected until the whole library is changed.
+This library uses an unconvential double dash (@samp{--}) between file
+namespaces and function names, which contradicts normal Elisp style.
+This needs to be respected until the whole library is changed.
 @item
 Use @samp{aggressive-indent-mode} or similar to keep your code indented.
 @item
 Single spaces end sentences in docstrings.
 @item
-There's no need for a blank line after the first docstring line (one is added automatically when documentation is displayed).
+There's no need for a blank line after the first docstring line (one is
+added automatically when documentation is displayed).
 @end itemize
 
 @node Supporting @samp{mastodonel}
@@ -818,8 +927,8 @@ There's no need for a blank line after the first docstring line (one is added au
 
 If you'd like to support continued development of @samp{mastodon.el}, I accept
 donations via paypal: @uref{https://paypal.me/martianh, paypal.me/martianh}. If you would prefer a different
-payment method, please write to me at <mousebot@@disroot.org> and I can
-provide IBAN or other bank account details.
+payment method, please write to me at <mousebot @{at@} disroot.org> and I
+can provide IBAN or other bank account details.
 
 I don't have a tech worker's income, so even a small tip would help out.
 
@@ -843,8 +952,8 @@ Some significant contributors are:
 @uref{https://codeberg.org/Red_Starfish}
 @end itemize
 
-@node screenshots
-@section screenshots
+@node Screenshots
+@section Screenshots
 
 Here's a (federated) timeline:
 
@@ -854,11 +963,13 @@ Here's a notifcations view plus a compose buffer:
 
 @image{screenshot-notifs+compose,,,,png}
 
-Here's a user settings transient (active values green, current server values commented and, if a boolean, underlined):
+Here's a user settings transient (active values green, current server
+values commented and, if a boolean, underlined):
 
 @image{screenshot-transient-1,,,,jpg}
 
-Here's a user profile fields transient (changed fields green, current server values commented):
+Here's a user profile fields transient (changed fields green, current
+server values commented):
 
 @image{screenshot-transient-2,,,,jpg}
 
