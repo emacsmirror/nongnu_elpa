@@ -921,7 +921,7 @@ QUERY is a search term to filter by."
   ;; FIXME: how to get issues by number, or get all issues?
   (let* ((endpoint (format "repos/%s/%s/issues" (or owner fj-user) repo))
          ;; NB: get issues has no sort param!
-         (params `(("limit" . "100")
+         (params `(("limit" . "50") ;; server max
                    ,@(when state `(("state" . ,state)))
                    ,@(when type `(("type" . ,type)))
                    ,@(when query `(("q" . ,query)))
