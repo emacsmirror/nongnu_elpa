@@ -3279,20 +3279,22 @@ and profile pages when showing followers or accounts followed."
             (mastodon-tl--update-params)
             'mastodon-tl--more* (current-buffer) (point)))
           (t ;; max_id paginate (timelines, items with ids/timestamps):
-           (let ((max-id (mastodon-tl--oldest-id)))
+           (let ((max-id (mastodon-tl--oldest-id))
+                 (params (mastodon-tl--update-params)))
              (mastodon-tl--more-json-async
               (mastodon-tl--endpoint)
-              max-id
-              (mastodon-tl--update-params)
-              'mastodon-tl--more* (current-buffer) (point) nil max-id))))))
+              max-id params
+              'mastodon-tl--more*
+              (current-buffer) (point) nil max-id params))))))
 
 (defun mastodon-tl--more* (response buffer point-before
-                                    &optional headers max-id)
+                                    &optional headers max-id update-params)
   "Append older toots to timeline, asynchronously.
 Runs the timeline's update function on RESPONSE, in BUFFER.
 When done, places point at POINT-BEFORE.
 HEADERS is the http headers returned in the response, if any.
-MAX-ID is the pagination parameter, a string."
+MAX-ID is the pagination parameter, a string.
+UPDATE-PARAMS is from prev buffer spec, added to the new one."
   (with-current-buffer buffer
     (if (not response)
         (user-error "No more results")
@@ -3335,10 +3337,13 @@ MAX-ID is the pagination parameter, a string."
             (goto-char point-before)
             ;; update buffer spec to new link-header or max-id:
             ;; (other values should just remain as they were)
-            (mastodon-tl--set-buffer-spec (mastodon-tl--buffer-name)
-                                          (mastodon-tl--endpoint)
-                                          (mastodon-tl--update-function)
-                                          link-header nil nil max-id)
+            (mastodon-tl--set-buffer-spec
+             (mastodon-tl--buffer-name)
+             (mastodon-tl--endpoint)
+             (mastodon-tl--update-function)
+             link-header update-params
+             nil ;; FIXME: hide-replies?
+             max-id)
             (message "Loading... done.")))))))
 
 (defun mastodon-tl--find-property-range (property start-point
