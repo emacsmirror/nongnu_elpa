@@ -911,7 +911,9 @@ Return the issue number."
 ;; /repos/{owner}/{repo}/issues
 ;; params: owner, repo, state, labels, q, type, milestones, since, before,
 ;; created_by, assigned_by, mentioned_by, page, limit
-(defun fj-repo-get-issues (repo &optional owner state type query)
+(defun fj-repo-get-issues (repo &optional owner state type query
+                                labels milestones)
+  ;; since, before, created_by, assigned_by, mentioned_by, page, limit
   "Return issues for REPO by OWNER.
 STATE is for issue status, a string of open, closed or all.
 TYPE is item type: issue pull or all.
@@ -919,10 +921,12 @@ QUERY is a search term to filter by."
   ;; FIXME: how to get issues by number, or get all issues?
   (let* ((endpoint (format "repos/%s/%s/issues" (or owner fj-user) repo))
          ;; NB: get issues has no sort param!
-         (params `(("state" . ,state)
-                   ("limit" . "100")
-                   ("type" . ,type)
-                   ("q" . ,query))))
+         (params `(("limit" . "100")
+                   ,@(when state `(("state" . ,state)))
+                   ,@(when type `(("type" . ,type)))
+                   ,@(when query `(("q" . ,query)))
+                   ,@(when labels `(("labels" . ,labels)))
+                   ,@(when milestones `(("milestones" . ,milestones))))))
     (condition-case err
         (fj-get endpoint params)
       (t (format "%s" (error-message-string err))))))
@@ -1417,7 +1421,7 @@ Return its name, or if ID, return a cons of its name and id."
               (completing-read
                (format "Add label to #%s: " issue)
                pairs)
-            (completing-read "Add label: " pairs))))
+            (completing-read "Label: " pairs))))
     (if id
         (assoc choice pairs #'string=)
       choice)))
@@ -1470,6 +1474,28 @@ Return its name, or if ID, return a cons of its name and id."
          (lambda (_)
            (fj-view-reload)
            (message "Label %s removed from #%s!" choice issue)))))))
+
+;;; MILESTONES
+
+(defun fj-get-milestones (&optional repo owner)
+  "Get milestones for REPO by OWNER."
+  ;; GET /repos/{owner}/{repo}/milestones state name page limit
+  (let* ((repo (fj-read-user-repo repo))
+         (owner (or owner fj-user))
+         (endpoint (format "/repos/%s/%s/milestones" owner repo))
+         ;; state param worth implementing:
+         (params nil))
+    (fj-get endpoint params)))
+
+(defun fj-read-milestone (&optional repo owner)
+  "Read a milestone for REPO by OWNER.
+Return an alist of title and ID."
+  ;; filtering issues handles milestone ids or names
+  (let* ((milestones (fj-get-milestones owner repo))
+         (alist (cl-loop for m in milestones
+                         collect (cons (alist-get 'title m)
+                                       (alist-get 'id m)))))
+    (completing-read "Milestone: " alist)))
 
 ;;; ISSUES TL
 
@@ -1700,7 +1726,24 @@ Nil if we fail to parse."
              (repo (string-trim-right (nth 3 split) ".git")))
         (list (nth 2 split) repo))))))
 
-(defun fj-list-issues-do (&optional repo owner state type query)
+(defun fj-list-issues-by-milestone (&optional repo owner state type query
+                                              labels)
+  "List issues in REPO by OWNER, filtering by milestone.
+STATE, TYPE and QUERY are for `fj-list-issues-do'."
+  (interactive)
+  (let* ((milestone (fj-read-milestone repo owner)))
+    (fj-list-issues-do repo owner state type query labels milestone)))
+
+(defun fj-list-issues-by-label (&optional repo owner state type query)
+  "List issues in REPO by OWNER, filtering by label.
+STATE, TYPE and QUERY are for `fj-list-issues-do'."
+  (interactive)
+  ;; FIXME: labels list is CSV, so we should do that here and send on:
+  (let* ((label (fj-issue-read-label)))
+    (fj-list-issues-do repo owner state type query label)))
+
+(defun fj-list-issues-do (&optional repo owner state type query
+                                    labels milestones)
   "Display ISSUES in a tabulated list view.
 Either for `fj-current-repo' or REPO, a string, owned by OWNER.
 With a prefix arg, or if REPO and `fj-current-repo' are nil,
@@ -1712,7 +1755,8 @@ QUERY is a search query to filter by."
   (let* ((repo (fj-read-user-repo repo))
          (owner (or owner fj-user))
          (type (or type "issues"))
-         (issues (fj-repo-get-issues repo owner state type query))
+         (issues (fj-repo-get-issues repo owner state type query
+                                     labels milestones))
          (repo-data (fj-get-repo repo owner))
          (has-issues (fj-repo-has-items-p type repo-data))
          (url (concat (alist-get 'html_url repo-data)
