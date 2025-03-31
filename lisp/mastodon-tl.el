@@ -2322,7 +2322,8 @@ We hide replies if user explictly set the
 `mastodon-tl--hide-replies' or used PREFIX combination to open a
 timeline."
   (and (mastodon-tl--timeline-proper-p) ; Only if we are in a proper timeline
-       (or mastodon-tl--hide-replies ; User configured to hide replies
+       (or (mastodon-tl--buffer-property 'hide-replies nil :noerror)
+           mastodon-tl--hide-replies ; User configured to hide replies
            (equal '(4) prefix)))) ; Timeline called with C-u prefix
 
 
@@ -3285,10 +3286,10 @@ and profile pages when showing followers or accounts followed."
               (mastodon-tl--endpoint)
               max-id params
               'mastodon-tl--more*
-              (current-buffer) (point) nil max-id params))))))
+              (current-buffer) (point) nil max-id))))))
 
-(defun mastodon-tl--more* (response buffer point-before
-                                    &optional headers max-id update-params)
+(defun mastodon-tl--more*
+    (response buffer point-before &optional headers max-id)
   "Append older toots to timeline, asynchronously.
 Runs the timeline's update function on RESPONSE, in BUFFER.
 When done, places point at POINT-BEFORE.
@@ -3341,9 +3342,8 @@ UPDATE-PARAMS is from prev buffer spec, added to the new one."
              (mastodon-tl--buffer-name)
              (mastodon-tl--endpoint)
              (mastodon-tl--update-function)
-             link-header update-params
-             nil ;; FIXME: hide-replies?
-             max-id)
+             link-header (mastodon-tl--update-params)
+             (mastodon-tl--hide-replies-p) max-id)
             (message "Loading... done.")))))))
 
 (defun mastodon-tl--find-property-range (property start-point
