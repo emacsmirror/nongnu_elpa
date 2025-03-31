@@ -508,8 +508,8 @@ MAX-ID is a flag to add the max_id pagination parameter."
   (interactive "p")
   (let* ((params
           `(("limit" . ,mastodon-tl--timeline-posts-count)
-            ,(when max-id
-               `("max_id" . ,(mastodon-tl--buffer-property 'max-id))))))
+            ,@(when max-id
+                `(("max_id" . ,(mastodon-tl--buffer-property 'max-id)))))))
     (message "Loading home timeline...")
     (mastodon-tl--init "home" "timelines/home" 'mastodon-tl--timeline nil
                        params
