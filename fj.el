@@ -579,6 +579,8 @@ If CURRENT-REPO, get from `fj-current-repo' instead."
   ;; should actually be universal:
   "<tab>" #'fj-next-tab-item
   "<backtab>" #'fj-prev-tab-item
+  "." #'fj-next-page
+  "," #'fj-prev-page
   "C-M-q" #'fj-kill-all-buffers
   "/" #'fj-switch-to-buffer
   ;; really oughta be universal:
@@ -605,6 +607,75 @@ Should work for anything with an fj-byline property."
 Should work for anything with an fj-byline property."
   (interactive)
   (fedi--goto-pos #'previous-single-property-change 'fj-byline))
+
+;;; PAGINATION
+
+(defun fj--inc-str (str &optional dec)
+  "Incrememt STR, and return a string.
+When DEC, decrement string instead."
+  (let ((num (string-to-number str)))
+    (number-to-string
+     (if dec (1- num) (1+ num)))))
+
+(defun fj-inc-or-2 (&optional page)
+  "Incrememt PAGE.
+If nil, return \"2\"."
+  (if page (fj--inc-str page) "2"))
+
+(defun fj-dec-or-nil (&optional page)
+  "Decrement PAGE.
+If nil, return nil."
+  (when page (fj--inc-str page :dec)))
+
+(defun fj-next-page ()
+  "Load the next page of the current view."
+  (interactive)
+  (message "Loading next page...")
+  (pcase major-mode
+    ('fj-issue-tl-mode
+     (fj-destructure-buf-spec (repo owner state type query
+                                    labels milestones page limit _viewfun)
+       ;; FIXME: viewfun here errors with "Invalid function:
+       ;; #'fj-list-issues-do":
+       (funcall #'fj-list-issues-do repo owner state type query
+                labels milestones (fj-inc-or-2 page) limit)))
+    ('fj-owned-issues-tl-mode
+     (fj-destructure-buf-spec (query state type created assigned mentioned
+                                     page _viewfun)
+       (funcall #'fj-list-own-items query state type created assigned mentioned
+                (fj-inc-or-2 page))))
+    (_ (user-error "Pagination not yet implemented here")))
+  (message "Loading next page... Done."))
+
+(defmacro fj-prev-page-maybe (page &rest body)
+  "Call BODY if PAGE is neither nil nor 1."
+  (declare (debug t) (indent 1))
+  `(if (or (not ,page) ;; never paginated
+           (= 1 (string-to-number ,page))) ;; after paginating
+       (user-error "No previous page")
+     ,@body))
+
+(defun fj-prev-page ()
+  "Load the previous page."
+  (interactive)
+  (pcase major-mode
+    ('fj-issue-tl-mode
+     (message "Loading previous page...")
+     (fj-destructure-buf-spec (repo owner state type query
+                                    labels milestones page limit _viewfun)
+       (fj-prev-page-maybe page
+         (funcall #'fj-list-issues-do repo owner state type query
+                  labels milestones (fj-dec-or-nil page) limit)
+         (message "Loading previous page... Done."))))
+    ('fj-owned-issues-tl-mode
+     (message "Loading previous page...")
+     (fj-destructure-buf-spec (query state type created assigned mentioned
+                                     page _viewfun)
+       (fj-prev-page-maybe page
+         (funcall #'fj-list-own-items query state type created
+                  assigned mentioned (fj-dec-or-nil page))
+         (message "Loading previous page... Done."))))
+    (_ (user-error "Pagination not yet implemented here"))))
 
 ;;; REPOS TL UTILS
 
@@ -933,7 +1004,8 @@ QUERY is a search term to filter by."
       (t (format "%s" (error-message-string err))))))
 
 (defun fj-issues-search (&optional query owner state type
-                                   created assigned mentioned)
+                                   created assigned mentioned
+                                   page)
   "Make a GET request for issues matching QUERY.
 Optionally limit search by OWNER, STATE, or TYPE.
 Either QUERY or OWNER must be provided.
@@ -941,9 +1013,10 @@ STATE is \"open\" or \"closed\".
 TYPE is \"issues\" or \"pulls\".
 Optionally filter results for those you have CREATED, been ASSIGNED to,
 or MENTIONED in.
-STATE defaults to open."
+STATE defaults to open.
+PAGE is a number for pagination."
   ;; GET /repos/issues/search
-  ;; TODO: params: page, reviewed, review_requested, team, before, since,
+  ;; TODO: params: reviewed, review_requested, team, before, since,
   ;; priority_repo_id, milestones (c s list), labels (c s list)
   ;; NB: this endpoint can be painfully slow
   (let* ((endpoint "repos/issues/search")
@@ -954,7 +1027,8 @@ STATE defaults to open."
                    ,@(when type       `(("type" . ,type)))
                    ,@(when created    '(("created" . "true")))
                    ,@(when assigned   '(("assigned" . "true")))
-                   ,@(when mentioned  '(("mentioned" . "true"))))))
+                   ,@(when mentioned  '(("mentioned" . "true")))
+                   ,@(when page       `(("page" . ,page))))))
     (condition-case err
         (fj-get endpoint params)
       (t (format "%s" (error-message-string err))))))
@@ -979,14 +1053,14 @@ QUERY, STATE, TYPE, CREATED, ASSIGNED, and MENTIONED are all for
    query state "issues" created assigned mentioned))
 
 (defun fj-list-own-items (&optional query state type
-                                    created assigned mentioned)
+                                    created assigned mentioned page)
   "List items of TYPE in repos owned by `fj-user'.
-QUERY, STATE, TYPE, CREATED, ASSIGNED, and MENTIONED are all for
+QUERY, STATE, TYPE, CREATED, ASSIGNED, MENTIONED and PAGE are all for
 `fj-issues-search'."
   (interactive)
   (let ((items
          (fj-issues-search query fj-user state type
-                           created assigned mentioned))
+                           created assigned mentioned page))
         (buf-name (format "*fj-user-repos-%s" type))
         (prev-buf (buffer-name (current-buffer)))
         (prev-mode major-mode))
@@ -1742,34 +1816,6 @@ STATE, TYPE and QUERY are for `fj-list-issues-do'."
   ;; FIXME: labels list is CSV, so we should do that here and send on:
   (let* ((label (fj-issue-read-label)))
     (fj-list-issues-do repo owner state type query label)))
-
-(defun fj--inc-str (str &optional dec)
-  "Incrememt STR, and return a string.
-When DEC, decrement string instead."
-  (let ((num (string-to-number str)))
-    (number-to-string
-     (if dec (1- num) (1+ num)))))
-
-(defun fj-issues-next-page ()
-  "Load the next page of issues."
-  (interactive)
-  (fj-destructure-buf-spec (repo owner state type query
-                                 labels milestones page limit)
-    (let ((page (if page (fj--inc-str page) "2")))
-      (fj-list-issues-do repo owner state type query
-                         labels milestones page limit))))
-
-(defun fj-issues-prev-page ()
-  "Load the previous page of issues"
-  (interactive)
-  (fj-destructure-buf-spec (repo owner state type query
-                                 labels milestones page limit)
-    (if (or (not page) ;; never paginated
-            (= 1 (string-to-number page))) ;; after paginating
-        (user-error "No previous page")
-      (let ((page (when page (fj--inc-str page :dec))))
-        (fj-list-issues-do repo owner state type query
-                           labels milestones page limit)))))
 
 (defun fj-list-issues-do (&optional repo owner state type query
                                     labels milestones page limit)
