@@ -912,7 +912,7 @@ Return the issue number."
 ;; params: owner, repo, state, labels, q, type, milestones, since, before,
 ;; created_by, assigned_by, mentioned_by, page, limit
 (defun fj-repo-get-issues (repo &optional owner state type query
-                                labels milestones)
+                                labels milestones page limit)
   ;; since, before, created_by, assigned_by, mentioned_by, page, limit
   "Return issues for REPO by OWNER.
 STATE is for issue status, a string of open, closed or all.
@@ -921,12 +921,13 @@ QUERY is a search term to filter by."
   ;; FIXME: how to get issues by number, or get all issues?
   (let* ((endpoint (format "repos/%s/%s/issues" (or owner fj-user) repo))
          ;; NB: get issues has no sort param!
-         (params `(("limit" . "50") ;; server max
+         (params `(("limit" . ,(or limit "50")) ;; server max
                    ,@(when state `(("state" . ,state)))
                    ,@(when type `(("type" . ,type)))
                    ,@(when query `(("q" . ,query)))
                    ,@(when labels `(("labels" . ,labels)))
-                   ,@(when milestones `(("milestones" . ,milestones))))))
+                   ,@(when milestones `(("milestones" . ,milestones)))
+                   ,@(when page `(("page" . ,page)))))) ;; 1-based
     (condition-case err
         (fj-get endpoint params)
       (t (format "%s" (error-message-string err))))))
@@ -1742,8 +1743,36 @@ STATE, TYPE and QUERY are for `fj-list-issues-do'."
   (let* ((label (fj-issue-read-label)))
     (fj-list-issues-do repo owner state type query label)))
 
+(defun fj--inc-str (str &optional dec)
+  "Incrememt STR, and return a string.
+When DEC, decrement string instead."
+  (let ((num (string-to-number str)))
+    (number-to-string
+     (if dec (1- num) (1+ num)))))
+
+(defun fj-issues-next-page ()
+  "Load the next page of issues."
+  (interactive)
+  (fj-destructure-buf-spec (repo owner state type query
+                                 labels milestones page limit)
+    (let ((page (if page (fj--inc-str page) "2")))
+      (fj-list-issues-do repo owner state type query
+                         labels milestones page limit))))
+
+(defun fj-issues-prev-page ()
+  "Load the previous page of issues"
+  (interactive)
+  (fj-destructure-buf-spec (repo owner state type query
+                                 labels milestones page limit)
+    (if (or (not page) ;; never paginated
+            (= 1 (string-to-number page))) ;; after paginating
+        (user-error "No previous page")
+      (let ((page (when page (fj--inc-str page :dec))))
+        (fj-list-issues-do repo owner state type query
+                           labels milestones page limit)))))
+
 (defun fj-list-issues-do (&optional repo owner state type query
-                                    labels milestones)
+                                    labels milestones page limit)
   "Display ISSUES in a tabulated list view.
 Either for `fj-current-repo' or REPO, a string, owned by OWNER.
 With a prefix arg, or if REPO and `fj-current-repo' are nil,
@@ -1756,7 +1785,7 @@ QUERY is a search query to filter by."
          (owner (or owner fj-user))
          (type (or type "issues"))
          (issues (fj-repo-get-issues repo owner state type query
-                                     labels milestones))
+                                     labels milestones page limit))
          (repo-data (fj-get-repo repo owner))
          (has-issues (fj-repo-has-items-p type repo-data))
          (url (concat (alist-get 'html_url repo-data)
@@ -1779,8 +1808,9 @@ QUERY is a search query to filter by."
         (setq fj-current-repo repo
               fj-repo-data repo-data
               fj-buffer-spec
-              `(:repo ,repo :state ,state-str :owner ,owner :url ,url
-                      :type ,type))
+              `( :repo ,repo :state ,state-str :owner ,owner :url ,url
+                 :type ,type :labels ,labels :milestones ,milestones
+                 :limit ,limit :page ,page))
         ;; ensure our .dir-locals.el settings take effect:
         ;; via https://emacs.stackexchange.com/questions/13080/reloading-directory-local-variables
         (setq default-directory wd)
