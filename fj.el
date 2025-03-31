@@ -1865,6 +1865,8 @@ TYPE is the item type."
   (interactive "P")
   (fj-list-issues-do repo owner "all" type))
 
+;;; VIEW CYCLE
+
 (defun fj-list-issues-cycle ()
   "Cycle between listing of open, closed, and all issues."
   (interactive)
@@ -1896,6 +1898,18 @@ TYPE is the item type."
       (_ ; issues default
        (fj-list-own-items nil state "pulls")))))
 
+(defun fj-issues-item-cycle ()
+  "Cycle item type listing of issues, pulls, and all."
+  (interactive)
+  (fj-destructure-buf-spec (state owner repo type)
+    (pcase type
+      ("pulls" (fj-list-issues-do repo owner state "all"))
+      ("all" (fj-list-issues-do repo owner state "issues"))
+      (_ ; issues default
+       (fj-list-issues-do repo owner state "pulls")))))
+
+;;; RELOADING
+
 (defun fj-view-reload ()
   "Try to reload the current view based on its major-mode."
   (interactive)
@@ -1905,8 +1919,8 @@ TYPE is the item type."
     ((or 'fj-tl-repo-mode 'fj-user-repo-tl-mode)
      (fj-repo-tl-reload))
     ('fj-notifications-mode (fj-notifications-reload))
-    ;; TODO: commits-mode, users-mode (they don't have reload funs)
     ('fj-users-mode (fj-users-reload))
+    ;; TODO: owned-issues-mode, commits-mode (no reload funs):
     ('fj-owned-issues-tl-mode
      (fj-list-own-issues))
     ('fj-commits-mode (fj-repo-commit-log))
@@ -1927,15 +1941,29 @@ Repo's stargazers or watchers."
     (fj-destructure-buf-spec (state owner repo type)
       (fj-list-issues-do repo owner state type))))
 
-(defun fj-issues-item-cycle ()
-  "Cycle item type listing of issues, pulls, and all."
+(defun fj-item-view-reload ()
+  "Reload the current item view."
   (interactive)
-  (fj-destructure-buf-spec (state owner repo type)
-    (pcase type
-      ("pulls" (fj-list-issues-do repo owner state "all"))
-      ("all" (fj-list-issues-do repo owner state "issues"))
-      (_ ; issues default
-       (fj-list-issues-do repo owner state "pulls")))))
+  (fj-with-item-view
+   (fj-destructure-buf-spec (item owner type)
+     ;; FIXME: handle pull view:
+     (fj-item-view fj-current-repo owner
+                   item :reload type))))
+
+(defun fj-notifications-reload ()
+  "Reload current notifications view."
+  (interactive)
+  (let* ((type (fj--get-buffer-spec :type)))
+    (fj-view-notifications type)))
+
+(defun fj-repo-tl-reload ()
+  "Reload current user repos tl."
+  (interactive)
+  (let* ((query (fj--get-buffer-spec :query)) ; only in search tl
+         (user (unless query (fj--get-buffer-spec :owner))))
+    (if query
+        (fj-repo-search-tl query)
+      (fj-user-repos-tl user))))
 
 ;;; ISSUE VIEW
 (defvar fj-url-regex fedi-post-url-regex)
@@ -2233,15 +2261,6 @@ RELOAD means we are reloading, so don't open in other window."
 ;;      (fj-issue-comment repo number))))
 
 ;;; ITEM VIEW ACTIONS
-
-(defun fj-item-view-reload ()
-  "Reload the current item view."
-  (interactive)
-  (fj-with-item-view
-   (fj-destructure-buf-spec (item owner type)
-     ;; FIXME: handle pull view:
-     (fj-item-view fj-current-repo owner
-                   item :reload type))))
 
 ;; TODO: merge simple action functions
 (defun fj-item-view-close (&optional state)
@@ -2924,15 +2943,6 @@ Optionally specify repo OWNER and URL."
                      (fj--repo-owner))))
        (fj-user-repos-tl owner)))))
 
-(defun fj-repo-tl-reload ()
-  "Reload current user repos tl."
-  (interactive)
-  (let* ((query (fj--get-buffer-spec :query)) ; only in search tl
-         (user (unless query (fj--get-buffer-spec :owner))))
-    (if query
-        (fj-repo-search-tl query)
-      (fj-user-repos-tl user))))
-
 ;; search or user repo TL
 (defun fj-repo-tl-star-repo (&optional unstar)
   "Star or UNSTAR current repo from tabulated user repos listing."
@@ -3577,12 +3587,6 @@ Use ID if provided."
 Use ID if provided."
   (interactive)
   (fj-mark-notification "unread" id))
-
-(defun fj-notifications-reload ()
-  "Reload current notifications view."
-  (interactive)
-  (let* ((type (fj--get-buffer-spec :type)))
-    (fj-view-notifications type)))
 
 ;;; BROWSE
 
