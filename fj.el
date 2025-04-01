@@ -113,7 +113,7 @@ etc."
   "List of possible status types for getting notifications.")
 
 (defvar fj-notifications-subject-types
-  '("issue" "pull" "commit" "repository")
+  '(nil "issue" "pull" "commit" "repository")
   "List of possible subject types for getting notifications.")
 
 ;;; CUSTOMIZES
@@ -3508,6 +3508,7 @@ Optionally set LIMIT to results."
   :doc "Keymap for `fj-notifications-mode'."
   :parent fj-generic-map
   "C-c C-c" #'fj-notifications-unread-toggle
+  "C-c C-s" #'fj-notifications-subject-cycle
   ;; FIXME: move to `fj-generic-map' when item views are ready:
   "." #'fj-next-page
   "," #'fj-prev-page
@@ -3551,39 +3552,57 @@ ALL is a boolean, meaning also return read notifications."
 STATE is either \"all\" or \"unread\", meaning which set of notifs to
 display."
   (interactive)
-  (let ((buf (format "*fj-notifications-%s*"
-                     (if all "all" "unread")))
-        (data (fj-get-notifications all status-types
-                                    subject-type page limit)))
-    (if (not data)
-        (when (y-or-n-p "No unread notifications. Load all?")
-          (fj-view-notifications-all))
-      (fedi-with-buffer buf 'fj-notifications-mode nil
-        (fj-render-notifications data)
-        ;; FIXME: make this an option in `fedi-with-buffer'?
-        ;; else it just goes to point-min:
-        (setq fj-buffer-spec `( :viewfun fj-view-notifications
-                                :viewargs
-                                ( :all ,all :status-types ,status-types
-                                  :subject-type ,subject-type
-                                  :page ,page :limit ,limit)))
-        (fj-item-next)))))
+  (let* ((all-type (if all "all" "unread"))
+         (buf (format "*fj-notifications-%s%s*"
+                      all-type
+                      (if subject-type
+                          (concat "-" subject-type "s")
+                        "")))
+         (data (fj-get-notifications all status-types
+                                     subject-type page limit)))
+    (fedi-with-buffer buf 'fj-notifications-mode nil
+      (if (not data)
+          (insert
+           (format "No notifications of type: %s %s" all-type subject-type))
+        (fj-render-notifications data))
+      (setq fj-buffer-spec `( :viewfun fj-view-notifications
+                              :viewargs
+                              ( :all ,all :status-types ,status-types
+                                :subject-type ,subject-type
+                                :page ,page :limit ,limit)))
+      ;; FIXME: make this an option in `fedi-with-buffer'?
+      ;; else it just goes to point-min:
+      (fj-item-next))))
 
-(defun fj-view-notifications-all ()
+(defun fj-view-notifications-all (&optional status-types subject-type
+                                            page limit)
   "View all notifications for `fj-user'."
   (interactive)
-  (fj-view-notifications "all"))
-
-(defun fj-view-notifications-unread ()
-  "View unread notifications for `fj-user'."
-  (interactive)
-  (fj-view-notifications "unread"))
+  (fj-view-notifications "true" status-types subject-type
+                         page limit))
 
 (defun fj-notifications-all-plist (plist)
   "Update the value of :state in PLIST and return it."
   (let* ((current (plist-get plist :all))
          (next (if current nil "true")))
     (plist-put plist :all next)))
+
+(defun fj-notifications-subject-plist (plist)
+  "Replace :subject-type in PLIST with next value.
+Values are in `fj-notifications-subject-types'."
+  (let* ((current (plist-get plist :subject-type))
+         (next (fj-next-item-var current fj-notifications-subject-types)))
+    (plist-put plist :subject-type next)))
+
+(defun fj-notifications-subject-cycle ()
+  "Cycle notifications by `fj-notifications-subject-types'.
+Subject types are \"issues\" \"pulls\" \"commits\" and \"repository\"."
+  (interactive)
+  ;; NB: subject-type can be a list of things, but for now we just cycle
+  ;; one-by-one:
+  (fj-destructure-buf-spec (viewfun viewargs)
+    (let ((args (fj-notifications-subject-plist viewargs)))
+      (apply viewfun (fj-plist-values args)))))
 
 (defun fj-notifications-unread-toggle ()
   "Switch between showing all notifications, and only showing unread."
