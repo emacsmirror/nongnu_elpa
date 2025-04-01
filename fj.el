@@ -1996,12 +1996,6 @@ TYPE is the item type."
      (fj-item-view fj-current-repo owner
                    item :reload type))))
 
-(defun fj-notifications-reload ()
-  "Reload current notifications view."
-  (interactive)
-  (let* ((type (fj--get-buffer-spec :type)))
-    (fj-view-notifications type)))
-
 ;;; ISSUE VIEW
 (defvar fj-url-regex fedi-post-url-regex)
 
