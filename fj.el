@@ -628,13 +628,13 @@ If nil, return nil."
   (when page (fj--inc-str page :dec)))
 
 (defun fj-dec-plist-page (plist)
-  "Decrement the :page entry in PLIST."
+  "Decrement the :page entry in PLIST and return it."
   (let* ((new-page (fj-dec-or-nil
                     (plist-get plist :page))))
     (plist-put plist :page new-page)))
 
 (defun fj-inc-plist-page (plist)
-  "Increment the :page entry in PLIST."
+  "Increment the :page entry in PLIST and return it."
   (let ((new-page (fj-inc-or-2
                    (plist-get plist :page))))
     (plist-put plist :page new-page)))
@@ -1067,7 +1067,10 @@ QUERY, STATE, TYPE, CREATED, ASSIGNED, and MENTIONED are all for
 QUERY, STATE, TYPE, CREATED, ASSIGNED, MENTIONED and PAGE are all for
 `fj-issues-search'."
   (interactive)
-  (let ((items
+  ;; NB: defaults are now required for buff spec:
+  (let ((state (or state "open"))
+        (type (or type "issues"))
+        (items
          (fj-issues-search query fj-user state type
                            created assigned mentioned page))
         (buf-name (format "*fj-user-repos-%s" type))
@@ -1606,8 +1609,8 @@ Return an alist of title and ID."
   "k" #'fj-issues-tl-close
   "K" #'fj-issues-tl-delete
   "c" #'fj-create-issue
-  "C-c C-c" #'fj-list-issues-cycle
-  "C-c C-s" #'fj-issues-item-cycle
+  "C-c C-c" #'fj-cycle-state
+  "C-c C-s" #'fj-cycle-type
   "o" #'fj-issues-tl-reopen
   "s" #'fj-list-issues-search
   "S" #'fj-repo-search-tl
@@ -1645,8 +1648,8 @@ Return an alist of title and ID."
 (defvar-keymap fj-owned-issues-tl-mode-map
   :doc "Map for `fj-owned-issues-tl-mode', a tabluated list of issues."
   :parent fj-issue-tl-mode-map ; has nav
-  "C-c C-c" #'fj-list-own-items-state-cycle
-  "C-c C-s" #'fj-list-own-items-type-cycle)
+  "C-c C-c" #'fj-cycle-state
+  "C-c C-s" #'fj-cycle-type)
 
 ;; FIXME: refactor with `fj-issue-tl-mode' mode?
 ;; this just adds Repo col
@@ -1933,46 +1936,44 @@ TYPE is the item type."
 
 ;;; VIEW CYCLE
 
-(defun fj-list-issues-cycle ()
-  "Cycle between listing of open, closed, and all issues."
-  (interactive)
-  (fj-destructure-buf-spec (state owner repo type)
-    (pcase state
-      ("closed" (fj-list-issues-all repo owner type))
-      ("all" (fj-list-issues-do repo owner nil type))
-      (_ ; open is default
-       (fj-list-issues-closed repo owner type)))))
+(defvar fj-items-states
+  '("open" "closed" "all"))
 
-(defun fj-list-own-items-state-cycle ()
+(defvar fj-items-types
+  '("issues" "pulls" "all"))
+
+(defun fj-next-item-var (current var)
+  "Return the next item in VAR based on CURRENT."
+  (let ((mem (member current var)))
+    (if (length= mem 1)
+        (car var)
+      (cadr mem))))
+
+(defun fj-next-item-state-plist (plist)
+  "Update the value of :state in PLIST and return it."
+  (let* ((current (plist-get plist :state))
+         (next (fj-next-item-var current fj-items-states)))
+    (plist-put plist :state next)))
+
+(defun fj-next-item-type-plist (plist)
+  "Update the value of :type in PLIST and return it."
+  (let* ((current (plist-get plist :type))
+         (next (fj-next-item-var current fj-items-types)))
+    (plist-put plist :type next)))
+
+(defun fj-cycle-state ()
   "Cycle item state listing of open, closed, and all."
   (interactive)
-  ;; FIXME: implement other own-issues params (add to buffer-spec)
-  (fj-destructure-buf-spec (state type)
-    (pcase state
-      ("closed" (fj-list-own-items nil "all" type))
-      ("all" (fj-list-own-items nil "open" type))
-      (_ (fj-list-own-items nil "closed" type)))))
+  (fj-destructure-buf-spec (viewfun viewargs)
+    (let ((args (fj-next-item-state-plist viewargs)))
+      (apply viewfun (fj-plist-values args)))))
 
-(defun fj-list-own-items-type-cycle ()
+(defun fj-cycle-type ()
   "Cycle item type listing of issues, pulls, and all."
   (interactive)
-  ;; FIXME: implement other own-issues params (add to buffer-spec)
-  (fj-destructure-buf-spec (state type)
-    (pcase type
-      ("pulls" (fj-list-own-items nil state "all"))
-      ("all" (fj-list-own-items nil state "issues"))
-      (_ ; issues default
-       (fj-list-own-items nil state "pulls")))))
-
-(defun fj-issues-item-cycle ()
-  "Cycle item type listing of issues, pulls, and all."
-  (interactive)
-  (fj-destructure-buf-spec (state owner repo type)
-    (pcase type
-      ("pulls" (fj-list-issues-do repo owner state "all"))
-      ("all" (fj-list-issues-do repo owner state "issues"))
-      (_ ; issues default
-       (fj-list-issues-do repo owner state "pulls")))))
+  (fj-destructure-buf-spec (viewfun viewargs)
+    (let ((args (fj-next-item-type-plist viewargs)))
+      (apply viewfun (fj-plist-values args)))))
 
 ;;; RELOADING
 
