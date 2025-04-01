@@ -1868,10 +1868,9 @@ QUERY is a search query to filter by."
         (setq fj-current-repo repo
               fj-repo-data repo-data
               fj-buffer-spec
-              ;; viewargs must match function signature, but also if we
-              ;; use a value elsewhere, we can duplicate it outside of
-              ;; view args for easy destructuring?: though i think mostly
-              ;; we use it to simply re-call the present function? (e.g. cycling)
+              ;; viewargs must match function signature, but also we
+              ;; duplicate it outside of view args for easy destructuring
+              ;; for other actions
               `( :repo ,repo :owner ,owner
                  :viewargs
                  ( :repo ,repo :owner ,owner :state ,state-str
