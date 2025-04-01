@@ -2203,10 +2203,12 @@ RELOAD mean we reloaded."
           ;; set vars before timeline so they're avail:
           (setq fj-current-repo repo)
           (setq fj-buffer-spec
-                `( :repo ,repo :owner ,owner :item ,number
-                   :type ,(if pull-p :pull :issue)
-                   :author ,.user.username :title ,.title
-                   :body ,.body :url ,.html_url
+                `( :repo ,repo :owner ,owner
+                   :item ,number ;; used by lots of stuff
+                   :type ,(if pull-p :pull :issue) ;; used by with-pull
+                   :author ,.user.username ;; used by own-issue
+                   :title ,.title ;; for commenting
+                   :url ,.html_url ;; for browsing
                    :viewfun fj-render-item
                    :viewargs ( :repo ,repo :owner ,owner :item ,item
                                :number ,number :timeline ,timeline)))
