@@ -627,24 +627,35 @@ If nil, return \"2\"."
 If nil, return nil."
   (when page (fj--inc-str page :dec)))
 
+(defun fj-dec-plist-page (plist)
+  "Decrement the :page entry in PLIST."
+  (let* ((new-page (fj-dec-or-nil
+                    (plist-get plist :page))))
+    (plist-put plist :page new-page)))
+
+(defun fj-inc-plist-page (plist)
+  "Increment the :page entry in PLIST."
+  (let ((new-page (fj-inc-or-2
+                   (plist-get plist :page))))
+    (plist-put plist :page new-page)))
+
+(defun fj-plist-values (plist)
+  "Return the values of PLIST as a list."
+  ;; prob a better way to implement this!:
+  (cl-loop for x in plist by 'cddr
+           collect (plist-get plist x)))
+
 (defun fj-next-page ()
   "Load the next page of the current view."
+  ;; NB: for this to work, :viewargs in `fj-buffer-spec' must be a plist
+  ;; whose values match the signature of :viewfun. the value of :page in
+  ;; :viewargs is incremented.
   (interactive)
   (message "Loading next page...")
-  (pcase major-mode
-    ('fj-issue-tl-mode
-     (fj-destructure-buf-spec (repo owner state type query
-                                    labels milestones page limit _viewfun)
-       ;; FIXME: viewfun here errors with "Invalid function:
-       ;; #'fj-list-issues-do":
-       (funcall #'fj-list-issues-do repo owner state type query
-                labels milestones (fj-inc-or-2 page) limit)))
-    ('fj-owned-issues-tl-mode
-     (fj-destructure-buf-spec (query state type created assigned mentioned
-                                     page _viewfun)
-       (funcall #'fj-list-own-items query state type created assigned mentioned
-                (fj-inc-or-2 page))))
-    (_ (user-error "Pagination not yet implemented here")))
+  (fj-destructure-buf-spec (viewfun viewargs)
+    ;; incremement page:
+    (let ((args (fj-inc-plist-page viewargs)))
+      (apply viewfun (fj-plist-values args))))
   (message "Loading next page... Done."))
 
 (defmacro fj-prev-page-maybe (page &rest body)
@@ -658,24 +669,13 @@ If nil, return nil."
 (defun fj-prev-page ()
   "Load the previous page."
   (interactive)
-  (pcase major-mode
-    ('fj-issue-tl-mode
-     (message "Loading previous page...")
-     (fj-destructure-buf-spec (repo owner state type query
-                                    labels milestones page limit _viewfun)
-       (fj-prev-page-maybe page
-         (funcall #'fj-list-issues-do repo owner state type query
-                  labels milestones (fj-dec-or-nil page) limit)
-         (message "Loading previous page... Done."))))
-    ('fj-owned-issues-tl-mode
-     (message "Loading previous page...")
-     (fj-destructure-buf-spec (query state type created assigned mentioned
-                                     page _viewfun)
-       (fj-prev-page-maybe page
-         (funcall #'fj-list-own-items query state type created
-                  assigned mentioned (fj-dec-or-nil page))
-         (message "Loading previous page... Done."))))
-    (_ (user-error "Pagination not yet implemented here"))))
+  (message "Loading previous page...")
+  (fj-destructure-buf-spec (viewfun viewargs)
+    (fj-prev-page-maybe (plist-get viewargs :page)
+      ;; decrement page:
+      (let ((args (fj-dec-plist-page viewargs)))
+        (apply viewfun (fj-plist-values args)))))
+  (message "Loading previous page... Done."))
 
 ;;; REPOS TL UTILS
 
@@ -777,22 +777,29 @@ X and Y are sorting args."
   "Return settings for the current user."
   (fj-get "user/settings"))
 
-(defun fj-get-user-repos (user)
-  "GET request repos for USER."
-  (let ((params '(("limit" . "100")))
+(defun fj-get-user-repos (user &optional page limit order)
+  "GET request repos for USER.
+PAGE, LIMIT, ORDER."
+  (let ((params `(("limit" . ,(or limit "100"))
+                  ,@(when page `(("page" . ,page)))
+                  ,@(when order `(("order" . ,order)))))
         (endpoint (format "users/%s/repos" user)))
     (fj-get endpoint params)))
 
-(defun fj-user-repos-tl (&optional user)
-  "View a tabulated list of respos for USER."
+(defun fj-user-repos-tl (&optional user page limit order)
+  "View a tabulated list of respos for USER.
+PAGE, LIMIT, ORDER."
   (interactive "sView user repos: ")
-  (let* ((repos (fj-get-user-repos user))
+  (let* ((repos (fj-get-user-repos user page limit order))
          (entries (fj-repo-tl-entries repos :no-owner))
          (buf (format "*fj-repos-%s*" user)))
     (fj-repos-tl-render buf entries #'fj-user-repo-tl-mode)
     (with-current-buffer (get-buffer-create buf)
       (setq fj-buffer-spec
-            `(:owner ,user :url ,(concat fj-host "/" user))))))
+            `( :owner ,user :url ,(concat fj-host "/" user)
+               :viewargs ( :user ,user :page ,page
+                           :limit ,limit :order ,order)
+               :viewfun fj-user-repos-tl)))))
 
 (defun fj-list-own-repos ()
   "List repos for `fj-user'."
@@ -817,7 +824,8 @@ X and Y are sorting args."
       (fj-repos-tl-render buf entries #'fj-repo-tl-mode)
       (with-current-buffer (get-buffer-create buf)
         (setq fj-buffer-spec
-              `(:owner ,fj-user :url ,(concat fj-host "/" fj-user)))))))
+              `( :owner ,fj-user :url ,(concat fj-host "/" fj-user)
+                 :viewfun fj-list-repos))))))
 
 (defun fj-star-repo (repo owner &optional unstar)
   "Star or UNSTAR REPO owned by OWNER."
@@ -878,7 +886,8 @@ BUF-STR is to name the buffer, URL-STR is for the buffer-spec."
       (setq fj-buffer-spec
             `( :owner fj-user
                :url (when url-str
-                      ,(concat fj-host "/" fj-user url-str)))))))
+                      ,(concat fj-host "/" fj-user url-str))
+               :viewfun fj--list-user-repos)))))
 
 ;;; USER REPOS
 
@@ -1019,6 +1028,7 @@ PAGE is a number for pagination."
   ;; TODO: params: reviewed, review_requested, team, before, since,
   ;; priority_repo_id, milestones (c s list), labels (c s list)
   ;; NB: this endpoint can be painfully slow
+  ;; NB: this endpoint has no sort!
   (let* ((endpoint "repos/issues/search")
          (params `(("limit" . "50") ;; max
                    ,@(when query      `(("q" . ,query)))
@@ -1032,7 +1042,6 @@ PAGE is a number for pagination."
     (condition-case err
         (fj-get endpoint params)
       (t (format "%s" (error-message-string err))))))
-
 
 (defun fj-list-own-pulls (&optional query state
                                     created assigned mentioned)
@@ -1073,9 +1082,11 @@ QUERY, STATE, TYPE, CREATED, ASSIGNED, MENTIONED and PAGE are all for
       (tabulated-list-init-header)
       (tabulated-list-print)
       (setq fj-buffer-spec
-            `( :state ,state :owner ,fj-user :type ,type
-               :query ,query :created ,created
-               :assiged ,assigned :mentioned ,mentioned))
+            `(:viewargs
+              ( :query ,query :state ,state :type ,type
+                :created ,created :assiged ,assigned :mentioned ,mentioned
+                :page ,page)
+              :viewfun fj-list-own-items))
       (fj-other-window-maybe
        prev-buf (format "-%s*" type) #'string-suffix-p prev-mode))))
 
@@ -1854,9 +1865,18 @@ QUERY is a search query to filter by."
         (setq fj-current-repo repo
               fj-repo-data repo-data
               fj-buffer-spec
-              `( :repo ,repo :state ,state-str :owner ,owner :url ,url
-                 :type ,type :labels ,labels :milestones ,milestones
-                 :limit ,limit :page ,page))
+              ;; viewargs must match function signature, but also if we
+              ;; use a value elsewhere, we can duplicate it outside of
+              ;; view args for easy destructuring?: though i think mostly
+              ;; we use it to simply re-call the present function? (e.g. cycling)
+              `( :repo ,repo :owner ,owner
+                 :viewargs
+                 ( :repo ,repo :owner ,owner :state ,state-str
+                   :type ,type :query ,query :labels ,labels
+                   :milestones ,milestones
+                   :page ,page :limit ,limit)
+                 :viewfun fj-list-issues-do
+                 :url ,url))
         ;; ensure our .dir-locals.el settings take effect:
         ;; via https://emacs.stackexchange.com/questions/13080/reloading-directory-local-variables
         (setq default-directory wd)
@@ -2773,22 +2793,33 @@ Use REVIEW-ID for ITEM-ID in REPO by OWNER."
   '("source" "fork" "mirror" "collaborative")
   "Types of repositories in foregejo search.")
 
-(defun fj-repo-search-do (query &optional topic id mode)
+(defvar fj-search-sorts
+  '("alpha" "created" "updated" "size" "git_size" "lfs_size" "stars"
+    "forks" "id"))
+
+(defun fj-repo-search-do (query &optional topic id mode
+                                include-desc sort order page limit)
   "Search for QUERY, optionally flag it as a TOPIC.
 ID is a user ID, which if given must own the repo.
 MODE must be a member of `fj-search-modes', else it is silently
-ignored."
+ignored.
+INCLUDE-DESC SORT ORDER PAGE LIMIT."
+  ;; GET /repos/search. args TODO:
+  ;; priority_owner_id, team_id, starredby
+  ;; private, is_private, template, archived
   (let* ((params `(("q" . ,query)
                    ("limit" . "100")
-                   ("includeDesc" . "true")
-                   ("sort" . "updated")
-                   ,@(when id
-                       `(("exclusive" . ,id)))
+                   ("includeDesc" . ,(or include-desc "true"))
+                   ("sort" . ,(or sort "updated"))
+                   ,@(when order `(("order" . ,order)))
+                   ,@(when id `(("uid" . ,id)
+                                ("exclusive" . "true")))
                    ,@(when (and mode
                                 (member mode fj-search-modes))
                        `(("mode" . ,mode)))
-                   ,@(when topic
-                       '(("topic" . "true"))))))
+                   ,@(when topic '(("topic" . "true")))
+                   ,@(when page `(("page" . ,page)))
+                   ,@(when limit `(("limit" . ,limit))))))
     (fj-get "/repos/search" params)))
 
 (defun fj-repo-search (query &optional topic id mode)
@@ -2896,11 +2927,14 @@ NO-OWNER means don't display owner column (user repos view)."
            face 'fj-comment-face
            item repo)])))))
 
-(defun fj-repo-search-tl (query &optional topic)
+(defun fj-repo-search-tl (query &optional topic id mode
+                                include-desc sort order page limit)
   "Search repos for QUERY, and display a tabulated list of results.
-TOPIC, a boolean, means search in repo topics."
+TOPIC, a boolean, means search in repo topics.
+ID MODE INCLUDE-DESC SORT ORDER PAGE LIMIT."
   (interactive "sSearch for repos: ")
-  (let* ((resp (fj-repo-search-do query topic))
+  (let* ((resp (fj-repo-search-do query topic id mode
+                                  include-desc sort order page limit))
          (buf (format "*fj-search-%s*" query))
          (url (concat fj-host "/explore/repos"))
          (data (alist-get 'data resp))
@@ -2908,7 +2942,12 @@ TOPIC, a boolean, means search in repo topics."
     (fj-repos-tl-render buf entries #'fj-repo-tl-mode)
     (with-current-buffer (get-buffer-create buf)
       (setq fj-buffer-spec
-            `(:url ,url :query ,query)))))
+            `( :url ,url
+               :viewargs
+               ( :query ,query :topic ,topic :id ,id :mode ,mode
+                 :include-desc ,include-desc :sort ,sort
+                 :order ,order :page ,page :limit ,limit)
+               :viewfun fj-repo-search-tl)))))
 
 (defun fj-repo-search-tl-topic (query)
   "Search repo topics for QUERY, and display a tabulated list."
