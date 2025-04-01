@@ -1981,17 +1981,13 @@ TYPE is the item type."
   "Try to reload the current view based on its major-mode."
   (interactive)
   (pcase major-mode
-    ('fj-issue-tl-mode (fj-issues-tl-reload))
+    ;; FIXME: replace these with generic viewargs reloading:
     ('fj-item-view-mode (fj-item-view-reload))
-    ((or 'fj-tl-repo-mode 'fj-user-repo-tl-mode)
-     (fj-repo-tl-reload))
     ('fj-notifications-mode (fj-notifications-reload))
     ('fj-users-mode (fj-users-reload))
-    ;; TODO: owned-issues-mode, commits-mode (no reload funs):
-    ('fj-owned-issues-tl-mode
-     (fj-list-own-issues))
-    ('fj-commits-mode (fj-repo-commit-log))
-    (_ (user-error "Reload not implemented yet"))))
+    (_ (fj-destructure-buf-spec (viewfun viewargs)
+         ;; works so long as we set viewargs right:
+         (apply viewfun (fj-plist-values viewargs))))))
 
 (defun fj-users-reload ()
   "Reload a users listing view.
@@ -2000,13 +1996,6 @@ Repo's stargazers or watchers."
     (if (string-suffix-p "stargazers*" (buffer-name))
         (fj-repo-stargazers repo owner)
       (fj-repo-watchers repo owner))))
-
-(defun fj-issues-tl-reload ()
-  "Reload current issues tabulated list view."
-  (interactive)
-  (when (eq major-mode #'fj-issue-tl-mode)
-    (fj-destructure-buf-spec (state owner repo type)
-      (fj-list-issues-do repo owner state type))))
 
 (defun fj-item-view-reload ()
   "Reload the current item view."
@@ -2022,15 +2011,6 @@ Repo's stargazers or watchers."
   (interactive)
   (let* ((type (fj--get-buffer-spec :type)))
     (fj-view-notifications type)))
-
-(defun fj-repo-tl-reload ()
-  "Reload current user repos tl."
-  (interactive)
-  (let* ((query (fj--get-buffer-spec :query)) ; only in search tl
-         (user (unless query (fj--get-buffer-spec :owner))))
-    (if query
-        (fj-repo-search-tl query)
-      (fj-user-repos-tl user))))
 
 ;;; ISSUE VIEW
 (defvar fj-url-regex fedi-post-url-regex)
