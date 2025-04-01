@@ -563,9 +563,13 @@ If CURRENT-REPO, get from `fj-current-repo' instead."
   "C-M-q" #'fj-kill-all-buffers
   "/" #'fj-switch-to-buffer
   ;; really oughta be universal:
+  "R" #'fj-repo-update-settings
+  "I" #'fj-list-issues
+  "P" #'fj-list-pulls
   "O" #'fj-list-own-repos
   "W" #'fj-list-own-issues
   "N" #'fj-view-notifications
+  "S" #'fj-repo-search-tl
   "U" #'fj-update-user-settings
   "b" #'fj-browse-view
   "C" #'fj-copy-item-url
@@ -584,9 +588,13 @@ If CURRENT-REPO, get from `fj-current-repo' instead."
   "C-M-q" #'fj-kill-all-buffers
   "/" #'fj-switch-to-buffer
   ;; really oughta be universal:
+  "R" #'fj-repo-update-settings
+  "I" #'fj-list-issues
+  "P" #'fj-list-pulls
   "O" #'fj-list-own-repos
   "W" #'fj-list-own-issues
   "N" #'fj-view-notifications
+  "S" #'fj-repo-search-tl
   "U" #'fj-update-user-settings
   "C" #'fj-copy-item-url
   "b" #'fj-browse-view
@@ -1613,13 +1621,9 @@ Return an alist of title and ID."
   "C-c C-s" #'fj-cycle-type
   "o" #'fj-issues-tl-reopen
   "s" #'fj-list-issues-search
-  "S" #'fj-repo-search-tl
   "B" #'fj-tl-browse-entry
   "u" #'fj-repo-copy-clone-url
-  "I" #'fj-list-issues
-  "P" #'fj-list-pulls
   "L" #'fj-repo-commit-log
-  "R" #'fj-repo-update-settings
   "j" #'imenu
   "l" #'fj-issues-tl-label-add
   "U" #'fj-copy-pr-url)
@@ -2099,13 +2103,9 @@ JSON is the item's data to process the link with."
   "K" #'fj-item-view-comment-delete
   "t" #'fj-issue-view-edit-title
   "s" #'fj-list-issues-search
-  "S" #'fj-repo-search-tl
   "D" #'fj-view-pull-diff
-  "R" #'fj-repo-update-settings
   "L" #'fj-repo-commit-log
   "l" #'fj-issue-label-add
-  "I" #'fj-list-issues
-  "P" #'fj-list-pulls
   "M" #'fj-merge-pull)
 
 (define-derived-mode fj-item-view-mode special-mode "fj-issue"
@@ -3507,9 +3507,7 @@ Optionally set LIMIT to results."
   ;; FIXME: move to `fj-generic-map' when item views are ready:
   "." #'fj-next-page
   "," #'fj-prev-page
-  "s" #'fj-list-issues-search
-  "I" #'fj-list-issues
-  "S" #'fj-repo-search-tl)
+  "s" #'fj-list-issues-search)
 
 (define-derived-mode fj-notifications-mode special-mode "fj-notifs"
   "Major mode for viewing notifications."
@@ -3788,9 +3786,6 @@ Used for a mouse-click EVENT on a link."
   :doc "Keymap for `fj-commits-mode'."
   :parent fj-generic-map
   "s" #'fj-list-issues-search
-  "I" #'fj-list-issues
-  "S" #'fj-repo-search-tl
-  "R" #'fj-repo-update-settings
   "L" #'fj-repo-commit-log)
 
 (define-derived-mode fj-commits-mode special-mode "fj-commits"
@@ -3872,10 +3867,7 @@ Optionally specify BRANCH to show commits from."
   :doc "Keymap for `fj-users-mode'."
   :parent fj-generic-map
   "s" #'fj-list-issues-search
-  "I" #'fj-list-issues
-  "S" #'fj-repo-search-tl
-  "L" #'fj-repo-commit-log
-  "R" #'fj-repo-update-settings)
+  "L" #'fj-repo-commit-log)
 
 (define-derived-mode fj-users-mode special-mode "fj-users"
   "Major mode for viewing users."
