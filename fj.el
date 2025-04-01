@@ -1983,7 +1983,6 @@ TYPE is the item type."
   (pcase major-mode
     ;; FIXME: replace these with generic viewargs reloading:
     ('fj-item-view-mode (fj-item-view-reload))
-    ('fj-notifications-mode (fj-notifications-reload))
     (_ (fj-destructure-buf-spec (viewfun viewargs)
          ;; works so long as we set viewargs right:
          (apply viewfun (fj-plist-values viewargs))))))
@@ -2211,10 +2210,13 @@ RELOAD mean we reloaded."
           ;; set vars before timeline so they're avail:
           (setq fj-current-repo repo)
           (setq fj-buffer-spec
-                `(:repo ,repo :owner ,owner :item ,number
-                        :type ,(if pull-p :pull :issue)
-                        :author ,.user.username :title ,.title
-                        :body ,.body :url ,.html_url))
+                `( :repo ,repo :owner ,owner :item ,number
+                   :type ,(if pull-p :pull :issue)
+                   :author ,.user.username :title ,.title
+                   :body ,.body :url ,.html_url
+                   :viewfun fj-render-item
+                   :viewargs ( :repo ,repo :owner ,owner :item ,item
+                               :number ,number :timeline ,timeline)))
           ;; .is_locked
           (setq header-line-format
                 `("" header-line-indent
@@ -3506,6 +3508,9 @@ Optionally set LIMIT to results."
   :doc "Keymap for `fj-notifications-mode'."
   :parent fj-generic-map
   "C-c C-c" #'fj-notifications-unread-toggle
+  ;; FIXME: move to `fj-generic-map' when item views are ready:
+  "." #'fj-next-page
+  "," #'fj-prev-page
   "s" #'fj-list-issues-search
   "I" #'fj-list-issues
   "S" #'fj-repo-search-tl)
@@ -3519,12 +3524,19 @@ Optionally set LIMIT to results."
   '("unread" "read" "pinned")
   "List of possible status types for getting notifications.")
 
-(defun fj-get-notifications (&optional all) ; status-types subject-type)
-                                        ; before since page limit
+(defun fj-get-notifications (&optional all status-types subject-type
+                                       page limit)
+                                        ; before since
   "GET notifications for `fj-user'.
 ALL is a boolean, meaning also return read notifications."
-  ;; STATUS-TYPES and SUBJECT-TYPE are array strings."
-  (let ((params `(("all" . ,all)))
+  ;; NB: STATUS-TYPES and SUBJECT-TYPE are array strings."
+  (let ((params `(,@(when all '(("all" . "true")))
+                  ,@(when status-types
+                      `(("status-types" . ,status-types)))
+                  ,@(when subject-type
+                      `(("subject-type" . ,subject-type)))
+                  ,@(when page `(("page" . ,page)))
+                  ,@(when limit `(("limit" . ,limit)))))
         (endpoint "notifications"))
     (fj-get endpoint params)))
 
@@ -3533,24 +3545,28 @@ ALL is a boolean, meaning also return read notifications."
   (alist-get 'new
              (fj-get "notifications/new")))
 
-(defun fj-view-notifications (&optional type)
+(defun fj-view-notifications (&optional all status-types subject-type
+                                        page limit)
   "View notifications for `fj-user'.
-TYPE is either \"all\" or \"unread\", meaning which set of notifs
-to display."
+STATE is either \"all\" or \"unread\", meaning which set of notifs to
+display."
   (interactive)
-  (let ((buf (format "*fj-notifications-%s*" (or type "unread")))
-        (data (fj-get-notifications
-               (if (string= type "all")
-                   "true" "false"))))
+  (let ((buf (format "*fj-notifications-%s*"
+                     (if all "all" "unread")))
+        (data (fj-get-notifications all status-types
+                                    subject-type page limit)))
     (if (not data)
         (when (y-or-n-p "No unread notifications. Load all?")
           (fj-view-notifications-all))
       (fedi-with-buffer buf 'fj-notifications-mode nil
-        (fj-render-notifications data))
-      ;; FIXME: make this an option in `fedi-with-buffer'?
-      ;; else it just goes to point-min:
-      (with-current-buffer buf
-        (setq fj-buffer-spec `(:type ,type))
+        (fj-render-notifications data)
+        ;; FIXME: make this an option in `fedi-with-buffer'?
+        ;; else it just goes to point-min:
+        (setq fj-buffer-spec `( :viewfun fj-view-notifications
+                                :viewargs
+                                ( :all ,all :status-types ,status-types
+                                  :subject-type ,subject-type
+                                  :page ,page :limit ,limit)))
         (fj-item-next)))))
 
 (defun fj-view-notifications-all ()
@@ -3563,12 +3579,18 @@ to display."
   (interactive)
   (fj-view-notifications "unread"))
 
+(defun fj-notifications-all-plist (plist)
+  "Update the value of :state in PLIST and return it."
+  (let* ((current (plist-get plist :all))
+         (next (if current nil "true")))
+    (plist-put plist :all next)))
+
 (defun fj-notifications-unread-toggle ()
   "Switch between showing all notifications, and only showing unread."
   (interactive)
-  (let ((type (fj--get-buffer-spec :type)))
-    (fj-view-notifications
-     (if (string= type "all") "unread" "all"))))
+  (fj-destructure-buf-spec (viewfun viewargs)
+    (let ((args (fj-notifications-all-plist viewargs)))
+      (apply viewfun (fj-plist-values args)))))
 
 (defun fj-render-notifications (data)
   "Render notifications DATA."
