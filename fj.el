@@ -1300,13 +1300,15 @@ OWNER is the repo owner."
                            owner repo issue)))
     (fj-get endpoint)))
 
-(defun fj-issue-get-comments-timeline (repo owner issue)
+(defun fj-issue-get-timeline (repo owner issue &optional page limit) ;; since before
   "Return comments timeline for ISSUE in REPO.
 OWNER is the repo owner.
 Comments timeline contains comments of any type."
   (let* ((endpoint (format "repos/%s/%s/issues/%s/timeline"
-                           owner repo issue)))
-    (fj-get endpoint)))
+                           owner repo issue))
+         (params `(,@(when page `(("page" . ,page)))
+                   ,@(when limit `(("limit" . ,limit))))))
+    (fj-get endpoint params)))
 
 (defun fj-get-comment (repo owner issue &optional comment)
   "GET data for COMMENT of ISSUE in REPO.
@@ -1983,21 +1985,9 @@ TYPE is the item type."
 (defun fj-view-reload ()
   "Try to reload the current view based on its major-mode."
   (interactive)
-  (pcase major-mode
-    ;; FIXME: replace these with generic viewargs reloading:
-    ('fj-item-view-mode (fj-item-view-reload))
-    (_ (fj-destructure-buf-spec (viewfun viewargs)
-         ;; works so long as we set viewargs right:
-         (apply viewfun (fj-plist-values viewargs))))))
-
-(defun fj-item-view-reload ()
-  "Reload the current item view."
-  (interactive)
-  (fj-with-item-view
-   (fj-destructure-buf-spec (item owner type)
-     ;; FIXME: handle pull view:
-     (fj-item-view fj-current-repo owner
-                   item :reload type))))
+  (fj-destructure-buf-spec (viewfun viewargs)
+    ;; works so long as we set viewargs right:
+    (apply viewfun (fj-plist-values viewargs))))
 
 ;;; ISSUE VIEW
 (defvar fj-url-regex fedi-post-url-regex)
@@ -2187,7 +2177,8 @@ OWNER is the repo owner."
                           'face 'fj-item-byline-face)
               (fj-prop-item-flag "edited")))))
 
-(defun fj-render-item (repo owner item number timeline &optional reload)
+(defun fj-render-item (repo owner item number timeline
+                            &optional reload type page limit)
   "Render ITEM number NUMBER, in REPO and its TIMELINE.
 OWNER is the repo owner.
 RELOAD mean we reloaded."
@@ -2197,21 +2188,25 @@ RELOAD mean we reloaded."
     (let ((header-line-indent " "))
       (header-line-indent-mode 1) ; broken?
       (let-alist item
-        (let ((stamp (fedi--relative-time-description
-                      (date-to-time .created_at)))
-              (pull-p .base)) ;; rough PR check!
+        (let* ((stamp (fedi--relative-time-description
+                       (date-to-time .created_at)))
+               (pull-p .base) ;; rough PR check!
+               (type (if pull-p :pull :issue)))
           ;; set vars before timeline so they're avail:
           (setq fj-current-repo repo)
           (setq fj-buffer-spec
                 `( :repo ,repo :owner ,owner
                    :item ,number ;; used by lots of stuff
-                   :type ,(if pull-p :pull :issue) ;; used by with-pull
+                   :type ,type ;; used by with-pull
                    :author ,.user.username ;; used by own-issue
                    :title ,.title ;; for commenting
                    :url ,.html_url ;; for browsing
-                   :viewfun fj-render-item
-                   :viewargs ( :repo ,repo :owner ,owner :item ,item
-                               :number ,number :timeline ,timeline)))
+                   :viewfun fj-item-view
+                   ;; repo owner number reload pull page limit
+                   :viewargs ( :repo ,repo :owner ,owner :number ,number
+                               :reload ,reload ;; FIXME: remove reload arg
+                               :type ,type
+                               :page ,page :limit ,limit)))
           ;; .is_locked
           (setq header-line-format
                 `("" header-line-indent
@@ -2276,15 +2271,15 @@ RELOAD mean we reloaded."
                      (require 'emojify nil :noerror))
             (emojify-mode t)))))))
 
-(defun fj-item-view (&optional repo owner number reload pull)
+(defun fj-item-view (&optional repo owner number reload type page limit)
   "View item NUMBER from REPO of OWNER.
 RELOAD means we are reloading, so don't open in other window."
   (interactive "P")
   (let* ((repo (fj-read-user-repo repo))
-         (item (fj-get-item repo owner number pull))
+         (item (fj-get-item repo owner number type))
          (number (or number (alist-get 'number item)))
-         (timeline (fj-issue-get-comments-timeline repo owner number)))
-    (fj-render-item repo owner item number timeline reload)))
+         (timeline (fj-issue-get-timeline repo owner number page limit)))
+    (fj-render-item repo owner item number timeline reload type page limit)))
 
 ;; (defun fj-item-view-comment ()
 ;;   "Comment on the issue currently being viewed."
