@@ -1984,18 +1984,9 @@ TYPE is the item type."
     ;; FIXME: replace these with generic viewargs reloading:
     ('fj-item-view-mode (fj-item-view-reload))
     ('fj-notifications-mode (fj-notifications-reload))
-    ('fj-users-mode (fj-users-reload))
     (_ (fj-destructure-buf-spec (viewfun viewargs)
          ;; works so long as we set viewargs right:
          (apply viewfun (fj-plist-values viewargs))))))
-
-(defun fj-users-reload ()
-  "Reload a users listing view.
-Repo's stargazers or watchers."
-  (fj-destructure-buf-spec (repo owner)
-    (if (string-suffix-p "stargazers*" (buffer-name))
-        (fj-repo-stargazers repo owner)
-      (fj-repo-watchers repo owner))))
 
 (defun fj-item-view-reload ()
   "Reload the current item view."
@@ -3855,76 +3846,92 @@ Optionally specify BRANCH to show commits from."
   :group 'fj
   (read-only-mode 1))
 
-(defun fj-repo-users (fetch-fun buf-str &optional repo owner)
+;;; repo users
+
+(defun fj-repo-users (fetch-fun buf-str &optional repo owner
+                                viewfun page limit)
   "Render users for REPO by OWNER.
 Fetch users by calling FETCH-FUN with two args, REPO and OWNER.
 BUF-STR is the name of the buffer string to use."
   (let* ((repo (or repo (fj--get-buffer-spec :repo)))
          (owner (or owner (fj--get-buffer-spec :owner)))
          (buf (format "*fj-%s-%s*" repo buf-str))
-         (data (funcall fetch-fun repo owner)))
-    (fj-render-users-do data buf repo owner)))
+         (data (funcall fetch-fun repo owner page limit)))
+    (fedi-with-buffer buf 'fj-users-mode nil
+      (fj-render-users data)
+      (when repo (setq fj-current-repo repo))
+      (setq fj-buffer-spec
+            `( :repo ,repo :owner ,owner
+               :viewargs ( :repo ,repo :owner ,owner
+                           :page ,page :limit ,limit)
+               :viewfun ,viewfun)))))
 
-(defun fj-account-users (fetch-fun buf-str &optional user)
+(defun fj-get-repo-stargazers (repo owner &optional page limit)
+  "Get stargazers of REPO by OWNER."
+  (let ((endpoint (format "/repos/%s/%s/stargazers" owner repo))
+        (params `(,@(when page `(("page" . ,page)))
+                  ,@(when limit `(("limit" . ,limit))))))
+    (fj-get endpoint params)))
+
+(defun fj-repo-stargazers (&optional repo owner page limit)
+  "Render stargazers for REPO by OWNER."
+  (interactive)
+  (fj-repo-users #'fj-get-stargazers "stargazers"
+                 repo owner #'fj-repo-stargazers page limit))
+
+(defun fj-get-watchers (repo owner &optional page limit)
+  "Get watchers of REPO by OWNER."
+  (let ((endpoint (format "/repos/%s/%s/subscribers" owner repo))
+        (params `(,@(when page `(("page" . ,page)))
+                  ,@(when limit `(("limit" . ,limit))))))
+    (fj-get endpoint params)))
+
+(defun fj-repo-watchers (&optional repo owner page limit)
+  "Render watchers for REPO by OWNER."
+  (interactive)
+  (fj-repo-users #'fj-get-watchers "watchers"
+                 repo owner #'fj-repo-watchers page limit))
+
+;;; account users
+
+(defun fj-account-users (fetch-fun buf-str &optional user
+                                   viewfun page limit)
   "Render users linked somehow to USER.
 Fetch users by calling FETCH-FUN with no args.
 BUF-STR is the name of the `buffer-string' to use."
   (let* ((user (or user fj-user))
          (buf (format "*fj-%s" buf-str))
          (data (funcall fetch-fun)))
-    (fj-render-users-do data buf nil user)))
-
-(defun fj-render-users-do (data buf-str &optional repo owner)
-  "Render DATA, a list of users.
-Fetch users by calling FETCH-FUN with two args, REPO and OWNER.
-BUF-STR is the name of the buffer string to use."
-  (fedi-with-buffer buf-str 'fj-users-mode nil
-    (fj-render-users data)
-    (when repo (setq fj-current-repo repo))
-    (setq fj-buffer-spec
-          `(:repo ,repo :owner ,owner))))
-
-(defun fj-get-repo-stargazers (repo owner) ;; page limit
-  "Get stargazers of REPO by OWNER."
-  (let ((endpoint (format "/repos/%s/%s/stargazers" owner repo))
-        (params '()))
-    (fj-get endpoint params)))
-
-(defun fj-repo-stargazers (&optional repo owner)
-  "Render stargazers for REPO by OWNER."
-  (interactive)
-  (fj-repo-users #'fj-get-stargazers "stargazers" repo owner))
-
-(defun fj-get-watchers (repo owner) ;; page limit
-  "Get watchers of REPO by OWNER."
-  (let ((endpoint (format "/repos/%s/%s/subscribers" owner repo))
-        (params '()))
-    (fj-get endpoint params)))
-
-(defun fj-repo-watchers (&optional repo owner)
-  "Render watchers for REPO by OWNER."
-  (interactive)
-  (fj-repo-users #'fj-get-watchers "watchers" repo owner))
+    (fedi-with-buffer buf-str 'fj-users-mode nil
+      (fj-render-users data)
+      ;; (when repo (setq fj-current-repo repo))
+      (setq fj-buffer-spec
+            `( :viewargs (:user ,user :page ,page :limit ,limit)
+               :viewfun ,viewfun)))))
 
 (defun fj-get-user-followers ()
   "Get users you `fj-user' is followed by."
   (let* ((endpoint "/user/followers"))
     (fj-get endpoint)))
 
-(defun fj-user-followers ()
+(defun fj-user-followers (&optional user page limit)
   "View users who follow you."
   (interactive)
-  (fj-account-users #'fj-get-user-followers "followers"))
+  (fj-account-users #'fj-get-user-followers "followers"
+                    user #'fj-user-followers page limit))
 
 (defun fj-get-user-following ()
   "Get users you `fj-user' is following."
   (let* ((endpoint "/user/following"))
     (fj-get endpoint)))
 
-(defun fj-user-following ()
+(defun fj-user-following (&optional user page limit)
   "View users you are following."
   (interactive)
-  (fj-account-users #'fj-get-user-following "followers"))
+  (fj-account-users #'fj-get-user-following "followers"
+                    user #'fj-user-following page limit))
+
+;;; render users
 
 (defun fj-render-users (users)
   "Render USERS."
