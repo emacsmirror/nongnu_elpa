@@ -3925,6 +3925,8 @@ Optionally specify BRANCH to show commits from."
 (defvar-keymap fj-users-mode-map
   :doc "Keymap for `fj-users-mode'."
   :parent fj-generic-map
+  "." #'fj-next-page
+  "," #'fj-prev-page
   "s" #'fj-list-issues-search
   "L" #'fj-repo-commit-log)
 
