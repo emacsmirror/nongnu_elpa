@@ -2059,7 +2059,8 @@ Buffer-local variable `fj-previous-window-config' holds the config."
 ;; FIXME: use POST /markdown on the instance to render!
 (defun fj-render-body (body &optional json)
   "Render item BODY as markdowned html.
-JSON is the item's data to process the link with."
+JSON is the item's data to process the link with.
+Return a string."
   ;; NB: make sure this doesn't leak into our issue buffers!
   (let ((buf "*fj-md*")
         str
@@ -2216,97 +2217,90 @@ OWNER is the repo owner."
   "Render ITEM number NUMBER, in REPO and its TIMELINE.
 OWNER is the repo owner.
 RELOAD mean we reloaded."
-  (fedi-with-buffer (format "*fj-%s-item-%s*" repo number)
-      'fj-item-view-mode
-      (not reload)
-    (let ((header-line-indent " "))
-      (header-line-indent-mode 1) ; broken?
-      (let-alist item
-        (let* ((stamp (fedi--relative-time-description
-                       (date-to-time .created_at)))
-               (pull-p .base) ;; rough PR check!
-               (type (or type (if pull-p :pull :issue))))
-          ;; set vars before timeline so they're avail:
-          (setq fj-current-repo repo)
-          (setq fj-buffer-spec
-                `( :repo ,repo :owner ,owner
-                   :item ,number ;; used by lots of stuff
-                   :type ,type ;; used by with-pull
-                   :author ,.user.username ;; used by own-issue
-                   :title ,.title ;; for commenting
-                   :url ,.html_url ;; for browsing
-                   :viewfun fj-item-view
-                   ;; signature: repo owner number reload pull page limit:
-                   :viewargs ( :repo ,repo :owner ,owner :number ,number
-                               :reload ,reload ;; FIXME: remove reload arg
-                               :type ,type
-                               :page ,page :limit ,limit)))
-          ;; .is_locked
-          (setq header-line-format
-                `("" header-line-indent
-                  ,(concat "#" (number-to-string .number) " "
-                           (propertize .title
-                                       'face 'fj-item-face))))
+  (let ((header-line-indent " "))
+    (header-line-indent-mode 1) ; broken?
+    (let-alist item
+      (let* ((stamp (fedi--relative-time-description
+                     (date-to-time .created_at)))
+             (pull-p .base) ;; rough PR check!
+             (type (or type (if pull-p :pull :issue))))
+        ;; set vars before timeline so they're avail:
+        (setq fj-current-repo repo)
+        (setq fj-buffer-spec
+              `( :repo ,repo :owner ,owner
+                 :item ,number ;; used by lots of stuff
+                 :type ,type ;; used by with-pull
+                 :author ,.user.username ;; used by own-issue
+                 :title ,.title ;; for commenting
+                 :url ,.html_url ;; for browsing
+                 :viewfun fj-item-view
+                 ;; signature: repo owner number reload pull page limit:
+                 :viewargs ( :repo ,repo :owner ,owner :number ,number
+                             :reload ,reload ;; FIXME: remove reload arg
+                             :type ,type
+                             :page ,page :limit ,limit)))
+        ;; .is_locked
+        (setq header-line-format
+              `("" header-line-indent
+                ,(concat "#" (number-to-string .number) " "
+                         (propertize .title
+                                     'face 'fj-item-face))))
+        (insert
+         ;; header stuff
+         ;; (forge has: state, status, milestone, labels, marks, assignees):
+         (propertize
+          (concat
+           "State: " .state
+           (if (string= "closed" .state)
+               (concat " " (fedi--relative-time-description
+                            (date-to-time .closed_at)))
+             "")
+           (if .labels
+               (fj-render-labels .labels)
+             "")
+           ;; PR stuff:
+           (if pull-p
+               (format
+                (if (eq :json-false .merged)
+                    "\n%s wants to merge from %s into %s"
+                  "\n%s merged from %s into %s")
+                (propertize .user.username
+                            'face 'fj-name-face)
+                ;; FIXME: make links work! data doesn't have branch URLs
+                ;; and gitnex doesn't linkify them
+                ;; webUI uses $fork-repo/src/branch/$name:
+                (propertize
+                 (format "%s:%s".head.repo.full_name .head.label)
+                 'face 'fj-name-face)
+                (propertize .base.label 'face 'fj-name-face))
+             "")
+           "\n\n"
+           ;; item byline:
+           ;; FIXME: :extend t doesn't work here whatever i do
+           (fj-render-item-user (concat .user.username))
+           (propertize " "
+                       'face 'fj-item-byline-face)
+           (fj-author-or-owner-str .user.username nil owner)
+           ;; FIXME: this diffing will mark any issue as edited if it has
+           ;; merely been commented on.
+           ;; (fj-edited-str-maybe .created_at .updated_at)
+           (propertize (fj--issue-right-align-str stamp)
+                       'face 'fj-item-byline-face)
+           "\n\n"
+           (fj-render-body .body item)
+           "\n"
+           (fj-render-issue-reactions .number)
+           "\n"
+           fedi-horiz-bar fedi-horiz-bar "\n\n")
+          'fj-item-number number
+          'fj-repo repo
+          'fj-item-data item))
+        (when (eq :json-false .mergeable)
           (insert
-           ;; header stuff
-           ;; (forge has: state, status, milestone, labels, marks, assignees):
-           (propertize
-            (concat
-             "State: " .state
-             (if (string= "closed" .state)
-                 (concat " " (fedi--relative-time-description
-                              (date-to-time .closed_at)))
-               "")
-             (if .labels
-                 (fj-render-labels .labels)
-               "")
-             ;; PR stuff:
-             (if pull-p
-                 (format
-                  (if (eq :json-false .merged)
-                      "\n%s wants to merge from %s into %s"
-                    "\n%s merged from %s into %s")
-                  (propertize .user.username
-                              'face 'fj-name-face)
-                  ;; FIXME: make links work! data doesn't have branch URLs
-                  ;; and gitnex doesn't linkify them
-                  ;; webUI uses $fork-repo/src/branch/$name:
-                  (propertize
-                   (format "%s:%s".head.repo.full_name .head.label)
-                   'face 'fj-name-face)
-                  (propertize .base.label 'face 'fj-name-face))
-               "")
-             "\n\n"
-             ;; item byline:
-             ;; FIXME: :extend t doesn't work here whatever i do
-             (fj-render-item-user (concat .user.username))
-             (propertize " "
-                         'face 'fj-item-byline-face)
-             (fj-author-or-owner-str .user.username nil owner)
-             ;; FIXME: this diffing will mark any issue as edited if it has
-             ;; merely been commented on.
-             ;; (fj-edited-str-maybe .created_at .updated_at)
-             (propertize (fj--issue-right-align-str stamp)
-                         'face 'fj-item-byline-face)
-             "\n\n"
-             (fj-render-body .body item)
-             "\n"
-             (fj-render-issue-reactions .number)
-             "\n"
-             fedi-horiz-bar fedi-horiz-bar "\n\n")
-            'fj-item-number number
-            'fj-repo repo
-            'fj-item-data item))
-          (when (eq :json-false .mergeable)
-            (insert
-             "This PR has changes conflicting with the target branch."))
-          ;; timeline items:
-          ;; (fj-render-timeline timeline .user.username owner)
-          ;; async (not actually!):
-          (fj-item-view-more (or page "1"))
-          (when (and fj-use-emojify
-                     (require 'emojify nil :noerror))
-            (emojify-mode t)))))))
+           "This PR has changes conflicting with the target branch."))
+        (when (and fj-use-emojify
+                   (require 'emojify nil :noerror))
+          (emojify-mode t))))))
 
 (defun fj-item-view (&optional repo owner number reload type page limit)
   "View item NUMBER from REPO of OWNER.
@@ -2321,7 +2315,11 @@ PAGE and LIMIT are for `fj-issue-get-timeline'."
          (item (fj-get-item repo owner number type))
          (number (or number (alist-get 'number item))))
     ;; (timeline (fj-issue-get-timeline repo owner number page limit)))
-    (fj-render-item repo owner item number reload type page limit)))
+    (fedi-with-buffer (format "*fj-%s-item-%s*" repo number)
+        'fj-item-view-mode
+        (not reload)
+      (fj-render-item repo owner item number reload type page limit)
+      (fj-item-view-more page))))
 
 (defun fj-item-view-more (&optional init-page)
   "Append more timeline items to the current view, asynchronously.
