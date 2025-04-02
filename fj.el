@@ -2197,7 +2197,7 @@ OWNER is the repo owner."
                           'face 'fj-item-byline-face)
               (fj-prop-item-flag "edited")))))
 
-(defun fj-render-item (repo owner item number timeline
+(defun fj-render-item (repo owner item number
                             &optional reload type page limit)
   "Render ITEM number NUMBER, in REPO and its TIMELINE.
 OWNER is the repo owner.
@@ -2283,10 +2283,13 @@ RELOAD mean we reloaded."
             'fj-item-number number
             'fj-repo repo
             'fj-item-data item))
-          ;; timeline items:
-          (fj-render-timeline timeline .user.username owner)
           (when (eq :json-false .mergeable)
-            (insert "This PR has changes conflicting with the target branch."))
+            (insert
+             "This PR has changes conflicting with the target branch."))
+          ;; timeline items:
+          ;; (fj-render-timeline timeline .user.username owner)
+          ;; async (not actually!):
+          (fj-item-view-more (or page "1"))
           (when (and fj-use-emojify
                      (require 'emojify nil :noerror))
             (emojify-mode t)))))))
@@ -2302,23 +2305,25 @@ PAGE and LIMIT are for `fj-issue-get-timeline'."
          (limit (or limit "20"))
          (repo (fj-read-user-repo repo))
          (item (fj-get-item repo owner number type))
-         (number (or number (alist-get 'number item)))
-         (timeline (fj-issue-get-timeline repo owner number page limit)))
-    (fj-render-item repo owner item number timeline reload type page limit)))
+         (number (or number (alist-get 'number item))))
+    ;; (timeline (fj-issue-get-timeline repo owner number page limit)))
+    (fj-render-item repo owner item number reload type page limit)))
 
-(defun fj-item-view-more ()
-  "Append more timeline items to the current view, asynchronously."
+(defun fj-item-view-more (&optional init-page)
+  "Append more timeline items to the current view, asynchronously.
+INIT-PAGE is used in `fj-render-item' on first load of a view."
   (interactive)
   (cl-destructuring-bind (&key repo owner number _reload _type page limit)
       (fj--get-buffer-spec :viewargs)
     (fj-issue-get-timeline-async
-     repo owner number (fj-inc-or-2 page) limit
-     #'fj-item-view-more-cb (current-buffer) (point))))
+     repo owner number (or init-page (fj-inc-or-2 page)) limit
+     #'fj-item-view-more-cb (current-buffer) (point) init-page)))
 
-(defun fj-item-view-more-cb (json buf point)
+(defun fj-item-view-more-cb (json buf point init-page)
   "Callback function to append more tiemline items to current view.
 JSON is the parsed HTTP response, BUF is the buffer to add to, POINT is
-where it was prior to updating."
+where it was prior to updating.
+If INIT-PAGE, do not update :page in viewargs."
   (with-current-buffer buf
     (goto-char point)
     (if (not json)
@@ -2326,9 +2331,11 @@ where it was prior to updating."
       (fj-destructure-buf-spec (viewargs)
         ;; increment page in viewargs
         ;; FIXME: this means reload will reload with page = "2":
-        (let ((args (plist-put viewargs
-                               :page (fj-inc-or-2
-                                      (plist-get viewargs :page)))))
+        (let ((args (if init-page
+                        viewargs
+                      (plist-put viewargs
+                                 :page (fj-inc-or-2
+                                        (plist-get viewargs :page))))))
           (setq fj-buffer-spec
                 (plist-put fj-buffer-spec :viewargs args)))
         (save-excursion
