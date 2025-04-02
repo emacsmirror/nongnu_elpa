@@ -339,7 +339,7 @@ PARAMS and JSON are for `fedi-http--delete'."
 (defvar fj-default-limit nil)
 
 (defun fj-default-limit ()
-  ""
+  "Return the value of `fj-default-limit' or fetch from instance."
   (or fj-default-limit
       (let ((settings (fj-get-api-settings)))
         (setq fj-default-limit
@@ -352,8 +352,8 @@ PARAMS and JSON are for `fedi-http--delete'."
   "Return the max response items setting from the current instance."
   (or fj-max-items
       (let ((settings (fj-get-api-settings)))
-        (setq (number-to-string
-               fj-max-items (alist-get 'max_response_items settings))))))
+        (setq fj-max-items (number-to-string
+                            (alist-get 'max_response_items settings))))))
 
 (defun fj-get-swagger-json ()
   "Return the full swagger JSON from the current instance."
