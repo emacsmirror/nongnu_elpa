@@ -3950,6 +3950,7 @@ BUF-STR is the name of the buffer string to use."
       (fj-render-users data)
       (when repo (setq fj-current-repo repo))
       (setq fj-buffer-spec
+            ;; FIXME: url for browsing
             `( :repo ,repo :owner ,owner
                :viewargs ( :repo ,repo :owner ,owner
                            :page ,page :limit ,limit)
@@ -3999,6 +4000,7 @@ BUF-STR is the name of the `buffer-string' to use."
       (fj-render-users data)
       ;; (when repo (setq fj-current-repo repo))
       (setq fj-buffer-spec
+            ;; FIXME: url for browsing
             `( :viewargs (:user ,user :page ,page :limit ,limit)
                :viewfun ,viewfun)))))
 
@@ -4023,7 +4025,7 @@ PAGE and LIMIT are for pagination."
   "View users that USER or `fj-user' is following.
 PAGE and LIMIT are for pagination."
   (interactive)
-  (fj-account-users #'fj-get-user-following "followers"
+  (fj-account-users #'fj-get-user-following "following"
                     user #'fj-user-following page limit))
 
 ;;; render users
