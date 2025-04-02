@@ -617,6 +617,8 @@ Should work for anything with an fj-byline property."
   (fedi--goto-pos #'previous-single-property-change 'fj-byline))
 
 ;;; PAGINATION
+;; it seems like the LIMIT param only works when PAGE is set.
+;; not sure if we should therefore always set a default PAGE value ("1")?
 
 (defun fj--inc-str (str &optional dec)
   "Incrememt STR, and return a string.
@@ -1093,11 +1095,11 @@ QUERY, STATE, TYPE, CREATED, ASSIGNED, MENTIONED and PAGE are all for
       (tabulated-list-init-header)
       (tabulated-list-print)
       (setq fj-buffer-spec
-            `(:viewargs
-              ( :query ,query :state ,state :type ,type
-                :created ,created :assiged ,assigned :mentioned ,mentioned
-                :page ,page)
-              :viewfun fj-list-own-items))
+            `( :owner ,fj-user
+               :viewfun fj-list-own-items
+               :viewargs ( :query ,query :state ,state :type ,type
+                           :created ,created :assiged ,assigned :mentioned ,mentioned
+                           :page ,page)))
       (fj-other-window-maybe
        prev-buf (format "-%s*" type) #'string-suffix-p prev-mode))))
 
@@ -1300,12 +1302,14 @@ OWNER is the repo owner."
                            owner repo issue)))
     (fj-get endpoint)))
 
-(defun fj-issue-get-timeline (repo owner issue &optional page limit) ;; since before
+(defun fj-issue-get-timeline (repo owner issue &optional page limit)
+                                        ; since before
   "Return comments timeline for ISSUE in REPO.
 OWNER is the repo owner.
-Comments timeline contains comments of any type."
+Timeline contains comments and events of any type."
   (let* ((endpoint (format "repos/%s/%s/issues/%s/timeline"
                            owner repo issue))
+         ;; NB: limit only works if page specified:
          (params `(,@(when page `(("page" . ,page)))
                    ,@(when limit `(("limit" . ,limit))))))
     (fj-get endpoint params)))
@@ -2202,7 +2206,7 @@ RELOAD mean we reloaded."
                    :title ,.title ;; for commenting
                    :url ,.html_url ;; for browsing
                    :viewfun fj-item-view
-                   ;; repo owner number reload pull page limit
+                   ;; signature: repo owner number reload pull page limit:
                    :viewargs ( :repo ,repo :owner ,owner :number ,number
                                :reload ,reload ;; FIXME: remove reload arg
                                :type ,type
@@ -2273,9 +2277,14 @@ RELOAD mean we reloaded."
 
 (defun fj-item-view (&optional repo owner number reload type page limit)
   "View item NUMBER from REPO of OWNER.
-RELOAD means we are reloading, so don't open in other window."
+RELOAD means we are reloading, so don't open in other window.
+TYPE is :pull or :list (default).
+PAGE and LIMIT are for `fj-issue-get-timeline'."
   (interactive "P")
-  (let* ((repo (fj-read-user-repo repo))
+  (let* ( ;; set defaults for pagination:
+         (page (or page "1"))
+         (limit (or limit "20"))
+         (repo (fj-read-user-repo repo))
          (item (fj-get-item repo owner number type))
          (number (or number (alist-get 'number item)))
          (timeline (fj-issue-get-timeline repo owner number page limit)))
