@@ -2055,6 +2055,12 @@ Buffer-local variable `fj-previous-window-config' holds the config."
   (set-window-configuration (car config))
   (goto-char (cadr config)))
 
+(defun fj-render-markdown (text)
+  "Return server-rendered markdown TEXT."
+  (let* ((resp (fj-post "markdown" `(("text" . ,text)))))
+    (fedi-http--triage
+     resp (lambda (resp) (fj-resp-str resp)))))
+
 ;; I think magit/forge just uses markdown-mode rather than rendering
 ;; FIXME: use POST /markdown on the instance to render!
 (defun fj-render-body (body &optional json)
@@ -2073,26 +2079,20 @@ Return a string."
     (with-temp-buffer
       (insert body)
       (goto-char (point-min))
-      (fj-mdize-plain-urls)
+      (fj-mdize-plain-urls) ;; FIXME: mdize a string to save a buffer
       (goto-char (point-min))
-      ;; 2: md-ize or fallback
-      (let ((old-buf (buffer-string)))
-        (condition-case nil
-            (markdown-standalone buf)
-          (t ; if rendering fails, return unrendered body:
-           (with-current-buffer (get-buffer-create buf)
-             (erase-buffer)
-             (insert old-buf)))))
-      ;; 3: shr-render the md
-      (with-current-buffer buf
-        (let ((shr-width (window-width))
-              (shr-discard-aria-hidden t)) ; for pandoc md image output
-          ;; shr render:
-          (shr-render-buffer (current-buffer))))
+      ;; 2: md-ize
+      (let ((html (fj-render-markdown (buffer-string))))
+        (with-current-buffer (get-buffer-create buf)
+          (insert html)
+          ;; 3: shr-render the md
+          (let ((shr-width (window-width))
+                (shr-discard-aria-hidden t)) ; for pandoc md image output
+            ;; shr render (render region not a contender here):
+            (shr-render-buffer (current-buffer)))))
       ;; 4 collect result
       (with-current-buffer "*html*"
-	(goto-char (point-min))
-        (re-search-forward "\n\n" nil :no-error)
+        (goto-char (point-min))
         (setq str (buffer-substring (point) (point-max)))
         (kill-buffer-and-window)        ; shr's *html*
         (kill-buffer buf)))             ; our md
