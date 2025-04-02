@@ -336,10 +336,24 @@ PARAMS and JSON are for `fedi-http--delete'."
   (let ((endpoint "/settings/api"))
     (fj-get endpoint)))
 
-(defun fj-get-max-response-items ()
+(defvar fj-default-limit nil)
+
+(defun fj-default-limit ()
+  ""
+  (or fj-default-limit
+      (let ((settings (fj-get-api-settings)))
+        (setq fj-default-limit
+              (number-to-string
+               (alist-get 'default_paging_num settings))))))
+
+(defvar fj-max-items nil)
+
+(defun fj-max-items ()
   "Return the max response items setting from the current instance."
-  (let ((settings (fj-get-api-settings)))
-    (alist-get 'max_response_items settings)))
+  (or fj-max-items
+      (let ((settings (fj-get-api-settings)))
+        (setq (number-to-string
+               fj-max-items (alist-get 'max_response_items settings))))))
 
 (defun fj-get-swagger-json ()
   "Return the full swagger JSON from the current instance."
@@ -790,7 +804,7 @@ X and Y are sorting args."
 (defun fj-get-user-repos (user &optional page limit order)
   "GET request repos for USER.
 PAGE, LIMIT, ORDER."
-  (let ((params `(("limit" . ,(or limit "100"))
+  (let ((params `(("limit" . ,(or limit (fj-default-limit)))
                   ,@(when page `(("page" . ,page)))
                   ,@(when order `(("order" . ,order)))))
         (endpoint (format "users/%s/repos" user)))
@@ -927,7 +941,7 @@ Also set `fj-current-repo' to the name."
   "Return the user's repos.
 Return LIMIT repos, LIMIT is a string."
   (let ((endpoint "user/repos"))
-    (fj-get endpoint `(("limit" . ,(or limit "100"))))))
+    (fj-get endpoint `(("limit" . ,(or limit (fj-default-limit)))))))
 
 (defun fj-get-repo-candidates (repos)
   "Return REPOS as completion candidates."
@@ -1011,7 +1025,7 @@ QUERY is a search term to filter by."
   ;; FIXME: how to get issues by number, or get all issues?
   (let* ((endpoint (format "repos/%s/%s/issues" (or owner fj-user) repo))
          ;; NB: get issues has no sort param!
-         (params `(("limit" . ,(or limit "50")) ;; server max
+         (params `(("limit" . ,(or limit (fj-default-limit)))
                    ,@(when state `(("state" . ,state)))
                    ,@(when type `(("type" . ,type)))
                    ,@(when query `(("q" . ,query)))
@@ -1040,7 +1054,7 @@ PAGE is a number for pagination."
   ;; NB: this endpoint can be painfully slow
   ;; NB: this endpoint has no sort!
   (let* ((endpoint "repos/issues/search")
-         (params `(("limit" . "50") ;; max
+         (params `(("limit" . (fj-default-limit))
                    ,@(when query      `(("q" . ,query)))
                    ,@(when owner      `(("owner" . ,owner)))
                    ,@(when state      `(("state" . ,state)))
@@ -2302,7 +2316,7 @@ PAGE and LIMIT are for `fj-issue-get-timeline'."
   (interactive "P")
   (let* ( ;; set defaults for pagination:
          (page (or page "1"))
-         (limit (or limit "20"))
+         (limit (or limit (fj-default-limit)))
          (repo (fj-read-user-repo repo))
          (item (fj-get-item repo owner number type))
          (number (or number (alist-get 'number item))))
@@ -2834,7 +2848,7 @@ INCLUDE-DESC SORT ORDER PAGE LIMIT."
   ;; priority_owner_id, team_id, starredby
   ;; private, is_private, template, archived
   (let* ((params `(("q" . ,query)
-                   ("limit" . "100")
+                   ("limit" . (fj-default-limit))
                    ("includeDesc" . ,(or include-desc "true"))
                    ("sort" . ,(or sort "updated"))
                    ,@(when order `(("order" . ,order)))
@@ -3507,7 +3521,7 @@ Optionally set LIMIT to results."
   (let* ((resp (fj-search-users
                 (buffer-substring-no-properties (1+ start) ; cull '@'
                                                 end)
-                "50")) ; limit
+                (fj-max-items)))
          (data (alist-get 'data resp)))
     (fj-users-list data)))
 
