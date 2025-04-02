@@ -2211,7 +2211,7 @@ RELOAD mean we reloaded."
         (let* ((stamp (fedi--relative-time-description
                        (date-to-time .created_at)))
                (pull-p .base) ;; rough PR check!
-               (type (if pull-p :pull :issue)))
+               (type (or type (if pull-p :pull :issue))))
           ;; set vars before timeline so they're avail:
           (setq fj-current-repo repo)
           (setq fj-buffer-spec
@@ -2354,7 +2354,7 @@ where it was prior to updating."
   (fj-with-item-view
    (fj-destructure-buf-spec (item owner repo)
      (fj-issue-close repo owner item state)
-     (fj-item-view-reload))))
+     (fj-view-reload))))
 
 (defun fj-item-view-reopen ()
   "Reopen item being viewed."
@@ -2386,7 +2386,7 @@ where it was prior to updating."
   (fj-with-own-issue-or-repo
    (fj-destructure-buf-spec (repo owner item)
      (fj-issue-edit-title repo owner item)
-     (fj-item-view-reload))))
+     (fj-view-reload))))
 
 (defun fj-item-view-comment ()
   "Comment on the item currently being viewed."
@@ -2422,7 +2422,7 @@ where it was prior to updating."
             (endpoint (format "repos/%s/%s/issues/comments/%s" owner repo id)))
        (when (yes-or-no-p "Delete comment?")
          (fj-delete endpoint)
-         (fj-item-view-reload))))))
+         (fj-view-reload))))))
 
 ;;; PR VIEWS
 
@@ -3259,7 +3259,7 @@ Optionally set PAGE and LIMIT."
              (owner (fj--get-buffer-spec :owner))
              (repo (fj--repo-col-or-buf-spec)))
         (fj-issue-close repo owner number)
-        (fj-issues-tl-reload))))))
+        (fj-view-reload))))))
 
 (defun fj-issues-tl-delete (&optional _)
   "Delete current issue from tabulated issues listing."
@@ -3272,7 +3272,7 @@ Optionally set PAGE and LIMIT."
            (repo (fj--repo-col-or-buf-spec)))
       (when (y-or-n-p (format "Delete issue %s?" number))
         (fj-issue-delete repo owner number :no-confirm)
-        (fj-issues-tl-reload))))))
+        (fj-view-reload))))))
 
 (defun fj-issues-tl-reopen (&optional _)
   "Reopen current issue from tabulated issues listing."
@@ -3285,7 +3285,7 @@ Optionally set PAGE and LIMIT."
             (owner (fj--get-buffer-spec :owner))
             (repo (fj--repo-col-or-buf-spec)))
        (fj-issue-close repo owner number "open")
-       (fj-issues-tl-reload)))))
+       (fj-view-reload)))))
 
 (defun fj-issues-tl-edit-title ()
   "Edit issue title from issues tabulated list view."
@@ -3296,7 +3296,7 @@ Optionally set PAGE and LIMIT."
           (owner (fj--get-buffer-spec :owner))
           (number (car (seq-first entry))))
      (fj-issue-edit-title repo owner number)
-     (fj-issues-tl-reload))))
+     (fj-view-reload))))
 
 (defun fj-issues-tl-label-add ()
   "Add label to issue from tabulated issues listing."
@@ -3466,7 +3466,7 @@ Call response and update functions."
               ;; FIXME: we may have been in issues TL or issue view.
               ;; we we need prev-buffer arg?
               ;; else generic reload function
-              (fj-item-view-reload)
+              (fj-view-reload)
             (fj-list-issues-do repo)))))))
 
 (defun fj-search-users (query &optional limit)
@@ -3572,7 +3572,10 @@ Optionally set LIMIT to results."
                                        page limit)
                                         ; before since
   "GET notifications for `fj-user'.
-ALL is a boolean, meaning also return read notifications."
+ALL is a boolean, meaning also return read notifications.
+STATUS-TYPES must be a member of `fj-notifications-status-types'.
+SUBJECT-TYPE must be a member of `fj-notifications-subject-types'.
+PAGE and LIMIT are for pagination."
   ;; NB: STATUS-TYPES and SUBJECT-TYPE are array strings."
   (let ((params `(,@(when all '(("all" . "true")))
                   ,@(when status-types
@@ -3592,8 +3595,11 @@ ALL is a boolean, meaning also return read notifications."
 (defun fj-view-notifications (&optional all status-types subject-type
                                         page limit)
   "View notifications for `fj-user'.
-STATE is either \"all\" or \"unread\", meaning which set of notifs to
-display."
+ALL is either \"all\" or \"unread\", meaning which set of notifs to
+display.
+STATUS-TYPES must be a member of `fj-notifications-status-types'.
+SUBJECT-TYPE must be a member of `fj-notifications-subject-types'.
+PAGE and LIMIT are for pagination."
   (interactive)
   (let* ((all-type (if all "all" "unread"))
          (buf (format "*fj-notifications-%s%s*"
@@ -3619,7 +3625,10 @@ display."
 
 (defun fj-view-notifications-all (&optional status-types subject-type
                                             page limit)
-  "View all notifications for `fj-user'."
+  "View all notifications for `fj-user'.
+STATUS-TYPES must be a member of `fj-notifications-status-types'.
+SUBJECT-TYPE must be a member of `fj-notifications-subject-types'.
+PAGE and LIMIT are for pagination."
   (interactive)
   (fj-view-notifications "true" status-types subject-type
                          page limit))
@@ -3715,7 +3724,7 @@ If RELOAD, also reload the notications view."
        ;; FIXME: needs to be optional, as `fj-mark-notification-read'
        ;; is also called when we load an item from notifs view:
        (when reload
-         (fj-notifications-reload))))))
+         (fj-view-reload))))))
 
 (defun fj-mark-notification-read (&optional id)
   "Mark notification at point as read.
@@ -3945,27 +3954,31 @@ BUF-STR is the name of the buffer string to use."
                :viewfun ,viewfun)))))
 
 (defun fj-get-repo-stargazers (repo owner &optional page limit)
-  "Get stargazers of REPO by OWNER."
+  "Get stargazers of REPO by OWNER.
+PAGE and LIMIT are for pagination."
   (let ((endpoint (format "/repos/%s/%s/stargazers" owner repo))
         (params `(,@(when page `(("page" . ,page)))
                   ,@(when limit `(("limit" . ,limit))))))
     (fj-get endpoint params)))
 
 (defun fj-repo-stargazers (&optional repo owner page limit)
-  "Render stargazers for REPO by OWNER."
+  "Render stargazers for REPO by OWNER.
+PAGE and LIMIT are for pagination."
   (interactive)
   (fj-repo-users #'fj-get-stargazers "stargazers"
                  repo owner #'fj-repo-stargazers page limit))
 
 (defun fj-get-watchers (repo owner &optional page limit)
-  "Get watchers of REPO by OWNER."
+  "Get watchers of REPO by OWNER.
+PAGE and LIMIT are for pagination."
   (let ((endpoint (format "/repos/%s/%s/subscribers" owner repo))
         (params `(,@(when page `(("page" . ,page)))
                   ,@(when limit `(("limit" . ,limit))))))
     (fj-get endpoint params)))
 
 (defun fj-repo-watchers (&optional repo owner page limit)
-  "Render watchers for REPO by OWNER."
+  "Render watchers for REPO by OWNER.
+PAGE and LIMIT are for pagination."
   (interactive)
   (fj-repo-users #'fj-get-watchers "watchers"
                  repo owner #'fj-repo-watchers page limit))
@@ -3980,7 +3993,7 @@ BUF-STR is the name of the `buffer-string' to use."
   (let* ((user (or user fj-user))
          (buf (format "*fj-%s" buf-str))
          (data (funcall fetch-fun)))
-    (fedi-with-buffer buf-str 'fj-users-mode nil
+    (fedi-with-buffer buf 'fj-users-mode nil
       (fj-render-users data)
       ;; (when repo (setq fj-current-repo repo))
       (setq fj-buffer-spec
@@ -3993,7 +4006,8 @@ BUF-STR is the name of the `buffer-string' to use."
     (fj-get endpoint)))
 
 (defun fj-user-followers (&optional user page limit)
-  "View users who follow you."
+  "View users who follow USER or `fj-user'.
+PAGE and LIMIT are for pagination."
   (interactive)
   (fj-account-users #'fj-get-user-followers "followers"
                     user #'fj-user-followers page limit))
@@ -4004,7 +4018,8 @@ BUF-STR is the name of the `buffer-string' to use."
     (fj-get endpoint)))
 
 (defun fj-user-following (&optional user page limit)
-  "View users you are following."
+  "View users that USER or `fj-user' is following.
+PAGE and LIMIT are for pagination."
   (interactive)
   (fj-account-users #'fj-get-user-following "followers"
                     user #'fj-user-following page limit))
