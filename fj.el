@@ -1314,6 +1314,22 @@ Timeline contains comments and events of any type."
                    ,@(when limit `(("limit" . ,limit))))))
     (fj-get endpoint params)))
 
+(defun fj-issue-get-timeline-async (repo owner issue
+                                         &optional page limit cb
+                                         &rest cbargs)
+                                        ; since before
+  "Return comments timeline for ISSUE in REPO asynchronously.
+OWNER is the repo owner.
+Timeline contains comments and events of any type.
+PAGE and LIMIT are for pagination."
+  (let* ((endpoint (format "repos/%s/%s/issues/%s/timeline"
+                           owner repo issue))
+         (url (fj-api endpoint))
+         ;; NB: limit only works if page specified:
+         (params `(,@(when page `(("page" . ,page)))
+                   ,@(when limit `(("limit" . ,limit))))))
+    (apply #'fedi-http--get-json-async url params cb cbargs)))
+
 (defun fj-get-comment (repo owner issue &optional comment)
   "GET data for COMMENT of ISSUE in REPO.
 COMMENT is a number.
@@ -2289,6 +2305,36 @@ PAGE and LIMIT are for `fj-issue-get-timeline'."
          (number (or number (alist-get 'number item)))
          (timeline (fj-issue-get-timeline repo owner number page limit)))
     (fj-render-item repo owner item number timeline reload type page limit)))
+
+(defun fj-item-view-more ()
+  "Append more timeline items to the current view, asynchronously."
+  (interactive)
+  (cl-destructuring-bind (&key repo owner number _reload _type page limit)
+      (fj--get-buffer-spec :viewargs)
+    (fj-issue-get-timeline-async
+     repo owner number (fj-inc-or-2 page) limit
+     #'fj-item-view-more-cb (current-buffer) (point))))
+
+(defun fj-item-view-more-cb (json buf point)
+  "Callback function to append more tiemline items to current view.
+JSON is the parsed HTTP response, BUF is the buffer to add to, POINT is
+where it was prior to updating."
+  (with-current-buffer buf
+    (goto-char point)
+    (if (not json)
+        (user-error "No more items")
+      (fj-destructure-buf-spec (viewargs)
+        ;; increment page in viewargs
+        ;; FIXME: this means reload will reload with page = "2":
+        (let ((args (plist-put viewargs
+                               :page (fj-inc-or-2
+                                      (plist-get viewargs :page)))))
+          (setq fj-buffer-spec
+                (plist-put fj-buffer-spec :viewargs args)))
+        (save-excursion
+          (let ((inhibit-read-only t))
+            ;; FIXME: we need .user.username owner args for new elements:
+            (fj-render-timeline json)))))))
 
 ;; (defun fj-item-view-comment ()
 ;;   "Comment on the issue currently being viewed."
