@@ -2317,9 +2317,9 @@ Return note ids for notes that match QUERY."
   "Update to databse version v4."
   (let ((tags (gnosis-get-tags--unique)))
     (pcase-dolist (`(,table ,schema) (seq-filter (lambda (schema)
-						   (member (car schema) '(tags links)))
+						   (member (car schema) '(links tags)))
 						 gnosis-db--schemata))
-      (emacsql gnosis-db [:create-table $i1 $S2] table schema))
+      (emacsql gnosis-db [:create-table :if-not-exists $i1 $S2] table schema))
     (cl-loop for tag in tags
 	     do (gnosis--insert-into 'tags `[,tag]))
     (emacsql gnosis-db [:alter-table notes :rename-column main :to keimenon])
