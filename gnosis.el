@@ -92,10 +92,6 @@ between two strings to consider them as similar."
   "Function to use for `completing-read'."
   :type 'function)
 
-(defcustom gnosis-apply-highlighting-p t
-  "Non-nil means apply syntax highlighting."
-  :type 'boolean)
-
 (defcustom gnosis-new-notes-limit nil
   "Total new notes limit."
   :type '(choice (const :tag "None" nil)
@@ -392,37 +388,19 @@ This will not be applied to sentences that start with double space."
 
 (defun gnosis-apply-syntax-overlay ()
   "Apply custom font overlays for syntax highlighting."
-  (let ((syntax-highlights
-         '(("\\*\\([^*[:space:]][^*\n]*[^*[:space:]]\\)\\*" . bold)
-           ("/\\([^/[:space:]][^/\n]*[^/[:space:]]\\)/" . italic)
-           ("=\\([^=[:space:]][^=\n]*[^=[:space:]]\\)=" . font-lock-constant-face)
-           ("~\\([^~[:space:]][^~\n]*[^~[:space:]]\\)~" . font-lock-keyword-face)
-           ("_\\([^_[:space:]][^_\n]*[^_[:space:]]\\)_" . underline))))
-    (when gnosis-apply-highlighting-p
-      (with-silent-modifications
-	(save-excursion
-          (cl-loop for (regex . face) in syntax-highlights
-                   do
-		   (goto-char (point-min))
-		   (while (re-search-forward regex nil t)
-		     (when (null (get-text-property (match-beginning 1) 'face))
-                       (if (eq face 'link)
-			   (let* ((link (match-string 1))
-                                  (desc (or (match-string 2) link))
-                                  (start (match-beginning 0))
-                                  (end (match-end 0)))
-			     (delete-region start end)
-			     (insert desc)
-			     (let ((ol (make-overlay start (+ start (length desc)))))
-                               (overlay-put ol 'face 'link)
-                               (overlay-put ol 'gnosis-link link)
-                               (overlay-put ol 'mouse-face 'highlight)
-                               (overlay-put ol 'help-echo link)))
-                         (let ((start (match-beginning 1))
-                               (end (match-end 1)))
-			   (overlay-put (make-overlay start end) 'face face)
-			   (delete-region end (match-end 0))
-			   (delete-region (match-beginning 0) start)))))))))))
+  (with-silent-modifications
+    (save-excursion
+      (dolist (highlight (gnosis-generate-syntax-highlights))
+        (let ((regex (car highlight))
+              (face (cdr highlight)))
+          (goto-char (point-min))
+          (while (re-search-forward regex nil t)
+            (when (null (get-text-property (match-beginning 1) 'face))
+              (let ((start (match-beginning 1))
+                    (end (match-end 1)))
+                (overlay-put (make-overlay start end) 'face face)
+                (delete-region end (match-end 0))
+                (delete-region (match-beginning 0) start)))))))))
 
 (defun gnosis-display-keimenon (str)
   "Display STR as keimenon."
