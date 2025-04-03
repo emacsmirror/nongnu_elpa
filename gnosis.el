@@ -188,6 +188,35 @@ Avoid using an increased height value as this messes up with
 (defvar gnosis-review-notes nil
   "Review notes.")
 
+(defvar gnosis-syntax-delimiters
+  '(("*" . bold)
+    ("/" . italic)
+    ("=" . (bold font-lock-constant-face))
+    ("~" . font-lock-keyword-face)
+    ("_" . underline))
+  "Alist of delimiter characters and their corresponding face properties.")
+
+(defun gnosis-generate-syntax-highlights ()
+  "Generate syntax highlighting patterns from delimiter configurations.
+
+Returns an alist where each entry consists of a regex pattern and its
+corresponding face.  The regex patterns are dynamically generated from
+`gnosis-syntax-delimiters'.  Each pattern matches text surrounded by
+specified delimiters for applying styling like bold, italic, etc.
+
+Refer to `gnosis-apply-syntax-overlay' to for how it is used."
+  (mapcar (lambda (pair)
+            (let ((delim (car pair))
+                  (face (cdr pair)))
+              (cons (format "%s\\([^%s[:space:]][^%s\n]*[^%s[:space:]]\\)%s"
+                            (regexp-quote delim)
+                            (regexp-quote delim)
+                            (regexp-quote delim)
+                            (regexp-quote delim)
+                            (regexp-quote delim))
+                    face)))
+          gnosis-syntax-delimiters))
+
 (defvar gnosis-export-separator "\n- ")
 
 ;; TODO: Make this as a defcustom.
