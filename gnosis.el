@@ -467,8 +467,17 @@ This will not be applied to sentences that start with double space."
     (insert str)
     (goto-char (point-min))
     (dolist (answer answers)
-      (when (search-forward answer nil t)
-	(replace-match (propertize answer 'face face) nil t)))
+      (let ((answer-text (gnosis-trim-quotes answer)))
+        (while (search-forward answer-text nil t)
+          (replace-match 
+           (mapconcat 
+            (lambda (char)
+              (if (not (memq char '(?\s ?\t ?\n)))
+                  (propertize (char-to-string char) 'face face)
+                (char-to-string char)))
+            answer-text
+            "")
+           nil t))))
     (buffer-string)))
 
 (defun gnosis-cloze-mark-false (str answers)
