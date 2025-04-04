@@ -214,10 +214,13 @@ Optionally start from POS."
 (defun fedi-next-tab-item (&optional previous prop)
   "Move to the next interesting item.
 This could be the next toot, link, or image; whichever comes first.
-Don't move if nothing else to move to is found, i.e. near the end of the buffer.
+Don't move if nothing else to move to is found, i.e. near the end of the
+buffer.
 This also skips tab items in invisible text, i.e. hidden spoiler text.
 PREVIOUS means move to previous item.
-PROP is the text property to search for."
+PROP is the text property to search for.
+Returns nil if nothing found, returns the value of point moved to if
+something found."
   (interactive)
   (let (next-range
         (search-pos (point)))
@@ -233,9 +236,10 @@ PROP is the text property to search for."
     (if (null next-range)
         (prog1 nil ;; return nil if nothing (so we can use in or clause)
           (message "Nothing else here."))
-      (goto-char (car next-range))
-      (if-let* ((hecho (fedi--property 'help-echo)))
-          (message "%s" hecho)))))
+      (prog1 ;; return point not nil if we moved:
+          (goto-char (car next-range))
+        (if-let* ((hecho (fedi--property 'help-echo)))
+            (message "%s" hecho))))))
 
 (defun fedi-previous-tab-item ()
   "Move to the previous interesting item.
