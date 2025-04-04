@@ -148,7 +148,7 @@ SILENT means don't message.
 VECTOR means return json arrays as vectors."
   (car (fedi-http--get-response url params :no-headers silent vector)))
 
-(defun fedi-http--post (url &optional params headers json)
+(defun fedi-http--post (url &optional params headers json silent)
   "POST synchronously to URL, optionally with PARAMS and HEADERS.
 JSON means we are posting a JSON payload, so we add headers and
 json-string PARAMS."
@@ -170,7 +170,7 @@ json-string PARAMS."
           (append url-request-extra-headers ; set in macro
                   headers)))
     (with-temp-buffer
-      (fedi-http--url-retrieve-synchronously url))))
+      (fedi-http--url-retrieve-synchronously url silent))))
 
 (defun fedi-http--delete (url &optional params)
   "Make DELETE request to URL.
