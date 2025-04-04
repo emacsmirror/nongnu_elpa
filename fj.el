@@ -2338,23 +2338,25 @@ JSON is the parsed HTTP response, BUF is the buffer to add to, POINT is
 where it was prior to updating.
 If INIT-PAGE, do not update :page in viewargs."
   (with-current-buffer buf
-    (goto-char point)
-    (if (not json)
-        (user-error "No more items")
-      (fj-destructure-buf-spec (viewargs)
-        ;; increment page in viewargs
-        ;; FIXME: this means reload will reload with page = "2":
-        (let ((args (if init-page
-                        viewargs
-                      (plist-put viewargs
-                                 :page (fj-inc-or-2
-                                        (plist-get viewargs :page))))))
-          (setq fj-buffer-spec
-                (plist-put fj-buffer-spec :viewargs args)))
-        (save-excursion
+    (save-excursion
+      (goto-char point)
+      (if (not json)
+          (user-error "No more items")
+        (fj-destructure-buf-spec (viewargs)
+          ;; increment page in viewargs
+          ;; FIXME: this means reload will reload with page = "2":
+          (let ((args (if init-page
+                          viewargs
+                        (plist-put viewargs
+                                   :page (fj-inc-or-2
+                                          (plist-get viewargs :page))))))
+            (setq fj-buffer-spec
+                  (plist-put fj-buffer-spec :viewargs args)))
+          (message "Loading comments...")
           (let ((inhibit-read-only t))
             ;; FIXME: we need .user.username owner args for new elements:
-            (fj-render-timeline json)))))))
+            (fj-render-timeline json))
+          (message "Loading comments... Done"))))))
 
 ;; (defun fj-item-view-comment ()
 ;;   "Comment on the issue currently being viewed."
