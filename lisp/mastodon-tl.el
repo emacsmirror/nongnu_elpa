@@ -2281,7 +2281,10 @@ call this function after it is set or use something else."
           ((mastodon-tl--endpoint-str-= "timelines/link")
            'link-timeline)
           ((mastodon-tl--endpoint-str-= "announcements")
-           'announcements))))
+           'announcements)
+          ;; followed hashtags
+          ((mastodon-tl--endpoint-str-= "followed_tags")
+           'followed-hashtags))))
 
 (defun mastodon-tl--buffer-type-eq (type)
   "Return t if current buffer type is equal to symbol TYPE."
@@ -2989,8 +2992,8 @@ If TAG is provided, unfollow it."
                            (lambda (_)
                              (message "tag #%s unfollowed!" tag)))))
 
-(defun mastodon-tl-list-followed-tags (&optional prefix)
-  "List followed tags. View timeline of tag user choses.
+(defun mastodon-tl-jump-to-followed-tag (&optional prefix)
+  "Prompt for a followed tag and view its timeline.
 PREFIX is sent to `mastodon-tl-get-tag-timeline', which see."
   (interactive "p")
   (let* ((followed-tags-json (mastodon-tl--followed-tags))
@@ -2999,6 +3002,25 @@ PREFIX is sent to `mastodon-tl-get-tag-timeline', which see."
     (if (null tag)
         (user-error "You have to follow some tags first")
       (mastodon-tl-get-tag-timeline prefix tag))))
+
+(defun mastodon-tl-list-followed-tags ()
+  "List followed tags. View timeline of tag user choses.
+PREFIX is sent to `mastodon-tl-get-tag-timeline', which see."
+  (interactive)
+  (let* ((json (mastodon-tl--followed-tags))
+         (sorted (sort json :key (lambda (x)
+                                   (downcase (alist-get 'name x)))))
+         (buf "*mastodon-followed-tags*"))
+    (if (null sorted)
+        (user-error "You have to follow some tags first")
+      (with-mastodon-buffer (get-buffer-create buf)
+          #'mastodon-mode nil
+        (mastodon-tl--set-buffer-spec
+         buf "followed_tags" #'mastodon-tl-list-followed-tags)
+        (mastodon-search--insert-heading "followed tags")
+        (insert "\n")
+        (mastodon-search--print-tags sorted)
+        (goto-char (point-min))))))
 
 (defun mastodon-tl-followed-tags-timeline (&optional prefix)
   "Open a timeline of multiple tags.
