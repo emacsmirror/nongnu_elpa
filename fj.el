@@ -1408,7 +1408,7 @@ NEW-BODY is the new comment text to send."
    (fj-destructure-buf-spec (owner repo)
      (let ((endpoint (format "repos/%s/%s/issues/comments/%s/reactions"
                              owner repo id)))
-       (fj-get endpoint)))))
+       (fj-get endpoint nil nil :silent)))))
 
 (defun fj-render-issue-reactions (id)
   "Render reactions for issue with ID.
@@ -2057,7 +2057,8 @@ Buffer-local variable `fj-previous-window-config' holds the config."
 
 (defun fj-render-markdown (text)
   "Return server-rendered markdown TEXT."
-  (let* ((resp (fj-post "markdown" `(("text" . ,text)))))
+  ;; NB: sync request:
+  (let* ((resp (fj-post "markdown" `(("text" . ,text)) nil :silent)))
     (fedi-http--triage
      resp (lambda (resp) (fj-resp-str resp)))))
 
