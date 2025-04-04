@@ -3817,15 +3817,23 @@ Used for hitting RET on a given link."
         ((or  'commit 'commit-ref)
          (fj-view-commit-diff item))
         ('notif
-         (let ((repo (fj--property 'fj-repo))
-               (owner (fj--property 'fj-owner)))
-           (fj-item-view repo owner item)
-           (fj-mark-notification-read item)))
+         (fj-notif-link-follow item))
         ('shr
          (let ((url (fj--property 'shr-url)))
            (shr-browse-url url)))
         (_
          (error "Unknown link type %s" type))))))
+
+(defun fj-notif-link-follow (item)
+  "Follow a notification link.
+ITEM is the destination item's id.
+After loading, also mark the notification as read."
+  ;; NB: we don't use buffer spec repo/owner for notifs links:
+  (let ((repo (fj--property 'fj-repo))
+        (owner (fj--property 'fj-owner))
+        (id (fj--property 'fj-notification)))
+    (fj-item-view repo owner item)
+    (fj-mark-notification-read id)))
 
 (defun fj-do-link-action-mouse (event)
   "Do the action of the link at point.
