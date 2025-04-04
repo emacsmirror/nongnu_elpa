@@ -3635,15 +3635,15 @@ PAGE and LIMIT are for pagination."
       (if (not data)
           (insert
            (format "No notifications of type: %s %s" all-type subject-type))
-        (fj-render-notifications data))
+        (save-excursion (fj-render-notifications data)))
       (setq fj-buffer-spec `( :viewfun fj-view-notifications
                               :viewargs
                               ( :all ,all :status-types ,status-types
                                 :subject-type ,subject-type
-                                :page ,page :limit ,limit)))
-      ;; FIXME: make this an option in `fedi-with-buffer'?
-      ;; else it just goes to point-min:
-      (fj-item-next))))
+                                :page ,page :limit ,limit))))
+    ;; FIXME: make this an option in `fedi-with-buffer'?
+    ;; else it just goes to point-min:
+    (fj-next-tab-item)))
 
 (defun fj-view-notifications-all (&optional status-types subject-type
                                             page limit)
