@@ -255,15 +255,15 @@ Requires `fj-token' to be set."
                                  (fj-token) 'utf-8)))))))
      ,body))
 
-(defun fj-get (endpoint &optional params no-json)
+(defun fj-get (endpoint &optional params no-json silent)
   "Make a GET request to ENDPOINT.
 PARAMS is any parameters to send with the request.
 NO-JSON means return the raw response."
   (let* ((url (fj-api endpoint))
          (resp (fj-authorized-request "GET"
                  (if no-json
-                     (fedi-http--get url params)
-                   (fedi-http--get-json url params)))))
+                     (fedi-http--get url params silent)
+                   (fedi-http--get-json url params silent)))))
     (if no-json
         ;; return response buffer, not resulting string. the idea is to then
         ;; call --triage on the result, in case we don't get a 200 response.
@@ -295,13 +295,13 @@ NO-JSON means return the raw response."
               'utf-8)))
         (json-read-from-string str)))))
 
-(defun fj-post (endpoint &optional params json)
+(defun fj-post (endpoint &optional params json silent)
   "Make a POST request to ENDPOINT.
 PARAMS.
 If JSON, encode request data as JSON. else encode like query params."
   (let ((url (fj-api endpoint)))
     (fj-authorized-request "POST"
-      (fedi-http--post url params nil json))))
+      (fedi-http--post url params nil json silent))))
 
 (defun fj-put (endpoint &optional params json)
   "Make a PUT request to ENDPOINT.
