@@ -2582,6 +2582,9 @@ DATA contains all types of issue comments (references, name
 changes, commit references, etc.).
 AUTHOR is timeline item's author, OWNER is of item's repo."
   (cl-loop for i in data
+           ;; prevent a `nil' item (seen in the wild) from breaking our
+           ;; timeline:
+           when i
            do (fj-render-timeline-item i author owner)))
 
 (defun fj-render-timeline-item (item &optional author owner)
