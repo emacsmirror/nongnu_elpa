@@ -113,7 +113,7 @@ etc."
   "List of possible status types for getting notifications.")
 
 (defvar fj-notifications-subject-types
-  '("issue" "pull" "commit" "repository")
+  '(nil "issue" "pull" "commit" "repository")
   "List of possible subject types for getting notifications.")
 
 ;;; CUSTOMIZES
@@ -255,15 +255,15 @@ Requires `fj-token' to be set."
                                  (fj-token) 'utf-8)))))))
      ,body))
 
-(defun fj-get (endpoint &optional params no-json)
+(defun fj-get (endpoint &optional params no-json silent)
   "Make a GET request to ENDPOINT.
 PARAMS is any parameters to send with the request.
 NO-JSON means return the raw response."
   (let* ((url (fj-api endpoint))
          (resp (fj-authorized-request "GET"
                  (if no-json
-                     (fedi-http--get url params)
-                   (fedi-http--get-json url params)))))
+                     (fedi-http--get url params silent)
+                   (fedi-http--get-json url params silent)))))
     (if no-json
         ;; return response buffer, not resulting string. the idea is to then
         ;; call --triage on the result, in case we don't get a 200 response.
@@ -295,13 +295,13 @@ NO-JSON means return the raw response."
               'utf-8)))
         (json-read-from-string str)))))
 
-(defun fj-post (endpoint &optional params json)
+(defun fj-post (endpoint &optional params json silent)
   "Make a POST request to ENDPOINT.
 PARAMS.
 If JSON, encode request data as JSON. else encode like query params."
   (let ((url (fj-api endpoint)))
     (fj-authorized-request "POST"
-      (fedi-http--post url params nil json))))
+      (fedi-http--post url params nil json silent))))
 
 (defun fj-put (endpoint &optional params json)
   "Make a PUT request to ENDPOINT.
@@ -336,10 +336,24 @@ PARAMS and JSON are for `fedi-http--delete'."
   (let ((endpoint "/settings/api"))
     (fj-get endpoint)))
 
-(defun fj-get-max-response-items ()
+(defvar fj-default-limit nil)
+
+(defun fj-default-limit ()
+  "Return the value of `fj-default-limit' or fetch from instance."
+  (or fj-default-limit
+      (let ((settings (fj-get-api-settings)))
+        (setq fj-default-limit
+              (number-to-string
+               (alist-get 'default_paging_num settings))))))
+
+(defvar fj-max-items nil)
+
+(defun fj-max-items ()
   "Return the max response items setting from the current instance."
-  (let ((settings (fj-get-api-settings)))
-    (alist-get 'max_response_items settings)))
+  (or fj-max-items
+      (let ((settings (fj-get-api-settings)))
+        (setq fj-max-items (number-to-string
+                            (alist-get 'max_response_items settings))))))
 
 (defun fj-get-swagger-json ()
   "Return the full swagger JSON from the current instance."
@@ -563,9 +577,13 @@ If CURRENT-REPO, get from `fj-current-repo' instead."
   "C-M-q" #'fj-kill-all-buffers
   "/" #'fj-switch-to-buffer
   ;; really oughta be universal:
+  "R" #'fj-repo-update-settings
+  "I" #'fj-list-issues
+  "P" #'fj-list-pulls
   "O" #'fj-list-own-repos
   "W" #'fj-list-own-issues
   "N" #'fj-view-notifications
+  "S" #'fj-repo-search-tl
   "U" #'fj-update-user-settings
   "b" #'fj-browse-view
   "C" #'fj-copy-item-url
@@ -579,12 +597,18 @@ If CURRENT-REPO, get from `fj-current-repo' instead."
   ;; should actually be universal:
   "<tab>" #'fj-next-tab-item
   "<backtab>" #'fj-prev-tab-item
+  "." #'fj-next-page
+  "," #'fj-prev-page
   "C-M-q" #'fj-kill-all-buffers
   "/" #'fj-switch-to-buffer
   ;; really oughta be universal:
+  "R" #'fj-repo-update-settings
+  "I" #'fj-list-issues
+  "P" #'fj-list-pulls
   "O" #'fj-list-own-repos
   "W" #'fj-list-own-issues
   "N" #'fj-view-notifications
+  "S" #'fj-repo-search-tl
   "U" #'fj-update-user-settings
   "C" #'fj-copy-item-url
   "b" #'fj-browse-view
@@ -605,6 +629,77 @@ Should work for anything with an fj-byline property."
 Should work for anything with an fj-byline property."
   (interactive)
   (fedi--goto-pos #'previous-single-property-change 'fj-byline))
+
+;;; PAGINATION
+;; it seems like the LIMIT param only works when PAGE is set.
+;; not sure if we should therefore always set a default PAGE value ("1")?
+
+(defun fj--inc-str (str &optional dec)
+  "Incrememt STR, and return a string.
+When DEC, decrement string instead."
+  (let ((num (string-to-number str)))
+    (number-to-string
+     (if dec (1- num) (1+ num)))))
+
+(defun fj-inc-or-2 (&optional page)
+  "Incrememt PAGE.
+If nil, return \"2\"."
+  (if page (fj--inc-str page) "2"))
+
+(defun fj-dec-or-nil (&optional page)
+  "Decrement PAGE.
+If nil, return nil."
+  (when page (fj--inc-str page :dec)))
+
+(defun fj-dec-plist-page (plist)
+  "Decrement the :page entry in PLIST and return it."
+  (let* ((new-page (fj-dec-or-nil
+                    (plist-get plist :page))))
+    (plist-put plist :page new-page)))
+
+(defun fj-inc-plist-page (plist)
+  "Increment the :page entry in PLIST and return it."
+  (let ((new-page (fj-inc-or-2
+                   (plist-get plist :page))))
+    (plist-put plist :page new-page)))
+
+(defun fj-plist-values (plist)
+  "Return the values of PLIST as a list."
+  ;; prob a better way to implement this!:
+  (cl-loop for x in plist by 'cddr
+           collect (plist-get plist x)))
+
+(defun fj-next-page ()
+  "Load the next page of the current view."
+  ;; NB: for this to work, :viewargs in `fj-buffer-spec' must be a plist
+  ;; whose values match the signature of :viewfun. the value of :page in
+  ;; :viewargs is incremented.
+  (interactive)
+  (message "Loading next page...")
+  (fj-destructure-buf-spec (viewfun viewargs)
+    ;; incremement page:
+    (let ((args (fj-inc-plist-page viewargs)))
+      (apply viewfun (fj-plist-values args))))
+  (message "Loading next page... Done."))
+
+(defmacro fj-prev-page-maybe (page &rest body)
+  "Call BODY if PAGE is neither nil nor 1."
+  (declare (debug t) (indent 1))
+  `(if (or (not ,page) ;; never paginated
+           (= 1 (string-to-number ,page))) ;; after paginating
+       (user-error "No previous page")
+     ,@body))
+
+(defun fj-prev-page ()
+  "Load the previous page."
+  (interactive)
+  (message "Loading previous page...")
+  (fj-destructure-buf-spec (viewfun viewargs)
+    (fj-prev-page-maybe (plist-get viewargs :page)
+      ;; decrement page:
+      (let ((args (fj-dec-plist-page viewargs)))
+        (apply viewfun (fj-plist-values args)))))
+  (message "Loading previous page... Done."))
 
 ;;; REPOS TL UTILS
 
@@ -706,22 +801,29 @@ X and Y are sorting args."
   "Return settings for the current user."
   (fj-get "user/settings"))
 
-(defun fj-get-user-repos (user)
-  "GET request repos for USER."
-  (let ((params '(("limit" . "100")))
+(defun fj-get-user-repos (user &optional page limit order)
+  "GET request repos for USER.
+PAGE, LIMIT, ORDER."
+  (let ((params `(("limit" . ,(or limit (fj-default-limit)))
+                  ,@(when page `(("page" . ,page)))
+                  ,@(when order `(("order" . ,order)))))
         (endpoint (format "users/%s/repos" user)))
     (fj-get endpoint params)))
 
-(defun fj-user-repos-tl (&optional user)
-  "View a tabulated list of respos for USER."
+(defun fj-user-repos-tl (&optional user page limit order)
+  "View a tabulated list of respos for USER.
+PAGE, LIMIT, ORDER."
   (interactive "sView user repos: ")
-  (let* ((repos (fj-get-user-repos user))
+  (let* ((repos (fj-get-user-repos user page limit order))
          (entries (fj-repo-tl-entries repos :no-owner))
          (buf (format "*fj-repos-%s*" user)))
     (fj-repos-tl-render buf entries #'fj-user-repo-tl-mode)
     (with-current-buffer (get-buffer-create buf)
       (setq fj-buffer-spec
-            `(:owner ,user :url ,(concat fj-host "/" user))))))
+            `( :owner ,user :url ,(concat fj-host "/" user)
+               :viewargs ( :user ,user :page ,page
+                           :limit ,limit :order ,order)
+               :viewfun fj-user-repos-tl)))))
 
 (defun fj-list-own-repos ()
   "List repos for `fj-user'."
@@ -746,7 +848,8 @@ X and Y are sorting args."
       (fj-repos-tl-render buf entries #'fj-repo-tl-mode)
       (with-current-buffer (get-buffer-create buf)
         (setq fj-buffer-spec
-              `(:owner ,fj-user :url ,(concat fj-host "/" fj-user)))))))
+              `( :owner ,fj-user :url ,(concat fj-host "/" fj-user)
+                 :viewfun fj-list-repos))))))
 
 (defun fj-star-repo (repo owner &optional unstar)
   "Star or UNSTAR REPO owned by OWNER."
@@ -807,7 +910,8 @@ BUF-STR is to name the buffer, URL-STR is for the buffer-spec."
       (setq fj-buffer-spec
             `( :owner fj-user
                :url (when url-str
-                      ,(concat fj-host "/" fj-user url-str)))))))
+                      ,(concat fj-host "/" fj-user url-str))
+               :viewfun fj--list-user-repos)))))
 
 ;;; USER REPOS
 
@@ -837,7 +941,7 @@ Also set `fj-current-repo' to the name."
   "Return the user's repos.
 Return LIMIT repos, LIMIT is a string."
   (let ((endpoint "user/repos"))
-    (fj-get endpoint `(("limit" . ,(or limit "100"))))))
+    (fj-get endpoint `(("limit" . ,(or limit (fj-default-limit)))))))
 
 (defun fj-get-repo-candidates (repos)
   "Return REPOS as completion candidates."
@@ -921,7 +1025,7 @@ QUERY is a search term to filter by."
   ;; FIXME: how to get issues by number, or get all issues?
   (let* ((endpoint (format "repos/%s/%s/issues" (or owner fj-user) repo))
          ;; NB: get issues has no sort param!
-         (params `(("limit" . ,(or limit "50")) ;; server max
+         (params `(("limit" . ,(or limit (fj-default-limit)))
                    ,@(when state `(("state" . ,state)))
                    ,@(when type `(("type" . ,type)))
                    ,@(when query `(("q" . ,query)))
@@ -933,7 +1037,8 @@ QUERY is a search term to filter by."
       (t (format "%s" (error-message-string err))))))
 
 (defun fj-issues-search (&optional query owner state type
-                                   created assigned mentioned)
+                                   created assigned mentioned
+                                   page)
   "Make a GET request for issues matching QUERY.
 Optionally limit search by OWNER, STATE, or TYPE.
 Either QUERY or OWNER must be provided.
@@ -941,24 +1046,26 @@ STATE is \"open\" or \"closed\".
 TYPE is \"issues\" or \"pulls\".
 Optionally filter results for those you have CREATED, been ASSIGNED to,
 or MENTIONED in.
-STATE defaults to open."
+STATE defaults to open.
+PAGE is a number for pagination."
   ;; GET /repos/issues/search
-  ;; TODO: params: page, reviewed, review_requested, team, before, since,
+  ;; TODO: params: reviewed, review_requested, team, before, since,
   ;; priority_repo_id, milestones (c s list), labels (c s list)
   ;; NB: this endpoint can be painfully slow
+  ;; NB: this endpoint has no sort!
   (let* ((endpoint "repos/issues/search")
-         (params `(("limit" . "50") ;; max
+         (params `(("limit" . (fj-default-limit))
                    ,@(when query      `(("q" . ,query)))
                    ,@(when owner      `(("owner" . ,owner)))
                    ,@(when state      `(("state" . ,state)))
                    ,@(when type       `(("type" . ,type)))
                    ,@(when created    '(("created" . "true")))
                    ,@(when assigned   '(("assigned" . "true")))
-                   ,@(when mentioned  '(("mentioned" . "true"))))))
+                   ,@(when mentioned  '(("mentioned" . "true")))
+                   ,@(when page       `(("page" . ,page))))))
     (condition-case err
         (fj-get endpoint params)
       (t (format "%s" (error-message-string err))))))
-
 
 (defun fj-list-own-pulls (&optional query state
                                     created assigned mentioned)
@@ -979,14 +1086,17 @@ QUERY, STATE, TYPE, CREATED, ASSIGNED, and MENTIONED are all for
    query state "issues" created assigned mentioned))
 
 (defun fj-list-own-items (&optional query state type
-                                    created assigned mentioned)
+                                    created assigned mentioned page)
   "List items of TYPE in repos owned by `fj-user'.
-QUERY, STATE, TYPE, CREATED, ASSIGNED, and MENTIONED are all for
+QUERY, STATE, TYPE, CREATED, ASSIGNED, MENTIONED and PAGE are all for
 `fj-issues-search'."
   (interactive)
-  (let ((items
+  ;; NB: defaults are now required for buff spec:
+  (let ((state (or state "open"))
+        (type (or type "issues"))
+        (items
          (fj-issues-search query fj-user state type
-                           created assigned mentioned))
+                           created assigned mentioned page))
         (buf-name (format "*fj-user-repos-%s" type))
         (prev-buf (buffer-name (current-buffer)))
         (prev-mode major-mode))
@@ -999,9 +1109,11 @@ QUERY, STATE, TYPE, CREATED, ASSIGNED, and MENTIONED are all for
       (tabulated-list-init-header)
       (tabulated-list-print)
       (setq fj-buffer-spec
-            `( :state ,state :owner ,fj-user :type ,type
-               :query ,query :created ,created
-               :assiged ,assigned :mentioned ,mentioned))
+            `( :owner ,fj-user
+               :viewfun fj-list-own-items
+               :viewargs ( :query ,query :state ,state :type ,type
+                           :created ,created :assiged ,assigned :mentioned ,mentioned
+                           :page ,page)))
       (fj-other-window-maybe
        prev-buf (format "-%s*" type) #'string-suffix-p prev-mode))))
 
@@ -1204,13 +1316,33 @@ OWNER is the repo owner."
                            owner repo issue)))
     (fj-get endpoint)))
 
-(defun fj-issue-get-comments-timeline (repo owner issue)
+(defun fj-issue-get-timeline (repo owner issue &optional page limit)
+                                        ; since before
   "Return comments timeline for ISSUE in REPO.
 OWNER is the repo owner.
-Comments timeline contains comments of any type."
+Timeline contains comments and events of any type."
   (let* ((endpoint (format "repos/%s/%s/issues/%s/timeline"
-                           owner repo issue)))
-    (fj-get endpoint)))
+                           owner repo issue))
+         ;; NB: limit only works if page specified:
+         (params `(,@(when page `(("page" . ,page)))
+                   ,@(when limit `(("limit" . ,limit))))))
+    (fj-get endpoint params)))
+
+(defun fj-issue-get-timeline-async (repo owner issue
+                                         &optional page limit cb
+                                         &rest cbargs)
+                                        ; since before
+  "Return comments timeline for ISSUE in REPO asynchronously.
+OWNER is the repo owner.
+Timeline contains comments and events of any type.
+PAGE and LIMIT are for pagination."
+  (let* ((endpoint (format "repos/%s/%s/issues/%s/timeline"
+                           owner repo issue))
+         (url (fj-api endpoint))
+         ;; NB: limit only works if page specified:
+         (params `(,@(when page `(("page" . ,page)))
+                   ,@(when limit `(("limit" . ,limit))))))
+    (apply #'fedi-http--get-json-async url params cb cbargs)))
 
 (defun fj-get-comment (repo owner issue &optional comment)
   "GET data for COMMENT of ISSUE in REPO.
@@ -1276,7 +1408,7 @@ NEW-BODY is the new comment text to send."
    (fj-destructure-buf-spec (owner repo)
      (let ((endpoint (format "repos/%s/%s/issues/comments/%s/reactions"
                              owner repo id)))
-       (fj-get endpoint)))))
+       (fj-get endpoint nil nil :silent)))))
 
 (defun fj-render-issue-reactions (id)
   "Render reactions for issue with ID.
@@ -1521,17 +1653,13 @@ Return an alist of title and ID."
   "k" #'fj-issues-tl-close
   "K" #'fj-issues-tl-delete
   "c" #'fj-create-issue
-  "C-c C-c" #'fj-list-issues-cycle
-  "C-c C-s" #'fj-issues-item-cycle
+  "C-c C-c" #'fj-cycle-state
+  "C-c C-s" #'fj-cycle-type
   "o" #'fj-issues-tl-reopen
   "s" #'fj-list-issues-search
-  "S" #'fj-repo-search-tl
   "B" #'fj-tl-browse-entry
   "u" #'fj-repo-copy-clone-url
-  "I" #'fj-list-issues
-  "P" #'fj-list-pulls
   "L" #'fj-repo-commit-log
-  "R" #'fj-repo-update-settings
   "j" #'imenu
   "l" #'fj-issues-tl-label-add
   "U" #'fj-copy-pr-url)
@@ -1560,8 +1688,8 @@ Return an alist of title and ID."
 (defvar-keymap fj-owned-issues-tl-mode-map
   :doc "Map for `fj-owned-issues-tl-mode', a tabluated list of issues."
   :parent fj-issue-tl-mode-map ; has nav
-  "C-c C-c" #'fj-list-own-items-state-cycle
-  "C-c C-s" #'fj-list-own-items-type-cycle)
+  "C-c C-c" #'fj-cycle-state
+  "C-c C-s" #'fj-cycle-type)
 
 ;; FIXME: refactor with `fj-issue-tl-mode' mode?
 ;; this just adds Repo col
@@ -1808,9 +1936,17 @@ QUERY is a search query to filter by."
         (setq fj-current-repo repo
               fj-repo-data repo-data
               fj-buffer-spec
-              `( :repo ,repo :state ,state-str :owner ,owner :url ,url
-                 :type ,type :labels ,labels :milestones ,milestones
-                 :limit ,limit :page ,page))
+              ;; viewargs must match function signature, but also we
+              ;; duplicate it outside of view args for easy destructuring
+              ;; for other actions
+              `( :repo ,repo :owner ,owner
+                 :viewargs
+                 ( :repo ,repo :owner ,owner :state ,state-str
+                   :type ,type :query ,query :labels ,labels
+                   :milestones ,milestones
+                   :page ,page :limit ,limit)
+                 :viewfun fj-list-issues-do
+                 :url ,url))
         ;; ensure our .dir-locals.el settings take effect:
         ;; via https://emacs.stackexchange.com/questions/13080/reloading-directory-local-variables
         (setq default-directory wd)
@@ -1865,77 +2001,55 @@ TYPE is the item type."
   (interactive "P")
   (fj-list-issues-do repo owner "all" type))
 
-(defun fj-list-issues-cycle ()
-  "Cycle between listing of open, closed, and all issues."
-  (interactive)
-  (fj-destructure-buf-spec (state owner repo type)
-    (pcase state
-      ("closed" (fj-list-issues-all repo owner type))
-      ("all" (fj-list-issues-do repo owner nil type))
-      (_ ; open is default
-       (fj-list-issues-closed repo owner type)))))
+;;; VIEW CYCLE
 
-(defun fj-list-own-items-state-cycle ()
+(defvar fj-items-states
+  '("open" "closed" "all"))
+
+(defvar fj-items-types
+  '("issues" "pulls" "all"))
+
+(defun fj-next-item-var (current var)
+  "Return the next item in VAR based on CURRENT."
+  (let ((mem (member current var)))
+    (if (length= mem 1)
+        (car var)
+      (cadr mem))))
+
+(defun fj-next-item-state-plist (plist)
+  "Update the value of :state in PLIST and return it."
+  (let* ((current (plist-get plist :state))
+         (next (fj-next-item-var current fj-items-states)))
+    (plist-put plist :state next)))
+
+(defun fj-next-item-type-plist (plist)
+  "Update the value of :type in PLIST and return it."
+  (let* ((current (plist-get plist :type))
+         (next (fj-next-item-var current fj-items-types)))
+    (plist-put plist :type next)))
+
+(defun fj-cycle-state ()
   "Cycle item state listing of open, closed, and all."
   (interactive)
-  ;; FIXME: implement other own-issues params (add to buffer-spec)
-  (fj-destructure-buf-spec (state type)
-    (pcase state
-      ("closed" (fj-list-own-items nil "all" type))
-      ("all" (fj-list-own-items nil "open" type))
-      (_ (fj-list-own-items nil "closed" type)))))
+  (fj-destructure-buf-spec (viewfun viewargs)
+    (let ((args (fj-next-item-state-plist viewargs)))
+      (apply viewfun (fj-plist-values args)))))
 
-(defun fj-list-own-items-type-cycle ()
+(defun fj-cycle-type ()
   "Cycle item type listing of issues, pulls, and all."
   (interactive)
-  ;; FIXME: implement other own-issues params (add to buffer-spec)
-  (fj-destructure-buf-spec (state type)
-    (pcase type
-      ("pulls" (fj-list-own-items nil state "all"))
-      ("all" (fj-list-own-items nil state "issues"))
-      (_ ; issues default
-       (fj-list-own-items nil state "pulls")))))
+  (fj-destructure-buf-spec (viewfun viewargs)
+    (let ((args (fj-next-item-type-plist viewargs)))
+      (apply viewfun (fj-plist-values args)))))
+
+;;; RELOADING
 
 (defun fj-view-reload ()
   "Try to reload the current view based on its major-mode."
   (interactive)
-  (pcase major-mode
-    ('fj-issue-tl-mode (fj-issues-tl-reload))
-    ('fj-item-view-mode (fj-item-view-reload))
-    ((or 'fj-tl-repo-mode 'fj-user-repo-tl-mode)
-     (fj-repo-tl-reload))
-    ('fj-notifications-mode (fj-notifications-reload))
-    ;; TODO: commits-mode, users-mode (they don't have reload funs)
-    ('fj-users-mode (fj-users-reload))
-    ('fj-owned-issues-tl-mode
-     (fj-list-own-issues))
-    ('fj-commits-mode (fj-repo-commit-log))
-    (_ (user-error "Reload not implemented yet"))))
-
-(defun fj-users-reload ()
-  "Reload a users listing view.
-Repo's stargazers or watchers."
-  (fj-destructure-buf-spec (repo owner)
-    (if (string-suffix-p "stargazers*" (buffer-name))
-        (fj-repo-stargazers repo owner)
-      (fj-repo-watchers repo owner))))
-
-(defun fj-issues-tl-reload ()
-  "Reload current issues tabulated list view."
-  (interactive)
-  (when (eq major-mode #'fj-issue-tl-mode)
-    (fj-destructure-buf-spec (state owner repo type)
-      (fj-list-issues-do repo owner state type))))
-
-(defun fj-issues-item-cycle ()
-  "Cycle item type listing of issues, pulls, and all."
-  (interactive)
-  (fj-destructure-buf-spec (state owner repo type)
-    (pcase type
-      ("pulls" (fj-list-issues-do repo owner state "all"))
-      ("all" (fj-list-issues-do repo owner state "issues"))
-      (_ ; issues default
-       (fj-list-issues-do repo owner state "pulls")))))
+  (fj-destructure-buf-spec (viewfun viewargs)
+    ;; works so long as we set viewargs right:
+    (apply viewfun (fj-plist-values viewargs))))
 
 ;;; ISSUE VIEW
 (defvar fj-url-regex fedi-post-url-regex)
@@ -1969,11 +2083,19 @@ Buffer-local variable `fj-previous-window-config' holds the config."
   (set-window-configuration (car config))
   (goto-char (cadr config)))
 
+(defun fj-render-markdown (text)
+  "Return server-rendered markdown TEXT."
+  ;; NB: sync request:
+  (let* ((resp (fj-post "markdown" `(("text" . ,text)) nil :silent)))
+    (fedi-http--triage
+     resp (lambda (resp) (fj-resp-str resp)))))
+
 ;; I think magit/forge just uses markdown-mode rather than rendering
 ;; FIXME: use POST /markdown on the instance to render!
 (defun fj-render-body (body &optional json)
   "Render item BODY as markdowned html.
-JSON is the item's data to process the link with."
+JSON is the item's data to process the link with.
+Return a string."
   ;; NB: make sure this doesn't leak into our issue buffers!
   (let ((buf "*fj-md*")
         str
@@ -1986,26 +2108,20 @@ JSON is the item's data to process the link with."
     (with-temp-buffer
       (insert body)
       (goto-char (point-min))
-      (fj-mdize-plain-urls)
+      (fj-mdize-plain-urls) ;; FIXME: mdize a string to save a buffer
       (goto-char (point-min))
-      ;; 2: md-ize or fallback
-      (let ((old-buf (buffer-string)))
-        (condition-case nil
-            (markdown-standalone buf)
-          (t ; if rendering fails, return unrendered body:
-           (with-current-buffer (get-buffer-create buf)
-             (erase-buffer)
-             (insert old-buf)))))
-      ;; 3: shr-render the md
-      (with-current-buffer buf
-        (let ((shr-width (window-width))
-              (shr-discard-aria-hidden t)) ; for pandoc md image output
-          ;; shr render:
-          (shr-render-buffer (current-buffer))))
+      ;; 2: md-ize
+      (let ((html (fj-render-markdown (buffer-string))))
+        (with-current-buffer (get-buffer-create buf)
+          (insert html)
+          ;; 3: shr-render the md
+          (let ((shr-width (window-width))
+                (shr-discard-aria-hidden t)) ; for pandoc md image output
+            ;; shr render (render region not a contender here):
+            (shr-render-buffer (current-buffer)))))
       ;; 4 collect result
       (with-current-buffer "*html*"
-	(goto-char (point-min))
-        (re-search-forward "\n\n" nil :no-error)
+        (goto-char (point-min))
         (setq str (buffer-substring (point) (point-max)))
         (kill-buffer-and-window)        ; shr's *html*
         (kill-buffer buf)))             ; our md
@@ -2041,13 +2157,9 @@ JSON is the item's data to process the link with."
   "K" #'fj-item-view-comment-delete
   "t" #'fj-issue-view-edit-title
   "s" #'fj-list-issues-search
-  "S" #'fj-repo-search-tl
   "D" #'fj-view-pull-diff
-  "R" #'fj-repo-update-settings
   "L" #'fj-repo-commit-log
   "l" #'fj-issue-label-add
-  "I" #'fj-list-issues
-  "P" #'fj-list-pulls
   "M" #'fj-merge-pull)
 
 (define-derived-mode fj-item-view-mode special-mode "fj-issue"
@@ -2129,99 +2241,150 @@ OWNER is the repo owner."
                           'face 'fj-item-byline-face)
               (fj-prop-item-flag "edited")))))
 
-(defun fj-render-item (repo owner item number timeline &optional reload)
+(defun fj-render-item (repo owner item number
+                            &optional reload type page limit)
   "Render ITEM number NUMBER, in REPO and its TIMELINE.
 OWNER is the repo owner.
 RELOAD mean we reloaded."
-  (fedi-with-buffer (format "*fj-%s-item-%s*" repo number)
-      'fj-item-view-mode
-      (not reload)
-    (let ((header-line-indent " "))
-      (header-line-indent-mode 1) ; broken?
-      (let-alist item
-        (let ((stamp (fedi--relative-time-description
-                      (date-to-time .created_at)))
-              (pull-p .base)) ;; rough PR check!
-          ;; set vars before timeline so they're avail:
-          (setq fj-current-repo repo)
-          (setq fj-buffer-spec
-                `(:repo ,repo :owner ,owner :item ,number
-                        :type ,(if pull-p :pull :issue)
-                        :author ,.user.username :title ,.title
-                        :body ,.body :url ,.html_url))
-          ;; .is_locked
-          (setq header-line-format
-                `("" header-line-indent
-                  ,(concat "#" (number-to-string .number) " "
-                           (propertize .title
-                                       'face 'fj-item-face))))
+  (let ((header-line-indent " "))
+    (header-line-indent-mode 1) ; broken?
+    (let-alist item
+      (let* ((stamp (fedi--relative-time-description
+                     (date-to-time .created_at)))
+             (pull-p .base) ;; rough PR check!
+             (type (or type (if pull-p :pull :issue))))
+        ;; set vars before timeline so they're avail:
+        (setq fj-current-repo repo)
+        (setq fj-buffer-spec
+              `( :repo ,repo :owner ,owner
+                 :item ,number ;; used by lots of stuff
+                 :type ,type ;; used by with-pull
+                 :author ,.user.username ;; used by own-issue
+                 :title ,.title ;; for commenting
+                 :url ,.html_url ;; for browsing
+                 :viewfun fj-item-view
+                 ;; signature: repo owner number reload pull page limit:
+                 :viewargs ( :repo ,repo :owner ,owner :number ,number
+                             :reload ,(not reload) ;; FIXME: remove reload arg
+                             :type ,type
+                             :page ,page :limit ,limit)))
+        ;; .is_locked
+        (setq header-line-format
+              `("" header-line-indent
+                ,(concat "#" (number-to-string .number) " "
+                         (propertize .title
+                                     'face 'fj-item-face))))
+        (insert
+         ;; header stuff
+         ;; (forge has: state, status, milestone, labels, marks, assignees):
+         (propertize
+          (concat
+           "State: " .state
+           (if (string= "closed" .state)
+               (concat " " (fedi--relative-time-description
+                            (date-to-time .closed_at)))
+             "")
+           (if .labels
+               (fj-render-labels .labels)
+             "")
+           ;; PR stuff:
+           (if pull-p
+               (format
+                (if (eq :json-false .merged)
+                    "\n%s wants to merge from %s into %s"
+                  "\n%s merged from %s into %s")
+                (propertize .user.username
+                            'face 'fj-name-face)
+                ;; FIXME: make links work! data doesn't have branch URLs
+                ;; and gitnex doesn't linkify them
+                ;; webUI uses $fork-repo/src/branch/$name:
+                (propertize
+                 (format "%s:%s".head.repo.full_name .head.label)
+                 'face 'fj-name-face)
+                (propertize .base.label 'face 'fj-name-face))
+             "")
+           "\n\n"
+           ;; item byline:
+           ;; FIXME: :extend t doesn't work here whatever i do
+           (fj-render-item-user (concat .user.username))
+           (propertize " "
+                       'face 'fj-item-byline-face)
+           (fj-author-or-owner-str .user.username nil owner)
+           ;; FIXME: this diffing will mark any issue as edited if it has
+           ;; merely been commented on.
+           ;; (fj-edited-str-maybe .created_at .updated_at)
+           (propertize (fj--issue-right-align-str stamp)
+                       'face 'fj-item-byline-face)
+           "\n\n"
+           (fj-render-body .body item)
+           "\n"
+           (fj-render-issue-reactions .number)
+           "\n"
+           fedi-horiz-bar fedi-horiz-bar "\n\n")
+          'fj-item-number number
+          'fj-repo repo
+          'fj-item-data item))
+        (when (eq :json-false .mergeable)
           (insert
-           ;; header stuff
-           ;; (forge has: state, status, milestone, labels, marks, assignees):
-           (propertize
-            (concat
-             "State: " .state
-             (if (string= "closed" .state)
-                 (concat " " (fedi--relative-time-description
-                              (date-to-time .closed_at)))
-               "")
-             (if .labels
-                 (fj-render-labels .labels)
-               "")
-             ;; PR stuff:
-             (if pull-p
-                 (format
-                  (if (eq :json-false .merged)
-                      "\n%s wants to merge from %s into %s"
-                    "\n%s merged from %s into %s")
-                  (propertize .user.username
-                              'face 'fj-name-face)
-                  ;; FIXME: make links work! data doesn't have branch URLs
-                  ;; and gitnex doesn't linkify them
-                  ;; webUI uses $fork-repo/src/branch/$name:
-                  (propertize
-                   (format "%s:%s".head.repo.full_name .head.label)
-                   'face 'fj-name-face)
-                  (propertize .base.label 'face 'fj-name-face))
-               "")
-             "\n\n"
-             ;; item byline:
-             ;; FIXME: :extend t doesn't work here whatever i do
-             (fj-render-item-user (concat .user.username))
-             (propertize " "
-                         'face 'fj-item-byline-face)
-             (fj-author-or-owner-str .user.username nil owner)
-             ;; FIXME: this diffing will mark any issue as edited if it has
-             ;; merely been commented on.
-             ;; (fj-edited-str-maybe .created_at .updated_at)
-             (propertize (fj--issue-right-align-str stamp)
-                         'face 'fj-item-byline-face)
-             "\n\n"
-             (fj-render-body .body item)
-             "\n"
-             (fj-render-issue-reactions .number)
-             "\n"
-             fedi-horiz-bar fedi-horiz-bar "\n\n")
-            'fj-item-number number
-            'fj-repo repo
-            'fj-item-data item))
-          ;; timeline items:
-          (fj-render-timeline timeline .user.username owner)
-          (when (eq :json-false .mergeable)
-            (insert "This PR has changes conflicting with the target branch."))
-          (when (and fj-use-emojify
-                     (require 'emojify nil :noerror))
-            (emojify-mode t)))))))
+           "This PR has changes conflicting with the target branch."))
+        (when (and fj-use-emojify
+                   (require 'emojify nil :noerror))
+          (emojify-mode t))))))
 
-(defun fj-item-view (&optional repo owner number reload pull)
+(defun fj-item-view (&optional repo owner number reload type page limit)
   "View item NUMBER from REPO of OWNER.
-RELOAD means we are reloading, so don't open in other window."
+RELOAD means we are reloading, so don't open in other window.
+TYPE is :pull or :list (default).
+PAGE and LIMIT are for `fj-issue-get-timeline'."
   (interactive "P")
-  (let* ((repo (fj-read-user-repo repo))
-         (item (fj-get-item repo owner number pull))
-         (number (or number (alist-get 'number item)))
-         (timeline (fj-issue-get-comments-timeline repo owner number)))
-    (fj-render-item repo owner item number timeline reload)))
+  (let* ( ;; set defaults for pagination:
+         (page (or page "1"))
+         (limit (or limit (fj-default-limit)))
+         (repo (fj-read-user-repo repo))
+         (item (fj-get-item repo owner number type))
+         (number (or number (alist-get 'number item))))
+    ;; (timeline (fj-issue-get-timeline repo owner number page limit)))
+    (fedi-with-buffer (format "*fj-%s-item-%s*" repo number)
+        'fj-item-view-mode
+        (not reload)
+      (fj-render-item repo owner item number reload type page limit)
+      (fj-item-view-more page))))
+
+(defun fj-item-view-more (&optional init-page)
+  "Append more timeline items to the current view, asynchronously.
+INIT-PAGE is used in `fj-render-item' on first load of a view."
+  (interactive)
+  (cl-destructuring-bind (&key repo owner number _reload _type page limit)
+      (fj--get-buffer-spec :viewargs)
+    (fj-issue-get-timeline-async
+     repo owner number (or init-page (fj-inc-or-2 page)) limit
+     #'fj-item-view-more-cb (current-buffer) (point) init-page)))
+
+(defun fj-item-view-more-cb (json buf point init-page)
+  "Callback function to append more tiemline items to current view.
+JSON is the parsed HTTP response, BUF is the buffer to add to, POINT is
+where it was prior to updating.
+If INIT-PAGE, do not update :page in viewargs."
+  (with-current-buffer buf
+    (save-excursion
+      (goto-char point)
+      (if (not json)
+          (user-error "No more items")
+        (fj-destructure-buf-spec (viewargs)
+          ;; increment page in viewargs
+          ;; FIXME: this means reload will reload with page = "2":
+          (let ((args (if init-page
+                          viewargs
+                        (plist-put viewargs
+                                   :page (fj-inc-or-2
+                                          (plist-get viewargs :page))))))
+            (setq fj-buffer-spec
+                  (plist-put fj-buffer-spec :viewargs args)))
+          (message "Loading comments...")
+          (let ((inhibit-read-only t))
+            ;; FIXME: we need .user.username owner args for new elements:
+            (fj-render-timeline json))
+          (message "Loading comments... Done"))))))
 
 ;; (defun fj-item-view-comment ()
 ;;   "Comment on the issue currently being viewed."
@@ -2234,15 +2397,6 @@ RELOAD means we are reloading, so don't open in other window."
 
 ;;; ITEM VIEW ACTIONS
 
-(defun fj-item-view-reload ()
-  "Reload the current item view."
-  (interactive)
-  (fj-with-item-view
-   (fj-destructure-buf-spec (item owner type)
-     ;; FIXME: handle pull view:
-     (fj-item-view fj-current-repo owner
-                   item :reload type))))
-
 ;; TODO: merge simple action functions
 (defun fj-item-view-close (&optional state)
   "Close item being viewed, or set to STATE."
@@ -2250,7 +2404,7 @@ RELOAD means we are reloading, so don't open in other window."
   (fj-with-item-view
    (fj-destructure-buf-spec (item owner repo)
      (fj-issue-close repo owner item state)
-     (fj-item-view-reload))))
+     (fj-view-reload))))
 
 (defun fj-item-view-reopen ()
   "Reopen item being viewed."
@@ -2282,7 +2436,7 @@ RELOAD means we are reloading, so don't open in other window."
   (fj-with-own-issue-or-repo
    (fj-destructure-buf-spec (repo owner item)
      (fj-issue-edit-title repo owner item)
-     (fj-item-view-reload))))
+     (fj-view-reload))))
 
 (defun fj-item-view-comment ()
   "Comment on the item currently being viewed."
@@ -2318,7 +2472,7 @@ RELOAD means we are reloading, so don't open in other window."
             (endpoint (format "repos/%s/%s/issues/comments/%s" owner repo id)))
        (when (yes-or-no-p "Delete comment?")
          (fj-delete endpoint)
-         (fj-item-view-reload))))))
+         (fj-view-reload))))))
 
 ;;; PR VIEWS
 
@@ -2446,6 +2600,7 @@ ENDPOINT is the API endpoint to hit."
     ("delete_branch" . "%s deleted branch %s %s")
     ("review" . "%s %s changes %s")
     ;; FIXME: add a request for changes review? not just approval?
+    ("review_request" . "%s requested review from %s %s")
     ("milestone" . "%s added milestone %s %s")
     ("assignees" . "%s %sassigned this%s %s")))
 
@@ -2455,6 +2610,9 @@ DATA contains all types of issue comments (references, name
 changes, commit references, etc.).
 AUTHOR is timeline item's author, OWNER is of item's repo."
   (cl-loop for i in data
+           ;; prevent a `nil' item (seen in the wild) from breaking our
+           ;; timeline:
+           when i
            do (fj-render-timeline-item i author owner)))
 
 (defun fj-render-timeline-item (item &optional author owner)
@@ -2497,7 +2655,16 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
              (url-unhex-string (fj-get-html-link-desc body))
              'commit-ref .ref_commit_sha)))
           ("issue_ref"
-           (format format-str user .repository.full_name ts))
+           (concat
+            (format format-str user .ref_issue.repository.full_name ts)
+            "\n"
+            (fj-propertize-link
+             (url-unhex-string .ref_issue.title)
+             'issue-ref .ref_issue.number))
+
+           ;; (fj-propertize-link ;.ref_issue.repository.full_name)
+           ;;  (url-unhex-string ).ref_issue.title)
+           )
           ("label"
            (let ((action (if (string= body "1") "added" "removed")))
              (format format-str user action .label.name ts)))
@@ -2556,6 +2723,8 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
           ;; reviews
           ("review"
            (fj-format-review .review_id ts format-str user))
+          ("review_request"
+           (fj-format-assignee format-str user .assignee.username ts))
           ;; milestones:
           ("milestone"
            (format format-str user
@@ -2566,7 +2735,7 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
            (fj-format-assignee format-str
                                .user.username .assignee.username ts))
           (_ ;; just so we never break the rest of the view:
-           (format "%s did unknown action %s" user ts)))
+           (format "%s did unknown action: %s %s" user .type ts)))
         'fj-item-data item)
        "\n\n"))))
 
@@ -2708,22 +2877,33 @@ Use REVIEW-ID for ITEM-ID in REPO by OWNER."
   '("source" "fork" "mirror" "collaborative")
   "Types of repositories in foregejo search.")
 
-(defun fj-repo-search-do (query &optional topic id mode)
+(defvar fj-search-sorts
+  '("alpha" "created" "updated" "size" "git_size" "lfs_size" "stars"
+    "forks" "id"))
+
+(defun fj-repo-search-do (query &optional topic id mode
+                                include-desc sort order page limit)
   "Search for QUERY, optionally flag it as a TOPIC.
 ID is a user ID, which if given must own the repo.
 MODE must be a member of `fj-search-modes', else it is silently
-ignored."
+ignored.
+INCLUDE-DESC SORT ORDER PAGE LIMIT."
+  ;; GET /repos/search. args TODO:
+  ;; priority_owner_id, team_id, starredby
+  ;; private, is_private, template, archived
   (let* ((params `(("q" . ,query)
-                   ("limit" . "100")
-                   ("includeDesc" . "true")
-                   ("sort" . "updated")
-                   ,@(when id
-                       `(("exclusive" . ,id)))
+                   ("limit" . (fj-default-limit))
+                   ("includeDesc" . ,(or include-desc "true"))
+                   ("sort" . ,(or sort "updated"))
+                   ,@(when order `(("order" . ,order)))
+                   ,@(when id `(("uid" . ,id)
+                                ("exclusive" . "true")))
                    ,@(when (and mode
                                 (member mode fj-search-modes))
                        `(("mode" . ,mode)))
-                   ,@(when topic
-                       '(("topic" . "true"))))))
+                   ,@(when topic '(("topic" . "true")))
+                   ,@(when page `(("page" . ,page)))
+                   ,@(when limit `(("limit" . ,limit))))))
     (fj-get "/repos/search" params)))
 
 (defun fj-repo-search (query &optional topic id mode)
@@ -2831,11 +3011,14 @@ NO-OWNER means don't display owner column (user repos view)."
            face 'fj-comment-face
            item repo)])))))
 
-(defun fj-repo-search-tl (query &optional topic)
+(defun fj-repo-search-tl (query &optional topic id mode
+                                include-desc sort order page limit)
   "Search repos for QUERY, and display a tabulated list of results.
-TOPIC, a boolean, means search in repo topics."
+TOPIC, a boolean, means search in repo topics.
+ID MODE INCLUDE-DESC SORT ORDER PAGE LIMIT."
   (interactive "sSearch for repos: ")
-  (let* ((resp (fj-repo-search-do query topic))
+  (let* ((resp (fj-repo-search-do query topic id mode
+                                  include-desc sort order page limit))
          (buf (format "*fj-search-%s*" query))
          (url (concat fj-host "/explore/repos"))
          (data (alist-get 'data resp))
@@ -2843,7 +3026,12 @@ TOPIC, a boolean, means search in repo topics."
     (fj-repos-tl-render buf entries #'fj-repo-tl-mode)
     (with-current-buffer (get-buffer-create buf)
       (setq fj-buffer-spec
-            `(:url ,url :query ,query)))))
+            `( :url ,url
+               :viewargs
+               ( :query ,query :topic ,topic :id ,id :mode ,mode
+                 :include-desc ,include-desc :sort ,sort
+                 :order ,order :page ,page :limit ,limit)
+               :viewfun fj-repo-search-tl)))))
 
 (defun fj-repo-search-tl-topic (query)
   "Search repo topics for QUERY, and display a tabulated list."
@@ -2923,15 +3111,6 @@ Optionally specify repo OWNER and URL."
                        (fj--get-tl-col 2) ;; ISSUE author not REPO owner
                      (fj--repo-owner))))
        (fj-user-repos-tl owner)))))
-
-(defun fj-repo-tl-reload ()
-  "Reload current user repos tl."
-  (interactive)
-  (let* ((query (fj--get-buffer-spec :query)) ; only in search tl
-         (user (unless query (fj--get-buffer-spec :owner))))
-    (if query
-        (fj-repo-search-tl query)
-      (fj-user-repos-tl user))))
 
 ;; search or user repo TL
 (defun fj-repo-tl-star-repo (&optional unstar)
@@ -3145,7 +3324,7 @@ Optionally set PAGE and LIMIT."
              (owner (fj--get-buffer-spec :owner))
              (repo (fj--repo-col-or-buf-spec)))
         (fj-issue-close repo owner number)
-        (fj-issues-tl-reload))))))
+        (fj-view-reload))))))
 
 (defun fj-issues-tl-delete (&optional _)
   "Delete current issue from tabulated issues listing."
@@ -3158,7 +3337,7 @@ Optionally set PAGE and LIMIT."
            (repo (fj--repo-col-or-buf-spec)))
       (when (y-or-n-p (format "Delete issue %s?" number))
         (fj-issue-delete repo owner number :no-confirm)
-        (fj-issues-tl-reload))))))
+        (fj-view-reload))))))
 
 (defun fj-issues-tl-reopen (&optional _)
   "Reopen current issue from tabulated issues listing."
@@ -3171,7 +3350,7 @@ Optionally set PAGE and LIMIT."
             (owner (fj--get-buffer-spec :owner))
             (repo (fj--repo-col-or-buf-spec)))
        (fj-issue-close repo owner number "open")
-       (fj-issues-tl-reload)))))
+       (fj-view-reload)))))
 
 (defun fj-issues-tl-edit-title ()
   "Edit issue title from issues tabulated list view."
@@ -3182,7 +3361,7 @@ Optionally set PAGE and LIMIT."
           (owner (fj--get-buffer-spec :owner))
           (number (car (seq-first entry))))
      (fj-issue-edit-title repo owner number)
-     (fj-issues-tl-reload))))
+     (fj-view-reload))))
 
 (defun fj-issues-tl-label-add ()
   "Add label to issue from tabulated issues listing."
@@ -3352,7 +3531,7 @@ Call response and update functions."
               ;; FIXME: we may have been in issues TL or issue view.
               ;; we we need prev-buffer arg?
               ;; else generic reload function
-              (fj-item-view-reload)
+              (fj-view-reload)
             (fj-list-issues-do repo)))))))
 
 (defun fj-search-users (query &optional limit)
@@ -3386,7 +3565,7 @@ Optionally set LIMIT to results."
   (let* ((resp (fj-search-users
                 (buffer-substring-no-properties (1+ start) ; cull '@'
                                                 end)
-                "50")) ; limit
+                (fj-max-items)))
          (data (alist-get 'data resp)))
     (fj-users-list data)))
 
@@ -3439,9 +3618,11 @@ Optionally set LIMIT to results."
   :doc "Keymap for `fj-notifications-mode'."
   :parent fj-generic-map
   "C-c C-c" #'fj-notifications-unread-toggle
-  "s" #'fj-list-issues-search
-  "I" #'fj-list-issues
-  "S" #'fj-repo-search-tl)
+  "C-c C-s" #'fj-notifications-subject-cycle
+  ;; FIXME: move to `fj-generic-map' when item views are ready:
+  "." #'fj-next-page
+  "," #'fj-prev-page
+  "s" #'fj-list-issues-search)
 
 (define-derived-mode fj-notifications-mode special-mode "fj-notifs"
   "Major mode for viewing notifications."
@@ -3452,12 +3633,22 @@ Optionally set LIMIT to results."
   '("unread" "read" "pinned")
   "List of possible status types for getting notifications.")
 
-(defun fj-get-notifications (&optional all) ; status-types subject-type)
-                                        ; before since page limit
+(defun fj-get-notifications (&optional all status-types subject-type
+                                       page limit)
+                                        ; before since
   "GET notifications for `fj-user'.
-ALL is a boolean, meaning also return read notifications."
-  ;; STATUS-TYPES and SUBJECT-TYPE are array strings."
-  (let ((params `(("all" . ,all)))
+ALL is a boolean, meaning also return read notifications.
+STATUS-TYPES must be a member of `fj-notifications-status-types'.
+SUBJECT-TYPE must be a member of `fj-notifications-subject-types'.
+PAGE and LIMIT are for pagination."
+  ;; NB: STATUS-TYPES and SUBJECT-TYPE are array strings."
+  (let ((params `(,@(when all '(("all" . "true")))
+                  ,@(when status-types
+                      `(("status-types" . ,status-types)))
+                  ,@(when subject-type
+                      `(("subject-type" . ,subject-type)))
+                  ,@(when page `(("page" . ,page)))
+                  ,@(when limit `(("limit" . ,limit)))))
         (endpoint "notifications"))
     (fj-get endpoint params)))
 
@@ -3466,42 +3657,76 @@ ALL is a boolean, meaning also return read notifications."
   (alist-get 'new
              (fj-get "notifications/new")))
 
-(defun fj-view-notifications (&optional type)
+(defun fj-view-notifications (&optional all status-types subject-type
+                                        page limit)
   "View notifications for `fj-user'.
-TYPE is either \"all\" or \"unread\", meaning which set of notifs
-to display."
+ALL is either \"all\" or \"unread\", meaning which set of notifs to
+display.
+STATUS-TYPES must be a member of `fj-notifications-status-types'.
+SUBJECT-TYPE must be a member of `fj-notifications-subject-types'.
+PAGE and LIMIT are for pagination."
   (interactive)
-  (let ((buf (format "*fj-notifications-%s*" (or type "unread")))
-        (data (fj-get-notifications
-               (if (string= type "all")
-                   "true" "false"))))
-    (if (not data)
-        (when (y-or-n-p "No unread notifications. Load all?")
-          (fj-view-notifications-all))
-      (fedi-with-buffer buf 'fj-notifications-mode nil
-        (fj-render-notifications data))
-      ;; FIXME: make this an option in `fedi-with-buffer'?
-      ;; else it just goes to point-min:
-      (with-current-buffer buf
-        (setq fj-buffer-spec `(:type ,type))
-        (fj-item-next)))))
+  (let* ((all-type (if all "all" "unread"))
+         (buf (format "*fj-notifications-%s%s*"
+                      all-type
+                      (if subject-type
+                          (concat "-" subject-type "s")
+                        "")))
+         (data (fj-get-notifications all status-types
+                                     subject-type page limit)))
+    (fedi-with-buffer buf 'fj-notifications-mode nil
+      (if (not data)
+          (insert
+           (format "No notifications of type: %s %s" all-type subject-type))
+        (save-excursion (fj-render-notifications data)))
+      (setq fj-buffer-spec `( :viewfun fj-view-notifications
+                              :viewargs
+                              ( :all ,all :status-types ,status-types
+                                :subject-type ,subject-type
+                                :page ,page :limit ,limit))))
+    ;; FIXME: make this an option in `fedi-with-buffer'?
+    ;; else it just goes to point-min:
+    (fj-next-tab-item)))
 
-(defun fj-view-notifications-all ()
-  "View all notifications for `fj-user'."
+(defun fj-view-notifications-all (&optional status-types subject-type
+                                            page limit)
+  "View all notifications for `fj-user'.
+STATUS-TYPES must be a member of `fj-notifications-status-types'.
+SUBJECT-TYPE must be a member of `fj-notifications-subject-types'.
+PAGE and LIMIT are for pagination."
   (interactive)
-  (fj-view-notifications "all"))
+  (fj-view-notifications "true" status-types subject-type
+                         page limit))
 
-(defun fj-view-notifications-unread ()
-  "View unread notifications for `fj-user'."
+(defun fj-notifications-all-plist (plist)
+  "Update the value of :state in PLIST and return it."
+  (let* ((current (plist-get plist :all))
+         (next (if current nil "true")))
+    (plist-put plist :all next)))
+
+(defun fj-notifications-subject-plist (plist)
+  "Replace :subject-type in PLIST with next value.
+Values are in `fj-notifications-subject-types'."
+  (let* ((current (plist-get plist :subject-type))
+         (next (fj-next-item-var current fj-notifications-subject-types)))
+    (plist-put plist :subject-type next)))
+
+(defun fj-notifications-subject-cycle ()
+  "Cycle notifications by `fj-notifications-subject-types'.
+Subject types are \"issues\" \"pulls\" \"commits\" and \"repository\"."
   (interactive)
-  (fj-view-notifications "unread"))
+  ;; NB: subject-type can be a list of things, but for now we just cycle
+  ;; one-by-one:
+  (fj-destructure-buf-spec (viewfun viewargs)
+    (let ((args (fj-notifications-subject-plist viewargs)))
+      (apply viewfun (fj-plist-values args)))))
 
 (defun fj-notifications-unread-toggle ()
   "Switch between showing all notifications, and only showing unread."
   (interactive)
-  (let ((type (fj--get-buffer-spec :type)))
-    (fj-view-notifications
-     (if (string= type "all") "unread" "all"))))
+  (fj-destructure-buf-spec (viewfun viewargs)
+    (let ((args (fj-notifications-all-plist viewargs)))
+      (apply viewfun (fj-plist-values args)))))
 
 (defun fj-render-notifications (data)
   "Render notifications DATA."
@@ -3564,7 +3789,7 @@ If RELOAD, also reload the notications view."
        ;; FIXME: needs to be optional, as `fj-mark-notification-read'
        ;; is also called when we load an item from notifs view:
        (when reload
-         (fj-notifications-reload))))))
+         (fj-view-reload))))))
 
 (defun fj-mark-notification-read (&optional id)
   "Mark notification at point as read.
@@ -3577,12 +3802,6 @@ Use ID if provided."
 Use ID if provided."
   (interactive)
   (fj-mark-notification "unread" id))
-
-(defun fj-notifications-reload ()
-  "Reload current notifications view."
-  (interactive)
-  (let* ((type (fj--get-buffer-spec :type)))
-    (fj-view-notifications type)))
 
 ;;; BROWSE
 
@@ -3643,16 +3862,33 @@ Used for hitting RET on a given link."
         ('handle (fj-user-repos-tl item))
         ((or  'commit 'commit-ref)
          (fj-view-commit-diff item))
+        ('issue-ref
+         (fj-issue-ref-follow item))
         ('notif
-         (let ((repo (fj--property 'fj-repo))
-               (owner (fj--property 'fj-owner)))
-           (fj-item-view repo owner item)
-           (fj-mark-notification-read item)))
+         (fj-notif-link-follow item))
         ('shr
          (let ((url (fj--property 'shr-url)))
            (shr-browse-url url)))
         (_
          (error "Unknown link type %s" type))))))
+
+(defun fj-issue-ref-follow (item)
+  "Follow an issue ref link.
+ITEM is the issue's number."
+  (let-alist (fj--property 'fj-item-data)
+    (fj-item-view .ref_issue.repository.name .ref_issue.repository.owner
+                  item)))
+
+(defun fj-notif-link-follow (item)
+  "Follow a notification link.
+ITEM is the destination item's id.
+After loading, also mark the notification as read."
+  ;; NB: we don't use buffer spec repo/owner for notifs links:
+  (let ((repo (fj--property 'fj-repo))
+        (owner (fj--property 'fj-owner))
+        (id (fj--property 'fj-notification)))
+    (fj-item-view repo owner item)
+    (fj-mark-notification-read id)))
 
 (defun fj-do-link-action-mouse (event)
   "Do the action of the link at point.
@@ -3663,9 +3899,9 @@ Used for a mouse-click EVENT on a link."
 (defun fj-next-tab-item ()
   "Jump to next tab item."
   (interactive)
-  ;; FIXME: some links only have 'shr-tab-stop!
+  ;; FIXME: some links only have 'shr-tabstop! some have both
   (or (fedi-next-tab-item nil 'fj-tab-stop)
-      (fedi-next-tab-item nil 'shr-tab-stop)))
+      (fedi-next-tab-item nil 'shr-tabstop)))
 
 (defun fj-prev-tab-item ()
   "Jump to prev tab item."
@@ -3691,9 +3927,6 @@ Used for a mouse-click EVENT on a link."
   :doc "Keymap for `fj-commits-mode'."
   :parent fj-generic-map
   "s" #'fj-list-issues-search
-  "I" #'fj-list-issues
-  "S" #'fj-repo-search-tl
-  "R" #'fj-repo-update-settings
   "L" #'fj-repo-commit-log)
 
 (define-derived-mode fj-commits-mode special-mode "fj-commits"
@@ -3774,87 +4007,110 @@ Optionally specify BRANCH to show commits from."
 (defvar-keymap fj-users-mode-map
   :doc "Keymap for `fj-users-mode'."
   :parent fj-generic-map
+  "." #'fj-next-page
+  "," #'fj-prev-page
   "s" #'fj-list-issues-search
-  "I" #'fj-list-issues
-  "S" #'fj-repo-search-tl
-  "L" #'fj-repo-commit-log
-  "R" #'fj-repo-update-settings)
+  "L" #'fj-repo-commit-log)
 
 (define-derived-mode fj-users-mode special-mode "fj-users"
   "Major mode for viewing users."
   :group 'fj
   (read-only-mode 1))
 
-(defun fj-repo-users (fetch-fun buf-str &optional repo owner)
+;;; repo users
+
+(defun fj-repo-users (fetch-fun buf-str &optional repo owner
+                                viewfun page limit)
   "Render users for REPO by OWNER.
 Fetch users by calling FETCH-FUN with two args, REPO and OWNER.
 BUF-STR is the name of the buffer string to use."
   (let* ((repo (or repo (fj--get-buffer-spec :repo)))
          (owner (or owner (fj--get-buffer-spec :owner)))
          (buf (format "*fj-%s-%s*" repo buf-str))
-         (data (funcall fetch-fun repo owner)))
-    (fj-render-users-do data buf repo owner)))
+         (data (funcall fetch-fun repo owner page limit)))
+    (fedi-with-buffer buf 'fj-users-mode nil
+      (fj-render-users data)
+      (when repo (setq fj-current-repo repo))
+      (setq fj-buffer-spec
+            ;; FIXME: url for browsing
+            `( :repo ,repo :owner ,owner
+               :viewargs ( :repo ,repo :owner ,owner
+                           :page ,page :limit ,limit)
+               :viewfun ,viewfun)))))
 
-(defun fj-account-users (fetch-fun buf-str &optional user)
+(defun fj-get-repo-stargazers (repo owner &optional page limit)
+  "Get stargazers of REPO by OWNER.
+PAGE and LIMIT are for pagination."
+  (let ((endpoint (format "/repos/%s/%s/stargazers" owner repo))
+        (params `(,@(when page `(("page" . ,page)))
+                  ,@(when limit `(("limit" . ,limit))))))
+    (fj-get endpoint params)))
+
+(defun fj-repo-stargazers (&optional repo owner page limit)
+  "Render stargazers for REPO by OWNER.
+PAGE and LIMIT are for pagination."
+  (interactive)
+  (fj-repo-users #'fj-get-stargazers "stargazers"
+                 repo owner #'fj-repo-stargazers page limit))
+
+(defun fj-get-watchers (repo owner &optional page limit)
+  "Get watchers of REPO by OWNER.
+PAGE and LIMIT are for pagination."
+  (let ((endpoint (format "/repos/%s/%s/subscribers" owner repo))
+        (params `(,@(when page `(("page" . ,page)))
+                  ,@(when limit `(("limit" . ,limit))))))
+    (fj-get endpoint params)))
+
+(defun fj-repo-watchers (&optional repo owner page limit)
+  "Render watchers for REPO by OWNER.
+PAGE and LIMIT are for pagination."
+  (interactive)
+  (fj-repo-users #'fj-get-watchers "watchers"
+                 repo owner #'fj-repo-watchers page limit))
+
+;;; account users
+
+(defun fj-account-users (fetch-fun buf-str &optional user
+                                   viewfun page limit)
   "Render users linked somehow to USER.
 Fetch users by calling FETCH-FUN with no args.
 BUF-STR is the name of the `buffer-string' to use."
   (let* ((user (or user fj-user))
          (buf (format "*fj-%s" buf-str))
          (data (funcall fetch-fun)))
-    (fj-render-users-do data buf nil user)))
-
-(defun fj-render-users-do (data buf-str &optional repo owner)
-  "Render DATA, a list of users.
-Fetch users by calling FETCH-FUN with two args, REPO and OWNER.
-BUF-STR is the name of the buffer string to use."
-  (fedi-with-buffer buf-str 'fj-users-mode nil
-    (fj-render-users data)
-    (when repo (setq fj-current-repo repo))
-    (setq fj-buffer-spec
-          `(:repo ,repo :owner ,owner))))
-
-(defun fj-get-repo-stargazers (repo owner) ;; page limit
-  "Get stargazers of REPO by OWNER."
-  (let ((endpoint (format "/repos/%s/%s/stargazers" owner repo))
-        (params '()))
-    (fj-get endpoint params)))
-
-(defun fj-repo-stargazers (&optional repo owner)
-  "Render stargazers for REPO by OWNER."
-  (interactive)
-  (fj-repo-users #'fj-get-stargazers "stargazers" repo owner))
-
-(defun fj-get-watchers (repo owner) ;; page limit
-  "Get watchers of REPO by OWNER."
-  (let ((endpoint (format "/repos/%s/%s/subscribers" owner repo))
-        (params '()))
-    (fj-get endpoint params)))
-
-(defun fj-repo-watchers (&optional repo owner)
-  "Render watchers for REPO by OWNER."
-  (interactive)
-  (fj-repo-users #'fj-get-watchers "watchers" repo owner))
+    (fedi-with-buffer buf 'fj-users-mode nil
+      (fj-render-users data)
+      ;; (when repo (setq fj-current-repo repo))
+      (setq fj-buffer-spec
+            ;; FIXME: url for browsing
+            `( :viewargs (:user ,user :page ,page :limit ,limit)
+               :viewfun ,viewfun)))))
 
 (defun fj-get-user-followers ()
   "Get users you `fj-user' is followed by."
   (let* ((endpoint "/user/followers"))
     (fj-get endpoint)))
 
-(defun fj-user-followers ()
-  "View users who follow you."
+(defun fj-user-followers (&optional user page limit)
+  "View users who follow USER or `fj-user'.
+PAGE and LIMIT are for pagination."
   (interactive)
-  (fj-account-users #'fj-get-user-followers "followers"))
+  (fj-account-users #'fj-get-user-followers "followers"
+                    user #'fj-user-followers page limit))
 
 (defun fj-get-user-following ()
   "Get users you `fj-user' is following."
   (let* ((endpoint "/user/following"))
     (fj-get endpoint)))
 
-(defun fj-user-following ()
-  "View users you are following."
+(defun fj-user-following (&optional user page limit)
+  "View users that USER or `fj-user' is following.
+PAGE and LIMIT are for pagination."
   (interactive)
-  (fj-account-users #'fj-get-user-following "followers"))
+  (fj-account-users #'fj-get-user-following "following"
+                    user #'fj-user-following page limit))
+
+;;; render users
 
 (defun fj-render-users (users)
   "Render USERS."
