@@ -2627,7 +2627,16 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
              (url-unhex-string (fj-get-html-link-desc body))
              'commit-ref .ref_commit_sha)))
           ("issue_ref"
-           (format format-str user .repository.full_name ts))
+           (concat
+            (format format-str user .ref_issue.repository.full_name ts)
+            "\n"
+            (fj-propertize-link
+             (url-unhex-string .ref_issue.title)
+             'issue-ref .ref_issue.number))
+
+           ;; (fj-propertize-link ;.ref_issue.repository.full_name)
+           ;;  (url-unhex-string ).ref_issue.title)
+           )
           ("label"
            (let ((action (if (string= body "1") "added" "removed")))
              (format format-str user action .label.name ts)))
@@ -3825,6 +3834,8 @@ Used for hitting RET on a given link."
         ('handle (fj-user-repos-tl item))
         ((or  'commit 'commit-ref)
          (fj-view-commit-diff item))
+        ('issue-ref
+         (fj-issue-ref-follow item))
         ('notif
          (fj-notif-link-follow item))
         ('shr
@@ -3832,6 +3843,13 @@ Used for hitting RET on a given link."
            (shr-browse-url url)))
         (_
          (error "Unknown link type %s" type))))))
+
+(defun fj-issue-ref-follow (item)
+  "Follow an issue ref link.
+ITEM is the issue's number."
+  (let-alist (fj--property 'fj-item-data)
+    (fj-item-view .ref_issue.repository.name .ref_issue.repository.owner
+                  item)))
 
 (defun fj-notif-link-follow (item)
   "Follow a notification link.
