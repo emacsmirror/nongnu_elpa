@@ -2237,7 +2237,7 @@ RELOAD mean we reloaded."
                  :viewfun fj-item-view
                  ;; signature: repo owner number reload pull page limit:
                  :viewargs ( :repo ,repo :owner ,owner :number ,number
-                             :reload ,reload ;; FIXME: remove reload arg
+                             :reload ,(not reload) ;; FIXME: remove reload arg
                              :type ,type
                              :page ,page :limit ,limit)))
         ;; .is_locked
