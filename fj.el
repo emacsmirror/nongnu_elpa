@@ -2572,6 +2572,7 @@ ENDPOINT is the API endpoint to hit."
     ("delete_branch" . "%s deleted branch %s %s")
     ("review" . "%s %s changes %s")
     ;; FIXME: add a request for changes review? not just approval?
+    ("review_request" . "%s requested review from %s %s")
     ("milestone" . "%s added milestone %s %s")
     ("assignees" . "%s %sassigned this%s %s")))
 
@@ -2682,6 +2683,8 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
           ;; reviews
           ("review"
            (fj-format-review .review_id ts format-str user))
+          ("review_request"
+           (fj-format-assignee format-str user .assignee.username ts))
           ;; milestones:
           ("milestone"
            (format format-str user
@@ -2692,7 +2695,7 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
            (fj-format-assignee format-str
                                .user.username .assignee.username ts))
           (_ ;; just so we never break the rest of the view:
-           (format "%s did unknown action %s" user ts)))
+           (format "%s did unknown action: %s %s" user .type ts)))
         'fj-item-data item)
        "\n\n"))))
 
