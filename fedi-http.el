@@ -172,12 +172,19 @@ json-string PARAMS."
     (with-temp-buffer
       (fedi-http--url-retrieve-synchronously url silent))))
 
-(defun fedi-http--delete (url &optional params)
+(defun fedi-http--delete (url &optional params json)
   "Make DELETE request to URL.
-PARAMS is an alist of any extra parameters to send with the request."
+PARAMS is an alist of any extra parameters to send with the request.
+If JSON, encode PARAMS as JSON."
   ;; url-request-data only works with POST requests?
   (let ((url-request-method "DELETE")
-        (url (fedi-http--concat-params-to-url url params)))
+        (url-request-data
+         (when params
+           (if json
+               (encode-coding-string
+                (json-encode params) 'utf-8)
+             (fedi-http--build-params-string params)))))
+    ;; (url (fedi-http--concat-params-to-url url params)))
     (with-temp-buffer
       (fedi-http--url-retrieve-synchronously url))))
 
