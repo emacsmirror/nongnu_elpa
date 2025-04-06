@@ -157,6 +157,46 @@ If COERCE, make numbers strings."
 ;;                          (symbol-name arg))))
 ;;     `(when ,arg (cons ,str "true"))))
 
+(defmacro fedi-opt-params (&rest params)
+  "From PARAMS, a list of symbols, create an alist of parameters.
+Used to conditionally create fields in the parameters alist.
+
+A param can also be an expression, in which case the car should be the
+symbol name of the param as used locally. The cdr should be a plist
+that may contain the fields :boolean, :alias and :when.
+:boolean should be a string, either \"true\" or \"false\".
+:alias should be the name of the parameter as it is on the server.
+:when should be a condition clause to test against rather than the mere
+value of the parameter symbol.
+
+For example:
+
+\(fedi-opt-params (query :alias \"q\") (topic :boolean \"true\")
+                  uid (mode :when (member mode fj-search-modes))
+                  (include-desc :alias \"includeDesc\"
+                                :boolean \"true\")
+                  order page limit)."
+  (declare (debug t))
+  `(append ,@(fedi--opt-params-whens params)))
+
+(defun fedi--opt-params-whens (params)
+  "Return a when clause for each item in params, a list of symbols."
+  (cl-loop for x in params
+           collect (fedi--opt-param-expr x)))
+
+(defun fedi--opt-param-expr (param)
+  "For PARAM, return a when expression of the form:
+(when param '(\"param\" . param)).
+Param can also be an expression. See `fedi-opt-params' for details."
+  (if (consp param)
+      (let* ((name (car param))
+             (boolean (plist-get (cdr param) :boolean))
+             (alias (plist-get (cdr param) :alias))
+             (clause (plist-get (cdr param) :when))
+             (str (or alias (symbol-to-string name))))
+        `(when ,(or clause name)
+           `((,,str . ,,name))))
+    `(when ,param `((,(symbol-to-string ',param) . ,,param)))))
 
 ;;; BUFFER MACRO
 
