@@ -163,11 +163,12 @@ Used to conditionally create fields in the parameters alist.
 
 A param can also be an expression, in which case the car should be the
 symbol name of the param as used locally. The cdr should be a plist
-that may contain the fields :boolean, :alias and :when.
+that may contain the fields :boolean, :alias, :when and :list.
 :boolean should be a string, either \"true\" or \"false\".
 :alias should be the name of the parameter as it is on the server.
 :when should be a condition clause to test against rather than the mere
-value of the parameter symbol.
+value of the parameter symbol
+:list should be a list of values for the parameter.
 
 For example:
 
@@ -175,6 +176,7 @@ For example:
                   uid (mode :when (member mode fj-search-modes))
                   (include-desc :alias \"includeDesc\"
                                 :boolean \"true\")
+                  (list :list (\"123\" \"abc\")
                   order page limit)."
   (declare (debug t))
   `(append ,@(fedi--opt-params-whens params)))
@@ -193,9 +195,11 @@ Param can also be an expression. See `fedi-opt-params' for details."
              (boolean (plist-get (cdr param) :boolean))
              (alias (plist-get (cdr param) :alias))
              (clause (plist-get (cdr param) :when))
+             (list (plist-get (cdr param) :list))
+             (value (or list name))
              (str (or alias (symbol-to-string name))))
         `(when ,(or clause name)
-           `((,,str . ,,name))))
+           `((,,str . ,,value))))
     `(when ,param `((,(symbol-to-string ',param) . ,,param)))))
 
 ;;; BUFFER MACRO
