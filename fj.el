@@ -1626,17 +1626,55 @@ Return its name, or if ID, return a cons of its name and id."
          (params (fedi-opt-params state name page limit)))
     (fj-get endpoint params)))
 
-(defun fj-read-milestone (&optional repo owner)
-  "Read a milestone for REPO by OWNER.
-Return an alist of title and ID."
-  ;; filtering issues handles milestone ids or names
-  (let* ((milestones (fj-get-milestones owner repo))
-         (alist (cl-loop for m in milestones
-                         collect (cons (alist-get 'title m)
-                                       (alist-get 'id m)))))
-    (completing-read "Milestone: " alist)))
+(defun fj-milestones-alist (milestones)
+  "Return an alist of title and ID from MILESTONES."
+  (cl-loop for m in milestones
+           collect (cons (alist-get 'title m)
+                         (alist-get 'id m))))
+
+(defun fj-create-milestone (&optional repo owner)
+  "Create a milestone for REPO by OWNER."
+  ;; POST /repos/{owner}/{repo}/milestones due_on, state (open/closed)
+  (interactive)
+  (let* ((repo (fj-read-user-repo repo))
+         (owner (or owner fj-user))
+         (endpoint (format "/repos/%s/%s/milestones" owner repo))
+         (title (read-string "Title: "))
+         (desc (read-string "Description (optional): "))
+         (params `(("title" . ,title)
+                   ("description" . ,desc)))
+         (resp (fj-post endpoint params :json)))
+    (fedi-http--triage
+     resp
+     (lambda (resp)
+       (message "Milestone %s created!" title)))))
+
+(defun fj-add-issue-to-milestone (&optional repo owner)
+  "Add issue at point or in current view to milestone."
+  (interactive)
+  (fj-with-issue
+   (let* ((repo (fj-read-user-repo repo))
+          (owner (or owner fj-user))
+          (issue (pcase major-mode
+                   ('fj-item-view-mode
+                    (fj--get-buffer-spec :item))
+                   ('fj-issue-tl-mode
+                    (fj--get-tl-col 0))))
+          (milestones (fj-get-milestones repo owner))
+          (alist (fj-milestones-alist milestones))
+          (choice (completing-read "Milestone: " alist))
+          (id (number-to-string
+               (cdr (assoc choice alist #'equal))))
+          (resp (fj-issue-patch repo owner issue nil nil
+                                nil nil nil nil id)))
+     (fedi-http--triage
+      resp
+      (lambda (resp)
+        (message "%s added to milestone %s" issue choice))))))
 
 ;;; ISSUES TL
+
+;;; mode and listings rendering
 
 ;; webUI sort options:
 ;; (defvar fj-list-tl-sort-options
@@ -1888,7 +1926,8 @@ git config."
   "List issues in REPO by OWNER, filtering by milestone.
 STATE, TYPE and QUERY are for `fj-list-issues-do'."
   (interactive)
-  (let* ((milestone (fj-read-milestone repo owner)))
+  (let* ((milestones (fj-get-milestones repo owner))
+         (milestone (fj-read-milestone milestones)))
     (fj-list-issues-do repo owner state type query labels milestone)))
 
 (defun fj-list-issues-by-label (&optional repo owner state type query)
