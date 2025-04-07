@@ -167,8 +167,9 @@ json-string PARAMS."
                                 ("Accept" . "application/json")))
                     '(("Content-Type" . "application/x-www-form-urlencoded"))))
          (url-request-extra-headers
-          (append url-request-extra-headers ; set in macro
-                  headers)))
+          (if (not url-request-extra-headers)
+              headers ;; no need to add anything
+            (append headers  url-request-extra-headers))))
     (with-temp-buffer
       (fedi-http--url-retrieve-synchronously url silent))))
 
