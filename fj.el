@@ -804,9 +804,9 @@ X and Y are sorting args."
 (defun fj-get-user-repos (user &optional page limit order)
   "GET request repos for USER.
 PAGE, LIMIT, ORDER."
-  (let ((params `(("limit" . ,(or limit (fj-default-limit)))
-                  ,@(when page `(("page" . ,page)))
-                  ,@(when order `(("order" . ,order)))))
+  (let ((params (append
+                 `(("limit" . ,(or limit (fj-default-limit))))
+                 (fedi-opt-params page limit)))
         (endpoint (format "users/%s/repos" user)))
     (fj-get endpoint params)))
 
@@ -862,10 +862,10 @@ PAGE, LIMIT, ORDER."
                          (message "Repo %s %s!" repo
                                   (if unstar "unstarred" "starred"))))))
 
-(defun fj-fork-repo (repo owner &optional name) ; org
+(defun fj-fork-repo (repo owner &optional name org)
   "Fork REPO owned by OWNER, optionally call fork NAME."
   (let* ((endpoint (format "repos/%s/%s/forks" owner repo))
-         (params `(("name" . ,name)))
+         (params (fedi-opt-params name org))
          ;; ("organization" . ,org)))
          (resp (fj-post endpoint params :json)))
     (fedi-http--triage resp
@@ -1013,33 +1013,37 @@ Return the issue number."
                          cands))))
     (cadr item)))
 
-;; /repos/{owner}/{repo}/issues
+;; GET /repos/{owner}/{repo}/issues
 ;; params: owner, repo, state, labels, q, type, milestones, since, before,
 ;; created_by, assigned_by, mentioned_by, page, limit
 (defun fj-repo-get-issues (repo &optional owner state type query
                                 labels milestones page limit)
-  ;; since, before, created_by, assigned_by, mentioned_by, page, limit
+  ;; TODO: since, before, created_by, assigned_by, mentioned_by
   "Return issues for REPO by OWNER.
 STATE is for issue status, a string of open, closed or all.
 TYPE is item type: issue pull or all.
-QUERY is a search term to filter by."
+QUERY is a search term to filter by.
+Optionally limit results to LABELS or MILESTONES, which are
+comma-separated lists.
+PAGE is 1-based page of results to return.
+LIMIT is the number of results."
   ;; FIXME: how to get issues by number, or get all issues?
   (let* ((endpoint (format "repos/%s/%s/issues" (or owner fj-user) repo))
          ;; NB: get issues has no sort param!
-         (params `(("limit" . ,(or limit (fj-default-limit)))
-                   ,@(when state `(("state" . ,state)))
-                   ,@(when type `(("type" . ,type)))
-                   ,@(when query `(("q" . ,query)))
-                   ,@(when labels `(("labels" . ,labels)))
-                   ,@(when milestones `(("milestones" . ,milestones)))
-                   ,@(when page `(("page" . ,page)))))) ;; 1-based
+         (params
+          (append `(("limit" . ,(or limit (fj-default-limit))))
+                  (fedi-opt-params state type
+                                   (query :alias "q")
+                                   labels milestones
+                                   page limit))))
     (condition-case err
         (fj-get endpoint params)
       (t (format "%s" (error-message-string err))))))
 
-(defun fj-issues-search (&optional query owner state type
-                                   created assigned mentioned
-                                   page)
+(defun fj-issues-search
+    (&optional state lables milestones query priority_repo_id type since
+               before assigned created mentioned
+               review_requested reviewed owner team page limit)
   "Make a GET request for issues matching QUERY.
 Optionally limit search by OWNER, STATE, or TYPE.
 Either QUERY or OWNER must be provided.
@@ -1048,22 +1052,22 @@ TYPE is \"issues\" or \"pulls\".
 Optionally filter results for those you have CREATED, been ASSIGNED to,
 or MENTIONED in.
 STATE defaults to open.
-PAGE is a number for pagination."
+PAGE is a 1-based number for pagination.
+MILESTONES and LABELS are comma-separated lists."
   ;; GET /repos/issues/search
-  ;; TODO: params: reviewed, review_requested, team, before, since,
-  ;; priority_repo_id, milestones (c s list), labels (c s list)
   ;; NB: this endpoint can be painfully slow
   ;; NB: this endpoint has no sort!
   (let* ((endpoint "repos/issues/search")
-         (params `(("limit" . (fj-default-limit))
-                   ,@(when query      `(("q" . ,query)))
-                   ,@(when owner      `(("owner" . ,owner)))
-                   ,@(when state      `(("state" . ,state)))
-                   ,@(when type       `(("type" . ,type)))
-                   ,@(when created    '(("created" . "true")))
-                   ,@(when assigned   '(("assigned" . "true")))
-                   ,@(when mentioned  '(("mentioned" . "true")))
-                   ,@(when page       `(("page" . ,page))))))
+         (params
+          (append
+           `(("limit" . ,(fj-default-limit)))
+           (fedi-opt-params state lables milestones (query :alias "q")
+                            priority_repo_id type since before
+                            (assigned :boolean "true")
+                            (created :boolean "true")
+                            (mentioned :boolean "true")
+                            review_requested reviewed owner
+                            team page limit))))
     (condition-case err
         (fj-get endpoint params)
       (t (format "%s" (error-message-string err))))))
@@ -1153,13 +1157,16 @@ LABELS is a list of label names."
                                         collect (cdr x))))))
     (fj-post url params :json)))
 
-(defun fj-issue-patch (repo owner issue &optional title body state)
+(defun fj-issue-patch
+    (repo owner issue &optional title body state assignee assignees
+          due_date milestone ref unset_due_date updated_at)
   "PATCH/Edit ISSUE in REPO.
 With PARAMS.
 OWNER is the repo owner."
-  (let* ((params `(("body" . ,body)
-                   ("title" . ,title)
-                   ("state" . ,state)))
+  ;; PATCH /repos/{owner}/{repo}/issues/{index}
+  (let* ((params (fedi-opt-params
+                  title body state assignee assignees due_date
+                  milestone ref unset_due_date updated_at))
          (endpoint (format "repos/%s/%s/issues/%s" owner repo issue)))
     (fj-patch endpoint params)))
 
@@ -1325,8 +1332,7 @@ Timeline contains comments and events of any type."
   (let* ((endpoint (format "repos/%s/%s/issues/%s/timeline"
                            owner repo issue))
          ;; NB: limit only works if page specified:
-         (params `(,@(when page `(("page" . ,page)))
-                   ,@(when limit `(("limit" . ,limit))))))
+         (params (fedi-opt-params page limit)))
     (fj-get endpoint params)))
 
 (defun fj-issue-get-timeline-async (repo owner issue
@@ -1341,8 +1347,7 @@ PAGE and LIMIT are for pagination."
                            owner repo issue))
          (url (fj-api endpoint))
          ;; NB: limit only works if page specified:
-         (params `(,@(when page `(("page" . ,page)))
-                   ,@(when limit `(("limit" . ,limit))))))
+         (params (fedi-opt-params page limit)))
     (apply #'fedi-http--get-json-async url params cb cbargs)))
 
 (defun fj-get-comment (repo owner issue &optional comment)
@@ -1611,14 +1616,14 @@ Return its name, or if ID, return a cons of its name and id."
 
 ;;; MILESTONES
 
-(defun fj-get-milestones (&optional repo owner)
+(defun fj-get-milestones (&optional repo owner state name page limit)
   "Get milestones for REPO by OWNER."
-  ;; GET /repos/{owner}/{repo}/milestones state name page limit
+  ;; GET /repos/{owner}/{repo}/milestones
   (let* ((repo (fj-read-user-repo repo))
          (owner (or owner fj-user))
          (endpoint (format "/repos/%s/%s/milestones" owner repo))
          ;; state param worth implementing:
-         (params nil))
+         (params (fedi-opt-params state name page limit)))
     (fj-get endpoint params)))
 
 (defun fj-read-milestone (&optional repo owner)
@@ -2880,28 +2885,29 @@ Use REVIEW-ID for ITEM-ID in REPO by OWNER."
 
 (defun fj-repo-search-do (query &optional topic id mode
                                 include-desc sort order page limit)
-  "Search for QUERY, optionally flag it as a TOPIC.
+  "Search repos for QUERY.
+Optionally flag it as a TOPIC.
 ID is a user ID, which if given must own the repo.
 MODE must be a member of `fj-search-modes', else it is silently
 ignored.
-INCLUDE-DESC SORT ORDER PAGE LIMIT."
+INCLUDE-DESC SORT ORDER PAGE LIMIT
+Sort must be a member of `fj-search-sorts'."
   ;; GET /repos/search. args TODO:
   ;; priority_owner_id, team_id, starredby
   ;; private, is_private, template, archived
-  (let* ((params `(("q" . ,query)
-                   ("limit" . (fj-default-limit))
-                   ("includeDesc" . ,(or include-desc "true"))
-                   ("sort" . ,(or sort "updated"))
-                   ,@(when order `(("order" . ,order)))
-                   ,@(when id `(("uid" . ,id)
-                                ("exclusive" . "true")))
-                   ,@(when (and mode
-                                (member mode fj-search-modes))
-                       `(("mode" . ,mode)))
-                   ,@(when topic '(("topic" . "true")))
-                   ,@(when page `(("page" . ,page)))
-                   ,@(when limit `(("limit" . ,limit))))))
+  (let* ((params
+          (append
+           `(("limit" . ,(fj-default-limit))
+             ("sort" . ,(or sort "updated")))
+           (when id `(("exclusive" . "true")))
+           (fedi-opt-params (query :alias "q") (topic :boolean "true")
+                            (id :alias uid)
+                            (mode :when (member mode fj-search-modes))
+                            (include-desc :alias "includeDesc"
+                                          :boolean "true")
+                            order page limit))))
     (fj-get "/repos/search" params)))
+
 
 (defun fj-repo-search (query &optional topic id mode)
   "Search repos for QUERY.
@@ -3257,8 +3263,7 @@ PAGE and LIMIT are for `fj-get-stargazers'."
   "Get stargazers for REPO by OWNER.
 Optionally set PAGE and LIMIT."
   (let ((endpoint (format "repos/%s/%s/stargazers" owner repo))
-        (params `(("page" . ,page)
-                  ("limit" . ,limit))))
+        (params (fedi-opt-params page limit)))
     (fj-get endpoint params)))
 
 ;;; TL ACTIONS, ISSUES ONLY
@@ -3631,23 +3636,18 @@ Optionally set LIMIT to results."
   "List of possible status types for getting notifications.")
 
 (defun fj-get-notifications (&optional all status-types subject-type
-                                       page limit)
-                                        ; before since
+                                       page limit before since)
   "GET notifications for `fj-user'.
 ALL is a boolean, meaning also return read notifications.
-STATUS-TYPES must be a member of `fj-notifications-status-types'.
-SUBJECT-TYPE must be a member of `fj-notifications-subject-types'.
+STATUS-TYPES is a list the members of which must be members of
+`fj-notifications-status-types'.
+SUBJECT-TYPE is a list the members of which must be members of
+`fj-notifications-subject-types'.
 PAGE and LIMIT are for pagination."
   ;; NB: STATUS-TYPES and SUBJECT-TYPE are array strings."
-  (let ((params `(,@(when all '(("all" . "true")))
-                  ,@(when status-types
-                      `(("status-types" . ,status-types)))
-                  ,@(when subject-type
-                      `(("subject-type" . ,subject-type)))
-                  ,@(when page `(("page" . ,page)))
-                  ,@(when limit `(("limit" . ,limit)))))
-        (endpoint "notifications"))
-    (fj-get endpoint params)))
+  (let ((params (fedi-opt-params (all :boolean "true") status-types
+                                 subject-type page limit before since)))
+    (fj-get "notifications" params)))
 
 (defun fj-get-new-notifications-count ()
   "Return the number of new notifications for `fj-user'."
@@ -3951,12 +3951,14 @@ If PREFIX arg, prompt for branch to show commits of."
       (setq fj-current-repo repo)
       (setq fj-buffer-spec `(:repo ,repo :owner ,owner)))))
 
-(defun fj-get-repo-commits (repo owner &optional branch) ;; TODO: &optional sha path page limit not)
+(defun fj-get-repo-commits (repo owner &optional branch page limit)
+  ;; TODO: &optional sha path page limit not)
   ;; stat (diffs), verification, files, (optional, disable for speed)
   "Get commits of REPO by OWNER.
 Optionally specify BRANCH to show commits from."
   (let ((endpoint (format "/repos/%s/%s/commits" owner repo))
-        (params `(("sha" . ,branch))))
+        (params (append `(("sha" . ,branch))
+                        (fedi-opt-params page limit))))
     (fj-get endpoint params)))
 
 (defun fj-render-commits (commits)
@@ -4039,8 +4041,7 @@ BUF-STR is the name of the buffer string to use."
   "Get stargazers of REPO by OWNER.
 PAGE and LIMIT are for pagination."
   (let ((endpoint (format "/repos/%s/%s/stargazers" owner repo))
-        (params `(,@(when page `(("page" . ,page)))
-                  ,@(when limit `(("limit" . ,limit))))))
+        (params (fedi-opt-params page limit)))
     (fj-get endpoint params)))
 
 (defun fj-repo-stargazers (&optional repo owner page limit)
@@ -4054,8 +4055,7 @@ PAGE and LIMIT are for pagination."
   "Get watchers of REPO by OWNER.
 PAGE and LIMIT are for pagination."
   (let ((endpoint (format "/repos/%s/%s/subscribers" owner repo))
-        (params `(,@(when page `(("page" . ,page)))
-                  ,@(when limit `(("limit" . ,limit))))))
+        (params (fedi-opt-params page limit)))
     (fj-get endpoint params)))
 
 (defun fj-repo-watchers (&optional repo owner page limit)
