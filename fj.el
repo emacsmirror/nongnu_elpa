@@ -2285,7 +2285,7 @@ OWNER is the repo owner."
               (fj-prop-item-flag "edited")))))
 
 (defun fj-render-item (repo owner item number
-                            &optional reload type page limit)
+                            &optional type page limit)
   "Render ITEM number NUMBER, in REPO and its TIMELINE.
 OWNER is the repo owner.
 RELOAD mean we reloaded."
@@ -2306,9 +2306,8 @@ RELOAD mean we reloaded."
                  :title ,.title ;; for commenting
                  :url ,.html_url ;; for browsing
                  :viewfun fj-item-view
-                 ;; signature: repo owner number reload pull page limit:
+                 ;; signature: repo owner number pull page limit:
                  :viewargs ( :repo ,repo :owner ,owner :number ,number
-                             :reload ,(not reload) ;; FIXME: remove reload arg
                              :type ,type
                              :page ,page :limit ,limit)))
         ;; .is_locked
@@ -2374,7 +2373,7 @@ RELOAD mean we reloaded."
                    (require 'emojify nil :noerror))
           (emojify-mode t))))))
 
-(defun fj-item-view (&optional repo owner number reload type page limit)
+(defun fj-item-view (&optional repo owner number type page limit)
   "View item NUMBER from REPO of OWNER.
 RELOAD means we are reloading, so don't open in other window.
 TYPE is :pull or :list (default).
@@ -2383,14 +2382,15 @@ PAGE and LIMIT are for `fj-issue-get-timeline'."
   (let* ( ;; set defaults for pagination:
          (page (or page "1"))
          (limit (or limit (fj-default-limit)))
+         ;; mode check for other-window arg:
+         (ow (not (eq major-mode 'fj-item-view-mode)))
          (repo (fj-read-user-repo repo))
          (item (fj-get-item repo owner number type))
          (number (or number (alist-get 'number item))))
     ;; (timeline (fj-issue-get-timeline repo owner number page limit)))
     (fedi-with-buffer (format "*fj-%s-item-%s*" repo number)
-        'fj-item-view-mode
-        (not reload)
-      (fj-render-item repo owner item number reload type page limit)
+        'fj-item-view-mode ow
+      (fj-render-item repo owner item number type page limit)
       ;; if we have paginated, re-append all pages sequentially:
       (if (fj-string-number> page "1")
           (fj-reload-paginated-pages)
