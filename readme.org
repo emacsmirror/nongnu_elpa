@@ -168,6 +168,7 @@ Repo settings transient:
 #+RESULTS:
 | Binding   | Command                          | Description                                                         |
 |-----------+----------------------------------+---------------------------------------------------------------------|
+|           | fj-add-issue-to-milestone        | Add issue at point or in current view to milestone.                 |
 |           | fj-add-reaction                  | Add reaction to issue, PR or comment at point.                      |
 |           | fj-browse-commit                 | Browse commit with SHA in REPO by OWNER.                            |
 | b         | fj-browse-view                   | Brose URL of view at point.                                         |
@@ -176,12 +177,14 @@ Repo settings transient:
 |           | fj-compose-comment-mode          | Minor mode for composing comments.                                  |
 |           | fj-compose-mode                  | Minor mode for composing issues.                                    |
 | C-c C-l   | fj-compose-read-labels           | Read a label in the issue compose buffer.                           |
+| C-c RET   | fj-compose-read-milestone        | Read an existing milestone in the compose buffer.                   |
 | C-c C-r   | fj-compose-read-repo             | Read a repo for composing a issue or comment.                       |
 | C-c C-t   | fj-compose-read-title            | Read an issue title.                                                |
 |           | fj-compose-send                  | Submit the issue or comment to your Forgejo instance.               |
 | C         | fj-copy-item-url                 | Copy URL of current item, either issue or PR.                       |
 |           | fj-copy-pr-url                   | Copy upstream Pull Request URL with branch name.                    |
 | c         | fj-create-issue                  | Create issue in current repo or repo at point in tabulated listing. |
+|           | fj-create-milestone              | Create a milestone for REPO by OWNER.                               |
 |           | fj-create-token                  | Create an access token for `fj-user' on `fj-host'.                  |
 | C-c C-c   | fj-cycle-state                   | Cycle item state listing of open, closed, and all.                  |
 | C-c C-s   | fj-cycle-type                    | Cycle item type listing of issues, pulls, and all.                  |
@@ -233,6 +236,7 @@ Repo settings transient:
 |           | fj-list-issues-closed            | Display closed ISSUES for REPO by OWNER in tabulated list view.     |
 |           | fj-list-issues-do                | Display ISSUES in a tabulated list view.                            |
 |           | fj-list-issues-search            | Search current repo issues for QUERY.                               |
+|           | fj-list-items                    | List pulls for REPO by OWNER, filtered by STATE and TYPE.           |
 | W         | fj-list-own-issues               | List issues in repos owned by `fj-user'.                            |
 |           | fj-list-own-items                | List items of TYPE in repos owned by `fj-user'.                     |
 |           | fj-list-own-pulls                | List pulls in repos owned by `fj-user'.                             |
