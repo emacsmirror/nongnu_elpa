@@ -360,7 +360,7 @@ NAME is not part of the symbol table, '?' is returned."
 (defun fedi-font-lock-comment (&rest strs)
   "Font lock comment face STRS."
   (propertize (mapconcat #'identity strs "")
-              'face font-lock-comment-face))
+              'face 'font-lock-comment-face))
 
 (defun fedi-thing-json ()
   "Get json of thing at point, comment, post, community or user."
