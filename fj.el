@@ -2152,7 +2152,9 @@ Return a string."
       (fj-mdize-plain-urls) ;; FIXME: mdize a string to save a buffer
       (goto-char (point-min))
       ;; 2: md-ize
-      (let ((html (fj-render-markdown (buffer-string))))
+      (let ((html (decode-coding-string
+                   (fj-render-markdown (buffer-string))
+                   'utf-8)))
         (with-current-buffer (get-buffer-create buf)
           (insert html)
           ;; 3: shr-render the md
