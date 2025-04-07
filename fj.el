@@ -2391,19 +2391,51 @@ PAGE and LIMIT are for `fj-issue-get-timeline'."
         'fj-item-view-mode
         (not reload)
       (fj-render-item repo owner item number reload type page limit)
-      (fj-item-view-more page))))
+      ;; if we have paginated, re-append all pages sequentially:
+      (if (fj-string-number> page "1")
+          (fj-reload-paginated-pages)
+        (fj-item-view-more page)))))
+
+(defun fj-reload-paginated-pages (&optional end-page)
+  "Reload a page of timeline items.
+Possibly reload more than one page. The idea is that if you reply to an
+item after having paginated through a timeline, we reload the timeline
+up to where you were, page by page.
+`fj-item-view' calls this with no args.
+In subsequent calls, END-PAGE is the original (i.e. highest) pagination page.
+Conditionally called from the end of `fj-item-view-more-cb'."
+  (cl-destructuring-bind (&key repo owner number _reload _type page limit)
+      (fj--get-buffer-spec :viewargs)
+    ;; if no pagination, do nothing:
+    (when (fj-string-number> (or end-page ;; repeat calls
+                                 page) ;; first call
+                             "2"
+                             #'>=)
+      ;; we have pagination to restore, starting from 1:
+      (fj-destructure-buf-spec (viewargs)
+        ;; update spec:
+        (let ((new-page (if end-page page ;; repeat calls
+                          "1"))) ;; first call
+          (setq fj-buffer-spec
+                (plist-put fj-buffer-spec :viewargs
+                           (plist-put viewargs :page new-page)))
+          (fj-issue-get-timeline-async
+           repo owner number new-page limit
+           #'fj-item-view-more-cb (current-buffer) (point) nil page))))))
 
 (defun fj-item-view-more (&optional init-page)
   "Append more timeline items to the current view, asynchronously.
-INIT-PAGE is used in `fj-render-item' on first load of a view."
+Interactively, INIT-PAGE is nil.
+INIT-PAGE is used in `fj-render-item' on first load of a view and when
+reloading a paginated view."
   (interactive)
   (cl-destructuring-bind (&key repo owner number _reload _type page limit)
       (fj--get-buffer-spec :viewargs)
     (fj-issue-get-timeline-async
      repo owner number (or init-page (fj-inc-or-2 page)) limit
-     #'fj-item-view-more-cb (current-buffer) (point) init-page)))
+     #'fj-item-view-more-cb (current-buffer) (point-max) init-page)))
 
-(defun fj-item-view-more-cb (json buf point init-page)
+(defun fj-item-view-more-cb (json buf point &optional init-page end-page)
   "Callback function to append more tiemline items to current view.
 JSON is the parsed HTTP response, BUF is the buffer to add to, POINT is
 where it was prior to updating.
@@ -2414,20 +2446,33 @@ If INIT-PAGE, do not update :page in viewargs."
       (if (not json)
           (user-error "No more items")
         (fj-destructure-buf-spec (viewargs)
-          ;; increment page in viewargs
-          ;; FIXME: this means reload will reload with page = "2":
-          (let ((args (if init-page
-                          viewargs
-                        (plist-put viewargs
-                                   :page (fj-inc-or-2
-                                          (plist-get viewargs :page))))))
+          ;; unless init-page arg, increment page in viewargs
+          (let* ((page (plist-get viewargs :page))
+                 (args (if init-page
+                           viewargs
+                         (plist-put viewargs :page (fj-inc-or-2 page)))))
             (setq fj-buffer-spec
-                  (plist-put fj-buffer-spec :viewargs args)))
-          (message "Loading comments...")
-          (let ((inhibit-read-only t))
-            ;; FIXME: we need .user.username owner args for new elements:
-            (fj-render-timeline json))
-          (message "Loading comments... Done"))))))
+                  (plist-put fj-buffer-spec :viewargs args))
+            (message "Loading comments...")
+            (let ((inhibit-read-only t))
+              ;; FIXME: we need .user.username owner args for new elements:
+              (fj-render-timeline json))
+            (message "Loading comments... Done")
+            (when end-page ;; if we are re-paginating, go again maybe:
+              (fj-reload-paginated-pages-maybe end-page page))))))))
+
+(defun fj-reload-paginated-pages-maybe (end-page page)
+  "Call `fj-reload-paginated-pages' maybe.
+Do so if END-PAGE is non-nil and larger than PAGE."
+  (when (and end-page (fj-string-number> end-page page))
+    (fj-reload-paginated-pages end-page)))
+
+(defun fj-string-number> (str1 str2 &optional op)
+  "Call `>' on STR1 and STR2.
+Alternatively, call OP on them instead."
+  (funcall (or op #'>)
+           (string-to-number str1)
+           (string-to-number str2)))
 
 ;; (defun fj-item-view-comment ()
 ;;   "Comment on the issue currently being viewed."
