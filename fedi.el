@@ -182,25 +182,27 @@ For example:
   `(append ,@(fedi--opt-params-whens params)))
 
 (defun fedi--opt-params-whens (params)
-  "Return a when clause for each item in params, a list of symbols."
+  "Return a when clause for each of PARAMS, a list of symbols."
   (cl-loop for x in params
            collect (fedi--opt-param-expr x)))
 
 (defun fedi--opt-param-expr (param)
-  "For PARAM, return a when expression of the form:
-(when param '(\"param\" . param)).
-Param can also be an expression. See `fedi-opt-params' for details."
+  "For PARAM, return a when expression.
+It takes the form:
+\(when param '(\"param\" . param)).
+Param itself can also be an expression. See `fedi-opt-params' for
+details."
   (if (consp param)
       (let* ((name (car param))
              (boolean (plist-get (cdr param) :boolean))
              (alias (plist-get (cdr param) :alias))
              (clause (plist-get (cdr param) :when))
              (list (plist-get (cdr param) :list))
-             (value (or list name))
-             (str (or alias (symbol-to-string name))))
+             (value (or list boolean name))
+             (str (or alias (symbol-name name))))
         `(when ,(or clause name)
            `((,,str . ,,value))))
-    `(when ,param `((,(symbol-to-string ',param) . ,,param)))))
+    `(when ,param `((,(symbol-name ',param) . ,,param)))))
 
 ;;; BUFFER MACRO
 
