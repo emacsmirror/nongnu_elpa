@@ -928,7 +928,7 @@ Also set `fj-current-repo' to the name."
       ;; (let ((id (alist-get 'id
       ;;                      (fj-get-current-user)))
       ;;       (repo (fj-repo-search-do query nil id mode))))
-      (let* ((repos (fj-get-repos))
+      (let* ((repos (fj-get-repos nil nil :silent))
              (names (cl-loop for r in repos
                              collect (alist-get 'name r)))
              (dir (file-name-nondirectory
@@ -937,11 +937,12 @@ Also set `fj-current-repo' to the name."
         (when (member dir names) ;; nil if dir no match any remotes
           (setq fj-current-repo dir))))))
 
-(defun fj-get-repos (&optional limit)
+(defun fj-get-repos (&optional limit no-json silent)
   "Return the user's repos.
 Return LIMIT repos, LIMIT is a string."
   (let ((endpoint "user/repos"))
-    (fj-get endpoint `(("limit" . ,(or limit (fj-default-limit)))))))
+    (fj-get endpoint `(("limit" . ,(or limit (fj-default-limit))))
+            no-json silent)))
 
 (defun fj-get-repo-candidates (repos)
   "Return REPOS as completion candidates."
@@ -952,10 +953,10 @@ Return LIMIT repos, LIMIT is a string."
                      ,(alist-get 'username
                                  (alist-get 'owner r)))))
 
-(defun fj-read-user-repo-do (&optional default)
+(defun fj-read-user-repo-do (&optional default silent)
   "Prompt for a user repository.
 DEFAULT is initial input for `completing-read'."
-  (let* ((repos (fj-get-repos))
+  (let* ((repos (fj-get-repos nil nil silent))
          (cands (fj-get-repo-candidates repos)))
     (completing-read "Repo: " cands
                      nil nil default)))
@@ -967,11 +968,11 @@ If it is a string, return it.
 Otherwise, try `fj-current-repo' and `fj-current-dir-repo'.
 If both return nil, also prompt."
   (if (consp arg)
-      (fj-read-user-repo-do)
+      (fj-read-user-repo-do nil :silent)
     (or arg
         fj-current-repo
         (fj-current-dir-repo) ;; requires loaded magit
-        (fj-read-user-repo-do))))
+        (fj-read-user-repo-do nil :silent))))
 
 (defun fj-repo-create ()
   "Create a new repo.
@@ -1804,56 +1805,78 @@ If REPO is provided, also include a repo column."
      data
      (fj-plain-space))))
 
-(defun fj-list-issues-+-pulls (repo &optional owner state)
-  "List issues and pulls for REPO by OWNER, filtered by STATE."
-  (interactive "P")
-  (let* ((repo (fj-read-user-repo repo)))
-    (fj-list-issues-do repo owner state "all")))
+;;; issues tl commands
 
-(defun fj-list-pulls (repo &optional owner state)
-  "List pulls for REPO by OWNER, filtered by STATE."
-  (interactive "P")
-  (let* ((repo (fj-read-user-repo repo)))
-    (fj-list-issues-do repo owner state "pulls")))
+(defvar fj-non-fj-hosts
+  '("github.com" "gitlab.com" "bitbucket.com"))
 
-(defvar fj-repo-data nil) ;; for transients for now
-
-(defun fj-list-issues (&optional repo)
-  "List issues for current REPO.
-If we are in a repo, don't assume `fj-user' owns it. In that case we
-fetch owner/repo from git config.
-If we are not in a repo, call `fj-list-issues-do' without using git
-config."
-  (interactive "P")
-  (if (or current-prefix-arg ;; still allow completing-read a repo
-          (not (magit-inside-worktree-p :noerror)))
-      (fj-list-issues-do repo) ;; fall back to `fj-user' repos
-    ;; FIXME: should we not have a fallback for when this fails?
-    ;; FIXME: this fails in a non-foregejo git repo.
-    (let* ((repo-+-owner (fj-repo-+-owner-from-git))
-           (owner (car repo-+-owner))
-           (repo (cadr repo-+-owner)))
-      (fj-list-issues-do repo owner))))
+(defun fj--forgejo-repo-maybe (url)
+  "Nil if the host of URL is a member of `fj-non-fj-hosts'.
+Otherwise t."
+  (let* ((parsed (url-generic-parse-url url)))
+    (not (cl-member-if (lambda (x)
+                         (string-prefix-p x (url-host parsed)))
+                       fj-non-fj-hosts))))
 
 (defun fj-repo-+-owner-from-git ()
   "Return repo and owner from git config.
 Nil if we fail to parse."
   ;; https://git-scm.com/book/en/v2/Git-on-the-Server-The-Protocols
   ;; docs are unclear on how to distinguish these!
-  (let ((remote (fj-git-config-remote-url)))
-    (cond
-     ((string-prefix-p "http" remote) ;; http(s)
-      (last (split-string remote "/") 2))
-     ;; git protocol: git:// or git@...?
-     ;; can't just be prefix "git" because that matches ssh gitea@...
-     ((string-prefix-p "git://" remote) ;; git maybe
-      nil) ;;  TODO: git protocol
-     (t ;; ssh (can omit ssh:// prefix)
-      ;; “sshuser@domain.com:username/repo.git”
-      ;; nb sshuser is not the foregejo user!
-      (let* ((split (split-string remote "[@:/]"))
-             (repo (string-trim-right (nth 3 split) ".git")))
-        (list (nth 2 split) repo))))))
+  (let* ((remote (fj-git-config-remote-url)))
+    (when (fj--forgejo-repo-maybe remote)
+      (cond
+       ((string-prefix-p "http" remote) ;; http(s)
+        (last (split-string remote "/") 2))
+       ;; git protocol: git:// or git@...?
+       ;; can't just be prefix "git" because that matches ssh gitea@...
+       ((string-prefix-p "git://" remote) ;; git maybe
+        nil) ;;  TODO: git protocol
+       (t ;; ssh (can omit ssh:// prefix)
+        ;; “sshuser@domain.com:username/repo.git”
+        ;; nb sshuser is not the foregejo user!
+        (let* ((split (split-string remote "[@:/]"))
+               (repo (string-trim-right (nth 3 split) ".git")))
+          (list (nth 2 split) repo)))))))
+
+(defun fj-list-issues-+-pulls (repo &optional owner state)
+  "List issues and pulls for REPO by OWNER, filtered by STATE."
+  (interactive "P")
+  (fj-list-items repo owner state "all"))
+
+(defun fj-list-pulls (repo &optional owner state)
+  "List pulls for REPO by OWNER, filtered by STATE."
+  (interactive "P")
+  (fj-list-items repo owner state "pulls"))
+
+(defun fj-list-issues (&optional repo)
+  "List issues for current REPO.
+  If we are in a repo, don't assume `fj-user' owns it. In that case we
+  fetch owner/repo from git config.
+  If we are not in a repo, call `fj-list-issues-do' without using git
+  config."
+  (interactive "P")
+  (fj-list-items repo nil nil "issues"))
+
+(defun fj-list-items (&optional repo owner state type)
+  "List pulls for REPO by OWNER, filtered by STATE and TYPE.
+TYPE is item type, a member of `fj-items-types'.
+STATE is a member of `fj-items-states'.
+If we are in a repo, don't assume `fj-user' owns it. In that case we
+fetch owner/repo from git config and check if it might have a foregejo
+remote.
+If we are not in a repo, call `fj-list-issues-do' without using
+git config."
+  (interactive "P")
+  (if (or current-prefix-arg ;; still allow completing-read a repo
+          (not (magit-inside-worktree-p :noerror)))
+      (fj-list-issues-do repo owner state type) ;; fall back to `fj-user' repos
+    (if-let* ((repo-+-owner (fj-repo-+-owner-from-git))
+              (owner (car repo-+-owner))
+              (repo (cadr repo-+-owner)))
+        (fj-list-issues-do repo owner state type)
+      (message "Failed to find Forgejo repo")
+      (fj-list-issues-do repo owner state type))))
 
 (defun fj-list-issues-by-milestone (&optional repo owner state type query
                                               labels)
