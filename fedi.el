@@ -157,6 +157,52 @@ If COERCE, make numbers strings."
 ;;                          (symbol-name arg))))
 ;;     `(when ,arg (cons ,str "true"))))
 
+(defmacro fedi-opt-params (&rest params)
+  "From PARAMS, a list of symbols, create an alist of parameters.
+Used to conditionally create fields in the parameters alist.
+
+A param can also be an expression, in which case the car should be the
+symbol name of the param as used locally. The cdr should be a plist
+that may contain the fields :boolean, :alias, :when and :list.
+:boolean should be a string, either \"true\" or \"false\".
+:alias should be the name of the parameter as it is on the server.
+:when should be a condition clause to test against rather than the mere
+value of the parameter symbol
+:list should be a list of values for the parameter.
+
+For example:
+
+\(fedi-opt-params (query :alias \"q\") (topic :boolean \"true\")
+                  uid (mode :when (member mode fj-search-modes))
+                  (include-desc :alias \"includeDesc\"
+                                :boolean \"true\")
+                  (list :list (\"123\" \"abc\")
+                  order page limit)."
+  (declare (debug t))
+  `(append ,@(fedi--opt-params-whens params)))
+
+(defun fedi--opt-params-whens (params)
+  "Return a when clause for each of PARAMS, a list of symbols."
+  (cl-loop for x in params
+           collect (fedi--opt-param-expr x)))
+
+(defun fedi--opt-param-expr (param)
+  "For PARAM, return a when expression.
+It takes the form:
+\(when param '(\"param\" . param)).
+Param itself can also be an expression. See `fedi-opt-params' for
+details."
+  (if (consp param)
+      (let* ((name (car param))
+             (boolean (plist-get (cdr param) :boolean))
+             (alias (plist-get (cdr param) :alias))
+             (clause (plist-get (cdr param) :when))
+             (list (plist-get (cdr param) :list))
+             (value (or list boolean name))
+             (str (or alias (symbol-name name))))
+        `(when ,(or clause name)
+           `((,,str . ,,value))))
+    `(when ,param `((,(symbol-name ',param) . ,,param)))))
 
 ;;; BUFFER MACRO
 
@@ -214,10 +260,13 @@ Optionally start from POS."
 (defun fedi-next-tab-item (&optional previous prop)
   "Move to the next interesting item.
 This could be the next toot, link, or image; whichever comes first.
-Don't move if nothing else to move to is found, i.e. near the end of the buffer.
+Don't move if nothing else to move to is found, i.e. near the end of the
+buffer.
 This also skips tab items in invisible text, i.e. hidden spoiler text.
 PREVIOUS means move to previous item.
-PROP is the text property to search for."
+PROP is the text property to search for.
+Returns nil if nothing found, returns the value of point moved to if
+something found."
   (interactive)
   (let (next-range
         (search-pos (point)))
@@ -233,9 +282,10 @@ PROP is the text property to search for."
     (if (null next-range)
         (prog1 nil ;; return nil if nothing (so we can use in or clause)
           (message "Nothing else here."))
-      (goto-char (car next-range))
-      (if-let* ((hecho (fedi--property 'help-echo)))
-          (message "%s" hecho)))))
+      (prog1 ;; return point not nil if we moved:
+          (goto-char (car next-range))
+        (if-let* ((hecho (fedi--property 'help-echo)))
+            (message "%s" hecho))))))
 
 (defun fedi-previous-tab-item ()
   "Move to the previous interesting item.
@@ -310,7 +360,7 @@ NAME is not part of the symbol table, '?' is returned."
 (defun fedi-font-lock-comment (&rest strs)
   "Font lock comment face STRS."
   (propertize (mapconcat #'identity strs "")
-              'face font-lock-comment-face))
+              'face 'font-lock-comment-face))
 
 (defun fedi-thing-json ()
   "Get json of thing at point, comment, post, community or user."

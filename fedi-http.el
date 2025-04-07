@@ -81,13 +81,12 @@ A random one is picked at package initialization.")
 
 (defun fedi-http--render-html-err (string)
   "Render STRING as HTML in a temp buffer.
-STRING should be HTML for a 404 errror."
+STRING should be HTML for a 404 or 429 etc. errror."
   (with-temp-buffer
     (insert string)
     (shr-render-buffer (current-buffer))
-    (view-mode))) ; for 'q' to kill buffer and window
-;; FIXME: this is awful, it pops up also:
-;; (error ""))) ; stop subsequent processing
+    (view-mode) ;; for 'q' to kill buffer and window
+    (user-error "HTML response")))
 
 (defun fedi-http--read-file-as-string (filename)
   "Read a file FILENAME as a string. Used to generate image preview."
@@ -149,7 +148,7 @@ SILENT means don't message.
 VECTOR means return json arrays as vectors."
   (car (fedi-http--get-response url params :no-headers silent vector)))
 
-(defun fedi-http--post (url &optional params headers json)
+(defun fedi-http--post (url &optional params headers json silent)
   "POST synchronously to URL, optionally with PARAMS and HEADERS.
 JSON means we are posting a JSON payload, so we add headers and
 json-string PARAMS."
@@ -162,22 +161,31 @@ json-string PARAMS."
               (fedi-http--build-params-string params))))
          ;; TODO: perhaps leave these headers to the package now that
          ;; `fedi-request' takes header args?
-         (headers (when json
-                    (append headers
-                            '(("Content-Type" . "application/json")
-                              ("Accept" . "application/json")))))
+         (headers (if json
+                      (append headers
+                              '(("Content-Type" . "application/json")
+                                ("Accept" . "application/json")))
+                    '(("Content-Type" . "application/x-www-form-urlencoded"))))
          (url-request-extra-headers
-          (append url-request-extra-headers ; set in macro
-                  headers)))
+          (if (not url-request-extra-headers)
+              headers ;; no need to add anything
+            (append headers  url-request-extra-headers))))
     (with-temp-buffer
-      (fedi-http--url-retrieve-synchronously url))))
+      (fedi-http--url-retrieve-synchronously url silent))))
 
-(defun fedi-http--delete (url &optional params)
+(defun fedi-http--delete (url &optional params json)
   "Make DELETE request to URL.
-PARAMS is an alist of any extra parameters to send with the request."
+PARAMS is an alist of any extra parameters to send with the request.
+If JSON, encode PARAMS as JSON."
   ;; url-request-data only works with POST requests?
   (let ((url-request-method "DELETE")
-        (url (fedi-http--concat-params-to-url url params)))
+        (url-request-data
+         (when params
+           (if json
+               (encode-coding-string
+                (json-encode params) 'utf-8)
+             (fedi-http--build-params-string params)))))
+    ;; (url (fedi-http--concat-params-to-url url params)))
     (with-temp-buffer
       (fedi-http--url-retrieve-synchronously url))))
 

@@ -427,7 +427,7 @@ to update status fields."
            for name = (alist-get 'name item)
            for prop = (alist-get 'prop item)
            concat (propertize (capitalize name)
-                              prop t)))
+                              (if (consp prop) (car prop) prop) t)))
 
 (defun fedi-post--display-docs-and-status-fields (&optional mode prefix
                                                             fields type edit)
@@ -479,23 +479,31 @@ FIELDS is a list of alists of fields to add, using `fedi-post--concat-fields'."
 
 (defun fedi-post--update-status-field (item)
   "ITEM."
+  ;; FIXME: remove these evals
   (let-alist item
     (let ((region (fedi--find-property-range .prop (point-min))))
-      (add-text-properties (car region) (cdr region)
-                           (list 'display
-                                 (if (eval .item-var)
-                                     (format
-                                      (concat
-                                       (if .no-label
-                                           ""
-                                         (concat (capitalize .name)
-                                                 ": "))
-                                       (propertize "%s"
-                                                   'face .face)
-                                       " ⋅ ")
-                                      (eval .item-var))
-                                   "")
-                                 'face 'fedi-post-docs-face)))))
+      (add-text-properties
+       (car region) (cdr region)
+       (list 'display
+             (if (eval .item-var)
+                 (format
+                  (concat
+                   (if .no-label
+                       ""
+                     (concat (capitalize .name)
+                             ": "))
+                   (propertize "%s"
+                               'face .face)
+                   " ⋅ ")
+                  (if (listp (eval .item-var))
+                      (mapconcat (lambda (x)
+                                   ;; for alists, concat the cars:
+                                   (if (consp x) (car x) x))
+                                 (eval .item-var) " ")
+                    (eval .item-var)))
+               ;; .item-var))
+               "")
+             'face 'fedi-post-docs-face)))))
 
 (defun fedi-post--update-status-fields (&rest _args)
   "Update the status fields in the header based on the current state."
@@ -657,7 +665,11 @@ string, the other elements should be symbols."
         (declare-function company-mode-on "company")
         (set (make-local-variable 'company-backends)
              (add-to-list 'company-backends 'company-capf))
-        (company-mode-on)))
+        (company-mode-on))
+      ;; corfu
+      (when (require 'corfu nil :no-error)
+        (setq-local corfu-auto t)
+        (corfu--on)))
     ;; after-change:
     (make-local-variable 'after-change-functions)
     ;; (cl-pushnew #'fedi-post--save-post-text after-change-functions)
