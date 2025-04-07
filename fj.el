@@ -1927,7 +1927,8 @@ git config."
 STATE, TYPE and QUERY are for `fj-list-issues-do'."
   (interactive)
   (let* ((milestones (fj-get-milestones repo owner))
-         (milestone (fj-read-milestone milestones)))
+         (alist (fj-milestones-alist milestones))
+         (milestone (completing-read "Milestone: " alist)))
     (fj-list-issues-do repo owner state type query labels milestone)))
 
 (defun fj-list-issues-by-label (&optional repo owner state type query)
