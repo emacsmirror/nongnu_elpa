@@ -99,6 +99,8 @@ etc."
 
 (defvar-local fj-compose-issue-labels nil)
 
+(defvar-local fj-compose-milestone nil)
+
 ;; instance vars
 
 (defvar fj-commit-status-types
@@ -3463,7 +3465,8 @@ LIMIT is for `re-search-forward''s bound argument."
   :parent fj-compose-comment-mode-map
   "C-c C-t" #'fj-compose-read-title
   "C-c C-r" #'fj-compose-read-repo
-  "C-c C-l" #'fj-compose-read-labels)
+  "C-c C-l" #'fj-compose-read-labels
+  "C-c C-m" #'fj-compose-read-milestone)
 
 (define-minor-mode fj-compose-mode
   "Minor mode for composing issues."
@@ -3497,6 +3500,18 @@ LIMIT is for `re-search-forward''s bound argument."
               :test #'equal)
   (fedi-post--update-status-fields))
 
+(defun fj-compose-read-milestone ()
+  "Read an existing milestone in the compose buffer.
+Return its ID."
+  (interactive)
+  (let* ((milestones (fj-get-milestones fj-compose-repo
+                                        fj-compose-repo-owner))
+         (alist (fj-milestones-alist milestones))
+         (choice (completing-read "Milestone: " alist)))
+    (setq fj-compose-milestone
+          (cdr (assoc choice alist #'string=)))
+    (fedi-post--update-status-fields)))
+
 (defun fj-issue-compose (&optional edit mode type init-text)
   "Compose a new post.
 EDIT means we are editing.
@@ -3528,6 +3543,10 @@ Inject INIT-TEXT into the buffer, for editing."
        ((name . "labels")
         (prop . compose-labels)
         (item-var . fj-compose-issue-labels)
+        (face . fj-post-title-face))
+       ((name . "milestone")
+        (prop . compose-milestone)
+        (item-var . fj-compose-milestone)
         (face . fj-post-title-face)))
      init-text quote)
     (setq fj-compose-item-type
@@ -3576,7 +3595,9 @@ Call response and update functions."
                  (fj-issue-post repo
                                 fj-compose-repo-owner
                                 fj-compose-issue-title body
-                                fj-compose-issue-labels)))))
+                                fj-compose-issue-labels
+                                nil nil nil
+                                fj-compose-milestone)))))
         (when response
           (with-current-buffer buf
             (fedi-post-kill))
