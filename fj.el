@@ -1146,15 +1146,22 @@ If TYPE is :pull, get a pull request, not issue."
 ;;                          (message "issue %s created!" title)
 ;;                          (fj-issues-tl-reload)))))
 
-(defun fj-issue-post (repo user title body &optional labels)
+(defun fj-issue-post (repo user title body &optional labels
+                           assigneees closed due-date milestone ref)
   "POST a new issue to REPO owned by USER.
 TITLE and BODY are the parts of the issue to send.
 LABELS is a list of label names."
+  ;; POST /repos/{owner}/{repo}/issues
+  ;; assignee (deprecated) assignees closed due_date milestone ref
   (let ((url (format "repos/%s/%s/issues" user repo))
-        (params `(("body" . ,body)
-                  ("title" . ,title)
-                  ("labels" . ,(cl-loop for x in labels
-                                        collect (cdr x))))))
+        (params (append
+                 `(("body" . ,body)
+                   ("title" . ,title)
+                   ("labels" . ,(cl-loop for x in labels
+                                         collect (cdr x))))
+                 (fedi-opt-params assigneees closed
+                                  (due-date :alias "due_date")
+                                  milestone ref))))
     (fj-post url params :json)))
 
 (defun fj-issue-patch
