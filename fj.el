@@ -2328,6 +2328,8 @@ RELOAD mean we reloaded."
                (concat " " (fedi--relative-time-description
                             (date-to-time .closed_at)))
              "")
+           (when .milestone
+             (concat "\nMilestone: " .milestone.title "\n"))
            (if .labels
                (fj-render-labels .labels)
              "")
