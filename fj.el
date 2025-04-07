@@ -1894,33 +1894,7 @@ STATE, TYPE and QUERY are for `fj-list-issues-do'."
   (let* ((label (fj-issue-read-label)))
     (fj-list-issues-do repo owner state type query label)))
 
-(defun fj--inc-str (str &optional dec)
-  "Incrememt STR, and return a string.
-When DEC, decrement string instead."
-  (let ((num (string-to-number str)))
-    (number-to-string
-     (if dec (1- num) (1+ num)))))
-
-(defun fj-issues-next-page ()
-  "Load the next page of issues."
-  (interactive)
-  (fj-destructure-buf-spec (repo owner state type query
-                                 labels milestones page limit)
-    (let ((page (if page (fj--inc-str page) "2")))
-      (fj-list-issues-do repo owner state type query
-                         labels milestones page limit))))
-
-(defun fj-issues-prev-page ()
-  "Load the previous page of issues"
-  (interactive)
-  (fj-destructure-buf-spec (repo owner state type query
-                                 labels milestones page limit)
-    (if (or (not page) ;; never paginated
-            (= 1 (string-to-number page))) ;; after paginating
-        (user-error "No previous page")
-      (let ((page (when page (fj--inc-str page :dec))))
-        (fj-list-issues-do repo owner state type query
-                           labels milestones page limit)))))
+(defvar fj-repo-data nil) ;; for transients for now
 
 (defun fj-list-issues-do (&optional repo owner state type query
                                     labels milestones page limit)
