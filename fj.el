@@ -3349,7 +3349,15 @@ Optionally specify REF, a commit, branch, or tag."
         (owner (fj--repo-owner)))
     (fj-repo-readme repo owner)))
 
-(defun fj-repo-tl-stargazers (&optional page limit)
+(defun fj-repo-tl-stargazers ()
+  "View a listing of stargazers of repo at point.
+PAGE and LIMIT are for `fj-get-stargazers'."
+  (interactive)
+  (let* ((repo (fj--repo-name))
+         (owner (fj--repo-owner)))
+    (fj-repo-stargazers repo owner)))
+
+(defun fj-repo-tl-stargazers-completing (&optional page limit)
   "Prompt for a repo stargazer, and view their repos.
 PAGE and LIMIT are for `fj-get-stargazers'."
   (interactive)
