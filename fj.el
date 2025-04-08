@@ -1157,16 +1157,16 @@ LABELS is a list of label names.
 MILESTONE is a cons of title string and ID."
   ;; POST /repos/{owner}/{repo}/issues
   ;; assignee (deprecated) assignees closed due_date milestone ref
-  (let ((url (format "repos/%s/%s/issues" user repo))
-        (milestone (cdr milestone))
-        (params (append
-                 `(("body" . ,body)
-                   ("title" . ,title)
-                   ("labels" . ,(cl-loop for x in labels
-                                         collect (cdr x))))
-                 (fedi-opt-params assigneees closed
-                                  (due-date :alias "due_date")
-                                  milestone ref))))
+  (let* ((url (format "repos/%s/%s/issues" user repo))
+         (milestone (cdr milestone))
+         (params (append
+                  `(("body" . ,body)
+                    ("title" . ,title)
+                    ("labels" . ,(cl-loop for x in labels
+                                          collect (cdr x))))
+                  (fedi-opt-params assigneees closed
+                                   (due-date :alias "due_date")
+                                   milestone ref))))
     (fj-post url params :json)))
 
 (defun fj-issue-patch
@@ -1658,7 +1658,7 @@ Return its name, or if ID, return a cons of its name and id."
          (resp (fj-post endpoint params :json)))
     (fedi-http--triage
      resp
-     (lambda (resp)
+     (lambda (_resp)
        (message "Milestone %s created!" title)))))
 
 (defun fj-add-issue-to-milestone (&optional repo owner)
@@ -1681,7 +1681,7 @@ Return its name, or if ID, return a cons of its name and id."
                                 nil nil nil nil id)))
      (fedi-http--triage
       resp
-      (lambda (resp)
+      (lambda (_resp)
         (message "%s added to milestone %s" issue choice))))))
 
 ;;; ISSUES TL
@@ -1906,10 +1906,10 @@ Nil if we fail to parse."
 
 (defun fj-list-issues (&optional repo)
   "List issues for current REPO.
-  If we are in a repo, don't assume `fj-user' owns it. In that case we
-  fetch owner/repo from git config.
-  If we are not in a repo, call `fj-list-issues-do' without using git
-  config."
+If we are in a repo, don't assume `fj-user' owns it. In that case we
+fetch owner/repo from git config.
+If we are not in a repo, call `fj-list-issues-do' without using git
+config."
   (interactive "P")
   (fj-list-items repo nil nil "issues"))
 
@@ -3003,7 +3003,7 @@ Sort must be a member of `fj-search-sorts'."
              ("sort" . ,(or sort "updated")))
            (when id `(("exclusive" . "true")))
            (fedi-opt-params (query :alias "q") (topic :boolean "true")
-                            (id :alias uid)
+                            (id :alias "uid")
                             (mode :when (member mode fj-search-modes))
                             (include-desc :alias "includeDesc"
                                           :boolean "true")
