@@ -808,7 +808,7 @@ X and Y are sorting args."
 PAGE, LIMIT, ORDER."
   (let ((params (append
                  `(("limit" . ,(or limit (fj-default-limit))))
-                 (fedi-opt-params page limit)))
+                 (fedi-opt-params page order)))
         (endpoint (format "users/%s/repos" user)))
     (fj-get endpoint params)))
 
@@ -1102,8 +1102,9 @@ QUERY, STATE, TYPE, CREATED, ASSIGNED, MENTIONED and PAGE are all for
   (let ((state (or state "open"))
         (type (or type "issues"))
         (items
-         (fj-issues-search query fj-user state type
-                           created assigned mentioned page))
+         (fj-issues-search state nil nil query nil type nil nil
+                           assigned created mentioned nil nil fj-user
+                           nil page))
         (buf-name (format "*fj-user-repos-%s" type))
         (prev-buf (buffer-name (current-buffer)))
         (prev-mode major-mode))
@@ -1152,18 +1153,20 @@ If TYPE is :pull, get a pull request, not issue."
                            assigneees closed due-date milestone ref)
   "POST a new issue to REPO owned by USER.
 TITLE and BODY are the parts of the issue to send.
-LABELS is a list of label names."
+LABELS is a list of label names.
+MILESTONE is a cons of title string and ID."
   ;; POST /repos/{owner}/{repo}/issues
   ;; assignee (deprecated) assignees closed due_date milestone ref
-  (let ((url (format "repos/%s/%s/issues" user repo))
-        (params (append
-                 `(("body" . ,body)
-                   ("title" . ,title)
-                   ("labels" . ,(cl-loop for x in labels
-                                         collect (cdr x))))
-                 (fedi-opt-params assigneees closed
-                                  (due-date :alias "due_date")
-                                  milestone ref))))
+  (let* ((url (format "repos/%s/%s/issues" user repo))
+         (milestone (cdr milestone))
+         (params (append
+                  `(("body" . ,body)
+                    ("title" . ,title)
+                    ("labels" . ,(cl-loop for x in labels
+                                          collect (cdr x))))
+                  (fedi-opt-params assigneees closed
+                                   (due-date :alias "due_date")
+                                   milestone ref))))
     (fj-post url params :json)))
 
 (defun fj-issue-patch
@@ -1655,7 +1658,7 @@ Return its name, or if ID, return a cons of its name and id."
          (resp (fj-post endpoint params :json)))
     (fedi-http--triage
      resp
-     (lambda (resp)
+     (lambda (_resp)
        (message "Milestone %s created!" title)))))
 
 (defun fj-add-issue-to-milestone (&optional repo owner)
@@ -1678,7 +1681,7 @@ Return its name, or if ID, return a cons of its name and id."
                                 nil nil nil nil id)))
      (fedi-http--triage
       resp
-      (lambda (resp)
+      (lambda (_resp)
         (message "%s added to milestone %s" issue choice))))))
 
 ;;; ISSUES TL
@@ -1903,10 +1906,10 @@ Nil if we fail to parse."
 
 (defun fj-list-issues (&optional repo)
   "List issues for current REPO.
-  If we are in a repo, don't assume `fj-user' owns it. In that case we
-  fetch owner/repo from git config.
-  If we are not in a repo, call `fj-list-issues-do' without using git
-  config."
+If we are in a repo, don't assume `fj-user' owns it. In that case we
+fetch owner/repo from git config.
+If we are not in a repo, call `fj-list-issues-do' without using git
+config."
   (interactive "P")
   (fj-list-items repo nil nil "issues"))
 
@@ -2314,6 +2317,7 @@ RELOAD mean we reloaded."
                  :type ,type ;; used by with-pull
                  :author ,.user.username ;; used by own-issue
                  :title ,.title ;; for commenting
+                 :body ,.body ;; for editing
                  :url ,.html_url ;; for browsing
                  :viewfun fj-item-view
                  ;; signature: repo owner number pull page limit:
@@ -2999,7 +3003,7 @@ Sort must be a member of `fj-search-sorts'."
              ("sort" . ,(or sort "updated")))
            (when id `(("exclusive" . "true")))
            (fedi-opt-params (query :alias "q") (topic :boolean "true")
-                            (id :alias uid)
+                            (id :alias "uid")
                             (mode :when (member mode fj-search-modes))
                             (include-desc :alias "includeDesc"
                                           :boolean "true")
@@ -3345,25 +3349,6 @@ Optionally specify REF, a commit, branch, or tag."
         (owner (fj--repo-owner)))
     (fj-repo-readme repo owner)))
 
-(defun fj-repo-tl-stargazers (&optional page limit)
-  "Prompt for a repo stargazer, and view their repos.
-PAGE and LIMIT are for `fj-get-stargazers'."
-  (interactive)
-  (let* ((repo (fj--repo-name))
-         (owner (fj--repo-owner))
-         (gazers (fj-get-stargazers repo owner page limit))
-         (gazers-list (cl-loop for u in gazers
-                               collect (alist-get 'login u)))
-         (choice (completing-read "Stargazer: " gazers-list)))
-    (fj-user-repos-tl choice)))
-
-(defun fj-get-stargazers (repo owner &optional page limit)
-  "Get stargazers for REPO by OWNER.
-Optionally set PAGE and LIMIT."
-  (let ((endpoint (format "repos/%s/%s/stargazers" owner repo))
-        (params (fedi-opt-params page limit)))
-    (fj-get endpoint params)))
-
 ;;; TL ACTIONS, ISSUES ONLY
 
 (defun fj-issues-tl-view (&optional _)
@@ -3547,14 +3532,14 @@ LIMIT is for `re-search-forward''s bound argument."
 
 (defun fj-compose-read-milestone ()
   "Read an existing milestone in the compose buffer.
-Return its ID."
+Return a cons of title and ID."
   (interactive)
   (let* ((milestones (fj-get-milestones fj-compose-repo
                                         fj-compose-repo-owner))
          (alist (fj-milestones-alist milestones))
          (choice (completing-read "Milestone: " alist)))
     (setq fj-compose-milestone
-          (cdr (assoc choice alist #'string=)))
+          (assoc choice alist #'string=))
     (fedi-post--update-status-fields)))
 
 (defun fj-issue-compose (&optional edit mode type init-text)
@@ -4154,7 +4139,7 @@ BUF-STR is the name of the buffer string to use."
                            :page ,page :limit ,limit)
                :viewfun ,viewfun)))))
 
-(defun fj-get-repo-stargazers (repo owner &optional page limit)
+(defun fj-get-stargazers (repo owner &optional page limit)
   "Get stargazers of REPO by OWNER.
 PAGE and LIMIT are for pagination."
   (let ((endpoint (format "/repos/%s/%s/stargazers" owner repo))
@@ -4167,6 +4152,26 @@ PAGE and LIMIT are for pagination."
   (interactive)
   (fj-repo-users #'fj-get-stargazers "stargazers"
                  repo owner #'fj-repo-stargazers page limit))
+
+(defun fj-repo-tl-stargazers ()
+  "View a listing of stargazers of repo at point.
+PAGE and LIMIT are for `fj-get-stargazers'."
+  (interactive)
+  (let* ((repo (fj--repo-name))
+         (owner (fj--repo-owner)))
+    (fj-repo-stargazers repo owner)))
+
+(defun fj-repo-tl-stargazers-completing (&optional page limit)
+  "Prompt for a repo stargazer, and view their repos.
+PAGE and LIMIT are for `fj-get-stargazers'."
+  (interactive)
+  (let* ((repo (fj--repo-name))
+         (owner (fj--repo-owner))
+         (gazers (fj-get-stargazers repo owner page limit))
+         (gazers-list (cl-loop for u in gazers
+                               collect (alist-get 'login u)))
+         (choice (completing-read "Stargazer: " gazers-list)))
+    (fj-user-repos-tl choice)))
 
 (defun fj-get-watchers (repo owner &optional page limit)
   "Get watchers of REPO by OWNER.
@@ -4181,6 +4186,14 @@ PAGE and LIMIT are for pagination."
   (interactive)
   (fj-repo-users #'fj-get-watchers "watchers"
                  repo owner #'fj-repo-watchers page limit))
+
+(defun fj-repo-tl-watchers ()
+  "View a listing of watchers of repo at point.
+PAGE and LIMIT are for `fj-get-watchers'."
+  (interactive)
+  (let* ((repo (fj--repo-name))
+         (owner (fj--repo-owner)))
+    (fj-repo-watchers repo owner)))
 
 ;;; account users
 
