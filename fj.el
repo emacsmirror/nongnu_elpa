@@ -1102,8 +1102,9 @@ QUERY, STATE, TYPE, CREATED, ASSIGNED, MENTIONED and PAGE are all for
   (let ((state (or state "open"))
         (type (or type "issues"))
         (items
-         (fj-issues-search query fj-user state type
-                           created assigned mentioned page))
+         (fj-issues-search state nil nil query nil type nil nil
+                           assigned created mentioned nil nil fj-user
+                           nil page))
         (buf-name (format "*fj-user-repos-%s" type))
         (prev-buf (buffer-name (current-buffer)))
         (prev-mode major-mode))
