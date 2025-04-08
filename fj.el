@@ -2315,6 +2315,7 @@ RELOAD mean we reloaded."
                  :type ,type ;; used by with-pull
                  :author ,.user.username ;; used by own-issue
                  :title ,.title ;; for commenting
+                 :body ,.body ;; for editing
                  :url ,.html_url ;; for browsing
                  :viewfun fj-item-view
                  ;; signature: repo owner number pull page limit:
