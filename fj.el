@@ -808,7 +808,7 @@ X and Y are sorting args."
 PAGE, LIMIT, ORDER."
   (let ((params (append
                  `(("limit" . ,(or limit (fj-default-limit))))
-                 (fedi-opt-params page limit)))
+                 (fedi-opt-params page order)))
         (endpoint (format "users/%s/repos" user)))
     (fj-get endpoint params)))
 
