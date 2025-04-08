@@ -1153,10 +1153,12 @@ If TYPE is :pull, get a pull request, not issue."
                            assigneees closed due-date milestone ref)
   "POST a new issue to REPO owned by USER.
 TITLE and BODY are the parts of the issue to send.
-LABELS is a list of label names."
+LABELS is a list of label names.
+MILESTONE is a cons of title string and ID."
   ;; POST /repos/{owner}/{repo}/issues
   ;; assignee (deprecated) assignees closed due_date milestone ref
   (let ((url (format "repos/%s/%s/issues" user repo))
+        (milestone (cdr milestone))
         (params (append
                  `(("body" . ,body)
                    ("title" . ,title)
@@ -3549,14 +3551,14 @@ LIMIT is for `re-search-forward''s bound argument."
 
 (defun fj-compose-read-milestone ()
   "Read an existing milestone in the compose buffer.
-Return its ID."
+Return a cons of title and ID."
   (interactive)
   (let* ((milestones (fj-get-milestones fj-compose-repo
                                         fj-compose-repo-owner))
          (alist (fj-milestones-alist milestones))
          (choice (completing-read "Milestone: " alist)))
     (setq fj-compose-milestone
-          (cdr (assoc choice alist #'string=)))
+          (assoc choice alist #'string=))
     (fedi-post--update-status-fields)))
 
 (defun fj-issue-compose (&optional edit mode type init-text)
