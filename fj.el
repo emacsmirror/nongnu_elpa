@@ -3349,33 +3349,6 @@ Optionally specify REF, a commit, branch, or tag."
         (owner (fj--repo-owner)))
     (fj-repo-readme repo owner)))
 
-(defun fj-repo-tl-stargazers ()
-  "View a listing of stargazers of repo at point.
-PAGE and LIMIT are for `fj-get-stargazers'."
-  (interactive)
-  (let* ((repo (fj--repo-name))
-         (owner (fj--repo-owner)))
-    (fj-repo-stargazers repo owner)))
-
-(defun fj-repo-tl-stargazers-completing (&optional page limit)
-  "Prompt for a repo stargazer, and view their repos.
-PAGE and LIMIT are for `fj-get-stargazers'."
-  (interactive)
-  (let* ((repo (fj--repo-name))
-         (owner (fj--repo-owner))
-         (gazers (fj-get-stargazers repo owner page limit))
-         (gazers-list (cl-loop for u in gazers
-                               collect (alist-get 'login u)))
-         (choice (completing-read "Stargazer: " gazers-list)))
-    (fj-user-repos-tl choice)))
-
-(defun fj-get-stargazers (repo owner &optional page limit)
-  "Get stargazers for REPO by OWNER.
-Optionally set PAGE and LIMIT."
-  (let ((endpoint (format "repos/%s/%s/stargazers" owner repo))
-        (params (fedi-opt-params page limit)))
-    (fj-get endpoint params)))
-
 ;;; TL ACTIONS, ISSUES ONLY
 
 (defun fj-issues-tl-view (&optional _)
@@ -4166,7 +4139,7 @@ BUF-STR is the name of the buffer string to use."
                            :page ,page :limit ,limit)
                :viewfun ,viewfun)))))
 
-(defun fj-get-repo-stargazers (repo owner &optional page limit)
+(defun fj-get-stargazers (repo owner &optional page limit)
   "Get stargazers of REPO by OWNER.
 PAGE and LIMIT are for pagination."
   (let ((endpoint (format "/repos/%s/%s/stargazers" owner repo))
@@ -4179,6 +4152,26 @@ PAGE and LIMIT are for pagination."
   (interactive)
   (fj-repo-users #'fj-get-stargazers "stargazers"
                  repo owner #'fj-repo-stargazers page limit))
+
+(defun fj-repo-tl-stargazers ()
+  "View a listing of stargazers of repo at point.
+PAGE and LIMIT are for `fj-get-stargazers'."
+  (interactive)
+  (let* ((repo (fj--repo-name))
+         (owner (fj--repo-owner)))
+    (fj-repo-stargazers repo owner)))
+
+(defun fj-repo-tl-stargazers-completing (&optional page limit)
+  "Prompt for a repo stargazer, and view their repos.
+PAGE and LIMIT are for `fj-get-stargazers'."
+  (interactive)
+  (let* ((repo (fj--repo-name))
+         (owner (fj--repo-owner))
+         (gazers (fj-get-stargazers repo owner page limit))
+         (gazers-list (cl-loop for u in gazers
+                               collect (alist-get 'login u)))
+         (choice (completing-read "Stargazer: " gazers-list)))
+    (fj-user-repos-tl choice)))
 
 (defun fj-get-watchers (repo owner &optional page limit)
   "Get watchers of REPO by OWNER.
@@ -4193,6 +4186,14 @@ PAGE and LIMIT are for pagination."
   (interactive)
   (fj-repo-users #'fj-get-watchers "watchers"
                  repo owner #'fj-repo-watchers page limit))
+
+(defun fj-repo-tl-watchers ()
+  "View a listing of watchers of repo at point.
+PAGE and LIMIT are for `fj-get-watchers'."
+  (interactive)
+  (let* ((repo (fj--repo-name))
+         (owner (fj--repo-owner)))
+    (fj-repo-watchers repo owner)))
 
 ;;; account users
 
