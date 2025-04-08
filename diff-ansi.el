@@ -803,7 +803,17 @@ Store the result in TARGET-BUF when non-nil."
                   (write-region point-prev (point) output nil 0)
                   ;; The "site-file" can cause messages that break our logic
                   ;; which requires predictable process output, see: #4.
-                  (push (list emacs-bin "--no-site-file" "--batch" output "--eval" emacs-eval-arg)
+                  (push (list
+                         emacs-bin
+                         ;; Site files can generate warnings, interfering with the batch operation.
+                         ;; For example a warning about a header not including lexical-binding
+                         ;; will cause the command to fail entirely.
+                         "--no-site-file"
+                         "--no-site-lisp"
+                         "--batch"
+                         output
+                         "--eval"
+                         emacs-eval-arg)
                         per-chunk-args))
                 (setq i (1+ i)))
 
