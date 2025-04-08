@@ -478,31 +478,35 @@ FIELDS is a list of alists of fields to add, using `fedi-post--concat-fields'."
     (length (buffer-substring (point-min) (point-max)))))
 
 (defun fedi-post--update-status-field (item)
-  "ITEM."
-  ;; FIXME: remove these evals
+  "Update status field for ITEM.
+ITEM is an alist with name, prop, item-var, no-label and face fields.
+Item-var, containing the data to be displayed, can be a string, or a
+cons cell, or a list. If the latter two, the first element is displayed."
   (let-alist item
-    (let ((region (fedi--find-property-range .prop (point-min))))
+    (let ((region (fedi--find-property-range .prop (point-min)))
+          (val (eval .item-var))) ;; FIXME: remove this eval?
       (add-text-properties
        (car region) (cdr region)
        (list 'display
-             (if (eval .item-var)
-                 (format
-                  (concat
-                   (if .no-label
-                       ""
-                     (concat (capitalize .name)
-                             ": "))
-                   (propertize "%s"
-                               'face .face)
-                   " ⋅ ")
-                  (if (listp (eval .item-var))
-                      (mapconcat (lambda (x)
-                                   ;; for alists, concat the cars:
-                                   (if (consp x) (car x) x))
-                                 (eval .item-var) " ")
-                    (eval .item-var)))
-               ;; .item-var))
-               "")
+             (if (not val)
+                 ""
+               (format
+                (concat
+                 (if .no-label
+                     ""
+                   (concat (capitalize .name)
+                           ": "))
+                 (propertize "%s"
+                             'face .face)
+                 " ⋅ ")
+                (cond ((proper-list-p val) ;; list
+                       (mapconcat (lambda (x)
+                                    ;; for alists, concat the cars:
+                                    (if (consp x) (car x) x))
+                                  val " "))
+                      ((consp val) ;; cons, use car
+                       (car val))
+                      (t val))))
              'face 'fedi-post-docs-face)))))
 
 (defun fedi-post--update-status-fields (&rest _args)
