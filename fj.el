@@ -4176,15 +4176,15 @@ PAGE and LIMIT are for pagination."
   (fj-repo-users #'fj-get-stargazers "stargazers"
                  repo owner #'fj-repo-stargazers page limit))
 
-(defun fj-repo-tl-stargazers ()
-  "View a listing of stargazers of repo at point.
-PAGE and LIMIT are for `fj-get-stargazers'."
-  (interactive)
-  (let* ((repo (fj--repo-name))
-         (owner (fj--repo-owner)))
-    (fj-repo-stargazers repo owner)))
+;; (defun fj-repo-tl-stargazers ()
+;;   "View a listing of stargazers of repo at point.
+;; PAGE and LIMIT are for `fj-get-stargazers'."
+;;   (interactive)
+;;   (let* ((repo (fj--repo-name))
+;;          (owner (fj--repo-owner)))
+;;     (fj-repo-stargazers repo owner)))
 
-(defun fj-repo-tl-stargazers-completing (&optional page limit)
+(defun fj-stargazers-completing (&optional page limit)
   "Prompt for a repo stargazer, and view their repos.
 PAGE and LIMIT are for `fj-get-stargazers'."
   (interactive)
@@ -4210,13 +4210,13 @@ PAGE and LIMIT are for pagination."
   (fj-repo-users #'fj-get-watchers "watchers"
                  repo owner #'fj-repo-watchers page limit))
 
-(defun fj-repo-tl-watchers ()
-  "View a listing of watchers of repo at point.
-PAGE and LIMIT are for `fj-get-watchers'."
-  (interactive)
-  (let* ((repo (fj--repo-name))
-         (owner (fj--repo-owner)))
-    (fj-repo-watchers repo owner)))
+;; (defun fj-repo-tl-watchers ()
+;;   "View a listing of watchers of repo at point.
+;; PAGE and LIMIT are for `fj-get-watchers'."
+;;   (interactive)
+;;   (let* ((repo (fj--repo-name))
+;;          (owner (fj--repo-owner)))
+;;     (fj-repo-watchers repo owner)))
 
 ;;; account users
 
