@@ -3496,7 +3496,9 @@ LIMIT is for `re-search-forward''s bound argument."
   "C-c C-t" #'fj-compose-read-title
   "C-c C-r" #'fj-compose-read-repo
   "C-c C-l" #'fj-compose-read-labels
-  "C-c C-m" #'fj-compose-read-milestone)
+  "C-c C-m" #'fj-compose-read-milestone
+  "C-c C-S-M" #'fj-compose-remove-milestone
+  "C-c C-S-L" #'fj-compose-remove-labels)
 
 (define-minor-mode fj-compose-mode
   "Minor mode for composing issues."
@@ -3541,6 +3543,24 @@ Return a cons of title and ID."
     (setq fj-compose-milestone
           (assoc choice alist #'string=))
     (fedi-post--update-status-fields)))
+
+(defun fj-compose-remove-variable (var)
+  "Set VAR to nil if it is non-nil.
+Update status fields."
+  (if (not (symbol-value var))
+      (user-error "No milestone to remove")
+    (set var nil)
+    (fedi-post--update-status-fields)))
+
+(defun fj-compose-remove-labels ()
+  "Remove labels from item being composed."
+  (interactive)
+  (fj-compose-remove-variable 'fj-compose-issue-labels))
+
+(defun fj-compose-remove-milestone ()
+  "Remove milestone from item being composed."
+  (interactive)
+  (fj-compose-remove-variable 'fj-compose-milestone))
 
 (defun fj-issue-compose (&optional edit mode type init-text)
   "Compose a new post.
