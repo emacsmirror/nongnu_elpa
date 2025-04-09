@@ -4148,13 +4148,16 @@ BUF-STR is the name of the buffer string to use."
   (let* ((repo (or repo (fj--get-buffer-spec :repo)))
          (owner (or owner (fj--get-buffer-spec :owner)))
          (buf (format "*fj-%s-%s*" repo buf-str))
-         (data (funcall fetch-fun repo owner page limit)))
+         (data (funcall fetch-fun repo owner page limit))
+         (endpoint (if (eq fetch-fun #'fj-get-stargazers)
+                       "stars"
+                     "watchers")))
     (fedi-with-buffer buf 'fj-users-mode nil
       (fj-render-users data)
       (when repo (setq fj-current-repo repo))
       (setq fj-buffer-spec
-            ;; FIXME: url for browsing
             `( :repo ,repo :owner ,owner
+               :url ,(format "%s/%s/%s/%s" fj-host owner repo endpoint)
                :viewargs ( :repo ,repo :owner ,owner
                            :page ,page :limit ,limit)
                :viewfun ,viewfun)))))
