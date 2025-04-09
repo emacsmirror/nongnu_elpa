@@ -958,7 +958,7 @@ Return LIMIT repos, LIMIT is a string."
 (defun fj-read-user-repo-do (&optional default silent)
   "Prompt for a user repository.
 DEFAULT is initial input for `completing-read'."
-  (let* ((repos (fj-get-repos nil nil silent))
+  (let* ((repos (fj-get-repos (fj-max-items) nil silent))
          (cands (fj-get-repo-candidates repos)))
     (completing-read "Repo: " cands
                      nil nil default)))
