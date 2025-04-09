@@ -958,7 +958,7 @@ Return LIMIT repos, LIMIT is a string."
 (defun fj-read-user-repo-do (&optional default silent)
   "Prompt for a user repository.
 DEFAULT is initial input for `completing-read'."
-  (let* ((repos (fj-get-repos nil nil silent))
+  (let* ((repos (fj-get-repos (fj-max-items) nil silent))
          (cands (fj-get-repo-candidates repos)))
     (completing-read "Repo: " cands
                      nil nil default)))
@@ -3496,7 +3496,9 @@ LIMIT is for `re-search-forward''s bound argument."
   "C-c C-t" #'fj-compose-read-title
   "C-c C-r" #'fj-compose-read-repo
   "C-c C-l" #'fj-compose-read-labels
-  "C-c C-m" #'fj-compose-read-milestone)
+  "C-c C-m" #'fj-compose-read-milestone
+  "C-c C-S-M" #'fj-compose-remove-milestone
+  "C-c C-S-L" #'fj-compose-remove-labels)
 
 (define-minor-mode fj-compose-mode
   "Minor mode for composing issues."
@@ -3523,9 +3525,9 @@ LIMIT is for `re-search-forward''s bound argument."
 (defun fj-compose-read-labels ()
   "Read a label in the issue compose buffer."
   (interactive)
-  ;; FIXME: we need to store conses of (name . id), then patch fedi.el to
-  ;; display the in the compose docs but submit the latter to the server.
-  (cl-pushnew (fj-issue-read-label nil nil nil :id)
+  ;; we store conses of (name . id), then fedi.el
+  ;; displays nanmes in the compose docs but submits the id.
+  (cl-pushnew (fj-issue-read-label fj-compose-repo nil nil :id)
               fj-compose-issue-labels
               :test #'equal)
   (fedi-post--update-status-fields))
@@ -3541,6 +3543,24 @@ Return a cons of title and ID."
     (setq fj-compose-milestone
           (assoc choice alist #'string=))
     (fedi-post--update-status-fields)))
+
+(defun fj-compose-remove-variable (var)
+  "Set VAR to nil if it is non-nil.
+Update status fields."
+  (if (not (symbol-value var))
+      (user-error "No milestone to remove")
+    (set var nil)
+    (fedi-post--update-status-fields)))
+
+(defun fj-compose-remove-labels ()
+  "Remove labels from item being composed."
+  (interactive)
+  (fj-compose-remove-variable 'fj-compose-issue-labels))
+
+(defun fj-compose-remove-milestone ()
+  "Remove milestone from item being composed."
+  (interactive)
+  (fj-compose-remove-variable 'fj-compose-milestone))
 
 (defun fj-issue-compose (&optional edit mode type init-text)
   "Compose a new post.
@@ -4128,13 +4148,16 @@ BUF-STR is the name of the buffer string to use."
   (let* ((repo (or repo (fj--get-buffer-spec :repo)))
          (owner (or owner (fj--get-buffer-spec :owner)))
          (buf (format "*fj-%s-%s*" repo buf-str))
-         (data (funcall fetch-fun repo owner page limit)))
+         (data (funcall fetch-fun repo owner page limit))
+         (endpoint (if (eq fetch-fun #'fj-get-stargazers)
+                       "stars"
+                     "watchers")))
     (fedi-with-buffer buf 'fj-users-mode nil
       (fj-render-users data)
       (when repo (setq fj-current-repo repo))
       (setq fj-buffer-spec
-            ;; FIXME: url for browsing
             `( :repo ,repo :owner ,owner
+               :url ,(format "%s/%s/%s/%s" fj-host owner repo endpoint)
                :viewargs ( :repo ,repo :owner ,owner
                            :page ,page :limit ,limit)
                :viewfun ,viewfun)))))
@@ -4153,15 +4176,15 @@ PAGE and LIMIT are for pagination."
   (fj-repo-users #'fj-get-stargazers "stargazers"
                  repo owner #'fj-repo-stargazers page limit))
 
-(defun fj-repo-tl-stargazers ()
-  "View a listing of stargazers of repo at point.
-PAGE and LIMIT are for `fj-get-stargazers'."
-  (interactive)
-  (let* ((repo (fj--repo-name))
-         (owner (fj--repo-owner)))
-    (fj-repo-stargazers repo owner)))
+;; (defun fj-repo-tl-stargazers ()
+;;   "View a listing of stargazers of repo at point.
+;; PAGE and LIMIT are for `fj-get-stargazers'."
+;;   (interactive)
+;;   (let* ((repo (fj--repo-name))
+;;          (owner (fj--repo-owner)))
+;;     (fj-repo-stargazers repo owner)))
 
-(defun fj-repo-tl-stargazers-completing (&optional page limit)
+(defun fj-stargazers-completing (&optional page limit)
   "Prompt for a repo stargazer, and view their repos.
 PAGE and LIMIT are for `fj-get-stargazers'."
   (interactive)
@@ -4187,13 +4210,13 @@ PAGE and LIMIT are for pagination."
   (fj-repo-users #'fj-get-watchers "watchers"
                  repo owner #'fj-repo-watchers page limit))
 
-(defun fj-repo-tl-watchers ()
-  "View a listing of watchers of repo at point.
-PAGE and LIMIT are for `fj-get-watchers'."
-  (interactive)
-  (let* ((repo (fj--repo-name))
-         (owner (fj--repo-owner)))
-    (fj-repo-watchers repo owner)))
+;; (defun fj-repo-tl-watchers ()
+;;   "View a listing of watchers of repo at point.
+;; PAGE and LIMIT are for `fj-get-watchers'."
+;;   (interactive)
+;;   (let* ((repo (fj--repo-name))
+;;          (owner (fj--repo-owner)))
+;;     (fj-repo-watchers repo owner)))
 
 ;;; account users
 

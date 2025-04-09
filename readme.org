@@ -180,6 +180,8 @@ Repo settings transient:
 | C-c RET   | fj-compose-read-milestone        | Read an existing milestone in the compose buffer.                   |
 | C-c C-r   | fj-compose-read-repo             | Read a repo for composing a issue or comment.                       |
 | C-c C-t   | fj-compose-read-title            | Read an issue title.                                                |
+| C-c C-S-l | fj-compose-remove-labels         | Remove labels from item being composed.                             |
+| C-c S-RET | fj-compose-remove-milestone      | Remove milestone from item being composed.                          |
 |           | fj-compose-send                  | Submit the issue or comment to your Forgejo instance.               |
 | C         | fj-copy-item-url                 | Copy URL of current item, either issue or PR.                       |
 |           | fj-copy-pr-url                   | Copy upstream Pull Request URL with branch name.                    |
@@ -273,10 +275,10 @@ Repo settings transient:
 |           | fj-repo-tl-mode                  | Mode for displaying a tabulated list of repo search results.        |
 | r         | fj-repo-tl-readme                | Display readme file of current repo.                                |
 | *         | fj-repo-tl-star-repo             | Star or UNSTAR current repo from tabulated user repos listing.      |
-|           | fj-repo-tl-stargazers            | Prompt for a repo stargazer, and view their repos.                  |
 |           | fj-repo-tl-unstar-repo           | Unstar current repo from tabulated user repos listing.              |
 | R         | fj-repo-update-settings          | A transient for setting current repo settings.                      |
 |           | fj-repo-watchers                 | Render watchers for REPO by OWNER.                                  |
+|           | fj-stargazers-completing         | Prompt for a repo stargazer, and view their repos.                  |
 |           | fj-starred-repos                 | List your starred repos.                                            |
 | /         | fj-switch-to-buffer              | Switch to a live fj buffer.                                         |
 | B         | fj-tl-browse-entry               | Browse URL of tabulated list entry at point.                        |
