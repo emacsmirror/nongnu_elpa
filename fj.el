@@ -3525,9 +3525,9 @@ LIMIT is for `re-search-forward''s bound argument."
 (defun fj-compose-read-labels ()
   "Read a label in the issue compose buffer."
   (interactive)
-  ;; FIXME: we need to store conses of (name . id), then patch fedi.el to
-  ;; display the in the compose docs but submit the latter to the server.
-  (cl-pushnew (fj-issue-read-label nil nil nil :id)
+  ;; we store conses of (name . id), then fedi.el
+  ;; displays nanmes in the compose docs but submits the id.
+  (cl-pushnew (fj-issue-read-label fj-compose-repo nil nil :id)
               fj-compose-issue-labels
               :test #'equal)
   (fedi-post--update-status-fields))
