@@ -1923,6 +1923,7 @@ Split content of Hypothesis and Answer headings using SEPARATOR."
 (defvar-keymap gnosis-edit-mode-map
   :doc "gnosis org mode map"
   "C-c C-c" #'gnosis-save
+  "C-c C-q" #'gnosis-tags-prompt
   "C-c C-k" #'gnosis-edit-quit)
 
 (define-derived-mode gnosis-edit-mode org-mode "Gnosis Org"
