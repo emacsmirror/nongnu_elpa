@@ -3859,6 +3859,7 @@ Subject types are \"issues\" \"pulls\" \"commits\" and \"repository\"."
     (let ((number (car (last (split-string .subject.url "/"))))
           (unread (eq t .unread)))
       (insert
+       "\n"
        (propertize
         (concat
          (propertize (concat "#" number)
@@ -3875,10 +3876,7 @@ Subject types are \"issues\" \"pulls\" \"commits\" and \"repository\"."
         'fj-url .subject.html_url
         'fj-notification .id
         'fj-byline t) ; for nav
-
-       "\n"
-       fedi-horiz-bar fedi-horiz-bar
-       "\n\n"))))
+       "\n" fedi-horiz-bar fedi-horiz-bar "\n"))))
 
 (defun fj-mark-notifs-read ()
   "Mark all notifications read."
