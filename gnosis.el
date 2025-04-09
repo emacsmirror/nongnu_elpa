@@ -989,6 +989,8 @@ DATE is a list of the form (year month day)."
 
 If you only require a tag prompt, refer to `gnosis-tags--prompt'."
   (interactive)
+  (unless (derived-mode-p 'org-mode)
+    (error "This function is meant to be used in an org-mode buffer"))
   (save-excursion
     (let ((input (gnosis-tags--prompt))
 	  (current-tags (org-get-tags)))
