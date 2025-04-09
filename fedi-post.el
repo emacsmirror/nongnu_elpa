@@ -484,7 +484,7 @@ Item-var, containing the data to be displayed, can be a string, or a
 cons cell, or a list. If the latter two, the first element is displayed."
   (let-alist item
     (let ((region (fedi--find-property-range .prop (point-min)))
-          (val (eval .item-var))) ;; FIXME: remove this eval?
+          (val (symbol-value .item-var)))
       (add-text-properties
        (car region) (cdr region)
        (list 'display
