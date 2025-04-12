@@ -193,8 +193,9 @@ The DRV file to use."
 		      (format "%s:%s" bin eshell-path-env))
       (when (boundp 'woman-manpath)
 	    (add-to-list 'woman-manpath man))
-	  (add-to-list 'ffap-c-path include)
-	  (add-to-list 'Man-header-file-path include)
+      (add-to-list 'ffap-c-path include)
+      (when (listp Man-header-file-path)
+	(add-to-list 'Man-header-file-path include))
       (when (boundp 'irony-additional-clang-options)
 	    (add-to-list 'irony-additional-clang-options
 		       (format "-I%s" include)))))
