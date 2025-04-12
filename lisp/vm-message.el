@@ -728,11 +728,12 @@ works in all VM buffers."
 
 (defun vm-find-and-set-text-of (m)
   (with-current-buffer (vm-buffer-of m)
-    (save-restriction
-      (widen)
-      (goto-char (vm-headers-of m))
-      (search-forward "\n\n" (vm-text-end-of m) 0)
-      (vm-set-text-of m (point-marker)))))
+    (save-excursion
+      (save-restriction
+        (widen)
+        (goto-char (vm-headers-of m))
+        (search-forward "\n\n" (vm-text-end-of m) 0)
+        (vm-set-text-of m (point-marker))))))
 
 (defsubst vm-virtual-message-p (m)
   (not (eq m (vm-real-message-of m))))
