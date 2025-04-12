@@ -2497,12 +2497,16 @@ view all branches of a thread."
 This is the non-interactive version, so we can call it
 programmatically and not crash into
 `mastodon-toot--with-toot-item'."
-  ;; this function's var must not be id as the above macro binds id and even
-  ;; if we provide the arg (e.g. url-lookup), the macro definition overrides
-  ;; it, making the optional arg unusable!
+  ;; this function's var must not be id as the above macro binds id and
+  ;; even if we provide the arg (e.g. url-lookup), the macro definition
+  ;; overrides it, making the optional arg unusable!
   (let* ((id (or thread-id (mastodon-tl--property 'base-item-id :no-move)))
-         (type (mastodon-tl--field 'type
-                                   (mastodon-tl--property 'item-json :no-move)))
+         (type
+          (if (and (mastodon-tl--buffer-type-eq 'notifications)
+                   mastodon-group-notifications)
+              (mastodon-tl--property 'notification-type)
+            (mastodon-tl--field 'type
+                                (mastodon-tl--property 'item-json :no-move))))
          (unfolded-state (mastodon-tl--buffer-property 'thread-unfolded
                                                        (current-buffer) :noerror))
          (mastodon-tl--expand-content-warnings
