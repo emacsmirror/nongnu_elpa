@@ -1,6 +1,10 @@
 #!/usr/bin/python
 # -*- python -*-
 
+##
+# program to find missing autoload tokens.
+##
+
 import sys
 
 def identifier_start(string, startpos=0):
@@ -48,7 +52,7 @@ def find_defs(filename, pattern="(defun", pos=0):
 	s = identifier_start(l, s + len(pattern))
 	while "() \t\r\n.,".find(l[s]) != -1:
 	    s = s + 1
-	e = identifier_end(l, s) 
+	e = identifier_end(l, s)
 	if s == e:
 	    raise "Could not find identifier end in " + repr(l)
 	    continue
@@ -79,12 +83,12 @@ def check_calls(filename, funs, missing):
 	    required.append(l[s:e] + ".el")
 	    #print required
 	    continue
-				   
+
 	# check for calls to external function without autoloads or require
 	for c in l.split("("):
 	    s = identifier_start(c, 0)
 	    e = identifier_end(c, s)
-		
+
 	    #print repr(c)
 	    s = identifier_start(c, 0)
 	    e = identifier_end(c, s)
@@ -104,9 +108,9 @@ def check_calls(filename, funs, missing):
 		if f not in  missing[d.filename]:
 		    missing[d.filename].append(f)
     fd.close()
-    
 
-# emit cross references with missing autoloads 
+
+# emit cross references with missing autoloads
 if __name__ == '__main__':
     funs = {}
     for filename in sys.argv[3:]:
@@ -122,5 +126,3 @@ if __name__ == '__main__':
 	print f
 	for m in missing[f]:
 	    print "\t", m
-	
-    

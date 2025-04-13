@@ -1,4 +1,4 @@
-*.elc
+s*.elc
 TAGS
 configure.lineno
 ChangeLog
@@ -12,7 +12,6 @@ qp-decode.exe
 qp-encode.exe
 *.info*
 *.diff
-*.patch
 *.log
 *.aux
 *.cp*
