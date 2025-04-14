@@ -3797,7 +3797,8 @@ PAGE and LIMIT are for pagination."
     (fedi-with-buffer buf 'fj-notifications-mode nil
       (if (not data)
           (insert
-           (format "No notifications of type: %s %s" all-type subject-type))
+           (format "No notifications of type: %s %s" all-type
+                   (or subject-type "")))
         (save-excursion (fj-render-notifications data)))
       (setq fj-buffer-spec `( :viewfun fj-view-notifications
                               :viewargs
