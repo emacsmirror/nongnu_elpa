@@ -3360,7 +3360,7 @@ Optionally specify REF, a commit, branch, or tag."
           (owner (fj--get-buffer-spec :owner))
           (repo (fj--repo-col-or-buf-spec))
           (item (fj--property 'item)))
-     (fj-item-view repo owner number nil
+     (fj-item-view repo owner number
                    (when (eq item 'pull) :pull)))))
 
 (defun fj-issues-tl-edit ()
