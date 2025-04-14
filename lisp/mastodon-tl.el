@@ -637,7 +637,8 @@ is extracted from it."
   (let ((data (or (alist-get 'account toot)
                   toot))) ;; grouped nofifs use account data directly
     (let-alist data
-      (propertize (if (not (string-empty-p .display_name))
+      (propertize (if (and .display_name
+                           (not (string-empty-p .display_name)))
                       .display_name
                     .username)
                   'face 'mastodon-display-name-face

@@ -693,7 +693,8 @@ MAX-ID is a flag to include the max_id pagination parameter."
              (mastodon-profile--image-from-account account 'avatar_static)
              (mastodon-profile--image-from-account account 'header_static)
              "\n"
-             (propertize .display_name 'face 'mastodon-display-name-face)
+             (when .display_name
+               (propertize .display_name 'face 'mastodon-display-name-face))
              ;; roles
              (when .roles
                (concat " " (mastodon-profile--render-roles .roles)))

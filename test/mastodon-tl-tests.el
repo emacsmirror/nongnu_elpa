@@ -110,6 +110,35 @@
             (reblogged)))
   "A sample reblogged/boosted toot (parsed json)")
 
+(defconst mastodon-tl-test-empty-display-name
+  '((id . 61208)
+    (created_at . "2017-04-24T19:01:02.000Z")
+    (in_reply_to_id)
+    (in_reply_to_account_id)
+    (sensitive . :json-false)
+    (spoiler_text . "")
+    (visibility . "public")
+    (account (id . 42)
+             (username . "acct42")
+             (acct . "acct42@example.space")
+             (display_name . nil)
+             (locked . :json-false)
+             (created_at . "2017-04-01T00:00:00.000Z")
+             (followers_count . 99)
+             (following_count . 13)
+             (statuses_count . 101)
+             (note . "E"))
+    (media_attachments . ())
+    (mentions . ())
+    (tags . ())
+    (uri . "tag:example.space,2017-04-24:objectId=654321:objectType=Status")
+    (url . "https://example.space/users/acct42/updates/123456789")
+    (content . "<p>Just some text</p>")
+    (reblogs_count . 0)
+    (favourites_count . 0)
+    (reblog))
+  "A sample toot (parsed json)")
+
 (defconst mastodon-tl--follow-notify-true-response
   "HTTP/1.1 200 OK
 Date: Mon, 20 Dec 2021 13:42:29 GMT
@@ -531,6 +560,24 @@ Strict-Transport-Security: max-age=31536000
                  ;; keep changing it!
                  "7 years, 4 months ago"
                  (plist-get properties 'display)))))))
+
+(ert-deftest mastodon-tl--byline-no-displayname ()
+  "Should not fail when display_name is nil."
+  (let* ((mastodon-tl--show-avatars-p nil)
+         (toot (cons '(reblogged . t) mastodon-tl-test-empty-display-name))
+         (timestamp (cdr (assoc 'created_at toot))))
+    (with-mock
+      (mock (date-to-time timestamp) => '(22782 21551))
+      (mock (mastodon-tl--symbol 'boost) => "B")
+      (mock (mastodon-tl--toot-stats toot) => "")
+      (mock (format-time-string mastodon-toot-timestamp-format '(22782 21551)) => "2999-99-99 00:11:22")
+
+      (should (string= (substring-no-properties
+                        (mastodon-tl--byline toot))
+                       (concat "(B) acct42 (@acct42@example.space) 2999-99-99 00:11:22
+  "
+                               mastodon-tl--horiz-bar "
+"))))))
 
 (ert-deftest mastodon-tl--consider-timestamp-for-updates-no-active-callback ()
   "Should update the timestamp update variables as expected."
