@@ -2702,7 +2702,7 @@ ENDPOINT is the API endpoint to hit."
     ("merge_pull" . "%s merged this pull request %s")
     ("pull_ref" . "%s referenced a PR that will close this %s")
     ("delete_branch" . "%s deleted branch %s %s")
-    ("review" . "%s %s changes %s")
+    ("review" . "%s %s %s")
     ;; FIXME: add a request for changes review? not just approval?
     ("review_request" . "%s requested review from %s %s")
     ("milestone" . "%s added milestone %s %s")
@@ -2892,9 +2892,10 @@ Renders a review heading and review comments."
       (let-alist review
         (let ((state (pcase .state
                        ("APPROVED"
-                        (concat (downcase .state) " these"))
+                        (concat (downcase .state) " these changes"))
                        ("REQUEST_CHANGES"
-                        "requested"))))
+                        "requested changes")
+                       (_ "reviewed"))))
           (propertize
            (concat
             (format format-str user state ts)
@@ -3359,7 +3360,7 @@ Optionally specify REF, a commit, branch, or tag."
           (owner (fj--get-buffer-spec :owner))
           (repo (fj--repo-col-or-buf-spec))
           (item (fj--property 'item)))
-     (fj-item-view repo owner number nil
+     (fj-item-view repo owner number
                    (when (eq item 'pull) :pull)))))
 
 (defun fj-issues-tl-edit ()
