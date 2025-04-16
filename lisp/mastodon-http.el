@@ -220,9 +220,10 @@ Callback to `mastodon-http--get-response-async', usually
     (goto-char (point-min))
     (re-search-forward "^$" nil 'move)
     (let ((json-array-type (if vector 'vector 'list))
-          (json-string (decode-coding-string
-                        (buffer-substring-no-properties (point) (point-max))
-                        'utf-8)))
+          (json-string (string-trim-right
+                        (decode-coding-string
+                         (buffer-substring-no-properties (point) (point-max))
+                         'utf-8))))
       (kill-buffer)
       (cond ((or (string-empty-p json-string) (null json-string))
              nil)
