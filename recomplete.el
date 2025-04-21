@@ -700,7 +700,7 @@ step onto the next item)."
   "Run `ispell-word', using the first suggestion, or cycle forward.
 ARG is the offset to cycle, default is 1, -1 to cycle backwards."
   (declare (important-return-value nil))
-  (interactive "p")
+  (interactive "*p")
   (recomplete-with-callback 'recomplete-impl-ispell arg))
 
 ;; Case Style Cycle.
@@ -709,7 +709,7 @@ ARG is the offset to cycle, default is 1, -1 to cycle backwards."
   "Cycles over common case-styles.
 ARG is the offset to cycle, default is 1, -1 to cycle backwards."
   (declare (important-return-value nil))
-  (interactive "p")
+  (interactive "*p")
   (recomplete-with-callback 'recomplete-impl-case-style arg))
 
 ;; Case Style Cycle Programming Mode.
@@ -718,7 +718,7 @@ ARG is the offset to cycle, default is 1, -1 to cycle backwards."
   "Cycles over common case-styles.
 ARG is the offset to cycle, default is 1, -1 to cycle backwards."
   (declare (important-return-value nil))
-  (interactive "p")
+  (interactive "*p")
   (recomplete-with-callback 'recomplete-impl-case-style-symbol arg))
 
 ;; Abbreviations.
@@ -727,7 +727,7 @@ ARG is the offset to cycle, default is 1, -1 to cycle backwards."
   "Run `dabbrev', using the first suggestion, or cycle forward.
 ARG is the offset to cycle, default is 1, -1 to cycle backwards."
   (declare (important-return-value nil))
-  (interactive "p")
+  (interactive "*p")
   (recomplete-with-callback 'recomplete-impl-dabbrev arg))
 
 (provide 'recomplete)
