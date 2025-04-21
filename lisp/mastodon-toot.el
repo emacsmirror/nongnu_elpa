@@ -1487,7 +1487,8 @@ Return a cons of a human readable string, and a seconds-from-now string."
                                     options nil 'confirm)))
     (or (assoc response options #'string=)
         (if (< (string-to-number response) 600)
-            (car options))))) ;; min 5 mins
+            (car options) ;; min 5 mins
+	  (cons (format "%s seconds" response) response)))))
 
 (defun mastodon-toot--poll-expiry-options-alist ()
   "Return an alist of expiry options options in seconds."
