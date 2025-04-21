@@ -18,7 +18,7 @@
 (require 'nix)
 
 ;;;###autoload
-(define-derived-mode nix-drv-mode js-mode "Nix-Derivation"
+(define-derived-mode nix-drv-mode json-ts-mode "Nix-Derivation"
   "Pretty print Nix’s .drv files."
   (let ((inhibit-read-only t))
     (erase-buffer)
