@@ -20,15 +20,35 @@
 ;;;###autoload
 (define-derived-mode nix-drv-mode json-ts-mode "Nix-Derivation"
   "Pretty print Nix’s .drv files."
-  (let ((inhibit-read-only t))
-    (erase-buffer)
-    (insert (shell-command-to-string
-             (format "%s show-derivation \"%s\""
-		     nix-executable
-		     (buffer-file-name))))
-    (set-buffer-modified-p nil)
-    (read-only-mode 1))
-
+  (setq inhibit-read-only t)
+  (erase-buffer)
+  (let ((err-buf (generate-new-buffer "*nix-drv-mode*")))
+    (make-process
+     :name "nix-drv-mode"
+     :buffer (current-buffer)
+     :command (list nix-executable "derivation" "show" (buffer-file-name))
+     :stderr err-buf
+     :sentinel (lambda (proc event)
+		 (setq inhibit-read-only nil)
+		 (when (string-match "finished" event)
+		   (let ((buf (process-buffer proc)))
+                     (when (and buf (buffer-live-p buf))
+                       (with-current-buffer buf
+			 (set-buffer-modified-p nil)
+			 (read-only-mode)
+			 )))
+		   (when (and (buffer-live-p err-buf) (> (buffer-size err-buf) 0))
+		     (with-current-buffer err-buf
+		       (read-only-mode))
+		     (display-buffer err-buf))
+		   ))
+     :filter (lambda (proc output)
+               ;; use process buffer for output
+               (let ((buf (process-buffer proc)))
+		 (when (and buf (buffer-live-p buf))
+		   (with-current-buffer buf
+                     (goto-char (point-max))
+                     (insert output)))))))
   (add-hook 'change-major-mode-hook #'nix-drv-mode-dejsonify-buffer nil t))
 
 (defun nix-drv-mode-dejsonify-buffer ()
