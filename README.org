@@ -570,7 +570,7 @@ am=, if you want to actually contribute a commit.
 3. Fork the repository and create a branch off of =develop=.
 4. Run the tests and ensure that your code doesn't break any of them.
 5. Create a pull request (to develop) referencing the issue created in
-   step 1.
+   step 2.
 
 *** Coding style
 
