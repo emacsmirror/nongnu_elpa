@@ -3538,7 +3538,8 @@ This location is defined by a non-nil value of
   "Update timeline with new toots."
   (interactive)
   ;; FIXME: actually these buffers should just reload by calling their own
-  ;; load function (actually g is mostly mapped as such):
+  ;; load function (actually g is mostly mapped as such)
+  ;; well actually, g should be for reload, update is different.
   (if (or (member (mastodon-tl--get-buffer-type)
                   '(trending-statuses
                     trending-tags
