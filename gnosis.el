@@ -461,16 +461,18 @@ This will not be applied to sentences that start with double space."
       (buffer-string))))
 
 (defun gnosis-cloze-mark-answers (str answers face)
-  "Mark ANSWERS in STR with FACE."
+  "Mark ANSWERS in STR with FACE.
+
+Replaces first occurence of answer in STR with FACE."
   (cl-assert (listp answers) nil "Answers to mark must be a list.")
   (with-temp-buffer
     (insert str)
     (goto-char (point-min))
     (dolist (answer answers)
       (let ((answer-text (gnosis-trim-quotes answer)))
-        (while (search-forward answer-text nil t)
-          (replace-match 
-           (mapconcat 
+        (when (search-forward answer-text nil t)
+          (replace-match
+           (mapconcat
             (lambda (char)
               (if (not (memq char '(?\s ?\t ?\n)))
                   (propertize (char-to-string char) 'face face)
