@@ -565,11 +565,12 @@ am=, if you want to actually contribute a commit.
 
 *** Fixes and features
 
-1. Create an [[https://codeberg.org/martianh/mastodon.el/issues][issue]] detailing what you'd like to do.
-2. Fork the repository and create a branch off of =develop=.
-3. Run the tests and ensure that your code doesn't break any of them.
-4. Create a pull request (to develop) referencing the issue created in
-   step 1.
+1. Install [[https://cask.readthedocs.io/en/latest/guide/installation.html][Cask]] if you don't already have it installed
+2. Create an [[https://codeberg.org/martianh/mastodon.el/issues][issue]] detailing what you'd like to do.
+3. Fork the repository and create a branch off of =develop=.
+4. Run the tests (with =make tests=) and ensure that your code doesn't break any of them.
+5. Create a pull request (to develop) referencing the issue created in
+   step 2.
 
 *** Coding style
 
