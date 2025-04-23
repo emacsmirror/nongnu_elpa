@@ -2382,9 +2382,13 @@ RELOAD mean we reloaded."
           'fj-item-number number
           'fj-repo repo
           'fj-item-data item))
-        (when (eq :json-false .mergeable)
-          (insert
-           "This PR has changes conflicting with the target branch."))
+        ;; FIXME: move this to after async timeline rendering?:
+        (insert
+         (pcase .mergeable
+           (:json-false "This PR has changes conflicting with the target branch.\n\n")
+           ('t
+            "This PR can be merged automatically.\n\n")
+           (_ "")))
         (when (and fj-use-emojify
                    (require 'emojify nil :noerror))
           (emojify-mode t))))))
