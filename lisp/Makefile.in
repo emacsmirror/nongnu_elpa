@@ -76,10 +76,7 @@ xemacs_OBJECTS = auto-autoloads.elc custom-load.elc
 
 OBJECTS = ${@EMACS_FLAVOR@_OBJECTS} $(SOURCES:.el=.elc)
 
-AUX_FILES = version.txt
-
 INSTALL_FILES += $(OBJECTS:.elc=.el) $(OBJECTS)
-INSTALL_FILES += $(AUX_FILES)
 
 # for autoload generation
 AUTOLOAD_PACKAGE_NAME = (setq autoload-package-name \"vm\")
@@ -125,7 +122,7 @@ all: $(OBJECTS)
 
 $(OBJECTS): $(AUTOLOADS)
 
-install: install-el install-elc install-aux
+install: install-el install-elc
 
 ##############################################################################
 # Create file with version and commit
@@ -240,13 +237,6 @@ install-elc: all $(INSTALL_FILES)
 	        $(INSTALL_DATA) $$elc "$(DESTDIR)$(lispdir)"; \
 	    done;                                            \
 	fi;
-
-install-aux: $(AUX_FILES)
-	$(INSTALL) -d -m 0755 "$(DESTDIR)$(lispdir)/"
-	for i in $(AUX_FILES); do                                 \
-	    echo "Install $$i in $(DESTDIR)$(lispdir)/";   \
-	    $(INSTALL_DATA) $$i "$(DESTDIR)$(lispdir)/";   \
-        done;
 
 ##############################################################################
 Makefile: @srcdir@/Makefile.in
