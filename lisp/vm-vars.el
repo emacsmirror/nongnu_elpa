@@ -6851,7 +6851,7 @@ append a space to words that complete unambiguously.")
       (vm-ml-labels ("; " vm-ml-labels)) " %] ")
      (" %[%] "))
     "%p"
-    " (VM " vm-version ")"
+    " (VM " (vm-version) ")"
     global-mode-string
     "%-"))
 (defconst vm-mode-line-format-classic
