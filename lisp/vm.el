@@ -1480,14 +1480,21 @@ summary buffer to select a folder."
       (reporter-submit-bug-report
        vm-maintainer-address		; address
        (concat "VM " (vm-version)	; pkgname
-               " commit: " (vm-commit-version))
+               " commit: " (vm-version-commit))
        varlist				; varlist
        pre-hooks			; pre-hooks
        post-hooks			; post-hooks
        (concat				; salutation
 	"INSTRUCTIONS:
 
-- You are using Emacs default messaging here.  *** NOT vm-mail-mode!
+- The preferd way submit a bug report is at:
+
+   https://gitlab.com/emacs-vm/vm/-/issues
+
+  The content of this mail maybe pasted into the issues to understand your
+  configuration.
+
+- You are using Emacs default messaging here.  *** NOT vm-mail-mode ***
 
 - Please change the Subject header to a concise bug description.
 
@@ -1505,10 +1512,9 @@ summary buffer to select a folder."
 "
 	(if (> errors 0)
 	    "
-- The raw definitions for some of the mail configurations are included
-  below because there were errors in cleaning them.  Please replace any
-  sensitive information by xxxx."))
-	)
+- The below defintions should be scrubbed of sensitive information.
+  However, please verify this is the case."
+          )))
       (goto-char (point-min))
       (mail-position-on-field "Subject"))))
 
