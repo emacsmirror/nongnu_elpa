@@ -30,18 +30,22 @@ in _info_ format.
 The preferred way to report bugs is to file issues at
 https://gitlab.com/emacs-vm/vm/-/issues.
 
-Alternatively, bugs can be reported report in VM using the VM function
+Alternatively, bugs can be reported report in VM using the VM function.
 
 ```
 M-x vm-submit-bug-report
 ```
 
+This function create a mail message that includes your VM configuration
+information. If you are creating an issue, this information maybe pasted
+into the GitLab issue instead of sending.
+
 However, this function currently sends an e-mail to a mailing list,
-which makes the issue hard to track, why the Gitlab issue tracker
-normally is a better option
+which makes the issue hard to track, hence the Gitlab issue tracker
+normally is a better option.
 
 Please include information about how to reproduce the problem. Please
-report any problems or bugs otherwise they cannot be fixed!
+report any problems or bugs, otherwise they cannot be fixed!
 
 If you are not sure that the problem is a bug or that it could be of
 general importance to other users, you are welcome to discuss it on
