@@ -21,52 +21,61 @@
 ;;; Code:
 
 (require 'vm-macro)
+(require 'package)
 
 ;; Don't use vm-device-type here because it may not not be loaded yet.
 (declare-function device-type "vm-xemacs" ())
 (declare-function device-matching-specifier-tag-list "vm-xemacs" ())
 
-(defun vm-read-version-file (file-name line-number)
-  "Read the a line from of FILE-NAME, remove all whitespace, and return it as a string.
-Returns \"undefined\" if the file cannot be read."
-  (let ((file-path (expand-file-name
-                    file-name
-                    (and load-file-name (file-name-directory load-file-name)))))
-    (condition-case nil
-        (with-temp-buffer
-          (insert-file-contents-literally file-path)
-          (goto-char (point-min))
-          (forward-line (1- line-number))
-          (replace-regexp-in-string "\\s-" "" ; Remove all whitespace
-                                    (buffer-substring-no-properties
-                                      (line-beginning-position) (line-end-position))))
-      (file-error "undefined"))))
+(defun vm--version-info-from-conf ()
+  "Return version and commit from vm-version-conf.el if it exists."
+  (when (ignore-errors (load "vm-version-conf"))
+    (list vm-version-config vm-version-commit-config)))
 
-(defconst vm-version (vm-read-version-file "version.txt" 1)
-  "Version number of VM.")
+(defun vm--commit-from-package (pkg)
+  "Get commit hash from PKG, whether VC-installed or archive-installed."
+  (let ((desc (package-get-descriptor pkg)))
+    (or (when (package-vc-p desc)
+          (package-vc-commit desc))
+        (alist-get :commit (package-desc-extras desc)))))
+
+(defun vm--version-info-from-package ()
+  "Return version and commit if VM is loaded from a package."
+  (let ((package-version (vm-get-package-version)))
+    (if package-version
+        (list package-version (vm--commit-from-package 'vm))
+      (list nil nil))))
+
+;; Define vm-version and vm-version-commit
+(let ((version-info (or (vm--version-info-from-conf)
+                        (vm--version-info-from-package)
+                        (list nil nil))))
+  (defconst vm-version (nth 0 version-info)
+    "Version number of VM.")
+  (defconst vm-version-commit (nth 1 version-info)
+    "Git commit number of VM.")
+  (unless vm-version
+    (warn "Can't obtain vm-version from package or vm-version-conf.el"))
+  (unless vm-version-commit
+    (warn "Can't obtain vm-version-commit from package or vm-version-conf.el")))
 
 (defun vm-version ()
-  "Return the value of the variable `vm-version'."
+  "Display and return the value of the variable `vm-version'."
   (interactive)
   (when (vm-interactive-p)
-    (or (and (stringp vm-version)
-	     (string-match "[0-9]" vm-version))
-	(error "Cannot determine VM version!"))
-    (message "VM version is: %s" vm-version))
-  vm-version)
-
-(defconst vm-version-commit (vm-read-version-file "version.txt" 2)
-  "git commit number of VM.")
+    (if vm-version
+        (message "VM version is: %s" vm-version)
+      (message "VM version was not discovered when VM was loaded"))
+  vm-version))
 
 (defun vm-version-commit ()
-  "Return the value of the variable `vm-version-commit'."
+  "Display and the value of the variable `vm-version-commit'."
   (interactive)
   (when (vm-interactive-p)
-    (or (and (stringp vm-version-commit)
-	     (string-match "[a-f0-9]+" vm-version-commit))
-	(error "Cannot determine VM commit!"))
-    (message "VM commit is: %s" vm-version-commit))
-  vm-version-commit)
+    (if vm-version-commit
+        (message "VM commit is: %s" vm-version-commit)
+      (message "VM commit was not discovered when VM was loaded"))
+  vm-version-commit))
 
 (defun vm-menu-can-eval-item-name ()
   (and (featurep 'xemacs)

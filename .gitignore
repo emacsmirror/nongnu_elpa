@@ -12,7 +12,6 @@ qp-decode.exe
 qp-encode.exe
 *.info*
 *.diff
-*.patch
 *.log
 *.aux
 *.cp*
@@ -37,17 +36,16 @@ config.status
 configure
 release
 snapshot
-info/version.texinfo
-lisp/version.txt
-/lisp/vm-autoloads.el
-/vm-autoloads.el
-/vm-pkg.el
-lisp/vm-cus-load.el
 *.orig
 *.rej
 *.saved
 package-info
 _pkg.el
 commit.msg
+
+/info/version.texinfo
+/lisp/vm-autoloads.el
+/lisp/vm-version-conf.el
+/lisp/vm-cus-load.el
 
 .emacs.bak/

@@ -56,7 +56,7 @@
 (require 'vm-sort)
 (require 'vm-reply)
 (eval-when-compile (require 'cl-lib))
-
+(require 'package)
 
 (defvar enable-multibyte-characters)
 
@@ -1674,5 +1674,11 @@ draft messages."
 (autoload 'tapestry-replace-tapestry-element "tapestry")
 (autoload 'tapestry-nullify-tapestry-elements "tapestry")
 (autoload 'tapestry-remove-frame-parameters "tapestry")
+
+(defun vm-get-package-version ()
+  "Return version of VM if it was installed as a package"
+  ;; N.B. this must be in this file, as package-get-version wants
+  ;; to be called from the file containg the `Version:' header.
+  (package-get-version))
 
 ;;; vm.el ends here

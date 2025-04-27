@@ -59,6 +59,7 @@ SOURCES += vm-virtual.el
 SOURCES += vm-window.el
 SOURCES += vm-w3m.el
 SOURCES += vm-w3.el
+SOURCES += vm-version-conf.el
 
 SOURCES += vcard.el
 SOURCES += tapestry.el
@@ -75,10 +76,7 @@ xemacs_OBJECTS = auto-autoloads.elc custom-load.elc
 
 OBJECTS = ${@EMACS_FLAVOR@_OBJECTS} $(SOURCES:.el=.elc)
 
-AUX_FILES = version.txt
-
 INSTALL_FILES += $(OBJECTS:.elc=.el) $(OBJECTS)
-INSTALL_FILES += $(AUX_FILES)
 
 # for autoload generation
 AUTOLOAD_PACKAGE_NAME = (setq autoload-package-name \"vm\")
@@ -124,17 +122,18 @@ all: $(OBJECTS)
 
 $(OBJECTS): $(AUTOLOADS)
 
-install: install-el install-elc install-aux
+install: install-el install-elc
 
 ##############################################################################
-vm-version.elc: vm-version.el version.txt
-
-version.txt:
-	echo "$(PACKAGE_VERSION)" > $@.tmp
+# Create file with version and commit
+vm-version-conf.el: Makefile
+	echo ";;; Generated file do not commit " > $@.tmp
+	echo '(defconst vm-version-config "'"$(PACKAGE_VERSION)"'")' >> $@.tmp
 	if [ -d "$(GIT_DIR)" ]; then \
-		$(GIT) --git-dir="$(GIT_DIR)" rev-parse HEAD >> $@.tmp; \
+		commit=`$(GIT) --git-dir="$(GIT_DIR)" rev-parse HEAD`; \
+		echo '(defconst vm-version-commit-config "'"$${commit}"'")' >> $@.tmp ; \
 	else \
-		echo "unknown" >> $@.tp; \
+		echo '(defconst vm-version-commit-config "unknown")' >> $@.tmp ; \
 	fi
 	mv -f $@.tmp $@
 
@@ -169,9 +168,6 @@ vm-cus-load.el: $(SOURCES:%=@srcdir@/%)
 # XEmacs#s auto-autoloads and custom-load file
 auto-autoloads.el: $(SOURCES:%=@srcdir@/%)
 	-$(RM) -f $@
-#	(build_dir=`pwd`; cd "@srcdir@"; \
-#	 $(EMACS_PROG) $(FLAGS) -l autoload \
-#		-f vm-built-autoloads "@abs_builddir@/$@" "`pwd`")
 	$(EMACS_COMP) \
                 -eval "$(AUTOLOAD_PACKAGE_NAME)" \
                 -eval "$(AUTOLOAD_FILE)" \
@@ -242,20 +238,13 @@ install-elc: all $(INSTALL_FILES)
 	    done;                                            \
 	fi;
 
-install-aux: $(AUX_FILES)
-	$(INSTALL) -d -m 0755 "$(DESTDIR)$(lispdir)/"
-	for i in $(AUX_FILES); do                                 \
-	    echo "Install $$i in $(DESTDIR)$(lispdir)/";   \
-	    $(INSTALL_DATA) $$i "$(DESTDIR)$(lispdir)/";   \
-        done;
-
 ##############################################################################
 Makefile: @srcdir@/Makefile.in
 	cd .. ; ./config.status
 
 ##############################################################################
 clean:
-	-$(RM) -f version.txt *.elc vm-autoloads.el auto-autoloads.el custom-load.el
+	-$(RM) -f vm-version-conf.el *.elc vm-autoloads.el auto-autoloads.el custom-load.el
 
 distclean: clean
 	-$(RM) -f Makefile vm-cus-load.el
