@@ -60,22 +60,22 @@
     (warn "Can't obtain vm-version-commit from package or vm-version-conf.el")))
 
 (defun vm-version ()
-  "Return the value of the variable `vm-version'."
+  "Display and return the value of the variable `vm-version'."
   (interactive)
   (when (vm-interactive-p)
-    (unless vm-version
-      (warn "VM version was not discovered when VM was loaded"))
-    (message "VM version is: %s" vm-version))
-  vm-version)
+    (if vm-version
+        (message "VM version is: %s" vm-version)
+      (message "VM version was not discovered when VM was loaded"))
+  vm-version))
 
 (defun vm-version-commit ()
-  "Return the value of the variable `vm-version-commit'."
+  "Display and the value of the variable `vm-version-commit'."
   (interactive)
   (when (vm-interactive-p)
-    (unless vm-version-commit
-      (warn "VM commit was not discovered when VM was loaded"))
-    (message "VM commit is: %s" vm-version-commit))
-  vm-version-commit)
+    (if vm-version-commit
+        (message "VM commit is: %s" vm-version-commit)
+      (message "VM commit was not discovered when VM was loaded"))
+  vm-version-commit))
 
 (defun vm-menu-can-eval-item-name ()
   (and (featurep 'xemacs)
