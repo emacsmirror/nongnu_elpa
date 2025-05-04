@@ -112,7 +112,7 @@ a POP server, find its cache file on the file system"
   (let ((process nil)
 	(m-per-session vm-pop-messages-per-session)
 	(b-per-session vm-pop-bytes-per-session)
-	(handler (vm-find-file-name-handler source 'vm-pop-move-mail))
+	(handler (find-file-name-handler source 'vm-pop-move-mail))
 	(popdrop (or (vm-pop-find-name-for-spec source)
 		     (vm-safe-popdrop-string source)))
 	(statblob nil)
@@ -268,7 +268,7 @@ a POP server, find its cache file on the file system"
 
 (defun vm-pop-check-mail (source)
   (let ((process nil)
-	(handler (vm-find-file-name-handler source 'vm-pop-check-mail))
+	(handler (find-file-name-handler source 'vm-pop-check-mail))
 	(retrieved vm-pop-retrieved-messages)
 	(popdrop (vm-popdrop-sans-password source))
 	(count 0)
