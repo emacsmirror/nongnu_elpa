@@ -63,7 +63,7 @@
 ;; now add VM source dirs to load-path and preload some
 (setq load-path (append '("." "./lisp") load-path))
 (require 'vm-macro)
-(require 'vm-version)
+(require 'vm-misc)
 (require 'vm-message)
 (require 'vm-vars)
 

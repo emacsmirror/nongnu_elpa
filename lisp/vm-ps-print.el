@@ -404,7 +404,7 @@ t) instead of `vm-print-message'."
   (interactive)
   (if each (fset 'vm-toolbar-print-command 'vm-ps-print-each-message)
     (fset 'vm-toolbar-print-command 'vm-ps-print-message))
-  (require 'vm-version)
+  (require 'vm-misc)
   (require 'vm-menu)
   (vm-ps-print-message-fix-menu 'vm-menu-dispose-menu each)
   (vm-ps-print-message-fix-menu 'vm-menu-vm-menu each)

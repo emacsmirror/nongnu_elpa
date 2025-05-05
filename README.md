@@ -36,13 +36,12 @@ Alternatively, bugs can be reported report in VM using the VM function.
 M-x vm-submit-bug-report
 ```
 
-This function create a mail message that includes your VM configuration
-information. If you are creating an issue, this information maybe pasted
-into the GitLab issue instead of sending.
-
 However, this function currently sends an e-mail to a mailing list,
 which makes the issue hard to track, hence the Gitlab issue tracker
 normally is a better option.
+
+The mail message includes your VM configuration information. If you are
+creating an issue, this information maybe pasted into the GitLab issue.
 
 Please include information about how to reproduce the problem. Please
 report any problems or bugs, otherwise they cannot be fixed!

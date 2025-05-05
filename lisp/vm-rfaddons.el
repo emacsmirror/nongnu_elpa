@@ -60,8 +60,6 @@
 ;;; Code:
 
 (require 'vm-macro)
-(require 'vm-version)
-
 (require 'vm-misc)
 (require 'vm-folder)
 (require 'vm-summary)

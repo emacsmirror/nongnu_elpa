@@ -22,7 +22,6 @@
 
 ;;; Code:
 
-(require 'vm-version)
 (require 'vm-macro)
 
 (declare-function vm-parse "vm-misc" (string regexp &optional matchn matches))

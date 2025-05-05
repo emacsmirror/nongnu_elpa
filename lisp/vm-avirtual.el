@@ -132,7 +132,7 @@
 
 ;;----------------------------------------------------------------------------
 (eval-and-compile
-  (require 'vm-version)
+  (require 'vm-misc)
   (require 'regexp-opt)
   (require 'time-date)
 

@@ -54,7 +54,6 @@ SOURCES += vm-undo.el
 SOURCES += vm-user.el
 SOURCES += vm-vars.el
 SOURCES += vm-vcard.el
-SOURCES += vm-version.el
 SOURCES += vm-virtual.el
 SOURCES += vm-window.el
 SOURCES += vm-w3m.el
@@ -155,7 +154,8 @@ vm-autoloads.el: $(SOURCES:%=@srcdir@/%)
 	echo "(setq vm-configure-docdir \"${docdir}\")" | tr -d '\015' >> $@
 	echo "(setq vm-configure-infodir \"${infodir}\")" | tr -d '\015' >> $@
 	echo "(require 'vm-vars)" | tr -d '\015' >> $@
-	echo "(provide 'vm-autoloads)" | tr -d '\015' >> $@
+	echo "(provide 'vm-autoloads)" | tr -d '\015' >> $@.tmp
+	mv -f $@.tmp $@
 
 vm-cus-load.el: $(SOURCES:%=@srcdir@/%)
 	$(EMACS_COMP) -f vm-custom-make-dependencies .

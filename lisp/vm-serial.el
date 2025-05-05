@@ -72,7 +72,6 @@
 ;; 
 ;;; Code:
 
-(require 'vm-version)
 (require 'vm-reply)
 (require 'vm-macro)
 (require 'vm-misc)
