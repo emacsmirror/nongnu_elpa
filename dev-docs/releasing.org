@@ -1,3 +1,11 @@
 Releasing VM
 
+* pre-release testing:
+(package-vc-install '("https://gitlab.com/USER/REPO.git" :rev "v1.2.3"))
+
+
+
+* post-release testing
+(package-vc-install '("https://gitlab.com/USER/REPO.git" :rev "v1.2.3"))
+
 

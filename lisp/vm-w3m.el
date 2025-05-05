@@ -32,7 +32,7 @@
 ;;; Code:
 
 (require 'vm-mime)
-(require 'vm-version)
+(require 'vm-misc)
 
 (eval-and-compile (vm-load-features '(w3m) byte-compile-current-file))
 

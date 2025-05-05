@@ -34,7 +34,6 @@
 
 (provide 'vm)
 
-(require 'vm-version)
 (require 'vm-macro)
 (require 'vm-misc)
 (require 'vm-folder)
@@ -1686,5 +1685,57 @@ draft messages."
   ;; N.B. this must be in this file, as package-get-version wants
   ;; to be called from the file containg the `Version:' header.
   (package-get-version))
+
+(defun vm--version-info-from-conf ()
+  "Return version and commit from vm-version-conf.el if it exists."
+  (when (ignore-errors (load "vm-version-conf"))
+    (list vm-version-config vm-version-commit-config)))
+
+(defun vm--commit-from-package (pkg)
+  "Get commit hash from PKG, whether VC-installed or archive-installed."
+  (let ((desc (package-get-descriptor pkg)))
+    (or (when (package-vc-p desc)
+          (package-vc-commit desc))
+        (alist-get :commit (package-desc-extras desc)))))
+
+(defun vm--version-info-from-package ()
+  "Return version and commit if VM is loaded from a package."
+  (let ((package-version (vm-get-package-version)))
+    (if package-version
+        (list package-version (vm--commit-from-package 'vm))
+      (list nil nil))))
+
+;; Define vm-version and vm-version-commit
+(let ((version-info (or (vm--version-info-from-conf)
+                        (vm--version-info-from-package)
+                        (list nil nil))))
+  (defconst vm-version (nth 0 version-info)
+    "Version number of VM.")
+  (defconst vm-version-commit (nth 1 version-info)
+    "Git commit number of VM.")
+  (unless vm-version
+    (warn "Can't obtain vm-version from package or vm-version-conf.el"))
+  (unless vm-version-commit
+    (warn "Can't obtain vm-version-commit from package or vm-version-conf.el")))
+
+;;;###autoload
+(defun vm-version ()
+  "Display and return the value of the variable `vm-version'."
+  (interactive)
+  (when (vm-interactive-p)
+    (if vm-version
+        (message "VM version is: %s" vm-version)
+      (message "VM version was not discovered when VM was loaded")))
+  (or vm-version "unknown"))
+
+;;;###autoload
+(defun vm-version-commit ()
+  "Display and the value of the variable `vm-version-commit'."
+  (interactive)
+  (when (vm-interactive-p)
+    (if vm-version-commit
+        (message "VM commit is: %s" vm-version-commit)
+      (message "VM commit was not discovered when VM was loaded")))
+   (or vm-version-commit "unknown"))
 
 ;;; vm.el ends here
