@@ -25,9 +25,9 @@ There is also a globalised mode `global-visual-fill-column-mode`. This mode turn
 
 ## Wrap prefix ##
 
-In `auto-fill-mode`, there is an option `adaptive-fill-mode`, which ensures that if the first line of a paragraph is indented or has, e.g., a mail quote prefix (`> `), this is applied to the entire paragraph. To get the same effect, you can use the package [`adaptive-wrap`](https://elpa.gnu.org/packages/adaptive-wrap.html), which is available from GNU Elpa. Like `visual-fill-column-mode`, its effect is purely visual, the buffer text is not actually modified. The effect of this package is shown in the following two images:
+In `auto-fill-mode`, there is an option `adaptive-fill-mode`, which ensures that if the first line of a paragraph is indented or has, e.g., a mail quote prefix (`> `), this is applied to the entire paragraph. To get the same effect using `visual-line-mode` / `visual-fill-column-mode`, you can use `visual-wrap-prefix-mode` or, if you're using Emacs 29 or earlier, the package [`adaptive-wrap`](https://elpa.gnu.org/packages/adaptive-wrap.html), which is available from GNU Elpa. The effect of these packages is purely visual, the buffer text is not actually modified. The effect of this package is shown in the following two images:
 
- Without `adaptive-wrap`     | With `adaptive-wrap`
+ Without `visual-wrap`     | With `visual-wrap`
 --------------------------------- | -------------------------------
  ![without adaptive-wrap](no-adaptive-wrap.png) | ![with adaptive-wrap](adaptive-wrap.png)
 
