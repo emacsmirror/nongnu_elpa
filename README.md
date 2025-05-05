@@ -16,11 +16,13 @@
 
 `visual-fill-column-mode` wraps long lines at `fill-column` without adding newlines to the buffer. Its primary (though not exclusive) purpose is to soft-wrap text in buffers that use `visual-line-mode`. The most straightforward way to achieve this is to use the minor mode `visual-line-fill-column-mode` instead of `visual-line-mode`. This function activates (and deactivates) `visual-line-mode` and `visual-fill-column-mode` in conjunction.
 
-`visual-fill-column` can also be used independently from `visual-line-mode`, for example to centre text in a buffer. In this case, use the function `visual-fill-column-mode` to activate it. This function can be added to mode hooks or called directly with `M-x visual-fill-column-mode RET`.
+`visual-fill-column` can also be used independently from `visual-line-mode`, for example to centre text in a buffer. In this case, use the function `visual-fill-column-mode` to activate it.
 
-Note that if you activate `visual-fill-column-mode` in a mode hook, though, it will not be deactivated when the hook's mode is deactivated. If, for example, you would add `visual-fill-column-mode` to `visual-line-mode-hook`, activating `visual-line-mode` will activate `visual-fill-column-mode`, but *deactivating* `visual-line-mode` will *not* deactivate `visual-fill-column-mode`. Therefore, the use of `visual-line-fill-column-mode` is preferred.
+There is also a globalised mode `global-visual-fill-column-mode`. This mode turns on `visual-fill-column-mode` in every buffer that visits a file. Activate it either through Customize or by calling it as a function in your init file. In buffers that do not visit a file, `visual-fill-column-mode` may be disruptive, so `global-visual-fill-column-mode` is restricted to file-visiting buffers. (You can, of course still activate `visual-fill-column-mode` manually for such buffers, of course.)
 
-There is also a globalised mode `global-visual-fill-column-mode`. This mode turns on `visual-fill-column-mode` in every buffer that visits a file. Activate it either through Customize or by calling it as a function in your init file. In buffers that do not visit a file, `visual-fill-column-mode` may be disruptive, so `global-visual-fill-column-mode` is restricted to file-visiting buffers. (You can, of course still activate `visual-fill-column-mode` manually or in hooks for such buffers, of course.)
+Another option is to add the function `visual-fill-column-mode` to mode hooks in order to activate it in specific modes. This works well from major mode hooks, but be aware of an issue that occurs if you add `visual-fill-column-mode` to a *minor* mode hook: a minor mode's hook is run not only when the minor mode is activated, but also when the minor mode is deactivated.
+
+This means that if you add `visual-fill-column-mode` to, e.g., `visual-line-mode-hook`, deactivating `visual-line-mode` will **not** deactivate `visual-fill-column-mode`. Instead, `visual-fill-column-mode` will be activated a second time. Unfortunately, there is no good way to handle this situation: a function run from a hook cannot determine whether the hook's mode is being activated or deactivated. For this reason, this package provides the command `visual-line-fill-column-mode`, which activates and deactivates both modes in tandem.
 
 
 ## Wrap prefix ##
