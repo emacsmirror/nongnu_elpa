@@ -1246,47 +1246,59 @@ SUCCESS is a boolean value, t for success, nil for failure."
       (gnosis-display-next-review id success)
       success)))
 
-(defun gnosis-review-cloze--input (cloze &optional user-input)
-  "Prompt for user input during cloze review.
+(defun gnosis-review-cloze--input (clozes &optional user-input)
+  "Prompt for USER-INPUT during cloze review.
 
-Returns a cons, t or nil depending on success of review and the cloze
-string."
-  (let ((user-input (or user-input (read-string "Answer: "))))
-    (cons (gnosis-compare-strings user-input cloze) user-input)))
+CLOZES is a list of possible correct answers.
+
+Returns a cons; ='(position . user-input) if correct,
+='(nil . user-input) if incorrect."
+  (let* ((user-input (or user-input (read-string "Answer: ")))
+         (position (cl-position user-input clozes :test #'gnosis-compare-strings)))
+    (cons position user-input)))
 
 (defun gnosis-review-cloze (id)
   "Review cloze type note for ID."
   (let* ((keimenon (gnosis-get 'keimenon 'notes `(= id ,id)))
-	 (clozes (gnosis-get 'answer 'notes `(= id ,id)))
-	 (num 0) ;; Number of clozes revealed
-	 (hints (gnosis-get 'hypothesis 'notes `(= id ,id)))
-	 (parathema (gnosis-get 'parathema 'extras `(= id ,id)))
-	 (success))
-    ;; Quick fix for old cloze note versions.
-    (cond ((and (stringp hints) (string-empty-p hints))
-	   (setq hints nil))
-	  ((and (not (listp hints)) (not (string-empty-p hints)))
-	   (setq hints (list hints))))
+         (all-clozes (gnosis-get 'answer 'notes `(= id ,id)))
+         (all-hints (gnosis-get 'hypothesis 'notes `(= id ,id)))
+         (revealed-clozes '()) ;; List of revealed clozes
+         (unrevealed-clozes (copy-sequence all-clozes))
+         (unrevealed-hints (copy-sequence all-hints))
+         (parathema (gnosis-get 'parathema 'extras `(= id ,id)))
+         (success t))
     ;; Initially display the sentence with no reveals
-    (gnosis-display-cloze-string keimenon clozes hints nil nil)
-    (cl-loop for cloze in clozes
-	     do (let ((input (gnosis-review-cloze--input cloze)))
-		  (if (equal (car input) t)
-		      ;; Correct answer -> reveal the current cloze
-		      (progn (cl-incf num)
-			     (gnosis-display-cloze-string keimenon (nthcdr num clozes)
-							  (nthcdr num hints)
-							  (cl-subseq clozes 0 num)
-							  nil))
-		    ;; Incorrect answer
-		    (gnosis-display-cloze-string keimenon nil nil
-						 (cl-subseq clozes 0 num)
-						 (member cloze clozes))
-		    (gnosis-display-cloze-user-answer (cdr input))
-		    (setq success nil)
-		    (cl-return)))
-	     ;; Update note after all clozes are revealed successfully
-	     finally (setq success t))
+    (gnosis-display-cloze-string keimenon unrevealed-clozes unrevealed-hints nil nil)
+    (catch 'done
+      (while unrevealed-clozes
+        (let* ((input (gnosis-review-cloze--input all-clozes))
+               (position (car input))
+               (matched-cloze (when position (nth position all-clozes)))
+               (matched-hint (when (and position (< position (length all-hints)))
+                               (nth position all-hints))))
+          (if (and matched-cloze (member matched-cloze unrevealed-clozes))
+              ;; Correct answer - move cloze from unrevealed to revealed
+              (progn
+                ;; Add to revealed clozes list, preserving original order
+                (setq revealed-clozes
+                      (cl-sort (cons matched-cloze revealed-clozes)
+                               #'< :key (lambda (cloze)
+                                          (cl-position cloze all-clozes))))
+                ;; Remove from unrevealed lists
+                (setq unrevealed-clozes (cl-remove matched-cloze unrevealed-clozes
+						   :count 1))
+                (when matched-hint
+                  (setq unrevealed-hints (cl-remove matched-hint unrevealed-hints
+						    :count 1)))
+                ;; Display with updated revealed/unrevealed lists
+                (gnosis-display-cloze-string keimenon unrevealed-clozes unrevealed-hints
+                                           revealed-clozes nil))
+            ;; Incorrect answer
+            (gnosis-display-cloze-string keimenon nil nil
+                                       revealed-clozes unrevealed-clozes)
+            (gnosis-display-cloze-user-answer (cdr input))
+            (setq success nil)
+            (throw 'done nil)))))
     (gnosis-display-parathema parathema)
     (gnosis-display-next-review id success)
     success))
