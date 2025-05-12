@@ -954,7 +954,8 @@ If SUSPENDED-P, return suspended notes as well."
   "Return notes for deck, with value of DECK-ID.
 
 If DUE is t, return only due notes."
-  (let ((notes (gnosis-select 'id 'notes `(= deck-id ,(or deck-id (gnosis--get-deck-id))) t)))
+  (let ((notes (gnosis-select 'id 'notes `(= deck-id ,(or deck-id (gnosis--get-deck-id)))
+			      t)))
     (if (or due nil)
 	(cl-loop for note in notes
 		 when (and (not (gnosis-suspended-p note))
@@ -1050,7 +1051,7 @@ START is the search starting position, used internally for recursion."
 TAGS: boolean value, t to specify tags.
 DUE: boolean value, t to specify due notes.
 DECK: Integer, specify deck id.
-QUERY: String value,"
+QUERY: String value."
   (cl-assert (and (booleanp due) (booleanp tags)
 		  (or (numberp deck) (null deck))
 		  (or (stringp query) (null query)))
@@ -1679,20 +1680,23 @@ and KEIMENON reversed."
 
 (defun gnosis-add-note--mcq (id deck-id type keimenon hypothesis
 				answer parathema tags suspend links)
-  "Default format for adding a note.
+  "Helper function for MCQ note type.
 
-ID: Note ID, either an integer value or NEW.
-DECK-ID: Integer value of deck-id.
-TYPE: String representing the type of note.
-KEIMENON: String for the note text.
-HYPOTHESIS: List of a signle string.
-ANSWER: List of a single string.
-PARATHEMA: String for the parathema text.
-TAGS: List of note tags.
-SUSPEND: Integer value of 0 for nil and 1 for true (suspended).
-LINKS: List of id links in PARATHEMA."
+Provide assertions for MCQ type notes.
+
+DECK-ID: ID for deck.
+ID: Integer for note ID.
+TYPE: String for type, must be \"mcq\".
+HYPOTHESIS: List of strings or nil, hypothesis in MCQ note types
+serve as choices to select from.
+ANSWER: List of one time, the right answer.  Must be member of
+HYPOTHESIS.
+TAGS: List of tags.
+PARATHEMA: Parathesis for THEMA.
+SUSPEND: integer value, 1 or 0.
+LINKS: list of strings."
   (cl-assert (integerp deck-id) nil "Deck-id value must be an integer.")
-  (cl-assert (stringp type) nil "Type must be a string.")
+  (cl-assert (string= type "mcq") nil "TYPE value must be \"mcq\".")
   (cl-assert (stringp keimenon) nil "Keimenon must be a string.")
   (cl-assert (and (listp hypothesis)
 		  (> (length hypothesis) 1))
@@ -1701,11 +1705,15 @@ LINKS: List of id links in PARATHEMA."
 		  (= (length answer) 1)
 		  (member (car answer) hypothesis))
 	     nil "Answer value must be a single item, member of the Hypothesis")
-  (cl-assert (listp tags) nil "Tags must be a list.")
+  (cl-assert (and (listp tags)
+		  (cl-every 'stringp tags))
+	     nil "Tags must be a list.")
   (cl-assert (or (= suspend 0)
 		 (= suspend 1))
 	     nil "Suspend value must either 0 or 1")
-  (cl-assert (listp links) nil "Links must be a list")
+  (cl-assert (and (listp links)
+		  (cl-every 'stringp links))
+	     nil "Links must be a list")
   (if (equal id "NEW")
       (gnosis-add-note-fields deck-id type keimenon (or hypothesis (list ""))
 			      answer parathema tags suspend links)
@@ -1713,19 +1721,37 @@ LINKS: List of id links in PARATHEMA."
 
 (defun gnosis-add-note--cloze (id deck-id type keimenon hypothesis
 				  answer parathema tags suspend links)
-  "Add cloze type note."
+  "Helper for cloze type notes.
+
+Provide assertions for cloze type notes.
+
+DECK-ID: ID for deck.
+ID: Integer for note ID.
+TYPE: String for type, must be \"cloze\".
+HYPOTHESIS: List of strings or nil, hypothesis in cloze note types
+serve as hints.
+ANSWER: List of answers for clozes.
+TAGS: List of tags.
+PARATHEMA: Parathesis for thema.
+SUSPEND: integer value, 1 or 0.
+LINKS: list of strings."
   (cl-assert (integerp deck-id) nil "Deck-id value must be an integer.")
-  (cl-assert (stringp type) nil "Type must be a string.")
+  (cl-assert (string= type "cloze") nil "Type for cloze type must be \"cloze\".")
   (cl-assert (stringp keimenon) nil "Keimenon must be a string.")
   (cl-assert (or (>= (length answer) (length hypothesis))
 		 (null hypothesis))
-	     nil "Hypothesis value must be a list or nil, less or equal in length of Answer.")
+	     nil
+	     "Hypothesis value must be a list or nil, less or equal in length of Answer.")
   (cl-assert (listp answer) nil "Answer value must be a list.")
-  (cl-assert (listp tags) nil "Tags must be a list.")
+  (cl-assert (and (listp tags)
+		  (cl-every 'stringp tags))
+	     nil "Tags must be a list of strings..")
   (cl-assert (or (= suspend 0)
 		 (= suspend 1))
 	     nil "Suspend value must either 0 or 1")
-  (cl-assert (listp links) nil "Links must be a list")
+  (cl-assert (and (listp links)
+		  (cl-every 'strinp links))
+	     nil "Links must be a list")
   (cl-assert (gnosis-cloze-check keimenon answer) nil
 	     "Clozes (answer) values are not part of keimenon")
   (if (equal id "NEW")
@@ -1735,15 +1761,31 @@ LINKS: List of id links in PARATHEMA."
 
 (defun gnosis-add-note--mc-cloze (id deck-id type keimenon hypothesis
 				  answer parathema tags suspend links)
-  "Add cloze type note."
+  "Helper for mc-cloze type notes.
+
+Provide assertions for mc-cloze type notes.
+
+DECK-ID: ID for deck.
+ID: Integer for note ID.
+TYPE: String for type, must be \"mc-cloze\".
+HYPOTHESIS: List of strings or nil, hypothesis in mc-cloze note types
+serve as hints.
+ANSWER: List of answers for mc-clozes.
+TAGS: List of tags.
+PARATHEMA: Parathesis for thema.
+SUSPEND: integer value, 1 or 0.
+LINKS: list of strings."
   (cl-assert (integerp deck-id) nil "Deck-id value must be an integer.")
-  (cl-assert (stringp type) nil "Type must be a string.")
+  (cl-assert (string= type "mc-cloze") nil "TYPE value must be \"mc-cloze\" .")
   (cl-assert (stringp keimenon) nil "Keimenon must be a string.")
-  (cl-assert (listp hypothesis)
-	     nil "Hypothesis value must be a list or nil, equal in length of Answer.")
+  (cl-assert (and (listp hypothesis)
+		  (> (length hypothesis) (length answer)))
+	     nil "Hypothesis value must be a list, greater in length of ANSWER.")
   (cl-assert (and (listp answer) (length= answer 1)) nil
-	     "Answer value must be a list of one item.")
-  (cl-assert (listp tags) nil "Tags must be a list.")
+	     "ANSWER value must be a list of one item.")
+  (cl-assert (and (listp tags)
+		  (cl-every 'stringp tags))
+	     nil "Tags must be a list of strings.")
   (cl-assert (or (= suspend 0)
 		 (= suspend 1))
 	     nil "Suspend value must either 0 or 1")
