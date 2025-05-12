@@ -732,42 +732,45 @@ LENGTH: length of id, default to a random number between 10-15."
 ;; function, which prompts for user input and passes it to the hidden
 ;; function.
 
-(cl-defun gnosis-add-note--mcq (&key deck question choices correct-answer
-				     extra (images nil) tags (suspend 0))
-  "Create a NOTE with a list of multiple CHOICES.
+(defun gnosis-add-note--basic (id deck-id type keimenon hypothesis answer
+				       parathema tags suspend links)
+  "Helper for basic type notes.
 
-MCQ type consists of a main `QUESTION' that is displayed to the user.
-The user will be prompted to select the correct answer from a list of
-`CHOICES'.  The `CORRECT-ANSWER' should be the index of the correct
-choice in the `CHOICES' list.  Each note must correspond to one `DECK'.
+Provide assertions for basic type notes.
 
-`IMAGES' cons cell, where car is the image to display before and cdr
-is the image to display post review
-
-`EXTRA' are extra information displayed after an answer is given.
-`TAGS' are used to organize questions.
-`SUSPEND' is a binary value, where 1 is for suspend."
-  (when (or (not (numberp correct-answer))
-	    (equal correct-answer 0))
-    (error "Correct answer value must be the index number of the correct answer"))
-  (gnosis-add-note-fields deck "mcq" question choices correct-answer extra tags suspend
-			  (car images) (cdr images)))
-
-(cl-defun gnosis-add-note--basic (&key deck question hint answer
-				       extra (images nil) (tags) (suspend 0))
-  "Add Basic type note.
-
-DECK: Deck name for note.
-QUESTION: Quesiton to display for note.
-ANSWER: Answer for QUESTION, which user will be prompted to type
-HINT: Hint to display during review, before user-input.
-EXTRA: Extra information to display after user-input/giving an answer.
-IMAGES: Cons cell, where car is the image to display before user-input
-	and cdr is the image to display post review.
-TAGS: Tags used to organize notes
-SUSPEND: Binary value of 0 & 1, when 1 note will be ignored."
-  (gnosis-add-note-fields deck "basic" question hint answer extra tags suspend
-			  (car images) (cdr images)))
+DECK-ID: ID for deck.
+ID: Integer for note ID.
+TYPE: String for type, must be \"basic\".
+KEIMENON: Question to display
+HYPOTHESIS: List of a single strings or nil, hypothesis serves as a hint.
+ANSWER: List of a single item.
+TAGS: List of strings.
+PARATHEMA: Parathesis for thema.
+SUSPEND: integer value, 1 or 0.
+LINKS: list of strings."
+  (cl-assert (integerp deck-id) nil "Deck-id value must be an integer.")
+  (cl-assert (string= type "basic") nil "Type for cloze type must be \"basic\".")
+  (cl-assert (stringp keimenon) nil "Keimenon must be a string.")
+  (cl-assert (or (>= (length answer) (length hypothesis))
+		 (null hypothesis))
+	     nil
+	     "Hypothesis value must be a list of one item or nil.")
+  (cl-assert (and (listp answer)
+		  (= (length answer) 1))
+	     nil "Answer value must be a list.")
+  (cl-assert (and (listp tags)
+		  (cl-every 'stringp tags))
+	     nil "Tags must be a list of strings..")
+  (cl-assert (or (= suspend 0)
+		 (= suspend 1))
+	     nil "Suspend value must either 0 or 1")
+  (cl-assert (and (listp links)
+		  (cl-every 'strinp links))
+	     nil "Links must be a list")
+  (if (equal id "NEW")
+      (gnosis-add-note-fields deck-id type keimenon (or hypothesis (list ""))
+			      answer parathema tags suspend links)
+    (gnosis-update-note id keimenon hypothesis answer parathema tags links)))
 
 (cl-defun gnosis-add-note--double (&key deck question hint answer extra (images nil) tags (suspend 0))
   "Add Double type note.
