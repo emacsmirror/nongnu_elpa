@@ -834,7 +834,7 @@ CHAR: separator for mc-cloze, default to `gnosis-mc-cloze-separator'"
   (cl-every (lambda (cloze)
               (string-match-p
                (regexp-quote
-		(string-remove-prefix "\"" (string-remove-suffix "\"" cloze)))
+	        (gnosis-trim-quotes cloze))
                sentence))
             clozes))
 ;; TODO: use a better name to indicate that it also removes hints from STRING.
