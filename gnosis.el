@@ -552,7 +552,7 @@ SUCCESS is t when user-input is correct, else nil"
 	   (insert (gnosis-center-string (propertize hint 'face 'gnosis-face-hint))))
       (gnosis-insert-separator))))
 
-(cl-defun gnosis-display-cloze-user-answer (user-input &optional (false t))
+(defun gnosis-display-cloze-user-answer (user-input &optional false)
   "Display USER-INPUT answer for cloze note upon failed review.
 
 If FALSE t, use gnosis-face-false face"
