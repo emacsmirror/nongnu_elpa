@@ -1165,27 +1165,38 @@ the toot)."
                (string-prefix-p "/tag" path)) ;; "/tag/" or "/tags/"
       (nth 2 split))))
 
-(defun mastodon-tl--base-tags (tags)
-  "TAGS is a list of tag alists, from a post's JSON.
-Return a string of all tags, linkified."
-  (cl-loop for tag in tags
-           concat (concat (mastodon-tl--render-base-tag tag)
-                          " ")))
+(defun mastodon-tl--base-tags (tags body-tags)
+  "Return a string of all tags not in BODY-TAGS, linkified.
+TAGS is a list of tag alists, from a post's JSON."
+  (when (mastodon-tl--base-tags-print-p tags body-tags)
+    (concat
+     "\n"
+     (cl-loop for tag in tags
+              concat (concat (mastodon-tl--render-base-tag tag body-tags)
+                             " ")))))
 
-(defun mastodon-tl--render-base-tag (tag)
-  "TAG."
+(defun mastodon-tl--base-tags-print-p (tags body-tags)
+  "Non-nil if we need to print base tags.
+We need to do so if TAGS contains any elements not in BODY-TAGS."
+  (cl-remove-if (lambda (tag)
+                  (member (alist-get 'name tag) body-tags))
+                tags))
+
+(defun mastodon-tl--render-base-tag (tag body-tags)
+  "Return TAG as a linkified string, provided it is not in BODY-TAGS."
   (let ((name (alist-get 'name tag)))
-    (mastodon-tl--buttonify-link
-     (concat "#" name)
-     'mastodon-tab-stop 'hashtag
-     'mastodon-tag name
-     'mouse-face '(highlight)
-     'keymap mastodon-tl--link-keymap
-     'face '(shr-text shr-link)
-     'follow-link t
-     'shr-tab-stop t
-     'shr-url (alist-get 'url tag)
-     'help-echo (concat "Browse tag #" name))))
+    (unless (member (downcase name) body-tags)
+      (mastodon-tl--buttonify-link
+       (concat "#" name)
+       'mastodon-tab-stop 'hashtag
+       'mastodon-tag name
+       'mouse-face '(highlight)
+       'keymap mastodon-tl--link-keymap
+       'face '(shr-text shr-link)
+       'follow-link t
+       'shr-tab-stop t
+       'shr-url (alist-get 'url tag)
+       'help-echo (concat "Browse tag #" name)))))
 
 
 ;;; HYPERLINKS
@@ -1819,6 +1830,25 @@ Runs `mastodon-tl--render-text' and fetches poll or media."
   (let ((prev-id (mastodon-tl--prev-item-id)))
     (string= reply-to-id prev-id)))
 
+(defun mastodon-tl--body-tags (body)
+  "Return a plain string list of the tags in BODY."
+  ;; NB: replies on text props 'mastodon-tab-stop and 'shr-url
+  ;; FIXME: snac tags fail our prop test, not sure about others.
+  (let (list prop)
+    (with-temp-buffer
+      (insert body)
+      (goto-char (point-min))
+      (save-match-data
+        (while
+            (setq prop (text-property-search-forward
+                        'mastodon-tab-stop 'hashtag t))
+          (goto-char (prop-match-beginning prop))
+          (let ((tag (mastodon-tl--property 'mastodon-tag)))
+            (when tag
+              (push (downcase tag) list)))
+          (goto-char (prop-match-end prop)))))
+    list))
+
 (defun mastodon-tl--insert-status
     (toot body &optional detailed-p thread domain unfolded no-byline
           cw-expanded)
@@ -1841,7 +1871,8 @@ CW-EXPANDED means treat content warnings as unfolded."
                (length> body mastodon-tl--fold-toots-at-length)))
          (cw-p (not
                 (string-empty-p
-                 (alist-get 'spoiler_text toot)))))
+                 (alist-get 'spoiler_text toot))))
+         (body-tags (mastodon-tl--body-tags body)))
     (insert
      (propertize ;; body + byline:
       (concat
@@ -1872,7 +1903,7 @@ CW-EXPANDED means treat content warnings as unfolded."
        (let ((tags (alist-get 'tags toot)))
          ;; FIXME: we also need to test here for normal body tags, and if
          ;; so, don't go ahead:
-         (if tags (concat "\n" (mastodon-tl--base-tags tags)) ""))
+         (if tags (concat (mastodon-tl--base-tags tags body-tags)) ""))
        ;; byline:
        "\n"
        (if no-byline
