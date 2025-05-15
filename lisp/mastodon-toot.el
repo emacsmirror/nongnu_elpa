@@ -258,7 +258,7 @@ send.")
 
 (defvar mastodon-toot-tag-regex
   (rx (| (any ?\( "\n" "\t" " ") bol)
-      (group-n 2 ?# (+ (any "A-Z" "a-z" "0-9")))
+      (group-n 2 ?# (+ (any "_" "A-Z" "a-z" "0-9")))
       (| "'" word-boundary))) ; boundary or possessive
 
 (defvar mastodon-toot-emoji-regex
