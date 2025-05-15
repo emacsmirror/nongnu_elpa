@@ -95,6 +95,8 @@
 (autoload 'mastodon-notifications--current-type "mastodon-notifications")
 (autoload 'mastodon-notifications--timeline "mastodon-notifications")
 (autoload 'mastodon-notifications--empty-group-json-p "mastodon-notifications")
+(autoload 'mastodon-search--print-tags "mastodon-search")
+
 (defvar mastodon-toot--visibility)
 (defvar mastodon-toot-mode)
 (defvar mastodon-active-user)
