@@ -1165,6 +1165,28 @@ the toot)."
                (string-prefix-p "/tag" path)) ;; "/tag/" or "/tags/"
       (nth 2 split))))
 
+(defun mastodon-tl--base-tags (tags)
+  "TAGS is a list of tag alists, from a post's JSON.
+Return a string of all tags, linkified."
+  (cl-loop for tag in tags
+           concat (concat (mastodon-tl--render-base-tag tag)
+                          " ")))
+
+(defun mastodon-tl--render-base-tag (tag)
+  "TAG."
+  (let ((name (alist-get 'name tag)))
+    (mastodon-tl--buttonify-link
+     (concat "#" name)
+     'mastodon-tab-stop 'hashtag
+     'mastodon-tag name
+     'mouse-face '(highlight)
+     'keymap mastodon-tl--link-keymap
+     'face '(shr-text shr-link)
+     'follow-link t
+     'shr-tab-stop t
+     'shr-url (alist-get 'url tag)
+     'help-echo (concat "Browse tag #" name))))
+
 
 ;;; HYPERLINKS
 
@@ -1846,6 +1868,11 @@ CW-EXPANDED means treat content warnings as unfolded."
               "LESS" cw-p (not cw-expanded))
            ""))
         'toot-body t) ;; includes newlines etc. for folding
+       ;; post tags:
+       (let ((tags (alist-get 'tags toot)))
+         ;; FIXME: we also need to test here for normal body tags, and if
+         ;; so, don't go ahead:
+         (if tags (concat "\n" (mastodon-tl--base-tags tags)) ""))
        ;; byline:
        "\n"
        (if no-byline
