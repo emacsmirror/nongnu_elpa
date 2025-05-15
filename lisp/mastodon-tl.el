@@ -2475,10 +2475,15 @@ webapp"
 
 ;;; THREADS
 
-(defun mastodon-tl-single-toot (id)
-  "View toot at point in separate buffer.
-ID is that of the toot to view."
+(defun mastodon-tl-view-single-toot ()
+  "View toot at point in a separate buffer."
   (interactive)
+  (let ((id (mastodon-tl--property 'base-item-id)))
+    (mastodon-tl--single-toot id)))
+
+(defun mastodon-tl--single-toot (id)
+  "View toot in separate buffer.
+ID is that of the toot to view."
   (let* ((buffer (format "*mastodon-toot-%s*" id))
          (toot (mastodon-http--get-json
                 (mastodon-http--api (concat "statuses/" id)))))
@@ -2499,7 +2504,7 @@ ID is that of the toot to view."
 (defun mastodon-tl--update-toot (json)
   "Call `mastodon-tl-single-toot' on id found in JSON."
   (let ((id (alist-get 'id json)))
-    (mastodon-tl-single-toot id)))
+    (mastodon-tl--single-toot id)))
 
 (defun mastodon-tl-view-whole-thread ()
   "From a thread view, view entire thread.
@@ -2560,7 +2565,7 @@ programmatically and not crash into
           (if (not (< 0 (+ (length (alist-get 'ancestors context))
                            (length (alist-get 'descendants context)))))
               ;; just print the lone toot:
-              (mastodon-tl-single-toot id)
+              (mastodon-tl--single-toot id)
             ;; we have a thread:
             (with-mastodon-buffer buffer #'mastodon-mode nil
               (let ((marker (make-marker)))
