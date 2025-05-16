@@ -100,6 +100,12 @@ If you want to insert a link to a line in your source files, consider using http
 - =markdown= command
 - tp.el
 
+* limitations
+
+** performance
+
+Unfortunately =fj.el= is pretty slow at loading issues/PRs with lots of comments and other timeline elements. The relevant code was recently re-written to be partly async, but the performance is still terrible. Any ideas or assistance here would be welcome.
+
 * contributions
 
 Contributions are welcome, as is feedback about your needs.

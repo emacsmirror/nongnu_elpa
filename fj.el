@@ -1021,6 +1021,7 @@ Return the issue number."
 (defun fj-repo-get-issues (repo &optional owner state type query
                                 labels milestones page limit)
   ;; TODO: since, before, created_by, assigned_by, mentioned_by
+  ;; TODO: Forgejo v11: sort!
   "Return issues for REPO by OWNER.
 STATE is for issue status, a string of open, closed or all.
 TYPE is item type: issue pull or all.
@@ -2382,9 +2383,13 @@ RELOAD mean we reloaded."
           'fj-item-number number
           'fj-repo repo
           'fj-item-data item))
-        (when (eq :json-false .mergeable)
-          (insert
-           "This PR has changes conflicting with the target branch."))
+        ;; FIXME: move this to after async timeline rendering?:
+        (insert
+         (pcase .mergeable
+           (:json-false "This PR has changes conflicting with the target branch.\n\n")
+           ('t
+            "This PR can be merged automatically.\n\n")
+           (_ "")))
         (when (and fj-use-emojify
                    (require 'emojify nil :noerror))
           (emojify-mode t))))))
@@ -3797,7 +3802,8 @@ PAGE and LIMIT are for pagination."
     (fedi-with-buffer buf 'fj-notifications-mode nil
       (if (not data)
           (insert
-           (format "No notifications of type: %s %s" all-type subject-type))
+           (format "No notifications of type: %s %s" all-type
+                   (or subject-type "")))
         (save-excursion (fj-render-notifications data)))
       (setq fj-buffer-spec `( :viewfun fj-view-notifications
                               :viewargs
@@ -3876,6 +3882,7 @@ Subject types are \"issues\" \"pulls\" \"commits\" and \"repository\"."
         'fj-owner .repository.owner.login
         'fj-url .subject.html_url
         'fj-notification .id
+        'fj-notif-unread unread
         'fj-byline t) ; for nav
        "\n" fedi-horiz-bar fedi-horiz-bar "\n"))))
 
@@ -4004,9 +4011,11 @@ After loading, also mark the notification as read."
   ;; NB: we don't use buffer spec repo/owner for notifs links:
   (let ((repo (fj--property 'fj-repo))
         (owner (fj--property 'fj-owner))
-        (id (fj--property 'fj-notification)))
+        (id (fj--property 'fj-notification))
+        (unread (fj--property 'fj-notif-unread)))
     (fj-item-view repo owner item)
-    (fj-mark-notification-read id)))
+    (when unread
+      (fj-mark-notification-read id))))
 
 (defun fj-do-link-action-mouse (event)
   "Do the action of the link at point.
