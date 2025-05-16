@@ -3881,6 +3881,7 @@ Subject types are \"issues\" \"pulls\" \"commits\" and \"repository\"."
         'fj-owner .repository.owner.login
         'fj-url .subject.html_url
         'fj-notification .id
+        'fj-notif-unread unread
         'fj-byline t) ; for nav
        "\n" fedi-horiz-bar fedi-horiz-bar "\n"))))
 
@@ -4009,9 +4010,11 @@ After loading, also mark the notification as read."
   ;; NB: we don't use buffer spec repo/owner for notifs links:
   (let ((repo (fj--property 'fj-repo))
         (owner (fj--property 'fj-owner))
-        (id (fj--property 'fj-notification)))
+        (id (fj--property 'fj-notification))
+        (unread (fj--property 'fj-notif-unread)))
     (fj-item-view repo owner item)
-    (fj-mark-notification-read id)))
+    (when unread
+      (fj-mark-notification-read id))))
 
 (defun fj-do-link-action-mouse (event)
   "Do the action of the link at point.
