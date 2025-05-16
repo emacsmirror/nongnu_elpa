@@ -1021,6 +1021,7 @@ Return the issue number."
 (defun fj-repo-get-issues (repo &optional owner state type query
                                 labels milestones page limit)
   ;; TODO: since, before, created_by, assigned_by, mentioned_by
+  ;; TODO: Forgejo v11: sort!
   "Return issues for REPO by OWNER.
 STATE is for issue status, a string of open, closed or all.
 TYPE is item type: issue pull or all.
