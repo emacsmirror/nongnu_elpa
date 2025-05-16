@@ -624,7 +624,8 @@ If CURRENT-REPO, get from `fj-current-repo' instead."
   "Go to next item or notification.
 Should work for anything with an fj-byline property."
   (interactive)
-  (fedi--goto-pos #'next-single-property-change 'fj-byline))
+  (fedi--goto-pos #'next-single-property-change 'fj-byline
+                  #'fj-item-view-more))
 
 (defun fj-item-prev ()
   "Goto previous item or notification.
