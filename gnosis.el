@@ -902,16 +902,17 @@ This function should be used in combination with
     result))
 
 (defun gnosis-compare-strings (str1 str2)
-  "Compare STR1 and STR2.
-
-Compare 2 strings, ignoring case and whitespace."
-  (let ((string-compare-func (if (or (> (length str1) gnosis-string-difference)
-				     (> (length str2) gnosis-string-difference))
-				 #'(lambda (str1 str2) (<= (string-distance str1 str2) gnosis-string-difference))
-			       #'string=)))
-    (funcall string-compare-func
-	     (downcase (replace-regexp-in-string "\\s-" "" (gnosis-trim-quotes str1)))
-	     (downcase (replace-regexp-in-string "\\s-" "" (gnosis-trim-quotes str2))))))
+  "Compare STR1 and STR2, ignoring case and whitespace."
+  (let* ((normalized-str1 (downcase
+			   (replace-regexp-in-string "\\s-" ""
+						     (gnosis-trim-quotes str1))))
+         (normalized-str2 (downcase
+			   (replace-regexp-in-string "\\s-" ""
+						     (gnosis-trim-quotes str2))))
+         (max-length (max (length normalized-str1) (length normalized-str2))))
+    (if (> max-length gnosis-string-difference)
+        (<= (string-distance normalized-str1 normalized-str2) gnosis-string-difference)
+      (string= normalized-str1 normalized-str2))))
 
 (defun gnosis-get-tags--unique ()
   "Return a list of unique strings for tags in `gnosis-db'."
