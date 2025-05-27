@@ -483,8 +483,12 @@ Return the region replaced."
       (setq str (substring str (or i-beg 0) (or i-end len))))
 
     (goto-char beg)
-    (delete-region beg end)
-    (insert str)
+
+    (unless (eq beg end)
+      (delete-region beg end))
+    (unless (string-empty-p str)
+      (insert str))
+
     (when i-end-ofs
       ;; Leave the cursor where it would be if the end wasn't clipped.
       (goto-char (+ (point) i-end-ofs)))
