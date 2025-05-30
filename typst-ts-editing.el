@@ -84,7 +84,7 @@ DIRECTION is one of following symbols:
     (setq rows (seq-partition grid-cells amount-of-columns))
     (setq current (seq-elt rows row-index))
     (setq to-switch
-          (pcase direction
+          (pcase-exhaustive direction
             ('up
              (progn
                (when (= row-index 0)
@@ -94,9 +94,7 @@ DIRECTION is one of following symbols:
              (progn
                (when (length= rows (1+ row-index))
                  (user-error "Already on last row"))
-               (seq-elt rows (1+ row-index))))
-            (_
-             (error "DIRECTION: %s is not one of: `up', `down'" direction))))
+               (seq-elt rows (1+ row-index))))))
     (let ((start1 (treesit-node-start (car current)))
           (end1 (treesit-node-end (car (last current))))
           (start2 (treesit-node-start (car to-switch)))
