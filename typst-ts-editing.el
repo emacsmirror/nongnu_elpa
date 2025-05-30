@@ -169,6 +169,113 @@ Up/down means moving the cell to another row while keeping the column index."
     (transpose-regions (treesit-node-start cell) (treesit-node-end cell)
                        (treesit-node-start to-switch) (treesit-node-end to-switch))))
 
+(defun typst-ts-editing-item-list-change-type (type)
+  "Change the list type of the item list at point to TYPE.
+TYPE is a symbol one of: (numbered, ordered, bullet)
+
+1. one
+2. two
+
++ one
++ two
+
+- one
+- two"
+  (interactive
+   (list (intern (completing-read "Choose list type: "
+                                  '("numbered" "ordered" "bullet")
+                                  nil t))))
+  (let ((item (typst-ts-editing-item--at-point-p))
+        (previous-item nil)
+        (current-type-p nil)
+        (marker nil)
+        (marker-start nil)
+        (new-marker (pcase-exhaustive type
+                      ('numbered 1)
+                      ('ordered "+")
+                      ('bullet "-")))
+        (insert-fn nil))
+    (unless item
+      (user-error "Not on a item list"))
+    (setq current-type-p (treesit-node-text (treesit-node-child item 0)))
+    (cond
+     ((string= "-" current-type-p)
+      (setq current-type-p
+            (lambda (x)
+              (string= "-" (treesit-node-text
+                            (treesit-node-child x 0))))))
+     ((string= "+" current-type-p)
+      (setq current-type-p
+            (lambda (x)
+              (string= "+" (treesit-node-text
+                            (treesit-node-child x 0))))))
+     (t
+      (setq current-type-p
+            (lambda (x)
+              (not (= 0 (string-to-number
+                         (treesit-node-text
+                          (treesit-node-child x 0)))))))))
+    (pcase-exhaustive type
+      ('numbered
+       (setq insert-fn
+             (lambda ()
+               (insert (format "%d." new-marker))
+               (setq new-marker (1+ new-marker)))))
+      ('ordered
+       (setq insert-fn
+             (lambda ()
+               (insert "+"))))
+      ('bullet
+       (setq insert-fn
+             (lambda ()
+               (insert "-")))))
+    ;; traverse the list up
+    (setq previous-item (treesit-node-prev-sibling item))
+    (while (and item
+                (string= (treesit-node-type previous-item) "item")
+                (funcall current-type-p previous-item))
+      (setq item previous-item)
+      (setq previous-item (treesit-node-prev-sibling item)))
+    (atomic-change-group
+      (save-excursion
+        (while (and item
+                    (string= (treesit-node-type item) "item")
+                    (funcall current-type-p item))
+          (setq marker (treesit-node-child item 0))
+          (setq marker-start (treesit-node-start marker))
+          (goto-char marker-start)
+          (delete-region marker-start (treesit-node-end marker))
+          (funcall insert-fn)
+          ;; item is now invalid, need to revalidate it
+          (setq item (treesit-node-next-sibling
+                      (treesit-node-parent
+                       (treesit-node-at marker-start)))))))))
+
+(defun typst-ts-editing-item-list-renumber ()
+  "Cleanup the numbered list at point.
+
+   1. one
+   2. two
+   3. three
+
+   Now remove 2.
+
+   1. one
+   3. three
+
+   Run command
+
+   1. one
+   2. three"
+  (interactive)
+  (let ((current-item (typst-ts-editing-item--at-point-p)))
+    (when (or (not current-item)
+              (= (string-to-number
+                  (treesit-node-text (treesit-node-child current-item 0)))
+                 0))
+      (user-error "Not on a numbered list"))
+    (typst-ts-editing-item-list-change-type 'numbered)))
+
 (defun typst-ts-editing-grid-cell-down ()
   "See `typst-ts-editing-grid-cell--move'."
   (interactive)
