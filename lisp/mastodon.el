@@ -519,7 +519,9 @@ If FORCE, do a lookup regardless of the result of `mastodon--fedi-url-p'."
           (string-match "^/comment/[[:digit:]]+$" query) ; lemmy
           (string-match "^/@[^/]+/statuses/[[:alnum:]]" query) ; GTS
           (string-match "^/user[s]?/[[:alnum:]_]+/statuses/[[:digit:]]+$" query) ; hometown
-          (string-match "^/notes/[[:alnum:]]+$" query))))) ; misskey post
+          (string-match "^/notes/[[:alnum:]]+$" query) ; misskey post
+          (string-match "^/w/[[:alnum:]_]+$" query) ; peertube post
+          ))))
 
 (defun mastodon-live-buffers ()
   "Return a list of open mastodon buffers.

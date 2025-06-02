@@ -95,6 +95,8 @@
 (autoload 'mastodon-notifications--current-type "mastodon-notifications")
 (autoload 'mastodon-notifications--timeline "mastodon-notifications")
 (autoload 'mastodon-notifications--empty-group-json-p "mastodon-notifications")
+(autoload 'mastodon-search--print-tags "mastodon-search")
+
 (defvar mastodon-toot--visibility)
 (defvar mastodon-toot-mode)
 (defvar mastodon-active-user)
@@ -1165,6 +1167,39 @@ the toot)."
                (string-prefix-p "/tag" path)) ;; "/tag/" or "/tags/"
       (nth 2 split))))
 
+(defun mastodon-tl--base-tags (tags body-tags)
+  "Return a string of all tags not in BODY-TAGS, linkified.
+TAGS is a list of tag alists, from a post's JSON."
+  (when (mastodon-tl--base-tags-print-p tags body-tags)
+    (concat
+     "\n"
+     (cl-loop for tag in tags
+              concat (concat (mastodon-tl--render-base-tag tag body-tags)
+                             " ")))))
+
+(defun mastodon-tl--base-tags-print-p (tags body-tags)
+  "Non-nil if we need to print base tags.
+We need to do so if TAGS contains any elements not in BODY-TAGS."
+  (cl-remove-if (lambda (tag)
+                  (member (alist-get 'name tag) body-tags))
+                tags))
+
+(defun mastodon-tl--render-base-tag (tag body-tags)
+  "Return TAG as a linkified string, provided it is not in BODY-TAGS."
+  (let ((name (alist-get 'name tag)))
+    (unless (member (downcase name) body-tags)
+      (mastodon-tl--buttonify-link
+       (concat "#" name)
+       'mastodon-tab-stop 'hashtag
+       'mastodon-tag name
+       'mouse-face '(highlight)
+       'keymap mastodon-tl--link-keymap
+       'face '(shr-text shr-link)
+       'follow-link t
+       'shr-tab-stop t
+       'shr-url (alist-get 'url tag)
+       'help-echo (concat "Browse tag #" name)))))
+
 
 ;;; HYPERLINKS
 
@@ -1797,6 +1832,25 @@ Runs `mastodon-tl--render-text' and fetches poll or media."
   (let ((prev-id (mastodon-tl--prev-item-id)))
     (string= reply-to-id prev-id)))
 
+(defun mastodon-tl--body-tags (body)
+  "Return a plain string list of the tags in BODY."
+  ;; NB: replies on text props 'mastodon-tab-stop and 'shr-url
+  ;; FIXME: snac tags fail our prop test, not sure about others.
+  (let (list prop)
+    (with-temp-buffer
+      (insert body)
+      (goto-char (point-min))
+      (save-match-data
+        (while
+            (setq prop (text-property-search-forward
+                        'mastodon-tab-stop 'hashtag t))
+          (goto-char (prop-match-beginning prop))
+          (let ((tag (mastodon-tl--property 'mastodon-tag)))
+            (when tag
+              (push (downcase tag) list)))
+          (goto-char (prop-match-end prop)))))
+    list))
+
 (defun mastodon-tl--insert-status
     (toot body &optional detailed-p thread domain unfolded no-byline
           cw-expanded)
@@ -1819,7 +1873,8 @@ CW-EXPANDED means treat content warnings as unfolded."
                (length> body mastodon-tl--fold-toots-at-length)))
          (cw-p (not
                 (string-empty-p
-                 (alist-get 'spoiler_text toot)))))
+                 (alist-get 'spoiler_text toot))))
+         (body-tags (mastodon-tl--body-tags body)))
     (insert
      (propertize ;; body + byline:
       (concat
@@ -1846,6 +1901,11 @@ CW-EXPANDED means treat content warnings as unfolded."
               "LESS" cw-p (not cw-expanded))
            ""))
         'toot-body t) ;; includes newlines etc. for folding
+       ;; post tags:
+       (let ((tags (alist-get 'tags toot)))
+         ;; FIXME: we also need to test here for normal body tags, and if
+         ;; so, don't go ahead:
+         (if tags (concat (mastodon-tl--base-tags tags body-tags)) ""))
        ;; byline:
        "\n"
        (if no-byline
@@ -2448,10 +2508,15 @@ webapp"
 
 ;;; THREADS
 
-(defun mastodon-tl-single-toot (id)
-  "View toot at point in separate buffer.
-ID is that of the toot to view."
+(defun mastodon-tl-view-single-toot ()
+  "View toot at point in a separate buffer."
   (interactive)
+  (let ((id (mastodon-tl--property 'base-item-id)))
+    (mastodon-tl--single-toot id)))
+
+(defun mastodon-tl--single-toot (id)
+  "View toot in separate buffer.
+ID is that of the toot to view."
   (let* ((buffer (format "*mastodon-toot-%s*" id))
          (toot (mastodon-http--get-json
                 (mastodon-http--api (concat "statuses/" id)))))
@@ -2472,7 +2537,7 @@ ID is that of the toot to view."
 (defun mastodon-tl--update-toot (json)
   "Call `mastodon-tl-single-toot' on id found in JSON."
   (let ((id (alist-get 'id json)))
-    (mastodon-tl-single-toot id)))
+    (mastodon-tl--single-toot id)))
 
 (defun mastodon-tl-view-whole-thread ()
   "From a thread view, view entire thread.
@@ -2546,7 +2611,7 @@ programmatically and not crash into
           (if (not (< 0 (+ (length (alist-get 'ancestors context))
                            (length (alist-get 'descendants context)))))
               ;; just print the lone toot:
-              (mastodon-tl-single-toot id)
+              (mastodon-tl--single-toot id)
             ;; we have a thread:
             (with-mastodon-buffer buffer #'mastodon-mode nil
               (let ((marker (make-marker)))
