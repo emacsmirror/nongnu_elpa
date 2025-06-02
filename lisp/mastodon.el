@@ -73,6 +73,8 @@
 (when (require 'lingva nil :no-error)
   (autoload 'mastodon-toot-translate-toot-text "mastodon-toot"))
 (autoload 'mastodon-toot--view-toot-history "mastodon-tl")
+(autoload 'mastodon-tl-return "mastodon-tl")
+(autoload 'mastodon-tl-jump-to-followed-tag "mastodon-tl")
 
 ;; for M-x visibility
 ;; (views.el uses `mastodon-mode-map', so we can't easily require it)
