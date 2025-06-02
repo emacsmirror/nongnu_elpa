@@ -257,7 +257,7 @@ Also nil `mastodon-auth--token-alist'."
     (define-key map (kbd "v")      #'mastodon-tl-poll-vote)
     (define-key map (kbd "E")      #'mastodon-toot-view-toot-edits)
     (define-key map (kbd "T")      #'mastodon-tl-thread)
-    (define-key map (kbd "RET")    #'mastodon-tl-thread)
+    (define-key map (kbd "RET")    #'mastodon-tl-return)
     (define-key map (kbd "m")      #'mastodon-tl-dm-user)
     (define-key map (kbd "=")      #'mastodon-tl-view-first-full-image)
     (when (require 'lingva nil :no-error)

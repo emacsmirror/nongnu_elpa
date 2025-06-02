@@ -2486,6 +2486,19 @@ view all branches of a thread."
     (let ((id (mastodon-tl--property 'base-item-id)))
       (mastodon-tl--thread-do id))))
 
+(defun mastodon-tl-return ()
+  "Load user profile or thread of item at point.
+If item at point is a follow or follow request, load user profile.
+Else load thread."
+  (interactive)
+  (let ((notif (mastodon-tl--property 'notification-type)))
+    (if (or (equal "follow" notif)
+            (equal "follow_request" notif))
+        (let* ((json (mastodon-tl--property 'item-json))
+               (handle (alist-get 'acct json)))
+          (mastodon-profile-show-user handle))
+      (mastodon-tl-thread))))
+
 (defun mastodon-tl-thread ()
   "Open thread buffer for toot at point."
   (interactive)
