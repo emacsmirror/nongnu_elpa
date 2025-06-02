@@ -258,7 +258,7 @@ send.")
 
 (defvar mastodon-toot-tag-regex
   (rx (| (any ?\( "\n" "\t" " ") bol)
-      (group-n 2 ?# (+ (any "A-Z" "a-z" "0-9")))
+      (group-n 2 ?# (+ (any "_" "A-Z" "a-z" "0-9")))
       (| "'" word-boundary))) ; boundary or possessive
 
 (defvar mastodon-toot-emoji-regex
@@ -1486,8 +1486,9 @@ Return a cons of a human readable string, and a seconds-from-now string."
          (response (completing-read "poll ends in [or enter seconds]: "
                                     options nil 'confirm)))
     (or (assoc response options #'string=)
-        (if (< (string-to-number response) 600)
-            (car options))))) ;; min 5 mins
+        (if (< (string-to-number response) 300)
+            (cons "5 minutes" (number-to-string (* 60 5))) ;; min 5 mins
+	  (cons (format "%s seconds" response) response)))))
 
 (defun mastodon-toot--poll-expiry-options-alist ()
   "Return an alist of expiry options options in seconds."

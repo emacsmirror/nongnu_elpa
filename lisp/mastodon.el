@@ -6,7 +6,7 @@
 ;; Author: Johnson Denen <johnson.denen@gmail.com>
 ;;         Marty Hiatt <mousebot@disroot.org>
 ;; Maintainer: Marty Hiatt <mousebot@disroot.org>
-;; Version: 2.0.0
+;; Version: 2.0.1
 ;; Package-Requires: ((emacs "28.1") (persist "0.4") (tp "0.7"))
 ;; Homepage: https://codeberg.org/martianh/mastodon.el
 
@@ -73,6 +73,8 @@
 (when (require 'lingva nil :no-error)
   (autoload 'mastodon-toot-translate-toot-text "mastodon-toot"))
 (autoload 'mastodon-toot--view-toot-history "mastodon-tl")
+(autoload 'mastodon-tl-return "mastodon-tl")
+(autoload 'mastodon-tl-jump-to-followed-tag "mastodon-tl")
 
 ;; for M-x visibility
 ;; (views.el uses `mastodon-mode-map', so we can't easily require it)
@@ -228,6 +230,7 @@ Also nil `mastodon-auth--token-alist'."
     ;; navigation between timelines
     (define-key map (kbd "#")      #'mastodon-tl-get-tag-timeline)
     (define-key map (kbd "\"")     #'mastodon-tl-list-followed-tags)
+    (define-key map (kbd "C-\"")     #'mastodon-tl-jump-to-followed-tag)
     (define-key map (kbd "'")      #'mastodon-tl-followed-tags-timeline)
     (define-key map (kbd "C-'")   #'mastodon-tl-tag-group-timeline)
     (define-key map (kbd "A")      #'mastodon-profile-get-toot-author)
@@ -256,7 +259,7 @@ Also nil `mastodon-auth--token-alist'."
     (define-key map (kbd "v")      #'mastodon-tl-poll-vote)
     (define-key map (kbd "E")      #'mastodon-toot-view-toot-edits)
     (define-key map (kbd "T")      #'mastodon-tl-thread)
-    (define-key map (kbd "RET")    #'mastodon-tl-thread)
+    (define-key map (kbd "RET")    #'mastodon-tl-return)
     (define-key map (kbd "m")      #'mastodon-tl-dm-user)
     (define-key map (kbd "=")      #'mastodon-tl-view-first-full-image)
     (when (require 'lingva nil :no-error)
@@ -518,7 +521,9 @@ If FORCE, do a lookup regardless of the result of `mastodon--fedi-url-p'."
           (string-match "^/comment/[[:digit:]]+$" query) ; lemmy
           (string-match "^/@[^/]+/statuses/[[:alnum:]]" query) ; GTS
           (string-match "^/user[s]?/[[:alnum:]_]+/statuses/[[:digit:]]+$" query) ; hometown
-          (string-match "^/notes/[[:alnum:]]+$" query))))) ; misskey post
+          (string-match "^/notes/[[:alnum:]]+$" query) ; misskey post
+          (string-match "^/w/[[:alnum:]_]+$" query) ; peertube post
+          ))))
 
 (defun mastodon-live-buffers ()
   "Return a list of open mastodon buffers.
