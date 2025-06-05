@@ -1016,13 +1016,28 @@ Return the issue number."
                          cands))))
     (cadr item)))
 
+(defvar fj-issues-sort
+  '("relevance" "latest" "oldest" "recentupdate" "leastupdate" "mostcomment" "leastcomment" "nearduedate" "farduedate")
+  "A list of sort options for listing repo issues.")
+
+(defun fj-list-issues-sort ()
+  "Reload current issues listing, prompting for a sort type.
+The default sort value is \"latest\"."
+  (interactive)
+  (cl-destructuring-bind (&key repo owner state type
+                               query labels milestones page limit)
+      (fj--get-buffer-spec :viewargs)
+    (let ((sort (completing-read "Sort by: " fj-issues-sort)))
+      (fj-list-issues-do repo owner state type
+                         query labels milestones page limit sort))))
+
 ;; GET /repos/{owner}/{repo}/issues
 ;; params: owner, repo, state, labels, q, type, milestones, since, before,
 ;; created_by, assigned_by, mentioned_by, page, limit
 (defun fj-repo-get-issues (repo &optional owner state type query
-                                labels milestones page limit)
+                                labels milestones page limit sort)
   ;; TODO: since, before, created_by, assigned_by, mentioned_by
-  ;; TODO: Forgejo v11: sort!
+  ;; default sort = latest.
   "Return issues for REPO by OWNER.
 STATE is for issue status, a string of open, closed or all.
 TYPE is item type: issue pull or all.
@@ -1039,7 +1054,7 @@ LIMIT is the number of results."
                   (fedi-opt-params state type
                                    (query :alias "q")
                                    labels milestones
-                                   page limit))))
+                                   page limit sort))))
     (condition-case err
         (fj-get endpoint params)
       (t (format "%s" (error-message-string err))))))
@@ -1704,23 +1719,24 @@ Return its name, or if ID, return a cons of its name and id."
 (defvar-keymap fj-issue-tl-mode-map
   :doc "Map for `fj-issue-tl-mode', a tabluated list of issues."
   :parent fj-generic-tl-map ; has nav
-  "C" #'fj-issues-tl-comment
-  "e" #'fj-issues-tl-edit
-  "t" #'fj-issues-tl-edit-title
-  "v" #'fj-issues-tl-view
-  "k" #'fj-issues-tl-close
-  "K" #'fj-issues-tl-delete
-  "c" #'fj-create-issue
-  "C-c C-c" #'fj-cycle-state
-  "C-c C-s" #'fj-cycle-type
-  "o" #'fj-issues-tl-reopen
-  "s" #'fj-list-issues-search
-  "B" #'fj-tl-browse-entry
-  "u" #'fj-repo-copy-clone-url
-  "L" #'fj-repo-commit-log
-  "j" #'imenu
-  "l" #'fj-issues-tl-label-add
-  "U" #'fj-copy-pr-url)
+  "C"        #'fj-issues-tl-comment
+  "e"        #'fj-issues-tl-edit
+  "t"        #'fj-issues-tl-edit-title
+  "v"        #'fj-issues-tl-view
+  "k"        #'fj-issues-tl-close
+  "K"        #'fj-issues-tl-delete
+  "c"        #'fj-create-issue
+  "C-c C-x"  #'fj-list-issues-sort
+  "C-c C-c"  #'fj-cycle-state
+  "C-c C-s"  #'fj-cycle-type
+  "o"        #'fj-issues-tl-reopen
+  "s"        #'fj-list-issues-search
+  "B"        #'fj-tl-browse-entry
+  "u"        #'fj-repo-copy-clone-url
+  "L"        #'fj-repo-commit-log
+  "j"        #'imenu
+  "l"        #'fj-issues-tl-label-add
+  "U"        #'fj-copy-pr-url)
 
 (define-derived-mode fj-issue-tl-mode tabulated-list-mode
   "fj-issues"
@@ -1729,7 +1745,8 @@ Return its name, or if ID, return a cons of its name and id."
   (hl-line-mode 1)
   (setq tabulated-list-padding 0 ;2) ; point directly on issue
         ;; this is changed by `tabulated-list-sort' which sorts by col at point:
-        tabulated-list-sort-key '("Updated" . t) ;; default
+        ;; Superceded by new API sort param:
+        ;; tabulated-list-sort-key '("Updated" . t) ;; default
         tabulated-list-format
         '[("#" 5 fj-tl-sort-by-issues :right-align)
           ("💬" 3 fj-tl-sort-by-comment-count :right-align)
@@ -1907,16 +1924,17 @@ Nil if we fail to parse."
   (fj-list-items repo owner state "pulls"))
 
 (defun fj-list-issues (&optional repo)
-  "List issues for current REPO.
+  "List issues for current REPO with default sorting.
 If we are in a repo, don't assume `fj-user' owns it. In that case we
 fetch owner/repo from git config.
 If we are not in a repo, call `fj-list-issues-do' without using git
-config."
+config.
+The default sort value is \"latest\"."
   (interactive "P")
   (fj-list-items repo nil nil "issues"))
 
 (defun fj-list-items (&optional repo owner state type)
-  "List pulls for REPO by OWNER, filtered by STATE and TYPE.
+  "List issues or pulls for REPO by OWNER, filtered by STATE and TYPE.
 TYPE is item type, a member of `fj-items-types'.
 STATE is a member of `fj-items-states'.
 If we are in a repo, don't assume `fj-user' owns it. In that case we
@@ -1956,7 +1974,7 @@ STATE, TYPE and QUERY are for `fj-list-issues-do'."
 (defvar fj-repo-data nil) ;; for transients for now
 
 (defun fj-list-issues-do (&optional repo owner state type query
-                                    labels milestones page limit)
+                                    labels milestones page limit sort)
   "Display ISSUES in a tabulated list view.
 Either for `fj-current-repo' or REPO, a string, owned by OWNER.
 With a prefix arg, or if REPO and `fj-current-repo' are nil,
@@ -1969,7 +1987,7 @@ QUERY is a search query to filter by."
          (owner (or owner fj-user))
          (type (or type "issues"))
          (issues (fj-repo-get-issues repo owner state type query
-                                     labels milestones page limit))
+                                     labels milestones page limit sort))
          (repo-data (fj-get-repo repo owner))
          (has-issues (fj-repo-has-items-p type repo-data))
          (url (concat (alist-get 'html_url repo-data)
