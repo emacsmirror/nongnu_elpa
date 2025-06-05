@@ -765,7 +765,7 @@ LINKS: list of strings."
 		 (= suspend 1))
 	     nil "Suspend value must either 0 or 1")
   (cl-assert (and (listp links)
-		  (cl-every 'strinp links))
+		  (cl-every 'stringp links))
 	     nil "Links must be a list")
   (if (equal id "NEW")
       (gnosis-add-note-fields deck-id type keimenon (or hypothesis (list ""))
@@ -1751,7 +1751,7 @@ LINKS: list of strings."
 		 (= suspend 1))
 	     nil "Suspend value must either 0 or 1")
   (cl-assert (and (listp links)
-		  (cl-every 'strinp links))
+		  (cl-every 'stringp links))
 	     nil "Links must be a list")
   (cl-assert (gnosis-cloze-check keimenon answer) nil
 	     "Clozes (answer) values are not part of keimenon")
