@@ -834,16 +834,18 @@ PAGE, LIMIT, ORDER."
     "reversegitsize" "gitsize" "reverselfssize" "lfssize" "moststars"
     "feweststars" "mostforks" "fewestforks"))
 
-(defun fj-list-own-repos (&optional order)
+(defun fj-list-own-repos (&optional order page)
   "List repos for `fj-user'.
 With prefix arg ORDER, prompt for an argument to sort
 results (server-side)."
   (interactive "P")
-  (let* ((order (when current-prefix-arg
-                  (completing-read "Order repos by:"
-                                   fj-own-repos-order)))
+  (let* ((order (if (stringp order) ;; we are paginating
+                    order
+                  (when current-prefix-arg ;; we are prefixing
+                    (completing-read "Order repos by:"
+                                     fj-own-repos-order))))
          (buf (format "*fj-repos-%s*" fj-user))
-         (repos (and fj-user (fj-get-repos nil nil nil order)))
+         (repos (and fj-user (fj-get-repos nil nil nil page order)))
          (entries (fj-repo-tl-entries repos)))
     (if (not repos)
         (user-error "No repos")
@@ -851,7 +853,8 @@ results (server-side)."
       (with-current-buffer (get-buffer-create buf)
         (setq fj-buffer-spec
               `( :owner ,fj-user :url ,(concat fj-host "/" fj-user)
-                 :viewfun fj-list-repos))))))
+                 :viewfun fj-list-own-repos
+                 :viewargs (:order ,order :page ,page)))))))
 
 (defun fj-list-repos ()
   "List repos for `fj-user' extended by `fj-extra-repos'."
@@ -958,7 +961,7 @@ Also set `fj-current-repo' to the name."
         (when (member dir names) ;; nil if dir no match any remotes
           (setq fj-current-repo dir))))))
 
-(defun fj-get-repos (&optional limit no-json silent order)
+(defun fj-get-repos (&optional limit no-json silent page order)
   "Return the user's repos.
 Return LIMIT repos, LIMIT is a string.
 NO-JSON is for `fj-get'.
@@ -966,7 +969,7 @@ ORDER should be a member of `fj-own-repos-order'."
   (let ((endpoint "user/repos")
         (params
          (append `(("limit" . ,(or limit (fj-default-limit))))
-                 (fedi-opt-params (order :alias "order_by")))))
+                 (fedi-opt-params page (order :alias "order_by")))))
     (fj-get endpoint params no-json silent)))
 
 (defun fj-get-repo-candidates (repos)
