@@ -39,7 +39,7 @@
      (should (string= "http://example.org/remote/img.png" (plist-get properties 'image-url)))
      (should (eq mastodon-tl--shr-image-map-replacement (plist-get properties 'keymap)))
      (should (string= "image" (plist-get properties 'mastodon-media-type)))
-     (should (string= "RET/i: load full image (prefix: copy URL), +/-: zoom, r: rotate, o: save preview, S: toggle sensitive media"
+     (should (string= "RET: load full image or play video, i for image options, S: toggle sensitive media"
                       (plist-get properties 'help-echo))))))
 
 (ert-deftest mastodon-media:get-media-link-rendering-gif ()
@@ -63,7 +63,7 @@
      (should (string= "http://example.org/remote/img.png" (plist-get properties 'image-url)))
      (should (eq mastodon-tl--shr-image-map-replacement (plist-get properties 'keymap)))
      (should (string= "gifv" (plist-get properties 'mastodon-media-type)))
-     (should (string= "RET/i: load full image (prefix: copy URL), +/-: zoom, r: rotate, o: save preview, S: toggle sensitive media\nC-RET: play gifv with mpv"
+     (should (string= "RET: load full image or play video, i for image options, S: toggle sensitive media\nC-RET: play gifv with mpv"
                  (plist-get properties 'help-echo))))))
 
 (ert-deftest mastodon-media--load-image-from-url-avatar-with-imagemagic ()
