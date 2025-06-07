@@ -828,12 +828,30 @@ PAGE, LIMIT, ORDER."
                            :limit ,limit :order ,order)
                :viewfun fj-user-repos-tl)))))
 
-(defun fj-list-own-repos ()
-  "List repos for `fj-user'."
-  (interactive)
-  (if (not fj-user)
-      (user-error "Set `fj-user' to run this command")
-    (fj-user-repos-tl fj-user)))
+(defvar fj-own-repos-order
+  '("name" "id" "newest" "oldest" "recentupdate" "leastupdate"
+    "reversealphabetically" "alphabetically" "reversesize" "size"
+    "reversegitsize" "gitsize" "reverselfssize" "lfssize" "moststars"
+    "feweststars" "mostforks" "fewestforks"))
+
+(defun fj-list-own-repos (&optional order)
+  "List repos for `fj-user'.
+With prefix arg ORDER, prompt for an argument to sort
+results (server-side)."
+  (interactive "P")
+  (let* ((order (when current-prefix-arg
+                  (completing-read "Order repos by:"
+                                   fj-own-repos-order)))
+         (buf (format "*fj-repos-%s*" fj-user))
+         (repos (and fj-user (fj-get-repos nil nil nil order)))
+         (entries (fj-repo-tl-entries repos)))
+    (if (not repos)
+        (user-error "No repos")
+      (fj-repos-tl-render buf entries #'fj-repo-tl-mode :nil)
+      (with-current-buffer (get-buffer-create buf)
+        (setq fj-buffer-spec
+              `( :owner ,fj-user :url ,(concat fj-host "/" fj-user)
+                 :viewfun fj-list-repos))))))
 
 (defun fj-list-repos ()
   "List repos for `fj-user' extended by `fj-extra-repos'."
@@ -940,12 +958,16 @@ Also set `fj-current-repo' to the name."
         (when (member dir names) ;; nil if dir no match any remotes
           (setq fj-current-repo dir))))))
 
-(defun fj-get-repos (&optional limit no-json silent)
+(defun fj-get-repos (&optional limit no-json silent order)
   "Return the user's repos.
-Return LIMIT repos, LIMIT is a string."
-  (let ((endpoint "user/repos"))
-    (fj-get endpoint `(("limit" . ,(or limit (fj-default-limit))))
-            no-json silent)))
+Return LIMIT repos, LIMIT is a string.
+NO-JSON is for `fj-get'.
+ORDER should be a member of `fj-own-repos-order'."
+  (let ((endpoint "user/repos")
+        (params
+         (append `(("limit" . ,(or limit (fj-default-limit))))
+                 (fedi-opt-params (order :alias "order_by")))))
+    (fj-get endpoint params no-json silent)))
 
 (defun fj-get-repo-candidates (repos)
   "Return REPOS as completion candidates."
@@ -3168,13 +3190,22 @@ ID MODE INCLUDE-DESC SORT ORDER PAGE LIMIT."
   (interactive "sSearch for topic in repos: ")
   (fj-repo-search-tl query 'topic))
 
-(defun fj-repos-tl-render (buf entries mode)
+(defun fj-repos-tl-render (buf entries mode &optional sort-key)
   "Render a tabulated list in BUF fer, with ENTRIES, in MODE.
-Optionally specify repo OWNER and URL."
+Optionally specify repo OWNER and URL.
+Set `tabulated-list-sort-key' to SORT-KEY. It may optionally be :nil to
+unset any default values."
   (let ((prev-buf (buffer-name (current-buffer))))
     (with-current-buffer (get-buffer-create buf)
       (setq tabulated-list-entries entries)
       (funcall mode)
+      ;; some modes set a sort-key, but we also may want to selectively
+      ;; unset it. but if we don't have sort-key, we also don't want to
+      ;; nil the mode setting:
+      (when sort-key
+        (if (eq :nil sort-key)
+            (setq tabulated-list-sort-key nil)
+          (setq tabulated-list-sort-key sort-key)))
       (tabulated-list-init-header)
       (tabulated-list-print)
       (fj-other-window-maybe prev-buf "*fj-search" #'string-prefix-p))))
