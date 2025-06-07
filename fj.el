@@ -980,7 +980,8 @@ ORDER should be a member of `fj-own-repos-order'."
 
 (defun fj-read-user-repo-do (&optional default silent)
   "Prompt for a user repository.
-DEFAULT is initial input for `completing-read'."
+DEFAULT is initial input for `completing-read'.
+SILENT means silent request."
   (let* ((repos (fj-get-repos (fj-max-items) nil silent))
          (cands (fj-get-repo-candidates repos)))
     (completing-read "Repo: " cands
