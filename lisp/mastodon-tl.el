@@ -1162,11 +1162,14 @@ the toot)."
   (let* ((instance-host (url-host
                          (url-generic-parse-url instance-url)))
          (parsed (url-generic-parse-url url))
-         (path (url-filename parsed))
-         (split (split-string path "/")))
-    (when (and (string= instance-host (url-host parsed))
-               (string-prefix-p "/tag" path)) ;; "/tag/" or "/tags/"
-      (nth 2 split))))
+         (path (url-filename parsed)))
+    (when (string= instance-host (url-host parsed))
+      (cond ((string-prefix-p "/tag" path) ;; "/tag/" or "/tags/"
+             (let ((split (split-string path "/")))
+               (nth 2 split)))
+            ((string-prefix-p "?t=" path) ;; snac tag
+             (let ((split (split-string path "=")))
+               (nth 1 split)))))))
 
 (defun mastodon-tl--base-tags (tags body-tags)
   "Return a string of all tags not in BODY-TAGS, linkified.
