@@ -846,10 +846,10 @@ results (server-side)."
                                      fj-own-repos-order))))
          (buf (format "*fj-repos-%s*" fj-user))
          (repos (and fj-user (fj-get-repos nil nil nil page order)))
-         (entries (fj-repo-tl-entries repos)))
+         (entries (fj-repo-tl-entries repos :no-owner)))
     (if (not repos)
         (user-error "No repos")
-      (fj-repos-tl-render buf entries #'fj-repo-tl-mode :nil)
+      (fj-repos-tl-render buf entries #'fj-user-repo-tl-mode :nil)
       (with-current-buffer (get-buffer-create buf)
         (setq fj-buffer-spec
               `( :owner ,fj-user :url ,(concat fj-host "/" fj-user)
