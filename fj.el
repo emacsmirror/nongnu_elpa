@@ -777,7 +777,8 @@ X and Y are sorting args."
 
 (defvar-keymap fj-user-repo-tl-mode-map
   :doc "Map for `fj-user-repo-tl-mode', a tabluated list of repos."
-  :parent fj-repo-tl-map)
+  :parent fj-repo-tl-map
+  "C-c C-x" #'fj-list-own-repos-read)
 
 (define-derived-mode fj-user-repo-tl-mode tabulated-list-mode
   "fj-user-repos"
@@ -834,16 +835,27 @@ PAGE, LIMIT, ORDER."
     "reversegitsize" "gitsize" "reverselfssize" "lfssize" "moststars"
     "feweststars" "mostforks" "fewestforks"))
 
+(defcustom fj-own-repos-default-order "recentupdate"
+  "The default order parameter for `fj-list-own-repos'.
+The value must be a member of `fj-own-repos-order'.")
+
+(defun fj-list-own-repos-read ()
+  "List repos for `fj-user', prompting for an order type."
+  (interactive)
+  (fj-list-own-repos '(4)))
+
 (defun fj-list-own-repos (&optional order page)
   "List repos for `fj-user'.
 With prefix arg ORDER, prompt for an argument to sort
 results (server-side)."
   (interactive "P")
-  (let* ((order (if (stringp order) ;; we are paginating
-                    order
-                  (when current-prefix-arg ;; we are prefixing
-                    (completing-read "Order repos by:"
-                                     fj-own-repos-order))))
+  (let* ((order (cond ((stringp order) ;; we are paginating
+                       order)
+                      ((or current-prefix-arg ;; we are prefixing
+                           (equal order '(4))) ;; fj-list-own-repos-read
+                       (completing-read "Order repos by:"
+                                        fj-own-repos-order))
+                      (t fj-own-repos-default-order))) ;; fallback/default
          (buf (format "*fj-repos-%s*" fj-user))
          (repos (and fj-user (fj-get-repos nil nil nil page order)))
          (entries (fj-repo-tl-entries repos :no-owner)))
