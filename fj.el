@@ -4094,7 +4094,7 @@ Used for a mouse-click EVENT on a link."
   (interactive)
   ;; FIXME: some links only have 'shr-tabstop! some have both
   (or (fedi-next-tab-item nil 'fj-tab-stop)
-      (fedi-next-tab-item nil 'shr-tabstop)))
+      (fedi-next-tab-item nil 'shr-tab-stop)))
 
 (defun fj-prev-tab-item ()
   "Jump to prev tab item."
