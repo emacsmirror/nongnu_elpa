@@ -378,7 +378,8 @@ PARAMS and JSON are for `fedi-http--delete'."
       (eq major-mode 'fj-owned-issues-tl-mode) ;; own issues listing
       (and (eq major-mode 'fj-repo-tl-mode)
            (equal fj-user (fj--get-tl-col 1)))
-      (and (eq major-mode 'fj-issue-tl-mode)
+      (and (or (eq major-mode 'fj-item-view-mode)
+               (eq major-mode 'fj-issue-tl-mode))
            (equal fj-user (fj--get-buffer-spec :owner)))))
 
 (defun fj--issue-own-p ()
