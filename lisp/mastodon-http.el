@@ -206,6 +206,13 @@ STRING should be a HTML for a 404 errror."
     (view-mode))) ; for 'q' to kill buffer and window
     ;; (error ""))) ; stop subsequent processing
 
+(defvar mastodon-http--evil-unicode-regex "[‮]"
+  ;; (emacs) codepoints: 3fffe2, 3fff80, 3fffae.
+  ;; 3fffe2 is right-to-left-override (00202E?), I think.
+  ;; We probably shouldn't just strip these though, maybe they have legit
+  ;; uses.
+  "A regex of characters to be stripped from incoming JSON.")
+
 (defun mastodon-http--process-response (&optional no-headers vector)
   "Process http response.
 Return a cons of JSON list and http response headers.
@@ -219,11 +226,14 @@ Callback to `mastodon-http--get-response-async', usually
                    (mastodon-http--process-headers))))
     (goto-char (point-min))
     (re-search-forward "^$" nil 'move)
-    (let ((json-array-type (if vector 'vector 'list))
-          (json-string (string-trim-right
-                        (decode-coding-string
-                         (buffer-substring-no-properties (point) (point-max))
-                         'utf-8))))
+    (let* ((json-array-type (if vector 'vector 'list))
+           (substr (buffer-substring-no-properties (point) (point-max)))
+           ;; strip evil unicode chars:
+           ;; FIXME: this should probably be done better than this but oh well:
+           (json-str (replace-regexp-in-string mastodon-http--evil-unicode-regex
+                                               "" substr))
+           (json-string (string-trim-right
+                         (decode-coding-string json-str 'utf-8))))
       (kill-buffer)
       (cond ((or (string-empty-p json-string) (null json-string))
              nil)
