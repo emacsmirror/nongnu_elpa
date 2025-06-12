@@ -2769,7 +2769,8 @@ ENDPOINT is the API endpoint to hit."
     ;; FIXME: add a request for changes review? not just approval?
     ("review_request" . "%s requested review from %s %s")
     ("milestone" . "%s added milestone %s %s")
-    ("assignees" . "%s %sassigned this%s %s")))
+    ("assignees" . "%s %sassigned this%s %s")
+    ("change_target_branch" . "%s changed target branch from %s to %s")))
 
 (defun fj-render-timeline (data &optional author owner)
   "Render timeline DATA.
@@ -2901,10 +2902,22 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
           ("assignees"
            (fj-format-assignee format-str
                                .user.username .assignee.username ts))
+          ("change_target_branch"
+           (fj-format-change-target format-str .user.username
+                                    .old_ref .new_ref))
           (_ ;; just so we never break the rest of the view:
            (format "%s did unknown action: %s %s" user .type ts)))
         'fj-item-data item)
        "\n\n"))))
+
+(defun fj-format-change-target (format-str user old new)
+  "Format a change-target-branch timeline item.
+FORMAT-STR is the base string. USER is the agent, OLD is old branch, NEW
+is new branch."
+  (format format-str
+          (propertize user 'face 'fj-name-face)
+          (propertize old 'face 'fj-name-face)
+          (propertize new 'face 'fj-name-face)))
 
 (defun fj-format-assignee (format-str user assignee ts)
   "Format an assignee timeline item.
