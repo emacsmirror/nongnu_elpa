@@ -205,13 +205,7 @@ STRING should be a HTML for a 404 errror."
     (shr-render-buffer (current-buffer))
     (view-mode))) ; for 'q' to kill buffer and window
     ;; (error ""))) ; stop subsequent processing
-
-(defvar mastodon-http--evil-unicode-regex "[‮]"
-  ;; (emacs) codepoints: 3fffe2, 3fff80, 3fffae.
-  ;; 3fffe2 is right-to-left-override (00202E?), I think.
-  ;; We probably shouldn't just strip these though, maybe they have legit
-  ;; uses.
-  "A regex of characters to be stripped from incoming JSON.")
+;; (error ""))) ; stop subsequent processing
 
 (defun mastodon-http--process-response (&optional no-headers vector)
   "Process http response.

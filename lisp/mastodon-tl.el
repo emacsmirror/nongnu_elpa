@@ -633,6 +633,19 @@ Do so if type of status at poins is not follow_request/follow."
                   (string= type "follow")) ; no counts for these
         (message "%s" echo)))))
 
+(defvar mastodon-tl-evil-unicode-regex
+  "[‮]"
+  ;; NB: this is (emacs) codepoints: 3fffe2, 3fff80, 3fffae.
+  ;; 3fffe2 is right-to-left-override (00202E?), I think.
+  ;; We probably shouldn't just strip these though, maybe they have legit
+  ;; uses?
+  "A regex of characters to be stripped from incoming JSON.")
+
+(defun mastodon-tl--display-name-strip (name)
+  "Strip NAME, a string, of characters in `mastodon-tl-evil-unicode-regex'."
+  (replace-regexp-in-string mastodon-tl-evil-unicode-regex
+                            "" name))
+
 (defun mastodon-tl--byline-username (toot)
   "Format a byline username from account in TOOT.
 TOOT may be account data, or toot data, in which case acount data
@@ -640,24 +653,24 @@ is extracted from it."
   (let ((data (or (alist-get 'account toot)
                   toot))) ;; grouped nofifs use account data directly
     (let-alist data
-      (propertize (if (and .display_name
-                           (not (string-empty-p
-                                 (string-trim .display_name mastodon-http--evil-unicode-regex))))
-                      .display_name
-                    .username)
-                  'face 'mastodon-display-name-face
-                  ;; enable playing of videos when point is on byline:
-                  ;; 'attachments (mastodon-tl--get-attachments-for-byline toot)
-                  'keymap mastodon-tl--byline-link-keymap
-                  ;; echo faves count when point on post author name:
-                  ;; which is where --goto-next-toot puts point.
-                  'help-echo
-                  ;; but don't add it to "following"/"follows" on
-                  ;; profile views: we don't have a tl--buffer-spec
-                  ;; yet:
-                  (unless (or (string-suffix-p "-followers*" (buffer-name))
-                              (string-suffix-p "-following*" (buffer-name)))
-                    (mastodon-tl--format-byline-help-echo data))))))
+      (let ((disp (mastodon-tl--display-name-strip .display_name)))
+        (propertize (if (and .display_name
+                             (not (string-empty-p disp)))
+                        disp
+                      .username)
+                    'face 'mastodon-display-name-face
+                    ;; enable playing of videos when point is on byline:
+                    ;; 'attachments (mastodon-tl--get-attachments-for-byline toot)
+                    'keymap mastodon-tl--byline-link-keymap
+                    ;; echo faves count when point on post author name:
+                    ;; which is where --goto-next-toot puts point.
+                    'help-echo
+                    ;; but don't add it to "following"/"follows" on
+                    ;; profile views: we don't have a tl--buffer-spec
+                    ;; yet:
+                    (unless (or (string-suffix-p "-followers*" (buffer-name))
+                                (string-suffix-p "-following*" (buffer-name)))
+                      (mastodon-tl--format-byline-help-echo data)))))))
 
 (defun mastodon-tl--byline-handle (toot &optional domain string face)
   "Format a byline handle from account in TOOT.
