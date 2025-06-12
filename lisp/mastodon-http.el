@@ -205,7 +205,6 @@ STRING should be a HTML for a 404 errror."
     (shr-render-buffer (current-buffer))
     (view-mode))) ; for 'q' to kill buffer and window
     ;; (error ""))) ; stop subsequent processing
-;; (error ""))) ; stop subsequent processing
 
 (defun mastodon-http--process-response (&optional no-headers vector)
   "Process http response.
@@ -220,14 +219,11 @@ Callback to `mastodon-http--get-response-async', usually
                    (mastodon-http--process-headers))))
     (goto-char (point-min))
     (re-search-forward "^$" nil 'move)
-    (let* ((json-array-type (if vector 'vector 'list))
-           (substr (buffer-substring-no-properties (point) (point-max)))
-           ;; strip evil unicode chars:
-           ;; FIXME: this should probably be done better than this but oh well:
-           (json-str (replace-regexp-in-string mastodon-http--evil-unicode-regex
-                                               "" substr))
-           (json-string (string-trim-right
-                         (decode-coding-string json-str 'utf-8))))
+    (let ((json-array-type (if vector 'vector 'list))
+          (json-string (string-trim-right
+                        (decode-coding-string
+                         (buffer-substring-no-properties (point) (point-max))
+                         'utf-8))))
       (kill-buffer)
       (cond ((or (string-empty-p json-string) (null json-string))
              nil)
