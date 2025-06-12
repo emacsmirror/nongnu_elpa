@@ -1184,9 +1184,11 @@ TAGS is a list of tag alists, from a post's JSON."
 (defun mastodon-tl--base-tags-print-p (tags body-tags)
   "Non-nil if we need to print base tags.
 We need to do so if TAGS contains any elements not in BODY-TAGS."
-  (cl-remove-if (lambda (tag)
-                  (member (alist-get 'name tag) body-tags))
-                tags))
+  (cl-remove-if
+   (lambda (tag)
+     ;; downcase name string (body strings are downcased):
+     (member (downcase (alist-get 'name tag)) body-tags))
+   tags))
 
 (defun mastodon-tl--render-base-tag (tag body-tags)
   "Return TAG as a linkified string, provided it is not in BODY-TAGS."
