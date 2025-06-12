@@ -2676,7 +2676,7 @@ Note that you can only (un)mute threads you have posted in."
     (mastodon-tl--goto-first-item)
     (mastodon-tl--property 'base-item-id :no-move)))
 
-(defun mastodon-tl--mute-or-unmute-thread  (&optional unmute)
+(defun mastodon-tl--mute-or-unmute-thread (&optional unmute)
   "Mute a thread.
 If UNMUTE, unmute it."
   (let ((mute-str (if unmute "unmute" "mute")))
@@ -2692,7 +2692,7 @@ If UNMUTE, unmute it."
              (url (mastodon-http--api (format "statuses/%s/%s" id mute-str))))
         (if (not we-posted-p)
             (user-error "You can only (un)mute a thread you have posted in")
-          (when (y-or-n-p (format "%s this thread? " (capitalize mute-str)))
+          (when (y-or-n-p (format "%s this thread? " mute-str))
             (let ((response (mastodon-http--post url)))
               (mastodon-http--triage
                response
@@ -3111,7 +3111,7 @@ PREFIX is sent to `mastodon-tl-get-tag-timeline', which see."
 PREFIX is sent to `mastodon-tl-get-tag-timeline', which see."
   (interactive)
   (let* ((json (mastodon-tl--followed-tags))
-         (sorted (sort json :key (lambda (x)
+         (sorted (cl-sort json :key (lambda (x)
                                    (downcase (alist-get 'name x)))))
          (buf "*mastodon-followed-tags*"))
     (if (null sorted)
