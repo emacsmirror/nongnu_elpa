@@ -615,8 +615,6 @@ If CURRENT-REPO, get from `fj-current-repo' instead."
   "U" #'fj-update-user-settings
   "C" #'fj-copy-item-url
   "b" #'fj-browse-view
-  "n" #'fj-item-next
-  "p" #'fj-item-prev
   "g" #'fj-view-reload)
 
 ;;; NAV
