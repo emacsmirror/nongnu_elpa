@@ -677,18 +677,19 @@ The last two args allow for display a username as a clickable
 handle."
   (let-alist (or (alist-get 'account toot)
                  toot) ;; grouped notifs
-    (mastodon-tl--buttonify-link
-     (or string
-         (concat "@" .acct
-                 (when domain
-                   (concat "@"
-                           (url-host
-                            (url-generic-parse-url .url))))))
-     'face (or face 'mastodon-handle-face)
-     'mastodon-tab-stop 'user-handle
-     'shr-url .url
-     'mastodon-handle (concat "@" .acct)
-     'help-echo (concat "Browse user profile of @" .acct))))
+    (let ((str (or string
+                   (concat "@" .acct
+                           (when domain
+                             (concat "@"
+                                     (url-host
+                                      (url-generic-parse-url .url))))))))
+      (mastodon-tl--buttonify-link
+       (mastodon-tl--unicode-wrap str)
+       'face (or face 'mastodon-handle-face)
+       'mastodon-tab-stop 'user-handle
+       'shr-url .url
+       'mastodon-handle (concat "@" .acct)
+       'help-echo (concat "Browse user profile of @" .acct)))))
 
 (defun mastodon-tl--byline-uname-+-handle (data &optional domain)
   "Concatenate a byline username and handle.
@@ -1046,7 +1047,7 @@ links in the text. If TOOT is nil no parsing occurs."
       ;; FIXME: replace with refactored handle render fun
       ;; in byline refactor branch:
       (concat
-       (propertize (or .display_name .username)
+       (propertize (mastodon-tl--unicode-wrap (or .display_name .username))
                    'face 'mastodon-display-name-face
                    'item-type 'user
                    'item-id .id)
