@@ -642,8 +642,8 @@ Do so if type of status at poins is not follow_request/follow."
 
 (defun mastodon-tl--byline-username (toot)
   "Format a byline username from account in TOOT.
-  TOOT may be account data, or toot data, in which case acount data
-  is extracted from it."
+TOOT may be account data, or toot data, in which case acount data
+is extracted from it."
   (let ((data (or (alist-get 'account toot)
                   toot))) ;; grouped nofifs use account data directly
     (let-alist data
@@ -925,10 +925,10 @@ TS is a timestamp from the server, if any."
                           'face 'mastodon-display-name-face
                           'follow-link t
                           'mouse-face 'highlight
-		                  'mastodon-tab-stop 'shr-url
-		                  'shr-url app-url
+		          'mastodon-tab-stop 'shr-url
+		          'shr-url app-url
                           'help-echo app-url
-		                  'keymap mastodon-tl--shr-map-replacement)))))
+		          'keymap mastodon-tl--shr-map-replacement)))))
        ;; edited:
        (when edited-time
          (concat
@@ -1055,10 +1055,10 @@ links in the text. If TOOT is nil no parsing occurs."
        (propertize (concat "@" .acct)
                    'face 'mastodon-handle-face
                    'mouse-face 'highlight
-		           'mastodon-tab-stop 'user-handle
-		           'keymap mastodon-tl--link-keymap
+		   'mastodon-tab-stop 'user-handle
+		   'keymap mastodon-tl--link-keymap
                    'mastodon-handle (concat "@" .acct)
-		           'help-echo (concat "Browse user profile of @" .acct))))))
+		   'help-echo (concat "Browse user profile of @" .acct))))))
 
 (defun mastodon-tl--process-link (toot start end url)
   "Process link URL in TOOT as hashtag, userhandle, or normal link.
@@ -3107,7 +3107,7 @@ PREFIX is sent to `mastodon-tl-get-tag-timeline', which see."
   (interactive)
   (let* ((json (mastodon-tl--followed-tags))
          (sorted (cl-sort json :key (lambda (x)
-                                   (downcase (alist-get 'name x)))))
+                                      (downcase (alist-get 'name x)))))
          (buf "*mastodon-followed-tags*"))
     (if (null sorted)
         (user-error "You have to follow some tags first")
