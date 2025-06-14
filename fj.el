@@ -2724,6 +2724,7 @@ ENDPOINT is the API endpoint to hit."
                                            merge-type merge-commit)))
              (fedi-http--triage resp
                                 (lambda (_)
+                                  (fj-view-reload)
                                   (message "Merged!"))))))))))
 
 (defun fj-fetch-pull-as-branch ()
