@@ -3151,6 +3151,11 @@ Returns annotation for CAND, a candidate."
   'action 'fj-list-user-repos
   'help-echo "RET: View this user.")
 
+(define-button-type 'fj-repo-stargazers-button
+  'follow-link t
+  'action 'fj-repo-tl-stargazers
+  'help-echo "RET: View stargazers.")
+
 (defun fj-repo-tl-entries (repos &optional no-owner)
   "Return tabluated list entries for REPOS.
 NO-OWNER means don't display owner column (user repos view)."
@@ -3178,6 +3183,7 @@ NO-OWNER means don't display owner column (user repos view)."
                                   fj-tab-stop t)))
           (,(number-to-string .stars_count)
            id ,.id face fj-figures-face
+           type fj-repo-stargazers-button
            item repo)
           (,fork id ,.id face fj-figures-face item repo)
           (,(number-to-string .open_issues_count)
@@ -4282,6 +4288,14 @@ PAGE and LIMIT are for `fj-get-stargazers'."
                                collect (alist-get 'login u)))
          (choice (completing-read "Stargazer: " gazers-list)))
     (fj-user-repos-tl choice)))
+
+;; RET/click on stars:
+(defun fj-repo-tl-stargazers (&optional _)
+  "View stargazers of tabulated list repo at point."
+  (interactive)
+  (fj-with-repo-entry
+   (let ((repo (fj--get-tl-col 0)))
+     (fj-repo-stargazers repo))))
 
 (defun fj-get-watchers (repo owner &optional page limit)
   "Get watchers of REPO by OWNER.
