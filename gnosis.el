@@ -1415,41 +1415,6 @@ NOTE-COUNT: Total notes to be commited for session."
       (gnosis-dashboard)
       (gnosis-review-commit note-count))))
 
-(defun gnosis--shell-cmd-with-password (command)
-  "Run COMMAND and watch for password prompt."
-  (let ((process (start-process-shell-command "shell-cmd" nil command)))
-    (set-process-filter
-     process
-     (lambda (proc output)
-       (when (string-match-p "password:" output)
-         (process-send-string proc
-			      (concat (read-passwd "Password: ") "\n")))
-       (message "%s" output)))))
-
-;;;###autoload
-(cl-defun gnosis-vc-push (&optional (dir gnosis-dir))
-  "Run `git push' in DIR."
-  (interactive)
-  (let ((default-directory dir)
-	(git (executable-find "git")))
-    (gnosis--shell-cmd-with-password
-     (format "%s push" git))))
-
-;;;###autoload
-(cl-defun gnosis-vc-pull (&optional (dir gnosis-dir))
-  "Run `git pull' in DIR."
-  (interactive)
-  (let ((default-directory dir))
-    ;; TODO: Try to use a vc instead of shell-command
-    ;; vc-pull is async, this causes issues for re-establishing the
-    ;; database.  To use vc-pull we should define a hook that runs
-    ;; after vc-pull is done or to find a way to run a "post-command"
-    ;; for vc-git-command.  For now using shell-command that runs sync
-    ;; is a better options.
-    (shell-command (format "%s pull" (executable-find "git")))
-    (setf gnosis-db
-	  (emacsql-sqlite-open (expand-file-name "gnosis.db" gnosis-dir)))))
-
 (defun gnosis-review-commit (note-num)
   "Commit review session on git repository.
 
@@ -3116,6 +3081,43 @@ DASHBOARD-TYPE: either Notes or Decks to display the respective dashboard."
       (gnosis-dashboard-enable-mode)
       (gnosis-dashboard-menu))))
 
+;; VC functions ;;
+;;;;;;;;;;;;;;;;;;
+
+(defun gnosis--shell-cmd-with-password (command)
+  "Run COMMAND and watch for password prompt."
+  (let ((process (start-process-shell-command "shell-cmd" nil command)))
+    (set-process-filter
+     process
+     (lambda (proc output)
+       (when (string-match-p "password:" output)
+         (process-send-string proc
+			      (concat (read-passwd "Password: ") "\n")))
+       (message "%s" output)))))
+
+;;;###autoload
+(cl-defun gnosis-vc-push (&optional (dir gnosis-dir))
+  "Run `git push' in DIR."
+  (interactive)
+  (let ((default-directory dir)
+	(git (executable-find "git")))
+    (gnosis--shell-cmd-with-password
+     (format "%s push" git))))
+
+;;;###autoload
+(cl-defun gnosis-vc-pull (&optional (dir gnosis-dir))
+  "Run `git pull' in DIR."
+  (interactive)
+  (let ((default-directory dir))
+    ;; TODO: Try to use a vc instead of shell-command
+    ;; vc-pull is async, this causes issues for re-establishing the
+    ;; database.  To use vc-pull we should define a hook that runs
+    ;; after vc-pull is done or to find a way to run a "post-command"
+    ;; for vc-git-command.  For now using shell-command that runs sync
+    ;; is a better options.
+    (shell-command (format "%s pull" (executable-find "git")))
+    (setf gnosis-db
+	  (emacsql-sqlite-open (expand-file-name "gnosis.db" gnosis-dir)))))
 ;; Gnosis mode ;;
 ;;;;;;;;;;;;;;;;;
 
