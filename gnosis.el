@@ -1352,8 +1352,12 @@ If NEW? is non-nil, increment new notes log by 1."
   (when (y-or-n-p "Delete all activity log?")
     (emacsql gnosis-db [:delete :from activity-log])))
 
-(defun gnosis-review-note (id)
-  "Start review for note with value of id ID, if note is unsuspended."
+(defun gnosis-review--display-note (id)
+  "Display note with ID for review in the gnosis buffer.
+
+Handles buffer setup and calls the appropriate review function based
+on note type.  Returns nil if note is suspended, otherwise returns the
+review result."
   (when (gnosis-suspended-p id)
     (message "Suspended note with id: %s" id)
     (sit-for 0.3)) ;; this should only occur in testing
@@ -1367,10 +1371,13 @@ If NEW? is non-nil, increment new notes log by 1."
       (error "Malformed note type: '%s'" type))))
 
 (defun gnosis-review-process-note (note note-count)
-  "Process a single note review and return updated note count.
+  "Process review for NOTE and update session statistics.
 
-Helper function for `gnosis-review-session'."
-  (let ((success (gnosis-review-note note)))
+Displays the note, processes the review result, and updates the
+header.  Returns the incremented NOTE-COUNT after processing.
+
+This is a helper function for `gnosis-review-session'."
+  (let ((success (gnosis-review--display-note note)))
     (cl-incf note-count)
     (gnosis-review-update-header note-count)
     (gnosis-review-actions success note note-count)
