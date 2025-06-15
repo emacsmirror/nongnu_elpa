@@ -27,4 +27,4 @@ test:
 	--eval "(ert-run-tests-batch-and-exit)"
 
 clean:
-	rm -f $(TEXI) $(INFO) *.elc
+	rm -f $(TEXI) $(INFO) *.elc *-pkg.el*
