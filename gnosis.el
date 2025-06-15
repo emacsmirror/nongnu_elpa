@@ -1366,6 +1366,48 @@ If NEW? is non-nil, increment new notes log by 1."
           (funcall func-name id))
       (error "Malformed note type: '%s'" type))))
 
+(defun gnosis-review-process-note (note note-count)
+  "Process a single note review and return updated note count.
+
+Helper function for `gnosis-review-session'."
+  (let ((success (gnosis-review-note note)))
+    (cl-incf note-count)
+    (gnosis-review-update-header note-count)
+    (gnosis-review-actions success note note-count)
+    note-count))
+
+(defun gnosis-review-update-header (note-count)
+  "Update the review session header with current stats.
+
+NOTE-COUNT: Number of notes reviewed for current session."
+  (with-current-buffer (get-buffer-create "*gnosis*")
+    (setq-local header-line-format
+                (format " Reviewed: %s | Due: %s"
+                        (propertize (number-to-string note-count)
+                                    'face 'font-lock-type-face)
+                        (propertize (number-to-string gnosis-due-notes-total)
+                                    'face 'gnosis-face-false)))))
+
+(defun gnosis-review-session (notes &optional due note-count)
+  "Start review session for NOTES.
+NOTES: List of note ids
+DUE: If due is non-nil, session will loop for due notes.
+NOTE-COUNT: Total notes to be commited for session."
+  (let ((note-count (or note-count 0)))
+    (if (null notes)
+        (message "No notes for review.")
+      (setf gnosis-review-notes notes)
+      (gnosis-review-update-header note-count)
+      (catch 'review-loop
+        (cl-loop for note in notes
+                 do (setq note-count (gnosis-review-process-note note note-count))
+                 finally
+                 (and due (gnosis-review-session
+                           (gnosis-collect-note-ids :due t) t note-count))))
+      
+      (gnosis-dashboard)
+      (gnosis-review-commit note-count))))
+
 (defun gnosis--shell-cmd-with-password (command)
   "Run COMMAND and watch for password prompt."
   (let ((process (start-process-shell-command "shell-cmd" nil command)))
@@ -1492,29 +1534,6 @@ To customize the keybindings, adjust `gnosis-review-keybindings'."
       (?s (gnosis-review-action--suspend success id note-count))
       (?e (gnosis-review-action--edit success id note-count))
       (?q (gnosis-review-action--quit success id)))))
-
-(defun gnosis-review-session (notes &optional due note-count)
-  "Start review session for NOTES.
-
-NOTES: List of note ids
-DUE: If due is non-nil, session will loop for due notes.
-NOTE-COUNT: Total notes to be commited for session."
-  (let ((note-count (or note-count 0)))
-    (if (null notes)
-	(message "No notes for review.")
-      (setf gnosis-review-notes notes)
-      (catch 'review-loop
-	(cl-loop for note in notes
-		 do (let ((success (gnosis-review-note note)))
-		      (cl-incf note-count)
-		      (gnosis-review-actions success note note-count))
-		 finally
-		 ;; TODO: Add optional arg, repeat for specific deck/tag.
-		 ;; Repeat until there are no due notes
-		 (and due (gnosis-review-session
-			   (gnosis-collect-note-ids :due t) t note-count))))
-      (gnosis-dashboard)
-      (gnosis-review-commit note-count))))
 
 ;;;###autoload
 (defun gnosis-review ()
