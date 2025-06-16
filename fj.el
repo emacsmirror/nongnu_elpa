@@ -587,7 +587,7 @@ If CURRENT-REPO, get from `fj-current-repo' instead."
   "W" #'fj-list-own-issues
   "N" #'fj-view-notifications
   "S" #'fj-repo-search-tl
-  "U" #'fj-update-user-settings
+  "U" #'fj-user-update-settings
   "b" #'fj-browse-view
   "C" #'fj-copy-item-url
   "n" #'fj-item-next
@@ -612,7 +612,7 @@ If CURRENT-REPO, get from `fj-current-repo' instead."
   "W" #'fj-list-own-issues
   "N" #'fj-view-notifications
   "S" #'fj-repo-search-tl
-  "U" #'fj-update-user-settings
+  "U" #'fj-user-update-settings
   "C" #'fj-copy-item-url
   "b" #'fj-browse-view
   "g" #'fj-view-reload)
