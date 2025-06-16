@@ -1286,8 +1286,9 @@ review result."
          (func-name (intern (format "gnosis-review-%s" (downcase type)))))
     (if (fboundp func-name)
         (progn
-	  (pop-to-buffer-same-window (get-buffer-create "*gnosis*"))
-          (gnosis-mode)
+	  (unless (eq major-mode 'gnosis-mode)
+	    (pop-to-buffer-same-window (get-buffer-create "*gnosis*"))
+            (gnosis-mode))
           (funcall func-name id))
       (error "Malformed note type: '%s'" type))))
 
@@ -1310,11 +1311,12 @@ This is a helper function for `gnosis-review-session'."
 NOTE-COUNT: Number of notes reviewed for current session."
   (with-current-buffer (get-buffer-create "*gnosis*")
     (setq-local header-line-format
-                (format " Reviewed: %s | Due: %s"
-                        (propertize (number-to-string note-count)
-                                    'face 'font-lock-type-face)
-                        (propertize (number-to-string gnosis-due-notes-total)
-                                    'face 'gnosis-face-false)))))
+                (gnosis-center-string
+		 (format "Reviewed: %s | Due: %s"
+                         (propertize (number-to-string note-count)
+                                     'face 'font-lock-type-face)
+                         (propertize (number-to-string gnosis-due-notes-total)
+                                     'face 'gnosis-face-false))))))
 
 (defun gnosis-review-session (notes &optional due note-count)
   "Start review session for NOTES.
@@ -2379,8 +2381,7 @@ Return note ids for notes that match QUERY."
     (cl-loop for tag in (gnosis-get-tags--unique)
 	     ;; Replaces dashes to underscores.
 	     if (string-match-p "-" tag)
-	     do (gnosis-tag-rename tag
-				   (replace-regexp-in-string "-" "_" tag)))))
+	     do (gnosis-tag-rename tag (replace-regexp-in-string "-" "_" tag)))))
 
 (defun gnosis-db-init ()
   "Create essential directories & database."
