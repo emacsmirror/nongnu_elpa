@@ -1337,7 +1337,6 @@ NOTE-COUNT: Total notes to be commited for session."
     (if (null notes)
         (message "No notes for review.")
       (setf gnosis-review-notes notes)
-      (gnosis-review-update-header note-count)
       (catch 'review-loop
         (cl-loop for note in notes
                  do (setq note-count (gnosis-review-process-note note note-count))
@@ -2463,12 +2462,8 @@ DATE: Integer, used with `gnosis-algorithm-date' to get previous dates."
 				 num))))))
 
 (defun gnosis-dashboard-output-average-rev ()
-  "Output the average daily notes reviewed for current year.
-
-Skips days where no note was reviewed."
-  (let ((reviews (gnosis-select 'reviewed-total 'activity-log '(> reviewed-total 0) t)))
-    (if (null reviews) "0"
-      (format "%.2f" (/ (apply '+ reviews) (float (length reviews)))))))
+  "Output the average daily notes reviewed as a string for the dashboard."
+  (format "%.2f" (gnosis-calculate-average-daily-reviews)))
 
 (defun gnosis-dashboard-edit-note ()
   "Edit note with ID."
