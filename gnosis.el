@@ -1898,22 +1898,52 @@ Split content of Hypothesis and Answer headings using SEPARATOR."
       nil nil)
     results))
 
-(defun gnosis-export-note (id)
-  "Export note with ID."
-  (let ((note-data (append (gnosis-select '[type keimenon hypothesis answer tags]
-					  'notes `(= id ,id) t)
-			   (gnosis-select 'parathema 'extras `(= id ,id) t))))
-    (gnosis-export--insert-note (number-to-string id)
-			     (nth 0 note-data)
-			     (nth 1 note-data)
-			     (concat (string-remove-prefix "\n" gnosis-export-separator)
-				     (mapconcat 'identity (nth 2 note-data)
-						gnosis-export-separator))
-			     (concat (string-remove-prefix "\n" gnosis-export-separator)
-				     (mapconcat 'identity (nth 3 note-data)
-						gnosis-export-separator))
-			     (nth 5 note-data)
-			     (nth 4 note-data))))
+(defun gnosis-export-notes (ids &optional new-p)
+  "Export notes for IDS.
+
+If NEW-P replace the ids of notes with NEW, used for new notes to
+generate new note id."
+  (cl-assert (listp ids) nil "IDS value must be a list.")
+  ;; Extract just the ID values if they're in a list structure
+  (let ((id-values (mapcar (lambda (id)
+                             (if (listp id) (car id) id))
+                           ids)))
+    ;; Process each note
+    (dolist (id id-values)
+      (let ((note-data (append (gnosis-select '[type keimenon hypothesis answer tags]
+                                              'notes `(= id ,id) t)
+                               (gnosis-select 'parathema 'extras `(= id ,id) t))))
+        (gnosis-export--insert-note
+         (if new-p "NEW" (number-to-string id))
+         (nth 0 note-data)
+         (nth 1 note-data)
+         (concat (string-remove-prefix "\n" gnosis-export-separator)
+                 (mapconcat 'identity (nth 2 note-data) gnosis-export-separator))
+         (concat (string-remove-prefix "\n" gnosis-export-separator)
+                 (mapconcat 'identity (nth 3 note-data) gnosis-export-separator))
+         (nth 5 note-data)
+         (nth 4 note-data))))))
+
+(defun gnosis-export-deck (&optional deck filename new-p)
+  "Export contents of DECK to FILENAME.
+If FILENAME is nil, prompt for a filename."
+  (interactive (list (gnosis--get-deck-id)
+                     (read-file-name "Export to file: ")
+		     (y-or-n-p "Export with current note ids? ")))
+  (let ((deck-name (gnosis--get-deck-name deck)))
+    (when filename
+      (unless (string-match-p "\\.org$" filename)
+        (setq filename (concat filename ".org"))))
+    (with-current-buffer (get-buffer-create (format "EXPORT: %s" deck-name))
+      (let ((inhibit-read-only t))
+        (org-mode)
+        (erase-buffer)
+        (insert (format "#+GNOSIS_DECK: %s\n\n" deck-name))
+        (let ((note-ids (gnosis-select 'id 'notes `(= deck-id ,deck))))
+          (gnosis-export-notes note-ids new-p)
+          (when filename
+            (write-file filename)
+            (message "Exported deck to %s" filename)))))))
 
 (defun gnosis-save-note (note deck)
   "Save NOTE for DECK."
@@ -1933,6 +1963,28 @@ Split content of Hypothesis and Answer headings using SEPARATOR."
     (funcall note-func id deck type keimenon hypothesis
 	     answer parathema tags 0 links)))
 
+(defun gnosis-save ()
+  "Save notes in current buffer."
+  (interactive)
+  (let ((notes (gnosis-export-parse-notes))
+	(deck (gnosis--get-deck-id (gnosis-export-parse--deck-name))))
+    (cl-loop for note in notes
+	     do (gnosis-save-note note deck))
+    (gnosis-edit-quit)))
+
+;;;###autoload
+(defun gnosis-save-deck (deck-name)
+  "Save notes for deck with DECK-NAME."
+  (interactive
+   (progn
+     (unless (eq major-mode 'org-mode)
+       (user-error "This function can only be used in org-mode buffers"))
+     (list (read-string "Deck name: " (gnosis-export-parse--deck-name)))))
+  (let ((notes (gnosis-export-parse-notes))
+	(deck (gnosis-get-deck-id deck-name)))
+    (cl-loop for note in notes
+	     do (gnosis-save-note note deck))))
+
 ;;;###autoload
 (defun gnosis-add-note (deck type &optional keimenon hypothesis
 			      answer parathema tags example)
@@ -1948,7 +2000,7 @@ Split content of Hypothesis and Answer headings using SEPARATOR."
     (insert "#+DECK: " deck)
     (gnosis-edit-mode)
     (gnosis-export--insert-note "NEW" type keimenon hypothesis
-			      answer parathema tags example))
+				answer parathema tags example))
   (search-backward "keimenon")
   (forward-line))
 
@@ -1962,18 +2014,9 @@ Split content of Hypothesis and Answer headings using SEPARATOR."
       (erase-buffer)
       (insert "#+DECK: " deck-name))
     (gnosis-edit-mode)
-    (gnosis-export-note id)
+    (gnosis-export-notes (list id))
     (search-backward "keimenon")
     (forward-line)))
-
-(defun gnosis-save ()
-  "Save notes in current buffer."
-  (interactive)
-  (let ((notes (gnosis-export-parse-notes))
-	(deck (gnosis--get-deck-id (gnosis-export-parse--deck-name))))
-    (cl-loop for note in notes
-	     do (gnosis-save-note note deck))
-    (gnosis-edit-quit)))
 
 (defun gnosis-edit-quit ()
   "Quit recrusive edit & kill current buffer."
@@ -2533,27 +2576,6 @@ If STRING-SECTION is nil, apply FACE to the entire STRING."
 					:extra ""
 					:tags note-tags))
       (error "Demo deck already exists"))))
-
-;; TODO: Add Export funcs
-(defun gnosis-export-deck (&optional deck)
-  "Export contents of DECK."
-  (interactive (list (gnosis--get-deck-id)))
-  (with-current-buffer (get-buffer-create "*test*")
-    (org-mode)
-    (insert (format "#+GNOSIS_DECK: %s\n\n" (gnosis--get-deck-name deck)))
-    (cl-loop for note in (gnosis-select '[keimenon type answer id]
-					'notes `(= deck-id ,deck))
-	     do (gnosis-export--insert-note (number-to-string (car (last note)))
-					  (cadr note)
-					  (car note)
-					  "hypo"
-					  (caddr note)
-					  
-		 ;; :main (car note)
-		 ;; :answer (cadr note)
-		 ;; :id (number-to-string (caddr note))
-		 ;; :type (cadddr note)
-		 ))))
 
 ;; Dashboard
 ;;;;;;;;;;;;
