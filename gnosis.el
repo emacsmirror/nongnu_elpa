@@ -278,10 +278,6 @@ Example:
   "Return caar of VALUE from TABLE, optionally with where RESTRICTIONS."
   (caar (gnosis-select value table restrictions)))
 
-(defun gnosis-get-type (id)
-  "Return note for note ID."
-  (car (gnosis-select-id 'type 'notes id)))
-
 (defun gnosis--delete (table value)
   "From TABLE use where to delete VALUE."
   (emacsql gnosis-db `[:delete :from ,table :where ,value]))
@@ -710,15 +706,6 @@ When called with a prefix, unsuspends all notes for tag."
 	(suspend (if current-prefix-arg 0 1)))
     (cl-loop for note in notes
 	     do (gnosis-update 'review-log `(= suspend ,suspend) `(= id ,note)))))
-
-(defun gnosis-suspend ()
-  "Suspend note(s) with specified values."
-  (interactive)
-  (let ((item (gnosis-completing-read "Suspend by: " '("Deck" "Tag"))))
-    (pcase item
-      ("Deck" (gnosis-suspend-deck))
-      ("Tag" (gnosis-suspend-tag))
-      (_ (message "Not ready yet.")))))
 
 (defun gnosis-generate-id (&optional length deck-p)
   "Generate a unique gnosis ID.
@@ -2152,7 +2139,8 @@ CUSTOM-DECK: Custom deck to be used instead."
   (let* ((deck (or custom-deck (gnosis-get-note-deck-name id)))
 	 (tags-proto (gnosis-get-custom-tag-values id :proto custom-tags custom-values))
 	 (decks-proto (gnosis-get-custom-deck-value deck :proto custom-values)))
-    (if tags-proto (gnosis-proto-max-values tags-proto) (gnosis-proto-max-values (or decks-proto gnosis-algorithm-proto)))))
+    (if tags-proto (gnosis-proto-max-values tags-proto)
+      (gnosis-proto-max-values (or decks-proto gnosis-algorithm-proto)))))
 
 (defun gnosis-get-note-tag-anagnosis (id &optional custom-tags custom-values)
   "Return the minimum anagnosis tag value for note ID.
