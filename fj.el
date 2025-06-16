@@ -4053,9 +4053,16 @@ Allow quick jumping to an element in a tabulated list view."
     (save-excursion
       (goto-char (point-min))
       (while (tabulated-list-get-entry)
-        (let* ((name (if (eq major-mode #'fj-issue-tl-mode)
-                         (fj--get-tl-col 4)
-                       (fj--get-tl-col 0))))
+        (let* ((name
+                (cond ((eq major-mode #'fj-issue-tl-mode)
+                       (fj--get-tl-col 4))
+                      ((eq major-mode #'fj-owned-issues-tl-mode)
+                       (concat (fj--get-tl-col 5)
+                               (propertize
+                                (concat "\t[" (fj--get-tl-col 2) "]")
+                                'face 'font-lock-comment-face)))
+                      (t
+                       (fj--get-tl-col 0)))))
           (push `(,name . ,(point)) alist))
         (forward-line)))
     alist))
