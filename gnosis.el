@@ -648,6 +648,17 @@ Set SPLIT to t to split all input given."
   "Return id for DECK name."
   (gnosis-get 'id 'decks `(= name ,deck)))
 
+(defun gnosis-get-deck-id (&optional deck)
+  "Return note id for DECK.
+
+If DECK does not exist, create it."
+  (cl-assert (stringp deck) nil "DECK must be a string.")
+  (let* ((deck (or deck (gnosis--get-deck-name)))
+	 (deck-id (gnosis-select 'id 'decks `(= name ,deck) t)))
+    (if deck-id (car deck-id)
+      (gnosis-add-deck deck)
+      (gnosis-get-deck-id deck))))
+
 (defun gnosis-get-note-deck-name (id)
   "Return deck name of note ID."
   (let ((deck (gnosis-get 'deck-id 'notes `(= id ,id))))
