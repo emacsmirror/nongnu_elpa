@@ -103,6 +103,10 @@ between two strings to consider them as similar."
 When nil, review new notes last."
   :type 'bolean)
 
+(defcustom gnosis-default-average-review-period 30
+  "The number of days used to calculate the average reviews on gnosis dashboard."
+  :type 'integer)
+
 ;;; Faces
 
 (defface gnosis-face-parathema
