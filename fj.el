@@ -2521,7 +2521,8 @@ If INIT-PAGE, do not update :page in viewargs."
     (save-excursion
       (goto-char point)
       (if (not json)
-          (user-error "No more items")
+          ;; FIXME: this should only occur if called interactively!:
+          nil ;(user-error "No more items")
         (fj-destructure-buf-spec (viewargs)
           ;; unless init-page arg, increment page in viewargs
           (let* ((page (plist-get viewargs :page))
