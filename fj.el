@@ -3389,6 +3389,23 @@ Or if viewing a repo's issues, use its clone_url."
     (kill-new str)
     (message (format "Copied: %s" str))))
 
+(defun fj-fork-to-parent ()
+  "From a repo TL listing, jump to the parent repo."
+  ;; FIXME: this works ok, but perhaps we would rather jump not to the
+  ;; issues listing, but to another TL listing of the parent? to see
+  ;; owner, stats, etc.
+  (interactive)
+  (let* ((data (fj--property 'fj-item-data))
+         (forkp (eq t (alist-get 'fork data)))
+         (parent (if forkp (alist-get 'parent data)))
+         (repo (alist-get 'name parent))
+         (owner (map-nested-elt parent '(owner username))))
+    (if (not forkp)
+        (user-error "No fork at point?")
+      (fj-list-items repo owner nil "issues")
+      (message "Jumped to parent repo %s"
+               (alist-get 'full_name parent)))))
+
 ;; TODO: star toggle
 
 (defun fj-get-repo-files (repo owner)
