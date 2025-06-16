@@ -6,7 +6,7 @@
 ;; Package-Requires: ((emacs "29.1") (fedi "0.2") (tp "0.5") (transient) (magit))
 ;; Keywords: git, convenience
 ;; URL: https://codeberg.org/martianh/fj.el
-;; Version: 0.9
+;; Version: 0.10
 ;; Separator: -
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -587,7 +587,7 @@ If CURRENT-REPO, get from `fj-current-repo' instead."
   "W" #'fj-list-own-issues
   "N" #'fj-view-notifications
   "S" #'fj-repo-search-tl
-  "U" #'fj-update-user-settings
+  "U" #'fj-user-update-settings
   "b" #'fj-browse-view
   "C" #'fj-copy-item-url
   "n" #'fj-item-next
@@ -612,11 +612,9 @@ If CURRENT-REPO, get from `fj-current-repo' instead."
   "W" #'fj-list-own-issues
   "N" #'fj-view-notifications
   "S" #'fj-repo-search-tl
-  "U" #'fj-update-user-settings
+  "U" #'fj-user-update-settings
   "C" #'fj-copy-item-url
   "b" #'fj-browse-view
-  "n" #'fj-item-next
-  "p" #'fj-item-prev
   "g" #'fj-view-reload)
 
 ;;; NAV
@@ -2523,7 +2521,8 @@ If INIT-PAGE, do not update :page in viewargs."
     (save-excursion
       (goto-char point)
       (if (not json)
-          (user-error "No more items")
+          ;; FIXME: this should only occur if called interactively!:
+          nil ;(user-error "No more items")
         (fj-destructure-buf-spec (viewargs)
           ;; unless init-page arg, increment page in viewargs
           (let* ((page (plist-get viewargs :page))
@@ -2726,6 +2725,7 @@ ENDPOINT is the API endpoint to hit."
                                            merge-type merge-commit)))
              (fedi-http--triage resp
                                 (lambda (_)
+                                  (fj-view-reload)
                                   (message "Merged!"))))))))))
 
 (defun fj-fetch-pull-as-branch ()
@@ -3152,6 +3152,11 @@ Returns annotation for CAND, a candidate."
   'action 'fj-list-user-repos
   'help-echo "RET: View this user.")
 
+(define-button-type 'fj-repo-stargazers-button
+  'follow-link t
+  'action 'fj-repo-tl-stargazers
+  'help-echo "RET: View stargazers.")
+
 (defun fj-repo-tl-entries (repos &optional no-owner)
   "Return tabluated list entries for REPOS.
 NO-OWNER means don't display owner column (user repos view)."
@@ -3179,6 +3184,7 @@ NO-OWNER means don't display owner column (user repos view)."
                                   fj-tab-stop t)))
           (,(number-to-string .stars_count)
            id ,.id face fj-figures-face
+           type fj-repo-stargazers-button
            item repo)
           (,fork id ,.id face fj-figures-face item repo)
           (,(number-to-string .open_issues_count)
@@ -3383,6 +3389,23 @@ Or if viewing a repo's issues, use its clone_url."
                               branch))))
     (kill-new str)
     (message (format "Copied: %s" str))))
+
+(defun fj-fork-to-parent ()
+  "From a repo TL listing, jump to the parent repo."
+  ;; FIXME: this works ok, but perhaps we would rather jump not to the
+  ;; issues listing, but to another TL listing of the parent? to see
+  ;; owner, stats, etc.
+  (interactive)
+  (let* ((data (fj--property 'fj-item-data))
+         (forkp (eq t (alist-get 'fork data)))
+         (parent (if forkp (alist-get 'parent data)))
+         (repo (alist-get 'name parent))
+         (owner (map-nested-elt parent '(owner username))))
+    (if (not forkp)
+        (user-error "No fork at point?")
+      (fj-list-items repo owner nil "issues")
+      (message "Jumped to parent repo %s"
+               (alist-get 'full_name parent)))))
 
 ;; TODO: star toggle
 
@@ -4283,6 +4306,14 @@ PAGE and LIMIT are for `fj-get-stargazers'."
                                collect (alist-get 'login u)))
          (choice (completing-read "Stargazer: " gazers-list)))
     (fj-user-repos-tl choice)))
+
+;; RET/click on stars:
+(defun fj-repo-tl-stargazers (&optional _)
+  "View stargazers of tabulated list repo at point."
+  (interactive)
+  (fj-with-repo-entry
+   (let ((repo (fj--get-tl-col 0)))
+     (fj-repo-stargazers repo))))
 
 (defun fj-get-watchers (repo owner &optional page limit)
   "Get watchers of REPO by OWNER.
