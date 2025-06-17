@@ -1469,18 +1469,25 @@ To customize the keybindings, adjust `gnosis-review-keybindings'."
 			    (gnosis-collect-note-ids :deck (gnosis--get-deck-id))))
       ("All notes of tag(s)" (gnosis-review-session (gnosis-collect-note-ids :tags t))))))
 
+(defun gnosis-review--select-topic ()
+  "Prompt for topic from org-gnosis database and return it's id."
+  (let* ((topic-title (gnosis-completing-read "Select topic: " (org-gnosis-select 'title 'nodes)))
+	 (topic-id (caar (org-gnosis-select 'id 'nodes `(= title ,topic-title)))))
+    topic-id))
+
+;;;###autoload
 (defun gnosis-review-topic (&optional node-id)
-  "Review gnosis notes for topic with NODE-ID."
+  "Review gnosis for topic with NODE-ID."
   (interactive)
-  (let* ((node-id (or node-id (org-gnosis-get-id)))
+  (let* ((node-id (or node-id (gnosis-review--select-topic)))
 	 (node-title (car (org-gnosis-select 'title 'nodes `(= id ,node-id) t)))
 	 (gnosis-questions (gnosis-select 'source 'links `(= dest ,node-id) t)))
     (if (and gnosis-questions
-	     (y-or-n-p (format "Review %s note(s) for '%s'?"
+	     (y-or-n-p (format "Review %s thema(s) for '%s'?"
 			       (length gnosis-questions)
 			       node-title)))
 	(gnosis-review-session gnosis-questions)
-      (message "No notes for node id: %s" node-id))))
+      (message "No thema found for %s (id:%s)" node-title node-id))))
 
 (defun gnosis-add-note-fields (deck-id type keimenon hypothesis answer
 					parathema tags suspend links &optional review-image)
