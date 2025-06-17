@@ -328,10 +328,7 @@ or do the binding and advising on your own. (Rob F)"
    (when option-list
     (message "VM-RFADDONS: The following options are unknown: %s" option-list)
     (ding)
-    (sit-for 3))
-  
-  (message "VM-RFADDONS: Options loaded.")
-  (vm-sit-for (or sit-for 2)))
+    (sit-for 3)))
 
 (defun rf-vm-su-labels (m)
   "This version does some sanity checking. (Rob F)"
