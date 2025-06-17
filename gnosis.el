@@ -2425,9 +2425,8 @@ Return note ids for notes that match QUERY."
 	  (emacsql gnosis-db [:create-table $i1 $S2] table schema))
         (emacsql gnosis-db [:pragma (= user-version org-gnosis-db-version)])))
     ;; Update database schema for version
-    ;; TODO: Adjust for new version
     (cond ((= gnosis-curr-version 2)
-	   (gnosis-db-update-v3)))))
+	   (gnosis-db-update-v4)))))
 
 (gnosis-db-init)
 
