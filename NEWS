@@ -1,4 +1,31 @@
 -*- mode: org -*-
+* 0.5.0
+[[http://thanosapollo.org/posts/gnosis-0-5-0-release/][Announcement post]]
+
++ Major rewrite of gnosis database
+  + All columns have the same value types
+  + Every note (/thema/) type will consist of
+    + *keimenon* (passage/document) a string value.
+    + *hypothesis* assumption/hint, string value related to keimenon
+      to help finding the right answer.
+    + *answer*, a string value, self explanatory.
+    + *parathema*, a string value, the "extras" with emphasis on adding
++ =Drop support for images=
+  + Image support will be rewritten in the next minor version, to
+    support them as file links via keimenon.
++ =Drop support y-or-n notes=
+  + With this update your current y-or-n notes will be converted into
+    MCQ type, with "Yes" & "No" choices.
++ =Support for org-mode=
+  + Create & edit notes in an org-mode buffer, replacing previous
+    emacs-lisp implementation.
+  + Export decks as org-mode files
+  + Import & Edit decks as org-mode files
++ =Support for linking gnosis notes with org-gnosis notes.=
+  + Adding an org link to either the keimenon or parathema of a gnosis
+    note to an [[https://thanosapollo.org/projects/org-gnosis/][org-gnosis]] note will link said notes, this way you can
+    do review gnosis notes that are related to a specific topic/note
+    of org-gnosis.
 
 * 0.4.10
 + Implement major performance improvements in gnosis-dashboard.
