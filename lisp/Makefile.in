@@ -144,16 +144,16 @@ vm-version-conf.el: Makefile
 # the echo command can also emit CRs.
 vm-autoloads.el: $(SOURCES:%=@srcdir@/%)
 	-$(RM) -f $@
-	echo > $@
+	echo > $@.tmp
 	(build_dir="`pwd`"; cd "@srcdir@"; \
 	 $(EMACS_COMP) -l autoload \
-		-f vm-built-autoloads "@abs_builddir@/$@" "`pwd`")
-	echo "(custom-add-load 'vm 'vm-cus-load)" | tr -d '\015' >> $@
-	echo "(setq vm-configure-datadir \"${etcdir}\")" | tr -d '\015' >> $@
-	echo "(setq vm-configure-pixmapdir \"${pixmapdir}\")" | tr -d '\015' >> $@
-	echo "(setq vm-configure-docdir \"${docdir}\")" | tr -d '\015' >> $@
-	echo "(setq vm-configure-infodir \"${infodir}\")" | tr -d '\015' >> $@
-	echo "(require 'vm-vars)" | tr -d '\015' >> $@
+		-f vm-built-autoloads "@abs_builddir@/$@.tmp" "`pwd`")
+	echo "(custom-add-load 'vm 'vm-cus-load)" | tr -d '\015' >> $@.tmp
+	echo "(setq vm-configure-datadir \"${etcdir}\")" | tr -d '\015' >> $@.tmp
+	echo "(setq vm-configure-pixmapdir \"${pixmapdir}\")" | tr -d '\015' >> $@.tmp
+	echo "(setq vm-configure-docdir \"${docdir}\")" | tr -d '\015' >> $@.tmp
+	echo "(setq vm-configure-infodir \"${infodir}\")" | tr -d '\015' >> $@.tmp
+	echo "(require 'vm-vars)" | tr -d '\015' >> $@.tmp
 	echo "(provide 'vm-autoloads)" | tr -d '\015' >> $@.tmp
 	mv -f $@.tmp $@
 

@@ -23,7 +23,10 @@ Status
 
 VM 8.3.0 <in progress>
   CHANGES
-  * added vm-version-commit variable and function for the git commit id.
+  * VM development convert from bzr to git and moved to GitLab.
+  * Merged multiple pending changes.
+  * Update to modern e-lisp.
+  * Added vm-version-commit variable and function for the git commit id.
 
 VM 8.2.0b1
 
