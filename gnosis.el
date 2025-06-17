@@ -1298,7 +1298,8 @@ review result."
         (progn
 	  (unless (eq major-mode 'gnosis-mode)
 	    (pop-to-buffer-same-window (get-buffer-create "*gnosis*"))
-            (gnosis-mode))
+            (gnosis-mode)
+	    (gnosis-review-update-header 0))
           (funcall func-name id))
       (error "Malformed note type: '%s'" type))))
 
@@ -1311,8 +1312,8 @@ header.  Returns the incremented NOTE-COUNT after processing.
 This is a helper function for `gnosis-review-session'."
   (let ((success (gnosis-review--display-note note)))
     (cl-incf note-count)
-    (gnosis-review-update-header note-count)
     (gnosis-review-actions success note note-count)
+    (gnosis-review-update-header note-count)
     note-count))
 
 (defun gnosis-review-update-header (note-count)
