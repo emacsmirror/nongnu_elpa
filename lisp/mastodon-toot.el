@@ -251,9 +251,12 @@ send.")
 ;;; REGEXES
 
 (defvar mastodon-toot-handle-regex
-  (rx (| (any ?\( "\n" "\t "" ") bol) ; preceding things
-      (group-n 2 (+ ?@ (* (any ?- ?_ ?. "A-Z" "a-z" "0-9" ))) ; handle
-               (? ?@ (* (not (any "\n" "\t" " "))))) ; optional domain
+  (rx (group-n 2 ; include domain
+        (group-n 4 ; exclude domain
+          (| (any ?\( "\n" "\t" " ") bol) ; preceding things
+          ?@ ; first @
+          (* (any ?- ?_ ?. "A-Z" "a-z" "0-9" ))) ; username
+        (? ?@ (* (not (any "\n" "\t" " "))))) ; optional domain
       (| "'" word-boundary))) ; boundary or possessive
 
 (defvar mastodon-toot-tag-regex
@@ -1884,10 +1887,11 @@ CW is the content warning, which contributes to the character count."
   ;; FIXME: URL chars is avail at /api/v1/instance
   ;; for masto, it's .statuses.characters_reserved_per_url
   (let* ((url-replacement (make-string 23 ?x))
-         (count-str (replace-regexp-in-string ; handle @handles
-                     mastodon-toot-handle-regex "\2"
-                     (replace-regexp-in-string ; handle URLs
-                      mastodon-toot-url-regex url-replacement toot-string))))
+         (count-str
+          (replace-regexp-in-string ; handle @handles
+           mastodon-toot-handle-regex "\\4"
+           (replace-regexp-in-string ; handle URLs
+            mastodon-toot-url-regex url-replacement toot-string))))
     (+ (length cw)
        (length count-str))))
 
