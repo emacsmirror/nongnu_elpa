@@ -1681,8 +1681,20 @@ LINKS: list of strings."
   (cl-assert (gnosis-cloze-check keimenon answer) nil
 	     "Clozes (answer) values are not part of keimenon")
   (if (equal id "NEW")
-      (gnosis-add-note-fields deck-id type keimenon (or hypothesis (list ""))
-			      answer parathema tags suspend links)
+      (progn
+	(if (null answer)
+	    ;; if answer is left null, extract all contents from keimenon.
+	    (let* ((contents (gnosis-cloze-extract-contents keimenon))
+		   (keimenon-new (gnosis-cloze-remove-tags keimenon))
+		   (clozes (gnosis-cloze-extract-answers contents))
+		   (hints (gnosis-cloze-extract-hints contents)))
+	      (cl-loop for cloze in clozes
+		       for hint in hints
+		       do
+		       (gnosis-add-note-fields deck-id type keimenon-new hint cloze parathema
+						  tags suspend links)))
+	  (gnosis-add-note-fields deck-id type keimenon (or hypothesis (list ""))
+				  answer parathema tags suspend links)))
     (gnosis-update-note id keimenon hypothesis answer parathema tags links)))
 
 (defun gnosis-add-note--mc-cloze (id deck-id type keimenon hypothesis
