@@ -57,15 +57,13 @@ note collections but also for specific tagged topics, thereby creating
 a personalized learning environment for each topic.  Read more on
 [[Gnosis Algorithm]]
 
-Before continuing reading this manual, it's recommended you try out
-=gnosis-demo=.
-
 * Adding notes
 Creating notes for gnosis can be done interactively with:
 
     =M-x gnosis-add-note=
 
 Or from within =gnosis-dashboard=
+
 * Note Types
 Each note is a *thema* consisting of the following components:
 
@@ -82,6 +80,7 @@ Optionally, you can use also add tags for each note.
 Notes/themas can have multiple hypotheses and answers (*depending on
 their type*), separated by =gnosis-export-separator=, which defaults to
 ="\n-"= /(a new line followed by a dash)/.
+
 ** Cloze
 :PROPERTIES:
 :CUSTOM_ID: Cloze
@@ -138,6 +137,7 @@ Example format:
 
 #+end_src
 
+
 You can format clozes like Anki if you so prefer with hints; e.g ~{{c1::Cyproheptadine::drug name}}~
    + You can use the keyword =::= to indicate a hint.
 
@@ -150,6 +150,16 @@ You can format clozes like Anki if you so prefer with hints; e.g ~{{c1::Cyprohep
   + If a cloze is repeated, such as in phrases with "acetyl" &
     acetylcholine, include whitespace in the cloze to denote a single
     word.
+
+* Linking gnosis notes to org-gnosis content
+/org-gnosis is the note taking module of gnosis/
+
++ You can create notes using =M-x org-gnosis-find=, to link them to a
+  gnosis thema use =M-x org-gnosis-insert= to insert a link of said
+  topic, either on the keimenon or parathema.
+
++ You can review gnosis questions that are linked to a topic by using
+  =M-x gnosis-review-topic=.
 
 * Customization
 :PROPERTIES:
@@ -173,7 +183,9 @@ difference of at most one character edit.
 To demonstrate, 'example' and 'examples' will be recognized as
 similar, considering that the latter involves just one additional
 character."
+
 * Gnosis Algorithm
+
 
 Each gnosis note has a gnosis score, which is a list of 3 values,
 (gnosis-plus gnosis-minus gnosis-synolon/total).  Gnosis-synolon is
@@ -183,6 +195,7 @@ well, gnosis-minus is subtracted from gnosis-synolon upon failing to
 recall a note's answer.
 
 Gnosis has 2 special events, one is ~anagnosis~ /ανάγνωση/ and ~lethe~ /λήθη/.
+
 ** Anagnosis Event
 ~Anagnosis~, which means comprehension & recognition of knowledge, is
 triggered when the consecutive successful or failed recalls are equal
@@ -255,6 +268,7 @@ To automatically push changes after a review session, add this to your configura
 (gnosis-vc-pull) ;; Run vc-pull for gnosis on startup
 #+end_src
 
+
 * Interactions with other software
 ** emacs-no-littering
 
@@ -266,6 +280,7 @@ its standards by adding the following snippet to your configuration:
 #+end_src
 
 This sets =gnosis-dir= to =~/.emacs.d/var/gnosis=, in line with the folders of other packages.
+
 * Contributing
 
 Thank you for considering contributing back to gnosis.  You can

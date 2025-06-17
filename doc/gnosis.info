@@ -1,0 +1,457 @@
+This is gnosis.info, produced by .texi2any-real version 7.1.1 from
+gnosis.texi.
+
+INFO-DIR-SECTION Emacs misc features
+START-INFO-DIR-ENTRY
+* Gnosis: (gnosis).     Spaced Repetition System.
+END-INFO-DIR-ENTRY
+
+
+File: gnosis.info,  Node: Top,  Next: Introduction,  Up: (dir)
+
+Gnosis User Manual
+******************
+
+Gnosis is a customizable spaced repetition system designed to enhance
+memory retention through active recall.  It allows users to set specific
+review intervals for note decks & tags, creating an optimal learning
+environment tailored to each specific topic/subject.
+
+This manual is written for Gnosis version 0.5.0, released on 2025-06-17.
+
+   • Manual:
+        • <https://elpa.nongnu.org/nongnu/doc/gnosis.html>
+        • <https://thanosapollo.org/projects/gnosis/> (Mirror)
+   • Git repositories:
+        • <https://git.thanosapollo.org/gnosis>
+        • <https://codeberg.org/thanosapollo/emacs-gnosis> (Mirror)
+        • 
+          <https://git.savannah.gnu.org/cgit/emacs/nongnu.git/?h=elpa/gnosis>
+          (Mirror)
+
+* Menu:
+
+* Introduction::
+* Adding notes::
+* Note Types::
+* Linking gnosis notes to org-gnosis content::
+* Customization::
+* Gnosis Algorithm::
+* Editing notes::
+* Sync between devices::
+* Interactions with other software::
+* Contributing::
+
+-- The Detailed Node Listing --
+
+Note Types
+
+* Cloze::
+
+Cloze
+
+* Default cloze format::
+* Using anki-like syntax::
+
+Customization
+
+* Typos | String Comparison::
+
+Gnosis Algorithm
+
+* Anagnosis Event::
+* Proto::
+
+Interactions with other software
+
+* emacs-no-littering::
+
+Contributing
+
+* How to create a patch::
+
+
+
+File: gnosis.info,  Node: Introduction,  Next: Adding notes,  Prev: Top,  Up: Top
+
+1 Introduction
+**************
+
+Gnosis (γνῶσις) is a spaced repetition system that enhances memory
+retention through active recall.  It employs a Q&A format, where each
+note consists of a question, answer, and explanation.  Notes are
+reviewed at optimally spaced intervals based on the user's success or
+failure to recall the answer.  Key benefits arise from writing out
+answers when reviewing notes, fostering deeper understanding and
+improved memory retention.
+
+   Gnosis algorithm is highly adjustable, allowing users to set specific
+values not just for note decks but for tags as well.  Gnosis'
+adjustability allows users to fine-tune settings not only for entire
+note collections but also for specific tagged topics, thereby creating a
+personalized learning environment for each topic.  Read more on *note
+Gnosis Algorithm::
+
+
+File: gnosis.info,  Node: Adding notes,  Next: Note Types,  Prev: Introduction,  Up: Top
+
+2 Adding notes
+**************
+
+Creating notes for gnosis can be done interactively with:
+
+   ‘M-x gnosis-add-note’
+
+   Or from within ‘gnosis-dashboard’
+
+
+File: gnosis.info,  Node: Note Types,  Next: Linking gnosis notes to org-gnosis content,  Prev: Adding notes,  Up: Top
+
+3 Note Types
+************
+
+Each note is a *thema* consisting of the following components:
+
+   • *Keimenon*; The main text or question.
+   • *Hypothesis*; Assumptions/hints for the text to guide to the right
+     answer
+        • For example this is used as hints for cloze type or as choices
+          in MCQs
+   • *Answer*; The correct response or solution to the keimenon.
+   • *Parathema*; expansion of keimenon, that can include links to e.g
+     org-gnosis topics or even files, serving as a way to link
+     org-gnosis topics to current thema.
+
+   Optionally, you can use also add tags for each note.
+
+   Notes/themas can have multiple hypotheses and answers (*depending on
+their type*), separated by ‘gnosis-export-separator’, which defaults to
+‘"\n-"’ _(a new line followed by a dash)_.
+
+* Menu:
+
+* Cloze::
+
+
+File: gnosis.info,  Node: Cloze,  Up: Note Types
+
+3.1 Cloze
+=========
+
+A cloze note type is a format where you create sentences or paragraphs
+with "missing" words.  A fill-in-the-blanks question.
+
+   You can create a cloze note type using ‘M-x gnosis-add-note’ and
+selecting ‘Cloze’.
+
+   Example format:
+
+* Menu:
+
+* Default cloze format::
+* Using anki-like syntax::
+
+
+File: gnosis.info,  Node: Default cloze format,  Next: Using anki-like syntax,  Up: Cloze
+
+3.1.1 Default cloze format
+--------------------------
+
+     * Thema                      :pharmacology:antimicrobials:penicillin:
+     :PROPERTIES:
+     :GNOSIS_ID: NEW
+     :GNOSIS_TYPE: cloze
+     :END:
+     ** Keimenon
+     What is the treatment for Actinomyces infection?
+
+     Penicillin
+
+     ** Hypothesis
+     - drug type
+
+     ** Answer
+     - Penicillin
+
+     ** Parathema
+     Sulfonamides → Nocardia
+     Actinomyces → [[id:680ca944-8ee9-4513-92d6-25696ee01f48][Penicillin]]
+     (treatment is a SNAP)
+
+
+File: gnosis.info,  Node: Using anki-like syntax,  Prev: Default cloze format,  Up: Cloze
+
+3.1.2 Using anki-like syntax
+----------------------------
+
+     * Thema                      :pharmacology:antimicrobials:penicillin:
+     :PROPERTIES:
+     :GNOSIS_ID: NEW
+     :GNOSIS_TYPE: cloze
+     :END:
+     ** Keimenon
+     {c1:Cyproheptadine::drug name} is a(n) {c2:5-HT2} receptor antagonist used to treat {c2:serotonin syndrome}
+
+     ** Hypothesis
+     -
+
+     ** Answer
+     -
+
+     ** Parathema
+
+
+   You can format clozes like Anki if you so prefer with hints; e.g
+‘{{c1::Cyproheptadine::drug name}}’
+   • You can use the keyword ‘::’ to indicate a hint.
+
+   • For each cX-tag there will be created a cloze type note, the above
+     example creates 2 cloze type notes.
+
+   • Each cX tag can have multiple clozes, but each cloze must be a
+     *UNIQUE* word, or a unique combination of words, in given note.
+
+        • If a cloze is repeated, such as in phrases with "acetyl" &
+          acetylcholine, include whitespace in the cloze to denote a
+          single word.
+
+
+File: gnosis.info,  Node: Linking gnosis notes to org-gnosis content,  Next: Customization,  Prev: Note Types,  Up: Top
+
+4 Linking gnosis notes to org-gnosis content
+********************************************
+
+_org-gnosis is the note taking module of gnosis_
+
+   • You can create notes using ‘M-x org-gnosis-find’, to link them to a
+     gnosis thema use ‘M-x org-gnosis-insert’ to insert a link of said
+     topic, either on the keimenon or parathema.
+
+   • You can review gnosis questions that are linked to a topic by using
+     ‘M-x gnosis-review-topic’.
+
+
+File: gnosis.info,  Node: Customization,  Next: Gnosis Algorithm,  Prev: Linking gnosis notes to org-gnosis content,  Up: Top
+
+5 Customization
+***************
+
+* Menu:
+
+* Typos | String Comparison::
+
+
+File: gnosis.info,  Node: Typos | String Comparison,  Up: Customization
+
+5.1 Typos | String Comparison
+=============================
+
+You can adjust ‘gnosis-string-difference’, this is a threshold value for
+string comparison that determines the maximum acceptable Levenshtein
+distance between two strings, which identifies their similarity
+
+   Let's illustrate with an example:
+     (setf gnosis-string-difference 1)
+
+   In this scenario, we set ‘gnosis-string-difference’ to 1.  This
+implies that two strings will be recognized as similar if they exhibit a
+difference of at most one character edit.
+
+   To demonstrate, 'example' and 'examples' will be recognized as
+similar, considering that the latter involves just one additional
+character."
+
+
+File: gnosis.info,  Node: Gnosis Algorithm,  Next: Editing notes,  Prev: Customization,  Up: Top
+
+6 Gnosis Algorithm
+******************
+
+Each gnosis note has a gnosis score, which is a list of 3 values,
+(gnosis-plus gnosis-minus gnosis-synolon/total).  Gnosis-synolon is what
+is used to determine the next interval upon a successful recall,
+gnosis-plus is added to gnosis-synolon upon a successful recall as well,
+gnosis-minus is subtracted from gnosis-synolon upon failing to recall a
+note's answer.
+
+   Gnosis has 2 special events, one is ‘anagnosis’ _ανάγνωση_ and
+‘lethe’ _λήθη_.
+
+* Menu:
+
+* Anagnosis Event::
+* Proto::
+
+
+File: gnosis.info,  Node: Anagnosis Event,  Next: Proto,  Up: Gnosis Algorithm
+
+6.1 Anagnosis Event
+===================
+
+‘Anagnosis’, which means comprehension & recognition of knowledge, is
+triggered when the consecutive successful or failed recalls are equal or
+greater to anagnosis value.
+
+   When ‘anagnosis’ is triggered by consecutive *successful* recalls,
+‘epignosis’ value is added to gnosis-plus.  _Epignosis means accuracy of
+knowledge_.
+
+   When ‘anagnosis’ is triggered by consecutive *failed* recalls,
+‘agnoia’ value is added to gnosis-minus.  _Agnoia means lack of
+knowledge_
+
+   You can set specific values for each deck and tag of the variables
+mentioned above by adjusting ‘gnosis-custom-values’.
+
+
+File: gnosis.info,  Node: Proto,  Prev: Anagnosis Event,  Up: Gnosis Algorithm
+
+6.2 Proto
+=========
+
+The default initial interval is defined at ‘gnosis-algorithm-proto’, you
+can define a custom initial interval for each deck as well.
+
+   ‘gnosis-algorithm-interval’ is a list of numbers, representing the
+first initial intervals for successful reviews.  There is no limit on
+the length of the list.
+
+   Example:
+
+     (setq gnosis-algorithm-interval '(0 1 2 30))
+
+   Upon each successful note review, the algorithm will increment to the
+next interval value: 0 days (0), 1 day later (1), 2 days later (2), and
+30 days later.
+
+   Upon failing to review a note without completing it's proto
+successful reviews, it's next review date will be on the same date.
+
+
+File: gnosis.info,  Node: Editing notes,  Next: Sync between devices,  Prev: Gnosis Algorithm,  Up: Top
+
+7 Editing notes
+***************
+
+   • Currently there are 2 ways for editing notes:
+
+        • You can edit a note after review by pressing ‘e’
+        • Open ‘gnosis-dashboard’ with ‘M-x gnosis-dashboard’, find the
+          note you want to edit and press ‘e’
+
+
+File: gnosis.info,  Node: Sync between devices,  Next: Interactions with other software,  Prev: Editing notes,  Up: Top
+
+8 Sync between devices
+**********************
+
+Gnosis uses git to maintain data integrity and facilitate
+synchronization across devices.
+
+   You will need to configure your remote manually.
+
+   Example:
+
+     cd ~/.emacs.d/gnosis # default location for gnosis, no-littering is ~/.emacs.d/var/gnosis
+     git init # After completing your first review session, a git repo should have been initialized automatically.
+     git remote add origin <remote_url>
+     git push --set-upstream origin master
+
+   You can interactively use ‘gnosis-vc-push’ & ‘gnosis-vc-pull’.  As
+the name suggests, they rely on ‘vc’ to work properly.
+
+   Depending on your setup, ‘vc’ might require an external package for
+the ssh passphrase dialog, such as ‘x11-ssh-askpass’.
+
+   To automatically push changes after a review session, add this to
+your configuration:
+     (setf gnosis-vc-auto-push t)
+     (gnosis-vc-pull) ;; Run vc-pull for gnosis on startup
+
+
+File: gnosis.info,  Node: Interactions with other software,  Next: Contributing,  Prev: Sync between devices,  Up: Top
+
+9 Interactions with other software
+**********************************
+
+* Menu:
+
+* emacs-no-littering::
+
+
+File: gnosis.info,  Node: emacs-no-littering,  Up: Interactions with other software
+
+9.1 emacs-no-littering
+======================
+
+If you are a user of emacs-no-littering
+(https://github.com/emacscollective/no-littering), you can theme Gnosis
+to fit its standards by adding the following snippet to your
+configuration:
+
+     (setq gnosis-dir (no-littering-expand-var-file-name "gnosis/"))
+
+   This sets ‘gnosis-dir’ to ‘~/.emacs.d/var/gnosis’, in line with the
+folders of other packages.
+
+
+File: gnosis.info,  Node: Contributing,  Prev: Interactions with other software,  Up: Top
+
+10 Contributing
+***************
+
+Thank you for considering contributing back to gnosis.  You can
+contribute by submitting a pull request on the codeberg mirror
+repository, or directly sending me patch via email.
+
+* Menu:
+
+* How to create a patch::
+
+
+File: gnosis.info,  Node: How to create a patch,  Up: Contributing
+
+10.1 How to create a patch
+==========================
+
+_Example:_
+
+     $ git clone https://git.thanosapollo.com/gnosis.git && cd gnosis
+     $ emacs something
+     $ git add something
+     $ git commit -m "Fix something"
+     $ git format-patch HEAD^1
+     0001-Fix-something.patch
+
+   You can sent the patch to "Thanos Apollo", the email of which you can
+find on the git log.
+
+
+
+Tag Table:
+Node: Top209
+Node: Introduction1604
+Node: Adding notes2526
+Node: Note Types2780
+Node: Cloze3736
+Node: Default cloze format4113
+Node: Using anki-like syntax4725
+Node: Linking gnosis notes to org-gnosis content5817
+Node: Customization6397
+Node: Typos | String Comparison6599
+Node: Gnosis Algorithm7355
+Node: Anagnosis Event8002
+Node: Proto8743
+Node: Editing notes9510
+Node: Sync between devices9902
+Node: Interactions with other software10978
+Node: emacs-no-littering11204
+Node: Contributing11704
+Node: How to create a patch12046
+
+End Tag Table
+
+
+Local Variables:
+coding: utf-8
+End:
