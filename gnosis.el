@@ -1483,7 +1483,7 @@ To customize the keybindings, adjust `gnosis-review-keybindings'."
       (message "No notes for node id: %s" node-id))))
 
 (defun gnosis-add-note-fields (deck-id type keimenon hypothesis answer
-					parathema tags suspend links)
+					parathema tags suspend links &optional review-image)
   "Insert fields for new note.
 
 DECK-ID: Deck ID for new note.
@@ -1505,7 +1505,8 @@ LINKS: List of id links."
   (cl-assert (stringp parathema) nil "Parathema must be a string")
   (cl-assert (listp tags) nil "Tags must be a list")
   (cl-assert (listp links) nil "Links must be a list")
-  (let* ((note-id (gnosis-generate-id)))
+  (let* ((note-id (gnosis-generate-id))
+	 (review-image (or review-image "")))
     (emacsql-with-transaction gnosis-db
       ;; Refer to `gnosis-db-schema-SCHEMA' e.g `gnosis-db-schema-review-log'
       (gnosis--insert-into 'notes `([,note-id ,(downcase type) ,keimenon ,hypothesis
@@ -1515,7 +1516,7 @@ LINKS: List of id links."
       (gnosis--insert-into 'review-log `([,note-id ,(gnosis-algorithm-date)
 						   ,(gnosis-algorithm-date) 0 0 0 0
 						   ,suspend 0]))
-      (gnosis--insert-into 'extras `([,note-id ,parathema]))
+      (gnosis--insert-into 'extras `([,note-id ,parathema ,review-image]))
       (cl-loop for link in links
 	       do (gnosis--insert-into 'links `([,note-id ,link]))))))
 
