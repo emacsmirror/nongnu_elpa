@@ -6,7 +6,7 @@ EMACS = emacs
 ORG := doc/gnosis.org
 TEXI := doc/gnosis.texi
 INFO := doc/gnosis.info
-TEST_FILE := gnosis-test.el
+TEST_FILE := tests/gnosis-test-auto.el
 
 all: doc
 
@@ -17,11 +17,14 @@ doc:	$(ORG)
 	--eval "(with-current-buffer (find-file \"$(ORG)\") (org-texinfo-export-to-texinfo) (org-texinfo-export-to-info) (save-buffer))" \
 	--kill
 
-test:	
+
+test:
+	rm -f *.elc
 	$(EMACS) --batch \
 	-q \
+	--eval "(add-to-list 'load-path \"$(shell pwd)\")" \
 	--load $(TEST_FILE) \
 	--eval "(ert-run-tests-batch-and-exit)"
 
 clean:
-	rm -f $(TEXI) $(INFO)
+	rm -f $(TEXI) $(INFO) *.elc *-pkg.el*

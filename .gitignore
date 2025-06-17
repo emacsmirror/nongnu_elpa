@@ -1,2 +1,5 @@
 research
 *.elc
+
+/gnosis-autoloads.el
+/gnosis-pkg.el

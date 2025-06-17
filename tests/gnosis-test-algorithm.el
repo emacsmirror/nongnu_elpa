@@ -1,4 +1,4 @@
-;;; gnosis-algorithm.el --- Gnosis testing module  -*- lexical-binding: t; -*-
+;;; gnosis-test-algorithm.el --- Gnosis Algorithm tests  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2023  Thanos Apollo
 
@@ -24,122 +24,19 @@
 
 ;;; Commentary:
 
-;; Development module for gnosis, make testing of gnosis
-;; easier by creating a testing environment with random inputs.
+;; Testing module for gnosis algorithm functions.
+
+;; Before making any push on master we should be passing the following
+;; tests.
 
 ;;; Code:
-(add-to-list 'load-path ".")
-
-
 (require 'ert)
 (require 'gnosis)
 
-(defvar gnosis-test-tags '("anatomy" "thoracic" "serratus-anterior"
-			  "biochemistry" "informatics" "amino-acids"
-			  "microbiology" "gram-positive" "gram-negative"
-			  "fungi" "parasites"))
-
-(defvar gnosis-test-image "anatomy/typic-vertebra-superior-01.png"
-  "Random image for testing")
-
-(defun gnosis-test-random-items (list x)
-  "Select X random items from LIST."
-  (let ((shuffled-list (copy-sequence list))
-        selected-items)
-    (dotimes (_ x)
-      (let* ((index (random (length shuffled-list)))
-             (item (nth index shuffled-list)))
-        (setq selected-items (cons item selected-items))
-        (setq shuffled-list (append (butlast shuffled-list index) (nthcdr (1+ index) shuffled-list)))))
-    selected-items))
-
-(defun gnosis-test-add-fields (&optional num deck)
-  "Add random inputs to test.
-
-NUM: Number of random inputs to add.
-DECK: Deck to add the inputs to."
-  (let ((num (or num (string-to-number (read-string "Number of random inputs: "))))
-	(testing-deck (or deck "testing")))
-    (unless (gnosis-get 'name 'decks `(= name ,testing-deck))
-      (gnosis-add-deck testing-deck))
-    (when (y-or-n-p "Add MCQ type?")
-      (emacsql-with-transaction gnosis-db
-	(dotimes (_ num)
-	  (gnosis-add-note--mcq :deck testing-deck
-				:question "A *37-year-old* man is admitted to the
-emergency department after a severe car crash. /After/ examining the
-patient the emergency medicine physician concludes *that* the serratus
-anterior muscle is damaged. ~Which~ of the following nerves innervates
-the =serratus anterior muscle=?"
-				:choices '("Long thoracic" "Axillary" "Spinal accessory" "Dorsal scapular" "Thoracodorsal")
-				:correct-answer 1
-				:extra "The long thoracic is the only nerve that
-innervates the serratus anterior. The axillary nerve innervates the
-deltoid, the spinal accessory nerve innervates the sternocleidomastoid
-and trapezius, the dorsal scapular nerve supplies the rhomboid muscles
-and levator scapulae, and the latissimus dorsi is the muscle supplied
-by the thoracodorsal nerve."
-				:images (cons gnosis-test-image gnosis-test-image)
-				:tags (gnosis-test-random-items gnosis-test-tags 2))))
-      (when (y-or-n-p "Add Basic type questions?")
-	(dotimes (_ num)
-	  (gnosis-add-note--basic :deck testing-deck
-				  :question "A question"
-				  :hint "hint"
-				  :answer "answer"
-				  :extra "extra"
-				  :images (cons gnosis-test-image gnosis-test-image)
-				  :tags (gnosis-test-random-items gnosis-test-tags 2))))
-      (when (y-or-n-p "Add single Cloze type?")
-	(dotimes (_ num)
-	  ;; TODO: Update tests for include hints.
-	  (gnosis-add-note--cloze :deck testing-deck
-				  :note "this is a {c1:note}"
-				  :tags (gnosis-test-random-items gnosis-test-tags 2)
-				  :images (cons gnosis-test-image gnosis-test-image)
-				  :extra "extra")))
-      (when (y-or-n-p "Add multimple Clozes note?")
-	(dotimes (_ num)
-	  (gnosis-add-note--cloze :deck testing-deck
-				  :note "this is a {c1:note}, a note with multiple {c1:clozes::what}"
-				  :tags (gnosis-test-random-items gnosis-test-tags 2)
-				  :images (cons gnosis-test-image gnosis-test-image)
-				  :extra "extra")))
-      (when (y-or-n-p "Add y-or-n note type?")
-	(dotimes (_ num)
-	  (gnosis-add-note--y-or-n :deck testing-deck
-				   :question "Is Codeine recommended in breastfeeding mothers?"
-				   :hint "hint"
-				   :answer 110
-				   :extra "extra"
-				   :images (cons gnosis-test-image gnosis-test-image)
-				   :tags (gnosis-test-random-items gnosis-test-tags 2)))))))
-
-(defun gnosis-test-start (&optional note-num)
-  "Begin/End testing env.
-
-If ask nil, leave testing env"
-  (interactive)
-  (let* ((ask (y-or-n-p "Start development env (n for exit)?"))
-	 (testing-dir (expand-file-name "testing" gnosis-dir))
-	 (testing-db (expand-file-name "testing.db" testing-dir)))
-    (if ask
-	(progn
-	  (unless (file-exists-p testing-dir)
-	    (make-directory testing-dir))
-	  (setf gnosis-db (emacsql-sqlite-open testing-db))
-	  (dolist (table '(decks notes review review-log extras activity-log))
-	    (condition-case nil
-		(gnosis--drop-table table)
-	      (error (message "No %s table to drop." table))))
-	  (setf gnosis-testing t)
-	  (gnosis-db-init)
-	  (gnosis-test-add-fields note-num)
-	  (message "Adding testing values...")
-	  (message "Development env is ready for testing."))
-      (setf gnosis-db (emacsql-sqlite-open (expand-file-name "gnosis.db" gnosis-dir)))
-      (setf gnosis-testing nil)
-      (message "Exited development env."))))
+(let ((parent-dir (file-name-directory
+                   (directory-file-name
+                    (file-name-directory (or load-file-name default-directory))))))
+  (add-to-list 'load-path parent-dir))
 
 (ert-deftest gnosis-test-algorithm-next-interval-proto ()
   "Test next interval for proto values."
@@ -506,6 +403,3 @@ If ask nil, leave testing env"
 
 
 (ert-run-tests-batch-and-exit)
-
-(provide 'gnosis-test)
-;;; gnosis-test.el ends here

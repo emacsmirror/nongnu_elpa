@@ -181,7 +181,7 @@ SUCCESS: non-nil when review was successful.
 
 SUCCESSFUL-REVIEWS: Number of successful reviews.
 
-AMNESIA: 'Forget value', used to calculate next interval upon failed
+AMNESIA: \"Forget\" value, used to calculate next interval upon failed
 review.
 
 PROTO: List of proto intervals, for successful reviews.

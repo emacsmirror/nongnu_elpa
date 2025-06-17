@@ -4,8 +4,8 @@
 #+language: en
 #+options: ':t toc:nil author:t email:t num:t
 #+startup: content
-#+macro: stable-version 0.4.4
-#+macro: release-date 2024-10-06
+#+macro: stable-version 0.5.0
+#+macro: release-date 2025-06-17
 #+macro: file @@texinfo:@file{@@$1@@texinfo:}@@
 #+macro: space @@texinfo:@: @@
 #+macro: kbd @@texinfo:@kbd{@@$1@@texinfo:}@@
@@ -15,14 +15,14 @@
 #+texinfo_filename: gnosis.info
 #+texinfo_dir_category: Emacs misc features
 #+texinfo_dir_title: Gnosis: (gnosis) 
-#+texinfo_dir_desc: Spaced Repetition Note Taking System 
+#+texinfo_dir_desc: Spaced Repetition System
 #+texinfo_header: @set MAINTAINERSITE @uref{https://thanosapollo.org,maintainer webpage}
 #+texinfo_header: @set MAINTAINER Thanos Apollo
 #+texinfo_header: @set MAINTAINEREMAIL @email{public@thanosapollo.org}
 #+texinfo_header: @set MAINTAINERCONTACT @uref{mailto:public@thanosapollo.org,contact the maintainer}
 
 
-Gnosis (GNU-sis) is a customizable spaced repetition system designed to enhance
+Gnosis is a customizable spaced repetition system designed to enhance
 memory retention through active recall.  It allows users to set
 specific review intervals for note decks & tags, creating an optimal
 learning environment tailored to each specific topic/subject.
@@ -66,11 +66,22 @@ Creating notes for gnosis can be done interactively with:
     =M-x gnosis-add-note=
 
 Or from within =gnosis-dashboard=
-
-When it comes to adding images, you can select images that are inside
-=gnosis-images-dir=.  For adjusting image size, refer to [[#Customization][Customization]]
-
 * Note Types
+Each note is a *thema* consisting of the following components:
+
+- *Keimenon*; The main text or question.
+- *Hypothesis*; Assumptions/hints for the text to guide to the right answer
+   - For example this is used as hints for cloze type or as choices in MCQs
+- *Answer*; The correct response or solution to the keimenon.
+- *Parathema*; expansion of keimenon, that can include links to e.g
+  org-gnosis topics or even files, serving as a way to link org-gnosis
+  topics to current thema.
+
+Optionally, you can use also add tags for each note.
+
+Notes/themas can have multiple hypotheses and answers (*depending on
+their type*), separated by =gnosis-export-separator=, which defaults to
+="\n-"= /(a new line followed by a dash)/.
 ** Cloze
 :PROPERTIES:
 :CUSTOM_ID: Cloze
@@ -79,13 +90,56 @@ A cloze note type is a format where you create sentences or paragraphs
 with "missing" words.  A fill-in-the-blanks question.  
 
 You can create a cloze note type using =M-x gnosis-add-note= and
-selecting ~Cloze~, the question should be formatted like this:
+selecting ~Cloze~.
 
-#+BEGIN_QUOTE
-{c1:Cyproheptadine::drug name} is a(n) {c2:5-HT2} receptor antagonist used to treat {c2:serotonin syndrome}
-#+END_QUOTE
+Example format:
 
-You can also format clozes like Anki if you so prefer; e.g ~{{c1::Cyproheptadine::drug name}}~
+*** Default cloze format
+#+begin_src org
+  ,* Thema                      :pharmacology:antimicrobials:penicillin:
+  :PROPERTIES:
+  :GNOSIS_ID: NEW
+  :GNOSIS_TYPE: cloze
+  :END:
+  ,** Keimenon 
+  What is the treatment for Actinomyces infection?
+
+  Penicillin
+
+  ,** Hypothesis 
+  - drug type
+
+  ,** Answer 
+  - Penicillin
+
+  ,** Parathema 
+  Sulfonamides → Nocardia
+  Actinomyces → [[id:680ca944-8ee9-4513-92d6-25696ee01f48][Penicillin]] 
+  (treatment is a SNAP)
+#+end_src
+
+*** Using anki-like syntax
+#+begin_src org
+  ,* Thema                      :pharmacology:antimicrobials:penicillin:
+  :PROPERTIES:
+  :GNOSIS_ID: NEW
+  :GNOSIS_TYPE: cloze
+  :END:
+  ,** Keimenon 
+  {c1:Cyproheptadine::drug name} is a(n) {c2:5-HT2} receptor antagonist used to treat {c2:serotonin syndrome}
+
+  ,** Hypothesis 
+  - 
+
+  ,** Answer 
+  - 
+
+  ,** Parathema 
+
+#+end_src
+
+You can format clozes like Anki if you so prefer with hints; e.g ~{{c1::Cyproheptadine::drug name}}~
+   + You can use the keyword =::= to indicate a hint.
 
 + For each cX-tag there will be created a cloze type note, the above
   example creates 2 cloze type notes.
@@ -97,79 +151,10 @@ You can also format clozes like Anki if you so prefer; e.g ~{{c1::Cyproheptadine
     acetylcholine, include whitespace in the cloze to denote a single
     word.
 
-+ You can use the keyword =::= to indicate a hint.
-
-You can remove the /guidance/ string by adjusting
-=gnosis-cloze-guidance=.
-
-** MC-Cloze (Under development)
-
-MC-Cloze is disabled by default, to enable it add to your configuration:
-
-    =(add-to-list 'gnosis-note-types "MC-Cloze")=
-
-A MC-Cloze (/Multiple Choice Cloze/) is a fill-in-the-blank note,
-but unlike [[#Cloze][cloze note type]] the user is prompted to select an option
-instead of typing an answer.
-
-You can create multiple notes from one input, but each note can only
-have *one* cloze. The first option will always be the right answer
-(will be randomized in the database), separated by the rest of the
-answer by =gnosis-mc-cloze-separator= (default value is "&&"), and a
-note will be generated from each cloze.
-
-Example:
-#+BEGIN_QUOTE
-    The greatest text editor is Emacs&&Vim&&Helix
-#+END_QUOTE
-
-When customizing =gnosis-mc-cloze=separator= pay attention to not use
-values that would mess up with regex functions.
-** MCQ
-
-A MCQ note type, as the name suggests, is a multiple choice question.
-
-The stem field (question) is separated by the options (choices) via
-=gnosis-mcq-separator=, each option is separated by =gnosis-mcq-option-separator=.
-
-You can remove the /guidance/ string by adjusting
-=gnosis-mcq-guidance=.
-
-** Basic Type
-
-Basic note type is a simple question/answer note, where the user first
-sees a "main" part, which is usually a question, and he is prompted to
-input the answer. 
-
-** Double
-Double note type, is essentially a note that generates 2 basic notes.
-The second one reverses question/answer.
-
-Ideal for vocabulary acquisition notes.
-
-** y-or-n
-y-or-n (yes or no) note type, user is presented with a question and
-prompted to enter character "y" or "n".
-
-When using the hidden function =gnosis-add-note--y-or-n=, note that the
-ANSWER must be either 121 (~y~) or 110 (~n~), as those correspond to the
-character values used to represent them.
-
 * Customization
 :PROPERTIES:
 :CUSTOM_ID: Customization
 :END:
-** Image size
-:PROPERTIES:
-:CUSTOM_ID: image-size
-:END:
-Adjust image size using =gnosis-image-height= & =gnosis-image-width=
-
-Example:
-#+begin_src emacs-lisp
-(setf gnosis-image-height 300
-      gnosis-image-width 300)
-#+end_src
 ** Typos | String Comparison
 You can adjust =gnosis-string-difference=, this is a threshold value
 for string comparison that determines the maximum acceptable
@@ -240,39 +225,6 @@ it's next review date will be on the same date.
 
     + You can edit a note after review by pressing ~e~
     + Open =gnosis-dashboard= with =M-x gnosis-dashboard=, find the note you want to edit and press ~e~
-* Configuring Note Types
-** Custom Note Types
-Each gnosis note type has an /interactive/ function, named
-=gnosis-add-note-TYPE= and a "hidden" function
-named =gnosis-add-note--TYPE=.  You can create your own custom interactive
-functions to ignore or hard-code specific values by using already
-defined hidden functions that handle all the logic.
-
-For example:
-
-#+begin_src emacs-lisp
-  (defun gnosis-add-note-custombasic (deck)
-    (gnosis-add-note--basic :deck deck
-  			  :question (gnosis-read-string-from-buffer "Question: " "")
-  			  :answer (read-string "Answer: ")
-  			  :hint (gnosis-hint-prompt gnosis-previous-note-hint)
-  			  :extra ""
-  			  :images nil
-  			  :tags (gnosis-prompt-tags--split gnosis-previous-note-tags)))
-  ;; Add custom note type to gnosis-note-types
-  (add-to-list 'gnosis-note-types "custombasic")
-#+end_src
-
-Now ~custombasic~ is available as a note type, for which you won't be prompted to enter
-anything for ~extra~ & ~images~.
-
-** Development
-To make development and customization easier, gnosis comes with
-=gnosis-test= module, that should be used to create a custom database for
-testing.
-
-To exit the testing environment, rerun =M-x gnosis-test-start= and
-then enter =n= (no) at the prompt "Start development env?"
 
 * Sync between devices
 
