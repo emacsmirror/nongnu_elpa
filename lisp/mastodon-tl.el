@@ -647,11 +647,11 @@ is extracted from it."
   (let ((data (or (alist-get 'account toot)
                   toot))) ;; grouped nofifs use account data directly
     (let-alist data
-      (let ((disp (mastodon-tl--unicode-wrap .display_name)))
-        (propertize (if (and .display_name
-                             (not (string-empty-p disp)))
-                        disp
-                      .username)
+      (let ((disp (if (and .display_name
+                           (not (string-empty-p .display_name)))
+                      (mastodon-tl--unicode-wrap .display_name)
+                    .username)))
+        (propertize disp
                     'face 'mastodon-display-name-face
                     ;; enable playing of videos when point is on byline:
                     ;; 'attachments (mastodon-tl--get-attachments-for-byline toot)
