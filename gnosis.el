@@ -1319,9 +1319,10 @@ NOTE-COUNT: Number of notes reviewed for current session."
   (with-current-buffer (get-buffer-create "*gnosis*")
     (setq-local header-line-format
                 (gnosis-center-string
-		 (format "Reviewed: %s | Due: %s"
+		 (format "%s %s %s"
                          (propertize (number-to-string note-count)
                                      'face 'font-lock-type-face)
+			 (propertize "|" 'face 'font-lock-comment-face)
                          (propertize (number-to-string gnosis-due-notes-total)
                                      'face 'gnosis-face-false))))))
 
