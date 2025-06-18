@@ -1162,7 +1162,7 @@ SUCCESS is a boolean value, t for success, nil for failure."
 	 (user-choice (gnosis-mcq-answer id))
 	 (success (string= answer user-choice)))
     (gnosis-display-correct-answer-mcq answer user-choice)
-    (gnosis-display-parathema (gnosis-get 'parathema 'extras '(= id ,id)))
+    (gnosis-display-parathema (gnosis-get 'parathema 'extras `(= id ,id)))
     (gnosis-display-next-review id success)
     success))
 
