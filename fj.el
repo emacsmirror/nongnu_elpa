@@ -1401,6 +1401,14 @@ Timeline contains comments and events of any type."
          (params (fedi-opt-params page limit)))
     (fj-get endpoint params)))
 
+(defun fj-issue-timeline-more-p ()
+  "Check for more timeline data for the current item.
+Increments the current page argument and checks for 2 more items.
+Return nil if there is no more data."
+  (cl-destructuring-bind (&key repo owner number _type page limit)
+      (fj--get-buffer-spec :viewargs)
+    (fj-issue-get-timeline repo owner number (fj--inc-str page) "2")))
+
 (defun fj-issue-get-timeline-async (repo owner issue
                                          &optional page limit cb
                                          &rest cbargs)
@@ -2537,7 +2545,21 @@ If INIT-PAGE, do not update :page in viewargs."
               (fj-render-timeline json))
             (message "Loading comments... Done")
             (when end-page ;; if we are re-paginating, go again maybe:
-              (fj-reload-paginated-pages-maybe end-page page))))))))
+              (fj-reload-paginated-pages-maybe end-page page))
+            ;; maybe add a "more" link:
+            (fj-issue-timeline-more-btn)))))))
+
+(defun fj-issue-timeline-more-btn ()
+  "Maybe render a more button at end of buffer.
+Do so if there are items beyond the current page."
+  (when (fj-issue-timeline-more-p)
+    (save-excursion
+      (let ((inhibit-read-only t))
+        (goto-char (point-max))
+        ;; FIXME: make this a (tabstopped?) link
+        ;; FIXME: remove this on adding more!
+        (insert "Load more")
+        (message "more")))))
 
 (defun fj-reload-paginated-pages-maybe (end-page page)
   "Call `fj-reload-paginated-pages' maybe.
