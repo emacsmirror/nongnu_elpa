@@ -47,6 +47,7 @@ This manual is written for Gnosis version 0.5.0, released on 2025-06-17.
 Note Types
 
 * Cloze::
+* MCQ::
 
 Cloze
 
@@ -131,9 +132,10 @@ their type*), separated by ‘gnosis-export-separator’, which defaults to
 * Menu:
 
 * Cloze::
+* MCQ::
 
 
-File: gnosis.info,  Node: Cloze,  Up: Note Types
+File: gnosis.info,  Node: Cloze,  Next: MCQ,  Up: Note Types
 
 3.1 Cloze
 =========
@@ -214,6 +216,43 @@ File: gnosis.info,  Node: Using anki-like syntax,  Prev: Default cloze format,  
         • If a cloze is repeated, such as in phrases with "acetyl" &
           acetylcholine, include whitespace in the cloze to denote a
           single word.
+
+
+File: gnosis.info,  Node: MCQ,  Prev: Cloze,  Up: Note Types
+
+3.2 MCQ
+=======
+
+Example format:
+
+     * Thema                                                            :clinical:
+     :PROPERTIES:
+     :GNOSIS_ID: NEW
+     :GNOSIS_TYPE: mcq
+     :END:
+     ** Keimenon
+     A 60-year-old man comes to the physician with chills, nausea, and
+     diffuse muscle aches for 3 days. His niece had similar symptoms 2
+     weeks ago and H3N2 influenza strain was isolated from her respiratory
+     secretions. He received his influenza vaccination 2 months ago. His
+     temperature is 38.5°C. A rapid influenza test is
+     positive. Which of the following mechanisms best explains this
+     patient's infection despite vaccination?
+
+     ** Hypothesis
+     - Random point mutations within viral genome
+     - Complementing with functional viral proteins
+     - Exchange of viral genes between chromosomes
+     - Reassortment of viral RNA segments
+     - Acquisition of viral surface proteins
+
+     ** Answer
+     - Random point mutations within viral genome
+
+     ** Parathema
+     Random point mutations within the viral genome are responsible for
+     antigenic drift, which creates a new virus strain.
+
 
 
 File: gnosis.info,  Node: Linking gnosis notes to org-gnosis content,  Next: Customization,  Prev: Note Types,  Up: Top
@@ -430,24 +469,25 @@ find on the git log.
 
 Tag Table:
 Node: Top209
-Node: Introduction1604
-Node: Adding notes2526
-Node: Note Types2780
-Node: Cloze3736
-Node: Default cloze format4113
-Node: Using anki-like syntax4725
-Node: Linking gnosis notes to org-gnosis content5817
-Node: Customization6397
-Node: Typos | String Comparison6599
-Node: Gnosis Algorithm7355
-Node: Anagnosis Event8002
-Node: Proto8743
-Node: Editing notes9510
-Node: Sync between devices9902
-Node: Interactions with other software10978
-Node: emacs-no-littering11204
-Node: Contributing11704
-Node: How to create a patch12046
+Node: Introduction1612
+Node: Adding notes2534
+Node: Note Types2788
+Node: Cloze3752
+Node: Default cloze format4141
+Node: Using anki-like syntax4753
+Node: MCQ5845
+Node: Linking gnosis notes to org-gnosis content7050
+Node: Customization7630
+Node: Typos | String Comparison7832
+Node: Gnosis Algorithm8588
+Node: Anagnosis Event9235
+Node: Proto9976
+Node: Editing notes10743
+Node: Sync between devices11135
+Node: Interactions with other software12211
+Node: emacs-no-littering12437
+Node: Contributing12937
+Node: How to create a patch13279
 
 End Tag Table
 

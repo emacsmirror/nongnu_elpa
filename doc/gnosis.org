@@ -151,6 +151,43 @@ You can format clozes like Anki if you so prefer with hints; e.g ~{{c1::Cyprohep
     acetylcholine, include whitespace in the cloze to denote a single
     word.
 
+** MCQ
+:PROPERTIES:
+:CUSTOM_ID: MCQ
+:END:
+Example format:
+#+begin_src org
+
+  ,* Thema                                                            :clinical:
+  :PROPERTIES:
+  :GNOSIS_ID: NEW
+  :GNOSIS_TYPE: mcq
+  :END:
+  ,** Keimenon
+  A 60-year-old man comes to the physician with chills, nausea, and
+  diffuse muscle aches for 3 days. His niece had similar symptoms 2
+  weeks ago and H3N2 influenza strain was isolated from her respiratory
+  secretions. He received his influenza vaccination 2 months ago. His
+  temperature is 38.5°C. A rapid influenza test is
+  positive. Which of the following mechanisms best explains this
+  patient's infection despite vaccination?
+
+  ,** Hypothesis
+  - Random point mutations within viral genome
+  - Complementing with functional viral proteins
+  - Exchange of viral genes between chromosomes
+  - Reassortment of viral RNA segments
+  - Acquisition of viral surface proteins
+
+  ,** Answer
+  - Random point mutations within viral genome
+
+  ,** Parathema
+  Random point mutations within the viral genome are responsible for
+  antigenic drift, which creates a new virus strain.
+
+#+end_src
+
 * Linking gnosis notes to org-gnosis content
 /org-gnosis is the note taking module of gnosis/
 
