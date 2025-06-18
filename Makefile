@@ -6,7 +6,7 @@ EMACS = emacs
 ORG := doc/gnosis.org
 TEXI := doc/gnosis.texi
 INFO := doc/gnosis.info
-TEST_FILE := tests/gnosis-test-auto.el
+TEST_FILE := tests/gnosis-test-algorithm.el
 
 all: doc
 
