@@ -223,7 +223,6 @@ character."
 
 * Gnosis Algorithm
 
-
 Each gnosis note has a gnosis score, which is a list of 3 values,
 (gnosis-plus gnosis-minus gnosis-synolon/total).  Gnosis-synolon is
 what is used to determine the next interval upon a successful recall,
@@ -246,6 +245,16 @@ When ~anagnosis~ is triggered by consecutive *failed* recalls,
 
 You can set specific values for each deck and tag of the variables
 mentioned above by adjusting =gnosis-custom-values=.
+
+** Lethe event
+
+The ~Lethe~ event triggers after a certain number of consecutive
+failures to recall an answer correctly.
+
+When this threshold is reached, the next interval is reset to 0.
+
+For example, with lethe value of 2, upon having 2 consecutive failed
+recalls the next review will be set for the current day.
 
 ** Proto
 
