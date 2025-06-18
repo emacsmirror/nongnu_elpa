@@ -243,10 +243,6 @@ Optional argument FLATTEN, when non-nil, flattens the result."
 	 (output (emacsql gnosis-db `[:select ,value :from ,table :where ,restrictions])))
     (if flatten (apply #'append output) output)))
 
-(defun gnosis-select-id (value table id)
-  "Select VALUE from TABLE for note ID."
-  (gnosis-select value table `(= id ,id) t))
-
 (defun gnosis-table-exists-p (table)
   "Check if TABLE exists."
   (let ((tables (mapcar (lambda (str) (replace-regexp-in-string "_" "-" (symbol-name str)))
@@ -1262,7 +1258,7 @@ Returns a cons; ='(position . user-input) if correct,
 
 (defun gnosis-review-is-note-new-p (id)
   "Return t if note with ID is new."
-  (let ((reviews (car (gnosis-select-id 'n 'review-log id))))
+  (let ((reviews (car (gnosis-select 'n 'review-log `(= id ,id) t))))
     (not (> reviews 0))))
 
 (defun gnosis-review-increment-activity-log (new? &optional date)
