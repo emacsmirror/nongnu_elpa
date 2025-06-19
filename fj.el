@@ -804,8 +804,17 @@ X and Y are sorting args."
   "Return settings for the current user."
   (fj-get "user/settings"))
 
+(defun fj-get-repos (&optional page limit order)
+  "GET request repos that USER has access to.
+PAGE, LIMIT, ORDER."
+  (let ((params (append
+                 `(("limit" . ,(or limit (fj-default-limit))))
+                 (fedi-opt-params page order)))
+        (endpoint (format "user/repos")))
+    (fj-get endpoint params)))
+
 (defun fj-get-user-repos (user &optional page limit order)
-  "GET request repos for USER.
+  "GET request repos owned by USER.
 PAGE, LIMIT, ORDER."
   (let ((params (append
                  `(("limit" . ,(or limit (fj-default-limit))))
@@ -850,6 +859,8 @@ results (server-side)."
   (interactive "P")
   (let* ((order (fj-repos-order-arg order))
          (buf (format "*fj-repos-%s*" fj-user))
+         ;; FIXME: we should hit /users/$user/repos here not /user/repos?
+         ;; but the former has "order" arg!
          (repos (and fj-user (fj-get-repos nil nil nil page order)))
          (entries (fj-repo-tl-entries repos :no-owner)))
     (if (not repos)
