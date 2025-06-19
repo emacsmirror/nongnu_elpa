@@ -742,17 +742,6 @@ LENGTH: length of id, default to a random number between 10-15."
         (gnosis-generate-id length)
       id)))
 
-(cl-defun gnosis-mc-cloze-extract-options (str &optional (char gnosis-mc-cloze-separator))
-  "Extract options for MC-CLOZE note type from STR.
-
-CHAR: separator for mc-cloze, default to `gnosis-mc-cloze-separator'"
-  (cl-remove-if
-   #'null
-   (mapcar (lambda (s)
-             (when (string-match-p (regexp-quote char) s)
-               (split-string s (regexp-quote char))))
-           (split-string str " "))))
-
 (defun gnosis-mcq-answer (id)
   "Choose the correct answer, from mcq choices for question ID."
   (let ((choices (gnosis-get 'hypothesis 'notes `(= id ,id)))
@@ -821,12 +810,6 @@ This function should be used in combination with
                         (match-string 1 str)))
                     lst))
           nested-lst))
-
-(defun gnosis-mc-cloze-remove-separator (string &optional separator)
-  "Remove SEPARATOR and all followed words from STRING."
-  (let* ((separator (or separator gnosis-mc-cloze-separator))
-	 (result (replace-regexp-in-string (format "%s[^ ]*" separator) "" string)))
-    result))
 
 (defun gnosis-compare-strings (str1 str2)
   "Compare STR1 and STR2, ignoring case and whitespace."
