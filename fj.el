@@ -1401,13 +1401,31 @@ Timeline contains comments and events of any type."
          (params (fedi-opt-params page limit)))
     (fj-get endpoint params)))
 
-(defun fj-issue-timeline-more-p ()
-  "Check for more timeline data for the current item.
+(defun fj-issue-timeline-more-link-mayb ()
+  "Insert a Load more: link if there is more timeline data.
 Increments the current page argument and checks for 2 more items.
-Return nil if there is no more data."
+Do nothing if there is no more data."
   (cl-destructuring-bind (&key repo owner number _type page limit)
       (fj--get-buffer-spec :viewargs)
-    (fj-issue-get-timeline repo owner number (fj--inc-str page) "2")))
+    ;; NB: we can't limit=2 here, as then it assumes page 1 is also
+    ;; limit=2, giving false results. sad but true:
+    (fj-issue-get-timeline-async
+     repo owner number (fj--inc-str page) limit
+     #'fj-issue-timeline-more-link-mayb-cb
+     (current-buffer))))
+
+(defun fj-issue-timeline-more-link-mayb-cb (json buf)
+  "Insert Load more: link at end of BUF, if JSON is non-nil."
+  (with-current-buffer buf
+    (when json
+      (save-excursion
+        (let ((inhibit-read-only t))
+          (goto-char (point-max))
+          ;; FIXME: remove on adding more!
+          (insert
+           (fj-propertize-link "[Load more]"
+                               'more nil 'underline))
+          (message "Load more"))))))
 
 (defun fj-issue-get-timeline-async (repo owner issue
                                          &optional page limit cb
@@ -1416,7 +1434,8 @@ Return nil if there is no more data."
   "Return comments timeline for ISSUE in REPO asynchronously.
 OWNER is the repo owner.
 Timeline contains comments and events of any type.
-PAGE and LIMIT are for pagination."
+PAGE and LIMIT are for pagination.
+CB is a callback, called on JSON response as first arg, followed by CBARGS."
   (let* ((endpoint (format "repos/%s/%s/issues/%s/timeline"
                            owner repo issue))
          (url (fj-api endpoint))
@@ -2547,7 +2566,7 @@ If INIT-PAGE, do not update :page in viewargs."
             (when end-page ;; if we are re-paginating, go again maybe:
               (fj-reload-paginated-pages-maybe end-page page))
             ;; maybe add a "more" link:
-            (fj-issue-timeline-more-btn)))))))
+            (fj-issue-timeline-more-link-mayb)))))))
 
 (defun fj-issue-timeline-more-btn ()
   "Maybe render a more button at end of buffer.
@@ -4126,6 +4145,12 @@ Used for hitting RET on a given link."
         ('shr
          (let ((url (fj--property 'shr-url)))
            (shr-browse-url url)))
+        ('more
+         (let ((inhibit-read-only t))
+           (delete-region
+            (save-excursion (beginning-of-line) (point))
+            (save-excursion (end-of-line) (point))))
+         (fj-item-view-more))
         (_
          (error "Unknown link type %s" type))))))
 
