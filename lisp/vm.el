@@ -34,6 +34,7 @@
 
 (provide 'vm)
 
+
 (require 'vm-macro)
 (require 'vm-misc)
 (require 'vm-folder)
@@ -57,6 +58,9 @@
 (eval-when-compile (require 'cl-lib))
 (require 'package)
 
+(defconst vm-min-emacs-version 28
+  "Minimum required Emacs major version supported by VM.")
+
 (defvar enable-multibyte-characters)
 
 ;; vm-xemacs.el is a non-existent file to fool the Emacs 23 compiler
@@ -67,6 +71,11 @@
 		  (&optional sit-for option-list exclude-option-list))
 (declare-function vm-summary-faces-mode "vm-summary-faces.el" 
 		  (&optional arg))
+
+;; Don't get any farther if emacs is too old
+(when (< emacs-major-version vm-min-emacs-version)
+  (error "VM requires Emacs %d or later" vm-min-emacs-version))
+
 
 ;; Ensure that vm-autoloads is loaded in case the user is using VM 7.x
 ;; autoloads 
