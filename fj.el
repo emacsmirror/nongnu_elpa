@@ -1712,6 +1712,28 @@ Return its name, or if ID, return a cons of its name and id."
            (fj-view-reload)
            (message "Label %s removed from #%s!" choice issue)))))))
 
+(defun fj-repo-create-label (&optional repo owner)
+  "Create a new label for REPO by OWNER."
+  ;; POST /repos/{owner}/{repo}/labels
+  (interactive)
+  (let* ((repo (fj-read-user-repo repo))
+         (owner (or owner fj-user))
+         ;; FIXME: check if name or color already used?:
+         (name (read-string "Label: "))
+         (color (read-color nil :rgb))
+         ;; convert eg #D2D2B4B48C8C to #D2B48C:
+         (color (concat (substring color 0 3)
+                        (substring color 5 7)
+                        (substring color 9 11)))
+         (params `(("name" . ,name)
+                   ("color" . ,color)))
+         (endpoint (format "/repos/%s/%s/labels" owner repo))
+         (resp (fj-post endpoint params :json)))
+    (fedi-http--triage
+     resp
+     (lambda (resp)
+       (message "Label %s added to %s!" name repo)))))
+
 ;;; MILESTONES
 
 (defun fj-get-milestones (&optional repo owner state name page limit)
