@@ -848,13 +848,7 @@ The value must be a member of `fj-own-repos-order'.")
 With prefix arg ORDER, prompt for an argument to sort
 results (server-side)."
   (interactive "P")
-  (let* ((order (cond ((stringp order) ;; we are paginating
-                       order)
-                      ((or current-prefix-arg ;; we are prefixing
-                           (equal order '(4))) ;; fj-list-own-repos-read
-                       (completing-read "Order repos by:"
-                                        fj-own-repos-order))
-                      (t fj-own-repos-default-order))) ;; fallback/default
+  (let* ((order (fj-repos-order-arg order))
          (buf (format "*fj-repos-%s*" fj-user))
          (repos (and fj-user (fj-get-repos nil nil nil page order)))
          (entries (fj-repo-tl-entries repos :no-owner)))
@@ -867,24 +861,35 @@ results (server-side)."
                  :viewfun fj-list-own-repos
                  :viewargs (:order ,order :page ,page)))))))
 
-(defun fj-list-repos ()
+(defun fj-repos-order-arg (&optional order)
+  ""
+  (cond ((stringp order) ;; we are paginating
+         order)
+        ((or current-prefix-arg ;; we are prefixing
+             (equal order '(4))) ;; fj-list-own-repos-read
+         (completing-read "Order repos by:" fj-own-repos-order))
+        (t fj-own-repos-default-order)))
+
+(defun fj-list-repos (&optional order page)
   "List repos for `fj-user' extended by `fj-extra-repos'."
   (interactive)
-  (let* ((buf (format "*fj-repos-%s*" fj-user))
-         (own-repos (and fj-user
-                         (fj-get-user-repos fj-user)))
+  (let* ((order (fj-repos-order-arg order))
+         (buf (format "*fj-repos-%s*" fj-user))
+         (own-repos (and fj-user (fj-get-repos nil nil nil page order)))
          (extra-repos (mapcar (lambda (repo)
                                 (fj-get (format "repos/%s/" repo)))
                               fj-extra-repos))
          (repos (append own-repos extra-repos))
          (entries (fj-repo-tl-entries repos)))
     (if (not repos)
-        (user-error "Set `fj-user' or `fj-extra-repos'")
+        (user-error "No (more) repos. \
+Unless paginating, set `fj-user' or `fj-extra-repos'")
       (fj-repos-tl-render buf entries #'fj-repo-tl-mode)
       (with-current-buffer (get-buffer-create buf)
         (setq fj-buffer-spec
               `( :owner ,fj-user :url ,(concat fj-host "/" fj-user)
-                 :viewfun fj-list-repos))))))
+                 :viewfun fj-list-repos
+                 :viewargs (:order ,order :page ,page)))))))
 
 (defun fj-star-repo (repo owner &optional unstar)
   "Star or UNSTAR REPO owned by OWNER."
