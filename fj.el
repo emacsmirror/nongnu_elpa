@@ -1663,7 +1663,8 @@ Not sure what the server actually accepts.")
 Label is for ISSUE in REPO by OWNER.
 Return its name, or if ID, return a cons of its name and id."
   (let* ((labels (fj-repo-get-labels repo owner))
-         (pairs (fj--map-alist-to-cons labels 'name 'id))
+         ;; (pairs (fj--map-alist-to-cons labels 'name 'id))
+         (pairs (fj-propertize-label-names labels))
          (choice
           (if issue
               (completing-read
@@ -1674,8 +1675,30 @@ Return its name, or if ID, return a cons of its name and id."
         (assoc choice pairs #'string=)
       choice)))
 
+(defun fj-propertize-label-names (json)
+  "Propertize all labels in label data JSON.
+Return an alist, with each cons being (name . id)"
+  (cl-loop ;; label JSON is a list of alists:
+   for x in json
+   for name = (alist-get 'name x)
+   for color = (concat "#" (alist-get 'color x))
+   for desc = (alist-get 'description x)
+   collect (cons (fj-propertize-label name color desc)
+                 (alist-get 'id x))))
+
+(defun fj-propertize-label (name color &optional desc)
+  "Propertize NAME as a label, with COLOR prop and DESC, a description."
+  (propertize name
+              'face
+              `( :inherit fj-label-face
+                 :background ,color
+                 :foreground ,(readable-foreground-color color))
+              ;; FIXME: in label data for an issue, desc is empty
+              'help-echo desc))
+
 (defun fj-issue-label-add (&optional repo owner issue)
   "Add a label to ISSUE in REPO by OWNER."
+  ;; POST "repos/%s/%s/issues/%s/labels"
   (interactive)
   (let* ((repo (fj-read-user-repo repo))
          (issue (or issue
@@ -1726,6 +1749,9 @@ Return its name, or if ID, return a cons of its name and id."
 (defun fj-repo-create-label (&optional repo owner)
   "Create a new label for REPO by OWNER."
   ;; POST /repos/{owner}/{repo}/labels
+  ;;  ((id . 456278) (name . "api") (exclusive . :json-false)
+  ;;   (is_archived . :json-false) (color . "ee9a49") (description . "")
+  ;;   (url . "https://codeberg.org/api/v1/repos/martianh/fj.el/labels/456278"))
   (interactive)
   (let* ((repo (fj-read-user-repo repo))
          (owner (or owner fj-user))
@@ -1743,7 +1769,25 @@ Return its name, or if ID, return a cons of its name and id."
     (fedi-http--triage
      resp
      (lambda (resp)
-       (message "Label %s added to %s!" name repo)))))
+       (let ((label (fj-propertize-label name color)))
+         (message "Label %s added to %s!" label repo))))))
+
+(defun  fj-repo-delete-label (&optional repo owner)
+  "Delete a label for REPO by OWNER."
+  ;; DELETE /repos/{owner}/{repo}/labels/{id}
+  (interactive)
+  (let* ((repo (fj-read-user-repo repo))
+         (owner (or owner fj-user))
+         (labels (fj-repo-get-labels repo owner))
+         (list (fj-propertize-label-names labels))
+         (choice (completing-read "Delete label: " list))
+         (id (cdr (assoc choice list #'string=)))
+         (endpoint (format "/repos/%s/%s/labels/%s" repo owner id))
+         (resp (fj-delete endpoint)))
+    (fedi-http--triage
+     resp
+     (lambda (resp)
+       (message "Label %s deleted from %s" choice repo)))))
 
 ;;; MILESTONES
 
@@ -1971,13 +2015,7 @@ If REPO is provided, also include a repo column."
      (lambda (l)
        (let-alist l
          (let ((bg (concat "#" .color)))
-           (propertize .name
-                       'face
-                       `( :inherit fj-label-face
-                          :background ,bg
-                          :foreground ,(readable-foreground-color bg))
-                       ;; FIXME: in label data for an issue, desc is empty
-                       'help-echo .description))))
+           (fj-propertize-label .name bg .description))))
      data
      (fj-plain-space))))
 
@@ -3644,6 +3682,15 @@ Optionally specify REF, a commit, branch, or tag."
           (owner (fj--get-buffer-spec :owner))
           (repo (fj--repo-col-or-buf-spec)))
      (fj-issue-label-add repo owner number))))
+
+(defun fj-issues-tl-label-remove ()
+  "Remove label from issue from tabulated issues listing."
+  (interactive)
+  (fj-with-entry
+   (let* ((number (fj--get-tl-col 0))
+          (owner (fj--get-buffer-spec :owner))
+          (repo (fj--repo-col-or-buf-spec)))
+     (fj-issue-label-remove repo owner number))))
 
 ;;; COMPOSING
 
