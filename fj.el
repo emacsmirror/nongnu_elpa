@@ -1708,9 +1708,10 @@ Return an alist, with each cons being (name . id)"
          (url (format "repos/%s/%s/issues/%s/labels" owner repo issue))
          (issue-labels (fj--map-alist-key
                         (fj-issue-get-labels repo owner issue)
-                        'name))
-         (choice (fj-issue-read-label repo owner issue))
-         (params `(("labels" . ,(cl-pushnew choice issue-labels
+                        'id)) ;; we post IDs to avoid duplicating:
+         (choice (fj-issue-read-label repo owner issue :id))
+         (id (cdr choice))
+         (params `(("labels" . ,(cl-pushnew id issue-labels
                                             :test #'equal))))
          (resp (fj-post url params :json)))
     (fedi-http--triage
@@ -1719,7 +1720,7 @@ Return an alist, with each cons being (name . id)"
        (let ((json (fj-resp-json resp)))
          (message "%s" (prin1-to-string json))
          (fj-view-reload)
-         (message "Label %s added to #%s!" choice issue))))))
+         (message "Label %s added to #%s!" (car choice) issue))))))
 
 (defun fj-issue-label-remove (&optional repo owner issue)
   "Remove label from ISSUE in REPO by OWNER."
