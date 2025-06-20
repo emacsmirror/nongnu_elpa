@@ -836,7 +836,11 @@ PAGE, LIMIT, ORDER."
 
 (defcustom fj-own-repos-default-order "recentupdate"
   "The default order parameter for `fj-list-own-repos'.
-The value must be a member of `fj-own-repos-order'.")
+The value must be a member of `fj-own-repos-order'."
+  :type (append '(choice)
+                (mapcar (lambda (x)
+                          `(const ,x))
+                        fj-own-repos-order)))
 
 (defun fj-list-own-repos-read ()
   "List repos for `fj-user', prompting for an order type."
