@@ -1732,11 +1732,12 @@ Return an alist, with each cons being (name . id)"
          (issue-labels (fj-issue-get-labels repo owner issue)))
     (if (not issue-labels)
         (user-error "No labels to remove")
-      (let* ((labels-alist (fj--map-alist-to-cons issue-labels 'name 'id))
+      (let* ((labels (fj-propertize-label-names issue-labels))
              (choice (completing-read
                       (format "Remove label from #%s: " issue)
-                      labels-alist))
-             (id (cdr (assoc choice labels-alist #'string=)))
+                      labels))
+             (id (cdr (assoc choice labels #'string=)))
+             (color (fj-label-color-from-name choice labels))
              (url (format "repos/%s/%s/issues/%s/labels/%s"
                           owner repo issue id))
              (resp (fj-delete url)))
@@ -1744,7 +1745,8 @@ Return an alist, with each cons being (name . id)"
          resp
          (lambda (_)
            (fj-view-reload)
-           (message "Label %s removed from #%s!" choice issue)))))))
+           (let ((label (fj-propertize-label choice color)))
+             (message "Label %s removed from #%s!" label issue))))))))
 
 (defun fj-repo-create-label (&optional repo owner)
   "Create a new label for REPO by OWNER."
@@ -1782,12 +1784,24 @@ Return an alist, with each cons being (name . id)"
          (list (fj-propertize-label-names labels))
          (choice (completing-read "Delete label: " list))
          (id (cdr (assoc choice list #'string=)))
-         (endpoint (format "/repos/%s/%s/labels/%s" repo owner id))
+         (color (fj-label-color-from-str choice list))
+         (endpoint (format "/repos/%s/%s/labels/%s" owner repo id))
          (resp (fj-delete endpoint)))
     (fedi-http--triage
      resp
      (lambda (resp)
-       (message "Label %s deleted from %s" choice repo)))))
+       (fj-view-reload)
+       (let ((label (fj-propertize-label choice color)))
+         (message "Label %s deleted from %s" label repo))))))
+
+(defun fj-label-color-from-name (name alist)
+  "Fetch the backgroun property of NAME in ALIST.
+ALIST is of labels as names and ids, and the names are propertized in
+the label's color, as per `fj-propertize-label-names'."
+  (plist-get
+   (get-text-property 0 'face
+                      (car (assoc name alist #'string=)))
+   :background))
 
 ;;; MILESTONES
 
