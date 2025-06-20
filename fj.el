@@ -847,16 +847,17 @@ The value must be a member of `fj-own-repos-order'."
   (interactive)
   (fj-list-own-repos '(4)))
 
-(defun fj-list-own-repos (&optional order page)
+(defun fj-list-own-repos (&optional limit order page)
   "List repos for `fj-user'.
 With prefix arg ORDER, prompt for an argument to sort
-results (server-side)."
+results (server-side).
+LIMIT and PAGE are for pagination."
   (interactive "P")
   (let* ((order (fj-repos-order-arg order))
          (buf (format "*fj-repos-%s*" fj-user))
          ;; FIXME: we should hit /users/$user/repos here not /user/repos?
          ;; but the former has "order" arg!
-         (repos (and fj-user (fj-get-repos nil nil nil page order)))
+         (repos (and fj-user (fj-get-repos limit nil nil page order)))
          (entries (fj-repo-tl-entries repos :no-owner)))
     (if (not repos)
         (user-error "No repos")
@@ -868,7 +869,10 @@ results (server-side)."
                  :viewargs (:order ,order :page ,page)))))))
 
 (defun fj-repos-order-arg (&optional order)
-  ""
+  "Return an ORDER argument.
+If ORDER is a string, return it.
+If there is a prefix arg, completing read from `fj-own-repos-order'.
+Else `fj-own-repos-default-order'."
   (cond ((stringp order) ;; we are paginating
          order)
         ((or current-prefix-arg ;; we are prefixing
@@ -876,12 +880,13 @@ results (server-side)."
          (completing-read "Order repos by:" fj-own-repos-order))
         (t fj-own-repos-default-order)))
 
-(defun fj-list-repos (&optional order page)
-  "List repos for `fj-user' extended by `fj-extra-repos'."
+(defun fj-list-repos (&optional order page limit)
+  "List repos for `fj-user' extended by `fj-extra-repos'.
+Order by ORDER, paginate by PAGE and LIMIT."
   (interactive)
   (let* ((order (fj-repos-order-arg order))
          (buf (format "*fj-repos-%s*" fj-user))
-         (own-repos (and fj-user (fj-get-repos nil nil nil page order)))
+         (own-repos (and fj-user (fj-get-repos limit nil nil page order)))
          (extra-repos (mapcar (lambda (repo)
                                 (fj-get (format "repos/%s/" repo)))
                               fj-extra-repos))
@@ -1766,7 +1771,7 @@ Return an alist, with each cons being (name . id)"
          (resp (fj-post endpoint params :json)))
     (fedi-http--triage
      resp
-     (lambda (resp)
+     (lambda (_)
        (let ((label (fj-propertize-label name color)))
          (message "Label %s added to %s!" label repo))))))
 
@@ -1780,12 +1785,12 @@ Return an alist, with each cons being (name . id)"
          (list (fj-propertize-label-names labels))
          (choice (completing-read "Delete label: " list))
          (id (cdr (assoc choice list #'string=)))
-         (color (fj-label-color-from-str choice list))
+         (color (fj-label-color-from-name choice list))
          (endpoint (format "/repos/%s/%s/labels/%s" owner repo id))
          (resp (fj-delete endpoint)))
     (fedi-http--triage
      resp
-     (lambda (resp)
+     (lambda (_)
        (fj-view-reload)
        (let ((label (fj-propertize-label choice color)))
          (message "Label %s deleted from %s" label repo))))))
@@ -2653,18 +2658,6 @@ If INIT-PAGE, do not update :page in viewargs."
               (fj-reload-paginated-pages-maybe end-page page))
             ;; maybe add a "more" link:
             (fj-issue-timeline-more-link-mayb)))))))
-
-(defun fj-issue-timeline-more-btn ()
-  "Maybe render a more button at end of buffer.
-Do so if there are items beyond the current page."
-  (when (fj-issue-timeline-more-p)
-    (save-excursion
-      (let ((inhibit-read-only t))
-        (goto-char (point-max))
-        ;; FIXME: make this a (tabstopped?) link
-        ;; FIXME: remove this on adding more!
-        (insert "Load more")
-        (message "more")))))
 
 (defun fj-reload-paginated-pages-maybe (end-page page)
   "Call `fj-reload-paginated-pages' maybe.
