@@ -804,15 +804,6 @@ X and Y are sorting args."
   "Return settings for the current user."
   (fj-get "user/settings"))
 
-(defun fj-get-repos (&optional page limit order)
-  "GET request repos that USER has access to.
-PAGE, LIMIT, ORDER."
-  (let ((params (append
-                 `(("limit" . ,(or limit (fj-default-limit))))
-                 (fedi-opt-params page order)))
-        (endpoint (format "user/repos")))
-    (fj-get endpoint params)))
-
 (defun fj-get-user-repos (user &optional page limit order)
   "GET request repos owned by USER.
 PAGE, LIMIT, ORDER."
