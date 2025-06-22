@@ -1,4 +1,3 @@
--*- mode: org -*-
 * 0.5.1
 + Minor bug fixes & documentation update.
 

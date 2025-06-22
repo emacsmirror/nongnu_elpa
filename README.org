@@ -1,6 +1,5 @@
 
-Gnosis | Γνῶσις
-------------------
+* Gnosis
 
 Gnosis is a GNU Emacs spaced repetition system.
 
