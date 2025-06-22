@@ -1227,14 +1227,14 @@ Returns a cons; ='(position . user-input) if correct,
 	 (user-input)
 	 (success))
     (gnosis-display-cloze-string keimenon cloze nil nil nil)
-    (setq user-input (funcall gnosis-completing-read-function
-			      "Select answer: "
-			      options))
+    (setq user-input (gnosis-completing-read "Select answer: "
+					     (gnosis-shuffle options)))
     (if (string= user-input (car cloze))
 	(progn
 	  (gnosis-display-cloze-string keimenon nil nil cloze nil)
 	  (setq success t))
-      (gnosis-display-cloze-string keimenon nil nil nil cloze))
+      (gnosis-display-cloze-string keimenon nil nil nil cloze)
+      (gnosis-display-correct-answer-mcq (car cloze) user-input))
     (gnosis-display-parathema parathema)
     (gnosis-display-next-review id success)
     success))
