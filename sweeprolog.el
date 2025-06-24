@@ -3383,10 +3383,9 @@ variable at point, if any."
 (defun sweeprolog-cursor-sensor-functions (var)
   (list
    (lambda (_win old dir)
-     (if (eq dir 'entered)
-         (sweeprolog-highlight-variable (point) var)
-       (sweeprolog-highlight-variable old)))))
-
+     (cond
+       ((eq dir 'entered) (sweeprolog-highlight-variable (point) var))
+       ((eq dir 'left)    (sweeprolog-highlight-variable old))))))
 
 ;;;; Flymake
 
