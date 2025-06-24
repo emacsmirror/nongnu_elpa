@@ -291,11 +291,8 @@ NO-JSON means return the raw response."
     (with-current-buffer resp
       (goto-char (point-min))
       (re-search-forward "^$" nil 'move)
-      (let ((str
-             (decode-coding-string
-              (buffer-substring-no-properties (point) (point-max))
-              'utf-8)))
-        (json-read-from-string str)))))
+      (decode-coding-region (point) (point-max) 'utf-8)
+      (json-parse-buffer :object-type 'alist))))
 
 (defun fj-post (endpoint &optional params json silent)
   "Make a POST request to ENDPOINT.
