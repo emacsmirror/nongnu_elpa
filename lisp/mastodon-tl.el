@@ -3808,6 +3808,48 @@ TYPE is a notification type."
   (unless (mastodon-tl--profile-buffer-p)
     (mastodon-tl--goto-first-item)))
 
+;;; NODEINFO
+
+(defun mastodon-tl--get-nodeinfo (instance &optional version)
+  "Return Nodeinfo data for INSTANCE, optionally for version."
+  ;; NB: not in the API:
+  (let ((url (format "https://%s/nodeinfo/%s" instance (or version "2.0"))))
+    (mastodon-http--get-json url)))
+
+(defun mastodon-tl-nodeinfo-for-toot ()
+  "Return Nodeinfo for toot at point.
+Displays what software and version an instance is running.
+Also the instances description and usage stats, etc.
+Nodeinfo is a data standard for distributed social networks, see
+https://nodeinfo.diaspora.software."
+  (interactive)
+  (let* ((item (mastodon-tl--property 'item-json))
+         (url (mastodon-tl--field 'url item))
+         (instance (url-host (url-generic-parse-url url)))
+         (data (mastodon-tl--get-nodeinfo instance)))
+    ;; FIXME: parse some data!:
+    ;; e.g. data (sharkey or poss pleroma has much more):
+    ;; ((version . "2.0") ;; nodeinfo iself
+    ;;  (software
+    ;;   (name . "mastodon") ;; important
+    ;;   (version . "4.4.0-nightly.2025-06-21")) ;; important
+    ;;  (protocols "activitypub")
+    ;;  (services
+    ;;   (outbound)
+    ;;   (inbound))
+    ;;  (usage ;; meh
+    ;;   (users
+    ;;    (total . 2778491)
+    ;;    (activeMonth . 284973)
+    ;;    (activeHalfyear . 766793))
+    ;;   (localPosts . 135874775))
+    ;;  (openRegistrations . t) ;; handy
+    ;;  (metadata
+    ;;   (nodeName . "Mastodon")
+    ;;   (nodeDescription . "The original server operated by the Mastodon\
+    ;;   gGmbH non-profit"))) ;; instance description
+    (message "%s" data)))
+
 ;;; BOOKMARKS
 
 (require 'bookmark)
