@@ -38,7 +38,8 @@ When it is local it will open it inside Emacs (THING will be a relative link)."
 
 (defcustom typst-ts-mc-open-function #'typst-ts-mc-open-thing-function
   "The function that is called by `typst-ts-mc-open-at-point'."
-  :type 'function)
+  :type 'function
+  :group 'typst)
 
 (defun typst-ts-mc-install-grammar ()
   "Install Typst grammar."

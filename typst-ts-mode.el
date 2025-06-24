@@ -2,8 +2,8 @@
 ;; Copyright (C) 2023-2025 The typst-ts-mode Project Contributors
 
 ;; Version: 0.11.0
-;; Author: Ziqi Yang <mr.meowking@anche.no>
-;; Maintainer: Ziqi Yang <mr.meowking@anche.no>
+;; Author: Meow King <mr.meowking@posteo.com>
+;; Maintainer: Meow King <mr.meowking@posteo.com>
 ;;   Huan Nguyen <nguyenthieuhuan@gmail.com>
 ;; Keywords: typst languages tree-sitter
 ;; URL: https://codeberg.org/meow_king/typst-ts-mode
