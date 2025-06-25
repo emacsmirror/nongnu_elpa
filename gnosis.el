@@ -2990,7 +2990,7 @@ DASHBOARD-TYPE: either Notes or Decks to display the respective dashboard."
   :group 'gnosis
   :lighter nil
   (setq gnosis-due-notes-total (length (gnosis-review-get-due-notes)))
-  (if (and gnosis-modeline-mode gnosis-due-notes-total)
+  (if (and gnosis-modeline-mode (> gnosis-due-notes-total 0))
       (progn
         (add-to-list 'global-mode-string
 		     '(:eval
