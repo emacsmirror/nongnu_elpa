@@ -3106,8 +3106,9 @@ PREFIX is sent to `mastodon-tl-get-tag-timeline', which see."
 PREFIX is sent to `mastodon-tl-get-tag-timeline', which see."
   (interactive)
   (let* ((json (mastodon-tl--followed-tags))
-         (sorted (cl-sort json :key (lambda (x)
-                                      (downcase (alist-get 'name x)))))
+         (sorted (cl-sort json #'string-lessp
+                          :key (lambda (x)
+                                 (downcase (alist-get 'name x)))))
          (buf "*mastodon-followed-tags*"))
     (if (null sorted)
         (user-error "You have to follow some tags first")
