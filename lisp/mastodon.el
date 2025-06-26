@@ -267,6 +267,7 @@ Also nil `mastodon-auth--token-alist'."
     (define-key map (kbd ",")      #'mastodon-toot-list-favouriters)
     (define-key map (kbd ".")      #'mastodon-toot-list-boosters)
     (define-key map (kbd ";")      #'mastodon-views-view-instance-description)
+    (define-key map (kbd "M-;")    #'mastodon-tl-nodeinfo-for-toot)
     ;; override special mode binding
     (define-key map (kbd "g")      #'undefined)
     (define-key map (kbd "g")      #'mastodon-tl-update)

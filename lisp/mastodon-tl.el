@@ -3828,28 +3828,23 @@ https://nodeinfo.diaspora.software."
          (url (mastodon-tl--field 'url item))
          (instance (url-host (url-generic-parse-url url)))
          (data (mastodon-tl--get-nodeinfo instance)))
-    ;; FIXME: parse some data!:
-    ;; e.g. data (sharkey or poss pleroma has much more):
-    ;; ((version . "2.0") ;; nodeinfo iself
-    ;;  (software
-    ;;   (name . "mastodon") ;; important
-    ;;   (version . "4.4.0-nightly.2025-06-21")) ;; important
-    ;;  (protocols "activitypub")
-    ;;  (services
-    ;;   (outbound)
-    ;;   (inbound))
-    ;;  (usage ;; meh
-    ;;   (users
-    ;;    (total . 2778491)
-    ;;    (activeMonth . 284973)
-    ;;    (activeHalfyear . 766793))
-    ;;   (localPosts . 135874775))
-    ;;  (openRegistrations . t) ;; handy
-    ;;  (metadata
-    ;;   (nodeName . "Mastodon")
-    ;;   (nodeDescription . "The original server operated by the Mastodon\
-    ;;   gGmbH non-profit"))) ;; instance description
-    (message "%s" data)))
+    (when data ;; don't display empty message when fetching failed
+      (if (eq 'error (caar data))
+          (user-error "Error: %s" (alist-get 'error data))
+        (mastodon-tl--render-nodeinfo data)))))
+
+(defun mastodon-tl--render-nodeinfo (data)
+  "Render Nodeinfo DADA as message."
+  (let-alist data
+    (message
+     "%s"
+     (concat "Software: "
+             .software.name " " .software.version
+             (if (not .metadata)
+                 ""
+               (concat
+                "\nInstance: "
+                .metadata.nodeName " " .metadata.nodeDescription))))))
 
 ;;; BOOKMARKS
 
