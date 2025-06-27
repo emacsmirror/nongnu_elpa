@@ -2099,8 +2099,8 @@ git config."
           (not (magit-inside-worktree-p :noerror)))
       (fj-list-issues-do repo owner state type) ;; fall back to `fj-user' repos
     (if-let* ((repo-+-owner (fj-repo-+-owner-from-git))
-              (owner (car repo-+-owner))
-              (repo (cadr repo-+-owner)))
+              (owner (or repo (car repo-+-owner)))
+              (repo (or owner (cadr repo-+-owner))))
         (fj-list-issues-do repo owner state type)
       (message "Failed to find Forgejo repo")
       (fj-list-issues-do repo owner state type))))
