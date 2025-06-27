@@ -2910,6 +2910,11 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
                (date-to-time .updated_at)))
           (user (propertize .user.username
                             'face 'fj-name-face))
+          (assignee (if .assignee_team
+                        (or .assignee_team.name "")
+                      (or .assignee.username
+                          .assignee.login
+                          "")))
           (body (mm-url-decode-entities-string .body)))
       (insert
        (propertize
@@ -3009,7 +3014,7 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
           ("review"
            (fj-format-review .review_id ts format-str user))
           ("review_request"
-           (fj-format-assignee format-str user .assignee.username ts))
+           (fj-format-assignee format-str user assignee ts))
           ;; milestones:
           ("milestone"
            (format format-str user
@@ -3017,8 +3022,7 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
                                'face 'fj-name-face)
                    ts))
           ("assignees"
-           (fj-format-assignee format-str
-                               .user.username .assignee.username ts))
+           (fj-format-assignee format-str .user.username assignee ts))
           ("change_target_branch"
            (fj-format-change-target format-str .user.username
                                     .old_ref .new_ref))
