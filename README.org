@@ -1,0 +1,11 @@
+* flymake-pyrefly
+
+A [[https://pyrefly.org/][Pyrefly]] backend for [[https://www.gnu.org/software/emacs/manual/html_node/flymake/index.html#Top][Flymake]].
+
+* How to install
+
+#+begin_src elisp
+  (use-package flymake-pyrefly
+    :vc (:url "https://github.com/inpefess/flymake-pyrefly.git")
+    :hook (python-mode . pyrefly-setup-flymake-backend))
+#+end_src
