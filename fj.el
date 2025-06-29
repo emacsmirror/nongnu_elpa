@@ -6,7 +6,7 @@
 ;; Package-Requires: ((emacs "29.1") (fedi "0.2") (tp "0.5") (transient) (magit))
 ;; Keywords: git, convenience
 ;; URL: https://codeberg.org/martianh/fj.el
-;; Version: 0.11
+;; Version: 0.12
 ;; Separator: -
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -291,11 +291,8 @@ NO-JSON means return the raw response."
     (with-current-buffer resp
       (goto-char (point-min))
       (re-search-forward "^$" nil 'move)
-      (let ((str
-             (decode-coding-string
-              (buffer-substring-no-properties (point) (point-max))
-              'utf-8)))
-        (json-read-from-string str)))))
+      (decode-coding-region (point) (point-max) 'utf-8)
+      (json-parse-buffer :object-type 'alist))))
 
 (defun fj-post (endpoint &optional params json silent)
   "Make a POST request to ENDPOINT.
@@ -805,7 +802,7 @@ X and Y are sorting args."
   (fj-get "user/settings"))
 
 (defun fj-get-user-repos (user &optional page limit order)
-  "GET request repos for USER.
+  "GET request repos owned by USER.
 PAGE, LIMIT, ORDER."
   (let ((params (append
                  `(("limit" . ,(or limit (fj-default-limit))))
@@ -836,27 +833,28 @@ PAGE, LIMIT, ORDER."
 
 (defcustom fj-own-repos-default-order "recentupdate"
   "The default order parameter for `fj-list-own-repos'.
-The value must be a member of `fj-own-repos-order'.")
+The value must be a member of `fj-own-repos-order'."
+  :type (append '(choice)
+                (mapcar (lambda (x)
+                          `(const ,x))
+                        fj-own-repos-order)))
 
 (defun fj-list-own-repos-read ()
   "List repos for `fj-user', prompting for an order type."
   (interactive)
   (fj-list-own-repos '(4)))
 
-(defun fj-list-own-repos (&optional order page)
+(defun fj-list-own-repos (&optional limit order page)
   "List repos for `fj-user'.
 With prefix arg ORDER, prompt for an argument to sort
-results (server-side)."
+results (server-side).
+LIMIT and PAGE are for pagination."
   (interactive "P")
-  (let* ((order (cond ((stringp order) ;; we are paginating
-                       order)
-                      ((or current-prefix-arg ;; we are prefixing
-                           (equal order '(4))) ;; fj-list-own-repos-read
-                       (completing-read "Order repos by:"
-                                        fj-own-repos-order))
-                      (t fj-own-repos-default-order))) ;; fallback/default
+  (let* ((order (fj-repos-order-arg order))
          (buf (format "*fj-repos-%s*" fj-user))
-         (repos (and fj-user (fj-get-repos nil nil nil page order)))
+         ;; FIXME: we should hit /users/$user/repos here not /user/repos?
+         ;; but the former has "order" arg!
+         (repos (and fj-user (fj-get-repos limit nil nil page order)))
          (entries (fj-repo-tl-entries repos :no-owner)))
     (if (not repos)
         (user-error "No repos")
@@ -867,24 +865,39 @@ results (server-side)."
                  :viewfun fj-list-own-repos
                  :viewargs (:order ,order :page ,page)))))))
 
-(defun fj-list-repos ()
-  "List repos for `fj-user' extended by `fj-extra-repos'."
+(defun fj-repos-order-arg (&optional order)
+  "Return an ORDER argument.
+If ORDER is a string, return it.
+If there is a prefix arg, completing read from `fj-own-repos-order'.
+Else `fj-own-repos-default-order'."
+  (cond ((stringp order) ;; we are paginating
+         order)
+        ((or current-prefix-arg ;; we are prefixing
+             (equal order '(4))) ;; fj-list-own-repos-read
+         (completing-read "Order repos by:" fj-own-repos-order))
+        (t fj-own-repos-default-order)))
+
+(defun fj-list-repos (&optional order page limit)
+  "List repos for `fj-user' extended by `fj-extra-repos'.
+Order by ORDER, paginate by PAGE and LIMIT."
   (interactive)
-  (let* ((buf (format "*fj-repos-%s*" fj-user))
-         (own-repos (and fj-user
-                         (fj-get-user-repos fj-user)))
+  (let* ((order (fj-repos-order-arg order))
+         (buf (format "*fj-repos-%s*" fj-user))
+         (own-repos (and fj-user (fj-get-repos limit nil nil page order)))
          (extra-repos (mapcar (lambda (repo)
                                 (fj-get (format "repos/%s/" repo)))
                               fj-extra-repos))
          (repos (append own-repos extra-repos))
          (entries (fj-repo-tl-entries repos)))
     (if (not repos)
-        (user-error "Set `fj-user' or `fj-extra-repos'")
+        (user-error "No (more) repos. \
+Unless paginating, set `fj-user' or `fj-extra-repos'")
       (fj-repos-tl-render buf entries #'fj-repo-tl-mode)
       (with-current-buffer (get-buffer-create buf)
         (setq fj-buffer-spec
               `( :owner ,fj-user :url ,(concat fj-host "/" fj-user)
-                 :viewfun fj-list-repos))))))
+                 :viewfun fj-list-repos
+                 :viewargs (:order ,order :page ,page)))))))
 
 (defun fj-star-repo (repo owner &optional unstar)
   "Star or UNSTAR REPO owned by OWNER."
@@ -1401,6 +1414,32 @@ Timeline contains comments and events of any type."
          (params (fedi-opt-params page limit)))
     (fj-get endpoint params)))
 
+(defun fj-issue-timeline-more-link-mayb ()
+  "Insert a Load more: link if there is more timeline data.
+Increments the current page argument and checks for 2 more items.
+Do nothing if there is no more data."
+  (cl-destructuring-bind (&key repo owner number _type page limit)
+      (fj--get-buffer-spec :viewargs)
+    ;; NB: we can't limit=2 here, as then it assumes page 1 is also
+    ;; limit=2, giving false results. sad but true:
+    (fj-issue-get-timeline-async
+     repo owner number (fj--inc-str page) limit
+     #'fj-issue-timeline-more-link-mayb-cb
+     (current-buffer))))
+
+(defun fj-issue-timeline-more-link-mayb-cb (json buf)
+  "Insert Load more: link at end of BUF, if JSON is non-nil."
+  (with-current-buffer buf
+    (when json
+      (save-excursion
+        (let ((inhibit-read-only t))
+          (goto-char (point-max))
+          ;; FIXME: remove on adding more!
+          (insert
+           (fj-propertize-link "[Load more]"
+                               'more nil 'underline))
+          (message "Load more"))))))
+
 (defun fj-issue-get-timeline-async (repo owner issue
                                          &optional page limit cb
                                          &rest cbargs)
@@ -1408,7 +1447,8 @@ Timeline contains comments and events of any type."
   "Return comments timeline for ISSUE in REPO asynchronously.
 OWNER is the repo owner.
 Timeline contains comments and events of any type.
-PAGE and LIMIT are for pagination."
+PAGE and LIMIT are for pagination.
+CB is a callback, called on JSON response as first arg, followed by CBARGS."
   (let* ((endpoint (format "repos/%s/%s/issues/%s/timeline"
                            owner repo issue))
          (url (fj-api endpoint))
@@ -1620,7 +1660,8 @@ Not sure what the server actually accepts.")
 Label is for ISSUE in REPO by OWNER.
 Return its name, or if ID, return a cons of its name and id."
   (let* ((labels (fj-repo-get-labels repo owner))
-         (pairs (fj--map-alist-to-cons labels 'name 'id))
+         ;; (pairs (fj--map-alist-to-cons labels 'name 'id))
+         (pairs (fj-propertize-label-names labels))
          (choice
           (if issue
               (completing-read
@@ -1631,8 +1672,30 @@ Return its name, or if ID, return a cons of its name and id."
         (assoc choice pairs #'string=)
       choice)))
 
+(defun fj-propertize-label-names (json)
+  "Propertize all labels in label data JSON.
+Return an alist, with each cons being (name . id)"
+  (cl-loop ;; label JSON is a list of alists:
+   for x in json
+   for name = (alist-get 'name x)
+   for color = (concat "#" (alist-get 'color x))
+   for desc = (alist-get 'description x)
+   collect (cons (fj-propertize-label name color desc)
+                 (alist-get 'id x))))
+
+(defun fj-propertize-label (name color &optional desc)
+  "Propertize NAME as a label, with COLOR prop and DESC, a description."
+  (propertize name
+              'face
+              `( :inherit fj-label-face
+                 :background ,color
+                 :foreground ,(readable-foreground-color color))
+              ;; FIXME: in label data for an issue, desc is empty
+              'help-echo desc))
+
 (defun fj-issue-label-add (&optional repo owner issue)
   "Add a label to ISSUE in REPO by OWNER."
+  ;; POST "repos/%s/%s/issues/%s/labels"
   (interactive)
   (let* ((repo (fj-read-user-repo repo))
          (issue (or issue
@@ -1642,9 +1705,10 @@ Return its name, or if ID, return a cons of its name and id."
          (url (format "repos/%s/%s/issues/%s/labels" owner repo issue))
          (issue-labels (fj--map-alist-key
                         (fj-issue-get-labels repo owner issue)
-                        'name))
-         (choice (fj-issue-read-label repo owner issue))
-         (params `(("labels" . ,(cl-pushnew choice issue-labels
+                        'id)) ;; we post IDs to avoid duplicating:
+         (choice (fj-issue-read-label repo owner issue :id))
+         (id (cdr choice))
+         (params `(("labels" . ,(cl-pushnew id issue-labels
                                             :test #'equal))))
          (resp (fj-post url params :json)))
     (fedi-http--triage
@@ -1653,7 +1717,7 @@ Return its name, or if ID, return a cons of its name and id."
        (let ((json (fj-resp-json resp)))
          (message "%s" (prin1-to-string json))
          (fj-view-reload)
-         (message "Label %s added to #%s!" choice issue))))))
+         (message "Label %s added to #%s!" (car choice) issue))))))
 
 (defun fj-issue-label-remove (&optional repo owner issue)
   "Remove label from ISSUE in REPO by OWNER."
@@ -1666,11 +1730,12 @@ Return its name, or if ID, return a cons of its name and id."
          (issue-labels (fj-issue-get-labels repo owner issue)))
     (if (not issue-labels)
         (user-error "No labels to remove")
-      (let* ((labels-alist (fj--map-alist-to-cons issue-labels 'name 'id))
+      (let* ((labels (fj-propertize-label-names issue-labels))
              (choice (completing-read
                       (format "Remove label from #%s: " issue)
-                      labels-alist))
-             (id (cdr (assoc choice labels-alist #'string=)))
+                      labels))
+             (id (cdr (assoc choice labels #'string=)))
+             (color (fj-label-color-from-name choice labels))
              (url (format "repos/%s/%s/issues/%s/labels/%s"
                           owner repo issue id))
              (resp (fj-delete url)))
@@ -1678,7 +1743,63 @@ Return its name, or if ID, return a cons of its name and id."
          resp
          (lambda (_)
            (fj-view-reload)
-           (message "Label %s removed from #%s!" choice issue)))))))
+           (let ((label (fj-propertize-label choice color)))
+             (message "Label %s removed from #%s!" label issue))))))))
+
+(defun fj-repo-create-label (&optional repo owner)
+  "Create a new label for REPO by OWNER."
+  ;; POST /repos/{owner}/{repo}/labels
+  ;;  ((id . 456278) (name . "api") (exclusive . :json-false)
+  ;;   (is_archived . :json-false) (color . "ee9a49") (description . "")
+  ;;   (url . "https://codeberg.org/api/v1/repos/martianh/fj.el/labels/456278"))
+  (interactive)
+  (let* ((repo (fj-read-user-repo repo))
+         (owner (or owner fj-user))
+         ;; FIXME: check if name or color already used?:
+         (name (read-string "Label: "))
+         (color (read-color nil :rgb))
+         ;; convert eg #D2D2B4B48C8C to #D2B48C:
+         (color (concat (substring color 0 3)
+                        (substring color 5 7)
+                        (substring color 9 11)))
+         (params `(("name" . ,name)
+                   ("color" . ,color)))
+         (endpoint (format "/repos/%s/%s/labels" owner repo))
+         (resp (fj-post endpoint params :json)))
+    (fedi-http--triage
+     resp
+     (lambda (_)
+       (let ((label (fj-propertize-label name color)))
+         (message "Label %s added to %s!" label repo))))))
+
+(defun  fj-repo-delete-label (&optional repo owner)
+  "Delete a label for REPO by OWNER."
+  ;; DELETE /repos/{owner}/{repo}/labels/{id}
+  (interactive)
+  (let* ((repo (fj-read-user-repo repo))
+         (owner (or owner fj-user))
+         (labels (fj-repo-get-labels repo owner))
+         (list (fj-propertize-label-names labels))
+         (choice (completing-read "Delete label: " list))
+         (id (cdr (assoc choice list #'string=)))
+         (color (fj-label-color-from-name choice list))
+         (endpoint (format "/repos/%s/%s/labels/%s" owner repo id))
+         (resp (fj-delete endpoint)))
+    (fedi-http--triage
+     resp
+     (lambda (_)
+       (fj-view-reload)
+       (let ((label (fj-propertize-label choice color)))
+         (message "Label %s deleted from %s" label repo))))))
+
+(defun fj-label-color-from-name (name alist)
+  "Fetch the backgroun property of NAME in ALIST.
+ALIST is of labels as names and ids, and the names are propertized in
+the label's color, as per `fj-propertize-label-names'."
+  (plist-get
+   (get-text-property 0 'face
+                      (car (assoc name alist #'string=)))
+   :background))
 
 ;;; MILESTONES
 
@@ -1906,13 +2027,7 @@ If REPO is provided, also include a repo column."
      (lambda (l)
        (let-alist l
          (let ((bg (concat "#" .color)))
-           (propertize .name
-                       'face
-                       `( :inherit fj-label-face
-                          :background ,bg
-                          :foreground ,(readable-foreground-color bg))
-                       ;; FIXME: in label data for an issue, desc is empty
-                       'help-echo .description))))
+           (fj-propertize-label .name bg .description))))
      data
      (fj-plain-space))))
 
@@ -1984,8 +2099,8 @@ git config."
           (not (magit-inside-worktree-p :noerror)))
       (fj-list-issues-do repo owner state type) ;; fall back to `fj-user' repos
     (if-let* ((repo-+-owner (fj-repo-+-owner-from-git))
-              (owner (car repo-+-owner))
-              (repo (cadr repo-+-owner)))
+              (owner (or repo (car repo-+-owner)))
+              (repo (or owner (cadr repo-+-owner))))
         (fj-list-issues-do repo owner state type)
       (message "Failed to find Forgejo repo")
       (fj-list-issues-do repo owner state type))))
@@ -2537,7 +2652,9 @@ If INIT-PAGE, do not update :page in viewargs."
               (fj-render-timeline json))
             (message "Loading comments... Done")
             (when end-page ;; if we are re-paginating, go again maybe:
-              (fj-reload-paginated-pages-maybe end-page page))))))))
+              (fj-reload-paginated-pages-maybe end-page page))
+            ;; maybe add a "more" link:
+            (fj-issue-timeline-more-link-mayb)))))))
 
 (defun fj-reload-paginated-pages-maybe (end-page page)
   "Call `fj-reload-paginated-pages' maybe.
@@ -2793,6 +2910,11 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
                (date-to-time .updated_at)))
           (user (propertize .user.username
                             'face 'fj-name-face))
+          (assignee (if .assignee_team
+                        (or .assignee_team.name "")
+                      (or .assignee.username
+                          .assignee.login
+                          "")))
           (body (mm-url-decode-entities-string .body)))
       (insert
        (propertize
@@ -2892,7 +3014,7 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
           ("review"
            (fj-format-review .review_id ts format-str user))
           ("review_request"
-           (fj-format-assignee format-str user .assignee.username ts))
+           (fj-format-assignee format-str user assignee ts))
           ;; milestones:
           ("milestone"
            (format format-str user
@@ -2900,8 +3022,7 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
                                'face 'fj-name-face)
                    ts))
           ("assignees"
-           (fj-format-assignee format-str
-                               .user.username .assignee.username ts))
+           (fj-format-assignee format-str .user.username assignee ts))
           ("change_target_branch"
            (fj-format-change-target format-str .user.username
                                     .old_ref .new_ref))
@@ -3566,6 +3687,15 @@ Optionally specify REF, a commit, branch, or tag."
           (repo (fj--repo-col-or-buf-spec)))
      (fj-issue-label-add repo owner number))))
 
+(defun fj-issues-tl-label-remove ()
+  "Remove label from issue from tabulated issues listing."
+  (interactive)
+  (fj-with-entry
+   (let* ((number (fj--get-tl-col 0))
+          (owner (fj--get-buffer-spec :owner))
+          (repo (fj--repo-col-or-buf-spec)))
+     (fj-issue-label-remove repo owner number))))
+
 ;;; COMPOSING
 
 (defalias 'fj-compose-cancel #'fedi-post-cancel)
@@ -4104,6 +4234,12 @@ Used for hitting RET on a given link."
         ('shr
          (let ((url (fj--property 'shr-url)))
            (shr-browse-url url)))
+        ('more
+         (let ((inhibit-read-only t))
+           (delete-region
+            (save-excursion (beginning-of-line) (point))
+            (save-excursion (end-of-line) (point))))
+         (fj-item-view-more))
         (_
          (error "Unknown link type %s" type))))))
 
