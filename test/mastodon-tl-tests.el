@@ -359,7 +359,9 @@ Strict-Transport-Security: max-age=31536000
 (ert-deftest mastodon-tl--byline-regular ()
   "Should format the regular toot correctly."
   (let ((mastodon-tl--show-avatars-p nil)
-        (timestamp (cdr (assoc 'created_at mastodon-tl-test-base-toot))))
+        (timestamp (cdr (assoc 'created_at mastodon-tl-test-base-toot)))
+        (username (mastodon-tl--unicode-wrap "Account 42"))
+        (handle (mastodon-tl--unicode-wrap "@acct42@example.space")))
     (with-mock
       (mock (date-to-time timestamp) => '(22782 21551))
       (mock (mastodon-tl--toot-stats mastodon-tl-test-base-toot) => "")
@@ -369,10 +371,8 @@ Strict-Transport-Security: max-age=31536000
 	    (handle-location 20))
         (should (string= (substring-no-properties
 			  byline)
-			 (concat "Account 42 (@acct42@example.space) 2999-99-99 00:11:22
-  "
-                                 mastodon-tl--horiz-bar "
-")))
+			 (format "%s (%s) 2999-99-99 00:11:22\n  %s\n"
+                                 username handle mastodon-tl--horiz-bar)))
         (should (eq (get-text-property handle-location 'mastodon-tab-stop byline)
                     'user-handle))
         (should (string= (get-text-property handle-location 'mastodon-handle byline)
@@ -383,7 +383,9 @@ Strict-Transport-Security: max-age=31536000
 (ert-deftest mastodon-tl--byline-regular-with-avatar ()
   "Should format the regular toot correctly."
   (let ((mastodon-tl--show-avatars-p t)
-        (timestamp (cdr (assoc 'created_at mastodon-tl-test-base-toot))))
+        (timestamp (cdr (assoc 'created_at mastodon-tl-test-base-toot)))
+        (username (mastodon-tl--unicode-wrap "Account 42"))
+        (handle (mastodon-tl--unicode-wrap "@acct42@example.space")))
     (with-mock
       (stub create-image => '(image "fake data"))
       (mock (date-to-time timestamp) => '(22782 21551))
@@ -392,16 +394,16 @@ Strict-Transport-Security: max-age=31536000
 
       (should (string= (substring-no-properties
                         (mastodon-tl--byline mastodon-tl-test-base-toot))
-                       (concat "Account 42 (@acct42@example.space) 2999-99-99 00:11:22
-  "
-                               mastodon-tl--horiz-bar "
-"))))))
+                       (format "%s (%s) 2999-99-99 00:11:22\n  %s\n"
+                               username handle mastodon-tl--horiz-bar))))))
 
 (ert-deftest mastodon-tl--byline-boosted ()
   "Should format the boosted toot correctly."
   (let* ((mastodon-tl--show-avatars-p nil)
          (toot (cons '(reblogged . t) mastodon-tl-test-base-toot))
-         (timestamp (cdr (assoc 'created_at toot))))
+         (timestamp (cdr (assoc 'created_at toot)))
+         (username (mastodon-tl--unicode-wrap "Account 42"))
+         (handle (mastodon-tl--unicode-wrap "@acct42@example.space")))
     (with-mock
       (mock (date-to-time timestamp) => '(22782 21551))
       (mock (mastodon-tl--symbol 'boost) => "B")
@@ -410,16 +412,16 @@ Strict-Transport-Security: max-age=31536000
 
       (should (string= (substring-no-properties
                         (mastodon-tl--byline toot))
-                       (concat "(B) Account 42 (@acct42@example.space) 2999-99-99 00:11:22
-  "
-                               mastodon-tl--horiz-bar "
-"))))))
+                       (format "(B) %s (%s) 2999-99-99 00:11:22\n  %s\n"
+                               username handle mastodon-tl--horiz-bar))))))
 
 (ert-deftest mastodon-tl--byline-favorited ()
   "Should format the favourited toot correctly."
   (let* ((mastodon-tl--show-avatars-p nil)
          (toot (cons '(favourited . t) mastodon-tl-test-base-toot))
-         (timestamp (cdr (assoc 'created_at toot))))
+         (timestamp (cdr (assoc 'created_at toot)))
+         (username (mastodon-tl--unicode-wrap "Account 42"))
+         (handle (mastodon-tl--unicode-wrap "@acct42@example.space")))
     (with-mock
       (mock (mastodon-tl--symbol 'favourite) => "F")
       (mock (date-to-time timestamp) => '(22782 21551))
@@ -428,17 +430,17 @@ Strict-Transport-Security: max-age=31536000
 
       (should (string= (substring-no-properties
                         (mastodon-tl--byline toot))
-                       (concat "(F) Account 42 (@acct42@example.space) 2999-99-99 00:11:22
-  "
-                               mastodon-tl--horiz-bar "
-"))))))
+                       (format "(F) %s (%s) 2999-99-99 00:11:22\n  %s\n"
+                               username handle mastodon-tl--horiz-bar))))))
 
 
 (ert-deftest mastodon-tl--byline-boosted/favorited ()
   "Should format the boosted & favourited toot correctly."
   (let* ((mastodon-tl--show-avatars-p nil)
          (toot `((favourited . t) (reblogged . t) ,@mastodon-tl-test-base-toot))
-         (timestamp (cdr (assoc 'created_at toot))))
+         (timestamp (cdr (assoc 'created_at toot)))
+         (username (mastodon-tl--unicode-wrap "Account 42"))
+         (handle (mastodon-tl--unicode-wrap "@acct42@example.space")))
     (with-mock
       (mock (mastodon-tl--toot-stats toot) => "")
       (mock (date-to-time timestamp) => '(22782 21551))
@@ -450,10 +452,8 @@ Strict-Transport-Security: max-age=31536000
 
       (should (string= (substring-no-properties
                         (mastodon-tl--byline toot))
-                       (concat "(?) (?) Account 42 (@acct42@example.space) 2999-99-99 00:11:22
-  "
-                               mastodon-tl--horiz-bar "
-"))))))
+                       (format "(?) (?) %s (%s) 2999-99-99 00:11:22\n  %s\n"
+                               username handle mastodon-tl--horiz-bar))))))
 
 ;; FIXME: In recent mastodon versions the `mastodon-tl--byline' behavior changed
 ;; as well as the reblogged behavior, and as a result this test behaves similar
@@ -497,7 +497,9 @@ Strict-Transport-Security: max-age=31536000
          (toot mastodon-tl-test-base-boosted-toot)
          (original-toot (cdr (assoc 'reblog mastodon-tl-test-base-boosted-toot)))
          (timestamp (cdr (assoc 'created_at toot)))
-         (original-timestamp (cdr (assoc 'created_at original-toot))))
+         (original-timestamp (cdr (assoc 'created_at original-toot)))
+         (username (mastodon-tl--unicode-wrap "Account 43"))
+         (handle (mastodon-tl--unicode-wrap "@acct43@example.space")))
     (with-mock
       ;; We don't expect to use the toot's timestamp but the timestamp of the
       ;; reblogged toot:
@@ -510,17 +512,18 @@ Strict-Transport-Security: max-age=31536000
 
       (should (string= (substring-no-properties
                         (mastodon-tl--byline toot))
-                       (concat "Account 43 (@acct43@example.space) original time
-  " mastodon-tl--horiz-bar "
-"))))))
+                       (format "%s (%s) original time\n  %s\n"
+                               username handle mastodon-tl--horiz-bar))))))
 
 (ert-deftest mastodon-tl--byline-reblogged-boosted/favorited ()
-  "Should format the reblogged toot that was also boosted & favoritedcorrectly."
+  "Should format the reblogged toot that was also boosted & favorited correctly."
   (let* ((mastodon-tl--show-avatars-p nil)
          (toot `((favourited . t) (reblogged . t) ,@mastodon-tl-test-base-boosted-toot))
          (original-toot (cdr (assoc 'reblog mastodon-tl-test-base-boosted-toot)))
          (timestamp (cdr (assoc 'created_at toot)))
-         (original-timestamp (cdr (assoc 'created_at original-toot))))
+         (original-timestamp (cdr (assoc 'created_at original-toot)))
+         (username (mastodon-tl--unicode-wrap "Account 43"))
+         (handle (mastodon-tl--unicode-wrap "@acct43@example.space")))
     (with-mock
       ;; We don't expect to use the toot's timestamp but the timestamp of the
       ;; reblogged toot:
@@ -536,9 +539,8 @@ Strict-Transport-Security: max-age=31536000
 
       (should (string= (substring-no-properties
                         (mastodon-tl--byline toot))
-                       (concat "Account 43 (@acct43@example.space) original time
-  " mastodon-tl--horiz-bar "
-"))))))
+                       (format "%s (%s) original time\n  %s\n"
+                               username handle mastodon-tl--horiz-bar))))))
 
 (ert-deftest mastodon-tl--byline-timestamp-has-relative-display ()
   "Should display the timestamp with a relative time."
@@ -565,7 +567,8 @@ Strict-Transport-Security: max-age=31536000
   "Should not fail when display_name is nil."
   (let* ((mastodon-tl--show-avatars-p nil)
          (toot (cons '(reblogged . t) mastodon-tl-test-empty-display-name))
-         (timestamp (cdr (assoc 'created_at toot))))
+         (timestamp (cdr (assoc 'created_at toot)))
+         (handle (mastodon-tl--unicode-wrap "@acct42@example.space")))
     (with-mock
       (mock (date-to-time timestamp) => '(22782 21551))
       (mock (mastodon-tl--symbol 'boost) => "B")
@@ -574,10 +577,8 @@ Strict-Transport-Security: max-age=31536000
 
       (should (string= (substring-no-properties
                         (mastodon-tl--byline toot))
-                       (concat "(B) acct42 (@acct42@example.space) 2999-99-99 00:11:22
-  "
-                               mastodon-tl--horiz-bar "
-"))))))
+                       (format "(B) acct42 (%s) 2999-99-99 00:11:22\n  %s\n"
+                               handle mastodon-tl--horiz-bar))))))
 
 (ert-deftest mastodon-tl--consider-timestamp-for-updates-no-active-callback ()
   "Should update the timestamp update variables as expected."
