@@ -1468,7 +1468,8 @@ To customize the keybindings, adjust `gnosis-review-keybindings'."
       (message "No thema found for %s (id:%s)" node-title node-id))))
 
 (defun gnosis-add-note-fields (deck-id type keimenon hypothesis answer
-					parathema tags suspend links &optional review-image)
+				       parathema tags suspend links
+				       &optional review-image gnosis-id)
   "Insert fields for new note.
 
 DECK-ID: Deck ID for new note.
@@ -1490,34 +1491,40 @@ LINKS: List of id links."
   (cl-assert (stringp parathema) nil "Parathema must be a string")
   (cl-assert (listp tags) nil "Tags must be a list")
   (cl-assert (listp links) nil "Links must be a list")
-  (let* ((note-id (gnosis-generate-id))
+  (let* ((gnosis-id (or gnosis-id (gnosis-generate-id)))
 	 (review-image (or review-image "")))
     (emacsql-with-transaction gnosis-db
       ;; Refer to `gnosis-db-schema-SCHEMA' e.g `gnosis-db-schema-review-log'
-      (gnosis--insert-into 'notes `([,note-id ,(downcase type) ,keimenon ,hypothesis
+      (gnosis--insert-into 'notes `([,gnosis-id ,(downcase type) ,keimenon ,hypothesis
 					      ,answer ,tags ,deck-id]))
-      (gnosis--insert-into 'review  `([,note-id ,gnosis-algorithm-gnosis-value
+      (gnosis--insert-into 'review  `([,gnosis-id ,gnosis-algorithm-gnosis-value
 						,gnosis-algorithm-amnesia-value]))
-      (gnosis--insert-into 'review-log `([,note-id ,(gnosis-algorithm-date)
+      (gnosis--insert-into 'review-log `([,gnosis-id ,(gnosis-algorithm-date)
 						   ,(gnosis-algorithm-date) 0 0 0 0
 						   ,suspend 0]))
-      (gnosis--insert-into 'extras `([,note-id ,parathema ,review-image]))
+      (gnosis--insert-into 'extras `([,gnosis-id ,parathema ,review-image]))
       (cl-loop for link in links
-	       do (gnosis--insert-into 'links `([,note-id ,link]))))))
+	       do (gnosis--insert-into 'links `([,gnosis-id ,link]))))))
 
-(defun gnosis-update-note (id keimenon hypothesis answer parathema tags links)
-  "Update note entry for ID."
-  ;; Make sure we provided the id as a number.
+(defun gnosis-update-note (id keimenon hypothesis answer parathema tags links
+			      &optional deck-id type)
+  "Update note entry for ID.
+
+If gnosis ID does not exist, create it anew."
   (let ((id (if (stringp id) (string-to-number id) id)))
-    (emacsql-with-transaction gnosis-db
-      (gnosis-update 'notes `(= keimenon ,keimenon) `(= id ,id))
-      (gnosis-update 'notes `(= hypothesis ',hypothesis) `(= id ,id))
-      (gnosis-update 'notes `(= answer ',answer) `(= id ,id))
-      (gnosis-update 'extras `(= parathema ,parathema) `(= id ,id))
-      (gnosis-update 'notes `(= tags ',tags) `(= id ,id))
-      (gnosis--delete 'links `(= source ,id))
-      (cl-loop for link in links
-	       do (gnosis--insert-into 'links `([,id ,link]))))))
+    (if (member id (gnosis-select 'id 'notes nil t))
+	(emacsql-with-transaction gnosis-db
+	  (gnosis-update 'notes `(= keimenon ,keimenon) `(= id ,id))
+	  (gnosis-update 'notes `(= hypothesis ',hypothesis) `(= id ,id))
+	  (gnosis-update 'notes `(= answer ',answer) `(= id ,id))
+	  (gnosis-update 'extras `(= parathema ,parathema) `(= id ,id))
+	  (gnosis-update 'notes `(= tags ',tags) `(= id ,id))
+	  (gnosis--delete 'links `(= source ,id))
+	  (cl-loop for link in links
+		   do (gnosis--insert-into 'links `([,id ,link]))))
+      (message "Gnosis with id: %d does not exist, creating anew." id )
+      (gnosis-add-note-fields deck-id type keimenon hypothesis answer parathema tags
+			      0 links nil id))))
 
 ;;;;;;;;;;;;;;;;;;;;;; NOTE HELPERS ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; These functions provide assertions depending on the type of note.
@@ -1559,7 +1566,7 @@ LINKS: List of id links in PARATHEMA."
   (if (equal id "NEW")
       (gnosis-add-note-fields deck-id type keimenon (or hypothesis (list ""))
 			       answer parathema tags suspend links)
-    (gnosis-update-note id keimenon hypothesis answer parathema tags links)))
+    (gnosis-update-note id keimenon hypothesis answer parathema tags links deck-id type)))
 
 (defun gnosis-add-note--double (id deck-id type keimenon hypothesis
 				    answer parathema tags suspend links)
@@ -1587,7 +1594,7 @@ and KEIMENON reversed."
 				   (list keimenon) parathema tags suspend links))
       ;; There should not be a double type note in database to
       ;; update.  This is used for testing purposes.
-      (gnosis-update-note id keimenon hypothesis answer parathema tags links))))
+      (gnosis-update-note id keimenon hypothesis answer parathema tags links deck-id type))))
 
 (defun gnosis-add-note--mcq (id deck-id type keimenon hypothesis
 				answer parathema tags suspend links)
@@ -1628,7 +1635,7 @@ LINKS: list of strings."
   (if (equal id "NEW")
       (gnosis-add-note-fields deck-id type keimenon (or hypothesis (list ""))
 			      answer parathema tags suspend links)
-    (gnosis-update-note id keimenon hypothesis answer parathema tags links)))
+    (gnosis-update-note id keimenon hypothesis answer parathema tags links deck-id type)))
 
 (defun gnosis-add-note--cloze (id deck-id type keimenon hypothesis
 				  answer parathema tags suspend links)
@@ -1680,7 +1687,7 @@ LINKS: list of strings."
 						  tags suspend links)))
 	  (gnosis-add-note-fields deck-id type keimenon (or hypothesis (list ""))
 				  answer parathema tags suspend links)))
-    (gnosis-update-note id keimenon hypothesis answer parathema tags links)))
+    (gnosis-update-note id keimenon hypothesis answer parathema tags links deck-id type)))
 
 (defun gnosis-add-note--mc-cloze (id deck-id type keimenon hypothesis
 				  answer parathema tags suspend links)
@@ -1718,7 +1725,7 @@ LINKS: list of strings."
   (if (equal id "NEW")
       (gnosis-add-note-fields deck-id type keimenon (or hypothesis (list ""))
 			      answer parathema tags suspend links)
-    (gnosis-update-note id keimenon hypothesis answer parathema tags links)))
+    (gnosis-update-note id keimenon hypothesis answer parathema tags links deck-id type)))
 
 (defun gnosis-export--insert-read-only (string)
   "Insert STRING as read-only."
@@ -1845,20 +1852,21 @@ generate new note id."
          (nth 4 note-data))))))
 
 (defun gnosis-export-deck (&optional deck filename new-p)
-  "Export contents of DECK to FILENAME.
-If FILENAME is nil, prompt for a filename."
+  "Export contents of DECK to FILENAME."
   (interactive (list (gnosis--get-deck-id)
                      (read-file-name "Export to file: ")
-		     (y-or-n-p "Export with current note ids? ")))
-  (let ((deck-name (gnosis--get-deck-name deck)))
-    (when filename
-      (unless (string-match-p "\\.org$" filename)
-        (setq filename (concat filename ".org"))))
+		     (not (y-or-n-p "Export with current note ids? "))))
+  (let* ((deck-name (gnosis--get-deck-name deck))
+	 (filename (if (file-directory-p filename)
+		       (expand-file-name deck-name filename)
+		     filename)))
+    (unless (string-match-p "\\.org$" filename)
+      (setq filename (concat (or filename deck-name) ".org")))
     (with-current-buffer (get-buffer-create (format "EXPORT: %s" deck-name))
       (let ((inhibit-read-only t))
         (org-mode)
         (erase-buffer)
-        (insert (format "#+GNOSIS_DECK: %s\n\n" deck-name))
+        (insert (format "#+DECK: %s\n\n" deck-name))
         (let ((note-ids (gnosis-select 'id 'notes `(= deck-id ,deck))))
           (gnosis-export-notes note-ids new-p)
           (when filename
@@ -2930,7 +2938,7 @@ DASHBOARD-TYPE: either Notes or Decks to display the respective dashboard."
 			  'face 'font-lock-type-face))))
 	(insert "\n")
 	(insert (gnosis-center-string
-		 (format "Current streak: %s days"
+		 (format "Current streak: %s day(s)"
 			 (propertize
 			  (gnosis-dashboard--streak
 			   (gnosis-select 'date 'activity-log '(> reviewed-total 0) t))
