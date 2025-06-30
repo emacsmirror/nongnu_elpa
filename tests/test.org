@@ -1,4 +1,5 @@
 #+DECK: test
+#+DESCRIPTION: Testing deck for gnosis.
 
 * Thema                                                       :latin:phrases:
 :PROPERTIES:

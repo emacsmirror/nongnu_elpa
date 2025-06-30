@@ -33,6 +33,10 @@
 (defvar gnosis-test-image "anatomy/typic-vertebra-superior-01.png"
   "Random image for testing")
 
+(defvar gnosis-test-deck-file
+  (expand-file-name "test.org"
+		    (file-name-directory (or load-file-name buffer-file-name))))
+
 (defun gnosis-test-random-items (list x)
   "Select X random items from LIST."
   (let ((shuffled-list (copy-sequence list))
@@ -64,7 +68,8 @@ If ask nil, leave testing env"
 	      (error (message "No %s table to drop." table))))
 	  (setf gnosis-testing t)
 	  (gnosis-db-init)
-	  (message "Development env is ready for testing."))
+	  (message "Development env is ready for testing.")
+	  (and (y-or-n-p "Add testing deck? ") (gnosis-import-deck gnosis-test-deck-file)))
       (setf gnosis-db (emacsql-sqlite-open (expand-file-name "gnosis.db" gnosis-dir)))
       (setf gnosis-testing nil)
       (message "Exited development env."))))
