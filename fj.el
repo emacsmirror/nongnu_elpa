@@ -6,7 +6,7 @@
 ;; Package-Requires: ((emacs "29.1") (fedi "0.2") (tp "0.5") (transient) (magit))
 ;; Keywords: git, convenience
 ;; URL: https://codeberg.org/martianh/fj.el
-;; Version: 0.12
+;; Version: 0.13
 ;; Separator: -
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -2099,8 +2099,8 @@ git config."
           (not (magit-inside-worktree-p :noerror)))
       (fj-list-issues-do repo owner state type) ;; fall back to `fj-user' repos
     (if-let* ((repo-+-owner (fj-repo-+-owner-from-git))
-              (owner (or repo (car repo-+-owner)))
-              (repo (or owner (cadr repo-+-owner))))
+              (owner (or owner (car repo-+-owner)))
+              (repo (or repo (cadr repo-+-owner))))
         (fj-list-issues-do repo owner state type)
       (message "Failed to find Forgejo repo")
       (fj-list-issues-do repo owner state type))))
