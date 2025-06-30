@@ -1914,6 +1914,15 @@ generate new note id."
 	     do (gnosis-save-note note deck))))
 
 ;;;###autoload
+(defun gnosis-import-deck (file)
+  "Save gnosis deck from FILE."
+  (interactive "fFile: ")
+  (with-temp-buffer
+    (insert-file-contents file)
+    (org-mode)
+    (gnosis-save-deck (gnosis-export-parse--deck-name))))
+
+;;;###autoload
 (defun gnosis-add-note (deck type &optional keimenon hypothesis
 			      answer parathema tags example)
   "Add note with TYPE in DECK."
