@@ -62,7 +62,7 @@ Strict-Transport-Security: max-age=31536000
   (let ((response-buffer
          (get-buffer-create "mastodon-http--triage-buffer")))
     (with-mock
-      (mock (url-http-parse-response) => 200)
+      (mock (mastodon-http--response-status response-buffer) => 200)
       (with-current-buffer response-buffer
         (erase-buffer)
         (insert mastodon-http--example-200))
@@ -78,7 +78,7 @@ Strict-Transport-Security: max-age=31536000
   (let ((response-buffer
          (get-buffer-create "mastodon-http--triage-buffer")))
     (with-mock
-      (mock (url-http-parse-response) => 444)
+      (mock (mastodon-http--response-status response-buffer) => 444)
       (with-current-buffer response-buffer
         (erase-buffer)
         (insert mastodon-http--example-400))

@@ -209,7 +209,7 @@ mention string."
           (toot mastodon-toot-test-base-toot)
           (id 61208))
       (with-mock
-        (mock (url-http-parse-response) => 200)
+        (mock (mastodon-http--response-status pin-response) => 200)
         (mock (mastodon-tl--property 'base-item-id) => id)
         (mock (mastodon-http--api "statuses/61208/pin")
               => "https://example.space/statuses/61208/pin")
