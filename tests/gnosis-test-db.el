@@ -24,15 +24,11 @@
 
 ;;; Commentary:
 
-;; Development module for gnosis, make testing of gnosis
-;; easier by creating a testing environment with random inputs.
+;; Development module for gnosis, creates a testing database env.
 
 ;;; Code:
 
-(defvar gnosis-test-tags '("anatomy" "thoracic" "serratus-anterior"
-			  "biochemistry" "informatics" "amino-acids"
-			  "microbiology" "gram-positive" "gram-negative"
-			  "fungi" "parasites"))
+(require 'gnosis)
 
 (defvar gnosis-test-image "anatomy/typic-vertebra-superior-01.png"
   "Random image for testing")
@@ -49,23 +45,12 @@
 				    (nthcdr (1+ index) shuffled-list)))))
     selected-items))
 
-(defun gnosis-test-add-fields (&optional num deck)
-  "Add random inputs to test.
-
-NUM: Number of random inputs to add.
-DECK: Deck to add the inputs to."
-  (let ((num (or num (string-to-number (read-string "Number of random inputs: "))))
-	(testing-deck (or deck "testing")))
-    (unless (gnosis-get 'name 'decks `(= name ,testing-deck))
-      (gnosis-add-deck testing-deck))
-    num))
-
-(defun gnosis-test-start (&optional note-num)
+(defun gnosis-test-db ()
   "Begin/End testing env.
 
 If ask nil, leave testing env"
   (interactive)
-  (let* ((ask (y-or-n-p "Start development env (n for exit)?"))
+  (let* ((ask (y-or-n-p "Start testing database (n for exit)?"))
 	 (testing-dir (expand-file-name "testing" gnosis-dir))
 	 (testing-db (expand-file-name "testing.db" testing-dir)))
     (if ask
@@ -79,13 +64,11 @@ If ask nil, leave testing env"
 	      (error (message "No %s table to drop." table))))
 	  (setf gnosis-testing t)
 	  (gnosis-db-init)
-	  (gnosis-test-add-fields note-num)
-	  (message "Adding testing values...")
 	  (message "Development env is ready for testing."))
       (setf gnosis-db (emacsql-sqlite-open (expand-file-name "gnosis.db" gnosis-dir)))
       (setf gnosis-testing nil)
       (message "Exited development env."))))
 
 
-(provide 'gnosis-test)
-;;; gnosis-test.el ends here
+(provide 'gnosis-test-db)
+;;; gnosis-test-db.el ends here
