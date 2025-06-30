@@ -6,7 +6,7 @@
 ;; Keywords: extensions
 ;; URL: https://thanosapollo.org/projects/gnosis
 
-;; Version: 0.5.1
+;; Version: 0.5.2
 
 ;; Package-Requires: ((emacs "27.2") (emacsql "4.1.0") (compat "29.1.4.2") (transient "0.7.2") (org-gnosis "0.0.9"))
 
@@ -25,13 +25,9 @@
 
 ;;; Commentary:
 
-;; Gnosis (γνῶσις) is a spaced repetition system that enhances memory
+;; Gnosis is a spaced repetition system-like that enhances memory
 ;; retention through active recall.  It employs a Q&A format, where each
-;; note consists of a question, answer, and explanation.  Notes are
-;; reviewed at optimally spaced intervals based on the user's success or
-;; failure to recall the answer.  Key benefits arise from writing out
-;; answers when reviewing notes, fostering deeper understanding
-;; and improved memory retention.
+;; gnosis consists of a question, answer, and explanation.
 
 ;; Gnosis algorithm is highly adjustable, allowing users to set specific
 ;; values not just for note decks but for tags as well.  Gnosis'
