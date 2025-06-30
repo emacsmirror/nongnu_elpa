@@ -122,48 +122,51 @@ When formatting Gargon's state we want to see
 - the url of the avatar (yet to be loaded)
 - the info attached to the name"
   (with-mock
-   ;; Don't start any image loading:
-   (mock (mastodon-media--inline-images * *) => nil)
-   ;; Let's not do formatting as that makes it hard to not rely on
-   ;; window width and reflowing the text.
-   (mock (shr-render-region * *) => nil)
-   (if (version< emacs-version "27.1")
-       (mock (image-type-available-p 'imagemagick) => t)
-     (mock (image-transforms-p) => t))
+    ;; Don't start any image loading:
+    (mock (mastodon-media--inline-images * *) => nil)
+    ;; Let's not do formatting as that makes it hard to not rely on
+    ;; window width and reflowing the text.
+    (mock (shr-render-region * *) => nil)
+    (if (version< emacs-version "27.1")
+        (mock (image-type-available-p 'imagemagick) => t)
+      (mock (image-transforms-p) => t))
 
-   (with-temp-buffer
-     (let ((mastodon-tl--show-avatars t)
-           (mastodon-tl--display-media-p t))
-       (mastodon-profile--format-user (list gargron-profile-json)))
+    (with-temp-buffer
+      (let ((mastodon-tl--show-avatars t)
+            (mastodon-tl--display-media-p t)
+            (username (mastodon-tl--unicode-wrap "Eugen"))
+            (handle (mastodon-tl--unicode-wrap "@Gargron")))
+        (mastodon-profile--format-user (list gargron-profile-json))
 
-     (should
-      (equal
-       (buffer-substring-no-properties (point-min) (point-max))
-       "\n  Eugen (@Gargron)\n<p>Developer of Mastodon and administrator of mastodon.social. I post service announcements, development updates, and personal stuff.</p>\n"))
+        (should
+         (equal
+          (buffer-substring-no-properties (point-min) (point-max))
+          (format "\n  %s (%s)\n<p>Developer of Mastodon and administrator of mastodon.social. I post service announcements, development updates, and personal stuff.</p>\n"
+                  username handle)))
 
-     ;; Check the avatar at pos 2
-     (should
-      (equal
-       (get-text-property 2 'media-url)
-       "https://files.mastodon.social/accounts/avatars/000/000/001/original/d96d39a0abb45b92.jpg"))
-     (should
-      (equal
-       (get-text-property 2 'media-state)
-       'needs-loading))
+        ;; Check the avatar at pos 2
+        (should
+         (equal
+          (get-text-property 2 'media-url)
+          "https://files.mastodon.social/accounts/avatars/000/000/001/original/d96d39a0abb45b92.jpg"))
+        (should
+         (equal
+          (get-text-property 2 'media-state)
+          'needs-loading))
 
-     ;; Check the byline state
-     (should
-      (equal
-       (get-text-property 4 'byline)
-       t))
-     (should
-      (equal
-       (get-text-property 4 'item-id)
-       (alist-get 'id gargron-profile-json)))
-     (should
-      (equal
-       (get-text-property 4 'item-json)
-       gargron-profile-json)))))
+        ;; Check the byline state
+        (should
+         (equal
+          (get-text-property 4 'byline)
+          t))
+        (should
+         (equal
+          (get-text-property 4 'item-id)
+          (alist-get 'id gargron-profile-json)))
+        (should
+         (equal
+          (get-text-property 4 'item-json)
+          gargron-profile-json))))))
 
 (ert-deftest mastodon-profile--search-account-by-handle--removes-at ()
   "Should ignore a leading at-sign in user handle.

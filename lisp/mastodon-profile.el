@@ -890,7 +890,7 @@ Used to view a user's followers and those they're following."
            (insert
             "\n"
             (propertize
-             (mastodon-tl--byline-author `((account . ,toot)) :avatar)
+             (mastodon-tl--byline-author `((account . ,toot)) :avatar nil :base)
              'byline  't
              'item-id (alist-get 'id toot)
              'base-item-id (mastodon-tl--item-id toot)
