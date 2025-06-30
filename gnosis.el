@@ -1283,32 +1283,36 @@ review result."
           (funcall func-name id))
       (error "Malformed note type: '%s'" type))))
 
-(defun gnosis-review-process-note (note note-count)
+(defun gnosis-review-process-note (note &optional note-count)
   "Process review for NOTE and update session statistics.
 
 Displays the note, processes the review result, and updates the
 header.  Returns the incremented NOTE-COUNT after processing.
 
 This is a helper function for `gnosis-review-session'."
-  (let ((success (gnosis-review--display-note note)))
+  (let ((success (gnosis-review--display-note note))
+	(note-count (or note-count 0)))
     (cl-incf note-count)
     (gnosis-review-actions success note note-count)
     (gnosis-review-update-header note-count)
     note-count))
 
-(defun gnosis-review-update-header (note-count)
+(defun gnosis-review-update-header (reviewed-count &optional remaining-reviews)
   "Update the review session header with current stats.
 
-NOTE-COUNT: Number of notes reviewed for current session."
+REVIEWED-COUNT: Total number of items that have been reviewed in
+current session.
+REMAINING-REVIEWS: Total number of remaining items to be reviewed."
   (with-current-buffer (get-buffer-create "*gnosis*")
-    (setq-local header-line-format
-                (gnosis-center-string
-		 (format "%s %s %s"
-                         (propertize (number-to-string note-count)
-                                     'face 'font-lock-type-face)
-			 (propertize "|" 'face 'font-lock-comment-face)
-                         (propertize (number-to-string gnosis-due-notes-total)
-                                     'face 'gnosis-face-false))))))
+    (let ((remaining-reviews (or remaining-reviews gnosis-due-notes-total)))
+      (setq-local header-line-format
+                  (gnosis-center-string
+		   (format "%s %s %s"
+                           (propertize (number-to-string reviewed-count)
+                                       'face 'font-lock-type-face)
+			   (propertize "|" 'face 'font-lock-comment-face)
+                           (propertize (number-to-string remaining-reviews)
+				       'face 'gnosis-face-false)))))))
 
 (defun gnosis-review-session (notes &optional due note-count)
   "Start review session for NOTES.
@@ -1391,13 +1395,6 @@ be called with new SUCCESS value plus NOTE & NOTE-COUNT."
   (setf success (if success nil t))
   (gnosis-display-next-review note success)
   (gnosis-review-actions success note note-count))
-
-;; (defun gnosis-review-action--read (id)
-;;   "Open link for note at extras."
-;;   (let* ((extras (gnosis-get 'extra-notes 'extras `(= id ,id)))
-;; 	 (ids (gnosis-extract-id-links extras))
-;; 	 ())
-;;     )
 
 (defun gnosis-review-actions (success id note-count)
   "Specify action during review of note.
