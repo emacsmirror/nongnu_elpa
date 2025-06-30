@@ -1062,7 +1062,7 @@ Optionally, provide a list for due NOTE-IDS."
   (let* ((where-id-clause `(= id ,id))
          (last-rev (gnosis-get 'last-rev 'review-log where-id-clause))
 	 (rev-date (gnosis-get 'next-rev 'review-log where-id-clause)))
-    (max (gnosis-algorithm-date-diff last-rev rev-date) 1)))
+    (gnosis-algorithm-date-diff last-rev rev-date)))
 
 (defun gnosis-review-algorithm (id success)
   "Return next review date & gnosis for note with value of id ID.
@@ -2081,8 +2081,6 @@ Optionally, use CUSTOM-DECK and CUSTOM-VALUES."
 
 (defun gnosis-get-note-amnesia (id &optional custom-deck custom-tags custom-values )
   "Return amnesia value for note ID.
-
-Note amnesia should be hte MINIMUM value of deck's & tags' amnesia.
 
 CUSTOM-DECK: Specify custom deck.
 CUSTOM-TAGS: Specify custom tags for note id.
