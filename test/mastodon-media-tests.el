@@ -75,12 +75,13 @@
       (mock (create-image
              *
              (when (version< emacs-version "27.1") 'imagemagick)
-             t :height 123) => '(image foo))
+             t :height 123)
+            => '(image foo))
       (mock (copy-marker 7) => :my-marker )
       (mock (url-retrieve
              url
              #'mastodon-media--process-image-response
-             `(:my-marker (:height 123) 1 ,url))
+             `(,url :my-marker (:height 123) 1))
             => :called-as-expected)
 
       (with-temp-buffer
@@ -101,7 +102,7 @@
       (mock (url-retrieve
              url
              #'mastodon-media--process-image-response
-             `(:my-marker () 1 ,url))
+             `(,url :my-marker () 1))
             => :called-as-expected)
 
       (with-temp-buffer
@@ -121,7 +122,7 @@
       (mock (url-retrieve
              "http://example.org/image.png"
              #'mastodon-media--process-image-response
-             '(:my-marker (:max-height 321) 5 "http://example.org/image.png"))
+             '("http://example.org/image.png" :my-marker (:max-height 321) 5))
             => :called-as-expected)
       (with-temp-buffer
         (insert (concat "Start:"
@@ -141,7 +142,7 @@
       (mock (url-retrieve
              "http://example.org/image.png"
              #'mastodon-media--process-image-response
-             '(:my-marker () 5 "http://example.org/image.png"))
+             '("http://example.org/image.png" :my-marker (:max-height 321) 5))
             => :called-as-expected)
 
       (with-temp-buffer
@@ -160,7 +161,8 @@
       (mock (create-image
              *
              (when (version< emacs-version "27.1") 'imagemagick)
-             t :height 123) => '(image foo))
+             t :height 123)
+            => '(image foo))
       (stub url-retrieve => (error "url-retrieve failed"))
 
       (with-temp-buffer
@@ -201,7 +203,7 @@
                  t ':image :option) => :fake-image)
 
           (mastodon-media--process-image-response
-           () used-marker '(:image :option) 1 "http://example.org/image.png")
+           () "http://example.org/image.png" used-marker '(:image :option) 1)
 
           ;; the used marker has been unset:
           (should (null (marker-position used-marker)))
