@@ -1,3 +1,8 @@
+* 0.5.2
++ Fix importing deck issues with non-new gnosis ids.
++ Minor aesthetic changes on review header.
++ Remove modeline review indication when due reviews are 0.
+
 * 0.5.1
 + Minor bug fixes & documentation update.
 
