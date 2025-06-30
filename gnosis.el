@@ -2978,6 +2978,7 @@ DASHBOARD-TYPE: either Notes or Decks to display the respective dashboard."
     (shell-command (format "%s pull" (executable-find "git")))
     (setf gnosis-db
 	  (emacsql-sqlite-open (expand-file-name "gnosis.db" gnosis-dir)))))
+
 ;; Gnosis mode ;;
 ;;;;;;;;;;;;;;;;;
 
@@ -2988,17 +2989,19 @@ DASHBOARD-TYPE: either Notes or Decks to display the respective dashboard."
   :group 'gnosis
   :lighter nil
   (setq gnosis-due-notes-total (length (gnosis-review-get-due-notes)))
-  (if (and gnosis-modeline-mode (> gnosis-due-notes-total 0))
+  (if gnosis-modeline-mode
       (progn
         (add-to-list 'global-mode-string
-		     '(:eval
-		       (format " G:%d" gnosis-due-notes-total) 'face 'warning))
+                     '(:eval
+                       (if (and gnosis-due-notes-total (> gnosis-due-notes-total 0))
+                           (format " G:%d" gnosis-due-notes-total)
+                         "")))
         (force-mode-line-update))
     (setq global-mode-string
           (seq-remove (lambda (item)
                         (and (listp item) (eq (car item) :eval)
                              (string-prefix-p " G:" (format "%s" (eval (cadr item))))))
-		      global-mode-string))
+                      global-mode-string))
     (force-mode-line-update)))
 
 (define-derived-mode gnosis-mode special-mode "Gnosis"
