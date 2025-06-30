@@ -331,7 +331,8 @@ When VERIFICATION is non-nil, skip `y-or-n-p' prompt."
 PROMPT: Prompt for `gnosis-completing-read-function'
 History is disabled."
   (let ((history-add-new-input nil))
-    (funcall gnosis-completing-read-function prompt (gnosis-shuffle seq))))
+    (funcall gnosis-completing-read-function prompt
+	     (gnosis-shuffle (copy-sequence seq)))))
 
 (defun gnosis-insert-separator ()
   "Insert a dashed line spanning the entire width of the buffer."
