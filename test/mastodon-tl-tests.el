@@ -1131,7 +1131,8 @@ correct value for following, as well as notifications enabled or disabled."
          (url-mute "https://instance.url/accounts/123456789/mute")
          (url-block "https://instance.url/accounts/123456789/block")
          (url-true "https://instance.url/accounts/123456789/follow?notify=true")
-         (url-false "https://instance.url/accounts/123456789/follow?notify=false"))
+         (url-false "https://instance.url/accounts/123456789/follow?notify=false")
+         (handle (concat "@" user-handle)))
     (with-temp-buffer
       (let ((response-buffer-true (current-buffer)))
         (insert mastodon-tl--follow-notify-true-response)
@@ -1144,7 +1145,7 @@ correct value for following, as well as notifications enabled or disabled."
                                                   user-name
                                                   user-handle
                                                   "follow")
-            "User some-user (@some-user@instance.url) followed!")))))
+            (format "User %s (%s) %s!" user-name handle "followed"))))))
     (with-temp-buffer
       (let ((response-buffer-true (current-buffer)))
         (insert mastodon-tl--follow-notify-true-response)
@@ -1157,7 +1158,7 @@ correct value for following, as well as notifications enabled or disabled."
                                                   user-name
                                                   user-handle
                                                   "mute")
-            "User some-user (@some-user@instance.url) muted!")))))
+            (format "User %s (%s) %s!" user-name handle "muted"))))))
     (with-temp-buffer
       (let ((response-buffer-true (current-buffer)))
         (insert mastodon-tl--follow-notify-true-response)
@@ -1170,7 +1171,7 @@ correct value for following, as well as notifications enabled or disabled."
                                                   user-name
                                                   user-handle
                                                   "block")
-            "User some-user (@some-user@instance.url) blocked!")))))
+            (format "User %s (%s) %s!" user-name handle "blocked"))))))
     (with-temp-buffer
       (let ((response-buffer-true (current-buffer)))
         (insert mastodon-tl--follow-notify-true-response)
@@ -1185,7 +1186,8 @@ correct value for following, as well as notifications enabled or disabled."
                                                     user-handle
                                                     "follow"
                                                     "true")
-              "Receiving notifications for user some-user (@some-user@instance.url)!"))))))
+              (format "Receiving notifications for user %s (%s)!"
+                      user-name handle)))))))
     (with-temp-buffer
       (let ((response-buffer-false (current-buffer)))
         (insert mastodon-tl--follow-notify-false-response)
@@ -1199,7 +1201,8 @@ correct value for following, as well as notifications enabled or disabled."
                                                   user-handle
                                                   "follow"
                                                   "false")
-            "Not receiving notifications for user some-user (@some-user@instance.url)!")))))))
+            (format "Not receiving notifications for user %s (%s)!"
+                    user-name handle))))))))
 
 (ert-deftest mastodon-tl--report-to-mods-params-alist ()
   ""
