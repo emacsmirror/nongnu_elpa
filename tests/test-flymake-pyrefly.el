@@ -25,16 +25,15 @@
   (should-error (flymake-pyrefly 'identity)))
 (ert-deftest flymake-pyrefly-test-normal-use-case ()
   "Test a normal Pyrefly use-case."
-  (let ((saved-args nil)
-        (mock-report-fn (lambda (args) (setq saved-args args))))
+  (defun mock-report-fn (args)
+    (setq saved-args args))
   (find-file "example.py")
-  (flymake-pyrefly mock-report-fn)
-  (flymake-pyrefly mock-report-fn)
+  (setq saved-args nil)
+  (flymake-pyrefly 'mock-report-fn)
+  (flymake-pyrefly 'mock-report-fn)
   (sleep-for 1)
   (should
-   (equal
-    (aref (car saved-args) 5)
-    "`Literal[0]` is not assignable to variable `x` with type `str` [bad-assignment]"))))
+   (equal (aref (car saved-args) 2) (cons 2 5))))
 (ert-deftest flymake-pyrefly-test-setup ()
   (pyrefly-setup-flymake-backend)
   (should (member 'flymake-pyrefly flymake-diagnostic-functions)))

@@ -43,7 +43,7 @@
   ;; Save the current buffer, the narrowing restriction, remove any
   ;; narrowing restriction.
   ;;
-  (let ((source (current-buffer)))
+  (let ((source (current-buffer)) (source-file-name buffer-file-name))
     (save-restriction
       (widen)
       ;; Reset the `pyrefly--flymake-proc' process to a new process
@@ -59,7 +59,7 @@
         :command
         (append
          '("pyrefly" "check" "--output-format" "min-text" "--no-summary")
-         (list buffer-file-name))
+         (list source-file-name))
         :sentinel
         (lambda (proc _event)
           ;; Check that the process has indeed exited, as it might
@@ -80,17 +80,18 @@
                       ;;
                       (cl-loop
                        while (search-forward-regexp
-                              "^\\([A-Z]+\\) .+\.py:\\([0-9]+\\):[0-9]+\-[0-9]+: \\(.*\\)$"
+                              "^\\([A-Z]+\\) .+\.py:\\([0-9]+\\):\\([0-9]+\\)\-\\([0-9]+\\): \\(.*\\)$"
                               nil t)
-                       for msg = (match-string 3)
-                       for (beg . end) = (flymake-diag-region
-                                          source
-                                          (string-to-number (match-string 2)))
+                       for msg = (match-string 5)
+                       for beg = (cons (string-to-number (match-string 2))
+                                       (string-to-number (match-string 3)))
+                       for end = (cons (string-to-number (match-string 2))
+                                       (string-to-number (match-string 4)))
                        for type = (if (equal "ERROR" (match-string 1))
                                       :error
                                     :warning)
                        when (and beg end)
-                       collect (flymake-make-diagnostic source
+                       collect (flymake-make-diagnostic source-file-name
                                                         beg
                                                         end
                                                         type
