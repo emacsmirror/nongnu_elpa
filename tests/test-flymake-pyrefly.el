@@ -22,16 +22,19 @@
 (require 'flymake)
 (ert-deftest flymake-pyrefly-test-no-pyrefly ()
   "Test error message when Pyrefly is not found."
+  (find-file "tests/example.py")
   (should-error (flymake-pyrefly 'identity)))
 (ert-deftest flymake-pyrefly-test-normal-use-case ()
   "Test a normal Pyrefly use-case."
   (defun mock-report-fn (args)
     (setq saved-args args))
-  (find-file "example.py")
+  (push (getenv "PYREFLY_BIN_DIR") exec-path)
+  (find-file "tests/example.py")
   (setq saved-args nil)
   (flymake-pyrefly 'mock-report-fn)
   (flymake-pyrefly 'mock-report-fn)
   (sleep-for 1)
+  (pop exec-path)
   (should
    (equal (aref (car saved-args) 2) (cons 2 5))))
 (ert-deftest flymake-pyrefly-test-setup ()
