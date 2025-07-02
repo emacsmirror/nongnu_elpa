@@ -60,7 +60,7 @@ Git repositories:
 
 @menu
 * Introduction::
-* Adding notes::
+* Getting started::
 * Note Types::
 * Linking gnosis notes to org-gnosis content::
 * Customization::
@@ -72,6 +72,10 @@ Git repositories:
 
 @detailmenu
 --- The Detailed Node Listing ---
+
+Getting started
+
+* Gnosis Dashboard::
 
 Note Types
 
@@ -90,6 +94,7 @@ Customization
 Gnosis Algorithm
 
 * Anagnosis Event::
+* Lethe event::
 * Proto::
 
 Interactions with other software
@@ -108,11 +113,7 @@ Contributing
 
 Gnosis (γνῶσις) is a spaced repetition system that enhances memory
 retention through active recall. It employs a Q&A format, where each
-note consists of a question, answer, and explanation. Notes are
-reviewed at optimally spaced intervals based on the user's success or
-failure to recall the answer.  Key benefits arise from writing out
-answers when reviewing notes, fostering deeper understanding
-and improved memory retention.
+gnosis consists of a question, answer, and explanation.
 
 Gnosis algorithm is highly adjustable, allowing users to set specific
 values not just for note decks but for tags as well.  Gnosis'
@@ -121,14 +122,34 @@ note collections but also for specific tagged topics, thereby creating
 a personalized learning environment for each topic.  Read more on
 @ref{Gnosis Algorithm}
 
-@node Adding notes
-@chapter Adding notes
+@node Getting started
+@chapter Getting started
 
-Creating notes for gnosis can be done interactively with:
+To follow this tutorial, clone the demo deck available at codeberg
 
-@samp{M-x gnosis-add-note}
+Demo Deck: @uref{https://codeberg.org/thanosapollo/gnosis-demo}
 
-Or from within @samp{gnosis-dashboard}
+Import it to your gnosis collection via @kbd{M-x gnosis-import-deck}
+
+@menu
+* Gnosis Dashboard::
+@end menu
+
+@node Gnosis Dashboard
+@section Gnosis Dashboard
+
+The first thing new users should familiarize themselves with is
+@samp{gnosis-dashboard}, which you can access via @kbd{M-x gnosis-dashboard}.
+
+From there you have access to your review stats & history as well as
+your gnosis contents.
+
+You can start a review session from the dashboard or with @kbd{M-x gnosis-review}.
+
+NOTE: Gnosis supports reviewing specifics topics for notes of
+@samp{org-gnosis} with @kbd{M-x gnosis-review-topic}
+
+You can add new gnosis from the dashboard or with @kbd{M-x gnosis-add-note}
 
 @node Note Types
 @chapter Note Types
@@ -345,6 +366,7 @@ Gnosis has 2 special events, one is @code{anagnosis} @emph{ανάγνωση} and
 
 @menu
 * Anagnosis Event::
+* Lethe event::
 * Proto::
 @end menu
 
@@ -363,6 +385,17 @@ When @code{anagnosis} is triggered by consecutive @strong{failed} recalls,
 
 You can set specific values for each deck and tag of the variables
 mentioned above by adjusting @samp{gnosis-custom-values}.
+
+@node Lethe event
+@section Lethe event
+
+The @code{Lethe} event triggers after a certain number of consecutive
+failures to recall an answer correctly.
+
+When this threshold is reached, the next interval is reset to 0.
+
+For example, with lethe value of 2, upon having 2 consecutive failed
+recalls the next review will be set for the current day.
 
 @node Proto
 @section Proto
