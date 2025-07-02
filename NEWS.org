@@ -1,3 +1,8 @@
+* 0.5.3
++ Fix gnosis algorithm bug for failed reviews with custom amnesia
+  value of lower than 0.5.
++ Update documentation.
+
 * 0.5.2
 + Fix importing deck issues with non-new gnosis ids.
 + Minor aesthetic changes on review header.
