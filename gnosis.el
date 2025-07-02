@@ -419,8 +419,8 @@ This will not be applied to sentences that start with double space."
   (erase-buffer)
   (insert "\n" (gnosis-center-string (replace-regexp-in-string "\n" " " str)))
   (gnosis-insert-separator)
-  (gnosis-apply-center-buffer-overlay)
-  (gnosis-apply-syntax-overlay))
+  (gnosis-apply-syntax-overlay)
+  (gnosis-apply-center-buffer-overlay))
 
 (defun gnosis-display-mcq-options (id)
   "Display answer options for mcq note ID."
