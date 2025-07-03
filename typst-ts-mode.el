@@ -33,6 +33,7 @@
 (require 'treesit)
 (require 'outline)
 (require 'elec-pair)
+(require 'easymenu)
 
 (require 'typst-ts-embedding-lang-settings)
 (require 'typst-ts-core)
@@ -478,21 +479,7 @@ This function is meant to be used when user hits a return key."
     (if (re-search-backward typst-ts-outline-regexp nil t)
         (- (match-end 1) (match-beginning 1))
       0)))
-
-
-;;;###autoload
 (defvar-keymap typst-ts-mode-map
-  "C-c C-c" #'typst-ts-compile  ; use prefix argument to do preview
-  "C-c C-S-C" #'typst-ts-compile-and-preview
-  "C-c C-w" #'typst-ts-watch-mode
-  "C-c C-p" #'typst-ts-preview
-
-  "M-<left>" #'typst-ts-editing-meta-left
-  "M-<right>" #'typst-ts-editing-meta-right
-  "M-<down>" #'typst-ts-editing-meta-down
-  "M-<up>" #'typst-ts-editing-meta-up
-  "M-<return>" #'typst-ts-editing-meta-return
-
   ;; don't bind <return>
   ;; Binding a command to "<return>" is generally a bug.
   ;; Emacs will first look for a binding for `return` and if it finds one
@@ -500,10 +487,77 @@ This function is meant to be used when user hits a return key."
   ;; relative precedence of the keymaps involved.
   "TAB" #'typst-ts-editing-cycle
   "RET" #'typst-ts-editing-return
-  "C-c '" #'typst-ts-edit-indirect
+  "C-c '" #'typst-ts-edit-indirect)
 
-  "C-c C-o" #'typst-ts-mc-open-at-point)
-
+(easy-menu-define typst-ts-mode-menu typst-ts-mode-map
+  "Menu for `typst-ts-mode'."
+  '("Typst"
+    ("Heading"
+     ["Move Heading Up" typst-ts-editing-meta-up
+      :active (typst-ts-editing-heading--at-point-p)
+      :keys "M-<up>"]
+     ["Move Heading Down" typst-ts-editing-meta-down
+      :active (typst-ts-editing-heading--at-point-p)
+      :keys "M-<down>"]
+     "--"
+     ["Lower Heading Level" typst-ts-editing-meta-left
+      :active (typst-ts-editing-heading--at-point-p)
+      :keys "M-<left>"]
+     ["Increase Heading Level" typst-ts-editing-meta-right
+      :active (typst-ts-editing-heading--at-point-p)
+      :keys "M-<right>"])
+    ("List"
+     ["Toggle Indent" typst-ts-editing-cycle
+      :active (typst-ts-editing-item--at-point-p)
+      :keys "TAB"]
+     ["Insert Item" typst-ts-editing-meta-return
+      :active (typst-ts-editing-item--at-point-p)
+      :keys "M-<return>"]
+     ["Change List Type" typst-ts-editing-item-list-change-type
+      :active (typst-ts-editing-item--at-point-p)]
+     ["Renumber List" typst-ts-editing-item-list-renumber
+      :active (typst-ts-editing-item--at-point-p)]
+     "--"
+     ["Move Item Up" typst-ts-editing-meta-up
+      :active (typst-ts-editing-item--at-point-p)
+      :keys "M-<up>"]
+     ["Move Item Down" typst-ts-editing-meta-down
+      :active (typst-ts-editing-item--at-point-p)
+      :keys "M-<down>"])
+    ("Table/Grid"
+     ["Move Cell Up" typst-ts-editing-meta-up
+      :active (typst-ts-editing-grid-cell--at-point-p)
+      :keys "M-<up>"]
+     ["Move Cell Down" typst-ts-editing-meta-down
+      :active (typst-ts-editing-grid-cell--at-point-p)
+      :keys "M-<down>"]
+     ["Move Cell Left" typst-ts-editing-meta-left
+      :active (typst-ts-editing-grid-cell--at-point-p)
+      :keys "M-<left>"]
+     ["Move Cell Right" typst-ts-editing-meta-right
+      :active (typst-ts-editing-grid-cell--at-point-p)
+      :keys "M-<right>"]
+     "--"
+     ["Move Row Up" typst-ts-editing-grid-row-up
+      :active (typst-ts-editing-grid-cell--at-point-p)]
+     ["Move Row Down" typst-ts-editing-grid-row-down
+      :active (typst-ts-editing-grid-cell--at-point-p)])
+    ("Compile"
+     ["Compile" typst-ts-compile
+      :key "C-c C-c"]
+     ["Compile and Preview" typst-ts-compile-and-preview
+      :key "C-c C-S-C"]
+     ["Preview" typst-ts-preview
+      :key "C-c C-p"]
+     ["Watch Mode" typst-ts-watch-mode
+      :key "C-c C-w"])
+    ["Symbol/Emoji Picker" typst-ts-editing-symbol-picker]
+    ["Follow Thing at Point" typst-ts-mc-open-at-point
+     :key "C-c C-o"]
+    ["Follow Thing at Point" typst-ts-mc-open-at-point
+     :key "C-c C-o"]
+    ["Edit Code Block" typst-ts-edit-indirect
+     :key "C-c '"]))
 
 (defun typst-ts-indent-line-function ()
   "A simple wrapper of `treesit-indent' for handle indentation edge cases.
