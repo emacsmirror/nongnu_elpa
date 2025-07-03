@@ -192,7 +192,7 @@
    :feature 'math-standard  ; part 1
    '((symbol) @font-lock-constant-face
      (letter) @font-lock-constant-face)
-   
+
    :language 'typst
    :feature 'math-standard  ; part 2
    :override 'append
@@ -500,7 +500,9 @@ This function is meant to be used when user hits a return key."
   ;; relative precedence of the keymaps involved.
   "TAB" #'typst-ts-editing-cycle
   "RET" #'typst-ts-editing-return
-  "C-c '" #'typst-ts-edit-indirect)
+  "C-c '" #'typst-ts-edit-indirect
+
+  "C-c C-o" #'typst-ts-mc-open-at-point)
 
 
 (defun typst-ts-indent-line-function ()
