@@ -1,0 +1,18 @@
+name: Test with Emacs
+on: [push]
+jobs:
+  test-with-emacs:
+    runs-on: ubuntu-latest
+    container:
+      image: inpefess/multi-emacs-with-python:2025.07.03
+    steps:
+      - name: Check out repository code
+        uses: actions/checkout@v4
+      - name: Install Pyrefly
+        run: |
+          /emacs-tests/.venv/bin/pip install pyrefly
+      - name: Test with Emacs
+        run: |
+          export EMACS=/emacs-tests/emacs-30.1/.local/bin/emacs
+          export PYREFLY_BIN_DIR=/emacs-tests/.venv/bin
+          ./run-tests.sh
