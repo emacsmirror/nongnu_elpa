@@ -554,8 +554,6 @@ This function is meant to be used when user hits a return key."
     ["Symbol/Emoji Picker" typst-ts-editing-symbol-picker]
     ["Follow Thing at Point" typst-ts-mc-open-at-point
      :key "C-c C-o"]
-    ["Follow Thing at Point" typst-ts-mc-open-at-point
-     :key "C-c C-o"]
     ["Edit Code Block" typst-ts-edit-indirect
      :key "C-c '"]))
 
