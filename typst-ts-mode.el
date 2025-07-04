@@ -550,7 +550,12 @@ This function is meant to be used when user hits a return key."
      ["Preview" typst-ts-preview
       :key "C-c C-p"]
      ["Watch Mode" typst-ts-watch-mode
-      :key "C-c C-w"])
+      :key "C-c C-w"]
+     ["Export to Markdown" typst-ts-mc-export-to-markdown])
+    ("Online"
+     ["Search Symbol/Emoji" typst-ts-mc-search-typst-symbol]
+     ["Recognize Handwritten Symbol" typst-ts-mc-recognize-typst-symbol]
+     ["Search Packages" typst-ts-mc-search-package])
     ["Symbol/Emoji Picker" typst-ts-editing-symbol-picker]
     ["Follow Thing at Point" typst-ts-mc-open-at-point
      :key "C-c C-o"]
