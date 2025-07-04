@@ -1,9 +1,9 @@
 ;;; typst-ts-mode.el --- Tree Sitter support for Typst  -*- lexical-binding: t; -*-
 ;; Copyright (C) 2023-2025 The typst-ts-mode Project Contributors
 
-;; Version: 0.11.0
-;; Author: Meow King <mr.meowking@posteo.com>
-;; Maintainer: Meow King <mr.meowking@posteo.com>
+;; Version: 0.12.1
+;; Author: Ziqi Yang <mr.meowking@anche.no>
+;; Maintainer: Ziqi Yang <mr.meowking@anche.no>
 ;;   Huan Nguyen <nguyenthieuhuan@gmail.com>
 ;; Keywords: typst languages tree-sitter
 ;; URL: https://codeberg.org/meow_king/typst-ts-mode
