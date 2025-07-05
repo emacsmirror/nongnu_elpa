@@ -4160,7 +4160,7 @@ Use ID if provided."
   "Mark notification at point as unread.
 Use ID if provided."
   (interactive)
-  (fj-mark-notification "unread" id))
+  (fj-mark-notification "unread" id :reload))
 
 ;;; BROWSE
 
