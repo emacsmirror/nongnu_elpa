@@ -3046,9 +3046,10 @@ FORMAT-STR is the base string. USER is the agent, ASSIGNEE is the user
 assigned to. TS is a timeline timestamp."
   (let ((user (propertize user 'face 'fj-name-face))
         (assignee (propertize assignee 'face 'fj-name-face)))
+    ;; "%s %sassigned this%s %s":
     (if (string= user assignee)
         (format format-str user "self-" "" ts)
-      (format format-str user assignee ts))))
+      (format format-str user "" (concat "to " assignee) ts))))
 
 (defun fj-get-html-link-desc (str)
   "Return a description string from HTML link STR."
