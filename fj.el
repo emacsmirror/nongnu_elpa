@@ -4260,9 +4260,9 @@ After loading, also mark the notification as read."
         (owner (fj--property 'fj-owner))
         (id (fj--property 'fj-notification))
         (unread (fj--property 'fj-notif-unread)))
-    (fj-item-view repo owner item)
     (when unread
-      (fj-mark-notification-read id))))
+      (fj-mark-notification-read id))
+    (fj-item-view repo owner item)))
 
 (defun fj-do-link-action-mouse (event)
   "Do the action of the link at point.
