@@ -25,4 +25,7 @@ jobs:
       - name: Test with Emacs
         run: |
           export PYREFLY_BIN_DIR=$(pwd)/.venv/bin
-          ./run-tests.sh
+          make test
+      - name: Compile
+        run: |
+          make compile
