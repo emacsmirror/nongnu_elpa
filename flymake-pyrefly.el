@@ -95,7 +95,6 @@
                        for type = (if (equal "ERROR" (match-string 1))
                                       :error
                                     :warning)
-                       when (and beg end)
                        collect (flymake-make-diagnostic source-file-name
                                                         beg
                                                         end
