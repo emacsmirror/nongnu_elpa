@@ -177,7 +177,12 @@ For example:
                   (include-desc :alias \"includeDesc\"
                                 :boolean \"true\")
                   (list :list (\"123\" \"abc\")
-                  order page limit)."
+                  order page limit).
+
+To use this in combination with mandatory parameters, you can do this:
+
+\(append `((\"mandatory\" . ,value))
+          (fedi-opt-params a b c d))."
   (declare (debug t))
   `(append ,@(fedi--opt-params-whens params)))
 
@@ -189,7 +194,7 @@ For example:
 (defun fedi--opt-param-expr (param)
   "For PARAM, return a when expression.
 It takes the form:
-\(when param '(\"param\" . param)).
+\(when param \\='(\"param\" . param)).
 Param itself can also be an expression. See `fedi-opt-params' for
 details."
   (if (consp param)
