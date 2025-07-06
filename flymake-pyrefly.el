@@ -26,8 +26,12 @@
 ;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
+
+;; A Pyrefly (https://pyrefly.org/) Flymake backend.
 ;; Based on the annotated example from Flymake info.
+;;
 ;; Usage:
+;;
 ;;   (use-package flymake-pyrefly
 ;;     :hook (python-mode . pyrefly-setup-flymake-backend))
 
