@@ -2179,7 +2179,13 @@ QUERY is a search query to filter by."
         (let ((enable-local-variables :all))
           (hack-dir-local-variables-non-file-buffer))
         (fj-other-window-maybe
-         prev-buf "-issues*" #'string-suffix-p prev-mode)))))
+         prev-buf "-issues*" #'string-suffix-p prev-mode)
+        (message (substitute-command-keys
+                  ;; it can't find our bindings: 
+                  ;; "\\[fj-cycle-state - cycle state\
+                  ;; | fj-cycle-type - cycle type | fj-list-issues-sort - sort]"
+                  "\\`C-c C-c': cycle state | \\`C-c C-x': sort\
+ | \\`C-c C-s': cycle type | "))))))
 
 (defun fj-repo-has-items-p (type data)
   "Return t if repo DATA has items of TYPE enabled."
