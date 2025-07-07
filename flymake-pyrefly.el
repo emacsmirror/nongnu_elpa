@@ -1,6 +1,6 @@
 ;;; flymake-pyrefly.el --- A Pyrefly Flymake backend  -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2025 Free Software Foundation, Inc.
+;; Copyright (C) 2025 Boris Shminke
 
 ;; Author: Boris Shminke <boris@shminke.com>
 ;; Maintainer: Boris Shminke <boris@shminke.com>

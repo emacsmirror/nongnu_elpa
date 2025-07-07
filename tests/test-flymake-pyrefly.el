@@ -1,5 +1,5 @@
 ;;; test-flymake-pyrefly.el --- Test flymake-pyrefly package. -*- lexical-binding: t; -*-
-;; Copyright (C) 2025 Free Software Foundation, Inc.
+;; Copyright (C) 2025 Boris Shminke
 ;; Author: Boris Shminke <boris@shminke.com>
 
 ;; This program is free software: you can redistribute it and/or modify
