@@ -215,12 +215,10 @@ Copies the token to the kill ring and returns it."
     (fedi-http--triage
      resp
      (lambda (resp)
-       (let* ((json (fj-resp-json resp))
-              (token (alist-get 'sha1 json))
-              (name (alist-get 'name json)))
-         (kill-new token)
-         (message "Token %s copied to kill ring." name)
-         token)))))
+       (let-alist (fj-resp-json resp)
+         (kill-new .sha1)
+         (message "Token %s copied to kill ring." .name))
+       .sha1))))
 
 (defun fj-auth-source-get ()
   "Fetch an auth source token.
@@ -999,11 +997,8 @@ ORDER should be a member of `fj-own-repos-order'."
 (defun fj-get-repo-candidates (repos)
   "Return REPOS as completion candidates."
   (cl-loop for r in repos
-           collect `(,(alist-get 'name r)
-                     ,(alist-get 'id r)
-                     ,(alist-get 'description r)
-                     ,(alist-get 'username
-                                 (alist-get 'owner r)))))
+           collect (let-alist r
+                     (list .name .id .description .owner.username))))
 
 (defun fj-read-user-repo-do (&optional default silent)
   "Prompt for a user repository.
@@ -1677,11 +1672,10 @@ Return its name, or if ID, return a cons of its name and id."
 Return an alist, with each cons being (name . id)"
   (cl-loop ;; label JSON is a list of alists:
    for x in json
-   for name = (alist-get 'name x)
-   for color = (concat "#" (alist-get 'color x))
-   for desc = (alist-get 'description x)
-   collect (cons (fj-propertize-label name color desc)
-                 (alist-get 'id x))))
+   collect
+   (let-alist x
+     (cons (fj-propertize-label .name (concat "#" .color) .description)
+           .id))))
 
 (defun fj-propertize-label (name color &optional desc)
   "Propertize NAME as a label, with COLOR prop and DESC, a description."
@@ -3238,7 +3232,7 @@ ignored."
 Returns annotation for CAND, a candidate."
   (if-let* ((entry (assoc cand minibuffer-completion-table
                           #'equal)))
-      (concat " " (cl-fourth entry))
+      (concat "\t\t" (cl-fourth entry))
     ""))
 
 ;;; SEARCH REPOS TL
@@ -3952,10 +3946,10 @@ Optionally set LIMIT to results."
 (defun fj-issues-alist (data)
   "Return an alist from issue DATA, a cons of number and title."
   (cl-loop for i in data
-           collect (cons (concat "#"
-                                 (number-to-string
-                                  (alist-get 'number i)))
-                         (alist-get 'title i))))
+           collect (let-alist i
+                     (cons (concat "#"
+                                   (number-to-string .number)
+                                   .title)))))
 
 ;; FIXME: start end not used?
 (defun fj-compose-issues-fun (_start _end)
