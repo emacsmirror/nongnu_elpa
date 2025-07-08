@@ -85,20 +85,19 @@
                       ;; of objects, and call `report-fn'.
                       (cl-loop
                        while (search-forward-regexp
-                              (rx line-start
-                                  ;; diagnostic level (error, warn, etc)
-                                  (group (one-or-more upper-case))
-                                  ;; file name
-                                  (one-or-more anything) ".py:"
-                                  ;; line number
-                                  (group (one-or-more digit)) ":"
-                                  ;; start column
-                                  (group (one-or-more digit)) "-"
-                                  ;; end column
-                                  (group (one-or-more digit)) ": "
-                                  ;; diagnostic message
-                                  (group (one-or-more anything))
-                                  line-end)
+                              (rx
+                               ;; diagnostic level (error, warn, etc)
+                               (group (one-or-more upper-case)) " "
+                               ;; file name
+                               (one-or-more (not space)) ".py:"
+                               ;; line number
+                               (group (one-or-more digit)) ":"
+                               ;; start column
+                               (group (one-or-more digit)) "-"
+                               ;; end column
+                               (group (one-or-more digit)) ": "
+                               ;; diagnostic message
+                               (group (one-or-more not-newline)))
                               nil t)
                        for msg = (match-string 5)
                        for beg = (cons (string-to-number (match-string 2))
