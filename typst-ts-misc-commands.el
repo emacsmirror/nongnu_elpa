@@ -24,6 +24,23 @@
 
 (require 'treesit)
 
+(defun typst-ts-mc-open-thing-function (thing type)
+  "Open THING which is of TYPE.
+TYPE is one of the following symbols: (local url)
+
+If it is url it will open it outside Emacs.
+When it is local it will open it inside Emacs (THING will be a relative link)."
+  (pcase-exhaustive type
+    ('url
+     (browse-url thing))
+    ('local
+     (find-file thing))))
+
+(defcustom typst-ts-mc-open-function #'typst-ts-mc-open-thing-function
+  "The function that is called by `typst-ts-mc-open-at-point'."
+  :type 'function
+  :group 'typst)
+
 (defun typst-ts-mc-install-grammar ()
   "Install Typst grammar."
   (interactive)
@@ -71,6 +88,37 @@ Require pandoc to be installed."
   "Search typst packages through website."
   (interactive)
   (browse-url "https://typst.app/universe"))
+
+(defun typst-ts-mc-open-at-point ()
+  "Follow thing at point.
+
+By default it will call `typst-ts-mc-open-thing-function'.
+Default behavior can be changed in `typst-ts-mc-open-function'."
+  (interactive)
+  (let ((node (treesit-node-at (point)))
+        type thing)
+    (if (string= (treesit-node-type node) "url")
+        (funcall typst-ts-mc-open-function
+                 (treesit-node-text node)
+                 'url)
+      (setq node (treesit-node-parent node))
+      (setq type (treesit-node-type node))
+      ;; remove the quotes in "text"
+      (setq thing (substring (treesit-node-text node) 1 -1))
+      (if (and (string= type "string")
+               (file-exists-p thing))
+          (funcall typst-ts-mc-open-function
+                   thing
+                   'local)
+        (user-error "Not on an openable thing")))))
+
+(defun typst-ts-mc-insert-link ()
+  "Insert a local relative file link."
+  (interactive)
+  (let ((link (read-file-name "File: ")))
+    (when (or (not link) (= (length link) 0))
+      (user-error "No input"))
+    (insert (file-relative-name link))))
 
 (provide 'typst-ts-misc-commands)
 
