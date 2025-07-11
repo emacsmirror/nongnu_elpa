@@ -5,7 +5,7 @@
 ;; Author: Boris Shminke <boris@shminke.com>
 ;; Maintainer: Boris Shminke <boris@shminke.com>
 ;; Created: 29 Jun 2025
-;; Version: 0.1.3
+;; Version: 0.1.4
 ;; Keywords: tools, languages
 ;; URL: https://github.com/inpefess/flymake-pyrefly
 ;; Package-Requires: ((emacs "26.1"))
