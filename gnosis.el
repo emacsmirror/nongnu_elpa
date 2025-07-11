@@ -105,10 +105,6 @@ When nil, review new notes last."
 
 ;;; Faces
 
-(defface gnosis-face-parathema
-  '((t :inherit font-lock-doc-face))
-  "Face for extra-notes.")
-
 (defface gnosis-face-separator
   '((default :inherit org-hide)
     (((background light)) :strike-through "gray70")
@@ -595,9 +591,8 @@ If FALSE t, use gnosis-face-false face"
   (when parathema
     (search-backward "----") ; search back for separator
     (forward-line 1)
-    (insert "\n"
-	    (propertize (gnosis-center-string parathema) 'face 'gnosis-face-parathema)
-	    "\n")))
+    (insert "\n" (gnosis-center-string parathema) "\n")
+    (gnosis-apply-syntax-overlay)))
 
 (defun gnosis-display-next-review (id success)
   "Display next interval of note ID for SUCCESS."
