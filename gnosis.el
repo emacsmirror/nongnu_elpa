@@ -604,8 +604,13 @@ If FALSE t, use gnosis-face-false face"
   (let* ((interval (car (gnosis-review-algorithm id success)))
 	 (next-review-msg (format "\n\n%s %s"
 				  (propertize "Next review:" 'face 'gnosis-face-directions)
-				  (propertize (format "%s" interval) 'face
-					      'gnosis-face-next-review))))
+				  (propertize
+				   (replace-regexp-in-string
+				    "[]()[:space:]]"
+				    (lambda (match)
+				      (if (string= match " ") "/" ""))
+				    (format "%s" interval) t t)
+				   'face 'gnosis-face-next-review))))
     (if (search-backward "Next review" nil t)
 	;; Delete previous result, and override with new this should
 	;; occur only when used for overriding review result.
