@@ -250,7 +250,8 @@ Provide current topics for adding/removing."
    ("s" "default merge style" "default_merge_style"
     :class tp-option
     :alist-key default_merge_style
-    :choices fj-merge-types)] ;; FIXME: broken?
+    :choices fj-merge-types) ;; FIXME: broken?
+   ("p" "is private" "private" :alist-key private :class tp-bool)]
   ["Update"
    ("C-c C-c" "Save settings" fj-update-repo)
    ("C-x C-k" :info "to revert all changes")]
