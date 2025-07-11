@@ -39,12 +39,14 @@
 (require 'cl-lib)
 (defvar-local pyrefly--flymake-proc nil)
 
+(define-error 'no-pyrefly-error "Cannot find pyrefly")
+
 (defun pyrefly-flymake-backend (report-fn &rest _args)
   "Report pyrefly diagnostic with REPORT-FN."
   ;; Not having pyrefly installed is a serious problem which should cause
   ;; the backend to disable itself, so an error is signaled.
   (unless (executable-find "pyrefly")
-    (error "Cannot find pyrefly"))
+    (signal 'no-pyrefly-error nil))
 
   ;; If a live process launched in an earlier check was found, that
   ;; process is killed.  When that process's sentinel eventually runs,

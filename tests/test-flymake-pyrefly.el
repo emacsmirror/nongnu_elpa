@@ -24,7 +24,8 @@
 (ert-deftest flymake-pyrefly-test-no-pyrefly ()
   "Test error message when Pyrefly is not found."
   (find-file "tests/example.py")
-  (should-error (pyrefly-flymake-backend 'identity)))
+  (should-error (pyrefly-flymake-backend 'identity)
+                :type 'no-pyrefly-error))
 (ert-deftest flymake-pyrefly-test-normal-use-case ()
   "Test a normal Pyrefly use-case."
   (defun mock-report-fn (args)
