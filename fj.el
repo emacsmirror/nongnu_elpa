@@ -189,6 +189,16 @@ The value must be a member of `fj-own-repos-order'."
   '((t :inherit font-lock-type-face :weight bold))
   "Face for item names.")
 
+(defface fj-item-verbatim-face
+  `((t :inherit font-lock-type-face :background
+       ,(face-attribute 'highlight :background)))
+  "Face for item names.")
+
+(defface fj-item-closed-verbatim-face
+  `((t :inherit font-lock-comment-face :background
+       ,(face-attribute 'highlight :background)))
+  "Face for item names.")
+
 (defface fj-item-author-face
   `((t :inherit magit-diff-hunk-heading
        :underline t
@@ -2017,16 +2027,41 @@ If REPO is provided, also include a repo column."
            face default
            item ,type)
           (,(concat
-             (propertize .title
-                         'face (if (equal .state "closed")
-                                   'fj-closed-issue-face
-                                 'fj-item-face))
+             (fj-format-tl-title .title .state)
              (fj-plain-space)
              (fj-propertize-labels .labels))
            id ,.id
            state ,.state
            type fj-issue-button
            item ,type)])))))
+
+(defun fj-format-tl-title (str state)
+  "Propertize STR, respecting its state (open/closed).
+Propertize any verbatim markdown in STR."
+  (let ((face (if (equal state "closed")
+                  'fj-closed-issue-face
+                'fj-item-face))
+        (verbatim (if (equal state "closed")
+                      'fj-item-closed-verbatim-face
+                    'fj-item-verbatim-face)))
+    (save-match-data
+      ;; FIXME: works for only one verbatim substr per str
+      (if (string-match markdown-regex-code str)
+          (progn
+            (add-text-properties 0
+                                 (match-beginning 1)
+                                 `(face ,face)
+                                 str)
+            (add-text-properties (match-beginning 1)
+                                 (match-end 1)
+                                 `(face ,verbatim)
+                                 str)
+            (add-text-properties (match-end 1)
+                                 (length str)
+                                 `(face ,face)
+                                 str)
+            str)
+        (propertize str 'face face)))))
 
 (defun fj-plain-space ()
   "Return a space with default face."
