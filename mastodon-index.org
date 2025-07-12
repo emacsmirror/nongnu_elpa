@@ -2,6 +2,63 @@
 * mastodon commands index
 
 #+BEGIN_SRC emacs-lisp :results table :colnames '("Binding" "Command" "Description") :exports results
+  (defvar masto-readme-maps
+    (mapcar (lambda (x)
+              x)
+            (list mastodon-mode-map
+                  mastodon-toot-mode-map
+                  mastodon-profile-mode-map
+                  mastodon-notifications--map
+                  mastodon-tl--shr-image-map-replacement
+                  mastodon-profile-update-mode-map
+                  mastodon-views-map
+                  mastodon-views--follow-suggestions-map
+                  mastodon-views--scheduled-map
+                  mastodon-views--view-lists-keymap
+                  mastodon-views--view-follow-requests-keymap
+                  mastodon-views--view-filters-keymap)))
+
+  (defun masto-readme-where-is-map (symbol maps)
+    ""
+    (cl-remove-duplicates
+     (flatten-tree
+      (mapcar (lambda (x)
+                (where-is-internal symbol x t nil (command-remapping symbol)))
+              maps))
+     :test #'equal))
+
+  (defun masto-readme-push-rows (symbol)
+    (let* ((doc (car
+                 (split-string
+                  (or (documentation symbol t) "")
+                  "\n")))
+           (maps fj-readme-maps)
+           (binding-codes
+            (let ((keys (fj-readme-where-is-map symbol maps)))
+              ;; just take first 2 bindings:
+              (if (> (length keys) 2)
+                  (list (car keys) (cadr keys))
+                keys)))
+           (binding-str (if binding-codes
+                            (mapconcat
+                             (lambda (x)
+                               (key-description x))
+                             binding-codes ", ")
+                          "")))
+      (push `(,binding-str ,symbol ,doc) rows)
+      rows))
+
+  (let (rows)
+    (mapatoms
+     (lambda (symbol)
+       (when (and (string-match "^fj"
+                                (symbol-name symbol))
+                  (commandp symbol))
+         (fj-readme-push-rows symbol))))
+    (sort rows
+          (lambda (x y)
+            (string-lessp (cadr x) (cadr y)))))
+
   (let (rows)
     (mapatoms
      (lambda (symbol)
@@ -14,18 +71,7 @@
                        "\n")))
                 ;; add more keymaps here
                 ;; some keys are in sub 'keymap keys inside a map
-                (maps (list mastodon-mode-map
-                            mastodon-toot-mode-map
-                            mastodon-profile-mode-map
-                            mastodon-notifications--map
-                            mastodon-tl--shr-image-map-replacement
-                            mastodon-profile-update-mode-map
-                            mastodon-views-map
-                            mastodon-views--follow-suggestions-map
-                            mastodon-views--scheduled-map
-                            mastodon-views--view-lists-keymap
-                            mastodon-views--view-follow-requests-keymap
-                            mastodon-views--view-filters-keymap))
+                (maps masto-readme-maps)
                 (binding-code
                  (let ((keys (where-is-internal symbol maps nil nil (command-remapping symbol))))
                    ;; just take first 2 bindings:
@@ -46,16 +92,22 @@
 #+END_SRC
 
 #+RESULTS:
-| Binding          | Command                                           | Description                                                                    |
-|------------------+---------------------------------------------------+--------------------------------------------------------------------------------|
-|                  | mastodon                                          | Connect client to `mastodon-instance-url' instance.                            |
-|                  | mastodon-async-mode                               | Async Mastodon.                                                                |
-| C-c C-p          | mastodon-create-poll                              | A transient for creating a poll.                                               |
-|                  | mastodon-create-poll-done                         | Update current user profile fields.                                            |
-| C-M-q            | mastodon-kill-all-buffers                         | Kill any and all open mastodon buffers, hopefully.                             |
-| Q                | mastodon-kill-window                              | Quit window and delete helper.                                                 |
-|                  | mastodon-mode                                     | Major mode for fediverse services using the Mastodon API.                      |
+| Binding          | Command                                          | Description                                                                    |
+|------------------+--------------------------------------------------+--------------------------------------------------------------------------------|
+|                  | mastodon                                         | Connect client to `mastodon-instance-url' instance.                            |
+|                  | mastodon-clear-poll                              | Clear current poll data.                                                       |
+|                  | mastodon-create-poll                             | A transient for creating a poll.                                               |
+|                  | mastodon-create-poll-done                        | Finish setting poll details.                                                   |
 |                  | mastodon-forget-all-logins                       | Delete `mastodon-client--token-file'.                                          |
+|                  | mastodon-image-mode                              | Major mode derived from `image-mode' by `define-derived-mode'.                 |
+|                  | mastodon-inspect--get-search-account             | Return JSON for a single account after search QUERY.                           |
+|                  | mastodon-inspect--get-search-result              | Inspect function for a search result for QUERY.                                |
+|                  | mastodon-inspect--toot                           | Find next toot and dump its meta data into new buffer.                         |
+|                  | mastodon-inspect--view-single-toot               | View the toot/status represented by ITEM-ID.                                   |
+|                  | mastodon-inspect--view-single-toot-source        | View the ess source of a toot/status represented by ITEM-ID.                   |
+| C-M-q            | mastodon-kill-all-buffers                        | Kill any and all open mastodon buffers, hopefully.                             |
+| Q                | mastodon-kill-window                             | Quit window and delete helper.                                                 |
+|                  | mastodon-mode                                    | Major mode for fediverse services using the Mastodon API.                      |
 |                  | mastodon-notifications-clear-all                 | Clear all notifications.                                                       |
 | C-k              | mastodon-notifications-clear-current             | Dismiss the notification at point.                                             |
 |                  | mastodon-notifications-cycle-type                | Cycle the current notifications view.                                          |
@@ -147,6 +199,7 @@
 | #                | mastodon-tl-get-tag-timeline                     | Prompt for tag and opens its timeline.                                         |
 | n                | mastodon-tl-goto-next-item                       | Jump to next item.                                                             |
 | p                | mastodon-tl-goto-prev-item                       | Jump to previous item.                                                         |
+| C-"              | mastodon-tl-jump-to-followed-tag                 | Prompt for a followed tag and view its timeline.                               |
 | "                | mastodon-tl-list-followed-tags                   | List followed tags. View timeline of tag user choses.                          |
 | C-<return>       | mastodon-tl-mpv-play-video-at-point              | Play the video or gif at point with an mpv process.                            |
 |                  | mastodon-tl-mpv-play-video-from-byline           | Run `mastodon-tl-mpv-play-video-at-point' on first moving image in post.       |
@@ -154,17 +207,18 @@
 | M                | mastodon-tl-mute-user                            | Query for USER-HANDLE from current status and mute that user.                  |
 |                  | mastodon-tl-next-full-image                      | From full image view buffer, load the toot's next image.                       |
 | TAB, M-n         | mastodon-tl-next-tab-item                        | Move to the next interesting item.                                             |
+| M-;              | mastodon-tl-nodeinfo-for-toot                    | Return Nodeinfo for toot at point.                                             |
 | v                | mastodon-tl-poll-vote                            | If there is a poll at point, prompt user for OPTION to vote on it.             |
 |                  | mastodon-tl-prev-full-image                      | From full image view buffer, load the toot's prev image.                       |
 | S-TAB, <backtab> | mastodon-tl-previous-tab-item                    | Move to the previous interesting item.                                         |
 |                  | mastodon-tl-remote-tag-timeline                  | Call `mastodon-tl-get-remote-local-timeline' but for a TAG timeline.           |
 | Z                | mastodon-tl-report-to-mods                       | Report the author of the toot at point to your instance moderators.            |
+| RET              | mastodon-tl-return                               | Load user profile or thread of item at point.                                  |
 | SPC              | mastodon-tl-scroll-up-command                    | Call `scroll-up-command', loading more toots if necessary.                     |
 |                  | mastodon-tl-shr-browse-image                     | Browse the image under point.                                                  |
-|                  | mastodon-tl-single-toot                          | View toot at point in separate buffer.                                         |
 |                  | mastodon-tl-some-followed-tags-timeline          | Prompt for some tags, and open a timeline for them.                            |
 | C-'              | mastodon-tl-tag-group-timeline                   | Load a timeline of a tag group from `mastodon-tl--tags-groups'.                |
-| RET, T           | mastodon-tl-thread                               | Open thread buffer for toot at point.                                          |
+| T                | mastodon-tl-thread                               | Open thread buffer for toot at point.                                          |
 |                  | mastodon-tl-toggle-sensitive-image               | Toggle dislay of sensitive image at point.                                     |
 |                  | mastodon-tl-toggle-spoiler-in-thread             | Toggler content warning for all posts in current thread.                       |
 | c                | mastodon-tl-toggle-spoiler-text-in-toot          | Toggle the visibility of the spoiler text in the current toot.                 |
@@ -181,6 +235,7 @@
 |                  | mastodon-tl-view-full-image-at-point             | Browse full-sized version of image at point in a new window.                   |
 |                  | mastodon-tl-view-full-image-or-play-video        | View full sized version of image at point, or try to play video.               |
 |                  | mastodon-tl-view-item-on-own-instance            | Load current toot on your own instance.                                        |
+|                  | mastodon-tl-view-single-toot                     | View toot at point in a separate buffer.                                       |
 |                  | mastodon-tl-view-whole-thread                    | From a thread view, view entire thread.                                        |
 | t                | mastodon-toot                                    | Update instance with new toot. Content is captured in a new buffer.            |
 | C-c C-a          | mastodon-toot-attach-media                       | Prompt for an attachment FILE with DESCRIPTION.                                |
