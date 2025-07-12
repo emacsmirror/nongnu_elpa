@@ -118,6 +118,17 @@ etc."
   '(nil "issue" "pull" "commit" "repository")
   "List of possible subject types for getting notifications.")
 
+(defvar fj-own-repos-order
+  '("name" "id" "newest" "oldest" "recentupdate" "leastupdate"
+    "reversealphabetically" "alphabetically" "reversesize" "size"
+    "reversegitsize" "gitsize" "reverselfssize" "lfssize" "moststars"
+    "feweststars" "mostforks" "fewestforks"))
+
+(defvar fj-issues-sort
+  '("relevance" "latest" "oldest" "recentupdate" "leastupdate"
+    "mostcomment" "leastcomment" "nearduedate" "farduedate")
+  "A list of sort options for listing repo issues.")
+
 ;;; CUSTOMIZES
 
 (defgroup fj nil
@@ -136,6 +147,21 @@ If set to nil, you need to set `fj-token' to your user token."
   "Whether to enable `emojify-mode' in item views.
 This will not install emojify for you, you have to do that yourself."
   :type 'boolean)
+
+(defcustom fj-own-repos-default-order "recentupdate"
+  "The default order parameter for `fj-list-own-repos'.
+The value must be a member of `fj-own-repos-order'."
+  :type (append '(choice)
+                (mapcar (lambda (x)
+                          `(const ,x))
+                        fj-own-repos-order)))
+
+(defcustom fj-issues-sort-default "recentUpdate"
+  "Default sort parameter for repo issues listing."
+  :type (append '(choice)
+                (mapcar (lambda (x)
+                          `(const ,x))
+                        fj-issues-sort)))
 
 ;;; FACES
 
@@ -823,20 +849,6 @@ PAGE, LIMIT, ORDER."
                            :limit ,limit :order ,order)
                :viewfun fj-user-repos-tl)))))
 
-(defvar fj-own-repos-order
-  '("name" "id" "newest" "oldest" "recentupdate" "leastupdate"
-    "reversealphabetically" "alphabetically" "reversesize" "size"
-    "reversegitsize" "gitsize" "reverselfssize" "lfssize" "moststars"
-    "feweststars" "mostforks" "fewestforks"))
-
-(defcustom fj-own-repos-default-order "recentupdate"
-  "The default order parameter for `fj-list-own-repos'.
-The value must be a member of `fj-own-repos-order'."
-  :type (append '(choice)
-                (mapcar (lambda (x)
-                          `(const ,x))
-                        fj-own-repos-order)))
-
 (defun fj-list-own-repos-read ()
   "List repos for `fj-user', prompting for an order type."
   (interactive)
@@ -1061,10 +1073,6 @@ Return the issue number."
                          cands))))
     (cadr item)))
 
-(defvar fj-issues-sort
-  '("relevance" "latest" "oldest" "recentupdate" "leastupdate" "mostcomment" "leastcomment" "nearduedate" "farduedate")
-  "A list of sort options for listing repo issues.")
-
 (defun fj-list-issues-sort ()
   "Reload current issues listing, prompting for a sort type.
 The default sort value is \"latest\"."
@@ -1096,11 +1104,12 @@ LIMIT is the number of results."
   (let* ((endpoint (format "repos/%s/%s/issues" (or owner fj-user) repo))
          ;; NB: get issues has no sort param!
          (params
-          (append `(("limit" . ,(or limit (fj-default-limit))))
+          (append `(("limit" . ,(or limit (fj-default-limit)))
+                    ("sort" . ,(or sort fj-issues-sort-default)))
                   (fedi-opt-params state type
                                    (query :alias "q")
                                    labels milestones
-                                   page limit sort))))
+                                   page limit))))
     (condition-case err
         (fj-get endpoint params)
       (t (format "%s" (error-message-string err))))))
