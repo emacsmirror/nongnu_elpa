@@ -783,9 +783,11 @@ used in a link function. For an example of regexes' subgroups, see
                  (domain (when domain-subexp ; fedi-post-handle-regex
                            (buffer-substring-no-properties (match-beginning domain-subexp)
                                                            (match-end domain-subexp))))
-                 (link (if (functionp link)
-                           (funcall link)
-                         link)))
+                 (link (cond ((eq type 'shr)
+                              item-str) ;; IF TYPE SHR: USE MATCHED URL
+                             ((functionp link)
+                              (funcall link))
+                             (t link))))
             (add-text-properties beg
                                  end
                                  (fedi-link-props face link item type item-str keymap))
@@ -797,7 +799,7 @@ used in a link function. For an example of regexes' subgroups, see
   "Return a plist for a link."
   `(face ,(or face '(shr-text shr-link))
          mouse-face highlight
-         shr-tabstop t
+         shr-tab-stop t
          shr-url ,link
          button t
          type ,type
