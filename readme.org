@@ -135,47 +135,68 @@ Repo settings transient:
 * commands index
 
 #+BEGIN_SRC emacs-lisp :results table :colnames '("Binding" "Command" "Description") :exports results
-  (let ((rows))
+  (defvar fj-readme-maps
+    (mapcar (lambda (x)
+              x)
+            (list fj-item-view-mode-map
+                  fj-repo-tl-map
+                  fj-issue-tl-mode-map
+                  fj-user-repo-tl-mode-map
+                  fj-repo-tl-mode-map
+                  fj-compose-mode-map
+                  fj-compose-comment-mode-map
+                  fj-notifications-mode-map
+                  fj-commits-mode-map
+                  fj-users-mode-map
+                  fj-link-keymap)))
+
+  (defun fj-readme-where-is-map (symbol maps)
+    ""
+    (cl-remove-duplicates
+     (flatten-tree
+      (mapcar (lambda (x)
+                (where-is-internal symbol x t nil (command-remapping symbol)))
+              maps))
+     :test #'equal))
+
+  (defun fj-readme-push-rows (symbol)
+    (let* ((doc (car
+                 (split-string
+                  (or (documentation symbol t) "")
+                  "\n")))
+           (maps fj-readme-maps)
+           (binding-codes
+            (let ((keys (fj-readme-where-is-map symbol maps)))
+              ;; just take first 2 bindings:
+              (if (> (length keys) 2)
+                  (list (car keys) (cadr keys))
+                keys)))
+           (binding-str (if binding-codes
+                            (mapconcat
+                             (lambda (x)
+                               (key-description x))
+                             binding-codes ", ")
+                          "")))
+      (push `(,binding-str ,symbol ,doc) rows)
+      rows))
+
+  (let (rows)
     (mapatoms
      (lambda (symbol)
        (when (and (string-match "^fj"
                                 (symbol-name symbol))
                   (commandp symbol))
-         (let* ((doc (car
-                      (split-string
-                       (or (documentation symbol t) "")
-                       "\n")))
-                (maps (list fj-link-keymap
-                            fj-repo-tl-map
-                            fj-user-repo-tl-mode-map
-                            fj-issue-tl-mode-map
-                            fj-item-view-mode-map
-                            fj-repo-tl-mode-map
-                            fj-compose-comment-mode-map
-                            fj-compose-mode-map
-                            fj-notifications-mode-map
-                            fj-commits-mode-map
-                            fj-users-mode-map))
-                (binding-code
-                 (let ((keys (where-is-internal symbol maps nil nil (command-remapping symbol))))
-                   ;; just take first 2 bindings:
-                   (if (> (length keys) 2)
-                       (list (car keys) (cadr keys))
-                     keys)))
-                (binding-str (if binding-code
-                                 (mapconcat #'help--key-description-fontified
-                                            binding-code ", ")
-                               "")))
-           (push `(,binding-str ,symbol ,doc) rows)
-           rows))))
-    (sort rows (lambda (x y) (string-lessp (cadr x) (cadr y)))))
+         (fj-readme-push-rows symbol))))
+    (sort rows
+          (lambda (x y)
+            (string-lessp (cadr x) (cadr y)))))
 #+END_SRC
 
 #+RESULTS:
 | Binding   | Command                          | Description                                                         |
 |-----------+----------------------------------+---------------------------------------------------------------------|
 |           | fj-add-issue-to-milestone        | Add issue at point or in current view to milestone.                 |
-|           | fj-add-reaction                  | Add reaction to issue, PR or comment at point.                      |
+| r         | fj-add-reaction                  | Add reaction to issue, PR or comment at point.                      |
 |           | fj-browse-commit                 | Browse commit with SHA in REPO by OWNER.                            |
 | b         | fj-browse-view                   | Brose URL of view at point.                                         |
 |           | fj-commits-mode                  | Major mode for viewing repo commits.                                |
@@ -188,9 +209,9 @@ Repo settings transient:
 | C-c C-t   | fj-compose-read-title            | Read an issue title.                                                |
 | C-c C-S-l | fj-compose-remove-labels         | Remove labels from item being composed.                             |
 | C-c S-RET | fj-compose-remove-milestone      | Remove milestone from item being composed.                          |
-|           | fj-compose-send                  | Submit the issue or comment to your Forgejo instance.               |
+| C-c C-c   | fj-compose-send                  | Submit the issue or comment to your Forgejo instance.               |
 | C         | fj-copy-item-url                 | Copy URL of current item, either issue or PR.                       |
-|           | fj-copy-pr-url                   | Copy upstream Pull Request URL with branch name.                    |
+| U         | fj-copy-pr-url                   | Copy upstream Pull Request URL with branch name.                    |
 | c         | fj-create-issue                  | Create issue in current repo or repo at point in tabulated listing. |
 |           | fj-create-milestone              | Create a milestone for REPO by OWNER.                               |
 |           | fj-create-token                  | Create an access token for `fj-user' on `fj-host'.                  |
@@ -212,30 +233,31 @@ Repo settings transient:
 |           | fj-issue-edit                    | Edit ISSUE body in REPO.                                            |
 |           | fj-issue-edit-title              | Edit ISSUE title in REPO.                                           |
 |           | fj-issue-get-labels              | Get labels on ISSUE in REPO by OWNER.                               |
-|           | fj-issue-label-add               | Add a label to ISSUE in REPO by OWNER.                              |
+| l         | fj-issue-label-add               | Add a label to ISSUE in REPO by OWNER.                              |
 |           | fj-issue-label-remove            | Remove label from ISSUE in REPO by OWNER.                           |
 |           | fj-issue-tl-mode                 | Major mode for browsing a tabulated list of issues.                 |
-|           | fj-issue-view-edit-title         | Edit the title of the item being viewed.                            |
+| t         | fj-issue-view-edit-title         | Edit the title of the item being viewed.                            |
 | k         | fj-issues-tl-close               | Close current issue from tabulated issues listing.                  |
-|           | fj-issues-tl-comment             | Comment on issue from tabulated issues listing.                     |
+| C         | fj-issues-tl-comment             | Comment on issue from tabulated issues listing.                     |
 | K         | fj-issues-tl-delete              | Delete current issue from tabulated issues listing.                 |
 | e         | fj-issues-tl-edit                | Edit issue from tabulated issues listing.                           |
 | t         | fj-issues-tl-edit-title          | Edit issue title from issues tabulated list view.                   |
 | l         | fj-issues-tl-label-add           | Add label to issue from tabulated issues listing.                   |
+|           | fj-issues-tl-label-remove        | Remove label from issue from tabulated issues listing.              |
 | o         | fj-issues-tl-reopen              | Reopen current issue from tabulated issues listing.                 |
 | v         | fj-issues-tl-view                | View current issue from tabulated issues listing.                   |
-|           | fj-item-next                     | Go to next item or notification.                                    |
-|           | fj-item-prev                     | Goto previous item or notification.                                 |
+| n         | fj-item-next                     | Go to next item or notification.                                    |
+| p         | fj-item-prev                     | Goto previous item or notification.                                 |
 |           | fj-item-view                     | View item NUMBER from REPO of OWNER.                                |
-|           | fj-item-view-close               | Close item being viewed, or set to STATE.                           |
-|           | fj-item-view-comment             | Comment on the item currently being viewed.                         |
-|           | fj-item-view-comment-delete      | Delete comment at point.                                            |
+| k         | fj-item-view-close               | Close item being viewed, or set to STATE.                           |
+| c         | fj-item-view-comment             | Comment on the item currently being viewed.                         |
+| K         | fj-item-view-comment-delete      | Delete comment at point.                                            |
 |           | fj-item-view-edit                | Edit the item currently being viewed.                               |
 |           | fj-item-view-edit-comment        | Edit the comment at point.                                          |
-|           | fj-item-view-edit-item-at-point  | Edit issue or comment at point in item view mode.                   |
+| e         | fj-item-view-edit-item-at-point  | Edit issue or comment at point in item view mode.                   |
 |           | fj-item-view-mode                | Major mode for viewing items.                                       |
 |           | fj-item-view-more                | Append more timeline items to the current view, asynchronously.     |
-|           | fj-item-view-reopen              | Reopen item being viewed.                                           |
+| o         | fj-item-view-reopen              | Reopen item being viewed.                                           |
 | C-M-q     | fj-kill-all-buffers              | Kill all fj buffers.                                                |
 | I         | fj-list-issues                   | List issues for current REPO with default sorting.                  |
 |           | fj-list-issues-+-pulls           | List issues and pulls for REPO by OWNER, filtered by STATE.         |
@@ -244,8 +266,8 @@ Repo settings transient:
 |           | fj-list-issues-by-milestone      | List issues in REPO by OWNER, filtering by milestone.               |
 |           | fj-list-issues-closed            | Display closed ISSUES for REPO by OWNER in tabulated list view.     |
 |           | fj-list-issues-do                | Display ISSUES in a tabulated list view.                            |
-|           | fj-list-issues-search            | Search current repo issues for QUERY.                               |
-|           | fj-list-issues-sort              | Reload current issues listing, prompting for a sort type.           |
+| s         | fj-list-issues-search            | Search current repo issues for QUERY.                               |
+| C-c C-x   | fj-list-issues-sort              | Reload current issues listing, prompting for a sort type.           |
 |           | fj-list-items                    | List issues or pulls for REPO by OWNER, filtered by STATE and TYPE. |
 | W         | fj-list-own-issues               | List issues in repos owned by `fj-user'.                            |
 |           | fj-list-own-items                | List items of TYPE in repos owned by `fj-user'.                     |
@@ -262,17 +284,19 @@ Repo settings transient:
 | .         | fj-next-page                     | Load the next page of the current view.                             |
 | <tab>     | fj-next-tab-item                 | Jump to next tab item.                                              |
 |           | fj-notifications-mode            | Major mode for viewing notifications.                               |
-|           | fj-notifications-subject-cycle   | Cycle notifications by `fj-notifications-subject-types'.            |
-|           | fj-notifications-unread-toggle   | Switch between showing all notifications, and only showing unread.  |
+| C-c C-s   | fj-notifications-subject-cycle   | Cycle notifications by `fj-notifications-subject-types'.            |
+| C-c C-c   | fj-notifications-unread-toggle   | Switch between showing all notifications, and only showing unread.  |
 |           | fj-owned-issues-list-repo-issues | View issues of current repo from tabulated repos listing.           |
 |           | fj-owned-issues-tl-mode          | Major mode for browsing a tabulated list of issues.                 |
 | ,         | fj-prev-page                     | Load the previous page.                                             |
 | <backtab> | fj-prev-tab-item                 | Jump to prev tab item.                                              |
 |           | fj-pull-req-comment              | Add comment to PULL in REPO.                                        |
 |           | fj-remove-reaction               | Remove a reaction from issue, PR or comment at point.               |
-|           | fj-repo-commit-log               | Render log of commits for REPO by OWNER.                            |
-| L, u      | fj-repo-copy-clone-url           | Add the clone_url of repo at point to the kill ring.                |
+| L         | fj-repo-commit-log               | Render log of commits for REPO by OWNER.                            |
+| u, L      | fj-repo-copy-clone-url           | Add the clone_url of repo at point to the kill ring.                |
 |           | fj-repo-create                   | Create a new repo.                                                  |
+|           | fj-repo-create-label             | Create a new label for REPO by OWNER.                               |
+|           | fj-repo-delete-label             | Delete a label for REPO by OWNER.                                   |
 |           | fj-repo-get-labels               | Return labels JSON for REPO by OWNER.                               |
 |           | fj-repo-search                   | Search repos for QUERY.                                             |
 | s, S      | fj-repo-search-tl                | Search repos for QUERY, and display a tabulated list of results.    |
@@ -295,12 +319,12 @@ Repo settings transient:
 |           | fj-token                         | Fetch user access token from auth source, or try to add one.        |
 |           | fj-update-repo                   | Update current repo settings.                                       |
 |           | fj-update-topics                 | Update repo topics on the server.                                   |
-| U         | fj-update-user-settings          | Update current user settings on the server.                         |
+|           | fj-update-user-settings          | Update current user settings on the server.                         |
 |           | fj-user-followers                | View users who follow USER or `fj-user'.                            |
 |           | fj-user-following                | View users that USER or `fj-user' is following.                     |
 |           | fj-user-repo-tl-mode             | Mode for displaying a tabulated list of user repos.                 |
 |           | fj-user-repos-tl                 | View a tabulated list of respos for USER.                           |
-|           | fj-user-update-settings          | A transient for setting current user settings.                      |
+| U         | fj-user-update-settings          | A transient for setting current user settings.                      |
 |           | fj-users-mode                    | Major mode for viewing users.                                       |
 |           | fj-view-commit-diff              | View a diff of a commit at point.                                   |
 | N         | fj-view-notifications            | View notifications for `fj-user'.                                   |
