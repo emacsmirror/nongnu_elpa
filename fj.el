@@ -2292,10 +2292,13 @@ TYPE is the item type."
   ;; NB: this must not break any md, otherwise `markdown-standalone' may
   ;; hang!
   (save-match-data
+    ;; FIXME: this will match ). after url and put point after both:
+    ;; that means it will put < > surreounding the ).
     (while (re-search-forward fj-url-regex nil :no-error)
       (unless
           (save-excursion
-            (goto-char (1- (point)))
+            ;;
+            (goto-char (- (point) 2))
             (or (markdown-inside-link-p)
                 ;; bbcode (seen in spam, breaks markdown if url replaced):
                 (let ((regex (concat "\\[url=" markdown-regex-uri "\\/\\]"
@@ -2322,22 +2325,54 @@ Buffer-local variable `fj-previous-window-config' holds the config."
     (fedi-http--triage
      resp (lambda (resp) (fj-resp-str resp)))))
 
+(defun fj-body-prop-regexes (str json)
+  "Propertize items by regexes in STR.
+JSON is the data associated with STR."
+  (insert str)
+  (goto-char (point-min))
+  (fedi-propertize-items fedi-post-handle-regex 'handle json
+                         fj-link-keymap 1 2 nil nil
+                         '(fj-tab-stop t))
+  (fedi-propertize-items fedi-post-tag-regex 'tag json
+                         fj-link-keymap 1 2 nil nil
+                         '(fj-tab-stop t))
+  ;; NB: this is required for shr tab stops
+  ;; - why doesn't shr always add shr-tab-stop prop?
+  ;; - does not add tab-stops for []() links (nor does shr!?)
+  ;; - fixed prev breakage here by adding item as link in
+  ;; - `fedi-propertize-items'.
+  (fedi-propertize-items fedi-post-url-regex 'shr json
+                         fj-link-keymap 1 1 nil nil
+                         '(fj-tab-stop t))
+  ;; FIXME: md []() links:
+  ;; doesn't work
+  ;; (setq str
+  ;;       (fedi-propertize-items str markdown-regex-link-inline 'shr json
+  ;;                              fj-link-keymap 1 1 nil nil
+  ;;                              '(fj-tab-stop t)))
+  (fedi-propertize-items fedi-post-commit-regex 'commit json
+                         fj-link-keymap 1 1 nil nil
+                         '(fj-tab-stop t)
+                         'fj-issue-commit-face)
+  (buffer-string))
+
 ;; I think magit/forge just uses markdown-mode rather than rendering
-;; FIXME: use POST /markdown on the instance to render!
 (defun fj-render-body (body &optional json)
   "Render item BODY as markdowned html.
 JSON is the item's data to process the link with.
 Return a string."
   ;; NB: make sure this doesn't leak into our issue buffers!
-  (let ((buf "*fj-md*")
-        str
-        (body (decode-coding-string body 'utf-8)))
+  (let ((buf "*fj-render*")
+        (body (decode-coding-string body 'utf-8))
+        str)
     ;; shr.el fucks windows up, so we save and restore:
     (setq fj-previous-window-config
           (list (current-window-configuration)
                 (point-marker)))
-    ;; 1: temp buffer, prepare for md
-    (with-temp-buffer
+    ;; 1 buffer for hacking in:
+    (with-current-buffer (get-buffer-create buf)
+      ;; (switch-to-buffer (current-buffer))
+      (erase-buffer)
       (insert body)
       (goto-char (point-min))
       (fj-mdize-plain-urls) ;; FIXME: mdize a string to save a buffer
@@ -2346,38 +2381,25 @@ Return a string."
       (let ((html (decode-coding-string
                    (fj-render-markdown (buffer-string))
                    'utf-8)))
-        (with-current-buffer (get-buffer-create buf)
-          (insert html)
-          ;; 3: shr-render the md
-          (let ((shr-width (window-width))
-                (shr-discard-aria-hidden t)) ; for pandoc md image output
-            ;; shr render (render region not a contender here):
-            (shr-render-buffer (current-buffer)))))
-      ;; 4 collect result
-      (with-current-buffer "*html*"
-        (goto-char (point-min))
-        (setq str (buffer-substring (point) (point-max)))
-        (kill-buffer-and-window)        ; shr's *html*
-        (kill-buffer buf)))             ; our md
-    ;; propertize special items:
-    (setq str
-          (fedi-propertize-items str fedi-post-handle-regex 'handle json
-                                 fj-link-keymap 1 2 nil nil
-                                 '(fj-tab-stop t)))
-    (setq str
-          (fedi-propertize-items str fedi-post-tag-regex 'tag json
-                                 fj-link-keymap 1 2 nil nil
-                                 '(fj-tab-stop t)))
-    ;; FIXME: is this required? it breaks shr links
-    ;; (setq str
-    ;;       (fedi-propertize-items str fedi-post-url-regex 'link json
-    ;;                              fj-link-keymap 1 1 nil nil
-    ;;                              '(fj-tab-stop t)))
-    (setq str
-          (fedi-propertize-items str fedi-post-commit-regex 'commit json
-                                 fj-link-keymap 1 1 nil nil
-                                 '(fj-tab-stop t)
-                                 'fj-issue-commit-face))
+        (erase-buffer)
+        (insert html)
+        ;; 3: shr-render the md
+        (let ((shr-width (window-width))
+              (shr-discard-aria-hidden t)) ; for pandoc md image output
+          ;; shr render (render-region not a contender here):
+          ;; NB: shr renders md-ized URLs without shr-tab-stop!:
+          (shr-render-buffer (current-buffer))
+          ;; 4 collect result
+          (with-current-buffer "*html*"
+            (setq str (buffer-string))
+            (kill-buffer-and-window))) ;; shr's *html*
+        ;; propertize special items (reuse buffer):
+        (with-current-buffer (get-buffer buf)
+          ;; (switch-to-buffer (current-buffer))
+          (erase-buffer)
+          (setq str
+                (fj-body-prop-regexes str json))
+          (kill-buffer buf))))
     (fj-restore-previous-window-config fj-previous-window-config)
     str))
 
@@ -3074,7 +3096,7 @@ Optionally set link TYPE and ITEM number and FACE."
   (propertize str
               'face (or face 'shr-link)
               'mouse-face 'highlight
-              'shr-tabstop t
+              'fj-tab-stop t
               'keymap fj-link-keymap
               'button t
               'type type
@@ -4239,9 +4261,7 @@ Used for hitting RET on a given link."
          (fj-issue-ref-follow item))
         ('notif
          (fj-notif-link-follow item))
-        ('shr
-         (let ((url (fj--property 'shr-url)))
-           (shr-browse-url url)))
+        ('shr (shr-browse-url))
         ('more
          (let ((inhibit-read-only t))
            (delete-region
