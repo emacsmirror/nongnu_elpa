@@ -1167,7 +1167,7 @@ QUERY, STATE, TYPE, CREATED, ASSIGNED, MENTIONED and PAGE are all for
          (fj-issues-search state nil nil query nil type nil nil
                            assigned created mentioned nil nil fj-user
                            nil page))
-        (buf-name (format "*fj-user-repos-%s" type))
+        (buf-name (format "*fj-user-repos-%s*" type))
         (prev-buf (buffer-name (current-buffer)))
         (prev-mode major-mode))
     ;; FIXME refactor with `fj-list-issues'? just tab list entries fun and
@@ -1182,7 +1182,8 @@ QUERY, STATE, TYPE, CREATED, ASSIGNED, MENTIONED and PAGE are all for
             `( :owner ,fj-user
                :viewfun fj-list-own-items
                :viewargs ( :query ,query :state ,state :type ,type
-                           :created ,created :assiged ,assigned :mentioned ,mentioned
+                           :created ,created :assigned ,assigned
+                           :mentioned ,mentioned
                            :page ,page)))
       (fj-other-window-maybe
        prev-buf (format "-%s*" type) #'string-suffix-p prev-mode))))
@@ -1632,6 +1633,7 @@ Not sure what the server actually accepts.")
 ;; TODO: - reload issue on add label
 ;;       - display label desc help-echo
 ;;       - add label from issues TL and from issue timeline
+;;       - API doesn't implement initializing labels. ASKED
 
 (defun fj-repo-get-labels (&optional repo owner)
   "Return labels JSON for REPO by OWNER."
