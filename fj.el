@@ -1929,7 +1929,6 @@ the label's color, as per `fj-propertize-label-names'."
 (defvar-keymap fj-owned-issues-tl-mode-map
   :doc "Map for `fj-owned-issues-tl-mode', a tabluated list of issues."
   :parent fj-issue-tl-mode-map ; has nav
-  ;; FIXME: unbind C-c C-x!
   "C-c C-c" #'fj-cycle-state
   "C-c C-s" #'fj-cycle-type)
 
@@ -1940,6 +1939,8 @@ the label's color, as per `fj-propertize-label-names'."
   "Major mode for browsing a tabulated list of issues."
   :group 'fj
   (hl-line-mode 1)
+  (keymap-unset fj-owned-issues-tl-mode-map
+                "C-c C-x") ;; unset sort from issues tl
   (setq tabulated-list-padding 0 ;2) ; point directly on issue
         ;; this is changed by `tabulated-list-sort' which sorts by col at point:
         tabulated-list-sort-key '("Updated" . t) ;; default
