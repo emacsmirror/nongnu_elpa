@@ -73,11 +73,11 @@ A random one is picked at package initialization.")
 
 ;;; UTILS
 
-(defun fedi-http--api (endpoint &optional url ver-str)
+(defun fedi-http--api (endpoint &optional url ver-str no-slash)
   "Return Fedi API URL for ENDPOINT."
   (concat (or url fedi-instance-url) "/api/"
           (or ver-str fedi-http--api-version)
-          "/" endpoint))
+          (unless no-slash "/") endpoint))
 
 (defun fedi-http--render-html-err (string)
   "Render STRING as HTML in a temp buffer.
