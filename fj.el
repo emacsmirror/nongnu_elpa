@@ -1069,6 +1069,7 @@ Return the issue number."
   "Reload current issues listing, prompting for a sort type.
 The default sort value is \"latest\"."
   (interactive)
+  ;; FIXME: broken in own issues view (needs to be unbound)
   (cl-destructuring-bind (&key repo owner state type
                                query labels milestones page limit)
       (fj--get-buffer-spec :viewargs)
@@ -1919,6 +1920,7 @@ the label's color, as per `fj-propertize-label-names'."
 (defvar-keymap fj-owned-issues-tl-mode-map
   :doc "Map for `fj-owned-issues-tl-mode', a tabluated list of issues."
   :parent fj-issue-tl-mode-map ; has nav
+  ;; FIXME: unbind C-c C-x!
   "C-c C-c" #'fj-cycle-state
   "C-c C-s" #'fj-cycle-type)
 
