@@ -6,7 +6,7 @@
 ;; Package-Requires: ((emacs "29.1") (fedi "0.2") (tp "0.5") (transient) (magit))
 ;; Keywords: git, convenience
 ;; URL: https://codeberg.org/martianh/fj.el
-;; Version: 0.14
+;; Version: 0.15
 ;; Separator: -
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -118,6 +118,17 @@ etc."
   '(nil "issue" "pull" "commit" "repository")
   "List of possible subject types for getting notifications.")
 
+(defvar fj-own-repos-order
+  '("name" "id" "newest" "oldest" "recentupdate" "leastupdate"
+    "reversealphabetically" "alphabetically" "reversesize" "size"
+    "reversegitsize" "gitsize" "reverselfssize" "lfssize" "moststars"
+    "feweststars" "mostforks" "fewestforks"))
+
+(defvar fj-issues-sort
+  '("relevance" "latest" "oldest" "recentupdate" "leastupdate"
+    "mostcomment" "leastcomment" "nearduedate" "farduedate")
+  "A list of sort options for listing repo issues.")
+
 ;;; CUSTOMIZES
 
 (defgroup fj nil
@@ -136,6 +147,21 @@ If set to nil, you need to set `fj-token' to your user token."
   "Whether to enable `emojify-mode' in item views.
 This will not install emojify for you, you have to do that yourself."
   :type 'boolean)
+
+(defcustom fj-own-repos-default-order "recentupdate"
+  "The default order parameter for `fj-list-own-repos'.
+The value must be a member of `fj-own-repos-order'."
+  :type (append '(choice)
+                (mapcar (lambda (x)
+                          `(const ,x))
+                        fj-own-repos-order)))
+
+(defcustom fj-issues-sort-default "recentUpdate"
+  "Default sort parameter for repo issues listing."
+  :type (append '(choice)
+                (mapcar (lambda (x)
+                          `(const ,x))
+                        fj-issues-sort)))
 
 ;;; FACES
 
@@ -215,12 +241,10 @@ Copies the token to the kill ring and returns it."
     (fedi-http--triage
      resp
      (lambda (resp)
-       (let* ((json (fj-resp-json resp))
-              (token (alist-get 'sha1 json))
-              (name (alist-get 'name json)))
-         (kill-new token)
-         (message "Token %s copied to kill ring." name)
-         token)))))
+       (let-alist (fj-resp-json resp)
+         (kill-new .sha1)
+         (message "Token %s copied to kill ring." .name))
+       .sha1))))
 
 (defun fj-auth-source-get ()
   "Fetch an auth source token.
@@ -825,20 +849,6 @@ PAGE, LIMIT, ORDER."
                            :limit ,limit :order ,order)
                :viewfun fj-user-repos-tl)))))
 
-(defvar fj-own-repos-order
-  '("name" "id" "newest" "oldest" "recentupdate" "leastupdate"
-    "reversealphabetically" "alphabetically" "reversesize" "size"
-    "reversegitsize" "gitsize" "reverselfssize" "lfssize" "moststars"
-    "feweststars" "mostforks" "fewestforks"))
-
-(defcustom fj-own-repos-default-order "recentupdate"
-  "The default order parameter for `fj-list-own-repos'.
-The value must be a member of `fj-own-repos-order'."
-  :type (append '(choice)
-                (mapcar (lambda (x)
-                          `(const ,x))
-                        fj-own-repos-order)))
-
 (defun fj-list-own-repos-read ()
   "List repos for `fj-user', prompting for an order type."
   (interactive)
@@ -999,11 +1009,8 @@ ORDER should be a member of `fj-own-repos-order'."
 (defun fj-get-repo-candidates (repos)
   "Return REPOS as completion candidates."
   (cl-loop for r in repos
-           collect `(,(alist-get 'name r)
-                     ,(alist-get 'id r)
-                     ,(alist-get 'description r)
-                     ,(alist-get 'username
-                                 (alist-get 'owner r)))))
+           collect (let-alist r
+                     (list .name .id .description .owner.username))))
 
 (defun fj-read-user-repo-do (&optional default silent)
   "Prompt for a user repository.
@@ -1066,14 +1073,11 @@ Return the issue number."
                          cands))))
     (cadr item)))
 
-(defvar fj-issues-sort
-  '("relevance" "latest" "oldest" "recentupdate" "leastupdate" "mostcomment" "leastcomment" "nearduedate" "farduedate")
-  "A list of sort options for listing repo issues.")
-
 (defun fj-list-issues-sort ()
   "Reload current issues listing, prompting for a sort type.
 The default sort value is \"latest\"."
   (interactive)
+  ;; FIXME: broken in own issues view (needs to be unbound)
   (cl-destructuring-bind (&key repo owner state type
                                query labels milestones page limit)
       (fj--get-buffer-spec :viewargs)
@@ -1100,11 +1104,12 @@ LIMIT is the number of results."
   (let* ((endpoint (format "repos/%s/%s/issues" (or owner fj-user) repo))
          ;; NB: get issues has no sort param!
          (params
-          (append `(("limit" . ,(or limit (fj-default-limit))))
+          (append `(("limit" . ,(or limit (fj-default-limit)))
+                    ("sort" . ,(or sort fj-issues-sort-default)))
                   (fedi-opt-params state type
                                    (query :alias "q")
                                    labels milestones
-                                   page limit sort))))
+                                   page limit))))
     (condition-case err
         (fj-get endpoint params)
       (t (format "%s" (error-message-string err))))))
@@ -1172,7 +1177,7 @@ QUERY, STATE, TYPE, CREATED, ASSIGNED, MENTIONED and PAGE are all for
          (fj-issues-search state nil nil query nil type nil nil
                            assigned created mentioned nil nil fj-user
                            nil page))
-        (buf-name (format "*fj-user-repos-%s" type))
+        (buf-name (format "*fj-user-repos-%s*" type))
         (prev-buf (buffer-name (current-buffer)))
         (prev-mode major-mode))
     ;; FIXME refactor with `fj-list-issues'? just tab list entries fun and
@@ -1187,10 +1192,13 @@ QUERY, STATE, TYPE, CREATED, ASSIGNED, MENTIONED and PAGE are all for
             `( :owner ,fj-user
                :viewfun fj-list-own-items
                :viewargs ( :query ,query :state ,state :type ,type
-                           :created ,created :assiged ,assigned :mentioned ,mentioned
+                           :created ,created :assigned ,assigned
+                           :mentioned ,mentioned
                            :page ,page)))
       (fj-other-window-maybe
-       prev-buf (format "-%s*" type) #'string-suffix-p prev-mode))))
+       prev-buf (format "-%s*" type) #'string-suffix-p prev-mode)
+      (message (substitute-command-keys
+                "\\`C-c C-c': cycle state | \\`C-c C-s': cycle type")))))
 
 (defun fj-get-item (repo &optional owner number type)
   "GET ISSUE NUMBER, in REPO by OWNER.
@@ -1586,14 +1594,16 @@ Not sure what the server actually accepts.")
   (interactive)
   (fj-with-item-view
    (fj-destructure-buf-spec (owner repo)
-     (let ((data (fedi--property 'fj-item-data)))
+     (let ((data (fedi--property 'fj-item-data))
+           (index (fedi--property 'fj-item-number)))
        (let-alist data
          (let* ((reac (completing-read "Reaction: " fj-base-reactions))
                 (endpoint
-                 (format (if (string= "comment" .type)
-                             "repos/%s/%s/issues/comments/%s/reactions"
-                           "repos/%s/%s/issues/%s/reactions")
-                         owner repo .id))
+                 (if (string= "comment" .type)
+                     (format "repos/%s/%s/issues/comments/%s/reactions"
+                             owner repo .id)
+                   (format "repos/%s/%s/issues/%s/reactions"
+                           owner repo index)))
                 (params `(("content" . ,reac)))
                 (resp (fj-post endpoint params :json)))
            (fedi-http--triage
@@ -1637,6 +1647,7 @@ Not sure what the server actually accepts.")
 ;; TODO: - reload issue on add label
 ;;       - display label desc help-echo
 ;;       - add label from issues TL and from issue timeline
+;;       - API doesn't implement initializing labels. ASKED
 
 (defun fj-repo-get-labels (&optional repo owner)
   "Return labels JSON for REPO by OWNER."
@@ -1677,11 +1688,10 @@ Return its name, or if ID, return a cons of its name and id."
 Return an alist, with each cons being (name . id)"
   (cl-loop ;; label JSON is a list of alists:
    for x in json
-   for name = (alist-get 'name x)
-   for color = (concat "#" (alist-get 'color x))
-   for desc = (alist-get 'description x)
-   collect (cons (fj-propertize-label name color desc)
-                 (alist-get 'id x))))
+   collect
+   (let-alist x
+     (cons (fj-propertize-label .name (concat "#" .color) .description)
+           .id))))
 
 (defun fj-propertize-label (name color &optional desc)
   "Propertize NAME as a label, with COLOR prop and DESC, a description."
@@ -1931,6 +1941,8 @@ the label's color, as per `fj-propertize-label-names'."
   "Major mode for browsing a tabulated list of issues."
   :group 'fj
   (hl-line-mode 1)
+  (keymap-unset fj-owned-issues-tl-mode-map
+                "C-c C-x") ;; unset sort from issues tl
   (setq tabulated-list-padding 0 ;2) ; point directly on issue
         ;; this is changed by `tabulated-list-sort' which sorts by col at point:
         tabulated-list-sort-key '("Updated" . t) ;; default
@@ -2179,7 +2191,11 @@ QUERY is a search query to filter by."
         (let ((enable-local-variables :all))
           (hack-dir-local-variables-non-file-buffer))
         (fj-other-window-maybe
-         prev-buf "-issues*" #'string-suffix-p prev-mode)))))
+         prev-buf "-issues*" #'string-suffix-p prev-mode)
+        (message (substitute-command-keys
+                  ;; it can't find our bindings: 
+                  "\\`C-c C-c': cycle state | \\`C-c C-x': sort\
+ | \\`C-c C-s': cycle type"))))))
 
 (defun fj-repo-has-items-p (type data)
   "Return t if repo DATA has items of TYPE enabled."
@@ -2286,10 +2302,13 @@ TYPE is the item type."
   ;; NB: this must not break any md, otherwise `markdown-standalone' may
   ;; hang!
   (save-match-data
+    ;; FIXME: this will match ). after url and put point after both:
+    ;; that means it will put < > surreounding the ).
     (while (re-search-forward fj-url-regex nil :no-error)
       (unless
           (save-excursion
-            (goto-char (1- (point)))
+            ;;
+            (goto-char (- (point) 2))
             (or (markdown-inside-link-p)
                 ;; bbcode (seen in spam, breaks markdown if url replaced):
                 (let ((regex (concat "\\[url=" markdown-regex-uri "\\/\\]"
@@ -2316,22 +2335,54 @@ Buffer-local variable `fj-previous-window-config' holds the config."
     (fedi-http--triage
      resp (lambda (resp) (fj-resp-str resp)))))
 
+(defun fj-body-prop-regexes (str json)
+  "Propertize items by regexes in STR.
+JSON is the data associated with STR."
+  (insert str)
+  (goto-char (point-min))
+  (fedi-propertize-items fedi-post-handle-regex 'handle json
+                         fj-link-keymap 1 2 nil nil
+                         '(fj-tab-stop t))
+  (fedi-propertize-items fedi-post-tag-regex 'tag json
+                         fj-link-keymap 1 2 nil nil
+                         '(fj-tab-stop t))
+  ;; NB: this is required for shr tab stops
+  ;; - why doesn't shr always add shr-tab-stop prop?
+  ;; - does not add tab-stops for []() links (nor does shr!?)
+  ;; - fixed prev breakage here by adding item as link in
+  ;; - `fedi-propertize-items'.
+  (fedi-propertize-items fedi-post-url-regex 'shr json
+                         fj-link-keymap 1 1 nil nil
+                         '(fj-tab-stop t))
+  ;; FIXME: md []() links:
+  ;; doesn't work
+  ;; (setq str
+  ;;       (fedi-propertize-items str markdown-regex-link-inline 'shr json
+  ;;                              fj-link-keymap 1 1 nil nil
+  ;;                              '(fj-tab-stop t)))
+  (fedi-propertize-items fedi-post-commit-regex 'commit json
+                         fj-link-keymap 1 1 nil nil
+                         '(fj-tab-stop t)
+                         'fj-issue-commit-face)
+  (buffer-string))
+
 ;; I think magit/forge just uses markdown-mode rather than rendering
-;; FIXME: use POST /markdown on the instance to render!
 (defun fj-render-body (body &optional json)
   "Render item BODY as markdowned html.
 JSON is the item's data to process the link with.
 Return a string."
   ;; NB: make sure this doesn't leak into our issue buffers!
-  (let ((buf "*fj-md*")
-        str
-        (body (decode-coding-string body 'utf-8)))
+  (let ((buf "*fj-render*")
+        (body (decode-coding-string body 'utf-8))
+        str)
     ;; shr.el fucks windows up, so we save and restore:
     (setq fj-previous-window-config
           (list (current-window-configuration)
                 (point-marker)))
-    ;; 1: temp buffer, prepare for md
-    (with-temp-buffer
+    ;; 1 buffer for hacking in:
+    (with-current-buffer (get-buffer-create buf)
+      ;; (switch-to-buffer (current-buffer))
+      (erase-buffer)
       (insert body)
       (goto-char (point-min))
       (fj-mdize-plain-urls) ;; FIXME: mdize a string to save a buffer
@@ -2340,38 +2391,25 @@ Return a string."
       (let ((html (decode-coding-string
                    (fj-render-markdown (buffer-string))
                    'utf-8)))
-        (with-current-buffer (get-buffer-create buf)
-          (insert html)
-          ;; 3: shr-render the md
-          (let ((shr-width (window-width))
-                (shr-discard-aria-hidden t)) ; for pandoc md image output
-            ;; shr render (render region not a contender here):
-            (shr-render-buffer (current-buffer)))))
-      ;; 4 collect result
-      (with-current-buffer "*html*"
-        (goto-char (point-min))
-        (setq str (buffer-substring (point) (point-max)))
-        (kill-buffer-and-window)        ; shr's *html*
-        (kill-buffer buf)))             ; our md
-    ;; propertize special items:
-    (setq str
-          (fedi-propertize-items str fedi-post-handle-regex 'handle json
-                                 fj-link-keymap 1 2 nil nil
-                                 '(fj-tab-stop t)))
-    (setq str
-          (fedi-propertize-items str fedi-post-tag-regex 'tag json
-                                 fj-link-keymap 1 2 nil nil
-                                 '(fj-tab-stop t)))
-    ;; FIXME: is this required? it breaks shr links
-    ;; (setq str
-    ;;       (fedi-propertize-items str fedi-post-url-regex 'link json
-    ;;                              fj-link-keymap 1 1 nil nil
-    ;;                              '(fj-tab-stop t)))
-    (setq str
-          (fedi-propertize-items str fedi-post-commit-regex 'commit json
-                                 fj-link-keymap 1 1 nil nil
-                                 '(fj-tab-stop t)
-                                 'fj-issue-commit-face))
+        (erase-buffer)
+        (insert html)
+        ;; 3: shr-render the md
+        (let ((shr-width (window-width))
+              (shr-discard-aria-hidden t)) ; for pandoc md image output
+          ;; shr render (render-region not a contender here):
+          ;; NB: shr renders md-ized URLs without shr-tab-stop!:
+          (shr-render-buffer (current-buffer))
+          ;; 4 collect result
+          (with-current-buffer "*html*"
+            (setq str (buffer-string))
+            (kill-buffer-and-window))) ;; shr's *html*
+        ;; propertize special items (reuse buffer):
+        (with-current-buffer (get-buffer buf)
+          ;; (switch-to-buffer (current-buffer))
+          (erase-buffer)
+          (setq str
+                (fj-body-prop-regexes str json))
+          (kill-buffer buf))))
     (fj-restore-previous-window-config fj-previous-window-config)
     str))
 
@@ -2388,7 +2426,8 @@ Return a string."
   "D" #'fj-view-pull-diff
   "L" #'fj-repo-commit-log
   "l" #'fj-issue-label-add
-  "M" #'fj-merge-pull)
+  "M" #'fj-merge-pull
+  "r" #'fj-add-reaction)
 
 (define-derived-mode fj-item-view-mode special-mode "fj-issue"
   "Major mode for viewing items."
@@ -3067,7 +3106,7 @@ Optionally set link TYPE and ITEM number and FACE."
   (propertize str
               'face (or face 'shr-link)
               'mouse-face 'highlight
-              'shr-tabstop t
+              'fj-tab-stop t
               'keymap fj-link-keymap
               'button t
               'type type
@@ -3232,7 +3271,7 @@ ignored."
 Returns annotation for CAND, a candidate."
   (if-let* ((entry (assoc cand minibuffer-completion-table
                           #'equal)))
-      (concat " " (cl-fourth entry))
+      (concat "\t\t" (cl-fourth entry))
     ""))
 
 ;;; SEARCH REPOS TL
@@ -3946,10 +3985,10 @@ Optionally set LIMIT to results."
 (defun fj-issues-alist (data)
   "Return an alist from issue DATA, a cons of number and title."
   (cl-loop for i in data
-           collect (cons (concat "#"
-                                 (number-to-string
-                                  (alist-get 'number i)))
-                         (alist-get 'title i))))
+           collect (let-alist i
+                     (cons (concat "#"
+                                   (number-to-string .number)
+                                   .title)))))
 
 ;; FIXME: start end not used?
 (defun fj-compose-issues-fun (_start _end)
@@ -4160,7 +4199,7 @@ Use ID if provided."
   "Mark notification at point as unread.
 Use ID if provided."
   (interactive)
-  (fj-mark-notification "unread" id))
+  (fj-mark-notification "unread" id :reload))
 
 ;;; BROWSE
 
@@ -4232,9 +4271,7 @@ Used for hitting RET on a given link."
          (fj-issue-ref-follow item))
         ('notif
          (fj-notif-link-follow item))
-        ('shr
-         (let ((url (fj--property 'shr-url)))
-           (shr-browse-url url)))
+        ('shr (shr-browse-url))
         ('more
          (let ((inhibit-read-only t))
            (delete-region
@@ -4260,9 +4297,9 @@ After loading, also mark the notification as read."
         (owner (fj--property 'fj-owner))
         (id (fj--property 'fj-notification))
         (unread (fj--property 'fj-notif-unread)))
-    (fj-item-view repo owner item)
     (when unread
-      (fj-mark-notification-read id))))
+      (fj-mark-notification-read id))
+    (fj-item-view repo owner item)))
 
 (defun fj-do-link-action-mouse (event)
   "Do the action of the link at point.
