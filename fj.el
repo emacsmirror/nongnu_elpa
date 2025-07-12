@@ -2390,7 +2390,8 @@ Return a string."
   "D" #'fj-view-pull-diff
   "L" #'fj-repo-commit-log
   "l" #'fj-issue-label-add
-  "M" #'fj-merge-pull)
+  "M" #'fj-merge-pull
+  "r" #'fj-add-reaction)
 
 (define-derived-mode fj-item-view-mode special-mode "fj-issue"
   "Major mode for viewing items."
