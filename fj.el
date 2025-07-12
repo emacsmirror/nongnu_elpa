@@ -864,7 +864,9 @@ LIMIT and PAGE are for pagination."
          (buf (format "*fj-repos-%s*" fj-user))
          ;; FIXME: we should hit /users/$user/repos here not /user/repos?
          ;; but the former has "order" arg!
-         (repos (and fj-user (fj-get-repos limit nil nil page order)))
+         (repos (and fj-user (fj-get-repos
+                              limit nil nil page
+                              (or order fj-own-repos-default-order))))
          (entries (fj-repo-tl-entries repos :no-owner)))
     (if (not repos)
         (user-error "No repos")
