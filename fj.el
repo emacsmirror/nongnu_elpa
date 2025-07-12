@@ -1582,14 +1582,16 @@ Not sure what the server actually accepts.")
   (interactive)
   (fj-with-item-view
    (fj-destructure-buf-spec (owner repo)
-     (let ((data (fedi--property 'fj-item-data)))
+     (let ((data (fedi--property 'fj-item-data))
+           (index (fedi--property 'fj-item-number)))
        (let-alist data
          (let* ((reac (completing-read "Reaction: " fj-base-reactions))
                 (endpoint
-                 (format (if (string= "comment" .type)
-                             "repos/%s/%s/issues/comments/%s/reactions"
-                           "repos/%s/%s/issues/%s/reactions")
-                         owner repo .id))
+                 (if (string= "comment" .type)
+                     (format "repos/%s/%s/issues/comments/%s/reactions"
+                             owner repo .id)
+                   (format "repos/%s/%s/issues/%s/reactions"
+                           owner repo index)))
                 (params `(("content" . ,reac)))
                 (resp (fj-post endpoint params :json)))
            (fedi-http--triage
