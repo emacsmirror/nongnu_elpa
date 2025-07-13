@@ -2057,24 +2057,17 @@ Propertize any verbatim markdown in STR."
         (verbatim (if (equal state "closed")
                       'fj-item-closed-verbatim-face
                     'fj-item-verbatim-face)))
-    (save-match-data
-      ;; FIXME: works for only one verbatim substr per str
-      (if (string-match markdown-regex-code str)
-          (progn
-            (add-text-properties 0
-                                 (match-beginning 1)
-                                 `(face ,face)
-                                 str)
-            (add-text-properties (match-beginning 1)
-                                 (match-end 1)
-                                 `(face ,verbatim)
-                                 str)
-            (add-text-properties (match-end 1)
-                                 (length str)
-                                 `(face ,face)
-                                 str)
-            str)
-        (propertize str 'face face)))))
+    (with-temp-buffer
+      (switch-to-buffer (current-buffer))
+      (insert
+       (propertize str 'face face))
+      (goto-char (point-min))
+      (while (re-search-forward markdown-regex-code nil :noerror)
+        (add-text-properties (match-beginning 1)
+                             (match-end 1)
+                             `(face ,verbatim)
+                             (current-buffer)))
+      (buffer-string))))
 
 (defun fj-plain-space ()
   "Return a space with default face."
