@@ -4004,9 +4004,21 @@ Call response and update functions."
   "Search instance users for QUERY.
 Optionally set LIMIT to results."
   ;; FIXME: server: limit is an integer; it doesn't respect our 25, returns 2500
+  ;; works:
+  ;; (let ((resp (fj-search-users "mart" "10")))
+  ;;   (length (alist-get 'data resp)))
   (let ((params `(("q" . ,query)
                   ("limit" . ,limit))))
     (fj-get "users/search" params)))
+
+;; (with-current-buffer (get-buffer-create "*fj-test*")
+;;   (erase-buffer)
+;;   (insert
+;;    (prin1-to-string
+;;     (fj-search-users "mart" "10")))
+;;   (pp-buffer)
+;;   (emacs-lisp-mode)
+;;   (switch-to-buffer-other-window (current-buffer)))
 
 (defun fj-users-list (data)
   "Return an list of handles from users' DATA."
