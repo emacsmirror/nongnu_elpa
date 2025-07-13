@@ -333,3 +333,35 @@ Repo settings transient:
 | g         | fj-view-reload                   | Try to reload the current view based on its major-mode.             |
 |           | fj-watch-repo                    | Watch repo at point or in current view.                             |
 |           | fj-watched-repos                 | List your watched repos.                                            |
+
+* variables index
+
+#+BEGIN_SRC emacs-lisp :results table :colnames '("Custom variable" "Description") :exports results
+  (let (rows)
+    (mapatoms
+     (lambda (symbol)
+       (when (and (string-match "^fj"
+                                (symbol-name symbol))
+                  (custom-variable-p symbol))
+         (let* ((doc (car (split-string
+                           (or (get (indirect-variable symbol)
+                                    'variable-documentation)
+                               (get symbol 'variable-documentation)
+                               "")
+                           "\n"))))
+           (push `(,symbol ,doc) rows)
+           rows))))
+    (sort rows (lambda (x y) (string-lessp (car x) (car y)))))
+#+end_src
+
+#+RESULTS:
+| Custom variable              | Description                                                   |
+|------------------------------+---------------------------------------------------------------|
+| fj-compose-comment-mode-hook | Hook run after entering or leaving `fj-compose-comment-mode'. |
+| fj-compose-mode-hook         | Hook run after entering or leaving `fj-compose-mode'.         |
+| fj-issues-sort-default       | Default sort parameter for repo issues listing.               |
+| fj-own-repos-default-order   | The default order parameter for `fj-list-own-repos'.          |
+| fj-timeline-default-items    | The default number of timeline items to load.                 |
+| fj-token-use-auth-source     | Whether to use an auth-source file.                           |
+| fj-use-emojify               | Whether to enable `emojify-mode' in item views.               |
+
