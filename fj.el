@@ -2417,51 +2417,65 @@ JSON is the data associated with STR."
   (buffer-string))
 
 ;; I think magit/forge just uses markdown-mode rather than rendering
-(defun fj-render-body (body &optional json)
-  "Render item BODY as markdowned html.
-JSON is the item's data to process the link with.
-Return a string."
-  ;; NB: make sure this doesn't leak into our issue buffers!
-  (let ((buf "*fj-render*")
-        (body (decode-coding-string body 'utf-8))
-        str)
-    ;; shr.el fucks windows up, so we save and restore:
-    (setq fj-previous-window-config
-          (list (current-window-configuration)
-                (point-marker)))
-    ;; 1 buffer for hacking in:
-    (with-current-buffer (get-buffer-create buf)
-      ;; (switch-to-buffer (current-buffer))
-      (erase-buffer)
-      (insert body)
-      (goto-char (point-min))
-      (fj-mdize-plain-urls) ;; FIXME: mdize a string to save a buffer
-      (goto-char (point-min))
-      ;; 2: md-ize
-      (let ((html (decode-coding-string
-                   (fj-render-markdown (buffer-string))
-                   'utf-8)))
-        (erase-buffer)
-        (insert html)
-        ;; 3: shr-render the md
-        (let ((shr-width (window-width))
-              (shr-discard-aria-hidden t)) ; for pandoc md image output
-          ;; shr render (render-region not a contender here):
-          ;; NB: shr renders md-ized URLs without shr-tab-stop!:
-          (shr-render-buffer (current-buffer))
-          ;; 4 collect result
-          (with-current-buffer "*html*"
-            (setq str (buffer-string))
-            (kill-buffer-and-window))) ;; shr's *html*
-        ;; propertize special items (reuse buffer):
-        (with-current-buffer (get-buffer buf)
-          ;; (switch-to-buffer (current-buffer))
-          (erase-buffer)
-          (setq str
-                (fj-body-prop-regexes str json))
-          (kill-buffer buf))))
-    (fj-restore-previous-window-config fj-previous-window-config)
-    str))
+(defun fj-render-body (body)
+  "Render BODY as markdown and decode."
+  (decode-coding-string
+   (fj-render-markdown body)
+   'utf-8))
+
+(defun fj-render-item-bodies (json)
+  "Render all item bodies in the buffer.
+Uses property fj-item-body to find them.
+Also propertize all handles, tags, commits, and URLs."
+  (save-match-data
+    (let ((inhibit-read-only t))
+      (save-excursion
+        (goto-char (point-min))
+        (while (setq match (text-property-search-forward 'fj-item-body))
+          (let ((shr-width (window-width))
+                (shr-discard-aria-hidden t)) ; for pandoc md image output
+            ;; (fj-mdize-plain-urls) ;; FIXME: still needed since we changed to buffer parsing?
+            (shr-render-region (prop-match-beginning match)
+                               (prop-match-end match)
+                               (current-buffer))
+            ;; if we render body as markdown, rendering HTML changes
+            ;; amount of chars, so we can't reuse prop-matches here:
+
+            ;; FIXME: if we want to ensure body has props, we can set
+            ;; marker @ beg / end of shr-render-region (roll our own, it's simple),
+            ;; then re-add
+            ;; props to re-add are just (not sure if even necessary?):
+            ;; 'fj-item-number number
+            ;; 'fj-repo repo
+            ;; 'fj-item-data item
+            ;; (add-text-properties (prop-match-beginning match)
+            ;;                      (prop-match-end match)
+            ;;                      props (current-buffer))
+            )))
+      ;; propertize handles, tags, URLs, and commits
+      (fedi-propertize-items fedi-post-handle-regex 'handle json
+                             fj-link-keymap 1 2 nil nil
+                             '(fj-tab-stop t))
+      (fedi-propertize-items fedi-post-tag-regex 'tag json
+                             fj-link-keymap 1 2 nil nil
+                             '(fj-tab-stop t))
+      ;; NB: this is required for shr tab stops
+      ;; - why doesn't shr always add shr-tab-stop prop?
+      ;; - does not add tab-stops for []() links (nor does shr!?)
+      ;; - fixed prev breakage here by adding item as link in
+      ;; - `fedi-propertize-items'.
+      (fedi-propertize-items fedi-post-url-regex 'shr json
+                             fj-link-keymap 1 1 nil nil
+                             '(fj-tab-stop t))
+      (fedi-propertize-items fedi-post-commit-regex 'commit json
+                             fj-link-keymap 1 1 nil nil
+                             '(fj-tab-stop t)
+                             'fj-issue-commit-face)
+      ;; FIXME: make md []() links tab stops? (doesn't work):
+      ;; (fedi-propertize-items markdown-regex-link-inline 'shr json
+      ;;                        fj-link-keymap 1 1 nil nil
+      ;;                        '(fj-tab-stop t))
+      )))
 
 (defvar-keymap fj-item-view-mode-map
   :doc "Keymap for `fj-item-view-mode'."
@@ -2498,8 +2512,10 @@ AUTHOR is of comment, OWNER is of repo."
          (fj-edited-str-maybe .created_at .updated_at)
          stamp)
         "\n\n"
-        (fj-render-body .body comment) "\n"
-        (fj-render-comment-reactions reactions) "\n"
+        (propertize (fj-render-body .body)
+                    'fj-item-body t)
+        "\n"
+        ;; (fj-render-comment-reactions reactions) "\n"
         fedi-horiz-bar fedi-horiz-bar)
        'fj-comment comment
        'fj-comment-author .user.username
@@ -2635,7 +2651,8 @@ RELOAD mean we reloaded."
            (propertize (fj--issue-right-align-str stamp)
                        'face 'fj-item-byline-face)
            "\n\n"
-           (fj-render-body .body item)
+           (propertize (fj-render-body .body)
+                       'fj-item-body t)
            "\n"
            (fj-render-issue-reactions .number)
            "\n"
@@ -2652,7 +2669,9 @@ RELOAD mean we reloaded."
            (_ "")))
         (when (and fj-use-emojify
                    (require 'emojify nil :noerror))
-          (emojify-mode t))))))
+          (emojify-mode t))
+        ;; Propertize top level item only:
+        (fj-render-item-bodies item)))))
 
 (defun fj-item-view (&optional repo owner number type page limit)
   "View item NUMBER from REPO of OWNER.
@@ -2742,6 +2761,8 @@ If INIT-PAGE, do not update :page in viewargs."
             (message "Loading comments... Done")
             (when end-page ;; if we are re-paginating, go again maybe:
               (fj-reload-paginated-pages-maybe end-page page))
+            ;; shr-render-region and regex props:
+            (fj-render-item-bodies json)
             ;; maybe add a "more" link:
             (fj-issue-timeline-more-link-mayb)))))))
 
