@@ -672,7 +672,7 @@ If CURRENT-REPO, get from `fj-current-repo' instead."
 Should work for anything with an fj-byline property."
   (interactive)
   (fedi--goto-pos #'next-single-property-change 'fj-byline
-                  #'fj-item-view-more))
+                  #'fj-item-view-more*))
 
 (defun fj-item-prev ()
   "Goto previous item or notification.
@@ -2481,7 +2481,8 @@ Also propertize all handles, tags, commits, and URLs."
   "L" #'fj-repo-commit-log
   "l" #'fj-issue-label-add
   "M" #'fj-merge-pull
-  "r" #'fj-add-reaction)
+  "r" #'fj-add-reaction
+  ">" #'fj-item-view-more)
 
 (define-derived-mode fj-item-view-mode special-mode "fj-issue"
   "Major mode for viewing items."
@@ -2683,7 +2684,7 @@ PAGE and LIMIT are for `fj-issue-get-timeline'."
       ;; if we have paginated, re-append all pages sequentially:
       (if (fj-string-number> page "1")
           (fj-reload-paginated-pages)
-        (fj-item-view-more page)))))
+        (fj-item-view-more* page)))))
 
 (defun fj-reload-paginated-pages (&optional end-page)
   "Reload a page of timeline items.
@@ -2712,12 +2713,24 @@ Conditionally called from the end of `fj-item-view-more-cb'."
            repo owner number new-page limit
            #'fj-item-view-more-cb (current-buffer) (point) nil page))))))
 
-(defun fj-item-view-more (&optional init-page)
+(defun fj-item-view-more ()
+  ""
+  (interactive)
+  ;; when we are not clicking on a button but calling the cmd:
+  (let ((inhibit-read-only t))
+    (save-excursion
+      (when (setq match (text-property-search-forward 'type 'more t))
+        ;; remove load more button:
+        (delete-region (prop-match-beginning match)
+                       (prop-match-end match))))
+    ;; load more async:
+    (fj-item-view-more*)))
+
+(defun fj-item-view-more* (&optional init-page)
   "Append more timeline items to the current view, asynchronously.
 Interactively, INIT-PAGE is nil.
 INIT-PAGE is used in `fj-render-item' on first load of a view and when
 reloading a paginated view."
-  (interactive)
   (cl-destructuring-bind (&key repo owner number _reload _type page limit)
       (fj--get-buffer-spec :viewargs)
     (fj-issue-get-timeline-async
@@ -4348,8 +4361,8 @@ Used for hitting RET on a given link."
          (let ((inhibit-read-only t))
            (delete-region
             (save-excursion (beginning-of-line) (point))
-            (save-excursion (end-of-line) (point))))
-         (fj-item-view-more))
+            (save-excursion (end-of-line) (point)))
+           (fj-item-view-more*)))
         (_
          (error "Unknown link type %s" type))))))
 
