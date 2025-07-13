@@ -476,7 +476,11 @@ If we fail, return `fj-user'." ;; poss insane
   "Return repo name, whatever view we are in."
   (or (fj--get-buffer-spec :repo)
       fj-current-repo
-      (fj--get-tl-col 0)
+      (if (equal major-mode 'fj-owned-issues-tl-mode)
+          ;; own repos mode:
+          (fj--get-tl-col 2)
+        ;; repos mode (repo tl search):
+        (fj--get-tl-col 0))
       (fj-current-dir-repo)))
 
 (defun fj--map-alist-key (list key)
