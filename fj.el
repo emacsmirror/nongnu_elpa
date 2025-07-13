@@ -2595,8 +2595,7 @@ RELOAD mean we reloaded."
         (setq header-line-format
               `("" header-line-indent
                 ,(concat "#" (number-to-string .number) " "
-                         (propertize .title
-                                     'face 'fj-item-face))))
+                         (fj-format-tl-title .title .state))))
         (insert
          ;; header stuff
          ;; (forge has: state, status, milestone, labels, marks, assignees):
