@@ -2431,24 +2431,19 @@ Also propertize all handles, tags, commits, and URLs."
         (while (setq match (text-property-search-forward 'fj-item-body))
           (let ((shr-width (window-width))
                 (shr-discard-aria-hidden t)) ; for pandoc md image output
-            ;; (fj-mdize-plain-urls) ;; FIXME: still needed since we changed to buffer parsing?
+            ;; (fj-mdize-plain-urls) ;; FIXME: still needed since we
+            ;; changed to buffer parsing?
             (shr-render-region (prop-match-beginning match)
                                (prop-match-end match)
                                (current-buffer))
-            ;; if we render body as markdown, rendering HTML changes
-            ;; amount of chars, so we can't reuse prop-matches here:
-
-            ;; FIXME: if we want to ensure body has props, we can set
-            ;; marker @ beg / end of shr-render-region (roll our own, it's simple),
-            ;; then re-add
-            ;; props to re-add are just (not sure if even necessary?):
-            ;; 'fj-item-number number
-            ;; 'fj-repo repo
-            ;; 'fj-item-data item
-            ;; (add-text-properties (prop-match-beginning match)
-            ;;                      (prop-match-end match)
-            ;;                      props (current-buffer))
-            )))
+            ;; Re-add props (so we can edit when point on body, etc.):
+            (add-text-properties (prop-match-beginning match)
+                                 (point)
+                                 ;; 'fj-repo repo
+                                 `( fj-item-data ,json
+                                    fj-item-number
+                                    ,(alist-get 'number json))
+                                 (current-buffer)))))
       ;; propertize handles, tags, URLs, and commits
       (fedi-propertize-items fedi-post-handle-regex 'handle json
                              fj-link-keymap 1 2 nil nil
