@@ -2506,7 +2506,7 @@ AUTHOR is of comment, OWNER is of repo."
         (propertize (fj-render-body .body)
                     'fj-item-body t)
         "\n"
-        ;; (fj-render-comment-reactions reactions) "\n"
+        (fj-render-comment-reactions reactions) "\n"
         fedi-horiz-bar fedi-horiz-bar)
        'fj-comment comment
        'fj-comment-author .user.username
