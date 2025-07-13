@@ -163,6 +163,19 @@ The value must be a member of `fj-own-repos-order'."
                           `(const ,x))
                         fj-issues-sort)))
 
+(defcustom fj-timeline-default-items 15
+  "The default number of timeline items to load.
+Used for issues and pulls.
+If set to nil, `fj-default-limit',the general default amount, will be used.
+Fj.el currently struggles with performances in timelines, and it seems like the actual requests might be the culprit (after we culled all contenders on our end), so if you find that frustrating, ensure this is set to a pretty low number (10-15)."
+  :type 'integer)
+
+(defun fj-timeline-default-items ()
+  ""
+  (if (not fj-timeline-default-items)
+      (fj-default-limit)
+    (number-to-string fj-timeline-default-items)))
+
 ;;; FACES
 
 (defface fj-comment-face
@@ -2649,7 +2662,7 @@ PAGE and LIMIT are for `fj-issue-get-timeline'."
   (interactive "P")
   (let* ( ;; set defaults for pagination:
          (page (or page "1"))
-         (limit (or limit (fj-default-limit)))
+         (limit (or limit (fj-timeline-default-items)))
          ;; mode check for other-window arg:
          (ow (not (eq major-mode 'fj-item-view-mode)))
          (repo (fj-read-user-repo repo))
