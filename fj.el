@@ -2430,7 +2430,8 @@ Also propertize all handles, tags, commits, and URLs."
         (goto-char (point-min))
         (while (setq match (text-property-search-forward 'fj-item-body))
           (let ((shr-width (window-width))
-                (shr-discard-aria-hidden t)) ; for pandoc md image output
+                (shr-discard-aria-hidden t) ; for pandoc md image output
+                (props (text-properties-at (point) (current-buffer))))
             ;; (fj-mdize-plain-urls) ;; FIXME: still needed since we
             ;; changed to buffer parsing?
             (shr-render-region (prop-match-beginning match)
@@ -2439,10 +2440,7 @@ Also propertize all handles, tags, commits, and URLs."
             ;; Re-add props (so we can edit when point on body, etc.):
             (add-text-properties (prop-match-beginning match)
                                  (point)
-                                 ;; 'fj-repo repo
-                                 `( fj-item-data ,json
-                                    fj-item-number
-                                    ,(alist-get 'number json))
+                                 props
                                  (current-buffer)))))
       ;; propertize handles, tags, URLs, and commits
       (fedi-propertize-items fedi-post-handle-regex 'handle json
