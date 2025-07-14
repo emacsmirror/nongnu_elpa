@@ -1513,9 +1513,11 @@ OWNER is the repo owner."
                            owner repo comment)))
     (fj-get endpoint)))
 
-(defun fj-issue-comment (&optional repo owner issue comment)
+(defun fj-issue-comment (&optional repo owner issue comment
+                                   close)
   "Add COMMENT to ISSUE in REPO.
-OWNER is the repo owner."
+OWNER is the repo owner.
+With arg CLOSE, also close ISSUE."
   (interactive "P")
   (let* ((repo (fj-read-user-repo repo))
          (issue (or issue (fj-read-repo-issue repo)))
@@ -1526,7 +1528,10 @@ OWNER is the repo owner."
          (response (fj-post url params)))
     (fedi-http--triage response
                        (lambda (_)
-                         (message "comment created!")))))
+                         (if (not close)
+                             (message "comment created!")
+                           (fj-issue-close repo owner issue)
+                           (message "comment created, issue closed!"))))))
 
 (defun fj-comment-patch (repo owner id &optional params issue json)
   "Edit comment with ID in REPO owned by OWNER.
@@ -4005,12 +4010,13 @@ Inject INIT-TEXT into the buffer, for editing."
                 'new-comment
               'new-issue)))))
 
-(defun fj-compose-send ()
+(defun fj-compose-send (&optional prefix)
   "Submit the issue or comment to your Forgejo instance.
-Call response and update functions."
+Call response and update functions.
+With a prefix argument, also close issue if sending a comment."
   ;; FIXME: handle `fj-compose-repo-owner' being unset?
   ;; if we want to error about it, we also need a way to set it.
-  (interactive)
+  (interactive "P")
   (let ((buf (buffer-name))
         (type fj-compose-item-type))
     (if (and (or (eq type 'new-issue)
@@ -4026,7 +4032,7 @@ Call response and update functions."
                  (fj-issue-comment repo
                                    fj-compose-repo-owner
                                    fj-compose-issue-number
-                                   body))
+                                   body prefix))
                 ('edit-comment
                  (fj-issue-comment-edit repo
                                         fj-compose-repo-owner
