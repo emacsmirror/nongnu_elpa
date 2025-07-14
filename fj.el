@@ -4102,12 +4102,17 @@ Optionally set LIMIT to results."
          (data (alist-get 'data resp)))
     (fj-users-list data)))
 
+;; (defun fj-compose-mentions-capf ()
+;;   (cape-wrap-debug #'fj-compose-mentions-capf*))
+
 (defun fj-compose-mentions-capf ()
   "Build a mentions completion backend for `completion-at-point-functions'."
   (fedi-post--return-capf fedi-post-handle-regex
                           #'fj-compose-mentions-fun
                           nil nil
-                          #'fj-compose-handle-exit-fun))
+                          #'fj-compose-handle-exit-fun
+                          ;; 'fj-mention
+                          ))
 
 ;;; issues capf
 ;; TODO: we need to trigger completion on typing # alone (depends on regex)
