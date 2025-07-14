@@ -618,7 +618,8 @@ Added to `after-change-functions'."
 ;;; COMPOSE BUFFER FUNCTION
 
 (defun fedi-post--compose-buffer
-    (&optional edit major minor prefix type capf-funs fields init-text reply-text)
+    (&optional edit major minor prefix type capf-funs fields
+               init-text reply-text buf-prefix)
   "Create a new buffer to capture text for a new post.
 EDIT means we are editing an existing post, not composing a new one.
 MAJOR is the major mode to enable.
@@ -631,10 +632,11 @@ TYPE is a string for the buffer name.
 FIELDS is a list of alists containing status fields for bindings
 and options display. Each alist should have a name, prop,
 item-var and face elements. Element name should be a hyphen-separated
-string, the other elements should be symbols."
+string, the other elements should be symbols.
+BUF-PREFIX is a string to prepend to the buffer name."
   (let* ((buffer-name (if edit
-                          (format "*edit %s*" type)
-                        (format "*new %s*" type)))
+                          (format "*%sedit %s*" buf-prefix type)
+                        (format "*%snew %s*" buf-prefix type)))
          (buffer-exists (get-buffer buffer-name))
          (buffer (or buffer-exists (get-buffer-create buffer-name)))
          (inhibit-read-only t)
