@@ -229,7 +229,8 @@ Buffer-local variable `fedi-post-previous-window-config' holds the config."
               (match-end 1))))))
 
 (defun fedi-post--return-capf (regex completion-fun &optional
-                                     annot-fun _affix-fun exit-fun)
+                                     annot-fun _affix-fun exit-fun
+                                     category)
   "Return a completion at point function.
 REGEX is used to get the item before point.
 
@@ -265,6 +266,7 @@ and a status."
             ;; FIXME: we "should" use :affixation-function for this but i
             ;; can't get it to work so use an exit-fun hack:
             :exit-function
+            :category category
             (when exit-fun
               (lambda (str status)
                 (funcall exit-fun str status)))
@@ -484,7 +486,7 @@ Item-var, containing the data to be displayed, can be a string, or a
 cons cell, or a list. If the latter two, the first element is displayed."
   (let-alist item
     (let ((region (fedi--find-property-range .prop (point-min)))
-          (val (eval .item-var))) ;; FIXME: remove this eval?
+          (val (symbol-value .item-var)))
       (add-text-properties
        (car region) (cdr region)
        (list 'display
@@ -618,7 +620,8 @@ Added to `after-change-functions'."
 ;;; COMPOSE BUFFER FUNCTION
 
 (defun fedi-post--compose-buffer
-    (&optional edit major minor prefix type capf-funs fields init-text reply-text)
+    (&optional edit major minor prefix type capf-funs fields
+               init-text reply-text buf-prefix)
   "Create a new buffer to capture text for a new post.
 EDIT means we are editing an existing post, not composing a new one.
 MAJOR is the major mode to enable.
@@ -631,10 +634,11 @@ TYPE is a string for the buffer name.
 FIELDS is a list of alists containing status fields for bindings
 and options display. Each alist should have a name, prop,
 item-var and face elements. Element name should be a hyphen-separated
-string, the other elements should be symbols."
+string, the other elements should be symbols.
+BUF-PREFIX is a string to prepend to the buffer name."
   (let* ((buffer-name (if edit
-                          (format "*edit %s*" type)
-                        (format "*new %s*" type)))
+                          (format "*%sedit %s*" buf-prefix type)
+                        (format "*%snew %s*" buf-prefix type)))
          (buffer-exists (get-buffer buffer-name))
          (buffer (or buffer-exists (get-buffer-create buffer-name)))
          (inhibit-read-only t)

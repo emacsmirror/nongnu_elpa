@@ -177,7 +177,12 @@ For example:
                   (include-desc :alias \"includeDesc\"
                                 :boolean \"true\")
                   (list :list (\"123\" \"abc\")
-                  order page limit)."
+                  order page limit).
+
+To use this in combination with mandatory parameters, you can do this:
+
+\(append `((\"mandatory\" . ,value))
+          (fedi-opt-params a b c d))."
   (declare (debug t))
   `(append ,@(fedi--opt-params-whens params)))
 
@@ -189,7 +194,7 @@ For example:
 (defun fedi--opt-param-expr (param)
   "For PARAM, return a when expression.
 It takes the form:
-\(when param '(\"param\" . param)).
+\(when param \\='(\"param\" . param)).
 Param itself can also be an expression. See `fedi-opt-params' for
 details."
   (if (consp param)
@@ -741,9 +746,9 @@ the whole likes count in order to propertize it fully."
 
 ;;; PROPERTIZING SPECIAL ITEMS
 
-(defun fedi-propertize-items (str regex type json keymap subexp
-                                  &optional item-subexp domain-subexp link
-                                  extra-props face)
+(defun fedi-propertize-items (regex type json keymap subexp
+                                    &optional item-subexp domain-subexp link
+                                    extra-props face)
   "Propertize items of TYPE matching REGEX in STR as links using JSON.
 KEYMAP and LINK are properties to add to the match.
 EXTRA-PROPS is a property list of any extra properties to add.
@@ -756,11 +761,9 @@ used in a link function. For an example of regexes' subgroups, see
 `fedi-post-handle-regex'."
   ;; FIXME: ideally we'd not do this in a sep buffer (gc)
   ;; this runs on every item for every regex type!
-  (with-temp-buffer
-    (switch-to-buffer (current-buffer))
-    (insert str)
-    (goto-char (point-min))
+  (save-excursion
     (save-match-data
+      (goto-char (point-min))
       ;; ideally we'd work errors out, but we don't want to ruin
       ;; our caller, which might make a page load fail:
       (ignore-errors
@@ -778,21 +781,22 @@ used in a link function. For an example of regexes' subgroups, see
                  (domain (when domain-subexp ; fedi-post-handle-regex
                            (buffer-substring-no-properties (match-beginning domain-subexp)
                                                            (match-end domain-subexp))))
-                 (link (if (functionp link)
-                           (funcall link)
-                         link)))
+                 (link (cond ((eq type 'shr)
+                              item-str) ;; IF TYPE SHR: USE MATCHED URL
+                             ((functionp link)
+                              (funcall link))
+                             (t link))))
             (add-text-properties beg
                                  end
                                  (fedi-link-props face link item type item-str keymap))
             (add-text-properties beg end
-                                 extra-props)))))
-    (buffer-string)))
+                                 extra-props)))))))
 
 (defun fedi-link-props (&optional face link item type help-echo keymap)
   "Return a plist for a link."
   `(face ,(or face '(shr-text shr-link))
          mouse-face highlight
-         shr-tabstop t
+         shr-tab-stop t
          shr-url ,link
          button t
          type ,type
