@@ -2066,11 +2066,14 @@ Propertize any verbatim markdown in STR."
       (insert
        (propertize str 'face face))
       (goto-char (point-min))
-      (while (re-search-forward markdown-regex-code nil :noerror)
-        (add-text-properties (match-beginning 1)
-                             (match-end 1)
-                             `(face ,verbatim)
-                             (current-buffer)))
+      (save-match-data
+        (while (re-search-forward markdown-regex-code nil :noerror)
+          (add-text-properties (match-beginning 1) (match-end 1)
+                               `(face ,verbatim)
+                               (current-buffer))
+          (replace-match (buffer-substring (match-beginning 3)
+                                           (match-end 3))
+                         nil nil nil 1)))
       (buffer-string))))
 
 (defun fj-plain-space ()
