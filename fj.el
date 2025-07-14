@@ -2441,7 +2441,7 @@ Also propertize all handles, tags, commits, and URLs."
       (save-excursion
         (goto-char (point-min))
         (while (setq match (text-property-search-forward 'fj-item-body))
-          (let ((shr-width (window-width))
+          (let ((shr-width (- (window-width) 2))
                 (shr-discard-aria-hidden t) ; for pandoc md image output
                 (props (text-properties-at (point) (current-buffer))))
             ;; (fj-mdize-plain-urls) ;; FIXME: still needed since we
