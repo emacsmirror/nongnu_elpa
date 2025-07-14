@@ -2,7 +2,7 @@
 * mastodon commands index
 
 #+BEGIN_SRC emacs-lisp :results table :colnames '("Binding" "Command" "Description") :exports results
-  (defvar masto-readme-maps
+  (defvar readme-maps
     (mapcar (lambda (x)
               x)
             (list mastodon-mode-map
@@ -18,7 +18,7 @@
                   mastodon-views--view-follow-requests-keymap
                   mastodon-views--view-filters-keymap)))
 
-  (defun masto-readme-where-is-map (symbol maps)
+  (defun readme-where-is-map (symbol maps)
     ""
     (cl-remove-duplicates
      (flatten-tree
@@ -27,14 +27,14 @@
               maps))
      :test #'equal))
 
-  (defun masto-readme-push-rows (symbol)
+  (defun readme-push-rows (symbol)
     (let* ((doc (car
                  (split-string
                   (or (documentation symbol t) "")
                   "\n")))
-           (maps fj-readme-maps)
+           (maps readme-maps)
            (binding-codes
-            (let ((keys (fj-readme-where-is-map symbol maps)))
+            (let ((keys (readme-where-is-map symbol maps)))
               ;; just take first 2 bindings:
               (if (> (length keys) 2)
                   (list (car keys) (cadr keys))
@@ -51,268 +51,237 @@
   (let (rows)
     (mapatoms
      (lambda (symbol)
-       (when (and (string-match "^fj"
-                                (symbol-name symbol))
-                  (commandp symbol))
-         (fj-readme-push-rows symbol))))
-    (sort rows
-          (lambda (x y)
-            (string-lessp (cadr x) (cadr y)))))
-
-  (let (rows)
-    (mapatoms
-     (lambda (symbol)
        (when (and (string-match "^mastodon"
                                 (symbol-name symbol))
                   (commandp symbol))
-         (let* ((doc (car
-                      (split-string
-                       (or (documentation symbol t) "")
-                       "\n")))
-                ;; add more keymaps here
-                ;; some keys are in sub 'keymap keys inside a map
-                (maps masto-readme-maps)
-                (binding-code
-                 (let ((keys (where-is-internal symbol maps nil nil (command-remapping symbol))))
-                   ;; just take first 2 bindings:
-                   (if (> (length keys) 2)
-                       (list (car keys) (cadr keys))
-                     keys)))
-                ;; (or (car (rassoc symbol mastodon-mode-map))
-                ;; (car (rassoc symbol (cadr mastodon-toot-mode-map)))
-                ;; (car (rassoc symbol (cadr mastodon-profile-mode-map)))
-                ;; (car (rassoc symbol mastodon-notifications--map))))
-                (binding-str (if binding-code
-                                 (mapconcat #'help--key-description-fontified
-                                            binding-code ", ")
-                               "")))
-           (push `(,binding-str ,symbol ,doc) rows)
-           rows))))
-    (sort rows (lambda (x y) (string-lessp (cadr x) (cadr y)))))
+         (readme-push-rows symbol))))
+    (sort rows
+          (lambda (x y)
+            (string-lessp (cadr x) (cadr y)))))
 #+END_SRC
 
 #+RESULTS:
-| Binding          | Command                                          | Description                                                                    |
-|------------------+--------------------------------------------------+--------------------------------------------------------------------------------|
-|                  | mastodon                                         | Connect client to `mastodon-instance-url' instance.                            |
-|                  | mastodon-clear-poll                              | Clear current poll data.                                                       |
-|                  | mastodon-create-poll                             | A transient for creating a poll.                                               |
-|                  | mastodon-create-poll-done                        | Finish setting poll details.                                                   |
-|                  | mastodon-forget-all-logins                       | Delete `mastodon-client--token-file'.                                          |
-|                  | mastodon-image-mode                              | Major mode derived from `image-mode' by `define-derived-mode'.                 |
-|                  | mastodon-inspect--get-search-account             | Return JSON for a single account after search QUERY.                           |
-|                  | mastodon-inspect--get-search-result              | Inspect function for a search result for QUERY.                                |
-|                  | mastodon-inspect--toot                           | Find next toot and dump its meta data into new buffer.                         |
-|                  | mastodon-inspect--view-single-toot               | View the toot/status represented by ITEM-ID.                                   |
-|                  | mastodon-inspect--view-single-toot-source        | View the ess source of a toot/status represented by ITEM-ID.                   |
-| C-M-q            | mastodon-kill-all-buffers                        | Kill any and all open mastodon buffers, hopefully.                             |
-| Q                | mastodon-kill-window                             | Quit window and delete helper.                                                 |
-|                  | mastodon-mode                                    | Major mode for fediverse services using the Mastodon API.                      |
-|                  | mastodon-notifications-clear-all                 | Clear all notifications.                                                       |
-| C-k              | mastodon-notifications-clear-current             | Dismiss the notification at point.                                             |
-|                  | mastodon-notifications-cycle-type                | Cycle the current notifications view.                                          |
-|                  | mastodon-notifications-follow-request-accept     | Accept a follow request.                                                       |
-| j                | mastodon-notifications-follow-request-reject     | Reject a follow request.                                                       |
-| N                | mastodon-notifications-get                       | Display NOTIFICATIONS in buffer.                                               |
-|                  | mastodon-notifications-get-boosts                | Display boost notifications in buffer.                                         |
-|                  | mastodon-notifications-get-edits                 | Display edited post notifications in buffer.                                   |
-|                  | mastodon-notifications-get-favourites            | Display favourite notifications in buffer.                                     |
-|                  | mastodon-notifications-get-follow-requests       | Display follow request notifications in buffer.                                |
-|                  | mastodon-notifications-get-follows               | Display follow notifications in buffer.                                        |
-| @                | mastodon-notifications-get-mentions              | Display mention notifications in buffer.                                       |
-|                  | mastodon-notifications-get-polls                 | Display poll notifications in buffer.                                          |
-|                  | mastodon-notifications-get-single-notif          | Return a single notification JSON for v2 notifs.                               |
-|                  | mastodon-notifications-get-statuses              | Display status notifications in buffer.                                        |
-|                  | mastodon-notifications-get-type                  | Read a notification type and load its timeline.                                |
-| C-:              | mastodon-notifications-policy                    | A transient to set notifications policy options.                               |
-|                  | mastodon-notifications-policy-update             | Send updated notification policy settings.                                     |
-|                  | mastodon-notifications-request-accept            | Accept a notification request for a user.                                      |
-|                  | mastodon-notifications-request-reject            | Reject a notification request for a user.                                      |
-| C-S-n            | mastodon-notifications-requests                  | Open a new buffer displaying the user's notification requests.                 |
-|                  | mastodon-profile-account-bot-toggle              | Toggle the bot status of your account.                                         |
-|                  | mastodon-profile-account-discoverable-toggle     | Toggle the discoverable status of your account.                                |
-|                  | mastodon-profile-account-locked-toggle           | Toggle the locked status of your account.                                      |
-|                  | mastodon-profile-account-search                  | Run a statuses search QUERY for the currently viewed account.                  |
-|                  | mastodon-profile-account-sensitive-toggle        | Toggle the sensitive status of your account.                                   |
-|                  | mastodon-profile-account-view-cycle              | Cycle through profile view: toots, toot sans boosts, followers, and following. |
-|                  | mastodon-profile-add-account-to-list             | Add account of current profile buffer to a list.                               |
-|                  | mastodon-profile-add-private-note-to-account     | Add a private note to an account.                                              |
-|                  | mastodon-profile-fields                          | A transient for setting profile fields.                                        |
-|                  | mastodon-profile-fields-update                   | Update current user profile fields.                                            |
-| A                | mastodon-profile-get-toot-author                 | Open profile of author of toot under point.                                    |
-|                  | mastodon-profile-mode                            | Toggle mastodon profile minor mode.                                            |
-| O                | mastodon-profile-my-profile                      | Show the profile of the currently signed in user.                              |
-|                  | mastodon-profile-open-followers                  | Open a profile buffer showing the accounts following the current profile.      |
-|                  | mastodon-profile-open-following                  | Open a profile buffer showing the accounts that current profile follows.       |
-|                  | mastodon-profile-open-statuses                   | Open a profile showing statuses.                                               |
-|                  | mastodon-profile-open-statuses-no-reblogs        | Open a profile buffer showing statuses without reblogs.                        |
-|                  | mastodon-profile-open-statuses-no-replies        | Open a profile buffer showing statuses without replies.                        |
-|                  | mastodon-profile-open-statuses-only-media        | Open a profile buffer showing only statuses with media.                        |
-| C-c #            | mastodon-profile-open-statuses-tagged            | Prompt for a hashtag and display a profile with only statuses containing it.   |
-|                  | mastodon-profile-remove-from-followers-at-point  | Prompt for a user in the item at point and remove from followers.              |
-|                  | mastodon-profile-remove-from-followers-list      | Select a user from your followers and remove from followers.                   |
-|                  | mastodon-profile-remove-user-from-followers      | Remove a user from your followers.                                             |
-|                  | mastodon-profile-show-familiar-followers         | Show a list of familiar followers.                                             |
-| P                | mastodon-profile-show-user                       | Query for USER-HANDLE from current status and show that user's profile.        |
-|                  | mastodon-profile-update-display-name             | Update display name for your account.                                          |
-|                  | mastodon-profile-update-meta-fields              | Prompt for new metadata fields information and PATCH the server.               |
-|                  | mastodon-profile-update-mode                     | Minor mode to update user profile.                                             |
-|                  | mastodon-profile-update-profile-note-cancel      | Cancel updating user profile and kill buffer and window.                       |
-| U                | mastodon-profile-update-user-profile-note        | Fetch user's profile note and display for editing.                             |
-|                  | mastodon-profile-user-profile-send-updated       | Send PATCH request with the updated profile note.                              |
-|                  | mastodon-profile-view-account-private-note       | Display the private note about a user.                                         |
-| K                | mastodon-profile-view-bookmarks                  | Open a new buffer displaying the user's bookmarks.                             |
-| V                | mastodon-profile-view-favourites                 | Open a new buffer displaying the user's favourites.                            |
-|                  | mastodon-profile-view-preferences                | View user preferences in another window.                                       |
-|                  | mastodon-search-load-link-posts                  | Load timeline of posts containing link at point.                               |
-|                  | mastodon-search-mode                             | Toggle mastodon search minor mode.                                             |
-| s                | mastodon-search-query                            | Prompt for a search QUERY and return accounts, statuses, and hashtags.         |
-|                  | mastodon-search-query-accounts-followed          | Run an accounts search QUERY, limited to your followers.                       |
-|                  | mastodon-search-query-cycle                      | Cycle through search types: accounts, hashtags, and statuses.                  |
-|                  | mastodon-search-trending-links                   | Display a list of links trending on your instance.                             |
-|                  | mastodon-search-trending-statuses                | Display a list of statuses trending on your instance.                          |
-|                  | mastodon-search-trending-tags                    | Display a list of tags trending on your instance.                              |
-| /                | mastodon-switch-to-buffer                        | Switch to a live mastodon buffer.                                              |
-|                  | mastodon-tl-announcements                        | Display announcements from your instance.                                      |
-|                  | mastodon-tl-block-domain                         | Read a domain and block it.                                                    |
-| B                | mastodon-tl-block-user                           | Query for USER-HANDLE from current status and block that user.                 |
-| <mouse-2>        | mastodon-tl-click-image-or-video                 | Click to play video with `mpv.el'.                                             |
-|                  | mastodon-tl-copy-image-caption                   | Copy the caption of the image at point.                                        |
-|                  | mastodon-tl-disable-notify-user-posts            | Query for USER-HANDLE and disable notifications when they post.                |
-| m                | mastodon-tl-dm-user                              | Query for USER-HANDLE from current status and compose a message to that user.  |
-|                  | mastodon-tl-do-link-action                       | Do the action of the link at point.                                            |
-|                  | mastodon-tl-do-link-action-at-point              | Do the action of the link at POS.                                              |
-|                  | mastodon-tl-enable-notify-user-posts             | Query for USER-HANDLE and enable notifications when they post.                 |
-|                  | mastodon-tl-filter-user-user-posts-by-language   | Query for USER-HANDLE and filter display of their posts by language.           |
-|                  | mastodon-tl-fold-post                            | Fold post at point, if it is too long.                                         |
-| !                | mastodon-tl-fold-post-toggle                     | Toggle the folding status of the toot at point.                                |
-|                  | mastodon-tl-follow-tag                           | Prompt for a tag (from post at point) and follow it.                           |
-| W                | mastodon-tl-follow-user                          | Query for USER-HANDLE from current status and follow that user.                |
-|                  | mastodon-tl-follow-user-by-handle                | Prompt for a USER-HANDLE and follow that user.                                 |
-|                  | mastodon-tl-follow-user-disable-boosts           | Prompt for a USER-HANDLE, and disable display of boosts in home timeline.      |
-|                  | mastodon-tl-follow-user-enable-boosts            | Prompt for a USER-HANDLE, and enable display of boosts in home timeline.       |
-| '                | mastodon-tl-followed-tags-timeline               | Open a timeline of multiple tags.                                              |
-| F                | mastodon-tl-get-federated-timeline               | Open federated timeline.                                                       |
-| H                | mastodon-tl-get-home-timeline                    | Open home timeline.                                                            |
-| L                | mastodon-tl-get-local-timeline                   | Open local timeline.                                                           |
-| \                | mastodon-tl-get-remote-local-timeline            | Prompt for an instance domain and try to display its local timeline.           |
-| #                | mastodon-tl-get-tag-timeline                     | Prompt for tag and opens its timeline.                                         |
-| n                | mastodon-tl-goto-next-item                       | Jump to next item.                                                             |
-| p                | mastodon-tl-goto-prev-item                       | Jump to previous item.                                                         |
-| C-"              | mastodon-tl-jump-to-followed-tag                 | Prompt for a followed tag and view its timeline.                               |
-| "                | mastodon-tl-list-followed-tags                   | List followed tags. View timeline of tag user choses.                          |
-| C-<return>       | mastodon-tl-mpv-play-video-at-point              | Play the video or gif at point with an mpv process.                            |
-|                  | mastodon-tl-mpv-play-video-from-byline           | Run `mastodon-tl-mpv-play-video-at-point' on first moving image in post.       |
-|                  | mastodon-tl-mute-thread                          | Mute the thread displayed in the current buffer.                               |
-| M                | mastodon-tl-mute-user                            | Query for USER-HANDLE from current status and mute that user.                  |
-|                  | mastodon-tl-next-full-image                      | From full image view buffer, load the toot's next image.                       |
-| TAB, M-n         | mastodon-tl-next-tab-item                        | Move to the next interesting item.                                             |
-| M-;              | mastodon-tl-nodeinfo-for-toot                    | Return Nodeinfo for toot at point.                                             |
-| v                | mastodon-tl-poll-vote                            | If there is a poll at point, prompt user for OPTION to vote on it.             |
-|                  | mastodon-tl-prev-full-image                      | From full image view buffer, load the toot's prev image.                       |
-| S-TAB, <backtab> | mastodon-tl-previous-tab-item                    | Move to the previous interesting item.                                         |
-|                  | mastodon-tl-remote-tag-timeline                  | Call `mastodon-tl-get-remote-local-timeline' but for a TAG timeline.           |
-| Z                | mastodon-tl-report-to-mods                       | Report the author of the toot at point to your instance moderators.            |
-| RET              | mastodon-tl-return                               | Load user profile or thread of item at point.                                  |
-| SPC              | mastodon-tl-scroll-up-command                    | Call `scroll-up-command', loading more toots if necessary.                     |
-|                  | mastodon-tl-shr-browse-image                     | Browse the image under point.                                                  |
-|                  | mastodon-tl-some-followed-tags-timeline          | Prompt for some tags, and open a timeline for them.                            |
-| C-'              | mastodon-tl-tag-group-timeline                   | Load a timeline of a tag group from `mastodon-tl--tags-groups'.                |
-| T                | mastodon-tl-thread                               | Open thread buffer for toot at point.                                          |
-|                  | mastodon-tl-toggle-sensitive-image               | Toggle dislay of sensitive image at point.                                     |
-|                  | mastodon-tl-toggle-spoiler-in-thread             | Toggler content warning for all posts in current thread.                       |
-| c                | mastodon-tl-toggle-spoiler-text-in-toot          | Toggle the visibility of the spoiler text in the current toot.                 |
-|                  | mastodon-tl-unblock-domain                       | Read a blocked domain and unblock it.                                          |
-| C-S-b            | mastodon-tl-unblock-user                         | Query for USER-HANDLE from list of blocked users and unblock that user.        |
-|                  | mastodon-tl-unfilter-user-languages              | Remove any language filters for USER-HANDLE.                                   |
-|                  | mastodon-tl-unfold-post                          | Unfold the toot at point if it is folded (read-more).                          |
-|                  | mastodon-tl-unfollow-tag                         | Prompt for a followed tag, and unfollow it.                                    |
-| C-S-w            | mastodon-tl-unfollow-user                        | Query for USER-HANDLE from current status and unfollow that user.              |
-|                  | mastodon-tl-unmute-thread                        | Unmute the thread displayed in the current buffer.                             |
-| S-RET            | mastodon-tl-unmute-user                          | Query for USER-HANDLE from list of muted users and unmute that user.           |
-| u, g             | mastodon-tl-update                               | Update timeline with new toots.                                                |
-| =                | mastodon-tl-view-first-full-image                | From item byline, fetch load its first full image.                             |
-|                  | mastodon-tl-view-full-image-at-point             | Browse full-sized version of image at point in a new window.                   |
-|                  | mastodon-tl-view-full-image-or-play-video        | View full sized version of image at point, or try to play video.               |
-|                  | mastodon-tl-view-item-on-own-instance            | Load current toot on your own instance.                                        |
-|                  | mastodon-tl-view-single-toot                     | View toot at point in a separate buffer.                                       |
-|                  | mastodon-tl-view-whole-thread                    | From a thread view, view entire thread.                                        |
-| t                | mastodon-toot                                    | Update instance with new toot. Content is captured in a new buffer.            |
-| C-c C-a          | mastodon-toot-attach-media                       | Prompt for an attachment FILE with DESCRIPTION.                                |
-| o                | mastodon-toot-browse-toot-url                    | Browse URL of toot at point.                                                   |
-| C-c C-k          | mastodon-toot-cancel                             | Kill new-toot buffer/window. Does not POST content.                            |
-| C-c C-v          | mastodon-toot-change-visibility                  | Change the current visibility to the next valid value.                         |
-| C-c !            | mastodon-toot-clear-all-attachments              | Remove all attachments from a toot draft.                                      |
-| C-c C-o          | mastodon-toot-clear-poll                         | Remove poll from toot compose buffer.                                          |
-|                  | mastodon-toot-copy-toot-text                     | Copy text of toot at point.                                                    |
-| C                | mastodon-toot-copy-toot-url                      | Copy URL of toot at point.                                                     |
-| C-c C-p          | mastodon-toot-create-poll                        | Prompt for new poll options and return as a list.                              |
-|                  | mastodon-toot-delete-all-drafts                  | Delete all drafts.                                                             |
-| D                | mastodon-toot-delete-and-redraft-toot            | Delete and redraft user's toot at point synchronously.                         |
-|                  | mastodon-toot-delete-draft-toot                  | Prompt for a draft toot and delete it.                                         |
-| d                | mastodon-toot-delete-toot                        | Delete user's toot at point synchronously.                                     |
-|                  | mastodon-toot-download-custom-emoji              | Download `mastodon-instance-url's custom emoji.                                |
-|                  | mastodon-toot-edit-media-description             | Prompt for an attachment, and update its description.                          |
-| e                | mastodon-toot-edit-toot-at-point                 | Edit the user's toot at point.                                                 |
-|                  | mastodon-toot-enable-custom-emoji                | Add `mastodon-instance-url's custom emoji to `emojify'.                        |
-| C-c C-e          | mastodon-toot-insert-emoji                       | Prompt to insert an emoji.                                                     |
-| .                | mastodon-toot-list-boosters                      | List the boosters of toot at point.                                            |
-| ,                | mastodon-toot-list-favouriters                   | List the favouriters of toot at point.                                         |
-|                  | mastodon-toot-mode                               | Minor mode for composing toots.                                                |
-|                  | mastodon-toot-open-draft-toot                    | Prompt for a draft and compose a toot with it.                                 |
-| i                | mastodon-toot-pin-toot-toggle                    | Pin or unpin user's toot at point.                                             |
-| r                | mastodon-toot-reply                              | Reply to toot at `point'.                                                      |
-|                  | mastodon-toot-save-draft                         | Save the current compose toot text as a draft.                                 |
-| C-c C-s          | mastodon-toot-schedule-toot                      | Read a date (+ time) in the minibuffer and schedule the current toot.          |
-| C-c C-c          | mastodon-toot-send                               | POST contents of new-toot buffer to fediverse instance and kill buffer.        |
-| C-c C-w          | mastodon-toot-set-content-warning                | Set a content warning for the current toot.                                    |
-|                  | mastodon-toot-set-default-visibility             | Set the default visibility for toots on the server.                            |
-| C-c C-l          | mastodon-toot-set-toot-language                  | Prompt for a language and set `mastodon-toot--language'.                       |
-| k                | mastodon-toot-toggle-bookmark                    | Bookmark or unbookmark toot at point.                                          |
-| b                | mastodon-toot-toggle-boost                       | Boost/unboost toot at `point'.                                                 |
-| f                | mastodon-toot-toggle-favourite                   | Favourite/unfavourite toot at `point'.                                         |
-| C-c C-n          | mastodon-toot-toggle-nsfw                        | Toggle `mastodon-toot--content-nsfw'.                                          |
-| a                | mastodon-toot-translate-toot-text                | Translate text of toot at point.                                               |
-| E                | mastodon-toot-view-toot-edits                    | View editing history of the toot at point in a popup buffer.                   |
-|                  | mastodon-transient--prefix-inspect               | Inspect a transient prefix's arguments and scope.                              |
-|                  | mastodon-transient-choice-add                    | Add another poll choice if possible.                                           |
-|                  | mastodon-update-profile-note                     | Update current user profile note.                                              |
-|                  | mastodon-url-lookup                              | If a URL resembles a fediverse link, try to load in `mastodon.el'.             |
-|                  | mastodon-url-lookup-force                        | Call `mastodon-url-lookup' without checking if URL is fedi-like.               |
-| :                | mastodon-user-settings                           | A transient for setting current user settings.                                 |
-|                  | mastodon-user-settings-update                    | Update current user settings on the server.                                    |
-|                  | mastodon-views-add-account-to-list               | Prompt for a list and for an account, add account to list.                     |
-|                  | mastodon-views-add-account-to-list-at-point      | Prompt for account and add to list at point.                                   |
-|                  | mastodon-views-add-filter-kw                     | Add a keyword to filter at point.                                              |
-|                  | mastodon-views-add-toot-account-at-point-to-list | Prompt for a list, and add the account of the toot at point to it.             |
-|                  | mastodon-views-cancel-scheduled-toot             | Cancel the scheduled toot at point.                                            |
-|                  | mastodon-views-copy-scheduled-toot-text          | Copy the text of the scheduled toot at point.                                  |
-|                  | mastodon-views-create-filter                     | Create a filter for a word.                                                    |
-|                  | mastodon-views-create-list                       | Create a new list.                                                             |
-|                  | mastodon-views-delete-filter                     | Delete filter at point.                                                        |
-|                  | mastodon-views-delete-list                       | Prompt for a list and delete it.                                               |
-|                  | mastodon-views-delete-list-at-point              | Delete list at point.                                                          |
-|                  | mastodon-views-edit-list                         | Prompt for a list and edit the name and replies policy.                        |
-|                  | mastodon-views-edit-list-at-point                | Edit list at point.                                                            |
-|                  | mastodon-views-edit-scheduled-as-new             | Edit scheduled status as new toot.                                             |
-|                  | mastodon-views-instance-desc-misskey             | Show instance description for a misskey/firefish server.                       |
-|                  | mastodon-views-remove-account-from-list          | Prompt for a list, select an account and remove from list.                     |
-|                  | mastodon-views-remove-account-from-list-at-point | Prompt for account and remove from list at point.                              |
-|                  | mastodon-views-remove-filter-kw                  | Remove keyword from filter at point.                                           |
-|                  | mastodon-views-reschedule-toot                   | Reschedule the scheduled toot at point.                                        |
-|                  | mastodon-views-update-filter                     | Update filter at point.                                                        |
-|                  | mastodon-views-update-filter-kw                  | Update filter keyword.                                                         |
-| I                | mastodon-views-view-filters                      | View the user's filters in a new buffer.                                       |
-| R                | mastodon-views-view-follow-requests              | Open a new buffer displaying the user's follow requests.                       |
-| G                | mastodon-views-view-follow-suggestions           | Display a buffer of suggested accounts to follow.                              |
-| ;                | mastodon-views-view-instance-description         | View the details of the instance the current post's author is on.              |
-|                  | mastodon-views-view-instance-description-brief   | View brief details of the instance the current post's author is on.            |
-|                  | mastodon-views-view-list-timeline                | Prompt for a list and view its timeline.                                       |
-| X                | mastodon-views-view-lists                        | Show the user's lists in a new buffer.                                         |
-|                  | mastodon-views-view-own-instance                 | View details of your own instance.                                             |
-|                  | mastodon-views-view-own-instance-brief           | View brief details of your own instance.                                       |
-| S                | mastodon-views-view-scheduled-toots              | Show the user's scheduled toots in a new buffer.                               |
-|                  | mastodon-views-view-timeline-list-at-point       | View timeline of list at point.                                                |
+| Binding    | Command                                          | Description                                                                    |
+|------------+--------------------------------------------------+--------------------------------------------------------------------------------|
+| C-c m m    | mastodon                                         | Connect client to `mastodon-instance-url' instance.                            |
+|            | mastodon-clear-poll                              | Clear current poll data.                                                       |
+|            | mastodon-create-poll                             | A transient for creating a poll.                                               |
+|            | mastodon-create-poll-done                        | Finish setting poll details.                                                   |
+|            | mastodon-forget-all-logins                       | Delete `mastodon-client--token-file'.                                          |
+|            | mastodon-image-mode                              | Major mode derived from `image-mode' by `define-derived-mode'.                 |
+|            | mastodon-inspect--get-search-account             | Return JSON for a single account after search QUERY.                           |
+|            | mastodon-inspect--get-search-result              | Inspect function for a search result for QUERY.                                |
+|            | mastodon-inspect--toot                           | Find next toot and dump its meta data into new buffer.                         |
+|            | mastodon-inspect--view-single-toot               | View the toot/status represented by ITEM-ID.                                   |
+|            | mastodon-inspect--view-single-toot-source        | View the ess source of a toot/status represented by ITEM-ID.                   |
+| C-M-q      | mastodon-kill-all-buffers                        | Kill any and all open mastodon buffers, hopefully.                             |
+| Q          | mastodon-kill-window                             | Quit window and delete helper.                                                 |
+|            | mastodon-mode                                    | Major mode for fediverse services using the Mastodon API.                      |
+|            | mastodon-notifications-clear-all                 | Clear all notifications.                                                       |
+| C-k        | mastodon-notifications-clear-current             | Dismiss the notification at point.                                             |
+| C-c C-c    | mastodon-notifications-cycle-type                | Cycle the current notifications view.                                          |
+| a          | mastodon-notifications-follow-request-accept     | Accept a follow request.                                                       |
+| j          | mastodon-notifications-follow-request-reject     | Reject a follow request.                                                       |
+| C-c m n, N | mastodon-notifications-get                       | Display NOTIFICATIONS in buffer.                                               |
+|            | mastodon-notifications-get-boosts                | Display boost notifications in buffer.                                         |
+|            | mastodon-notifications-get-edits                 | Display edited post notifications in buffer.                                   |
+|            | mastodon-notifications-get-favourites            | Display favourite notifications in buffer.                                     |
+|            | mastodon-notifications-get-follow-requests       | Display follow request notifications in buffer.                                |
+|            | mastodon-notifications-get-follows               | Display follow notifications in buffer.                                        |
+| @          | mastodon-notifications-get-mentions              | Display mention notifications in buffer.                                       |
+|            | mastodon-notifications-get-polls                 | Display poll notifications in buffer.                                          |
+|            | mastodon-notifications-get-single-notif          | Return a single notification JSON for v2 notifs.                               |
+|            | mastodon-notifications-get-statuses              | Display status notifications in buffer.                                        |
+|            | mastodon-notifications-get-type                  | Read a notification type and load its timeline.                                |
+| C-:        | mastodon-notifications-policy                    | A transient to set notifications policy options.                               |
+|            | mastodon-notifications-policy-update             | Send updated notification policy settings.                                     |
+|            | mastodon-notifications-request-accept            | Accept a notification request for a user.                                      |
+|            | mastodon-notifications-request-reject            | Reject a notification request for a user.                                      |
+| C-S-n      | mastodon-notifications-requests                  | Open a new buffer displaying the user's notification requests.                 |
+|            | mastodon-profile-account-bot-toggle              | Toggle the bot status of your account.                                         |
+|            | mastodon-profile-account-discoverable-toggle     | Toggle the discoverable status of your account.                                |
+|            | mastodon-profile-account-locked-toggle           | Toggle the locked status of your account.                                      |
+| C-c C-s    | mastodon-profile-account-search                  | Run a statuses search QUERY for the currently viewed account.                  |
+|            | mastodon-profile-account-sensitive-toggle        | Toggle the sensitive status of your account.                                   |
+| C-c C-c    | mastodon-profile-account-view-cycle              | Cycle through profile view: toots, toot sans boosts, followers, and following. |
+|            | mastodon-profile-add-account-to-list             | Add account of current profile buffer to a list.                               |
+|            | mastodon-profile-add-private-note-to-account     | Add a private note to an account.                                              |
+|            | mastodon-profile-fields                          | A transient for setting profile fields.                                        |
+|            | mastodon-profile-fields-update                   | Update current user profile fields.                                            |
+| A          | mastodon-profile-get-toot-author                 | Open profile of author of toot under point.                                    |
+|            | mastodon-profile-mode                            | Toggle mastodon profile minor mode.                                            |
+| O          | mastodon-profile-my-profile                      | Show the profile of the currently signed in user.                              |
+|            | mastodon-profile-open-followers                  | Open a profile buffer showing the accounts following the current profile.      |
+|            | mastodon-profile-open-following                  | Open a profile buffer showing the accounts that current profile follows.       |
+|            | mastodon-profile-open-statuses                   | Open a profile showing statuses.                                               |
+|            | mastodon-profile-open-statuses-no-reblogs        | Open a profile buffer showing statuses without reblogs.                        |
+|            | mastodon-profile-open-statuses-no-replies        | Open a profile buffer showing statuses without replies.                        |
+|            | mastodon-profile-open-statuses-only-media        | Open a profile buffer showing only statuses with media.                        |
+| C-c #      | mastodon-profile-open-statuses-tagged            | Prompt for a hashtag and display a profile with only statuses containing it.   |
+|            | mastodon-profile-remove-from-followers-at-point  | Prompt for a user in the item at point and remove from followers.              |
+|            | mastodon-profile-remove-from-followers-list      | Select a user from your followers and remove from followers.                   |
+|            | mastodon-profile-remove-user-from-followers      | Remove a user from your followers.                                             |
+|            | mastodon-profile-show-familiar-followers         | Show a list of familiar followers.                                             |
+| P          | mastodon-profile-show-user                       | Query for USER-HANDLE from current status and show that user's profile.        |
+|            | mastodon-profile-update-display-name             | Update display name for your account.                                          |
+|            | mastodon-profile-update-meta-fields              | Prompt for new metadata fields information and PATCH the server.               |
+|            | mastodon-profile-update-mode                     | Minor mode to update user profile.                                             |
+| C-c C-k    | mastodon-profile-update-profile-note-cancel      | Cancel updating user profile and kill buffer and window.                       |
+| U          | mastodon-profile-update-user-profile-note        | Fetch user's profile note and display for editing.                             |
+| C-c C-c    | mastodon-profile-user-profile-send-updated       | Send PATCH request with the updated profile note.                              |
+|            | mastodon-profile-view-account-private-note       | Display the private note about a user.                                         |
+| K          | mastodon-profile-view-bookmarks                  | Open a new buffer displaying the user's bookmarks.                             |
+| V          | mastodon-profile-view-favourites                 | Open a new buffer displaying the user's favourites.                            |
+|            | mastodon-profile-view-preferences                | View user preferences in another window.                                       |
+|            | mastodon-search-load-link-posts                  | Load timeline of posts containing link at point.                               |
+|            | mastodon-search-mode                             | Toggle mastodon search minor mode.                                             |
+| s          | mastodon-search-query                            | Prompt for a search QUERY and return accounts, statuses, and hashtags.         |
+|            | mastodon-search-query-accounts-followed          | Run an accounts search QUERY, limited to your followers.                       |
+|            | mastodon-search-query-cycle                      | Cycle through search types: accounts, hashtags, and statuses.                  |
+|            | mastodon-search-trending-links                   | Display a list of links trending on your instance.                             |
+|            | mastodon-search-trending-statuses                | Display a list of statuses trending on your instance.                          |
+|            | mastodon-search-trending-tags                    | Display a list of tags trending on your instance.                              |
+| /          | mastodon-switch-to-buffer                        | Switch to a live mastodon buffer.                                              |
+|            | mastodon-tl-announcements                        | Display announcements from your instance.                                      |
+|            | mastodon-tl-block-domain                         | Read a domain and block it.                                                    |
+| B          | mastodon-tl-block-user                           | Query for USER-HANDLE from current status and block that user.                 |
+| <mouse-2>  | mastodon-tl-click-image-or-video                 | Click to play video with `mpv.el'.                                             |
+| C          | mastodon-tl-copy-image-caption                   | Copy the caption of the image at point.                                        |
+|            | mastodon-tl-disable-notify-user-posts            | Query for USER-HANDLE and disable notifications when they post.                |
+| m          | mastodon-tl-dm-user                              | Query for USER-HANDLE from current status and compose a message to that user.  |
+|            | mastodon-tl-do-link-action                       | Do the action of the link at point.                                            |
+|            | mastodon-tl-do-link-action-at-point              | Do the action of the link at POS.                                              |
+|            | mastodon-tl-enable-notify-user-posts             | Query for USER-HANDLE and enable notifications when they post.                 |
+|            | mastodon-tl-filter-user-user-posts-by-language   | Query for USER-HANDLE and filter display of their posts by language.           |
+|            | mastodon-tl-fold-post                            | Fold post at point, if it is too long.                                         |
+| !          | mastodon-tl-fold-post-toggle                     | Toggle the folding status of the toot at point.                                |
+|            | mastodon-tl-follow-tag                           | Prompt for a tag (from post at point) and follow it.                           |
+| W          | mastodon-tl-follow-user                          | Query for USER-HANDLE from current status and follow that user.                |
+|            | mastodon-tl-follow-user-by-handle                | Prompt for a USER-HANDLE and follow that user.                                 |
+|            | mastodon-tl-follow-user-disable-boosts           | Prompt for a USER-HANDLE, and disable display of boosts in home timeline.      |
+|            | mastodon-tl-follow-user-enable-boosts            | Prompt for a USER-HANDLE, and enable display of boosts in home timeline.       |
+| '          | mastodon-tl-followed-tags-timeline               | Open a timeline of multiple tags.                                              |
+| F          | mastodon-tl-get-federated-timeline               | Open federated timeline.                                                       |
+| H          | mastodon-tl-get-home-timeline                    | Open home timeline.                                                            |
+| L          | mastodon-tl-get-local-timeline                   | Open local timeline.                                                           |
+| \          | mastodon-tl-get-remote-local-timeline            | Prompt for an instance domain and try to display its local timeline.           |
+| #          | mastodon-tl-get-tag-timeline                     | Prompt for tag and opens its timeline.                                         |
+| n          | mastodon-tl-goto-next-item                       | Jump to next item.                                                             |
+| p          | mastodon-tl-goto-prev-item                       | Jump to previous item.                                                         |
+| C-"        | mastodon-tl-jump-to-followed-tag                 | Prompt for a followed tag and view its timeline.                               |
+| "          | mastodon-tl-list-followed-tags                   | List followed tags. View timeline of tag user choses.                          |
+| C-<return> | mastodon-tl-mpv-play-video-at-point              | Play the video or gif at point with an mpv process.                            |
+|            | mastodon-tl-mpv-play-video-from-byline           | Run `mastodon-tl-mpv-play-video-at-point' on first moving image in post.       |
+|            | mastodon-tl-mute-thread                          | Mute the thread displayed in the current buffer.                               |
+| M          | mastodon-tl-mute-user                            | Query for USER-HANDLE from current status and mute that user.                  |
+|            | mastodon-tl-next-full-image                      | From full image view buffer, load the toot's next image.                       |
+| TAB        | mastodon-tl-next-tab-item                        | Move to the next interesting item.                                             |
+| M-;        | mastodon-tl-nodeinfo-for-toot                    | Return Nodeinfo for toot at point.                                             |
+| v          | mastodon-tl-poll-vote                            | If there is a poll at point, prompt user for OPTION to vote on it.             |
+|            | mastodon-tl-prev-full-image                      | From full image view buffer, load the toot's prev image.                       |
+| C-M-i      | mastodon-tl-previous-tab-item                    | Move to the previous interesting item.                                         |
+|            | mastodon-tl-remote-tag-timeline                  | Call `mastodon-tl-get-remote-local-timeline' but for a TAG timeline.           |
+| Z          | mastodon-tl-report-to-mods                       | Report the author of the toot at point to your instance moderators.            |
+| RET        | mastodon-tl-return                               | Load user profile or thread of item at point.                                  |
+| SPC        | mastodon-tl-scroll-up-command                    | Call `scroll-up-command', loading more toots if necessary.                     |
+|            | mastodon-tl-shr-browse-image                     | Browse the image under point.                                                  |
+|            | mastodon-tl-some-followed-tags-timeline          | Prompt for some tags, and open a timeline for them.                            |
+| C-'        | mastodon-tl-tag-group-timeline                   | Load a timeline of a tag group from `mastodon-tl--tags-groups'.                |
+| T          | mastodon-tl-thread                               | Open thread buffer for toot at point.                                          |
+| S          | mastodon-tl-toggle-sensitive-image               | Toggle dislay of sensitive image at point.                                     |
+|            | mastodon-tl-toggle-spoiler-in-thread             | Toggler content warning for all posts in current thread.                       |
+| c          | mastodon-tl-toggle-spoiler-text-in-toot          | Toggle the visibility of the spoiler text in the current toot.                 |
+|            | mastodon-tl-unblock-domain                       | Read a blocked domain and unblock it.                                          |
+| C-S-b      | mastodon-tl-unblock-user                         | Query for USER-HANDLE from list of blocked users and unblock that user.        |
+|            | mastodon-tl-unfilter-user-languages              | Remove any language filters for USER-HANDLE.                                   |
+|            | mastodon-tl-unfold-post                          | Unfold the toot at point if it is folded (read-more).                          |
+|            | mastodon-tl-unfollow-tag                         | Prompt for a followed tag, and unfollow it.                                    |
+| C-S-w      | mastodon-tl-unfollow-user                        | Query for USER-HANDLE from current status and unfollow that user.              |
+|            | mastodon-tl-unmute-thread                        | Unmute the thread displayed in the current buffer.                             |
+| S-RET      | mastodon-tl-unmute-user                          | Query for USER-HANDLE from list of muted users and unmute that user.           |
+| u          | mastodon-tl-update                               | Update timeline with new toots.                                                |
+| =          | mastodon-tl-view-first-full-image                | From item byline, fetch load its first full image.                             |
+|            | mastodon-tl-view-full-image-at-point             | Browse full-sized version of image at point in a new window.                   |
+| RET        | mastodon-tl-view-full-image-or-play-video        | View full sized version of image at point, or try to play video.               |
+|            | mastodon-tl-view-item-on-own-instance            | Load current toot on your own instance.                                        |
+|            | mastodon-tl-view-single-toot                     | View toot at point in a separate buffer.                                       |
+|            | mastodon-tl-view-whole-thread                    | From a thread view, view entire thread.                                        |
+| C-c m t, t | mastodon-toot                                    | Update instance with new toot. Content is captured in a new buffer.            |
+| C-c C-a    | mastodon-toot-attach-media                       | Prompt for an attachment FILE with DESCRIPTION.                                |
+| o          | mastodon-toot-browse-toot-url                    | Browse URL of toot at point.                                                   |
+| C-c C-k    | mastodon-toot-cancel                             | Kill new-toot buffer/window. Does not POST content.                            |
+| C-c C-v    | mastodon-toot-change-visibility                  | Change the current visibility to the next valid value.                         |
+| C-c !      | mastodon-toot-clear-all-attachments              | Remove all attachments from a toot draft.                                      |
+| C-c C-o    | mastodon-toot-clear-poll                         | Remove poll from toot compose buffer.                                          |
+|            | mastodon-toot-copy-toot-text                     | Copy text of toot at point.                                                    |
+| C          | mastodon-toot-copy-toot-url                      | Copy URL of toot at point.                                                     |
+| C-c C-p    | mastodon-toot-create-poll                        | Prompt for new poll options and return as a list.                              |
+|            | mastodon-toot-delete-all-drafts                  | Delete all drafts.                                                             |
+| D          | mastodon-toot-delete-and-redraft-toot            | Delete and redraft user's toot at point synchronously.                         |
+|            | mastodon-toot-delete-draft-toot                  | Prompt for a draft toot and delete it.                                         |
+| d          | mastodon-toot-delete-toot                        | Delete user's toot at point synchronously.                                     |
+|            | mastodon-toot-download-custom-emoji              | Download `mastodon-instance-url's custom emoji.                                |
+|            | mastodon-toot-edit-media-description             | Prompt for an attachment, and update its description.                          |
+| e          | mastodon-toot-edit-toot-at-point                 | Edit the user's toot at point.                                                 |
+|            | mastodon-toot-enable-custom-emoji                | Add `mastodon-instance-url's custom emoji to `emojify'.                        |
+| C-c C-e    | mastodon-toot-insert-emoji                       | Prompt to insert an emoji.                                                     |
+| .          | mastodon-toot-list-boosters                      | List the boosters of toot at point.                                            |
+| ,          | mastodon-toot-list-favouriters                   | List the favouriters of toot at point.                                         |
+|            | mastodon-toot-mode                               | Minor mode for composing toots.                                                |
+|            | mastodon-toot-open-draft-toot                    | Prompt for a draft and compose a toot with it.                                 |
+| i          | mastodon-toot-pin-toot-toggle                    | Pin or unpin user's toot at point.                                             |
+| r          | mastodon-toot-reply                              | Reply to toot at `point'.                                                      |
+|            | mastodon-toot-save-draft                         | Save the current compose toot text as a draft.                                 |
+| C-c C-s    | mastodon-toot-schedule-toot                      | Read a date (+ time) in the minibuffer and schedule the current toot.          |
+| C-c C-c    | mastodon-toot-send                               | POST contents of new-toot buffer to fediverse instance and kill buffer.        |
+| C-c C-w    | mastodon-toot-set-content-warning                | Set a content warning for the current toot.                                    |
+|            | mastodon-toot-set-default-visibility             | Set the default visibility for toots on the server.                            |
+| C-c C-l    | mastodon-toot-set-toot-language                  | Prompt for a language and set `mastodon-toot--language'.                       |
+| k          | mastodon-toot-toggle-bookmark                    | Bookmark or unbookmark toot at point.                                          |
+| b          | mastodon-toot-toggle-boost                       | Boost/unboost toot at `point'.                                                 |
+| f          | mastodon-toot-toggle-favourite                   | Favourite/unfavourite toot at `point'.                                         |
+| C-c C-n    | mastodon-toot-toggle-nsfw                        | Toggle `mastodon-toot--content-nsfw'.                                          |
+| a          | mastodon-toot-translate-toot-text                | Translate text of toot at point.                                               |
+| E          | mastodon-toot-view-toot-edits                    | View editing history of the toot at point in a popup buffer.                   |
+|            | mastodon-transient--prefix-inspect               | Inspect a transient prefix's arguments and scope.                              |
+|            | mastodon-transient-choice-add                    | Add another poll choice if possible.                                           |
+|            | mastodon-update-profile-note                     | Update current user profile note.                                              |
+| C-c m u    | mastodon-url-lookup                              | If a URL resembles a fediverse link, try to load in `mastodon.el'.             |
+|            | mastodon-url-lookup-force                        | Call `mastodon-url-lookup' without checking if URL is fedi-like.               |
+| :          | mastodon-user-settings                           | A transient for setting current user settings.                                 |
+|            | mastodon-user-settings-update                    | Update current user settings on the server.                                    |
+| A          | mastodon-views-add-account-to-list               | Prompt for a list and for an account, add account to list.                     |
+|            | mastodon-views-add-account-to-list-at-point      | Prompt for account and add to list at point.                                   |
+| a          | mastodon-views-add-filter-kw                     | Add a keyword to filter at point.                                              |
+|            | mastodon-views-add-toot-account-at-point-to-list | Prompt for a list, and add the account of the toot at point to it.             |
+| c          | mastodon-views-cancel-scheduled-toot             | Cancel the scheduled toot at point.                                            |
+|            | mastodon-views-copy-scheduled-toot-text          | Copy the text of the scheduled toot at point.                                  |
+| c          | mastodon-views-create-filter                     | Create a filter for a word.                                                    |
+| C          | mastodon-views-create-list                       | Create a new list.                                                             |
+| k          | mastodon-views-delete-filter                     | Delete filter at point.                                                        |
+| D          | mastodon-views-delete-list                       | Prompt for a list and delete it.                                               |
+|            | mastodon-views-delete-list-at-point              | Delete list at point.                                                          |
+| E          | mastodon-views-edit-list                         | Prompt for a list and edit the name and replies policy.                        |
+|            | mastodon-views-edit-list-at-point                | Edit list at point.                                                            |
+| RET        | mastodon-views-edit-scheduled-as-new             | Edit scheduled status as new toot.                                             |
+|            | mastodon-views-instance-desc-misskey             | Show instance description for a misskey/firefish server.                       |
+| R          | mastodon-views-remove-account-from-list          | Prompt for a list, select an account and remove from list.                     |
+|            | mastodon-views-remove-account-from-list-at-point | Prompt for account and remove from list at point.                              |
+| r          | mastodon-views-remove-filter-kw                  | Remove keyword from filter at point.                                           |
+| r          | mastodon-views-reschedule-toot                   | Reschedule the scheduled toot at point.                                        |
+| u          | mastodon-views-update-filter                     | Update filter at point.                                                        |
+| U          | mastodon-views-update-filter-kw                  | Update filter keyword.                                                         |
+| I, g       | mastodon-views-view-filters                      | View the user's filters in a new buffer.                                       |
+| g, R       | mastodon-views-view-follow-requests              | Open a new buffer displaying the user's follow requests.                       |
+| g, G       | mastodon-views-view-follow-suggestions           | Display a buffer of suggested accounts to follow.                              |
+| ;          | mastodon-views-view-instance-description         | View the details of the instance the current post's author is on.              |
+|            | mastodon-views-view-instance-description-brief   | View brief details of the instance the current post's author is on.            |
+|            | mastodon-views-view-list-timeline                | Prompt for a list and view its timeline.                                       |
+| g, X       | mastodon-views-view-lists                        | Show the user's lists in a new buffer.                                         |
+|            | mastodon-views-view-own-instance                 | View details of your own instance.                                             |
+|            | mastodon-views-view-own-instance-brief           | View brief details of your own instance.                                       |
+| g, S       | mastodon-views-view-scheduled-toots              | Show the user's scheduled toots in a new buffer.                               |
+|            | mastodon-views-view-timeline-list-at-point       | View timeline of list at point.                                                |
 
 * mastodon custom variables index
  
