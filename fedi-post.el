@@ -265,8 +265,8 @@ and a status."
             ;; (funcall affix-fun cands))
             ;; FIXME: we "should" use :affixation-function for this but i
             ;; can't get it to work so use an exit-fun hack:
-            :exit-function
             :category category
+            :exit-function
             (when exit-fun
               (lambda (str status)
                 (funcall exit-fun str status)))
