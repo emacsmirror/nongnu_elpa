@@ -2442,7 +2442,7 @@ JSON is the data associated with STR."
    (fj-render-markdown body)
    'utf-8))
 
-(defun fj-render-item-bodies (json)
+(defun fj-render-item-bodies ()
   "Render all item bodies in the buffer.
 Uses property fj-item-body to find them.
 Also propertize all handles, tags, commits, and URLs."
@@ -2466,10 +2466,10 @@ Also propertize all handles, tags, commits, and URLs."
                                  props
                                  (current-buffer)))))
       ;; propertize handles, tags, URLs, and commits
-      (fedi-propertize-items fedi-post-handle-regex 'handle json
+      (fedi-propertize-items fedi-post-handle-regex 'handle
                              fj-link-keymap 1 2 nil nil
                              '(fj-tab-stop t))
-      (fedi-propertize-items fedi-post-tag-regex 'tag json
+      (fedi-propertize-items fedi-post-tag-regex 'tag
                              fj-link-keymap 1 2 nil nil
                              '(fj-tab-stop t))
       ;; NB: this is required for shr tab stops
@@ -2477,15 +2477,15 @@ Also propertize all handles, tags, commits, and URLs."
       ;; - does not add tab-stops for []() links (nor does shr!?)
       ;; - fixed prev breakage here by adding item as link in
       ;; - `fedi-propertize-items'.
-      (fedi-propertize-items fedi-post-url-regex 'shr json
+      (fedi-propertize-items fedi-post-url-regex 'shr
                              fj-link-keymap 1 1 nil nil
                              '(fj-tab-stop t))
-      (fedi-propertize-items fedi-post-commit-regex 'commit json
+      (fedi-propertize-items fedi-post-commit-regex 'commit
                              fj-link-keymap 1 1 nil nil
                              '(fj-tab-stop t)
                              'fj-issue-commit-face)
       ;; FIXME: make md []() links tab stops? (doesn't work):
-      ;; (fedi-propertize-items markdown-regex-link-inline 'shr json
+      ;; (fedi-propertize-items markdown-regex-link-inline 'shr
       ;;                        fj-link-keymap 1 1 nil nil
       ;;                        '(fj-tab-stop t))
       )))
@@ -2686,7 +2686,7 @@ RELOAD mean we reloaded."
                    (require 'emojify nil :noerror))
           (emojify-mode t))
         ;; Propertize top level item only:
-        (fj-render-item-bodies item)))))
+        (fj-render-item-bodies)))))
 
 (defun fj-item-view (&optional repo owner number type page limit)
   "View item NUMBER from REPO of OWNER.
@@ -2797,7 +2797,7 @@ If INIT-PAGE, do not update :page in viewargs."
             (when end-page ;; if we are re-paginating, go again maybe:
               (fj-reload-paginated-pages-maybe end-page page))
             ;; shr-render-region and regex props:
-            (fj-render-item-bodies json)
+            (fj-render-item-bodies)
             ;; maybe add a "more" link:
             (fj-issue-timeline-more-link-mayb)))))))
 
