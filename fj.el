@@ -190,6 +190,10 @@ Fj.el currently struggles with performances in timelines, and it seems like the 
   '((t :inherit fj-closed-issue-face :underline t))
   "Face for the title of a closed issue in notifications view.")
 
+(defface fj-closed-issue-notif-verbatim-face
+  `((t :inherit (highlight font-lock-comment-face)))
+  "Face for the title of a closed issue in notifications view.")
+
 (defface fj-user-face
   '((t :inherit font-lock-function-name-face))
   "User face.")
@@ -203,13 +207,11 @@ Fj.el currently struggles with performances in timelines, and it seems like the 
   "Face for item names.")
 
 (defface fj-item-verbatim-face
-  `((t :inherit font-lock-type-face :background
-       ,(face-attribute 'highlight :background)))
+  `((t :inherit (highlight font-lock-type-face)))
   "Face for item names.")
 
 (defface fj-item-closed-verbatim-face
-  `((t :inherit font-lock-comment-face :background
-       ,(face-attribute 'highlight :background)))
+  `((t :inherit (highlight font-lock-comment-face)))
   "Face for item names.")
 
 (defface fj-item-author-face
@@ -231,6 +233,11 @@ Fj.el currently struggles with performances in timelines, and it seems like the 
 
 (defface fj-name-face
   '((t :weight bold))
+  "Face for timeline item names (user, issue, PR).
+Not used for items that are links.")
+
+(defface fj-name-verbatim-face
+  `((t :inherit highlight :weight bold))
   "Face for timeline item names (user, issue, PR).
 Not used for items that are links.")
 
@@ -2052,15 +2059,17 @@ If REPO is provided, also include a repo column."
            type fj-issue-button
            item ,type)])))))
 
-(defun fj-format-tl-title (str state)
+(defun fj-format-tl-title (str &optional state face verbatim-face)
   "Propertize STR, respecting its state (open/closed).
 Propertize any verbatim markdown in STR."
-  (let ((face (if (equal state "closed")
-                  'fj-closed-issue-face
-                'fj-item-face))
-        (verbatim (if (equal state "closed")
-                      'fj-item-closed-verbatim-face
-                    'fj-item-verbatim-face)))
+  (let ((face (or face
+                  (if (equal state "closed")
+                      'fj-closed-issue-face
+                    'fj-item-face)))
+        (verbatim (or verbatim-face
+                      (if (equal state "closed")
+                          'fj-item-closed-verbatim-face
+                        'fj-item-verbatim-face))))
     (with-temp-buffer
       (switch-to-buffer (current-buffer))
       (insert
@@ -2598,7 +2607,9 @@ RELOAD mean we reloaded."
         ;; .is_locked
         (setq header-line-format
               `("" header-line-indent
+                ;; number:
                 ,(concat "#" (number-to-string .number) " "
+                         ;; title:
                          (fj-format-tl-title .title .state))))
         (insert
          ;; header stuff
@@ -3041,8 +3052,8 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
            (format format-str user
                    (propertize .old_title
                                'face '(:strike-through t))
-                   (propertize .new_title
-                               'face 'fj-name-face)
+                   (fj-format-tl-title .new_title nil 'fj-name-face
+                                       'highlight)
                    ts))
           ("comment_ref"
            (let ((number (number-to-string
@@ -3050,22 +3061,26 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
              (concat
               (format format-str user ts)
               "\n"
-              (fj-propertize-link (concat .ref_issue.title " #" number)
-                                  'comment-ref number))))
+              (fj-propertize-link
+               (fj-format-tl-title
+                (concat .ref_issue.title " #" number))
+               'comment-ref number nil :noface))))
           ("commit_ref"
            (concat
             (format format-str user ts)
             "\n"
             (fj-propertize-link
-             (url-unhex-string (fj-get-html-link-desc body))
-             'commit-ref .ref_commit_sha)))
+             (fj-format-tl-title
+              (url-unhex-string (fj-get-html-link-desc body)))
+             'commit-ref .ref_commit_sha nil :noface)))
           ("issue_ref"
            (concat
             (format format-str user .ref_issue.repository.full_name ts)
             "\n"
             (fj-propertize-link
-             (url-unhex-string .ref_issue.title)
-             'issue-ref .ref_issue.number))
+             (fj-format-tl-title
+              (url-unhex-string .ref_issue.title)
+              'issue-ref .ref_issue.number nil :noface)))
 
            ;; (fj-propertize-link ;.ref_issue.repository.full_name)
            ;;  (url-unhex-string ).ref_issue.title)
@@ -3172,24 +3187,35 @@ assigned to. TS is a timeline timestamp."
     (string-match "<a[^\n]*>\\(?2:[^\n]*\\)</a>" str)
     (match-string 2 str)))
 
-(defun fj-propertize-link (str &optional type item face)
+(defun fj-propertize-link (str &optional type item face no-face)
   "Propertize a link with text STR.
 Optionally set link TYPE and ITEM number and FACE."
   ;; TODO: poss to refactor with `fedi-link-props'?
   ;; make plain links work:
   (when (eq type 'shr)
     (setq str (propertize str 'shr-url str)))
-  (propertize str
-              'face (or face 'shr-link)
-              'mouse-face 'highlight
-              'fj-tab-stop t
-              'keymap fj-link-keymap
-              'button t
-              'type type
-              'item item
-              'fj-tab-stop t
-              'category 'shr
-              'follow-link t))
+  (if no-face
+      (propertize str
+                  'mouse-face 'highlight
+                  'fj-tab-stop t
+                  'keymap fj-link-keymap
+                  'button t
+                  'type type
+                  'item item
+                  'fj-tab-stop t
+                  'category 'shr
+                  'follow-link t)
+    (propertize str
+                'face (or face 'shr-link)
+                'mouse-face 'highlight
+                'fj-tab-stop t
+                'keymap fj-link-keymap
+                'button t
+                'type type
+                'item item
+                'fj-tab-stop t
+                'category 'shr
+                'follow-link t)))
 
 ;;; REVIEWS (PRS)
 
@@ -4234,8 +4260,11 @@ Subject types are \"issues\" \"pulls\" \"commits\" and \"repository\"."
          (propertize (concat "#" number)
                      'face 'fj-comment-face)
          " "
-         (fj-propertize-link .subject.title 'notif number
-                             (unless unread 'fj-closed-issue-notif-face))
+         (fj-propertize-link
+          (fj-format-tl-title .subject.title nil
+                              (unless unread 'fj-closed-issue-notif-face)
+                              (unless unread 'fj-closed-issue-notif-verbatim-face))
+          'notif number nil :noface)
          "\n"
          (propertize
           (concat .repository.owner.login "/" .repository.name)
