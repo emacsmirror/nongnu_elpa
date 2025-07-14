@@ -1,12 +1,23 @@
 ;;; mastodon-media-test.el --- Tests for mastodon-media.el  -*- lexical-binding: nil -*-
 
+;; non interactive failures:
+;; FAILED  mastodon-media--get-avatar-rendering
+;; FAILED  mastodon-media--load-image-from-url-avatar-with-imagemagic
+;; FAILED  mastodon-media--load-image-from-url-media-link-with-imagemagic
+;; FAILED  mastodon-media--load-image-from-url-media-link-without-imagemagic
+;; FAILED  mastodon-media--load-image-from-url-url-fetching-fails
+
 (require 'el-mock)
 
 (ert-deftest mastodon-media--get-avatar-rendering ()
   "Should return text with all expected properties."
   (with-mock
     ;; (mock (image-type-available-p 'imagemagick) => t)
-    (mock (create-image * (when (version< emacs-version "27.1") 'imagemagick) t :height 123) => :mock-image)
+    (mock (create-image *
+                        (when (version< emacs-version "27.1") 'imagemagick)
+                        t
+                        :height 123) ;; FIXME: fails non-interactively, is nil
+          => :mock-image)
 
     (let* ((mastodon-media--avatar-height 123)
            (result (mastodon-media--get-avatar-rendering "http://example.org/img.png"))
@@ -39,7 +50,7 @@
      (should (string= "http://example.org/remote/img.png" (plist-get properties 'image-url)))
      (should (eq mastodon-tl--shr-image-map-replacement (plist-get properties 'keymap)))
      (should (string= "image" (plist-get properties 'mastodon-media-type)))
-     (should (string= "RET/i: load full image (prefix: copy URL), +/-: zoom, r: rotate, o: save preview, S: toggle sensitive media"
+     (should (string= "RET: load full image or play video, i for image options, S: toggle sensitive media"
                       (plist-get properties 'help-echo))))))
 
 (ert-deftest mastodon-media:get-media-link-rendering-gif ()
@@ -63,7 +74,7 @@
      (should (string= "http://example.org/remote/img.png" (plist-get properties 'image-url)))
      (should (eq mastodon-tl--shr-image-map-replacement (plist-get properties 'keymap)))
      (should (string= "gifv" (plist-get properties 'mastodon-media-type)))
-     (should (string= "RET/i: load full image (prefix: copy URL), +/-: zoom, r: rotate, o: save preview, S: toggle sensitive media\nC-RET: play gifv with mpv"
+     (should (string= "RET: load full image or play video, i for image options, S: toggle sensitive media\nC-RET: play gifv with mpv"
                  (plist-get properties 'help-echo))))))
 
 (ert-deftest mastodon-media--load-image-from-url-avatar-with-imagemagic ()
@@ -75,12 +86,13 @@
       (mock (create-image
              *
              (when (version< emacs-version "27.1") 'imagemagick)
-             t :height 123) => '(image foo))
+             t :height 123)
+            => '(image foo))
       (mock (copy-marker 7) => :my-marker )
       (mock (url-retrieve
              url
              #'mastodon-media--process-image-response
-             `(:my-marker (:height 123) 1 ,url))
+             `(,url :my-marker (:height 123) 1))
             => :called-as-expected)
 
       (with-temp-buffer
@@ -101,7 +113,7 @@
       (mock (url-retrieve
              url
              #'mastodon-media--process-image-response
-             `(:my-marker () 1 ,url))
+             `(,url :my-marker () 1))
             => :called-as-expected)
 
       (with-temp-buffer
@@ -121,14 +133,17 @@
       (mock (url-retrieve
              "http://example.org/image.png"
              #'mastodon-media--process-image-response
-             '(:my-marker (:max-height 321) 5 "http://example.org/image.png"))
+             '("http://example.org/image.png" :my-marker
+               (:max-height 321) ;; FIXME: fails non-interactively: is nil
+               5))
             => :called-as-expected)
       (with-temp-buffer
         (insert (concat "Start:"
                         (mastodon-media--get-media-link-rendering url)
                         ":rest"))
         (let ((mastodon-media--preview-max-height 321))
-          (should (eq :called-as-expected (mastodon-media--load-image-from-url url 'media-link 7 5))))))))
+          (should (eq :called-as-expected
+                      (mastodon-media--load-image-from-url url 'media-link 7 5))))))))
 
 (ert-deftest mastodon-media--load-image-from-url-media-link-without-imagemagic ()
   "Should make the right call to url-retrieve."
@@ -136,12 +151,14 @@
     (with-mock
       ;; (mock (image-type-available-p 'imagemagick) => nil)
       ;; (mock (image-transforms-p) => nil)
-      (mock (create-image * nil t) => '(image foo))
+      (mock (create-image * nil t :height 20) => '(image foo))
       (mock (copy-marker 7) => :my-marker )
       (mock (url-retrieve
              "http://example.org/image.png"
              #'mastodon-media--process-image-response
-             '(:my-marker () 5 "http://example.org/image.png"))
+             '("http://example.org/image.png" :my-marker
+               (:max-height 321) ;; FIXME: fails non-interactively: is nil
+               5))
             => :called-as-expected)
 
       (with-temp-buffer
@@ -160,7 +177,9 @@
       (mock (create-image
              *
              (when (version< emacs-version "27.1") 'imagemagick)
-             t :height 123) => '(image foo))
+             t
+             :height 123) ;; FIXME: fails non-interactively, is nil
+            => '(image foo))
       (stub url-retrieve => (error "url-retrieve failed"))
 
       (with-temp-buffer
@@ -201,7 +220,7 @@
                  t ':image :option) => :fake-image)
 
           (mastodon-media--process-image-response
-           () used-marker '(:image :option) 1 "http://example.org/image.png")
+           () "http://example.org/image.png" used-marker '(:image :option) 1)
 
           ;; the used marker has been unset:
           (should (null (marker-position used-marker)))

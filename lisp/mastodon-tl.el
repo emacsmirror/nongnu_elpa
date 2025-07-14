@@ -633,6 +633,13 @@ Do so if type of status at poins is not follow_request/follow."
                   (string= type "follow")) ; no counts for these
         (message "%s" echo)))))
 
+(defun mastodon-tl--unicode-wrap (str)
+  "Wrap STR in unicode directional isolates."
+  ;; see https://unicode.org/reports/tr9/#Explicit_Directional_Isolates
+  ;; via Tusky (again! thanks)
+  ;; https://codeberg.org/tusky/Tusky/src/commit/16cef3d6202648e4fd67f06ef0fb1d0a2d04b68f/app/src/main/java/com/keylesspalace/tusky/util/StringUtils.kt#L65
+  (concat "\u2068" str "\u2069"))
+
 (defun mastodon-tl--byline-username (toot)
   "Format a byline username from account in TOOT.
 TOOT may be account data, or toot data, in which case acount data
@@ -640,23 +647,24 @@ is extracted from it."
   (let ((data (or (alist-get 'account toot)
                   toot))) ;; grouped nofifs use account data directly
     (let-alist data
-      (propertize (if (and .display_name
+      (let ((disp (if (and .display_name
                            (not (string-empty-p .display_name)))
-                      .display_name
-                    .username)
-                  'face 'mastodon-display-name-face
-                  ;; enable playing of videos when point is on byline:
-                  ;; 'attachments (mastodon-tl--get-attachments-for-byline toot)
-                  'keymap mastodon-tl--byline-link-keymap
-                  ;; echo faves count when point on post author name:
-                  ;; which is where --goto-next-toot puts point.
-                  'help-echo
-                  ;; but don't add it to "following"/"follows" on
-                  ;; profile views: we don't have a tl--buffer-spec
-                  ;; yet:
-                  (unless (or (string-suffix-p "-followers*" (buffer-name))
-                              (string-suffix-p "-following*" (buffer-name)))
-                    (mastodon-tl--format-byline-help-echo data))))))
+                      (mastodon-tl--unicode-wrap .display_name)
+                    .username)))
+        (propertize disp
+                    'face 'mastodon-display-name-face
+                    ;; enable playing of videos when point is on byline:
+                    ;; 'attachments (mastodon-tl--get-attachments-for-byline toot)
+                    'keymap mastodon-tl--byline-link-keymap
+                    ;; echo faves count when point on post author name:
+                    ;; which is where --goto-next-toot puts point.
+                    'help-echo
+                    ;; but don't add it to "following"/"follows" on
+                    ;; profile views: we don't have a tl--buffer-spec
+                    ;; yet:
+                    (unless (or (string-suffix-p "-followers*" (buffer-name))
+                                (string-suffix-p "-following*" (buffer-name)))
+                      (mastodon-tl--format-byline-help-echo data)))))))
 
 (defun mastodon-tl--byline-handle (toot &optional domain string face)
   "Format a byline handle from account in TOOT.
@@ -669,18 +677,19 @@ The last two args allow for display a username as a clickable
 handle."
   (let-alist (or (alist-get 'account toot)
                  toot) ;; grouped notifs
-    (mastodon-tl--buttonify-link
-     (or string
-         (concat "@" .acct
-                 (when domain
-                   (concat "@"
-                           (url-host
-                            (url-generic-parse-url .url))))))
-     'face (or face 'mastodon-handle-face)
-     'mastodon-tab-stop 'user-handle
-     'shr-url .url
-     'mastodon-handle (concat "@" .acct)
-     'help-echo (concat "Browse user profile of @" .acct))))
+    (let ((str (or string
+                   (concat "@" .acct
+                           (when domain
+                             (concat "@"
+                                     (url-host
+                                      (url-generic-parse-url .url))))))))
+      (mastodon-tl--buttonify-link
+       (mastodon-tl--unicode-wrap str)
+       'face (or face 'mastodon-handle-face)
+       'mastodon-tab-stop 'user-handle
+       'shr-url .url
+       'mastodon-handle (concat "@" .acct)
+       'help-echo (concat "Browse user profile of @" .acct)))))
 
 (defun mastodon-tl--byline-uname-+-handle (data &optional domain)
   "Concatenate a byline username and handle.
@@ -916,10 +925,10 @@ TS is a timestamp from the server, if any."
                           'face 'mastodon-display-name-face
                           'follow-link t
                           'mouse-face 'highlight
-		                  'mastodon-tab-stop 'shr-url
-		                  'shr-url app-url
+		          'mastodon-tab-stop 'shr-url
+		          'shr-url app-url
                           'help-echo app-url
-		                  'keymap mastodon-tl--shr-map-replacement)))))
+		          'keymap mastodon-tl--shr-map-replacement)))))
        ;; edited:
        (when edited-time
          (concat
@@ -1038,7 +1047,7 @@ links in the text. If TOOT is nil no parsing occurs."
       ;; FIXME: replace with refactored handle render fun
       ;; in byline refactor branch:
       (concat
-       (propertize (or .display_name .username)
+       (propertize (mastodon-tl--unicode-wrap (or .display_name .username))
                    'face 'mastodon-display-name-face
                    'item-type 'user
                    'item-id .id)
@@ -1046,10 +1055,10 @@ links in the text. If TOOT is nil no parsing occurs."
        (propertize (concat "@" .acct)
                    'face 'mastodon-handle-face
                    'mouse-face 'highlight
-		           'mastodon-tab-stop 'user-handle
-		           'keymap mastodon-tl--link-keymap
+		   'mastodon-tab-stop 'user-handle
+		   'keymap mastodon-tl--link-keymap
                    'mastodon-handle (concat "@" .acct)
-		           'help-echo (concat "Browse user profile of @" .acct))))))
+		   'help-echo (concat "Browse user profile of @" .acct))))))
 
 (defun mastodon-tl--process-link (toot start end url)
   "Process link URL in TOOT as hashtag, userhandle, or normal link.
@@ -1162,11 +1171,14 @@ the toot)."
   (let* ((instance-host (url-host
                          (url-generic-parse-url instance-url)))
          (parsed (url-generic-parse-url url))
-         (path (url-filename parsed))
-         (split (split-string path "/")))
-    (when (and (string= instance-host (url-host parsed))
-               (string-prefix-p "/tag" path)) ;; "/tag/" or "/tags/"
-      (nth 2 split))))
+         (path (url-filename parsed)))
+    (when (string= instance-host (url-host parsed))
+      (cond ((string-prefix-p "/tag" path) ;; "/tag/" or "/tags/"
+             (let ((split (split-string path "/")))
+               (nth 2 split)))
+            ((string-prefix-p "?t=" path) ;; snac tag
+             (let ((split (split-string path "=")))
+               (nth 1 split)))))))
 
 (defun mastodon-tl--base-tags (tags body-tags)
   "Return a string of all tags not in BODY-TAGS, linkified.
@@ -1181,9 +1193,11 @@ TAGS is a list of tag alists, from a post's JSON."
 (defun mastodon-tl--base-tags-print-p (tags body-tags)
   "Non-nil if we need to print base tags.
 We need to do so if TAGS contains any elements not in BODY-TAGS."
-  (cl-remove-if (lambda (tag)
-                  (member (alist-get 'name tag) body-tags))
-                tags))
+  (cl-remove-if
+   (lambda (tag)
+     ;; downcase name string (body strings are downcased):
+     (member (downcase (alist-get 'name tag)) body-tags))
+   tags))
 
 (defun mastodon-tl--render-base-tag (tag body-tags)
   "Return TAG as a linkified string, provided it is not in BODY-TAGS."
@@ -2657,7 +2671,7 @@ Note that you can only (un)mute threads you have posted in."
     (mastodon-tl--goto-first-item)
     (mastodon-tl--property 'base-item-id :no-move)))
 
-(defun mastodon-tl--mute-or-unmute-thread  (&optional unmute)
+(defun mastodon-tl--mute-or-unmute-thread (&optional unmute)
   "Mute a thread.
 If UNMUTE, unmute it."
   (let ((mute-str (if unmute "unmute" "mute")))
@@ -2673,7 +2687,7 @@ If UNMUTE, unmute it."
              (url (mastodon-http--api (format "statuses/%s/%s" id mute-str))))
         (if (not we-posted-p)
             (user-error "You can only (un)mute a thread you have posted in")
-          (when (y-or-n-p (format "%s this thread? " (capitalize mute-str)))
+          (when (y-or-n-p (format "%s this thread? " mute-str))
             (let ((response (mastodon-http--post url)))
               (mastodon-http--triage
                response
@@ -3092,8 +3106,9 @@ PREFIX is sent to `mastodon-tl-get-tag-timeline', which see."
 PREFIX is sent to `mastodon-tl-get-tag-timeline', which see."
   (interactive)
   (let* ((json (mastodon-tl--followed-tags))
-         (sorted (sort json :key (lambda (x)
-                                   (downcase (alist-get 'name x)))))
+         (sorted (cl-sort json #'string-lessp
+                          :key (lambda (x)
+                                 (downcase (alist-get 'name x)))))
          (buf "*mastodon-followed-tags*"))
     (if (null sorted)
         (user-error "You have to follow some tags first")
@@ -3793,6 +3808,43 @@ TYPE is a notification type."
                        nil)))
   (unless (mastodon-tl--profile-buffer-p)
     (mastodon-tl--goto-first-item)))
+
+;;; NODEINFO
+
+(defun mastodon-tl--get-nodeinfo (instance &optional version)
+  "Return Nodeinfo data for INSTANCE, optionally for version."
+  ;; NB: not in the API:
+  (let ((url (format "https://%s/nodeinfo/%s" instance (or version "2.0"))))
+    (mastodon-http--get-json url)))
+
+(defun mastodon-tl-nodeinfo-for-toot ()
+  "Return Nodeinfo for toot at point.
+Displays what software and version an instance is running.
+Also the instances description and usage stats, etc.
+Nodeinfo is a data standard for distributed social networks, see
+https://nodeinfo.diaspora.software."
+  (interactive)
+  (let* ((item (mastodon-tl--property 'item-json))
+         (url (mastodon-tl--field 'url item))
+         (instance (url-host (url-generic-parse-url url)))
+         (data (mastodon-tl--get-nodeinfo instance)))
+    (when data ;; don't display empty message when fetching failed
+      (if (eq 'error (caar data))
+          (user-error "Error: %s" (alist-get 'error data))
+        (mastodon-tl--render-nodeinfo data)))))
+
+(defun mastodon-tl--render-nodeinfo (data)
+  "Render Nodeinfo DADA as message."
+  (let-alist data
+    (message
+     "%s"
+     (concat "Software: "
+             .software.name " " .software.version
+             (if (not .metadata)
+                 ""
+               (concat
+                "\nInstance: "
+                .metadata.nodeName " " .metadata.nodeDescription))))))
 
 ;;; BOOKMARKS
 
