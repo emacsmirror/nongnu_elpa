@@ -6,7 +6,7 @@
 ;; Package-Requires: ((emacs "29.1") (fedi "0.2") (tp "0.5") (transient) (magit))
 ;; Keywords: git, convenience
 ;; URL: https://codeberg.org/martianh/fj.el
-;; Version: 0.15
+;; Version: 0.16
 ;; Separator: -
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -163,6 +163,23 @@ The value must be a member of `fj-own-repos-order'."
                           `(const ,x))
                         fj-issues-sort)))
 
+(defcustom fj-timeline-default-items 15
+  "The default number of timeline items to load.
+Used for issues and pulls.
+If set to nil, `fj-default-limit',the general default amount, will be used.
+Fj.el currently struggles with performances in timelines, and it seems
+like the actual requests might be the culprit (after we culled all
+contenders on our end), so if you find that frustrating, ensure this is
+set to a pretty low number (10-15)."
+  :type 'integer)
+
+(defun fj-timeline-default-items ()
+  "Return a value for default timeline items to load.
+If `fj-timeline-default-items' is not set, call `fj-default-limit'."
+  (if (not fj-timeline-default-items)
+      (fj-default-limit)
+    (number-to-string fj-timeline-default-items)))
+
 ;;; FACES
 
 (defface fj-comment-face
@@ -177,6 +194,10 @@ The value must be a member of `fj-own-repos-order'."
   '((t :inherit fj-closed-issue-face :underline t))
   "Face for the title of a closed issue in notifications view.")
 
+(defface fj-closed-issue-notif-verbatim-face
+  `((t :inherit (highlight font-lock-comment-face)))
+  "Face for the title of a closed issue in notifications view.")
+
 (defface fj-user-face
   '((t :inherit font-lock-function-name-face))
   "User face.")
@@ -187,6 +208,14 @@ The value must be a member of `fj-own-repos-order'."
 
 (defface fj-item-face
   '((t :inherit font-lock-type-face :weight bold))
+  "Face for item names.")
+
+(defface fj-item-verbatim-face
+  `((t :inherit (highlight font-lock-type-face)))
+  "Face for item names.")
+
+(defface fj-item-closed-verbatim-face
+  `((t :inherit (highlight font-lock-comment-face)))
   "Face for item names.")
 
 (defface fj-item-author-face
@@ -208,6 +237,11 @@ The value must be a member of `fj-own-repos-order'."
 
 (defface fj-name-face
   '((t :weight bold))
+  "Face for timeline item names (user, issue, PR).
+Not used for items that are links.")
+
+(defface fj-name-verbatim-face
+  `((t :inherit highlight :weight bold))
   "Face for timeline item names (user, issue, PR).
 Not used for items that are links.")
 
@@ -243,8 +277,8 @@ Copies the token to the kill ring and returns it."
      (lambda (resp)
        (let-alist (fj-resp-json resp)
          (kill-new .sha1)
-         (message "Token %s copied to kill ring." .name))
-       .sha1))))
+         (message "Token %s copied to kill ring." .name)
+         .sha1)))))
 
 (defun fj-auth-source-get ()
   "Fetch an auth source token.
@@ -453,7 +487,11 @@ If we fail, return `fj-user'." ;; poss insane
   "Return repo name, whatever view we are in."
   (or (fj--get-buffer-spec :repo)
       fj-current-repo
-      (fj--get-tl-col 0)
+      (if (equal major-mode 'fj-owned-issues-tl-mode)
+          ;; own repos mode:
+          (fj--get-tl-col 2)
+        ;; repos mode (repo tl search):
+        (fj--get-tl-col 0))
       (fj-current-dir-repo)))
 
 (defun fj--map-alist-key (list key)
@@ -645,7 +683,7 @@ If CURRENT-REPO, get from `fj-current-repo' instead."
 Should work for anything with an fj-byline property."
   (interactive)
   (fedi--goto-pos #'next-single-property-change 'fj-byline
-                  #'fj-item-view-more))
+                  #'fj-item-view-more*))
 
 (defun fj-item-prev ()
   "Goto previous item or notification.
@@ -864,7 +902,9 @@ LIMIT and PAGE are for pagination."
          (buf (format "*fj-repos-%s*" fj-user))
          ;; FIXME: we should hit /users/$user/repos here not /user/repos?
          ;; but the former has "order" arg!
-         (repos (and fj-user (fj-get-repos limit nil nil page order)))
+         (repos (and fj-user (fj-get-repos
+                              limit nil nil page
+                              (or order fj-own-repos-default-order))))
          (entries (fj-repo-tl-entries repos :no-owner)))
     (if (not repos)
         (user-error "No repos")
@@ -2015,16 +2055,39 @@ If REPO is provided, also include a repo column."
            face default
            item ,type)
           (,(concat
-             (propertize .title
-                         'face (if (equal .state "closed")
-                                   'fj-closed-issue-face
-                                 'fj-item-face))
+             (fj-format-tl-title .title .state)
              (fj-plain-space)
              (fj-propertize-labels .labels))
            id ,.id
            state ,.state
            type fj-issue-button
            item ,type)])))))
+
+(defun fj-format-tl-title (str &optional state face verbatim-face)
+  "Propertize STR, respecting its state (open/closed).
+Propertize any verbatim markdown in STR."
+  (let ((face (or face
+                  (if (equal state "closed")
+                      'fj-closed-issue-face
+                    'fj-item-face)))
+        (verbatim (or verbatim-face
+                      (if (equal state "closed")
+                          'fj-item-closed-verbatim-face
+                        'fj-item-verbatim-face))))
+    (with-temp-buffer
+      (switch-to-buffer (current-buffer))
+      (insert
+       (propertize str 'face face))
+      (goto-char (point-min))
+      (save-match-data
+        (while (re-search-forward markdown-regex-code nil :noerror)
+          (add-text-properties (match-beginning 1) (match-end 1)
+                               `(face ,verbatim)
+                               (current-buffer))
+          (replace-match (buffer-substring (match-beginning 3)
+                                           (match-end 3))
+                         nil nil nil 1)))
+      (buffer-string))))
 
 (defun fj-plain-space ()
   "Return a space with default face."
@@ -2110,12 +2173,18 @@ git config."
   (if (or current-prefix-arg ;; still allow completing-read a repo
           (not (magit-inside-worktree-p :noerror)))
       (fj-list-issues-do repo owner state type) ;; fall back to `fj-user' repos
-    (if-let* ((repo-+-owner (fj-repo-+-owner-from-git))
-              (owner (or owner (car repo-+-owner)))
-              (repo (or repo (cadr repo-+-owner))))
-        (fj-list-issues-do repo owner state type)
-      (message "Failed to find Forgejo repo")
-      (fj-list-issues-do repo owner state type))))
+    ;; if in fj buffer, respect its buf-spec:
+    (if (string-prefix-p "*fj-" (buffer-name (current-buffer)))
+        (let* ((repo (fj-read-user-repo repo))
+               (owner (or owner fj-user)))
+          (fj-list-issues-do repo owner state type))
+      ;; if NOT fj.el buffer, try to get info from git:
+      (if-let* ((repo-+-owner (fj-repo-+-owner-from-git))
+                (owner (or owner (car repo-+-owner)))
+                (repo (or repo (cadr repo-+-owner))))
+          (fj-list-issues-do repo owner state type)
+        (message "Failed to find Forgejo repo")
+        (fj-list-issues-do repo owner state type)))))
 
 (defun fj-list-issues-by-milestone (&optional repo owner state type query
                                               labels)
@@ -2193,7 +2262,7 @@ QUERY is a search query to filter by."
         (fj-other-window-maybe
          prev-buf "-issues*" #'string-suffix-p prev-mode)
         (message (substitute-command-keys
-                  ;; it can't find our bindings: 
+                  ;; it can't find our bindings:
                   "\\`C-c C-c': cycle state | \\`C-c C-x': sort\
  | \\`C-c C-s': cycle type"))))))
 
@@ -2367,51 +2436,59 @@ JSON is the data associated with STR."
   (buffer-string))
 
 ;; I think magit/forge just uses markdown-mode rather than rendering
-(defun fj-render-body (body &optional json)
-  "Render item BODY as markdowned html.
-JSON is the item's data to process the link with.
-Return a string."
-  ;; NB: make sure this doesn't leak into our issue buffers!
-  (let ((buf "*fj-render*")
-        (body (decode-coding-string body 'utf-8))
-        str)
-    ;; shr.el fucks windows up, so we save and restore:
-    (setq fj-previous-window-config
-          (list (current-window-configuration)
-                (point-marker)))
-    ;; 1 buffer for hacking in:
-    (with-current-buffer (get-buffer-create buf)
-      ;; (switch-to-buffer (current-buffer))
-      (erase-buffer)
-      (insert body)
-      (goto-char (point-min))
-      (fj-mdize-plain-urls) ;; FIXME: mdize a string to save a buffer
-      (goto-char (point-min))
-      ;; 2: md-ize
-      (let ((html (decode-coding-string
-                   (fj-render-markdown (buffer-string))
-                   'utf-8)))
-        (erase-buffer)
-        (insert html)
-        ;; 3: shr-render the md
-        (let ((shr-width (window-width))
-              (shr-discard-aria-hidden t)) ; for pandoc md image output
-          ;; shr render (render-region not a contender here):
-          ;; NB: shr renders md-ized URLs without shr-tab-stop!:
-          (shr-render-buffer (current-buffer))
-          ;; 4 collect result
-          (with-current-buffer "*html*"
-            (setq str (buffer-string))
-            (kill-buffer-and-window))) ;; shr's *html*
-        ;; propertize special items (reuse buffer):
-        (with-current-buffer (get-buffer buf)
-          ;; (switch-to-buffer (current-buffer))
-          (erase-buffer)
-          (setq str
-                (fj-body-prop-regexes str json))
-          (kill-buffer buf))))
-    (fj-restore-previous-window-config fj-previous-window-config)
-    str))
+(defun fj-render-body (body)
+  "Render BODY as markdown and decode."
+  (decode-coding-string
+   (fj-render-markdown body)
+   'utf-8))
+
+(defun fj-render-item-bodies ()
+  "Render all item bodies in the buffer.
+Uses property fj-item-body to find them.
+Also propertize all handles, tags, commits, and URLs."
+  (save-match-data
+    (let ((inhibit-read-only t)
+          match)
+      (save-excursion
+        (goto-char (point-min))
+        (while (setq match (text-property-search-forward 'fj-item-body))
+          (let ((shr-width (- (window-width) 2))
+                (shr-discard-aria-hidden t) ; for pandoc md image output
+                (props (text-properties-at (point) (current-buffer))))
+            ;; (fj-mdize-plain-urls) ;; FIXME: still needed since we
+            ;; changed to buffer parsing?
+            (shr-render-region (prop-match-beginning match)
+                               (prop-match-end match)
+                               (current-buffer))
+            ;; Re-add props (so we can edit when point on body, etc.):
+            (add-text-properties (prop-match-beginning match)
+                                 (point)
+                                 props
+                                 (current-buffer)))))
+      ;; propertize handles, tags, URLs, and commits
+      (fedi-propertize-items fedi-post-handle-regex 'handle
+                             fj-link-keymap 1 2 nil nil
+                             '(fj-tab-stop t))
+      (fedi-propertize-items fedi-post-tag-regex 'tag
+                             fj-link-keymap 1 2 nil nil
+                             '(fj-tab-stop t))
+      ;; NB: this is required for shr tab stops
+      ;; - why doesn't shr always add shr-tab-stop prop?
+      ;; - does not add tab-stops for []() links (nor does shr!?)
+      ;; - fixed prev breakage here by adding item as link in
+      ;; - `fedi-propertize-items'.
+      (fedi-propertize-items fedi-post-url-regex 'shr
+                             fj-link-keymap 1 1 nil nil
+                             '(fj-tab-stop t))
+      (fedi-propertize-items fedi-post-commit-regex 'commit
+                             fj-link-keymap 1 1 nil nil
+                             '(fj-tab-stop t)
+                             'fj-issue-commit-face)
+      ;; FIXME: make md []() links tab stops? (doesn't work):
+      ;; (fedi-propertize-items markdown-regex-link-inline 'shr
+      ;;                        fj-link-keymap 1 1 nil nil
+      ;;                        '(fj-tab-stop t))
+      )))
 
 (defvar-keymap fj-item-view-mode-map
   :doc "Keymap for `fj-item-view-mode'."
@@ -2427,7 +2504,8 @@ Return a string."
   "L" #'fj-repo-commit-log
   "l" #'fj-issue-label-add
   "M" #'fj-merge-pull
-  "r" #'fj-add-reaction)
+  "r" #'fj-add-reaction
+  ">" #'fj-item-view-more)
 
 (define-derived-mode fj-item-view-mode special-mode "fj-issue"
   "Major mode for viewing items."
@@ -2448,7 +2526,9 @@ AUTHOR is of comment, OWNER is of repo."
          (fj-edited-str-maybe .created_at .updated_at)
          stamp)
         "\n\n"
-        (fj-render-body .body comment) "\n"
+        (propertize (fj-render-body .body)
+                    'fj-item-body t)
+        "\n"
         (fj-render-comment-reactions reactions) "\n"
         fedi-horiz-bar fedi-horiz-bar)
        'fj-comment comment
@@ -2538,9 +2618,10 @@ RELOAD mean we reloaded."
         ;; .is_locked
         (setq header-line-format
               `("" header-line-indent
+                ;; number:
                 ,(concat "#" (number-to-string .number) " "
-                         (propertize .title
-                                     'face 'fj-item-face))))
+                         ;; title:
+                         (fj-format-tl-title .title .state))))
         (insert
          ;; header stuff
          ;; (forge has: state, status, milestone, labels, marks, assignees):
@@ -2585,7 +2666,8 @@ RELOAD mean we reloaded."
            (propertize (fj--issue-right-align-str stamp)
                        'face 'fj-item-byline-face)
            "\n\n"
-           (fj-render-body .body item)
+           (propertize (fj-render-body .body)
+                       'fj-item-body t)
            "\n"
            (fj-render-issue-reactions .number)
            "\n"
@@ -2602,7 +2684,9 @@ RELOAD mean we reloaded."
            (_ "")))
         (when (and fj-use-emojify
                    (require 'emojify nil :noerror))
-          (emojify-mode t))))))
+          (emojify-mode t))
+        ;; Propertize top level item only:
+        (fj-render-item-bodies)))))
 
 (defun fj-item-view (&optional repo owner number type page limit)
   "View item NUMBER from REPO of OWNER.
@@ -2612,7 +2696,7 @@ PAGE and LIMIT are for `fj-issue-get-timeline'."
   (interactive "P")
   (let* ( ;; set defaults for pagination:
          (page (or page "1"))
-         (limit (or limit (fj-default-limit)))
+         (limit (or limit (fj-timeline-default-items)))
          ;; mode check for other-window arg:
          (ow (not (eq major-mode 'fj-item-view-mode)))
          (repo (fj-read-user-repo repo))
@@ -2625,7 +2709,7 @@ PAGE and LIMIT are for `fj-issue-get-timeline'."
       ;; if we have paginated, re-append all pages sequentially:
       (if (fj-string-number> page "1")
           (fj-reload-paginated-pages)
-        (fj-item-view-more page)))))
+        (fj-item-view-more* page)))))
 
 (defun fj-reload-paginated-pages (&optional end-page)
   "Reload a page of timeline items.
@@ -2654,12 +2738,32 @@ Conditionally called from the end of `fj-item-view-more-cb'."
            repo owner number new-page limit
            #'fj-item-view-more-cb (current-buffer) (point) nil page))))))
 
-(defun fj-item-view-more (&optional init-page)
+(defun fj-item-view-more ()
+  "Load more items to the timeline, if it has more items.
+A view is considered to have more items if we can find a load-more
+button in it, which has the text property type of more."
+  (interactive)
+  ;; when we are not clicking on a button but calling the cmd:
+  (let ((inhibit-read-only t)
+        match)
+    (save-excursion
+      (if (setq match
+                (or (text-property-search-forward 'type 'more t)
+                    ;; if we didn't find by searching forward, maybe we
+                    ;; are just after the button (eob):
+                    (text-property-search-backward 'type 'more t)))
+          (progn ;; remove load more button:
+            (delete-region (prop-match-beginning match)
+                           (prop-match-end match))
+            ;; load more async (if we found a "load more" btn):
+            (fj-item-view-more*))
+        (user-error "No more items to load")))))
+
+(defun fj-item-view-more* (&optional init-page)
   "Append more timeline items to the current view, asynchronously.
 Interactively, INIT-PAGE is nil.
 INIT-PAGE is used in `fj-render-item' on first load of a view and when
 reloading a paginated view."
-  (interactive)
   (cl-destructuring-bind (&key repo owner number _reload _type page limit)
       (fj--get-buffer-spec :viewargs)
     (fj-issue-get-timeline-async
@@ -2692,6 +2796,8 @@ If INIT-PAGE, do not update :page in viewargs."
             (message "Loading comments... Done")
             (when end-page ;; if we are re-paginating, go again maybe:
               (fj-reload-paginated-pages-maybe end-page page))
+            ;; shr-render-region and regex props:
+            (fj-render-item-bodies)
             ;; maybe add a "more" link:
             (fj-issue-timeline-more-link-mayb)))))))
 
@@ -2965,8 +3071,8 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
            (format format-str user
                    (propertize .old_title
                                'face '(:strike-through t))
-                   (propertize .new_title
-                               'face 'fj-name-face)
+                   (fj-format-tl-title .new_title nil 'fj-name-face
+                                       'highlight)
                    ts))
           ("comment_ref"
            (let ((number (number-to-string
@@ -2974,26 +3080,26 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
              (concat
               (format format-str user ts)
               "\n"
-              (fj-propertize-link (concat .ref_issue.title " #" number)
-                                  'comment-ref number))))
+              (fj-propertize-link
+               (fj-format-tl-title
+                (concat .ref_issue.title " #" number))
+               'comment-ref number nil :noface))))
           ("commit_ref"
            (concat
             (format format-str user ts)
             "\n"
             (fj-propertize-link
-             (url-unhex-string (fj-get-html-link-desc body))
-             'commit-ref .ref_commit_sha)))
+             (fj-format-tl-title
+              (url-unhex-string (fj-get-html-link-desc body)))
+             'commit-ref .ref_commit_sha nil :noface)))
           ("issue_ref"
            (concat
             (format format-str user .ref_issue.repository.full_name ts)
             "\n"
             (fj-propertize-link
-             (url-unhex-string .ref_issue.title)
-             'issue-ref .ref_issue.number))
-
-           ;; (fj-propertize-link ;.ref_issue.repository.full_name)
-           ;;  (url-unhex-string ).ref_issue.title)
-           )
+             (fj-format-tl-title
+              (url-unhex-string .ref_issue.title))
+             'issue-ref .ref_issue.number nil :noface)))
           ("label"
            (let ((action (if (string= body "1") "added" "removed")))
              (format format-str user action .label.name ts)))
@@ -3096,24 +3202,35 @@ assigned to. TS is a timeline timestamp."
     (string-match "<a[^\n]*>\\(?2:[^\n]*\\)</a>" str)
     (match-string 2 str)))
 
-(defun fj-propertize-link (str &optional type item face)
+(defun fj-propertize-link (str &optional type item face no-face)
   "Propertize a link with text STR.
 Optionally set link TYPE and ITEM number and FACE."
   ;; TODO: poss to refactor with `fedi-link-props'?
   ;; make plain links work:
   (when (eq type 'shr)
     (setq str (propertize str 'shr-url str)))
-  (propertize str
-              'face (or face 'shr-link)
-              'mouse-face 'highlight
-              'fj-tab-stop t
-              'keymap fj-link-keymap
-              'button t
-              'type type
-              'item item
-              'fj-tab-stop t
-              'category 'shr
-              'follow-link t))
+  (if no-face
+      (propertize str
+                  'mouse-face 'highlight
+                  'fj-tab-stop t
+                  'keymap fj-link-keymap
+                  'button t
+                  'type type
+                  'item item
+                  'fj-tab-stop t
+                  'category 'shr
+                  'follow-link t)
+    (propertize str
+                'face (or face 'shr-link)
+                'mouse-face 'highlight
+                'fj-tab-stop t
+                'keymap fj-link-keymap
+                'button t
+                'type type
+                'item item
+                'fj-tab-stop t
+                'category 'shr
+                'follow-link t)))
 
 ;;; REVIEWS (PRS)
 
@@ -3877,7 +3994,8 @@ Inject INIT-TEXT into the buffer, for editing."
         (prop . compose-milestone)
         (item-var . fj-compose-milestone)
         (face . fj-post-title-face)))
-     init-text quote)
+     init-text quote
+     "fj-")
     (setq fj-compose-item-type
           (if edit
               (if (eq type 'comment)
@@ -3941,9 +4059,21 @@ Call response and update functions."
   "Search instance users for QUERY.
 Optionally set LIMIT to results."
   ;; FIXME: server: limit is an integer; it doesn't respect our 25, returns 2500
+  ;; works:
+  ;; (let ((resp (fj-search-users "mart" "10")))
+  ;;   (length (alist-get 'data resp)))
   (let ((params `(("q" . ,query)
                   ("limit" . ,limit))))
     (fj-get "users/search" params)))
+
+;; (with-current-buffer (get-buffer-create "*fj-test*")
+;;   (erase-buffer)
+;;   (insert
+;;    (prin1-to-string
+;;     (fj-search-users "mart" "10")))
+;;   (pp-buffer)
+;;   (emacs-lisp-mode)
+;;   (switch-to-buffer-other-window (current-buffer)))
 
 (defun fj-users-list (data)
   "Return an list of handles from users' DATA."
@@ -3972,12 +4102,17 @@ Optionally set LIMIT to results."
          (data (alist-get 'data resp)))
     (fj-users-list data)))
 
+;; (defun fj-compose-mentions-capf ()
+;;   (cape-wrap-debug #'fj-compose-mentions-capf*))
+
 (defun fj-compose-mentions-capf ()
   "Build a mentions completion backend for `completion-at-point-functions'."
   (fedi-post--return-capf fedi-post-handle-regex
                           #'fj-compose-mentions-fun
                           nil nil
-                          #'fj-compose-handle-exit-fun))
+                          #'fj-compose-handle-exit-fun
+                          ;; 'fj-mention
+                          ))
 
 ;;; issues capf
 ;; TODO: we need to trigger completion on typing # alone (depends on regex)
@@ -4145,8 +4280,11 @@ Subject types are \"issues\" \"pulls\" \"commits\" and \"repository\"."
          (propertize (concat "#" number)
                      'face 'fj-comment-face)
          " "
-         (fj-propertize-link .subject.title 'notif number
-                             (unless unread 'fj-closed-issue-notif-face))
+         (fj-propertize-link
+          (fj-format-tl-title .subject.title nil
+                              (unless unread 'fj-closed-issue-notif-face)
+                              (unless unread 'fj-closed-issue-notif-verbatim-face))
+          'notif number nil :noface)
          "\n"
          (propertize
           (concat .repository.owner.login "/" .repository.name)
@@ -4276,8 +4414,8 @@ Used for hitting RET on a given link."
          (let ((inhibit-read-only t))
            (delete-region
             (save-excursion (beginning-of-line) (point))
-            (save-excursion (end-of-line) (point))))
-         (fj-item-view-more))
+            (save-excursion (end-of-line) (point)))
+           (fj-item-view-more*)))
         (_
          (error "Unknown link type %s" type))))))
 
