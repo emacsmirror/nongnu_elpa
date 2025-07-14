@@ -1,4 +1,4 @@
-;;; haml-mode.el --- Major mode for editing Haml files
+;;; haml-mode.el --- Major mode for editing Haml files  -*- lexical-binding: t -*-
 
 ;; Copyright (c) 2007, 2008 Natalie Weizenbaum
 
@@ -139,6 +139,7 @@ respectively."
           ;; so we have to move the beginning back one char
           (font-lock-fontify-region (1- beg) end))))))
 
+(defvar ruby-font-lock-syntax-table)
 (defun haml-fontify-region-as-ruby (beg end)
   "Use Ruby's font-lock variables to fontify the region between BEG and END."
   (haml-fontify-region beg end ruby-font-lock-keywords
@@ -175,6 +176,7 @@ elsewhere."
                          js-mode-syntax-table
                          #'js-syntax-propertize)))
 
+(defvar textile-mode-syntax-table)
 (defun haml-fontify-region-as-textile (beg end)
   "Highlight textile from BEG to END.
 
@@ -186,6 +188,7 @@ and indented Haml filters always have leading whitespace."
   (if (boundp 'textile-font-lock-keywords)
       (haml-fontify-region beg end textile-font-lock-keywords textile-mode-syntax-table nil)))
 
+(defvar markdown-mode-syntax-table)
 (defun haml-fontify-region-as-markdown (beg end)
   "Highlight markdown from BEG to END.
 
@@ -255,10 +258,10 @@ This highlights the tag attributes and object refs of the tag,
 as well as the script expression (-, =, or ~) following the tag.
 
 For example, this will highlight all of the following:
-  %p{:foo => 'bar'}
+  %p{:foo => \='bar\='}
   %p[@bar]
-  %p= 'baz'
-  %p{:foo => 'bar'}[@bar]= 'baz'"
+  %p= \='baz\='
+  %p{:foo => \='bar'\=}[@bar]= \='baz\='"
   (when (re-search-forward "^[ \t]*[%.#]" limit t)
     (forward-char -1)
 
@@ -367,6 +370,9 @@ With ARG, do it that many times."
               end (match-end 0)))
       (when start
         (cons start end)))))
+
+(defvar font-lock-beg)
+(defvar font-lock-end)
 
 (defun haml-maybe-extend-region (extender)
   "Maybe extend the font lock region using EXTENDER.
@@ -682,8 +688,8 @@ See http://www.w3.org/TR/html-markup/syntax.html.")
                  finally return nil)))))
 
 (cl-defun haml-parse-multiline-attr-hash ()
-  "Parses a multiline attribute hash, and returns
-an alist with the following keys:
+  "Parse a multiline attribute hash.
+Return value is an alist with the following keys:
 
 INDENT is the indentation of the line beginning the hash.
 
@@ -718,12 +724,12 @@ beginning the hash."
     (haml-move "(")
     (haml-parse-new-attr-hash)))
 
-(cl-defun haml-parse-new-attr-hash (&optional (fn (lambda (type beg end) ())))
-  "Parse a new-style attribute hash on this line, and returns
-t if it's not finished on the current line.
+(cl-defun haml-parse-new-attr-hash (&optional (fn (lambda (_type _beg _end) ())))
+  "Parse a new-style attribute hash on this line.
+Return value is t if it's not finished on the current line.
 
 FN should take three parameters: TYPE, BEG, and END.
-TYPE is the type of text parsed ('name or 'value)
+TYPE is the type of text parsed (\='name or \='value)
 and BEG and END delimit that text in the buffer."
   (let ((eol (save-excursion (end-of-line) (point))))
     (while (not (haml-move ")"))
@@ -796,7 +802,7 @@ back-dent the line by `haml-indent-offset' spaces.  On reaching column
 0, it will cycle back to the maximum sensible indentation."
   (interactive "*")
   (let ((ci (current-indentation))
-        (cc (current-column)))
+        (_cc (current-column)))
     (cl-destructuring-bind (need strict) (haml-compute-indentation)
       (save-excursion
         (beginning-of-line)
@@ -840,7 +846,7 @@ the current line."
           (save-excursion
             (beginning-of-line)
             (looking-at "^[ \t]+$")))
-      (backward-delete-char arg)
+      (delete-char (- arg))
     (save-excursion
       (beginning-of-line)
       (unwind-protect
