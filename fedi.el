@@ -793,7 +793,8 @@ used in a link function. For an example of regexes' subgroups, see
                                  extra-props)))))))
 
 (defun fedi-link-props (&optional face link item type help-echo keymap)
-  "Return a plist for a link."
+  "Return a plist for a link.
+FACE LINK ITEM TYPE HELP-ECHO KEYMAP."
   `(face ,(or face '(shr-text shr-link))
          mouse-face highlight
          shr-tab-stop t
