@@ -35,6 +35,7 @@
 (require 'elec-pair)
 (require 'easymenu)
 
+(require 'typst-ts-variables)
 (require 'typst-ts-embedding-lang-settings)
 (require 'typst-ts-core)
 (require 'typst-ts-faces)
@@ -45,8 +46,6 @@
 (require 'typst-ts-lsp)
 (require 'typst-ts-misc-commands)
 (require 'typst-ts-transient)
-(require 'typst-ts-variables)
-
 
 ;; ==============================================================================
 ;; TODO typst has three modes (namely 'markup', 'code' and 'math')
@@ -479,15 +478,29 @@ This function is meant to be used when user hits a return key."
     (if (re-search-backward typst-ts-outline-regexp nil t)
         (- (match-end 1) (match-beginning 1))
       0)))
+
 (defvar-keymap typst-ts-mode-map
-  ;; don't bind <return>
-  ;; Binding a command to "<return>" is generally a bug.
-  ;; Emacs will first look for a binding for `return` and if it finds one
-  ;; it'll use it in preference to a binding for `RET`, regardless of the
-  ;; relative precedence of the keymaps involved.
   "TAB" #'typst-ts-editing-cycle
   "RET" #'typst-ts-editing-return
-  "C-c '" #'typst-ts-edit-indirect)
+  "C-c '" #'typst-ts-edit-indirect
+
+  ;; DWIM
+  "M-<up>" #'typst-ts-editing-meta-up
+  "M-<down>" #'typst-ts-editing-meta-down
+  "M-<left>" #'typst-ts-editing-meta-left
+  "M-<right>" #'typst-ts-editing-meta-right
+
+  ;; List editing
+  "M-<return>" #'typst-ts-editing-meta-return
+
+  ;; Compile commands
+  "C-c C-c" #'typst-ts-compile
+  "C-c C-S-C" #'typst-ts-compile-and-preview
+  "C-c C-p" #'typst-ts-preview
+  "C-c C-w" #'typst-ts-watch-mode
+
+  ;; Other commands
+  "C-c C-o" #'typst-ts-mc-open-at-point)
 
 (easy-menu-define typst-ts-mode-menu typst-ts-mode-map
   "Menu for `typst-ts-mode'."
@@ -648,6 +661,7 @@ typst tree sitter grammar (at least %s)!" (current-time-string min-time))
   :group 'typst
   :syntax-table typst-ts-syntax-table
   :after-hook
+
   (typst-ts-after-hook-function)
 
   (unless (treesit-ready-p 'typst)
