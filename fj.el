@@ -2169,12 +2169,18 @@ git config."
   (if (or current-prefix-arg ;; still allow completing-read a repo
           (not (magit-inside-worktree-p :noerror)))
       (fj-list-issues-do repo owner state type) ;; fall back to `fj-user' repos
-    (if-let* ((repo-+-owner (fj-repo-+-owner-from-git))
-              (owner (or owner (car repo-+-owner)))
-              (repo (or repo (cadr repo-+-owner))))
-        (fj-list-issues-do repo owner state type)
-      (message "Failed to find Forgejo repo")
-      (fj-list-issues-do repo owner state type))))
+    ;; if in fj buffer, respect its buf-spec:
+    (if (string-prefix-p "*fj-" (buffer-name (current-buffer)))
+        (let* ((repo (fj-read-user-repo repo))
+               (owner (or owner fj-user)))
+          (fj-list-issues-do repo owner state type))
+      ;; if NOT fj.el buffer, try to get info from git:
+      (if-let* ((repo-+-owner (fj-repo-+-owner-from-git))
+                (owner (or owner (car repo-+-owner)))
+                (repo (or repo (cadr repo-+-owner))))
+          (fj-list-issues-do repo owner state type)
+        (message "Failed to find Forgejo repo")
+        (fj-list-issues-do repo owner state type)))))
 
 (defun fj-list-issues-by-milestone (&optional repo owner state type query
                                               labels)
