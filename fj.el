@@ -167,11 +167,15 @@ The value must be a member of `fj-own-repos-order'."
   "The default number of timeline items to load.
 Used for issues and pulls.
 If set to nil, `fj-default-limit',the general default amount, will be used.
-Fj.el currently struggles with performances in timelines, and it seems like the actual requests might be the culprit (after we culled all contenders on our end), so if you find that frustrating, ensure this is set to a pretty low number (10-15)."
+Fj.el currently struggles with performances in timelines, and it seems
+like the actual requests might be the culprit (after we culled all
+contenders on our end), so if you find that frustrating, ensure this is
+set to a pretty low number (10-15)."
   :type 'integer)
 
 (defun fj-timeline-default-items ()
-  ""
+  "Return a value for default timeline items to load.
+If `fj-timeline-default-items' is not set, call `fj-default-limit'."
   (if (not fj-timeline-default-items)
       (fj-default-limit)
     (number-to-string fj-timeline-default-items)))
@@ -273,8 +277,8 @@ Copies the token to the kill ring and returns it."
      (lambda (resp)
        (let-alist (fj-resp-json resp)
          (kill-new .sha1)
-         (message "Token %s copied to kill ring." .name))
-       .sha1))))
+         (message "Token %s copied to kill ring." .name)
+         .sha1)))))
 
 (defun fj-auth-source-get ()
   "Fetch an auth source token.
@@ -2258,7 +2262,7 @@ QUERY is a search query to filter by."
         (fj-other-window-maybe
          prev-buf "-issues*" #'string-suffix-p prev-mode)
         (message (substitute-command-keys
-                  ;; it can't find our bindings: 
+                  ;; it can't find our bindings:
                   "\\`C-c C-c': cycle state | \\`C-c C-x': sort\
  | \\`C-c C-s': cycle type"))))))
 
@@ -2443,7 +2447,8 @@ JSON is the data associated with STR."
 Uses property fj-item-body to find them.
 Also propertize all handles, tags, commits, and URLs."
   (save-match-data
-    (let ((inhibit-read-only t))
+    (let ((inhibit-read-only t)
+          match)
       (save-excursion
         (goto-char (point-min))
         (while (setq match (text-property-search-forward 'fj-item-body))
@@ -2734,17 +2739,25 @@ Conditionally called from the end of `fj-item-view-more-cb'."
            #'fj-item-view-more-cb (current-buffer) (point) nil page))))))
 
 (defun fj-item-view-more ()
-  ""
+  "Load more items to the timeline, if it has more items.
+A view is considered to have more items if we can find a load-more
+button in it, which has the text property type of more."
   (interactive)
   ;; when we are not clicking on a button but calling the cmd:
-  (let ((inhibit-read-only t))
+  (let ((inhibit-read-only t)
+        match)
     (save-excursion
-      (when (setq match (text-property-search-forward 'type 'more t))
-        ;; remove load more button:
-        (delete-region (prop-match-beginning match)
-                       (prop-match-end match))))
-    ;; load more async:
-    (fj-item-view-more*)))
+      (if (setq match
+                (or (text-property-search-forward 'type 'more t)
+                    ;; if we didn't find by searching forward, maybe we
+                    ;; are just after the button (eob):
+                    (text-property-search-backward 'type 'more t)))
+          (progn ;; remove load more button:
+            (delete-region (prop-match-beginning match)
+                           (prop-match-end match))
+            ;; load more async (if we found a "load more" btn):
+            (fj-item-view-more*))
+        (user-error "No more items to load")))))
 
 (defun fj-item-view-more* (&optional init-page)
   "Append more timeline items to the current view, asynchronously.
@@ -3085,12 +3098,8 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
             "\n"
             (fj-propertize-link
              (fj-format-tl-title
-              (url-unhex-string .ref_issue.title)
-              'issue-ref .ref_issue.number nil :noface)))
-
-           ;; (fj-propertize-link ;.ref_issue.repository.full_name)
-           ;;  (url-unhex-string ).ref_issue.title)
-           )
+              (url-unhex-string .ref_issue.title))
+             'issue-ref .ref_issue.number nil :noface)))
           ("label"
            (let ((action (if (string= body "1") "added" "removed")))
              (format format-str user action .label.name ts)))
