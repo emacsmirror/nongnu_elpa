@@ -256,9 +256,12 @@ Provide current topics for adding/removing."
    ("C-c C-c" "Save settings" fj-update-repo)
    ("C-x C-k" :info "to revert all changes")]
   (interactive)
-  (if (not fj-current-repo)
-      (user-error "No repo. Call from a repo view or set `fj-current-repo'")
-    (transient-setup 'fj-repo-update-settings)))
+  (if fj-current-repo
+      (transient-setup 'fj-repo-update-settings)
+    (if (y-or-n-p "No repo. Try to use git config?")
+        (if-let* ((repo-+-owner (fj-repo-+-owner-from-git))
+                  (fj-current-repo (cadr repo-+-owner)))
+            (transient-setup 'fj-repo-update-settings)))))
 
 (transient-define-suffix fj-update-user-settings (&optional args)
   "Update current user settings on the server."
