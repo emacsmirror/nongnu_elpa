@@ -3953,7 +3953,8 @@ Inject INIT-TEXT into the buffer, for editing."
         (prop . compose-milestone)
         (item-var . fj-compose-milestone)
         (face . fj-post-title-face)))
-     init-text quote)
+     init-text quote
+     "fj-")
     (setq fj-compose-item-type
           (if edit
               (if (eq type 'comment)
