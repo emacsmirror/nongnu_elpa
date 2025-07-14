@@ -746,7 +746,7 @@ the whole likes count in order to propertize it fully."
 
 ;;; PROPERTIZING SPECIAL ITEMS
 
-(defun fedi-propertize-items (regex type json keymap subexp
+(defun fedi-propertize-items (regex type keymap subexp
                                     &optional item-subexp domain-subexp link
                                     extra-props face)
   "Propertize items of TYPE matching REGEX in STR as links using JSON.
