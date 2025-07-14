@@ -229,7 +229,8 @@ Buffer-local variable `fedi-post-previous-window-config' holds the config."
               (match-end 1))))))
 
 (defun fedi-post--return-capf (regex completion-fun &optional
-                                     annot-fun _affix-fun exit-fun)
+                                     annot-fun _affix-fun exit-fun
+                                     category)
   "Return a completion at point function.
 REGEX is used to get the item before point.
 
@@ -265,6 +266,7 @@ and a status."
             ;; FIXME: we "should" use :affixation-function for this but i
             ;; can't get it to work so use an exit-fun hack:
             :exit-function
+            :category category
             (when exit-fun
               (lambda (str status)
                 (funcall exit-fun str status)))
