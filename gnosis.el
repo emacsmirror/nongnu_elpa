@@ -588,7 +588,7 @@ If FALSE t, use gnosis-face-false face"
 
 (defun gnosis-display-parathema (parathema)
   "Display PARATHEMA."
-  (when parathema
+  (when (and parathema (not (string-empty-p parathema)))
     (search-backward "----") ; search back for separator
     (forward-line 1)
     (insert "\n" (gnosis-center-string parathema) "\n")
