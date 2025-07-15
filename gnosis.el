@@ -381,14 +381,6 @@ This will not be applied to sentences that start with double space."
   (gnosis-insert-separator)
   (gnosis-apply-center-buffer-overlay))
 
-(defun gnosis-display-mcq-options (id)
-  "Display answer options for mcq note ID."
-  (let ((options (apply #'append (gnosis-select 'hypothesis 'notes `(= id ,id) t)))
-	(option-num 1))
-    (insert "\n" (propertize "Options:" 'face 'gnosis-face-directions))
-    (cl-loop for option in options
-	     do (insert (format "\n%s.  %s" option-num option))
-	     (setf option-num (1+ option-num)))))
 
 (defun gnosis-trim-quotes (str)
   "Remove prefix and suffxi quotes for STR."
