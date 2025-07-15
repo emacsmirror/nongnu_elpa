@@ -491,6 +491,8 @@ Applies highlighting for CORRECT & FALSE."
   "Display ANSWER.
 
 When SUCCESS nil, display USER-INPUT as well"
+  (with-current-buffer gnosis-review-buffer-name
+      (goto-char (point-max))
   (insert "\n\n"
 	  (propertize "Answer:" 'face 'gnosis-face-directions)
 	  " "
@@ -502,9 +504,7 @@ When SUCCESS nil, display USER-INPUT as well"
 	    (propertize "Your answer:" 'face 'gnosis-face-directions)
 	    " "
 	    (propertize user-input 'face 'gnosis-face-false))
-    (gnosis-center-current-line)))
-
-
+    (gnosis-center-current-line))))
 
 (defun gnosis-display-hint (hint)
   "Display HINT."
