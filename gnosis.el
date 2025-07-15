@@ -180,6 +180,9 @@ Avoid using an increased height value as this messes up with
 (defvar gnosis-review-notes nil
   "Review notes.")
 
+(defvar gnosis-review-buffer-name "*gnosis*"
+  "Review buffer name.")
+
 (defvar gnosis-export-separator "\n- ")
 
 ;; TODO: Make this as a defcustom.
