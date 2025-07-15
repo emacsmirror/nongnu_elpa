@@ -384,6 +384,13 @@ This will not be applied to sentences that start with double space."
   (gnosis-insert-separator)
   (gnosis-apply-center-buffer-overlay))
 
+(defun gnosis-display-image (keimenon)
+  "Dipslay image link from KEIMENON in new window."
+  (let ((image-path (and (string-match "\\[file:\\(.*?\\)\\]" keimenon)
+			 (match-string 1 keimenon))))
+    (when image-path
+      (find-file-other-window image-path)
+      (switch-to-buffer-other-window gnosis-review-buffer-name))))
 
 (defun gnosis-trim-quotes (str)
   "Remove prefix and suffxi quotes for STR."
