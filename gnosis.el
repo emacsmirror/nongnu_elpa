@@ -378,11 +378,12 @@ This will not be applied to sentences that start with double space."
 
 (defun gnosis-display-keimenon (str)
   "Display STR as keimenon."
-  (erase-buffer)
-  (insert "\n" (gnosis-center-string
-		(replace-regexp-in-string "\n" " " str)))
-  (gnosis-insert-separator)
-  (gnosis-apply-center-buffer-overlay))
+  (with-current-buffer gnosis-review-buffer-name
+    (erase-buffer)
+    (insert "\n" (gnosis-center-string
+		  (replace-regexp-in-string "\n" " " str)))
+    (gnosis-insert-separator)
+    (gnosis-apply-center-buffer-overlay)))
 
 (defun gnosis-display-image (keimenon)
   "Dipslay image link from KEIMENON in new window."
