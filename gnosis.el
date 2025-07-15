@@ -530,6 +530,7 @@ If FALSE t, use gnosis-face-false face"
 
 (defun gnosis-display-correct-answer-mcq (answer user-choice)
   "Display correct ANSWER & USER-CHOICE for MCQ note."
+  (goto-char (point-max))
   (insert (gnosis-center-string
 	   (format "%s %s\n%s %s"
 		   (propertize "Correct Answer:" 'face 'gnosis-face-directions)
