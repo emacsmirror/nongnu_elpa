@@ -1089,6 +1089,7 @@ SUCCESS is a boolean value, t for success, nil for failure."
 
 (defun gnosis-review-mcq (id)
   "Review MCQ note with ID."
+  (gnosis-display-image (gnosis-get 'keimenon 'notes `(= id ,id)))
   (gnosis-display-keimenon (gnosis-org-format-string
 			    (gnosis-get 'keimenon 'notes `(= id ,id))))
   (let* ((answer (car (gnosis-get 'answer 'notes `(= id ,id))))
@@ -1105,6 +1106,7 @@ SUCCESS is a boolean value, t for success, nil for failure."
 	 (parathema (gnosis-get 'parathema 'extras `(= id ,id)))
 	 (keimenon (gnosis-get 'keimenon 'notes `(= id ,id)))
 	 (answer (car (gnosis-get 'answer 'notes `(= id ,id)))))
+    (gnosis-display-image keimenon)
     (gnosis-display-keimenon (gnosis-org-format-string keimenon))
     (gnosis-display-hint hypothesis)
     (let* ((answer answer)
@@ -1217,22 +1219,16 @@ If NEW? is non-nil, increment new notes log by 1."
     (emacsql gnosis-db [:delete :from activity-log])))
 
 (defun gnosis-review--display-note (id)
-  "Display note with ID for review in the gnosis buffer.
-
-Handles buffer setup and calls the appropriate review function based
-on note type.  Returns nil if note is suspended, otherwise returns the
-review result."
-  (when (gnosis-suspended-p id)
-    (message "Suspended note with id: %s" id)
-    (sit-for 0.3)) ;; this should only occur in testing
+  "Display note with ID and call the appropriate review func."
   (let* ((type (gnosis-get 'type 'notes `(= id ,id)))
          (func-name (intern (format "gnosis-review-%s" (downcase type)))))
     (if (fboundp func-name)
         (progn
 	  (unless (eq major-mode 'gnosis-mode)
-	    (pop-to-buffer-same-window (get-buffer-create "*gnosis*"))
+	    (pop-to-buffer-same-window (get-buffer-create gnosis-review-buffer-name))
             (gnosis-mode)
 	    (gnosis-review-update-header 0))
+	  (window-configuration-to-register :gnosis-pre-image)
           (funcall func-name id))
       (error "Malformed note type: '%s'" type))))
 
@@ -1247,6 +1243,7 @@ This is a helper function for `gnosis-review-session'."
 	(note-count (or note-count 0)))
     (cl-incf note-count)
     (gnosis-review-actions success note note-count)
+    (jump-to-register :gnosis-pre-image)
     (gnosis-review-update-header note-count)
     note-count))
 
@@ -1256,7 +1253,7 @@ This is a helper function for `gnosis-review-session'."
 REVIEWED-COUNT: Total number of items that have been reviewed in
 current session.
 REMAINING-REVIEWS: Total number of remaining items to be reviewed."
-  (with-current-buffer (get-buffer-create "*gnosis*")
+  (with-current-buffer (get-buffer-create gnosis-review-buffer-name)
     (let ((remaining-reviews (or remaining-reviews gnosis-due-notes-total)))
       (setq-local header-line-format
                   (gnosis-center-string
@@ -1377,6 +1374,8 @@ To customize the keybindings, adjust `gnosis-review-keybindings'."
   (interactive)
   ;; Refresh modeline
   (setq gnosis-due-notes-total (length (gnosis-review-get-due-notes)))
+  ;; reset pre-image register
+  (set-register :gnosis-pre-image nil)
   ;; Select review type
   (let ((review-type
 	 (gnosis-completing-read "Review: "
