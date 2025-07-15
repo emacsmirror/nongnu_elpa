@@ -28,7 +28,7 @@ reinforcing learning.
 :GNOSIS_TYPE: cloze
 :END:
 ** Keimenon 
-GNU Emacs is an extensible editor created by Richard Stallman in 1984
+GNU Emacs is an extensible editor created by *Richard Stallman* in =1984=
 
 ** Hypothesis 
 - year
@@ -37,11 +37,11 @@ GNU Emacs is an extensible editor created by Richard Stallman in 1984
 - 1984
 
 ** Parathema 
-Emacs was originally implemented in 1976 on the MIT AI Lab's
+~Emacs~ was originally implemented in 1976 on the MIT AI Lab's
 Incompatible Timesharing System (ITS), as a collection of TECO macros.
 The name “Emacs” was originally chosen as an abbreviation of “Editor
 MACroS”. This version of Emacs, GNU Emacs, was originally written
-in 1984
+in [[https://thanosapollo.org][1984]].
 
 
 * Thema
@@ -50,7 +50,7 @@ in 1984
 :GNOSIS_TYPE: cloze
 :END:
 ** Keimenon 
-GNU Emacs is an extensible editor created by Richard Stallman in 1984
+~GNU Emacs~ is an extensible editor created by Richard Stallman /in 1984/
 
 ** Hypothesis 
 - 
@@ -60,7 +60,7 @@ GNU Emacs is an extensible editor created by Richard Stallman in 1984
 - Stallman
 
 ** Parathema 
-Emacs was originally implemented in 1976 on the MIT AI Lab's
+~Emacs~ was originally implemented in 1976 on the MIT AI Lab's
 Incompatible Timesharing System (ITS), as a collection of TECO macros.
 The name “Emacs” was originally chosen as an abbreviation of “Editor
 MACroS”. This version of Emacs, GNU Emacs, was originally written in
@@ -74,7 +74,7 @@ MACroS”. This version of Emacs, GNU Emacs, was originally written in
 :END:
 ** Keimenon 
 Which non-3rd generation group of *cephalosporins* can be used to
-treat *Bacterial* *Meningitis*?
+treat *Bacterial Meningitis*?
 
 ** Hypothesis 
 - 1st generation
@@ -86,7 +86,7 @@ treat *Bacterial* *Meningitis*?
 - 4th generation
 
 ** Parathema 
-3rd generation is 1st line empiric treatment
+~3rd generation is 1st line~ empiric treatment
 
 
 * Thema                                                 :diuretics:thiazides:
@@ -95,7 +95,7 @@ treat *Bacterial* *Meningitis*?
 :GNOSIS_TYPE: mc-cloze
 :END:
 ** Keimenon 
-Thiazide diuretics may cause hyponatremia as an adverse effect
+~Thiazide diuretics~ may cause hyponatremia as an adverse effect
 
 ** Hypothesis 
 - hyponatremia
