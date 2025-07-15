@@ -180,35 +180,6 @@ Avoid using an increased height value as this messes up with
 (defvar gnosis-review-notes nil
   "Review notes.")
 
-(defvar gnosis-syntax-delimiters
-  '(("*" . bold)
-    ("/" . italic)
-    ("=" . (bold font-lock-constant-face))
-    ("~" . font-lock-keyword-face)
-    ("_" . underline))
-  "Alist of delimiter characters and their corresponding face properties.")
-
-(defun gnosis-generate-syntax-highlights ()
-  "Generate syntax highlighting patterns from delimiter configurations.
-
-Returns an alist where each entry consists of a regex pattern and its
-corresponding face.  The regex patterns are dynamically generated from
-`gnosis-syntax-delimiters'.  Each pattern matches text surrounded by
-specified delimiters for applying styling like bold, italic, etc.
-
-Refer to `gnosis-apply-syntax-overlay' to for how it is used."
-  (mapcar (lambda (pair)
-            (let ((delim (car pair))
-                  (face (cdr pair)))
-              (cons (format "%s\\([^%s[:space:]][^%s\n]*[^%s[:space:]]\\)%s"
-                            (regexp-quote delim)
-                            (regexp-quote delim)
-                            (regexp-quote delim)
-                            (regexp-quote delim)
-                            (regexp-quote delim))
-                    face)))
-          gnosis-syntax-delimiters))
-
 (defvar gnosis-export-separator "\n- ")
 
 ;; TODO: Make this as a defcustom.
@@ -356,7 +327,7 @@ Acts only when CENTER? is non-nil."
 
 (defun gnosis-center-string (string)
   "Center each line of STRING in current window width.
-Replaces links [[source][description]] with =description=."
+Replaces links `[[source][description]]' with `description'."
   (let* ((width (window-width))
          (lines (split-string string "\n")))
     (mapconcat
@@ -367,7 +338,7 @@ Replaces links [[source][description]] with =description=."
                 ;; Replace links with just the description part
                 (processed (replace-regexp-in-string
                             "\\[\\[\\([^]]+\\)\\]\\[\\([^]]+\\)\\]\\]"
-                            "=\\2="
+                            "\\2"
                             trimmed))
                 ;; Fill the text to wrap it properly
                 (wrapped (with-temp-buffer
@@ -394,28 +365,20 @@ This will not be applied to sentences that start with double space."
       (gnosis-center-current-line)
       (forward-line 1))))
 
-(defun gnosis-apply-syntax-overlay ()
-  "Apply custom font overlays for syntax highlighting."
-  (with-silent-modifications
-    (save-excursion
-      (dolist (highlight (gnosis-generate-syntax-highlights))
-        (let ((regex (car highlight))
-              (face (cdr highlight)))
-          (goto-char (point-min))
-          (while (re-search-forward regex nil t)
-            (when (null (get-text-property (match-beginning 1) 'face))
-              (let ((start (match-beginning 1))
-                    (end (match-end 1)))
-                (overlay-put (make-overlay start end) 'face face)
-                (delete-region end (match-end 0))
-                (delete-region (match-beginning 0) start)))))))))
+(defun gnosis-org-format-string (str)
+  "Return STR fontified as in `org-mode'."
+  (with-temp-buffer
+    (org-mode)
+    (insert str)
+    (font-lock-ensure)
+    (buffer-string)))
 
 (defun gnosis-display-keimenon (str)
   "Display STR as keimenon."
   (erase-buffer)
-  (insert "\n" (gnosis-center-string (replace-regexp-in-string "\n" " " str)))
+  (insert "\n" (gnosis-center-string
+		(replace-regexp-in-string "\n" " " str)))
   (gnosis-insert-separator)
-  (gnosis-apply-syntax-overlay)
   (gnosis-apply-center-buffer-overlay))
 
 (defun gnosis-display-mcq-options (id)
@@ -437,6 +400,8 @@ This will not be applied to sentences that start with double space."
   (let ((cloze-string (or cloze-string gnosis-cloze-string)))
     (with-temp-buffer
       (insert (gnosis-center-string str))
+      (org-mode)
+      (font-lock-ensure)
       (dolist (cloze clozes)
         (let* ((cloze-text (gnosis-trim-quotes cloze))
                (replacement (concat
@@ -591,8 +556,7 @@ If FALSE t, use gnosis-face-false face"
   (when (and parathema (not (string-empty-p parathema)))
     (search-backward "----") ; search back for separator
     (forward-line 1)
-    (insert "\n" (gnosis-center-string parathema) "\n")
-    (gnosis-apply-syntax-overlay)))
+    (insert "\n" (gnosis-center-string (gnosis-org-format-string parathema)) "\n")))
 
 (defun gnosis-display-next-review (id success)
   "Display next interval of note ID for SUCCESS."
@@ -1133,7 +1097,8 @@ SUCCESS is a boolean value, t for success, nil for failure."
 
 (defun gnosis-review-mcq (id)
   "Review MCQ note with ID."
-  (gnosis-display-keimenon (gnosis-get 'keimenon 'notes `(= id ,id)))
+  (gnosis-display-keimenon (gnosis-org-format-string
+			    (gnosis-get 'keimenon 'notes `(= id ,id))))
   (let* ((answer (car (gnosis-get 'answer 'notes `(= id ,id))))
 	 (user-choice (gnosis-mcq-answer id))
 	 (success (string= answer user-choice)))
@@ -1148,7 +1113,7 @@ SUCCESS is a boolean value, t for success, nil for failure."
 	 (parathema (gnosis-get 'parathema 'extras `(= id ,id)))
 	 (keimenon (gnosis-get 'keimenon 'notes `(= id ,id)))
 	 (answer (car (gnosis-get 'answer 'notes `(= id ,id)))))
-    (gnosis-display-keimenon keimenon)
+    (gnosis-display-keimenon (gnosis-org-format-string keimenon))
     (gnosis-display-hint hypothesis)
     (let* ((answer answer)
 	   (user-input (read-string "Answer: "))
