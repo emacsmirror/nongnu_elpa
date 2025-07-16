@@ -2032,7 +2032,7 @@ the label's color, as per `fj-propertize-label-names'."
   (fj-with-repo-entry
    (let* ((entry (tabulated-list-get-entry))
           (name (car (seq-elt entry 2)))
-          (owner (or owner (fj--repo-owner))))
+          (owner  (fj--repo-owner)))
      (fj-list-issues-do name owner))))
 
 (defun fj-issue-tl-entries (issues &optional repo)
