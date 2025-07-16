@@ -2711,6 +2711,8 @@ PAGE and LIMIT are for `fj-issue-get-timeline'."
     ;; (timeline (fj-issue-get-timeline repo owner number page limit)))
     (fedi-with-buffer (format "*fj-%s-item-%s*" repo number)
         'fj-item-view-mode ow
+      (let ((enable-local-variables :all))
+        (hack-dir-local-variables-non-file-buffer))
       (fj-render-item repo owner item number type page limit)
       ;; if we have paginated, re-append all pages sequentially:
       (if (fj-string-number> page "1")
