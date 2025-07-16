@@ -699,6 +699,10 @@ BUF-PREFIX is a string to prepend to the buffer name."
     ;; we would need to add our own propertizing to md-mode font-locking
     (when (eq major 'markdown-mode)
       (cl-pushnew #'fedi-post-fontify-body-region after-change-functions))
+    ;; dir locals
+    (let ((enable-local-variables :all))
+      (hack-dir-local-variables-non-file-buffer))
+    ;; init and reply text
     (when init-text
       (insert init-text)
       (delete-trailing-whitespace))
