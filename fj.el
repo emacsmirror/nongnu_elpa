@@ -4822,6 +4822,7 @@ Returns a list of strings."
 (defun fj-delete-repo-tag ()
   "Prompt for a repo tag and delete it on the server."
   (interactive)
+  ;; FIXME: make it work in source files/magit?
   (fj-destructure-buf-spec (repo owner)
     (let* ((tags (fj-get-repo-tags))
            (list (cl-loop for x in tags
