@@ -4391,7 +4391,7 @@ Use ID if provided."
      (browse-url-generic url))))
 
 (defun fj-browse-view ()
-  "Brose URL of view at point."
+  "Browse URL of view at point."
   (interactive)
   (let ((url (fj--get-buffer-spec :url)))
     (browse-url-generic url)))
