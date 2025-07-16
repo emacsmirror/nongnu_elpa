@@ -256,9 +256,11 @@ Repo settings transient:
 |           | fj-item-view-edit-comment        | Edit the comment at point.                                          |
 | e         | fj-item-view-edit-item-at-point  | Edit issue or comment at point in item view mode.                   |
 |           | fj-item-view-mode                | Major mode for viewing items.                                       |
-|           | fj-item-view-more                | Append more timeline items to the current view, asynchronously.     |
+| >         | fj-item-view-more                | Load more items to the timeline, if it has more items.              |
 | o         | fj-item-view-reopen              | Reopen item being viewed.                                           |
 | C-M-q     | fj-kill-all-buffers              | Kill all fj buffers.                                                |
+|           | fj-list-authored-issues          | Return issues authored by `fj-user', in any repo.                   |
+|           | fj-list-authored-pulls           | Return pulls authored by `fj-user', in any repo.                    |
 | I         | fj-list-issues                   | List issues for current REPO with default sorting.                  |
 |           | fj-list-issues-+-pulls           | List issues and pulls for REPO by OWNER, filtered by STATE.         |
 |           | fj-list-issues-all               | Display all ISSUES for REPO by OWNER in tabulated list view.        |
