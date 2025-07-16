@@ -477,16 +477,18 @@ Works in issue view mode or in issues tl."
 
 (defun fj--repo-owner ()
   "Return repo owner, whatever view we are in.
-If we fail, return `fj-user'." ;; poss insane
+If we fail, return `fj-user'."
+  ;; repos search or user repos buffer:
   (if (eq major-mode #'fj-repo-tl-mode)
       (fj--get-tl-col 1)
-    (or (fj--get-buffer-spec :owner)
-        ;; If no owner in buf-spec, perhaps we are viewing issues from
-        ;; `fj-list-search-items' (fj-owned-issues-tl-mode) , i.e. issues
-        ;; we authored in non-owned repos or similar:
-        (map-nested-elt (fj--property 'fj-item-data)
-                        '(repository owner))
-        fj-user))) ;; FIXME: fallback hack
+    (or ;; try to fetch owner from item at point's repo data:
+     ;; perhaps we are viewing issues from `fj-list-search-items'
+     ;; (ie fj-owned-issues-tl-mode)
+     (map-nested-elt (fj--property 'fj-item-data)
+                     '(repository owner))
+     ;; else try buf spec:
+     (fj--get-buffer-spec :owner)
+     fj-user))) ;; FIXME: fallback hack
 
 (defun fj--repo-name ()
   "Return repo name, whatever view we are in."
@@ -962,7 +964,7 @@ Unless paginating, set `fj-user' or `fj-extra-repos'")
                  (fj-put endpoint))))
     (fedi-http--triage resp
                        (lambda (_)
-                         (message "Repo %s %s!" repo
+                         (message "Repo %s/%s %s!" owner repo
                                   (if unstar "unstarred" "starred"))))))
 
 (defun fj-fork-repo (repo owner &optional name org)
@@ -973,13 +975,12 @@ Unless paginating, set `fj-user' or `fj-extra-repos'")
          (resp (fj-post endpoint params :json)))
     (fedi-http--triage resp
                        (lambda (_)
-                         (message "Repo %s forked!" repo)))))
+                         (message "Repo %s/%s forked!" owner repo)))))
 
 (defun fj-delete-repo ()
   "Delete repo at point, if you are its owner."
   (interactive)
-  (let* ((repo (or (fj--get-buffer-spec :repo) ;; issues tl
-                   (fj--get-tl-col 0))) ;; own repos/search
+  (let* ((repo (fj--repo-name))
          (endpoint (format "repos/%s/%s/" fj-user repo)))
     (if (not (fj--own-repo-p))
         (user-error "Not your own repo")
@@ -987,9 +988,10 @@ Unless paginating, set `fj-user' or `fj-extra-repos'")
              (format "Delete repo %s [Permanent and cannot be undone]?"
                      repo))
         (let ((resp (fj-delete endpoint)))
-          (fedi-http--triage resp
-                             (lambda (_)
-                               (message "Repo %s deleted!" repo))))))))
+          (fedi-http--triage
+           resp
+           (lambda (_)
+             (message "Repo %s/%s deleted!" fj-user repo))))))))
 
 (defun fj-starred-repos ()
   "List your starred repos."
@@ -1325,9 +1327,7 @@ OWNER is the repo owner."
   (fj-with-own-issue ;; or owner?
    (let* ((repo (fj-read-user-repo repo))
           (issue (or issue (fj-read-repo-issue repo)))
-          (owner (or owner ;; FIXME: owner
-                     (fj--get-buffer-spec :owner)
-                     fj-user))
+          (owner (or owner (fj--repo-owner)))
           (data (fj-get-item repo owner issue))
           (old-body (alist-get 'body data))
           (new-body (read-string "Edit issue body: " old-body))
@@ -1543,7 +1543,7 @@ With arg CLOSE, also close ISSUE."
   (interactive "P")
   (let* ((repo (fj-read-user-repo repo))
          (issue (or issue (fj-read-repo-issue repo)))
-         (owner (or owner fj-user)) ;; FIXME owner
+         (owner (or owner (fj--repo-owner)))
          (url (format "repos/%s/%s/issues/%s/comments" owner repo issue))
          (body (or comment (read-string "Comment: ")))
          (params `(("body" . ,body)))
@@ -1569,7 +1569,7 @@ NEW-BODY is the new comment text to send."
   (interactive "P")
   (let* ((repo (fj-read-user-repo repo))
          (id (or id (fj--property 'fj-comment-id)))
-         (owner (or owner fj-user)) ;; FIXME
+         (owner (or owner (fj--repo-owner)))
          (response (fj-comment-patch repo owner id
                                      `(("body" . ,new-body)))))
     (fedi-http--triage response
@@ -1720,7 +1720,7 @@ Not sure what the server actually accepts.")
   "Return labels JSON for REPO by OWNER."
   (interactive "P")
   (let* ((repo (fj-read-user-repo repo))
-         (owner (or owner fj-user))
+         (owner (or owner (fj--repo-owner)))
          (endpoint (format "repos/%s/%s/labels" owner repo)))
     (fj-get endpoint)))
 
@@ -1729,7 +1729,7 @@ Not sure what the server actually accepts.")
   (interactive "P")
   (let* ((repo (fj-read-user-repo repo))
          (issue (or issue (fj-read-repo-issue repo)))
-         (owner (or owner fj-user))
+         (owner (or owner (fj--repo-owner)))
          (url (format "repos/%s/%s/issues/%s/labels" owner repo issue)))
     (fj-get url)))
 
@@ -1778,7 +1778,7 @@ Return an alist, with each cons being (name . id)"
          (issue (or issue
                     (fj--get-buffer-spec :item)
                     (fj-read-repo-issue repo)))
-         (owner (or owner fj-user)) ;; FIXME owner
+         (owner (or owner (fj--repo-owner)))
          (url (format "repos/%s/%s/issues/%s/labels" owner repo issue))
          (issue-labels (fj--map-alist-key
                         (fj-issue-get-labels repo owner issue)
@@ -1803,7 +1803,7 @@ Return an alist, with each cons being (name . id)"
          (issue (or issue
                     (fj--get-buffer-spec :item)
                     (fj-read-repo-issue repo)))
-         (owner (or owner fj-user)) ;; FIXME owner
+         (owner (or owner (fj--repo-owner)))
          (issue-labels (fj-issue-get-labels repo owner issue)))
     (if (not issue-labels)
         (user-error "No labels to remove")
@@ -1831,7 +1831,7 @@ Return an alist, with each cons being (name . id)"
   ;;   (url . "https://codeberg.org/api/v1/repos/martianh/fj.el/labels/456278"))
   (interactive)
   (let* ((repo (fj-read-user-repo repo))
-         (owner (or owner fj-user))
+         (owner (or owner (fj--repo-owner)))
          ;; FIXME: check if name or color already used?:
          (name (read-string "Label: "))
          (color (read-color nil :rgb))
@@ -1854,7 +1854,7 @@ Return an alist, with each cons being (name . id)"
   ;; DELETE /repos/{owner}/{repo}/labels/{id}
   (interactive)
   (let* ((repo (fj-read-user-repo repo))
-         (owner (or owner fj-user))
+         (owner (or owner (fj--repo-owner)))
          (labels (fj-repo-get-labels repo owner))
          (list (fj-propertize-label-names labels))
          (choice (completing-read "Delete label: " list))
@@ -1884,7 +1884,7 @@ the label's color, as per `fj-propertize-label-names'."
   "Get milestones for REPO by OWNER."
   ;; GET /repos/{owner}/{repo}/milestones
   (let* ((repo (fj-read-user-repo repo))
-         (owner (or owner fj-user))
+         (owner (or owner (fj--repo-owner)))
          (endpoint (format "/repos/%s/%s/milestones" owner repo))
          ;; state param worth implementing:
          (params (fedi-opt-params state name page limit)))
@@ -1901,7 +1901,7 @@ the label's color, as per `fj-propertize-label-names'."
   ;; POST /repos/{owner}/{repo}/milestones due_on, state (open/closed)
   (interactive)
   (let* ((repo (fj-read-user-repo repo))
-         (owner (or owner fj-user))
+         (owner (or owner (fj--repo-owner)))
          (endpoint (format "/repos/%s/%s/milestones" owner repo))
          (title (read-string "Title: "))
          (desc (read-string "Description (optional): "))
@@ -1918,7 +1918,7 @@ the label's color, as per `fj-propertize-label-names'."
   (interactive)
   (fj-with-issue
    (let* ((repo (fj-read-user-repo repo))
-          (owner (or owner fj-user))
+          (owner (or owner (fj--repo-owner)))
           (issue (pcase major-mode
                    ('fj-item-view-mode
                     (fj--get-buffer-spec :item))
@@ -2024,18 +2024,8 @@ the label's color, as per `fj-propertize-label-names'."
 
 (define-button-type 'fj-owned-issues-repo-button
   'follow-link t
-  'action 'fj-owned-issues-list-repo-issues
+  'action 'fj-repo-tl-list-issues
   'help-echo "RET: View this repo's issues.")
-
-;; FIXME: refactor with `fj-issue-tl-mode'? just the name seq elt changes
-(defun fj-owned-issues-list-repo-issues (&optional _)
-  "View issues of current repo from tabulated repos listing."
-  (interactive)
-  (fj-with-repo-entry
-   (let* ((entry (tabulated-list-get-entry))
-          (name (car (seq-elt entry 2)))
-          (owner (fj--repo-owner)))
-     (fj-list-issues-do name owner))))
 
 (defun fj-issue-tl-entries (issues &optional repo)
   "Return tabluated list entries for ISSUES.
@@ -2175,7 +2165,15 @@ Nil if we fail to parse."
   (fj-list-items repo owner state "all"))
 
 (defun fj-list-pulls (repo &optional owner state)
-  "List pulls for REPO by OWNER, filtered by STATE."
+  "List pulls for REPO by OWNER, filtered by STATE.
+If we are in a repo, don't assume `fj-user' owns it. In that case we
+fetch owner/repo from git config.
+If we are not in a repo, call `fj-list-issues-do' without using git
+config.
+With a prefix arg, prompt for a repo.
+With 2 prefix args, prompt for a repo, and ensure that its owner is
+`fj-user'.
+The default sort value follows `fj-issues-sort-default'."
   (interactive "P")
   (fj-list-items repo owner state "pulls"))
 
@@ -2185,7 +2183,10 @@ If we are in a repo, don't assume `fj-user' owns it. In that case we
 fetch owner/repo from git config.
 If we are not in a repo, call `fj-list-issues-do' without using git
 config.
-The default sort value is \"latest\"."
+With a prefix arg, prompt for a repo.
+With 2 prefix args, prompt for a repo and ensure that its owner is
+`fj-user'.
+The default sort value follows `fj-issues-sort-default'."
   (interactive "P")
   (fj-list-items repo nil nil "issues"))
 
@@ -2198,14 +2199,16 @@ fetch owner/repo from git config and check if it might have a foregejo
 remote.
 If we are not in a repo, call `fj-list-issues-do' without using
 git config."
-  (interactive "P")
+  ;; (interactive "P")
   (if (or current-prefix-arg ;; still allow completing-read a repo
+          ;; NB: this is T in fj buffers when no source files:
           (not (magit-inside-worktree-p :noerror)))
-      (fj-list-issues-do repo owner state type) ;; fall back to `fj-user' repos
+      ;; fall back to `fj--repo-owner' repos:
+      (fj-list-issues-do repo owner state type)
     ;; if in fj buffer, respect its buf-spec:
     (if (string-prefix-p "*fj-" (buffer-name (current-buffer)))
         (let* ((repo (fj-read-user-repo repo))
-               (owner (or owner fj-user)))
+               (owner (or owner (fj--repo-owner))))
           (fj-list-issues-do repo owner state type))
       ;; if NOT fj.el buffer, try to get info from git:
       (if-let* ((repo-+-owner (fj-repo-+-owner-from-git))
@@ -2235,17 +2238,21 @@ STATE, TYPE and QUERY are for `fj-list-issues-do'."
 
 (defvar fj-repo-data nil) ;; for transients for now
 
-(defun fj-list-issues-do (&optional repo owner state type query
+(defun fj-list-issues-do (&optional arg owner state type query
                                     labels milestones page limit sort)
   "Display ISSUES in a tabulated list view.
 Either for `fj-current-repo' or REPO, a string, owned by OWNER.
 With a prefix arg, or if REPO and `fj-current-repo' are nil,
 prompt for a repo to list.
+With two prefix args, also mandate that owner is `fj-user'.
 Optionally specify the STATE filter (open, closed, all), and the
 TYPE filter (issues, pulls, all).
-QUERY is a search query to filter by."
-  (let* ((repo (fj-read-user-repo repo))
-         (owner (or owner fj-user))
+QUERY is a search query to filter by.
+SORT defaults to `fj-issues-sort-default'."
+  (let* ((repo (fj-read-user-repo arg))
+         (owner (if (equal '(16) arg) ;; 2 prefixes
+                    fj-user
+                  (or owner (fj--repo-owner))))
          (type (or type "issues"))
          (issues (fj-repo-get-issues repo owner state type query
                                      labels milestones page limit sort))
@@ -3596,7 +3603,7 @@ unset any default values."
   (interactive)
   (fj-with-repo-entry
    (let* ((entry (tabulated-list-get-entry))
-          (name (car (seq-first entry)))
+          (name (fj--repo-name))
           (owner (fj--repo-owner)))
      (fj-list-issues-do name owner))))
 
@@ -3777,12 +3784,7 @@ Optionally specify REF, a commit, branch, or tag."
   (interactive)
   (fj-with-entry
    (let* ((number (fj--get-tl-col 0))
-          (owner (or (fj--get-buffer-spec :owner)
-                     ;; If no owner in buf-spec, perhaps we are viewing
-                     ;; issues from `fj-list-search-items', i.e. issues we
-                     ;; authored in non-owned repos or similar:
-                     (map-nested-elt (fj--property 'fj-item-data)
-                                     '(repository owner))))
+          (owner (fj--repo-owner))
           (repo (fj--repo-col-or-buf-spec))
           (item (fj--property 'item)))
      (fj-item-view repo owner number
@@ -4389,7 +4391,7 @@ Use ID if provided."
      (browse-url-generic url))))
 
 (defun fj-browse-view ()
-  "Brose URL of view at point."
+  "Browse URL of view at point."
   (interactive)
   (let ((url (fj--get-buffer-spec :url)))
     (browse-url-generic url)))
@@ -4527,8 +4529,8 @@ Used for a mouse-click EVENT on a link."
   "Render log of commits for REPO by OWNER.
 If PREFIX arg, prompt for branch to show commits of."
   (interactive "P")
-  (let* ((repo (or repo (fj--get-buffer-spec :repo)))
-         (owner (or owner (fj--get-buffer-spec :owner)))
+  (let* ((repo (or repo (fj--repo-name)))
+         (owner (or owner (fj--repo-owner)))
          (branch (when prefix
                    (completing-read "Branch: "
                                     (fj-repo-branches-list repo owner))))
@@ -4615,8 +4617,8 @@ Optionally specify BRANCH to show commits from."
   "Render users for REPO by OWNER.
 Fetch users by calling FETCH-FUN with two args, REPO and OWNER.
 BUF-STR is the name of the buffer string to use."
-  (let* ((repo (or repo (fj--get-buffer-spec :repo)))
-         (owner (or owner (fj--get-buffer-spec :owner)))
+  (let* ((repo (or repo (fj--repo-name)))
+         (owner (or owner (fj--repo-owner)))
          (buf (format "*fj-%s-%s*" repo buf-str))
          (data (funcall fetch-fun repo owner page limit))
          (endpoint (if (eq fetch-fun #'fj-get-stargazers)
@@ -4779,15 +4781,24 @@ PAGE and LIMIT are for pagination."
 (defun fj-watch-repo ()
   "Watch repo at point or in current view."
   (interactive)
-  (let* ((owner (or (fj--get-buffer-spec :owner)
-                    (fj--get-tl-col 1)))
-         (repo (or (fj--get-buffer-spec :repo)
-                   (fj--get-tl-col 0)))
+  (let* ((owner (fj--repo-owner))
+         (repo (fj--repo-name))
          (endpoint (format "repos/%s/%s/subscription" owner repo))
          (resp (fj-put endpoint)))
     (fedi-http--triage resp
                        (lambda (_)
-                         (message "Repo %s watched!" repo)))))
+                         (message "Repo %s/%s watched!" owner repo)))))
+
+(defun fj-unwatch-repo ()
+  "Watch repo at point or in current view."
+  (interactive)
+  (let* ((owner (fj--repo-owner))
+         (repo (fj--repo-name))
+         (endpoint (format "repos/%s/%s/subscription" owner repo))
+         (resp (fj-delete endpoint)))
+    (fedi-http--triage resp
+                       (lambda (_)
+                         (message "Repo %s/%s unwatched!" owner repo)))))
 
 ;;; TOPICS
 ;; topics are set in fj-transient.el
@@ -4827,6 +4838,7 @@ Returns a list of strings."
 (defun fj-delete-repo-tag ()
   "Prompt for a repo tag and delete it on the server."
   (interactive)
+  ;; FIXME: make it work in source files/magit?
   (fj-destructure-buf-spec (repo owner)
     (let* ((tags (fj-get-repo-tags))
            (list (cl-loop for x in tags
@@ -4837,7 +4849,7 @@ Returns a list of strings."
       (fedi-http--triage
        resp
        (lambda (_)
-         (message "Tag %s deleted!" choice))))))
+         (message "Tag %s on %s/%s deleted!" choice owner repo))))))
 
 ;;; ACTIVITIES
 
