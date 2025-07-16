@@ -2,7 +2,7 @@
 
 This repo contains some basic functions for interacting with a Forgejo instance (such as [[https://codeberg.org][codeberg.org]]) from within Emacs.
 
-It doesn't interact with =forge= / =magit=, which don't implement Gitea/Forgejo support and likely never will (see [[https://github.com/magit/forge/discussions/557][https://github.com/magit/forge/discussions/557]]). Nor does it attempt to follow their wonderful design (for now).
+It doesn't interact with =forge= / =magit=, which don't implement Gitea/Forgejo support for now (though this will likely change, see https://github.com/magit/forge/discussions/771). Nor does it attempt to follow their wonderful design.
 
 It just aims to cover a few of the bread and butter functions that will save you switching to the browser 80% of the time.
 
@@ -41,7 +41,7 @@ Current repository detection should work partially automatically. If you find yo
 Forgejo's API is vast. Currently =fj.el= just implements a few basic things:
 
 ** repos and repo listings
-- create new repo
+- create new (remote) repo
 - delete a repo
 
 
@@ -49,6 +49,7 @@ Forgejo's API is vast. Currently =fj.el= just implements a few basic things:
 - list a user's repos
 - fork a repo
 - star a repo
+- watch a repo
 - copy clone URL of repo
 - view a repo's readme
 - view a repo's commit log
@@ -56,16 +57,19 @@ Forgejo's API is vast. Currently =fj.el= just implements a few basic things:
 - list repo's watchers
 
 ** rich create/edit issue/comment interface
+
 ** issues/PRs as listings
 - list repo issues and PRs
 - list issues in any repo you own
+- list issues you have authored in any repo
 - cycle between issues/PRs/all
 - cycle between open/closed/all issues/PRs
-- quick jump to any issue/PR or repo in a listing with imenu.
+- sort issues/PRs (serverside)
+- quick jump to any issue/PR or repo in a listing with =imenu=.
 - search in repo issues/PRs
 
 
-- act on an issue/PR from the listing (edit, edit title, comment, close, reopen, delete)
+- act on an issue/PR from the listing (edit, edit title, comment, close, reopen, delete, add label)
 
 ** viewing issues/PRs
 - view issue/PR discussion
@@ -76,6 +80,8 @@ Forgejo's API is vast. Currently =fj.el= just implements a few basic things:
 - display diff of entire PR
 - merge PR
 - browse URL of view or entry at point
+- add reactions to item at point
+- add labels to item.
 
 ** notifications
 - view your notifications
@@ -104,7 +110,9 @@ If you want to insert a link to a line in your source files, consider using http
 
 ** performance
 
-Unfortunately =fj.el= is pretty slow at loading issues/PRs with lots of comments and other timeline elements. The relevant code was recently re-written to be partly async, but the performance is still terrible. Any ideas or assistance here would be welcome.
+Unfortunately =fj.el= is pretty slow at loading issues/PRs with lots of comments and other timeline elements. The relevant code was recently re-written to be partly async, and the rendering of HTML in item bodies was recently overhauled, but the performance is still terrible. This leads me to believe it is actually to do with the Forgejo API (as for example, my abominable old rendering code worked for 100 items with Lemmy, but couldn't do 30 items with Foregejo.)
+
+There is a defcustom, =fj-timeline-default-items=, with a default value of 15, meaning we load 15 timeline elements by default. If you find the performance is no problem on longer items, you can increase this value. (The default apart from this setting would be 30.)
 
 * contributions
 
@@ -256,21 +264,21 @@ Repo settings transient:
 |           | fj-item-view-edit-comment        | Edit the comment at point.                                          |
 | e         | fj-item-view-edit-item-at-point  | Edit issue or comment at point in item view mode.                   |
 |           | fj-item-view-mode                | Major mode for viewing items.                                       |
-|           | fj-item-view-more                | Append more timeline items to the current view, asynchronously.     |
+| >         | fj-item-view-more                | Load more items to the timeline, if it has more items.              |
 | o         | fj-item-view-reopen              | Reopen item being viewed.                                           |
 | C-M-q     | fj-kill-all-buffers              | Kill all fj buffers.                                                |
+|           | fj-list-authored-issues          | Return issues authored by `fj-user', in any repo.                   |
+|           | fj-list-authored-pulls           | Return pulls authored by `fj-user', in any repo.                    |
 | I         | fj-list-issues                   | List issues for current REPO with default sorting.                  |
 |           | fj-list-issues-+-pulls           | List issues and pulls for REPO by OWNER, filtered by STATE.         |
 |           | fj-list-issues-all               | Display all ISSUES for REPO by OWNER in tabulated list view.        |
 |           | fj-list-issues-by-label          | List issues in REPO by OWNER, filtering by label.                   |
 |           | fj-list-issues-by-milestone      | List issues in REPO by OWNER, filtering by milestone.               |
 |           | fj-list-issues-closed            | Display closed ISSUES for REPO by OWNER in tabulated list view.     |
-|           | fj-list-issues-do                | Display ISSUES in a tabulated list view.                            |
 | s         | fj-list-issues-search            | Search current repo issues for QUERY.                               |
 | C-c C-x   | fj-list-issues-sort              | Reload current issues listing, prompting for a sort type.           |
 |           | fj-list-items                    | List issues or pulls for REPO by OWNER, filtered by STATE and TYPE. |
 | W         | fj-list-own-issues               | List issues in repos owned by `fj-user'.                            |
-|           | fj-list-own-items                | List items of TYPE in repos owned by `fj-user'.                     |
 |           | fj-list-own-pulls                | List pulls in repos owned by `fj-user'.                             |
 | O         | fj-list-own-repos                | List repos for `fj-user'.                                           |
 | C-c C-x   | fj-list-own-repos-read           | List repos for `fj-user', prompting for an order type.              |

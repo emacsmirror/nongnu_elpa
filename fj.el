@@ -6,7 +6,7 @@
 ;; Package-Requires: ((emacs "29.1") (fedi "0.2") (tp "0.5") (transient) (magit))
 ;; Keywords: git, convenience
 ;; URL: https://codeberg.org/martianh/fj.el
-;; Version: 0.16
+;; Version: 0.17
 ;; Separator: -
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -481,6 +481,11 @@ If we fail, return `fj-user'." ;; poss insane
   (if (eq major-mode #'fj-repo-tl-mode)
       (fj--get-tl-col 1)
     (or (fj--get-buffer-spec :owner)
+        ;; If no owner in buf-spec, perhaps we are viewing issues from
+        ;; `fj-list-search-items' (fj-owned-issues-tl-mode) , i.e. issues
+        ;; we authored in non-owned repos or similar:
+        (map-nested-elt (fj--property 'fj-item-data)
+                        '(repository owner))
         fj-user))) ;; FIXME: fallback hack
 
 (defun fj--repo-name ()
@@ -1192,8 +1197,8 @@ MILESTONES and LABELS are comma-separated lists."
 QUERY, STATE, TYPE, CREATED, ASSIGNED, and MENTIONED are all for
 `fj-issues-search'."
   (interactive)
-  (fj-list-own-items
-   query state "pulls" created assigned mentioned))
+  (fj-list-search-items
+   query state "pulls" created assigned mentioned fj-user))
 
 (defun fj-list-own-issues (&optional query state
                                      created assigned mentioned)
@@ -1201,23 +1206,39 @@ QUERY, STATE, TYPE, CREATED, ASSIGNED, and MENTIONED are all for
 QUERY, STATE, TYPE, CREATED, ASSIGNED, and MENTIONED are all for
 `fj-issues-search'."
   (interactive)
-  (fj-list-own-items
-   query state "issues" created assigned mentioned))
+  (fj-list-search-items
+   query state "issues" created assigned mentioned fj-user))
 
-(defun fj-list-own-items (&optional query state type
-                                    created assigned mentioned page)
-  "List items of TYPE in repos owned by `fj-user'.
-QUERY, STATE, TYPE, CREATED, ASSIGNED, MENTIONED and PAGE are all for
-`fj-issues-search'."
+(defun fj-list-authored-issues ()
+  "Return issues authored by `fj-user', in any repo."
   (interactive)
+  (fj-list-authored-items nil nil "issues"))
+
+(defun fj-list-authored-pulls ()
+  "Return pulls authored by `fj-user', in any repo."
+  (interactive)
+  (fj-list-authored-items nil nil "pulls"))
+
+(defun fj-list-authored-items (&optional query state type
+                                         assigned mentioned)
+  "List issues created by `fj-user'.
+QUERY, STATE, TYPE, ASSIGNED, and MENTIONED are all for
+`fj-issues-search'."
+  (fj-list-search-items query state type "true" assigned mentioned))
+
+(defun fj-list-search-items (&optional query state type
+                                       created assigned mentioned owner page)
+  "List items of TYPE in repos owned by `fj-user'.
+QUERY, STATE, TYPE, CREATED, ASSIGNED, MENTIONED, OWNER, and PAGE are
+all for `fj-issues-search'."
   ;; NB: defaults are now required for buff spec:
   (let ((state (or state "open"))
         (type (or type "issues"))
         (items
          (fj-issues-search state nil nil query nil type nil nil
-                           assigned created mentioned nil nil fj-user
+                           assigned created mentioned nil nil owner
                            nil page))
-        (buf-name (format "*fj-user-repos-%s*" type))
+        (buf-name (format "*fj-search-%s*" (or type "items")))
         (prev-buf (buffer-name (current-buffer)))
         (prev-mode major-mode))
     ;; FIXME refactor with `fj-list-issues'? just tab list entries fun and
@@ -1229,11 +1250,11 @@ QUERY, STATE, TYPE, CREATED, ASSIGNED, MENTIONED and PAGE are all for
       (tabulated-list-init-header)
       (tabulated-list-print)
       (setq fj-buffer-spec
-            `( :owner ,fj-user
-               :viewfun fj-list-own-items
+            `( :owner ,owner
+               :viewfun fj-list-search-items
                :viewargs ( :query ,query :state ,state :type ,type
                            :created ,created :assigned ,assigned
-                           :mentioned ,mentioned
+                           :mentioned ,mentioned :owner ,owner
                            :page ,page)))
       (fj-other-window-maybe
        prev-buf (format "-%s*" type) #'string-suffix-p prev-mode)
@@ -1502,7 +1523,8 @@ CB is a callback, called on JSON response as first arg, followed by CBARGS."
          (url (fj-api endpoint))
          ;; NB: limit only works if page specified:
          (params (fedi-opt-params page limit)))
-    (apply #'fedi-http--get-json-async url params cb cbargs)))
+    (fj-authorized-request "GET"
+      (apply #'fedi-http--get-json-async url params cb cbargs))))
 
 (defun fj-get-comment (repo owner issue &optional comment)
   "GET data for COMMENT of ISSUE in REPO.
@@ -1513,9 +1535,11 @@ OWNER is the repo owner."
                            owner repo comment)))
     (fj-get endpoint)))
 
-(defun fj-issue-comment (&optional repo owner issue comment)
+(defun fj-issue-comment (&optional repo owner issue comment
+                                   close)
   "Add COMMENT to ISSUE in REPO.
-OWNER is the repo owner."
+OWNER is the repo owner.
+With arg CLOSE, also close ISSUE."
   (interactive "P")
   (let* ((repo (fj-read-user-repo repo))
          (issue (or issue (fj-read-repo-issue repo)))
@@ -1526,7 +1550,10 @@ OWNER is the repo owner."
          (response (fj-post url params)))
     (fedi-http--triage response
                        (lambda (_)
-                         (message "comment created!")))))
+                         (if (not close)
+                             (message "comment created!")
+                           (fj-issue-close repo owner issue)
+                           (message "comment created, issue closed!"))))))
 
 (defun fj-comment-patch (repo owner id &optional params issue json)
   "Edit comment with ID in REPO owned by OWNER.
@@ -2043,6 +2070,7 @@ If REPO is provided, also include a repo column."
                                    state ,.state
                                    type fj-owned-issues-repo-button
                                    item ,type
+                                   fj-item-data ,issue
                                    fj-tab-stop t)))
           (,.user.username face fj-user-face
                            id ,.id
@@ -2061,6 +2089,7 @@ If REPO is provided, also include a repo column."
            id ,.id
            state ,.state
            type fj-issue-button
+           fj-item-data ,issue
            item ,type)])))))
 
 (defun fj-format-tl-title (str &optional state face verbatim-face)
@@ -2215,7 +2244,6 @@ prompt for a repo to list.
 Optionally specify the STATE filter (open, closed, all), and the
 TYPE filter (issues, pulls, all).
 QUERY is a search query to filter by."
-  (interactive "P")
   (let* ((repo (fj-read-user-repo repo))
          (owner (or owner fj-user))
          (type (or type "issues"))
@@ -2705,6 +2733,8 @@ PAGE and LIMIT are for `fj-issue-get-timeline'."
     ;; (timeline (fj-issue-get-timeline repo owner number page limit)))
     (fedi-with-buffer (format "*fj-%s-item-%s*" repo number)
         'fj-item-view-mode ow
+      (let ((enable-local-variables :all))
+        (hack-dir-local-variables-non-file-buffer))
       (fj-render-item repo owner item number type page limit)
       ;; if we have paginated, re-append all pages sequentially:
       (if (fj-string-number> page "1")
@@ -2778,28 +2808,32 @@ If INIT-PAGE, do not update :page in viewargs."
   (with-current-buffer buf
     (save-excursion
       (goto-char point)
-      (if (not json)
-          ;; FIXME: this should only occur if called interactively!:
-          nil ;(user-error "No more items")
-        (fj-destructure-buf-spec (viewargs)
-          ;; unless init-page arg, increment page in viewargs
-          (let* ((page (plist-get viewargs :page))
-                 (args (if init-page
-                           viewargs
-                         (plist-put viewargs :page (fj-inc-or-2 page)))))
-            (setq fj-buffer-spec
-                  (plist-put fj-buffer-spec :viewargs args))
-            (message "Loading comments...")
-            (let ((inhibit-read-only t))
-              ;; FIXME: we need .user.username owner args for new elements:
-              (fj-render-timeline json))
-            (message "Loading comments... Done")
-            (when end-page ;; if we are re-paginating, go again maybe:
-              (fj-reload-paginated-pages-maybe end-page page))
-            ;; shr-render-region and regex props:
-            (fj-render-item-bodies)
-            ;; maybe add a "more" link:
-            (fj-issue-timeline-more-link-mayb)))))))
+      (cond ((and (not json)
+                  (called-interactively-p 'any))
+             (user-error "No more items"))
+            ((equal 'errors (caar json))
+             (user-error "I am Error: %s - %s"
+                         (alist-get 'message json) json))
+            (t
+             (fj-destructure-buf-spec (viewargs)
+               ;; unless init-page arg, increment page in viewargs
+               (let* ((page (plist-get viewargs :page))
+                      (args (if init-page
+                                viewargs
+                              (plist-put viewargs :page (fj-inc-or-2 page)))))
+                 (setq fj-buffer-spec
+                       (plist-put fj-buffer-spec :viewargs args))
+                 (message "Loading comments...")
+                 (let ((inhibit-read-only t))
+                   ;; FIXME: we need .user.username owner args for new elements:
+                   (fj-render-timeline json))
+                 (message "Loading comments... Done")
+                 (when end-page ;; if we are re-paginating, go again maybe:
+                   (fj-reload-paginated-pages-maybe end-page page))
+                 ;; shr-render-region and regex props:
+                 (fj-render-item-bodies)
+                 ;; maybe add a "more" link:
+                 (fj-issue-timeline-more-link-mayb))))))))
 
 (defun fj-reload-paginated-pages-maybe (end-page page)
   "Call `fj-reload-paginated-pages' maybe.
@@ -3743,7 +3777,12 @@ Optionally specify REF, a commit, branch, or tag."
   (interactive)
   (fj-with-entry
    (let* ((number (fj--get-tl-col 0))
-          (owner (fj--get-buffer-spec :owner))
+          (owner (or (fj--get-buffer-spec :owner)
+                     ;; If no owner in buf-spec, perhaps we are viewing
+                     ;; issues from `fj-list-search-items', i.e. issues we
+                     ;; authored in non-owned repos or similar:
+                     (map-nested-elt (fj--property 'fj-item-data)
+                                     '(repository owner))))
           (repo (fj--repo-col-or-buf-spec))
           (item (fj--property 'item)))
      (fj-item-view repo owner number
@@ -4005,12 +4044,13 @@ Inject INIT-TEXT into the buffer, for editing."
                 'new-comment
               'new-issue)))))
 
-(defun fj-compose-send ()
+(defun fj-compose-send (&optional prefix)
   "Submit the issue or comment to your Forgejo instance.
-Call response and update functions."
+Call response and update functions.
+With a prefix argument, also close issue if sending a comment."
   ;; FIXME: handle `fj-compose-repo-owner' being unset?
   ;; if we want to error about it, we also need a way to set it.
-  (interactive)
+  (interactive "P")
   (let ((buf (buffer-name))
         (type fj-compose-item-type))
     (if (and (or (eq type 'new-issue)
@@ -4026,7 +4066,7 @@ Call response and update functions."
                  (fj-issue-comment repo
                                    fj-compose-repo-owner
                                    fj-compose-issue-number
-                                   body))
+                                   body prefix))
                 ('edit-comment
                  (fj-issue-comment-edit repo
                                         fj-compose-repo-owner
