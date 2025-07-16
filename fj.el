@@ -2198,8 +2198,10 @@ If we are not in a repo, call `fj-list-issues-do' without using
 git config."
   (interactive "P")
   (if (or current-prefix-arg ;; still allow completing-read a repo
+          ;; NB: this is T in fj buffers when no source files:
           (not (magit-inside-worktree-p :noerror)))
-      (fj-list-issues-do repo owner state type) ;; fall back to `fj-user' repos
+      ;; fall back to `fj--repo-owner' repos:
+      (fj-list-issues-do repo owner state type)
     ;; if in fj buffer, respect its buf-spec:
     (if (string-prefix-p "*fj-" (buffer-name (current-buffer)))
         (let* ((repo (fj-read-user-repo repo))
