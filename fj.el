@@ -4784,6 +4784,17 @@ PAGE and LIMIT are for pagination."
                        (lambda (_)
                          (message "Repo %s/%s watched!" owner repo)))))
 
+(defun fj-unwatch-repo ()
+  "Watch repo at point or in current view."
+  (interactive)
+  (let* ((owner (fj--repo-owner))
+         (repo (fj--repo-name))
+         (endpoint (format "repos/%s/%s/subscription" owner repo))
+         (resp (fj-delete endpoint)))
+    (fedi-http--triage resp
+                       (lambda (_)
+                         (message "Repo %s/%s unwatched!" owner repo)))))
+
 ;;; TOPICS
 ;; topics are set in fj-transient.el
 
