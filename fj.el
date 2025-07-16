@@ -2175,7 +2175,15 @@ Nil if we fail to parse."
   (fj-list-items repo owner state "all"))
 
 (defun fj-list-pulls (repo &optional owner state)
-  "List pulls for REPO by OWNER, filtered by STATE."
+  "List pulls for REPO by OWNER, filtered by STATE.
+If we are in a repo, don't assume `fj-user' owns it. In that case we
+fetch owner/repo from git config.
+If we are not in a repo, call `fj-list-issues-do' without using git
+config.
+With a prefix arg, prompt for a repo.
+With 2 prefix args, prompt for a repo, and ensure that its owner is
+`fj-user'.
+The default sort value follows `fj-issues-sort-default'."
   (interactive "P")
   (fj-list-items repo owner state "pulls"))
 
@@ -2185,7 +2193,10 @@ If we are in a repo, don't assume `fj-user' owns it. In that case we
 fetch owner/repo from git config.
 If we are not in a repo, call `fj-list-issues-do' without using git
 config.
-The default sort value is \"latest\"."
+With a prefix arg, prompt for a repo.
+With 2 prefix args, prompt for a repo and ensure that its owner is
+`fj-user'.
+The default sort value follows `fj-issues-sort-default'."
   (interactive "P")
   (fj-list-items repo nil nil "issues"))
 
@@ -2198,7 +2209,7 @@ fetch owner/repo from git config and check if it might have a foregejo
 remote.
 If we are not in a repo, call `fj-list-issues-do' without using
 git config."
-  (interactive "P")
+  ;; (interactive "P")
   (if (or current-prefix-arg ;; still allow completing-read a repo
           ;; NB: this is T in fj buffers when no source files:
           (not (magit-inside-worktree-p :noerror)))
@@ -2237,17 +2248,21 @@ STATE, TYPE and QUERY are for `fj-list-issues-do'."
 
 (defvar fj-repo-data nil) ;; for transients for now
 
-(defun fj-list-issues-do (&optional repo owner state type query
+(defun fj-list-issues-do (&optional arg owner state type query
                                     labels milestones page limit sort)
   "Display ISSUES in a tabulated list view.
 Either for `fj-current-repo' or REPO, a string, owned by OWNER.
 With a prefix arg, or if REPO and `fj-current-repo' are nil,
 prompt for a repo to list.
+With two prefix args, also mandate that owner is `fj-user'.
 Optionally specify the STATE filter (open, closed, all), and the
 TYPE filter (issues, pulls, all).
-QUERY is a search query to filter by."
-  (let* ((repo (fj-read-user-repo repo))
-         (owner (or owner (fj--repo-owner)))
+QUERY is a search query to filter by.
+SORT defaults to `fj-issues-sort-default'."
+  (let* ((repo (fj-read-user-repo arg))
+         (owner (if (equal '(16) arg) ;; 2 prefixes
+                    fj-user
+                  (or owner (fj--repo-owner))))
          (type (or type "issues"))
          (issues (fj-repo-get-issues repo owner state type query
                                      labels milestones page limit sort))
