@@ -2024,18 +2024,8 @@ the label's color, as per `fj-propertize-label-names'."
 
 (define-button-type 'fj-owned-issues-repo-button
   'follow-link t
-  'action 'fj-owned-issues-list-repo-issues
+  'action 'fj-repo-tl-list-issues
   'help-echo "RET: View this repo's issues.")
-
-;; FIXME: refactor with `fj-issue-tl-mode'? just the name seq elt changes
-(defun fj-owned-issues-list-repo-issues (&optional _)
-  "View issues of current repo from tabulated repos listing."
-  (interactive)
-  (fj-with-repo-entry
-   (let* ((entry (tabulated-list-get-entry))
-          (name (car (seq-elt entry 2)))
-          (owner  (fj--repo-owner)))
-     (fj-list-issues-do name owner))))
 
 (defun fj-issue-tl-entries (issues &optional repo)
   "Return tabluated list entries for ISSUES.
@@ -3613,7 +3603,7 @@ unset any default values."
   (interactive)
   (fj-with-repo-entry
    (let* ((entry (tabulated-list-get-entry))
-          (name (car (seq-first entry)))
+          (name (fj--repo-name))
           (owner (fj--repo-owner)))
      (fj-list-issues-do name owner))))
 
