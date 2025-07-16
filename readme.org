@@ -110,7 +110,7 @@ If you want to insert a link to a line in your source files, consider using http
 
 ** performance
 
-Unfortunately =fj.el= is pretty slow at loading issues/PRs with lots of comments and other timeline elements. The relevant code was recently re-written to be partly async, and the rendering of HTML in item bodies was recently overhauled, but the performance is still terrible. This leads me to believe it is actually to do with the Forgejo API (as for example, my abominable old rendering code worked for 100 items with Lemmy, but couldn't do 30 items with Foregejo.)
+Unfortunately =fj.el= is pretty slow at loading issues/PRs with lots of comments and other timeline elements. The relevant code was recently re-written to be partly async, and the rendering of HTML in item bodies was recently overhauled, but the performance is still terrible. This leads me to believe it is actually to do with the Forgejo API (as for example, my abominable old rendering code worked for 100+ items with Lemmy, but couldn't do 30 items in a timeley manner with Forgejo.)
 
 There is a defcustom, =fj-timeline-default-items=, with a default value of 15, meaning we load 15 timeline elements by default. If you find the performance is no problem on longer items, you can increase this value. (The default apart from this setting would be 30.)
 
