@@ -1369,26 +1369,26 @@ OWNER is the repo owner."
          (endpoint (format "repos/%s/%s/issues/%s" owner repo issue)))
     (fj-patch endpoint params)))
 
-(defun fj-issue-edit (&optional repo owner issue)
-  "Edit ISSUE body in REPO.
-OWNER is the repo owner."
-  (interactive)
-  (fj-with-own-issue ;; or owner?
-   (let* ((repo (fj-read-user-repo repo))
-          (issue (or issue (fj-read-repo-issue repo)))
-          (owner (or owner (fj--repo-owner)))
-          (data (fj-get-item repo owner issue))
-          (old-body (alist-get 'body data))
-          (new-body (read-string "Edit issue body: " old-body))
-          (response (fj-issue-patch repo owner issue nil new-body)))
-     (fedi-http--triage response
-                        (lambda (_)
-                          (message "issue edited!"))))))
+;; (defun fj-issue-edit (&optional repo owner issue)
+;;   "Edit ISSUE body in REPO.
+;; OWNER is the repo owner."
+;;   (interactive)
+;;   (fj-with-own-issue ;; or owner?
+;;    (let* ((repo (fj-read-user-repo repo))
+;;           (issue (or issue (fj-read-repo-issue repo)))
+;;           (owner (or owner (fj--repo-owner)))
+;;           (data (fj-get-item repo owner issue))
+;;           (old-body (alist-get 'body data))
+;;           (new-body (read-string "Edit issue body: " old-body))
+;;           (response (fj-issue-patch repo owner issue nil new-body)))
+;;      (fedi-http--triage response
+;;                         (lambda (_)
+;;                           (message "issue edited!"))))))
 
 (defun fj-issue-edit-title (&optional repo owner issue)
   "Edit ISSUE title in REPO.
 OWNER is the repo owner."
-  (interactive)
+  ;; (interactive)
   (let* ((repo (fj-read-user-repo repo))
          (issue (or issue (fj-read-repo-issue repo)))
          (owner (or owner ;; FIXME: owner
@@ -1406,7 +1406,7 @@ OWNER is the repo owner."
 (defun fj-issue-close (&optional repo owner issue state)
   "Close ISSUE in REPO or set to STATE.
 OWNER is the repo owner."
-  (interactive "P")
+  ;; (interactive "P")
   (let* ((repo (fj-read-user-repo repo))
          (issue (or issue (fj-read-repo-issue repo)))
          (action-str (if (string= state "open") "Open" "Close"))
@@ -1420,7 +1420,7 @@ OWNER is the repo owner."
 (defun fj-issue-delete (&optional repo owner issue no-confirm)
   "Delete ISSUE in REPO of OWNER.
 Optionally, NO-CONFIRM means don't ask before deleting."
-  (interactive "P")
+  ;; (interactive "P")
   (let* ((repo (fj-read-user-repo repo))
          (issue (or issue (fj-read-repo-issue repo))))
     (when (or no-confirm
@@ -1589,7 +1589,7 @@ OWNER is the repo owner."
   "Add COMMENT to ISSUE in REPO.
 OWNER is the repo owner.
 With arg CLOSE, also close ISSUE."
-  (interactive "P")
+  ;; (interactive "P")
   (let* ((repo (fj-read-user-repo repo))
          (issue (or issue (fj-read-repo-issue repo)))
          (owner (or owner (fj--repo-owner)))
@@ -1615,7 +1615,7 @@ PARAMS."
   "Edit comment with ID in REPO.
 OWNER is the repo owner.
 NEW-BODY is the new comment text to send."
-  (interactive "P")
+  ;; (interactive "P")
   (let* ((repo (fj-read-user-repo repo))
          (id (or id (fj--property 'fj-comment-id)))
          (owner (or owner (fj--repo-owner)))
@@ -1822,7 +1822,7 @@ Return an alist, with each cons being (name . id)"
 (defun fj-issue-label-add (&optional repo owner issue)
   "Add a label to ISSUE in REPO by OWNER."
   ;; POST "repos/%s/%s/issues/%s/labels"
-  (interactive)
+  ;; (interactive)
   (let* ((repo (fj-read-user-repo repo))
          (issue (or issue
                     (fj--get-buffer-spec :item)
@@ -1847,7 +1847,7 @@ Return an alist, with each cons being (name . id)"
 
 (defun fj-issue-label-remove (&optional repo owner issue)
   "Remove label from ISSUE in REPO by OWNER."
-  (interactive)
+  ;; (interactive)
   (let* ((repo (fj-read-user-repo repo))
          (issue (or issue
                     (fj--get-buffer-spec :item)
@@ -2003,23 +2003,23 @@ the label's color, as per `fj-propertize-label-names'."
 (defvar-keymap fj-issue-tl-mode-map
   :doc "Map for `fj-issue-tl-mode', a tabluated list of issues."
   :parent fj-generic-tl-map ; has nav
-  "C"        #'fj-issues-tl-comment
-  "e"        #'fj-issues-tl-edit
-  "t"        #'fj-issues-tl-edit-title
+  "C"        #'fj-comment
+  "e"        #'fj-item-edit
+  "t"        #'fj-item-edit-title
   "v"        #'fj-issues-tl-view
-  "k"        #'fj-issues-tl-close
-  "K"        #'fj-issues-tl-delete
+  "k"        #'fj-item-close
+  "K"        #'fj-item-delete
   "c"        #'fj-create-issue
   "C-c C-d"  #'fj-cycle-sort-or-relation
   "C-c C-c"  #'fj-cycle-state
   "C-c C-s"  #'fj-cycle-type
-  "o"        #'fj-issues-tl-reopen
+  "o"        #'fj-item-reopen
   "s"        #'fj-list-issues-search
   "B"        #'fj-tl-browse-entry
   "u"        #'fj-repo-copy-clone-url
   "L"        #'fj-repo-commit-log
   "j"        #'imenu
-  "l"        #'fj-issues-tl-label-add
+  "l"        #'fj-item-label-add
   "U"        #'fj-copy-pr-url)
 
 (define-derived-mode fj-issue-tl-mode tabulated-list-mode
@@ -2590,16 +2590,16 @@ Also propertize all handles, tags, commits, and URLs."
 (defvar-keymap fj-item-view-mode-map
   :doc "Keymap for `fj-item-view-mode'."
   :parent  fj-generic-map
-  "e" #'fj-item-view-edit-item-at-point
-  "c" #'fj-item-view-comment
-  "k" #'fj-item-view-close
-  "o" #'fj-item-view-reopen
-  "K" #'fj-item-view-comment-delete
-  "t" #'fj-issue-view-edit-title
+  "e" #'fj-item-edit
+  "c" #'fj-item-comment
+  "k" #'fj-item-close
+  "o" #'fj-item-reopen
+  "K" #'fj-item-delete
+  "t" #'fj-item-edit-title
   "s" #'fj-list-issues-search
   "D" #'fj-view-pull-diff
   "L" #'fj-repo-commit-log
-  "l" #'fj-issue-label-add
+  "l" #'fj-item-label-add
   "M" #'fj-merge-pull
   "r" #'fj-add-reaction
   ">" #'fj-item-view-more)
@@ -2930,10 +2930,9 @@ Alternatively, call OP on them instead."
 
 ;;; ITEM VIEW ACTIONS
 
-;; TODO: merge simple action functions
 (defun fj-item-view-close (&optional state)
   "Close item being viewed, or set to STATE."
-  (interactive)
+  ;; (interactive)
   (fj-with-item-view
    (fj-destructure-buf-spec (item owner repo)
      (fj-issue-close repo owner item state)
@@ -2941,19 +2940,19 @@ Alternatively, call OP on them instead."
 
 (defun fj-item-view-reopen ()
   "Reopen item being viewed."
-  (interactive)
+  ;; (interactive)
   (fj-item-view-close "open"))
 
 (defun fj-item-view-edit-item-at-point ()
   "Edit issue or comment at point in item view mode."
-  (interactive)
+  ;; (interactive)
   (if (fj--property 'fj-comment)
       (fj-item-view-edit-comment)
     (fj-item-view-edit)))
 
 (defun fj-item-view-edit ()
   "Edit the item currently being viewed."
-  (interactive)
+  ;; (interactive)
   (fj-with-own-issue
    (fj-destructure-buf-spec (item repo owner title body)
      (fj-issue-compose :edit nil 'issue body)
@@ -2963,9 +2962,9 @@ Alternatively, call OP on them instead."
            fj-compose-issue-number item)
      (fedi-post--update-status-fields))))
 
-(defun fj-issue-view-edit-title ()
+(defun fj-item-view-edit-title ()
   "Edit the title of the item being viewed."
-  (interactive)
+  ;; (interactive)
   (fj-with-own-issue-or-repo
    (fj-destructure-buf-spec (repo owner item)
      (fj-issue-edit-title repo owner item)
@@ -2973,7 +2972,7 @@ Alternatively, call OP on them instead."
 
 (defun fj-item-view-comment ()
   "Comment on the item currently being viewed."
-  (interactive)
+  ;; (interactive)
   (fj-destructure-buf-spec (item repo owner title)
     (fj-issue-compose nil 'fj-compose-comment-mode 'comment)
     (setq fj-compose-repo repo
@@ -2984,7 +2983,7 @@ Alternatively, call OP on them instead."
 
 (defun fj-item-view-edit-comment ()
   "Edit the comment at point."
-  (interactive)
+  ;; (interactive)
   (fj-with-own-comment
    (fj-destructure-buf-spec (repo owner)
      (let ((id (fj--property 'fj-comment-id))
@@ -2996,9 +2995,25 @@ Alternatively, call OP on them instead."
              fj-compose-issue-number id)
        (fedi-post--update-status-fields)))))
 
+(defun fj-item-view-delete-item-at-point ()
+  "Edit issue or comment at point in item view mode."
+  ;; (interactive)
+  (if (fj--property 'fj-comment)
+      (fj-item-view-comment-delete)
+    (fj-item-view-delete)))
+
+(defun fj-item-view-delete (&optional _)
+  "Delete item being viewed."
+  ;; (interactive)
+  (fj-with-item-view
+   (fj-destructure-buf-spec (repo owner item)
+     (when (y-or-n-p (format "Delete issue %s in %s/%s?" item owner repo))
+       (fj-issue-delete repo owner item :no-confirm)
+       (kill-buffer)))))
+
 (defun fj-item-view-comment-delete ()
   "Delete comment at point."
-  (interactive)
+  ;; (interactive)
   (fj-with-own-comment
    (fj-destructure-buf-spec (repo owner)
      (let* ((id (fj--property 'fj-comment-id))
@@ -3854,7 +3869,7 @@ Optionally specify REF, a commit, branch, or tag."
 
 (defun fj-issues-tl-edit ()
   "Edit issue from tabulated issues listing."
-  (interactive)
+  ;; (interactive)
   (fj-with-own-entry
    (let* ((number (fj--get-tl-col 0))
           (owner (fj--get-buffer-spec :owner))
@@ -3872,7 +3887,7 @@ Optionally specify REF, a commit, branch, or tag."
 
 (defun fj-issues-tl-comment ()
   "Comment on issue from tabulated issues listing."
-  (interactive)
+  ;; (interactive)
   (fj-with-entry
    (let* ((number (fj--get-tl-col 0))
           (owner (fj--get-buffer-spec :owner))
@@ -3888,7 +3903,7 @@ Optionally specify REF, a commit, branch, or tag."
 
 (defun fj-issues-tl-close (&optional _)
   "Close current issue from tabulated issues listing."
-  (interactive)
+  ;; (interactive)
   (fj-with-entry
    ;; TODO make check work for "all": need to prop each tl entry
    (fj-with-own-issue-or-repo
@@ -3903,7 +3918,7 @@ Optionally specify REF, a commit, branch, or tag."
 
 (defun fj-issues-tl-delete (&optional _)
   "Delete current issue from tabulated issues listing."
-  (interactive)
+  ;; (interactive)
   (fj-with-entry
    (fj-with-own-repo
     (let* ((entry (tabulated-list-get-entry))
@@ -3916,7 +3931,7 @@ Optionally specify REF, a commit, branch, or tag."
 
 (defun fj-issues-tl-reopen (&optional _)
   "Reopen current issue from tabulated issues listing."
-  (interactive)
+  ;; (interactive)
   (fj-with-entry
    (if (string= (fj--property 'state) "open")
        (user-error "Issue already open")
@@ -3929,7 +3944,7 @@ Optionally specify REF, a commit, branch, or tag."
 
 (defun fj-issues-tl-edit-title ()
   "Edit issue title from issues tabulated list view."
-  (interactive)
+  ;; (interactive)
   (fj-with-own-issue-or-repo
    (let* ((entry (tabulated-list-get-entry))
           (repo (fj--repo-col-or-buf-spec))
@@ -3940,7 +3955,7 @@ Optionally specify REF, a commit, branch, or tag."
 
 (defun fj-issues-tl-label-add ()
   "Add label to issue from tabulated issues listing."
-  (interactive)
+  ;; (interactive)
   (fj-with-entry
    (let* ((number (fj--get-tl-col 0))
           (owner (fj--get-buffer-spec :owner))
@@ -3949,12 +3964,78 @@ Optionally specify REF, a commit, branch, or tag."
 
 (defun fj-issues-tl-label-remove ()
   "Remove label from issue from tabulated issues listing."
-  (interactive)
+  ;; (interactive)
   (fj-with-entry
    (let* ((number (fj--get-tl-col 0))
           (owner (fj--get-buffer-spec :owner))
           (repo (fj--repo-col-or-buf-spec)))
      (fj-issue-label-remove repo owner number))))
+
+;;; GENERIC ITEM COMMANDS
+
+(defun fj-comment ()
+  "Comment on the item at point or being viewed."
+  (interactive)
+  (pcase major-mode
+    ('fj-item-view-mode (fj-item-view-comment))
+    ('fj-issue-tl-mode (fj-issues-tl-comment))
+    (_ (user-error "No issue?"))))
+
+(defun fj-item-edit ()
+  "Edit the item at point or being viewed."
+  (interactive)
+  (pcase major-mode
+    ('fj-item-view-mode (fj-item-view-edit-item-at-point))
+    ('fj-issue-tl-mode (fj-issues-tl-close))
+    (_ (user-error "No issue?"))))
+
+(defun fj-item-edit-title ()
+  "Edit the title of the item at point or being viewed."
+  (interactive)
+  (pcase major-mode
+    ('fj-item-view-mode (fj-item-view-edit-title))
+    ('fj-issue-tl-mode (fj-issues-tl-edit-title))
+    (_ (user-error "No issue?"))))
+
+(defun fj-item-close ()
+  "Close the item at point or being viewed."
+  (interactive)
+  (pcase major-mode
+    ('fj-item-view-mode (fj-item-view-close))
+    ('fj-issue-tl-mode (fj-issues-tl-close))
+    (_ (user-error "No issue?"))))
+
+(defun fj-item-reopen ()
+  "Reopen the item at point or being viewed."
+  (interactive)
+  (pcase major-mode
+    ('fj-item-view-mode (fj-item-view-reopen))
+    ('fj-issue-tl-mode (fj-issues-tl-reopen))
+    (_ (user-error "No issue?"))))
+
+(defun fj-item-delete ()
+  "Delete the item at point or being viewed."
+  (interactive)
+  (pcase major-mode
+    ('fj-item-view-mode (fj-item-view-delete-item-at-point))
+    ('fj-issue-tl-mode (fj-issues-tl-delete))
+    (_ (user-error "No issue?"))))
+
+(defun fj-item-label-add ()
+  "Comment on the item at point or being viewed."
+  (interactive)
+  (pcase major-mode
+    ('fj-item-view-mode (fj-issue-label-add))
+    ('fj-issue-tl-mode (fj-issues-tl-label-add))
+    (_ (user-error "No issue?"))))
+
+(defun fj-item-label-remove ()
+  "Comment on the item at point or being viewed."
+  (interactive)
+  (pcase major-mode
+    ('fj-item-view-mode (fj-issue-label-remove))
+    ('fj-issue-tl-mode (fj-issues-tl-label-remove))
+    (_ (user-error "No issue?"))))
 
 ;;; COMPOSING
 
