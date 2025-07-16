@@ -103,8 +103,8 @@ If you want to insert a link to a line in your source files, consider using http
 * dependencies
 - =magit-post=, =magit-process= (for obtaining current repo)
 - [[https://codeberg.org/martianh/fedi.el][fedi.el]]
-- =markdown= command
-- tp.el
+- =markdown-mode=
+- [[https://codeberg.org/martianh/tp.el][tp.el]]
 
 * limitations
 
