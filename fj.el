@@ -870,20 +870,21 @@ X and Y are sorting args."
   "Return settings for the current user."
   (fj-get "user/settings"))
 
-(defun fj-get-user-repos (user &optional page limit order)
+(defun fj-get-user-repos (user &optional page limit)
   "GET request repos owned by USER.
-PAGE, LIMIT, ORDER."
+PAGE, LIMIT."
+  ;; NB: no order arg avail :/
   (let ((params (append
                  `(("limit" . ,(or limit (fj-default-limit))))
-                 (fedi-opt-params page order)))
+                 (fedi-opt-params page)))
         (endpoint (format "users/%s/repos" user)))
     (fj-get endpoint params)))
 
-(defun fj-user-repos-tl (&optional user page limit order)
+(defun fj-user-repos-tl (&optional user page limit)
   "View a tabulated list of respos for USER.
 PAGE, LIMIT, ORDER."
   (interactive "sView user repos: ")
-  (let* ((repos (fj-get-user-repos user page limit order))
+  (let* ((repos (fj-get-user-repos user page limit))
          (entries (fj-repo-tl-entries repos :no-owner))
          (buf (format "*fj-repos-%s*" user)))
     (fj-repos-tl-render buf entries #'fj-user-repo-tl-mode)
@@ -891,7 +892,7 @@ PAGE, LIMIT, ORDER."
       (setq fj-buffer-spec
             `( :owner ,user :url ,(concat fj-host "/" user)
                :viewargs ( :user ,user :page ,page
-                           :limit ,limit :order ,order)
+                           :limit ,limit)
                :viewfun fj-user-repos-tl)))))
 
 (defun fj-list-own-repos-read ()
