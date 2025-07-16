@@ -3413,24 +3413,6 @@ Sort must be a member of `fj-search-sorts'."
                             order page limit))))
     (fj-get "/repos/search" params)))
 
-;; use and rename the TL function
-;; (defun fj-repo-search (query &optional topic id mode)
-;;   "Search repos for QUERY.
-;; If TOPIC, QUERY is a search for topic keywords.
-;; ID is a user ID, which if given must own the repo.
-;; MODE must be a member of `fj-search-modes', else it is silently
-;; ignored."
-;;   (interactive "sSearch for repo: ")
-;;   (let* ((resp (fj-repo-search-do query topic id mode))
-;;          (data (alist-get 'data resp))
-;;          (cands (fj-get-repo-candidates data))
-;;          (completion-extra-properties
-;;           '(:annotation-function fj-repo-candidates-annot-fun))
-;;          (choice (completing-read "Repo: " cands))
-;;          (user (cl-fourth
-;;                 (assoc choice cands #'equal))))
-;;     (fj-list-issues-do choice user)))
-
 (defun fj-repo-candidates-annot-fun (cand)
   "Annocation function for `fj-repo-search'.
 Returns annotation for CAND, a candidate."
