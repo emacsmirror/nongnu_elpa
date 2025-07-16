@@ -3878,7 +3878,7 @@ Works in repo listings, issue listings, and item views."
 
 ;;; GENERIC ITEM ACTION COMMANDS
 
-(defun fj-comment ()
+(defun fj-item-comment ()
   "Comment on the item at point or being viewed."
   (interactive)
   (pcase major-mode
