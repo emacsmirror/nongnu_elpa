@@ -481,6 +481,11 @@ If we fail, return `fj-user'." ;; poss insane
   (if (eq major-mode #'fj-repo-tl-mode)
       (fj--get-tl-col 1)
     (or (fj--get-buffer-spec :owner)
+        ;; If no owner in buf-spec, perhaps we are viewing issues from
+        ;; `fj-list-search-items' (fj-owned-issues-tl-mode) , i.e. issues
+        ;; we authored in non-owned repos or similar:
+        (map-nested-elt (fj--property 'fj-item-data)
+                        '(repository owner))
         fj-user))) ;; FIXME: fallback hack
 
 (defun fj--repo-name ()
@@ -1192,8 +1197,8 @@ MILESTONES and LABELS are comma-separated lists."
 QUERY, STATE, TYPE, CREATED, ASSIGNED, and MENTIONED are all for
 `fj-issues-search'."
   (interactive)
-  (fj-list-own-items
-   query state "pulls" created assigned mentioned))
+  (fj-list-search-items
+   query state "pulls" created assigned mentioned fj-user))
 
 (defun fj-list-own-issues (&optional query state
                                      created assigned mentioned)
@@ -1201,23 +1206,39 @@ QUERY, STATE, TYPE, CREATED, ASSIGNED, and MENTIONED are all for
 QUERY, STATE, TYPE, CREATED, ASSIGNED, and MENTIONED are all for
 `fj-issues-search'."
   (interactive)
-  (fj-list-own-items
-   query state "issues" created assigned mentioned))
+  (fj-list-search-items
+   query state "issues" created assigned mentioned fj-user))
 
-(defun fj-list-own-items (&optional query state type
-                                    created assigned mentioned page)
-  "List items of TYPE in repos owned by `fj-user'.
-QUERY, STATE, TYPE, CREATED, ASSIGNED, MENTIONED and PAGE are all for
-`fj-issues-search'."
+(defun fj-list-authored-issues ()
+  "Return issues authored by `fj-user', in any repo."
   (interactive)
+  (fj-list-authored-items nil nil "issues"))
+
+(defun fj-list-authored-pulls ()
+  "Return pulls authored by `fj-user', in any repo."
+  (interactive)
+  (fj-list-authored-items nil nil "pulls"))
+
+(defun fj-list-authored-items (&optional query state type
+                                         assigned mentioned)
+  "List issues created by `fj-user'.
+QUERY, STATE, TYPE, ASSIGNED, and MENTIONED are all for
+`fj-issues-search'."
+  (fj-list-search-items query state type "true" assigned mentioned))
+
+(defun fj-list-search-items (&optional query state type
+                                       created assigned mentioned owner page)
+  "List items of TYPE in repos owned by `fj-user'.
+QUERY, STATE, TYPE, CREATED, ASSIGNED, MENTIONED, OWNER, and PAGE are
+all for `fj-issues-search'."
   ;; NB: defaults are now required for buff spec:
   (let ((state (or state "open"))
         (type (or type "issues"))
         (items
          (fj-issues-search state nil nil query nil type nil nil
-                           assigned created mentioned nil nil fj-user
+                           assigned created mentioned nil nil owner
                            nil page))
-        (buf-name (format "*fj-user-repos-%s*" type))
+        (buf-name (format "*fj-search-%s*" (or type "items")))
         (prev-buf (buffer-name (current-buffer)))
         (prev-mode major-mode))
     ;; FIXME refactor with `fj-list-issues'? just tab list entries fun and
@@ -1229,11 +1250,11 @@ QUERY, STATE, TYPE, CREATED, ASSIGNED, MENTIONED and PAGE are all for
       (tabulated-list-init-header)
       (tabulated-list-print)
       (setq fj-buffer-spec
-            `( :owner ,fj-user
-               :viewfun fj-list-own-items
+            `( :owner ,owner
+               :viewfun fj-list-search-items
                :viewargs ( :query ,query :state ,state :type ,type
                            :created ,created :assigned ,assigned
-                           :mentioned ,mentioned
+                           :mentioned ,mentioned :owner ,owner
                            :page ,page)))
       (fj-other-window-maybe
        prev-buf (format "-%s*" type) #'string-suffix-p prev-mode)
@@ -2049,6 +2070,7 @@ If REPO is provided, also include a repo column."
                                    state ,.state
                                    type fj-owned-issues-repo-button
                                    item ,type
+                                   fj-item-data ,issue
                                    fj-tab-stop t)))
           (,.user.username face fj-user-face
                            id ,.id
@@ -2067,6 +2089,7 @@ If REPO is provided, also include a repo column."
            id ,.id
            state ,.state
            type fj-issue-button
+           fj-item-data ,issue
            item ,type)])))))
 
 (defun fj-format-tl-title (str &optional state face verbatim-face)
@@ -3755,7 +3778,12 @@ Optionally specify REF, a commit, branch, or tag."
   (interactive)
   (fj-with-entry
    (let* ((number (fj--get-tl-col 0))
-          (owner (fj--get-buffer-spec :owner))
+          (owner (or (fj--get-buffer-spec :owner)
+                     ;; If no owner in buf-spec, perhaps we are viewing
+                     ;; issues from `fj-list-search-items', i.e. issues we
+                     ;; authored in non-owned repos or similar:
+                     (map-nested-elt (fj--property 'fj-item-data)
+                                     '(repository owner))))
           (repo (fj--repo-col-or-buf-spec))
           (item (fj--property 'item)))
      (fj-item-view repo owner number
