@@ -964,7 +964,7 @@ Unless paginating, set `fj-user' or `fj-extra-repos'")
                  (fj-put endpoint))))
     (fedi-http--triage resp
                        (lambda (_)
-                         (message "Repo %s %s!" repo
+                         (message "Repo %s/%s %s!" owner repo
                                   (if unstar "unstarred" "starred"))))))
 
 (defun fj-fork-repo (repo owner &optional name org)
@@ -975,7 +975,7 @@ Unless paginating, set `fj-user' or `fj-extra-repos'")
          (resp (fj-post endpoint params :json)))
     (fedi-http--triage resp
                        (lambda (_)
-                         (message "Repo %s forked!" repo)))))
+                         (message "Repo %s/%s forked!" owner repo)))))
 
 (defun fj-delete-repo ()
   "Delete repo at point, if you are its owner."
@@ -988,9 +988,10 @@ Unless paginating, set `fj-user' or `fj-extra-repos'")
              (format "Delete repo %s [Permanent and cannot be undone]?"
                      repo))
         (let ((resp (fj-delete endpoint)))
-          (fedi-http--triage resp
-                             (lambda (_)
-                               (message "Repo %s deleted!" repo))))))))
+          (fedi-http--triage
+           resp
+           (lambda (_)
+             (message "Repo %s/%s deleted!" fj-user repo))))))))
 
 (defun fj-starred-repos ()
   "List your starred repos."
@@ -4781,7 +4782,7 @@ PAGE and LIMIT are for pagination."
          (resp (fj-put endpoint)))
     (fedi-http--triage resp
                        (lambda (_)
-                         (message "Repo %s watched!" repo)))))
+                         (message "Repo %s/%s watched!" owner repo)))))
 
 ;;; TOPICS
 ;; topics are set in fj-transient.el
@@ -4832,7 +4833,7 @@ Returns a list of strings."
       (fedi-http--triage
        resp
        (lambda (_)
-         (message "Tag %s deleted!" choice))))))
+         (message "Tag %s on %s/%s deleted!" choice owner repo))))))
 
 ;;; ACTIVITIES
 
