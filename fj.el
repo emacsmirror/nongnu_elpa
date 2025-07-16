@@ -477,16 +477,18 @@ Works in issue view mode or in issues tl."
 
 (defun fj--repo-owner ()
   "Return repo owner, whatever view we are in.
-If we fail, return `fj-user'." ;; poss insane
+If we fail, return `fj-user'."
+  ;; repos search or user repos buffer:
   (if (eq major-mode #'fj-repo-tl-mode)
       (fj--get-tl-col 1)
-    (or (fj--get-buffer-spec :owner)
-        ;; If no owner in buf-spec, perhaps we are viewing issues from
-        ;; `fj-list-search-items' (fj-owned-issues-tl-mode) , i.e. issues
-        ;; we authored in non-owned repos or similar:
-        (map-nested-elt (fj--property 'fj-item-data)
-                        '(repository owner))
-        fj-user))) ;; FIXME: fallback hack
+    (or ;; try to fetch owner from item at point's repo data:
+     ;; perhaps we are viewing issues from `fj-list-search-items'
+     ;; (ie fj-owned-issues-tl-mode)
+     (map-nested-elt (fj--property 'fj-item-data)
+                     '(repository owner))
+     ;; else try buf spec:
+     (fj--get-buffer-spec :owner)
+     fj-user))) ;; FIXME: fallback hack
 
 (defun fj--repo-name ()
   "Return repo name, whatever view we are in."
@@ -978,8 +980,7 @@ Unless paginating, set `fj-user' or `fj-extra-repos'")
 (defun fj-delete-repo ()
   "Delete repo at point, if you are its owner."
   (interactive)
-  (let* ((repo (or (fj--get-buffer-spec :repo) ;; issues tl
-                   (fj--get-tl-col 0))) ;; own repos/search
+  (let* ((repo (fj--repo-name))
          (endpoint (format "repos/%s/%s/" fj-user repo)))
     (if (not (fj--own-repo-p))
         (user-error "Not your own repo")
@@ -4522,8 +4523,8 @@ Used for a mouse-click EVENT on a link."
   "Render log of commits for REPO by OWNER.
 If PREFIX arg, prompt for branch to show commits of."
   (interactive "P")
-  (let* ((repo (or repo (fj--get-buffer-spec :repo)))
-         (owner (or owner (fj--get-buffer-spec :owner)))
+  (let* ((repo (or repo (fj--repo-name)))
+         (owner (or owner (fj--repo-owner)))
          (branch (when prefix
                    (completing-read "Branch: "
                                     (fj-repo-branches-list repo owner))))
@@ -4610,8 +4611,8 @@ Optionally specify BRANCH to show commits from."
   "Render users for REPO by OWNER.
 Fetch users by calling FETCH-FUN with two args, REPO and OWNER.
 BUF-STR is the name of the buffer string to use."
-  (let* ((repo (or repo (fj--get-buffer-spec :repo)))
-         (owner (or owner (fj--get-buffer-spec :owner)))
+  (let* ((repo (or repo (fj--repo-name)))
+         (owner (or owner (fj--repo-owner)))
          (buf (format "*fj-%s-%s*" repo buf-str))
          (data (funcall fetch-fun repo owner page limit))
          (endpoint (if (eq fetch-fun #'fj-get-stargazers)
@@ -4774,10 +4775,8 @@ PAGE and LIMIT are for pagination."
 (defun fj-watch-repo ()
   "Watch repo at point or in current view."
   (interactive)
-  (let* ((owner (or (fj--get-buffer-spec :owner)
-                    (fj--get-tl-col 1)))
-         (repo (or (fj--get-buffer-spec :repo)
-                   (fj--get-tl-col 0)))
+  (let* ((owner (fj--repo-owner))
+         (repo (fj--repo-name))
          (endpoint (format "repos/%s/%s/subscription" owner repo))
          (resp (fj-put endpoint)))
     (fedi-http--triage resp
