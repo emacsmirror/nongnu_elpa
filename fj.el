@@ -4262,7 +4262,9 @@ PAGE and LIMIT are for pagination."
                                 :page ,page :limit ,limit))))
     ;; FIXME: make this an option in `fedi-with-buffer'?
     ;; else it just goes to point-min:
-    (fj-next-tab-item)))
+    (fj-next-tab-item)
+    (message (substitute-command-keys
+              "\\`C-c C-c': cycle state | \\`C-c C-s': cycle type"))))
 
 (defun fj-view-notifications-all (&optional status-types subject-type
                                             page limit)
