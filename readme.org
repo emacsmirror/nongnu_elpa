@@ -275,12 +275,10 @@ Repo settings transient:
 |           | fj-list-issues-by-label          | List issues in REPO by OWNER, filtering by label.                   |
 |           | fj-list-issues-by-milestone      | List issues in REPO by OWNER, filtering by milestone.               |
 |           | fj-list-issues-closed            | Display closed ISSUES for REPO by OWNER in tabulated list view.     |
-|           | fj-list-issues-do                | Display ISSUES in a tabulated list view.                            |
 | s         | fj-list-issues-search            | Search current repo issues for QUERY.                               |
 | C-c C-x   | fj-list-issues-sort              | Reload current issues listing, prompting for a sort type.           |
 |           | fj-list-items                    | List issues or pulls for REPO by OWNER, filtered by STATE and TYPE. |
 | W         | fj-list-own-issues               | List issues in repos owned by `fj-user'.                            |
-|           | fj-list-own-items                | List items of TYPE in repos owned by `fj-user'.                     |
 |           | fj-list-own-pulls                | List pulls in repos owned by `fj-user'.                             |
 | O         | fj-list-own-repos                | List repos for `fj-user'.                                           |
 | C-c C-x   | fj-list-own-repos-read           | List repos for `fj-user', prompting for an order type.              |

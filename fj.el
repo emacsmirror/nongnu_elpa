@@ -2244,7 +2244,6 @@ prompt for a repo to list.
 Optionally specify the STATE filter (open, closed, all), and the
 TYPE filter (issues, pulls, all).
 QUERY is a search query to filter by."
-  (interactive "P")
   (let* ((repo (fj-read-user-repo repo))
          (owner (or owner fj-user))
          (type (or type "issues"))
