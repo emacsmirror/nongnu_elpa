@@ -3389,7 +3389,11 @@ the current view.
 VERSION is the API version to use, as grouped notifs use v2."
   (let* ((args `(("since_id" . ,(mastodon-tl--as-string id))))
          (args (append args params))
-         (url (mastodon-http--api endpoint version)))
+         (url (mastodon-http--api
+               endpoint
+               (when (and mastodon-group-notifications
+                          (string= endpoint "notifications"))
+                 "v2"))))
     (mastodon-http--get-json url args)))
 
 ;; TODO: add this to new posts in some cases, e.g. in thread view.
