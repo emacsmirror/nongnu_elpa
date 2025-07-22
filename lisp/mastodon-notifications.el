@@ -73,6 +73,8 @@
 (autoload 'mastodon-views--minor-view "mastodon-views")
 (autoload 'mastodon-tl--goto-first-item "mastodon-tl")
 (autoload 'mastodon-tl--init-sync "mastodon-tl")
+(autoload 'mastodon-http--get-json-async "mastodon-http")
+(autoload 'mastodon-live-buffers "mastodon")
 
 ;; notifications defcustoms moved into mastodon.el
 ;; as some need to be available without loading this file
@@ -92,6 +94,8 @@
 (defvar mastodon-notifications-grouped-names-count)
 (defvar mastodon-tl--link-keymap)
 (defvar mastodon-tl--update-point)
+(defvar mastodon-notifications-updates-interval)
+(defvar mastodon-notifications-check-for-updates)
 
 ;;; VARIABLES
 
@@ -976,7 +980,7 @@ NOTE means to include a profile note."
      'item-json req)))
 
 ;;; UPDATES TIMER
-;; TODO: make this a customize, with option to set timer period.
+
 (defvar mastodon-notifications-timer nil
   "Timer to update the notifs buffer.")
 
@@ -987,7 +991,7 @@ Also nil the variable."
     (cancel-timer mastodon-notifications-timer))
   (setq mastodon-notifications-timer nil))
 
-(defun mastodon-notifications-update-with-timer ()
+(defun mastodon-notifications--update-with-timer ()
   "Run a timer to update notifications. Added to `mastodon-mode-hook'."
   ;; if no buffers: cancel our timer:
   ;; FIXME: fails on load first masto buffer!
@@ -1000,12 +1004,21 @@ Also nil the variable."
       (unless mastodon-notifications-timer
         (setq mastodon-notifications-timer
               (run-at-time mastodon-notifications-updates-interval
-                           nil #'mastodon-notifications-update-check))))))
+                           nil #'mastodon-notifications--update-check))))))
 
-(defun mastodon-notifications-update-check ()
-  "Function called by `mastodon-notifications-update-with-timer'.
+(defun mastodon-notifications--update-check ()
+  "Function called by `mastodon-notifications--update-with-timer'.
 Calls `mastodon-tl--update'."
-  (let ((count (mastodon-notifications--get-unread-count)))
+  (let* ((endpoint "notifications/unread_count")
+         (url (mastodon-http--api endpoint
+                                  (when mastodon-group-notifications "v2"))))
+    (mastodon-http--get-json-async
+     url nil
+     #'mastodon-notifications--update-check-cb)))
+
+(defun mastodon-notifications--update-check-cb (resp)
+  "Callback functions for handling unread notifs count response RESP."
+  (let ((count (alist-get 'count resp)))
     (if (> count 0)
         (if (not (mastodon-tl--buffer-type-eq 'notifications))
             (message "New mastodon.el notification(s): %s" count)
@@ -1016,10 +1029,10 @@ Calls `mastodon-tl--update'."
       (message "No new mastodon.el notifications")) ;; just to show we ran
     ;; cancel and set new timer:
     (mastodon-notifications-cancel-timer)
-    (mastodon-notifications-update-with-timer)))
+    (mastodon-notifications--update-with-timer)))
 
 (add-hook 'mastodon-mode-hook
-          #'mastodon-notifications-update-with-timer)
+          #'mastodon-notifications--update-with-timer)
 
 (provide 'mastodon-notifications)
 ;;; mastodon-notifications.el ends here
