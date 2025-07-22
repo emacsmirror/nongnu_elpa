@@ -92,6 +92,7 @@
 (defvar mastodon-notifications-grouped-names-count)
 (defvar mastodon-tl--link-keymap)
 (defvar mastodon-tl--update-point)
+
 ;;; VARIABLES
 
 (defvar mastodon-notifications--map
@@ -659,6 +660,7 @@ UPDATE means we are updating, so skip some things."
     ;; set update point:
     (setq mastodon-tl--update-point (point))
     ;; render:
+    (setq mastodon-tl--update-point (point))
     (mastodon-notifications--render json
                                     (not mastodon-group-notifications))
     (goto-char (point-min))
@@ -991,13 +993,15 @@ NOTE means to include a profile note."
   "Function called by `mastodon-notifications-update-with-timer'.
 Calls `mastodon-tl--update'."
   (let ((count (mastodon-notifications--get-unread-count)))
-    (when (> 0 count)
-      (if (mastodon-tl--buffer-type-eq 'notifications)
-          ;; run updates if in notifs buffer:
-          (mastodon-tl--update)
-        (message "New mastodon.el notification(s)"))
-      ;; set new timer:
-      (mastodon-notifications-update-with-timer))))
+    (when (> count 0)
+      (if (not (mastodon-tl--buffer-type-eq 'notifications))
+          (message "New mastodon.el notification(s)")
+        ;; run updates if in notifs buffer:
+        (message "Updating mastodon.el notifications...")
+        (mastodon-tl--update)
+        (message "Updating mastodon.el notifications... Done.")))
+    ;; set new timer:
+    (mastodon-notifications-update-with-timer)))
 
 (add-hook 'mastodon-mode-hook
           #'mastodon-notifications-update-with-timer)
