@@ -183,7 +183,7 @@ nil."
   "A set of symbols (and fallback strings) to be used in timeline.
 If a symbol does not look right (tofu), it means your
 font settings do not support it."
-  :type '(alist :key-type symbol :value-type string))
+  :type '(alist :key-type symbol :value-type (cons string string)))
 
 (defcustom mastodon-tl-position-after-update nil
   "Defines where `point' should be located after a timeline update.
