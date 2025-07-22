@@ -978,6 +978,7 @@ NOTE means to include a profile note."
         (mastodon-tl--render-text .account.note .account))
       "\n")
      'item-json req)))
+
 
 ;;; UPDATES TIMER
 
@@ -995,8 +996,8 @@ Also nil the variable."
   "Run a timer to update notifications. Added to `mastodon-mode-hook'."
   ;; if no buffers: cancel our timer:
   ;; FIXME: fails on load first masto buffer!
-  ;; `mastodon-mode' loads before we populate the buffer via an update fun
-  ;; do we need an after-update hook?
+  ;; `mastodon-mode-hook' necessariliy runs before we have buf-spec.
+  ;; if we set buf-spec before enabling mode, buf-spec is lost
   (if (not (mastodon-live-buffers))
       ;; if not masto buffers: cancel everything:
       (mastodon-notifications-cancel-timer)
@@ -1035,9 +1036,6 @@ Calls `mastodon-tl--update'."
     ;; cancel and set new timer:
     (mastodon-notifications-cancel-timer)
     (mastodon-notifications--update-with-timer)))
-
-(add-hook 'mastodon-mode-hook
-          #'mastodon-notifications--update-with-timer)
 
 (provide 'mastodon-notifications)
 ;;; mastodon-notifications.el ends here

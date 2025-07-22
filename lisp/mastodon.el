@@ -75,6 +75,7 @@
 (autoload 'mastodon-toot--view-toot-history "mastodon-tl")
 (autoload 'mastodon-tl-return "mastodon-tl")
 (autoload 'mastodon-tl-jump-to-followed-tag "mastodon-tl")
+(autoload 'mastodon-notifications--update-with-timer "mastodon-notifications")
 
 ;; for M-x visibility
 ;; (views.el uses `mastodon-mode-map', so we can't easily require it)
@@ -590,7 +591,9 @@ Calls `mastodon-tl--get-buffer-type', which see."
   ;; make `thing-at-point' functions work:
   (setq-local thing-at-point-provider-alist
               (append thing-at-point-provider-alist
-                      '((url . mastodon--url-at-point)))))
+                      '((url . mastodon--url-at-point))))
+  ;; notifs timer
+  (mastodon-notifications--update-with-timer))
 
 ;;;###autoload
 (add-hook 'mastodon-mode-hook #'mastodon-mode-hook-fun)
