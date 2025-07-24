@@ -55,8 +55,8 @@ When using a prefix argument or the optional argument PREVIEW,
   (compile
    (format "%s compile %s %s %s"
            typst-ts-compile-executable-location
-           (file-name-nondirectory buffer-file-name)
-           (typst-ts-compile-get-result-pdf-filename)
+           (shell-quote-argument (file-name-nondirectory buffer-file-name))
+           (shell-quote-argument (typst-ts-compile-get-result-pdf-filename))
            typst-ts-compile-options)
    'typst-ts-compilation-mode))
 
