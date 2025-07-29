@@ -2464,6 +2464,7 @@ DATE: Integer, used with `gnosis-algorithm-date' to get previous dates."
 
 (defvar-keymap gnosis-dashboard-notes-mode-map
   :doc "Keymap for notes dashboard."
+  "q" #'gnosis-dashboard
   "e" #'gnosis-dashboard-edit-note
   "s" #'gnosis-dashboard-suspend-note
   "SPC" #'gnosis-dashboard-search-note
@@ -2592,6 +2593,7 @@ DATE: Integer, used with `gnosis-algorithm-date' to get previous dates."
 (defvar-keymap gnosis-dashboard-tags-mode-map
   "RET" #'gnosis-dashboard-tag-view-notes
   "e" #'gnosis-dashboard-rename-tag
+  "q" #'gnosis-dashboard
   "s" #'gnosis-dashboard-suspend-tag
   "r" #'gnosis-dashboard-rename-tag
   "d" #'gnosis-dashboard-delete-tag
@@ -2631,6 +2633,7 @@ DATE: Integer, used with `gnosis-algorithm-date' to get previous dates."
 (defvar-keymap gnosis-dashboard-decks-mode-map
   "e" #'gnosis-dashboard-rename-deck
   "r" #'gnosis-dashboard-rename-deck
+  "q" #'gnosis-dashboard
   "a" #'gnosis-dashboard-decks-add
   "s" #'gnosis-dashboard-decks-suspend-deck
   "d" #'gnosis-dashboard-decks-delete
