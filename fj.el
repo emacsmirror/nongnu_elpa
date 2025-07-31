@@ -1121,6 +1121,13 @@ Return the issue number."
                          cands))))
     (cadr item)))
 
+(defun fj-cycle-sort-or-relation ()
+  "Call `fj-own-items-cycle-relation' or `fj-list-issues-sort'."
+  (interactive)
+  (if (equal major-mode #'fj-owned-issues-tl-mode)
+      (fj-own-items-cycle-relation)
+    (fj-list-issues-sort)))
+
 (defun fj-list-issues-sort ()
   "Reload current issues listing, prompting for a sort type.
 The default sort value is \"latest\"."
@@ -1212,6 +1219,31 @@ QUERY, STATE, TYPE, CREATED, ASSIGNED, and MENTIONED are all for
   (fj-list-search-items
    query state "issues" created assigned mentioned fj-user))
 
+(defun fj-next-plist-state (plist old new &optional newval)
+  (let ((plist (plist-put plist old nil)))
+    (plist-put plist new (or newval t))))
+
+(defun fj-cycle-viewargs (viewargs)
+  "Cycle the values in VIEWARGS.
+Cycle between owner, created, mentioned, assigned."
+  (cond ((plist-get viewargs :owner)
+         (fj-next-plist-state viewargs :owner :created))
+        ((plist-get viewargs :created)
+         (fj-next-plist-state viewargs :created :mentioned))
+        ((plist-get viewargs :mentioned)
+         (fj-next-plist-state viewargs :mentioned :assigned))
+        (t ; (plist-get viewargs :assigned)
+         (fj-next-plist-state viewargs :assigned :owner fj-user))))
+
+(defun fj-own-items-cycle-relation ()
+  "Cycle the relation for own issues view.
+Cycles between listing issues user is owner of, created, is mentioned
+in, or assigned to."
+  (interactive)
+  (fj-destructure-buf-spec (viewfun viewargs)
+    (let ((newargs (fj-cycle-viewargs viewargs)))
+      (apply #'fj-list-search-items (fj-plist-values newargs)))))
+
 (defun fj-list-authored-issues ()
   "Return issues authored by `fj-user', in any repo."
   (interactive)
@@ -1244,7 +1276,8 @@ all for `fj-issues-search'."
          (fj-issues-search state nil nil query nil type nil nil
                            assigned created mentioned nil nil owner
                            nil page))
-        (buf-name (format "*fj-search-%s*" (or type "items")))
+        (buf-name (format "*fj-search-%s%s*" (or type "items")
+                          (fj-cycle-str created assigned mentioned owner)))
         (prev-buf (buffer-name (current-buffer)))
         (prev-mode major-mode))
     ;; FIXME refactor with `fj-list-issues'? just tab list entries fun and
@@ -1266,7 +1299,20 @@ all for `fj-issues-search'."
       (fj-other-window-maybe
        prev-buf (format "-%s*" type) #'string-suffix-p prev-mode)
       (message (substitute-command-keys
-                "\\`C-c C-c': cycle state | \\`C-c C-s': cycle type")))))
+                "\\`C-c C-c': cycle state | \\`C-c C-s': cycle type\
+ | \\`C-c C-d': cycle relation")))))
+
+(defun fj-cycle-str (created assigned mentioned owner)
+  "Return whichever of CREATED ASSIGNED MENTIONED OWNER is non-nil.
+Return the variable name as a string.
+If OWNER, return `fj-user'."
+  ;; Not sure how to return a variable's name if it is non-nil
+  ;; boundp can get you there but only with dynamic-scoping
+  (concat "-"
+          (cond (created "created")
+                (assigned "assigned")
+                (mentioned "mentioned")
+                (owner "owned"))))
 
 (defun fj-get-item (repo &optional owner number type)
   "GET ISSUE NUMBER, in REPO by OWNER.
@@ -1966,7 +2012,7 @@ the label's color, as per `fj-propertize-label-names'."
   "k"        #'fj-issues-tl-close
   "K"        #'fj-issues-tl-delete
   "c"        #'fj-create-issue
-  "C-c C-x"  #'fj-list-issues-sort
+  "C-c C-d"  #'fj-cycle-sort-or-relation
   "C-c C-c"  #'fj-cycle-state
   "C-c C-s"  #'fj-cycle-type
   "o"        #'fj-issues-tl-reopen
@@ -2013,8 +2059,6 @@ the label's color, as per `fj-propertize-label-names'."
   "Major mode for browsing a tabulated list of issues."
   :group 'fj
   (hl-line-mode 1)
-  (keymap-unset fj-owned-issues-tl-mode-map
-                "C-c C-x") ;; unset sort from issues tl
   (setq tabulated-list-padding 0 ;2) ; point directly on issue
         ;; this is changed by `tabulated-list-sort' which sorts by col at point:
         tabulated-list-sort-key '("Updated" . t) ;; default
@@ -2303,7 +2347,7 @@ SORT defaults to `fj-issues-sort-default'."
          prev-buf "-issues*" #'string-suffix-p prev-mode)
         (message (substitute-command-keys
                   ;; it can't find our bindings:
-                  "\\`C-c C-c': cycle state | \\`C-c C-x': sort\
+                  "\\`C-c C-c': cycle state | \\`C-c C-d': sort\
  | \\`C-c C-s': cycle type"))))))
 
 (defun fj-repo-has-items-p (type data)
