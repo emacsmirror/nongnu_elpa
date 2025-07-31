@@ -223,6 +223,7 @@ Repo settings transient:
 | c         | fj-create-issue                 | Create issue in current repo or repo at point in tabulated listing. |
 |           | fj-create-milestone             | Create a milestone for REPO by OWNER.                               |
 |           | fj-create-token                 | Create an access token for `fj-user' on `fj-host'.                  |
+| C-c C-d   | fj-cycle-sort-or-relation       | Call `fj-own-items-cycle-relation' or `fj-list-issues-sort'.        |
 | C-c C-c   | fj-cycle-state                  | Cycle item state listing of open, closed, and all.                  |
 | C-c C-s   | fj-cycle-type                   | Cycle item type listing of issues, pulls, and all.                  |
 |           | fj-delete-repo                  | Delete repo at point, if you are its owner.                         |
@@ -276,7 +277,7 @@ Repo settings transient:
 |           | fj-list-issues-by-milestone     | List issues in REPO by OWNER, filtering by milestone.               |
 |           | fj-list-issues-closed           | Display closed ISSUES for REPO by OWNER in tabulated list view.     |
 | s         | fj-list-issues-search           | Search current repo issues for QUERY.                               |
-| C-c C-x   | fj-list-issues-sort             | Reload current issues listing, prompting for a sort type.           |
+|           | fj-list-issues-sort             | Reload current issues listing, prompting for a sort type.           |
 | W         | fj-list-own-issues              | List issues in repos owned by `fj-user'.                            |
 |           | fj-list-own-pulls               | List pulls in repos owned by `fj-user'.                             |
 | O         | fj-list-own-repos               | List repos for `fj-user'.                                           |
@@ -293,6 +294,7 @@ Repo settings transient:
 |           | fj-notifications-mode           | Major mode for viewing notifications.                               |
 | C-c C-s   | fj-notifications-subject-cycle  | Cycle notifications by `fj-notifications-subject-types'.            |
 | C-c C-c   | fj-notifications-unread-toggle  | Switch between showing all notifications, and only showing unread.  |
+|           | fj-own-items-cycle-relation     | Cycle the relation for own issues view.                             |
 |           | fj-owned-issues-tl-mode         | Major mode for browsing a tabulated list of issues.                 |
 | ,         | fj-prev-page                    | Load the previous page.                                             |
 | <backtab> | fj-prev-tab-item                | Jump to prev tab item.                                              |
