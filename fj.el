@@ -652,7 +652,7 @@ If CURRENT-REPO, get from `fj-current-repo' instead."
   "O" #'fj-list-own-repos
   "W" #'fj-list-own-issues
   "N" #'fj-view-notifications
-  "S" #'fj-repo-search-tl
+  "S" #'fj-repo-search
   "U" #'fj-user-update-settings
   "b" #'fj-browse-view
   "C" #'fj-copy-item-url
@@ -677,7 +677,7 @@ If CURRENT-REPO, get from `fj-current-repo' instead."
   "O" #'fj-list-own-repos
   "W" #'fj-list-own-issues
   "N" #'fj-view-notifications
-  "S" #'fj-repo-search-tl
+  "S" #'fj-repo-search
   "U" #'fj-user-update-settings
   "C" #'fj-copy-item-url
   "b" #'fj-browse-view
@@ -824,18 +824,18 @@ X and Y are sorting args."
 
 (define-button-type 'fj-user-repo-button
   'follow-link t
-  'action 'fj-repo-tl-list-issues
+  'action 'fj-repo-list-issues
   'help-echo "RET: View this repo's issues.")
 
 (defvar-keymap fj-repo-tl-map
   :doc "Map for `fj-repo-tl-mode' and `fj-user-repo-tl-mode' to inherit."
   :parent fj-generic-tl-map
-  "RET" #'fj-repo-tl-list-issues
-  "M-RET" #'fj-repo-tl-list-pulls
-  "*" #'fj-repo-tl-star-repo
+  "RET" #'fj-repo-list-issues
+  "M-RET" #'fj-repo-list-pulls
+  "*" #'fj-star-repo
   "c" #'fj-create-issue
-  "s" #'fj-repo-search-tl
-  "r" #'fj-repo-tl-readme
+  "s" #'fj-repo-search
+  "r" #'fj-repo-readme
   "B" #'fj-tl-browse-entry
   "L" #'fj-repo-copy-clone-url
   "j" #'imenu)
@@ -880,7 +880,7 @@ PAGE, LIMIT."
         (endpoint (format "users/%s/repos" user)))
     (fj-get endpoint params)))
 
-(defun fj-user-repos-tl (&optional user page limit)
+(defun fj-user-repos (&optional user page limit order)
   "View a tabulated list of respos for USER.
 PAGE, LIMIT, ORDER."
   (interactive "sView user repos: ")
@@ -892,8 +892,8 @@ PAGE, LIMIT, ORDER."
       (setq fj-buffer-spec
             `( :owner ,user :url ,(concat fj-host "/" user)
                :viewargs ( :user ,user :page ,page
-                           :limit ,limit)
-               :viewfun fj-user-repos-tl)))))
+                           :limit ,limit :order ,order)
+               :viewfun fj-user-repos)))))
 
 (defun fj-list-own-repos-read ()
   "List repos for `fj-user', prompting for an order type."
@@ -957,7 +957,7 @@ Unless paginating, set `fj-user' or `fj-extra-repos'")
                  :viewfun fj-list-repos
                  :viewargs (:order ,order :page ,page)))))))
 
-(defun fj-star-repo (repo owner &optional unstar)
+(defun fj-star-repo* (repo owner &optional unstar)
   "Star or UNSTAR REPO owned by OWNER."
   (let* ((endpoint (format "user/starred/%s/%s" owner repo))
          (resp (if unstar
@@ -968,7 +968,7 @@ Unless paginating, set `fj-user' or `fj-extra-repos'")
                          (message "Repo %s/%s %s!" owner repo
                                   (if unstar "unstarred" "starred"))))))
 
-(defun fj-fork-repo (repo owner &optional name org)
+(defun fj-fork-repo* (repo owner &optional name org)
   "Fork REPO owned by OWNER, optionally call fork NAME."
   (let* ((endpoint (format "repos/%s/%s/forks" owner repo))
          (params (fedi-opt-params name org))
@@ -2071,7 +2071,7 @@ the label's color, as per `fj-propertize-label-names'."
 
 (define-button-type 'fj-owned-issues-repo-button
   'follow-link t
-  'action 'fj-repo-tl-list-issues
+  'action 'fj-repo-list-issues
   'help-echo "RET: View this repo's issues.")
 
 (defun fj-issue-tl-entries (issues &optional repo)
@@ -3483,23 +3483,23 @@ Sort must be a member of `fj-search-sorts'."
                             order page limit))))
     (fj-get "/repos/search" params)))
 
-
-(defun fj-repo-search (query &optional topic id mode)
-  "Search repos for QUERY.
-If TOPIC, QUERY is a search for topic keywords.
-ID is a user ID, which if given must own the repo.
-MODE must be a member of `fj-search-modes', else it is silently
-ignored."
-  (interactive "sSearch for repo: ")
-  (let* ((resp (fj-repo-search-do query topic id mode))
-         (data (alist-get 'data resp))
-         (cands (fj-get-repo-candidates data))
-         (completion-extra-properties
-          '(:annotation-function fj-repo-candidates-annot-fun))
-         (choice (completing-read "Repo: " cands))
-         (user (cl-fourth
-                (assoc choice cands #'equal))))
-    (fj-list-issues-do choice user)))
+;; use and rename the TL function
+;; (defun fj-repo-search (query &optional topic id mode)
+;;   "Search repos for QUERY.
+;; If TOPIC, QUERY is a search for topic keywords.
+;; ID is a user ID, which if given must own the repo.
+;; MODE must be a member of `fj-search-modes', else it is silently
+;; ignored."
+;;   (interactive "sSearch for repo: ")
+;;   (let* ((resp (fj-repo-search-do query topic id mode))
+;;          (data (alist-get 'data resp))
+;;          (cands (fj-get-repo-candidates data))
+;;          (completion-extra-properties
+;;           '(:annotation-function fj-repo-candidates-annot-fun))
+;;          (choice (completing-read "Repo: " cands))
+;;          (user (cl-fourth
+;;                 (assoc choice cands #'equal))))
+;;     (fj-list-issues-do choice user)))
 
 (defun fj-repo-candidates-annot-fun (cand)
   "Annocation function for `fj-repo-search'.
@@ -3535,7 +3535,7 @@ Returns annotation for CAND, a candidate."
 
 (define-button-type 'fj-search-repo-button
   'follow-link t
-  'action 'fj-repo-tl-list-issues
+  'action 'fj-repo-list-issues
   'help-echo "RET: View this repo's issues.")
 
 (define-button-type 'fj-search-owner-button
@@ -3595,8 +3595,8 @@ NO-OWNER means don't display owner column (user repos view)."
            face 'fj-comment-face
            item repo)])))))
 
-(defun fj-repo-search-tl (query &optional topic id mode
-                                include-desc sort order page limit)
+(defun fj-repo-search (query &optional topic id mode
+                             include-desc sort order page limit)
   "Search repos for QUERY, and display a tabulated list of results.
 TOPIC, a boolean, means search in repo topics.
 ID MODE INCLUDE-DESC SORT ORDER PAGE LIMIT."
@@ -3615,12 +3615,12 @@ ID MODE INCLUDE-DESC SORT ORDER PAGE LIMIT."
                ( :query ,query :topic ,topic :id ,id :mode ,mode
                  :include-desc ,include-desc :sort ,sort
                  :order ,order :page ,page :limit ,limit)
-               :viewfun fj-repo-search-tl)))))
+               :viewfun fj-repo-search)))))
 
-(defun fj-repo-search-tl-topic (query)
+(defun fj-repo-search-topic (query)
   "Search repo topics for QUERY, and display a tabulated list."
   (interactive "sSearch for topic in repos: ")
-  (fj-repo-search-tl query 'topic))
+  (fj-repo-search query 'topic))
 
 (defun fj-repos-tl-render (buf entries mode &optional sort-key)
   "Render a tabulated list in BUF fer, with ENTRIES, in MODE.
@@ -3675,7 +3675,7 @@ unset any default values."
     (fedi-post--update-status-fields)))
 
 ;; in search or user repo TL
-(defun fj-repo-tl-list-issues (&optional _)
+(defun fj-repo-list-issues (&optional _)
   "View issues of current repo from tabulated repos listing."
   (interactive)
   (fj-with-repo-entry
@@ -3684,7 +3684,7 @@ unset any default values."
           (owner (fj--repo-owner)))
      (fj-list-issues-do name owner))))
 
-(defun fj-repo-tl-list-pulls (&optional _)
+(defun fj-repo-list-pulls (&optional _)
   "View issues of current repo from tabulated repos listing."
   (interactive)
   (fj-with-repo-entry
@@ -3703,10 +3703,10 @@ unset any default values."
      (let* ((owner (if (eq major-mode #'fj-issue-tl-mode)
                        (fj--get-tl-col 2) ;; ISSUE author not REPO owner
                      (fj--repo-owner))))
-       (fj-user-repos-tl owner)))))
+       (fj-user-repos owner)))))
 
 ;; search or user repo TL
-(defun fj-repo-tl-star-repo (&optional unstar)
+(defun fj-star-repo (&optional unstar)
   "Star or UNSTAR current repo from tabulated user repos listing."
   (interactive)
   (fj-with-repo-entry
@@ -3714,12 +3714,12 @@ unset any default values."
           (owner (fj--repo-owner)))
      (fj-star-repo repo owner unstar))))
 
-(defun fj-repo-tl-unstar-repo ()
+(defun fj-unstar-repo ()
   "Unstar current repo from tabulated user repos listing."
   (interactive)
-  (fj-repo-tl-star-repo :unstar))
+  (fj-star-repo :unstar))
 
-(defun fj-repo-tl-fork ()
+(defun fj-fork-repo ()
   "Fork repo entry at point."
   (interactive)
   (fj-with-entry
@@ -3847,8 +3847,9 @@ Optionally specify REF, a commit, branch, or tag."
       ;; (kill-buffer buffer)
       (switch-to-buffer-other-window (current-buffer)))))
 
-(defun fj-repo-tl-readme ()
-  "Display readme file of current repo."
+(defun fj-repo-readme ()
+  "Display readme file of current repo.
+Works in repo listings, issue listings, and item views."
   (interactive)
   (let ((repo (fj--repo-name))
         (owner (fj--repo-owner)))
@@ -4591,7 +4592,7 @@ Used for hitting RET on a given link."
          (fj-issue-ref-follow item))
         ;; ((eq type 'pull)
         ;; (fj-item-view repo owner item nil :pull))
-        ('handle (fj-user-repos-tl item))
+        ('handle (fj-user-repos item))
         ((or  'commit 'commit-ref)
          (fj-view-commit-diff item))
         ('issue-ref
@@ -4790,18 +4791,14 @@ PAGE and LIMIT are for pagination."
 
 (defun fj-repo-stargazers (&optional repo owner page limit)
   "Render stargazers for REPO by OWNER.
-PAGE and LIMIT are for pagination."
+PAGE and LIMIT are for pagination.
+Works in repo listing or item listings or item views."
   (interactive)
-  (fj-repo-users #'fj-get-stargazers "stargazers"
-                 repo owner #'fj-repo-stargazers page limit))
-
-;; (defun fj-repo-tl-stargazers ()
-;;   "View a listing of stargazers of repo at point.
-;; PAGE and LIMIT are for `fj-get-stargazers'."
-;;   (interactive)
-;;   (let* ((repo (fj--repo-name))
-;;          (owner (fj--repo-owner)))
-;;     (fj-repo-stargazers repo owner)))
+  (let ((repo (if (equal major-mode 'fj-repo-tl-mode)
+                  (fj--get-tl-col 0)
+                repo)))
+    (fj-repo-users #'fj-get-stargazers "stargazers"
+                   repo owner #'fj-repo-stargazers page limit)))
 
 (defun fj-stargazers-completing (&optional page limit)
   "Prompt for a repo stargazer, and view their repos.
@@ -4813,15 +4810,7 @@ PAGE and LIMIT are for `fj-get-stargazers'."
          (gazers-list (cl-loop for u in gazers
                                collect (alist-get 'login u)))
          (choice (completing-read "Stargazer: " gazers-list)))
-    (fj-user-repos-tl choice)))
-
-;; RET/click on stars:
-(defun fj-repo-tl-stargazers (&optional _)
-  "View stargazers of tabulated list repo at point."
-  (interactive)
-  (fj-with-repo-entry
-   (let ((repo (fj--get-tl-col 0)))
-     (fj-repo-stargazers repo))))
+    (fj-user-repos choice)))
 
 (defun fj-get-watchers (repo owner &optional page limit)
   "Get watchers of REPO by OWNER.
@@ -4836,14 +4825,6 @@ PAGE and LIMIT are for pagination."
   (interactive)
   (fj-repo-users #'fj-get-watchers "watchers"
                  repo owner #'fj-repo-watchers page limit))
-
-;; (defun fj-repo-tl-watchers ()
-;;   "View a listing of watchers of repo at point.
-;; PAGE and LIMIT are for `fj-get-watchers'."
-;;   (interactive)
-;;   (let* ((repo (fj--repo-name))
-;;          (owner (fj--repo-owner)))
-;;     (fj-repo-watchers repo owner)))
 
 ;;; account users
 
