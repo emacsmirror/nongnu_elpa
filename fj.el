@@ -1132,7 +1132,6 @@ Return the issue number."
   "Reload current issues listing, prompting for a sort type.
 The default sort value is \"latest\"."
   (interactive)
-  ;; FIXME: broken in own issues view (needs to be unbound)
   (cl-destructuring-bind (&key repo owner state type
                                query labels milestones page limit)
       (fj--get-buffer-spec :viewargs)
