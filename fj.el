@@ -2549,6 +2549,15 @@ Also propertize all handles, tags, commits, and URLs."
                                  (point)
                                  props
                                  (current-buffer)))))
+      ;; FIXME: still no idea how to fontify diffs:
+      ;; (save-excursion
+      ;;   (goto-char (point-min))
+      ;;   (while (setq match (text-property-search-forward 'fj-review-diff))
+      ;;     (setq-local font-lock-defaults diff-font-lock-defaults)
+      ;;     (font-lock-fontify-region (prop-match-beginning match)
+      ;;                               (prop-match-end match)
+      ;;                               t)
+      ;;     (goto-char (prop-match-end match))))
       ;; propertize handles, tags, URLs, and commits
       (fedi-propertize-items fedi-post-handle-regex 'handle
                              fj-link-keymap 1 2 nil nil
@@ -3371,7 +3380,8 @@ AUTHOR, OWNER, and TS are for header formatting."
   ;; (diff-minor-mode 1)
   (concat
    "\n" fedi-horiz-bar "\n"
-   (fj-format-review-diff (car data)) ;; diff hunk
+   (propertize (fj-format-review-diff (car data)) ;; diff hunk
+               'fj-review-diff t)
    "\n"
    (cl-loop for c in (cdr data)
             concat (fj-format-review-comment c author owner ts))))
