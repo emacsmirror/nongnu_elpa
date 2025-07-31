@@ -1238,6 +1238,9 @@ all for `fj-issues-search'."
   (let ((state (or state "open"))
         (type (or type "issues"))
         (items
+         ;; these parameters are exclusive, not cumulative, but it would be
+         ;; nice to be able to combine them, or at least cycle through
+         ;; them:
          (fj-issues-search state nil nil query nil type nil nil
                            assigned created mentioned nil nil owner
                            nil page))
@@ -3353,7 +3356,8 @@ AUTHOR of item, OWNER of repo, TS is a timestamp."
        owner "" ;; FIXME: (fj-edited-str-maybe .created_at .updated_at)
        ts)
       "\n"
-      (fj-render-body .body))
+      (propertize (fj-render-body .body)
+                  'fj-item-body t))
      'fj-review-comment comment
      'line-prefix "  "))) ;; indent
 
