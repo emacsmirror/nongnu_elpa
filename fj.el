@@ -1254,6 +1254,7 @@ all for `fj-issues-search'."
       (tabulated-list-print)
       (setq fj-buffer-spec
             `( :owner ,owner
+               :url ,(concat fj-host "/issues") ;; FIXME: url params
                :viewfun fj-list-search-items
                :viewargs ( :query ,query :state ,state :type ,type
                            :created ,created :assigned ,assigned
