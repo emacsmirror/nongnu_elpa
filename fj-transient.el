@@ -256,6 +256,7 @@ Provide current topics for adding/removing."
    ("C-c C-c" "Save settings" fj-update-repo)
    ("C-x C-k" :info "to revert all changes")]
   (interactive)
+  ;; FIXME: bail if we are not authorized to change this repo!
   (if fj-current-repo
       (transient-setup 'fj-repo-update-settings)
     (if (y-or-n-p "No repo. Try to use git config?")
