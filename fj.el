@@ -3375,26 +3375,13 @@ data, OWNER is the repo owner, and TS is a timestamp."
   "Format a diff hunk followed by its comments.
 DATA is a cons from `fj-format-grouped-review-comments'.
 AUTHOR, OWNER, and TS are for header formatting."
-  ;; (diff-minor-mode 1)
   (concat
    "\n" fedi-horiz-bar "\n"
-   (propertize (fj-format-review-diff (car data)) ;; diff hunk
+   (propertize (car data) ;; diff hunk
                'fj-review-diff t)
    "\n"
    (cl-loop for c in (cdr data)
             concat (fj-format-review-comment c author owner ts))))
-
-(defun fj-format-review-diff (diff)
-  "Return a formatted diff hunk for DIFF."
-  ;; FIXME: propertize this diff somehow
-  ;; (diff-mode uses overlays we can can't copy them)
-  ;; magit (wash/paint hunk) replies on its own classes, and wants a file
-  ;; ansi color apply wants color codes
-  (with-temp-buffer
-    (insert diff)
-    (goto-char (point-min))
-    ;; (magit-diff-wash-hunk)
-    (buffer-string)))
 
 (defun fj-format-review-comment (comment author owner ts)
   "Format a review COMMENT.
