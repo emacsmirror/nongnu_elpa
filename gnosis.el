@@ -2748,10 +2748,9 @@ When called with called with a prefix, unsuspend all notes of deck."
   (display-line-numbers-mode 0))
 
 (defun gnosis-dashboard-enable-mode ()
-  "Enable `gnosis-dashboard-mode'.
-
-This should only be enabled in a gnosis dashboard buffer."
-  (when (string= (buffer-name) gnosis-dashboard-buffer-name)
+  "Enable `gnosis-dashboard-mode'."
+  (when (and (string= (buffer-name) gnosis-dashboard-buffer-name)
+	     (not (eq major-mode 'gnosis-dashboard-mode)))
     (gnosis-dashboard-mode)))
 
 (cl-defun gnosis-dashboard--search (&optional dashboard-type (note-ids nil))
@@ -2858,56 +2857,55 @@ DASHBOARD-TYPE: either Notes or Decks to display the respective dashboard."
 (defun gnosis-dashboard ()
   "Launch gnosis dashboard."
   (interactive)
-  (let* ((buffer-name gnosis-dashboard-buffer-name)
+  (let* ((buffer (get-buffer-create gnosis-dashboard-buffer-name))
 	 (due-log (gnosis-review-get--due-notes))
-	 (due-note-ids (mapcar #'car due-log)))
-    (when (get-buffer buffer-name)
-      (kill-buffer buffer-name))  ;; Kill the existing buffer if it exists
-    (let ((buffer (get-buffer-create buffer-name)))
-      (with-current-buffer buffer
-        (insert "\n"
-		(gnosis-center-string
-		 (format "%s" (propertize "Gnosis Dashboard" 'face
-					  'gnosis-face-dashboard-header))))
-	(gnosis-insert-separator)
-	(insert (gnosis-center-string
-		 (format "\nReviewed today: %s (New: %s)"
-			 (propertize
-			  (number-to-string (gnosis-get-date-total-notes))
-			  'face
-			  'font-lock-variable-use-face)
-			 (propertize
-			  (number-to-string (gnosis-get-date-new-notes))
-			  'face
-			  'font-lock-keyword-face))))
-	(insert "\n")
-	(insert (gnosis-center-string
-		 (format "Due notes: %s (Overdue: %s)"
-			 (propertize
-			  (number-to-string (length due-note-ids))
-			  'face 'error)
-			 (propertize
-			  (number-to-string
-			   (length (gnosis-review-get-overdue-notes)))
-			  'face 'warning))))
-	(insert "\n\n")
-	(insert (gnosis-center-string
-		 (format "Daily Average: %s"
-			 (propertize
-			  (gnosis-dashboard-output-average-rev)
-			  'face 'font-lock-type-face))))
-	(insert "\n")
-	(insert (gnosis-center-string
-		 (format "Current streak: %s day(s)"
-			 (propertize
-			  (gnosis-dashboard--streak
-			   (gnosis-select 'date 'activity-log '(> reviewed-total 0) t))
-			  'face 'success))))
-	(insert "\n\n"))
-      (pop-to-buffer-same-window buffer)
-      (goto-char (point-min))
-      (gnosis-dashboard-enable-mode)
-      (gnosis-dashboard-menu))))
+	 (due-note-ids (mapcar #'car due-log))
+	 (inhibit-read-only t))
+    (with-current-buffer buffer
+      (erase-buffer)
+      (insert "\n"
+	      (gnosis-center-string
+	       (format "%s" (propertize "Gnosis Dashboard" 'face
+					'gnosis-face-dashboard-header))))
+      (gnosis-insert-separator)
+      (insert (gnosis-center-string
+	       (format "\nReviewed today: %s (New: %s)"
+		       (propertize
+			(number-to-string (gnosis-get-date-total-notes))
+			'face
+			'font-lock-variable-use-face)
+		       (propertize
+			(number-to-string (gnosis-get-date-new-notes))
+			'face
+			'font-lock-keyword-face))))
+      (insert "\n")
+      (insert (gnosis-center-string
+	       (format "Due notes: %s (Overdue: %s)"
+		       (propertize
+			(number-to-string (length due-note-ids))
+			'face 'error)
+		       (propertize
+			(number-to-string
+			 (length (gnosis-review-get-overdue-notes)))
+			'face 'warning))))
+      (insert "\n\n")
+      (insert (gnosis-center-string
+	       (format "Daily Average: %s"
+		       (propertize
+			(gnosis-dashboard-output-average-rev)
+			'face 'font-lock-type-face))))
+      (insert "\n")
+      (insert (gnosis-center-string
+	       (format "Current streak: %s day(s)"
+		       (propertize
+			(gnosis-dashboard--streak
+			 (gnosis-select 'date 'activity-log '(> reviewed-total 0) t))
+			'face 'success))))
+      (insert "\n\n"))
+    (pop-to-buffer-same-window buffer)
+    (goto-char (point-min))
+    (gnosis-dashboard-enable-mode)
+    (gnosis-dashboard-menu)))
 
 ;; VC functions ;;
 ;;;;;;;;;;;;;;;;;;
