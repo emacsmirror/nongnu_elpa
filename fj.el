@@ -1260,6 +1260,17 @@ QUERY, STATE, TYPE, ASSIGNED, and MENTIONED are all for
 `fj-issues-search'."
   (fj-list-search-items query state type "true" assigned mentioned))
 
+(defun fj-cycle-str (created assigned mentioned owner)
+  "Return whichever of CREATED ASSIGNED MENTIONED OWNER is non-nil.
+Return the variable name as a string."
+  ;; Not sure how to return a variable's name if it is non-nil
+  ;; boundp can get you there but only with dynamic-scoping
+  (concat "-"
+          (cond (created "created")
+                (assigned "assigned")
+                (mentioned "mentioned")
+                (owner "owned"))))
+
 (defun fj-list-search-items (&optional query state type
                                        created assigned mentioned owner page)
   "List items of TYPE in repos owned by `fj-user'.
@@ -1300,18 +1311,6 @@ all for `fj-issues-search'."
       (message (substitute-command-keys
                 "\\`C-c C-c': cycle state | \\`C-c C-s': cycle type\
  | \\`C-c C-d': cycle relation")))))
-
-(defun fj-cycle-str (created assigned mentioned owner)
-  "Return whichever of CREATED ASSIGNED MENTIONED OWNER is non-nil.
-Return the variable name as a string.
-If OWNER, return `fj-user'."
-  ;; Not sure how to return a variable's name if it is non-nil
-  ;; boundp can get you there but only with dynamic-scoping
-  (concat "-"
-          (cond (created "created")
-                (assigned "assigned")
-                (mentioned "mentioned")
-                (owner "owned"))))
 
 (defun fj-get-item (repo &optional owner number type)
   "GET ISSUE NUMBER, in REPO by OWNER.
