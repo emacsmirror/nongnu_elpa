@@ -2534,9 +2534,16 @@ Also propertize all handles, tags, commits, and URLs."
       (save-excursion
         (goto-char (point-min))
         (while (setq match (text-property-search-forward 'fj-item-body))
-          (let ((shr-width (- (window-width) 2))
+          (let ((shr-width (- (window-width)
+                              (if (get-text-property (1- (point))
+                                                     'line-prefix)
+                                  tab-width ;; review comments
+                                2)))
                 (shr-discard-aria-hidden t) ; for pandoc md image output
-                (props (text-properties-at (point) (current-buffer))))
+                ;; FIXME: (1- (point)) is needed to catch review comment
+                ;; props, but it breaks Web UI quote lines (the quote and
+                ;; the response to it run on together):
+                (props (text-properties-at (1- (point)) (current-buffer))))
             ;; (fj-mdize-plain-urls) ;; FIXME: still needed since we
             ;; changed to buffer parsing?
             (shr-render-region (prop-match-beginning match)
@@ -2602,7 +2609,7 @@ Also propertize all handles, tags, commits, and URLs."
   :group 'fj
   (read-only-mode 1))
 
-(defun fj-format-comment (comment &optional author owner)
+(defun fj-format-comment (comment &optional author owner no-bar)
   "Format COMMENT.
 AUTHOR is of comment, OWNER is of repo."
   (let-alist comment
@@ -2618,9 +2625,11 @@ AUTHOR is of comment, OWNER is of repo."
         "\n\n"
         (propertize (fj-render-body .body)
                     'fj-item-body t)
-        "\n"
-        (fj-render-comment-reactions reactions) "\n"
-        fedi-horiz-bar fedi-horiz-bar)
+        (if (not reactions)
+            ""
+          (concat "\n"
+                  (fj-render-comment-reactions reactions)))
+        (if no-bar "" (concat "\n" fedi-horiz-bar fedi-horiz-bar)))
        'fj-comment comment
        'fj-comment-author .user.username
        'fj-comment-id .id
@@ -3254,7 +3263,7 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
                    ts))
           ;; reviews
           ("review"
-           (fj-format-review .review_id ts format-str user))
+           (fj-format-review item ts format-str user))
           ("review_request"
            (fj-format-assignee format-str user assignee ts))
           ;; milestones:
@@ -3331,27 +3340,30 @@ Optionally set link TYPE and ITEM number and FACE."
 
 ;;; REVIEWS (PRS)
 
-(defun fj-format-review (review-id ts format-str user)
-  "Render code review with REVIEW-ID.
+(defun fj-format-review (data ts format-str user)
+  "Render code review ITEM.
 TS, FORMAT-STR and USER are from `fj-render-timeline-item', which see.
 Renders a review heading and review comments."
   (fj-destructure-buf-spec (repo owner item)
-    (let ((review (fj-get-review repo owner
-                                 item review-id))
-          (comments (fj-get-review-comments repo owner
-                                            item review-id)))
-      (let-alist review
-        (let ((state (pcase .state
-                       ("APPROVED"
-                        (concat (downcase .state) " these changes"))
-                       ("REQUEST_CHANGES"
-                        "requested changes")
-                       (_ "reviewed"))))
-          (propertize
-           (concat
-            (format format-str user state ts)
-            (fj-format-grouped-review-comments comments owner ts))
-           'fj-review review))))))
+    (let-alist data
+      (let ((review (fj-get-review repo owner
+                                   item .review_id))
+            (comments (fj-get-review-comments repo owner
+                                              item .review_id)))
+        (let-alist review
+          (let ((state (pcase .state
+                         ("APPROVED"
+                          (concat (downcase .state) " these changes"))
+                         ("REQUEST_CHANGES"
+                          "requested changes")
+                         (_ "reviewed"))))
+            (propertize
+             (concat
+              (format format-str user state ts) "\n\n"
+              ;; FIXME: only add if we have a comment?:
+              (fj-format-comment data nil nil :nobar)
+              (fj-format-grouped-review-comments comments owner ts))
+             'fj-review review)))))))
 
 (defun fj-format-grouped-review-comments (comments owner ts)
   "Build an alist where each cons is a diff hunk and its comments.
@@ -3398,7 +3410,7 @@ AUTHOR of item, OWNER of repo, TS is a timestamp."
       (propertize (fj-render-body .body)
                   'fj-item-body t))
      'fj-review-comment comment
-     'line-prefix "  "))) ;; indent
+     'line-prefix "\t"))) ;; indent
 
 (defun fj-get-review (repo owner item-id review-id)
   "Get review data for REVIEW-ID.
