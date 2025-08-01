@@ -3198,7 +3198,8 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
              'issue-ref .ref_issue.number nil :noface)))
           ("label"
            (let ((action (if (string= body "1") "added" "removed")))
-             (format format-str user action .label.name ts)))
+             (format format-str user action
+                     (fj-propertize-label .label.name  (concat "#" .label.color)) ts)))
           ;; PRs:
           ;; FIXME: reimplement "pull_push" force-push and non-force
           ;; format strings
