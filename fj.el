@@ -2547,15 +2547,14 @@ Also propertize all handles, tags, commits, and URLs."
                                  (point)
                                  props
                                  (current-buffer)))))
-      ;; FIXME: still no idea how to fontify diffs:
-      ;; (save-excursion
-      ;;   (goto-char (point-min))
-      ;;   (while (setq match (text-property-search-forward 'fj-review-diff))
-      ;;     (setq-local font-lock-defaults diff-font-lock-defaults)
-      ;;     (font-lock-fontify-region (prop-match-beginning match)
-      ;;                               (prop-match-end match)
-      ;;                               t)
-      ;;     (goto-char (prop-match-end match))))
+      (save-excursion
+        (goto-char (point-min))
+        (while (setq match (text-property-search-forward 'fj-review-diff))
+          (setq-local font-lock-defaults diff-font-lock-defaults)
+          (font-lock-fontify-region (prop-match-beginning match)
+                                    (prop-match-end match)
+                                    t)
+          (goto-char (prop-match-end match))))
       ;; propertize handles, tags, URLs, and commits
       (fedi-propertize-items fedi-post-handle-regex 'handle
                              fj-link-keymap 1 2 nil nil
