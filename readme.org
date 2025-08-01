@@ -1,3 +1,6 @@
+
+@@html: <a href="https://liberapay.com/martianh/donate"><img alt="Donate using Liberapay" src="https://liberapay.com/assets/widgets/donate.svg"></a>@@
+
 * fj.el
 
 This repo contains some basic functions for interacting with a Forgejo instance (such as [[https://codeberg.org][codeberg.org]]) from within Emacs.
@@ -121,6 +124,21 @@ Contributions are welcome, as is feedback about your needs.
 Please PR into branch =dev= (=main= is for releases), and let me know if you're hacking on something.
 
 Currently the project has just evolved organically out of my own needs (and my own libraries), which are likely different to yours.
+
+* supporting =fj.el=
+
+If you'd like to support continued development of =fj.el=, I accept
+donations via paypal: [[https://paypal.me/martianh][paypal.me/martianh]]. 
+
+I also accept support via liberapay:
+
+@@html: <a href="https://liberapay.com/martianh/donate"><img alt="Donate using Liberapay" src="https://liberapay.com/assets/widgets/donate.svg"></a>@@
+
+If you would prefer a different payment method, please write to me at
+<mousebot {at} disroot.org> and I can provide IBAN or other bank account
+details.
+
+I don't have a tech worker's income, so even a small tip would help out.
 
 * screenshots
 
