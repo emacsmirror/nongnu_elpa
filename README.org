@@ -8,6 +8,8 @@
 
 @@html: <a href="https://melpa.org/#/mastodon"><img alt="MELPA" src="https://melpa.org/packages/mastodon-badge.svg"></a>@@
 
+@@html: <a href="https://liberapay.com/martianh/donate"><img alt="Donate using Liberapay" src="https://liberapay.com/assets/widgets/donate.svg"></a>@@
+
 # @@html: <a href="https://ci.codeberg.org/martianh/mastodon.el"><img alt="Build Status" src="https://ci.codeberg.org/api/badges/martianh/mastodon.el/status.svg"></a>@@
 
 * README
@@ -585,9 +587,15 @@ am=, if you want to actually contribute a commit.
 ** Supporting =mastodon.el=
 
 If you'd like to support continued development of =mastodon.el=, I accept
-donations via paypal: [[https://paypal.me/martianh][paypal.me/martianh]]. If you would prefer a different
-payment method, please write to me at <mousebot {at} disroot.org> and I
-can provide IBAN or other bank account details.
+donations via paypal: [[https://paypal.me/martianh][paypal.me/martianh]]. 
+
+I also accept support via liberapay:
+
+@@html: <a href="https://liberapay.com/martianh/donate"><img alt="Donate using Liberapay" src="https://liberapay.com/assets/widgets/donate.svg"></a>@@
+
+If you would prefer a different payment method, please write to me at
+<mousebot {at} disroot.org> and I can provide IBAN or other bank account
+details.
 
 I don't have a tech worker's income, so even a small tip would help out.
 
