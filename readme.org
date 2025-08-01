@@ -81,6 +81,8 @@ Forgejo's API is vast. Currently =fj.el= just implements a few basic things:
 - display all issue/PR timeline items (references, commits, merges, close/reopen, edit, etc.)
 - display diff of any commit
 - display diff of entire PR
+- PR review discussion
+- PR review diffs
 - merge PR
 - browse URL of view or entry at point
 - add reactions to item at point
