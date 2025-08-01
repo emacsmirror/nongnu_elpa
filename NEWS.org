@@ -1,3 +1,9 @@
+* 0.5.4
++ New feature: open of file links in a new buffer.
+  + This can be used to view images or pdf/ebooks.
++ Change syntax highlighting to org mode.
++ Quitting viewing notes/decks returns to dashboard home page.
++ Minor bug fixes & adjustments on dashboard.
 * 0.5.3
 + Fix gnosis algorithm bug for failed reviews with custom amnesia
   value of lower than 0.5.
