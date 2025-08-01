@@ -496,14 +496,14 @@ If FORCE, do a lookup regardless of the result of `mastodon--fedi-url-p'."
   (interactive)
   (mastodon-url-lookup nil :force))
 
-(defun mastodon--fedi-url-p (query)
+(defun mastodon--fedi-url-p (url)
   "Check if QUERY resembles a fediverse URL."
   ;; calqued off https://github.com/tuskyapp/Tusky/blob/c8fc2418b8f5458a817bba221d025b822225e130/app/src/main/java/com/keylesspalace/tusky/BottomSheetActivity.kt
   ;; thx to Conny Duck!
   ;; mastodon at least seems to allow only [a-z0-9_] for usernames, plus "."
   ;; but not at beginning or end, see https://github.com/mastodon/mastodon/issues/6830
   ;; objects may have - in them
-  (let* ((uri-parsed (url-generic-parse-url query))
+  (let* ((uri-parsed (url-generic-parse-url url))
          (query (url-filename uri-parsed)))
     (save-match-data
       (or (string-match "^/@[^/]+$" query)
@@ -524,7 +524,8 @@ If FORCE, do a lookup regardless of the result of `mastodon--fedi-url-p'."
           (string-match "^/user[s]?/[[:alnum:]_]+/statuses/[[:digit:]]+$" query) ; hometown
           (string-match "^/notes/[[:alnum:]]+$" query) ; misskey post
           (string-match "^/w/[[:alnum:]_]+$" query) ; peertube post
-          ))))
+          ;; bsky via fed.brid.gy (unsure if this needs narrowing down?):
+          (string-prefix-p "https://fed.brid.gy/r/" url)))))
 
 (defun mastodon-live-buffers ()
   "Return a list of open mastodon buffers.
