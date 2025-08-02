@@ -3408,7 +3408,12 @@ AUTHOR of item, OWNER of repo, TS is a timestamp."
        ts)
       "\n"
       (propertize (fj-render-body .body)
-                  'fj-item-body t))
+                  'fj-item-body t)
+      (if (not .resolver)
+          ""
+        (format "\n%s marked this discussion as resolved"
+                (propertize .resolver.login 'face 'fj-name-face))))
+     ;; )
      'fj-review-comment comment
      'line-prefix "\t"))) ;; indent
 
