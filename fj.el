@@ -6,7 +6,7 @@
 ;; Package-Requires: ((emacs "29.1") (fedi "0.2") (tp "0.5") (transient) (magit))
 ;; Keywords: git, convenience
 ;; URL: https://codeberg.org/martianh/fj.el
-;; Version: 0.19
+;; Version: 0.20
 ;; Separator: -
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -2524,7 +2524,7 @@ JSON is the data associated with STR."
    (fj-render-markdown body)
    'utf-8))
 
-(defun fj-render-item-bodies ()
+(defun fj-render-item-bodies (&optional point)
   "Render all item bodies in the buffer.
 Uses property fj-item-body to find them.
 Also propertize all handles, tags, commits, and URLs."
@@ -2532,7 +2532,7 @@ Also propertize all handles, tags, commits, and URLs."
     (let ((inhibit-read-only t)
           match)
       (save-excursion
-        (goto-char (point-min))
+        (goto-char (or point (point-min)))
         (while (setq match (text-property-search-forward 'fj-item-body))
           (let ((shr-width (- (window-width)
                               (if (get-text-property (1- (point))
@@ -2555,7 +2555,7 @@ Also propertize all handles, tags, commits, and URLs."
                                  props
                                  (current-buffer)))))
       (save-excursion
-        (goto-char (point-min))
+        (goto-char (or point (point-min)))
         (while (setq match (text-property-search-forward 'fj-review-diff))
           (setq-local font-lock-defaults diff-font-lock-defaults)
           (font-lock-fontify-region (prop-match-beginning match)
@@ -2902,7 +2902,7 @@ If INIT-PAGE, do not update :page in viewargs."
                  (when end-page ;; if we are re-paginating, go again maybe:
                    (fj-reload-paginated-pages-maybe end-page page))
                  ;; shr-render-region and regex props:
-                 (fj-render-item-bodies)
+                 (fj-render-item-bodies point)
                  ;; maybe add a "more" link:
                  (fj-issue-timeline-more-link-mayb))))))))
 
@@ -3408,7 +3408,12 @@ AUTHOR of item, OWNER of repo, TS is a timestamp."
        ts)
       "\n"
       (propertize (fj-render-body .body)
-                  'fj-item-body t))
+                  'fj-item-body t)
+      (if (not .resolver)
+          ""
+        (format "\n%s marked this discussion as resolved"
+                (propertize .resolver.login 'face 'fj-name-face))))
+     ;; )
      'fj-review-comment comment
      'line-prefix "\t"))) ;; indent
 
@@ -4499,8 +4504,10 @@ Used for hitting RET on a given link."
     (let ((type (get-text-property pos 'type))
           (item (fj--property 'item)))
       (pcase type
-        ((or 'tag 'comment-ref)
+        ('tag
          (fj-item-view repo owner item))
+        ('comment-ref
+         (fj-issue-ref-follow item))
         ;; ((eq type 'pull)
         ;; (fj-item-view repo owner item nil :pull))
         ('handle (fj-user-repos-tl item))
