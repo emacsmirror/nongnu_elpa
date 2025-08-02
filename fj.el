@@ -4504,8 +4504,10 @@ Used for hitting RET on a given link."
     (let ((type (get-text-property pos 'type))
           (item (fj--property 'item)))
       (pcase type
-        ((or 'tag 'comment-ref)
+        ('tag
          (fj-item-view repo owner item))
+        ('comment-ref
+         (fj-issue-ref-follow item))
         ;; ((eq type 'pull)
         ;; (fj-item-view repo owner item nil :pull))
         ('handle (fj-user-repos-tl item))
