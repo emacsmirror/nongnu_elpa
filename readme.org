@@ -174,6 +174,10 @@ Syntax highlighting (optional dependency):
 
 [[file:screenshot-syntax-highlight.png]]
 
+Diffs (as code as as reviews):
+
+[[file:screenshot-diff.png]]
+
 * commands index
 
 #+BEGIN_SRC emacs-lisp :results table :colnames '("Binding" "Command" "Description") :exports results
