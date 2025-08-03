@@ -106,13 +106,14 @@ Forgejo's API is vast. Currently =fj.el= just implements a few basic things:
 *** create remote links from local source files
 If you want to insert a link to a line in your source files, consider using https://github.com/sshaw/git-link.
 
-*** syntax highlighting for verbatim code in comments
+*** syntax highlighting for code blocks
 
-If you want verbatim text in comments to have syntax highlighting,
+If you want verbatim code blocks in comments to have syntax highlighting,
 consider installing
 https://github.com/xuchunyang/shr-tag-pre-highlight.el. =fj-.el= uses =shr=
 for rendering, and =shr-tag-pre-highlight= adds syntax highlighting support
-to =shr=.
+to =shr=. You may also need to customize =shr-tag-pre-highlight-lang-modes= to
+ensure the languages you want will work.
 
 * dependencies
 - =magit-post=, =magit-process= (for obtaining current repo)
