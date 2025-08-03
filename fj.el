@@ -2180,11 +2180,10 @@ If we are in a repo, don't assume `fj-user' owns it. In that case we
 fetch owner/repo from git config.
 If we are not in a repo, call `fj-list-issues-do' without using git
 config.
-With a prefix arg, prompt for a repo.
-With 2 prefix args, prompt for a repo and ensure that its owner is
-`fj-user'.
+With a prefix arg, prompt for a repo and assume its owner is `fj-user'.
 The default sort value follows `fj-issues-sort-default'."
   (interactive "P")
+  ;; FIXME: if we prompt for repo, we should mandate `fj-user' as owner!
   (fj-list-items repo nil nil "issues"))
 
 (defun fj-list-items (&optional repo owner state type)
@@ -2239,14 +2238,13 @@ STATE, TYPE and QUERY are for `fj-list-issues-do'."
   "Display ISSUES in a tabulated list view.
 Either for `fj-current-repo' or REPO, a string, owned by OWNER.
 With a prefix arg, or if REPO and `fj-current-repo' are nil,
-prompt for a repo to list.
-With two prefix args, also mandate that owner is `fj-user'.
+prompt for a repo to list and assume owner is `fj-user'.
 Optionally specify the STATE filter (open, closed, all), and the
 TYPE filter (issues, pulls, all).
 QUERY is a search query to filter by.
 SORT defaults to `fj-issues-sort-default'."
   (let* ((repo (fj-read-user-repo arg))
-         (owner (if (equal '(16) arg) ;; 2 prefixes
+         (owner (if (equal '(4) arg)
                     fj-user
                   (or owner (fj--repo-owner))))
          (type (or type "issues"))
