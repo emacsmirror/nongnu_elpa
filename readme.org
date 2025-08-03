@@ -170,6 +170,10 @@ Repo settings transient:
 
 [[file:Screenshot-transient.png]]
 
+Syntax highlighting (optional dependency):
+
+[[file:screenshot-syntax-highlight.png]]
+
 * commands index
 
 #+BEGIN_SRC emacs-lisp :results table :colnames '("Binding" "Command" "Description") :exports results
