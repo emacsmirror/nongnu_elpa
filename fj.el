@@ -3307,7 +3307,7 @@ Optionally set link TYPE and ITEM number and FACE."
 ;;; REVIEWS (PRS)
 
 (defun fj-format-review (data ts format-str user)
-  "Render code review ITEM.
+  "Render code review DATA.
 TS, FORMAT-STR and USER are from `fj-render-timeline-item', which see.
 Renders a review heading and review comments."
   (fj-destructure-buf-spec (repo owner item)
