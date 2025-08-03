@@ -1239,7 +1239,7 @@ Cycle between owner, created, mentioned, assigned."
 Cycles between listing issues user is owner of, created, is mentioned
 in, or assigned to."
   (interactive)
-  (fj-destructure-buf-spec (viewfun viewargs)
+  (fj-destructure-buf-spec (_viewfun viewargs)
     (let ((newargs (fj-cycle-viewargs viewargs)))
       (apply #'fj-list-search-items (fj-plist-values newargs)))))
 
@@ -1953,7 +1953,7 @@ the label's color, as per `fj-propertize-label-names'."
 (defvar-keymap fj-issue-tl-mode-map
   :doc "Map for `fj-issue-tl-mode', a tabluated list of issues."
   :parent fj-generic-tl-map ; has nav
-  "C"        #'fj-comment
+  "C"        #'fj-item-comment
   "e"        #'fj-item-edit
   "t"        #'fj-item-edit-title
   "v"        #'fj-issues-tl-view
@@ -3612,7 +3612,7 @@ unset any default values."
   "View issues of current repo from tabulated repos listing."
   (interactive)
   (fj-with-repo-entry
-   (let* ((entry (tabulated-list-get-entry))
+   (let* ( ;; (entry (tabulated-list-get-entry))
           (name (fj--repo-name))
           (owner (fj--repo-owner)))
      (fj-list-issues-do name owner))))
@@ -3753,7 +3753,7 @@ FILE is a string, including type suffix, and is case-sensitive."
                        (lambda (resp)
                          (fj-resp-str resp)))))
 
-(defun fj-repo-readme (&optional repo owner)
+(defun fj--repo-readme (&optional repo owner)
   "Display readme file of REPO by OWNER.
 Optionally specify REF, a commit, branch, or tag."
   (let* ((files (fj-get-repo-files repo owner))
@@ -3786,7 +3786,7 @@ Works in repo listings, issue listings, and item views."
   (interactive)
   (let ((repo (fj--repo-name))
         (owner (fj--repo-owner)))
-    (fj-repo-readme repo owner)))
+    (fj--repo-readme repo owner)))
 
 ;;; TL ACTIONS, ISSUES ONLY
 
