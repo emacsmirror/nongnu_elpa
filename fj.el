@@ -2890,7 +2890,10 @@ If INIT-PAGE, do not update :page in viewargs."
         (fj-destructure-buf-spec (viewargs)
           ;; unless init-page arg, increment page in viewargs
           (let* ((page (plist-get viewargs :page))
-                 (args (if init-page
+                 (final-load-p
+                  (and end-page
+                       (fj-string-number> end-page page #'=)))
+                 (args (if (or init-page final-load-p)
                            viewargs
                          (plist-put viewargs :page (fj-inc-or-2 page)))))
             (setq fj-buffer-spec
@@ -2907,14 +2910,13 @@ If INIT-PAGE, do not update :page in viewargs."
             ;; - on first load
             ;; - on loading another page
             ;; - on reload (`g'), only after loading all pages.
-            (when
-                (or
-                 ;; on first load?:
-                 (and init-page (= (string-to-number init-page) 1))
-                 ;; on paginate?:
-                 (and (not init-page) (not end-page))
-                 ;; after last reload?:
-                 (and end-page (fj-string-number> end-page page #'=)))
+            (when (or
+                   ;; on first load?:
+                   (and init-page (= (string-to-number init-page) 1))
+                   ;; on paginate?:
+                   (and (not init-page) (not end-page))
+                   ;; after last reload?:
+                   final-load-p)
               ;; shr-render-region and regex props:
               (let ((render-point ;; make point arg first item after head item
                      (save-excursion
