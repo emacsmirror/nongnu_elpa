@@ -2879,32 +2879,51 @@ If INIT-PAGE, do not update :page in viewargs."
   (with-current-buffer buf
     (save-excursion
       (goto-char point)
-      (cond ((and (not json)
-                  (called-interactively-p 'any))
-             (user-error "No more items"))
-            ((equal 'errors (caar json))
-             (user-error "I am Error: %s - %s"
-                         (alist-get 'message json) json))
-            (t
-             (fj-destructure-buf-spec (viewargs)
-               ;; unless init-page arg, increment page in viewargs
-               (let* ((page (plist-get viewargs :page))
-                      (args (if init-page
-                                viewargs
-                              (plist-put viewargs :page (fj-inc-or-2 page)))))
-                 (setq fj-buffer-spec
-                       (plist-put fj-buffer-spec :viewargs args))
-                 (message "Loading comments...")
-                 (let ((inhibit-read-only t))
-                   ;; FIXME: we need .user.username owner args for new elements:
-                   (fj-render-timeline json))
-                 (message "Loading comments... Done")
-                 (when end-page ;; if we are re-paginating, go again maybe:
-                   (fj-reload-paginated-pages-maybe end-page page))
-                 ;; shr-render-region and regex props:
-                 (fj-render-item-bodies point)
-                 ;; maybe add a "more" link:
-                 (fj-issue-timeline-more-link-mayb))))))))
+      (cond
+       ((and (not json)
+             (called-interactively-p 'any))
+        (user-error "No more items"))
+       ((equal 'errors (caar json))
+        (user-error "I am Error: %s - %s"
+                    (alist-get 'message json) json))
+       (t
+        (fj-destructure-buf-spec (viewargs)
+          ;; unless init-page arg, increment page in viewargs
+          (let* ((page (plist-get viewargs :page))
+                 (args (if init-page
+                           viewargs
+                         (plist-put viewargs :page (fj-inc-or-2 page)))))
+            (setq fj-buffer-spec
+                  (plist-put fj-buffer-spec :viewargs args))
+            (message "Loading comments...")
+            (let ((inhibit-read-only t))
+              ;; FIXME: we need .user.username owner args for new elements:
+              (fj-render-timeline json))
+            (message "Loading comments... Done")
+            (when end-page ;; if we are re-paginating, go again maybe:
+              (fj-reload-paginated-pages-maybe end-page page))
+            ;; NB: we need to call `fj-render-item-bodies' exactly once,
+            ;; no matter the situation:
+            ;; - on first load
+            ;; - on loading another page
+            ;; - on reload (`g'), only after loading all pages.
+            (when
+                (or
+                 ;; on first load?:
+                 (and init-page (= (string-to-number init-page) 1))
+                 ;; on paginate?:
+                 (and (not init-page) (not end-page))
+                 ;; after last reload?:
+                 (and end-page (fj-string-number> end-page page #'=)))
+              ;; shr-render-region and regex props:
+              (let ((render-point ;; make point arg first item after head item
+                     (save-excursion
+                       (goto-char (point-min))
+                       (text-property-search-forward 'fj-item-body)
+                       (point))))
+                (fj-render-item-bodies render-point)))
+            ;; maybe add a "more" link:
+            (fj-issue-timeline-more-link-mayb))))))))
 
 (defun fj-reload-paginated-pages-maybe (end-page page)
   "Call `fj-reload-paginated-pages' maybe.
