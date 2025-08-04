@@ -125,9 +125,13 @@ ensure the languages you want will work.
 
 ** performance
 
-Unfortunately =fj.el= is pretty slow at loading issues/PRs with lots of comments and other timeline elements. The relevant code was recently re-written to be partly async, and the rendering of HTML in item bodies was recently overhauled, but the performance is still terrible. This leads me to believe it is actually to do with the Forgejo API (as for example, my abominable old rendering code worked for 100+ items with Lemmy, but couldn't do 30 items in a timeley manner with Forgejo.)
+Unfortunately =fj.el= is pretty slow at loading issues/PRs with lots of comments and other timeline elements. The relevant code was recently re-written to be partly async, and the rendering of HTML in item bodies was recently overhauled, but the performance is still terrible. This leads me to believe it is actually to do with the Forgejo API (as for example, my abominable old rendering code worked for 100+ items with Lemmy, but couldn't do 30 items in a timely manner with Forgejo.)
 
 There is a defcustom, =fj-timeline-default-items=, with a default value of 15, meaning we load 15 timeline elements by default. If you find the performance is no problem on longer items, you can increase this value. (The default apart from this setting would be 30.)
+
+** general design
+
+=fj.el= started out as a tiny package around my general use-case: working with repos I own and that have few if any collaborators and only one remote. Working with other repos was added later, and some workflows and commands still need adjusting in this regard. If you find =fj.el= generates a lot of friction with your workflow, feel free to let me know. (It's not easy hacking in the vague direction what I imagine other people's workflows to be.)
 
 * contributions
 
