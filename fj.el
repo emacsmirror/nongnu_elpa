@@ -518,16 +518,28 @@ If we fail, return `fj-user'."
 
 ;;; GIT CONFIG
 
-(defun fj-git-config-remote-url ()
-  "Return a remote's URL.
-Either get push default or call `magit-read-remote'."
-  ;; it might be nice to also offer "upstream" remote even if pushDefault
-  ;; is set and it is different? like if you operate a fork, maybe the
-  ;; fork is pushDefault but you want to work on issues on "upstream"?
-  ;; used in `fj-list-issues' and `fj-issue-compose'
+;; patch magit-read-remote to have no-match arg avail:
+(defun fj-magit-read-remote (prompt &optional default use-only no-match)
+  (let ((remotes (magit-list-remotes)))
+    (if (and use-only (length= remotes 1))
+        (car remotes)
+      (magit-completing-read prompt remotes
+                             nil (not no-match) nil nil
+                             (or default
+                                 (magit-remote-at-point)
+                                 (magit-get-remote))))))
+
+(defun fj-git-config-remote-url (&optional remote)
+  "Return a REMOTE's URL.
+Either get push default or call `magit-read-remote'.
+When READ, read a remote without checking push.default.
+NO-MATCH means when completing-reading a remote, do not require match."
+  ;; used in `fj-list-issues', `fj-issue-compose'
   ;; FIXME: use everywhere?
-  (let* ((remote ;; maybe works for own repo, as you gotta push:
-          (or (magit-get-push-remote)
+  (let* ((remote
+          (or remote
+              ;; maybe works for own repo, as you gotta push:
+              (magit-get-push-remote)
               ;; nice for not own repo:
               (magit-read-remote "Remote:" nil :use-only))))
     (magit-get (format "remote.%s.url" remote))))
@@ -2138,12 +2150,12 @@ Otherwise t."
                          (string-prefix-p x (url-host parsed)))
                        fj-non-fj-hosts))))
 
-(defun fj-repo-+-owner-from-git ()
-  "Return repo and owner from git config.
+(defun fj-repo-+-owner-from-git (&optional remote)
+  "Return repo and owner of REMOTE from git config.
 Nil if we fail to parse."
   ;; https://git-scm.com/book/en/v2/Git-on-the-Server-The-Protocols
   ;; docs are unclear on how to distinguish these!
-  (let* ((remote (fj-git-config-remote-url)))
+  (let* ((remote (fj-git-config-remote-url remote)))
     (when (fj--forgejo-repo-maybe remote)
       (cond
        ((string-prefix-p "http" remote) ;; http(s)
@@ -4025,12 +4037,15 @@ LIMIT is for `re-search-forward''s bound argument."
 (defun fj-compose-read-owner ()
   "Read a repo owner."
   (interactive)
-  ;; FIXME: should we have completing-read of names of remotes
-  ;; (from URLs not local git names)
-  ;; based on where we think we are (but you can override)
-  (setq fj-compose-repo-owner
-        (read-string "Owner: " fj-compose-repo-owner))
-  (fedi-post--update-status-fields))
+  (let ((remote
+         (fj-magit-read-remote "Remote [from git or any string]"
+                               fj-compose-repo-owner
+                               :use-only :no-match)))
+    (setq fj-compose-repo-owner
+          (if (not (magit-get (format "remote.%s.url" remote)))
+              remote ;; return arbitrary string
+            (car (fj-repo-+-owner-from-git remote))))
+    (fedi-post--update-status-fields)))
 
 (defun fj-compose-read-title ()
   "Read an issue title."
