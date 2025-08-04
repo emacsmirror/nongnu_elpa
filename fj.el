@@ -521,6 +521,9 @@ If we fail, return `fj-user'."
 (defun fj-git-config-remote-url ()
   "Return a remote's URL.
 Either get push default or call `magit-read-remote'."
+  ;; it might be nice to also offer "upstream" remote even if pushDefault
+  ;; is set and it is different? like if you operate a fork, maybe the
+  ;; fork is pushDefault but you want to work on issues on "upstream"?
   ;; used in `fj-list-issues' and `fj-issue-compose'
   ;; FIXME: use everywhere?
   (let* ((remote ;; maybe works for own repo, as you gotta push:
@@ -3997,10 +4000,11 @@ LIMIT is for `re-search-forward''s bound argument."
 (defvar-keymap fj-compose-mode-map
   :doc "Keymap for `fj-compose-mode'."
   :parent fj-compose-comment-mode-map
-  "C-c C-t" #'fj-compose-read-title
-  "C-c C-r" #'fj-compose-read-repo
-  "C-c C-l" #'fj-compose-read-labels
-  "C-c C-m" #'fj-compose-read-milestone
+  "C-c C-t"   #'fj-compose-read-title
+  "C-c C-r"   #'fj-compose-read-repo
+  "C-c C-l"   #'fj-compose-read-labels
+  "C-c C-m"   #'fj-compose-read-milestone
+  "C-c C-o"   #'fj-compose-read-owner
   "C-c C-S-M" #'fj-compose-remove-milestone
   "C-c C-S-L" #'fj-compose-remove-labels)
 
@@ -4016,6 +4020,16 @@ LIMIT is for `re-search-forward''s bound argument."
   ;; FIXME: combine own repos and completing search:
   (setq fj-compose-repo
         (fj-read-user-repo-do fj-compose-repo))
+  (fedi-post--update-status-fields))
+
+(defun fj-compose-read-owner ()
+  "Read a repo owner."
+  (interactive)
+  ;; FIXME: should we have completing-read of names of remotes
+  ;; (from URLs not local git names)
+  ;; based on where we think we are (but you can override)
+  (setq fj-compose-repo-owner
+        (read-string "Owner: " fj-compose-repo-owner))
   (fedi-post--update-status-fields))
 
 (defun fj-compose-read-title ()
@@ -4086,22 +4100,26 @@ Inject INIT-TEXT into the buffer, for editing."
      (list #'fj-compose-mentions-capf)
      ;; #'fj-compose-issues-capf
      ;; TODO: why not have a compose-buffer-spec rather than 10 separate vars?
-     `(((name . "repo")
-        (prop . compose-repo)
+     `(((name     . "repo")
+        (prop     . compose-repo)
         (item-var . fj-compose-repo)
-        (face . link))
-       ((name . ,(if (eq type 'comment) "issue ""title"))
-        (prop . compose-title)
+        (face     . link))
+       ((name     . "owner")
+        (prop     . compose-repo-owner)
+        (item-var . fj-compose-repo-owner)
+        (face     . link))
+       ((name     . ,(if (eq type 'comment) "issue ""title"))
+        (prop     . compose-title)
         (item-var . fj-compose-issue-title)
-        (face . fj-post-title-face))
-       ((name . "labels")
-        (prop . compose-labels)
+        (face     . fj-post-title-face))
+       ((name     . "labels")
+        (prop     . compose-labels)
         (item-var . fj-compose-issue-labels)
-        (face . fj-post-title-face))
-       ((name . "milestone")
-        (prop . compose-milestone)
+        (face     . fj-post-title-face))
+       ((name     . "milestone")
+        (prop     . compose-milestone)
         (item-var . fj-compose-milestone)
-        (face . fj-post-title-face)))
+        (face     . fj-post-title-face)))
      init-text quote
      "fj-")
     (setq fj-compose-item-type
