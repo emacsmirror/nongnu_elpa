@@ -1075,14 +1075,16 @@ ORDER should be a member of `fj-own-repos-order'."
            collect (let-alist r
                      (list .name .id .description .owner.username))))
 
-(defun fj-read-user-repo-do (&optional default silent)
+(defun fj-read-user-repo-do (&optional default silent order)
   "Prompt for a user repository.
 DEFAULT is initial input for `completing-read'.
 SILENT means silent request."
-  (let* ((repos (fj-get-repos (fj-max-items) nil silent))
+  (let* ((repos (fj-get-repos (fj-max-items) nil silent
+                              nil (or order "recentupdate")))
          (cands (fj-get-repo-candidates repos)))
     (completing-read "Repo: " cands
-                     nil nil default)))
+                     nil nil ;; don't force match
+                     default)))
 
 (defun fj-read-user-repo (&optional arg)
   "Return a user repo.
