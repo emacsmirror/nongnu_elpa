@@ -2883,7 +2883,8 @@ If INIT-PAGE, do not update :page in viewargs."
               (let ((render-point ;; make point arg first item after head item
                      (save-excursion
                        (goto-char (point-min))
-                       (text-property-search-forward 'fj-item-body)
+                       ;; fj-item-body assumes body is not "":
+                       (text-property-search-forward 'fj-item-data)
                        (point))))
                 (fj-render-item-bodies render-point)))
             ;; maybe add a "more" link:
