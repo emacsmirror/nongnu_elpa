@@ -467,6 +467,10 @@ http://takeonrules.com/2024/10/31/hacking-on-mastodon-emacs-package-to-narrow-vi
 
 The incomparable sachac has a bunch of =mastodon.el= extensions and goodies in their literate config, available here: https://sachachua.com/dotemacs/index.html#mastodon.
 
+**** syntax highlighting in posts
+
+If you would like to have syntax highlighting when viewing posts containing code (provided it is in =<pre>= tags), consider installing https://github.com/xuchunyang/shr-tag-pre-highlight.el.
+
 *** Live-updating timelines: =mastodon-async-mode=
 
 (code taken from [[https://github.com/alexjgriffith/mastodon-future.el][mastodon-future]].)
