@@ -5,7 +5,7 @@
 ;; Author: Boris Shminke <boris@shminke.com>
 ;; Maintainer: Boris Shminke <boris@shminke.com>
 ;; Created: 29 Jun 2025
-;; Version: 0.1.5
+;; Version: 0.1.6
 ;; Keywords: tools, languages
 ;; URL: https://github.com/inpefess/flymake-pyrefly
 ;; Package-Requires: ((emacs "26.1"))
@@ -27,13 +27,24 @@
 
 ;;; Commentary:
 
-;; A Pyrefly (https://pyrefly.org/) Flymake backend.
-;; Based on the annotated example from Flymake info.
+;; Pyrefly (https://pyrefly.org/) is a fast Python type checker
+;; written in Rust. flymake-pyrefly is a Pyrefly backend for Flymake
+;; that helps you to see typing errors in your Python files.
 ;;
 ;; Usage:
 ;;
+;;   (add-hook 'python-base-mode-hook #'pyrefly-setup-flymake-backend)
+;;
+;;   ;; alternatively, with use-package
 ;;   (use-package flymake-pyrefly
-;;     :hook (python-mode . pyrefly-setup-flymake-backend))
+;;     :hook (python-base-mode . pyrefly-setup-flymake-backend))
+;;
+;;   ;; or if you use eglot
+;;   (add-hook 'eglot-managed-mode-hook #'pyrefly-setup-flymake-backend)
+;;
+;;   ;; if you use eglot and use-package
+;;   (use-package flymake-pyrefly
+;;     :hook (eglot-managed-mode . pyrefly-setup-flymake-backend))
 
 ;;; Code:
 (require 'cl-lib)
@@ -116,7 +127,7 @@
                                                         msg)
                        into diags
                        finally (funcall report-fn diags)))
-                  (flymake-log :warning "Canceling obsolete check %s"
+                  (flymake-log :warning "Cancelling obsolete check %s"
                                proc))
               ;; Cleanup the temporary buffer used to hold the
               ;; check's output.
