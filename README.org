@@ -1,3 +1,5 @@
+[[https://elpa.nongnu.org/nongnu/flymake-pyrefly.html][https://elpa.nongnu.org/nongnu/flymake-pyrefly.svg]]
+
 * flymake-pyrefly
 
 [[https://pyrefly.org/][Pyrefly]] is a fast Python type checker written in Rust.
