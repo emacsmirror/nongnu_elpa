@@ -2,7 +2,7 @@
 
 [[https://pyrefly.org/][Pyrefly]] is a fast Python type checker written in Rust.
 flymake-pyrefly is a Pyrefly backend for [[https://www.gnu.org/software/emacs/manual/html_node/flymake/index.html#Top][Flymake]] that helps you to
-see typing errors in your Pyton files.
+see typing errors in your Python files.
 
 * How to install
 
@@ -20,7 +20,7 @@ Python files (notice the difference if you use eglot):
     :hook (python-base-mode . pyrefly-setup-flymake-backend))
 
   ;; or if you use eglot
-  (add-hook 'eglot-managed-mode-hook #'pyrefly-setup-flymake-backen)
+  (add-hook 'eglot-managed-mode-hook #'pyrefly-setup-flymake-backend)
 
   ;; if you use eglot and use-package
   (use-package flymake-pyrefly
