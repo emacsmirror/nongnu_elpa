@@ -180,6 +180,12 @@ If `fj-timeline-default-items' is not set, call `fj-default-limit'."
       (fj-default-limit)
     (number-to-string fj-timeline-default-items)))
 
+(defcustom fj-compose-autocomplete t
+  "Whether to enable autocompletion in compose buffers.
+Sets `corfu-auto' to t, buffer locally.
+Disable this if you prefer to trigger autocompletion manually."
+  :type 'boolean)
+
 ;;; FACES
 
 (defface fj-comment-face
@@ -4193,7 +4199,7 @@ Inject INIT-TEXT into the buffer, for editing."
         (item-var . fj-compose-milestone)
         (face     . fj-post-title-face)))
      init-text quote
-     "fj-")
+     "fj-" fj-compose-autocomplete)
     (setq fj-compose-item-type
           (if edit
               (if (eq type 'comment)
