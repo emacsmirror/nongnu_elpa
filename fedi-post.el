@@ -621,7 +621,7 @@ Added to `after-change-functions'."
 
 (defun fedi-post--compose-buffer
     (&optional edit major minor prefix type capf-funs fields
-               init-text reply-text buf-prefix)
+               init-text reply-text buf-prefix autocomplete)
   "Create a new buffer to capture text for a new post.
 EDIT means we are editing an existing post, not composing a new one.
 MAJOR is the major mode to enable.
@@ -675,7 +675,8 @@ BUF-PREFIX is a string to prepend to the buffer name."
              (add-to-list 'company-backends 'company-capf))
         (company-mode-on))
       ;; corfu
-      (when (require 'corfu nil :no-error)
+      (when (and (require 'corfu nil :no-error)
+                 autocomplete)
         (setq-local corfu-auto t)
         (corfu--on)))
     ;; after-change:
