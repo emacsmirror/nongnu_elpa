@@ -3760,14 +3760,68 @@ REF is a commit, branch or tag."
   (let ((endpoint (format"repos/%s/%s/contents" owner repo)))
     (fj-get endpoint)))
 
-(defun fj-get-repo-file (repo owner file)
+(defun fj-get-repo-file (repo owner file &optional ref)
   "Return FILE from REPO of OWNER.
 FILE is a string, including type suffix, and is case-sensitive."
   (let* ((endpoint (format "repos/%s/%s/raw/%s" owner repo file))
-         (resp (fj-get endpoint nil :no-json)))
+         (params (fedi-opt-params ref))
+         (resp (fj-get endpoint params :no-json)))
     (fedi-http--triage resp
                        (lambda (resp)
                          (fj-resp-str resp)))))
+
+(defun fj-get-repo-file-range (repo owner file beg &optional end ref)
+  "Return FILE from REPO by OWNER.
+Return the range from BEG to END, both being line numbers.
+REF is a string, either branch name, commit ref or tag ref."
+  (let ((raw (fj-get-repo-file repo owner file)))
+    (with-temp-buffer
+      (switch-to-buffer (current-buffer))
+      (insert raw)
+      (goto-char (point-min))
+      (forward-line beg)
+      (buffer-substring (point)
+                        (if (not end)
+                            (progn (forward-line 1)
+                                   (point))
+                          (save-excursion
+                            (goto-char (point-min))
+                            (forward-line (1+ end))
+                            (point)))))))
+
+(defun fj-range-from-url (url)
+  "From URL, return a range of code as a string."
+  (let ((parsed (url-generic-parse-url url)))
+    ;; when on this instance:
+    (when (and (equal (url-host (url-generic-parse-url fj-host))
+                      (url-host parsed))
+               ;; and it has # after last /
+               (url-target parsed))
+      (let* ((path (url-filename parsed))
+             (split (split-string path "/"))
+             (targ (split-string (url-target parsed) "-")))
+        ;; FIXME: handle tag ref:
+        (if (equal (nth 4 split) "commit")
+            (fj-get-repo-file-range
+             (nth 2 split)
+             (nth 1 split)
+             (nth 6 split)
+             (fj--range-elt-as-number (nth 0 targ))
+             (when (cdr targ)
+               (fj--range-elt-as-number (nth 1 targ)))
+             (nth 5 split)) ;; commit ref
+          (fj-get-repo-file-range
+           (nth 2 split)
+           (nth 1 split)
+           (nth 5 split)
+           (fj--range-elt-as-number (nth 0 targ))
+           (when (cdr targ)
+             (fj--range-elt-as-number (nth 1 targ)))
+           (nth 4 split))))))) ;; branch
+
+(defun fj--range-elt-as-number (str)
+  "Remove first elt of STR and convert to number."
+  (string-to-number (substring str 1)))
 
 (defun fj--repo-readme (&optional repo owner)
   "Display readme file of REPO by OWNER.
