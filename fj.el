@@ -2417,6 +2417,41 @@ TYPE is the item type."
 ;;; ISSUE VIEW
 (defvar fj-url-regex fedi-post-url-regex)
 
+(defvar fj-team-handle-regex
+  ;; copied from `fedi-post-handle-regex':
+  (rx (| (any ?\( "\n" "\t "" ") bol) ; preceding things
+      (group-n 1 ; = handle with @
+        (+ ; breaks groups with instance handles!
+         ?@
+         (group-n 2 ; = repo/tem only
+           (* (any ?- ?_ ;?. ;; this . breaks word-boundary at end
+                   "A-Z" "a-z" "0-9")) ;; before slash (repo)
+           "/" ;; one slash
+           (* (any ?- ?_ ;?. ;; this . breaks word-boundary at end
+                   "A-Z" "a-z" "0-9"))))) ;; after slash (team)
+      ;; i struggled to get full stops working here (in fedi.el) but
+      ;; perhaps they aren't needed, as they are not included in handles
+      ;; above?
+      (| "'" word-boundary)) ; boundary or possessive
+  "Regex for a team handle, e.g. @repo/team.
+Group 1 is for completion at point functions. Group 2 is
+for forming a URL.")
+
+(defvar fj-repo-tag-regex
+  (rx (| (any ?\( "\n" "\t" " ") bol) ;; preceding things
+      (group-n 1 ; = owner/repo#item
+        (* (any ?- ?_ ;?. ;; this . breaks word-boundary at end
+                "A-Z" "a-z" "0-9")) ;; before slash (owner)
+        "/" ;; one slash
+        (* (any ?- ?_ ;?. ;; this . breaks word-boundary at end
+                "." "A-Z" "a-z" "0-9")) ;; after slash (repo)
+        (group-n 2 ?#
+                 (group-n 3
+                   (one-or-more (any "A-Z" "a-z" "0-9")))))
+      (| "'" word-boundary)) ; boundary or possessive
+  "Regex for a repo-prefixed tag.
+Group 1 is owner/repo#item, group 2 is #item, group 3 is item.")
+
 (defun fj-mdize-plain-urls ()
   "Markdown-ize any plain string URLs found in current buffer."
   ;; FIXME: this doesn't rly work with ```verbatim``` in md
@@ -2538,6 +2573,12 @@ Also propertize all handles, tags, commits, and URLs."
                              '(fj-tab-stop t))
       (fedi-propertize-items fedi-post-tag-regex 'tag
                              fj-link-keymap 1 2 nil nil
+                             '(fj-tab-stop t))
+      (fedi-propertize-items fj-team-handle-regex 'team
+                             fj-link-keymap 1 2 nil nil
+                             '(fj-tab-stop t))
+      (fedi-propertize-items fj-repo-tag-regex 'repo-tag
+                             fj-link-keymap 1 1 nil nil
                              '(fj-tab-stop t))
       ;; NB: this is required for shr tab stops
       ;; - why doesn't shr always add shr-tab-stop prop?
@@ -4615,6 +4656,8 @@ Used for hitting RET on a given link."
         ;; ((eq type 'pull)
         ;; (fj-item-view repo owner item nil :pull))
         ('handle (fj-user-repos item))
+        ('team (fj-browse-team item))
+        ('repo-tag (fj-repo-tag-follow item))
         ((or  'commit 'commit-ref)
          (fj-view-commit-diff item))
         ('issue-ref
@@ -4630,6 +4673,18 @@ Used for hitting RET on a given link."
            (fj-item-view-more*)))
         (_
          (error "Unknown link type %s" type))))))
+
+(defun fj-repo-tag-follow (item)
+  (pcase-let* ((`(,owner ,repo ,item) (split-string item "[/#]")))
+    (fj-item-view repo owner item)))
+
+(defun fj-browse-team (item)
+  "Browse URL of team handle link.
+ITEM is the team handle minus leading @.
+Note that teams URLs may not load if they are private."
+  (pcase-let* ((`(,repo  ,team) (split-string item "/"))
+               (url (format "%s/org/%s/teams/%s" fj-host repo team)))
+    (browse-url-generic url)))
 
 (defun fj-issue-ref-follow (item)
   "Follow an issue ref link.
