@@ -4099,6 +4099,9 @@ LIMIT is for `re-search-forward''s bound argument."
 
 (defun fj-compose-read-owner ()
   "Read a repo owner."
+  ;; FIXME: let us specify any owner to create an issue in!
+  ;; currently, if magit remote owner = fj-user, nothing happens here
+  ;; it is `fj-magit-read-remote's fault.
   (interactive)
   (let ((remote
          (fj-magit-read-remote "Remote [from git or any string]"
