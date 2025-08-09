@@ -2862,6 +2862,7 @@ DASHBOARD-TYPE: either Notes or Decks to display the respective dashboard."
 	 (due-note-ids (mapcar #'car due-log))
 	 (inhibit-read-only t))
     (with-current-buffer buffer
+      (setq-local header-line-format nil)
       (erase-buffer)
       (insert "\n"
 	      (gnosis-center-string
