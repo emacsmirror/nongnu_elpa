@@ -120,7 +120,7 @@ face. no-label is optional.")
          ?@
          (group-n 2 ; = username only
            (* (any ?- ?_ ;?. ;; this . breaks word-boundary at end
-                   "A-Z" "a-z" "0-9" )))
+                   "A-Z" "a-z" "0-9")))
          (? ?@
             (group-n 3 ; = optional domain
               (* (not (any "\n" "\t" " ")))))))
@@ -675,9 +675,8 @@ BUF-PREFIX is a string to prepend to the buffer name."
              (add-to-list 'company-backends 'company-capf))
         (company-mode-on))
       ;; corfu
-      (when (and (require 'corfu nil :no-error)
-                 autocomplete)
-        (setq-local corfu-auto t)
+      (when (require 'corfu nil :no-error)
+        (when autocomplete (setq-local corfu-auto t))
         (corfu--on)))
     ;; after-change:
     (make-local-variable 'after-change-functions)
