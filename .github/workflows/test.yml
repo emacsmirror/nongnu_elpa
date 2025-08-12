@@ -49,7 +49,7 @@ jobs:
     - uses: emacs-eask/setup-eask@master
       with:
         version: 'snapshot'
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - name: Run tests
       run: 'make .eask test'
     - name: Run tests (allow failure)
