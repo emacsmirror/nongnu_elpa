@@ -302,7 +302,6 @@ History is disabled."
 
 (defun gnosis-insert-separator ()
   "Insert a dashed line spanning the entire width of the buffer."
-  (interactive)
   (let* ((width (window-width))
          (dash-line (concat (make-string width ?-))))
     (insert "\n" dash-line "\n")
@@ -317,7 +316,6 @@ History is disabled."
   "Centers text in the current line ignoring leading spaces.
 
 Acts only when CENTER? is non-nil."
-  (interactive)
   (let* ((start (line-beginning-position))
          (end (line-end-position))
          (text (string-trim (buffer-substring start end)))
@@ -854,7 +852,6 @@ DATE is a list of the form (year month day)."
   "Tag prompt for adding notes.
 
 If you only require a tag prompt, refer to `gnosis-tags--prompt'."
-  (interactive)
   (unless (derived-mode-p 'org-mode)
     (error "This function is meant to be used in an org-mode buffer"))
   (save-excursion
@@ -1841,7 +1838,7 @@ generate new note id."
 
 (defun gnosis-save ()
   "Save notes in current buffer."
-  (interactive)
+  (interactive nil gnosis-edit-mode)
   (let ((notes (gnosis-export-parse-notes))
 	(deck (gnosis--get-deck-id (gnosis-export-parse--deck-name))))
     (cl-loop for note in notes
@@ -1905,7 +1902,7 @@ generate new note id."
 
 (defun gnosis-edit-quit ()
   "Quit recrusive edit & kill current buffer."
-  (interactive)
+  (interactive nil gnosis-edit-mode)
   (kill-buffer)
   (jump-to-register :gnosis-edit)
   (when gnosis-review-editing-p
