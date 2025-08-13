@@ -1,3 +1,6 @@
+* 0.5.5
++ Performance improvements for un/suspending decks.
++ Minor bug fixes & adjustments.
 * 0.5.4
 + New feature: open of file links in a new buffer.
   + This can be used to view images or pdf/ebooks.
