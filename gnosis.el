@@ -2904,8 +2904,7 @@ DASHBOARD-TYPE: either Notes or Decks to display the respective dashboard."
       (insert "\n\n"))
     (pop-to-buffer-same-window buffer)
     (goto-char (point-min))
-    (gnosis-dashboard-enable-mode)
-    (gnosis-dashboard-menu)))
+    (gnosis-dashboard-enable-mode)))
 
 ;; VC functions ;;
 ;;;;;;;;;;;;;;;;;;
