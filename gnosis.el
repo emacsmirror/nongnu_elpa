@@ -2740,6 +2740,7 @@ When called with called with a prefix, unsuspend all notes of deck."
   "Major mode for displaying Gnosis dashboard."
   :keymap gnosis-dashboard-mode-map
   :interactive nil
+  (setq-local header-line-format nil)
   (setq tabulated-list-padding 2
 	tabulated-list-sort-key nil
 	gnosis-dashboard--selected-ids nil)
@@ -2860,8 +2861,8 @@ DASHBOARD-TYPE: either Notes or Decks to display the respective dashboard."
 	 (due-note-ids (mapcar #'car due-log))
 	 (inhibit-read-only t))
     (with-current-buffer buffer
-      (setq-local header-line-format nil)
       (erase-buffer)
+      (gnosis-dashboard-mode)
       (insert "\n"
 	      (gnosis-center-string
 	       (format "%s" (propertize "Gnosis Dashboard" 'face
