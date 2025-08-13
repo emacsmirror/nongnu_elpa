@@ -655,18 +655,16 @@ When VERIFICATION is non-nil, skips `y-or-n-p' prompt."
 When called with a prefix, unsuspends all notes in deck."
   (let* ((notes (gnosis-select 'id 'notes `(= deck-id ,deck) t))
 	 (suspend (if current-prefix-arg 0 1))
-	 (note-count 0)
 	 (confirm
 	  (y-or-n-p
 	   (if (= suspend 0)
 	       "Unsuspend all notes for deck? " "Suspend all notes for deck? "))))
     (when confirm
-      (cl-loop for note in notes
-	       do (gnosis-update 'review-log `(= suspend ,suspend) `(= id ,note))
-	       (setq note-count (1+ note-count))
-	       finally (if (equal suspend 0)
-			   (message "Unsuspended %s notes" note-count)
-			 (message "Suspended %s notes" note-count))))))
+      (emacsql gnosis-db `[:update review-log :set (= suspend ,suspend) :where
+				   (in id ,(vconcat notes))])
+      (if (equal suspend 0)
+	  (message "Unsuspended %s notes" (length notes))
+	(message "Suspended %s notes" (length notes))))))
 
 (defun gnosis-suspend-tag ()
   "Suspend all note(s) with tag.
