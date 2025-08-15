@@ -2471,7 +2471,9 @@ DATE: Integer, used with `gnosis-algorithm-date' to get previous dates."
 
 (define-minor-mode gnosis-dashboard-notes-mode
   "Minor mode for gnosis dashboard notes output."
-  :keymap gnosis-dashboard-notes-mode-map)
+  :keymap gnosis-dashboard-notes-mode-map
+  (gnosis-dashboard-decks-mode -1)
+  (gnosis-dashboard-tags-mode -1))
 
 (defun gnosis-dashboard--output-notes (note-ids)
   "Output tabulated-list format for NOTE-IDS."
