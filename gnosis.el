@@ -2430,13 +2430,12 @@ DATE: Integer, used with `gnosis-algorithm-date' to get previous dates."
 
 (defun gnosis-dashboard-suspend-note ()
   "Suspend note."
-  (interactive)
+  (interactive nil gnosis-dashboard-notes-mode)
   (let ((current-line (line-number-at-pos)))
-    (if gnosis-dashboard--selected-ids
-	(gnosis-dashboard-marked-suspend)
-      (gnosis-suspend-note (tabulated-list-get-id))
-      (gnosis-dashboard-output-notes gnosis-dashboard-note-ids)
-      (revert-buffer t t t))
+    (gnosis-toggle-suspend-notes
+     (or gnosis-dashboard--selected-ids (list (tabulated-list-get-id))))
+    (gnosis-dashboard-output-notes gnosis-dashboard-note-ids)
+    (revert-buffer t t t)
     (forward-line (- current-line 1))))
 
 (defun gnosis-dashboard-delete ()
