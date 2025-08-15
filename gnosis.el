@@ -666,15 +666,6 @@ When called with a prefix, unsuspends all notes in deck."
 	  (message "Unsuspended %s notes" (length notes))
 	(message "Suspended %s notes" (length notes))))))
 
-(defun gnosis-suspend-tag ()
-  "Suspend all note(s) with tag.
-
-When called with a prefix, unsuspends all notes for tag."
-  (let ((notes (gnosis-select-by-tag (gnosis-tags-prompt)))
-	(suspend (if current-prefix-arg 0 1)))
-    (cl-loop for note in notes
-	     do (gnosis-update 'review-log `(= suspend ,suspend) `(= id ,note)))))
-
 (defun gnosis-generate-id (&optional length deck-p)
   "Generate a unique gnosis ID.
 
