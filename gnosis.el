@@ -2379,9 +2379,6 @@ Return note ids for notes that match QUERY."
 (defvar gnosis-dashboard-buffer-name "*Gnosis Dashboard*"
   "Name of gnosis-dashboard buffer.")
 
-(defvar gnosis-dashboard-search-value nil
-  "Store search value.")
-
 (defvar gnosis-dashboard--current
   '(:type nil :ids nil)
   "Current values to return after edits.")
