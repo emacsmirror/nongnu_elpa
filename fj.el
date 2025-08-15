@@ -3647,21 +3647,15 @@ unset any default values."
 
 ;;; TL ACTIONS
 
-;; in repo's issues TL, or for repo entry at point:
 (defun fj-create-issue (&optional _)
   "Create issue in current repo or repo at point in tabulated listing."
-  ;; for this to work simply from eg a code file not an fj.el buffer,
-  ;; we need `fj--repo-owner' to work.
-  
-  ;; we cd fall back to `fj-user' but that's assuming we are creating an
-  ;; issue in a repo that's ours, not that we are contributing to.
-  ;; otherwise, maybe we cd prompt for "owner/repo" format rather than
-  ;; just repo name, allowing user to choose from their own repos but also
-  ;; forks, upstreams?
-
-  ;; maybe we allow the fallback to `fj-user' but also allow interactive
-  ;; modifying of it like repo name? cd format like "owner/repo" in
-  ;; compose buffer.
+  ;; Should work:
+  ;; - in repo's issues TL;
+  ;; - for repo TL entry at point;
+  ;; - from an issue timeline view;
+  ;; - from a source code file;
+  ;; - from a magit buffer;
+  ;; - from an unrelated buffer (without repo being set)
   (interactive)
   (let* ((owner (fj--repo-owner))
          (repo (fj--repo-name)))
