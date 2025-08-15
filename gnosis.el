@@ -641,7 +641,9 @@ If NAME is t, return name of deck."
 
 When VERIFICATION is non-nil, skips `y-or-n-p' prompt."
   (let* ((suspended (= (gnosis-get 'suspend 'review-log `(= id ,id)) 1))
-	 (verification (or verification (y-or-n-p (if suspended "Unsuspend note? " "Suspend note? ")))))
+	 (verification
+	  (or verification (y-or-n-p
+			    (if suspended "Unsuspend note? " "Suspend note? ")))))
     (when verification
       (if suspended
 	  (gnosis-update 'review-log '(= suspend 0) `(= id ,id))
@@ -2574,10 +2576,19 @@ DATE: Integer, used with `gnosis-algorithm-date' to get previous dates."
   "Suspend notes of TAG."
   (interactive)
   (let* ((tag (or tag (tabulated-list-get-id)))
-	 (notes (gnosis-get-tag-notes tag)))
-    (when (y-or-n-p "Toggle SUSPEND for tagged notes?")
-      (cl-loop for note in notes
-	       do (gnosis-suspend-note note t)))))
+	 (notes (gnosis-get-tag-notes tag))
+	 (suspend (if current-prefix-arg 0 1))
+	 (confirm-msg (y-or-n-p
+		       (if (= suspend 0)
+			   "Unsuspend all notes for tag? "
+			 "Suspend all notes for tag?"))))
+    (when confirm-msg
+      (emacsql gnosis-db
+	       `[:update review-log :set (= suspend ,suspend) :where
+			 (in id ,(vconcat notes))])
+      (if (= suspend 0)
+	  (message "Unsuspended %s notes" (length notes))
+	(message "Suspended %s notes" (length notes))))))
 
 (defun gnosis-dashboard-tag-view-notes (&optional tag)
   "View notes for TAG."
