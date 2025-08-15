@@ -636,18 +636,27 @@ If NAME is t, return name of deck."
 	 (deck (gnosis-get 'deck-id 'notes id-clause)))
     (if name (gnosis--get-deck-name deck) deck)))
 
-(cl-defun gnosis-suspend-note (id &optional verification)
-  "Suspend note with ID.
+(cl-defun gnosis-toggle-suspend-notes (ids &optional verification)
+  "Toggle Suspend value for note with ID.
 
 When VERIFICATION is non-nil, skips `y-or-n-p' prompt."
-  (let* ((suspended (= (gnosis-get 'suspend 'review-log `(= id ,id)) 1))
-	 (verification
-	  (or verification (y-or-n-p
-			    (if suspended "Unsuspend note? " "Suspend note? ")))))
+  (cl-assert (listp ids) nil "IDS value needs to be a list.")
+  (let* ((items-num (length ids))
+         (suspended (and (= items-num 1)
+                         (= (gnosis-get 'suspend 'review-log `(= id ,(car ids))) 1)))
+         (verification
+          (or verification
+              (cond ((= items-num 1)
+                     (y-or-n-p
+                      (if suspended "Unsuspend note? " "Suspend note? ")))
+                    (t (y-or-n-p
+                        (format "Toggle suspend value for %s items? " items-num)))))))
     (when verification
-      (if suspended
-	  (gnosis-update 'review-log '(= suspend 0) `(= id ,id))
-	(gnosis-update 'review-log '(= suspend 1) `(= id ,id))))))
+      (emacsql gnosis-db
+               [:update review-log
+                :set (= suspend (- 1 suspend))
+                :where (in id $v1)]
+               (vconcat ids)))))
 
 (cl-defun gnosis-suspend-deck (&optional (deck (gnosis--get-deck-id)))
   "Suspend all note(s) with DECK id.
