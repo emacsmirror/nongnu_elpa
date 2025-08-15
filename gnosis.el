@@ -2466,6 +2466,7 @@ DATE: Integer, used with `gnosis-algorithm-date' to get previous dates."
   "g" #'gnosis-dashboard-return
   "d" #'gnosis-dashboard-delete
   "m" #'gnosis-dashboard-mark-toggle
+  "M" #'gnosis-dashboard-mark-all
   "u" #'gnosis-dashboard-mark-toggle
   "U" #'gnosis-dashboard-unmark-all)
 
@@ -2813,6 +2814,21 @@ DASHBOARD-TYPE: either Notes or Decks to display the respective dashboard."
     (setq gnosis-dashboard--selected-ids nil)
     (remove-overlays nil nil 'gnosis-mark t)
     (message "All items unmarked")))
+
+(defun gnosis-dashboard-mark-all ()
+  "Mark all items in the tabulated-list buffer and collect their IDs."
+  (interactive)
+  (when (derived-mode-p 'tabulated-list-mode)
+    (let ((inhibit-read-only t))
+      ;; Clear existing marks
+      (remove-overlays (point-min) (point-max) 'gnosis-mark t)
+      ;; Apply overlay to the entire buffer at once
+      (let ((ov (make-overlay (point-min) (point-max))))
+        (overlay-put ov 'face 'highlight)
+        (overlay-put ov 'gnosis-mark t))
+      ;; Set selected IDs
+      (setq gnosis-dashboard--selected-ids gnosis-dashboard-note-ids)
+      (message "Marked %d items" (count-lines (point-min) (point-max))))))
 
 (defun gnosis-dashboard-marked-delete ()
   "Delete marked note entries."
