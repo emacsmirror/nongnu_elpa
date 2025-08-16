@@ -657,7 +657,6 @@ If CURRENT-REPO, get from `fj-current-repo' instead."
 
 ;;; MAP
 
-;; FIXME: we need 1 derived from tl, one from special?
 (defvar-keymap fj-generic-map
   :doc "Generic keymap."
   :parent special-mode-map
@@ -1028,17 +1027,21 @@ Unless paginating, set `fj-user' or `fj-extra-repos'")
 (defun fj--list-user-repos (endpoint buf-str &optional url-str)
   "Fetch user data at /user/ENDPOINT and list them.
 BUF-STR is to name the buffer, URL-STR is for the buffer-spec."
-  (let* ((endpoint (format "/user/%s" endpoint))
-         (repos (fj-get endpoint))
+  (let* ((ep (format "/user/%s" endpoint))
+         (repos (fj-get ep))
          (entries (fj-repo-tl-entries repos))
-         (buf (format "*fj-%s-repos*" buf-str)))
+         (buf (format "*fj-%s-repos*" buf-str))
+         (url (when url-str
+                (concat fj-host "/" fj-user url-str))))
     (fj-repos-tl-render buf entries #'fj-repo-tl-mode)
     (with-current-buffer buf
       (setq fj-buffer-spec
             `( :owner fj-user
-               :url (when url-str
-                      ,(concat fj-host "/" fj-user url-str))
-               :viewfun fj--list-user-repos)))))
+               :url ,url
+               :viewfun fj--list-user-repos
+               :viewargs ( :endpoint ,endpoint
+                           :buf-str ,buf-str
+                           :url ,url))))))
 
 ;;; USER REPOS
 
