@@ -3818,7 +3818,7 @@ FILE is a string, including type suffix, and is case-sensitive."
   "Return FILE from REPO by OWNER.
 Return the range from BEG to END, both being line numbers.
 REF is a string, either branch name, commit ref or tag ref."
-  (let ((raw (fj-get-repo-file repo owner file)))
+  (let ((raw (fj-get-repo-file repo owner file ref)))
     (with-temp-buffer
       (switch-to-buffer (current-buffer))
       (insert raw)
