@@ -743,13 +743,13 @@ If nil, return nil."
   "Decrement the :page entry in PLIST and return it."
   (let* ((new-page (fj-dec-or-nil
                     (plist-get plist :page))))
-    (plist-put plist :page new-page)))
+    (plist-put (copy-sequence plist) :page new-page)))
 
 (defun fj-inc-plist-page (plist)
   "Increment the :page entry in PLIST and return it."
   (let ((new-page (fj-inc-or-2
                    (plist-get plist :page))))
-    (plist-put plist :page new-page)))
+    (plist-put (copy-sequence plist) :page new-page)))
 
 (defun fj-plist-values (plist)
   "Return the values of PLIST as a list."
@@ -1245,7 +1245,7 @@ QUERY, STATE, TYPE, CREATED, ASSIGNED, and MENTIONED are all for
    query state "issues" created assigned mentioned fj-user))
 
 (defun fj-next-plist-state (plist old new &optional newval)
-  (let ((plist (plist-put plist old nil)))
+  (let ((plist (plist-put (copy-sequence plist) old nil)))
     (plist-put plist new (or newval t))))
 
 (defun fj-cycle-viewargs (viewargs)
