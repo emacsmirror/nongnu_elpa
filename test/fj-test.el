@@ -1,5 +1,28 @@
 ;;; fj-test.el --- Tests for fj.el  -*- lexical-binding: nil -*-
 
+;;; Commentary
+
+;; Tests for fj.el
+;; We use exemplify-ert/-eval to make expect style tests.
+;; See <https://flandrew.srht.site/listful/sw-emacs-exemplify-ert.html>.
+
+;; To get the data for variables, the commented function call under their
+;; name is evaluated by `pp-eval-last-sexp' with a prefix argument, which inserts
+;; it into the buffer.
+
+;; To create the expect tests, do something like
+
+;; (exemplify-ert fj-test-comment-cands
+;;   (fj-get-comment-candidates fj-test-comments)
+
+;; and with point after the expression, call `exemplify-eval-do', which
+;; will insert the return value of the expression, following a =>, into the
+;; buffer. If you have a set of expressions in a test, mark them and call
+;; `exemplify-eval-do' with a prefix arg of 3 (i.e. call M-3
+;; `exemplify-eval-do'). This will insert the return values of all
+;; expressions after each one.
+
+
 (require 'exemplify-ert)
 (require 'exemplify-eval)
 (require 'fj)
