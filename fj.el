@@ -1140,12 +1140,16 @@ Return the issue number."
   (let* ((issues (fj-repo-get-issues repo))
          (cands (fj-get-item-candidates issues))
          (choice (completing-read "Issue: " cands))
-         (item
-          (car
-           (cl-member-if (lambda (c)
-                           (string= (car c) choice))
-                         cands))))
+         (item (fj-item-from-choice cands choice)))
     (cadr item)))
+
+(defun fj-item-from-choice (cands choice)
+  "From CANDS, return the data for CHOICE.
+CHOICE is a string returned by `completing-read'."
+  (car
+   (cl-member-if (lambda (c)
+                   (string= (car c) choice))
+                 cands)))
 
 (defun fj-cycle-sort-or-relation ()
   "Call `fj-own-items-cycle-relation' or `fj-list-issues-sort'."
@@ -1434,11 +1438,7 @@ Return its number."
   (let* ((issues (fj-repo-get-pull-reqs repo))
          (cands (fj-get-item-candidates issues))
          (choice (completing-read "Pull request: " cands))
-         (item
-          (car
-           (cl-member-if (lambda (c)
-                           (string= (car c) choice))
-                         cands))))
+         (item (fj-item-from-choice cands choice)))
     (cadr item)))
 
 (defun fj-repo-get-pull-reqs (repo &optional state)
@@ -1487,11 +1487,7 @@ OWNER is the repo owner."
   (let* ((comments (fj-issue-get-comments repo owner item))
          (cands (fj-get-comment-candidates comments))
          (choice (completing-read "Comment: " cands))
-         (comm
-          (car
-           (cl-member-if (lambda (c)
-                           (string= (car c) choice))
-                         cands))))
+         (comm (fj-item-from-choice cands choice)))
     (cadr comm)))
 
 (defun fj-issue-get-comments (repo owner issue)
