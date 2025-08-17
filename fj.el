@@ -1310,9 +1310,8 @@ all for `fj-issues-search'."
   (let ((state (or state "open"))
         (type (or type "issues"))
         (items
-         ;; these parameters are exclusive, not cumulative, but it would be
-         ;; nice to be able to combine them, or at least cycle through
-         ;; them:
+         ;; these parameters are exclusive, not cumulative, but it would
+         ;; be nice to be able to combine them
          (fj-issues-search state nil nil query nil type nil nil
                            assigned created mentioned nil nil owner
                            nil page))
@@ -1493,6 +1492,7 @@ OWNER is the repo owner."
 (defun fj-issue-get-comments (repo owner issue)
   "Return comments for ISSUE in REPO.
 OWNER is the repo owner."
+  ;; NB: no limit arg
   (let* ((endpoint (format "repos/%s/%s/issues/%s/comments"
                            owner repo issue)))
     (fj-get endpoint)))
