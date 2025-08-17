@@ -1475,7 +1475,9 @@ MERGE-COMMIT is the merge commit ID, used for type manually-merged."
   (cl-loop for c in comments
            for body = (alist-get 'body c)
            for trim = (string-clean-whitespace
-                       (substring body nil 70))
+                       (substring body nil
+                                  (when (> (length body) 70)
+                                    70)))
            collect `(,trim
                      ,(alist-get 'id c))))
 
