@@ -2383,13 +2383,13 @@ TYPE is the item type."
   "Update the value of :state in PLIST and return it."
   (let* ((current (plist-get plist :state))
          (next (fj-next-item-var current fj-items-states)))
-    (plist-put plist :state next)))
+    (plist-put (copy-sequence plist) :state next)))
 
 (defun fj-next-item-type-plist (plist)
   "Update the value of :type in PLIST and return it."
   (let* ((current (plist-get plist :type))
          (next (fj-next-item-var current fj-items-types)))
-    (plist-put plist :type next)))
+    (plist-put (copy-sequence plist) :type next)))
 
 (defun fj-cycle-state ()
   "Cycle item state listing of open, closed, and all."
