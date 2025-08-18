@@ -4032,7 +4032,7 @@ Works in repo listings, issue listings, and item views."
   (interactive)
   (pcase major-mode
     ('fj-item-view-mode (fj-item-view-edit-item-at-point))
-    ('fj-issue-tl-mode (fj-issues-tl-close))
+    ('fj-issue-tl-mode (fj-issues-tl-edit))
     (_ (user-error "No issue?"))))
 
 (defun fj-item-edit-title ()
