@@ -920,7 +920,7 @@ PAGE, LIMIT, ORDER."
   (interactive)
   (fj-list-own-repos '(4)))
 
-(defun fj-list-own-repos (&optional limit order page)
+(defun fj-list-own-repos (&optional order page limit)
   "List repos for `fj-user'.
 With prefix arg ORDER, prompt for an argument to sort
 results (server-side).
