@@ -22,6 +22,8 @@
 ;; `exemplify-eval-do'). This will insert the return values of all
 ;; expressions after each one.
 
+;; TODO: test the arity of buffer-spec viewfun matches length of viewargs
+;; for all views.
 
 (require 'exemplify-ert)
 (require 'exemplify-eval)
@@ -1474,3 +1476,264 @@ the webUI only completes names in the issue.")
         5826602)
        ("sort param for user/search endpoint is merged, coming in forgejo v13."
         5983591)))
+
+(defvar fj-test-reactions
+  ;; (fj-get-comment-reactions "2320940" "fj.el" "martianh")
+  '(((user (id . 36599) (login . "martianh") (login_name . "")
+           (source_id . 0) (full_name . "") (email . "mousebot@disroot.org")
+           (avatar_url
+            . "https://codeberg.org/avatars/f2bfe793b009b03283e12089adfdc5ae7cd215f5435f2d3734c44cad831c84e6")
+           (html_url . "https://codeberg.org/martianh") (language . "en-US")
+           (is_admin . :json-false)
+           (last_login . "2024-11-21T14:09:25+01:00")
+           (created . "2021-12-22T10:45:50+01:00") (restricted . :json-false)
+           (active . t) (prohibit_login . :json-false)
+           (location . "local group") (pronouns . "he/him or they/them")
+           (website . "https://anarchive.mooo.com")
+           (description
+            . "If you appreciate my packages, please consider making a donation: https://paypal.me/martianh, https://liberapay.com/martianh/donate.")
+           (visibility . "public") (followers_count . 26)
+           (following_count . 66) (starred_repos_count . 82)
+           (username . "martianh"))
+     (content . "hooray") (created_at . "2024-12-19T10:25:02+01:00"))
+    ((user (id . 36599) (login . "martianh") (login_name . "")
+           (source_id . 0) (full_name . "") (email . "mousebot@disroot.org")
+           (avatar_url
+            . "https://codeberg.org/avatars/f2bfe793b009b03283e12089adfdc5ae7cd215f5435f2d3734c44cad831c84e6")
+           (html_url . "https://codeberg.org/martianh") (language . "en-US")
+           (is_admin . :json-false)
+           (last_login . "2024-11-21T14:09:25+01:00")
+           (created . "2021-12-22T10:45:50+01:00") (restricted . :json-false)
+           (active . t) (prohibit_login . :json-false)
+           (location . "local group") (pronouns . "he/him or they/them")
+           (website . "https://anarchive.mooo.com")
+           (description
+            . "If you appreciate my packages, please consider making a donation: https://paypal.me/martianh, https://liberapay.com/martianh/donate.")
+           (visibility . "public") (followers_count . 26)
+           (following_count . 66) (starred_repos_count . 82)
+           (username . "martianh"))
+     (content . "eyes") (created_at . "2024-12-19T10:28:38+01:00"))
+    ((user (id . 36599) (login . "martianh") (login_name . "")
+           (source_id . 0) (full_name . "") (email . "mousebot@disroot.org")
+           (avatar_url
+            . "https://codeberg.org/avatars/f2bfe793b009b03283e12089adfdc5ae7cd215f5435f2d3734c44cad831c84e6")
+           (html_url . "https://codeberg.org/martianh") (language . "en-US")
+           (is_admin . :json-false)
+           (last_login . "2024-11-21T14:09:25+01:00")
+           (created . "2021-12-22T10:45:50+01:00") (restricted . :json-false)
+           (active . t) (prohibit_login . :json-false)
+           (location . "local group") (pronouns . "he/him or they/them")
+           (website . "https://anarchive.mooo.com")
+           (description
+            . "If you appreciate my packages, please consider making a donation: https://paypal.me/martianh, https://liberapay.com/martianh/donate.")
+           (visibility . "public") (followers_count . 26)
+           (following_count . 66) (starred_repos_count . 82)
+           (username . "martianh"))
+     (content . "heart") (created_at . "2025-03-19T14:24:04+01:00"))))
+
+(exemplify-ert fj-test-render-comment-reactions
+  (fj-group-reactions fj-test-reactions)
+  => '(("hooray" "martianh") ("eyes" "martianh") ("heart" "martianh"))
+  (fj-render-comment-reactions fj-test-reactions)
+  => #("――――――――――――――――
+:hooray: 1 :eyes: 1 :heart: 1"
+       25 27 (help-echo "martianh" face fj-user-face)
+       34 36 (help-echo "martianh" face fj-user-face)
+       44 46 (help-echo "martianh" face fj-user-face)))
+
+(exemplify-ert fj-test-prop-labels
+  (fj-propertize-label-names fj-test-repo-labels)
+  => '((#("api" 0 3
+          (face
+           (:inherit fj-label-face :background "#ee9a49" :foreground "black")
+           help-echo ""))
+        . 456275)
+       (#("api" 0 3
+          (face
+           (:inherit fj-label-face :background "#ee9a49" :foreground "black")
+           help-echo ""))
+        . 456278)
+       (#("api" 0 3
+          (face
+           (:inherit fj-label-face :background "#ee9a49" :foreground "black")
+           help-echo ""))
+        . 456281)
+       (#("bug" 0 3
+          (face
+           (:inherit fj-label-face :background "#ee0701" :foreground "#ffffff")
+           help-echo "Something is not working"))
+        . 259827)
+       (#("contribution welcome" 0 20
+          (face
+           (:inherit fj-label-face :background "#128a0c" :foreground "#ffffff")
+           help-echo "Contributions are very welcome, get started here"))
+        . 259831)
+       (#("duplicate" 0 9
+          (face
+           (:inherit fj-label-face :background "#cccccc" :foreground "black")
+           help-echo "This issue or pull request already exists"))
+        . 259828)
+       (#("enhancement" 0 11
+          (face
+           (:inherit fj-label-face :background "#84b6eb" :foreground "black")
+           help-echo "New feature"))
+        . 259829)
+       (#("good first issue" 0 16
+          (face
+           (:inherit fj-label-face :background "#53e917" :foreground "black")
+           help-echo "Interested in contributing? Get started here."))
+        . 259835)
+       (#("help wanted" 0 11
+          (face
+           (:inherit fj-label-face :background "#eb6420" :foreground "#ffffff")
+           help-echo "Need some help"))
+        . 259830)
+       (#("invalid" 0 7
+          (face
+           (:inherit fj-label-face :background "#e6e6e6" :foreground "black")
+           help-echo "Something is wrong"))
+        . 259832)
+       (#("question" 0 8
+          (face
+           (:inherit fj-label-face :background "#cc317c" :foreground "#ffffff")
+           help-echo "More information is needed"))
+        . 259833)
+       (#("upstream" 0 8
+          (face
+           (:inherit fj-label-face :background "#0052cc" :foreground "#ffffff")
+           help-echo "Related to an upstream repository, already reported there"))
+        . 259834))
+  (fj-propertize-labels fj-test-repo-labels)
+  => #("api api api bug contribution welcome duplicate enhancement good first issue help wanted invalid question upstream"
+       0 3
+       (help-echo "" face
+                  (:inherit fj-label-face :background "#ee9a49" :foreground
+                            "black"))
+       3 4 (face default) 4 7
+       (help-echo "" face
+                  (:inherit fj-label-face :background "#ee9a49" :foreground
+                            "black"))
+       7 8 (face default) 8 11
+       (help-echo "" face
+                  (:inherit fj-label-face :background "#ee9a49" :foreground
+                            "black"))
+       11 12 (face default) 12 15
+       (help-echo "Something is not working" face
+                  (:inherit fj-label-face :background "#ee0701" :foreground
+                            "#ffffff"))
+       15 16 (face default) 16 36
+       (help-echo "Contributions are very welcome, get started here" face
+                  (:inherit fj-label-face :background "#128a0c" :foreground
+                            "#ffffff"))
+       36 37 (face default) 37 46
+       (help-echo "This issue or pull request already exists" face
+                  (:inherit fj-label-face :background "#cccccc" :foreground
+                            "black"))
+       46 47 (face default) 47 58
+       (help-echo "New feature" face
+                  (:inherit fj-label-face :background "#84b6eb" :foreground
+                            "black"))
+       58 59 (face default) 59 75
+       (help-echo "Interested in contributing? Get started here." face
+                  (:inherit fj-label-face :background "#53e917" :foreground
+                            "black"))
+       75 76 (face default) 76 87
+       (help-echo "Need some help" face
+                  (:inherit fj-label-face :background "#eb6420" :foreground
+                            "#ffffff"))
+       87 88 (face default) 88 95
+       (help-echo "Something is wrong" face
+                  (:inherit fj-label-face :background "#e6e6e6" :foreground
+                            "black"))
+       95 96 (face default) 96 104
+       (help-echo "More information is needed" face
+                  (:inherit fj-label-face :background "#cc317c" :foreground
+                            "#ffffff"))
+       104 105 (face default) 105 113
+       (help-echo "Related to an upstream repository, already reported there"
+                  face
+                  (:inherit fj-label-face :background "#0052cc" :foreground
+                            "#ffffff")))
+
+  (fj-label-color-from-name
+   "bug" (fj-propertize-label-names fj-test-repo-labels))
+  => "#ee0701")
+
+
+(defvar fj-test-milestones
+  ;; (fj-get-milestones "fj.el" "martianh")
+  '(((id . 15356) (title . "0.5") (description . "") (state . "open")
+     (open_issues . 0) (closed_issues . 5)
+     (created_at . "2025-04-06T15:26:15+02:00")
+     (updated_at . "2025-04-07T20:50:57+02:00") (closed_at) (due_on))))
+
+
+(exemplify-ert fj-test-next-item-var
+  (fj-next-item-var "issues" fj-items-types) => "pulls"
+  (fj-next-item-var "pulls" fj-items-types) => "all"
+  (fj-next-item-var "open" fj-items-states) => "closed"
+  (fj-next-item-var "all" fj-items-states) => "open")
+
+(exemplify-ert fj-test-state-plist-cycle
+  (fj-next-item-state-plist fj-test-viewargs)
+  ;; (:repo "fj.el" :owner "martianh" :state "open" :type "issues" :query nil
+  ;;        :labels nil :milestones nil :page nil :limit nil)
+  => '(:repo "fj.el" :owner "martianh" :state "closed" :type "issues" :query nil
+             :labels nil :milestones nil :page nil :limit nil)
+  (fj-next-item-type-plist fj-test-viewargs)
+  => '(:repo "fj.el" :owner "martianh" :state "open" :type "pulls" :query nil
+             :labels nil :milestones nil :page nil :limit nil))
+
+(defvar fj-test-timeline-comment
+  ;; (cadr (fj-issue-get-timeline "fj.el" "martianh" "164"))
+  '((id . 5465076) (type . "comment")
+    (html_url
+     . "https://codeberg.org/martianh/fj.el/issues/164#issuecomment-5465076")
+    (pull_request_url . "")
+    (issue_url . "https://codeberg.org/martianh/fj.el/issues/164")
+    (user (id . 36599) (login . "martianh") (login_name . "") (source_id . 0)
+          (full_name . "") (email . "martianh@noreply.codeberg.org")
+          (avatar_url
+           . "https://codeberg.org/avatars/f2bfe793b009b03283e12089adfdc5ae7cd215f5435f2d3734c44cad831c84e6")
+          (html_url . "https://codeberg.org/martianh") (language . "")
+          (is_admin . :json-false) (last_login . "0001-01-01T00:00:00Z")
+          (created . "2021-12-22T10:45:50+01:00") (restricted . :json-false)
+          (active . :json-false) (prohibit_login . :json-false)
+          (location . "local group") (pronouns . "he/him or they/them")
+          (website . "https://anarchive.mooo.com")
+          (description
+           . "If you appreciate my packages, please consider making a donation: https://paypal.me/martianh, https://liberapay.com/martianh/donate.")
+          (visibility . "public") (followers_count . 26)
+          (following_count . 66) (starred_repos_count . 82)
+          (username . "martianh"))
+    (body
+     . "it could also serve as destination of the fork-jump-to-parent cmd.")
+    (created_at . "2025-06-18T13:25:18+02:00")
+    (updated_at . "2025-06-18T13:25:18+02:00") (old_project_id . 0)
+    (project_id . 0) (old_milestone) (milestone) (tracked_time)
+    (old_title . "") (new_title . "") (old_ref . "") (new_ref . "")
+    (ref_issue) (ref_comment) (ref_action . "none") (ref_commit_sha . "")
+    (review_id . 0) (label) (assignee) (assignee_team)
+    (removed_assignee . :json-false) (resolve_doer) (dependent_issue)))
+
+(exemplify-ert fj-test-format-comment-and-header
+  (let-alist fj-test-timeline-comment
+    ;; test comment:
+    ;; FIXME: we can't do this until `fj-get-comment-reactions' is re-written
+    ;;   (fj-format-comment fj-test-timeline-comment)
+    ;; test comment header:
+    (fj-format-comment-header
+     ;; FIXME: test author / edited args:
+     .user.username nil nil
+     (fj-edited-str-maybe .created_at .updated_at)
+     (fedi--relative-time-description
+      (date-to-time .created_at))))
+  => #("martianh   9 weeks ago" 0 8
+       (item "martianh" type handle follow-link t mouse-face highlight button t
+             keymap
+             (keymap (mouse-2 . fj-do-link-action-mouse)
+                     (return . fj-do-link-action))
+             fj-tab-stop t fj-byline t face fj-item-author-face)
+       8 9 (face fj-item-byline-face) 9 10 (face fj-item-byline-face) 10 11
+       (display (space :align-to (- right 15)) face fj-item-byline-face) 11 22
+       (face fj-item-byline-face)))
