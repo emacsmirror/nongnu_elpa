@@ -1604,23 +1604,24 @@ NEW-BODY is the new comment text to send."
 ;;; ISSUE/COMMENT REACTIONS
 ;; render reactions
 
+;; FIXME: repo/owner should be args not fetched from buf-spec:
+
 (defun fj-get-issue-reactions (id)
   "Return reactions data for comment with ID."
   ;; GET /repos/{owner}/{repo}/issues/{index}/reactions
-  (fj-with-item-view
-   (fj-destructure-buf-spec (owner repo)
-     (let ((endpoint (format "repos/%s/%s/issues/%s/reactions"
-                             owner repo id)))
-       (fj-get endpoint)))))
+  (fj-destructure-buf-spec (owner repo)
+    (let ((endpoint (format "repos/%s/%s/issues/%s/reactions"
+                            owner repo id)))
+      (fj-get endpoint))))
 
-(defun fj-get-comment-reactions (id)
+(defun fj-get-comment-reactions (id &optional c-repo c-owner)
   "Return reactions data for comment with ID."
   ;; GET /repos/{owner}/{repo}/issues/comments/{id}/reactions
-  (fj-with-item-view
-   (fj-destructure-buf-spec (owner repo)
-     (let ((endpoint (format "repos/%s/%s/issues/comments/%s/reactions"
-                             owner repo id)))
-       (fj-get endpoint nil nil :silent)))))
+  (fj-destructure-buf-spec (owner repo)
+    (let ((endpoint (format "repos/%s/%s/issues/comments/%s/reactions"
+                            (or c-owner owner)
+                            (or c-repo repo) id)))
+      (fj-get endpoint nil nil :silent))))
 
 (defun fj-render-issue-reactions (id)
   "Render reactions for issue with ID.
