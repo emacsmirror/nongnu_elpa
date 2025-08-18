@@ -2864,13 +2864,20 @@ LANGS is the accumulated array param alist if we re-run recursively."
       (user-error "Looks like you have no mutes to unmute!")
     (mastodon-tl--do-user-action-and-response user-handle "unmute" t)))
 
-(defun mastodon-tl-dm-user (user-handle)
+(defun mastodon-tl-dm-user ()
   "Query for USER-HANDLE from current status and compose a message to that user."
-  (interactive (list (mastodon-tl--user-handles-get "message")))
-  (mastodon-tl--do-if-item
-   (mastodon-toot--compose-buffer (concat "@" user-handle))
-   (setq mastodon-toot--visibility "direct")
-   (mastodon-toot--update-status-fields)))
+  (interactive)
+  (let ((user-handle
+         (if (mastodon-tl--profile-buffer-p)
+             (save-excursion
+               (goto-char (point-min))
+               (alist-get 'acct
+                          (mastodon-tl--property 'profile-json)))
+           (mastodon-tl--user-handles-get "message"))))
+    (mastodon-tl--do-if-item
+     (mastodon-toot--compose-buffer (concat "@" user-handle))
+     (setq mastodon-toot--visibility "direct")
+     (mastodon-toot--update-status-fields))))
 
 (defun mastodon-tl--user-handles-get (action)
   "Get the list of user-handles for ACTION from the current toot."
