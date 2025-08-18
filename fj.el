@@ -1633,7 +1633,7 @@ If none, return emptry string."
     ""))
 
 (defun fj-render-comment-reactions (reactions)
-  "Render REACTIONS for comment with ID.
+  "Render REACTIONS for comment.
 If none, return emptry string."
   (if-let* ((grouped (fj-group-reactions reactions)))
       (concat fedi-horiz-bar "\n"
@@ -1893,7 +1893,7 @@ Return an alist, with each cons being (name . id)"
          (message "Label %s deleted from %s" label repo))))))
 
 (defun fj-label-color-from-name (name alist)
-  "Fetch the backgroun property of NAME in ALIST.
+  "Fetch the background property of NAME in ALIST.
 ALIST is of labels as names and ids, and the names are propertized in
 the label's color, as per `fj-propertize-label-names'."
   (plist-get
@@ -2116,8 +2116,7 @@ Propertize any verbatim markdown in STR."
                         'fj-item-verbatim-face))))
     (with-temp-buffer
       (switch-to-buffer (current-buffer))
-      (insert
-       (propertize str 'face face))
+      (insert (propertize str 'face face))
       (goto-char (point-min))
       (save-match-data
         (while (re-search-forward markdown-regex-code nil :noerror)
@@ -2664,12 +2663,13 @@ TS is a formatted timestamp."
    (propertize (fj--issue-right-align-str ts)
                'face 'fj-item-byline-face)))
 
-(defun fj-render-comments (comments &optional author owner)
-  "Render a list of COMMENTS.
-AUTHOR is the author of the parent issue.
-OWNER is the repo owner."
-  (cl-loop for c in comments
-           concat (fj-format-comment c author owner)))
+;; NB: unused
+;; (defun fj-render-comments (comments &optional author owner)
+;;   "Render a list of COMMENTS.
+;; AUTHOR is the author of the parent issue.
+;; OWNER is the repo owner."
+;;   (cl-loop for c in comments
+;;            concat (fj-format-comment c author owner)))
 
 (defun fj-prop-item-flag (str)
   "Propertize STR as author face in box."
