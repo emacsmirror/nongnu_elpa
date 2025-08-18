@@ -2492,36 +2492,43 @@ Buffer-local variable `fj-previous-window-config' holds the config."
     (fedi-http--triage
      resp (lambda (resp) (fj-resp-str resp)))))
 
-(defun fj-body-prop-regexes (str json)
-  "Propertize items by regexes in STR.
-JSON is the data associated with STR."
-  (insert str)
-  (goto-char (point-min))
-  (fedi-propertize-items fedi-post-handle-regex 'handle json
-                         fj-link-keymap 1 2 nil nil
-                         '(fj-tab-stop t))
-  (fedi-propertize-items fedi-post-tag-regex 'tag json
-                         fj-link-keymap 1 2 nil nil
-                         '(fj-tab-stop t))
-  ;; NB: this is required for shr tab stops
-  ;; - why doesn't shr always add shr-tab-stop prop?
-  ;; - does not add tab-stops for []() links (nor does shr!?)
-  ;; - fixed prev breakage here by adding item as link in
-  ;; - `fedi-propertize-items'.
-  (fedi-propertize-items fedi-post-url-regex 'shr json
-                         fj-link-keymap 1 1 nil nil
-                         '(fj-tab-stop t))
-  ;; FIXME: md []() links:
-  ;; doesn't work
-  ;; (setq str
-  ;;       (fedi-propertize-items str markdown-regex-link-inline 'shr json
-  ;;                              fj-link-keymap 1 1 nil nil
-  ;;                              '(fj-tab-stop t)))
-  (fedi-propertize-items fedi-post-commit-regex 'commit json
-                         fj-link-keymap 1 1 nil nil
-                         '(fj-tab-stop t)
-                         'fj-issue-commit-face)
-  (buffer-string))
+;; FIXME: use this?
+;; (defun fj-body-prop-regexes (str json)
+;;   "Propertize items by regexes in STR.
+;; JSON is the data associated with STR."
+;;   (with-temp-buffer
+;;     (insert str)
+;;     (goto-char (point-min))
+;;     (fedi-propertize-items fedi-post-handle-regex 'handle
+;;                            fj-link-keymap 1 2 nil nil
+;;                            '(fj-tab-stop t))
+;;     (fedi-propertize-items fedi-post-tag-regex 'tag
+;;                            fj-link-keymap 1 2 nil nil
+;;                            '(fj-tab-stop t))
+;;     (fedi-propertize-items fj-team-handle-regex 'team
+;;                            fj-link-keymap 1 2 nil nil
+;;                            '(fj-tab-stop t))
+;;     (fedi-propertize-items fj-repo-tag-regex 'repo-tag
+;;                            fj-link-keymap 1 1 nil nil
+;;                            '(fj-tab-stop t))
+;;     ;; NB: this is required for shr tab stops
+;;     ;; - why doesn't shr always add shr-tab-stop prop?
+;;     ;; - does not add tab-stops for []() links (nor does shr!?)
+;;     ;; - fixed prev breakage here by adding item as link in
+;;     ;; - `fedi-propertize-items'.
+;;     (fedi-propertize-items fedi-post-url-regex 'shr
+;;                            fj-link-keymap 1 1 nil nil
+;;                            '(fj-tab-stop t))
+;;     ;; FIXME: md []() links:
+;;     ;; doesn't work
+;;     ;; (fedi-propertize-items str markdown-regex-link-inline 'shr json
+;;     ;;                              fj-link-keymap 1 1 nil nil
+;;     ;;                              '(fj-tab-stop t))
+;;     (fedi-propertize-items fedi-post-commit-regex 'commit
+;;                            fj-link-keymap 1 1 nil nil
+;;                            '(fj-tab-stop t)
+;;                            'fj-issue-commit-face)
+;;     (buffer-string)))
 
 ;; I think magit/forge just uses markdown-mode rather than rendering
 (defun fj-render-body (body)
