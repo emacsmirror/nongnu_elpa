@@ -2922,9 +2922,10 @@ If INIT-PAGE, do not update :page in viewargs."
             (setq fj-buffer-spec
                   (plist-put fj-buffer-spec :viewargs args))
             (message "Loading comments...")
-            (let ((inhibit-read-only t))
-              ;; FIXME: we need .user.username owner args for new elements:
-              (fj-render-timeline json))
+            (let ((inhibit-read-only t)
+                  (author (fj--get-buffer-spec :author))
+                  (owner (fj--get-buffer-spec :owner)))
+              (fj-render-timeline json author owner))
             (message "Loading comments... Done")
             (when end-page ;; if we are re-paginating, go again maybe:
               (fj-reload-paginated-pages-maybe end-page page))
