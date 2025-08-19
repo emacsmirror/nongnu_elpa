@@ -1716,24 +1716,35 @@ the webUI only completes names in the issue.")
     (review_id . 0) (label) (assignee) (assignee_team)
     (removed_assignee . :json-false) (resolve_doer) (dependent_issue)))
 
-(exemplify-ert fj-test-format-comment-and-header
+(exemplify-ert fj-test-format-comment-header
   (let-alist fj-test-timeline-comment
-    ;; test comment:
-    ;; FIXME: we can't do this until `fj-get-comment-reactions' is re-written
-    ;;   (fj-format-comment fj-test-timeline-comment)
     ;; test comment header:
     (fj-format-comment-header
-     ;; FIXME: test author / edited args:
+     ;; FIXME: test author / edited args (from buf-spec):
      .user.username nil nil
      (fj-edited-str-maybe .created_at .updated_at)
      (fedi--relative-time-description
-      (date-to-time .created_at))))
-  => #("martianh   9 weeks ago" 0 8
-       (item "martianh" type handle follow-link t mouse-face highlight button t
-             keymap
-             (keymap (mouse-2 . fj-do-link-action-mouse)
-                     (return . fj-do-link-action))
-             fj-tab-stop t fj-byline t face fj-item-author-face)
-       8 9 (face fj-item-byline-face) 9 10 (face fj-item-byline-face) 10 11
-       (display (space :align-to (- right 15)) face fj-item-byline-face) 11 22
-       (face fj-item-byline-face)))
+      (date-to-time .created_at)))
+    => #("martianh   9 weeks ago" 0 8
+         (item "martianh" type handle follow-link t mouse-face highlight button t
+               keymap
+               (keymap (mouse-2 . fj-do-link-action-mouse)
+                       (return . fj-do-link-action))
+               fj-tab-stop t fj-byline t face fj-item-author-face)
+         8 9 (face fj-item-byline-face) 9 10 (face fj-item-byline-face) 10 11
+         (display (space :align-to (- right 15)) face fj-item-byline-face) 11 22
+         (face fj-item-byline-face))))
+
+(exemplify-ert fj-test-format-comment
+  ;; test comment:
+  (substring-no-properties
+   ;; properties are nuts/fragemented due to inclusion of header!
+   (fj-format-comment "fj.el" "martianh" fj-test-timeline-comment))
+  => "martianh  owner 9 weeks ago\n\n\n<p dir=\"auto\">it could also serve as destination of the fork-jump-to-parent cmd.</p>\n\n――――――――――――――――――――――――――――――――")
+
+(exemplify-ert fj-test-string-number>
+  (fj-string-number> "34" "12") => t
+  (fj-string-number> "12" "34") => nil
+  (fj-string-number> "12" "12" #'>=) => t)
+
+;; TODO: tests for timeline items
