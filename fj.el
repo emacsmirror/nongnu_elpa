@@ -863,7 +863,7 @@ X and Y are sorting args."
 (defvar-keymap fj-user-repo-tl-mode-map
   :doc "Map for `fj-user-repo-tl-mode', a tabluated list of repos."
   :parent fj-repo-tl-map
-  "C-c C-x" #'fj-list-own-repos-read)
+  "C-c C-c" #'fj-list-own-repos-read)
 
 (define-derived-mode fj-user-repo-tl-mode tabulated-list-mode
   "fj-user-repos"
@@ -941,7 +941,9 @@ LIMIT and PAGE are for pagination."
         (setq fj-buffer-spec
               `( :owner ,fj-user :url ,(concat fj-host "/" fj-user)
                  :viewfun fj-list-own-repos
-                 :viewargs (:order ,order :page ,page)))))))
+                 :viewargs (:order ,order :page ,page)))
+        (message
+         (substitute-command-keys "\\`C-c C-c': sort by"))))))
 
 (defun fj-repos-order-arg (&optional order)
   "Return an ORDER argument.
