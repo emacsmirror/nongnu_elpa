@@ -255,6 +255,7 @@ Diffs (as code as as reviews):
 |           | fj-compose-mode                | Minor mode for composing issues.                                    |
 | C-c C-l   | fj-compose-read-labels         | Read a label in the issue compose buffer.                           |
 | C-c RET   | fj-compose-read-milestone      | Read an existing milestone in the compose buffer.                   |
+| C-c C-o   | fj-compose-read-owner          | Read a repo owner.                                                  |
 | C-c C-r   | fj-compose-read-repo           | Read a repo for composing a issue or comment.                       |
 | C-c C-t   | fj-compose-read-title          | Read an issue title.                                                |
 | C-c C-S-l | fj-compose-remove-labels       | Remove labels from item being composed.                             |
@@ -276,13 +277,14 @@ Diffs (as code as as reviews):
 |           | fj-fork-repo                   | Fork repo entry at point.                                           |
 |           | fj-fork-to-parent              | From a repo TL listing, jump to the parent repo.                    |
 |           | fj-get-pull-commits            | Return the data for the commits of the current pull.                |
+|           | fj-git-link-code-range         | Call `git-link'.                                                    |
 |           | fj-inspect-item-data           | Browse the JSON data of item at point.                              |
 |           | fj-issue-compose               | Compose a new post.                                                 |
 |           | fj-issue-get-labels            | Get labels on ISSUE in REPO by OWNER.                               |
 |           | fj-issue-tl-mode               | Major mode for browsing a tabulated list of issues.                 |
 | v         | fj-issues-tl-view              | View current issue from tabulated issues listing.                   |
 | k         | fj-item-close                  | Close the item at point or being viewed.                            |
-| c         | fj-item-comment                | Comment on the item at point or being viewed.                       |
+| c, C      | fj-item-comment                | Comment on the item at point or being viewed.                       |
 | K         | fj-item-delete                 | Delete the item at point or being viewed.                           |
 | e         | fj-item-edit                   | Edit the item at point or being viewed.                             |
 | t         | fj-item-edit-title             | Edit the title of the item at point or being viewed.                |

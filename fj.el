@@ -6,7 +6,7 @@
 ;; Package-Requires: ((emacs "29.1") (fedi "0.2") (tp "0.5") (transient) (magit))
 ;; Keywords: git, convenience
 ;; URL: https://codeberg.org/martianh/fj.el
-;; Version: 0.22
+;; Version: 0.23
 ;; Separator: -
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -330,6 +330,7 @@ NO-JSON means return the raw response."
                  (if no-json
                      (fedi-http--get url params silent)
                    (fedi-http--get-json url params silent)))))
+    ;; FIXME: handle 404 etc!
     (if no-json
         ;; return response buffer, not resulting string. the idea is to then
         ;; call --triage on the result, in case we don't get a 200 response.
@@ -657,7 +658,6 @@ If CURRENT-REPO, get from `fj-current-repo' instead."
 
 ;;; MAP
 
-;; FIXME: we need 1 derived from tl, one from special?
 (defvar-keymap fj-generic-map
   :doc "Generic keymap."
   :parent special-mode-map
@@ -744,13 +744,13 @@ If nil, return nil."
   "Decrement the :page entry in PLIST and return it."
   (let* ((new-page (fj-dec-or-nil
                     (plist-get plist :page))))
-    (plist-put plist :page new-page)))
+    (plist-put (copy-sequence plist) :page new-page)))
 
 (defun fj-inc-plist-page (plist)
   "Increment the :page entry in PLIST and return it."
   (let ((new-page (fj-inc-or-2
                    (plist-get plist :page))))
-    (plist-put plist :page new-page)))
+    (plist-put (copy-sequence plist) :page new-page)))
 
 (defun fj-plist-values (plist)
   "Return the values of PLIST as a list."
@@ -864,7 +864,7 @@ X and Y are sorting args."
 (defvar-keymap fj-user-repo-tl-mode-map
   :doc "Map for `fj-user-repo-tl-mode', a tabluated list of repos."
   :parent fj-repo-tl-map
-  "C-c C-x" #'fj-list-own-repos-read)
+  "C-c C-c" #'fj-list-own-repos-read)
 
 (define-derived-mode fj-user-repo-tl-mode tabulated-list-mode
   "fj-user-repos"
@@ -921,7 +921,7 @@ PAGE, LIMIT, ORDER."
   (interactive)
   (fj-list-own-repos '(4)))
 
-(defun fj-list-own-repos (&optional limit order page)
+(defun fj-list-own-repos (&optional order page limit)
   "List repos for `fj-user'.
 With prefix arg ORDER, prompt for an argument to sort
 results (server-side).
@@ -942,7 +942,9 @@ LIMIT and PAGE are for pagination."
         (setq fj-buffer-spec
               `( :owner ,fj-user :url ,(concat fj-host "/" fj-user)
                  :viewfun fj-list-own-repos
-                 :viewargs (:order ,order :page ,page)))))))
+                 :viewargs (:order ,order :page ,page)))
+        (message
+         (substitute-command-keys "\\`C-c C-c': sort by"))))))
 
 (defun fj-repos-order-arg (&optional order)
   "Return an ORDER argument.
@@ -1028,17 +1030,21 @@ Unless paginating, set `fj-user' or `fj-extra-repos'")
 (defun fj--list-user-repos (endpoint buf-str &optional url-str)
   "Fetch user data at /user/ENDPOINT and list them.
 BUF-STR is to name the buffer, URL-STR is for the buffer-spec."
-  (let* ((endpoint (format "/user/%s" endpoint))
-         (repos (fj-get endpoint))
+  (let* ((ep (format "/user/%s" endpoint))
+         (repos (fj-get ep))
          (entries (fj-repo-tl-entries repos))
-         (buf (format "*fj-%s-repos*" buf-str)))
+         (buf (format "*fj-%s-repos*" buf-str))
+         (url (when url-str
+                (concat fj-host "/" fj-user url-str))))
     (fj-repos-tl-render buf entries #'fj-repo-tl-mode)
     (with-current-buffer buf
       (setq fj-buffer-spec
             `( :owner fj-user
-               :url (when url-str
-                      ,(concat fj-host "/" fj-user url-str))
-               :viewfun fj--list-user-repos)))))
+               :url ,url
+               :viewfun fj--list-user-repos
+               :viewargs ( :endpoint ,endpoint
+                           :buf-str ,buf-str
+                           :url ,url))))))
 
 ;;; USER REPOS
 
@@ -1137,12 +1143,16 @@ Return the issue number."
   (let* ((issues (fj-repo-get-issues repo))
          (cands (fj-get-item-candidates issues))
          (choice (completing-read "Issue: " cands))
-         (item
-          (car
-           (cl-member-if (lambda (c)
-                           (string= (car c) choice))
-                         cands))))
+         (item (fj-item-from-choice cands choice)))
     (cadr item)))
+
+(defun fj-item-from-choice (cands choice)
+  "From CANDS, return the data for CHOICE.
+CHOICE is a string returned by `completing-read'."
+  (car
+   (cl-member-if (lambda (c)
+                   (string= (car c) choice))
+                 cands)))
 
 (defun fj-cycle-sort-or-relation ()
   "Call `fj-own-items-cycle-relation' or `fj-list-issues-sort'."
@@ -1242,7 +1252,7 @@ QUERY, STATE, TYPE, CREATED, ASSIGNED, and MENTIONED are all for
    query state "issues" created assigned mentioned fj-user))
 
 (defun fj-next-plist-state (plist old new &optional newval)
-  (let ((plist (plist-put plist old nil)))
+  (let ((plist (plist-put (copy-sequence plist) old nil)))
     (plist-put plist new (or newval t))))
 
 (defun fj-cycle-viewargs (viewargs)
@@ -1303,9 +1313,8 @@ all for `fj-issues-search'."
   (let ((state (or state "open"))
         (type (or type "issues"))
         (items
-         ;; these parameters are exclusive, not cumulative, but it would be
-         ;; nice to be able to combine them, or at least cycle through
-         ;; them:
+         ;; these parameters are exclusive, not cumulative, but it would
+         ;; be nice to be able to combine them
          (fj-issues-search state nil nil query nil type nil nil
                            assigned created mentioned nil nil owner
                            nil page))
@@ -1431,11 +1440,7 @@ Return its number."
   (let* ((issues (fj-repo-get-pull-reqs repo))
          (cands (fj-get-item-candidates issues))
          (choice (completing-read "Pull request: " cands))
-         (item
-          (car
-           (cl-member-if (lambda (c)
-                           (string= (car c) choice))
-                         cands))))
+         (item (fj-item-from-choice cands choice)))
     (cadr item)))
 
 (defun fj-repo-get-pull-reqs (repo &optional state)
@@ -1473,7 +1478,9 @@ MERGE-COMMIT is the merge commit ID, used for type manually-merged."
   (cl-loop for c in comments
            for body = (alist-get 'body c)
            for trim = (string-clean-whitespace
-                       (substring body nil 70))
+                       (substring body nil
+                                  (when (> (length body) 70)
+                                    70)))
            collect `(,trim
                      ,(alist-get 'id c))))
 
@@ -1484,16 +1491,13 @@ OWNER is the repo owner."
   (let* ((comments (fj-issue-get-comments repo owner item))
          (cands (fj-get-comment-candidates comments))
          (choice (completing-read "Comment: " cands))
-         (comm
-          (car
-           (cl-member-if (lambda (c)
-                           (string= (car c) choice))
-                         cands))))
+         (comm (fj-item-from-choice cands choice)))
     (cadr comm)))
 
 (defun fj-issue-get-comments (repo owner issue)
   "Return comments for ISSUE in REPO.
 OWNER is the repo owner."
+  ;; NB: no limit arg
   (let* ((endpoint (format "repos/%s/%s/issues/%s/comments"
                            owner repo issue)))
     (fj-get endpoint)))
@@ -1603,23 +1607,24 @@ NEW-BODY is the new comment text to send."
 ;;; ISSUE/COMMENT REACTIONS
 ;; render reactions
 
+;; FIXME: repo/owner should be args not fetched from buf-spec:
+
 (defun fj-get-issue-reactions (id)
   "Return reactions data for comment with ID."
   ;; GET /repos/{owner}/{repo}/issues/{index}/reactions
-  (fj-with-item-view
-   (fj-destructure-buf-spec (owner repo)
-     (let ((endpoint (format "repos/%s/%s/issues/%s/reactions"
-                             owner repo id)))
-       (fj-get endpoint)))))
+  (fj-destructure-buf-spec (owner repo)
+    (let ((endpoint (format "repos/%s/%s/issues/%s/reactions"
+                            owner repo id)))
+      (fj-get endpoint))))
 
-(defun fj-get-comment-reactions (id)
+(defun fj-get-comment-reactions (id &optional c-repo c-owner)
   "Return reactions data for comment with ID."
   ;; GET /repos/{owner}/{repo}/issues/comments/{id}/reactions
-  (fj-with-item-view
-   (fj-destructure-buf-spec (owner repo)
-     (let ((endpoint (format "repos/%s/%s/issues/comments/%s/reactions"
-                             owner repo id)))
-       (fj-get endpoint nil nil :silent)))))
+  (fj-destructure-buf-spec (owner repo)
+    (let ((endpoint (format "repos/%s/%s/issues/comments/%s/reactions"
+                            (or c-owner owner)
+                            (or c-repo repo) id)))
+      (fj-get endpoint nil nil :silent))))
 
 (defun fj-render-issue-reactions (id)
   "Render reactions for issue with ID.
@@ -1632,7 +1637,7 @@ If none, return emptry string."
     ""))
 
 (defun fj-render-comment-reactions (reactions)
-  "Render REACTIONS for comment with ID.
+  "Render REACTIONS for comment.
 If none, return emptry string."
   (if-let* ((grouped (fj-group-reactions reactions)))
       (concat fedi-horiz-bar "\n"
@@ -1892,7 +1897,7 @@ Return an alist, with each cons being (name . id)"
          (message "Label %s deleted from %s" label repo))))))
 
 (defun fj-label-color-from-name (name alist)
-  "Fetch the backgroun property of NAME in ALIST.
+  "Fetch the background property of NAME in ALIST.
 ALIST is of labels as names and ids, and the names are propertized in
 the label's color, as per `fj-propertize-label-names'."
   (plist-get
@@ -2115,8 +2120,7 @@ Propertize any verbatim markdown in STR."
                         'fj-item-verbatim-face))))
     (with-temp-buffer
       (switch-to-buffer (current-buffer))
-      (insert
-       (propertize str 'face face))
+      (insert (propertize str 'face face))
       (goto-char (point-min))
       (save-match-data
         (while (re-search-forward markdown-regex-code nil :noerror)
@@ -2383,13 +2387,13 @@ TYPE is the item type."
   "Update the value of :state in PLIST and return it."
   (let* ((current (plist-get plist :state))
          (next (fj-next-item-var current fj-items-states)))
-    (plist-put plist :state next)))
+    (plist-put (copy-sequence plist) :state next)))
 
 (defun fj-next-item-type-plist (plist)
   "Update the value of :type in PLIST and return it."
   (let* ((current (plist-get plist :type))
          (next (fj-next-item-var current fj-items-types)))
-    (plist-put plist :type next)))
+    (plist-put (copy-sequence plist) :type next)))
 
 (defun fj-cycle-state ()
   "Cycle item state listing of open, closed, and all."
@@ -2491,36 +2495,43 @@ Buffer-local variable `fj-previous-window-config' holds the config."
     (fedi-http--triage
      resp (lambda (resp) (fj-resp-str resp)))))
 
-(defun fj-body-prop-regexes (str json)
-  "Propertize items by regexes in STR.
-JSON is the data associated with STR."
-  (insert str)
-  (goto-char (point-min))
-  (fedi-propertize-items fedi-post-handle-regex 'handle json
-                         fj-link-keymap 1 2 nil nil
-                         '(fj-tab-stop t))
-  (fedi-propertize-items fedi-post-tag-regex 'tag json
-                         fj-link-keymap 1 2 nil nil
-                         '(fj-tab-stop t))
-  ;; NB: this is required for shr tab stops
-  ;; - why doesn't shr always add shr-tab-stop prop?
-  ;; - does not add tab-stops for []() links (nor does shr!?)
-  ;; - fixed prev breakage here by adding item as link in
-  ;; - `fedi-propertize-items'.
-  (fedi-propertize-items fedi-post-url-regex 'shr json
-                         fj-link-keymap 1 1 nil nil
-                         '(fj-tab-stop t))
-  ;; FIXME: md []() links:
-  ;; doesn't work
-  ;; (setq str
-  ;;       (fedi-propertize-items str markdown-regex-link-inline 'shr json
-  ;;                              fj-link-keymap 1 1 nil nil
-  ;;                              '(fj-tab-stop t)))
-  (fedi-propertize-items fedi-post-commit-regex 'commit json
-                         fj-link-keymap 1 1 nil nil
-                         '(fj-tab-stop t)
-                         'fj-issue-commit-face)
-  (buffer-string))
+;; FIXME: use this?
+;; (defun fj-body-prop-regexes (str json)
+;;   "Propertize items by regexes in STR.
+;; JSON is the data associated with STR."
+;;   (with-temp-buffer
+;;     (insert str)
+;;     (goto-char (point-min))
+;;     (fedi-propertize-items fedi-post-handle-regex 'handle
+;;                            fj-link-keymap 1 2 nil nil
+;;                            '(fj-tab-stop t))
+;;     (fedi-propertize-items fedi-post-tag-regex 'tag
+;;                            fj-link-keymap 1 2 nil nil
+;;                            '(fj-tab-stop t))
+;;     (fedi-propertize-items fj-team-handle-regex 'team
+;;                            fj-link-keymap 1 2 nil nil
+;;                            '(fj-tab-stop t))
+;;     (fedi-propertize-items fj-repo-tag-regex 'repo-tag
+;;                            fj-link-keymap 1 1 nil nil
+;;                            '(fj-tab-stop t))
+;;     ;; NB: this is required for shr tab stops
+;;     ;; - why doesn't shr always add shr-tab-stop prop?
+;;     ;; - does not add tab-stops for []() links (nor does shr!?)
+;;     ;; - fixed prev breakage here by adding item as link in
+;;     ;; - `fedi-propertize-items'.
+;;     (fedi-propertize-items fedi-post-url-regex 'shr
+;;                            fj-link-keymap 1 1 nil nil
+;;                            '(fj-tab-stop t))
+;;     ;; FIXME: md []() links:
+;;     ;; doesn't work
+;;     ;; (fedi-propertize-items str markdown-regex-link-inline 'shr json
+;;     ;;                              fj-link-keymap 1 1 nil nil
+;;     ;;                              '(fj-tab-stop t))
+;;     (fedi-propertize-items fedi-post-commit-regex 'commit
+;;                            fj-link-keymap 1 1 nil nil
+;;                            '(fj-tab-stop t)
+;;                            'fj-issue-commit-face)
+;;     (buffer-string)))
 
 ;; I think magit/forge just uses markdown-mode rather than rendering
 (defun fj-render-body (body)
@@ -2663,12 +2674,13 @@ TS is a formatted timestamp."
    (propertize (fj--issue-right-align-str ts)
                'face 'fj-item-byline-face)))
 
-(defun fj-render-comments (comments &optional author owner)
-  "Render a list of COMMENTS.
-AUTHOR is the author of the parent issue.
-OWNER is the repo owner."
-  (cl-loop for c in comments
-           concat (fj-format-comment c author owner)))
+;; NB: unused
+;; (defun fj-render-comments (comments &optional author owner)
+;;   "Render a list of COMMENTS.
+;; AUTHOR is the author of the parent issue.
+;; OWNER is the repo owner."
+;;   (cl-loop for c in comments
+;;            concat (fj-format-comment c author owner)))
 
 (defun fj-prop-item-flag (str)
   "Propertize STR as author face in box."
@@ -3179,6 +3191,55 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
            when i
            do (fj-render-timeline-item i author owner)))
 
+(defun fj-get-timeline-commits (commits)
+  "Get data for COMMITS, a list of commit ids, in timeline view."
+  (fj-destructure-buf-spec (repo owner)
+    (cl-loop for c in commits
+             collect (fj-get-commit repo owner c))))
+
+(defun fj-format-pull-push (format-str user ts body)
+  "Format a pull_push timeline item.
+FORMAT-STR is the format string, USER is the commiter.
+TS is timestamp, BODY is the item's response."
+  (let* ((json-array-type 'list)
+         (json (json-read-from-string body))
+         (commits (alist-get 'commit_ids json))
+         (commits-data (fj-get-timeline-commits commits))
+         (force
+          (not
+           (eq :json-false
+               (alist-get 'is_force_push json)))))
+    (concat
+     (format format-str user (if force "force pushed" "added")
+             (if force (1- (length commits))
+               (length commits))
+             ts)
+     ;; FIXME: fix force format string:
+     ;; (format "%s force-pushed %s from %s to %s %s"
+     ;; user branch c1 c2 ts)
+     (if force
+         (concat ": from "
+                 (fj-propertize-link
+                  (substring (car commits) 0 7)
+                  'commit-ref (car commits))
+                 " to "
+                 (fj-propertize-link
+                  (substring (cadr commits) 0 7)
+                  'commit-ref (cadr commits)))
+       (cl-loop
+        for c in commits
+        for d in commits-data
+        for short = (substring c 0 7)
+        concat
+        (concat "\n"
+                (fj-propertize-link
+                 (concat
+                  short " "
+                  (car (string-split
+                        (map-nested-elt d '(commit message))
+                        "\n")))
+                 'commit-ref c)))))))
+
 (defun fj-render-timeline-item (item &optional author owner)
   "Render timeline ITEM.
 AUTHOR is timeline item's author, OWNER is of item's repo."
@@ -3242,37 +3303,7 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
           ;; FIXME: reimplement "pull_push" force-push and non-force
           ;; format strings
           ("pull_push"
-           (let* ((json-array-type 'list)
-                  (json (json-read-from-string body))
-                  (commits (alist-get 'commit_ids json))
-                  (force
-                   (not
-                    (eq :json-false
-                        (alist-get 'is_force_push json)))))
-             (concat
-              (format format-str user (if force "force pushed" "added")
-                      (if force (1- (length commits))
-                        (length commits))
-                      ts)
-              ;; FIXME: fix force format string:
-              ;; (format "%s force-pushed %s from %s to %s %s"
-              ;; user branch c1 c2 ts)
-              (if force
-                  (concat ": from "
-                          (fj-propertize-link
-                           (substring (car commits) 0 7)
-                           'commit-ref (car commits))
-                          " to "
-                          (fj-propertize-link
-                           (substring (cadr commits) 0 7)
-                           'commit-ref (cadr commits)))
-                (cl-loop
-                 for c in commits
-                 for short = (substring c 0 7)
-                 concat
-                 (concat " "
-                         (fj-propertize-link short
-                                             'commit-ref c)))))))
+           (fj-format-pull-push format-str user ts body))
           ("merge_pull"
            ;; FIXME: get commit and branch for merge:
            ;; Commit is the *merge* commit, created by actually merging
@@ -3647,21 +3678,15 @@ unset any default values."
 
 ;;; TL ACTIONS
 
-;; in repo's issues TL, or for repo entry at point:
 (defun fj-create-issue (&optional _)
   "Create issue in current repo or repo at point in tabulated listing."
-  ;; for this to work simply from eg a code file not an fj.el buffer,
-  ;; we need `fj--repo-owner' to work.
-  
-  ;; we cd fall back to `fj-user' but that's assuming we are creating an
-  ;; issue in a repo that's ours, not that we are contributing to.
-  ;; otherwise, maybe we cd prompt for "owner/repo" format rather than
-  ;; just repo name, allowing user to choose from their own repos but also
-  ;; forks, upstreams?
-
-  ;; maybe we allow the fallback to `fj-user' but also allow interactive
-  ;; modifying of it like repo name? cd format like "owner/repo" in
-  ;; compose buffer.
+  ;; Should work:
+  ;; - in repo's issues TL;
+  ;; - for repo TL entry at point;
+  ;; - from an issue timeline view;
+  ;; - from a source code file;
+  ;; - from a magit buffer;
+  ;; - from an unrelated buffer (without repo being set)
   (interactive)
   (let* ((owner (fj--repo-owner))
          (repo (fj--repo-name)))
@@ -3821,7 +3846,7 @@ FILE is a string, including type suffix, and is case-sensitive."
   "Return FILE from REPO by OWNER.
 Return the range from BEG to END, both being line numbers.
 REF is a string, either branch name, commit ref or tag ref."
-  (let ((raw (fj-get-repo-file repo owner file)))
+  (let ((raw (fj-get-repo-file repo owner file ref)))
     (with-temp-buffer
       (switch-to-buffer (current-buffer))
       (insert raw)
@@ -4029,7 +4054,7 @@ Works in repo listings, issue listings, and item views."
   (interactive)
   (pcase major-mode
     ('fj-item-view-mode (fj-item-view-edit-item-at-point))
-    ('fj-issue-tl-mode (fj-issues-tl-close))
+    ('fj-issue-tl-mode (fj-issues-tl-edit))
     (_ (user-error "No issue?"))))
 
 (defun fj-item-edit-title ()
