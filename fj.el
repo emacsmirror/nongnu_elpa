@@ -3190,6 +3190,55 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
            when i
            do (fj-render-timeline-item i author owner)))
 
+(defun fj-get-timeline-commits (commits)
+  "Get data for COMMITS, a list of commit ids, in timeline view."
+  (fj-destructure-buf-spec (repo owner)
+    (cl-loop for c in commits
+             collect (fj-get-commit repo owner c))))
+
+(defun fj-format-pull-push (format-str user ts body)
+  "Format a pull_push timeline item.
+FORMAT-STR is the format string, USER is the commiter.
+TS is timestamp, BODY is the item's response."
+  (let* ((json-array-type 'list)
+         (json (json-read-from-string body))
+         (commits (alist-get 'commit_ids json))
+         (commits-data (fj-get-timeline-commits commits))
+         (force
+          (not
+           (eq :json-false
+               (alist-get 'is_force_push json)))))
+    (concat
+     (format format-str user (if force "force pushed" "added")
+             (if force (1- (length commits))
+               (length commits))
+             ts)
+     ;; FIXME: fix force format string:
+     ;; (format "%s force-pushed %s from %s to %s %s"
+     ;; user branch c1 c2 ts)
+     (if force
+         (concat ": from "
+                 (fj-propertize-link
+                  (substring (car commits) 0 7)
+                  'commit-ref (car commits))
+                 " to "
+                 (fj-propertize-link
+                  (substring (cadr commits) 0 7)
+                  'commit-ref (cadr commits)))
+       (cl-loop
+        for c in commits
+        for d in commits-data
+        for short = (substring c 0 7)
+        concat
+        (concat "\n"
+                (fj-propertize-link
+                 (concat
+                  short " "
+                  (car (string-split
+                        (map-nested-elt d '(commit message))
+                        "\n")))
+                 'commit-ref c)))))))
+
 (defun fj-render-timeline-item (item &optional author owner)
   "Render timeline ITEM.
 AUTHOR is timeline item's author, OWNER is of item's repo."
@@ -3253,37 +3302,7 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
           ;; FIXME: reimplement "pull_push" force-push and non-force
           ;; format strings
           ("pull_push"
-           (let* ((json-array-type 'list)
-                  (json (json-read-from-string body))
-                  (commits (alist-get 'commit_ids json))
-                  (force
-                   (not
-                    (eq :json-false
-                        (alist-get 'is_force_push json)))))
-             (concat
-              (format format-str user (if force "force pushed" "added")
-                      (if force (1- (length commits))
-                        (length commits))
-                      ts)
-              ;; FIXME: fix force format string:
-              ;; (format "%s force-pushed %s from %s to %s %s"
-              ;; user branch c1 c2 ts)
-              (if force
-                  (concat ": from "
-                          (fj-propertize-link
-                           (substring (car commits) 0 7)
-                           'commit-ref (car commits))
-                          " to "
-                          (fj-propertize-link
-                           (substring (cadr commits) 0 7)
-                           'commit-ref (cadr commits)))
-                (cl-loop
-                 for c in commits
-                 for short = (substring c 0 7)
-                 concat
-                 (concat " "
-                         (fj-propertize-link short
-                                             'commit-ref c)))))))
+           (fj-format-pull-push format-str user ts body))
           ("merge_pull"
            ;; FIXME: get commit and branch for merge:
            ;; Commit is the *merge* commit, created by actually merging
