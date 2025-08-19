@@ -2925,8 +2925,9 @@ END-PAGE means we are at the end, don't go again."
             (message "Loading comments...")
             (let ((inhibit-read-only t)
                   (author (fj--get-buffer-spec :author))
-                  (owner (fj--get-buffer-spec :owner)))
-              (fj-render-timeline json author owner))
+                  (owner (fj--get-buffer-spec :owner))
+                  (repo (fj--get-buffer-spec :repo)))
+              (fj-render-timeline json author owner repo))
             (message "Loading comments... Done")
             (when end-page ;; if we are re-paginating, go again maybe:
               (fj-reload-paginated-pages-maybe end-page page))
@@ -3182,7 +3183,7 @@ ENDPOINT is the API endpoint to hit."
     ("assignees" . "%s %sassigned this%s %s")
     ("change_target_branch" . "%s changed target branch from %s to %s")))
 
-(defun fj-render-timeline (data &optional author owner)
+(defun fj-render-timeline (data &optional author owner repo)
   "Render timeline DATA.
 DATA contains all types of issue comments (references, name
 changes, commit references, etc.).
@@ -3191,7 +3192,7 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
            ;; prevent a `nil' item (seen in the wild) from breaking our
            ;; timeline:
            when i
-           do (fj-render-timeline-item i author owner)))
+           do (fj-render-timeline-item i author owner repo)))
 
 (defun fj-get-timeline-commits (commits)
   "Get data for COMMITS, a list of commit ids, in timeline view."
@@ -3242,7 +3243,7 @@ TS is timestamp, BODY is the item's response."
                         "\n")))
                  'commit-ref c)))))))
 
-(defun fj-render-timeline-item (item &optional author owner)
+(defun fj-render-timeline-item (item &optional author owner repo)
   "Render timeline ITEM.
 AUTHOR is timeline item's author, OWNER is of item's repo."
   (let-alist item
@@ -3261,8 +3262,7 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
       (insert
        (propertize
         (pcase .type
-          ("comment" (fj-format-comment .item.repository.name
-                                        owner item author))
+          ("comment" (fj-format-comment repo owner item author))
           ("close" (format format-str user ts))
           ("reopen" (format format-str user ts))
           ("change_title"
