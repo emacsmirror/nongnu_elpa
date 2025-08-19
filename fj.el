@@ -2261,7 +2261,7 @@ STATE, TYPE and QUERY are for `fj-list-issues-do'."
                                     labels milestones page limit sort)
   "Display ISSUES in a tabulated list view.
 Either for `fj-current-repo' or REPO, a string, owned by OWNER.
-With a prefix arg, or if REPO and `fj-current-repo' are nil,
+With a prefix ARG, or if REPO and `fj-current-repo' are nil,
 prompt for a repo to list and assume owner is `fj-user'.
 Optionally specify the STATE filter (open, closed, all), and the
 TYPE filter (issues, pulls, all).
@@ -2540,7 +2540,8 @@ Buffer-local variable `fj-previous-window-config' holds the config."
 (defun fj-render-item-bodies (&optional point)
   "Render all item bodies in the buffer.
 Uses property fj-item-body to find them.
-Also propertize all handles, tags, commits, and URLs."
+Also propertize all handles, tags, commits, and URLs.
+Optionally start from POINT."
   (save-match-data
     (let ((inhibit-read-only t)
           match)
@@ -2629,8 +2630,8 @@ Also propertize all handles, tags, commits, and URLs."
   (read-only-mode 1))
 
 (defun fj-format-comment (repo owner comment &optional author no-bar)
-  "Format COMMENT.
-AUTHOR is of comment, OWNER is of repo."
+  "Format COMMENT in REPO by OWNER.
+AUTHOR is of comment, optionally suppress horiztontal bar with NO-BAR."
   (let-alist comment
     (let ((stamp (fedi--relative-time-description
                   (date-to-time .created_at)))
@@ -2897,7 +2898,8 @@ reloading a paginated view."
   "Callback function to append more tiemline items to current view.
 JSON is the parsed HTTP response, BUF is the buffer to add to, POINT is
 where it was prior to updating.
-If INIT-PAGE, do not update :page in viewargs."
+If INIT-PAGE, do not update :page in viewargs.
+END-PAGE means we are at the end, don't go again."
   (with-current-buffer buf
     (save-excursion
       (goto-char point)
