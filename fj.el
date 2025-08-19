@@ -330,6 +330,7 @@ NO-JSON means return the raw response."
                  (if no-json
                      (fedi-http--get url params silent)
                    (fedi-http--get-json url params silent)))))
+    ;; FIXME: handle 404 etc!
     (if no-json
         ;; return response buffer, not resulting string. the idea is to then
         ;; call --triage on the result, in case we don't get a 200 response.
