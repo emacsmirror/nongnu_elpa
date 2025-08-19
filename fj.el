@@ -2829,10 +2829,12 @@ PAGE and LIMIT are for `fj-issue-get-timeline'."
         'fj-item-view-mode ow
       (let ((enable-local-variables :all))
         (hack-dir-local-variables-non-file-buffer))
+      ;; render actual (top) item:
       (fj-render-item repo owner item number type page limit)
       ;; if we have paginated, re-append all pages sequentially:
       (if (fj-string-number> page "1")
           (fj-reload-paginated-pages)
+        ;; otherwise render first page of timeline:
         (fj-item-view-more* page)))))
 
 (defun fj-reload-paginated-pages (&optional end-page)
