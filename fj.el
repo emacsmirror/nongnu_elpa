@@ -1609,27 +1609,24 @@ NEW-BODY is the new comment text to send."
 
 ;; FIXME: repo/owner should be args not fetched from buf-spec:
 
-(defun fj-get-issue-reactions (id)
-  "Return reactions data for comment with ID."
+(defun fj-get-issue-reactions (repo owner id)
+  "Return reactions data for comment with ID in REPO by OWNER."
   ;; GET /repos/{owner}/{repo}/issues/{index}/reactions
-  (fj-destructure-buf-spec (owner repo)
-    (let ((endpoint (format "repos/%s/%s/issues/%s/reactions"
-                            owner repo id)))
-      (fj-get endpoint))))
+  (let ((endpoint (format "repos/%s/%s/issues/%s/reactions"
+                          owner repo id)))
+    (fj-get endpoint)))
 
-(defun fj-get-comment-reactions (id &optional c-repo c-owner)
-  "Return reactions data for comment with ID."
+(defun fj-get-comment-reactions (repo owner id)
+  "Return reactions data for comment with ID in REPO by OWNER."
   ;; GET /repos/{owner}/{repo}/issues/comments/{id}/reactions
-  (fj-destructure-buf-spec (owner repo)
-    (let ((endpoint (format "repos/%s/%s/issues/comments/%s/reactions"
-                            (or c-owner owner)
-                            (or c-repo repo) id)))
-      (fj-get endpoint nil nil :silent))))
+  (let ((endpoint (format "repos/%s/%s/issues/comments/%s/reactions"
+                          owner repo id)))
+    (fj-get endpoint nil nil :silent)))
 
-(defun fj-render-issue-reactions (id)
-  "Render reactions for issue with ID.
+(defun fj-render-issue-reactions (repo owner id)
+  "Render reactions for issue with ID in REPO by OWNER.
 If none, return emptry string."
-  (if-let* ((reactions (fj-get-issue-reactions id))
+  (if-let* ((reactions (fj-get-issue-reactions repo owner id))
             (grouped (fj-group-reactions reactions)))
       (concat fedi-horiz-bar "\n"
               (mapconcat #'fj-render-grouped-reaction
@@ -2631,13 +2628,13 @@ Also propertize all handles, tags, commits, and URLs."
   :group 'fj
   (read-only-mode 1))
 
-(defun fj-format-comment (comment &optional author owner no-bar)
+(defun fj-format-comment (repo owner comment &optional author no-bar)
   "Format COMMENT.
 AUTHOR is of comment, OWNER is of repo."
   (let-alist comment
     (let ((stamp (fedi--relative-time-description
                   (date-to-time .created_at)))
-          (reactions (fj-get-comment-reactions .id)))
+          (reactions (fj-get-comment-reactions repo owner .id)))
       (propertize
        (concat
         (fj-format-comment-header
@@ -2791,7 +2788,7 @@ RELOAD mean we reloaded."
            (propertize (fj-render-body .body)
                        'fj-item-body t)
            "\n"
-           (fj-render-issue-reactions .number)
+           (fj-render-issue-reactions repo owner .number)
            "\n"
            fedi-horiz-bar fedi-horiz-bar "\n\n")
           'fj-item-number number
@@ -3262,7 +3259,8 @@ AUTHOR is timeline item's author, OWNER is of item's repo."
       (insert
        (propertize
         (pcase .type
-          ("comment" (fj-format-comment item author owner))
+          ("comment" (fj-format-comment .item.repository.name
+                                        owner item author))
           ("close" (format format-str user ts))
           ("reopen" (format format-str user ts))
           ("change_title"
@@ -3424,7 +3422,7 @@ Renders a review heading and review comments."
              (concat
               (format format-str user state ts) "\n\n"
               ;; FIXME: only add if we have a comment?:
-              (fj-format-comment data nil nil :nobar)
+              (fj-format-comment repo owner data nil :nobar)
               (fj-format-grouped-review-comments comments owner ts))
              'fj-review review)))))))
 
