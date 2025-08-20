@@ -147,7 +147,7 @@ The format for a mastodon.el auth source entry is as follows:
 
 with the token being what you copy from the browser when authenticating.
 If you have =auth-source-save-behavior= set to nil, you'll also need to add
-such an entry manually.
+such an entry manually. Moreover, you should ensure that your =auth-sources= file is actually writable.
 
 Finally, if you find you're asked for your key passphrase too often while
 authenticating, consider setting =epa-file-encrypt-to= (for auth-source
