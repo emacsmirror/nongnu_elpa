@@ -1087,20 +1087,26 @@ ORDER should be a member of `fj-own-repos-order'."
            collect (let-alist r
                      (list .name .id .description .owner.username))))
 
-(defun fj-read-user-repo-do (&optional default silent order)
+(defun fj-read-user-repo-do (&optional default silent order fun)
   "Prompt for a user repository.
 DEFAULT is initial input for `completing-read'.
 SILENT means silent request."
   (completing-read
    "Repo: "
-   (completion-table-dynamic #'fj-user-repo-dynamic)
+   (completion-table-dynamic (or fun #'fj-user-repo-dynamic))
    nil nil ;; don't force match
    default))
 
-(defun fj-user-repo-dynamic (str)
+(defun fj-repo-dynamic (str)
+  "Dynamic repo completion for STR."
+  (fj-user-repo-dynamic str :noid))
+
+(defun fj-user-repo-dynamic (str &optional no-id)
   "Dynamic `fj-user' repo completion for STR."
-  (let* ((id (number-to-string
-              (alist-get 'id (fj-get-current-user))))
+  ;; NB: also currently used for `fj-compose-read-repo'
+  (let* ((id (unless no-id
+               (number-to-string
+                (alist-get 'id (fj-get-current-user)))))
          (json (fj-repo-search-do str nil id nil nil "updated")))
     (cl-loop for x in (alist-get 'data json)
              collect (alist-get 'name x))))
@@ -4170,9 +4176,9 @@ LIMIT is for `re-search-forward''s bound argument."
 (defun fj-compose-read-repo ()
   "Read a repo for composing a issue or comment."
   (interactive)
-  ;; FIXME: combine own repos and completing search:
   (setq fj-compose-repo
-        (fj-read-user-repo-do fj-compose-repo))
+        (fj-read-user-repo-do
+         fj-compose-repo nil nil #'fj-user-repo-dynamic))
   (fedi-post--update-status-fields))
 
 (defun fj-compose-read-owner ()
