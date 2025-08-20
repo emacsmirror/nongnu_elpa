@@ -3522,11 +3522,13 @@ Use REVIEW-ID for ITEM-ID in REPO by OWNER."
                                 include-desc sort order page limit)
   "Search repos for QUERY.
 Optionally flag it as a TOPIC.
-ID is a user ID, which if given must own the repo.
+ID is a user ID, which if given must own or contribute the repo.
 MODE must be a member of `fj-search-modes', else it is silently
 ignored.
-INCLUDE-DESC SORT ORDER PAGE LIMIT
-Sort must be a member of `fj-search-sorts'."
+INCLUDE-DESC means also search in repo description.
+SORT must be a member of `fj-search-sorts'.
+ORDER: asc or desc, only applies if SORT also given.
+PAGE LIMIT"
   ;; GET /repos/search. args TODO:
   ;; priority_owner_id, team_id, starredby
   ;; private, is_private, template, archived
