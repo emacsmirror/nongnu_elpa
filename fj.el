@@ -1099,15 +1099,27 @@ SILENT means silent request."
 
 (defun fj-repo-dynamic (str)
   "Dynamic repo completion for STR."
-  (fj-user-repo-dynamic str :noid))
+  ;; NB: used by `fj-compose-read-repo'
+  (fj-user-repo-dynamic str :no-id :noexcl))
 
-(defun fj-user-repo-dynamic (str &optional no-id)
-  "Dynamic `fj-user' repo completion for STR."
-  ;; NB: also currently used for `fj-compose-read-repo'
-  (let* ((id (unless no-id
-               (number-to-string
-                (alist-get 'id (fj-get-current-user)))))
-         (json (fj-repo-search-do str nil id nil nil "updated")))
+(defun fj-user-repo-dynamic (str &optional no-id no-excl)
+  "Dynamic `fj-user' repo completion for STR.
+When NO-ID, do not limit to `fj-user's ID.
+When NO-EXCL, do not force exclusive to `fj-user' but instead prioritize
+`fj-user' in results.
+This *should* mean that with an empty STR, `fj-user' repos will appear
+as sorted candidates, but if the user searches with a STR that does not
+match their own repos, other results will actually appear.
+NB: we limit results to 15, for speed. It's approximate, but not capping
+it makes things far too slow for non `fj-user' only search."
+  (let* ((id (number-to-string
+              (alist-get 'id (fj-get-current-user))))
+         (json (fj-repo-search-do str nil
+                                  (unless no-id id) nil
+                                  (unless no-excl :exclusive)
+                                  nil (when no-excl id) ;; priority-id
+                                  "updated" "desc" ;; most recent
+                                  nil "15")))
     (cl-loop for x in (alist-get 'data json)
              collect (alist-get 'name x))))
 
@@ -3519,8 +3531,9 @@ Use REVIEW-ID for ITEM-ID in REPO by OWNER."
   '("alpha" "created" "updated" "size" "git_size" "lfs_size" "stars"
     "forks" "id"))
 
-(defun fj-repo-search-do (query &optional topic id mode
-                                include-desc sort order page limit)
+(defun fj-repo-search-do (query &optional topic id mode exclusive
+                                include-desc priority-owner-id
+                                sort order page limit)
   "Search repos for QUERY.
 Optionally flag it as a TOPIC.
 ID is a user ID, which if given must own or contribute the repo.
@@ -3535,15 +3548,17 @@ PAGE LIMIT"
   ;; private, is_private, template, archived
   (let* ((params
           (append
-           `(("limit" . ,(fj-default-limit))
+           `(("limit" . ,(or limit (fj-default-limit)))
              ("sort" . ,(or sort "updated")))
-           (when id `(("exclusive" . "true")))
+           ;; (when id `(("exclusive" . "true")))
            (fedi-opt-params (query :alias "q") (topic :boolean "true")
                             (id :alias "uid")
+                            (exclusive :boolean "true")
                             (mode :when (member mode fj-search-modes))
                             (include-desc :alias "includeDesc"
                                           :boolean "true")
-                            order page limit))))
+                            (priority-owner-id :alias "priority_owner_id")
+                            order page))))
     (fj-get "/repos/search" params)))
 
 (defun fj-repo-candidates-annot-fun (cand)
@@ -3640,14 +3655,16 @@ NO-OWNER means don't display owner column (user repos view)."
            face 'fj-comment-face
            item repo)])))))
 
-(defun fj-repo-search (query &optional topic id mode
-                             include-desc sort order page limit)
+(defun fj-repo-search (query &optional topic id mode exclusive
+                             include-desc priority-owner-id
+                             sort order page limit)
   "Search repos for QUERY, and display a tabulated list of results.
 TOPIC, a boolean, means search in repo topics.
 ID MODE INCLUDE-DESC SORT ORDER PAGE LIMIT."
   (interactive "sSearch for repos: ")
-  (let* ((resp (fj-repo-search-do query topic id mode
-                                  include-desc sort order page limit))
+  (let* ((resp (fj-repo-search-do query topic id mode exclusive
+                                  include-desc priority-owner-id
+                                  sort order page limit))
          (buf (format "*fj-search-%s*" query))
          (url (concat fj-host "/explore/repos"))
          (data (alist-get 'data resp))
@@ -4178,7 +4195,7 @@ LIMIT is for `re-search-forward''s bound argument."
   (interactive)
   (setq fj-compose-repo
         (fj-read-user-repo-do
-         fj-compose-repo nil nil #'fj-user-repo-dynamic))
+         fj-compose-repo nil nil #'fj-repo-dynamic))
   (fedi-post--update-status-fields))
 
 (defun fj-compose-read-owner ()
