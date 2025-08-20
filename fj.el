@@ -1091,24 +1091,19 @@ ORDER should be a member of `fj-own-repos-order'."
   "Prompt for a user repository.
 DEFAULT is initial input for `completing-read'.
 SILENT means silent request."
-  (let* ((repos (fj-get-repos (fj-max-items) nil silent
-                              nil (or order "recentupdate")))
-         (cands (fj-get-repo-candidates repos)))
-    (completing-read
-     "Repo: " ;; cands
-     (completion-table-dynamic #'fj-user-repo-dynamic)
-     nil nil ;; don't force match
-     default)))
+  (completing-read
+   "Repo: "
+   (completion-table-dynamic #'fj-user-repo-dynamic)
+   nil nil ;; don't force match
+   default))
 
-;; FIXME: somehow switches buffer when triggered (when str> 2)
 (defun fj-user-repo-dynamic (str)
   "Dynamic `fj-user' repo completion for STR."
-  (when (length> str 2)
-    (let* ((id (number-to-string
-                (alist-get 'id (fj-get-current-user))))
-           (json (fj-repo-search-do str nil id)))
-      (cl-loop for x in (alist-get 'data json)
-               collect (alist-get 'name x)))))
+  (let* ((id (number-to-string
+              (alist-get 'id (fj-get-current-user))))
+         (json (fj-repo-search-do str nil id nil nil "updated")))
+    (cl-loop for x in (alist-get 'data json)
+             collect (alist-get 'name x))))
 
 (defun fj-read-user-repo (&optional arg)
   "Return a user repo.
