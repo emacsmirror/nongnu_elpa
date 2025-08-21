@@ -4076,69 +4076,63 @@ Works in repo listings, issue listings, and item views."
 
 ;;; GENERIC ITEM ACTION COMMANDS
 
+(defun fj-item-mode-dispatch (item-view-fun tl-mode-fun)
+  "Call ITEM-VIEW-FUN or TL-MODE-FUN depending on major-mode."
+  (pcase major-mode
+    ('fj-item-view-mode
+     (funcall item-view-fun))
+    ((or 'fj-owned-issues-tl-mode
+         'fj-issue-tl-mode)
+     (funcall tl-mode-fun))
+    (_ (user-error "No item?"))))
+
 (defun fj-item-comment ()
   "Comment on the item at point or being viewed."
   (interactive)
-  (pcase major-mode
-    ('fj-item-view-mode (fj-item-view-comment))
-    ('fj-issue-tl-mode (fj-issues-tl-comment))
-    (_ (user-error "No issue?"))))
+  (fj-item-mode-dispatch #'fj-item-view-comment
+                         #'fj-issues-tl-comment))
 
 (defun fj-item-edit ()
   "Edit the item at point or being viewed."
   (interactive)
-  (pcase major-mode
-    ('fj-item-view-mode (fj-item-view-edit-item-at-point))
-    ('fj-issue-tl-mode (fj-issues-tl-edit))
-    (_ (user-error "No issue?"))))
+  (fj-item-mode-dispatch #'fj-item-view-edit-item-at-point
+                         #'fj-issues-tl-edit))
 
 (defun fj-item-edit-title ()
   "Edit the title of the item at point or being viewed."
   (interactive)
-  (pcase major-mode
-    ('fj-item-view-mode (fj-item-view-edit-title))
-    ('fj-issue-tl-mode (fj-issues-tl-edit-title))
-    (_ (user-error "No issue?"))))
+  (fj-item-mode-dispatch #'fj-item-view-edit-title
+                         #'fj-issues-tl-edit-title))
 
 (defun fj-item-close ()
   "Close the item at point or being viewed."
   (interactive)
-  (pcase major-mode
-    ('fj-item-view-mode (fj-item-view-close))
-    ('fj-issue-tl-mode (fj-issues-tl-close))
-    (_ (user-error "No issue?"))))
+  (fj-item-mode-dispatch #'fj-item-view-close
+                         #'fj-issues-tl-close))
 
 (defun fj-item-reopen ()
   "Reopen the item at point or being viewed."
   (interactive)
-  (pcase major-mode
-    ('fj-item-view-mode (fj-item-view-reopen))
-    ('fj-issue-tl-mode (fj-issues-tl-reopen))
-    (_ (user-error "No issue?"))))
+  (fj-item-mode-dispatch #'fj-item-view-reopen
+                         #'fj-issues-tl-reopen))
 
 (defun fj-item-delete ()
   "Delete the item at point or being viewed."
   (interactive)
-  (pcase major-mode
-    ('fj-item-view-mode (fj-item-view-delete-item-at-point))
-    ('fj-issue-tl-mode (fj-issues-tl-delete))
-    (_ (user-error "No issue?"))))
+  (fj-item-mode-dispatch #'fj-item-view-delete-item-at-point
+                         #'fj-issues-tl-delete))
 
 (defun fj-item-label-add ()
-  "Comment on the item at point or being viewed."
+  "Add label to the item at point or being viewed."
   (interactive)
-  (pcase major-mode
-    ('fj-item-view-mode (fj-issue-label-add))
-    ('fj-issue-tl-mode (fj-issues-tl-label-add))
-    (_ (user-error "No issue?"))))
+  (fj-item-mode-dispatch #'fj-issue-label-add
+                         #'fj-issues-tl-label-add))
 
 (defun fj-item-label-remove ()
-  "Comment on the item at point or being viewed."
+  "Remove label from the item at point or being viewed."
   (interactive)
-  (pcase major-mode
-    ('fj-item-view-mode (fj-issue-label-remove))
-    ('fj-issue-tl-mode (fj-issues-tl-label-remove))
-    (_ (user-error "No issue?"))))
+  (fj-item-mode-dispatch #'fj-issue-label-remove
+                         #'fj-issues-tl-label-remove))
 
 ;;; COMPOSING
 
