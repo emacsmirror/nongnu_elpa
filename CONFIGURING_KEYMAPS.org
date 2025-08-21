@@ -1,0 +1,113 @@
+#+title: Configuring the Keymaps
+
+* Change the keymap to use
+
+To change the keymap to use, change ~standard-keys-map-style~ value to
+the keymap style you want to use.
+
+#+begin_src emacs-lisp
+(setopt standard-keys-map-style 'keymap-to-use)
+
+;; or if you prefer to use `use-package'...
+:custom (standard-keys-map-style 'keymap-to-use)
+#+end_src
+
+* Change the keymaps keybindings
+
+To change the keymap keybindings is simple, if you are using the
+default keymap set in ~standard-keys-map-style~, change the keybindings
+defined in that keymap (~standard-keys-default-keymap~).
+
+#+begin_src emacs-lisp
+(keymap-set standard-keys-default-keymap "C-t" #'tab-line-new-tab)
+
+;; or with `use-package'
+:bind (:map standard-keys-default-keymap
+            ("C-t" . tab-line-new-tab))
+#+end_src
+
+* Change the =C-x= and =C-c= prefixes to other shortcut
+
+~standard-keys-mode~ uses ~standard-keys-C-x-dynamic-prefix~ and
+~standard-keys-C-c-dynamic-prefix~ variables to change the key prefixes
+to other shortcuts, however these variables are only available after
+the package is loaded.
+
+An easier way to change prefixes is by using the ~use-package~ macro:
+
+#+begin_src emacs-lisp
+;; Asumming you want to use Control+Shift for the C-x and C-d prefixes
+;; in the default keymap
+(use-package standard-keys-mode
+  ;; ...
+  :bind (:map standard-keys-default-keymap
+              ("C-e" . nil)
+              ("C-d" . nil))
+  :config
+  (keymap-set standard-keys-default-keymap "C-S-x" standard-keys-C-x-dynamic-prefix)
+  (keymap-set standard-keys-default-keymap "C-S-c" standard-keys-C-c-dynamic-prefix))
+#+end_src
+
+If you don't want to use ~use-package~, you can use this instead:
+
+#+begin_src emacs-lisp
+(with-eval-after-load "standard-keys-mode"
+  (keymap-unset standard-keys-default-keymap "C-d")
+  (keymap-unset standard-keys-default-keymap "C-c")
+  (keymap-set standard-keys-default-keymap "C-S-x" standard-keys-C-x-dynamic-prefix)
+  (keymap-set standard-keys-default-keymap "C-S-c" standard-keys-C-c-dynamic-prefix))
+#+end_src
+
+* Creating your own keymap environment
+
+For start using your own keymap, first you must define a variable
+which contains a keymap, in this sample, we will use the ~defvar-keymap~
+macro:
+
+#+begin_src emacs-lisp
+(with-eval-after-load "standard-keys-mode"
+  (defvar-keymap my-own-keymap
+    "<f1>" standard-keys-C-x-dynamic-prefix
+    "<f2>" standard-keys-C-c-dynamic-prefix
+    "C-x"  #'kill-region
+    "C-c"  #'kill-ring-save
+    "C-v"  #'yank
+    ;; ...
+    ))
+#+end_src
+
+The ~with-eval-after-load~ macro is needed since the variables where the
+=C-x= and =C-c= prefixes are stored are only available after the package
+is loaded.
+
+After our keymap is now defined, we now can use it setting
+~standard-keys-map-style~ to the variable name.
+
+#+begin_src emacs-lisp
+(setopt standard-keys-map-style 'my-own-keymap)
+#+end_src
+
+And now turning on ~standard-keys-mode~
+
+#+begin_src emacs-lisp
+(standard-keys-mode)
+#+end_src
+
+/Example of creating a keymap theme:/
+
+#+begin_src emacs-lisp
+(use-package standard-keys-mode
+  :hook after-init
+  :custom (standard-keys-map-style 'my-keymap-theme)
+  :config
+  (defvar-keymap my-keymap-theme
+    "ESC x" standard-keys-C-x-dynamic-prefix
+    "ESC c" standard-keys-C-c-dynamic-prefix
+    "C-c" #'execute-extended-command
+    "C-x" #'next-line
+    "C-q" #'scroll-down
+    "C-w" #'beginning-of-line
+    "C-e" #'previous-line
+    "C-r" #'end-of-line
+    "C-o" #'quoted-insert))
+#+end_src

@@ -1,0 +1,121 @@
+#+title: GETTING STARTED
+
+* Description
+
+This file will guide you to install ~standard-keys-mode~, configuring
+and some configurations that you may find useful if this is your first
+time using Emacs.
+
+* Installation
+
+~standard-keys-mode~ requires Emacs 24.4 or greater /(it is recommended
+to use any recent version of Emacs for a better experience)/.
+
+Currently it is not available in any ELPA, but you can install it
+using ~package-vc-install~:
+
+=M-x package-vc-install RET https://github.com/DevelopmentCool2449/standard-keys-mode RET=
+
+Alternatively using ~use-package~ ~:vc~ keyword:
+
+#+begin_src emacs-lisp
+(use-package standard-keys-mode
+  :ensure t
+  :vc ( :url "https://github.com/DevelopmentCool2449/standard-keys-mode"
+        :rev :newest))
+#+end_src
+
+Once you have it installed you can enable it with =M-x standard-keys-mode=
+
+* Start using standard-keys
+
+Once you have ~standard-keys-mode~ installed, you will need to add this
+snippet to your init file.
+(See [[https://www.gnu.org/software/emacs/manual/html_node/emacs/Init-File.html][The Emacs Initialization File Section in Manual]]
+and [[https://www.gnu.org/software/emacs/manual/html_node/efaq-w32/Location-of-init-file.html][Where do I put my init file? Section in Emacs FAQ for MS Windows]]).
+
+Additionally this also include some opinionated options such as
+keybindings and packages that you may be interested.
+
+#+begin_src emacs-lisp
+(use-package standard-keys-mode
+  :ensure t ; Ensure the package is installed
+  ;; Install the package from the github repository (requires git)
+  :vc ( :url "https://github.com/DevelopmentCool2449/standard-keys-mode"
+        :rev :newest)
+  ;; Customize options:
+  :custom
+  ;; Make the C-x and C-c bindings are properly overriden (this is optional)
+  (standard-keys-override-new-C-x-and-C-c-commands t)
+
+  ;; Tell standard-keys-create-new-buffer to create a new scratch buffer
+  (standard-keys-new-buffer-mode 'scratch-buffer)
+
+  ;; Use TAB key to complete or indent the line/region
+  (tab-always-indent 'complete)
+
+  ;; Enable hungry deletion in programming modes
+  (backward-delete-char-untabify-method 'all)
+
+  ;; Better isearch movement
+  (isearch-repeat-on-direction-change t)
+
+  ;; Enable standard-keys-mode after initializing the Emacs session
+  :hook after-init
+  :bind
+  (:map standard-keys-default-keymap
+        ;; Unless you dont want to use tab-line, you can remove this line:
+        ("C-t" . tab-line-new-tab)
+
+        :map context-menu-mode-map
+        ;; Bind Context Menu to `Apps' button
+        ;; (requires context-menu-mode enabled)
+        ("<apps>" . context-menu-open)
+
+        :map help-map
+        ;; Bind describe-face to C-h F
+        ("F" . describe-face)
+
+        ;; Make isearch easy to use
+        :map isearch-mode-map
+        ("<up>"   . isearch-repeat-backward)
+        ("<down>" . isearch-repeat-forward)
+        ("<remap> <yank>" . isearch-yank-kill)
+
+        ;; Use RET as y (yes) action in y-or-n prompts
+        :map y-or-n-p-map
+        ("<return>" . y-or-n-p-insert-y)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;; Additional Package configurations, you can skip this if you don't want it.
+
+;; Enable mouse right click menus
+(context-menu-mode 1)
+
+(use-package which-key
+  :custom
+  (which-key-add-column-padding 2)
+  (which-key-dont-use-unicode)
+  (which-key-ellipsis "..")
+  (which-key-allow-multiple-replacements t)
+  (which-key-idle-delay 0.5)
+  :bind
+  (:map which-key-C-h-map
+        ("n" . nil) ("p" . nil)
+        ("C-n" . nil) ("C-p" . nil)
+        ("<left>" . which-key-show-next-page-cycle)
+        ("<right>" . which-key-show-previous-page-cycle))
+  :config
+  (which-key-mode))
+
+(use-package tab-line
+  :hook (after-init . global-tab-line-mode)
+  :bind
+  (("C-<prior>" . tab-line-switch-to-prev-tab)
+   ("C-<next>"  . tab-line-switch-to-next-tab)
+   ("C-S-<prior>" . tab-line-move-tab-backward)
+   ("C-S-<next>"  . tab-line-move-tab-forward))
+  :custom
+  (tab-line-new-tab-choice #'standard-keys-create-new-buffer)
+  (tab-line-close-tab-function 'kill-buffer))
+#+end_src

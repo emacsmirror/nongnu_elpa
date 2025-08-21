@@ -1,0 +1,137 @@
+~standard-keys-mode~ includes the following additional keymaps themes
+out-the-box:
+
+* Modes-based keymaps
+Keymaps based on different Emacs packages.
+
+** standard-keys-default-keymap
+Default keymap theme used in ~standard-keys-map-style~.
+This keymap is based in ~wakib-keys~ default keymap
+
+| key                  | command                                                                        |
+|----------------------+--------------------------------------------------------------------------------|
+| ~Control~ ~o~            | ~find-file~ (Open file)                                                          |
+| ~Control~ ~Shift~ ~o~      | ~revert-buffer~ (Refresh/Update current buffer file state)                       |
+| ~Control~ ~w~            | ~kill-current-buffer~ (Quit/Kill current buffer)                                 |
+| ~Control~ ~q~            | ~save-buffers-kill-terminal~ (Quit Emacs)                                        |
+| ~Control~ ~e~            | ~C-x~ prefix                                                                     |
+| ~Control~ ~d~            | ~C-c~ prefix                                                                     |
+| ~Control~ ~x~            | ~kill-region~ (Cut)                                                              |
+| ~Control~ ~c~            | ~kill-ring-save~ (Copy)                                                          |
+| ~Control~ ~v~            | ~yank~ (Paste)                                                                   |
+| ~Control~ ~z~            | ~undo~                                                                           |
+| ~Control~ ~y~            | ~undo-redo~ (Redo)                                                               |
+| ~Control~ ~Shift~ ~z~      | ~undo-redo~ (Redo)                                                               |
+| ~Control~ ~f~            | ~isearch-forward~  (Search forward)                                              |
+| ~Control~ ~Shift~ ~f~      | ~isearch-backward~ (Search backward)                                             |
+| ~Control~ ~r~            | ~query-replace~ (Replace)                                                        |
+| ~Control~ ~Shift~ ~r~      | ~query-replace-regexp~ (Replace with regexp)                                     |
+| ~Control~ ~s~            | ~save-buffer~ (Save buffer/file)                                                 |
+| ~Control~ ~Shift~ ~s~      | ~write-file~ (Save buffer/file as)                                               |
+| ~Control~ ~p~            | ~print-buffer~ (Print buffer/file)                                               |
+| ~Control~ ~a~            | ~mark-whole-buffer~ (Select All)                                                 |
+| ~Control~ ~+~            | ~text-scale-increase~ (Zoom in)                                                  |
+| ~Control~ ~-~            | ~text-scale-decrease~ (Zoom out)                                                 |
+| ~Control~ ~=~            | ~text-scale-adjust~ (Set Zoom)                                                   |
+| ~Control~ ~n~            | ~standard-keys-create-new-buffer~ (Create a new empty buffer)                    |
+| ~Control~ ~;~            | ~comment-line~ (Comment out current line)                                        |
+| ~Alt/Meta~ ~1~           | ~delete-other-windows~                                                           |
+| ~Alt/Meta~ ~2~           | ~split-window-below~                                                             |
+| ~Alt/Meta~ ~3~           | ~split-window-right~                                                             |
+| ~Control~ ~RETURN~       | ~rectangle-mark-mode~ (Select in rectangle mode)                                 |
+| ~Control~ ~Shift~ ~RETURN~ | ~standard-keys-newline-and-indent-before-point~ (Insert a newline before cursor) |
+| ~Control~ ~b~            | ~switch-to-buffer~                                                               |
+| ~HOME~                 | ~standard-keys-move-beginning-of-line-or-indentation~                            |
+| ~ESC~                  | ~standard-keys-keyboard-quit~ (Cancel current action, similar to C-g)            |
+
+** standard-keys-ergoemacs-like-keymap
+A Ergoemacs-like keymap theme.
+
+This keymap emulates the ~Ergoemacs QWERTY US layout~ from
+~ergoemacs-mode~.  *It is not a complete emulation*, it just provides some
+basic keybindings from ergoemacs.
+
+| key              | command                         |
+|------------------+---------------------------------|
+| ~Alt/Meta~ ~4~       | ~split-window-right~              |
+| ~Alt/Meta~ ~e~       | ~backward-kill-word~              |
+| ~Alt/Meta~ ~r~       | ~kill-word~                       |
+| ~Alt/Meta~ ~t~       | ~completion-at-point~             |
+| ~Alt/Meta~ ~y~       | ~isearch-forward~                 |
+| ~Alt/Meta~ ~u~       | ~backward-word~                   |
+| ~Alt/Meta~ ~i~       | ~previous-line~                   |
+| ~Alt/Meta~ ~k~       | ~next-line~                       |
+| ~Alt/Meta~ ~j~       | ~left-char~                       |
+| ~Alt/Meta~ ~l~       | ~right-char~                      |
+| ~Alt/Meta~ ~o~       | ~forward-word~                    |
+| ~Alt/Meta~ ~p~       | ~recenter~                        |
+| ~Alt/Meta~ ~a~       | ~execute-extended-command~        |
+| ~Alt/Meta~ ~d~       | ~delete-backward-char~            |
+| ~Alt/Meta~ ~f~       | ~delete-forward-char~             |
+| ~Alt/Meta~ ~x~       | ~kill-region~                     |
+| ~Alt/Meta~ ~n~       | ~beginning-of-buffer~             |
+| ~Alt/Meta~ ~SPC~     | ~set-mark-command~                |
+| ~Alt/Meta~ ~Shift~ ~4~ | ~split-window-below~              |
+| ~Alt/Meta~ ~Shift~ ~y~ | ~isearch-backward~                |
+| ~Alt/Meta~ ~Shift~ ~u~ | ~move-beginning-of-line~          |
+| ~Alt/Meta~ ~Shift~ ~o~ | ~move-end-of-line~                |
+| ~Alt/Meta~ ~Shift~ ~i~ | ~forward-page~                    |
+| ~Alt/Meta~ ~Shift~ ~j~ | ~backward-page~                   |
+| ~Alt/Meta~ ~Shift~ ~n~ | ~end-of-buffer~                   |
+| ~F1~               | ~execute-extended-command~        |
+| ~F6~               | ~esc-map~ Ergoemacs Alt mode      |
+| ~Menu/App~ ~d~       | C-x prefix                      |
+| ~Menu/App~ ~f~       | C-c prefix                      |
+| ~Menu/App~ ~g~       | ~universal-argument~              |
+| ~Menu/App~ ~q~       | ~quoted-insert~                   |
+| ~Control~ ~w~        | ~kill-current-buffer~             |
+| ~Control~ ~r~        | ~revert-buffer-quick~             |
+| ~Control~ ~y~        | ~undo-redo~                       |
+| ~Control~ ~o~        | ~find-file~                       |
+| ~Control~ ~p~        | ~print-buffer~                    |
+| ~Control~ ~a~        | ~mark-whole-buffer~               |
+| ~Control~ ~s~        | ~save-buffer~                     |
+| ~Control~ ~f~        | ~isearch-forward~                 |
+| ~Control~ ~l~        | ~goto-line~                       |
+| ~Control~ ~z~        | ~undo~                            |
+| ~Control~ ~x~        | ~kill-region~                     |
+| ~Control~ ~c~        | ~kill-ring-save~                  |
+| ~Control~ ~v~        | ~yank~                            |
+| ~Control~ ~n~        | ~standard-keys-create-new-buffer~ |
+| ~Control~ ~.~        | ~save-buffers-kill-terminal~      |
+| ~Control~ ~/~        | ~info~                            |
+| ~Control~ ~Shift~ ~w~  | ~delete-frame~                    |
+| ~Control~ ~Shift~ ~s~  | ~write-file~                      |
+| ~Control~ ~Shift~ ~f~  | ~occur~                           |
+| ~Control~ ~Shift~ ~n~  | ~make-frame-command~              |
+
+** standard-keys-minimal-keymap
+A minimal CUA-style keymap theme, designed for people who don't want
+to use all the shortcuts or want to build their own keymap by
+themselves.
+
+| key             | command        |
+|-----------------+----------------|
+| ~Control~ ~Shift~ ~x~ | C-x prefix     |
+| ~Control~ ~Shift~ ~c~ | C-c prefix     |
+| ~Control~ ~s~       | ~save-buffer~    |
+| ~Control~ ~x~       | ~kill-region~    |
+| ~Control~ ~c~       | ~kill-ring-save~ |
+| ~Control~ ~v~       | ~yank~           |
+| ~Control~ ~z~       | ~undo-only~      |
+| ~Control~ ~y~       | ~undo-redo~      |
+
+* Keyboard-based keymaps
+Keymaps designed for different keyboards, mostly based on the default
+keymap.
+
+/WIP/
+
+* Editor-based keymaps
+Keymaps based on various editors, designed for beginners coming from
+those editors.
+
+*Note: None of these are complete emulations, and most take certain
+liberties.*
+
+/WIP/
