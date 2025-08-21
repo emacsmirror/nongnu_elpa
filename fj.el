@@ -4013,7 +4013,6 @@ Works in repo listings, issue listings, and item views."
 (defun fj-issues-tl-close (&optional _)
   "Close current issue from tabulated issues listing."
   (fj-with-entry
-   ;; TODO make check work for "all": need to prop each tl entry
    (fj-with-own-issue-or-repo
     (if (string= (fj--property 'state) "closed")
         (user-error "Issue already closed")
