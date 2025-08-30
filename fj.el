@@ -3660,7 +3660,15 @@ NO-OWNER means don't display owner column (user repos view)."
                              sort order page limit)
   "Search repos for QUERY, and display a tabulated list of results.
 TOPIC, a boolean, means search in repo topics.
-ID MODE INCLUDE-DESC SORT ORDER PAGE LIMIT."
+INCLUDE-DESC means also search in repo description. It defaults to non-nil.
+User ID means only search for repos the user owns or contributes to.
+PRIORITY-OWNER-ID means proritize this owner in results.
+EXCLUSIVE means search exclusively for ID, if given.
+MODE must be one of `fj-search-modes'.
+SORT must be one of `fj-search-sorts'.
+ORDER is the sort order, either \"asc\" or \"desc\"; it requires SORT to be set.
+PAGE is the page number of results.
+LIMIT is the amount of result (to a page)."
   (interactive "sSearch for repos: ")
   (let* ((resp (fj-repo-search-do query topic id mode exclusive
                                   (or include-desc :desc)
