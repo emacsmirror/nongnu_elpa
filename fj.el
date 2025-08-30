@@ -3675,7 +3675,8 @@ ID MODE INCLUDE-DESC SORT ORDER PAGE LIMIT."
             `( :url ,url
                :viewargs
                ( :query ,query :topic ,topic :id ,id :mode ,mode
-                 :include-desc ,include-desc :sort ,sort
+                 :exclusive ,exclusive :include-desc ,include-desc
+                 :priority-owner-id ,priority-owner-id :sort ,sort
                  :order ,order :page ,page :limit ,limit)
                :viewfun fj-repo-search)))))
 
