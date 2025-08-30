@@ -1087,10 +1087,12 @@ ORDER should be a member of `fj-own-repos-order'."
            collect (let-alist r
                      (list .name .id .description .owner.username))))
 
-(defun fj-read-user-repo-do (&optional default silent order fun)
+(defun fj-read-user-repo-do (&optional default fun)
   "Prompt for a user repository.
 DEFAULT is initial input for `completing-read'.
-SILENT means silent request."
+SILENT means silent request.
+FUN is the function for dynamic completion, it defaults to
+`fj-user-repo-dynamic'."
   (completing-read
    "Repo: "
    (completion-table-dynamic (or fun #'fj-user-repo-dynamic))
@@ -1130,11 +1132,11 @@ If it is a string, return it.
 Otherwise, try `fj-current-repo' and `fj-current-dir-repo'.
 If both return nil, also prompt."
   (if (consp arg)
-      (fj-read-user-repo-do nil :silent)
+      (fj-read-user-repo-do)
     (or arg
         fj-current-repo
         (fj-current-dir-repo) ;; requires loaded magit
-        (fj-read-user-repo-do nil :silent))))
+        (fj-read-user-repo-do))))
 
 (defun fj-repo-create ()
   "Create a new repo.
@@ -4198,7 +4200,7 @@ LIMIT is for `re-search-forward''s bound argument."
   (interactive)
   (setq fj-compose-repo
         (fj-read-user-repo-do
-         fj-compose-repo nil nil #'fj-repo-dynamic))
+         fj-compose-repo #'fj-repo-dynamic))
   (fedi-post--update-status-fields))
 
 (defun fj-compose-read-owner ()
