@@ -3663,7 +3663,8 @@ TOPIC, a boolean, means search in repo topics.
 ID MODE INCLUDE-DESC SORT ORDER PAGE LIMIT."
   (interactive "sSearch for repos: ")
   (let* ((resp (fj-repo-search-do query topic id mode exclusive
-                                  include-desc priority-owner-id
+                                  (or include-desc :desc)
+                                  priority-owner-id
                                   sort order page limit))
          (buf (format "*fj-search-%s*" query))
          (url (concat fj-host "/explore/repos"))
