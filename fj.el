@@ -943,7 +943,7 @@ LIMIT and PAGE are for pagination."
          (entries (fj-repo-tl-entries repos :no-owner)))
     (if (not repos)
         (user-error "No repos")
-      (fj-repos-tl-render buf entries #'fj-user-repo-tl-mode :nil)
+      (fj-repos-tl-render buf entries #'fj-user-repo-tl-mode :unset)
       (with-current-buffer (get-buffer-create buf)
         (setq fj-buffer-spec
               `( :owner ,fj-user :url ,(concat fj-host "/" fj-user)
@@ -3721,7 +3721,7 @@ LIMIT is the amount of result (to a page)."
 (defun fj-repos-tl-render (buf entries mode &optional sort-key)
   "Render a tabulated list in BUF fer, with ENTRIES, in MODE.
 Optionally specify repo OWNER and URL.
-Set `tabulated-list-sort-key' to SORT-KEY. It may optionally be :nil to
+Set `tabulated-list-sort-key' to SORT-KEY. It may optionally be :unset to
 unset any default values."
   (let ((prev-buf (buffer-name (current-buffer))))
     (with-current-buffer (get-buffer-create buf)
@@ -3731,7 +3731,7 @@ unset any default values."
       ;; unset it. but if we don't have sort-key, we also don't want to
       ;; nil the mode setting:
       (when sort-key
-        (if (eq :nil sort-key)
+        (if (eq :unset sort-key)
             (setq tabulated-list-sort-key nil)
           (setq tabulated-list-sort-key sort-key)))
       (tabulated-list-init-header)
