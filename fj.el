@@ -3,10 +3,10 @@
 ;; Author: Marty Hiatt <mousebot@disroot.org>
 ;; Copyright (C) 2023 Marty Hiatt <mousebot@disroot.org>
 ;;
-;; Package-Requires: ((emacs "29.1") (fedi "0.2") (tp "0.5") (transient) (magit))
+;; Package-Requires: ((emacs "29.1") (fedi "0.2") (tp "0.5") (transient "0.9.3") (magit "4.3.8"))
 ;; Keywords: git, convenience
 ;; URL: https://codeberg.org/martianh/fj.el
-;; Version: 0.24
+;; Version: 0.25
 ;; Separator: -
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -943,7 +943,7 @@ LIMIT and PAGE are for pagination."
          (entries (fj-repo-tl-entries repos :no-owner)))
     (if (not repos)
         (user-error "No repos")
-      (fj-repos-tl-render buf entries #'fj-user-repo-tl-mode :nil)
+      (fj-repos-tl-render buf entries #'fj-user-repo-tl-mode :unset)
       (with-current-buffer (get-buffer-create buf)
         (setq fj-buffer-spec
               `( :owner ,fj-user :url ,(concat fj-host "/" fj-user)
@@ -3721,7 +3721,7 @@ LIMIT is the amount of result (to a page)."
 (defun fj-repos-tl-render (buf entries mode &optional sort-key)
   "Render a tabulated list in BUF fer, with ENTRIES, in MODE.
 Optionally specify repo OWNER and URL.
-Set `tabulated-list-sort-key' to SORT-KEY. It may optionally be :nil to
+Set `tabulated-list-sort-key' to SORT-KEY. It may optionally be :unset to
 unset any default values."
   (let ((prev-buf (buffer-name (current-buffer))))
     (with-current-buffer (get-buffer-create buf)
@@ -3731,7 +3731,7 @@ unset any default values."
       ;; unset it. but if we don't have sort-key, we also don't want to
       ;; nil the mode setting:
       (when sort-key
-        (if (eq :nil sort-key)
+        (if (eq :unset sort-key)
             (setq tabulated-list-sort-key nil)
           (setq tabulated-list-sort-key sort-key)))
       (tabulated-list-init-header)
@@ -3829,7 +3829,7 @@ Or if viewing a repo's issues, use its clone_url."
         (let* ((resp (fj-get-repo repo owner))
                (url (alist-get 'clone_url resp)))
           (kill-new url)
-          (message (format "Copied: %s" url))))
+          (message "Copied: %s" url)))
     (fj-with-repo-entry
      (let* ((entry (tabulated-list-get-entry))
             (repo (car (seq-first entry)))
@@ -3837,7 +3837,7 @@ Or if viewing a repo's issues, use its clone_url."
             (resp (fj-get-repo repo owner))
             (url (alist-get 'clone_url resp)))
        (kill-new url)
-       (message (format "Copied: %s" url))))))
+       (message "Copied: %s" url)))))
 
 (defun fj-copy-item-url ()
   "Copy URL of current item, either issue or PR."
@@ -3849,7 +3849,7 @@ Or if viewing a repo's issues, use its clone_url."
              (alist-get 'html_url
                         (fj--property 'fj-item-data)))))
     (kill-new url)
-    (message (format "Copied: %s" url))))
+    (message "Copied: %s" url)))
 
 (defun fj-copy-pr-url ()
   "Copy upstream Pull Request URL with branch name."
@@ -3874,7 +3874,7 @@ Or if viewing a repo's issues, use its clone_url."
                               author
                               branch))))
     (kill-new str)
-    (message (format "Copied: %s" str))))
+    (message "Copied: %s" str)))
 
 (defun fj-fork-to-parent ()
   "From a repo TL listing, jump to the parent repo."
@@ -4882,27 +4882,26 @@ PAGE and LIMIT as always."
            ;; (cr-str (format-time-string "%s" cr))
            (cr-display (fedi--relative-time-description cr nil :brief)))
       (insert
-       (concat
-        (propertize
-         (fj-propertize-link (car (string-lines .commit.message))
-                             'commit)
-         'item .sha
-         'fj-url .html_url
-         'fj-item-data commit
-         'fj-byline t) ; for nav
-        "\n"
-        ;; we just use author name and username here
-        ;; need to look into author/committer difference
-        (fj-propertize-link .commit.author.name
-                            'handle .author.username 'fj-name-face)
-        " committed "
-        (propertize cr-display
-                    'help-echo .created)
-        (propertize
-         (concat " | " (substring .sha 0 7))
-         'face 'fj-comment-face
-         'help-echo .sha)
-        "\n" fedi-horiz-bar fedi-horiz-bar "\n\n")))))
+       (propertize
+        (fj-propertize-link (car (string-lines .commit.message))
+                            'commit)
+        'item .sha
+        'fj-url .html_url
+        'fj-item-data commit
+        'fj-byline t) ; for nav
+       "\n"
+       ;; we just use author name and username here
+       ;; need to look into author/committer difference
+       (fj-propertize-link .commit.author.name
+                           'handle .author.username 'fj-name-face)
+       " committed "
+       (propertize cr-display
+                   'help-echo .created)
+       (propertize
+        (concat " | " (substring .sha 0 7))
+        'face 'fj-comment-face
+        'help-echo .sha)
+       "\n" fedi-horiz-bar fedi-horiz-bar "\n\n"))))
 
 ;; GET /repos/{owner}/{repo}/activities/feeds
 (defun fj-repo-get-feed (repo owner)
@@ -5060,17 +5059,16 @@ PAGE and LIMIT are for pagination."
        (propertize (concat " joined " cr-display)
                    'face 'fj-comment-face))
       (insert
-       (concat
-        "\n"
-        ;; website:
-        (unless (string-empty-p .website)
-          (concat (fj-propertize-link .website 'shr nil
-                                      'fj-simple-link-face)
-                  "\n"))
-        ;; description:
-        ;; TODO: render links here:
-        (unless (string-empty-p .description)
-          (concat (string-clean-whitespace .description) "\n"))))
+       "\n"
+       ;; website:
+       (unless (string-empty-p .website)
+         (concat (fj-propertize-link .website 'shr nil
+                                     'fj-simple-link-face)
+                 "\n"))
+       ;; description:
+       ;; TODO: render links here:
+       (unless (string-empty-p .description)
+         (concat (string-clean-whitespace .description) "\n")))
       (insert "\n" fedi-horiz-bar fedi-horiz-bar "\n\n"))))
 
 (defun fj-watch-repo ()
