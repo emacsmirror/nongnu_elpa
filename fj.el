@@ -4882,27 +4882,26 @@ PAGE and LIMIT as always."
            ;; (cr-str (format-time-string "%s" cr))
            (cr-display (fedi--relative-time-description cr nil :brief)))
       (insert
-       (concat
-        (propertize
-         (fj-propertize-link (car (string-lines .commit.message))
-                             'commit)
-         'item .sha
-         'fj-url .html_url
-         'fj-item-data commit
-         'fj-byline t) ; for nav
-        "\n"
-        ;; we just use author name and username here
-        ;; need to look into author/committer difference
-        (fj-propertize-link .commit.author.name
-                            'handle .author.username 'fj-name-face)
-        " committed "
-        (propertize cr-display
-                    'help-echo .created)
-        (propertize
-         (concat " | " (substring .sha 0 7))
-         'face 'fj-comment-face
-         'help-echo .sha)
-        "\n" fedi-horiz-bar fedi-horiz-bar "\n\n")))))
+       (propertize
+        (fj-propertize-link (car (string-lines .commit.message))
+                            'commit)
+        'item .sha
+        'fj-url .html_url
+        'fj-item-data commit
+        'fj-byline t) ; for nav
+       "\n"
+       ;; we just use author name and username here
+       ;; need to look into author/committer difference
+       (fj-propertize-link .commit.author.name
+                           'handle .author.username 'fj-name-face)
+       " committed "
+       (propertize cr-display
+                   'help-echo .created)
+       (propertize
+        (concat " | " (substring .sha 0 7))
+        'face 'fj-comment-face
+        'help-echo .sha)
+       "\n" fedi-horiz-bar fedi-horiz-bar "\n\n"))))
 
 ;; GET /repos/{owner}/{repo}/activities/feeds
 (defun fj-repo-get-feed (repo owner)
@@ -5060,17 +5059,16 @@ PAGE and LIMIT are for pagination."
        (propertize (concat " joined " cr-display)
                    'face 'fj-comment-face))
       (insert
-       (concat
-        "\n"
-        ;; website:
-        (unless (string-empty-p .website)
-          (concat (fj-propertize-link .website 'shr nil
-                                      'fj-simple-link-face)
-                  "\n"))
-        ;; description:
-        ;; TODO: render links here:
-        (unless (string-empty-p .description)
-          (concat (string-clean-whitespace .description) "\n"))))
+       "\n"
+       ;; website:
+       (unless (string-empty-p .website)
+         (concat (fj-propertize-link .website 'shr nil
+                                     'fj-simple-link-face)
+                 "\n"))
+       ;; description:
+       ;; TODO: render links here:
+       (unless (string-empty-p .description)
+         (concat (string-clean-whitespace .description) "\n")))
       (insert "\n" fedi-horiz-bar fedi-horiz-bar "\n\n"))))
 
 (defun fj-watch-repo ()
