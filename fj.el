@@ -3829,7 +3829,7 @@ Or if viewing a repo's issues, use its clone_url."
         (let* ((resp (fj-get-repo repo owner))
                (url (alist-get 'clone_url resp)))
           (kill-new url)
-          (message (format "Copied: %s" url))))
+          (message "Copied: %s" url)))
     (fj-with-repo-entry
      (let* ((entry (tabulated-list-get-entry))
             (repo (car (seq-first entry)))
@@ -3837,7 +3837,7 @@ Or if viewing a repo's issues, use its clone_url."
             (resp (fj-get-repo repo owner))
             (url (alist-get 'clone_url resp)))
        (kill-new url)
-       (message (format "Copied: %s" url))))))
+       (message "Copied: %s" url)))))
 
 (defun fj-copy-item-url ()
   "Copy URL of current item, either issue or PR."
@@ -3849,7 +3849,7 @@ Or if viewing a repo's issues, use its clone_url."
              (alist-get 'html_url
                         (fj--property 'fj-item-data)))))
     (kill-new url)
-    (message (format "Copied: %s" url))))
+    (message "Copied: %s" url)))
 
 (defun fj-copy-pr-url ()
   "Copy upstream Pull Request URL with branch name."
@@ -3874,7 +3874,7 @@ Or if viewing a repo's issues, use its clone_url."
                               author
                               branch))))
     (kill-new str)
-    (message (format "Copied: %s" str))))
+    (message "Copied: %s" str)))
 
 (defun fj-fork-to-parent ()
   "From a repo TL listing, jump to the parent repo."
