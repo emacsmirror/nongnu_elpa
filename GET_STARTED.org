@@ -8,8 +8,7 @@ time using Emacs.
 
 * Installation
 
-~standard-keys-mode~ requires Emacs 24.4 or greater /(it is recommended
-to use any recent version of Emacs for a better experience)/.
+~standard-keys-mode~ requires Emacs 29.1 or greater
 
 Currently it is not available in any ELPA, but you can install it
 using ~package-vc-install~:

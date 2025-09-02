@@ -4,7 +4,7 @@
 
 ;; Author: Elias G. Pérez <eg642616@gmail.com>
 ;; Created: 2025-08-21
-;; Package-Requires: ((emacs "24.4") (compat "29.1"))
+;; Package-Requires: ((emacs "29.1"))
 ;; Homepage: https://github.com/DevelopmentCool2449/standard-keys-mode
 ;; Keywords: emulations, convenience
 ;; Version: 1.0.0
@@ -49,7 +49,6 @@
 ;; which was the inspiration for this package.
 
 ;;; Code:
-(require 'cl-lib)
 
 
 ;;;; User Options
@@ -61,11 +60,11 @@
   :group 'convenience)
 
 (defcustom standard-keys-update-commands-descriptions t
-  "If non-nil, commands docstring descriptions should use the remaped `C-x'/`C-c'."
+  "If non-nil, commands docstring descriptions should use the remaped \\`C-x'/\\`C-c'."
   :type 'boolean)
 
 (defcustom standard-keys-override-new-C-x-and-C-c-commands nil
-  "Whether key definitions in `C-x'/`C-c' must take precedence over other keymaps.
+  "Whether key definitions in \\`C-x' and \\`C-c' must take precedence over other keymaps.
 WARNING: Enabling this may override some terminal specific keybindings
 and only should be used only for override properly the `C-x' and `C-c'
 in buffers or modes which take precedence over `standard-keys-mode'
@@ -121,44 +120,44 @@ KEY must be a key prefix string, either \"C-x\" or \"C-c\"."
   "Return a list of keymaps from MAPS where prefix KEY is defined.
 If MAPS is not set, it will use `current-active-maps' instead."
   (let (list)
-    (dolist (keymaps
-             ;; Exclude the currently used keymap
-             (remove (symbol-value standard-keys-map-style)
-                     (or maps (current-active-maps))))
-      (when-let* ((k (keymap-lookup keymaps key)))
+    (dolist (keymaps (or maps (current-active-maps)))
+      (when-let* (;; Exclude the currently used keymap (avoids consing a new list)
+                  ((not (eq (symbol-value standard-keys-map-style) keymaps)))
+                  (k (keymap-lookup keymaps key)))
         (push k list)))
     ;; The keymaps order must be inverted
     (nreverse list)))
 
-(defvar sk-C-x-dynamic-prefix (standard-keys-key-keybinding "C-x")
+(defvar standard-keys-C-x-dynamic-prefix (standard-keys-key-keybinding "C-x")
   "Dynamic `C-x' prefix used for the keymaps.")
 
-(defvar sk-C-c-dynamic-prefix (standard-keys-key-keybinding "C-c")
+(defvar standard-keys-C-c-dynamic-prefix (standard-keys-key-keybinding "C-c")
   "Dynamic `C-c' prefix used for the keymaps.")
 
 (defun sk--where-is-prefix-key (prefix map actives)
-  "Return a keymap where PREFIX is defined in MAP.
+  "Return a keymap where PREFIX keymap is defined in keymap MAP.
 ACTIVES is for internal use only."
-  (cl-block nil
+  (catch 's-k-key
     (map-keymap-internal
      (lambda (key def)
        (cond
         ((equal def prefix)
-         (cl-return
-          `(,key
-            keymap
-            ,@(if (equal prefix sk-C-x-dynamic-prefix)
-                  (sk--get-key-in-active-mode-keymaps "C-x" actives)
-                (sk--get-key-in-active-mode-keymaps "C-c" actives)))))
+         (throw 's-k-key
+                `(,key
+                  keymap
+                  ,@(if (equal prefix sk-C-x-dynamic-prefix)
+                        (sk--get-key-in-active-mode-keymaps "C-x" actives)
+                      (sk--get-key-in-active-mode-keymaps "C-c" actives)))))
 
         ((keymapp def)
          (when-let* ((map (sk--where-is-prefix-key prefix def actives)))
-           (cl-return
-            `(,key keymap ,map))))))
+           (throw 's-k-key
+                  `(,key keymap ,map))))))
      map)))
 
 (defun sk--where-is-internal-advice (orig-fun def &optional keymap &rest rest)
-  "Advice for `where-is-internal' to find DEF in the rebinded `C-x'/`C-c' maps."
+  "Advice for `where-is-internal' to find DEF in the rebinded \\`C-x' and \\`C-c' maps.
+ORIG-FUN, KEYMAP and REST are arguments for `where-is-internal'."
   (unless keymap
     (let* ((actives (current-active-maps))
            (map (symbol-value standard-keys-map-style))
@@ -203,8 +202,8 @@ ARG is used like in `move-beginning-of-line'."
   (let ((arg (or arg 1))
         (current-point (point))
         (point (progn (back-to-indentation) (point))))
-    (if (= current-point point)
-        (move-beginning-of-line arg))))
+    (when (= current-point point)
+      (move-beginning-of-line arg))))
 
 ;;;###autoload
 (defun sk-create-new-buffer ()
@@ -212,7 +211,6 @@ ARG is used like in `move-beginning-of-line'."
 The buffer major mode is specified in `standard-keys-new-buffer-mode'."
   (interactive)
   (let ((buf (generate-new-buffer "Untitled")))
-    (switch-to-buffer buf)
     (with-current-buffer buf
       (if (eq standard-keys-new-buffer-mode 'scratch-buffer)
           (progn
@@ -222,7 +220,8 @@ The buffer major mode is specified in `standard-keys-new-buffer-mode'."
               (set-buffer-modified-p nil))
             (when (eq initial-major-mode 'lisp-interaction-mode)
               (setq-local trusted-content :all)))
-        (funcall standard-keys-new-buffer-mode)))))
+        (funcall standard-keys-new-buffer-mode)))
+    (switch-to-buffer buf)))
 
 
 ;;;; Keymaps
@@ -273,14 +272,7 @@ The buffer major mode is specified in `standard-keys-new-buffer-mode'."
   :doc "Minimal and basic CUA-like keymap for `standard-keys-map-style'.
 This keymap is intended to be a minimal CUA, binding only a few
 keybindings, and remaping `C-x' and `C-c' to `Control Shift x' and
-`Control Shift c'.
-
-To use this keymap set `standard-keys-map-style' to this keymap:
-
- (setopt standard-keys-map-style \\='standard-keys-minimal-keymap)
-
-or with `use-package':
-  :custom (standard-keys-map-style \\='standard-keys-minimal-keymap)"
+`Control Shift c'."
   "C-S-x" standard-keys-C-x-dynamic-prefix
   "C-S-c" standard-keys-C-c-dynamic-prefix
 
@@ -294,14 +286,7 @@ or with `use-package':
 (defvar-keymap standard-keys-ergoemacs-like-keymap
   :doc "`Ergoemacs QWERTY US layout'-like keymap for `standard-keys-map-style'.
 *This is not a complete emulation*, it just provides some basic
-keybindings from ergoemacs.
-
-To use this keymap set `standard-keys-map-style' to this keymap:
-
- (setopt standard-keys-map-style \\='standard-keys-ergoemacs-like-keymap)
-
-or with `use-package':
-  :custom (standard-keys-map-style \\='standard-keys-ergoemacs-like-keymap)"
+keybindings from ergoemacs."
   ;; Meta (+ Shift) keys
   "M-4" #'split-window-right
   "M-e" #'backward-kill-word
