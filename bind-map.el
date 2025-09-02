@@ -170,23 +170,6 @@ be activated.")
     (put map-sym (pop properties)
          (when properties (pop properties)))))
 
-(defun bind-map-evil-local-mode-hook ()
-  "Called to activate local state maps in a buffer."
-  ;; format is (OVERRIDE-MODE STATE KEY DEF)
-  (dolist (entry bind-map-evil-local-bindings)
-    (let* ((map (intern (format "evil-%s-state-local-map" (nth 1 entry))))
-           (mode (nth 0 entry))
-           (global-mode (intern (format "global-%s" (nth 0 entry))))
-           (set-explicitly (intern (format "%s-set-explicitly" mode))))
-      (when (and (boundp global-mode) (boundp mode)
-                 (boundp set-explicitly) (boundp map)
-                 (keymapp (symbol-value map))
-                 (symbol-value global-mode)
-                 (not (and (symbol-value set-explicitly)
-                           (null (symbol-value mode)))))
-        (define-key (symbol-value map) (nth 2 entry) (nth 3 entry))))))
-(add-hook 'evil-local-mode-hook 'bind-map-evil-local-mode-hook)
-
 (defvar bind-map-major-modes-alist '()
   "Each element takes the form (MAP-ACTIVE (MAJOR-MODE1
 MAJOR-MODE2 ...)). The car is the variable used to activate a map
@@ -395,7 +378,13 @@ mode maps. Set up by bind-map.el." map))
              ,override-mode-doc)
            (,global-override-mode 1))
          (add-to-list 'emulation-mode-map-alists
-                      (list (cons ',override-mode ,root-map)))))
+                      (list (cons ',override-mode ,root-map)))
+         ;; Ensure Evil includes this map by also adding to minor-mode maps
+         (add-to-list 'minor-mode-map-alist (cons ',override-mode ,root-map))
+         ;; Normalize Evil keymaps when the override mode toggles
+         (with-eval-after-load 'evil
+           (add-hook ',(intern (format "%s-hook" override-mode))
+                     #'evil-normalize-keymaps))))
 
      (if (or minor-modes major-modes)
          ;; only bind keys in root-map
@@ -409,28 +398,37 @@ mode maps. Set up by bind-map.el." map))
 
      (when evil-keys
        (if (or minor-modes major-modes)
-	   `((eval-after-load 'evil
-	       '(progn
-		  (dolist (key (bind-map-kbd-keys (list ,@evil-keys)))
-		    (dolist (state ',evil-states)
-		      (when ',major-modes
-			(define-key
-			  (evil-get-auxiliary-keymap ,root-map state t)
-			  key ',prefix-cmd))
-		      (dolist (mode ',minor-modes)
-			(when (fboundp 'evil-define-minor-mode-key)
-			  (evil-define-minor-mode-key
-			   state mode key ',prefix-cmd)))))
-		  (evil-normalize-keymaps))))
-	 `((eval-after-load 'evil
-	     '(progn
-		(dolist (key (bind-map-kbd-keys (list ,@evil-keys)))
-		  (dolist (state ',evil-states)
-		    (when ,override-minor-modes
-		      (push (list ',override-mode state key ',prefix-cmd)
-			    bind-map-evil-local-bindings))
-		    (evil-global-set-key state key ',prefix-cmd)))
-		(evil-normalize-keymaps))))))
+           `((eval-after-load 'evil
+               '(progn
+                  ;; Bind per-state leaders in the auxiliary keymaps of root-map
+                  (dolist (key (bind-map-kbd-keys (list ,@evil-keys)))
+                    (dolist (state ',evil-states)
+                      (when ',major-modes
+                        (define-key (evil-get-auxiliary-keymap ,root-map state t)
+                          key ',prefix-cmd))
+                      (dolist (mode ',minor-modes)
+                        (evil-define-minor-mode-key ',evil-states mode key ',prefix-cmd))))
+                  (evil-normalize-keymaps))))
+         `((eval-after-load 'evil
+             '(progn
+                (dolist (state ',evil-states)
+                  ;; Mark the root-map overriding for precedence
+                  (evil-make-overriding-map ,root-map state)
+                  ;; Bind keys in the per-state auxiliary keymaps
+                  (dolist (key (bind-map-kbd-keys (list ,@evil-keys)))
+                    (define-key (evil-get-auxiliary-keymap ,root-map state t)
+                      key ',prefix-cmd)))
+                ;; Also associate bindings with the override minor mode so they
+                ;; are scoped to buffers where it is enabled
+                (when ,override-minor-modes
+                  (dolist (key (bind-map-kbd-keys (list ,@evil-keys)))
+                    (evil-define-minor-mode-key ',evil-states ',override-mode key ',prefix-cmd)))
+                ;; Fall back to global bindings when not overriding minor modes
+                (unless ,override-minor-modes
+                  (dolist (key (bind-map-kbd-keys (list ,@evil-keys)))
+                    (dolist (state ',evil-states)
+                      (evil-global-set-key state key ',prefix-cmd))))
+                (evil-normalize-keymaps))))))
 
      (when bindings
        `((bind-map-set-keys ,map
