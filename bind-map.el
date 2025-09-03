@@ -181,12 +181,10 @@ when the major mode is an element of the cdr. See
   ;; format is (ACTIVATE-VAR MAJOR-MODES-LIST)
   (dolist (entry bind-map-major-modes-alist)
     (if (boundp (car entry))
-      (setf (symbol-value (car entry))
-            (not
-             (null
-              (member major-mode
-                      (mapcan
-                       #'bind-map--lookup-major-modes (cdr entry))))))
+        (set (make-local-variable (car entry))
+             (let* ((modes (cdr entry))
+                    (expanded (mapcan #'bind-map--lookup-major-modes modes)))
+               (and (memq major-mode expanded) t)))
       (message "bind-map: %s is void in change major mode hook" (car entry)))))
 (add-hook 'change-major-mode-after-body-hook
           'bind-map-change-major-mode-after-body-hook)
@@ -224,7 +222,20 @@ then append MAJOR-MODE-LIST to the existing cdr."
         (setcdr current (append (cdr current)
                                 major-mode-list))
       (push (cons activate-var major-mode-list)
-            bind-map-major-modes-alist))))
+            bind-map-major-modes-alist)))
+  ;; Recompute activation immediately for existing buffers so the change takes effect
+  ;; without requiring a mode change.
+  (let* ((entry (assq activate-var bind-map-major-modes-alist))
+         (modes (and entry (cdr entry)))
+         (expanded (when modes (mapcan #'bind-map--lookup-major-modes modes))))
+    (when expanded
+      (dolist (buf (buffer-list))
+        (with-current-buffer buf
+          (when (boundp activate-var)
+            (set (make-local-variable activate-var)
+                 (and (memq major-mode expanded) t))
+            (when (featurep 'evil)
+              (evil-normalize-keymaps))))))))
 
 (defun bind-map-kbd-keys (keys)
   "Apply `kbd' to KEYS filtering out nil and empty strings."
@@ -362,8 +373,16 @@ mode maps. Set up by bind-map.el." map))
        `((with-no-warnings (defvar-local ,active-var nil))
          (add-to-list 'minor-mode-map-alist (cons ',active-var ,root-map))
          (bind-map-add-to-major-mode-list ',active-var ',major-modes)
-         ;; call once in case we are already in the relevant major mode
-         (bind-map-change-major-mode-after-body-hook)))
+         ;; Normalize activation across existing buffers immediately
+         (let* ((modes ',major-modes)
+                (expanded (mapcan #'bind-map--lookup-major-modes modes)))
+           (dolist (buf (buffer-list))
+             (with-current-buffer buf
+               (when (boundp ',active-var)
+                 (set (make-local-variable ',active-var)
+                      (and (memq major-mode expanded) t))
+                 (when (featurep 'evil)
+                   (evil-normalize-keymaps))))))))
 
      (when (and override-minor-modes
                 (null major-modes)
