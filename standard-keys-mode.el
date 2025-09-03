@@ -44,6 +44,8 @@
 ;; - `standard-keys-newline-and-indent-before-point'
 ;; - `standard-keys-move-beginning-of-line-or-indentation'
 ;; - `standard-keys-create-new-buffer'
+;; - `standard-keys-kill-region-or-line'
+;; - `standard-keys-copy-region-or-line'
 ;;
 ;; Thanks to Abdulla Bubshait (darkstego) for creating wakib-key,
 ;; which was the inspiration for this package.
@@ -223,6 +225,26 @@ The buffer major mode is specified in `standard-keys-new-buffer-mode'."
         (funcall standard-keys-new-buffer-mode)))
     (switch-to-buffer buf)))
 
+;;;###autoload
+(defun sk-copy-region-or-line ()
+  "Copy the active region, or the current line if no region is active."
+  (interactive)
+  (let ((bounds
+         (if (use-region-p)
+             (list (region-beginning) (region-end))
+           (list (line-beginning-position) (line-end-position)))))
+    (apply #'pulse-momentary-highlight-region bounds)
+    (apply #'kill-ring-save bounds)))
+
+;;;###autoload
+(defun sk-kill-region-or-line ()
+  "Cut the active region, or the current line if no region is active."
+  (interactive)
+  (if (use-region-p)
+      (kill-region (region-beginning) (region-end))
+    (kill-region (line-beginning-position)
+                 (line-beginning-position 2))))
+
 
 ;;;; Keymaps
 
@@ -240,8 +262,8 @@ The buffer major mode is specified in `standard-keys-new-buffer-mode'."
   "C-e" standard-keys-C-x-dynamic-prefix
   "C-d" standard-keys-C-c-dynamic-prefix
 
-  "C-x"   #'kill-region
-  "C-c"   #'kill-ring-save
+  "C-x"   #'standard-keys-kill-region-or-line
+  "C-c"   #'standard-keys-copy-region-or-line
   "C-v"   #'yank
   "C-z"   #'undo-only
   "C-y"   #'undo-redo
@@ -303,7 +325,7 @@ keybindings from ergoemacs."
   "M-a" #'execute-extended-command
   "M-d" #'delete-backward-char
   "M-f" #'delete-forward-char
-  "M-x" #'kill-region
+  "M-x" #'standard-keys-kill-region-or-line
   "M-n" #'beginning-of-buffer
   "M-SPC" #'set-mark-command
   ;; Meta + Shift keys
@@ -336,8 +358,8 @@ keybindings from ergoemacs."
                           ; search-forward in ergoemacs
   "C-l" #'goto-line
   "C-z" #'undo
-  "C-x" #'kill-region
-  "C-c" #'kill-ring-save
+  "C-x" #'standard-keys-kill-region-or-line
+  "C-c" #'standard-keys-copy-region-or-line
   "C-v" #'yank
   "C-n" #'standard-keys-create-new-buffer
   "C-." #'save-buffers-kill-terminal
