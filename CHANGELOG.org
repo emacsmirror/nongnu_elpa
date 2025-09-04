@@ -1,5 +1,17 @@
 ChangeLog file that shows all the released versions and their features
 or changes.
 
+* Master (1.0.1)
+
+Added new commands:
+
++ standard-keys-copy-region-or-line
++ standard-keys-cut-region-or-line
+
+~standard-keys-default-keymap~ and ~standard-keys-ergoemacs-like-keymap~
+now uses ~standard-keys-copy-region-or-line~ and
+~standard-keys-cut-region-or-line~ instead of ~kill-ring-save~ and
+~kill-region~.
+
 * 1.0.0 Release (25 ago. 2025)
 Initial Release
