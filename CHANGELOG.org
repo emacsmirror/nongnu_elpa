@@ -1,7 +1,7 @@
 ChangeLog file that shows all the released versions and their features
 or changes.
 
-* Master (1.0.1)
+* Unreleased 1.0.1
 
 Added new commands:
 
