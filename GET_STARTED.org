@@ -10,18 +10,15 @@ time using Emacs.
 
 ~standard-keys-mode~ requires Emacs 29.1 or greater
 
-Currently it is not available in any ELPA, but you can install it
-using ~package-vc-install~:
+For install it, you can run:
 
-=M-x package-vc-install RET https://github.com/DevelopmentCool2449/standard-keys-mode RET=
+=M-x package-install RET standard-keys-mode RET=
 
-Alternatively using ~use-package~ ~:vc~ keyword:
+Alternatively using ~use-package~ keyword:
 
 #+begin_src emacs-lisp
 (use-package standard-keys-mode
-  :ensure t
-  :vc ( :url "https://github.com/DevelopmentCool2449/standard-keys-mode"
-        :rev :newest))
+  :ensure t :hook after-init)
 #+end_src
 
 Once you have it installed you can enable it with =M-x standard-keys-mode=
@@ -38,10 +35,9 @@ keybindings and packages that you may be interested.
 
 #+begin_src emacs-lisp
 (use-package standard-keys-mode
-  :ensure t ; Ensure the package is installed
-  ;; Install the package from the github repository (requires git)
-  :vc ( :url "https://github.com/DevelopmentCool2449/standard-keys-mode"
-        :rev :newest)
+  :ensure t ; Ensure the package is installed.
+  ;; Enable standard-keys-mode after initializing the Emacs session.
+  :hook after-init
   ;; Customize options:
   :custom
   ;; Make the C-x and C-c bindings are properly overriden (this is optional)
@@ -58,9 +54,6 @@ keybindings and packages that you may be interested.
 
   ;; Better isearch movement
   (isearch-repeat-on-direction-change t)
-
-  ;; Enable standard-keys-mode after initializing the Emacs session
-  :hook after-init
   :bind
   (:map standard-keys-default-keymap
         ;; Unless you dont want to use tab-line, you can remove this line:

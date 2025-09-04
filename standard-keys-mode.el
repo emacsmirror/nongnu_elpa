@@ -186,7 +186,7 @@ NOTE: This doesn't work if `C-g' is remaped."
 
 ;;;###autoload
 (defun sk-newline-and-indent-before-point ()
-  "Like `newline-and-indent', but insert the newline before cursor."
+  "Like `newline-and-indent', but inserts the newline before cursor."
   (interactive "^")
   (beginning-of-line)
   (save-excursion (newline-and-indent))

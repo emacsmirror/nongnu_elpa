@@ -16,8 +16,8 @@ This keymap is based in ~wakib-keys~ default keymap
 | ~Control~ ~q~            | ~save-buffers-kill-terminal~ (Quit Emacs)                                        |
 | ~Control~ ~e~            | ~C-x~ prefix                                                                     |
 | ~Control~ ~d~            | ~C-c~ prefix                                                                     |
-| ~Control~ ~x~            | ~kill-region~ (Cut)                                                              |
-| ~Control~ ~c~            | ~kill-ring-save~ (Copy)                                                          |
+| ~Control~ ~x~            | ~standard-keys-cut-region-or-line~ (Cut)                                         |
+| ~Control~ ~c~            | ~standard-keys-copy-region-or-line~ (Copy)                                       |
 | ~Control~ ~v~            | ~yank~ (Paste)                                                                   |
 | ~Control~ ~z~            | ~undo~                                                                           |
 | ~Control~ ~y~            | ~undo-redo~ (Redo)                                                               |
@@ -51,59 +51,59 @@ This keymap emulates the ~Ergoemacs QWERTY US layout~ from
 ~ergoemacs-mode~.  *It is not a complete emulation*, it just provides some
 basic keybindings from ergoemacs.
 
-| key              | command                         |
-|------------------+---------------------------------|
-| ~Alt/Meta~ ~4~       | ~split-window-right~              |
-| ~Alt/Meta~ ~e~       | ~backward-kill-word~              |
-| ~Alt/Meta~ ~r~       | ~kill-word~                       |
-| ~Alt/Meta~ ~t~       | ~completion-at-point~             |
-| ~Alt/Meta~ ~y~       | ~isearch-forward~                 |
-| ~Alt/Meta~ ~u~       | ~backward-word~                   |
-| ~Alt/Meta~ ~i~       | ~previous-line~                   |
-| ~Alt/Meta~ ~k~       | ~next-line~                       |
-| ~Alt/Meta~ ~j~       | ~left-char~                       |
-| ~Alt/Meta~ ~l~       | ~right-char~                      |
-| ~Alt/Meta~ ~o~       | ~forward-word~                    |
-| ~Alt/Meta~ ~p~       | ~recenter~                        |
-| ~Alt/Meta~ ~a~       | ~execute-extended-command~        |
-| ~Alt/Meta~ ~d~       | ~delete-backward-char~            |
-| ~Alt/Meta~ ~f~       | ~delete-forward-char~             |
-| ~Alt/Meta~ ~x~       | ~kill-region~                     |
-| ~Alt/Meta~ ~n~       | ~beginning-of-buffer~             |
-| ~Alt/Meta~ ~SPC~     | ~set-mark-command~                |
-| ~Alt/Meta~ ~Shift~ ~4~ | ~split-window-below~              |
-| ~Alt/Meta~ ~Shift~ ~y~ | ~isearch-backward~                |
-| ~Alt/Meta~ ~Shift~ ~u~ | ~move-beginning-of-line~          |
-| ~Alt/Meta~ ~Shift~ ~o~ | ~move-end-of-line~                |
-| ~Alt/Meta~ ~Shift~ ~i~ | ~forward-page~                    |
-| ~Alt/Meta~ ~Shift~ ~j~ | ~backward-page~                   |
-| ~Alt/Meta~ ~Shift~ ~n~ | ~end-of-buffer~                   |
-| ~F1~               | ~execute-extended-command~        |
-| ~F6~               | ~esc-map~ Ergoemacs Alt mode      |
-| ~Menu/App~ ~d~       | C-x prefix                      |
-| ~Menu/App~ ~f~       | C-c prefix                      |
-| ~Menu/App~ ~g~       | ~universal-argument~              |
-| ~Menu/App~ ~q~       | ~quoted-insert~                   |
-| ~Control~ ~w~        | ~kill-current-buffer~             |
-| ~Control~ ~r~        | ~revert-buffer-quick~             |
-| ~Control~ ~y~        | ~undo-redo~                       |
-| ~Control~ ~o~        | ~find-file~                       |
-| ~Control~ ~p~        | ~print-buffer~                    |
-| ~Control~ ~a~        | ~mark-whole-buffer~               |
-| ~Control~ ~s~        | ~save-buffer~                     |
-| ~Control~ ~f~        | ~isearch-forward~                 |
-| ~Control~ ~l~        | ~goto-line~                       |
-| ~Control~ ~z~        | ~undo~                            |
-| ~Control~ ~x~        | ~kill-region~                     |
-| ~Control~ ~c~        | ~kill-ring-save~                  |
-| ~Control~ ~v~        | ~yank~                            |
-| ~Control~ ~n~        | ~standard-keys-create-new-buffer~ |
-| ~Control~ ~.~        | ~save-buffers-kill-terminal~      |
-| ~Control~ ~/~        | ~info~                            |
-| ~Control~ ~Shift~ ~w~  | ~delete-frame~                    |
-| ~Control~ ~Shift~ ~s~  | ~write-file~                      |
-| ~Control~ ~Shift~ ~f~  | ~occur~                           |
-| ~Control~ ~Shift~ ~n~  | ~make-frame-command~              |
+| key              | command                           |
+|------------------+-----------------------------------|
+| ~Alt/Meta~ ~4~       | ~split-window-right~                |
+| ~Alt/Meta~ ~e~       | ~backward-kill-word~                |
+| ~Alt/Meta~ ~r~       | ~kill-word~                         |
+| ~Alt/Meta~ ~t~       | ~completion-at-point~               |
+| ~Alt/Meta~ ~y~       | ~isearch-forward~                   |
+| ~Alt/Meta~ ~u~       | ~backward-word~                     |
+| ~Alt/Meta~ ~i~       | ~previous-line~                     |
+| ~Alt/Meta~ ~k~       | ~next-line~                         |
+| ~Alt/Meta~ ~j~       | ~left-char~                         |
+| ~Alt/Meta~ ~l~       | ~right-char~                        |
+| ~Alt/Meta~ ~o~       | ~forward-word~                      |
+| ~Alt/Meta~ ~p~       | ~recenter~                          |
+| ~Alt/Meta~ ~a~       | ~execute-extended-command~          |
+| ~Alt/Meta~ ~d~       | ~delete-backward-char~              |
+| ~Alt/Meta~ ~f~       | ~delete-forward-char~               |
+| ~Alt/Meta~ ~x~       | ~standard-keys-cut-region-or-line~  |
+| ~Alt/Meta~ ~n~       | ~beginning-of-buffer~               |
+| ~Alt/Meta~ ~SPC~     | ~set-mark-command~                  |
+| ~Alt/Meta~ ~Shift~ ~4~ | ~split-window-below~                |
+| ~Alt/Meta~ ~Shift~ ~y~ | ~isearch-backward~                  |
+| ~Alt/Meta~ ~Shift~ ~u~ | ~move-beginning-of-line~            |
+| ~Alt/Meta~ ~Shift~ ~o~ | ~move-end-of-line~                  |
+| ~Alt/Meta~ ~Shift~ ~i~ | ~forward-page~                      |
+| ~Alt/Meta~ ~Shift~ ~j~ | ~backward-page~                     |
+| ~Alt/Meta~ ~Shift~ ~n~ | ~end-of-buffer~                     |
+| ~F1~               | ~execute-extended-command~          |
+| ~F6~               | ~esc-map~ Ergoemacs Alt mode        |
+| ~Menu/App~ ~d~       | C-x prefix                        |
+| ~Menu/App~ ~f~       | C-c prefix                        |
+| ~Menu/App~ ~g~       | ~universal-argument~                |
+| ~Menu/App~ ~q~       | ~quoted-insert~                     |
+| ~Control~ ~w~        | ~kill-current-buffer~               |
+| ~Control~ ~r~        | ~revert-buffer-quick~               |
+| ~Control~ ~y~        | ~undo-redo~                         |
+| ~Control~ ~o~        | ~find-file~                         |
+| ~Control~ ~p~        | ~print-buffer~                      |
+| ~Control~ ~a~        | ~mark-whole-buffer~                 |
+| ~Control~ ~s~        | ~save-buffer~                       |
+| ~Control~ ~f~        | ~isearch-forward~                   |
+| ~Control~ ~l~        | ~goto-line~                         |
+| ~Control~ ~z~        | ~undo~                              |
+| ~Control~ ~x~        | ~standard-keys-cut-region-or-line~  |
+| ~Control~ ~c~        | ~standard-keys-copy-region-or-line~ |
+| ~Control~ ~v~        | ~yank~                              |
+| ~Control~ ~n~        | ~standard-keys-create-new-buffer~   |
+| ~Control~ ~.~        | ~save-buffers-kill-terminal~        |
+| ~Control~ ~/~        | ~info~                              |
+| ~Control~ ~Shift~ ~w~  | ~delete-frame~                      |
+| ~Control~ ~Shift~ ~s~  | ~write-file~                        |
+| ~Control~ ~Shift~ ~f~  | ~occur~                             |
+| ~Control~ ~Shift~ ~n~  | ~make-frame-command~                |
 
 ** standard-keys-minimal-keymap
 A minimal CUA-style keymap theme, designed for people who don't want

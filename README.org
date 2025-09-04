@@ -1,6 +1,8 @@
 #+title: standard-keys-mode
 #+author: Elias G. Perez
 
+#+html: <a href="https://elpa.nongnu.org/nongnu/standard-keys-mode.html"><img alt="NonGNU ELPA" src="https://elpa.nongnu.org/nongnu/standard-keys-mode.svg"/></a>
+
 * Introduction
 
 standard-keys-mode is yet another CUA-like mode that aims to emulate
@@ -73,8 +75,8 @@ standard-keys uses the following shortcuts by default (defined in
 | ~Control~ ~q~            | ~save-buffers-kill-terminal~ (Quit Emacs)                                        |
 | ~Control~ ~e~            | ~C-x~ prefix                                                                     |
 | ~Control~ ~d~            | ~C-c~ prefix                                                                     |
-| ~Control~ ~x~            | ~kill-region~ (Cut)                                                              |
-| ~Control~ ~c~            | ~kill-ring-save~ (Copy)                                                          |
+| ~Control~ ~x~            | ~standard-keys-cut-region-or-line~ (Cut)                                         |
+| ~Control~ ~c~            | ~standard-keys-copy-region-or-line~ (Copy)                                       |
 | ~Control~ ~v~            | ~yank~ (Paste)                                                                   |
 | ~Control~ ~z~            | ~undo~                                                                           |
 | ~Control~ ~y~            | ~undo-redo~ (Redo)                                                               |
@@ -134,6 +136,46 @@ standard-keys uses the following shortcuts by default (defined in
   Use this option to change the default keymap to use.
 
   default: ='standard-keys-default-keymap=
+
++ ~standard-keys-new-buffer-mode~
+
+  Which major mode should ~standard-keys-create-new-buffer~ use.
+
+  The value can be any major mode function symbol.
+
+  If set to =scratch-buffer=, it will create a new scratch buffer.
+
+  default: ='fundamental-mode=
+
+** Commands
+
++ ~standard-keys-keyboard-quit~
+
+  Quit from the current command/action.  This acts like `C-g' but is
+  intended to be used for any other additional keybindings.
+
+  *NOTE*: This doesn't work if =C-g= is remaped.
+
++ ~standard-keys-newline-and-indent-before-point~
+
+  Like ~newline-and-indent~, but inserts the newline before cursor.
+
++ ~standard-keys-move-beginning-of-line-or-indentation~
+
+  This acts like ~move-beginning-of-line~, but can also move the cursor
+  to the beginning of the indentation.
+
++ ~standard-keys-create-new-buffer~
+
+  Create a new Untitled empty buffer.
+
++ ~standard-keys-copy-region-or-line~
+
+  Copy the active region, or the current line if no region is active.
+
++ ~standard-keys-cut-region-or-line~
+
+  Cut the active region, or the current line if no region is active.
 
 * Troubleshooting
 
