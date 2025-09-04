@@ -229,21 +229,19 @@ The buffer major mode is specified in `standard-keys-new-buffer-mode'."
 (defun sk-copy-region-or-line ()
   "Copy the active region, or the current line if no region is active."
   (interactive)
-  (let ((bounds
-         (if (use-region-p)
-             (list (region-beginning) (region-end))
-           (list (line-beginning-position) (line-end-position)))))
-    (apply #'pulse-momentary-highlight-region bounds)
-    (apply #'kill-ring-save bounds)))
+  (let* ((region (use-region-p))
+         (beg (if region (region-beginning) (line-beginning-position)))
+         (end (if region (region-end) (line-end-position))))
+    (unless region (pulse-momentary-highlight-region beg end 'region))
+    (kill-ring-save beg end)))
 
 ;;;###autoload
-(defun sk-kill-region-or-line ()
+(defun sk-cut-region-or-line ()
   "Cut the active region, or the current line if no region is active."
   (interactive)
-  (if (use-region-p)
-      (kill-region (region-beginning) (region-end))
-    (kill-region (line-beginning-position)
-                 (line-beginning-position 2))))
+  (kill-region (line-beginning-position)
+               (line-end-position)
+               (use-region-p)))
 
 
 ;;;; Keymaps
@@ -262,7 +260,7 @@ The buffer major mode is specified in `standard-keys-new-buffer-mode'."
   "C-e" standard-keys-C-x-dynamic-prefix
   "C-d" standard-keys-C-c-dynamic-prefix
 
-  "C-x"   #'standard-keys-kill-region-or-line
+  "C-x"   #'standard-keys-cut-region-or-line
   "C-c"   #'standard-keys-copy-region-or-line
   "C-v"   #'yank
   "C-z"   #'undo-only
@@ -325,7 +323,7 @@ keybindings from ergoemacs."
   "M-a" #'execute-extended-command
   "M-d" #'delete-backward-char
   "M-f" #'delete-forward-char
-  "M-x" #'standard-keys-kill-region-or-line
+  "M-x" #'standard-keys-cut-region-or-line
   "M-n" #'beginning-of-buffer
   "M-SPC" #'set-mark-command
   ;; Meta + Shift keys
@@ -358,7 +356,7 @@ keybindings from ergoemacs."
                           ; search-forward in ergoemacs
   "C-l" #'goto-line
   "C-z" #'undo
-  "C-x" #'standard-keys-kill-region-or-line
+  "C-x" #'standard-keys-cut-region-or-line
   "C-c" #'standard-keys-copy-region-or-line
   "C-v" #'yank
   "C-n" #'standard-keys-create-new-buffer
