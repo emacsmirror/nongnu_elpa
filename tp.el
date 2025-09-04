@@ -263,7 +263,8 @@ transient ignores false/nil values.")
 
 (cl-defmethod transient-init-value ((obj tp-option))
   "Initialize the value of OBJ."
-  (let* ((prefix-val (oref transient--prefix value)))
+  (let* ((prefix-val (transient-get-value)))
+    ;; (oref transient--prefix value)))
     (oset obj value
           (tp-get-server-val obj prefix-val))))
 
@@ -370,7 +371,8 @@ We add the current value as initial input."
 The format of the value is a transient pair as a string, ie \"key=val\".
 Nil values will also match the empty string.
 OBJ is the object whose args are being checked."
-  (let* ((data (oref transient--prefix value))
+  (let* ((data (transient-get-value))
+         ;; (oref transient--prefix value))
          (server-val (tp-get-server-val obj data))
          (server-str (if (and server-val
                               (symbolp server-val))
