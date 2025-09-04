@@ -52,11 +52,16 @@
 
 (define-error 'no-pyrefly-error "Cannot find pyrefly")
 
+;;;###autoload
+(defcustom flymake-pyrefly-binary-path "pyrefly"
+  "Path to a pyrefly binary."
+  :type 'file)
+
 (defun pyrefly-flymake-backend (report-fn &rest _args)
   "Report pyrefly diagnostic with REPORT-FN."
   ;; Not having pyrefly installed is a serious problem which should cause
   ;; the backend to disable itself, so an error is signaled.
-  (unless (executable-find "pyrefly")
+  (unless (executable-find flymake-pyrefly-binary-path)
     (signal 'no-pyrefly-error nil))
 
   ;; If a live process launched in an earlier check was found, that
@@ -80,7 +85,7 @@
         ;; Make output go to a temporary buffer.
         :buffer (generate-new-buffer " *flymake-pyrefly*")
         :command
-        `("pyrefly" "check" "--output-format" "min-text" "--no-summary" ,source-file-name)
+        `(,flymake-pyrefly-binary-path "check" "--output-format" "min-text" "--no-summary" ,source-file-name)
         :sentinel
         (lambda (proc _event)
           ;; Check that the process has indeed exited, as it might
