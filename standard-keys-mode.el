@@ -230,10 +230,10 @@ The buffer major mode is specified in `standard-keys-new-buffer-mode'."
   "Copy the active region, or the current line if no region is active."
   (interactive)
   (let* ((region (use-region-p))
-         (beg (if region (region-beginning) (line-beginning-position)))
-         (end (if region (region-end) (line-beginning-position 2))))
+         (beg (line-beginning-position))
+         (end (line-beginning-position 2)))
     (unless region (pulse-momentary-highlight-region beg end 'region))
-    (kill-ring-save beg end)))
+    (kill-ring-save beg end region)))
 
 ;;;###autoload
 (defun sk-cut-region-or-line ()
