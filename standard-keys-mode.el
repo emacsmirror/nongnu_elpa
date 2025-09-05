@@ -231,7 +231,7 @@ The buffer major mode is specified in `standard-keys-new-buffer-mode'."
   (interactive)
   (let* ((region (use-region-p))
          (beg (if region (region-beginning) (line-beginning-position)))
-         (end (if region (region-end) (line-end-position))))
+         (end (if region (region-end) (line-beginning-position 2))))
     (unless region (pulse-momentary-highlight-region beg end 'region))
     (kill-ring-save beg end)))
 
@@ -240,7 +240,7 @@ The buffer major mode is specified in `standard-keys-new-buffer-mode'."
   "Cut the active region, or the current line if no region is active."
   (interactive)
   (kill-region (line-beginning-position)
-               (line-end-position)
+               (line-beginning-position 2)
                (use-region-p)))
 
 
