@@ -30,6 +30,11 @@ For `typst-ts-compile-after-compilation-hook' and
 user set `display-buffer-alist' option for compilation buffer to switch to
 compilation buffer before compilation."
   (lambda (compilation-buffer msg)
+    (when (and
+           typst-ts-compile-hide-compilation-buffer-if-success
+           (string-match-p "finished" (string-trim msg)))
+      (delete-windows-on compilation-buffer)
+      (message "Execute typst copmile successfully."))
     (unwind-protect
         (with-current-buffer cur-buffer
           (run-hook-with-args 'typst-ts-compile-after-compilation-hook compilation-buffer msg))
@@ -59,6 +64,7 @@ When using a prefix argument or the optional argument PREVIEW,
            (shell-quote-argument (typst-ts-compile-get-result-pdf-filename))
            typst-ts-compile-options)
    'typst-ts-compilation-mode))
+
 
 (defun typst-ts-compile-get-result-pdf-filename (&optional buffer check)
   "Get the result PDF filename based on the name of BUFFER.

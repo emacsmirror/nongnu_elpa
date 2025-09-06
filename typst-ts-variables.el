@@ -73,29 +73,34 @@ The car is used for subscript, the cdr is used for superscripts."
   :type 'string
   :group 'typst-ts-compile)
 
+(defcustom typst-ts-compile-hide-compilation-buffer-if-success t
+  "Hide compilation buffer if typst compile command is executed successfully."
+  :type 'boolean
+  :group 'typst-ts-compile)
+
 (defcustom typst-ts-compile-options ""
   "User defined compile options for `typst-ts-compile'.
 The compile options will be passed to the end of
 `<typst-executable> compile <current-file>' command."
   :type 'string
-  :group 'typst-ts)
+  :group 'typst-ts-compile)
 
 (defcustom typst-ts-output-directory ""
   "User defined output directory for `typst-ts-compile` and `typst-ts-watch`."
   :type 'string
-  :group 'typst-ts)
+  :group 'typst-ts-compile)
 
 
 (defcustom typst-ts-preview-function 'browse-url
   "Function that opens PDF documents for preview."
   :type 'function
-  :group 'typst-ts)
+  :group 'typst-ts-compile)
 
 
 (defcustom typst-ts-compile-before-compilation-hook nil
   "Hook runs after compile."
   :type 'hook
-  :group 'typst-ts)
+  :group 'typst-ts-compile)
 
 (defcustom typst-ts-compile-after-compilation-hook nil
   "Hook runs after compile.
@@ -103,7 +108,7 @@ Note the requirement of this hook is the same as `compilation-finish-functions'.
 Also note that this hook runs with typst buffer(the buffer you are editing) as
 the current buffer."
   :type 'hook
-  :group 'typst-ts)
+  :group 'typst-ts-compile)
 
 
 ;;; Watch Mode =================================================================
