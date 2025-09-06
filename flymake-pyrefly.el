@@ -55,14 +55,15 @@
 
 (define-error 'no-pyrefly-error "Cannot find pyrefly")
 
-(defgroup flymake-pyrefly-group nil
-  "A Pyrefly Flymake backend.")
+(defgroup flymake-pyrefly nil
+  "A Pyrefly Flymake backend."
+  :group 'tools)
 
 ;;;###autoload
 (defcustom flymake-pyrefly-binary-path "pyrefly"
   "Path to Pyrefly binary."
   :type 'file
-  :group 'flymake-pyrefly-group)
+  :group 'flymake-pyrefly)
 
 (defun pyrefly-flymake-backend (report-fn &rest _args)
   "Report pyrefly diagnostic with REPORT-FN."
