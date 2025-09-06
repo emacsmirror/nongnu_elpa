@@ -5,7 +5,7 @@
 ;; Author: Boris Shminke <boris@shminke.com>
 ;; Maintainer: Boris Shminke <boris@shminke.com>
 ;; Created: 29 Jun 2025
-;; Version: 0.1.6
+;; Version: 0.1.7
 ;; Keywords: tools, languages
 ;; URL: https://github.com/inpefess/flymake-pyrefly
 ;; Package-Requires: ((emacs "26.1"))
@@ -45,6 +45,9 @@
 ;;   ;; if you use eglot and use-package
 ;;   (use-package flymake-pyrefly
 ;;     :hook (eglot-managed-mode . pyrefly-setup-flymake-backend))
+;;
+;;   You can also set Pyrefly binary path through Easy Customization
+;;   variable flymake-pyrefly-binary-path
 
 ;;; Code:
 (require 'cl-lib)
@@ -52,11 +55,21 @@
 
 (define-error 'no-pyrefly-error "Cannot find pyrefly")
 
+(defgroup flymake-pyrefly nil
+  "A Pyrefly Flymake backend."
+  :group 'tools)
+
+;;;###autoload
+(defcustom flymake-pyrefly-binary-path "pyrefly"
+  "Path to Pyrefly binary."
+  :type 'file
+  :group 'flymake-pyrefly)
+
 (defun pyrefly-flymake-backend (report-fn &rest _args)
   "Report pyrefly diagnostic with REPORT-FN."
   ;; Not having pyrefly installed is a serious problem which should cause
   ;; the backend to disable itself, so an error is signaled.
-  (unless (executable-find "pyrefly")
+  (unless (executable-find flymake-pyrefly-binary-path)
     (signal 'no-pyrefly-error nil))
 
   ;; If a live process launched in an earlier check was found, that
@@ -80,7 +93,7 @@
         ;; Make output go to a temporary buffer.
         :buffer (generate-new-buffer " *flymake-pyrefly*")
         :command
-        `("pyrefly" "check" "--output-format" "min-text" "--no-summary" ,source-file-name)
+        `(,flymake-pyrefly-binary-path "check" "--output-format" "min-text" "--no-summary" ,source-file-name)
         :sentinel
         (lambda (proc _event)
           ;; Check that the process has indeed exited, as it might
