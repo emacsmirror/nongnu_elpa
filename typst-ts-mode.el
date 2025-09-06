@@ -730,7 +730,8 @@ typst tree sitter grammar (at least %s)!" (current-time-string min-time))
   (setq-local indent-line-function #'typst-ts-indent-line-function)
   (add-hook 'typst-ts-mode-hook (lambda ()
                                   (setq-local edit-indirect-guess-mode-function
-                                              #'typst-ts-edit-indirect--guess-mode))))
+                                              #'typst-ts-edit-indirect--guess-mode)))
+  (yank-media-handler "image/png" #'typst-ts-editing-yank-png))
 
 ;;;###autoload
 (add-to-list 'auto-mode-alist '("\\.typ\\'" . typst-ts-mode))

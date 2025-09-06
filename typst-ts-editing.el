@@ -805,6 +805,40 @@ In code mode, the selection needs to be prefixed with the module."
       (setq to-insert (concat "#emoji." to-insert))))
     (insert to-insert)))
 
+(defun typst-ts-editing-yank-png (_mime data)
+  "Function for `yank-media-handler' handling png images.
+DATA is the data."
+  (if-let* ((buf (buffer-file-name))
+            (root (file-name-directory buf))
+            (default-name (concat (format-time-string "%Y%m%d-%H%M%S") ".png"))
+            (default-path (file-name-concat
+                           root
+                           default-name))
+            (save-to (expand-file-name
+                      (read-file-name
+                       "Save to file: "
+                       nil nil nil default-name))))
+      (progn
+        (when (and (file-exists-p save-to)
+                   (not (yes-or-no-p (format "Overwrite: %s?" save-to))))
+          (user-error "Aborted"))
+        (make-directory (file-name-directory save-to) t)
+        ;; save the image data into save-to
+        (write-region data nil save-to)
+        ;; insert the image
+        (insert (concat
+                 (unless (treesit-parent-until (treesit-node-at (point))
+                                               (lambda (x)
+                                                 (or
+                                                  (string= (treesit-node-type x)
+                                                           "code")
+                                                  (string= (treesit-node-type x)
+                                                           "content"))))
+                   "#")
+                 (format "image(\"%s\")" (file-relative-name save-to root))))
+        (indent-according-to-mode))
+    (user-error "Save the file first!")))
+
 (provide 'typst-ts-editing)
 
 ;;; typst-ts-editing.el ends here
