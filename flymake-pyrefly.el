@@ -45,6 +45,9 @@
 ;;   ;; if you use eglot and use-package
 ;;   (use-package flymake-pyrefly
 ;;     :hook (eglot-managed-mode . pyrefly-setup-flymake-backend))
+;;
+;;   You can also set Pyrefly binary path through Easy Customization
+;;   variable flymake-pyrefly-binary-path
 
 ;;; Code:
 (require 'cl-lib)
