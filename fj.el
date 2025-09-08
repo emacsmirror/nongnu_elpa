@@ -2849,7 +2849,8 @@ RELOAD mean we reloaded."
             "This PR can be merged automatically.\n\n")
            (_ "")))
         (when (and fj-use-emojify
-                   (require 'emojify nil :noerror))
+                   (require 'emojify nil :noerror)
+                   (fboundp 'emojify-mode))
           (emojify-mode t))
         ;; Propertize top level item only:
         (fj-render-item-bodies)))))
