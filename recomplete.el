@@ -462,8 +462,8 @@ Return the region replaced."
               (setq len-test i))))))
       (unless (zerop i)
         (setq i-end (- len i))
-        (setq len (- len i))
-        (setq end (- end i))
+        (decf len i)
+        (decf end i)
         (setq i-end-ofs i)))
 
     ;; Check for skip start.
@@ -472,12 +472,12 @@ Return the region replaced."
         (while (< i len-test)
           (cond
            ((eq (aref str i) (char-after (+ beg i)))
-            (setq i (1+ i)))
+            (incf i))
            (t ; Break.
             (setq len-test i)))))
       (unless (zerop i)
         (setq i-beg i)
-        (setq beg (+ beg i))))
+        (incf beg i)))
 
     (when (or i-beg i-end)
       (setq str (substring str (or i-beg 0) (or i-end len))))
