@@ -99,7 +99,7 @@ Argument ALSO-MOVE-POINT When non-nil, move the POINT as well."
     (when also-move-point
       (let ((lines-point-remainder (forward-line lines)))
         (unless (zerop lines-point-remainder)
-          (setq lines (- lines lines-point-remainder)))))
+          (decf lines lines-point-remainder))))
     (unless (zerop lines)
       (set-window-start window
                         (save-excursion
@@ -342,7 +342,7 @@ Returns true when scrolling took place, otherwise nil."
             (lambda (self-fn)
               (let ((lines delta))
                 (unless (zerop lines)
-                  (setq delta-px-accum (- delta-px-accum (* lines this-frame-char-height)))
+                  (decf delta-px-accum (* lines this-frame-char-height))
                   (let ((lines-remainder (scroll-on-drag--scroll-by-lines this-window lines t)))
                     (unless (zerop (- lines lines-remainder))
                       (scroll-on-drag--force-redisplay-with-hooks)))))
@@ -368,11 +368,11 @@ Returns true when scrolling took place, otherwise nil."
                  ;; Non-Smooth-Scrolling (snap to lines).
                  ;; Basically same logic as above, but only step over lines.
                  (t
-                  (setq delta-px-accum (+ delta-scaled delta-px-accum))
+                  (incf delta-px-accum delta-scaled)
                   (let ((lines (/ delta-px-accum this-frame-char-height)))
 
                     (unless (zerop lines)
-                      (setq delta-px-accum (- delta-px-accum (* lines this-frame-char-height)))
+                      (decf delta-px-accum (* lines this-frame-char-height))
                       (scroll-on-drag--scroll-by-lines this-window lines t)
                       (setq do-draw t)))))
 
