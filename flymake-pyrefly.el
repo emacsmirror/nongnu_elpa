@@ -63,6 +63,11 @@
   "Pyrefly binary (with absolute or relative path)."
   :type 'file)
 
+(defcustom flymake-pyrefly-arguments
+  '("--output-format" "min-text" "--no-summary")
+  "Pyrefly binary command-line arguments."
+  :type '(repeat string))
+
 (defun pyrefly-flymake-backend (report-fn &rest _args)
   "Report pyrefly diagnostic with REPORT-FN."
   ;; Not having pyrefly installed is a serious problem which should cause
@@ -91,7 +96,8 @@
         ;; Make output go to a temporary buffer.
         :buffer (generate-new-buffer " *flymake-pyrefly*")
         :command
-        `(,flymake-pyrefly-binary-file "check" "--output-format" "min-text" "--no-summary" ,source-file-name)
+        `(,flymake-pyrefly-binary-file
+          "check" ,@flymake-pyrefly-arguments ,source-file-name)
         :sentinel
         (lambda (proc _event)
           ;; Check that the process has indeed exited, as it might
