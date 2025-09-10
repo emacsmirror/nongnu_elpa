@@ -59,7 +59,6 @@
   "A Pyrefly Flymake backend."
   :group 'tools)
 
-;;;###autoload
 (defcustom flymake-pyrefly-binary-file "pyrefly"
   "Pyrefly binary (with absolute or relative path)."
   :type 'file)
