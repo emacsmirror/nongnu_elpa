@@ -62,8 +62,7 @@
 ;;;###autoload
 (defcustom flymake-pyrefly-binary-file "pyrefly"
   "Pyrefly binary (with absolute or relative path)."
-  :type 'file
-  :group 'flymake-pyrefly)
+  :type 'file)
 
 (defun pyrefly-flymake-backend (report-fn &rest _args)
   "Report pyrefly diagnostic with REPORT-FN."
