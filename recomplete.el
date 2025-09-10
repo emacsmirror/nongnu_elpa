@@ -644,7 +644,7 @@ step onto the next item)."
                                           (format "[%s]" (propertize iter-word 'face 'match)))
                                          (t
                                           (format " %s " iter-word)))
-                                   (setq iter-index (1+ iter-index))))
+                                   (incf iter-index)))
                                result-choices))
                             "")))
 
