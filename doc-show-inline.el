@@ -352,8 +352,7 @@ the point should not be moved by this function."
                ;; so `looking-at-p' works as expected.
                (goto-char (pos-bol))
                (while (and (looking-at-p "[[:blank:]]*$")
-                           (< (setq blank-lines (1+ blank-lines))
-                              doc-show-inline-exclude-blank-lines)
+                           (< (incf blank-lines) doc-show-inline-exclude-blank-lines)
                            (zerop (forward-line -1)))))
              (eq blank-lines doc-show-inline-exclude-blank-lines)))
 
