@@ -30,4 +30,4 @@ Python files (notice the difference if you use eglot):
 #+end_src
 
 If Pyrefly binary is not visible from current Python virtual
-environment, you can set it through the interface ~M-x customize-variable RET flymake-pyrefly-binary-path RET~.
+environment, you can set it through the interface ~M-x customize-variable RET flymake-pyrefly-binary-file RET~.
