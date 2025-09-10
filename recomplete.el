@@ -36,6 +36,22 @@
 
 
 ;; ---------------------------------------------------------------------------
+;; Compatibility
+
+(when (and (version< emacs-version "31.1") (not (and (fboundp 'incf) (fboundp 'decf))))
+  (defmacro incf (place &optional delta)
+    "Increment PLACE by DELTA or 1."
+    (declare (debug (gv-place &optional form)))
+    (gv-letplace (getter setter) place
+      (funcall setter `(+ ,getter ,(or delta 1)))))
+  (defmacro decf (place &optional delta)
+    "Decrement PLACE by DELTA or 1."
+    (declare (debug (gv-place &optional form)))
+    (gv-letplace (getter setter) place
+      (funcall setter `(- ,getter ,(or delta 1))))))
+
+
+;; ---------------------------------------------------------------------------
 ;; Custom Variables
 
 (defgroup recomplete nil
@@ -70,6 +86,10 @@
 ;;   after `recomplete-with-callback', so we know not to break the chain in that case.
 (defvar-local recomplete--alist nil
   "Internal properties for repeated `recomplete' calls.")
+
+
+;; ---------------------------------------------------------------------------
+;; Implementation: Utilities
 
 (defmacro recomplete--with-advice (advice &rest body)
   "Execute BODY with ADVICE temporarily enabled.
