@@ -506,8 +506,8 @@ Optional keywords in KEYWORDS.
 
                 (delete-process proc)
 
-                (setq count-complete (1+ count-complete))
-                (setq count-running (1- count-running))
+                (incf count-complete)
+                (decf count-running)
                 (when output
                   (let ((str (mapconcat #'identity (reverse (aref results id)) "")))
                     (aset results id str)))
@@ -520,7 +520,7 @@ Optional keywords in KEYWORDS.
 
            (start-job-fn
             (lambda (i)
-              (setq count-running (1+ count-running))
+              (incf count-running)
               (let ((proc
                      (make-process
                       :name (concat "call-process-parallel" (number-to-string i))
@@ -538,7 +538,7 @@ Optional keywords in KEYWORDS.
       ;; Setup indices to represent jobs that aren't complete.
       (let ((i args-len))
         (while (not (zerop i))
-          (push (setq i (1- i)) jobs-pending)))
+          (push (decf i) jobs-pending)))
 
       ;; Main loop to complete
       (diff-ansi--with-temp-echo-area
@@ -552,7 +552,7 @@ Optional keywords in KEYWORDS.
                       ;; Overwrite with `t' (never to use again).
                       (funcall output output-funcall-next str)
                       (aset results output-funcall-next t)
-                      (setq output-funcall-next (1+ output-funcall-next))
+                      (incf output-funcall-next)
                       (setq is-modified t))
                     (when is-modified
 
@@ -817,7 +817,7 @@ Store the result in TARGET-BUF when non-nil."
                          "--eval"
                          emacs-eval-arg)
                         per-chunk-args))
-                (setq i (1+ i)))
+                (incf i))
 
               (setq per-chunk-args (nreverse per-chunk-args))))
 
