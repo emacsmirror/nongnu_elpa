@@ -423,7 +423,7 @@ This is written mainly to be used as `end-of-defun-function' for Zig."
         (if (looking-at "\\\\\\\\")
             'zig-multiline-string-face
           'font-lock-string-face)
-      (if (looking-at "//[/|!][^/]")
+      (if (looking-at "//[/!][^/]")
           'font-lock-doc-face
         'font-lock-comment-face))))
 
