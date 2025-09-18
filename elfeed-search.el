@@ -534,27 +534,28 @@ never show a relative time."
          (feed (elfeed-entry-feed entry))
          (feed-title (and feed (elfeed-meta--title feed)))
          (window (get-buffer-window))
-         (title-width (- (if window (window-width window) (frame-width))
-                         10 elfeed-search-trailing-width))
-         (title-column (elfeed-format-column
-                        title (elfeed-clamp
-                               elfeed-search-title-min-width
-                               title-width
-                               elfeed-search-title-max-width)
-                        :left)))
+         (title-width (elfeed-clamp
+                       elfeed-search-title-min-width
+                       (- (if window (window-width window) (frame-width))
+                         10 elfeed-search-trailing-width)
+                       elfeed-search-title-max-width))
+         (title-column (elfeed-format-column title title-width :left))
+         (date-width (cadr elfeed-search-date-format)))
     (insert (elfeed-add-properties date
                                    'face 'elfeed-search-date-face
                                    'mouse-face 'highlight
                                    'follow-link [elfeed-date])
-            " "
+            (propertize " " 'display `(space :align-to ,(1+ date-width)))
             (elfeed-add-properties title-column
                                    'face title-faces 'kbd-help title
                                    'mouse-face 'highlight
                                    'follow-link [elfeed-entry]))
     (when feed-title
-      (insert " " (propertize feed-title 'face 'elfeed-search-feed-face
-                              'mouse-face 'highlight
-                              'follow-link [elfeed-feed])))
+      (insert (propertize " " 'display `( space :align-to
+                                          ,(+ 2 date-width title-width)))
+              (propertize feed-title 'face 'elfeed-search-feed-face
+                          'mouse-face 'highlight
+                          'follow-link [elfeed-feed])))
     (when tags
       (insert " (" (elfeed-search--format-tags tags) ")"))))
 
