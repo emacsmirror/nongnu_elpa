@@ -1,6 +1,6 @@
 ;;; geiser-edit.el --- Scheme edit locations  -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2009, 2010, 2012, 2013, 2019-2024 Jose Antonio Ortega Ruiz
+;; Copyright (C) 2009, 2010, 2012, 2013, 2019-2025 Jose Antonio Ortega Ruiz
 
 ;; This program is free software; you can redistribute it and/or
 ;; modify it under the terms of the Modified BSD License. You should
@@ -155,11 +155,10 @@ or following links in error buffers.")
         (unless no-error
           (error "Couldn't find location for '%s'" symbol)))))
 
-(defsubst geiser-edit--try-edit (symbol ret &optional method no-error)
-  (let ((res (geiser-eval--retort-result ret)))
-    (if (listp res)
-        (geiser-edit--try-edit-location symbol res method no-error)
-      (unless no-error (error "Couldn't find location for '%s'" symbol)))))
+(defsubst geiser-edit--try-edit (symbol res &optional method no-error)
+  (if (listp res)
+      (geiser-edit--try-edit-location symbol res method no-error)
+    (unless no-error (error "Couldn't find location for '%s'" symbol))))
 
 
 ;;; Links
@@ -257,26 +256,30 @@ or following links in error buffers.")
 
 (defvar geiser-edit--symbol-history nil)
 
+(defun geiser-edit-symbol-location (&optional symbol)
+  (let* ((symbol (or symbol
+                     (geiser--symbol-at-point)
+                     (error "No symbol at point")))
+         (cmd `(:eval (:ge symbol-location ',symbol))))
+    (geiser-eval--retort-result (geiser-eval--send/wait cmd))))
+
 (defun geiser-edit-symbol (symbol &optional method marker)
   "Asks for a symbol to edit, with completion."
   (interactive
    (list (geiser-completion--read-symbol "Edit symbol: "
                                          nil
                                          geiser-edit--symbol-history)))
-  (let ((cmd `(:eval (:ge symbol-location ',symbol))))
-    (geiser-edit--try-edit symbol (geiser-eval--send/wait cmd) method)
-    (when marker (xref-push-marker-stack))))
+  (geiser-edit--try-edit symbol (geiser-edit-symbol-location symbol) method)
+  (when marker (xref-push-marker-stack)))
 
 (defun geiser-edit-symbol-at-point (&optional arg)
   "Visit the definition of the symbol at point.
 With prefix, asks for the symbol to locate."
   (interactive "P")
-  (let* ((symbol (or (and (not arg) (geiser--symbol-at-point))
-                     (geiser-completion--read-symbol "Edit symbol: ")))
-         (cmd `(:eval (:ge symbol-location ',symbol)))
-         (marker (point-marker))
-         (ret (ignore-errors (geiser-eval--send/wait cmd))))
-    (if (geiser-edit--try-edit symbol ret nil t)
+  (let ((symbol (or (and (not arg) (geiser--symbol-at-point))
+                    (geiser-completion--read-symbol "Edit symbol: ")))
+        (marker (point-marker)))
+    (if (geiser-edit--try-edit symbol (geiser-edit-symbol-location symbol) nil t)
         (when marker (xref-push-marker-stack marker))
       (unless (geiser-edit-module-at-point t)
         (error "Couldn't find location for '%s'" symbol)))
@@ -290,11 +293,20 @@ With prefix, asks for the symbol to locate."
     (with-no-warnings
       (xref-pop-marker-stack))))
 
-(defun geiser-edit-module (module &optional method no-error)
+(defun geiser-edit-module-location (&optional module)
+  (let* ((module (or module
+                     (geiser-completion--module-at-point)
+                     (error "No module at point")))
+         (cmd `(:eval (:ge module-location '(:module ,module)))))
+    (geiser-eval--retort-result (geiser-eval--send/wait cmd))))
+
+(defun geiser-edit-module (&optional module method no-error)
   "Asks for a module and opens it in a new buffer."
   (interactive (list (geiser-completion--read-module)))
-  (let ((cmd `(:eval (:ge module-location '(:module ,module)))))
-    (geiser-edit--try-edit module (geiser-eval--send/wait cmd) method no-error)))
+  (geiser-edit--try-edit module
+                         (geiser-edit-module-location module)
+                         method
+                         no-error))
 
 (defun geiser-edit-module-at-point (&optional no-error)
   "Opens a new window visiting the module at point."

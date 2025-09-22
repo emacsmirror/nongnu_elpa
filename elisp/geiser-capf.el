@@ -1,6 +1,6 @@
 ;;; geiser-capf.el --- Setup for Geiser's CAPFs  -*- lexical-binding: t; -*-
 
-;; Copyright (c) 2022  Jose Antonio Ortega Ruiz
+;; Copyright (c) 2022, 2025  Jose Antonio Ortega Ruiz
 
 ;; This program is free software; you can redistribute it and/or
 ;; modify it under the terms of the Modified BSD License. You should
@@ -18,6 +18,7 @@
 (require 'geiser-doc)
 (require 'geiser-completion)
 (require 'geiser-edit)
+(require 'geiser-syntax)
 
 (defun geiser-capf--company-docsig (id)
   (condition-case err
@@ -40,10 +41,13 @@
 (defun geiser-capf--company-location (id)
   (condition-case _err
       (when (and geiser-impl--implementation (not (geiser-autodoc--inhibit)))
-        (let ((id (make-symbol id)))
-          (condition-case nil
-              (geiser-edit-module id 'noselect)
-            (error (geiser-edit-symbol id 'noselect)))))
+        (let ((id (if (stringp id) (geiser-syntax--form-from-string id) id)))
+          (if-let* ((mloc (geiser-edit-module-location id))
+                    (f (geiser-edit--location-file mloc)))
+              (cons f 1)
+            (if-let* ((sloc (geiser-edit-symbol-location id))
+                      (f (geiser-edit--location-file sloc)))
+                (cons f (or (geiser-edit--location-line sloc) 1))))))
     (error (message "Location not found for %s" id))))
 
 (defun geiser-capf--thing-at-point (module &optional _predicate)
