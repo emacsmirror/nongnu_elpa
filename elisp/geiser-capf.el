@@ -39,16 +39,15 @@
           (current-buffer))))))
 
 (defun geiser-capf--company-location (id)
-  (condition-case _err
-      (when (and geiser-impl--implementation (not (geiser-autodoc--inhibit)))
-        (let ((id (if (stringp id) (geiser-syntax--form-from-string id) id)))
-          (if-let* ((mloc (geiser-edit-module-location id))
-                    (f (geiser-edit--location-file mloc)))
-              (cons f 1)
-            (if-let* ((sloc (geiser-edit-symbol-location id))
-                      (f (geiser-edit--location-file sloc)))
-                (cons f (or (geiser-edit--location-line sloc) 1))))))
-    (error (message "Location not found for %s" id))))
+  (ignore-errors
+    (when (and geiser-impl--implementation (not (geiser-autodoc--inhibit)))
+      (let ((id (if (stringp id) (geiser-syntax--form-from-string id) id)))
+        (if-let* ((mloc (geiser-edit-module-location id))
+                  (f (geiser-edit--location-file mloc)))
+            (cons f 1)
+          (if-let* ((sloc (geiser-edit-symbol-location id))
+                    (f (geiser-edit--location-file sloc)))
+              (cons f (or (geiser-edit--location-line sloc) 1))))))))
 
 (defun geiser-capf--thing-at-point (module &optional _predicate)
   (with-syntax-table scheme-mode-syntax-table
