@@ -301,7 +301,7 @@ should be the result of `idle-highlight--word-at-point-args'."
   ;; Ensure all other buffers are highlighted on request.
   (let ((is-mode-active (bound-and-true-p idle-highlight-mode))
         (buf-current (current-buffer))
-        (dirty-buffer-list (list))
+        (dirty-buffer-alist (list))
         (force-all idle-highlight-visible-buffers))
 
     ;; When this buffer is not in the mode, flush all other buffers.
@@ -316,8 +316,7 @@ should be the result of `idle-highlight--word-at-point-args'."
     (when force-all
       (setq idle-highlight--dirty-flush-all t))
 
-    ;; Accumulate visible ranges in each buffers `idle-highlight--dirty'
-    ;; value which is temporarily used as a list to store ranges.
+    ;; Accumulate visible ranges in `dirty-buffer-alist'.
     (dolist (frame (frame-list))
       (dolist (win (window-list frame -1))
         (let ((buf (window-buffer win)))
@@ -328,41 +327,42 @@ should be the result of `idle-highlight--word-at-point-args'."
                  (t
                   (eq buf buf-current)))
 
-            (unless (memq buf dirty-buffer-list)
-              (push buf dirty-buffer-list))
+            (let ((buf-and-visible-ranges (assq buf dirty-buffer-alist))
+                  (visible-ranges nil))
+              (cond
+               (buf-and-visible-ranges
+                (setq visible-ranges (cdr buf-and-visible-ranges)))
+               (t
+                (setq buf-and-visible-ranges (cons buf nil))
+                (push buf-and-visible-ranges dirty-buffer-alist)))
 
-            (with-current-buffer buf
-              (when (eq idle-highlight--dirty t)
-                (setq idle-highlight--dirty nil))
-              ;; Push a (min . max) cons cell,
-              ;; expanded to line bounds (to avoid clipping words).
-              (save-excursion
-                (push (cons
-                       (progn
-                         (goto-char (max (point-min) (window-start win)))
-                         (pos-bol))
-                       (progn
-                         (goto-char (min (point-max) (window-end win)))
-                         (pos-eol)))
-                      idle-highlight--dirty)))))))
-
+              (with-current-buffer buf
+                ;; Push a (min . max) cons cell,
+                ;; expanded to line bounds (to avoid clipping words).
+                (save-excursion
+                  (push (cons
+                         (progn
+                           (goto-char (max (point-min) (window-start win)))
+                           (pos-bol))
+                         (progn
+                           (goto-char (min (point-max) (window-end win t)))
+                           (pos-eol)))
+                        visible-ranges)))
+              (setcdr buf-and-visible-ranges visible-ranges))))))
 
     (let ((target-args (and force-all (idle-highlight--word-at-point-args))))
-      (dolist (buf dirty-buffer-list)
+      (pcase-dolist (`(,buf . ,visible-ranges) dirty-buffer-alist)
         (with-current-buffer buf
-          (let ((visible-ranges idle-highlight--dirty))
-            ;; Restore this values status as a boolean.
-            (setq idle-highlight--dirty nil)
+          (setq visible-ranges (idle-highlight--merge-overlapping-ranges visible-ranges))
+          (unless force-all
+            (setq target-args (idle-highlight--word-at-point-args)))
 
-            (setq visible-ranges (idle-highlight--merge-overlapping-ranges visible-ranges))
-
-            (unless force-all
-              (setq target-args (idle-highlight--word-at-point-args)))
-
-            (pcase-let ((`(,target . ,target-range) target-args))
-              (when (and force-all (not (eq buf buf-current)))
-                (setq target-range nil))
-              (idle-highlight--word-at-point-highlight target target-range visible-ranges))))))
+          (pcase-let ((`(,target . ,target-range) target-args))
+            (when (and force-all (not (eq buf buf-current)))
+              (setq target-range nil))
+            (idle-highlight--word-at-point-highlight target target-range visible-ranges))
+          ;; Once complete, this is no longer dirty.
+          (setq idle-highlight--dirty nil))))
 
     (cond
      (is-mode-active
