@@ -654,7 +654,7 @@ folder, that message is marked as having been replied to."
 (defun vm-keep-mail-buffer (buffer)
   (vm-keep-some-buffers buffer 'vm-kept-mail-buffers vm-keep-sent-messages))
 
-(defun vm-help-tale ()
+(defun vm-check-recipient-format ()
   (save-excursion
     (goto-char (point-min))
     (while (vm-match-header)
@@ -664,7 +664,7 @@ folder, that message is marked as having been replied to."
 	(if (re-search-forward "[^, \t][ \t]*\n[ \t\n]+[^ \t\n]"
 			       (vm-matched-header-contents-end)
 			       t)
-	    (error "tale is an idiot, and so are you. :-)"))
+	    (error "missing trailing comma in `%s' header" (vm-matched-header-name)))
 	(goto-char (vm-matched-header-end))))))
 
 (defun vm-mail-mode-insert-message-id-maybe ()
@@ -806,8 +806,8 @@ This function is a variant of `vm-get-header-contents'."
   "Just like mail-send except that VM flags the appropriate message(s)
 as replied to, forwarded, etc, if appropriate."
   (interactive)
-  (if vm-tale-is-an-idiot
-      (vm-help-tale))
+  (if vm-mail-check-recipient-format
+      (vm-check-recipient-format))
   ;; protect value of this-command from minibuffer read
   (let ((this-command this-command))
     (when (and vm-confirm-mail-send

@@ -5781,7 +5781,6 @@ data to XBM data."
   "Non-nil if the uncompface command accepts a -X argument.
 This is only used for FSF Emacs currently.")
 
-(defvaralias 'vm-tale-is-an-idiot 'vm-mail-check-recipient-format)
 (defcustom vm-mail-check-recipient-format nil
   "Non-nil value causes `vm-mail-send' to check multi-line recipient
 headers of outbound mail for lines that don't end with a
