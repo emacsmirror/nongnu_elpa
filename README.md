@@ -2,41 +2,53 @@
 
 `visual-fill-column-mode` is a small Emacs minor mode that mimics the effect of `fill-column` in `visual-line-mode`. Instead of wrapping lines at the window edge, which is the standard behaviour of `visual-line-mode`, it wraps lines at `fill-column` (or `visual-fill-column-width`, if set).  That is, it turns the view on the left into the view on the right, without changing the contents of the file:
 
- Without `visual-fill-column`     | With `visual-fill-column`
+ Without Visual Fill Column     | With Visual Fill Column
 --------------------------------- | -------------------------------
  ![screenshot before](before.png) | ![screenshot after](after.png)
 
 
 ## Installation ##
 
-`visual-fill-column` can be installed from [NonGNU Elpa](http://elpa.nongnu.org/). In Emacs versions 28 and above, simply type `M-x package-install RET visual-fill-column-mode RET`.
+Visual Fill Column can be installed from [NonGNU Elpa](http://elpa.nongnu.org/). In Emacs versions 28 and above, simply type `M-x package-install RET visual-fill-column-mode RET`.
 
 
 ## Usage ##
 
-`visual-fill-column-mode` wraps long lines at `fill-column` without adding newlines to the buffer. Its primary (though not exclusive) purpose is to soft-wrap text in buffers that use `visual-line-mode`. The most straightforward way to achieve this is to use the minor mode `visual-line-fill-column-mode` instead of `visual-line-mode`. This function activates (and deactivates) `visual-line-mode` and `visual-fill-column-mode` in conjunction.
+`visual-fill-column-mode` wraps long lines at `fill-column` without adding newlines to the buffer. Its primary (though not exclusive) purpose is to soft-wrap text in buffers that use `visual-line-mode`. The most straightforward way to achieve this is to add the function `visual-fill-column-for-vline` to `visual-line-mode-hook`:
 
-`visual-fill-column` can also be used independently from `visual-line-mode`, for example to centre text in a buffer. In this case, use the function `visual-fill-column-mode` to activate it.
+```
+(add-hook 'visual-line-mode-hook #'visual-fill-column-for-vline)
+```
+
+This function ensures that `visual-fill-column-mode` is enabled and disabled in conjunction with `visual-line-mode`. Note that you should *not* add `visual-fill-column-mode` to `visual-line-mode-hook`, because then `visual-fill-column-mode` is not disabled when you disable `visual-line-mode`. This also means that if you use `use-package`, you should not use the `:hook` keyword, because it will add `-hook` to the name of the function. Instead, put the `add-hook` invocation under `:config`.
+
+`visual-fill-column-mode` can also be used independently from `visual-line-mode`, for example to centre text in a buffer. In this case, use the command `visual-fill-column-mode` to activate it.
 
 There is also a globalised mode `global-visual-fill-column-mode`. This mode turns on `visual-fill-column-mode` in every buffer that visits a file. Activate it either through Customize or by calling it as a function in your init file. In buffers that do not visit a file, `visual-fill-column-mode` may be disruptive, so `global-visual-fill-column-mode` is restricted to file-visiting buffers. (You can, of course still activate `visual-fill-column-mode` manually for such buffers, of course.)
 
 Another option is to add the function `visual-fill-column-mode` to mode hooks in order to activate it in specific modes. This works well from major mode hooks, but be aware of an issue that occurs if you add `visual-fill-column-mode` to a *minor* mode hook: a minor mode's hook is run not only when the minor mode is activated, but also when the minor mode is deactivated.
 
-This means that if you add `visual-fill-column-mode` to, e.g., `visual-line-mode-hook`, deactivating `visual-line-mode` will **not** deactivate `visual-fill-column-mode`. Instead, `visual-fill-column-mode` will be activated a second time. Unfortunately, there is no good way to handle this situation: a function run from a hook cannot determine whether the hook's mode is being activated or deactivated. For this reason, this package provides the command `visual-line-fill-column-mode`, which activates and deactivates both modes in tandem.
+This means that if you add `visual-fill-column-mode` to `<some>-mode-hook`, deactivating `<some>-mode` will **not** deactivate `visual-fill-column-mode`. Instead, `visual-fill-column-mode` will be activated a second time. Unfortunately, there is no good way to handle this situation: a function run from a hook cannot determine whether the hook's mode is being activated or deactivated. If you only ever activate `some-mode`, you won't run into this issue. Otherwise, you can take look at the definition of the function `visual-fill-column-for-vline` and adapt it to your use-case.
+
+
+## Deprecating `visual-line-fill-column-mode` ##
+
+The minor mode `visual-line-fill-column-mode` was provided to activate and deactivate `visual-line-mode` and `visual-fill-column-mode` in conjunction. This minor mode has been deprecated; instead, use the method described above, i.e., adding the function `visual-fill-column-for-vline` to `visual-line-mode-hook`, to achieve the same effect.
 
 
 ## Wrap prefix ##
 
-In `auto-fill-mode`, there is an option `adaptive-fill-mode`, which ensures that if the first line of a paragraph is indented or has, e.g., a mail quote prefix (`> `), this is applied to the entire paragraph. To get the same effect using `visual-line-mode` / `visual-fill-column-mode`, you can use `visual-wrap-prefix-mode` or, if you're using Emacs 29 or earlier, the package [`adaptive-wrap`](https://elpa.gnu.org/packages/adaptive-wrap.html), which is available from GNU Elpa. The effect of these packages is purely visual, the buffer text is not actually modified. The effect of this package is shown in the following two images:
+In `auto-fill-mode`, there is an option `adaptive-fill-mode`, which ensures that if the first line of a paragraph is indented or has, e.g., a mail quote prefix (`> `), this is applied to the entire paragraph. To get the same effect using `visual-line-mode` + `visual-fill-column-mode`, you can use `visual-wrap-prefix-mode` or, if you're using Emacs 29 or earlier, the package [`adaptive-wrap`](https://elpa.gnu.org/packages/adaptive-wrap.html), which is available from GNU Elpa. The effect of these packages is shown in the following two images:
 
  Without `visual-wrap`     | With `visual-wrap`
 --------------------------------- | -------------------------------
  ![without adaptive-wrap](no-adaptive-wrap.png) | ![with adaptive-wrap](adaptive-wrap.png)
 
+Just like `visual-fill-column-mode`, this effect is just visual, the actual buffer content is not affected.
 
 ## Centering the text ##
 
-Another use case for `visual-fill-column` is to centre the text in a window:
+Another use case for Visual Fill Column is to centre the text in a window:
 
 ![screenshot after](centred.png)
 
@@ -56,7 +68,7 @@ The amount by which the margins are widened depends on the window width and is a
 
 ## Splitting a Window ##
 
-If you have a wide screen (more specifically, if your Emacs frame is wide), `visual-fill-column` has the unfortunate effect that if you pop up, say, a `*Help*` or `*Completions*` buffer or something similar, the popped-up window appears below the active buffer, not next to it, as you might otherwise expect.
+If you have a wide screen (more specifically, if your Emacs frame is wide), Visual Fill Column has the unfortunate effect that if you pop up, say, a `*Help*` or `*Completions*` buffer or something similar, the popped-up window appears below the active buffer, not next to it, as you might otherwise expect.
 
 This is due to the fact that Emacs uses the width of the text area to determine whether a window can be split into two side-by-side windows, and since `visual-fill-column-mode` narrows the text area, Emacs thinks there is not enough room to do a side-by-side split and so opts for putting the new window below the current one.
 

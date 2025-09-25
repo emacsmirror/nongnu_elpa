@@ -8,7 +8,7 @@
 ;; Maintainer: Joost Kremers <joostkremers@fastmail.fm>
 ;; URL: https://codeberg.org/joostkremers/visual-fill-column
 ;; Created: 2015
-;; Version: 2.6.3
+;; Version: 2.7.0
 ;; Package-Requires: ((emacs "25.1"))
 
 ;; This file is NOT part of GNU Emacs.
@@ -145,11 +145,13 @@ the text scale factor, so that the text is wrapped at
 (define-minor-mode visual-fill-column-mode
   "Soft-wrap lines according to `fill-column'.
 This minor mode narrows the text area.  Its primary use is in
-conjunction with `visual-line-mode', to enable soft word-wrapping
-of long lines, but it can also be used in other contexts, e.g.,
-to center the text in a window.  To activate it together with
-`visual-line-mode', it is usually best to use
-`visual-line-fill-column-mode'."
+conjunction with `visual-line-mode', to enable soft word-wrapping of
+long lines, but it can also be used in other contexts, e.g., to center
+the text in a window.
+
+Note: to activate and deactivate `visual-fill-column-mode' together with
+`visual-line-mode', add the function `visual-fill-column' to
+`visual-line-mode-hook'."
   :init-value nil :lighter nil :global nil
   (if visual-fill-column-mode
       (visual-fill-column-mode--enable)
@@ -161,17 +163,27 @@ to center the text in a window.  To activate it together with
   :group 'visual-fill-column)
 
 ;;;###autoload
+(defun visual-fill-column-for-vline ()
+  "Hook function for `visual-line-mode-hook'.
+Use this function to enable and disable `visual-fill-column-mode' in
+conjunction with `visual-line-mode'."
+  (if visual-line-mode
+      (visual-fill-column-mode +1)
+    (visual-fill-column-mode -1)))
+
+;;;###autoload
 (define-minor-mode visual-line-fill-column-mode
-  "Enable `visual-line-mode' and soft-wrap lines according to `fill-column'.
-Use this mode to activate and deactivate `visual-line-mode' and
-`visual-fill-column-mode' in conjunction."
+  "Enable `visual-line-mode' and soft-wrap lines according to `fill-column'."
   :init-value nil :lighter nil :global nil
   (cond (visual-line-fill-column-mode
-	 (visual-fill-column-mode 1)
-	 (visual-line-mode 1))
-	(t
-	 (visual-fill-column-mode -1)
-	 (visual-line-mode -1))))
+         (visual-fill-column-mode 1)
+         (visual-line-mode 1))
+        (t
+         (visual-fill-column-mode -1))))
+
+(make-obsolete 'visual-line-fill-column-mode
+               "add `visual-fill-column-for-vline' to `visual-line-mode-hook' instead."
+               "2.7.0")
 
 (defun visual-fill-column-toggle-center-text ()
   "Toggle centering of text in the current buffer."
