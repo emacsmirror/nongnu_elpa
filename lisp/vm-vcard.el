@@ -29,10 +29,12 @@
 ;;; Commentary:
 ;;; Code:
 
-(require 'vcard)
 (require 'vm-mime)
+(eval-and-compile
+  (require 'vm-misc)
+  (vm-load-features '(vcard) byte-compile-current-file))
 
-(and (string-lessp vcard-api-version "2.0")
+(and (boundp 'vcard-api-version) (string-lessp vcard-api-version "2.0")
      (error "vm-vcard.el requires vcard API version 2.0 or later."))
 
 ;;;###autoload

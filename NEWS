@@ -27,6 +27,8 @@ VM 8.3.0 <in progress>
   * Merged multiple pending changes.
   * Update to modern e-lisp.
   * Added vm-version-commit variable and function for the git commit id.
+  * Remove outdated copy of vcard support in favor of standard package, which must
+    me install for vcard functionality to work
 
 VM 8.2.0b1
 
