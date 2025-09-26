@@ -60,7 +60,6 @@ SOURCES += vm-w3m.el
 SOURCES += vm-w3.el
 SOURCES += vm-version-conf.el
 
-SOURCES += vcard.el
 SOURCES += tapestry.el
 SOURCES += u-vm-color.el
 

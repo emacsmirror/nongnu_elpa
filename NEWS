@@ -9,7 +9,7 @@ Status
   VM is currently being maintained by a 'VM development team' consisting of
   Göran Uddeborg, John Stoffel, Mark Diekhans, Stefan Monnier, Ulrich Müller 
 
-  More volunteers to help with the maintenance are quite welcome.
+  More volunteers to help with the development are needed .
 
   Project repository:      https://gitlab.com/emacs-vm/vm/
   Project home page:       http://www.nongnu.org/viewmail/
@@ -17,6 +17,7 @@ Status
   Mailing list:            viewmail-info@nongnu.org
 
   Bug reports (direct):    https://gitlab.com/emacs-vm/vm/-/issues/
+                           (this the preferred mentod)
                            
   Bug reports (email):     viewmail-bugs@nongnu.org
                            (Please use `M-x vm-submit-bug-report' within VM)
@@ -27,6 +28,9 @@ VM 8.3.0 <in progress>
   * Merged multiple pending changes.
   * Update to modern e-lisp.
   * Added vm-version-commit variable and function for the git commit id.
+  * Remove outdated copy of vcard support in favor of standard package, which must
+    me install for vcard functionality to work
+  * Enable vm-mail-check-recipient-format by default
 
 VM 8.2.0b1
 
