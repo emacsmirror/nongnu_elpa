@@ -1129,20 +1129,20 @@ Returns a cons; ='(position . user-input) if correct,
          (all-clozes (gnosis-get 'answer 'notes `(= id ,id)))
          (all-hints (gnosis-get 'hypothesis 'notes `(= id ,id)))
          (revealed-clozes '()) ;; List of revealed clozes
-         (unrevealed-clozes (copy-sequence all-clozes))
-         (unrevealed-hints (copy-sequence all-hints))
+         (unrevealed-clozes all-clozes)
+         (unrevealed-hints all-hints)
          (parathema (gnosis-get 'parathema 'extras `(= id ,id)))
          (success t))
     ;; Initially display the sentence with no reveals
     (gnosis-display-cloze-string keimenon unrevealed-clozes unrevealed-hints nil nil)
     (catch 'done
       (while unrevealed-clozes
-        (let* ((input (gnosis-review-cloze--input all-clozes))
+        (let* ((input (gnosis-review-cloze--input unrevealed-clozes))
                (position (car input))
-               (matched-cloze (when position (nth position all-clozes)))
-               (matched-hint (when (and position (< position (length all-hints)))
-                               (nth position all-hints))))
-          (if (and matched-cloze (member matched-cloze unrevealed-clozes))
+               (matched-cloze (when position (nth position unrevealed-clozes)))
+               (matched-hint (when (and position (< position (length unrevealed-hints)))
+                               (nth position unrevealed-hints))))
+          (if matched-cloze
               ;; Correct answer - move cloze from unrevealed to revealed
               (progn
                 ;; Add to revealed clozes list, preserving original order
@@ -1150,12 +1150,12 @@ Returns a cons; ='(position . user-input) if correct,
                       (cl-sort (cons matched-cloze revealed-clozes)
                                #'< :key (lambda (cloze)
                                           (cl-position cloze all-clozes))))
-                ;; Remove from unrevealed lists
-                (setq unrevealed-clozes (cl-remove matched-cloze unrevealed-clozes
-						   :count 1))
-                (when matched-hint
-                  (setq unrevealed-hints (cl-remove matched-hint unrevealed-hints
-						    :count 1)))
+                ;; Remove from unrevealed lists by position
+                (setq unrevealed-clozes (append (cl-subseq unrevealed-clozes 0 position)
+                                               (cl-subseq unrevealed-clozes (1+ position))))
+                (when (and matched-hint (< position (length unrevealed-hints)))
+		  (setq unrevealed-hints (append (cl-subseq unrevealed-hints 0 position)
+                                                (cl-subseq unrevealed-hints (1+ position)))))
                 ;; Display with updated revealed/unrevealed lists
                 (gnosis-display-cloze-string keimenon unrevealed-clozes unrevealed-hints
                                            revealed-clozes nil))
