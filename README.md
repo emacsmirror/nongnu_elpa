@@ -72,6 +72,11 @@ The module provides the following key bindings for convenience
 * <kbd>C-c h</kbd> runs `j-help-lookup-symbol`
 * <kbd>C-c C-h</kbd> `j-help-lookup-symbol-at-point`
 
+Experimental:
+
+If `j-help-use-jwiki` is set to `t`, `j-help` would try to lookup
+the symbol on [NuVoc](https://code.jsoftware.com/wiki/NuVoc).
+
 ### License
 
 Copyright (C) 2012-2014 Zachary Elliott
