@@ -1302,4 +1302,11 @@ The key is 'id."
    (equal
     (mastodon-tl--map-alist-vals-to-alist
      'id 'text mastodon-tl--test-instance-rules)
-    '(("1" . "We do not accept racism.") ("2" . "We do not accept homophobia.") ("3" . "We do not accept sexism.") ("4" . "We do not accept ableism.") ("5" . "We do not accept harassment.") ("6" . "We also do not accept hate speech.") ("7" . "We do not accept abuse of minors.") ("8" . "We do not accept glorification of violence.")))))
+    '(("1" . "We do not accept racism.")
+      ("2" . "We do not accept homophobia.")
+      ("3" . "We do not accept sexism.")
+      ("4" . "We do not accept ableism.")
+      ("5" . "We do not accept harassment.")
+      ("6" . "We also do not accept hate speech.")
+      ("7" . "We do not accept abuse of minors.")
+      ("8" . "We do not accept glorification of violence.")))))

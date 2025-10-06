@@ -247,7 +247,7 @@ will instead be stored encrypted in @samp{mastodon-client--token-file}, a plstor
 If for some reason you reauthenticate, you'll need to either remove the
 entry in your auth sources file, or manually update the token in it after
 doing so, as mastodon.el is unable to reliably update (or even remove)
-entires.
+entries.
 
 The format for a mastodon.el auth source entry is as follows:
 
@@ -895,14 +895,16 @@ version and what kind of server your account is on.
 
 @enumerate
 @item
+Install @uref{https://cask.readthedocs.io/en/latest/guide/installation.html, Cask} if you don't already have it installed
+@item
 Create an @uref{https://codeberg.org/martianh/mastodon.el/issues, issue} detailing what you'd like to do.
 @item
 Fork the repository and create a branch off of @samp{develop}.
 @item
-Run the tests and ensure that your code doesn't break any of them.
+Run the tests (with @samp{make tests}) and ensure that your code doesn't break any of them.
 @item
 Create a pull request (to develop) referencing the issue created in
-step 1.
+step 2.
 @end enumerate
 
 @node Coding style
@@ -926,9 +928,15 @@ added automatically when documentation is displayed).
 @section Supporting @samp{mastodon.el}
 
 If you'd like to support continued development of @samp{mastodon.el}, I accept
-donations via paypal: @uref{https://paypal.me/martianh, paypal.me/martianh}. If you would prefer a different
-payment method, please write to me at <mousebot @{at@} disroot.org> and I
-can provide IBAN or other bank account details.
+donations via paypal: @uref{https://paypal.me/martianh, paypal.me/martianh}. 
+
+I also accept support via liberapay:
+
+
+
+If you would prefer a different payment method, please write to me at
+<mousebot @{at@} disroot.org> and I can provide IBAN or other bank account
+details.
 
 I don't have a tech worker's income, so even a small tip would help out.
 

@@ -432,7 +432,13 @@ If search returns nil, execute REFRESH function.
 Optionally start from POS."
   (let* ((npos ; toot/user items have byline:
           (funcall find-pos
-                   (or pos (point))
+                   (or pos
+                       (if (save-excursion
+                             (when (not (= 1 (point)))
+                               (backward-char 1))
+                             (looking-at "\u2068"))
+                           (1- (point))
+                         (point)))
                    ;; FIXME: we need to fix item-type?
                    ;; 'item-type ; breaks nav to last item in a view?
                    'byline
@@ -445,7 +451,9 @@ Optionally start from POS."
             (mastodon-tl--goto-item-pos find-pos refresh npos)
           (goto-char npos)
           ;; force display of help-echo on moving to a toot byline:
-          (mastodon-tl--message-help-echo))
+          (mastodon-tl--message-help-echo)
+          (when (looking-at "\u2068")
+            (forward-char 1)))
       (condition-case nil
           (funcall refresh)
         (error "No more items")))))

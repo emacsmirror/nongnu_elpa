@@ -139,7 +139,7 @@ will instead be stored encrypted in =mastodon-client--token-file=, a plstore.
 If for some reason you reauthenticate, you'll need to either remove the
 entry in your auth sources file, or manually update the token in it after
 doing so, as mastodon.el is unable to reliably update (or even remove)
-entires.
+entries.
 
 The format for a mastodon.el auth source entry is as follows:
 
@@ -147,7 +147,7 @@ The format for a mastodon.el auth source entry is as follows:
 
 with the token being what you copy from the browser when authenticating.
 If you have =auth-source-save-behavior= set to nil, you'll also need to add
-such an entry manually.
+such an entry manually. Moreover, you should ensure that your =auth-sources= file is actually writable.
 
 Finally, if you find you're asked for your key passphrase too often while
 authenticating, consider setting =epa-file-encrypt-to= (for auth-source
@@ -466,6 +466,10 @@ http://takeonrules.com/2024/10/31/hacking-on-mastodon-emacs-package-to-narrow-vi
 **** Sachac's config goodies
 
 The incomparable sachac has a bunch of =mastodon.el= extensions and goodies in their literate config, available here: https://sachachua.com/dotemacs/index.html#mastodon.
+
+**** syntax highlighting in posts
+
+If you would like to have syntax highlighting when viewing posts containing code (provided it is in =<pre>= tags), consider installing https://github.com/xuchunyang/shr-tag-pre-highlight.el.
 
 *** Live-updating timelines: =mastodon-async-mode=
 
