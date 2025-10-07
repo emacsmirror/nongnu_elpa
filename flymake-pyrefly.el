@@ -64,7 +64,7 @@
   :type 'file)
 
 (defcustom flymake-pyrefly-arguments
-  '("--output-format" "min-text" "--no-summary")
+  '("--output-format" "min-text" "--summary=none")
   "Pyrefly binary command-line arguments."
   :type '(repeat string))
 
