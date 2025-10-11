@@ -43,6 +43,8 @@ contribute efficiently.
 If a file has a "Homepage:" keyword, it will be removed from the next
 minor or major release.
 
+`ob-csharp.el`
+
 
 # Other files
 
@@ -101,7 +103,6 @@ minor or major release.
 ## Org Babel languages
 
 -   **ob-abc.el:** Org-mode Babel Functions for ABC
--   **ob-csharp.el:** Org-mode Babel Functions for csharp evaluation
 -   **ob-ebnf.el:** Org-mode Babel Functions for EBNF
 -   **ob-eukleides.el:** Org-mode Babel Functions for eukleides evaluation
 -   **ob-fomus.el:** Org-mode Babel Functions for fomus evaluation

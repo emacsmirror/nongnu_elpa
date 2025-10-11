@@ -4,7 +4,7 @@
 
 ;; Author: thomas "at" friendlyvillagers.com based on ob-java.el by Eric Schulte
 ;; Keywords: literate programming, reproducible research
-;; Homepage: https://git.sr.ht/~bzg/org-contrib
+;; Homepage: https://cgit.git.savannah.gnu.org/cgit/emacs/org-mode.git/tree/lisp/ob-csharp.el
 
 ;; This file is not part of GNU Emacs.
 
