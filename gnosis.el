@@ -326,11 +326,11 @@ Acts only when CENTER? is non-nil."
 	       (insert (make-string padding ? ) text))
       (insert text))))
 
-(defun gnosis-center-string (string)
-  "Center each line of STRING in current window width.
+(defun gnosis-center-string (str)
+  "Center each line of STR in current window width.
 Replaces links `[[source][description]]' with `description'."
   (let* ((width (window-width))
-         (lines (split-string string "\n")))
+         (lines (split-string str "\n")))
     (mapconcat
      (lambda (line)
        (if (string-blank-p line)
@@ -338,9 +338,9 @@ Replaces links `[[source][description]]' with `description'."
          (let* ((trimmed (string-trim line))
                 ;; Replace links with just the description part
                 (processed (replace-regexp-in-string
-                            "\\[\\[\\([^]]+\\)\\]\\[\\([^]]+\\)\\]\\]"
-                            "\\2"
-                            trimmed))
+			    "\\[\\[\\([^]]+\\)\\]\\[\\([^]]+\\)\\]\\]"
+			    "\\2"
+			    trimmed))
                 ;; Fill the text to wrap it properly
                 (wrapped (with-temp-buffer
                            (insert processed)
@@ -349,11 +349,11 @@ Replaces links `[[source][description]]' with `description'."
                 ;; Process each wrapped line with proper centering
                 (wrapped-lines (split-string wrapped "\n")))
            (mapconcat
-            (lambda (wline)
-              (let ((padding (max 0 (/ (- width (string-width wline)) 2))))
+	    (lambda (wline)
+	      (let ((padding (max 0 (/ (- width (string-width wline)) 2))))
                 (concat (make-string padding ?\s) wline)))
-            wrapped-lines
-            "\n"))))
+	    wrapped-lines
+	    "\n"))))
      lines
      "\n")))
 
@@ -1009,9 +1009,8 @@ Optionally, provide a list for due NOTE-IDS."
 
 (defun gnosis-review-last-interval (id)
   "Return last review interval for note ID."
-  (let* ((where-id-clause `(= id ,id))
-         (last-rev (gnosis-get 'last-rev 'review-log where-id-clause))
-	 (rev-date (gnosis-get 'next-rev 'review-log where-id-clause)))
+  (let* ((last-rev (gnosis-get 'last-rev 'review-log `(= id ,id)))
+	 (rev-date (gnosis-get 'next-rev 'review-log `(= id ,id))))
     (gnosis-algorithm-date-diff last-rev rev-date)))
 
 (defun gnosis-review-algorithm (id success)
@@ -1273,7 +1272,6 @@ NOTE-COUNT: Total notes to be commited for session."
                  finally
                  (and due (gnosis-review-session
                            (gnosis-collect-note-ids :due t) t note-count))))
-      
       (gnosis-dashboard)
       (gnosis-review-commit note-count))))
 
