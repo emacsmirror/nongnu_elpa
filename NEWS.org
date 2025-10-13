@@ -1,3 +1,9 @@
+* 0.5.6
++ Fix issues for clozes with multiple identical answers.
++ Improve performance for suspending multiple notes via the dashboard.
++ Display newlines when reviewing notes.
++ Add feature to mark all notes present at current dashboard.
+
 * 0.5.5
 + Performance improvements for un/suspending decks.
 + Minor bug fixes & adjustments.
@@ -50,11 +56,11 @@
 
 * 0.4.10
 + Implement major performance improvements in gnosis-dashboard.
-  
+
 * 0.4.9
 - Implement asynchronous dashboard creation
 - Minor bug fixes
-  
+
 * 0.4.8
 + Refactor average review output
 
@@ -108,5 +114,3 @@
 + Rewrite gnosis database.
   + Remove deck specific values.
   + Use new algorithm variables.
-
-
