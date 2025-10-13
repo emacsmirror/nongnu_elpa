@@ -993,15 +993,6 @@ Optionally, provide a list for due NOTE-IDS."
   (let ((note-ids (or note-ids (length (gnosis-review-get-due-notes)))))
     (cl-set-difference note-ids (gnosis-review-get-overdue-notes note-ids))))
 
-(defun gnosis-review-get-due-tags ()
-  "Return a list of due note tags."
-  (let ((due-notes (gnosis-review-get-due-notes)))
-    (cl-remove-duplicates
-     (cl-mapcan (lambda (note-id)
-                  (gnosis-get 'tags 'notes `(= id ,note-id)))
-	        due-notes)
-     :test #'equal)))
-
 (defun gnosis-review-last-interval (id)
   "Return last review interval for note ID."
   (let* ((last-rev (gnosis-get 'last-rev 'review-log `(= id ,id)))
