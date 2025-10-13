@@ -1002,11 +1002,6 @@ Optionally, provide a list for due NOTE-IDS."
 	        due-notes)
      :test #'equal)))
 
-(defun gnosis-review--get-offset (id)
-  "Return offset for note with value of id ID."
-  (let ((last-rev (gnosis-get 'last-rev 'review-log `(= id ,id))))
-    (gnosis-algorithm-date-diff last-rev)))
-
 (defun gnosis-review-last-interval (id)
   "Return last review interval for note ID."
   (let* ((last-rev (gnosis-get 'last-rev 'review-log `(= id ,id)))
