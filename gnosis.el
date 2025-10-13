@@ -378,8 +378,7 @@ This will not be applied to sentences that start with double space."
   "Display STR as keimenon."
   (with-current-buffer gnosis-review-buffer-name
     (erase-buffer)
-    (insert "\n" (gnosis-center-string
-		  (replace-regexp-in-string "\n" " " str)))
+    (insert "\n" (gnosis-center-string str))
     (gnosis-insert-separator)
     (gnosis-apply-center-buffer-overlay)))
 
