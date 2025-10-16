@@ -2937,15 +2937,11 @@ DASHBOARD-TYPE: either Notes or Decks to display the respective dashboard."
   "Run `git pull' in DIR."
   (interactive)
   (let ((default-directory dir))
-    ;; TODO: Try to use a vc instead of shell-command
-    ;; vc-pull is async, this causes issues for re-establishing the
-    ;; database.  To use vc-pull we should define a hook that runs
-    ;; after vc-pull is done or to find a way to run a "post-command"
-    ;; for vc-git-command.  For now using shell-command that runs sync
-    ;; is a better options.
-    (shell-command (format "%s pull" (executable-find "git")))
-    (setf gnosis-db
-	  (emacsql-sqlite-open (expand-file-name "gnosis.db" gnosis-dir)))))
+    (let ((process (async-shell-command (format "%s pull" (executable-find "git")))))
+      (lambda (proc event)
+	(when (string= event "finished\n")
+	  (setf gnosis-db
+		(emacsql-sqlite-open (expand-file-name "gnosis.db" gnosis-dir))))))))
 
 ;; Gnosis mode ;;
 ;;;;;;;;;;;;;;;;;
