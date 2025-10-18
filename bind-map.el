@@ -335,6 +335,8 @@ mode maps. Set up by bind-map.el." map))
          (turn-on-override-mode (intern (format "turn-on-%s" override-mode)))
          (turn-on-override-mode-doc (format "Enable `%s' except in minibuffer"
                                             override-mode))
+         (ensure-override-mode-func (intern (format "bind-map--ensure-%s" override-mode)))
+         (ensure-override-mode-doc (format "Ensure %s is enabled in appropriate buffers." override-mode))
          (evil-keys (or (plist-get args :evil-keys)
                         bind-map-default-evil-keys))
          (evil-states (or (plist-get args :evil-states)
@@ -403,7 +405,18 @@ mode maps. Set up by bind-map.el." map))
          ;; Normalize Evil keymaps when the override mode toggles
          (with-eval-after-load 'evil
            (add-hook ',(intern (format "%s-hook" override-mode))
-                     #'evil-normalize-keymaps))))
+                     #'evil-normalize-keymaps))
+         ;; Defensive hook to ensure the mode is enabled in buffers that may
+         ;; have been created in unusual ways (e.g., programmatically via
+         ;; get-buffer-create). This catches cases where after-change-major-mode-hook
+         ;; might not fire or fires before the global mode is enabled.
+         (defun ,ensure-override-mode-func ()
+           ,ensure-override-mode-doc
+           (when (and ,global-override-mode
+                      (not ,override-mode)
+                      (not (minibufferp)))
+             (,override-mode 1)))
+         (add-hook 'buffer-list-update-hook #',ensure-override-mode-func)))
 
      (if (or minor-modes major-modes)
          ;; only bind keys in root-map
