@@ -30,7 +30,7 @@
 
 (eval-and-compile
   (require 'vm-misc)
-  (vm-load-features '(w3) byte-compile-current-file))
+  (vm-load-features-silent-when-compiling'(w3)))
 
 (declare-function w3-region "ext:w3-display.el" (st nd))
 

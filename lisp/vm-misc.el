@@ -1676,5 +1676,11 @@ Return the list of loaded features."
                 feature-list))
   (delete nil feature-list))
 
+
+(defun vm-load-features-silent-when-compiling (feature-list)
+  "Try to load those features listed in FEATURE_LIST and
+don't display warnings if compiling"
+  (vm-load-features feature-list (bound-and-true-p byte-compile-current-file)))
+
 (provide 'vm-misc)
 ;;; vm-misc.el ends here

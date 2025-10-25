@@ -99,7 +99,7 @@
 ;; The following function is erroneously called in fsfemacs too
 ;; (declare-function read-expression "vm-xemacs" 
 ;; 		  (prompt &optional initial-contents history default))
-(vm-load-features '(bbdb bbdb-sc) byte-compile-current-file)
+(vm-load-features-silent-when-compiling '(bbdb bbdb-sc))
 
 (defvar vm-reply-list nil)
 (defvar vm-redistribute-list nil)

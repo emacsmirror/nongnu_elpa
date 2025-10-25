@@ -135,8 +135,7 @@
   (require 'vm-misc)
   (require 'regexp-opt)
   (require 'time-date)
-
-  (vm-load-features '(bbdb bbdb-autoloads bbdb-com) byte-compile-current-file))
+  (vm-load-features-silent-when-compiling '(bbdb bbdb-autoloads bbdb-com)))
 
 (defvar bbdb-get-addresses-headers)	; dummy declaration
 (defvar bbdb-user-mail-names)
