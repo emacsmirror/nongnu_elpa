@@ -92,11 +92,8 @@
 
 ;; handle missing pgg.el gracefully
 (eval-and-compile
-  (if (and (boundp 'byte-compile-current-file) byte-compile-current-file)
-      (condition-case nil
-          (require 'pgg)
-        (error (message "WARNING: Cannot load pgg.el, related functions may not work!")))
-    (require 'pgg)))
+  (require 'vm-misc)
+  (vm-load-features-silent-when-compiling '(pgg)))
 
 (require 'easymenu)
 (require 'vm-misc)

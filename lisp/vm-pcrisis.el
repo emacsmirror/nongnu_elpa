@@ -42,7 +42,7 @@
 (require 'vm-summary)
 (require 'vm-motion)
 (require 'vm-reply)
-(eval-when-compile (vm-load-features '(regexp-opt bbdb bbdb-com) byte-compile-current-file))
+(eval-when-compile (vm-load-features-silent-when-compiling '(regexp-opt bbdb bbdb-com)))
 (eval-when-compile (require 'vm-macro))
 
 (declare-function set-extent-face "vm-xemacs" (extent face))

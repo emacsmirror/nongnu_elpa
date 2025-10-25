@@ -34,7 +34,7 @@
 (require 'vm-mime)
 (require 'vm-misc)
 
-(eval-and-compile (vm-load-features '(w3m) byte-compile-current-file))
+(eval-and-compile (vm-load-features-silent-when-compiling '(w3m)))
 
 (declare-function w3m-region 
 		  "ext:w3m" (start end &optional url charset))
