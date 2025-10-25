@@ -1,3 +1,9 @@
+* 0.5.7
+#+DATE: 2025/10/25
++ Resolve issues relating to selecting multiple questions on
+  dashboard.
++ Resolve issues for suspending content.
++ Improve performance for suspending multiple questions
 
 * 0.5.6
 #+DATE: 2025/10/13
