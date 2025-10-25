@@ -1312,7 +1312,7 @@ the review session."
 
 This function should be used with `gnosis-review-actions', which
 should be recursively called using SUCCESS, NOTE, NOTE-COUNT."
-  (gnosis-suspend-note note)
+  (gnosis-toggle-suspend-notes (list note))
   (gnosis-review-actions success note note-count))
 
 (defun gnosis-review-action--override (success note note-count)
@@ -2823,8 +2823,7 @@ DASHBOARD-TYPE: either Notes or Decks to display the respective dashboard."
   "Suspend marked note entries."
   (interactive)
   (when (y-or-n-p "Toggle SUSPEND on selected notes?")
-    (cl-loop for note in gnosis-dashboard--selected-ids
-	     do (gnosis-suspend-note note t))
+    (gnosis-toggle-suspend-notes gnosis-dashboard--selected-ids nil)
     (gnosis-dashboard-return)))
 
 (transient-define-suffix gnosis-dashboard-suffix-query (query)
