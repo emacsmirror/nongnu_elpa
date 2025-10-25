@@ -804,7 +804,7 @@ TEXT-ONLY means don't check for attachments or polls."
   (interactive)
   (if mastodon-use-emojify
       (emojify-insert-emoji)
-    (emoji-search))) ;; 29.1
+    (call-interactively #'emoji-search))) ;; 29.1
 
 (defun mastodon-toot--emoji-dir ()
   "Return the file path for the mastodon custom emojis directory."
