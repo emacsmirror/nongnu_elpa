@@ -51,7 +51,7 @@ PROC: process; OUTPUT: new output from PROC."
                     (+ not-newline) ":"  ; file
                     (+ num) ":"  ; start-line
                     (+ num) "\n"  ; start-col
-                    (+ (+ (or blank num)) "│" (* not-newline) "\n")))
+                    (+ (+ (or blank num)) (or "│" "=") (* not-newline) "\n")))
             (next-match-start-pos 0)
             res-output)
         (while (string-match re output next-match-start-pos)
