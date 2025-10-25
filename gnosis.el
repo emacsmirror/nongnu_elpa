@@ -2780,8 +2780,9 @@ DASHBOARD-TYPE: either Notes or Decks to display the respective dashboard."
 		(setq gnosis-dashboard--selected-ids
 		      (remove id gnosis-dashboard--selected-ids)))
             (let ((ov (make-overlay beg end)))
-	      (setf gnosis-dashboard--selected-ids
-		    (append gnosis-dashboard--selected-ids (list id)))
+	      (unless (member id gnosis-dashboard--selected-ids)
+		(setf gnosis-dashboard--selected-ids
+		      (append gnosis-dashboard--selected-ids (list id))))
               (overlay-put ov 'face 'highlight)
               (overlay-put ov 'gnosis-mark t)))
 	  (forward-line))
