@@ -1,4 +1,4 @@
-;;; fj.el --- Client for forgejo instances -*- lexical-binding: t; -*-
+;;; fj.el --- Client for Forgejo instances -*- lexical-binding: t; -*-
 
 ;; Author: Marty Hiatt <mousebot@disroot.org>
 ;; Copyright (C) 2023 Marty Hiatt <mousebot@disroot.org>
