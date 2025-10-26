@@ -444,35 +444,28 @@ When the process ends, the function CALLBACK is called like the following
 call: (funcall CALLBACK CALLBACK-ARG).
 The process is registered at `jabber-httpupload-upload-processes' AList with
 the provided CALLBACK and CALLBACK-ARG."
-  (let* ((exec-path (executable-find "curl"))
-         (header-args
-          (mapconcat
-           (pcase-lambda (`(,name . ,value))
-             (concat "-H " (shell-quote-argument (format "%s: %s" name value))))
-           headers
-           " "))
-         (cmd (format "%s %s --upload-file '%s' %s '%s'"
-                      exec-path
-                      (if ignore-cert-problems
-                          "--insecure"
-                        "")
-                      filepath header-args put-url)))
-    (when exec-path
-      (with-current-buffer (get-buffer-create "*jabber-httpupload-put-file-curl*")
+  (when-let* ((curl-path (executable-find "curl")))
+    (let ((buffer (get-buffer-create "*jabber-httpupload-put-file-curl*"))
+          (command
+           `( "--upload-file" ,filepath
+              ,@(cl-loop for (name . value) in headers
+                         append (list "-H" (format "%s: %s" name value)))
+              ,put-url)))
+      (when ignore-cert-problems
+        (push "--insecure" command))
+      (push curl-path command)
+      (with-current-buffer buffer
         (let ((inhibit-read-only t))
           (goto-char (point-max))
-          (insert (format  "%s Uploading to %s with curl:\n$ %s"
+          (insert (format  "%s Uploading with curl:\n%S\n"
                            (current-time-string)
-                           put-url
-                           cmd))
-          (let ((process (start-process-shell-command "jabber-httpupload-put-file-curl"
-                                                      (current-buffer)
-                                                      cmd)))
-            (push (cons process (list callback callback-arg))
-                  jabber-httpupload-upload-processes)
-            (set-process-sentinel process #'jabber-httpupload-curl-sentinel))
-          (insert "-- done --")
-          t)))))
+                           command))))
+      (push (cons (make-process :name "jabber-httpupload-put-file-curl"
+                                :buffer buffer
+                                :command command
+                                :sentinel #'jabber-httpupload-curl-sentinel)
+                  (list callback callback-arg))
+            jabber-httpupload-upload-processes))))
 
 ;; * Send the file URL to the client *
 
