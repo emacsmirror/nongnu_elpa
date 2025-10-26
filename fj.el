@@ -6,7 +6,7 @@
 ;; Package-Requires: ((emacs "29.1") (fedi "0.2") (tp "0.5") (transient "0.9.3") (magit "4.3.8"))
 ;; Keywords: git, convenience
 ;; URL: https://codeberg.org/martianh/fj.el
-;; Version: 0.25
+;; Version: 0.26
 ;; Separator: -
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -2849,7 +2849,8 @@ RELOAD mean we reloaded."
             "This PR can be merged automatically.\n\n")
            (_ "")))
         (when (and fj-use-emojify
-                   (require 'emojify nil :noerror))
+                   (require 'emojify nil :noerror)
+                   (fboundp 'emojify-mode))
           (emojify-mode t))
         ;; Propertize top level item only:
         (fj-render-item-bodies)))))
@@ -3854,18 +3855,22 @@ Or if viewing a repo's issues, use its clone_url."
 (defun fj-copy-pr-url ()
   "Copy upstream Pull Request URL with branch name."
   (interactive)
+  ;; FIXME: do we actually need this branched format? or is
+  ;; `fj-copy-item-url' ok?
   (let* ((owner (fj--get-buffer-spec :owner))
          (repo (fj--get-buffer-spec :repo))
-         (number (fj--get-buffer-spec :item))
+         (number (if (eq major-mode 'fj-issue-tl-mode)
+                     (fj--get-tl-col 0)
+                   (fj--get-buffer-spec :item)))
          (author (fj--get-buffer-spec :author))
-
          (endpoint (format "repos/%s/%s/pulls/%s" owner repo number))
          (pr (fj-get endpoint))
          (data (alist-get 'head pr))
          (branch (alist-get 'ref data))
          (author+repo (alist-get 'full_name
                                  (alist-get 'repo data)))
-
+         ;; FIXME: what's up with this format? it is not a URL?!
+         ;; shouldn't it be: $host/$author/$repo/src/branch/$branch?!
          (str (concat fj-host "/" author+repo
                       "  "
                       (format "%s:pr-%s-%s-%s"
@@ -4391,15 +4396,20 @@ With PREFIX, also close issue if sending a comment."
               (fj-view-reload)
             (fj-list-issues-do repo)))))))
 
-(defun fj-search-users (query &optional limit)
+(defvar fj-search-users-sort
+  '("oldest" "newest" "alphabetically" "reversealphabetically"
+    "recentupdate" "leastupdate")
+  "Sort parameter options for `fj-search-users'.")
+
+(defun fj-search-users (query &optional limit sort)
   "Search instance users for QUERY.
-Optionally set LIMIT to results."
-  ;; FIXME: server: limit is an integer; it doesn't respect our 25, returns 2500
-  ;; works:
-  ;; (let ((resp (fj-search-users "mart" "10")))
-  ;;   (length (alist-get 'data resp)))
+Optionally set LIMIT to results.
+Optionally SORT results.
+SORT should be a member of `fj-search-users-sort'."
+  ;; "page" may be required for "limit" to work?
   (let ((params `(("q" . ,query)
-                  ("limit" . ,limit))))
+                  ("limit" . ,limit)
+                  ("sort" . ,sort))))
     (fj-get "users/search" params)))
 
 ;; (with-current-buffer (get-buffer-create "*fj-test*")
@@ -4434,7 +4444,13 @@ Optionally set LIMIT to results."
   (let* ((resp (fj-search-users
                 (buffer-substring-no-properties (1+ start) ; cull '@'
                                                 end)
-                (fj-max-items)))
+                ;; performance/accuracy trade-off: if a search prefix has
+                ;; a lot of results and limit param is too low, the
+                ;; desired handle may not appear:
+                "30" ;; (fj-max-items)
+                ;; sort argument: basically we just need to not have
+                ;; alphabetic here:
+                "newest"))
          (data (alist-get 'data resp)))
     (fj-users-list data)))
 
