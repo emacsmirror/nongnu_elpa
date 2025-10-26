@@ -104,7 +104,7 @@
                                          "-autoloads"))
           (save-some-buffers t))
       ;; GNU Emacs 21 wants some content, but 22 does not like it ...
-      (insert ";;; vm-autoloads.el --- automatically extracted autoloads\n")
+      (insert ";;; vm-autoloads.el --- automatically extracted autoloads  -*- lexical-binding: t; -*-\n")
       (insert ";;\n")
       (insert ";;; Code:\n")
       (cond

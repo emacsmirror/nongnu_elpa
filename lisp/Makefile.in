@@ -125,13 +125,15 @@ install: install-el install-elc
 ##############################################################################
 # Create file with version and commit
 vm-version-conf.el: Makefile
-	echo ";;; Generated file do not commit " > $@.tmp
-	echo '(defconst vm-version-config "'"$(PACKAGE_VERSION)"'")' >> $@.tmp
+	echo ";;; Generated file do not commit -*- lexical-binding: t; -*-" > $@.tmp
+	echo '(defvar vm-version-config)' >> $@.tmp
+	echo '(defvar vm-version-commit-config)' >> $@.tmp
+	echo '(setq vm-version-config "$(PACKAGE_VERSION)")' >> $@.tmp
 	if [ -d "$(GIT_DIR)" ]; then \
 		commit=`$(GIT) --git-dir="$(GIT_DIR)" rev-parse HEAD`; \
-		echo '(defconst vm-version-commit-config "'"$${commit}"'")' >> $@.tmp ; \
+		echo '(setq vm-version-commit-config "'"$${commit}"'")' >> $@.tmp ; \
 	else \
-		echo '(defconst vm-version-commit-config "unknown")' >> $@.tmp ; \
+		echo '(setq vm-version-commit-config "unknown")' >> $@.tmp ; \
 	fi
 	mv -f $@.tmp $@
 
