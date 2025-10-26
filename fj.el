@@ -4304,15 +4304,20 @@ With a prefix argument, also close issue if sending a comment."
               (fj-view-reload)
             (fj-list-issues-do repo)))))))
 
-(defun fj-search-users (query &optional limit)
+(defvar fj-search-users-sort
+  '("oldest" "newest" "alphabetically" "reversealphabetically"
+    "recentupdate" "leastupdate")
+  "Sort parameter options for `fj-search-users'.")
+
+(defun fj-search-users (query &optional limit sort)
   "Search instance users for QUERY.
-Optionally set LIMIT to results."
-  ;; FIXME: server: limit is an integer; it doesn't respect our 25, returns 2500
-  ;; works:
-  ;; (let ((resp (fj-search-users "mart" "10")))
-  ;;   (length (alist-get 'data resp)))
+Optionally set LIMIT to results.
+Optionally SORT results.
+SORT should be a member of `fj-search-users-sort'."
+  ;; "page" may be required for "limit" to work?
   (let ((params `(("q" . ,query)
-                  ("limit" . ,limit))))
+                  ("limit" . ,limit)
+                  ("sort" . ,sort))))
     (fj-get "users/search" params)))
 
 ;; (with-current-buffer (get-buffer-create "*fj-test*")
@@ -4347,7 +4352,13 @@ Optionally set LIMIT to results."
   (let* ((resp (fj-search-users
                 (buffer-substring-no-properties (1+ start) ; cull '@'
                                                 end)
-                (fj-max-items)))
+                ;; performance/accuracy trade-off: if a search prefix has
+                ;; a lot of results and limit param is too low, the
+                ;; desired handle may not appear:
+                "30" ;; (fj-max-items)
+                ;; sort argument: basically we just need to not have
+                ;; alphabetic here:
+                "newest"))
          (data (alist-get 'data resp)))
     (fj-users-list data)))
 
