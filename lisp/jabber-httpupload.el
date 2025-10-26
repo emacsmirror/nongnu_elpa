@@ -49,6 +49,8 @@
 (require 'fsm)
 (require 'mailcap)
 (require 'jabber)
+(eval-when-compile
+  (require 'cl-lib))
 
 ;; * Configuration variables *
 
@@ -251,10 +253,23 @@ JC is the Jabber Connection to use."
   "Retrieve the slot data from the XML-DATA information.
 The XML-DATA is the stanza receive from the Jabber Connection after requesting
 the slot for a file.
-The returned list has the PUT URL and the GET URL."
-  (list
-   (jabber-xml-get-attribute (jabber-xml-path xml-data '(slot put)) 'url)
-   (jabber-xml-get-attribute (jabber-xml-path xml-data '(slot get)) 'url)))
+The returned list contains a cons pair of the PUT URL and PUT headers as
+the first element and the GET URL as the second element.  PUT headers
+are cons pairs containing the header name and header value."
+  (let ((put (jabber-xml-path xml-data '(slot put)))
+        (get (jabber-xml-path xml-data '(slot get))))
+    (list (cons
+           ;; PUT URL.
+           (jabber-xml-get-attribute put 'url)
+           ;; PUT headers.
+           (cl-loop for header in (jabber-xml-get-children put 'header)
+                    for name = (jabber-xml-get-attribute header 'name)
+                    when (member name '("Authorization" "Cookie" "Expires"))
+                    for value = (car (jabber-xml-node-children header))
+                    when value
+                    collect (cons name value)))
+          ;; GET URL.
+          (jabber-xml-get-attribute get 'url))))
 
 (defun jabber-httpupload--request-slot-successful (jc xml-data data)
   "Callback function used when the slot request succeeded.
@@ -349,17 +364,17 @@ certificate validation status."
   (member (plist-get (fsm-get-state-data jc) :server)
           jabber-invalid-certificate-servers))
 
-(defun jabber-httpupload-upload-file (filepath content-type put-url
+(defun jabber-httpupload-upload-file (filepath headers put-url
                               callback callback-arg
                               &optional ignore-cert-problems)
-  "Update the given file at FILEPATH to the provided PUT-URL.
-The CONTENT-TYPE (MIME type) of the file must match the one provided
-to the Jabber Connection with `jabber-httpupload-request-slot'.
+  "Update the given file at FILEPATH to PUT-URL using HEADERS.
+The content-type (MIME type) in HEADERS must match the one provided to
+the Jabber Connection with `jabber-httpupload-request-slot'.
 IGNORE-CERT-PROBLEMS allows to connect with HTTPS servers with invalid or
 non-trusted SSL/TLS certificates.
 When the process ends, a callback function is called using the following
 code: (funcall CALLBACK CALLBACK-ARG)"
-  (unless (funcall jabber-httpupload-upload-function filepath content-type put-url
+  (unless (funcall jabber-httpupload-upload-function filepath headers put-url
                    callback callback-arg
                    ignore-cert-problems)
     (error (concat "The upload function failed to PUT the file to the server. "
@@ -417,11 +432,11 @@ When EVENT is \"finished\n\", then the function
     (jabber-httpupload-process-ended process)))
 
 ;; This is the function used to send a file to the server by running a curl subprocess.
-(defun jabber-httpupload-put-file-curl (filepath content-type put-url
+(defun jabber-httpupload-put-file-curl (filepath headers put-url
                                 callback callback-arg
                                 &optional ignore-cert-problems)
-  "Use the curl command to put the file at FILEPATH into the PUT-URL.
-Send the SIZE and CONTENT-TYPE MIME as headers.
+  "Use Curl to upload the file at FILEPATH to PUT-URL.
+The PUT request includes all HEADERS in their current order.
 IGNORE-CERT-PROBLEMS enable the use of HTTPS connections with invalid or
 non-trusted SSL/TLS certificates.  If nil, curl will validate the certificate
 provided by the HTTP/S Web server.
@@ -430,12 +445,18 @@ call: (funcall CALLBACK CALLBACK-ARG).
 The process is registered at `jabber-httpupload-upload-processes' AList with
 the provided CALLBACK and CALLBACK-ARG."
   (let* ((exec-path (executable-find "curl"))
-         (cmd (format "%s %s --upload-file '%s' -H \"content-type: %s\" '%s'"
+         (header-args
+          (mapconcat
+           (pcase-lambda (`(,name . ,value))
+             (concat "-H " (shell-quote-argument (format "%s: %s" name value))))
+           headers
+           " "))
+         (cmd (format "%s %s --upload-file '%s' %s '%s'"
                       exec-path
                       (if ignore-cert-problems
                           "--insecure"
                         "")
-                      filepath content-type put-url)))
+                      filepath header-args put-url)))
     (when exec-path
       (with-current-buffer (get-buffer-create "*jabber-httpupload-put-file-curl*")
         (let ((inhibit-read-only t))
@@ -560,17 +581,19 @@ After the upload is done, send the get-url to the destined Jabber user JID."
 JC is the current Jabber Connection.
 XML-DATA is the received XML from the server.
 FILEDATA is a triple `(filepath size content-type).
-URLS is a tuple `(put-url get-url).
+URLS is a tuple `((put-url ((header-name . header-value) ...)) get-url).
 EXTRA-DATA is a list `(jid)"
   (let ((filepath (car filedata))
-        (content-type (nth 2 filedata))
         (jid (car extra-data))
         (get-url (cadr urls))
-        (put-url (car urls)))
-    (message "jabber-httpupload: slot PUT and GET URLs: %S" urls)
+        (put-url (caar urls))
+        (headers (cdar urls)))
+    (push (cons "content-length" (nth 1 filedata)) headers)
+    (push (cons "content-type" (nth 2 filedata)) headers)
+    (message "jabber-httpupload: slot PUT and GET URLs: %s %s" put-url get-url)
     (condition-case err
         (jabber-httpupload-upload-file (expand-file-name filepath)
-                      content-type
+                      headers
                       put-url
                       #'jabber-httpupload--upload-done (list jc jid get-url)
                       (jabber-httpupload-ignore-certificate jc))
