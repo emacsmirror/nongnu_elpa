@@ -537,7 +537,10 @@ JC is the Jabber Connection to send the file URL."
   (unless (jabber-httpupload-server-has-support jc)
     (error "The Jabber Connection provided has no HTTP Upload support"))
   (let* ((size (file-attribute-size (file-attributes filepath)))
-         (content-type (mailcap-extension-to-mime (file-name-extension filepath)))
+         (content-type
+          (or (and-let* ((extension (file-name-extension filepath)))
+                (mailcap-extension-to-mime extension))
+              "application/octet-stream"))
          (filedata (list filepath size content-type)))
     (jabber-httpupload-request-slot jc filedata
                    #'jabber-httpupload--slot-reserved
