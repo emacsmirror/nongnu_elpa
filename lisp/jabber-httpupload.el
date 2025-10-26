@@ -427,7 +427,7 @@ When EVENT is \"finished\n\", then the function
   (with-current-buffer (process-buffer process)
     (let ((inhibit-read-only t))
       (goto-char (point-max))
-      (insert (format "Sentinel: %S event received." event))))
+      (insert (format "Sentinel: %S event received.\n" event))))
   (when (string= event "finished\n")
     (jabber-httpupload-process-ended process)))
 
