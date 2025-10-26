@@ -1,4 +1,4 @@
-;;; fj.el --- Client for forgejo instances -*- lexical-binding: t; -*-
+;;; fj.el --- Client for Forgejo instances -*- lexical-binding: t; -*-
 
 ;; Author: Marty Hiatt <mousebot@disroot.org>
 ;; Copyright (C) 2023 Marty Hiatt <mousebot@disroot.org>
@@ -6,7 +6,7 @@
 ;; Package-Requires: ((emacs "29.1") (fedi "0.2") (tp "0.5") (transient "0.9.3") (magit "4.3.8"))
 ;; Keywords: git, convenience
 ;; URL: https://codeberg.org/martianh/fj.el
-;; Version: 0.26
+;; Version: 0.27
 ;; Separator: -
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -24,11 +24,20 @@
 
 ;;; Commentary:
 
-;; Some bare-bones commands for interacting with Forgejo instances.
+;; A client for Forgejo instances. Forgejo is a self-hostable software
+;; forge. See <https://foregejo.org>.
 
-;; To use these functions, first set `fj-token' and `fj-user'.
-;; Then either set your Forgejo access token in your auth-source file or
-;; set `fj-host' to it.
+;; The client is based on tabulated listings for issues, PRs, repos,
+;; users, etc., and attempts to implement a fairly rich interface for item
+;; (issue, PR) timelines, as well as for composing items and comments. It
+;; is built with fedi.el, which in turn is based on mastodon.el.
+
+;; To get started, first set `fj-token' and `fj-user'. Then either set
+;; your Forgejo access token in your auth-source file or set `fj-host' to
+;; it.
+
+;; For further details, see the readme at
+;; <https://codeberg.org/martianh/fj.el>.
 
 ;;; Code:
 
@@ -138,7 +147,7 @@ etc."
 
 (defcustom fj-token-use-auth-source t
   "Whether to use an auth-source file.
-If non-nil, use an auth-source file such as ~/,authinfo.gpg for the user
+If non-nil, use an auth-source file such as ~/.authinfo.gpg for the user
 authorization token of the foregejo instance.
 If set to nil, you need to set `fj-token' to your user token."
   :type 'boolean)
@@ -2942,7 +2951,7 @@ reloading a paginated view."
      #'fj-item-view-more-cb (current-buffer) (point-max) init-page)))
 
 (defun fj-item-view-more-cb (json buf point &optional init-page end-page)
-  "Callback function to append more tiemline items to current view.
+  "Callback function to append more timeline items to current view.
 JSON is the parsed HTTP response, BUF is the buffer to add to, POINT is
 where it was prior to updating.
 If INIT-PAGE, do not update :page in viewargs.
