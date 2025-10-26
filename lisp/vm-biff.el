@@ -517,7 +517,7 @@ AddToFunc SelectWindow
                               'vm-biff-timer-delete-popup wf))))))))
 
 ; add hook only when explictly requring this module
-(when (not (or (bound-and-true-p byte-compile-current-file) (bound-and-true-p comp-compile-warning-errors)))
+(unless (bound-and-true-p byte-compile-current-file)
   (add-hook 'vm-arrived-messages-hook 'vm-biff-popup t))
 
 (provide 'vm-biff)

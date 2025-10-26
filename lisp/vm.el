@@ -63,6 +63,19 @@
 
 (defvar enable-multibyte-characters)
 
+(defvar vm-version nil
+  "Version number of VM.")
+
+(defvar vm-version-commit nil
+  "Git commit number of VM.")
+
+(defvar vm-version-config nil
+  "Version number of VM from generated file when building using make.")
+
+(defvar vm-version-commit-config nil
+  "Git commit number of VM from generated file when building using make.")
+
+
 ;; vm-xemacs.el is a non-existent file to fool the Emacs 23 compiler
 (declare-function get-coding-system "vm-xemacs.el" (name))
 (declare-function find-face "vm-xemacs.el" (face-or-name))
@@ -1718,10 +1731,8 @@ draft messages."
 (let ((version-info (or (vm--version-info-from-conf)
                         (vm--version-info-from-package)
                         (list nil nil))))
-  (defconst vm-version (nth 0 version-info)
-    "Version number of VM.")
-  (defconst vm-version-commit (nth 1 version-info)
-    "Git commit number of VM.")
+  (setq vm-version (nth 0 version-info)
+        vm-version-commit (nth 1 version-info))
   (unless vm-version
     (warn "Can't obtain vm-version from package or vm-version-conf.el"))
   (unless vm-version-commit
