@@ -34,7 +34,7 @@ compilation buffer before compilation."
            typst-ts-compile-hide-compilation-buffer-if-success
            (string-match-p "finished" (string-trim msg)))
       (delete-windows-on compilation-buffer)
-      (message "Execute typst copmile successfully."))
+      (message "Execute typst compile successfully."))
     (unwind-protect
         (with-current-buffer cur-buffer
           (run-hook-with-args 'typst-ts-compile-after-compilation-hook compilation-buffer msg))
