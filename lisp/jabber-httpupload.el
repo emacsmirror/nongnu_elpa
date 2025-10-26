@@ -533,7 +533,7 @@ and the JC Jabber Connection."
 JC is the Jabber Connection to send the file URL."
   (interactive (list (jabber-read-account)
                      (jabber-read-jid-completing "Send file to: " nil nil nil 'full t)
-                     (read-file-name "File to send:")))
+                     (read-file-name "File to send: ")))
   (unless (jabber-httpupload-server-has-support jc)
     (error "The Jabber Connection provided has no HTTP Upload support"))
   (let* ((size (file-attribute-size (file-attributes filepath)))
