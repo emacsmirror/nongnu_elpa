@@ -160,7 +160,7 @@ This function is asynchronous, thus it won't return any results."
 ;;   "urn:xmpp:http:upload"))
 ;;
 ;; This Disco item supports HTTP Upload because the
-;; "urn:xmpp:http:upload" namespace is in the second list.
+;; "urn:xmpp:http:upload:0" namespace is in the second list.
 
 (defun jabber-httpupload-test-item-support (jc iri)
   "Test if the IRI Disco item supports HTTP Upload.
@@ -169,7 +169,7 @@ if the HTTP Upload namespace feature is in the answer, store the IRI
 in `jabber-httpupload-support'."
   (jabber-disco-get-info jc iri nil
                          (lambda (jc _data result)
-                           (when (member "urn:xmpp:http:upload"
+                           (when (member "urn:xmpp:http:upload:0"
                                          (nth 1 result))
                              ;; This item supports HTTP Upload... register it!
                              (push (cons jc iri) jabber-httpupload-support)))
