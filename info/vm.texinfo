@@ -24,7 +24,7 @@ This file documents the VM mail reader.
 @item Copyright @copyright{} 2003 - 2008 Robert Widhopf-Fenk
 @item Copyright @copyright{} 2008 - 2012 Uday S. Reddy
 @item Copyright @copyright{} 2024-2025 The VM Developers
-o@end table
+@end table
 
 Permission is granted to make and distribute verbatim copies of
 this manual provided the copyright notice and this permission notice
@@ -2707,7 +2707,7 @@ any XEmacs version compiled with MULE support, the value of
 because all characters are displayed using fonts discovered by
 MULE and VM has no control over them.
 
-@node multipart/alternative, Inferring @acronym{MIME} types, Character sets, @acronym{MIME} Messages
+@node multipart/alternative, multipart/related, Character sets, @acronym{MIME} Messages
 @subsection @acronym{MIME} multipart/alternative
 
 @cindex @acronym{MIME} alternatives
@@ -2787,7 +2787,7 @@ You can ask VM to always treat @samp{multipart/related} content in a way
 similar to @samp{multipart/mixed} by setting the variable
 @code{vm-mime-multipart/related-show-method} to @code{'mixed}.
 
-@node Inferring @acronym{MIME} types, Reading Secure @acronym{MIME}, multipart/alternative, @acronym{MIME} Messages
+@node Inferring @acronym{MIME} types, Reading Secure @acronym{MIME}, multipart/related, @acronym{MIME} Messages
 @subsection Inferring @acronym{MIME} types
 
 Some mailers incorrectly use the generic
@@ -5188,7 +5188,7 @@ the string.  This is more efficient than the @code{vm-isearch-forward}
 command (@pxref{Navigating}) because it only searches in the text part
 of message bodies, not inside @acronym{MIME} attachments. 
 
-@node Defined Folders, Working with Virtual Folders, Search Folders, Virtual Folders
+@node Defined Folders, Virtual Selectors, Search Folders, Virtual Folders
 @section Defined Virtual Folders
 
 @vindex vm-virtual-folder-alist
@@ -5531,7 +5531,7 @@ matches the message if the current-buffer is in mail-mode and one of
 its argument selectors matches the message.
 @end table
 
-@node Working with Virtual Folders, vm-avirtual, Defined Folders,Virtual Folders
+@node Working with Virtual Folders, vm-avirtual, Virtual Selectors, Virtual Folders
 @section Working with Virtual Folders
 
 @findex vm-get-new-mail
