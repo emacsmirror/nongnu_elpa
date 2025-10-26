@@ -147,7 +147,7 @@ etc."
 
 (defcustom fj-token-use-auth-source t
   "Whether to use an auth-source file.
-If non-nil, use an auth-source file such as ~/,authinfo.gpg for the user
+If non-nil, use an auth-source file such as ~/.authinfo.gpg for the user
 authorization token of the foregejo instance.
 If set to nil, you need to set `fj-token' to your user token."
   :type 'boolean)
@@ -2951,7 +2951,7 @@ reloading a paginated view."
      #'fj-item-view-more-cb (current-buffer) (point-max) init-page)))
 
 (defun fj-item-view-more-cb (json buf point &optional init-page end-page)
-  "Callback function to append more tiemline items to current view.
+  "Callback function to append more timeline items to current view.
 JSON is the parsed HTTP response, BUF is the buffer to add to, POINT is
 where it was prior to updating.
 If INIT-PAGE, do not update :page in viewargs.
