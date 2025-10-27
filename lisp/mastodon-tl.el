@@ -1488,8 +1488,11 @@ SENSITIVE is a flag from the item's JSON data."
 (define-derived-mode mastodon-image-mode image-mode
   "mastodon-image"
   :group 'mastodon
-  (if pixel-scroll-precision-mode
-      (pixel-scroll-precision-mode -1)))
+  ;; Disable `pixel-scroll-precision-mode' locally because it doesn't
+  ;; work nicely with `mastodon-image-mode':
+  ;; thanks Tusar for this fix:
+  (when (bound-and-true-p pixel-scroll-precision-mode)
+    (setq-local pixel-scroll-precision-mode nil)))
 
 ;; patch `shr-browse-image' to accept url arg:
 (defun mastodon-tl-shr-browse-image (&optional image-url copy-url)
