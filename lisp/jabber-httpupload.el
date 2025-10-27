@@ -32,6 +32,8 @@
 ;; after sharing the file, and the receiver may be disconnected while
 ;; the sender is uploading.
 
+;; Use the command `jabber-httpupload-send-file' to send a file.
+
 ;; The procedure to send a file is as follows -
 
 ;; 1. Use Disco queries to discover if the server supports the HTTP Upload (~urn:xmpp:http:upload~ namespace).
@@ -528,6 +530,7 @@ and the JC Jabber Connection."
 ;; The following functions add interactive commands to the chat buffer
 ;; to send the GET URL to the current (or selected) client.
 
+;;;###autoload
 (defun jabber-httpupload-send-file (jc jid filepath)
   "Send the file at FILEPATH to the user JID.
 JC is the Jabber Connection to send the file URL."
@@ -606,15 +609,11 @@ EXTRA-DATA is a list `(jid)"
 ;;                                   jabber-httpupload-record-command))))
 ;;     (set-process-sentinel process #'jabber-httpupload-record-sentinel)))
 
-;; * Add hooks *
-;; Some function should start automatically.
-
-;; ** Test connection support after session is established **
-;; Call `jabber-httpupload-test-connection-support' as soon as
-
-;; * Adding functions to hooks *
-;; ** Test HTTP Upload support after connecting **
+;; Test new connections.
 (add-hook 'jabber-post-connect-hooks #'jabber-httpupload-test-connection-support)
+
+;; Test existing connections.
+(jabber-httpupload-test-all-connections-support)
 
 (provide 'jabber-httpupload)
 
