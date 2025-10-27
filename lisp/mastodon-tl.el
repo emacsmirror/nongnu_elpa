@@ -1893,10 +1893,18 @@ Runs `mastodon-tl--render-text' and fetches poll or media."
 (defun mastodon-tl--insert-quoted (data)
   "Propertize quoted status DATA for insertion."
   (let ((bar (concat " " (mastodon-tl--symbol 'reply-bar)))
-        (content (map-nested-elt data '(quoted_status content))))
+        (content (map-nested-elt data '(quoted_status content)))
+      ;; quote symbol hack:
+        (quotemark (propertize "“" 'face
+                               '(t :inherit success :weight bold
+                                   :height 1.8))))
     (propertize
-     (concat
-      (mastodon-tl--byline (alist-get 'quoted_status data))
+     (concat quotemark "\n"
+      ;; author byline without horiz bar and toot stats:
+      (mastodon-tl--byline-author
+       (alist-get 'quoted_status data) nil :domain :base)
+      "\n"
+      ;; quoted text:
       (mastodon-tl--render-text content
                                 (alist-get 'quoted_status data)))
      'line-prefix bar
