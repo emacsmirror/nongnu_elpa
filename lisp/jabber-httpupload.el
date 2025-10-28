@@ -47,7 +47,6 @@
 
 ;;; Code:
 
-(require 'seq)
 (require 'fsm)
 (require 'mailcap)
 (require 'jabber)
@@ -103,9 +102,8 @@ the alist element for the associated connection will not be present.")
   "Test all connections in `jabber-connections' for HTTP Upload support.
 Store the results in `jabber-httpupload-support'.  If the connection was
 already tested and the test was successful, do not re-test it."
-  (let ((connections (seq-difference jabber-connections
-                                     (mapcar #'car jabber-httpupload-support))))
-    (dolist (jc connections)
+  (dolist (jc jabber-connections)
+    (unless (jabber-httpupload-server-has-support jc)
       (jabber-httpupload-test-connection-support jc))))
 
 (defun jabber-httpupload-test-connection-support (jc)
