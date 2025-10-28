@@ -373,7 +373,7 @@ code: (funcall CALLBACK CALLBACK-ARG)"
 (defvar jabber-httpupload-upload-processes nil
   "Alist of running processes uploading the file to the server.
 List of running processes uploading the file to the server
-associated with their callback and arguments. Each element has
+associated with their callback and arguments.  Each element has
 the following format: (process . (callback arg))")
 
 ;; When the file has been uploaded, the process is still registered
