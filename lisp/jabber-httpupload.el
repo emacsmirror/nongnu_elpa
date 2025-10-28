@@ -201,7 +201,7 @@ the item vector."
     (jabber-disco-get-items jc node nil
                             (lambda (jc _data result)
                               (dolist (item result)
-		                (message "item: %S" item)
+                                ;; (message "item: %S" item)
                                 (funcall callback jc item)))
                             nil)))
 
@@ -574,7 +574,7 @@ EXTRA-DATA is a list `(jid)"
         (headers (cdar urls)))
     (push (cons "content-length" (nth 1 filedata)) headers)
     (push (cons "content-type" (nth 2 filedata)) headers)
-    (message "jabber-httpupload: slot PUT and GET URLs: %s %s" put-url get-url)
+    ;; (message "jabber-httpupload: slot PUT and GET URLs: %s %s" put-url get-url)
     (condition-case err
         (jabber-httpupload-upload-file (expand-file-name filepath)
                       headers
