@@ -89,24 +89,20 @@ please check their documentation for more information."
 ;; [[https://xmpp.org/extensions/xep-0363.html#disco][Discovering
 ;; Support section of XEP-0363]].
 
-;; This implementation requires an initialization step to fill the
-;; `jabber-httpupload-support' variable. This variable registers all
-;; connections with their HTTP Upload item. If one of the server
-;; associated to a connection does not support HTTP Upload, then it
-;; will be registered with a `nil' item.
-
 ;; * Discovering support *
 
 (defvar jabber-httpupload-support nil
   "Alist of Jabber connections and the node with HTTP Upload support.
-This is filled by the `jabber-httpupload-test-all-connections-suport'.
-Each element are of the form (jabber-connection . string/nil).  If the value is
-a string, it is the upload item IRI, if nil means no support.")
+Alist elements for supported connections may be added by calling
+`jabber-httpupload-test-all-connections-suport' or
+`jabber-httpupload-test-connection-support'.  Each element is of the
+form (jabber-connection . upload-iri).  Where there is no upload support
+the alist element for the associated connection will not be present.")
 
 (defun jabber-httpupload-test-all-connections-support ()
   "Test all connections in `jabber-connections' for HTTP Upload support.
-Store the results at `jabber-httpupload-support'.
-If the connection is already tested, ignore it."
+Store the results in `jabber-httpupload-support'.  If the connection was
+already tested and the test was successful, do not re-test it."
   (let ((connections (seq-difference jabber-connections
                                      (mapcar #'car jabber-httpupload-support))))
     (dolist (jc connections)
@@ -213,20 +209,11 @@ the item vector."
 
 (defun jabber-httpupload-server-has-support (jc)
   "Check if the server has HTTP Upload support.
-Return the tuple (jabber-connection . upload-url) when there is support from
-the server.  Return nil when the server does not support HTTP Upload.
-
-If the server is not in `jabber-httpupload-support', then it is considered as
-it is not supported.  It SHOULD be tested on-line with
-`jabber-httpupload-test-connection-support' as soon as the connection and
-authentication is established.
+Return the cons pair (jabber-connection . upload-iri) when there is
+support from the server.  Return nil when the feature is not supported.
 
 JC is the Jabber Connection to use."
-
-  (seq-find (lambda (tuple)
-              (and (equal jc (car tuple))
-                   (cdr tuple)))
-            jabber-httpupload-support))
+  (assq jc jabber-httpupload-support))
 
 ;; * Requesting a slot *
 
