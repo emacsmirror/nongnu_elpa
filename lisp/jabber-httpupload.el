@@ -36,11 +36,14 @@
 
 ;; The procedure to send a file is as follows -
 
-;; 1. Use Disco queries to discover if the server supports the HTTP Upload (~urn:xmpp:http:upload~ namespace).
-;; 2. Request a slot to the upload Disco item. The server will answer with a GET and PUT URL.
+;; 1. Use Disco queries to discover if the server supports the HTTP
+;;    Upload (urn:xmpp:http:upload namespace).
+;; 2. Request a slot to the upload Disco item.  The server will answer
+;;    with a GET and PUT URL.
 ;; 3. Upload the file to the HTTP server by using the PUT URL.
-;; 4. Usually, send the GET URL to the other XMPP clients to allow them to access the uploaded file.
-;;
+;; 4. Usually, send the GET URL to the other XMPP clients to allow
+;;    them to access the uploaded file.
+
 ;; TODO -
 ;; 1. Use wget to send the file
 ;; 2. Recording audio and sending
