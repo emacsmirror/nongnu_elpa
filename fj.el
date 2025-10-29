@@ -1606,10 +1606,11 @@ CB is a callback, called on JSON response as first arg, followed by CBARGS."
     (fj-authorized-request "GET"
       (apply #'fedi-http--get-json-async url params cb cbargs))))
 
-(defun fj-get-comment (repo owner issue &optional comment)
+(defun fj-get-comment (repo owner &optional issue comment)
   "GET data for COMMENT of ISSUE in REPO.
 COMMENT is a number.
 OWNER is the repo owner."
+  ;; FIXME: retire `fj-read-item-comment'!
   (let* ((comment (or comment (fj-read-item-comment repo owner issue)))
          (endpoint (format "repos/%s/%s/issues/comments/%s"
                            owner repo comment)))
@@ -2690,7 +2691,12 @@ AUTHOR is of comment, optionally suppress horiztontal bar with NO-BAR."
   (let-alist comment
     (let ((stamp (fedi--relative-time-description
                   (date-to-time .created_at)))
-          (reactions (fj-get-comment-reactions repo owner .id)))
+          (reactions (fj-get-comment-reactions repo owner .id))
+          ;; timeline data doesn't have attachments data, so we need to
+          ;; fetch the comment from its own endpoint if we want to render
+          ;; them
+          (assets (alist-get 'assets
+                             (fj-get-comment repo owner nil .id))))
       (propertize
        (concat
         (fj-format-comment-header
@@ -2704,7 +2710,9 @@ AUTHOR is of comment, optionally suppress horiztontal bar with NO-BAR."
             ""
           (concat "\n"
                   (fj-render-comment-reactions reactions)))
-        (if no-bar "" (concat "\n" fedi-horiz-bar fedi-horiz-bar)))
+        (if no-bar "" (concat "\n" fedi-horiz-bar fedi-horiz-bar))
+        (when assets
+          (fj-render-assets-urls assets)))
        'fj-comment comment
        'fj-comment-author .user.username
        'fj-comment-id .id
@@ -2846,7 +2854,11 @@ RELOAD mean we reloaded."
            "\n"
            (fj-render-issue-reactions repo owner .number)
            "\n"
-           fedi-horiz-bar fedi-horiz-bar "\n\n")
+           fedi-horiz-bar fedi-horiz-bar
+           ;; attachments:
+           (when .assets
+             (fj-render-assets-urls .assets))
+           "\n\n")
           'fj-item-number number
           'fj-repo repo
           'fj-item-data item))
@@ -2863,6 +2875,15 @@ RELOAD mean we reloaded."
           (emojify-mode t))
         ;; Propertize top level item only:
         (fj-render-item-bodies)))))
+
+(defun fj-render-assets-urls (assets)
+  "Render download URLS of attachment data ASSETS."
+  (concat
+   "\n"
+   (mapconcat #'identity
+              (fj--map-alist-key assets 'browser_download_url)
+              "\n")
+   "\n" fedi-horiz-bar fedi-horiz-bar))
 
 (defun fj-item-view (&optional repo owner number type page limit)
   "View item NUMBER from REPO of OWNER.
