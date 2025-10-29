@@ -1681,7 +1681,8 @@ If none, return emptry string."
             (grouped (fj-group-reactions reactions)))
       (concat fedi-horiz-bar "\n"
               (mapconcat #'fj-render-grouped-reaction
-                         grouped " "))
+                         grouped " ")
+              "\n")
     ""))
 
 (defun fj-render-comment-reactions (reactions)
@@ -2708,13 +2709,13 @@ AUTHOR is of comment, optionally suppress horiztontal bar with NO-BAR."
         "\n\n"
         (propertize (fj-render-body .body)
                     'fj-item-body t)
+        (when assets
+          (fj-render-assets-urls assets))
         (if (not reactions)
             ""
           (concat "\n"
                   (fj-render-comment-reactions reactions)))
-        (if no-bar "" (concat "\n" fedi-horiz-bar fedi-horiz-bar))
-        (when assets
-          (fj-render-assets-urls assets)))
+        (if no-bar "" (concat "\n" fedi-horiz-bar fedi-horiz-bar)))
        'fj-comment comment
        'fj-comment-author .user.username
        'fj-comment-id .id
@@ -2853,13 +2854,12 @@ RELOAD mean we reloaded."
            "\n\n"
            (propertize (fj-render-body .body)
                        'fj-item-body t)
-           "\n"
-           (fj-render-issue-reactions repo owner .number)
-           "\n"
-           fedi-horiz-bar fedi-horiz-bar
            ;; attachments:
            (when .assets
              (fj-render-assets-urls .assets))
+           "\n"
+           (fj-render-issue-reactions repo owner .number)
+           fedi-horiz-bar fedi-horiz-bar
            "\n\n")
           'fj-item-number number
           'fj-repo repo
@@ -2884,6 +2884,7 @@ Creates a markdown link, with attachment name as display text.
 Renders it on the server, adds `fj-item-body' property so our rendering
 works on the resulting html."
   (concat
+   "\n📎 " (substring fedi-horiz-bar 3)
    (propertize
     ;; FIXME: markdown rendering adds an unwanted newline, and stripping
     ;; it still renders with an empty line!
@@ -2894,8 +2895,7 @@ works on the resulting html."
                    (alist-get 'browser_download_url x)
                    ")"))
                 assets "\n"))
-    'fj-item-body t)
-   fedi-horiz-bar fedi-horiz-bar))
+    'fj-item-body t)))
 
 (defun fj-item-view (&optional repo owner number type page limit)
   "View item NUMBER from REPO of OWNER.
