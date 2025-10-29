@@ -1674,11 +1674,10 @@ NEW-BODY is the new comment text to send."
                           owner repo id)))
     (fj-get endpoint nil nil :silent)))
 
-(defun fj-render-issue-reactions (repo owner id)
+(defun fj-render-issue-reactions (reactions)
   "Render reactions for issue with ID in REPO by OWNER.
 If none, return emptry string."
-  (if-let* ((reactions (fj-get-issue-reactions repo owner id))
-            (grouped (fj-group-reactions reactions)))
+  (if-let* ((grouped (fj-group-reactions reactions)))
       (concat fedi-horiz-bar "\n"
               (mapconcat #'fj-render-grouped-reaction
                          grouped " ")
@@ -1777,10 +1776,11 @@ Not sure what the server actually accepts.")
          (let-alist data
            (let* ((reac (completing-read "Reaction: " own))
                   (endpoint
-                   (format (if (string= "comment" .type)
-                               "repos/%s/%s/issues/comments/%s/reactions"
-                             "repos/%s/%s/issues/%s/reactions")
-                           owner repo .id))
+                   (if (string= "comment" .type)
+                       (format "repos/%s/%s/issues/comments/%s/reactions"
+                               owner repo .id)
+                     (format "repos/%s/%s/issues/%s/reactions"
+                             owner repo .number)))
                   (params `(("content" . ,reac)))
                   (resp (fj-delete endpoint params :json)))
              (fedi-http--triage
@@ -2785,7 +2785,8 @@ RELOAD mean we reloaded."
       (let* ((stamp (fedi--relative-time-description
                      (date-to-time .created_at)))
              (pull-p .base) ;; rough PR check!
-             (type (or type (if pull-p :pull :issue))))
+             (type (or type (if pull-p :pull :issue)))
+             (reactions (fj-get-issue-reactions repo owner .number)))
         ;; set vars before timeline so they're avail:
         (setq fj-current-repo repo)
         (setq fj-buffer-spec
@@ -2858,12 +2859,13 @@ RELOAD mean we reloaded."
            (when .assets
              (fj-render-assets-urls .assets))
            "\n"
-           (fj-render-issue-reactions repo owner .number)
+           (fj-render-issue-reactions reactions)
            fedi-horiz-bar fedi-horiz-bar
            "\n\n")
           'fj-item-number number
           'fj-repo repo
-          'fj-item-data item))
+          'fj-item-data item
+          'fj-reactions reactions))
         ;; FIXME: move this to after async timeline rendering?:
         (insert
          (pcase .mergeable
