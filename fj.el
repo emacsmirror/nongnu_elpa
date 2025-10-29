@@ -2544,6 +2544,8 @@ Buffer-local variable `fj-previous-window-config' holds the config."
 (defun fj-render-markdown (text)
   "Return server-rendered markdown TEXT."
   ;; NB: sync request:
+  ;; NB: returns string wrapped in newlines. shall we strip them always so
+  ;; we can add our own or not?
   (let* ((resp (fj-post "markdown" `(("text" . ,text)) nil :silent)))
     (fedi-http--triage
      resp (lambda (resp) (fj-resp-str resp)))))
@@ -2877,13 +2879,23 @@ RELOAD mean we reloaded."
         (fj-render-item-bodies)))))
 
 (defun fj-render-assets-urls (assets)
-  "Render download URLS of attachment data ASSETS."
+  "Render download URLS of attachment data ASSETS.
+Creates a markdown link, with attachment name as display text.
+Renders it on the server, adds `fj-item-body' property so our rendering
+works on the resulting html."
   (concat
-   "\n"
-   (mapconcat #'identity
-              (fj--map-alist-key assets 'browser_download_url)
-              "\n")
-   "\n" fedi-horiz-bar fedi-horiz-bar))
+   (propertize
+    ;; FIXME: markdown rendering adds an unwanted newline, and stripping
+    ;; it still renders with an empty line!
+    (fj-render-markdown
+     (mapconcat (lambda (x)
+                  (concat
+                   "[" (alist-get 'name x) "]("
+                   (alist-get 'browser_download_url x)
+                   ")"))
+                assets "\n"))
+    'fj-item-body t)
+   fedi-horiz-bar fedi-horiz-bar))
 
 (defun fj-item-view (&optional repo owner number type page limit)
   "View item NUMBER from REPO of OWNER.
