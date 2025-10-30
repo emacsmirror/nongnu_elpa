@@ -62,7 +62,8 @@
 
 ;; Note that this has it's values extracted and isn't used directly.
 (defface diff-ansi-default-face (list (list t :foreground "black" :background "black"))
-  "Face used to render black color.")
+  "Face used to render black color."
+  :group 'diff-ansi)
 
 (defcustom diff-ansi-tool-custom nil
   "Command to use when `diff-ansi-tool' is set to `custom'.
