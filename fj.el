@@ -2995,8 +2995,13 @@ END-PAGE means we are at the end, don't go again."
     (save-excursion
       (goto-char point)
       (cond
-       ((and (not json)
-             (called-interactively-p 'any))
+       ((and (not json))
+        ;; FIXME: this called-interactively-p always fails because we are
+        ;; in a callback:
+        ;; we need to distinguish what exactly? if we reload on nav and
+        ;; have no json, we should error here.
+        ;; but in what cases should we press on?
+        ;; (called-interactively-p 'any))
         (user-error "No more items"))
        ((equal 'errors (caar json))
         (user-error "I am Error: %s - %s"
@@ -3015,7 +3020,7 @@ END-PAGE means we are at the end, don't go again."
                   (plist-put fj-buffer-spec :viewargs args))
             (message "Loading comments...")
             (let ((inhibit-read-only t))
-              ;; remove poss [Load more] button ():
+              ;; remove poss [Load more] button (for reload on nav):
               (save-excursion
                 (beginning-of-line)
                 (when (looking-at "\\[Loa")
