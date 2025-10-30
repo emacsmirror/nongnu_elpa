@@ -49,7 +49,8 @@
   :group 'faces)
 
 (defface idle-highlight '((t (:inherit region)))
-  "Face used to highlight other occurrences of the word at point.")
+  "Face used to highlight other occurrences of the word at point."
+  :group 'idle-highlight)
 
 (defcustom idle-highlight-exceptions nil
   "List of words to be excepted from highlighting."
