@@ -3015,6 +3015,12 @@ END-PAGE means we are at the end, don't go again."
                   (plist-put fj-buffer-spec :viewargs args))
             (message "Loading comments...")
             (let ((inhibit-read-only t))
+              ;; remove poss [Load more] button ():
+              (save-excursion
+                (beginning-of-line)
+                (when (looking-at "\\[Loa")
+                  (kill-line)))
+              ;; raw render items:
               (fj-render-timeline json author owner repo))
             (message "Loading comments... Done")
             (when end-page ;; if we are re-paginating, go again maybe:
