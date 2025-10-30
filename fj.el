@@ -3902,8 +3902,6 @@ Or if viewing a repo's issues, use its clone_url."
 (defun fj-copy-pr-url ()
   "Copy upstream Pull Request URL with branch name."
   (interactive)
-  ;; FIXME: do we actually need this branched format? or is
-  ;; `fj-copy-item-url' ok?
   (fj-destructure-buf-spec (owner repo item author)
     (let* ((number (if (eq major-mode 'fj-issue-tl-mode)
                        (fj--get-tl-col 0)
@@ -3917,15 +3915,17 @@ Or if viewing a repo's issues, use its clone_url."
            (branch (alist-get 'ref data))
            (author+repo (alist-get 'full_name
                                    (alist-get 'repo data)))
-           ;; FIXME: what's up with this format? it is not a URL?!
-           ;; shouldn't it be: $host/$author/$repo/src/branch/$branch?!
+           ;; this format, $host/$author/$repo/src/branch/$branch, is what
+           ;; a PR in the webUI links to:
            (str (concat fj-host "/" author+repo
-                        "  "
-                        (format "%s:pr-%s-%s-%s"
-                                branch
-                                number
-                                author
-                                branch))))
+                        "/src/branch/" branch)))
+      ;; old/strange format, in case we ever remember why this was used:
+      ;; "  "
+      ;; (format "%s:pr-%s-%s-%s"
+      ;;         branch
+      ;;         number
+      ;;         author
+      ;;         branch))))
       (kill-new str)
       (message "Copied: %s" str))))
 
