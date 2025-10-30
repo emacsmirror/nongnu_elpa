@@ -497,8 +497,9 @@ and the JC Jabber Connection."
 	    (dolist (global-hook (default-value 'jabber-chat-send-hooks))
 	      (nconc stanza-to-send (funcall global-hook body id))))
 	(nconc stanza-to-send (funcall hook body id))))
-	  (jabber-maybe-print-rare-time
-	   (ewoc-enter-last jabber-chat-ewoc (list :local stanza-to-send :time (current-time)))))
+          (with-current-buffer (jabber-chat-create-buffer jc jid)
+            (jabber-maybe-print-rare-time
+             (ewoc-enter-last jabber-chat-ewoc (list :local stanza-to-send :time (current-time))))))
     ;; ...and send it...
     (jabber-send-sexp jc stanza-to-send)))
 
