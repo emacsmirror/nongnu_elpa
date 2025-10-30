@@ -3002,7 +3002,7 @@ END-PAGE means we are at the end, don't go again."
         (user-error "I am Error: %s - %s"
                     (alist-get 'message json) json))
        (t
-        (fj-destructure-buf-spec (viewargs)
+        (fj-destructure-buf-spec (viewargs author owner repo)
           ;; unless init-page arg, increment page in viewargs
           (let* ((page (plist-get viewargs :page))
                  (final-load-p
@@ -3014,10 +3014,7 @@ END-PAGE means we are at the end, don't go again."
             (setq fj-buffer-spec
                   (plist-put fj-buffer-spec :viewargs args))
             (message "Loading comments...")
-            (let ((inhibit-read-only t)
-                  (author (fj--get-buffer-spec :author))
-                  (owner (fj--get-buffer-spec :owner))
-                  (repo (fj--get-buffer-spec :repo)))
+            (let ((inhibit-read-only t))
               (fj-render-timeline json author owner repo))
             (message "Loading comments... Done")
             (when end-page ;; if we are re-paginating, go again maybe:
@@ -3901,29 +3898,27 @@ Or if viewing a repo's issues, use its clone_url."
   (interactive)
   ;; FIXME: do we actually need this branched format? or is
   ;; `fj-copy-item-url' ok?
-  (let* ((owner (fj--get-buffer-spec :owner))
-         (repo (fj--get-buffer-spec :repo))
-         (number (if (eq major-mode 'fj-issue-tl-mode)
-                     (fj--get-tl-col 0)
-                   (fj--get-buffer-spec :item)))
-         (author (fj--get-buffer-spec :author))
-         (endpoint (format "repos/%s/%s/pulls/%s" owner repo number))
-         (pr (fj-get endpoint))
-         (data (alist-get 'head pr))
-         (branch (alist-get 'ref data))
-         (author+repo (alist-get 'full_name
-                                 (alist-get 'repo data)))
-         ;; FIXME: what's up with this format? it is not a URL?!
-         ;; shouldn't it be: $host/$author/$repo/src/branch/$branch?!
-         (str (concat fj-host "/" author+repo
-                      "  "
-                      (format "%s:pr-%s-%s-%s"
-                              branch
-                              number
-                              author
-                              branch))))
-    (kill-new str)
-    (message "Copied: %s" str)))
+  (fj-destructure-buf-spec (owner repo item author)
+    (let* ((number (if (eq major-mode 'fj-issue-tl-mode)
+                       (fj--get-tl-col 0)
+                     item))
+           (endpoint (format "repos/%s/%s/pulls/%s" owner repo number))
+           (pr (fj-get endpoint))
+           (data (alist-get 'head pr))
+           (branch (alist-get 'ref data))
+           (author+repo (alist-get 'full_name
+                                   (alist-get 'repo data)))
+           ;; FIXME: what's up with this format? it is not a URL?!
+           ;; shouldn't it be: $host/$author/$repo/src/branch/$branch?!
+           (str (concat fj-host "/" author+repo
+                        "  "
+                        (format "%s:pr-%s-%s-%s"
+                                branch
+                                number
+                                author
+                                branch))))
+      (kill-new str)
+      (message "Copied: %s" str))))
 
 (defun fj-fork-to-parent ()
   "From a repo TL listing, jump to the parent repo."
