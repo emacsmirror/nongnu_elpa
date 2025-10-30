@@ -6,7 +6,7 @@
 ;; Package-Requires: ((emacs "29.1") (fedi "0.2") (tp "0.5") (transient "0.9.3") (magit "4.3.8"))
 ;; Keywords: git, convenience
 ;; URL: https://codeberg.org/martianh/fj.el
-;; Version: 0.27
+;; Version: 0.28
 ;; Separator: -
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -1606,10 +1606,11 @@ CB is a callback, called on JSON response as first arg, followed by CBARGS."
     (fj-authorized-request "GET"
       (apply #'fedi-http--get-json-async url params cb cbargs))))
 
-(defun fj-get-comment (repo owner issue &optional comment)
+(defun fj-get-comment (repo owner &optional issue comment)
   "GET data for COMMENT of ISSUE in REPO.
 COMMENT is a number.
 OWNER is the repo owner."
+  ;; FIXME: retire `fj-read-item-comment'!
   (let* ((comment (or comment (fj-read-item-comment repo owner issue)))
          (endpoint (format "repos/%s/%s/issues/comments/%s"
                            owner repo comment)))
@@ -1673,14 +1674,14 @@ NEW-BODY is the new comment text to send."
                           owner repo id)))
     (fj-get endpoint nil nil :silent)))
 
-(defun fj-render-issue-reactions (repo owner id)
+(defun fj-render-issue-reactions (reactions)
   "Render reactions for issue with ID in REPO by OWNER.
 If none, return emptry string."
-  (if-let* ((reactions (fj-get-issue-reactions repo owner id))
-            (grouped (fj-group-reactions reactions)))
+  (if-let* ((grouped (fj-group-reactions reactions)))
       (concat fedi-horiz-bar "\n"
               (mapconcat #'fj-render-grouped-reaction
-                         grouped " "))
+                         grouped " ")
+              "\n")
     ""))
 
 (defun fj-render-comment-reactions (reactions)
@@ -1775,10 +1776,11 @@ Not sure what the server actually accepts.")
          (let-alist data
            (let* ((reac (completing-read "Reaction: " own))
                   (endpoint
-                   (format (if (string= "comment" .type)
-                               "repos/%s/%s/issues/comments/%s/reactions"
-                             "repos/%s/%s/issues/%s/reactions")
-                           owner repo .id))
+                   (if (string= "comment" .type)
+                       (format "repos/%s/%s/issues/comments/%s/reactions"
+                               owner repo .id)
+                     (format "repos/%s/%s/issues/%s/reactions"
+                             owner repo .number)))
                   (params `(("content" . ,reac)))
                   (resp (fj-delete endpoint params :json)))
              (fedi-http--triage
@@ -2543,6 +2545,8 @@ Buffer-local variable `fj-previous-window-config' holds the config."
 (defun fj-render-markdown (text)
   "Return server-rendered markdown TEXT."
   ;; NB: sync request:
+  ;; NB: returns string wrapped in newlines. shall we strip them always so
+  ;; we can add our own or not?
   (let* ((resp (fj-post "markdown" `(("text" . ,text)) nil :silent)))
     (fedi-http--triage
      resp (lambda (resp) (fj-resp-str resp)))))
@@ -2690,7 +2694,12 @@ AUTHOR is of comment, optionally suppress horiztontal bar with NO-BAR."
   (let-alist comment
     (let ((stamp (fedi--relative-time-description
                   (date-to-time .created_at)))
-          (reactions (fj-get-comment-reactions repo owner .id)))
+          (reactions (fj-get-comment-reactions repo owner .id))
+          ;; timeline data doesn't have attachments data, so we need to
+          ;; fetch the comment from its own endpoint if we want to render
+          ;; them
+          (assets (alist-get 'assets
+                             (fj-get-comment repo owner nil .id))))
       (propertize
        (concat
         (fj-format-comment-header
@@ -2700,6 +2709,8 @@ AUTHOR is of comment, optionally suppress horiztontal bar with NO-BAR."
         "\n\n"
         (propertize (fj-render-body .body)
                     'fj-item-body t)
+        (when assets
+          (fj-render-assets-urls assets))
         (if (not reactions)
             ""
           (concat "\n"
@@ -2774,7 +2785,8 @@ RELOAD mean we reloaded."
       (let* ((stamp (fedi--relative-time-description
                      (date-to-time .created_at)))
              (pull-p .base) ;; rough PR check!
-             (type (or type (if pull-p :pull :issue))))
+             (type (or type (if pull-p :pull :issue)))
+             (reactions (fj-get-issue-reactions repo owner .number)))
         ;; set vars before timeline so they're avail:
         (setq fj-current-repo repo)
         (setq fj-buffer-spec
@@ -2843,13 +2855,17 @@ RELOAD mean we reloaded."
            "\n\n"
            (propertize (fj-render-body .body)
                        'fj-item-body t)
+           ;; attachments:
+           (when .assets
+             (fj-render-assets-urls .assets))
            "\n"
-           (fj-render-issue-reactions repo owner .number)
-           "\n"
-           fedi-horiz-bar fedi-horiz-bar "\n\n")
+           (fj-render-issue-reactions reactions)
+           fedi-horiz-bar fedi-horiz-bar
+           "\n\n")
           'fj-item-number number
           'fj-repo repo
-          'fj-item-data item))
+          'fj-item-data item
+          'fj-reactions reactions))
         ;; FIXME: move this to after async timeline rendering?:
         (insert
          (pcase .mergeable
@@ -2863,6 +2879,25 @@ RELOAD mean we reloaded."
           (emojify-mode t))
         ;; Propertize top level item only:
         (fj-render-item-bodies)))))
+
+(defun fj-render-assets-urls (assets)
+  "Render download URLS of attachment data ASSETS.
+Creates a markdown link, with attachment name as display text.
+Renders it on the server, adds `fj-item-body' property so our rendering
+works on the resulting html."
+  (concat
+   "\n📎 " (substring fedi-horiz-bar 3)
+   (propertize
+    ;; FIXME: markdown rendering adds an unwanted newline, and stripping
+    ;; it still renders with an empty line!
+    (fj-render-markdown
+     (mapconcat (lambda (x)
+                  (concat
+                   "[" (alist-get 'name x) "]("
+                   (alist-get 'browser_download_url x)
+                   ")"))
+                assets "\n"))
+    'fj-item-body t)))
 
 (defun fj-item-view (&optional repo owner number type page limit)
   "View item NUMBER from REPO of OWNER.
@@ -2960,14 +2995,19 @@ END-PAGE means we are at the end, don't go again."
     (save-excursion
       (goto-char point)
       (cond
-       ((and (not json)
-             (called-interactively-p 'any))
+       ((and (not json))
+        ;; FIXME: this called-interactively-p always fails because we are
+        ;; in a callback:
+        ;; we need to distinguish what exactly? if we reload on nav and
+        ;; have no json, we should error here.
+        ;; but in what cases should we press on?
+        ;; (called-interactively-p 'any))
         (user-error "No more items"))
        ((equal 'errors (caar json))
         (user-error "I am Error: %s - %s"
                     (alist-get 'message json) json))
        (t
-        (fj-destructure-buf-spec (viewargs)
+        (fj-destructure-buf-spec (viewargs author owner repo)
           ;; unless init-page arg, increment page in viewargs
           (let* ((page (plist-get viewargs :page))
                  (final-load-p
@@ -2979,10 +3019,13 @@ END-PAGE means we are at the end, don't go again."
             (setq fj-buffer-spec
                   (plist-put fj-buffer-spec :viewargs args))
             (message "Loading comments...")
-            (let ((inhibit-read-only t)
-                  (author (fj--get-buffer-spec :author))
-                  (owner (fj--get-buffer-spec :owner))
-                  (repo (fj--get-buffer-spec :repo)))
+            (let ((inhibit-read-only t))
+              ;; remove poss [Load more] button (for reload on nav):
+              (save-excursion
+                (beginning-of-line)
+                (when (looking-at "\\[Loa")
+                  (kill-line)))
+              ;; raw render items:
               (fj-render-timeline json author owner repo))
             (message "Loading comments... Done")
             (when end-page ;; if we are re-paginating, go again maybe:
@@ -3864,31 +3907,32 @@ Or if viewing a repo's issues, use its clone_url."
 (defun fj-copy-pr-url ()
   "Copy upstream Pull Request URL with branch name."
   (interactive)
-  ;; FIXME: do we actually need this branched format? or is
-  ;; `fj-copy-item-url' ok?
-  (let* ((owner (fj--get-buffer-spec :owner))
-         (repo (fj--get-buffer-spec :repo))
-         (number (if (eq major-mode 'fj-issue-tl-mode)
-                     (fj--get-tl-col 0)
-                   (fj--get-buffer-spec :item)))
-         (author (fj--get-buffer-spec :author))
-         (endpoint (format "repos/%s/%s/pulls/%s" owner repo number))
-         (pr (fj-get endpoint))
-         (data (alist-get 'head pr))
-         (branch (alist-get 'ref data))
-         (author+repo (alist-get 'full_name
-                                 (alist-get 'repo data)))
-         ;; FIXME: what's up with this format? it is not a URL?!
-         ;; shouldn't it be: $host/$author/$repo/src/branch/$branch?!
-         (str (concat fj-host "/" author+repo
-                      "  "
-                      (format "%s:pr-%s-%s-%s"
-                              branch
-                              number
-                              author
-                              branch))))
-    (kill-new str)
-    (message "Copied: %s" str)))
+  (fj-destructure-buf-spec (owner repo item author)
+    (let* ((number (if (eq major-mode 'fj-issue-tl-mode)
+                       (fj--get-tl-col 0)
+                     item))
+           (author (if (eq major-mode 'fj-issue-tl-mode)
+                       (fj--get-tl-col 2)
+                     author))
+           (endpoint (format "repos/%s/%s/pulls/%s" owner repo number))
+           (pr (fj-get endpoint))
+           (data (alist-get 'head pr))
+           (branch (alist-get 'ref data))
+           (author+repo (alist-get 'full_name
+                                   (alist-get 'repo data)))
+           ;; this format, $host/$author/$repo/src/branch/$branch, is what
+           ;; a PR in the webUI links to:
+           (str (concat fj-host "/" author+repo
+                        "/src/branch/" branch)))
+      ;; old/strange format, in case we ever remember why this was used:
+      ;; "  "
+      ;; (format "%s:pr-%s-%s-%s"
+      ;;         branch
+      ;;         number
+      ;;         author
+      ;;         branch))))
+      (kill-new str)
+      (message "Copied: %s" str))))
 
 (defun fj-fork-to-parent ()
   "From a repo TL listing, jump to the parent repo."
