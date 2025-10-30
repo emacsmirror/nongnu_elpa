@@ -94,7 +94,8 @@ does not have a user defined background color."
 (defface doc-show-inline-face (list (list t :extend t))
   "Background for overlays.
 Note that the `background' is initialized using
-`doc-show-inline-face-background-highlight' unless it's customized.")
+`doc-show-inline-face-background-highlight' unless it's customized."
+  :group 'doc-show-inline)
 
 ;; TODO, document and make public.
 (defvar doc-show-inline-mode-defaults
