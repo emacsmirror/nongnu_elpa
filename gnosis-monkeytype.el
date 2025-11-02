@@ -58,6 +58,8 @@
 
 (defvar gnosis-monkeytype-string nil)
 
+(defvar gnosis-monkeytype-wpm-result nil)
+
 (defun gnosis-monkeytype--format-text (text)
   "Format TEXT using a temp buffer."
   (with-temp-buffer

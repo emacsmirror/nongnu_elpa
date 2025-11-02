@@ -1218,10 +1218,24 @@ If NEW? is non-nil, increment new themata log by 1."
           (funcall func-name id))
       (error "Malformed thema type: '%s'" type))))
 
+(defun gnosis-monkeytype-session (themata &rest_)
+  "Start monkeytype session for THEMATA ids."
+  (cl-assert (listp themata) nil "Themata must be a list of ids")
+  (catch 'monkeytype-loop
+    (cl-loop for thema in themata
+	     do (gnosis-review-process-thema--monkeytype thema))))
+
+(defun gnosis-monkeytype-start ()
+  "Gnosis Monkeytype Session"
+  (interactive)
+  (gnosis-review #'gnosis-monkeytype-session))
+
 (defun gnosis-review-process-thema--monkeytype (thema)
-  "Process monkeytyping for THEMA."
+  "Process monkeytyping for THEMA id."
   (let* ((thema-context (gnosis-select '[keimenon type answer] 'themata `(= id ,thema) t))
-	 (keimenon (nth 0 thema-context))
+	 (keimenon (replace-regexp-in-string
+		    "\\[\\[\\([^]]+\\)\\]\\[\\([^]]+\\)\\]\\]" "\\2" ;; remove links
+		    (nth 0 thema-context)))
 	 (type (nth 1 thema-context))
 	 (answer (nth 2 thema-context)))
     (cond ((string= type "basic")
