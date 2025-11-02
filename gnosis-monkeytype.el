@@ -126,14 +126,15 @@
   "RET" #'forward-line
   "C-c C-k" #'gnosis-monkeytype-exit)
 
-(define-derived-mode gnosis-monkeytype-mode fundamental-mode "Gnosis Monkeytype"
+(define-derived-mode gnosis-monkeytype-mode text-mode "Gnosis Monkeytype"
   "Gnosis Monkeytype Mode."
   :interactive nil
   :lighter " gnosis-monkeytype-mode"
   :keymap gnosis-monkeytype-mode-map
-  (setq header-line-format
-	(substitute-command-keys
-	 " Wrong answer, monkeytype the thema. \\[gnosis-monkeytype-exit] to exit.")))
+  (setq-local post-self-insert-hook nil)
+  (setq-local header-line-format
+	      (substitute-command-keys
+	       " Wrong answer, monkeytype the thema. \\[gnosis-monkeytype-exit] to exit.")))
 
 (provide 'gnosis-monkeytype)
 ;;; gnosis-monkeytype.el ends here
