@@ -102,7 +102,7 @@ When nil, review new themata last."
   :type 'bolean)
 
 (defcustom gnosis-default-average-review-period 30
-  "The number of days used to calculate the average reviews on gnosis dashboard."
+  "Number of days of which the average review score will be calculated."
   :type 'integer)
 
 ;;; Faces
