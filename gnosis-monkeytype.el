@@ -81,7 +81,9 @@
             ;; Check if complete
             (when (= end (1+ (length gnosis-monkeytype-string)))
 	      (kill-buffer (current-buffer))
-              (exit-recursive-edit)))
+              (exit-recursive-edit))
+	    ;; Forward line when at the end
+	    (and (eolp) (forward-line 1)))
         (when (and correct-char typed-char)
           (delete-char -1)
           (goto-char (1- end)))))))
