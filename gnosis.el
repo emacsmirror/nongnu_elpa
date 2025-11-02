@@ -30,9 +30,9 @@
 ;; gnosis consists of a question, answer, and explanation.
 
 ;; Gnosis algorithm is highly adjustable, allowing users to set specific
-;; values not just for note decks but for tags as well.  Gnosis'
+;; values not just for thema decks but for tags as well.  Gnosis'
 ;; adjustability allows users to fine-tune settings not only for entire
-;; note collections but also for specific tagged topics, thereby creating
+;; thema collections but also for specific tagged topics, thereby creating
 ;; a personalized learning environment for each topic.
 
 ;;; Code:
@@ -51,8 +51,9 @@
 (require 'gnosis-algorithm)
 (require 'org-gnosis)
 
+
 (defgroup gnosis nil
-  "Spaced Repetition System For Note Taking & Self Testing."
+  "Spaced Repetition System For Thema Taking & Self Testing."
   :group 'external
   :prefix "gnosis-")
 
@@ -88,15 +89,15 @@ between two strings to consider them as similar."
   "Function to use for `completing-read'."
   :type 'function)
 
-(defcustom gnosis-new-notes-limit nil
-  "Total new notes limit."
+(defcustom gnosis-new-themata-limit nil
+  "Total new themata limit."
   :type '(choice (const :tag "None" nil)
 		 (integer :tag "Number")))
 
 (defcustom gnosis-review-new-first t
-  "Review new notes first.
+  "Review new themata first.
 
-When nil, review new notes last."
+When nil, review new themata last."
   :type 'bolean)
 
 (defcustom gnosis-default-average-review-period 30
@@ -160,25 +161,25 @@ Avoid using an increased height value as this messes up with
 (defconst gnosis-db-version 3
   "Gnosis database version.")
 
-(defvar gnosis-note-types
-  '(("Basic" . gnosis-add-note--basic)
-    ("MCQ" .  gnosis-add-note--mcq)
-    ("Double" .  gnosis-add-note--double)
-    ("Cloze" . gnosis-add-note--cloze)
-    ("MC-cloze" . gnosis-add-note--mc-cloze))
-  "Mapping of Notes & their respective functions.")
+(defvar gnosis-thema-types
+  '(("Basic" . gnosis-add-thema--basic)
+    ("MCQ" .  gnosis-add-thema--mcq)
+    ("Double" .  gnosis-add-thema--double)
+    ("Cloze" . gnosis-add-thema--cloze)
+    ("MC-cloze" . gnosis-add-thema--mc-cloze))
+  "Mapping of Themata & their respective functions.")
 
-(defvar gnosis-previous-note-tags '()
-  "Tags input from previously added note.")
+(defvar gnosis-previous-thema-tags '()
+  "Tags input from previously added thema.")
 
-(defvar gnosis-previous-note-hint nil
-  "Hint input from previously added note.")
+(defvar gnosis-previous-thema-hint nil
+  "Hint input from previously added thema.")
 
-(defvar gnosis-due-notes-total nil
-  "Total due notes.")
+(defvar gnosis-due-themata-total nil
+  "Total due themata.")
 
-(defvar gnosis-review-notes nil
-  "Review notes.")
+(defvar gnosis-review-themata nil
+  "Review themata.")
 
 (defvar gnosis-review-buffer-name "*gnosis*"
   "Review buffer name.")
@@ -237,7 +238,7 @@ Optional argument FLATTEN, when non-nil, flattens the result."
   "Update records in TABLE with to new VALUE based on the given WHERE condition.
 
 Example:
- (gnosis-update ='notes ='(= keimenon \"NEW VALUE\") ='(= id 12))"
+ (gnosis-update ='themata ='(= keimenon \"NEW VALUE\") ='(= id 12))"
   (emacsql gnosis-db `[:update ,table :set ,value :where ,where]))
 
 (defun gnosis-get (value table &optional restrictions)
@@ -248,12 +249,12 @@ Example:
   "From TABLE use where to delete VALUE."
   (emacsql gnosis-db `[:delete :from ,table :where ,value]))
 
-(defun gnosis-delete-note (id &optional verification)
-  "Delete note with ID.
+(defun gnosis-delete-thema (id &optional verification)
+  "Delete thema with ID.
 
 When VERIFICATION is non-nil, skip `y-or-n-p' prompt."
-  (when (or verification (y-or-n-p "Delete note?"))
-    (emacsql-with-transaction gnosis-db (gnosis--delete 'notes `(= id ,id)))))
+  (when (or verification (y-or-n-p "Delete thema?"))
+    (emacsql-with-transaction gnosis-db (gnosis--delete 'themata `(= id ,id)))))
 
 (defun gnosis-delete-deck (&optional id)
   "Delete deck with ID."
@@ -512,7 +513,7 @@ When SUCCESS nil, display USER-INPUT as well"
       (gnosis-insert-separator))))
 
 (defun gnosis-display-cloze-user-answer (user-input &optional false)
-  "Display USER-INPUT answer for cloze note upon failed review.
+  "Display USER-INPUT answer for cloze thema upon failed review.
 
 If FALSE t, use gnosis-face-false face"
   (goto-char (point-max))
@@ -525,7 +526,7 @@ If FALSE t, use gnosis-face-false face"
   (newline))
 
 (defun gnosis-display-correct-answer-mcq (answer user-choice)
-  "Display correct ANSWER & USER-CHOICE for MCQ note."
+  "Display correct ANSWER & USER-CHOICE for MCQ thema."
   (goto-char (point-max))
   (insert (gnosis-center-string
 	   (format "%s %s\n%s %s"
@@ -546,7 +547,7 @@ If FALSE t, use gnosis-face-false face"
     (insert "\n" (gnosis-center-string (gnosis-org-format-string parathema)) "\n")))
 
 (defun gnosis-display-next-review (id success)
-  "Display next interval of note ID for SUCCESS."
+  "Display next interval of thema ID for SUCCESS."
   (with-current-buffer gnosis-review-buffer-name
     (let* ((interval (car (gnosis-review-algorithm id success)))
 	   (next-review-msg (format "\n\n%s %s"
@@ -613,7 +614,7 @@ Set SPLIT to t to split all input given."
   (gnosis-get 'id 'decks `(= name ,deck)))
 
 (defun gnosis-get-deck-id (&optional deck)
-  "Return note id for DECK.
+  "Return thema id for DECK.
 
 If DECK does not exist, create it."
   (cl-assert (stringp deck) nil "DECK must be a string.")
@@ -623,21 +624,21 @@ If DECK does not exist, create it."
       (gnosis-add-deck deck)
       (gnosis-get-deck-id deck))))
 
-(defun gnosis-get-note-deck-name (id)
-  "Return deck name of note ID."
-  (let ((deck (gnosis-get 'deck-id 'notes `(= id ,id))))
+(defun gnosis-get-thema-deck-name (id)
+  "Return deck name of thema ID."
+  (let ((deck (gnosis-get 'deck-id 'themata `(= id ,id))))
     (and deck (gnosis--get-deck-name deck))))
 
-(defun gnosis-get-deck--note (id &optional name)
-  "Get deck id for note ID.
+(defun gnosis-get-deck--thema (id &optional name)
+  "Get deck id for thema ID.
 
 If NAME is t, return name of deck."
   (let* ((id-clause `(= id ,id))
-	 (deck (gnosis-get 'deck-id 'notes id-clause)))
+	 (deck (gnosis-get 'deck-id 'themata id-clause)))
     (if name (gnosis--get-deck-name deck) deck)))
 
-(cl-defun gnosis-toggle-suspend-notes (ids &optional verification)
-  "Toggle Suspend value for note with ID.
+(cl-defun gnosis-toggle-suspend-themata (ids &optional verification)
+  "Toggle Suspend value for thema with ID.
 
 When VERIFICATION is non-nil, skips `y-or-n-p' prompt."
   (cl-assert (listp ids) nil "IDS value needs to be a list.")
@@ -648,7 +649,7 @@ When VERIFICATION is non-nil, skips `y-or-n-p' prompt."
           (or verification
               (cond ((= items-num 1)
                      (y-or-n-p
-                      (if suspended "Unsuspend note? " "Suspend note? ")))
+                      (if suspended "Unsuspend thema? " "Suspend thema? ")))
                     (t (y-or-n-p
                         (format "Toggle suspend value for %s items? " items-num)))))))
     (when verification
@@ -659,26 +660,26 @@ When VERIFICATION is non-nil, skips `y-or-n-p' prompt."
                (vconcat ids)))))
 
 (cl-defun gnosis-suspend-deck (&optional (deck (gnosis--get-deck-id)))
-  "Suspend all note(s) with DECK id.
+  "Suspend all thema(s) with DECK id.
 
-When called with a prefix, unsuspends all notes in deck."
-  (let* ((notes (gnosis-select 'id 'notes `(= deck-id ,deck) t))
+When called with a prefix, unsuspends all themata in deck."
+  (let* ((themata (gnosis-select 'id 'themata `(= deck-id ,deck) t))
 	 (suspend (if current-prefix-arg 0 1))
 	 (confirm
 	  (y-or-n-p
 	   (if (= suspend 0)
-	       "Unsuspend all notes for deck? " "Suspend all notes for deck? "))))
+	       "Unsuspend all themata for deck? " "Suspend all themata for deck? "))))
     (when confirm
       (emacsql gnosis-db `[:update review-log :set (= suspend ,suspend) :where
-				   (in id ,(vconcat notes))])
+				   (in id ,(vconcat themata))])
       (if (equal suspend 0)
-	  (message "Unsuspended %s notes" (length notes))
-	(message "Suspended %s notes" (length notes))))))
+	  (message "Unsuspended %s themata" (length themata))
+	(message "Suspended %s themata" (length themata))))))
 
 (defun gnosis-generate-id (&optional length deck-p)
   "Generate a unique gnosis ID.
 
-Default to generating a note id, when DECK-P is t generates a deck id.
+Default to generating a thema id, when DECK-P is t generates a deck id.
 
 LENGTH: length of id, default to a random number between 10-15."
   (let* ((length (or length (+ (random 5) 10)))
@@ -686,14 +687,14 @@ LENGTH: length of id, default to a random number between 10-15."
          (min-val (expt 10 (1- length)))
          (id (+ (random (- max-val min-val)) min-val))
 	 (current-ids (if deck-p (gnosis-select 'id 'decks nil t)
-			(gnosis-select 'id 'notes nil t))))
+			(gnosis-select 'id 'themata nil t))))
     (if (member id current-ids)
         (gnosis-generate-id length)
       id)))
 
 (defun gnosis-mcq-answer (id)
   "Choose the correct answer, from mcq choices for question ID."
-  (let ((choices (gnosis-get 'hypothesis 'notes `(= id ,id)))
+  (let ((choices (gnosis-get 'hypothesis 'themata `(= id ,id)))
 	(history-add-new-input nil)) ;; Disable history
     (gnosis-completing-read "Answer: " choices)))
 
@@ -776,52 +777,52 @@ This function should be used in combination with
 (defun gnosis-get-tags--unique ()
   "Return a list of unique strings for tags in `gnosis-db'."
   (cl-loop for tags in (apply 'append
-			      (emacsql gnosis-db [:select :distinct tags :from notes]))
+			      (emacsql gnosis-db [:select :distinct tags :from themata]))
            nconc tags into all-tags
            finally return (delete-dups all-tags)))
 
-(defun gnosis-collect-tag-note-ids (tags &optional ids)
-  "Collect note IDS for TAGS."
+(defun gnosis-collect-tag-thema-ids (tags &optional ids)
+  "Collect thema IDS for TAGS."
   (cl-assert (listp tags))
   (if (null tags) ids
-    (gnosis-collect-tag-note-ids (cdr tags)
-                                 (append ids (gnosis-get-tag-notes (car tags))))))
+    (gnosis-collect-tag-thema-ids (cdr tags)
+                                 (append ids (gnosis-get-tag-themata (car tags))))))
 
 (defun gnosis-select-by-tag (input-tags &optional due suspended-p)
-  "Return note ID's for every note with INPUT-TAGS.
+  "Return thema ID's for every thema with INPUT-TAGS.
 
-If DUE, return only due notes.
-If SUSPENDED-P, return suspended notes as well."
+If DUE, return only due themata.
+If SUSPENDED-P, return suspended themata as well."
   (cl-assert (listp input-tags) t "Input tags must be a list")
   (cl-assert (booleanp due) "Due value must be a boolean")
-  (let ((ids (gnosis-collect-tag-note-ids input-tags)))
+  (let ((ids (gnosis-collect-tag-thema-ids input-tags)))
     ;; Filter the collected IDs based on due and suspension status
     (cl-loop for id in ids
              when (and (or (not suspended-p) (not (gnosis-suspended-p id)))
                        (if due (gnosis-review-is-due-p id) t))
              collect id)))
 
-(defun gnosis-get-tag-notes (tag)
-  "Return note ids for TAG."
-  (let ((notes (gnosis-select 'id 'notes `(like tags ',(format "%%\"%s\"%%" tag)) t)))
-    notes))
+(defun gnosis-get-tag-themata (tag)
+  "Return thema ids for TAG."
+  (let ((themata (gnosis-select 'id 'themata `(like tags ',(format "%%\"%s\"%%" tag)) t)))
+    themata))
 
 (defun gnosis-suspended-p (id)
-  "Return t if note with ID is suspended."
+  "Return t if thema with ID is suspended."
   (= (gnosis-get 'suspend 'review-log `(= id ,id)) 1))
 
-(defun gnosis-get-deck-notes (&optional deck-id due)
-  "Return notes for deck, with value of DECK-ID.
+(defun gnosis-get-deck-themata (&optional deck-id due)
+  "Return themata for deck, with value of DECK-ID.
 
-If DUE is t, return only due notes."
-  (let ((notes (gnosis-select 'id 'notes `(= deck-id ,(or deck-id (gnosis--get-deck-id)))
+If DUE is t, return only due themata."
+  (let ((themata (gnosis-select 'id 'themata `(= deck-id ,(or deck-id (gnosis--get-deck-id)))
 			      t)))
     (if (or due nil)
-	(cl-loop for note in notes
-		 when (and (not (gnosis-suspended-p note))
-			   (gnosis-review-is-due-p note))
-		 collect note)
-      notes)))
+	(cl-loop for thema in themata
+		 when (and (not (gnosis-suspended-p thema))
+			   (gnosis-review-is-due-p thema))
+		 collect thema)
+      themata)))
 
 (defun gnosis-past-or-present-p (date)
   "Compare the input DATE with the current date.
@@ -851,7 +852,7 @@ DATE is a list of the form (year month day)."
     input))
 
 (defun gnosis-tags-prompt ()
-  "Tag prompt for adding notes.
+  "Tag prompt for adding themata.
 
 If you only require a tag prompt, refer to `gnosis-tags--prompt'."
   (interactive)
@@ -863,7 +864,7 @@ If you only require a tag prompt, refer to `gnosis-tags--prompt'."
       (outline-up-heading 99)
       (when input
 	(gnosis-tags--update input)
-	(setf gnosis-previous-note-tags input)
+	(setf gnosis-previous-thema-tags input)
         (org-set-tags (append input current-tags))))))
 
 (defun gnosis-tags-refresh ()
@@ -871,7 +872,7 @@ If you only require a tag prompt, refer to `gnosis-tags--prompt'."
   (let ((tags (gnosis-get-tags--unique)))
     ;; Delete all values from tags table.
     (gnosis--delete 'tags nil)
-    ;; Insert all unique tags from notes.
+    ;; Insert all unique tags from themata.
     (emacsql-with-transaction gnosis-db
       (cl-loop for tag in tags
 	       do (gnosis--insert-into 'tags `[,tag])))))
@@ -884,10 +885,10 @@ does not accept heading tags with dashes."
   (let ((new-tag (or new-tag
 		     (replace-regexp-in-string
 		      "-" "_" (read-string "New tag name: ")))))
-    (cl-loop for note in (gnosis-get-tag-notes tag)
-	     do (let* ((tags (car (gnosis-select '[tags] 'notes `(= id ,note) t)))
+    (cl-loop for thema in (gnosis-get-tag-themata tag)
+	     do (let* ((tags (car (gnosis-select '[tags] 'themata `(= id ,thema) t)))
 		       (new-tags (cl-substitute new-tag tag tags :test #'string-equal)))
-		  (gnosis-update 'notes `(= tags ',new-tags) `(= id ,note))))
+		  (gnosis-update 'themata `(= tags ',new-tags) `(= id ,thema))))
     ;; Update tags in database
     (gnosis-tags-refresh)
     (message "Renamed tag '%s' to '%s'" tag new-tag)))
@@ -905,109 +906,109 @@ START is the search starting position, used internally for recursion."
 
 ;; TODO: Rewrite this! Tags should be an input of strings,
 ;; interactive handling should be done by "helper" funcs
-(cl-defun gnosis-collect-note-ids (&key (tags nil) (due nil) (deck nil) (query nil))
-  "Return list of note ids based on TAGS, DUE, DECKS, QUERY.
+(cl-defun gnosis-collect-thema-ids (&key (tags nil) (due nil) (deck nil) (query nil))
+  "Return list of thema ids based on TAGS, DUE, DECKS, QUERY.
 
 TAGS: boolean value, t to specify tags.
-DUE: boolean value, t to specify due notes.
+DUE: boolean value, t to specify due themata.
 DECK: Integer, specify deck id.
 QUERY: String value."
   (cl-assert (and (booleanp due) (booleanp tags)
 		  (or (numberp deck) (null deck))
 		  (or (stringp query) (null query)))
-	     nil "Incorrect value passed to `gnosis-collect-note-ids'")
+	     nil "Incorrect value passed to `gnosis-collect-thema-ids'")
   (cond ((and (null tags) (null due) (null deck) (null query))
-	 (gnosis-select 'id 'notes nil t))
-	;; All due notes
+	 (gnosis-select 'id 'themata nil t))
+	;; All due themata
 	((and (null tags) due (null deck))
-	 (gnosis-review-get-due-notes))
-	;; All notes for tags
+	 (gnosis-review-get-due-themata))
+	;; All themata for tags
 	((and tags (null due) (null deck))
 	 (gnosis-select-by-tag (gnosis-tags--prompt :require-match t)))
-	;; All due notes for tags
+	;; All due themata for tags
 	((and tags due (null deck))
 	 (gnosis-select-by-tag (gnosis-tags--prompt :require-match t) t))
-	;; All notes for deck
+	;; All themata for deck
 	((and (null tags) (null due) deck)
-	 (gnosis-get-deck-notes deck nil))
-	;; All due notes for deck
+	 (gnosis-get-deck-themata deck nil))
+	;; All due themata for deck
 	((and (null tags) deck due)
-	 (gnosis-get-deck-notes deck t))
+	 (gnosis-get-deck-themata deck t))
 	;; Query
 	((and (null tags) (null due) (null deck) query)
-	 (gnosis-search-note query))))
+	 (gnosis-search-thema query))))
 
 ;; Review
 ;;;;;;;;;;
 
-(defun gnosis-review-is-due-p (note-id)
-  "Check if note with value of NOTE-ID for id is due for review.
+(defun gnosis-review-is-due-p (thema-id)
+  "Check if thema with value of THEMA-ID for id is due for review.
 
 Check if it's suspended, and if it's due today."
-  (and (not (gnosis-suspended-p note-id))
-       (gnosis-review-is-due-today-p note-id)))
+  (and (not (gnosis-suspended-p thema-id))
+       (gnosis-review-is-due-today-p thema-id)))
 
 (defun gnosis-review-is-due-today-p (id)
-  "Return t if note with ID is due today.
+  "Return t if thema with ID is due today.
 
-This function ignores if note is suspended.  Refer to
+This function ignores if thema is suspended.  Refer to
 `gnosis-review-is-due-p' if you need to check for suspended value as
 well."
   (let ((next-rev (gnosis-get 'next-rev 'review-log `(= id ,id))))
     (gnosis-past-or-present-p next-rev)))
 
-(defun gnosis-review-get--due-notes ()
-  "Return due note IDs & due dates."
-  (let* ((old-notes (cl-loop for note in
+(defun gnosis-review-get--due-themata ()
+  "Return due thema IDs & due dates."
+  (let* ((old-themata (cl-loop for thema in
 			     (gnosis-select '[id next-rev] 'review-log
 					    '(and (> n 0)
 						  (= suspend 0))
 					    nil)
-			     when (gnosis-past-or-present-p (cadr note))
-			     collect note))
-	 (new-notes (cl-loop for note in
+			     when (gnosis-past-or-present-p (cadr thema))
+			     collect thema))
+	 (new-themata (cl-loop for thema in
 			     (gnosis-select '[id next-rev] 'review-log
 					    '(and (= n 0)
 						  (= suspend 0))
 					    nil)
-			     when (gnosis-past-or-present-p (cadr note))
-			     collect note)))
+			     when (gnosis-past-or-present-p (cadr thema))
+			     collect thema)))
     (if gnosis-review-new-first
-	(append (cl-subseq new-notes 0 gnosis-new-notes-limit) old-notes)
-      (append old-notes (cl-subseq new-notes 0 gnosis-new-notes-limit)))))
+	(append (cl-subseq new-themata 0 gnosis-new-themata-limit) old-themata)
+      (append old-themata (cl-subseq new-themata 0 gnosis-new-themata-limit)))))
 
-(defun gnosis-review-get-due-notes ()
-  "Return all due note IDs."
-  (mapcar #'car (gnosis-review-get--due-notes)))
+(defun gnosis-review-get-due-themata ()
+  "Return all due thema IDs."
+  (mapcar #'car (gnosis-review-get--due-themata)))
 
-(defun gnosis-review-get-overdue-notes (&optional note-ids)
-  "Return overdue notes for current DATE.
+(defun gnosis-review-get-overdue-themata (&optional thema-ids)
+  "Return overdue themata for current DATE.
 
-Optionally, provide NOTE-IDS of which the overdue ones will be returned."
-  (cl-loop for note in (or note-ids (gnosis-review-get--due-notes))
-	   when (not (equal (cadr note) (gnosis-algorithm-date)))
-	   collect (car note)))
+Optionally, provide THEMA-IDS of which the overdue ones will be returned."
+  (cl-loop for thema in (or thema-ids (gnosis-review-get--due-themata))
+	   when (not (equal (cadr thema) (gnosis-algorithm-date)))
+	   collect (car thema)))
 
-(defun gnosis-review-get-due-notes--no-overdue (&optional note-ids)
-  "Return due notes, without overdue.
+(defun gnosis-review-get-due-themata--no-overdue (&optional thema-ids)
+  "Return due themata, without overdue.
 
-Optionally, provide a list for due NOTE-IDS."
-  (let ((note-ids (or note-ids (length (gnosis-review-get-due-notes)))))
-    (cl-set-difference note-ids (gnosis-review-get-overdue-notes note-ids))))
+Optionally, provide a list for due THEMA-IDS."
+  (let ((thema-ids (or thema-ids (length (gnosis-review-get-due-themata)))))
+    (cl-set-difference thema-ids (gnosis-review-get-overdue-themata thema-ids))))
 
 (defun gnosis-review-last-interval (id)
-  "Return last review interval for note ID."
+  "Return last review interval for thema ID."
   (let* ((last-rev (gnosis-get 'last-rev 'review-log `(= id ,id)))
 	 (rev-date (gnosis-get 'next-rev 'review-log `(= id ,id))))
     (gnosis-algorithm-date-diff last-rev rev-date)))
 
 (defun gnosis-review-algorithm (id success)
-  "Return next review date & gnosis for note with value of id ID.
+  "Return next review date & gnosis for thema with value of id ID.
 
 SUCCESS is a boolean value, t for success, nil for failure.
 
 Returns a list of the form ((yyyy mm dd) (ef-increase ef-decrease ef-total))."
-  (let ((amnesia (gnosis-get-note-amnesia id))
+  (let ((amnesia (gnosis-get-thema-amnesia id))
 	(gnosis (gnosis-get 'gnosis 'review `(= id ,id)))
 	(t-success (gnosis-get 't-success 'review-log `(= id ,id))) ;; total successful reviews
 	(c-success (gnosis-get 'c-success 'review-log `(= id ,id))) ;; consecutive successful reviews
@@ -1023,26 +1024,26 @@ Returns a list of the form ((yyyy mm dd) (ef-increase ef-decrease ef-total))."
       :success success
       :successful-reviews t-success
       :c-fails c-fails
-      :lethe (gnosis-get-note-lethe id)
+      :lethe (gnosis-get-thema-lethe id)
       :amnesia amnesia
-      :proto (gnosis-get-note-proto id))
+      :proto (gnosis-get-thema-proto id))
      (gnosis-algorithm-next-gnosis
       :gnosis gnosis
       :success success
-      :epignosis (gnosis-get-note-epignosis id)
-      :agnoia (gnosis-get-note-agnoia id)
-      :anagnosis (gnosis-get-note-anagnosis id)
+      :epignosis (gnosis-get-thema-epignosis id)
+      :agnoia (gnosis-get-thema-agnoia id)
+      :anagnosis (gnosis-get-thema-anagnosis id)
       :c-successes c-success
       :c-failures c-fails))))
 
 (defun gnosis-review--update (id success)
-  "Update review-log for note with value of id ID.
+  "Update review-log for thema with value of id ID.
 
 SUCCESS is a boolean value, t for success, nil for failure."
   (let ((gnosis (cadr (gnosis-review-algorithm id success)))
 	(next-rev (car (gnosis-review-algorithm id success))))
     ;; Update activity-log
-    (gnosis-review-increment-activity-log (gnosis-review-is-note-new-p id))
+    (gnosis-review-increment-activity-log (gnosis-review-is-thema-new-p id))
     ;; Update review-log
     (gnosis-update 'review-log `(= last-rev ',(gnosis-algorithm-date)) `(= id ,id))
     (gnosis-update 'review-log `(= next-rev ',next-rev) `(= id ,id))
@@ -1064,16 +1065,16 @@ SUCCESS is a boolean value, t for success, nil for failure."
       (gnosis-update 'review-log `(= c-success 0) `(= id ,id)))))
 
 (defun gnosis-review-result (id success)
-  "Update review note ID results for SUCCESS."
+  "Update review thema ID results for SUCCESS."
   (gnosis-review--update id success)
-  (setf gnosis-due-notes-total (length (gnosis-review-get-due-notes))))
+  (setf gnosis-due-themata-total (length (gnosis-review-get-due-themata))))
 
 (defun gnosis-review-mcq (id)
-  "Review MCQ note with ID."
-  (gnosis-display-image (gnosis-get 'keimenon 'notes `(= id ,id)))
+  "Review MCQ thema with ID."
+  (gnosis-display-image (gnosis-get 'keimenon 'themata `(= id ,id)))
   (gnosis-display-keimenon (gnosis-org-format-string
-			    (gnosis-get 'keimenon 'notes `(= id ,id))))
-  (let* ((answer (car (gnosis-get 'answer 'notes `(= id ,id))))
+			    (gnosis-get 'keimenon 'themata `(= id ,id))))
+  (let* ((answer (car (gnosis-get 'answer 'themata `(= id ,id))))
 	 (user-choice (gnosis-mcq-answer id))
 	 (success (string= answer user-choice)))
     (gnosis-display-correct-answer-mcq answer user-choice)
@@ -1082,11 +1083,11 @@ SUCCESS is a boolean value, t for success, nil for failure."
     success))
 
 (defun gnosis-review-basic (id)
-  "Review basic type note for ID."
-  (let* ((hypothesis (car (gnosis-get 'hypothesis 'notes `(= id ,id))))
+  "Review basic type thema for ID."
+  (let* ((hypothesis (car (gnosis-get 'hypothesis 'themata `(= id ,id))))
 	 (parathema (gnosis-get 'parathema 'extras `(= id ,id)))
-	 (keimenon (gnosis-get 'keimenon 'notes `(= id ,id)))
-	 (answer (car (gnosis-get 'answer 'notes `(= id ,id)))))
+	 (keimenon (gnosis-get 'keimenon 'themata `(= id ,id)))
+	 (answer (car (gnosis-get 'answer 'themata `(= id ,id)))))
     (gnosis-display-image keimenon)
     (gnosis-display-keimenon (gnosis-org-format-string keimenon))
     (gnosis-display-hint hypothesis)
@@ -1110,10 +1111,10 @@ Returns a cons; ='(position . user-input) if correct,
     (cons position user-input)))
 
 (defun gnosis-review-cloze (id)
-  "Review cloze type note for ID."
-  (let* ((keimenon (gnosis-get 'keimenon 'notes `(= id ,id)))
-         (all-clozes (gnosis-get 'answer 'notes `(= id ,id)))
-         (all-hints (gnosis-get 'hypothesis 'notes `(= id ,id)))
+  "Review cloze type thema for ID."
+  (let* ((keimenon (gnosis-get 'keimenon 'themata `(= id ,id)))
+         (all-clozes (gnosis-get 'answer 'themata `(= id ,id)))
+         (all-hints (gnosis-get 'hypothesis 'themata `(= id ,id)))
          (revealed-clozes '()) ;; List of revealed clozes
          (unrevealed-clozes all-clozes)
          (unrevealed-hints all-hints)
@@ -1156,10 +1157,10 @@ Returns a cons; ='(position . user-input) if correct,
     success))
 
 (defun gnosis-review-mc-cloze (id)
-  "Review mc-cloze type note for ID."
-  (let* ((keimenon (gnosis-get 'keimenon 'notes `(= id ,id)))
-	 (cloze (gnosis-get 'answer 'notes `(= id ,id)))
-	 (options (gnosis-get 'hypothesis 'notes `(= id ,id)))
+  "Review mc-cloze type thema for ID."
+  (let* ((keimenon (gnosis-get 'keimenon 'themata `(= id ,id)))
+	 (cloze (gnosis-get 'answer 'themata `(= id ,id)))
+	 (options (gnosis-get 'hypothesis 'themata `(= id ,id)))
 	 (parathema (gnosis-get 'parathema 'extras `(= id ,id)))
 	 (user-input)
 	 (success))
@@ -1176,18 +1177,18 @@ Returns a cons; ='(position . user-input) if correct,
     (gnosis-display-next-review id success)
     success))
 
-(defun gnosis-review-is-note-new-p (id)
-  "Return t if note with ID is new."
+(defun gnosis-review-is-thema-new-p (id)
+  "Return t if thema with ID is new."
   (let ((reviews (car (gnosis-select 'n 'review-log `(= id ,id) t))))
     (not (> reviews 0))))
 
 (defun gnosis-review-increment-activity-log (new? &optional date)
   "Increament activity log for DATE by one.
 
-If NEW? is non-nil, increment new notes log by 1."
-  (let* ((current-total-value (gnosis-get-date-total-notes))
+If NEW? is non-nil, increment new themata log by 1."
+  (let* ((current-total-value (gnosis-get-date-total-themata))
 	 (inc-total (cl-incf current-total-value))
-	 (current-new-value (gnosis-get-date-new-notes))
+	 (current-new-value (gnosis-get-date-new-themata))
 	 (inc-new (cl-incf current-new-value))
 	 (date (or date (gnosis-algorithm-date))))
     (gnosis-update 'activity-log `(= reviewed-total ,inc-total) `(= date ',date))
@@ -1199,9 +1200,9 @@ If NEW? is non-nil, increment new notes log by 1."
   (when (y-or-n-p "Delete all activity log?")
     (emacsql gnosis-db [:delete :from activity-log])))
 
-(defun gnosis-review--display-note (id)
-  "Display note with ID and call the appropriate review func."
-  (let* ((type (gnosis-get 'type 'notes `(= id ,id)))
+(defun gnosis-review--display-thema (id)
+  "Display thema with ID and call the appropriate review func."
+  (let* ((type (gnosis-get 'type 'themata `(= id ,id)))
          (func-name (intern (format "gnosis-review-%s" (downcase type)))))
     (if (fboundp func-name)
         (progn
@@ -1211,22 +1212,22 @@ If NEW? is non-nil, increment new notes log by 1."
 	    (gnosis-review-update-header 0))
 	  (window-configuration-to-register :gnosis-pre-image)
           (funcall func-name id))
-      (error "Malformed note type: '%s'" type))))
+      (error "Malformed thema type: '%s'" type))))
 
-(defun gnosis-review-process-note (note &optional note-count)
-  "Process review for NOTE and update session statistics.
+(defun gnosis-review-process-thema (thema &optional thema-count)
+  "Process review for THEMA and update session statistics.
 
-Displays the note, processes the review result, and updates the
-header.  Returns the incremented NOTE-COUNT after processing.
+Displays the thema, processes the review result, and updates the
+header.  Returns the incremented THEMA-COUNT after processing.
 
 This is a helper function for `gnosis-review-session'."
-  (let ((success (gnosis-review--display-note note))
-	(note-count (or note-count 0)))
-    (cl-incf note-count)
-    (gnosis-review-actions success note note-count)
+  (let ((success (gnosis-review--display-thema thema))
+	(thema-count (or thema-count 0)))
+    (cl-incf thema-count)
+    (gnosis-review-actions success thema thema-count)
     (jump-to-register :gnosis-pre-image)
-    (gnosis-review-update-header note-count)
-    note-count))
+    (gnosis-review-update-header thema-count)
+    thema-count))
 
 (defun gnosis-review-update-header (reviewed-count &optional remaining-reviews)
   "Update the review session header with current stats.
@@ -1235,7 +1236,7 @@ REVIEWED-COUNT: Total number of items that have been reviewed in
 current session.
 REMAINING-REVIEWS: Total number of remaining items to be reviewed."
   (with-current-buffer (get-buffer-create gnosis-review-buffer-name)
-    (let ((remaining-reviews (or remaining-reviews gnosis-due-notes-total)))
+    (let ((remaining-reviews (or remaining-reviews gnosis-due-themata-total)))
       (setq-local header-line-format
                   (gnosis-center-string
 		   (format "%s %s %s"
@@ -1245,30 +1246,30 @@ REMAINING-REVIEWS: Total number of remaining items to be reviewed."
                            (propertize (number-to-string remaining-reviews)
 				       'face 'gnosis-face-false)))))))
 
-(defun gnosis-review-session (notes &optional due note-count)
-  "Start review session for NOTES.
-NOTES: List of note ids
-DUE: If due is non-nil, session will loop for due notes.
-NOTE-COUNT: Total notes to be commited for session."
-  (let ((note-count (or note-count 0)))
-    (if (null notes)
-        (message "No notes for review.")
-      (setf gnosis-review-notes notes)
+(defun gnosis-review-session (themata &optional due thema-count)
+  "Start review session for THEMATA.
+THEMATA: List of thema ids
+DUE: If due is non-nil, session will loop for due themata.
+THEMA-COUNT: Total themata to be commited for session."
+  (let ((thema-count (or thema-count 0)))
+    (if (null themata)
+        (message "No themata for review.")
+      (setf gnosis-review-themata themata)
       (catch 'review-loop
-        (cl-loop for note in notes
-                 do (setq note-count (gnosis-review-process-note note note-count))
+        (cl-loop for thema in themata
+                 do (setq thema-count (gnosis-review-process-thema thema thema-count))
                  finally
                  (and due (gnosis-review-session
-                           (gnosis-collect-note-ids :due t) t note-count))))
+                           (gnosis-collect-thema-ids :due t) t thema-count))))
       (gnosis-dashboard)
-      (gnosis-review-commit note-count))))
+      (gnosis-review-commit thema-count))))
 
-(defun gnosis-review-commit (note-num)
+(defun gnosis-review-commit (thema-num)
   "Commit review session on git repository.
 
 This function initializes the `gnosis-dir' as a Git repository if it is not
 already one.  It then adds the gnosis.db file to the repository and commits
-the changes with a message containing the reviewed number NOTE-NUM."
+the changes with a message containing the reviewed number THEMA-NUM."
   (let ((git (executable-find "git"))
 	(default-directory gnosis-dir))
     (unless git
@@ -1279,63 +1280,63 @@ the changes with a message containing the reviewed number NOTE-NUM."
       (shell-command
        (format "%s add gnosis.db" git))
       (gnosis--shell-cmd-with-password
-       (format "%s commit -m 'Total notes reviewed: %d'" git note-num)))
+       (format "%s commit -m 'Total themata reviewed: %d'" git thema-num)))
     (sit-for 0.1)
     (when (and gnosis-vc-auto-push (not gnosis-testing))
       (gnosis-vc-push))
-    (message "Review session finished.  %d notes reviewed." note-num)))
+    (message "Review session finished.  %d themata reviewed." thema-num)))
 
-(defun gnosis-review-action--edit (success note note-count)
-  "Edit NOTE during review.
+(defun gnosis-review-action--edit (success thema thema-count)
+  "Edit THEMA during review.
 
 Save current contents of *gnosis-edit* buffer, if any, and start
-editing NOTE with it's new contents.
+editing THEMA with it's new contents.
 
-After done editing, call `gnosis-review-actions' with SUCCESS NOTE
-NOTE-COUNT."
-  (gnosis-edit-note note)
+After done editing, call `gnosis-review-actions' with SUCCESS THEMA
+THEMA-COUNT."
+  (gnosis-edit-thema thema)
   (setf gnosis-review-editing-p t)
   (recursive-edit)
-  (gnosis-review-actions success note note-count))
+  (gnosis-review-actions success thema thema-count))
 
-(defun gnosis-review-action--quit (success note)
+(defun gnosis-review-action--quit (success thema)
   "Quit review session.
 
-Update result for NOTE review with SUCCESS and commit session for NOTE-COUNT.
+Update result for THEMA review with SUCCESS and commit session for THEMA-COUNT.
 
 This function should be used with `gnosis-review-actions', to finish
 the review session."
-  (gnosis-review-result note success)
+  (gnosis-review-result thema success)
   ;; Break the review loop of `gnosis-review-session'
   (throw 'review-loop t))
 
-(defun gnosis-review-action--suspend (success note note-count)
-  "Suspend/Unsuspend NOTE.
+(defun gnosis-review-action--suspend (success thema thema-count)
+  "Suspend/Unsuspend THEMA.
 
 This function should be used with `gnosis-review-actions', which
-should be recursively called using SUCCESS, NOTE, NOTE-COUNT."
-  (gnosis-toggle-suspend-notes (list note))
-  (gnosis-review-actions success note note-count))
+should be recursively called using SUCCESS, THEMA, THEMA-COUNT."
+  (gnosis-toggle-suspend-themata (list thema))
+  (gnosis-review-actions success thema thema-count))
 
-(defun gnosis-review-action--override (success note note-count)
+(defun gnosis-review-action--override (success thema thema-count)
   "Override current review result for SUCCESS.
 
 This function should be used with `gnosis-review-actions', which will
-be called with new SUCCESS value plus NOTE & NOTE-COUNT."
+be called with new SUCCESS value plus THEMA & THEMA-COUNT."
   (setf success (if success nil t))
-  (gnosis-display-next-review note success)
-  (gnosis-review-actions success note note-count))
+  (gnosis-display-next-review thema success)
+  (gnosis-review-actions success thema thema-count))
 
-(defun gnosis-review-actions (success id note-count)
-  "Specify action during review of note.
+(defun gnosis-review-actions (success id thema-count)
+  "Specify action during review of thema.
 
 SUCCESS: Review result
-ID: Note ID
-NOTE-COUNT: Total notes reviewed
+ID: Thema ID
+THEMA-COUNT: Total themata reviewed
 
 To customize the keybindings, adjust `gnosis-review-keybindings'."
   (let* ((prompt
-	  "Action: %sext gnosis, %sverride result, %suspend note, %sdit note, %suit: ")
+	  "Action: %sext gnosis, %sverride result, %suspend thema, %sdit thema, %suit: ")
 	 (choice (read-char-choice
 		  (apply #'format prompt
 			 (mapcar
@@ -1343,9 +1344,9 @@ To customize the keybindings, adjust `gnosis-review-keybindings'."
 		  '(?n ?o ?s ?e ?q))))
     (pcase choice
       (?n (gnosis-review-result id success))
-      (?o (gnosis-review-action--override success id note-count))
-      (?s (gnosis-review-action--suspend success id note-count))
-      (?e (gnosis-review-action--edit success id note-count))
+      (?o (gnosis-review-action--override success id thema-count))
+      (?s (gnosis-review-action--suspend success id thema-count))
+      (?e (gnosis-review-action--edit success id thema-count))
       (?q (gnosis-review-action--quit success id)))))
 
 ;;;###autoload
@@ -1353,35 +1354,36 @@ To customize the keybindings, adjust `gnosis-review-keybindings'."
   "Start gnosis review session."
   (interactive)
   ;; Refresh modeline
-  (setq gnosis-due-notes-total (length (gnosis-review-get-due-notes)))
+  (setq gnosis-due-themata-total (length (gnosis-review-get-due-themata)))
   ;; reset pre-image register
   (set-register :gnosis-pre-image nil)
   ;; Select review type
   (let ((review-type
 	 (gnosis-completing-read "Review: "
-				 '("Due notes"
-				   "Due notes of deck"
-				   "Due notes of specified tag(s)"
-				   "Overdue notes"
-				   "Due notes (Without Overdue)"
-				   "All notes of deck"
-				   "All notes of tag(s)"))))
+				 '("Due themata"
+				   "Due themata of deck"
+				   "Due themata of specified tag(s)"
+				   "Overdue themata"
+				   "Due themata (Without Overdue)"
+				   "All themata of deck"
+				   "All themata of tag(s)"))))
     (pcase review-type
-      ("Due notes" (gnosis-review-session (gnosis-collect-note-ids :due t) t))
-      ("Due notes of deck" (gnosis-review-session
-			    (gnosis-collect-note-ids :due t :deck (gnosis--get-deck-id))))
-      ("Due notes of specified tag(s)" (gnosis-review-session
-					(gnosis-collect-note-ids :due t :tags t)))
-      ("Overdue notes" (gnosis-review-session (gnosis-review-get-overdue-notes)))
-      ("Due notes (Without Overdue)" (gnosis-review-session
-				      (gnosis-review-get-due-notes--no-overdue)))
-      ("All notes of deck" (gnosis-review-session
-			    (gnosis-collect-note-ids :deck (gnosis--get-deck-id))))
-      ("All notes of tag(s)" (gnosis-review-session (gnosis-collect-note-ids :tags t))))))
+      ("Due themata" (gnosis-review-session (gnosis-collect-thema-ids :due t) t))
+      ("Due themata of deck" (gnosis-review-session
+			    (gnosis-collect-thema-ids :due t :deck (gnosis--get-deck-id))))
+      ("Due themata of specified tag(s)" (gnosis-review-session
+					(gnosis-collect-thema-ids :due t :tags t)))
+      ("Overdue themata" (gnosis-review-session (gnosis-review-get-overdue-themata)))
+      ("Due themata (Without Overdue)" (gnosis-review-session
+				      (gnosis-review-get-due-themata--no-overdue)))
+      ("All themata of deck" (gnosis-review-session
+			    (gnosis-collect-thema-ids :deck (gnosis--get-deck-id))))
+      ("All themata of tag(s)" (gnosis-review-session (gnosis-collect-thema-ids :tags t))))))
 
 (defun gnosis-review--select-topic ()
   "Prompt for topic from org-gnosis database and return it's id."
-  (let* ((topic-title (gnosis-completing-read "Select topic: " (org-gnosis-select 'title 'nodes)))
+  (let* ((topic-title (gnosis-completing-read "Select topic: "
+					      (org-gnosis-select 'title 'nodes)))
 	 (topic-id (caar (org-gnosis-select 'id 'nodes `(= title ,topic-title)))))
     topic-id))
 
@@ -1399,20 +1401,20 @@ To customize the keybindings, adjust `gnosis-review-keybindings'."
 	(gnosis-review-session gnosis-questions)
       (message "No thema found for %s (id:%s)" node-title node-id))))
 
-(defun gnosis-add-note-fields (deck-id type keimenon hypothesis answer
+(defun gnosis-add-thema-fields (deck-id type keimenon hypothesis answer
 				       parathema tags suspend links
 				       &optional review-image gnosis-id)
-  "Insert fields for new note.
+  "Insert fields for new thema.
 
-DECK-ID: Deck ID for new note.
-TYPE: Note type e.g \"mcq\"
-KEIMENON: Note's keimenon
-HYPOTHESIS: Note hypothesis, e.g choices for mcq for OR hints for
-cloze/basic note
-ANSWER: Correct answer for note, for MCQ is an integer while for
+DECK-ID: Deck ID for new thema.
+TYPE: Thema type e.g \"mcq\"
+KEIMENON: Thema's keimenon
+HYPOTHESIS: Thema hypothesis, e.g choices for mcq for OR hints for
+cloze/basic thema
+ANSWER: Correct answer for thema, for MCQ is an integer while for
 cloze/basic a string/list of the right answer(s)
 PARATHEMA: Parathema information to display after the answer
-TAGS: Tags to organize notes
+TAGS: Tags to organize themata
 SUSPEND: Integer value of 1 or 0, where 1 suspends the card.
 LINKS: List of id links."
   (cl-assert (integerp deck-id) nil "Deck ID must be an integer")
@@ -1427,7 +1429,7 @@ LINKS: List of id links."
 	 (review-image (or review-image "")))
     (emacsql-with-transaction gnosis-db
       ;; Refer to `gnosis-db-schema-SCHEMA' e.g `gnosis-db-schema-review-log'
-      (gnosis--insert-into 'notes `([,gnosis-id ,(downcase type) ,keimenon ,hypothesis
+      (gnosis--insert-into 'themata `([,gnosis-id ,(downcase type) ,keimenon ,hypothesis
 					      ,answer ,tags ,deck-id]))
       (gnosis--insert-into 'review  `([,gnosis-id ,gnosis-algorithm-gnosis-value
 						,gnosis-algorithm-amnesia-value]))
@@ -1438,46 +1440,46 @@ LINKS: List of id links."
       (cl-loop for link in links
 	       do (gnosis--insert-into 'links `([,gnosis-id ,link]))))))
 
-(defun gnosis-update-note (id keimenon hypothesis answer parathema tags links
+(defun gnosis-update-thema (id keimenon hypothesis answer parathema tags links
 			      &optional deck-id type)
-  "Update note entry for ID.
+  "Update thema entry for ID.
 
 If gnosis ID does not exist, create it anew."
   (let ((id (if (stringp id) (string-to-number id) id)))
-    (if (member id (gnosis-select 'id 'notes nil t))
+    (if (member id (gnosis-select 'id 'themata nil t))
 	(emacsql-with-transaction gnosis-db
-	  (gnosis-update 'notes `(= keimenon ,keimenon) `(= id ,id))
-	  (gnosis-update 'notes `(= hypothesis ',hypothesis) `(= id ,id))
-	  (gnosis-update 'notes `(= answer ',answer) `(= id ,id))
+	  (gnosis-update 'themata `(= keimenon ,keimenon) `(= id ,id))
+	  (gnosis-update 'themata `(= hypothesis ',hypothesis) `(= id ,id))
+	  (gnosis-update 'themata `(= answer ',answer) `(= id ,id))
 	  (gnosis-update 'extras `(= parathema ,parathema) `(= id ,id))
-	  (gnosis-update 'notes `(= tags ',tags) `(= id ,id))
+	  (gnosis-update 'themata `(= tags ',tags) `(= id ,id))
 	  (gnosis--delete 'links `(= source ,id))
 	  (cl-loop for link in links
 		   do (gnosis--insert-into 'links `([,id ,link]))))
       (message "Gnosis with id: %d does not exist, creating anew." id )
-      (gnosis-add-note-fields deck-id type keimenon hypothesis answer parathema tags
+      (gnosis-add-thema-fields deck-id type keimenon hypothesis answer parathema tags
 			      0 links nil id))))
 
-;;;;;;;;;;;;;;;;;;;;;; NOTE HELPERS ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; These functions provide assertions depending on the type of note.
+;;;;;;;;;;;;;;;;;;;;;; THEMA HELPERS ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; These functions provide assertions depending on the type of thema.
 ;;
-;; Each note should use a helper function that calls to provide
+;; Each thema should use a helper function that calls to provide
 ;; assertions, such as length of hypothesis and answer, for said
-;; note.
+;; thema.
 ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defun gnosis-add-note--basic (id deck-id type keimenon hypothesis
+(defun gnosis-add-thema--basic (id deck-id type keimenon hypothesis
 				   answer parathema tags suspend links)
-  "Default format for adding a note.
+  "Default format for adding a thema.
 
 DECK-ID: Integer value of deck-id.
-TYPE: String representing the type of note.
-KEIMENON: String for the note text.
+TYPE: String representing the type of thema.
+KEIMENON: String for the thema text.
 HYPOTHESIS: List of a signle string.
 ANSWER: List of a single string.
 PARATHEMA: String for the parathema text.
-TAGS: List of note tags.
+TAGS: List of thema tags.
 SUSPEND: Integer value of 0 for nil and 1 for true (suspended).
 LINKS: List of id links in PARATHEMA."
   (cl-assert (integerp deck-id) nil "Deck-id value must be an integer.")
@@ -1496,15 +1498,15 @@ LINKS: List of id links in PARATHEMA."
 	     nil "Suspend value must either 0 or 1")
   (cl-assert (listp links) nil "Links must be a list")
   (if (equal id "NEW")
-      (gnosis-add-note-fields deck-id type keimenon (or hypothesis (list ""))
+      (gnosis-add-thema-fields deck-id type keimenon (or hypothesis (list ""))
 			       answer parathema tags suspend links)
-    (gnosis-update-note id keimenon hypothesis answer parathema tags links deck-id type)))
+    (gnosis-update-thema id keimenon hypothesis answer parathema tags links deck-id type)))
 
-(defun gnosis-add-note--double (id deck-id type keimenon hypothesis
+(defun gnosis-add-thema--double (id deck-id type keimenon hypothesis
 				    answer parathema tags suspend links)
-  "Double note format.
+  "Double thema format.
 
-Changes TYPE to basic & inserts a second basic note with ANSWER
+Changes TYPE to basic & inserts a second basic thema with ANSWER
 and KEIMENON reversed."
   (cl-assert (integerp deck-id) nil "Deck-id value must be an integer.")
   (cl-assert (stringp type) nil "Type must be a string.")
@@ -1520,24 +1522,24 @@ and KEIMENON reversed."
 	(hypothesis (or hypothesis (list ""))))
     (if (equal id "NEW")
 	(progn
-	  (gnosis-add-note-fields deck-id type keimenon hypothesis
+	  (gnosis-add-thema-fields deck-id type keimenon hypothesis
 				   answer parathema tags suspend links)
-	  (gnosis-add-note-fields deck-id type (car answer) hypothesis
+	  (gnosis-add-thema-fields deck-id type (car answer) hypothesis
 				   (list keimenon) parathema tags suspend links))
-      ;; There should not be a double type note in database to
+      ;; There should not be a double type thema in database to
       ;; update.  This is used for testing purposes.
-      (gnosis-update-note id keimenon hypothesis answer parathema tags links deck-id type))))
+      (gnosis-update-thema id keimenon hypothesis answer parathema tags links deck-id type))))
 
-(defun gnosis-add-note--mcq (id deck-id type keimenon hypothesis
+(defun gnosis-add-thema--mcq (id deck-id type keimenon hypothesis
 				answer parathema tags suspend links)
-  "Helper function for MCQ note type.
+  "Helper function for MCQ thema type.
 
-Provide assertions for MCQ type notes.
+Provide assertions for MCQ type themata.
 
 DECK-ID: ID for deck.
-ID: Integer for note ID.
+ID: Integer for thema ID.
 TYPE: String for type, must be \"mcq\".
-HYPOTHESIS: List of strings or nil, hypothesis in MCQ note types
+HYPOTHESIS: List of strings or nil, hypothesis in MCQ thema types
 serve as choices to select from.
 ANSWER: List of one time, the right answer.  Must be member of
 HYPOTHESIS.
@@ -1565,20 +1567,20 @@ LINKS: list of strings."
 		  (cl-every 'stringp links))
 	     nil "Links must be a list")
   (if (equal id "NEW")
-      (gnosis-add-note-fields deck-id type keimenon (or hypothesis (list ""))
+      (gnosis-add-thema-fields deck-id type keimenon (or hypothesis (list ""))
 			      answer parathema tags suspend links)
-    (gnosis-update-note id keimenon hypothesis answer parathema tags links deck-id type)))
+    (gnosis-update-thema id keimenon hypothesis answer parathema tags links deck-id type)))
 
-(defun gnosis-add-note--cloze (id deck-id type keimenon hypothesis
+(defun gnosis-add-thema--cloze (id deck-id type keimenon hypothesis
 				  answer parathema tags suspend links)
-  "Helper for cloze type notes.
+  "Helper for cloze type themata.
 
-Provide assertions for cloze type notes.
+Provide assertions for cloze type themata.
 
 DECK-ID: ID for deck.
-ID: Integer for note ID.
+ID: Integer for thema ID.
 TYPE: String for type, must be \"cloze\".
-HYPOTHESIS: List of strings or nil, hypothesis in cloze note types
+HYPOTHESIS: List of strings or nil, hypothesis in cloze thema types
 serve as hints.
 ANSWER: List of answers for clozes.
 TAGS: List of tags.
@@ -1615,22 +1617,22 @@ LINKS: list of strings."
 	      (cl-loop for cloze in clozes
 		       for hint in hints
 		       do
-		       (gnosis-add-note-fields deck-id type keimenon-new hint cloze parathema
+		       (gnosis-add-thema-fields deck-id type keimenon-new hint cloze parathema
 						  tags suspend links)))
-	  (gnosis-add-note-fields deck-id type keimenon (or hypothesis (list ""))
+	  (gnosis-add-thema-fields deck-id type keimenon (or hypothesis (list ""))
 				  answer parathema tags suspend links)))
-    (gnosis-update-note id keimenon hypothesis answer parathema tags links deck-id type)))
+    (gnosis-update-thema id keimenon hypothesis answer parathema tags links deck-id type)))
 
-(defun gnosis-add-note--mc-cloze (id deck-id type keimenon hypothesis
+(defun gnosis-add-thema--mc-cloze (id deck-id type keimenon hypothesis
 				  answer parathema tags suspend links)
-  "Helper for mc-cloze type notes.
+  "Helper for mc-cloze type themata.
 
-Provide assertions for mc-cloze type notes.
+Provide assertions for mc-cloze type themata.
 
 DECK-ID: ID for deck.
-ID: Integer for note ID.
+ID: Integer for thema ID.
 TYPE: String for type, must be \"mc-cloze\".
-HYPOTHESIS: List of strings or nil, hypothesis in mc-cloze note types
+HYPOTHESIS: List of strings or nil, hypothesis in mc-cloze thema types
 serve as hints.
 ANSWER: List of answers for mc-clozes.
 TAGS: List of tags.
@@ -1655,9 +1657,9 @@ LINKS: list of strings."
   (cl-assert (gnosis-cloze-check keimenon answer) nil
 	     "Clozes (answer) values are not part of keimenon")
   (if (equal id "NEW")
-      (gnosis-add-note-fields deck-id type keimenon (or hypothesis (list ""))
+      (gnosis-add-thema-fields deck-id type keimenon (or hypothesis (list ""))
 			      answer parathema tags suspend links)
-    (gnosis-update-note id keimenon hypothesis answer parathema tags links deck-id type)))
+    (gnosis-update-thema id keimenon hypothesis answer parathema tags links deck-id type)))
 
 (defun gnosis-export--insert-read-only (string)
   "Insert STRING as read-only."
@@ -1677,17 +1679,17 @@ LINKS: list of strings."
       (put-text-property (match-beginning 0) (match-end 0) 'read-only t)))
   (goto-char (point-min)))
 
-(cl-defun gnosis-export--insert-note (id type &optional keimenon hypothesis
+(cl-defun gnosis-export--insert-thema (id type &optional keimenon hypothesis
 				      answer parathema tags example)
-  "Insert note for note ID.
+  "Insert thema for thema ID.
 
-TYPE: Note type, refer to `gnosis-note-types'
+TYPE: Thema type, refer to `gnosis-thema-types'
 KEIMENON: Text user is first presented with.
 HYPOTHESIS: Hypothesis for what the ANSWER is
 ANSWER: The revelation after KEIMENON
-PARATHEMA: The text where NOTE is derived from.
-TAGS: List of NOTE tags
-EXAMPLE: Boolean value, if non-nil do not add properties for note."
+PARATHEMA: The text where THEMA is derived from.
+TAGS: List of THEMA tags
+EXAMPLE: Boolean value, if non-nil do not add properties for thema."
   (let ((components `(("** Keimenon" . ,keimenon)
                       ("** Hypothesis" . ,hypothesis)
                       ("** Answer" . ,answer)
@@ -1716,8 +1718,8 @@ EXAMPLE: Boolean value, if non-nil do not add properties for note."
 		  nil t)))
     title))
 
-(defun gnosis-export-parse-notes (&optional separator)
-  "Extract content for each level-2 heading for note headings with a GNOSIS_ID.
+(defun gnosis-export-parse-themata (&optional separator)
+  "Extract content for each level-2 heading for thema headings with a GNOSIS_ID.
 
 Split content of Hypothesis and Answer headings using SEPARATOR."
   (let ((sep (or separator gnosis-export-separator))
@@ -1756,37 +1758,37 @@ Split content of Hypothesis and Answer headings using SEPARATOR."
       nil nil)
     results))
 
-(defun gnosis-export-notes (ids &optional new-p)
-  "Export notes for IDS.
+(defun gnosis-export-themata (ids &optional new-p)
+  "Export themata for IDS.
 
-If NEW-P replace the ids of notes with NEW, used for new notes to
-generate new note id."
+If NEW-P replace the ids of themata with NEW, used for new themata to
+generate new thema id."
   (cl-assert (listp ids) nil "IDS value must be a list.")
   ;; Extract just the ID values if they're in a list structure
   (let ((id-values (mapcar (lambda (id)
                              (if (listp id) (car id) id))
                            ids)))
-    ;; Process each note
+    ;; Process each thema
     (dolist (id id-values)
-      (let ((note-data (append (gnosis-select '[type keimenon hypothesis answer tags]
-                                              'notes `(= id ,id) t)
+      (let ((thema-data (append (gnosis-select '[type keimenon hypothesis answer tags]
+                                              'themata `(= id ,id) t)
                                (gnosis-select 'parathema 'extras `(= id ,id) t))))
-        (gnosis-export--insert-note
+        (gnosis-export--insert-thema
          (if new-p "NEW" (number-to-string id))
-         (nth 0 note-data)
-         (nth 1 note-data)
+         (nth 0 thema-data)
+         (nth 1 thema-data)
          (concat (string-remove-prefix "\n" gnosis-export-separator)
-                 (mapconcat 'identity (nth 2 note-data) gnosis-export-separator))
+                 (mapconcat 'identity (nth 2 thema-data) gnosis-export-separator))
          (concat (string-remove-prefix "\n" gnosis-export-separator)
-                 (mapconcat 'identity (nth 3 note-data) gnosis-export-separator))
-         (nth 5 note-data)
-         (nth 4 note-data))))))
+                 (mapconcat 'identity (nth 3 thema-data) gnosis-export-separator))
+         (nth 5 thema-data)
+         (nth 4 thema-data))))))
 
 (defun gnosis-export-deck (&optional deck filename new-p)
   "Export contents of DECK to FILENAME."
   (interactive (list (gnosis--get-deck-id)
                      (read-file-name "Export to file: ")
-		     (not (y-or-n-p "Export with current note ids? "))))
+		     (not (y-or-n-p "Export with current thema ids? "))))
   (let* ((deck-name (gnosis--get-deck-name deck))
 	 (filename (if (file-directory-p filename)
 		       (expand-file-name deck-name filename)
@@ -1798,51 +1800,51 @@ generate new note id."
         (org-mode)
         (erase-buffer)
         (insert (format "#+DECK: %s\n\n" deck-name))
-        (let ((note-ids (gnosis-select 'id 'notes `(= deck-id ,deck))))
-          (gnosis-export-notes note-ids new-p)
+        (let ((thema-ids (gnosis-select 'id 'themata `(= deck-id ,deck))))
+          (gnosis-export-themata thema-ids new-p)
           (when filename
             (write-file filename)
             (message "Exported deck to %s" filename)))))))
 
-(defun gnosis-save-note (note deck)
-  "Save NOTE for DECK."
-  (let* ((id (nth 0 note))
-	 (type (nth 1 note))
-	 (keimenon (nth 2 note))
-	 (hypothesis (nth 3 note))
-	 (answer (nth 4 note))
-	 (parathema (or (nth 5 note) ""))
-	 (tags (nth 6 note))
+(defun gnosis-save-thema (thema deck)
+  "Save THEMA for DECK."
+  (let* ((id (nth 0 thema))
+	 (type (nth 1 thema))
+	 (keimenon (nth 2 thema))
+	 (hypothesis (nth 3 thema))
+	 (answer (nth 4 thema))
+	 (parathema (or (nth 5 thema) ""))
+	 (tags (nth 6 thema))
 	 (links (append (gnosis-extract-id-links parathema)
 			(gnosis-extract-id-links keimenon)))
-	 (note-func (cdr (assoc (downcase type)
+	 (thema-func (cdr (assoc (downcase type)
 				  (mapcar (lambda (pair) (cons (downcase (car pair))
 							  (cdr pair)))
-					  gnosis-note-types)))))
-    (funcall note-func id deck type keimenon hypothesis
+					  gnosis-thema-types)))))
+    (funcall thema-func id deck type keimenon hypothesis
 	     answer parathema tags 0 links)))
 
 (defun gnosis-save ()
-  "Save notes in current buffer."
+  "Save themata in current buffer."
   (interactive nil gnosis-edit-mode)
-  (let ((notes (gnosis-export-parse-notes))
+  (let ((themata (gnosis-export-parse-themata))
 	(deck (gnosis--get-deck-id (gnosis-export-parse--deck-name))))
-    (cl-loop for note in notes
-	     do (gnosis-save-note note deck))
+    (cl-loop for thema in themata
+	     do (gnosis-save-thema thema deck))
     (gnosis-edit-quit)))
 
 ;;;###autoload
 (defun gnosis-save-deck (deck-name)
-  "Save notes for deck with DECK-NAME."
+  "Save themata for deck with DECK-NAME."
   (interactive
    (progn
      (unless (eq major-mode 'org-mode)
        (user-error "This function can only be used in org-mode buffers"))
      (list (read-string "Deck name: " (gnosis-export-parse--deck-name)))))
-  (let ((notes (gnosis-export-parse-notes))
+  (let ((themata (gnosis-export-parse-themata))
 	(deck (gnosis-get-deck-id deck-name)))
-    (cl-loop for note in notes
-	     do (gnosis-save-note note deck))))
+    (cl-loop for thema in themata
+	     do (gnosis-save-thema thema deck))))
 
 ;;;###autoload
 (defun gnosis-import-deck (file)
@@ -1854,12 +1856,12 @@ generate new note id."
     (gnosis-save-deck (gnosis-export-parse--deck-name))))
 
 ;;;###autoload
-(defun gnosis-add-note (deck type &optional keimenon hypothesis
+(defun gnosis-add-thema (deck type &optional keimenon hypothesis
 			      answer parathema tags example)
-  "Add note with TYPE in DECK."
+  "Add thema with TYPE in DECK."
   (interactive (list
 		(gnosis--get-deck-name)
-		(downcase (completing-read "Select type: " gnosis-note-types))))
+		(downcase (completing-read "Select type: " gnosis-thema-types))))
   (window-configuration-to-register :gnosis-edit)
   (pop-to-buffer "*Gnosis NEW*")
   (with-current-buffer "*Gnosis NEW*"
@@ -1867,22 +1869,22 @@ generate new note id."
       (erase-buffer))
     (insert "#+DECK: " deck)
     (gnosis-edit-mode)
-    (gnosis-export--insert-note "NEW" type keimenon hypothesis
+    (gnosis-export--insert-thema "NEW" type keimenon hypothesis
 				answer parathema tags example))
   (search-backward "keimenon")
   (forward-line))
 
-(defun gnosis-edit-note (id)
-  "Edit note with ID."
+(defun gnosis-edit-thema (id)
+  "Edit thema with ID."
   (window-configuration-to-register :gnosis-edit)
   (with-current-buffer (pop-to-buffer "*Gnosis Edit*")
     (let ((inhibit-read-only 1)
 	  (deck-name (gnosis--get-deck-name
-		      (gnosis-get 'deck-id 'notes `(= id ,id)))))
+		      (gnosis-get 'deck-id 'themata `(= id ,id)))))
       (erase-buffer)
       (insert "#+DECK: " deck-name))
     (gnosis-edit-mode)
-    (gnosis-export-notes (list id))
+    (gnosis-export-themata (list id))
     (search-backward "keimenon")
     (forward-line)))
 
@@ -1908,7 +1910,7 @@ generate new note id."
   :keymap gnosis-edit-mode-map
   (setq header-line-format
 	(substitute-command-keys
-	 " Save note by running \\[gnosis-save] or \\[gnosis-edit-quit] to quit")))
+	 " Save thema by running \\[gnosis-save] or \\[gnosis-edit-quit] to quit")))
 
 (defun gnosis-validate-custom-values (new-value)
   "Validate the structure and values of NEW-VALUE for gnosis-custom-values."
@@ -1981,111 +1983,111 @@ VALUES: Defaults to `gnosis-custom-values'."
     results))
 
 (defun gnosis-get-custom-deck-value (deck value &optional values)
-  "Return custom VALUE for note DECK."
+  "Return custom VALUE for thema DECK."
   (plist-get (gnosis-get-custom-values :deck deck values) value))
 
 (defun gnosis-get-custom-tag-values (id keyword &optional custom-tags custom-values)
-  "Return KEYWORD values for note ID."
+  "Return KEYWORD values for thema ID."
   (cl-assert (keywordp keyword) nil "keyword must be a keyword!")
-  (let ((tags (if id (gnosis-get 'tags 'notes `(= id ,id)) custom-tags)))
+  (let ((tags (if id (gnosis-get 'tags 'themata `(= id ,id)) custom-tags)))
     (cl-loop for tag in tags
 	     ;; Only collect non-nil values
 	     when (plist-get (gnosis-get-custom-values :tag tag custom-values) keyword)
 	     collect (plist-get (gnosis-get-custom-values :tag tag custom-values)
 				keyword))))
 
-(defun gnosis-get-note-tag-amnesia (id &optional custom-tags custom-values)
-  "Return tag MINIMUM amnesia for note ID.
+(defun gnosis-get-thema-tag-amnesia (id &optional custom-tags custom-values)
+  "Return tag MINIMUM amnesia for thema ID.
 
 The closer the amnesia value is to 0, the closer it is to total
 amnesia i.e next interval to be 0.
 
-CUSTOM-TAGS: Specify tags for note id.
+CUSTOM-TAGS: Specify tags for thema id.
 CUSTOM-VALUES: Specify values for tags."
   (let ((amnesia-values (gnosis-get-custom-tag-values id :amnesia
 						      custom-tags custom-values)))
     (and amnesia-values (apply #'max amnesia-values))))
 
-(defun gnosis-get-note-deck-amnesia (id &optional custom-deck custom-values)
-  "Return tag amnesia for note ID.
+(defun gnosis-get-thema-deck-amnesia (id &optional custom-deck custom-values)
+  "Return tag amnesia for thema ID.
 
 Optionally, use CUSTOM-DECK and CUSTOM-VALUES."
-  (let ((deck (or (gnosis-get-note-deck-name id) custom-deck )))
+  (let ((deck (or (gnosis-get-thema-deck-name id) custom-deck )))
     (or (gnosis-get-custom-deck-value deck :amnesia custom-values)
 	gnosis-algorithm-amnesia-value)))
 
-(defun gnosis-get-note-amnesia (id &optional custom-deck custom-tags custom-values )
-  "Return amnesia value for note ID.
+(defun gnosis-get-thema-amnesia (id &optional custom-deck custom-tags custom-values )
+  "Return amnesia value for thema ID.
 
 CUSTOM-DECK: Specify custom deck.
-CUSTOM-TAGS: Specify custom tags for note id.
+CUSTOM-TAGS: Specify custom tags for thema id.
 CUSTOM-VALUES: Specify custom values."
-  (let* ((deck-amnesia (gnosis-get-note-deck-amnesia id custom-deck custom-values))
-         (tags-amnesia (gnosis-get-note-tag-amnesia id custom-tags custom-values))
-	 (note-amnesia (or tags-amnesia deck-amnesia)))
-    (if (>= note-amnesia 1)
+  (let* ((deck-amnesia (gnosis-get-thema-deck-amnesia id custom-deck custom-values))
+         (tags-amnesia (gnosis-get-thema-tag-amnesia id custom-tags custom-values))
+	 (thema-amnesia (or tags-amnesia deck-amnesia)))
+    (if (>= thema-amnesia 1)
 	(error "Amnesia value must be lower than 1")
-      note-amnesia)))
+      thema-amnesia)))
 
-(defun gnosis-get-note-tag-epignosis (id &optional custom-tags custom-values)
-  "Return tag epignosis for note ID.
+(defun gnosis-get-thema-tag-epignosis (id &optional custom-tags custom-values)
+  "Return tag epignosis for thema ID.
 
-CUSTOM-TAGS: Specify custom tags for note id.
+CUSTOM-TAGS: Specify custom tags for thema id.
 CUSTOM-VALUES: Specify custom values."
   (let* ((epignosis-values (gnosis-get-custom-tag-values id :epignosis custom-tags custom-values)))
     (and epignosis-values (apply #'max epignosis-values))))
 
-(defun gnosis-get-note-deck-epignosis (id &optional custom-deck custom-values)
-  "Return deck epignosis for note ID.
+(defun gnosis-get-thema-deck-epignosis (id &optional custom-deck custom-values)
+  "Return deck epignosis for thema ID.
 
 CUSTOM-DECK: Specify custom deck.
 CUSTOM-VALUES: Specify custom values."
-  (let ((deck (or (gnosis-get-note-deck-name id) custom-deck)))
+  (let ((deck (or (gnosis-get-thema-deck-name id) custom-deck)))
     (or (gnosis-get-custom-deck-value deck :epignosis custom-values)
 	gnosis-algorithm-epignosis-value)))
 
-(defun gnosis-get-note-epignosis (id &optional custom-deck custom-tags custom-values)
-  "Return epignosis value for note ID.
+(defun gnosis-get-thema-epignosis (id &optional custom-deck custom-tags custom-values)
+  "Return epignosis value for thema ID.
 
 CUSTOM-DECK: Specify custom deck.
-CUSTOM-TAGS: Specify custom tags for note id.
+CUSTOM-TAGS: Specify custom tags for thema id.
 CUSTOM-VALUES: Specify custom values."
-  (let* ((deck-epignosis (gnosis-get-note-deck-epignosis id custom-deck custom-values))
-         (tag-epignosis (gnosis-get-note-tag-epignosis id custom-tags custom-values))
-	 (note-epignosis (or tag-epignosis deck-epignosis)))
-    (if (>= note-epignosis 1)
+  (let* ((deck-epignosis (gnosis-get-thema-deck-epignosis id custom-deck custom-values))
+         (tag-epignosis (gnosis-get-thema-tag-epignosis id custom-tags custom-values))
+	 (thema-epignosis (or tag-epignosis deck-epignosis)))
+    (if (>= thema-epignosis 1)
 	(error "Epignosis value must be lower than 1")
-      note-epignosis)))
+      thema-epignosis)))
 
-(defun gnosis-get-note-tag-agnoia (id &optional custom-tags custom-values)
-  "Return agnoia value for note ID.
+(defun gnosis-get-thema-tag-agnoia (id &optional custom-tags custom-values)
+  "Return agnoia value for thema ID.
 
-CUSTOM-TAGS: Specify custom tags for note id.
+CUSTOM-TAGS: Specify custom tags for thema id.
 CUSTOM-VALUES: Specify custom values."
   (let ((agnoia-values (gnosis-get-custom-tag-values id :agnoia custom-tags custom-values)))
     (and agnoia-values (apply #'max agnoia-values))))
 
-(defun gnosis-get-note-deck-agnoia (id &optional custom-deck custom-values)
-  "Return agnoia value for note ID.
+(defun gnosis-get-thema-deck-agnoia (id &optional custom-deck custom-values)
+  "Return agnoia value for thema ID.
 
 CUSTOM-DECK: Specify custom deck.
 CUSTOM-VALUES: Specify custom values."
-  (let ((deck (or (gnosis-get-note-deck-name id) custom-deck)))
+  (let ((deck (or (gnosis-get-thema-deck-name id) custom-deck)))
     (or (gnosis-get-custom-deck-value deck :agnoia custom-values)
 	gnosis-algorithm-agnoia-value)))
 
-(defun gnosis-get-note-agnoia (id &optional custom-deck custom-tags custom-values)
-  "Return agnoia value for note ID.
+(defun gnosis-get-thema-agnoia (id &optional custom-deck custom-tags custom-values)
+  "Return agnoia value for thema ID.
 
 CUSTOM-DECK: Specify custom deck.
-CUSTOM-TAGS: Specify custom tags for note id.
+CUSTOM-TAGS: Specify custom tags for thema id.
 CUSTOM-VALUES: Specify custom values."
-  (let* ((deck-agnoia (gnosis-get-note-deck-agnoia id custom-deck custom-values))
-         (tag-agnoia (gnosis-get-note-tag-agnoia id custom-tags custom-values))
-	 (note-agnoia (or tag-agnoia deck-agnoia)))
-    (if (>= note-agnoia 1)
+  (let* ((deck-agnoia (gnosis-get-thema-deck-agnoia id custom-deck custom-values))
+         (tag-agnoia (gnosis-get-thema-tag-agnoia id custom-tags custom-values))
+	 (thema-agnoia (or tag-agnoia deck-agnoia)))
+    (if (>= thema-agnoia 1)
 	(error "Agnoia value must be lower than 1")
-      note-agnoia)))
+      thema-agnoia)))
 
 (defun gnosis-proto-max-values (proto-values)
   "Return max values from PROTO-VALUES."
@@ -2097,76 +2099,76 @@ CUSTOM-VALUES: Specify custom values."
                                  proto-values)))
       (apply #'cl-mapcar #'max padded-lists))))
 
-(defun gnosis-get-note-proto (id &optional custom-tags custom-deck custom-values)
-  "Return tag proto values for note ID.
+(defun gnosis-get-thema-proto (id &optional custom-tags custom-deck custom-values)
+  "Return tag proto values for thema ID.
 
 CUSTOM-VALUES: Custom values to be used instead.
 CUSTOM-TAGS: Custom tags to be used instead.
 CUSTOM-DECK: Custom deck to be used instead."
-  (let* ((deck (or custom-deck (gnosis-get-note-deck-name id)))
+  (let* ((deck (or custom-deck (gnosis-get-thema-deck-name id)))
 	 (tags-proto (gnosis-get-custom-tag-values id :proto custom-tags custom-values))
 	 (decks-proto (gnosis-get-custom-deck-value deck :proto custom-values)))
     (if tags-proto (gnosis-proto-max-values tags-proto)
       (gnosis-proto-max-values (or decks-proto gnosis-algorithm-proto)))))
 
-(defun gnosis-get-note-tag-anagnosis (id &optional custom-tags custom-values)
-  "Return the minimum anagnosis tag value for note ID.
+(defun gnosis-get-thema-tag-anagnosis (id &optional custom-tags custom-values)
+  "Return the minimum anagnosis tag value for thema ID.
 
 CUSTOM-VALUES: Custom values to be used instead.
 CUSTOM-TAGS: Custom tags to be used instead."
   (let ((anagnosis-values (gnosis-get-custom-tag-values id :anagnosis custom-tags custom-values)))
     (and anagnosis-values (apply #'min anagnosis-values))))
 
-(defun gnosis-get-note-deck-anagnosis (id &optional custom-deck custom-values)
-  "Return anagnosis deck value for note ID.
+(defun gnosis-get-thema-deck-anagnosis (id &optional custom-deck custom-values)
+  "Return anagnosis deck value for thema ID.
 
 CUSTOM-VALUES: Custom values to be used instead.
 CUSTOM-DECK: Custom deck to be used instead."
-  (let ((deck (or (gnosis-get-note-deck-name id) custom-deck)))
+  (let ((deck (or (gnosis-get-thema-deck-name id) custom-deck)))
     (or (gnosis-get-custom-deck-value deck :anagnosis custom-values)
 	gnosis-algorithm-anagnosis-value)))
 
-(defun gnosis-get-note-anagnosis (id &optional custom-deck custom-tags custom-values)
-  "Return minimum anagnosis value for note ID.
+(defun gnosis-get-thema-anagnosis (id &optional custom-deck custom-tags custom-values)
+  "Return minimum anagnosis value for thema ID.
 
 CUSTOM-VALUES: Custom values to be used instead.
 CUSTOM-TAGS: Custom tags to be used instead.
 CUSTOM-DECK: Custom deck to be used instead."
-  (let* ((deck-anagnosis (gnosis-get-note-deck-anagnosis id custom-deck custom-values))
-	 (tag-anagnosis (gnosis-get-note-tag-anagnosis id custom-tags custom-values))
-	 (note-anagnosis (or tag-anagnosis deck-anagnosis)))
-    note-anagnosis))
+  (let* ((deck-anagnosis (gnosis-get-thema-deck-anagnosis id custom-deck custom-values))
+	 (tag-anagnosis (gnosis-get-thema-tag-anagnosis id custom-tags custom-values))
+	 (thema-anagnosis (or tag-anagnosis deck-anagnosis)))
+    thema-anagnosis))
 
-(defun gnosis-get-note-deck-lethe (id &optional custom-deck custom-values)
-  "Return lethe deck value for note ID.
+(defun gnosis-get-thema-deck-lethe (id &optional custom-deck custom-values)
+  "Return lethe deck value for thema ID.
 
 CUSTOM-VALUES: Custom values to be used instead.
 CUSTOM-DECK: Custom deck to be used instead."
-  (let ((deck (or (gnosis-get-note-deck-name id) custom-deck)))
+  (let ((deck (or (gnosis-get-thema-deck-name id) custom-deck)))
     (or (gnosis-get-custom-deck-value deck :lethe custom-values)
 	gnosis-algorithm-lethe-value)))
 
-(defun gnosis-get-note-tag-lethe (id &optional custom-tags custom-values)
-  "Return note ID tag lethe values.
+(defun gnosis-get-thema-tag-lethe (id &optional custom-tags custom-values)
+  "Return thema ID tag lethe values.
 
 CUSTOM-VALUES: Custom values to be used instead.
 CUSTOM-TAGS: Custom tags to be used instead."
   (let ((lethe-values (gnosis-get-custom-tag-values id :lethe custom-tags custom-values)))
     (and lethe-values (apply #'min lethe-values))))
 
-(defun gnosis-get-note-lethe (id &optional custom-deck custom-tags custom-values)
-  "Return note ID lethe value.
+(defun gnosis-get-thema-lethe (id &optional custom-deck custom-tags custom-values)
+  "Return thema ID lethe value.
 
 CUSTOM-VALUES: Custom values to be used instead.
 CUSTOM-TAGS: Custom tags to be used instead.
 CUSTOM-DECK: Custom deck to be used instead."
-  (let* ((deck-lethe (gnosis-get-note-deck-lethe id custom-deck custom-values))
-	 (tag-lethe (gnosis-get-note-tag-lethe id custom-tags custom-values))
-	 (note-lethe (or tag-lethe deck-lethe)))
-    note-lethe))
+  (let* ((deck-lethe (gnosis-get-thema-deck-lethe id custom-deck custom-values))
+	 (tag-lethe (gnosis-get-thema-tag-lethe id custom-tags custom-values))
+	 (thema-lethe (or tag-lethe deck-lethe)))
+    thema-lethe))
 
-(defun gnosis-get-date-total-notes (&optional date)
-  "Return total notes reviewed for DATE.
+(defun gnosis-get-date-total-themata (&optional date)
+  "Return total themata reviewed for DATE.
 
 If entry for DATE does not exist, it will be created.
 
@@ -2185,8 +2187,8 @@ Defaults to current date."
 	       (gnosis--insert-into 'activity-log `([,date 0 ,reviewed-new])))
 	  0))))
 
-(defun gnosis-get-date-new-notes (&optional date)
-  "Return total notes reviewed for DATE.
+(defun gnosis-get-date-new-themata (&optional date)
+  "Return total themata reviewed for DATE.
 
 Defaults to current date."
   (cl-assert (listp date) nil "Date must be a list.")
@@ -2196,19 +2198,19 @@ Defaults to current date."
     reviewed-new))
 ;; TODO: Auto tag overdue tags.
 (defun gnosis-tags--append (id tag)
-  "Append TAG to the list of tags of note ID."
-  (cl-assert (numberp id) nil "ID must be the note id number")
+  "Append TAG to the list of tags of thema ID."
+  (cl-assert (numberp id) nil "ID must be the thema id number")
   (cl-assert (stringp tag) nil "Tag must a string")
-  (let* ((current-tags (gnosis-get 'tags 'notes `(= id ,id)))
+  (let* ((current-tags (gnosis-get 'tags 'themata `(= id ,id)))
 	 (new-tags (append current-tags (list tag))))
-    (gnosis-update 'notes `(= tags ',new-tags) `(= id ,id))))
+    (gnosis-update 'themata `(= tags ',new-tags) `(= id ,id))))
 
-(defun gnosis-search-note (&optional query)
-  "Search for note QUERY.
+(defun gnosis-search-thema (&optional query)
+  "Search for thema QUERY.
 
-Return note ids for notes that match QUERY."
+Return thema ids for themata that match QUERY."
   (cl-assert (or (stringp query) (eq query nil)))
-  (let* ((query (or query (read-string "Search for note: ")))
+  (let* ((query (or query (read-string "Search for thema: ")))
          (words (split-string query))
          (clause-keimenon `(and ,@(mapcar (lambda (word)
 					`(like keimenon ,(format "%%%s%%" word)))
@@ -2216,8 +2218,8 @@ Return note ids for notes that match QUERY."
 	 (clause-answer `(and ,@(mapcar (lambda (word)
 					  `(like answer ,(format "%%%s%%" word)))
 					words))))
-    (append (gnosis-select 'id 'notes clause-keimenon t)
-	    (gnosis-select 'id 'notes clause-answer t))))
+    (append (gnosis-select 'id 'themata clause-keimenon t)
+	    (gnosis-select 'id 'themata clause-answer t))))
 
 ;;; Database Schemas
 (defconst gnosis-db--schemata
@@ -2225,7 +2227,7 @@ Return note ids for notes that match QUERY."
      ([(id integer :primary-key :autoincrement)
        (name text :not-null)]
       (:unique [name])))
-    (notes
+    (themata
      ([(id integer :primary-key :autoincrement)
        (type text :not-null)
        (keimenon text :not-null)
@@ -2236,13 +2238,13 @@ Return note ids for notes that match QUERY."
       (:foreign-key [deck-id] :references decks [id]
 		    :on-delete :cascade)))
     (review
-     ([(id integer :primary-key :not-null) ;; note-id
+     ([(id integer :primary-key :not-null) ;; thema-id
        (gnosis integer :not-null)
        (amnesia integer :not-null)]
-      (:foreign-key [id] :references notes [id]
+      (:foreign-key [id] :references themata [id]
 		    :on-delete :cascade)))
     (review-log
-     ([(id integer :primary-key :not-null) ;; note-id
+     ([(id integer :primary-key :not-null) ;; thema-id
        (last-rev integer :not-null)  ;; Last review date
        (next-rev integer :not-null)  ;; Next review date
        (c-success integer :not-null) ;; Consecutive successful reviews
@@ -2251,7 +2253,7 @@ Return note ids for notes that match QUERY."
        (t-fails integer :not-null)   ;; Total failed reviews
        (suspend integer :not-null)   ;; Binary value, 1=suspended
        (n integer :not-null)]        ;; Number of reviews
-      (:foreign-key [id] :references notes [id]
+      (:foreign-key [id] :references themata [id]
 		    :on-delete :cascade)))
     (activity-log
      ([(date text :not-null)
@@ -2261,7 +2263,7 @@ Return note ids for notes that match QUERY."
      ([(id integer :primary-key :not-null)
        (parathema string)
        (review-image string)]
-      (:foreign-key [id] :references notes [id]
+      (:foreign-key [id] :references themata [id]
 		    :on-delete :cascade)))
      (tags
       ([(tag text :primary-key)]
@@ -2269,24 +2271,24 @@ Return note ids for notes that match QUERY."
      (links
       ([(source text)
 	(dest text)]
-       (:foreign-key [source] :references notes [id]
+       (:foreign-key [source] :references themata [id]
 		     :on-delete :cascade)
        (:unique [source dest])))))
 
 (defun gnosis-update--make-list (column)
   "Make COLUMN values into a list."
-  (let ((results (emacsql gnosis-db `[:select [id ,column] :from notes])))
+  (let ((results (emacsql gnosis-db `[:select [id ,column] :from themata])))
     (dolist (row results)
       (let ((id (car row))
             (old-value (cadr row)))
 	;; Update each entry, converting the value to a list representation
 	(unless (listp old-value)
-	  (emacsql gnosis-db `[:update notes
+	  (emacsql gnosis-db `[:update themata
 				       :set (= ,column $s1)
 				       :where (= id $s2)]
 		   (list old-value)
 		   id)
-	  (message "Update Note: %d" id))))))
+	  (message "Update Thema: %d" id))))))
 
 (defun gnosis-db-update-v4 ()
   "Update to databse version v4."
@@ -2297,41 +2299,41 @@ Return note ids for notes that match QUERY."
       (emacsql gnosis-db [:create-table :if-not-exists $i1 $S2] table schema))
     (cl-loop for tag in tags
 	     do (gnosis--insert-into 'tags `[,tag]))
-    (emacsql gnosis-db [:alter-table notes :rename-column main :to keimenon])
-    (emacsql gnosis-db [:alter-table notes :rename-column options :to hypothesis])
-    (emacsql gnosis-db [:alter-table extras :rename-column extra-notes :to parathema])
+    (emacsql gnosis-db [:alter-table themata :rename-column main :to keimenon])
+    (emacsql gnosis-db [:alter-table themata :rename-column options :to hypothesis])
+    (emacsql gnosis-db [:alter-table extras :rename-column extra-themata :to parathema])
     (emacsql gnosis-db [:alter-table extras :rename-column images :to review-image])
     (emacsql gnosis-db [:alter-table extras :drop-column extra-image])
     ;; Make sure all hypothesis & answer values are lists
     (gnosis-update--make-list 'hypothesis)
     (gnosis-update--make-list 'answer)
     ;; Fix MCQs
-    (cl-loop for note in (gnosis-select 'id 'notes '(= type "mcq") t)
+    (cl-loop for thema in (gnosis-select 'id 'themata '(= type "mcq") t)
 	     do (funcall
 		 (lambda (id)
-		   (let* ((data (gnosis-select '[hypothesis answer] 'notes `(= id ,id) t))
+		   (let* ((data (gnosis-select '[hypothesis answer] 'themata `(= id ,id) t))
 			  (hypothesis (nth 0 data))
 			  (old-answer (car (nth 1 data)))
 			  (new-answer (when (integerp old-answer)
 					(list (nth (- 1 old-answer) hypothesis)))))
 		     (when (integerp old-answer)
-		       (gnosis-update 'notes `(= answer ',new-answer) `(= id ,id)))))
-		 note))
+		       (gnosis-update 'themata `(= answer ',new-answer) `(= id ,id)))))
+		 thema))
     ;; Replace y-or-n with MCQ
-    (cl-loop for note in (gnosis-select 'id 'notes '(= type "y-or-n") t)
+    (cl-loop for thema in (gnosis-select 'id 'themata '(= type "y-or-n") t)
 	     do (funcall (lambda (id)
 			   (let ((data (gnosis-select '[type hypothesis answer]
-						      'notes `(= id ,id) t)))
+						      'themata `(= id ,id) t)))
 			     (when (string= (nth 0 data) "y-or-n")
-			       (gnosis-update 'notes '(= type "mcq") `(= id ,id))
-			       (gnosis-update 'notes '(= hypothesis '("Yes" "No"))
+			       (gnosis-update 'themata '(= type "mcq") `(= id ,id))
+			       (gnosis-update 'themata '(= hypothesis '("Yes" "No"))
 					      `(= id ,id))
 			       (if (= (car (nth 2 data)) 121)
-				   (gnosis-update 'notes '(= answer '("Yes"))
+				   (gnosis-update 'themata '(= answer '("Yes"))
 						  `(= id ,id))
-				 (gnosis-update 'notes '(= answer '("No"))
+				 (gnosis-update 'themata '(= answer '("No"))
 						`(= id ,id))))))
-			 note))
+			 thema))
     ;; Replace - with _, org does not support tags with dash.
     (cl-loop for tag in (gnosis-get-tags--unique)
 	     ;; Replaces dashes to underscores.
@@ -2357,8 +2359,8 @@ Return note ids for notes that match QUERY."
 ;; Dashboard
 ;;;;;;;;;;;;
 
-(defvar gnosis-dashboard-note-ids nil
-  "Store note ids for dashboard.")
+(defvar gnosis-dashboard-thema-ids nil
+  "Store thema ids for dashboard.")
 
 (defvar gnosis-dashboard-buffer-name "*Gnosis Dashboard*"
   "Name of gnosis-dashboard buffer.")
@@ -2377,8 +2379,8 @@ Return note ids for notes that match QUERY."
   (let* ((current-values (or current-values gnosis-dashboard--current))
 	 (type (plist-get current-values :type))
 	 (ids (plist-get current-values :ids)))
-    (cond ((eq type 'notes)
-	   (gnosis-dashboard-output-notes ids))
+    (cond ((eq type 'themata)
+	   (gnosis-dashboard-output-themata ids))
 	  ((eq type 'decks)
 	   (gnosis-dashboard-output-decks))
 	  ((eq type 'tags)
@@ -2403,49 +2405,49 @@ DATE: Integer, used with `gnosis-algorithm-date' to get previous dates."
 				 num))))))
 
 (defun gnosis-dashboard-output-average-rev ()
-  "Output the average daily notes reviewed as a string for the dashboard."
+  "Output the average daily themata reviewed as a string for the dashboard."
   (format "%.2f" (gnosis-calculate-average-daily-reviews)))
 
-(defun gnosis-dashboard-edit-note ()
-  "Edit note with ID."
+(defun gnosis-dashboard-edit-thema ()
+  "Edit thema with ID."
   (interactive)
   (let ((id (tabulated-list-get-id)))
-    (gnosis-edit-note id)))
+    (gnosis-edit-thema id)))
 
-(defun gnosis-dashboard-suspend-note ()
-  "Suspend note."
-  (interactive nil gnosis-dashboard-notes-mode)
+(defun gnosis-dashboard-suspend-thema ()
+  "Suspend thema."
+  (interactive nil gnosis-dashboard-themata-mode)
   (let ((current-line (line-number-at-pos)))
-    (gnosis-toggle-suspend-notes
+    (gnosis-toggle-suspend-themata
      (or gnosis-dashboard--selected-ids (list (tabulated-list-get-id))))
-    (gnosis-dashboard-output-notes gnosis-dashboard-note-ids)
+    (gnosis-dashboard-output-themata gnosis-dashboard-thema-ids)
     (revert-buffer t t t)
     (forward-line (- current-line 1))))
 
 (defun gnosis-dashboard-delete ()
-  "Delete note."
+  "Delete thema."
   (interactive)
   (let ((current-line (line-number-at-pos)))
     (if gnosis-dashboard--selected-ids
 	(gnosis-dashboard-marked-delete)
-      (gnosis-delete-note (tabulated-list-get-id))
-      (gnosis-dashboard-output-notes gnosis-dashboard-note-ids)
+      (gnosis-delete-thema (tabulated-list-get-id))
+      (gnosis-dashboard-output-themata gnosis-dashboard-thema-ids)
       (revert-buffer t t t))
     (forward-line (- current-line 1))))
 
-(defun gnosis-dashboard-search-note (&optional str)
-  "Search for notes with STR."
+(defun gnosis-dashboard-search-thema (&optional str)
+  "Search for themata with STR."
   (interactive)
-  (gnosis-dashboard-output-notes
-   (gnosis-collect-note-ids :query (or str (read-string "Search for note: ")))))
+  (gnosis-dashboard-output-themata
+   (gnosis-collect-thema-ids :query (or str (read-string "Search for thema: ")))))
 
-(defvar-keymap gnosis-dashboard-notes-mode-map
-  :doc "Keymap for notes dashboard."
+(defvar-keymap gnosis-dashboard-themata-mode-map
+  :doc "Keymap for themata dashboard."
   "q" #'gnosis-dashboard
-  "e" #'gnosis-dashboard-edit-note
-  "s" #'gnosis-dashboard-suspend-note
-  "SPC" #'gnosis-dashboard-search-note
-  "a" #'gnosis-add-note
+  "e" #'gnosis-dashboard-edit-thema
+  "s" #'gnosis-dashboard-suspend-thema
+  "SPC" #'gnosis-dashboard-search-thema
+  "a" #'gnosis-add-thema
   "r" #'gnosis-dashboard-return
   "g" #'gnosis-dashboard-return
   "d" #'gnosis-dashboard-delete
@@ -2454,22 +2456,22 @@ DATE: Integer, used with `gnosis-algorithm-date' to get previous dates."
   "u" #'gnosis-dashboard-mark-toggle
   "U" #'gnosis-dashboard-unmark-all)
 
-(define-minor-mode gnosis-dashboard-notes-mode
-  "Minor mode for gnosis dashboard notes output."
-  :keymap gnosis-dashboard-notes-mode-map
+(define-minor-mode gnosis-dashboard-themata-mode
+  "Minor mode for gnosis dashboard themata output."
+  :keymap gnosis-dashboard-themata-mode-map
   (gnosis-dashboard-decks-mode -1)
   (gnosis-dashboard-tags-mode -1))
 
-(defun gnosis-dashboard--output-notes (note-ids)
-  "Output tabulated-list format for NOTE-IDS."
-  (cl-assert (listp note-ids))
+(defun gnosis-dashboard--output-themata (thema-ids)
+  "Output tabulated-list format for THEMA-IDS."
+  (cl-assert (listp thema-ids))
   (let ((entries (emacsql gnosis-db
 			  `[:select
-			    [notes:id notes:keimenon notes:hypothesis notes:answer
-				      notes:tags notes:type review-log:suspend]
-			    :from notes
-			    :join review-log :on (= notes:id review-log:id)
-			    :where (in notes:id ,(vconcat note-ids))])))
+			    [themata:id themata:keimenon themata:hypothesis themata:answer
+				      themata:tags themata:type review-log:suspend]
+			    :from themata
+			    :join review-log :on (= themata:id review-log:id)
+			    :where (in themata:id ,(vconcat thema-ids))])))
     (cl-loop for sublist in entries
              collect
 	     (list (car sublist)
@@ -2481,44 +2483,44 @@ DATE: Integer, used with `gnosis-algorithm-date' to get previous dates."
 			     collect
 			     (replace-regexp-in-string "\n" " " (format "%s" item))))))))
 
-(defun gnosis-dashboard-output-notes (note-ids)
-  "Return NOTE-IDS contents on gnosis dashboard."
-  (cl-assert (listp note-ids) t "`note-ids' must be a list of note ids.")
+(defun gnosis-dashboard-output-themata (thema-ids)
+  "Return THEMA-IDS contents on gnosis dashboard."
+  (cl-assert (listp thema-ids) t "`thema-ids' must be a list of thema ids.")
   (pop-to-buffer-same-window gnosis-dashboard-buffer-name)
   (gnosis-dashboard-enable-mode)
-  (gnosis-dashboard-notes-mode)
+  (gnosis-dashboard-themata-mode)
   (setf tabulated-list-format `[("Keimenon" ,(/ (window-width) 4) t)
                                 ("Hypothesis" ,(/ (window-width) 6) t)
                                 ("Answer" ,(/ (window-width) 6) t)
                                 ("Tags" ,(/ (window-width) 5) t)
                                 ("Type" ,(/ (window-width) 10) t)
                                 ("Suspend" ,(/ (window-width) 6) t)]
-        gnosis-dashboard-note-ids note-ids
+        gnosis-dashboard-thema-ids thema-ids
         tabulated-list-entries nil)
   (make-local-variable 'tabulated-list-entries)
   (tabulated-list-init-header)
   (let ((inhibit-read-only t)
-	(entries (gnosis-dashboard--output-notes note-ids)))
+	(entries (gnosis-dashboard--output-themata thema-ids)))
     (erase-buffer)
-    (insert (format "Loading %s notes..." (length note-ids)))
+    (insert (format "Loading %s themata..." (length thema-ids)))
     (setq tabulated-list-entries entries)
     (tabulated-list-print t)
     (setf gnosis-dashboard--current
-	  `(:type notes :ids ,note-ids))))
+	  `(:type themata :ids ,thema-ids))))
 
-(defun gnosis-dashboard-deck-note-count (id)
-  "Return total note count for deck with ID."
-  (let ((note-count (length (gnosis-select 'id 'notes `(= deck-id ,id) t))))
+(defun gnosis-dashboard-deck-thema-count (id)
+  "Return total thema count for deck with ID."
+  (let ((thema-count (length (gnosis-select 'id 'themata `(= deck-id ,id) t))))
     (when (gnosis-select 'id 'decks `(= id ,id))
-      (list (number-to-string note-count)))))
+      (list (number-to-string thema-count)))))
 
 (defun gnosis-dashboard-output-tag (tag)
-  "Output TAG name and total notes."
-  (let ((notes (gnosis-get-tag-notes tag)))
-    `(,tag ,(number-to-string (length notes)))))
+  "Output TAG name and total themata."
+  (let ((themata (gnosis-get-tag-themata tag)))
+    `(,tag ,(number-to-string (length themata)))))
 
-(defun gnosis-dashboard-sort-total-notes (entry1 entry2)
-  "Sort function for the total notes column, for ENTRY1 and ENTRY2."
+(defun gnosis-dashboard-sort-total-themata (entry1 entry2)
+  "Sort function for the total themata column, for ENTRY1 and ENTRY2."
   (let ((total1 (string-to-number (elt (cadr entry1) 1)))
         (total2 (string-to-number (elt (cadr entry2) 1))))
     (< total1 total2)))
@@ -2537,10 +2539,10 @@ DATE: Integer, used with `gnosis-algorithm-date' to get previous dates."
   (let ((tag (or tag (tabulated-list-get-id))))
     (when (y-or-n-p (format "Delete tag %s?"
 			    (propertize tag 'face 'font-lock-keyword-face)))
-      (cl-loop for note in (gnosis-get-tag-notes tag)
-	       do (let* ((tags (car (gnosis-select '[tags] 'notes `(= id ,note) t)))
+      (cl-loop for thema in (gnosis-get-tag-themata tag)
+	       do (let* ((tags (car (gnosis-select '[tags] 'themata `(= id ,thema) t)))
 			 (new-tags (remove tag tags)))
-		    (gnosis-update 'notes `(= tags ',new-tags) `(= id ,note))))
+		    (gnosis-update 'themata `(= tags ',new-tags) `(= id ,thema))))
       ;; Update tags in database
       (gnosis-tags-refresh)
       ;; Output tags anew
@@ -2556,31 +2558,31 @@ DATE: Integer, used with `gnosis-algorithm-date' to get previous dates."
     (gnosis-dashboard-output-decks)))
 
 (defun gnosis-dashboard-suspend-tag (&optional tag)
-  "Suspend notes of TAG."
+  "Suspend themata of TAG."
   (interactive)
   (let* ((tag (or tag (tabulated-list-get-id)))
-	 (notes (gnosis-get-tag-notes tag))
+	 (themata (gnosis-get-tag-themata tag))
 	 (suspend (if current-prefix-arg 0 1))
 	 (confirm-msg (y-or-n-p
 		       (if (= suspend 0)
-			   "Unsuspend all notes for tag? "
-			 "Suspend all notes for tag?"))))
+			   "Unsuspend all themata for tag? "
+			 "Suspend all themata for tag?"))))
     (when confirm-msg
       (emacsql gnosis-db
 	       `[:update review-log :set (= suspend ,suspend) :where
-			 (in id ,(vconcat notes))])
+			 (in id ,(vconcat themata))])
       (if (= suspend 0)
-	  (message "Unsuspended %s notes" (length notes))
-	(message "Suspended %s notes" (length notes))))))
+	  (message "Unsuspended %s themata" (length themata))
+	(message "Suspended %s themata" (length themata))))))
 
-(defun gnosis-dashboard-tag-view-notes (&optional tag)
-  "View notes for TAG."
+(defun gnosis-dashboard-tag-view-themata (&optional tag)
+  "View themata for TAG."
   (interactive)
   (let ((tag (or tag (tabulated-list-get-id))))
-    (gnosis-dashboard-output-notes (gnosis-get-tag-notes tag))))
+    (gnosis-dashboard-output-themata (gnosis-get-tag-themata tag))))
 
 (defvar-keymap gnosis-dashboard-tags-mode-map
-  "RET" #'gnosis-dashboard-tag-view-notes
+  "RET" #'gnosis-dashboard-tag-view-themata
   "e" #'gnosis-dashboard-rename-tag
   "q" #'gnosis-dashboard
   "s" #'gnosis-dashboard-suspend-tag
@@ -2601,7 +2603,7 @@ DATE: Integer, used with `gnosis-algorithm-date' to get previous dates."
     (gnosis-dashboard-tags-mode)
     (setf gnosis-dashboard--current '(:type 'tags))
     (setq tabulated-list-format [("Name" 35 t)
-                                 ("Total Notes" 10 gnosis-dashboard-sort-total-notes)])
+                                 ("Total Themata" 10 gnosis-dashboard-sort-total-themata)])
     (tabulated-list-init-header)
     (setq tabulated-list-entries
           (cl-loop for tag in tags
@@ -2612,8 +2614,8 @@ DATE: Integer, used with `gnosis-algorithm-date' to get previous dates."
 (defun gnosis-dashboard-output-deck (id)
   "Output contents from deck ID, formatted for gnosis dashboard."
   (let* ((deck-name (gnosis-select 'name 'decks `(= id ,id) t))
-         (note-count (gnosis-dashboard-deck-note-count id))
-         (combined-data (append deck-name (mapcar #'string-to-number note-count))))
+         (thema-count (gnosis-dashboard-deck-thema-count id))
+         (combined-data (append deck-name (mapcar #'string-to-number thema-count))))
     (mapcar (lambda (item) (format "%s" item))
             (seq-filter (lambda (item)
                          (not (and (vectorp item) (seq-empty-p item))))
@@ -2638,7 +2640,7 @@ DATE: Integer, used with `gnosis-algorithm-date' to get previous dates."
   (gnosis-dashboard-enable-mode)
   (gnosis-dashboard-decks-mode)
   (setq tabulated-list-format [("Name" 15 t)
-			       ("Total Notes" 10 gnosis-dashboard-sort-total-notes)])
+			       ("Total Themata" 10 gnosis-dashboard-sort-total-themata)])
   (tabulated-list-init-header)
   (setq tabulated-list-entries
 	(cl-loop for id in (gnosis-select 'id 'decks nil t)
@@ -2656,9 +2658,9 @@ DATE: Integer, used with `gnosis-algorithm-date' to get previous dates."
   (revert-buffer t t t))
 
 (defun gnosis-dashboard-decks-suspend-deck (&optional deck-id)
-  "Suspend notes for DECK-ID.
+  "Suspend themata for DECK-ID.
 
-When called with called with a prefix, unsuspend all notes of deck."
+When called with called with a prefix, unsuspend all themata of deck."
   (interactive)
   (let ((deck-id (or deck-id (string-to-number (tabulated-list-get-id)))))
     (gnosis-suspend-deck deck-id)
@@ -2674,10 +2676,10 @@ When called with called with a prefix, unsuspend all notes of deck."
     (revert-buffer t t t)))
 
 (defun gnosis-dashboard-decks-view-deck (&optional deck-id)
-  "View notes of DECK-ID."
+  "View themata of DECK-ID."
   (interactive)
   (let ((deck-id (or deck-id (string-to-number (tabulated-list-get-id)))))
-    (gnosis-dashboard-output-notes (gnosis-collect-note-ids :deck deck-id))))
+    (gnosis-dashboard-output-themata (gnosis-collect-thema-ids :deck deck-id))))
 
 (defun gnosis-dashboard-history (&optional history)
   "Display review HISTORY."
@@ -2692,8 +2694,8 @@ When called with called with a prefix, unsuspend all notes of deck."
       (tabulated-list-mode)
       (setq tabulated-list-format
             `[("Date" ,(/ (window-width) 6) t)
-              ("Total Reviews" ,(/ (window-width) 6) gnosis-dashboard-sort-total-notes)
-              ("New" ,(/ (window-width) 6) gnosis-dashboard-sort-total-notes)])
+              ("Total Reviews" ,(/ (window-width) 6) gnosis-dashboard-sort-total-themata)
+              ("New" ,(/ (window-width) 6) gnosis-dashboard-sort-total-themata)])
       (make-local-variable 'tabulated-list-entries)
       ;; Sort for date
       (setq tabulated-list-sort-key (cons "Date" t))
@@ -2720,10 +2722,10 @@ When called with called with a prefix, unsuspend all notes of deck."
   "h" #'gnosis-dashboard-menu
   "H" #'gnosis-dashboard-history
   "r" #'gnosis-review
-  "a" #'gnosis-add-note
+  "a" #'gnosis-add-thema
   "A" #'gnosis-add-deck
   "s" #'gnosis-dashboard-suffix-query
-  "n" #'(lambda () (interactive) (gnosis-dashboard-output-notes (gnosis-collect-note-ids)))
+  "n" #'(lambda () (interactive) (gnosis-dashboard-output-themata (gnosis-collect-thema-ids)))
   "d" #'gnosis-dashboard-suffix-decks
   "t" #'(lambda () (interactive) (gnosis-dashboard-output-tags)))
 
@@ -2743,27 +2745,27 @@ When called with called with a prefix, unsuspend all notes of deck."
 	     (not (eq major-mode 'gnosis-dashboard-mode)))
     (gnosis-dashboard-mode)))
 
-(cl-defun gnosis-dashboard--search (&optional dashboard-type (note-ids nil))
+(cl-defun gnosis-dashboard--search (&optional dashboard-type (thema-ids nil))
   "Display gnosis dashboard.
 
-NOTE-IDS: List of note ids to display on dashboard.  When nil, prompt
+THEMA-IDS: List of thema ids to display on dashboard.  When nil, prompt
 for dashboard type.
 
-DASHBOARD-TYPE: either Notes or Decks to display the respective dashboard."
+DASHBOARD-TYPE: either Themata or Decks to display the respective dashboard."
   (interactive)
   (let ((dashboard-type (or dashboard-type
 			    (cadr (read-multiple-choice
 				   "Display dashboard for:"
-				   '((?n "notes")
+				   '((?n "themata")
 				     (?d "decks")
 				     (?t "tags")
 				     (?s "search")))))))
-    (if note-ids (gnosis-dashboard-output-notes note-ids)
+    (if thema-ids (gnosis-dashboard-output-themata thema-ids)
       (pcase dashboard-type
-	("notes" (gnosis-dashboard-output-notes (gnosis-collect-note-ids)))
+	("themata" (gnosis-dashboard-output-themata (gnosis-collect-thema-ids)))
 	("decks" (gnosis-dashboard-output-decks))
-	("tags"  (gnosis-dashboard-output-notes (gnosis-collect-note-ids :tags t)))
-	("search" (gnosis-dashboard-search-note))))
+	("tags"  (gnosis-dashboard-output-themata (gnosis-collect-thema-ids :tags t)))
+	("search" (gnosis-dashboard-search-thema))))
     (tabulated-list-print t)))
 
 (defun gnosis-dashboard-mark-toggle ()
@@ -2810,28 +2812,28 @@ DASHBOARD-TYPE: either Notes or Decks to display the respective dashboard."
         (overlay-put ov 'face 'highlight)
         (overlay-put ov 'gnosis-mark t))
       ;; Set selected IDs
-      (setq gnosis-dashboard--selected-ids gnosis-dashboard-note-ids)
+      (setq gnosis-dashboard--selected-ids gnosis-dashboard-thema-ids)
       (message "Marked %d items" (count-lines (point-min) (point-max))))))
 
 (defun gnosis-dashboard-marked-delete ()
-  "Delete marked note entries."
+  "Delete marked thema entries."
   (interactive)
-  (when (y-or-n-p "Delete selected notes?")
-    (cl-loop for note in gnosis-dashboard--selected-ids
-	     do (gnosis-delete-note note t))
+  (when (y-or-n-p "Delete selected themata?")
+    (cl-loop for thema in gnosis-dashboard--selected-ids
+	     do (gnosis-delete-thema thema t))
     (gnosis-dashboard-return)))
 
 (defun gnosis-dashboard-marked-suspend ()
-  "Suspend marked note entries."
+  "Suspend marked thema entries."
   (interactive)
-  (when (y-or-n-p "Toggle SUSPEND on selected notes?")
-    (gnosis-toggle-suspend-notes gnosis-dashboard--selected-ids nil)
+  (when (y-or-n-p "Toggle SUSPEND on selected themata?")
+    (gnosis-toggle-suspend-themata gnosis-dashboard--selected-ids nil)
     (gnosis-dashboard-return)))
 
 (transient-define-suffix gnosis-dashboard-suffix-query (query)
-  "Search for note content for QUERY."
-  (interactive "sSearch for note content: ")
-  (gnosis-dashboard-output-notes (gnosis-collect-note-ids :query query)))
+  "Search for thema content for QUERY."
+  (interactive "sSearch for thema content: ")
+  (gnosis-dashboard-output-themata (gnosis-collect-thema-ids :query query)))
 
 (transient-define-suffix gnosis-dashboard-suffix-decks ()
   (interactive)
@@ -2841,15 +2843,15 @@ DASHBOARD-TYPE: either Notes or Decks to display the respective dashboard."
   "Transient buffer for gnosis dashboard interactions."
   [["Actions"
     ("r" "Review" gnosis-review)
-    ("a" "Add note" gnosis-add-note)
+    ("a" "Add thema" gnosis-add-thema)
     ("A" "Add deck" gnosis-add-deck)
     ("q" "Quit" quit-window)
     "\n"]
-   ["Notes"
+   ["Themata"
     ("s" "Search" gnosis-dashboard-suffix-query)
-    ("n" "Notes" (lambda () (interactive)
-		   (gnosis-dashboard-output-notes
-		    (gnosis-collect-note-ids))))
+    ("n" "Themata" (lambda () (interactive)
+		   (gnosis-dashboard-output-themata
+		    (gnosis-collect-thema-ids))))
     ("d" "Decks" gnosis-dashboard-suffix-decks)
     ("t" "Tags" (lambda () (interactive)
 		  (gnosis-dashboard-output-tags)))]
@@ -2861,8 +2863,8 @@ DASHBOARD-TYPE: either Notes or Decks to display the respective dashboard."
   "Launch gnosis dashboard."
   (interactive)
   (let* ((buffer (get-buffer-create gnosis-dashboard-buffer-name))
-	 (due-log (gnosis-review-get--due-notes))
-	 (due-note-ids (mapcar #'car due-log))
+	 (due-log (gnosis-review-get--due-themata))
+	 (due-thema-ids (mapcar #'car due-log))
 	 (inhibit-read-only t))
     (with-current-buffer buffer
       (erase-buffer)
@@ -2875,22 +2877,22 @@ DASHBOARD-TYPE: either Notes or Decks to display the respective dashboard."
       (insert (gnosis-center-string
 	       (format "\nReviewed today: %s (New: %s)"
 		       (propertize
-			(number-to-string (gnosis-get-date-total-notes))
+			(number-to-string (gnosis-get-date-total-themata))
 			'face
 			'font-lock-variable-use-face)
 		       (propertize
-			(number-to-string (gnosis-get-date-new-notes))
+			(number-to-string (gnosis-get-date-new-themata))
 			'face
 			'font-lock-keyword-face))))
       (insert "\n")
       (insert (gnosis-center-string
-	       (format "Due notes: %s (Overdue: %s)"
+	       (format "Due themata: %s (Overdue: %s)"
 		       (propertize
-			(number-to-string (length due-note-ids))
+			(number-to-string (length due-thema-ids))
 			'face 'error)
 		       (propertize
 			(number-to-string
-			 (length (gnosis-review-get-overdue-notes)))
+			 (length (gnosis-review-get-overdue-themata)))
 			'face 'warning))))
       (insert "\n\n")
       (insert (gnosis-center-string
@@ -2949,17 +2951,17 @@ DASHBOARD-TYPE: either Notes or Decks to display the respective dashboard."
 
 ;;;###autoload
 (define-minor-mode gnosis-modeline-mode
-  "Minor mode for showing gnosis total due notes on modeline."
+  "Minor mode for showing gnosis total due themata on modeline."
   :global t
   :group 'gnosis
   :lighter nil
-  (setq gnosis-due-notes-total (length (gnosis-review-get-due-notes)))
+  (setq gnosis-due-themata-total (length (gnosis-review-get-due-themata)))
   (if gnosis-modeline-mode
       (progn
         (add-to-list 'global-mode-string
                      '(:eval
-                       (if (and gnosis-due-notes-total (> gnosis-due-notes-total 0))
-                           (format " G:%d" gnosis-due-notes-total)
+                       (if (and gnosis-due-themata-total (> gnosis-due-themata-total 0))
+                           (format " G:%d" gnosis-due-themata-total)
                          "")))
         (force-mode-line-update))
     (setq global-mode-string
