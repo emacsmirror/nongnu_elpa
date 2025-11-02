@@ -1906,9 +1906,9 @@ generate new note id."
   :interactive nil
   :lighter " Gnosis Edit"
   :keymap gnosis-edit-mode-map
-  (setq header-line-format (format " Save note by running %s or %s to quit"
-				   (propertize "C-c C-c" 'face 'help-key-binding)
-				   (propertize "C-c C-k" 'face 'help-key-binding))))
+  (setq header-line-format
+	(substitute-command-keys
+	 " Save note by running \\[gnosis-save] or \\[gnosis-edit-quit] to quit")))
 
 (defun gnosis-validate-custom-values (new-value)
   "Validate the structure and values of NEW-VALUE for gnosis-custom-values."
