@@ -49,6 +49,7 @@
 (require 'org-element)
 
 (require 'gnosis-algorithm)
+(require 'gnosis-monkeytype)
 (require 'org-gnosis)
 
 
@@ -1214,6 +1215,16 @@ If NEW? is non-nil, increment new themata log by 1."
           (funcall func-name id))
       (error "Malformed thema type: '%s'" type))))
 
+(defun gnosis-review-process-thema--monkeytype (thema)
+  "Process monkeytyping for THEMA."
+  (let* ((thema-context (gnosis-select '[keimenon type answer] 'themata `(= id ,thema) t))
+	 (keimenon (nth 0 thema-context))
+	 (type (nth 1 thema-context))
+	 (answer (nth 2 thema-context)))
+    (cond ((string= type "basic")
+	   (gnosis-monkeytype (concat keimenon "\n" (car answer)) type))
+	  (t (gnosis-monkeytype keimenon type)))))
+
 (defun gnosis-review-process-thema (thema &optional thema-count)
   "Process review for THEMA and update session statistics.
 
@@ -1222,8 +1233,11 @@ header.  Returns the incremented THEMA-COUNT after processing.
 
 This is a helper function for `gnosis-review-session'."
   (let ((success (gnosis-review--display-thema thema))
-	(thema-count (or thema-count 0)))
+	(thema-count (or thema-count 0))
+	(thema-context (gnosis-select '[keimenon type] 'themata `(= id ,thema) t)))
     (cl-incf thema-count)
+    (unless success
+      (gnosis-monkeytype (nth 0 thema-context) (nth 1 thema-context)))
     (gnosis-review-actions success thema thema-count)
     (jump-to-register :gnosis-pre-image)
     (gnosis-review-update-header thema-count)
