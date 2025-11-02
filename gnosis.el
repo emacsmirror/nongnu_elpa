@@ -158,7 +158,7 @@ Avoid using an increased height value as this messes up with
 (defvar gnosis-testing nil
   "Change this to non-nil when running manual tests.")
 
-(defconst gnosis-db-version 3
+(defconst gnosis-db-version 4
   "Gnosis database version.")
 
 (defvar gnosis-thema-types
@@ -2340,6 +2340,11 @@ Return thema ids for themata that match QUERY."
 	     if (string-match-p "-" tag)
 	     do (gnosis-tag-rename tag (replace-regexp-in-string "-" "_" tag)))))
 
+(defun gnosis-db-update-v5 ()
+  "Update database v5."
+  (emacsql gnosis-db [:alter-table notes :rename-to themata])
+  (emacsql gnosis-db `[:pragma (= user-version ,gnosis-db-version)]))
+
 (defun gnosis-db-init ()
   "Create essential directories & database."
   (let ((gnosis-curr-version (caar (emacsql gnosis-db  [:pragma user-version]))))
@@ -2349,10 +2354,12 @@ Return thema ids for themata that match QUERY."
       (emacsql-with-transaction gnosis-db
 	(pcase-dolist (`(,table ,schema) gnosis-db--schemata)
 	  (emacsql gnosis-db [:create-table $i1 $S2] table schema))
-        (emacsql gnosis-db [:pragma (= user-version org-gnosis-db-version)])))
+        (emacsql gnosis-db `[:pragma (= user-version ,gnosis-db-version)])))
     ;; Update database schema for version
     (cond ((= gnosis-curr-version 2)
-	   (gnosis-db-update-v4)))))
+	   (gnosis-db-update-v4))
+	  ((< gnosis-curr-version 3)
+	   (gnosis-db-update-v5)))))
 
 (gnosis-db-init)
 
