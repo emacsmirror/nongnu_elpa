@@ -90,21 +90,35 @@
   "Exit monkeytyping."
   (interactive nil gnosis-monkeytype-mode)
   (kill-buffer (current-buffer))
+  (ignore-errors (throw 'monkeytype-loop t))
   (exit-recursive-edit))
+
+(defun gnosis-monkeytype--calculate-wpm (text start-time)
+  "Calculate and display WPM based on TEXT and START-TIME."
+  (let* ((end-time (current-time))
+         (elapsed-seconds (float-time (time-subtract end-time start-time)))
+         (elapsed-minutes (/ elapsed-seconds 60.0))
+         (word-count (length (split-string text "\\s-+")))
+         (wpm (/ word-count elapsed-minutes)))
+    (message "WPM: %.2f (Time: %.2f seconds)" wpm elapsed-seconds)
+    wpm))
 
 (defun gnosis-monkeytype (text thema-type)
   "Monkeytype TEXT for selected THEMA-TYPE."
   (when (and gnosis-monkeytype-enable (member thema-type gnosis-monkeytype-themata))
     (with-current-buffer (get-buffer-create gnosis-monkeytype-buffer-name)
       (erase-buffer)
-      (let ((text-formatted (gnosis-monkeytype--format-text text)))
+      (let ((text-formatted (gnosis-monkeytype--format-text text))
+	    (start-time (current-time)))
 	(setq gnosis-monkeytype-string text-formatted)
 	(gnosis-monkeytype-mode)
 	(insert text-formatted)
 	(switch-to-buffer (get-buffer-create gnosis-monkeytype-buffer-name))
 	(goto-char (point-min))
 	(add-hook 'after-change-functions #'gnosis-monkeytype--handle-change)
-	(recursive-edit)))))
+	(recursive-edit)
+	(setq gnosis-monkeytype-wpm-result
+	      (gnosis-monkeytype--calculate-wpm text-formatted start-time))))))
 
 (defvar-keymap gnosis-monkeytype-mode-map
   :doc "gnosis-monkeytype mode map"
