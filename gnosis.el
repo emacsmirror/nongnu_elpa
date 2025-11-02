@@ -159,6 +159,14 @@ Avoid using an increased height value as this messes up with
 (defvar gnosis-testing nil
   "Change this to non-nil when running manual tests.")
 
+(defvar gnosis-review-types '("Due themata"
+			      "Due themata of deck"
+			      "Due themata of specified tag(s)"
+			      "Overdue themata"
+			      "Due themata (Without Overdue)"
+			      "All themata of deck"
+			      "All themata of tag(s)"))
+
 (defconst gnosis-db-version 4
   "Gnosis database version.")
 
@@ -1364,35 +1372,30 @@ To customize the keybindings, adjust `gnosis-review-keybindings'."
       (?q (gnosis-review-action--quit success id)))))
 
 ;;;###autoload
-(defun gnosis-review ()
-  "Start gnosis review session."
+(defun gnosis-review (&optional fn)
+  "Start gnosis review session.
+
+FN: Review function, defaults to `gnosis-review-session'"
   (interactive)
-  ;; Refresh modeline
   (setq gnosis-due-themata-total (length (gnosis-review-get-due-themata)))
-  ;; reset pre-image register
   (set-register :gnosis-pre-image nil)
-  ;; Select review type
-  (let ((review-type
-	 (gnosis-completing-read "Review: "
-				 '("Due themata"
-				   "Due themata of deck"
-				   "Due themata of specified tag(s)"
-				   "Overdue themata"
-				   "Due themata (Without Overdue)"
-				   "All themata of deck"
-				   "All themata of tag(s)"))))
+  (let ((review-type (gnosis-completing-read "Review: " gnosis-review-types))
+	(fn (or fn #'gnosis-review-session)))
     (pcase review-type
-      ("Due themata" (gnosis-review-session (gnosis-collect-thema-ids :due t) t))
-      ("Due themata of deck" (gnosis-review-session
-			    (gnosis-collect-thema-ids :due t :deck (gnosis--get-deck-id))))
-      ("Due themata of specified tag(s)" (gnosis-review-session
-					(gnosis-collect-thema-ids :due t :tags t)))
-      ("Overdue themata" (gnosis-review-session (gnosis-review-get-overdue-themata)))
-      ("Due themata (Without Overdue)" (gnosis-review-session
-				      (gnosis-review-get-due-themata--no-overdue)))
-      ("All themata of deck" (gnosis-review-session
-			    (gnosis-collect-thema-ids :deck (gnosis--get-deck-id))))
-      ("All themata of tag(s)" (gnosis-review-session (gnosis-collect-thema-ids :tags t))))))
+      ("Due themata"
+       (funcall fn (gnosis-collect-thema-ids :due t) t))
+      ("Due themata of deck"
+       (funcall fn (gnosis-collect-thema-ids :due t :deck (gnosis--get-deck-id))))
+      ("Due themata of specified tag(s)"
+       (funcall fn (gnosis-collect-thema-ids :due t :tags t)))
+      ("Overdue themata"
+       (funcall fn (gnosis-review-get-overdue-themata)))
+      ("Due themata (Without Overdue)"
+       (funcall fn (gnosis-review-get-due-themata--no-overdue)))
+      ("All themata of deck"
+       (funcall fn (gnosis-collect-thema-ids :deck (gnosis--get-deck-id))))
+      ("All themata of tag(s)"
+       (funcall fn (gnosis-collect-thema-ids :tags t))))))
 
 (defun gnosis-review--select-topic ()
   "Prompt for topic from org-gnosis database and return it's id."
