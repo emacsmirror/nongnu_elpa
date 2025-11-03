@@ -608,7 +608,10 @@ DASHBOARD-TYPE: either Themata or Decks to display the respective dashboard."
       (gnosis-dashboard-mode)
       (dolist (module gnosis-dashboard-modules)
 	(funcall (symbol-value module))
-	(gnosis-insert-separator)))
+	(gnosis-insert-separator))
+      ;; Delete last separator
+      (beginning-of-visual-line)
+      (kill-whole-line))
     (pop-to-buffer-same-window buffer)
     (goto-char (point-min))
     (gnosis-dashboard-enable-mode)))
