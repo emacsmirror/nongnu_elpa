@@ -2291,15 +2291,15 @@ Return thema ids for themata that match QUERY."
        (review-image string)]
       (:foreign-key [id] :references themata [id]
 		    :on-delete :cascade)))
-     (tags
-      ([(tag text :primary-key)]
-       (:unique [tag])))
-     (links
-      ([(source text)
-	(dest text)]
-       (:foreign-key [source] :references themata [id]
-		     :on-delete :cascade)
-       (:unique [source dest])))))
+    (tags
+     ([(tag text :primary-key)]
+      (:unique [tag])))
+    (links
+     ([(source text)
+       (dest text)]
+      (:foreign-key [source] :references themata [id]
+		    :on-delete :cascade)
+      (:unique [source dest])))))
 
 (defun gnosis-update--make-list (column)
   "Make COLUMN values into a list."
