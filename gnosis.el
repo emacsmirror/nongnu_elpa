@@ -50,6 +50,7 @@
 
 (require 'gnosis-algorithm)
 (require 'gnosis-monkeytype)
+(require 'gnosis-utils)
 (require 'org-gnosis)
 
 
@@ -396,10 +397,6 @@ This will not be applied to sentences that start with double space."
       (find-file-other-window image-path)
       (switch-to-buffer-other-window gnosis-review-buffer-name))))
 
-(defun gnosis-trim-quotes (str)
-  "Remove prefix and suffxi quotes for STR."
-  (string-remove-prefix "\"" (string-remove-suffix "\"" str)))
-
 (defun gnosis-cloze-create (str clozes &optional cloze-string)
   "Replace CLOZES in STR with CLOZE-STRING, preserving whitespace pattern."
   (cl-assert (listp clozes) nil "Adding clozes: Clozes need to be a list.")
@@ -407,7 +404,7 @@ This will not be applied to sentences that start with double space."
     (with-temp-buffer
       (insert (gnosis-center-string (gnosis-org-format-string str)))
       (dolist (cloze clozes)
-        (let* ((cloze-text (gnosis-trim-quotes cloze))
+        (let* ((cloze-text (gnosis-utils-trim-quotes cloze))
                (replacement (concat
                              (and (string-match "^\\s-+" cloze-text)
 				  (match-string 0 cloze-text))
@@ -437,28 +434,6 @@ This will not be applied to sentences that start with double space."
                  (goto-char (match-end 0)))) ; Move point to end of match
       (buffer-string))))
 
-(defun gnosis-cloze-mark-answers (str answers face)
-  "Mark ANSWERS in STR with FACE.
-
-Replaces first occurence of answer in STR with FACE."
-  (cl-assert (listp answers) nil "Answers to mark must be a list.")
-  (with-temp-buffer
-    (insert str)
-    (goto-char (point-min))
-    (dolist (answer answers)
-      (let ((answer-text (gnosis-trim-quotes answer)))
-        (when (search-forward answer-text nil t)
-          (replace-match
-           (mapconcat
-            (lambda (char)
-              (if (not (memq char '(?\s ?\t ?\n)))
-                  (propertize (char-to-string char) 'face face)
-                (char-to-string char)))
-            answer-text
-            "")
-           nil t))))
-    (buffer-string)))
-
 (defun gnosis-cloze-mark-false (str answers)
   "Mark contents of STR as false for ANSWERS.
 
@@ -466,11 +441,11 @@ First item of answers will be marked as false, while the rest unanswered."
   (let* ((false (car answers))
 	 (unanswered (cdr answers))
          (str-with-false (and answers
-			      (gnosis-cloze-mark-answers str (list false)
+			      (gnosis-utils-highlight-words str (list false)
 							 'gnosis-face-false)))
 	 final)
     (if unanswered
-	(setq final (gnosis-cloze-mark-answers str-with-false
+	(setq final (gnosis-utils-highlight-words str-with-false
 					       (if (listp unanswered) unanswered
 						 (list unanswered))
 					       'gnosis-face-unanswered))
@@ -484,7 +459,7 @@ Applies highlighting for CORRECT & FALSE."
   (let* ((cloze-str (gnosis-cloze-create str clozes))
 	 (str-with-hints (gnosis-cloze-add-hints cloze-str hints))
 	 (str-with-c-answers
-	  (gnosis-cloze-mark-answers str-with-hints correct 'gnosis-face-correct))
+	  (gnosis-utils-highlight-words str-with-hints correct 'gnosis-face-correct))
 	 (final (gnosis-cloze-mark-false str-with-c-answers false)))
     (gnosis-display-keimenon final)))
 
@@ -707,7 +682,7 @@ LENGTH: length of id, default to a random number between 10-15."
   (cl-every (lambda (cloze)
               (string-match-p
                (regexp-quote
-	        (gnosis-trim-quotes cloze))
+	        (gnosis-utils-trim-quotes cloze))
                sentence))
             clozes))
 ;; TODO: use a better name to indicate that it also removes hints from STRING.
@@ -769,10 +744,10 @@ This function should be used in combination with
   "Compare STR1 and STR2, ignoring case and whitespace."
   (let* ((normalized-str1 (downcase
 			   (replace-regexp-in-string "\\s-" ""
-						     (gnosis-trim-quotes str1))))
+						     (gnosis-utils-trim-quotes str1))))
          (normalized-str2 (downcase
 			   (replace-regexp-in-string "\\s-" ""
-						     (gnosis-trim-quotes str2))))
+						     (gnosis-utils-trim-quotes str2))))
          (max-length (max (length normalized-str1) (length normalized-str2))))
     (if (> max-length gnosis-string-difference)
         (<= (string-distance normalized-str1 normalized-str2) gnosis-string-difference)
@@ -1239,8 +1214,9 @@ If NEW? is non-nil, increment new themata log by 1."
 	 (type (nth 1 thema-context))
 	 (answer (nth 2 thema-context)))
     (cond ((string= type "basic")
-	   (gnosis-monkeytype (concat keimenon "\n" (car answer)) type))
-	  (t (gnosis-monkeytype keimenon type)))))
+	   (gnosis-monkeytype (concat keimenon "\n" (car answer)) type
+			      answer))
+	  (t (gnosis-monkeytype keimenon type answer)))))
 
 (defun gnosis-review-process-thema (thema &optional thema-count)
   "Process review for THEMA and update session statistics.
