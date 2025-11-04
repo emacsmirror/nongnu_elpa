@@ -29,6 +29,9 @@
 
 ;;; Code:
 
+(require 'gnosis-utils)
+
+
 (defface gnosis-monketype-face-dimmed
   '((((class color) (background light)) :foreground "grey50")
     (((class color) (background  dark)) :foreground "grey50"))
@@ -108,16 +111,21 @@
     (message "WPM: %.2f (Time: %.2f seconds)" wpm elapsed-seconds)
     wpm))
 
-(defun gnosis-monkeytype (text thema-type)
-  "Monkeytype TEXT for selected THEMA-TYPE."
+(defun gnosis-monkeytype (text thema-type &optional mistakes)
+  "Monkeytype TEXT for selected THEMA-TYPE.
+
+Optionally, highlight MISTAKES."
   (when (and gnosis-monkeytype-enable (member thema-type gnosis-monkeytype-themata))
     (with-current-buffer (get-buffer-create gnosis-monkeytype-buffer-name)
       (erase-buffer)
-      (let ((text-formatted (gnosis-monkeytype--format-text text))
+      (let ((text-formatted (gnosis-utils-highlight-words
+			     text mistakes 'gnosis-monkeytype-face-wrong
+			     'gnosis-monketype-face-dimmed))
 	    (start-time (current-time)))
 	(setq gnosis-monkeytype-string text-formatted)
 	(gnosis-monkeytype-mode)
 	(insert text-formatted)
+	(fill-paragraph)
 	(switch-to-buffer (get-buffer-create gnosis-monkeytype-buffer-name))
 	(goto-char (point-min))
 	(add-hook 'after-change-functions #'gnosis-monkeytype--handle-change)
