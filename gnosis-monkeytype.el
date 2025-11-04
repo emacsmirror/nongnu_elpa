@@ -41,7 +41,7 @@
   :group 'gnosis)
 
 (defface gnosis-monkeytype-face-wrong
-  '((t :foreground "#FF004D"))
+  '((t :inherit error))
   "Face for correctly typed text."
   :group 'gnosis)
 
