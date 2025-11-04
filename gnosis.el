@@ -1223,14 +1223,14 @@ If NEW? is non-nil, increment new themata log by 1."
   (cl-assert (listp themata) nil "Themata must be a list of ids")
   (catch 'monkeytype-loop
     (cl-loop for thema in themata
-	     do (gnosis-review-process-thema--monkeytype thema))))
+	     do (gnosis-monkeytype-thema thema))))
 
 (defun gnosis-monkeytype-start ()
   "Gnosis Monkeytype Session"
   (interactive)
   (gnosis-review #'gnosis-monkeytype-session))
 
-(defun gnosis-review-process-thema--monkeytype (thema)
+(defun gnosis-monkeytype-thema (thema)
   "Process monkeytyping for THEMA id."
   (let* ((thema-context (gnosis-select '[keimenon type answer] 'themata `(= id ,thema) t))
 	 (keimenon (replace-regexp-in-string
@@ -1250,11 +1250,9 @@ header.  Returns the incremented THEMA-COUNT after processing.
 
 This is a helper function for `gnosis-review-session'."
   (let ((success (gnosis-review--display-thema thema))
-	(thema-count (or thema-count 0))
-	(thema-context (gnosis-select '[keimenon type] 'themata `(= id ,thema) t)))
+	(thema-count (or thema-count 0)))
     (cl-incf thema-count)
-    (unless success
-      (gnosis-monkeytype (nth 0 thema-context) (nth 1 thema-context)))
+    (unless success (gnosis-monkeytype-thema thema))
     (gnosis-review-actions success thema thema-count)
     (jump-to-register :gnosis-pre-image)
     (gnosis-review-update-header thema-count)
