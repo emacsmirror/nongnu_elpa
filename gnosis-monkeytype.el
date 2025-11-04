@@ -30,7 +30,8 @@
 ;;; Code:
 
 (defface gnosis-monketype-face-dimmed
-  '((t :foreground "#888888"))
+  '((((class color) (background light)) :foreground "grey50")
+    (((class color) (background  dark)) :foreground "grey50"))
   "Face for untyped text."
   :group 'gnosis)
 
