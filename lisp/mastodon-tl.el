@@ -1495,24 +1495,24 @@ SENSITIVE is a flag from the item's JSON data."
     (setq-local pixel-scroll-precision-mode nil)))
 
 ;; patch `shr-browse-image' to accept url arg:
-(defun mastodon-tl-shr-browse-image (&optional image-url copy-url)
+(defun mastodon-tl-shr-browse-image (&optional arg)
   "Browse the image under point.
-If COPY-URL (the prefix if called interactively) is non-nil, copy
-the URL of the image to the kill buffer instead.
-Optionally use IMAGE-URL rather than the image-url property at point."
-  (interactive "sP")
-  (let ((url (or image-url (get-text-property (point) 'image-url))))
-    (cond
-     ((not url)
-      (message "No image under point"))
-     (copy-url
-      (with-temp-buffer
-        (insert url)
-        (copy-region-as-kill (point-min) (point-max))
-        (message "Copied %s" url)))
-     (t
-      (message "Browsing %s..." url)
-      (browse-url url)))))
+With a prefix argument, copy the URL of the image instead.
+If URL is a string, use it rather than the image-url property at point."
+  (interactive "P")
+  (let ((prop (get-text-property (point) 'image-url)))
+    (if current-prefix-arg
+        (if (not prop)
+            (user-error "No image at point?")
+          (with-temp-buffer
+            (insert prop)
+            (copy-region-as-kill (point-min) (point-max))
+            (message "Copied %s" prop)))
+      (let ((url (or arg prop)))
+        (if (not url)
+            (user-error "No URL here?")
+          (message "Browsing %s..." url)
+          (browse-url url))))))
 
 (defun mastodon-tl--view-image-url (url attachments)
   "View image URL. Set ATTACHMENTS metadata in image buffer."
