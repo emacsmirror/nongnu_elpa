@@ -70,12 +70,10 @@ Avoid using an increased height value as this messes up with
       (format "\nReviewed today: %s (New: %s)"
 	      (propertize
 	       (number-to-string (gnosis-get-date-total-themata))
-	       'face
-	       'font-lock-variable-use-face)
+	       'face 'success)
 	      (propertize
 	       (number-to-string (gnosis-get-date-new-themata))
-	       'face
-	       'font-lock-keyword-face)))
+	       'face 'font-lock-keyword-face)))
      "\n"
      (gnosis-center-string
       (format "Due themata: %s (Overdue: %s)"
