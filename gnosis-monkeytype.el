@@ -71,14 +71,15 @@
     (delete-trailing-whitespace)
     (buffer-string)))
 
-(defun gnosis-monkeytype--handle-change (_beg end _len)
+(defun gnosis-monkeytype--handler (_beg end _len)
   "Handler buffer change at END."
   (when (and (eq (current-buffer) (get-buffer gnosis-monkeytype-buffer-name))
 	     (eq this-command 'self-insert-command))
     (let ((correct-char (char-after end))
           (typed-char (char-before end)))
-      (when (and correct-char typed-char)
-	(message "Comparing: %c with %c POS: %d" typed-char correct-char end))
+      ;; Debugging ;;
+      ;; (when (and correct-char typed-char)
+      ;; 	(message "Comparing: %c with %c POS: %d" typed-char correct-char end))
       (if (and correct-char typed-char (char-equal correct-char typed-char))
           (progn
             (delete-char -1)
@@ -128,7 +129,7 @@ Optionally, highlight MISTAKES."
 	(fill-paragraph)
 	(switch-to-buffer (get-buffer-create gnosis-monkeytype-buffer-name))
 	(goto-char (point-min))
-	(add-hook 'after-change-functions #'gnosis-monkeytype--handle-change)
+	(add-hook 'after-change-functions #'gnosis-monkeytype--handler)
 	(recursive-edit)
 	(setq gnosis-monkeytype-wpm-result
 	      (gnosis-monkeytype--calculate-wpm text-formatted start-time))))))
