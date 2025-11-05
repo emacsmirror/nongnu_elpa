@@ -600,19 +600,19 @@ DASHBOARD-TYPE: either Themata or Decks to display the respective dashboard."
   "Launch gnosis dashboard."
   (interactive)
   (let* ((buffer (get-buffer-create gnosis-dashboard-buffer-name))
-	 (inhibit-read-only t))
+         (inhibit-read-only t))
     (with-current-buffer buffer
       (erase-buffer)
       (gnosis-dashboard-mode)
-      (dolist (module gnosis-dashboard-modules)
-	(funcall (symbol-value module))
-	(gnosis-insert-separator))
-      ;; Delete last separator
-      (beginning-of-visual-line)
-      (kill-whole-line))
-    (pop-to-buffer-same-window buffer)
-    (goto-char (point-min))
-    (gnosis-dashboard-enable-mode)))
+      (let ((modules gnosis-dashboard-modules))
+        (when modules
+          (funcall (symbol-value (car modules)))
+          (dolist (module (cdr modules))
+            (gnosis-insert-separator)
+            (funcall (symbol-value module)))))
+      (pop-to-buffer-same-window buffer)
+      (goto-char (point-min))
+      (gnosis-dashboard-enable-mode))))
 
 (provide 'gnosis-dashboard)
 ;;; gnosis-dashboard.el ends here
