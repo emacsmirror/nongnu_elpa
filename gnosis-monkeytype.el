@@ -136,6 +136,7 @@ Optionally, highlight MISTAKES."
 (defvar-keymap gnosis-monkeytype-mode-map
   :doc "gnosis-monkeytype mode map"
   :parent text-mode-map
+  "DEL" #'(lambda () (interactive) (message "DEL key is disabled."))
   "RET" #'forward-line
   "C-c C-k" #'gnosis-monkeytype-exit)
 
