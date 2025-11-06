@@ -45,7 +45,7 @@ Replaces first occurence of word in STR with FACE.
 Optionally, use custom DEFAULT-FACE."
   (cl-assert (listp words) nil "Words to mark must be a list.")
   (with-temp-buffer
-    (insert (propertize str 'face default-face))
+    (insert (if default-face (propertize str 'face default-face) str))
     (goto-char (point-min))
     (dolist (answer words)
       (let ((answer-text (gnosis-utils-trim-quotes answer)))
