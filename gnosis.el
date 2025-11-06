@@ -2391,8 +2391,8 @@ Return thema ids for themata that match QUERY."
   "Run `git pull' in DIR."
   (interactive)
   (let ((default-directory dir))
-    (let ((process (async-shell-command (format "%s pull" (executable-find "git")))))
-      (lambda (proc event)
+    (let ((_process (async-shell-command (format "%s pull" (executable-find "git")))))
+      (lambda (_proc event)
 	(when (string= event "finished\n")
 	  (setf gnosis-db
 		(emacsql-sqlite-open (expand-file-name "gnosis.db" gnosis-dir))))))))
