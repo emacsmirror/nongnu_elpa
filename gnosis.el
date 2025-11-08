@@ -6,7 +6,7 @@
 ;; Keywords: extensions
 ;; URL: https://thanosapollo.org/projects/gnosis
 
-;; Version: 0.5.7
+;; Version: 0.5.8
 
 ;; Package-Requires: ((emacs "27.2") (emacsql "4.1.0") (compat "29.1.4.2") (transient "0.7.2") (org-gnosis "0.0.9"))
 

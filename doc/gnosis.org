@@ -4,8 +4,8 @@
 #+language: en
 #+options: ':t toc:nil author:t email:t num:t
 #+startup: content
-#+macro: stable-version 0.5.0
-#+macro: release-date 2025-06-17
+#+macro: stable-version 0.5.8
+#+macro: release-date 2025-11-08
 #+macro: file @@texinfo:@file{@@$1@@texinfo:}@@
 #+macro: space @@texinfo:@: @@
 #+macro: kbd @@texinfo:@kbd{@@$1@@texinfo:}@@
@@ -14,7 +14,7 @@
 #+macro: kbd @@texinfo:@kbd{@@$1@@texinfo:}@@
 #+texinfo_filename: gnosis.info
 #+texinfo_dir_category: Emacs misc features
-#+texinfo_dir_title: Gnosis: (gnosis) 
+#+texinfo_dir_title: Gnosis: (gnosis)
 #+texinfo_dir_desc: Spaced Repetition System
 #+texinfo_header: @set MAINTAINERSITE @uref{https://thanosapollo.org,maintainer webpage}
 #+texinfo_header: @set MAINTAINER Thanos Apollo
@@ -22,10 +22,9 @@
 #+texinfo_header: @set MAINTAINERCONTACT @uref{mailto:public@thanosapollo.org,contact the maintainer}
 
 
-Gnosis is a customizable spaced repetition system designed to enhance
-memory retention through active recall.  It allows users to set
-specific review intervals for note decks & tags, creating an optimal
-learning environment tailored to each specific topic/subject.
+Gnosis is a learning tool designed to enhance memory retention by
+integrating a note-taking system with spaced repetition and
+self-testing.
 
 #+texinfo: @noindent
 This manual is written for Gnosis version {{{stable-version}}}, released on {{{release-date}}}.
@@ -42,18 +41,15 @@ This manual is written for Gnosis version {{{stable-version}}}, released on {{{r
 
 * Introduction
 
-Gnosis (γνῶσις) is a spaced repetition system that enhances memory
-retention through active recall. It employs a Q&A format, where each
-gnosis consists of a question, answer, and explanation.
+Gnosis consists of a note taking module (=org-gnosis=) and a self
+testing module.
 
-Gnosis algorithm is highly adjustable, allowing users to set specific
-values not just for note decks but for tags as well.  Gnosis'
-adjustability allows users to fine-tune settings not only for entire
-note collections but also for specific tagged topics, thereby creating
-a personalized learning environment for each topic.  Read more on
-[[Gnosis Algorithm]]
+Users can use each module independently, but Gnosis is designed for a
+workflow that starts with writing a note on a topic. After completing
+a note, the user creates themas (questions/flashcards) for that topic,
+which are used for reviews based on the [[Gnosis Algorithm]].
 
-* Getting started
+* Getting started Tutorial
 
 To follow this tutorial, clone the demo deck available at codeberg
 
@@ -66,18 +62,36 @@ Import it to your gnosis collection via {{{kbd(M-x gnosis-import-deck)}}}
 The first thing new users should familiarize themselves with is
 =gnosis-dashboard=, which you can access via {{{kbd(M-x gnosis-dashboard)}}}.
 
-From there you have access to your review stats & history as well as
-your gnosis contents.
-
-You can start a review session from the dashboard or with {{{kbd(M-x
+You can start a review session from the dashboard by pressing {{{kbd(r)}}} or with {{{kbd(M-x
 gnosis-review)}}}.
 
   NOTE: Gnosis supports reviewing specifics topics for notes of
   =org-gnosis= with {{{kbd(M-x gnosis-review-topic)}}}
 
-You can add new gnosis from the dashboard or with {{{kbd(M-x gnosis-add-note)}}}
+You can add new themata from the dashboard {{{kbd(a)}}} or with {{{kbd(M-x gnosis-add-thema)}}}
 
-* Note Types
+** Linking Themata to Note Topics
+We can create a demo note topic for Vancomycin, an antibiotic, with
+{{{kbd(M-x org-gnosis-find RET Vancomycin)}}}.  For this demo, just save
+the buffer contents by pressing {{{kbd(C-x C-s)}}}.
+
+Back to the dashboard {{{kbd(M-x gnosis-dashboard)}}}, we can view all
+our themata by pressing {{{kbd(n)}}} or we can press {{{kbd(s)}}} to
+search our themata.  For this demo, we are looking for a thema from
+the demo deck we imported, that contains a questions about
+=Vancomycin=.
+
+To link that thema to the note topic we created before, press
+{{{kbd(e)}}} to edit the thema.  In the =Keimenon= section delete
+"Vancomycin" and press {{{kbd(M-x org-gnosis-insert RET
+Vancomycin)}}}.
+
+After saving the thema with {{{kbd(M-x C-c C-c)}}}, you can review all
+themata linked to that topic by {{{kbd(M-x gnosis-review-topic)}}}.
+
+View more on [[Linking gnosis themata to org-gnosis content]].
+
+* Thema Types
 Each note is a *thema* consisting of the following components:
 
 - *Keimenon*; The main text or question.
@@ -90,7 +104,7 @@ Each note is a *thema* consisting of the following components:
 
 Optionally, you can use also add tags for each note.
 
-Notes/themas can have multiple hypotheses and answers (*depending on
+Themas can have multiple hypotheses and answers (*depending on
 their type*), separated by =gnosis-export-separator=, which defaults to
 ="\n-"= /(a new line followed by a dash)/.
 
@@ -99,9 +113,9 @@ their type*), separated by =gnosis-export-separator=, which defaults to
 :CUSTOM_ID: Cloze
 :END:
 A cloze note type is a format where you create sentences or paragraphs
-with "missing" words.  A fill-in-the-blanks question.  
+with "missing" words.  A fill-in-the-blanks question.
 
-You can create a cloze note type using =M-x gnosis-add-note= and
+You can create a cloze note type using =M-x gnosis-add-thema= and
 selecting ~Cloze~.
 
 Example format:
@@ -113,20 +127,20 @@ Example format:
   :GNOSIS_ID: NEW
   :GNOSIS_TYPE: cloze
   :END:
-  ,** Keimenon 
+  ,** Keimenon
   What is the treatment for Actinomyces infection?
 
   Penicillin
 
-  ,** Hypothesis 
+  ,** Hypothesis
   - drug type
 
-  ,** Answer 
+  ,** Answer
   - Penicillin
 
-  ,** Parathema 
+  ,** Parathema
   Sulfonamides → Nocardia
-  Actinomyces → [[id:680ca944-8ee9-4513-92d6-25696ee01f48][Penicillin]] 
+  Actinomyces → [[id:680ca944-8ee9-4513-92d6-25696ee01f48][Penicillin]]
   (treatment is a SNAP)
 #+end_src
 
@@ -137,16 +151,16 @@ Example format:
   :GNOSIS_ID: NEW
   :GNOSIS_TYPE: cloze
   :END:
-  ,** Keimenon 
+  ,** Keimenon
   {c1:Cyproheptadine::drug name} is a(n) {c2:5-HT2} receptor antagonist used to treat {c2:serotonin syndrome}
 
-  ,** Hypothesis 
-  - 
+  ,** Hypothesis
+  -
 
-  ,** Answer 
-  - 
+  ,** Answer
+  -
 
-  ,** Parathema 
+  ,** Parathema
 
 #+end_src
 
@@ -156,7 +170,7 @@ You can format clozes like Anki if you so prefer with hints; e.g ~{{c1::Cyprohep
 
 + For each cX-tag there will be created a cloze type note, the above
   example creates 2 cloze type notes.
-  
+
 + Each cX tag can have multiple clozes, but each cloze must be a
   *UNIQUE* word, or a unique combination of words, in given note.
 
@@ -201,8 +215,7 @@ Example format:
 
 #+end_src
 
-* Linking gnosis notes to org-gnosis content
-/org-gnosis is the note taking module of gnosis/
+* Linking gnosis themata to org-gnosis content
 
 + You can create notes using =M-x org-gnosis-find=, to link them to a
   gnosis thema use =M-x org-gnosis-insert= to insert a link of said

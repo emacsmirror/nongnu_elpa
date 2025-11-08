@@ -12,12 +12,11 @@ File: gnosis.info,  Node: Top,  Next: Introduction,  Up: (dir)
 Gnosis User Manual
 ******************
 
-Gnosis is a customizable spaced repetition system designed to enhance
-memory retention through active recall.  It allows users to set specific
-review intervals for note decks & tags, creating an optimal learning
-environment tailored to each specific topic/subject.
+Gnosis is a learning tool designed to enhance memory retention by
+integrating a note-taking system with spaced repetition and
+self-testing.
 
-This manual is written for Gnosis version 0.5.0, released on 2025-06-17.
+This manual is written for Gnosis version 0.5.8, released on 2025-11-08.
 
    • Manual:
         • <https://elpa.nongnu.org/nongnu/doc/gnosis.html>
@@ -32,9 +31,9 @@ This manual is written for Gnosis version 0.5.0, released on 2025-06-17.
 * Menu:
 
 * Introduction::
-* Getting started::
-* Note Types::
-* Linking gnosis notes to org-gnosis content::
+* Getting started Tutorial::
+* Thema Types::
+* Linking gnosis themata to org-gnosis content::
 * Customization::
 * Gnosis Algorithm::
 * Editing notes::
@@ -44,11 +43,12 @@ This manual is written for Gnosis version 0.5.0, released on 2025-06-17.
 
 -- The Detailed Node Listing --
 
-Getting started
+Getting started Tutorial
 
 * Gnosis Dashboard::
+* Linking Themata to Note Topics::
 
-Note Types
+Thema Types
 
 * Cloze::
 * MCQ::
@@ -78,27 +78,24 @@ Contributing
 
 
 
-File: gnosis.info,  Node: Introduction,  Next: Getting started,  Prev: Top,  Up: Top
+File: gnosis.info,  Node: Introduction,  Next: Getting started Tutorial,  Prev: Top,  Up: Top
 
 1 Introduction
 **************
 
-Gnosis (γνῶσις) is a spaced repetition system that enhances memory
-retention through active recall.  It employs a Q&A format, where each
-gnosis consists of a question, answer, and explanation.
+Gnosis consists of a note taking module (‘org-gnosis’) and a self
+testing module.
 
-   Gnosis algorithm is highly adjustable, allowing users to set specific
-values not just for note decks but for tags as well.  Gnosis'
-adjustability allows users to fine-tune settings not only for entire
-note collections but also for specific tagged topics, thereby creating a
-personalized learning environment for each topic.  Read more on *note
-Gnosis Algorithm::
+   Users can use each module independently, but Gnosis is designed for a
+workflow that starts with writing a note on a topic.  After completing a
+note, the user creates themas (questions/flashcards) for that topic,
+which are used for reviews based on the *note Gnosis Algorithm::.
 
 
-File: gnosis.info,  Node: Getting started,  Next: Note Types,  Prev: Introduction,  Up: Top
+File: gnosis.info,  Node: Getting started Tutorial,  Next: Thema Types,  Prev: Introduction,  Up: Top
 
-2 Getting started
-*****************
+2 Getting started Tutorial
+**************************
 
 To follow this tutorial, clone the demo deck available at codeberg
 
@@ -109,9 +106,10 @@ To follow this tutorial, clone the demo deck available at codeberg
 * Menu:
 
 * Gnosis Dashboard::
+* Linking Themata to Note Topics::
 
 
-File: gnosis.info,  Node: Gnosis Dashboard,  Up: Getting started
+File: gnosis.info,  Node: Gnosis Dashboard,  Next: Linking Themata to Note Topics,  Up: Getting started Tutorial
 
 2.1 Gnosis Dashboard
 ====================
@@ -119,23 +117,44 @@ File: gnosis.info,  Node: Gnosis Dashboard,  Up: Getting started
 The first thing new users should familiarize themselves with is
 ‘gnosis-dashboard’, which you can access via ‘M-x gnosis-dashboard’.
 
-   From there you have access to your review stats & history as well as
-your gnosis contents.
-
-   You can start a review session from the dashboard or with ‘M-x
-gnosis-review’.
+   You can start a review session from the dashboard by pressing ‘r’ or
+with ‘M-x gnosis-review’.
 
    NOTE: Gnosis supports reviewing specifics topics for notes of
 ‘org-gnosis’ with ‘M-x gnosis-review-topic’
 
-   You can add new gnosis from the dashboard or with ‘M-x
-gnosis-add-note’
+   You can add new themata from the dashboard ‘a’ or with ‘M-x
+gnosis-add-thema’
 
 
-File: gnosis.info,  Node: Note Types,  Next: Linking gnosis notes to org-gnosis content,  Prev: Getting started,  Up: Top
+File: gnosis.info,  Node: Linking Themata to Note Topics,  Prev: Gnosis Dashboard,  Up: Getting started Tutorial
 
-3 Note Types
-************
+2.2 Linking Themata to Note Topics
+==================================
+
+We can create a demo note topic for Vancomycin, an antibiotic, with ‘M-x
+org-gnosis-find RET Vancomycin’.  For this demo, just save the buffer
+contents by pressing ‘C-x C-s’.
+
+   Back to the dashboard ‘M-x gnosis-dashboard’, we can view all our
+themata by pressing ‘n’ or we can press ‘s’ to search our themata.  For
+this demo, we are looking for a thema from the demo deck we imported,
+that contains a questions about ‘Vancomycin’.
+
+   To link that thema to the note topic we created before, press ‘e’ to
+edit the thema.  In the ‘Keimenon’ section delete "Vancomycin" and press
+‘M-x org-gnosis-insert RET Vancomycin’.
+
+   After saving the thema with ‘M-x C-c C-c’, you can review all themata
+linked to that topic by ‘M-x gnosis-review-topic’.
+
+   View more on *note Linking gnosis themata to org-gnosis content::.
+
+
+File: gnosis.info,  Node: Thema Types,  Next: Linking gnosis themata to org-gnosis content,  Prev: Getting started Tutorial,  Up: Top
+
+3 Thema Types
+*************
 
 Each note is a *thema* consisting of the following components:
 
@@ -151,8 +170,8 @@ Each note is a *thema* consisting of the following components:
 
    Optionally, you can use also add tags for each note.
 
-   Notes/themas can have multiple hypotheses and answers (*depending on
-their type*), separated by ‘gnosis-export-separator’, which defaults to
+   Themas can have multiple hypotheses and answers (*depending on their
+type*), separated by ‘gnosis-export-separator’, which defaults to
 ‘"\n-"’ _(a new line followed by a dash)_.
 
 * Menu:
@@ -161,7 +180,7 @@ their type*), separated by ‘gnosis-export-separator’, which defaults to
 * MCQ::
 
 
-File: gnosis.info,  Node: Cloze,  Next: MCQ,  Up: Note Types
+File: gnosis.info,  Node: Cloze,  Next: MCQ,  Up: Thema Types
 
 3.1 Cloze
 =========
@@ -169,7 +188,7 @@ File: gnosis.info,  Node: Cloze,  Next: MCQ,  Up: Note Types
 A cloze note type is a format where you create sentences or paragraphs
 with "missing" words.  A fill-in-the-blanks question.
 
-   You can create a cloze note type using ‘M-x gnosis-add-note’ and
+   You can create a cloze note type using ‘M-x gnosis-add-thema’ and
 selecting ‘Cloze’.
 
    Example format:
@@ -244,7 +263,7 @@ File: gnosis.info,  Node: Using anki-like syntax,  Prev: Default cloze format,  
           single word.
 
 
-File: gnosis.info,  Node: MCQ,  Prev: Cloze,  Up: Note Types
+File: gnosis.info,  Node: MCQ,  Prev: Cloze,  Up: Thema Types
 
 3.2 MCQ
 =======
@@ -281,12 +300,10 @@ Example format:
 
 
 
-File: gnosis.info,  Node: Linking gnosis notes to org-gnosis content,  Next: Customization,  Prev: Note Types,  Up: Top
+File: gnosis.info,  Node: Linking gnosis themata to org-gnosis content,  Next: Customization,  Prev: Thema Types,  Up: Top
 
-4 Linking gnosis notes to org-gnosis content
-********************************************
-
-_org-gnosis is the note taking module of gnosis_
+4 Linking gnosis themata to org-gnosis content
+**********************************************
 
    • You can create notes using ‘M-x org-gnosis-find’, to link them to a
      gnosis thema use ‘M-x org-gnosis-insert’ to insert a link of said
@@ -296,7 +313,7 @@ _org-gnosis is the note taking module of gnosis_
      ‘M-x gnosis-review-topic’.
 
 
-File: gnosis.info,  Node: Customization,  Next: Gnosis Algorithm,  Prev: Linking gnosis notes to org-gnosis content,  Up: Top
+File: gnosis.info,  Node: Customization,  Next: Gnosis Algorithm,  Prev: Linking gnosis themata to org-gnosis content,  Up: Top
 
 5 Customization
 ***************
@@ -510,27 +527,28 @@ find on the git log.
 
 Tag Table:
 Node: Top209
-Node: Introduction1670
-Node: Getting started2357
-Node: Gnosis Dashboard2724
-Node: Note Types3357
-Node: Cloze4324
-Node: Default cloze format4713
-Node: Using anki-like syntax5325
-Node: MCQ6417
-Node: Linking gnosis notes to org-gnosis content7622
-Node: Customization8202
-Node: Typos | String Comparison8404
-Node: Gnosis Algorithm9160
-Node: Anagnosis Event9823
-Node: Lethe event10570
-Node: Proto11014
-Node: Editing notes11777
-Node: Sync between devices12169
-Node: Interactions with other software13245
-Node: emacs-no-littering13471
-Node: Contributing13971
-Node: How to create a patch14313
+Node: Introduction1602
+Node: Getting started Tutorial2099
+Node: Gnosis Dashboard2529
+Node: Linking Themata to Note Topics3145
+Node: Thema Types4192
+Node: Cloze5167
+Node: Default cloze format5558
+Node: Using anki-like syntax6170
+Node: MCQ7262
+Node: Linking gnosis themata to org-gnosis content8468
+Node: Customization9005
+Node: Typos | String Comparison9209
+Node: Gnosis Algorithm9965
+Node: Anagnosis Event10628
+Node: Lethe event11375
+Node: Proto11819
+Node: Editing notes12582
+Node: Sync between devices12974
+Node: Interactions with other software14050
+Node: emacs-no-littering14276
+Node: Contributing14776
+Node: How to create a patch15118
 
 End Tag Table
 

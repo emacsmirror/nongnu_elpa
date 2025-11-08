@@ -1,3 +1,8 @@
+* 0.5.8
+#+DATE: 2025/11/08
++ Update database to version 5.
++ Restructure gnosis modules.
++ Add monkeytype functionality.
 * 0.5.7
 #+DATE: 2025/10/25
 + Resolve issues relating to selecting multiple questions on
