@@ -179,7 +179,8 @@ conjunction with `visual-line-mode'."
          (visual-fill-column-mode 1)
          (visual-line-mode 1))
         (t
-         (visual-fill-column-mode -1))))
+         (visual-fill-column-mode -1)
+         (visual-line-mode -1))))
 
 (make-obsolete 'visual-line-fill-column-mode
                "add `visual-fill-column-for-vline' to `visual-line-mode-hook' instead."
