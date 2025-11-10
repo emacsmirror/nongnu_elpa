@@ -250,6 +250,16 @@
      (let ((form (mapconcat #'identity args " ")))
        (format "(eval '(geiser:%s %s) (find-module 'geiser))" proc form)))))
 
+(defun geiser-gauche--eval-bounds ()
+  "Return the bounds for `geiser-eval-buffer' command."
+  (cons (if (equal "#!" (buffer-substring (point-min) (+ 2 (point-min))))
+            (save-excursion
+              (goto-char (point-min))
+              (forward-line 1)
+              (point))
+          (point-min))
+        (point-max)))
+
 
 ;;; Module handling
 
@@ -362,7 +372,8 @@ form."
   (external-help geiser-gauche--manual-look-up)
   (check-buffer geiser-gauche--guess)
   (keywords geiser-gauche--keywords)
-  (case-sensitive geiser-gauche-case-sensitive-p))
+  (case-sensitive geiser-gauche-case-sensitive-p)
+  (eval-bounds geiser-gauche--eval-bounds))
 
 (geiser-implementation-extension 'gauche "scm")
 
