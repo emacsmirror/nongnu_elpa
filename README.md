@@ -28,7 +28,7 @@ There is also a globalised mode `global-visual-fill-column-mode`. This mode turn
 
 Another option is to add the function `visual-fill-column-mode` to mode hooks in order to activate it in specific modes. This works well from major mode hooks, but be aware of an issue that occurs if you add `visual-fill-column-mode` to a *minor* mode hook: a minor mode's hook is run not only when the minor mode is activated, but also when the minor mode is deactivated.
 
-This means that if you add `visual-fill-column-mode` to `<some>-mode-hook`, deactivating `<some>-mode` will **not** deactivate `visual-fill-column-mode`. Instead, `visual-fill-column-mode` will be activated a second time. Unfortunately, there is no good way to handle this situation: a function run from a hook cannot determine whether the hook's mode is being activated or deactivated. If you only ever activate `some-mode`, you won't run into this issue. Otherwise, you can take look at the definition of the function `visual-fill-column-for-vline` and adapt it to your use-case.
+This means that if you add `visual-fill-column-mode` to `<some>-mode-hook`, deactivating `<some>-mode` will **not** deactivate `visual-fill-column-mode`. Instead, `visual-fill-column-mode` will be activated a second time. Unfortunately, there is no good way to handle this situation: a function run from a hook cannot determine whether the hook's mode is being activated or deactivated. If you only ever activate `<some>-mode`, you won't run into this issue. Otherwise, you can take look at the definition of the function `visual-fill-column-for-vline` and adapt it to your use-case.
 
 
 ## Deprecating `visual-line-fill-column-mode` ##
@@ -53,7 +53,7 @@ Another use case for Visual Fill Column is to centre the text in a window:
 
 ![screenshot after](centred.png)
 
-This effect is achieved by setting the user option `visual-fill-column-center-text`. You can use the Customize interface or `setopt` to set a default value. In addition, the effect can also be toggled on a per-buffer basis using the command: `visual-fill-column-toggle-center-text`. 
+This effect is achieved by setting the user option `visual-fill-column-center-text`. You can use the Customize interface or `setopt` to set a default value. In addition, the effect can also be toggled on a per-buffer basis using the command `visual-fill-column-toggle-center-text`. 
 
 Keep in mind that `visual-fill-column-mode` is not dependent on `visual-line-mode`, so it can be used to center text in buffers that use `auto-fill-mode` or in programming modes.
 
