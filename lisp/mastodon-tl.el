@@ -794,27 +794,32 @@ The result is added as an attachments property to author-byline."
                       :url (or .remote_url .url))))
             media)))
 
-(defun mastodon-tl--byline-booster (toot)
-  "Add author byline for booster from TOOT.
-Only return something if TOOT contains a reblog."
-  (let ((reblog (alist-get 'reblog toot)))
-    (if reblog
-        (mastodon-tl--byline-author toot)
-      "")))
+(defun mastodon-tl--acc-by-id (id)
+  "Return account JSON for ID."
+  (let* ((endpoint (format "accounts/%s" id))
+         (url (mastodon-http--api endpoint)))
+    (mastodon-http--get-json url)))
 
-(defun mastodon-tl--byline-booster-str (toot)
-  "Format boosted string for action byline.
-Only return string if TOOT contains a reblog."
-  (let ((reblog (alist-get 'reblog toot)))
-    (if reblog
-        (concat
-         " " (propertize "boosted" 'face 'mastodon-boosted-face) "\n")
-      "")))
-
-(defun mastodon-tl--byline-boost (toot)
-  "Format a boost action-byline element for TOOT."
-  (concat (mastodon-tl--byline-booster toot)
-          (mastodon-tl--byline-booster-str toot)))
+(defun mastodon-tl--top-byline (toot)
+  "Format a boost or reply top (action) byline for TOOT."
+  (let ((reblog (alist-get 'reblog toot))
+        (reply-acc-id (alist-get 'in_reply_to_account_id toot)))
+    (cond
+     (reblog
+      (concat (mastodon-tl--byline-author toot) " "
+              (propertize "boosted" 'face 'mastodon-boosted-face) "\n"))
+     (reply-acc-id
+      (let* ((acc (mastodon-tl--acc-by-id reply-acc-id))
+             (name (or (alist-get 'display_name acc)
+                       (alist-get 'username acc))))
+        (unless (mastodon-tl--buffer-type-eq 'thread)
+          (concat (mastodon-tl--symbol 'reply)
+                  (propertize " in reply to "
+                              'face 'mastodon-boosted-face)
+                  (propertize name
+                              'face 'mastodon-display-name-face)
+                  "\n"))))
+     (t ""))))
 
 (defun mastodon-tl--format-faved-or-boosted-byline (letter)
   "Format the byline marker for a boosted or favourited status.
@@ -1909,7 +1914,7 @@ CW-EXPANDED means treat content warnings as unfolded."
        (propertize ;; body only:
         (concat
          "\n"
-         (mastodon-tl--byline-boost toot) ;; top byline (boost)
+         (mastodon-tl--top-byline toot) ;; (boost, in reply to)
          ;; relpy symbol:
          (when (and after-reply-status-p thread)
            (concat (mastodon-tl--symbol 'replied)
