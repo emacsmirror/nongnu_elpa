@@ -1443,9 +1443,9 @@ vm-folder-type is initialized here."
       ;; (unless (= 0 (logand status #x0020)) ; deleted on the server
       ;; 	nil)
       ;; read-receipt requested
-      (vm-set-read-receipt-flag-of message (not (= 0 (logand status #x0040)))) 
+      (vm-set-read-receipt-flag-of message (not (= 0 (logand status #x0040))))
       ;; read-receipt sent
-      (vm-set-read-receipt-sent-flag-of message (not (logand status #x0080)))
+      (vm-set-read-receipt-sent-flag-of message (not (= 0 (logand status #x0080))))
       ;; (unless (= 0 (logand status #x0100)) ; template
       ;; 	nil)
       ;; has attachments
