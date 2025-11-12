@@ -25,7 +25,7 @@
 (source 'melpa)
 (source 'gnu)
 
-(depends-on "emacs" "26.1")
+(depends-on "emacs" "27.1")
 
 (development
  (depends-on "phpactor")
