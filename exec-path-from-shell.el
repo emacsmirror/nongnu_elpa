@@ -214,10 +214,10 @@ buffer is left undisplayed."
          (err-buff-name "*exec-path-from-shell: nushell errors*")
          (err-file (make-temp-file err-buff-name)))
     (with-temp-buffer
-      (kill-buffer err-buff-name)
+      (when (get-buffer err-buff-name) (kill-buffer err-buff-name))
       (exec-path-from-shell--debug "Invoking shell %s with args %S" shell shell-args)
       (let ((exit-code (exec-path-from-shell--warn-duration
-                        (apply #'call-process shell nil '(t err-file) nil shell-args)))
+                        (apply #'call-process shell nil `(t ,err-file) nil shell-args)))
             (err-buff (generate-new-buffer err-buff-name)))
         (exec-path-from-shell--debug "Shell printed: %S" (buffer-string))
         (with-current-buffer err-buff (insert-file-contents err-file))
