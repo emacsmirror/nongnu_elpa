@@ -1891,6 +1891,27 @@ Runs `mastodon-tl--render-text' and fetches poll or media."
           (goto-char (prop-match-end prop)))))
     list))
 
+(defun mastodon-tl--insert-quoted (data)
+  "Propertize quoted status DATA for insertion."
+  (let ((bar (concat " " (mastodon-tl--symbol 'reply-bar)))
+        (content (map-nested-elt data '(quoted_status content)))
+      ;; quote symbol hack:
+        (quotemark (propertize "“" 'face
+                               '(t :inherit success :weight bold
+                                   :height 1.8))))
+    (propertize
+     (concat quotemark "\n"
+      ;; author byline without horiz bar and toot stats:
+      (mastodon-tl--byline-author
+       (alist-get 'quoted_status data) nil :domain :base)
+      "\n"
+      ;; quoted text:
+      (mastodon-tl--render-text content
+                                (alist-get 'quoted_status data)))
+     'line-prefix bar
+     'wrap-prefix bar
+     'mastodon-quote data)))
+
 (defun mastodon-tl--insert-status
     (toot body &optional detailed-p thread domain unfolded no-byline
           cw-expanded)
@@ -1914,7 +1935,8 @@ CW-EXPANDED means treat content warnings as unfolded."
          (cw-p (not
                 (string-empty-p
                  (alist-get 'spoiler_text toot))))
-         (body-tags (mastodon-tl--body-tags body)))
+         (body-tags (mastodon-tl--body-tags body))
+         (quote (alist-get 'quote toot)))
     (insert
      (propertize ;; body + byline:
       (concat
@@ -1931,11 +1953,17 @@ CW-EXPANDED means treat content warnings as unfolded."
                (body (if (and toot-foldable (not unfolded))
                          (mastodon-tl--fold-body body)
                        body)))
-           (if (and after-reply-status-p thread)
-               (propertize body
-                           'line-prefix bar
-                           'wrap-prefix bar)
-             body))
+           (concat
+            ;; insert quote maybe:
+            (if (and after-reply-status-p thread)
+                (propertize body
+                            'line-prefix bar
+                            'wrap-prefix bar)
+              body)
+            (when quote
+              (concat "\n\n"
+                      (mastodon-tl--insert-quoted quote)
+                      ))))
          (if (and toot-foldable unfolded cw-expanded)
              (mastodon-tl--read-more-or-less
               "LESS" cw-p (not cw-expanded))
