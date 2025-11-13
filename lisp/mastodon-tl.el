@@ -801,7 +801,10 @@ The result is added as an attachments property to author-byline."
     (mastodon-http--get-json url)))
 
 (defun mastodon-tl--top-byline (toot)
-  "Format a boost or reply top (action) byline for TOOT."
+  "Format a boost or reply top (action) byline for TOOT.
+If it is a self-reply, return 'continued thread'.
+If it is a non-self-reply, return 'in reply to $username'.
+If it is a boost, return '$username boosted'."
   (let ((reblog (alist-get 'reblog toot))
         (reply-acc-id (alist-get 'in_reply_to_account_id toot)))
     (cond
@@ -809,16 +812,19 @@ The result is added as an attachments property to author-byline."
       (concat (mastodon-tl--byline-author toot) " "
               (propertize "boosted" 'face 'mastodon-boosted-face) "\n"))
      (reply-acc-id
-      (let* ((acc (mastodon-tl--acc-by-id reply-acc-id))
-             (name (or (alist-get 'display_name acc)
-                       (alist-get 'username acc))))
-        (unless (mastodon-tl--buffer-type-eq 'thread)
-          (concat (mastodon-tl--symbol 'reply)
-                  (propertize " in reply to "
-                              'face 'mastodon-boosted-face)
-                  (propertize name
-                              'face 'mastodon-display-name-face)
-                  "\n"))))
+      (unless (mastodon-tl--buffer-type-eq 'thread)
+        (if (equal reply-acc-id (map-nested-elt toot '(account id)))
+            (propertize "continued thread\n"
+                        'face 'mastodon-boosted-face)
+          (let* ((acc (mastodon-tl--acc-by-id reply-acc-id))
+                 (name (or (alist-get 'display_name acc)
+                           (alist-get 'username acc))))
+            (concat (mastodon-tl--symbol 'reply)
+                    (propertize " in reply to "
+                                'face 'mastodon-boosted-face)
+                    (propertize name
+                                'face 'mastodon-display-name-face)
+                    "\n")))))
      (t ""))))
 
 (defun mastodon-tl--format-faved-or-boosted-byline (letter)
