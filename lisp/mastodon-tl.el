@@ -814,8 +814,9 @@ If it is a boost, return '$username boosted'."
      (reply-acc-id
       (unless (mastodon-tl--buffer-type-eq 'thread)
         (if (equal reply-acc-id (map-nested-elt toot '(account id)))
-            (propertize "continued thread\n"
-                        'face 'mastodon-boosted-face)
+            (concat (mastodon-tl--symbol 'reply) " "
+                    (propertize "continued thread\n"
+                                'face 'mastodon-boosted-face))
           (let* ((acc (mastodon-tl--acc-by-id reply-acc-id))
                  (name (or (alist-get 'display_name acc)
                            (alist-get 'username acc))))
