@@ -37,14 +37,16 @@
 (defcustom jabber-autoaway-methods
   (list 'jabber-current-idle-time
         'jabber-xprintidle-get-idle-time
-        'jabber-termatime-get-idle-time)
+        'jabber-termatime-get-idle-time
+        'jabber-windows-get-idle-time)
   "Methods used to keep track of idleness.
 This is a list of functions that takes no arguments, and returns the
 number of seconds since the user was active, or nil on error."
   :type 'hook
   :options '(jabber-current-idle-time
              jabber-xprintidle-get-idle-time
-             jabber-termatime-get-idle-time))
+             jabber-termatime-get-idle-time
+             jabber-windows-get-idle-time))
 
 (defcustom jabber-autoaway-timeout 5
   "Minutes of inactivity before changing status to away."
@@ -206,6 +208,13 @@ The method for finding the terminal only works on GNU/Linux."
 	     (diff (time-to-seconds (time-since atime-of-tty))))
 	(when (> diff 0)
 	  diff)))))
+
+(defun jabber-windows-get-idle-time ()
+  "Get idle time from Windows."
+  (and (fboundp 'w32-system-idle-time)
+       (pcase (w32-system-idle-time)
+         (-1 nil)
+         (ms (/ ms 1000.0)))))
 
 (defun jabber-current-idle-time ()
   "Get idle time through `current-idle-time'."
