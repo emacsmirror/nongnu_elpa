@@ -105,7 +105,8 @@
 (defvar mastodon-notifications--types
   '("all" "favourite" "reblog" "mention" "poll"
     "follow_request" "follow" "status" "update"
-    "severed_relationships" "moderation_warning")
+    "severed_relationships" "moderation_warning" "quote"
+    "quoted_update")
   "A list of notification types according to their name on the server, plus \"all\".")
 
 (defvar mastodon-notifications--filter-types-alist
@@ -117,7 +118,9 @@
     ("follow_request"         . mastodon-notifications-get-follow-requests)
     ("follow"                 . mastodon-notifications-get-follows)
     ("status"                 . mastodon-notifications-get-statuses)
-    ("update"                 . mastodon-notifications-get-edits))
+    ("update"                 . mastodon-notifications-get-edits)
+    ("quote"                  . mastodon-notifications-get-quotes)
+    ("quoted_update"          . mastodon-notifications-get-quoted-updates))
   "An alist of notification types and their corresponding load functions.
 Notification types are named according to their name on the server.")
 
@@ -129,7 +132,8 @@ Notification types are named according to their name on the server.")
     ("Posted a poll"        . "that has now ended")
     ("Requested to follow"  . "you")
     ("Posted"               . "a post")
-    ("Edited"               . "their post"))
+    ("Edited"               . "their post")
+    ("Quoted"               . "your post"))
   "Alist of subjects for notification types.")
 
 (defvar mastodon-notifications--action-alist
@@ -142,7 +146,8 @@ Notification types are named according to their name on the server.")
     (poll                  . "Posted a poll")
     (update                . "Edited")
     (severed_relationships . "Relationships severed")
-    (moderation_warning    . "Moderation warning"))
+    (moderation_warning    . "Moderation warning")
+    (quote                 . "Quoted"))
   "Action strings keyed by notification type.
 Types are those of the Mastodon API.")
 
@@ -455,6 +460,9 @@ TYPE is notification type, used for non-group notifs."
        (propertize body ;; body only
                    'toot-body t) ;; includes newlines etc. for folding
        "\n"
+       ;; display quoted post:
+       (when (alist-get 'quote toot)
+         (mastodon-tl--insert-quoted (alist-get 'quote toot)))
        ;; actual byline:
        (if (member type '("severed_relationships" "moderation_warning"))
            (propertize
