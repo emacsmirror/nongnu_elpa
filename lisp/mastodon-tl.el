@@ -172,7 +172,7 @@ nil."
     (direct                . ("✉" . "[direct]"))
     (edited                . ("✍" . "[edited]"))
     (update                . ("✍" . "[edited]")) ;; server compat
-    (status                . ("✍" . "[posted]"))
+    (status                . ("🔔" . "[posted]"))
     (replied               . ("⬇" . "↓"))
     (reply-bar             . ("┃" . "|"))
     (poll                  . ("📊" . "[poll]"))
