@@ -824,8 +824,11 @@ If it is a boost, return '$username boosted'."
                  (name (or (alist-get 'display_name acc)
                            (alist-get 'username acc))))
             (concat (mastodon-tl--symbol 'reply)
-                    (propertize " in reply to "
-                                'face 'mastodon-boosted-face)
+                    (mastodon-tl--buttonify-link
+                     " in reply to "
+                     'face 'mastodon-boosted-face
+                     'continued-thread t
+                     'help-echo "Browse thread")
                     (propertize name
                                 'face 'mastodon-display-name-face)
                     "\n")))))
