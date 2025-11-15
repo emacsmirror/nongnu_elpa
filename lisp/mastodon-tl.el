@@ -815,8 +815,11 @@ If it is a boost, return '$username boosted'."
       (unless (mastodon-tl--buffer-type-eq 'thread)
         (if (equal reply-acc-id (map-nested-elt toot '(account id)))
             (concat (mastodon-tl--symbol 'reply) " "
-                    (propertize "continued thread\n"
-                                'face 'mastodon-boosted-face))
+                    (mastodon-tl--buttonify-link
+                     "continued thread\n"
+                     'face 'mastodon-boosted-face
+                     'continued-thread t
+                     'help-echo "Browse thread"))
           (let* ((acc (mastodon-tl--acc-by-id reply-acc-id))
                  (name (or (alist-get 'display_name acc)
                            (alist-get 'username acc))))
@@ -827,6 +830,14 @@ If it is a boost, return '$username boosted'."
                                 'face 'mastodon-display-name-face)
                     "\n")))))
      (t ""))))
+
+(defun mastodon-tl-continued-thread-load ()
+  "Load thread based on prop item-id.
+Used to load self-reply threads by clicking on top-byline's \"continued
+thead\" text."
+  (interactive)
+  (let ((id (mastodon-tl--property 'item-id)))
+    (mastodon-tl--thread-do id)))
 
 (defun mastodon-tl--format-faved-or-boosted-byline (letter)
   "Format the byline marker for a boosted or favourited status.
@@ -1273,8 +1284,11 @@ LINK-TYPE is the type of link to produce."
   "Do the action of the link at POS.
 Used for hitting RET on a given link."
   (interactive "d")
-  (let ((link-type (get-text-property pos 'mastodon-tab-stop)))
-    (cond ((eq link-type 'content-warning)
+  (let ((link-type (get-text-property pos 'mastodon-tab-stop))
+        (cont-thread (mastodon-tl--property 'continued-thread :nomove)))
+    (cond (cont-thread
+           (mastodon-tl-continued-thread-load))
+          ((eq link-type 'content-warning)
            (mastodon-tl--toggle-spoiler-text pos))
           ((eq link-type 'hashtag)
            (mastodon-tl--show-tag-timeline
