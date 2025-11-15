@@ -794,27 +794,50 @@ The result is added as an attachments property to author-byline."
                       :url (or .remote_url .url))))
             media)))
 
-(defun mastodon-tl--byline-booster (toot)
-  "Add author byline for booster from TOOT.
-Only return something if TOOT contains a reblog."
-  (let ((reblog (alist-get 'reblog toot)))
-    (if reblog
-        (mastodon-tl--byline-author toot)
-      "")))
+(defun mastodon-tl--acc-by-id (id)
+  "Return account JSON for ID."
+  (let* ((endpoint (format "accounts/%s" id))
+         (url (mastodon-http--api endpoint)))
+    (mastodon-http--get-json url)))
 
-(defun mastodon-tl--byline-booster-str (toot)
-  "Format boosted string for action byline.
-Only return string if TOOT contains a reblog."
-  (let ((reblog (alist-get 'reblog toot)))
-    (if reblog
-        (concat
-         " " (propertize "boosted" 'face 'mastodon-boosted-face) "\n")
-      "")))
+(defun mastodon-tl--top-byline (toot)
+  "Format a boost or reply top (action) byline for TOOT.
+If it is a self-reply, return 'continued thread'.
+If it is a non-self-reply, return 'in reply to $username'.
+If it is a boost, return '$username boosted'."
+  (let ((reblog (alist-get 'reblog toot))
+        (reply-acc-id (alist-get 'in_reply_to_account_id toot)))
+    (cond
+     (reblog
+      (concat (mastodon-tl--byline-author toot) " "
+              (propertize "boosted" 'face 'mastodon-boosted-face) "\n"))
+     (reply-acc-id
+      (unless (mastodon-tl--buffer-type-eq 'thread)
+        (if (equal reply-acc-id (map-nested-elt toot '(account id)))
+            (concat (mastodon-tl--symbol 'reply) " "
+                    (mastodon-tl--buttonify-link
+                     "continued thread\n"
+                     'face 'mastodon-boosted-face
+                     'continued-thread t
+                     'help-echo "Browse thread"))
+          (let* ((acc (mastodon-tl--acc-by-id reply-acc-id))
+                 (name (or (alist-get 'display_name acc)
+                           (alist-get 'username acc))))
+            (concat (mastodon-tl--symbol 'reply)
+                    (propertize " in reply to "
+                                'face 'mastodon-boosted-face)
+                    (propertize name
+                                'face 'mastodon-display-name-face)
+                    "\n")))))
+     (t ""))))
 
-(defun mastodon-tl--byline-boost (toot)
-  "Format a boost action-byline element for TOOT."
-  (concat (mastodon-tl--byline-booster toot)
-          (mastodon-tl--byline-booster-str toot)))
+(defun mastodon-tl-continued-thread-load ()
+  "Load thread based on prop item-id.
+Used to load self-reply threads by clicking on top-byline's \"continued
+thead\" text."
+  (interactive)
+  (let ((id (mastodon-tl--property 'item-id)))
+    (mastodon-tl--thread-do id)))
 
 (defun mastodon-tl--format-faved-or-boosted-byline (letter)
   "Format the byline marker for a boosted or favourited status.
@@ -1261,8 +1284,11 @@ LINK-TYPE is the type of link to produce."
   "Do the action of the link at POS.
 Used for hitting RET on a given link."
   (interactive "d")
-  (let ((link-type (get-text-property pos 'mastodon-tab-stop)))
-    (cond ((eq link-type 'content-warning)
+  (let ((link-type (get-text-property pos 'mastodon-tab-stop))
+        (cont-thread (mastodon-tl--property 'continued-thread :nomove)))
+    (cond (cont-thread
+           (mastodon-tl-continued-thread-load))
+          ((eq link-type 'content-warning)
            (mastodon-tl--toggle-spoiler-text pos))
           ((eq link-type 'hashtag)
            (mastodon-tl--show-tag-timeline
@@ -1487,27 +1513,32 @@ SENSITIVE is a flag from the item's JSON data."
 
 (define-derived-mode mastodon-image-mode image-mode
   "mastodon-image"
-  :group 'mastodon)
+  :group 'mastodon
+  ;; Disable `pixel-scroll-precision-mode' locally because it doesn't
+  ;; work nicely with `mastodon-image-mode':
+  ;; thanks Tusar for this fix:
+  (when (bound-and-true-p pixel-scroll-precision-mode)
+    (setq-local pixel-scroll-precision-mode nil)))
 
 ;; patch `shr-browse-image' to accept url arg:
-(defun mastodon-tl-shr-browse-image (&optional image-url copy-url)
+(defun mastodon-tl-shr-browse-image (&optional arg)
   "Browse the image under point.
-If COPY-URL (the prefix if called interactively) is non-nil, copy
-the URL of the image to the kill buffer instead.
-Optionally use IMAGE-URL rather than the image-url property at point."
-  (interactive "sP")
-  (let ((url (or image-url (get-text-property (point) 'image-url))))
-    (cond
-     ((not url)
-      (message "No image under point"))
-     (copy-url
-      (with-temp-buffer
-        (insert url)
-        (copy-region-as-kill (point-min) (point-max))
-        (message "Copied %s" url)))
-     (t
-      (message "Browsing %s..." url)
-      (browse-url url)))))
+With a prefix argument, copy the URL of the image instead.
+If URL is a string, use it rather than the image-url property at point."
+  (interactive "P")
+  (let ((prop (get-text-property (point) 'image-url)))
+    (if current-prefix-arg
+        (if (not prop)
+            (user-error "No image at point?")
+          (with-temp-buffer
+            (insert prop)
+            (copy-region-as-kill (point-min) (point-max))
+            (message "Copied %s" prop)))
+      (let ((url (or arg prop)))
+        (if (not url)
+            (user-error "No URL here?")
+          (message "Browsing %s..." url)
+          (browse-url url))))))
 
 (defun mastodon-tl--view-image-url (url attachments)
   "View image URL. Set ATTACHMENTS metadata in image buffer."
@@ -1874,6 +1905,27 @@ Runs `mastodon-tl--render-text' and fetches poll or media."
           (goto-char (prop-match-end prop)))))
     list))
 
+(defun mastodon-tl--insert-quoted (data)
+  "Propertize quoted status DATA for insertion."
+  (let ((bar (concat " " (mastodon-tl--symbol 'reply-bar)))
+        (content (map-nested-elt data '(quoted_status content)))
+      ;; quote symbol hack:
+        (quotemark (propertize "“" 'face
+                               '(t :inherit success :weight bold
+                                   :height 1.8))))
+    (propertize
+     (concat quotemark "\n"
+      ;; author byline without horiz bar and toot stats:
+      (mastodon-tl--byline-author
+       (alist-get 'quoted_status data) nil :domain :base)
+      "\n"
+      ;; quoted text:
+      (mastodon-tl--render-text content
+                                (alist-get 'quoted_status data)))
+     'line-prefix bar
+     'wrap-prefix bar
+     'mastodon-quote data)))
+
 (defun mastodon-tl--insert-status
     (toot body &optional detailed-p thread domain unfolded no-byline
           cw-expanded)
@@ -1897,14 +1949,15 @@ CW-EXPANDED means treat content warnings as unfolded."
          (cw-p (not
                 (string-empty-p
                  (alist-get 'spoiler_text toot))))
-         (body-tags (mastodon-tl--body-tags body)))
+         (body-tags (mastodon-tl--body-tags body))
+         (quote (alist-get 'quote toot)))
     (insert
      (propertize ;; body + byline:
       (concat
        (propertize ;; body only:
         (concat
          "\n"
-         (mastodon-tl--byline-boost toot) ;; top byline (boost)
+         (mastodon-tl--top-byline toot) ;; (boost, in reply to)
          ;; relpy symbol:
          (when (and after-reply-status-p thread)
            (concat (mastodon-tl--symbol 'replied)
@@ -1914,11 +1967,17 @@ CW-EXPANDED means treat content warnings as unfolded."
                (body (if (and toot-foldable (not unfolded))
                          (mastodon-tl--fold-body body)
                        body)))
-           (if (and after-reply-status-p thread)
-               (propertize body
-                           'line-prefix bar
-                           'wrap-prefix bar)
-             body))
+           (concat
+            ;; insert quote maybe:
+            (if (and after-reply-status-p thread)
+                (propertize body
+                            'line-prefix bar
+                            'wrap-prefix bar)
+              body)
+            (when quote
+              (concat "\n\n"
+                      (mastodon-tl--insert-quoted quote)
+                      ))))
          (if (and toot-foldable unfolded cw-expanded)
              (mastodon-tl--read-more-or-less
               "LESS" cw-p (not cw-expanded))
