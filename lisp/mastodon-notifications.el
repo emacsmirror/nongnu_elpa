@@ -133,7 +133,15 @@ Notification types are named according to their name on the server.")
     ("Requested to follow"  . "you")
     ("Posted"               . "a post")
     ("Edited"               . "their post")
-    ("Quoted"               . "your post"))
+    ("Quoted"               . "your post")
+    ;; FIXME: this is very annoying, but because "Edited" is used above,
+    ;; we cannot reuse it here. I think this is because we use
+    ;; `mastodon-notifications--action-alist' to go from (server) notif
+    ;; type, to a string, and then use that string to get the rest of the
+    ;; byline string from `mastodon-notifications--response-alist' here.
+    ;; Ideally would just key the two strings according to notif type,
+    ;; even if they did need to be gathered separately and combined.
+    ("Modified"             . "a post that you quoted"))
   "Alist of subjects for notification types.")
 
 (defvar mastodon-notifications--action-alist
@@ -147,7 +155,8 @@ Notification types are named according to their name on the server.")
     (update                . "Edited")
     (severed_relationships . "Relationships severed")
     (moderation_warning    . "Moderation warning")
-    (quote                 . "Quoted"))
+    (quote                 . "Quoted")
+    (quoted_update         . "Modified"))
   "Action strings keyed by notification type.
 Types are those of the Mastodon API.")
 
