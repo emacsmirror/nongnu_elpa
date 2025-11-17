@@ -159,7 +159,7 @@ nil."
   :type 'boolean)
 
 (defcustom mastodon-tl--symbols
-  '((reply                 . ("💬" . "R"))
+  `((reply                 . ("💬" . "R"))
     (boost                 . ("🔁" . "B"))
     (reblog                . ("🔁" . "B")) ;; server compat
     (favourite             . ("⭐" . "F"))
@@ -172,14 +172,18 @@ nil."
     (direct                . ("✉" . "[direct]"))
     (edited                . ("✍" . "[edited]"))
     (update                . ("✍" . "[edited]")) ;; server compat
-    (status                . ("✍" . "[posted]"))
+    (status                . ("🔔" . "[posted]"))
     (replied               . ("⬇" . "↓"))
     (reply-bar             . ("┃" . "|"))
     (poll                  . ("📊" . "[poll]"))
     (follow                . ("👤" . "+"))
     (follow_request        . ("👤" . "+"))
     (severed_relationships . ("🔗" . "//"))
-    (moderation_warning    . ("⚠" . "!!")))
+    (moderation_warning    . ("⚠" . "!!"))
+    (quote                 . (,(propertize "“" 'face
+                                           '(t :inherit success :weight bold
+                                               :height 1.8))))
+    (quoted_update         . ("✍" . "[edited]")))
   "A set of symbols (and fallback strings) to be used in timeline.
 If a symbol does not look right (tofu), it means your
 font settings do not support it."
