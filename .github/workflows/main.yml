@@ -16,6 +16,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
+      - uses: emacs-eask/setup-eask@master
+        with:
+          version: 'snapshot'
       - name: Check out repository code
         uses: actions/checkout@v4
       - name: Install Pyrefly

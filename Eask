@@ -18,4 +18,5 @@
 (source "melpa")
 
 (development
+  (depends-on "f")
   (depends-on "undercover"))
