@@ -1,4 +1,4 @@
 Makefile
-tests
+test
 .github
 .gitignore
