@@ -19,6 +19,10 @@
 ;; Test suite for flymake-pyrefly.
 
 ;;; Code:
+(when (require 'undercover nil t)
+  (undercover "flymake-pyrefly.el"
+              (:report-format 'lcov)
+              (:send-report nil)))
 (require 'flymake-pyrefly)
 (require 'flymake)
 (require 'f)

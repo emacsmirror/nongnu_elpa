@@ -86,3 +86,4 @@ pkg-file:
 #   - all .elc files
 clean:
 	$(EASK) clean all
+	rm -rf coverage

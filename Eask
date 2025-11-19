@@ -14,3 +14,8 @@
 (source "gnu")
 
 (depends-on "emacs" "26.1")
+
+(source "melpa")
+
+(development
+  (depends-on "undercover"))
