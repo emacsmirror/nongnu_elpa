@@ -19,11 +19,16 @@
 ;; Test suite for flymake-pyrefly.
 
 ;;; Code:
+(when (require 'undercover nil t)
+  (undercover "flymake-pyrefly.el"
+              (:report-format 'codecov)
+              (:send-report nil)))
 (require 'flymake-pyrefly)
 (require 'flymake)
+(require 'f)
 (ert-deftest flymake-pyrefly-test-no-pyrefly ()
   "Test error message when Pyrefly is not found."
-  (find-file "tests/example.py")
+  (find-file (f-join "test" "example.py"))
   (should-error (pyrefly-flymake-backend 'identity)
                 :type 'no-pyrefly-error))
 (ert-deftest flymake-pyrefly-test-normal-use-case ()
@@ -31,7 +36,7 @@
   (defun mock-report-fn (args)
     (setq saved-args args))
   (push (getenv "PYREFLY_BIN_DIR") exec-path)
-  (find-file "tests/example.py")
+  (find-file (f-join "test" "example.py"))
   (setq saved-args nil)
   (pyrefly-flymake-backend 'mock-report-fn)
   (pyrefly-flymake-backend 'mock-report-fn)
