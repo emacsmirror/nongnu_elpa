@@ -63,10 +63,6 @@ it is added automatically at run-time using the value of
   :type 'string
   :group 'hyperdrive)
 
-(define-obsolete-variable-alias
-  ;; TODO(v0.5.0) Remove this alias.
-  'hyperdrive-hyper-gateway-port 'hyperdrive-gateway-port "0.4.0")
-
 (defcustom h/gateway-port 4973
   "Port to use to send requests to the gateway server."
   :type 'natnum)

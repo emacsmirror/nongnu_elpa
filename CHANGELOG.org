@@ -6,7 +6,9 @@
 
 * 0.6-pre
 
-Nothing yet...
+** Removed
+
+- Obsolete variable ~hyperdrive-hyper-gateway-port~.
 
 * 0.5.2 [2024-12-22 Sun]
 
