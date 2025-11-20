@@ -6,9 +6,18 @@
 
 * 0.6-pre
 
+** Fixed
+
+- Fixed typo in ~hyperdrive/dir-handler~
+
 ** Removed
 
 - Obsolete variable ~hyperdrive-hyper-gateway-port~.
+
+** Internal
+
+- Bump ~persist.el~ package dependency to ~v0.8~, fixing a potential
+  data loss bug.
 
 * 0.5.2 [2024-12-22 Sun]
 
