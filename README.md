@@ -52,7 +52,7 @@ the mailing lists, [see below](#communication).
 
 ## Communication
 
-Communication is done on four mailing list (VM **is** a mail reader
+Communication is done on four mailing lists (VM **is** a mail reader
 after all):
 
 - [viewmail-info](https://lists.nongnu.org/mailman/listinfo/viewmail-info)
