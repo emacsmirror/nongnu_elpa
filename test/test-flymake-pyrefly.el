@@ -21,7 +21,7 @@
 ;;; Code:
 (when (require 'undercover nil t)
   (undercover "flymake-pyrefly.el"
-              (:report-format 'codecov)
+              (:report-format 'lcov)
               (:send-report nil)))
 (require 'flymake-pyrefly)
 (require 'flymake)

@@ -1,4 +1,4 @@
-[[https://elpa.nongnu.org/nongnu/flymake-pyrefly.html][https://elpa.nongnu.org/nongnu/flymake-pyrefly.svg]]
+[[https://elpa.nongnu.org/nongnu/flymake-pyrefly.html][https://elpa.nongnu.org/nongnu/flymake-pyrefly.svg]] [[https://codecov.io/gh/inpefess/flymake-pyrefly][https://codecov.io/gh/inpefess/flymake-pyrefly/graph/badge.svg?token=ZFO5KJAY2I]]
 
 * flymake-pyrefly
 
