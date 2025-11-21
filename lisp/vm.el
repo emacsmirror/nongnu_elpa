@@ -9,7 +9,7 @@
 ;; Version: 8.3.0snapshot
 ;; Maintainer: viewmail-info@nongnu.org
 ;; URL: https://gitlab.com/emacs-vm/vm
-;; Package-Requires: ((cl-lib "0.5") (nadvice "0.3") (vcard "0.2.2))
+;; Package-Requires: ((cl-lib "0.5") (nadvice "0.3") (vcard "0.2.2"))
 ;;
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
