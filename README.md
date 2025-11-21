@@ -11,10 +11,10 @@ This site exists to continue VM development community project.
 
 ## Version Information
 
-The VM versions 8.2.0 and up are designed to work with:
+The VM versions 8.3.0 and up are designed to work with:
 
-- XEmacs version 21.4 or higher, with MULE support
-- Gnu Emacs versions 22 or higher
+- Gnu Emacs versions 28. or higher
+- XEmacs version (not currently tested with XEmacs)
 
 ## Installation
 
