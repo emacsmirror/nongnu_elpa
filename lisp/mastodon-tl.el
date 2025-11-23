@@ -1957,7 +1957,7 @@ CW-EXPANDED means treat content warnings as unfolded."
                 (string-empty-p
                  (alist-get 'spoiler_text toot))))
          (body-tags (mastodon-tl--body-tags body))
-         (quote (alist-get 'quote toot)))
+         (quote (mastodon-tl--field 'quote toot)))
     (insert
      (propertize ;; body + byline:
       (concat
@@ -1975,12 +1975,12 @@ CW-EXPANDED means treat content warnings as unfolded."
                          (mastodon-tl--fold-body body)
                        body)))
            (concat
-            ;; insert quote maybe:
             (if (and after-reply-status-p thread)
                 (propertize body
                             'line-prefix bar
                             'wrap-prefix bar)
               body)
+            ;; insert quote maybe:
             (when quote
               (concat "\n\n"
                       (mastodon-tl--insert-quoted quote)
