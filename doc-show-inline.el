@@ -345,7 +345,7 @@ the point should not be moved by this function."
 
         (cond
          ;; Ensure the comment is not a trailing comment of a previous line.
-         ((not
+         ((null
            (eq
             pos-beg-of-line
             (save-excursion
@@ -362,7 +362,7 @@ the point should not be moved by this function."
          ;; Optionally exclude blank lines between the comment and the function definition.
          ((and
            ;; Checking blank lines?
-           (not (zerop doc-show-inline-exclude-blank-lines))
+           (null (zerop doc-show-inline-exclude-blank-lines))
            (let ((blank-lines 0))
              (save-excursion
                (goto-char pos-end)
