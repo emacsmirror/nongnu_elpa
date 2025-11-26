@@ -209,7 +209,7 @@ Where RANGES is an unordered list of (min . max) cons cells."
 (defun idle-highlight--check-word (target)
   "Return non-nil when TARGET should not be excluded."
   (declare (important-return-value t))
-  (not
+  (null
    (cond
     ((functionp idle-highlight-exceptions)
      (funcall idle-highlight-exceptions target))
@@ -359,7 +359,7 @@ should be the result of `idle-highlight--word-at-point-args'."
             (setq target-args (idle-highlight--word-at-point-args)))
 
           (pcase-let ((`(,target . ,target-range) target-args))
-            (when (and force-all (not (eq buf buf-current)))
+            (when (and force-all (null (eq buf buf-current)))
               (setq target-range nil))
             (idle-highlight--word-at-point-highlight target target-range visible-ranges))
           ;; Once complete, this is no longer dirty.
@@ -439,17 +439,17 @@ should be the result of `idle-highlight--word-at-point-args'."
          ;; Not already enabled.
          (not (bound-and-true-p idle-highlight-mode))
          ;; Not in the mini-buffer.
-         (not (minibufferp))
+         (null (minibufferp))
          ;; Not a special mode (package list, tabulated data ... etc)
          ;; Instead the buffer is likely derived from `text-mode' or `prog-mode'.
-         (not (derived-mode-p 'special-mode))
+         (null (derived-mode-p 'special-mode))
          ;; Not explicitly ignored.
-         (not (memq major-mode idle-highlight-ignore-modes))
+         (null (memq major-mode idle-highlight-ignore-modes))
          ;; Optionally check if a function is used.
          (or (null idle-highlight-global-ignore-buffer)
              (cond
               ((functionp idle-highlight-global-ignore-buffer)
-               (not (funcall idle-highlight-global-ignore-buffer (current-buffer))))
+               (null (funcall idle-highlight-global-ignore-buffer (current-buffer))))
               (t
                nil))))
     (idle-highlight-mode 1)))
