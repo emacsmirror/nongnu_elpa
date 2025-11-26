@@ -372,7 +372,7 @@ Additional keyword arguments may also be passed in.
                   (erase-buffer))))
 
               (process-send-eof proc)
-              (while (not sentinel-called)
+              (while (null sentinel-called)
                 (accept-process-output))
 
               ;; Check exit-code.
@@ -555,7 +555,7 @@ Optional keywords in KEYWORDS.
 
       ;; Setup indices to represent jobs that aren't complete.
       (let ((i args-len))
-        (while (not (zerop i))
+        (while (null (zerop i))
           (push (decf i) jobs-pending)))
 
       ;; Main loop to complete
@@ -693,7 +693,7 @@ Store the result in TARGET-BUF when non-nil."
 Argument BEG is only used to calculate the progress percentage."
   (declare (important-return-value nil))
   (cond
-   ((not (buffer-live-p buf))
+   ((null (buffer-live-p buf))
     ;; The buffer was closed (most likely by the user) while the timer was running,  cancel it.
     (cancel-timer timer))
    ((input-pending-p)
@@ -814,7 +814,7 @@ Store the result in TARGET-BUF when non-nil."
                    (point-prev (point))
                    ;; Index (for unique names.
                    (i 0))
-              (while (not (eobp))
+              (while (null (eobp))
                 (setq point-prev (point))
                 (goto-char (min (+ (point) diff-ansi-chunks-size) (point-max)))
                 (goto-char (pos-eol))
