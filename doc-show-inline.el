@@ -827,12 +827,12 @@ XREF-BACKEND is the back-end used to find this symbol."
 
     (with-current-buffer buf
       (cond
-       ((null (get-buffer-window buf t))
-        (doc-show-inline--log-info "idle timer ignored for buffer %S without a window" buf))
-       ((null (bound-and-true-p doc-show-inline-mode))
+       ((not (bound-and-true-p doc-show-inline-mode))
         (doc-show-inline--log-info
          "idle timer ignored for buffer %S without `doc-show-inline-mode' set"
          buf))
+       ((null (get-buffer-window buf t))
+        (doc-show-inline--log-info "idle timer ignored for buffer %S without a window" buf))
        (t
         (doc-show-inline--log-info "idle timer for buffer %S callback running..." buf)
         ;; In the unlikely event of an error, run the timer again.
