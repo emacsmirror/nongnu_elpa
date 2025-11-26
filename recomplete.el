@@ -204,7 +204,7 @@ Argument LIST compatible list `buffer-undo-list'."
    ((eq this-command 'keyboard-quit)
 
     ;; Toggle reverse direction.
-    (let ((cycle-reverse (not (alist-get 'cycle-reverse recomplete--alist))))
+    (let ((cycle-reverse (null (alist-get 'cycle-reverse recomplete--alist))))
 
       ;; Re-display the message.
       (let ((msg-prefix
@@ -274,7 +274,7 @@ Argument FN-CACHE stores the result for reuse."
 
         ;; Scan backward over "-_".
         (let ((pos-prev (1+ word-beg)))
-          (while (not (eql pos-prev word-beg))
+          (while (null (eql pos-prev word-beg))
             (setq pos-prev word-beg)
             (when (memq (char-before word-beg) (list ?_ ?-))
               (let ((range
@@ -285,7 +285,7 @@ Argument FN-CACHE stores the result for reuse."
                   (setq word-beg (car range)))))))
         ;; Scan forward over "-_".
         (let ((pos-prev (1- word-end)))
-          (while (not (eql pos-prev word-end))
+          (while (null (eql pos-prev word-end))
             (setq pos-prev word-end)
             (when (memq (char-after word-end) (list ?_ ?-))
               (let ((range
@@ -561,7 +561,7 @@ step onto the next item)."
       ;;
       ;; While we could check `this-command', this isn't set properly when called indirectly.
       ;; Simply check if the internal symbol changes.
-      (when (and alist (not (eq fn-symbol (alist-get 'fn-symbol alist))))
+      (when (and alist (null (eq fn-symbol (alist-get 'fn-symbol alist))))
         (setq alist nil))
 
       ;; We only need to check if `recomplete--alist' is set here,
