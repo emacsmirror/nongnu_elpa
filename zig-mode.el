@@ -3,7 +3,7 @@
 ;; Author: Andrea Orru <andreaorru1991@gmail.com>
 ;;         Andrew Kelley <superjoe30@gmail.com>
 ;; Maintainer: Shen, Jen-Chieh <jcs090218@gmail.com>
-;; URL: https://github.com/zig-lang/zig-mode
+;; URL: https://codeberg.org/ziglang/zig-mode
 ;; Version: 0.0.8
 ;; Package-Requires: ((emacs "26.1") (reformatter "0.6"))
 ;; Keywords: zig, languages
@@ -25,7 +25,7 @@
 
 ;; A major mode for the Zig programming languages.
 
-;; See documentation on https://github.com/zig-lang/zig-mode
+;; See documentation on https://codeberg.org/ziglang/zig-mode
 
 ;;; Code:
 

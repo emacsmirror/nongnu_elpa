@@ -4,7 +4,7 @@
          "0.0.8"
          "A major mode for the Zig programming language")
 
-(website-url "https://github.com/zig-lang/zig-mode")
+(website-url "https://codeberg.org/ziglang/zig-mode")
 (keywords "zig" "languages")
 
 (package-file "zig-mode.el")

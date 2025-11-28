@@ -34,8 +34,6 @@ Then add the following to your `.emacs` file:
 
 ## Testing
 
-[![CI](https://github.com/ziglang/zig-mode/actions/workflows/main.yml/badge.svg)](https://github.com/ziglang/zig-mode/actions/workflows/main.yml)
-
 To run the test locally, you will need the following tools:
 
 - [Eask](https://emacs-eask.github.io/)
