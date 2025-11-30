@@ -17,18 +17,18 @@ LOAD_PATH  += -L .
 all: lisp
 
 help:
-	$(info make all          - generate byte-code and autoloads)
-	$(info make lisp         - generate byte-code and autoloads)
-	$(info make redo         - re-generate byte-code and autoloads)
-	$(info make htmlize      - htmlize htmlize.el)
-	$(info make clean        - remove generated files)
+	$(info make all        -- Build lisp)
+	$(info make lisp       -- Build lisp)
+	$(info make redo       -- Build lisp from scratch)
+	$(info make htmlize    -- Htmlize htmlize.el)
+	$(info make clean      -- Remove built files)
 	@printf "\n"
 
 redo: clean lisp
 
-lisp: $(ELCS) loaddefs check-declare
+lisp: $(ELCS) autoloads check-declare
 
-loaddefs: $(PKG)-autoloads.el
+autoloads: $(PKG)-autoloads.el
 
 %.elc: %.el
 	@printf "Compiling $<\n"
@@ -45,7 +45,7 @@ check-declare:
 
 htmlize: $(HTML)
 
-CLEAN  = $(ELCS) $(PKG)-autoloads.el
+CLEAN = $(ELCS) $(PKG)-autoloads.el
 
 clean:
 	@printf " Cleaning...\n"
