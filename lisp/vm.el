@@ -58,8 +58,8 @@
 (eval-when-compile (require 'cl-lib))
 (require 'package)
 
-(defconst vm-min-emacs-version 28
-  "Minimum required Emacs major version supported by VM.")
+(defconst vm-min-emacs-version "28.0"
+  "Minimum Emacs version supported by VM.")
 
 (defvar enable-multibyte-characters)
 
@@ -86,11 +86,11 @@
 		  (&optional arg))
 
 ;; Don't get any farther if emacs is too old
-(when (< emacs-major-version vm-min-emacs-version)
-  (error "VM requires Emacs %d or later" vm-min-emacs-version))
+(when (version< emacs-version vm-min-emacs-version)
+  (error "VM requires Emacs %s or later" vm-min-emacs-version))
 
 
-;; Ensure that vm-autoloads is loaded in case the user is using VM 7.x
+;; Ensure that vm-autoloads is loaded in case the user is using VM
 ;; autoloads 
 
 (if (not (featurep 'xemacs))
