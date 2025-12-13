@@ -2,9 +2,7 @@
 [![MELPA](https://melpa.org/packages/geiser-gauche-badge.svg)](https://melpa.org/#/geiser-gauche)
 [![License](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://spdx.org/licenses/BSD-3-Clause.html)
 
-Experimental [Gauche Scheme](http://practical-scheme.net/gauche/) support for [Geiser](https://gitlab.com/jaor/geiser/). 
-
-geiser-gauche is in a verly early stage of its development and mostly untested, so bugs and rough edges are to be expected.
+[Gauche Scheme](http://practical-scheme.net/gauche/) support for [Geiser](https://gitlab.com/jaor/geiser/). 
 
 **Table of contents**
 - [Description](#description)
@@ -62,8 +60,11 @@ with
 
 ## Credits
 Thanks to [Jao](https://gitlab.com/jaor) and his co-developers for creating and maintaining Geiser, and for helping the development of this package. Thanks also to Shiro Kawai and his co-developers for Gauche, the _raison d'être_ of this package.
+
+I'd also like to thank Fabian Brosda, Toshi Umehara and Visuwesh for their code contributions.
+
 ## License
-Copyright (C) 2020 András Simonyi
+Copyright (C) 2020-2025 András Simonyi
 
 Authors: András Simonyi
 
