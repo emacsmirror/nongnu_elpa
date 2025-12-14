@@ -176,7 +176,7 @@ Where RANGES is an unordered list of (min . max) cons cells."
               (zerop (skip-syntax-forward idle-highlight-exceptions-syntax (1+ pos))))
             (progn
               (goto-char pos)
-              (zerop (skip-syntax-backward idle-highlight-exceptions-syntax pos)))))
+              (zerop (skip-syntax-backward idle-highlight-exceptions-syntax (1- pos))))))
        (t
         (goto-char pos)
         (zerop (skip-syntax-forward idle-highlight-exceptions-syntax (1+ pos)))))))
