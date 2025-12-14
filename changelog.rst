@@ -1,6 +1,7 @@
 
-- In development.
+- Version 1.1.5 (2025-12-14)
 
+  - Fix ``idle-highlight-before-point`` wasn't working properly.
   - Fix missing call to ``save-match-data``.
   - Add support for highlighting text before the cursor using ``idle-highlight-before-point``.
 
