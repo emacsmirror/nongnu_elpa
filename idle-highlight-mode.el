@@ -31,7 +31,7 @@
 ;;; Code:
 
 (eval-when-compile
-  ;; For `pcase-dolist'.
+  ;; For the byte-compiler to find: `pcase-dolist'.
   (require 'pcase))
 
 
@@ -65,7 +65,7 @@
            (function :tag "A function that takes a list of faces, non-nil result excludes.")))
 
 (defcustom idle-highlight-exceptions-syntax "^w_"
-  "Syntax table to to skip.
+  "Syntax table to skip.
 
 See documentation for `skip-syntax-forward', nil to ignore."
   :type '(choice (const nil) string))
@@ -111,7 +111,7 @@ check this buffer.")
 ;; Internal Functions
 
 (defun idle-highlight--faces-at-point (pos)
-  "Add the named faces that the `read-face-name' or `face' property use.
+  "Return the named faces that the `read-face-name' or `face' property use.
 Argument POS return faces at this point."
   (declare (important-return-value t))
   (let ((faces nil) ; List of faces to return.
@@ -279,10 +279,10 @@ should be the result of `idle-highlight--word-at-point-args'."
 ;; - The timer is kept active as long as the local mode is enabled.
 ;; - Entering a buffer runs the buffer local `window-state-change-hook'
 ;;   immediately which checks if the mode is enabled,
-;;   set up the global timer if it is.
+;;   sets up the global timer if it is.
 ;; - Switching any other buffer wont run this hook,
-;;   rely on the idle timer it's self running, which detects the active mode,
-;;   canceling it's self if the mode isn't active.
+;;   rely on the idle timer itself running, which detects the active mode,
+;;   canceling itself if the mode isn't active.
 ;;
 ;; This is a reliable way of using a global,
 ;; repeating idle timer that is effectively buffer local.
@@ -292,7 +292,7 @@ should be the result of `idle-highlight--word-at-point-args'."
 (defvar idle-highlight--global-timer nil)
 ;; When t, the timer will update buffers in all other visible windows.
 (defvar idle-highlight--dirty-flush-all nil)
-;; When true, the buffer should be updated when inactive.
+;; When t, the buffer should be updated when inactive.
 (defvar-local idle-highlight--dirty nil)
 
 (defun idle-highlight--time-callback-or-disable ()
@@ -389,7 +389,7 @@ should be the result of `idle-highlight--word-at-point-args'."
       (setq idle-highlight--global-timer nil)))))
 
 (defun idle-highlight--time-reset ()
-  "Run this when the buffer change was changed."
+  "Run this when the buffer was changed."
   (declare (important-return-value nil))
   ;; Ensure changing windows doesn't leave other buffers with stale highlight.
   (cond
