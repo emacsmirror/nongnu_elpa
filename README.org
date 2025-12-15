@@ -30,7 +30,7 @@ And more:
    - Titles font sizes for .
 4. Fully-supported for each modes:
    - Diff / EDiff
-   - Dired / Dired+
+   - Dired / Dired+ / Diredfl
    - ERC / rcirc
    - Eshell / Ansi-term
    - Gnus / Message
