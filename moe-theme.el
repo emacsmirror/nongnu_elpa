@@ -452,9 +452,11 @@ as long as setq `moe-theme-modeline-color' first."
 ;; Support for tab-bar mode (built-in since Emacs 27)
 (with-eval-after-load 'tab-bar
   (defun moe-theme-get-color-by-tab-bar-index ()
-    (let* ((int (tab-bar--current-tab-index))
-           (enabled-colors-len (length moe-theme-colorize-modeline-by-frame-id-color-set)))
-      (nth (% int enabled-colors-len) moe-theme-colorize-modeline-by-frame-id-color-set)))
+    (let* ((cur-index (tab-bar--current-tab-index))
+           (enabled-colors-len (length moe-theme-colorize-modeline-by-frame-id-color-set))
+	   (gotten-color (nth (% cur-index enabled-colors-len) moe-theme-colorize-modeline-by-frame-id-color-set)))
+	(message "[%s] %s" cur-index gotten-color)
+	gotten-color))
 
   (defadvice tab-bar-select-tab (after change-mode-line-color-by-tab-bar--select activate)
     (if moe-theme-colorize-modeline-by-frame-id
