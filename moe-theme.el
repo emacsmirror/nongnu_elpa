@@ -436,18 +436,40 @@ as long as setq `moe-theme-modeline-color' first."
 ;; support for Elscreen
 (with-eval-after-load 'elscreen
   (when (and (window-system))
-    (defun moe-theme-get-color-by-frame-name ()
+    (defun moe-theme-get-color-by-elscreen ()
       (let* ((all-screen-indexes (sort (elscreen-get-screen-list) '<))
              (cur-index (elscreen-get-current-screen))
              (enabled-colors-len (length moe-theme-colorize-modeline-by-frame-id-color-set))
 	     (gotten-color (nth (% cur-index enabled-colors-len) moe-theme-colorize-modeline-by-frame-id-color-set)))
 	(message "[%s] %s" cur-index gotten-color)
 	gotten-color))
-    (defadvice elscreen-goto (after change-mode-line-color-by-frame-id activate)
+    (defadvice elscreen-goto (after change-mode-line-color-by-elscreen activate)
       (if moe-theme-colorize-modeline-by-frame-id
-          (moe-theme-modeline-apply-color (moe-theme-get-color-by-frame-name)))
+          (moe-theme-modeline-apply-color (moe-theme-get-color-by-elscreen)))
       )
     ))
+
+;; Support for tab-bar mode (built-in since Emacs 27)
+(with-eval-after-load 'tab-bar
+  (defun moe-theme-get-color-by-tab-bar-index ()
+    (let* ((int (tab-bar--current-tab-index))
+           (enabled-colors-len (length moe-theme-colorize-modeline-by-frame-id-color-set)))
+      (nth (% int enabled-colors-len) moe-theme-colorize-modeline-by-frame-id-color-set)))
+
+  (defadvice tab-bar-select-tab (after change-mode-line-color-by-tab-bar--select activate)
+    (if moe-theme-colorize-modeline-by-frame-id
+        (moe-theme-modeline-apply-color (moe-theme-get-color-by-tab-bar-index))))
+
+  (defadvice tab-bar-new-tab (after change-mode-line-color-by-tab-bar--new activate)
+    (if moe-theme-colorize-modeline-by-frame-id
+        (moe-theme-modeline-apply-color (moe-theme-get-color-by-tab-bar-index))))
+
+  (defadvice tab-bar-close (after change-mode-line-color-by-tab-bar--close activate)
+    (if moe-theme-colorize-modeline-by-frame-id
+        (moe-theme-modeline-apply-color (moe-theme-get-color-by-tab-bar-index))))
+
+)
+
 ;;;###autoload
 (when (and (boundp 'custom-theme-load-path)
            load-file-name)
