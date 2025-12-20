@@ -1,4 +1,4 @@
-;;; vm.el --- Entry points for VM  -*- lexical-binding: t; -*-
+;;; vm.el --- VM mail reader for Emacs -*- lexical-binding: t -*-
 ;;
 ;; This file is part of VM
 ;;
@@ -6,10 +6,11 @@
 ;; Copyright (C) 2003-2006 Robert Widhopf-Fenk
 ;; Copyright (C) 2024-2025 The VM Developers
 ;;
-;; Version: 8.3.0snapshot
+;; Version: 8.3.0
 ;; Maintainer: viewmail-info@nongnu.org
 ;; URL: https://gitlab.com/emacs-vm/vm
 ;; Package-Requires: ((emacs "28.0") (vcard "0.2.2"))
+;; Keywords: mail
 ;;
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -25,10 +26,13 @@
 ;; with this program; if not, write to the Free Software Foundation, Inc.,
 ;; 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
-
-;;; History:
-;;
-;; This file was vm-startup.el!
+;;; Commentary:
+;; VM mail reader for Emacs
+;; It is designed ot be highly configurable and easy to use. It supports POP
+;; and IMAP mail servers, understands MIME, and handles mail folders in the
+;; standard UNIX mailbox format and the BABYL format used by the RMAIL
+;; mailer. It has a powerful virtual folder facility to facilitate searching
+;; as well as more advanced handling of multiple mail folders.
 
 ;;; Code:
 

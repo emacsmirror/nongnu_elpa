@@ -2,24 +2,31 @@ Releasing VM
 
 * release is done initial in fork
 then merge to make official
+
 * version update
 - Add note release to info/vm.texinfo @item Version ..
-- Update NEWS
-- Update version in configure.ac AC_INIT
-- Update lisp/vm.el Version:
+- NEWS
+- version in configure.ac AC_INIT
+- lisp/vm.el Version:
+  
 * last test
 - make distclean
 - autoconf
 - configure
 - make
+
 * commit and tag
 - tag is in the form '3.0.0'
 - a branch are only made if changes are needed relative to a tag
 
-* pre-release testing:
-(package-vc-install '("https://gitlab.com/USER/vm.git" :rev "1.2.3"))
-
-* post-release testing
-(package-vc-install '("https://gitlab.com/emacs-vm/vm.git" :rev "1.2.3"))
-
-
+* pre-release testing from fork:
+(package-vc-install
+  '(vm :url"https://gitlab.com/USER/vm.git"
+       :lisp-dir "lisp"
+       :branch "3.0.0"))
+  
+* post-release testing from main repo:
+(package-vc-install
+  '(vm :url"https://gitlab.com/emacs-vm/vm.git"
+       :lisp-dir "lisp"
+       :branch "3.0.0"))
