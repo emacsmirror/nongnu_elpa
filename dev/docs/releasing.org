@@ -1,6 +1,7 @@
 Releasing VM
 
-* release is done in fork 
+* release is done initial in fork
+then merge to make official
 * version update
 - Add note release to info/vm.texinfo @item Version ..
 - Update NEWS
