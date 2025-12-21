@@ -1,11 +1,53 @@
 Releasing VM
 
-* pre-release testing:
-(package-vc-install '("https://gitlab.com/USER/REPO.git" :rev "v1.2.3"))
+* use package-lint to check vm.el packages
+requires package-lint
+  make package-lint
+or 
+  M-x package-lint-current-buffer
+note lint will not be clean, due to xemacs references
+
+* release is built initial in fork
+then merge to make official
+
+* version update in these files:
+- Add note release to info/vm.texinfo @item Version ..
+- NEWS
+- version in configure.ac AC_INIT
+- lisp/vm.el Version:
+  
+* test build
+- make distclean
+- autoconf
+- configure
+- make
+
+* pre-release testing from repo:
+(package-vc-install 
+  '(vm :url "file:////Users/markd/projs/emacs/vm/vm-markd"
+       :lisp-dir "lisp"))
 
 
+* commit and tag
+- tag is in the form '3.0.0'
+- a branch are only made if changes are needed relative to a tag
 
-* post-release testing
-(package-vc-install '("https://gitlab.com/USER/REPO.git" :rev "v1.2.3"))
+
+* pre-release testing from fork:
+(package-vc-install
+  '(vm :url"https://gitlab.com/USER/vm.git"
+       :lisp-dir "lisp"
+       :branch "3.0.0"))
+  
+* post-release testing from main repo:
+(package-vc-install
+  '(vm :url"https://gitlab.com/emacs-vm/vm.git"
+       :lisp-dir "lisp"
+       :branch "3.0.0"))
+
+* push and test install once available in nongnu ELPA
+
+* update version to a snapshot of the next patch
+e.g. 3.0.0 -> 3.0.1snapshot
 
 

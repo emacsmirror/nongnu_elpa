@@ -1,15 +1,6 @@
 *.elc
 TAGS
 configure.lineno
-ChangeLog
-base64-decode
-base64-encode
-qp-decode
-qp-encode
-base64-decode.exe
-base64-encode.exe
-qp-decode.exe
-qp-encode.exe
 *.info*
 *.diff
 *.log

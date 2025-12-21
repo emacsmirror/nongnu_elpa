@@ -1,4 +1,4 @@
-;;; vm.el --- Entry points for VM  -*- lexical-binding: t; -*-
+;;; vm.el --- VM mail reader -*- lexical-binding: t; -*-
 ;;
 ;; This file is part of VM
 ;;
@@ -9,7 +9,8 @@
 ;; Version: 8.3.0snapshot
 ;; Maintainer: viewmail-info@nongnu.org
 ;; URL: https://gitlab.com/emacs-vm/vm
-;; Package-Requires: ((emacs "28.0") (vcard "0.2.2"))
+;; Package-Requires: ((emacs "28.1") (vcard "0.2.2"))
+;; Keywords: mail
 ;;
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -25,10 +26,13 @@
 ;; with this program; if not, write to the Free Software Foundation, Inc.,
 ;; 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
-
-;;; History:
-;;
-;; This file was vm-startup.el!
+;;; Commentary:
+;; VM mail reader for Emacs
+;; It is designed ot be highly configurable and easy to use. It supports POP
+;; and IMAP mail servers, understands MIME, and handles mail folders in the
+;; standard UNIX mailbox format and the BABYL format used by the RMAIL
+;; mailer. It has a powerful virtual folder facility to facilitate searching
+;; as well as more advanced handling of multiple mail folders.
 
 ;;; Code:
 
@@ -58,7 +62,8 @@
 (eval-when-compile (require 'cl-lib))
 (require 'package)
 
-(defconst vm-min-emacs-version "28.0"
+;; keep vm-min-emacs-version in sync with above Package-Requires
+(defconst vm-min-emacs-version "28.1"
   "Minimum Emacs version supported by VM.")
 
 (defvar enable-multibyte-characters)
@@ -78,7 +83,7 @@
 
 ;; vm-xemacs.el is a non-existent file to fool the Emacs 23 compiler
 (declare-function get-coding-system "vm-xemacs.el" (name))
-(declare-function find-face "vm-xemacs.el" (face-or-name))
+(declare-function facep "vm-xemacs.el" (face-or-name))
 
 (declare-function vm-rfaddons-infect-vm "vm-rfaddons.el" 
 		  (&optional sit-for option-list exclude-option-list))
@@ -1716,9 +1721,8 @@ draft messages."
 (defun vm--commit-from-package (pkg)
   "Get commit hash from PKG, whether VC-installed or archive-installed."
   (let ((desc (package-get-descriptor pkg)))
-    (or (when (package-vc-p desc)
-          (package-vc-commit desc))
-        (alist-get :commit (package-desc-extras desc)))))
+    (or (alist-get :commit (package-desc-extras desc))
+        "unknown-commit")))
 
 (defun vm--version-info-from-package ()
   "Return version and commit if VM is loaded from a package."

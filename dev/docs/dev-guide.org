@@ -1,0 +1,22 @@
+
+* code linting
+** byte and native compile check
+make byte-compile-lint
+make native-compile-lint
+
+** package-lint of vm.el (external package-lint)
+make package-lint
+
+** regular expresion lint (external relint)
+make relint-lint
+
+** elint
+make elint-lint
+*** This is current very broken:
+gets Lisp nesting exceeds `max-lisp-eval-depth': 1601
+
+
+** elisp-lint (external package elisp-lint)
+make elisp-lint
+*** lots of errors, many false positives.
+

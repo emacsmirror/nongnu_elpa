@@ -237,7 +237,7 @@ TEST
 ])
 
 ##############################################################################
-AC_INIT([VM],[8.3.x],[viewmail-info@nongnu.org])
+AC_INIT([VM],[8.3.0snapshot],[viewmail-info@nongnu.org])
 # Name of the application
 # Version (release) number
 # Contact address
