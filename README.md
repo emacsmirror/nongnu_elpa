@@ -21,7 +21,7 @@ The VM versions 8.3.0 and up are designed to work with:
 
 ## Installation
 
-VM releases are avaliable through non-gnu ELPA package.
+VM releases are avaliable through a non-gnu ELPA package:
 
 ```
    M-x package-install <ret> vm <ret>
