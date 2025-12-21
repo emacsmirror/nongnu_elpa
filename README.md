@@ -9,17 +9,26 @@ mailer. It has a powerful virtual folder facility to facilitate
 searching as well as more advanced handling of multiple mail folders.
 This site exists to continue VM development community project.
 
+VM is available from 
+  <https://gitlab.com/emacs-vm/vm>
+
 ## Version Information
 
 The VM versions 8.3.0 and up are designed to work with:
 
-- Gnu Emacs versions 28. or higher
+- Gnu Emacs versions 28.1 or higher
 - XEmacs version (not currently tested with XEmacs)
 
 ## Installation
 
-Read [INSTALL](INSTALL) and follow the instructions to compile and
-setup VM.
+VM releases are avaliable through non-gnu ELPA package.
+
+```
+   M-x package-install <ret> vm <ret>
+```
+
+If you wish to build from source, see [INSTALL](INSTALL)
+for instructions.
 
 If you are new to VM, see example.vm for example configuration
 settings (to be put into a `~/.vm` file). Read more in the VM manual
@@ -28,7 +37,7 @@ in _info_ format.
 ## Bugs
 
 The preferred way to report bugs is to file issues at
-https://gitlab.com/emacs-vm/vm/-/issues.
+  <https://gitlab.com/emacs-vm/vm/-/issues>
 
 Alternatively, bugs can be reported report in VM using the VM function.
 

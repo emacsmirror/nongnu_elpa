@@ -1,21 +1,15 @@
-PRE-COMPILED BINARIES
-=====================
-
-If you have downloaded binaries for Gnu Emacs version 22 or 23, you
-can unpack it to a directory, say ~/vm, and go to step (3) below.
-
-However, this build assumes that you are not using any supporting
-libraries such as BBDB, W3 or W3M.  If you are using such libraries,
-please rebuild VM as indicated below.  
-
-If you are using XEmacs, you need to do your own build.
-
-USING CONFIGURE
+PACKAGE INSTALL
 ===============
 
-0) autoconf: If you get VM from the revision control, the `configure' script
-   is not included. You have to run `autoconf' to create it.  If you got VM
-   from a public release, you should skip this step.
+VM releases are avaliable through non-gnu ELPA package.
+
+M-x package-install <ret> vm <ret>
+
+
+BUILD FROM SOURCE
+=================
+
+VM source is availabe from https://gitlab.com/emacs-vm/vm
 
 1) configure: First you need to decide the various options.
 
