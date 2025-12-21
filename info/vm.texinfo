@@ -7215,7 +7215,7 @@ Please let us know if any contributors have been missed out.
 @item Version 8.1.1, released 25 April, 2010.
 @item Version 8.1.2, released 5 March, 2012.
 @item Version 8.2.0, planned for release in March, 2013.
-@item Version 8.3.0, 20 December, 2025
+@item Version 8.3.0snapshot, coming soon
 @end itemize
 
 

@@ -10,7 +10,7 @@ note lint will not be clean, due to xemacs references
 * release is built initial in fork
 then merge to make official
 
-* version update
+* version update in these files:
 - Add note release to info/vm.texinfo @item Version ..
 - NEWS
 - version in configure.ac AC_INIT
@@ -44,3 +44,10 @@ then merge to make official
   '(vm :url"https://gitlab.com/emacs-vm/vm.git"
        :lisp-dir "lisp"
        :branch "3.0.0"))
+
+* push and test install once available in nongnu ELPA
+
+* update version to a snapshot of the next patch
+e.g. 3.0.0 -> 3.0.1snapshot
+
+
