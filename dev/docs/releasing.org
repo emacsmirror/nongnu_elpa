@@ -1,6 +1,13 @@
 Releasing VM
 
-* release is done initial in fork
+* use package-lint to check vm.el packages
+requires package-lint
+  make package-lint
+or 
+  M-x package-lint-current-buffer
+note lint will not be clean, due to xemacs references
+
+* release is built initial in fork
 then merge to make official
 
 * version update
@@ -9,15 +16,22 @@ then merge to make official
 - version in configure.ac AC_INIT
 - lisp/vm.el Version:
   
-* last test
+* test build
 - make distclean
 - autoconf
 - configure
 - make
 
+* pre-release testing from repo:
+(package-vc-install 
+  '(vm :url "file:////Users/markd/projs/emacs/vm/vm-markd"
+       :lisp-dir "lisp"))
+
+
 * commit and tag
 - tag is in the form '3.0.0'
 - a branch are only made if changes are needed relative to a tag
+
 
 * pre-release testing from fork:
 (package-vc-install

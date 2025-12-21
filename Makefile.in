@@ -9,6 +9,7 @@ XARGS = @XARGS@
 INSTALL = @INSTALL@
 INSTALL_DATA = @INSTALL_DATA@
 PACKAGE_TARNAME = @PACKAGE_TARNAME@
+EMACS_PROG = @EMACS_PROG@
 
 prefix = @prefix@
 srcdir = @srcdir@
@@ -66,10 +67,58 @@ distclean:
 	-$(RM) -f Makefile vm-load.el config.status config.log
 	-$(RM) -rf autom4te.cache
 
-push:
-	$(BZR) push
+##############################################################################
+# linting
+#
+PACKAGE_INIT = --eval "(progn (require 'package) (package-initialize))"
+
+# byte compile check
+byte-compile-lint:
+	rm -f list/*.elc
+	$(EMACS_PROG) -batch -Q -L lisp \
+	    --eval '(setq byte-compile-error-on-warn t)' \
+	    -f batch-byte-compile lisp/*.el
+
+# native compile check
+native-compile-lint:
+	rm -rf eln.tmp
+	@mkdir -p eln.tmp
+	$(EMACS_PROG) -batch -Q -L lisp \
+	    --eval '(setq native-comp-async-report-warnings-errors nil)' \
+	    --eval '(setq byte-compile-error-on-warn nil)' \
+	    --eval '(dolist (f (directory-files "lisp" t "\\.el$$")) (let ((out (concat "eln.tmp/" (file-name-nondirectory f) ".eln"))) (message "Native compiling %s..." f) (native-compile f out)))'
+	rm -rf eln.tmp
+
+# check with build-in elint
+elint-lint:
+	$(EMACS_PROG) -batch -Q -l `pwd`/lisp \
+	    --eval '(mapc (lambda (f) (message "Checking %s" f) (elint-file f)) \
+	                  (directory-files "lisp" t "\\.el$$"))'
+
+# check package file with external package-lint
+package-lint:
+	$(EMACS_PROG) -batch -L lisp $(PACKAGE_INIT) \
+	    --eval "(require 'package-lint)" \
+	    -f package-lint-batch-and-exit lisp/vm.el
+
+# check reqular expressions with external relint
+relint-lint:
+	$(EMACS_PROG) -batch -L lisp $(PACKAGE_INIT) \
+	    --eval "(require 'relint)" \
+	    -f relint-batch lisp/*.el
+
+
+# check with external elisp-lint
+ELINT_CONFIG = --eval '(setq-default fill-column 80)'
+elisp-lint:
+	$(EMACS_PROG) -batch -L `pwd`/lisp $(PACKAGE_INIT) $(ELINT_CONFIG) \
+	    --eval "(require 'elisp-lint)" \
+	    -f elisp-lint-files-batch `pwd`/lisp/*.el
+
+.PHONY: byte-compile-lint native-compile-lint elint package-lint relint-lint elisp-lint
 
 ##############################################################################
+# xemacs package (not tested)
 PKGDIR =  $(shell pwd)/,,package/
 PKGINFO = $(PKGDIR)/lisp/vm/_pkg.el
 xemacs-package:
@@ -79,9 +128,9 @@ xemacs-package:
 	  exit 1; \
 	fi
 	-$(RM) -rf ,,package
-	cd lisp && $(make) PACKAGEDIR=$(PKGDIR)/lisp/vm install-pkg
-	cd info && $(make) infodir=$(PKGDIR)/info install-pkg
-	cd src && $(make) infodir=$(PKGDIR)/bin install-pkg
+	cd lisp && $(MAKE) PACKAGEDIR=$(PKGDIR)/lisp/vm install-pkg
+	cd info && $(MAKE) infodir=$(PKGDIR)/info install-pkg
+	cd src && $(MAKE) infodir=$(PKGDIR)/bin install-pkg
 	echo ";;;###autoload" > $(PKGINFO)
 	echo "(package-provide 'vm'" > $(PKGINFO)
 	echo "         :version $(PACKAGE_VERSION)" >> $(PKGINFO)
@@ -93,12 +142,6 @@ xemacs-package:
 	cd ,,package; $(TAR) -cvzf ../vm-pkg.tar.gz *
 
 ##############################################################################
-release::
-	./release.sh
-
-snapshot::
-	./release.sh snapshot
-
 tags::
 	etags lisp/*.el contrib/*.el info/*.texinfo NEWS example.vm INSTALL Makefile.in lisp/Makefile.in info/Makefile.in src/Makefile.in pixmaps/Makefile.in
 

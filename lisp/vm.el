@@ -1,4 +1,4 @@
-;;; vm.el --- VM mail reader -*- lexical-binding: t -*-
+;;; vm.el --- VM mail reader -*- lexical-binding: t; -*-
 ;;
 ;; This file is part of VM
 ;;
@@ -62,7 +62,7 @@
 (eval-when-compile (require 'cl-lib))
 (require 'package)
 
-;; keep vm-min-emacs-version in sync with above Package-Requires 
+;; keep vm-min-emacs-version in sync with above Package-Requires
 (defconst vm-min-emacs-version "28.1"
   "Minimum Emacs version supported by VM.")
 
