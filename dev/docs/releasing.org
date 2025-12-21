@@ -1,11 +1,29 @@
 Releasing VM
 
+* NonGNU ELPA
+
+Package contents of GitLab vm/main will be at NonGNU-devel in
+https://elpa.nongnu.org/nongnu-devel/vm.html
+
+You can test installed by from here using:
+
+(add-to-list 'package-archives 
+             '("nongnu-devel" . "https://elpa.nongnu.org/nongnu-devel/"))
+
+Note that it takes around 12 hours for an update to be available on
+NonGNU-devel.
+
+Once release is made with a release version number (1.2.3)
+in vm.el, it will become available as a NonGNU ELPA
+package at https://elpa.nongnu.org/nongnu/vm.html
+
 * use package-lint to check vm.el packages
 requires package-lint
   make package-lint
 or 
   M-x package-lint-current-buffer
 note lint will not be clean, due to xemacs references
+
 
 * release is built initial in fork
 then merge to make official
@@ -27,6 +45,8 @@ then merge to make official
   '(vm :url "file:////Users/markd/projs/emacs/vm/vm-markd"
        :lisp-dir "lisp"))
 
+Note: as of emacs 30.2, package-vc-install doesn't generate
+a correct description or commit.
 
 * commit and tag
 - tag is in the form '3.0.0'
