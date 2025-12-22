@@ -254,6 +254,7 @@ AC_PROG_LN_S
 AC_PATH_PROG(RM, rm, /bin/rm)
 AC_PATH_PROG(LS, ls, /bin/ls)
 AC_PATH_PROG(MKDIR, mkdir, /bin/mkdir)
+AC_PATH_PROG(RMDIR, rmdir, /bin/rmdir)
 AC_PATH_PROG(GREP, grep, /bin/grep)
 
 # External programs checking:
@@ -270,12 +271,6 @@ VM_OTHERDIRS
 # is there a sane way to set this to a useful default?
 VM_ARG_SUBST([PACKAGEDIR], [package-dir], [DIR],
   [set the Emacs package directory to DIR],)
-
-VM_ARG_SUBST([SYMLINKS], [symlinks], [],
-  [install VM by linking instead of copying], [no])
-
-VM_ARG_SUBST([LINKPATH], [linkpath], [PATH],
-  [path to symlink from if `pwd' does not work])
 
 AC_OUTPUT
 

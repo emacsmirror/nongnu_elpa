@@ -3,6 +3,7 @@
 # location of required programms
 GIT = git
 MKDIR = @MKDIR@
+RMDIR = @RMDIR@
 TAR = @TAR@
 RM   = @RM@
 XARGS = @XARGS@
@@ -14,6 +15,7 @@ EMACS_PROG = @EMACS_PROG@
 prefix = @prefix@
 srcdir = @srcdir@
 datarootdir = @datarootdir@
+etcdir = @etcdir@
 docdir = @docdir@
 
 SUBDIRS = lisp info pixmaps
@@ -43,7 +45,7 @@ Makefile:  @srcdir@/Makefile.in config.status
 	./config.status $@
 
 @srcdir@/configure: @srcdir@/configure.ac
-	cd @srcdir@ ; autoconf
+	cd @srcdir@ && autoconf
 	./config.status --recheck
 
 config.status: @srcdir@/configure
@@ -53,10 +55,20 @@ install: install-pkg
 	@for i in $(SUBDIRS) ; do ($(MAKE) -C $$i install) || exit 1; done
 
 install-pkg:
-	$(MKDIR) -p "$(DESTDIR)$(docdir)"
+	@$(MKDIR) -p "$(DESTDIR)$(docdir)"
 	for i in $(SOURCES) ; do                                  \
 	    echo "Installing $$i in '$(DESTDIR)$(docdir)'" ;      \
 	    $(INSTALL_DATA) $$i "$(DESTDIR)$(docdir)" ;           \
+	done ;
+
+uninstall: uninstall-pkg
+	@for i in $(SUBDIRS) ; do ($(MAKE) -C $$i uninstall) || exit 1; done
+	-$(RMDIR) $(DESTDIR)$(docdir)/ 2> /dev/null
+
+uninstall-pkg:
+	@for i in $(SOURCES) ; do                                  \
+	    echo "Uninstalling $$i from '$(DESTDIR)$(docdir)'" ;  \
+	    $(RM) -f "$(DESTDIR)$(docdir)/$$i" ;                     \
 	done ;
 
 clean:
@@ -138,8 +150,8 @@ xemacs-package:
 	echo "         :type 'regular)" >> $(PKGINFO)
 	mkdir $(PKGDIR)/pkginfo;
 	touch $(PKGDIR)/pkginfo/MANIFEST.vm;
-	cd $(PKGDIR); find -type f | cut -c3- > pkginfo/MANIFEST.vm
-	cd ,,package; $(TAR) -cvzf ../vm-pkg.tar.gz *
+	cd $(PKGDIR) && find -type f | cut -c3- > pkginfo/MANIFEST.vm
+	cd ,,package && $(TAR) -cvzf ../vm-pkg.tar.gz *
 
 ##############################################################################
 tags::
