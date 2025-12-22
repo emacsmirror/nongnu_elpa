@@ -87,6 +87,8 @@ AUTOLOAD_FILE = (setq generated-autoload-file \"./auto-autoloads.el\")
 # location of required programms
 RM   = @RM@
 LS   = @LS@
+MKDIR = @MKDIR@
+RMDIR = @RMDIR@
 XARGS = @XARGS@
 INSTALL = @INSTALL@
 INSTALL_PROGRAM = @INSTALL_PROGRAM@
@@ -109,9 +111,6 @@ FLAGS = @FLAGS@
 
 EMACS_COMP = OTHERDIRS=@OTHERDIRS@ "$(EMACS_PROG)" $(FLAGS)
 
-SYMLINKS = @SYMLINKS@
-LINKPATH = @LINKPATH@
-
 .el.elc:
 	$(EMACS_COMP) -f batch-byte-compile $<
 
@@ -120,7 +119,9 @@ all: $(OBJECTS)
 
 $(OBJECTS): $(AUTOLOADS)
 
-install: install-el install-elc
+install: install-pkg
+
+uninstall: uninstall-pkg
 
 ##############################################################################
 # Create file with version and commit
@@ -146,7 +147,7 @@ vm-version-conf.el: Makefile
 vm-autoloads.el: $(SOURCES:%=@srcdir@/%)
 	-$(RM) -f $@
 	echo > $@.tmp
-	(build_dir="`pwd`"; cd "@srcdir@"; \
+	(build_dir="`pwd`"; cd "@srcdir@" && \
 	 $(EMACS_COMP) -l autoload \
 		-f vm-built-autoloads "@abs_builddir@/$@.tmp" "`pwd`")
 	echo "(custom-add-load 'vm 'vm-cus-load)" | tr -d '\015' >> $@.tmp
@@ -160,10 +161,6 @@ vm-autoloads.el: $(SOURCES:%=@srcdir@/%)
 
 vm-cus-load.el: $(SOURCES:%=@srcdir@/%)
 	$(EMACS_COMP) -f vm-custom-make-dependencies .
-	if [ "@EMACS_VERSION" = "21" ] ; then \
-	    sed -e "s/provide 'cus-load/provide 'vm-cus-load/" cus-load.el > $@ ;\
-	   $(RM) cus-load.el ;\
-        fi
 
 ##############################################################################
 # XEmacs#s auto-autoloads and custom-load file
@@ -191,57 +188,25 @@ custom-load.el: $(SOURCES:%=@srcdir@/%)
 
 ##############################################################################
 install-pkg: all $(INSTALL_FILES)
-	@if test "x$(SYMLINKS)" = "xno" ; then                 \
-	  mkdir -p -m 0755 $(DESTDIR)$(PACKAGEDIR);            \
-	  for i in $(SOURCES:%=@srcdir@/%) $(INSTALL_FILES) ; do  \
-	    echo "Installing $$i in $(DESTDIR)$(PACKAGEDIR)" ; \
-	    $(INSTALL_DATA) $$i $(DESTDIR)$(PACKAGEDIR) ;      \
-	  done ;                                               \
-	else                                                   \
-	  if test "x$(LINKPATH)" = "x" ; then                  \
-	    $(LN_S) "`pwd`" $(DESTDIR)$(PACKAGEDIR) ;          \
-	  else                                                 \
-	    $(LN_S) $(LINKPATH)/lisp $(DESTDIR)$(PACKAGEDIR) ; \
-	  fi ;                                                 \
-	fi
-	@echo VM ELISP files successfully installed\!
+	@mkdir -p -m 0755 $(DESTDIR)$(lispdir);               \
+	for i in $(SOURCES:%=@srcdir@/%) $(INSTALL_FILES) ; do  \
+	  echo "Installing $$i in $(DESTDIR)$(lispdir)" ;    \
+	  $(INSTALL_DATA) $$i $(DESTDIR)$(lispdir) ;         \
+	done
+	@echo VM ELISP files successfully installed
 
-# This entry will never install .el files if there are no .elc files.
-install-el: all $(INSTALL_FILES)
-	$(INSTALL) -d -m 0755 "$(DESTDIR)$(lispdir)/"
-	for elc in *.elc; do                                                  \
-	    el=`basename $$elc c`;                                            \
-	    if test -f "$(srcdir)/$$el"; then                                 \
-	        echo "Install $$el in $(DESTDIR)$(lispdir)/";                 \
-	        $(INSTALL_DATA) "${srcdir}/$$el" "$(DESTDIR)$(lispdir)/";     \
-	    fi;                                                               \
-        done;
-	if $(LS) $(contrib)/*.elc > /dev/null 2>&1; then                      \
-	    for elc in $(contribdir)/*.elc; do                                \
-	        el=`basename $$elc c`;                                        \
-	        if test -f "${srcdir}/$(contribdir)/$$el"; then               \
-	            echo "Install $(contribdir)/$$el in $(DESTDIR)$(lispdir)/"; \
-	            $(INSTALL_DATA) "${srcdir}/$(contribdir)/$$el" "$(DESTDIR)$(lispdir)/"; \
-	        fi;                                                           \
-	    done;                                                             \
-	fi;
+uninstall-pkg: $(INSTALL_FILES)
+	@for i in $(SOURCES:%=@srcdir@/%) $(INSTALL_FILES) ; do  \
+	  echo "Unnstalling $$i from $(DESTDIR)$(lispdir)" ; \
+	  $(RM) -f $(DESTDIR)$(lispdir)/$$i ;                  \
+	done
+	-$(RMDIR) $(DESTDIR)$(lispdir)/ 2> /dev/null
+	@echo VM ELISP files successfully uninstalled
 
-install-elc: all $(INSTALL_FILES)
-	$(INSTALL) -d -m 0755 "$(DESTDIR)$(lispdir)/"
-	for elc in *.elc; do                                 \
-	    echo "Install $$elc in $(DESTDIR)$(lispdir)/";   \
-	    $(INSTALL_DATA) $$elc "$(DESTDIR)$(lispdir)/";   \
-        done;
-	if $(LS) $(contribdir)/*.elc > /dev/null 2>&1; then  \
-	    for elc in $(contribdir)/*.elc; do               \
-	        echo "Install $$elc in $(DESTDIR)$(lispdir)"; \
-	        $(INSTALL_DATA) $$elc "$(DESTDIR)$(lispdir)"; \
-	    done;                                            \
-	fi;
 
 ##############################################################################
 Makefile: @srcdir@/Makefile.in
-	cd .. ; ./config.status
+	cd @srcdir@/.. && ./config.status
 
 ##############################################################################
 clean:

@@ -10,6 +10,7 @@ GIT_DIR = "@top_srcdir@/.git"
 ##############################################################################
 # location of required programms
 MKDIR = @MKDIR@
+RMDIR = @RMDIR@
 RM   = @RM@
 LS   = @LS@
 XARGS = @XARGS@
@@ -27,9 +28,6 @@ EMACS_PROG = @EMACS_PROG@
 EMACS_FLAVOR = @EMACS_FLAVOR@
 
 FLAGS = @FLAGS@
-
-SYMLINKS = @SYMLINKS@
-LINKPATH = @LINKPATH@
 
 ##############################################################################
 
@@ -52,34 +50,22 @@ vm-pcrisis.info:: version.texinfo
 info: vm.info vm-pcrisis.info
 
 Makefile: @srcdir@/Makefile.in
-	cd @srcdir@/..; ./config.status
+	cd @srcdir@/.. && ./config.status
 
 install: install-pkg
+uninstall: uninstall-pkg
 
 install-pkg: uninstall-pkg info
-	@mkdir -p -m 0755 "$(DESTDIR)$(infodir)";                      \
-	if test "x$(SYMLINKS)" = "xno" ; then                          \
-          for i in `${LS} *.info* ` ; do                               \
-	    echo "Installing $$i in $(DESTDIR)$(infodir)" ;            \
-            $(INSTALL_DATA) $$i "$(DESTDIR)$(infodir)" ;               \
-          done ;                                                       \
-        else                                                           \
-          if test "x$(LINKPATH)" = "x" ; then                          \
-            for i in `${LS} *.info* ` ; do                             \
-              echo "Linking $$i in $(DESTDIR)$(infodir)" ;             \
-              $(LN_S) "`pwd`/$$i" "$(DESTDIR)$(infodir)/$$i" ;         \
-            done ;                                                     \
-          else                                                         \
-            for i in `${LS} *.info* ` ; do                             \
-              echo "Linking $(LINKPATH)/texinfo/$$i in $(DESTDIR)$(infodir)" ; \
-              $(LN_S) "$(LINKPATH)/texinfo/$$i" "$(DESTDIR)$(infodir)/$$i" ; \
-            done ;                                                     \
-          fi ;                                                         \
-        fi
-	@echo VM INFO files successfully installed\!
+	@$(MKDIR) -p -m 0755 "$(DESTDIR)$(infodir)";                     \
+	for i in `${LS} *.info* ` ; do                               \
+	  echo "Installing $$i in $(DESTDIR)$(infodir)" ;            \
+	  $(INSTALL_DATA) $$i "$(DESTDIR)$(infodir)" ;               \
+	done
+	@echo VM INFO files successfully installed
 
 uninstall-pkg:
-	-$(RM) "$(DESTDIR)$(infodir)"/vm*.info*
+	-$(RM) -f "$(DESTDIR)$(infodir)"/vm*.info*
+	-$(RMDIR) $(DESTDIR)$(infodir)/ 2> /dev/null
 
 ##############################################################################
 clean:

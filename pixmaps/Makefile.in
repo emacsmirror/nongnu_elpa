@@ -6,6 +6,7 @@ SHELL = /bin/sh
 ##############################################################################
 # location of required programms
 MKDIR = @MKDIR@
+RMDIR = @RMDIR@
 RM   = @RM@
 LS   = @LS@
 INSTALL = @INSTALL@
@@ -15,35 +16,56 @@ prefix = @prefix@
 srcdir = @srcdir@
 pixmapdir = @pixmapdir@
 
-SYMLINKS = @SYMLINKS@
-LINKPATH = @LINKPATH@
-
 ##############################################################################
 
 all:
 
 Makefile: @srcdir@/Makefile.in
-	cd @srcdir@/..; ./config.status
+	cd @srcdir@/.. && ./config.status
 
 install: install-pkg
 
+uninstall: uninstall-pkg
+
+
+##############################################################################
 install-pkg: 
 	$(MKDIR) -p "$(DESTDIR)$(pixmapdir)"
-	for i in `$(LS) *.xpm` ; do                                    \
+	@for i in *.xpm ; do                                    \
 	    echo "Installing $$i in '$(DESTDIR)$(pixmapdir)'" ;        \
 	    $(INSTALL_DATA) $$i "$(DESTDIR)$(pixmapdir)" ;             \
-	done ;
+	done
 	$(MKDIR) -p "$(DESTDIR)$(pixmapdir)/mime"
-	for i in `ls mime/*.xpm` ; do                                  \
+	@for i in mime/*.xpm ; do                                  \
 	    echo "Installing $$i in '$(DESTDIR)$(pixmapdir)'" ;        \
 	    $(INSTALL_DATA) $$i "$(DESTDIR)$(pixmapdir)/mime" ;        \
-	done ;                                                         
+	done
 	$(MKDIR) -p "$(DESTDIR)$(pixmapdir)/gtk"
-	for i in `ls gtk/*.xpm` ; do                                   \
+	@for i in gtk/*.xpm ; do                                   \
 	    echo "Installing $$i in '$(DESTDIR)$(pixmapdir)'" ;        \
 	    $(INSTALL_DATA) $$i "$(DESTDIR)$(pixmapdir)/gtk" ;         \
-	done ;                                                         
-	@echo VM pixmaps successfully installed\!
+	done
+	@echo VM pixmaps successfully installed
+
+##############################################################################
+uninstall-pkg: 
+	@for i in mime/*.xpm ; do                                  \
+	    echo "Uninstalling $$i from '$(DESTDIR)$(pixmapdir)'" ;        \
+	    rm -f "$(DESTDIR)$(pixmapdir)/$$i" ;        \
+	done
+	-$(RMDIR) "$(DESTDIR)$(pixmapdir)/mime" 2> /dev/null
+	@for i in gtk/*.xpm ; do                                   \
+	    echo "Uninstalling $$i from '$(DESTDIR)$(pixmapdir)'" ;        \
+	    rm -f "$(DESTDIR)$(pixmapdir)/$$i" ;         \
+	done
+	-$(RMDIR) "$(DESTDIR)$(pixmapdir)/gtk" 2> /dev/null
+	@for i in *.xpm ; do                                    \
+	    echo "Uninstalling $$i from '$(DESTDIR)$(pixmapdir)'" ;        \
+	    rm -f "$(DESTDIR)$(pixmapdir)/$$i" ;             \
+	done
+	-$(RMDIR) "$(DESTDIR)$(pixmapdir)/" 2> /dev/null
+	@echo VM pixmaps successfully uninstalled
+
 
 ##############################################################################
 clean:
