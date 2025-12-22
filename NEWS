@@ -17,12 +17,12 @@ Status
   Mailing list:            viewmail-info@nongnu.org
 
   Bug reports (direct):    https://gitlab.com/emacs-vm/vm/-/issues/
-                           (this the preferred mentod)
+                           (this the preferred method)
                            
   Bug reports (email):     viewmail-bugs@nongnu.org
                            (Please use `M-x vm-submit-bug-report' within VM)
 
-VM 8.3.0 (pending)
+VM 8.3.0 released 2025-12-22
 
   CHANGES
   * VM development convert from bzr to git and moved to GitLab.
@@ -30,7 +30,7 @@ VM 8.3.0 (pending)
   * Update to modern e-lisp.
   * Added vm-version-commit variable and function for the git commit id.
   * Remove outdated copy of vcard support in favor of standard package, which must
-    me install for vcard functionality to work
+    be install for vcard functionality to work
   * Enable vm-mail-check-recipient-format by default
   * Multiple bug fixes
 

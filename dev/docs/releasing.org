@@ -24,7 +24,6 @@ or
   M-x package-lint-current-buffer
 note lint will not be clean, due to xemacs references
 
-
 * release is built initial in fork
 then merge to make official
 
@@ -41,6 +40,8 @@ then merge to make official
 - make
 
 * pre-release testing from repo:
+changes must be committed
+
 (package-vc-install 
   '(vm :url "file:////Users/markd/projs/emacs/vm/vm-markd"
        :lisp-dir "lisp"))
