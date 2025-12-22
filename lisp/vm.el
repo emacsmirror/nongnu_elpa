@@ -1549,30 +1549,6 @@ summary buffer to select a folder."
   (interactive)
   (find-file-other-frame vm-init-file))
 
-(defun vm-check-emacs-version ()
-  "Checks the version of Emacs and gives an error if it is unsupported."
-  (cond ((and (featurep 'xemacs) (< emacs-major-version 21))
-	 (error "VM %s must be run on XEmacs 21 or a later version."
-		(vm-version)))
-	((and (not (featurep 'xemacs)) (< emacs-major-version 21))
-	 (error "VM %s must be run on GNU Emacs 21 or a later version."
-		(vm-version)))))
-
-;; This function is now defunct.  USR, 2011-11-12
-
-;; (defun vm-set-debug-flags ()
-;;   (or stack-trace-on-error
-;;       debug-on-error
-;;       (setq stack-trace-on-error
-;; 	    '(
-;; 	      wrong-type-argument
-;; 	      wrong-number-of-arguments
-;; 	      args-out-of-range
-;; 	      void-function
-;; 	      void-variable
-;; 	      invalid-function
-;; 	     ))))
-
 (defun vm-toggle-thread-operations ()
   "Toggle the variable `vm-enable-thread-operations'.
 
@@ -1614,11 +1590,9 @@ attributes, adding/deleting labels etc."
   "If this is the first time VM has been run in this Emacs session,
 do some necessary preparations.  Otherwise, update the count of
 draft messages."
-  ;;  (vm-set-debug-flags)
   (if (or (not (boundp 'vm-session-beginning))
 	  vm-session-beginning)
       (progn
-        (vm-check-emacs-version)
         (require 'vm-macro)
         (require 'vm-vars)
         (require 'vm-misc)
