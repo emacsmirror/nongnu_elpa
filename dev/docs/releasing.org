@@ -50,7 +50,7 @@ Note: as of emacs 30.2, package-vc-install doesn't generate
 a correct description or commit.
 
 * commit and tag
-- tag is in the form '3.0.0'
+- tag is in the form '8.3.0'
 - a branch are only made if changes are needed relative to a tag
 
 
@@ -58,17 +58,17 @@ a correct description or commit.
 (package-vc-install
   '(vm :url"https://gitlab.com/USER/vm.git"
        :lisp-dir "lisp"
-       :branch "3.0.0"))
+       :branch "8.3.0"))
   
 * post-release testing from main repo:
 (package-vc-install
   '(vm :url"https://gitlab.com/emacs-vm/vm.git"
        :lisp-dir "lisp"
-       :branch "3.0.0"))
+       :branch "8.3.0"))
 
 * push and test install once available in nongnu ELPA
 
 * update version to a snapshot of the next patch
-e.g. 3.0.0 -> 3.0.1snapshot
+e.g. 8.3.0 -> 8.3.1snapshot
 
 
