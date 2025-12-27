@@ -95,11 +95,14 @@
   (error "VM requires Emacs %s or later" vm-min-emacs-version))
 
 
-;; Ensure that vm-autoloads is loaded in case the user is using VM
-;; autoloads 
-
-(if (not (featurep 'xemacs))
-    (require 'vm-autoloads))
+;; emacs 28 doesn't generate a provide in when generating autoloads
+;; yet does bbdb-vm.el  (require 'vm-autoloads). This workds around
+;; this issue, yet allows vm.el to work if evaluated without going through
+;; vm-autoloads.
+(if (<= emacs-major-version 28)
+    (progn
+      (load-library "vm-autoloads")
+      (provide 'vm-autoloads)))
 
 ;;;###autoload
 (cl-defun vm (&optional folder &key read-only interactive
