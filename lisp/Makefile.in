@@ -10,7 +10,6 @@ GIT_DIR = "@top_srcdir@/.git"
 
 # the list of source files
 SOURCES = vm.el
-SOURCES += vm-autoload.el
 SOURCES += vm-avirtual.el
 SOURCES += vm-biff.el
 SOURCES += vm-crypto.el
@@ -139,7 +138,7 @@ vm-version-conf.el: Makefile
 	mv -f $@.tmp $@
 
 #############################################################################
-# GNU Emacs's vm-autoload file
+# GNU Emacs's vm-autoloads file
 # We use tr -d because Emacs under Cygwin apparently outputs CRLF
 # under Windows.  We remove the CRs.
 # Solaris 8's tr -d '\r' removes r's so we use '\015' instead.
