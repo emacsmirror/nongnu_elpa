@@ -26,7 +26,7 @@ git clone https://github.com/huangfeiyu/eldoc-mouse-nov.git
 
     Emacs 27.1 or higher
     nov-mode
-    eldoc-mouse 3.0.1 or higher
+    eldoc-mouse 3.0.2 or higher
 
 ### License
 
