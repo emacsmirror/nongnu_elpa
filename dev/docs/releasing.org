@@ -2,10 +2,10 @@ Releasing VM
 
 * NonGNU ELPA
 
-Package contents of GitLab vm/main will be at NonGNU-devel in
-https://elpa.nongnu.org/nongnu-devel/vm.html
+Current package contents of GitLab vm/main will be at NonGNU-devel in
+https://elpa.nongnu.org/nongnu-devel/vm.html.
 
-You can test installed by from here using:
+You can test installing from here by add to package-archives:
 
 (add-to-list 'package-archives 
              '("nongnu-devel" . "https://elpa.nongnu.org/nongnu-devel/"))
@@ -28,7 +28,7 @@ note lint will not be clean, due to xemacs references
 then merge to make official
 
 * version update in these files:
-- Add note abourt release to info/vm.texinfo @item Version ..
+- Add note abort release to info/vm.texinfo @item Version ..
 - NEWS
 - version in configure.ac AC_INIT
 - lisp/vm.el Version:
@@ -36,8 +36,9 @@ then merge to make official
 * test build
 - make distclean
 - autoconf
-- configure
+- ./configure
 - make
+- make install
 
 * pre-release testing from repo:
 changes must be committed
