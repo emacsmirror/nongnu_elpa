@@ -2,10 +2,10 @@ Releasing VM
 
 * NonGNU ELPA
 
-Package contents of GitLab vm/main will be at NonGNU-devel in
-https://elpa.nongnu.org/nongnu-devel/vm.html
+Current package contents of GitLab vm/main will be at NonGNU-devel in
+https://elpa.nongnu.org/nongnu-devel/vm.html.
 
-You can test installed by from here using:
+You can test installing from here by add to package-archives:
 
 (add-to-list 'package-archives 
              '("nongnu-devel" . "https://elpa.nongnu.org/nongnu-devel/"))
