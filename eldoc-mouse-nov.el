@@ -4,7 +4,7 @@
 
 ;; Author: Huang Feiyu <sibadake1@163.com>
 ;; Version: 0.1
-;; Package-Requires: ((emacs "27.1") (eldoc-mouse "3.0.1"))
+;; Package-Requires: ((emacs "27.1") (eldoc-mouse "3.0.2"))
 ;; Keywords: tools, epub, convenience, mouse, hover
 ;; URL: https://github.com/huangfeiyu/eldoc-mouse-nov
 ;; SPDX-License-Identifier: GPL-3.0-or-later
@@ -61,6 +61,13 @@
 
 (defun eldoc-mouse-nov-enable ()
   "Enable eldoc-mouse-nov in buffers."
+  (setq eldoc-mouse-bounds-of-thing-at-point-function
+        (lambda ()
+          (let* ((pos (point))
+                 (prop 'shr-url))
+            (when (get-text-property pos prop)
+              (cons (previous-single-property-change (1+ pos) prop nil (point-min))
+                    (next-single-property-change pos prop nil (point-max)))))))
   (add-hook 'eldoc-mouse-eldoc-documentation-functions #'eldoc-mouse-nov--eldoc-documentation-function nil t))
 
 (defun eldoc-mouse-nov-disable ()
