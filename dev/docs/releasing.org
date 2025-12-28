@@ -36,8 +36,9 @@ then merge to make official
 * test build
 - make distclean
 - autoconf
-- configure
+- ./configure
 - make
+- make install
 
 * pre-release testing from repo:
 changes must be committed
