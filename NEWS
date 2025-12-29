@@ -22,7 +22,13 @@ Status
   Bug reports (email):     viewmail-bugs@nongnu.org
                            (Please use `M-x vm-submit-bug-report' within VM)
 
-VM 8.3.1 released 2025-12-22
+VM 8.3.2 released 2025-12-29
+
+  CHANGES
+  * Address problem with 8.3.1 change where some user configurations for emacs 30
+    need vm to evaluate autoloads.el.
+
+VM 8.3.1 released 2025-12-27
 
   CHANGES
   * Work around ELPA install problem cause by emacs 28 not adding a provide call when
