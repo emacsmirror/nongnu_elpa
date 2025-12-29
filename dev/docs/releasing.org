@@ -28,7 +28,7 @@ note lint will not be clean, due to xemacs references
 then merge to make official
 
 * version update in these files:
-- Add note abort release to info/vm.texinfo @item Version ..
+- Add note about release to info/vm.texinfo @item Version ..
 - NEWS
 - version in configure.ac AC_INIT
 - lisp/vm.el Version:
