@@ -6,7 +6,7 @@
 ;; Copyright (C) 2003-2006 Robert Widhopf-Fenk
 ;; Copyright (C) 2024-2025 The VM Developers
 ;;
-;; Version: 8.3.2.snapshot
+;; Version: 8.3.2
 ;; Maintainer: viewmail-info@nongnu.org
 ;; URL: https://gitlab.com/emacs-vm/vm
 ;; Package-Requires: ((emacs "28.1") (vcard "0.2.2"))
@@ -99,10 +99,11 @@
 ;; yet does bbdb-vm.el  (require 'vm-autoloads). This workds around
 ;; this issue, yet allows vm.el to work if evaluated without going through
 ;; vm-autoloads.
-(if (<= emacs-major-version 28)
-    (progn
-      (load-library "vm-autoloads")
-      (provide 'vm-autoloads)))
+(cond ((<= emacs-major-version 28)
+       (progn
+	 (load-library "vm-autoloads")
+	 (provide 'vm-autoloads)))
+      (t (require 'vm-autoloads)))
 
 ;;;###autoload
 (cl-defun vm (&optional folder &key read-only interactive
