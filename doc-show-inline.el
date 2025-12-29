@@ -91,7 +91,7 @@ Ignored when `doc-show-inline-face'
 does not have a user defined background color."
   :type 'float)
 
-(defface doc-show-inline-face (list (list t :extend t))
+(defface doc-show-inline-face '((t :extend t))
   "Background for overlays.
 Note that the `background' is initialized using
 `doc-show-inline-face-background-highlight' unless it's customized."
@@ -100,9 +100,9 @@ Note that the `background' is initialized using
 ;; TODO, document and make public.
 (defvar doc-show-inline-mode-defaults
   (list
-   (cons 'c-mode (list :filter 'doc-show-inline-filter-for-cc-mode))
-   (cons 'cc-mode (list :filter 'doc-show-inline-filter-for-cc-mode))
-   (cons 'objc-mode (list :filter 'doc-show-inline-filter-for-cc-mode)))
+   (cons 'c-mode (list :filter #'doc-show-inline-filter-for-cc-mode))
+   (cons 'cc-mode (list :filter #'doc-show-inline-filter-for-cc-mode))
+   (cons 'objc-mode (list :filter #'doc-show-inline-filter-for-cc-mode)))
   "An association-list of default functions.")
 
 (defcustom doc-show-inline-use-logging nil
@@ -125,7 +125,7 @@ note that highlighting from overlays are also supported.")
 This hook is called instead of the mode hooks such as:
 `c-mode-hook' and `after-change-major-mode-hook'.")
 
-(defvar-local doc-show-inline-locations 'doc-show-inline-locations-default
+(defvar-local doc-show-inline-locations #'doc-show-inline-locations-default
   "Scans the current buffer for locations that `xref' should look-up.
 The result of each item must be a (symbol . position) cons cell,
 where the symbol is a string used for the look-up and
@@ -133,7 +133,7 @@ the position is it's beginning in the buffer.
 
 Note that this function may move the POINT without using `save-excursion'.")
 
-(defvar-local doc-show-inline-extract-doc 'doc-show-inline-extract-doc-default
+(defvar-local doc-show-inline-extract-doc #'doc-show-inline-extract-doc-default
   "Function to extract the doc-string given the destination buffer.
 The buffer and point will be the destination (the header file for example).
 The function must return a (BEG . END) cons cell representing the range to
@@ -165,7 +165,7 @@ When unset, the :filter property from `doc-show-inline-mode-defaults' is used.")
 (defvar-local doc-show-inline--idle-timer nil)
 
 ;; List of interactive commands.
-(defconst doc-show-inline--commands (list 'doc-show-inline-buffer 'doc-show-inline-mode))
+(defconst doc-show-inline--commands '(doc-show-inline-buffer doc-show-inline-mode))
 
 
 ;; ---------------------------------------------------------------------------
@@ -179,7 +179,7 @@ When unset, the :filter property from `doc-show-inline-mode-defaults' is used.")
 ;; When debug is enabled.
 (defvar doc-show-inline--idle-overlays-debug-index 0)
 (defvar doc-show-inline--idle-overlays-debug-colors
-  (list "#005500" "#550000" "#000055" "#550055" "#005555"))
+  '("#005500" "#550000" "#000055" "#550055" "#005555"))
 
 
 ;; ---------------------------------------------------------------------------
@@ -206,7 +206,7 @@ see `advice-add' documentation."
           ,@body)))
      (t
       (while (setq item (pop advice-list))
-        (unless (and (listp item) (eq 3 (length item)))
+        (unless (and (listp item) (length= item 3))
           (error "Each advice must be a list of 3 items"))
         (let ((fn-sym (gensym))
               (fn-advise (pop item))
@@ -388,7 +388,7 @@ the point should not be moved by this function."
          ((and doc-show-inline-exclude-regexp
                (save-match-data
                  (goto-char pos-beg)
-                 (search-forward-regexp doc-show-inline-exclude-regexp pos-end t)))
+                 (re-search-forward doc-show-inline-exclude-regexp pos-end t)))
 
           (doc-show-inline--log-info
            "comment \"%s\" in %S at point %d was skipped because of regex match with %S"
@@ -772,7 +772,7 @@ XREF-BACKEND is the back-end used to find this symbol."
                       (doc-show-inline--idle-handle-pos pos sym xref-backend))))))
 
               ;; Close any buffers loaded only for the purpose of extracting text.
-              (mapc 'kill-buffer temporary-buffers)))))
+              (mapc #'kill-buffer temporary-buffers)))))
 
       ;; Do this last, in the unlikely event of an error or an interruption,
       ;; these overlays will be used again to ensure everything is updated.
@@ -789,7 +789,7 @@ XREF-BACKEND is the back-end used to find this symbol."
 
     (overlay-put ov 'doc-show-inline-pending t)
 
-    (overlay-put ov 'evaporate 't)
+    (overlay-put ov 'evaporate t)
 
     (doc-show-inline--timer-ensure t))
 
@@ -960,7 +960,7 @@ Use STATE to enable/disable."
   (let ((defaults (assoc-default major-mode doc-show-inline-mode-defaults 'eq nil)))
     ;; Set unless the user has set this already.
     (unless doc-show-inline-filter
-      (setq doc-show-inline-filter (or (plist-get defaults :filter) 'identity))))
+      (setq doc-show-inline-filter (or (plist-get defaults :filter) #'identity))))
 
   (doc-show-inline--timer-buffer-local-enable))
 
@@ -985,7 +985,7 @@ Use STATE to enable/disable."
   (interactive)
 
   (unless (bound-and-true-p doc-show-inline-mode)
-    (user-error "Error: doc-show-inline-mode is not active!"))
+    (user-error "`doc-show-inline-mode' is not active"))
 
   (font-lock-ensure (point-min) (point-max))
   (doc-show-inline--idle-font-lock-region-pending (point-min) (point-max))
