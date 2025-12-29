@@ -15,7 +15,7 @@
 ;; This package overlays doc-strings (typically from C/C++ headers).
 ;;
 
-;;; Usage
+;;; Usage:
 
 ;;
 ;; Write the following code to your .emacs file:
@@ -28,7 +28,7 @@
 ;;
 ;; If you prefer to enable this per-mode, you may do so using
 ;; mode hooks instead of calling `doc-show-inline-mode'.
-;; The following example enables this for C-mode:
+;; The following example enables this for `c-mode':
 ;;
 ;;   (add-hook 'c-mode-hook
 ;;     (lambda ()
@@ -63,11 +63,11 @@
 ;; Custom Variables
 
 (defgroup doc-show-inline nil
-  "Overlay doc-strings from external files (using `xref' look-up)."
+  "Overlay doc-strings from external files (using `xref' lookup)."
   :group 'convenience)
 
 (defcustom doc-show-inline-idle-delay-init 1.0
-  "Initial idle delay, `doc-show-inline-idle-delay' is used afterwards."
+  "Initial idle delay; `doc-show-inline-idle-delay' is used afterwards."
   :type 'float)
 
 (defcustom doc-show-inline-idle-delay 0.75
@@ -86,9 +86,9 @@ Zero disables."
   :type 'integer)
 
 (defcustom doc-show-inline-face-background-highlight -0.04
-  "Use to tint the background color for overlay text (between -1.0 and 1.0).
+  "Used to tint the background color for overlay text (between -1.0 and 1.0).
 Ignored when `doc-show-inline-face'
-does not have a user defined background color."
+does not have a user-defined background color."
   :type 'float)
 
 (defface doc-show-inline-face '((t :extend t))
@@ -97,7 +97,7 @@ Note that the `background' is initialized using
 `doc-show-inline-face-background-highlight' unless it's customized."
   :group 'doc-show-inline)
 
-;; TODO, document and make public.
+;; TODO: document and make public.
 (defvar doc-show-inline-mode-defaults
   (list
    (cons 'c-mode (list :filter #'doc-show-inline-filter-for-cc-mode))
@@ -107,8 +107,8 @@ Note that the `background' is initialized using
 
 (defcustom doc-show-inline-use-logging nil
   "Optionally log interactions.
-Use for troubleshooting when lookups aren't or debugging.
-Note that this should not be enabled general usage as it impacts performance."
+Use for troubleshooting when lookups aren't working, or for debugging.
+Note that this should not be enabled for general usage as it impacts performance."
   :type 'boolean)
 
 
@@ -116,29 +116,29 @@ Note that this should not be enabled general usage as it impacts performance."
 ;; Custom Functions
 
 (defvar doc-show-inline-fontify-hook nil
-  "Run before extraction, functions take two arguments for the comment range.
+  "Hook run before extraction; functions take two arguments for the comment range.
 Intended for any additional highlighting such as tags or spell checking text,
-note that highlighting from overlays are also supported.")
+note that highlighting from overlays is also supported.")
 
 (defvar doc-show-inline-buffer-hook nil
-  "Run upon loading a new buffer.
+  "Hook run upon loading a new buffer.
 This hook is called instead of the mode hooks such as:
 `c-mode-hook' and `after-change-major-mode-hook'.")
 
 (defvar-local doc-show-inline-locations #'doc-show-inline-locations-default
-  "Scans the current buffer for locations that `xref' should look-up.
+  "Function that scans the current buffer for locations that `xref' should lookup.
 The result of each item must be a (symbol . position) cons cell,
-where the symbol is a string used for the look-up and
-the position is it's beginning in the buffer.
+where the symbol is a string used for the lookup and
+the position is its beginning in the buffer.
 
-Note that this function may move the POINT without using `save-excursion'.")
+Note that this function may move the point without using `save-excursion'.")
 
 (defvar-local doc-show-inline-extract-doc #'doc-show-inline-extract-doc-default
   "Function to extract the doc-string given the destination buffer.
 The buffer and point will be the destination (the header file for example).
 The function must return a (BEG . END) cons cell representing the range to
 display or nil on failure.
-Note that the beginning may contain white-space (before the comment begins)
+Note that the beginning may contain blank-space (before the comment begins)
 in order to maintain alignment with the following lines.")
 
 (defvar-local doc-show-inline-filter nil
@@ -158,7 +158,7 @@ When unset, the :filter property from `doc-show-inline-mode-defaults' is used.")
 ;; Allow disabling for debugging.
 (defconst doc-show-inline--use-lookup-cache t)
 ;; Always set when the mode is active:
-;; - key: the symbol as a string (from `xref-backend-identifier-at-point' or from `imenu'),
+;; - key: the symbol as a string (from `xref-backend-identifier-at-point' or `imenu'),
 ;; - value: the syntax-highlighted string to display (from `doc-show-inline--doc-from-xref').
 (defvar-local doc-show-inline--lookup-cache nil)
 
@@ -169,10 +169,10 @@ When unset, the :filter property from `doc-show-inline-mode-defaults' is used.")
 
 
 ;; ---------------------------------------------------------------------------
-;; Idle Overlay (Package Development / Debugging Only)
+;; Idle Overlay (Package Development and Debugging Only)
 ;;
-;; Not intended for general purpose use,
-;; needed for checking there are no gaps in the regions being checked .
+;; Not intended for general-purpose use,
+;; needed for checking that there are no gaps in the regions being checked.
 
 ;; Only for showing areas marked for highlighting.
 (defconst doc-show-inline--idle-overlays-debug nil)
@@ -188,7 +188,7 @@ When unset, the :filter property from `doc-show-inline-mode-defaults' is used.")
 (defmacro doc-show-inline--with-advice (advice &rest body)
   "Execute BODY with ADVICE temporarily enabled.
 
-Advice are triplets of (SYMBOL HOW FUNCTION),
+Advice items are triplets of (SYMBOL HOW FUNCTION),
 see `advice-add' documentation."
   (declare (indent 1))
   (let ((advice-list advice)
@@ -228,8 +228,8 @@ see `advice-add' documentation."
            ,@body-advice-remove))))))
 
 (defun doc-show-inline--color-highlight (color factor)
-  "Tint between COLOR by FACTOR in (-1..1).
-Where positive brighten and negative numbers darken."
+  "Tint COLOR by FACTOR in (-1..1),
+where positive values brighten and negative values darken."
   (declare (important-return-value t))
   (let ((value (color-values color))
         (factor-int (truncate (* 65535 factor))))
@@ -238,7 +238,7 @@ Where positive brighten and negative numbers darken."
             "#%02x%02x%02x"
             (mapcar
              (lambda (n)
-               ;; Shift by -8 to map the value returned by `color values':
+               ;; Shift by -8 to map the value returned by `color-values':
                ;; 0..65535 to 0..255 for `#RRGGBB` string formatting.
                (ash (min 65535 (max 0 (truncate (+ (nth n value) factor-int)))) -8))
              (number-sequence 0 2))))))
@@ -265,15 +265,15 @@ Where positive brighten and negative numbers darken."
 ;; ---------------------------------------------------------------------------
 ;; Logging
 ;;
-;; Without detailed logging, it's difficult to know why a doc-string is not found,
-;; this is quite verbose and intended for troubleshooting only.
+;; Without detailed logging, it's difficult to know why a doc-string is not found.
+;; This is quite verbose and intended for troubleshooting only.
 
 (defun doc-show-inline--log-type-impl (prefix str)
-  "Logging function (implementation), PREFIX and STR (with no newline)."
+  "Log PREFIX followed by STR to the log buffer."
   (declare (important-return-value nil))
   (let ((buf (get-buffer-create "*doc-show-inline-log*")))
     (set-text-properties 0 (length str) nil str)
-    ;; (printf "%s%s\n" prefix str)
+    ;; (message "%s%s" prefix str)
     (with-current-buffer buf
       (insert prefix str "\n"))))
 
@@ -289,7 +289,7 @@ Where positive brighten and negative numbers darken."
 
 
 ;; ---------------------------------------------------------------------------
-;; Mode Specific Logic
+;; Mode-Specific Logic
 ;;
 ;; Currently only C/C++ has custom support, other languages will work in principle
 ;; if their doc-strings are stored externally and support `xref'.
@@ -297,17 +297,17 @@ Where positive brighten and negative numbers darken."
 (defun doc-show-inline-filter-for-cc-mode (sym)
   "Return non-nil when this SYM should be checked for a doc-string.
 
-The point will be located over the symbol (typically at it's beginning),
+The point will be located over the symbol (typically at its beginning),
 the point should not be moved by this function."
   (declare (important-return-value t))
   (let ((prefix (buffer-substring-no-properties (pos-bol) (point))))
     (cond
      ;; Ignore defines, they never have external docs.
-     ;; Removing will work, it just performs an unnecessary lookup.
+     ;; Removing this check would still work but performs an unnecessary lookup.
      ((string-match-p "[ \t]*#[ \t]*define[ \t]+" prefix)
       nil)
      ;; Ignore static function doc-strings.
-     ;; Removing will work, it just performs an unnecessary lookup.
+     ;; Removing this check would still work but performs an unnecessary lookup.
      ((string-match-p "\\_<static\\_>" prefix)
       nil)
      ;; Forward declaring structs shouldn't show documentation, e.g:
@@ -315,11 +315,11 @@ the point should not be moved by this function."
      ;; while this is in some sense a personal preference,
      ;; forward declarations are mostly used to prevent warnings when these
      ;; structs are used as parameters.
-     ;; So it makes sense to ignore them.
+     ;; It therefore makes sense to ignore them.
      ((and (string-match-p "^\\_<struct\\_>" prefix)
            (equal ?\; (char-after (+ (point) (length sym)))))
       nil)
-     ;; Including `typedef' rarely gains anything from in-lining doc-string
+     ;; Including `typedef' rarely gains anything from inlining a doc-string.
      ;; Similar to `struct':
      ;; - This is already the declaration so the doc-string is already available.
      ;; - This forward declares an opaque type.
@@ -332,8 +332,8 @@ the point should not be moved by this function."
   "Extract doc-string for SYM."
   (declare (important-return-value t))
 
-  ;; There may be blank lines between the comment beginning,
-  ;; include these since it's useful to display the the space to know if the comment
+  ;; There may be blank lines between the comment and the declaration;
+  ;; include these since it's useful to display the space to know if the comment
   ;; was directly above the text or not.
   (let ((pos-end (max (point-min) (1- (pos-bol)))))
     ;; Move one character into the comment.
@@ -352,7 +352,7 @@ the point should not be moved by this function."
               (skip-chars-backward " \t" pos-beg-of-line)
               (point))))
           (doc-show-inline--log-info
-           "symbol \"%s\" in %S at point %d is previous lines trailing comment"
+           "symbol \"%s\" in %S at point %d is previous line's trailing comment"
            sym
            (current-buffer)
            (point))
@@ -366,7 +366,7 @@ the point should not be moved by this function."
            (let ((blank-lines 0))
              (save-excursion
                (goto-char pos-end)
-               ;; It's important the point is at the beginning of the line
+               ;; It's important that the point is at the beginning of the line
                ;; so `looking-at-p' works as expected.
                (goto-char (pos-bol))
                (while (and (looking-at-p "[[:blank:]]*$")
@@ -381,7 +381,7 @@ the point should not be moved by this function."
            pos-beg
            doc-show-inline-exclude-blank-lines)
 
-          ;; Found at least `doc-show-inline-exclude-blank-lines' blank-lines, skipping.
+          ;; Found at least `doc-show-inline-exclude-blank-lines' blank lines, skipping.
           nil)
 
          ;; Optionally exclude a regexp.
@@ -433,10 +433,10 @@ the point should not be moved by this function."
       (set-face-attribute 'doc-show-inline-face nil :background default-tint))))
 
 (defun doc-show-inline--overlays-remove (&optional pos-beg pos-end)
-  "Remove overlays between POS-BEG & POS-END."
+  "Remove overlays between POS-BEG and POS-END."
   (declare (important-return-value nil))
   (cond
-   ;; When logging remove overlays one at a time.
+   ;; When logging, remove overlays one at a time.
    (doc-show-inline-use-logging
     (let ((overlays-in-view (overlays-in (or pos-beg (point-min)) (or pos-end (point-max)))))
       (when overlays-in-view
@@ -445,7 +445,7 @@ the point should not be moved by this function."
             (when (and (overlay-get ov 'doc-show-inline) (overlay-buffer ov))
               (doc-show-inline--log-info
                "removing overlay in %S at point %d" (current-buffer)
-               ;; Start & end are the same.
+               ;; Start and end are the same.
                (overlay-start ov))
               (delete-overlay ov)))))))
    (t
@@ -476,7 +476,7 @@ the point should not be moved by this function."
         (imenu--make-index-alist)
       (error
        (doc-show-inline--log-fail
-        "IMENU couldn't access symbols (failed to parse?): %s"
+        "`imenu' couldn't access symbols (failed to parse?): %s"
         (error-message-string err)))))
   (let ((alist imenu--index-alist)
         (pair nil)
@@ -484,19 +484,19 @@ the point should not be moved by this function."
         (imstack nil)
         (result nil)
 
-        ;; As the results differ between back-ends, some custom handling is needed.
+        ;; As the results differ between backends, some custom handling is needed.
         (xref-backend (xref-find-backend)))
 
     ;; Elements of alist are either ("name" . marker), or
     ;; ("submenu" ("name" . marker) ... ). The list can be
-    ;; Arbitrarily nested.
+    ;; arbitrarily nested.
     (while (or alist imstack)
       (cond
        (alist
         (setq pair (car-safe alist))
         (setq alist (cdr-safe alist))
         (cond
-         ((atom pair)) ; Skip anything not a cons.
+         ((atom pair)) ; Skip non-cons (including nil).
 
          ((imenu--subalist-p pair)
           (setq imstack (cons alist imstack))
@@ -515,14 +515,14 @@ the point should not be moved by this function."
               (let ((sym nil))
                 (cond
                  ((eq xref-backend 'eglot)
-                  ;; EGLOT mode has some differences.
+                  ;; `eglot' mode has some differences.
                   ;; - `xref-backend-identifier-at-point' isn't functional.
                   ;; - The point is at the beginning of the line.
-                  ;; For this reason, it's necessary to search for `sym' & set the
-                  ;; position to this.
+                  ;; For this reason, it's necessary to search for SYM and update
+                  ;; the position accordingly.
                   (setq sym (car pair))
                   (unless (looking-at-p (regexp-quote sym))
-                    ;; In most cases limiting by `pos-eol' is sufficient.
+                    ;; In most cases limiting by `pos-end' is sufficient.
                     (save-match-data
                       (when (search-forward sym pos-end t)
                         (setq pos (- (point) (length sym)))))))
@@ -542,7 +542,7 @@ the point should not be moved by this function."
 
 Argument XREF-BACKEND is used to avoid multiple calls to `xref-find-backend'."
   (declare (important-return-value t))
-  ;; (printf "SYM: %S\n" sym)
+  ;; (message "SYM: %S" sym)
   (let ((xref-list nil))
     (doc-show-inline--with-advice ((#'xref--not-found-error :override (lambda (_kind _input) nil))
                                    (#'xref--show-defs
@@ -555,10 +555,10 @@ Argument XREF-BACKEND is used to avoid multiple calls to `xref-find-backend'."
                                         :override
                                         (lambda (&rest _args)
                                           (doc-show-inline--log-info
-                                           "XREF lookup %S requested a file name for backend %S"
+                                           "`xref' lookup %S requested a file name for backend %S"
                                            (current-buffer)
                                            xref-backend)
-                                          ;; File that doesn't exist.
+                                          ;; Return an error to abort the file read request.
                                           (user-error
                                            "Doc-show-inline: ignoring request for file read"))))
           (with-demoted-errors "%S"
@@ -566,11 +566,11 @@ Argument XREF-BACKEND is used to avoid multiple calls to `xref-find-backend'."
     xref-list))
 
 (defun doc-show-inline--doc-from-xref (sym xref-list)
-  "XREF-LIST is a list of `xref' items for SYM."
+  "Extract doc-string text from XREF-LIST for symbol SYM."
   (declare (important-return-value t))
   ;; Build a list of comments from the `xref' list (which may find multiple sources).
   ;; In most cases only a single item is found.
-  ;; Nevertheless, best combine all so a doc-string will be extracted from at least one.
+  ;; Nevertheless, it's best to combine all so a doc-string will be extracted from at least one.
   (let ((text-results nil)
         (current-buf (current-buffer)))
 
@@ -587,7 +587,7 @@ Argument XREF-BACKEND is used to avoid multiple calls to `xref-find-backend'."
         (dolist (item xref-list)
 
           (let* ((marker
-                  ;; This sets '(point)' which is OK in this case.
+                  ;; This sets point, which is OK in this case.
                   (xref-location-marker (xref-item-location item)))
                  (buf (marker-buffer marker)))
             ;; Ignore matches in the same buffer.
@@ -602,7 +602,7 @@ Argument XREF-BACKEND is used to avoid multiple calls to `xref-find-backend'."
                     ;; Ensure the comment is properly syntax highlighted,
                     ;; note that we could assume this only uses the comment face
                     ;; however some configurations highlight tags such as TODO
-                    ;; or even bad spelling, so font lock this text.
+                    ;; or even for bad spelling, so font lock this text.
                     (with-demoted-errors "doc-show-inline/font-lock-ensure: %S"
                       (font-lock-ensure pos-beg pos-end))
 
@@ -624,23 +624,21 @@ Argument XREF-BACKEND is used to avoid multiple calls to `xref-find-backend'."
       nil))))
 
 (defun doc-show-inline--show-text (pos text)
-  "Add an overlay from TEXT at POS."
+  "Add an overlay with TEXT at POS."
   (declare (important-return-value nil))
   (doc-show-inline--log-info
-   "adding overlay in %S at point %d has %d length text"
+   "adding overlay in %S at point %d with text of length %d"
    (current-buffer)
    pos
    (length (or text "")))
 
   (let ((ov (make-overlay pos pos)))
-    ;; Handy for debugging pending regions to be checked.
-
     (overlay-put ov 'before-string text)
     (overlay-put ov 'doc-show-inline t)
     ov))
 
 (defun doc-show-inline--idle-overlays (pos-beg pos-end)
-  "Return a list of valid overlays between POS-BEG and POS-END."
+  "Return a list of pending overlays between POS-BEG and POS-END."
   (declare (important-return-value t))
   (let ((result nil))
     (let ((overlays-in-view (overlays-in pos-beg pos-end)))
@@ -653,15 +651,15 @@ Argument XREF-BACKEND is used to avoid multiple calls to `xref-find-backend'."
 
 (defun doc-show-inline--idle-overlays-remove (&optional pos-beg pos-end)
   "Remove `doc-show-inline-pending' overlays from current buffer.
-If optional arguments POS-BEG and POS-END exist
+If optional arguments POS-BEG and POS-END are provided,
 remove overlays from range POS-BEG to POS-END.
-Otherwise remove all overlays."
+Otherwise, remove all overlays."
   (declare (important-return-value nil))
   (remove-overlays pos-beg pos-end 'doc-show-inline-pending t))
 
 (defun doc-show-inline--idle-handle-pos (pos sym xref-backend)
   "Add text for the overlay at POS for SYM.
-XREF-BACKEND is the back-end used to find this symbol."
+XREF-BACKEND is the backend used to find this symbol."
   (declare (important-return-value nil))
   (cond
    ;; Check if the symbol should be considered for doc-strings,
@@ -680,7 +678,7 @@ XREF-BACKEND is the back-end used to find this symbol."
       (when doc-show-inline--use-lookup-cache
         (setq text (gethash sym doc-show-inline--lookup-cache t)))
 
-      ;; When true, the value doesn't exist in cache.
+      ;; When true, the value doesn't exist in the cache.
       (cond
        ((eq text t)
         (setq text nil)
@@ -691,24 +689,24 @@ XREF-BACKEND is the back-end used to find this symbol."
            (current-buffer)
            pos
            (length xref-list))
-          ;; Loads a buffer.
+          ;; This may load a buffer.
           (when xref-list
             (setq text (doc-show-inline--doc-from-xref sym xref-list))))
 
-        ;; Cache, even when nil (to avoid future lookups to establish it's nil).
+        ;; Cache even when nil, to avoid redundant lookups.
         (when doc-show-inline--use-lookup-cache
           (puthash sym text doc-show-inline--lookup-cache))
 
         (doc-show-inline--log-info
-         "symbol \"%s\" in %S at point %d has %d length text"
+         "symbol \"%s\" in %S at point %d with text of length %d"
          sym
          (current-buffer)
          pos
          (length (or text ""))))
-       ;; Otherwise cache is used, text is either nil or a string.
+       ;; Otherwise, the cache is used; text is either nil or a string.
        (t
         (doc-show-inline--log-info
-         "symbol \"%s\" in %S at point %d has %d length text (cached)"
+         "symbol \"%s\" in %S at point %d with text of length %d (cached)"
          sym
          (current-buffer)
          pos
@@ -720,7 +718,7 @@ XREF-BACKEND is the back-end used to find this symbol."
 (defun doc-show-inline--idle-handle-pending-ranges ()
   "Handle all queued ranges."
   (declare (important-return-value nil))
-  ;; First remove any overlays.
+  ;; First, remove any overlays.
   (when-let* ((overlays-in-view (doc-show-inline--idle-overlays (point-min) (point-max))))
     (let ((overlays-beg (point-max))
           (overlays-end (point-min)))
@@ -735,7 +733,7 @@ XREF-BACKEND is the back-end used to find this symbol."
           (setq overlays-end (max overlays-end ov-end))))
 
       (save-excursion
-        ;; There is something to do, postpone accessing `points'.
+        ;; Compute points only when there's work to do.
         (let ((points (funcall doc-show-inline-locations (point-min) (point-max))))
           (doc-show-inline--log-info
            "found %d identifier(s) in %S"
@@ -774,17 +772,17 @@ XREF-BACKEND is the back-end used to find this symbol."
               ;; Close any buffers loaded only for the purpose of extracting text.
               (mapc #'kill-buffer temporary-buffers)))))
 
-      ;; Do this last, in the unlikely event of an error or an interruption,
+      ;; Do this last, in the unlikely event of an error or interruption,
       ;; these overlays will be used again to ensure everything is updated.
       (doc-show-inline--idle-overlays-remove overlays-beg overlays-end))))
 
 (defun doc-show-inline--idle-font-lock-region-pending (pos-beg pos-end)
-  "Track the range to check for overlays, adding POS-BEG & POS-END to the queue."
+  "Track the range to check for overlays, adding POS-BEG and POS-END to the queue."
   (declare (important-return-value nil))
   (let ((ov (make-overlay pos-beg pos-end)))
     (doc-show-inline--log-info "idle overlay [%d..%d] in %S" pos-beg pos-end (current-buffer))
 
-    ;; Handy for debugging pending regions to be checked.
+    ;; Useful for debugging pending regions.
     ;; (overlay-put ov 'face '(:background "#000000" :extend t))
 
     (overlay-put ov 'doc-show-inline-pending t)
@@ -813,15 +811,15 @@ XREF-BACKEND is the back-end used to find this symbol."
 (defun doc-show-inline--timer-callback-or-disable (this-timer buf)
   "Callback run from the idle timer THIS-TIMER for BUF."
   (declare (important-return-value nil))
-  ;; Ensure all other buffers are highlighted on request.
+  ;; Handle the timer callback for this buffer.
   (cond
    ((null (buffer-name buf))
     (doc-show-inline--log-info "idle timer ignored for invalid buffer %S" buf)
     ;; The buffer has been deleted, so cancel the timer directly.
     (cancel-timer this-timer))
    (t
-    ;; Needed since the initial time might have been 0.0.
-    ;; Ideally this wouldn't need to be set every time.
+    ;; Needed since the initial delay might have been 0.0.
+    ;; Ideally, this wouldn't need to be set every time.
     (when doc-show-inline--idle-timer
       (timer-set-idle-time doc-show-inline--idle-timer doc-show-inline-idle-delay t))
 
@@ -852,9 +850,8 @@ XREF-BACKEND is the back-end used to find this symbol."
      (t
       (doc-show-inline--log-info "idle timer ensure t, enabling for %S" (current-buffer))
       (setq doc-show-inline--idle-timer
-            ;; One off, set repeat so the timer can be manually disabled,
+            ;; Set repeat so the timer can be manually disabled,
             ;; ensuring it is only disabled on successful completion.
-            ;; Pass a nil function here, set the function & arguments below.
             (run-with-idle-timer
              doc-show-inline-idle-delay t #'doc-show-inline--timer-callback-or-disable))
 
@@ -871,35 +868,35 @@ XREF-BACKEND is the back-end used to find this symbol."
     (kill-local-variable 'doc-show-inline--idle-timer))))
 
 (defun doc-show-inline--timer-reset ()
-  "Run this when the buffer was changed."
+  "Reset the idle timer when the window state changes."
   (declare (important-return-value nil))
   ;; Ensure changing windows triggers the idle timer if this buffer uses the mode.
   (when (bound-and-true-p doc-show-inline-mode)
     (doc-show-inline--timer-ensure t)))
 
 (defun doc-show-inline--timer-buffer-local-enable ()
-  "Ensure buffer local state is enabled."
+  "Enable buffer-local timer and hooks."
   (declare (important-return-value nil))
   ;; Needed in case focus changes before the idle timer runs.
   (doc-show-inline--timer-ensure t)
   (add-hook 'window-state-change-hook #'doc-show-inline--timer-reset nil t))
 
 (defun doc-show-inline--timer-buffer-local-disable ()
-  "Ensure buffer local state is disabled."
+  "Disable buffer-local timer and hooks."
   (declare (important-return-value nil))
   (doc-show-inline--timer-ensure nil)
   (remove-hook 'window-state-change-hook #'doc-show-inline--timer-reset t))
 
 
 ;; ---------------------------------------------------------------------------
-;; Gap-less Font Lock Overlay Hack
+;; Gapless Font Lock Overlay Hack
 ;;
 ;; Unfortunately C/C++ font locking performs tricks resulting in gaps in ranges
 ;; with `jit-lock-register' callbacks.
-;; This is annoying but can be worked around using
+;; This is annoying but can be worked around using advice on `c-context-expand-fl-region'.
 
 (defun doc-show-inline--cc-gapless-hack-fn (old-fn beg end)
-  "Advice for `c-context-expand-fl-region' (OLD-FN),extract the region (BEG END)."
+  "Advice around OLD-FN to extract the region between BEG and END."
   (declare (important-return-value t))
   (let ((bounds (funcall old-fn beg end)))
     (when (bound-and-true-p doc-show-inline-mode)
@@ -921,7 +918,7 @@ XREF-BACKEND is the back-end used to find this symbol."
     result))
 
 (defun doc-show-inline--jit-or-gapless-hack-set (state)
-  "Setup the callback for tracking ranges that need to be handled.
+  "Set up the callback for tracking ranges that need to be handled.
 Use STATE to enable/disable."
   (declare (important-return-value nil))
   (cond
@@ -956,7 +953,7 @@ Use STATE to enable/disable."
 
   (doc-show-inline--jit-or-gapless-hack-set t)
 
-  ;; Setup default callbacks based on mode.
+  ;; Set up default callbacks based on mode.
   (let ((defaults (assoc-default major-mode doc-show-inline-mode-defaults 'eq nil)))
     ;; Set unless the user has set this already.
     (unless doc-show-inline-filter
@@ -997,12 +994,13 @@ Use STATE to enable/disable."
 ;; ---------------------------------------------------------------------------
 ;; Define Minor Mode
 ;;
-;; Developer note, use global hooks since these run before buffers are loaded.
+;; Developer note: use global hooks since these run before buffers are loaded.
 ;; Each function checks if the local mode is active before operating.
 
 (defun doc-show-inline--mode-enable (&optional is-interactive)
-  "Turn on option `doc-show-inline-mode' for the current buffer.
-When IS-INTERACTIVE is true, use `doc-show-inline-idle-delay-init'."
+  "Enable `doc-show-inline-mode' for the current buffer.
+When IS-INTERACTIVE is non-nil, use 0.0 delay, otherwise use
+`doc-show-inline-idle-delay-init'."
   (declare (important-return-value nil))
 
   (when doc-show-inline--use-lookup-cache
@@ -1010,11 +1008,11 @@ When IS-INTERACTIVE is true, use `doc-show-inline-idle-delay-init'."
 
   (doc-show-inline--idle-enable)
 
-  ;; Should always be true.
+  ;; The timer should have been created by `doc-show-inline--idle-enable'.
   (when doc-show-inline--idle-timer
     ;; When loading for the first time, postpone `timer-set-idle-time',
     ;; since `lsp-mode' may take some time to initialize.
-    ;; Otherwise this can run immediately when started on an existing buffer.
+    ;; Otherwise, this can run immediately when started on an existing buffer.
     (timer-set-idle-time doc-show-inline--idle-timer
                          (cond
                           (is-interactive
@@ -1025,7 +1023,7 @@ When IS-INTERACTIVE is true, use `doc-show-inline-idle-delay-init'."
                          t)))
 
 (defun doc-show-inline--mode-disable ()
-  "Turn off option `doc-show-inline-mode' for the current buffer."
+  "Disable `doc-show-inline-mode' for the current buffer."
   (declare (important-return-value nil))
 
   (when doc-show-inline--use-lookup-cache
@@ -1035,7 +1033,7 @@ When IS-INTERACTIVE is true, use `doc-show-inline-idle-delay-init'."
 
 ;;;###autoload
 (define-minor-mode doc-show-inline-mode
-  "Toggle variable `doc-show-inline-mode' in the current buffer."
+  "Toggle showing inline doc-strings in the current buffer."
   :global nil
 
   (cond
@@ -1045,13 +1043,13 @@ When IS-INTERACTIVE is true, use `doc-show-inline-idle-delay-init'."
    (t
     (doc-show-inline--mode-disable))))
 
-;; Evil Mode (setup if in use).
+;; Evil Mode (set up if in use).
 ;;
-;; Don't let these commands repeat as they are for the UI, not editor.
+;; Don't let these commands repeat as they are for the UI, not the editor.
 ;;
 ;; Notes:
 ;; - Package lint complains about using this command,
-;;   however it's needed to avoid issues with `evil-mode'.
+;;   however, it's needed to avoid issues with `evil-mode'.
 (declare-function evil-declare-not-repeat "ext:evil-common")
 (with-eval-after-load 'evil
   (mapc #'evil-declare-not-repeat doc-show-inline--commands))
