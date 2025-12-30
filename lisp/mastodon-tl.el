@@ -1981,7 +1981,8 @@ CW-EXPANDED means treat content warnings as unfolded."
                             'wrap-prefix bar)
               body)
             ;; insert quote maybe:
-            (when quote
+            (when (and quote
+                       (not (string= "deleted" (alist-get 'state quote))))
               (concat "\n\n"
                       (mastodon-tl--insert-quoted quote)
                       ))))
