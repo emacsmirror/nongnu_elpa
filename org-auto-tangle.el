@@ -111,6 +111,19 @@ DEFAULT.")
   :tag "Org Auto Tangle"
   :group 'org-babel)
 
+(defcustom org-auto-tangle-with-files nil
+  "Lisp files to be loaded in the async tangling process.
+
+Can be a string (a single file path) or a list of file paths.
+Each file will be `load-file`'d in the asynchronous subprocess
+before tangling starts.  Useful for loading custom libraries or
+initializing environment variables."
+  :group 'org-auto-tangle
+  :type '(choice
+          (const :tag "None" nil)
+          (file :tag "Single file")
+          (repeat (file :tag "Multiple files"))))
+
 (defcustom org-auto-tangle-with-vars nil
   "Non-nil means pass VARS variables to the async tangling process.
 
@@ -162,9 +175,17 @@ Assume buffer is in Org mode.  Narrowing, if any, is ignored."
                                        org-babel-pre-tangle-hook
                                        org-babel-post-tangle-hook)
                                      with-vars)))
-          (evaluate (not (member file org-auto-tangle-babel-safelist))))
+          (evaluate (not (member file org-auto-tangle-babel-safelist)))
+          (with-files org-auto-tangle-with-files))
      (lambda ()
        (require 'org)
+       (when with-files
+         (dolist (f (if (listp with-files)
+                        with-files
+                      (list with-files)))
+           (when (and (stringp f) (file-exists-p f))
+             (ignore-errors
+               (load-file f)))))
        (let ((start-time (current-time))
              (non-essential t)
              (org-confirm-babel-evaluate evaluate))

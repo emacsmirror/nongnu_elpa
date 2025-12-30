@@ -60,6 +60,16 @@ line without removing any ~vars~ list.
   #+auto_tangle: vars:load-path nil
 #+end_src
 
+Each listed file in =org-auto-tangle-with-files= will be loaded inside the asynchronous
+Emacs process *before* tangling begins.  This is useful for setting up additional
+libraries, paths, or environment variables.
+
+#+begin_src emacs-lisp
+(setq org-auto-tangle-with-files
+      '("~/.emacs.d/my-env.el"
+        "~/.emacs.d/project-hooks.el"))
+#+end_src
+
 * Babel Auto Tangle Safelist
 Add a list of files to the safelist to autotangle with noweb evaluation
 #+begin_src emacs-lisp
