@@ -2073,9 +2073,16 @@ CW-EXPANDED means treat content warnings as unfolded."
                                (if (mastodon-tl--has-spoiler toot)
                                    (mastodon-tl--spoiler toot)
                                  (mastodon-tl--content toot)))))
-    ;; If any filters are "hide", then we hide,
-    ;; even though item may also have a "warn" filter:
-    (unless (and filtered (assoc "hide" filters)) ;; no insert
+    (unless (or
+             ;; If any filters are "hide", then we hide,
+             ;; even though item may also have a "warn" filter:
+             (and filtered (assoc "hide" filters)) ;; no insert
+             ;; if account suspended, no-op:
+             ;; https://codeberg.org/martianh/mastodon.el/issues/753
+             ;; a user found post in bookmarks from a suspended user,
+             ;; breaking loading of bookmarks, even though I suspect the
+             ;; server should not even send us such data:
+             (map-nested-elt toot '(account suspended)))
       (mastodon-tl--insert-status
        toot (mastodon-tl--clean-tabs-and-nl spoiler-or-content)
        detailed-p thread domain unfolded no-byline cw-expanded))))
