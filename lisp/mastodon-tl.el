@@ -1916,22 +1916,25 @@ Runs `mastodon-tl--render-text' and fetches poll or media."
   "Propertize quoted status DATA for insertion."
   (let ((bar (concat " " (mastodon-tl--symbol 'reply-bar)))
         (content (map-nested-elt data '(quoted_status content)))
-      ;; quote symbol hack:
+        (state (alist-get 'state data))
+        ;; quote symbol hack:
         (quotemark (propertize "“" 'face
                                '(t :inherit success :weight bold
                                    :height 1.8))))
-    (propertize
-     (concat quotemark "\n"
-      ;; author byline without horiz bar and toot stats:
-      (mastodon-tl--byline-author
-       (alist-get 'quoted_status data) nil :domain :base)
-      "\n"
-      ;; quoted text:
-      (mastodon-tl--render-text content
-                                (alist-get 'quoted_status data)))
-     'line-prefix bar
-     'wrap-prefix bar
-     'mastodon-quote data)))
+    (unless (or (string= "deleted" state)
+                (string= "pending" state))
+      (propertize
+       (concat quotemark "\n"
+               ;; author byline without horiz bar and toot stats:
+               (mastodon-tl--byline-author
+                (alist-get 'quoted_status data) nil :domain :base)
+               "\n"
+               ;; quoted text:
+               (mastodon-tl--render-text content
+                                         (alist-get 'quoted_status data)))
+       'line-prefix bar
+       'wrap-prefix bar
+       'mastodon-quote data))))
 
 (defun mastodon-tl--insert-status
     (toot body &optional detailed-p thread domain unfolded no-byline
