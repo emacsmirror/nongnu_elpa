@@ -1936,6 +1936,34 @@ Runs `mastodon-tl--render-text' and fetches poll or media."
        'wrap-prefix bar
        'mastodon-quote data))))
 
+;; PUT /api/v1/statuses/:id/interaction_policy
+(defun mastodon-tl--change-post-quote-policy ()
+  "Change the quote policy of the toot at point.
+Toot must be on you own."
+  (interactive)
+  ;; SCOPE: with own toot:
+  (let ((toot (mastodon-tl--property 'item-json :no-move)))
+    (if (not (mastodon-toot--own-toot-p toot))
+        (user-error "You can only set quote policy for your own posts.")
+      (let* ((id (mastodon-tl--property 'item-id))
+             (current (car (map-nested-elt toot
+                                           '(quote_approval automatic))))
+             (choice (completing-read "Set post quote policy: "
+                                      mastodon-profiles-quote-policy-types
+                                      nil :match))
+             (url (mastodon-http--api (format "statuses/%s/interaction_policy"
+                                              id)))
+             (resp (mastodon-http--put
+                    url `(("quote_approval_policy" . ,choice)))))
+        (mastodon-http--triage
+         resp
+         (lambda (resp)
+           (let* ((json (with-current-buffer resp
+                          (mastodon-http--process-json)))
+                  (set (or (car (map-nested-elt json '(quote_approval automatic)))
+                           "nobody"))) ;; nil on the server = nobody
+             (message "Quote policy for post updated to: %s!" set))))))))
+
 (defun mastodon-tl--insert-status
     (toot body &optional detailed-p thread domain unfolded no-byline
           cw-expanded)
