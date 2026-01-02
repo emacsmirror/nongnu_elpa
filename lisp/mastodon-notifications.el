@@ -828,6 +828,25 @@ Status notifications are created when you call
          (resp (mastodon-http--get-json url)))
     (alist-get 'count resp)))
 
+;;; REVOKE QUOTED STATUS
+;; POST /api/v1/statuses/:id/quotes/:quoting_status_id/revoke.
+(defun mastodon-notifications-revoke-post-quote ()
+  "Revoke the quote of a post from a quote notification."
+  (interactive)
+  ;; SCOPE required: check quote notif type, which will have user post in
+  ;; the "status" attribute:
+  (let* ((notif (mastodon-tl--property 'item-json :no-move))
+         (id (map-nested-elt notif '(quote quoted_status id)))
+         (quote-id (alist-get 'id notif))
+         (url (mastodon-http--api (format "statuses/%s/quotes/%s/revoke"
+                                          id quote-id))))
+    (when (y-or-n-p "Revoke quote of post at point?")
+      (let ((resp (mastodon-http--post url)))
+        (mastodon-http--triage
+         resp
+         (lambda (resp)
+           (message "Quote of post revoked!")))))))
+
 ;;; NOTIFICATION REQUESTS / FILTERING / POLICY
 
 (defvar mastodon-notifications--requests-map

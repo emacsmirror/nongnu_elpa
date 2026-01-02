@@ -1921,7 +1921,10 @@ Runs `mastodon-tl--render-text' and fetches poll or media."
         (quotemark (propertize "“" 'face
                                '(t :inherit success :weight bold
                                    :height 1.8))))
+    ;; FIXME: we need a list of these in a var, maybe only allow rather
+    ;; than blocking:
     (unless (or (string= "deleted" state)
+                (string= "revoked" state)
                 (string= "pending" state))
       (propertize
        (concat quotemark "\n"
