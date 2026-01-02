@@ -241,6 +241,9 @@ Takes its form from `window-configuration-to-register'.")
 (defvar mastodon-toot-current-toot-text nil
   "The text of the toot being composed.")
 
+(defvar-local mastodon-toot-quote-policy nil
+  "The quote policy for the current toot.")
+
 (persist-defvar mastodon-toot-draft-toots-list nil
   "A list of toots that have been saved as drafts.
 For the moment we just put all composed toots in here, as we want
@@ -331,8 +334,9 @@ property, and call BODY-FUN on them."
     (define-key map (kbd "C-c C-v") #'mastodon-toot-change-visibility)
     (define-key map (kbd "C-c C-e") #'mastodon-toot-insert-emoji)
     (define-key map (kbd "C-c C-a") #'mastodon-toot-attach-media)
-    (define-key map (kbd "C-c !") #'mastodon-toot-clear-all-attachments)
+    (define-key map (kbd "C-c !")   #'mastodon-toot-clear-all-attachments)
     (define-key map (kbd "C-c C-p") #'mastodon-toot-create-poll)
+    (define-key map (kbd "C-c C-u") #'mastodon-toot-set-quote-policy)
     (define-key map (kbd "C-c C-o") #'mastodon-toot-clear-poll)
     (define-key map (kbd "C-c C-l") #'mastodon-toot-set-toot-language)
     (define-key map (kbd "C-c C-s") #'mastodon-toot-schedule-toot)
@@ -932,6 +936,7 @@ instance to edit a toot."
              ("sensitive" . ,(when mastodon-toot--content-nsfw
                                (symbol-name t)))
              ("spoiler_text" . ,mastodon-toot--content-warning)
+             ("quote_approval_policy" . ,mastodon-toot-quote-policy)
              ("language" . ,mastodon-toot--language))
            ;; Pleroma instances can't handle null-valued
            ;; scheduled_at args, so only add if non-nil
@@ -1294,6 +1299,20 @@ Return its two letter ISO 639 1 code."
     (setq mastodon-toot--language
           (alist-get choice mastodon-iso-639-1 nil nil #'string=))
     (message "Language set to %s" choice)
+    (mastodon-toot--update-status-fields)))
+
+(defun mastodon-toot-set-quote-policy ()
+  "Set quote policy for the current toot."
+  (interactive)
+  (let* ((default (alist-get 'posting:default:quote_policy
+                             (mastodon-http--get-json
+                              (mastodon-http--api "preferences"))))
+         (choice (completing-read
+                  (format "Quote policy for this toot [default: %s]"
+                          default)
+                  mastodon-profiles-quote-policy-types)))
+    (setq mastodon-toot-quote-policy choice)
+    (message "Quote policy for this toot: " choice)
     (mastodon-toot--update-status-fields)))
 
 
@@ -1739,6 +1758,9 @@ REPLY-TEXT is the text of the toot being replied to."
         " "
         (propertize "NSFW"
                     'toot-post-nsfw-flag t)
+        " "
+        (propertize "Quoting"
+                    'toot-quote-policy t)
         "\n"
         " Attachments: "
         (propertize "None                  "
@@ -1823,6 +1845,8 @@ REPLY-REGION is a string to be injected into the buffer."
                                                            (point-min)))
            (poll-region (mastodon-tl--find-property-range 'toot-post-poll-flag
                                                           (point-min)))
+           (quote-pol-region (mastodon-tl--find-property-range 'toot-quote-policy
+                                                               (point-min)))
            (toot-string (buffer-substring-no-properties (cdr header-region)
                                                         (point-max))))
       (mastodon-toot--apply-fields-props
@@ -1869,6 +1893,12 @@ REPLY-REGION is a string to be injected into the buffer."
                 (not (string= "" mastodon-toot--content-warning)))
            (format "CW: %s" mastodon-toot--content-warning)
          "  ") ;; hold the blank space
+       'mastodon-cw-face)
+      (mastodon-toot--apply-fields-props
+       quote-pol-region
+       (if mastodon-toot-quote-policy
+           (format "Quoting: %s" mastodon-toot-quote-policy)
+         "")
        'mastodon-cw-face))))
 
 (defun mastodon-toot--apply-fields-props (region display &optional face help-echo)
