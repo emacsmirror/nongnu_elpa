@@ -1912,6 +1912,12 @@ Runs `mastodon-tl--render-text' and fetches poll or media."
           (goto-char (prop-match-end prop)))))
     list))
 
+(defvar mastodon-tl--quote-states
+  "A list of possible values for a quote state attribute.
+See https://docs.joinmastodon.org/entities/Quote/#state for details."
+  '( pending accepted rejected revoked deleted
+     unauthorized blocked_account blocked_domain muted_account))
+
 (defun mastodon-tl--insert-quoted (data)
   "Propertize quoted status DATA for insertion."
   (let ((bar (concat " " (mastodon-tl--symbol 'reply-bar)))
@@ -1921,11 +1927,9 @@ Runs `mastodon-tl--render-text' and fetches poll or media."
         (quotemark (propertize "“" 'face
                                '(t :inherit success :weight bold
                                    :height 1.8))))
-    ;; FIXME: we need a list of these in a var, maybe only allow rather
-    ;; than blocking:
-    (unless (or (string= "deleted" state)
-                (string= "revoked" state)
-                (string= "pending" state))
+    ;; TODO: tailor non-disply of quote based on quote 'state'
+    ;; `mastodon-tl--quote-states':
+    (when (string= "accepted" state)
       (propertize
        (concat quotemark "\n"
                ;; author byline without horiz bar and toot stats:
