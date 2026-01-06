@@ -28,7 +28,7 @@ Customization
 =============
 
 ``inkpot-theme-use-box``: ``t``
-   When nil, don't use box outlines for the mode-line and header.
+   When t, use box outlines for the mode-line and header.
 ``inkpot-theme-use-black-background``: ``nil``
    When t, use a black background.
 
@@ -64,27 +64,27 @@ Markup Languages:
 
 Other:
    - ``diff-mode`` with refine colors for emacs 27+.
-   - ``ediff-mode``
+   - ``ediff-mode``.
 
 Bundled Packages:
-   - ``eglot``
-   - ``tab-bar-mode``
-   - ``which-func``
-   - ``white-space``
-   - ``xref``
+   - ``eglot``.
+   - ``tab-bar-mode``.
+   - ``which-func``.
+   - ``whitespace``.
+   - ``xref``.
 
 Other Packages:
-   - ``anzu``
-   - ``idle-highlight-mode``
+   - ``anzu``.
+   - ``idle-highlight-mode``.
    - ``auto-complete``.
    - ``dap-mode``.
-   - ``diff-hl``
+   - ``diff-hl``.
    - ``display-line-numbers``.
    - ``fancy-dabbrev``.
    - ``gnus``.
    - ``helm-mode``.
    - ``highlight-indent-guides``.
-   - ``highlight-number`` *(needed to match the original themes number color)*.
+   - ``highlight-number`` *(needed to match the original theme's number color)*.
    - ``highlight-operators``.
    - ``highlight-symbol``.
    - ``hl-indent-scope``.
