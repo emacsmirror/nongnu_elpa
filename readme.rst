@@ -12,7 +12,7 @@ with a modified background color so they are distinct from the editable code.
 .. figure:: https://codeberg.org/attachments/250a5183-e1f1-40a2-a4ab-de871f49c77e
    :target: https://codeberg.org/attachments/a6d8b446-33e1-4132-b0b4-d1259c62a7a9
 
-   Source file (left) showing public doc-stings inline (right).
+   Source file (left) showing public doc-strings inline (right).
 
 Available via `melpa <https://melpa.org/#/doc-show-inline>`__.
 
@@ -20,14 +20,14 @@ Available via `melpa <https://melpa.org/#/doc-show-inline>`__.
 Motivation
 ==========
 
-Supporting having doc-strings always visible along side implementations,
+Supporting having doc-strings always visible alongside implementations,
 without having to switch files to be aware of their intended usage while browsing or editing a code-base.
 
 
 Usage
 =====
 
-This package provides a minor mode which can be enabled as via a mode hook or toggled via a key shortcut,
+This package provides a minor mode which can be enabled via a mode hook or toggled via a key shortcut,
 which may be preferable especially for very large doc-strings which could be intrusive.
 
 
@@ -51,7 +51,7 @@ Customization
    which aren't intended to represent documentation for the following symbol.
 
 ``doc-show-inline-face-background-highlight`` (float ``-0.04``)
-   The tint to use when generating the background color for the background of doc-string overlays.
+   The tint to use when generating the background color for doc-string overlays.
    The value is between -1.0 and 1.0 where negative numbers darken, positive numbers brighten.
 
 ``doc-show-inline-face``
@@ -106,18 +106,18 @@ via the `spell-fu <https://melpa.org/#/spell-fu>`__ & `hl-prog-extra <https://me
 Function Configuration
 ----------------------
 
-These functions can overridden to adjust behavior.
+These functions can be overridden to adjust behavior.
 
 ``doc-show-inline-filter``
-   Takes the symbol and returns non-nil if the symbol should have it's documentation displayed.
-   In general it's harmless to set this to ``'identity`` which wont filter out anything.
+   Takes the symbol and returns non-nil if the symbol should have its documentation displayed.
+   In general it's harmless to set this to ``'identity`` which won't filter out anything.
 
    However some symbols such as ``#define`` statements in C/C++ don't make sense to handle,
    so by default they are ignored to avoid unnecessary overhead.
 
 ``doc-show-inline-locations`` (symbol ``'doc-show-inline-locations-default``)
    A function that returns a list of ``(symbol . point)`` cons cells,
-   containing symbols and their starting positions in th current buffer.
+   containing symbols and their starting positions in the current buffer.
 
    By default ``imenu`` is used for this purpose.
 
@@ -137,7 +137,7 @@ Details
 - While there are no direct dependencies on ``lsp-mode``,
   this has been tested using ``lsp-mode`` and ``eglot`` with both ``ccls`` and ``clangd`` backends.
 - Documentation overlays are added while idle.
-- Any comment before the function is considered it's doc-string,
+- Any comment before the function is considered its doc-string,
   *(unless it's the trailing comment of a non-blank line).*
 
 
@@ -146,7 +146,7 @@ Installation
 
 The package is `available in melpa <https://melpa.org/#/doc-show-inline>`__ as ``doc-show-inline``.
 
-Example ``use-pacakge`` that enables for C/C++ modes.
+Example ``use-package`` that enables for C/C++ modes.
 
 .. code-block:: elisp
 
@@ -158,4 +158,4 @@ Example ``use-pacakge`` that enables for C/C++ modes.
      (define-key c++-mode-map (kbd "C-;") 'doc-show-inline-mode)
 
      :hook ((c-mode . doc-show-inline-mode)
-            (c++-mode . doc-show-inline-mode))))
+            (c++-mode . doc-show-inline-mode)))

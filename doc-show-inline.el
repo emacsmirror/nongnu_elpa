@@ -678,7 +678,7 @@ XREF-BACKEND is the backend used to find this symbol."
       (when doc-show-inline--use-lookup-cache
         (setq text (gethash sym doc-show-inline--lookup-cache t)))
 
-      ;; When true, the value doesn't exist in the cache.
+      ;; When t, the value doesn't exist in the cache.
       (cond
        ((eq text t)
         (setq text nil)
