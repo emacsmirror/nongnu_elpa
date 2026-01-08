@@ -12,10 +12,10 @@ Motivation
 
 The aim for this package is to be fast and light.
 
-While there are many similar packages (see `Other Packages`_) that have the same basic functionality
-these they tend towards being heavier by supporting advanced functionality.
+While there are many similar packages (see `Other Packages`_) that have the same basic functionality,
+they tend towards being heavier by supporting advanced functionality.
 
-For example running operation on every key-stroke or marking symbols over the entire buffer
+For example running operations on every key-stroke or marking symbols over the entire buffer
 which can cause poor performance editing large files.
 
 The following guarantees ensure good performance:
@@ -68,7 +68,7 @@ Global Settings
    Apply the current highlighting to all visible buffers.
 ``idle-highlight-idle-time``: ``0.35``
    Delay before highlighting (in seconds).
-``idle-highlight-global-ignore-modes``: ``nil``
+``idle-highlight-ignore-modes``: ``nil``
    A list of modes that won't enable idle-highlight from ``idle-highlight-global-mode``.
 
 
@@ -111,7 +111,7 @@ You may wish to set this to a different value for each mode, e.g:
    (add-hook 'after-change-major-mode-hook
      (lambda ()
        (when (derived-mode-p 'c-mode)
-         (setq-local idle-highlight-exceptions '("unsigned" "signed" "long" "int" "shot" "char")))
+         (setq-local idle-highlight-exceptions '("unsigned" "signed" "long" "int" "short" "char")))
        (when (derived-mode-p 'python-mode)
          (setq-local idle-highlight-exceptions '("list" "tuple" "int" "float" "str" "bool")))))
 

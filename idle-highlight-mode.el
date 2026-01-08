@@ -112,7 +112,7 @@ check this buffer.")
 
 (defun idle-highlight--faces-at-point (pos)
   "Return the named faces that the `read-face-name' or `face' property use.
-Argument POS return faces at this point."
+Argument POS is the position to return faces for."
   (declare (important-return-value t))
   (let ((faces nil) ; List of faces to return.
         ;; NOTE: use `get-text-property' instead of `get-char-property' so overlays are excluded,
@@ -280,7 +280,7 @@ should be the result of `idle-highlight--word-at-point-args'."
 ;; - Entering a buffer runs the buffer local `window-state-change-hook'
 ;;   immediately which checks if the mode is enabled,
 ;;   sets up the global timer if it is.
-;; - Switching any other buffer wont run this hook,
+;; - Switching any other buffer won't run this hook,
 ;;   rely on the idle timer itself running, which detects the active mode,
 ;;   canceling itself if the mode isn't active.
 ;;
@@ -389,7 +389,7 @@ should be the result of `idle-highlight--word-at-point-args'."
       (setq idle-highlight--global-timer nil)))))
 
 (defun idle-highlight--time-reset ()
-  "Run this when the buffer was changed."
+  "Run when the buffer changes."
   (declare (important-return-value nil))
   ;; Ensure changing windows doesn't leave other buffers with stale highlight.
   (cond
@@ -440,7 +440,7 @@ should be the result of `idle-highlight--word-at-point-args'."
          (not (bound-and-true-p idle-highlight-mode))
          ;; Not in the mini-buffer.
          (null (minibufferp))
-         ;; Not a special mode (package list, tabulated data ... etc)
+         ;; Not a special mode (package list, tabulated data, etc.)
          ;; Instead the buffer is likely derived from `text-mode' or `prog-mode'.
          (null (derived-mode-p 'special-mode))
          ;; Not explicitly ignored.
