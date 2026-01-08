@@ -1426,22 +1426,27 @@ FILTER is a string to use as a filter warning spoiler instead."
      cw
      (propertize
       (mastodon-tl--content toot)
-      'invisible
-      (or filter ;; filters = invis
-          (let ((cust mastodon-tl--expand-content-warnings))
-            (if (not (eq 'server cust))
-                (not cust) ;; opp to setting
-              ;; respect server setting:
-              ;; If something goes wrong reading prefs,
-              ;; just return t so CWs fold by default.
-              (condition-case nil
-                  (if (eq :json-false
-                          (mastodon-profile--get-preferences-pref
-                           'reading:expand:spoilers))
-                      t
-                    nil)
-                (error t)))))
+      'invisible (mastodon-tl--spoiler-invisible-maybe filter)
       'mastodon-content-warning-body t))))
+
+(defun mastodon-tl--spoiler-invisible-maybe (&optional filter)
+  "Set the invisible property for a post with a spoiler.
+Also used to set invisibility for quoted posts.
+We respect `mastodon-tl--expand-content-warnings'.
+If it is server, we check the user's preference.
+FILTER means we go invisible."
+  (or filter ;; filters = invis
+      (let ((cust mastodon-tl--expand-content-warnings))
+        (if (not (eq 'server cust))
+            (not cust) ;; opp to setting
+          ;; respect server setting:
+          ;; If something goes wrong reading prefs,
+          ;; just return t so CWs fold by default.
+          (condition-case nil
+              (eq :json-false
+                  (mastodon-profile--get-preferences-pref
+                   'reading:expand:spoilers))
+            (error t))))))
 
 
 ;;; MEDIA
@@ -1918,15 +1923,19 @@ See https://docs.joinmastodon.org/entities/Quote/#state for details."
   '( pending accepted rejected revoked deleted
      unauthorized blocked_account blocked_domain muted_account))
 
-(defun mastodon-tl--insert-quoted (data)
-  "Propertize quoted status DATA for insertion."
-  (let ((bar (concat " " (mastodon-tl--symbol 'reply-bar)))
-        (content (map-nested-elt data '(quoted_status content)))
-        (state (alist-get 'state data))
-        ;; quote symbol hack:
-        (quotemark (propertize "“" 'face
-                               '(t :inherit success :weight bold
-                                   :height 1.8))))
+(defun mastodon-tl--insert-quoted (data toot)
+  "Propertize quoted status DATA for insertion.
+TOOT is the data for the quoting toot."
+  (let* ((bar (concat " " (mastodon-tl--symbol 'reply-bar)))
+         (content (map-nested-elt data '(quoted_status content)))
+         (state (alist-get 'state data))
+         ;; CW status of quoting toot:
+         (cw (not (string-empty-p
+                   (mastodon-tl--field 'spoiler_text toot))))
+         ;; quote symbol hack:
+         (quotemark (propertize "“" 'face
+                                '(t :inherit success :weight bold
+                                    :height 1.8))))
     ;; TODO: tailor non-disply of quote based on quote 'state'
     ;; `mastodon-tl--quote-states':
     (when (string= "accepted" state)
@@ -1941,6 +1950,9 @@ See https://docs.joinmastodon.org/entities/Quote/#state for details."
                                          (alist-get 'quoted_status data)))
        'line-prefix bar
        'wrap-prefix bar
+       'mastodon-content-warning-body (when cw t)
+       ;; TODO: respect filtering of quoted toot:
+       'invisible (mastodon-tl--spoiler-invisible-maybe)
        'mastodon-quote data))))
 
 ;; PUT /api/v1/statuses/:id/interaction_policy
@@ -1991,9 +2003,8 @@ CW-EXPANDED means treat content warnings as unfolded."
          (toot-foldable
           (and mastodon-tl--fold-toots-at-length
                (length> body mastodon-tl--fold-toots-at-length)))
-         (cw-p (not
-                (string-empty-p
-                 (alist-get 'spoiler_text toot))))
+         (cw-p (not (string-empty-p
+                     (alist-get 'spoiler_text toot))))
          (body-tags (mastodon-tl--body-tags body))
          (quote (mastodon-tl--field 'quote toot)))
     (insert
@@ -2020,9 +2031,7 @@ CW-EXPANDED means treat content warnings as unfolded."
               body)
             ;; insert quote maybe:
             (when quote
-              (concat "\n\n"
-                      (mastodon-tl--insert-quoted quote)
-                      ))))
+              (mastodon-tl--insert-quoted quote toot))))
          (if (and toot-foldable unfolded cw-expanded)
              (mastodon-tl--read-more-or-less
               "LESS" cw-p (not cw-expanded))

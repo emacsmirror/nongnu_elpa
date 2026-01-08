@@ -471,7 +471,7 @@ TYPE is notification type, used for non-group notifs."
        "\n"
        ;; display quoted post:
        (when (alist-get 'quote toot)
-         (mastodon-tl--insert-quoted (alist-get 'quote toot)))
+         (mastodon-tl--insert-quoted (alist-get 'quote toot) toot))
        ;; actual byline:
        (if (member type '("severed_relationships" "moderation_warning"))
            (propertize
