@@ -129,6 +129,8 @@ Saves me from writing :language `LANGUAGE' for every `RULES'."
 		(append "{}():;,[]" electric-indent-chars))
     ;; Indent
     (setq-local treesit-simple-indent-rules blueprint-ts-mode--indent-rules)
+    (setq-local indent-tabs-mode nil)
+    (setq-local tab-width blueprint-ts-mode-indent-offset)
     ;; Navigation
     (setq-local treesit-defun-type-regexp
 		(rx (or "template" "object" "menu")))
