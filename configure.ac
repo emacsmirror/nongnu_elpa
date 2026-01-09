@@ -77,6 +77,14 @@ AC_DEFUN([VM_PROG_MAKEINFO],
       AC_MSG_WARN([*** Info files will not be built.])
     fi ])
 
+# for install-info program (for updating info dir file)
+AC_DEFUN([VM_PROG_INSTALL_INFO],
+  [ AC_CHECK_PROG(INSTALL_INFO, install-info, install-info)
+    if test "x${INSTALL_INFO}" = "x" ; then
+      AC_MSG_WARN([*** No install-info program found.])
+      AC_MSG_WARN([*** Info dir file will not be updated on install.])
+    fi ])
+
 # Find a texi2dvi program. A failure is not fatal, only dvi and pdf files
 # won't be built.
 AC_DEFUN([VM_PROG_TEXI2DVI],
@@ -261,6 +269,7 @@ AC_PATH_PROG(GREP, grep, /bin/grep)
 VM_PROG_XARGS
 VM_PROG_GNU_TAR
 VM_PROG_MAKEINFO
+VM_PROG_INSTALL_INFO
 VM_PROG_TEXI2DVI
 
 VM_PROG_EMACS

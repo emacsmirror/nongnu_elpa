@@ -18,16 +18,25 @@ INSTALL = @INSTALL@
 INSTALL_PROGRAM = @INSTALL_PROGRAM@
 INSTALL_SCRIPT = @INSTALL_SCRIPT@
 INSTALL_DATA = @INSTALL_DATA@
+INSTALL_INFO = @INSTALL_INFO@
+MAKEINFO = @MAKEINFO@
 
 prefix = @prefix@
 srcdir = @srcdir@
 datarootdir = @datarootdir@
 infodir = @infodir@
+infodestdir = $(DESTDIR)$(infodir)
 
 EMACS_PROG = @EMACS_PROG@
 EMACS_FLAVOR = @EMACS_FLAVOR@
 
 FLAGS = @FLAGS@
+
+INFO_FILE = vm.info
+INFO_ALL_FILES = vm.info vm.info-1 vm.info-2
+INFO_INSTALLED = $(infodestdir)/vm.info
+INFO_INSTALLED = $(INFO_FILE:%=$(infodestdir)/%)
+INFO_ALL_INSTALLED = $(INFO_ALL_FILES:%=$(infodestdir)/%)
 
 ##############################################################################
 
@@ -42,12 +51,14 @@ version.texinfo:
 	fi
 	mv -f $@.tmp $@
 
+$(INFO_FILE): version.texinfo
 
-vm.info:: version.texinfo
+.PHONY: info
+info: ${INFO_FILE}
 
-vm-pcrisis.info:: version.texinfo
-
-info: vm.info vm-pcrisis.info
+# Build info file from texinfo source
+%.info: %.texinfo 
+	$(MAKEINFO) $(MAKEINFO_FLAGS) -o $@ $<
 
 Makefile: @srcdir@/Makefile.in
 	cd @srcdir@/.. && ./config.status
@@ -55,17 +66,16 @@ Makefile: @srcdir@/Makefile.in
 install: install-pkg
 uninstall: uninstall-pkg
 
-install-pkg: uninstall-pkg info
-	@$(MKDIR) -p -m 0755 "$(DESTDIR)$(infodir)";                     \
-	for i in `${LS} *.info* ` ; do                               \
-	  echo "Installing $$i in $(DESTDIR)$(infodir)" ;            \
-	  $(INSTALL_DATA) $$i "$(DESTDIR)$(infodir)" ;               \
-	done
+install-pkg: info
+	@$(MKDIR) -p -m 0755 "$(infodestdir)";
+	$(INSTALL) ${INFO_ALL_FILES} $(infodestdir)
+	$(INSTALL_INFO) --dir-file=$(infodestdir)/dir $(INFO_INSTALLED)
 	@echo VM INFO files successfully installed
 
 uninstall-pkg:
-	-$(RM) -f "$(DESTDIR)$(infodir)"/vm*.info*
-	-$(RMDIR) $(DESTDIR)$(infodir)/ 2> /dev/null
+	$(INSTALL_INFO) --delete --dir-file=$(infodestdir)/dir $(INFO_INSTALLED)
+	$(RM) -f $(INFO_ALL_INSTALLED)
+	$(RMDIR) $(infodestdir)/ 2> /dev/null || true
 
 ##############################################################################
 clean:

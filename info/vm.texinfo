@@ -7065,16 +7065,16 @@ after version 7.19 as a community project.''
 
 @cindex Ulrich Müller
 @cindex Uday S Reddy
-Currently, VM is maintained by a ``VM Development Team,'' consisting of
+VM wwas  maintained by a ``VM Development Team,'' consisting of
 Robert Widhopf-Fenk, Ulrich Müller and Uday S Reddy.  Other potential members
 are warmly welcomed.  Robert Fenk has been inactive since November, 2008
 but he continues to be an official member of the team.  The new
 releases made by the team are numbered @code{8.1.0} and up.
 
-@cindex Launchpad
-The project code base is maintained at the Launchpad web site
-@uref{http://launchpad.net/vm}.  The ``VM Development Team'' can be
-reached here using the email address @email{vm@@lists.launchpad.net}.
+@cindex GitLab
+In 2024, the project code development was moved to GitLab
+@uref{https://gitlab.com/emacs-vm/vm/} by a small team of
+new developers.
 
 @unnumberedsec Savannah project site
 
@@ -7115,36 +7115,13 @@ detailed description of the problem and how it arose.  The developers
 may need to ask you for further information or ask you to try
 alternative approaches to narrow down the problem.
 
-The best way to report bugs is via the Launchpad bug tacker.  See below.
+The best way to report bugs at GitLab site:
+@uref{https://gitlab.com/emacs-vm/vm/-/issues}.
 
 @unnumberedsec Get Involved
 
 VM is now supported and maintained by the user community.  So, as an
-active user, your participation is key to keep the project going.  
-
-Consider registering as a user of the Launchpad development site
-@uref{http://launchpad.net/vm}.  This 
-allows you to communicate with the developers and other users using a
-private Launchpad email address.  In particular, you can contribute bug
-reports and participate in the bug report discussions.
-
-You can download the development versions of VM and act as an ``alpha''
-tester.  This will allow you to shape the new developments and features
-and make suggestions that will be valuable to the developers.
-
-To download the development version, identify the ``branch'' that you
-would like to download, and use Bazaar version control system with an
-appropriate Launchpad @acronym{URL}.  For example, the command
-@command{bzr get lp:vm} can be used to download the main development
-branch. 
-
-You can also make change to the branch you have downloaded, and submit
-them to the developers for inclusion in the project.  The @code{README}
-file in the distribution explains how to do this.  Alternatively, you
-can create a separate branch in your own space on the Launchpad web
-site, and submit your changes to that branch.  The developers can review
-and merge your branch with the main development when your changes
-are ready.
+active user, your participation is key to keep the project going.
 
 @unnumberedsubsec Contributors
 
