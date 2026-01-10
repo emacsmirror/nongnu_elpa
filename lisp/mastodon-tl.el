@@ -1292,9 +1292,13 @@ LINK-TYPE is the type of link to produce."
 Used for hitting RET on a given link."
   (interactive "d")
   (let ((link-type (get-text-property pos 'mastodon-tab-stop))
-        (cont-thread (mastodon-tl--property 'continued-thread :nomove)))
+        (cont-thread (mastodon-tl--property 'continued-thread :nomove))
+        (quote-toot (mastodon-tl--property 'quote-url :nomove)))
     (cond (cont-thread
            (mastodon-tl-continued-thread-load))
+          (quote-toot
+           (let ((url (mastodon-tl--property 'quote-url :nomove)))
+             (mastodon-url-lookup url)))
           ((eq link-type 'content-warning)
            (mastodon-tl--toggle-spoiler-text pos))
           ((eq link-type 'hashtag)
@@ -1875,9 +1879,18 @@ in which case play first video or gif from current toot."
   "Retrieve text content from TOOT.
 Runs `mastodon-tl--render-text' and fetches poll or media."
   (let* ((content (mastodon-tl--field 'content toot))
+         (quote-p (mastodon-tl--field 'quote toot))
+         (rendered (mastodon-tl--render-text content toot))
+         (stripped-maybe (if (not quote-p)
+                             rendered
+                           (with-temp-buffer ;; strip quoted toot URL:
+                             (insert rendered)
+                             (goto-char (point-min))
+                             (kill-line)
+                             (buffer-string))))
          (poll-p (mastodon-tl--field 'poll toot))
          (media-p (mastodon-tl--field 'media_attachments toot)))
-    (concat (mastodon-tl--render-text content toot)
+    (concat stripped-maybe
             (when poll-p
               (mastodon-tl--format-poll
                (mastodon-tl--field 'poll toot))) ;; toot or reblog
@@ -1932,6 +1945,7 @@ TOOT is the data for the quoting toot."
          ;; CW status of quoting toot:
          (cw (not (string-empty-p
                    (mastodon-tl--field 'spoiler_text toot))))
+         (url (map-nested-elt data '(quoted_status url)))
          ;; quote symbol hack:
          (quotemark (propertize "“" 'face
                                 '(t :inherit success :weight bold
@@ -1948,8 +1962,25 @@ TOOT is the data for the quoting toot."
                ;; quoted text:
                (mastodon-tl--render-text content
                                          (alist-get 'quoted_status data)))
+          "\n"
+          ;; quoted text:
+         (concat
+          "\n\n"
+          (mastodon-tl--buttonify-link
+           (concat
+            quotemark "\n"
+            ;; author byline without horiz bar and toot stats:
+            (mastodon-tl--byline-author
+             (alist-get 'quoted_status data) nil :domain :base)
+            "\n"
+            ;; quoted text:
+            (mastodon-tl--render-text content
+                                      (alist-get 'quoted_status data)))
+           'help-echo "Load quoted toot"
+           'mouse-face '(:inherit '(highlight link) :underline nil))))
        'line-prefix bar
        'wrap-prefix bar
+       'quote-url url
        'mastodon-content-warning-body (when cw t)
        ;; TODO: respect filtering of quoted toot:
        'invisible (mastodon-tl--spoiler-invisible-maybe)
