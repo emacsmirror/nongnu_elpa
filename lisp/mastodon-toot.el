@@ -1899,9 +1899,10 @@ REPLY-REGION is a string to be injected into the buffer."
                                                         (point-max)))
            (toot-quote (mastodon-tl--find-property-range 'toot-quote
                                                          (point-min)))
-           (quote-text (save-excursion
-                         (goto-char (car toot-quote))
-                         (mastodon-tl--property 'toot-quote :nomove))))
+           (quote-text (when toot-quote
+                         (save-excursion
+                           (goto-char (car toot-quote))
+                           (mastodon-tl--property 'toot-quote :nomove)))))
       (mastodon-toot--apply-fields-props
        count-region
        (format "%s/%s chars"
