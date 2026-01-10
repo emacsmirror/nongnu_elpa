@@ -1955,30 +1955,21 @@ TOOT is the data for the quoting toot."
     ;; `mastodon-tl--quote-states':
     (when (string= "accepted" state)
       (propertize
-       (concat quotemark "\n"
-               ;; author byline without horiz bar and toot stats:
-               (mastodon-tl--byline-author
-                (alist-get 'quoted_status data) nil :domain :base)
-               "\n"
-               ;; quoted text:
-               (mastodon-tl--render-text content
-                                         (alist-get 'quoted_status data)))
+       ;; quoted text:
+       (concat
+        "\n\n"
+        (mastodon-tl--buttonify-link
+         (concat
+          quotemark "\n"
+          ;; author byline without horiz bar and toot stats:
+          (mastodon-tl--byline-author
+           (alist-get 'quoted_status data) nil :domain :base)
           "\n"
           ;; quoted text:
-         (concat
-          "\n\n"
-          (mastodon-tl--buttonify-link
-           (concat
-            quotemark "\n"
-            ;; author byline without horiz bar and toot stats:
-            (mastodon-tl--byline-author
-             (alist-get 'quoted_status data) nil :domain :base)
-            "\n"
-            ;; quoted text:
-            (mastodon-tl--render-text content
-                                      (alist-get 'quoted_status data)))
-           'help-echo "Load quoted toot"
-           'mouse-face '(:inherit '(highlight link) :underline nil))))
+          (mastodon-tl--render-text content
+                                    (alist-get 'quoted_status data)))
+         'help-echo "Load quoted toot"
+         'mouse-face '(:inherit '(highlight link) :underline nil)))
        'line-prefix bar
        'wrap-prefix bar
        'quote-url url
