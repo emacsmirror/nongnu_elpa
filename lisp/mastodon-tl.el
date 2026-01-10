@@ -859,6 +859,7 @@ LETTER is a string, F for favourited, B for boosted, or K for bookmarked."
             (propertize letter 'face 'mastodon-boost-fave-face
                         ;; emojify breaks this for 🔖:
                         'help-echo (format "You have %s this status."
+                                           ;; FIXME: this is often nil
                                            help-string)))))
 
 (defun mastodon-tl--image-trans-check ()
