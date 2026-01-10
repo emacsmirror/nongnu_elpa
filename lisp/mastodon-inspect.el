@@ -51,10 +51,10 @@
   (erase-buffer)
   (let ((print-level nil)
         (print-length nil))
-    (insert (pp json t)))
-  (goto-char (point-min))
-  (emacs-lisp-mode)
-  (message "success"))
+    (pp json (current-buffer))
+    (goto-char (point-min))
+    (emacs-lisp-mode)
+    (message "success")))
 
 (defun mastodon-inspect--toot ()
   "Find next toot and dump its meta data into new buffer."
