@@ -1814,9 +1814,10 @@ REPLY-TEXT is the text of the toot being replied to."
                 (mastodon-toot--format-reply-in-compose reply-text)
                 'toot-reply t))
               (quote-text
-               (propertize
-                (mastodon-toot--format-reply-in-compose nil quote-text)
-                'toot-quote t)))
+               (let ((text (mastodon-toot--format-reply-in-compose
+                            nil quote-text)))
+                 (propertize text
+                             'toot-quote text))))
         divider)
        'face 'mastodon-toot-docs-face
        'read-only "Edit your message below."
@@ -1895,7 +1896,12 @@ REPLY-REGION is a string to be injected into the buffer."
            (quote-pol-region (mastodon-tl--find-property-range 'toot-quote-policy
                                                                (point-min)))
            (toot-string (buffer-substring-no-properties (cdr header-region)
-                                                        (point-max))))
+                                                        (point-max)))
+           (toot-quote (mastodon-tl--find-property-range 'toot-quote
+                                                         (point-min)))
+           (quote-text (save-excursion
+                         (goto-char (car toot-quote))
+                         (mastodon-tl--property 'toot-quote :nomove))))
       (mastodon-toot--apply-fields-props
        count-region
        (format "%s/%s chars"
@@ -1946,7 +1952,9 @@ REPLY-REGION is a string to be injected into the buffer."
        (if mastodon-toot-quote-policy
            (format "Quoting: %s" mastodon-toot-quote-policy)
          "")
-       'mastodon-cw-face))))
+       'mastodon-cw-face)
+      (mastodon-toot--apply-fields-props
+       toot-quote quote-text 'mastodon-cw-face))))
 
 (defun mastodon-toot--apply-fields-props (region display &optional face help-echo)
   "Apply DISPLAY props FACE and HELP-ECHO to REGION, a cons of beg and end."
@@ -2121,7 +2129,6 @@ EDIT means we are editing an existing toot, not composing a new one."
     (setq mastodon-toot--language
           (mastodon-profile--get-preferences-pref 'posting:default:language))
     ;; display original toot:
-    ;; FIXME: display some quoted toot:
     (cond (quote-id
            (mastodon-toot--display-docs-and-status-fields
             nil (mastodon-tl--field 'content quote-json))
