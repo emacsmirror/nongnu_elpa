@@ -1957,8 +1957,8 @@ TOOT is the data for the quoting toot."
       (propertize
        ;; quoted text:
        (concat
-        "\n\n"
-        (mastodon-tl--buttonify-link
+        "\n"
+        (propertize ;; button quoted toot
          (concat
           quotemark "\n"
           ;; author byline without horiz bar and toot stats:
@@ -1968,6 +1968,8 @@ TOOT is the data for the quoting toot."
           ;; quoted text:
           (mastodon-tl--render-text content
                                     (alist-get 'quoted_status data)))
+         'button t
+         'keymap mastodon-tl--link-keymap
          'help-echo "Load quoted toot"
          'mouse-face '(:inherit (highlight link) :underline nil)))
        'line-prefix bar
