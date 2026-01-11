@@ -1975,7 +1975,7 @@ TOOT is the data for the quoting toot."
        'quote-url url
        'mastodon-content-warning-body (when cw t)
        ;; TODO: respect filtering of quoted toot:
-       'invisible (mastodon-tl--spoiler-invisible-maybe)
+       'invisible (when cw (mastodon-tl--spoiler-invisible-maybe))
        'mastodon-quote data))))
 
 ;; PUT /api/v1/statuses/:id/interaction_policy
