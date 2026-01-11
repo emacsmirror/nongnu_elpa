@@ -1949,8 +1949,8 @@ TOOT is the data for the quoting toot."
          (url (map-nested-elt data '(quoted_status url)))
          ;; quote symbol hack:
          (quotemark (propertize "“" 'face
-                                '(t :inherit success :weight bold
-                                    :height 1.8))))
+                                '(:inherit success :weight bold
+                                           :height 1.8))))
     ;; TODO: tailor non-disply of quote based on quote 'state'
     ;; `mastodon-tl--quote-states':
     (when (string= "accepted" state)
@@ -1969,7 +1969,7 @@ TOOT is the data for the quoting toot."
           (mastodon-tl--render-text content
                                     (alist-get 'quoted_status data)))
          'help-echo "Load quoted toot"
-         'mouse-face '(:inherit '(highlight link) :underline nil)))
+         'mouse-face '(:inherit (highlight link) :underline nil)))
        'line-prefix bar
        'wrap-prefix bar
        'quote-url url
