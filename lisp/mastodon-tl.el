@@ -1953,21 +1953,20 @@ TOOT is the data for the quoting toot."
                                            :height 1.8))))
     ;; TODO: tailor non-disply of quote based on quote 'state'
     ;; `mastodon-tl--quote-states':
+    ;; FIXME: filtering logic here?
     (when (string= "accepted" state)
       (propertize
        ;; quoted text:
        (concat
+        "\n" quotemark "\n"
+        ;; author byline without horiz bar/stats:
+        (mastodon-tl--byline-author
+         (alist-get 'quoted_status data) nil :domain :base)
         "\n"
         (propertize ;; button quoted toot
-         (concat
-          quotemark "\n"
-          ;; author byline without horiz bar and toot stats:
-          (mastodon-tl--byline-author
-           (alist-get 'quoted_status data) nil :domain :base)
-          "\n"
-          ;; quoted text:
-          (mastodon-tl--render-text content
-                                    (alist-get 'quoted_status data)))
+         ;; quoted text:
+         (mastodon-tl--render-text content
+                                   (alist-get 'quoted_status data))
          'button t
          'keymap mastodon-tl--link-keymap
          'help-echo "Load quoted toot"
