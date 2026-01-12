@@ -1595,19 +1595,32 @@ If TRANSIENT, we are called from a transient, so nil
   (let* ((quote-id (mastodon-tl--property 'base-item-id))
          (json (mastodon-tl--property 'item-json))
          (policy (alist-get 'quote_approval json))
-         ;; https://docs.joinmastodon.org/methods/statuses/#form-data-parameters
-         ;; FIXME: "Quoting a private post will restrict the quoting post’s
-         ;; visibility to private or direct (if the given visibility is
-         ;; public or unlisted, private will be used instead)."
-         ;; So we need to set visibility when composing a quote toot:
-         (visibility (mastodon-tl--field 'visibility json))
-         (user-policy (alist-get 'current_user policy)))
+         (user-policy (alist-get 'current_user policy))
+         ;; Respect visibility when quoting a toot:
+         ;; According to web UI settings (preferences/posting defaults):
+
+         ;; - quoting an unlisted ("quiet public") post, means quoting post also unlisted
+         ;; "When people quote you, their post will also be hidden from trending timelines."
+
+         ;; - private ("followers only") means no quoting allowed
+         ;; "Followers-only posts authored on Mastodon can't be quoted by others."
+         ;; BUT: we don't need to enforce this, as user-policy will be "denied"
+         ;; if toot is "private"
+
+         ;;  "Quoting a private post will restrict the quoting post’s
+         ;;  visibility to private or direct (if the given visibility is
+         ;;  public or unlisted, private will be used instead)."
+
+         ;; <https://docs.joinmastodon.org/methods/statuses/#form-data-parameters>
+
+         ;; for now all we do is hand on quoted toot's visibility:
+         (visibility (mastodon-tl--field 'visibility json)))
     (pcase user-policy
       ("denied" (user-error "You don't have permission to quote this toot."))
       ("unknown"
        (when (y-or-n-p "Quote permission unknown. Proceed?")
-         (mastodon-toot nil nil nil quote-id json)))
-      (_ (mastodon-toot nil nil nil quote-id json)))))
+         (mastodon-toot nil nil nil quote-id json visibility)))
+      (_ (mastodon-toot nil nil nil quote-id json visibility)))))
 
 
 ;;; SCHEDULE
@@ -2086,7 +2099,7 @@ Added to `after-change-functions'."
 
 (defun mastodon-toot--compose-buffer
     (&optional reply-to-user reply-to-id reply-json initial-text edit
-               quote-id quote-json)
+               quote-id quote-json visibility)
   "Create a new buffer to capture text for a new toot.
 If REPLY-TO-USER is provided, inject their handle into the message.
 If REPLY-TO-ID is provided, set the `mastodon-toot--reply-to-id' var.
@@ -2119,7 +2132,8 @@ EDIT means we are editing an existing toot, not composing a new one."
       (setq mastodon-toot-quote-id quote-id))
     ;; set visibility:
     (setq mastodon-toot--visibility
-          (or (plist-get mastodon-profile-account-settings 'privacy)
+          (or visibility ;; quoting a toot
+              (plist-get mastodon-profile-account-settings 'privacy)
               ;; use toot visibility setting from the server:
               (mastodon-profile--get-source-value 'privacy)
               "public")) ; fallback

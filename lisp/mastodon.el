@@ -417,14 +417,14 @@ FORCE means to fetch from the server in any case and update
 
 ;;;###autoload
 (defun mastodon-toot (&optional user reply-to-id reply-json
-                                quote-id quote-json)
+                                quote-id quote-json visibility)
   "Update instance with new toot. Content is captured in a new buffer.
 If USER is non-nil, insert after @ symbol to begin new toot.
 If REPLY-TO-ID is non-nil, attach new toot to a conversation.
 If REPLY-JSON is the json of the toot being replied to."
   (interactive)
   (mastodon-toot--compose-buffer user reply-to-id reply-json
-                                 nil nil quote-id quote-json))
+                                 nil nil quote-id quote-json visibility))
 
 ;;;###autoload
 (defun mastodon-notifications-get (&optional type buffer-name max-id)
