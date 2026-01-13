@@ -1619,8 +1619,8 @@ If TRANSIENT, we are called from a transient, so nil
       ("denied" (user-error "You don't have permission to quote this toot."))
       ("unknown"
        (when (y-or-n-p "Quote permission unknown. Proceed?")
-         (mastodon-toot nil nil nil quote-id json visibility)))
-      (_ (mastodon-toot nil nil nil quote-id json visibility)))))
+         (mastodon-toot--compose-buffer nil nil nil nil nil quote-id json visibility)))
+      (_ (mastodon-toot--compose-buffer nil nil nil nil nil quote-id json visibility)))))
 
 
 ;;; SCHEDULE
