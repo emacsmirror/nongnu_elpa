@@ -1615,12 +1615,12 @@ If TRANSIENT, we are called from a transient, so nil
 
          ;; for now all we do is hand on quoted toot's visibility:
          (visibility (mastodon-tl--field 'visibility json)))
-    (pcase user-policy
-      ("denied" (user-error "You don't have permission to quote this toot."))
-      ("unknown"
-       (when (y-or-n-p "Quote permission unknown. Proceed?")
-         (mastodon-toot--compose-buffer nil nil nil nil nil quote-id json visibility)))
-      (_ (mastodon-toot--compose-buffer nil nil nil nil nil quote-id json visibility)))))
+    (if (string=  user-policy "denied")
+        (user-error "You don't have permission to quote this toot.")
+      (when (or (not (string=  user-policy "unknown"))
+                (y-or-n-p "Quote permission unknown. Proceed?"))
+        (mastodon-toot--compose-buffer nil nil nil nil nil
+                                       quote-id json visibility)))))
 
 
 ;;; SCHEDULE
