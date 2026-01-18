@@ -338,20 +338,28 @@ SILENT means make a silent request."
   (let* ((url (fj-api endpoint))
          (resp (fj-authorized-request "GET"
                  (if no-json
-                     (fedi-http--get url params silent)
-                   (fedi-http--get-json url params silent)))))
+                     (cons (fedi-http--get url params silent) nil)
+                   (fedi-http--get-response url params nil silent))))
+         (headers (cdr resp))
+         (resp (car resp)))
     ;; FIXME: handle 404 etc!
-    (if no-json
-        ;; return response buffer, not resulting string. the idea is to then
-        ;; call --triage on the result, in case we don't get a 200 response.
-        ;; (fj-resp-str resp)
-        resp
-      (if (or (eq (caar resp) 'errors)
-              (eq (caar resp) 'message))
-          (user-error "I am Error: %s Endpoint: %s"
-                      (alist-get 'message resp)
-                      endpoint)
-        resp))))
+    (cond
+     ;; return response buffer, not resulting string. the idea is to then
+     ;; call --triage on the result, in case we don't get a 200 response.
+     ;; (fj-resp-str resp)
+     (no-json resp)
+
+     ((eq (alist-get 'status headers) 404)
+      nil)
+
+     ((or (eq (caar resp) 'errors)
+          (eq (caar resp) 'message))
+
+      (user-error "I am Error: %s Endpoint: %s"
+                  (alist-get 'message resp)
+                  endpoint))
+
+     (t resp))))
 
 (defun fj-resp-str (resp)
   "Return the response string from RESP, an HTTP response buffer."
@@ -3342,9 +3350,8 @@ TS is timestamp, BODY is the item's response."
                 (fj-propertize-link
                  (concat
                   short " "
-                  (car (string-split
-                        (map-nested-elt d '(commit message))
-                        "\n")))
+                  (if d (car (string-lines (map-nested-elt d '(commit message))))
+                    "unreachable commit"))
                  'commit-ref c)))))))
 
 (defun fj-render-timeline-item (item &optional author owner repo)
