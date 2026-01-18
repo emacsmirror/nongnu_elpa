@@ -97,12 +97,14 @@
 (autoload 'mastodon-notifications--empty-group-json-p "mastodon-notifications")
 (autoload 'mastodon-search--print-tags "mastodon-search")
 (autoload 'mastodon-profile-show-user "mastodon-profile")
+(autoload 'mastodon-toot--own-toot-p "mastodon-toot")
 
 (defvar mastodon-toot--visibility)
 (defvar mastodon-toot-mode)
 (defvar mastodon-active-user)
 (defvar mastodon-images-in-notifs)
 (defvar mastodon-group-notifications)
+(defvar mastodon-profiles-quote-policy-types)
 
 (when (require 'mpv nil :no-error)
   (declare-function mpv-start "mpv"))
@@ -807,8 +809,8 @@ The result is added as an attachments property to author-byline."
 (defun mastodon-tl--top-byline (toot)
   "Format a boost or reply top (action) byline for TOOT.
 If it is a self-reply, return 'continued thread'.
-If it is a non-self-reply, return 'in reply to $username'.
-If it is a boost, return '$username boosted'."
+If it is a non-self-reply, return \\='in reply to $username'.
+If it is a boost, return \\='$username boosted'."
   (let ((reblog (alist-get 'reblog toot))
         (reply-acc-id (alist-get 'in_reply_to_account_id toot)))
     (cond
@@ -1540,7 +1542,7 @@ SENSITIVE is a flag from the item's JSON data."
 ;; patch `shr-browse-image' to accept url arg:
 (defun mastodon-tl-shr-browse-image (&optional arg)
   "Browse the image under point.
-With a prefix argument, copy the URL of the image instead.
+With a prefix ARG, copy the URL of the image instead.
 If URL is a string, use it rather than the image-url property at point."
   (interactive "P")
   (let ((prop (get-text-property (point) 'image-url)))
@@ -1932,10 +1934,10 @@ Runs `mastodon-tl--render-text' and fetches poll or media."
     list))
 
 (defvar mastodon-tl--quote-states
+  '(pending accepted rejected revoked deleted
+            unauthorized blocked_account blocked_domain muted_account)
   "A list of possible values for a quote state attribute.
-See https://docs.joinmastodon.org/entities/Quote/#state for details."
-  '( pending accepted rejected revoked deleted
-     unauthorized blocked_account blocked_domain muted_account))
+See https://docs.joinmastodon.org/entities/Quote/#state for details.")
 
 (defun mastodon-tl--insert-quoted (data toot)
   "Propertize quoted status DATA for insertion.
@@ -1985,11 +1987,11 @@ Toot must be on you own."
   ;; SCOPE: with own toot:
   (let ((toot (mastodon-tl--property 'item-json :no-move)))
     (if (not (mastodon-toot--own-toot-p toot))
-        (user-error "You can only set quote policy for your own posts.")
+        (user-error "You can only set quote policy for your own posts")
       (let* ((id (mastodon-tl--property 'item-id))
              (current (car (map-nested-elt toot
                                            '(quote_approval automatic))))
-             (choice (completing-read "Set post quote policy: "
+             (choice (completing-read (format "Set quote policy [%s]: " current)
                                       mastodon-profiles-quote-policy-types
                                       nil :match))
              (url (mastodon-http--api (format "statuses/%s/interaction_policy"
@@ -3955,7 +3957,7 @@ TYPE is a notification type."
 ;;; NODEINFO
 
 (defun mastodon-tl--get-nodeinfo (instance &optional version)
-  "Return Nodeinfo data for INSTANCE, optionally for version."
+  "Return Nodeinfo data for INSTANCE, optionally for VERSION."
   ;; NB: not in the API:
   (let ((url (format "https://%s/nodeinfo/%s" instance (or version "2.0"))))
     (mastodon-http--get-json url)))
@@ -3977,7 +3979,7 @@ https://nodeinfo.diaspora.software."
         (mastodon-tl--render-nodeinfo data)))))
 
 (defun mastodon-tl--render-nodeinfo (data)
-  "Render Nodeinfo DADA as message."
+  "Render Nodeinfo DATA as message."
   (let-alist data
     (message
      "%s"
