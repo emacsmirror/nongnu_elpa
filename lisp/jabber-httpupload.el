@@ -7,7 +7,6 @@
 ;; Version: 0.1.0
 ;; Keywords: comm
 ;; URL: https://github.com/cnngimenez/emacs-jabber
-;; Package-Requires: ((emacs "26.1") (jabber "0.8.92"))
 
 ;; This program is free software: you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
