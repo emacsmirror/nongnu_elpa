@@ -321,7 +321,13 @@ JC is the Jabber connection."
               (list fwd-msg
                     (and
                      to
-                     (jabber-chat-create-buffer jc to))))
+                     (jabber-chat-create-buffer
+                      jc
+                      ;; issue-106: cheogram telephony gateway silently drops
+                      ;; message that include "/sip:..." resource part.
+                      (if (string-equal (jabber-jid-server to) "cheogram.com")
+                          (jabber-jid-user to)
+                        to)))))
           (list xml-data nil))
       (let ((from (jabber-xml-get-attribute xml-data 'from))
 	    (error-p (jabber-xml-get-children xml-data 'error))
