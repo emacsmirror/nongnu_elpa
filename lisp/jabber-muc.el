@@ -725,8 +725,12 @@ JC is the Jabber connection."
 
 XML-DATA is the parsed tree data from the stream (stanzas)
 obtained from `xml-parse-region'."
-  (let ((new-topic (jabber-xml-path xml-data '(subject ""))))
-    (when new-topic
+  (let ((body (car
+	       (jabber-xml-node-children
+		(car
+		 (jabber-xml-get-children xml-data 'body)))))
+	(new-topic (jabber-xml-path xml-data '(subject ""))))
+    (when (and new-topic (not body))
       (setq jabber-muc-topic new-topic))))
 
 (add-to-list 'jabber-jid-muc-menu
