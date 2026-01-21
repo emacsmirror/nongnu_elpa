@@ -2,4 +2,8 @@
 
 # Pass XMPP URIs to jabber.el.  See `(jabber)XMPP URIs'.
 
-emacsclient -e "(jabber-handle-uri \"$1\")"
+if [ ! $# -eq 1 ]; then
+  echo "Usage: $0 xmpp:romeo@montague.net"; exit 1
+fi
+
+emacsclient -e '(jabber-handle-uri (pop server-eval-args-left))' "$1"
