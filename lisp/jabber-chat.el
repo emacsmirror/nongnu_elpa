@@ -645,10 +645,11 @@ obtained from `xml-parse-region'."
 			   (car (jabber-xml-get-children x 'url)))))
 		(desc (car (jabber-xml-node-children
 			    (car (jabber-xml-get-children x 'desc))))))
-	    (insert "\n"
-                    (jabber-propertize
-		     "URL: " 'face 'jabber-chat-prompt-system)
-                    (format "%s <%s>" desc url))))))
+            (insert (format "\n%s%s<%s>"
+                            (jabber-propertize
+                             "URL: " 'face 'jabber-chat-prompt-system)
+                            (if (stringp desc) (concat desc " ") "")
+                            url))))))
     foundp))
 
 (defun jabber-chat-goto-address (_xml-data _who mode)

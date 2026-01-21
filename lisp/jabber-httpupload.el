@@ -6,7 +6,6 @@
 ;; Maintainer: cnngimenez
 ;; Version: 0.1.0
 ;; Keywords: comm
-;; URL: https://github.com/cnngimenez/emacs-jabber
 
 ;; This program is free software: you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -32,23 +31,28 @@
 ;; after sharing the file, and the receiver may be disconnected while
 ;; the sender is uploading.
 
+;; Use the command `jabber-httpupload-send-file' to send a file.
+
 ;; The procedure to send a file is as follows -
 
-;; 1. Use Disco queries to discover if the server supports the HTTP Upload (~urn:xmpp:http:upload~ namespace).
-;; 2. Request a slot to the upload Disco item. The server will answer with a GET and PUT URL.
+;; 1. Use Disco queries to discover if the server supports the HTTP
+;;    Upload (urn:xmpp:http:upload namespace).
+;; 2. Request a slot to the upload Disco item.  The server will answer
+;;    with a GET and PUT URL.
 ;; 3. Upload the file to the HTTP server by using the PUT URL.
-;; 4. Usually, send the GET URL to the other XMPP clients to allow them to access the uploaded file.
-;;
+;; 4. Usually, send the GET URL to the other XMPP clients to allow
+;;    them to access the uploaded file.
+
 ;; TODO -
 ;; 1. Use wget to send the file
-;; 2. Recording audio and sending
 
 ;;; Code:
 
-(require 'seq)
 (require 'fsm)
 (require 'mailcap)
 (require 'jabber)
+(eval-when-compile
+  (require 'cl-lib))
 
 ;; * Configuration variables *
 
@@ -61,13 +65,6 @@ Some functions calls external programs such as Curl and wget,
 please check their documentation for more information."
   :group 'jabber-httpupload
   :type 'function)
-
-;; TODO Recording and sending audio
-;; (defcustom jabber-httpupload-record-command "sox -d -t ogg $(filename).ogg"
-;;   "What is the command used to record audio?
-;; Use $(filename) where the temporal filename should be."
-;;   :group 'jabber-httpupload
-;;   :type 'function)
 
 ;; Disco is used to discover if HTTP Upload is supported on the server
 ;; side. Two queries are used:
@@ -85,27 +82,22 @@ please check their documentation for more information."
 ;; [[https://xmpp.org/extensions/xep-0363.html#disco][Discovering
 ;; Support section of XEP-0363]].
 
-;; This implementation requires an initialization step to fill the
-;; `jabber-httpupload-support' variable. This variable registers all
-;; connections with their HTTP Upload item. If one of the server
-;; associated to a connection does not support HTTP Upload, then it
-;; will be registered with a `nil' item.
-
 ;; * Discovering support *
 
 (defvar jabber-httpupload-support nil
   "Alist of Jabber connections and the node with HTTP Upload support.
-This is filled by the `jabber-httpupload-test-all-connections-suport'.
-Each element are of the form (jabber-connection . string/nil).  If the value is
-a string, it is the upload item IRI, if nil means no support.")
+Alist elements for supported connections may be added by calling
+`jabber-httpupload-test-all-connections-suport' or
+`jabber-httpupload-test-connection-support'.  Each element is of the
+form (jabber-connection . upload-iri).  Where there is no upload support
+the alist element for the associated connection will not be present.")
 
 (defun jabber-httpupload-test-all-connections-support ()
   "Test all connections in `jabber-connections' for HTTP Upload support.
-Store the results at `jabber-httpupload-support'.
-If the connection is already tested, ignore it."
-  (let ((connections (seq-difference jabber-connections
-                                     (mapcar #'car jabber-httpupload-support))))
-    (dolist (jc connections)
+Store the results in `jabber-httpupload-support'.  If the connection was
+already tested and the test was successful, do not re-test it."
+  (dolist (jc jabber-connections)
+    (unless (jabber-httpupload-server-has-support jc)
       (jabber-httpupload-test-connection-support jc))))
 
 (defun jabber-httpupload-test-connection-support (jc)
@@ -160,7 +152,7 @@ This function is asynchronous, thus it won't return any results."
 ;;   "urn:xmpp:http:upload"))
 ;;
 ;; This Disco item supports HTTP Upload because the
-;; "urn:xmpp:http:upload" namespace is in the second list.
+;; "urn:xmpp:http:upload:0" namespace is in the second list.
 
 (defun jabber-httpupload-test-item-support (jc iri)
   "Test if the IRI Disco item supports HTTP Upload.
@@ -169,7 +161,7 @@ if the HTTP Upload namespace feature is in the answer, store the IRI
 in `jabber-httpupload-support'."
   (jabber-disco-get-info jc iri nil
                          (lambda (jc _data result)
-                           (when (member "urn:xmpp:http:upload"
+                           (when (member "urn:xmpp:http:upload:0"
                                          (nth 1 result))
                              ;; This item supports HTTP Upload... register it!
                              (push (cons jc iri) jabber-httpupload-support)))
@@ -203,26 +195,17 @@ the item vector."
     (jabber-disco-get-items jc node nil
                             (lambda (jc _data result)
                               (dolist (item result)
-		                (message "item: %S" item)
+                                ;; (message "item: %S" item)
                                 (funcall callback jc item)))
                             nil)))
 
 (defun jabber-httpupload-server-has-support (jc)
   "Check if the server has HTTP Upload support.
-Return the tuple (jabber-connection . upload-url) when there is support from
-the server.  Return nil when the server does not support HTTP Upload.
-
-If the server is not in `jabber-httpupload-support', then it is considered as
-it is not supported.  It SHOULD be tested on-line with
-`jabber-httpupload-test-connection-support' as soon as the connection and
-authentication is established.
+Return the cons pair (jabber-connection . upload-iri) when there is
+support from the server.  Return nil when the feature is not supported.
 
 JC is the Jabber Connection to use."
-
-  (seq-find (lambda (tuple)
-              (and (equal jc (car tuple))
-                   (cdr tuple)))
-            jabber-httpupload-support))
+  (assq jc jabber-httpupload-support))
 
 ;; * Requesting a slot *
 
@@ -251,10 +234,23 @@ JC is the Jabber Connection to use."
   "Retrieve the slot data from the XML-DATA information.
 The XML-DATA is the stanza receive from the Jabber Connection after requesting
 the slot for a file.
-The returned list has the PUT URL and the GET URL."
-  (list
-   (jabber-xml-get-attribute (jabber-xml-path xml-data '(slot put)) 'url)
-   (jabber-xml-get-attribute (jabber-xml-path xml-data '(slot get)) 'url)))
+The returned list contains a cons pair of the PUT URL and PUT headers as
+the first element and the GET URL as the second element.  PUT headers
+are cons pairs containing the header name and header value."
+  (let ((put (jabber-xml-path xml-data '(slot put)))
+        (get (jabber-xml-path xml-data '(slot get))))
+    (list (cons
+           ;; PUT URL.
+           (jabber-xml-get-attribute put 'url)
+           ;; PUT headers.
+           (cl-loop for header in (jabber-xml-get-children put 'header)
+                    for name = (jabber-xml-get-attribute header 'name)
+                    when (member name '("Authorization" "Cookie" "Expires"))
+                    for value = (car (jabber-xml-node-children header))
+                    when value
+                    collect (cons name value)))
+          ;; GET URL.
+          (jabber-xml-get-attribute get 'url))))
 
 (defun jabber-httpupload--request-slot-successful (jc xml-data data)
   "Callback function used when the slot request succeeded.
@@ -349,17 +345,17 @@ certificate validation status."
   (member (plist-get (fsm-get-state-data jc) :server)
           jabber-invalid-certificate-servers))
 
-(defun jabber-httpupload-upload-file (filepath content-type put-url
+(defun jabber-httpupload-upload-file (filepath headers put-url
                               callback callback-arg
                               &optional ignore-cert-problems)
-  "Update the given file at FILEPATH to the provided PUT-URL.
-The CONTENT-TYPE (MIME type) of the file must match the one provided
-to the Jabber Connection with `jabber-httpupload-request-slot'.
+  "Update the given file at FILEPATH to PUT-URL using HEADERS.
+The content-type (MIME type) in HEADERS must match the one provided to
+the Jabber Connection with `jabber-httpupload-request-slot'.
 IGNORE-CERT-PROBLEMS allows to connect with HTTPS servers with invalid or
 non-trusted SSL/TLS certificates.
 When the process ends, a callback function is called using the following
 code: (funcall CALLBACK CALLBACK-ARG)"
-  (unless (funcall jabber-httpupload-upload-function filepath content-type put-url
+  (unless (funcall jabber-httpupload-upload-function filepath headers put-url
                    callback callback-arg
                    ignore-cert-problems)
     (error (concat "The upload function failed to PUT the file to the server. "
@@ -376,7 +372,7 @@ code: (funcall CALLBACK CALLBACK-ARG)"
 (defvar jabber-httpupload-upload-processes nil
   "Alist of running processes uploading the file to the server.
 List of running processes uploading the file to the server
-associated with their callback and arguments. Each element has
+associated with their callback and arguments.  Each element has
 the following format: (process . (callback arg))")
 
 ;; When the file has been uploaded, the process is still registered
@@ -412,16 +408,16 @@ When EVENT is \"finished\n\", then the function
   (with-current-buffer (process-buffer process)
     (let ((inhibit-read-only t))
       (goto-char (point-max))
-      (insert (format "Sentinel: %S event received." event))))
+      (insert (format "Sentinel: %S event received.\n" event))))
   (when (string= event "finished\n")
     (jabber-httpupload-process-ended process)))
 
 ;; This is the function used to send a file to the server by running a curl subprocess.
-(defun jabber-httpupload-put-file-curl (filepath content-type put-url
+(defun jabber-httpupload-put-file-curl (filepath headers put-url
                                 callback callback-arg
                                 &optional ignore-cert-problems)
-  "Use the curl command to put the file at FILEPATH into the PUT-URL.
-Send the SIZE and CONTENT-TYPE MIME as headers.
+  "Use Curl to upload the file at FILEPATH to PUT-URL.
+The PUT request includes all HEADERS in their current order.
 IGNORE-CERT-PROBLEMS enable the use of HTTPS connections with invalid or
 non-trusted SSL/TLS certificates.  If nil, curl will validate the certificate
 provided by the HTTP/S Web server.
@@ -429,29 +425,28 @@ When the process ends, the function CALLBACK is called like the following
 call: (funcall CALLBACK CALLBACK-ARG).
 The process is registered at `jabber-httpupload-upload-processes' AList with
 the provided CALLBACK and CALLBACK-ARG."
-  (let* ((exec-path (executable-find "curl"))
-         (cmd (format "%s %s --upload-file '%s' -H \"content-type: %s\" '%s'"
-                      exec-path
-                      (if ignore-cert-problems
-                          "--insecure"
-                        "")
-                      filepath content-type put-url)))
-    (when exec-path
-      (with-current-buffer (get-buffer-create "*jabber-httpupload-put-file-curl*")
+  (when-let* ((curl-path (executable-find "curl")))
+    (let ((buffer (get-buffer-create "*jabber-httpupload-put-file-curl*"))
+          (command
+           `( "--upload-file" ,filepath
+              ,@(cl-loop for (name . value) in headers
+                         append (list "-H" (format "%s: %s" name value)))
+              ,put-url)))
+      (when ignore-cert-problems
+        (push "--insecure" command))
+      (push curl-path command)
+      (with-current-buffer buffer
         (let ((inhibit-read-only t))
           (goto-char (point-max))
-          (insert (format  "%s Uploading to %s with curl:\n$ %s"
+          (insert (format  "%s Uploading with curl:\n%S\n"
                            (current-time-string)
-                           put-url
-                           cmd))
-          (let ((process (start-process-shell-command "jabber-httpupload-put-file-curl"
-                                                      (current-buffer)
-                                                      cmd)))
-            (push (cons process (list callback callback-arg))
-                  jabber-httpupload-upload-processes)
-            (set-process-sentinel process #'jabber-httpupload-curl-sentinel))
-          (insert "-- done --")
-          t)))))
+                           command))))
+      (push (cons (make-process :name "jabber-httpupload-put-file-curl"
+                                :buffer buffer
+                                :command command
+                                :sentinel #'jabber-httpupload-curl-sentinel)
+                  (list callback callback-arg))
+            jabber-httpupload-upload-processes))))
 
 ;; * Send the file URL to the client *
 
@@ -502,8 +497,9 @@ and the JC Jabber Connection."
 	    (dolist (global-hook (default-value 'jabber-chat-send-hooks))
 	      (nconc stanza-to-send (funcall global-hook body id))))
 	(nconc stanza-to-send (funcall hook body id))))
-	  (jabber-maybe-print-rare-time
-	   (ewoc-enter-last jabber-chat-ewoc (list :local stanza-to-send :time (current-time)))))
+          (with-current-buffer (jabber-chat-create-buffer jc jid)
+            (jabber-maybe-print-rare-time
+             (ewoc-enter-last jabber-chat-ewoc (list :local stanza-to-send :time (current-time))))))
     ;; ...and send it...
     (jabber-send-sexp jc stanza-to-send)))
 
@@ -514,16 +510,20 @@ and the JC Jabber Connection."
 ;; The following functions add interactive commands to the chat buffer
 ;; to send the GET URL to the current (or selected) client.
 
+;;;###autoload
 (defun jabber-httpupload-send-file (jc jid filepath)
   "Send the file at FILEPATH to the user JID.
 JC is the Jabber Connection to send the file URL."
   (interactive (list (jabber-read-account)
                      (jabber-read-jid-completing "Send file to: " nil nil nil 'full t)
-                     (read-file-name "File to send:")))
+                     (read-file-name "File to send: ")))
   (unless (jabber-httpupload-server-has-support jc)
     (error "The Jabber Connection provided has no HTTP Upload support"))
   (let* ((size (file-attribute-size (file-attributes filepath)))
-         (content-type (mailcap-extension-to-mime (file-name-extension filepath)))
+         (content-type
+          (or (and-let* ((extension (file-name-extension filepath)))
+                (mailcap-extension-to-mime extension))
+              "application/octet-stream"))
          (filedata (list filepath size content-type)))
     (jabber-httpupload-request-slot jc filedata
                    #'jabber-httpupload--slot-reserved
@@ -560,42 +560,29 @@ After the upload is done, send the get-url to the destined Jabber user JID."
 JC is the current Jabber Connection.
 XML-DATA is the received XML from the server.
 FILEDATA is a triple `(filepath size content-type).
-URLS is a tuple `(put-url get-url).
+URLS is a tuple `((put-url ((header-name . header-value) ...)) get-url).
 EXTRA-DATA is a list `(jid)"
   (let ((filepath (car filedata))
-        (content-type (nth 2 filedata))
         (jid (car extra-data))
         (get-url (cadr urls))
-        (put-url (car urls)))
-    (message "jabber-httpupload: slot PUT and GET URLs: %S" urls)
+        (put-url (caar urls))
+        (headers (cdar urls)))
+    (push (cons "content-length" (nth 1 filedata)) headers)
+    (push (cons "content-type" (nth 2 filedata)) headers)
+    ;; (message "jabber-httpupload: slot PUT and GET URLs: %s %s" put-url get-url)
     (condition-case err
         (jabber-httpupload-upload-file (expand-file-name filepath)
-                      content-type
+                      headers
                       put-url
                       #'jabber-httpupload--upload-done (list jc jid get-url)
                       (jabber-httpupload-ignore-certificate jc))
       (error "Cannot upload the file.  Error: %S" err))))
 
-;; TODO Recording and sending audio **
-;; (defun jabber-httpupload--record-audio ()
-;;   "Create a new audio record and save the file into a temporal directory."
-;;   (let ((process (start-process-shell-command
-;;                   "jabber-httpupload-record-audio"
-;;                   (current-buffer)
-;;                   (replace-string "$(filename"
-;;                                   "/tmp/jabber-httpupload-record"
-;;                                   jabber-httpupload-record-command))))
-;;     (set-process-sentinel process #'jabber-httpupload-record-sentinel)))
-
-;; * Add hooks *
-;; Some function should start automatically.
-
-;; ** Test connection support after session is established **
-;; Call `jabber-httpupload-test-connection-support' as soon as
-
-;; * Adding functions to hooks *
-;; ** Test HTTP Upload support after connecting **
+;; Test new connections.
 (add-hook 'jabber-post-connect-hooks #'jabber-httpupload-test-connection-support)
+
+;; Test existing connections.
+(jabber-httpupload-test-all-connections-support)
 
 (provide 'jabber-httpupload)
 
