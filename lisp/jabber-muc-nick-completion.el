@@ -187,7 +187,9 @@ Optional argument GROUP to look."
                     (display-sort-function . ,(lambda (nicks)
                                                (jabber-sort-nicks
 						nicks group)))
-                  (cycle-sort-function . identity))
+                  (cycle-sort-function . ,(lambda (nicks)
+                                               (jabber-sort-nicks
+						nicks group))))
               (complete-with-action action table str pred))))))
 
 (add-hook 'jabber-muc-hooks #'jabber-muc-track-message-time)
