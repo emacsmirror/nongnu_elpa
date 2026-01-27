@@ -189,30 +189,28 @@ Movement is restricted to the current line unless `evil-cross-lines' is non-nil.
   (interactive "<c>")
   (unless count (setq count 1))
   (let ((char (car (cdr evil-last-find)))
-        (direction (car (cdr (cdr evil-last-find)))))
+        (forward (car (cdr (cdr evil-last-find)))))
     (cond
      ((eq (car evil-last-find) 'evil-find-char)
-      (if (and direction
+      (if (and forward
                (= char (char-after)))
           (when (> count 1)
             (evil-repeat-find-char (1- count)))
         (evil-repeat-find-char count))
-      (when direction
-        (forward-char))
-      (setq evil-last-find (list #'evil-find-char char direction)))
+      (when forward (forward-char))
+      (setq evil-last-find (list #'evil-find-char char forward)))
      ((eq (car evil-last-find) 'evil-find-char-to)
-      (if (and direction
+      (if (and forward
                (= char (char-after)))
           (when (> count 1)
             (evil-repeat-find-char (1- count))
             (forward-char))
-        (unless (and (not direction)
+        (unless (and (not forward)
                      (= char (char-before))
                      (= count 1))
           (evil-repeat-find-char count)
-          (when direction
-            (forward-char))))
-      (setq evil-last-find (list #'evil-find-char-to char direction))))))
+          (when forward (forward-char))))
+      (setq evil-last-find (list #'evil-find-char-to char forward))))))
 
 (evil-define-motion evil-emacs-cursor-model-repeat-find-char-reverse (count)
   "Repeat the last find/to COUNT times in the opposite direction."
@@ -220,30 +218,28 @@ Movement is restricted to the current line unless `evil-cross-lines' is non-nil.
   (interactive "<c>")
   (unless count (setq count 1))
   (let ((char (car (cdr evil-last-find)))
-        (direction (car (cdr (cdr evil-last-find)))))
+        (forward (car (cdr (cdr evil-last-find)))))
     (cond
      ((eq (car evil-last-find) 'evil-find-char)
-      (if (and (not direction)
+      (if (and (not forward)
                (= char (char-after)))
           (when (> count 1)
             (evil-repeat-find-char-reverse (1- count)))
         (evil-repeat-find-char-reverse count))
-      (unless direction
-        (forward-char))
-      (setq evil-last-find (list #'evil-find-char char direction)))
+      (unless forward (forward-char))
+      (setq evil-last-find (list #'evil-find-char char forward)))
      ((eq (car evil-last-find) 'evil-find-char-to)
-      (if (and (not direction)
+      (if (and (not forward)
                (= char (char-after)))
           (when (> count 1)
             (evil-repeat-find-char-reverse (1- count))
             (forward-char))
-        (unless (and direction
+        (unless (and forward
                      (= char (char-before))
                      (= count 1))
           (evil-repeat-find-char-reverse count)
-          (unless direction
-            (forward-char))))
-      (setq evil-last-find (list #'evil-find-char-to char direction))))))
+          (unless forward (forward-char))))
+      (setq evil-last-find (list #'evil-find-char-to char forward))))))
 
 (defun evil-emacs-cursor-model-forward-after-end (thing &optional count)
   "Move forward to end of THING.
