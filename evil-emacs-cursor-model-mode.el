@@ -4,7 +4,7 @@
 ;;; License:
 ;; ============================================================================
 ;; Creative Commons Attribution-ShareAlike 4.0 International License
-;; [[https://creativecommons.org/licenses/by-a/4.0/]]
+;; [[https://creativecommons.org/licenses/by-sa/4.0/]]
 
 ;; A special thanks to Toby Cubitt who coded the motions in the cursor model.
 ;; Peter Friis Jensen made it a mode and swapped some keybindings.
