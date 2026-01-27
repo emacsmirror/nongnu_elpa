@@ -4,7 +4,7 @@
 ;;; License:
 ;; ============================================================================
 ;; Creative Commons Attribution-ShareAlike 4.0 International License
-;; [[https://creativecommons.org/licenses/by-sa/4.0/]]
+;; [[https://creativecommons.org/licenses/by-a/4.0/]]
 
 ;; A special thanks to Toby Cubitt who coded the motions in the cursor model.
 ;; Peter Friis Jensen made it a mode and swapped some keybindings.
@@ -13,7 +13,7 @@
 ;; Maintainer: Peter Friis Jensen <maxfriis@gmail.com>
 ;; URL: https://github.com/maxfriis/evil-emacs-cursor-model-mode
 ;; Created: 2025-11-15
-;; Version: 0.1.2
+;; Version: 0.1.3
 ;; Keywords: convenience, files
 ;; Package-Requires: ((emacs "29.1") (evil "1.15.0"))
 
@@ -35,6 +35,8 @@
 ;; ============================================================================
 (require 'evil)
 
+;; ----------------------------------------------------------------------------
+;; Remember init defaults.
 (defvar evil-emacs-cursor-model-move-cursor-back-init evil-move-cursor-back
   "For toggling the variable with `evil-emacs-cursor-model-mode'.")
 (defvar evil-emacs-cursor-model-move-beyond-eol-init evil-move-beyond-eol
@@ -102,6 +104,12 @@ Maybe fewer layers are better for your Emacs pinky?"
             "<remap> <evil-find-char>"
             #'evil-emacs-cursor-model-find-after-char)
 (keymap-set evil-emacs-cursor-model-mode-map
+            "<remap> <evil-repeat-find-char>"
+            #'evil-emacs-cursor-model-repeat-find-char)
+(keymap-set evil-emacs-cursor-model-mode-map
+            "<remap> <evil-repeat-find-char-reverse>"
+            #'evil-emacs-cursor-model-repeat-find-char-reverse)
+(keymap-set evil-emacs-cursor-model-mode-map
             "<remap> <evil-forward-word-end>"
             #'evil-emacs-cursor-model-forward-after-word-end)
 (keymap-set evil-emacs-cursor-model-mode-map
@@ -136,6 +144,7 @@ Maybe fewer layers are better for your Emacs pinky?"
 (keymap-set evil-emacs-cursor-model-mode-map
             "<remap> <evil-paste-after>"
             #'evil-paste-before)
+;; ----------------------------------------------------------------------------
 (add-to-list 'minor-mode-map-alist
              (cons 'evil-emacs-cursor-model-mode
                    evil-emacs-cursor-model-mode-map) t)
@@ -156,7 +165,7 @@ Movement is restricted to the current line unless `evil-cross-lines' is non-nil.
       (evil-find-char count char)))
    ((< count 0)
     (evil-find-char-to-backward (- count) char)))
-  (setq evil-last-find (list #'evil-emacs-cursor-model-find-before-char char (> count 0))))
+  (setq evil-last-find (list #'evil-find-char-to char (> count 0))))
 
 (evil-define-motion evil-emacs-cursor-model-find-after-char (count char)
   "Move point immediately after the next COUNT'th occurrence of CHAR.
@@ -172,7 +181,69 @@ Movement is restricted to the current line unless `evil-cross-lines' is non-nil.
     (forward-char))
    ((< count 0)
     (evil-find-char-backward (- count) char)))
-  (setq evil-last-find (list #'evil-emacs-cursor-model-find-after-char char (> count 0))))
+  (setq evil-last-find (list #'evil-find-char char (> count 0))))
+
+(evil-define-motion evil-emacs-cursor-model-repeat-find-char (count)
+  "Repeat the last find/to COUNT times."
+  :type inclusive
+  (interactive "<c>")
+  (unless count (setq count 1))
+  (let ((char (car (cdr evil-last-find)))
+        (direction (car (cdr (cdr evil-last-find)))))
+    (cond
+     ((eq (car evil-last-find) 'evil-find-char)
+      (if (and direction
+               (= char (char-after)))
+          (when (> count 1)
+            (evil-repeat-find-char (1- count)))
+        (evil-repeat-find-char count))
+      (when direction
+        (forward-char))
+      (setq evil-last-find (list #'evil-find-char char direction)))
+     ((eq (car evil-last-find) 'evil-find-char-to)
+      (if (and direction
+               (= char (char-after)))
+          (when (> count 1)
+            (evil-repeat-find-char (1- count))
+            (forward-char))
+        (unless (and (not direction)
+                     (= char (char-before))
+                     (= count 1))
+          (evil-repeat-find-char count)
+          (when direction
+            (forward-char))))
+      (setq evil-last-find (list #'evil-find-char-to char direction))))))
+
+(evil-define-motion evil-emacs-cursor-model-repeat-find-char-reverse (count)
+  "Repeat the last find/to COUNT times in the opposite direction."
+  :type inclusive
+  (interactive "<c>")
+  (unless count (setq count 1))
+  (let ((char (car (cdr evil-last-find)))
+        (direction (car (cdr (cdr evil-last-find)))))
+    (cond
+     ((eq (car evil-last-find) 'evil-find-char)
+      (if (and (not direction)
+               (= char (char-after)))
+          (when (> count 1)
+            (evil-repeat-find-char-reverse (1- count)))
+        (evil-repeat-find-char-reverse count))
+      (unless direction
+        (forward-char))
+      (setq evil-last-find (list #'evil-find-char char direction)))
+     ((eq (car evil-last-find) 'evil-find-char-to)
+      (if (and (not direction)
+               (= char (char-after)))
+          (when (> count 1)
+            (evil-repeat-find-char-reverse (1- count))
+            (forward-char))
+        (unless (and direction
+                     (= char (char-before))
+                     (= count 1))
+          (evil-repeat-find-char-reverse count)
+          (unless direction
+            (forward-char))))
+      (setq evil-last-find (list #'evil-find-char-to char direction))))))
 
 (defun evil-emacs-cursor-model-forward-after-end (thing &optional count)
   "Move forward to end of THING.
@@ -182,7 +253,7 @@ The motion is repeated COUNT times."
    ((> count 0)
     (forward-thing thing count))
    (t
-    (unless (bobp) (forward-char -1))
+    (unless (bobp) (backward-char))
     (let ((bnd (bounds-of-thing-at-point thing))
           rest)
       (when bnd
@@ -271,7 +342,7 @@ If the end position is at the beginning of a line, then:
        offset)
       (when (and (= (aref offset (match-beginning 1)) ?e)
                  (not (bobp)))
-        (forward-char 1)))))
+        (forward-char)))))
 
 (advice-add
  'evil-ex-search-goto-offset
