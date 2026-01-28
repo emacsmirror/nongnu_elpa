@@ -182,48 +182,44 @@ Movement is restricted to the current line unless `evil-cross-lines' is non-nil.
   :type inclusive
   (interactive "<c>")
   (unless count (setq count 1))
-  (let ((find (eq (car evil-last-find) #'evil-find-char))
-        (char (car (cdr evil-last-find)))
-        (forward (car (cdr (cdr evil-last-find)))))
-    (if (and forward
-             (= char (char-after)))
-        (when (> count 1)
-          (evil-repeat-find-char (1- count))
-          (unless find (forward-char)))
-      (when (or find
-                forward
-                (/= char (char-before))
-                (> count 1))
-        (when (or find (/= char (char-after (1+ (point)))))
-          (evil-repeat-find-char count))
-        (when (and (not find) forward) (forward-char))))
-    (when (and find forward) (forward-char))
-    (setq evil-last-find
-          (list (if find #'evil-find-char #'evil-find-char-to) char forward))))
+  (if evil-last-find
+      (let ((find (eq (car evil-last-find) #'evil-find-char))
+            (char (nth 1 evil-last-find))
+            (fwd (nth 2 evil-last-find)))
+        (if (and fwd (= char (char-after)))
+            (when (> count 1)
+              (evil-repeat-find-char (1- count))
+              (unless find (forward-char)))
+          (when (or find fwd (/= char (char-before)) (> count 1))
+            (when (or find (and fwd (/= char (char-after (1+ (point))))))
+              (evil-repeat-find-char count))
+            (when (and (not find) fwd) (forward-char))))
+        (when (and find fwd) (forward-char))
+        (setq evil-last-find
+              (list (if find #'evil-find-char #'evil-find-char-to) char fwd)))
+    (message "evil-repeat-find-char: No previous search")))
 
 (evil-define-motion evil-emacs-cursor-model-repeat-find-char-reverse (count)
   "Repeat the last find/to COUNT times in the opposite direction."
   :type inclusive
   (interactive "<c>")
   (unless count (setq count 1))
-  (let ((find (eq (car evil-last-find) #'evil-find-char))
-        (char (car (cdr evil-last-find)))
-        (forward (car (cdr (cdr evil-last-find)))))
-    (if (and (not forward)
-             (= char (char-after)))
-        (when (> count 1)
-          (evil-repeat-find-char-reverse (1- count))
-          (unless find (forward-char)))
-      (when (or find
-                (not forward)
-                (/= char (char-before))
-                (> count 1))
-        (when (or find (/= char (char-after (1+ (point)))))
-          (evil-repeat-find-char-reverse count))
-        (unless (or find forward) (forward-char))))
-    (unless (or (not find) forward) (forward-char))
-    (setq evil-last-find
-          (list (if find #'evil-find-char #'evil-find-char-to) char forward))))
+  (if evil-last-find
+      (let ((find (eq (car evil-last-find) #'evil-find-char))
+            (char (nth 1 evil-last-find))
+            (fwd (nth 2 evil-last-find)))
+        (if (and (not fwd) (= char (char-after)))
+            (when (> count 1)
+              (evil-repeat-find-char-reverse (1- count))
+              (unless find (forward-char)))
+          (when (or find (not fwd) (/= char (char-before)) (> count 1))
+            (when (or find (and (not fwd) (/= char (char-after (1+ (point))))))
+              (evil-repeat-find-char-reverse count))
+            (unless (or find fwd) (forward-char))))
+        (unless (or (not find) fwd) (forward-char))
+        (setq evil-last-find
+              (list (if find #'evil-find-char #'evil-find-char-to) char fwd)))
+    (message "evil-repeat-find-char: No previous search")))
 
 (defun evil-emacs-cursor-model-forward-after-end (thing &optional count)
   "Move forward to end of THING.
