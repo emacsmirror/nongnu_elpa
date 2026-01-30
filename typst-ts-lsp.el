@@ -66,10 +66,12 @@ Will override old versions."
            (inside-archive (concat "tinymist-" arch os "/tinymist")))
       (url-copy-file url-path tinymist-archive t)
       (url-copy-file url-hash hash-file t)
-      (when (=
-             0
-             (call-process "sha256sum" nil nil nil
-                           "-c" hash-file))
+      (unless (=
+               0
+               (let ((default-directory
+                      (file-name-directory hash-file)))
+                 (call-process "sha256sum" nil nil nil
+                               "-c" hash-file)))
         (user-error "The hashes don't match"))
       (call-process "tar" nil nil nil
                     "-xzf" tinymist-archive
