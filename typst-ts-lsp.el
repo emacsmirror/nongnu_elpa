@@ -47,22 +47,40 @@ Will override old versions."
   (interactive)
   (unless (file-exists-p typst-ts-lsp-download-path)
     (make-directory (file-name-directory typst-ts-lsp-download-path) t))
-  (let ((url "https://github.com/Myriad-Dreamin/tinymist/releases/latest/download/tinymist-installer.sh")
-        (file (make-temp-file "script-" nil ".sh"))
-        (process-environment (append '("TINYMIST_NO_MODIFY_PATH=1")
-                                     process-environment))
-        (buf "*tinymist-installer-output*")
-        (binary-location (or (getenv "XDG_BIN_HOME")
-                             (when-let ((xdg (getenv "XDG_DATA_HOME")))
-                               (expand-file-name "bin" (expand-file-name ".." xdg)))
-                             (expand-file-name "~/.local/bin"))))
-    (url-copy-file url file t)
-    (set-file-modes file #o755)
-    (start-process file buf file)
-    (display-buffer buf '((display-buffer-reuse-window
-                           display-buffer-pop-up-window)))
-    (message "Moving %s to %s" binary-location typst-ts-lsp-download-path)
-    (rename-file binary-location typst-ts-lsp-download-path t)))
+  (let ((url-prefix
+         "https://github.com/Myriad-Dreamin/tinymist/releases/latest/download/tinymist-")
+        (arch (concat (car (split-string system-configuration "-")) "-"))
+        (os (pcase system-type
+              ('darwin "apple-darwin")
+              ('gnu/linux "unknown-linux-gnu")
+              (_ (user-error "Unknown OS"))))
+        (targz ".tar.gz")
+        (sha256 ".sha256"))
+    (let* ((url-path (concat url-prefix arch os targz))
+           (url-hash (concat url-path sha256))
+           (tinymist-archive
+            (expand-file-name
+             (concat (file-name-directory typst-ts-lsp-download-path)
+                     "tinymist-" arch os targz)))
+           (hash-file (concat tinymist-archive sha256))
+           (inside-archive (concat "tinymist-" arch os "/tinymist")))
+      (url-copy-file url-path tinymist-archive t)
+      (url-copy-file url-hash hash-file t)
+      (when (=
+             0
+             (call-process "sha256sum" nil nil nil
+                           "-c" hash-file))
+        (user-error "The hashes don't match"))
+      (call-process "tar" nil nil nil
+                    "-xzf" tinymist-archive
+                    "-C" (file-name-directory tinymist-archive)
+                    "--strip-components=1"
+                    inside-archive)
+      (delete-file tinymist-archive t)
+      (delete-file hash-file t)
+      (rename-file (concat (file-name-directory tinymist-archive) "tinymist")
+                   typst-ts-lsp-download-path
+                   t))))
 
 (provide 'typst-ts-lsp)
 ;;; typst-ts-lsp.el ends here
