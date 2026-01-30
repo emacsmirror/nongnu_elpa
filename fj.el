@@ -2888,15 +2888,20 @@ works on the resulting html."
   (concat
    "\n📎 " (substring fedi-horiz-bar 3)
    (propertize
-    ;; FIXME: markdown rendering adds an unwanted newline, and stripping
-    ;; it still renders with an empty line!
-    (fj-render-markdown
-     (mapconcat (lambda (x)
-                  (concat
-                   "[" (alist-get 'name x) "]("
-                   (alist-get 'browser_download_url x)
-                   ")"))
-                assets "\n"))
+    (mapconcat (lambda (x)
+                 (propertize
+                  ;; FIXME: markdown rendering adds an unwanted newline,
+                  ;; and stripping it still renders with an empty line! we
+                  ;; need to render each attachment separately so we can
+                  ;; then propertize it with its data
+                  (fj-render-markdown
+                   (concat
+                    "[" (alist-get 'name x) "]("
+                    (alist-get 'browser_download_url x)
+                    ")"))
+                  'fj-attachment x
+                  'fj-attachment-id (alist-get 'id x)))
+               assets "\n")
     'fj-item-body t)))
 
 (defun fj-item-view (&optional repo owner number type page limit)
