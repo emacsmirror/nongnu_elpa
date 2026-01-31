@@ -196,7 +196,7 @@ This is maintained to restart Idris when the arguments change.")
 (defun idris-send (sexp proc)
   "Send a SEXP to Idris over the PROC. This is the lowest level of communication."
   (let* ((msg (concat (idris-prin1-to-string sexp) "\n"))
-         (string (concat (idris-encode-length (length msg)) msg)))
+         (string (concat (idris-encode-length (string-bytes msg)) msg)))
     (idris-event-log sexp t)
     (process-send-string proc string)))
 
