@@ -824,16 +824,16 @@ DATA is the data."
           (user-error "Aborted"))
         (make-directory (file-name-directory save-to) t)
         ;; save the image data into save-to
-        (write-region data nil save-to)
+        (let ((coding-system-for-write 'no-conversion))
+          (write-region data nil save-to))
         ;; insert the image
         (insert (concat
+                 ;; do not insert # if inside code mode
                  (unless (treesit-parent-until (treesit-node-at (point))
                                                (lambda (x)
-                                                 (or
-                                                  (string= (treesit-node-type x)
-                                                           "code")
-                                                  (string= (treesit-node-type x)
-                                                           "content"))))
+                                                 (string=
+                                                  (treesit-node-type x)
+                                                  "code")))
                    "#")
                  (format "image(\"%s\")" (file-relative-name save-to root))))
         (indent-according-to-mode))
