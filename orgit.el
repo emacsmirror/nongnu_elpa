@@ -312,12 +312,12 @@ In that case `orgit-rev-store' stores one or more links instead."
     (let ((repo (orgit--current-repository))
           (args (if orgit-log-save-arguments
                     (if magit-buffer-log-files
-                        (list magit-buffer-revisions
+                        (list magit-buffer-log-revisions
                               magit-buffer-log-args
                               magit-buffer-log-files)
-                      (list magit-buffer-revisions
+                      (list magit-buffer-log-revisions
                             magit-buffer-log-args))
-                  magit-buffer-revisions)))
+                  magit-buffer-log-revisions)))
       (org-link-store-props
        :type        "orgit-log"
        :link        (format "orgit-log:%s::%S" repo args)
