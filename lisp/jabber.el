@@ -213,12 +213,12 @@ configure a Google Talk account like this:
   :group 'jabber-faces)
 
 (defface jabber-title-medium
-  '((t (:weight bold :width expanded :height 2.0 :inherit variable-pitch)))
+  '((t (:weight bold :width expanded :height 1.4 :inherit variable-pitch)))
   "Face for medium titles."
   :group 'jabber-faces)
 
 (defface jabber-title-large
-  '((t (:weight bold :width ultra-expanded :height 3.0 :inherit variable-pitch)))
+  '((t (:weight bold :width ultra-expanded :height 1.8 :inherit variable-pitch)))
   "Face for large titles."
   :group 'jabber-faces)
 
