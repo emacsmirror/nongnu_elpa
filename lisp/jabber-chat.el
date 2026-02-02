@@ -497,8 +497,14 @@ This function is used as an ewoc prettyprinter."
 		 (or (null prev)
 		     (jabber-rare-time-needed (entry-time prev-data)
 					      (entry-time data))))
+        ;; When jabber-parse-time supports fraction seconds (optional
+        ;; with XEP-0082), jabber-chat-pp chokes on :rate-time ewoc
+        ;; elements.  Ensure that the timestamp is in lisp form,
+        ;; rather than (cons bignum . bignum).
 	(ewoc-enter-before jabber-chat-ewoc node
-			   (list :rare-time (entry-time data)))))))
+			   (list :rare-time (time-convert
+                                             (entry-time data)
+                                             'list)))))))
 
 (defun jabber-chat-print-prompt (xml-data timestamp delayed dont-print-nick-p)
   "Print prompt for received message in XML-DATA.

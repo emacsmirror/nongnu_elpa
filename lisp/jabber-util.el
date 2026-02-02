@@ -437,7 +437,7 @@ time value."
 	(hour (string-to-number (substring timestamp 9 11)))
 	(minute (string-to-number (substring timestamp 12 14)))
 	(second (string-to-number (substring timestamp 15 17))))
-    (encode-time second minute hour day month year 0)))
+    (encode-time (list second minute hour day month year nil -1 nil))))
 
 (defun jabber-encode-legacy-time (timestamp)
   "Parse TIMESTAMP as internal time value and encode as ccyymmddThh:mm:ss (UTC)."
@@ -476,16 +476,10 @@ TIME is in a format accepted by `format-time-string'."
 	 (day (string-to-number (substring time 8 10)))
 	 (hour (string-to-number (substring time 11 13)))
 	 (minute (string-to-number (substring time 14 16)))
-	 (second (string-to-number (substring time 17 19)))
-         (timezone (if (eq (aref time 19) ?.)
-                       ;; fractions are optional
-                       (let ((timezone (cadr
-                                        (split-string (substring time 20)
-                                                      "[-+Z]"))))
-                         (if (string= "" timezone)
-                             "Z"
-                           timezone))
-                     (substring time 19))))
+         (tail (substring time 17))
+         (tz (string-match "[Z+-]" tail))
+	 (second (string-to-number (substring tail 0 tz)))
+         (timezone (if tz (substring tail tz) "Z")))
     ;; timezone is either Z (UTC) or [+-]HH:MM
     (let ((timezone-seconds
 	   (if (string= timezone "Z")
@@ -493,7 +487,7 @@ TIME is in a format accepted by `format-time-string'."
 	     (* (if (eq (aref timezone 0) ?+) 1 -1)
 		(* 60 (+ (* 60 (string-to-number (substring timezone 1 3)))
 			 (string-to-number (substring timezone 4 6))))))))
-      (encode-time second minute hour day month year timezone-seconds))))
+      (encode-time (list second minute hour day month year nil -1 timezone-seconds)))))
 
 (defun jabber-report-success (_jc xml-data context)
   "IQ callback reporting success or failure of the operation.
