@@ -1080,43 +1080,6 @@ JC is the Jabber connection."
 				    (funcall jabber-alert-muc-function
 					     nick group (current-buffer) body-text))))))))))
 
-(defface jabber-muc-presence-dim
-  '((t (:foreground "dark grey" :weight light :slant italic)))
-  "face for diminished presence notifications."
-  :group 'jabber-alerts)
-
-(defcustom jabber-muc-decorate-presence-patterns nil
-  "List of regular expressions and face pairs.
-When a presence notification matches a pattern, display it with
-associated face.  Ignore notification if face is ‘nil’."
-  :type '(repeat
-          :tag "Patterns"
-          (cons :format "%v"
-           (regexp :tag "Regexp")
-           (choice
-            (const :tag "Ignore" nil)
-            (face :tag "Face" :value jabber-muc-presence-dim))))
-  :group 'jabber-alerts)
-
-(defun jabber-muc-maybe-decorate-presence (node)
-  "Filter presence notifications."
-  (cl-destructuring-bind (key msg &key time) node
-    (let* ((match (cl-find-if
-                   (lambda (pair)
-                     (string-match (car pair) msg))
-                   jabber-muc-decorate-presence-patterns))
-           (face (cdr-safe match)))
-      (if match
-          (when face
-            (jabber-maybe-print-rare-time
-             (ewoc-enter-last
-              jabber-chat-ewoc
-              (list key
-                    (propertize msg 'face face)
-                    :time time))))
-        (jabber-maybe-print-rare-time
-         (ewoc-enter-last jabber-chat-ewoc node))))))
-
 (defun jabber-muc-process-presence (jc presence)
   (let* ((from (jabber-xml-get-attribute presence 'from))
 	 (type (jabber-xml-get-attribute presence 'type))
@@ -1179,12 +1142,13 @@ associated face.  Ignore notification if face is ‘nil’."
 	    (let ((buffer (get-buffer (jabber-muc-get-buffer group))))
 	      (if buffer
 		  (with-current-buffer buffer
-                    (jabber-muc-maybe-decorate-presence
-                     (list (if (string= type "error")
-                               :muc-error
-                             :muc-notice)
-                           message
-                           :time (current-time))))
+		    (jabber-maybe-print-rare-time
+		     (ewoc-enter-last jabber-chat-ewoc
+				      (list (if (string= type "error")
+						:muc-error
+					      :muc-notice)
+					    message
+					    :time (current-time)))))
 		(message "%s: %s" (jabber-jid-displayname group) message))))
 	;; or someone else?
 	(let* ((plist (jabber-muc-participant-plist group nickname))
@@ -1196,23 +1160,25 @@ associated face.  Ignore notification if face is ‘nil’."
 				       ">")))))
 	  (jabber-muc-remove-participant group nickname)
 	  (with-current-buffer (jabber-muc-create-buffer jc group)
-            (jabber-muc-maybe-decorate-presence
-             (list :muc-notice
-                   (cond
-                    ((member "301" status-codes)
-                     (concat name " has been banned"
-                             (when actor (concat " by " actor))
-                             (when reason (concat " - '" reason "'"))))
-                    ((member "307" status-codes)
-                     (concat name " has been kicked"
-                             (when actor (concat " by " actor))
-                             (when reason (concat " - '" reason "'"))))
-                    ((member "303" status-codes)
-                     (concat name " changes nickname to "
-                             (jabber-xml-get-attribute item 'nick)))
-                    (t
-                     (concat name " has left the chatroom")))
-                   :time (current-time)))))))
+	    (jabber-maybe-print-rare-time
+	     (ewoc-enter-last
+	      jabber-chat-ewoc
+	      (list :muc-notice
+		    (cond
+		     ((member "301" status-codes)
+		      (concat name " has been banned"
+			      (when actor (concat " by " actor))
+			      (when reason (concat " - '" reason "'"))))
+		     ((member "307" status-codes)
+		      (concat name " has been kicked"
+			      (when actor (concat " by " actor))
+			      (when reason (concat " - '" reason "'"))))
+		     ((member "303" status-codes)
+		      (concat name " changes nickname to "
+			      (jabber-xml-get-attribute item 'nick)))
+		     (t
+		      (concat name " has left the chatroom")))
+		    :time (current-time))))))))
      (t
       ;; someone is entering
 
@@ -1246,10 +1212,12 @@ associated face.  Ignore notification if face is ‘nil’."
 					       reason actor)))
 	  (when report
 	    (with-current-buffer (jabber-muc-create-buffer jc group)
-              (jabber-muc-maybe-decorate-presence
-               (list :muc-notice report
-                     :time (current-time)))
-             ;; Did the server change our nick?
+	      (jabber-maybe-print-rare-time
+	       (ewoc-enter-last
+		jabber-chat-ewoc
+		(list :muc-notice report
+		      :time (current-time))))
+	      ;; Did the server change our nick?
 	      (when (member "210" status-codes)
 		(ewoc-enter-last
 		 jabber-chat-ewoc

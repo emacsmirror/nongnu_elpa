@@ -83,7 +83,7 @@ JC is the Jabber connection."
 
   (unless jabber-chat-ewoc
     (setq jabber-chat-ewoc
-	  (ewoc-create ewoc-pp nil "---"))
+	  (ewoc-create ewoc-pp nil "---\n" 'nosep))
     (goto-char (point-max))
     (put-text-property (point-min) (point) 'read-only t)
     (let ((inhibit-read-only t))
@@ -160,6 +160,25 @@ JC is the Jabber connection."
     (if jabber-buffer
         (switch-to-buffer jabber-buffer)
       (error "No jabber buffer found"))))
+(defun jabber-chat-redisplay (&optional all-chats)
+  "Regenerate the EWOC text for one or more buffers.
+With prefix argument, regenerate all `jabber-chat-mode' buffers,
+otherwise regenerate the current buffer display."
+  (interactive "P")
+  (let ((current-buffer (current-buffer)))
+    (mapc
+     (lambda (buffer)
+       (with-current-buffer buffer
+         (ewoc-refresh jabber-chat-ewoc)
+         (forward-line)))
+     (seq-filter
+      (lambda (buffer)
+        (with-current-buffer buffer
+          (and (eq major-mode 'jabber-chat-mode)
+               (or all-chats
+                   (eq buffer current-buffer)))))
+      (buffer-list)))))
+
 
 (provide 'jabber-chatbuffer)
 ;;; jabber-chatbuffer.el ends here

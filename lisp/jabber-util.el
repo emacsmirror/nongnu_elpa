@@ -402,10 +402,16 @@ obtained from `xml-parse-region'."
 
 XML-DATA is the parsed tree data from the stream (stanzas)
 obtained from `xml-parse-region'."
-  (jabber-x-delay
-   (or
-    (jabber-xml-path xml-data '(("urn:xmpp:delay" . "delay")))
-    (jabber-xml-path xml-data '(("jabber:x:delay" . "x"))))))
+  ;; Since Emacs 27.1, timestamps may be represented by a cons
+  ;; consisting of two integers.  :rare-time EWOC entries consist of
+  ;; just a timestamp, detect those timestamps and return them
+  ;; directly.
+  (if (integerp (cdr xml-data))
+      (time-convert xml-data 'list)
+    (jabber-x-delay
+     (or
+      (jabber-xml-path xml-data '(("urn:xmpp:delay" . "delay")))
+      (jabber-xml-path xml-data '(("jabber:x:delay" . "x")))))))
 
 (defun jabber-x-delay (xml-data)
   "Return timestamp given a delayed delivery element.

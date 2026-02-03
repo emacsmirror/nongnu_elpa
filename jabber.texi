@@ -518,7 +518,7 @@ jabber-muc-names}.  This gives a list of nicknames,
 * MUC Administration::
 @end menu
 
-@node Configuration, Invitations, , Groupchat
+@node Configuration, Presence announcements, , Groupchat
 @section Configuration
 
 @vindex jabber-muc-default-nicknames
@@ -555,32 +555,136 @@ accounts---if you connect several accounts, both will try to connect to
 the same chat rooms, or use the same nickname.  This will lead to
 confusion.
 
-@node Presence announcements
+@node Presence announcements, Invitations, Configuration, Groupchat
 @section Presence announcements
 
+@cindex Presence announcements
 @vindex jabber-muc-decorate-presence-patterns
+@vindex jabber-muc-decorate-presence-patterns-alist
+
+With the advent of mobile XMPP clients MUC chat buffers can be clogged
+with join/leave message as mobile clients experience frequent network
+disconnect and reconnects.
 
 To limit, highlight, or deemphasize presences announcement messages,
+customize either the variable
+@code{jabber-muc-decorate-presence-patterns} or
+@code{jabber-muc-decorate-presence-patterns-alist}.  If you want to
+establish a single set of rules for displaying presence announcements,
 customize the variable @code{jabber-muc-decorate-presence-patterns}.
+If you prefer to view different MUC chat buffers with different rules
+customize the variable
+@code{jabber-muc-decorate-presence-patterns-alist}.
 
-@code{jabber-muc-decorate-presence-patterns} is a list of pairs
-consisting of a regular expression and a face.  When a presence
-announcement matches a regular expression pattern, it will be
-displayed with the associated face.  If the face is @code{nil}, the
-announcement will not be added to the groupchat.  For example, the
-customization:
+The latter option allows, for example, join/leave presence
+announcements to be hidden by default, but displayed and re-hidden on
+demand.
+
+By default all MUC presence announcements are displayed as this has
+been historical behavior.
+
+@defopt jabber-muc-decorate-presence-patterns
+This value of this option can be customized to provide an initial,
+possibly unchanging, filter for hiding or displaying MUC presence
+announcements.
+
+This option is overwritten by the command
+@code{jabber-chat-muc-presence-patterns-select} which allows the
+selection of alternate display preferences from an entry in
+@code{jabber-muc-decorate-presence-patterns-alist}.
+
+Making @code{jabber-muc-decorate-presence-patterns} buffer-local
+allows maintaining different MUC presence filters for each chat
+buffer.
+
+For example,
 
 @example
-'(jabber-muc-decorate-presence-patterns
-  '(("\\( enters the room ([^)]+)\\| has left the chatroom\\)$")
-    ("." . jabber-muc-presence-dim)))
+@group
+(defun local/chat-mode-hook ()
+  (setq-local jabber-muc-decorate-presence-patterns
+              '(("\\( enters the room ([^)]+)\\| has left the chatroom\\)$")
+                ("." . jabber-muc-presence-dim)))
+@end group
+
+@group
+(add-hook 'jabber-chat #'local/chat-mode-hook)
+@end group
 @end example
 
-This suppresses display of membership changes (join and leave events)
-and deemphasizes moderator action to set them off from surrounding
-chat messages.
+This both makes @code{jabber-muc-decorate-presence-patterns}
+buffer-local, and suppresses display of membership changes (join and
+leave events) and deemphasizes other messages like moderator kick and
+ban action or participant nick changes to set them off from
+surrounding chat messages.
 
-@node Invitations, Private messages, Configuration, Groupchat
+@end defopt
+
+@defopt jabber-muc-decorate-presence-patterns-alist
+
+This option specifies a list of values that can be assigned to
+@code{jabber-muc-decorate-presence-patterns} by the command
+@code{jabber-chat-muc-presence-patterns-select}.
+
+
+Each entry in @code{jabber-muc-decorate-presence-patterns-alist}
+consists of a string identifier and a list of pairs.  The pairs
+consist of a regular expression and a face, specifying how a matching
+presence message should be treated (hidden or displayed with the
+specified face).
+
+If the major mode of current buffer is @code{jabber-chat-mode}, after
+updating @code{jabber-muc-decorate-presence-patterns},
+@code{jabber-chat-muc-presence-patterns-select} redisplays the current
+buffer with the new display rules.
+
+The default value for
+@code{jabber-muc-decorate-presence-patterns-alist} is:
+
+@example
+'(("Show all"
+   ("." . jabber-chat-text-foreign))
+  ("Hide all"
+   ("."))
+  ("Show all diminished"
+   ("." . jabber-muc-presence-dim))
+  ("Hide enter/leave"
+   ("\\( enters the room ([^)]+)\\| has left the chatroom\\)$")
+   ("." . jabber-muc-presence-dim))
+@end example
+@end defopt
+
+The "Show all" entry matches any presence message, preserves the
+default behavior (all presence announcements displayed).  The next
+entry ("Hide all") matches all presence messaged.  Since no face is
+provided, all presence messages will be hidden.  The "Show all
+diminished" entry displays all presence message with a diminished face
+to set them apart from chat messages.  The "Hide enter/leave" entry
+hides enter and leave presence messages, but displays other presence
+messages (kick, ban, changed nick, etc) in a diminished face.
+
+@deffn command jabber-chat-muc-presence-patterns-select
+This command can be used to update
+@code{jabber-muc-decorate-presence-patterns} with a selected entry
+from @code{jabber-muc-decorate-presence-patterns-alist}.  Entries are
+selected in the minibuffer by label ("Show all", "Hide all", etc.)
+
+If the major mode of the current buffer is @code{jabber-chat-mode},
+the buffer is redisplayed using the new display rules.
+
+Without a prefix argument,
+@code{jabber-chat-muc-presence-patterns-select} makes
+@code{jabber-muc-decorate-presence-patterns} a local variable.  With a
+prefix, @code{jabber-chat-muc-presence-patterns-select} does not
+change the local variable state of
+@code{jabber-chat-muc-presence-patterns-select}.
+
+@code{jabber-chat-muc-presence-patterns-select} is bound to @kbd{C-x
+C-j C-y} by default.
+
+@end deffn
+
+@node Invitations, Private messages, Presence announcements, Groupchat
 @section Invitations
 
 @cindex Invitations

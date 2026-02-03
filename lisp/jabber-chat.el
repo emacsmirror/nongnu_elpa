@@ -211,6 +211,53 @@ added to the outgoing message.")
   "Float-time of earliest backlog entry inserted into buffer.
 nil if no backlog has been inserted.")
 
+(defvar jaber-chat-much-presence-patterns-history nil
+  "History values selected for `jabber-muc-decorate-presence-patterns'")
+
+(defface jabber-muc-presence-dim
+  '((t (:foreground "dark grey" :weight light :slant italic)))
+  "face for diminished presence notifications."
+  :group 'jabber-alerts)
+
+(defcustom jabber-muc-decorate-presence-patterns-alist
+  '(("Show all"
+     ("." . jabber-chat-text-foreign))
+    ("Hide all"
+     ("."))
+    ("Show enter/leave diminished"
+     ("." . jabber-muc-presence-dim))
+    ("Hide enter/leave"
+     ("\\( enters the room ([^)]+)\\| has left the chatroom\\)$")
+     ("." . jabber-muc-presence-dim)))
+  "List presence treatment specifications.
+Each specification consists of a label (string) and a list of
+pattern/face pairs which are suitable values for
+`jabber-muc-decorate-presence-patterns'.  These pairs describe
+how to highlight presence events in MUC chat logs."
+  :type '(alist
+          :key-type string
+          :value-type (repeat
+                       :tag "Patterns"
+                       (cons :format "%v"
+                             (regexp :tag "Regexp")
+                             (choice
+                              (const :tag "Ignore" nil)
+                              (face :tag "Face" :value jabber-muc-presence-dim)))))
+  :group 'jabber-alerts)
+
+(defcustom jabber-muc-decorate-presence-patterns (cdar jabber-muc-decorate-presence-patterns-alist)
+  "List of regular expressions and face pairs.
+When a presence notification matches a pattern, display it with
+associated face.  Ignore notification if face is `nil'."
+  :type '(repeat
+          :tag "Patterns"
+          (cons :format "%v"
+           (regexp :tag "Regexp")
+           (choice
+            (const :tag "Ignore" nil)
+            (face :tag "Face" :value jabber-muc-presence-dim))))
+  :group 'jabber-alerts)
+
 ;;;###autoload
 (defun jabber-chat-get-buffer (chat-with)
   "Return the chat buffer for chatting with CHAT-WITH (bare or full JID).
@@ -390,6 +437,65 @@ JC is the Jabber connection."
     ;; ...and send it...
     (jabber-send-sexp jc stanza-to-send)))
 
+(defun jabber-find-previous-visible-node (node)
+  "Return first visible EWOC node preceding NODE.
+Step backward over hidden nodes, like MUC presence join/leave
+messages."
+  (let* ((node-location (ewoc-location node))
+         (prev (ewoc-prev jabber-chat-ewoc node))
+         (prev-location (and prev (ewoc-location prev))))
+    (while (and
+            prev
+            (not (equal (ewoc-data node) (ewoc-data prev)))
+            (equal (marker-position node-location) (marker-position prev-location)))
+      (setq prev (ewoc-prev jabber-chat-ewoc prev)
+            prev-location (and prev (ewoc-location prev))))
+    prev))
+
+(defun jabber-chat-muc-presence-patterns-select (global)
+  "Select a MUC presence treatment.
+Prompts user to select a presence treatment by name, where the
+name is the `car' of an entry in
+`jabber-muc-decorate-presence-patterns-alist'.  The variable
+`jabber-muc-decorate-presence-patterns' is set to the `cdr' of
+the selected treatment.
+
+By default, when `jabber-muc-decorate-presence-patterns' is
+updated, it is made buffer local.  With a prefix argument, the
+buffer-local state of the variable is not changed.
+
+The chat buffer is redisplayed using the new value of
+`jabber-muc-decorate-presence-patterns'.  Redisplaying the buffer
+may take a few second, especially in MUCs with a large number of
+participants connected through intermittent networks (like mobile
+clients)."
+  (interactive "P")
+  (when-let ((patterns (cdr
+                        (assoc-string
+                         (completing-read
+                          "MUC presence treatment: "
+                          (mapcar #'car jabber-muc-decorate-presence-patterns-alist)
+                          nil t nil
+                          'jaber-chat-much-presence-patterns-history)
+                         jabber-muc-decorate-presence-patterns-alist))))
+    (unless (equal patterns jabber-muc-decorate-presence-patterns)
+      (set (if global
+               'jabber-muc-decorate-presence-patterns
+             (make-local-variable 'jabber-muc-decorate-presence-patterns))
+           patterns)
+      (jabber-chat-redisplay))))
+
+(defun jabber-chat-muc-presence-highlight (message)
+  "Return non-`nil' to control MUC presence notification display.
+This matches :muc-notification message text with the list
+`jabber-muc-decorate-presence-patterns' and returns the pattern
+entry when a match is found, or nil if no matching pattern is
+found."
+  (seq-find
+   (lambda (pair)
+     (string-match (car pair) message nil 'inhibit-modify))
+   jabber-muc-decorate-presence-patterns))
+
 (defun jabber-chat-pp (data)
   "Pretty-print a <message/> stanza.
 \(car data) is either :local, :foreign, :error or :notice.
@@ -431,27 +537,57 @@ This function is used as an ewoc prettyprinter."
 	 (jabber-muc-print-prompt (cadr data) t /me-p))
         (:muc-foreign
          (jabber-muc-print-prompt (cadr data) nil /me-p))
-	((or :muc-notice :muc-error)
+	(:muc-notice
+         (unless (jabber-chat-muc-presence-highlight (cadr data))
+	   (jabber-muc-system-prompt)))
+        (:muc-error
 	 (jabber-muc-system-prompt)))
       (put-text-property prompt-start (point) 'field 'jabber-prompt))
 
     ;; ...and body
     (pcase (car data)
       ((or :local :foreign)
-       (run-hook-with-args 'jabber-chat-printers (cadr data) (car data) :insert))
+       (run-hook-with-args 'jabber-chat-printers (cadr data) (car data) :insert)
+       (insert "\n"))
       ((or :muc-local :muc-foreign)
        (let ((args (list (cadr data) (car data) :insert)))
 	 (mapc (lambda (f) (apply f args))
-	       (append jabber-muc-printers jabber-chat-printers))))
+	       (append jabber-muc-printers jabber-chat-printers))
+         (insert "\n")))
       ((or :error :muc-error)
        (if (stringp (cadr data))
-	    (insert (jabber-propertize (cadr data) 'face 'jabber-chat-error))
+	    (insert (jabber-propertize (cadr data) 'face 'jabber-chat-error) "\n")
 	 (jabber-chat-print-error (cadr data))))
-      ((or :notice :muc-notice)
-       (insert (cadr data)))
+      (:muc-notice
+       (let* ((highlight (jabber-chat-muc-presence-highlight (cadr data)))
+              (face (cdr-safe highlight)))
+         (cond
+          (face (insert
+                 (jabber-propertize (cadr data) 'face face)
+                 "\n"))
+          (highlight)
+          (t (insert (cadr data) "\n")))))
+      (:notice
+       (insert (cadr data) "\n"))
       (:rare-time
+       ;; When MUC presence announcements are hidden, lightly
+       ;; trafficked chat rooms fill with superfluous :rare-time
+       ;; entries.  To suppress these, search backward from the node
+       ;; containing DATA for the previous visible node.  If that node
+       ;; is also a :rare-time entry, remove its text.  This seems a
+       ;; bit skeevy; we await a better implementation.
+       (let* ((node (jabber-chat-find-node data))
+              (prev-visible (jabber-find-previous-visible-node node)))
+         (when (and
+		prev-visible
+		(eq (car (ewoc-data prev-visible)) :rare-time))
+           (delete-region
+            (setq beg (marker-position (ewoc-location prev-visible)))
+            (point))
+           (goto-char beg)))
        (insert (jabber-propertize (format-time-string jabber-rare-time-format (cadr data))
-                                  'face 'jabber-rare-time-face)))
+                                  'face 'jabber-rare-time-face)
+               "\n"))
       (:subscription-request
        (insert "This user requests subscription to your presence.\n")
        (when (and (stringp (cadr data)) (not (zerop (length (cadr data)))))
@@ -468,7 +604,8 @@ This function is used as an ewoc prettyprinter."
 		   (insert "\t")))
 	 (button "Mutual" 'jabber-subscription-accept-mutual)
 	 (button "One-way" 'jabber-subscription-accept-one-way)
-	 (button "Decline" 'jabber-subscription-decline))))
+	 (button "Decline" 'jabber-subscription-decline)
+         (insert "\n"))))
 
     (when jabber-chat-fill-long-lines
       (save-restriction
@@ -483,6 +620,36 @@ This function is used as an ewoc prettyprinter."
   "Return non-nil if a timestamp should be printed between TIME1 and TIME2."
   (not (string= (format-time-string jabber-rare-time-format time1)
 		(format-time-string jabber-rare-time-format time2))))
+
+(defun jabber-chat-entry-time (entry)
+  "Return timestamp from EWOC node ENTRY."
+  (or (when (listp (cadr entry))
+	(jabber-message-timestamp (cadr entry)))
+      (plist-get (cddr entry) :time)))
+
+(defun jabber-chat-find-node (data)
+  "Find EWOC node whose data element equals DATA."
+  (let* ((node (ewoc-locate jabber-chat-ewoc (point)))
+         (node-time (jabber-chat-entry-time (ewoc-data node)))
+         (data-time (jabber-chat-entry-time data))
+         (node-iter (if (time-less-p data-time node-time)
+                        #'ewoc-next
+                      #'ewoc-prev)))
+    (cl-macrolet ((search ()))
+      (while (and
+              node
+              (not (equal data (ewoc-data node))))
+        (setq node (funcall node-iter jabber-chat-ewoc node)))
+      (search)
+      ;; In the off chance we searched the wrong direction, switch
+      ;; directions and re-search.
+      (unless node
+        (setq node (ewoc-locate jabber-chat-ewoc (point))
+              node-iter (if (equal node-iter #'ewoc-prev)
+                            #'ewoc-next
+                          #'ewoc-prev))
+        (search)))
+    node))
 
 (defun jabber-maybe-print-rare-time (node)
   "Print rare time before NODE, if appropriate."
@@ -583,7 +750,8 @@ obtained from `xml-parse-region'."
     (insert
      (jabber-propertize
       (concat "Error: " (jabber-parse-error the-error))
-      'face 'jabber-chat-error))))
+      'face 'jabber-chat-error)
+     "\n")))
 
 (defun jabber-chat-print-subject (xml-data _who mode)
   "Print subject of given <message/>, if any.
