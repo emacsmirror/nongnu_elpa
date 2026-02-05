@@ -228,56 +228,6 @@ Movement is restricted to the current line unless `evil-cross-lines' is non-nil.
   (interactive "<c>")
   (evil-emacs-cursor-model-repeat-find-char (- (or count 1))))
 
-;; (evil-define-motion evil-emacs-cursor-model-repeat-find-char (count)
-;;   "Repeat the last find COUNT times."
-;;   :type inclusive
-;;   (interactive "<c>")
-;;   (unless count (setq count 1))
-;;   (unless (prog1
-;;               (let ((find (eq (car evil-last-find) #'evil-find-char))
-;;                     (fwd  (nth 2 evil-last-find))
-;;                     (char (car (cdr evil-last-find))))
-;;                 ;; (when (< count 0) (setq count (- count) fwd (not fwd)))
-;;                 (condition-case nil
-;;                     (cond
-;;                      ((and fwd (if find (= char (char-after)) (= char (char-after (1+ (point))))))
-;;                       (when (> count 1) (evil-repeat-find-char (1- count))))
-;;                      (t
-;;                       (unless (or (not fwd) find (bolp)) (backward-char)) ; if "T"
-;;                       (evil-repeat-find-char count)))
-;;                   (user-error (message "evil-find-char: Can't find `%c'" char)
-;;                               (unless (or (not fwd) find) (forward-char))
-;;                               (when fwd (backward-char))))
-;;                 (when fwd (forward-char))
-;;                 (setq evil-last-find
-;;                       (list (if find #'evil-find-char #'evil-find-char-to) char fwd))))
-;;     (user-error "No previous search")))
-
-;; (evil-define-motion evil-emacs-cursor-model-repeat-find-char-reverse (count)
-;;   "Repeat the last find COUNT times in the opposite direction."
-;;   :type inclusive
-;;   (interactive "<c>")
-;;   (unless count (setq count 1))
-;;   (unless (prog1
-;;               (let ((find (eq (car evil-last-find) #'evil-find-char))
-;;                     (fwd  (nth 2 evil-last-find))
-;;                     (char (nth 1 evil-last-find)))
-;;                 (when (< count 0) (setq count (- count) fwd (not fwd)))
-;;                 (condition-case nil
-;;                     (cond
-;;                      ((and (not fwd) (if find (= char (char-after)) (= char (char-after (1+ (point))))))
-;;                       (when (> count 1) (evil-repeat-find-char-reverse (1- count))))
-;;                      (t
-;;                       (unless (or fwd find (bolp)) (backward-char))
-;;                       (evil-repeat-find-char-reverse count)))
-;;                   (user-error (message "evil-find-char: Can't find `%c'" char)
-;;                               (unless (or fwd find) (forward-char))
-;;                               (unless fwd (backward-char))))
-;;                 (unless fwd (forward-char))
-;;                 (setq evil-last-find
-;;                       (list (if find #'evil-find-char #'evil-find-char-to) char fwd))))
-;;     (user-error "No previous search")))
-
 (defun evil-emacs-cursor-model-forward-after-end (thing &optional count)
   "Move forward to end of THING.
 The motion is repeated COUNT times."
