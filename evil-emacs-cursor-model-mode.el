@@ -32,9 +32,8 @@
 ;;
 ;; Work on `evil-visual-block' which still use `evil-mode's cursor model.
 ;;
-;; Make error `message' into `user-error' in
-;; `evil-emacs-cursor-model-repeat-find-char'.
-;; I don't know how yet.
+;; Fix `user-error' in `evil-emacs-cursor-model-repeat-find-char'.
+;; I don't know how to make the signal come from the function.
 
 ;; ============================================================================
 ;;; Code:
@@ -196,11 +195,9 @@ Movement is restricted to the current line unless `evil-cross-lines' is non-nil.
   (interactive "<c>")
   (unless count (setq count 1))
   (let ((find (eq (car evil-last-find) #'evil-find-char))
-        (char (nth 1 evil-last-find))
-        (fwd  (nth 2 evil-last-find))) ; Lower case "t"/"f".
-    (unless char (message "No previous search"))
-    (unless fwd (setq count (- count) fwd (not fwd)))
-    (when (< count 0) (setq fwd (not fwd))) ; fwd is now forward.
+        (char (nth 1 evil-last-find)))
+    (unless char (user-error "No previous search"))
+    (unless (nth 2 evil-last-find) (setq count (- count)))
     (unless find
       (cond
        ((and (= count 1) (eq char (char-after)))
@@ -213,14 +210,14 @@ Movement is restricted to the current line unless `evil-cross-lines' is non-nil.
                ((and evil-respect-visual-line-mode
                      visual-line-mode)
                 (save-excursion
-                  (if fwd (end-of-visual-line) (beginning-of-visual-line))
+                  (if (> count 0) (end-of-visual-line) (beginning-of-visual-line))
                   (point)))
-               (fwd (line-end-position))
+               ((> count 0) (line-end-position))
                (t (line-beginning-position)))
          t count)
         (unless (or find (= count 0))
           (if (> count 0) (backward-char) (forward-char)))
-      (message "Can't find `%c'" char))))
+      (user-error "Can't find `%c'" char))))
 
 (evil-define-motion evil-emacs-cursor-model-repeat-find-char-reverse (count)
   "Repeat the last find COUNT times in the opposite direction."
