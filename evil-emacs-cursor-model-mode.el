@@ -27,13 +27,14 @@
 ;; ============================================================================
 ;;; TODO:
 ;; ============================================================================
-;; Does erlier release versions of evil work?
+;; Does erlier release versions of evil work?  Probably.
 ;; 1.15.0 is the current but fairly old release version of evil.
 ;;
 ;; Work on `evil-visual-block' which still use `evil-mode's cursor model.
 ;;
 ;; Fix `user-error' in `evil-emacs-cursor-model-repeat-find-char'.
-;; I don't know how to make the signal come from the function.
+;; Don't know how to make the signal come from the function when inside `let'.
+;; For now the function `if' reports the `user-error'.
 
 ;; ============================================================================
 ;;; Code:
@@ -48,13 +49,6 @@
   "For toggling the variable with `evil-emacs-cursor-model-mode'.")
 (defvar evil-emacs-cursor-model-highlight-closing-paren-at-point-states-init evil-highlight-closing-paren-at-point-states
   "For toggling the variable with `evil-emacs-cursor-model-mode'.")
-;; ----------------------------------------------------------------------------
-;; Customization. Not yet implemented.
-(defvar evil-emacs-cursor-model-incremented-repeat-find-char-to nil
-  "Toggle Vim's oddity when repeating a `evil-find-char-to' character search.
-\n`evil-find-char' does the same as `evil-repeat-find-char' with the same prefix.
-`evil-find-char-to' need an incremented prefix to replicate what
-`evil-repeat-find-char' does.  Vim's \"2t?\" keybinding is repeated with \"1;\"")
 
 ;; ============================================================================
 ;;; The minor mode
@@ -194,16 +188,14 @@ Movement is restricted to the current line unless `evil-cross-lines' is non-nil.
   :type inclusive
   (interactive "<c>")
   (unless count (setq count 1))
+  (unless (nth 2 evil-last-find) (setq count (- count))) ; Backwards search.
   (let ((find (eq (car evil-last-find) #'evil-find-char))
         (char (nth 1 evil-last-find)))
     (unless char (user-error "No previous search"))
-    (unless (nth 2 evil-last-find) (setq count (- count)))
     (unless find
-      (cond
-       ((and (= count 1) (eq char (char-after)))
-        (setq count (1+ count)))
-       ((and (= count -1) (eq char (char-before)))
-        (setq count (1- count))))) ; Vim does this on "repeat find to".
+      (cond ; Vim does this when find is nil.
+       ((and (= count  1) (= char (char-after)))  (setq count (1+ count)))
+       ((and (= count -1) (= char (char-before))) (setq count (1- count)))))
     (if (search-forward
          (char-to-string char)
          (cond (evil-cross-lines nil)
@@ -239,7 +231,7 @@ The motion is repeated COUNT times."
       (when bnd
         (cond
          ((< (point) (cdr bnd)) (goto-char (car bnd)))
-         ((= (point) (cdr bnd)) (cl-incf count))))
+         ((= (point) (cdr bnd)) (setq count (1+ count)))))
       (condition-case nil
           (when (zerop (setq rest (forward-thing thing count)))
             (end-of-thing thing))
