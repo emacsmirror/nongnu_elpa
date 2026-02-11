@@ -143,7 +143,7 @@ Avoid unnecessary load-theme")
     (setq list (append list '(1.0))))
   list)
 
-(with-eval-after-load "markdown"
+(with-eval-after-load 'markdown-mode
   (defun moe-theme-resize-title-apply-markdown ()
     (setq moe-theme-resize-title-markdown (moe-theme-resize-title--repaire-list moe-theme-resize-title-markdown 6))
     (set-face-attribute 'markdown-header-face-1 nil :height (nth 0 moe-theme-resize-title-markdown))
@@ -154,7 +154,7 @@ Avoid unnecessary load-theme")
     (set-face-attribute 'markdown-header-face-6 nil :height (nth 5 moe-theme-resize-title-markdown)))
   (moe-theme-resize-title-apply-markdown))
 
-(with-eval-after-load "org"
+(with-eval-after-load 'org-mode
   (defun moe-theme-resize-title-apply-org ()
     (setq moe-theme-resize-title-org (moe-theme-resize-title--repaire-list moe-theme-resize-title-org 9))
     (set-face-attribute 'org-document-title nil :height (nth 0 moe-theme-resize-title-org))
@@ -168,7 +168,7 @@ Avoid unnecessary load-theme")
     (set-face-attribute 'org-level-8        nil :height (nth 8 moe-theme-resize-title-org)))
   (moe-theme-resize-title-apply-org))
 
-(with-eval-after-load "rst"
+(with-eval-after-load 'rst-mode
   (defun moe-theme-resize-title-apply-rst ()
     (setq moe-theme-resize-title-rst (moe-theme-resize-title--repaire-list moe-theme-resize-title-rst 6))
     (if (facep 'rst-level-1-face)
