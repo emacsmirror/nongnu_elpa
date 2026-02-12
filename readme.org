@@ -1,4 +1,5 @@
 
+@@html: <a href="https://elpa.nongnu.org/nongnu/fj.html"><img alt="ELPA" src="https://elpa.nongnu.org/nongnu/fj.svg"></a>@@
 @@html: <a href="https://liberapay.com/martianh/donate"><img alt="Donate using Liberapay" src="https://liberapay.com/assets/widgets/donate.svg"></a>@@
 
 * fj.el
@@ -8,6 +9,19 @@ This repo contains some basic functions for interacting with a Forgejo instance 
 It doesn't interact with =forge= / =magit=, which don't implement Gitea/Forgejo support for now (though this will likely change, see https://github.com/magit/forge/discussions/771). Nor does it attempt to follow their wonderful design.
 
 It just aims to cover a few of the bread and butter functions that will save you switching to the browser 80% of the time.
+
+* install
+
+=fj.el= is available in [[https://elpa.nongnu.org/][ELPA]].
+
+You can also just pull it from the repo with use-package/straight, such as:
+
+#+begin_src emacs-lisp
+(use-package fj
+  :straight (:type git :host codeberg "martianh/fj.el")
+  :config
+  (setq fj-user "martianh"))
+#+end_src
 
 * getting started
 
