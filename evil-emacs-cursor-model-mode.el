@@ -106,11 +106,17 @@ Maybe fewer layers are better if you have an Emacs pinky?"
 ;; ----------------------------------------------------------------------------
 ;; Motions.
 (keymap-set evil-emacs-cursor-model-mode-map
+            "<remap> <evil-find-char>"
+            #'evil-emacs-cursor-model-find-after-char)
+(keymap-set evil-emacs-cursor-model-mode-map
+            "<remap> <evil-find-char-backward>"
+            #'evil-emacs-cursor-model-find-before-char-backward)
+(keymap-set evil-emacs-cursor-model-mode-map
             "<remap> <evil-find-char-to>"
             #'evil-emacs-cursor-model-find-before-char)
 (keymap-set evil-emacs-cursor-model-mode-map
-            "<remap> <evil-find-char>"
-            #'evil-emacs-cursor-model-find-after-char)
+            "<remap> <evil-find-char-to-backward>"
+            #'evil-emacs-cursor-model-find-after-char-backward)
 (keymap-set evil-emacs-cursor-model-mode-map
             "<remap> <evil-repeat-find-char>"
             #'evil-emacs-cursor-model-repeat-find-char)
@@ -160,8 +166,6 @@ Maybe fewer layers are better if you have an Emacs pinky?"
 ;; ============================================================================
 ;;; Evil commands implementing the cursor model
 ;; ============================================================================
-;; f/t with -count works like F/T. F/T with -count has evil-mode behavior.
-;; F/T with negative count is so unusual that I don't rebind them.
 (evil-define-motion evil-emacs-cursor-model-find-after-char (count char)
   "Move point immediately after the next COUNT'th occurrence of CHAR.
 Movement is restricted to the current line unless `evil-cross-lines' is non-nil."
@@ -173,6 +177,12 @@ Movement is restricted to the current line unless `evil-cross-lines' is non-nil.
     (evil-find-char count char))
   (when (plusp count) (forward-char)))
 
+(evil-define-motion evil-emacs-cursor-model-find-before-char-backward (count char)
+  "Move before the previous COUNT'th occurrence of CHAR."
+  :type inclusive
+  (interactive "<c><C>")
+  (evil-emacs-cursor-model-find-after-char (- (or count 1)) char))
+
 (evil-define-motion evil-emacs-cursor-model-find-before-char (count char)
   "Move point immediately before the next COUNT'th occurrence of CHAR.
 Movement is restricted to the current line unless `evil-cross-lines' is non-nil."
@@ -181,10 +191,15 @@ Movement is restricted to the current line unless `evil-cross-lines' is non-nil.
   (setq count (or count 1))
   (if (and (plusp count) (= char (char-after)))
       (evil-find-char (1- count) char)
-    (when (and (minusp count) (= char (char-before))) (incf count))
     (evil-find-char count char))
   (when (minusp count) (forward-char))
   (setq evil-last-find (list #'evil-find-char-to char (plusp count))))
+
+(evil-define-motion evil-emacs-cursor-model-find-after-char-backward (count char)
+  "Move after the previous COUNT'th occurrence of CHAR."
+  :type inclusive
+  (interactive "<c><C>")
+  (evil-emacs-cursor-model-find-before-char (- (or count 1)) char))
 
 (evil-define-motion evil-emacs-cursor-model-repeat-find-char (count)
   "Repeat the last find COUNT times."
