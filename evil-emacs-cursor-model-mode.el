@@ -99,7 +99,7 @@ Maybe fewer layers are better if you have an Emacs pinky?"
       "O"  #'evil-org-open-above))))
 
 ;; ============================================================================
-;;; Remappings that implement Emacs' cursor model
+;;; Remappings
 ;; ============================================================================
 (defvar evil-emacs-cursor-model-mode-map (make-sparse-keymap)
   "Keymap for `evil-emacs-cursor-model-mode'.")
@@ -158,7 +158,7 @@ Maybe fewer layers are better if you have an Emacs pinky?"
                    evil-emacs-cursor-model-mode-map) t)
 
 ;; ============================================================================
-;;; Evil commands implementing Emacs' cursor model
+;;; Evil commands implementing the cursor model
 ;; ============================================================================
 (evil-define-motion evil-emacs-cursor-model-find-after-char (count char)
   "Move point immediately after the next COUNT'th occurrence of CHAR.
@@ -180,6 +180,7 @@ Movement is restricted to the current line unless `evil-cross-lines' is non-nil.
   (if (and (= char (char-after)) (plusp count))
       (evil-find-char (1- count) char)
     (evil-find-char count char))
+  (when (minusp count) (forward-char))
   (setq evil-last-find (list #'evil-find-char-to char (plusp count))))
 
 (evil-define-motion evil-emacs-cursor-model-repeat-find-char (count)
@@ -188,11 +189,11 @@ Movement is restricted to the current line unless `evil-cross-lines' is non-nil.
   (interactive "<c>")
   (setq count (or count 1))
   (unless (nth 2 evil-last-find) (setq count (- count)))
-  (let ((find (eq (car evil-last-find) #'evil-find-char))
-        (char (nth 1 evil-last-find))
+  (let ((char (nth 1 evil-last-find))
+        (find (eq (car evil-last-find) #'evil-find-char))
         case-fold-search)
-    (unless char (user-error "No previous search"))
-    (unless find
+    (unless char (user-error "No previous char search"))
+    (unless find ; Vim does this.
       (cond ((and (= count  1) (= char (char-after)))  (incf count))
             ((and (= count -1) (= char (char-before))) (decf count))))
     (if (search-forward
