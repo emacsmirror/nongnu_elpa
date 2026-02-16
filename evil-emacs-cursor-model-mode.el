@@ -160,13 +160,15 @@ Maybe fewer layers are better if you have an Emacs pinky?"
 ;; ============================================================================
 ;;; Evil commands implementing the cursor model
 ;; ============================================================================
+;; f/t with -count works like F/T. F/T with -count has evil-mode behavior.
+;; F/T with negative count is so unusual that I don't rebind them.
 (evil-define-motion evil-emacs-cursor-model-find-after-char (count char)
   "Move point immediately after the next COUNT'th occurrence of CHAR.
 Movement is restricted to the current line unless `evil-cross-lines' is non-nil."
   :type inclusive
   (interactive "<c><C>")
   (setq count (or count 1))
-  (if (and (= char (char-after)) (plusp count))
+  (if (and (plusp count) (= char (char-after)))
       (evil-find-char (1- count) char)
     (evil-find-char count char))
   (when (plusp count) (forward-char)))
@@ -177,8 +179,9 @@ Movement is restricted to the current line unless `evil-cross-lines' is non-nil.
   :type inclusive
   (interactive "<c><C>")
   (setq count (or count 1))
-  (if (and (= char (char-after)) (plusp count))
+  (if (and (plusp count) (= char (char-after)))
       (evil-find-char (1- count) char)
+    (when (and (minusp count) (= char (char-before))) (incf count))
     (evil-find-char count char))
   (when (minusp count) (forward-char))
   (setq evil-last-find (list #'evil-find-char-to char (plusp count))))
