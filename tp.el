@@ -269,8 +269,12 @@ Values to send will not be JSON booleans, but plain strings.")
 
 (cl-defmethod transient-init-value ((obj tp-option))
   "Initialize the value of OBJ."
-  (let* ((prefix-val (transient-get-value)))
-    ;; (oref transient--prefix value)))
+  (let* ((prefix-val
+          ;; (transient-get-value))) ;; new transient (broken)
+          ;; (transient--get-extended-value))) (also broken)
+          ;; (oref transient--prefix value))) ;; old transient (broken)
+          ;; (transient-scope))) ;; doesn't work
+          tp-transient-settings)) ;; our variable (works?)
     (oset obj value
           (tp-get-server-val obj prefix-val))))
 
@@ -386,8 +390,14 @@ We add the current value as initial input."
 The format of the value is a transient pair as a string, ie \"key=val\".
 Nil values will also match the empty string.
 OBJ is the object whose args are being checked."
-  (let* ((data (transient-get-value))
-         ;; (oref transient--prefix value))
+  (let* ((data ;; (transient-get-value)) ;; new transient (broken)
+          ;; (oref transient--prefix value)) ;; get from prefix (old, broken)
+          ;; get from self? (works if suffix initialized, but useless, as
+          ;; we need no just val but also key to check server val):
+          ;; (oref obj value))
+          ;; our variable (works, server value rather than current prefix
+          ;; state):
+          tp-transient-settings)
          (server-val (tp-get-server-val obj data))
          (server-str (if (and server-val
                               (symbolp server-val))
@@ -398,7 +408,8 @@ OBJ is the object whose args are being checked."
 (cl-defmethod tp-get-server-val ((obj tp-option) data)
   "Return the server value for OBJ from DATA.
 If OBJ's key has dotted notation, drill down into the alist. Currently
-only one level of nesting is supported."
+only one level of nesting is supported.
+DATA is JSON data returned from the server."
   ;; TODO: handle nested alist keys
   (let* ((key (oref obj alist-key))
          (split (split-string (symbol-name key) "\\.")))
