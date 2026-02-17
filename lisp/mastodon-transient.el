@@ -376,7 +376,9 @@ Do not add more than the server's maximum setting."
 
 (defun mastodon-notifications-requests-count ()
   "Format a string for pending requests."
-  (let ((val (oref transient--prefix value)))
+  (let ((val ;; (oref transient--prefix value))) ;; deprecated
+         ;; (transient-get-value)) ;; broken
+         tp-transient-settings)) ;; dubious
     (format "Pending requests: %d"
             (or (map-nested-elt
                  val
@@ -385,7 +387,9 @@ Do not add more than the server's maximum setting."
 
 (defun mastodon-notifications-filtered-count ()
   "Format a string for pending notifications."
-  (let ((val (oref transient--prefix value)))
+  (let ((val ;; (oref transient--prefix value))) ;; deprecated
+         ;; (transient-get-value)) ;; broken
+         tp-transient-settings)) ;; dubious
     (format "Pending notifications: %d"
             (or (map-nested-elt
                  val
@@ -417,7 +421,9 @@ We always read.")
 
 (cl-defmethod transient-init-value ((obj mastodon-transient-field))
   "Initialize value of OBJ."
-  (let* ((prefix-val (oref transient--prefix value)))
+  (let* ((prefix-val ;; (oref transient--prefix value))) ;; deprecated
+          ;; (transient-get-value)) ;; broken
+          tp-transient-settings)) ;; dubious
     ;; (arg (oref obj alist-key)))
     (oset obj value
           (tp-get-server-val obj prefix-val))))
