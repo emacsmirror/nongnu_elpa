@@ -3689,12 +3689,12 @@ Returns annotation for CAND, a candidate."
 
 (define-button-type 'fj-search-owner-button
   'follow-link t
-  'action 'fj-list-user-repos
+  'action 'fj-list-own-or-user-repos
   'help-echo "RET: View this user.")
 
 (define-button-type 'fj-issues-owner-button
   'follow-link t
-  'action 'fj-list-user-repos
+  'action 'fj-list-own-or-user-repos
   'help-echo "RET: View this user.")
 
 (define-button-type 'fj-repo-stargazers-button
@@ -3859,6 +3859,18 @@ unset any default values."
                        (fj--get-tl-col 2) ;; ISSUE author not REPO owner
                      (fj--repo-owner))))
        (fj-user-repos owner)))))
+
+(defun fj-list-own-or-user-repos (pos)
+  "Button action function for owners in tabulated lists.
+POS is current position.
+If owner is `fj-user', call `fj-list-own-repos'.
+Else call `fj-user-repos'.
+We do this because the latter has no sort argument, while the former
+does, and sorting user repos is useful."
+  (let ((user (button-label (button-at pos))))
+    (if (string= fj-user user)
+        (fj-list-own-repos)
+      (fj-list-user-repos))))
 
 ;; search or user repo TL
 (defun fj-star-repo (&optional unstar)
@@ -4824,7 +4836,9 @@ Used for hitting RET on a given link."
          (fj-issue-ref-follow item))
         ;; ((eq type 'pull)
         ;; (fj-item-view repo owner item nil :pull))
-        ('handle (fj-user-repos item))
+        ('handle (if (string= fj-user item)
+                     (fj-list-own-repos)
+                   (fj-user-repos item)))
         ('team (fj-browse-team item))
         ('repo-tag (fj-repo-tag-follow item))
         ((or  'commit 'commit-ref)
