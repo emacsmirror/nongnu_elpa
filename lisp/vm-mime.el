@@ -6250,6 +6250,21 @@ quoted-printable or binary).                            USR, 2011-03-27"
 		    (not (memq vm-mime-8bit-text-transfer-encoding
 			       '(quoted-printable base64))))
 	   (setq vm-mime-8bit-text-transfer-encoding 'quoted-printable))
+	 ;; Encode charset to bytes before transfer encoding, but only if
+	 ;; the content is not already transfer-encoded
+	 (let ((current-encoding (downcase (vm-mm-layout-encoding layout))))
+	   (when (and (member current-encoding '("7bit" "8bit" "binary"))
+		      (vm-mime-text-type-layout-p layout))
+	     (let ((charset (vm-mime-get-parameter layout "charset")))
+	       (when charset
+		 (let ((coding-system (vm-mime-charset-to-coding charset)))
+		   (unless coding-system
+		     (error "Can't find a coding system for charset %s"
+			    charset))
+		   (encode-coding-region
+		    (vm-mm-layout-body-start layout)
+		    (vm-mm-layout-body-end layout)
+		    coding-system))))))
 	 (setq encoding
 	       (vm-mime-transfer-encode-region (vm-mm-layout-encoding layout)
 					       (vm-mm-layout-body-start layout)
