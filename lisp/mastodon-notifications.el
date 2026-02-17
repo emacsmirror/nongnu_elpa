@@ -836,7 +836,7 @@ Status notifications are created when you call
   (let* ((endpoint "notifications/unread_count")
          (url (mastodon-http--api endpoint
                                   (when mastodon-group-notifications "v2")))
-         (resp (mastodon-http--get-json url)))
+         (resp (mastodon-http--get-json url nil :silent)))
     (alist-get 'count resp)))
 
 (alert-add-rule :mode 'mastodon-mode
@@ -847,11 +847,11 @@ Status notifications are created when you call
                 :style mastodon-notifications-alert-style
                 :continue t)
 
-(defun mastodon-notifications-notify ()
+(defun mastodon-notifications-notify (&optional count)
   "Send a desktop notification when we have unread notifications.
 Uses `notifications-notify'."
-  (let ((count (mastodon-notifications--get-unread-count)))
-    (when (> 0 count)
+  (let ((count (or count (mastodon-notifications--get-unread-count))))
+    (when (> count 0)
       (alert (format "New notifications: <b>%s</b>" count)
              :title "mastodon.el"))))
 
@@ -1050,9 +1050,8 @@ Calls `mastodon-tl--update'."
   (let ((count (alist-get 'count resp)))
     (when (> count 0)
       (if (not (mastodon-tl--buffer-type-eq 'notifications))
-          (progn
-            (mastodon-notifications-notify)
-            (message "New mastodon.el notification(s): %s" count))
+          (mastodon-notifications-notify count)
+        ;; (message "New mastodon.el notificatigon(s): %s" count))
         ;; run updates if in notifs buffer:
         (message "Updating mastodon.el notifications...")
         (undo-boundary)
