@@ -40,6 +40,7 @@
 (eval-when-compile (require 'subr-x))
 (require 'url)
 (require 'thingatpt)
+(require 'alert)
 (require 'shr)
 
 (require 'mastodon-http)
@@ -203,6 +204,19 @@ and X others...\"."
 (defcustom mastodon-notifications-updates-interval 60
   "How often to check for new notifications, in seconds."
   :type '(integer))
+
+(defcustom mastodon-notifications-alert-style 'alert-default-style
+  "The type of alert.el style to use for mastodon.el notification alerts.
+If you have alert.el configured elsewhere, this will not override your
+configuration, it merely sets the `alert-default-style' variable temporarily."
+  :type
+  `(choice
+    ,@(append
+       '((const :tag "alert.el default"
+                :value alert-default-style))
+       (cl-loop for x in alert-styles
+                collect (list 'const :tag (plist-get (cdr x) :title)
+                              :value (car x))))))
 
 (defun mastodon-kill-window ()
   "Quit window and delete helper."

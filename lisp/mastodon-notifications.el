@@ -34,6 +34,7 @@
 (require 'cl-lib)
 (require 'mastodon-widget)
 (require 'map)
+(require 'alert)
 
 (autoload 'mastodon-http--api "mastodon-http")
 (autoload 'mastodon-http--get-params-async-json "mastodon-http")
@@ -75,6 +76,7 @@
 (autoload 'mastodon-tl--init-sync "mastodon-tl")
 (autoload 'mastodon-http--get-json-async "mastodon-http")
 (autoload 'mastodon-live-buffers "mastodon")
+(autoload 'mastodon-tl--update "mastodon-tl")
 
 ;; notifications defcustoms moved into mastodon.el
 ;; as some need to be available without loading this file
@@ -96,6 +98,7 @@
 (defvar mastodon-tl--update-point)
 (defvar mastodon-notifications-updates-interval)
 (defvar mastodon-notifications-check-for-updates)
+(defvar mastodon-notifications-alert-style)
 
 ;;; VARIABLES
 
@@ -839,14 +842,11 @@ Status notifications are created when you call
 (defun mastodon-notifications-notify ()
   "Send a desktop notification when we have unread notifications.
 Uses `notifications-notify'."
-  (let ((count (mastodon-notifications--get-unread-count)))
-    (if (not (require 'notifications nil :noerror))
-        (user-error "notifications.el not available?")
-      ;; (when (> 0 count)
-      (notifications-notify
-       :title "mastodon.el"
-       :body (format "New notifications: <b>%s</b>"
-                     count)))))
+  (let ((count (mastodon-notifications--get-unread-count))
+        (alert-default-style mastodon-notifications-alert-style))
+    (when (> 0 count)
+      (alert (format "New notifications: <b>%s</b>" count)
+             :title "mastodon.el"))))
 
 ;;; NOTIFICATION REQUESTS / FILTERING / POLICY
 
@@ -1007,10 +1007,17 @@ Also nil the variable."
 (defun mastodon-notifications--update-with-timer ()
   "Run a timer to update notifications. Added to `mastodon-mode-hook'."
   ;; if no buffers: cancel our timer:
-  ;; FIXME: fails on load first masto buffer!
-  ;; `mastodon-mode-hook' necessariliy runs before we have buf-spec.
-  ;; if we set buf-spec before enabling mode, buf-spec is lost
-  (if (not (mastodon-live-buffers))
+  (if (and (not (mastodon-live-buffers))
+           ;; if we are loading a first mastodon buffer, the previous
+           ;; check fails, as `mastodon-mode-hook' necessariliy runs
+           ;; before we have buf-spec, which
+           ;; `mastodon-tl--get-buffer-type' depends on, and if we set
+           ;; buf-spec before enabling the mode, buf-spec is lost. so
+           ;; let's also check if the current buffer prefix is *mastodon-,
+           ;; which it will be when first calling `mastodon' at least
+           ;; (though not necessarily when loading other first mastodon.el
+           ;; buffers, such as new toot):
+           (not (string-prefix-p "*mastodon-" (buffer-name))))
       ;; if not masto buffers: cancel everything:
       (mastodon-notifications-cancel-timer)
     (when mastodon-notifications-check-for-updates
@@ -1029,8 +1036,7 @@ Calls `mastodon-tl--update'."
          (url (mastodon-http--api endpoint
                                   (when mastodon-group-notifications "v2"))))
     (mastodon-http--get-json-async
-     url nil
-     #'mastodon-notifications--update-check-cb)))
+     url nil #'mastodon-notifications--update-check-cb)))
 
 (defun mastodon-notifications--update-check-cb (resp)
   "Callback functions for handling unread notifs count response RESP."
