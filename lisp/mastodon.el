@@ -205,10 +205,11 @@ and X others...\"."
   "How often to check for new notifications, in seconds."
   :type '(integer))
 
-(defcustom mastodon-notifications-alert-style 'alert-default-style
+(defcustom mastodon-notifications-alert-style alert-default-style
   "The type of alert.el style to use for mastodon.el notification alerts.
-If you have alert.el configured elsewhere, this will not override your
-configuration, it merely sets the `alert-default-style' variable temporarily."
+Currently, if you customize this variable, you need to restart emacs for
+it to take effect, or if you don't have any other alert.el rules set up,
+you can nil `alert-internal-configuration' and reload mastodon.el"
   :type
   `(choice
     ,@(append

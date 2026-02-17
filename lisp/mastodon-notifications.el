@@ -839,11 +839,18 @@ Status notifications are created when you call
          (resp (mastodon-http--get-json url)))
     (alist-get 'count resp)))
 
+(alert-add-rule :mode 'mastodon-mode
+                :status '(buried visible idle selected)
+                ;; FIXME: if user configures this variable, we need to
+                ;; remove this rule and re-add it! or they need to restart
+                ;; emacs?:
+                :style mastodon-notifications-alert-style
+                :continue t)
+
 (defun mastodon-notifications-notify ()
   "Send a desktop notification when we have unread notifications.
 Uses `notifications-notify'."
-  (let ((count (mastodon-notifications--get-unread-count))
-        (alert-default-style mastodon-notifications-alert-style))
+  (let ((count (mastodon-notifications--get-unread-count)))
     (when (> 0 count)
       (alert (format "New notifications: <b>%s</b>" count)
              :title "mastodon.el"))))
@@ -1041,18 +1048,17 @@ Calls `mastodon-tl--update'."
 (defun mastodon-notifications--update-check-cb (resp)
   "Callback functions for handling unread notifs count response RESP."
   (let ((count (alist-get 'count resp)))
-    (if (> count 0)
-        (if (not (mastodon-tl--buffer-type-eq 'notifications))
-            (progn
-              (mastodon-notifications-notify)
-              (message "New mastodon.el notification(s): %s" count))
-          ;; run updates if in notifs buffer:
-          (message "Updating mastodon.el notifications...")
-          (undo-boundary)
-          (mastodon-tl--update)
-          (undo-boundary)
-          (message "Updating mastodon.el notifications... Done."))
-      (message "No new mastodon.el notifications")) ;; just to show we ran
+    (when (> count 0)
+      (if (not (mastodon-tl--buffer-type-eq 'notifications))
+          (progn
+            (mastodon-notifications-notify)
+            (message "New mastodon.el notification(s): %s" count))
+        ;; run updates if in notifs buffer:
+        (message "Updating mastodon.el notifications...")
+        (undo-boundary)
+        (mastodon-tl--update)
+        (undo-boundary)
+        (message "Updating mastodon.el notifications... Done.")))
     ;; cancel and set new timer:
     (mastodon-notifications-cancel-timer)
     (mastodon-notifications--update-with-timer)))
