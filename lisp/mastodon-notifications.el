@@ -1020,7 +1020,7 @@ Also nil the variable."
 
 (defun mastodon-notifications--update-with-timer ()
   "Run a timer to update notifications. Added to `mastodon-mode-hook'."
-  ;; if no buffers: cancel our timer:
+  ;; if no buffers: cancel our timer and do nothing else:
   (if (and (not (mastodon-live-buffers))
            ;; if we are loading a first mastodon buffer, the previous
            ;; check fails, as `mastodon-mode-hook' necessariliy runs
@@ -1035,8 +1035,23 @@ Also nil the variable."
       ;; if not masto buffers: cancel everything:
       (mastodon-notifications-cancel-timer)
     (when mastodon-notifications-check-for-updates
-      ;; FIXME: it is poss for this var to be non-nil but no such timer in
-      ;; `list-timers':
+      ;; if a timer has already run but somehow the variable has not been
+      ;; nilled, assume it is a leftover and cancel it, otherwise our
+      ;; unless check below will always fail and no new timer will be
+      ;; created.
+      ;; NB: this gets called:
+      ;; - on creating a new mastodon.el buffer,
+      ;; - if an existing timer is run.
+      ;; in both cases, `timerp' should fail, but sometimes we have a
+      ;; zombie one somehow:
+      (when (and (timerp mastodon-notifications-timer)
+                 (timer--triggered mastodon-notifications-timer))
+        (mastodon-notifications-cancel-timer))
+      ;; maybe we can remove this unless check, and just always cancel and
+      ;; restart? that would have the effect of making the timer always
+      ;; run mastodon-notifications-updates-interval seconds after opening
+      ;; a new mastodon.el buffer, or effectively only showing an alert if
+      ;; the user stops opening buffers:
       (unless mastodon-notifications-timer
         ;; set new timer if we don't have one:
         (setq mastodon-notifications-timer
