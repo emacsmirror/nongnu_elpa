@@ -118,6 +118,9 @@
   "List of notification types for which grouping is implemented.
 Used in `mastodon-notifications-get'")
 
+(defvar mastodon-notifications-notify-shown nil
+  "Whether recent notifications have been seen by the user or not.")
+
 (defgroup mastodon nil
   "Interface with Mastodon."
   :prefix "mastodon-"
@@ -207,7 +210,7 @@ and X others...\"."
 
 (defcustom mastodon-notifications-alert-style alert-default-style
   "The type of alert.el style to use for mastodon.el notification alerts.
-Currently, if you customize this variable, you need to restart emacs for
+Currently, if you customize this variable, you need to restart Emacs for
 it to take effect, or if you don't have any other alert.el rules set up,
 you can nil `alert-internal-configuration' and reload mastodon.el"
   :type
@@ -476,7 +479,9 @@ MAX-ID is a request parameter for pagination."
          "v1"
        "v2"))
     (with-current-buffer (get-buffer-create buffer)
-      (use-local-map mastodon-notifications--map))
+      (use-local-map mastodon-notifications--map)
+      (when mastodon-notifications-notify-shown
+        (setq mastodon-notifications-notify-shown nil)))
     (message "Loading your notifications... Done")))
 
 ;;;###autoload

@@ -851,9 +851,12 @@ Status notifications are created when you call
   "Send a desktop notification when we have unread notifications.
 Uses `notifications-notify'."
   (let ((count (or count (mastodon-notifications--get-unread-count))))
-    (when (> count 0)
+    (when (and (> count 0)
+               (not mastodon-notifications-notify-shown))
       (alert (format "New notifications: <b>%s</b>" count)
-             :title "mastodon.el"))))
+             :title "mastodon.el")
+      ;; we nil this in `mastodon-notifications-get':
+      (setq mastodon-notifications-notify-shown t))))
 
 ;;; NOTIFICATION REQUESTS / FILTERING / POLICY
 
