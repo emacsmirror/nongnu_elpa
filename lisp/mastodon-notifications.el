@@ -848,23 +848,6 @@ Status notifications are created when you call
                 :style mastodon-notifications-alert-style
                 :continue t)
 
-(defvar mastodon-notifications-notify-shown)
-
-(defun mastodon-notifications-notify (&optional count force)
-  "Send a desktop notification when we have COUNT unread notifications.
-If COUNT is nil, fetch again from server (synchronously).
-Uses `alert.el'.
-When FORCE, skip all checks and show an alert (for debugging)."
-  (let ((count (or count (mastodon-notifications--get-unread-count))))
-    (when (or force
-              (and (> count 0)
-                   (not mastodon-notifications-notify-shown)))
-      (alert (format "New notifications: <b>%s</b>" count)
-             :title "mastodon.el")
-      (unless force
-      ;; we nil this in `mastodon-notifications-get':
-        (setq mastodon-notifications-notify-shown t)))))
-
 ;;; REVOKE QUOTED STATUS
 ;; POST /api/v1/statuses/:id/quotes/:quoting_status_id/revoke.
 (defun mastodon-notifications-revoke-post-quote ()
@@ -1030,6 +1013,8 @@ NOTE means to include a profile note."
 
 ;;; UPDATES TIMER
 
+(defvar mastodon-notifications-notify-shown)
+
 (defvar mastodon-notifications-timer nil
   "Timer to update the notifs buffer.")
 
@@ -1039,6 +1024,25 @@ Also nil the variable."
   (when (timerp mastodon-notifications-timer)
     (cancel-timer mastodon-notifications-timer))
   (setq mastodon-notifications-timer nil))
+
+(defun mastodon-notifications-notify (&optional count force)
+  "Send a desktop notification when we have COUNT unread notifications.
+If COUNT is nil, fetch again from server (synchronously).
+Uses `alert.el'.
+When FORCE, skip all checks and show an alert (for debugging)."
+  (let ((count (or count (mastodon-notifications--get-unread-count))))
+    (when (or force
+              (and (> count 0)
+                   (not mastodon-notifications-notify-shown)))
+      (alert (format "New notifications: <b>%s</b>" count)
+             :title "mastodon.el"
+             ;; adding an alert.el rule as per above doesn't always work
+             ;; if a non-mastodon.el buffer is active (despite the 'buried
+             ;; status setting), so let's just give it a masto buffer:
+             :buffer (car (mastodon-live-buffers)))
+      (unless force
+        ;; we nil this in `mastodon-notifications-get':
+        (setq mastodon-notifications-notify-shown t)))))
 
 (defun mastodon-notifications--update-with-timer ()
   "Run a timer to update notifications. Added to `mastodon-mode-hook'."
@@ -1100,7 +1104,7 @@ Callback is `mastodon-notifications--update-check-cb'."
         ;; run updates if in notifs buffer:
         (message "Updating mastodon.el notifications...")
         (undo-boundary)
-        (mastodon-tl--update)
+        (mastodon-tl-update)
         (undo-boundary)
         (message "Updating mastodon.el notifications... Done.")))
     ;; cancel and set new timer:
