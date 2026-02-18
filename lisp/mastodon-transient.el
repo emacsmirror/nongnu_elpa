@@ -73,7 +73,8 @@ the inner key part."
   (let* ((split (split-string key "[][]"))
          (array-key (cadr split)))
     (if (or (= 1 (length split)) ;; no split
-            (member array-key '("privacy" "sensitive" "language")))
+            (member array-key
+                    '("quote_policy" "privacy" "sensitive" "language")))
         key
       array-key)))
 
@@ -163,7 +164,10 @@ the format fields.X.keyname."
     :choices (lambda () mastodon-toot-visibility-settings-list))
    ("s" "mark sensitive" "source.sensitive" :alist-key source.sensitive :class tp-bool)
    ("g" "default language" "source.language" :alist-key source.language :class tp-option
-    :choices (lambda () mastodon-iso-639-regional))]
+    :choices (lambda () mastodon-iso-639-regional))
+   ("q" "quote policy" "source.quote_policy" :alist-key source.quote_policy
+    :class tp-option
+    :choices (lambda () mastodon-profiles-quote-policy-types))]
   ["Update"
    ("C-c C-c" "Save settings" mastodon-user-settings-update)
    ("C-x C-k" :info "Revert all changes")]
