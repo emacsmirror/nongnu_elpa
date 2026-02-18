@@ -850,17 +850,20 @@ Status notifications are created when you call
 
 (defvar mastodon-notifications-notify-shown)
 
-(defun mastodon-notifications-notify (&optional count)
+(defun mastodon-notifications-notify (&optional count force)
   "Send a desktop notification when we have COUNT unread notifications.
-If COUNT is nil, fetch again from server.
-Uses `alert.el'."
+If COUNT is nil, fetch again from server (synchronously).
+Uses `alert.el'.
+When FORCE, skip all checks and show an alert (for debugging)."
   (let ((count (or count (mastodon-notifications--get-unread-count))))
-    (when (and (> count 0)
-               (not mastodon-notifications-notify-shown))
+    (when (or force
+              (and (> count 0)
+                   (not mastodon-notifications-notify-shown)))
       (alert (format "New notifications: <b>%s</b>" count)
              :title "mastodon.el")
+      (unless force
       ;; we nil this in `mastodon-notifications-get':
-      (setq mastodon-notifications-notify-shown t))))
+        (setq mastodon-notifications-notify-shown t)))))
 
 ;;; REVOKE QUOTED STATUS
 ;; POST /api/v1/statuses/:id/quotes/:quoting_status_id/revoke.
