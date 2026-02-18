@@ -1957,7 +1957,8 @@ TOOT is the data for the quoting toot."
                        (mastodon-tl--current-filters .filtered))))
         ;; TODO: tailor non-disply of quote based on quote 'state'
         ;; `mastodon-tl--quote-states':
-        (when (string= "accepted" state)
+        (when (or (string= "pending" state)
+                  (string= "accepted" state))
           (propertize
            (if-let* ((match (or (assoc "warn" filters)
                                 (assoc "hide" filters))))
@@ -1968,15 +1969,18 @@ TOOT is the data for the quoting toot."
              (concat
               "\n" quotemark "\n"
               ;; author byline without horiz bar/stats:
-              (mastodon-tl--byline-author quoted nil :domain :base)
-              "\n"
-              (propertize ;; buttonize quoted toot body
-               ;; quoted text:
-               (mastodon-tl--content quoted)
-               'button t
-               'keymap mastodon-tl--link-keymap
-               'help-echo "Load quoted toot"
-               'mouse-face '(:inherit (highlight link) :underline nil))))
+              (if (string= state "pending")
+                  "[quote pending]"
+                (concat
+                 (mastodon-tl--byline-author quoted nil :domain :base)
+                 "\n"
+                 (propertize ;; buttonize quoted toot body
+                  ;; quoted text:
+                  (mastodon-tl--content quoted)
+                  'button t
+                  'keymap mastodon-tl--link-keymap
+                  'help-echo "Load quoted toot"
+                  'mouse-face '(:inherit (highlight link) :underline nil))))))
            'line-prefix bar
            'wrap-prefix bar
            'quote-url .url
