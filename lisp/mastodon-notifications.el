@@ -836,6 +836,7 @@ Status notifications are created when you call
   (let* ((endpoint "notifications/unread_count")
          (url (mastodon-http--api endpoint
                                   (when mastodon-group-notifications "v2")))
+         ;; NB: sync request!:
          (resp (mastodon-http--get-json url nil :silent)))
     (alist-get 'count resp)))
 
@@ -847,9 +848,12 @@ Status notifications are created when you call
                 :style mastodon-notifications-alert-style
                 :continue t)
 
+(defvar mastodon-notifications-notify-shown)
+
 (defun mastodon-notifications-notify (&optional count)
-  "Send a desktop notification when we have unread notifications.
-Uses `notifications-notify'."
+  "Send a desktop notification when we have COUNT unread notifications.
+If COUNT is nil, fetch again from server.
+Uses `alert.el'."
   (let ((count (or count (mastodon-notifications--get-unread-count))))
     (when (and (> count 0)
                (not mastodon-notifications-notify-shown))
@@ -1040,13 +1044,14 @@ Also nil the variable."
                            nil #'mastodon-notifications--update-check))))))
 
 (defun mastodon-notifications--update-check ()
-  "Function called by `mastodon-notifications--update-with-timer'.
-Calls `mastodon-tl--update'."
+  "Get unread notifications count from the server, asynchronously.
+Called by `mastodon-notifications--update-with-timer'.
+Callback is `mastodon-notifications--update-check-cb'."
   (let* ((endpoint "notifications/unread_count")
          (url (mastodon-http--api endpoint
                                   (when mastodon-group-notifications "v2"))))
     (mastodon-http--get-json-async
-     url nil #'mastodon-notifications--update-check-cb)))
+     url nil :silent #'mastodon-notifications--update-check-cb)))
 
 (defun mastodon-notifications--update-check-cb (resp)
   "Callback functions for handling unread notifs count response RESP."

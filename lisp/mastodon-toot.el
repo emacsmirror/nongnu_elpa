@@ -352,7 +352,7 @@ property, and call BODY-FUN on them."
 NO-TOOT means we are not calling from a toot buffer."
   (mastodon-http--get-json-async
    (mastodon-http--api "instance")
-   nil
+   nil :silent
    'mastodon-toot--get-max-toot-chars-callback no-toot))
 
 (defun mastodon-toot--get-max-toot-chars-callback (json-response

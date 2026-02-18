@@ -46,7 +46,6 @@
 (autoload 'mastodon-auth--get-account-name "mastodon-auth.el")
 (autoload 'mastodon-http--api "mastodon-http.el")
 (autoload 'mastodon-http--get-json "mastodon-http.el")
-(autoload 'mastodon-http--get-json-async "mastodon-http.el")
 (autoload 'mastodon-http--get-response "mastodon-http")
 (autoload 'mastodon-http--patch "mastodon-http")
 (autoload 'mastodon-http--patch-json "mastodon-http")

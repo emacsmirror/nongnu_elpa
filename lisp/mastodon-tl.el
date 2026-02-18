@@ -3342,11 +3342,12 @@ report the account for spam."
     (mastodon-http--get-json url args)))
 
 (defun mastodon-tl--more-json-async
-    (endpoint id &optional params callback &rest cbargs)
+    (endpoint id &optional params silent callback &rest cbargs)
   "Return JSON for timeline ENDPOINT before ID.
 Then run CALLBACK with arguments CBARGS.
 PARAMS is used to send any parameters needed to correctly update
-the current view."
+the current view.
+Optionally make the request SILENT."
   (let* ((args `(("max_id" . ,(mastodon-tl--as-string id))))
          (args (append args params))
          (url (mastodon-http--api
@@ -3355,9 +3356,9 @@ the current view."
                               (string= endpoint "notifications"))
                          (string-suffix-p "search" endpoint))
                  "v2"))))
-    (apply #'mastodon-http--get-json-async url args callback cbargs)))
+    (apply #'mastodon-http--get-json-async url args silent callback cbargs)))
 
-(defun mastodon-tl--more-json-async-offset (endpoint &optional params
+(defun mastodon-tl--more-json-async-offset (endpoint &optional params silent
                                                      callback &rest cbargs)
   "Return JSON for ENDPOINT, using the \"offset\" query param.
 This is used for pagination with endpoints that implement the
@@ -3366,7 +3367,8 @@ This is used for pagination with endpoints that implement the
 PARAMS are the update parameters, see
 `mastodon-tl--update-params'. These (\"limit\" and \"offset\")
 must be set in `mastodon-tl--buffer-spec' for pagination to work.
-Then run CALLBACK with arguments CBARGS."
+Then run CALLBACK with arguments CBARGS.
+Optionally make the request SILENT."
   (let* ((params (or params (mastodon-tl--update-params)))
          (limit (string-to-number
                  (alist-get "limit" params nil nil #'string=)))
@@ -3380,7 +3382,7 @@ Then run CALLBACK with arguments CBARGS."
                  "v2"))))
     ;; increment:
     (setf (alist-get "offset" params nil nil #'string=) offset)
-    (apply #'mastodon-http--get-json-async url params callback cbargs)))
+    (apply #'mastodon-http--get-json-async url params silent callback cbargs)))
 
 (defun mastodon-tl--updated-json (endpoint id &optional params version)
   "Return JSON for timeline ENDPOINT since ID.
@@ -3484,14 +3486,14 @@ and profile pages when showing followers or accounts followed."
                (mastodon-tl--search-buffer-p))
            (mastodon-tl--more-json-async-offset
             (mastodon-tl--endpoint)
-            (mastodon-tl--update-params)
+            (mastodon-tl--update-params) nil
             'mastodon-tl--more* (current-buffer) (point)))
           (t ;; max_id paginate (timelines, items with ids/timestamps):
            (let ((max-id (mastodon-tl--oldest-id))
                  (params (mastodon-tl--update-params)))
              (mastodon-tl--more-json-async
               (mastodon-tl--endpoint)
-              max-id params
+              max-id params nil
               'mastodon-tl--more*
               (current-buffer) (point) nil max-id))))))
 
@@ -3784,7 +3786,8 @@ NO-BYLINE means just insert toot body, used for announcements."
      (if headers
          #'mastodon-http--get-response-async
        #'mastodon-http--get-json-async)
-     url params 'mastodon-tl--init*
+     url params nil ;; not silent
+     'mastodon-tl--init*
      buffer endpoint update-function headers params hide-replies
      instance no-byline)))
 
