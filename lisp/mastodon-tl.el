@@ -1530,7 +1530,7 @@ SENSITIVE is a flag from the item's JSON data."
 ;; patch `shr-browse-image' to accept url arg:
 (defun mastodon-tl-shr-browse-image (&optional arg)
   "Browse the image under point.
-With a prefix argument, copy the URL of the image instead.
+With prefix argument ARG, copy the URL of the image instead.
 If URL is a string, use it rather than the image-url property at point."
   (interactive "P")
   (let ((prop (get-text-property (point) 'image-url)))
@@ -3901,7 +3901,7 @@ TYPE is a notification type."
 ;;; NODEINFO
 
 (defun mastodon-tl--get-nodeinfo (instance &optional version)
-  "Return Nodeinfo data for INSTANCE, optionally for version."
+  "Return Nodeinfo data for INSTANCE, optionally for VERSION."
   ;; NB: not in the API:
   (let ((url (format "https://%s/nodeinfo/%s" instance (or version "2.0"))))
     (mastodon-http--get-json url)))
@@ -3923,7 +3923,7 @@ https://nodeinfo.diaspora.software."
         (mastodon-tl--render-nodeinfo data)))))
 
 (defun mastodon-tl--render-nodeinfo (data)
-  "Render Nodeinfo DADA as message."
+  "Render Nodeinfo DATA as message."
   (let-alist data
     (message
      "%s"
