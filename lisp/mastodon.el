@@ -258,10 +258,11 @@ Also nil `mastodon-auth--token-alist'."
     (define-key map (kbd "l")      #'recenter-top-bottom)
     ;; navigation between timelines
     (define-key map (kbd "#")      #'mastodon-tl-get-tag-timeline)
-    (define-key map (kbd "\"")     #'mastodon-tl-list-followed-tags)
-    (define-key map (kbd "C-\"")     #'mastodon-tl-jump-to-followed-tag)
+    (define-key map (kbd "C-#")    #'mastodon-tl-list-followed-tags)
+    ;; (define-key map (kbd "\"")     #'mastodon-tl-list-followed-tags)
+    (define-key map (kbd "C-\"")   #'mastodon-tl-jump-to-followed-tag)
     (define-key map (kbd "'")      #'mastodon-tl-followed-tags-timeline)
-    (define-key map (kbd "C-'")   #'mastodon-tl-tag-group-timeline)
+    (define-key map (kbd "C-'")    #'mastodon-tl-tag-group-timeline)
     (define-key map (kbd "A")      #'mastodon-profile-get-toot-author)
     (define-key map (kbd "F")      #'mastodon-tl-get-federated-timeline)
     (define-key map (kbd "H")      #'mastodon-tl-get-home-timeline)
@@ -283,6 +284,7 @@ Also nil `mastodon-auth--token-alist'."
     (define-key map (kbd "f")      #'mastodon-toot-toggle-favourite)
     (define-key map (kbd "k")      #'mastodon-toot-toggle-bookmark)
     (define-key map (kbd "r")      #'mastodon-toot-reply)
+    (define-key map (kbd "\"")     #'mastodon-toot-quote)
     (define-key map (kbd "C")      #'mastodon-toot-copy-toot-url)
     (define-key map (kbd "o")      #'mastodon-toot-browse-toot-url)
     (define-key map (kbd "v")      #'mastodon-tl-poll-vote)
@@ -443,13 +445,15 @@ FORCE means to fetch from the server in any case and update
   (alist-get 'version (mastodon-instance-data)))
 
 ;;;###autoload
-(defun mastodon-toot (&optional user reply-to-id reply-json)
+(defun mastodon-toot (&optional user reply-to-id reply-json
+                                quote-id quote-json visibility)
   "Update instance with new toot. Content is captured in a new buffer.
 If USER is non-nil, insert after @ symbol to begin new toot.
 If REPLY-TO-ID is non-nil, attach new toot to a conversation.
 If REPLY-JSON is the json of the toot being replied to."
   (interactive)
-  (mastodon-toot--compose-buffer user reply-to-id reply-json))
+  (mastodon-toot--compose-buffer user reply-to-id reply-json
+                                 nil nil quote-id quote-json visibility))
 
 ;;;###autoload
 (defun mastodon-notifications-get (&optional type buffer-name max-id)

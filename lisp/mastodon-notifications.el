@@ -481,7 +481,7 @@ TYPE is notification type, used for non-group notifs."
        "\n"
        ;; display quoted post:
        (when (alist-get 'quote toot)
-         (mastodon-tl--insert-quoted (alist-get 'quote toot)))
+         (mastodon-tl--insert-quoted (alist-get 'quote toot) toot))
        ;; actual byline:
        (if (member type '("severed_relationships" "moderation_warning"))
            (propertize
@@ -861,6 +861,25 @@ Uses `alert.el'."
              :title "mastodon.el")
       ;; we nil this in `mastodon-notifications-get':
       (setq mastodon-notifications-notify-shown t))))
+
+;;; REVOKE QUOTED STATUS
+;; POST /api/v1/statuses/:id/quotes/:quoting_status_id/revoke.
+(defun mastodon-notifications-revoke-post-quote ()
+  "Revoke the quote of a post from a quote notification."
+  (interactive)
+  ;; SCOPE required: check quote notif type, which will have user post in
+  ;; the "status" attribute:
+  (let* ((notif (mastodon-tl--property 'item-json :no-move))
+         (id (map-nested-elt notif '(quote quoted_status id)))
+         (quote-id (alist-get 'id notif))
+         (url (mastodon-http--api (format "statuses/%s/quotes/%s/revoke"
+                                          id quote-id))))
+    (when (y-or-n-p "Revoke quote of post at point?")
+      (let ((resp (mastodon-http--post url)))
+        (mastodon-http--triage
+         resp
+         (lambda (resp)
+           (message "Quote of post revoked!")))))))
 
 ;;; NOTIFICATION REQUESTS / FILTERING / POLICY
 

@@ -97,12 +97,14 @@
 (autoload 'mastodon-notifications--empty-group-json-p "mastodon-notifications")
 (autoload 'mastodon-search--print-tags "mastodon-search")
 (autoload 'mastodon-profile-show-user "mastodon-profile")
+(autoload 'mastodon-toot--own-toot-p "mastodon-toot")
 
 (defvar mastodon-toot--visibility)
 (defvar mastodon-toot-mode)
 (defvar mastodon-active-user)
 (defvar mastodon-images-in-notifs)
 (defvar mastodon-group-notifications)
+(defvar mastodon-profiles-quote-policy-types)
 
 (when (require 'mpv nil :no-error)
   (declare-function mpv-start "mpv"))
@@ -807,8 +809,8 @@ The result is added as an attachments property to author-byline."
 (defun mastodon-tl--top-byline (toot)
   "Format a boost or reply top (action) byline for TOOT.
 If it is a self-reply, return 'continued thread'.
-If it is a non-self-reply, return 'in reply to $username'.
-If it is a boost, return '$username boosted'."
+If it is a non-self-reply, return \\='in reply to $username'.
+If it is a boost, return \\='$username boosted'."
   (let ((reblog (alist-get 'reblog toot))
         (reply-acc-id (alist-get 'in_reply_to_account_id toot)))
     (cond
@@ -859,6 +861,7 @@ LETTER is a string, F for favourited, B for boosted, or K for bookmarked."
             (propertize letter 'face 'mastodon-boost-fave-face
                         ;; emojify breaks this for 🔖:
                         'help-echo (format "You have %s this status."
+                                           ;; FIXME: this is often nil
                                            help-string)))))
 
 (defun mastodon-tl--image-trans-check ()
@@ -1292,9 +1295,13 @@ LINK-TYPE is the type of link to produce."
 Used for hitting RET on a given link."
   (interactive "d")
   (let ((link-type (get-text-property pos 'mastodon-tab-stop))
-        (cont-thread (mastodon-tl--property 'continued-thread :nomove)))
+        (cont-thread (mastodon-tl--property 'continued-thread :nomove))
+        (quote-toot (mastodon-tl--property 'quote-url :nomove)))
     (cond (cont-thread
            (mastodon-tl-continued-thread-load))
+          (quote-toot
+           (let ((url (mastodon-tl--property 'quote-url :nomove)))
+             (mastodon-url-lookup url)))
           ((eq link-type 'content-warning)
            (mastodon-tl--toggle-spoiler-text pos))
           ((eq link-type 'hashtag)
@@ -1426,22 +1433,27 @@ FILTER is a string to use as a filter warning spoiler instead."
      cw
      (propertize
       (mastodon-tl--content toot)
-      'invisible
-      (or filter ;; filters = invis
-          (let ((cust mastodon-tl--expand-content-warnings))
-            (if (not (eq 'server cust))
-                (not cust) ;; opp to setting
-              ;; respect server setting:
-              ;; If something goes wrong reading prefs,
-              ;; just return t so CWs fold by default.
-              (condition-case nil
-                  (if (eq :json-false
-                          (mastodon-profile--get-preferences-pref
-                           'reading:expand:spoilers))
-                      t
-                    nil)
-                (error t)))))
+      'invisible (mastodon-tl--spoiler-invisible-maybe filter)
       'mastodon-content-warning-body t))))
+
+(defun mastodon-tl--spoiler-invisible-maybe (&optional filter)
+  "Set the invisible property for a post with a spoiler.
+Also used to set invisibility for quoted posts.
+We respect `mastodon-tl--expand-content-warnings'.
+If it is server, we check the user's preference.
+FILTER means we go invisible."
+  (or filter ;; filters = invis
+      (let ((cust mastodon-tl--expand-content-warnings))
+        (if (not (eq 'server cust))
+            (not cust) ;; opp to setting
+          ;; respect server setting:
+          ;; If something goes wrong reading prefs,
+          ;; just return t so CWs fold by default.
+          (condition-case nil
+              (eq :json-false
+                  (mastodon-profile--get-preferences-pref
+                   'reading:expand:spoilers))
+            (error t))))))
 
 
 ;;; MEDIA
@@ -1870,9 +1882,18 @@ in which case play first video or gif from current toot."
   "Retrieve text content from TOOT.
 Runs `mastodon-tl--render-text' and fetches poll or media."
   (let* ((content (mastodon-tl--field 'content toot))
+         (quote-p (mastodon-tl--field 'quote toot))
+         (rendered (mastodon-tl--render-text content toot))
+         (stripped-maybe (if (not quote-p)
+                             rendered
+                           (with-temp-buffer ;; strip quoted toot URL:
+                             (insert rendered)
+                             (goto-char (point-min))
+                             (kill-line 2)
+                             (buffer-string))))
          (poll-p (mastodon-tl--field 'poll toot))
          (media-p (mastodon-tl--field 'media_attachments toot)))
-    (concat (mastodon-tl--render-text content toot)
+    (concat stripped-maybe
             (when poll-p
               (mastodon-tl--format-poll
                (mastodon-tl--field 'poll toot))) ;; toot or reblog
@@ -1912,26 +1933,89 @@ Runs `mastodon-tl--render-text' and fetches poll or media."
           (goto-char (prop-match-end prop)))))
     list))
 
-(defun mastodon-tl--insert-quoted (data)
-  "Propertize quoted status DATA for insertion."
-  (let ((bar (concat " " (mastodon-tl--symbol 'reply-bar)))
-        (content (map-nested-elt data '(quoted_status content)))
-      ;; quote symbol hack:
-        (quotemark (propertize "“" 'face
-                               '(t :inherit success :weight bold
-                                   :height 1.8))))
-    (propertize
-     (concat quotemark "\n"
-      ;; author byline without horiz bar and toot stats:
-      (mastodon-tl--byline-author
-       (alist-get 'quoted_status data) nil :domain :base)
-      "\n"
-      ;; quoted text:
-      (mastodon-tl--render-text content
-                                (alist-get 'quoted_status data)))
-     'line-prefix bar
-     'wrap-prefix bar
-     'mastodon-quote data)))
+(defvar mastodon-tl--quote-states
+  '(pending accepted rejected revoked deleted
+            unauthorized blocked_account blocked_domain muted_account)
+  "A list of possible values for a quote state attribute.
+See https://docs.joinmastodon.org/entities/Quote/#state for details.")
+
+(defun mastodon-tl--insert-quoted (data toot)
+  "Propertize quoted status DATA for insertion.
+TOOT is the data for the quoting toot."
+  (let* ((bar (concat " " (mastodon-tl--symbol 'reply-bar)))
+         (state (alist-get 'state data))
+         ;; CW status of quoting toot:
+         (cw (not (string-empty-p
+                   (mastodon-tl--field 'spoiler_text toot))))
+         ;; quote symbol hack:
+         (quotemark (propertize "“" 'face
+                                '( :inherit success :weight bold
+                                   :height 1.8)))
+         (quoted (alist-get 'quoted_status data)))
+    (let-alist quoted
+      (let ((filters (when .filtered
+                       (mastodon-tl--current-filters .filtered))))
+        ;; TODO: tailor non-disply of quote based on quote 'state'
+        ;; `mastodon-tl--quote-states':
+        (when (or (string= "pending" state)
+                  (string= "accepted" state))
+          (propertize
+           (if-let* ((match (or (assoc "warn" filters)
+                                (assoc "hide" filters))))
+               ;; FIXME: "warn" should result in CW, but it should be
+               ;; a CW independent of post CW:
+               (concat "\n\n" quotemark "\n"
+                       "Quote hidden due to one of your filters")
+             (concat
+              "\n" quotemark "\n"
+              ;; author byline without horiz bar/stats:
+              (if (string= state "pending")
+                  "[quote pending]"
+                (concat
+                 (mastodon-tl--byline-author quoted nil :domain :base)
+                 "\n"
+                 (propertize ;; buttonize quoted toot body
+                  ;; quoted text:
+                  (mastodon-tl--content quoted)
+                  'button t
+                  'keymap mastodon-tl--link-keymap
+                  'help-echo "Load quoted toot"
+                  'mouse-face '(:inherit (highlight link) :underline nil))))))
+           'line-prefix bar
+           'wrap-prefix bar
+           'quote-url .url
+           'mastodon-content-warning-body (when cw t)
+           ;; TODO: respect filtering of quoted toot:
+           'invisible (when cw (mastodon-tl--spoiler-invisible-maybe))
+           'mastodon-quote data))))))
+
+;; PUT /api/v1/statuses/:id/interaction_policy
+(defun mastodon-tl--change-post-quote-policy ()
+  "Change the quote policy of the toot at point.
+Toot must be on you own."
+  (interactive)
+  ;; SCOPE: with own toot:
+  (let ((toot (mastodon-tl--property 'item-json :no-move)))
+    (if (not (mastodon-toot--own-toot-p toot))
+        (user-error "You can only set quote policy for your own posts")
+      (let* ((id (mastodon-tl--property 'item-id))
+             (current (car (map-nested-elt toot
+                                           '(quote_approval automatic))))
+             (choice (completing-read (format "Set quote policy [%s]: " current)
+                                      mastodon-profiles-quote-policy-types
+                                      nil :match))
+             (url (mastodon-http--api (format "statuses/%s/interaction_policy"
+                                              id)))
+             (resp (mastodon-http--put
+                    url `(("quote_approval_policy" . ,choice)))))
+        (mastodon-http--triage
+         resp
+         (lambda (resp)
+           (let* ((json (with-current-buffer resp
+                          (mastodon-http--process-json)))
+                  (set (or (car (map-nested-elt json '(quote_approval automatic)))
+                           "nobody"))) ;; nil on the server = nobody
+             (message "Quote policy for post updated to: %s!" set))))))))
 
 (defun mastodon-tl--insert-status
     (toot body &optional detailed-p thread domain unfolded no-byline
@@ -1953,9 +2037,8 @@ CW-EXPANDED means treat content warnings as unfolded."
          (toot-foldable
           (and mastodon-tl--fold-toots-at-length
                (length> body mastodon-tl--fold-toots-at-length)))
-         (cw-p (not
-                (string-empty-p
-                 (alist-get 'spoiler_text toot))))
+         (cw-p (not (string-empty-p
+                     (alist-get 'spoiler_text toot))))
          (body-tags (mastodon-tl--body-tags body))
          (quote (mastodon-tl--field 'quote toot)))
     (insert
@@ -1981,11 +2064,8 @@ CW-EXPANDED means treat content warnings as unfolded."
                             'wrap-prefix bar)
               body)
             ;; insert quote maybe:
-            (when (and quote
-                       (not (string= "deleted" (alist-get 'state quote))))
-              (concat "\n\n"
-                      (mastodon-tl--insert-quoted quote)
-                      ))))
+            (when quote
+              (mastodon-tl--insert-quoted quote toot))))
          (if (and toot-foldable unfolded cw-expanded)
              (mastodon-tl--read-more-or-less
               "LESS" cw-p (not cw-expanded))
@@ -2036,12 +2116,15 @@ title, and context."
 (defun mastodon-tl--filters-context ()
   "Return a string of the current buffer's filter context.
 Returns a member of `mastodon-views--filter-types'."
+  ;; FIXME: filters for bookmarks? = home?
   (let ((buf (mastodon-tl--get-buffer-type)))
     (cond ((or (eq buf 'local) (eq buf 'federated))
            "public")
           ((mastodon-tl--profile-buffer-p)
            "profile")
-          ((eq buf 'list-timeline)
+          (
+           ;; (eq buf 'list-timeline)
+           (or (eq buf 'list-timeline) (eq buf 'bookmarks))
            "home") ;; lists are "home" filter
           (t ;; thread, notifs, home:
            (symbol-name buf)))))

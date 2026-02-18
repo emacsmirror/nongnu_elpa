@@ -241,6 +241,9 @@ Takes its form from `window-configuration-to-register'.")
 (defvar mastodon-toot-current-toot-text nil
   "The text of the toot being composed.")
 
+(defvar-local mastodon-toot-quote-policy nil
+  "The quote policy for the current toot.")
+
 (persist-defvar mastodon-toot-draft-toots-list nil
   "A list of toots that have been saved as drafts.
 For the moment we just put all composed toots in here, as we want
@@ -331,8 +334,9 @@ property, and call BODY-FUN on them."
     (define-key map (kbd "C-c C-v") #'mastodon-toot-change-visibility)
     (define-key map (kbd "C-c C-e") #'mastodon-toot-insert-emoji)
     (define-key map (kbd "C-c C-a") #'mastodon-toot-attach-media)
-    (define-key map (kbd "C-c !") #'mastodon-toot-clear-all-attachments)
+    (define-key map (kbd "C-c !")   #'mastodon-toot-clear-all-attachments)
     (define-key map (kbd "C-c C-p") #'mastodon-toot-create-poll)
+    (define-key map (kbd "C-c C-u") #'mastodon-toot-set-quote-policy)
     (define-key map (kbd "C-c C-o") #'mastodon-toot-clear-poll)
     (define-key map (kbd "C-c C-l") #'mastodon-toot-set-toot-language)
     (define-key map (kbd "C-c C-s") #'mastodon-toot-schedule-toot)
@@ -734,7 +738,8 @@ MEDIA is the media_attachments data for a status from the server."
           media))
 
 (defun mastodon-toot--set-toot-properties
-    (reply-id visibility cw lang &optional scheduled scheduled-id media poll)
+    (reply-id visibility cw lang
+              &optional scheduled scheduled-id media poll quote-id)
   "Set the toot properties for the current redrafted or edited toot.
 REPLY-ID, VISIBILITY, CW, SCHEDULED, and LANG are the properties to set.
 MEDIA is the media_attachments data for a status from the server."
@@ -751,6 +756,7 @@ MEDIA is the media_attachments data for a status from the server."
       (mastodon-toot--set-toot-media-attachments media))
     (when poll
       (mastodon-toot--server-poll-to-local poll))
+    (setq mastodon-toot-quote-id quote-id)
     (mastodon-toot--refresh-attachments-display)
     (mastodon-toot--update-status-fields)))
 
@@ -932,7 +938,9 @@ instance to edit a toot."
              ("sensitive" . ,(when mastodon-toot--content-nsfw
                                (symbol-name t)))
              ("spoiler_text" . ,mastodon-toot--content-warning)
-             ("language" . ,mastodon-toot--language))
+             ("quote_approval_policy" . ,mastodon-toot-quote-policy)
+             ("language" . ,mastodon-toot--language)
+             ("quoted_status_id" . ,mastodon-toot-quote-id))
            ;; Pleroma instances can't handle null-valued
            ;; scheduled_at args, so only add if non-nil
            (when scheduled `(("scheduled_at" . ,scheduled)))))
@@ -1006,17 +1014,19 @@ instance to edit a toot."
          (user-error "You can only edit your own toots")
        (let* ((source (mastodon-toot--get-toot-source id))
               (content (alist-get 'text source))
-              (source-cw (alist-get 'spoiler_text source)))
+              (source-cw (alist-get 'spoiler_text source))
+              (quote (alist-get 'quote toot)))
          (let-alist toot
            (when (y-or-n-p "Edit this toot? ")
              (mastodon-toot--compose-buffer nil .in_reply_to_id nil
                                             content :edit)
              (goto-char (point-max))
              ;; adopt reply-to-id, visibility, CW, language, and media:
-             (mastodon-toot--set-toot-properties .in_reply_to_id .visibility
-                                                 source-cw .language nil nil
-                                                 ;; maintain media order:
-                                                 (reverse .media_attachments) .poll)
+             (mastodon-toot--set-toot-properties
+              .in_reply_to_id .visibility source-cw .language nil nil
+              ;; maintain media order:
+              (reverse .media_attachments) .poll
+              (map-nested-elt quote '(quoted_status id)))
              (setq mastodon-toot--edit-item-id id))))))))
 
 (defun mastodon-toot--get-toot-source (id)
@@ -1296,6 +1306,20 @@ Return its two letter ISO 639 1 code."
     (message "Language set to %s" choice)
     (mastodon-toot--update-status-fields)))
 
+(defun mastodon-toot-set-quote-policy ()
+  "Set quote policy for the current toot."
+  (interactive)
+  (let* ((default (alist-get 'posting:default:quote_policy
+                             (mastodon-http--get-json
+                              (mastodon-http--api "preferences"))))
+         (choice (completing-read
+                  (format "Quote policy for this toot [default: %s]"
+                          default)
+                  mastodon-profiles-quote-policy-types)))
+    (setq mastodon-toot-quote-policy choice)
+    (message "Quote policy for this toot: " choice)
+    (mastodon-toot--update-status-fields)))
+
 
 ;;; ATTACHMENTS
 
@@ -1320,31 +1344,35 @@ If that fails, return 4 as a fallback"
      (alist-get 'max_media_attachments config))
    4)) ; mastodon default as fallback
 
-(defun mastodon-toot-attach-media (file description)
-  "Prompt for an attachment FILE with DESCRIPTION.
+(defun mastodon-toot-attach-media ()
+  "Prompt for an attachment file.
 A preview is displayed in the new toot buffer, and the file
 is uploaded asynchronously using `mastodon-toot--upload-attached-media'.
 File is actually attached to the toot upon posting."
-  (interactive "fFilename: \nsDescription: ")
-  (let ((max-attachments (mastodon-toot--get-instance-max-attachments)))
-    (when (>= (length mastodon-toot--media-attachments)
-              max-attachments)
-      ;; warn + pop the oldest one:
-      (when (y-or-n-p
-             (format "Maximum attachments (%s) reached: remove first one?"
-                     max-attachments))
-        (pop mastodon-toot--media-attachments)))
-    (if (file-directory-p file)
-        (user-error "Looks like you chose a directory not a file")
-      (setq mastodon-toot--media-attachments
-            (nconc mastodon-toot--media-attachments
-                   `(((:contents . ,(mastodon-http--read-file-as-string file))
-                      (:description . ,description)
-                      (:filename . ,file)))))
-      (mastodon-toot--refresh-attachments-display)
-      ;; upload only most recent attachment:
-      (mastodon-toot--upload-attached-media
-       (car (last mastodon-toot--media-attachments))))))
+  (interactive)
+  (if mastodon-toot-quote-id
+      (user-error "You can't add attachments to quote toots.")
+    (let ((file (read-file-name "Filename: "))
+          (description (read-string "Description: "))
+          (max-attachments (mastodon-toot--get-instance-max-attachments)))
+      (when (>= (length mastodon-toot--media-attachments)
+                max-attachments)
+        ;; warn + pop the oldest one:
+        (when (y-or-n-p
+               (format "Maximum attachments (%s) reached: remove first one?"
+                       max-attachments))
+          (pop mastodon-toot--media-attachments)))
+      (if (file-directory-p file)
+          (user-error "Looks like you chose a directory not a file")
+        (setq mastodon-toot--media-attachments
+              (nconc mastodon-toot--media-attachments
+                     `(((:contents . ,(mastodon-http--read-file-as-string file))
+                        (:description . ,description)
+                        (:filename . ,file)))))
+        (mastodon-toot--refresh-attachments-display)
+        ;; upload only most recent attachment:
+        (mastodon-toot--upload-attached-media
+         (car (last mastodon-toot--media-attachments)))))))
 
 (defun mastodon-toot--attachment-descriptions ()
   "Return a list of image descriptions for current attachments."
@@ -1444,9 +1472,11 @@ MAX is the maximum number set by their instance."
 (defun mastodon-toot-create-poll ()
   "Prompt for new poll options and return as a list."
   (interactive)
-  (if mastodon-toot-poll-use-transient
-      (call-interactively #'mastodon-create-poll)
-    (mastodon-toot--read-poll)))
+  (cond (mastodon-toot-quote-id
+         (user-error "You can't add a poll to a quote toot."))
+        (mastodon-toot-poll-use-transient
+         (call-interactively #'mastodon-create-poll))
+        (t (mastodon-toot--read-poll))))
 
 (defun mastodon-toot--read-poll ()
   "Read poll options."
@@ -1547,6 +1577,50 @@ If TRANSIENT, we are called from a transient, so nil
         (setq mastodon-toot-poll
               `( :options ,options :expiry-readable ,expiry-human
                  :expiry ,expiry-str :multi ,multiple))))))
+
+;;; QUOTE
+
+(defvar mastodon-toot-quote-approval-user
+  '("automatic" "manual" "denied" "unknown"))
+
+(defvar mastodon-toot-quote-approval-auto-or-manual
+  '("public" "followers" "following" "unsupported_policy"))
+
+(defvar-local mastodon-toot-quote-id nil)
+
+(defun mastodon-toot-quote ()
+  "Compose a toot quoting the toot at point."
+  (interactive)
+  ;; boosted toot or toot:
+  (let* ((quote-id (mastodon-tl--property 'base-item-id))
+         (json (mastodon-tl--property 'item-json))
+         (policy (alist-get 'quote_approval json))
+         (user-policy (alist-get 'current_user policy))
+         ;; Respect visibility when quoting a toot:
+         ;; According to web UI settings (preferences/posting defaults):
+
+         ;; - quoting an unlisted ("quiet public") post, means quoting post also unlisted
+         ;; "When people quote you, their post will also be hidden from trending timelines."
+
+         ;; - private ("followers only") means no quoting allowed
+         ;; "Followers-only posts authored on Mastodon can't be quoted by others."
+         ;; BUT: we don't need to enforce this, as user-policy will be "denied"
+         ;; if toot is "private"
+
+         ;;  "Quoting a private post will restrict the quoting post’s
+         ;;  visibility to private or direct (if the given visibility is
+         ;;  public or unlisted, private will be used instead)."
+
+         ;; <https://docs.joinmastodon.org/methods/statuses/#form-data-parameters>
+
+         ;; for now all we do is hand on quoted toot's visibility:
+         (visibility (mastodon-tl--field 'visibility json)))
+    (if (string=  user-policy "denied")
+        (user-error "You don't have permission to quote this toot.")
+      (when (or (not (string=  user-policy "unknown"))
+                (y-or-n-p "Quote permission unknown. Proceed?"))
+        (mastodon-toot--compose-buffer nil nil nil nil nil
+                                       quote-id json visibility)))))
 
 
 ;;; SCHEDULE
@@ -1690,22 +1764,23 @@ LONGEST is the length of the longest binding."
       (mastodon-toot--formatted-kbinds-pairs formatted longest-kbind)
       nil))))
 
-(defun mastodon-toot--format-reply-in-compose (reply-text)
+(defun mastodon-toot--format-reply-in-compose (reply-text &optional quote-text)
   "Format a REPLY-TEXT for display in compose buffer docs."
-  (let* ((rendered (mastodon-tl--render-text reply-text))
+  (let* ((rendered (mastodon-tl--render-text (or quote-text reply-text)))
          (no-props (substring-no-properties rendered))
          ;; FIXME: this replaces \n at end of every post, so we have to trim:
          (no-newlines (string-trim
                        (replace-regexp-in-string "[\n]+" " " no-props)))
-         (reply-to (concat " Reply to: \"" no-newlines "\""))
-         (crop (truncate-string-to-width reply-to
-                                         mastodon-toot-orig-in-reply-length)))
+         (prompt (concat (if quote-text " Quoting: \"" " Reply to: \"")
+                         no-newlines "\""))
+         (crop (truncate-string-to-width
+                prompt mastodon-toot-orig-in-reply-length)))
     (if (> (length no-newlines)
            (length crop)) ; we cropped:
         (concat crop "\n")
-      (concat reply-to "\n"))))
+      (concat prompt "\n"))))
 
-(defun mastodon-toot--display-docs-and-status-fields (&optional reply-text)
+(defun mastodon-toot--display-docs-and-status-fields (&optional reply-text quote-text)
   "Insert propertized text with documentation about `mastodon-toot-mode'.
 Also includes and the status fields which will get updated based
 on the status of NSFW, content warning flags, media attachments, etc.
@@ -1739,15 +1814,23 @@ REPLY-TEXT is the text of the toot being replied to."
         " "
         (propertize "NSFW"
                     'toot-post-nsfw-flag t)
+        " "
+        (propertize "Quoting"
+                    'toot-quote-policy t)
         "\n"
         " Attachments: "
         (propertize "None                  "
                     'toot-attachments t)
         "\n"
-        (when reply-text
-          (propertize
-           (mastodon-toot--format-reply-in-compose reply-text)
-           'toot-reply t))
+        (cond (reply-text
+               (propertize
+                (mastodon-toot--format-reply-in-compose reply-text)
+                'toot-reply t))
+              (quote-text
+               (let ((text (mastodon-toot--format-reply-in-compose
+                            nil quote-text)))
+                 (propertize text
+                             'toot-quote text))))
         divider)
        'face 'mastodon-toot-docs-face
        'read-only "Edit your message below."
@@ -1823,8 +1906,16 @@ REPLY-REGION is a string to be injected into the buffer."
                                                            (point-min)))
            (poll-region (mastodon-tl--find-property-range 'toot-post-poll-flag
                                                           (point-min)))
+           (quote-pol-region (mastodon-tl--find-property-range 'toot-quote-policy
+                                                               (point-min)))
            (toot-string (buffer-substring-no-properties (cdr header-region)
-                                                        (point-max))))
+                                                        (point-max)))
+           (toot-quote (mastodon-tl--find-property-range 'toot-quote
+                                                         (point-min)))
+           (quote-text (when toot-quote
+                         (save-excursion
+                           (goto-char (car toot-quote))
+                           (mastodon-tl--property 'toot-quote :nomove)))))
       (mastodon-toot--apply-fields-props
        count-region
        (format "%s/%s chars"
@@ -1869,7 +1960,15 @@ REPLY-REGION is a string to be injected into the buffer."
                 (not (string= "" mastodon-toot--content-warning)))
            (format "CW: %s" mastodon-toot--content-warning)
          "  ") ;; hold the blank space
-       'mastodon-cw-face))))
+       'mastodon-cw-face)
+      (mastodon-toot--apply-fields-props
+       quote-pol-region
+       (if mastodon-toot-quote-policy
+           (format "Quoting: %s" mastodon-toot-quote-policy)
+         "")
+       'mastodon-cw-face)
+      (mastodon-toot--apply-fields-props
+       toot-quote quote-text 'mastodon-cw-face))))
 
 (defun mastodon-toot--apply-fields-props (region display &optional face help-echo)
   "Apply DISPLAY props FACE and HELP-ECHO to REGION, a cons of beg and end."
@@ -1999,7 +2098,8 @@ Added to `after-change-functions'."
 ;;; COMPOSE BUFFER FUNCTION
 
 (defun mastodon-toot--compose-buffer
-    (&optional reply-to-user reply-to-id reply-json initial-text edit)
+    (&optional reply-to-user reply-to-id reply-json initial-text edit
+               quote-id quote-json visibility)
   "Create a new buffer to capture text for a new toot.
 If REPLY-TO-USER is provided, inject their handle into the message.
 If REPLY-TO-ID is provided, set the `mastodon-toot--reply-to-id' var.
@@ -2027,9 +2127,13 @@ EDIT means we are editing an existing toot, not composing a new one."
     (switch-to-buffer-other-window buffer)
     (text-mode)
     (mastodon-toot-mode t)
+    ;; set quote id:
+    (when quote-id
+      (setq mastodon-toot-quote-id quote-id))
     ;; set visibility:
     (setq mastodon-toot--visibility
-          (or (plist-get mastodon-profile-account-settings 'privacy)
+          (or visibility ;; quoting a toot
+              (plist-get mastodon-profile-account-settings 'privacy)
               ;; use toot visibility setting from the server:
               (mastodon-profile--get-source-value 'privacy)
               "public")) ; fallback
@@ -2040,11 +2144,14 @@ EDIT means we are editing an existing toot, not composing a new one."
     (setq mastodon-toot--language
           (mastodon-profile--get-preferences-pref 'posting:default:language))
     ;; display original toot:
-    (if mastodon-toot-display-orig-in-reply-buffer
-        (progn
-          (mastodon-toot--display-docs-and-status-fields reply-text)
-          (mastodon-toot--fill-reply-in-compose))
-      (mastodon-toot--display-docs-and-status-fields))
+    (cond (quote-id
+           (mastodon-toot--display-docs-and-status-fields
+            nil (mastodon-tl--field 'content quote-json))
+           (mastodon-toot--fill-reply-in-compose))
+          (mastodon-toot-display-orig-in-reply-buffer
+           (mastodon-toot--display-docs-and-status-fields reply-text)
+           (mastodon-toot--fill-reply-in-compose))
+          (t (mastodon-toot--display-docs-and-status-fields)))
     ;; `reply-to-user' (alone) is also used by `mastodon-tl-dm-user', so
     ;; perhaps we should not always call --setup-as-reply, or make its
     ;; workings conditional on reply-to-id. currently it only checks for
