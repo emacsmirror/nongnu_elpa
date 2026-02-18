@@ -1949,35 +1949,41 @@ TOOT is the data for the quoting toot."
                    (mastodon-tl--field 'spoiler_text toot))))
          ;; quote symbol hack:
          (quotemark (propertize "“" 'face
-                                '(:inherit success :weight bold
-                                           :height 1.8)))
+                                '( :inherit success :weight bold
+                                   :height 1.8)))
          (quoted (alist-get 'quoted_status data)))
     (let-alist quoted
-      ;; TODO: tailor non-disply of quote based on quote 'state'
-      ;; `mastodon-tl--quote-states':
-      ;; FIXME: filtering logic here?
-      (when (string= "accepted" state)
-        (propertize
-         ;; quoted text:
-         (concat
-          "\n" quotemark "\n"
-          ;; author byline without horiz bar/stats:
-          (mastodon-tl--byline-author quoted nil :domain :base)
-          "\n"
-          (propertize ;; buttonize quoted toot
-           ;; quoted text:
-           (mastodon-tl--content quoted)
-           'button t
-           'keymap mastodon-tl--link-keymap
-           'help-echo "Load quoted toot"
-           'mouse-face '(:inherit (highlight link) :underline nil)))
-         'line-prefix bar
-         'wrap-prefix bar
-         'quote-url .url
-         'mastodon-content-warning-body (when cw t)
-         ;; TODO: respect filtering of quoted toot:
-         'invisible (when cw (mastodon-tl--spoiler-invisible-maybe))
-         'mastodon-quote data)))))
+      (let ((filters (when .filtered
+                       (mastodon-tl--current-filters .filtered))))
+        ;; TODO: tailor non-disply of quote based on quote 'state'
+        ;; `mastodon-tl--quote-states':
+        (when (string= "accepted" state)
+          (propertize
+           (if-let* ((match (or (assoc "warn" filters)
+                                (assoc "hide" filters))))
+               ;; FIXME: "warn" should result in CW, but it should be
+               ;; a CW independent of post CW:
+               (concat "\n\n" quotemark "\n"
+                       "Quote hidden due to one of your filters")
+             (concat
+              "\n" quotemark "\n"
+              ;; author byline without horiz bar/stats:
+              (mastodon-tl--byline-author quoted nil :domain :base)
+              "\n"
+              (propertize ;; buttonize quoted toot body
+               ;; quoted text:
+               (mastodon-tl--content quoted)
+               'button t
+               'keymap mastodon-tl--link-keymap
+               'help-echo "Load quoted toot"
+               'mouse-face '(:inherit (highlight link) :underline nil))))
+           'line-prefix bar
+           'wrap-prefix bar
+           'quote-url .url
+           'mastodon-content-warning-body (when cw t)
+           ;; TODO: respect filtering of quoted toot:
+           'invisible (when cw (mastodon-tl--spoiler-invisible-maybe))
+           'mastodon-quote data))))))
 
 ;; PUT /api/v1/statuses/:id/interaction_policy
 (defun mastodon-tl--change-post-quote-policy ()
@@ -2106,12 +2112,15 @@ title, and context."
 (defun mastodon-tl--filters-context ()
   "Return a string of the current buffer's filter context.
 Returns a member of `mastodon-views--filter-types'."
+  ;; FIXME: filters for bookmarks? = home?
   (let ((buf (mastodon-tl--get-buffer-type)))
     (cond ((or (eq buf 'local) (eq buf 'federated))
            "public")
           ((mastodon-tl--profile-buffer-p)
            "profile")
-          ((eq buf 'list-timeline)
+          (
+           ;; (eq buf 'list-timeline)
+           (or (eq buf 'list-timeline) (eq buf 'bookmarks))
            "home") ;; lists are "home" filter
           (t ;; thread, notifs, home:
            (symbol-name buf)))))
