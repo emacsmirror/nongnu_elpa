@@ -3475,7 +3475,7 @@ and profile pages when showing followers or accounts followed."
                  ;;(prev (cadr (mastodon-tl--link-header)))
                  (url (mastodon-tl--build-link-header-url next)))
             (mastodon-http--get-response-async
-             url nil 'mastodon-tl--more* (current-buffer) (point) :headers))))
+             url nil nil 'mastodon-tl--more* (current-buffer) (point) :headers))))
     (cond (;; no paginate
            (or (mastodon-tl--buffer-type-eq 'follow-suggestions)
                (mastodon-tl--buffer-type-eq 'filters)
