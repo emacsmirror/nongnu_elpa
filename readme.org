@@ -184,7 +184,7 @@ Repo search listing:
 
 [[file:Screenshot-search.png]]
 
-Repo settings transient:
+Repo settings transient (current setting on the server underlined, current user choice in green):
 
 [[file:Screenshot-transient.png]]
 
@@ -192,7 +192,7 @@ Syntax highlighting (optional dependency):
 
 [[file:screenshot-syntax-highlight.png]]
 
-Diffs (as code as as reviews):
+Diffs (as commits and PRs):
 
 [[file:screenshot-diff.png]]
 
@@ -291,7 +291,6 @@ Diffs (as code as as reviews):
 |           | fj-fork-repo                   | Fork repo entry at point.                                           |
 |           | fj-fork-to-parent              | From a repo TL listing, jump to the parent repo.                    |
 |           | fj-get-pull-commits            | Return the data for the commits of the current pull.                |
-|           | fj-git-link-code-range         | Call `git-link'.                                                    |
 |           | fj-inspect-item-data           | Browse the JSON data of item at point.                              |
 |           | fj-issue-compose               | Compose a new post.                                                 |
 |           | fj-issue-get-labels            | Get labels on ISSUE in REPO by OWNER.                               |
@@ -302,8 +301,8 @@ Diffs (as code as as reviews):
 | K         | fj-item-delete                 | Delete the item at point or being viewed.                           |
 | e         | fj-item-edit                   | Edit the item at point or being viewed.                             |
 | t         | fj-item-edit-title             | Edit the title of the item at point or being viewed.                |
-| l         | fj-item-label-add              | Comment on the item at point or being viewed.                       |
-|           | fj-item-label-remove           | Comment on the item at point or being viewed.                       |
+| l         | fj-item-label-add              | Add label to the item at point or being viewed.                     |
+|           | fj-item-label-remove           | Remove label from the item at point or being viewed.                |
 | n         | fj-item-next                   | Go to next item or notification.                                    |
 | p         | fj-item-prev                   | Goto previous item or notification.                                 |
 | o         | fj-item-reopen                 | Reopen the item at point or being viewed.                           |
@@ -324,7 +323,7 @@ Diffs (as code as as reviews):
 | W         | fj-list-own-issues             | List issues in repos owned by `fj-user'.                            |
 |           | fj-list-own-pulls              | List pulls in repos owned by `fj-user'.                             |
 | O         | fj-list-own-repos              | List repos for `fj-user'.                                           |
-| C-c C-x   | fj-list-own-repos-read         | List repos for `fj-user', prompting for an order type.              |
+| C-c C-c   | fj-list-own-repos-read         | List repos for `fj-user', prompting for an order type.              |
 | P         | fj-list-pulls                  | List pulls for REPO by OWNER, filtered by STATE.                    |
 |           | fj-list-repos                  | List repos for `fj-user' extended by `fj-extra-repos'.              |
 |           | fj-list-user-repos             | View repos of current entry user from tabulated repos listing.      |
@@ -406,6 +405,7 @@ Diffs (as code as as reviews):
 #+RESULTS:
 | Custom variable              | Description                                                   |
 |------------------------------+---------------------------------------------------------------|
+| fj-compose-autocomplete      | Whether to enable autocompletion in compose buffers.          |
 | fj-compose-comment-mode-hook | Hook run after entering or leaving `fj-compose-comment-mode'. |
 | fj-compose-mode-hook         | Hook run after entering or leaving `fj-compose-mode'.         |
 | fj-issues-sort-default       | Default sort parameter for repo issues listing.               |
