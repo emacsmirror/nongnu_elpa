@@ -11,7 +11,7 @@
 ;;  (magit "4.3.8"))
 ;; Keywords: git, convenience
 ;; URL: https://codeberg.org/martianh/fj.el
-;; Version: 0.28
+;; Version: 0.29
 ;; Separator: -
 
 ;; This program is free software; you can redistribute it and/or modify
