@@ -124,7 +124,7 @@ If you want to insert a link to a line in your source files, consider using http
 
 If you want verbatim code blocks in comments to have syntax highlighting,
 consider installing
-https://github.com/xuchunyang/shr-tag-pre-highlight.el. =fj-.el= uses =shr=
+[[https://github.com/xuchunyang/shr-tag-pre-highlight.el]]. =fj-.el= uses =shr=
 for rendering, and =shr-tag-pre-highlight= adds syntax highlighting support
 to =shr=. You may also need to customize =shr-tag-pre-highlight-lang-modes= to
 ensure the languages you want will work.
