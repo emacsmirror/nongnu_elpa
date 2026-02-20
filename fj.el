@@ -3884,7 +3884,7 @@ does, and sorting user repos is useful."
   (fj-with-repo-entry
    (let* ((repo (fj--repo-name))
           (owner (fj--repo-owner)))
-     (fj-star-repo repo owner unstar))))
+     (fj-star-repo* repo owner unstar))))
 
 (defun fj-unstar-repo ()
   "Unstar current repo from tabulated user repos listing."
