@@ -3,10 +3,15 @@
 ;; Author: Marty Hiatt <mousebot@disroot.org>
 ;; Copyright (C) 2023 Marty Hiatt <mousebot@disroot.org>
 ;;
-;; Package-Requires: ((emacs "29.1") (fedi "0.2") (tp "0.5") (transient "0.9.3") (magit "4.3.8"))
+;; Package-Requires:
+;; ((emacs "29.1")
+;;  (fedi "0.2")
+;;  (tp "0.8")
+;;  (transient "0.10.0")
+;;  (magit "4.3.8"))
 ;; Keywords: git, convenience
 ;; URL: https://codeberg.org/martianh/fj.el
-;; Version: 0.28
+;; Version: 0.29
 ;; Separator: -
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -338,20 +343,28 @@ SILENT means make a silent request."
   (let* ((url (fj-api endpoint))
          (resp (fj-authorized-request "GET"
                  (if no-json
-                     (fedi-http--get url params silent)
-                   (fedi-http--get-json url params silent)))))
+                     (cons (fedi-http--get url params silent) nil)
+                   (fedi-http--get-response url params nil silent))))
+         (headers (cdr resp))
+         (resp (car resp)))
     ;; FIXME: handle 404 etc!
-    (if no-json
-        ;; return response buffer, not resulting string. the idea is to then
-        ;; call --triage on the result, in case we don't get a 200 response.
-        ;; (fj-resp-str resp)
-        resp
-      (if (or (eq (caar resp) 'errors)
-              (eq (caar resp) 'message))
-          (user-error "I am Error: %s Endpoint: %s"
-                      (alist-get 'message resp)
-                      endpoint)
-        resp))))
+    (cond
+     ;; return response buffer, not resulting string. the idea is to then
+     ;; call --triage on the result, in case we don't get a 200 response.
+     ;; (fj-resp-str resp)
+     (no-json resp)
+
+     ((eq (alist-get 'status headers) 404)
+      nil)
+
+     ((or (eq (caar resp) 'errors)
+          (eq (caar resp) 'message))
+
+      (user-error "I am Error: %s Endpoint: %s"
+                  (alist-get 'message resp)
+                  endpoint))
+
+     (t resp))))
 
 (defun fj-resp-str (resp)
   "Return the response string from RESP, an HTTP response buffer."
@@ -2888,15 +2901,20 @@ works on the resulting html."
   (concat
    "\n📎 " (substring fedi-horiz-bar 3)
    (propertize
-    ;; FIXME: markdown rendering adds an unwanted newline, and stripping
-    ;; it still renders with an empty line!
-    (fj-render-markdown
-     (mapconcat (lambda (x)
-                  (concat
-                   "[" (alist-get 'name x) "]("
-                   (alist-get 'browser_download_url x)
-                   ")"))
-                assets "\n"))
+    (mapconcat (lambda (x)
+                 (propertize
+                  ;; FIXME: markdown rendering adds an unwanted newline,
+                  ;; and stripping it still renders with an empty line! we
+                  ;; need to render each attachment separately so we can
+                  ;; then propertize it with its data
+                  (fj-render-markdown
+                   (concat
+                    "[" (alist-get 'name x) "]("
+                    (alist-get 'browser_download_url x)
+                    ")"))
+                  'fj-attachment x
+                  'fj-attachment-id (alist-get 'id x)))
+               assets "\n")
     'fj-item-body t)))
 
 (defun fj-item-view (&optional repo owner number type page limit)
@@ -3337,9 +3355,8 @@ TS is timestamp, BODY is the item's response."
                 (fj-propertize-link
                  (concat
                   short " "
-                  (car (string-split
-                        (map-nested-elt d '(commit message))
-                        "\n")))
+                  (if d (car (string-lines (map-nested-elt d '(commit message))))
+                    "unreachable commit"))
                  'commit-ref c)))))))
 
 (defun fj-render-timeline-item (item &optional author owner repo)
@@ -3677,12 +3694,12 @@ Returns annotation for CAND, a candidate."
 
 (define-button-type 'fj-search-owner-button
   'follow-link t
-  'action 'fj-list-user-repos
+  'action 'fj-list-own-or-user-repos
   'help-echo "RET: View this user.")
 
 (define-button-type 'fj-issues-owner-button
   'follow-link t
-  'action 'fj-list-user-repos
+  'action 'fj-list-own-or-user-repos
   'help-echo "RET: View this user.")
 
 (define-button-type 'fj-repo-stargazers-button
@@ -3848,6 +3865,18 @@ unset any default values."
                      (fj--repo-owner))))
        (fj-user-repos owner)))))
 
+(defun fj-list-own-or-user-repos (pos)
+  "Button action function for owners in tabulated lists.
+POS is current position.
+If owner is `fj-user', call `fj-list-own-repos'.
+Else call `fj-user-repos'.
+We do this because the latter has no sort argument, while the former
+does, and sorting user repos is useful."
+  (let ((user (button-label (button-at pos))))
+    (if (string= fj-user user)
+        (fj-list-own-repos)
+      (fj-list-user-repos))))
+
 ;; search or user repo TL
 (defun fj-star-repo (&optional unstar)
   "Star or UNSTAR current repo from tabulated user repos listing."
@@ -3855,7 +3884,7 @@ unset any default values."
   (fj-with-repo-entry
    (let* ((repo (fj--repo-name))
           (owner (fj--repo-owner)))
-     (fj-star-repo repo owner unstar))))
+     (fj-star-repo* repo owner unstar))))
 
 (defun fj-unstar-repo ()
   "Unstar current repo from tabulated user repos listing."
@@ -4812,7 +4841,9 @@ Used for hitting RET on a given link."
          (fj-issue-ref-follow item))
         ;; ((eq type 'pull)
         ;; (fj-item-view repo owner item nil :pull))
-        ('handle (fj-user-repos item))
+        ('handle (if (string= fj-user item)
+                     (fj-list-own-repos)
+                   (fj-user-repos item)))
         ('team (fj-browse-team item))
         ('repo-tag (fj-repo-tag-follow item))
         ((or  'commit 'commit-ref)
@@ -4972,9 +5003,39 @@ PAGE and LIMIT as always."
         'help-echo .sha)
        "\n" fedi-horiz-bar fedi-horiz-bar "\n\n"))))
 
+(defvar fj-repo-activity-types
+  '("create_repo"
+    "rename_repo"
+    "star_repo"
+    "watch_repo"
+    "commit_repo"
+    "create_issue"
+    "create_pull_request"
+    "transfer_repo"
+    "push_tag"
+    "comment_issue"
+    "merge_pull_request"
+    "close_issue"
+    "reopen_issue"
+    "close_pull_request"
+    "reopen_pull_request"
+    "delete_tag"
+    "delete_branch"
+    "mirror_sync_push"
+    "mirror_sync_create"
+    "mirror_sync_delete"
+    "approve_pull_request"
+    "reject_pull_request"
+    "comment_pull"
+    "publish_release"
+    "pull_review_dismissed"
+    "pull_request_ready_for_review"
+    "auto_merge_pull_request")
+  "List of activity types in repository feeds.")
+
 ;; GET /repos/{owner}/{repo}/activities/feeds
 (defun fj-repo-get-feed (repo owner)
-  "Get te activity feed of REPO by OWNER."
+  "Get the activity feed of REPO by OWNER."
   (let ((endpoint (format "repos/%s/%s/activities/feeds" owner repo)))
     (fj-get endpoint)))
 
