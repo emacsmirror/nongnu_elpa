@@ -4,7 +4,7 @@
 
 ;; Author: Tim Vaughan <plugd@thelambdalab.xyz>
 ;; Created: 11 April 2019
-;; Version: 3.6.6
+;; Version: 3.7.0
 ;; Keywords: comm gopher gemini
 ;; Homepage: https://thelambdalab.xyz/elpher
 ;; Package-Requires: ((emacs "27.1"))
@@ -70,7 +70,7 @@
 ;;; Global constants
 ;;
 
-(defconst elpher-version "3.6.6"
+(defconst elpher-version "3.7.0"
   "Current version of elpher.")
 
 (defconst elpher-margin-width 6
@@ -397,6 +397,8 @@ requiring gopher-over-TLS."
    ((and (equal type ?h)
          (string-prefix-p "URL:" selector))
     (elpher-address-from-url (elt (split-string selector "URL:") 1)))
+   ((equal type ?w)
+    (elpher-address-from-url selector))
    ((equal type ?8)
     (elpher-address-from-url
      (concat "telnet"

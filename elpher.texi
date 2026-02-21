@@ -1,7 +1,7 @@
 \input texinfo @c -*-texinfo-*-
 
 @setfilename elpher.info
-@settitle Elpher Manual v3.6.0
+@settitle Elpher Manual v3.7.0
 
 @dircategory Emacs
 @direntry
@@ -11,7 +11,7 @@
 @copying
 This manual documents Elpher, a gopher and gemini client for Emacs.
 
-Copyright @copyright{} 2019-2023  Tim Vaughan@*
+Copyright @copyright{} 2019-2026  Tim Vaughan@*
 Copyright @copyright{} 2021 Daniel Semyonov@*
 Copyright @copyright{} 2021 Alex Schroeder
 
@@ -84,6 +84,7 @@ Gemini support
 
 News
 
+* v3.7.0::
 * v3.6.0::
 * v3.5.0::
 * v3.4.0::
@@ -859,6 +860,7 @@ See the customization group itself for details.
 This chapter documents the major changes introduced by Elpher releases.
 
 @menu
+* v3.7.0::
 * v3.6.0::
 * v3.5.0::
 * v3.4.0::
@@ -868,7 +870,18 @@ This chapter documents the major changes introduced by Elpher releases.
 * v3.0.0::
 @end menu
 
-@node v3.6.0, v3.5.0, News, News
+@node v3.7.0, v3.6.0, News, News
+@section v3.7.0
+
+@subsection Support for the ``w'' item type
+
+This version introduces support for the w item type, which
+is a non-RFC1436 type that is occassionally used in place
+of hURL (also non-RFC1436) to include generic URLs in gophermaps.
+Both alternatives should now produce exactly the same rendered
+index in Elpher.
+
+@node v3.6.0, v3.5.0, v3.7.0, News
 @section v3.6.0
 
 @subsection Easily open links in new buffer
@@ -1048,6 +1061,7 @@ all generously provided assistance and/or patches:
 @item Simon South @email{simon@@simonsouth.net}
 @item Daniel Semyonov @email{daniel@@dsemy.com}
 @item Bradley Thornton @email{bradley@@northtech.us}
+@item John Hamelink @email{me@@johnhame.link}
 @end itemize
 
 @bye
