@@ -81,20 +81,20 @@
 
 ;;;###autoload
 (defcustom vm-ps-print-message-function  'ps-print-buffer-with-faces
-  "*This should point to the function which is used for ps-printing.
+  "This should point to the function which is used for ps-printing.
 The function should accept one optional argument which is a filename."
   :group 'vm-print
   :type 'function)
 
 ;;;###autoload
 (defcustom vm-ps-print-message-separater  "\n"
-  "*The separator between messages when printing multiple messages."
+  "The separator between messages when printing multiple messages."
   :group 'vm-print
   :type 'string)
 
 ;;;###autoload
 (defcustom vm-ps-print-message-font-size  10
-  "*The font size for the PS-output of the message text."
+  "The font size for the PS-output of the message text."
   :group 'vm-print
   :type 'integer)
 
@@ -102,7 +102,7 @@ The function should accept one optional argument which is a filename."
 
 ;;;###autoload
 (defcustom vm-ps-print-message-header-lines  2
-  "*See `ps-header-lines'."
+  "See `ps-header-lines'."
   :group 'vm-print
   :type 'integer)
 
@@ -110,14 +110,14 @@ The function should accept one optional argument which is a filename."
 (defcustom vm-ps-print-message-left-header
   '(list (format "(Folder `%s')" folder-name)
 	 (format "(%d message%s printed)" mcount (if (= mcount 1) "" "s")))
-  "*This variable should contain a command returning a valid `ps-left-header'."
+  "This variable should contain a command returning a valid `ps-left-header'."
   :group 'vm-print
   :type 'sexp)
 
 ;;;###autoload
 (defcustom vm-ps-print-message-right-header
   '(list"/pagenumberstring load" 'dd-mon-yyyy)
-  "*This variable should contain a command returning a valid `ps-right-header'.
+  "This variable should contain a command returning a valid `ps-right-header'.
 The defaults to the number of pages and the date of the printout."
   :group 'vm-print
   :type 'sexp)
@@ -129,7 +129,7 @@ The defaults to the number of pages and the date of the printout."
               vm-summary-format
             "%n %*%a %-17.17F %-3.3m %2d %4l/%-5c %I\"%s\"\n")
           "******************************************************************************\n")
-  "*The summary line before a message.
+  "The summary line before a message.
 See `vm-summary-format' for a description of the conversion specifiers."
   :group 'vm-print
   :type 'string)
@@ -137,7 +137,7 @@ See `vm-summary-format' for a description of the conversion specifiers."
 ;;----------------------------------------------------------------------------
 ;;;###autoload
 (defcustom vm-ps-print-each-message-header-lines 2
-  "*See `ps-header-lines'."
+  "See `ps-header-lines'."
   :group 'vm-print
   :type 'integer)
 
@@ -145,7 +145,7 @@ See `vm-summary-format' for a description of the conversion specifiers."
 (defcustom vm-ps-print-each-message-left-header
   '(list (format "(Folder `%s')" folder-name)
 	 (format "(%s)" (vm-ps-print-tokenized-summary msg (vm-summary-sprintf vm-ps-print-each-message-summary-format msg t))))
-  "*This command should return a valid `ps-left-header'.
+  "This command should return a valid `ps-left-header'.
 The default is to have the folder name and a summary according to the
 variable `vm-ps-print-each-message-summary-format' in the left header."
   :group 'vm-print
@@ -154,7 +154,7 @@ variable `vm-ps-print-each-message-summary-format' in the left header."
 ;;;###autoload
 (defcustom vm-ps-print-each-message-right-header
   '(list  "/pagenumberstring load" 'dd-mon-yyyy)
-  "*This variable should contain a command returning a valid `ps-right-header'.
+  "This variable should contain a command returning a valid `ps-right-header'.
 The defaults to the number of pages and the date of the printout."
   :group 'vm-print
   :type 'sexp)
@@ -162,35 +162,37 @@ The defaults to the number of pages and the date of the printout."
 ;;;###autoload
 (defcustom vm-ps-print-each-message-summary-format
   "Message# %n, Lines %l, Characters %c"
-  "*The summary line for the postscript header.
+  "The summary line for the postscript header.
 See `vm-summary-format' for a description of the conversion specifiers."
   :group 'vm-print
   :type 'string)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-(defun vm-ps-print-message-internal (filename each _folder-name _mcount _msg)
+(defun vm-ps-print-message-internal (filename each folder-name mcount msg)
   "This function does the actual call to the ps-printing function.
 This is not a function to call interactively!
 
 If the customization of headers is insufficient, then you may want
 to modify this function.  If FILENAME is a string, then the output is
-written to that file.  If EACH is t then create a new johb for each
+written to that file.  If EACH is t then create a new job for each
 message.  FOLDER-NAME specifies the folder name which is displayed in
 the header line and MCOUNT is the number of messages to print, while
 MSG is a VM message pointer.
 
 See:	`vm-ps-print-message-function'"
-  (defvar dd-mon-yyyy) ;; FIXME: Namespace!
   (let* ((dd-mon-yyyy (format-time-string "%d %b %Y   %T" (current-time)))
-	 (ps-left-header (if each (eval vm-ps-print-each-message-left-header)
-			   (eval vm-ps-print-message-left-header)))
-	 (ps-right-header (if each (eval vm-ps-print-each-message-right-header)
-			    (eval vm-ps-print-message-right-header)))
+	 (env `((dd-mon-yyyy . ,dd-mon-yyyy)
+	        (folder-name . ,folder-name)
+	        (mcount . ,mcount)
+	        (msg . ,msg)))
+	 (ps-left-header (if each (eval vm-ps-print-each-message-left-header env)
+			   (eval vm-ps-print-message-left-header env)))
+	 (ps-right-header (if each (eval vm-ps-print-each-message-right-header env)
+			    (eval vm-ps-print-message-right-header env)))
 	 (ps-header-lines  (if each vm-ps-print-each-message-header-lines
 			     vm-ps-print-each-message-header-lines))
 	 (ps-print-header-frame t)
 	 (ps-font-size vm-ps-print-message-font-size))
-;    (setq filename (expand-file-name "~/mail.ps"))
     (funcall vm-ps-print-message-function filename)
     ))
 
