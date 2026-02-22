@@ -257,13 +257,18 @@ Provide current topics for adding/removing."
    ("C-c C-c" "Save settings" fj-update-repo)
    ("C-x C-k" :info "to revert all changes")]
   (interactive)
-  ;; FIXME: bail if we are not authorized to change this repo!
-  (if fj-current-repo
+  (if (not fj-current-repo)
+      (if (y-or-n-p "No repo. Try to use git config?")
+          (setq fj-current-repo (cadr (fj-repo-+-owner-from-git)))
+        (user-error "No repo")))
+  (if-let* ((data (fj-get-repo fj-current-repo
+                               (fj--repo-owner)))
+            ;; bail if we are not authorized to change this repo
+            ;; FIXME: how to confirm if admin required to change repo settings:
+            (perm (alist-get 'permissions data))
+            (admin-p (eq t (alist-get 'admin perm))))
       (transient-setup 'fj-repo-update-settings)
-    (if (y-or-n-p "No repo. Try to use git config?")
-        (if-let* ((repo-+-owner (fj-repo-+-owner-from-git))
-                  (fj-current-repo (cadr repo-+-owner)))
-            (transient-setup 'fj-repo-update-settings)))))
+    (user-error "You don't have permission to modify this repo")))
 
 (transient-define-suffix fj-update-user-settings (&optional args)
   "Update current user settings on the server."

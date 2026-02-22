@@ -3,15 +3,10 @@
 ;; Author: Marty Hiatt <mousebot@disroot.org>
 ;; Copyright (C) 2023 Marty Hiatt <mousebot@disroot.org>
 ;;
-;; Package-Requires:
-;; ((emacs "29.1")
-;;  (fedi "0.2")
-;;  (tp "0.8")
-;;  (transient "0.10.0")
-;;  (magit "4.3.8"))
+;; Package-Requires: ((emacs "29.1") (fedi "0.2") (tp "0.8") (transient "0.10.0") (magit "4.3.8"))
 ;; Keywords: git, convenience
 ;; URL: https://codeberg.org/martianh/fj.el
-;; Version: 0.29
+;; Version: 0.30
 ;; Separator: -
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -37,8 +32,8 @@
 ;; (issue, PR) timelines, as well as for composing items and comments. It
 ;; is built with fedi.el, which in turn is based on mastodon.el.
 
-;; To get started, first set `fj-token' and `fj-user'. Then either set
-;; your Forgejo access token in your auth-source file or set `fj-host' to
+;; To get started, first set `fj-host' and `fj-user'. Then either set
+;; your Forgejo access token in your auth-source file or set `fj-token' to
 ;; it.
 
 ;; For further details, see the readme at
@@ -2291,6 +2286,7 @@ If we are not in a repo, call `fj-list-issues-do' without using
 git config."
   (if (or current-prefix-arg ;; still allow completing-read a repo
           ;; NB: this is T in fj buffers when no source files:
+          ;; NB: this is nil in magit's commit message buffer:
           (not (magit-inside-worktree-p :noerror)))
       ;; fall back to `fj--repo-owner' repos:
       (fj-list-issues-do repo owner state type)
