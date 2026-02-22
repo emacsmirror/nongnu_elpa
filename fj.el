@@ -675,8 +675,48 @@ If CURRENT-REPO, get from `fj-current-repo' instead."
   "Destructure `fj-buffer-spec' with keyword PARAMETERS and call BODY."
   (declare (debug t)
            (indent 1))
+  ;; FIXME: wrapping this macro breaks edebug:
   `(cl-destructuring-bind (&key ,@parameters &allow-other-keys)
        fj-buffer-spec
+     ,@body))
+
+(defmacro fj-with-tl (mode buffer entries wd &rest body)
+  "Set up a tabulated-list BUFFER and execute BODY.
+Sets `tabulated-list-entries' to ENTRIES, enables MODE, and uses WD as
+the working-directory (for directory-local variables)."
+  (declare (indent 4)
+           (debug t))
+  `(with-current-buffer (get-buffer-create ,buffer)
+     (setq tabulated-list-entries ,entries)
+     (funcall ,mode)
+     ;; ensure our .dir-locals.el settings take effect:
+     ;; via https://emacs.stackexchange.com/questions/13080/reloading-directory-local-variables
+     (setq default-directory ,wd)
+     (let ((enable-local-variables :all))
+       (hack-dir-local-variables-non-file-buffer))
+     ;; sort key?
+     (tabulated-list-init-header)
+     (tabulated-list-print)
+     ,@body
+     ;; other-window maybe?
+     ;; message bindings maybe?
+     ))
+
+
+(defmacro fj-with-buffer (buf mode wd ow &rest body)
+  "Set up a BUF fer in MODE and call BODY.
+Sets up default-directory as WD and ensures local variables take effect
+in non-file buffers.
+OW is other window argument for `fedi-with-buffer'."
+  (declare (indent 4)
+           (debug t))
+  `(fedi-with-buffer ,buf
+       ,mode ,ow
+     ;; ensure our .dir-locals.el settings take effect:
+     ;; via https://emacs.stackexchange.com/questions/13080/reloading-directory-local-variables
+     (setq default-directory ,wd)
+     (let ((enable-local-variables :all))
+       (hack-dir-local-variables-non-file-buffer))
      ,@body))
 
 ;;; MAP
@@ -917,7 +957,7 @@ X and Y are sorting args."
 (defun fj-get-user-repos (user &optional page limit)
   "GET request repos owned by USER.
 PAGE, LIMIT."
-  ;; NB: no order arg avail :/
+  ;; NB: API has no sort arg!
   (let ((params (append
                  `(("limit" . ,(or limit (fj-default-limit))))
                  (fedi-opt-params page)))
@@ -930,14 +970,17 @@ PAGE, LIMIT, ORDER."
   (interactive "sView user repos: ")
   (let* ((repos (fj-get-user-repos user page limit))
          (entries (fj-repo-tl-entries repos :no-owner))
-         (buf (format "*fj-repos-%s*" user)))
-    (fj-repos-tl-render buf entries #'fj-user-repo-tl-mode)
-    (with-current-buffer (get-buffer-create buf)
+         (buf (format "*fj-repos-%s*" user))
+         (prev-buf (buffer-name))
+         (wd default-directory))
+    (fj-with-tl #'fj-user-repo-tl-mode buf entries wd
       (setq fj-buffer-spec
             `( :owner ,user :url ,(concat fj-host "/" user)
                :viewargs ( :user ,user :page ,page
                            :limit ,limit :order ,order)
-               :viewfun fj-user-repos)))))
+               :viewfun fj-user-repos))
+      (fj-other-window-maybe
+       prev-buf "*fj-search" #'string-prefix-p))))
 
 (defun fj-list-own-repos-read ()
   "List repos for `fj-user', prompting for an order type."
@@ -957,17 +1000,20 @@ LIMIT and PAGE are for pagination."
          (repos (and fj-user (fj-get-repos
                               limit nil nil page
                               (or order fj-own-repos-default-order))))
-         (entries (fj-repo-tl-entries repos :no-owner)))
+         (entries (fj-repo-tl-entries repos :no-owner))
+         (wd default-directory)
+         (prev-buf (buffer-name)))
     (if (not repos)
         (user-error "No repos")
-      (fj-repos-tl-render buf entries #'fj-user-repo-tl-mode :unset)
-      (with-current-buffer (get-buffer-create buf)
+      (fj-with-tl #'fj-user-repo-tl-mode buf entries wd
         (setq fj-buffer-spec
               `( :owner ,fj-user :url ,(concat fj-host "/" fj-user)
                  :viewfun fj-list-own-repos
                  :viewargs (:order ,order :page ,page)))
         (message
-         (substitute-command-keys "\\`C-c C-c': sort by"))))))
+         (substitute-command-keys "\\`C-c C-c': sort by"))
+        (fj-other-window-maybe
+         prev-buf "*fj-search" #'string-prefix-p)))))
 
 (defun fj-repos-order-arg (&optional order)
   "Return an ORDER argument.
@@ -992,16 +1038,18 @@ Order by ORDER, paginate by PAGE and LIMIT."
                                 (fj-get (format "repos/%s/" repo)))
                               fj-extra-repos))
          (repos (append own-repos extra-repos))
-         (entries (fj-repo-tl-entries repos)))
+         (entries (fj-repo-tl-entries repos))
+         (wd default-directory)
+         (prev-buf (buffer-name)))
     (if (not repos)
         (user-error "No (more) repos. \
 Unless paginating, set `fj-user' or `fj-extra-repos'")
-      (fj-repos-tl-render buf entries #'fj-repo-tl-mode)
-      (with-current-buffer (get-buffer-create buf)
+      (fj-with-tl #'fj-repo-tl-mode buf entries wd
         (setq fj-buffer-spec
               `( :owner ,fj-user :url ,(concat fj-host "/" fj-user)
                  :viewfun fj-list-repos
-                 :viewargs (:order ,order :page ,page)))))))
+                 :viewargs (:order ,order :page ,page)))
+        (fj-other-window-maybe prev-buf "*fj-search" #'string-prefix-p)))))
 
 (defun fj-star-repo* (repo owner &optional unstar)
   "Star or UNSTAR REPO owned by OWNER."
@@ -1059,16 +1107,18 @@ BUF-STR is to name the buffer, URL-STR is for the buffer-spec."
          (entries (fj-repo-tl-entries repos))
          (buf (format "*fj-%s-repos*" buf-str))
          (url (when url-str
-                (concat fj-host "/" fj-user url-str))))
-    (fj-repos-tl-render buf entries #'fj-repo-tl-mode)
-    (with-current-buffer buf
+                (concat fj-host "/" fj-user url-str)))
+         (prev-buf (buffer-name))
+         (wd default-directory))
+    (fj-with-tl #'fj-repo-tl-mode buf entries wd
       (setq fj-buffer-spec
             `( :owner fj-user
                :url ,url
                :viewfun fj--list-user-repos
                :viewargs ( :endpoint ,endpoint
                            :buf-str ,buf-str
-                           :url ,url))))))
+                           :url ,url)))
+      (fj-other-window-maybe prev-buf "*fj-search" #'string-prefix-p))))
 
 ;;; USER REPOS
 
@@ -1376,7 +1426,7 @@ all for `fj-issues-search'."
                            nil page))
         (buf-name (format "*fj-search-%s%s*" (or type "items")
                           (fj-cycle-str created assigned mentioned owner)))
-        (prev-buf (buffer-name (current-buffer)))
+        (prev-buf (buffer-name))
         (prev-mode major-mode))
     ;; FIXME refactor with `fj-list-issues'? just tab list entries fun and
     ;; the buffer spec settings change
@@ -2291,7 +2341,7 @@ git config."
       ;; fall back to `fj--repo-owner' repos:
       (fj-list-issues-do repo owner state type)
     ;; if in fj buffer, respect its buf-spec:
-    (if (string-prefix-p "*fj-" (buffer-name (current-buffer)))
+    (if (string-prefix-p "*fj-" (buffer-name))
         (let* ((repo (fj-read-user-repo repo))
                (owner (or owner (fj--repo-owner))))
           (fj-list-issues-do repo owner state type))
@@ -2353,12 +2403,7 @@ SORT defaults to `fj-issues-sort-default'."
          (buf-name (format "*fj-%s-%s-%s*" repo state-str type)))
     (if (not has-issues)
         (user-error "Repo does not have %s" type)
-      (with-current-buffer (get-buffer-create buf-name)
-        (setq tabulated-list-entries
-              (fj-issue-tl-entries issues))
-        (fj-issue-tl-mode)
-        (tabulated-list-init-header)
-        (tabulated-list-print)
+      (fj-with-tl #'fj-issue-tl-mode buf-name (fj-issue-tl-entries issues) wd
         (setq fj-current-repo repo
               fj-repo-data repo-data
               fj-buffer-spec
@@ -2373,16 +2418,12 @@ SORT defaults to `fj-issues-sort-default'."
                    :page ,page :limit ,limit)
                  :viewfun fj-list-issues-do
                  :url ,url))
-        ;; ensure our .dir-locals.el settings take effect:
-        ;; via https://emacs.stackexchange.com/questions/13080/reloading-directory-local-variables
-        (setq default-directory wd)
-        (let ((enable-local-variables :all))
-          (hack-dir-local-variables-non-file-buffer))
         (fj-other-window-maybe
          prev-buf "-issues*" #'string-suffix-p prev-mode)
-        (message (substitute-command-keys
-                  ;; it can't find our bindings:
-                  "\\`C-c C-c': cycle state | \\`C-c C-d': sort\
+        (message
+         (substitute-command-keys
+          ;; it can't find our bindings:
+          "\\`C-c C-c': cycle state | \\`C-c C-d': sort\
  | \\`C-c C-s': cycle type"))))))
 
 (defun fj-repo-has-items-p (type data)
@@ -2926,12 +2967,11 @@ PAGE and LIMIT are for `fj-issue-get-timeline'."
          (ow (not (eq major-mode 'fj-item-view-mode)))
          (repo (fj-read-user-repo repo))
          (item (fj-get-item repo owner number type))
-         (number (or number (alist-get 'number item))))
+         (number (or number (alist-get 'number item)))
+         (wd default-directory))
     ;; (timeline (fj-issue-get-timeline repo owner number page limit)))
-    (fedi-with-buffer (format "*fj-%s-item-%s*" repo number)
-        'fj-item-view-mode ow
-      (let ((enable-local-variables :all))
-        (hack-dir-local-variables-non-file-buffer))
+    (fj-with-buffer (format "*fj-%s-item-%s*" repo number)
+        'fj-item-view-mode wd nil ;; other-window
       ;; render actual (top) item:
       (fj-render-item repo owner item number type page limit)
       ;; if we have paginated, re-append all pages sequentially:
@@ -3767,9 +3807,10 @@ LIMIT is the amount of result (to a page)."
          (buf (format "*fj-search-%s*" query))
          (url (concat fj-host "/explore/repos"))
          (data (alist-get 'data resp))
-         (entries (fj-repo-tl-entries data)))
-    (fj-repos-tl-render buf entries #'fj-repo-tl-mode)
-    (with-current-buffer (get-buffer-create buf)
+         (entries (fj-repo-tl-entries data))
+         (prev-buf (buffer-name))
+         (wd default-directory))
+    (fj-with-tl #'fj-repo-tl-mode buf entries wd
       (setq fj-buffer-spec
             `( :url ,url
                :viewargs
@@ -3777,39 +3818,13 @@ LIMIT is the amount of result (to a page)."
                  :exclusive ,exclusive :include-desc ,include-desc
                  :priority-owner-id ,priority-owner-id :sort ,sort
                  :order ,order :page ,page :limit ,limit)
-               :viewfun fj-repo-search)))))
+               :viewfun fj-repo-search))
+      (fj-other-window-maybe prev-buf "*fj-search" #'string-prefix-p))))
 
 (defun fj-repo-search-topic (query)
   "Search repo topics for QUERY, and display a tabulated list."
   (interactive "sSearch for topic in repos: ")
   (fj-repo-search query 'topic))
-
-(defun fj-repos-tl-render (buf entries mode &optional sort-key)
-  "Render a tabulated list in BUF fer, with ENTRIES, in MODE.
-Optionally specify repo OWNER and URL.
-Set `tabulated-list-sort-key' to SORT-KEY. It may optionally be :unset to
-unset any default values."
-  (let ((prev-buf (buffer-name (current-buffer))))
-    (with-current-buffer (get-buffer-create buf)
-      (setq tabulated-list-entries entries)
-      (funcall mode)
-      ;; some modes set a sort-key, but we also may want to selectively
-      ;; unset it. but if we don't have sort-key, we also don't want to
-      ;; nil the mode setting:
-      (when sort-key
-        (if (eq :unset sort-key)
-            (setq tabulated-list-sort-key nil)
-          (setq tabulated-list-sort-key sort-key)))
-      (tabulated-list-init-header)
-      (tabulated-list-print)
-      (fj-other-window-maybe prev-buf "*fj-search" #'string-prefix-p))))
-
-;; (cond ((or (string= buf prev-buf) ;; reloading
-;;            (string-prefix-p "*fj-search" buf)) ;; any search
-;;        ;; (string-suffix-p "-issues*" prev-buf) ; diff repo
-;;        (switch-to-buffer (current-buffer)))
-;;       (t ;; new buf
-;;        (switch-to-buffer-other-window (current-buffer)))))))
 
 ;;; TL ACTIONS
 
@@ -4637,8 +4652,9 @@ PAGE and LIMIT are for pagination."
                           (concat "-" subject-type "s")
                         "")))
          (data (fj-get-notifications all status-types
-                                     subject-type page limit)))
-    (fedi-with-buffer buf 'fj-notifications-mode nil
+                                     subject-type page limit))
+         (wd default-directory))
+    (fj-with-buffer buf 'fj-notifications-mode wd nil
       (if (not data)
           (insert
            (format "No notifications of type: %s %s" all-type
@@ -4649,11 +4665,10 @@ PAGE and LIMIT are for pagination."
                               ( :all ,all :status-types ,status-types
                                 :subject-type ,subject-type
                                 :page ,page :limit ,limit))))
-    ;; FIXME: make this an option in `fedi-with-buffer'?
-    ;; else it just goes to point-min:
-    (fj-next-tab-item)
-    (message (substitute-command-keys
-              "\\`C-c C-c': cycle state | \\`C-c C-s': cycle type"))))
+    (with-current-buffer buf
+      (fj-next-tab-item)
+      (message (substitute-command-keys
+                "\\`C-c C-c': cycle state | \\`C-c C-s': cycle type")))))
 
 (defun fj-view-notifications-all (&optional status-types subject-type
                                             page limit)
@@ -4946,8 +4961,9 @@ If PREFIX arg, prompt for branch to show commits of."
                                     (fj-repo-branches-list repo owner))))
          (data (fj-get-repo-commits repo owner branch))
          (buf (format "*fj-%s-commit-log%s*" repo
-                      (if branch (format "-branch-%s" branch) ""))))
-    (fedi-with-buffer buf 'fj-commits-mode nil
+                      (if branch (format "-branch-%s" branch) "")))
+         (wd default-directory))
+    (fj-with-buffer buf 'fj-commits-mode wd nil
       ;; FIXME: use `fj-other-window-maybe'
       (setq-local header-line-format (format "Commits in branch: %s"
                                              (or branch "default")))
@@ -5063,8 +5079,9 @@ BUF-STR is the name of the buffer string to use."
          (data (funcall fetch-fun repo owner page limit))
          (endpoint (if (eq fetch-fun #'fj-get-stargazers)
                        "stars"
-                     "watchers")))
-    (fedi-with-buffer buf 'fj-users-mode nil
+                     "watchers"))
+         (wd default-directory))
+    (fj-with-buffer buf 'fj-users-mode wd nil
       (fj-render-users data)
       (when repo (setq fj-current-repo repo))
       (setq fj-buffer-spec
@@ -5127,8 +5144,9 @@ Fetch users by calling FETCH-FUN with no args.
 BUF-STR is the name of the `buffer-string' to use."
   (let* ((user (or user fj-user))
          (buf (format "*fj-%s" buf-str))
-         (data (funcall fetch-fun)))
-    (fedi-with-buffer buf 'fj-users-mode nil
+         (data (funcall fetch-fun))
+         (wd default-directory))
+    (fj-with-buffer buf 'fj-users-mode wd nil
       (fj-render-users data)
       ;; (when repo (setq fj-current-repo repo))
       (setq fj-buffer-spec
