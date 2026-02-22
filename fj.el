@@ -680,11 +680,11 @@ If CURRENT-REPO, get from `fj-current-repo' instead."
        fj-buffer-spec
      ,@body))
 
-(defmacro fj-with-tl (mode buffer entries wd &rest body)
+(defmacro fj-with-tl (mode buffer entries wd sort-key &rest body)
   "Set up a tabulated-list BUFFER and execute BODY.
 Sets `tabulated-list-entries' to ENTRIES, enables MODE, and uses WD as
 the working-directory (for directory-local variables)."
-  (declare (indent 4)
+  (declare (indent 5)
            (debug t))
   `(with-current-buffer (get-buffer-create ,buffer)
      (setq tabulated-list-entries ,entries)
@@ -694,7 +694,9 @@ the working-directory (for directory-local variables)."
      (setq default-directory ,wd)
      (let ((enable-local-variables :all))
        (hack-dir-local-variables-non-file-buffer))
-     ;; sort key?
+     (when ,sort-key
+       (setq tabulated-list-sort-key
+             ,(if (eq :unset sort-key) nil sort-key)))
      (tabulated-list-init-header)
      (tabulated-list-print)
      ,@body
@@ -973,7 +975,7 @@ PAGE, LIMIT, ORDER."
          (buf (format "*fj-repos-%s*" user))
          (prev-buf (buffer-name))
          (wd default-directory))
-    (fj-with-tl #'fj-user-repo-tl-mode buf entries wd
+    (fj-with-tl #'fj-user-repo-tl-mode buf entries wd nil
       (setq fj-buffer-spec
             `( :owner ,user :url ,(concat fj-host "/" user)
                :viewargs ( :user ,user :page ,page
@@ -1013,7 +1015,7 @@ LIMIT and PAGE are for pagination."
          (prev-buf (buffer-name)))
     (if (not repos)
         (user-error "No repos")
-      (fj-with-tl #'fj-user-repo-tl-mode buf entries wd
+      (fj-with-tl #'fj-user-repo-tl-mode buf entries wd :unset
         (setq fj-buffer-spec
               `( :owner ,fj-user :url ,(concat fj-host "/" fj-user)
                  :viewfun fj-list-own-repos
@@ -1052,7 +1054,7 @@ Order by ORDER, paginate by PAGE and LIMIT."
     (if (not repos)
         (user-error "No (more) repos. \
 Unless paginating, set `fj-user' or `fj-extra-repos'")
-      (fj-with-tl #'fj-repo-tl-mode buf entries wd
+      (fj-with-tl #'fj-repo-tl-mode buf entries wd nil
         (setq fj-buffer-spec
               `( :owner ,fj-user :url ,(concat fj-host "/" fj-user)
                  :viewfun fj-list-repos
@@ -1118,7 +1120,7 @@ BUF-STR is to name the buffer, URL-STR is for the buffer-spec."
                 (concat fj-host "/" fj-user url-str)))
          (prev-buf (buffer-name))
          (wd default-directory))
-    (fj-with-tl #'fj-repo-tl-mode buf entries wd
+    (fj-with-tl #'fj-repo-tl-mode buf entries wd nil
       (setq fj-buffer-spec
             `( :owner fj-user
                :url ,url
@@ -2411,7 +2413,7 @@ SORT defaults to `fj-issues-sort-default'."
          (buf-name (format "*fj-%s-%s-%s*" repo state-str type)))
     (if (not has-issues)
         (user-error "Repo does not have %s" type)
-      (fj-with-tl #'fj-issue-tl-mode buf-name (fj-issue-tl-entries issues) wd
+      (fj-with-tl #'fj-issue-tl-mode buf-name (fj-issue-tl-entries issues) wd nil
         (setq fj-current-repo repo
               fj-repo-data repo-data
               fj-buffer-spec
@@ -3818,7 +3820,7 @@ LIMIT is the amount of result (to a page)."
          (entries (fj-repo-tl-entries data))
          (prev-buf (buffer-name))
          (wd default-directory))
-    (fj-with-tl #'fj-repo-tl-mode buf entries wd
+    (fj-with-tl #'fj-repo-tl-mode buf entries wd nil
       (setq fj-buffer-spec
             `( :url ,url
                :viewargs
