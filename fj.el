@@ -3690,7 +3690,7 @@ PAGE LIMIT"
   (let* ((params
           (append
            `(("limit" . ,(or limit (fj-default-limit)))
-             ("sort" . ,(or sort "updated")))
+             ("sort" . ,sort))
            ;; (when id `(("exclusive" . "true")))
            (fedi-opt-params (query :alias "q") (topic :boolean "true")
                             (id :alias "uid")
@@ -3714,7 +3714,8 @@ Returns annotation for CAND, a candidate."
 
 (defvar-keymap fj-repo-tl-mode-map
   :doc   "Map for `fj-repo-tl-mode', a tabluated list of repos."
-  :parent fj-repo-tl-map)
+  :parent fj-repo-tl-map
+  "C-c C-c" #'fj-list-repos-sort)
 
 (define-derived-mode fj-repo-tl-mode tabulated-list-mode
   "fj-repo-search"
@@ -3811,10 +3812,22 @@ ORDER is the sort order, either \"asc\" or \"desc\"; it requires SORT to be set.
 PAGE is the page number of results.
 LIMIT is the amount of result (to a page)."
   (interactive "sSearch for repos: ")
-  (let* ((resp (fj-repo-search-do query topic id mode exclusive
-                                  (or include-desc :desc)
-                                  priority-owner-id
-                                  sort order page limit))
+  (let* ((resp (fj-repo-search-do
+                query topic id mode exclusive
+                ;; include description by default:
+                (or include-desc :desc)
+                priority-owner-id
+                ;; provide better default than the API.
+                ;; default is alphabetic, which
+                ;; indicates very little for repos
+                ;; results:
+                (or sort "updated")
+                ;; provide better default than the API.
+                ;; if we sort alphabetic but don't to
+                ;; desc it is reverse alphabetic, or for
+                ;; stars it starts with least stars:
+                (or order "desc")
+                page limit))
          (buf (format "*fj-search-%s*" query))
          (url (concat fj-host "/explore/repos"))
          (data (alist-get 'data resp))
@@ -3826,9 +3839,12 @@ LIMIT is the amount of result (to a page)."
             `( :url ,url
                :viewargs
                ( :query ,query :topic ,topic :id ,id :mode ,mode
-                 :exclusive ,exclusive :include-desc ,include-desc
-                 :priority-owner-id ,priority-owner-id :sort ,sort
-                 :order ,order :page ,page :limit ,limit)
+                 :exclusive ,exclusive
+                 :include-desc ,(or include-desc :desc)
+                 :priority-owner-id ,priority-owner-id
+                 :sort ,(or sort "updated")
+                 :order ,(or order "desc") ;; else the default is backwards
+                 :page ,page :limit ,limit)
                :viewfun fj-repo-search))
       (fj-other-window-maybe prev-buf "*fj-search" #'string-prefix-p))))
 
@@ -3836,6 +3852,15 @@ LIMIT is the amount of result (to a page)."
   "Search repo topics for QUERY, and display a tabulated list."
   (interactive "sSearch for topic in repos: ")
   (fj-repo-search query 'topic))
+
+(defun fj-list-repos-sort ()
+  "Reload current repos listing, prompting for a sort type.
+The default sort value is \"latest\"."
+  (interactive)
+  (fj-destructure-buf-spec (viewfun viewargs)
+    (let* ((sort (completing-read "Sort by: " fj-search-sorts))
+           (args (plist-put (copy-sequence viewargs) :sort sort)))
+      (apply viewfun (fj-plist-values args)))))
 
 ;;; TL ACTIONS
 
