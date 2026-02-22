@@ -5187,13 +5187,15 @@ PAGE and LIMIT are for pagination."
       (insert
        "\n"
        ;; website:
-       (unless (string-empty-p .website)
+       (if (string-empty-p .website)
+           .website
          (concat (fj-propertize-link .website 'shr nil
                                      'fj-simple-link-face)
                  "\n"))
        ;; description:
        ;; TODO: render links here:
-       (unless (string-empty-p .description)
+       (if (string-empty-p .description)
+           .description
          (concat (string-clean-whitespace .description) "\n")))
       (insert "\n" fedi-horiz-bar fedi-horiz-bar "\n\n"))))
 
