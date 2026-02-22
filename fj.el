@@ -3782,7 +3782,7 @@ NO-OWNER means don't display owner column (user repos view)."
            face default
            item repo)
           (,(string-replace "\n" " " .description)
-           face 'fj-comment-face
+           face fj-comment-face
            item repo)])))))
 
 (defun fj-repo-search (query &optional topic id mode exclusive
