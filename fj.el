@@ -2158,7 +2158,7 @@ Optionally specify REPO and OWNER."
   (hl-line-mode 1)
   (setq tabulated-list-padding 0 ;2) ; point directly on issue
         ;; this is changed by `tabulated-list-sort' which sorts by col at point:
-        tabulated-list-sort-key '("Updated" . t) ;; default
+        ;; tabulated-list-sort-key '("Updated" . t) ;; default
         tabulated-list-format
         '[("#" 5 fj-tl-sort-by-issues :right-align)
           ("💬" 3 fj-tl-sort-by-comment-count :right-align)
@@ -3721,7 +3721,7 @@ Returns annotation for CAND, a candidate."
   :group 'fj
   (hl-line-mode 1)
   (setq tabulated-list-padding 0 ;2) ; point directly on issue
-        tabulated-list-sort-key '("Updated" . t) ;; default
+        ;; tabulated-list-sort-key '("Updated" . t) ;; default
         tabulated-list-format
         '[("Name" 12 t)
           ("Owner" 12 t)
