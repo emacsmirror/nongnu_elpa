@@ -5178,7 +5178,7 @@ PAGE and LIMIT are for pagination."
        (propertize
         (fj-propertize-link .login 'handle .login)
         'fj-url .html_url
-        'fj-item-data .login_name
+        'fj-item-data user
         'fj-byline t)) ; for nav
       ;; timestamp:
       (insert
