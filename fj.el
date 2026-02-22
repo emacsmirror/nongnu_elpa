@@ -985,12 +985,20 @@ PAGE, LIMIT, ORDER."
 (defun fj-list-own-repos-read ()
   "List repos for `fj-user', prompting for an order type."
   (interactive)
+  ;; NB: if we respect page here, we fetch from server with a new sort
+  ;; arg, then stay on the same relative page, it is a bit confusing. but
+  ;; it is also confusing to return to page one with a new sort type...
+  ;; maybe it is too confusing to enable, as what it would used in place
+  ;; of is just sorting the current page, which the user can do in the
+  ;; usual TL mode way...
+  ;; (let ((page (plist-get (fj--get-buffer-spec :viewargs) :page)))
   (fj-list-own-repos '(4)))
 
 (defun fj-list-own-repos (&optional order page limit)
   "List repos for `fj-user'.
 With prefix arg ORDER, prompt for an argument to sort
-results (server-side).
+results (server-side). Note that this will reset any
+pagination (i.e. return to page 1).
 LIMIT and PAGE are for pagination."
   (interactive "P")
   (let* ((order (fj-repos-order-arg order))
