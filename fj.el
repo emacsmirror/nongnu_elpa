@@ -2286,6 +2286,7 @@ If we are not in a repo, call `fj-list-issues-do' without using
 git config."
   (if (or current-prefix-arg ;; still allow completing-read a repo
           ;; NB: this is T in fj buffers when no source files:
+          ;; NB: this is nil in magit's commit message buffer:
           (not (magit-inside-worktree-p :noerror)))
       ;; fall back to `fj--repo-owner' repos:
       (fj-list-issues-do repo owner state type)
