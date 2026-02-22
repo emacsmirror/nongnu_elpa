@@ -83,22 +83,26 @@ PROC: process; OUTPUT: new output from PROC."
 (defun typst-ts-watch-start ()
   "Watch(hot compile) current typst file."
   (interactive)
+  (unless (buffer-file-name)
+    (user-error "Current buffer is not visiting a file"))
   (run-hooks typst-ts-watch-before-watch-hook)
   (with-current-buffer (get-buffer-create typst-ts-watch-process-buffer-name)
     (erase-buffer)
     (unless (derived-mode-p 'typst-ts-compilation-mode)
       (typst-ts-compilation-mode)
       (read-only-mode -1)))
-  (set-process-filter
-   (apply
-    #'start-process
-    typst-ts-watch-process-name typst-ts-watch-process-buffer-name
-    typst-ts-compile-executable-location
-    "watch"
-    (file-name-nondirectory buffer-file-name)
-    (typst-ts-compile-get-result-pdf-filename)
-    typst-ts-watch-options)
-   'typst-ts-watch--process-filter)
+  (and-let* ((target-file (typst-ts-compile-get-target-file-argument))
+             (result-file (typst-ts-compile-get-result-pdf-filename)))
+    (set-process-filter
+     (apply
+      #'start-process
+      typst-ts-watch-process-name typst-ts-watch-process-buffer-name
+      typst-ts-compile-executable-location
+      "watch"
+      target-file
+      result-file
+      typst-ts-watch-options)
+     'typst-ts-watch--process-filter))
   (message "Start Watch"))
 
 ;;;###autoload

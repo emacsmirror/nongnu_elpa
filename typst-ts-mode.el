@@ -496,6 +496,7 @@ This function is meant to be used when user hits a return key."
   ;; Compile commands
   "C-c C-c" #'typst-ts-compile
   "C-c C-S-C" #'typst-ts-compile-and-preview
+  "C-c C-m" #'typst-ts-main-file-ask
   "C-c C-p" #'typst-ts-preview
   "C-c C-w" #'typst-ts-watch-mode
 
@@ -560,6 +561,8 @@ This function is meant to be used when user hits a return key."
       :key "C-c C-c"]
      ["Compile and Preview" typst-ts-compile-and-preview
       :key "C-c C-S-C"]
+     ["Set Main File" typst-ts-main-file-ask
+      :key "C-c C-m"]
      ["Preview" typst-ts-preview
       :key "C-c C-p"]
      ["Watch Mode" typst-ts-watch-mode
@@ -620,6 +623,16 @@ but it does help prevent some error cases."
 typst tree sitter grammar (at least %s)!" (current-time-string min-time))
           'face '(:weight bold :foreground "firebrick")))))))
 
+(defun typst-ts-set-compile-command ()
+  "Set buffer-local `compile-command' for Typst compilation."
+  (when-let* ((target-file (typst-ts-compile-get-target-file-argument)))
+    (setq-local
+     compile-command
+     (format "%s compile %s %s"
+             typst-ts-compile-executable-location
+             (shell-quote-argument target-file)
+             typst-ts-compile-options))))
+
 (defun typst-ts-after-hook-function ()
   "Run after all hooks in `typst-ts-hook'."
   ;; patch `electric-pair-post-self-insert-function' function
@@ -634,13 +647,9 @@ typst tree sitter grammar (at least %s)!" (current-time-string min-time))
 
   ;; Set Compile Command
   (ignore-errors
-    (unless compile-command
-      (setq-local
-       compile-command
-       (format "%s compile %s %s"
-               typst-ts-compile-executable-location
-               (file-name-nondirectory buffer-file-name)
-               typst-ts-compile-options))))
+    (typst-ts-set-compile-command))
+  ;; File-local variables are loaded after major mode setup, so update again.
+  (add-hook 'hack-local-variables-hook #'typst-ts-set-compile-command nil t)
 
   ;; Although without enabling `outline-minor-mode' also works, enabling it
   ;; provides outline ellipsis (if you use `set-display-table-slot' to set)

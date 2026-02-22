@@ -23,6 +23,66 @@
 (require 'compile)
 (require 'typst-ts-variables)
 
+(defun typst-ts-compile-get-target-file (&optional buffer)
+  "Get Typst file path to compile for BUFFER.
+When `typst-main-file' is non-nil, use it as main file, otherwise use
+`buffer-file-name'.  If BUFFER is nil, use current buffer.
+Return absolute file path, or nil if there is no associated file."
+  (with-current-buffer (or buffer (current-buffer))
+    (and-let* ((current-file (buffer-file-name)))
+      (if (stringp typst-main-file)
+          (expand-file-name typst-main-file
+                            (file-name-directory current-file))
+        current-file))))
+
+(defun typst-ts-compile-get-target-file-argument (&optional buffer)
+  "Get compile target file argument for BUFFER.
+If BUFFER is nil, use current buffer.  Return absolute file path or nil."
+  (typst-ts-compile-get-target-file buffer))
+
+;;;###autoload
+(defun typst-ts-main-file-ask ()
+  "Ask for Typst main file and persist it as a file-local variable.
+The chosen file is saved to `typst-main-file' in Local Variables comments.
+Choosing current file unsets `typst-main-file'."
+  (interactive)
+  (unless (buffer-file-name)
+    (user-error "Current buffer is not visiting a file"))
+  (let* ((modified-before (buffer-modified-p))
+         (current-file (expand-file-name buffer-file-name))
+         (current-dir (file-name-directory current-file))
+         (existing-main-file (and (stringp typst-main-file)
+                                  (expand-file-name typst-main-file current-dir)))
+         (chosen-file (expand-file-name
+                       (read-file-name
+                        "Main Typst file (RET for current file): "
+                        current-dir
+                        (or existing-main-file current-file)
+                        t)))
+         (new-main-file (unless (file-equal-p chosen-file current-file)
+                          (file-relative-name chosen-file current-dir))))
+    (setq-local typst-main-file new-main-file)
+    (if new-main-file
+        (add-file-local-variable 'typst-main-file new-main-file)
+      (delete-file-local-variable 'typst-main-file))
+    (when (fboundp 'typst-ts-set-compile-command)
+      (typst-ts-set-compile-command))
+    (cond
+     ((not (buffer-modified-p))
+      (message "Updated main file: %s"
+               (or typst-main-file "current buffer")))
+     ((not modified-before)
+      (save-buffer)
+      (message "Updated main file and saved buffer: %s"
+               (or typst-main-file "current buffer")))
+     ((y-or-n-p "Save buffer now so typst-main-file persists on reopen? ")
+      (save-buffer)
+      (message "Updated main file and saved buffer: %s"
+               (or typst-main-file "current buffer")))
+     (t
+      (message "Updated main file in buffer only (not saved yet): %s"
+               (or typst-main-file "current buffer"))))))
+
 (defun typst-ts-compile--compilation-finish-function (cur-buffer)
   "Compilation finish function.
 For `typst-ts-compile-after-compilation-hook' and
@@ -57,13 +117,17 @@ When using a prefix argument or the optional argument PREVIEW,
   ;; define them inside a let binding.
   (add-hook 'compilation-finish-functions
             (typst-ts-compile--compilation-finish-function (current-buffer)))
-  (compile
-   (format "%s compile %s %s %s"
-           typst-ts-compile-executable-location
-           (shell-quote-argument (file-name-nondirectory buffer-file-name))
-           (shell-quote-argument (typst-ts-compile-get-result-pdf-filename))
-           typst-ts-compile-options)
-   'typst-ts-compilation-mode))
+  (unless (buffer-file-name)
+    (user-error "Current buffer is not visiting a file"))
+  (and-let* ((target-file (typst-ts-compile-get-target-file-argument))
+             (result-file (typst-ts-compile-get-result-pdf-filename)))
+    (compile
+     (format "%s compile %s %s %s"
+             typst-ts-compile-executable-location
+             (shell-quote-argument target-file)
+             (shell-quote-argument result-file)
+             typst-ts-compile-options)
+     'typst-ts-compilation-mode)))
 
 
 (defun typst-ts-compile-get-result-pdf-filename (&optional buffer check)
@@ -72,8 +136,14 @@ If BUFFER is nil, it means use the current buffer.
 CHECK: non-nil mean check the file existence.
 Return nil if the BUFFER has not associated file or the there is
 no compiled pdf file when CHECK is non-nil."
-  (and-let* ((typst-file (buffer-file-name buffer)))
-    (let ((res (concat (file-name-as-directory typst-ts-output-directory) (file-name-base typst-file) ".pdf")))
+  (and-let* ((typst-file (typst-ts-compile-get-target-file buffer)))
+    (let* ((output-dir (with-current-buffer (or buffer (current-buffer))
+                         (if (string= typst-ts-output-directory "")
+                             (file-name-directory typst-file)
+                           (expand-file-name typst-ts-output-directory))))
+           (res (expand-file-name
+                 (concat (file-name-base typst-file) ".pdf")
+                 output-dir)))
       (and (or (not check) (file-exists-p res))
            res))))
 

@@ -30,6 +30,7 @@
   [["Compile"
     ("c" "compile & preview" typst-ts-compile-and-preview)
     ("C" "compile" typst-ts-compile)
+    ("m" "set main file" typst-ts-main-file-ask)
     ("w" "watch" typst-ts-watch-mode)
     ("p" "preview" typst-ts-preview)]
 

@@ -81,7 +81,8 @@ The car is used for subscript, the cdr is used for superscripts."
 (defcustom typst-ts-compile-options ""
   "User defined compile options for `typst-ts-compile'.
 The compile options will be passed to the end of
-`<typst-executable> compile <current-file>' command."
+`<typst-executable> compile <target-file>' command.
+`<target-file>' is `typst-main-file' when set, otherwise current file."
   :type 'string
   :group 'typst-ts-compile)
 
@@ -89,6 +90,20 @@ The compile options will be passed to the end of
   "User defined output directory for `typst-ts-compile` and `typst-ts-watch`."
   :type 'string
   :group 'typst-ts-compile)
+
+(defvar-local typst-main-file nil
+  "Main Typst file to compile for current buffer.
+When nil, compile the current buffer file.  When non-nil, it should be a path
+to the main Typst file, either absolute or relative to the current buffer's
+directory.
+
+This variable is intended to be used as a file-local variable.")
+
+(put 'typst-main-file 'safe-local-variable
+     (lambda (value)
+       (or (null value)
+           (and (stringp value)
+                (> (length value) 0)))))
 
 
 (defcustom typst-ts-preview-function 'browse-url
@@ -116,7 +131,8 @@ the current buffer."
 (defcustom typst-ts-watch-options '()
   "User defined compile options for `typst-ts-watch'.
 The compile options will be passed to the
-`<typst-executable> watch <current-file>' sub-command."
+`<typst-executable> watch <target-file>' sub-command.
+`<target-file>' is `typst-main-file' when set, otherwise current file."
   :type '(list string)
   :group 'typst-ts-watch)
 
@@ -156,4 +172,3 @@ your `display-buffer-alist', then this option will be covered by that rule."
 (provide 'typst-ts-variables)
 
 ;;; typst-ts-variables.el ends here
-
