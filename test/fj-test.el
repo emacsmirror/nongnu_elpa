@@ -25,6 +25,8 @@
 ;; TODO: test the arity of buffer-spec viewfun matches length of viewargs
 ;; for all views.
 
+(require 'ert)
+(require 'el-mock)
 (require 'exemplify-ert)
 (require 'exemplify-eval)
 (require 'fj)
@@ -1746,5 +1748,35 @@ the webUI only completes names in the issue.")
   (fj-string-number> "34" "12") => t
   (fj-string-number> "12" "34") => nil
   (fj-string-number> "12" "12" #'>=) => t)
+
+(ert-deftest fj-test-issues-tl-buffer-spec ()
+  "Test that the `fj-buffer-spec' is set up as expected.
+Mock test of `fj-list-issues-do'."
+  ;; TODO: unfortunately we can't cycle and test again, because doing so
+  ;; will also use our mock results, with state set to "open".
+  (let* ((fj-host "https://codeberg.org")
+         (fj-user "martianh")
+         (repo "fj.el")
+         (type "issues")
+         (state "open")
+         (buf (format "*fj-%s-%s-%s*" repo state type)))
+    (with-mock
+      (mock (fj-repo-get-issues repo fj-user
+                                state type nil nil nil nil nil nil)
+            => fj-test-issues)
+      (mock (fj-get-repo repo fj-user) => (car fj-test-repos))
+      (fj-list-issues-do repo fj-user state type)
+      (with-current-buffer buf
+        (should
+         (equal
+          fj-buffer-spec
+          '( :repo "fj.el" :owner "martianh"
+             :viewargs
+             ( :repo "fj.el" :owner "martianh" :state "open"
+               :type "issues" :query nil :labels nil :milestones nil
+               :page nil :limit nil)
+             :viewfun fj-list-issues-do
+             :url "https://codeberg.org/martianh/fj.el/issues"))))
+      (kill-buffer buf))))
 
 ;; TODO: tests for timeline items
