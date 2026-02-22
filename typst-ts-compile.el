@@ -53,14 +53,29 @@ Choosing current file unsets `typst-main-file'."
          (current-dir (file-name-directory current-file))
          (existing-main-file (and (stringp typst-main-file)
                                   (expand-file-name typst-main-file current-dir)))
+         (last-main-file (and (stringp typst-ts-main-file-last)
+                              (file-exists-p typst-ts-main-file-last)
+                              typst-ts-main-file-last))
+         (default-main-file (or existing-main-file
+                                last-main-file
+                                current-file))
+         (default-main-file-display
+          (let ((path (file-relative-name default-main-file current-dir)))
+            (if (or (string-prefix-p "." path)
+                    (string-prefix-p "/" path))
+                path
+              (concat "./" path))))
          (chosen-file (expand-file-name
                        (read-file-name
-                        "Main Typst file (RET for current file): "
+                        (format "Main Typst file (default %s): "
+                                default-main-file-display)
                         current-dir
-                        (or existing-main-file current-file)
+                        default-main-file
                         t)))
          (new-main-file (unless (file-equal-p chosen-file current-file)
                           (file-relative-name chosen-file current-dir))))
+    (unless (file-equal-p chosen-file current-file)
+      (setq typst-ts-main-file-last chosen-file))
     (setq-local typst-main-file new-main-file)
     (if new-main-file
         (add-file-local-variable 'typst-main-file new-main-file)

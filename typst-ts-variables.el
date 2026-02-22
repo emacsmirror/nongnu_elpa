@@ -99,6 +99,10 @@ directory.
 
 This variable is intended to be used as a file-local variable.")
 
+(defvar typst-ts-main-file-last nil
+  "Last main Typst file selected by `typst-ts-main-file-ask'.
+Stored as an absolute path and used as default candidate for other buffers.")
+
 (put 'typst-main-file 'safe-local-variable
      (lambda (value)
        (or (null value)
