@@ -959,16 +959,17 @@ X and Y are sorting args."
 (defun fj-get-user-repos (user &optional page limit)
   "GET request repos owned by USER.
 PAGE, LIMIT."
-  ;; NB: API has no sort arg!
+  ;; NB: API has no sort/order arg!
   (let ((params (append
                  `(("limit" . ,(or limit (fj-default-limit))))
                  (fedi-opt-params page)))
         (endpoint (format "users/%s/repos" user)))
     (fj-get endpoint params)))
 
-(defun fj-user-repos (&optional user page limit order)
+(defun fj-user-repos (&optional user page limit) ;; order)
   "View a tabulated list of respos for USER.
-PAGE, LIMIT, ORDER."
+PAGE, LIMIT."
+  ;; NB: API has no order arg
   (interactive "sView user repos: ")
   (let* ((repos (fj-get-user-repos user page limit))
          (entries (fj-repo-tl-entries repos :no-owner))
@@ -976,13 +977,13 @@ PAGE, LIMIT, ORDER."
          (prev-buf (buffer-name))
          (wd default-directory))
     (fj-with-tl #'fj-user-repo-tl-mode buf entries wd nil
-      (setq fj-buffer-spec
-            `( :owner ,user :url ,(concat fj-host "/" user)
-               :viewargs ( :user ,user :page ,page
-                           :limit ,limit :order ,order)
-               :viewfun fj-user-repos))
-      (fj-other-window-maybe
-       prev-buf "*fj-search" #'string-prefix-p))))
+                (setq fj-buffer-spec
+                      `( :owner ,user :url ,(concat fj-host "/" user)
+                         :viewargs ( :user ,user :page ,page
+                                     :limit ,limit) ;; :order ,order)
+                         :viewfun fj-user-repos))
+                (fj-other-window-maybe
+                 prev-buf "*fj-search" #'string-prefix-p))))
 
 (defun fj-list-own-repos-read ()
   "List repos for `fj-user', prompting for an order type."
