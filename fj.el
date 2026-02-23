@@ -2120,7 +2120,9 @@ Optionally specify REPO and OWNER."
   "L"        #'fj-repo-commit-log
   "j"        #'imenu
   "l"        #'fj-item-label-add
-  "U"        #'fj-copy-pr-url)
+  ;; TODO: conflicts with fj-user-settings-transient:
+  ;; "U"        #'fj-copy-pr-url
+  )
 
 (define-derived-mode fj-issue-tl-mode tabulated-list-mode
   "fj-issues"
@@ -3983,32 +3985,33 @@ Or if viewing a repo's issues, use its clone_url."
 (defun fj-copy-pr-url ()
   "Copy upstream Pull Request URL with branch name."
   (interactive)
-  (fj-destructure-buf-spec (owner repo item author)
-    (let* ((number (if (eq major-mode 'fj-issue-tl-mode)
-                       (fj--get-tl-col 0)
-                     item))
-           (author (if (eq major-mode 'fj-issue-tl-mode)
-                       (fj--get-tl-col 2)
-                     author))
-           (endpoint (format "repos/%s/%s/pulls/%s" owner repo number))
-           (pr (fj-get endpoint))
-           (data (alist-get 'head pr))
-           (branch (alist-get 'ref data))
-           (author+repo (alist-get 'full_name
-                                   (alist-get 'repo data)))
-           ;; this format, $host/$author/$repo/src/branch/$branch, is what
-           ;; a PR in the webUI links to:
-           (str (concat fj-host "/" author+repo
-                        "/src/branch/" branch)))
-      ;; old/strange format, in case we ever remember why this was used:
-      ;; "  "
-      ;; (format "%s:pr-%s-%s-%s"
-      ;;         branch
-      ;;         number
-      ;;         author
-      ;;         branch))))
-      (kill-new str)
-      (message "Copied: %s" str))))
+  (fj-with-pull
+   (fj-destructure-buf-spec (owner repo item author)
+     (let* ((number (if (eq major-mode 'fj-issue-tl-mode)
+                        (fj--get-tl-col 0)
+                      item))
+            (author (if (eq major-mode 'fj-issue-tl-mode)
+                        (fj--get-tl-col 2)
+                      author))
+            (endpoint (format "repos/%s/%s/pulls/%s" owner repo number))
+            (pr (fj-get endpoint))
+            (data (alist-get 'head pr))
+            (branch (alist-get 'ref data))
+            (author+repo (alist-get 'full_name
+                                    (alist-get 'repo data)))
+            ;; this format, $host/$author/$repo/src/branch/$branch, is what
+            ;; a PR in the webUI links to:
+            (str (concat fj-host "/" author+repo
+                         "/src/branch/" branch)))
+       ;; old/strange format, in case we ever remember why this was used:
+       ;; "  "
+       ;; (format "%s:pr-%s-%s-%s"
+       ;;         branch
+       ;;         number
+       ;;         author
+       ;;         branch))))
+       (kill-new str)
+       (message "Copied: %s" str)))))
 
 (defun fj-fork-to-parent ()
   "From a repo TL listing, jump to the parent repo."
