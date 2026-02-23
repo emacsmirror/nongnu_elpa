@@ -233,6 +233,8 @@ than `switch-to-buffer'."
          ;; (switch-to-buffer ,buffer))
          (pop-to-buffer ,buffer '(display-buffer-same-window)))
        ,@body
+       ;; FIXME: this breaks the poss of nav to first item
+       ;; we have to do another `with-current-buffer' for it to work
        (goto-char (point-min)))))
 
 ;;; NAV

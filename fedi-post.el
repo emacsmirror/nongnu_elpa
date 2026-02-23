@@ -583,6 +583,7 @@ Added to `after-change-functions'."
     ;; TODO: generalize:
     ;; (let ((new-or-edit '("new" . "edit"))
     ;; (types '("post" "issue" "comment")))
+    ;; use regex-opt
     (or (equal "*new post*" buf)
         (equal "*edit post*" buf)
         (equal "*new issue*" buf)
