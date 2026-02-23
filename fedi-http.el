@@ -39,6 +39,7 @@
 (require 'json)
 ;; (require 'request) ; for attachments upload
 (require 'url)
+(require 'url-http)
 (defvar url-http-response-status)
 (defvar url-http-end-of-headers)
 
@@ -252,7 +253,7 @@ to returnany error message needed."
                     (with-current-buffer response
                       (url-http-parse-response))
                   (wrong-type-argument
-                   (user-error "Failed to check http response code.")))))
+                   (user-error "Failed to check http response code")))))
     (cond ((and (>= status 200)
                 (<= status 299))
            (funcall success response))
