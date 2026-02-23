@@ -3485,7 +3485,7 @@ Optionally make the request SILENT."
     (setf (alist-get "offset" params nil nil #'string=) offset)
     (apply #'mastodon-http--get-json-async url params silent callback cbargs)))
 
-(defun mastodon-tl--updated-json (endpoint id &optional params version)
+(defun mastodon-tl--updated-json (endpoint id &optional params)
   "Return JSON for timeline ENDPOINT since ID.
 PARAMS is used to send any parameters needed to correctly update
 the current view.
