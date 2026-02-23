@@ -1939,6 +1939,13 @@ Runs `mastodon-tl--render-text' and fetches poll or media."
   "A list of possible values for a quote state attribute.
 See https://docs.joinmastodon.org/entities/Quote/#state for details.")
 
+(defun mastodon-tl--quote-symbol-str ()
+  "Return a propertized quote symbol, \"."
+  ;; quote symbol hack:
+  (propertize "“" 'face
+              '( :inherit success :weight bold
+                 :height 1.8)))
+
 (defun mastodon-tl--insert-quoted (data toot)
   "Propertize quoted status DATA for insertion.
 TOOT is the data for the quoting toot."
@@ -1947,47 +1954,58 @@ TOOT is the data for the quoting toot."
          ;; CW status of quoting toot:
          (cw (not (string-empty-p
                    (mastodon-tl--field 'spoiler_text toot))))
-         ;; quote symbol hack:
-         (quotemark (propertize "“" 'face
-                                '( :inherit success :weight bold
-                                   :height 1.8)))
          (quoted (alist-get 'quoted_status data)))
     (let-alist quoted
       (let ((filters (when .filtered
                        (mastodon-tl--current-filters .filtered))))
         ;; TODO: tailor non-disply of quote based on quote 'state'
         ;; `mastodon-tl--quote-states':
-        (when (or (string= "pending" state)
-                  (string= "accepted" state))
-          (propertize
-           (if-let* ((match (or (assoc "warn" filters)
-                                (assoc "hide" filters))))
-               ;; FIXME: "warn" should result in CW, but it should be
-               ;; a CW independent of post CW:
-               (concat "\n\n" quotemark "\n"
-                       "Quote hidden due to one of your filters")
-             (concat
-              "\n" quotemark "\n"
-              ;; author byline without horiz bar/stats:
-              (if (string= state "pending")
-                  "[quote pending]"
-                (concat
-                 (mastodon-tl--byline-author quoted nil :domain :base)
-                 "\n"
-                 (propertize ;; buttonize quoted toot body
-                  ;; quoted text:
-                  (mastodon-tl--content quoted)
-                  'button t
-                  'keymap mastodon-tl--link-keymap
-                  'help-echo "Load quoted toot"
-                  'mouse-face '(:inherit (highlight link) :underline nil))))))
-           'line-prefix bar
-           'wrap-prefix bar
-           'quote-url .url
-           'mastodon-content-warning-body (when cw t)
-           ;; TODO: respect filtering of quoted toot:
-           'invisible (when cw (mastodon-tl--spoiler-invisible-maybe))
-           'mastodon-quote data))))))
+        (propertize
+         (cond
+          ((or (assoc "warn" filters)
+               (assoc "hide" filters))
+           ;; FIXME: "warn" should result in CW, but it should be
+           ;; a CW independent of post CW:
+           (mastodon-tl--format-quote-non-display
+            "Quote hidden due to one of your filters"))
+          ;; FIXME: muted account should result in a folded quote
+          ;; (unfoldable):
+          ((string= state "muted_account")
+           (mastodon-tl--format-quote-non-display
+            "Quote hidden, account muted"))
+          ((member state '("rejected" "revoked" "deleted"))
+           (mastodon-tl--format-quote-non-display
+            (format "Quote %s" state)))
+          ((member state '("blocked_account" "blocked_domain"))
+           (mastodon-tl--format-quote-non-display
+            (format "Quote hidden, %s" state)))
+          ((string= state "pending")
+           (mastodon-tl--format-quote-non-display "[quote pending]"))
+          (t
+           (concat
+            "\n" (mastodon-tl--quote-symbol-str) "\n"
+            ;; author byline without horiz bar/stats:
+            (concat
+             (mastodon-tl--byline-author quoted nil :domain :base)
+             "\n"
+             (propertize ;; buttonize quoted toot body
+              ;; quoted text:
+              (mastodon-tl--content quoted)
+              'button t
+              'keymap mastodon-tl--link-keymap
+              'help-echo "Load quoted toot"
+              'mouse-face '(:inherit (highlight link) :underline nil))))))
+         'line-prefix bar
+         'wrap-prefix bar
+         'quote-url .url
+         'mastodon-content-warning-body (when cw t)
+         ;; TODO: respect filtering of quoted toot:
+         'invisible (when cw (mastodon-tl--spoiler-invisible-maybe))
+         'mastodon-quote data)))))
+
+(defun mastodon-tl--format-quote-non-display (str)
+  "Return a non-displaying quote string for STR."
+  (concat "\n\n" (mastodon-tl--quote-symbol-str) "\n[" str "]"))
 
 ;; PUT /api/v1/statuses/:id/interaction_policy
 (defun mastodon-tl--change-post-quote-policy ()
