@@ -2977,7 +2977,7 @@ PAGE and LIMIT are for `fj-issue-get-timeline'."
          (page (or page "1"))
          (limit (or limit (fj-timeline-default-items)))
          ;; mode check for other-window arg:
-         (ow (not (eq major-mode 'fj-item-view-mode)))
+         ;; (ow (not (eq major-mode 'fj-item-view-mode)))
          (repo (fj-read-user-repo repo))
          (item (fj-get-item repo owner number type))
          (number (or number (alist-get 'number item)))
@@ -3986,13 +3986,13 @@ Or if viewing a repo's issues, use its clone_url."
   "Copy upstream Pull Request URL with branch name."
   (interactive)
   (fj-with-pull
-   (fj-destructure-buf-spec (owner repo item author)
+   (fj-destructure-buf-spec (owner repo item _author)
      (let* ((number (if (eq major-mode 'fj-issue-tl-mode)
                         (fj--get-tl-col 0)
                       item))
-            (author (if (eq major-mode 'fj-issue-tl-mode)
-                        (fj--get-tl-col 2)
-                      author))
+            ;; (author (if (eq major-mode 'fj-issue-tl-mode)
+            ;;             (fj--get-tl-col 2)
+            ;;           author))
             (endpoint (format "repos/%s/%s/pulls/%s" owner repo number))
             (pr (fj-get endpoint))
             (data (alist-get 'head pr))
