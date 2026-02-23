@@ -609,6 +609,13 @@ If CURRENT-REPO, get from `fj-current-repo' instead."
        (user-error "Not in an issue view?")
      ,@body))
 
+(defmacro fj-with-item-tl (&rest body)
+  "Execute BODY if we are in an item TL."
+  (declare (debug t))
+  `(if (not (equal major-mode 'fj-issue-tl-mode))
+       (user-error "Not in an item TL?")
+     ,@body))
+
 (defmacro fj-with-own-repo (&rest body)
   "Execute BODY if a repo owned by `fj-user'."
   (declare (debug t))
@@ -2371,18 +2378,20 @@ git config."
   "List issues in REPO by OWNER, filtering by milestone.
 STATE, TYPE, QUERY, and LABELS are for `fj-list-issues-do'."
   (interactive)
-  (let* ((milestones (fj-get-milestones repo owner))
-         (alist (fj-milestones-alist milestones))
-         (milestone (completing-read "Milestone: " alist)))
-    (fj-list-issues-do repo owner state type query labels milestone)))
+  (fj-with-item-tl
+   (let* ((milestones (fj-get-milestones repo owner))
+          (alist (fj-milestones-alist milestones))
+          (milestone (completing-read "Milestone: " alist)))
+     (fj-list-issues-do repo owner state type query labels milestone))))
 
 (defun fj-list-issues-by-label (&optional repo owner state type query)
   "List issues in REPO by OWNER, filtering by label.
 STATE, TYPE and QUERY are for `fj-list-issues-do'."
   (interactive)
-  ;; FIXME: labels list is CSV, so we should do that here and send on:
-  (let* ((label (fj-issue-read-label)))
-    (fj-list-issues-do repo owner state type query label)))
+  (fj-with-item-tl
+   ;; FIXME: labels list is CSV, so we should do that here and send on:
+   (let* ((label (fj-issue-read-label)))
+     (fj-list-issues-do repo owner state type query label))))
 
 (defvar fj-repo-data nil) ;; for transients for now
 
