@@ -152,8 +152,8 @@ The theme has to be reloaded after changing anything in this group."
   :type 'boolean
   :group 'dracula)
 
-(defcustom dracula-alternate-syntax nil
-  "Use normal weight for syntax faces (keywords, functions, variables)."
+(defcustom dracula-bolder-keywords t
+  "Use bold weight for syntax faces (keywords, functions, variables)."
   :type 'boolean
   :group 'dracula)
 
@@ -250,10 +250,10 @@ read it before opening a new issue about your will.")
                (font-lock-constant-face :foreground ,dracula-purple)
                (font-lock-doc-face :foreground ,dracula-comment)
                (font-lock-function-name-face :foreground ,dracula-green
-                                             ,@(unless dracula-alternate-syntax
+                                             ,@(when dracula-bolder-keywords
                                                  (list :weight 'bold)))
                (font-lock-keyword-face :foreground ,dracula-pink
-                                       ,@(unless dracula-alternate-syntax
+                                       ,@(when dracula-bolder-keywords
                                            (list :weight 'bold)))
                (font-lock-negation-char-face :foreground ,dracula-cyan)
                (font-lock-number-face :foreground ,dracula-purple)
@@ -265,7 +265,7 @@ read it before opening a new issue about your will.")
                (font-lock-string-face :foreground ,dracula-yellow)
                (font-lock-type-face :inherit font-lock-builtin-face)
                (font-lock-variable-name-face :foreground ,dracula-fg
-                                             ,@(unless dracula-alternate-syntax
+                                             ,@(when dracula-bolder-keywords
                                                  (list :weight 'bold)))
                (font-lock-warning-face :inherit warning :background ,bg2)
                ;; auto-complete
