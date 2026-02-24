@@ -3,10 +3,9 @@
 ;; This file is part of VM
 ;;
 ;; Copyright (C) 1999 Robert Fenk
-;; Copyright (C) 2024-2025 The VM Developers
+;; Copyright (C) 2024-2026 The VM Developers
 ;;
 ;; Author:	Robert Fenk
-;; Status:	Tested with XEmacs 21.4.15 & VM 7.18
 ;; Keywords:	extensions, vm, ps-print
 ;; X-URL:       http://www.robf.de/Hacking/elisp
 ;;
@@ -39,11 +38,6 @@
 ;; decoding therefore messages are always display in their default
 ;; appearance.
 ;;
-;; To use these functions you should put this file into your load-path
-;; and add the following lines to your .vm file:
-;;
-;; (require 'vm-ps-print)
-;;
 ;; To redefine the default VM settings for the tool bar and menu add
 ;; the following line.  The default is to use  `vm-ps-print-message',
 ;; but if you use an optional non nil argument you will get
@@ -71,11 +65,11 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; group already defined in vm-vars.el
 ;; (defgroup vm nil
-;;   "VM"
+;;   "The VM mail reader."
 ;;   :group 'mail)
 
-;; (defgroup vm-psprint nil
-;;   "The VM ps-print lib"
+;; (defgroup vm-print nil
+;;   "Options affecting printing of messages in VM."
 ;;   :group 'vm)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -100,6 +94,18 @@ The function should accept one optional argument which is a filename."
 
 ;;----------------------------------------------------------------------------
 
+;;; This documentation should match the definition of `env' in the
+;;; function `vm-ps-print-message-internal' below.
+;;;###autoload
+(defconst vm-ps-print-message-header-env "
+
+The following variables are available when evaluating the value:
+  `dd-mon-yyyy'  The current date
+  `folder-name'  The name of the folder
+  `mcount'       The number of messages to print
+  `msg'          A pointer to a VM message"
+)
+
 ;;;###autoload
 (defcustom vm-ps-print-message-header-lines  2
   "See `ps-header-lines'."
@@ -110,15 +116,19 @@ The function should accept one optional argument which is a filename."
 (defcustom vm-ps-print-message-left-header
   '(list (format "(Folder `%s')" folder-name)
 	 (format "(%d message%s printed)" mcount (if (= mcount 1) "" "s")))
-  "This variable should contain a command returning a valid `ps-left-header'."
+  (concat
+   "This variable should contain a command returning a valid `ps-left-header'."
+   vm-ps-print-message-header-env)
   :group 'vm-print
   :type 'sexp)
 
 ;;;###autoload
 (defcustom vm-ps-print-message-right-header
   '(list"/pagenumberstring load" 'dd-mon-yyyy)
-  "This variable should contain a command returning a valid `ps-right-header'.
-The defaults to the number of pages and the date of the printout."
+  (concat
+   "This variable should contain a command returning a valid `ps-right-header'.
+The default is the number of pages and the date of the printout."
+   vm-ps-print-message-header-env)
   :group 'vm-print
   :type 'sexp)
 
@@ -145,17 +155,21 @@ See `vm-summary-format' for a description of the conversion specifiers."
 (defcustom vm-ps-print-each-message-left-header
   '(list (format "(Folder `%s')" folder-name)
 	 (format "(%s)" (vm-ps-print-tokenized-summary msg (vm-summary-sprintf vm-ps-print-each-message-summary-format msg t))))
-  "This command should return a valid `ps-left-header'.
+  (concat
+   "This command should return a valid `ps-left-header'.
 The default is to have the folder name and a summary according to the
 variable `vm-ps-print-each-message-summary-format' in the left header."
+   vm-ps-print-message-header-env)
   :group 'vm-print
   :type 'sexp)
 
 ;;;###autoload
 (defcustom vm-ps-print-each-message-right-header
   '(list  "/pagenumberstring load" 'dd-mon-yyyy)
-  "This variable should contain a command returning a valid `ps-right-header'.
-The defaults to the number of pages and the date of the printout."
+  (concat
+   "This variable should contain a command returning a valid `ps-right-header'.
+The default is the number of pages and the date of the printout."
+   vm-ps-print-message-header-env)
   :group 'vm-print
   :type 'sexp)
 
@@ -181,6 +195,8 @@ MSG is a VM message pointer.
 
 See:	`vm-ps-print-message-function'"
   (let* ((dd-mon-yyyy (format-time-string "%d %b %Y   %T" (current-time)))
+	 ;; This definition should match the documentation of
+	 ;; `vm-ps-print-message-header-env' above.
 	 (env `((dd-mon-yyyy . ,dd-mon-yyyy)
 	        (folder-name . ,folder-name)
 	        (mcount . ,mcount)
