@@ -6,7 +6,7 @@
 ;; Package-Requires: ((emacs "29.1") (fedi "0.2") (tp "0.8") (transient "0.10.0") (magit "4.3.8"))
 ;; Keywords: git, convenience
 ;; URL: https://codeberg.org/martianh/fj.el
-;; Version: 0.30
+;; Version: 0.31
 ;; Separator: -
 
 ;; This program is free software; you can redistribute it and/or modify
