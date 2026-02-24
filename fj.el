@@ -6,7 +6,7 @@
 ;; Package-Requires: ((emacs "29.1") (fedi "0.2") (tp "0.8") (transient "0.10.0") (magit "4.3.8"))
 ;; Keywords: git, convenience
 ;; URL: https://codeberg.org/martianh/fj.el
-;; Version: 0.30
+;; Version: 0.31
 ;; Separator: -
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -609,6 +609,13 @@ If CURRENT-REPO, get from `fj-current-repo' instead."
        (user-error "Not in an issue view?")
      ,@body))
 
+(defmacro fj-with-item-tl (&rest body)
+  "Execute BODY if we are in an item TL."
+  (declare (debug t))
+  `(if (not (equal major-mode 'fj-issue-tl-mode))
+       (user-error "Not in an item TL?")
+     ,@body))
+
 (defmacro fj-with-own-repo (&rest body)
   "Execute BODY if a repo owned by `fj-user'."
   (declare (debug t))
@@ -675,8 +682,50 @@ If CURRENT-REPO, get from `fj-current-repo' instead."
   "Destructure `fj-buffer-spec' with keyword PARAMETERS and call BODY."
   (declare (debug t)
            (indent 1))
+  ;; FIXME: wrapping this macro breaks edebug:
   `(cl-destructuring-bind (&key ,@parameters &allow-other-keys)
        fj-buffer-spec
+     ,@body))
+
+(defmacro fj-with-tl (mode buffer entries wd sort-key &rest body)
+  "Set up a tabulated-list BUFFER and execute BODY.
+Sets `tabulated-list-entries' to ENTRIES, enables MODE, and uses WD as
+the working-directory (for directory-local variables)."
+  (declare (indent 5)
+           (debug t))
+  `(with-current-buffer (get-buffer-create ,buffer)
+     (setq tabulated-list-entries ,entries)
+     (funcall ,mode)
+     ;; ensure our .dir-locals.el settings take effect:
+     ;; via https://emacs.stackexchange.com/questions/13080/reloading-directory-local-variables
+     (setq default-directory ,wd)
+     (let ((enable-local-variables :all))
+       (hack-dir-local-variables-non-file-buffer))
+     (when ,sort-key
+       (setq tabulated-list-sort-key
+             ,(if (eq :unset sort-key) nil sort-key)))
+     (tabulated-list-init-header)
+     (tabulated-list-print)
+     ,@body
+     ;; other-window maybe?
+     ;; message bindings maybe?
+     ))
+
+
+(defmacro fj-with-buffer (buf mode wd ow &rest body)
+  "Set up a BUF fer in MODE and call BODY.
+Sets up default-directory as WD and ensures local variables take effect
+in non-file buffers.
+OW is other window argument for `fedi-with-buffer'."
+  (declare (indent 4)
+           (debug t))
+  `(fedi-with-buffer ,buf
+       ,mode ,ow
+     ;; ensure our .dir-locals.el settings take effect:
+     ;; via https://emacs.stackexchange.com/questions/13080/reloading-directory-local-variables
+     (setq default-directory ,wd)
+     (let ((enable-local-variables :all))
+       (hack-dir-local-variables-non-file-buffer))
      ,@body))
 
 ;;; MAP
@@ -917,37 +966,49 @@ X and Y are sorting args."
 (defun fj-get-user-repos (user &optional page limit)
   "GET request repos owned by USER.
 PAGE, LIMIT."
-  ;; NB: no order arg avail :/
+  ;; NB: API has no sort/order arg!
   (let ((params (append
                  `(("limit" . ,(or limit (fj-default-limit))))
                  (fedi-opt-params page)))
         (endpoint (format "users/%s/repos" user)))
     (fj-get endpoint params)))
 
-(defun fj-user-repos (&optional user page limit order)
+(defun fj-user-repos (&optional user page limit) ;; order)
   "View a tabulated list of respos for USER.
-PAGE, LIMIT, ORDER."
+PAGE, LIMIT."
+  ;; NB: API has no order arg
   (interactive "sView user repos: ")
   (let* ((repos (fj-get-user-repos user page limit))
          (entries (fj-repo-tl-entries repos :no-owner))
-         (buf (format "*fj-repos-%s*" user)))
-    (fj-repos-tl-render buf entries #'fj-user-repo-tl-mode)
-    (with-current-buffer (get-buffer-create buf)
-      (setq fj-buffer-spec
-            `( :owner ,user :url ,(concat fj-host "/" user)
-               :viewargs ( :user ,user :page ,page
-                           :limit ,limit :order ,order)
-               :viewfun fj-user-repos)))))
+         (buf (format "*fj-repos-%s*" user))
+         (prev-buf (buffer-name))
+         (wd default-directory))
+    (fj-with-tl #'fj-user-repo-tl-mode buf entries wd nil
+                (setq fj-buffer-spec
+                      `( :owner ,user :url ,(concat fj-host "/" user)
+                         :viewargs ( :user ,user :page ,page
+                                     :limit ,limit) ;; :order ,order)
+                         :viewfun fj-user-repos))
+                (fj-other-window-maybe
+                 prev-buf "*fj-search" #'string-prefix-p))))
 
 (defun fj-list-own-repos-read ()
   "List repos for `fj-user', prompting for an order type."
   (interactive)
+  ;; NB: if we respect page here, we fetch from server with a new sort
+  ;; arg, then stay on the same relative page, it is a bit confusing. but
+  ;; it is also confusing to return to page one with a new sort type...
+  ;; maybe it is too confusing to enable, as what it would used in place
+  ;; of is just sorting the current page, which the user can do in the
+  ;; usual TL mode way...
+  ;; (let ((page (plist-get (fj--get-buffer-spec :viewargs) :page)))
   (fj-list-own-repos '(4)))
 
 (defun fj-list-own-repos (&optional order page limit)
   "List repos for `fj-user'.
 With prefix arg ORDER, prompt for an argument to sort
-results (server-side).
+results (server-side). Note that this will reset any
+pagination (i.e. return to page 1).
 LIMIT and PAGE are for pagination."
   (interactive "P")
   (let* ((order (fj-repos-order-arg order))
@@ -957,17 +1018,20 @@ LIMIT and PAGE are for pagination."
          (repos (and fj-user (fj-get-repos
                               limit nil nil page
                               (or order fj-own-repos-default-order))))
-         (entries (fj-repo-tl-entries repos :no-owner)))
+         (entries (fj-repo-tl-entries repos :no-owner))
+         (wd default-directory)
+         (prev-buf (buffer-name)))
     (if (not repos)
         (user-error "No repos")
-      (fj-repos-tl-render buf entries #'fj-user-repo-tl-mode :unset)
-      (with-current-buffer (get-buffer-create buf)
+      (fj-with-tl #'fj-user-repo-tl-mode buf entries wd :unset
         (setq fj-buffer-spec
               `( :owner ,fj-user :url ,(concat fj-host "/" fj-user)
                  :viewfun fj-list-own-repos
                  :viewargs (:order ,order :page ,page)))
         (message
-         (substitute-command-keys "\\`C-c C-c': sort by"))))))
+         (substitute-command-keys "\\`C-c C-c': sort by"))
+        (fj-other-window-maybe
+         prev-buf "*fj-search" #'string-prefix-p)))))
 
 (defun fj-repos-order-arg (&optional order)
   "Return an ORDER argument.
@@ -992,16 +1056,18 @@ Order by ORDER, paginate by PAGE and LIMIT."
                                 (fj-get (format "repos/%s/" repo)))
                               fj-extra-repos))
          (repos (append own-repos extra-repos))
-         (entries (fj-repo-tl-entries repos)))
+         (entries (fj-repo-tl-entries repos))
+         (wd default-directory)
+         (prev-buf (buffer-name)))
     (if (not repos)
         (user-error "No (more) repos. \
 Unless paginating, set `fj-user' or `fj-extra-repos'")
-      (fj-repos-tl-render buf entries #'fj-repo-tl-mode)
-      (with-current-buffer (get-buffer-create buf)
+      (fj-with-tl #'fj-repo-tl-mode buf entries wd nil
         (setq fj-buffer-spec
               `( :owner ,fj-user :url ,(concat fj-host "/" fj-user)
                  :viewfun fj-list-repos
-                 :viewargs (:order ,order :page ,page)))))))
+                 :viewargs (:order ,order :page ,page)))
+        (fj-other-window-maybe prev-buf "*fj-search" #'string-prefix-p)))))
 
 (defun fj-star-repo* (repo owner &optional unstar)
   "Star or UNSTAR REPO owned by OWNER."
@@ -1059,16 +1125,18 @@ BUF-STR is to name the buffer, URL-STR is for the buffer-spec."
          (entries (fj-repo-tl-entries repos))
          (buf (format "*fj-%s-repos*" buf-str))
          (url (when url-str
-                (concat fj-host "/" fj-user url-str))))
-    (fj-repos-tl-render buf entries #'fj-repo-tl-mode)
-    (with-current-buffer buf
+                (concat fj-host "/" fj-user url-str)))
+         (prev-buf (buffer-name))
+         (wd default-directory))
+    (fj-with-tl #'fj-repo-tl-mode buf entries wd nil
       (setq fj-buffer-spec
             `( :owner fj-user
                :url ,url
                :viewfun fj--list-user-repos
                :viewargs ( :endpoint ,endpoint
                            :buf-str ,buf-str
-                           :url ,url))))))
+                           :url ,url)))
+      (fj-other-window-maybe prev-buf "*fj-search" #'string-prefix-p))))
 
 ;;; USER REPOS
 
@@ -1376,7 +1444,7 @@ all for `fj-issues-search'."
                            nil page))
         (buf-name (format "*fj-search-%s%s*" (or type "items")
                           (fj-cycle-str created assigned mentioned owner)))
-        (prev-buf (buffer-name (current-buffer)))
+        (prev-buf (buffer-name))
         (prev-mode major-mode))
     ;; FIXME refactor with `fj-list-issues'? just tab list entries fun and
     ;; the buffer spec settings change
@@ -2059,7 +2127,9 @@ Optionally specify REPO and OWNER."
   "L"        #'fj-repo-commit-log
   "j"        #'imenu
   "l"        #'fj-item-label-add
-  "U"        #'fj-copy-pr-url)
+  ;; TODO: conflicts with fj-user-settings-transient:
+  ;; "U"        #'fj-copy-pr-url
+  )
 
 (define-derived-mode fj-issue-tl-mode tabulated-list-mode
   "fj-issues"
@@ -2098,7 +2168,7 @@ Optionally specify REPO and OWNER."
   (hl-line-mode 1)
   (setq tabulated-list-padding 0 ;2) ; point directly on issue
         ;; this is changed by `tabulated-list-sort' which sorts by col at point:
-        tabulated-list-sort-key '("Updated" . t) ;; default
+        ;; tabulated-list-sort-key '("Updated" . t) ;; default
         tabulated-list-format
         '[("#" 5 fj-tl-sort-by-issues :right-align)
           ("💬" 3 fj-tl-sort-by-comment-count :right-align)
@@ -2291,7 +2361,7 @@ git config."
       ;; fall back to `fj--repo-owner' repos:
       (fj-list-issues-do repo owner state type)
     ;; if in fj buffer, respect its buf-spec:
-    (if (string-prefix-p "*fj-" (buffer-name (current-buffer)))
+    (if (string-prefix-p "*fj-" (buffer-name))
         (let* ((repo (fj-read-user-repo repo))
                (owner (or owner (fj--repo-owner))))
           (fj-list-issues-do repo owner state type))
@@ -2308,18 +2378,20 @@ git config."
   "List issues in REPO by OWNER, filtering by milestone.
 STATE, TYPE, QUERY, and LABELS are for `fj-list-issues-do'."
   (interactive)
-  (let* ((milestones (fj-get-milestones repo owner))
-         (alist (fj-milestones-alist milestones))
-         (milestone (completing-read "Milestone: " alist)))
-    (fj-list-issues-do repo owner state type query labels milestone)))
+  (fj-with-item-tl
+   (let* ((milestones (fj-get-milestones repo owner))
+          (alist (fj-milestones-alist milestones))
+          (milestone (completing-read "Milestone: " alist)))
+     (fj-list-issues-do repo owner state type query labels milestone))))
 
 (defun fj-list-issues-by-label (&optional repo owner state type query)
   "List issues in REPO by OWNER, filtering by label.
 STATE, TYPE and QUERY are for `fj-list-issues-do'."
   (interactive)
-  ;; FIXME: labels list is CSV, so we should do that here and send on:
-  (let* ((label (fj-issue-read-label)))
-    (fj-list-issues-do repo owner state type query label)))
+  (fj-with-item-tl
+   ;; FIXME: labels list is CSV, so we should do that here and send on:
+   (let* ((label (fj-issue-read-label)))
+     (fj-list-issues-do repo owner state type query label))))
 
 (defvar fj-repo-data nil) ;; for transients for now
 
@@ -2353,12 +2425,7 @@ SORT defaults to `fj-issues-sort-default'."
          (buf-name (format "*fj-%s-%s-%s*" repo state-str type)))
     (if (not has-issues)
         (user-error "Repo does not have %s" type)
-      (with-current-buffer (get-buffer-create buf-name)
-        (setq tabulated-list-entries
-              (fj-issue-tl-entries issues))
-        (fj-issue-tl-mode)
-        (tabulated-list-init-header)
-        (tabulated-list-print)
+      (fj-with-tl #'fj-issue-tl-mode buf-name (fj-issue-tl-entries issues) wd nil
         (setq fj-current-repo repo
               fj-repo-data repo-data
               fj-buffer-spec
@@ -2373,16 +2440,12 @@ SORT defaults to `fj-issues-sort-default'."
                    :page ,page :limit ,limit)
                  :viewfun fj-list-issues-do
                  :url ,url))
-        ;; ensure our .dir-locals.el settings take effect:
-        ;; via https://emacs.stackexchange.com/questions/13080/reloading-directory-local-variables
-        (setq default-directory wd)
-        (let ((enable-local-variables :all))
-          (hack-dir-local-variables-non-file-buffer))
         (fj-other-window-maybe
          prev-buf "-issues*" #'string-suffix-p prev-mode)
-        (message (substitute-command-keys
-                  ;; it can't find our bindings:
-                  "\\`C-c C-c': cycle state | \\`C-c C-d': sort\
+        (message
+         (substitute-command-keys
+          ;; it can't find our bindings:
+          "\\`C-c C-c': cycle state | \\`C-c C-d': sort\
  | \\`C-c C-s': cycle type"))))))
 
 (defun fj-repo-has-items-p (type data)
@@ -2923,15 +2986,14 @@ PAGE and LIMIT are for `fj-issue-get-timeline'."
          (page (or page "1"))
          (limit (or limit (fj-timeline-default-items)))
          ;; mode check for other-window arg:
-         (ow (not (eq major-mode 'fj-item-view-mode)))
+         ;; (ow (not (eq major-mode 'fj-item-view-mode)))
          (repo (fj-read-user-repo repo))
          (item (fj-get-item repo owner number type))
-         (number (or number (alist-get 'number item))))
+         (number (or number (alist-get 'number item)))
+         (wd default-directory))
     ;; (timeline (fj-issue-get-timeline repo owner number page limit)))
-    (fedi-with-buffer (format "*fj-%s-item-%s*" repo number)
-        'fj-item-view-mode ow
-      (let ((enable-local-variables :all))
-        (hack-dir-local-variables-non-file-buffer))
+    (fj-with-buffer (format "*fj-%s-item-%s*" repo number)
+        'fj-item-view-mode wd nil ;; other-window
       ;; render actual (top) item:
       (fj-render-item repo owner item number type page limit)
       ;; if we have paginated, re-append all pages sequentially:
@@ -3639,7 +3701,7 @@ PAGE LIMIT"
   (let* ((params
           (append
            `(("limit" . ,(or limit (fj-default-limit)))
-             ("sort" . ,(or sort "updated")))
+             ("sort" . ,sort))
            ;; (when id `(("exclusive" . "true")))
            (fedi-opt-params (query :alias "q") (topic :boolean "true")
                             (id :alias "uid")
@@ -3663,7 +3725,8 @@ Returns annotation for CAND, a candidate."
 
 (defvar-keymap fj-repo-tl-mode-map
   :doc   "Map for `fj-repo-tl-mode', a tabluated list of repos."
-  :parent fj-repo-tl-map)
+  :parent fj-repo-tl-map
+  "C-c C-c" #'fj-list-repos-sort)
 
 (define-derived-mode fj-repo-tl-mode tabulated-list-mode
   "fj-repo-search"
@@ -3671,7 +3734,7 @@ Returns annotation for CAND, a candidate."
   :group 'fj
   (hl-line-mode 1)
   (setq tabulated-list-padding 0 ;2) ; point directly on issue
-        tabulated-list-sort-key '("Updated" . t) ;; default
+        ;; tabulated-list-sort-key '("Updated" . t) ;; default
         tabulated-list-format
         '[("Name" 12 t)
           ("Owner" 12 t)
@@ -3742,7 +3805,7 @@ NO-OWNER means don't display owner column (user repos view)."
            face default
            item repo)
           (,(string-replace "\n" " " .description)
-           face 'fj-comment-face
+           face fj-comment-face
            item repo)])))))
 
 (defun fj-repo-search (query &optional topic id mode exclusive
@@ -3760,56 +3823,55 @@ ORDER is the sort order, either \"asc\" or \"desc\"; it requires SORT to be set.
 PAGE is the page number of results.
 LIMIT is the amount of result (to a page)."
   (interactive "sSearch for repos: ")
-  (let* ((resp (fj-repo-search-do query topic id mode exclusive
-                                  (or include-desc :desc)
-                                  priority-owner-id
-                                  sort order page limit))
+  (let* ((resp (fj-repo-search-do
+                query topic id mode exclusive
+                ;; include description by default:
+                (or include-desc :desc)
+                priority-owner-id
+                ;; provide better default than the API.
+                ;; default is alphabetic, which
+                ;; indicates very little for repos
+                ;; results:
+                (or sort "updated")
+                ;; provide better default than the API.
+                ;; if we sort alphabetic but don't to
+                ;; desc it is reverse alphabetic, or for
+                ;; stars it starts with least stars:
+                (or order "desc")
+                page limit))
          (buf (format "*fj-search-%s*" query))
          (url (concat fj-host "/explore/repos"))
          (data (alist-get 'data resp))
-         (entries (fj-repo-tl-entries data)))
-    (fj-repos-tl-render buf entries #'fj-repo-tl-mode)
-    (with-current-buffer (get-buffer-create buf)
+         (entries (fj-repo-tl-entries data))
+         (prev-buf (buffer-name))
+         (wd default-directory))
+    (fj-with-tl #'fj-repo-tl-mode buf entries wd nil
       (setq fj-buffer-spec
             `( :url ,url
                :viewargs
                ( :query ,query :topic ,topic :id ,id :mode ,mode
-                 :exclusive ,exclusive :include-desc ,include-desc
-                 :priority-owner-id ,priority-owner-id :sort ,sort
-                 :order ,order :page ,page :limit ,limit)
-               :viewfun fj-repo-search)))))
+                 :exclusive ,exclusive
+                 :include-desc ,(or include-desc :desc)
+                 :priority-owner-id ,priority-owner-id
+                 :sort ,(or sort "updated")
+                 :order ,(or order "desc") ;; else the default is backwards
+                 :page ,page :limit ,limit)
+               :viewfun fj-repo-search))
+      (fj-other-window-maybe prev-buf "*fj-search" #'string-prefix-p))))
 
 (defun fj-repo-search-topic (query)
   "Search repo topics for QUERY, and display a tabulated list."
   (interactive "sSearch for topic in repos: ")
   (fj-repo-search query 'topic))
 
-(defun fj-repos-tl-render (buf entries mode &optional sort-key)
-  "Render a tabulated list in BUF fer, with ENTRIES, in MODE.
-Optionally specify repo OWNER and URL.
-Set `tabulated-list-sort-key' to SORT-KEY. It may optionally be :unset to
-unset any default values."
-  (let ((prev-buf (buffer-name (current-buffer))))
-    (with-current-buffer (get-buffer-create buf)
-      (setq tabulated-list-entries entries)
-      (funcall mode)
-      ;; some modes set a sort-key, but we also may want to selectively
-      ;; unset it. but if we don't have sort-key, we also don't want to
-      ;; nil the mode setting:
-      (when sort-key
-        (if (eq :unset sort-key)
-            (setq tabulated-list-sort-key nil)
-          (setq tabulated-list-sort-key sort-key)))
-      (tabulated-list-init-header)
-      (tabulated-list-print)
-      (fj-other-window-maybe prev-buf "*fj-search" #'string-prefix-p))))
-
-;; (cond ((or (string= buf prev-buf) ;; reloading
-;;            (string-prefix-p "*fj-search" buf)) ;; any search
-;;        ;; (string-suffix-p "-issues*" prev-buf) ; diff repo
-;;        (switch-to-buffer (current-buffer)))
-;;       (t ;; new buf
-;;        (switch-to-buffer-other-window (current-buffer)))))))
+(defun fj-list-repos-sort ()
+  "Reload current repos listing, prompting for a sort type.
+The default sort value is \"latest\"."
+  (interactive)
+  (fj-destructure-buf-spec (viewfun viewargs)
+    (let* ((sort (completing-read "Sort by: " fj-search-sorts))
+           (args (plist-put (copy-sequence viewargs) :sort sort)))
+      (apply viewfun (fj-plist-values args)))))
 
 ;;; TL ACTIONS
 
@@ -3932,32 +3994,33 @@ Or if viewing a repo's issues, use its clone_url."
 (defun fj-copy-pr-url ()
   "Copy upstream Pull Request URL with branch name."
   (interactive)
-  (fj-destructure-buf-spec (owner repo item author)
-    (let* ((number (if (eq major-mode 'fj-issue-tl-mode)
-                       (fj--get-tl-col 0)
-                     item))
-           (author (if (eq major-mode 'fj-issue-tl-mode)
-                       (fj--get-tl-col 2)
-                     author))
-           (endpoint (format "repos/%s/%s/pulls/%s" owner repo number))
-           (pr (fj-get endpoint))
-           (data (alist-get 'head pr))
-           (branch (alist-get 'ref data))
-           (author+repo (alist-get 'full_name
-                                   (alist-get 'repo data)))
-           ;; this format, $host/$author/$repo/src/branch/$branch, is what
-           ;; a PR in the webUI links to:
-           (str (concat fj-host "/" author+repo
-                        "/src/branch/" branch)))
-      ;; old/strange format, in case we ever remember why this was used:
-      ;; "  "
-      ;; (format "%s:pr-%s-%s-%s"
-      ;;         branch
-      ;;         number
-      ;;         author
-      ;;         branch))))
-      (kill-new str)
-      (message "Copied: %s" str))))
+  (fj-with-pull
+   (fj-destructure-buf-spec (owner repo item _author)
+     (let* ((number (if (eq major-mode 'fj-issue-tl-mode)
+                        (fj--get-tl-col 0)
+                      item))
+            ;; (author (if (eq major-mode 'fj-issue-tl-mode)
+            ;;             (fj--get-tl-col 2)
+            ;;           author))
+            (endpoint (format "repos/%s/%s/pulls/%s" owner repo number))
+            (pr (fj-get endpoint))
+            (data (alist-get 'head pr))
+            (branch (alist-get 'ref data))
+            (author+repo (alist-get 'full_name
+                                    (alist-get 'repo data)))
+            ;; this format, $host/$author/$repo/src/branch/$branch, is what
+            ;; a PR in the webUI links to:
+            (str (concat fj-host "/" author+repo
+                         "/src/branch/" branch)))
+       ;; old/strange format, in case we ever remember why this was used:
+       ;; "  "
+       ;; (format "%s:pr-%s-%s-%s"
+       ;;         branch
+       ;;         number
+       ;;         author
+       ;;         branch))))
+       (kill-new str)
+       (message "Copied: %s" str)))))
 
 (defun fj-fork-to-parent ()
   "From a repo TL listing, jump to the parent repo."
@@ -4637,8 +4700,9 @@ PAGE and LIMIT are for pagination."
                           (concat "-" subject-type "s")
                         "")))
          (data (fj-get-notifications all status-types
-                                     subject-type page limit)))
-    (fedi-with-buffer buf 'fj-notifications-mode nil
+                                     subject-type page limit))
+         (wd default-directory))
+    (fj-with-buffer buf 'fj-notifications-mode wd nil
       (if (not data)
           (insert
            (format "No notifications of type: %s %s" all-type
@@ -4649,11 +4713,10 @@ PAGE and LIMIT are for pagination."
                               ( :all ,all :status-types ,status-types
                                 :subject-type ,subject-type
                                 :page ,page :limit ,limit))))
-    ;; FIXME: make this an option in `fedi-with-buffer'?
-    ;; else it just goes to point-min:
-    (fj-next-tab-item)
-    (message (substitute-command-keys
-              "\\`C-c C-c': cycle state | \\`C-c C-s': cycle type"))))
+    (with-current-buffer buf
+      (fj-next-tab-item)
+      (message (substitute-command-keys
+                "\\`C-c C-c': cycle state | \\`C-c C-s': cycle type")))))
 
 (defun fj-view-notifications-all (&optional status-types subject-type
                                             page limit)
@@ -4946,8 +5009,9 @@ If PREFIX arg, prompt for branch to show commits of."
                                     (fj-repo-branches-list repo owner))))
          (data (fj-get-repo-commits repo owner branch))
          (buf (format "*fj-%s-commit-log%s*" repo
-                      (if branch (format "-branch-%s" branch) ""))))
-    (fedi-with-buffer buf 'fj-commits-mode nil
+                      (if branch (format "-branch-%s" branch) "")))
+         (wd default-directory))
+    (fj-with-buffer buf 'fj-commits-mode wd nil
       ;; FIXME: use `fj-other-window-maybe'
       (setq-local header-line-format (format "Commits in branch: %s"
                                              (or branch "default")))
@@ -5063,8 +5127,9 @@ BUF-STR is the name of the buffer string to use."
          (data (funcall fetch-fun repo owner page limit))
          (endpoint (if (eq fetch-fun #'fj-get-stargazers)
                        "stars"
-                     "watchers")))
-    (fedi-with-buffer buf 'fj-users-mode nil
+                     "watchers"))
+         (wd default-directory))
+    (fj-with-buffer buf 'fj-users-mode wd nil
       (fj-render-users data)
       (when repo (setq fj-current-repo repo))
       (setq fj-buffer-spec
@@ -5127,8 +5192,9 @@ Fetch users by calling FETCH-FUN with no args.
 BUF-STR is the name of the `buffer-string' to use."
   (let* ((user (or user fj-user))
          (buf (format "*fj-%s" buf-str))
-         (data (funcall fetch-fun)))
-    (fedi-with-buffer buf 'fj-users-mode nil
+         (data (funcall fetch-fun))
+         (wd default-directory))
+    (fj-with-buffer buf 'fj-users-mode wd nil
       (fj-render-users data)
       ;; (when repo (setq fj-current-repo repo))
       (setq fj-buffer-spec
@@ -5178,7 +5244,7 @@ PAGE and LIMIT are for pagination."
        (propertize
         (fj-propertize-link .login 'handle .login)
         'fj-url .html_url
-        'fj-item-data .login_name
+        'fj-item-data user
         'fj-byline t)) ; for nav
       ;; timestamp:
       (insert
@@ -5187,13 +5253,15 @@ PAGE and LIMIT are for pagination."
       (insert
        "\n"
        ;; website:
-       (unless (string-empty-p .website)
+       (if (string-empty-p .website)
+           .website
          (concat (fj-propertize-link .website 'shr nil
                                      'fj-simple-link-face)
                  "\n"))
        ;; description:
        ;; TODO: render links here:
-       (unless (string-empty-p .description)
+       (if (string-empty-p .description)
+           .description
          (concat (string-clean-whitespace .description) "\n")))
       (insert "\n" fedi-horiz-bar fedi-horiz-bar "\n\n"))))
 
