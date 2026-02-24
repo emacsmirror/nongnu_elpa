@@ -37,6 +37,9 @@ need to be set before `load-theme` is invoked for Dracula.
 
 ;; Use less pink and bold on the mode-line and minibuffer (default nil)
 (setq dracula-alternate-mode-line-and-minibuffer t)
+
+;; Use normal weight for syntax faces like keywords, functions, and variables (default t)
+(setq dracula-bolder-keywords nil)
 ```
 
 ## Test
