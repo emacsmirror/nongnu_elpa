@@ -1,4 +1,4 @@
-;;; gnosis-tl.el --- Fast single-entry tabulated-list operations  -*- lexical-binding: t; -*-
+;;; gnosis-tl.el --- Fast tabulated-list operations for large datasets  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2023-2026  Free Software Foundation, Inc.
 
@@ -21,10 +21,25 @@
 
 ;;; Commentary:
 
-;; Single-entry replace and delete operations for tabulated-list buffers.
-;; Avoids calling `tabulated-list-print' (which re-renders ALL entries)
-;; when only one line needs to change.  Full renders still use the
-;; standard `tabulated-list-print'.
+;; Fast tabulated-list operations for large datasets.
+;;
+;; Emacs's `tabulated-list-print' is expensive at scale: every
+;; `insert' triggers modification hooks, undo recording, marker
+;; adjustment, interval-tree updates, and cache invalidation.
+;; With ~8 inserts per entry across 6 columns, this adds up fast.
+;;
+;; Key optimizations:
+;;
+;; 1. Wrap the erase+render cycle with `inhibit-modification-hooks',
+;;    eliminating per-mutation Elisp hook dispatch.  Standard
+;;    `tabulated-list-print' does NOT use this flag.
+;;
+;; 2. Skip `tabulated-list-column-name' text properties (one per
+;;    column per entry).  Instead, `gnosis-tl--column-at-point'
+;;    computes the column from cursor position and format widths.
+;;
+;; Also provides single-entry replace/delete operations that avoid
+;; re-rendering the entire buffer when only one line changes.
 
 ;;; Code:
 
