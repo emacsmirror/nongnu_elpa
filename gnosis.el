@@ -2122,6 +2122,110 @@ before importing into it."
       (org-mode)
       (gnosis-save-deck (gnosis-export-parse--deck-name)))))
 
+(defun gnosis--import-split-chunks (text chunk-size)
+  "Split org TEXT into chunks of CHUNK-SIZE themata.
+
+Return a list of strings, each containing up to CHUNK-SIZE
+`* Thema' headings."
+  (let ((headings '())
+        (start 0))
+    ;; Find all `* Thema' positions
+    (while (string-match "^\\* Thema" text start)
+      (push (match-beginning 0) headings)
+      (setf start (1+ (match-beginning 0))))
+    (setq headings (nreverse headings))
+    (let ((chunks '())
+          (total (length headings)))
+      (cl-loop for i from 0 below total by chunk-size
+               for beg = (nth i headings)
+               for end-idx = (min (+ i chunk-size) total)
+               for end = (if (< end-idx total)
+                             (nth end-idx headings)
+                           (length text))
+               do (push (substring text beg end) chunks))
+      (nreverse chunks))))
+
+(defun gnosis--import-chunk (header chunk deck-id id-cache)
+  "Import a single CHUNK of org text.
+
+HEADER is the #+DECK line to prepend.  DECK-ID is the resolved
+deck id.  ID-CACHE is the shared `gnosis--id-cache' hash table.
+Returns a list of error strings (nil on full success)."
+  (let ((gc-cons-threshold most-positive-fixnum)
+        (gnosis--id-cache id-cache)
+        (errors nil))
+    (with-temp-buffer
+      (insert header "\n" chunk)
+      (org-mode)
+      (let ((themata (gnosis-export-parse-themata)))
+        (emacsql-with-transaction gnosis-db
+          (cl-loop for thema in themata
+                   for err = (gnosis-save-thema thema deck-id)
+                   when err do (push err errors)))))
+    (nreverse errors)))
+
+;;;###autoload
+(defun gnosis-import-deck-async (file &optional chunk-size)
+  "Import gnosis deck from FILE asynchronously in chunks.
+
+CHUNK-SIZE controls how many themata to process per batch
+\(default 500).  Uses `run-with-timer' between chunks so Emacs
+stays responsive.  Progress is reported in the echo area."
+  (interactive "fFile: ")
+  (let* ((chunk-size (or chunk-size 500))
+         (text (with-temp-buffer
+                 (insert-file-contents file)
+                 (buffer-string)))
+         ;; Extract header (everything before first `* Thema')
+         (header-end (or (string-match "^\\* Thema" text) 0))
+         (header (string-trim-right (substring text 0 header-end)))
+         (deck-name (with-temp-buffer
+                      (insert header)
+                      (org-mode)
+                      (gnosis-export-parse--deck-name)))
+         (deck-id (progn
+                    (when (and (gnosis-get 'id 'decks `(= name ,deck-name))
+                               (not (y-or-n-p
+                                     (format "Deck '%s' already exists.  Import into it? "
+                                             deck-name))))
+                      (user-error "Aborted"))
+                    (gnosis-get-deck-id deck-name)))
+         (id-cache (let ((ht (make-hash-table :test 'equal)))
+                     (dolist (id (gnosis-select 'id 'themata nil t) ht)
+                       (puthash id t ht))))
+         (chunks (gnosis--import-split-chunks text chunk-size))
+         (total-chunks (length chunks))
+         ;; Count total themata from the text
+         (total-themata (with-temp-buffer
+                          (insert text)
+                          (count-matches "^\\* Thema" (point-min) (point-max))))
+         (imported 0)
+         (all-errors '()))
+    (message "Importing %d themata in %d chunks..." total-themata total-chunks)
+    (cl-labels
+        ((process-next (remaining chunk-n)
+           (if (null remaining)
+               ;; Done
+               (if all-errors
+                   (message "Import complete: %d themata, %d errors"
+                            imported (length all-errors))
+                 (message "Import complete: %d themata for deck '%s'"
+                          imported deck-name))
+             (let* ((chunk (car remaining))
+                    (errors (gnosis--import-chunk header chunk deck-id id-cache))
+                    ;; Count headings in this chunk
+                    (n (with-temp-buffer
+                         (insert chunk)
+                         (count-matches "^\\* Thema" (point-min) (point-max)))))
+               (setq imported (+ imported n))
+               (when errors
+                 (setq all-errors (append all-errors errors)))
+               (message "Importing... %d/%d themata (chunk %d/%d)"
+                        imported total-themata chunk-n total-chunks)
+               (run-with-timer 0.01 nil
+                               #'process-next (cdr remaining) (1+ chunk-n))))))
+      (process-next chunks 1))))
+
 ;;;###autoload
 (defun gnosis-add-thema (deck type &optional keimenon hypothesis
 			      answer parathema tags example)
