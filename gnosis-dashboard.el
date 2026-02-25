@@ -1032,61 +1032,48 @@ Only searches within currently displayed nodes."
           (gnosis-dashboard-output-nodes matching-ids))
       (message "No nodes in current view match '%s'" query))))
 
-(defun gnosis-dashboard-nodes-search-by-content (query)
-  "Search ALL nodes by file content in org-gnosis-dir.
-Only searches files starting with numbers at root level (non-recursive).
-Each matching file contributes its node ID once to the results."
-  (interactive "sSearch all nodes by content: ")
-  (when (string-empty-p query)
-    (user-error "Search query cannot be empty"))
-  (let* ((files (directory-files org-gnosis-dir t "^[0-9].*\\.org$"))
-         (matching-ids '()))
+(defun gnosis-dashboard-nodes--search-files (query &optional node-ids)
+  "Search org files in `org-gnosis-dir' for QUERY, return matching node IDs.
+When NODE-IDS is non-nil, only search files whose node ID is in that list."
+  (let ((files (directory-files org-gnosis-dir t "^[0-9].*\\.org$"))
+        (matching-ids '()))
     (dolist (file files)
       (when (file-regular-p file)
         (with-temp-buffer
           (insert-file-contents file)
-          (when (search-forward query nil t)
-            ;; File contains the search term, get its node ID (once per file)
-            (goto-char (point-min))
-            (when (re-search-forward "^:ID:[[:space:]]+\\([^[:space:]]+\\)" nil t)
-              (let ((id (match-string 1)))
-                (unless (member id matching-ids)
+          (goto-char (point-min))
+          (when (re-search-forward "^:ID:[[:space:]]+\\([^[:space:]]+\\)" nil t)
+            (let ((id (match-string 1)))
+              (when (or (null node-ids) (member id node-ids))
+                (goto-char (point-min))
+                (when (search-forward query nil t)
                   (push id matching-ids))))))))
+    (nreverse matching-ids)))
+
+(defun gnosis-dashboard-nodes-search-by-content (query)
+  "Search ALL nodes by file content in org-gnosis-dir."
+  (interactive "sSearch all nodes by content: ")
+  (when (string-empty-p query)
+    (user-error "Search query cannot be empty"))
+  (let ((matching-ids (gnosis-dashboard-nodes--search-files query)))
     (if matching-ids
         (progn
-          ;; Save current view to history
           (push (cons (tabulated-list-get-id) gnosis-dashboard-nodes-current-ids)
                 gnosis-dashboard-nodes-history)
           (gnosis-dashboard-output-nodes matching-ids))
       (message "No nodes found matching '%s'" query))))
 
 (defun gnosis-dashboard-nodes-filter-by-content (query)
-  "Filter CURRENT nodes by searching file content.
-Only searches within currently displayed nodes."
+  "Filter CURRENT nodes by searching file content."
   (interactive "sFilter current nodes by content: ")
   (unless gnosis-dashboard-nodes-current-ids
     (user-error "No nodes to filter"))
   (when (string-empty-p query)
     (user-error "Search query cannot be empty"))
-  (let* ((files (directory-files org-gnosis-dir t "^[0-9].*\\.org$"))
-         (matching-ids '()))
-    (dolist (file files)
-      (when (file-regular-p file)
-        (with-temp-buffer
-          (insert-file-contents file)
-          (goto-char (point-min))
-          ;; Get this file's node ID
-          (when (re-search-forward "^:ID:[[:space:]]+\\([^[:space:]]+\\)" nil t)
-            (let ((id (match-string 1)))
-              ;; Only check if this node is in current view
-              (when (member id gnosis-dashboard-nodes-current-ids)
-                (goto-char (point-min))
-                (when (search-forward query nil t)
-                  (unless (member id matching-ids)
-                    (push id matching-ids)))))))))
+  (let ((matching-ids (gnosis-dashboard-nodes--search-files
+                       query gnosis-dashboard-nodes-current-ids)))
     (if matching-ids
         (progn
-          ;; Save current view to history
           (push (cons (tabulated-list-get-id) gnosis-dashboard-nodes-current-ids)
                 gnosis-dashboard-nodes-history)
           (gnosis-dashboard-output-nodes matching-ids))
