@@ -12,6 +12,7 @@
 ;;; Code:
 (require 'ert)
 (require 'gnosis)
+(require 'gnosis-tl)
 (require 'gnosis-dashboard)
 
 (let ((parent-dir (file-name-directory
@@ -618,5 +619,262 @@ Binds `org-gnosis-dir' to the temp directory."
             (should (member id1 displayed-ids))
             (should (member id2 displayed-ids))
             (should-not (member id3 displayed-ids))))))))
+
+;; ──────────────────────────────────────────────────────────
+;; gnosis-tl pure function tests
+;; ──────────────────────────────────────────────────────────
+
+(ert-deftest gnosis-test-tl-column-specs-basic ()
+  "Column specs extracts name, width, pad-right from format vector."
+  (let ((specs (gnosis-tl--column-specs [("Name" 20 t) ("Age" 5 t)])))
+    (should (= (length specs) 2))
+    ;; First column: pad-right defaults to 1
+    (should (equal (plist-get (nth 0 specs) :name) "Name"))
+    (should (= (plist-get (nth 0 specs) :width) 20))
+    (should (= (plist-get (nth 0 specs) :pad-right) 1))
+    ;; Last column: pad-right forced to 0
+    (should (equal (plist-get (nth 1 specs) :name) "Age"))
+    (should (= (plist-get (nth 1 specs) :pad-right) 0))))
+
+(ert-deftest gnosis-test-tl-column-specs-single ()
+  "Single column gets pad-right 0."
+  (let ((specs (gnosis-tl--column-specs [("Only" 10 t)])))
+    (should (= (length specs) 1))
+    (should (= (plist-get (nth 0 specs) :pad-right) 0))))
+
+(ert-deftest gnosis-test-tl-column-specs-custom-pad ()
+  "Custom :pad-right is respected for non-last columns."
+  (let ((specs (gnosis-tl--column-specs [("A" 10 t :pad-right 3) ("B" 5 t)])))
+    (should (= (plist-get (nth 0 specs) :pad-right) 3))
+    (should (= (plist-get (nth 1 specs) :pad-right) 0))))
+
+(ert-deftest gnosis-test-tl-pad-column-short-text ()
+  "Short text is padded to width."
+  (let ((result (gnosis-tl--pad-column "hi" 10 1 nil)))
+    ;; "hi" + 8 spaces padding + 1 pad-right = 11 chars
+    (should (= (length result) 11))
+    (should (string-prefix-p "hi" result))))
+
+(ert-deftest gnosis-test-tl-pad-column-truncation ()
+  "Long text is truncated with ellipsis."
+  (let ((result (gnosis-tl--pad-column "a very long string" 8 1 nil)))
+    (should (string-search "..." result))
+    ;; Total visual width: 8 (column) + 1 (pad-right) = 9
+    (should (= (string-width result) 9))))
+
+(ert-deftest gnosis-test-tl-pad-column-right-align ()
+  "Right-aligned text has leading spaces."
+  (let ((result (gnosis-tl--pad-column "hi" 10 0 t)))
+    ;; 8 spaces + "hi" = 10 chars
+    (should (= (string-width result) 10))
+    (should (string-suffix-p "hi" result))))
+
+(ert-deftest gnosis-test-tl-format-line-properties ()
+  "Format-line attaches tabulated-list-id and tabulated-list-entry properties."
+  (let* ((tabulated-list-padding 2)
+         (specs (gnosis-tl--column-specs [("Col1" 10 t) ("Col2" 5 t)]))
+         (cols (vector "hello" "world"))
+         (line (gnosis-tl--format-line 42 cols specs)))
+    ;; Has the right text properties
+    (should (equal (get-text-property 0 'tabulated-list-id line) 42))
+    (should (equal (get-text-property 0 'tabulated-list-entry line) cols))
+    ;; Ends with newline
+    (should (string-suffix-p "\n" line))
+    ;; Contains the column text
+    (should (string-search "hello" line))
+    (should (string-search "world" line))))
+
+;; ──────────────────────────────────────────────────────────
+;; gnosis-tl entry operation tests
+;; ──────────────────────────────────────────────────────────
+
+(ert-deftest gnosis-test-tl-replace-entry ()
+  "Replace-entry swaps a single line without full re-render."
+  (with-temp-buffer
+    (tabulated-list-mode)
+    (setq tabulated-list-format [("Name" 20 t) ("Val" 10 t)])
+    (setq tabulated-list-padding 2)
+    (tabulated-list-init-header)
+    (setq tabulated-list-entries
+          '((1 ["Alice" "100"])
+            (2 ["Bob" "200"])
+            (3 ["Carol" "300"])))
+    (tabulated-list-print)
+    ;; Verify Bob is present
+    (goto-char (point-min))
+    (should (search-forward "Bob" nil t))
+    ;; Replace Bob's entry
+    (gnosis-tl-replace-entry 2 ["Robert" "250"])
+    ;; Bob is gone, Robert is present
+    (goto-char (point-min))
+    (should-not (search-forward "Bob" nil t))
+    (goto-char (point-min))
+    (should (search-forward "Robert" nil t))
+    ;; Other entries untouched
+    (goto-char (point-min))
+    (should (search-forward "Alice" nil t))
+    (goto-char (point-min))
+    (should (search-forward "Carol" nil t))
+    ;; tabulated-list-get-id works on the replaced line
+    (goto-char (point-min))
+    (while (and (not (eobp))
+                (not (equal (tabulated-list-get-id) 2)))
+      (forward-line 1))
+    (should (equal (tabulated-list-get-id) 2))
+    ;; Total line count unchanged (3 entries)
+    (should (= (count-lines (point-min) (point-max)) 3))))
+
+(ert-deftest gnosis-test-tl-replace-entry-preserves-point ()
+  "Replace-entry preserves cursor position."
+  (with-temp-buffer
+    (tabulated-list-mode)
+    (setq tabulated-list-format [("Name" 20 t)])
+    (setq tabulated-list-padding 2)
+    (tabulated-list-init-header)
+    (setq tabulated-list-entries
+          '((1 ["Alice"])
+            (2 ["Bob"])
+            (3 ["Carol"])))
+    (tabulated-list-print)
+    ;; Position on Carol (line 3)
+    (goto-char (point-min))
+    (forward-line 2)
+    (should (equal (tabulated-list-get-id) 3))
+    ;; Replace Alice (line 1) -- cursor should stay on Carol
+    (gnosis-tl-replace-entry 1 ["Alicia"])
+    (should (equal (tabulated-list-get-id) 3))))
+
+(ert-deftest gnosis-test-tl-replace-entry-nonexistent ()
+  "Replace-entry with nonexistent ID is a no-op."
+  (with-temp-buffer
+    (tabulated-list-mode)
+    (setq tabulated-list-format [("Name" 20 t)])
+    (setq tabulated-list-padding 2)
+    (tabulated-list-init-header)
+    (setq tabulated-list-entries '((1 ["Alice"])))
+    (tabulated-list-print)
+    (let ((before (buffer-string)))
+      (gnosis-tl-replace-entry 999 ["Ghost"])
+      (should (equal (buffer-string) before)))))
+
+(ert-deftest gnosis-test-tl-delete-entry ()
+  "Delete-entry removes a single line without full re-render."
+  (with-temp-buffer
+    (tabulated-list-mode)
+    (setq tabulated-list-format [("Name" 20 t) ("Val" 10 t)])
+    (setq tabulated-list-padding 2)
+    (tabulated-list-init-header)
+    (setq tabulated-list-entries
+          '((1 ["Alice" "100"])
+            (2 ["Bob" "200"])
+            (3 ["Carol" "300"])))
+    (tabulated-list-print)
+    (should (= (count-lines (point-min) (point-max)) 3))
+    ;; Delete Bob
+    (gnosis-tl-delete-entry 2)
+    ;; Bob is gone
+    (goto-char (point-min))
+    (should-not (search-forward "Bob" nil t))
+    ;; Others remain
+    (goto-char (point-min))
+    (should (search-forward "Alice" nil t))
+    (goto-char (point-min))
+    (should (search-forward "Carol" nil t))
+    ;; Line count decreased
+    (should (= (count-lines (point-min) (point-max)) 2))
+    ;; tabulated-list-get-id works on remaining lines
+    (goto-char (point-min))
+    (should (equal (tabulated-list-get-id) 1))
+    (forward-line 1)
+    (should (equal (tabulated-list-get-id) 3))))
+
+(ert-deftest gnosis-test-tl-delete-entry-preserves-point ()
+  "Delete-entry preserves cursor position."
+  (with-temp-buffer
+    (tabulated-list-mode)
+    (setq tabulated-list-format [("Name" 20 t)])
+    (setq tabulated-list-padding 2)
+    (tabulated-list-init-header)
+    (setq tabulated-list-entries
+          '((1 ["Alice"])
+            (2 ["Bob"])
+            (3 ["Carol"])))
+    (tabulated-list-print)
+    ;; Position on Carol (line 3)
+    (goto-char (point-min))
+    (forward-line 2)
+    (should (equal (tabulated-list-get-id) 3))
+    ;; Delete Alice (line 1) -- cursor should stay on Carol
+    (gnosis-tl-delete-entry 1)
+    (should (equal (tabulated-list-get-id) 3))))
+
+(ert-deftest gnosis-test-tl-delete-entry-nonexistent ()
+  "Delete-entry with nonexistent ID is a no-op."
+  (with-temp-buffer
+    (tabulated-list-mode)
+    (setq tabulated-list-format [("Name" 20 t)])
+    (setq tabulated-list-padding 2)
+    (tabulated-list-init-header)
+    (setq tabulated-list-entries '((1 ["Alice"])))
+    (tabulated-list-print)
+    (let ((before (buffer-string)))
+      (gnosis-tl-delete-entry 999)
+      (should (equal (buffer-string) before)))))
+
+;; ──────────────────────────────────────────────────────────
+;; Benchmark tests
+;; ──────────────────────────────────────────────────────────
+
+(ert-deftest gnosis-test-dashboard-print-entry-benchmark ()
+  "Benchmark tabulated-list-print-entry vs tabulated-list-print.
+Shows per-entry cost so we can size chunks correctly."
+  (with-temp-buffer
+    (tabulated-list-mode)
+    (setq tabulated-list-format
+          [("Keimenon" 30 t) ("Hypothesis" 20 t) ("Answer" 20 t)
+           ("Tags" 15 t) ("Type" 10 t) ("Suspend" 10 t)])
+    (setq tabulated-list-padding 2)
+    (tabulated-list-init-header)
+    (let ((entry '(1 ["A sample keimenon text" "some hypothesis"
+                      "the answer" "tag1,tag2" "basic" "No"]))
+          (inhibit-read-only t))
+      ;; Benchmark tabulated-list-print-entry x 2000
+      (let ((start (float-time)))
+        (dotimes (_ 2000)
+          (tabulated-list-print-entry (car entry) (cadr entry)))
+        (let ((elapsed (- (float-time) start)))
+          (message "print-entry x2000: %.3fs (%.0fus/entry)"
+                   elapsed (* 1e6 (/ elapsed 2000)))))
+      ;; Reset buffer, benchmark tabulated-list-print with 2000 entries
+      (erase-buffer)
+      (setq tabulated-list-entries
+            (cl-loop for i from 1 to 2000
+                     collect (list i (cadr entry))))
+      (let ((start (float-time)))
+        (tabulated-list-print t)
+        (message "tabulated-list-print x2000: %.3fs (%.0fus/entry)"
+                 (- (float-time) start)
+                 (* 1e6 (/ (- (float-time) start) 2000))))
+      ;; Benchmark tabulated-list-print with 10000 entries
+      (erase-buffer)
+      (setq tabulated-list-entries
+            (cl-loop for i from 1 to 10000
+                     collect (list i (cadr entry))))
+      (let ((start (float-time)))
+        (tabulated-list-print t)
+        (message "tabulated-list-print x10000: %.3fs (%.0fus/entry)"
+                 (- (float-time) start)
+                 (* 1e6 (/ (- (float-time) start) 10000))))
+      ;; Benchmark tabulated-list-print with 40000 entries
+      (erase-buffer)
+      (setq tabulated-list-entries
+            (cl-loop for i from 1 to 40000
+                     collect (list i (cadr entry))))
+      (let ((start (float-time)))
+        (tabulated-list-print t)
+        (message "tabulated-list-print x40000: %.3fs (%.0fus/entry)"
+                 (- (float-time) start)
+                 (* 1e6 (/ (- (float-time) start) 40000))))
+      (should (> (buffer-size) 0)))))
 
 (ert-run-tests-batch-and-exit)
