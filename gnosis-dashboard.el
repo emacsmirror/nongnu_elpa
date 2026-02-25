@@ -29,6 +29,7 @@
 
 (require 'gnosis-monkeytype)
 (require 'gnosis)
+(require 'gnosis-tl)
 (require 'org-gnosis)
 
 (defface gnosis-face-dashboard-header
@@ -55,6 +56,8 @@ When non-nil, sort in ascending order (smaller values first)."
   :type 'boolean
   :group 'gnosis)
 
+(defvar gnosis-dashboard-timer-delay 0.01)
+
 (defvar gnosis-dashboard-thema-ids nil
   "Store thema ids for dashboard.")
 
@@ -73,6 +76,16 @@ When non-nil, sort in ascending order (smaller values first)."
 Populated by `gnosis-dashboard--output-themata', invalidated on
 edit, delete, and suspend.")
 
+(defvar-local gnosis-dashboard--rendered-ids nil
+  "Thema IDs of the last rendered view.")
+
+(defvar-local gnosis-dashboard--rendered-width nil
+  "Window width of the last rendered view.")
+
+(defvar-local gnosis-dashboard--rendered-text nil
+  "Cached buffer text (with properties) of the last rendered view.")
+
+
 (defvar gnosis-dashboard-themata-mode)
 
 (defvar gnosis-dashboard-modules
@@ -85,7 +98,8 @@ edit, delete, and suspend.")
 
 (defvar gnosis-dashboard--view-history nil
   "Stack of previous dashboard views for cross-mode navigation.
-Each entry is a function to restore that view (e.g. `gnosis-dashboard-output-decks').")
+Each entry is a function to restore that view
+ (e.g. `gnosis-dashboard-output-decks').")
 
 (defvar gnosis-dashboard-themata-current-ids nil
   "Current list of thema IDs being displayed.")
@@ -349,7 +363,8 @@ With prefix arg, prompt for count.  Default 0 (never reviewed)."
   "m" #'gnosis-dashboard-mark-toggle
   "M" #'gnosis-dashboard-mark-all
   "u" #'gnosis-dashboard-mark-toggle
-  "U" #'gnosis-dashboard-unmark-all)
+  "U" #'gnosis-dashboard-unmark-all
+)
 
 (define-minor-mode gnosis-dashboard-themata-mode
   "Minor mode for gnosis dashboard themata output."
@@ -396,10 +411,11 @@ Uses `gnosis-dashboard--entry-cache' to avoid re-querying known entries."
 	     when entry collect entry)))
 
 (defun gnosis-dashboard--update-entries (ids)
-  "Re-fetch and update tabulated-list entries for IDS."
-  ;; Invalidate cache so entries are re-queried
+  "Re-fetch and update tabulated-list entries for IDS.
+Replaces only the affected lines in the buffer via `gnosis-tl-replace-entry'."
   (dolist (id ids)
     (remhash id gnosis-dashboard--entry-cache))
+  (setq gnosis-dashboard--rendered-text nil)
   (let* ((new-entries (gnosis-dashboard--output-themata ids))
          (update-map (make-hash-table :test 'equal)))
     (dolist (entry new-entries)
@@ -408,21 +424,25 @@ Uses `gnosis-dashboard--entry-cache' to avoid re-querying known entries."
           (mapcar (lambda (entry)
                     (or (gethash (car entry) update-map) entry))
                   tabulated-list-entries))
-    (tabulated-list-print t)))
+    (dolist (entry new-entries)
+      (gnosis-tl-replace-entry (car entry) (cadr entry)))))
 
 (defun gnosis-dashboard--remove-entries (ids)
-  "Remove tabulated-list entries for IDS."
+  "Remove tabulated-list entries for IDS.
+Deletes only the affected lines in the buffer via `gnosis-tl-delete-entry'."
   (let ((id-set (make-hash-table :test 'equal)))
     (dolist (id ids)
       (puthash id t id-set)
       (remhash id gnosis-dashboard--entry-cache))
+    (setq gnosis-dashboard--rendered-text nil)
     (setq tabulated-list-entries
           (cl-remove-if (lambda (entry) (gethash (car entry) id-set))
                         tabulated-list-entries))
     (setq gnosis-dashboard-thema-ids
           (cl-remove-if (lambda (id) (gethash id id-set))
                         gnosis-dashboard-thema-ids))
-    (tabulated-list-print t)))
+    (dolist (id ids)
+      (gnosis-tl-delete-entry id))))
 
 (defun gnosis-dashboard--refresh-cache-entry (id)
   "Silently re-cache the formatted entry for thema ID.
@@ -447,39 +467,10 @@ refreshes the cache so the next themata view is current."
 (add-hook 'gnosis-save-hook #'gnosis-dashboard-update-entry)
 
 (defcustom gnosis-dashboard-chunk-size 500
-  "Number of themata to insert per async chunk in dashboard loading.
-Each chunk appends this many entries then yields to the event loop
-for redisplay."
+  "Number of themata per chunk for background cache warming.
+Each chunk fetches this many entries then yields to the event loop."
   :type 'integer
   :group 'gnosis)
-
-(defun gnosis-dashboard--load-themata-chunk (entries-remaining buffer gen inserted total)
-  "Append one chunk of ENTRIES-REMAINING to BUFFER and schedule next.
-GEN: generation counter to cancel stale loads.
-INSERTED: count of entries appended so far.  TOTAL: total count."
-  (when (and (buffer-live-p buffer)
-             (= gen (buffer-local-value
-                     'gnosis-dashboard--load-generation buffer))
-             entries-remaining)
-    (let ((chunk-size gnosis-dashboard-chunk-size)
-          (count 0))
-      (with-current-buffer buffer
-        (let ((inhibit-read-only t)
-              (saved-point (point)))
-          (goto-char (point-max))
-          (while (and entries-remaining (< count chunk-size))
-            (let ((entry (car entries-remaining)))
-              (tabulated-list-print-entry (car entry) (cadr entry)))
-            (setq entries-remaining (cdr entries-remaining))
-            (cl-incf count))
-          (goto-char saved-point)))
-      (let ((new-inserted (+ inserted count)))
-        (gnosis-dashboard--set-header-line new-inserted)
-        (if entries-remaining
-            (run-with-timer 0.01 nil
-                            #'gnosis-dashboard--load-themata-chunk
-                            entries-remaining buffer gen new-inserted total)
-          (message "Loaded %d themata" new-inserted))))))
 
 (defun gnosis-dashboard--warm-cache-chunk (chunks total warmed)
   "Process one chunk of thema IDs for background cache warming.
@@ -530,13 +521,28 @@ which view the user navigates to."
   "Clear and rebuild the themata entry cache."
   (interactive)
   (clrhash gnosis-dashboard--entry-cache)
+  (setq gnosis-dashboard--rendered-text nil)
   (message "Cache cleared, rebuilding...")
   (gnosis-dashboard-warm-cache))
 
+(defun gnosis-dashboard--set-column-format ()
+  "Set `tabulated-list-format' based on current window width.
+Distributes available width (minus padding and column gaps)
+proportionally so all columns fit within the window."
+  (let* ((w (window-width))
+         ;; Reserve: tabulated-list-padding (2) + 5 column gaps (1 each)
+         (avail (- w 7)))
+    (setf tabulated-list-format
+          `[("Keimenon"   ,(max 10 (/ (* avail 28) 100)) t)
+            ("Hypothesis" ,(max 8  (/ (* avail 16) 100)) t)
+            ("Answer"     ,(max 8  (/ (* avail 16) 100)) t)
+            ("Tags"       ,(max 8  (/ (* avail 18) 100)) t)
+            ("Type"       ,(max 5  (/ (* avail 10) 100)) t)
+            ("Suspend"    ,(max 3  (/ (* avail 8) 100)) t)])))
+
+
 (defun gnosis-dashboard-output-themata (thema-ids)
-  "Return THEMA-IDS contents on gnosis dashboard.
-For large datasets, loads asynchronously in chunks of
-`gnosis-dashboard-chunk-size' using `run-with-timer'."
+  "Display THEMA-IDS in the gnosis dashboard."
   (cl-assert (listp thema-ids) t "`thema-ids' must be a list of thema ids.")
   (cl-incf gnosis-dashboard--load-generation)
   (pop-to-buffer-same-window gnosis-dashboard-buffer-name)
@@ -549,35 +555,42 @@ For large datasets, loads asynchronously in chunks of
   (gnosis-dashboard-themata-mode 1)
   ;; Store current thema IDs for history
   (setq gnosis-dashboard-themata-current-ids thema-ids)
-  (setf tabulated-list-format `[("Keimenon" ,(/ (window-width) 4) t)
-                                ("Hypothesis" ,(/ (window-width) 6) t)
-                                ("Answer" ,(/ (window-width) 6) t)
-                                ("Tags" ,(/ (window-width) 5) t)
-                                ("Type" ,(/ (window-width) 10) t)
-                                ("Suspend" ,(/ (window-width) 6) t)]
-        gnosis-dashboard-thema-ids thema-ids
-        tabulated-list-entries nil
-        tabulated-list-sort-key nil)  ; Clear sort key when switching views
+  (gnosis-dashboard--set-column-format)
+  (setf gnosis-dashboard-thema-ids thema-ids
+        tabulated-list-sort-key nil)
   (make-local-variable 'tabulated-list-entries)
   (tabulated-list-init-header)
   (setq-local gnosis-dashboard--base-header-line header-line-format)
   (setf gnosis-dashboard--current
 	`(:type themata :ids ,thema-ids))
-  (let ((total (length thema-ids))
-        (inhibit-read-only t))
+  (let ((inhibit-read-only t))
     (erase-buffer)
-    (let ((entries (gnosis-dashboard--output-themata thema-ids)))
-      (setq tabulated-list-entries entries)
-      (if (<= total gnosis-dashboard-chunk-size)
-          ;; Small dataset: print synchronously
-          (progn
-            (tabulated-list-print t)
-            (gnosis-dashboard--set-header-line (length entries)))
-        ;; Large dataset: append entries via timer-based chunks
-        (run-with-timer 0.01 nil
-                        #'gnosis-dashboard--load-themata-chunk
-                        entries (current-buffer)
-                        gnosis-dashboard--load-generation 0 total)))))
+    (if (and gnosis-dashboard--rendered-text
+             (equal thema-ids gnosis-dashboard--rendered-ids)
+             (= (window-width) gnosis-dashboard--rendered-width))
+        ;; Cache hit — insert cached text and restore entries from data cache
+        (progn
+          (insert gnosis-dashboard--rendered-text)
+          (setq tabulated-list-entries
+                (gnosis-dashboard--output-themata thema-ids)))
+      ;; Cache miss — compute entries and render
+      (let ((entries (gnosis-dashboard--output-themata thema-ids)))
+        (setq tabulated-list-entries entries)
+        (tabulated-list-print)
+        ;; Defer rendered text cache to idle time
+        (let ((buf (current-buffer))
+              (ids (copy-sequence thema-ids))
+              (w (window-width)))
+          (run-with-idle-timer
+           0.5 nil
+           (lambda ()
+             (when (buffer-live-p buf)
+               (with-current-buffer buf
+                 (setq gnosis-dashboard--rendered-ids ids
+                       gnosis-dashboard--rendered-width w
+                       gnosis-dashboard--rendered-text
+                       (buffer-substring (point-min) (point-max))))))))))
+    (gnosis-dashboard--set-header-line (length thema-ids))))
 
 (defun gnosis-dashboard-deck-thema-count (id)
   "Return total thema count for deck with ID."
@@ -975,7 +988,7 @@ DASHBOARD-TYPE: either Themata or Decks to display the respective dashboard."
 
 (defun gnosis-dashboard-themata-show-orphaned ()
   "Show themata with orphaned links (referencing deleted org-gnosis nodes)."
-  (interactive)
+  (interactive nil gnosis-dashboard-themata-mode)
   (let* ((orphaned-rows (gnosis--orphaned-links))
          (thema-ids (when orphaned-rows
                       (cl-remove-duplicates (mapcar #'car orphaned-rows)))))
@@ -1007,7 +1020,7 @@ DASHBOARD-TYPE: either Themata or Decks to display the respective dashboard."
   [["Navigate"
     ("n" "Nodes" gnosis-dashboard-menu-nodes)
     ("t" "Themata" gnosis-dashboard-menu-themata)
-    ("D" "Decks" gnosis-dashboard-output-decks)
+    ("D" "Decks" (lambda () (interactive) (gnosis-dashboard-output-decks)))
     ("q" "Quit" quit-window)]
    ["Actions"
     ("r" "Review" gnosis-review)
