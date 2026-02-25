@@ -1,6 +1,6 @@
 ;;; gnosis-test-db.el --- Gnosis testing module  -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2023  Thanos Apollo
+;; Copyright (C) 2026  Free Software Foundation, Inc.
 
 ;; Author: Thanos Apollo <public@thanosapollo.org>
 ;; Keywords: extensions

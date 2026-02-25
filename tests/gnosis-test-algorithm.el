@@ -1,6 +1,6 @@
 ;;; gnosis-test-algorithm.el --- Gnosis Algorithm tests  -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2023  Thanos Apollo
+;; Copyright (C) 2026  Free Software Foundation, Inc.
 
 ;; Author: Thanos Apollo <public@thanosapollo.org>
 ;; Keywords: extensions

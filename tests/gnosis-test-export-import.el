@@ -1,6 +1,6 @@
 ;;; gnosis-test-export-import.el --- Export/import tests  -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2023-2026  Thanos Apollo
+;; Copyright (C) 2026  Free Software Foundation, Inc.
 
 ;; Author: Thanos Apollo <public@thanosapollo.org>
 
