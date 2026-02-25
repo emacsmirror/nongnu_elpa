@@ -96,6 +96,169 @@ Returns a single string with tabulated-list text properties attached."
                            line)
       line)))
 
+;;; Sorting
+
+(defun gnosis-tl--get-sorter ()
+  "Return a comparison function for `tabulated-list-entries', or nil.
+Mirrors `tabulated-list--get-sorter': uses `tabulated-list-sort-key'
+and `tabulated-list-format' to build the comparator.  Returns nil
+when no sort key is set or the column is not sortable."
+  (when (and tabulated-list-sort-key
+             (car tabulated-list-sort-key))
+    (let* ((sort-col (car tabulated-list-sort-key))
+           (n (tabulated-list--column-number sort-col))
+           (sorter (nth 2 (aref tabulated-list-format n))))
+      (when (eq sorter t)
+        (setq sorter (lambda (a b)
+                       (let ((a (aref (cadr a) n))
+                             (b (aref (cadr b) n)))
+                         (string< (if (stringp a) a (car a))
+                                  (if (stringp b) b (car b)))))))
+      (when sorter
+        (if (cdr tabulated-list-sort-key)
+            (lambda (a b) (funcall sorter b a))
+          sorter)))))
+
+;;; Bulk rendering
+
+(defun gnosis-tl--render-into-buffer (entries format padding)
+  "Render ENTRIES into the current buffer at point.
+FORMAT is the `tabulated-list-format' vector.  PADDING is the
+`tabulated-list-padding' integer.
+
+Uses pre-computed format strings and an ASCII fast-path to
+minimise per-entry overhead.  Properties set per line:
+`tabulated-list-id', `tabulated-list-entry'; per column:
+`tabulated-list-column-name' (needed by `tabulated-list-sort')."
+  (let* ((specs (gnosis-tl--column-specs format))
+         (n-cols (length specs))
+         (last-idx (1- n-cols))
+         (ellipsis gnosis-tl-ellipsis)
+         (pad-str (when (> padding 0) (make-string padding ?\s)))
+         ;; Pre-compute per-column vectors (avoid plist-get in hot loop)
+         (widths    (vconcat (mapcar (lambda (s) (plist-get s :width)) specs)))
+         (pad-rights (vconcat (cl-loop for s in specs for i from 0
+                                       collect (if (= i last-idx) 0
+                                                 (plist-get s :pad-right)))))
+         (right-aligns (vconcat (mapcar (lambda (s) (plist-get s :right-align)) specs)))
+         (col-names (vconcat (mapcar (lambda (s) (plist-get s :name)) specs)))
+         ;; Pre-computed "%-Ns" format strings for ASCII fast-path
+         (fmt-strs (vconcat (cl-loop for i below n-cols
+                                     collect (format "%%-%ds"
+                                                     (+ (aref widths i)
+                                                        (aref pad-rights i)))))))
+    (dolist (entry entries)
+      (let ((id (car entry))
+            (cols (cadr entry))
+            (beg (point))
+            (i 0))
+        (when pad-str (insert pad-str))
+        (while (< i n-cols)
+          (let* ((raw (or (aref cols i) ""))
+                 (text (if (stringp raw) raw (format "%s" raw)))
+                 (len (length text))
+                 (ascii-p (= len (string-bytes text)))
+                 (width (aref widths i))
+                 (col-beg (point)))
+            (if (= i last-idx)
+                ;; Last column — no padding, just truncate if needed
+                (insert (if (and ascii-p (<= len width))
+                            text
+                          (let ((sw (if ascii-p len (string-width text))))
+                            (if (> sw width)
+                                (truncate-string-to-width text width nil nil ellipsis)
+                              text))))
+              ;; Non-last columns — pad to width + pad-right
+              (if (and ascii-p (<= len width))
+                  ;; Fast path: single C-level format call does padding
+                  (insert (format (aref fmt-strs i) text))
+                ;; Slow path: multibyte or truncation needed
+                (let ((sw (if ascii-p len (string-width text)))
+                      (pr (aref pad-rights i)))
+                  (if (> sw width)
+                      (insert (truncate-string-to-width text width nil nil ellipsis)
+                              (make-string pr ?\s))
+                    (if (aref right-aligns i)
+                        (insert (make-string (- width sw) ?\s) text
+                                (make-string pr ?\s))
+                      (insert text (make-string (+ (- width sw) pr) ?\s)))))))
+            (put-text-property col-beg (point)
+                               'tabulated-list-column-name
+                               (aref col-names i)))
+          (setq i (1+ i)))
+        (insert ?\n)
+        (add-text-properties beg (point)
+                             (list 'tabulated-list-id id
+                                   'tabulated-list-entry cols))))))
+
+(defun gnosis-tl-render-lines (entries format padding)
+  "Render ENTRIES into a single propertized string.
+FORMAT is the `tabulated-list-format' vector.  PADDING is the
+`tabulated-list-padding' integer.  Returns the concatenated text
+of all formatted lines.  Pure function — no buffer side effects."
+  (with-temp-buffer
+    (gnosis-tl--render-into-buffer entries format padding)
+    (buffer-string)))
+
+(defun gnosis-tl-print (&optional remember-pos)
+  "Fast drop-in replacement for `tabulated-list-print'.
+Renders directly into the current buffer using optimised bulk
+insertion.  When REMEMBER-POS is non-nil, restore point to the
+same entry ID and column."
+  (let* ((saved-id (and remember-pos (tabulated-list-get-id)))
+         (saved-col (and remember-pos (current-column)))
+         (inhibit-read-only t)
+         (entries (if (functionp tabulated-list-entries)
+                      (funcall tabulated-list-entries)
+                    tabulated-list-entries))
+         (sorter (gnosis-tl--get-sorter)))
+    (when sorter
+      (setq entries (sort entries sorter))
+      (unless (functionp tabulated-list-entries)
+        (setq tabulated-list-entries entries)))
+    (erase-buffer)
+    (gnosis-tl--render-into-buffer entries tabulated-list-format
+                                   (or tabulated-list-padding 0))
+    (set-buffer-modified-p nil)
+    (if (and saved-id remember-pos)
+        (progn
+          (goto-char (point-min))
+          (while (and (not (eobp))
+                      (not (equal (get-text-property (point) 'tabulated-list-id)
+                                  saved-id)))
+            (forward-line 1))
+          (when saved-col
+            (move-to-column saved-col)))
+      (goto-char (point-min)))))
+
+(defun gnosis-tl-sort (&optional n)
+  "Sort the current tabulated-list by column at point.
+Like `tabulated-list-sort' but re-renders with `gnosis-tl-print'.
+With numeric prefix N, sort the Nth column.  With prefix -1,
+restore original order."
+  (interactive "P")
+  (when (and n (or (>= n (length tabulated-list-format))
+                   (< n -1)))
+    (user-error "Invalid column number"))
+  (if (equal n -1)
+      (progn
+        (setq tabulated-list-sort-key nil)
+        (tabulated-list-init-header)
+        (gnosis-tl-print t))
+    (let ((name (if n
+                    (car (aref tabulated-list-format n))
+                  (get-text-property (point)
+                                     'tabulated-list-column-name))))
+      (unless name (user-error "No column at point"))
+      (unless (nth 2 (assoc name (append tabulated-list-format nil)))
+        (user-error "Cannot sort by %s" name))
+      (if (equal name (car tabulated-list-sort-key))
+          (setcdr tabulated-list-sort-key
+                  (not (cdr tabulated-list-sort-key)))
+        (setq tabulated-list-sort-key (cons name nil)))
+      (tabulated-list-init-header)
+      (gnosis-tl-print t))))
+
 ;;; Single-entry buffer operations
 
 (defun gnosis-tl-replace-entry (id new-cols)

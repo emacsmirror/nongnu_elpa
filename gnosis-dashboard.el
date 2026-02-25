@@ -76,14 +76,17 @@ When non-nil, sort in ascending order (smaller values first)."
 Populated by `gnosis-dashboard--output-themata', invalidated on
 edit, delete, and suspend.")
 
-(defvar-local gnosis-dashboard--rendered-ids nil
-  "Thema IDs of the last rendered view.")
+(defvar gnosis-dashboard--rendered-ids nil
+  "Thema IDs of the last rendered all-themata view.")
 
-(defvar-local gnosis-dashboard--rendered-width nil
-  "Window width of the last rendered view.")
+(defvar gnosis-dashboard--rendered-width nil
+  "Window width of the last rendered all-themata view.")
 
-(defvar-local gnosis-dashboard--rendered-text nil
-  "Cached buffer text (with properties) of the last rendered view.")
+(defvar gnosis-dashboard--rendered-text nil
+  "Pre-rendered buffer text (with properties) of the all-themata view.
+Persists across dashboard opens.  Invalidated only when data changes
+via `gnosis-dashboard--update-entries', `gnosis-dashboard--remove-entries',
+or `gnosis-dashboard-rebuild-cache'.")
 
 
 (defvar gnosis-dashboard-themata-mode)
@@ -500,7 +503,8 @@ Continues as long as the dashboard buffer exists."
             (run-with-timer gnosis-dashboard-timer-delay nil
                             #'gnosis-dashboard--warm-cache-chunk
                             (cdr chunks) total new-warmed))
-        (message "Cache warmed (%d themata)" total)))))
+        (message "Cache warmed (%d themata)" total)
+        (gnosis-dashboard--start-prerender)))))
 
 (defun gnosis-dashboard-warm-cache ()
   "Warm the entry cache for all themata in the background.
@@ -517,6 +521,51 @@ which view the user navigates to."
                       #'gnosis-dashboard--warm-cache-chunk
                       chunks (length all-ids) 0))))
 
+(defun gnosis-dashboard--start-prerender ()
+  "Begin background pre-rendering of the all-themata view.
+Called after cache warming completes.  Splits entries into chunks
+and processes them via timer chain, storing the final result in
+`gnosis-dashboard--rendered-text'."
+  (let* ((buf (get-buffer gnosis-dashboard-buffer-name))
+         (win (and buf (get-buffer-window buf)))
+         (w (if win (window-width win) 80))
+         (all-ids (gnosis-select 'id 'themata nil t))
+         (gen gnosis-dashboard--load-generation)
+         (fmt (gnosis-dashboard--compute-column-format w))
+         (entries (cl-loop for id in all-ids
+                           for entry = (gethash id gnosis-dashboard--entry-cache)
+                           when entry collect entry))
+         (chunks (let (result (rest entries))
+                   (while rest
+                     (push (seq-take rest gnosis-dashboard-chunk-size) result)
+                     (setq rest (nthcdr gnosis-dashboard-chunk-size rest)))
+                   (nreverse result))))
+    (when chunks
+      (run-with-timer gnosis-dashboard-timer-delay nil
+                      #'gnosis-dashboard--prerender-chunk
+                      chunks fmt w all-ids gen nil))))
+
+(defun gnosis-dashboard--prerender-chunk (chunks fmt width all-ids gen acc)
+  "Render one CHUNKS entry for the pre-render cache.
+FMT: column format vector.  WIDTH: window width.
+ALL-IDS: full thema ID list.  GEN: load generation for staleness.
+ACC: accumulated result strings."
+  (when (and (get-buffer gnosis-dashboard-buffer-name)
+             (= gen gnosis-dashboard--load-generation))
+    (let ((rendered (gnosis-tl-render-lines (car chunks) fmt 2)))
+      (push rendered acc)
+      (if (cdr chunks)
+          (run-with-timer gnosis-dashboard-timer-delay nil
+                          #'gnosis-dashboard--prerender-chunk
+                          (cdr chunks) fmt width all-ids gen acc)
+        ;; Final chunk — assemble and store
+        (let ((text (apply #'concat (nreverse acc))))
+          (when (= gen gnosis-dashboard--load-generation)
+            (setq gnosis-dashboard--rendered-text text
+                  gnosis-dashboard--rendered-ids all-ids
+                  gnosis-dashboard--rendered-width width))
+          (message "Pre-render complete (%d themata)" (length all-ids)))))))
+
 (defun gnosis-dashboard-rebuild-cache ()
   "Clear and rebuild the themata entry cache."
   (interactive)
@@ -525,20 +574,22 @@ which view the user navigates to."
   (message "Cache cleared, rebuilding...")
   (gnosis-dashboard-warm-cache))
 
-(defun gnosis-dashboard--set-column-format ()
-  "Set `tabulated-list-format' based on current window width.
+(defun gnosis-dashboard--compute-column-format (width)
+  "Compute the themata column format vector for window WIDTH.
 Distributes available width (minus padding and column gaps)
-proportionally so all columns fit within the window."
-  (let* ((w (window-width))
-         ;; Reserve: tabulated-list-padding (2) + 5 column gaps (1 each)
-         (avail (- w 7)))
-    (setf tabulated-list-format
-          `[("Keimenon"   ,(max 10 (/ (* avail 28) 100)) t)
-            ("Hypothesis" ,(max 8  (/ (* avail 16) 100)) t)
-            ("Answer"     ,(max 8  (/ (* avail 16) 100)) t)
-            ("Tags"       ,(max 8  (/ (* avail 18) 100)) t)
-            ("Type"       ,(max 5  (/ (* avail 10) 100)) t)
-            ("Suspend"    ,(max 3  (/ (* avail 8) 100)) t)])))
+proportionally so all columns fit."
+  (let ((avail (- width 7)))
+    `[("Keimenon"   ,(max 10 (/ (* avail 28) 100)) t)
+      ("Hypothesis" ,(max 8  (/ (* avail 16) 100)) t)
+      ("Answer"     ,(max 8  (/ (* avail 16) 100)) t)
+      ("Tags"       ,(max 8  (/ (* avail 18) 100)) t)
+      ("Type"       ,(max 5  (/ (* avail 10) 100)) t)
+      ("Suspend"    ,(max 3  (/ (* avail 8) 100)) t)]))
+
+(defun gnosis-dashboard--set-column-format ()
+  "Set `tabulated-list-format' based on current window width."
+  (setf tabulated-list-format
+        (gnosis-dashboard--compute-column-format (window-width))))
 
 
 (defun gnosis-dashboard-output-themata (thema-ids)
@@ -576,7 +627,7 @@ proportionally so all columns fit within the window."
       ;; Cache miss — compute entries and render
       (let ((entries (gnosis-dashboard--output-themata thema-ids)))
         (setq tabulated-list-entries entries)
-        (tabulated-list-print)
+        (gnosis-tl-print)
         ;; Defer rendered text cache to idle time
         (let ((buf (current-buffer))
               (ids (copy-sequence thema-ids))
@@ -589,8 +640,8 @@ proportionally so all columns fit within the window."
                  (setq gnosis-dashboard--rendered-ids ids
                        gnosis-dashboard--rendered-width w
                        gnosis-dashboard--rendered-text
-                       (buffer-substring (point-min) (point-max))))))))))
-    (gnosis-dashboard--set-header-line (length thema-ids))))
+                       (buffer-string))))))))))
+  (gnosis-dashboard--set-header-line (length thema-ids)))
 
 (defun gnosis-dashboard-deck-thema-count (id)
   "Return total thema count for deck with ID."
@@ -855,6 +906,8 @@ When called with a prefix, unsuspend all themata of deck."
   "n" #'gnosis-dashboard-menu-nodes
   "t" #'gnosis-dashboard-menu-themata
   "D" #'gnosis-dashboard-output-decks
+  ;; Sort (override tabulated-list-sort with fast version)
+  "S" #'gnosis-tl-sort
   ;; Actions
   "r" #'gnosis-review
   "a" #'gnosis-add-thema
