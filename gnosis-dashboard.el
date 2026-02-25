@@ -155,21 +155,19 @@ When non-nil, sort in ascending order (smaller values first)."
 	  ((eq type 'history)
 	   (gnosis-dashboard-history)))))
 
-(defun gnosis-dashboard--streak (dates &optional num date)
+(defun gnosis-dashboard--streak (dates)
   "Return current review streak number as a string.
-
-DATES: Dates in the activity log, a list of dates in (YYYY MM DD).
-NUM: Streak number.
-DATE: Integer, used with `gnosis-algorithm-date' to get previous dates."
-  (let ((num (or num 0))
-	(date (or date -1)))
-    (cond ((> num 666)
-	   "+666") ;; do not go over 666, avoiding `max-lisp-eval-depth'
-	  ((member (gnosis-algorithm-date date) dates)
-	   (gnosis-dashboard--streak dates (cl-incf num) (- date 1)))
-	  (t (number-to-string (if (member (gnosis-algorithm-date) dates)
-				   (+ 1 num)
-				 num))))))
+DATES: Dates in the activity log, a list of dates in (YYYY MM DD)."
+  (let ((date-set (make-hash-table :test 'equal))
+        (count 0))
+    (dolist (d dates)
+      (puthash d t date-set))
+    (cl-loop for i from -1 downto -9999
+             while (gethash (gnosis-algorithm-date i) date-set)
+             do (cl-incf count))
+    (when (gethash (gnosis-algorithm-date) date-set)
+      (cl-incf count))
+    (number-to-string count)))
 
 (defun gnosis-dashboard--header-line (label count)
   "Return header-line string for LABEL with COUNT."
