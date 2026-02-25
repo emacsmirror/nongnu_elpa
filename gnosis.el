@@ -1261,6 +1261,16 @@ Returns a cons; ='(position . user-input) if correct,
   (let ((reviews (car (gnosis-select 'n 'review-log `(= id ,id) t))))
     (not (> reviews 0))))
 
+(defun gnosis-get-themata-by-reviews (max-reviews &optional thema-ids)
+  "Return thema IDs with at most MAX-REVIEWS total reviews.
+When THEMA-IDS is non-nil, restrict to that subset."
+  (gnosis-select 'id 'review-log
+                 (if thema-ids
+                     `(and (<= n ,max-reviews)
+                           (in id ,(vconcat thema-ids)))
+                   `(<= n ,max-reviews))
+                 t))
+
 (defun gnosis-review-increment-activity-log (new? &optional date)
   "Increment activity log for DATE by one.
 
