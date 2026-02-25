@@ -117,7 +117,7 @@ between two strings to consider them as similar."
 When nil, review new themata last."
   :type 'boolean)
 
-(defcustom gnosis-default-average-review-period 30
+(defcustom gnosis-default-average-review-period 360
   "Number of days of which the average review score will be calculated."
   :type 'integer)
 
@@ -229,13 +229,26 @@ This is set automatically based on buffer type:
   "Hook run after a successful `gnosis-save'.
 Each function is called with the saved thema ID (integer).")
 
-;; TODO: Make this as a defcustom.
-(defvar gnosis-custom-values
+(defcustom gnosis-custom-values
   '((:deck "demo" (:proto (0 1 3) :anagnosis 3 :epignosis 0.5 :agnoia 0.3
 			  :amnesia 0.5 :lethe 3))
     (:tag "demo" (:proto (1 2) :anagnosis 3 :epignosis 0.5 :agnoia 0.3
 			 :amnesia 0.45 :lethe 3)))
-  "Custom review values for adjusting gnosis algorithm.")
+  "Custom review values for adjusting gnosis algorithm.
+
+Each entry is a list of (SCOPE NAME PARAMETERS) where:
+- SCOPE is :deck or :tag
+- NAME is the deck/tag name string
+- PARAMETERS is a plist with keys:
+  :proto (list of integers), :anagnosis (integer),
+  :epignosis (number), :agnoia (number),
+  :amnesia (number 0-1), :lethe (positive integer)"
+  :type '(repeat sexp)
+  :initialize #'custom-initialize-default
+  :set (lambda (symbol value)
+         (gnosis-validate-custom-values value)
+         (set-default symbol value))
+  :group 'gnosis)
 
 (defvar gnosis-custom--valid-values
   '(:proto :anagnosis :epignosis :agnoia :amnesia :lethe))
