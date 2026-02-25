@@ -171,6 +171,12 @@ DATE: Integer, used with `gnosis-algorithm-date' to get previous dates."
 				   (+ 1 num)
 				 num))))))
 
+(defun gnosis-dashboard--header-line (label count)
+  "Return header-line string for LABEL with COUNT."
+  (format " %s: %s"
+          (propertize label 'face 'font-lock-keyword-face)
+          (propertize (format "%d shown" count) 'face 'shadow)))
+
 (defun gnosis-dashboard-output-average-rev ()
   "Output the average daily themata reviewed as a string for the dashboard."
   (format "%.2f" (gnosis-calculate-average-daily-reviews)))
@@ -387,6 +393,8 @@ Called from `gnosis-save-hook'."
     (insert (format "Loading %s themata..." (length thema-ids)))
     (setq tabulated-list-entries entries)
     (tabulated-list-print t)
+    (setq-local header-line-format
+                (gnosis-dashboard--header-line "Themata" (length entries)))
     (setf gnosis-dashboard--current
 	  `(:type themata :ids ,thema-ids))))
 
@@ -513,7 +521,9 @@ Called from `gnosis-save-hook'."
                    for output = (gnosis-dashboard-output-tag tag)
                    collect (list (car output)
                                  (vconcat output))))
-    (tabulated-list-print t)))
+    (tabulated-list-print t)
+    (setq-local header-line-format
+                (gnosis-dashboard--header-line "Tags" (length tabulated-list-entries)))))
 
 (defun gnosis-dashboard-output-deck (id)
   "Output contents from deck ID, formatted for gnosis dashboard."
@@ -571,6 +581,8 @@ Called from `gnosis-save-hook'."
 		 when output
 		 collect (list (number-to-string id) (vconcat output))))
   (tabulated-list-print t)
+  (setq-local header-line-format
+              (gnosis-dashboard--header-line "Decks" (length tabulated-list-entries)))
   (setf gnosis-dashboard--current `(:type decks :ids ,(gnosis-select 'id 'decks nil t))))
 
 (defun gnosis-dashboard-decks-add ()
@@ -1283,7 +1295,9 @@ Shows title, link count, backlink count, and themata links count."
     (setq tabulated-list-entries entries)
     ;; Store current node IDs (now always populated)
     (setq gnosis-dashboard-nodes-current-ids displayed-ids)
-    (tabulated-list-print t)))
+    (tabulated-list-print t)
+    (setq-local header-line-format
+                (gnosis-dashboard--header-line "Nodes" (length entries)))))
 
 (provide 'gnosis-dashboard)
 ;;; gnosis-dashboard.el ends here
