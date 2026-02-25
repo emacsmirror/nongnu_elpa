@@ -140,6 +140,14 @@ When non-nil, sort in ascending order (smaller values first)."
 	  (gnosis-center-string
 	   (format "Latest WPM: %.2f" gnosis-monkeytype-wpm-result))))))
 
+(defun gnosis-dashboard--set-header-line (count)
+  "Prepend COUNT badge to the tabulated-list column headers."
+  (let ((badge (concat (propertize (format " %d " count)
+                                   'face '(:inherit shadow))
+                       " ")))
+    (setq-local header-line-format
+                (list badge header-line-format))))
+
 (defun gnosis-dashboard-return (&optional current-values)
   "Return to dashboard for CURRENT-VALUES."
   (interactive)
@@ -168,12 +176,6 @@ DATES: Dates in the activity log, a list of dates in (YYYY MM DD)."
     (when (gethash (gnosis-algorithm-date) date-set)
       (cl-incf count))
     (number-to-string count)))
-
-(defun gnosis-dashboard--header-line (label count)
-  "Return header-line string for LABEL with COUNT."
-  (format " %s: %s"
-          (propertize label 'face 'font-lock-keyword-face)
-          (propertize (format "%d shown" count) 'face 'shadow)))
 
 (defun gnosis-dashboard-output-average-rev ()
   "Output the average daily themata reviewed as a string for the dashboard."
@@ -233,6 +235,36 @@ If IDS is not provided, use current themata being displayed."
             (gnosis-dashboard-output-themata filtered))
         (message "No themata match the filter")))))
 
+(defun gnosis-dashboard-themata-show-new (max-reviews)
+  "Show themata with at most MAX-REVIEWS total reviews.
+With prefix arg, prompt for count.  Default 0 (never reviewed)."
+  (interactive (list (if current-prefix-arg
+                        (read-number "Max reviews: " 0)
+                      0)))
+  (let ((ids (gnosis-get-themata-by-reviews max-reviews)))
+    (if ids
+        (progn
+          (setq gnosis-dashboard-themata-history nil)
+          (gnosis-dashboard-output-themata ids))
+      (message "No themata with at most %d reviews" max-reviews))))
+
+(defun gnosis-dashboard-filter-themata-by-reviews (max-reviews)
+  "Filter current themata to those with at most MAX-REVIEWS total reviews.
+With prefix arg, prompt for count.  Default 0 (never reviewed)."
+  (interactive (list (if current-prefix-arg
+                        (read-number "Max reviews: " 0)
+                      0)))
+  (unless gnosis-dashboard-themata-current-ids
+    (user-error "No themata to filter"))
+  (let ((filtered (gnosis-get-themata-by-reviews
+                   max-reviews gnosis-dashboard-themata-current-ids)))
+    (if filtered
+        (progn
+          (push (cons (tabulated-list-get-id) gnosis-dashboard-themata-current-ids)
+                gnosis-dashboard-themata-history)
+          (gnosis-dashboard-output-themata filtered))
+      (message "No themata in current view with at most %d reviews" max-reviews))))
+
 (defun gnosis-dashboard-themata-back ()
   "Go back to the previous themata view, nodes view, or main dashboard."
   (interactive)
@@ -264,6 +296,7 @@ If IDS is not provided, use current themata being displayed."
     ("q" "Back" gnosis-dashboard-themata-back)
     ("SPC" "Search" gnosis-dashboard-search-thema)
     ("l" "Filter current" gnosis-dashboard-filter-themata)
+    ("n" "Filter new/low reviews" gnosis-dashboard-filter-themata-by-reviews)
     ("g" "Refresh" gnosis-dashboard-return :transient t)
     ("RET" "Edit at point" gnosis-dashboard-edit-thema)]
    ["Edit"
@@ -286,6 +319,7 @@ If IDS is not provided, use current themata being displayed."
   "s" #'gnosis-dashboard-suspend-thema
   "SPC" #'gnosis-dashboard-search-thema
   "l" #'gnosis-dashboard-filter-themata
+  "n" #'gnosis-dashboard-filter-themata-by-reviews
   "a" #'gnosis-add-thema
   "r" #'gnosis-dashboard-return
   "g" #'gnosis-dashboard-return
@@ -391,8 +425,7 @@ Called from `gnosis-save-hook'."
     (insert (format "Loading %s themata..." (length thema-ids)))
     (setq tabulated-list-entries entries)
     (tabulated-list-print t)
-    (setq-local header-line-format
-                (gnosis-dashboard--header-line "Themata" (length entries)))
+    (gnosis-dashboard--set-header-line (length entries))
     (setf gnosis-dashboard--current
 	  `(:type themata :ids ,thema-ids))))
 
@@ -520,8 +553,7 @@ Called from `gnosis-save-hook'."
                    collect (list (car output)
                                  (vconcat output))))
     (tabulated-list-print t)
-    (setq-local header-line-format
-                (gnosis-dashboard--header-line "Tags" (length tabulated-list-entries)))))
+    (gnosis-dashboard--set-header-line (length tabulated-list-entries))))
 
 (defun gnosis-dashboard-output-deck (id)
   "Output contents from deck ID, formatted for gnosis dashboard."
@@ -579,8 +611,7 @@ Called from `gnosis-save-hook'."
 		 when output
 		 collect (list (number-to-string id) (vconcat output))))
   (tabulated-list-print t)
-  (setq-local header-line-format
-              (gnosis-dashboard--header-line "Decks" (length tabulated-list-entries)))
+  (gnosis-dashboard--set-header-line (length tabulated-list-entries))
   (setf gnosis-dashboard--current `(:type decks :ids ,(gnosis-select 'id 'decks nil t))))
 
 (defun gnosis-dashboard-decks-add ()
@@ -813,6 +844,7 @@ DASHBOARD-TYPE: either Themata or Decks to display the respective dashboard."
                           (gnosis-dashboard-output-decks)))
     ("t" "View by tags" (lambda () (interactive)
                          (gnosis-dashboard-output-tags)))
+    ("n" "View new" gnosis-dashboard-themata-show-new)
     ("o" "Show orphaned" gnosis-dashboard-themata-show-orphaned)
     ("q" "Back" transient-quit-one)]])
 
@@ -1281,8 +1313,7 @@ Shows title, link count, backlink count, and themata links count."
     ;; Store current node IDs (now always populated)
     (setq gnosis-dashboard-nodes-current-ids displayed-ids)
     (tabulated-list-print t)
-    (setq-local header-line-format
-                (gnosis-dashboard--header-line "Nodes" (length entries)))))
+    (gnosis-dashboard--set-header-line (length entries))))
 
 (provide 'gnosis-dashboard)
 ;;; gnosis-dashboard.el ends here
