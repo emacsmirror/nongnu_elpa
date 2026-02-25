@@ -3766,6 +3766,11 @@ Returns annotation for CAND, a candidate."
   'action 'fj-repo-tl-stargazers
   'help-echo "RET: View stargazers.")
 
+(defun fj-get-languages (repo owner)
+  "Get languages data for REPO by OWNER."
+  (let ((endpoint (format "repos/%s/%s/languages" owner repo)))
+    (fj-get endpoint)))
+
 (defun fj-repo-tl-entries (repos &optional no-owner)
   "Return tabluated list entries for REPOS.
 NO-OWNER means don't display owner column (user repos view)."
@@ -3776,7 +3781,11 @@ NO-OWNER means don't display owner column (user repos view)."
      (let* ((fork (if (eq .fork :json-false) "ℹ" "⑂"))
             (updated (date-to-time .updated_at))
             (updated-str (format-time-string "%s" updated))
-            (updated-display (fedi--relative-time-description updated nil :brief)))
+            (updated-display
+             (fedi--relative-time-description updated nil :brief))
+            ;; just get first lang:
+            (lang (symbol-to-string
+                   (caar (fj-get-languages .name .owner.username)))))
        `(nil ;; TODO: id
          [(,.name face fj-item-face
                   id ,.id
@@ -3799,7 +3808,7 @@ NO-OWNER means don't display owner column (user repos view)."
           (,(number-to-string .open_issues_count)
            id ,.id face fj-figures-face
            item repo)
-          ,.language
+          (,lang) ;; .language
           (,updated-str
            display ,updated-display
            face default
