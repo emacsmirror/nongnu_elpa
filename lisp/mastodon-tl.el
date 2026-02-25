@@ -3849,9 +3849,7 @@ This location is defined by a non-nil value of
                  (notifs-p
                   (eq update-fun 'mastodon-notifications--timeline))
                  (json (mastodon-tl--updated-json
-                        endpoint id params
-                        (when (and notifs-p mastodon-group-notifications)
-                          "v2"))))
+                        endpoint id params)))
             (if (mastodon-tl--no-json json)
                 (user-error "Nothing to update")
               (let ((inhibit-read-only t))
