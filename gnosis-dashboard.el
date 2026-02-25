@@ -68,6 +68,11 @@ When non-nil, sort in ascending order (smaller values first)."
 (defvar gnosis-dashboard--selected-ids nil
   "Selected ids from the tabulated list.")
 
+(defvar gnosis-dashboard--entry-cache (make-hash-table :test 'equal)
+  "Cache mapping thema id to its formatted tabulated-list entry.
+Populated by `gnosis-dashboard--output-themata', invalidated on
+edit, delete, and suspend.")
+
 (defvar gnosis-dashboard-themata-mode)
 
 (defvar gnosis-dashboard-modules
@@ -78,6 +83,10 @@ When non-nil, sort in ascending order (smaller values first)."
 (defvar gnosis-dashboard-themata-history nil
   "Stack of previous themata views for navigation history.")
 
+(defvar gnosis-dashboard--view-history nil
+  "Stack of previous dashboard views for cross-mode navigation.
+Each entry is a function to restore that view (e.g. `gnosis-dashboard-output-decks').")
+
 (defvar gnosis-dashboard-themata-current-ids nil
   "Current list of thema IDs being displayed.")
 
@@ -86,6 +95,9 @@ When non-nil, sort in ascending order (smaller values first)."
 
 (defvar gnosis-dashboard-nodes-current-ids nil
   "Current list of node IDs being displayed.")
+
+(defvar gnosis-dashboard--load-generation 0
+  "Generation counter to cancel stale async loads.")
 
 (defvar gnosis-dashboard-module-header
   (lambda ()
@@ -96,26 +108,27 @@ When non-nil, sort in ascending order (smaller values first)."
 
 (defvar gnosis-dashboard-module-today-stats
   (lambda ()
-    (insert
-     (gnosis-center-string
-      (format "\nReviewed today: %s (New: %s)"
-	      (propertize
-	       (number-to-string (gnosis-get-date-total-themata))
-	       'face 'success)
-	      (propertize
-	       (number-to-string (gnosis-get-date-new-themata))
-	       'face 'font-lock-keyword-face)))
-     "\n"
-     (gnosis-center-string
-      (format "Due themata: %s (Overdue: %s)"
-	      (propertize
-	       (number-to-string
-		(length (mapcar #'car (gnosis-review-get--due-themata))))
-	       'face 'error)
-	      (propertize
-	       (number-to-string
-		(length (gnosis-review-get-overdue-themata)))
-	       'face 'warning))))))
+    (let* ((due (gnosis-review-get--due-themata))
+           (due-count (length due))
+           (today (gnosis-algorithm-date))
+           (overdue-count (cl-count-if-not
+                           (lambda (thema) (equal (cadr thema) today))
+                           due)))
+      (insert
+       (gnosis-center-string
+        (format "\nReviewed today: %s (New: %s)"
+                (propertize
+                 (number-to-string (gnosis-get-date-total-themata))
+                 'face 'success)
+                (propertize
+                 (number-to-string (gnosis-get-date-new-themata))
+                 'face 'font-lock-keyword-face)))
+       "\n"
+       (gnosis-center-string
+        (format "Due themata: %s (Overdue: %s)"
+                (propertize (number-to-string due-count) 'face 'error)
+                (propertize (number-to-string overdue-count)
+                            'face 'warning)))))))
 
 (defvar gnosis-dashboard-module-average-rev
   (lambda ()
@@ -140,13 +153,18 @@ When non-nil, sort in ascending order (smaller values first)."
 	  (gnosis-center-string
 	   (format "Latest WPM: %.2f" gnosis-monkeytype-wpm-result))))))
 
+(defvar-local gnosis-dashboard--base-header-line nil
+  "Base `header-line-format' before count badge is prepended.")
+
 (defun gnosis-dashboard--set-header-line (count)
-  "Prepend COUNT badge to the tabulated-list column headers."
-  (let ((badge (concat (propertize (format " %d " count)
+  "Set COUNT badge in the tabulated-list column headers.
+Safe to call multiple times; always rebuilds from the base header."
+  (let ((base (or gnosis-dashboard--base-header-line header-line-format))
+        (badge (concat (propertize (format " %d " count)
                                    'face '(:inherit shadow))
                        " ")))
-    (setq-local header-line-format
-                (list badge header-line-format))))
+    (setq-local gnosis-dashboard--base-header-line base)
+    (setq-local header-line-format (list badge base))))
 
 (defun gnosis-dashboard-return (&optional current-values)
   "Return to dashboard for CURRENT-VALUES."
@@ -244,7 +262,8 @@ With prefix arg, prompt for count.  Default 0 (never reviewed)."
   (let ((ids (gnosis-get-themata-by-reviews max-reviews)))
     (if ids
         (progn
-          (setq gnosis-dashboard-themata-history nil)
+          (setq gnosis-dashboard-themata-history nil
+                gnosis-dashboard--view-history nil)
           (gnosis-dashboard-output-themata ids))
       (message "No themata with at most %d reviews" max-reviews))))
 
@@ -286,6 +305,9 @@ With prefix arg, prompt for count.  Default 0 (never reviewed)."
          gnosis-dashboard-themata-mode
          gnosis-dashboard-nodes-history)
     (gnosis-dashboard-nodes-back))
+   ;; If view history exists, go back to previous view (decks, tags, etc.)
+   (gnosis-dashboard--view-history
+    (funcall (pop gnosis-dashboard--view-history)))
    ;; Otherwise go to main dashboard
    (t
     (gnosis-dashboard))))
@@ -333,33 +355,51 @@ With prefix arg, prompt for count.  Default 0 (never reviewed)."
   "Minor mode for gnosis dashboard themata output."
   :keymap gnosis-dashboard-themata-mode-map)
 
+(defun gnosis-dashboard--format-entry (row)
+  "Format a single database ROW into a tabulated-list entry.
+ROW is (id keimenon hypothesis answer tags type suspend)."
+  (let* ((fields (cl-loop for item in (cdr row)
+			  if (listp item)
+			  collect (mapconcat (lambda (x) (format "%s" x)) item ",")
+			  else collect
+			  (let ((formatted (replace-regexp-in-string "\n" " " (format "%s" item))))
+			    (replace-regexp-in-string
+			     "\\[\\[id:[^]]+\\]\\[\\(.*?\\)\\]\\]"
+			     "\\1" formatted)))))
+    (list (car row)
+	  (vconcat (append (butlast fields)
+			   (list (if (equal (car (last fields)) "1")
+				     "Yes" "No")))))))
+
 (defun gnosis-dashboard--output-themata (thema-ids)
-  "Output tabulated-list format for THEMA-IDS."
+  "Output tabulated-list format for THEMA-IDS.
+Uses `gnosis-dashboard--entry-cache' to avoid re-querying known entries."
   (cl-assert (listp thema-ids))
-  (let ((entries (emacsql gnosis-db
-			  `[:select
-			    [themata:id themata:keimenon themata:hypothesis themata:answer
-				      themata:tags themata:type review-log:suspend]
-			    :from themata
-			    :join review-log :on (= themata:id review-log:id)
-			    :where (in themata:id ,(vconcat thema-ids))])))
-    (cl-loop for sublist in entries
-	     for fields = (cl-loop for item in (cdr sublist)
-				   if (listp item)
-				   collect (mapconcat (lambda (x) (format "%s" x)) item ",")
-				   else collect
-				   (let ((formatted (replace-regexp-in-string "\n" " " (format "%s" item))))
-				     (replace-regexp-in-string
-				      "\\[\\[id:[^]]+\\]\\[\\(.*?\\)\\]\\]"
-				      "\\1" formatted)))
-	     ;; Last field is suspend (0/1) — format as Yes/No
-	     collect (list (car sublist)
-			   (vconcat (append (butlast fields)
-					    (list (if (equal (car (last fields)) "1")
-						      "Yes" "No"))))))))
+  (let* ((uncached (cl-remove-if
+		    (lambda (id) (gethash id gnosis-dashboard--entry-cache))
+		    thema-ids)))
+    ;; Fetch and cache only the missing entries
+    (when uncached
+      (let ((rows (emacsql gnosis-db
+			   `[:select
+			     [themata:id themata:keimenon themata:hypothesis themata:answer
+				       themata:tags themata:type review-log:suspend]
+			     :from themata
+			     :join review-log :on (= themata:id review-log:id)
+			     :where (in themata:id ,(vconcat uncached))])))
+	(dolist (row rows)
+	  (puthash (car row) (gnosis-dashboard--format-entry row)
+		   gnosis-dashboard--entry-cache))))
+    ;; Return all requested entries from cache (preserving order)
+    (cl-loop for id in thema-ids
+	     for entry = (gethash id gnosis-dashboard--entry-cache)
+	     when entry collect entry)))
 
 (defun gnosis-dashboard--update-entries (ids)
   "Re-fetch and update tabulated-list entries for IDS."
+  ;; Invalidate cache so entries are re-queried
+  (dolist (id ids)
+    (remhash id gnosis-dashboard--entry-cache))
   (let* ((new-entries (gnosis-dashboard--output-themata ids))
          (update-map (make-hash-table :test 'equal)))
     (dolist (entry new-entries)
@@ -374,7 +414,8 @@ With prefix arg, prompt for count.  Default 0 (never reviewed)."
   "Remove tabulated-list entries for IDS."
   (let ((id-set (make-hash-table :test 'equal)))
     (dolist (id ids)
-      (puthash id t id-set))
+      (puthash id t id-set)
+      (remhash id gnosis-dashboard--entry-cache))
     (setq tabulated-list-entries
           (cl-remove-if (lambda (entry) (gethash (car entry) id-set))
                         tabulated-list-entries))
@@ -383,21 +424,121 @@ With prefix arg, prompt for count.  Default 0 (never reviewed)."
                         gnosis-dashboard-thema-ids))
     (tabulated-list-print t)))
 
+(defun gnosis-dashboard--refresh-cache-entry (id)
+  "Silently re-cache the formatted entry for thema ID.
+Does not touch any buffer — only updates `gnosis-dashboard--entry-cache'."
+  (remhash id gnosis-dashboard--entry-cache)
+  (gnosis-dashboard--output-themata (list id)))
+
 (defun gnosis-dashboard-update-entry (id)
   "Update the tabulated-list entry for thema ID in place.
-Called from `gnosis-save-hook'."
-  (when gnosis-dashboard-themata-mode
-    (gnosis-dashboard--update-entries (list id))
-    (goto-char (point-min))
-    (while (and (not (eobp))
-                (not (equal (tabulated-list-get-id) id)))
-      (forward-line 1))))
+Called from `gnosis-save-hook'.
+When in themata view, updates the visible list.  Otherwise silently
+refreshes the cache so the next themata view is current."
+  (if gnosis-dashboard-themata-mode
+      (progn
+        (gnosis-dashboard--update-entries (list id))
+        (goto-char (point-min))
+        (while (and (not (eobp))
+                    (not (equal (tabulated-list-get-id) id)))
+          (forward-line 1)))
+    (gnosis-dashboard--refresh-cache-entry id)))
 
 (add-hook 'gnosis-save-hook #'gnosis-dashboard-update-entry)
 
+(defcustom gnosis-dashboard-chunk-size 500
+  "Number of themata to insert per async chunk in dashboard loading.
+Each chunk appends this many entries then yields to the event loop
+for redisplay."
+  :type 'integer
+  :group 'gnosis)
+
+(defun gnosis-dashboard--load-themata-chunk (entries-remaining buffer gen inserted total)
+  "Append one chunk of ENTRIES-REMAINING to BUFFER and schedule next.
+GEN: generation counter to cancel stale loads.
+INSERTED: count of entries appended so far.  TOTAL: total count."
+  (when (and (buffer-live-p buffer)
+             (= gen (buffer-local-value
+                     'gnosis-dashboard--load-generation buffer))
+             entries-remaining)
+    (let ((chunk-size gnosis-dashboard-chunk-size)
+          (count 0))
+      (with-current-buffer buffer
+        (let ((inhibit-read-only t)
+              (saved-point (point)))
+          (goto-char (point-max))
+          (while (and entries-remaining (< count chunk-size))
+            (let ((entry (car entries-remaining)))
+              (tabulated-list-print-entry (car entry) (cadr entry)))
+            (setq entries-remaining (cdr entries-remaining))
+            (cl-incf count))
+          (goto-char saved-point)))
+      (let ((new-inserted (+ inserted count)))
+        (gnosis-dashboard--set-header-line new-inserted)
+        (if entries-remaining
+            (run-with-timer 0.01 nil
+                            #'gnosis-dashboard--load-themata-chunk
+                            entries-remaining buffer gen new-inserted total)
+          (message "Loaded %d themata" new-inserted))))))
+
+(defun gnosis-dashboard--warm-cache-chunk (chunks total warmed)
+  "Process one chunk of thema IDs for background cache warming.
+CHUNKS: remaining list of id-sublists.  TOTAL: total thema count.
+WARMED: count of entries processed so far.
+Continues as long as the dashboard buffer exists."
+  (when (and (get-buffer gnosis-dashboard-buffer-name) chunks)
+    (let* ((ids (car chunks))
+           (uncached (cl-remove-if
+                      (lambda (id) (gethash id gnosis-dashboard--entry-cache))
+                      ids))
+           (new-warmed (+ warmed (length ids))))
+      (when uncached
+        (let ((rows (emacsql gnosis-db
+                     `[:select
+                       [themata:id themata:keimenon themata:hypothesis themata:answer
+                                   themata:tags themata:type review-log:suspend]
+                       :from themata
+                       :join review-log :on (= themata:id review-log:id)
+                       :where (in themata:id ,(vconcat uncached))])))
+          (dolist (row rows)
+            (puthash (car row) (gnosis-dashboard--format-entry row)
+                     gnosis-dashboard--entry-cache))))
+      (if (cdr chunks)
+          (progn
+            (message "Warming cache... %d/%d" new-warmed total)
+            (run-with-timer gnosis-dashboard-timer-delay nil
+                            #'gnosis-dashboard--warm-cache-chunk
+                            (cdr chunks) total new-warmed))
+        (message "Cache warmed (%d themata)" total)))))
+
+(defun gnosis-dashboard-warm-cache ()
+  "Warm the entry cache for all themata in the background.
+Continues as long as the dashboard buffer exists, regardless of
+which view the user navigates to."
+  (let* ((all-ids (gnosis-select 'id 'themata nil t))
+         (chunks (let (result (rest all-ids))
+                   (while rest
+                     (push (seq-take rest gnosis-dashboard-chunk-size) result)
+                     (setq rest (nthcdr gnosis-dashboard-chunk-size rest)))
+                   (nreverse result))))
+    (when chunks
+      (run-with-timer gnosis-dashboard-timer-delay nil
+                      #'gnosis-dashboard--warm-cache-chunk
+                      chunks (length all-ids) 0))))
+
+(defun gnosis-dashboard-rebuild-cache ()
+  "Clear and rebuild the themata entry cache."
+  (interactive)
+  (clrhash gnosis-dashboard--entry-cache)
+  (message "Cache cleared, rebuilding...")
+  (gnosis-dashboard-warm-cache))
+
 (defun gnosis-dashboard-output-themata (thema-ids)
-  "Return THEMA-IDS contents on gnosis dashboard."
+  "Return THEMA-IDS contents on gnosis dashboard.
+For large datasets, loads asynchronously in chunks of
+`gnosis-dashboard-chunk-size' using `run-with-timer'."
   (cl-assert (listp thema-ids) t "`thema-ids' must be a list of thema ids.")
+  (cl-incf gnosis-dashboard--load-generation)
   (pop-to-buffer-same-window gnosis-dashboard-buffer-name)
   (gnosis-dashboard-enable-mode)
   ;; Disable other dashboard modes
@@ -419,15 +560,24 @@ Called from `gnosis-save-hook'."
         tabulated-list-sort-key nil)  ; Clear sort key when switching views
   (make-local-variable 'tabulated-list-entries)
   (tabulated-list-init-header)
-  (let ((inhibit-read-only t)
-	(entries (gnosis-dashboard--output-themata thema-ids)))
+  (setq-local gnosis-dashboard--base-header-line header-line-format)
+  (setf gnosis-dashboard--current
+	`(:type themata :ids ,thema-ids))
+  (let ((total (length thema-ids))
+        (inhibit-read-only t))
     (erase-buffer)
-    (insert (format "Loading %s themata..." (length thema-ids)))
-    (setq tabulated-list-entries entries)
-    (tabulated-list-print t)
-    (gnosis-dashboard--set-header-line (length entries))
-    (setf gnosis-dashboard--current
-	  `(:type themata :ids ,thema-ids))))
+    (let ((entries (gnosis-dashboard--output-themata thema-ids)))
+      (setq tabulated-list-entries entries)
+      (if (<= total gnosis-dashboard-chunk-size)
+          ;; Small dataset: print synchronously
+          (progn
+            (tabulated-list-print t)
+            (gnosis-dashboard--set-header-line (length entries)))
+        ;; Large dataset: append entries via timer-based chunks
+        (run-with-timer 0.01 nil
+                        #'gnosis-dashboard--load-themata-chunk
+                        entries (current-buffer)
+                        gnosis-dashboard--load-generation 0 total)))))
 
 (defun gnosis-dashboard-deck-thema-count (id)
   "Return total thema count for deck with ID."
@@ -502,6 +652,7 @@ Called from `gnosis-save-hook'."
   (let ((tag (or tag (tabulated-list-get-id))))
     ;; Clear history for fresh start from tags
     (setq gnosis-dashboard-themata-history nil)
+    (push #'gnosis-dashboard-output-tags gnosis-dashboard--view-history)
     (gnosis-dashboard-output-themata (gnosis-get-tag-themata tag))))
 
 (transient-define-prefix gnosis-dashboard-tags-mode-menu ()
@@ -645,6 +796,7 @@ When called with a prefix, unsuspend all themata of deck."
   (let ((deck-id (or deck-id (string-to-number (tabulated-list-get-id)))))
     ;; Clear history for fresh start from decks
     (setq gnosis-dashboard-themata-history nil)
+    (push #'gnosis-dashboard-output-decks gnosis-dashboard--view-history)
     (gnosis-dashboard-output-themata (gnosis-collect-thema-ids :deck deck-id))))
 
 (defun gnosis-dashboard-history (&optional history)
@@ -689,6 +841,7 @@ When called with a prefix, unsuspend all themata of deck."
   ;; Navigate
   "n" #'gnosis-dashboard-menu-nodes
   "t" #'gnosis-dashboard-menu-themata
+  "D" #'gnosis-dashboard-output-decks
   ;; Actions
   "r" #'gnosis-review
   "a" #'gnosis-add-thema
@@ -736,8 +889,7 @@ DASHBOARD-TYPE: either Themata or Decks to display the respective dashboard."
 	("themata" (gnosis-dashboard-output-themata (gnosis-collect-thema-ids)))
 	("decks" (gnosis-dashboard-output-decks))
 	("tags"  (gnosis-dashboard-output-themata (gnosis-collect-thema-ids :tags t)))
-	("search" (gnosis-dashboard-search-thema))))
-    (tabulated-list-print t)))
+	("search" (gnosis-dashboard-search-thema))))))
 
 (defun gnosis-dashboard-mark-toggle ()
   "Toggle mark on the current item in the tabulated-list."
@@ -829,7 +981,8 @@ DASHBOARD-TYPE: either Themata or Decks to display the respective dashboard."
                       (cl-remove-duplicates (mapcar #'car orphaned-rows)))))
     (if thema-ids
         (progn
-          (setq gnosis-dashboard-themata-history nil)
+          (setq gnosis-dashboard-themata-history nil
+                gnosis-dashboard--view-history nil)
           (gnosis-dashboard-output-themata thema-ids))
       (message "No themata with orphaned links"))))
 
@@ -837,7 +990,8 @@ DASHBOARD-TYPE: either Themata or Decks to display the respective dashboard."
   "Transient menu for themata operations."
   [["Themata"
     ("a" "View all themata" (lambda () (interactive)
-                             (setq gnosis-dashboard-themata-history nil)
+                             (setq gnosis-dashboard-themata-history nil
+                                   gnosis-dashboard--view-history nil)
                              (gnosis-dashboard-output-themata (gnosis-collect-thema-ids))))
     ("s" "Search themata" gnosis-dashboard-suffix-query)
     ("d" "View by decks" (lambda () (interactive)
@@ -853,6 +1007,7 @@ DASHBOARD-TYPE: either Themata or Decks to display the respective dashboard."
   [["Navigate"
     ("n" "Nodes" gnosis-dashboard-menu-nodes)
     ("t" "Themata" gnosis-dashboard-menu-themata)
+    ("D" "Decks" gnosis-dashboard-output-decks)
     ("q" "Quit" quit-window)]
    ["Actions"
     ("r" "Review" gnosis-review)
@@ -867,26 +1022,52 @@ DASHBOARD-TYPE: either Themata or Decks to display the respective dashboard."
     ("s" "Sync nodes" org-gnosis-db-sync)
     ("S" "Rebuild nodes" (lambda () (interactive) (org-gnosis-db-sync t)))
     ("l" "Link health" gnosis-links-check)
-    ("L" "Link sync" gnosis-links-sync)]])
+    ("L" "Link sync" gnosis-links-sync)
+    ("c" "Rebuild cache" gnosis-dashboard-rebuild-cache)]])
+
+(defun gnosis-dashboard--load-stats (buffer marker generation)
+  "Load dashboard statistics into BUFFER at MARKER position.
+GENERATION prevents stale updates when the user navigates away."
+  (when (and (buffer-live-p buffer)
+             (= generation gnosis-dashboard--load-generation))
+    (with-current-buffer buffer
+      (let ((inhibit-read-only t))
+        (delete-region marker (point-max))
+        (goto-char marker)
+        (let ((first t))
+          (dolist (module (cdr gnosis-dashboard-modules))
+            (if first
+                (setq first nil)
+              (gnosis-insert-separator))
+            (funcall (symbol-value module))))
+        (goto-char (point-min))))))
 
 ;;;###autoload
 (defun gnosis-dashboard ()
   "Launch gnosis dashboard."
   (interactive)
+  (cl-incf gnosis-dashboard--load-generation)
   (let* ((buffer (get-buffer-create gnosis-dashboard-buffer-name))
          (inhibit-read-only t))
     (with-current-buffer buffer
       (erase-buffer)
       (gnosis-dashboard-mode)
-      (let ((modules gnosis-dashboard-modules))
-        (when modules
-          (funcall (symbol-value (car modules)))
-          (dolist (module (cdr modules))
-            (gnosis-insert-separator)
-            (funcall (symbol-value module)))))
-      (pop-to-buffer-same-window buffer)
-      (goto-char (point-min))
-      (gnosis-dashboard-enable-mode)
+      ;; Show header immediately
+      (funcall (symbol-value (car gnosis-dashboard-modules)))
+      (gnosis-insert-separator)
+      (let ((stats-start (point-marker))
+            (gen gnosis-dashboard--load-generation))
+        (insert (gnosis-center-string "Loading statistics..."))
+        (pop-to-buffer-same-window buffer)
+        (goto-char (point-min))
+        (gnosis-dashboard-enable-mode)
+        ;; Defer expensive stats modules
+        (run-with-timer gnosis-dashboard-timer-delay nil
+                        #'gnosis-dashboard--load-stats
+                        buffer stats-start gen)
+        ;; Start background cache warming after stats have a head start
+        (run-with-timer (* 2 gnosis-dashboard-timer-delay) nil
+                        #'gnosis-dashboard-warm-cache))
       (gnosis-dashboard-menu))))
 
 (defun gnosis-dashboard-sort-count (entry1 entry2)

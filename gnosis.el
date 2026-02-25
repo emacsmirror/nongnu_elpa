@@ -875,14 +875,15 @@ If DUE is t, return only due themata."
 		 collect thema)
       themata)))
 
+(defun gnosis--date-to-int (date)
+  "Convert DATE list (year month day) to YYYYMMDD integer for fast comparison."
+  (+ (* (nth 0 date) 10000) (* (nth 1 date) 100) (nth 2 date)))
+
 (defun gnosis-past-or-present-p (date)
   "Compare the input DATE with the current date.
 Return t if DATE is today or in the past, nil if it's in the future.
 DATE is a list of the form (year month day)."
-  (let* ((now (gnosis-algorithm-date))
-         (time-now (encode-time 0 0 0 (nth 2 now) (nth 1 now) (nth 0 now)))
-         (time-date (encode-time 0 0 0 (nth 2 date) (nth 1 date) (nth 0 date))))
-    (not (time-less-p time-now time-date))))
+  (<= (gnosis--date-to-int date) (gnosis--date-to-int (gnosis-algorithm-date))))
 
 (defun gnosis-tags--update (tags)
   "Update db for TAGS."
@@ -1045,20 +1046,21 @@ well."
 
 (defun gnosis-review-get--due-themata ()
   "Return due thema IDs & due dates."
-  (let* ((old-themata (cl-loop for thema in
-			     (gnosis-select '[id next-rev] 'review-log
-					    '(and (> n 0)
-						  (= suspend 0))
-					    nil)
-			     when (gnosis-past-or-present-p (cadr thema))
-			     collect thema))
+  (let* ((today (gnosis--date-to-int (gnosis-algorithm-date)))
+	 (old-themata (cl-loop for thema in
+			       (gnosis-select '[id next-rev] 'review-log
+					      '(and (> n 0)
+						    (= suspend 0))
+					      nil)
+			       when (<= (gnosis--date-to-int (cadr thema)) today)
+			       collect thema))
 	 (new-themata (cl-loop for thema in
-			     (gnosis-select '[id next-rev] 'review-log
-					    '(and (= n 0)
-						  (= suspend 0))
-					    nil)
-			     when (gnosis-past-or-present-p (cadr thema))
-			     collect thema)))
+			       (gnosis-select '[id next-rev] 'review-log
+					      '(and (= n 0)
+						    (= suspend 0))
+					      nil)
+			       when (<= (gnosis--date-to-int (cadr thema)) today)
+			       collect thema)))
     (if gnosis-review-new-first
 	(append (cl-subseq new-themata 0 gnosis-new-themata-limit) old-themata)
       (append old-themata (cl-subseq new-themata 0 gnosis-new-themata-limit)))))
