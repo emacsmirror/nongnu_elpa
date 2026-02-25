@@ -3886,7 +3886,10 @@ The default sort value is \"latest\"."
   ;; - from an unrelated buffer (without repo being set)
   (interactive)
   (let* ((owner (fj--repo-owner))
-         (repo (fj--repo-name)))
+         (repo (or (fj--repo-name)
+                   ;; if we fail (source file) try git:
+                   (cadr
+                    (fj-repo-+-owner-from-git)))))
     (fj-issue-compose)
     (setq fj-compose-repo repo
           fj-compose-repo-owner owner)
