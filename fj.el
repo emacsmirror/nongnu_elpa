@@ -6,7 +6,7 @@
 ;; Package-Requires: ((emacs "29.1") (fedi "0.2") (tp "0.8") (transient "0.10.0") (magit "4.3.8"))
 ;; Keywords: git, convenience
 ;; URL: https://codeberg.org/martianh/fj.el
-;; Version: 0.31
+;; Version: 0.32
 ;; Separator: -
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -3766,6 +3766,11 @@ Returns annotation for CAND, a candidate."
   'action 'fj-repo-tl-stargazers
   'help-echo "RET: View stargazers.")
 
+(defun fj-get-languages (repo owner)
+  "Get languages data for REPO by OWNER."
+  (let ((endpoint (format "repos/%s/%s/languages" owner repo)))
+    (fj-get endpoint)))
+
 (defun fj-repo-tl-entries (repos &optional no-owner)
   "Return tabluated list entries for REPOS.
 NO-OWNER means don't display owner column (user repos view)."
@@ -3776,7 +3781,11 @@ NO-OWNER means don't display owner column (user repos view)."
      (let* ((fork (if (eq .fork :json-false) "ℹ" "⑂"))
             (updated (date-to-time .updated_at))
             (updated-str (format-time-string "%s" updated))
-            (updated-display (fedi--relative-time-description updated nil :brief)))
+            (updated-display
+             (fedi--relative-time-description updated nil :brief))
+            ;; just get first lang:
+            (lang (symbol-to-string
+                   (caar (fj-get-languages .name .owner.username)))))
        `(nil ;; TODO: id
          [(,.name face fj-item-face
                   id ,.id
@@ -3799,7 +3808,7 @@ NO-OWNER means don't display owner column (user repos view)."
           (,(number-to-string .open_issues_count)
            id ,.id face fj-figures-face
            item repo)
-          ,.language
+          (,lang) ;; .language
           (,updated-str
            display ,updated-display
            face default
@@ -3886,7 +3895,10 @@ The default sort value is \"latest\"."
   ;; - from an unrelated buffer (without repo being set)
   (interactive)
   (let* ((owner (fj--repo-owner))
-         (repo (fj--repo-name)))
+         (repo (or (fj--repo-name)
+                   ;; if we fail (source file) try git:
+                   (cadr
+                    (fj-repo-+-owner-from-git)))))
     (fj-issue-compose)
     (setq fj-compose-repo repo
           fj-compose-repo-owner owner)
@@ -4399,8 +4411,9 @@ LIMIT is for `re-search-forward''s bound argument."
   "Read a label in the issue compose buffer."
   (interactive)
   ;; we store conses of (name . id), then fedi.el
-  ;; displays nanmes in the compose docs but submits the id.
-  (cl-pushnew (fj-issue-read-label fj-compose-repo nil nil :id)
+  ;; displays names in the compose docs but submits the id.
+  (cl-pushnew (fj-issue-read-label fj-compose-repo
+                                   fj-compose-repo-owner nil :id)
               fj-compose-issue-labels
               :test #'equal)
   (fedi-post--update-status-fields))

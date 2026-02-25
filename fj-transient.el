@@ -199,6 +199,11 @@ Designed to be used in a transient called from the repo."
     (with-current-buffer (car (buffer-list)) ;transient--original-buffer
       (let* ((repo (fj--get-buffer-spec :repo))
              (owner (fj--get-buffer-spec :owner)))
+        ;; if not in a fj.el buffer, assume source buffer and fetch from git:
+        (when (or (not repo) (not owner))
+          (let ((pair (fj-repo-+-owner-from-git)))
+            (setq repo (cadr pair)
+                  owner (car pair))))
         (fj-repo-settings-patch repo owner parsed)))))
 
 (transient-define-suffix fj-update-topics ()

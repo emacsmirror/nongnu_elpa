@@ -1738,11 +1738,19 @@ the webUI only completes names in the issue.")
          (face fj-item-byline-face))))
 
 (exemplify-ert fj-test-format-comment
-  ;; test comment:
-  (substring-no-properties
-   ;; properties are nuts/fragemented due to inclusion of header!
-   (fj-format-comment "fj.el" "martianh" fj-test-timeline-comment))
-  => "martianh  owner 9 weeks ago\n\n\n<p dir=\"auto\">it could also serve as destination of the fork-jump-to-parent cmd.</p>\n\n――――――――――――――――――――――――――――――――")
+  (with-mock
+    (mock (current-time) => (27038 64936 599389 582000))
+    ;; test comment:
+    (substring-no-properties
+     ;; properties are nuts/fragemented due to inclusion of header!
+     (fj-format-comment "fj.el" "martianh" fj-test-timeline-comment))
+    => "\
+martianh  owner 36 weeks ago
+
+
+<p dir=\"auto\">it could also serve as destination of the fork-jump-to-parent cmd.</p>
+
+――――――――――――――――――――――――――――――――"))
 
 (exemplify-ert fj-test-string-number>
   (fj-string-number> "34" "12") => t
