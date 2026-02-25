@@ -5,9 +5,8 @@
 ;; Copyright (C) 1999 Robert Fenk
 ;; Copyright (C) 2024-2026 The VM Developers
 ;;
-;; Author:	Robert Fenk
-;; Keywords:	extensions, vm, ps-print
-;; X-URL:       http://www.robf.de/Hacking/elisp
+;; Original author: Robert Fenk
+;; X-URL:           http://www.robf.de/Hacking/elisp
 ;;
 ;; This code is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -20,23 +19,22 @@
 ;; GNU General Public License for more details.
 ;;
 ;; You should have received a copy of the GNU General Public License
-;; along with this program; if not, write to the Free Software
-;; Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
-;; 02110-1301, USA.
+;; along with this program. If not, see <https://www.gnu.org/licenses/>. 
 
 ;;; Commentary:
 ;; 
-;; There are three new user functions for generating postscript output:
+;; There are four user functions for generating postscript output:
 ;;   vm-ps-print-message
 ;;   vm-ps-print-each-message
-;;   vm-ps-print-message-preview
+;;   vm-ps-print-message-presentation
+;;   vm-ps-print-marked
 ;; The first one prints like vm-ps-print, but multiple messages are
 ;; concatenated to one printout.  In contrast to this the second
-;; function creates one print job for each message.  Finally the the
+;; function creates one print job for each message.  The the
 ;; third one prints the current message as displayed in the
 ;; presentation buffer -- the other two functions do their own MIME
 ;; decoding therefore messages are always display in their default
-;; appearance.
+;; appearance. The fourth prints all marked messages.
 ;;
 ;; To redefine the default VM settings for the tool bar and menu add
 ;; the following line.  The default is to use  `vm-ps-print-message',
@@ -73,20 +71,17 @@
 ;;   :group 'vm)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-;;;###autoload
 (defcustom vm-ps-print-message-function  'ps-print-buffer-with-faces
   "This should point to the function which is used for ps-printing.
 The function should accept one optional argument which is a filename."
   :group 'vm-print
   :type 'function)
 
-;;;###autoload
 (defcustom vm-ps-print-message-separater  "\n"
   "The separator between messages when printing multiple messages."
   :group 'vm-print
   :type 'string)
 
-;;;###autoload
 (defcustom vm-ps-print-message-font-size  10
   "The font size for the PS-output of the message text."
   :group 'vm-print
@@ -94,45 +89,35 @@ The function should accept one optional argument which is a filename."
 
 ;;----------------------------------------------------------------------------
 
-;;; This documentation should match the definition of `env' in the
-;;; function `vm-ps-print-message-internal' below.
-;;;###autoload
-(defconst vm-ps-print-message-header-env "
-
-The following variables are available when evaluating the value:
-  `dd-mon-yyyy'  The current date
-  `folder-name'  The name of the folder
-  `mcount'       The number of messages to print
-  `msg'          A pointer to a VM message"
-)
-
-;;;###autoload
 (defcustom vm-ps-print-message-header-lines  2
   "See `ps-header-lines'."
   :group 'vm-print
   :type 'integer)
 
-;;;###autoload
 (defcustom vm-ps-print-message-left-header
   '(list (format "(Folder `%s')" folder-name)
 	 (format "(%d message%s printed)" mcount (if (= mcount 1) "" "s")))
-  (concat
-   "This variable should contain a command returning a valid `ps-left-header'."
-   vm-ps-print-message-header-env)
+  ;; This documentation should match the definition of `env' in the
+  ;; function `vm-ps-print-message-internal' below.
+  "This variable should contain an ELisp expression returning a
+valid `ps-left-header'.
+The following variables are available when evaluating the value:
+  `dd-mon-yyyy'  The current date
+  `folder-name'  The name of the folder
+  `mcount'       The number of messages to print
+  `msg'          A pointer to a VM message"
   :group 'vm-print
   :type 'sexp)
 
-;;;###autoload
 (defcustom vm-ps-print-message-right-header
-  '(list"/pagenumberstring load" 'dd-mon-yyyy)
-  (concat
-   "This variable should contain a command returning a valid `ps-right-header'.
-The default is the number of pages and the date of the printout."
-   vm-ps-print-message-header-env)
+  '(list "/pagenumberstring load" 'dd-mon-yyyy)
+  "This variable should contain an ELisp expression returning a
+valid `ps-right-header'.
+The default is the number of pages and the date of the printout.
+See `vm-ps-print-message-left-header' for a list of variables it can use."
   :group 'vm-print
   :type 'sexp)
 
-;;;###autoload
 (defcustom vm-ps-print-message-summary-format
   (concat "******************************************************************************\n"
 	  (if (boundp 'vm-summary-format)
@@ -145,35 +130,31 @@ See `vm-summary-format' for a description of the conversion specifiers."
   :type 'string)
 
 ;;----------------------------------------------------------------------------
-;;;###autoload
 (defcustom vm-ps-print-each-message-header-lines 2
   "See `ps-header-lines'."
   :group 'vm-print
   :type 'integer)
 
-;;;###autoload
 (defcustom vm-ps-print-each-message-left-header
   '(list (format "(Folder `%s')" folder-name)
 	 (format "(%s)" (vm-ps-print-tokenized-summary msg (vm-summary-sprintf vm-ps-print-each-message-summary-format msg t))))
-  (concat
-   "This command should return a valid `ps-left-header'.
+  "This variable should contain an ELisp expression returning a
+valid `ps-left-header'.
 The default is to have the folder name and a summary according to the
-variable `vm-ps-print-each-message-summary-format' in the left header."
-   vm-ps-print-message-header-env)
+variable `vm-ps-print-each-message-summary-format' in the left header.
+See `vm-ps-print-message-left-header' for a list of variables it can use."
   :group 'vm-print
   :type 'sexp)
 
-;;;###autoload
 (defcustom vm-ps-print-each-message-right-header
   '(list  "/pagenumberstring load" 'dd-mon-yyyy)
-  (concat
-   "This variable should contain a command returning a valid `ps-right-header'.
-The default is the number of pages and the date of the printout."
-   vm-ps-print-message-header-env)
+  "This variable should contain an Elisp expression returning a
+valid `ps-right-header'.
+The default is the number of pages and the date of the printout.
+See `vm-ps-print-message-left-header' for a list of variables it can use."
   :group 'vm-print
   :type 'sexp)
 
-;;;###autoload
 (defcustom vm-ps-print-each-message-summary-format
   "Message# %n, Lines %l, Characters %c"
   "The summary line for the postscript header.
@@ -351,7 +332,6 @@ summary lines between messages.
 
 See: `vm-ps-print-message-function'
      `vm-ps-print-message-font-size'
-     `vm-ps-print-each-message-separater'
      `vm-ps-print-each-message-left-header'
      `vm-ps-print-each-message-right-header'
      `vm-ps-print-each-message-summary-format'
@@ -374,7 +354,6 @@ number, prompt the user for the name of the file to save in.
 
 See: `vm-ps-print-message-function'
      `vm-ps-print-message-font-size'
-     `vm-ps-print-each-message-separater'
      `vm-ps-print-each-message-left-header'
      `vm-ps-print-each-message-right-header'
      `vm-ps-print-each-message-summary-format'
