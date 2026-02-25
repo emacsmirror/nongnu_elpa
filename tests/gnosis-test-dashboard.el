@@ -448,4 +448,104 @@ SUSPEND: 1 to suspend, 0 or nil for active."
           (gnosis-dashboard-unmark-all)
           (should (null gnosis-dashboard--selected-ids)))))))
 
+;; ──────────────────────────────────────────────────────────
+;; Content search helper tests
+;; ──────────────────────────────────────────────────────────
+
+(defmacro gnosis-test-with-org-files (file-specs &rest body)
+  "Create temporary org files per FILE-SPECS then run BODY.
+FILE-SPECS is a list of (ID CONTENT) pairs.
+Binds `org-gnosis-dir' to the temp directory."
+  (declare (indent 1) (debug t))
+  `(let ((org-gnosis-dir (make-temp-file "gnosis-test-org-" t)))
+     (unwind-protect
+         (progn
+           (dolist (spec ,file-specs)
+             (let ((id (nth 0 spec))
+                   (content (nth 1 spec)))
+               (with-temp-file (expand-file-name
+                                (format "20250101-%s.org" id) org-gnosis-dir)
+                 (insert (format ":PROPERTIES:\n:ID: %s\n:END:\n%s" id content)))))
+           ,@body)
+       (delete-directory org-gnosis-dir t))))
+
+(ert-deftest gnosis-test-dashboard-search-files-all ()
+  "Search all files returns matching node IDs."
+  (gnosis-test-with-org-files
+      '(("node-aaa" "Emacs is a great editor")
+        ("node-bbb" "Vim is also popular")
+        ("node-ccc" "Emacs and Vim are both editors"))
+    (let ((result (gnosis-dashboard-nodes--search-files "Emacs")))
+      (should (= (length result) 2))
+      (should (member "node-aaa" result))
+      (should (member "node-ccc" result)))))
+
+(ert-deftest gnosis-test-dashboard-search-files-with-filter ()
+  "Search with node-ids filter restricts to subset."
+  (gnosis-test-with-org-files
+      '(("node-aaa" "Emacs is a great editor")
+        ("node-bbb" "Vim is also popular")
+        ("node-ccc" "Emacs and Vim are both editors"))
+    (let ((result (gnosis-dashboard-nodes--search-files
+                   "Emacs" '("node-aaa"))))
+      (should (= (length result) 1))
+      (should (equal (car result) "node-aaa")))))
+
+(ert-deftest gnosis-test-dashboard-search-files-no-matches ()
+  "Search with no matches returns nil."
+  (gnosis-test-with-org-files
+      '(("node-aaa" "Emacs is a great editor"))
+    (let ((result (gnosis-dashboard-nodes--search-files "nonexistent-term")))
+      (should (null result)))))
+
+;; ──────────────────────────────────────────────────────────
+;; Header-line tests
+;; ──────────────────────────────────────────────────────────
+
+(ert-deftest gnosis-test-dashboard-header-line-helper ()
+  "Header-line helper formats label and count."
+  (should (equal (gnosis-dashboard--header-line "Themata" 42)
+                 " Themata: 42 shown"))
+  (should (equal (gnosis-dashboard--header-line "Nodes" 0)
+                 " Nodes: 0 shown")))
+
+(ert-deftest gnosis-test-dashboard-header-line-themata ()
+  "Output-themata sets header-line-format with count."
+  (gnosis-test-with-db
+    (let* ((deck-id (gnosis-test--add-deck "test-deck"))
+           (id1 (gnosis-test--add-basic-thema deck-id "Q1" "A1"))
+           (id2 (gnosis-test--add-basic-thema deck-id "Q2" "A2")))
+      (gnosis-test-with-dashboard-buffer
+        (gnosis-dashboard-output-themata (list id1 id2))
+        (with-current-buffer gnosis-dashboard-buffer-name
+          (should (stringp header-line-format))
+          (should (string-search "Themata" header-line-format))
+          (should (string-search "2 shown" header-line-format)))))))
+
+(ert-deftest gnosis-test-dashboard-header-line-tags ()
+  "Output-tags sets header-line-format with count."
+  (gnosis-test-with-db
+    (let ((deck-id (gnosis-test--add-deck "test-deck")))
+      (gnosis-test--add-basic-thema deck-id "Q1" "A1" '("math"))
+      (gnosis-test--add-basic-thema deck-id "Q2" "A2" '("geo"))
+      (gnosis-test--setup-tags)
+      (gnosis-test-with-dashboard-buffer
+        (gnosis-dashboard-output-tags)
+        (with-current-buffer gnosis-dashboard-buffer-name
+          (should (stringp header-line-format))
+          (should (string-search "Tags" header-line-format))
+          (should (string-search "2 shown" header-line-format)))))))
+
+(ert-deftest gnosis-test-dashboard-header-line-decks ()
+  "Output-decks sets header-line-format with count."
+  (gnosis-test-with-db
+    (let ((deck-id (gnosis-test--add-deck "deck-1")))
+      (gnosis-test--add-basic-thema deck-id "Q1" "A1")
+      (gnosis-test-with-dashboard-buffer
+        (gnosis-dashboard-output-decks)
+        (with-current-buffer gnosis-dashboard-buffer-name
+          (should (stringp header-line-format))
+          (should (string-search "Decks" header-line-format))
+          (should (string-search "1 shown" header-line-format)))))))
+
 (ert-run-tests-batch-and-exit)
