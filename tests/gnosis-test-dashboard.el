@@ -822,59 +822,553 @@ Binds `org-gnosis-dir' to the temp directory."
       (should (equal (buffer-string) before)))))
 
 ;; ──────────────────────────────────────────────────────────
+;; gnosis-tl-print tests
+;; ──────────────────────────────────────────────────────────
+
+(ert-deftest gnosis-test-tl-print-basic ()
+  "gnosis-tl-print renders entries into the buffer."
+  (with-temp-buffer
+    (tabulated-list-mode)
+    (setq tabulated-list-format [("Name" 20 t) ("Val" 10 t)])
+    (setq tabulated-list-padding 2)
+    (tabulated-list-init-header)
+    (setq tabulated-list-entries
+          '((1 ["Alice" "100"])
+            (2 ["Bob" "200"])
+            (3 ["Carol" "300"])))
+    (gnosis-tl-print)
+    ;; All entries present
+    (goto-char (point-min))
+    (should (search-forward "Alice" nil t))
+    (goto-char (point-min))
+    (should (search-forward "Bob" nil t))
+    (goto-char (point-min))
+    (should (search-forward "Carol" nil t))
+    ;; Correct line count
+    (should (= (count-lines (point-min) (point-max)) 3))
+    ;; tabulated-list-id properties are set
+    (goto-char (point-min))
+    (should (equal (get-text-property (point) 'tabulated-list-id) 1))
+    (forward-line 1)
+    (should (equal (get-text-property (point) 'tabulated-list-id) 2))
+    (forward-line 1)
+    (should (equal (get-text-property (point) 'tabulated-list-id) 3))))
+
+(ert-deftest gnosis-test-tl-print-sorting ()
+  "gnosis-tl-print sorts entries by tabulated-list-sort-key."
+  (with-temp-buffer
+    (tabulated-list-mode)
+    (setq tabulated-list-format [("Name" 20 t) ("Val" 10 t)])
+    (setq tabulated-list-padding 2)
+    (tabulated-list-init-header)
+    (setq tabulated-list-entries
+          '((1 ["Charlie" "300"])
+            (2 ["Alice" "100"])
+            (3 ["Bob" "200"])))
+    ;; Sort by Name ascending (flip=nil)
+    (setq tabulated-list-sort-key (cons "Name" nil))
+    (gnosis-tl-print)
+    ;; First entry should be Alice
+    (goto-char (point-min))
+    (should (equal (get-text-property (point) 'tabulated-list-id) 2))
+    ;; Second should be Bob
+    (forward-line 1)
+    (should (equal (get-text-property (point) 'tabulated-list-id) 3))
+    ;; Third should be Charlie
+    (forward-line 1)
+    (should (equal (get-text-property (point) 'tabulated-list-id) 1))))
+
+(ert-deftest gnosis-test-tl-print-sorting-descending ()
+  "gnosis-tl-print respects descending sort (flip=t)."
+  (with-temp-buffer
+    (tabulated-list-mode)
+    (setq tabulated-list-format [("Name" 20 t) ("Val" 10 t)])
+    (setq tabulated-list-padding 2)
+    (tabulated-list-init-header)
+    (setq tabulated-list-entries
+          '((1 ["Alice" "100"])
+            (2 ["Bob" "200"])
+            (3 ["Charlie" "300"])))
+    ;; Sort by Name descending (flip=t)
+    (setq tabulated-list-sort-key (cons "Name" t))
+    (gnosis-tl-print)
+    ;; First entry should be Charlie
+    (goto-char (point-min))
+    (should (equal (get-text-property (point) 'tabulated-list-id) 3))
+    (forward-line 1)
+    (should (equal (get-text-property (point) 'tabulated-list-id) 2))
+    (forward-line 1)
+    (should (equal (get-text-property (point) 'tabulated-list-id) 1))))
+
+(ert-deftest gnosis-test-tl-print-remember-pos ()
+  "gnosis-tl-print restores cursor to saved entry ID."
+  (with-temp-buffer
+    (tabulated-list-mode)
+    (setq tabulated-list-format [("Name" 20 t)])
+    (setq tabulated-list-padding 2)
+    (tabulated-list-init-header)
+    (setq tabulated-list-entries
+          '((1 ["Alice"])
+            (2 ["Bob"])
+            (3 ["Carol"])))
+    (gnosis-tl-print)
+    ;; Position on Bob
+    (goto-char (point-min))
+    (forward-line 1)
+    (should (equal (tabulated-list-get-id) 2))
+    ;; Re-render with remember-pos
+    (gnosis-tl-print t)
+    ;; Should still be on Bob
+    (should (equal (tabulated-list-get-id) 2))))
+
+(ert-deftest gnosis-test-tl-print-empty ()
+  "gnosis-tl-print with no entries produces empty buffer."
+  (with-temp-buffer
+    (tabulated-list-mode)
+    (setq tabulated-list-format [("Name" 20 t)])
+    (setq tabulated-list-padding 2)
+    (tabulated-list-init-header)
+    (setq tabulated-list-entries nil)
+    (gnosis-tl-print)
+    (should (= (buffer-size) 0))))
+
+(ert-deftest gnosis-test-tl-print-remember-pos-column ()
+  "gnosis-tl-print restores both entry and column position."
+  (with-temp-buffer
+    (tabulated-list-mode)
+    (setq tabulated-list-format [("Name" 20 t) ("Val" 10 t)]
+          tabulated-list-padding 2)
+    (tabulated-list-init-header)
+    (setq tabulated-list-entries
+          '((1 ["Alice" "100"])
+            (2 ["Bob" "200"])
+            (3 ["Carol" "300"])))
+    (gnosis-tl-print)
+    ;; Position on Bob, move into the line
+    (goto-char (point-min))
+    (forward-line 1)
+    (move-to-column 10)
+    (let ((col (current-column)))
+      (should (equal (tabulated-list-get-id) 2))
+      ;; Re-render with remember-pos
+      (gnosis-tl-print t)
+      ;; Same entry and column
+      (should (equal (tabulated-list-get-id) 2))
+      (should (= (current-column) col)))))
+
+(ert-deftest gnosis-test-tl-print-sorted-same-as-tabulated-list ()
+  "gnosis-tl-print with sort key produces same order as tabulated-list-print."
+  (let ((entries '((1 ["Charlie" "300"])
+                   (2 ["Alice" "100"])
+                   (3 ["Bob" "200"]))))
+    ;; tabulated-list-print with sort
+    (let (tl-ids)
+      (with-temp-buffer
+        (tabulated-list-mode)
+        (setq tabulated-list-format [("Name" 20 t) ("Val" 10 t)]
+              tabulated-list-padding 2
+              tabulated-list-sort-key (cons "Name" nil)
+              tabulated-list-entries (copy-sequence entries))
+        (tabulated-list-init-header)
+        (tabulated-list-print)
+        (goto-char (point-min))
+        (while (not (eobp))
+          (push (tabulated-list-get-id) tl-ids)
+          (forward-line 1))
+        (setq tl-ids (nreverse tl-ids)))
+      ;; gnosis-tl-print with same sort
+      (let (our-ids)
+        (with-temp-buffer
+          (tabulated-list-mode)
+          (setq tabulated-list-format [("Name" 20 t) ("Val" 10 t)]
+                tabulated-list-padding 2
+                tabulated-list-sort-key (cons "Name" nil)
+                tabulated-list-entries (copy-sequence entries))
+          (tabulated-list-init-header)
+          (gnosis-tl-print)
+          (goto-char (point-min))
+          (while (not (eobp))
+            (push (tabulated-list-get-id) our-ids)
+            (forward-line 1))
+          (setq our-ids (nreverse our-ids)))
+        (should (equal tl-ids our-ids))))))
+
+;; ──────────────────────────────────────────────────────────
+;; gnosis-tl-render-lines tests
+;; ──────────────────────────────────────────────────────────
+
+(ert-deftest gnosis-test-tl-render-lines-basic ()
+  "render-lines returns a propertized string with all entries."
+  (let* ((fmt [("Name" 20 t) ("Val" 10 t)])
+         (entries '((1 ["Alice" "100"])
+                    (2 ["Bob" "200"])))
+         (result (gnosis-tl-render-lines entries fmt 2)))
+    ;; Returns a string
+    (should (stringp result))
+    ;; Contains both entries
+    (should (string-search "Alice" result))
+    (should (string-search "Bob" result))
+    ;; Has text properties
+    (should (equal (get-text-property 0 'tabulated-list-id result) 1))
+    ;; Two newlines (one per entry)
+    (should (= (cl-count ?\n result) 2))))
+
+(ert-deftest gnosis-test-tl-render-lines-empty ()
+  "render-lines with no entries returns empty string."
+  (let ((result (gnosis-tl-render-lines nil [("Name" 20 t)] 2)))
+    (should (equal result ""))))
+
+(ert-deftest gnosis-test-tl-render-lines-padding ()
+  "render-lines respects padding parameter."
+  (let* ((fmt [("Name" 20 t)])
+         (entries '((1 ["Alice"])))
+         (result-0 (gnosis-tl-render-lines entries fmt 0))
+         (result-4 (gnosis-tl-render-lines entries fmt 4)))
+    ;; result-4 should be 4 chars longer (leading spaces)
+    (should (= (- (length result-4) (length result-0)) 4))))
+
+;; ──────────────────────────────────────────────────────────
+;; gnosis-tl--get-sorter tests
+;; ──────────────────────────────────────────────────────────
+
+(ert-deftest gnosis-test-tl-get-sorter-nil-key ()
+  "No sorter when tabulated-list-sort-key is nil."
+  (with-temp-buffer
+    (tabulated-list-mode)
+    (setq tabulated-list-format [("Name" 20 t) ("Val" 10 t)])
+    (setq tabulated-list-sort-key nil)
+    (should (null (gnosis-tl--get-sorter)))))
+
+(ert-deftest gnosis-test-tl-get-sorter-unsortable ()
+  "No sorter when column has nil (not sortable) predicate."
+  (with-temp-buffer
+    (tabulated-list-mode)
+    (setq tabulated-list-format [("Name" 20 nil) ("Val" 10 t)])
+    (setq tabulated-list-sort-key (cons "Name" nil))
+    (should (null (gnosis-tl--get-sorter)))))
+
+(ert-deftest gnosis-test-tl-get-sorter-default-ascending ()
+  "Default sorter (t predicate) sorts by string< ascending."
+  (with-temp-buffer
+    (tabulated-list-mode)
+    (setq tabulated-list-format [("Name" 20 t) ("Val" 10 t)])
+    (setq tabulated-list-sort-key (cons "Name" nil))
+    (let ((sorter (gnosis-tl--get-sorter)))
+      (should (functionp sorter))
+      ;; "Alice" < "Bob"
+      (should (funcall sorter '(1 ["Alice" "x"]) '(2 ["Bob" "y"])))
+      ;; "Bob" NOT < "Alice"
+      (should-not (funcall sorter '(2 ["Bob" "y"]) '(1 ["Alice" "x"]))))))
+
+(ert-deftest gnosis-test-tl-get-sorter-default-descending ()
+  "Default sorter with flip=t reverses to descending."
+  (with-temp-buffer
+    (tabulated-list-mode)
+    (setq tabulated-list-format [("Name" 20 t) ("Val" 10 t)])
+    (setq tabulated-list-sort-key (cons "Name" t))
+    (let ((sorter (gnosis-tl--get-sorter)))
+      (should (functionp sorter))
+      ;; Flipped: "Bob" before "Alice"
+      (should (funcall sorter '(2 ["Bob" "y"]) '(1 ["Alice" "x"])))
+      (should-not (funcall sorter '(1 ["Alice" "x"]) '(2 ["Bob" "y"]))))))
+
+(ert-deftest gnosis-test-tl-get-sorter-equal-elements ()
+  "Sorter returns nil for equal elements in both directions.
+This is the critical bug fix: (not nil) => t was wrong."
+  (with-temp-buffer
+    (tabulated-list-mode)
+    (setq tabulated-list-format [("Name" 20 t)])
+    ;; Ascending: equal elements
+    (setq tabulated-list-sort-key (cons "Name" nil))
+    (let ((sorter (gnosis-tl--get-sorter)))
+      (should-not (funcall sorter '(1 ["Alice"]) '(2 ["Alice"]))))
+    ;; Descending: equal elements must ALSO return nil
+    (setq tabulated-list-sort-key (cons "Name" t))
+    (let ((sorter (gnosis-tl--get-sorter)))
+      (should-not (funcall sorter '(1 ["Alice"]) '(2 ["Alice"]))))))
+
+(ert-deftest gnosis-test-tl-get-sorter-custom-predicate ()
+  "Custom function predicate is called correctly."
+  (with-temp-buffer
+    (tabulated-list-mode)
+    (setq tabulated-list-format
+          [("Name" 20 t)
+           ("Count" 10 (lambda (a b)
+                         (< (string-to-number (aref (cadr a) 1))
+                            (string-to-number (aref (cadr b) 1)))))])
+    (setq tabulated-list-sort-key (cons "Count" nil))
+    (let ((sorter (gnosis-tl--get-sorter)))
+      (should (funcall sorter '(1 ["x" "5"]) '(2 ["y" "10"])))
+      (should-not (funcall sorter '(2 ["y" "10"]) '(1 ["x" "5"]))))))
+
+(ert-deftest gnosis-test-tl-get-sorter-matches-tabulated-list ()
+  "gnosis-tl--get-sorter produces same sort order as tabulated-list--get-sorter."
+  (with-temp-buffer
+    (tabulated-list-mode)
+    (setq tabulated-list-format [("Name" 20 t) ("Val" 10 t)])
+    (let ((entries '((1 ["Charlie" "300"])
+                     (2 ["Alice" "100"])
+                     (3 ["Bob" "200"])
+                     (4 ["Alice" "050"]))))
+      ;; Ascending
+      (setq tabulated-list-sort-key (cons "Name" nil))
+      (let ((our (sort (copy-sequence entries) (gnosis-tl--get-sorter)))
+            (theirs (sort (copy-sequence entries) (tabulated-list--get-sorter))))
+        (should (equal (mapcar #'car our) (mapcar #'car theirs))))
+      ;; Descending
+      (setq tabulated-list-sort-key (cons "Name" t))
+      (let ((our (sort (copy-sequence entries) (gnosis-tl--get-sorter)))
+            (theirs (sort (copy-sequence entries) (tabulated-list--get-sorter))))
+        (should (equal (mapcar #'car our) (mapcar #'car theirs)))))))
+
+;; ──────────────────────────────────────────────────────────
+;; gnosis-tl-sort tests
+;; ──────────────────────────────────────────────────────────
+
+(ert-deftest gnosis-test-tl-sort-by-column-name ()
+  "gnosis-tl-sort reads column-name property and sorts."
+  (with-temp-buffer
+    (tabulated-list-mode)
+    (setq tabulated-list-format [("Name" 20 t) ("Val" 10 t)]
+          tabulated-list-padding 2)
+    (tabulated-list-init-header)
+    (setq tabulated-list-entries
+          '((1 ["Charlie" "300"])
+            (2 ["Alice" "100"])
+            (3 ["Bob" "200"])))
+    (gnosis-tl-print)
+    ;; Move past padding to column text
+    (goto-char (point-min))
+    (move-to-column 2)
+    (gnosis-tl-sort)
+    ;; After sorting by Name ascending, Alice should be first
+    (goto-char (point-min))
+    (should (equal (tabulated-list-get-id) 2))
+    ;; Sort key was set
+    (should (equal (car tabulated-list-sort-key) "Name"))
+    (should-not (cdr tabulated-list-sort-key))))
+
+(ert-deftest gnosis-test-tl-sort-toggle-direction ()
+  "Pressing gnosis-tl-sort twice on same column flips direction."
+  (with-temp-buffer
+    (tabulated-list-mode)
+    (setq tabulated-list-format [("Name" 20 t) ("Val" 10 t)]
+          tabulated-list-padding 2)
+    (tabulated-list-init-header)
+    (setq tabulated-list-entries
+          '((1 ["Alice" "100"])
+            (2 ["Bob" "200"])
+            (3 ["Charlie" "300"])))
+    (gnosis-tl-print)
+    ;; Move past padding to column text
+    (goto-char (point-min))
+    (move-to-column 2)
+    ;; First sort: ascending
+    (gnosis-tl-sort)
+    (goto-char (point-min))
+    (should (equal (tabulated-list-get-id) 1))  ;; Alice first
+    ;; Move past padding again for second sort
+    (move-to-column 2)
+    ;; Second sort: descending
+    (gnosis-tl-sort)
+    (goto-char (point-min))
+    (should (equal (tabulated-list-get-id) 3))))  ;; Charlie first
+
+(ert-deftest gnosis-test-tl-sort-by-column-number ()
+  "gnosis-tl-sort with numeric prefix sorts by column index."
+  (with-temp-buffer
+    (tabulated-list-mode)
+    (setq tabulated-list-format [("Name" 20 t) ("Val" 10 t)]
+          tabulated-list-padding 2)
+    (tabulated-list-init-header)
+    (setq tabulated-list-entries
+          '((1 ["Charlie" "100"])
+            (2 ["Alice" "300"])
+            (3 ["Bob" "200"])))
+    (gnosis-tl-print)
+    ;; Sort by column 1 ("Val") ascending
+    (gnosis-tl-sort 1)
+    (goto-char (point-min))
+    ;; "100" < "200" < "300" (string<)
+    (should (equal (tabulated-list-get-id) 1))   ;; Charlie "100"
+    (forward-line 1)
+    (should (equal (tabulated-list-get-id) 3))   ;; Bob "200"
+    (forward-line 1)
+    (should (equal (tabulated-list-get-id) 2)))) ;; Alice "300"
+
+(ert-deftest gnosis-test-tl-sort-preserves-position ()
+  "gnosis-tl-sort preserves cursor on the same entry."
+  (with-temp-buffer
+    (tabulated-list-mode)
+    (setq tabulated-list-format [("Name" 20 t)]
+          tabulated-list-padding 2)
+    (tabulated-list-init-header)
+    (setq tabulated-list-entries
+          '((1 ["Charlie"])
+            (2 ["Alice"])
+            (3 ["Bob"])))
+    (gnosis-tl-print)
+    ;; Position on Bob (line 3)
+    (goto-char (point-min))
+    (forward-line 2)
+    (should (equal (tabulated-list-get-id) 3))
+    ;; Sort — Bob should still be under cursor
+    (gnosis-tl-sort 0)
+    (should (equal (tabulated-list-get-id) 3))))
+
+(ert-deftest gnosis-test-tl-sort-same-as-tabulated-list-sort ()
+  "gnosis-tl-sort produces same entry order as tabulated-list-sort."
+  (let ((entries '((1 ["Charlie" "300"])
+                   (2 ["Alice" "100"])
+                   (3 ["Bob" "200"]))))
+    ;; Sort with tabulated-list-sort
+    (let (tl-ids)
+      (with-temp-buffer
+        (tabulated-list-mode)
+        (setq tabulated-list-format [("Name" 20 t) ("Val" 10 t)]
+              tabulated-list-padding 2
+              tabulated-list-sort-key nil
+              tabulated-list-entries (copy-sequence entries))
+        (tabulated-list-init-header)
+        (tabulated-list-print)
+        (goto-char (point-min))
+        (tabulated-list-sort 0)
+        (goto-char (point-min))
+        (while (not (eobp))
+          (push (tabulated-list-get-id) tl-ids)
+          (forward-line 1))
+        (setq tl-ids (nreverse tl-ids)))
+      ;; Sort with gnosis-tl-sort
+      (let (our-ids)
+        (with-temp-buffer
+          (tabulated-list-mode)
+          (setq tabulated-list-format [("Name" 20 t) ("Val" 10 t)]
+                tabulated-list-padding 2
+                tabulated-list-sort-key nil
+                tabulated-list-entries (copy-sequence entries))
+          (tabulated-list-init-header)
+          (gnosis-tl-print)
+          (goto-char (point-min))
+          (gnosis-tl-sort 0)
+          (goto-char (point-min))
+          (while (not (eobp))
+            (push (tabulated-list-get-id) our-ids)
+            (forward-line 1))
+          (setq our-ids (nreverse our-ids)))
+        (should (equal tl-ids our-ids))))))
+
+;; ──────────────────────────────────────────────────────────
+;; gnosis-tl-print equivalence tests
+;; ──────────────────────────────────────────────────────────
+
+(ert-deftest gnosis-test-tl-print-same-ids-as-tabulated-list-print ()
+  "gnosis-tl-print produces the same entry IDs per line as tabulated-list-print."
+  (let* ((fmt [("Name" 20 t) ("Val" 10 t)])
+         (entries '((1 ["Alice" "100"])
+                    (2 ["Bob" "200"])
+                    (3 ["Carol" "300"]))))
+    ;; Render with tabulated-list-print
+    (let (tl-ids)
+      (with-temp-buffer
+        (tabulated-list-mode)
+        (setq tabulated-list-format fmt
+              tabulated-list-padding 2
+              tabulated-list-sort-key nil
+              tabulated-list-entries (copy-sequence entries))
+        (tabulated-list-init-header)
+        (tabulated-list-print)
+        (goto-char (point-min))
+        (while (not (eobp))
+          (push (tabulated-list-get-id) tl-ids)
+          (forward-line 1))
+        (setq tl-ids (nreverse tl-ids)))
+      ;; Render with gnosis-tl-print
+      (let (our-ids)
+        (with-temp-buffer
+          (tabulated-list-mode)
+          (setq tabulated-list-format fmt
+                tabulated-list-padding 2
+                tabulated-list-sort-key nil
+                tabulated-list-entries (copy-sequence entries))
+          (tabulated-list-init-header)
+          (gnosis-tl-print)
+          (goto-char (point-min))
+          (while (not (eobp))
+            (push (tabulated-list-get-id) our-ids)
+            (forward-line 1))
+          (setq our-ids (nreverse our-ids)))
+        ;; Same IDs in same order
+        (should (equal tl-ids our-ids))))))
+
+;; ──────────────────────────────────────────────────────────
+;; gnosis-dashboard--compute-column-format tests
+;; ──────────────────────────────────────────────────────────
+
+(ert-deftest gnosis-test-dashboard-compute-column-format ()
+  "compute-column-format returns a 6-column format vector."
+  (let ((fmt (gnosis-dashboard--compute-column-format 120)))
+    (should (vectorp fmt))
+    (should (= (length fmt) 6))
+    ;; Column names
+    (should (equal (car (aref fmt 0)) "Keimenon"))
+    (should (equal (car (aref fmt 5)) "Suspend"))
+    ;; Widths are positive
+    (dotimes (i 6)
+      (should (> (nth 1 (aref fmt i)) 0)))))
+
+(ert-deftest gnosis-test-dashboard-compute-column-format-narrow ()
+  "compute-column-format enforces minimum widths for narrow windows."
+  (let ((fmt (gnosis-dashboard--compute-column-format 30)))
+    ;; Minimums enforced
+    (should (>= (nth 1 (aref fmt 0)) 10))  ;; Keimenon
+    (should (>= (nth 1 (aref fmt 4)) 5))   ;; Type
+    (should (>= (nth 1 (aref fmt 5)) 3)))) ;; Suspend
+
+;; ──────────────────────────────────────────────────────────
 ;; Benchmark tests
 ;; ──────────────────────────────────────────────────────────
 
 (ert-deftest gnosis-test-dashboard-print-entry-benchmark ()
-  "Benchmark tabulated-list-print-entry vs tabulated-list-print.
-Shows per-entry cost so we can size chunks correctly."
-  (with-temp-buffer
-    (tabulated-list-mode)
-    (setq tabulated-list-format
-          [("Keimenon" 30 t) ("Hypothesis" 20 t) ("Answer" 20 t)
-           ("Tags" 15 t) ("Type" 10 t) ("Suspend" 10 t)])
-    (setq tabulated-list-padding 2)
-    (tabulated-list-init-header)
-    (let ((entry '(1 ["A sample keimenon text" "some hypothesis"
-                      "the answer" "tag1,tag2" "basic" "No"]))
-          (inhibit-read-only t))
-      ;; Benchmark tabulated-list-print-entry x 2000
-      (let ((start (float-time)))
-        (dotimes (_ 2000)
-          (tabulated-list-print-entry (car entry) (cadr entry)))
-        (let ((elapsed (- (float-time) start)))
-          (message "print-entry x2000: %.3fs (%.0fus/entry)"
-                   elapsed (* 1e6 (/ elapsed 2000)))))
-      ;; Reset buffer, benchmark tabulated-list-print with 2000 entries
-      (erase-buffer)
-      (setq tabulated-list-entries
-            (cl-loop for i from 1 to 2000
-                     collect (list i (cadr entry))))
-      (let ((start (float-time)))
-        (tabulated-list-print t)
-        (message "tabulated-list-print x2000: %.3fs (%.0fus/entry)"
-                 (- (float-time) start)
-                 (* 1e6 (/ (- (float-time) start) 2000))))
-      ;; Benchmark tabulated-list-print with 10000 entries
-      (erase-buffer)
-      (setq tabulated-list-entries
-            (cl-loop for i from 1 to 10000
-                     collect (list i (cadr entry))))
-      (let ((start (float-time)))
-        (tabulated-list-print t)
-        (message "tabulated-list-print x10000: %.3fs (%.0fus/entry)"
-                 (- (float-time) start)
-                 (* 1e6 (/ (- (float-time) start) 10000))))
-      ;; Benchmark tabulated-list-print with 40000 entries
-      (erase-buffer)
-      (setq tabulated-list-entries
-            (cl-loop for i from 1 to 40000
-                     collect (list i (cadr entry))))
-      (let ((start (float-time)))
-        (tabulated-list-print t)
-        (message "tabulated-list-print x40000: %.3fs (%.0fus/entry)"
-                 (- (float-time) start)
-                 (* 1e6 (/ (- (float-time) start) 40000))))
-      (should (> (buffer-size) 0)))))
+  "Benchmark gnosis-tl-print vs tabulated-list-print at various sizes."
+  (let ((fmt [("Keimenon" 30 t) ("Hypothesis" 20 t) ("Answer" 20 t)
+              ("Tags" 15 t) ("Type" 10 t) ("Suspend" 10 t)])
+        (cols ["A sample keimenon text" "some hypothesis"
+               "the answer" "tag1,tag2" "basic" "No"]))
+    (dolist (n '(2000 10000 40000))
+      (let ((entries (cl-loop for i from 1 to n
+                              collect (list i cols))))
+        ;; tabulated-list-print
+        (with-temp-buffer
+          (tabulated-list-mode)
+          (setq tabulated-list-format fmt
+                tabulated-list-padding 2
+                tabulated-list-sort-key nil
+                tabulated-list-entries entries)
+          (tabulated-list-init-header)
+          (let ((start (float-time)))
+            (tabulated-list-print t)
+            (message "tabulated-list-print x%d: %.3fs (%.0fus/entry)"
+                     n (- (float-time) start)
+                     (* 1e6 (/ (- (float-time) start) n)))))
+        ;; gnosis-tl-print
+        (with-temp-buffer
+          (tabulated-list-mode)
+          (setq tabulated-list-format fmt
+                tabulated-list-padding 2
+                tabulated-list-sort-key nil
+                tabulated-list-entries entries)
+          (tabulated-list-init-header)
+          (let ((start (float-time)))
+            (gnosis-tl-print)
+            (message "gnosis-tl-print x%d: %.3fs (%.0fus/entry)"
+                     n (- (float-time) start)
+                     (* 1e6 (/ (- (float-time) start) n)))))
+        ;; gnosis-tl-render-lines (pure, no buffer)
+        (let ((start (float-time)))
+          (gnosis-tl-render-lines entries fmt 2)
+          (message "gnosis-tl-render-lines x%d: %.3fs (%.0fus/entry)"
+                   n (- (float-time) start)
+                   (* 1e6 (/ (- (float-time) start) n))))))
+    (should t)))
 
 (ert-run-tests-batch-and-exit)
