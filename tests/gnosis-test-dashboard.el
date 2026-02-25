@@ -502,15 +502,8 @@ Binds `org-gnosis-dir' to the temp directory."
 ;; Header-line tests
 ;; ──────────────────────────────────────────────────────────
 
-(ert-deftest gnosis-test-dashboard-header-line-helper ()
-  "Header-line helper formats label and count."
-  (should (equal (gnosis-dashboard--header-line "Themata" 42)
-                 " Themata: 42 shown"))
-  (should (equal (gnosis-dashboard--header-line "Nodes" 0)
-                 " Nodes: 0 shown")))
-
 (ert-deftest gnosis-test-dashboard-header-line-themata ()
-  "Output-themata sets header-line-format with count."
+  "Output-themata prepends count badge to header-line."
   (gnosis-test-with-db
     (let* ((deck-id (gnosis-test--add-deck "test-deck"))
            (id1 (gnosis-test--add-basic-thema deck-id "Q1" "A1"))
@@ -518,12 +511,11 @@ Binds `org-gnosis-dir' to the temp directory."
       (gnosis-test-with-dashboard-buffer
         (gnosis-dashboard-output-themata (list id1 id2))
         (with-current-buffer gnosis-dashboard-buffer-name
-          (should (stringp header-line-format))
-          (should (string-search "Themata" header-line-format))
-          (should (string-search "2 shown" header-line-format)))))))
+          (should (listp header-line-format))
+          (should (string-search "2" (car header-line-format))))))))
 
 (ert-deftest gnosis-test-dashboard-header-line-tags ()
-  "Output-tags sets header-line-format with count."
+  "Output-tags prepends count badge to header-line."
   (gnosis-test-with-db
     (let ((deck-id (gnosis-test--add-deck "test-deck")))
       (gnosis-test--add-basic-thema deck-id "Q1" "A1" '("math"))
@@ -532,20 +524,99 @@ Binds `org-gnosis-dir' to the temp directory."
       (gnosis-test-with-dashboard-buffer
         (gnosis-dashboard-output-tags)
         (with-current-buffer gnosis-dashboard-buffer-name
-          (should (stringp header-line-format))
-          (should (string-search "Tags" header-line-format))
-          (should (string-search "2 shown" header-line-format)))))))
+          (should (listp header-line-format))
+          (should (string-search "2" (car header-line-format))))))))
 
 (ert-deftest gnosis-test-dashboard-header-line-decks ()
-  "Output-decks sets header-line-format with count."
+  "Output-decks prepends count badge to header-line."
   (gnosis-test-with-db
     (let ((deck-id (gnosis-test--add-deck "deck-1")))
       (gnosis-test--add-basic-thema deck-id "Q1" "A1")
       (gnosis-test-with-dashboard-buffer
         (gnosis-dashboard-output-decks)
         (with-current-buffer gnosis-dashboard-buffer-name
-          (should (stringp header-line-format))
-          (should (string-search "Decks" header-line-format))
-          (should (string-search "1 shown" header-line-format)))))))
+          (should (listp header-line-format))
+          (should (string-search "1" (car header-line-format))))))))
+
+;; ──────────────────────────────────────────────────────────
+;; Review count filter tests
+;; ──────────────────────────────────────────────────────────
+
+(defun gnosis-test--set-review-count (id n)
+  "Set the review count N for thema ID in review-log."
+  (gnosis-update 'review-log `(= n ,n) `(= id ,id)))
+
+(ert-deftest gnosis-test-get-themata-by-reviews-basic ()
+  "Get themata filtered by review count."
+  (gnosis-test-with-db
+    (let* ((deck-id (gnosis-test--add-deck "test-deck"))
+           (id1 (gnosis-test--add-basic-thema deck-id "Q1" "A1"))
+           (id2 (gnosis-test--add-basic-thema deck-id "Q2" "A2"))
+           (id3 (gnosis-test--add-basic-thema deck-id "Q3" "A3")))
+      ;; All start at n=0
+      (gnosis-test--set-review-count id2 3)
+      (gnosis-test--set-review-count id3 5)
+      ;; max-reviews=0: only never-reviewed
+      (let ((result (gnosis-get-themata-by-reviews 0)))
+        (should (= (length result) 1))
+        (should (member id1 result)))
+      ;; max-reviews=3: id1 (0) and id2 (3)
+      (let ((result (gnosis-get-themata-by-reviews 3)))
+        (should (= (length result) 2))
+        (should (member id1 result))
+        (should (member id2 result)))
+      ;; max-reviews=5: all three
+      (let ((result (gnosis-get-themata-by-reviews 5)))
+        (should (= (length result) 3))))))
+
+(ert-deftest gnosis-test-get-themata-by-reviews-with-subset ()
+  "Get themata by review count restricted to a subset."
+  (gnosis-test-with-db
+    (let* ((deck-id (gnosis-test--add-deck "test-deck"))
+           (id1 (gnosis-test--add-basic-thema deck-id "Q1" "A1"))
+           (id2 (gnosis-test--add-basic-thema deck-id "Q2" "A2"))
+           (id3 (gnosis-test--add-basic-thema deck-id "Q3" "A3")))
+      ;; All at n=0
+      (gnosis-test--set-review-count id3 5)
+      ;; Restrict to id1 and id3 with max-reviews=0
+      (let ((result (gnosis-get-themata-by-reviews 0 (list id1 id3))))
+        (should (= (length result) 1))
+        (should (member id1 result))))))
+
+(ert-deftest gnosis-test-dashboard-show-new-renders ()
+  "Show-new renders matching themata in the dashboard."
+  (gnosis-test-with-db
+    (let* ((deck-id (gnosis-test--add-deck "test-deck"))
+           (id1 (gnosis-test--add-basic-thema deck-id "New Q" "A1"))
+           (id2 (gnosis-test--add-basic-thema deck-id "Old Q" "A2")))
+      (gnosis-test--set-review-count id2 5)
+      (gnosis-test-with-dashboard-buffer
+        (gnosis-dashboard-themata-show-new 0)
+        (with-current-buffer gnosis-dashboard-buffer-name
+          (should gnosis-dashboard-themata-mode)
+          (should (= (length tabulated-list-entries) 1))
+          (should (equal (caar tabulated-list-entries) id1)))))))
+
+(ert-deftest gnosis-test-dashboard-filter-by-reviews ()
+  "Filter current themata by review count."
+  (gnosis-test-with-db
+    (let* ((deck-id (gnosis-test--add-deck "test-deck"))
+           (id1 (gnosis-test--add-basic-thema deck-id "Q1" "A1"))
+           (id2 (gnosis-test--add-basic-thema deck-id "Q2" "A2"))
+           (id3 (gnosis-test--add-basic-thema deck-id "Q3" "A3")))
+      (gnosis-test--set-review-count id2 2)
+      (gnosis-test--set-review-count id3 5)
+      (gnosis-test-with-dashboard-buffer
+        ;; Start with all themata displayed
+        (gnosis-dashboard-output-themata (list id1 id2 id3))
+        (with-current-buffer gnosis-dashboard-buffer-name
+          (should (= (length tabulated-list-entries) 3))
+          ;; Filter to max 2 reviews
+          (gnosis-dashboard-filter-themata-by-reviews 2)
+          (should (= (length tabulated-list-entries) 2))
+          (let ((displayed-ids (mapcar #'car tabulated-list-entries)))
+            (should (member id1 displayed-ids))
+            (should (member id2 displayed-ids))
+            (should-not (member id3 displayed-ids))))))))
 
 (ert-run-tests-batch-and-exit)
