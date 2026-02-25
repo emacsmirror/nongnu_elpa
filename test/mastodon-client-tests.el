@@ -4,6 +4,9 @@
 (require 'mastodon-client)
 (require 'mastodon-http)
 
+;; NB: since switching to encrypted (client) plstore, some tests fail if
+;; `plistore-encrypt-to' is not set to a working gpg key
+
 (ert-deftest mastodon-client--register ()
   "Should POST to /apps."
   (with-mock

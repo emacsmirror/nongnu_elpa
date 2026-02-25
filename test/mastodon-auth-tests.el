@@ -4,6 +4,9 @@
 (require 'mastodon)
 (require 'mastodon-auth)
 
+;; NB: since switching to encrypted (client) plstore, some tests fail if
+;; `plistore-encrypt-to' is not set to a working gpg key
+
 (ert-deftest mastodon-auth--handle-token-response--good ()
   "Should extract the access token from a good response."
   (should
