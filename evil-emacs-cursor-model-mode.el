@@ -7,7 +7,7 @@
 ;; [[https://creativecommons.org/licenses/by-sa/4.0/]]
 ;; ----------------------------------------------------------------------------
 ;; Thanks.
-;; Thanks to Toby Cubitt who coded most of the motions in the cursor model.
+;; Toby Cubitt had the idea for the package and coded most of the motions.
 ;; Peter Friis Jensen made it a mode and swapped some keybindings.
 
 ;; ============================================================================
@@ -139,7 +139,7 @@ Maybe fewer layers are better if you have an Emacs pinky?"
             "<remap> <evil-jump-item>"
             #'evil-emacs-cursor-model-jump-after-item)
 ;; ----------------------------------------------------------------------------
-;; Commands.
+;; Operations.
 (keymap-set evil-emacs-cursor-model-mode-map
             "<remap> <evil-append>"
             #'evil-append-line)
@@ -177,12 +177,6 @@ Movement is restricted to the current line unless `evil-cross-lines' is non-nil.
     (evil-find-char count char))
   (when (plusp count) (forward-char)))
 
-(evil-define-motion evil-emacs-cursor-model-find-before-char-backward (count char)
-  "Move before the previous COUNT'th occurrence of CHAR."
-  :type inclusive
-  (interactive "<c><C>")
-  (evil-emacs-cursor-model-find-after-char (- (or count 1)) char))
-
 (evil-define-motion evil-emacs-cursor-model-find-before-char (count char)
   "Move point immediately before the next COUNT'th occurrence of CHAR.
 Movement is restricted to the current line unless `evil-cross-lines' is non-nil."
@@ -201,6 +195,12 @@ Movement is restricted to the current line unless `evil-cross-lines' is non-nil.
   (interactive "<c><C>")
   (evil-emacs-cursor-model-find-before-char (- (or count 1)) char))
 
+(evil-define-motion evil-emacs-cursor-model-find-before-char-backward (count char)
+  "Move before the previous COUNT'th occurrence of CHAR."
+  :type inclusive
+  (interactive "<c><C>")
+  (evil-emacs-cursor-model-find-after-char (- (or count 1)) char))
+
 (evil-define-motion evil-emacs-cursor-model-repeat-find-char (count)
   "Repeat the last find COUNT times."
   :type inclusive
@@ -211,7 +211,7 @@ Movement is restricted to the current line unless `evil-cross-lines' is non-nil.
         (find (eq (car evil-last-find) #'evil-find-char))
         case-fold-search)
     (unless char (user-error "No previous char search"))
-    (unless find ; Vim does this.
+    (unless find ; Vim does this (1=2).
       (cond ((and (= count  1) (= char (char-after)))  (incf count))
             ((and (= count -1) (= char (char-before))) (decf count))))
     (if (search-forward
