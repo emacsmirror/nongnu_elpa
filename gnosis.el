@@ -1760,9 +1760,9 @@ Reopens the gnosis database after successful pull."
 ;;; Bulk link operations
 
 (defun gnosis--count-themata-with-string (themata string)
-  "Count how many THEMATA contain STRING in keimenon."
+  "Count how many THEMATA contain STRING in keimenon outside existing links."
   (cl-count-if (lambda (thema)
-                 (string-match-p (regexp-quote string) (nth 1 thema)))
+                 (gnosis-utils-string-outside-links-p (nth 1 thema) string))
                themata))
 
 (defun gnosis--themata-to-update (themata string node-id)
@@ -1774,10 +1774,11 @@ Reopens the gnosis database after successful pull."
            when (car result)
            collect (cons thema-id (cdr result))))
 
-(defun gnosis--update-themata (updates)
+(defun gnosis--update-themata-keimenon (updates)
   "Apply UPDATES list of (ID . NEW-KEIMENON) to database."
-  (dolist (update updates)
-    (gnosis-update 'themata `(= keimenon ,(cdr update)) `(= id ,(car update)))))
+  (emacsql-with-transaction gnosis-db
+    (dolist (update updates)
+      (gnosis-update 'themata `(= keimenon ,(cdr update)) `(= id ,(car update))))))
 
 (defun gnosis--commit-bulk-link (count string)
   "Commit bulk link changes for COUNT themata with STRING."
@@ -1793,6 +1794,7 @@ Reopens the gnosis database after successful pull."
     (when (and gnosis-vc-auto-push (not gnosis-testing))
       (gnosis-vc-push))))
 
+;;;###autoload
 (defun gnosis-bulk-link-string (string node-id)
   "Replace all instances of STRING in themata keimenon with org-link to NODE-ID."
   (interactive
@@ -1811,7 +1813,7 @@ Reopens the gnosis database after successful pull."
         (message "No themata contain '%s'" string)
       (when (y-or-n-p (format "Replace '%s' in %d themata? " string count))
         (let ((updates (gnosis--themata-to-update themata string node-id)))
-          (gnosis--update-themata updates)
+          (gnosis--update-themata-keimenon updates)
           (gnosis--commit-bulk-link (length updates) string)
           (message "Updated %d themata with links to '%s'" (length updates) string)
           (length updates))))))
