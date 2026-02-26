@@ -12,6 +12,7 @@
 ;;; Code:
 (require 'ert)
 (require 'gnosis)
+(require 'gnosis-export-import)
 
 (let ((parent-dir (file-name-directory
                    (directory-file-name

@@ -12,6 +12,7 @@
 ;;; Code:
 (require 'ert)
 (require 'gnosis)
+(require 'gnosis-review)
 (require 'gnosis-tl)
 (require 'gnosis-dashboard)
 
