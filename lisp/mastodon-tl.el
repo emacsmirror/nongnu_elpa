@@ -2241,6 +2241,21 @@ Folding decided by `mastodon-tl--fold-toots-at-length'."
     (propertize display
                 'read-more body)))
 
+(defun mastodon-tl--load-images-fold ()
+  "Check for unloaded images on (un)fold and load if found."
+  (when mastodon-tl--display-media-p
+    (let ((prev-point
+           (save-excursion
+             (let ((pb (point)))
+               (mastodon-tl-goto-prev-item :norefresh)
+               ;; our prev-item implementation is awful, so we just check
+               ;; if we moved, if we didn't, assume we are first item, so
+               ;; return point-min and use it:
+               (if (eq (point) pb)
+                   (point-min)
+                 (point))))))
+      (mastodon-media--inline-images prev-point (point)))))
+
 (defun mastodon-tl-unfold-post (&optional fold)
   "Unfold the toot at point if it is folded (read-more).
 FOLD means to fold it instead."
@@ -2283,6 +2298,8 @@ FOLD means to fold it instead."
           (add-text-properties (car toot-range)
                                (cdr toot-range)
                                `(toot-folded ,fold)))
+        ;; load unfolded images maybe:
+        (mastodon-tl--load-images-fold)
         ;; try to leave point somewhere sane:
         (cond ((or at-byline
                    (and fold point-after-fold)) ;; point was in area now folded
