@@ -77,6 +77,7 @@
 (autoload 'mastodon-http--get-json-async "mastodon-http")
 (autoload 'mastodon-live-buffers "mastodon")
 (autoload 'mastodon-tl--update "mastodon-tl")
+(autoload 'mastodon-tl--insert-quoted "mastodon-tl")
 
 ;; notifications defcustoms moved into mastodon.el
 ;; as some need to be available without loading this file
@@ -873,7 +874,7 @@ Status notifications are created when you call
       (let ((resp (mastodon-http--post url)))
         (mastodon-http--triage
          resp
-         (lambda (resp)
+         (lambda (_resp)
            (message "Quote of post revoked!")))))))
 
 ;;; NOTIFICATION REQUESTS / FILTERING / POLICY
