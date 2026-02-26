@@ -680,25 +680,26 @@ NO-REDRAFT means delete toot only."
          (id (mastodon-tl--as-string (mastodon-tl--item-id toot)))
          (url (mastodon-http--api (format "statuses/%s" id)))
          (pos (point)))
-    (let-alist toot
-      (if (not (mastodon-toot--own-toot-p toot))
-          (user-error "You can only delete (and redraft) your own toots")
-        (when (y-or-n-p (if no-redraft
-                            (format "Delete this toot? ")
-                          (format "Delete and redraft this toot? ")))
-          (let* ((response (mastodon-http--delete url)))
-            (mastodon-http--triage
-             response
-             (lambda (_)
-               (if no-redraft
-                   (progn
-                     (when mastodon-tl--buffer-spec
-                       (mastodon-tl--reload-timeline-or-profile pos))
-                     (message "Toot deleted!"))
-                 (mastodon-toot--redraft response
-                                         .in_reply_to_id
-                                         .visibility
-                                         .spoiler_text))))))))))
+    (mastodon-toot--with-toot-item
+     (let-alist toot
+       (if (not (mastodon-toot--own-toot-p toot))
+           (user-error "You can only delete (and redraft) your own toots")
+         (when (y-or-n-p (if no-redraft
+                             (format "Delete this toot? ")
+                           (format "Delete and redraft this toot? ")))
+           (let* ((response (mastodon-http--delete url)))
+             (mastodon-http--triage
+              response
+              (lambda (_)
+                (if no-redraft
+                    (progn
+                      (when mastodon-tl--buffer-spec
+                        (mastodon-tl--reload-timeline-or-profile pos))
+                      (message "Toot deleted!"))
+                  (mastodon-toot--redraft response
+                                          .in_reply_to_id
+                                          .visibility
+                                          .spoiler_text)))))))))))
 
 (defun mastodon-toot--set-cw (&optional cw)
   "Set content warning to CW if it is non-nil."
