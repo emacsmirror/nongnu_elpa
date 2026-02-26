@@ -1137,7 +1137,7 @@ DECK-ID: ID for deck.
 ID: Integer for thema ID.
 TYPE: String for type, must be \"mc-cloze\".
 HYPOTHESIS: List of strings or nil, hypothesis in mc-cloze thema types
-serve as hints.
+serve as answer options.
 ANSWER: List of answers for mc-clozes.
 TAGS: List of tags.
 PARATHEMA: Parathema for thema.
@@ -1149,7 +1149,9 @@ LINKS: list of strings."
   (cl-assert (and (listp hypothesis)
 		  (> (length hypothesis) (length answer)))
 	     nil "Hypothesis value must be a list, greater in length of ANSWER.")
-  (cl-assert (and (listp answer) (length= answer 1)) nil
+  (cl-assert (and (listp answer) (length= answer 1)
+		  (member (car answer) hypothesis))
+	     nil
 	     "ANSWER value must be a list of one item.")
   (cl-assert (and (listp tags)
 		  (cl-every 'stringp tags))
