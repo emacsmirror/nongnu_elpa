@@ -31,7 +31,6 @@
 ;;; Code:
 (eval-when-compile (require 'subr-x))
 
-
 (defvar mastodon-use-emojify)
 (require 'emojify nil :noerror)
 (declare-function emojify-insert-emoji "emojify")
@@ -56,6 +55,7 @@
 (defvar mastodon-tl--enable-proportional-fonts)
 (defvar mastodon-profile-account-settings)
 (defvar mastodon-profile-acccount-preferences-data)
+(defvar mastodon-profiles-quote-policy-types)
 
 (autoload 'iso8601-parse "iso8601")
 (autoload 'ht-get "ht")
@@ -243,6 +243,8 @@ Takes its form from `window-configuration-to-register'.")
 
 (defvar-local mastodon-toot-quote-policy nil
   "The quote policy for the current toot.")
+
+(defvar-local mastodon-toot-quote-id nil)
 
 (persist-defvar mastodon-toot-draft-toots-list nil
   "A list of toots that have been saved as drafts.
@@ -676,11 +678,10 @@ Uses `lingva.el'."
   "Delete and redraft user's toot at point synchronously.
 NO-REDRAFT means delete toot only."
   (interactive)
-  (let* ((toot (mastodon-toot--base-toot-or-item-json))
-         (id (mastodon-tl--as-string (mastodon-tl--item-id toot)))
-         (url (mastodon-http--api (format "statuses/%s" id)))
-         (pos (point)))
-    (mastodon-toot--with-toot-item
+  (mastodon-toot--with-toot-item
+   (let* ((toot (mastodon-toot--base-toot-or-item-json))
+          (url (mastodon-http--api (format "statuses/%s" id)))
+          (pos (point)))
      (let-alist toot
        (if (not (mastodon-toot--own-toot-p toot))
            (user-error "You can only delete (and redraft) your own toots")
@@ -1318,7 +1319,7 @@ Return its two letter ISO 639 1 code."
                           default)
                   mastodon-profiles-quote-policy-types)))
     (setq mastodon-toot-quote-policy choice)
-    (message "Quote policy for this toot: " choice)
+    (message (concat "Quote policy for this toot: " choice))
     (mastodon-toot--update-status-fields)))
 
 
@@ -1352,7 +1353,7 @@ is uploaded asynchronously using `mastodon-toot--upload-attached-media'.
 File is actually attached to the toot upon posting."
   (interactive)
   (if mastodon-toot-quote-id
-      (user-error "You can't add attachments to quote toots.")
+      (user-error "You can't add attachments to quote toots")
     (let ((file (read-file-name "Filename: "))
           (description (read-string "Description: "))
           (max-attachments (mastodon-toot--get-instance-max-attachments)))
@@ -1474,7 +1475,7 @@ MAX is the maximum number set by their instance."
   "Prompt for new poll options and return as a list."
   (interactive)
   (cond (mastodon-toot-quote-id
-         (user-error "You can't add a poll to a quote toot."))
+         (user-error "You can't add a poll to a quote toot"))
         (mastodon-toot-poll-use-transient
          (call-interactively #'mastodon-create-poll))
         (t (mastodon-toot--read-poll))))
@@ -1587,8 +1588,6 @@ If TRANSIENT, we are called from a transient, so nil
 (defvar mastodon-toot-quote-approval-auto-or-manual
   '("public" "followers" "following" "unsupported_policy"))
 
-(defvar-local mastodon-toot-quote-id nil)
-
 (defun mastodon-toot-quote ()
   "Compose a toot quoting the toot at point."
   (interactive)
@@ -1617,7 +1616,7 @@ If TRANSIENT, we are called from a transient, so nil
          ;; for now all we do is hand on quoted toot's visibility:
          (visibility (mastodon-tl--field 'visibility json)))
     (if (string=  user-policy "denied")
-        (user-error "You don't have permission to quote this toot.")
+        (user-error "You don't have permission to quote this toot")
       (when (or (not (string=  user-policy "unknown"))
                 (y-or-n-p "Quote permission unknown. Proceed?"))
         (mastodon-toot--compose-buffer nil nil nil nil nil
@@ -1766,7 +1765,8 @@ LONGEST is the length of the longest binding."
       nil))))
 
 (defun mastodon-toot--format-reply-in-compose (reply-text &optional quote-text)
-  "Format a REPLY-TEXT for display in compose buffer docs."
+  "Format a REPLY-TEXT for display in compose buffer docs.
+Optionally format QUOTE-TEXT."
   (let* ((rendered (mastodon-tl--render-text (or quote-text reply-text)))
          (no-props (substring-no-properties rendered))
          ;; FIXME: this replaces \n at end of every post, so we have to trim:
@@ -1785,7 +1785,8 @@ LONGEST is the length of the longest binding."
   "Insert propertized text with documentation about `mastodon-toot-mode'.
 Also includes and the status fields which will get updated based
 on the status of NSFW, content warning flags, media attachments, etc.
-REPLY-TEXT is the text of the toot being replied to."
+REPLY-TEXT is the text of the toot being replied to.
+QUOTE-TEXT is that of the toot being quoted if so."
   (let ((divider
          "|=================================================================|"))
     (insert
@@ -2107,7 +2108,10 @@ If REPLY-TO-ID is provided, set the `mastodon-toot--reply-to-id' var.
 REPLY-JSON is the full JSON of the toot being replied to.
 INITIAL-TEXT is used by `mastodon-toot-insert-draft-toot' to add
 a draft into the buffer.
-EDIT means we are editing an existing toot, not composing a new one."
+EDIT means we are editing an existing toot, not composing a new one.
+QUOTE-ID is the id of the post being quoted if there is one.
+QUOTE-JSON is its data.
+VISIBILITY is the toot's visibility."
   (let* ((buffer-name (if edit "*edit toot*" "*new toot*"))
          (buffer-exists (get-buffer buffer-name))
          (buffer (if (not buffer-exists)
