@@ -518,17 +518,18 @@ Continues as long as the dashboard buffer exists."
 (defun gnosis-dashboard-warm-cache ()
   "Warm the entry cache for all themata in the background.
 Continues as long as the dashboard buffer exists, regardless of
-which view the user navigates to."
-  (let* ((all-ids (gnosis-select 'id 'themata nil t))
-         (chunks (let (result (rest all-ids))
-                   (while rest
-                     (push (seq-take rest gnosis-dashboard-chunk-size) result)
-                     (setq rest (nthcdr gnosis-dashboard-chunk-size rest)))
-                   (nreverse result))))
-    (when chunks
-      (run-with-timer gnosis-dashboard-timer-delay nil
-                      #'gnosis-dashboard--warm-cache-chunk
-                      chunks (length all-ids) 0))))
+which view the user navigates to.  Skips if cache is already populated."
+  (when (zerop (hash-table-count gnosis-dashboard--entry-cache))
+    (let* ((all-ids (gnosis-select 'id 'themata nil t))
+           (chunks (let (result (rest all-ids))
+                     (while rest
+                       (push (seq-take rest gnosis-dashboard-chunk-size) result)
+                       (setq rest (nthcdr gnosis-dashboard-chunk-size rest)))
+                     (nreverse result))))
+      (when chunks
+        (run-with-timer gnosis-dashboard-timer-delay nil
+                        #'gnosis-dashboard--warm-cache-chunk
+                        chunks (length all-ids) 0)))))
 
 (defun gnosis-dashboard--start-prerender ()
   "Begin background pre-rendering of the all-themata view.
