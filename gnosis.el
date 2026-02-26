@@ -959,6 +959,8 @@ When `gnosis--id-cache' is bound, uses hash table for existence check."
 	  (gnosis-update 'themata `(= tags ',tags) `(= id ,id))
 	  (when type
 	    (gnosis-update 'themata `(= type ,type) `(= id ,id)))
+	  (when deck-id
+	    (gnosis-update 'themata `(= deck-id ,deck-id) `(= id ,id)))
 	  (gnosis--delete 'links `(= source ,id))
 	  (cl-loop for link in links
 		   do (gnosis--insert-into 'links `([,id ,link]))))
