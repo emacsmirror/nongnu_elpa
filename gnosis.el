@@ -1794,7 +1794,25 @@ Reopens the gnosis database after successful pull."
     (when (and gnosis-vc-auto-push (not gnosis-testing))
       (gnosis-vc-push))))
 
-;;;###autoload
+(defun gnosis-bulk-link-themata (ids string node-id)
+  "Replace STRING with org-link to NODE-ID in themata with IDS.
+Return list of updated thema IDs."
+  (when (string-empty-p string)
+    (user-error "String cannot be empty"))
+  (unless node-id
+    (user-error "Node not found"))
+  (let* ((themata (gnosis-select '[id keimenon] 'themata
+                                 `(in id ,(vconcat ids))))
+         (count (gnosis--count-themata-with-string themata string)))
+    (if (zerop count)
+        (progn (message "No themata contain '%s'" string) nil)
+      (when (y-or-n-p (format "Replace '%s' in %d themata? " string count))
+        (let ((updates (gnosis--themata-to-update themata string node-id)))
+          (gnosis--update-themata-keimenon updates)
+          (gnosis--commit-bulk-link (length updates) string)
+          (message "Updated %d themata with links to '%s'" (length updates) string)
+          (mapcar #'car updates))))))
+
 (defun gnosis-bulk-link-string (string node-id)
   "Replace all instances of STRING in themata keimenon with org-link to NODE-ID."
   (interactive
@@ -1803,20 +1821,7 @@ Reopens the gnosis database after successful pull."
           (node-title (gnosis-completing-read "Select node: " (mapcar #'cadr nodes)))
           (node-id (car (cl-find node-title nodes :key #'cadr :test #'string=))))
      (list string node-id)))
-  (when (string-empty-p string)
-    (user-error "String cannot be empty"))
-  (unless node-id
-    (user-error "Node not found"))
-  (let* ((themata (gnosis-select '[id keimenon] 'themata nil))
-         (count (gnosis--count-themata-with-string themata string)))
-    (if (zerop count)
-        (message "No themata contain '%s'" string)
-      (when (y-or-n-p (format "Replace '%s' in %d themata? " string count))
-        (let ((updates (gnosis--themata-to-update themata string node-id)))
-          (gnosis--update-themata-keimenon updates)
-          (gnosis--commit-bulk-link (length updates) string)
-          (message "Updated %d themata with links to '%s'" (length updates) string)
-          (length updates))))))
+  (gnosis-bulk-link-themata (gnosis-select 'id 'themata nil t) string node-id))
 
 ;;; Link integrity
 
