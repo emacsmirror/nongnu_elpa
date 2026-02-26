@@ -342,7 +342,8 @@ With prefix arg, prompt for count.  Default 0 (never reviewed)."
     ("e" "Edit thema" gnosis-dashboard-edit-thema :transient t)
     ("a" "Add thema" gnosis-add-thema :transient t)
     ("s" "Suspend" gnosis-dashboard-suspend-thema :transient t)
-    ("d" "Delete" gnosis-dashboard-delete :transient t)]
+    ("d" "Delete" gnosis-dashboard-delete :transient t)
+    ("b" "Bulk link" gnosis-dashboard-bulk-link :transient t)]
    ["Mark"
     ("m" "Toggle mark" gnosis-dashboard-mark-toggle :transient t)
     ("M" "Mark all" gnosis-dashboard-mark-all :transient t)
@@ -365,6 +366,7 @@ With prefix arg, prompt for count.  Default 0 (never reviewed)."
   "d" #'gnosis-dashboard-delete
   "m" #'gnosis-dashboard-mark-toggle
   "M" #'gnosis-dashboard-mark-all
+  "b" #'gnosis-dashboard-bulk-link
   "u" #'gnosis-dashboard-mark-toggle
   "U" #'gnosis-dashboard-unmark-all
 )
@@ -1079,6 +1081,20 @@ DASHBOARD-TYPE: either Themata or Decks to display the respective dashboard."
     (gnosis-toggle-suspend-themata gnosis-dashboard--selected-ids nil)
     (gnosis-dashboard--update-entries gnosis-dashboard--selected-ids)
     (setq gnosis-dashboard--selected-ids nil)))
+
+(defun gnosis-dashboard-bulk-link ()
+  "Bulk link string in marked or all displayed themata."
+  (interactive nil gnosis-dashboard-themata-mode)
+  (let* ((ids (or gnosis-dashboard--selected-ids
+                  gnosis-dashboard-themata-current-ids))
+         (string (read-string "String to replace: "))
+         (nodes (org-gnosis-select '[id title] 'nodes))
+         (node-title (gnosis-completing-read "Select node: " (mapcar #'cadr nodes)))
+         (node-id (car (cl-find node-title nodes :key #'cadr :test #'string=)))
+         (updated (gnosis-bulk-link-themata ids string node-id)))
+    (when updated
+      (gnosis-dashboard--update-entries updated)
+      (setq gnosis-dashboard--selected-ids nil))))
 
 (transient-define-suffix gnosis-dashboard-suffix-query (query)
   "Search for thema content for QUERY."
