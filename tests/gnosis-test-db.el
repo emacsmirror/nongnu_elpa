@@ -30,12 +30,8 @@
 
 (require 'gnosis)
 
-(defvar gnosis-test-image "anatomy/typic-vertebra-superior-01.png"
-  "Random image for testing")
-
 (defvar gnosis-test-deck-file
-  (expand-file-name "test.org"
-		    (file-name-directory (or load-file-name buffer-file-name))))
+  (expand-file-name "../decks/demo.org"))
 
 (defun gnosis-test-random-items (list x)
   "Select X random items from LIST."
