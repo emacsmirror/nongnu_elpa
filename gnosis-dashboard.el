@@ -475,6 +475,13 @@ Each chunk fetches this many entries then yields to the event loop."
   :type 'integer
   :group 'gnosis)
 
+(defcustom gnosis-dashboard-render-chunk-size 5000
+  "Number of entries per chunk for progressive rendering.
+The first chunk is rendered immediately; remaining chunks are
+appended via timers so the UI stays responsive."
+  :type 'integer
+  :group 'gnosis)
+
 (defun gnosis-dashboard--warm-cache-chunk (chunks total warmed)
   "Process one chunk of thema IDs for background cache warming.
 CHUNKS: remaining list of id-sublists.  TOTAL: total thema count.
@@ -592,6 +599,68 @@ proportionally so all columns fit."
         (gnosis-dashboard--compute-column-format (window-width))))
 
 
+(defun gnosis-dashboard--progressive-render (entries gen)
+  "Render ENTRIES progressively in chunks.
+First chunk is rendered immediately; remaining chunks are appended
+via timers.  GEN is the load generation for staleness checks."
+  (let* ((size gnosis-dashboard-render-chunk-size)
+         (first-chunk (seq-take entries size))
+         (rest (nthcdr size entries)))
+    ;; Render first chunk immediately
+    (let ((inhibit-read-only t)
+          (inhibit-modification-hooks t))
+      (erase-buffer)
+      (gnosis-tl--render-into-buffer first-chunk tabulated-list-format
+                                     (or tabulated-list-padding 0)))
+    (setq tabulated-list-entries (copy-sequence first-chunk))
+    (set-buffer-modified-p nil)
+    (goto-char (point-min))
+    ;; Schedule remaining chunks
+    (when rest
+      (let* ((tail (last tabulated-list-entries))
+             (buf (current-buffer))
+             (chunks (let (result (r rest))
+                       (while r
+                         (push (seq-take r size) result)
+                         (setq r (nthcdr size r)))
+                       (nreverse result))))
+        (run-with-timer gnosis-dashboard-timer-delay nil
+                        #'gnosis-dashboard--append-chunk
+                        buf chunks tail gen)))))
+
+(defun gnosis-dashboard--append-chunk (buf chunks entries-tail gen)
+  "Append one chunk of entries to BUF.
+CHUNKS: remaining list of entry sublists.
+ENTRIES-TAIL: last cons cell of `tabulated-list-entries' for nconc.
+GEN: load generation — no-op if stale."
+  (when (and (buffer-live-p buf)
+             (= gen gnosis-dashboard--load-generation)
+             chunks)
+    (with-current-buffer buf
+      (let ((chunk (car chunks)))
+        (gnosis-tl-append-entries chunk)
+        ;; Extend tabulated-list-entries via nconc to the tail
+        (let ((new-tail (copy-sequence chunk)))
+          (setcdr entries-tail new-tail)
+          (setq entries-tail (last new-tail))))
+      (if (cdr chunks)
+          (run-with-timer gnosis-dashboard-timer-delay nil
+                          #'gnosis-dashboard--append-chunk
+                          buf (cdr chunks) entries-tail gen)
+        ;; Final chunk — update header badge, defer cache string
+        (gnosis-dashboard--set-header-line (length tabulated-list-entries))
+        (let ((ids (copy-sequence gnosis-dashboard-thema-ids))
+              (w (window-width)))
+          (run-with-idle-timer
+           0.5 nil
+           (lambda ()
+             (when (buffer-live-p buf)
+               (with-current-buffer buf
+                 (setq gnosis-dashboard--rendered-ids ids
+                       gnosis-dashboard--rendered-width w
+                       gnosis-dashboard--rendered-text
+                       (buffer-string)))))))))))
+
 (defun gnosis-dashboard-output-themata (thema-ids)
   "Display THEMA-IDS in the gnosis dashboard."
   (cl-assert (listp thema-ids) t "`thema-ids' must be a list of thema ids.")
@@ -624,23 +693,13 @@ proportionally so all columns fit."
           (insert gnosis-dashboard--rendered-text)
           (setq tabulated-list-entries
                 (gnosis-dashboard--output-themata thema-ids)))
-      ;; Cache miss — compute entries and render
-      (let ((entries (gnosis-dashboard--output-themata thema-ids)))
-        (setq tabulated-list-entries entries)
-        (gnosis-tl-print)
-        ;; Defer rendered text cache to idle time
-        (let ((buf (current-buffer))
-              (ids (copy-sequence thema-ids))
-              (w (window-width)))
-          (run-with-idle-timer
-           0.5 nil
-           (lambda ()
-             (when (buffer-live-p buf)
-               (with-current-buffer buf
-                 (setq gnosis-dashboard--rendered-ids ids
-                       gnosis-dashboard--rendered-width w
-                       gnosis-dashboard--rendered-text
-                       (buffer-string))))))))))
+      ;; Cache miss — compute entries and render progressively
+      (let* ((entries (gnosis-dashboard--output-themata thema-ids))
+             (sorter (gnosis-tl--get-sorter)))
+        (when sorter
+          (setq entries (sort entries sorter)))
+        (gnosis-dashboard--progressive-render
+         entries gnosis-dashboard--load-generation))))
   (gnosis-dashboard--set-header-line (length thema-ids)))
 
 (defun gnosis-dashboard-deck-thema-count (id)
