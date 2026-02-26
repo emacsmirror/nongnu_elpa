@@ -1405,6 +1405,148 @@ This is the critical bug fix: (not nil) => t was wrong."
     (should (>= (nth 1 (aref fmt 5)) 3)))) ;; Suspend
 
 ;; ──────────────────────────────────────────────────────────
+;; gnosis-tl-append-entries tests
+;; ──────────────────────────────────────────────────────────
+
+(ert-deftest gnosis-test-tl-append-entries-basic ()
+  "Append-entries adds lines at the end of the buffer."
+  (with-temp-buffer
+    (tabulated-list-mode)
+    (setq tabulated-list-format [("Name" 20 t) ("Val" 10 t)]
+          tabulated-list-padding 2)
+    (tabulated-list-init-header)
+    ;; Render initial entries
+    (setq tabulated-list-entries
+          '((1 ["Alice" "100"])
+            (2 ["Bob" "200"])))
+    (gnosis-tl-print)
+    (should (= (count-lines (point-min) (point-max)) 2))
+    ;; Append more entries
+    (gnosis-tl-append-entries '((3 ["Carol" "300"])
+                                (4 ["Dave" "400"])))
+    ;; Now 4 lines
+    (should (= (count-lines (point-min) (point-max)) 4))
+    ;; All entries present with correct IDs
+    (goto-char (point-min))
+    (should (equal (tabulated-list-get-id) 1))
+    (forward-line 1)
+    (should (equal (tabulated-list-get-id) 2))
+    (forward-line 1)
+    (should (equal (tabulated-list-get-id) 3))
+    (forward-line 1)
+    (should (equal (tabulated-list-get-id) 4))))
+
+(ert-deftest gnosis-test-tl-append-entries-preserves-point ()
+  "Append-entries does not move point."
+  (with-temp-buffer
+    (tabulated-list-mode)
+    (setq tabulated-list-format [("Name" 20 t)]
+          tabulated-list-padding 2)
+    (tabulated-list-init-header)
+    (setq tabulated-list-entries '((1 ["Alice"]) (2 ["Bob"])))
+    (gnosis-tl-print)
+    ;; Position on Bob
+    (goto-char (point-min))
+    (forward-line 1)
+    (should (equal (tabulated-list-get-id) 2))
+    ;; Append — cursor should stay on Bob
+    (gnosis-tl-append-entries '((3 ["Carol"])))
+    (should (equal (tabulated-list-get-id) 2))))
+
+(ert-deftest gnosis-test-tl-append-entries-empty ()
+  "Append-entries with empty list is a no-op."
+  (with-temp-buffer
+    (tabulated-list-mode)
+    (setq tabulated-list-format [("Name" 20 t)]
+          tabulated-list-padding 2)
+    (tabulated-list-init-header)
+    (setq tabulated-list-entries '((1 ["Alice"])))
+    (gnosis-tl-print)
+    (let ((before (buffer-string)))
+      (gnosis-tl-append-entries nil)
+      (should (equal (buffer-string) before)))))
+
+(ert-deftest gnosis-test-tl-append-entries-to-empty-buffer ()
+  "Append-entries works on an empty buffer."
+  (with-temp-buffer
+    (tabulated-list-mode)
+    (setq tabulated-list-format [("Name" 20 t) ("Val" 10 t)]
+          tabulated-list-padding 2)
+    (tabulated-list-init-header)
+    (let ((inhibit-read-only t))
+      (erase-buffer))
+    (gnosis-tl-append-entries '((1 ["Alice" "100"])))
+    (should (= (count-lines (point-min) (point-max)) 1))
+    (goto-char (point-min))
+    (should (equal (tabulated-list-get-id) 1))))
+
+;; ──────────────────────────────────────────────────────────
+;; Progressive rendering tests
+;; ──────────────────────────────────────────────────────────
+
+(ert-deftest gnosis-test-dashboard-progressive-render-small ()
+  "Progressive render with fewer entries than chunk size renders all at once."
+  (gnosis-test-with-db
+    (let* ((deck-id (gnosis-test--add-deck "test-deck"))
+           (id1 (gnosis-test--add-basic-thema deck-id "Q1" "A1"))
+           (id2 (gnosis-test--add-basic-thema deck-id "Q2" "A2"))
+           (id3 (gnosis-test--add-basic-thema deck-id "Q3" "A3")))
+      (gnosis-test-with-dashboard-buffer
+        (gnosis-dashboard-output-themata (list id1 id2 id3))
+        (with-current-buffer gnosis-dashboard-buffer-name
+          ;; All 3 entries rendered immediately (< chunk size)
+          (should (= (length tabulated-list-entries) 3))
+          (should (= (count-lines (point-min) (point-max)) 3))
+          ;; IDs are correct
+          (goto-char (point-min))
+          (let ((ids nil))
+            (while (not (eobp))
+              (push (tabulated-list-get-id) ids)
+              (forward-line 1))
+            (should (= (length ids) 3))))))))
+
+(ert-deftest gnosis-test-dashboard-progressive-render-chunked ()
+  "Progressive render splits entries when exceeding chunk size."
+  (gnosis-test-with-db
+    (let* ((gnosis-dashboard-render-chunk-size 2)
+           (deck-id (gnosis-test--add-deck "test-deck"))
+           (id1 (gnosis-test--add-basic-thema deck-id "Q1" "A1"))
+           (id2 (gnosis-test--add-basic-thema deck-id "Q2" "A2"))
+           (id3 (gnosis-test--add-basic-thema deck-id "Q3" "A3"))
+           (id4 (gnosis-test--add-basic-thema deck-id "Q4" "A4"))
+           (id5 (gnosis-test--add-basic-thema deck-id "Q5" "A5")))
+      (gnosis-test-with-dashboard-buffer
+        (gnosis-dashboard-output-themata (list id1 id2 id3 id4 id5))
+        (with-current-buffer gnosis-dashboard-buffer-name
+          ;; First chunk: only 2 entries rendered synchronously
+          (should (= (length tabulated-list-entries) 2))
+          (should (= (count-lines (point-min) (point-max)) 2)))))))
+
+(ert-deftest gnosis-test-dashboard-progressive-render-stale-gen ()
+  "Progressive render timer no-ops when generation is stale."
+  (gnosis-test-with-db
+    (let* ((gnosis-dashboard-render-chunk-size 2)
+           (deck-id (gnosis-test--add-deck "test-deck"))
+           (id1 (gnosis-test--add-basic-thema deck-id "Q1" "A1"))
+           (id2 (gnosis-test--add-basic-thema deck-id "Q2" "A2"))
+           (id3 (gnosis-test--add-basic-thema deck-id "Q3" "A3")))
+      (gnosis-test-with-dashboard-buffer
+        (gnosis-dashboard-output-themata (list id1 id2 id3))
+        (with-current-buffer gnosis-dashboard-buffer-name
+          ;; First chunk rendered
+          (should (= (length tabulated-list-entries) 2))
+          ;; Simulate navigation away (bumps generation)
+          (cl-incf gnosis-dashboard--load-generation)
+          ;; Manually call append-chunk with stale gen — should be no-op
+          (let ((old-count (count-lines (point-min) (point-max))))
+            (gnosis-dashboard--append-chunk
+             (current-buffer)
+             (list (list (list id3 ["Q3" "" "" "test" "basic" "No"])))
+             (last tabulated-list-entries)
+             (1- gnosis-dashboard--load-generation))
+            (should (= (count-lines (point-min) (point-max)) old-count))))))))
+
+;; ──────────────────────────────────────────────────────────
 ;; Benchmark tests
 ;; ──────────────────────────────────────────────────────────
 
