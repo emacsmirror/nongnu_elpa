@@ -99,7 +99,7 @@
 (defvar mastodon-notifications-updates-interval)
 (defvar mastodon-notifications-check-for-updates)
 (defvar mastodon-notifications-alert-style)
-
+(defvar mastodon-notifications-alerts)
 ;;; VARIABLES
 
 (defvar mastodon-notifications--map
@@ -840,20 +840,22 @@ Status notifications are created when you call
          (resp (mastodon-http--get-json url nil :silent)))
     (alist-get 'count resp)))
 
-(alert-add-rule :mode 'mastodon-mode
-                :status '(buried visible idle selected)
-                :persistent
-                #'(lambda (info)
-                    ;; If the buffer is buried, or the user has been idle
-                    ;; for `alert-reveal-idle-time' seconds, make this
-                    ;; alert persistent. Normally, alerts become
-                    ;; persistent after `alert-persist-idle-time' seconds.
-                    (memq (plist-get info :status) '(buried idle)))
-                ;; FIXME: if user configures this variable, we need to
-                ;; remove this rule and re-add it! or they need to restart
-                ;; emacs?:
-                :style mastodon-notifications-alert-style
-                :continue t)
+(when (and mastodon-notifications-alerts
+           (require 'alert nil :noerror))
+  (alert-add-rule :mode 'mastodon-mode
+                  :status '(buried visible idle selected)
+                  :persistent
+                  #'(lambda (info)
+                      ;; If the buffer is buried, or the user has been idle
+                      ;; for `alert-reveal-idle-time' seconds, make this
+                      ;; alert persistent. Normally, alerts become
+                      ;; persistent after `alert-persist-idle-time' seconds.
+                      (memq (plist-get info :status) '(buried idle)))
+                  ;; FIXME: if user configures this variable, we need to
+                  ;; remove this rule and re-add it! or they need to restart
+                  ;; emacs?:
+                  :style mastodon-notifications-alert-style
+                  :continue t))
 
 ;;; REVOKE QUOTED STATUS
 ;; POST /api/v1/statuses/:id/quotes/:quoting_status_id/revoke.

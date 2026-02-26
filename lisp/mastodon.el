@@ -7,7 +7,7 @@
 ;;         Marty Hiatt <mousebot@disroot.org>
 ;; Maintainer: Marty Hiatt <mousebot@disroot.org>
 ;; Version: 2.0.8
-;; Package-Requires: ((emacs "28.1") (persist "0.8") (tp "0.8") (alert "1.2"))
+;; Package-Requires: ((emacs "28.1") (persist "0.8") (tp "0.8"))
 ;; Homepage: https://codeberg.org/martianh/mastodon.el
 
 ;; This file is not part of GNU Emacs.
@@ -207,6 +207,10 @@ and X others...\"."
 (defcustom mastodon-notifications-updates-interval 60
   "How often to check for new notifications, in seconds."
   :type '(integer))
+
+(defcustom mastodon-notifications-alerts nil
+  "Whether to enable alert.el alerts."
+  :type '(boolean))
 
 (defcustom mastodon-notifications-alert-style alert-default-style
   "The type of alert.el style to use for mastodon.el notification alerts.
@@ -617,7 +621,9 @@ Calls `mastodon-tl--get-buffer-type', which see."
               (append thing-at-point-provider-alist
                       '((url . mastodon--url-at-point))))
   ;; notifs timer
-  (mastodon-notifications--update-with-timer))
+  (when (and mastodon-notifications-alerts
+             (require 'alert nil :noerror))
+    (mastodon-notifications--update-with-timer)))
 
 ;;;###autoload
 (add-hook 'mastodon-mode-hook #'mastodon-mode-hook-fun)
