@@ -13,6 +13,7 @@
 
 (require 'ert)
 (require 'gnosis)
+(require 'gnosis-export-import)
 
 (let ((parent-dir (file-name-directory
                    (directory-file-name
@@ -189,6 +190,17 @@
                     "{{c2::cleft lip::face}} and {{c2::cleft palate::face}}")
                    "cleft lip and cleft palate")))
 
+(ert-deftest gnosis-test-cloze-remove-colon-in-content ()
+  "Cloze content containing a colon (e.g. smiley) is cleaned."
+  (should (string= (gnosis-cloze-remove-tags "{{c1::Both :)}}")
+                   "Both :)")))
+
+(ert-deftest gnosis-test-cloze-remove-multi-cloze-with-colon ()
+  "Multi-line text with two cX groups, one containing a colon."
+  (should (string= (gnosis-cloze-remove-tags
+                    "Is valproate used to prevent relapse or treat acute {{c2::mania}} in bipolar disorder?\n{{c1::Both :)}}")
+                   "Is valproate used to prevent relapse or treat acute mania in bipolar disorder?\nBoth :)")))
+
 ;; ──────────────────────────────────────────────────────────
 ;; gnosis-cloze-check
 ;; ──────────────────────────────────────────────────────────
@@ -280,6 +292,22 @@
     (should (equal (car hints) '("face" "face")))
     (should (string= clean "associated with cleft lip and cleft palate"))
     (should (gnosis-cloze-check clean (car answers)))))
+
+(ert-deftest gnosis-test-cloze-pipeline-colon-in-content ()
+  "Full pipeline: multi-line cloze with colon in content (smiley)."
+  (let* ((text "Is valproate used to prevent relapse or treat acute {{c2::mania}} in bipolar disorder?\n{{c1::Both :)}}")
+         (contents (gnosis-cloze-extract-contents text))
+         (answers (gnosis-cloze-extract-answers contents))
+         (hints (gnosis-cloze-extract-hints contents))
+         (clean (gnosis-cloze-remove-tags text)))
+    (should (= (length answers) 2))
+    (should (equal (nth 0 answers) '("mania")))
+    (should (equal (nth 1 answers) '("Both :)")))
+    (should (equal (nth 0 hints) '(nil)))
+    (should (equal (nth 1 hints) '(nil)))
+    (should (string= clean "Is valproate used to prevent relapse or treat acute mania in bipolar disorder?\nBoth :)"))
+    (should (gnosis-cloze-check clean (nth 0 answers)))
+    (should (gnosis-cloze-check clean (nth 1 answers)))))
 
 ;; ──────────────────────────────────────────────────────────
 ;; Import: cloze with Anki syntax + nil answer → auto-extract
