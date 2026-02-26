@@ -665,7 +665,7 @@ Works with both single (:), double colons (::), single braces ({}) and
 double braces ({{}}).
 
 Also removes content after a double semicolon (::), which indicate a hint."
-  (let* ((regex "{\\{1,2\\}c[0-9]+:\\{1,2\\}\\([^:{}]*?\\)\\(::[^{}]*\\)?}\\{1,2\\}")
+  (let* ((regex "{\\{1,2\\}c[0-9]+:\\{1,2\\}\\(.*?\\)\\(::[^{}]*\\)?}\\{1,2\\}")
          (result (replace-regexp-in-string regex "\\1" string)))
     result))
 
@@ -1111,22 +1111,21 @@ LINKS: list of strings."
 	     nil "Links must be a list")
   (cl-assert (gnosis-cloze-check keimenon answer) nil
 	     "Clozes (answer) values are not part of keimenon")
-  (if (equal id "NEW")
-      (progn
+  (let ((keimenon-clean (gnosis-cloze-remove-tags keimenon)))
+    (if (equal id "NEW")
 	(if (null answer)
 	    ;; if answer is left null, extract all contents from keimenon.
 	    (let* ((contents (gnosis-cloze-extract-contents keimenon))
-		   (keimenon-new (gnosis-cloze-remove-tags keimenon))
 		   (clozes (gnosis-cloze-extract-answers contents))
 		   (hints (gnosis-cloze-extract-hints contents)))
 	      (cl-loop for cloze in clozes
 		       for hint in hints
 		       do
-		       (gnosis-add-thema-fields deck-id type keimenon-new hint cloze parathema
-						  tags suspend links)))
-	  (gnosis-add-thema-fields deck-id type keimenon (or hypothesis (list ""))
-				  answer parathema tags suspend links)))
-    (gnosis-update-thema id keimenon hypothesis answer parathema tags links deck-id type)))
+		       (gnosis-add-thema-fields deck-id type keimenon-clean hint cloze parathema
+						tags suspend links)))
+	  (gnosis-add-thema-fields deck-id type keimenon-clean (or hypothesis (list ""))
+				   answer parathema tags suspend links))
+      (gnosis-update-thema id keimenon-clean hypothesis answer parathema tags links deck-id type))))
 
 (defun gnosis-add-thema--mc-cloze (id deck-id type keimenon hypothesis
 				  answer parathema tags suspend links)
