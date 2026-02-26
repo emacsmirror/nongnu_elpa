@@ -1122,11 +1122,91 @@ This is the critical bug fix: (not nil) => t was wrong."
         (should (equal (mapcar #'car our) (mapcar #'car theirs)))))))
 
 ;; ──────────────────────────────────────────────────────────
+;; gnosis-tl--column-at-point tests
+;; ──────────────────────────────────────────────────────────
+
+(ert-deftest gnosis-test-tl-column-at-point-first ()
+  "Cursor on first column returns index 0."
+  (with-temp-buffer
+    (tabulated-list-mode)
+    (setq tabulated-list-format [("Name" 20 t) ("Val" 10 t)]
+          tabulated-list-padding 2)
+    (tabulated-list-init-header)
+    (setq tabulated-list-entries '((1 ["Alice" "100"])))
+    (gnosis-tl-print)
+    (goto-char (point-min))
+    (move-to-column 2)  ;; past padding, on first column
+    (should (= (gnosis-tl--column-at-point) 0))))
+
+(ert-deftest gnosis-test-tl-column-at-point-second ()
+  "Cursor on second column returns index 1."
+  (with-temp-buffer
+    (tabulated-list-mode)
+    (setq tabulated-list-format [("Name" 20 t) ("Val" 10 t)]
+          tabulated-list-padding 2)
+    (tabulated-list-init-header)
+    (setq tabulated-list-entries '((1 ["Alice" "100"])))
+    (gnosis-tl-print)
+    (goto-char (point-min))
+    ;; padding(2) + Name(20) + pad-right(1) = 23
+    (move-to-column 23)
+    (should (= (gnosis-tl--column-at-point) 1))))
+
+(ert-deftest gnosis-test-tl-column-at-point-on-padding ()
+  "Cursor on padding (before first column) returns 0."
+  (with-temp-buffer
+    (tabulated-list-mode)
+    (setq tabulated-list-format [("Name" 20 t) ("Val" 10 t)]
+          tabulated-list-padding 2)
+    (tabulated-list-init-header)
+    (setq tabulated-list-entries '((1 ["Alice" "100"])))
+    (gnosis-tl-print)
+    (goto-char (point-min))
+    (move-to-column 0)
+    (should (= (gnosis-tl--column-at-point) 0))))
+
+(ert-deftest gnosis-test-tl-column-at-point-three-cols ()
+  "Column detection works for 3-column format."
+  (with-temp-buffer
+    (tabulated-list-mode)
+    (setq tabulated-list-format [("A" 10 t) ("B" 15 t) ("C" 8 t)]
+          tabulated-list-padding 0)
+    (tabulated-list-init-header)
+    (setq tabulated-list-entries '((1 ["aaa" "bbb" "ccc"])))
+    (gnosis-tl-print)
+    (goto-char (point-min))
+    ;; Column A: 0..9 (width 10), pad-right 1
+    (move-to-column 5)
+    (should (= (gnosis-tl--column-at-point) 0))
+    ;; Column B starts at 11: A(10) + pad(1)
+    (move-to-column 11)
+    (should (= (gnosis-tl--column-at-point) 1))
+    ;; Column C starts at 27: A(10) + pad(1) + B(15) + pad(1)
+    (move-to-column 27)
+    (should (= (gnosis-tl--column-at-point) 2))))
+
+(ert-deftest gnosis-test-tl-column-at-point-custom-pad-right ()
+  "Column detection respects custom :pad-right."
+  (with-temp-buffer
+    (tabulated-list-mode)
+    (setq tabulated-list-format [("A" 10 t :pad-right 3) ("B" 10 t)]
+          tabulated-list-padding 0)
+    (tabulated-list-init-header)
+    (setq tabulated-list-entries '((1 ["aaa" "bbb"])))
+    (gnosis-tl-print)
+    (goto-char (point-min))
+    ;; Column A: 0..9, pad-right 3, so B starts at 13
+    (move-to-column 12)
+    (should (= (gnosis-tl--column-at-point) 0))
+    (move-to-column 13)
+    (should (= (gnosis-tl--column-at-point) 1))))
+
+;; ──────────────────────────────────────────────────────────
 ;; gnosis-tl-sort tests
 ;; ──────────────────────────────────────────────────────────
 
 (ert-deftest gnosis-test-tl-sort-by-column-name ()
-  "gnosis-tl-sort reads column-name property and sorts."
+  "gnosis-tl-sort detects column at point and sorts."
   (with-temp-buffer
     (tabulated-list-mode)
     (setq tabulated-list-format [("Name" 20 t) ("Val" 10 t)]
