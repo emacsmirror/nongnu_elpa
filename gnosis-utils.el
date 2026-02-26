@@ -61,14 +61,42 @@ Optionally, use custom DEFAULT-FACE."
            nil t))))
     (buffer-string)))
 
+(defconst gnosis-utils--org-link-re
+  "\\[\\[[^]]*\\]\\[[^]]*\\]\\]\\|\\[\\[[^]]*\\]\\]"
+  "Regexp matching org-mode links: [[target][desc]] or [[target]].")
+
+(defun gnosis-utils-string-outside-links-p (text string)
+  "Return non-nil if STRING appears in TEXT outside of org-links."
+  (let ((case-fold-search nil)
+        (target (regexp-quote string))
+        (pos 0))
+    (catch 'found
+      (while (string-match gnosis-utils--org-link-re text pos)
+        (when (string-match-p target (substring text pos (match-beginning 0)))
+          (throw 'found t))
+        (setq pos (match-end 0)))
+      (string-match-p target (substring text pos)))))
+
 (defun gnosis-utils-replace-string-with-link (text string node-id)
-  "Replace STRING in TEXT with org-link to NODE-ID.
+  "Replace STRING in TEXT with org-link to NODE-ID, skipping existing links.
 Returns (MODIFIED-P . NEW-TEXT)."
-  (let ((new-text (replace-regexp-in-string
-                   (regexp-quote string)
-                   (format "[[id:%s][%s]]" node-id string)
-                   text t t)))
-    (cons (not (string= text new-text)) new-text)))
+  (let ((case-fold-search nil)
+        (target (regexp-quote string))
+        (replacement (format "[[id:%s][%s]]" node-id string))
+        (pos 0)
+        (parts nil))
+    (while (string-match gnosis-utils--org-link-re text pos)
+      (push (replace-regexp-in-string
+             target replacement
+             (substring text pos (match-beginning 0)) t t)
+            parts)
+      (push (match-string 0 text) parts)
+      (setq pos (match-end 0)))
+    (push (replace-regexp-in-string
+           target replacement (substring text pos) t t)
+          parts)
+    (let ((new-text (apply #'concat (nreverse parts))))
+      (cons (not (string= text new-text)) new-text))))
 
 (provide 'gnosis-utils)
 ;;; gnosis-utils.el ends here
