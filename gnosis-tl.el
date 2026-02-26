@@ -324,5 +324,18 @@ Point is preserved via `save-excursion'."
         (delete-region (line-beginning-position)
                        (progn (forward-line 1) (point)))))))
 
+;;; Append rendering
+
+(defun gnosis-tl-append-entries (entries)
+  "Append ENTRIES at the end of the current tabulated-list buffer.
+Uses `gnosis-tl--render-into-buffer' at `point-max'.
+Assumes `tabulated-list-format' and `tabulated-list-padding' are set."
+  (let ((inhibit-read-only t)
+        (inhibit-modification-hooks t))
+    (save-excursion
+      (goto-char (point-max))
+      (gnosis-tl--render-into-buffer entries tabulated-list-format
+                                     (or tabulated-list-padding 0)))))
+
 (provide 'gnosis-tl)
 ;;; gnosis-tl.el ends here
