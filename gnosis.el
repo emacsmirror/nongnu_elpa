@@ -1166,10 +1166,11 @@ LINKS: list of strings."
   (cl-assert (listp links) nil "Links must be a list")
   (cl-assert (gnosis-cloze-check keimenon answer) nil
 	     "Clozes (answer) values are not part of keimenon")
-  (if (equal id "NEW")
-      (gnosis-add-thema-fields deck-id type keimenon (or hypothesis (list ""))
-			      answer parathema tags suspend links)
-    (gnosis-update-thema id keimenon hypothesis answer parathema tags links deck-id type)))
+  (let ((keimenon-clean (gnosis-cloze-remove-tags keimenon)))
+    (if (equal id "NEW")
+	(gnosis-add-thema-fields deck-id type keimenon-clean (or hypothesis (list ""))
+				 answer parathema tags suspend links)
+      (gnosis-update-thema id keimenon-clean hypothesis answer parathema tags links deck-id type))))
 
 ;;;###autoload
 (defun gnosis-add-thema (deck type &optional keimenon hypothesis
