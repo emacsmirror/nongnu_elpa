@@ -1088,6 +1088,7 @@ DASHBOARD-TYPE: either Themata or Decks to display the respective dashboard."
   (interactive nil gnosis-dashboard-themata-mode)
   (let* ((ids (or gnosis-dashboard--selected-ids
                   gnosis-dashboard-themata-current-ids))
+         (_ (unless ids (user-error "No themata to link")))
          (string (read-string "String to replace: "))
          (nodes (org-gnosis-select '[id title] 'nodes))
          (node-title (gnosis-completing-read "Select node: " (mapcar #'cadr nodes)))
