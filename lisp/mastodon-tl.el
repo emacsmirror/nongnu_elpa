@@ -1980,7 +1980,7 @@ TOOT is the data for the quoting toot."
            (mastodon-tl--format-quote-non-display
             (format "Quote hidden, %s" state)))
           ((string= state "pending")
-           (mastodon-tl--format-quote-non-display "[quote pending]"))
+           (mastodon-tl--format-quote-non-display "quote pending"))
           (t
            (concat
             "\n" (mastodon-tl--quote-symbol-str) "\n"
