@@ -842,6 +842,13 @@ Status notifications are created when you call
 
 (alert-add-rule :mode 'mastodon-mode
                 :status '(buried visible idle selected)
+                :persistent
+                #'(lambda (info)
+                    ;; If the buffer is buried, or the user has been idle
+                    ;; for `alert-reveal-idle-time' seconds, make this
+                    ;; alert persistent. Normally, alerts become
+                    ;; persistent after `alert-persist-idle-time' seconds.
+                    (memq (plist-get info :status) '(buried idle)))
                 ;; FIXME: if user configures this variable, we need to
                 ;; remove this rule and re-add it! or they need to restart
                 ;; emacs?:
