@@ -1226,20 +1226,6 @@ Compares ENTRY1 and ENTRY2 by converting string values to numbers."
 Queries the gnosis database links table where dest = NODE-ID."
   (gnosis-select 'source 'links `(= dest ,node-id) t))
 
-(defun gnosis-dashboard-get-themata-link-titles (node-id)
-  "Return list of keimenon for themata that link to NODE-ID."
-  (let ((thema-ids (gnosis-dashboard-get-themata-links node-id)))
-    (mapcar (lambda (id)
-              (car (gnosis-select 'keimenon 'themata `(= id ,id) t)))
-            thema-ids)))
-
-(defun gnosis-dashboard-get-backlink-titles (node-id)
-  "Return list of titles for nodes that link to NODE-ID (backlinks)."
-  (let ((backlink-ids (org-gnosis-select 'source 'links `(= dest ,node-id) t)))
-    (mapcar (lambda (id)
-              (car (org-gnosis-select 'title 'nodes `(= id ,id) t)))
-            backlink-ids)))
-
 (defun gnosis-dashboard-get-backlink-ids (node-id)
   "Return list of node IDs that link to NODE-ID (backlinks)."
   (org-gnosis-select 'source 'links `(= dest ,node-id) t))
