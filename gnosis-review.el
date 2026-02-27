@@ -319,7 +319,7 @@ SUCCESS is a boolean value, t for success, nil for failure."
 	 (t-fails (nth 4 log)))
     (gnosis-review-increment-activity-log (not (> n 0)))
     ;; Single review-log UPDATE
-    (emacsql gnosis-db
+    (emacsql (gnosis--ensure-db)
 	     "UPDATE review_log SET last_rev = $s1, next_rev = $s2, n = $s3, c_success = $s4, c_fails = $s5, t_success = $s6, t_fails = $s7 WHERE id = $s8"
 	     (gnosis-algorithm-date) next-rev (1+ n)
 	     (if success (1+ c-success) 0)
@@ -472,7 +472,7 @@ If NEW? is non-nil, increment new themata log by 1."
   "Delete all activity log entries."
   (interactive)
   (when (y-or-n-p "Delete all activity log?")
-    (emacsql gnosis-db [:delete :from activity-log])))
+    (emacsql (gnosis--ensure-db) [:delete :from activity-log])))
 
 ;;; Session management
 

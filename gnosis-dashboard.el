@@ -395,7 +395,7 @@ Uses `gnosis-dashboard--entry-cache' to avoid re-querying known entries."
 		    thema-ids)))
     ;; Fetch and cache only the missing entries
     (when uncached
-      (let ((rows (emacsql gnosis-db
+      (let ((rows (emacsql (gnosis--ensure-db)
 			   `[:select
 			     [themata:id themata:keimenon themata:hypothesis themata:answer
 				       themata:tags themata:type review-log:suspend]
@@ -491,7 +491,7 @@ Continues as long as the dashboard buffer exists."
                       ids))
            (new-warmed (+ warmed (length ids))))
       (when uncached
-        (let ((rows (emacsql gnosis-db
+        (let ((rows (emacsql (gnosis--ensure-db)
                      `[:select
                        [themata:id themata:keimenon themata:hypothesis themata:answer
                                    themata:tags themata:type review-log:suspend]
@@ -761,7 +761,7 @@ GEN: load generation — no-op if stale."
 			   "Unsuspend all themata for tag? "
 			 "Suspend all themata for tag?"))))
     (when confirm-msg
-      (emacsql gnosis-db
+      (emacsql (gnosis--ensure-db)
 	       `[:update review-log :set (= suspend ,suspend) :where
 			 (in id ,(vconcat themata))])
       (if (= suspend 0)

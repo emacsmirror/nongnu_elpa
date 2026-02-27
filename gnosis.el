@@ -343,7 +343,7 @@ Example:
 
 When VERIFICATION is non-nil, skip `y-or-n-p' prompt."
   (when (or verification (y-or-n-p "Delete thema?"))
-    (emacsql-with-transaction gnosis-db (gnosis--delete 'themata `(= id ,id)))))
+    (emacsql-with-transaction (gnosis--ensure-db) (gnosis--delete 'themata `(= id ,id)))))
 
 (defun gnosis-delete-deck (&optional id)
   "Delete deck with ID."
@@ -351,7 +351,7 @@ When VERIFICATION is non-nil, skip `y-or-n-p' prompt."
   (let* ((id (or id (gnosis--get-deck-id)))
 	 (deck-name (gnosis--get-deck-name id)))
     (when (y-or-n-p (format "Delete deck `%s'? " deck-name))
-      (emacsql-with-transaction gnosis-db (gnosis--delete 'decks `(= id ,id)))
+      (emacsql-with-transaction (gnosis--ensure-db) (gnosis--delete 'decks `(= id ,id)))
       (message "Deleted deck `%s'" deck-name))))
 
 (defun gnosis-calculate-average-daily-reviews (&optional days)
@@ -604,7 +604,7 @@ When VERIFICATION is non-nil, skips `y-or-n-p' prompt."
                     (t (y-or-n-p
                         (format "Toggle suspend value for %s items? " items-num)))))))
     (when verification
-      (emacsql gnosis-db
+      (emacsql (gnosis--ensure-db)
                [:update review-log
                 :set (= suspend (- 1 suspend))
                 :where (in id $v1)]
@@ -621,7 +621,7 @@ When called with a prefix, unsuspends all themata in deck."
 	   (if (= suspend 0)
 	       "Unsuspend all themata for deck? " "Suspend all themata for deck? "))))
     (when confirm
-      (emacsql gnosis-db `[:update review-log :set (= suspend ,suspend) :where
+      (emacsql (gnosis--ensure-db) `[:update review-log :set (= suspend ,suspend) :where
 				   (in id ,(vconcat themata))])
       (if (equal suspend 0)
 	  (message "Unsuspended %s themata" (length themata))
@@ -733,7 +733,7 @@ This function should be used in combination with
 (defun gnosis-get-tags--unique ()
   "Return a list of unique strings for tags in `gnosis-db'."
   (cl-loop for tags in (apply 'append
-			      (emacsql gnosis-db [:select :distinct tags :from themata]))
+			      (emacsql (gnosis--ensure-db) [:select :distinct tags :from themata]))
            nconc tags into all-tags
            finally return (delete-dups all-tags)))
 
@@ -799,7 +799,7 @@ DATE is a list of the form (year month day)."
 
 (defun gnosis-tags--update (tags)
   "Update db for TAGS."
-  (emacsql-with-transaction gnosis-db
+  (emacsql-with-transaction (gnosis--ensure-db)
     (cl-loop for tag in tags
 	     do (gnosis--insert-into 'tags `[,tag]))))
 
@@ -938,7 +938,7 @@ LINKS: List of id links."
   (cl-assert (listp links) nil "Links must be a list")
   (let* ((gnosis-id (or gnosis-id (gnosis-generate-id)))
 	 (review-image (or review-image "")))
-    (emacsql-with-transaction gnosis-db
+    (emacsql-with-transaction (gnosis--ensure-db)
       ;; Refer to `gnosis-db-schema-SCHEMA' e.g `gnosis-db-schema-review-log'
       (gnosis--insert-into 'themata `([,gnosis-id ,(downcase type) ,keimenon ,hypothesis
 					      ,answer ,tags ,deck-id]))
@@ -1770,7 +1770,7 @@ Reopens the gnosis database after successful pull."
 
 (defun gnosis--update-themata-keimenon (updates)
   "Apply UPDATES list of (ID . NEW-KEIMENON) to database."
-  (emacsql-with-transaction gnosis-db
+  (emacsql-with-transaction (gnosis--ensure-db)
     (dolist (update updates)
       (gnosis-update 'themata `(= keimenon ,(cdr update)) `(= id ,(car update))))))
 
@@ -1898,23 +1898,23 @@ Fetches all themata, extras, and links in bulk queries."
 (defun gnosis--delete-orphaned-links (orphaned-dests)
   "Delete links whose dest is in ORPHANED-DESTS."
   (when orphaned-dests
-    (emacsql-with-transaction gnosis-db
-      (emacsql gnosis-db `[:delete :from links
+    (emacsql-with-transaction (gnosis--ensure-db)
+      (emacsql (gnosis--ensure-db) `[:delete :from links
                            :where (in dest ,(vconcat orphaned-dests))]))))
 
 (defun gnosis--delete-stale-links (stale-links)
   "Delete STALE-LINKS list of (source dest) from links table."
   (when stale-links
-    (emacsql-with-transaction gnosis-db
+    (emacsql-with-transaction (gnosis--ensure-db)
       (dolist (link stale-links)
-        (emacsql gnosis-db `[:delete :from links
+        (emacsql (gnosis--ensure-db) `[:delete :from links
                              :where (and (= source ,(car link))
                                          (= dest ,(cadr link)))])))))
 
 (defun gnosis--insert-missing-links (missing-links)
   "Insert MISSING-LINKS list of (source dest) into links table."
   (when missing-links
-    (emacsql-with-transaction gnosis-db
+    (emacsql-with-transaction (gnosis--ensure-db)
       (dolist (link missing-links)
         (gnosis--insert-into 'links `([,(car link) ,(cadr link)]))))))
 
