@@ -178,9 +178,19 @@ This is set automatically based on buffer type:
   '((t :inherit bold))
   "Face for next review.")
 
-(defvar gnosis-db
-  (emacsql-sqlite-open (expand-file-name "gnosis.db" gnosis-dir))
-  "Gnosis database.")
+(defvar gnosis-db nil
+  "Gnosis database connection.
+Initialized lazily by `gnosis--ensure-db' on first use.")
+
+(defun gnosis--ensure-db ()
+  "Return the gnosis database connection, opening it if necessary.
+Creates `gnosis-dir' and runs schema initialization on first use."
+  (unless gnosis-db
+    (unless (file-directory-p gnosis-dir)
+      (make-directory gnosis-dir))
+    (setq gnosis-db (emacsql-sqlite-open (expand-file-name "gnosis.db" gnosis-dir)))
+    (gnosis-db-init))
+  gnosis-db)
 
 (autoload 'gnosis-dashboard "gnosis-dashboard" nil t)
 
@@ -281,13 +291,15 @@ for O(1) lookups instead of querying the database per thema.")
   "Select VALUE from TABLE, optionally with RESTRICTIONS.
 
 Optional argument FLATTEN, when non-nil, flattens the result."
-  (let* ((restrictions (or restrictions '(= 1 1)))
+  (let* ((db (gnosis--ensure-db))
+	 (restrictions (or restrictions '(= 1 1)))
 	 (flatten (or flatten nil))
-	 (output (emacsql gnosis-db `[:select ,value :from ,table :where ,restrictions])))
+	 (output (emacsql db `[:select ,value :from ,table :where ,restrictions])))
     (if flatten (apply #'append output) output)))
 
 (defun gnosis-table-exists-p (table)
   "Check if TABLE exists."
+  (gnosis--ensure-db)
   (let ((tables (mapcar (lambda (str) (replace-regexp-in-string "_" "-" (symbol-name str)))
 			(cdr (gnosis-select 'name 'sqlite-master '(= type table) t)))))
     (member (symbol-name table) tables)))
@@ -295,11 +307,11 @@ Optional argument FLATTEN, when non-nil, flattens the result."
 (defun gnosis--create-table (table &optional values)
   "Create TABLE for VALUES."
   (unless (gnosis-table-exists-p table)
-    (emacsql gnosis-db `[:create-table ,table ,values])))
+    (emacsql (gnosis--ensure-db) `[:create-table ,table ,values])))
 
 (defun gnosis--drop-table (table)
   "Drop TABLE from `gnosis-db'."
-  (emacsql gnosis-db `[:drop-table ,table]))
+  (emacsql (gnosis--ensure-db) `[:drop-table ,table]))
 
 (defun gnosis-drop-table (table)
   "Drop TABLE from `gnosis-db'."
@@ -308,14 +320,14 @@ Optional argument FLATTEN, when non-nil, flattens the result."
 
 (defun gnosis--insert-into (table values)
   "Insert VALUES to TABLE."
-  (emacsql gnosis-db `[:insert :into ,table :values ,values]))
+  (emacsql (gnosis--ensure-db) `[:insert :into ,table :values ,values]))
 
 (defun gnosis-update (table value where)
   "Update records in TABLE with to new VALUE based on the given WHERE condition.
 
 Example:
  (gnosis-update ='themata ='(= keimenon \"NEW VALUE\") ='(= id 12))"
-  (emacsql gnosis-db `[:update ,table :set ,value :where ,where]))
+  (emacsql (gnosis--ensure-db) `[:update ,table :set ,value :where ,where]))
 
 (defun gnosis-get (value table &optional restrictions)
   "Return caar of VALUE from TABLE, optionally with where RESTRICTIONS."
@@ -323,7 +335,7 @@ Example:
 
 (defun gnosis--delete (table value)
   "From TABLE use where to delete VALUE."
-  (emacsql gnosis-db `[:delete :from ,table :where ,value]))
+  (emacsql (gnosis--ensure-db) `[:delete :from ,table :where ,value]))
 
 (defun gnosis-delete-thema (id &optional verification)
   "Delete thema with ID.
