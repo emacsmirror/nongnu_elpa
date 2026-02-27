@@ -832,12 +832,10 @@ If you only require a tag prompt, refer to `gnosis-tags--prompt'."
         (org-set-tags (append input current-tags))))))
 
 (defun gnosis-tags-refresh ()
-  "Refresh tags value."
+  "Refresh tags table from current themata tags."
   (let ((tags (gnosis-get-tags--unique)))
-    ;; Delete all values from tags table.
-    (gnosis--delete 'tags nil)
-    ;; Insert all unique tags from themata.
-    (emacsql-with-transaction gnosis-db
+    (emacsql-with-transaction (gnosis--ensure-db)
+      (gnosis--delete 'tags)
       (cl-loop for tag in tags
 	       do (gnosis--insert-into 'tags `[,tag])))))
 
@@ -959,21 +957,19 @@ LINKS: List of id links."
 
 If gnosis ID does not exist, create it anew.
 When `gnosis--id-cache' is bound, uses hash table for existence check."
-  (let ((id (if (stringp id) (string-to-number id) id)))
+  (let* ((id (if (stringp id) (string-to-number id) id))
+	 (current-type (gnosis-get 'type 'themata `(= id ,id)))
+	 (current-deck (gnosis-get 'deck-id 'themata `(= id ,id))))
     (if (if gnosis--id-cache
 	    (gethash id gnosis--id-cache)
 	  (member id (gnosis-select 'id 'themata nil t)))
-	(emacsql-with-transaction gnosis-db
-	  ;; Single UPDATE for core themata fields
-	  (gnosis-update 'themata `(= keimenon ,keimenon) `(= id ,id))
-	  (gnosis-update 'themata `(= hypothesis ',hypothesis) `(= id ,id))
-	  (gnosis-update 'themata `(= answer ',answer) `(= id ,id))
-	  (gnosis-update 'themata `(= tags ',tags) `(= id ,id))
-	  (when type
-	    (gnosis-update 'themata `(= type ,type) `(= id ,id)))
-	  (when deck-id
-	    (gnosis-update 'themata `(= deck-id ,deck-id) `(= id ,id)))
-	  ;; Single UPDATE for extras table
+	(emacsql-with-transaction (gnosis--ensure-db)
+	  ;; Single multi-column UPDATE for themata
+	  (emacsql (gnosis--ensure-db)
+	    "UPDATE themata SET keimenon = $s1, hypothesis = $s2, answer = $s3, tags = $s4, type = $s5, deck_id = $s6 WHERE id = $s7"
+	    keimenon hypothesis answer tags
+	    (or type current-type) (or deck-id current-deck) id)
+	  ;; Single UPDATE for extras
 	  (gnosis-update 'extras `(= parathema ,parathema) `(= id ,id))
 	  ;; Re-sync links
 	  (gnosis--delete 'links `(= source ,id))
@@ -1498,11 +1494,11 @@ Return thema ids for themata that match QUERY."
 ;;; Database Schemas
 (defconst gnosis-db--schemata
   '((decks
-     ([(id integer :primary-key :autoincrement)
+     ([(id integer :primary-key)
        (name text :not-null)]
       (:unique [name])))
     (themata
-     ([(id integer :primary-key :autoincrement)
+     ([(id integer :primary-key)
        (type text :not-null)
        (keimenon text :not-null)
        (hypothesis text :not-null)
@@ -1549,91 +1545,121 @@ Return thema ids for themata that match QUERY."
 		    :on-delete :cascade)
       (:unique [source dest])))))
 
-(defun gnosis-update--make-list (column)
+(defun gnosis--db-version ()
+  "Return the current user_version pragma from the database."
+  (caar (emacsql (gnosis--ensure-db) [:pragma user-version])))
+
+(defun gnosis--db-set-version (version)
+  "Set the database user_version pragma to VERSION."
+  (emacsql (gnosis--ensure-db) `[:pragma (= user-version ,version)]))
+
+(defun gnosis--db-create-tables ()
+  "Create all tables and set version to current.
+Used for fresh databases only."
+  (emacsql-with-transaction (gnosis--ensure-db)
+    (pcase-dolist (`(,table ,schema) gnosis-db--schemata)
+      (emacsql (gnosis--ensure-db) [:create-table $i1 $S2] table schema))
+    (gnosis--db-set-version gnosis-db-version)))
+
+(defun gnosis--db-has-tables-p ()
+  "Return non-nil if the database has user tables."
+  (let ((tables (emacsql (gnosis--ensure-db)
+			 [:select name :from sqlite-master
+			  :where (= type table)])))
+    (length> tables 0)))
+
+;;; Migration helpers
+
+(defun gnosis--migrate-make-list (column)
   "Make COLUMN values into a list."
-  (let ((results (emacsql gnosis-db `[:select [id ,column] :from themata])))
+  (let ((results (emacsql (gnosis--ensure-db)
+			  `[:select [id ,column] :from themata])))
     (dolist (row results)
       (let ((id (car row))
             (old-value (cadr row)))
-	;; Update each entry, converting the value to a list representation
 	(unless (listp old-value)
-	  (emacsql gnosis-db `[:update themata
-				       :set (= ,column $s1)
-				       :where (= id $s2)]
-		   (list old-value)
-		   id)
-	  (message "Update Thema: %d" id))))))
+	  (emacsql (gnosis--ensure-db)
+		   `[:update themata :set (= ,column $s1) :where (= id $s2)]
+		   (list old-value) id))))))
 
-(defun gnosis-db-update-v4 ()
-  "Update to databse version v4."
-  (let ((tags (gnosis-get-tags--unique)))
+(defun gnosis-db--migrate-v1 ()
+  "Migration v1: rename notes table to themata."
+  (emacsql (gnosis--ensure-db) [:alter-table notes :rename-to themata])
+  (gnosis--db-set-version 1))
+
+(defun gnosis-db--migrate-v2 ()
+  "Migration v2: column renames, tags/links tables, data conversions."
+  (let ((db (gnosis--ensure-db))
+	(tags (gnosis-get-tags--unique)))
+    ;; Create tags and links tables
     (pcase-dolist (`(,table ,schema) (seq-filter (lambda (schema)
 						   (member (car schema) '(links tags)))
 						 gnosis-db--schemata))
-      (emacsql gnosis-db [:create-table :if-not-exists $i1 $S2] table schema))
+      (emacsql db [:create-table :if-not-exists $i1 $S2] table schema))
     (cl-loop for tag in tags
 	     do (gnosis--insert-into 'tags `[,tag]))
-    (emacsql gnosis-db [:alter-table themata :rename-column main :to keimenon])
-    (emacsql gnosis-db [:alter-table themata :rename-column options :to hypothesis])
-    (emacsql gnosis-db [:alter-table extras :rename-column extra-themata :to parathema])
-    (emacsql gnosis-db [:alter-table extras :rename-column images :to review-image])
-    (emacsql gnosis-db [:alter-table extras :drop-column extra-image])
+    ;; Column renames
+    (emacsql db [:alter-table themata :rename-column main :to keimenon])
+    (emacsql db [:alter-table themata :rename-column options :to hypothesis])
+    (emacsql db [:alter-table extras :rename-column extra-themata :to parathema])
+    (emacsql db [:alter-table extras :rename-column images :to review-image])
+    (emacsql db [:alter-table extras :drop-column extra-image])
     ;; Make sure all hypothesis & answer values are lists
-    (gnosis-update--make-list 'hypothesis)
-    (gnosis-update--make-list 'answer)
+    (gnosis--migrate-make-list 'hypothesis)
+    (gnosis--migrate-make-list 'answer)
     ;; Fix MCQs
     (cl-loop for thema in (gnosis-select 'id 'themata '(= type "mcq") t)
-	     do (funcall
-		 (lambda (id)
-		   (let* ((data (gnosis-select '[hypothesis answer] 'themata `(= id ,id) t))
-			  (hypothesis (nth 0 data))
-			  (old-answer (car (nth 1 data)))
-			  (new-answer (when (integerp old-answer)
-					(list (nth (- 1 old-answer) hypothesis)))))
-		     (when (integerp old-answer)
-		       (gnosis-update 'themata `(= answer ',new-answer) `(= id ,id)))))
-		 thema))
+	     do (let* ((data (gnosis-select '[hypothesis answer] 'themata
+					    `(= id ,thema) t))
+		       (hypothesis (nth 0 data))
+		       (old-answer (car (nth 1 data)))
+		       (new-answer (when (integerp old-answer)
+				     (list (nth (- 1 old-answer) hypothesis)))))
+		  (when (integerp old-answer)
+		    (gnosis-update 'themata `(= answer ',new-answer)
+				   `(= id ,thema)))))
     ;; Replace y-or-n with MCQ
     (cl-loop for thema in (gnosis-select 'id 'themata '(= type "y-or-n") t)
-	     do (funcall (lambda (id)
-			   (let ((data (gnosis-select '[type hypothesis answer]
-						      'themata `(= id ,id) t)))
-			     (when (string= (nth 0 data) "y-or-n")
-			       (gnosis-update 'themata '(= type "mcq") `(= id ,id))
-			       (gnosis-update 'themata '(= hypothesis '("Yes" "No"))
-					      `(= id ,id))
-			       (if (= (car (nth 2 data)) 121)
-				   (gnosis-update 'themata '(= answer '("Yes"))
-						  `(= id ,id))
-				 (gnosis-update 'themata '(= answer '("No"))
-						`(= id ,id))))))
-			 thema))
+	     do (let ((data (gnosis-select '[type hypothesis answer]
+					   'themata `(= id ,thema) t)))
+		  (when (string= (nth 0 data) "y-or-n")
+		    (gnosis-update 'themata '(= type "mcq") `(= id ,thema))
+		    (gnosis-update 'themata '(= hypothesis '("Yes" "No"))
+				   `(= id ,thema))
+		    (if (= (car (nth 2 data)) 121)
+			(gnosis-update 'themata '(= answer '("Yes"))
+				       `(= id ,thema))
+		      (gnosis-update 'themata '(= answer '("No"))
+				     `(= id ,thema))))))
     ;; Replace - with _, org does not support tags with dash.
     (cl-loop for tag in (gnosis-get-tags--unique)
-	     ;; Replaces dashes to underscores.
 	     if (string-match-p "-" tag)
-	     do (gnosis-tag-rename tag (replace-regexp-in-string "-" "_" tag)))))
+	     do (gnosis-tag-rename tag (replace-regexp-in-string "-" "_" tag))))
+  (gnosis--db-set-version 2))
 
-(defun gnosis-db-update-v5 ()
-  "Update database v5."
-  (emacsql gnosis-db [:alter-table notes :rename-to themata])
-  (emacsql gnosis-db `[:pragma (= user-version ,gnosis-db-version)]))
+(defconst gnosis-db--migrations
+  `((1 . gnosis-db--migrate-v1)
+    (2 . gnosis-db--migrate-v2))
+  "Alist of (VERSION . FUNCTION).
+Each migration brings the DB from VERSION-1 to VERSION.")
+
+(defun gnosis--db-run-migrations (current-version)
+  "Run all pending migrations from CURRENT-VERSION to `gnosis-db-version'."
+  (cl-loop for (version . func) in gnosis-db--migrations
+	   when (> version current-version)
+	   do (progn
+		(message "Gnosis: running migration to v%d..." version)
+		(funcall func)
+		(message "Gnosis: migration to v%d complete" version))))
 
 (defun gnosis-db-init ()
-  "Create essential directories & database."
-  (let ((gnosis-curr-version (caar (emacsql gnosis-db  [:pragma user-version]))))
-    (unless (length> (emacsql gnosis-db [:select name :from sqlite-master
-						 :where (= type table)])
-		     3)
-      (emacsql-with-transaction gnosis-db
-	(pcase-dolist (`(,table ,schema) gnosis-db--schemata)
-	  (emacsql gnosis-db [:create-table $i1 $S2] table schema))
-        (emacsql gnosis-db `[:pragma (= user-version ,gnosis-db-version)])))
-    ;; Update database schema for version
-    (cond ((= gnosis-curr-version 2)
-	   (gnosis-db-update-v4))
-	  ((< gnosis-curr-version 3)
-	   (gnosis-db-update-v5)))))
+  "Initialize database: create tables if fresh, run pending migrations."
+  (let ((version (gnosis--db-version)))
+    (if (and (zerop version) (not (gnosis--db-has-tables-p)))
+	;; Fresh database: create all tables at current version
+	(gnosis--db-create-tables)
+      ;; Existing database: run any pending migrations
+      (gnosis--db-run-migrations version))))
 
 ;; VC functions ;;
 ;;;;;;;;;;;;;;;;;;
