@@ -266,12 +266,6 @@ Optionally, provide THEMA-IDS of which the overdue ones will be returned."
 
 ;;; Algorithm bridge
 
-(defun gnosis-review-last-interval (id)
-  "Return last review interval for thema ID."
-  (let* ((last-rev (gnosis-get 'last-rev 'review-log `(= id ,id)))
-	 (rev-date (gnosis-get 'next-rev 'review-log `(= id ,id))))
-    (gnosis-algorithm-date-diff last-rev rev-date)))
-
 (defun gnosis-review-algorithm (id success)
   "Return next review date & gnosis for thema with value of id ID.
 

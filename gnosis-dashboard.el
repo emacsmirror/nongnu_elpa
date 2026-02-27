@@ -27,7 +27,6 @@
 
 ;;; Code:
 
-(require 'gnosis-monkeytype)
 (require 'gnosis)
 (require 'gnosis-tl)
 (require 'org-gnosis)
@@ -211,10 +210,6 @@ DATES: Dates in the activity log, a list of dates in (YYYY MM DD)."
     (when (gethash (gnosis-algorithm-date) date-set)
       (cl-incf count))
     (number-to-string count)))
-
-(defun gnosis-dashboard-output-average-rev ()
-  "Output the average daily themata reviewed as a string for the dashboard."
-  (format "%.2f" (gnosis-calculate-average-daily-reviews)))
 
 (defun gnosis-dashboard-edit-thema ()
   "Edit thema with ID."
@@ -669,6 +664,7 @@ GEN: load generation — no-op if stale."
   (cl-assert (listp thema-ids) t "`thema-ids' must be a list of thema ids.")
   (cl-incf gnosis-dashboard--load-generation)
   (pop-to-buffer-same-window gnosis-dashboard-buffer-name)
+  (goto-char (point-min))
   (gnosis-dashboard-enable-mode)
   ;; Disable other dashboard modes
   (gnosis-dashboard-nodes-mode -1)
@@ -997,28 +993,6 @@ When called with a prefix, unsuspend all themata of deck."
 	     (not (eq major-mode 'gnosis-dashboard-mode)))
     (gnosis-dashboard-mode)))
 
-(cl-defun gnosis-dashboard--search (&optional dashboard-type (thema-ids nil))
-  "Display gnosis dashboard.
-
-THEMA-IDS: List of thema ids to display on dashboard.  When nil, prompt
-for dashboard type.
-
-DASHBOARD-TYPE: either Themata or Decks to display the respective dashboard."
-  (interactive)
-  (let ((dashboard-type (or dashboard-type
-			    (cadr (read-multiple-choice
-				   "Display dashboard for:"
-				   '((?n "themata")
-				     (?d "decks")
-				     (?t "tags")
-				     (?s "search")))))))
-    (if thema-ids (gnosis-dashboard-output-themata thema-ids)
-      (pcase dashboard-type
-	("themata" (gnosis-dashboard-output-themata (gnosis-collect-thema-ids)))
-	("decks" (gnosis-dashboard-output-decks))
-	("tags"  (gnosis-dashboard-output-themata (gnosis-collect-thema-ids :tags t)))
-	("search" (gnosis-dashboard-search-thema))))))
-
 (defun gnosis-dashboard-mark-toggle ()
   "Toggle mark on the current item in the tabulated-list."
   (interactive)
@@ -1073,14 +1047,6 @@ DASHBOARD-TYPE: either Themata or Decks to display the respective dashboard."
     (cl-loop for thema in gnosis-dashboard--selected-ids
 	     do (gnosis-delete-thema thema t))
     (gnosis-dashboard--remove-entries gnosis-dashboard--selected-ids)
-    (setq gnosis-dashboard--selected-ids nil)))
-
-(defun gnosis-dashboard-marked-suspend ()
-  "Suspend marked thema entries."
-  (interactive)
-  (when (y-or-n-p "Toggle SUSPEND on selected themata?")
-    (gnosis-toggle-suspend-themata gnosis-dashboard--selected-ids nil)
-    (gnosis-dashboard--update-entries gnosis-dashboard--selected-ids)
     (setq gnosis-dashboard--selected-ids nil)))
 
 (defun gnosis-dashboard-bulk-link ()
