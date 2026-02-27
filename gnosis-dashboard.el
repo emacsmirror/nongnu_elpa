@@ -1136,7 +1136,7 @@ DASHBOARD-TYPE: either Themata or Decks to display the respective dashboard."
                              (setq gnosis-dashboard-themata-history nil
                                    gnosis-dashboard--view-history nil)
                              (gnosis-dashboard-output-themata (gnosis-collect-thema-ids))))
-    ("s" "Search themata" gnosis-dashboard-suffix-query)
+    ("SPC" "Search themata" gnosis-dashboard-suffix-query)
     ("d" "View by decks" (lambda () (interactive)
                           (gnosis-dashboard-output-decks)))
     ("t" "View by tags" (lambda () (interactive)
