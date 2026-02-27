@@ -1696,25 +1696,31 @@ Return thema ids for themata that match QUERY."
 ;; VC functions ;;
 ;;;;;;;;;;;;;;;;;;
 
-(defun gnosis--shell-cmd-with-password (command)
-  "Run COMMAND and watch for password prompt."
-  (let ((process (start-process-shell-command "shell-cmd" nil command)))
+(defun gnosis--git-cmd (args &optional sentinel)
+  "Run git with ARGS list, watching for password prompts.
+
+ARGS is a list of strings passed directly to git (no shell interpretation).
+Optional SENTINEL is called with (process event) on completion."
+  (let* ((git (or (executable-find "git")
+                  (error "Git is not installed or not in PATH")))
+         (process (apply #'start-process "gnosis-git" nil git args)))
     (set-process-filter
      process
      (lambda (proc output)
        (when (string-match-p "password:" output)
          (process-send-string proc
 			      (concat (read-passwd "Password: ") "\n")))
-       (message "%s" output)))))
+       (message "%s" output)))
+    (when sentinel
+      (set-process-sentinel process sentinel))
+    process))
 
 ;;;###autoload
 (cl-defun gnosis-vc-push (&optional (dir gnosis-dir))
   "Run `git push' in DIR."
   (interactive)
-  (let ((default-directory dir)
-	(git (executable-find "git")))
-    (gnosis--shell-cmd-with-password
-     (format "%s push" git))))
+  (let ((default-directory dir))
+    (gnosis--git-cmd '("push"))))
 
 ;;;###autoload
 (cl-defun gnosis-vc-pull (&optional (dir gnosis-dir))
@@ -1722,12 +1728,9 @@ Return thema ids for themata that match QUERY."
 
 Reopens the gnosis database after successful pull."
   (interactive)
-  (unless (executable-find "git")
-    (error "Git is not installed or not in PATH"))
   (let ((default-directory dir))
-    (set-process-sentinel
-     (start-process "gnosis-git-pull" "*gnosis-git-pull*"
-                    (executable-find "git") "pull")
+    (gnosis--git-cmd
+     '("pull")
      (lambda (proc event)
        (cond
         ((string-match-p "finished" event)
@@ -1800,15 +1803,14 @@ Reopens the gnosis database after successful pull."
 
 (defun gnosis--commit-bulk-link (count string)
   "Commit bulk link changes for COUNT themata with STRING."
-  (let ((git (executable-find "git"))
-        (default-directory gnosis-dir))
+  (let ((default-directory gnosis-dir))
     (unless gnosis-testing
       (unless (file-exists-p (expand-file-name ".git" gnosis-dir))
         (vc-git-create-repo))
-      (shell-command (format "%s add gnosis.db" git))
-      (gnosis--shell-cmd-with-password
-       (format "%s commit -m 'Bulk link: %d themata updated with %s'"
-               git count string)))
+      (call-process (executable-find "git") nil nil nil "add" "gnosis.db")
+      (gnosis--git-cmd
+       (list "commit" "-m"
+             (format "Bulk link: %d themata updated with %s" count string))))
     (when (and gnosis-vc-auto-push (not gnosis-testing))
       (gnosis-vc-push))))
 
@@ -1945,15 +1947,15 @@ Fetches all themata, extras, and links in bulk queries."
 
 (defun gnosis--commit-link-cleanup (orphaned stale missing)
   "Commit link cleanup changes for ORPHANED, STALE, and MISSING counts."
-  (let ((git (executable-find "git"))
-        (default-directory gnosis-dir))
+  (let ((default-directory gnosis-dir))
     (unless gnosis-testing
       (unless (file-exists-p (expand-file-name ".git" gnosis-dir))
         (vc-git-create-repo))
-      (shell-command (format "%s add gnosis.db" git))
-      (gnosis--shell-cmd-with-password
-       (format "%s commit -m 'Link cleanup: %d orphaned, %d stale removed, %d missing added'"
-               git orphaned stale missing)))
+      (call-process (executable-find "git") nil nil nil "add" "gnosis.db")
+      (gnosis--git-cmd
+       (list "commit" "-m"
+             (format "Link cleanup: %d orphaned, %d stale removed, %d missing added"
+                     orphaned stale missing))))
     (when (and gnosis-vc-auto-push (not gnosis-testing))
       (gnosis-vc-push))))
 
