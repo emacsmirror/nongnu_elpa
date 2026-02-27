@@ -278,15 +278,17 @@ Optionally, provide THEMA-IDS of which the overdue ones will be returned."
 SUCCESS is a boolean value, t for success, nil for failure.
 
 Returns a list of the form ((yyyy mm dd) (ef-increase ef-decrease ef-total))."
-  (let ((amnesia (gnosis-get-thema-amnesia id))
-	(gnosis (gnosis-get 'gnosis 'review `(= id ,id)))
-	(t-success (gnosis-get 't-success 'review-log `(= id ,id))) ;; total successful reviews
-	(c-success (gnosis-get 'c-success 'review-log `(= id ,id))) ;; consecutive successful reviews
-	(c-fails (gnosis-get 'c-fails 'review-log `(= id ,id))) ;; consecutive failed reviews
-	;; (t-fails (gnosis-get 't-fails 'review-log `(= id ,id))) ;; total failed reviews
-	;; (review-num (gnosis-get 'n 'review-log `(= id ,id))) ;; total reviews
-	;; (last-interval (max (gnosis-review--get-offset id) 1))
-	(last-interval (gnosis-review-last-interval id))) ;; last interval
+  (let* (;; Batch-fetch review-log fields (1 query instead of 4)
+	 (log-data (car (gnosis-select '[t-success c-success c-fails last-rev next-rev]
+				       'review-log `(= id ,id))))
+	 (t-success (nth 0 log-data))
+	 (c-success (nth 1 log-data))
+	 (c-fails (nth 2 log-data))
+	 (last-interval (gnosis-algorithm-date-diff (nth 3 log-data) (nth 4 log-data)))
+	 (gnosis (gnosis-get 'gnosis 'review `(= id ,id)))
+	 ;; Custom values (compute once)
+	 (amnesia (gnosis-get-thema-amnesia id))
+	 (lethe (gnosis-get-thema-lethe id)))
     (list
      (gnosis-algorithm-next-interval
       :last-interval last-interval
@@ -294,7 +296,7 @@ Returns a list of the form ((yyyy mm dd) (ef-increase ef-decrease ef-total))."
       :success success
       :successful-reviews t-success
       :c-fails c-fails
-      :lethe (gnosis-get-thema-lethe id)
+      :lethe lethe
       :amnesia amnesia
       :proto (gnosis-get-thema-proto id))
      (gnosis-algorithm-next-gnosis
@@ -305,7 +307,7 @@ Returns a list of the form ((yyyy mm dd) (ef-increase ef-decrease ef-total))."
       :anagnosis (gnosis-get-thema-anagnosis id)
       :c-successes c-success
       :c-failures c-fails
-      :lethe (gnosis-get-thema-lethe id)))))
+      :lethe lethe))))
 
 (defun gnosis-review--update (id success)
   "Update review-log for thema ID.
@@ -343,28 +345,30 @@ SUCCESS is a boolean value, t for success, nil for failure."
 
 (defun gnosis-review-mcq (id)
   "Review MCQ thema with ID."
-  (gnosis-display-image (gnosis-get 'keimenon 'themata `(= id ,id)))
-  (gnosis-display-keimenon (gnosis-org-format-string
-			    (gnosis-get 'keimenon 'themata `(= id ,id))))
-  (let* ((answer (car (gnosis-get 'answer 'themata `(= id ,id))))
-	 (user-choice (gnosis-mcq-answer id))
-	 (success (string= answer user-choice)))
-    (gnosis-display-correct-answer-mcq answer user-choice)
-    (gnosis-display-parathema (gnosis-get 'parathema 'extras `(= id ,id)))
-    (gnosis-display-next-review id success)
-    success))
+  (let* ((data (car (gnosis-select '[keimenon answer] 'themata `(= id ,id))))
+	 (keimenon (nth 0 data))
+	 (answer (car (nth 1 data)))
+	 (parathema (gnosis-get 'parathema 'extras `(= id ,id))))
+    (gnosis-display-image keimenon)
+    (gnosis-display-keimenon (gnosis-org-format-string keimenon))
+    (let* ((user-choice (gnosis-mcq-answer id))
+	   (success (string= answer user-choice)))
+      (gnosis-display-correct-answer-mcq answer user-choice)
+      (gnosis-display-parathema parathema)
+      (gnosis-display-next-review id success)
+      success)))
 
 (defun gnosis-review-basic (id)
   "Review basic type thema for ID."
-  (let* ((hypothesis (car (gnosis-get 'hypothesis 'themata `(= id ,id))))
-	 (parathema (gnosis-get 'parathema 'extras `(= id ,id)))
-	 (keimenon (gnosis-get 'keimenon 'themata `(= id ,id)))
-	 (answer (car (gnosis-get 'answer 'themata `(= id ,id)))))
+  (let* ((data (car (gnosis-select '[keimenon hypothesis answer] 'themata `(= id ,id))))
+	 (keimenon (nth 0 data))
+	 (hypothesis (car (nth 1 data)))
+	 (answer (car (nth 2 data)))
+	 (parathema (gnosis-get 'parathema 'extras `(= id ,id))))
     (gnosis-display-image keimenon)
     (gnosis-display-keimenon (gnosis-org-format-string keimenon))
     (gnosis-display-hint hypothesis)
-    (let* ((answer answer)
-	   (user-input (read-string "Answer: "))
+    (let* ((user-input (read-string "Answer: "))
 	   (success (gnosis-compare-strings answer user-input)))
       (gnosis-display-basic-answer answer success user-input)
       (gnosis-display-parathema parathema)
@@ -384,9 +388,10 @@ Returns a cons; ='(position . user-input) if correct,
 
 (defun gnosis-review-cloze (id)
   "Review cloze type thema for ID."
-  (let* ((keimenon (gnosis-get 'keimenon 'themata `(= id ,id)))
-         (all-clozes (gnosis-get 'answer 'themata `(= id ,id)))
-         (all-hints (gnosis-get 'hypothesis 'themata `(= id ,id)))
+  (let* ((data (car (gnosis-select '[keimenon answer hypothesis] 'themata `(= id ,id))))
+	 (keimenon (nth 0 data))
+         (all-clozes (nth 1 data))
+         (all-hints (nth 2 data))
          (revealed-clozes '()) ;; List of revealed clozes
          (unrevealed-clozes all-clozes)
          (unrevealed-hints all-hints)
@@ -430,9 +435,10 @@ Returns a cons; ='(position . user-input) if correct,
 
 (defun gnosis-review-mc-cloze (id)
   "Review mc-cloze type thema for ID."
-  (let* ((keimenon (gnosis-get 'keimenon 'themata `(= id ,id)))
-	 (cloze (gnosis-get 'answer 'themata `(= id ,id)))
-	 (options (gnosis-get 'hypothesis 'themata `(= id ,id)))
+  (let* ((data (car (gnosis-select '[keimenon answer hypothesis] 'themata `(= id ,id))))
+	 (keimenon (nth 0 data))
+	 (cloze (nth 1 data))
+	 (options (nth 2 data))
 	 (parathema (gnosis-get 'parathema 'extras `(= id ,id)))
 	 (user-input)
 	 (success))
@@ -549,17 +555,16 @@ THEMA-COUNT: Total themata to be commited for session."
 This function initializes the `gnosis-dir' as a Git repository if it is not
 already one.  It then adds the gnosis.db file to the repository and commits
 the changes with a message containing the reviewed number THEMA-NUM."
-  (let ((git (executable-find "git"))
-	(default-directory gnosis-dir))
-    (unless git
+  (let ((default-directory gnosis-dir))
+    (unless (executable-find "git")
       (error "Git not found, please install git"))
     (unless (file-exists-p (expand-file-name ".git" gnosis-dir))
       (vc-git-create-repo))
     (unless gnosis-testing
-      (shell-command
-       (format "%s add gnosis.db" git))
-      (gnosis--shell-cmd-with-password
-       (format "%s commit -m 'Total themata reviewed: %d'" git thema-num)))
+      (call-process (executable-find "git") nil nil nil "add" "gnosis.db")
+      (gnosis--git-cmd
+       (list "commit" "-m"
+             (format "Total themata reviewed: %d" thema-num))))
     (sit-for 0.1)
     (when (and gnosis-vc-auto-push (not gnosis-testing))
       (gnosis-vc-push))
