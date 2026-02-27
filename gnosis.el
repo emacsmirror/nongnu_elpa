@@ -117,7 +117,7 @@ between two strings to consider them as similar."
 When nil, review new themata last."
   :type 'boolean)
 
-(defcustom gnosis-default-average-review-period 360
+(defcustom gnosis-default-average-review-period 90
   "Number of days of which the average review score will be calculated."
   :type 'integer)
 
