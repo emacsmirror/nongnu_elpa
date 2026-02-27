@@ -1587,7 +1587,7 @@ Return thema ids for themata that match QUERY."
      ([(tag text :primary-key)]
       (:unique [tag])))
     (links
-     ([(source text)
+     ([(source integer)
        (dest text)]
       (:foreign-key [source] :references themata [id]
 		    :on-delete :cascade)
