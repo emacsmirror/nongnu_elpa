@@ -82,8 +82,7 @@
   "Gnosis directory."
   :type 'directory)
 
-(unless (file-directory-p gnosis-dir)
-  (make-directory gnosis-dir))
+;; Directory creation deferred to gnosis--ensure-db
 
 (defcustom gnosis-string-difference 1
   "Threshold value for string comparison in Gnosis.
@@ -587,14 +586,6 @@ If DECK does not exist, create it."
   (let ((deck (gnosis-get 'deck-id 'themata `(= id ,id))))
     (and deck (gnosis--get-deck-name deck))))
 
-(defun gnosis-get-deck--thema (id &optional name)
-  "Get deck id for thema ID.
-
-If NAME is t, return name of deck."
-  (let* ((id-clause `(= id ,id))
-	 (deck (gnosis-get 'deck-id 'themata id-clause)))
-    (if name (gnosis--get-deck-name deck) deck)))
-
 (cl-defun gnosis-toggle-suspend-themata (ids &optional verification)
   "Toggle Suspend value for themata IDS.
 
@@ -780,11 +771,18 @@ If SUSPENDED-P, return suspended themata as well."
 If DUE is t, return only due themata."
   (let ((themata (gnosis-select 'id 'themata `(= deck-id ,(or deck-id (gnosis--get-deck-id)))
 				t)))
-    (if due
-	(cl-loop for thema in themata
-		 when (and (not (gnosis-suspended-p thema))
-			   (gnosis-review-is-due-p thema))
-		 collect thema)
+    (if (and due themata)
+	;; Bulk-fetch suspend + next-rev in single query instead of N queries
+	(let* ((review-data (gnosis-select '[id suspend next-rev] 'review-log
+					   `(in id ,(vconcat themata))))
+	       (today (gnosis--date-to-int (gnosis-algorithm-date))))
+	  (cl-loop for row in review-data
+		   for id = (nth 0 row)
+		   for suspend = (nth 1 row)
+		   for next-rev = (nth 2 row)
+		   when (and (= suspend 0)
+			     (<= (gnosis--date-to-int next-rev) today))
+		   collect id))
       themata)))
 
 (defun gnosis--date-to-int (date)
@@ -964,19 +962,22 @@ When `gnosis--id-cache' is bound, uses hash table for existence check."
 	    (gethash id gnosis--id-cache)
 	  (member id (gnosis-select 'id 'themata nil t)))
 	(emacsql-with-transaction gnosis-db
+	  ;; Single UPDATE for core themata fields
 	  (gnosis-update 'themata `(= keimenon ,keimenon) `(= id ,id))
 	  (gnosis-update 'themata `(= hypothesis ',hypothesis) `(= id ,id))
 	  (gnosis-update 'themata `(= answer ',answer) `(= id ,id))
-	  (gnosis-update 'extras `(= parathema ,parathema) `(= id ,id))
 	  (gnosis-update 'themata `(= tags ',tags) `(= id ,id))
 	  (when type
 	    (gnosis-update 'themata `(= type ,type) `(= id ,id)))
 	  (when deck-id
 	    (gnosis-update 'themata `(= deck-id ,deck-id) `(= id ,id)))
+	  ;; Single UPDATE for extras table
+	  (gnosis-update 'extras `(= parathema ,parathema) `(= id ,id))
+	  ;; Re-sync links
 	  (gnosis--delete 'links `(= source ,id))
 	  (cl-loop for link in links
 		   do (gnosis--insert-into 'links `([,id ,link]))))
-      (message "Gnosis with id: %d does not exist, creating anew." id )
+      (message "Gnosis with id: %d does not exist, creating anew." id)
       (gnosis-add-thema-fields deck-id type keimenon hypothesis answer parathema tags
 			      0 links nil id))))
 
@@ -1326,98 +1327,94 @@ VALUES: Defaults to `gnosis-custom-values'."
 	     collect (plist-get (gnosis-get-custom-values :tag tag custom-values)
 				keyword))))
 
+(defun gnosis--get-tag-value (id keyword aggregator &optional custom-tags custom-values)
+  "Return aggregated tag value for thema ID and KEYWORD.
+
+AGGREGATOR combines multiple tag values (e.g., #\\='max or #\\='min).
+Returns nil when no tags define KEYWORD."
+  (let ((vals (gnosis-get-custom-tag-values id keyword custom-tags custom-values)))
+    (and vals (apply aggregator vals))))
+
+(defun gnosis--get-deck-value (id keyword default-var &optional custom-deck custom-values)
+  "Return deck value for thema ID and KEYWORD, falling back to DEFAULT-VAR."
+  (let ((deck (or custom-deck (gnosis-get-thema-deck-name id))))
+    (or (gnosis-get-custom-deck-value deck keyword custom-values)
+        default-var)))
+
+(defun gnosis-get-thema-custom-value (id keyword aggregator default-var
+					 &optional validate-p custom-deck custom-tags custom-values)
+  "Return the custom algorithm value for thema ID and KEYWORD.
+
+Looks up tag values (aggregated with AGGREGATOR) and deck value
+\(falling back to DEFAULT-VAR).  Tags take priority over deck.
+When VALIDATE-P is non-nil, signals error if value >= 1."
+  (let* ((tag-val (gnosis--get-tag-value id keyword aggregator custom-tags custom-values))
+         (deck-val (gnosis--get-deck-value id keyword default-var custom-deck custom-values))
+         (val (or tag-val deck-val)))
+    (when (and validate-p (>= val 1))
+      (error "%s value must be lower than 1" keyword))
+    val))
+
+;; Named wrappers -- tag variants (used in tests)
+
 (defun gnosis-get-thema-tag-amnesia (id &optional custom-tags custom-values)
-  "Return tag MINIMUM amnesia for thema ID.
-
-The closer the amnesia value is to 0, the closer it is to total
-amnesia i.e next interval to be 0.
-
-CUSTOM-TAGS: Specify tags for thema id.
-CUSTOM-VALUES: Specify values for tags."
-  (let ((amnesia-values (gnosis-get-custom-tag-values id :amnesia
-						      custom-tags custom-values)))
-    (and amnesia-values (apply #'max amnesia-values))))
-
-(defun gnosis-get-thema-deck-amnesia (id &optional custom-deck custom-values)
-  "Return tag amnesia for thema ID.
-
-Optionally, use CUSTOM-DECK and CUSTOM-VALUES."
-  (let ((deck (or (gnosis-get-thema-deck-name id) custom-deck )))
-    (or (gnosis-get-custom-deck-value deck :amnesia custom-values)
-	gnosis-algorithm-amnesia-value)))
-
-(defun gnosis-get-thema-amnesia (id &optional custom-deck custom-tags custom-values )
-  "Return amnesia value for thema ID.
-
-CUSTOM-DECK: Specify custom deck.
-CUSTOM-TAGS: Specify custom tags for thema id.
-CUSTOM-VALUES: Specify custom values."
-  (let* ((deck-amnesia (gnosis-get-thema-deck-amnesia id custom-deck custom-values))
-         (tags-amnesia (gnosis-get-thema-tag-amnesia id custom-tags custom-values))
-	 (thema-amnesia (or tags-amnesia deck-amnesia)))
-    (if (>= thema-amnesia 1)
-	(error "Amnesia value must be lower than 1")
-      thema-amnesia)))
+  "Return tag amnesia for thema ID."
+  (gnosis--get-tag-value id :amnesia #'max custom-tags custom-values))
 
 (defun gnosis-get-thema-tag-epignosis (id &optional custom-tags custom-values)
-  "Return tag epignosis for thema ID.
-
-CUSTOM-TAGS: Specify custom tags for thema id.
-CUSTOM-VALUES: Specify custom values."
-  (let* ((epignosis-values (gnosis-get-custom-tag-values id :epignosis custom-tags custom-values)))
-    (and epignosis-values (apply #'max epignosis-values))))
-
-(defun gnosis-get-thema-deck-epignosis (id &optional custom-deck custom-values)
-  "Return deck epignosis for thema ID.
-
-CUSTOM-DECK: Specify custom deck.
-CUSTOM-VALUES: Specify custom values."
-  (let ((deck (or (gnosis-get-thema-deck-name id) custom-deck)))
-    (or (gnosis-get-custom-deck-value deck :epignosis custom-values)
-	gnosis-algorithm-epignosis-value)))
-
-(defun gnosis-get-thema-epignosis (id &optional custom-deck custom-tags custom-values)
-  "Return epignosis value for thema ID.
-
-CUSTOM-DECK: Specify custom deck.
-CUSTOM-TAGS: Specify custom tags for thema id.
-CUSTOM-VALUES: Specify custom values."
-  (let* ((deck-epignosis (gnosis-get-thema-deck-epignosis id custom-deck custom-values))
-         (tag-epignosis (gnosis-get-thema-tag-epignosis id custom-tags custom-values))
-	 (thema-epignosis (or tag-epignosis deck-epignosis)))
-    (if (>= thema-epignosis 1)
-	(error "Epignosis value must be lower than 1")
-      thema-epignosis)))
+  "Return tag epignosis for thema ID."
+  (gnosis--get-tag-value id :epignosis #'max custom-tags custom-values))
 
 (defun gnosis-get-thema-tag-agnoia (id &optional custom-tags custom-values)
-  "Return agnoia value for thema ID.
+  "Return tag agnoia for thema ID."
+  (gnosis--get-tag-value id :agnoia #'max custom-tags custom-values))
 
-CUSTOM-TAGS: Specify custom tags for thema id.
-CUSTOM-VALUES: Specify custom values."
-  (let ((agnoia-values (gnosis-get-custom-tag-values id :agnoia custom-tags custom-values)))
-    (and agnoia-values (apply #'max agnoia-values))))
+(defun gnosis-get-thema-tag-anagnosis (id &optional custom-tags custom-values)
+  "Return tag anagnosis for thema ID."
+  (gnosis--get-tag-value id :anagnosis #'min custom-tags custom-values))
+
+(defun gnosis-get-thema-tag-lethe (id &optional custom-tags custom-values)
+  "Return tag lethe for thema ID."
+  (gnosis--get-tag-value id :lethe #'min custom-tags custom-values))
+
+;; Named wrappers -- deck variants (used in tests)
+
+(defun gnosis-get-thema-deck-amnesia (id &optional custom-deck custom-values)
+  "Return deck amnesia for thema ID."
+  (gnosis--get-deck-value id :amnesia gnosis-algorithm-amnesia-value custom-deck custom-values))
+
+(defun gnosis-get-thema-deck-epignosis (id &optional custom-deck custom-values)
+  "Return deck epignosis for thema ID."
+  (gnosis--get-deck-value id :epignosis gnosis-algorithm-epignosis-value custom-deck custom-values))
 
 (defun gnosis-get-thema-deck-agnoia (id &optional custom-deck custom-values)
-  "Return agnoia value for thema ID.
+  "Return deck agnoia for thema ID."
+  (gnosis--get-deck-value id :agnoia gnosis-algorithm-agnoia-value custom-deck custom-values))
 
-CUSTOM-DECK: Specify custom deck.
-CUSTOM-VALUES: Specify custom values."
-  (let ((deck (or (gnosis-get-thema-deck-name id) custom-deck)))
-    (or (gnosis-get-custom-deck-value deck :agnoia custom-values)
-	gnosis-algorithm-agnoia-value)))
+(defun gnosis-get-thema-deck-anagnosis (id &optional custom-deck custom-values)
+  "Return deck anagnosis for thema ID."
+  (gnosis--get-deck-value id :anagnosis gnosis-algorithm-anagnosis-value custom-deck custom-values))
+
+(defun gnosis-get-thema-deck-lethe (id &optional custom-deck custom-values)
+  "Return deck lethe for thema ID."
+  (gnosis--get-deck-value id :lethe gnosis-algorithm-lethe-value custom-deck custom-values))
+
+;; Named wrappers -- merged (tag overrides deck)
+
+(defun gnosis-get-thema-amnesia (id &optional custom-deck custom-tags custom-values)
+  "Return amnesia value for thema ID."
+  (gnosis-get-thema-custom-value id :amnesia #'max gnosis-algorithm-amnesia-value
+				 t custom-deck custom-tags custom-values))
+
+(defun gnosis-get-thema-epignosis (id &optional custom-deck custom-tags custom-values)
+  "Return epignosis value for thema ID."
+  (gnosis-get-thema-custom-value id :epignosis #'max gnosis-algorithm-epignosis-value
+				 t custom-deck custom-tags custom-values))
 
 (defun gnosis-get-thema-agnoia (id &optional custom-deck custom-tags custom-values)
-  "Return agnoia value for thema ID.
-
-CUSTOM-DECK: Specify custom deck.
-CUSTOM-TAGS: Specify custom tags for thema id.
-CUSTOM-VALUES: Specify custom values."
-  (let* ((deck-agnoia (gnosis-get-thema-deck-agnoia id custom-deck custom-values))
-         (tag-agnoia (gnosis-get-thema-tag-agnoia id custom-tags custom-values))
-	 (thema-agnoia (or tag-agnoia deck-agnoia)))
-    (if (>= thema-agnoia 1)
-	(error "Agnoia value must be lower than 1")
-      thema-agnoia)))
+  "Return agnoia value for thema ID."
+  (gnosis-get-thema-custom-value id :agnoia #'max gnosis-algorithm-agnoia-value
+				 t custom-deck custom-tags custom-values))
 
 (defun gnosis-proto-max-values (proto-values)
   "Return max values from PROTO-VALUES."
@@ -1441,61 +1438,15 @@ CUSTOM-DECK: Custom deck to be used instead."
     (if tags-proto (gnosis-proto-max-values tags-proto)
       (gnosis-proto-max-values (or decks-proto gnosis-algorithm-proto)))))
 
-(defun gnosis-get-thema-tag-anagnosis (id &optional custom-tags custom-values)
-  "Return the minimum anagnosis tag value for thema ID.
-
-CUSTOM-VALUES: Custom values to be used instead.
-CUSTOM-TAGS: Custom tags to be used instead."
-  (let ((anagnosis-values (gnosis-get-custom-tag-values id :anagnosis custom-tags custom-values)))
-    (and anagnosis-values (apply #'min anagnosis-values))))
-
-(defun gnosis-get-thema-deck-anagnosis (id &optional custom-deck custom-values)
-  "Return anagnosis deck value for thema ID.
-
-CUSTOM-VALUES: Custom values to be used instead.
-CUSTOM-DECK: Custom deck to be used instead."
-  (let ((deck (or (gnosis-get-thema-deck-name id) custom-deck)))
-    (or (gnosis-get-custom-deck-value deck :anagnosis custom-values)
-	gnosis-algorithm-anagnosis-value)))
-
 (defun gnosis-get-thema-anagnosis (id &optional custom-deck custom-tags custom-values)
-  "Return minimum anagnosis value for thema ID.
-
-CUSTOM-VALUES: Custom values to be used instead.
-CUSTOM-TAGS: Custom tags to be used instead.
-CUSTOM-DECK: Custom deck to be used instead."
-  (let* ((deck-anagnosis (gnosis-get-thema-deck-anagnosis id custom-deck custom-values))
-	 (tag-anagnosis (gnosis-get-thema-tag-anagnosis id custom-tags custom-values))
-	 (thema-anagnosis (or tag-anagnosis deck-anagnosis)))
-    thema-anagnosis))
-
-(defun gnosis-get-thema-deck-lethe (id &optional custom-deck custom-values)
-  "Return lethe deck value for thema ID.
-
-CUSTOM-VALUES: Custom values to be used instead.
-CUSTOM-DECK: Custom deck to be used instead."
-  (let ((deck (or (gnosis-get-thema-deck-name id) custom-deck)))
-    (or (gnosis-get-custom-deck-value deck :lethe custom-values)
-	gnosis-algorithm-lethe-value)))
-
-(defun gnosis-get-thema-tag-lethe (id &optional custom-tags custom-values)
-  "Return thema ID tag lethe values.
-
-CUSTOM-VALUES: Custom values to be used instead.
-CUSTOM-TAGS: Custom tags to be used instead."
-  (let ((lethe-values (gnosis-get-custom-tag-values id :lethe custom-tags custom-values)))
-    (and lethe-values (apply #'min lethe-values))))
+  "Return anagnosis value for thema ID."
+  (gnosis-get-thema-custom-value id :anagnosis #'min gnosis-algorithm-anagnosis-value
+				 nil custom-deck custom-tags custom-values))
 
 (defun gnosis-get-thema-lethe (id &optional custom-deck custom-tags custom-values)
-  "Return thema ID lethe value.
-
-CUSTOM-VALUES: Custom values to be used instead.
-CUSTOM-TAGS: Custom tags to be used instead.
-CUSTOM-DECK: Custom deck to be used instead."
-  (let* ((deck-lethe (gnosis-get-thema-deck-lethe id custom-deck custom-values))
-	 (tag-lethe (gnosis-get-thema-tag-lethe id custom-tags custom-values))
-	 (thema-lethe (or tag-lethe deck-lethe)))
-    thema-lethe))
+  "Return lethe value for thema ID."
+  (gnosis-get-thema-custom-value id :lethe #'min gnosis-algorithm-lethe-value
+				 nil custom-deck custom-tags custom-values))
 
 (defun gnosis-get-date-total-themata (&optional date)
   "Return total themata reviewed for DATE.
@@ -1526,15 +1477,6 @@ Defaults to current date."
 	 (reviewed-new (or (car (gnosis-select 'reviewed-new 'activity-log `(= date ',date) t))
 			   0)))
     reviewed-new))
-;; TODO: Auto tag overdue tags.
-(defun gnosis-tags--append (id tag)
-  "Append TAG to the list of tags of thema ID."
-  (cl-assert (numberp id) nil "ID must be the thema id number")
-  (cl-assert (stringp tag) nil "Tag must a string")
-  (let* ((current-tags (gnosis-get 'tags 'themata `(= id ,id)))
-	 (new-tags (append current-tags (list tag))))
-    (gnosis-update 'themata `(= tags ',new-tags) `(= id ,id))))
-
 (defun gnosis-search-thema (&optional query)
   "Search for thema QUERY.
 
@@ -1690,8 +1632,6 @@ Return thema ids for themata that match QUERY."
 	   (gnosis-db-update-v4))
 	  ((< gnosis-curr-version 3)
 	   (gnosis-db-update-v5)))))
-
-(gnosis-db-init)
 
 ;; VC functions ;;
 ;;;;;;;;;;;;;;;;;;
