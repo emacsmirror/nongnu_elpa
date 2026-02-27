@@ -1327,19 +1327,32 @@ DISPLAY-FN displays results, defaults to `gnosis-dashboard-output-nodes'."
 Isolated nodes have no backlinks, no forward links, and no themata links."
   (interactive)
   (let* ((all-nodes-data (org-gnosis-get-nodes-data))
+	 (all-ids (mapcar #'car all-nodes-data))
+	 ;; Bulk fetch forward links (1 query instead of N)
+	 (fwd-raw (when all-ids
+		    (org-gnosis-select '[source dest] 'links
+				       `(in source ,(vconcat all-ids)))))
+	 (fwd-set (let ((h (make-hash-table :test 'equal)))
+		    (dolist (link fwd-raw h)
+		      (puthash (nth 0 link) t h))))
+	 ;; Bulk fetch themata links (1 query instead of N)
+	 (themata-raw (when all-ids
+			(gnosis-select '[dest source] 'links
+				       `(in dest ,(vconcat all-ids)))))
+	 (themata-set (let ((h (make-hash-table :test 'equal)))
+			(dolist (link themata-raw h)
+			  (puthash (nth 0 link) t h))))
          (isolated-ids (cl-loop for node in all-nodes-data
                                for id = (nth 0 node)
                                for backlink-count = (nth 2 node)
                                when (and (= backlink-count 0)
-                                        (= (length (gnosis-dashboard-get-forward-link-ids id)) 0)
-                                        (= (length (gnosis-dashboard-get-themata-links id)) 0))
+					 (not (gethash id fwd-set))
+					 (not (gethash id themata-set)))
                                collect id)))
     (if isolated-ids
         (progn
-          ;; Save current view and position to history
           (push (cons (tabulated-list-get-id) gnosis-dashboard-nodes-current-ids)
                 gnosis-dashboard-nodes-history)
-          ;; Show isolated nodes
           (gnosis-dashboard-output-nodes isolated-ids))
       (message "No isolated nodes found"))))
 
