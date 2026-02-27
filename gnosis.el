@@ -1458,7 +1458,7 @@ Defaults to current date."
   (let* ((date (or date (gnosis-algorithm-date)))
 	 (date-log (gnosis-select
 		    '[date reviewed-total reviewed-new] 'activity-log
-		    `(= date ',(gnosis-algorithm-date)) t))
+		    `(= date ',date) t))
 	 (reviewed-total (cadr date-log))
 	 (reviewed-new (or (caddr date-log) 0)))
     (or reviewed-total
