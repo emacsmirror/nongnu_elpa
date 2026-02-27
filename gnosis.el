@@ -1703,9 +1703,14 @@ Reopens the gnosis database after successful pull."
        (cond
         ((string-match-p "finished" event)
          (when (zerop (process-exit-status proc))
-           (setf gnosis-db
-                 (emacsql-sqlite-open (expand-file-name "gnosis.db" gnosis-dir)))
-           (message "Gnosis: Git pull successful, database reopened")))
+	   (condition-case err
+	       (progn
+		 (setf gnosis-db
+                       (emacsql-sqlite-open (expand-file-name "gnosis.db" gnosis-dir)))
+		 (gnosis-db-init)
+		 (message "Gnosis: Pull successful, database reopened"))
+	     (error (message "Gnosis: Failed to reopen database: %s"
+			     (error-message-string err))))))
         ((string-match-p "exited abnormally" event)
          (message "Gnosis: Git pull failed with exit code %s"
                   (process-exit-status proc))))))))
