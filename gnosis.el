@@ -332,9 +332,11 @@ Example:
   "Return caar of VALUE from TABLE, optionally with where RESTRICTIONS."
   (caar (gnosis-select value table restrictions)))
 
-(defun gnosis--delete (table value)
-  "From TABLE use where to delete VALUE."
-  (emacsql (gnosis--ensure-db) `[:delete :from ,table :where ,value]))
+(defun gnosis--delete (table &optional where)
+  "Delete from TABLE, optionally restricted by WHERE clause."
+  (if where
+      (emacsql (gnosis--ensure-db) `[:delete :from ,table :where ,where])
+    (emacsql (gnosis--ensure-db) `[:delete :from ,table])))
 
 (defun gnosis-delete-thema (id &optional verification)
   "Delete thema with ID.
