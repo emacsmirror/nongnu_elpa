@@ -63,6 +63,12 @@
 
 ;; Customize: M-x customize-group RET selected-window-contrast
 
+;; Note, if you use C-o to switch windows, this may conflict with
+;;  rectangle-mark-mode-map
+;; Rebind keys then:
+;; (keymap-set rectangle-mark-mode-map "C-c o" #'open-rectangle)
+;; (keymap-set rectangle-mark-mode-map "C-o" #'other-window)
+
 ;;;; Donate:
 
 ;; - BTC (Bitcoin) address: 1CcDWSQ2vgqv5LxZuWaHGW52B9fkT5io25
