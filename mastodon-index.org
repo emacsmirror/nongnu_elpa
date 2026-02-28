@@ -77,6 +77,8 @@
 | C-M-q      | mastodon-kill-all-buffers                        | Kill any and all open mastodon buffers, hopefully.                             |
 | Q          | mastodon-kill-window                             | Quit window and delete helper.                                                 |
 |            | mastodon-mode                                    | Major mode for fediverse services using the Mastodon API.                      |
+|            | mastodon-notifications--get-single-notif         | Return a single notification JSON for v2 notifs.                               |
+|            | mastodon-notifications-check                     | Check for the number of unread notifications.                                  |
 |            | mastodon-notifications-clear-all                 | Clear all notifications.                                                       |
 | C-k        | mastodon-notifications-clear-current             | Dismiss the notification at point.                                             |
 | C-c C-c    | mastodon-notifications-cycle-type                | Cycle the current notifications view.                                          |
@@ -90,7 +92,6 @@
 |            | mastodon-notifications-get-follows               | Display follow notifications in buffer.                                        |
 | @          | mastodon-notifications-get-mentions              | Display mention notifications in buffer.                                       |
 |            | mastodon-notifications-get-polls                 | Display poll notifications in buffer.                                          |
-|            | mastodon-notifications-get-single-notif          | Return a single notification JSON for v2 notifs.                               |
 |            | mastodon-notifications-get-statuses              | Display status notifications in buffer.                                        |
 |            | mastodon-notifications-get-type                  | Read a notification type and load its timeline.                                |
 | C-:        | mastodon-notifications-policy                    | A transient to set notifications policy options.                               |
@@ -173,7 +174,7 @@
 | n          | mastodon-tl-goto-next-item                       | Jump to next item.                                                             |
 | p          | mastodon-tl-goto-prev-item                       | Jump to previous item.                                                         |
 | C-"        | mastodon-tl-jump-to-followed-tag                 | Prompt for a followed tag and view its timeline.                               |
-| "          | mastodon-tl-list-followed-tags                   | List followed tags. View timeline of tag user choses.                          |
+| C-#        | mastodon-tl-list-followed-tags                   | List followed tags. View timeline of tag user choses.                          |
 | C-<return> | mastodon-tl-mpv-play-video-at-point              | Play the video or gif at point with an mpv process.                            |
 |            | mastodon-tl-mpv-play-video-from-byline           | Run `mastodon-tl-mpv-play-video-at-point' on first moving image in post.       |
 |            | mastodon-tl-mute-thread                          | Mute the thread displayed in the current buffer.                               |
@@ -323,7 +324,11 @@
 | mastodon-media--hide-sensitive-media               | Whether media marked as sensitive should be hidden.                          |
 | mastodon-media--preview-max-height                 | Max height of any media attachment preview to be shown in timelines.         |
 | mastodon-mode-hook                                 | Hook run when entering Mastodon mode.                                        |
+| mastodon-notifications-alert-style                 | The type of alert.el style to use for mastodon.el notification alerts.       |
+| mastodon-notifications-alerts                      | Whether to enable alert.el alerts.                                           |
+| mastodon-notifications-check-for-updates           | Whether to regularly check for new notifications.                            |
 | mastodon-notifications-grouped-names-count         | The number of notification authors to display.                               |
+| mastodon-notifications-updates-interval            | How often to check for new notifications, in seconds.                        |
 | mastodon-profile-mode-hook                         | Hook run after entering or leaving `mastodon-profile-mode'.                  |
 | mastodon-profile-note-in-foll-reqs                 | If non-nil, show a user's profile note in follow request notifications.      |
 | mastodon-profile-note-in-foll-reqs-max-length      | The max character length for user profile note in follow requests.           |
