@@ -1117,17 +1117,17 @@ Callback is `mastodon-notifications--update-check-cb'."
       ;; and only ever notify, not update.
 
       ;; (if ;;(not (mastodon-tl--buffer-type-eq 'notifications))
-          ;; (not mastodon-notifications-update-when-unread)
-          (mastodon-notifications-notify count)
-        ;; run updates if in notifs buffer:
-        ;; (message "Updating mastodon.el notifications...")
-        ;; (undo-boundary)
-        ;; (mastodon-tl-update)
-        ;; (undo-boundary)
-        ;; (message "Updating mastodon.el notifications... Done.")))
-    ;; cancel and set new timer:
-    (mastodon-notifications-cancel-timer)
-    (mastodon-notifications--update-with-timer)))
+      ;; (not mastodon-notifications-update-when-unread)
+      (mastodon-notifications-notify count)
+      ;; run updates if in notifs buffer:
+      ;; (message "Updating mastodon.el notifications...")
+      ;; (undo-boundary)
+      ;; (mastodon-tl-update)
+      ;; (undo-boundary)
+      ;; (message "Updating mastodon.el notifications... Done.")))
+      ;; cancel and set new timer:
+      (mastodon-notifications-cancel-timer)
+      (mastodon-notifications--update-with-timer))))
 
 (provide 'mastodon-notifications)
 ;;; mastodon-notifications.el ends here
