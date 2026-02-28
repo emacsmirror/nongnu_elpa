@@ -6,8 +6,8 @@
 ;; Author: Johnson Denen <johnson.denen@gmail.com>
 ;;         Marty Hiatt <mousebot@disroot.org>
 ;; Maintainer: Marty Hiatt <mousebot@disroot.org>
-;; Version: 2.0.8
-;; Package-Requires: ((emacs "28.1") (persist "0.8") (tp "0.7"))
+;; Version: 2.0.9
+;; Package-Requires: ((emacs "29.1") (persist "0.8") (tp "0.8"))
 ;; Homepage: https://codeberg.org/martianh/mastodon.el
 
 ;; This file is not part of GNU Emacs.
@@ -40,6 +40,7 @@
 (eval-when-compile (require 'subr-x))
 (require 'url)
 (require 'thingatpt)
+(require 'alert)
 (require 'shr)
 
 (require 'mastodon-http)
@@ -75,6 +76,7 @@
 (autoload 'mastodon-toot--view-toot-history "mastodon-tl")
 (autoload 'mastodon-tl-return "mastodon-tl")
 (autoload 'mastodon-tl-jump-to-followed-tag "mastodon-tl")
+(autoload 'mastodon-notifications--update-with-timer "mastodon-notifications")
 
 ;; for M-x visibility
 ;; (views.el uses `mastodon-mode-map', so we can't easily require it)
@@ -104,6 +106,8 @@
   nil :interactive)
 
 (autoload 'special-mode "simple")
+(autoload 'mastodon-tl--thread-do "mastodon-tl")
+(autoload 'mastodon-notifications--get-unread-count "mastodon-notifications")
 
 (defvar mastodon-tl--highlight-current-toot)
 (defvar mastodon-notifications--map)
@@ -113,6 +117,9 @@
   '("reblog" "favourite") ;; TODO: implement follow!
   "List of notification types for which grouping is implemented.
 Used in `mastodon-notifications-get'")
+
+(defvar mastodon-notifications-notify-shown nil
+  "Whether recent notifications have been seen by the user or not.")
 
 (defgroup mastodon nil
   "Interface with Mastodon."
@@ -193,6 +200,32 @@ A count of 2 for example means to display like so: \"Bob, Jenny
 and X others...\"."
   :type '(integer))
 
+(defcustom mastodon-notifications-check-for-updates t
+  "Whether to regularly check for new notifications."
+  :type '(boolean))
+
+(defcustom mastodon-notifications-updates-interval 60
+  "How often to check for new notifications, in seconds."
+  :type '(integer))
+
+(defcustom mastodon-notifications-alerts nil
+  "Whether to enable alert.el alerts."
+  :type '(boolean))
+
+(defcustom mastodon-notifications-alert-style alert-default-style
+  "The type of alert.el style to use for mastodon.el notification alerts.
+Currently, if you customize this variable, you need to restart Emacs for
+it to take effect, or if you don't have any other alert.el rules set up,
+you can nil `alert-internal-configuration' and reload mastodon.el"
+  :type
+  `(choice
+    ,@(append
+       '((const :tag "alert.el default"
+                :value alert-default-style))
+       (cl-loop for x in alert-styles
+                collect (list 'const :tag (plist-get (cdr x) :title)
+                              :value (car x))))))
+
 (defun mastodon-kill-window ()
   "Quit window and delete helper."
   (interactive)
@@ -229,10 +262,11 @@ Also nil `mastodon-auth--token-alist'."
     (define-key map (kbd "l")      #'recenter-top-bottom)
     ;; navigation between timelines
     (define-key map (kbd "#")      #'mastodon-tl-get-tag-timeline)
-    (define-key map (kbd "\"")     #'mastodon-tl-list-followed-tags)
-    (define-key map (kbd "C-\"")     #'mastodon-tl-jump-to-followed-tag)
+    (define-key map (kbd "C-#")    #'mastodon-tl-list-followed-tags)
+    ;; (define-key map (kbd "\"")     #'mastodon-tl-list-followed-tags)
+    (define-key map (kbd "C-\"")   #'mastodon-tl-jump-to-followed-tag)
     (define-key map (kbd "'")      #'mastodon-tl-followed-tags-timeline)
-    (define-key map (kbd "C-'")   #'mastodon-tl-tag-group-timeline)
+    (define-key map (kbd "C-'")    #'mastodon-tl-tag-group-timeline)
     (define-key map (kbd "A")      #'mastodon-profile-get-toot-author)
     (define-key map (kbd "F")      #'mastodon-tl-get-federated-timeline)
     (define-key map (kbd "H")      #'mastodon-tl-get-home-timeline)
@@ -254,6 +288,7 @@ Also nil `mastodon-auth--token-alist'."
     (define-key map (kbd "f")      #'mastodon-toot-toggle-favourite)
     (define-key map (kbd "k")      #'mastodon-toot-toggle-bookmark)
     (define-key map (kbd "r")      #'mastodon-toot-reply)
+    (define-key map (kbd "\"")     #'mastodon-toot-quote)
     (define-key map (kbd "C")      #'mastodon-toot-copy-toot-url)
     (define-key map (kbd "o")      #'mastodon-toot-browse-toot-url)
     (define-key map (kbd "v")      #'mastodon-tl-poll-vote)
@@ -414,13 +449,15 @@ FORCE means to fetch from the server in any case and update
   (alist-get 'version (mastodon-instance-data)))
 
 ;;;###autoload
-(defun mastodon-toot (&optional user reply-to-id reply-json)
+(defun mastodon-toot (&optional user reply-to-id reply-json
+                                quote-id quote-json visibility)
   "Update instance with new toot. Content is captured in a new buffer.
 If USER is non-nil, insert after @ symbol to begin new toot.
 If REPLY-TO-ID is non-nil, attach new toot to a conversation.
 If REPLY-JSON is the json of the toot being replied to."
   (interactive)
-  (mastodon-toot--compose-buffer user reply-to-id reply-json))
+  (mastodon-toot--compose-buffer user reply-to-id reply-json
+                                 nil nil quote-id quote-json visibility))
 
 ;;;###autoload
 (defun mastodon-notifications-get (&optional type buffer-name max-id)
@@ -450,8 +487,17 @@ MAX-ID is a request parameter for pagination."
          "v1"
        "v2"))
     (with-current-buffer (get-buffer-create buffer)
-      (use-local-map mastodon-notifications--map))
+      (use-local-map mastodon-notifications--map)
+      (when mastodon-notifications-notify-shown
+        (setq mastodon-notifications-notify-shown nil)))
     (message "Loading your notifications... Done")))
+
+;;;###autoload
+(defun mastodon-notifications-check ()
+  "Check for the number of unread notifications."
+  (interactive)
+  (let ((count (mastodon-notifications--get-unread-count)))
+    (message "Unread notifications: %s" count)))
 
 ;; URL lookup: should be available even if `mastodon.el' not loaded:
 
@@ -573,7 +619,10 @@ Calls `mastodon-tl--get-buffer-type', which see."
   ;; make `thing-at-point' functions work:
   (setq-local thing-at-point-provider-alist
               (append thing-at-point-provider-alist
-                      '((url . mastodon--url-at-point)))))
+                      '((url . mastodon--url-at-point))))
+  ;; notifs timer
+  (when mastodon-notifications-alerts
+    (mastodon-notifications--update-with-timer)))
 
 ;;;###autoload
 (add-hook 'mastodon-mode-hook #'mastodon-mode-hook-fun)

@@ -40,6 +40,8 @@
 (autoload 'mastodon-http--post "mastodon-http")
 (autoload 'mastodon-http--triage "mastodon-http")
 (autoload 'mastodon-media--inline-images "mastodon-media")
+(autoload 'mastodon-notifications-get "mastodon")
+(autoload 'mastodon-tl--buffer-type-eq "mastodon-tl")
 (autoload 'mastodon-tl--byline "mastodon-tl")
 (autoload 'mastodon-tl--byline-author "mastodon-tl")
 (autoload 'mastodon-tl--clean-tabs-and-nl "mastodon-tl")
@@ -71,6 +73,10 @@
 (autoload 'mastodon-views--minor-view "mastodon-views")
 (autoload 'mastodon-tl--goto-first-item "mastodon-tl")
 (autoload 'mastodon-tl--init-sync "mastodon-tl")
+(autoload 'mastodon-http--get-json-async "mastodon-http")
+(autoload 'mastodon-live-buffers "mastodon")
+(autoload 'mastodon-tl--update "mastodon-tl")
+(autoload 'mastodon-tl--insert-quoted "mastodon-tl")
 
 ;; notifications defcustoms moved into mastodon.el
 ;; as some need to be available without loading this file
@@ -90,6 +96,10 @@
 (defvar mastodon-notifications-grouped-names-count)
 (defvar mastodon-tl--link-keymap)
 (defvar mastodon-tl--update-point)
+(defvar mastodon-notifications-updates-interval)
+(defvar mastodon-notifications-check-for-updates)
+(defvar mastodon-notifications-alert-style)
+(defvar mastodon-notifications-alerts)
 ;;; VARIABLES
 
 (defvar mastodon-notifications--map
@@ -471,7 +481,7 @@ TYPE is notification type, used for non-group notifs."
        "\n"
        ;; display quoted post:
        (when (alist-get 'quote toot)
-         (mastodon-tl--insert-quoted (alist-get 'quote toot)))
+         (mastodon-tl--insert-quoted (alist-get 'quote toot) toot))
        ;; actual byline:
        (if (member type '("severed_relationships" "moderation_warning"))
            (propertize
@@ -657,6 +667,7 @@ UPDATE means we are updating, so skip some things."
     ;; set update point:
     (setq mastodon-tl--update-point (point))
     ;; render:
+    (setq mastodon-tl--update-point (point))
     (mastodon-notifications--render json
                                     (not mastodon-group-notifications))
     (goto-char (point-min))
@@ -809,7 +820,7 @@ Status notifications are created when you call
          (resp (mastodon-http--get-json endpoint params)))
     (map-nested-elt resp '(notifications last_read_id))))
 
-(defun mastodon-notifications-get-single-notif ()
+(defun mastodon-notifications--get-single-notif ()
   "Return a single notification JSON for v2 notifs."
   (interactive)
   (let* ((id ;; grouped (should work for ungrouped items):
@@ -825,8 +836,45 @@ Status notifications are created when you call
   (let* ((endpoint "notifications/unread_count")
          (url (mastodon-http--api endpoint
                                   (when mastodon-group-notifications "v2")))
-         (resp (mastodon-http--get-json url)))
+         ;; NB: sync request!:
+         (resp (mastodon-http--get-json url nil :silent)))
     (alist-get 'count resp)))
+
+(when (and mastodon-notifications-alerts
+           (require 'alert nil :noerror))
+  (alert-add-rule :mode 'mastodon-mode
+                  :status '(buried visible idle selected)
+                  :persistent
+                  #'(lambda (info)
+                      ;; If the buffer is buried, or the user has been idle
+                      ;; for `alert-reveal-idle-time' seconds, make this
+                      ;; alert persistent. Normally, alerts become
+                      ;; persistent after `alert-persist-idle-time' seconds.
+                      (memq (plist-get info :status) '(buried idle)))
+                  ;; FIXME: if user configures this variable, we need to
+                  ;; remove this rule and re-add it! or they need to restart
+                  ;; emacs?:
+                  :style mastodon-notifications-alert-style
+                  :continue t))
+
+;;; REVOKE QUOTED STATUS
+;; POST /api/v1/statuses/:id/quotes/:quoting_status_id/revoke.
+(defun mastodon-notifications-revoke-post-quote ()
+  "Revoke the quote of a post from a quote notification."
+  (interactive)
+  ;; SCOPE required: check quote notif type, which will have user post in
+  ;; the "status" attribute:
+  (let* ((notif (mastodon-tl--property 'item-json :no-move))
+         (id (map-nested-elt notif '(quote quoted_status id)))
+         (quote-id (alist-get 'id notif))
+         (url (mastodon-http--api (format "statuses/%s/quotes/%s/revoke"
+                                          id quote-id))))
+    (when (y-or-n-p "Revoke quote of post at point?")
+      (let ((resp (mastodon-http--post url)))
+        (mastodon-http--triage
+         resp
+         (lambda (_resp)
+           (message "Quote of post revoked!")))))))
 
 ;;; NOTIFICATION REQUESTS / FILTERING / POLICY
 
@@ -970,6 +1018,116 @@ NOTE means to include a profile note."
         (mastodon-tl--render-text .account.note .account))
       "\n")
      'item-json req)))
+
+
+;;; UPDATES TIMER
+
+(defvar mastodon-notifications-notify-shown)
+
+(defvar mastodon-notifications-timer nil
+  "Timer to update the notifs buffer.")
+
+(defun mastodon-notifications-cancel-timer ()
+  "Cancel `mastodon-notifications-timer'.
+Also nil the variable."
+  (when (timerp mastodon-notifications-timer)
+    (cancel-timer mastodon-notifications-timer))
+  (setq mastodon-notifications-timer nil))
+
+(defun mastodon-notifications-notify (&optional count force)
+  "Send a desktop notification when we have COUNT unread notifications.
+If COUNT is nil, fetch again from server (synchronously).
+Uses `alert.el'.
+When FORCE, skip all checks and show an alert (for debugging)."
+  (let ((count (or count (mastodon-notifications--get-unread-count))))
+    (when (or force
+              (and (> count 0)
+                   (not mastodon-notifications-notify-shown)))
+      (if (not (require 'alert :noerror))
+          (message "mastodon.el: new notifications %s" count)
+        (alert (format "New notifications: <b>%s</b>" count)
+               :title "mastodon.el"
+               ;; adding an alert.el rule as per above doesn't always work
+               ;; if a non-mastodon.el buffer is active (despite the 'buried
+               ;; status setting), so let's just give it a masto buffer:
+               :buffer (car (mastodon-live-buffers))))
+      (unless force
+        ;; we nil this in `mastodon-notifications-get':
+        (setq mastodon-notifications-notify-shown t)))))
+
+(defun mastodon-notifications--update-with-timer ()
+  "Run a timer to update notifications. Added to `mastodon-mode-hook'."
+  ;; if no buffers: cancel our timer and do nothing else:
+  (if (and (not (mastodon-live-buffers))
+           ;; if we are loading a first mastodon buffer, the previous
+           ;; check fails, as `mastodon-mode-hook' necessariliy runs
+           ;; before we have buf-spec, which
+           ;; `mastodon-tl--get-buffer-type' depends on, and if we set
+           ;; buf-spec before enabling the mode, buf-spec is lost. so
+           ;; let's also check if the current buffer prefix is *mastodon-,
+           ;; which it will be when first calling `mastodon' at least
+           ;; (though not necessarily when loading other first mastodon.el
+           ;; buffers, such as new toot):
+           (not (string-prefix-p "*mastodon-" (buffer-name))))
+      ;; if not masto buffers: cancel everything:
+      (mastodon-notifications-cancel-timer)
+    (when mastodon-notifications-check-for-updates
+      ;; if a timer has already run but somehow the variable has not been
+      ;; nilled, assume it is a leftover and cancel it, otherwise our
+      ;; unless check below will always fail and no new timer will be
+      ;; created.
+      ;; NB: this gets called:
+      ;; - on creating a new mastodon.el buffer,
+      ;; - if an existing timer is run.
+      ;; in both cases, `timerp' should fail, but sometimes we have a
+      ;; zombie one somehow:
+      (when (and (timerp mastodon-notifications-timer)
+                 (timer--triggered mastodon-notifications-timer))
+        (mastodon-notifications-cancel-timer))
+      ;; maybe we can remove this unless check, and just always cancel and
+      ;; restart? that would have the effect of making the timer always
+      ;; run mastodon-notifications-updates-interval seconds after opening
+      ;; a new mastodon.el buffer, or effectively only showing an alert if
+      ;; the user stops opening buffers:
+      (unless mastodon-notifications-timer
+        ;; set new timer if we don't have one:
+        (setq mastodon-notifications-timer
+              (run-at-time mastodon-notifications-updates-interval
+                           nil #'mastodon-notifications--update-check))))))
+
+(defun mastodon-notifications--update-check ()
+  "Get unread notifications count from the server, asynchronously.
+Called by `mastodon-notifications--update-with-timer'.
+Callback is `mastodon-notifications--update-check-cb'."
+  (let* ((endpoint "notifications/unread_count")
+         (url (mastodon-http--api endpoint
+                                  (when mastodon-group-notifications "v2"))))
+    (mastodon-http--get-json-async
+     url nil :silent #'mastodon-notifications--update-check-cb)))
+
+(defun mastodon-notifications--update-check-cb (resp)
+  "Callback functions for handling unread notifs count response RESP."
+  (let ((count (alist-get 'count resp)))
+    (when (> count 0)
+      ;; (message "%s" (current-buffer)) ;; => *mastodon-home* / *messages*
+
+      ;; FIXME: unsure how to check if notifications buffer is active
+      ;; here, as (current-buffer) returns different things if this is
+      ;; triggered with notifs buffer active! so let's skip it for now,
+      ;; and only ever notify, not update.
+
+      ;; (if ;;(not (mastodon-tl--buffer-type-eq 'notifications))
+          ;; (not mastodon-notifications-update-when-unread)
+          (mastodon-notifications-notify count)
+        ;; run updates if in notifs buffer:
+        ;; (message "Updating mastodon.el notifications...")
+        ;; (undo-boundary)
+        ;; (mastodon-tl-update)
+        ;; (undo-boundary)
+        ;; (message "Updating mastodon.el notifications... Done.")))
+    ;; cancel and set new timer:
+    (mastodon-notifications-cancel-timer)
+    (mastodon-notifications--update-with-timer)))
 
 (provide 'mastodon-notifications)
 ;;; mastodon-notifications.el ends here

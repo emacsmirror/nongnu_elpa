@@ -46,7 +46,6 @@
 (autoload 'mastodon-auth--get-account-name "mastodon-auth.el")
 (autoload 'mastodon-http--api "mastodon-http.el")
 (autoload 'mastodon-http--get-json "mastodon-http.el")
-(autoload 'mastodon-http--get-json-async "mastodon-http.el")
 (autoload 'mastodon-http--get-response "mastodon-http")
 (autoload 'mastodon-http--patch "mastodon-http")
 (autoload 'mastodon-http--patch-json "mastodon-http")
@@ -571,6 +570,24 @@ The endpoint only holds a few preferences. For others, see
                         (prin1-to-string (cdr el)))
                 "\n\n"))
       (goto-char (point-min)))))
+
+(defvar mastodon-profiles-quote-policy-types
+  '(public followers nobody))
+
+(defun mastodon-profile-set-quote-policy ()
+  "Prompt for a quote policy and set it in the user's preferences."
+  (interactive)
+  (let* ((prefs
+          ;; this fetches from a local var, we want to fetch from server,
+          ;; else we need this var to update when we change this setting:
+          ;; (mastodon-profile--get-source-values))
+          ;; so we fetch from preferences instead:
+          (mastodon-http--get-json (mastodon-http--api "preferences")))
+         (current (alist-get 'posting:default:quote_policy prefs))
+         (choice (completing-read
+                  (format "Set default quote policy [current: %s]: " current)
+                  mastodon-profiles-quote-policy-types nil :match)))
+    (mastodon-profile--update-preference "quote_policy" choice 'source)))
 
 
 ;;; PROFILE VIEW DETAILS

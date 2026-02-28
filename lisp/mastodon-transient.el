@@ -73,7 +73,8 @@ the inner key part."
   (let* ((split (split-string key "[][]"))
          (array-key (cadr split)))
     (if (or (= 1 (length split)) ;; no split
-            (member array-key '("privacy" "sensitive" "language")))
+            (member array-key
+                    '("quote_policy" "privacy" "sensitive" "language")))
         key
       array-key)))
 
@@ -163,7 +164,10 @@ the format fields.X.keyname."
     :choices (lambda () mastodon-toot-visibility-settings-list))
    ("s" "mark sensitive" "source.sensitive" :alist-key source.sensitive :class tp-bool)
    ("g" "default language" "source.language" :alist-key source.language :class tp-option
-    :choices (lambda () mastodon-iso-639-regional))]
+    :choices (lambda () mastodon-iso-639-regional))
+   ("q" "quote policy" "source.quote_policy" :alist-key source.quote_policy
+    :class tp-option
+    :choices (lambda () mastodon-profiles-quote-policy-types))]
   ["Update"
    ("C-c C-c" "Save settings" mastodon-user-settings-update)
    ("C-x C-k" :info "Revert all changes")]
@@ -376,7 +380,9 @@ Do not add more than the server's maximum setting."
 
 (defun mastodon-notifications-requests-count ()
   "Format a string for pending requests."
-  (let ((val (oref transient--prefix value)))
+  (let ((val ;; (oref transient--prefix value))) ;; deprecated
+         ;; (transient-get-value)) ;; broken
+         tp-transient-settings)) ;; dubious
     (format "Pending requests: %d"
             (or (map-nested-elt
                  val
@@ -385,7 +391,9 @@ Do not add more than the server's maximum setting."
 
 (defun mastodon-notifications-filtered-count ()
   "Format a string for pending notifications."
-  (let ((val (oref transient--prefix value)))
+  (let ((val ;; (oref transient--prefix value))) ;; deprecated
+         ;; (transient-get-value)) ;; broken
+         tp-transient-settings)) ;; dubious
     (format "Pending notifications: %d"
             (or (map-nested-elt
                  val
@@ -417,7 +425,9 @@ We always read.")
 
 (cl-defmethod transient-init-value ((obj mastodon-transient-field))
   "Initialize value of OBJ."
-  (let* ((prefix-val (oref transient--prefix value)))
+  (let* ((prefix-val ;; (oref transient--prefix value))) ;; deprecated
+          ;; (transient-get-value)) ;; broken
+          tp-transient-settings)) ;; dubious
     ;; (arg (oref obj alist-key)))
     (oset obj value
           (tp-get-server-val obj prefix-val))))

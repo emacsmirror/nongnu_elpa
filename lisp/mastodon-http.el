@@ -323,30 +323,36 @@ JSON means send params as JSON data."
 
  ;; Asynchronous functions
 
-(defun mastodon-http--get-async (url &optional params callback &rest cbargs)
+(defun mastodon-http--get-async (url &optional params silent
+                                     callback &rest cbargs)
   "Make GET request to URL.
 Pass response buffer to CALLBACK function with args CBARGS.
-PARAMS is an alist of any extra parameters to send with the request."
+PARAMS is an alist of any extra parameters to send with the request.
+Optionally make the request SILENT."
   (let ((url (mastodon-http--concat-params-to-url url params)))
     (mastodon-http--authorized-request "GET"
-      (url-retrieve url callback cbargs))))
+      (url-retrieve url callback cbargs silent))))
 
-(defun mastodon-http--get-response-async (url &optional params callback &rest cbargs)
+(defun mastodon-http--get-response-async (url &optional params silent
+                                              callback &rest cbargs)
   "Make GET request to URL. Call CALLBACK with http response and CBARGS.
-PARAMS is an alist of any extra parameters to send with the request."
+PARAMS is an alist of any extra parameters to send with the request.
+Optionally make the request SILENT."
   (mastodon-http--get-async
    url
-   params
+   params silent
    (lambda (status)
      (when status ; for flakey servers
        (apply callback (mastodon-http--process-response) cbargs)))))
 
-(defun mastodon-http--get-json-async (url &optional params callback &rest cbargs)
+(defun mastodon-http--get-json-async (url &optional params silent
+                                          callback &rest cbargs)
   "Make GET request to URL. Call CALLBACK with json-list and CBARGS.
-PARAMS is an alist of any extra parameters to send with the request."
+PARAMS is an alist of any extra parameters to send with the request.
+Optionally make the request SILENT."
   (mastodon-http--get-async
    url
-   params
+   params silent
    (lambda (status)
      (when status ;; only when we actually get sth?
        (apply callback (mastodon-http--process-json) cbargs)))))
