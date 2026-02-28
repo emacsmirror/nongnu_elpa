@@ -299,8 +299,8 @@ Returns a list of the form ((yyyy mm dd) (ef-increase ef-decrease ef-total))."
       :epignosis (gnosis-get-thema-epignosis id)
       :agnoia (gnosis-get-thema-agnoia id)
       :anagnosis (gnosis-get-thema-anagnosis id)
-      :c-successes c-success
-      :c-failures c-fails
+      :c-successes (if success (1+ c-success) 0)
+      :c-failures (if success 0 (1+ c-fails))
       :lethe lethe))))
 
 (defun gnosis-review--update (id success)
