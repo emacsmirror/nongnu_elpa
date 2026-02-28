@@ -958,8 +958,9 @@ LINKS: List of id links."
 If gnosis ID does not exist, create it anew.
 When `gnosis--id-cache' is bound, uses hash table for existence check."
   (let* ((id (if (stringp id) (string-to-number id) id))
-	 (current-type (gnosis-get 'type 'themata `(= id ,id)))
-	 (current-deck (gnosis-get 'deck-id 'themata `(= id ,id))))
+	 (current (car (gnosis-select '[type deck-id] 'themata `(= id ,id))))
+	 (current-type (nth 0 current))
+	 (current-deck (nth 1 current)))
     (if (if gnosis--id-cache
 	    (gethash id gnosis--id-cache)
 	  (member id (gnosis-select 'id 'themata nil t)))
@@ -988,56 +989,44 @@ When `gnosis--id-cache' is bound, uses hash table for existence check."
 ;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defun gnosis-add-thema--basic (id deck-id type keimenon hypothesis
-				   answer parathema tags suspend links)
-  "Default format for adding a thema.
-
-ID: Thema ID.
-DECK-ID: Integer value of deck-id.
-TYPE: String representing the type of thema.
-KEIMENON: String for the thema text.
-HYPOTHESIS: List of a single string.
-ANSWER: List of a single string.
-PARATHEMA: String for the parathema text.
-TAGS: List of thema tags.
-SUSPEND: Integer value of 0 for nil and 1 for true (suspended).
-LINKS: List of id links in PARATHEMA."
+(defun gnosis-add-thema--assert-common (deck-id keimenon tags suspend links)
+  "Assert common fields shared by all thema types.
+DECK-ID, KEIMENON, TAGS, SUSPEND, and LINKS are validated."
   (cl-assert (integerp deck-id) nil "Deck-id value must be an integer.")
-  (cl-assert (stringp type) nil "Type must be a string.")
   (cl-assert (stringp keimenon) nil "Keimenon must be a string.")
-  (cl-assert (or (null hypothesis)
-		 (and (listp hypothesis)
-		      (= (length hypothesis) 1)))
-	     nil "Hypothesis value must be a list of a single item or nil.")
-  (cl-assert (and (listp answer)
-		  (= (length answer) 1))
-	     nil "Answer value must be a list of a single item")
-  (cl-assert (listp tags) nil "Tags must be a list.")
-  (cl-assert (or (= suspend 0)
-		 (= suspend 1))
-	     nil "Suspend value must either 0 or 1")
-  (cl-assert (listp links) nil "Links must be a list")
+  (cl-assert (and (listp tags) (cl-every #'stringp tags)) nil "Tags must be a list of strings.")
+  (cl-assert (memq suspend '(0 1)) nil "Suspend value must be 0 or 1.")
+  (cl-assert (and (listp links) (cl-every #'stringp links)) nil "Links must be a list of strings."))
+
+(defun gnosis-add-thema--dispatch (id deck-id type keimenon hypothesis
+				      answer parathema tags suspend links)
+  "Dispatch thema creation or update for ID.
+When ID is \"NEW\", create via `gnosis-add-thema-fields'.
+Otherwise, update via `gnosis-update-thema'."
   (if (equal id "NEW")
       (gnosis-add-thema-fields deck-id type keimenon (or hypothesis (list ""))
 			       answer parathema tags suspend links)
     (gnosis-update-thema id keimenon hypothesis answer parathema tags links deck-id type)))
 
+(defun gnosis-add-thema--basic (id deck-id type keimenon hypothesis
+				   answer parathema tags suspend links)
+  "Add or update a basic thema."
+  (gnosis-add-thema--assert-common deck-id keimenon tags suspend links)
+  (cl-assert (or (null hypothesis)
+		 (and (listp hypothesis) (= (length hypothesis) 1)))
+	     nil "Hypothesis must be a list of a single item or nil.")
+  (cl-assert (and (listp answer) (= (length answer) 1))
+	     nil "Answer must be a list of a single item.")
+  (gnosis-add-thema--dispatch id deck-id type keimenon hypothesis
+			      answer parathema tags suspend links))
+
 (defun gnosis-add-thema--double (id deck-id type keimenon hypothesis
 				    answer parathema tags suspend links)
-  "Double thema format.
-
-Changes TYPE to basic & inserts a second basic thema with ANSWER
-and KEIMENON reversed."
-  (cl-assert (integerp deck-id) nil "Deck-id value must be an integer.")
-  (cl-assert (stringp type) nil "Type must be a string.")
-  (cl-assert (stringp keimenon) nil "Keimenon must be a string.")
-  (cl-assert (listp hypothesis) nil "Hypothesis value must be a list.")
+  "Add a double thema (two basic themata with reversed Q/A)."
+  (gnosis-add-thema--assert-common deck-id keimenon tags suspend links)
+  (cl-assert (listp hypothesis) nil "Hypothesis must be a list.")
   (cl-assert (and (listp answer) (= (length answer) 1))
-	     nil "Answer value must be a list of a single item")
-  (cl-assert (listp tags) nil "Tags must be a list.")
-  (cl-assert (or (= suspend 0) (= suspend 1)) nil "Suspend value must either 0 or 1")
-  (cl-assert (listp links) nil "Links must be a list")
-  ;; Change type to basic
+	     nil "Answer must be a list of a single item.")
   (let ((type "basic")
 	(hypothesis (or hypothesis (list ""))))
     (if (equal id "NEW")
@@ -1046,142 +1035,60 @@ and KEIMENON reversed."
 				   answer parathema tags suspend links)
 	  (gnosis-add-thema-fields deck-id type (car answer) hypothesis
 				   (list keimenon) parathema tags suspend links))
-      ;; There should not be a double type thema in database to
-      ;; update.  This is used for testing purposes.
       (gnosis-update-thema id keimenon hypothesis answer parathema tags links deck-id type))))
 
 (defun gnosis-add-thema--mcq (id deck-id type keimenon hypothesis
 				answer parathema tags suspend links)
-  "Helper function for MCQ thema type.
-
-Provide assertions for MCQ type themata.
-
-DECK-ID: ID for deck.
-ID: Integer for thema ID.
-TYPE: String for type, must be \"mcq\".
-HYPOTHESIS: List of strings or nil, hypothesis in MCQ thema types
-serve as choices to select from.
-ANSWER: List of one time, the right answer.  Must be member of
-HYPOTHESIS.
-TAGS: List of tags.
-PARATHEMA: Parathema for THEMA.
-SUSPEND: integer value, 1 or 0.
-LINKS: list of strings."
-  (cl-assert (integerp deck-id) nil "Deck-id value must be an integer.")
-  (cl-assert (string= type "mcq") nil "TYPE value must be \"mcq\".")
-  (cl-assert (stringp keimenon) nil "Keimenon must be a string.")
-  (cl-assert (and (listp hypothesis)
-		  (> (length hypothesis) 1))
-	     nil "Hypothesis value must be a list greater than 1 item.")
-  (cl-assert (and (listp answer)
-		  (= (length answer) 1)
+  "Add or update an MCQ thema."
+  (gnosis-add-thema--assert-common deck-id keimenon tags suspend links)
+  (cl-assert (string= type "mcq") nil "TYPE must be \"mcq\".")
+  (cl-assert (and (listp hypothesis) (> (length hypothesis) 1))
+	     nil "Hypothesis must be a list of more than 1 item.")
+  (cl-assert (and (listp answer) (= (length answer) 1)
 		  (member (car answer) hypothesis))
-	     nil "Answer value must be a single item, member of the Hypothesis")
-  (cl-assert (and (listp tags)
-		  (cl-every 'stringp tags))
-	     nil "Tags must be a list.")
-  (cl-assert (or (= suspend 0)
-		 (= suspend 1))
-	     nil "Suspend value must either 0 or 1")
-  (cl-assert (and (listp links)
-		  (cl-every 'stringp links))
-	     nil "Links must be a list")
-  (if (equal id "NEW")
-      (gnosis-add-thema-fields deck-id type keimenon (or hypothesis (list ""))
-			      answer parathema tags suspend links)
-    (gnosis-update-thema id keimenon hypothesis answer parathema tags links deck-id type)))
+	     nil "Answer must be a single item, member of hypothesis.")
+  (gnosis-add-thema--dispatch id deck-id type keimenon hypothesis
+			      answer parathema tags suspend links))
 
 (defun gnosis-add-thema--cloze (id deck-id type keimenon hypothesis
 				  answer parathema tags suspend links)
-  "Helper for cloze type themata.
-
-Provide assertions for cloze type themata.
-
-DECK-ID: ID for deck.
-ID: Integer for thema ID.
-TYPE: String for type, must be \"cloze\".
-HYPOTHESIS: List of strings or nil, hypothesis in cloze thema types
-serve as hints.
-ANSWER: List of answers for clozes.
-TAGS: List of tags.
-PARATHEMA: Parathema for thema.
-SUSPEND: integer value, 1 or 0.
-LINKS: list of strings."
-  (cl-assert (integerp deck-id) nil "Deck-id value must be an integer.")
-  (cl-assert (string= type "cloze") nil "Type for cloze type must be \"cloze\".")
-  (cl-assert (stringp keimenon) nil "Keimenon must be a string.")
-  (cl-assert (or (>= (length answer) (length hypothesis))
-		 (null hypothesis))
-	     nil
-	     "Hypothesis value must be a list or nil, less or equal in length of Answer.")
-  (cl-assert (listp answer) nil "Answer value must be a list.")
-  (cl-assert (and (listp tags)
-		  (cl-every 'stringp tags))
-	     nil "Tags must be a list of strings..")
-  (cl-assert (or (= suspend 0)
-		 (= suspend 1))
-	     nil "Suspend value must either 0 or 1")
-  (cl-assert (and (listp links)
-		  (cl-every 'stringp links))
-	     nil "Links must be a list")
+  "Add or update a cloze thema."
+  (gnosis-add-thema--assert-common deck-id keimenon tags suspend links)
+  (cl-assert (string= type "cloze") nil "TYPE must be \"cloze\".")
+  (cl-assert (or (null hypothesis) (>= (length answer) (length hypothesis)))
+	     nil "Hypothesis length must not exceed answer length.")
+  (cl-assert (listp answer) nil "Answer must be a list.")
   (cl-assert (gnosis-cloze-check keimenon answer) nil
-	     "Clozes (answer) values are not part of keimenon")
+	     "Cloze answers are not part of keimenon.")
   (let ((keimenon-clean (gnosis-cloze-remove-tags keimenon)))
     (if (equal id "NEW")
 	(if (null answer)
-	    ;; if answer is left null, extract all contents from keimenon.
 	    (let* ((contents (gnosis-cloze-extract-contents keimenon))
 		   (clozes (gnosis-cloze-extract-answers contents))
 		   (hints (gnosis-cloze-extract-hints contents)))
 	      (cl-loop for cloze in clozes
 		       for hint in hints
-		       do
-		       (gnosis-add-thema-fields deck-id type keimenon-clean hint cloze parathema
-						tags suspend links)))
+		       do (gnosis-add-thema-fields deck-id type keimenon-clean hint cloze
+						   parathema tags suspend links)))
 	  (gnosis-add-thema-fields deck-id type keimenon-clean (or hypothesis (list ""))
 				   answer parathema tags suspend links))
       (gnosis-update-thema id keimenon-clean hypothesis answer parathema tags links deck-id type))))
 
 (defun gnosis-add-thema--mc-cloze (id deck-id type keimenon hypothesis
 				  answer parathema tags suspend links)
-  "Helper for mc-cloze type themata.
-
-Provide assertions for mc-cloze type themata.
-
-DECK-ID: ID for deck.
-ID: Integer for thema ID.
-TYPE: String for type, must be \"mc-cloze\".
-HYPOTHESIS: List of strings or nil, hypothesis in mc-cloze thema types
-serve as answer options.
-ANSWER: List of answers for mc-clozes.
-TAGS: List of tags.
-PARATHEMA: Parathema for thema.
-SUSPEND: integer value, 1 or 0.
-LINKS: list of strings."
-  (cl-assert (integerp deck-id) nil "Deck-id value must be an integer.")
-  (cl-assert (string= type "mc-cloze") nil "TYPE value must be \"mc-cloze\" .")
-  (cl-assert (stringp keimenon) nil "Keimenon must be a string.")
-  (cl-assert (and (listp hypothesis)
-		  (> (length hypothesis) (length answer)))
-	     nil "Hypothesis value must be a list, greater in length of ANSWER.")
+  "Add or update an mc-cloze thema."
+  (gnosis-add-thema--assert-common deck-id keimenon tags suspend links)
+  (cl-assert (string= type "mc-cloze") nil "TYPE must be \"mc-cloze\".")
+  (cl-assert (and (listp hypothesis) (> (length hypothesis) (length answer)))
+	     nil "Hypothesis must be a list, longer than answer.")
   (cl-assert (and (listp answer) (length= answer 1)
 		  (member (car answer) hypothesis))
-	     nil
-	     "ANSWER value must be a list of one item.")
-  (cl-assert (and (listp tags)
-		  (cl-every 'stringp tags))
-	     nil "Tags must be a list of strings.")
-  (cl-assert (or (= suspend 0)
-		 (= suspend 1))
-	     nil "Suspend value must either 0 or 1")
-  (cl-assert (listp links) nil "Links must be a list")
+	     nil "Answer must be a list of one item, member of hypothesis.")
   (cl-assert (gnosis-cloze-check keimenon answer) nil
-	     "Clozes (answer) values are not part of keimenon")
+	     "Cloze answers are not part of keimenon.")
   (let ((keimenon-clean (gnosis-cloze-remove-tags keimenon)))
-    (if (equal id "NEW")
-	(gnosis-add-thema-fields deck-id type keimenon-clean (or hypothesis (list ""))
-				 answer parathema tags suspend links)
-      (gnosis-update-thema id keimenon-clean hypothesis answer parathema tags links deck-id type))))
+    (gnosis-add-thema--dispatch id deck-id type keimenon-clean hypothesis
+				answer parathema tags suspend links)))
 
 ;;;###autoload
 (defun gnosis-add-thema (deck type &optional keimenon hypothesis
@@ -1705,6 +1612,8 @@ Reopens the gnosis database after successful pull."
          (when (zerop (process-exit-status proc))
 	   (condition-case err
 	       (progn
+		 (when (and gnosis-db (emacsql-live-p gnosis-db))
+		   (emacsql-close gnosis-db))
 		 (setf gnosis-db
                        (emacsql-sqlite-open (expand-file-name "gnosis.db" gnosis-dir)))
 		 (gnosis-db-init)
