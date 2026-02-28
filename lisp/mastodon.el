@@ -621,8 +621,7 @@ Calls `mastodon-tl--get-buffer-type', which see."
               (append thing-at-point-provider-alist
                       '((url . mastodon--url-at-point))))
   ;; notifs timer
-  (when (and mastodon-notifications-alerts
-             (require 'alert nil :noerror))
+  (when mastodon-notifications-alerts
     (mastodon-notifications--update-with-timer)))
 
 ;;;###autoload

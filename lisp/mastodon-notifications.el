@@ -34,7 +34,6 @@
 (require 'cl-lib)
 (require 'mastodon-widget)
 (require 'map)
-(require 'alert)
 
 (autoload 'mastodon-http--api "mastodon-http")
 (autoload 'mastodon-http--get-params-async-json "mastodon-http")
@@ -1044,12 +1043,14 @@ When FORCE, skip all checks and show an alert (for debugging)."
     (when (or force
               (and (> count 0)
                    (not mastodon-notifications-notify-shown)))
-      (alert (format "New notifications: <b>%s</b>" count)
-             :title "mastodon.el"
-             ;; adding an alert.el rule as per above doesn't always work
-             ;; if a non-mastodon.el buffer is active (despite the 'buried
-             ;; status setting), so let's just give it a masto buffer:
-             :buffer (car (mastodon-live-buffers)))
+      (if (not (require 'alert :noerror))
+          (message "mastodon.el: new notifications %s" count)
+        (alert (format "New notifications: <b>%s</b>" count)
+               :title "mastodon.el"
+               ;; adding an alert.el rule as per above doesn't always work
+               ;; if a non-mastodon.el buffer is active (despite the 'buried
+               ;; status setting), so let's just give it a masto buffer:
+               :buffer (car (mastodon-live-buffers))))
       (unless force
         ;; we nil this in `mastodon-notifications-get':
         (setq mastodon-notifications-notify-shown t)))))
@@ -1108,15 +1109,22 @@ Callback is `mastodon-notifications--update-check-cb'."
   "Callback functions for handling unread notifs count response RESP."
   (let ((count (alist-get 'count resp)))
     (when (> count 0)
-      (if (not (mastodon-tl--buffer-type-eq 'notifications))
+      ;; (message "%s" (current-buffer)) ;; => *mastodon-home* / *messages*
+
+      ;; FIXME: unsure how to check if notifications buffer is active
+      ;; here, as (current-buffer) returns different things if this is
+      ;; triggered with notifs buffer active! so let's skip it for now,
+      ;; and only ever notify, not update.
+
+      ;; (if ;;(not (mastodon-tl--buffer-type-eq 'notifications))
+          ;; (not mastodon-notifications-update-when-unread)
           (mastodon-notifications-notify count)
-        ;; (message "New mastodon.el notificatigon(s): %s" count))
         ;; run updates if in notifs buffer:
-        (message "Updating mastodon.el notifications...")
-        (undo-boundary)
-        (mastodon-tl-update)
-        (undo-boundary)
-        (message "Updating mastodon.el notifications... Done.")))
+        ;; (message "Updating mastodon.el notifications...")
+        ;; (undo-boundary)
+        ;; (mastodon-tl-update)
+        ;; (undo-boundary)
+        ;; (message "Updating mastodon.el notifications... Done.")))
     ;; cancel and set new timer:
     (mastodon-notifications-cancel-timer)
     (mastodon-notifications--update-with-timer)))
