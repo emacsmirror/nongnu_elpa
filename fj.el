@@ -3112,21 +3112,25 @@ END-PAGE means we are at the end, don't go again."
             ;; - on loading another page
             ;; - on reload (`g'), only after loading all pages.
             (when (or
-                   ;; on first load?:
+                   ;; on first load:
                    (and init-page (= (string-to-number init-page) 1))
-                   ;; on paginate?:
+                   ;; on paginate:
                    (and (not init-page) (not end-page))
-                   ;; after last reload?:
+                   ;; after last reload:
                    final-load-p)
               ;; shr-render-region and regex props:
-              (let ((render-point ;; make point arg first item after head item
-                     (save-excursion
-                       (goto-char (point-min))
-                       ;; fj-item-body assumes body is not "":
-                       (text-property-search-forward 'fj-item-data)
-                       (point))))
+              (let ((render-point
+                     ;; on clicking "Load more", only render from that point:
+                     (if (and (not init-page) (not end-page))
+                         point
+                       ;; else make render from first item after head item:
+                       (save-excursion
+                         (goto-char (point-min))
+                         ;; fj-item-body assumes body is not "":
+                         (text-property-search-forward 'fj-item-data)
+                         (point)))))
                 (fj-render-item-bodies render-point)))
-            ;; maybe add a "more" link:
+            ;; if view still has more items, add a "more" link:
             (fj-issue-timeline-more-link-mayb))))))))
 
 (defun fj-reload-paginated-pages-maybe (end-page page)
