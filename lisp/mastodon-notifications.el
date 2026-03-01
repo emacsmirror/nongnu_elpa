@@ -35,6 +35,9 @@
 (require 'mastodon-widget)
 (require 'map)
 
+(declare-function alert-add-rule "alert")
+(declare-function alert "alert")
+
 (autoload 'mastodon-http--api "mastodon-http")
 (autoload 'mastodon-http--get-params-async-json "mastodon-http")
 (autoload 'mastodon-http--post "mastodon-http")
