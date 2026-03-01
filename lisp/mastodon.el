@@ -51,7 +51,6 @@
 
 (declare-function discover-add-context-menu "discover")
 (declare-function emojify-mode "emojify")
-(declare-function request "request")
 
 (autoload 'mastodon-auth--get-account-name "mastodon-auth")
 (autoload 'mastodon-auth--user-acct "mastodon-auth")
