@@ -6,7 +6,7 @@
 ;; Package-Requires: ((emacs "29.1") (fedi "0.2") (tp "0.8") (transient "0.10.0") (magit "4.3.8"))
 ;; Keywords: git, convenience
 ;; URL: https://codeberg.org/martianh/fj.el
-;; Version: 0.32
+;; Version: 0.33
 ;; Separator: -
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -3027,7 +3027,8 @@ Conditionally called from the end of `fj-item-view-more-cb'."
                            (plist-put viewargs :page new-page)))
           (fj-issue-get-timeline-async
            repo owner number new-page limit
-           #'fj-item-view-more-cb (current-buffer) (point) nil page))))))
+           #'fj-item-view-more-cb (current-buffer) (point) nil
+           (or end-page page)))))))
 
 (defun fj-item-view-more ()
   "Load more items to the timeline, if it has more items.
@@ -3066,7 +3067,7 @@ reloading a paginated view."
 JSON is the parsed HTTP response, BUF is the buffer to add to, POINT is
 where it was prior to updating.
 If INIT-PAGE, do not update :page in viewargs.
-END-PAGE means we are at the end, don't go again."
+END-PAGE should be a string of the highest page number to paginate to."
   (with-current-buffer buf
     (save-excursion
       (goto-char point)
@@ -3112,21 +3113,25 @@ END-PAGE means we are at the end, don't go again."
             ;; - on loading another page
             ;; - on reload (`g'), only after loading all pages.
             (when (or
-                   ;; on first load?:
+                   ;; on first load:
                    (and init-page (= (string-to-number init-page) 1))
-                   ;; on paginate?:
+                   ;; on paginate:
                    (and (not init-page) (not end-page))
-                   ;; after last reload?:
+                   ;; after last reload:
                    final-load-p)
               ;; shr-render-region and regex props:
-              (let ((render-point ;; make point arg first item after head item
-                     (save-excursion
-                       (goto-char (point-min))
-                       ;; fj-item-body assumes body is not "":
-                       (text-property-search-forward 'fj-item-data)
-                       (point))))
+              (let ((render-point
+                     ;; on clicking "Load more", only render from that point:
+                     (if (and (not init-page) (not end-page))
+                         point
+                       ;; else make render from first item after head item:
+                       (save-excursion
+                         (goto-char (point-min))
+                         ;; fj-item-body assumes body is not "":
+                         (text-property-search-forward 'fj-item-data)
+                         (point)))))
                 (fj-render-item-bodies render-point)))
-            ;; maybe add a "more" link:
+            ;; if view still has more items, add a "more" link:
             (fj-issue-timeline-more-link-mayb))))))))
 
 (defun fj-reload-paginated-pages-maybe (end-page page)
