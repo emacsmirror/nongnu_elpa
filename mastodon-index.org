@@ -325,10 +325,9 @@
 | mastodon-media--preview-max-height                 | Max height of any media attachment preview to be shown in timelines.         |
 | mastodon-mode-hook                                 | Hook run when entering Mastodon mode.                                        |
 | mastodon-notifications-alert-style                 | The type of alert.el style to use for mastodon.el notification alerts.       |
-| mastodon-notifications-alerts                      | Whether to enable alert.el alerts.                                           |
-| mastodon-notifications-check-for-updates           | Whether to regularly check for new notifications.                            |
+| mastodon-notifications-alerts                      | Whether to enable alert.el unread-notification alerts.                       |
+| mastodon-notifications-alerts-interval             | How often to check for new notifications, in seconds.                        |
 | mastodon-notifications-grouped-names-count         | The number of notification authors to display.                               |
-| mastodon-notifications-updates-interval            | How often to check for new notifications, in seconds.                        |
 | mastodon-profile-mode-hook                         | Hook run after entering or leaving `mastodon-profile-mode'.                  |
 | mastodon-profile-note-in-foll-reqs                 | If non-nil, show a user's profile note in follow request notifications.      |
 | mastodon-profile-note-in-foll-reqs-max-length      | The max character length for user profile note in follow requests.           |

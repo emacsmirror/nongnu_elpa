@@ -96,8 +96,7 @@
 (defvar mastodon-notifications-grouped-names-count)
 (defvar mastodon-tl--link-keymap)
 (defvar mastodon-tl--update-point)
-(defvar mastodon-notifications-updates-interval)
-(defvar mastodon-notifications-check-for-updates)
+(defvar mastodon-notifications-alerts-interval)
 (defvar mastodon-notifications-alert-style)
 (defvar mastodon-notifications-alerts)
 ;;; VARIABLES
@@ -1057,43 +1056,44 @@ When FORCE, skip all checks and show an alert (for debugging)."
 
 (defun mastodon-notifications--update-with-timer ()
   "Run a timer to update notifications. Added to `mastodon-mode-hook'."
-  ;; if no buffers: cancel our timer and do nothing else:
-  (if (and (not (mastodon-live-buffers))
-           ;; if we are loading a first mastodon buffer, the previous
-           ;; check fails, as `mastodon-mode-hook' necessariliy runs
-           ;; before we have buf-spec, which
-           ;; `mastodon-tl--get-buffer-type' depends on, and if we set
-           ;; buf-spec before enabling the mode, buf-spec is lost. so
-           ;; let's also check if the current buffer prefix is *mastodon-,
-           ;; which it will be when first calling `mastodon' at least
-           ;; (though not necessarily when loading other first mastodon.el
-           ;; buffers, such as new toot):
-           (not (string-prefix-p "*mastodon-" (buffer-name))))
-      ;; if not masto buffers: cancel everything:
-      (mastodon-notifications-cancel-timer)
-    (when mastodon-notifications-check-for-updates
-      ;; if a timer has already run but somehow the variable has not been
-      ;; nilled, assume it is a leftover and cancel it, otherwise our
-      ;; unless check below will always fail and no new timer will be
-      ;; created.
-      ;; NB: this gets called:
-      ;; - on creating a new mastodon.el buffer,
-      ;; - if an existing timer is run.
-      ;; in both cases, `timerp' should fail, but sometimes we have a
-      ;; zombie one somehow:
-      (when (and (timerp mastodon-notifications-timer)
-                 (timer--triggered mastodon-notifications-timer))
-        (mastodon-notifications-cancel-timer))
-      ;; maybe we can remove this unless check, and just always cancel and
-      ;; restart? that would have the effect of making the timer always
-      ;; run mastodon-notifications-updates-interval seconds after opening
-      ;; a new mastodon.el buffer, or effectively only showing an alert if
-      ;; the user stops opening buffers:
-      (unless mastodon-notifications-timer
-        ;; set new timer if we don't have one:
-        (setq mastodon-notifications-timer
-              (run-at-time mastodon-notifications-updates-interval
-                           nil #'mastodon-notifications--update-check))))))
+  (cond
+   ;; if no buffers: cancel our timer and do nothing else:
+   ((and (not (mastodon-live-buffers))
+         ;; if we are loading a first mastodon.el buffer, the previous
+         ;; check fails, as `mastodon-mode-hook' necessariliy runs
+         ;; before we have buf-spec, which
+         ;; `mastodon-tl--get-buffer-type' relies on, and if we set
+         ;; buf-spec earlier, enabling the mode wipes it. So
+         ;; let's also check if the current buffer prefix is *mastodon-,
+         ;; which it will be when first calling `mastodon' at least
+         ;; (though not necessarily when loading other first mastodon.el
+         ;; buffers, such as new toot):
+         (not (string-prefix-p "*mastodon-" (buffer-name))))
+    ;; if not masto buffers: cancel everything:
+    (mastodon-notifications-cancel-timer))
+   ;; if a timer has already run but somehow
+   ;; `mastodon-notifications-timer' has not been nilled, assume it is a
+   ;; leftover and cancel it, otherwise our unless check below will always
+   ;; fail and no new timer will be created.
+   ;; NB: this gets called:
+   ;; - on creating a new mastodon.el buffer,
+   ;; - if an existing timer is run.
+   ;; in both cases, `timerp' should fail, but sometimes we have a
+   ;; zombie one somehow:
+   ((and (timerp mastodon-notifications-timer)
+         (timer--triggered mastodon-notifications-timer))
+    (mastodon-notifications-cancel-timer))
+   ;; maybe we can remove this unless check, and just always cancel and
+   ;; restart? that would have the effect of making the timer always
+   ;; run `mastodon-notifications-alerts-interval' seconds after opening
+   ;; a new mastodon.el buffer, or effectively only showing an alert if
+   ;; the user stops opening buffers:
+   (t
+    (unless mastodon-notifications-timer
+      ;; set new timer if we don't have one:
+      (setq mastodon-notifications-timer
+            (run-at-time mastodon-notifications-alerts-interval
+                         nil #'mastodon-notifications--update-check))))))
 
 (defun mastodon-notifications--update-check ()
   "Get unread notifications count from the server, asynchronously.
@@ -1114,7 +1114,7 @@ Callback is `mastodon-notifications--update-check-cb'."
       ;; FIXME: unsure how to check if notifications buffer is active
       ;; here, as (current-buffer) returns different things if this is
       ;; triggered with notifs buffer active! so let's skip it for now,
-      ;; and only ever notify, not update.
+      ;; and only ever notify, not update the notifs buffer.
 
       ;; (if ;;(not (mastodon-tl--buffer-type-eq 'notifications))
       ;; (not mastodon-notifications-update-when-unread)

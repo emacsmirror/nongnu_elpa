@@ -6,7 +6,7 @@
 ;; Author: Johnson Denen <johnson.denen@gmail.com>
 ;;         Marty Hiatt <mousebot@disroot.org>
 ;; Maintainer: Marty Hiatt <mousebot@disroot.org>
-;; Version: 2.0.10
+;; Version: 2.0.11
 ;; Package-Requires: ((emacs "29.1") (persist "0.8") (tp "0.8"))
 ;; Homepage: https://codeberg.org/martianh/mastodon.el
 
@@ -200,16 +200,17 @@ A count of 2 for example means to display like so: \"Bob, Jenny
 and X others...\"."
   :type '(integer))
 
-(defcustom mastodon-notifications-check-for-updates t
-  "Whether to regularly check for new notifications."
-  :type '(boolean))
-
-(defcustom mastodon-notifications-updates-interval 60
+(defcustom mastodon-notifications-alerts-interval 60
   "How often to check for new notifications, in seconds."
   :type '(integer))
 
-(defcustom mastodon-notifications-alerts nil
-  "Whether to enable alert.el alerts."
+(defcustom mastodon-notifications-alerts t
+  "Whether to enable alert.el unread-notification alerts.
+If this is enabled and alert.el is installed, an alert.el notification
+will be shown using `mastodon-notifications-alert-style' as its alert
+style. If this is enabled but alert.el is not installed, alerts will be
+shown using `message'.
+Alerts are only checked for when at least 1 mastodon.el buffer is open."
   :type '(boolean))
 
 (defcustom mastodon-notifications-alert-style alert-default-style
