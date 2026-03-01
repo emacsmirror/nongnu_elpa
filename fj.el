@@ -3027,7 +3027,8 @@ Conditionally called from the end of `fj-item-view-more-cb'."
                            (plist-put viewargs :page new-page)))
           (fj-issue-get-timeline-async
            repo owner number new-page limit
-           #'fj-item-view-more-cb (current-buffer) (point) nil page))))))
+           #'fj-item-view-more-cb (current-buffer) (point) nil
+           (or end-page page)))))))
 
 (defun fj-item-view-more ()
   "Load more items to the timeline, if it has more items.
@@ -3066,7 +3067,7 @@ reloading a paginated view."
 JSON is the parsed HTTP response, BUF is the buffer to add to, POINT is
 where it was prior to updating.
 If INIT-PAGE, do not update :page in viewargs.
-END-PAGE means we are at the end, don't go again."
+END-PAGE should be a string of the highest page number to paginate to."
   (with-current-buffer buf
     (save-excursion
       (goto-char point)
