@@ -632,11 +632,15 @@ JSON is the filters data."
     (table-justify-column 'center)
     (table-forward-cell) ;; col 2
     (table-justify-column 'center)
-    (while (re-search-forward ;; goto end of table:
-            (concat table-cell-horizontal-chars
-                    (make-string 1 table-cell-intersection-char)
-                    "\n")
-            nil :no-error))))
+    (mastodon-views--end-of-table)))
+
+(defun mastodon-views--end-of-table ()
+  ""
+  (while (re-search-forward ;; goto end of table:
+          (concat table-cell-horizontal-chars
+                  (make-string 1 table-cell-intersection-char)
+                  "\n")
+          nil :no-error)))
 
 (defun mastodon-views--insert-filter (filter)
   "Insert a single FILTER."
