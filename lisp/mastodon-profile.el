@@ -611,15 +611,14 @@ FIELDS means provide a fields vector fetched by other means."
   "Format field pairs (a.k.a profile metadata) in FIELDS."
   ;; prevent `mastodon-tl--render-text' from adding any newlines:
   (let* ((mastodon-tl--no-fill-on-render t)
+         ;; render sans variable pitch:
+         (mastodon-tl--enable-proportional-fonts nil)
          ;; to set cell witdth right, we have to render any html first:
-         (rendered (mapcar
-                    (lambda (x)
-                      (cons
-                       (mastodon-tl--render-text (car x) x)
-                       ;; (replace-regexp-in-string "\n" "" (car x)) x)
-                       (mastodon-tl--render-text  (cdr x) x)))
-                    ;; (replace-regexp-in-string "\n" "" (cdr x)) x)))
-                    fields))
+         (rendered (mapcar (lambda (x)
+                             (cons
+                              (mastodon-tl--render-text (car x) x)
+                              (mastodon-tl--render-text  (cdr x) x)))
+                           fields))
          (left-width (apply #'max (mapcar #'length
                                           (mapcar #'car rendered))))
          (right-longest (apply #'max (mapcar #'length
