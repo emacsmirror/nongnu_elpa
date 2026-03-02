@@ -607,18 +607,54 @@ FIELDS means provide a fields vector fetched by other means."
     (when fields
       (mastodon-tl--map-alist-vals-to-alist 'name 'value fields))))
 
-(defun mastodon-profile--fields-insert (fields)
-  "Format and insert field pairs (a.k.a profile metadata) in FIELDS."
-  (let* ((car-fields (mapcar #'car fields))
-         (left-width (apply #'max (mapcar #'length car-fields))))
-    (mapconcat (lambda (field)
-                 (mastodon-tl--render-text
-                  (concat
-                   (format "_ %s " (car field))
-                   (make-string (- (+ 1 left-width) (length (car field))) ?_)
-                   (format " :: %s" (cdr field)))
-                  field)) ; hack to make links tabstops
-               fields "")))
+(defun mastodon-profile--format-fields (fields)
+  "Format field pairs (a.k.a profile metadata) in FIELDS."
+  ;; to set cell witdth right, we have to render any html first:
+  (let* ((rendered (mapcar (lambda (x)
+                             (cons
+                              (mastodon-tl--render-text
+                               (string-clean-whitespace (car x)) x)
+                              (mastodon-tl--render-text
+                               (replace-regexp-in-string
+                                "\\n" "" (cdr x))
+                               x)))
+                           fields))
+         (left-width (apply #'max (mapcar #'length
+                                          (mapcar #'car rendered))))
+         ;; TODO: some people have obnoxiously long entries, we should set a max
+         ;; of (- window-width left-width):
+         (right-longest (apply #'max (mapcar #'length
+                                             (mapcar #'cdr rendered))))
+         (right-width (min
+                       (- (frame-width) (+ 10 left-width))
+                       ;; 20
+                       right-longest))
+         (table-cell-horizontal-chars (if (char-displayable-p ?–)
+                                          "–"
+                                        "-")))
+    (setq masto-temp-fields fields)
+    (with-temp-buffer
+      (switch-to-buffer (current-buffer))
+      (erase-buffer)
+      (let ((beg (point)))
+        (mastodon-profile--insert-fields rendered)
+        (table-capture beg (point) "|" "\n" nil
+                       ;; `table-insert' can take a list of col widths:
+                       `(,(+ 2 left-width) ,(+ 2 right-width)))
+        (table-justify-column 'center)
+        (table-forward-cell) ;; col 2
+        (table-justify-column 'center)
+        (buffer-string)))))
+
+(defun mastodon-profile--insert-fields (fields)
+  ""
+  (let ((mastodon-tl--enable-proportional-fonts nil))
+    (insert
+     (mapconcat
+      (lambda (field)
+        (concat " " (string-trim (car field) "\n ")
+                " | " (string-trim (cdr field) " \n")))
+      fields "\n"))))
 
 (defun mastodon-profile--get-statuses-pinned (account)
   "Fetch the pinned toots for ACCOUNT."
@@ -747,7 +783,7 @@ MAX-ID is a flag to include the max_id pagination parameter."
              ;; meta fields:
              (when fields
                (concat "\n" (mastodon-tl--set-face
-                             (mastodon-profile--fields-insert fields)
+                             (mastodon-profile--format-fields fields)
                              'success)))
              "\n"
              ;; Joined date:
