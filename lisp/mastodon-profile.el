@@ -708,6 +708,54 @@ DATA is an account data from a moved field in profile data."
         'help-echo (concat "Browse user profile of " handle))
        "\n\n"))))
 
+(defun mastodon-profile--insert-counts (toots followers following)
+  "Insert counts as a pretty table.
+TOOTS FOLLOWERS and FOLLOWING are each integers."
+  (let ((table-cell-horizontal-chars (if (char-displayable-p ?–)
+                                         "–"
+                                       "-"))
+        (toot-cell (concat " TOOTS: " (mastodon-tl--as-string toots)))
+        (followers-cell (concat "FOLLOWERS: "
+                                (mastodon-tl--as-string followers)))
+        (following-cell (concat "FOLLOWING: "
+                                (mastodon-tl--as-string following)))
+        (beg (point)))
+    (insert
+     (concat toot-cell " | " followers-cell " | " following-cell
+             "\n"))
+    (table-capture beg (point) "|" "\n" nil
+                   ;; `table-insert' can take a list of col widths:
+                   `(,(+ 2 (length toot-cell)) ,(+ 2 (length followers-cell))
+                     ,(+ 2 (length following-cell))))
+    (table-justify-column 'center)
+    (table-forward-cell) ;; col 2
+    (table-justify-column 'center)
+    (table-forward-cell) ;; col 3
+    (table-justify-column 'center)
+    (mastodon-views--end-of-table)
+    (add-text-properties beg (point) '(face success))))
+
+(defun mastodon-profile--insert-joined (joined)
+  ""
+  (let ((table-cell-horizontal-chars (if (char-displayable-p ?–)
+                                         "–"
+                                       "-"))
+        (beg (point))
+        (join-str "Joined: ")
+        (date-str (mastodon-profile--format-joined-date-string joined)))
+    (insert join-str "|" date-str)
+    (table-capture beg (point) "|" "\n" nil
+                   ;; `table-insert' can take a list of col widths:
+                   `(,(+ 2 (length join-str)) ,(+ 2 (length date-str))))
+    (table-justify-column 'center)
+    (table-forward-cell) ;; col 2
+    (table-justify-column 'center)
+    (table-forward-cell) ;; col 3
+    (table-justify-column 'center)
+    ;; (table-release)
+    (mastodon-views--end-of-table)
+    (add-text-properties beg (point) '(face success))))
+
 (defun mastodon-profile--make-profile-buffer-for
     (account endpoint-type update-function
              &optional no-reblogs headers no-replies only-media tag max-id)
@@ -783,28 +831,23 @@ MAX-ID is a flag to include the max_id pagination parameter."
                (mastodon-profile--render-moved .moved))
              ;; profile note:
              (mastodon-tl--render-text .note account) ; account = tab-stops in profile
-             ;; meta fields:
-             (when fields
-               (concat "\n" (mastodon-tl--set-face
-                             (mastodon-profile--format-fields fields)
-                             'success)))
-             "\n"
-             ;; Joined date:
-             (propertize
-              (mastodon-profile--format-joined-date-string .created_at)
-              'face 'success)
-             "\n\n")
-            'profile-json account)
-           ;; insert counts
-           (mastodon-tl--set-face
-            (concat " " mastodon-tl--horiz-bar "\n"
-                    " TOOTS: " (mastodon-tl--as-string .statuses_count) " | "
-                    "FOLLOWERS: " (mastodon-tl--as-string .followers_count) " | "
-                    "FOLLOWING: " (mastodon-tl--as-string .following_count) "\n"
-                    " " mastodon-tl--horiz-bar "\n\n")
-            'success)
-           ;; insert relationship (follows)
-           (let-alist relationships
+             "\n")
+            'profile-json account))
+          ;; Joined date:
+          (mastodon-profile--insert-joined .created_at)
+          ;; meta fields:
+          (when fields
+            (insert
+             (mastodon-tl--set-face
+              (mastodon-profile--format-fields fields)
+              'success)))
+          ;; insert counts
+          (mastodon-profile--insert-counts .statuses_count
+                                           .followers_count .following_count)
+          (insert "\n")
+          ;; insert relationship (follows)
+          (let-alist relationships
+            (insert
              (if (not .id)
                  ;; sharkey has no relationships endpoint, returns 500.
                  ;; or poss it has a different endpoint
@@ -878,7 +921,7 @@ NO-REBLOGS, NO-REPLIES, ONLY-MEDIA and TAG."
   "Format a human-readable Joined string from timestamp JOINED.
 JOINED is the `created_at' field in profile account JSON, and of
 the format \"2000-01-31T00:00:00.000Z\"."
-  (format-time-string "Joined: %d %B %Y"
+  (format-time-string "%d %B %Y"
                       (parse-iso8601-time-string joined)))
 
 (defun mastodon-profile-get-toot-author (&optional max-id)
