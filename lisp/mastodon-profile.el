@@ -647,10 +647,11 @@ Note that it can be a list of values, one for each column."
          (beg (point)))
     (apply insert-fun insert-args)
     (table-capture beg (point) "|" "\n" nil min-cell-width)
-    ;; FIXME: do this by number of cols:
-    (table-justify-column 'center)
-    (table-forward-cell) ;; col 2
-    (table-justify-column 'center)
+    ;; center our content by col:
+    (let* ((cols (nth 4 (table-query-dimension))))
+      (dotimes (x cols)
+        (table-justify-column 'center)
+        (table-forward-cell)))
     ;; (table-release) ;; removes frame, but fixes links
     (mastodon-views--end-of-table)
     (add-text-properties beg (point) '(face 'success))))
