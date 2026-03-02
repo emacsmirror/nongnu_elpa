@@ -681,14 +681,20 @@ NO-REDRAFT means delete toot only."
   (mastodon-toot--with-toot-item
    (let* ((toot (mastodon-toot--base-toot-or-item-json))
           (url (mastodon-http--api (format "statuses/%s" id)))
+          (attachmentsp (mastodon-tl--field 'media_attachments toot))
           (pos (point)))
      (let-alist toot
        (if (not (mastodon-toot--own-toot-p toot))
            (user-error "You can only delete (and redraft) your own toots")
          (when (y-or-n-p (if no-redraft
-                             (format "Delete this toot? ")
-                           (format "Delete and redraft this toot? ")))
-           (let* ((response (mastodon-http--delete url)))
+                             "Delete this toot? "
+                           "Delete and redraft this toot? "))
+           (let* ((params
+                   (when (and attachmentsp
+                              no-redraft
+                              (y-or-n-p "Also delete toot's attachments?"))
+                     `(("delete_media" . "true"))))
+                  (response (mastodon-http--delete url params)))
              (mastodon-http--triage
               response
               (lambda (_)
