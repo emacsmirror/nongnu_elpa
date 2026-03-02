@@ -41,6 +41,7 @@
 (eval-when-compile
   (require 'mastodon-tl))
 (require 'mastodon-widget)
+(require 'table)
 
 (autoload 'mastodon-auth--get-account-id "mastodon-auth")
 (autoload 'mastodon-auth--get-account-name "mastodon-auth.el")
@@ -85,6 +86,8 @@
 (autoload 'mastodon-tl--field-status "mastodon-tl")
 (autoload 'mastodon-toot--with-toot-item "mastodon-toot" nil nil 'macro)
 (autoload 'mastodon-tl--toot-or-base "mastodon-tl")
+(autoload 'mastodon-views--end-of-table "mastodon-views")
+(autoload 'mastodon-tl--buttonify-link "mastodon-tl")
 
 (defvar mastodon-active-user)
 (defvar mastodon-tl--horiz-bar)
@@ -635,7 +638,7 @@ FIELDS means provide a fields vector fetched by other means."
 
 (defun mastodon-profile--pretty-table (insert-fun min-cell-width
                                                   &rest insert-args)
-  "Insert some data and make a pretty table of it with table.el
+  "Insert some data and make a pretty table of it with table.el.
 Call INSERT-FUN with INSERT-ARGS.
 MIN-CELL-WIDTH is for `table-capture'.
 Note that it can be a list of values, one for each column."
@@ -649,7 +652,7 @@ Note that it can be a list of values, one for each column."
     (table-capture beg (point) "|" "\n" nil min-cell-width)
     ;; center our content by col:
     (let* ((cols (nth 4 (table-query-dimension))))
-      (dotimes (x cols)
+      (dotimes (_x cols)
         (table-justify-column 'center)
         (table-forward-cell)))
     ;; (table-release) ;; removes frame, but fixes links
@@ -726,8 +729,7 @@ TOOTS FOLLOWERS and FOLLOWING are each integers."
         (followers-cell (concat "FOLLOWERS: "
                                 (mastodon-tl--as-string followers)))
         (following-cell (concat "FOLLOWING: "
-                                (mastodon-tl--as-string following)))
-        (beg (point)))
+                                (mastodon-tl--as-string following))))
     (mastodon-profile--pretty-table
      (lambda ()
        (insert
