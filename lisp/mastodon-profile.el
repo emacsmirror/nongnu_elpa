@@ -628,35 +628,43 @@ FIELDS means provide a fields vector fetched by other means."
          ;; onto multiple lines:
          (right-width (min
                        (- (frame-width) (+ 10 left-width))
-                       right-longest))
+                       right-longest)))
+    (mastodon-profile--pretty-table
+     #'mastodon-profile--insert-fields
+     `(,(+ 2 left-width) ,(+ 2 right-width)) rendered)))
+
+(defun mastodon-profile--pretty-table (insert-fun min-cell-width
+                                                  &rest insert-args)
+  "Insert some data and make a pretty table of it with table.el
+Call INSERT-FUN with INSERT-ARGS.
+MIN-CELL-WIDTH is for `table-capture'.
+Note that it can be a list of values, one for each column."
+  (let* ((mastodon-tl--no-fill-on-render t)
          (table-cell-horizontal-chars (if (char-displayable-p ?–)
                                           "–"
-                                        "-")))
-    ;; FIXME: do this as a string like the other tables
-    (with-temp-buffer
-      ;; (switch-to-buffer (current-buffer)) ; debug
-      (let ((beg (point)))
-        (mastodon-profile--insert-fields rendered)
-        (table-capture beg (point) "|" "\n" nil
-                       ;; `table-insert' can take a list of col widths:
-                       `(,(+ 2 left-width) ,(+ 2 right-width)))
-        (table-justify-column 'center)
-        (table-forward-cell) ;; col 2
-        (table-justify-column 'center)
-        ;; (table-release) ;; removes frame, but fixes links
-        (buffer-string)))))
+                                        "-"))
+         (mastodon-tl--enable-proportional-fonts nil)
+         (beg (point)))
+    (apply insert-fun insert-args)
+    (table-capture beg (point) "|" "\n" nil min-cell-width)
+    ;; FIXME: do this by number of cols:
+    (table-justify-column 'center)
+    (table-forward-cell) ;; col 2
+    (table-justify-column 'center)
+    ;; (table-release) ;; removes frame, but fixes links
+    (mastodon-views--end-of-table)
+    (add-text-properties beg (point) '(face 'success))))
 
 (defun mastodon-profile--insert-fields (fields)
   "Insert profile metadata FIELDS, an alist.
 Format them so we can create a pretty table."
-  (let ((mastodon-tl--enable-proportional-fonts nil))
-    (insert
-     (mapconcat
-      (lambda (field)
-        (concat (string-trim (car field) "[ \n]")
-                " | "
-                (string-trim (cdr field) "[ \n]")))
-      fields "\n"))))
+  (insert
+   (mapconcat
+    (lambda (field)
+      (concat (string-trim (car field) "[ \n]")
+              " | "
+              (string-trim (cdr field) "[ \n]")))
+    fields "\n")))
 
 (defun mastodon-profile--get-statuses-pinned (account)
   "Fetch the pinned toots for ACCOUNT."
@@ -719,41 +727,21 @@ TOOTS FOLLOWERS and FOLLOWING are each integers."
         (following-cell (concat "FOLLOWING: "
                                 (mastodon-tl--as-string following)))
         (beg (point)))
-    (insert
-     (concat toot-cell " | " followers-cell " | " following-cell
-             "\n"))
-    (table-capture beg (point) "|" "\n" nil
-                   ;; `table-insert' can take a list of col widths:
-                   `(,(+ 2 (length toot-cell)) ,(+ 2 (length followers-cell))
-                     ,(+ 2 (length following-cell))))
-    (table-justify-column 'center)
-    (table-forward-cell) ;; col 2
-    (table-justify-column 'center)
-    (table-forward-cell) ;; col 3
-    (table-justify-column 'center)
-    (mastodon-views--end-of-table)
-    (add-text-properties beg (point) '(face success))))
+    (mastodon-profile--pretty-table
+     (lambda ()
+       (insert
+        (concat toot-cell " | " followers-cell " | " following-cell
+                "\n")))
+     `(,(+ 2 (length toot-cell)) ,(+ 2 (length followers-cell))
+       ,(+ 2 (length following-cell))))))
 
 (defun mastodon-profile--insert-joined (joined)
-  ""
-  (let ((table-cell-horizontal-chars (if (char-displayable-p ?–)
-                                         "–"
-                                       "-"))
-        (beg (point))
-        (join-str "Joined: ")
+  "Insert JOINED data as a pretty table."
+  (let ((join-str "Joined: ")
         (date-str (mastodon-profile--format-joined-date-string joined)))
-    (insert join-str "|" date-str)
-    (table-capture beg (point) "|" "\n" nil
-                   ;; `table-insert' can take a list of col widths:
-                   `(,(+ 2 (length join-str)) ,(+ 2 (length date-str))))
-    (table-justify-column 'center)
-    (table-forward-cell) ;; col 2
-    (table-justify-column 'center)
-    (table-forward-cell) ;; col 3
-    (table-justify-column 'center)
-    ;; (table-release)
-    (mastodon-views--end-of-table)
-    (add-text-properties beg (point) '(face success))))
+    (mastodon-profile--pretty-table
+     (lambda () (insert join-str "|" date-str))
+     `(,(+ 2 (length join-str)) ,(+ 2 (length date-str))))))
 
 (defun mastodon-profile--make-profile-buffer-for
     (account endpoint-type update-function
@@ -836,10 +824,7 @@ MAX-ID is a flag to include the max_id pagination parameter."
           (mastodon-profile--insert-joined .created_at)
           ;; meta fields:
           (when fields
-            (insert
-             (mastodon-tl--set-face
-              (mastodon-profile--format-fields fields)
-              'success)))
+            (mastodon-profile--format-fields fields))
           ;; insert counts
           (mastodon-profile--insert-counts .statuses_count
                                            .followers_count .following_count)
