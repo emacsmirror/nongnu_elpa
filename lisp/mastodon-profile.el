@@ -609,8 +609,10 @@ FIELDS means provide a fields vector fetched by other means."
 
 (defun mastodon-profile--format-fields (fields)
   "Format field pairs (a.k.a profile metadata) in FIELDS."
-  ;; to set cell witdth right, we have to render any html first:
-  (let* ((rendered (mapcar (lambda (x)
+  ;; prevent `mastodon-tl--render-text' from adding any newlines:
+  (let* ((mastodon-tl--no-fill-on-render t)
+         ;; to set cell witdth right, we have to render any html first:
+         (rendered (mapcar (lambda (x)
                              (cons
                               (mastodon-tl--render-text
                                (string-clean-whitespace (car x)) x)
@@ -621,13 +623,12 @@ FIELDS means provide a fields vector fetched by other means."
                            fields))
          (left-width (apply #'max (mapcar #'length
                                           (mapcar #'car rendered))))
-         ;; TODO: some people have obnoxiously long entries, we should set a max
-         ;; of (- window-width left-width):
          (right-longest (apply #'max (mapcar #'length
                                              (mapcar #'cdr rendered))))
+         ;; some people have very long entries, so we set a max
+         ;; of (- window-width left-width):
          (right-width (min
                        (- (frame-width) (+ 10 left-width))
-                       ;; 20
                        right-longest))
          (table-cell-horizontal-chars (if (char-displayable-p ?–)
                                           "–"
