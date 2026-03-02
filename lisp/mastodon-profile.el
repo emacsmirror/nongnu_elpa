@@ -612,31 +612,30 @@ FIELDS means provide a fields vector fetched by other means."
   ;; prevent `mastodon-tl--render-text' from adding any newlines:
   (let* ((mastodon-tl--no-fill-on-render t)
          ;; to set cell witdth right, we have to render any html first:
-         (rendered (mapcar (lambda (x)
-                             (cons
-                              (mastodon-tl--render-text
-                               (string-clean-whitespace (car x)) x)
-                              (mastodon-tl--render-text
-                               (replace-regexp-in-string
-                                "\\n" "" (cdr x))
-                               x)))
-                           fields))
+         (rendered (mapcar
+                    (lambda (x)
+                      (cons
+                       (mastodon-tl--render-text (car x) x)
+                       ;; (replace-regexp-in-string "\n" "" (car x)) x)
+                       (mastodon-tl--render-text  (cdr x) x)))
+                    ;; (replace-regexp-in-string "\n" "" (cdr x)) x)))
+                    fields))
          (left-width (apply #'max (mapcar #'length
                                           (mapcar #'car rendered))))
          (right-longest (apply #'max (mapcar #'length
                                              (mapcar #'cdr rendered))))
-         ;; some people have very long entries, so we set a max
-         ;; of (- window-width left-width):
+         ;; some people have very long entries, so we set a max of (-
+         ;; window-width left-width). that way, long cells will run over
+         ;; onto multiple lines:
          (right-width (min
                        (- (frame-width) (+ 10 left-width))
                        right-longest))
          (table-cell-horizontal-chars (if (char-displayable-p ?–)
                                           "–"
                                         "-")))
-    (setq masto-temp-fields fields)
+    ;; FIXME: do this as a string like the other tables
     (with-temp-buffer
-      (switch-to-buffer (current-buffer))
-      (erase-buffer)
+      ;; (switch-to-buffer (current-buffer)) ; debug
       (let ((beg (point)))
         (mastodon-profile--insert-fields rendered)
         (table-capture beg (point) "|" "\n" nil
@@ -645,16 +644,19 @@ FIELDS means provide a fields vector fetched by other means."
         (table-justify-column 'center)
         (table-forward-cell) ;; col 2
         (table-justify-column 'center)
+        ;; (table-release) ;; removes frame, but fixes links
         (buffer-string)))))
 
 (defun mastodon-profile--insert-fields (fields)
-  ""
+  "Insert profile metadata FIELDS, an alist.
+Format them so we can create a pretty table."
   (let ((mastodon-tl--enable-proportional-fonts nil))
     (insert
      (mapconcat
       (lambda (field)
-        (concat " " (string-trim (car field) "\n ")
-                " | " (string-trim (cdr field) " \n")))
+        (concat (string-trim (car field) "[ \n]")
+                " | "
+                (string-trim (cdr field) "[ \n]")))
       fields "\n"))))
 
 (defun mastodon-profile--get-statuses-pinned (account)
