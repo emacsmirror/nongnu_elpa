@@ -458,7 +458,8 @@ FORCE means to fetch from the server in any case and update
   "Update instance with new toot. Content is captured in a new buffer.
 If USER is non-nil, insert after @ symbol to begin new toot.
 If REPLY-TO-ID is non-nil, attach new toot to a conversation.
-If REPLY-JSON is the json of the toot being replied to."
+If REPLY-JSON is the json of the toot being replied to.
+QUOTE-ID is the id of a toot being quoted, QUOTE-JSON is its data."
   (interactive)
   (mastodon-toot--compose-buffer user reply-to-id reply-json
                                  nil nil quote-id quote-json visibility))
