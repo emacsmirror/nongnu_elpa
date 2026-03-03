@@ -31,6 +31,8 @@
 
 (require 'gnosis-utils)
 
+(defvar gnosis-script-input-method-alist)
+
 
 (defface gnosis-monkeytype-face-dimmed
   '((((class color) (background light)) :foreground "grey50")
@@ -131,7 +133,12 @@ Optionally, highlight MISTAKES."
 	(switch-to-buffer (get-buffer-create gnosis-monkeytype-buffer-name))
 	(goto-char (point-min))
 	(add-hook 'after-change-functions #'gnosis-monkeytype--handler nil t)
-	(recursive-edit)
+	(let ((method (alist-get (gnosis-utils-detect-script text)
+				 gnosis-script-input-method-alist)))
+	  (when method (activate-input-method method))
+	  (unwind-protect
+	      (recursive-edit)
+	    (when method (deactivate-input-method))))
 	(setq gnosis-monkeytype-wpm-result
 	      (gnosis-monkeytype--calculate-wpm text-formatted start-time))))))
 

@@ -128,6 +128,16 @@ When non-nil, center content during review sessions.
 When nil, content will be displayed left-aligned instead of centered."
   :type 'boolean)
 
+(defcustom gnosis-script-input-method-alist
+  '((greek . "greek")
+    (cyrillic . "cyrillic-translit"))
+  "Alist mapping script symbols to input method names.
+Each element is (SCRIPT . INPUT-METHOD) where SCRIPT is a symbol
+from `char-script-table' and INPUT-METHOD is a string suitable for
+`activate-input-method'."
+  :type '(alist :key-type symbol :value-type string)
+  :group 'gnosis)
+
 (defvar-local gnosis-center-content t
   "Buffer-local variable controlling content centering.
 
@@ -729,6 +739,20 @@ This function should be used in combination with
     (if (> max-length gnosis-string-difference)
         (<= (string-distance normalized-str1 normalized-str2) gnosis-string-difference)
       (string= normalized-str1 normalized-str2))))
+
+(defun gnosis--read-string-with-input-method (prompt answer)
+  "Read string with PROMPT, activating input method matching ANSWER's script.
+Activates the input method in the current buffer so `read-string' with
+INHERIT-INPUT-METHOD propagates it into the minibuffer.  Restores the
+previous state on exit."
+  (let ((method (alist-get (gnosis-utils-detect-script answer)
+                           gnosis-script-input-method-alist)))
+    (if (not method)
+        (read-string prompt)
+      (activate-input-method method)
+      (unwind-protect
+          (read-string prompt nil nil nil t)
+        (deactivate-input-method)))))
 
 (defun gnosis-get-tags--unique ()
   "Return a list of unique strings for tags in `gnosis-db'."

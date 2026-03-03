@@ -362,7 +362,7 @@ SUCCESS is a boolean value, t for success, nil for failure."
     (gnosis-display-image keimenon)
     (gnosis-display-keimenon (gnosis-org-format-string keimenon))
     (gnosis-display-hint hypothesis)
-    (let* ((user-input (read-string "Answer: "))
+    (let* ((user-input (gnosis--read-string-with-input-method "Answer: " answer))
 	   (success (gnosis-compare-strings answer user-input)))
       (gnosis-display-basic-answer answer success user-input)
       (gnosis-display-parathema parathema)
@@ -376,7 +376,9 @@ CLOZES is a list of possible correct answers.
 
 Returns a cons; ='(position . user-input) if correct,
 ='(nil . user-input) if incorrect."
-  (let* ((user-input (or user-input (read-string "Answer: ")))
+  (let* ((user-input (or user-input
+                         (gnosis--read-string-with-input-method
+                          "Answer: " (car clozes))))
          (position (cl-position user-input clozes :test #'gnosis-compare-strings)))
     (cons position user-input)))
 
