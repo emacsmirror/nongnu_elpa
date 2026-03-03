@@ -665,10 +665,18 @@ Format them so we can create a pretty table."
   (insert
    (mapconcat
     (lambda (field)
-      (concat (string-trim (car field) "[ \n]")
-              " | "
-              (string-trim (cdr field) "[ \n]")))
+      (concat
+       (mastodon-profile--sane-field-str (car field))
+       " | "
+       (mastodon-profile--sane-field-str (cdr field))))
     fields "\n")))
+
+(defun mastodon-profile--sane-field-str (str)
+  "In STR, replace | with / and trim spaces/newlines.
+We replace | because it is our pretty table's column delimiter."
+  (string-trim
+   (replace-regexp-in-string "|" "/" str)
+   "[ \n]"))
 
 (defun mastodon-profile--get-statuses-pinned (account)
   "Fetch the pinned toots for ACCOUNT."
