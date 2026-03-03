@@ -3716,7 +3716,7 @@ PAGE LIMIT"
                                           :boolean "true")
                             (priority-owner-id :alias "priority_owner_id")
                             order page))))
-    (fj-get "/repos/search" params)))
+    (fj-get "repos/search" params)))
 
 (defun fj-repo-candidates-annot-fun (cand)
   "Annocation function for `fj-repo-search'.
