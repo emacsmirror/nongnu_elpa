@@ -636,7 +636,7 @@ FIELDS means provide a fields vector fetched by other means."
      #'mastodon-profile--insert-fields
      `(,(+ 2 left-width) ,(+ 2 right-width)) rendered)))
 
-(defun mastodon-profile--pretty-table (insert-fun min-cell-width
+(defun mastodon-profile--pretty-table (insert-fun &optional min-cell-width
                                                   &rest insert-args)
   "Insert some data and make a pretty table of it with table.el.
 Call INSERT-FUN with INSERT-ARGS.
@@ -746,6 +746,37 @@ TOOTS FOLLOWERS and FOLLOWING are each integers."
      (lambda () (insert join-str "|" date-str))
      `(,(+ 2 (length join-str)) ,(+ 2 (length date-str))))))
 
+(defun mastodon-profile--insert-relationships (relationships)
+  "Insert RELATIONSHIPS data."
+  (let-alist relationships
+    ;; (sharkey has no relationships endpoint, returns 500.
+    ;; or poss it has a different endpoint?:)
+    (when .id
+      (let* ((followsp
+              (mastodon-profile--follows-p
+               (list .requested_by .following .followed_by .blocked_by)))
+             (rels (mastodon-profile--relationships-get .id))
+             (langs-filtered (when-let* ((langs (alist-get 'languages rels)))
+                               (concat " ("
+                                       (mapconcat #'identity langs " ")
+                                       ")")))
+             (fold-str (concat "FOLLOWED BY YOU |" langs-filtered))
+             (fols-str "FOLLOWS YOU |")
+             (req-str "REQUESTED TO FOLLOW YOU |")
+             (block-str "BLOCKS YOU |")
+             (str-list (cl-remove
+                        nil (list (when (eq .following t) fold-str)
+                                  (when (eq .followed_by t) fols-str)
+                                  (when (eq .requested_by t) req-str)
+                                  (when (eq .blocked_by t) block-str)))))
+        (when followsp
+          (mastodon-profile--pretty-table
+           (lambda ()
+             (insert
+              (apply #'concat str-list)))
+           (cl-loop for x in str-list
+                    collect (+ 2 (length x)))))))))
+
 (defun mastodon-profile--make-profile-buffer-for
     (account endpoint-type update-function
              &optional no-reblogs headers no-replies only-media tag max-id)
@@ -831,35 +862,8 @@ MAX-ID is a flag to include the max_id pagination parameter."
           ;; insert counts
           (mastodon-profile--insert-counts .statuses_count
                                            .followers_count .following_count)
-          (insert "\n")
           ;; insert relationship (follows)
-          (let-alist relationships
-            (insert
-             (if (not .id)
-                 ;; sharkey has no relationships endpoint, returns 500.
-                 ;; or poss it has a different endpoint
-                 ""
-               (let* ((followsp (mastodon-profile--follows-p
-                                 (list .requested_by .following .followed_by .blocked_by)))
-                      (rels (mastodon-profile--relationships-get .id))
-                      (langs-filtered (if-let* ((langs (alist-get 'languages rels)))
-                                          (concat " ("
-                                                  (mapconcat #'identity langs " ")
-                                                  ")")
-                                        "")))
-                 (if followsp
-                     (mastodon-tl--set-face
-                      (concat (when (eq .following t)
-                                (format " | FOLLOWED BY YOU%s" langs-filtered))
-                              (when (eq .followed_by t)
-                                " | FOLLOWS YOU")
-                              (when (eq .requested_by t)
-                                " | REQUESTED TO FOLLOW YOU")
-                              (when (eq .blocked_by t)
-                                " | BLOCKS YOU")
-                              "\n\n")
-                      'success)
-                   ""))))) ; for insert call
+          (mastodon-profile--insert-relationships relationships)
           (mastodon-media--inline-images (point-min) (point))
           ;; widget items description
           (mastodon-widget--create
