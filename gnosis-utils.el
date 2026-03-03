@@ -98,5 +98,21 @@ Returns (MODIFIED-P . NEW-TEXT)."
     (let ((new-text (apply #'concat (nreverse parts))))
       (cons (not (string= text new-text)) new-text))))
 
+(defun gnosis-utils-detect-script (str)
+  "Return the dominant non-Latin script symbol in STR, or nil.
+Uses `char-script-table' to classify characters, ignoring latin,
+common, and whitespace characters."
+  (let ((counts (make-hash-table :test 'eq)))
+    (seq-doseq (char str)
+      (let ((script (aref char-script-table char)))
+        (unless (memq script '(latin common inherited symbol))
+          (puthash script (1+ (gethash script counts 0)) counts))))
+    (let ((best nil) (best-count 0))
+      (maphash (lambda (script count)
+                 (when (> count best-count)
+                   (setq best script best-count count)))
+               counts)
+      best)))
+
 (provide 'gnosis-utils)
 ;;; gnosis-utils.el ends here
