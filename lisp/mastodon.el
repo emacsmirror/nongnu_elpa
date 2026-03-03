@@ -6,7 +6,7 @@
 ;; Author: Johnson Denen <johnson.denen@gmail.com>
 ;;         Marty Hiatt <mousebot@disroot.org>
 ;; Maintainer: Marty Hiatt <mousebot@disroot.org>
-;; Version: 2.0.11
+;; Version: 2.0.12
 ;; Package-Requires: ((emacs "29.1") (persist "0.8") (tp "0.8"))
 ;; Homepage: https://codeberg.org/martianh/mastodon.el
 
@@ -40,7 +40,6 @@
 (eval-when-compile (require 'subr-x))
 (require 'url)
 (require 'thingatpt)
-(require 'alert)
 (require 'shr)
 
 (require 'mastodon-http)
@@ -51,7 +50,6 @@
 
 (declare-function discover-add-context-menu "discover")
 (declare-function emojify-mode "emojify")
-(declare-function request "request")
 
 (autoload 'mastodon-auth--get-account-name "mastodon-auth")
 (autoload 'mastodon-auth--user-acct "mastodon-auth")
@@ -112,6 +110,9 @@
 (defvar mastodon-tl--highlight-current-toot)
 (defvar mastodon-notifications--map)
 (defvar mastodon-client--token-file)
+
+(defvar alert-default-style)
+(defvar alert-styles)
 
 (defvar mastodon-notifications-grouped-types
   '("reblog" "favourite") ;; TODO: implement follow!
@@ -213,19 +214,25 @@ shown using `message'.
 Alerts are only checked for when at least 1 mastodon.el buffer is open."
   :type '(boolean))
 
-(defcustom mastodon-notifications-alert-style alert-default-style
+(defcustom mastodon-notifications-alert-style
+  (when (require 'alert nil :noerror) alert-default-style)
   "The type of alert.el style to use for mastodon.el notification alerts.
 Currently, if you customize this variable, you need to restart Emacs for
 it to take effect, or if you don't have any other alert.el rules set up,
-you can nil `alert-internal-configuration' and reload mastodon.el"
+you can nil `alert-internal-configuration' and reload mastodon.el. This
+only applies to alert.el alerts, if you don't use alert.el, you should
+not set this variable and mastodon.el will message for notification
+alerts."
   :type
   `(choice
-    ,@(append
-       '((const :tag "alert.el default"
-                :value alert-default-style))
-       (cl-loop for x in alert-styles
-                collect (list 'const :tag (plist-get (cdr x) :title)
-                              :value (car x))))))
+    ,@(if (not (require 'alert nil :noerror))
+          '(const nil)
+        (append
+         '((const :tag "alert.el default"
+                  :value alert-default-style))
+         (cl-loop for x in alert-styles
+                  collect (list 'const :tag (plist-get (cdr x) :title)
+                                :value (car x)))))))
 
 (defun mastodon-kill-window ()
   "Quit window and delete helper."
@@ -455,7 +462,8 @@ FORCE means to fetch from the server in any case and update
   "Update instance with new toot. Content is captured in a new buffer.
 If USER is non-nil, insert after @ symbol to begin new toot.
 If REPLY-TO-ID is non-nil, attach new toot to a conversation.
-If REPLY-JSON is the json of the toot being replied to."
+If REPLY-JSON is the json of the toot being replied to.
+QUOTE-ID is the id of a toot being quoted, QUOTE-JSON is its data."
   (interactive)
   (mastodon-toot--compose-buffer user reply-to-id reply-json
                                  nil nil quote-id quote-json visibility))

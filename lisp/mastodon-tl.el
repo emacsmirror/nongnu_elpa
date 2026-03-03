@@ -1521,6 +1521,7 @@ SENSITIVE is a flag from the item's JSON data."
               'image-url (or full-remote-url media-url) ; for shr-browse-image
               'keymap mastodon-tl--shr-image-map-replacement
               'image-description caption
+              'shr-alt caption ; for shr-show-alt-text
               'sensitive sensitive
               'help-echo (if (or (string= type "image")
                                  (string= type nil)
