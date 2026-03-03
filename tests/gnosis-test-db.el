@@ -63,6 +63,7 @@ If ask nil, leave testing env"
 		(gnosis--drop-table table)
 	      (error (message "No %s table to drop." table))))
 	  (setf gnosis-testing t)
+	  (gnosis--db-set-version 0)
 	  (gnosis-db-init)
 	  (message "Development env is ready for testing.")
 	  (and (y-or-n-p "Add testing deck? ") (gnosis-import-deck gnosis-test-deck-file)))
