@@ -220,8 +220,9 @@ Alerts are only checked for when at least 1 mastodon.el buffer is open."
 Currently, if you customize this variable, you need to restart Emacs for
 it to take effect, or if you don't have any other alert.el rules set up,
 you can nil `alert-internal-configuration' and reload mastodon.el. This
-only applies to alert.el alerts, if you don't use alert.el, mastodon.el
-will message for notification alerts."
+only applies to alert.el alerts, if you don't use alert.el, you should
+not set this variable and mastodon.el will message for notification
+alerts."
   :type
   `(choice
     ,@(if (not (require 'alert nil :noerror))
