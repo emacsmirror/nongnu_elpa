@@ -808,7 +808,7 @@ The result is added as an attachments property to author-byline."
 
 (defun mastodon-tl--top-byline (toot)
   "Format a boost or reply top (action) byline for TOOT.
-If it is a self-reply, return 'continued thread'.
+If it is a self-reply, return \\='continued thread'.
 If it is a non-self-reply, return \\='in reply to $username'.
 If it is a boost, return \\='$username boosted'."
   (let ((reblog (alist-get 'reblog toot))
