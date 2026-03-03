@@ -615,7 +615,7 @@ FIELDS means provide a fields vector fetched by other means."
   ;; prevent `mastodon-tl--render-text' from adding any newlines:
   (let* ((mastodon-tl--no-fill-on-render t)
          ;; render sans variable pitch:
-         (mastodon-tl--enable-proportional-fonts nil)
+         ;; (mastodon-tl--enable-proportional-fonts nil)
          ;; to set cell witdth right, we have to render any html first:
          (rendered (mapcar (lambda (x)
                              (cons
