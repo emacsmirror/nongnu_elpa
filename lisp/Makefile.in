@@ -34,6 +34,7 @@ SOURCES += vm-mouse.el
 SOURCES += vm-page.el
 SOURCES += vm-pcrisis.el
 SOURCES += vm-pgg.el
+SOURCES += vm-epg.el
 SOURCES += vm-postpone.el
 SOURCES += vm-pop.el
 SOURCES += vm-ps-print.el
