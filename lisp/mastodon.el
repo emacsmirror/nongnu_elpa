@@ -214,7 +214,8 @@ shown using `message'.
 Alerts are only checked for when at least 1 mastodon.el buffer is open."
   :type '(boolean))
 
-(defcustom mastodon-notifications-alert-style alert-default-style
+(defcustom mastodon-notifications-alert-style
+  (when (require 'alert nil :noerror) alert-default-style)
   "The type of alert.el style to use for mastodon.el notification alerts.
 Currently, if you customize this variable, you need to restart Emacs for
 it to take effect, or if you don't have any other alert.el rules set up,
@@ -223,12 +224,14 @@ only applies to alert.el alerts, if you don't use alert.el, mastodon.el
 will message for notification alerts."
   :type
   `(choice
-    ,@(append
-       '((const :tag "alert.el default"
-                :value alert-default-style))
-       (cl-loop for x in alert-styles
-                collect (list 'const :tag (plist-get (cdr x) :title)
-                              :value (car x))))))
+    ,@(if (not (require 'alert nil :noerror))
+          '(const nil)
+        (append
+         '((const :tag "alert.el default"
+                  :value alert-default-style))
+         (cl-loop for x in alert-styles
+                  collect (list 'const :tag (plist-get (cdr x) :title)
+                                :value (car x)))))))
 
 (defun mastodon-kill-window ()
   "Quit window and delete helper."
