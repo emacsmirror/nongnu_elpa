@@ -40,7 +40,6 @@
 (eval-when-compile (require 'subr-x))
 (require 'url)
 (require 'thingatpt)
-(require 'alert)
 (require 'shr)
 
 (require 'mastodon-http)
@@ -111,6 +110,9 @@
 (defvar mastodon-tl--highlight-current-toot)
 (defvar mastodon-notifications--map)
 (defvar mastodon-client--token-file)
+
+(defvar alert-default-style)
+(defvar alert-styles)
 
 (defvar mastodon-notifications-grouped-types
   '("reblog" "favourite") ;; TODO: implement follow!
@@ -216,7 +218,9 @@ Alerts are only checked for when at least 1 mastodon.el buffer is open."
   "The type of alert.el style to use for mastodon.el notification alerts.
 Currently, if you customize this variable, you need to restart Emacs for
 it to take effect, or if you don't have any other alert.el rules set up,
-you can nil `alert-internal-configuration' and reload mastodon.el"
+you can nil `alert-internal-configuration' and reload mastodon.el. This
+only applies to alert.el alerts, if you don't use alert.el, mastodon.el
+will message for notification alerts."
   :type
   `(choice
     ,@(append
