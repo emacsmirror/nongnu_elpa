@@ -631,7 +631,11 @@ Calls `mastodon-tl--get-buffer-type', which see."
                       '((url . mastodon--url-at-point))))
   ;; notifs timer
   (when mastodon-notifications-alerts
-    (mastodon-notifications--update-with-timer)))
+    (mastodon-notifications--update-with-timer))
+  ;; pretty table override bindings:
+  (add-hook 'table-cell-map-hook
+            #'mastodon-profile-table-cell-hook-fun
+            nil :local))
 
 ;;;###autoload
 (add-hook 'mastodon-mode-hook #'mastodon-mode-hook-fun)

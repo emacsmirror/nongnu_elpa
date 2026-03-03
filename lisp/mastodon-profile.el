@@ -659,6 +659,18 @@ Note that it can be a list of values, one for each column."
     (mastodon-views--end-of-table)
     (add-text-properties beg (point) '(face 'success))))
 
+(defun mastodon-profile-table-cell-hook-fun ()
+  "Hook function for `table-cell-map-hook'.
+We ensure we have our tab/click/RET bindings active for links."
+  (define-key table-cell-map
+              [remap table-forward-cell] #'mastodon-tl-next-tab-item)
+  (define-key table-cell-map
+              [remap table-backward-cell] #'mastodon-tl-previous-tab-item)
+  (define-key table-cell-map
+              [remap *table--cell-newline] #'mastodon-tl-do-link-action-at-point)
+  (define-key table-cell-map [mouse-2] #'mastodon-tl-do-link-action)
+  (define-key table-cell-map [follow-link] 'mouse-face))
+
 (defun mastodon-profile--insert-fields (fields)
   "Insert profile metadata FIELDS, an alist.
 Format them so we can create a pretty table."
