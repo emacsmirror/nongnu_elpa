@@ -1,0 +1,104 @@
+#+DECK: demo
+
+* Thema                                                       :latin:phrases:
+:PROPERTIES:
+:GNOSIS_ID: NEW
+:GNOSIS_TYPE: basic
+:END:
+** Keimenon
+repetitio est mater memoriae
+
+** Hypothesis
+- Translate from Latin -> English
+
+** Answer
+- repetition is the mother of memory
+
+** Parathema
+Repetition strengthens neural pathways, enhancing memory retention.
+It consolidates information from short-term to long-term memory
+through consistent practice.  Regular repetition improves recall by
+reinforcing learning.
+
+
+* Thema
+:PROPERTIES:
+:GNOSIS_ID: NEW
+:GNOSIS_TYPE: cloze
+:END:
+** Keimenon
+GNU Emacs is an extensible editor created by Richard Stallman in 1984
+
+** Hypothesis
+- year
+
+** Answer
+- 1984
+
+** Parathema
+Emacs was originally implemented in 1976 on the MIT AI Lab's
+Incompatible Timesharing System (ITS), as a collection of TECO macros.
+The name “Emacs” was originally chosen as an abbreviation of “Editor
+MACroS”. This version of Emacs, GNU Emacs, was originally written
+in 1984
+
+
+* Thema
+:PROPERTIES:
+:GNOSIS_ID: NEW
+:GNOSIS_TYPE: cloze
+:END:
+** Keimenon
+GNU Emacs is an extensible editor created by Richard Stallman in 1984
+
+** Hypothesis
+-
+
+** Answer
+- Richard
+- Stallman
+
+** Parathema
+Emacs was originally implemented in 1976 on the MIT AI Lab's
+Incompatible Timesharing System (ITS), as a collection of TECO macros.
+The name “Emacs” was originally chosen as an abbreviation of “Editor
+MACroS”. This version of Emacs, GNU Emacs, was originally written in
+1984
+
+
+* Thema                                         :pharmacology:vancomycin:
+:PROPERTIES:
+:GNOSIS_ID: NEW
+:GNOSIS_TYPE: mcq
+:END:
+** Keimenon
+How is Vancomycin typically administered?
+
+** Hypothesis
+- IM
+- IV
+- Orally
+
+** Answer
+- IV
+
+** Parathema
+*Oral* vancomycin for *pseudomembranous colitis*
+
+
+* Thema                                                 :diuretics:thiazides:
+:PROPERTIES:
+:GNOSIS_ID: NEW
+:GNOSIS_TYPE: mc-cloze
+:END:
+** Keimenon
+Thiazide diuretics may cause hyponatremia as an adverse effect
+
+** Hypothesis
+- hyponatremia
+- hypernatremia
+
+** Answer
+- hyponatremia
+
+** Parathema

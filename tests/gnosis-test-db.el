@@ -1,6 +1,6 @@
 ;;; gnosis-test-db.el --- Gnosis testing module  -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2023  Thanos Apollo
+;; Copyright (C) 2026  Free Software Foundation, Inc.
 
 ;; Author: Thanos Apollo <public@thanosapollo.org>
 ;; Keywords: extensions
@@ -30,12 +30,8 @@
 
 (require 'gnosis)
 
-(defvar gnosis-test-image "anatomy/typic-vertebra-superior-01.png"
-  "Random image for testing")
-
 (defvar gnosis-test-deck-file
-  (expand-file-name "test.org"
-		    (file-name-directory (or load-file-name buffer-file-name))))
+  (expand-file-name "../decks/demo.org"))
 
 (defun gnosis-test-random-items (list x)
   "Select X random items from LIST."
@@ -67,6 +63,7 @@ If ask nil, leave testing env"
 		(gnosis--drop-table table)
 	      (error (message "No %s table to drop." table))))
 	  (setf gnosis-testing t)
+	  (gnosis--db-set-version 0)
 	  (gnosis-db-init)
 	  (message "Development env is ready for testing.")
 	  (and (y-or-n-p "Add testing deck? ") (gnosis-import-deck gnosis-test-deck-file)))

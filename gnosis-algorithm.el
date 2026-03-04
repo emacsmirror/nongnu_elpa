@@ -107,12 +107,6 @@ A value of 0.1 means +/- 10%%.  Set to 0 to disable."
   :group 'gnosis
   :type 'float)
 
-(defun gnosis-algorithm-replace-at-index (index new-item list)
-  "Replace item at INDEX with NEW-ITEM in LIST."
-  (cl-loop for item in list
-	   for i from 0
-	   collect (if (= i index) new-item item)))
-
 (defun gnosis-algorithm-round-items (list)
   "Round all items in LIST to 2 decimal places."
   (cl-loop for item in list

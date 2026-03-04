@@ -269,6 +269,48 @@ To demonstrate, 'example' and 'examples' will be recognized as
 similar, considering that the latter involves just one additional
 character."
 
+** Auto Input Method
+When reviewing themata whose answers are in a non-Latin script (e.g.,
+Greek, Cyrillic), Gnosis can automatically activate the appropriate
+Emacs input method before prompting for input.  After the prompt, the
+previous input method is restored.
+
+This is controlled by =gnosis-script-input-method-alist=, an alist
+mapping script symbols (as returned by =char-script-table=) to input
+method names.
+
+The default value maps Greek and Cyrillic scripts:
+
+#+begin_src emacs-lisp
+(setq gnosis-script-input-method-alist
+      '((greek . "greek")
+        (cyrillic . "cyrillic-translit")))
+#+end_src
+
+To add support for additional scripts, append entries to the alist:
+
+#+begin_src emacs-lisp
+(setq gnosis-script-input-method-alist
+      '((greek . "greek")
+        (cyrillic . "cyrillic-translit")
+        (hebrew . "hebrew")))
+#+end_src
+
+You can list all available input methods with {{{kbd(M-x
+list-input-methods)}}}.  The script symbols correspond to values in
+Emacs's =char-script-table= (e.g., =greek=, =cyrillic=, =hebrew=,
+=arabic=, =han=).
+
+To disable this feature entirely, set the alist to =nil=:
+
+#+begin_src emacs-lisp
+(setq gnosis-script-input-method-alist nil)
+#+end_src
+
+This feature applies to basic and cloze review types (where you type
+the answer) and to monkeytype sessions.  MCQ and mc-cloze types use
+selection, so no input method change is needed.
+
 * Gnosis Algorithm
 
 Each gnosis note has a gnosis score, which is a list of 3 values,

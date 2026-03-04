@@ -61,14 +61,58 @@ Optionally, use custom DEFAULT-FACE."
            nil t))))
     (buffer-string)))
 
+(defconst gnosis-utils--org-link-re
+  "\\[\\[[^]]*\\]\\[[^]]*\\]\\]\\|\\[\\[[^]]*\\]\\]"
+  "Regexp matching org-mode links: [[target][desc]] or [[target]].")
+
+(defun gnosis-utils-string-outside-links-p (text string)
+  "Return non-nil if STRING appears in TEXT outside of org-links."
+  (let ((case-fold-search nil)
+        (target (regexp-quote string))
+        (pos 0))
+    (catch 'found
+      (while (string-match gnosis-utils--org-link-re text pos)
+        (when (string-match-p target (substring text pos (match-beginning 0)))
+          (throw 'found t))
+        (setq pos (match-end 0)))
+      (string-match-p target (substring text pos)))))
+
 (defun gnosis-utils-replace-string-with-link (text string node-id)
-  "Replace STRING in TEXT with org-link to NODE-ID.
+  "Replace STRING in TEXT with org-link to NODE-ID, skipping existing links.
 Returns (MODIFIED-P . NEW-TEXT)."
-  (let ((new-text (replace-regexp-in-string
-                   (regexp-quote string)
-                   (format "[[id:%s][%s]]" node-id string)
-                   text t t)))
-    (cons (not (string= text new-text)) new-text)))
+  (let ((case-fold-search nil)
+        (target (regexp-quote string))
+        (replacement (format "[[id:%s][%s]]" node-id string))
+        (pos 0)
+        (parts nil))
+    (while (string-match gnosis-utils--org-link-re text pos)
+      (push (replace-regexp-in-string
+             target replacement
+             (substring text pos (match-beginning 0)) t t)
+            parts)
+      (push (match-string 0 text) parts)
+      (setq pos (match-end 0)))
+    (push (replace-regexp-in-string
+           target replacement (substring text pos) t t)
+          parts)
+    (let ((new-text (apply #'concat (nreverse parts))))
+      (cons (not (string= text new-text)) new-text))))
+
+(defun gnosis-utils-detect-script (str)
+  "Return the dominant non-Latin script symbol in STR, or nil.
+Uses `char-script-table' to classify characters, ignoring latin,
+common, and whitespace characters."
+  (let ((counts (make-hash-table :test 'eq)))
+    (seq-doseq (char str)
+      (let ((script (aref char-script-table char)))
+        (unless (memq script '(latin common inherited symbol))
+          (puthash script (1+ (gethash script counts 0)) counts))))
+    (let ((best nil) (best-count 0))
+      (maphash (lambda (script count)
+                 (when (> count best-count)
+                   (setq best script best-count count)))
+               counts)
+      best)))
 
 (provide 'gnosis-utils)
 ;;; gnosis-utils.el ends here
