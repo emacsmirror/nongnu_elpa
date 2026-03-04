@@ -3,6 +3,31 @@
 + [[https://git.thanosapollo.org/gnosis/][Upstream]]
 + [[https://thanosapollo.org/log/gnosis/][Changelog]]
 
+* 0.8.0
+#+DATE: 2026/03/04
+
+** New features
++ Auto input-method detection: gnosis detects the script of the
+  expected answer (Greek, Cyrillic, etc.) and activates the
+  appropriate input method during review.
+  Configured via ~gnosis-script-input-method-alist~.
++ Change thema type and deck via ~gnosis-update-thema~.
++ Dashboard bulk-link action for currently displayed themata.
++ Dashboard header-line with entry count and context.
++ Asynchronous deck import with ~gnosis-import-deck-async~.
++ Demo deck included in =decks/demo.org=.
+
+** Performance
++ New ~gnosis-tl~ module replaces ~tabulated-list-print~ for
+  dashboard rendering (3-4x faster).
++ Progressive async rendering for large dashboards.
++ Batch-fetch review data instead of per-thema queries.
+
+** Bug fixes
++ Fix anagnosis event calculation in the algorithm.
++ Fix cloze tag removal for edge cases and mc-cloze type.
++ Fix ~vc-pull~ to run migrations after pull.
+
 * 0.7.0
 #+DATE: 2026/02/24
 ** New features
