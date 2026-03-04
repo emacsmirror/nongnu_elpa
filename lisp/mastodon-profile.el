@@ -622,16 +622,17 @@ FIELDS means provide a fields vector fetched by other means."
                               (mastodon-tl--render-text (car x) x)
                               (mastodon-tl--render-text  (cdr x) x)))
                            fields))
-         (left-width (apply #'max (mapcar #'length
-                                          (mapcar #'car rendered))))
+         (left-longest (apply #'max (mapcar #'length
+                                            (mapcar #'car rendered))))
+         (left-width (min 30 left-longest))
          (right-longest (apply #'max (mapcar #'length
                                              (mapcar #'cdr rendered))))
-         ;; some people have very long entries, so we set a max of (-
-         ;; window-width left-width). that way, long cells will run over
-         ;; onto multiple lines:
-         (right-width (min
-                       (- (frame-width) (+ 10 left-width))
-                       right-longest)))
+         ;; some people have very long URLs in their entries, so we set a
+         ;; max of (- window-width left-width). that way, long cells will
+         ;; run over onto multiple lines when we enable
+         ;; `table-fixed-width-mode':
+         (right-width (min (- (frame-width) (+ 10 left-width))
+                           right-longest)))
     (mastodon-profile--pretty-table
      #'mastodon-profile--insert-fields
      `(,(+ 2 left-width) ,(+ 2 right-width)) rendered)))
@@ -657,6 +658,9 @@ Note that it can be a list of values, one for each column."
         (table-forward-cell)))
     ;; (table-release) ;; removes frame, but fixes links
     (mastodon-views--end-of-table)
+    (table-fixed-width-mode 1)
+    ;; unfuck `table-fixed-width-mode' disastrous face handling:
+    (set-face-attribute 'table-cell nil :inverse-video nil)
     (add-text-properties beg (point) '(face 'success))))
 
 (defun mastodon-profile-table-cell-hook-fun ()
