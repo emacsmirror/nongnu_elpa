@@ -12,6 +12,7 @@ TEST_FILES := tests/gnosis-test-algorithm.el \
 	tests/gnosis-test-dashboard.el \
 	tests/gnosis-test-cloze.el \
 	tests/gnosis-test-bulk-link.el \
+	tests/gnosis-test-script-detection.el \
 
 all: doc
 
