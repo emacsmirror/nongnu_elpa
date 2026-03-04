@@ -631,8 +631,12 @@ FIELDS means provide a fields vector fetched by other means."
          ;; max of (- window-width left-width). that way, long cells will
          ;; run over onto multiple lines when we enable
          ;; `table-fixed-width-mode':
-         (right-width (min (- (frame-width) (+ 10 left-width))
-                           right-longest)))
+         (right-width (min
+                       (if (> (frame-width) left-width)
+                           (- (frame-width) (+ 10 left-width))
+                         ;; bizarre fallback:
+                         (/ (frame-width) 3)) ;; 30)
+                       right-longest)))
     (mastodon-profile--pretty-table
      #'mastodon-profile--insert-fields
      `(,(+ 2 left-width) ,(+ 2 right-width)) rendered)))
