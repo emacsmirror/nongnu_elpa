@@ -3969,11 +3969,11 @@ does, and sorting user repos is useful."
 (defun fj-fork-repo ()
   "Fork repo entry at point."
   (interactive)
-  (fj-with-entry
+  (fj-with-repo-entry
    (let* ((repo (fj--repo-name))
           (owner (fj--repo-owner))
           (name (read-string "Fork name: " repo)))
-     (fj-fork-repo repo owner name))))
+     (fj-fork-repo* repo owner name))))
 
 (defun fj-repo-copy-clone-url ()
   "Add the clone_url of repo at point to the kill ring.
