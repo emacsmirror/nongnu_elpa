@@ -37,7 +37,7 @@ And more:
    - Helm / ido
    - Org-mode / Agenda / calfw
    - Magit / Git-commit / Git-gutter
-   - Markdown-mode / ReStructText-mode
+   - Markdown-mode / adoc-mode / ReStructText-mode
    - Auto-complete-mode / Company
    - Rainbow-delimiters
    - Swoop
@@ -125,12 +125,13 @@ to get more detailed information first.
 #+END_QUOTE
 
 *** Resize Titles
-You may want to resize titles in =markdown-mode=, =org-mode=, or
+You may want to resize titles in =markdown-mode=, =adoc-mode=, =org-mode=, or
 =ReStructuredText-mode=:
 
 #+BEGIN_SRC lisp
       ;; Resize titles
       (setq moe-theme-resize-title-markdown '(2.0 1.7 1.5 1.3 1.0 1.0))
+      (setq moe-theme-resize-title-adoc '(2.0 1.7 1.5 1.3 1.0 1.0))
       (setq moe-theme-resize-title-org '(2.2 1.8 1.6 1.4 1.2 1.0 1.0 1.0 1.0))
       (setq moe-theme-resize-title-rst '(2.0 1.7 1.5 1.3 1.1 1.0))
 #+END_SRC

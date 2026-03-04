@@ -89,7 +89,7 @@ If you encounter this problem, and want to have a background of #ffffff, set
 the value of `moe-light-pure-white-background-in-terminal' to t.")
 
 ;; ======================================================
-;; Resize Titles (Markdown / Org / RST)
+;; Resize Titles (Markdown / AsciiDoc / Org / RST)
 ;; ======================================================
 (defvar moe-theme-resize-title-markdown nil
   "Resize header/title faces of Markdown-mode or not. (default value is nil)
@@ -97,6 +97,15 @@ The value should be a list with 6 items of number, which decide title font sizes
 of each level.
 
   (setq moe-theme-resize-title-markdown '(2.0 1.7 1.5 1.3 1.0 1.0))
+
+If the vaule is nil, all the titles will be the same size.")
+
+(defvar moe-theme-resize-title-adoc nil
+  "Resize header/title faces of adoc-mode (AsciiDoc) or not. (default value is nil)
+The value should be a list with 6 items of number, which decide title font sizes
+of each level.
+
+  (setq moe-theme-resize-title-adoc '(2.0 1.7 1.5 1.3 1.0 1.0))
 
 If the vaule is nil, all the titles will be the same size.")
 
@@ -142,6 +151,17 @@ Avoid unnecessary load-theme")
   (while (< (length list) final-length)
     (setq list (append list '(1.0))))
   list)
+
+(with-eval-after-load 'adoc-mode
+  (defun moe-theme-resize-title-apply-adoc ()
+    (setq moe-theme-resize-title-adoc (moe-theme-resize-title--repaire-list moe-theme-resize-title-adoc 6))
+    (set-face-attribute 'adoc-title-0-face nil :height (nth 0 moe-theme-resize-title-adoc))
+    (set-face-attribute 'adoc-title-1-face nil :height (nth 1 moe-theme-resize-title-adoc))
+    (set-face-attribute 'adoc-title-2-face nil :height (nth 2 moe-theme-resize-title-adoc))
+    (set-face-attribute 'adoc-title-3-face nil :height (nth 3 moe-theme-resize-title-adoc))
+    (set-face-attribute 'adoc-title-4-face nil :height (nth 4 moe-theme-resize-title-adoc))
+    (set-face-attribute 'adoc-title-5-face nil :height (nth 5 moe-theme-resize-title-adoc)))
+  (moe-theme-resize-title-apply-adoc))
 
 (with-eval-after-load 'markdown-mode
   (defun moe-theme-resize-title-apply-markdown ()
@@ -191,6 +211,7 @@ Avoid unnecessary load-theme")
 (defun moe-theme--common-setup ()
   (if (functionp 'powerline) (powerline-moe-theme))
   (if (functionp 'moe-theme-resize-title-apply-markdown) (moe-theme-resize-title-apply-markdown))
+  (if (functionp 'moe-theme-resize-title-apply-adoc) (moe-theme-resize-title-apply-adoc))
   (if (functionp 'moe-theme-resize-title-apply-org) (moe-theme-resize-title-apply-org))
   (if (functionp 'moe-theme-resize-title-apply-rst) (moe-theme-resize-title-apply-rst))
   )
