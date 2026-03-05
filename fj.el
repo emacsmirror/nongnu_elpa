@@ -416,7 +416,7 @@ PARAMS and JSON are for `fedi-http--delete'."
 
 (defun fj-get-api-settings ()
   "Return API settings from the current instance."
-  (let ((endpoint "/settings/api"))
+  (let ((endpoint "settings/api"))
     (fj-get endpoint)))
 
 (defvar fj-default-limit nil)
@@ -1120,7 +1120,7 @@ Optionally specify ORG, an organization."
 (defun fj--list-user-repos (endpoint buf-str &optional url-str)
   "Fetch user data at /user/ENDPOINT and list them.
 BUF-STR is to name the buffer, URL-STR is for the buffer-spec."
-  (let* ((ep (format "/user/%s" endpoint))
+  (let* ((ep (format "user/%s" endpoint))
          (repos (fj-get ep))
          (entries (fj-repo-tl-entries repos))
          (buf (format "*fj-%s-repos*" buf-str))
@@ -1993,7 +1993,7 @@ Return an alist, with each cons being (name . id)"
                         (substring color 9 11)))
          (params `(("name" . ,name)
                    ("color" . ,color)))
-         (endpoint (format "/repos/%s/%s/labels" owner repo))
+         (endpoint (format "repos/%s/%s/labels" owner repo))
          (resp (fj-post endpoint params :json)))
     (fedi-http--triage
      resp
@@ -2012,7 +2012,7 @@ Return an alist, with each cons being (name . id)"
          (choice (completing-read "Delete label: " list))
          (id (cdr (assoc choice list #'string=)))
          (color (fj-label-color-from-name choice list))
-         (endpoint (format "/repos/%s/%s/labels/%s" owner repo id))
+         (endpoint (format "repos/%s/%s/labels/%s" owner repo id))
          (resp (fj-delete endpoint)))
     (fedi-http--triage
      resp
@@ -2039,7 +2039,7 @@ PAGE and LIMIT are for pagination."
   ;; GET /repos/{owner}/{repo}/milestones
   (let* ((repo (fj-read-user-repo repo))
          (owner (or owner (fj--repo-owner)))
-         (endpoint (format "/repos/%s/%s/milestones" owner repo))
+         (endpoint (format "repos/%s/%s/milestones" owner repo))
          ;; state param worth implementing:
          (params (fedi-opt-params state name page limit)))
     (fj-get endpoint params)))
@@ -2056,7 +2056,7 @@ PAGE and LIMIT are for pagination."
   (interactive)
   (let* ((repo (fj-read-user-repo repo))
          (owner (or owner (fj--repo-owner)))
-         (endpoint (format "/repos/%s/%s/milestones" owner repo))
+         (endpoint (format "repos/%s/%s/milestones" owner repo))
          (title (read-string "Title: "))
          (desc (read-string "Description (optional): "))
          (params `(("title" . ,title)
@@ -3279,7 +3279,7 @@ ENDPOINT is the API endpoint to hit."
   (interactive)
   (fj-with-pull
    (fj-destructure-buf-spec (repo owner item)
-     (let* ((endpoint (format "/repos/%s/%s/pulls/%s/commits"
+     (let* ((endpoint (format "repos/%s/%s/pulls/%s/commits"
                               owner repo item)))
        (fj-get endpoint)))))
 
@@ -5043,7 +5043,7 @@ If PREFIX arg, prompt for branch to show commits of."
   "Get commits of REPO by OWNER.
 Optionally specify BRANCH to show commits from.
 PAGE and LIMIT as always."
-  (let ((endpoint (format "/repos/%s/%s/commits" owner repo))
+  (let ((endpoint (format "repos/%s/%s/commits" owner repo))
         (params (append `(("sha" . ,branch))
                         (fedi-opt-params page limit))))
     (fj-get endpoint params)))
@@ -5160,7 +5160,7 @@ BUF-STR is the name of the buffer string to use."
 (defun fj-get-stargazers (repo owner &optional page limit)
   "Get stargazers of REPO by OWNER.
 PAGE and LIMIT are for pagination."
-  (let ((endpoint (format "/repos/%s/%s/stargazers" owner repo))
+  (let ((endpoint (format "repos/%s/%s/stargazers" owner repo))
         (params (fedi-opt-params page limit)))
     (fj-get endpoint params)))
 
@@ -5190,7 +5190,7 @@ PAGE and LIMIT are for `fj-get-stargazers'."
 (defun fj-get-watchers (repo owner &optional page limit)
   "Get watchers of REPO by OWNER.
 PAGE and LIMIT are for pagination."
-  (let ((endpoint (format "/repos/%s/%s/subscribers" owner repo))
+  (let ((endpoint (format "repos/%s/%s/subscribers" owner repo))
         (params (fedi-opt-params page limit)))
     (fj-get endpoint params)))
 
@@ -5222,7 +5222,7 @@ BUF-STR is the name of the `buffer-string' to use."
 
 (defun fj-get-user-followers ()
   "Get users you `fj-user' is followed by."
-  (let* ((endpoint "/user/followers"))
+  (let* ((endpoint "user/followers"))
     (fj-get endpoint)))
 
 (defun fj-user-followers (&optional user page limit)
@@ -5234,7 +5234,7 @@ PAGE and LIMIT are for pagination."
 
 (defun fj-get-user-following ()
   "Get users you `fj-user' is following."
-  (let* ((endpoint "/user/following"))
+  (let* ((endpoint "user/following"))
     (fj-get endpoint)))
 
 (defun fj-user-following (&optional user page limit)
@@ -5391,7 +5391,7 @@ Returns a list of strings."
   "Return data for recent activities timeline for `fj-user'.
 If USER-ONLY, limit results to only those performed by `fj-user'."
   ;; GET /users/{username}/activities/feeds
-  (let* ((endpoint (format "/users/%s/activities/feeds" fj-user)))
+  (let* ((endpoint (format "users/%s/activities/feeds" fj-user)))
     ;; items to display: .op_type, .act_user.login, repo.name
     ;; .created .comment/issue.body, commit refs, etc.
     (fj-get endpoint user-only)))
