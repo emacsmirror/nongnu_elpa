@@ -711,7 +711,6 @@ the working-directory (for directory-local variables)."
      ;; message bindings maybe?
      ))
 
-
 (defmacro fj-with-buffer (buf mode wd ow &rest body)
   "Set up a BUF fer in MODE and call BODY.
 Sets up default-directory as WD and ensures local variables take effect
