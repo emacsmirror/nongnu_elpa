@@ -141,12 +141,14 @@ The compile options will be passed to the
   :group 'typst-ts-watch)
 
 (defcustom typst-ts-watch-process-name "*Typst-Watch*"
-  "Process name for `typst watch' sub-command."
+  "Prefix of process name for `typst watch' sub-command.
+Watch sessions are scoped by target file, and each session appends that path."
   :type 'string
   :group 'typst-ts-watch)
 
 (defcustom typst-ts-watch-process-buffer-name "*Typst-Watch*"
-  "Process buffer name for `typst watch' sub-command."
+  "Prefix of process buffer name for `typst watch' sub-command.
+Watch sessions are scoped by target file, and each session appends that path."
   :type 'string
   :group 'typst-ts-watch)
 
