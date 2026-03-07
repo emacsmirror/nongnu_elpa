@@ -600,6 +600,8 @@ base toot."
 
 (defun mastodon-toot-browse-toot-url ()
   "Browse URL of toot at point.
+Note that this loads the version of the toot on the remote server, not
+your own.
 Calls `browse-url'."
   (interactive)
   (browse-url
