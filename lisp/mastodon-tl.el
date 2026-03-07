@@ -1989,7 +1989,7 @@ TOOT is the data for the quoting toot."
             "\n" (mastodon-tl--quote-symbol-str) "\n"
             ;; author byline without horiz bar/stats:
             (concat
-             (mastodon-tl--byline-author quoted nil :domain :base)
+             (mastodon-tl--byline-author quoted nil nil :base)
              "\n"
              (propertize ;; buttonize quoted toot body
               ;; quoted text:
