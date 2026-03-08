@@ -30,7 +30,7 @@
 ;; # Installation
 
 ;; The preferred way to install the mode is by grabbing
-;; `auto-dim-other-buffers' package form NonGNU ELPA:
+;; `auto-dim-other-buffers' package from NonGNU ELPA:
 
 ;;     M-x package-install RET auto-dim-other-buffers RET
 
@@ -38,8 +38,8 @@
 
 ;;     M-x auto-dim-other-buffers-mode RET
 
-;; To make the mode enabled every time Emacs starts, add the following to Emacs
-;; initialisation file (see `user-init-file'):
+;; To automatically enable the mode when Emacs starts, add the following to your
+;; Emacs initialisation file (see `user-init-file'):
 
 ;;     (add-hook 'after-init-hook (lambda ()
 ;;       (when (fboundp 'auto-dim-other-buffers-mode)
@@ -70,14 +70,14 @@
 ;; By its nature, `auto-dim-other-buffers-mode' often forces full-window
 ;; refreshes which may cause flickering on some systems and displays.  To
 ;; mitigate it, try disabling `fringe' highlighting which—due to Emacs’ display
-;; code limitation—require full-frame refresh.  See Customisation section above
-;; for instruction how to do it.
+;; code limitation—requires full-frame refresh.  See the Customisation section
+;; above for instruction on how to do it.
 
 ;; ### Text which should be hidden in org-mode is not
 
 ;; To hide text, `org-mode' uses `org-hide' face whose foreground is set to the
 ;; background colour of the `default' face.  When `auto-dim-other-buffers-mode'
-;; changes background of a dimmed window it also needs to be applied to the
+;; changes the background of a dimmed window it also needs to be applied to the
 ;; `org-hide' face.  The good news is that this is supported out of the box.
 ;; The caveat is that it requires that `auto-dim-other-buffers' and
 ;; `auto-dim-other-buffers-hide' are changed in sync.
@@ -95,9 +95,9 @@
 ;; ## Afterword
 
 ;; Note that despite its name, the mode operates on *windows* rather than
-;; buffers.  In other words, selected window is highlighted and all other
+;; buffers.  In other words, the selected window is highlighted and all other
 ;; windows are dimmed even if they display the same buffer.  The package is
-;; named `auto-dim-other-buffer' for historical reasons.
+;; named `auto-dim-other-buffers' for historical reasons.
 
 ;;; Code:
 
@@ -117,7 +117,7 @@ By default it is applied to, among others, the ‘default’ face and is
 intended to affect background of non-selected windows.  A related
 ‘auto-dim-other-buffers-hide’ face is intended for faces which need
 their foreground to be changed in sync.  Which faces are modified is
-configured by the ‘auto-dim-other-buffers-affecteds’ variable."
+configured by the ‘auto-dim-other-buffers-affected-faces’ variable."
   :group 'auto-dim-other-buffers)
 (define-obsolete-face-alias 'auto-dim-other-buffers-face
                             'auto-dim-other-buffers
@@ -139,7 +139,7 @@ in the same colour as the background.  Since the mode alters the
 background in a window such faces need to be updated as well.
 
 Which faces are modified is configured by the
-‘auto-dim-other-buffers-affecteds’ variable."
+‘auto-dim-other-buffers-affected-faces’ variable."
   :group 'auto-dim-other-buffers)
 (define-obsolete-face-alias 'auto-dim-other-buffers-hide-face
                             'auto-dim-other-buffers-hide
@@ -148,7 +148,7 @@ Which faces are modified is configured by the
 (defvar auto-dim-other-buffers-affected-faces) ; Forward declaration.
 
 (defcustom auto-dim-other-buffers-dim-on-focus-out t
-  "Whether to dim all windows when frame looses focus."
+  "Whether to dim all windows when frame loses focus."
   :type 'boolean
   :group 'auto-dim-other-buffers)
 
@@ -454,7 +454,7 @@ Beware: This mode may cause flickering, especially if fringe changing is
 enabled (which is the default).  To mitigate the flickering, try
 removing fringe changing (see `auto-dim-other-buffers-affected-faces').
 
-Note: Despite it’s name, this mode operates on *windows* rather than
+Note: Despite its name, this mode operates on *windows* rather than
 buffers, i.e. even if a buffer is shown in multiple windows, only one of
 them is considered selected and all other will be dimmed.  Historically,
 prior to Emacs 27, all or none windows displaying a buffer would be
