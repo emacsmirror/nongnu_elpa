@@ -1293,14 +1293,33 @@ responsibility to ensure ARG is a command."
       (error "Spies can only be created in `before-each' or `it'"))))
 
 
+(defvar native-comp-enable-subr-trampolines)
+(defvar comp-enable-subr-trampolines)
+
+(defmacro buttercup--without-subr-trampolines (&rest body)
+  "Execute BODY with subr trampoline generation disabled.
+Redefining certain primitive's trampolines will cause problems,
+see https://github.com/jorgenschaefer/emacs-buttercup/issues/230 and
+https://debbugs.gnu.org/cgi/bugreport.cgi?bug=61880"
+  (declare (indent 0) (debug t))
+  `(,@(if (fboundp 'with-suppressed-warnings)
+          '(with-suppressed-warnings ((obsolete comp-enable-subr-trampolines)))
+        '(progn))
+     (let ((comp-enable-subr-trampolines nil)
+           (native-comp-enable-subr-trampolines nil))
+       ,@body)))
+
 (defun buttercup--spy-on-and-call-replacement (spy fun orig-function)
   "Replace the function in symbol SPY with a spy calling FUN.
 Register a cleanup function to restore SPY to ORIG-FUNCTION. If the
 cleanup function list is not available, do not set the spy and return
 nil. This means `spy-on' has been called in a non-supported place."
-  (when (buttercup--add-cleanup (lambda ()
-                                  (fset spy orig-function)))
-    (fset spy (buttercup--make-spy fun))))
+  (when (buttercup--add-cleanup
+         (lambda ()
+           (buttercup--without-subr-trampolines
+            (fset spy orig-function))))
+    (buttercup--without-subr-trampolines
+     (fset spy (buttercup--make-spy fun)))))
 
 (defun buttercup--make-spy (fun)
   "Create a new spy function wrapping FUN and tracking every call to itself."
@@ -1345,24 +1364,13 @@ nil. This means `spy-on' has been called in a non-supported place."
 Should always be set to a value that is not `listp', except while
 in a `buttercup-with-cleanup' environment.")
 
-(defvar native-comp-enable-subr-trampolines)
-(defvar comp-enable-subr-trampolines)
-
 (defmacro buttercup-with-cleanup (&rest body)
   "Execute BODY, cleaning spys and the rest afterwards."
-  `(,@(if (fboundp 'with-suppressed-warnings)
-          '(with-suppressed-warnings ((obsolete comp-enable-subr-trampolines)))
-        '(progn))
-     (let ((buttercup--cleanup-functions nil)
-           ;; Redefining certain primitive's trampolines will cause problems,
-           ;; see https://github.com/jorgenschaefer/emacs-buttercup/issues/230 and
-           ;; https://debbugs.gnu.org/cgi/bugreport.cgi?bug=61880
-           (comp-enable-subr-trampolines nil)
-           (native-comp-enable-subr-trampolines nil))
-       (unwind-protect (progn ,@body)
-         (dolist (fun buttercup--cleanup-functions)
-           (ignore-errors
-             (funcall fun)))))))
+  `(let ((buttercup--cleanup-functions nil))
+     (unwind-protect (progn ,@body)
+       (dolist (fun buttercup--cleanup-functions)
+         (ignore-errors
+           (funcall fun))))))
 
 (defun buttercup--add-cleanup (function)
   "Register FUNCTION for cleanup in `buttercup-with-cleanup'."
