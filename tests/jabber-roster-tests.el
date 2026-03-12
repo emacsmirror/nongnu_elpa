@@ -130,9 +130,9 @@
 ;;; ---- Group 6: jabber-roster-separator ----
 
 (ert-deftest jabber-test-roster-separator-has-face ()
-  "Separator string has jabber-roster-separator face."
+  "Separator string has jabber-separator face."
   (let ((sep (jabber-roster-separator)))
-    (should (eq (get-text-property 0 'face sep) 'jabber-roster-separator))))
+    (should (eq (get-text-property 0 'face sep) 'jabber-separator))))
 
 (ert-deftest jabber-test-roster-separator-is-intangible ()
   "Separator string has cursor-intangible property."
@@ -219,7 +219,6 @@
                        (jabber-roster-user-dnd . error)
                        (jabber-roster-user-error . error)
                        (jabber-roster-user-offline . shadow)
-                       (jabber-roster-separator . nil)
                        (jabber-roster-groupchat . font-lock-type-face)
                        (jabber-roster-groupchat-nick . shadow)
                        (jabber-roster-unread . font-lock-warning-face)))

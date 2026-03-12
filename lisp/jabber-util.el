@@ -773,6 +773,19 @@ FN is applied to the node and not to the data itself."
 	   (setf (cdr prev) (if tail (funcall fn tail) nil))
 	   result)))))
 
+(defface jabber-separator
+  '((((background light)) :strike-through "gray70" :foreground "gray70")
+    (t :strike-through "gray30" :foreground "gray30"))
+  "Face for separator lines in jabber buffers."
+  :group 'jabber)
+
+(defun jabber-separator ()
+  "Return a propertized separator string."
+  (let* ((win (or (get-buffer-window (current-buffer)) (selected-window)))
+         (width (max 1 (/ (window-body-width win) 3))))
+    (jabber-propertize (make-string width ?\s)
+                       'face 'jabber-separator)))
+
 (provide 'jabber-util)
 
 ;;; jabber-util.el ends here

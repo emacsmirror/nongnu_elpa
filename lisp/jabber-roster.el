@@ -190,12 +190,6 @@ Trailing newlines are always removed, regardless of this variable."
   "Face for displaying offline users."
   :group 'jabber-roster)
 
-(defface jabber-roster-separator
-  '((((background light)) :strike-through "gray70" :foreground "gray70")
-    (t :strike-through "gray30" :foreground "gray30"))
-  "Face for separator lines in the roster buffer."
-  :group 'jabber-roster)
-
 (defface jabber-roster-groupchat
   '((t :inherit font-lock-type-face))
   "Face for groupchat room names in the roster buffer."
@@ -212,12 +206,9 @@ Trailing newlines are always removed, regardless of this variable."
   :group 'jabber-roster)
 
 (defun jabber-roster-separator ()
-  "Return a propertized separator string."
-  (let* ((win (or (get-buffer-window (current-buffer)) (selected-window)))
-	 (width (max 1 (/ (window-body-width win) 3))))
-    (jabber-propertize (make-string width ?\s)
-		       'face 'jabber-roster-separator
-		       'cursor-intangible t)))
+  "Return a propertized separator string for the roster buffer."
+  (jabber-propertize (jabber-separator)
+                     'cursor-intangible t))
 
 (defvar jabber-roster-debug nil
   "Debug roster draw.")
