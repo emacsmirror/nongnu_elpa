@@ -145,7 +145,8 @@ These fields are available:
   "Face used for system and special messages."
   :group 'jabber-chat)
 
-(defface jabber-chat-text-local '((t ()))
+(defface jabber-chat-text-local
+  '((t :inherit jabber-chat-prompt-local))
   "Face used for text you write."
   :group 'jabber-chat)
 
@@ -216,6 +217,7 @@ added to the outgoing message.")
 (declare-function jabber-db--store-outgoing "jabber-db.el"
                   (jc to body type))
 (defvar jabber-group)                   ; jabber-muc.el
+(defvar *jabber-active-groupchats*)     ; jabber-muc.el
 (defvar jabber-muc-printers)            ; jabber-muc.el
 
 ;;
@@ -324,9 +326,16 @@ JC is the Jabber connection."
   (let* ((message-time (plist-get msg-plist :timestamp))
 	 (direction (plist-get msg-plist :direction))
 	 (msg-type (plist-get msg-plist :msg-type))
-	 (node-type (if (string= direction "in")
-			(if (string= msg-type "groupchat") :muc-foreign :foreign)
-		      (if (string= msg-type "groupchat") :muc-local :local)))
+	 (node-type (cond
+		    ((string= msg-type "groupchat")
+		     (let* ((nick (jabber-jid-resource (plist-get msg-plist :from)))
+			    (my-nick (cdr (assoc jabber-group
+						 *jabber-active-groupchats*))))
+		       (if (and nick my-nick (string= nick my-nick))
+			   :muc-local
+			 :muc-foreign)))
+		    ((string= direction "out") :local)
+		    (t :foreign)))
 	 (node-data (list node-type msg-plist)))
 
     ;; Insert after existing rare timestamp?
