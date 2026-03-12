@@ -10,7 +10,8 @@ endif
 endif
 
 TESTS ?= tests/jabber-xml-tests.el tests/jabber-util-tests.el \
-         tests/jabber-muc-tests.el tests/jabber-roster-tests.el
+         tests/jabber-muc-tests.el tests/jabber-roster-tests.el \
+         tests/jabber-chat-tests.el tests/jabber-db-tests.el
 
 build: autoload compile
 
@@ -53,6 +54,6 @@ test:
 	-f ert-run-tests-batch-and-exit
 
 clean-elc:
-	-rm lisp/*.elc
+	find . -name '*.elc' -delete
 
 clean: clean-elc

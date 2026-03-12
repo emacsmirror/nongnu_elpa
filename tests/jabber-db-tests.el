@@ -132,34 +132,43 @@ and tears down on exit."
 
 ;;; ---- Group 3: Backlog format and ordering ----
 
-(ert-deftest jabber-db-test-backlog-vector-format ()
-  "Backlog entries are vectors of [timestamp direction sender recipient body]."
+(ert-deftest jabber-db-test-backlog-plist-format ()
+  "Backlog entries are plists with :from, :body, :timestamp, :delayed, :direction, :msg-type."
+  (jabber-db-test-with-db
+    (let ((ts (floor (float-time))))
+      (jabber-db-store-message
+       "me@example.com" "friend@example.com" "in" "chat"
+       "Hello!" ts "laptop")
+      (let* ((entries (jabber-db-backlog "me@example.com" "friend@example.com"))
+             (entry (car entries)))
+        (should (listp entry))
+        (should (string= "friend@example.com/laptop" (plist-get entry :from)))
+        (should (string= "Hello!" (plist-get entry :body)))
+        (should (string= "in" (plist-get entry :direction)))
+        (should (string= "chat" (plist-get entry :msg-type)))
+        (should (plist-get entry :delayed))
+        (should (plist-get entry :timestamp))))))
+
+(ert-deftest jabber-db-test-backlog-chat-no-resource ()
+  "Chat backlog sender is bare JID when no resource is stored."
   (jabber-db-test-with-db
     (let ((ts (floor (float-time))))
       (jabber-db-store-message
        "me@example.com" "friend@example.com" "in" "chat"
        "Hello!" ts)
-      (let* ((entries (jabber-db-backlog "me@example.com" "friend@example.com"))
-             (entry (car entries)))
-        (should (vectorp entry))
-        (should (= 5 (length entry)))
-        (should (stringp (aref entry 0)))      ; timestamp string
-        (should (string= "in" (aref entry 1)))
-        (should (string= "friend@example.com" (aref entry 2)))
-        (should (string= "me" (aref entry 3)))
-        (should (string= "Hello!" (aref entry 4)))))))
+      (let ((entry (car (jabber-db-backlog "me@example.com" "friend@example.com"))))
+        (should (string= "friend@example.com" (plist-get entry :from)))))))
 
 (ert-deftest jabber-db-test-backlog-outgoing-format ()
-  "Outgoing backlog entries have sender 'me' and recipient as peer."
+  "Outgoing backlog entries have account JID as :from."
   (jabber-db-test-with-db
     (let ((ts (floor (float-time))))
       (jabber-db-store-message
        "me@example.com" "friend@example.com" "out" "chat"
        "Hi there" ts)
       (let ((entry (car (jabber-db-backlog "me@example.com" "friend@example.com"))))
-        (should (string= "out" (aref entry 1)))
-        (should (string= "me" (aref entry 2)))
-        (should (string= "friend@example.com" (aref entry 3)))))))
+        (should (string= "out" (plist-get entry :direction)))
+        (should (string= "me@example.com" (plist-get entry :from)))))))
 
 (ert-deftest jabber-db-test-backlog-ordering ()
   "Backlog returns messages in reverse chronological order."
@@ -177,9 +186,9 @@ and tears down on exit."
       (let ((entries (jabber-db-backlog "me@example.com" "friend@example.com")))
         (should (= 3 (length entries)))
         ;; DESC order: newest first
-        (should (string= "Third" (aref (nth 0 entries) 4)))
-        (should (string= "Second" (aref (nth 1 entries) 4)))
-        (should (string= "First" (aref (nth 2 entries) 4)))))))
+        (should (string= "Third" (plist-get (nth 0 entries) :body)))
+        (should (string= "Second" (plist-get (nth 1 entries) :body)))
+        (should (string= "First" (plist-get (nth 2 entries) :body)))))))
 
 (ert-deftest jabber-db-test-backlog-respects-count ()
   "Backlog returns at most COUNT messages."
@@ -214,8 +223,8 @@ and tears down on exit."
                        "me@example.com" "friend@example.com"
                        nil cutoff)))
         (should (= 2 (length entries)))
-        (should (string= "Recent" (aref (nth 0 entries) 4)))
-        (should (string= "Old" (aref (nth 1 entries) 4)))))))
+        (should (string= "Recent" (plist-get (nth 0 entries) :body)))
+        (should (string= "Old" (plist-get (nth 1 entries) :body)))))))
 
 ;;; ---- Group 4: FTS search ----
 
@@ -318,8 +327,8 @@ and tears down on exit."
             (bob-msgs (jabber-db-backlog "bob@example.com" "friend@example.com")))
         (should (= 1 (length alice-msgs)))
         (should (= 1 (length bob-msgs)))
-        (should (string= "Alice's message" (aref (car alice-msgs) 4)))
-        (should (string= "Bob's message" (aref (car bob-msgs) 4)))))))
+        (should (string= "Alice's message" (plist-get (car alice-msgs) :body)))
+        (should (string= "Bob's message" (plist-get (car bob-msgs) :body)))))))
 
 (ert-deftest jabber-db-test-peer-isolation ()
   "Messages to different peers are isolated."
@@ -409,7 +418,72 @@ and tears down on exit."
         (should (= 1 (length rows)))
         (should (string= "Persistent message" (plist-get (car rows) :body)))))))
 
-;;; ---- Group 10: Import from history ----
+;;; ---- Group 10: MUC backlog round-trip ----
+
+(ert-deftest jabber-db-test-muc-backlog-sender-has-nickname ()
+  "MUC backlog sender includes room JID and nickname as resource."
+  (jabber-db-test-with-db
+    (let ((ts (floor (float-time))))
+      (jabber-db-store-message
+       "me@example.com" "room@conference.example.com" "in" "groupchat"
+       "Hello everyone" ts "knighthk")
+      (let ((entry (car (jabber-db-backlog
+                         "me@example.com" "room@conference.example.com"))))
+        (should (string= "room@conference.example.com/knighthk"
+                         (plist-get entry :from)))
+        (should (string= "in" (plist-get entry :direction)))
+        (should (string= "groupchat" (plist-get entry :msg-type)))
+        (should (string= "Hello everyone" (plist-get entry :body)))))))
+
+(ert-deftest jabber-db-test-muc-backlog-multiple-senders ()
+  "MUC backlog preserves distinct nicknames for different senders."
+  (jabber-db-test-with-db
+    (let ((now (floor (float-time))))
+      (jabber-db-store-message
+       "me@example.com" "room@conference.example.com" "in" "groupchat"
+       "Hi from Alice" (- now 20) "alice")
+      (jabber-db-store-message
+       "me@example.com" "room@conference.example.com" "in" "groupchat"
+       "Hi from Bob" (- now 10) "bob")
+      (jabber-db-store-message
+       "me@example.com" "room@conference.example.com" "out" "groupchat"
+       "Hi from me" now)
+      (let ((entries (jabber-db-backlog
+                      "me@example.com" "room@conference.example.com")))
+        (should (= 3 (length entries)))
+        ;; DESC order: newest first
+        (should (string= "me@example.com" (plist-get (nth 0 entries) :from)))
+        (should (string= "room@conference.example.com/bob"
+                         (plist-get (nth 1 entries) :from)))
+        (should (string= "room@conference.example.com/alice"
+                         (plist-get (nth 2 entries) :from)))))))
+
+(ert-deftest jabber-db-test-muc-backlog-persistence ()
+  "MUC messages survive close/reopen and retain nicknames."
+  (jabber-db-test-with-db
+    (let ((ts (floor (float-time))))
+      (jabber-db-store-message
+       "me@example.com" "room@conference.example.com" "in" "groupchat"
+       "Persistent MUC msg" ts "someuser")
+      (jabber-db-close)
+      (jabber-db-ensure-open)
+      (let ((entry (car (jabber-db-backlog
+                         "me@example.com" "room@conference.example.com"))))
+        (should (string= "room@conference.example.com/someuser"
+                         (plist-get entry :from)))
+        (should (string= "Persistent MUC msg" (plist-get entry :body)))))))
+
+(ert-deftest jabber-db-test-nil-path-disables-storage ()
+  "Setting jabber-db-path to nil disables all DB operations."
+  (let ((jabber-db-path nil)
+        (jabber-db--connection nil))
+    (should (null (jabber-db-ensure-open)))
+    (should (null (jabber-db-store-message
+                   "me@example.com" "friend@example.com" "in" "chat"
+                   "Hello" (floor (float-time)))))
+    (should (null (jabber-db-backlog "me@example.com" "friend@example.com")))))
+
+;;; ---- Group 11: Import from history ----
 
 (ert-deftest jabber-db-test-import-history ()
   "Importing from flat-file history populates the database."
@@ -448,6 +522,49 @@ and tears down on exit."
                                    0 (floor (float-time)))))
         (should (= 1 (length rows)))
         (should (string= "Global msg" (plist-get (car rows) :body)))))))
+
+;;; ---- Group 11: jabber-db--row-to-plist ----
+
+(ert-deftest jabber-db-test-row-to-plist-incoming-chat ()
+  "Incoming chat message builds correct plist."
+  (let* ((row '("me@example.com" "alice@example.com" "in"
+                "Hello!" 1700000000 "mobile" "chat"))
+         (plist (jabber-db--row-to-plist row)))
+    (should (string= "alice@example.com/mobile" (plist-get plist :from)))
+    (should (string= "Hello!" (plist-get plist :body)))
+    (should (string= "in" (plist-get plist :direction)))
+    (should (string= "chat" (plist-get plist :msg-type)))
+    (should (plist-get plist :delayed))
+    (should (equal (seconds-to-time 1700000000) (plist-get plist :timestamp)))))
+
+(ert-deftest jabber-db-test-row-to-plist-incoming-no-resource ()
+  "Incoming message without resource uses bare JID as :from."
+  (let* ((row '("me@example.com" "alice@example.com" "in"
+                "Hi" 1700000000 nil "chat"))
+         (plist (jabber-db--row-to-plist row)))
+    (should (string= "alice@example.com" (plist-get plist :from)))))
+
+(ert-deftest jabber-db-test-row-to-plist-outgoing ()
+  "Outgoing message uses account JID as :from."
+  (let* ((row '("me@example.com" "alice@example.com" "out"
+                "Bye!" 1700000000 nil "chat"))
+         (plist (jabber-db--row-to-plist row)))
+    (should (string= "me@example.com" (plist-get plist :from)))))
+
+(ert-deftest jabber-db-test-row-to-plist-groupchat ()
+  "Groupchat message has msg-type groupchat."
+  (let* ((row '("me@example.com" "room@conf.example.com" "in"
+                "Hello room" 1700000000 "Alice" "groupchat"))
+         (plist (jabber-db--row-to-plist row)))
+    (should (string= "groupchat" (plist-get plist :msg-type)))
+    (should (string= "room@conf.example.com/Alice" (plist-get plist :from)))))
+
+(ert-deftest jabber-db-test-row-to-plist-nil-body ()
+  "Nil body is converted to empty string."
+  (let* ((row '("me@example.com" "alice@example.com" "in"
+                nil 1700000000 nil "chat"))
+         (plist (jabber-db--row-to-plist row)))
+    (should (string= "" (plist-get plist :body)))))
 
 (provide 'jabber-db-tests)
 
