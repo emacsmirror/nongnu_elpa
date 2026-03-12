@@ -13,3 +13,4 @@ elc-stamp
 /jabber-pkg.el
 jabber.info
 emacs-jabber.schemas
+.worktrees/
