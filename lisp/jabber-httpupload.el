@@ -54,6 +54,9 @@
 (eval-when-compile
   (require 'cl-lib))
 
+(declare-function jabber-chat--msg-plist-from-stanza "jabber-chat.el"
+                  (xml-data &optional delayed))
+
 ;; * Configuration variables *
 
 (defgroup jabber-httpupload nil "Jabber HTTP Upload Settings."
@@ -499,7 +502,8 @@ and the JC Jabber Connection."
 	(nconc stanza-to-send (funcall hook body id))))
           (with-current-buffer (jabber-chat-create-buffer jc jid)
             (jabber-maybe-print-rare-time
-             (ewoc-enter-last jabber-chat-ewoc (list :local stanza-to-send :time (current-time))))))
+             (ewoc-enter-last jabber-chat-ewoc
+                              (list :local (jabber-chat--msg-plist-from-stanza stanza-to-send))))))
     ;; ...and send it...
     (jabber-send-sexp jc stanza-to-send)))
 

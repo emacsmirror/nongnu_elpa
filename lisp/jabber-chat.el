@@ -100,8 +100,9 @@ rare time printed."
   :type 'string)
 
 (defface jabber-rare-time-face
-  '((t (:foreground "darkgreen" :underline t)))
-  "face for displaying the rare time info")
+  '((t :inherit font-lock-comment-face :underline t))
+  "Face for displaying rare time information."
+  :group 'jabber-chat)
 
 (defcustom jabber-chat-local-prompt-format "[%t] %n> "
   "The format specification for lines you type in the chat buffer.
@@ -130,26 +131,32 @@ These fields are available:
   :type 'string)
 
 (defface jabber-chat-prompt-local
-  '((t (:foreground "blue" :weight bold)))
-  "face for displaying the chat prompt for what you type in")
+  '((t :inherit font-lock-keyword-face :weight bold))
+  "Face for displaying the chat prompt for what you type in."
+  :group 'jabber-chat)
 
 (defface jabber-chat-prompt-foreign
-  '((t (:foreground "red" :weight bold)))
-  "face for displaying the chat prompt for what they send")
+  '((t :inherit font-lock-constant-face :weight bold))
+  "Face for displaying the chat prompt for what they send."
+  :group 'jabber-chat)
 
 (defface jabber-chat-prompt-system
-  '((t (:foreground "green" :weight bold)))
-  "face used for system and special messages")
+  '((t :inherit success))
+  "Face used for system and special messages."
+  :group 'jabber-chat)
 
 (defface jabber-chat-text-local '((t ()))
-  "Face used for text you write")
+  "Face used for text you write."
+  :group 'jabber-chat)
 
 (defface jabber-chat-text-foreign '((t ()))
-  "Face used for text others write")
+  "Face used for text others write."
+  :group 'jabber-chat)
 
 (defface jabber-chat-error
-  '((t (:foreground "red" :weight bold)))
-  "Face used for error messages")
+  '((t :inherit error))
+  "Face used for error messages."
+  :group 'jabber-chat)
 
 ;;;###autoload
 (defvar jabber-chatting-with nil
@@ -196,12 +203,14 @@ added to the outgoing message.")
 (declare-function jabber-muc-private-create-buffer "jabber-muc.el"
                   (jc group nickname))
 (declare-function jabber-muc-print-prompt "jabber-muc.el"
-                  (xml-data &optional local dont-print-nick-p))
-(declare-function jabber-muc-private-print-prompt "jabber-muc.el" (xml-data))
+                  (msg &optional local dont-print-nick-p))
+(declare-function jabber-muc-private-print-prompt "jabber-muc.el" (msg))
 (declare-function jabber-muc-system-prompt "jabber-muc.el" (&rest _ignore))
 (declare-function jabber-muc-message-p "jabber-muc.el"(message))
 (declare-function jabber-muc-sender-p "jabber-muc.el" (jid))
 (declare-function jabber-muc-private-message-p "jabber-muc.el" (message))
+(defvar jabber-backlog-days)
+(defvar jabber-backlog-number)
 (declare-function jabber-db-backlog "jabber-db.el"
                   (account peer &optional count start-time))
 (declare-function jabber-db--store-outgoing "jabber-db.el"
@@ -219,17 +228,17 @@ nil if no backlog has been inserted.")
   "History values selected for `jabber-muc-decorate-presence-patterns'")
 
 (defface jabber-muc-presence-dim
-  '((t (:foreground "dark grey" :weight light :slant italic)))
-  "face for diminished presence notifications."
-  :group 'jabber-alerts)
+  '((t :inherit shadow :slant italic))
+  "Face for diminished presence notifications."
+  :group 'jabber-chat)
 
 (defcustom jabber-muc-decorate-presence-patterns-alist
-  '(("Show all"
+  '(("Show enter/leave diminished"
+     ("." . jabber-muc-presence-dim))
+    ("Show all"
      ("." . jabber-chat-text-foreign))
     ("Hide all"
      ("."))
-    ("Show enter/leave diminished"
-     ("." . jabber-muc-presence-dim))
     ("Hide enter/leave"
      ("\\( enters the room ([^)]+)\\| has left the chatroom\\)$")
      ("." . jabber-muc-presence-dim)))
@@ -279,7 +288,8 @@ This function is idempotent.
 JC is the Jabber connection."
   (with-current-buffer (get-buffer-create (jabber-chat-get-buffer chat-with))
     (unless (eq major-mode 'jabber-chat-mode)
-      (jabber-chat-mode jc #'jabber-chat-pp)
+      (jabber-chat-mode)
+      (jabber-chat-mode-setup jc #'jabber-chat-pp)
 
       (make-local-variable 'jabber-chatting-with)
       (setq jabber-chatting-with chat-with)
@@ -295,29 +305,29 @@ JC is the Jabber connection."
 				(jabber-jid-user chat-with))))
 	  (if (null backlog-entries)
 	      (setq jabber-chat-earliest-backlog (jabber-float-time))
+	    ;; backlog-entries is DESC; last element is oldest.
 	    (setq jabber-chat-earliest-backlog
-		  (jabber-float-time (jabber-parse-time
-				      (aref (car backlog-entries) 0))))
-	    (mapc #'jabber-chat-insert-backlog-entry
-	          (nreverse backlog-entries))))))
+		  (float-time (plist-get (car (last backlog-entries)) :timestamp)))
+	    ;; ewoc-enter-first with DESC input produces ascending display.
+	    (mapc #'jabber-chat-insert-backlog-entry backlog-entries)))))
 
     ;; Make sure the connection variable is up to date.
     (setq jabber-buffer-connection jc)
 
     (current-buffer)))
 
-(defun jabber-chat-insert-backlog-entry (msg)
-  "Insert backlog entry MSG at beginning of buffer."
+(defun jabber-chat-insert-backlog-entry (msg-plist)
+  "Insert backlog MSG-PLIST at beginning of buffer."
   ;; Rare timestamps are especially important in backlog.  We risk
   ;; having superfluous timestamps if we just add before each backlog
   ;; entry.
-  (let* ((message-time (jabber-parse-time (aref msg 0)))
-	 (fake-stanza `(message ((from . ,(aref msg 2)))
-				(body nil ,(aref msg 4))
-				(x ((xmlns . "jabber:x:delay")
-				    (stamp . ,(jabber-encode-legacy-time message-time))))))
-	 (node-data (list (if (string= (aref msg 1) "in") :foreign :local)
-			  fake-stanza :delayed t)))
+  (let* ((message-time (plist-get msg-plist :timestamp))
+	 (direction (plist-get msg-plist :direction))
+	 (msg-type (plist-get msg-plist :msg-type))
+	 (node-type (if (string= direction "in")
+			(if (string= msg-type "groupchat") :muc-foreign :foreign)
+		      (if (string= msg-type "groupchat") :muc-local :local)))
+	 (node-data (list node-type msg-plist)))
 
     ;; Insert after existing rare timestamp?
     (if (and jabber-print-rare-time
@@ -348,11 +358,10 @@ Specify 0 to display all messages."
 			   jabber-chat-earliest-backlog)))
     (when backlog-entries
       (setq jabber-chat-earliest-backlog
-	    (jabber-float-time (jabber-parse-time
-				(aref (car backlog-entries) 0))))
+	    (float-time (plist-get (car (last backlog-entries)) :timestamp)))
       (save-excursion
 	(goto-char (point-min))
-	(mapc #'jabber-chat-insert-backlog-entry (nreverse backlog-entries))))))
+	(mapc #'jabber-chat-insert-backlog-entry backlog-entries)))))
 
 (add-to-list 'jabber-message-chain #'jabber-process-chat)
 
@@ -389,11 +398,12 @@ JC is the Jabber connection."
 	    (error-p (jabber-xml-get-children xml-data 'error))
 	    (body-text (car (jabber-xml-node-children
 			     (car (jabber-xml-get-children
-				   xml-data 'body))))))
+				   xml-data 'body)))))
+	    (msg-plist (jabber-chat--msg-plist-from-stanza xml-data)))
         ;; First check if we would output anything for this stanza.
         (when (or error-p
 		  (run-hook-with-args-until-success 'jabber-chat-printers
-                                                    xml-data
+                                                    msg-plist
                                                     :foreign :printp))
           ;; If so, create chat buffer, if necessary...
 	  (with-current-buffer (if (jabber-muc-sender-p from)
@@ -406,9 +416,7 @@ JC is the Jabber connection."
             ;; ...add the message to the ewoc...
 	    (let ((node (ewoc-enter-last jabber-chat-ewoc
                                          (list (if error-p :error :foreign)
-                                               xml-data
-                                               :time
-                                               (current-time)))))
+                                               msg-plist))))
 	      (jabber-maybe-print-rare-time node))
 
             ;; ...and call alert hooks.
@@ -440,9 +448,10 @@ JC is the Jabber connection."
 	      (nconc stanza-to-send (funcall global-hook body id))))
       (nconc stanza-to-send (funcall hook body id))))
     ;; ...display it, if it would be displayed.
-    (when (run-hook-with-args-until-success 'jabber-chat-printers stanza-to-send :local :printp)
-      (jabber-maybe-print-rare-time
-       (ewoc-enter-last jabber-chat-ewoc (list :local stanza-to-send :time (current-time)))))
+    (let ((msg-plist (jabber-chat--msg-plist-from-stanza stanza-to-send)))
+      (when (run-hook-with-args-until-success 'jabber-chat-printers msg-plist :local :printp)
+        (jabber-maybe-print-rare-time
+         (ewoc-enter-last jabber-chat-ewoc (list :local msg-plist)))))
     ;; ...and send it...
     (jabber-send-sexp jc stanza-to-send)))
 
@@ -479,7 +488,7 @@ may take a few second, especially in MUCs with a large number of
 participants connected through intermittent networks (like mobile
 clients)."
   (interactive "P")
-  (when-let ((patterns (cdr
+  (when-let* ((patterns (cdr
                         (assoc-string
                          (completing-read
                           "MUC presence treatment: "
@@ -505,79 +514,123 @@ found."
      (string-match (car pair) message nil 'inhibit-modify))
    jabber-muc-decorate-presence-patterns))
 
+(defun jabber-chat--msg-plist-from-stanza (xml-data &optional delayed)
+  "Extract display fields from XML-DATA into a message plist.
+If DELAYED is non-nil, mark the message as delayed regardless of
+whether a delay element is present."
+  (let* ((from (jabber-xml-get-attribute xml-data 'from))
+         (body (car (jabber-xml-node-children
+                     (car (jabber-xml-get-children xml-data 'body)))))
+         (subject (car (jabber-xml-node-children
+                        (car (jabber-xml-get-children xml-data 'subject)))))
+         (timestamp (or (jabber-message-timestamp xml-data) (current-time)))
+         (oob-x (cl-find-if
+                 (lambda (x)
+                   (and (listp x)
+                        (string= (jabber-xml-get-attribute x 'xmlns)
+                                 "jabber:x:oob")))
+                 (jabber-xml-node-children xml-data)))
+         (error-node (car (jabber-xml-get-children xml-data 'error)))
+         ;; Detect MUC invitations - these need raw XML for accept/decline
+         (has-invite (cl-find-if
+                      (lambda (x)
+                        (and (listp x)
+                             (string= (jabber-xml-get-attribute x 'xmlns)
+                                      "http://jabber.org/protocol/muc#user")
+                             (jabber-xml-get-children x 'invite)))
+                      (jabber-xml-get-children xml-data 'x)))
+         (plist (list :from from
+                      :body body
+                      :subject subject
+                      :timestamp timestamp
+                      :delayed (or delayed
+                                   (and (jabber-message-timestamp xml-data) t))
+                      :oob-url (when oob-x
+                                 (car (jabber-xml-node-children
+                                       (car (jabber-xml-get-children
+                                             oob-x 'url)))))
+                      :oob-desc (when oob-x
+                                  (car (jabber-xml-node-children
+                                        (car (jabber-xml-get-children
+                                              oob-x 'desc)))))
+                      :error-text (when error-node
+                                    (jabber-parse-error error-node)))))
+    (when has-invite
+      (plist-put plist :xml-data xml-data))
+    plist))
+
 (defun jabber-chat-pp (data)
-  "Pretty-print a <message/> stanza.
-\(car data) is either :local, :foreign, :error or :notice.
-\(cadr data) is the <message/> stanza.
+  "Pretty-print a message node.
+\(car data) is the node type: :local, :foreign, :muc-local,
+:muc-foreign, :error, :muc-error, :notice, :muc-notice,
+:rare-time, or :subscription-request.
+For message types, (cadr data) is a message plist with keys
+:from, :body, :subject, :timestamp, :delayed, :oob-url,
+:oob-desc, :error-text.
 This function is used as an ewoc prettyprinter."
   (let* ((beg (point))
-         (original-timestamp (when (listp (cadr data))
-                               (jabber-message-timestamp (cadr data))))
-         (internal-time
-          (plist-get (cddr data) :time))
-         (body (ignore-errors (car
-               (jabber-xml-node-children
-                (car
-                 (jabber-xml-get-children (cadr data) 'body))))))
+         (type (car data))
+         (msg (cadr data))
+         (body (when (and (listp msg) (plist-member msg :body))
+                 (plist-get msg :body)))
+         (timestamp (when (and (listp msg) (plist-member msg :timestamp))
+                      (plist-get msg :timestamp)))
+         (delayed (when (and (listp msg) (plist-member msg :delayed))
+                    (plist-get msg :delayed)))
          (/me-p
-          (and (> (length body) 4)
-               (string= (substring body 0 4) "/me "))))
+          (and (stringp body)
+               (> (length body) 4)
+               (string= (substring body 0 4) "/me ")))
+         (muc-highlight (when (eq type :muc-notice)
+                          (jabber-chat-muc-presence-highlight msg)))
+         (muc-highlight-face (cdr-safe muc-highlight)))
 
     ;; Print prompt...
-    (let ((delayed (or original-timestamp (plist-get (cddr data) :delayed)))
-	  (prompt-start (point)))
-      (pcase (car data)
+    (let ((prompt-start (point)))
+      (pcase type
 	(:local
-	 (jabber-chat-self-prompt (or original-timestamp internal-time)
-				  delayed
-				  /me-p))
+	 (jabber-chat-self-prompt timestamp delayed /me-p))
 	(:foreign
-	 (if (and (listp (cadr data))
-		  (jabber-muc-private-message-p (cadr data)))
-	     (jabber-muc-private-print-prompt (cadr data))
-	   ;; For :error and :notice, this might be a string... beware
-	   (jabber-chat-print-prompt (when (listp (cadr data)) (cadr data))
-				     (or original-timestamp internal-time)
-				     delayed
-				     /me-p)))
+	 (jabber-chat-print-prompt msg timestamp delayed /me-p))
 	((or :error :notice :subscription-request)
-	 (jabber-chat-system-prompt (or original-timestamp internal-time)))
+	 (jabber-chat-system-prompt (or timestamp (current-time))))
 	(:muc-local
-	 (jabber-muc-print-prompt (cadr data) t /me-p))
+	 (jabber-muc-print-prompt msg t /me-p))
         (:muc-foreign
-         (jabber-muc-print-prompt (cadr data) nil /me-p))
+         (jabber-muc-print-prompt msg nil /me-p))
 	(:muc-notice
-         (unless (jabber-chat-muc-presence-highlight (cadr data))
-	   (jabber-muc-system-prompt)))
+         (cond
+          (muc-highlight-face
+           (jabber-muc-system-prompt)
+           (put-text-property prompt-start (point) 'face muc-highlight-face))
+          (muc-highlight)  ; matched but no face = hide entirely
+          (t (jabber-muc-system-prompt))))
         (:muc-error
 	 (jabber-muc-system-prompt)))
       (put-text-property prompt-start (point) 'field 'jabber-prompt))
 
     ;; ...and body
-    (pcase (car data)
+    (pcase type
       ((or :local :foreign)
-       (run-hook-with-args 'jabber-chat-printers (cadr data) (car data) :insert)
+       (run-hook-with-args 'jabber-chat-printers msg type :insert)
        (insert "\n"))
       ((or :muc-local :muc-foreign)
-       (let ((args (list (cadr data) (car data) :insert)))
+       (let ((args (list msg type :insert)))
 	 (mapc (lambda (f) (apply f args))
 	       (append jabber-muc-printers jabber-chat-printers))
          (insert "\n")))
       ((or :error :muc-error)
-       (if (stringp (cadr data))
-	    (insert (jabber-propertize (cadr data) 'face 'jabber-chat-error) "\n")
-	 (jabber-chat-print-error (cadr data))))
+       (if (stringp msg)
+	    (insert (jabber-propertize msg 'face 'jabber-chat-error) "\n")
+	 (jabber-chat-print-error msg)))
       (:muc-notice
-       (let* ((highlight (jabber-chat-muc-presence-highlight (cadr data)))
-              (face (cdr-safe highlight)))
-         (cond
-          (face (insert
-                 (jabber-propertize (cadr data) 'face face)
-                 "\n"))
-          (highlight)
-          (t (insert (cadr data) "\n")))))
+       (cond
+        (muc-highlight-face
+         (insert (jabber-propertize msg 'face muc-highlight-face) "\n"))
+        (muc-highlight)  ; matched but no face = hide entirely
+        (t (insert msg "\n"))))
       (:notice
-       (insert (cadr data) "\n"))
+       (insert msg "\n"))
       (:rare-time
        ;; When MUC presence announcements are hidden, lightly
        ;; trafficked chat rooms fill with superfluous :rare-time
@@ -594,13 +647,13 @@ This function is used as an ewoc prettyprinter."
             (setq beg (marker-position (ewoc-location prev-visible)))
             (point))
            (goto-char beg)))
-       (insert (jabber-propertize (format-time-string jabber-rare-time-format (cadr data))
+       (insert (jabber-propertize (format-time-string jabber-rare-time-format msg)
                                   'face 'jabber-rare-time-face)
                "\n"))
       (:subscription-request
        (insert "This user requests subscription to your presence.\n")
-       (when (and (stringp (cadr data)) (not (zerop (length (cadr data)))))
-         (insert "Message: " (cadr data) "\n"))
+       (when (and (stringp msg) (not (zerop (length msg))))
+         (insert "Message: " msg "\n"))
        (insert "Accept?\n\n")
        (cl-flet ((button
 	           (text action)
@@ -631,10 +684,14 @@ This function is used as an ewoc prettyprinter."
 		(format-time-string jabber-rare-time-format time2))))
 
 (defun jabber-chat-entry-time (entry)
-  "Return timestamp from EWOC node ENTRY."
-  (or (when (listp (cadr entry))
-	(jabber-message-timestamp (cadr entry)))
-      (plist-get (cddr entry) :time)))
+  "Return timestamp from EWOC node ENTRY.
+Handles both msg-plist entries (with :timestamp) and legacy
+string entries like :notice/:muc-notice (with :time in cddr)."
+  (pcase (car entry)
+    (:rare-time (cadr entry))
+    (_ (if (stringp (cadr entry))
+           (plist-get (cddr entry) :time)
+         (plist-get (cadr entry) :timestamp)))))
 
 (defun jabber-chat-find-node (data)
   "Find EWOC node whose data element equals DATA."
@@ -666,9 +723,9 @@ This function is used as an ewoc prettyprinter."
 	 (data (ewoc-data node))
 	 (prev-data (when prev (ewoc-data prev))))
     (cl-flet ((entry-time (entry)
-		(or (when (listp (cadr entry))
-		      (jabber-message-timestamp (cadr entry)))
-		    (plist-get (cddr entry) :time))))
+		(pcase (car entry)
+		  (:rare-time (cadr entry))
+		  (_ (plist-get (cadr entry) :timestamp)))))
       (when (and jabber-print-rare-time
 		 (or (null prev)
 		     (jabber-rare-time-needed (entry-time prev-data)
@@ -682,16 +739,15 @@ This function is used as an ewoc prettyprinter."
                                              (entry-time data)
                                              'list)))))))
 
-(defun jabber-chat-print-prompt (xml-data timestamp delayed dont-print-nick-p)
-  "Print prompt for received message in XML-DATA.
-TIMESTAMP is the timestamp to print, or nil to get it
-from a jabber:x:delay element.
+(defun jabber-chat-print-prompt (msg timestamp delayed dont-print-nick-p)
+  "Print prompt for received message.
+MSG is a message plist.  TIMESTAMP is the time to display.
 If DELAYED is non-nil, print long timestamp
 \(`jabber-chat-delayed-time-format' as opposed to
 `jabber-chat-time-format').
 If DONT-PRINT-NICK-P is non-nil, don't include nickname."
-  (let ((from (jabber-xml-get-attribute xml-data 'from))
-	(timestamp (or timestamp (jabber-message-timestamp xml-data))))
+  (let ((from (plist-get msg :from))
+	(timestamp (or timestamp (plist-get msg :timestamp))))
     (insert (jabber-propertize
 	     (format-spec jabber-chat-foreign-prompt-format
 			  (list
@@ -702,7 +758,7 @@ If DONT-PRINT-NICK-P is non-nil, don't include nickname."
 				     timestamp))
 			   (cons ?n (if dont-print-nick-p "" (jabber-jid-displayname from)))
 			   (cons ?u (or (jabber-jid-username from) from))
-			   (cons ?r (jabber-jid-resource from))
+			   (cons ?r (or (jabber-jid-resource from) ""))
 			   (cons ?j (jabber-jid-user from))))
 	     'face 'jabber-chat-prompt-foreign
 	     'help-echo
@@ -750,27 +806,18 @@ If DONT-PRINT-NICK-P is non-nil, don't include nickname."
 	     'help-echo
 	     (concat (format-time-string "On %Y-%m-%d %H:%M:%S" timestamp) " from you")))))
 
-(defun jabber-chat-print-error (xml-data)
-  "Print error in given <message/> in a readable way.
-
-XML-DATA is the parsed tree data from the stream (stanzas)
-obtained from `xml-parse-region'."
-  (let ((the-error (car (jabber-xml-get-children xml-data 'error))))
+(defun jabber-chat-print-error (msg)
+  "Print error from message plist MSG in a readable way."
+  (let ((error-text (plist-get msg :error-text)))
     (insert
      (jabber-propertize
-      (concat "Error: " (jabber-parse-error the-error))
+      (concat "Error: " (or error-text "Unknown error"))
       'face 'jabber-chat-error)
      "\n")))
 
-(defun jabber-chat-print-subject (xml-data _who mode)
-  "Print subject of given <message/>, if any.
-
-XML-DATA is the parsed tree data from the stream (stanzas)
-obtained from `xml-parse-region'."
-  (let ((subject (car
-		  (jabber-xml-node-children
-		   (car
-		    (jabber-xml-get-children xml-data 'subject))))))
+(defun jabber-chat-print-subject (msg _who mode)
+  "Print subject from message plist MSG, if any."
+  (let ((subject (plist-get msg :subject)))
     (when (not (zerop (length subject)))
       (pcase mode
 	(:printp
@@ -783,15 +830,12 @@ obtained from `xml-parse-region'."
 		  'face 'jabber-chat-text-foreign)
 		 "\n"))))))
 
-(defun jabber-chat-print-body (xml-data who mode)
-  (run-hook-with-args-until-success 'jabber-body-printers xml-data who mode))
+(defun jabber-chat-print-body (msg who mode)
+  (run-hook-with-args-until-success 'jabber-body-printers msg who mode))
 
-(defun jabber-chat-normal-body (xml-data who mode)
-  "Print body for received message in XML-DATA."
-  (let ((body (car
-	       (jabber-xml-node-children
-		(car
-		 (jabber-xml-get-children xml-data 'body))))))
+(defun jabber-chat-normal-body (msg who mode)
+  "Print body from message plist MSG."
+  (let ((body (plist-get msg :body)))
     (when body
 
       (when (eql mode :insert)
@@ -801,11 +845,10 @@ obtained from `xml-parse-region'."
 		  (nick (cond
 			 ((eq who :local)
 			  (plist-get (fsm-get-state-data jabber-buffer-connection) :username))
-			 ((or (jabber-muc-message-p xml-data)
-			      (jabber-muc-private-message-p xml-data))
-			  (jabber-jid-resource (jabber-xml-get-attribute xml-data 'from)))
+			 ((memq who '(:muc-local :muc-foreign))
+			  (jabber-jid-resource (plist-get msg :from)))
 			 (t
-			  (jabber-jid-displayname (jabber-xml-get-attribute xml-data 'from))))))
+			  (jabber-jid-displayname (plist-get msg :from))))))
 	      (insert (jabber-propertize
 		       (concat nick
 			       " "
@@ -818,34 +861,21 @@ obtained from `xml-parse-region'."
 			   ((or :local :muc-local) 'jabber-chat-text-local))))))
       t)))
 
-(defun jabber-chat-print-url (xml-data _who mode)
-  "Print URLs provided in jabber:x:oob namespace.
+(defun jabber-chat-print-url (msg _who mode)
+  "Print URLs from message plist MSG."
+  (let ((url (plist-get msg :oob-url)))
+    (when url
+      (when (eql mode :insert)
+        (let ((desc (plist-get msg :oob-desc)))
+          (insert (format "\n%s%s<%s>"
+                          (jabber-propertize
+                           "URL: " 'face 'jabber-chat-prompt-system)
+                          (if (stringp desc) (concat desc " ") "")
+                          url))))
+      t)))
 
-XML-DATA is the parsed tree data from the stream (stanzas)
-obtained from `xml-parse-region'."
-  (let ((foundp nil))
-    (dolist (x (jabber-xml-node-children xml-data))
-      (when (and (listp x) (eq (jabber-xml-node-name x) 'x)
-		 (string= (jabber-xml-get-attribute x 'xmlns) "jabber:x:oob"))
-	(setq foundp t)
-
-	(when (eql mode :insert)
-	  (let ((url (car (jabber-xml-node-children
-			   (car (jabber-xml-get-children x 'url)))))
-		(desc (car (jabber-xml-node-children
-			    (car (jabber-xml-get-children x 'desc))))))
-            (insert (format "\n%s%s<%s>"
-                            (jabber-propertize
-                             "URL: " 'face 'jabber-chat-prompt-system)
-                            (if (stringp desc) (concat desc " ") "")
-                            url))))))
-    foundp))
-
-(defun jabber-chat-goto-address (_xml-data _who mode)
-  "Call `goto-address' on the newly written text.
-
-XML-DATA is the parsed tree data from the stream (stanzas)
-obtained from `xml-parse-region'."
+(defun jabber-chat-goto-address (_msg _who mode)
+  "Call `goto-address' on the newly written text."
   (when (eq mode :insert)
     (ignore-errors
       (let ((end (point))

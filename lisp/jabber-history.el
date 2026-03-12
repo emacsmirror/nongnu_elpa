@@ -38,15 +38,6 @@
 Jabber history files."
   :group 'jabber)
 
-(defcustom jabber-history-enabled nil
-  "Non-nil means message logging is enabled."
-  :type 'boolean)
-
-(defcustom jabber-history-muc-enabled nil
-  "Non-nil means MUC logging is enabled.
-Default is nil, cause MUC logging may be i/o-intensive."
-  :type 'boolean)
-
 (defcustom jabber-history-dir
   (locate-user-emacs-file "jabber-history" ".emacs-jabber")
   "Base directory where per-contact history files are stored.
@@ -87,18 +78,10 @@ number after the last rotation."
 
 ;; Global reference declarations
 
-(declare-function jabber-muc-message-p "jabber-muc.el"(message))
+(defvar jabber-backlog-days)            ; jabber-db.el
+(defvar jabber-backlog-number)          ; jabber-db.el
 (defvar jabber-chatting-with)           ; jabber-chatbuffer.el
 (defvar jabber-buffer-connection)       ; jabber-buffer-connection.el
-
-;;
-
-(defvar jabber-history-inhibit-received-message-functions nil
-  "Functions determining whether to log an incoming message stanza.
-The functions in this list are called with two arguments,
-the connection and the full message stanza.
-If any of the functions returns non-nil, the stanza is not logged
-in the message history.")
 
 (defun jabber-rotate-history-p (history-file)
   "Return non-nil if HISTORY-FILE should be rotated."
@@ -235,17 +218,6 @@ of the log file."
 	      (when (bobp)
 		(throw 'beginning-of-file nil))))
 	collected))))
-
-(defcustom jabber-backlog-days 3.0
-  "Age limit on messages in chat buffer backlog, in days."
-  :group 'jabber
-  :type '(choice (number :tag "Number of days")
-		 (const :tag "No limit" nil)))
-
-(defcustom jabber-backlog-number 10
-  "Maximum number of messages in chat buffer backlog."
-  :group 'jabber
-  :type 'integer)
 
 (defun jabber-history-backlog (jid &optional before)
   "Fetch context from previous chats with JID.

@@ -178,7 +178,15 @@ The format is that of `mode-line-format' and `header-line-format'."
                   (jc to subject body type))
 (declare-function jabber-maybe-print-rare-time "jabber-chat.el" (node))
 (declare-function jabber-chat-pp "jabber-chat.el" (data))
-(declare-function jabber-chat-mode "jabber-chatbuffer.el" (jc ewoc-pp))
+(declare-function jabber-chat-mode "jabber-chatbuffer.el" ())
+(declare-function jabber-chat-mode-setup "jabber-chatbuffer.el" (jc ewoc-pp))
+(declare-function jabber-chat-insert-backlog-entry "jabber-chat.el" (msg-plist))
+(declare-function jabber-chat--msg-plist-from-stanza "jabber-chat.el"
+                  (xml-data &optional delayed))
+(declare-function jabber-db-last-timestamp "jabber-db.el"
+                  (account peer))
+(declare-function jabber-db-backlog "jabber-db.el"
+                  (account peer &optional count start-time))
 (defvar jabber-silent-mode)             ; jabber.el
 (defvar jabber-message-chain)           ; jabber-core.el
 (defvar jabber-alert-muc-function)      ; jabber-alert.el
@@ -189,6 +197,7 @@ The format is that of `mode-line-format' and `header-line-format'."
 (defvar jabber-chat-ewoc)               ; jabber-chatbuffer.el
 (defvar jabber-chat-printers)           ; jabber-chat.el
 (defvar jabber-chat-time-format)        ; jabber-chat.el
+(defvar jabber-connections)             ; jabber-core.el
 (defvar jabber-send-function)           ; jabber-console.el
 
 ;;
@@ -216,7 +225,8 @@ This function is idempotent.
 JC is the Jabber connection."
   (with-current-buffer (get-buffer-create (jabber-muc-get-buffer group))
     (unless (eq major-mode 'jabber-chat-mode)
-      (jabber-chat-mode jc #'jabber-chat-pp))
+      (jabber-chat-mode)
+      (jabber-chat-mode-setup jc #'jabber-chat-pp))
     ;; Make sure the connection variable is up to date.
     (setq jabber-buffer-connection jc)
 
@@ -224,6 +234,18 @@ JC is the Jabber connection."
     (make-local-variable 'jabber-muc-topic)
     (setq jabber-send-function #'jabber-muc-send)
     (setq header-line-format jabber-muc-header-line-format)
+
+    (make-local-variable 'jabber-chat-earliest-backlog)
+    (when (null jabber-chat-earliest-backlog)
+      (let ((backlog-entries (jabber-db-backlog
+                              (jabber-connection-bare-jid jc)
+                              (jabber-jid-user group))))
+        (if (null backlog-entries)
+            (setq jabber-chat-earliest-backlog (jabber-float-time))
+          (setq jabber-chat-earliest-backlog
+                (float-time (plist-get (car (last backlog-entries)) :timestamp)))
+          (mapc #'jabber-chat-insert-backlog-entry backlog-entries))))
+
     (current-buffer)))
 
 ;;;###autoload
@@ -243,7 +265,8 @@ This function is idempotent.
 JC is the Jabber connection."
   (with-current-buffer (get-buffer-create (jabber-muc-private-get-buffer group nickname))
     (unless (eq major-mode 'jabber-chat-mode)
-      (jabber-chat-mode jc #'jabber-chat-pp))
+      (jabber-chat-mode)
+      (jabber-chat-mode-setup jc #'jabber-chat-pp))
 
     (set (make-local-variable 'jabber-chatting-with) (concat group "/" nickname))
     (setq jabber-send-function #'jabber-chat-send)
@@ -573,7 +596,16 @@ Prompt with completion for joined rooms only."
 					 (cons ?j group)))))
     (if (get-buffer buffer-name)
 	(switch-to-buffer buffer-name)
-      (user-error "No buffer for %s" group))))
+      ;; Buffer was killed; recreate it.
+      (let ((jc (or ;; Find the connection that has messages for this group
+                    (cl-find-if
+                     (lambda (jc)
+                       (jabber-db-last-timestamp
+                        (jabber-connection-bare-jid jc)
+                        (jabber-jid-user group)))
+                     jabber-connections)
+                    (car jabber-connections))))
+        (switch-to-buffer (jabber-muc-create-buffer jc group))))))
 
 (defun jabber-muc-join-2 (jc closure result)
   (pcase-let ((`(,group ,nickname ,popup) closure))
@@ -837,70 +869,69 @@ JC is the Jabber connection."
 
 (add-to-list 'jabber-body-printers 'jabber-muc-print-invite)
 
-(defun jabber-muc-print-invite (xml-data _who mode)
-  "Print MUC invitation.
+(defun jabber-muc-print-invite (msg _who mode)
+  "Print MUC invitation from message plist MSG.
+Requires :xml-data key in MSG for raw stanza access."
+  (when-let* ((xml-data (plist-get msg :xml-data)))
+    (cl-dolist (x (jabber-xml-get-children xml-data 'x))
+      (when (string= (jabber-xml-get-attribute x 'xmlns) "http://jabber.org/protocol/muc#user")
+        (let ((invitation (car (jabber-xml-get-children x 'invite))))
+	  (when invitation
+	    (when (eql mode :insert)
+	      (let ((group (jabber-xml-get-attribute xml-data 'from))
+		    (inviter (jabber-xml-get-attribute invitation 'from))
+		    (reason (car (jabber-xml-node-children (car (jabber-xml-get-children invitation 'reason))))))
+	        ;; XXX: password
+	        (insert "You have been invited to MUC room " (jabber-jid-displayname group))
+	        (when inviter
+		  (insert " by " (jabber-jid-displayname inviter)))
+	        (insert ".")
+	        (when reason
+		  (insert "  Reason: " reason))
+	        (insert "\n\n")
 
-XML-DATA is the parsed tree data from the stream (stanzas)
-obtained from `xml-parse-region'."
-  (cl-dolist (x (jabber-xml-get-children xml-data 'x))
-    (when (string= (jabber-xml-get-attribute x 'xmlns) "http://jabber.org/protocol/muc#user")
-      (let ((invitation (car (jabber-xml-get-children x 'invite))))
-	(when invitation
-	  (when (eql mode :insert)
-	    (let ((group (jabber-xml-get-attribute xml-data 'from))
-		  (inviter (jabber-xml-get-attribute invitation 'from))
-		  (reason (car (jabber-xml-node-children (car (jabber-xml-get-children invitation 'reason))))))
-	      ;; XXX: password
-	      (insert "You have been invited to MUC room " (jabber-jid-displayname group))
-	      (when inviter
-		(insert " by " (jabber-jid-displayname inviter)))
-	      (insert ".")
-	      (when reason
-		(insert "  Reason: " reason))
-	      (insert "\n\n")
-
-	      (let ((action
-		     (lambda (&rest _ignore) (interactive)
-		       (jabber-muc-join jabber-buffer-connection group
-					(jabber-muc-read-my-nickname
-					 jabber-buffer-connection group)))))
-		(if (fboundp 'insert-button)
-		    (insert-button "Accept"
-				   'action action)
-		  ;; Simple button replacement
-		  (let ((keymap (make-keymap)))
-		    (define-key keymap "\r" action)
-		    (insert (jabber-propertize "Accept"
-					       'keymap keymap
-					       'face 'highlight))))
-
-		(insert "\t")
-
-		(let ((action
+	        (let ((action
 		       (lambda (&rest _ignore) (interactive)
-			 (let ((reason
-				(jabber-read-with-input-method
-				 "Reason: ")))
-			   (jabber-send-sexp
-			    jabber-buffer-connection
-			    `(message
-			      ((to . ,group))
-			      (x
-			       ((xmlns . "http://jabber.org/protocol/muc#user"))
-			       (decline
-				((to . ,inviter))
-				,(unless (zerop (length reason))
-				   `(reason nil ,reason))))))))))
+		         (jabber-muc-join jabber-buffer-connection group
+					  (jabber-muc-read-my-nickname
+					   jabber-buffer-connection group)))))
 		  (if (fboundp 'insert-button)
-		      (insert-button "Decline"
+		      (insert-button "Accept"
 				     'action action)
 		    ;; Simple button replacement
 		    (let ((keymap (make-keymap)))
 		      (define-key keymap "\r" action)
-		      (insert (jabber-propertize "Decline"
+		      (insert (jabber-propertize "Accept"
 						 'keymap keymap
-						 'face 'highlight))))))))
-	  (cl-return t))))))
+						 'face 'highlight))))
+
+		  (insert "\t")
+
+		  (let ((action
+		         (lambda (&rest _ignore) (interactive)
+			   (let ((reason
+				  (jabber-read-with-input-method
+				   "Reason: ")))
+			     (jabber-send-sexp
+			      jabber-buffer-connection
+			      `(message
+			        ((to . ,group))
+			        (x
+			         ((xmlns . "http://jabber.org/protocol/muc#user"))
+			         (decline
+				  ((to . ,inviter))
+				  ,(unless (zerop (length reason))
+				     `(reason nil ,reason))))))))))
+		    (if (fboundp 'insert-button)
+		        (insert-button "Decline"
+				       'action action)
+		      ;; Simple button replacement
+		      (let ((keymap (make-keymap)))
+		        (define-key keymap "\r" action)
+		        (insert (jabber-propertize "Decline"
+						   'keymap keymap
+						   'face 'highlight))))))))
+	    (cl-return t)))))))
 
 (defun jabber-muc-autojoin (jc)
   "Join rooms specified in account bookmarks and global `jabber-muc-autojoin'.
@@ -987,16 +1018,17 @@ Return nil if X-MUC is nil."
 			 (jabber-xml-node-attributes
 			  (car (jabber-xml-get-children x-muc 'item))))))
 
-(defun jabber-muc-print-prompt (xml-data &optional local dont-print-nick-p)
-  "Print MUC prompt for message in XML-DATA."
-  (let ((nick (jabber-jid-resource (jabber-xml-get-attribute xml-data 'from)))
-	(timestamp (jabber-message-timestamp xml-data)))
+(defun jabber-muc-print-prompt (msg &optional local dont-print-nick-p)
+  "Print MUC prompt for message plist MSG."
+  (let ((nick (jabber-jid-resource (plist-get msg :from)))
+	(timestamp (plist-get msg :timestamp))
+	(delayed (plist-get msg :delayed)))
     (if (stringp nick)
 	(insert (jabber-propertize
 		 (format-spec jabber-groupchat-prompt-format
 			      (list
 			       (cons ?t (format-time-string
-					 (if timestamp
+					 (if delayed
 					     jabber-chat-delayed-time-format
 					   jabber-chat-time-format)
 					 timestamp))
@@ -1004,39 +1036,36 @@ Return nil if X-MUC is nil."
 			       (cons ?u nick)
 			       (cons ?r nick)
 			       (cons ?j (concat jabber-group "/" nick))))
-		 'face (if local        ;Message from you.
-                           (if jabber-muc-colorize-local ;; If colorization enable...
-                               ;; ...colorize nick
+		 'face (if local
+                           (if jabber-muc-colorize-local
                                (list ':foreground (jabber-muc-nick-get-color nick))
-                             ;; otherwise, use default face.
                              'jabber-chat-prompt-local)
-                         ;; Message from other participant.
-                         (if jabber-muc-colorize-foreign ;If colorization enable...
-                             ;; ... colorize nick
+                         (if jabber-muc-colorize-foreign
                              (list ':foreground (jabber-muc-nick-get-color nick))
-                           ;; otherwise, use default face.
                            'jabber-chat-prompt-foreign))
 		 'help-echo (concat (format-time-string "On %Y-%m-%d %H:%M:%S" timestamp) " from " nick " in " jabber-group)))
       (jabber-muc-system-prompt))))
 
-(defun jabber-muc-private-print-prompt (xml-data)
-  "Print prompt for private MUC message in XML-DATA."
-  (let ((nick (jabber-jid-resource (jabber-xml-get-attribute xml-data 'from)))
-	(group (jabber-jid-user (jabber-xml-get-attribute xml-data 'from)))
-	(timestamp (jabber-message-timestamp xml-data)))
-    (insert (jabber-propertize
-	     (format-spec jabber-muc-private-foreign-prompt-format
-			  (list
-			   (cons ?t (format-time-string
-				     (if timestamp
-					 jabber-chat-delayed-time-format
-				       jabber-chat-time-format)
-				     timestamp))
-			   (cons ?n nick)
-			   (cons ?g (or (jabber-jid-rostername group)
-					(jabber-jid-username group)))))
-	     'face 'jabber-chat-prompt-foreign
-	     'help-echo (concat (format-time-string "On %Y-%m-%d %H:%M:%S" timestamp) " from " nick " in " jabber-group)))))
+(defun jabber-muc-private-print-prompt (msg)
+  "Print prompt for private MUC message plist MSG."
+  (let ((from (plist-get msg :from))
+	(timestamp (plist-get msg :timestamp))
+	(delayed (plist-get msg :delayed)))
+    (let ((nick (jabber-jid-resource from))
+	  (group (jabber-jid-user from)))
+      (insert (jabber-propertize
+	       (format-spec jabber-muc-private-foreign-prompt-format
+			    (list
+			     (cons ?t (format-time-string
+				       (if delayed
+					   jabber-chat-delayed-time-format
+					 jabber-chat-time-format)
+				       timestamp))
+			     (cons ?n nick)
+			     (cons ?g (or (jabber-jid-rostername group)
+					  (jabber-jid-username group)))))
+	       'face 'jabber-chat-prompt-foreign
+	       'help-echo (concat (format-time-string "On %Y-%m-%d %H:%M:%S" timestamp) " from " nick " in " jabber-group))))))
 
 (defun jabber-muc-system-prompt (&rest _ignore)
   "Print system prompt for MUC."
@@ -1071,7 +1100,8 @@ JC is the Jabber connection."
 			    (car (jabber-xml-get-children
 				  xml-data 'body)))))
 
-	   (printers (append jabber-muc-printers jabber-chat-printers)))
+	   (printers (append jabber-muc-printers jabber-chat-printers))
+	   (msg-plist (jabber-chat--msg-plist-from-stanza xml-data)))
 
       (with-current-buffer (jabber-muc-create-buffer jc group)
 	(jabber-muc-snarf-topic xml-data)
@@ -1079,10 +1109,10 @@ JC is the Jabber connection."
 	(when (or error-p
 		  (let ((res nil))
 		    (while (and printers (not res))
-		      (setq res (funcall (pop printers) xml-data type :printp)))
+		      (setq res (funcall (pop printers) msg-plist type :printp)))
 		    res))
 	  (jabber-maybe-print-rare-time
-	   (ewoc-enter-last jabber-chat-ewoc (list type xml-data :time (current-time))))
+	   (ewoc-enter-last jabber-chat-ewoc (list type msg-plist)))
 
 	  ;; ...except if the message is part of history, in which
 	  ;; case we don't want an alert.
