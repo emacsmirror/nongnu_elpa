@@ -202,6 +202,10 @@ added to the outgoing message.")
 (declare-function jabber-muc-message-p "jabber-muc.el"(message))
 (declare-function jabber-muc-sender-p "jabber-muc.el" (jid))
 (declare-function jabber-muc-private-message-p "jabber-muc.el" (message))
+(declare-function jabber-db-backlog "jabber-db.el"
+                  (account peer &optional count start-time))
+(declare-function jabber-db--store-outgoing "jabber-db.el"
+                  (jc to body type))
 (defvar jabber-group)                   ; jabber-muc.el
 (defvar jabber-muc-printers)            ; jabber-muc.el
 
@@ -286,7 +290,9 @@ JC is the Jabber connection."
 
       ;; insert backlog
       (when (null jabber-chat-earliest-backlog)
-	(let ((backlog-entries (jabber-history-backlog chat-with)))
+	(let ((backlog-entries (jabber-db-backlog
+				(jabber-connection-bare-jid jc)
+				(jabber-jid-user chat-with))))
 	  (if (null backlog-entries)
 	      (setq jabber-chat-earliest-backlog (jabber-float-time))
 	    (setq jabber-chat-earliest-backlog
@@ -335,8 +341,11 @@ Specify 0 to display all messages."
   (let* ((inhibit-read-only t)
 	 (jabber-backlog-days nil)
 	 (jabber-backlog-number (if (= how-many 0) t how-many))
-	 (backlog-entries (jabber-history-backlog
-			   (or jabber-chatting-with jabber-group) jabber-chat-earliest-backlog)))
+	 (backlog-entries (jabber-db-backlog
+			   (jabber-connection-bare-jid jabber-buffer-connection)
+			   (jabber-jid-user (or jabber-chatting-with jabber-group))
+			   jabber-backlog-number
+			   jabber-chat-earliest-backlog)))
     (when backlog-entries
       (setq jabber-chat-earliest-backlog
 	    (jabber-float-time (jabber-parse-time
@@ -866,8 +875,7 @@ JC is the Jabber connection."
                                    `(subject () ,subject))
                               ,(if (> (length body) 0)
                                    `(body () ,body))))
-  (if (and jabber-history-enabled (not (string= type "groupchat")))
-      (jabber-history-log-message "out" nil to body (current-time))))
+  (jabber-db--store-outgoing jc to body type))
 
 (add-to-list 'jabber-jid-chat-menu
 	     (cons "Start chat" 'jabber-chat-with))
