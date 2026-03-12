@@ -559,6 +559,22 @@ JC is the Jabber connection."
 (defalias 'jabber-groupchat-join #'jabber-muc-join
   "Deprecated. Use `jabber-muc-join' instead.")
 
+;;;###autoload
+(defun jabber-muc-switch (group)
+  "Switch to an active groupchat buffer.
+Prompt with completion for joined rooms only."
+  (interactive
+   (list (completing-read "Groupchat: "
+			  (mapcar #'car *jabber-active-groupchats*)
+			  nil t)))
+  (let* ((buffer-name (format-spec jabber-groupchat-buffer-format
+				   (list (cons ?n (jabber-jid-displayname group))
+					 (cons ?b (jabber-jid-bookmarkname group))
+					 (cons ?j group)))))
+    (if (get-buffer buffer-name)
+	(switch-to-buffer buffer-name)
+      (user-error "No buffer for %s" group))))
+
 (defun jabber-muc-join-2 (jc closure result)
   (pcase-let ((`(,group ,nickname ,popup) closure))
     (let* ( ;; Either success...

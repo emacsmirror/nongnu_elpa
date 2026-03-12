@@ -21,6 +21,7 @@
 
 (eval-when-compile (require 'cl-lib))
 (require 'jabber-util)
+(require 'transient)
 (require 'wid-edit)
 
 ;;;###autoload
@@ -161,44 +162,98 @@ With prefix argument, remove it."
 (defvar jabber-jid-service-menu nil
   "Menu items for service menu.")
 
-(defun jabber-popup-menu (which-menu)
-  "Popup specified menu."
-  (let* ((mouse-event (and (listp last-input-event) last-input-event))
-	 (choice (widget-choose "Actions" which-menu mouse-event)))
-    (if mouse-event
-	(mouse-set-point mouse-event))
-    (if choice
-	(call-interactively choice))))
+;; Global reference declarations for transient suffix commands
 
-(defun jabber-popup-chat-menu ()
-  "Popup chat menu."
-  (interactive)
-  (jabber-popup-menu jabber-jid-chat-menu))
+(declare-function jabber-chat-with "jabber-chat.el" (jc jid &optional other-window))
+(declare-function jabber-compose "jabber-compose.el" ())
+(declare-function jabber-chat-display-more-backlog "jabber-chat.el" (jc &optional before))
+(declare-function jabber-roster-change "jabber-presence.el" (jc jid name groups))
+(declare-function jabber-send-subscription-request "jabber-presence.el" (jc to &optional request))
+(declare-function jabber-roster-delete "jabber-presence.el" (jc jid))
+(declare-function jabber-get-disco-items "jabber-disco.el" (jc to &optional node))
+(declare-function jabber-get-disco-info "jabber-disco.el" (jc jid node callback closure-data &optional force))
+(declare-function jabber-get-browse "jabber-browse.el" (jc to))
+(declare-function jabber-get-version "jabber-version.el" (jc to))
+(declare-function jabber-ping "jabber-ping.el" (jc to))
+(declare-function jabber-get-time "jabber-time.el" (jc to))
+(declare-function jabber-vcard-get "jabber-vcard.el" (jc jid))
+(declare-function jabber-muc-join "jabber-muc.el" (jc group nickname &optional popup))
+(declare-function jabber-muc-leave "jabber-muc.el" (jc group))
+(declare-function jabber-muc-nick "jabber-muc.el" (jc group nickname &optional popup))
+(declare-function jabber-muc-set-topic "jabber-muc.el" (jc group topic))
+(declare-function jabber-muc-invite "jabber-muc.el" (jc jid group reason))
+(declare-function jabber-muc-names "jabber-muc.el" (jc group))
+(declare-function jabber-muc-get-config "jabber-muc.el" (jc group))
+(declare-function jabber-muc-set-role "jabber-muc.el" (jc group nickname role reason))
+(declare-function jabber-muc-set-affiliation "jabber-muc.el" (jc group nickname-or-jid nickname-p affiliation reason))
+(declare-function jabber-muc-private "jabber-muc.el" (jc group nickname))
+(declare-function jabber-muc-vcard-get "jabber-muc.el" (jc group nickname))
+(declare-function jabber-get-register "jabber-register.el" (jc to))
+(declare-function jabber-get-search "jabber-search.el" (jc to))
+(declare-function jabber-ahc-execute-command "jabber-ahc.el" (jc to node))
+(declare-function jabber-ahc-get-list "jabber-ahc.el" (jc to))
+(declare-function jabber-enable-carbons "jabber-carbons.el" (jc))
 
-(defun jabber-popup-info-menu ()
-  "Popup info menu."
-  (interactive)
-  (jabber-popup-menu jabber-jid-info-menu))
+;;;###autoload
+(transient-define-prefix jabber-chat-menu ()
+  "Jabber chat commands."
+  [["Chat"
+    ("c" "Start chat" jabber-chat-with)
+    ("m" "Compose message" jabber-compose)
+    ("b" "Display more context" jabber-chat-display-more-backlog)]])
 
-(defun jabber-popup-roster-menu ()
-  "Popup roster menu."
-  (interactive)
-  (jabber-popup-menu jabber-jid-roster-menu))
+;;;###autoload
+(transient-define-prefix jabber-roster-context-menu ()
+  "Jabber roster commands."
+  [["Roster"
+    ("a" "Add/modify contact" jabber-roster-change)
+    ("s" "Subscribe" jabber-send-subscription-request)
+    ("d" "Delete roster entry" jabber-roster-delete)]])
 
-(defun jabber-popup-muc-menu ()
-  "Popup MUC menu."
-  (interactive)
-  (jabber-popup-menu jabber-jid-muc-menu))
+;;;###autoload
+(transient-define-prefix jabber-info-menu ()
+  "Jabber info/discovery commands."
+  [["Discovery"
+    ("i" "Disco items" jabber-get-disco-items)
+    ("I" "Disco info" jabber-get-disco-info)
+    ("b" "Browse" jabber-get-browse)
+    ("v" "Client version" jabber-get-version)
+    ("p" "Ping" jabber-ping)
+    ("t" "Request time" jabber-get-time)
+    ("V" "View vCard" jabber-vcard-get)]])
 
-(defun jabber-popup-service-menu ()
-  "Popup service menu."
-  (interactive)
-  (jabber-popup-menu jabber-jid-service-menu))
+;;;###autoload
+(transient-define-prefix jabber-muc-menu ()
+  "Jabber MUC commands."
+  [["MUC"
+    ("j" "Join" jabber-muc-join)
+    ("l" "Leave" jabber-muc-leave)
+    ("n" "Change nick" jabber-muc-nick)
+    ("t" "Set topic" jabber-muc-set-topic)
+    ("i" "Invite" jabber-muc-invite)
+    ("w" "List participants" jabber-muc-names)
+    ("c" "Configure" jabber-muc-get-config)
+    ("r" "Set role" jabber-muc-set-role)
+    ("a" "Set affiliation" jabber-muc-set-affiliation)
+    ("p" "Private chat" jabber-muc-private)
+    ("v" "Request vcard" jabber-muc-vcard-get)]])
 
-(defun jabber-popup-combined-menu ()
-  "Popup combined menu."
-  (interactive)
-  (jabber-popup-menu (append jabber-jid-chat-menu jabber-jid-info-menu jabber-jid-roster-menu jabber-jid-muc-menu)))
+;;;###autoload
+(transient-define-prefix jabber-service-menu ()
+  "Jabber service commands."
+  [["Services"
+    ("r" "Register" jabber-get-register)
+    ("s" "Search directory" jabber-get-search)
+    ("c" "Execute command" jabber-ahc-execute-command)
+    ("l" "Command list" jabber-ahc-get-list)
+    ("C" "Enable carbons" jabber-enable-carbons)]])
+
+(define-obsolete-function-alias 'jabber-popup-chat-menu #'jabber-chat-menu "29.1")
+(define-obsolete-function-alias 'jabber-popup-roster-menu #'jabber-roster-context-menu "29.1")
+(define-obsolete-function-alias 'jabber-popup-info-menu #'jabber-info-menu "29.1")
+(define-obsolete-function-alias 'jabber-popup-muc-menu #'jabber-muc-menu "29.1")
+(define-obsolete-function-alias 'jabber-popup-service-menu #'jabber-service-menu "29.1")
+(define-obsolete-function-alias 'jabber-popup-combined-menu #'jabber-chat-menu "29.1")
 
 (provide 'jabber-menu)
 ;;; jabber-menu.el ends here

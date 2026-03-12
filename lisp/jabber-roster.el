@@ -29,6 +29,7 @@
 (require 'jabber-carbons)
 (require 'format-spec)
 (require 'ewoc)
+(require 'transient)
 
 (defgroup jabber-roster nil "roster display options"
   :group 'jabber)
@@ -131,19 +132,13 @@ choose the behaviour.
 Trailing newlines are always removed, regardless of this variable."
   :type 'boolean)
 
-(defcustom jabber-roster-show-bindings t
-  "Show keybindings in roster buffer?."
-  :type 'boolean)
 
-(defcustom jabber-roster-show-title t
-  "Show title in roster buffer?."
-  :type 'boolean)
 
 (defcustom jabber-roster-mode-hook nil
   "Hook run when entering Roster mode."
   :type 'hook)
 
-(defcustom jabber-roster-default-group-name "other"
+(defcustom jabber-roster-default-group-name "Contacts"
   "Default group name for buddies without groups."
   :type 'string
   :get (lambda (var)
@@ -161,41 +156,75 @@ Trailing newlines are always removed, regardless of this variable."
   :type 'boolean)
 
 (defface jabber-roster-user-online
-  '((t (:foreground "blue" :weight bold :slant normal)))
-  "Face for displaying online users.")
+  '((t :inherit success :weight bold))
+  "Face for displaying online users."
+  :group 'jabber-roster)
 
 (defface jabber-roster-user-xa
-  '((((background dark)) (:foreground "magenta" :weight normal :slant italic))
-    (t (:foreground "black" :weight normal :slant italic)))
-  "Face for displaying extended away users.")
+  '((t :inherit shadow :slant italic))
+  "Face for displaying extended away users."
+  :group 'jabber-roster)
 
 (defface jabber-roster-user-dnd
-  '((t (:foreground "red" :weight normal :slant italic)))
-  "Face for displaying do not disturb users.")
+  '((t :inherit error :weight bold))
+  "Face for displaying do not disturb users."
+  :group 'jabber-roster)
 
 (defface jabber-roster-user-away
-  '((t (:foreground "dark green" :weight normal :slant italic)))
-  "Face for displaying away users.")
+  '((t :inherit warning :slant italic))
+  "Face for displaying away users."
+  :group 'jabber-roster)
 
 (defface jabber-roster-user-chatty
-  '((t (:foreground "dark orange" :weight bold :slant normal)))
-  "Face for displaying chatty users.")
+  '((t :inherit success :weight bold :slant italic))
+  "Face for displaying chatty users."
+  :group 'jabber-roster)
 
 (defface jabber-roster-user-error
-  '((t (:foreground "red" :weight light :slant italic)))
-  "Face for displaying users sending presence errors.")
+  '((t :inherit error :slant italic))
+  "Face for displaying users sending presence errors."
+  :group 'jabber-roster)
 
 (defface jabber-roster-user-offline
-  '((t (:foreground "dark grey" :weight light :slant italic)))
-  "Face for displaying offline users.")
+  '((t :inherit shadow :slant italic))
+  "Face for displaying offline users."
+  :group 'jabber-roster)
+
+(defface jabber-roster-separator
+  '((((background light)) :strike-through "gray70" :foreground "gray70")
+    (t :strike-through "gray30" :foreground "gray30"))
+  "Face for separator lines in the roster buffer."
+  :group 'jabber-roster)
+
+(defface jabber-roster-groupchat
+  '((t :inherit font-lock-type-face))
+  "Face for groupchat room names in the roster buffer."
+  :group 'jabber-roster)
+
+(defface jabber-roster-groupchat-nick
+  '((t :inherit shadow))
+  "Face for the user's nickname in groupchat roster entries."
+  :group 'jabber-roster)
+
+(defface jabber-roster-unread
+  '((t :inherit font-lock-warning-face :weight bold))
+  "Face for roster entries with unread messages."
+  :group 'jabber-roster)
+
+(defun jabber-roster-separator ()
+  "Return a propertized separator string."
+  (let* ((win (or (get-buffer-window (current-buffer)) (selected-window)))
+	 (width (max 1 (/ (window-body-width win) 3))))
+    (jabber-propertize (make-string width ?\s)
+		       'face 'jabber-roster-separator
+		       'cursor-intangible t)))
 
 (defvar jabber-roster-debug nil
   "Debug roster draw.")
 
 (defvar jabber-roster-mode-map
   (let ((map (make-sparse-keymap)))
-    (suppress-keymap map)
-    (set-keymap-parent map jabber-common-keymap)
+    (set-keymap-parent map (make-composed-keymap jabber-common-keymap special-mode-map))
     (define-key map [mouse-2] #'jabber-roster-mouse-2-action-at-point)
     (define-key map (kbd "TAB") #'jabber-go-to-next-roster-item)
     (define-key map (kbd "S-TAB") #'jabber-go-to-previous-roster-item)
@@ -203,6 +232,8 @@ Trailing newlines are always removed, regardless of this variable."
     (define-key map (kbd "<backtab>") #'jabber-go-to-previous-roster-item)
     (define-key map (kbd "RET") #'jabber-roster-ret-action-at-point)
     (define-key map (kbd "C-k") #'jabber-roster-delete-at-point)
+    (define-key map "d" #'jabber-roster-delete-at-point)
+    (define-key map "D" #'jabber-roster-delete-at-point)
 
     (define-key map "e" #'jabber-roster-edit-action-at-point)
     (define-key map "s" #'jabber-send-subscription-request)
@@ -214,9 +245,10 @@ Trailing newlines are always removed, regardless of this variable."
     (define-key map "v" #'jabber-get-version)
     (define-key map "a" #'jabber-send-presence)
     (define-key map "g" #'jabber-display-roster)
+    (define-key map "h" #'jabber-roster-menu)
     (define-key map "o" #'jabber-roster-toggle-offline-display)
-    (define-key map "H" #'jabber-roster-toggle-binding-display)
-    ;;(define-key map "D" #'jabber-disconnect)
+    (define-key map "H" #'jabber-roster-menu)
+    (define-key map "?" #'jabber-roster-menu)
     map))
 
 ;; Global reference declarations
@@ -231,10 +263,44 @@ Trailing newlines are always removed, regardless of this variable."
                   (jc jid node callback closure-data &optional force))
 (declare-function jabber-get-version "jabber-version.el"  (jc to))
 (declare-function jabber-get-browse "jabber-browse.el"  (jc to))
+(declare-function jabber-get-disco-items "jabber-disco.el" (jc to &optional node))
+(declare-function jabber-get-disco-info "jabber-disco.el"
+                  (jc jid node callback closure-data &optional force))
+(declare-function jabber-send-presence "jabber-presence.el" (show status priority))
+(declare-function jabber-muc-switch "jabber-muc.el" (group))
+(declare-function jabber-muc-get-buffer "jabber-muc.el" (group))
+(declare-function jabber-send-subscription-request "jabber-presence.el" (jc to &optional request))
+(declare-function jabber-roster-delete-jid-at-point "jabber-presence.el" ())
+(declare-function jabber-roster-delete-group-from-jids "jabber-presence.el" (jc jids group))
+(declare-function jabber-roster-edit-group-from-jids "jabber-presence.el" (jc jids group))
+(declare-function jabber-roster-change "jabber-presence.el" (jc jid name groups))
+(defvar jabber-connections)             ; jabber-core.el
+(defvar jabber-roster-buffer)           ; jabber-core.el
 (defvar *jabber-current-show*)          ; jabber.el
 (defvar jabber-presence-strings)        ; jabber.el
 (defvar *jabber-current-status*)        ; jabber.el
 (defvar jabber-presence-faces)          ; jabber.el
+(defvar *jabber-active-groupchats*)     ; jabber-muc.el
+(defvar jabber-activity-jids)           ; jabber-activity.el
+
+(transient-define-prefix jabber-roster-menu ()
+  "Jabber roster commands."
+  [["Chat"
+    ("RET" "Open chat buffer" jabber-roster-ret-action-at-point)
+    ("e"   "Edit item" jabber-roster-edit-action-at-point)
+    ("s"   "Subscribe" jabber-send-subscription-request)]
+   ["Roster"
+    ("d"   "Delete item" jabber-roster-delete-at-point)
+    ("g"   "Refresh" jabber-display-roster)
+    ("o"   "Toggle offline" jabber-roster-toggle-offline-display)]
+   ["MUC & Presence"
+    ("j"   "Join groupchat" jabber-muc-join)
+    ("a"   "Send presence" jabber-send-presence)]
+   ["Discovery"
+    ("i"   "Disco items" jabber-get-disco-items)
+    ("I"   "Disco info" jabber-get-disco-info)
+    ("b"   "Browse" jabber-get-browse)
+    ("v"   "Client version" jabber-get-version)]])
 
 ;;
 
@@ -249,13 +315,18 @@ point."
 					     'jabber-account))
         (jid-at-point (get-text-property (point)
 					 'jabber-jid)))
-    (if (and group-at-point account-at-point)
-	(jabber-roster-roll-group account-at-point group-at-point)
-      ;; Is this a normal contact, or a groupchat?  Let's ask it.
+    (cond
+     ((and group-at-point account-at-point)
+      (jabber-roster-roll-group account-at-point group-at-point))
+     ;; Already-joined groupchat: switch directly to buffer.
+     ((assoc jid-at-point *jabber-active-groupchats*)
+      (jabber-muc-switch jid-at-point))
+     ;; Contact or other JID: disco-check to decide chat vs MUC join.
+     ((and jid-at-point account-at-point)
       (jabber-disco-get-info
        account-at-point (jabber-jid-user jid-at-point) nil
        #'jabber-roster-ret-action-at-point-1
-       jid-at-point))))
+       jid-at-point)))))
 
 (defun jabber-roster-ret-action-at-point-1 (jc jid result)
   ;; If we get an error, assume it's a normal contact.
@@ -285,7 +356,7 @@ at point."
 					     'jabber-account)))
     (if (and group-at-point account-at-point)
 	(jabber-roster-roll-group account-at-point group-at-point)
-      (jabber-popup-combined-menu))))
+      (call-interactively #'jabber-roster-menu))))
 
 (defun jabber-roster-delete-at-point ()
   "Delete at point from roster.
@@ -350,21 +421,50 @@ If SET is nor t or nil, roll down group."
        new-roll-groups)
       (jabber-display-roster))))
 
-(defun jabber-roster-mode ()
+(defun jabber-roster-imenu-create-index ()
+  "Create an imenu index for the roster buffer."
+  (let (contacts-index groupchats-index)
+    (save-excursion
+      (goto-char (point-min))
+      (while (not (eobp))
+	(let ((group (get-text-property (point) 'jabber-group))
+	      (jid (get-text-property (point) 'jabber-jid)))
+	  (cond
+	   (group
+	    (push (cons group (point))
+		  (if (string= group "Groupchats")
+		      groupchats-index
+		    contacts-index)))
+	   (jid
+	    (let ((entry (cons jid (point))))
+	      (if (assoc jid *jabber-active-groupchats*)
+		  (push entry groupchats-index)
+		(push entry contacts-index))))))
+	(forward-line 1)))
+    (let (index)
+      (when groupchats-index
+	(push (cons "Groupchats" (nreverse groupchats-index)) index))
+      (when contacts-index
+	(push (cons "Contacts" (nreverse contacts-index)) index))
+      index)))
+
+(define-derived-mode jabber-roster-mode special-mode "jabber-roster"
   "Major mode for Jabber roster display.
 Use the keybindings (mnemonic as Chat, Roster, Info, MUC, Service) to
 bring up menus of actions.
 \\{jabber-roster-mode-map}"
-  (kill-all-local-variables)
-  (setq major-mode 'jabber-roster-mode
-	mode-name "jabber-roster")
-  (use-local-map jabber-roster-mode-map)
-  (setq buffer-read-only t)
-  (if (fboundp 'run-mode-hooks)
-      (run-mode-hooks 'jabber-roster-mode-hook)
-    (run-hooks 'jabber-roster-mode-hook)))
-
-(put 'jabber-roster-mode 'mode-class 'special)
+  :keymap jabber-roster-mode-map
+  (setq display-line-numbers nil)
+  (setq left-margin-width 1)
+  (setq line-spacing 0.15)
+  (cursor-intangible-mode 1)
+  (setq left-fringe-width 0
+	right-fringe-width 0)
+  (setq imenu-create-index-function #'jabber-roster-imenu-create-index)
+  ;; Re-apply buffer to window so margin/fringe changes take effect.
+  (let ((win (get-buffer-window (current-buffer))))
+    (when win
+      (set-window-buffer win (current-buffer)))))
 
 ;;;###autoload
 (defun jabber-switch-to-roster-buffer (&optional _jc)
@@ -374,7 +474,9 @@ be used in `jabber-post-connection-hooks'."
   (interactive)
   (if (not (get-buffer jabber-roster-buffer))
       (jabber-display-roster)
-    (switch-to-buffer jabber-roster-buffer)))
+    (switch-to-buffer jabber-roster-buffer))
+  (when (called-interactively-p 'interactive)
+    (message "Press %s for commands" (propertize "h" 'face 'help-key-binding))))
 
 (defun jabber-sort-roster (jc)
   "Sort roster according to online status.
@@ -503,13 +605,6 @@ To change this permanently, customize the `jabber-show-offline-contacts'."
 	(not jabber-show-offline-contacts))
   (jabber-display-roster))
 
-(defun jabber-roster-toggle-binding-display ()
-  "Toggle display of the roster binding text."
-  (interactive)
-  (setq jabber-roster-show-bindings
-	(not jabber-roster-show-bindings))
-  (jabber-display-roster))
-
 (defun jabber-display-roster (&optional interactivep)
   "Switch to the main jabber buffer and refresh it.
 Switch to the roster display and refresh it to reflect the current
@@ -519,86 +614,122 @@ information."
     (if (not (eq major-mode 'jabber-roster-mode))
 	(jabber-roster-mode))
     (setq buffer-read-only nil)
-    ;; line-number-at-pos is in Emacs >= 21.4.  Only used to avoid
-    ;; excessive scrolling when updating roster, so not absolutely
-    ;; necessary.
-    (let ((current-line (and (fboundp 'line-number-at-pos) (line-number-at-pos)))
-	  (current-column (current-column)))
+    (let ((current-line (line-number-at-pos))
+	  (current-column (current-column))
+	  (window (get-buffer-window (current-buffer)))
+	  (window-line (when (get-buffer-window (current-buffer))
+			 (count-lines (window-start) (point)))))
       (erase-buffer)
       (setq jabber-roster-ewoc nil)
-      (when jabber-roster-show-title
-	(insert (jabber-propertize "Jabber roster" 'face 'jabber-title-large) "\n"))
-      (when jabber-roster-show-bindings
-	(insert "RET      Open chat buffer        C-k      Delete roster item
-e        Edit item               s        Send subscription request
-q        Bury buffer             i        Get disco items
-I        Get disco info          b        Browse
-j        Join groupchat (MUC)    v        Get client version
-a        Send presence           o        Show offline contacts on/off
-C-c C-c  Chat menu               C-c C-m  Multi-User Chat menu
-C-c C-i  Info menu               C-c C-r  Roster menu
-C-c C-s  Service menu
-
-H        Toggle displaying this text
-"))
-      (insert "__________________________________\n\n")
+      (setq header-line-format
+	    (jabber-propertize " Jabber roster" 'face '(:weight bold)))
       (if (null jabber-connections)
-	  (insert "Not connected\n")
-	(let ((map (make-sparse-keymap)))
-	  (define-key map [mouse-2] #'jabber-send-presence)
-	  (insert (jabber-propertize (concat (format " - %s"
-						     (cdr (assoc *jabber-current-show* jabber-presence-strings)))
-					     (if (not (zerop (length *jabber-current-status*)))
-						 (format " (%s)"
-							 (jabber-fix-status *jabber-current-status*)))
-					     " -")
-				     'face (or (cdr (assoc *jabber-current-show* jabber-presence-faces))
-					       'jabber-roster-user-online)
-				     ;;'mouse-face (cons 'background-color "light grey")
-				     'keymap map)
-		  "\n")))
+	  (insert "\nNot connected\n")
+	;; Show connected accounts summary.
+	(let ((show (cdr (assoc *jabber-current-show* jabber-presence-strings)))
+	      (accounts (mapconcat
+			 (lambda (jc)
+			   (concat (plist-get (fsm-get-state-data jc) :username)
+				   "@"
+				   (plist-get (fsm-get-state-data jc) :server)))
+			 jabber-connections ", ")))
+	  (insert (jabber-propertize (concat "Connected"
+					     (unless (string= show "Online")
+					       (format " [%s]" show))
+					     ": " accounts)
+				     'face 'shadow)
+		  "\n" (jabber-roster-separator) "\n"))
 
-      (dolist (jc jabber-connections)
-	;; use a hash-based roster
-	(when (not (plist-get (fsm-get-state-data jc) :roster-hash))
-	  (jabber-roster-prepare-roster jc))
-	;; We sort everything before putting it in the ewoc
-	(jabber-sort-roster jc)
-	(let ((before-ewoc (point))
-	      (ewoc (ewoc-create
-		       (let ((jc jc))
-			 (lambda (data)
-			   (let* ((group (car data))
-				  (group-name (car group))
-				  (buddy (car (cdr data))))
-			     (jabber-display-roster-entry jc group-name buddy))))
-		     (concat
-		      (jabber-propertize (concat
-					  (plist-get (fsm-get-state-data jc) :username)
-					  "@"
-					  (plist-get (fsm-get-state-data jc) :server))
-					 'face 'jabber-title-medium)
-		      "\n__________________________________\n")
-		     "__________________________________")))
-	  (plist-put(fsm-get-state-data jc) :roster-ewoc ewoc)
-	  (dolist (group (plist-get (fsm-get-state-data jc) :roster-groups))
-	    (let* ((group-name (car group))
-		   (buddies (jabber-roster-filter-display
-			    (gethash group-name
-				     (plist-get (fsm-get-state-data jc) :roster-hash)))))
-	      (when (or jabber-roster-show-empty-group
-			(> (length buddies) 0))
-		(let ((group-node (ewoc-enter-last ewoc (list group nil))))
-		  (if (not (cl-find
-			    group-name
-			    (plist-get (fsm-get-state-data jc) :roster-roll-groups)
+	;; Prepare and sort all connection rosters.
+	(dolist (jc jabber-connections)
+	  (when (not (plist-get (fsm-get-state-data jc) :roster-hash))
+	    (jabber-roster-prepare-roster jc))
+	  (jabber-sort-roster jc))
+
+	;; Collect all groups across connections into a merged view.
+	(let* ((all-groups (cl-remove-duplicates
+			    (cl-mapcan
+			     (lambda (jc)
+			       (mapcar #'car
+				       (plist-get (fsm-get-state-data jc) :roster-groups)))
+			     jabber-connections)
 			    :test #'string=))
+	       (all-groups (sort all-groups #'string<))
+	       (first-jc (car jabber-connections))
+	       (ewoc (ewoc-create
+		      (lambda (data)
+			(let* ((group (car data))
+			       (group-name (car group))
+			       (buddy (car (cdr data)))
+			       (jc (nth 2 data)))
+			  (jabber-display-roster-entry (or jc first-jc) group-name buddy)))
+		      ""
+		      (jabber-roster-separator))))
+	  ;; Store ewoc for all connections.
+	  (dolist (jc jabber-connections)
+	    (plist-put (fsm-get-state-data jc) :roster-ewoc ewoc))
+	  (dolist (group-name all-groups)
+	    ;; Merge buddies from all connections for this group.
+	    (let ((buddies '())
+		  (buddy-jc-map (make-hash-table :test 'equal)))
+	      (dolist (jc jabber-connections)
+		(let ((hash (plist-get (fsm-get-state-data jc) :roster-hash)))
+		  (when hash
+		    (dolist (buddy (gethash group-name hash))
+		      (unless (gethash (symbol-name buddy) buddy-jc-map)
+			(puthash (symbol-name buddy) jc buddy-jc-map)
+			(push buddy buddies))))))
+	      (setq buddies (jabber-roster-filter-display
+			     (sort (nreverse buddies) #'jabber-roster-sort-items)))
+	      (when (or jabber-roster-show-empty-group
+		       (> (length buddies) 0))
+		(let ((group (list group-name))
+		      ;; Use first connection's roll state.
+		      (rolled (cl-some
+			       (lambda (jc)
+				 (cl-find group-name
+					  (plist-get (fsm-get-state-data jc)
+						     :roster-roll-groups)
+					  :test #'string=))
+			       jabber-connections)))
+		  (let ((group-node (ewoc-enter-last ewoc (list group nil first-jc))))
+		    (unless rolled
 		      (dolist (buddy (reverse buddies))
-			(ewoc-enter-after ewoc group-node (list group buddy))))))))
+			(ewoc-enter-after ewoc group-node
+					  (list group buddy
+						(gethash (symbol-name buddy)
+							 buddy-jc-map))))))))))
 	  (goto-char (point-max))
-	  (insert "\n")
-	  (put-text-property before-ewoc (point)
-			     'jabber-account jc)))
+	  (insert "\n")))
+
+      (when *jabber-active-groupchats*
+	(insert (jabber-propertize "Groupchats"
+				   'face 'jabber-title-small
+				   'jabber-group "Groupchats")
+		"\n")
+	(dolist (gc (sort (copy-sequence *jabber-active-groupchats*)
+			  (lambda (a b) (string< (car a) (car b)))))
+	  (let* ((room-jid (car gc))
+		 (nick (cdr gc))
+		 (room-name (or (jabber-jid-user room-jid) room-jid))
+		 (gc-buf (get-buffer (jabber-muc-get-buffer room-jid)))
+		 (gc-jc (if gc-buf
+			    (buffer-local-value 'jabber-buffer-connection gc-buf)
+			  (car jabber-connections)))
+		 (unread (member room-jid
+				 (bound-and-true-p jabber-activity-jids)))
+		 (room-part (jabber-propertize (format "  %s" room-name)
+					       'face (if unread
+							 'jabber-roster-unread
+						       'jabber-roster-groupchat)))
+		 (nick-part (jabber-propertize (format " (%s)" nick)
+					       'face 'jabber-roster-groupchat-nick))
+		 (line (concat room-part nick-part)))
+	    (add-text-properties 0 (length line)
+				 (list 'jabber-jid room-jid
+				       'jabber-account gc-jc)
+				 line)
+	    (insert line "\n"))))
 
       (goto-char (point-min))
       (setq buffer-read-only t)
@@ -606,12 +737,16 @@ H        Toggle displaying this text
 	  (dolist (hook '(jabber-info-message-hooks jabber-alert-info-message-hooks))
 	    (run-hook-with-args hook 'roster (current-buffer) (funcall jabber-alert-info-message-function 'roster (current-buffer)))))
       (when current-line
-	;; Go back to previous line - don't use goto-line, since it
-	;; sets the mark.
 	(goto-char (point-min))
 	(forward-line (1- current-line))
-	;; ...and go back to previous column
-	(move-to-column current-column)))))
+	(move-to-column current-column)
+	;; Restore window scroll position.
+	(when (and window window-line)
+	  (set-window-start window
+			    (save-excursion
+			      (forward-line (- window-line))
+			      (point))
+			    t))))))
 
 (defun jabber-display-roster-entry (jc group-name buddy)
   "Format and insert a roster entry for BUDDY at point.
@@ -637,21 +772,23 @@ BUDDY is a JID symbol. JC is the Jabber connection."
                          (cons ?S (if (get buddy 'status)
                                       (jabber-fix-status (get buddy 'status))
                                     ""))))))
-	(add-text-properties 0
-			     (length buddy-str)
-			     (list
-			      'face
-			      (or (cdr (assoc (get buddy 'show) jabber-presence-faces))
-				  'jabber-roster-user-online)
-			      ;;'mouse-face
-			      ;;(cons 'background-color "light grey")
-			      'help-echo
-			      (symbol-name buddy)
-			      'jabber-jid
-			      (symbol-name buddy)
-			      'jabber-account
-			      jc)
-			     buddy-str)
+	(let ((unread (member (symbol-name buddy)
+			      (bound-and-true-p jabber-activity-jids))))
+	  (add-text-properties 0
+			       (length buddy-str)
+			       (list
+				'face
+				(if unread
+				    'jabber-roster-unread
+				  (or (cdr (assoc (get buddy 'show) jabber-presence-faces))
+				      'jabber-roster-user-online))
+				'help-echo
+				(symbol-name buddy)
+				'jabber-jid
+				(symbol-name buddy)
+				'jabber-account
+				jc)
+			       buddy-str))
 	(insert buddy-str)
 
 	(when (or (eq jabber-show-resources 'always)
@@ -867,6 +1004,54 @@ obtained from `xml-parse-region'."
                                    ,roll-groups)
                           'jabber-report-success "Roster groups saved"
                           'jabber-report-success "Failed to save roster groups"))))
+
+(defvar jabber-roster--last-groupchats nil
+  "Snapshot of `*jabber-active-groupchats*' for detecting changes.")
+
+(defvar jabber-roster--needs-refresh nil
+  "Non-nil when the roster buffer needs a redraw.")
+
+(defun jabber-roster--refresh-if-visible ()
+  "Refresh roster only if its buffer is visible, otherwise defer."
+  (let ((buf (get-buffer jabber-roster-buffer)))
+    (when buf
+      (if (get-buffer-window buf 'visible)
+	  (progn
+	    (jabber-display-roster)
+	    (setq jabber-roster--needs-refresh nil))
+	(setq jabber-roster--needs-refresh t)))))
+
+(defun jabber-roster--on-window-state-change (&rest _)
+  "Refresh roster when it becomes visible and needs it."
+  (when (and jabber-roster--needs-refresh
+	     (let ((buf (get-buffer jabber-roster-buffer)))
+	       (and buf (get-buffer-window buf 'visible))))
+    (setq jabber-roster--needs-refresh nil)
+    (jabber-display-roster)))
+
+(add-hook 'window-state-change-hook #'jabber-roster--on-window-state-change)
+
+(defun jabber-roster--maybe-refresh-on-activity ()
+  "Refresh roster when activity changes, if the buffer exists."
+  (jabber-roster--refresh-if-visible))
+
+(defun jabber-roster--maybe-refresh-on-muc (_jc _xml-data)
+  "Refresh roster when groupchat list changes."
+  (unless (equal *jabber-active-groupchats* jabber-roster--last-groupchats)
+    (setq jabber-roster--last-groupchats
+	  (copy-sequence *jabber-active-groupchats*))
+    (jabber-roster--refresh-if-visible)))
+
+(with-eval-after-load 'jabber-activity
+  (add-hook 'jabber-activity-update-hook
+	    #'jabber-roster--maybe-refresh-on-activity))
+
+;; MUC join/leave is signaled via presence stanzas, so we hook into
+;; the presence chain.  The handler short-circuits via `equal' check
+;; and only triggers a refresh when the groupchat list actually changes.
+(with-eval-after-load 'jabber-muc
+  (add-hook 'jabber-presence-chain
+	    #'jabber-roster--maybe-refresh-on-muc))
 
 (provide 'jabber-roster)
 

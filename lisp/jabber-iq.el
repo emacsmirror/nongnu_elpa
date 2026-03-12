@@ -36,7 +36,7 @@
 (defvar jabber-browse-mode-map
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map jabber-common-keymap)
-    (define-key map [mouse-2] #'jabber-popup-combined-menu)
+    (define-key map [mouse-2] #'jabber-chat-menu)
     map))
 
 (defcustom jabber-browse-mode-hook nil

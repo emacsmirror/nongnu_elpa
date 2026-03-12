@@ -37,15 +37,21 @@
 (declare-function jabber-disconnect "jabber-core.el" (&optional arg interactivep))
 (declare-function jabber-connect-all "jabber-core.el" (&optional arg))
 (declare-function jabber-chat-buffer-switch "jabber-chat.el")
+(declare-function jabber-muc-switch "jabber-muc.el" (group))
+(declare-function jabber-chat-menu "jabber-menu.el")
+(declare-function jabber-roster-context-menu "jabber-menu.el")
+(declare-function jabber-info-menu "jabber-menu.el")
+(declare-function jabber-muc-menu "jabber-menu.el")
+(declare-function jabber-service-menu "jabber-menu.el")
 ;;
 
 (defvar jabber-common-keymap
   (let ((map (make-sparse-keymap)))
-    (define-key map "\C-c\C-c" #'jabber-popup-chat-menu)
-    (define-key map "\C-c\C-r" #'jabber-popup-roster-menu)
-    (define-key map "\C-c\C-i" #'jabber-popup-info-menu)
-    (define-key map "\C-c\C-m" #'jabber-popup-muc-menu)
-    (define-key map "\C-c\C-s" #'jabber-popup-service-menu)
+    (define-key map "\C-c\C-c" #'jabber-chat-menu)
+    (define-key map "\C-c\C-r" #'jabber-roster-context-menu)
+    (define-key map "\C-c\C-i" #'jabber-info-menu)
+    (define-key map "\C-c\C-m" #'jabber-muc-menu)
+    (define-key map "\C-c\C-s" #'jabber-service-menu)
     ;; note that {forward,backward}-button are not autoloaded.
     ;; thus the `require' above.
     (when (fboundp 'forward-button)
@@ -67,6 +73,7 @@
     (define-key map "\C-x" #'jabber-send-xa-presence)
     (define-key map "\C-p" #'jabber-send-presence)
     (define-key map "\C-b" #'jabber-chat-buffer-switch)
+    (define-key map "\C-m" #'jabber-muc-switch)
     map)
   "Global Jabber keymap (usually under C-x C-j).")
 
