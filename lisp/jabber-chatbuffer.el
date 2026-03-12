@@ -57,18 +57,38 @@ window or at `fill-column', whichever is shorter."
 
 (defvar jabber-chat-mode-map
   (let ((map (make-sparse-keymap)))
-    (set-keymap-parent map jabber-common-keymap)
+    (set-keymap-parent map (make-composed-keymap jabber-common-keymap special-mode-map))
     (define-key map "\r" #'jabber-chat-buffer-send)
     (define-key map "\t" 'completion-at-point)
     map))
 
-(defun jabber-chat-mode (jc ewoc-pp)
-  "Jabber chat mode.
-\\{jabber-chat-mode-map}
+;; Spell check only what you're currently writing.
+(defun jabber-chat-mode-flyspell-verify ()
+  "Return non-nil if point is in the composition area."
+  (>= (point) jabber-point-insert))
 
-JC is the Jabber connection."
-  (kill-all-local-variables)
-  ;; Make sure to set this variable somewhere
+(define-derived-mode jabber-chat-mode special-mode "jabber-chat"
+  "Major mode for Jabber chat buffers.
+\\{jabber-chat-mode-map}"
+  :keymap jabber-chat-mode-map
+  (setq display-line-numbers nil)
+  (setq left-margin-width 1)
+  (setq left-fringe-width 0
+        right-fringe-width 0)
+  ;; special-mode sets buffer-read-only, but chat buffers need the
+  ;; composition area writable.  Read-only protection for the message
+  ;; area is handled by text properties instead.
+  (setq buffer-read-only nil)
+  (put 'jabber-chat-mode 'flyspell-mode-predicate
+       #'jabber-chat-mode-flyspell-verify)
+  ;; Re-apply buffer to window so margin/fringe changes take effect.
+  (let ((win (get-buffer-window (current-buffer))))
+    (when win
+      (set-window-buffer win (current-buffer)))))
+
+(defun jabber-chat-mode-setup (jc ewoc-pp)
+  "Initialize chat buffer state for connection JC.
+EWOC-PP is the pretty-printer function for the message EWOC."
   (make-local-variable 'jabber-send-function)
   (make-local-variable 'scroll-conservatively)
   (make-local-variable 'jabber-point-insert)
@@ -79,35 +99,17 @@ JC is the Jabber connection."
 
   (setq jabber-buffer-connection jc
         scroll-conservatively 5
-        buffer-undo-list t)             ;dont keep undo list for chatbuffer
+        buffer-undo-list t)
 
   (unless jabber-chat-ewoc
     (setq jabber-chat-ewoc
-	  (ewoc-create ewoc-pp nil "---\n" 'nosep))
+          (ewoc-create ewoc-pp nil (concat (jabber-separator) "\n") 'nosep))
     (goto-char (point-max))
     (put-text-property (point-min) (point) 'read-only t)
     (let ((inhibit-read-only t))
       (put-text-property (point-min) (point) 'front-sticky t)
       (put-text-property (point-min) (point) 'rear-nonsticky t))
-    (setq jabber-point-insert (point-marker)))
-
-  ;;(setq header-line-format jabber-chat-header-line-format)
-
-  (setq major-mode 'jabber-chat-mode
-        mode-name "jabber-chat")
-  (use-local-map jabber-chat-mode-map)
-
-  (if (fboundp 'run-mode-hooks)
-      (run-mode-hooks 'jabber-chat-mode-hook)
-    (run-hooks 'jabber-chat-mode-hook)))
-
-(put 'jabber-chat-mode 'mode-class 'special)
-
-;; Spell check only what you're currently writing
-(defun jabber-chat-mode-flyspell-verify ()
-  (>= (point) jabber-point-insert))
-(put 'jabber-chat-mode 'flyspell-mode-predicate
-  #'jabber-chat-mode-flyspell-verify)
+    (setq jabber-point-insert (point-marker))))
 
 (defun jabber-chat-buffer-send ()
   (interactive)
