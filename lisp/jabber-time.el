@@ -33,6 +33,17 @@
 
 (defvar jabber-jid-info-menu)           ; jabber-menu.el
 
+;; Namespace constants
+
+(defconst jabber-time-xmlns "urn:xmpp:time"
+  "XEP-0202 Entity Time namespace.")
+
+(defconst jabber-time-legacy-xmlns "jabber:iq:time"
+  "XEP-0090 Legacy Entity Time namespace.")
+
+(defconst jabber-last-xmlns "jabber:iq:last"
+  "XEP-0012 Last Activity namespace.")
+
 ;;
 
 (add-to-list 'jabber-jid-info-menu (cons "Request time" 'jabber-get-time))
@@ -46,7 +57,7 @@ JC is the Jabber connection."
                                                  nil nil nil 'full t)))
 
   (jabber-send-iq jc to "get"
-                  '(time ((xmlns . "urn:xmpp:time")))
+                  `(time ((xmlns . ,jabber-time-xmlns)))
                   'jabber-silent-process-data 'jabber-process-time
                   'jabber-silent-process-data
                   (lambda (jc xml-data)
@@ -65,7 +76,7 @@ obtained from `xml-parse-region'."
 
   (jabber-send-iq jc to
                   "get"
-                  '(query ((xmlns . "jabber:iq:time")))
+                  `(query ((xmlns . ,jabber-time-legacy-xmlns)))
                   'jabber-silent-process-data 'jabber-process-legacy-time
                   'jabber-silent-process-data "Time request failed"))
 
@@ -128,7 +139,7 @@ JC is the Jabber connection."
 						 nil nil nil 'bare-or-muc)))
   (jabber-send-iq jc to
 		  "get"
-		  '(query ((xmlns . "jabber:iq:last")))
+		  `(query ((xmlns . ,jabber-last-xmlns)))
 		  #'jabber-silent-process-data #'jabber-process-last
 		  #'jabber-silent-process-data "Last online request failed"))
 
@@ -141,7 +152,7 @@ JC is the Jabber connection."
 						 nil nil nil 'full t)))
   (jabber-send-iq jc to
 		  "get"
-		  '(query ((xmlns . "jabber:iq:last")))
+		  `(query ((xmlns . ,jabber-last-xmlns)))
 		  #'jabber-silent-process-data #'jabber-process-last
 		  #'jabber-silent-process-data "Idle time request failed"))
 
@@ -176,8 +187,8 @@ obtained from `xml-parse-region'."
       ;; Only hostname: uptime
       (format "%s uptime: %s seconds" from seconds)))))
 
-(add-to-list 'jabber-iq-get-xmlns-alist (cons "jabber:iq:time" 'jabber-return-legacy-time))
-(jabber-disco-advertise-feature "jabber:iq:time")
+(add-to-list 'jabber-iq-get-xmlns-alist (cons jabber-time-legacy-xmlns 'jabber-return-legacy-time))
+(jabber-disco-advertise-feature jabber-time-legacy-xmlns)
 
 (defun jabber-return-legacy-time (jc xml-data)
   "Return client time as defined in XEP-0090.
@@ -189,7 +200,7 @@ obtained from `xml-parse-region'."
   (let ((to (jabber-xml-get-attribute xml-data 'from))
 	(id (jabber-xml-get-attribute xml-data 'id)))
     (jabber-send-iq jc to "result"
-		    `(query ((xmlns . "jabber:iq:time"))
+		    `(query ((xmlns . ,jabber-time-legacy-xmlns))
 			    ;; what is ``human-readable'' format?
 			    ;; the same way as formating using by tkabber
 			    (display () ,(format-time-string "%a %b %d %H:%M:%S %Z %Y"))
@@ -198,8 +209,8 @@ obtained from `xml-parse-region'."
 		    nil nil nil nil
 		    id)))
 
-(add-to-list 'jabber-iq-get-xmlns-alist (cons "urn:xmpp:time" 'jabber-return-time))
-(jabber-disco-advertise-feature "urn:xmpp:time")
+(add-to-list 'jabber-iq-get-xmlns-alist (cons jabber-time-xmlns 'jabber-return-time))
+(jabber-disco-advertise-feature jabber-time-xmlns)
 
 (defun jabber-return-time (jc xml-data)
   "Return client time as defined in XEP-0202.
@@ -211,20 +222,20 @@ obtained from `xml-parse-region'."
   (let ((to (jabber-xml-get-attribute xml-data 'from))
         (id (jabber-xml-get-attribute xml-data 'id)))
     (jabber-send-iq jc to "result"
-                    `(time ((xmlns . "urn:xmpp:time"))
+                    `(time ((xmlns . ,jabber-time-xmlns))
                            (utc () ,(jabber-encode-time nil))
                            (tzo () ,(jabber-encode-timezone)))
                     nil nil nil nil
                     id)))
 
-(add-to-list 'jabber-iq-get-xmlns-alist (cons "jabber:iq:last" 'jabber-return-last))
-(jabber-disco-advertise-feature "jabber:iq:last")
+(add-to-list 'jabber-iq-get-xmlns-alist (cons jabber-last-xmlns 'jabber-return-last))
+(jabber-disco-advertise-feature jabber-last-xmlns)
 
 (defun jabber-return-last (jc xml-data)
   (let ((to (jabber-xml-get-attribute xml-data 'from))
         (id (jabber-xml-get-attribute xml-data 'id)))
     (jabber-send-iq jc to "result"
-                    `(time ((xmlns . "jabber:iq:last")
+                    `(time ((xmlns . ,jabber-last-xmlns)
 			    ;; XEP-0012 specifies that this is an integer.
                             (seconds . ,(number-to-string
 					 (floor (jabber-autoaway-get-idle-time))))))

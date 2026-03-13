@@ -34,6 +34,9 @@
 (require 'jabber-util)
 (require 'jabber-menu)
 
+(defconst jabber-browse-xmlns "jabber:iq:browse"
+  "XEP-0011 Jabber Browsing namespace.")
+
 (add-to-list 'jabber-jid-info-menu (cons "Send browse query" 'jabber-get-browse))
 
 (defun jabber-get-browse (jc to)
@@ -44,7 +47,7 @@ JC is the Jabber connection."
 		     (jabber-read-jid-completing "browse: " nil nil nil nil t)))
   (jabber-send-iq jc to
                   "get"
-                  '(query ((xmlns . "jabber:iq:browse")))
+                  `(query ((xmlns . ,jabber-browse-xmlns)))
                   #'jabber-process-data #'jabber-process-browse
 		  #'jabber-process-data "Browse failed"))
 

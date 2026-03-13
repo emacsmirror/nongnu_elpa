@@ -28,6 +28,11 @@
 (defvar jabber-buffer-connection)       ; jabber-chatbuffer.el
 (defvar jabber-xdata-xmlns)            ; jabber-xml.el
 
+;; Namespace constants
+
+(defconst jabber-search-xmlns "jabber:iq:search"
+  "XEP-0055 Jabber Search namespace.")
+
 ;;
 
 (add-to-list 'jabber-jid-service-menu
@@ -40,7 +45,7 @@ JC is the Jabber connection."
 		     (jabber-read-jid-completing "Search what database: ")))
   (jabber-send-iq jc to
 		  "get"
-		  '(query ((xmlns . "jabber:iq:search")))
+		  `(query ((xmlns . ,jabber-search-xmlns)))
 		  #'jabber-process-data #'jabber-process-register-or-search
 		  #'jabber-report-success "Search field retrieval"))
 
@@ -60,10 +65,10 @@ JC is the Jabber connection."
 
 		    (cond
 		     ((eq jabber-form-type 'register)
-		      `(query ((xmlns . "jabber:iq:search"))
+		      `(query ((xmlns . ,jabber-search-xmlns))
 			      ,@(jabber-parse-register-form)))
 		     ((eq jabber-form-type 'xdata)
-		      `(query ((xmlns . "jabber:iq:search"))
+		      `(query ((xmlns . ,jabber-search-xmlns))
 			      ,(jabber-parse-xdata-form)))
 		     (t
 		      (error "Unknown form type: %s" jabber-form-type)))

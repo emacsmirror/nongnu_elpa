@@ -25,6 +25,9 @@
 (require 'jabber-xml)
 (require 'jabber-iq)
 
+(defconst jabber-private-xmlns "jabber:iq:private"
+  "XEP-0049 Private XML Storage namespace.")
+
 ;;;###autoload
 (defun jabber-private-get (jc node-name namespace success-callback error-callback)
   "Retrieve an item from private XML storage.
@@ -37,7 +40,7 @@ XML fragment.
 On error, ERROR-CALLBACK is called with JC and the entire IQ
 result."
   (jabber-send-iq jc nil "get"
-		  `(query ((xmlns . "jabber:iq:private"))
+		  `(query ((xmlns . ,jabber-private-xmlns))
 			  (,node-name ((xmlns . ,namespace))))
 		  #'jabber-private-get-1 success-callback
 		  #'(lambda (jc xml-data error-callback)
@@ -59,7 +62,7 @@ ERROR-CLOSURE-DATA are used as in `jabber-send-iq'.
 
 JC is the Jabber connection."
   (jabber-send-iq jc nil "set"
-		  `(query ((xmlns . "jabber:iq:private"))
+		  `(query ((xmlns . ,jabber-private-xmlns))
 			  ,fragment)
 		  success-callback success-closure-data
 		  error-callback error-closure-data))

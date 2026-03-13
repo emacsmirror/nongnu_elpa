@@ -26,6 +26,9 @@
 (require 'find-func)
 (require 'lisp-mnt)
 
+(defconst jabber-version-xmlns "jabber:iq:version"
+  "XEP-0092 Software Version namespace.")
+
 (defcustom jabber-version-show t
   "Show our client version to others.  Acts on loading."
   :type 'boolean
@@ -48,7 +51,7 @@ JC is the Jabber connection."
 		(jabber-read-jid-completing "Request version of: " nil nil nil 'full t)))
   (jabber-send-iq jc to
 		  "get"
-		  '(query ((xmlns . "jabber:iq:version")))
+		  `(query ((xmlns . ,jabber-version-xmlns)))
 		  #'jabber-process-data #'jabber-process-version
 		  #'jabber-process-data "Version request failed"))
 
@@ -67,8 +70,8 @@ obtained from `xml-parse-region'."
 
 (if jabber-version-show
     (and
-     (add-to-list 'jabber-iq-get-xmlns-alist (cons "jabber:iq:version" 'jabber-return-version))
-     (jabber-disco-advertise-feature "jabber:iq:version")))
+     (add-to-list 'jabber-iq-get-xmlns-alist (cons jabber-version-xmlns 'jabber-return-version))
+     (jabber-disco-advertise-feature jabber-version-xmlns)))
 
 (defun jabber-return-version (jc xml-data)
   "Return client version as defined in XEP-0092.
@@ -84,7 +87,7 @@ JC is the Jabber connection."
 	     emacs-major-version emacs-minor-version
 	     system-type)))
     (jabber-send-iq jc to "result"
-		    `(query ((xmlns . "jabber:iq:version"))
+		    `(query ((xmlns . ,jabber-version-xmlns))
 			    (name () "jabber.el")
 			    (version () ,jabber-version)
 			    ;; Booting... /vmemacs.el

@@ -32,6 +32,12 @@
 (defvar jabber-buffer-connection)       ; jabber-chatbuffer.el
 (defvar jabber-silent-mode)             ; jabber.el
 (defvar jabber-xdata-xmlns)            ; jabber-xml.el
+(defvar jabber-search-xmlns)           ; jabber-search.el
+
+;; Namespace constants
+
+(defconst jabber-register-xmlns "jabber:iq:register"
+  "XEP-0077 In-Band Registration namespace.")
 
 ;;
 
@@ -45,7 +51,7 @@ JC is the Jabber connection."
 		     (jabber-read-jid-completing "Register with: ")))
   (jabber-send-iq jc to
 		  "get"
-		  '(query ((xmlns . "jabber:iq:register")))
+		  `(query ((xmlns . ,jabber-register-xmlns)))
 		  #'jabber-process-data #'jabber-process-register-or-search
 		  #'jabber-report-success "Registration"))
 
@@ -59,9 +65,9 @@ obtained from `xml-parse-region'."
   (let ((query (jabber-iq-query xml-data))
 	(have-xdata nil)
 	(type (cond
-	       ((string= (jabber-iq-xmlns xml-data) "jabber:iq:register")
+	       ((string= (jabber-iq-xmlns xml-data) jabber-register-xmlns)
 		'register)
-	       ((string= (jabber-iq-xmlns xml-data) "jabber:iq:search")
+	       ((string= (jabber-iq-xmlns xml-data) jabber-search-xmlns)
 		'search)
 	       (t
 		(error "Namespace %s not handled by jabber-process-register-or-search" (jabber-iq-xmlns xml-data)))))
@@ -93,7 +99,7 @@ obtained from `xml-parse-region'."
 	;; for sure how to put a default username in it.
 	(jabber-render-xdata-form x
 				  (if (and register-account
-					   (string= (jabber-xdata-formtype x) "jabber:iq:register"))
+					   (string= (jabber-xdata-formtype x) jabber-register-xmlns))
 				      (list (cons "username" username))
 				    nil))))
     (if (not have-xdata)
@@ -123,10 +129,10 @@ obtained from `xml-parse-region'."
 
 		    (cond
 		     ((eq jabber-form-type 'register)
-		      `(query ((xmlns . "jabber:iq:register"))
+		      `(query ((xmlns . ,jabber-register-xmlns))
 			      ,@(jabber-parse-register-form)))
 		     ((eq jabber-form-type 'xdata)
-		      `(query ((xmlns . "jabber:iq:register"))
+		      `(query ((xmlns . ,jabber-register-xmlns))
 			      ,(jabber-parse-xdata-form)))
 		     (t
 		      (error "Unknown form type: %s" jabber-form-type)))
@@ -156,7 +162,7 @@ obtained from `xml-parse-region'."
   (if (or jabber-silent-mode (yes-or-no-p (concat "Are you sure that you want to cancel your registration to " jabber-submit-to "? ")))
       (jabber-send-iq jabber-buffer-connection jabber-submit-to
 		      "set"
-		      '(query ((xmlns . "jabber:iq:register"))
+		      `(query ((xmlns . ,jabber-register-xmlns))
 			      (remove))
 		      #'jabber-report-success "Unregistration"
 		      #'jabber-report-success "Unregistration")))
