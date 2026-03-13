@@ -668,19 +668,12 @@ This function is used as an ewoc prettyprinter."
        (when (and (stringp msg) (not (zerop (length msg))))
          (insert "Message: " msg "\n"))
        (insert "Accept?\n\n")
-       (cl-flet ((button
-	           (text action)
-	           (if (fboundp 'insert-button)
-		       (insert-button text 'action action)
-		     ;; simple button replacement
-		     (let ((keymap (make-keymap)))
-		       (define-key keymap "\r" action)
-		       (insert (jabber-propertize text 'keymap keymap 'face 'highlight))))
-		   (insert "\t")))
-	 (button "Mutual" 'jabber-subscription-accept-mutual)
-	 (button "One-way" 'jabber-subscription-accept-one-way)
-	 (button "Decline" 'jabber-subscription-decline)
-         (insert "\n"))))
+       (insert-button "Mutual" 'action 'jabber-subscription-accept-mutual)
+       (insert "\t")
+       (insert-button "One-way" 'action 'jabber-subscription-accept-one-way)
+       (insert "\t")
+       (insert-button "Decline" 'action 'jabber-subscription-decline)
+       (insert "\n"))))
 
     (when jabber-chat-fill-long-lines
       (save-restriction

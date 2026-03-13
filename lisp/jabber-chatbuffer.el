@@ -20,7 +20,7 @@
 
 (require 'jabber-util)
 (require 'jabber-core)
-(require 'jabber-keymap)
+(require 'jabber-menu)
 
 (defvar jabber-point-insert nil
   "Position where the message being composed starts.")

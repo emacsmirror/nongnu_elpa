@@ -936,42 +936,26 @@ Requires :xml-data key in MSG for raw stanza access."
 		         (jabber-muc-join jabber-buffer-connection group
 					  (jabber-muc-read-my-nickname
 					   jabber-buffer-connection group)))))
-		  (if (fboundp 'insert-button)
-		      (insert-button "Accept"
-				     'action action)
-		    ;; Simple button replacement
-		    (let ((keymap (make-keymap)))
-		      (define-key keymap "\r" action)
-		      (insert (jabber-propertize "Accept"
-						 'keymap keymap
-						 'face 'highlight))))
+		  (insert-button "Accept" 'action action))
 
-		  (insert "\t")
+		(insert "\t")
 
-		  (let ((action
-		         (lambda (&rest _ignore) (interactive)
-			   (let ((reason
-				  (jabber-read-with-input-method
-				   "Reason: ")))
-			     (jabber-send-sexp
-			      jabber-buffer-connection
-			      `(message
-			        ((to . ,group))
-			        (x
-			         ((xmlns . "http://jabber.org/protocol/muc#user"))
-			         (decline
-				  ((to . ,inviter))
-				  ,(unless (zerop (length reason))
-				     `(reason nil ,reason))))))))))
-		    (if (fboundp 'insert-button)
-		        (insert-button "Decline"
-				       'action action)
-		      ;; Simple button replacement
-		      (let ((keymap (make-keymap)))
-		        (define-key keymap "\r" action)
-		        (insert (jabber-propertize "Decline"
-						   'keymap keymap
-						   'face 'highlight))))))))
+		(let ((action
+		       (lambda (&rest _ignore) (interactive)
+			 (let ((reason
+				(jabber-read-with-input-method
+				 "Reason: ")))
+			   (jabber-send-sexp
+			    jabber-buffer-connection
+			    `(message
+			      ((to . ,group))
+			      (x
+			       ((xmlns . "http://jabber.org/protocol/muc#user"))
+			       (decline
+				((to . ,inviter))
+				,(unless (zerop (length reason))
+				   `(reason nil ,reason))))))))))
+		  (insert-button "Decline" 'action action))))
 	    (cl-return t)))))))
 
 (defun jabber-muc-autojoin (jc)

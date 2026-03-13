@@ -162,9 +162,20 @@ With prefix argument, remove it."
 (defvar jabber-jid-service-menu nil
   "Menu items for service menu.")
 
-;; Global reference declarations for transient suffix commands
+;; Global reference declarations
 
+(declare-function jabber-send-presence "jabber-presence.el" (show status priority))
+(declare-function jabber-send-xa-presence "jabber-presence.el" (&optional status))
+(declare-function jabber-send-default-presence "jabber-presence.el" (&optional _ignore))
+(declare-function jabber-send-away-presence "jabber-presence.el" (&optional status))
+(declare-function jabber-activity-switch-to "jabber-activity.el" (&optional jid-param))
 (declare-function jabber-chat-with "jabber-chat.el" (jc jid &optional other-window))
+(declare-function jabber-chat-muc-presence-patterns-select "jabber-chat.el" ())
+(declare-function jabber-chat-buffer-switch "jabber-chat.el")
+(declare-function jabber-roster "jabber-roster.el" ())
+(declare-function jabber-disconnect "jabber-core.el" (&optional arg interactivep))
+(declare-function jabber-connect-all "jabber-core.el" (&optional arg))
+(declare-function jabber-muc-switch "jabber-muc.el" (group))
 (declare-function jabber-compose "jabber-compose.el" ())
 (declare-function jabber-chat-display-more-backlog "jabber-chat.el" (jc &optional before))
 (declare-function jabber-roster-change "jabber-presence.el" (jc jid name groups))
@@ -254,6 +265,35 @@ With prefix argument, remove it."
 (define-obsolete-function-alias 'jabber-popup-muc-menu #'jabber-muc-menu "29.1")
 (define-obsolete-function-alias 'jabber-popup-service-menu #'jabber-service-menu "29.1")
 (define-obsolete-function-alias 'jabber-popup-combined-menu #'jabber-chat-menu "29.1")
+
+;;;; Keymaps
+
+(defvar-keymap jabber-common-keymap
+  :doc "Common keymap shared by jabber chat, roster, console and IQ buffers."
+  "C-c C-c" #'jabber-chat-menu
+  "C-c C-r" #'jabber-roster-context-menu
+  "C-c C-i" #'jabber-info-menu
+  "C-c C-m" #'jabber-muc-menu
+  "C-c C-s" #'jabber-service-menu
+  "TAB"     #'forward-button
+  "<backtab>" #'backward-button)
+
+(defvar-keymap jabber-global-keymap
+  :doc "Global Jabber keymap (usually under C-x C-j)."
+  "C-c" #'jabber-connect-all
+  "C-d" #'jabber-disconnect
+  "C-r" #'jabber-roster
+  "C-j" #'jabber-chat-with
+  "C-l" #'jabber-activity-switch-to
+  "C-a" #'jabber-send-away-presence
+  "C-o" #'jabber-send-default-presence
+  "C-y" #'jabber-chat-muc-presence-patterns-select
+  "C-x" #'jabber-send-xa-presence
+  "C-p" #'jabber-send-presence
+  "C-b" #'jabber-chat-buffer-switch
+  "C-m" #'jabber-muc-switch)
+
+(define-key ctl-x-map "\C-j" jabber-global-keymap)
 
 (provide 'jabber-menu)
 ;;; jabber-menu.el ends here
