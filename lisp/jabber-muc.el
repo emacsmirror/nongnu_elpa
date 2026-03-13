@@ -144,17 +144,6 @@ These fields are about your account:
   :type 'string
   :group 'jabber-chat)
 
-(defcustom jabber-groupchat-prompt-format "[%t] %n> "
-  "The format specification for lines in groupchat.
-
-These fields are available:
-
-%t   Time, formatted according to `jabber-chat-time-format'
-%n, %u, %r
-     Nickname in groupchat
-%j   Full JID (room@server/nick)"
-  :type 'string
-  :group 'jabber-chat)
 
 (defcustom jabber-muc-header-line-format
   '(" " (:eval (jabber-jid-displayname jabber-group))
@@ -181,16 +170,6 @@ These fields are about your account:
   :type 'string
   :group 'jabber-chat)
 
-(defcustom jabber-muc-private-foreign-prompt-format "[%t] %g/%n> "
-  "The format specification for lines others type in a private MUC buffer.
-
-These fields are available:
-
-%t  Time, formatted according to `jabber-chat-time-format'
-%n  Nickname in room
-%g  Short room name (either roster name or username part of JID)"
-  :type 'string
-  :group 'jabber-chat)
 
 (defcustom jabber-muc-print-names-format "	%n	%a	%j\n"
   "The format specification for MUC list lines.
@@ -232,6 +211,10 @@ The format is that of `mode-line-format' and `header-line-format'."
 (declare-function jabber-chat-display-buffer-images "jabber-chat.el" ())
 (declare-function jabber-chat--msg-plist-from-stanza "jabber-chat.el"
                   (xml-data &optional delayed))
+(declare-function jabber-chat--insert-prompt "jabber-chat.el"
+                  (timestamp nick face))
+(declare-function jabber-chat--format-time "jabber-chat.el"
+                  (timestamp delayed))
 (declare-function jabber-db-last-timestamp "jabber-db.el"
                   (account peer))
 (declare-function jabber-db-backlog "jabber-db.el"
@@ -1082,61 +1065,38 @@ Return nil if X-MUC is nil."
 	(timestamp (plist-get msg :timestamp))
 	(delayed (plist-get msg :delayed)))
     (if (stringp nick)
-	(insert (jabber-propertize
-		 (format-spec jabber-groupchat-prompt-format
-			      (list
-			       (cons ?t (format-time-string
-					 (if delayed
-					     jabber-chat-delayed-time-format
-					   jabber-chat-time-format)
-					 timestamp))
-			       (cons ?n (if dont-print-nick-p "" nick))
-			       (cons ?u nick)
-			       (cons ?r nick)
-			       (cons ?j (concat jabber-group "/" nick))))
-		 'face (if local
-                           (if jabber-muc-colorize-local
-                               (list ':foreground (jabber-muc-nick-get-color nick))
-                             'jabber-chat-prompt-local)
-                         (if jabber-muc-colorize-foreign
-                             (list ':foreground (jabber-muc-nick-get-color nick))
-                           'jabber-chat-prompt-foreign))
-		 'help-echo (concat (format-time-string "On %Y-%m-%d %H:%M:%S" timestamp) " from " nick " in " jabber-group)))
+	(jabber-chat--insert-prompt
+	 (jabber-chat--format-time timestamp delayed)
+	 (if dont-print-nick-p "" nick)
+	 (if local
+	     (if jabber-muc-colorize-local
+		 (list ':foreground (jabber-muc-nick-get-color nick))
+	       'jabber-chat-prompt-local)
+	   (if jabber-muc-colorize-foreign
+	       (list ':foreground (jabber-muc-nick-get-color nick))
+	     'jabber-chat-prompt-foreign)))
       (jabber-muc-system-prompt))))
 
 (defun jabber-muc-private-print-prompt (msg)
   "Print prompt for private MUC message plist MSG."
-  (let ((from (plist-get msg :from))
-	(timestamp (plist-get msg :timestamp))
-	(delayed (plist-get msg :delayed)))
-    (let ((nick (jabber-jid-resource from))
-	  (group (jabber-jid-user from)))
-      (insert (jabber-propertize
-	       (format-spec jabber-muc-private-foreign-prompt-format
-			    (list
-			     (cons ?t (format-time-string
-				       (if delayed
-					   jabber-chat-delayed-time-format
-					 jabber-chat-time-format)
-				       timestamp))
-			     (cons ?n nick)
-			     (cons ?g (or (jabber-jid-rostername group)
-					  (jabber-jid-username group)))))
-	       'face 'jabber-chat-prompt-foreign
-	       'help-echo (concat (format-time-string "On %Y-%m-%d %H:%M:%S" timestamp) " from " nick " in " jabber-group))))))
+  (let* ((from (plist-get msg :from))
+	 (timestamp (plist-get msg :timestamp))
+	 (delayed (plist-get msg :delayed))
+	 (nick (jabber-jid-resource from))
+	 (group (jabber-jid-user from))
+	 (group-name (or (jabber-jid-rostername group)
+			 (jabber-jid-username group))))
+    (jabber-chat--insert-prompt
+     (jabber-chat--format-time timestamp delayed)
+     (concat group-name "/" nick)
+     'jabber-chat-prompt-foreign)))
 
 (defun jabber-muc-system-prompt (&rest _ignore)
   "Print system prompt for MUC."
-  (insert (jabber-propertize
-	   (format-spec jabber-groupchat-prompt-format
-			(list
-			 (cons ?t (format-time-string jabber-chat-time-format))
-			 (cons ?n "")
-			 (cons ?u "")
-			 (cons ?r "")
-			 (cons ?j jabber-group)))
-	   'face 'jabber-chat-prompt-system
-	   'help-echo (format-time-string "System message on %Y-%m-%d %H:%M:%S"))))
+  (jabber-chat--insert-prompt
+   (jabber-chat--format-time nil nil)
+   ""
+   'jabber-chat-prompt-system))
 
 (add-to-list 'jabber-message-chain #'jabber-muc-process-message)
 

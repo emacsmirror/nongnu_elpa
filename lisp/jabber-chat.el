@@ -87,7 +87,7 @@ See also `jabber-chat-delayed-time-format'.
 See `format-time-string' for valid values."
   :type 'string)
 
-(defcustom jabber-chat-delayed-time-format "%Y-%m-%d %H:%M"
+(defcustom jabber-chat-delayed-time-format "%H:%M"
   "The format specification for delayed messages in the chat buffer.
 See also `jabber-chat-time-format'.
 
@@ -116,31 +116,6 @@ rare time printed."
   "Face for displaying rare time information."
   :group 'jabber-chat)
 
-(defcustom jabber-chat-local-prompt-format "[%t] %n> "
-  "The format specification for lines you type in the chat buffer.
-
-These fields are available:
-
-%t   Time, formatted according to `jabber-chat-time-format'
-     or `jabber-chat-delayed-time-format'
-%u   Username
-%n   Nickname (obsolete, same as username)
-%r   Resource
-%j   Bare JID (without resource)"
-  :type 'string)
-
-(defcustom jabber-chat-foreign-prompt-format "[%t] %n> "
-  "The format specification for lines others type in the chat buffer.
-
-These fields are available:
-
-%t   Time, formatted according to `jabber-chat-time-format'
-     or `jabber-chat-delayed-time-format'
-%n   Nickname, or JID if no nickname set
-%u   Username
-%r   Resource
-%j   Bare JID (without resource)"
-  :type 'string)
 
 (defface jabber-chat-prompt-local
   '((t :inherit font-lock-keyword-face :weight bold))
@@ -645,8 +620,7 @@ This function is used as an ewoc prettyprinter."
           (muc-highlight)  ; matched but no face = hide entirely
           (t (jabber-muc-system-prompt))))
         (:muc-error
-	 (jabber-muc-system-prompt)))
-      (put-text-property prompt-start (point) 'field 'jabber-prompt))
+	 (jabber-muc-system-prompt))))
 
     ;; ...and body
     (pcase type
@@ -778,72 +752,47 @@ string entries like :notice/:muc-notice (with :time in cddr)."
                                              (entry-time data)
                                              'list)))))))
 
+(defun jabber-chat--format-time (timestamp delayed)
+  "Format TIMESTAMP for prompt display.
+Use short format normally, long format when DELAYED."
+  (format-time-string (if delayed
+                          jabber-chat-delayed-time-format
+                        jabber-chat-time-format)
+                      timestamp))
+
+(defun jabber-chat--insert-prompt (timestamp nick face)
+  "Insert a chat prompt: TIMESTAMP <NICK> .
+NICK gets FACE."
+  (insert (jabber-propertize timestamp 'face 'shadow) " ")
+  (when (> (length nick) 0)
+    (insert (propertize (format "<%s>" nick) 'face face))
+    (insert " ")))
+
 (defun jabber-chat-print-prompt (msg timestamp delayed dont-print-nick-p)
-  "Print prompt for received message.
-MSG is a message plist.  TIMESTAMP is the time to display.
-If DELAYED is non-nil, print long timestamp
-\(`jabber-chat-delayed-time-format' as opposed to
-`jabber-chat-time-format').
-If DONT-PRINT-NICK-P is non-nil, don't include nickname."
-  (let ((from (plist-get msg :from))
-	(timestamp (or timestamp (plist-get msg :timestamp))))
-    (insert (jabber-propertize
-	     (format-spec jabber-chat-foreign-prompt-format
-			  (list
-			   (cons ?t (format-time-string
-				     (if delayed
-					 jabber-chat-delayed-time-format
-				       jabber-chat-time-format)
-				     timestamp))
-			   (cons ?n (if dont-print-nick-p "" (jabber-jid-displayname from)))
-			   (cons ?u (or (jabber-jid-username from) from))
-			   (cons ?r (or (jabber-jid-resource from) ""))
-			   (cons ?j (jabber-jid-user from))))
-	     'face 'jabber-chat-prompt-foreign
-	     'help-echo
-	     (concat (format-time-string "On %Y-%m-%d %H:%M:%S" timestamp) " from " from)))))
+  "Print prompt for received message MSG."
+  (let* ((from (plist-get msg :from))
+         (timestamp (or timestamp (plist-get msg :timestamp)))
+         (nick (if dont-print-nick-p "" (jabber-jid-displayname from))))
+    (jabber-chat--insert-prompt
+     (jabber-chat--format-time timestamp delayed)
+     nick
+     'jabber-chat-prompt-foreign)))
 
 (defun jabber-chat-system-prompt (timestamp)
-  (insert (jabber-propertize
-	   (format-spec jabber-chat-foreign-prompt-format
-			(list
-			 (cons ?t (format-time-string jabber-chat-time-format
-						      timestamp))
-			 (cons ?n "")
-			 (cons ?u "")
-			 (cons ?r "")
-			 (cons ?j "")))
-	   'face 'jabber-chat-prompt-system
-	   'help-echo
-	   (concat (format-time-string "System message on %Y-%m-%d %H:%M:%S" timestamp)))))
+  "Print system prompt at TIMESTAMP."
+  (jabber-chat--insert-prompt
+   (jabber-chat--format-time timestamp nil)
+   ""
+   'jabber-chat-prompt-system))
 
 (defun jabber-chat-self-prompt (timestamp delayed dont-print-nick-p)
-  "Print prompt for sent message.
-TIMESTAMP is the timestamp to print, or nil for now.
-If DELAYED is non-nil, print long timestamp
-\(`jabber-chat-delayed-time-format' as opposed to
-`jabber-chat-time-format').
-If DONT-PRINT-NICK-P is non-nil, don't include nickname."
+  "Print prompt for sent message."
   (let* ((state-data (fsm-get-state-data jabber-buffer-connection))
-	 (username (plist-get state-data :username))
-	 (server (plist-get state-data :server))
-	 (resource (plist-get state-data :resource))
-	 (nickname username))
-    (insert (jabber-propertize
-	     (format-spec jabber-chat-local-prompt-format
-			  (list
-			   (cons ?t (format-time-string
-				     (if delayed
-					 jabber-chat-delayed-time-format
-				       jabber-chat-time-format)
-				     timestamp))
-			   (cons ?n (if dont-print-nick-p "" nickname))
-			   (cons ?u username)
-			   (cons ?r resource)
-			   (cons ?j (concat username "@" server))))
-	     'face 'jabber-chat-prompt-local
-	     'help-echo
-	     (concat (format-time-string "On %Y-%m-%d %H:%M:%S" timestamp) " from you")))))
+         (username (plist-get state-data :username)))
+    (jabber-chat--insert-prompt
+     (jabber-chat--format-time timestamp delayed)
+     (if dont-print-nick-p "" username)
+     'jabber-chat-prompt-local)))
 
 (defun jabber-chat-print-error (msg)
   "Print error from message plist MSG in a readable way."
