@@ -176,7 +176,6 @@ Trailing newlines are always removed, regardless of this variable."
 
 (defvar-keymap jabber-roster-mode-map
   :parent (make-composed-keymap jabber-common-keymap special-mode-map)
-  "<mouse-2>" #'jabber-roster-mouse-2-action-at-point
   "TAB"       #'jabber-go-to-next-roster-item
   "S-TAB"     #'jabber-go-to-previous-roster-item
   "M-TAB"     #'jabber-go-to-previous-roster-item

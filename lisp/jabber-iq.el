@@ -33,8 +33,7 @@
   "Mapping from XML namespace to handler for IQ SET requests.")
 
 (defvar-keymap jabber-browse-mode-map
-  :parent jabber-common-keymap
-  "<mouse-2>" #'jabber-chat-menu)
+  :parent jabber-common-keymap)
 
 (defcustom jabber-browse-mode-hook nil
   "Hook run when entering Browse mode."
