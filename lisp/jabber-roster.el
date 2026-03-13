@@ -174,34 +174,31 @@ Trailing newlines are always removed, regardless of this variable."
 (defvar jabber-roster-debug nil
   "Debug roster draw.")
 
-(defvar jabber-roster-mode-map
-  (let ((map (make-sparse-keymap)))
-    (set-keymap-parent map (make-composed-keymap jabber-common-keymap special-mode-map))
-    (define-key map [mouse-2] #'jabber-roster-mouse-2-action-at-point)
-    (define-key map (kbd "TAB") #'jabber-go-to-next-roster-item)
-    (define-key map (kbd "S-TAB") #'jabber-go-to-previous-roster-item)
-    (define-key map (kbd "M-TAB") #'jabber-go-to-previous-roster-item)
-    (define-key map (kbd "<backtab>") #'jabber-go-to-previous-roster-item)
-    (define-key map (kbd "RET") #'jabber-roster-ret-action-at-point)
-    (define-key map (kbd "C-k") #'jabber-roster-delete-at-point)
-    (define-key map "d" #'jabber-roster-delete-at-point)
-    (define-key map "D" #'jabber-roster-delete-at-point)
-
-    (define-key map "e" #'jabber-roster-edit-action-at-point)
-    (define-key map "s" #'jabber-send-subscription-request)
-    (define-key map "q" #'bury-buffer)
-    (define-key map "i" #'jabber-get-disco-items)
-    (define-key map "j" #'jabber-muc-join)
-    (define-key map "I" #'jabber-get-disco-info)
-    (define-key map "b" #'jabber-get-browse)
-    (define-key map "v" #'jabber-get-version)
-    (define-key map "a" #'jabber-send-presence)
-    (define-key map "g" #'jabber-roster)
-    (define-key map "h" #'jabber-roster-menu)
-    (define-key map "o" #'jabber-roster-toggle-offline-display)
-    (define-key map "H" #'jabber-roster-menu)
-    (define-key map "?" #'jabber-roster-menu)
-    map))
+(defvar-keymap jabber-roster-mode-map
+  :parent (make-composed-keymap jabber-common-keymap special-mode-map)
+  "<mouse-2>" #'jabber-roster-mouse-2-action-at-point
+  "TAB"       #'jabber-go-to-next-roster-item
+  "S-TAB"     #'jabber-go-to-previous-roster-item
+  "M-TAB"     #'jabber-go-to-previous-roster-item
+  "<backtab>" #'jabber-go-to-previous-roster-item
+  "RET"       #'jabber-roster-ret-action-at-point
+  "C-k"       #'jabber-roster-delete-at-point
+  "d"         #'jabber-roster-delete-at-point
+  "D"         #'jabber-roster-delete-at-point
+  "e"         #'jabber-roster-edit-action-at-point
+  "s"         #'jabber-send-subscription-request
+  "q"         #'bury-buffer
+  "i"         #'jabber-get-disco-items
+  "j"         #'jabber-muc-join
+  "I"         #'jabber-get-disco-info
+  "b"         #'jabber-get-browse
+  "v"         #'jabber-get-version
+  "a"         #'jabber-send-presence
+  "g"         #'jabber-roster
+  "h"         #'jabber-roster-menu
+  "o"         #'jabber-roster-toggle-offline-display
+  "H"         #'jabber-roster-menu
+  "?"         #'jabber-roster-menu)
 
 ;; Global reference declarations
 

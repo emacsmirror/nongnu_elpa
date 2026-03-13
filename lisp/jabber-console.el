@@ -62,11 +62,9 @@ what kind of chat buffer is being created.")
 (defvar jabber-console-ewoc nil
   "The ewoc showing the XML elements of this stream buffer.")
 
-(defvar jabber-console-mode-map
-  (let ((map (make-sparse-keymap)))
-    (set-keymap-parent map jabber-common-keymap)
-    (define-key map "\r" #'jabber-chat-buffer-send)
-    map))
+(defvar-keymap jabber-console-mode-map
+  :parent jabber-common-keymap
+  "RET" #'jabber-chat-buffer-send)
 
 ;; Global reference declarations
 

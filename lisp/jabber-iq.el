@@ -32,11 +32,9 @@
 (defvar jabber-iq-set-xmlns-alist nil
   "Mapping from XML namespace to handler for IQ SET requests.")
 
-(defvar jabber-browse-mode-map
-  (let ((map (make-sparse-keymap)))
-    (set-keymap-parent map jabber-common-keymap)
-    (define-key map [mouse-2] #'jabber-chat-menu)
-    map))
+(defvar-keymap jabber-browse-mode-map
+  :parent jabber-common-keymap
+  "<mouse-2>" #'jabber-chat-menu)
 
 (defcustom jabber-browse-mode-hook nil
   "Hook run when entering Browse mode."
