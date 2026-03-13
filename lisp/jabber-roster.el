@@ -287,6 +287,7 @@ Trailing newlines are always removed, regardless of this variable."
    ["Roster"
     ("d"   "Delete item" jabber-roster-delete-at-point)
     ("g"   "Refresh" jabber-display-roster)
+    ("m"   "Jump to item" imenu)
     ("o"   "Toggle offline" jabber-roster-toggle-offline-display)]
    ["MUC & Presence"
     ("j"   "Join groupchat" jabber-muc-join)
@@ -728,12 +729,12 @@ information."
       (if interactivep
 	  (dolist (hook '(jabber-info-message-hooks jabber-alert-info-message-hooks))
 	    (run-hook-with-args hook 'roster (current-buffer) (funcall jabber-alert-info-message-function 'roster (current-buffer)))))
-      (when current-line
-	(goto-char (point-min))
-	(forward-line (1- current-line))
-	(move-to-column current-column)
-	;; Restore window scroll position.
-	(when (and window window-line)
+      (goto-char (point-min))
+      (forward-line (1- current-line))
+      (move-to-column current-column)
+      (when window
+	(set-window-point window (point))
+	(when window-line
 	  (set-window-start window
 			    (save-excursion
 			      (forward-line (- window-line))
