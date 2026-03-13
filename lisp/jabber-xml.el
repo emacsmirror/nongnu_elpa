@@ -49,8 +49,6 @@ specially."
 
 (defun jabber-unescape-xml (string)
   "Unescape STRING for XML."
-  ;; Eventually this can be done with `xml-substitute-special', but the
-  ;; version in xml.el of GNU Emacs 21.3 is buggy.
   (if (stringp string)
       (let ((newstr string))
 	(setq newstr (jabber-replace-in-string newstr "&quot;" "\""))
@@ -110,8 +108,7 @@ tag with value nil.
 If DONT-RECURSE-INTO-STREAM is non-nil, stop after an opening
 <stream:stream> tag.
 
-The version of `sgml-skip-tag-forward' in Emacs 21 isn't good
-enough for us."
+Uses a custom parser instead of `sgml-skip-tag-forward'."
   (skip-chars-forward "^<")
   (cond
    ((looking-at "<!\\[CDATA\\[")
