@@ -162,6 +162,22 @@
   (let ((entry (list :notice "some notice")))
     (should-not (jabber-chat-entry-time entry))))
 
+;;; ---- Group 5: jabber-chat--decrypt-if-needed ----
+
+(ert-deftest jabber-chat-test-decrypt-if-needed-returns-xml-unchanged ()
+  "No-op decryption returns xml-data unchanged."
+  (let ((xml '(message ((from . "alice@example.com") (type . "chat"))
+                       (body () "Hello!"))))
+    (should (eq xml (jabber-chat--decrypt-if-needed nil xml)))))
+
+(ert-deftest jabber-chat-test-decrypt-if-needed-preserves-complex-stanza ()
+  "No-op decryption preserves a stanza with nested elements."
+  (let ((xml '(message ((from . "bob@example.com"))
+                       (body () "Encrypted?")
+                       (x ((xmlns . "jabber:x:oob"))
+                          (url () "https://example.com/file.png")))))
+    (should (eq xml (jabber-chat--decrypt-if-needed nil xml)))))
+
 (provide 'jabber-chat-tests)
 
 ;;; jabber-chat-tests.el ends here
