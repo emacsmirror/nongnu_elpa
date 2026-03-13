@@ -27,6 +27,7 @@
 (require 'jabber-menu)                  ;we need jabber-jid-chat-menu
 (require 'ewoc)
 (require 'goto-addr)
+(require 'url-parse)
 
 (eval-when-compile (require 'cl-lib))
 
@@ -105,6 +106,11 @@ formatted according to this string, is different to the last
 rare time printed."
   :type 'string)
 
+(defcustom jabber-chat-display-images t
+  "When non-nil, fetch and display image URLs inline in chat buffers."
+  :type 'boolean
+  :group 'jabber-chat)
+
 (defface jabber-rare-time-face
   '((t :inherit font-lock-comment-face :underline t))
   "Face for displaying rare time information."
@@ -172,7 +178,9 @@ These fields are available:
 (defvar jabber-chat-printers '(jabber-chat-print-subject
 			 jabber-chat-print-body
 			 jabber-chat-print-url
-			 jabber-chat-goto-address)
+			 jabber-chat-goto-address
+			 jabber-chat-mark-oob-attachment
+			 jabber-chat--schedule-image-scan)
   "List of functions that may be able to print part of a message.
 Each function receives these arguments:
 
@@ -217,6 +225,7 @@ added to the outgoing message.")
 (declare-function jabber-muc-sender-p "jabber-muc.el" (jid))
 (declare-function jabber-muc-private-message-p "jabber-muc.el" (message))
 (declare-function jabber-muc-nickname "jabber-muc.el" (group))
+(declare-function jabber-image-fetch "jabber-image" (url callback &rest cbargs))
 (defvar jabber-backlog-days)
 (defvar jabber-backlog-number)
 (declare-function jabber-db-backlog "jabber-db.el"
@@ -331,7 +340,8 @@ JC is the Jabber connection."
 	    (setq jabber-chat-earliest-backlog
 		  (float-time (plist-get (car (last backlog-entries)) :timestamp)))
 	    ;; ewoc-enter-first with DESC input produces ascending display.
-	    (mapc #'jabber-chat-insert-backlog-entry backlog-entries)))))
+	    (mapc #'jabber-chat-insert-backlog-entry backlog-entries)
+	    (jabber-chat-display-buffer-images)))))
 
     ;; Make sure the connection variable is up to date.
     (setq jabber-buffer-connection jc)
@@ -389,7 +399,8 @@ Specify 0 to display all messages."
 	    (float-time (plist-get (car (last backlog-entries)) :timestamp)))
       (save-excursion
 	(goto-char (point-min))
-	(mapc #'jabber-chat-insert-backlog-entry backlog-entries)))))
+	(mapc #'jabber-chat-insert-backlog-entry backlog-entries))
+      (jabber-chat-display-buffer-images))))
 
 (add-to-list 'jabber-message-chain #'jabber-process-chat)
 
@@ -890,9 +901,12 @@ If DONT-PRINT-NICK-P is non-nil, don't include nickname."
       t)))
 
 (defun jabber-chat-print-url (msg _who mode)
-  "Print URLs from message plist MSG."
-  (let ((url (plist-get msg :oob-url)))
-    (when url
+  "Print OOB URL from message plist MSG.
+Skips printing when the body already contains the URL to avoid
+duplication (e.g. HTTP Upload messages)."
+  (let ((url (plist-get msg :oob-url))
+        (body (plist-get msg :body)))
+    (when (and url (not (equal body url)))
       (when (eql mode :insert)
         (let ((desc (plist-get msg :oob-desc)))
           (insert (format "\n%s%s<%s>"
@@ -901,6 +915,107 @@ If DONT-PRINT-NICK-P is non-nil, don't include nickname."
                           (if (stringp desc) (concat desc " ") "")
                           url))))
       t)))
+
+(defun jabber-chat--image-url-p (url)
+  "Return non-nil if URL looks like an image based on file extension."
+  (string-match-p "\\.\\(png\\|jpe?g\\|gif\\|webp\\|svg\\)\\(?:\\?.*\\)?$"
+                  (downcase url)))
+
+(defvar jabber-chat-url-keymap
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "RET") #'jabber-chat-url-action-at-point)
+    map)
+  "Keymap active on inline images and downloadable URLs in chat buffers.")
+
+(defun jabber-chat-url-action-at-point ()
+  "Act on the URL at point: download OOB files, open images in EWW."
+  (interactive)
+  (let ((file-url (get-text-property (point) 'jabber-chat-file-url))
+        (image-url (get-text-property (point) 'jabber-chat-image-url)))
+    (cond
+     (file-url (jabber-chat-download-url file-url))
+     (image-url
+      (switch-to-buffer-other-window (get-buffer-create "*eww*"))
+      (eww image-url)))))
+
+(defun jabber-chat-download-url (url)
+  "Prompt to download URL to a local file."
+  (let* ((filename (file-name-nondirectory
+                    (url-filename (url-generic-parse-url url))))
+         (dest (read-file-name (format "Save %s to: " filename)
+                               nil nil nil filename)))
+    (url-copy-file url dest t)
+    (message "Downloaded %s" dest)))
+
+(defun jabber-chat--replace-url-with-image (image beg end buffer)
+  "Delete URL text between markers BEG and END, insert IMAGE.
+Uses `insert-image' so the URL serves as alt-text."
+  (when (and image (buffer-live-p buffer))
+    (with-current-buffer buffer
+      (let ((inhibit-read-only t)
+            (url (buffer-substring-no-properties beg end)))
+        (save-excursion
+          (delete-region beg end)
+          (goto-char beg)
+          (let ((start (point)))
+            (insert-image image url)
+            (put-text-property start (point) 'jabber-chat-image-url url)
+            (put-text-property start (point) 'keymap jabber-chat-url-keymap)))))))
+
+(defvar-local jabber-chat--image-scan-timer nil
+  "Idle timer for scanning image URLs in this buffer.")
+
+(defun jabber-chat--schedule-image-scan (_msg _who mode)
+  "Schedule an async image scan after message insertion.
+Added to `jabber-chat-printers' to trigger after each message."
+  (when (eql mode :insert)
+    (let ((buf (current-buffer)))
+      (when jabber-chat--image-scan-timer
+        (cancel-timer jabber-chat--image-scan-timer))
+      (setq jabber-chat--image-scan-timer
+            (run-with-idle-timer
+             0.3 nil
+             (lambda ()
+               (when (buffer-live-p buf)
+                 (with-current-buffer buf
+                   (jabber-chat-display-buffer-images)))))))))
+
+(defconst jabber-chat--image-url-re
+  "https?://[^ \t\n<>\"]+\\.\\(png\\|jpe?g\\|gif\\|webp\\|svg\\)\\(\\?[^ \t\n<>\"]*\\)?"
+  "Regexp matching HTTP(S) URLs with image file extensions.")
+
+(defun jabber-chat-display-buffer-images ()
+  "Scan buffer for image URLs and replace them with inline images.
+Skips URLs already processed (marked with `jabber-chat-image-url').
+When the image arrives the URL text is deleted and the image inserted."
+  (interactive)
+  (save-excursion
+    (let ((inhibit-read-only t)
+          (limit (and (markerp jabber-point-insert) jabber-point-insert)))
+      (when jabber-chat-display-images
+        (goto-char (point-min))
+        (while (re-search-forward jabber-chat--image-url-re limit t)
+          (unless (get-text-property (match-beginning 0) 'jabber-chat-image-url)
+            (let ((url (match-string-no-properties 0))
+                  (url-beg (match-beginning 0))
+                  (url-end (match-end 0)))
+              ;; Insert newline before URL so images appear on their
+              ;; own line.
+              (when (and (> url-beg (point-min))
+                         (not (eq (char-before url-beg) ?\n)))
+                (save-excursion
+                  (goto-char url-beg)
+                  (insert "\n"))
+                (setq url-beg (1+ url-beg)
+                      url-end (1+ url-end)))
+              (put-text-property url-beg url-end
+                                 'jabber-chat-image-url url)
+              (let ((beg (copy-marker url-beg))
+                    (end (copy-marker url-end)))
+                (jabber-image-fetch
+                 url
+                 #'jabber-chat--replace-url-with-image
+                 beg end (current-buffer))))))))))
 
 (defun jabber-chat-goto-address (_msg _who mode)
   "Call `goto-address' on the newly written text."
@@ -912,6 +1027,30 @@ If DONT-PRINT-NICK-P is non-nil, don't include nickname."
 	;; prompt.  The prompt has a field property, so we can find it
 	;; using `field-beginning'.
 	(goto-address-fontify (field-beginning nil nil limit) end)))))
+
+(defun jabber-chat-mark-oob-attachment (msg _who mode)
+  "Mark non-image OOB attachment URLs with download keymap.
+Runs after `jabber-chat-goto-address' so the goto-address overlay
+exists when we set our keymap as its parent."
+  (when (eql mode :insert)
+    (let ((oob-url (plist-get msg :oob-url)))
+      (when (and oob-url (not (jabber-chat--image-url-p oob-url)))
+        (save-excursion
+          (when (search-backward oob-url nil t)
+            (let ((beg (match-beginning 0))
+                  (end (match-end 0))
+                  (inhibit-read-only t))
+              (put-text-property beg end 'jabber-chat-file-url oob-url)
+              ;; goto-address places an overlay with its own keymap that
+              ;; shadows text-property keymaps.  Set ours as parent so
+              ;; RET falls through to jabber-chat-url-action-at-point.
+              (let ((ov (seq-find (lambda (o) (overlay-get o 'keymap))
+                                  (overlays-in beg end))))
+                (if ov
+                    (set-keymap-parent (overlay-get ov 'keymap)
+                                      jabber-chat-url-keymap)
+                  (put-text-property beg end 'keymap
+                                     jabber-chat-url-keymap))))))))))
 
 ;; jabber-compose is autoloaded in jabber.el
 (add-to-list 'jabber-jid-chat-menu

@@ -46,6 +46,7 @@ window or at `fill-column', whichever is shorter."
 ;; Global reference declarations
 
 (declare-function jabber-muc-nick-completion-at-point "jabber-nick-completion.el" ())
+(declare-function jabber-httpupload-send-file "jabber-httpupload" (jc jid filepath))
 
 ;;
 
@@ -55,36 +56,36 @@ window or at `fill-column', whichever is shorter."
 ;;;###autoload
 (make-variable-buffer-local 'jabber-buffer-connection)
 
-(defvar jabber-chat-mode-map
-  (let ((map (make-sparse-keymap)))
-    (set-keymap-parent map (make-composed-keymap jabber-common-keymap special-mode-map))
-    (define-key map "\r" #'jabber-chat-buffer-send)
-    (define-key map "\t" 'completion-at-point)
-    map))
+(defvar jabber-chatting-with)              ; jabber-chat.el
+(defvar jabber-group)                      ; jabber-muc.el
+
+(defun jabber-chat-attach-file (filepath)
+  "Send file at FILEPATH via HTTP Upload to the current chat recipient."
+  (interactive "fFile to send: ")
+  (let ((jid (or (and (boundp 'jabber-chatting-with) jabber-chatting-with)
+                 (and (boundp 'jabber-group) jabber-group))))
+    (unless jid
+      (error "No chat recipient in this buffer"))
+    (unless jabber-buffer-connection
+      (error "No active connection in this buffer"))
+    (jabber-httpupload-send-file jabber-buffer-connection jid filepath)))
 
 ;; Spell check only what you're currently writing.
 (defun jabber-chat-mode-flyspell-verify ()
   "Return non-nil if point is in the composition area."
   (>= (point) jabber-point-insert))
 
-(define-derived-mode jabber-chat-mode special-mode "jabber-chat"
+(defvar-keymap jabber-chat-mode-map
+  :parent jabber-common-keymap
+  "RET"     #'jabber-chat-buffer-send
+  "TAB"     #'completion-at-point
+  "C-c C-a" #'jabber-chat-attach-file)
+
+(define-derived-mode jabber-chat-mode fundamental-mode "jabber-chat"
   "Major mode for Jabber chat buffers.
 \\{jabber-chat-mode-map}"
-  :keymap jabber-chat-mode-map
-  (setq display-line-numbers nil)
-  (setq left-margin-width 1)
-  (setq left-fringe-width 0
-        right-fringe-width 0)
-  ;; special-mode sets buffer-read-only, but chat buffers need the
-  ;; composition area writable.  Read-only protection for the message
-  ;; area is handled by text properties instead.
-  (setq buffer-read-only nil)
-  (put 'jabber-chat-mode 'flyspell-mode-predicate
-       #'jabber-chat-mode-flyspell-verify)
-  ;; Re-apply buffer to window so margin/fringe changes take effect.
-  (let ((win (get-buffer-window (current-buffer))))
-    (when win
-      (set-window-buffer win (current-buffer)))))
+  (display-line-numbers-mode 0)
+  (put 'jabber-chat-mode 'flyspell-mode-predicate #'jabber-chat-mode-flyspell-verify))
 
 (defun jabber-chat-mode-setup (jc ewoc-pp)
   "Initialize chat buffer state for connection JC.
