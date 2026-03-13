@@ -40,7 +40,7 @@ stanza.")
 
 ;; Global reference declarations
 
-(declare-function jabber-display-roster "jabber-roster.el" ())
+(declare-function jabber-roster--refresh "jabber-roster.el" ())
 (declare-function jabber-roster-update "jabber-roster.el"
                   (jc new-items changed-items deleted-items))
 (declare-function jabber-chat-create-buffer "jabber-chat.el" (jc chat-with))
@@ -392,7 +392,7 @@ Show status properties from highest-priority resource."
 	   jc `(presence ((to . ,(concat room "/" nick)))
 			 ,@subelements))))))
 
-  (jabber-display-roster)
+  (jabber-roster--refresh)
   (run-hooks 'jabber-presence-sent-hooks))
 
 (defun jabber-presence-children (jc)

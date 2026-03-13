@@ -100,7 +100,7 @@
 
     (define-key-after map
       [jabber-menu-roster]
-      '("Switch to roster" . jabber-switch-to-roster-buffer))
+      '("Switch to roster" . jabber-roster))
 
     (define-key-after map
       [separator2]

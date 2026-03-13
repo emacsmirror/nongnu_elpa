@@ -150,7 +150,7 @@ problems."
 (declare-function jabber-muc-connection-closed "jabber-muc.el" (bare-jid))
 (declare-function jabber-roster-update "jabber-roster.el"
                   (jc new-items changed-items deleted-items))
-(declare-function jabber-display-roster "jabber-roster.el" ())
+(declare-function jabber-roster--refresh "jabber-roster.el" ())
 (declare-function jabber-process-roster "jabber-presence.el"
                   (jc xml-data closure-data))
 (declare-function jabber-initial-roster-failure "jabber-presence.el"
@@ -331,7 +331,7 @@ With double prefix argument, specify more connection details."
   ;; Clear MUC data
   (jabber-muc-connection-closed (jabber-connection-bare-jid fsm))
   ;; Remove lost connections from the roster buffer.
-  (jabber-display-roster)
+  (jabber-roster--refresh)
   (let ((expected (plist-get state-data :disconnection-expected))
 	(reason (plist-get state-data :disconnection-reason))
 	(ever-session-established (plist-get state-data :ever-session-established)))
@@ -354,7 +354,7 @@ With double prefix argument, specify more connection details."
 	    (delq fsm jabber-connections))
       (when jabber-mode-line-mode
         (jabber-mode-line-presence-update))
-      (jabber-display-roster)
+      (jabber-roster--refresh)
       ;; And let the FSM sleep...
       (list state-data nil))))
 
@@ -845,7 +845,7 @@ JC is the Jabber connection."
     (message "Disconnected from %s"
 	     (jabber-connection-jid jc)))
   (unless dont-redisplay
-    (jabber-display-roster)))
+    (jabber-roster--refresh)))
 
 (defun jabber-disconnected ()
   "Re-initialise jabber package variables.

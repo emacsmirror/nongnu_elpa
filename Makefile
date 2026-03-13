@@ -1,4 +1,4 @@
-.phony: all autoload compile lint clean test
+.phony: all compile lint clean test
 
 ifndef EMACS_CMD
 GUIX := $(shell command -v guix 2>/dev/null)
@@ -13,13 +13,9 @@ TESTS ?= tests/jabber-xml-tests.el tests/jabber-util-tests.el \
          tests/jabber-muc-tests.el tests/jabber-roster-tests.el \
          tests/jabber-chat-tests.el tests/jabber-db-tests.el
 
-build: autoload compile
+build: compile
 
-dev: autoload compile lint test
-
-autoload:
-	$(EMACS_CMD) -q --batch --eval="(require 'package)" \
-	--eval="(package-generate-autoloads \"jabber\" \"lisp\")"
+dev: compile lint test
 
 compile:
 	$(EMACS_CMD) -q -Q -L . -L lisp -L lisp/jabber-fallback-lib --batch \

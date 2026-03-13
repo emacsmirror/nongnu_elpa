@@ -420,8 +420,8 @@ This function is not called directly, but can be used as the value for
 
 ;; This is now defined in jabber-roster.el.
 ;; (defun jabber-presence-update-roster (who oldstatus newstatus statustext proposed-alert)
-;;   "Update the roster display by calling `jabber-display-roster'"
-;;   (jabber-display-roster))
+;;   "Update the roster display by calling `jabber-roster--refresh'"
+;;   (jabber-roster--refresh))
 
 (defun jabber-presence-display (_who _oldstatus _newstatus _statustext proposed-alert)
   "Display the roster buffer."
