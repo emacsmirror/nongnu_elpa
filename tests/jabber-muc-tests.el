@@ -197,5 +197,89 @@ ROOMS is an alist of (group . nickname)."
   (let ((jabber-muc--rooms (make-hash-table :test #'equal)))
     (should-not (jabber-muc-connection "unknown@example.com"))))
 
+;;; ---- Group 6: jabber-muc--classify-message ----
+
+(ert-deftest jabber-test-muc-classify-message-error ()
+  "Stanza with error child is classified as :muc-error."
+  (jabber-muc-test-with-rooms
+      '(("room@conference.example.com" . "mynick"))
+    (let ((xml '(message ((from . "room@conference.example.com/othernick")
+                          (type . "groupchat"))
+                 (error ((type . "cancel"))))))
+      (should (eq :muc-error
+                  (jabber-muc--classify-message
+                   "room@conference.example.com" "othernick" xml))))))
+
+(ert-deftest jabber-test-muc-classify-message-local ()
+  "Message from our own nick is classified as :muc-local."
+  (jabber-muc-test-with-rooms
+      '(("room@conference.example.com" . "mynick"))
+    (let ((xml '(message ((from . "room@conference.example.com/mynick")
+                          (type . "groupchat"))
+                 (body nil "Hello"))))
+      (should (eq :muc-local
+                  (jabber-muc--classify-message
+                   "room@conference.example.com" "mynick" xml))))))
+
+(ert-deftest jabber-test-muc-classify-message-foreign ()
+  "Message from another nick is classified as :muc-foreign."
+  (jabber-muc-test-with-rooms
+      '(("room@conference.example.com" . "mynick"))
+    (let ((xml '(message ((from . "room@conference.example.com/othernick")
+                          (type . "groupchat"))
+                 (body nil "Hello"))))
+      (should (eq :muc-foreign
+                  (jabber-muc--classify-message
+                   "room@conference.example.com" "othernick" xml))))))
+
+;;; ---- Group 7: jabber-muc--history-message-p ----
+
+(ert-deftest jabber-test-muc-history-message-p-delay ()
+  "Message with urn:xmpp:delay child is detected as history."
+  (let ((xml '(message ((from . "room@conference.example.com/nick")
+                        (type . "groupchat"))
+               (body nil "Old message")
+               (delay ((xmlns . "urn:xmpp:delay")
+                       (stamp . "2023-01-01T00:00:00Z"))))))
+    (should (jabber-muc--history-message-p xml))))
+
+(ert-deftest jabber-test-muc-history-message-p-legacy-delay ()
+  "Message with jabber:x:delay child is detected as history."
+  (let ((xml '(message ((from . "room@conference.example.com/nick")
+                        (type . "groupchat"))
+               (body nil "Old message")
+               (x ((xmlns . "jabber:x:delay")
+                   (stamp . "20230101T00:00:00"))))))
+    (should (jabber-muc--history-message-p xml))))
+
+(ert-deftest jabber-test-muc-history-message-p-live ()
+  "Live message without delay element is not history."
+  (let ((xml '(message ((from . "room@conference.example.com/nick")
+                        (type . "groupchat"))
+               (body nil "Live message"))))
+    (should-not (jabber-muc--history-message-p xml))))
+
+(ert-deftest jabber-test-muc-classify-message-error-priority ()
+  "Error classification takes priority over matching local nick."
+  (jabber-muc-test-with-rooms
+      '(("room@conference.example.com" . "mynick"))
+    (let ((xml '(message ((from . "room@conference.example.com/mynick")
+                          (type . "groupchat"))
+               (error ((type . "cancel"))))))
+      (should (eq :muc-error
+                  (jabber-muc--classify-message
+                   "room@conference.example.com" "mynick" xml))))))
+
+(ert-deftest jabber-test-muc-classify-message-nil-nick ()
+  "Nil nick (bare JID) classifies as :muc-foreign, not crash."
+  (jabber-muc-test-with-rooms
+      '(("room@conference.example.com" . "mynick"))
+    (let ((xml '(message ((from . "room@conference.example.com")
+                          (type . "groupchat"))
+               (body nil "Room announcement"))))
+      (should (eq :muc-foreign
+                  (jabber-muc--classify-message
+                   "room@conference.example.com" nil xml))))))
+
 (provide 'jabber-muc-tests)
 ;;; jabber-muc-tests.el ends here

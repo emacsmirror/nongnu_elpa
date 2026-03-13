@@ -1107,6 +1107,59 @@ Return nil if X-MUC is nil."
    ""
    'jabber-chat-prompt-system))
 
+(defun jabber-muc--classify-message (group nick xml-data)
+  "Return message type for a MUC stanza.
+GROUP is the room JID, NICK is the sender's room nickname, and
+XML-DATA is the parsed stanza.  Returns `:muc-error' if the stanza
+contains an error child, `:muc-local' if NICK matches our own
+nickname in GROUP, or `:muc-foreign' otherwise."
+  (cond
+   ((jabber-xml-get-children xml-data 'error) :muc-error)
+   ((and nick (string= nick (jabber-muc-nickname group))) :muc-local)
+   (t :muc-foreign)))
+
+(defun jabber-muc--history-message-p (xml-data)
+  "Return non-nil if XML-DATA is a delayed (history) message.
+Checks for a child element with xmlns `urn:xmpp:delay' or
+`jabber:x:delay'."
+  (let ((children-namespaces
+         (mapcar (lambda (x)
+                   (when (listp x)
+                     (jabber-xml-get-attribute x 'xmlns)))
+                 (jabber-xml-node-children xml-data))))
+    (or (member jabber-delay-xmlns children-namespaces)
+        (member jabber-delay-legacy-xmlns children-namespaces))))
+
+(defun jabber-muc--display-message (jc xml-data group nick type msg-plist)
+  "Display a MUC message and conditionally run alert hooks.
+Insert an EWOC entry into the MUC buffer for GROUP.  JC is the Jabber
+connection, XML-DATA the parsed stanza, NICK the sender nickname, TYPE
+one of `:muc-local', `:muc-foreign', or `:muc-error', and MSG-PLIST
+the message property list.  Alert hooks are skipped for history
+messages."
+  (let ((error-p (eq type :muc-error))
+        (printers (append jabber-muc-printers jabber-chat-printers))
+        (body-text (plist-get msg-plist :body)))
+    (with-current-buffer (jabber-muc-create-buffer jc group)
+      (jabber-muc-snarf-topic xml-data)
+      ;; Call alert hooks only when something is output
+      (when (or error-p
+                (let ((res nil))
+                  (while (and printers (not res))
+                    (setq res (funcall (pop printers) msg-plist type :printp)))
+                  res))
+        (jabber-maybe-print-rare-time
+         (ewoc-enter-last jabber-chat-ewoc (list type msg-plist)))
+        ;; ...except if the message is part of history, in which
+        ;; case we don't want an alert.
+        (unless (jabber-muc--history-message-p xml-data)
+          (dolist (hook '(jabber-muc-hooks jabber-alert-muc-hooks))
+            (run-hook-with-args hook
+                                nick group (current-buffer) body-text
+                                (funcall jabber-alert-muc-function
+                                         nick group (current-buffer)
+                                         body-text))))))))
+
 (add-to-list 'jabber-message-chain #'jabber-muc-process-message)
 
 (defun jabber-muc-process-message (jc xml-data)
@@ -1115,43 +1168,11 @@ Return nil if X-MUC is nil."
 JC is the Jabber connection."
   (when (jabber-muc-message-p xml-data)
     (let* ((from (jabber-xml-get-attribute xml-data 'from))
-	   (group (jabber-jid-user from))
-	   (nick (jabber-jid-resource from))
-	   (error-p (jabber-xml-get-children xml-data 'error))
-	   (type (cond
-		  (error-p :muc-error)
-		  ((string= nick (jabber-muc-nickname group))
-		   :muc-local)
-		  (t :muc-foreign)))
-	   (body-text (car (jabber-xml-node-children
-			    (car (jabber-xml-get-children
-				  xml-data 'body)))))
-
-	   (printers (append jabber-muc-printers jabber-chat-printers))
-	   (msg-plist (jabber-chat--msg-plist-from-stanza xml-data)))
-
-      (with-current-buffer (jabber-muc-create-buffer jc group)
-	(jabber-muc-snarf-topic xml-data)
-	;; Call alert hooks only when something is output
-	(when (or error-p
-		  (let ((res nil))
-		    (while (and printers (not res))
-		      (setq res (funcall (pop printers) msg-plist type :printp)))
-		    res))
-	  (jabber-maybe-print-rare-time
-	   (ewoc-enter-last jabber-chat-ewoc (list type msg-plist)))
-
-	  ;; ...except if the message is part of history, in which
-	  ;; case we don't want an alert.
-	  (let ((children-namespaces (mapcar (lambda (x) (when (listp x) (jabber-xml-get-attribute x 'xmlns)))
-					     (jabber-xml-node-children xml-data))))
-	    (unless (or (member jabber-delay-xmlns children-namespaces)
-			(member jabber-delay-legacy-xmlns children-namespaces))
-	      (dolist (hook '(jabber-muc-hooks jabber-alert-muc-hooks))
-		(run-hook-with-args hook
-				    nick group (current-buffer) body-text
-				    (funcall jabber-alert-muc-function
-					     nick group (current-buffer) body-text))))))))))
+           (group (jabber-jid-user from))
+           (nick (jabber-jid-resource from))
+           (type (jabber-muc--classify-message group nick xml-data))
+           (msg-plist (jabber-chat--msg-plist-from-stanza xml-data)))
+      (jabber-muc--display-message jc xml-data group nick type msg-plist))))
 
 (defun jabber-muc--format-actor-reason (actor reason)
   "Format optional \" by ACTOR\" / \" - \\='REASON\\='\" suffix."
