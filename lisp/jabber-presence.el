@@ -159,6 +159,100 @@ obtained from `xml-parse-region'."
   (jabber-report-success jc xml-data "Initial roster retrieval")
   (run-hook-with-args 'jabber-post-connect-hooks jc))
 
+(defun jabber-presence--extract-metadata (xml-data)
+  "Parse presence metadata from XML-DATA.
+Return a plist (:show :status :priority :error)."
+  (list :show (car (jabber-xml-node-children
+                    (car (jabber-xml-get-children xml-data 'show))))
+        :status (car (jabber-xml-node-children
+                      (car (jabber-xml-get-children xml-data 'status))))
+        :priority (string-to-number
+                   (or (car (jabber-xml-node-children
+                             (car (jabber-xml-get-children xml-data 'priority))))
+                       "0"))
+        :error (car (jabber-xml-get-children xml-data 'error))))
+
+(defun jabber-presence--update-resource (buddy type resource metadata)
+  "Update BUDDY presence for RESOURCE given TYPE and METADATA.
+METADATA is a plist from `jabber-presence--extract-metadata'.
+Modifies BUDDY symbol properties as a side effect.
+Return (NEWSTATUS . RESOURCE-PLIST)."
+  (let ((resource-plist (cdr (assoc resource (get buddy 'resources))))
+        (presence-show (plist-get metadata :show))
+        (presence-status (plist-get metadata :status))
+        (error-xml (plist-get metadata :error))
+        (priority (plist-get metadata :priority))
+        newstatus)
+    (cond
+     ((and (string= resource "") (member type '("unavailable" "error")))
+      ;; 'unavailable' or 'error' from bare JID means that all resources
+      ;; are offline.
+      (setq resource-plist nil)
+      (setq newstatus (if (string= type "error") "error" nil))
+      (let ((new-message (if error-xml
+                             (jabber-parse-error error-xml)
+                           presence-status)))
+        ;; erase any previous information
+        (put buddy 'resources nil)
+        (put buddy 'connected nil)
+        (put buddy 'show newstatus)
+        (put buddy 'status new-message)))
+
+     ((string= type "unavailable")
+      (setq resource-plist
+            (plist-put resource-plist 'connected nil))
+      (setq resource-plist
+            (plist-put resource-plist 'show nil))
+      (setq resource-plist
+            (plist-put resource-plist 'status
+                       presence-status)))
+
+     ((string= type "error")
+      (setq newstatus "error")
+      (setq resource-plist
+            (plist-put resource-plist 'connected nil))
+      (setq resource-plist
+            (plist-put resource-plist 'show "error"))
+      (setq resource-plist
+            (plist-put resource-plist 'status
+                       (if error-xml
+                           (jabber-parse-error error-xml)
+                         presence-status))))
+     ((or
+       (string= type "unsubscribe")
+       (string= type "subscribed")
+       (string= type "unsubscribed"))
+      ;; Do nothing, except letting the user know.  The Jabber protocol
+      ;; places all this complexity on the server.
+      (setq newstatus type))
+     (t
+      (setq resource-plist
+            (plist-put resource-plist 'connected t))
+      (setq resource-plist
+            (plist-put resource-plist 'show (or presence-show "")))
+      (setq resource-plist
+            (plist-put resource-plist 'status
+                       presence-status))
+      (setq resource-plist
+            (plist-put resource-plist 'priority priority))
+      (setq newstatus (or presence-show ""))))
+    (cons newstatus resource-plist)))
+
+(defun jabber-presence--run-hooks (buddy oldstatus newstatus status-message)
+  "Fire presence hooks for BUDDY with OLDSTATUS, NEWSTATUS, and STATUS-MESSAGE.
+Runs `jabber-presence-hooks' and `jabber-alert-presence-hooks'."
+  (dolist (hook '(jabber-presence-hooks jabber-alert-presence-hooks))
+    (run-hook-with-args hook
+                        buddy
+                        oldstatus
+                        newstatus
+                        status-message
+                        (funcall jabber-alert-presence-message-function
+                                 buddy
+                                 oldstatus
+                                 newstatus
+                                 status-message))))
+
 (add-to-list 'jabber-presence-chain 'jabber-process-presence)
 (defun jabber-process-presence (jc xml-data)
   "Process incoming presence tags.
@@ -167,19 +261,14 @@ JC is the Jabber connection.
 XML-DATA is the parsed tree data from the stream (stanzas)
 obtained from `xml-parse-region'."
   ;; XXX: use JC argument
-  (let ((roster (plist-get (fsm-get-state-data jc) :roster))
-	(from (jabber-xml-get-attribute xml-data 'from))
-	(type (jabber-xml-get-attribute xml-data 'type))
-	(presence-show (car (jabber-xml-node-children
-			     (car (jabber-xml-get-children xml-data 'show)))))
-	(presence-status (car (jabber-xml-node-children
-			       (car (jabber-xml-get-children xml-data 'status)))))
-	(error (car (jabber-xml-get-children xml-data 'error)))
-	(priority (string-to-number (or (car (jabber-xml-node-children (car (jabber-xml-get-children xml-data 'priority))))
-					"0"))))
+  (let* ((roster (plist-get (fsm-get-state-data jc) :roster))
+         (from (jabber-xml-get-attribute xml-data 'from))
+         (type (jabber-xml-get-attribute xml-data 'type))
+         (metadata (jabber-presence--extract-metadata xml-data)))
     (cond
      ((string= type "subscribe")
-      (run-with-idle-timer 0.01 nil #'jabber-process-subscription-request jc from presence-status))
+      (run-with-idle-timer 0.01 nil #'jabber-process-subscription-request
+                           jc from (plist-get metadata :status)))
 
      ((jabber-muc-presence-p xml-data)
       (jabber-muc-process-presence jc xml-data))
@@ -187,86 +276,29 @@ obtained from `xml-parse-region'."
      (t
       ;; XXX: Think about what to do about out-of-roster presences.
       (let ((buddy (jabber-jid-symbol from)))
-	(if (memq buddy roster)
-	    (let* ((oldstatus (get buddy 'show))
-		   (resource (or (jabber-jid-resource from) ""))
-		   (resource-plist (cdr (assoc resource
-					       (get buddy 'resources))))
-		   newstatus)
-	      (cond
-	       ((and (string= resource "") (member type '("unavailable" "error")))
-		;; 'unavailable' or 'error' from bare JID means that all resources
-		;; are offline.
-		(setq resource-plist nil)
-		(setq newstatus (if (string= type "error") "error" nil))
-		(let ((new-message (if error
-				       (jabber-parse-error error)
-				     presence-status)))
-		  ;; erase any previous information
-		  (put buddy 'resources nil)
-		  (put buddy 'connected nil)
-		  (put buddy 'show newstatus)
-		  (put buddy 'status new-message)))
+        (when (memq buddy roster)
+          (let* ((oldstatus (get buddy 'show))
+                 (resource (or (jabber-jid-resource from) ""))
+                 (result (jabber-presence--update-resource
+                          buddy type resource metadata))
+                 (newstatus (car result))
+                 (resource-plist (cdr result)))
 
-	       ((string= type "unavailable")
-		(setq resource-plist
-		      (plist-put resource-plist 'connected nil))
-		(setq resource-plist
-		      (plist-put resource-plist 'show nil))
-		(setq resource-plist
-		      (plist-put resource-plist 'status
-				 presence-status)))
+            (when resource-plist
+              ;; this is for `assoc-set!' in guile
+              (if (assoc resource (get buddy 'resources))
+                  (setcdr (assoc resource (get buddy 'resources))
+                          resource-plist)
+                (put buddy 'resources
+                     (cons (cons resource resource-plist)
+                           (get buddy 'resources))))
+              (jabber-prioritize-resources buddy))
 
-	       ((string= type "error")
-		(setq newstatus "error")
-		(setq resource-plist
-		      (plist-put resource-plist 'connected nil))
-		(setq resource-plist
-		      (plist-put resource-plist 'show "error"))
-		(setq resource-plist
-		      (plist-put resource-plist 'status
-				 (if error
-				     (jabber-parse-error error)
-				   presence-status))))
-	       ((or
-		 (string= type "unsubscribe")
-		 (string= type "subscribed")
-		 (string= type "unsubscribed"))
-		;; Do nothing, except letting the user know.  The Jabber protocol
-		;; places all this complexity on the server.
-		(setq newstatus type))
-	       (t
-		(setq resource-plist
-		      (plist-put resource-plist 'connected t))
-		(setq resource-plist
-		      (plist-put resource-plist 'show (or presence-show "")))
-		(setq resource-plist
-		      (plist-put resource-plist 'status
-				 presence-status))
-		(setq resource-plist
-		      (plist-put resource-plist 'priority priority))
-		(setq newstatus (or presence-show ""))))
+            (fsm-send jc (cons :roster-update buddy))
 
-	      (when resource-plist
-		;; this is for `assoc-set!' in guile
-		(if (assoc resource (get buddy 'resources))
-		    (setcdr (assoc resource (get buddy 'resources)) resource-plist)
-		  (put buddy 'resources (cons (cons resource resource-plist) (get buddy 'resources))))
-		(jabber-prioritize-resources buddy))
-
-	      (fsm-send jc (cons :roster-update buddy))
-
-	      (dolist (hook '(jabber-presence-hooks jabber-alert-presence-hooks))
-		(run-hook-with-args hook
-				    buddy
-				    oldstatus
-				    newstatus
-				    (plist-get resource-plist 'status)
-				    (funcall jabber-alert-presence-message-function
-					     buddy
-					     oldstatus
-					     newstatus
-					     (plist-get resource-plist 'status)))))))))))
+            (jabber-presence--run-hooks
+             buddy oldstatus newstatus
+             (plist-get resource-plist 'status)))))))))
 
 (defun jabber-process-subscription-request (jc from presence-status)
   "Process an incoming subscription request.

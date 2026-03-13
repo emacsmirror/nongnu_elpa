@@ -126,5 +126,131 @@
            (result (jabber--roster-process-item item nil nil)))
       (should (equal (get (cdr result) 'ask) "subscribe")))))
 
+;;; ---- Group 3: jabber-presence--extract-metadata ----
+
+(ert-deftest jabber-presence-test-extract-metadata-all-fields ()
+  "All fields are extracted from a fully populated presence stanza."
+  (let* ((xml '(presence ((from . "bob@example.com/phone"))
+                         (show () "away")
+                         (status () "On the phone")
+                         (priority () "5")
+                         (error ((type . "modify"))
+                                (bad-request ((xmlns . "urn:ietf:params:xml:ns:xmpp-stanzas"))))))
+         (result (jabber-presence--extract-metadata xml)))
+    (should (equal (plist-get result :show) "away"))
+    (should (equal (plist-get result :status) "On the phone"))
+    (should (equal (plist-get result :priority) 5))
+    (should (consp (plist-get result :error)))))
+
+(ert-deftest jabber-presence-test-extract-metadata-missing-elements ()
+  "Missing child elements yield nil (or 0 for priority)."
+  (let* ((xml '(presence ((from . "bob@example.com"))))
+         (result (jabber-presence--extract-metadata xml)))
+    (should (null (plist-get result :show)))
+    (should (null (plist-get result :status)))
+    (should (equal (plist-get result :priority) 0))
+    (should (null (plist-get result :error)))))
+
+(ert-deftest jabber-presence-test-extract-metadata-only-status ()
+  "Only the status element is present."
+  (let* ((xml '(presence ((from . "bob@example.com"))
+                         (status () "BRB")))
+         (result (jabber-presence--extract-metadata xml)))
+    (should (null (plist-get result :show)))
+    (should (equal (plist-get result :status) "BRB"))
+    (should (equal (plist-get result :priority) 0))
+    (should (null (plist-get result :error)))))
+
+(ert-deftest jabber-presence-test-extract-metadata-negative-priority ()
+  "Negative priority is parsed correctly."
+  (let* ((xml '(presence ((from . "bob@example.com"))
+                         (priority () "-1")))
+         (result (jabber-presence--extract-metadata xml)))
+    (should (equal (plist-get result :priority) -1))))
+
+;;; ---- Group 4: jabber-presence--update-resource ----
+
+(ert-deftest jabber-presence-test-update-resource-normal-presence ()
+  "Normal presence sets connected, show, status, priority on resource plist."
+  (jabber-presence-test-with-obarray
+    (let* ((buddy (intern "bob@example.com" jabber-jid-obarray))
+           (metadata '(:show "away" :status "BRB" :priority 5 :error nil))
+           (result (jabber-presence--update-resource buddy nil "phone" metadata))
+           (newstatus (car result))
+           (rplist (cdr result)))
+      (should (equal newstatus "away"))
+      (should (eq (plist-get rplist 'connected) t))
+      (should (equal (plist-get rplist 'show) "away"))
+      (should (equal (plist-get rplist 'status) "BRB"))
+      (should (equal (plist-get rplist 'priority) 5)))))
+
+(ert-deftest jabber-presence-test-update-resource-unavailable ()
+  "Unavailable presence clears connected and show on resource plist."
+  (jabber-presence-test-with-obarray
+    (let* ((buddy (intern "bob@example.com" jabber-jid-obarray))
+           (metadata '(:show nil :status "Goodbye" :priority 0 :error nil))
+           (result (jabber-presence--update-resource
+                    buddy "unavailable" "phone" metadata))
+           (newstatus (car result))
+           (rplist (cdr result)))
+      (should (null newstatus))
+      (should (null (plist-get rplist 'connected)))
+      (should (null (plist-get rplist 'show)))
+      (should (equal (plist-get rplist 'status) "Goodbye")))))
+
+(ert-deftest jabber-presence-test-update-resource-bare-jid-unavailable ()
+  "Bare JID unavailable clears all buddy resources and properties."
+  (jabber-presence-test-with-obarray
+    (let* ((buddy (intern "bob@example.com" jabber-jid-obarray)))
+      (put buddy 'resources '(("phone" connected t show "away")))
+      (put buddy 'connected t)
+      (put buddy 'show "away")
+      (let* ((metadata '(:show nil :status "Gone" :priority 0 :error nil))
+             (result (jabber-presence--update-resource
+                      buddy "unavailable" "" metadata))
+             (newstatus (car result))
+             (rplist (cdr result)))
+        (should (null newstatus))
+        (should (null rplist))
+        (should (null (get buddy 'resources)))
+        (should (null (get buddy 'connected)))
+        (should (null (get buddy 'show)))
+        (should (equal (get buddy 'status) "Gone"))))))
+
+(ert-deftest jabber-presence-test-update-resource-error ()
+  "Error presence sets show to error and connected to nil."
+  (jabber-presence-test-with-obarray
+    (let* ((buddy (intern "bob@example.com" jabber-jid-obarray))
+           (metadata '(:show nil :status "something" :priority 0 :error nil))
+           (result (jabber-presence--update-resource
+                    buddy "error" "phone" metadata))
+           (newstatus (car result))
+           (rplist (cdr result)))
+      (should (equal newstatus "error"))
+      (should (null (plist-get rplist 'connected)))
+      (should (equal (plist-get rplist 'show) "error"))
+      (should (equal (plist-get rplist 'status) "something")))))
+
+(ert-deftest jabber-presence-test-update-resource-subscribed ()
+  "Subscribed type sets newstatus without modifying resource plist."
+  (jabber-presence-test-with-obarray
+    (let* ((buddy (intern "bob@example.com" jabber-jid-obarray))
+           (metadata '(:show nil :status nil :priority 0 :error nil))
+           (result (jabber-presence--update-resource
+                    buddy "subscribed" "phone" metadata))
+           (newstatus (car result)))
+      (should (equal newstatus "subscribed")))))
+
+(ert-deftest jabber-presence-test-update-resource-default-show ()
+  "Normal presence with nil show defaults show to empty string."
+  (jabber-presence-test-with-obarray
+    (let* ((buddy (intern "bob@example.com" jabber-jid-obarray))
+           (metadata '(:show nil :status "Online" :priority 0 :error nil))
+           (result (jabber-presence--update-resource buddy nil "laptop" metadata))
+           (newstatus (car result))
+           (rplist (cdr result)))
+      (should (equal newstatus ""))
+      (should (equal (plist-get rplist 'show) "")))))
+
 (provide 'jabber-presence-tests)
 ;;; jabber-presence-tests.el ends here
