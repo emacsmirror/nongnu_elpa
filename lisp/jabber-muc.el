@@ -34,6 +34,18 @@
 
 (require 'ewoc)
 
+(defconst jabber-muc-xmlns "http://jabber.org/protocol/muc"
+  "XEP-0045 MUC namespace.")
+
+(defconst jabber-muc-xmlns-user "http://jabber.org/protocol/muc#user"
+  "XEP-0045 MUC user namespace.")
+
+(defconst jabber-muc-xmlns-owner "http://jabber.org/protocol/muc#owner"
+  "XEP-0045 MUC owner namespace.")
+
+(defconst jabber-muc-xmlns-admin "http://jabber.org/protocol/muc#admin"
+  "XEP-0045 MUC admin namespace.")
+
 (defvar jabber-muc--rooms (make-hash-table :test #'equal)
   "Internal hash table of active MUC rooms.
 Keys are group JID strings; values are (JC . NICKNAME) cons cells
@@ -535,7 +547,7 @@ JC is the Jabber connection."
   (interactive (jabber-muc-argument-list))
   (jabber-send-iq jc group
 		  "set"
-		  '(query ((xmlns . "http://jabber.org/protocol/muc#owner"))
+		  `(query ((xmlns . ,jabber-muc-xmlns-owner))
 			  (x ((xmlns . "jabber:x:data") (type . "submit"))))
 		  #'jabber-report-success "MUC instant configuration"
 		  #'jabber-report-success "MUC instant configuration"))
@@ -550,7 +562,7 @@ JC is the Jabber connection."
   (interactive (jabber-muc-argument-list))
   (jabber-send-iq jc group
 		  "get"
-		  '(query ((xmlns . "http://jabber.org/protocol/muc#owner")))
+		  `(query ((xmlns . ,jabber-muc-xmlns-owner)))
 		  #'jabber-process-data #'jabber-muc-render-config
 		  #'jabber-process-data "MUC configuration request failed"))
 
@@ -593,7 +605,7 @@ obtained from `xml-parse-region'."
 
   (jabber-send-iq jabber-buffer-connection jabber-submit-to
 		  "set"
-		  `(query ((xmlns . "http://jabber.org/protocol/muc#owner"))
+		  `(query ((xmlns . ,jabber-muc-xmlns-owner))
 			  ,(jabber-parse-xdata-form))
 		  #'jabber-report-success "MUC configuration"
 		  #'jabber-report-success "MUC configuration"))
@@ -606,7 +618,7 @@ obtained from `xml-parse-region'."
 
   (jabber-send-iq jabber-buffer-connection jabber-submit-to
 		  "set"
-		  '(query ((xmlns . "http://jabber.org/protocol/muc#owner"))
+		  `(query ((xmlns . ,jabber-muc-xmlns-owner))
 			  (x ((xmlns . "jabber:x:data") (type . "cancel"))))
 		  nil nil nil nil))
 
@@ -713,7 +725,7 @@ Prompt with completion for joined rooms only."
 
   (jabber-send-sexp jc
 		    `(presence ((to . ,(format "%s/%s" group nickname)))
-			       (x ((xmlns . "http://jabber.org/protocol/muc"))
+			       (x ((xmlns . ,jabber-muc-xmlns))
 				  ,@(when password
 				      `((password () ,password))))
 			       ,@(jabber-presence-children jc)))
@@ -847,7 +859,7 @@ JC is the Jabber connection."
 	    (read-string "Reason: ")))))
   (unless (or (zerop (length nickname)) (zerop (length role)))
     (jabber-send-iq jc group "set"
-		    `(query ((xmlns . "http://jabber.org/protocol/muc#admin"))
+		    `(query ((xmlns . ,jabber-muc-xmlns-admin))
 			    (item ((nick . ,nickname)
 				   (role . ,role))
 				  ,(unless (zerop (length reason))
@@ -887,7 +899,7 @@ JC is the Jabber connection."
 		     (error "JID of %s in group %s is unknown" nickname-or-jid group))))
 	   nickname-or-jid)))
     (jabber-send-iq jc group "set"
-		    `(query ((xmlns . "http://jabber.org/protocol/muc#admin"))
+		    `(query ((xmlns . ,jabber-muc-xmlns-admin))
 			    (item ((jid . ,jid)
 				   (affiliation . ,affiliation))
 				  ,(unless (zerop (length reason))
@@ -913,7 +925,7 @@ JC is the Jabber connection."
   (jabber-send-sexp
    jc
    `(message ((to . ,group))
-	     (x ((xmlns . "http://jabber.org/protocol/muc#user"))
+	     (x ((xmlns . ,jabber-muc-xmlns-user))
 		(invite ((to . ,jid))
 			,(unless (zerop (length reason))
 			   `(reason nil ,reason)))))))
@@ -925,7 +937,7 @@ JC is the Jabber connection."
 Requires :xml-data key in MSG for raw stanza access."
   (when-let* ((xml-data (plist-get msg :xml-data)))
     (cl-dolist (x (jabber-xml-get-children xml-data 'x))
-      (when (string= (jabber-xml-get-attribute x 'xmlns) "http://jabber.org/protocol/muc#user")
+      (when (string= (jabber-xml-get-attribute x 'xmlns) jabber-muc-xmlns-user)
         (let ((invitation (car (jabber-xml-get-children x 'invite))))
 	  (when invitation
 	    (when (eql mode :insert)
@@ -960,7 +972,7 @@ Requires :xml-data key in MSG for raw stanza access."
 			    `(message
 			      ((to . ,group))
 			      (x
-			       ((xmlns . "http://jabber.org/protocol/muc#user"))
+			       ((xmlns . ,jabber-muc-xmlns-user))
 			       (decline
 				((to . ,inviter))
 				,(unless (zerop (length reason))
@@ -1002,7 +1014,7 @@ include groupchat invites."
      (string= type "groupchat")
      (and (string= type "error")
 	  (gethash (jabber-jid-symbol from) jabber-pending-groupchats))
-     (jabber-xml-path message '(("http://jabber.org/protocol/muc#user" . "x") invite)))))
+     (jabber-xml-path message `((,jabber-muc-xmlns-user . "x") invite)))))
 
 ;;;###autoload
 (defun jabber-muc-sender-p (jid)
@@ -1037,7 +1049,7 @@ JC is the Jabber connection."
 	(type (jabber-xml-get-attribute presence 'type))
 	(muc-marker (cl-find-if
 		     (lambda (x) (equal (jabber-xml-get-attribute x 'xmlns)
-				   "http://jabber.org/protocol/muc#user"))
+				   jabber-muc-xmlns-user))
 		     (jabber-xml-get-children presence 'x))))
     ;; This is MUC presence if it has an MUC-namespaced tag...
     (or muc-marker
@@ -1280,7 +1292,7 @@ X-MUC, ACTOR, REASON and OUR-NICKNAME come from the stanza."
 	 (type (jabber-xml-get-attribute presence 'type))
 	 (x-muc (cl-find-if
 		 (lambda (x) (equal (jabber-xml-get-attribute x 'xmlns)
-			       "http://jabber.org/protocol/muc#user"))
+			       jabber-muc-xmlns-user))
 		 (jabber-xml-get-children presence 'x)))
 	 (group (jabber-jid-user from))
 	 (nickname (jabber-jid-resource from))
