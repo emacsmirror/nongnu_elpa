@@ -168,6 +168,7 @@ configure a Google Talk account like this:
 (require 'jabber-presence)
 (require 'jabber-alert)
 (require 'jabber-chat)
+(require 'jabber-db)
 (require 'jabber-disco)
 (require 'jabber-iq)
 (require 'jabber-widget)
