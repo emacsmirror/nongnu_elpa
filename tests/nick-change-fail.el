@@ -56,16 +56,16 @@ to enter the room named by `ncf-room-name' with the nick \"Romeo\"."
   (sit-for 0.01)
   (let ((buffer (jabber-muc-get-buffer ncf-room-name)))
     (ncf-assert (get-buffer buffer) "Couldn't enter MUC room")
-    (ncf-assert *jabber-active-groupchats* "Entering room not recorded")
+    (ncf-assert (jabber-muc-joined-p ncf-room-name) "Entering room not recorded")
 
     ;; Now, do an unallowed nickname change.
     (jabber-muc-join jc ncf-room-name "Mercutio")
     (sit-for 0.01)
 
     ;; We should still consider ourselves to be in the room as Romeo
-    (ncf-assert (assoc ncf-room-name *jabber-active-groupchats*)
+    (ncf-assert (jabber-muc-joined-p ncf-room-name)
 		"We thought we left the room, but we didn't")
-    (ncf-assert (string= (cdr (assoc ncf-room-name *jabber-active-groupchats*)) "Romeo")
+    (ncf-assert (string= (jabber-muc-nickname ncf-room-name) "Romeo")
        "We thought we changed nickname, but we didn't")))
 
 (jabberd-connect)

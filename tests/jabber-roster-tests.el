@@ -16,8 +16,7 @@
   "Run BODY with ROOMS as active groupchats.
 ROOMS is an alist of (group . nickname)."
   (declare (indent 1))
-  `(let ((*jabber-active-groupchats* ,rooms)
-         (jabber-muc--rooms (make-hash-table :test #'equal)))
+  `(let ((jabber-muc--rooms (make-hash-table :test #'equal)))
      (dolist (r ,rooms)
        (puthash (car r) (cons nil (cdr r)) jabber-muc--rooms))
      ,@body))
