@@ -63,6 +63,9 @@
                            raw-xml oob-url oob-desc))
 (defvar jabber-oob-xmlns)              ; jabber-xml.el
 
+(defconst jabber-httpupload-xmlns "urn:xmpp:http:upload:0"
+  "XML namespace for XEP-0363 HTTP File Upload.")
+
 ;; * Configuration variables *
 
 (defgroup jabber-httpupload nil "Jabber HTTP Upload Settings."
@@ -170,7 +173,7 @@ if the HTTP Upload namespace feature is in the answer, store the IRI
 in `jabber-httpupload-support'."
   (jabber-disco-get-info jc iri nil
                          (lambda (jc _data result)
-                           (when (member "urn:xmpp:http:upload:0"
+                           (when (member jabber-httpupload-xmlns
                                          (nth 1 result))
                              ;; This item supports HTTP Upload... register it!
                              (push (cons jc iri) jabber-httpupload-support)))
@@ -320,7 +323,7 @@ ERROR-ARGS is a list with arguments for ERROR-CALLBACK."
         (size (nth 1 filedata))
         (content-type (nth 2 filedata)))
     (jabber-send-iq jc (cdr (jabber-httpupload-server-has-support jc)) "get"
-                    `(request ((xmlns . "urn:xmpp:http:upload:0")
+                    `(request ((xmlns . ,jabber-httpupload-xmlns)
                                (filename . ,filename)
                                (size . ,size)
                                (content-type . ,content-type)))

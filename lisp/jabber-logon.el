@@ -28,15 +28,18 @@
 (declare-function jabber-send-iq "jabber-iq.el"
                   (jc to type query success-callback success-closure-data
 		      error-callback error-closure-data &optional result-id))
-;;
 
+(defconst jabber-logon-xmlns "jabber:iq:auth"
+  "XML namespace for XEP-0078 Non-SASL Authentication.")
+
+;;
 
 (defun jabber-get-auth (jc to session-id)
   "Send IQ get request in namespace \"jabber:iq:auth\".
 JC is the Jabber connection."
   (jabber-send-iq jc to
 		  "get"
-		  `(query ((xmlns . "jabber:iq:auth"))
+		  `(query ((xmlns . ,jabber-logon-xmlns))
 			  (username () ,(plist-get (fsm-get-state-data jc) :username)))
 		  #'jabber-do-logon session-id
 		  #'jabber-report-success "Impossible error - auth field request"))
@@ -66,7 +69,7 @@ obtained from `xml-parse-region'."
 	(plist-put (fsm-get-state-data jc) :resource "emacs-jabber"))
       (jabber-send-iq jc (plist-get (fsm-get-state-data jc) :server)
 		"set"
-		`(query ((xmlns . "jabber:iq:auth"))
+		`(query ((xmlns . ,jabber-logon-xmlns))
 			(username () ,(plist-get (fsm-get-state-data jc) :username))
 			,auth
 			(resource () ,(plist-get (fsm-get-state-data jc) :resource)))

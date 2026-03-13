@@ -39,11 +39,14 @@
 (defvar jabber-chatting-with)           ; jabber-chat.el
 (defvar jabber-point-insert)            ; jabber-console.el
 
+(defconst jabber-rtt-xmlns "urn:xmpp:rtt:0"
+  "XML namespace for XEP-0301 In-Band Real Time Text.")
+
 ;;;; Handling incoming events
 
 ;;;###autoload
 (eval-after-load "jabber-disco"
-  '(jabber-disco-advertise-feature "urn:xmpp:rtt:0"))
+  `(jabber-disco-advertise-feature ,jabber-rtt-xmlns))
 
 (defvar-local jabber-rtt-ewoc-node nil)
 
@@ -67,7 +70,7 @@
              (buffer (get-buffer (jabber-chat-get-buffer
                                   (jabber-xml-get-attribute xml-data 'from) jc))))
     (with-current-buffer buffer
-      (let* ((rtt (jabber-xml-path xml-data '(("urn:xmpp:rtt:0" . "rtt"))))
+      (let* ((rtt (jabber-xml-path xml-data `((,jabber-rtt-xmlns . "rtt"))))
 	     (body (jabber-xml-path xml-data '(body)))
 	     (seq (when rtt (jabber-xml-get-attribute rtt 'seq)))
 	     (event (when rtt (or (jabber-xml-get-attribute rtt 'event) "edit")))
@@ -229,7 +232,7 @@ XEP-0301, In-Band Real Time Text."
   (jabber-send-sexp jabber-buffer-connection
 		    `(message ((to . ,jabber-chatting-with)
 			       (type . "chat"))
-			      (rtt ((xmlns . "urn:xmpp:rtt:0")
+			      (rtt ((xmlns . ,jabber-rtt-xmlns)
 				    (seq . ,(number-to-string jabber-rtt-send-seq))
 				    (event . "cancel"))
 				   nil)))
@@ -246,7 +249,7 @@ XEP-0301, In-Band Real Time Text."
     (jabber-send-sexp jabber-buffer-connection
 		      `(message ((to . ,jabber-chatting-with)
 				 (type . "chat"))
-				(rtt ((xmlns . "urn:xmpp:rtt:0")
+				(rtt ((xmlns . ,jabber-rtt-xmlns)
 				      (seq . ,(number-to-string jabber-rtt-send-seq))
 				      (event . ,(if resetp "reset" "new")))
 				     (t () ,text))))))
@@ -307,7 +310,7 @@ XEP-0301, In-Band Real Time Text."
 	(jabber-send-sexp jabber-buffer-connection
 			  `(message ((to . ,jabber-chatting-with)
 				     (type . "chat"))
-				    (rtt ((xmlns . "urn:xmpp:rtt:0")
+				    (rtt ((xmlns . ,jabber-rtt-xmlns)
 					  (seq . ,(number-to-string jabber-rtt-send-seq))
 					  (event . ,event))
 					 ,@(nreverse jabber-rtt-outgoing-events))))

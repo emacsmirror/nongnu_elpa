@@ -27,6 +27,9 @@
 
 (defvar jabber-connections)                ; jabber-core.el
 
+(defconst jabber-ping-xmlns "urn:xmpp:ping"
+  "XML namespace for XEP-0199 XMPP Ping.")
+
 ;;
 
 (add-to-list 'jabber-jid-info-menu
@@ -38,7 +41,7 @@ JC is connection to use, TO is full JID, PROCESS-FUNC is fucntion to call to
 process result, ON-SUCCESS and ON-ERROR is arg for this function depending on
 result."
   (jabber-send-iq jc to "get"
-                  '(ping ((xmlns . "urn:xmpp:ping")))
+                  `(ping ((xmlns . ,jabber-ping-xmlns)))
                   process-func on-success
                   process-func on-error))
 
@@ -59,8 +62,8 @@ obtained from `xml-parse-region'."
   (let ((to (jabber-xml-get-attribute xml-data 'from)))
     (format "%s is alive" to)))
 
-(add-to-list 'jabber-iq-get-xmlns-alist (cons "urn:xmpp:ping" 'jabber-pong))
-(jabber-disco-advertise-feature "urn:xmpp:ping")
+(add-to-list 'jabber-iq-get-xmlns-alist (cons jabber-ping-xmlns 'jabber-pong))
+(jabber-disco-advertise-feature jabber-ping-xmlns)
 
 (defun jabber-pong (jc xml-data)
   "Return pong as defined in XEP-0199.

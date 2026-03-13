@@ -62,6 +62,9 @@ probably reading the message).")
 
 (declare-function jabber-muc-message-p "jabber-muc.el" (message))
 
+(defconst jabber-events-xmlns "jabber:x:event"
+  "XML namespace for XEP-0022 Message Events.")
+
 ;;
 
 (defun jabber-events-update-message ()
@@ -77,7 +80,7 @@ probably reading the message).")
 (defun jabber-events-when-sending (_text _id)
   (setq jabber-events-arrived nil)
   (jabber-events-update-message)
-  `((x ((xmlns . "jabber:x:event"))
+  `((x ((xmlns . ,jabber-events-xmlns))
        ,@(mapcar #'list jabber-events-request-these))))
 
 ;;; OUTGOING
@@ -136,7 +139,7 @@ and it hasn't been sent before."
        jabber-buffer-connection
        `(message
 	 ((to . ,jabber-chatting-with))
-	 (x ((xmlns . "jabber:x:event"))
+	 (x ((xmlns . ,jabber-events-xmlns))
 	    (displayed)
 	    (id () ,jabber-events-last-id))))
       (setq jabber-events-display-confirmed t))))
@@ -150,7 +153,7 @@ and it hasn't been sent before."
        jabber-buffer-connection
        `(message
 	 ((to . ,jabber-chatting-with))
-	 (x ((xmlns . "jabber:x:event"))
+	 (x ((xmlns . ,jabber-events-xmlns))
 	    ,@(if composing-now '((composing)) nil)
 	    (id () ,jabber-events-last-id))))
       (setq jabber-events-composing-sent composing-now))))
@@ -165,7 +168,7 @@ and it hasn't been sent before."
              (buffer (get-buffer (jabber-chat-get-buffer
                                   (jabber-xml-get-attribute xml-data 'from) jc))))
     (with-current-buffer buffer
-      (let ((x (cl-find "jabber:x:event"
+      (let ((x (cl-find jabber-events-xmlns
 		        (jabber-xml-get-children xml-data 'x)
 		        :key #'(lambda (x) (jabber-xml-get-attribute x 'xmlns))
 		        :test #'string=)))
@@ -203,7 +206,7 @@ and it hasn't been sent before."
 		       jc
 		       `(message
 		         ((to . ,(jabber-xml-get-attribute xml-data 'from)))
-		         (x ((xmlns . "jabber:x:event"))
+		         (x ((xmlns . ,jabber-events-xmlns))
 			    (,type)
 			    (id () ,jabber-events-last-id))))))
 	    ;; Send delivery confirmation if appropriate

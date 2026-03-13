@@ -11,6 +11,9 @@
 (require 'jabber-iq)
 (require 'jabber-disco)
 
+(defconst jabber-carbons-xmlns "urn:xmpp:carbons:2"
+  "XML namespace for XEP-0280 Message Carbons.")
+
 (defun jabber-carbon-success (jc xml-data _context)
   (when (equal "result" (jabber-xml-get-attribute xml-data 'type))
     (message "Carbons feature successfully enabled for %s"
@@ -31,11 +34,11 @@ JC is the Jabber connection."
   (jabber-send-iq jc
                   nil
                   "set"
-                  `(enable ((xmlns . "urn:xmpp:carbons:2")))
+                  `(enable ((xmlns . ,jabber-carbons-xmlns)))
                   #'jabber-carbon-success "Carbons feature enablement"
                   #'jabber-carbon-failure "Carbons feature enablement"))
 
-(jabber-disco-advertise-feature "urn:xmpp:carbons:2")
+(jabber-disco-advertise-feature jabber-carbons-xmlns)
 
 (provide 'jabber-carbons)
 
