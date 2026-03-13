@@ -79,6 +79,14 @@
          (plist (jabber-chat--msg-plist-from-stanza stanza)))
     (should (stringp (plist-get plist :error-text)))))
 
+(ert-deftest jabber-chat-test-plist-from-stanza-oob-no-url ()
+  "OOB element with no url child yields nil :oob-url."
+  (let* ((stanza '(message ((from . "alice@example.com"))
+                           (body () "Check this")
+                           (x ((xmlns . "jabber:x:oob")))))
+         (plist (jabber-chat--msg-plist-from-stanza stanza)))
+    (should-not (plist-get plist :oob-url))))
+
 (ert-deftest jabber-chat-test-plist-from-stanza-invite ()
   "MUC invitation preserves raw XML in :xml-data."
   (let* ((stanza '(message ((from . "room@conf.example.com"))

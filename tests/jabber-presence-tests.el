@@ -126,6 +126,24 @@
            (result (jabber--roster-process-item item nil nil)))
       (should (equal (get (cdr result) 'ask) "subscribe")))))
 
+(ert-deftest jabber-presence-test-process-item-no-groups ()
+  "Item with no group children yields nil groups property."
+  (jabber-presence-test-with-obarray
+    (let* ((item '(item ((jid . "bob@example.com")
+                         (name . "Bob")
+                         (subscription . "both"))))
+           (result (jabber--roster-process-item item nil nil)))
+      (should-not (get (cdr result) 'groups)))))
+
+(ert-deftest jabber-presence-test-process-item-no-name ()
+  "Item with no name attribute yields nil name but sets subscription."
+  (jabber-presence-test-with-obarray
+    (let* ((item '(item ((jid . "bob@example.com")
+                         (subscription . "to"))))
+           (result (jabber--roster-process-item item nil nil)))
+      (should-not (get (cdr result) 'name))
+      (should (equal (get (cdr result) 'subscription) "to")))))
+
 ;;; ---- Group 3: jabber-presence--extract-metadata ----
 
 (ert-deftest jabber-presence-test-extract-metadata-all-fields ()
@@ -251,6 +269,16 @@
            (rplist (cdr result)))
       (should (equal newstatus ""))
       (should (equal (plist-get rplist 'show) "")))))
+
+(ert-deftest jabber-presence-test-update-resource-unsubscribe ()
+  "Unsubscribe type returns (\"unsubscribe\" . nil)."
+  (jabber-presence-test-with-obarray
+    (let* ((buddy (intern "bob@example.com" jabber-jid-obarray))
+           (metadata '(:show nil :status nil :priority 0 :error nil))
+           (result (jabber-presence--update-resource
+                    buddy "unsubscribe" "phone" metadata))
+           (newstatus (car result)))
+      (should (equal newstatus "unsubscribe")))))
 
 (provide 'jabber-presence-tests)
 ;;; jabber-presence-tests.el ends here

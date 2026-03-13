@@ -232,6 +232,16 @@ ROOMS is an alist of (group . nickname)."
                   (jabber-muc--classify-message
                    "room@conference.example.com" "othernick" xml))))))
 
+(ert-deftest jabber-test-muc-classify-message-uncached-room ()
+  "Room not in jabber-muc--rooms with non-nil nick returns :muc-foreign."
+  (let ((jabber-muc--rooms (make-hash-table :test #'equal)))
+    (let ((xml '(message ((from . "room@conference.example.com/othernick")
+                          (type . "groupchat"))
+                 (body nil "Hello"))))
+      (should (eq :muc-foreign
+                  (jabber-muc--classify-message
+                   "room@conference.example.com" "othernick" xml))))))
+
 ;;; ---- Group 7: jabber-muc--history-message-p ----
 
 (ert-deftest jabber-test-muc-history-message-p-delay ()
@@ -258,6 +268,17 @@ ROOMS is an alist of (group . nickname)."
                         (type . "groupchat"))
                (body nil "Live message"))))
     (should-not (jabber-muc--history-message-p xml))))
+
+(ert-deftest jabber-test-muc-history-message-p-mixed-children ()
+  "Delay is detected among mixed sibling elements."
+  (let ((xml '(message ((from . "room@conference.example.com/nick")
+                        (type . "groupchat"))
+               (body nil "Old message")
+               (delay ((xmlns . "urn:xmpp:delay")
+                       (stamp . "2023-01-01T00:00:00Z")))
+               (x ((xmlns . "http://jabber.org/protocol/muc#user"))
+                  (status ((code . "100")))))))
+    (should (jabber-muc--history-message-p xml))))
 
 (ert-deftest jabber-test-muc-classify-message-error-priority ()
   "Error classification takes priority over matching local nick."
@@ -307,6 +328,12 @@ ROOMS is an alist of (group . nickname)."
                     (jabber-muc--format-affiliation-change
                      "dave" "member" "none" ""))))
 
+(ert-deftest jabber-test-muc-affiliation-owner-to-admin ()
+  "Owner demoted to admin reports demotion."
+  (should (string= "frank has been demoted to admin"
+                    (jabber-muc--format-affiliation-change
+                     "frank" "owner" "admin" ""))))
+
 (ert-deftest jabber-test-muc-affiliation-no-match ()
   "Unrecognized affiliation transition returns nil."
   (should-not (jabber-muc--format-affiliation-change
@@ -337,6 +364,12 @@ ROOMS is an alist of (group . nickname)."
   (should (string= "dave has been granted voice"
                     (jabber-muc--format-role-change
                      "dave" "visitor" "participant" ""))))
+
+(ert-deftest jabber-test-muc-role-change-visitor-to-moderator ()
+  "Visitor promoted to moderator reports grant."
+  (should (string= "eve has been granted moderator privileges"
+                    (jabber-muc--format-role-change
+                     "eve" "visitor" "moderator" ""))))
 
 ;;; ---- Group 10: jabber-muc-report-delta integration ----
 
