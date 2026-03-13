@@ -42,26 +42,22 @@
   "Send notifications about chat states?"
   :type 'boolean)
 
-(defvar jabber-chatstates-requested 'first-time
+(defvar-local jabber-chatstates-requested 'first-time
   "Whether or not chat states notification was requested.
 This is one of the following:
 first-time - send state in first stanza, then switch to nil
 t - send states
 nil - don't send states")
-(make-variable-buffer-local 'jabber-chatstates-requested)
 
-(defvar jabber-chatstates-last-state nil
+(defvar-local jabber-chatstates-last-state nil
   "The last seen chat state.")
-(make-variable-buffer-local 'jabber-chatstates-last-state)
 
-(defvar jabber-chatstates-message ""
+(defvar-local jabber-chatstates-message ""
   "Human-readable presentation of chat state information.")
-(make-variable-buffer-local 'jabber-chatstates-message)
 
-(defvar jabber-chatstates-composing-sent nil
+(defvar-local jabber-chatstates-composing-sent nil
   "Has composing notification been sent?
 It can be sent and cancelled several times.")
-(make-variable-buffer-local 'jabber-chatstates-composing-sent)
 
 ;;; INCOMING
 ;; Code for requesting chat state notifications from others and handling
@@ -90,9 +86,8 @@ It can be sent and cancelled several times.")
 ;; Code for handling requests for chat state notifications and providing
 ;; them, modulo user preferences.
 
-(defvar jabber-chatstates-paused-timer nil
+(defvar-local jabber-chatstates-paused-timer nil
   "Timer that counts down from `composing' state to `paused'.")
-(make-variable-buffer-local 'jabber-chatstates-paused-timer)
 
 (defun jabber-chatstates-stop-timer ()
   "Stop the `paused' timer."

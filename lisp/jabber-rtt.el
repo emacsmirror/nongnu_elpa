@@ -45,20 +45,15 @@
 (eval-after-load "jabber-disco"
   '(jabber-disco-advertise-feature "urn:xmpp:rtt:0"))
 
-(defvar jabber-rtt-ewoc-node nil)
-(make-variable-buffer-local 'jabber-rtt-ewoc-node)
+(defvar-local jabber-rtt-ewoc-node nil)
 
-(defvar jabber-rtt-last-seq nil)
-(make-variable-buffer-local 'jabber-rtt-last-seq)
+(defvar-local jabber-rtt-last-seq nil)
 
-(defvar jabber-rtt-message nil)
-(make-variable-buffer-local 'jabber-rtt-message)
+(defvar-local jabber-rtt-message nil)
 
-(defvar jabber-rtt-pending-events nil)
-(make-variable-buffer-local 'jabber-rtt-pending-events)
+(defvar-local jabber-rtt-pending-events nil)
 
-(defvar jabber-rtt-timer nil)
-(make-variable-buffer-local 'jabber-rtt-timer)
+(defvar-local jabber-rtt-timer nil)
 
 ;; Add function last in chain, so a chat buffer is already created.
 ;;;###autoload
@@ -195,17 +190,13 @@
 
 ;;;; Sending events
 
-(defvar jabber-rtt-send-timer nil)
-(make-variable-buffer-local 'jabber-rtt-send-timer)
+(defvar-local jabber-rtt-send-timer nil)
 
-(defvar jabber-rtt-send-seq nil)
-(make-variable-buffer-local 'jabber-rtt-send-seq)
+(defvar-local jabber-rtt-send-seq nil)
 
-(defvar jabber-rtt-outgoing-events nil)
-(make-variable-buffer-local 'jabber-rtt-outgoing-events)
+(defvar-local jabber-rtt-outgoing-events nil)
 
-(defvar jabber-rtt-send-last-timestamp nil)
-(make-variable-buffer-local 'jabber-rtt-send-last-timestamp)
+(defvar-local jabber-rtt-send-last-timestamp nil)
 
 ;;;###autoload
 (define-minor-mode jabber-rtt-send-mode

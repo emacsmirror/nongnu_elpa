@@ -69,9 +69,8 @@
 (defvar jabber-presence-chain nil
   "Incoming presence notifications are sent to these functions, in order.")
 
-(defvar jabber-namespace-prefixes nil
+(defvar-local jabber-namespace-prefixes nil
   "XML namespace prefixes used for the current connection.")
-(make-variable-buffer-local 'jabber-namespace-prefixes)
 
 (defgroup jabber-core nil "customize core functionality."
   :group 'jabber)
@@ -923,12 +922,6 @@ DATA is any sexp."
        ;; XXX: do these checks make sense?  If so, reinstate them.
        ;;(if (active-minibuffer-window)
        ;;    (run-with-idle-timer 0.01 nil #'jabber-filter process string)
-
-       ;; This check is needed for xml.el of Emacs 21, as it chokes on
-       ;; empty attribute values.
-       (save-excursion
-	 (while (search-forward-regexp " \\w+=''" nil t)
-           (replace-match "")))
 
        (setq xml-data (jabber-xml-parse-next-stanza))
 

@@ -45,21 +45,18 @@
 	      (const :tag "Displayed to user" displayed)
 	      (const :tag "User is typing a reply" composing)))
 
-(defvar jabber-events-composing-p nil
+(defvar-local jabber-events-composing-p nil
   "Is the other person composing a message?")
-(make-variable-buffer-local 'jabber-events-composing-p)
 
-(defvar jabber-events-arrived nil
+(defvar-local jabber-events-arrived nil
   "In what way has the message reached the recipient?
 Possible values are nil (no information available), offline
 \(queued for delivery when recipient is online), delivered
 \(message has reached the client) and displayed (user is
 probably reading the message).")
-(make-variable-buffer-local 'jabber-events-arrived)
 
-(defvar jabber-events-message ""
+(defvar-local jabber-events-message ""
   "Human-readable presentation of event information.")
-(make-variable-buffer-local 'jabber-events-message)
 
 ;; Global reference declarations
 
@@ -99,21 +96,17 @@ probably reading the message).")
   "Send notifications about typing a reply?"
   :type 'boolean)
 
-(defvar jabber-events-requested ()
+(defvar-local jabber-events-requested ()
   "List of events requested.")
-(make-variable-buffer-local 'jabber-events-requested)
 
-(defvar jabber-events-last-id nil
+(defvar-local jabber-events-last-id nil
   "Id of last message received, or nil if none.")
-(make-variable-buffer-local 'jabber-events-last-id)
 
-(defvar jabber-events-delivery-confirmed nil
+(defvar-local jabber-events-delivery-confirmed nil
   "Has delivery confirmation been sent?")
-(make-variable-buffer-local 'jabber-events-delivery-confirmed)
 
-(defvar jabber-events-display-confirmed nil
+(defvar-local jabber-events-display-confirmed nil
   "Has display confirmation been sent?")
-(make-variable-buffer-local 'jabber-events-display-confirmed)
 
 (defvar jabber-events-composing-sent nil
   "Has composing notification been sent?

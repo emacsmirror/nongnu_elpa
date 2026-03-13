@@ -68,9 +68,8 @@
 (require 'jabber-iq)
 (require 'jabber-avatar)
 
-(defvar jabber-vcard-photo nil
+(defvar-local jabber-vcard-photo nil
   "The avatar structure for the photo in the vCard edit buffer.")
-(make-variable-buffer-local 'jabber-vcard-photo)
 
 ;; Global reference declarations
 

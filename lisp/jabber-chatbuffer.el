@@ -51,10 +51,8 @@ window or at `fill-column', whichever is shorter."
 ;;
 
 ;;;###autoload
-(defvar jabber-buffer-connection nil
+(defvar-local jabber-buffer-connection nil
   "The connection used by this buffer.")
-;;;###autoload
-(make-variable-buffer-local 'jabber-buffer-connection)
 
 (defvar jabber-chatting-with)              ; jabber-chat.el
 (defvar jabber-group)                      ; jabber-muc.el
