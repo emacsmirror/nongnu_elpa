@@ -210,8 +210,7 @@ With prefix argument, remove it."
   "Jabber chat commands."
   [["Chat"
     ("c" "Start chat" jabber-chat-with)
-    ("m" "Compose message" jabber-compose)
-    ("b" "Display more context" jabber-chat-display-more-backlog)]])
+    ("m" "Compose message" jabber-compose)]])
 
 ;;;###autoload
 (transient-define-prefix jabber-roster-context-menu ()
