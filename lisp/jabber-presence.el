@@ -78,6 +78,46 @@ stanza.")
 
 ;;
 
+(defun jabber--roster-valid-push-p (from state-data)
+  "Return non-nil if FROM is a valid roster push sender.
+Valid senders are: nil (absent), the bare server, or our own full/bare JID."
+  (let ((username (plist-get state-data :username))
+        (server (plist-get state-data :server))
+        (resource (plist-get state-data :resource)))
+    (or (null from)
+        (string= from server)
+        (string= from (concat username "@" server))
+        (string= from (concat username "@" server "/" resource)))))
+
+(defun jabber--roster-process-item (item roster initialp)
+  "Process a single roster ITEM element.
+ROSTER is the current roster list.  INITIALP non-nil means initial fetch.
+Return (CATEGORY . JID-SYMBOL) where CATEGORY is `new', `changed', or `deleted'."
+  (let* ((jid (jabber-jid-symbol (jabber-xml-get-attribute item 'jid)))
+         (existing (car (memq jid roster))))
+    (if (string= (jabber-xml-get-attribute item 'subscription) "remove")
+        (progn
+          (if (jabber-jid-rostername jid)
+              (message "%s (%s) removed from roster" (jabber-jid-rostername jid) jid)
+            (message "%s removed from roster" jid))
+          (cons 'deleted jid))
+      (let ((roster-item (or existing jid)))
+        (when (and (not existing) (not initialp))
+          (if (jabber-xml-get-attribute item 'name)
+              (message "%s (%s) added to roster"
+                       (jabber-xml-get-attribute item 'name) jid)
+            (message "%s added to roster" jid)))
+        (when initialp
+          (setplist roster-item nil))
+        (put roster-item 'name (jabber-xml-get-attribute item 'name))
+        (put roster-item 'subscription (jabber-xml-get-attribute item 'subscription))
+        (put roster-item 'ask (jabber-xml-get-attribute item 'ask))
+        (put roster-item 'xml item)
+        (put roster-item 'groups
+             (mapcar (lambda (g) (nth 2 g))
+                     (jabber-xml-get-children item 'group)))
+        (cons (if existing 'changed 'new) roster-item)))))
+
 (add-to-list 'jabber-iq-set-xmlns-alist
 	     (cons jabber-roster-xmlns (function (lambda (jc x) (jabber-process-roster jc x nil)))))
 (defun jabber-process-roster (jc xml-data closure-data)
@@ -86,86 +126,26 @@ CLOSURE-DATA should be `initial' if initial roster push, nil otherwise.
 JC is the Jabber connection.
 XML-DATA is the parsed tree data from the stream (stanzas)
 obtained from `xml-parse-region'."
-  (let ((roster (plist-get (fsm-get-state-data jc) :roster))
-	(from (jabber-xml-get-attribute xml-data 'from))
-	(type (jabber-xml-get-attribute xml-data 'type))
-	(id (jabber-xml-get-attribute xml-data 'id))
-	(username (plist-get (fsm-get-state-data jc) :username))
-	(server (plist-get (fsm-get-state-data jc) :server))
-	(resource (plist-get (fsm-get-state-data jc) :resource))
-	new-items changed-items deleted-items)
-    ;; Perform sanity check on "from" attribute: it should be either absent
-    ;; match our own JID, or match the server's JID (the latter is what
-    ;; Facebook does).
-    (if (not (or (null from)
-		 (string= from server)
-		 (string= from (concat username "@" server))
-		 (string= from (concat username "@" server "/" resource))))
-	(message "Roster push with invalid \"from\": \"%s\" (expected \"%s\", \"%s@%s\" or \"%s@%s/%s\")"
-		 from
-		 server username server username server resource)
-
-      (dolist (item (jabber-xml-get-children (car (jabber-xml-get-children xml-data 'query)) 'item))
-	(let (roster-item
-	      (jid (jabber-jid-symbol (jabber-xml-get-attribute item 'jid))))
-
-	  ;; If subscripton="remove", contact is to be removed from roster
-	  (if (string= (jabber-xml-get-attribute item 'subscription) "remove")
-	      (progn
-		(if (jabber-jid-rostername jid)
-		    (message "%s (%s) removed from roster" (jabber-jid-rostername jid) jid)
-		  (message "%s removed from roster" jid))
-		(push jid deleted-items))
-
-	    ;; Find contact if already in roster
-	    (setq roster-item (car (memq jid roster)))
-
-	    (if roster-item
-		(push roster-item changed-items)
-	      ;; If not found, create a new roster item.
-	      (unless (eq closure-data 'initial)
-		(if (jabber-xml-get-attribute item 'name)
-		    (message "%s (%s) added to roster" (jabber-xml-get-attribute item 'name) jid)
-		  (message "%s added to roster" jid)))
-	      (setq roster-item jid)
-	      (push roster-item new-items))
-
-	    ;; If this is an initial push, we want to forget
-	    ;; everything we knew about this contact before - e.g. if
-	    ;; the contact was online when we disconnected and offline
-	    ;; when we reconnect, we don't want to see stale presence
-	    ;; information.  This assumes that no contacts are shared
-	    ;; between accounts.
-	    (when (eq closure-data 'initial)
-	      (setplist roster-item nil))
-
-	    ;; Now, get all data associated with the contact.
-	    (put roster-item 'name (jabber-xml-get-attribute item 'name))
-	    (put roster-item 'subscription (jabber-xml-get-attribute item 'subscription))
-	    (put roster-item 'ask (jabber-xml-get-attribute item 'ask))
-
-	    ;; Since roster items can't be changed incrementally, we
-	    ;; save the original XML to be able to modify it, instead of
-	    ;; having to reproduce it.  This is for forwards
-	    ;; compatibility.
-	    (put roster-item 'xml item)
-
-	    (put roster-item 'groups
-		 (mapcar (lambda (foo) (nth 2 foo))
-			 (jabber-xml-get-children item 'group)))))))
-    ;; This is the function that does the actual updating and
-    ;; redrawing of the roster.
-    (jabber-roster-update jc new-items changed-items deleted-items)
-
-    (if (and id (string= type "set"))
-	(jabber-send-iq jc nil "result" nil
-			nil nil nil nil id)))
-
-  ;; After initial roster push, run jabber-post-connect-hooks.  We do
-  ;; it here and not before since we want to have the entire roster
-  ;; before we receive any presence stanzas.
-  (when (eq closure-data 'initial)
-    (run-hook-with-args 'jabber-post-connect-hooks jc)))
+  (let* ((state-data (fsm-get-state-data jc))
+         (roster (plist-get state-data :roster))
+         (from (jabber-xml-get-attribute xml-data 'from))
+         (type (jabber-xml-get-attribute xml-data 'type))
+         (id (jabber-xml-get-attribute xml-data 'id))
+         (initialp (eq closure-data 'initial))
+         new-items changed-items deleted-items)
+    (if (not (jabber--roster-valid-push-p from state-data))
+        (message "Roster push with invalid \"from\": \"%s\"" from)
+      (dolist (item (jabber-xml-get-children
+                     (car (jabber-xml-get-children xml-data 'query)) 'item))
+        (pcase (jabber--roster-process-item item roster initialp)
+          (`(new . ,sym)     (push sym new-items))
+          (`(changed . ,sym) (push sym changed-items))
+          (`(deleted . ,sym) (push sym deleted-items))))
+      (jabber-roster-update jc new-items changed-items deleted-items)
+      (when (and id (string= type "set"))
+        (jabber-send-iq jc nil "result" nil nil nil nil nil id)))
+    (when initialp
+      (run-hook-with-args 'jabber-post-connect-hooks jc))))
 
 (defun jabber-initial-roster-failure (jc xml-data _closure-data)
   "Report the initial roster failure.
