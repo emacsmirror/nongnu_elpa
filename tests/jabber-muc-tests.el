@@ -281,5 +281,90 @@ ROOMS is an alist of (group . nickname)."
                   (jabber-muc--classify-message
                    "room@conference.example.com" nil xml))))))
 
+;;; ---- Group 8: jabber-muc--format-affiliation-change ----
+
+(ert-deftest jabber-test-muc-affiliation-promote-member-to-admin ()
+  "Promoting member to admin reports promotion."
+  (should (string= "alice has been promoted to admin"
+                    (jabber-muc--format-affiliation-change
+                     "alice" "member" "admin" ""))))
+
+(ert-deftest jabber-test-muc-affiliation-demote-admin-to-member ()
+  "Demoting admin to member reports demotion."
+  (should (string= "bob has been demoted to member by op: misconduct"
+                    (jabber-muc--format-affiliation-change
+                     "bob" "admin" "member" " by op: misconduct"))))
+
+(ert-deftest jabber-test-muc-affiliation-grant-membership ()
+  "Granting membership from outcast reports grant."
+  (should (string= "carol has been granted membership"
+                    (jabber-muc--format-affiliation-change
+                     "carol" "outcast" "member" ""))))
+
+(ert-deftest jabber-test-muc-affiliation-lose-membership ()
+  "Losing membership from member to none reports deprivation."
+  (should (string= "dave has been deprived of membership"
+                    (jabber-muc--format-affiliation-change
+                     "dave" "member" "none" ""))))
+
+(ert-deftest jabber-test-muc-affiliation-no-match ()
+  "Unrecognized affiliation transition returns nil."
+  (should-not (jabber-muc--format-affiliation-change
+               "eve" "admin" "outcast" "")))
+
+;;; ---- Group 9: jabber-muc--format-role-change ----
+
+(ert-deftest jabber-test-muc-role-change-to-moderator ()
+  "Participant promoted to moderator reports grant."
+  (should (string= "alice has been granted moderator privileges"
+                    (jabber-muc--format-role-change
+                     "alice" "participant" "moderator" ""))))
+
+(ert-deftest jabber-test-muc-role-change-moderator-to-participant ()
+  "Moderator demoted to participant reports revocation."
+  (should (string= "bob had moderator privileges revoked by admin"
+                    (jabber-muc--format-role-change
+                     "bob" "moderator" "participant" " by admin"))))
+
+(ert-deftest jabber-test-muc-role-change-to-visitor ()
+  "Participant changed to visitor reports denied voice."
+  (should (string= "carol has been denied voice"
+                    (jabber-muc--format-role-change
+                     "carol" "participant" "visitor" ""))))
+
+(ert-deftest jabber-test-muc-role-change-to-participant ()
+  "Visitor granted voice reports grant."
+  (should (string= "dave has been granted voice"
+                    (jabber-muc--format-role-change
+                     "dave" "visitor" "participant" ""))))
+
+;;; ---- Group 10: jabber-muc-report-delta integration ----
+
+(ert-deftest jabber-test-muc-report-delta-new-join ()
+  "Nil old-plist produces an enters-room message."
+  (let ((new-plist '(role "participant" affiliation "member")))
+    (should (string= "nick enters the room (participant, member)"
+                      (jabber-muc-report-delta "nick" nil new-plist nil nil)))))
+
+(ert-deftest jabber-test-muc-report-delta-no-change ()
+  "Same affiliation and role returns nil."
+  (let ((old '(role "participant" affiliation "member"))
+        (new '(role "participant" affiliation "member")))
+    (should-not (jabber-muc-report-delta "nick" old new nil nil))))
+
+(ert-deftest jabber-test-muc-report-delta-affiliation-change ()
+  "Affiliation change delegates to affiliation helper."
+  (let ((old '(role "participant" affiliation "member"))
+        (new '(role "participant" affiliation "admin")))
+    (should (string= "nick has been promoted to admin"
+                      (jabber-muc-report-delta "nick" old new nil nil)))))
+
+(ert-deftest jabber-test-muc-report-delta-role-change ()
+  "Role change delegates to role helper."
+  (let ((old '(role "participant" affiliation "member"))
+        (new '(role "moderator" affiliation "member")))
+    (should (string= "nick has been granted moderator privileges"
+                      (jabber-muc-report-delta "nick" old new nil nil)))))
+
 (provide 'jabber-muc-tests)
 ;;; jabber-muc-tests.el ends here

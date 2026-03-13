@@ -413,6 +413,50 @@ Return nil if nothing known about that combination."
       ;; or we don't
       (push (cons group (list (cons nickname new-plist))) jabber-muc-participants))))
 
+(defun jabber-muc--format-affiliation-change (nickname from to actor-reason)
+  "Generate message for affiliation transition of NICKNAME.
+FROM and TO are the old and new affiliation strings.
+ACTOR-REASON is the pre-formatted \" by actor: reason\" suffix.
+Return a string describing the change, or nil if unrecognized."
+  ;; There are many ways to express these transitions in English.
+  ;; This one favors eloquence over regularity and consistency.
+  (cond
+   ;; Higher affiliation
+   ((or (and (member from '("outcast" "none" "member"))
+             (member to '("admin" "owner")))
+        (and (string= from "admin") (string= to "owner")))
+    (concat nickname " has been promoted to " to actor-reason))
+   ;; Lower affiliation
+   ((or (and (member from '("owner" "admin"))
+             (string= to "member"))
+        (and (string= from "owner") (string= to "admin")))
+    (concat nickname " has been demoted to " to actor-reason))
+   ;; Become member
+   ((string= to "member")
+    (concat nickname " has been granted membership" actor-reason))
+   ;; Lose membership
+   ((string= to "none")
+    (concat nickname " has been deprived of membership" actor-reason))))
+
+(defun jabber-muc--format-role-change (nickname from to actor-reason)
+  "Generate message for role transition of NICKNAME.
+FROM and TO are the old and new role strings.
+ACTOR-REASON is the pre-formatted \" by actor: reason\" suffix.
+Return a string describing the change, or nil."
+  ;; Possible roles are "none" (not in room, hence not of interest
+  ;; in this function), "visitor" (no voice), "participant" (has
+  ;; voice), and "moderator".
+  (cond
+   ((string= to "moderator")
+    (concat nickname " has been granted moderator privileges" actor-reason))
+   ((and (string= from "moderator")
+         (string= to "participant"))
+    (concat nickname " had moderator privileges revoked" actor-reason))
+   ((string= to "participant")
+    (concat nickname " has been granted voice" actor-reason))
+   ((string= to "visitor")
+    (concat nickname " has been denied voice" actor-reason))))
+
 (defun jabber-muc-report-delta (nickname old-plist new-plist reason actor)
   "Compare OLD-PLIST and NEW-PLIST, and return a string explaining the change.
 Return nil if nothing noteworthy has happened.
@@ -444,28 +488,12 @@ in the user entering/staying in the room."
     (let ((actor-reason (concat (when actor
 				  (concat " by " actor))
 				(when reason
-				  (concat ": " reason))))
-	  (from (plist-get old-plist 'affiliation))
-	  (to (plist-get new-plist 'affiliation)))
-      ;; There are many ways to express these transitions in English.
-      ;; This one favors eloquence over regularity and consistency.
-      (cond
-       ;; Higher affiliation
-       ((or (and (member from '("outcast" "none" "member"))
-		 (member to '("admin" "owner")))
-	    (and (string= from "admin") (string= to "owner")))
-	(concat nickname " has been promoted to " to actor-reason))
-       ;; Lower affiliation
-       ((or (and (member from '("owner" "admin"))
-		 (string= to "member"))
-	    (and (string= from "owner") (string= to "admin")))
-	(concat nickname " has been demoted to " to actor-reason))
-       ;; Become member
-       ((string= to "member")
-	(concat nickname " has been granted membership" actor-reason))
-       ;; Lose membership
-       ((string= to "none")
-	(concat nickname " has been deprived of membership" actor-reason)))))
+				  (concat ": " reason)))))
+      (jabber-muc--format-affiliation-change
+       nickname
+       (plist-get old-plist 'affiliation)
+       (plist-get new-plist 'affiliation)
+       actor-reason)))
 
    ;; Role changes
    ((not (string= (plist-get old-plist 'role)
@@ -473,22 +501,12 @@ in the user entering/staying in the room."
     (let ((actor-reason (concat (when actor
 				  (concat " by " actor))
 				(when reason
-				  (concat ": " reason))))
-	  (from (plist-get old-plist 'role))
-	  (to (plist-get new-plist 'role)))
-      ;; Possible roles are "none" (not in room, hence not of interest
-      ;; in this function), "visitor" (no voice), "participant" (has
-      ;; voice), and "moderator".
-      (cond
-       ((string= to "moderator")
-	(concat nickname " has been granted moderator privileges" actor-reason))
-       ((and (string= from "moderator")
-	     (string= to "participant"))
-	(concat nickname " had moderator privileges revoked" actor-reason))
-       ((string= to "participant")
-	(concat nickname " has been granted voice" actor-reason))
-       ((string= to "visitor")
-	(concat nickname " has been denied voice" actor-reason)))))))
+				  (concat ": " reason)))))
+      (jabber-muc--format-role-change
+       nickname
+       (plist-get old-plist 'role)
+       (plist-get new-plist 'role)
+       actor-reason)))))
 
 (defun jabber-muc-remove-participant (group nickname)
   "Forget everything about NICKNAME in GROUP."
