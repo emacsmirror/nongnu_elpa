@@ -55,7 +55,7 @@ These fields are about your account:
   '("" (jabber-chat-buffer-show-avatar
 	(:eval
 	 (let ((buddy (jabber-jid-symbol jabber-chatting-with)))
-	   (jabber-propertize " "
+	   (propertize " "
 			      'display (get buddy 'avatar)))))
     (:eval (jabber-jid-displayname jabber-chatting-with))
     "\t" (:eval (let ((buddy (jabber-jid-symbol jabber-chatting-with)))
@@ -310,7 +310,7 @@ JC is the Jabber connection."
 				(jabber-connection-bare-jid jc)
 				(jabber-jid-user chat-with))))
 	  (if (null backlog-entries)
-	      (setq jabber-chat-earliest-backlog (jabber-float-time))
+	      (setq jabber-chat-earliest-backlog (float-time))
 	    ;; backlog-entries is DESC; last element is oldest.
 	    (setq jabber-chat-earliest-backlog
 		  (float-time (plist-get (car (last backlog-entries)) :timestamp)))
@@ -634,12 +634,12 @@ This function is used as an ewoc prettyprinter."
          (insert "\n")))
       ((or :error :muc-error)
        (if (stringp msg)
-	    (insert (jabber-propertize msg 'face 'jabber-chat-error) "\n")
+	    (insert (propertize msg 'face 'jabber-chat-error) "\n")
 	 (jabber-chat-print-error msg)))
       (:muc-notice
        (cond
         (muc-highlight-face
-         (insert (jabber-propertize msg 'face muc-highlight-face) "\n"))
+         (insert (propertize msg 'face muc-highlight-face) "\n"))
         (muc-highlight)  ; matched but no face = hide entirely
         (t (insert msg "\n"))))
       (:notice
@@ -660,7 +660,7 @@ This function is used as an ewoc prettyprinter."
             (setq beg (marker-position (ewoc-location prev-visible)))
             (point))
            (goto-char beg)))
-       (insert (jabber-propertize (format-time-string jabber-rare-time-format msg)
+       (insert (propertize (format-time-string jabber-rare-time-format msg)
                                   'face 'jabber-rare-time-face)
                "\n"))
       (:subscription-request
@@ -756,7 +756,7 @@ Use short format normally, long format when DELAYED."
 (defun jabber-chat--insert-prompt (timestamp nick face)
   "Insert a chat prompt: TIMESTAMP <NICK> .
 NICK gets FACE."
-  (insert (jabber-propertize timestamp 'face 'shadow) " ")
+  (insert (propertize timestamp 'face 'shadow) " ")
   (when (> (length nick) 0)
     (insert (propertize (format "<%s>" nick) 'face face))
     (insert " ")))
@@ -791,7 +791,7 @@ NICK gets FACE."
   "Print error from message plist MSG in a readable way."
   (let ((error-text (plist-get msg :error-text)))
     (insert
-     (jabber-propertize
+     (propertize
       (concat "Error: " (or error-text "Unknown error"))
       'face 'jabber-chat-error)
      "\n")))
@@ -804,9 +804,9 @@ NICK gets FACE."
 	(:printp
 	 t)
 	(:insert
-	 (insert (jabber-propertize
+	 (insert (propertize
 		  "Subject: " 'face 'jabber-chat-prompt-system)
-		 (jabber-propertize
+		 (propertize
 		  subject
 		  'face 'jabber-chat-text-foreign)
 		 "\n"))))))
@@ -830,12 +830,12 @@ NICK gets FACE."
 			  (jabber-jid-resource (plist-get msg :from)))
 			 (t
 			  (jabber-jid-displayname (plist-get msg :from))))))
-	      (insert (jabber-propertize
+	      (insert (propertize
 		       (concat nick
 			       " "
 			       action)
 		       'face 'jabber-chat-prompt-system)))
-	  (insert (jabber-propertize
+	  (insert (propertize
 		   body
 		   'face (pcase who
 			   ((or :foreign :muc-foreign) 'jabber-chat-text-foreign)
@@ -852,7 +852,7 @@ duplication (e.g. HTTP Upload messages)."
       (when (eql mode :insert)
         (let ((desc (plist-get msg :oob-desc)))
           (insert (format "\n%s%s<%s>"
-                          (jabber-propertize
+                          (propertize
                            "URL: " 'face 'jabber-chat-prompt-system)
                           (if (stringp desc) (concat desc " ") "")
                           url))))

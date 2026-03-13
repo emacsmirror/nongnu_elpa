@@ -88,7 +88,7 @@ for all accounts regardless of the argument."
   (interactive)
 
   (when jabber-keepalive-timer
-    (jabber-cancel-timer jabber-keepalive-timer)
+    (cancel-timer jabber-keepalive-timer)
     (setq jabber-keepalive-timer nil)))
 
 (defun jabber-keepalive-do ()
@@ -111,11 +111,11 @@ for all accounts regardless of the argument."
 	     (plist-get (fsm-get-state-data jc) :server)))
   (setq jabber-keepalive-pending (remq jc jabber-keepalive-pending))
   (when (and (null jabber-keepalive-pending) (timerp jabber-keepalive-timeout-timer))
-    (jabber-cancel-timer jabber-keepalive-timeout-timer)
+    (cancel-timer jabber-keepalive-timeout-timer)
     (setq jabber-keepalive-timeout-timer nil)))
 
 (defun jabber-keepalive-timeout ()
-  (jabber-cancel-timer jabber-keepalive-timer)
+  (cancel-timer jabber-keepalive-timer)
   (setq jabber-keepalive-timer nil)
 
   (dolist (c jabber-keepalive-pending)
@@ -171,7 +171,7 @@ accounts."
   (interactive)
 
   (when jabber-whitespace-ping-timer
-    (jabber-cancel-timer jabber-whitespace-ping-timer)
+    (cancel-timer jabber-whitespace-ping-timer)
     (setq jabber-whitespace-ping-timer nil)))
 
 (defun jabber-whitespace-ping-do ()

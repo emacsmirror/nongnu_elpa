@@ -154,7 +154,7 @@ JC is the Jabber connection."
     (jabber-init-widget-buffer nil)
     (setq jabber-buffer-connection jc)
 
-    (widget-insert (jabber-propertize (concat "Edit bookmarks for "
+    (widget-insert (propertize (concat "Edit bookmarks for "
 					      (jabber-connection-bare-jid jc))
 				      'face 'jabber-title-large)
 		   "\n\n")

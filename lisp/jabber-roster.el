@@ -168,7 +168,7 @@ Trailing newlines are always removed, regardless of this variable."
 
 (defun jabber-roster-separator ()
   "Return a propertized separator string for the roster buffer."
-  (jabber-propertize (jabber-separator)
+  (propertize (jabber-separator)
                      'cursor-intangible t))
 
 (defvar jabber-roster-debug nil
@@ -561,7 +561,7 @@ To change this permanently, customize the `jabber-show-offline-contacts'."
 			       "@"
 			       (plist-get (fsm-get-state-data jc) :server)))
 		     jabber-connections ", ")))
-      (insert (jabber-propertize (concat "Connected"
+      (insert (propertize (concat "Connected"
 					 (unless (string= show "Online")
 					   (format " [%s]" show))
 					 ": " accounts)
@@ -643,7 +643,7 @@ sorted list and BUDDY-JC-MAP maps buddy names to connections."
   "Insert the active groupchats section."
   (let ((rooms (sort (jabber-muc-active-rooms) #'string<)))
     (when rooms
-      (insert (jabber-propertize "Groupchats"
+      (insert (propertize "Groupchats"
 				 'face 'jabber-title-small
 				 'jabber-group "Groupchats")
 	      "\n")
@@ -654,11 +654,11 @@ sorted list and BUDDY-JC-MAP maps buddy names to connections."
 			  (car jabber-connections)))
 	       (unread (member room-jid
 			       (bound-and-true-p jabber-activity-jids)))
-	       (room-part (jabber-propertize (format "  %s" room-name)
+	       (room-part (propertize (format "  %s" room-name)
 					     'face (if unread
 						       'jabber-roster-unread
 						     'jabber-roster-groupchat)))
-	       (nick-part (jabber-propertize (format " (%s)" nick)
+	       (nick-part (propertize (format " (%s)" nick)
 					     'face 'jabber-roster-groupchat-nick))
 	       (line (concat room-part nick-part)))
 	  (add-text-properties 0 (length line)
@@ -696,7 +696,7 @@ sorted list and BUDDY-JC-MAP maps buddy names to connections."
 	(erase-buffer)
 	(setq jabber-roster-ewoc nil)
 	(setq header-line-format
-	      (jabber-propertize " Jabber roster" 'face '(:weight bold)))
+	      (propertize " Jabber roster" 'face '(:weight bold)))
 	(jabber-roster--insert-status)
 	(when jabber-connections
 	  (jabber-roster--insert-contacts))

@@ -121,7 +121,7 @@ The IGNORED argument is there so you can put this function in
   "Stop autoaway timer."
   (interactive)
   (when jabber-autoaway-timer
-    (jabber-cancel-timer jabber-autoaway-timer)
+    (cancel-timer jabber-autoaway-timer)
     (setq jabber-autoaway-timer nil)
     (jabber-autoaway-message "Autoaway timer stopped")))
 

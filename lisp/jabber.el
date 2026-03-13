@@ -4,7 +4,7 @@
 ;; Maintainer: wgreenhouse <wgreenhouse@tilde.club>
 ;; Keywords: comm
 ;; Homepage: https://codeberg.org/emacs-jabber/emacs-jabber
-;; Package-Requires: ((emacs "27.1") (fsm "0.2.0") (srv "0.2"))
+;; Package-Requires: ((emacs "29.1") (fsm "0.2.0") (srv "0.2"))
 ;; Version: 0.9.0
 
 ;; Copyright (C) 2003, 2004, 2007, 2008 - Magnus Henoch - mange@freemail.hu
@@ -238,13 +238,13 @@ configure a Google Talk account like this:
  "Mapping from presence types to faces.")
 
 (defconst jabber-presence-strings
-  `(("" . ,(jabber-propertize "Online" 'face 'jabber-roster-user-online))
-    ("away" . ,(jabber-propertize "Away" 'face 'jabber-roster-user-away))
-    ("xa" . ,(jabber-propertize "Extended Away" 'face 'jabber-roster-user-xa))
-    ("dnd" . ,(jabber-propertize "Do not Disturb" 'face 'jabber-roster-user-dnd))
-    ("chat" . ,(jabber-propertize "Chatty" 'face 'jabber-roster-user-chatty))
-    ("error" . ,(jabber-propertize "Error" 'face 'jabber-roster-user-error))
-    (nil . ,(jabber-propertize "Offline" 'face 'jabber-roster-user-offline)))
+  `(("" . ,(propertize "Online" 'face 'jabber-roster-user-online))
+    ("away" . ,(propertize "Away" 'face 'jabber-roster-user-away))
+    ("xa" . ,(propertize "Extended Away" 'face 'jabber-roster-user-xa))
+    ("dnd" . ,(propertize "Do not Disturb" 'face 'jabber-roster-user-dnd))
+    ("chat" . ,(propertize "Chatty" 'face 'jabber-roster-user-chatty))
+    ("error" . ,(propertize "Error" 'face 'jabber-roster-user-error))
+    (nil . ,(propertize "Offline" 'face 'jabber-roster-user-offline)))
   "Mapping from presence types to readable, colorized strings.")
 
 ;;;###autoload

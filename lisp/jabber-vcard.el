@@ -368,7 +368,7 @@ obtained from `xml-parse-region'."
     (let ((email-addresses (cdr (assq 'EMAIL parsed))))
       (when email-addresses
 	(insert "\n")
-	(insert (jabber-propertize "E-mail addresses:\n"
+	(insert (propertize "E-mail addresses:\n"
 				   'face 'jabber-title-medium))
 	(dolist (email email-addresses)
 	  (insert (mapconcat (lambda (type)
@@ -380,7 +380,7 @@ obtained from `xml-parse-region'."
     (let ((phone-numbers (cdr (assq 'TEL parsed))))
       (when phone-numbers
 	(insert "\n")
-	(insert (jabber-propertize "Phone numbers:\n"
+	(insert (propertize "Phone numbers:\n"
 				   'face 'jabber-title-medium))
 	(dolist (number phone-numbers)
 	  (insert (mapconcat (lambda (type)
@@ -392,10 +392,10 @@ obtained from `xml-parse-region'."
     (let ((addresses (cdr (assq 'ADR parsed))))
       (when addresses
 	(insert "\n")
-	(insert (jabber-propertize "Addresses:\n"
+	(insert (propertize "Addresses:\n"
 				   'face 'jabber-title-medium))
 	(dolist (address addresses)
-	  (insert (jabber-propertize
+	  (insert (propertize
 		   (mapconcat (lambda (type)
 				(cdr (assq type jabber-vcard-address-types)))
 			      (car address)
@@ -535,7 +535,7 @@ obtained from `xml-parse-region'."
 					   `(const :tag
 						   ,(concat
 						     "Existing: "
-						     (jabber-propertize " "
+						     (propertize " "
 									'display (jabber-avatar-image avatar)))
 						   ,(cdr photo))))
 				      (file :must-match t :tag "From file"))

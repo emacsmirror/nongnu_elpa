@@ -93,7 +93,7 @@ obtained from `xml-parse-region'."
     (if have-xdata
 	(jabber-render-xdata-search-results xdata)
 
-      (insert (jabber-propertize "Search results" 'face 'jabber-title-medium) "\n")
+      (insert (propertize "Search results" 'face 'jabber-title-medium) "\n")
 
       (setq fields '((first . (label "First name" column 0))
 		     (last . (label "Last name" column 15))
@@ -103,7 +103,7 @@ obtained from `xml-parse-region'."
 
       (dolist (field-cons fields)
 	(indent-to (plist-get (cdr field-cons) 'column) 1)
-	(insert (jabber-propertize (plist-get (cdr field-cons) 'label) 'face 'bold)))
+	(insert (propertize (plist-get (cdr field-cons) 'label) 'face 'bold)))
       (insert "\n\n")
 
       ;; Now, the items

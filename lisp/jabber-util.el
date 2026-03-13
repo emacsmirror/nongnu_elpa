@@ -48,27 +48,10 @@
 
 ;;
 
-(defalias 'jabber-propertize 'propertize)
-
 (defsubst jabber-read-with-input-method (prompt &optional initial-contents history default-value)
   "Like `read-string', but always inheriting the current input method."
   ;; Preserve input method when entering a minibuffer.
   (read-string prompt initial-contents history default-value t))
-
-(unless (fboundp 'delete-and-extract-region)
-  (defsubst delete-and-extract-region (start end)
-    (prog1
-	(buffer-substring start end)
-      (delete-region start end))))
-
-(unless (fboundp 'access-file)
-  (defsubst access-file (filename error-message)
-    (unless (file-readable-p filename)
-      (error error-message))))
-
-  (defalias 'jabber-float-time 'float-time)
-
-(defalias 'jabber-cancel-timer 'cancel-timer)
 
 (defvar jabber-connections)
 (defun jabber-concat-rosters ()
@@ -447,13 +430,7 @@ time value."
 
 (defun jabber-encode-legacy-time (timestamp)
   "Parse TIMESTAMP as internal time value and encode as ccyymmddThh:mm:ss (UTC)."
-  (if (featurep 'xemacs)
-      ;; XEmacs doesn't have `universal' argument to format-time-string,
-      ;; so we have to do it ourselves.
-      (format-time-string "%Y%m%dT%H:%M:%S"
-			  (time-subtract timestamp
-					 (list 0 (car (current-time-zone)))))
-    (format-time-string "%Y%m%dT%H:%M:%S" timestamp t)))
+  (format-time-string "%Y%m%dT%H:%M:%S" timestamp t))
 
 (defun jabber-encode-time (time)
   "Convert TIME to a string by XEP-0082.
@@ -783,7 +760,7 @@ FN is applied to the node and not to the data itself."
   "Return a propertized separator string."
   (let* ((win (or (get-buffer-window (current-buffer)) (selected-window)))
          (width (max 1 (/ (window-body-width win) 3))))
-    (jabber-propertize (make-string width ?\s)
+    (propertize (make-string width ?\s)
                        'face 'jabber-separator)))
 
 (provide 'jabber-util)

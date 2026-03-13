@@ -56,19 +56,19 @@ obtained from `xml-parse-region'."
 	 ((or
 	   (eq (jabber-xml-node-name item) 'user)
 	   (string= (jabber-xml-get-attribute item 'category) "user"))
-	  (insert (jabber-propertize "$ USER"
+	  (insert (propertize "$ USER"
 			      'face 'jabber-title-medium)
 		  "\n\n"))
 	 ((or
 	   (eq (jabber-xml-node-name item) 'service)
 	   (string= (jabber-xml-get-attribute item 'category) "service"))
-	  (insert (jabber-propertize "* SERVICE"
+	  (insert (propertize "* SERVICE"
 			      'face 'jabber-title-medium)
 		  "\n\n"))
 	 ((or
 	   (eq (jabber-xml-node-name item) 'conference)
 	   (string= (jabber-xml-get-attribute item 'category) "conference"))
-	  (insert (jabber-propertize "@ CONFERENCE"
+	  (insert (propertize "@ CONFERENCE"
 			      'face 'jabber-title-medium)
 		  "\n\n"))
 	 (t
@@ -79,7 +79,7 @@ obtained from `xml-parse-region'."
 	  (let ((category (jabber-xml-get-attribute item 'category)))
 	    (if (= (length category) 0)
 		(setq category (jabber-xml-node-name item)))
-	    (insert (jabber-propertize (format "! OTHER: %s" category)
+	    (insert (propertize (format "! OTHER: %s" category)
 				'face 'jabber-title-medium)
 		    "\n\n"))))
 	(dolist (attr '((type . "Type:\t\t")

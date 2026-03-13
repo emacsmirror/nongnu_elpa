@@ -285,7 +285,7 @@ JC is the Jabber connection."
                               (jabber-connection-bare-jid jc)
                               (jabber-jid-user group))))
         (if (null backlog-entries)
-            (setq jabber-chat-earliest-backlog (jabber-float-time))
+            (setq jabber-chat-earliest-backlog (float-time))
           (setq jabber-chat-earliest-backlog
                 (float-time (plist-get (car (last backlog-entries)) :timestamp)))
           (mapc #'jabber-chat-insert-backlog-entry backlog-entries)

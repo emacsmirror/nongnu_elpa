@@ -51,7 +51,7 @@ JC is the Jabber connection."
     (setq jabber-buffer-connection jc)
     (use-local-map widget-keymap)
 
-    (insert (jabber-propertize "Compose Jabber message\n" 'face 'jabber-title-large))
+    (insert (propertize "Compose Jabber message\n" 'face 'jabber-title-large))
 
     (insert (substitute-command-keys "\\<widget-field-keymap>Completion available with \\[widget-complete].\n"))
     (push (cons :recipients

@@ -198,7 +198,7 @@ of the log file."
 						 (forward-sexp)
 						 (point))))))
 		     (and (or (null start-time)
-			      (> (jabber-float-time (jabber-parse-time
+			      (> (float-time (jabber-parse-time
 						     (aref current-line 0)))
 				 start-time))
 			  (or (eq number t)
@@ -206,7 +206,7 @@ of the log file."
 	      (if (and (or (eq direction t)
 			   (string= direction (aref current-line 1)))
 		       (or (null end-time)
-			   (> end-time (jabber-float-time (jabber-parse-time
+			   (> end-time (float-time (jabber-parse-time
 							   (aref current-line 0)))))
 		       (string-match
 			jid-regexp
@@ -228,7 +228,7 @@ no entries will be fetched.  `jabber-backlog-days' still
 applies, though."
   (jabber-history-query
    (and jabber-backlog-days
-	(- (jabber-float-time) (* jabber-backlog-days 86400.0)))
+	(- (float-time) (* jabber-backlog-days 86400.0)))
    before
    jabber-backlog-number
    t					; both incoming and outgoing

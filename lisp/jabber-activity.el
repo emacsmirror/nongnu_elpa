@@ -270,19 +270,16 @@ Optional PRESENCE mean personal presence request or alert."
 	    (mapconcat
 	     (lambda (x)
 	       (let ((jump-to-jid (car x)))
-		 (jabber-propertize
+		 (propertize
 		  (cdr x)
 		  'face (if (member jump-to-jid jabber-activity-personal-jids)
 			    'jabber-activity-personal-face
 			  'jabber-activity-face)
-		  ;; XXX: XEmacs doesn't have make-mode-line-mouse-map.
-		  ;; Is there another way to make this work?
-		  'local-map (when (fboundp 'make-mode-line-mouse-map)
-			       (make-mode-line-mouse-map
-				'mouse-1 (lambda ()
-					   (interactive "@")
-					   (jabber-activity-switch-to
-					    jump-to-jid))))
+		  'local-map (make-mode-line-mouse-map
+			      'mouse-1 (lambda ()
+					 (interactive "@")
+					 (jabber-activity-switch-to
+					  jump-to-jid)))
 		  'help-echo (concat "Jump to "
 				     (jabber-jid-displayname (car x))
 				     "'s buffer"))))
@@ -374,12 +371,8 @@ With a numeric arg, enable this display if arg is positive."
   :init-value t
   (if jabber-activity-mode
       (progn
-	;; XEmacs compatibilty hack from erc-track
-	(if (featurep 'xemacs)
-	    (defadvice switch-to-buffer (after jabber-activity-update (&rest args) activate)
-	      (jabber-activity-clean))
-	  (add-hook 'window-configuration-change-hook
-		    #'jabber-activity-clean))
+	(add-hook 'window-configuration-change-hook
+		  #'jabber-activity-clean)
 	(add-hook 'jabber-message-hooks
 		  #'jabber-activity-add)
 	(add-hook 'jabber-muc-hooks
@@ -417,8 +410,8 @@ With a numeric arg, enable this display if arg is positive."
 					    jabber-activity-count-in-title-format
 					    icon-title-format)))))
     (progn
-      (if (featurep 'xemacs)
-	  (ad-disable-advice 'switch-to-buffer 'after 'jabber-activity-update))
+      (remove-hook 'window-configuration-change-hook
+		   #'jabber-activity-clean)
       (remove-hook 'jabber-message-hooks
 		   #'jabber-activity-add)
       (remove-hook 'jabber-muc-hooks

@@ -52,7 +52,7 @@
   (with-current-buffer (get-buffer-create "Export roster")
     (jabber-init-widget-buffer nil)
 
-    (widget-insert (jabber-propertize "Export roster\n"
+    (widget-insert (propertize "Export roster\n"
 				      'face 'jabber-title-large))
     (widget-insert "You are about to save your roster to a file.  Here
 you can edit it before saving.  Changes done here will
@@ -88,7 +88,7 @@ not affect your actual roster.
 
       (jabber-init-widget-buffer nil)
 
-      (widget-insert (jabber-propertize "Import roster\n"
+      (widget-insert (propertize "Import roster\n"
 					'face 'jabber-title-large))
       (widget-insert "You are about to import the contacts below to your roster.
 

@@ -80,9 +80,7 @@ JC is the Jabber connection."
   ;; Then again, jabber-process-iq should take care of that.
   (let ((to (jabber-xml-get-attribute xml-data 'from))
 	(id (jabber-xml-get-attribute xml-data 'id))
-	(os (format "%s %d.%d (%s)"
-	     (cond ((featurep 'xemacs) "XEmacs")
-		   (t "Emacs"))
+	(os (format "Emacs %d.%d (%s)"
 	     emacs-major-version emacs-minor-version
 	     system-type)))
     (jabber-send-iq jc to "result"

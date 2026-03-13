@@ -553,7 +553,7 @@ obtained from `xml-parse-region'."
 	(let ((name (jabber-xml-get-attribute x 'name))
 	      (category (jabber-xml-get-attribute x 'category))
 	      (type (jabber-xml-get-attribute x 'type)))
-	  (insert (jabber-propertize (if name
+	  (insert (propertize (if name
 					 name
 				       "Unnamed")
 				     'face 'jabber-title-medium)
@@ -583,9 +583,9 @@ obtained from `xml-parse-region'."
 		(name (jabber-xml-get-attribute item 'name))
 		(node (jabber-xml-get-attribute item 'node)))
 	    (insert
-	     (jabber-propertize
+	     (propertize
 	      (concat
-	       (jabber-propertize
+	       (propertize
 		(concat jid "\n" (if node (format "Node: %s\n" node)))
 		'face 'jabber-title-medium)
 	       name "\n\n")

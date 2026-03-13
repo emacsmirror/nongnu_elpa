@@ -168,7 +168,7 @@ DEFAULTS takes precedence over values specified in the form."
 
   (let ((title (car (jabber-xml-node-children (car (jabber-xml-get-children x 'title))))))
     (if (stringp title)
-	(widget-insert (jabber-propertize title 'face 'jabber-title-medium) "\n\n")))
+	(widget-insert (propertize title 'face 'jabber-title-medium) "\n\n")))
   (let ((instructions (car (jabber-xml-node-children (car (jabber-xml-get-children x 'instructions))))))
     (if (stringp instructions)
 	(widget-insert "Instructions: " instructions "\n\n")))
@@ -276,7 +276,7 @@ Return a list of strings, each of which to be included as cdata in a
   "Render search results in x:data form."
   (let ((title (car (jabber-xml-get-children xdata 'title))))
     (when title
-      (insert (jabber-propertize (car (jabber-xml-node-children title)) 'face 'jabber-title-medium) "\n")))
+      (insert (propertize (car (jabber-xml-node-children title)) 'face 'jabber-title-medium) "\n")))
   (if (jabber-xml-get-children xdata 'reported)
       (jabber-render-xdata-search-results-multi xdata)
     (jabber-render-xdata-search-results-single xdata)))
@@ -305,7 +305,7 @@ Return a list of strings, each of which to be included as cdata in a
 
     (dolist (field-cons fields)
       (indent-to (plist-get (cdr field-cons) 'column) 1)
-      (insert (jabber-propertize (plist-get (cdr field-cons) 'label) 'face 'bold)))
+      (insert (propertize (plist-get (cdr field-cons) 'label) 'face 'bold)))
     (insert "\n\n")
 
     ;; Now, the items
@@ -331,7 +331,7 @@ Return a list of strings, each of which to be included as cdata in a
 	      ;; property.
 	      (if (string= (plist-get field-plist 'type) "jid-single")
 		  (if (not (eq jid-fields 1))
-		      (insert (jabber-propertize value 'jabber-jid value))
+		      (insert (propertize value 'jabber-jid value))
 		    (setq jid value)
 		    (insert value))
 		(insert value)))))
@@ -349,7 +349,7 @@ Return a list of strings, each of which to be included as cdata in a
 			      (car (jabber-xml-node-children val)))
 			  (jabber-xml-get-children field 'value))))
       ;; XXX: consider type
-      (insert (jabber-propertize (concat label ": ") 'face 'bold))
+      (insert (propertize (concat label ": ") 'face 'bold))
       (indent-to 30)
       (insert (apply #'concat values) "\n"))))
 
