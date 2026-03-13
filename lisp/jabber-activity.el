@@ -154,9 +154,9 @@ It is called after `jabber-activity-mode-string' and
 
 ;; Global reference declarations
 
-(declare-function jabber-chat-get-buffer "jabber-chat.el" (chat-with))
-(declare-function jabber-muc-get-buffer "jabber-muc.el" (group))
-(declare-function jabber-muc-private-get-buffer "jabber-muc.el"
+(declare-function jabber-chat-find-buffer "jabber-chat.el" (chat-with))
+(declare-function jabber-muc-find-buffer "jabber-muc.el" (group))
+(declare-function jabber-muc-private-find-buffer "jabber-muc.el"
                   (group nickname))
 (declare-function jabber-muc-sender-p "jabber-muc.el" (jid))
 (declare-function jabber-muc-looks-like-personal-p
@@ -218,13 +218,13 @@ all strings still are unique and at least
 		   (1+ (jabber-activity-common-prefix cur next)))))))))
 
 (defun jabber-activity-find-buffer-name (jid)
-  "Find the name of the buffer that messages from JID would use."
+  "Find the buffer that messages from JID would use, or nil."
   (or (and (jabber-jid-resource jid)
-	   (get-buffer (jabber-muc-private-get-buffer
-			(jabber-jid-user jid)
-			(jabber-jid-resource jid))))
-      (get-buffer (jabber-chat-get-buffer jid))
-      (get-buffer (jabber-muc-get-buffer jid))))
+	   (jabber-muc-private-find-buffer
+	    (jabber-jid-user jid)
+	    (jabber-jid-resource jid)))
+      (jabber-chat-find-buffer jid)
+      (jabber-muc-find-buffer jid)))
 
 (defun jabber-activity-show-p-default (jid)
   "Return non-nil if JID should be hidden.

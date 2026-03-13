@@ -33,7 +33,7 @@
 (defgroup jabber-chat nil "chat display options"
   :group 'jabber)
 
-(defcustom jabber-chat-buffer-format "*-jabber-chat-%n-*"
+(defcustom jabber-chat-buffer-format "*%j-%a*"
   "The format specification for the name of chat buffers.
 
 These fields are available (all are about the person you are chatting
@@ -41,7 +41,13 @@ with):
 
 %n   Nickname, or JID if no nickname set
 %j   Bare JID (without resource)
-%r   Resource"
+%r   Resource
+
+These fields are about your account:
+
+%a   Your bare JID (account)
+%u   Your username
+%s   Your server"
   :type 'string)
 
 (defcustom jabber-chat-header-line-format
@@ -210,6 +216,7 @@ added to the outgoing message.")
 (declare-function jabber-muc-message-p "jabber-muc.el"(message))
 (declare-function jabber-muc-sender-p "jabber-muc.el" (jid))
 (declare-function jabber-muc-private-message-p "jabber-muc.el" (message))
+(declare-function jabber-muc-nickname "jabber-muc.el" (group))
 (defvar jabber-backlog-days)
 (defvar jabber-backlog-number)
 (declare-function jabber-db-backlog "jabber-db.el"
@@ -217,7 +224,6 @@ added to the outgoing message.")
 (declare-function jabber-db--store-outgoing "jabber-db.el"
                   (jc to body type))
 (defvar jabber-group)                   ; jabber-muc.el
-(defvar *jabber-active-groupchats*)     ; jabber-muc.el
 (defvar jabber-muc-printers)            ; jabber-muc.el
 
 ;;
@@ -274,21 +280,35 @@ associated face.  Ignore notification if face is `nil'."
   :group 'jabber-alerts)
 
 ;;;###autoload
-(defun jabber-chat-get-buffer (chat-with)
-  "Return the chat buffer for chatting with CHAT-WITH (bare or full JID).
-Either a string or a buffer is returned, so use `get-buffer' or
-`get-buffer-create'."
+(defun jabber-chat-get-buffer (chat-with &optional jc)
+  "Return the chat buffer name for chatting with CHAT-WITH (bare or full JID).
+When JC is provided, account-specific format specs (%a, %u, %s) are
+expanded.  Either a string or a buffer is returned, so use `get-buffer'
+or `get-buffer-create'."
   (format-spec jabber-chat-buffer-format
 	       (list
 		(cons ?n (jabber-jid-displayname chat-with))
 		(cons ?j (jabber-jid-user chat-with))
-		(cons ?r (or (jabber-jid-resource chat-with) "")))))
+		(cons ?r (or (jabber-jid-resource chat-with) ""))
+		(cons ?a (if jc (jabber-connection-bare-jid jc) ""))
+		(cons ?u (if jc (plist-get (fsm-get-state-data jc) :username) ""))
+		(cons ?s (if jc (plist-get (fsm-get-state-data jc) :server) "")))))
+
+(defun jabber-chat-find-buffer (chat-with)
+  "Find an existing chat buffer for CHAT-WITH, or nil.
+Searches by buffer-local `jabber-chatting-with' variable."
+  (let ((bare (jabber-jid-user chat-with)))
+    (cl-find bare (buffer-list)
+             :test #'string=
+             :key (lambda (buf)
+                    (when-let ((jid (buffer-local-value 'jabber-chatting-with buf)))
+                      (jabber-jid-user jid))))))
 
 (defun jabber-chat-create-buffer (jc chat-with)
   "Prepare a buffer for chatting with CHAT-WITH.
 This function is idempotent.
 JC is the Jabber connection."
-  (with-current-buffer (get-buffer-create (jabber-chat-get-buffer chat-with))
+  (with-current-buffer (get-buffer-create (jabber-chat-get-buffer chat-with jc))
     (unless (eq major-mode 'jabber-chat-mode)
       (jabber-chat-mode)
       (jabber-chat-mode-setup jc #'jabber-chat-pp)
@@ -329,8 +349,7 @@ JC is the Jabber connection."
 	 (node-type (cond
 		    ((string= msg-type "groupchat")
 		     (let* ((nick (jabber-jid-resource (plist-get msg-plist :from)))
-			    (my-nick (cdr (assoc jabber-group
-						 *jabber-active-groupchats*))))
+			    (my-nick (jabber-muc-nickname jabber-group)))
 		       (if (and nick my-nick (string= nick my-nick))
 			   :muc-local
 			 :muc-foreign)))

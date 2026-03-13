@@ -34,11 +34,47 @@
 
 (require 'ewoc)
 
-;;;###autoload
-(defvar *jabber-active-groupchats* nil
-  "Alist of groupchats and nicknames.
-Keys are strings, the bare JID of the room.
-Values are strings.")
+(defvar jabber-muc--rooms (make-hash-table :test #'equal)
+  "Internal hash table of active MUC rooms.
+Keys are group JID strings; values are (JC . NICKNAME) cons cells
+where JC is the Jabber connection object and NICKNAME is the
+user's nick in that room.")
+
+(defvar jabber-muc--generation 0
+  "Generation counter for `jabber-muc--rooms'.
+Incremented on every join/leave, enabling cheap change detection
+without copying the room list.")
+
+(defun jabber-muc-nickname (group)
+  "Return our nickname in GROUP, or nil."
+  (cdr (gethash group jabber-muc--rooms)))
+
+(defun jabber-muc-connection (group)
+  "Return the connection object for GROUP, or nil."
+  (car (gethash group jabber-muc--rooms)))
+
+(defun jabber-muc-joined-p (group)
+  "Return non-nil if we are in GROUP."
+  (and (gethash group jabber-muc--rooms) t))
+
+(defun jabber-muc-active-rooms ()
+  "Return list of joined room JIDs."
+  (hash-table-keys jabber-muc--rooms))
+
+(defun jabber-muc-join-set (group jc nickname)
+  "Record that we joined GROUP via JC with NICKNAME."
+  (puthash group (cons jc nickname) jabber-muc--rooms)
+  (cl-incf jabber-muc--generation))
+
+(defun jabber-muc-leave-remove (group)
+  "Remove GROUP from active rooms."
+  (remhash group jabber-muc--rooms)
+  (cl-incf jabber-muc--generation))
+
+(defun jabber-muc-generation ()
+  "Return current generation counter for change detection."
+  jabber-muc--generation)
+
 
 (defvar jabber-pending-groupchats (make-hash-table)
   "Hash table of groupchats and nicknames.
@@ -90,7 +126,7 @@ to join chat rooms on such servers, set this variable to t."
   :group 'jabber-chat
   :type 'boolean)
 
-(defcustom jabber-groupchat-buffer-format "*-jabber-groupchat-%n-*"
+(defcustom jabber-groupchat-buffer-format "*#%n-%a*"
   "The format specification for the name of groupchat buffers.
 
 These fields are available (all are about the group you are chatting
@@ -98,7 +134,13 @@ in):
 
 %n   Roster name of group, or JID if no nickname set
 %b   Name of group from bookmarks or roster name or JID if none set
-%j   Bare JID (without resource)"
+%j   Bare JID (without resource)
+
+These fields are about your account:
+
+%a   Your bare JID (account)
+%u   Your username
+%s   Your server"
   :type 'string
   :group 'jabber-chat)
 
@@ -123,13 +165,19 @@ The format is that of `mode-line-format' and `header-line-format'."
   :type 'sexp
   :group 'jabber-chat)
 
-(defcustom jabber-muc-private-buffer-format "*-jabber-muc-priv-%g-%n-*"
+(defcustom jabber-muc-private-buffer-format "*%g/%n-%a*"
   "The format specification for the buffer name for private MUC messages.
 
 These fields are available:
 
 %g   Roster name of group, or JID if no nickname set
-%n   Nickname of the group member you're chatting with"
+%n   Nickname of the group member you're chatting with
+
+These fields are about your account:
+
+%a   Your bare JID (account)
+%u   Your username
+%s   Your server"
   :type 'string
   :group 'jabber-chat)
 
@@ -208,22 +256,34 @@ The format is that of `mode-line-format' and `header-line-format'."
 This gets prepended to `jabber-chat-printers', which see.")
 
 ;;;###autoload
-(defun jabber-muc-get-buffer (group)
-  "Return the chat buffer for chatroom GROUP.
-Either a string or a buffer is returned, so use `get-buffer' or
-`get-buffer-create'."
+(defun jabber-muc-get-buffer (group &optional jc)
+  "Return the chat buffer name for chatroom GROUP.
+When JC is provided, account-specific format specs (%a, %u, %s) are
+expanded.  Either a string or a buffer is returned, so use `get-buffer'
+or `get-buffer-create'."
   (format-spec jabber-groupchat-buffer-format
 	       (list
 		(cons ?n (jabber-jid-displayname group))
                 (cons ?b (jabber-jid-bookmarkname group))
-		(cons ?j (jabber-jid-user group)))))
+		(cons ?j (jabber-jid-user group))
+		(cons ?a (if jc (jabber-connection-bare-jid jc) ""))
+		(cons ?u (if jc (plist-get (fsm-get-state-data jc) :username) ""))
+		(cons ?s (if jc (plist-get (fsm-get-state-data jc) :server) "")))))
+
+(defun jabber-muc-find-buffer (group)
+  "Find an existing MUC buffer for GROUP, or nil.
+Searches by buffer-local `jabber-group' variable."
+  (cl-find group (buffer-list)
+           :test #'string=
+           :key (lambda (buf)
+                  (buffer-local-value 'jabber-group buf))))
 
 (defun jabber-muc-create-buffer (jc group)
   "Prepare a buffer for chatroom GROUP.
 This function is idempotent.
 
 JC is the Jabber connection."
-  (with-current-buffer (get-buffer-create (jabber-muc-get-buffer group))
+  (with-current-buffer (get-buffer-create (jabber-muc-get-buffer group jc))
     (unless (eq major-mode 'jabber-chat-mode)
       (jabber-chat-mode)
       (jabber-chat-mode-setup jc #'jabber-chat-pp))
@@ -249,21 +309,34 @@ JC is the Jabber connection."
     (current-buffer)))
 
 ;;;###autoload
-(defun jabber-muc-private-get-buffer (group nickname)
-  "Return the chat buffer for private chat with NICKNAME in GROUP.
-Either a string or a buffer is returned, so use `get-buffer' or
-`get-buffer-create'."
+(defun jabber-muc-private-get-buffer (group nickname &optional jc)
+  "Return the chat buffer name for private chat with NICKNAME in GROUP.
+When JC is provided, account-specific format specs (%a, %u, %s) are
+expanded.  Either a string or a buffer is returned, so use `get-buffer'
+or `get-buffer-create'."
   (format-spec jabber-muc-private-buffer-format
 	       (list
 		(cons ?g (jabber-jid-displayname group))
-		(cons ?n nickname))))
+		(cons ?n nickname)
+		(cons ?a (if jc (jabber-connection-bare-jid jc) ""))
+		(cons ?u (if jc (plist-get (fsm-get-state-data jc) :username) ""))
+		(cons ?s (if jc (plist-get (fsm-get-state-data jc) :server) "")))))
+
+(defun jabber-muc-private-find-buffer (group nickname)
+  "Find an existing private MUC buffer for NICKNAME in GROUP, or nil.
+Searches by buffer-local `jabber-chatting-with' variable."
+  (let ((full-jid (concat group "/" nickname)))
+    (cl-find full-jid (buffer-list)
+             :test #'string=
+             :key (lambda (buf)
+                    (buffer-local-value 'jabber-chatting-with buf)))))
 
 (defun jabber-muc-private-create-buffer (jc group nickname)
   "Prepare a buffer for chatting with NICKNAME in GROUP.
 This function is idempotent.
 
 JC is the Jabber connection."
-  (with-current-buffer (get-buffer-create (jabber-muc-private-get-buffer group nickname))
+  (with-current-buffer (get-buffer-create (jabber-muc-private-get-buffer group nickname jc))
     (unless (eq major-mode 'jabber-chat-mode)
       (jabber-chat-mode)
       (jabber-chat-mode-setup jc #'jabber-chat-pp))
@@ -286,19 +359,14 @@ JC is the Jabber connection."
 		       (type . "groupchat"))
 		      (body () ,body))))
 
-(defun jabber-muc-add-groupchat (group nickname)
-  "Remember participating in GROUP under NICKNAME."
-  (let ((whichgroup (assoc group *jabber-active-groupchats*)))
-    (if whichgroup
-	(setcdr whichgroup nickname)
-      (add-to-list '*jabber-active-groupchats* (cons group nickname)))))
+(defun jabber-muc-add-groupchat (group nickname &optional jc)
+  "Remember participating in GROUP under NICKNAME via JC."
+  (jabber-muc-join-set group jc nickname))
 
 (defun jabber-muc-remove-groupchat (group)
   "Remove GROUP from internal bookkeeping."
-  (let ((whichgroup (assoc group *jabber-active-groupchats*))
-	(whichparticipants (assoc group jabber-muc-participants)))
-    (setq *jabber-active-groupchats*
-	  (delq whichgroup *jabber-active-groupchats*))
+  (jabber-muc-leave-remove group)
+  (let ((whichparticipants (assoc group jabber-muc-participants)))
     (setq jabber-muc-participants
 	  (delq whichparticipants jabber-muc-participants))))
 
@@ -306,18 +374,13 @@ JC is the Jabber connection."
   "Remove MUC data for BARE-JID.
 Forget all information about rooms that had been entered with
 this JID.  Suitable to call when the connection is closed."
-  (dolist (room-entry jabber-muc-participants)
-    (let* ((room (car room-entry))
-	   (buffer (get-buffer (jabber-muc-get-buffer room))))
-      (when (bufferp buffer)
-	(with-current-buffer buffer
-	  (when (string= bare-jid
-			 (jabber-connection-bare-jid jabber-buffer-connection))
-	    (setq *jabber-active-groupchats*
-		  (cl-delete room *jabber-active-groupchats*
-			     :key #'car :test #'string=))
-	    (setq jabber-muc-participants
-		  (delq room-entry jabber-muc-participants))))))))
+  (dolist (room (jabber-muc-active-rooms))
+    (let ((jc (jabber-muc-connection room)))
+      (when (and jc (string= bare-jid (jabber-connection-bare-jid jc)))
+        (jabber-muc-leave-remove room)
+        (let ((whichparticipants (assoc room jabber-muc-participants)))
+          (setq jabber-muc-participants
+                (delq whichparticipants jabber-muc-participants)))))))
 
 (defun jabber-muc-participant-plist (group nickname)
   "Return plist associated with NICKNAME in GROUP.
@@ -437,13 +500,13 @@ This macro is meant for use as an argument to `interactive'."
 If ALLOW-NOT-JOINED is provided and non-nil, permit choosing any
 JID; only provide completion as a guide."
   (or jabber-group
-      (jabber-read-jid-completing prompt
-				  (if (null *jabber-active-groupchats*)
-				      (error "You haven't joined any group")
-				    (mapcar (lambda (x) (jabber-jid-symbol (car x)))
-					    *jabber-active-groupchats*))
-				  (not allow-not-joined)
-				  jabber-group)))
+      (let ((rooms (jabber-muc-active-rooms)))
+        (jabber-read-jid-completing prompt
+                                    (if (null rooms)
+                                        (error "You haven't joined any group")
+                                      (mapcar #'jabber-jid-symbol rooms))
+                                    (not allow-not-joined)
+                                    jabber-group))))
 
 (defun jabber-muc-read-nickname (group prompt)
   "Read the nickname of a participant in GROUP."
@@ -570,7 +633,7 @@ JC is the Jabber connection."
      (list account group (jabber-muc-read-my-nickname account group) t)))
 
   ;; If the user is already in the room, we don't need as many checks.
-  (if (or (assoc group *jabber-active-groupchats*)
+  (if (or (jabber-muc-joined-p group)
 	  ;; Or if the users asked us not to check disco info.
 	  jabber-muc-disable-disco-check)
       (jabber-muc-join-3 jc group nickname nil popup)
@@ -588,23 +651,16 @@ JC is the Jabber connection."
 Prompt with completion for joined rooms only."
   (interactive
    (list (completing-read "Groupchat: "
-			  (mapcar #'car *jabber-active-groupchats*)
+			  (jabber-muc-active-rooms)
 			  nil t)))
-  (let* ((buffer-name (format-spec jabber-groupchat-buffer-format
-				   (list (cons ?n (jabber-jid-displayname group))
-					 (cons ?b (jabber-jid-bookmarkname group))
-					 (cons ?j group)))))
-    (if (get-buffer buffer-name)
-	(switch-to-buffer buffer-name)
+  (let* ((jc (jabber-muc-connection group))
+         (buffer (if jc
+                     (get-buffer (jabber-muc-get-buffer group jc))
+                   (jabber-muc-find-buffer group))))
+    (if buffer
+	(switch-to-buffer buffer)
       ;; Buffer was killed; recreate it.
-      (let ((jc (or ;; Find the connection that has messages for this group
-                    (cl-find-if
-                     (lambda (jc)
-                       (jabber-db-last-timestamp
-                        (jabber-connection-bare-jid jc)
-                        (jabber-jid-user group)))
-                     jabber-connections)
-                    (car jabber-connections))))
+      (when (setq jc (or jc (car jabber-connections)))
         (switch-to-buffer (jabber-muc-create-buffer jc group))))))
 
 (defun jabber-muc-join-2 (jc closure result)
@@ -709,10 +765,10 @@ JC is the Jabber connection."
 
 JC is the Jabber connection."
   (interactive (jabber-muc-argument-list))
-  (let ((whichgroup (assoc group *jabber-active-groupchats*)))
+  (let ((nick (jabber-muc-nickname group)))
     ;; send unavailable presence to our own nick in room
     (jabber-send-sexp jc
-		      `(presence ((to . ,(format "%s/%s" group (cdr whichgroup)))
+		      `(presence ((to . ,(format "%s/%s" group nick))
 				  (type . "unavailable"))))))
 
 (defalias 'jabber-groupchat-leave #'jabber-muc-leave
@@ -972,7 +1028,7 @@ include groupchat invites."
 ;;;###autoload
 (defun jabber-muc-sender-p (jid)
   "Return non-nil if JID is a full JID of an MUC participant."
-  (and (assoc (jabber-jid-user jid) *jabber-active-groupchats*)
+  (and (jabber-muc-joined-p (jabber-jid-user jid))
        (jabber-jid-resource jid)))
 
 ;;;###autoload
@@ -1093,7 +1149,7 @@ JC is the Jabber connection."
 	   (error-p (jabber-xml-get-children xml-data 'error))
 	   (type (cond
 		  (error-p :muc-error)
-		  ((string= nick (cdr (assoc group *jabber-active-groupchats*)))
+		  ((string= nick (jabber-muc-nickname group))
 		   :muc-local)
 		  (t :muc-foreign)))
 	   (body-text (car (jabber-xml-node-children
@@ -1185,7 +1241,7 @@ JC is the Jabber connection."
 	      (jabber-muc-remove-groupchat group))
 	    ;; If there is no buffer for this groupchat, don't bother
 	    ;; creating one just to tell that user left the room.
-	    (let ((buffer (get-buffer (jabber-muc-get-buffer group))))
+	    (let ((buffer (get-buffer (jabber-muc-get-buffer group jc))))
 	      (if buffer
 		  (with-current-buffer buffer
 		    (jabber-maybe-print-rare-time
@@ -1240,10 +1296,7 @@ JC is the Jabber connection."
 	;; participant, but even in this case the window where we have
 	;; incorrect information should be very small, as we should be
 	;; getting our own 110+210 presence shortly.
-	(let ((whichgroup (assoc group *jabber-active-groupchats*)))
-	  (if whichgroup
-	      (setcdr whichgroup nickname)
-	    (add-to-list '*jabber-active-groupchats* (cons group nickname))))
+	(jabber-muc-add-groupchat group nickname jc)
 	;; The server may have changed our nick.  Record the new one.
 	(puthash symbol nickname jabber-pending-groupchats))
 

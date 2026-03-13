@@ -134,9 +134,10 @@ It can be sent and cancelled several times.")
 
 ;;; COMMON
 
-(defun jabber-handle-incoming-message-chatstates (_jc xml-data)
-  (when (get-buffer (jabber-chat-get-buffer (jabber-xml-get-attribute xml-data 'from)))
-    (with-current-buffer (jabber-chat-get-buffer (jabber-xml-get-attribute xml-data 'from))
+(defun jabber-handle-incoming-message-chatstates (jc xml-data)
+  (when-let ((buffer (get-buffer (jabber-chat-get-buffer
+                                  (jabber-xml-get-attribute xml-data 'from) jc))))
+    (with-current-buffer buffer
       (cond
        ;; If we get an error message, we shouldn't report any
        ;; events, as the requests are mirrored from us.

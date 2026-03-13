@@ -168,9 +168,10 @@ and it hasn't been sent before."
 (add-to-list 'jabber-message-chain #'jabber-handle-incoming-message-events t)
 
 (defun jabber-handle-incoming-message-events (jc xml-data)
-  (when (and (not (jabber-muc-message-p xml-data))
-	     (get-buffer (jabber-chat-get-buffer (jabber-xml-get-attribute xml-data 'from))))
-    (with-current-buffer (jabber-chat-get-buffer (jabber-xml-get-attribute xml-data 'from))
+  (when-let (((not (jabber-muc-message-p xml-data)))
+             (buffer (get-buffer (jabber-chat-get-buffer
+                                  (jabber-xml-get-attribute xml-data 'from) jc))))
+    (with-current-buffer buffer
       (let ((x (cl-find "jabber:x:event"
 		        (jabber-xml-get-children xml-data 'x)
 		        :key #'(lambda (x) (jabber-xml-get-attribute x 'xmlns))

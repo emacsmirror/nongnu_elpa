@@ -210,12 +210,13 @@ files."
 
 ;; Global reference declarations
 
-(declare-function jabber-chat-get-buffer "jabber-chat.el" (chat-with))
+(declare-function jabber-chat-get-buffer "jabber-chat.el" (chat-with &optional jc))
+(declare-function jabber-chat-find-buffer "jabber-chat.el" (chat-with))
 (declare-function jabber-chat-send "jabber-chat.el" (jc body))
 (declare-function jabber-muc-sender-p "jabber-muc.el" (jid))
+(declare-function jabber-muc-nickname "jabber-muc.el" (group))
 (defvar jabber-presence-strings)        ; jabber.el
 (defvar jabber-xml-data)                ; jabber.el
-(defvar *jabber-active-groupchats*)     ; jabber-muc.el
 (defvar jabber-roster-buffer)           ; jabber-core.el
 (defvar jabber-buffer-connection)       ; jabber-chatbuffer.el
 
@@ -339,7 +340,7 @@ Examples:
 	    (not (memq (selected-window) (get-buffer-window-list buffer))))
     (if nick
 	(when (or jabber-muc-alert-self
-		  (not (string= nick (cdr (assoc group *jabber-active-groupchats*)))))
+		  (not (string= nick (jabber-muc-nickname group))))
 	  (format "Message from %s in %s" nick (jabber-jid-displayname
 						group)))
       (format "Message in %s" (jabber-jid-displayname group)))))
@@ -402,7 +403,7 @@ at a more manageable level when there are lots of users.
 
 This function is not called directly, but can be used as the value for
 `jabber-alert-presence-message-function'."
-  (when (get-buffer (jabber-chat-get-buffer (jabber-xml-get-attribute jabber-xml-data 'from)))
+  (when (jabber-chat-find-buffer (jabber-xml-get-attribute jabber-xml-data 'from))
     (jabber-presence-default-message who oldstatus newstatus statustext)))
 
 (defun jabber-presence-wave (who _oldstatus _newstatus _statustext proposed-alert)

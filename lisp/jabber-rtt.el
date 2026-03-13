@@ -31,7 +31,7 @@
 
 ;; Global reference declarations
 
-(declare-function jabber-chat-get-buffer "jabber-chat.el" (chat-with))
+(declare-function jabber-chat-get-buffer "jabber-chat.el" (chat-with &optional jc))
 (declare-function jabber-muc-message-p "jabber-muc.el"(message))
 (defvar jabber-message-chain)           ; jabber-core.el
 (defvar jabber-chat-ewoc)               ; jabber-chatbuffer.el
@@ -66,11 +66,12 @@
   '(add-to-list 'jabber-message-chain #'jabber-rtt-handle-message t))
 
 ;;;###autoload
-(defun jabber-rtt-handle-message (_jc xml-data)
+(defun jabber-rtt-handle-message (jc xml-data)
   ;; We could support this for MUC as well, if useful.
-  (when (and (not (jabber-muc-message-p xml-data))
-	     (get-buffer (jabber-chat-get-buffer (jabber-xml-get-attribute xml-data 'from))))
-    (with-current-buffer (jabber-chat-get-buffer (jabber-xml-get-attribute xml-data 'from))
+  (when-let (((not (jabber-muc-message-p xml-data)))
+             (buffer (get-buffer (jabber-chat-get-buffer
+                                  (jabber-xml-get-attribute xml-data 'from) jc))))
+    (with-current-buffer buffer
       (let* ((rtt (jabber-xml-path xml-data '(("urn:xmpp:rtt:0" . "rtt"))))
 	     (body (jabber-xml-path xml-data '(body)))
 	     (seq (when rtt (jabber-xml-get-attribute rtt 'seq)))
