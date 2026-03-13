@@ -210,6 +210,7 @@ added to the outgoing message.")
                   (jc to body type))
 (defvar jabber-group)                   ; jabber-muc.el
 (defvar jabber-muc-printers)            ; jabber-muc.el
+(defvar jabber-oob-xmlns)              ; jabber-xml.el
 
 ;;
 
@@ -537,7 +538,7 @@ found."
   "Build a message plist from the fields in XML-DATA.
 DELAYED marks the message as delayed unconditionally."
   (let* ((msg-timestamp (jabber-message-timestamp xml-data))
-         (oob-x (jabber-xml-child-with-xmlns xml-data "jabber:x:oob"))
+         (oob-x (jabber-xml-child-with-xmlns xml-data jabber-oob-xmlns))
          (error-node (car (jabber-xml-get-children xml-data 'error))))
     (list
      :from (jabber-xml-get-attribute xml-data 'from)

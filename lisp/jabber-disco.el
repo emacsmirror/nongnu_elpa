@@ -33,6 +33,7 @@
 
 (defvar jabber-presence-chain)          ; jabber-core.el
 (defvar jabber-connections)             ; jabber-core.el
+(defvar jabber-xdata-xmlns)            ; jabber-xml.el
 
 (defconst jabber-disco-xmlns-info "http://jabber.org/protocol/disco#info"
   "XEP-0030 Service Discovery info namespace.")
@@ -296,7 +297,7 @@ VER is the version string of the CAPS."
 		   (lambda (x)
 		     ;; Keep elements that are forms and have a FORM_TYPE,
 		     ;; according to XEP-0128.
-		     (and (string= (jabber-xml-get-xmlns x) "jabber:x:data")
+		     (and (string= (jabber-xml-get-xmlns x) jabber-xdata-xmlns)
 			  (jabber-xdata-formtype x)))
 		   maybe-forms)))
       ;; 2. Sort the service discovery identities [15] by category

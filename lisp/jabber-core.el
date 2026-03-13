@@ -169,6 +169,7 @@ problems."
 (defvar jabber-default-connection-type) ; jabber-conn.el
 (defvar jabber-connect-methods)         ; jabber-conn.el
 (defvar jabber-mode-line-mode)          ; jabber-modeline.el
+(defvar jabber-roster-xmlns)           ; jabber-xml.el
 
 ;;
 
@@ -755,7 +756,7 @@ With double prefix argument, specify more connection details."
   (fsm state-data)
   (jabber-send-iq fsm nil
 		  "get"
-		  '(query ((xmlns . "jabber:iq:roster")))
+		  `(query ((xmlns . ,jabber-roster-xmlns)))
 		  #'jabber-process-roster 'initial
 		  #'jabber-initial-roster-failure nil)
   (list (plist-put state-data :ever-session-established t) nil))

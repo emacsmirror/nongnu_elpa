@@ -61,6 +61,7 @@
                   (account peer direction type body timestamp
                            &optional resource stanza-id server-id
                            raw-xml oob-url oob-desc))
+(defvar jabber-oob-xmlns)              ; jabber-xml.el
 
 ;; * Configuration variables *
 
@@ -495,7 +496,7 @@ and the JC Jabber Connection."
                                     (type . ,type)
 				    (id . ,id))
                                    (body () ,body)
-                                   (x ((xmlns . "jabber:x:oob"))
+                                   (x ((xmlns . ,jabber-oob-xmlns))
                                       (url () ,body)))))
     (unless (equal type "groupchat")
       ;; Store with OOB before hooks (hook will dedup via stanza-id).

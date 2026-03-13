@@ -31,6 +31,7 @@
 (declare-function jabber-submit-search "jabber-search.el" (&rest _ignore))
 (defvar jabber-buffer-connection)       ; jabber-chatbuffer.el
 (defvar jabber-silent-mode)             ; jabber.el
+(defvar jabber-xdata-xmlns)            ; jabber-xml.el
 
 ;;
 
@@ -86,7 +87,7 @@ obtained from `xml-parse-region'."
     (widget-insert (if (eq type 'register) "Register with " "Search ") jabber-submit-to "\n\n")
 
     (dolist (x (jabber-xml-get-children query 'x))
-      (when (string= (jabber-xml-get-attribute x 'xmlns) "jabber:x:data")
+      (when (string= (jabber-xml-get-attribute x 'xmlns) jabber-xdata-xmlns)
 	(setq have-xdata t)
 	;; If the registration form obeys XEP-0068, we know
 	;; for sure how to put a default username in it.

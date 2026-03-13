@@ -26,6 +26,7 @@
 ;; Global reference declarations
 
 (defvar jabber-buffer-connection)       ; jabber-chatbuffer.el
+(defvar jabber-xdata-xmlns)            ; jabber-xml.el
 
 ;;
 
@@ -86,7 +87,7 @@ obtained from `xml-parse-region'."
 
     ;; First, check for results in jabber:x:data form.
     (dolist (x (jabber-xml-get-children query 'x))
-      (when (string= (jabber-xml-get-attribute x 'xmlns) "jabber:x:data")
+      (when (string= (jabber-xml-get-attribute x 'xmlns) jabber-xdata-xmlns)
 	(setq have-xdata t)
 	(setq xdata x)))
 

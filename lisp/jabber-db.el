@@ -48,6 +48,7 @@
 (defvar jabber-message-chain nil)       ; jabber-core.el
 (defvar jabber-post-connect-hooks nil) ; jabber-core.el
 (defvar jabber-pre-disconnect-hook nil) ; jabber-core.el
+(defvar jabber-oob-xmlns)              ; jabber-xml.el
 
 (defgroup jabber-db nil
   "SQLite message storage for jabber.el."
@@ -355,7 +356,7 @@ XML-DATA is the parsed stanza."
                     (lambda (x)
                       (and (listp x)
                            (string= (jabber-xml-get-attribute x 'xmlns)
-                                    "jabber:x:oob")))
+                                    jabber-oob-xmlns)))
                     (jabber-xml-node-children xml-data)))
            (oob-url (when oob-x
                       (car (jabber-xml-node-children

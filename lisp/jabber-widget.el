@@ -38,10 +38,11 @@
 ;; Global reference declarations
 
 (defvar *jabber-roster*)                ; jabber-core.el
+(defvar jabber-xdata-xmlns)            ; jabber-xml.el
 
 ;;
 
-(jabber-disco-advertise-feature "jabber:x:data")
+(jabber-disco-advertise-feature jabber-xdata-xmlns)
 
 (define-widget 'jid 'string
   "JID widget."
@@ -244,7 +245,7 @@ DEFAULTS takes precedence over values specified in the form."
   "Return an <x/> tag containing information entered in the widgets.
 Return an <x/> tag containing information entered in the widgets of the current
 buffer."
-  `(x ((xmlns . "jabber:x:data")
+  `(x ((xmlns . ,jabber-xdata-xmlns)
        (type . "submit"))
       ,@(mapcar
 	 (lambda (widget-cons)

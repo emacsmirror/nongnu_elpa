@@ -22,6 +22,12 @@
 (require 'jabber-disco)
 (require 'cl-lib)
 
+;; Global reference declarations
+
+(defvar jabber-xdata-xmlns)            ; jabber-xml.el
+
+;;
+
 (defconst jabber-feature-neg-xmlns "http://jabber.org/protocol/feature-neg"
   "XEP-0020 Feature Negotiation namespace.")
 
@@ -38,7 +44,7 @@ Returned alist has field name as key, and value is a list of offered
 alternatives."
   (let ((x (car (jabber-xml-get-children xml-data 'x))))
     (unless (and x
-		 (string= (jabber-xml-get-attribute x 'xmlns) "jabber:x:data"))
+		 (string= (jabber-xml-get-attribute x 'xmlns) jabber-xdata-xmlns))
       (jabber-signal-error "Modify" 'bad-request "Malformed Feature Negotiation"))
 
     (let (alist
@@ -70,7 +76,7 @@ Note that this is not the reverse of `jabber-fn-parse'.
 
 TYPE is either `request' or `response'."
   (let ((requestp (eq type 'request)))
-    `(x ((xmlns . "jabber:x:data")
+    `(x ((xmlns . ,jabber-xdata-xmlns)
 	 (type . ,(if requestp "form" "submit")))
 	 ,@(mapcar #'(lambda (field)
 		       `(field

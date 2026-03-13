@@ -45,6 +45,9 @@
                   (jc group &optional default))
 (declare-function jabber-muc-join "jabber-muc.el"
                   (jc group nickname &optional popup))
+(defvar jabber-delay-xmlns)            ; jabber-xml.el
+(defvar jabber-delay-legacy-xmlns)     ; jabber-xml.el
+(defvar jabber-stanzas-xmlns)          ; jabber-xml.el
 
 ;;
 
@@ -392,8 +395,8 @@ obtained from `xml-parse-region'."
       (time-convert xml-data 'list)
     (jabber-x-delay
      (or
-      (jabber-xml-path xml-data '(("urn:xmpp:delay" . "delay")))
-      (jabber-xml-path xml-data '(("jabber:x:delay" . "x")))))))
+      (jabber-xml-path xml-data `((,jabber-delay-xmlns . "delay")))
+      (jabber-xml-path xml-data `((,jabber-delay-legacy-xmlns . "x")))))))
 
 (defun jabber-x-delay (xml-data)
   "Return timestamp given a delayed delivery element.
@@ -405,13 +408,13 @@ XML-DATA is the parsed tree data from the stream (stanzas)
 obtained from `xml-parse-region'."
   (cond
    ((and (eq (jabber-xml-node-name xml-data) 'x)
-	 (string= (jabber-xml-get-attribute xml-data 'xmlns) "jabber:x:delay"))
+	 (string= (jabber-xml-get-attribute xml-data 'xmlns) jabber-delay-legacy-xmlns))
     (let ((stamp (jabber-xml-get-attribute xml-data 'stamp)))
       (if (and (stringp stamp)
 	       (= (length stamp) 17))
 	  (jabber-parse-legacy-time stamp))))
    ((and (eq (jabber-xml-node-name xml-data) 'delay)
-	 (string= (jabber-xml-get-attribute xml-data 'xmlns) "urn:xmpp:delay"))
+	 (string= (jabber-xml-get-attribute xml-data 'xmlns) jabber-delay-xmlns))
     (let ((stamp (jabber-xml-get-attribute xml-data 'stamp)))
       (when (stringp stamp)
 	(jabber-parse-time stamp))))))
@@ -548,7 +551,7 @@ See secton 9.3, Stanza Errors, of XMPP Core, and XEP-0086, Legacy Errors."
 	(dolist (child (jabber-xml-node-children error-xml))
 	  (when (string=
 		 (jabber-xml-get-attribute child 'xmlns)
-		 "urn:ietf:params:xml:ns:xmpp-stanzas")
+		 jabber-stanzas-xmlns)
 	    (if (eq (jabber-xml-node-name child) 'text)
 		(setq text (car (jabber-xml-node-children child)))
 	      (setq condition
@@ -566,7 +569,7 @@ See secton 9.3, Stanza Errors, of XMPP Core, and XEP-0086, Legacy Errors."
     (dolist (child (jabber-xml-node-children error-xml))
       (when (string=
 		 (jabber-xml-get-attribute child 'xmlns)
-		 "urn:ietf:params:xml:ns:xmpp-stanzas")
+		 jabber-stanzas-xmlns)
 	(throw 'condition (jabber-xml-node-name child))))))
 
 (defvar jabber-stream-error-messages

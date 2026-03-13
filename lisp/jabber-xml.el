@@ -291,5 +291,25 @@ ATTRIBUTES must be a list of symbols, as present in XML-DATA."
 			  prefixes)))))))
   prefixes)
 
+;;; Shared xmlns constants
+
+(defconst jabber-xdata-xmlns "jabber:x:data"
+  "XEP-0004: Data Forms.")
+
+(defconst jabber-oob-xmlns "jabber:x:oob"
+  "XEP-0066: Out of Band Data.")
+
+(defconst jabber-delay-xmlns "urn:xmpp:delay"
+  "XEP-0203: Delayed Delivery.")
+
+(defconst jabber-delay-legacy-xmlns "jabber:x:delay"
+  "XEP-0091: Legacy Delayed Delivery.")
+
+(defconst jabber-roster-xmlns "jabber:iq:roster"
+  "RFC 6121: Roster Management.")
+
+(defconst jabber-stanzas-xmlns "urn:ietf:params:xml:ns:xmpp-stanzas"
+  "RFC 6120: XMPP Stanza Errors.")
+
 (provide 'jabber-xml)
 ;;; jabber-xml.el ends here.

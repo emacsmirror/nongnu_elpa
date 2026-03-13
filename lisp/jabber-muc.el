@@ -253,6 +253,9 @@ The format is that of `mode-line-format' and `header-line-format'."
 (defvar jabber-chat-time-format)        ; jabber-chat.el
 (defvar jabber-connections)             ; jabber-core.el
 (defvar jabber-send-function)           ; jabber-console.el
+(defvar jabber-xdata-xmlns)            ; jabber-xml.el
+(defvar jabber-delay-xmlns)            ; jabber-xml.el
+(defvar jabber-delay-legacy-xmlns)     ; jabber-xml.el
 
 ;;
 
@@ -548,7 +551,7 @@ JC is the Jabber connection."
   (jabber-send-iq jc group
 		  "set"
 		  `(query ((xmlns . ,jabber-muc-xmlns-owner))
-			  (x ((xmlns . "jabber:x:data") (type . "submit"))))
+			  (x ((xmlns . ,jabber-xdata-xmlns) (type . "submit"))))
 		  #'jabber-report-success "MUC instant configuration"
 		  #'jabber-report-success "MUC instant configuration"))
 
@@ -579,7 +582,7 @@ obtained from `xml-parse-region'."
   (let ((query (jabber-iq-query xml-data))
 	xdata)
     (dolist (x (jabber-xml-get-children query 'x))
-      (if (string= (jabber-xml-get-attribute x 'xmlns) "jabber:x:data")
+      (if (string= (jabber-xml-get-attribute x 'xmlns) jabber-xdata-xmlns)
 	  (setq xdata x)))
     (if (not xdata)
 	(insert "No configuration possible.\n")
@@ -619,7 +622,7 @@ obtained from `xml-parse-region'."
   (jabber-send-iq jabber-buffer-connection jabber-submit-to
 		  "set"
 		  `(query ((xmlns . ,jabber-muc-xmlns-owner))
-			  (x ((xmlns . "jabber:x:data") (type . "cancel"))))
+			  (x ((xmlns . ,jabber-xdata-xmlns) (type . "cancel"))))
 		  nil nil nil nil))
 
 (defalias 'jabber-groupchat-cancel-config #'jabber-muc-cancel-config
@@ -1142,8 +1145,8 @@ JC is the Jabber connection."
 	  ;; case we don't want an alert.
 	  (let ((children-namespaces (mapcar (lambda (x) (when (listp x) (jabber-xml-get-attribute x 'xmlns)))
 					     (jabber-xml-node-children xml-data))))
-	    (unless (or (member "urn:xmpp:delay" children-namespaces)
-			(member "jabber:x:delay" children-namespaces))
+	    (unless (or (member jabber-delay-xmlns children-namespaces)
+			(member jabber-delay-legacy-xmlns children-namespaces))
 	      (dolist (hook '(jabber-muc-hooks jabber-alert-muc-hooks))
 		(run-hook-with-args hook
 				    nick group (current-buffer) body-text

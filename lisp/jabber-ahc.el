@@ -50,6 +50,7 @@ Use the function `jabber-ahc-add' to add a command to this list.")
 
 (defvar jabber-jid-info-menu)           ; jabber-menu.el
 (defvar jabber-buffer-connection)       ; jabber-chatbuffer.el
+(defvar jabber-xdata-xmlns)            ; jabber-xml.el
 
 ;;
 
@@ -81,7 +82,7 @@ access allowed.  nil means open for everyone."
 				       (name . ,name)))
 			    (feature ((var . ,jabber-ahc-xmlns)))
 			    (feature ((var . ,jabber-disco-xmlns-info)))
-			    (feature ((var . "jabber:x:data")))))))
+			    (feature ((var . ,jabber-xdata-xmlns)))))))
 
 (jabber-disco-advertise-feature jabber-ahc-xmlns)
 (add-to-list 'jabber-disco-items-nodes
@@ -179,7 +180,7 @@ JC is the Jabber connection."
     (setq jabber-buffer-connection jc)
 
     (dolist (x (jabber-xml-get-children query 'x))
-      (when (string= (jabber-xml-get-attribute x 'xmlns) "jabber:x:data")
+      (when (string= (jabber-xml-get-attribute x 'xmlns) jabber-xdata-xmlns)
 	(setq xdata x)))
 
     (cond

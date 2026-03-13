@@ -74,11 +74,12 @@ stanza.")
 (defvar *jabber-current-status*)        ; jabber.el
 (defvar *jabber-current-priority*)      ; jabber.el
 (defvar jabber-silent-mode)             ; jabber.el
+(defvar jabber-roster-xmlns)           ; jabber-xml.el
 
 ;;
 
 (add-to-list 'jabber-iq-set-xmlns-alist
-	     (cons "jabber:iq:roster" (function (lambda (jc x) (jabber-process-roster jc x nil)))))
+	     (cons jabber-roster-xmlns (function (lambda (jc x) (jabber-process-roster jc x nil)))))
 (defun jabber-process-roster (jc xml-data closure-data)
   "Process an incoming roster infoquery result.
 CLOSURE-DATA should be `initial' if initial roster push, nil otherwise.
@@ -559,7 +560,7 @@ JC is the Jabber connection."
   ;; they will be clobbered by this function.
   ;; XXX: specify account
   (jabber-send-iq jc nil "set"
-		  (list 'query (list (cons 'xmlns "jabber:iq:roster"))
+		  (list 'query (list (cons 'xmlns jabber-roster-xmlns))
 				(append
 				 (list 'item (append
 				     (list (cons 'jid (symbol-name jid)))
@@ -576,7 +577,7 @@ JC is the Jabber connection."
   (interactive (list (jabber-read-account)
 		     (jabber-read-jid-completing "Delete from roster: ")))
   (jabber-send-iq jc nil "set"
-		  `(query ((xmlns . "jabber:iq:roster"))
+		  `(query ((xmlns . ,jabber-roster-xmlns))
 			  (item ((jid . ,jid)
 				 (subscription . "remove"))))
 		  #'jabber-report-success "Roster item removal"

@@ -55,6 +55,7 @@ These fields are available at this moment:
 
 (declare-function jabber-send-sexp "jabber-core.el"  (jc sexp))
 (defvar jabber-iq-chain)                ; jabber-core.el
+(defvar jabber-stanzas-xmlns)          ; jabber-xml.el
 
 ;;
 
@@ -158,9 +159,9 @@ See section 9.3 of XMPP Core."
 	 (id . ,(or id "")))
 	,original-query
 	(error ((type . ,error-type))
-	       (,condition ((xmlns . "urn:ietf:params:xml:ns:xmpp-stanzas")))
+	       (,condition ((xmlns . ,jabber-stanzas-xmlns)))
 	       ,(if text
-		    `(text ((xmlns . "urn:ietf:params:xml:ns:xmpp-stanzas"))
+		    `(text ((xmlns . ,jabber-stanzas-xmlns))
 			   ,text))
 	       ,@app-specific))))
 

@@ -24,6 +24,7 @@
 (defvar *jabber-current-show*)
 (defvar *jabber-current-status*)
 (defvar *jabber-current-priority*)
+(defvar jabber-xdata-xmlns)            ; jabber-xml.el
 
 (defconst jabber-ahc-presence-node "http://jabber.org/protocol/rc#set-status"
   "Node used by function `jabber-ahc-presence'.")
@@ -56,7 +57,7 @@ obtained from `xml-parse-region'."
 		 (sessionid . "jabber-ahc-presence")
 		 (node . ,jabber-ahc-presence-node)
 		 (status . "executing"))
-		(x ((xmlns . "jabber:x:data")
+		(x ((xmlns . ,jabber-xdata-xmlns)
 		    (type . "form"))
 		   (title nil ,(format "Set presence of %s" (jabber-connection-jid jc)))
 		   (instructions nil "Select new presence status.")

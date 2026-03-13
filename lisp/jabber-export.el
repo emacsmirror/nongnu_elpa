@@ -35,6 +35,7 @@
 ;; Global reference declarations
 
 (defvar jabber-buffer-connection)       ; jabber-chatbuffer.el
+(defvar jabber-roster-xmlns)           ; jabber-xml.el
 
 ;;
 
@@ -191,7 +192,7 @@ not affect your actual roster.
     (when roster-delta
       (jabber-send-iq jabber-buffer-connection
 		      nil "set"
-		      `(query ((xmlns . "jabber:iq:roster")) ,@roster-delta)
+		      `(query ((xmlns . ,jabber-roster-xmlns)) ,@roster-delta)
 		      #'jabber-report-success "Roster import"
 		      #'jabber-report-success "Roster import"))))
 
