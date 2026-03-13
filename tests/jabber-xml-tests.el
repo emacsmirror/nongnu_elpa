@@ -144,7 +144,33 @@
   "Return nil when xmlns not present."
   (should (null (jabber-xml-get-xmlns '(query nil)))))
 
-;;; ---- Group 6: jabber-xml-path ----
+;;; ---- Group 6: jabber-xml-child-with-xmlns ----
+
+(ert-deftest jabber-test-xml-child-with-xmlns-found ()
+  "Find child element by xmlns."
+  (let ((node '(message nil
+                 (x ((xmlns . "jabber:x:oob")) (url () "http://example.com"))
+                 (body () "text"))))
+    (should (equal (jabber-xml-node-name
+                    (jabber-xml-child-with-xmlns node "jabber:x:oob"))
+                   'x))))
+
+(ert-deftest jabber-test-xml-child-with-xmlns-missing ()
+  "Return nil when no child has the given xmlns."
+  (let ((node '(message nil (body () "text"))))
+    (should-not (jabber-xml-child-with-xmlns node "jabber:x:oob"))))
+
+(ert-deftest jabber-test-xml-child-with-xmlns-nil-node ()
+  "Return nil for nil node."
+  (should-not (jabber-xml-child-with-xmlns nil "jabber:x:oob")))
+
+(ert-deftest jabber-test-xml-child-with-xmlns-skips-strings ()
+  "String children are skipped without error."
+  (let ((node '(body nil "just text")))
+    (should-not (jabber-xml-child-with-xmlns node "some:ns"))))
+
+;;; ---- Group 7: jabber-xml-path ----
+
 
 (ert-deftest jabber-test-xml-path-symbol ()
   "Navigate to child by symbol name."
@@ -178,7 +204,7 @@
   (let ((xml '(iq nil (query nil))))
     (should (null (jabber-xml-path xml '(error))))))
 
-;;; ---- Group 7: jabber-xml-skip-tag-forward ----
+;;; ---- Group 8: jabber-xml-skip-tag-forward ----
 
 (ert-deftest jabber-test-skip-tag-forward-self-closing ()
   "Skip past a self-closing tag."
@@ -227,7 +253,7 @@
     (should-not (catch 'unfinished
                   (jabber-xml-skip-tag-forward)))))
 
-;;; ---- Group 8: jabber-xml-parse-next-stanza ----
+;;; ---- Group 9: jabber-xml-parse-next-stanza ----
 
 (ert-deftest jabber-test-parse-next-stanza-complete ()
   "Parse a complete XML stanza."

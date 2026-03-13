@@ -200,6 +200,7 @@ added to the outgoing message.")
 (declare-function jabber-muc-sender-p "jabber-muc.el" (jid))
 (declare-function jabber-muc-private-message-p "jabber-muc.el" (message))
 (declare-function jabber-muc-nickname "jabber-muc.el" (group))
+(defvar jabber-muc-xmlns-user)
 (declare-function jabber-image-fetch "jabber-image" (url callback &rest cbargs))
 (defvar jabber-backlog-days)
 (defvar jabber-backlog-number)
@@ -520,48 +521,43 @@ found."
      (string-match (car pair) message nil 'inhibit-modify))
    jabber-muc-decorate-presence-patterns))
 
+(defun jabber-chat--oob-field (oob-node child)
+  "Return text content of CHILD element inside OOB-NODE, or nil."
+  (when oob-node
+    (car (jabber-xml-node-children
+          (car (jabber-xml-get-children oob-node child))))))
+
+(defun jabber-chat--has-muc-invite-p (xml-data)
+  "Return non-nil if XML-DATA contains a MUC invitation."
+  (let ((muc-x (jabber-xml-child-with-xmlns
+                xml-data jabber-muc-xmlns-user)))
+    (and muc-x (jabber-xml-get-children muc-x 'invite))))
+
+(defun jabber-chat--build-msg-plist (xml-data delayed)
+  "Build a message plist from the fields in XML-DATA.
+DELAYED marks the message as delayed unconditionally."
+  (let* ((msg-timestamp (jabber-message-timestamp xml-data))
+         (oob-x (jabber-xml-child-with-xmlns xml-data "jabber:x:oob"))
+         (error-node (car (jabber-xml-get-children xml-data 'error))))
+    (list
+     :from (jabber-xml-get-attribute xml-data 'from)
+     :body (car (jabber-xml-node-children
+                 (car (jabber-xml-get-children xml-data 'body))))
+     :subject (car (jabber-xml-node-children
+                    (car (jabber-xml-get-children xml-data 'subject))))
+     :timestamp (or msg-timestamp (current-time))
+     :delayed (or delayed (and msg-timestamp t))
+     :oob-url (jabber-chat--oob-field oob-x 'url)
+     :oob-desc (jabber-chat--oob-field oob-x 'desc)
+     :error-text (when error-node
+                   (jabber-parse-error error-node)))))
+
 (defun jabber-chat--msg-plist-from-stanza (xml-data &optional delayed)
   "Extract display fields from XML-DATA into a message plist.
 If DELAYED is non-nil, mark the message as delayed regardless of
 whether a delay element is present."
-  (let* ((from (jabber-xml-get-attribute xml-data 'from))
-         (body (car (jabber-xml-node-children
-                     (car (jabber-xml-get-children xml-data 'body)))))
-         (subject (car (jabber-xml-node-children
-                        (car (jabber-xml-get-children xml-data 'subject)))))
-         (timestamp (or (jabber-message-timestamp xml-data) (current-time)))
-         (oob-x (cl-find-if
-                 (lambda (x)
-                   (and (listp x)
-                        (string= (jabber-xml-get-attribute x 'xmlns)
-                                 "jabber:x:oob")))
-                 (jabber-xml-node-children xml-data)))
-         (error-node (car (jabber-xml-get-children xml-data 'error)))
-         ;; Detect MUC invitations - these need raw XML for accept/decline
-         (has-invite (cl-find-if
-                      (lambda (x)
-                        (and (listp x)
-                             (string= (jabber-xml-get-attribute x 'xmlns)
-                                      "http://jabber.org/protocol/muc#user")
-                             (jabber-xml-get-children x 'invite)))
-                      (jabber-xml-get-children xml-data 'x)))
-         (plist (list :from from
-                      :body body
-                      :subject subject
-                      :timestamp timestamp
-                      :delayed (or delayed
-                                   (and (jabber-message-timestamp xml-data) t))
-                      :oob-url (when oob-x
-                                 (car (jabber-xml-node-children
-                                       (car (jabber-xml-get-children
-                                             oob-x 'url)))))
-                      :oob-desc (when oob-x
-                                  (car (jabber-xml-node-children
-                                        (car (jabber-xml-get-children
-                                              oob-x 'desc)))))
-                      :error-text (when error-node
-                                    (jabber-parse-error error-node)))))
-    (when has-invite
+  (let ((plist (jabber-chat--build-msg-plist xml-data delayed)))
+    (when (jabber-chat--has-muc-invite-p xml-data)
       (plist-put plist :xml-data xml-data))
     plist))
 

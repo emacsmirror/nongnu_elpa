@@ -189,6 +189,18 @@ Return nil if the attribute was not found."
   "Get \"xmlns\" attribute of NODE, or nil if not present."
   (jabber-xml-get-attribute node 'xmlns))
 
+(defun jabber-xml-child-with-xmlns (node xmlns)
+  "Return the first child element of NODE whose xmlns equals XMLNS."
+  (let ((children (jabber-xml-node-children node))
+        result)
+    (while (and children (not result))
+      (let ((child (car children)))
+        (when (and (listp child)
+                   (string= (jabber-xml-get-xmlns child) xmlns))
+          (setq result child)))
+      (setq children (cdr children)))
+    result))
+
 (defun jabber-xml-path (xml-data path)
   "Find sub-node of XML-DATA according to PATH.
   PATH is a vaguely XPath-inspired list.  Each element can be:

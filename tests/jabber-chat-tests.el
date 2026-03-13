@@ -3,6 +3,10 @@
 (require 'ert)
 (require 'jabber-chat)
 
+;; jabber-chat uses this constant from jabber-muc, which has too many
+;; dependencies to load in isolation.  Define it here for tests.
+(defvar jabber-muc-xmlns-user "http://jabber.org/protocol/muc#user")
+
 ;;; ---- Group 1: jabber-chat--msg-plist-from-stanza ----
 
 (ert-deftest jabber-chat-test-plist-from-stanza-basic ()
@@ -92,7 +96,48 @@
          (plist (jabber-chat--msg-plist-from-stanza stanza)))
     (should-not (plist-get plist :xml-data))))
 
-;;; ---- Group 2: jabber-chat-entry-time ----
+;;; ---- Group 2: jabber-chat--oob-field ----
+
+(ert-deftest jabber-chat-test-oob-field-url ()
+  "Extract URL from OOB node."
+  (let ((oob '(x ((xmlns . "jabber:x:oob"))
+                  (url () "https://example.com/file.png"))))
+    (should (string= (jabber-chat--oob-field oob 'url)
+                     "https://example.com/file.png"))))
+
+(ert-deftest jabber-chat-test-oob-field-missing-child ()
+  "Return nil when OOB child element is absent."
+  (let ((oob '(x ((xmlns . "jabber:x:oob"))
+                  (url () "https://example.com/file.png"))))
+    (should-not (jabber-chat--oob-field oob 'desc))))
+
+(ert-deftest jabber-chat-test-oob-field-nil-node ()
+  "Return nil when OOB node is nil."
+  (should-not (jabber-chat--oob-field nil 'url)))
+
+;;; ---- Group 3: jabber-chat--has-muc-invite-p ----
+
+(ert-deftest jabber-chat-test-has-muc-invite-positive ()
+  "Detect MUC invitation in stanza."
+  (let ((stanza '(message ((from . "room@conf.example.com"))
+                  (x ((xmlns . "http://jabber.org/protocol/muc#user"))
+                     (invite ((from . "alice@example.com")))))))
+    (should (jabber-chat--has-muc-invite-p stanza))))
+
+(ert-deftest jabber-chat-test-has-muc-invite-negative ()
+  "Return nil for stanza without MUC invitation."
+  (let ((stanza '(message ((from . "alice@example.com"))
+                  (body () "Hello"))))
+    (should-not (jabber-chat--has-muc-invite-p stanza))))
+
+(ert-deftest jabber-chat-test-has-muc-invite-muc-user-no-invite ()
+  "Return nil when muc#user element exists but has no invite child."
+  (let ((stanza '(message ((from . "room@conf.example.com"))
+                  (x ((xmlns . "http://jabber.org/protocol/muc#user"))
+                     (status ((code . "110")))))))
+    (should-not (jabber-chat--has-muc-invite-p stanza))))
+
+;;; ---- Group 4: jabber-chat-entry-time ----
 
 (ert-deftest jabber-chat-test-entry-time-plist ()
   "Entry time from a msg-plist entry."
