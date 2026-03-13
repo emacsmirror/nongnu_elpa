@@ -99,7 +99,7 @@ Trailing newlines are always removed, regardless of this variable."
   "Hook run when entering Roster mode."
   :type 'hook)
 
-(defcustom jabber-roster-default-group-name "Contacts"
+(defcustom jabber-roster-default-group-name "Ungrouped"
   "Default group name for buddies without groups."
   :type 'string
   :get (lambda (var)
@@ -618,6 +618,9 @@ sorted list and BUDDY-JC-MAP maps buddy names to connections."
 		(jabber-roster-separator))))
     (dolist (jc jabber-connections)
       (plist-put (fsm-get-state-data jc) :roster-ewoc ewoc))
+    (insert (propertize "Contacts"
+                        'face 'jabber-title-small)
+            "\n")
     (dolist (group-name (jabber-roster--merged-groups))
       (let* ((result (jabber-roster--group-buddies group-name))
 	     (buddies (car result))
@@ -714,20 +717,21 @@ sorted list and BUDDY-JC-MAP maps buddy names to connections."
   "Format and insert a roster entry for BUDDY at point.
 BUDDY is a JID symbol. JC is the Jabber connection."
   (if buddy
-      (let* ((name (if (> (length (get buddy 'name)) 0)
-                       (get buddy 'name)
-                     (symbol-name buddy)))
+      (let* ((bare-jid (symbol-name buddy))
+             (nick (get buddy 'name))
              (show (or (cdr (assoc (get buddy 'show) jabber-presence-strings))
                        (get buddy 'show)))
-             (unread (member (symbol-name buddy)
+             (unread (member bare-jid
                              (bound-and-true-p jabber-activity-jids)))
              (face (if unread
                        'jabber-roster-unread
                      (or (cdr (assoc (get buddy 'show) jabber-presence-faces))
                          'jabber-roster-user-online)))
-             (props (list 'jabber-jid (symbol-name buddy)
+             (props (list 'jabber-jid bare-jid
                           'jabber-account jc)))
-        (insert (apply #'propertize (concat " " name) 'face face props))
+        (insert (apply #'propertize (concat "    " bare-jid) 'face face props))
+        (when (and nick (> (length nick) 0))
+          (insert (propertize (format " (%s)" nick) 'face 'shadow)))
         (when show
           (insert (propertize (concat " " show) 'face 'shadow)))
 
@@ -781,16 +785,17 @@ BUDDY is a JID symbol. JC is the Jabber connection."
 				      jc)
 				     resource-str)
 		(insert "\n" resource-str))))))
-    (let ((group-name (or group-name
-			  jabber-roster-default-group-name)))
+    (let* ((group-name (or group-name
+			   jabber-roster-default-group-name))
+	    (line (concat "  " group-name)))
       (add-text-properties 0
-			   (length group-name)
+			   (length line)
 			   (list
 			    'face 'jabber-title-small
 			    'jabber-group group-name
 			    'jabber-account jc)
-			   group-name)
-      (insert group-name))))
+			   line)
+      (insert line))))
 
 ;;;###autoload
 (defun jabber-roster-update (jc new-items changed-items deleted-items)
