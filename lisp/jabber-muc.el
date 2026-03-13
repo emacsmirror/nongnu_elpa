@@ -102,6 +102,16 @@ Values are lists of nickname strings.")
 (defvar jabber-muc-nickname-history ()
   "Keeps track of previously referred-to nicknames.")
 
+;;; MUC status codes (XEP-0045)
+(defconst jabber-muc-status-self-presence    "110")
+(defconst jabber-muc-status-room-created     "201")
+(defconst jabber-muc-status-nick-modified    "210")
+(defconst jabber-muc-status-banned           "301")
+(defconst jabber-muc-status-nick-changed     "303")
+(defconst jabber-muc-status-kicked           "307")
+(defconst jabber-muc-status-nick-not-allowed "406")
+(defconst jabber-muc-status-nick-conflict    "409")
+
 (defcustom jabber-muc-default-nicknames nil
   "Default nickname for specific MUC rooms."
   :group 'jabber-chat
@@ -1128,6 +1138,143 @@ JC is the Jabber connection."
 				    (funcall jabber-alert-muc-function
 					     nick group (current-buffer) body-text))))))))))
 
+(defun jabber-muc--format-actor-reason (actor reason)
+  "Format optional \" by ACTOR\" / \" - \\='REASON\\='\" suffix."
+  (concat (when actor (concat " by " actor))
+          (when reason (concat " - '" reason "'"))))
+
+(defun jabber-muc--process-self-leave (jc group type status-codes
+                                         error-node actor reason)
+  "Handle our own departure from GROUP.
+TYPE is the presence type (\"unavailable\" or \"error\").
+STATUS-CODES, ERROR-NODE, ACTOR and REASON come from the stanza."
+  (let* ((leavingp t)
+         (message (cond
+                   ((string= type "error")
+                    (cond
+                     ;; Nick-change errors don't mean we left the room.
+                     ((or (member jabber-muc-status-nick-not-allowed status-codes)
+                          (member jabber-muc-status-nick-conflict status-codes))
+                      (setq leavingp nil)
+                      (concat "Nickname change not allowed"
+                              (when error-node
+                                (concat ": " (jabber-parse-error error-node)))))
+                     (t
+                      (concat "Error entering room"
+                              (when error-node
+                                (concat ": " (jabber-parse-error error-node)))))))
+                   ((member jabber-muc-status-banned status-codes)
+                    (concat "You have been banned"
+                            (jabber-muc--format-actor-reason actor reason)))
+                   ((member jabber-muc-status-kicked status-codes)
+                    (concat "You have been kicked"
+                            (jabber-muc--format-actor-reason actor reason)))
+                   (t
+                    "You have left the chatroom"))))
+    (when leavingp
+      (jabber-muc-remove-groupchat group))
+    ;; If there is no buffer for this groupchat, don't bother
+    ;; creating one just to tell that user left the room.
+    (let ((buffer (get-buffer (jabber-muc-get-buffer group jc))))
+      (if buffer
+          (with-current-buffer buffer
+            (jabber-maybe-print-rare-time
+             (ewoc-enter-last jabber-chat-ewoc
+                              (list (if (string= type "error")
+                                        :muc-error
+                                      :muc-notice)
+                                    message
+                                    :time (current-time)))))
+        (message "%s: %s" (jabber-jid-displayname group) message)))))
+
+(defun jabber-muc--process-other-leave (jc group nickname status-codes
+                                           item actor reason)
+  "Handle another participant leaving GROUP.
+NICKNAME is the departing user.  STATUS-CODES, ITEM, ACTOR and REASON
+come from the stanza."
+  (let* ((plist (jabber-muc-participant-plist group nickname))
+         (jid (plist-get plist 'jid))
+         (name (concat nickname
+                       (when jid
+                         (concat " <"
+                                 (jabber-jid-user jid)
+                                 ">")))))
+    (jabber-muc-remove-participant group nickname)
+    (with-current-buffer (jabber-muc-create-buffer jc group)
+      (jabber-maybe-print-rare-time
+       (ewoc-enter-last
+        jabber-chat-ewoc
+        (list :muc-notice
+              (cond
+               ((member jabber-muc-status-banned status-codes)
+                (concat name " has been banned"
+                        (jabber-muc--format-actor-reason actor reason)))
+               ((member jabber-muc-status-kicked status-codes)
+                (concat name " has been kicked"
+                        (jabber-muc--format-actor-reason actor reason)))
+               ((member jabber-muc-status-nick-changed status-codes)
+                (concat name " changes nickname to "
+                        (jabber-xml-get-attribute item 'nick)))
+               (t
+                (concat name " has left the chatroom")))
+              :time (current-time)))))))
+
+(defun jabber-muc--room-created-message ()
+  "Return a string with buttons for configuring a newly created room."
+  (with-temp-buffer
+    (insert "This room was just created, and is locked to other participants.\n"
+            "To unlock it, ")
+    (insert-text-button
+     "configure the room"
+     'action (apply-partially 'call-interactively 'jabber-muc-get-config))
+    (insert " or ")
+    (insert-text-button
+     "accept the default configuration"
+     'action (apply-partially 'call-interactively 'jabber-muc-instant-config))
+    (insert ".")
+    (buffer-string)))
+
+(defun jabber-muc--enter-extra-notices (nickname status-codes)
+  "Insert extra ewoc notices for STATUS-CODES into the current MUC buffer.
+NICKNAME is the entering user.  Assumes `jabber-chat-ewoc' is current."
+  (when (member jabber-muc-status-nick-modified status-codes)
+    (ewoc-enter-last
+     jabber-chat-ewoc
+     (list :muc-notice
+           (concat "Your nick was changed to " nickname " by the server")
+           :time (current-time))))
+  (when (member jabber-muc-status-room-created status-codes)
+    (ewoc-enter-last
+     jabber-chat-ewoc
+     (list :muc-notice
+           (jabber-muc--room-created-message)
+           :time (current-time)))))
+
+(defun jabber-muc--process-enter (jc group nickname symbol status-codes
+                                     x-muc actor reason our-nickname)
+  "Handle a participant entering or updating presence in GROUP.
+NICKNAME is the user.  SYMBOL is their JID symbol.  STATUS-CODES,
+X-MUC, ACTOR, REASON and OUR-NICKNAME come from the stanza."
+  ;; Self-presence: check nickname too since some servers (e.g.
+  ;; ejabberd mod_irc) omit the 110 status code.
+  (when (or (member jabber-muc-status-self-presence status-codes)
+            (string= nickname our-nickname))
+    (jabber-muc-add-groupchat group nickname jc)
+    (puthash symbol nickname jabber-pending-groupchats))
+  (let ((old-plist (jabber-muc-participant-plist group nickname))
+        (new-plist (jabber-muc-parse-affiliation x-muc)))
+    (jabber-muc-modify-participant group nickname new-plist)
+    (let ((report (jabber-muc-report-delta nickname old-plist new-plist
+                                           reason actor)))
+      (when report
+        (with-current-buffer (jabber-muc-create-buffer jc group)
+          (jabber-maybe-print-rare-time
+           (ewoc-enter-last
+            jabber-chat-ewoc
+            (list :muc-notice report
+                  :time (current-time))))
+          (jabber-muc--enter-extra-notices nickname status-codes))))))
+
 (defun jabber-muc-process-presence (jc presence)
   (let* ((from (jabber-xml-get-attribute presence 'from))
 	 (type (jabber-xml-get-attribute presence 'type))
@@ -1149,145 +1296,17 @@ JC is the Jabber connection."
 			  (lambda (status-element)
 			    (jabber-xml-get-attribute status-element 'code))
 			  (jabber-xml-get-children x-muc 'status)))))
-    ;; handle leaving a room
     (cond
      ((or (string= type "unavailable") (string= type "error"))
-      ;; error from room itself? or are we leaving?
       (if (or (null nickname)
-	      (member "110" status-codes)
-	      (string= nickname our-nickname))
-	  ;; Assume that an error means that we were thrown out of the
-	  ;; room...
-	  (let* ((leavingp t)
-		 (message (cond
-			   ((string= type "error")
-			    (cond
-			     ;; ...except for certain cases.
-			     ((or (member "406" status-codes)
-				  (member "409" status-codes))
-			      (setq leavingp nil)
-			      (concat "Nickname change not allowed"
-				      (when error-node
-					(concat ": " (jabber-parse-error error-node)))))
-			     (t
-			      (concat "Error entering room"
-				      (when error-node
-					(concat ": " (jabber-parse-error error-node)))))))
-			   ((member "301" status-codes)
-			    (concat "You have been banned"
-				    (when actor (concat " by " actor))
-				    (when reason (concat " - '" reason "'"))))
-			   ((member "307" status-codes)
-			    (concat "You have been kicked"
-				    (when actor (concat " by " actor))
-				    (when reason (concat " - '" reason "'"))))
-			   (t
-			    "You have left the chatroom"))))
-	    (when leavingp
-	      (jabber-muc-remove-groupchat group))
-	    ;; If there is no buffer for this groupchat, don't bother
-	    ;; creating one just to tell that user left the room.
-	    (let ((buffer (get-buffer (jabber-muc-get-buffer group jc))))
-	      (if buffer
-		  (with-current-buffer buffer
-		    (jabber-maybe-print-rare-time
-		     (ewoc-enter-last jabber-chat-ewoc
-				      (list (if (string= type "error")
-						:muc-error
-					      :muc-notice)
-					    message
-					    :time (current-time)))))
-		(message "%s: %s" (jabber-jid-displayname group) message))))
-	;; or someone else?
-	(let* ((plist (jabber-muc-participant-plist group nickname))
-	       (jid (plist-get plist 'jid))
-	       (name (concat nickname
-			     (when jid
-			       (concat " <"
-				       (jabber-jid-user jid)
-				       ">")))))
-	  (jabber-muc-remove-participant group nickname)
-	  (with-current-buffer (jabber-muc-create-buffer jc group)
-	    (jabber-maybe-print-rare-time
-	     (ewoc-enter-last
-	      jabber-chat-ewoc
-	      (list :muc-notice
-		    (cond
-		     ((member "301" status-codes)
-		      (concat name " has been banned"
-			      (when actor (concat " by " actor))
-			      (when reason (concat " - '" reason "'"))))
-		     ((member "307" status-codes)
-		      (concat name " has been kicked"
-			      (when actor (concat " by " actor))
-			      (when reason (concat " - '" reason "'"))))
-		     ((member "303" status-codes)
-		      (concat name " changes nickname to "
-			      (jabber-xml-get-attribute item 'nick)))
-		     (t
-		      (concat name " has left the chatroom")))
-		    :time (current-time))))))))
+              (member jabber-muc-status-self-presence status-codes)
+              (string= nickname our-nickname))
+          (jabber-muc--process-self-leave jc group type status-codes
+                                         error-node actor reason)
+        (jabber-muc--process-other-leave jc group nickname status-codes
+                                         item actor reason)))
      (t
-      ;; someone is entering
-
-      (when (or (member "110" status-codes) (string= nickname our-nickname))
-	;; This is us.  We just succeeded in entering the room.
-	;;
-	;; The MUC server is supposed to send a 110 code whenever this
-	;; is our presence ("self-presence"), but at least one
-	;; (ejabberd's mod_irc) doesn't, so check the nickname as well.
-	;;
-	;; This check might give incorrect results if the server
-	;; changed our nickname to avoid collision with an existing
-	;; participant, but even in this case the window where we have
-	;; incorrect information should be very small, as we should be
-	;; getting our own 110+210 presence shortly.
-	(jabber-muc-add-groupchat group nickname jc)
-	;; The server may have changed our nick.  Record the new one.
-	(puthash symbol nickname jabber-pending-groupchats))
-
-      ;; Whoever enters, we create a buffer (if it didn't already
-      ;; exist), and print a notice.  This is where autojoined MUC
-      ;; rooms have buffers created for them.  We also remember some
-      ;; metadata.
-      (let ((old-plist (jabber-muc-participant-plist group nickname))
-	    (new-plist (jabber-muc-parse-affiliation x-muc)))
-	(jabber-muc-modify-participant group nickname new-plist)
-	(let ((report (jabber-muc-report-delta nickname old-plist new-plist
-					       reason actor)))
-	  (when report
-	    (with-current-buffer (jabber-muc-create-buffer jc group)
-	      (jabber-maybe-print-rare-time
-	       (ewoc-enter-last
-		jabber-chat-ewoc
-		(list :muc-notice report
-		      :time (current-time))))
-	      ;; Did the server change our nick?
-	      (when (member "210" status-codes)
-		(ewoc-enter-last
-		 jabber-chat-ewoc
-		 (list :muc-notice
-		       (concat "Your nick was changed to " nickname " by the server")
-		       :time (current-time))))
-	      ;; Was this room just created?  If so, it's a locked
-	      ;; room.  Notify the user.
-	      (when (member "201" status-codes)
-		(ewoc-enter-last
-		 jabber-chat-ewoc
-		 (list :muc-notice
-		       (with-temp-buffer
-			 (insert "This room was just created, and is locked to other participants.\n"
-				 "To unlock it, ")
-			 (insert-text-button
-			  "configure the room"
-			  'action (apply-partially 'call-interactively 'jabber-muc-get-config))
-			 (insert " or ")
-			 (insert-text-button
-			  "accept the default configuration"
-			  'action (apply-partially 'call-interactively 'jabber-muc-instant-config))
-			 (insert ".")
-			 (buffer-string))
-		       :time (current-time))))))))))))
-
+      (jabber-muc--process-enter jc group nickname symbol status-codes
+                                 x-muc actor reason our-nickname)))))
 (provide 'jabber-muc)
 ;;; jabber-muc.el ends here.
