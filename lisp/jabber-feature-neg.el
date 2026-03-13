@@ -22,7 +22,10 @@
 (require 'jabber-disco)
 (require 'cl-lib)
 
-(jabber-disco-advertise-feature "http://jabber.org/protocol/feature-neg")
+(defconst jabber-feature-neg-xmlns "http://jabber.org/protocol/feature-neg"
+  "XEP-0020 Feature Negotiation namespace.")
+
+(jabber-disco-advertise-feature jabber-feature-neg-xmlns)
 
 (defun jabber-fn-parse (xml-data type)
   "Parse a Feature Negotiation request, return alist representation.

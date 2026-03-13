@@ -46,13 +46,13 @@ obtained from `xml-parse-region'."
     (cond
      ;; command cancelled
      ((string= action "cancel")
-      `(command ((xmlns . "http://jabber.org/protocol/commands")
+      `(command ((xmlns . ,jabber-ahc-xmlns)
 		 (sessionid . ,sessionid)
 		 (node . ,jabber-ahc-presence-node)
 		 (status . "canceled"))))
      ;; return form
      ((null sessionid)
-      `(command ((xmlns . "http://jabber.org/protocol/commands")
+      `(command ((xmlns . ,jabber-ahc-xmlns)
 		 (sessionid . "jabber-ahc-presence")
 		 (node . ,jabber-ahc-presence-node)
 		 (status . "executing"))
@@ -104,7 +104,7 @@ obtained from `xml-parse-region'."
 	     ((string= var "status-priority")
 	      (setq new-priority (string-to-number value))))))
 	(jabber-send-presence new-show new-status new-priority))
-      `(command ((xmlns . "http://jabber.org/protocol/commands")
+      `(command ((xmlns . ,jabber-ahc-xmlns)
 		 (sessionid . ,sessionid)
 		 (node . ,jabber-ahc-presence-node)
 		 (status . "completed"))

@@ -34,6 +34,15 @@
 (defvar jabber-presence-chain)          ; jabber-core.el
 (defvar jabber-connections)             ; jabber-core.el
 
+(defconst jabber-disco-xmlns-info "http://jabber.org/protocol/disco#info"
+  "XEP-0030 Service Discovery info namespace.")
+
+(defconst jabber-disco-xmlns-items "http://jabber.org/protocol/disco#items"
+  "XEP-0030 Service Discovery items namespace.")
+
+(defconst jabber-caps-xmlns "http://jabber.org/protocol/caps"
+  "XEP-0115 Entity Capabilities namespace.")
+
 ;;
 ;;; Respond to disco requests
 
@@ -64,7 +73,7 @@ XEP-0115 currently recommends SHA-1, but let's be future-proof.")
 (defvar jabber-disco-items-cache (make-hash-table :test 'equal))
 
 (defvar jabber-advertised-features
-  (list "http://jabber.org/protocol/disco#info")
+  (list jabber-disco-xmlns-info)
   "Features advertised on service discovery requests.
 
 Don't add your feature to this list directly.  Instead, call
@@ -121,9 +130,9 @@ nil, access is always granted.")
 ;;
 
 (add-to-list 'jabber-iq-get-xmlns-alist
-	     (cons "http://jabber.org/protocol/disco#info" 'jabber-return-disco-info))
+	     (cons jabber-disco-xmlns-info 'jabber-return-disco-info))
 (add-to-list 'jabber-iq-get-xmlns-alist
-	     (cons "http://jabber.org/protocol/disco#items" 'jabber-return-disco-info))
+	     (cons jabber-disco-xmlns-items 'jabber-return-disco-info))
 
 (defun jabber-caps-get-cached (jid)
   "Get disco info from Entity Capabilities cache.
@@ -147,7 +156,7 @@ XML-DATA is the parsed tree data from the stream (stanzas)
 obtained from `xml-parse-region'."
   (let* ((from (jabber-xml-get-attribute xml-data 'from))
 	 (type (jabber-xml-get-attribute xml-data 'type))
-	 (c (jabber-xml-path xml-data '(("http://jabber.org/protocol/caps" . "c")))))
+	 (c (jabber-xml-path xml-data `((,jabber-caps-xmlns . "c")))))
     (when (and (null type) c)
       (jabber-xml-let-attributes
 	  (_ext hash node ver) c
@@ -187,7 +196,7 @@ and VER is the entity's version number."
 	          (jabber-send-iq
 	           jc jid
 	           "get"
-	           `(query ((xmlns . "http://jabber.org/protocol/disco#info")
+	           `(query ((xmlns . ,jabber-disco-xmlns-info)
 			    (node . ,(concat node "#" ver))))
 		   #'jabber-process-caps-info-result (list hash node ver)
 		   #'jabber-process-caps-info-error (list hash node ver))))
@@ -267,7 +276,7 @@ VER is the version string of the CAPS."
 	      (jabber-send-iq
 	       jc next-jid
 	       "get"
-	       `(query ((xmlns . "http://jabber.org/protocol/disco#info")
+	       `(query ((xmlns . ,jabber-disco-xmlns-info)
 			(node . ,(concat node "#" ver))))
 	       #'jabber-process-caps-info-result (list hash node ver)
 	       #'jabber-process-caps-info-error (list hash node ver)))
@@ -415,7 +424,7 @@ the right node."
   (unless jabber-caps-current-hash
     (jabber-caps-recalculate-hash))
   (list
-   `(c ((xmlns . "http://jabber.org/protocol/caps")
+   `(c ((xmlns . ,jabber-caps-xmlns)
 	(hash . ,jabber-caps-default-hash-function)
 	(node . ,jabber-caps-node)
 	(ver . ,jabber-caps-current-hash)))))
@@ -436,8 +445,8 @@ obtained from `xml-parse-region'."
 	 (xmlns (jabber-iq-xmlns xml-data))
 	 (which-alist (eval (cdr (assoc xmlns
 					(list
-					 (cons "http://jabber.org/protocol/disco#info" 'jabber-disco-info-nodes)
-					 (cons "http://jabber.org/protocol/disco#items" 'jabber-disco-items-nodes))))))
+					 (cons jabber-disco-xmlns-info 'jabber-disco-info-nodes)
+					 (cons jabber-disco-xmlns-items 'jabber-disco-items-nodes))))))
 	 (node (or
 		(jabber-xml-get-attribute (jabber-iq-query xml-data) 'node)
 		""))
@@ -500,7 +509,7 @@ NODE is an optional parameter specifying a particular node to request items for.
 		     (jabber-read-node "Node (or leave empty): ")))
   (jabber-send-iq jc to
 		  "get"
-		  (list 'query (append (list (cons 'xmlns "http://jabber.org/protocol/disco#items"))
+		  (list 'query (append (list (cons 'xmlns jabber-disco-xmlns-items))
 				       (if (> (length node) 0)
 					   (list (cons 'node node)))))
 		  #'jabber-process-data #'jabber-process-disco-items
@@ -520,7 +529,7 @@ items for."
 		     (jabber-read-node "Node (or leave empty): ")))
   (jabber-send-iq jc to
 		  "get"
-		  (list 'query (append (list (cons 'xmlns "http://jabber.org/protocol/disco#info"))
+		  (list 'query (append (list (cons 'xmlns jabber-disco-xmlns-info))
 				       (if (> (length node) 0)
 					   (list (cons 'node node)))))
 		  #'jabber-process-data #'jabber-process-disco-info
@@ -599,7 +608,7 @@ invalidate cache and get fresh data."
 	(and callback (run-with-timer 0 nil callback jc closure-data result))
       (jabber-send-iq jc jid
 		      "get"
-		      `(query ((xmlns . "http://jabber.org/protocol/disco#info")
+		      `(query ((xmlns . ,jabber-disco-xmlns-info)
 			       ,@(when node `((node . ,node)))))
 		      #'jabber-disco-got-info (cons callback closure-data)
 		      (lambda (jc xml-data callback-data)
@@ -674,7 +683,7 @@ invalidate cache and get fresh data."
 	(and callback (run-with-timer 0 nil callback jc closure-data result))
       (jabber-send-iq jc jid
 		      "get"
-		      `(query ((xmlns . "http://jabber.org/protocol/disco#items")
+		      `(query ((xmlns . ,jabber-disco-xmlns-items)
 			       ,@(when node `((node . ,node)))))
 		      #'jabber-disco-got-items (cons callback closure-data)
 		      (lambda (jc xml-data callback-data)
@@ -715,7 +724,7 @@ called with JC, the remaining CALLBACK-DATA, and the obtained RESULT."
 JC is the Jabber connection."
   (jabber-send-iq jc nil
 		  "set"
-		  `(query ((xmlns . "http://jabber.org/protocol/disco#items")
+		  `(query ((xmlns . ,jabber-disco-xmlns-items)
 			   ,@(when node `((node . ,node))))
 			  (item ((action . "update")
 				 (jid . ,item-jid)
@@ -735,7 +744,7 @@ ITEM-JID: JID (Jabber ID) of the disco item to be removed.
 ITEM-NODE: Specific node of the disco item to be removed.  Can be nil."
   (jabber-send-iq jc nil
 		  "set"
-		  `(query ((xmlns . "http://jabber.org/protocol/disco#items")
+		  `(query ((xmlns . ,jabber-disco-xmlns-items)
 			   ,@(when node `((node . ,node))))
 			  (item ((action . "remove")
 				 (jid . ,item-jid)

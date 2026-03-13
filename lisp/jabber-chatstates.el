@@ -173,7 +173,7 @@ It can be sent and cancelled several times.")
 ;; Add function last in chain, so a chat buffer is already created.
 (add-to-list 'jabber-message-chain #'jabber-handle-incoming-message-chatstates t)
 
-(jabber-disco-advertise-feature "http://jabber.org/protocol/chatstates")
+(jabber-disco-advertise-feature jabber-chatstates-xmlns)
 
 (provide 'jabber-chatstates)
 

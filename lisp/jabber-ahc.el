@@ -22,6 +22,9 @@
 (require 'jabber-disco)
 (require 'jabber-widget)
 
+(defconst jabber-ahc-xmlns "http://jabber.org/protocol/commands"
+  "XEP-0050 Ad-Hoc Commands namespace.")
+
 (defvar jabber-ahc-sessionid nil
   "Session ID of Ad-Hoc Command session.")
 
@@ -52,14 +55,14 @@ Use the function `jabber-ahc-add' to add a command to this list.")
 
 ;;; SERVER
 (add-to-list 'jabber-disco-info-nodes
-	     (list "http://jabber.org/protocol/commands"
-		   '((identity ((category . "automation")
+	     (list jabber-ahc-xmlns
+		   `((identity ((category . "automation")
 				(type . "command-list")
 				(name . "Ad-Hoc Command list")))
-		     (feature ((var . "http://jabber.org/protocol/commands")))
-		     (feature ((var . "http://jabber.org/protocol/disco#items")))
+		     (feature ((var . ,jabber-ahc-xmlns)))
+		     (feature ((var . ,jabber-disco-xmlns-items)))
 		     (feature
-		      ((var . "http://jabber.org/protocol/disco#info"))))))
+		      ((var . ,jabber-disco-xmlns-info))))))
 
 (defun jabber-ahc-add (node name func acl)
   "Add a command to internal lists.
@@ -76,13 +79,13 @@ access allowed.  nil means open for everyone."
 	       (list node `((identity ((category . "automation")
 				       (type . "command-node")
 				       (name . ,name)))
-			    (feature ((var . "http://jabber.org/protocol/commands")))
-			    (feature ((var . "http://jabber.org/protocol/disco#info")))
+			    (feature ((var . ,jabber-ahc-xmlns)))
+			    (feature ((var . ,jabber-disco-xmlns-info)))
 			    (feature ((var . "jabber:x:data")))))))
 
-(jabber-disco-advertise-feature "http://jabber.org/protocol/commands")
+(jabber-disco-advertise-feature jabber-ahc-xmlns)
 (add-to-list 'jabber-disco-items-nodes
-	     (list "http://jabber.org/protocol/commands" #'jabber-ahc-disco-items nil))
+	     (list jabber-ahc-xmlns #'jabber-ahc-disco-items nil))
 (defun jabber-ahc-disco-items (jc xml-data)
   "Return commands in response to disco#items request.
 
@@ -104,7 +107,7 @@ obtained from `xml-parse-region'."
 	    jabber-ahc-commands)))
 
 (add-to-list 'jabber-iq-set-xmlns-alist
-	     (cons "http://jabber.org/protocol/commands" 'jabber-ahc-process))
+	     (cons jabber-ahc-xmlns 'jabber-ahc-process))
 (defun jabber-ahc-process (jc xml-data)
 
   (let ((to (jabber-xml-get-attribute xml-data 'from))
@@ -137,7 +140,7 @@ See XEP-0050.
 JC is the Jabber connection."
   (interactive (list (jabber-read-account)
 		     (jabber-read-jid-completing "Request command list from: " nil nil nil nil nil)))
-  (jabber-get-disco-items jc to "http://jabber.org/protocol/commands"))
+  (jabber-get-disco-items jc to jabber-ahc-xmlns))
 
 (add-to-list 'jabber-jid-service-menu
 	     (cons "Execute command" 'jabber-ahc-execute-command))
@@ -151,7 +154,7 @@ JC is the Jabber connection."
 		     (jabber-read-node "Node of command: ")))
   (jabber-send-iq jc to
 		  "set"
-		  `(command ((xmlns . "http://jabber.org/protocol/commands")
+		  `(command ((xmlns . ,jabber-ahc-xmlns)
 			     (node . ,node)
 			     (action . "execute")))
 		  #'jabber-process-data #'jabber-ahc-display
@@ -232,7 +235,7 @@ JC is the Jabber connection."
 
   (jabber-send-iq jabber-buffer-connection jabber-submit-to
 		  "set"
-		  `(command ((xmlns . "http://jabber.org/protocol/commands")
+		  `(command ((xmlns . ,jabber-ahc-xmlns)
 			     (sessionid . ,jabber-ahc-sessionid)
 			     (node . ,jabber-ahc-node)
 			     (action . ,(symbol-name action)))
