@@ -68,6 +68,9 @@
 (require 'jabber-iq)
 (require 'jabber-avatar)
 
+(defconst jabber-vcard-xmlns "vcard-temp"
+  "XEP-0054 vCard namespace.")
+
 (defvar-local jabber-vcard-photo nil
   "The avatar structure for the photo in the vCard edit buffer.")
 
@@ -216,7 +219,7 @@ The top node should be the `vCard' node."
 	(error "Avatar bigger than 8 kilobytes"))
       (setq jabber-vcard-photo (jabber-avatar-from-file photo)))))
 
-  `(vCard ((xmlns . "vcard-temp"))
+  `(vCard ((xmlns . ,jabber-vcard-xmlns))
 	  ;; Put in simple fields
 	  ,@(mapcar
 	     (lambda (field)
@@ -271,7 +274,7 @@ JC is the Jabber connection."
 		     (jabber-read-jid-completing "Request vcard from: " nil nil nil 'bare-or-muc)))
   (jabber-send-iq jc jid
 		  "get"
-		  '(vCard ((xmlns . "vcard-temp")))
+		  `(vCard ((xmlns . ,jabber-vcard-xmlns)))
 		  #'jabber-process-data #'jabber-vcard-display
 		  #'jabber-process-data "Vcard request failed"))
 
@@ -282,7 +285,7 @@ JC is the Jabber connection."
   (interactive (list (jabber-read-account)))
   (jabber-send-iq jc nil
 		  "get"
-		  '(vCard ((xmlns . "vcard-temp")))
+		  `(vCard ((xmlns . ,jabber-vcard-xmlns)))
 		  #'jabber-vcard-do-edit nil
 		  #'jabber-report-success "Vcard request failed"))
 

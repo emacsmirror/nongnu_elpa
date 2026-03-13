@@ -25,6 +25,9 @@
 (require 'jabber-private)
 (require 'jabber-widget)
 
+(defconst jabber-bookmarks-xmlns "storage:bookmarks"
+  "XEP-0048 bookmarks namespace.")
+
 ;; Global reference declarations
 
 (defvar jabber-muc-default-nicknames)   ; jabber-muc.el
@@ -92,7 +95,7 @@ If REFRESH is non-nil, always fetch bookmarks."
     (if (and (not refresh) bookmarks)
 	(run-with-timer 0 nil cont jc (when (listp bookmarks) bookmarks))
       (let* ((callback (lambda (jc result) (jabber-get-bookmarks-1 jc result cont))))
-	(jabber-private-get jc 'storage "storage:bookmarks"
+	(jabber-private-get jc 'storage jabber-bookmarks-xmlns
 			    callback callback)))))
 
 (defun jabber-get-bookmarks-1 (jc result cont)
@@ -119,7 +122,7 @@ on success or failure, respectively."
     (setq callback #'ignore))
   (jabber-private-set
    jc
-   `(storage ((xmlns . "storage:bookmarks"))
+   `(storage ((xmlns . ,jabber-bookmarks-xmlns))
 	     ,@bookmarks)
    callback t
    callback nil))
@@ -222,7 +225,7 @@ JC is the Jabber connection."
     (remhash (jabber-connection-bare-jid jabber-buffer-connection) jabber-bookmarks)
     (jabber-private-set
      jabber-buffer-connection
-     `(storage ((xmlns . "storage:bookmarks"))
+     `(storage ((xmlns . ,jabber-bookmarks-xmlns))
 	       ,@bookmarks)
      'jabber-report-success "Storing bookmarks"
      'jabber-report-success "Storing bookmarks")))

@@ -48,6 +48,15 @@
 
 (require 'fsm)
 
+(defconst jabber-bind-xmlns "urn:ietf:params:xml:ns:xmpp-bind"
+  "RFC 6120 resource binding namespace.")
+
+(defconst jabber-session-xmlns "urn:ietf:params:xml:ns:xmpp-session"
+  "RFC 6120 session establishment namespace.")
+
+(defconst jabber-streams-xmlns "http://etherx.jabber.org/streams"
+  "RFC 6120 XMPP streams namespace.")
+
 (defvar jabber-connections nil
   "List of jabber-connection FSMs.")
 
@@ -689,7 +698,7 @@ With double prefix argument, specify more connection details."
 		   ;; or have the server pick one for us.
 		   (resource (plist-get state-data :resource)))
 	       (jabber-send-iq fsm nil "set"
-			       `(bind ((xmlns . "urn:ietf:params:xml:ns:xmpp-bind"))
+			       `(bind ((xmlns . ,jabber-bind-xmlns))
 				      ,@(when resource
 					  `((resource () ,resource))))
 			       handle-bind t
@@ -721,7 +730,7 @@ With double prefix argument, specify more connection details."
 				(if success :session-success :session-failure)
 				xml-data)))))
 	   (jabber-send-iq fsm nil "set"
-			   '(session ((xmlns . "urn:ietf:params:xml:ns:xmpp-session")))
+			   `(session ((xmlns . ,jabber-session-xmlns)))
 			   handle-session t
 			   handle-session nil)
 	   (list :bind state-data))
@@ -969,7 +978,7 @@ obtained from `xml-parse-region'."
 Return nil if XML-DATA is not a stream:error stanza.
 Return an fsm result list if it is."
   (when (and (eq (jabber-xml-node-name xml-data) 'error)
-	     (equal (jabber-xml-get-xmlns xml-data) "http://etherx.jabber.org/streams"))
+	     (equal (jabber-xml-get-xmlns xml-data) jabber-streams-xmlns))
     (let ((condition (jabber-stream-error-condition xml-data))
 	  (text (jabber-parse-stream-error xml-data)))
       (setq state-data (plist-put state-data :disconnection-reason

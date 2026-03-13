@@ -32,6 +32,11 @@
 (require 'jabber-iq)
 (require 'jabber-avatar)
 
+(defvar jabber-vcard-xmlns)             ; jabber-vcard.el
+
+(defconst jabber-vcard-update-xmlns "vcard-temp:x:update"
+  "XEP-0153 vCard-based avatars namespace.")
+
 (defcustom jabber-vcard-avatars-retrieve (display-images-p)
   "Automatically download vCard avatars?"
   :group 'jabber-avatar
@@ -58,7 +63,7 @@ obtained from `xml-parse-region'."
   (when (and jabber-vcard-avatars-retrieve
 	     (null (jabber-xml-get-attribute xml-data 'type)))
     (let* ((from (jabber-jid-user (jabber-xml-get-attribute xml-data 'from)))
-	   (photo (jabber-xml-path xml-data '(("vcard-temp:x:update" . "x") photo)))
+	   (photo (jabber-xml-path xml-data `((,jabber-vcard-update-xmlns . "x") photo)))
 	   (sha1-hash (car (jabber-xml-node-children photo))))
       (cond
        ((null sha1-hash)
@@ -81,7 +86,7 @@ JC is the Jabber connection."
   (interactive (list (jabber-read-account)
 		     (jabber-read-jid-completing "Fetch whose vCard avatar: ")
 		     nil))
-  (jabber-send-iq jc jid "get" '(vCard ((xmlns . "vcard-temp")))
+  (jabber-send-iq jc jid "get" `(vCard ((xmlns . ,jabber-vcard-xmlns)))
 		  #'jabber-vcard-avatars-vcard (cons jid sha1-hash)
 		  #'ignore nil))
 
@@ -109,7 +114,7 @@ JC is the Jabber connection."
 
 JC is the Jabber connection."
   (when jabber-vcard-avatars-publish
-    (jabber-send-iq jc nil "get" '(vCard ((xmlns . "vcard-temp")))
+    (jabber-send-iq jc nil "get" `(vCard ((xmlns . ,jabber-vcard-xmlns)))
 		    #'jabber-vcard-avatars-find-current-1 t
 		    #'jabber-vcard-avatars-find-current-1 nil)))
 
@@ -139,7 +144,7 @@ JC is the Jabber connection."
 		 (jabber-connection-bare-jid jc)
 		 jabber-vcard-avatars-current-hash)))
       (list
-       `(x ((xmlns . "vcard-temp:x:update"))
+       `(x ((xmlns . ,jabber-vcard-update-xmlns))
 	   ;; if "not yet ready to advertise image", don't.
 	   ;; that is, we haven't yet checked what avatar we have.
 	   ,(when hash

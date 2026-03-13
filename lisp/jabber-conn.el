@@ -35,6 +35,9 @@
 
 (require 'srv)
 
+(defconst jabber-tls-xmlns "urn:ietf:params:xml:ns:xmpp-tls"
+  "RFC 6120 XMPP STARTTLS namespace.")
+
 (defgroup jabber-conn nil "Jabber Connection Settings."
   :group 'jabber)
 
@@ -303,7 +306,7 @@ connection fails."
 (defun jabber-starttls-initiate (fsm)
   "Initiate a STARTTLS connection."
   (jabber-send-sexp fsm
-   '(starttls ((xmlns . "urn:ietf:params:xml:ns:xmpp-tls")))))
+   `(starttls ((xmlns . ,jabber-tls-xmlns)))))
 
 (defun jabber-starttls-process-input (fsm xml-data)
   "Process result of starttls request.

@@ -38,9 +38,13 @@
 
 (require 'jabber-xml)
 
+(defconst jabber-sasl-xmlns "urn:ietf:params:xml:ns:xmpp-sasl"
+  "RFC 6120 XMPP SASL namespace.")
+
 ;; Global reference declarations
 
 (declare-function jabber-send-sexp "jabber-core.el" (jc sexp))
+(defvar jabber-tls-xmlns)              ; jabber-conn.el
 (defvar jabber-silent-mode)             ; jabber.el
 
 ;;
@@ -70,7 +74,7 @@ with `jabber-xml-get-chidlren')."
 			        :key #'jabber-xml-get-xmlns
 			        :test #'string=))
 	      ;; Or maybe we have to use STARTTLS, but can't
-	      (starttls (cl-find "urn:ietf:params:xml:ns:xmpp-tls"
+	      (starttls (cl-find jabber-tls-xmlns
 			         (jabber-xml-get-children stream-features 'starttls)
 			         :key #'jabber-xml-get-xmlns
 			         :test #'string=)))
@@ -103,7 +107,7 @@ with `jabber-xml-get-chidlren')."
 	       (step (sasl-next-step client nil)))
 	  (jabber-send-sexp
 	   jc
-	   `(auth ((xmlns . "urn:ietf:params:xml:ns:xmpp-sasl")
+	   `(auth ((xmlns . ,jabber-sasl-xmlns)
 		   (mechanism . ,(sasl-mechanism-name mechanism)))
 		  ,(when (sasl-step-data step)
 		     (base64-encode-string (sasl-step-data step) t))))
@@ -136,7 +140,7 @@ obtained from `xml-parse-region'."
       (setq step (sasl-next-step client step))
       (jabber-send-sexp
        jc
-       `(response ((xmlns . "urn:ietf:params:xml:ns:xmpp-sasl"))
+       `(response ((xmlns . ,jabber-sasl-xmlns))
 		  ,(when (sasl-step-data step)
 		     (base64-encode-string (sasl-step-data step) t)))))
 
