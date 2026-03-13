@@ -33,13 +33,6 @@
 Note that functions in this hook have no way of knowing
 what kind of chat buffer is being created.")
 
-(defcustom jabber-chat-fill-long-lines t
-  "If non-nil, fill long lines in chat buffers.
-Lines are broken at word boundaries at the width of the
-window or at `fill-column', whichever is shorter."
-  :group 'jabber-chat
-  :type 'boolean)
-
 (defvar jabber-chat-ewoc nil
   "The ewoc showing the messages of this chat buffer.")
 
@@ -127,26 +120,6 @@ EWOC-PP is the pretty-printer function for the message EWOC."
 
     (let ((body (delete-and-extract-region jabber-point-insert (point-max))))
       (funcall jabber-send-function jabber-buffer-connection body))))
-
-(defun jabber-chat-buffer-fill-long-lines ()
-  "Fill lines that are wider than the window width."
-  ;; This was mostly stolen from article-fill-long-lines
-  (interactive)
-  (save-excursion
-    (let ((inhibit-read-only t)
-	  (width (window-width (get-buffer-window (current-buffer)))))
-      (goto-char (point-min))
-      (let ((adaptive-fill-mode nil))	;Why?  -sm
-	(while (not (eobp))
-	  (end-of-line)
-	  (when (>= (current-column) (min fill-column width))
-	    (save-restriction
-	      (narrow-to-region (min (1+ (point)) (point-max))
-				(line-beginning-position))
-	      (let ((goback (point-marker)))
-		(fill-paragraph nil)
-		(goto-char (marker-position goback)))))
-	  (forward-line 1))))))
 
 (defun jabber-chat-buffer-switch ()
   "Switch to a specified jabber chat buffer."

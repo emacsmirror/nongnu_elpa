@@ -573,116 +573,144 @@ whether a delay element is present."
       (plist-put plist :xml-data xml-data))
     plist))
 
+(defun jabber-chat-pp--local (data)
+  "Render a locally sent message from DATA."
+  (let* ((msg (cadr data))
+         (body (plist-get msg :body))
+         (/me-p (and (stringp body) (string-prefix-p "/me " body))))
+    (jabber-chat-self-prompt (plist-get msg :timestamp)
+                             (plist-get msg :delayed) /me-p)
+    (run-hook-with-args 'jabber-chat-printers msg :local :insert)
+    (insert "\n")))
+
+(defun jabber-chat-pp--foreign (data)
+  "Render a received message from DATA."
+  (let* ((msg (cadr data))
+         (body (plist-get msg :body))
+         (/me-p (and (stringp body) (string-prefix-p "/me " body))))
+    (jabber-chat-print-prompt msg (plist-get msg :timestamp)
+                              (plist-get msg :delayed) /me-p)
+    (run-hook-with-args 'jabber-chat-printers msg :foreign :insert)
+    (insert "\n")))
+
+(defun jabber-chat-pp--muc-local (data)
+  "Render a locally sent MUC message from DATA."
+  (let* ((msg (cadr data))
+         (body (plist-get msg :body))
+         (/me-p (and (stringp body) (string-prefix-p "/me " body))))
+    (jabber-muc-print-prompt msg t /me-p)
+    (mapc (lambda (f) (funcall f msg :muc-local :insert))
+          (append jabber-muc-printers jabber-chat-printers))
+    (insert "\n")))
+
+(defun jabber-chat-pp--muc-foreign (data)
+  "Render a received MUC message from DATA."
+  (let* ((msg (cadr data))
+         (body (plist-get msg :body))
+         (/me-p (and (stringp body) (string-prefix-p "/me " body))))
+    (jabber-muc-print-prompt msg nil /me-p)
+    (mapc (lambda (f) (funcall f msg :muc-foreign :insert))
+          (append jabber-muc-printers jabber-chat-printers))
+    (insert "\n")))
+
+(defun jabber-chat-pp--error (data)
+  "Render an error message from DATA."
+  (let* ((msg (cadr data))
+         (timestamp (when (listp msg) (plist-get msg :timestamp))))
+    (jabber-chat-system-prompt (or timestamp (current-time)))
+    (if (stringp msg)
+        (insert (propertize msg 'face 'jabber-chat-error) "\n")
+      (jabber-chat-print-error msg))))
+
+(defun jabber-chat-pp--muc-error (data)
+  "Render a MUC error message from DATA."
+  (let ((msg (cadr data)))
+    (jabber-muc-system-prompt)
+    (if (stringp msg)
+        (insert (propertize msg 'face 'jabber-chat-error) "\n")
+      (jabber-chat-print-error msg))))
+
+(defun jabber-chat-pp--notice (data)
+  "Render a system notice from DATA."
+  (let* ((msg (cadr data))
+         (timestamp (when (listp msg) (plist-get msg :timestamp))))
+    (jabber-chat-system-prompt (or timestamp (current-time)))
+    (insert msg "\n")))
+
+(defun jabber-chat-pp--muc-notice (data)
+  "Render a MUC presence notice from DATA.
+Respects `jabber-muc-decorate-presence-patterns' for
+highlight/hide behavior."
+  (let* ((msg (cadr data))
+         (match (jabber-chat-muc-presence-highlight msg))
+         (face (cdr-safe match)))
+    (cond
+     ;; Matched with face: show prompt and body with that face
+     (face
+      (let ((prompt-start (point)))
+        (jabber-muc-system-prompt)
+        (put-text-property prompt-start (point) 'face face))
+      (insert (propertize msg 'face face) "\n"))
+     ;; Matched with no face: hide entirely
+     (match)
+     ;; No match: show normally
+     (t
+      (jabber-muc-system-prompt)
+      (insert msg "\n")))))
+
+(defun jabber-chat-pp--rare-time (data)
+  "Insert rare-time separator from DATA.
+When the previous visible node is also a :rare-time entry,
+remove its text to suppress consecutive duplicates."
+  (let* ((msg (cadr data))
+         (node (jabber-chat-find-node data))
+         (prev (jabber-find-previous-visible-node node)))
+    (when (and prev (eq (car (ewoc-data prev)) :rare-time))
+      (delete-region (marker-position (ewoc-location prev)) (point)))
+    (insert (propertize (format-time-string jabber-rare-time-format msg)
+                        'face 'jabber-rare-time-face)
+            "\n")))
+
+(defun jabber-chat-pp--subscription-request (data)
+  "Render a subscription request from DATA."
+  (let* ((msg (cadr data))
+         (timestamp (when (listp msg) (plist-get msg :timestamp))))
+    (jabber-chat-system-prompt (or timestamp (current-time)))
+    (insert "This user requests subscription to your presence.\n")
+    (when (and (stringp msg) (not (zerop (length msg))))
+      (insert "Message: " msg "\n"))
+    (insert "Accept?\n\n")
+    (insert-button "Mutual" 'action 'jabber-subscription-accept-mutual)
+    (insert "\t")
+    (insert-button "One-way" 'action 'jabber-subscription-accept-one-way)
+    (insert "\t")
+    (insert-button "Decline" 'action 'jabber-subscription-decline)
+    (insert "\n")))
+
+(defconst jabber-chat-pp-dispatch
+  '((:local                . jabber-chat-pp--local)
+    (:foreign              . jabber-chat-pp--foreign)
+    (:muc-local            . jabber-chat-pp--muc-local)
+    (:muc-foreign          . jabber-chat-pp--muc-foreign)
+    (:error                . jabber-chat-pp--error)
+    (:muc-error            . jabber-chat-pp--muc-error)
+    (:notice               . jabber-chat-pp--notice)
+    (:muc-notice           . jabber-chat-pp--muc-notice)
+    (:rare-time            . jabber-chat-pp--rare-time)
+    (:subscription-request . jabber-chat-pp--subscription-request))
+  "Alist mapping message types to their render functions.")
+
 (defun jabber-chat-pp (data)
-  "Pretty-print a message node.
-\(car data) is the node type: :local, :foreign, :muc-local,
-:muc-foreign, :error, :muc-error, :notice, :muc-notice,
-:rare-time, or :subscription-request.
-For message types, (cadr data) is a message plist with keys
-:from, :body, :subject, :timestamp, :delayed, :oob-url,
-:oob-desc, :error-text.
-This function is used as an ewoc prettyprinter."
-  (let* ((beg (point))
-         (type (car data))
-         (msg (cadr data))
-         (body (when (and (listp msg) (plist-member msg :body))
-                 (plist-get msg :body)))
-         (timestamp (when (and (listp msg) (plist-member msg :timestamp))
-                      (plist-get msg :timestamp)))
-         (delayed (when (and (listp msg) (plist-member msg :delayed))
-                    (plist-get msg :delayed)))
-         (/me-p
-          (and (stringp body)
-               (> (length body) 4)
-               (string= (substring body 0 4) "/me ")))
-         (muc-highlight (when (eq type :muc-notice)
-                          (jabber-chat-muc-presence-highlight msg)))
-         (muc-highlight-face (cdr-safe muc-highlight)))
-
-    ;; Print prompt...
-    (let ((prompt-start (point)))
-      (pcase type
-	(:local
-	 (jabber-chat-self-prompt timestamp delayed /me-p))
-	(:foreign
-	 (jabber-chat-print-prompt msg timestamp delayed /me-p))
-	((or :error :notice :subscription-request)
-	 (jabber-chat-system-prompt (or timestamp (current-time))))
-	(:muc-local
-	 (jabber-muc-print-prompt msg t /me-p))
-        (:muc-foreign
-         (jabber-muc-print-prompt msg nil /me-p))
-	(:muc-notice
-         (cond
-          (muc-highlight-face
-           (jabber-muc-system-prompt)
-           (put-text-property prompt-start (point) 'face muc-highlight-face))
-          (muc-highlight)  ; matched but no face = hide entirely
-          (t (jabber-muc-system-prompt))))
-        (:muc-error
-	 (jabber-muc-system-prompt))))
-
-    ;; ...and body
-    (pcase type
-      ((or :local :foreign)
-       (run-hook-with-args 'jabber-chat-printers msg type :insert)
-       (insert "\n"))
-      ((or :muc-local :muc-foreign)
-       (let ((args (list msg type :insert)))
-	 (mapc (lambda (f) (apply f args))
-	       (append jabber-muc-printers jabber-chat-printers))
-         (insert "\n")))
-      ((or :error :muc-error)
-       (if (stringp msg)
-	    (insert (propertize msg 'face 'jabber-chat-error) "\n")
-	 (jabber-chat-print-error msg)))
-      (:muc-notice
-       (cond
-        (muc-highlight-face
-         (insert (propertize msg 'face muc-highlight-face) "\n"))
-        (muc-highlight)  ; matched but no face = hide entirely
-        (t (insert msg "\n"))))
-      (:notice
-       (insert msg "\n"))
-      (:rare-time
-       ;; When MUC presence announcements are hidden, lightly
-       ;; trafficked chat rooms fill with superfluous :rare-time
-       ;; entries.  To suppress these, search backward from the node
-       ;; containing DATA for the previous visible node.  If that node
-       ;; is also a :rare-time entry, remove its text.  This seems a
-       ;; bit skeevy; we await a better implementation.
-       (let* ((node (jabber-chat-find-node data))
-              (prev-visible (jabber-find-previous-visible-node node)))
-         (when (and
-		prev-visible
-		(eq (car (ewoc-data prev-visible)) :rare-time))
-           (delete-region
-            (setq beg (marker-position (ewoc-location prev-visible)))
-            (point))
-           (goto-char beg)))
-       (insert (propertize (format-time-string jabber-rare-time-format msg)
-                                  'face 'jabber-rare-time-face)
-               "\n"))
-      (:subscription-request
-       (insert "This user requests subscription to your presence.\n")
-       (when (and (stringp msg) (not (zerop (length msg))))
-         (insert "Message: " msg "\n"))
-       (insert "Accept?\n\n")
-       (insert-button "Mutual" 'action 'jabber-subscription-accept-mutual)
-       (insert "\t")
-       (insert-button "One-way" 'action 'jabber-subscription-accept-one-way)
-       (insert "\t")
-       (insert-button "Decline" 'action 'jabber-subscription-decline)
-       (insert "\n"))))
-
-    (when jabber-chat-fill-long-lines
-      (save-restriction
-        (narrow-to-region beg (point))
-        (jabber-chat-buffer-fill-long-lines)))
-
+  "Pretty-print a chat message DATA for EWOC display.
+Dispatches to a type-specific render function via
+`jabber-chat-pp-dispatch', then marks the region read-only."
+  (let ((beg (point-marker))
+        (type (car data)))
+    (funcall (alist-get type jabber-chat-pp-dispatch) data)
     (put-text-property beg (point) 'read-only t)
     (put-text-property beg (point) 'front-sticky t)
-    (put-text-property beg (point) 'rear-nonsticky t)))
+    (put-text-property beg (point) 'rear-nonsticky t)
+    (set-marker beg nil)))
 
 (defun jabber-rare-time-needed (time1 time2)
   "Return non-nil if a timestamp should be printed between TIME1 and TIME2."
