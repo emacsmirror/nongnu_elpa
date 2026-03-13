@@ -259,19 +259,23 @@ Trailing newlines are always removed, regardless of this variable."
                   (jc jid node callback closure-data &optional force))
 (declare-function jabber-send-presence "jabber-presence.el" (show status priority))
 (declare-function jabber-muc-switch "jabber-muc.el" (group))
-(declare-function jabber-muc-get-buffer "jabber-muc.el" (group))
+(declare-function jabber-muc-get-buffer "jabber-muc.el" (group &optional jc))
 (declare-function jabber-send-subscription-request "jabber-presence.el" (jc to &optional request))
 (declare-function jabber-roster-delete-jid-at-point "jabber-presence.el" ())
 (declare-function jabber-roster-delete-group-from-jids "jabber-presence.el" (jc jids group))
 (declare-function jabber-roster-edit-group-from-jids "jabber-presence.el" (jc jids group))
 (declare-function jabber-roster-change "jabber-presence.el" (jc jid name groups))
+(declare-function jabber-muc-joined-p "jabber-muc.el" (group))
+(declare-function jabber-muc-active-rooms "jabber-muc.el" ())
+(declare-function jabber-muc-nickname "jabber-muc.el" (group))
+(declare-function jabber-muc-connection "jabber-muc.el" (group))
+(declare-function jabber-muc-generation "jabber-muc.el" ())
 (defvar jabber-connections)             ; jabber-core.el
 (defvar jabber-roster-buffer)           ; jabber-core.el
 (defvar *jabber-current-show*)          ; jabber.el
 (defvar jabber-presence-strings)        ; jabber.el
 (defvar *jabber-current-status*)        ; jabber.el
 (defvar jabber-presence-faces)          ; jabber.el
-(defvar *jabber-active-groupchats*)     ; jabber-muc.el
 (defvar jabber-activity-jids)           ; jabber-activity.el
 
 (transient-define-prefix jabber-roster-menu ()
@@ -310,7 +314,7 @@ point."
      ((and group-at-point account-at-point)
       (jabber-roster-roll-group account-at-point group-at-point))
      ;; Already-joined groupchat: switch directly to buffer.
-     ((assoc jid-at-point *jabber-active-groupchats*)
+     ((jabber-muc-joined-p jid-at-point)
       (jabber-muc-switch jid-at-point))
      ;; Contact or other JID: disco-check to decide chat vs MUC join.
      ((and jid-at-point account-at-point)
@@ -428,7 +432,7 @@ If SET is nor t or nil, roll down group."
 		    contacts-index)))
 	   (jid
 	    (let ((entry (cons jid (point))))
-	      (if (assoc jid *jabber-active-groupchats*)
+	      (if (jabber-muc-joined-p jid)
 		  (push entry groupchats-index)
 		(push entry contacts-index))))))
 	(forward-line 1)))
@@ -693,34 +697,31 @@ information."
 	  (goto-char (point-max))
 	  (insert "\n")))
 
-      (when *jabber-active-groupchats*
-	(insert (jabber-propertize "Groupchats"
-				   'face 'jabber-title-small
-				   'jabber-group "Groupchats")
-		"\n")
-	(dolist (gc (sort (copy-sequence *jabber-active-groupchats*)
-			  (lambda (a b) (string< (car a) (car b)))))
-	  (let* ((room-jid (car gc))
-		 (nick (cdr gc))
-		 (room-name (or (jabber-jid-user room-jid) room-jid))
-		 (gc-buf (get-buffer (jabber-muc-get-buffer room-jid)))
-		 (gc-jc (if gc-buf
-			    (buffer-local-value 'jabber-buffer-connection gc-buf)
-			  (car jabber-connections)))
-		 (unread (member room-jid
-				 (bound-and-true-p jabber-activity-jids)))
-		 (room-part (jabber-propertize (format "  %s" room-name)
-					       'face (if unread
-							 'jabber-roster-unread
-						       'jabber-roster-groupchat)))
-		 (nick-part (jabber-propertize (format " (%s)" nick)
-					       'face 'jabber-roster-groupchat-nick))
-		 (line (concat room-part nick-part)))
-	    (add-text-properties 0 (length line)
-				 (list 'jabber-jid room-jid
-				       'jabber-account gc-jc)
-				 line)
-	    (insert line "\n"))))
+      (let ((rooms (sort (jabber-muc-active-rooms) #'string<)))
+        (when rooms
+	  (insert (jabber-propertize "Groupchats"
+				     'face 'jabber-title-small
+				     'jabber-group "Groupchats")
+		  "\n")
+	  (dolist (room-jid rooms)
+	    (let* ((nick (jabber-muc-nickname room-jid))
+		   (room-name (or (jabber-jid-user room-jid) room-jid))
+		   (gc-jc (or (jabber-muc-connection room-jid)
+			      (car jabber-connections)))
+		   (unread (member room-jid
+				   (bound-and-true-p jabber-activity-jids)))
+		   (room-part (jabber-propertize (format "  %s" room-name)
+						 'face (if unread
+							   'jabber-roster-unread
+							 'jabber-roster-groupchat)))
+		   (nick-part (jabber-propertize (format " (%s)" nick)
+						 'face 'jabber-roster-groupchat-nick))
+		   (line (concat room-part nick-part)))
+	      (add-text-properties 0 (length line)
+				   (list 'jabber-jid room-jid
+					 'jabber-account gc-jc)
+				   line)
+	      (insert line "\n")))))
 
       (goto-char (point-min))
       (setq buffer-read-only t)
@@ -996,8 +997,8 @@ obtained from `xml-parse-region'."
                           'jabber-report-success "Roster groups saved"
                           'jabber-report-success "Failed to save roster groups"))))
 
-(defvar jabber-roster--last-groupchats nil
-  "Snapshot of `*jabber-active-groupchats*' for detecting changes.")
+(defvar jabber-roster--last-muc-generation 0
+  "Last seen `jabber-muc--generation' value.")
 
 (defvar jabber-roster--needs-refresh nil
   "Non-nil when the roster buffer needs a redraw.")
@@ -1028,9 +1029,8 @@ obtained from `xml-parse-region'."
 
 (defun jabber-roster--maybe-refresh-on-muc (_jc _xml-data)
   "Refresh roster when groupchat list changes."
-  (unless (equal *jabber-active-groupchats* jabber-roster--last-groupchats)
-    (setq jabber-roster--last-groupchats
-	  (copy-sequence *jabber-active-groupchats*))
+  (unless (= (jabber-muc-generation) jabber-roster--last-muc-generation)
+    (setq jabber-roster--last-muc-generation (jabber-muc-generation))
     (jabber-roster--refresh-if-visible)))
 
 (with-eval-after-load 'jabber-activity

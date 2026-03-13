@@ -56,6 +56,7 @@
 
 (declare-function jabber-chat--msg-plist-from-stanza "jabber-chat.el"
                   (xml-data &optional delayed))
+(declare-function jabber-muc-joined-p "jabber-muc.el" (group))
 
 ;; * Configuration variables *
 
@@ -481,7 +482,7 @@ and the JC Jabber Connection."
   ;; (jabber-send-message jc jid nil get-url nil)
   (let* ((id (apply #'format "emacs-msg-%d.%d.%d" (current-time)))
 	 (fromjid (jabber-connection-original-jid jc))
-         (type (if (assoc jid *jabber-active-groupchats*)
+         (type (if (jabber-muc-joined-p jid)
                    "groupchat"
                  "chat"))
 	 (body get-url)

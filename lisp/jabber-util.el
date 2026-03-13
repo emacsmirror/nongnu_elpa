@@ -196,7 +196,7 @@ Also return non-nil if JID matches JC, modulo resource."
 	  (jabber-connection-bare-jid jc))
    (member (jabber-jid-user jid) (mapcar (lambda (x) (jabber-jid-user (car x))) jabber-account-list))))
 
-(defvar *jabber-active-groupchats*)
+(declare-function jabber-muc-joined-p "jabber-muc.el" (group))
 (defun jabber-read-jid-completing (prompt &optional subset require-match default resource fulljids)
   "Read a jid out of the current roster from the minibuffer.
 If SUBSET is non-nil, it should be a list of symbols from which
@@ -265,7 +265,7 @@ If FULLJIDS is non-nil, complete jids with resources."
 	 (if (null (jabber-jid-resource chosen))
 	     chosen
 	   (let ((bare (jabber-jid-user chosen)))
-	     (if (assoc bare *jabber-active-groupchats*)
+	     (if (jabber-muc-joined-p bare)
 		 chosen
 	       bare))))
 	(_

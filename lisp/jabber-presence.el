@@ -44,11 +44,13 @@ stanza.")
 (declare-function jabber-roster-update "jabber-roster.el"
                   (jc new-items changed-items deleted-items))
 (declare-function jabber-chat-create-buffer "jabber-chat.el" (jc chat-with))
-(declare-function jabber-muc-get-buffer "jabber-muc.el" (group))
+(declare-function jabber-muc-get-buffer "jabber-muc.el" (group &optional jc))
 (declare-function jabber-muc-process-presence "jabber-muc.el" (jc presence))
 (declare-function jabber-muc-presence-p "jabber-muc.el" (presence))
+(declare-function jabber-muc-active-rooms "jabber-muc.el" ())
+(declare-function jabber-muc-connection "jabber-muc.el" (group))
+(declare-function jabber-muc-nickname "jabber-muc.el" (group))
 (defvar jabber-chatting-with)           ; jabber-chat.el
-(defvar *jabber-active-groupchats*)     ; jabber-muc.el
 (defvar jabber-buffer-connection)       ; jabber-chatbuffer.el
 (defvar jabber-chat-ewoc)               ; jabber-chatbuffer.el
 (defvar *jabber-current-priority*)      ; jabber.el
@@ -381,14 +383,13 @@ Show status properties from highest-priority resource."
 	(jabber-send-sexp-if-connected jc `(presence () ,@subelements))))
 
     ;; Then send presence to groupchats
-    (dolist (gc *jabber-active-groupchats*)
-      (let* ((buffer (get-buffer (jabber-muc-get-buffer (car gc))))
-	     (jc (when buffer
-		   (buffer-local-value 'jabber-buffer-connection buffer)))
+    (dolist (room (jabber-muc-active-rooms))
+      (let* ((jc (jabber-muc-connection room))
+	     (nick (jabber-muc-nickname room))
 	     (subelements (cdr (assq jc subelements-map))))
 	(when jc
 	  (jabber-send-sexp-if-connected
-	   jc `(presence ((to . ,(concat (car gc) "/" (cdr gc))))
+	   jc `(presence ((to . ,(concat room "/" nick)))
 			 ,@subelements))))))
 
   (jabber-display-roster)

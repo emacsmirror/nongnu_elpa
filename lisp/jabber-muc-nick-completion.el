@@ -60,8 +60,8 @@ Note that \":\" or alike not needed (it appended in other string)"
 
 ;; Global reference declarations
 
+(declare-function jabber-muc-nickname "jabber-muc.el" (group))
 (defvar jabber-group)                   ; jabber-muc.el
-(defvar *jabber-active-groupchats*)     ; jabber-muc.el
 (defvar jabber-muc-default-nicknames)   ; jabber-muc.el
 (defvar jabber-muc-participants)        ; jabber-muc.el
 (defvar jabber-chatting-with)           ; jabber-chat.el
@@ -71,8 +71,8 @@ Note that \":\" or alike not needed (it appended in other string)"
 (defun jabber-my-nick (&optional group)
   "Return my jabber nick in GROUP."
   (let ((room (or group jabber-group)))
-    (cdr (or (assoc room *jabber-active-groupchats*)
-             (assoc room jabber-muc-default-nicknames)))))
+    (or (jabber-muc-nickname room)
+        (cdr (assoc room jabber-muc-default-nicknames)))))
 
 ;;;###autoload
 (defun jabber-muc-looks-like-personal-p (message &optional group)

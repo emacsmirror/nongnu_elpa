@@ -59,13 +59,13 @@ Set to nil to disable message storage entirely."
                  (const :tag "Disabled" nil))
   :group 'jabber-db)
 
-(defcustom jabber-backlog-days 3.0
+(defcustom jabber-backlog-days nil
   "Age limit on messages in chat buffer backlog, in days."
   :group 'jabber-db
   :type '(choice (number :tag "Number of days")
                  (const :tag "No limit" nil)))
 
-(defcustom jabber-backlog-number 10
+(defcustom jabber-backlog-number 300
   "Maximum number of messages in chat buffer backlog."
   :group 'jabber-db
   :type 'integer)
