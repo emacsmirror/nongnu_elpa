@@ -171,6 +171,64 @@ obtained from `xml-parse-region'."
 	  ;; TODO: do something clever here.
 	  ))))))
 
+(defun jabber-caps--store-hash (jid key)
+  "Store caps hash KEY in the resource plist for JID.
+KEY is a cons cell (HASH . VER) identifying the entity capabilities.
+JID is a full JID string; the resource portion is used as the
+key in the symbol's `resources' property."
+  (let* ((symbol (jabber-jid-symbol jid))
+	 (resource (or (jabber-jid-resource jid) ""))
+	 (resource-entry (assoc resource (get symbol 'resources)))
+	 (new-resource-plist (plist-put (cdr resource-entry) 'caps key)))
+    (if resource-entry
+	(setf (cdr resource-entry) new-resource-plist)
+      (push (cons resource new-resource-plist) (get symbol 'resources)))))
+
+(defun jabber-caps--query-if-needed (jc jid hash node ver key cache-entry)
+  "Decide whether to send a disco#info query for entity capabilities.
+JC is the Jabber connection.  JID is the full JID of the entity.
+HASH, NODE, and VER are the XEP-0115 capability fields.
+KEY is (HASH . VER), the cache key.  CACHE-ENTRY is the current
+value in `jabber-caps-cache' for KEY.
+
+When CACHE-ENTRY is a pending query (timestamp float), either
+add JID to the fallback list or re-query if the timeout (10s)
+has elapsed.  When CACHE-ENTRY is nil, record a pending query
+and send a disco#info request.  Otherwise, copy the cached
+capabilities into `jabber-disco-info-cache' for JID."
+  (cl-flet ((request-disco-info
+	      ()
+	      (jabber-send-iq
+	       jc jid
+	       "get"
+	       `(query ((xmlns . ,jabber-disco-xmlns-info)
+			(node . ,(concat node "#" ver))))
+	       #'jabber-process-caps-info-result (list hash node ver)
+	       #'jabber-process-caps-info-error (list hash node ver))))
+    (cond
+     ((and (consp cache-entry)
+	   (floatp (car cache-entry)))
+      ;; We have a record of asking someone about this hash.
+      (if (< (- (float-time) (car cache-entry)) 10.0)
+	  ;; We asked someone about this hash less than 10 seconds ago.
+	  ;; Let's add the new JID to the entry, just in case that
+	  ;; doesn't work out.
+	  (cl-pushnew jid (cdr cache-entry) :test #'string=)
+	;; We asked someone about it more than 10 seconds ago.
+	;; They're probably not going to answer.  Let's ask
+	;; this contact about it instead.
+	(setf (car cache-entry) (float-time))
+	(request-disco-info)))
+     ((null cache-entry)
+      ;; We know nothing about this hash.  Let's note the
+      ;; fact that we tried to get information about it.
+      (puthash key (list (float-time)) jabber-caps-cache)
+      (request-disco-info))
+     (t
+      ;; We already know what this hash represents, so we
+      ;; can cache info for this contact.
+      (puthash (cons jid nil) cache-entry jabber-disco-info-cache)))))
+
 (defun jabber-process-caps-modern (jc jid hash node ver)
   "Processes the capabilities of a contact which supports XEP-0115 v1.5 or later.
 
@@ -183,47 +241,8 @@ and VER is the entity's version number."
     ;; We support the hash function used.
     (let* ((key (cons hash ver))
 	   (cache-entry (gethash key jabber-caps-cache)))
-      ;; Remember the hash in the JID symbol.
-      (let* ((symbol (jabber-jid-symbol jid))
-	     (resource (or (jabber-jid-resource jid) ""))
-	     (resource-entry (assoc resource (get symbol 'resources)))
-	     (new-resource-plist (plist-put (cdr resource-entry) 'caps key)))
-	(if resource-entry
-	    (setf (cdr resource-entry) new-resource-plist)
-	  (push (cons resource new-resource-plist) (get symbol 'resources))))
-
-      (cl-flet ((request-disco-info
-	          ()
-	          (jabber-send-iq
-	           jc jid
-	           "get"
-	           `(query ((xmlns . ,jabber-disco-xmlns-info)
-			    (node . ,(concat node "#" ver))))
-		   #'jabber-process-caps-info-result (list hash node ver)
-		   #'jabber-process-caps-info-error (list hash node ver))))
-	(cond
-	 ((and (consp cache-entry)
-	       (floatp (car cache-entry)))
-	  ;; We have a record of asking someone about this hash.
-	  (if (< (- (float-time) (car cache-entry)) 10.0)
-	      ;; We asked someone about this hash less than 10 seconds ago.
-	      ;; Let's add the new JID to the entry, just in case that
-	      ;; doesn't work out.
-	      (cl-pushnew jid (cdr cache-entry) :test #'string=)
-	    ;; We asked someone about it more than 10 seconds ago.
-	    ;; They're probably not going to answer.  Let's ask
-	    ;; this contact about it instead.
-	    (setf (car cache-entry) (float-time))
-	    (request-disco-info)))
-	 ((null cache-entry)
-	  ;; We know nothing about this hash.  Let's note the
-	  ;; fact that we tried to get information about it.
-	  (puthash key (list (float-time)) jabber-caps-cache)
-	  (request-disco-info))
-	 (t
-	  ;; We already know what this hash represents, so we
-	  ;; can cache info for this contact.
-	  (puthash (cons jid nil) cache-entry jabber-disco-info-cache)))))))
+      (jabber-caps--store-hash jid key)
+      (jabber-caps--query-if-needed jc jid hash node ver key cache-entry))))
 
 (defun jabber-process-caps-info-result (jc xml-data closure-data)
   "Process the result of a jabber server's caps info request.
