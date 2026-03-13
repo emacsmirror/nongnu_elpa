@@ -1,5 +1,0 @@
-#+TITLE: Deprecated Features
-
-Anything listed here is no longer maintained, will not be tangled and compiled at build time, and may lose compatibility with existing features.
-
-Here there be dragons.
