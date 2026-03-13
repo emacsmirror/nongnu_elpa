@@ -43,16 +43,11 @@
 (defvar jabber-caps-cache (make-hash-table :test 'equal))
 
 (defconst jabber-caps-hash-names
-  (if (fboundp 'secure-hash)
-      '(("sha-1" . sha1)
-	("sha-224" . sha224)
-	("sha-256" . sha256)
-	("sha-384" . sha384)
-	("sha-512" . sha512))
-    ;; `secure-hash' was introduced in Emacs 24.  For Emacs 23, fall
-    ;; back to the `sha1' function, handled specially in
-    ;; `jabber-caps--secure-hash'.
-    '(("sha-1" . sha1)))
+  '(("sha-1" . sha1)
+    ("sha-224" . sha224)
+    ("sha-256" . sha256)
+    ("sha-384" . sha384)
+    ("sha-512" . sha512))
   "Hash function name map.
 Maps names defined in http://www.iana.org/assignments/hash-function-text-names
 to symbols accepted by `secure-hash'.
@@ -360,15 +355,7 @@ VER is the version string of the CAPS."
 
 (defun jabber-caps--secure-hash (algorithm string)
   "Compute and return a secure hash from STRING using ALGORITHM."
-  (cond
-   ;; `secure-hash' was introduced in Emacs 24
-   ((fboundp 'secure-hash)
-    (secure-hash algorithm string nil nil t))
-   ((eq algorithm 'sha1)
-    ;; For SHA-1, we can use the `sha1' function.
-    (sha1 string nil nil t))
-   (t
-    (error "Cannot use hash algorithm %s!" algorithm))))
+  (secure-hash algorithm string nil nil t))
 
 (defun jabber-caps-identity-< (a b)
   "Compare two Jabber identity XML elements A and B, return t if A < B."

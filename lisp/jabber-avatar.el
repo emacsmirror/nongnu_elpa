@@ -170,8 +170,7 @@ If there is no cached image, return nil."
       (with-temp-buffer
 	(let ((require-final-newline nil)
 	      (coding-system-for-write 'binary))
-	  (if (fboundp 'set-buffer-multibyte)
-	      (set-buffer-multibyte nil))
+	  (set-buffer-multibyte nil)
 	  (insert base64-data)
 	  (base64-decode-region (point-min) (point-max))
 	  (write-region (point-min) (point-max) filename nil 'silent))))))

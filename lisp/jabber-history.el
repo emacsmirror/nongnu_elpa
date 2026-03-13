@@ -246,10 +246,8 @@ applies, though."
       (let ((coding-system-for-read 'utf-8))
 	(insert-file-contents jabber-global-history-filename))
       (let ((progress-reporter
-	     (when (fboundp 'make-progress-reporter)
-	       (make-progress-reporter "Migrating history..."
-				       (point-min) (point-max))))
-	    ;;(file-table (make-hash-table :test 'equal))
+	     (make-progress-reporter "Migrating history..."
+				     (point-min) (point-max)))
 	    ;; Keep track of blocks of entries pertaining to the same JID.
 	    current-jid jid-start)
 	(while (not (eobp))
@@ -269,8 +267,7 @@ applies, though."
 	      ;; ...and switch to new JID.
 	      (setq current-jid jid)
 	      (setq jid-start start))
-	    (when (fboundp 'progress-reporter-update)
-	      (progress-reporter-update progress-reporter (point)))))
+	    (progress-reporter-update progress-reporter (point))))
 	;; Finally, save the last block, if any.
 	(when current-jid
 	  (let ((history-file (jabber-history-filename current-jid)))

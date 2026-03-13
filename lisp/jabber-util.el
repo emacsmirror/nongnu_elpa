@@ -269,13 +269,12 @@ If FULLJIDS is non-nil, complete jids with resources."
 (defun jabber-read-password (bare-jid)
   "Read Jabber password from minibuffer."
   (let ((found
-	 (and (fboundp 'auth-source-search)
-	      (nth 0 (auth-source-search
-		      :user (jabber-jid-username bare-jid)
-		      :host (jabber-jid-server bare-jid)
-		      :port "xmpp"
-		      :max 1
-		      :require '(:secret))))))
+	 (nth 0 (auth-source-search
+		 :user (jabber-jid-username bare-jid)
+		 :host (jabber-jid-server bare-jid)
+		 :port "xmpp"
+		 :max 1
+		 :require '(:secret)))))
     (if found
 	(let ((secret (plist-get found :secret)))
 	  (copy-sequence

@@ -29,7 +29,6 @@
 (require 'jabber-core)
 (require 'fsm)
 
-;; Emacs 24 can be linked with GnuTLS
 (require 'gnutls nil t)
 
 (require 'starttls nil t)
@@ -74,8 +73,7 @@ nil means prefer gnutls but fall back to openssl.
 This is a list of server names, each matching the hostname part
 of your JID.
 
-This option has effect only when using native GnuTLS in Emacs 24
-or later."
+This option has effect only when using native GnuTLS."
   :type '(repeat string))
 
 (defvar jabber-connect-methods
@@ -141,13 +139,7 @@ If we can't find SRV records, use standard defaults."
 Send a message of the form (:connected CONNECTION) to FSM if
 connection succeeds.  Send a message (:connection-failed ERRORS) if
 connection fails."
-  (cond
-   ((featurep 'make-network-process '(:nowait t))
-    ;; We can connect asynchronously!
-    (jabber-network-connect-async fsm server network-server port))
-   (t
-    ;; Connecting to the server will block Emacs.
-    (jabber-network-connect-sync fsm server network-server port))))
+  (jabber-network-connect-async fsm server network-server port))
 
 (defun jabber-network-connect-async (fsm server network-server port)
   ;; Get all potential targets...
@@ -212,49 +204,6 @@ connection fails."
 		(connection-failed nil (error-message-string e)))))))
       (message "Connecting to %s:%s..." (caar targets) (cdar targets))
       (connect (car targets) (cdr targets)))))
-
-(defun jabber-network-connect-sync (fsm server network-server port)
-  ;; This code will AFAIK only be used on Windows.  Apologies in
-  ;; advance for any bit rot...
-  (let ((coding-system-for-read 'utf-8)
-	(coding-system-for-write 'utf-8)
-	(targets (jabber-srv-targets server network-server port))
-	errors)
-    (catch 'connected
-      (dolist (target targets)
-	(condition-case e
-	    (let ((process-buffer (generate-new-buffer jabber-process-buffer))
-		  connection)
-	      (unwind-protect
-		  (setq connection (open-network-stream
-				    "jabber"
-				    process-buffer
-				    (car target)
-				    (cdr target)))
-
-		(unless (or connection jabber-debug-keep-process-buffers)
-		  (kill-buffer process-buffer)))
-
-	      (when connection
-		(fsm-send fsm (list :connected connection))
-		(throw 'connected connection)))
-	  (file-error
-	   ;; A file-error has the error message in the third list
-	   ;; element.
-	   (let ((err (format "Couldn't connect to %s:%s: %s"
-			      (car target) (cdr target)
-			      (car (cddr e)))))
-	     (message "%s" err)
-	     (push err errors)))
-	  (error
-	   ;; Not sure if we ever get anything but file-errors,
-	   ;; but let's make sure we report them:
-	   (let ((err (format "Couldn't connect to %s:%s: %s"
-			      (car target) (cdr target)
-			      (error-message-string e))))
-	     (message "%s" err)
-	     (push err errors)))))
-      (fsm-send fsm (list :connection-failed (nreverse errors))))))
 
 (defun jabber-network-send (connection string)
   "Send a string via a plain TCP/IP connection to the Jabber Server."

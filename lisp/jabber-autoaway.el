@@ -206,13 +206,11 @@ The method for finding the terminal only works on GNU/Linux."
 	  diff)))))
 
 (defun jabber-current-idle-time ()
-  "Get idle time through `current-idle-time'.
-`current-idle-time' was introduced in Emacs 22."
-  (if (fboundp 'current-idle-time)
-      (let ((idle-time (current-idle-time)))
-        (if (null idle-time)
-            0
-          (float-time idle-time)))))
+  "Get idle time through `current-idle-time'."
+  (let ((idle-time (current-idle-time)))
+    (if (null idle-time)
+        0
+      (float-time idle-time))))
 
 (provide 'jabber-autoaway)
 
