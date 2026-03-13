@@ -1,9 +1,26 @@
 ;;; jabber-roster-tests.el --- Tests for jabber-roster  -*- lexical-binding: t; -*-
 
 (require 'ert)
-(require 'jabber-roster)
 
-(defvar *jabber-active-groupchats* nil)
+;; Pre-define variables that jabber-muc.el expects at load time:
+(defvar jabber-body-printers nil)
+(defvar jabber-message-chain nil)
+(defvar jabber-presence-chain nil)
+(defvar jabber-iq-chain nil)
+(defvar jabber-jid-obarray (make-vector 127 0))
+
+(require 'jabber-roster)
+(require 'jabber-muc)
+
+(defmacro jabber-muc-test-with-rooms (rooms &rest body)
+  "Run BODY with ROOMS as active groupchats.
+ROOMS is an alist of (group . nickname)."
+  (declare (indent 1))
+  `(let ((*jabber-active-groupchats* ,rooms)
+         (jabber-muc--rooms (make-hash-table :test #'equal)))
+     (dolist (r ,rooms)
+       (puthash (car r) (cons nil (cdr r)) jabber-muc--rooms))
+     ,@body))
 
 ;;; ---- Group 1: jabber-roster-sort-by-status ----
 
@@ -235,7 +252,7 @@
 
 (ert-deftest jabber-test-roster-imenu-contacts ()
   "Imenu indexes contact groups and JIDs."
-  (let ((*jabber-active-groupchats* nil))
+  (jabber-muc-test-with-rooms nil
     (with-temp-buffer
       (let ((line1 "Friends")
             (line2 "alice@example.com"))
@@ -249,8 +266,8 @@
 
 (ert-deftest jabber-test-roster-imenu-groupchats ()
   "Imenu indexes groupchat JIDs under Groupchats."
-  (let ((*jabber-active-groupchats*
-         '(("room@conference.example.com" . "mynick"))))
+  (jabber-muc-test-with-rooms
+      '(("room@conference.example.com" . "mynick"))
     (with-temp-buffer
       (insert (propertize "Groupchats" 'jabber-group "Groupchats") "\n")
       (insert (propertize "room@conference.example.com"
@@ -264,7 +281,7 @@
 
 (ert-deftest jabber-test-roster-imenu-empty-buffer ()
   "Empty buffer returns nil index."
-  (let ((*jabber-active-groupchats* nil))
+  (jabber-muc-test-with-rooms nil
     (with-temp-buffer
       (should (null (jabber-roster-imenu-create-index))))))
 
@@ -274,9 +291,9 @@
   "Deferred refresh flag starts as nil."
   (should (null jabber-roster--needs-refresh)))
 
-(ert-deftest jabber-test-roster-last-groupchats-default-nil ()
-  "Groupchat snapshot starts as nil."
-  (should (null jabber-roster--last-groupchats)))
+(ert-deftest jabber-test-roster-last-muc-generation-default-zero ()
+  "MUC generation counter starts at zero."
+  (should (= jabber-roster--last-muc-generation 0)))
 
 (provide 'jabber-roster-tests)
 ;;; jabber-roster-tests.el ends here
