@@ -386,60 +386,52 @@ Specify 0 to display all messages."
     (when forwarded-message
       forwarded-message)))
 
+(defun jabber-chat--unwrap-carbon (jc xml-data)
+  "If XML-DATA is a carbon-forwarded message, unwrap it.
+Return (EFFECTIVE-XML-DATA . CHAT-BUFFER-OR-NIL).
+JC is the Jabber connection."
+  (if (car (jabber-xml-get-children xml-data 'sent))
+      (let* ((fwd-msg (jabber-get-forwarded-message xml-data))
+             (to (jabber-xml-get-attribute fwd-msg 'to)))
+        (cons fwd-msg
+              (when to
+                (jabber-chat-create-buffer jc to))))
+    (cons xml-data nil)))
+
+(defun jabber-chat--select-buffer (jc from &optional carbon-buffer)
+  "Return the chat buffer for an incoming message from FROM.
+CARBON-BUFFER, if non-nil, is a buffer already created for a
+carbon-forwarded message.  JC is the Jabber connection."
+  (if (jabber-muc-sender-p from)
+      (jabber-muc-private-create-buffer
+       jc (jabber-jid-user from) (jabber-jid-resource from))
+    (or carbon-buffer
+        (jabber-chat-create-buffer jc from))))
+
 (defun jabber-process-chat (jc xml-data)
   "If XML-DATA is a one-to-one chat message, handle it as such.
 JC is the Jabber connection."
-  ;; For now, everything that is not a public MUC message is
-  ;; potentially a 1to1 chat message.
   (when (not (jabber-muc-message-p xml-data))
-    ;; Note that we handle private MUC messages here.
-    (cl-destructuring-bind (xml-data chat-buffer)
-        (if (car (jabber-xml-get-children xml-data 'sent))
-            (let* ((fwd-msg (jabber-get-forwarded-message xml-data))
-                   (to (jabber-xml-get-attribute fwd-msg 'to)))
-              (list fwd-msg
-                    (and
-                     to
-                     (jabber-chat-create-buffer
-                      jc
-                      ;; issue-106: cheogram telephony gateway silently drops
-                      ;; message that include "/sip:..." resource part.
-                      (if (string-equal (jabber-jid-server to) "cheogram.com")
-                          (jabber-jid-user to)
-                        to)))))
-          (list xml-data nil))
-      (let ((from (jabber-xml-get-attribute xml-data 'from))
-	    (error-p (jabber-xml-get-children xml-data 'error))
-	    (body-text (car (jabber-xml-node-children
-			     (car (jabber-xml-get-children
-				   xml-data 'body)))))
-	    (msg-plist (jabber-chat--msg-plist-from-stanza xml-data)))
-        ;; First check if we would output anything for this stanza.
-        (when (or error-p
-		  (run-hook-with-args-until-success 'jabber-chat-printers
-                                                    msg-plist
-                                                    :foreign :printp))
-          ;; If so, create chat buffer, if necessary...
-	  (with-current-buffer (if (jabber-muc-sender-p from)
-				   (jabber-muc-private-create-buffer
-				    jc
-				    (jabber-jid-user from)
-				    (jabber-jid-resource from))
-			         (or chat-buffer
-                                     (jabber-chat-create-buffer jc from)))
-            ;; ...add the message to the ewoc...
-	    (let ((node (ewoc-enter-last jabber-chat-ewoc
-                                         (list (if error-p :error :foreign)
-                                               msg-plist))))
-	      (jabber-maybe-print-rare-time node))
-
-            ;; ...and call alert hooks.
-	    (dolist (hook '(jabber-message-hooks jabber-alert-message-hooks))
-	      (run-hook-with-args hook
-				  from (current-buffer) body-text
-				  (funcall jabber-alert-message-function
-					   from (current-buffer) body-text)))))))))
-
+    (let* ((unwrapped (jabber-chat--unwrap-carbon jc xml-data))
+           (xml-data (car unwrapped))
+           (carbon-buffer (cdr unwrapped))
+           (from (jabber-xml-get-attribute xml-data 'from))
+           (error-p (jabber-xml-get-children xml-data 'error))
+           (body-text (car (jabber-xml-node-children
+                            (car (jabber-xml-get-children xml-data 'body)))))
+           (msg-plist (jabber-chat--msg-plist-from-stanza xml-data)))
+      (when (or error-p
+                (run-hook-with-args-until-success 'jabber-chat-printers
+                                                  msg-plist :foreign :printp))
+        (with-current-buffer (jabber-chat--select-buffer jc from carbon-buffer)
+          (jabber-maybe-print-rare-time
+           (ewoc-enter-last jabber-chat-ewoc
+                            (list (if error-p :error :foreign) msg-plist)))
+          (dolist (hook '(jabber-message-hooks jabber-alert-message-hooks))
+            (run-hook-with-args hook
+                                from (current-buffer) body-text
+                                (funcall jabber-alert-message-function
+                                         from (current-buffer) body-text))))))))
 (defun jabber-chat-send (jc body)
   "Send BODY through connection JC, and display it in chat buffer.
 JC is the Jabber connection."
