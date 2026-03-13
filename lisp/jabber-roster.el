@@ -23,7 +23,7 @@
 (require 'cl-lib)
 (require 'jabber-util)
 (require 'jabber-alert)
-(require 'jabber-keymap)
+(require 'jabber-menu)
 (require 'jabber-private)
 (require 'jabber-presence)
 (require 'jabber-carbons)
@@ -34,46 +34,7 @@
 (defgroup jabber-roster nil "roster display options"
   :group 'jabber)
 
-(defcustom jabber-roster-line-format " %a %c %-25n %u %-8s  %S"
-  "The format specification of the lines in the roster display.
 
-These fields are available:
-
-%a   Avatar, if any
-%c   \"*\" if the contact is connected, or \" \" if not
-%u   sUbscription state - see below
-%n   Nickname of contact, or JID if no nickname
-%j   Bare JID of contact (without resource)
-%r   Highest-priority resource of contact
-%s   Availability of contact as string (\"Online\", \"Away\" etc)
-%S   Status string specified by contact
-
-%u is replaced by one of the strings given by
-`jabber-roster-subscription-display'."
-  :type 'string)
-
-(defcustom jabber-roster-subscription-display '(("none" . "   ")
-						("from" . "<  ")
-						("to" . "  >")
-						("both" . "<->"))
-  "Strings used for indicating subscription status of contacts.
-\"none\" means that there is no subscription between you and the
-contact.
-\"from\" means that the contact has a subscription to you, but you
-have no subscription to the contact.
-\"to\" means that you have a subscription to the contact, but the
-contact has no subscription to you.
-\"both\" means a mutual subscription.
-
-Having a \"presence subscription\" means being able to see the
-other person's presence.
-
-Some fancy arrows you might want to use, if your system can
-display them: ← → ⇄ ↔"
-  :type '(list (cons :format "%v" (const :format "" "none") (string :tag "None"))
-	       (cons :format "%v" (const :format "" "from") (string :tag "From"))
-	       (cons :format "%v" (const :format "" "to") (string :tag "To"))
-	       (cons :format "%v" (const :format "" "both") (string :tag "Both"))))
 
 (defcustom jabber-resource-line-format "     %r - %s (%S), priority %p"
   "The format specification of resource lines in the roster display.
@@ -757,44 +718,22 @@ sorted list and BUDDY-JC-MAP maps buddy names to connections."
   "Format and insert a roster entry for BUDDY at point.
 BUDDY is a JID symbol. JC is the Jabber connection."
   (if buddy
-      (let ((buddy-str (format-spec
-                        jabber-roster-line-format
-                        (list
-                         (cons ?a (jabber-propertize " " 'display (get buddy 'avatar)))
-                         (cons ?c (if (get buddy 'connected) "*" " "))
-                         (cons ?u (cdr (assoc
-                                        (or
-                                         (get buddy 'subscription) "none")
-                                        jabber-roster-subscription-display)))
-                         (cons ?n (if (> (length (get buddy 'name)) 0)
-                                      (get buddy 'name)
-                                    (symbol-name buddy)))
-                         (cons ?j (symbol-name buddy))
-                         (cons ?r (or (get buddy 'resource) ""))
-                         (cons ?s (or (cdr (assoc (get buddy 'show)
-					          jabber-presence-strings))
-                                      (get buddy 'show)))
-                         (cons ?S (if (get buddy 'status)
-                                      (jabber-fix-status (get buddy 'status))
-                                    ""))))))
-	(let ((unread (member (symbol-name buddy)
-			      (bound-and-true-p jabber-activity-jids))))
-	  (add-text-properties 0
-			       (length buddy-str)
-			       (list
-				'face
-				(if unread
-				    'jabber-roster-unread
-				  (or (cdr (assoc (get buddy 'show) jabber-presence-faces))
-				      'jabber-roster-user-online))
-				'help-echo
-				(symbol-name buddy)
-				'jabber-jid
-				(symbol-name buddy)
-				'jabber-account
-				jc)
-			       buddy-str))
-	(insert buddy-str)
+      (let* ((name (if (> (length (get buddy 'name)) 0)
+                       (get buddy 'name)
+                     (symbol-name buddy)))
+             (show (or (cdr (assoc (get buddy 'show) jabber-presence-strings))
+                       (get buddy 'show)))
+             (unread (member (symbol-name buddy)
+                             (bound-and-true-p jabber-activity-jids)))
+             (face (if unread
+                       'jabber-roster-unread
+                     (or (cdr (assoc (get buddy 'show) jabber-presence-faces))
+                         'jabber-roster-user-online)))
+             (props (list 'jabber-jid (symbol-name buddy)
+                          'jabber-account jc)))
+        (insert (apply #'propertize (concat " " name) 'face face props))
+        (when show
+          (insert (propertize (concat " " show) 'face 'shadow)))
 
 	(when (or (eq jabber-show-resources 'always)
 		  (and (eq jabber-show-resources 'sometimes)
