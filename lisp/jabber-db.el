@@ -33,6 +33,7 @@
 ;;; Code:
 
 (require 'jabber-util)
+(eval-when-compile (require 'cl-lib))
 
 ;; Global reference declarations
 (declare-function jabber-history-backlog "jabber-history.el"
@@ -97,7 +98,9 @@ CREATE TABLE IF NOT EXISTS message (
   body         TEXT,
   timestamp    INTEGER NOT NULL,
   encrypted    INTEGER DEFAULT 0,
-  raw_xml      TEXT
+  raw_xml      TEXT,
+  oob_url      TEXT,
+  oob_desc     TEXT
 )")
   (sqlite-execute db "\
 CREATE INDEX IF NOT EXISTS idx_msg_peer_ts
@@ -165,7 +168,7 @@ Return the database connection, or nil if storage is disabled."
 
 (defun jabber-db-store-message (account peer direction type body timestamp
                                         &optional resource stanza-id
-                                        server-id raw-xml)
+                                        server-id raw-xml oob-url oob-desc)
   "Store a message in the database.
 ACCOUNT is the bare JID of the local account.
 PEER is the bare JID of the contact or room.
@@ -176,7 +179,9 @@ TIMESTAMP is a unix epoch integer.
 Optional RESOURCE is the sender resource.
 Optional STANZA-ID is the XEP-0359 origin id.
 Optional SERVER-ID is the XEP-0359 server-assigned id.
-Optional RAW-XML is the full stanza as a string."
+Optional RAW-XML is the full stanza as a string.
+Optional OOB-URL is the jabber:x:oob URL.
+Optional OOB-DESC is the jabber:x:oob description."
   (when-let* ((db (jabber-db-ensure-open)))
     ;; Dedup by stanza_id if present
     (unless (and stanza-id
@@ -188,16 +193,16 @@ Optional RAW-XML is the full stanza as a string."
        db
        "INSERT INTO message \
 (account, peer, resource, direction, type, body, timestamp, \
-stanza_id, server_id, raw_xml) \
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+stanza_id, server_id, raw_xml, oob_url, oob_desc) \
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
        (list account peer resource direction type body timestamp
-             stanza-id server-id raw-xml)))))
+             stanza-id server-id raw-xml oob-url oob-desc)))))
 
 ;;; Retrieval
 
 (defun jabber-db--row-to-plist (row)
   "Convert a database ROW to a message plist.
-ROW is (account peer direction body timestamp resource type)."
+ROW is (account peer direction body timestamp resource type oob_url oob_desc)."
   (let* ((account (nth 0 row))
          (peer (nth 1 row))
          (direction (nth 2 row))
@@ -214,8 +219,8 @@ ROW is (account peer direction body timestamp resource type)."
           :delayed t
           :direction direction
           :msg-type (nth 6 row)
-          :oob-url nil
-          :oob-desc nil
+          :oob-url (nth 7 row)
+          :oob-desc (nth 8 row)
           :error-text nil)))
 
 (defun jabber-db-backlog (account peer &optional count start-time)
@@ -234,7 +239,8 @@ If nil, `jabber-backlog-days' is used to compute the cutoff."
                     (t 0)))
            (rows (sqlite-select
                   db
-                  "SELECT account, peer, direction, body, timestamp, resource, type \
+                  "SELECT account, peer, direction, body, timestamp, resource, type, \
+oob_url, oob_desc \
 FROM message \
 WHERE account = ? AND peer = ? AND timestamp >= ? \
 ORDER BY timestamp DESC LIMIT ?"
@@ -344,7 +350,19 @@ XML-DATA is the parsed stanza."
                        (car (jabber-xml-get-children xml-data 'body)))))
            (timestamp (jabber-message-timestamp xml-data))
            (type (jabber-xml-get-attribute xml-data 'type))
-           (stanza-id (jabber-xml-get-attribute xml-data 'id)))
+           (stanza-id (jabber-xml-get-attribute xml-data 'id))
+           (oob-x (cl-find-if
+                    (lambda (x)
+                      (and (listp x)
+                           (string= (jabber-xml-get-attribute x 'xmlns)
+                                    "jabber:x:oob")))
+                    (jabber-xml-node-children xml-data)))
+           (oob-url (when oob-x
+                      (car (jabber-xml-node-children
+                            (car (jabber-xml-get-children oob-x 'url))))))
+           (oob-desc (when oob-x
+                       (car (jabber-xml-node-children
+                             (car (jabber-xml-get-children oob-x 'desc)))))))
       (when (and from body)
         (jabber-db-store-message
          (jabber-connection-bare-jid jc)
@@ -354,11 +372,14 @@ XML-DATA is the parsed stanza."
          body
          (floor (float-time (or timestamp (current-time))))
          (jabber-jid-resource from)
-         stanza-id)))))
+         stanza-id
+         nil nil
+         oob-url oob-desc)))))
 
-(defun jabber-db--outgoing-handler (body _id)
+(defun jabber-db--outgoing-handler (body id)
   "Store outgoing chat message in the database.
-BODY is the message text.  Called from `jabber-chat-send-hooks'."
+BODY is the message text.  ID is the stanza id for dedup.
+Called from `jabber-chat-send-hooks'."
   (when (and jabber-chatting-with jabber-buffer-connection)
     (jabber-db-store-message
      (jabber-connection-bare-jid jabber-buffer-connection)
@@ -366,7 +387,8 @@ BODY is the message text.  Called from `jabber-chat-send-hooks'."
      "out"
      "chat"
      body
-     (floor (float-time)))))
+     (floor (float-time))
+     nil id)))
 
 (defun jabber-db--store-outgoing (jc to body type)
   "Store an outgoing message sent via `jabber-send-message'.

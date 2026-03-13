@@ -57,6 +57,10 @@
 (declare-function jabber-chat--msg-plist-from-stanza "jabber-chat.el"
                   (xml-data &optional delayed))
 (declare-function jabber-muc-joined-p "jabber-muc.el" (group))
+(declare-function jabber-db-store-message "jabber-db.el"
+                  (account peer direction type body timestamp
+                           &optional resource stanza-id server-id
+                           raw-xml oob-url oob-desc))
 
 ;; * Configuration variables *
 
@@ -494,17 +498,25 @@ and the JC Jabber Connection."
                                    (x ((xmlns . "jabber:x:oob"))
                                       (url () ,body)))))
     (unless (equal type "groupchat")
-          (dolist (hook jabber-chat-send-hooks)
-      (if (eq hook t)
-	  ;; Local hook referring to global...
-	  (when (local-variable-p 'jabber-chat-send-hooks)
-	    (dolist (global-hook (default-value 'jabber-chat-send-hooks))
-	      (nconc stanza-to-send (funcall global-hook body id))))
-	(nconc stanza-to-send (funcall hook body id))))
-          (with-current-buffer (jabber-chat-create-buffer jc jid)
-            (jabber-maybe-print-rare-time
-             (ewoc-enter-last jabber-chat-ewoc
-                              (list :local (jabber-chat--msg-plist-from-stanza stanza-to-send))))))
+      ;; Store with OOB before hooks (hook will dedup via stanza-id).
+      (jabber-db-store-message
+       (jabber-connection-bare-jid jc)
+       (jabber-jid-user jid)
+       "out" type body
+       (floor (float-time))
+       nil id nil nil
+       body nil)
+      (dolist (hook jabber-chat-send-hooks)
+	(if (eq hook t)
+	    ;; Local hook referring to global...
+	    (when (local-variable-p 'jabber-chat-send-hooks)
+	      (dolist (global-hook (default-value 'jabber-chat-send-hooks))
+		(nconc stanza-to-send (funcall global-hook body id))))
+	  (nconc stanza-to-send (funcall hook body id))))
+      (with-current-buffer (jabber-chat-create-buffer jc jid)
+        (jabber-maybe-print-rare-time
+         (ewoc-enter-last jabber-chat-ewoc
+                          (list :local (jabber-chat--msg-plist-from-stanza stanza-to-send))))))
     ;; ...and send it...
     (jabber-send-sexp jc stanza-to-send)))
 
