@@ -127,19 +127,23 @@ If MIME-TYPE is not specified, try to find it from the image data."
 ;;      (make-avatar :mime-type content-type :sha1-sum id :bytes bytes
 ;; 		  :height height :width width :base64-data base64-data))))
 
+(defun jabber-avatar--line-height ()
+  "Return the pixel height of a line, suitable for inline avatars."
+  (frame-char-height))
+
 (defun jabber-avatar-image (avatar)
-  "Create an image from AVATAR.
+  "Create an image from AVATAR sized to fit a single line.
 Return nil if images of this type are not supported."
   (condition-case nil
-      (jabber-image-create
-       (with-temp-buffer
-         (set-buffer-multibyte nil)
-         (insert (avatar-base64-data avatar))
-         (base64-decode-region (point-min) (point-max))
-         (buffer-string))
-       (avatar-mime-type avatar)
-       jabber-avatar-max-width
-       jabber-avatar-max-height)
+      (let ((h (jabber-avatar--line-height)))
+        (jabber-image-create
+         (with-temp-buffer
+           (set-buffer-multibyte nil)
+           (insert (avatar-base64-data avatar))
+           (base64-decode-region (point-min) (point-max))
+           (buffer-string))
+         (avatar-mime-type avatar)
+         h h))
     (error nil)))
 
 ;;;; Avatar cache
@@ -193,8 +197,8 @@ AVATAR may be one of:
       (setq image (lambda ()
                     (when-let* ((file (jabber-avatar-find-cached avatar)))
                       (condition-case nil
-                          (jabber-image-create-from-file
-                           file jabber-avatar-max-width jabber-avatar-max-height)
+                          (let ((h (jabber-avatar--line-height)))
+                            (jabber-image-create-from-file file h h))
                         (error nil))))))
      (t
       (setq hash nil)
@@ -205,14 +209,11 @@ AVATAR may be one of:
       (put jid-symbol 'avatar-hash hash))))
 
 (defun jabber-create-image (file-or-data &optional _type data-p)
-  "Create an image from FILE-OR-DATA.
-Uses dynamic sizing via `image-property' instead of ImageMagick."
-  (if data-p
-      (jabber-image-create file-or-data nil
-                           jabber-avatar-max-width jabber-avatar-max-height)
-    (jabber-image-create-from-file file-or-data
-                                   jabber-avatar-max-width
-                                   jabber-avatar-max-height)))
+  "Create a line-height-sized image from FILE-OR-DATA."
+  (let ((h (jabber-avatar--line-height)))
+    (if data-p
+        (jabber-image-create file-or-data nil h h)
+      (jabber-image-create-from-file file-or-data h h))))
 
 (provide 'jabber-avatar)
 
