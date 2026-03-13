@@ -76,6 +76,8 @@
 
 (declare-function jabber-vcard-avatars-update-current
                   "jabber-vcard-avatars.el" (jc new-hash))
+(declare-function jabber-image-create "jabber-image"
+                  (data &optional mime-type max-width max-height))
 (defvar jabber-vcard-fields)            ; jabber-vcard.el
 (defvar jabber-buffer-connection)       ; jabber-chatbuffer.el
 
@@ -413,7 +415,7 @@ obtained from `xml-parse-region'."
       (when (and photo-type photo-binval)
 	(condition-case nil
 	    ;; ignore the type, let create-image figure it out.
-	    (let ((image (jabber-create-image (base64-decode-string photo-binval) nil t)))
+	    (let ((image (jabber-image-create (base64-decode-string photo-binval))))
 	      (insert-image image "[Photo]")
 	      (insert "\n"))
 	  (error (insert "Couldn't display photo\n")))))))

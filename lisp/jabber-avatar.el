@@ -43,6 +43,7 @@
 (require 'mailcap)
 (eval-when-compile (require 'cl-lib))
 (require 'jabber-util)
+(require 'jabber-image)
 
 ;;;; Variables
 
@@ -51,9 +52,10 @@
   :group 'jabber)
 
 (defcustom jabber-avatar-cache-directory
-  (locate-user-emacs-file "jabber-avatar-cache" ".jabber-avatars")
+  (expand-file-name "jabber/avatars" user-emacs-directory)
   "Directory to use for cached avatars."
-  :type 'directory)
+  :type 'directory
+  :group 'jabber-avatar)
 
 (defcustom jabber-avatar-verbose nil
   "Display messages about irregularities with other people's avatars."
@@ -112,14 +114,9 @@ If MIME-TYPE is not specified, try to find it from the image data."
 	 (sha1-sum (sha1 data))
 	 (base64-data (or base64-string (base64-encode-string raw-data)))
 	 (type (or mime-type
-	           (cdr (assq (get :type (cdr (condition-case nil
-	        				  (jabber-create-image data nil t)
-	        				(error nil))))
-	        	      '((png "image/png")
-	        		(jpeg "image/jpeg")
-	        		(gif "image/gif")))))))
-    (jabber-avatar-compute-size
-     (make-avatar :mime-type type :sha1-sum sha1-sum :base64-data base64-data :bytes bytes))))
+                   (when-let* ((detected (ignore-errors (image-type data nil t))))
+                     (symbol-name detected)))))
+    (make-avatar :mime-type type :sha1-sum sha1-sum :base64-data base64-data :bytes bytes)))
 
 ;; XXX: This function is based on an outdated version of XEP-0084.
 ;; (defun jabber-avatar-from-data-node (data-node)
@@ -134,29 +131,16 @@ If MIME-TYPE is not specified, try to find it from the image data."
   "Create an image from AVATAR.
 Return nil if images of this type are not supported."
   (condition-case nil
-      (jabber-create-image (with-temp-buffer
-		      (set-buffer-multibyte nil)
-		      (insert (avatar-base64-data avatar))
-		      (base64-decode-region (point-min) (point-max))
-		      (buffer-string))
-		    nil
-		    t)
-      (error nil)))
-
-(defun jabber-avatar-compute-size (avatar)
-  "Compute and set the width and height fields of AVATAR.
-Return AVATAR."
-  ;; image-size only works when there is a window system.
-  ;; But display-graphic-p doesn't exist on XEmacs...
-  (let ((size (and (fboundp 'display-graphic-p)
-		   (display-graphic-p)
-		   (let ((image (jabber-avatar-image avatar)))
-		     (and image
-			  (image-size image t))))))
-    (when size
-      (setf (avatar-width avatar) (car size))
-      (setf (avatar-height avatar) (cdr size)))
-    avatar))
+      (jabber-image-create
+       (with-temp-buffer
+         (set-buffer-multibyte nil)
+         (insert (avatar-base64-data avatar))
+         (base64-decode-region (point-min) (point-max))
+         (buffer-string))
+       (avatar-mime-type avatar)
+       jabber-avatar-max-width
+       jabber-avatar-max-height)
+    (error nil)))
 
 ;;;; Avatar cache
 
@@ -207,9 +191,11 @@ AVATAR may be one of:
      ((stringp avatar)
       (setq hash avatar)
       (setq image (lambda ()
-		    (condition-case nil
-			(jabber-create-image (jabber-avatar-find-cached avatar))
-		      (error nil)))))
+                    (when-let* ((file (jabber-avatar-find-cached avatar)))
+                      (condition-case nil
+                          (jabber-image-create-from-file
+                           file jabber-avatar-max-width jabber-avatar-max-height)
+                        (error nil))))))
      (t
       (setq hash nil)
       (setq image #'ignore)))
@@ -218,21 +204,15 @@ AVATAR may be one of:
       (put jid-symbol 'avatar (funcall image))
       (put jid-symbol 'avatar-hash hash))))
 
-(defun jabber-create-image (file-or-data &optional type data-p)
+(defun jabber-create-image (file-or-data &optional _type data-p)
   "Create an image from FILE-OR-DATA.
-If width/height exceeds jabber-avatar-max-width or
-jabber-avatar-max-height, and ImageMagick is available, the image
-is scaled down."
-  (let* ((image (create-image file-or-data type data-p))
-         (size (image-size image t))
-         (spec (cdr image)))
-    (when (and (functionp 'imagemagick-types)
-               (or (> (car size) jabber-avatar-max-width)
-                   (> (cdr size) jabber-avatar-max-height)))
-      (plist-put spec :type 'imagemagick)
-      (plist-put spec :width jabber-avatar-max-width)
-      (plist-put spec :height jabber-avatar-max-height))
-    image))
+Uses dynamic sizing via `image-property' instead of ImageMagick."
+  (if data-p
+      (jabber-image-create file-or-data nil
+                           jabber-avatar-max-width jabber-avatar-max-height)
+    (jabber-image-create-from-file file-or-data
+                                   jabber-avatar-max-width
+                                   jabber-avatar-max-height)))
 
 (provide 'jabber-avatar)
 
