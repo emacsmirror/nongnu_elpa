@@ -78,7 +78,7 @@ These fields are about your account:
   "The specification for the header line of chat buffers.
 The format is that of `mode-line-format' and `header-line-format'.")
 
-(defcustom jabber-chat-buffer-show-avatar t
+(defcustom jabber-chat-buffer-show-avatar nil
   "Show avatars in header line of chat buffer?
 This variable might not take effect if you have changed
 `jabber-chat-header-line-format'."
