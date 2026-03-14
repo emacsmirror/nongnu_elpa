@@ -1,7 +1,6 @@
 *.elc
 *~
-Makefile
-Makefile.in
+/Makefile.in
 aclocal.m4
 config.log
 config.status
@@ -14,3 +13,5 @@ elc-stamp
 jabber.info
 emacs-jabber.schemas
 .worktrees/
+src/*.so
+lisp/*.so
