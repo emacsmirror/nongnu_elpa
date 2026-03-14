@@ -34,7 +34,7 @@
 SQLite returns BLOBs as multibyte strings; this normalizes them
 for the C module which expects unibyte."
   (if (and (stringp value) (multibyte-string-p value))
-      (string-as-unibyte value)
+      (encode-coding-string value 'raw-text)
     value))
 
 ;;; Store blob CRUD

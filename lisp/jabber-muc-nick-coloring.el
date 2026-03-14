@@ -81,10 +81,8 @@ added in #RGB notation for unknown nicks."
   (let ((color (cdr (assoc nick jabber-muc-participant-colors))))
     (if color
         color
-      (progn
-        (unless jabber-muc-participant-colors)
-        (push (cons nick (jabber-muc-nick-gen-color nick)) jabber-muc-participant-colors)
-        (cdr (assoc nick jabber-muc-participant-colors))))))
+      (push (cons nick (jabber-muc-nick-gen-color nick)) jabber-muc-participant-colors)
+      (cdr (assoc nick jabber-muc-participant-colors)))))
 
 (provide 'jabber-muc-nick-coloring)
 

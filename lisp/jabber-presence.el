@@ -575,9 +575,6 @@ JC is the Jabber connection."
 			      (mapcar
 			       (lambda (j) (get j 'groups))
 			       (plist-get (fsm-get-state-data account) :roster)))))
-		 (when (string< emacs-version "22")
-		   ;; Older emacsen want the completion table to be an alist...
-		   (setq all-groups (mapcar #'list all-groups)))
 		 (list account
 		       jid (jabber-read-with-input-method (format "Name: (default `%s') " name) nil nil name)
 		       (delete ""

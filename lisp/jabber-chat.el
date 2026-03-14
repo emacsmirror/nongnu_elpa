@@ -520,9 +520,6 @@ splice into the stanza after the body (e.g. OOB, hints)."
 			      (body () ,body)
 			      ,@extra-elements)))
        ;; ...add additional elements...
-       ;; TODO: Once we require Emacs 24.1, use `run-hook-wrapped' instead.
-       ;; That way we don't need to eliminate the "local hook" functionality
-       ;; here.
        (dolist (hook jabber-chat-send-hooks)
 	 (if (eq hook t)
 	     ;; Local hook referring to global...
