@@ -127,7 +127,7 @@ nil, access is always granted.")
 ;; Global reference declarations
 
 (declare-function jabber-send-current-presence "jabber-presence.el"
-                  (&optional _ignore))
+                  (&optional jc))
 (declare-function jabber-xdata-formtype "jabber-widget.el" (x))
 (defvar jabber-presence-element-functions) ; jabber-presence.el
 

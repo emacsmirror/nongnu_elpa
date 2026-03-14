@@ -260,6 +260,34 @@ Trailing newlines are always removed, regardless of this variable."
 
 ;;
 
+(defun jabber-roster--accounts-for-jid (jid)
+  "Return list of connections that have JID in their roster."
+  (let ((sym (jabber-jid-symbol jid)))
+    (cl-remove-if-not
+     (lambda (jc)
+       (memq sym (plist-get (fsm-get-state-data jc) :roster)))
+     jabber-connections)))
+
+(defun jabber-roster--choose-account (jid account-at-point)
+  "Choose which account to use for JID.
+If JID appears in more than one account's roster, prompt.
+Otherwise return ACCOUNT-AT-POINT."
+  (let ((accounts (jabber-roster--accounts-for-jid jid)))
+    (if (cdr accounts)
+        ;; Multiple accounts have this contact; prompt.
+        (let* ((completions (mapcar (lambda (jc)
+                                      (cons (jabber-connection-bare-jid jc) jc))
+                                    accounts))
+               (default (when account-at-point
+                          (jabber-connection-bare-jid account-at-point)))
+               (input (completing-read
+                       (format "Account for %s (default %s): "
+                               (jabber-jid-user jid) default)
+                       completions nil t nil 'jabber-account-history
+                       default)))
+          (cdr (assoc input completions)))
+      account-at-point)))
+
 (defun jabber-roster-ret-action-at-point ()
   "Action for RET.
 Before try to roll up/down group.  Eval `chat-with-jid-at-point' is no group at
@@ -279,10 +307,11 @@ point."
       (jabber-muc-switch jid-at-point))
      ;; Contact or other JID: disco-check to decide chat vs MUC join.
      ((and jid-at-point account-at-point)
-      (jabber-disco-get-info
-       account-at-point (jabber-jid-user jid-at-point) nil
-       #'jabber-roster-ret-action-at-point-1
-       jid-at-point)))))
+      (let ((jc (jabber-roster--choose-account jid-at-point account-at-point)))
+        (jabber-disco-get-info
+         jc (jabber-jid-user jid-at-point) nil
+         #'jabber-roster-ret-action-at-point-1
+         jid-at-point))))))
 
 (defun jabber-roster-ret-action-at-point-1 (jc jid result)
   ;; If we get an error, assume it's a normal contact.

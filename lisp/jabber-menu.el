@@ -167,10 +167,10 @@ With prefix argument, remove it."
 
 ;; Global reference declarations
 
-(declare-function jabber-send-presence "jabber-presence.el" (show status priority))
-(declare-function jabber-send-xa-presence "jabber-presence.el" (&optional status))
-(declare-function jabber-send-default-presence "jabber-presence.el" (&optional _ignore))
-(declare-function jabber-send-away-presence "jabber-presence.el" (&optional status))
+(declare-function jabber-send-presence "jabber-presence.el" (show status priority &optional jc))
+(declare-function jabber-send-xa-presence "jabber-presence.el" (&optional status jc))
+(declare-function jabber-send-default-presence "jabber-presence.el" (&optional jc))
+(declare-function jabber-send-away-presence "jabber-presence.el" (&optional status jc))
 (declare-function jabber-activity-switch-to "jabber-activity.el" (&optional jid-param))
 (declare-function jabber-chat-with "jabber-chat.el" (jc jid &optional other-window))
 (declare-function jabber-chat-muc-presence-patterns-select "jabber-chat.el" ())

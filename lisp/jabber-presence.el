@@ -380,10 +380,15 @@ Show status properties from highest-priority resource."
     count))
 
 ;;;###autoload
-(defun jabber-send-presence (show status priority)
-  "Set presence for all accounts."
+(defun jabber-send-presence (show status priority &optional jc)
+  "Set presence.
+When called interactively, prompt for which account to use.
+With prefix argument, send to all accounts.
+When JC is non-nil, send only for that connection.
+When JC is nil, send for all connections."
   (interactive
-   (let* ((label (completing-read "Status: "
+   (let* ((jc (unless current-prefix-arg (jabber-read-account)))
+          (label (completing-read "Status: "
                                   (mapcar #'car jabber-presence-show-alist)
                                   nil t nil 'jabber-presence-history))
           (show (cdr (assoc label jabber-presence-show-alist))))
@@ -392,31 +397,33 @@ Show status properties from highest-priority resource."
                                           '*jabber-status-history*)
            (read-string "Priority: " (int-to-string (if *jabber-current-priority*
                                                          *jabber-current-priority*
-                                                       jabber-default-priority))))))
+                                                       jabber-default-priority)))
+           jc)))
 
   (setq *jabber-current-show* show *jabber-current-status* status)
   (setq *jabber-current-priority*
 	(if (numberp priority) priority (string-to-number priority)))
 
-  (let (subelements-map)
+  (let ((connections (if jc (list jc) jabber-connections))
+        subelements-map)
     ;; For each connection, we use a different set of subelements.  We
     ;; cache them, to only generate them once.
 
     ;; Ordinary presence, with no specified recipient
-    (dolist (jc jabber-connections)
-      (let ((subelements (jabber-presence-children jc)))
-        (push (cons jc subelements) subelements-map)
-	(jabber-send-sexp-if-connected jc `(presence () ,@subelements))))
+    (dolist (c connections)
+      (let ((subelements (jabber-presence-children c)))
+        (push (cons c subelements) subelements-map)
+	(jabber-send-sexp-if-connected c `(presence () ,@subelements))))
 
     ;; Then send presence to groupchats
     (dolist (room (jabber-muc-active-rooms))
-      (let* ((jc (jabber-muc-connection room))
+      (let* ((room-jc (jabber-muc-connection room))
 	     (nick (jabber-muc-nickname room))
-	     (subelements (cdr (assq jc subelements-map))))
-	(when jc
+	     (subelements (cdr (assq room-jc subelements-map))))
+	(when (and room-jc (or (null jc) (eq room-jc jc)))
 	  (jabber-send-sexp-if-connected
-	   jc `(presence ((to . ,(concat room "/" nick)))
-			 ,@subelements))))))
+	   room-jc `(presence ((to . ,(concat room "/" nick)))
+			      ,@subelements))))))
 
   (jabber-roster--refresh)
   (run-hooks 'jabber-presence-sent-hooks))
@@ -487,47 +494,51 @@ JC is the Jabber connection."
       (jabber-send-sexp jc `(presence ((to . ,jid))
 				      ,@(jabber-presence-children jc)))))))
 
-(defun jabber-send-away-presence (&optional status)
+(defun jabber-send-away-presence (&optional status jc)
   "Set status to away.
-With prefix argument, ask for status message."
+With prefix argument, ask for status message.
+If JC is non-nil, send only for that connection."
   (interactive
    (list
     (when current-prefix-arg
       (jabber-read-with-input-method
        "status message: " *jabber-current-status* '*jabber-status-history*))))
   (jabber-send-presence "away" (if status status *jabber-current-status*)
-			*jabber-current-priority*))
+			*jabber-current-priority* jc))
 
 ;; XXX code duplication!
-(defun jabber-send-xa-presence (&optional status)
+(defun jabber-send-xa-presence (&optional status jc)
   "Send extended away presence.
-With prefix argument, ask for status message."
+With prefix argument, ask for status message.
+If JC is non-nil, send only for that connection."
   (interactive
    (list
     (when current-prefix-arg
       (jabber-read-with-input-method
        "status message: " *jabber-current-status* '*jabber-status-history*))))
   (jabber-send-presence "xa" (if status status *jabber-current-status*)
-			*jabber-current-priority*))
+			*jabber-current-priority* jc))
 
 ;;;###autoload
-(defun jabber-send-default-presence (&optional _ignore)
+(defun jabber-send-default-presence (&optional jc)
   "Send default presence.
 Default presence is specified by `jabber-default-show',
-`jabber-default-status', and `jabber-default-priority'."
+`jabber-default-status', and `jabber-default-priority'.
+If JC is non-nil, send only for that connection."
   (interactive)
   (jabber-send-presence
-   jabber-default-show jabber-default-status jabber-default-priority))
+   jabber-default-show jabber-default-status jabber-default-priority jc))
 
-(defun jabber-send-current-presence (&optional _ignore)
+(defun jabber-send-current-presence (&optional jc)
   "(Re-)send current presence.
 That is, if presence has already been sent, use current settings,
-otherwise send defaults (see `jabber-send-default-presence')."
+otherwise send defaults (see `jabber-send-default-presence').
+If JC is non-nil, send only for that connection."
   (interactive)
   (if *jabber-current-show*
       (jabber-send-presence *jabber-current-show* *jabber-current-status*
-			    *jabber-current-priority*)
-    (jabber-send-default-presence)))
+			    *jabber-current-priority* jc)
+    (jabber-send-default-presence jc)))
 
 (add-to-list 'jabber-jid-roster-menu (cons "Send subscription request"
 					   'jabber-send-subscription-request))
