@@ -200,10 +200,10 @@ child elements from the event."
          (jabber-bookmarks2--remove-from-cache jc jid)
          (jabber-bookmarks2--maybe-leave jc jid))))))
 
-(eval-after-load "jabber-pubsub"
-  '(push (cons jabber-bookmarks2-xmlns
-               #'jabber-bookmarks2--handle-event)
-         jabber-pubsub-node-handlers))
+(with-eval-after-load "jabber-pubsub"
+  (push (cons jabber-bookmarks2-xmlns
+              #'jabber-bookmarks2--handle-event)
+        jabber-pubsub-node-handlers))
 
 ;;; Fetch bookmarks
 

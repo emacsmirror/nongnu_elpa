@@ -66,8 +66,8 @@ These fields are available at this moment:
   "Special mode."  ;; FIXME: Improve!
   (setq buffer-read-only t))
 
-(eval-after-load "jabber-core"
-  '(add-to-list 'jabber-iq-chain 'jabber-process-iq))
+(with-eval-after-load "jabber-core"
+  (add-to-list 'jabber-iq-chain 'jabber-process-iq))
 (defun jabber-process-iq (jc xml-data)
   "Process an incoming iq stanza.
 

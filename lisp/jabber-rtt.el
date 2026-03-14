@@ -46,8 +46,8 @@
 ;;;; Handling incoming events
 
 ;;;###autoload
-(eval-after-load "jabber-disco"
-  `(jabber-disco-advertise-feature ,jabber-rtt-xmlns))
+(with-eval-after-load "jabber-disco"
+  (jabber-disco-advertise-feature jabber-rtt-xmlns))
 
 (defvar-local jabber-rtt-ewoc-node nil)
 
@@ -61,8 +61,8 @@
 
 ;; Add function last in chain, so a chat buffer is already created.
 ;;;###autoload
-(eval-after-load "jabber-core"
-  '(add-to-list 'jabber-message-chain #'jabber-rtt-handle-message t))
+(with-eval-after-load "jabber-core"
+  (add-to-list 'jabber-message-chain #'jabber-rtt-handle-message t))
 
 ;;;###autoload
 (defun jabber-rtt-handle-message (jc xml-data)

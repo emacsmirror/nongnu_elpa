@@ -418,8 +418,8 @@ Otherwise delegate to ORIG-FN."
 (advice-add 'jabber-chat--decrypt-if-needed :around
             #'jabber-openpgp--decrypt-if-needed '((depth . 20)))
 
-(eval-after-load "jabber-core"
-  '(add-hook 'jabber-post-connect-hooks #'jabber-openpgp-on-connect))
+(with-eval-after-load "jabber-core"
+  (add-hook 'jabber-post-connect-hooks #'jabber-openpgp-on-connect))
 
 (provide 'jabber-openpgp)
 ;;; jabber-openpgp.el ends here

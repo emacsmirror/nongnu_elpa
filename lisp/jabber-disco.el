@@ -50,8 +50,8 @@
 ;;
 ;;; Respond to disco requests
 
-(eval-after-load "jabber-core"
-  '(add-to-list 'jabber-presence-chain #'jabber-process-caps))
+(with-eval-after-load "jabber-core"
+  (add-to-list 'jabber-presence-chain #'jabber-process-caps))
 
 (defvar jabber-caps-cache (make-hash-table :test 'equal))
 
@@ -453,8 +453,8 @@ the right node."
 	(ver . ,jabber-caps-current-hash)))))
 
 ;;;###autoload
-(eval-after-load "jabber-presence"
-  '(add-to-list 'jabber-presence-element-functions #'jabber-caps-presence-element))
+(with-eval-after-load "jabber-presence"
+  (add-to-list 'jabber-presence-element-functions #'jabber-caps-presence-element))
 
 (defun jabber-return-disco-info (jc xml-data)
   "Respond to a service discovery request.

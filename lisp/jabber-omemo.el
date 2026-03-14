@@ -983,15 +983,14 @@ publishes our bundle, and pre-fetches sessions for open chat buffers."
 
 (jabber-disco-advertise-feature jabber-omemo-xmlns)
 
-(eval-after-load "jabber-pubsub"
-  '(push (cons jabber-omemo-devicelist-node
-               #'jabber-omemo--handle-device-list)
-         jabber-pubsub-node-handlers))
+(with-eval-after-load "jabber-pubsub"
+  (push (cons jabber-omemo-devicelist-node
+              #'jabber-omemo--handle-device-list)
+        jabber-pubsub-node-handlers))
 
-(eval-after-load "jabber-core"
-  '(progn
-     (add-hook 'jabber-post-connect-hooks #'jabber-omemo-on-connect)
-     (add-hook 'jabber-pre-disconnect-hook #'jabber-omemo--on-disconnect)))
+(with-eval-after-load "jabber-core"
+  (add-hook 'jabber-post-connect-hooks #'jabber-omemo-on-connect)
+  (add-hook 'jabber-pre-disconnect-hook #'jabber-omemo--on-disconnect))
 
 (advice-add 'jabber-chat--decrypt-if-needed :around
             #'jabber-omemo--decrypt-if-needed '((depth . 10)))
