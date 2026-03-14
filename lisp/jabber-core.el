@@ -298,8 +298,6 @@ With double prefix argument, specify more connection details."
 	       jabber-connections))
       (message "Already connected to %s@%s"
 	       username server)
-    ;;(jabber-clear-roster)
-
     (push (start-jabber-connection username server resource
 				   registerp password
 				   network-server port connection-type)
@@ -932,10 +930,6 @@ DATA is any sexp."
 
        ;; Normal tag
 
-       ;; XXX: do these checks make sense?  If so, reinstate them.
-       ;;(if (active-minibuffer-window)
-       ;;    (run-with-idle-timer 0.01 nil #'jabber-filter process string)
-
        (setq xml-data (jabber-xml-parse-next-stanza))
 
        while xml-data
@@ -953,10 +947,6 @@ DATA is any sexp."
        (fsm-send fsm (list :stanza
 			   (jabber-xml-resolve-namespace-prefixes
 			    (car xml-data) nil jabber-namespace-prefixes)))
-       ;; XXX: move this logic elsewhere
-       ;; We explicitly don't catch errors in jabber-process-input,
-       ;; to facilitate debugging.
-       ;; (jabber-process-input (car xml-data))
        ))))
 
 (defun jabber-process-input (jc xml-data)
@@ -993,9 +983,6 @@ Return an fsm result list if it is."
 	(setq state-data (plist-put state-data :disconnection-expected t)))
       (list nil state-data))))
 
-;; XXX: This function should probably die.  The roster is stored
-;; inside the connection plists, and the obarray shouldn't be so big
-;; that we need to clean it.
 (defun jabber-clear-roster ()
   "Clean up the roster."
   ;; This is made complicated by the fact that the JIDs are symbols with properties.
