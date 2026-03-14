@@ -446,5 +446,106 @@ On error, calls (funcall CALLBACK nil)."
      (lambda (_jc _xml-data _closure)
        (funcall callback nil)))))
 
+;;; Session establishment
+
+(defun jabber-omemo--establish-session (jc jid device-id bundle)
+  "Establish an OMEMO session with JID's DEVICE-ID using BUNDLE.
+BUNDLE is a plist from `jabber-omemo--parse-bundle-xml'.
+Selects a random pre-key, initiates the session, saves to DB
+and cache, and stores an undecided trust record (TOFU)."
+  (let* ((store-ptr (jabber-omemo--get-store jc))
+         (pre-keys (plist-get bundle :pre-keys))
+         (pk (nth (random (length pre-keys)) pre-keys))
+         (session-ptr (jabber-omemo-initiate-session
+                       store-ptr
+                       (plist-get bundle :signature)
+                       (plist-get bundle :signed-pre-key)
+                       (plist-get bundle :identity-key)
+                       (cdr pk)
+                       (plist-get bundle :signed-pre-key-id)
+                       (car pk)))
+         (account (jabber-connection-bare-jid jc)))
+    (jabber-omemo--save-session jc jid device-id session-ptr)
+    (jabber-omemo-store-save-trust account jid device-id
+                                   (plist-get bundle :identity-key)
+                                   0)
+    session-ptr))
+
+(defun jabber-omemo--ensure-sessions (jc jid callback)
+  "Ensure sessions exist for all active devices of JID via JC.
+Fetches the device list (from cache or PubSub), then for each
+device lacking a session, fetches the bundle and establishes one.
+Calls (funcall CALLBACK sessions) when done, where sessions is
+a list of (DEVICE-ID . SESSION-PTR) for all active devices."
+  (let* ((account (jabber-connection-bare-jid jc))
+         (bare-jid (jabber-jid-user jid))
+         (cache-key (jabber-omemo--device-list-key account bare-jid))
+         (cached-ids (gethash cache-key jabber-omemo--device-lists)))
+    (if cached-ids
+        (jabber-omemo--ensure-sessions-for-ids jc bare-jid cached-ids callback)
+      (jabber-omemo--fetch-device-list
+       jc bare-jid
+       (lambda (ids)
+         (if ids
+             (jabber-omemo--ensure-sessions-for-ids jc bare-jid ids callback)
+           (funcall callback nil)))))))
+
+(defun jabber-omemo--ensure-sessions-for-ids (jc jid device-ids callback)
+  "Ensure sessions for DEVICE-IDS of JID via JC, then call CALLBACK.
+CALLBACK receives a list of (DEVICE-ID . SESSION-PTR)."
+  (let ((our-id (jabber-omemo--get-device-id jc))
+        (pending 0)
+        (results nil))
+    (dolist (did device-ids)
+      (unless (= did our-id)
+        (let ((existing (jabber-omemo--get-session jc jid did)))
+          (if existing
+              (push (cons did existing) results)
+            (cl-incf pending)
+            (jabber-omemo--fetch-bundle
+             jc jid did
+             (lambda (bundle)
+               (when bundle
+                 (let ((session (jabber-omemo--establish-session
+                                 jc jid did bundle)))
+                   (push (cons did session) results)))
+               (cl-decf pending)
+               (when (zerop pending)
+                 (funcall callback results))))))))
+    (when (zerop pending)
+      (funcall callback results))))
+
+;;; Connect/disconnect hooks
+
+(defun jabber-omemo-on-connect (jc)
+  "Post-connect hook for OMEMO initialization.
+Loads or creates the store, ensures our device is listed,
+and publishes our bundle."
+  (jabber-omemo--get-store jc)
+  (jabber-omemo--get-device-id jc)
+  (jabber-omemo--ensure-device-listed jc)
+  (jabber-omemo--publish-bundle jc))
+
+(defun jabber-omemo--on-disconnect ()
+  "Pre-disconnect hook.  Clear OMEMO in-memory caches."
+  (clrhash jabber-omemo--device-ids)
+  (clrhash jabber-omemo--stores)
+  (clrhash jabber-omemo--device-lists)
+  (clrhash jabber-omemo--sessions))
+
+;;; Disco and PubSub registration
+
+(jabber-disco-advertise-feature jabber-omemo-xmlns)
+
+(eval-after-load "jabber-pubsub"
+  '(push (cons jabber-omemo-devicelist-node
+               #'jabber-omemo--handle-device-list)
+         jabber-pubsub-node-handlers))
+
+(eval-after-load "jabber-core"
+  '(progn
+     (add-hook 'jabber-post-connect-hooks #'jabber-omemo-on-connect)
+     (add-hook 'jabber-pre-disconnect-hook #'jabber-omemo--on-disconnect)))
+
 (provide 'jabber-omemo)
 ;;; jabber-omemo.el ends here
