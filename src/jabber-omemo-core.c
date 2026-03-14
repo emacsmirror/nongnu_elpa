@@ -50,6 +50,7 @@ static emacs_value Qjabber_omemo_error;
 static emacs_value Qidentity_key, Qsigned_pre_key, Qsigned_pre_key_id;
 static emacs_value Qsignature, Qpre_keys;
 static emacs_value Qkey, Qiv, Qciphertext;
+static emacs_value Qdata, Qpre_key_p;
 
 static void
 bind_function(emacs_env *env, const char *name, emacs_value func)
@@ -95,10 +96,16 @@ extract_unibyte(emacs_env *env, emacs_value arg,
     return 0;
 }
 
-/*  Finalizer for user-ptr  */
+/*  Finalizers for user-ptr  */
 
 static void
 free_store(void *ptr)
+{
+    free(ptr);
+}
+
+static void
+free_session(void *ptr)
 {
     free(ptr);
 }
@@ -431,6 +438,266 @@ F_decrypt_message(emacs_env *env, ptrdiff_t nargs, emacs_value *args,
     return result;
 }
 
+/*  jabber-omemo--make-session  */
+
+static emacs_value
+F_make_session(emacs_env *env, ptrdiff_t nargs, emacs_value *args,
+               void *data)
+{
+    (void)nargs; (void)args; (void)data;
+
+    struct omemoSession *session = calloc(1, sizeof(*session));
+    if (!session) {
+        signal_error(env, -1, "calloc failed");
+        return Qnil_v;
+    }
+
+    return env->make_user_ptr(env, free_session, session);
+}
+
+/*  jabber-omemo--initiate-session  */
+
+static emacs_value
+F_initiate_session(emacs_env *env, ptrdiff_t nargs, emacs_value *args,
+                   void *data)
+{
+    (void)nargs; (void)data;
+
+    struct omemoStore *store = env->get_user_ptr(env, args[0]);
+    if (env->non_local_exit_check(env))
+        return Qnil_v;
+
+    /* Extract signature (64 bytes) */
+    uint8_t sig[65];
+    if (extract_unibyte(env, args[1], sig, sizeof(sig), NULL))
+        return Qnil_v;
+
+    /* Extract signed pre-key (33 bytes) */
+    uint8_t spk[34];
+    if (extract_unibyte(env, args[2], spk, sizeof(spk), NULL))
+        return Qnil_v;
+
+    /* Extract identity key (33 bytes) */
+    uint8_t ik[34];
+    if (extract_unibyte(env, args[3], ik, sizeof(ik), NULL))
+        return Qnil_v;
+
+    /* Extract pre-key (33 bytes) */
+    uint8_t pk[34];
+    if (extract_unibyte(env, args[4], pk, sizeof(pk), NULL))
+        return Qnil_v;
+
+    uint32_t spk_id = (uint32_t)env->extract_integer(env, args[5]);
+    if (env->non_local_exit_check(env))
+        return Qnil_v;
+
+    uint32_t pk_id = (uint32_t)env->extract_integer(env, args[6]);
+    if (env->non_local_exit_check(env))
+        return Qnil_v;
+
+    struct omemoSession *session = calloc(1, sizeof(*session));
+    if (!session) {
+        signal_error(env, -1, "calloc failed");
+        return Qnil_v;
+    }
+
+    int rc = omemoInitiateSession(session, store, sig, spk, ik, pk,
+                                  spk_id, pk_id);
+    if (rc) {
+        free(session);
+        signal_error(env, rc, "omemoInitiateSession failed");
+        return Qnil_v;
+    }
+
+    return env->make_user_ptr(env, free_session, session);
+}
+
+/*  jabber-omemo--serialize-session  */
+
+static emacs_value
+F_serialize_session(emacs_env *env, ptrdiff_t nargs, emacs_value *args,
+                    void *data)
+{
+    (void)nargs; (void)data;
+
+    struct omemoSession *session = env->get_user_ptr(env, args[0]);
+    if (env->non_local_exit_check(env))
+        return Qnil_v;
+
+    size_t sz = omemoGetSerializedSessionSize(session);
+    uint8_t *buf = malloc(sz);
+    if (!buf) {
+        signal_error(env, -1, "malloc failed");
+        return Qnil_v;
+    }
+    omemoSerializeSession(buf, session);
+
+    emacs_value result = make_unibyte(env, buf, sz);
+    free(buf);
+    return result;
+}
+
+/*  jabber-omemo--deserialize-session  */
+
+static emacs_value
+F_deserialize_session(emacs_env *env, ptrdiff_t nargs, emacs_value *args,
+                      void *data)
+{
+    (void)nargs; (void)data;
+
+    ptrdiff_t bloblen = 0;
+    env->copy_string_contents(env, args[0], NULL, &bloblen);
+    if (env->non_local_exit_check(env))
+        return Qnil_v;
+
+    uint8_t *blob = malloc((size_t)bloblen);
+    if (!blob) {
+        signal_error(env, -1, "malloc failed");
+        return Qnil_v;
+    }
+    env->copy_string_contents(env, args[0], (char *)blob, &bloblen);
+    if (env->non_local_exit_check(env)) {
+        free(blob);
+        return Qnil_v;
+    }
+    size_t datalen = (size_t)(bloblen - 1);
+
+    struct omemoSession *session = calloc(1, sizeof(*session));
+    if (!session) {
+        free(blob);
+        signal_error(env, -1, "calloc failed");
+        return Qnil_v;
+    }
+
+    int rc = omemoDeserializeSession(blob, datalen, session);
+    free(blob);
+    if (rc) {
+        free(session);
+        signal_error(env, rc, "omemoDeserializeSession failed");
+        return Qnil_v;
+    }
+
+    return env->make_user_ptr(env, free_session, session);
+}
+
+/*  jabber-omemo--encrypt-key  */
+
+static emacs_value
+F_encrypt_key(emacs_env *env, ptrdiff_t nargs, emacs_value *args,
+              void *data)
+{
+    (void)nargs; (void)data;
+
+    struct omemoSession *session = env->get_user_ptr(env, args[0]);
+    if (env->non_local_exit_check(env))
+        return Qnil_v;
+
+    /* Extract plaintext key */
+    uint8_t keybuf[OMEMO_KEYSIZE + 1];
+    size_t keylen;
+    if (extract_unibyte(env, args[1], keybuf, sizeof(keybuf), &keylen))
+        return Qnil_v;
+
+    struct omemoKeyMessage msg;
+    memset(&msg, 0, sizeof(msg));
+
+    int rc = omemoEncryptKey(session, &msg, keybuf, keylen);
+    if (rc) {
+        signal_error(env, rc, "omemoEncryptKey failed");
+        return Qnil_v;
+    }
+
+    emacs_value Qlist = env->intern(env, "list");
+    emacs_value plist_args[4];
+    plist_args[0] = Qdata;
+    plist_args[1] = make_unibyte(env, msg.p, msg.n);
+    plist_args[2] = Qpre_key_p;
+    plist_args[3] = msg.isprekey ? Qt_v : Qnil_v;
+
+    return env->funcall(env, Qlist, 4, plist_args);
+}
+
+/*  jabber-omemo--decrypt-key  */
+
+static emacs_value
+F_decrypt_key(emacs_env *env, ptrdiff_t nargs, emacs_value *args,
+              void *data)
+{
+    (void)nargs; (void)data;
+
+    struct omemoSession *session = env->get_user_ptr(env, args[0]);
+    if (env->non_local_exit_check(env))
+        return Qnil_v;
+
+    struct omemoStore *store = env->get_user_ptr(env, args[1]);
+    if (env->non_local_exit_check(env))
+        return Qnil_v;
+
+    bool isprekey = env->is_not_nil(env, args[2]);
+
+    /* Extract encrypted message */
+    ptrdiff_t msglen_raw = 0;
+    env->copy_string_contents(env, args[3], NULL, &msglen_raw);
+    if (env->non_local_exit_check(env))
+        return Qnil_v;
+
+    uint8_t *msgbuf = malloc((size_t)msglen_raw);
+    if (!msgbuf) {
+        signal_error(env, -1, "malloc failed");
+        return Qnil_v;
+    }
+    env->copy_string_contents(env, args[3], (char *)msgbuf, &msglen_raw);
+    if (env->non_local_exit_check(env)) {
+        free(msgbuf);
+        return Qnil_v;
+    }
+    size_t msglen = (size_t)(msglen_raw - 1);
+
+    uint8_t key[OMEMO_KEYSIZE];
+    size_t keyn = sizeof(key);
+
+    int rc = omemoDecryptKey(session, store, key, &keyn,
+                             isprekey, msgbuf, msglen);
+    free(msgbuf);
+    if (rc) {
+        signal_error(env, rc, "omemoDecryptKey failed");
+        return Qnil_v;
+    }
+
+    return make_unibyte(env, key, keyn);
+}
+
+/*  jabber-omemo--heartbeat  */
+
+static emacs_value
+F_heartbeat(emacs_env *env, ptrdiff_t nargs, emacs_value *args,
+            void *data)
+{
+    (void)nargs; (void)data;
+
+    struct omemoSession *session = env->get_user_ptr(env, args[0]);
+    if (env->non_local_exit_check(env))
+        return Qnil_v;
+
+    struct omemoStore *store = env->get_user_ptr(env, args[1]);
+    if (env->non_local_exit_check(env))
+        return Qnil_v;
+
+    struct omemoKeyMessage msg;
+    memset(&msg, 0, sizeof(msg));
+
+    int rc = omemoHeartbeat(session, store, &msg);
+    if (rc) {
+        signal_error(env, rc, "omemoHeartbeat failed");
+        return Qnil_v;
+    }
+
+    if (msg.n == 0)
+        return Qnil_v;
+
+    return make_unibyte(env, msg.p, msg.n);
+}
+
 /*  Module init  */
 
 int
@@ -458,6 +725,8 @@ emacs_module_init(struct emacs_runtime *runtime)
     GLOBAL_SYM(Qkey,               ":key");
     GLOBAL_SYM(Qiv,                ":iv");
     GLOBAL_SYM(Qciphertext,        ":ciphertext");
+    GLOBAL_SYM(Qdata,              ":data");
+    GLOBAL_SYM(Qpre_key_p,         ":pre-key-p");
 
 #undef GLOBAL_SYM
 
@@ -514,6 +783,45 @@ emacs_module_init(struct emacs_runtime *runtime)
           "IV is a 12-byte unibyte string.\n"
           "CIPHERTEXT is the encrypted payload.\n"
           "Returns the plaintext as a unibyte string.");
+
+    DEFUN("jabber-omemo--make-session", F_make_session, 0, 0,
+          "Allocate an empty OMEMO session.\n"
+          "Returns a session user-ptr; freed automatically by GC.\n"
+          "Use for the receiving side of a pre-key message.");
+
+    DEFUN("jabber-omemo--initiate-session", F_initiate_session, 7, 7,
+          "Initiate an OMEMO session with a remote device's bundle.\n"
+          "STORE-PTR is the local OMEMO store.\n"
+          "SIGNATURE is a 64-byte unibyte string.\n"
+          "SIGNED-PRE-KEY, IDENTITY-KEY, PRE-KEY are 33-byte unibyte strings.\n"
+          "SPK-ID and PK-ID are integer key IDs.\n"
+          "Returns a session user-ptr; freed automatically by GC.");
+
+    DEFUN("jabber-omemo--serialize-session", F_serialize_session, 1, 1,
+          "Serialize SESSION-PTR to a unibyte string.");
+
+    DEFUN("jabber-omemo--deserialize-session", F_deserialize_session, 1, 1,
+          "Deserialize BLOB into an OMEMO session object.\n"
+          "Returns a session user-ptr; freed automatically by GC.");
+
+    DEFUN("jabber-omemo--encrypt-key", F_encrypt_key, 2, 2,
+          "Encrypt KEY for a recipient using SESSION-PTR.\n"
+          "KEY is a unibyte string (the message encryption key).\n"
+          "Returns a plist (:data BYTES :pre-key-p BOOL).");
+
+    DEFUN("jabber-omemo--decrypt-key", F_decrypt_key, 4, 4,
+          "Decrypt an encrypted key message.\n"
+          "SESSION-PTR is the session with the sender.\n"
+          "STORE-PTR is the local OMEMO store.\n"
+          "PRE-KEY-P is non-nil if this is a pre-key message.\n"
+          "MSG is the encrypted key message as a unibyte string.\n"
+          "Returns the decrypted key as a unibyte string.");
+
+    DEFUN("jabber-omemo--heartbeat", F_heartbeat, 2, 2,
+          "Check if a heartbeat message is needed after decryption.\n"
+          "SESSION-PTR is the session to check.\n"
+          "STORE-PTR is the local OMEMO store.\n"
+          "Returns heartbeat message bytes or nil.");
 
 #undef DEFUN
 
