@@ -902,11 +902,6 @@ JC is the Jabber connection."
     ;; recreate roster buffer
     (jabber-roster--refresh)))
 
-(defalias 'jabber-presence-update-roster #'ignore)
-;;jabber-presence-update-roster is not needed anymore.
-;;Its work is done in `jabber-process-presence'."
-(make-obsolete 'jabber-presence-update-roster 'ignore "2007")
-
 (defun jabber-next-property (&optional prev)
   "Return position of next property appearence or nil if there is none.
 If optional PREV is non-nil, return position of previous property appearence."
