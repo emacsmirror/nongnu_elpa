@@ -1,0 +1,3 @@
+[submodule "src/picomemo"]
+	path = src/picomemo
+	url = https://github.com/mierenhoop/picomemo.git
