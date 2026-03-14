@@ -59,6 +59,22 @@ for the C module which expects unibyte."
       "DELETE FROM omemo_store WHERE account = ?"
       (list account))))
 
+;;; Device ID CRUD
+
+(defun jabber-omemo-store-save-device-id (account device-id)
+  "Upsert DEVICE-ID for ACCOUNT in the omemo_device_id table."
+  (when-let* ((db (jabber-db-ensure-open)))
+    (sqlite-execute db
+      "INSERT OR REPLACE INTO omemo_device_id (account, device_id) VALUES (?, ?)"
+      (list account device-id))))
+
+(defun jabber-omemo-store-load-device-id (account)
+  "Load the device ID for ACCOUNT, or nil if not set."
+  (when-let* ((db (jabber-db-ensure-open)))
+    (caar (sqlite-select db
+            "SELECT device_id FROM omemo_device_id WHERE account = ?"
+            (list account)))))
+
 ;;; Trust CRUD
 
 (defun jabber-omemo-store-save-trust (account jid device-id

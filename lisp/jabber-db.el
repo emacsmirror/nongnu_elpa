@@ -182,7 +182,11 @@ CREATE INDEX IF NOT EXISTS idx_omemo_devices_jid
   ON omemo_devices (account, jid)")
   (sqlite-execute db "\
 CREATE INDEX IF NOT EXISTS idx_omemo_sessions_jid
-  ON omemo_sessions (account, jid)"))
+  ON omemo_sessions (account, jid)")
+  (sqlite-execute db "\
+CREATE TABLE IF NOT EXISTS omemo_device_id (
+  account TEXT PRIMARY KEY,
+  device_id INTEGER NOT NULL)"))
 
 (defun jabber-db--migrate (db)
   "Check user_version and apply migrations to DB."
