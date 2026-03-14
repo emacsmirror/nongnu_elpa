@@ -169,7 +169,8 @@ These fields are about your account:
 
 (defcustom jabber-muc-header-line-format
   '(" " (:eval (jabber-jid-displayname jabber-group))
-    "\t" jabber-muc-topic)
+    "\t" jabber-muc-topic
+    " " jabber-chat-encryption-message)	;see jabber-chatbuffer.el
   "The specification for the header line of MUC buffers.
 
 The format is that of `mode-line-format' and `header-line-format'."
@@ -208,7 +209,8 @@ Fields available:
   '(" " (:eval (jabber-jid-resource jabber-chatting-with))
     " in " (:eval (jabber-jid-displayname (jabber-jid-user jabber-chatting-with)))
     "\t" jabber-events-message
-    "\t" jabber-chatstates-message)
+    "\t" jabber-chatstates-message
+    " " jabber-chat-encryption-message)	;see jabber-chatbuffer.el
   "The specification for the header line of private MUC chat buffers.
 
 The format is that of `mode-line-format' and `header-line-format'."
