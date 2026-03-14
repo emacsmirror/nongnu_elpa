@@ -13,12 +13,20 @@ TESTS ?= tests/jabber-xml-tests.el tests/jabber-util-tests.el \
          tests/jabber-muc-tests.el tests/jabber-roster-tests.el \
          tests/jabber-chat-tests.el tests/jabber-db-tests.el
 
-build: compile module
+build: autoload compile module
 
-dev: compile module lint test
+dev: autoload compile module lint test
+
+autoload:
+	$(EMACS_CMD) -q -Q --batch -L lisp -L lisp/jabber-fallback-lib \
+	--eval="(loaddefs-generate \"lisp\" \"lisp/jabber-autoloads.el\")"
 
 module:
+ifdef GUIX
+	guix shell -m manifest.scm -- $(MAKE) -C src
+else
 	$(MAKE) -C src
+endif
 
 compile:
 	$(EMACS_CMD) -q -Q -L . -L lisp -L lisp/jabber-fallback-lib --batch \
@@ -56,6 +64,10 @@ clean-elc:
 	find . -name '*.elc' -delete
 
 clean-module:
+ifdef GUIX
+	guix shell -m manifest.scm -- $(MAKE) -C src clean
+else
 	$(MAKE) -C src clean
+endif
 
 clean: clean-elc clean-module
