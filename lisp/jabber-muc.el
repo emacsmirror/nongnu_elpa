@@ -244,6 +244,7 @@ The format is that of `mode-line-format' and `header-line-format'."
 (declare-function jabber-chat--format-time "jabber-chat.el"
                   (timestamp delayed))
 (declare-function jabber-omemo--send-muc "jabber-omemo.el" (jc body))
+(declare-function jabber-openpgp--send-muc "jabber-openpgp.el" (jc body))
 (declare-function jabber-chat--decrypt-if-needed "jabber-chat.el" (jc xml-data))
 (declare-function jabber-db-last-timestamp "jabber-db.el"
                   (account peer))
@@ -374,15 +375,19 @@ JC is the Jabber connection."
 JC is the Jabber connection."
   ;; There is no need to display the sent message in the buffer, as
   ;; we will get it back from the MUC server.
-  (if (eq jabber-chat-encryption 'omemo)
-      (progn
-        (require 'jabber-omemo)
-        (jabber-omemo--send-muc jc body))
-    (jabber-send-sexp jc
-                      `(message
-                        ((to . ,jabber-group)
-                         (type . "groupchat"))
-                        (body () ,body)))))
+  (pcase jabber-chat-encryption
+    ('omemo
+     (require 'jabber-omemo)
+     (jabber-omemo--send-muc jc body))
+    ('openpgp
+     (require 'jabber-openpgp)
+     (jabber-openpgp--send-muc jc body))
+    (_
+     (jabber-send-sexp jc
+                       `(message
+                         ((to . ,jabber-group)
+                          (type . "groupchat"))
+                         (body () ,body))))))
 
 (defun jabber-muc-add-groupchat (group nickname &optional jc)
   "Remember participating in GROUP under NICKNAME via JC."

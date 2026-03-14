@@ -94,12 +94,13 @@ before sending with RET."
 (defcustom jabber-chat-default-encryption 'omemo
   "Default encryption mode for new chat buffers."
   :type '(choice (const :tag "OMEMO" omemo)
+                 (const :tag "OpenPGP" openpgp)
                  (const :tag "Plaintext" plaintext))
   :group 'jabber-chat)
 
 (defvar-local jabber-chat-encryption nil
   "Encryption mode for this chat buffer.
-Possible values: `plaintext', `omemo'.  Set from
+Possible values: `plaintext', `omemo', `openpgp'.  Set from
 `jabber-chat-default-encryption' on buffer creation.")
 
 (defvar-local jabber-chat-encryption-message ""
@@ -109,6 +110,11 @@ Possible values: `plaintext', `omemo'.  Set from
 (defface jabber-chat-encryption-omemo
   '((t :inherit success))
   "Face for OMEMO encryption indicator in chat header."
+  :group 'jabber-chat)
+
+(defface jabber-chat-encryption-openpgp
+  '((t :inherit success))
+  "Face for OpenPGP encryption indicator in chat header."
   :group 'jabber-chat)
 
 (defface jabber-chat-encryption-plaintext
@@ -122,9 +128,11 @@ Possible values: `plaintext', `omemo'.  Set from
         (propertize
          (pcase jabber-chat-encryption
            ('omemo "[OMEMO]")
+           ('openpgp "[OpenPGP]")
            (_ "[plaintext]"))
          'face (pcase jabber-chat-encryption
                  ('omemo 'jabber-chat-encryption-omemo)
+                 ('openpgp 'jabber-chat-encryption-openpgp)
                  (_ 'jabber-chat-encryption-plaintext)))))
 
 (defun jabber-chat--peer-jid ()
@@ -160,6 +168,15 @@ Works for both 1:1 chat (`jabber-chatting-with') and MUC (`jabber-group')."
       (jabber-omemo--prefetch-muc-sessions
        jabber-buffer-connection jabber-group)))))
 
+(defun jabber-chat-encryption-set-openpgp ()
+  "Set encryption to OpenPGP for this chat buffer."
+  (interactive)
+  (require 'jabber-openpgp)
+  (setq jabber-chat-encryption 'openpgp)
+  (jabber-chat-encryption--save 'openpgp)
+  (jabber-chat-encryption--update-header)
+  (force-mode-line-update))
+
 (defun jabber-chat-encryption-set-plaintext ()
   "Set encryption to plaintext for this chat buffer."
   (interactive)
@@ -173,6 +190,7 @@ Works for both 1:1 chat (`jabber-chatting-with') and MUC (`jabber-group')."
   [:description
    (lambda () (format "Encryption (current: %s)" jabber-chat-encryption))
    ("o" "OMEMO" jabber-chat-encryption-set-omemo)
+   ("g" "OpenPGP" jabber-chat-encryption-set-openpgp)
    ("p" "Plaintext" jabber-chat-encryption-set-plaintext)])
 
 (defun jabber-chat-show-fingerprints ()
