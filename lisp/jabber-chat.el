@@ -119,12 +119,12 @@ rare time printed."
 
 
 (defface jabber-chat-prompt-local
-  '((t :inherit font-lock-keyword-face :weight bold))
+  '((t :inherit font-lock-constant-face))
   "Face for displaying the chat prompt for what you type in."
   :group 'jabber-chat)
 
 (defface jabber-chat-prompt-foreign
-  '((t :inherit font-lock-constant-face :weight bold))
+  '((t :inherit font-lock-type-face))
   "Face for displaying the chat prompt for what they send."
   :group 'jabber-chat)
 
@@ -133,8 +133,7 @@ rare time printed."
   "Face used for system and special messages."
   :group 'jabber-chat)
 
-(defface jabber-chat-text-local
-  '((t :inherit jabber-chat-prompt-local))
+(defface jabber-chat-text-local '((t ()))
   "Face used for text you write."
   :group 'jabber-chat)
 
@@ -800,8 +799,9 @@ Use short format normally, long format when DELAYED."
 NICK gets FACE."
   (insert (propertize timestamp 'face 'shadow) " ")
   (when (> (length nick) 0)
-    (insert (propertize (format "<%s>" nick) 'face face))
-    (insert " ")))
+    (insert (propertize (format "<%s> " nick)
+                        'face face
+                        'rear-nonsticky t))))
 
 (defun jabber-chat-print-prompt (msg timestamp delayed dont-print-nick-p)
   "Print prompt for received message MSG."
