@@ -169,40 +169,59 @@ certificates.  Return the process on success, nil if curl is not found."
 
 ;; Core upload pipeline
 
+(defun jabber-httpupload--discover-and-upload (jc filepath callback)
+  "Discover HTTP Upload support for JC, then upload FILEPATH.
+On success, call (funcall CALLBACK get-url).
+Error if the server does not support HTTP Upload."
+  (message "Discovering HTTP Upload support...")
+  (jabber-httpupload-apply-to-items
+   jc
+   (lambda (jc item)
+     (let ((iri (elt item 1)))
+       (jabber-disco-get-info
+        jc iri nil
+        (lambda (jc _data result)
+          (when (member jabber-httpupload-xmlns (nth 1 result))
+            (unless (assq jc jabber-httpupload-support)
+              (push (cons jc iri) jabber-httpupload-support))
+            (jabber-httpupload--upload jc filepath callback)))
+        nil)))))
+
 (defun jabber-httpupload--upload (jc filepath callback)
   "Upload FILEPATH via HTTP Upload on JC.
-On success, call (funcall CALLBACK get-url)."
-  (unless (jabber-httpupload-server-has-support jc)
-    (error "Server for this connection has no HTTP Upload support"))
-  (let* ((filepath (expand-file-name filepath))
-         (size (file-attribute-size (file-attributes filepath)))
-         (content-type
-          (or (and-let* ((ext (file-name-extension filepath)))
-                (mailcap-extension-to-mime ext))
-              "application/octet-stream"))
-         (filename (file-name-nondirectory filepath)))
-    (jabber-send-iq jc (cdr (jabber-httpupload-server-has-support jc)) "get"
-                    `(request ((xmlns . ,jabber-httpupload-xmlns)
-                               (filename . ,filename)
-                               (size . ,size)
-                               (content-type . ,content-type)))
-                    (lambda (_jc xml-data _data)
-                      (let* ((urls (jabber-httpupload-parse-slot-answer xml-data))
-                             (get-url (cadr urls))
-                             (put-url (caar urls))
-                             (headers (cdar urls)))
-                        (push (cons "content-length" size) headers)
-                        (push (cons "content-type" content-type) headers)
-                        (unless (funcall jabber-httpupload-upload-function
-                                         filepath headers put-url
-                                         callback get-url
-                                         (jabber-httpupload-ignore-certificate jc))
-                          (error "Upload function failed to PUT %s" filename))))
-                    nil
-                    (lambda (_jc xml-data _data)
-                      (error "HTTP Upload slot rejected for %s: %S"
-                             filename xml-data))
-                    nil)))
+On success, call (funcall CALLBACK get-url).
+If support has not been discovered yet, discover it first."
+  (if (not (jabber-httpupload-server-has-support jc))
+      (jabber-httpupload--discover-and-upload jc filepath callback)
+    (let* ((filepath (expand-file-name filepath))
+           (size (file-attribute-size (file-attributes filepath)))
+           (content-type
+            (or (and-let* ((ext (file-name-extension filepath)))
+                  (mailcap-extension-to-mime ext))
+                "application/octet-stream"))
+           (filename (file-name-nondirectory filepath)))
+      (jabber-send-iq jc (cdr (jabber-httpupload-server-has-support jc)) "get"
+                      `(request ((xmlns . ,jabber-httpupload-xmlns)
+                                 (filename . ,filename)
+                                 (size . ,size)
+                                 (content-type . ,content-type)))
+                      (lambda (_jc xml-data _data)
+                        (let* ((urls (jabber-httpupload-parse-slot-answer xml-data))
+                               (get-url (cadr urls))
+                               (put-url (caar urls))
+                               (headers (cdar urls)))
+                          (push (cons "content-length" size) headers)
+                          (push (cons "content-type" content-type) headers)
+                          (unless (funcall jabber-httpupload-upload-function
+                                           filepath headers put-url
+                                           callback get-url
+                                           (jabber-httpupload-ignore-certificate jc))
+                            (error "Upload function failed to PUT %s" filename))))
+                      nil
+                      (lambda (_jc xml-data _data)
+                        (error "HTTP Upload slot rejected for %s: %S"
+                               filename xml-data))
+                      nil))))
 
 ;; Pending OOB for deferred sends (C-c C-a in chat buffers)
 

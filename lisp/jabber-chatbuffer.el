@@ -67,12 +67,16 @@ what kind of chat buffer is being created.")
 (defvar jabber-muc-header-line-format)    ; jabber-muc.el
 (defvar jabber-httpupload--pending-url)    ; jabber-httpupload.el
 
+(declare-function jabber-httpupload--upload "jabber-httpupload.el"
+                  (jc filepath callback))
+
 (defun jabber-chat-attach-file (filepath)
   "Upload FILEPATH and insert the URL into the composition area.
 The file is uploaded via HTTP Upload.  Once the upload finishes,
 the GET URL is inserted at point so you can preview and edit
 before sending with RET."
   (interactive "fFile to upload: ")
+  (require 'jabber-httpupload)
   (unless jabber-buffer-connection
     (error "No active connection in this buffer"))
   (let ((buffer (current-buffer)))
