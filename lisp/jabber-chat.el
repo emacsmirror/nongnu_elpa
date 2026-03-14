@@ -228,6 +228,7 @@ added to the outgoing message.")
 (defvar jabber-group)                   ; jabber-muc.el
 (defvar jabber-muc-printers)            ; jabber-muc.el
 (defvar jabber-oob-xmlns)              ; jabber-xml.el
+(defvar jabber-carbons-xmlns)          ; jabber-carbons.el
 (defvar jabber-image-max-width)        ; jabber-image.el
 (defvar jabber-image-max-height)       ; jabber-image.el
 
@@ -402,23 +403,47 @@ Specify 0 to display all messages."
 (add-to-list 'jabber-message-chain #'jabber-process-chat)
 
 (defun jabber-get-forwarded-message (xml-data)
-  (let* ((sent (car (jabber-xml-get-children xml-data 'sent)))
-         (forwarded (car (jabber-xml-get-children sent 'forwarded)))
-         (forwarded-message (car (jabber-xml-get-children forwarded 'message))))
-    (when forwarded-message
-      forwarded-message)))
+  "Extract the inner message from a carbon-forwarded stanza.
+Returns the inner message element, or nil if XML-DATA is not a carbon."
+  (cdr (jabber-chat--extract-carbon xml-data)))
+
+(defun jabber-chat--extract-carbon (xml-data)
+  "Extract carbon type and inner message from XML-DATA.
+Returns (TYPE . MESSAGE) where TYPE is `sent' or `received',
+or nil if XML-DATA is not a carbon."
+  (let ((wrapper (or (car (jabber-xml-get-children xml-data 'sent))
+                     (car (jabber-xml-get-children xml-data 'received)))))
+    (when wrapper
+      (let* ((type (jabber-xml-node-name wrapper))
+             (fwd (car (jabber-xml-get-children wrapper 'forwarded)))
+             (msg (car (jabber-xml-get-children fwd 'message))))
+        (when msg (cons type msg))))))
 
 (defun jabber-chat--unwrap-carbon (jc xml-data)
   "If XML-DATA is a carbon-forwarded message, unwrap it.
 Return (EFFECTIVE-XML-DATA . CHAT-BUFFER-OR-NIL).
-JC is the Jabber connection."
-  (if (car (jabber-xml-get-children xml-data 'sent))
-      (let* ((fwd-msg (jabber-get-forwarded-message xml-data))
-             (to (jabber-xml-get-attribute fwd-msg 'to)))
-        (cons fwd-msg
-              (when to
-                (jabber-chat-create-buffer jc to))))
-    (cons xml-data nil)))
+JC is the Jabber connection.
+
+Validates that the outer stanza's `from' matches our bare JID to
+prevent forged carbons (CVE-2017-5589)."
+  (let ((carbon (jabber-chat--extract-carbon xml-data)))
+    (if (not carbon)
+        (cons xml-data nil)
+      (let ((outer-from (jabber-jid-user
+                         (jabber-xml-get-attribute xml-data 'from))))
+        (if (not (string= outer-from (jabber-connection-bare-jid jc)))
+            (progn
+              (warn "jabber: dropping forged carbon from %s" outer-from)
+              (cons xml-data nil))
+          (let* ((type (car carbon))
+                 (inner-msg (cdr carbon)))
+            (pcase type
+              ('sent
+               (let ((to (jabber-xml-get-attribute inner-msg 'to)))
+                 (cons inner-msg
+                       (when to (jabber-chat-create-buffer jc to)))))
+              ('received
+               (cons inner-msg nil)))))))))
 
 (defun jabber-chat--select-buffer (jc from &optional carbon-buffer)
   "Return the chat buffer for an incoming message from FROM.
