@@ -2,6 +2,9 @@
 
 ;; Copyright (C) 2008 - Magnus Henoch
 ;; Copyright (C) 2005 - Mario Domenech Goulart
+;; Copyright (C) 2026  Thanos Apollo
+
+;; Maintainer: Thanos Apollo <public@thanosapollo.org>
 
 ;; This file is a part of jabber.el.
 

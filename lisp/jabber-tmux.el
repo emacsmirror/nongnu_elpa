@@ -1,6 +1,9 @@
 ;;; jabber-tmux.el --- emacs-jabber interface to tmux  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2012 - Michael Cardell Widerkrantz <mc@hack.org>
+;; Copyright (C) 2026  Thanos Apollo
+
+;; Maintainer: Thanos Apollo <public@thanosapollo.org>
 
 ;; This file is a part of jabber.el.
 

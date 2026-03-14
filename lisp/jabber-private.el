@@ -1,8 +1,10 @@
 ;;; jabber-private.el --- jabber:iq:private API by JEP-0049  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2005  Magnus Henoch
+;; Copyright (C) 2026  Thanos Apollo
 
 ;; Author: Magnus Henoch <mange@freemail.hu>
+;; Maintainer: Thanos Apollo <public@thanosapollo.org>
 
 ;; This file is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by

@@ -1,6 +1,9 @@
 ;;; jabber-screen.el --- emacs-jabber interface to screen  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2005 - Magnus Henoch - mange@freemail.hu
+;; Copyright (C) 2026  Thanos Apollo
+
+;; Maintainer: Thanos Apollo <public@thanosapollo.org>
 
 ;; This file is a part of jabber.el.
 

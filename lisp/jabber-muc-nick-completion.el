@@ -3,6 +3,9 @@
 ;; Copyright (C) 2008 - Terechkov Evgenii - evg@altlinux.org
 ;; Copyright (C) 2007, 2008, 2010 - Kirill A. Korinskiy - catap@catap.ru
 ;; Copyright (C) 2007 - Serguei Jidkov - jsv@e-mail.ru
+;; Copyright (C) 2026  Thanos Apollo
+
+;; Maintainer: Thanos Apollo <public@thanosapollo.org>
 
 ;; This file is a part of jabber.el.
 

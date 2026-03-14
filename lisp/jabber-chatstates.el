@@ -1,7 +1,10 @@
 ;;; jabber-chatstate.el --- Chat state notification (XEP-0085) implementation  -*- lexical-binding: t; -*-
 
+;; Copyright (C) 2026  Thanos Apollo
+
 ;; Author: Ami Fischman <ami@fischman.org>
 ;; (based entirely on jabber-events.el by Magnus Henoch <mange@freemail.hu>)
+;; Maintainer: Thanos Apollo <public@thanosapollo.org>
 
 ;; This file is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by

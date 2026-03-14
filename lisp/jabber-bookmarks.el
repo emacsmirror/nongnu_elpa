@@ -1,6 +1,9 @@
 ;;; jabber-bookmarks.el --- bookmarks according to XEP-0048  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2007, 2008 - Magnus Henoch - mange@freemail.hu
+;; Copyright (C) 2026  Thanos Apollo
+
+;; Maintainer: Thanos Apollo <public@thanosapollo.org>
 
 ;; This file is a part of jabber.el.
 

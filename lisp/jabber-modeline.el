@@ -1,6 +1,9 @@
 ;;; jabber-modeline.el --- display jabber status in modeline  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2004 - Magnus Henoch - mange@freemail.hu
+;; Copyright (C) 2026  Thanos Apollo
+
+;; Maintainer: Thanos Apollo <public@thanosapollo.org>
 
 ;; This file is a part of jabber.el.
 

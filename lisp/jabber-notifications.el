@@ -3,6 +3,9 @@
 ;; Copyright (C) 2014 - Adam Sjøgren - asjo@koldfront.dk
 ;; Copyright (C) 2010 - Kirill A. Korinskiy - catap@catap.ru
 ;; Copyright (C) 2007 - Rodrigo Lazo - rlazo.paz@gmail.com
+;; Copyright (C) 2026  Thanos Apollo
+
+;; Maintainer: Thanos Apollo <public@thanosapollo.org>
 
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by

@@ -1,6 +1,9 @@
 ;;; jabber-muc-nick-coloring.el --- Add nick coloring abilyty to emacs-jabber  -*- lexical-binding: t; -*-
 
 ;; Copyright 2009, 2010, 2012, 2013 Terechkov Evgenii - evg@altlinux.org
+;; Copyright (C) 2026  Thanos Apollo
+
+;; Maintainer: Thanos Apollo <public@thanosapollo.org>
 
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by

@@ -1,6 +1,9 @@
 ;;; jabber-wmii.el --- emacs-jabber interface to wmii  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2007 - Detlev Zundel - dzu@gnu.org
+;; Copyright (C) 2026  Thanos Apollo
+
+;; Maintainer: Thanos Apollo <public@thanosapollo.org>
 
 ;; This file is a part of jabber.el.
 

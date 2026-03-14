@@ -5,6 +5,9 @@
 
 ;; SSL-Connection Parts:
 ;; Copyright (C) 2005 - Georg Lehner - jorge@magma.com.ni
+;; Copyright (C) 2026  Thanos Apollo
+
+;; Maintainer: Thanos Apollo <public@thanosapollo.org>
 
 ;; This file is a part of jabber.el.
 

@@ -1,6 +1,9 @@
 ;;; jabber-ping.el --- XMPP "Ping" by XEP-0199  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2009 - Evgenii Terechkov - evg@altlinux.org
+;; Copyright (C) 2026  Thanos Apollo
+
+;; Maintainer: Thanos Apollo <public@thanosapollo.org>
 
 ;; This file is a part of jabber.el.
 

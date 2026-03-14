@@ -2,6 +2,9 @@
 
 ;; Copyright (C) 2006, 2010 - Kirill A. Kroinskiy - catap@catap.ru
 ;; Copyright (C) 2006 - Magnus Henoch - mange@freemail.hu
+;; Copyright (C) 2026  Thanos Apollo
+
+;; Maintainer: Thanos Apollo <public@thanosapollo.org>
 
 ;; This file is a part of jabber.el.
 

@@ -4,6 +4,9 @@
 ;; mostly inspired by Gnus.
 
 ;; Copyright (C) 2005 - Carl Henrik Lunde - chlunde+jabber+@ping.uio.no
+;; Copyright (C) 2026  Thanos Apollo
+
+;; Maintainer: Thanos Apollo <public@thanosapollo.org>
 
 ;; This file is a part of jabber.el.
 

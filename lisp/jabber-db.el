@@ -1,6 +1,9 @@
 ;;; jabber-db.el --- SQLite message storage for jabber.el  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2024 emacs-jabber contributors
+;; Copyright (C) 2026  Thanos Apollo
+
+;; Maintainer: Thanos Apollo <public@thanosapollo.org>
 
 ;; This file is a part of jabber.el.
 

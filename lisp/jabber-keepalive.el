@@ -2,6 +2,9 @@
 
 ;; Copyright (C) 2004, 2008 - Magnus Henoch - mange@freemail.hu
 ;; Copyright (C) 2007 - Detlev Zundel - dzu@gnu.org
+;; Copyright (C) 2026  Thanos Apollo
+
+;; Maintainer: Thanos Apollo <public@thanosapollo.org>
 
 ;; This file is a part of jabber.el.
 

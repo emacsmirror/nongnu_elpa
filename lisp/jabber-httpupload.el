@@ -2,6 +2,8 @@
 
 ;; Copyright (C) 2026  Thanos Apollo
 
+;; Maintainer: Thanos Apollo <public@thanosapollo.org>
+
 ;; This file is a part of jabber.el.
 
 ;; This program is free software; you can redistribute it and/or modify

@@ -1,8 +1,10 @@
 ;;; jabber-rtt.el --- XEP-0301: In-Band Real Time Text  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2013  Magnus Henoch
+;; Copyright (C) 2026  Thanos Apollo
 
 ;; Author: Magnus Henoch <magnus.henoch@gmail.com>
+;; Maintainer: Thanos Apollo <public@thanosapollo.org>
 
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by

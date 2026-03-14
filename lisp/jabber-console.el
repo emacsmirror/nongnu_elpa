@@ -1,6 +1,9 @@
 ;;; jabber-console.el --- XML Console mode  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2009, 2010 - Demyan Rogozhin <demyan.rogozhin@gmail.com>
+;; Copyright (C) 2026  Thanos Apollo
+
+;; Maintainer: Thanos Apollo <public@thanosapollo.org>
 
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by

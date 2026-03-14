@@ -2,6 +2,8 @@
 
 ;; Copyright (C) 2026 Thanos Apollo
 
+;; Maintainer: Thanos Apollo <public@thanosapollo.org>
+
 ;; This file is part of emacs-jabber.
 
 ;; emacs-jabber is free software: you can redistribute it and/or modify

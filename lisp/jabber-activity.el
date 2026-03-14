@@ -1,6 +1,9 @@
 ;;; jabber-activity.el --- show jabber activity in the mode line  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2004 Carl Henrik Lunde - <chlunde+jabber+@ping.uio.no>
+;; Copyright (C) 2026  Thanos Apollo
+
+;; Maintainer: Thanos Apollo <public@thanosapollo.org>
 
 ;; This file is a part of jabber.el
 
