@@ -53,6 +53,7 @@ what kind of chat buffer is being created.")
   "The connection used by this buffer.")
 
 (defvar jabber-chatting-with)              ; jabber-chat.el
+(defvar jabber-chat-header-line-format)   ; jabber-chat.el
 (defvar jabber-group)                      ; jabber-muc.el
 (defvar jabber-httpupload--pending-url)    ; jabber-httpupload.el
 
@@ -87,6 +88,7 @@ Possible values: `plaintext', `omemo'.  Set from
 
 (defvar-local jabber-chat-encryption-message ""
   "Header-line string showing current encryption state.")
+(put 'jabber-chat-encryption-message 'risky-local-variable t)
 
 (defface jabber-chat-encryption-omemo
   '((t :inherit success))
@@ -240,6 +242,7 @@ otherwise regenerate the current buffer display."
      (lambda (buffer)
        (with-current-buffer buffer
          (ewoc-refresh jabber-chat-ewoc)
+         (setq header-line-format jabber-chat-header-line-format)
          (jabber-chat-encryption--update-header)
          (force-mode-line-update)
          (forward-line)))

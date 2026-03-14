@@ -1101,10 +1101,10 @@ Return nil if X-MUC is nil."
 	 (if local
 	     (if jabber-muc-colorize-local
 		 (list ':foreground (jabber-muc-nick-get-color nick))
-	       'jabber-chat-prompt-local)
+	       'jabber-chat-nick-plaintext)
 	   (if jabber-muc-colorize-foreign
 	       (list ':foreground (jabber-muc-nick-get-color nick))
-	     'jabber-chat-prompt-foreign)))
+	     'jabber-chat-nick-foreign-plaintext)))
       (jabber-muc-system-prompt))))
 
 (defun jabber-muc-private-print-prompt (msg)
@@ -1119,14 +1119,14 @@ Return nil if X-MUC is nil."
     (jabber-chat--insert-prompt
      (jabber-chat--format-time timestamp delayed)
      (concat group-name "/" nick)
-     'jabber-chat-prompt-foreign)))
+     'jabber-chat-nick-foreign-plaintext)))
 
 (defun jabber-muc-system-prompt (&rest _ignore)
   "Print system prompt for MUC."
   (jabber-chat--insert-prompt
    (jabber-chat--format-time nil nil)
    ""
-   'jabber-chat-prompt-system))
+   'jabber-chat-nick-system))
 
 (defun jabber-muc--classify-message (group nick xml-data)
   "Return message type for a MUC stanza.

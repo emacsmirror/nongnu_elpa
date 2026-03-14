@@ -122,29 +122,29 @@ rare time printed."
   :type 'string
   :group 'jabber-chat)
 
-(defface jabber-chat-prompt-local
+(defface jabber-chat-nick-encrypted
   '((t :inherit font-lock-constant-face))
-  "Face for the local prompt when the message is encrypted."
+  "Face for own nick on encrypted messages."
   :group 'jabber-chat)
 
-(defface jabber-chat-prompt-foreign
-  '((t :inherit font-lock-type-face))
-  "Face for the foreign prompt when the message is encrypted."
+(defface jabber-chat-nick-foreign-encrypted
+  '((t :inherit font-lock-keyword-face :weight bold))
+  "Face for foreign nick on encrypted messages."
   :group 'jabber-chat)
 
-(defface jabber-chat-prompt-local-plaintext
-  '((t :inherit font-lock-warning-face))
-  "Face for the local prompt when the message is plaintext."
+(defface jabber-chat-nick-plaintext
+  '((t :inherit font-lock-warning-face :slant italic))
+  "Face for own nick on plaintext messages."
   :group 'jabber-chat)
 
-(defface jabber-chat-prompt-foreign-plaintext
-  '((t :inherit font-lock-warning-face))
-  "Face for the foreign prompt when the message is plaintext."
+(defface jabber-chat-nick-foreign-plaintext
+  '((t :inherit font-lock-keyword-face :slant italic))
+  "Face for foreign nick on plaintext messages."
   :group 'jabber-chat)
 
-(defface jabber-chat-prompt-system
-  '((t :inherit success))
-  "Face used for system and special messages."
+(defface jabber-chat-nick-system
+  '((t :inherit font-lock-constant-face :weight bold))
+  "Face for system and special messages."
   :group 'jabber-chat)
 
 (defface jabber-chat-text-local '((t ()))
@@ -831,8 +831,8 @@ When ENCRYPTED, `jabber-chat-encrypted-indicator' is prepended."
     (jabber-chat--insert-prompt
      (jabber-chat--format-time timestamp delayed)
      nick
-     'jabber-chat-prompt-foreign
-     'jabber-chat-prompt-foreign-plaintext
+     'jabber-chat-nick-foreign-encrypted
+     'jabber-chat-nick-foreign-plaintext
      (plist-get msg :encrypted))))
 
 (defun jabber-chat-system-prompt (timestamp)
@@ -840,7 +840,7 @@ When ENCRYPTED, `jabber-chat-encrypted-indicator' is prepended."
   (jabber-chat--insert-prompt
    (jabber-chat--format-time timestamp nil)
    ""
-   'jabber-chat-prompt-system))
+   'jabber-chat-nick-system))
 
 (defun jabber-chat-self-prompt (msg timestamp delayed dont-print-nick-p)
   "Print prompt for sent message MSG."
@@ -849,8 +849,8 @@ When ENCRYPTED, `jabber-chat-encrypted-indicator' is prepended."
     (jabber-chat--insert-prompt
      (jabber-chat--format-time timestamp delayed)
      (if dont-print-nick-p "" username)
-     'jabber-chat-prompt-local
-     'jabber-chat-prompt-local-plaintext
+     'jabber-chat-nick-encrypted
+     'jabber-chat-nick-plaintext
      (plist-get msg :encrypted))))
 
 (defun jabber-chat-print-error (msg)
@@ -871,7 +871,7 @@ When ENCRYPTED, `jabber-chat-encrypted-indicator' is prepended."
 	 t)
 	(:insert
 	 (insert (propertize
-		  "Subject: " 'face 'jabber-chat-prompt-system)
+		  "Subject: " 'face 'jabber-chat-nick-system)
 		 (propertize
 		  subject
 		  'face 'jabber-chat-text-foreign)
@@ -900,7 +900,7 @@ When ENCRYPTED, `jabber-chat-encrypted-indicator' is prepended."
 		       (concat nick
 			       " "
 			       action)
-		       'face 'jabber-chat-prompt-system)))
+		       'face 'jabber-chat-nick-system)))
 	  (insert (propertize
 		   body
 		   'face (pcase who
@@ -919,7 +919,7 @@ duplication (e.g. HTTP Upload messages)."
         (let ((desc (plist-get msg :oob-desc)))
           (insert (format "\n%s%s<%s>"
                           (propertize
-                           "URL: " 'face 'jabber-chat-prompt-system)
+                           "URL: " 'face 'jabber-chat-nick-system)
                           (if (stringp desc) (concat desc " ") "")
                           url))))
       t)))
