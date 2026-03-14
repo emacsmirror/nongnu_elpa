@@ -74,9 +74,16 @@ before sending with RET."
          (setq jabber-httpupload--pending-url get-url)
          (message "Uploaded: %s (send with RET)" get-url))))))
 
-(defvar-local jabber-chat-encryption 'plaintext
+(defcustom jabber-chat-default-encryption 'omemo
+  "Default encryption mode for new chat buffers."
+  :type '(choice (const :tag "OMEMO" omemo)
+                 (const :tag "Plaintext" plaintext))
+  :group 'jabber-chat)
+
+(defvar-local jabber-chat-encryption nil
   "Encryption mode for this chat buffer.
-Possible values: `plaintext', `omemo'.  Future: `pgp'.")
+Possible values: `plaintext', `omemo'.  Set from
+`jabber-chat-default-encryption' on buffer creation.")
 
 (defvar-local jabber-chat-encryption-message ""
   "Header-line string showing current encryption state.")
@@ -105,11 +112,11 @@ Possible values: `plaintext', `omemo'.  Future: `pgp'.")
 (defun jabber-chat-encryption-set-omemo ()
   "Set encryption to OMEMO for this chat buffer."
   (interactive)
+  (require 'jabber-omemo)
   (setq jabber-chat-encryption 'omemo)
   (jabber-chat-encryption--update-header)
   (force-mode-line-update)
-  (when (and (bound-and-true-p jabber-buffer-connection)
-             (bound-and-true-p jabber-chatting-with))
+  (when (and jabber-buffer-connection jabber-chatting-with)
     (jabber-omemo--prefetch-sessions
      jabber-buffer-connection jabber-chatting-with)))
 
@@ -127,11 +134,17 @@ Possible values: `plaintext', `omemo'.  Future: `pgp'.")
    ("o" "OMEMO" jabber-chat-encryption-set-omemo)
    ("p" "Plaintext" jabber-chat-encryption-set-plaintext)])
 
+(defun jabber-chat-show-fingerprints ()
+  "Display OMEMO fingerprints for the current chat peer."
+  (interactive)
+  (require 'jabber-omemo)
+  (jabber-omemo-fingerprints))
+
 (transient-define-prefix jabber-chat-operations-menu ()
   "Chat buffer operations."
   [["Encryption"
     ("e" "Encryption..." jabber-chat-encryption-menu)
-    ("f" "Fingerprints" jabber-omemo-fingerprints)]
+    ("f" "Fingerprints" jabber-chat-show-fingerprints)]
    ["Files"
     ("a" "Attach file" jabber-chat-attach-file)]
    ["Buffer"
@@ -180,6 +193,10 @@ EWOC-PP is the pretty-printer function for the message EWOC."
       (put-text-property (point-min) (point) 'front-sticky t)
       (put-text-property (point-min) (point) 'rear-nonsticky t))
     (setq jabber-point-insert (point-marker)))
+  (unless jabber-chat-encryption
+    (setq jabber-chat-encryption jabber-chat-default-encryption)
+    (when (eq jabber-chat-encryption 'omemo)
+      (require 'jabber-omemo)))
   (jabber-chat-encryption--update-header))
 
 (defun jabber-chat-buffer-send ()
