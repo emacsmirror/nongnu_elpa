@@ -441,7 +441,8 @@ Called from `jabber-chat-send-hooks'."
      "chat"
      body
      (floor (float-time))
-     nil id)))
+     nil id))
+  nil)
 
 (defun jabber-db--store-outgoing (jc to body type)
   "Store an outgoing message sent via `jabber-send-message'.
