@@ -222,7 +222,8 @@ The format is that of `mode-line-format' and `header-line-format'."
 (declare-function jabber-parse-conference-bookmark "jabber-bookmarks.el"
                   (node))
 (declare-function jabber-send-sexp "jabber-core.el"  (jc sexp))
-(declare-function jabber-chat-send "jabber-chat.el"  (jc sexp))
+(declare-function jabber-chat-send "jabber-chat.el"
+                  (jc body &optional extra-elements))
 (declare-function jabber-send-message "jabber-chat.el"
                   (jc to subject body type))
 (declare-function jabber-maybe-print-rare-time "jabber-chat.el" (node))

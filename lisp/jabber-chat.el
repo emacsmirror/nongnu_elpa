@@ -452,16 +452,19 @@ JC is the Jabber connection."
          (jabber-chat--select-buffer jc from carbon-buffer)
          error-p from msg-plist)))))
 
-(defun jabber-chat-send (jc body)
+(defun jabber-chat-send (jc body &optional extra-elements)
   "Send BODY through connection JC, and display it in chat buffer.
-JC is the Jabber connection."
+JC is the Jabber connection.
+EXTRA-ELEMENTS, when non-nil, is a list of XML sexp elements to
+splice into the stanza after the body (e.g. OOB, hints)."
   ;; Build the stanza...
   (let* ((id (apply #'format "emacs-msg-%d.%d.%d" (current-time)))
 	 (stanza-to-send `(message
 			   ((to . ,jabber-chatting-with)
 			    (type . "chat")
 			    (id . ,id))
-			   (body () ,body))))
+			   (body () ,body)
+			   ,@extra-elements)))
     ;; ...add additional elements...
     ;; TODO: Once we require Emacs 24.1, use `run-hook-wrapped' instead.
     ;; That way we don't need to eliminate the "local hook" functionality
