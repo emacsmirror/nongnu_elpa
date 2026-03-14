@@ -149,15 +149,15 @@ JID must be a string."
 
 (defvar jabber-bookmarks)
 (defun jabber-jid-bookmarkname (string)
-  "Return from STRING the conference name from boomarks or displayname.
+  "Return from STRING the conference name from bookmarks or displayname.
 Use the name according to roster or else the JID if none set."
   (require 'jabber-bookmarks)
-  (or (cl-loop for conference
-               in (car (cl-loop for value being the hash-values of jabber-bookmarks
-                                collect value))
-            do (let ((ls (cadr conference)))
-                 (if (string= (cdr (assoc 'jid ls)) string)
-                     (cl-return (cdr (assoc 'name ls))))))
+  (or (cl-block nil
+        (maphash (lambda (_account bookmarks)
+                   (dolist (bm bookmarks)
+                     (when (string= (plist-get bm :jid) string)
+                       (cl-return (plist-get bm :name)))))
+                 jabber-bookmarks))
       (jabber-jid-displayname string)))
 
 (defun jabber-jid-resource (jid)
