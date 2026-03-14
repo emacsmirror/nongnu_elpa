@@ -118,14 +118,30 @@ rare time printed."
   :group 'jabber-chat)
 
 
+(defcustom jabber-chat-encrypted-indicator
+  (if (char-displayable-p ?\U0001F512) "\U0001F512" "[E]")
+  "String prepended to the timestamp of encrypted messages."
+  :type 'string
+  :group 'jabber-chat)
+
 (defface jabber-chat-prompt-local
   '((t :inherit font-lock-constant-face))
-  "Face for displaying the chat prompt for what you type in."
+  "Face for the local prompt when the message is encrypted."
   :group 'jabber-chat)
 
 (defface jabber-chat-prompt-foreign
   '((t :inherit font-lock-type-face))
-  "Face for displaying the chat prompt for what they send."
+  "Face for the foreign prompt when the message is encrypted."
+  :group 'jabber-chat)
+
+(defface jabber-chat-prompt-local-plaintext
+  '((t :inherit font-lock-warning-face))
+  "Face for the local prompt when the message is plaintext."
+  :group 'jabber-chat)
+
+(defface jabber-chat-prompt-foreign-plaintext
+  '((t :inherit font-lock-warning-face))
+  "Face for the foreign prompt when the message is plaintext."
   :group 'jabber-chat)
 
 (defface jabber-chat-prompt-system
@@ -572,6 +588,9 @@ DELAYED marks the message as delayed unconditionally."
                     (car (jabber-xml-get-children xml-data 'subject))))
      :timestamp (or msg-timestamp (current-time))
      :delayed (or delayed (and msg-timestamp t))
+     :encrypted (and (jabber-xml-child-with-xmlns
+                      xml-data "eu.siacs.conversations.axolotl")
+                     t)
      :oob-url (jabber-chat--oob-field oob-x 'url)
      :oob-desc (jabber-chat--oob-field oob-x 'desc)
      :error-text (when error-node
@@ -591,7 +610,7 @@ whether a delay element is present."
   (let* ((msg (cadr data))
          (body (plist-get msg :body))
          (/me-p (and (stringp body) (string-prefix-p "/me " body))))
-    (jabber-chat-self-prompt (plist-get msg :timestamp)
+    (jabber-chat-self-prompt msg (plist-get msg :timestamp)
                              (plist-get msg :delayed) /me-p)
     (run-hook-with-args 'jabber-chat-printers msg :local :insert)
     (insert "\n")))
@@ -794,13 +813,16 @@ Use short format normally, long format when DELAYED."
                         jabber-chat-time-format)
                       timestamp))
 
-(defun jabber-chat--insert-prompt (timestamp nick face)
+(defun jabber-chat--insert-prompt (timestamp nick face &optional plaintext-face encrypted)
   "Insert a chat prompt: TIMESTAMP <NICK> .
-NICK gets FACE."
+NICK gets FACE when ENCRYPTED, PLAINTEXT-FACE otherwise.
+When ENCRYPTED, `jabber-chat-encrypted-indicator' is prepended."
+  (when encrypted
+    (insert jabber-chat-encrypted-indicator))
   (insert (propertize timestamp 'face 'shadow) " ")
   (when (> (length nick) 0)
     (insert (propertize (format "<%s> " nick)
-                        'face face
+                        'face (if encrypted face (or plaintext-face face))
                         'rear-nonsticky t))))
 
 (defun jabber-chat-print-prompt (msg timestamp delayed dont-print-nick-p)
@@ -811,7 +833,9 @@ NICK gets FACE."
     (jabber-chat--insert-prompt
      (jabber-chat--format-time timestamp delayed)
      nick
-     'jabber-chat-prompt-foreign)))
+     'jabber-chat-prompt-foreign
+     'jabber-chat-prompt-foreign-plaintext
+     (plist-get msg :encrypted))))
 
 (defun jabber-chat-system-prompt (timestamp)
   "Print system prompt at TIMESTAMP."
@@ -820,14 +844,16 @@ NICK gets FACE."
    ""
    'jabber-chat-prompt-system))
 
-(defun jabber-chat-self-prompt (timestamp delayed dont-print-nick-p)
-  "Print prompt for sent message."
+(defun jabber-chat-self-prompt (msg timestamp delayed dont-print-nick-p)
+  "Print prompt for sent message MSG."
   (let* ((state-data (fsm-get-state-data jabber-buffer-connection))
          (username (plist-get state-data :username)))
     (jabber-chat--insert-prompt
      (jabber-chat--format-time timestamp delayed)
      (if dont-print-nick-p "" username)
-     'jabber-chat-prompt-local)))
+     'jabber-chat-prompt-local
+     'jabber-chat-prompt-local-plaintext
+     (plist-get msg :encrypted))))
 
 (defun jabber-chat-print-error (msg)
   "Print error from message plist MSG in a readable way."

@@ -237,7 +237,7 @@ The format is that of `mode-line-format' and `header-line-format'."
 (declare-function jabber-chat--msg-plist-from-stanza "jabber-chat.el"
                   (xml-data &optional delayed))
 (declare-function jabber-chat--insert-prompt "jabber-chat.el"
-                  (timestamp nick face))
+                  (timestamp nick face &optional plaintext-face encrypted))
 (declare-function jabber-chat--format-time "jabber-chat.el"
                   (timestamp delayed))
 (declare-function jabber-db-last-timestamp "jabber-db.el"
