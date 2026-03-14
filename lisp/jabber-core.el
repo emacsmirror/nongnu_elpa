@@ -88,7 +88,7 @@
 				       jabber-muc-autojoin
 				       jabber-whitespace-ping-start
 				       jabber-vcard-avatars-find-current
-				       jabber-enable-carbons)
+				       jabber-carbons-maybe-enable)
   "*Hooks run after successful connection and authentication.
 The functions should accept one argument, the connection object."
   :type 'hook
