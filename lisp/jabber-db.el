@@ -44,6 +44,7 @@
 (declare-function jabber-history-filename "jabber-history.el" (contact))
 (declare-function jabber-xml-child-with-xmlns "jabber-xml.el"
                   (node xmlns))
+(declare-function jabber-muc-joined-p "jabber-muc" (group))
 (defvar jabber-history-dir)             ; jabber-history.el
 (defvar jabber-use-global-history)      ; jabber-history.el
 (defvar jabber-global-history-filename) ; jabber-history.el
@@ -272,12 +273,17 @@ Optional OOB-URL is the jabber:x:oob URL.
 Optional OOB-DESC is the jabber:x:oob description.
 Optional ENCRYPTED is non-nil if the message was OMEMO-encrypted."
   (when-let* ((db (jabber-db-ensure-open)))
-    ;; Dedup by stanza_id if present
-    (unless (and stanza-id
-                 (caar (sqlite-select
-                        db
-                        "SELECT 1 FROM message WHERE stanza_id = ? LIMIT 1"
-                        (list stanza-id))))
+    ;; Dedup by stanza_id or server_id if present
+    (unless (or (and stanza-id
+                     (caar (sqlite-select
+                            db
+                            "SELECT 1 FROM message WHERE stanza_id = ? LIMIT 1"
+                            (list stanza-id))))
+                (and server-id
+                     (caar (sqlite-select
+                            db
+                            "SELECT 1 FROM message WHERE server_id = ? LIMIT 1"
+                            (list server-id)))))
       (sqlite-execute
        db
        "INSERT INTO message \
@@ -428,6 +434,26 @@ Returns a unix epoch integer, or nil if no messages exist."
 WHERE account = ? AND peer = ?"
            (list account peer)))))
 
+(defun jabber-db-last-server-id (account &optional peer)
+  "Return the most recent server_id for ACCOUNT, or nil.
+This is the XEP-0359 stanza-id assigned by the server, used as
+the sync point for MAM catch-up queries.
+When PEER is non-nil, scope to messages with that peer (for MUC MAM)."
+  (when-let* ((db (jabber-db-ensure-open)))
+    (if peer
+        (caar (sqlite-select
+               db
+               "SELECT server_id FROM message \
+WHERE account = ? AND peer = ? AND server_id IS NOT NULL \
+ORDER BY id DESC LIMIT 1"
+               (list account peer)))
+      (caar (sqlite-select
+             db
+             "SELECT server_id FROM message \
+WHERE account = ? AND server_id IS NOT NULL \
+ORDER BY id DESC LIMIT 1"
+             (list account))))))
+
 ;;; Message chain handlers
 
 (defun jabber-db--message-handler (jc xml-data)
@@ -443,6 +469,17 @@ XML-DATA is the parsed stanza."
            (timestamp (jabber-message-timestamp xml-data))
            (type (jabber-xml-get-attribute xml-data 'type))
            (stanza-id (jabber-xml-get-attribute xml-data 'id))
+           (server-id
+            (when-let* ((sid-el (jabber-xml-child-with-xmlns
+                                 xml-data "urn:xmpp:sid:0"))
+                        (by (jabber-xml-get-attribute sid-el 'by))
+                        ;; Trust stanza-id from our bare JID (1:1)
+                        ;; or from a room we've joined (MUC).
+                        ((or (string= by (jabber-connection-bare-jid jc))
+                             (and (string= type "groupchat")
+                                  (jabber-muc-joined-p
+                                   (jabber-jid-user from))))))
+              (jabber-xml-get-attribute sid-el 'id)))
            (oob-x (cl-find-if
                     (lambda (x)
                       (and (listp x)
@@ -455,8 +492,12 @@ XML-DATA is the parsed stanza."
            (oob-desc (when oob-x
                        (car (jabber-xml-node-children
                              (car (jabber-xml-get-children oob-x 'desc))))))
-           (encrypted (jabber-xml-child-with-xmlns
-                       xml-data "eu.siacs.conversations.axolotl")))
+           (encrypted (or (jabber-xml-child-with-xmlns
+                          xml-data "eu.siacs.conversations.axolotl")
+                         (jabber-xml-child-with-xmlns
+                          xml-data "jabber:x:encrypted")
+                         (jabber-xml-child-with-xmlns
+                          xml-data "urn:xmpp:openpgp:0"))))
       (when (and from body)
         (jabber-db-store-message
          (jabber-connection-bare-jid jc)
@@ -467,7 +508,7 @@ XML-DATA is the parsed stanza."
          (floor (float-time (or timestamp (current-time))))
          (jabber-jid-resource from)
          stanza-id
-         nil nil
+         server-id nil
          oob-url oob-desc
          encrypted)))))
 
@@ -485,7 +526,7 @@ Called from `jabber-chat-send-hooks'."
      (floor (float-time))
      nil id
      nil nil nil nil
-     (eq jabber-chat-encryption 'omemo)))
+     (memq jabber-chat-encryption '(omemo openpgp openpgp-legacy))))
   nil)
 
 (defun jabber-db--store-outgoing (jc to body type)

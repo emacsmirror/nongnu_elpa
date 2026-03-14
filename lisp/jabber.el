@@ -177,6 +177,7 @@ configure a Google Talk account like this:
 (require 'jabber-search)
 (require 'jabber-browse)
 (require 'jabber-muc)
+(require 'jabber-mam)
 (require 'jabber-muc-nick-completion)
 (require 'jabber-version)
 (require 'jabber-ahc-presence)
