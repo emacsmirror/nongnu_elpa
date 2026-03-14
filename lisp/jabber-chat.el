@@ -28,6 +28,8 @@
 (require 'ewoc)
 (require 'goto-addr)
 (require 'url-parse)
+(require 'url-queue)
+(require 'hex-util)
 
 (eval-when-compile (require 'cl-lib))
 
@@ -115,9 +117,7 @@ rare time printed."
   "Face for displaying rare time information."
   :group 'jabber-chat)
 
-
-(defcustom jabber-chat-encrypted-indicator
-  (if (char-displayable-p ?\U0001F512) "\U0001F512" "[E]")
+(defcustom jabber-chat-encrypted-indicator (propertize "[E]" 'face 'shadow)
   "String prepended to the timestamp of encrypted messages."
   :type 'string
   :group 'jabber-chat)
@@ -217,6 +217,8 @@ added to the outgoing message.")
 (declare-function jabber-muc-nickname "jabber-muc.el" (group))
 (defvar jabber-muc-xmlns-user)
 (declare-function jabber-image-fetch "jabber-image" (url callback &rest cbargs))
+(declare-function jabber-omemo-aesgcm-decrypt "jabber-omemo"
+                  (key iv ciphertext-with-tag))
 (defvar jabber-backlog-days)
 (defvar jabber-backlog-number)
 (declare-function jabber-db-backlog "jabber-db.el"
@@ -226,6 +228,8 @@ added to the outgoing message.")
 (defvar jabber-group)                   ; jabber-muc.el
 (defvar jabber-muc-printers)            ; jabber-muc.el
 (defvar jabber-oob-xmlns)              ; jabber-xml.el
+(defvar jabber-image-max-width)        ; jabber-image.el
+(defvar jabber-image-max-height)       ; jabber-image.el
 
 ;;
 
@@ -312,10 +316,11 @@ JC is the Jabber connection."
   (with-current-buffer (get-buffer-create (jabber-chat-get-buffer chat-with jc))
     (unless (eq major-mode 'jabber-chat-mode)
       (jabber-chat-mode)
-      (jabber-chat-mode-setup jc #'jabber-chat-pp)
 
       (make-local-variable 'jabber-chatting-with)
       (setq jabber-chatting-with chat-with)
+
+      (jabber-chat-mode-setup jc #'jabber-chat-pp)
       (setq jabber-send-function #'jabber-chat-send)
       (setq header-line-format jabber-chat-header-line-format)
 
@@ -924,9 +929,61 @@ duplication (e.g. HTTP Upload messages)."
                           url))))
       t)))
 
+(defun jabber-chat--parse-aesgcm-url (url)
+  "Parse an aesgcm:// URL into a plist.
+Returns (:https-url URL :iv BYTES :key BYTES) or nil if URL is
+not a valid aesgcm:// URL.  The fragment must be 88 hex characters
+\(12-byte IV + 32-byte key)."
+  (when (string-match
+         "\\`aesgcm://\\([^#]*\\)#\\([[:xdigit:]]\\{88\\}\\)\\'"
+         url)
+    (let* ((path (match-string 1 url))
+           (hex (match-string 2 url))
+           (bytes (decode-hex-string hex))
+           (iv (substring bytes 0 12))
+           (key (substring bytes 12 44)))
+      (list :https-url (concat "https://" path)
+            :iv iv
+            :key key))))
+
+(defun jabber-chat--fetch-aesgcm-image (url callback &rest cbargs)
+  "Fetch and decrypt an aesgcm:// image URL.
+Downloads via HTTPS, decrypts with AES-256-GCM, calls CALLBACK
+with the created image (or nil) followed by CBARGS."
+  (let ((parsed (jabber-chat--parse-aesgcm-url url)))
+    (if (null parsed)
+        (apply callback nil cbargs)
+      (url-queue-retrieve
+       (plist-get parsed :https-url)
+       (lambda (status key iv cb args)
+         (let ((url-buffer (current-buffer))
+               (image
+                (unless (plist-get status :error)
+                  (goto-char (point-min))
+                  (when (re-search-forward "\r?\n\r?\n" nil t)
+                    (let* ((encrypted (buffer-substring-no-properties
+                                       (point) (point-max)))
+                           (plaintext (condition-case nil
+                                         (jabber-omemo-aesgcm-decrypt
+                                          key iv encrypted)
+                                       (error nil))))
+                      (when plaintext
+                        (let ((img (create-image plaintext nil t)))
+                          (setf (image-property img :max-width)
+                                jabber-image-max-width)
+                          (setf (image-property img :max-height)
+                                jabber-image-max-height)
+                          img)))))))
+           (kill-buffer url-buffer)
+           (apply cb image args)))
+       (list (plist-get parsed :key) (plist-get parsed :iv)
+             callback cbargs)
+       'silent
+       'inhibit-cookies))))
+
 (defun jabber-chat--image-url-p (url)
   "Return non-nil if URL looks like an image based on file extension."
-  (string-match-p "\\.\\(png\\|jpe?g\\|gif\\|webp\\|svg\\)\\(?:\\?.*\\)?$"
+  (string-match-p "\\.\\(png\\|jpe?g\\|gif\\|webp\\|svg\\)\\(?:[?#].*\\)?$"
                   (downcase url)))
 
 (defvar jabber-chat-url-keymap
@@ -936,24 +993,58 @@ duplication (e.g. HTTP Upload messages)."
   "Keymap active on inline images and downloadable URLs in chat buffers.")
 
 (defun jabber-chat-url-action-at-point ()
-  "Act on the URL at point: download OOB files, open images in EWW."
+  "Act on the URL at point: download files, open images in EWW.
+Handles aesgcm:// URLs by decrypting after download."
   (interactive)
   (let ((file-url (get-text-property (point) 'jabber-chat-file-url))
         (image-url (get-text-property (point) 'jabber-chat-image-url)))
     (cond
      (file-url (jabber-chat-download-url file-url))
-     (image-url
-      (switch-to-buffer-other-window (get-buffer-create "*eww*"))
-      (eww image-url)))))
+     (image-url (jabber-chat-download-url image-url)))))
 
 (defun jabber-chat-download-url (url)
-  "Prompt to download URL to a local file."
-  (let* ((filename (file-name-nondirectory
-                    (url-filename (url-generic-parse-url url))))
+  "Prompt to download URL to a local file.
+For aesgcm:// URLs, fetches via HTTPS and decrypts with AES-256-GCM."
+  (let* ((parsed (and (string-prefix-p "aesgcm://" url)
+                      (jabber-chat--parse-aesgcm-url url)))
+         (fetch-url (if parsed (plist-get parsed :https-url) url))
+         (filename (file-name-nondirectory
+                    (url-filename (url-generic-parse-url fetch-url))))
          (dest (read-file-name (format "Save %s to: " filename)
                                nil nil nil filename)))
-    (url-copy-file url dest t)
-    (message "Downloaded %s" dest)))
+    (if (null parsed)
+        (progn
+          (url-copy-file url dest t)
+          (message "Downloaded %s" dest))
+      (url-queue-retrieve
+       fetch-url
+       (lambda (status dest-file key iv)
+         (let ((url-buffer (current-buffer)))
+           (if (plist-get status :error)
+               (progn
+                 (kill-buffer url-buffer)
+                 (message "Download failed: %s"
+                          (plist-get status :error)))
+             (goto-char (point-min))
+             (re-search-forward "\r?\n\r?\n" nil t)
+             (let* ((encrypted (buffer-substring-no-properties
+                                (point) (point-max)))
+                    (plaintext (condition-case err
+                                   (jabber-omemo-aesgcm-decrypt
+                                    key iv encrypted)
+                                 (error
+                                  (message "Decryption failed: %s"
+                                           (error-message-string err))
+                                  nil))))
+               (kill-buffer url-buffer)
+               (when plaintext
+                 (with-temp-file dest-file
+                   (set-buffer-multibyte nil)
+                   (insert plaintext))
+                 (message "Downloaded and decrypted %s" dest-file))))))
+       (list dest (plist-get parsed :key) (plist-get parsed :iv))
+       'silent
+       'inhibit-cookies))))
 
 (defun jabber-chat--replace-url-with-image (image beg end buffer)
   "Delete URL text between markers BEG and END, insert IMAGE.
@@ -989,8 +1080,8 @@ Added to `jabber-chat-printers' to trigger after each message."
                    (jabber-chat-display-buffer-images)))))))))
 
 (defconst jabber-chat--image-url-re
-  "https?://[^ \t\n<>\"]+\\.\\(png\\|jpe?g\\|gif\\|webp\\|svg\\)\\(\\?[^ \t\n<>\"]*\\)?"
-  "Regexp matching HTTP(S) URLs with image file extensions.")
+  "\\(?:https?\\|aesgcm\\)://[^ \t\n<>\"]+\\.\\(png\\|jpe?g\\|gif\\|webp\\|svg\\)\\(?:[?#][^ \t\n<>\"]*\\)?"
+  "Regexp matching HTTP(S) and aesgcm:// image URLs.")
 
 (defun jabber-chat-display-buffer-images ()
   "Scan buffer for image URLs and replace them with inline images.
@@ -1019,11 +1110,17 @@ When the image arrives the URL text is deleted and the image inserted."
               (put-text-property url-beg url-end
                                  'jabber-chat-image-url url)
               (let ((beg (copy-marker url-beg))
-                    (end (copy-marker url-end)))
-                (jabber-image-fetch
-                 url
-                 #'jabber-chat--replace-url-with-image
-                 beg end (current-buffer))))))))))
+                    (end (copy-marker url-end))
+                    (buf (current-buffer)))
+                (if (string-prefix-p "aesgcm://" url)
+                    (jabber-chat--fetch-aesgcm-image
+                     url
+                     #'jabber-chat--replace-url-with-image
+                     beg end buf)
+                  (jabber-image-fetch
+                   url
+                   #'jabber-chat--replace-url-with-image
+                   beg end buf))))))))))
 
 (defun jabber-chat-goto-address (_msg _who mode)
   "Call `goto-address' on the newly written text."

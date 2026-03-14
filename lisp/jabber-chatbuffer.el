@@ -45,6 +45,12 @@ what kind of chat buffer is being created.")
 (declare-function jabber-omemo--prefetch-sessions "jabber-omemo"
                   (jc jid))
 (declare-function jabber-omemo-fingerprints "jabber-omemo" ())
+(declare-function jabber-connection-bare-jid "jabber-util" (jc))
+(declare-function jabber-jid-user "jabber-util" (jid))
+(declare-function jabber-db-set-chat-encryption "jabber-db"
+                  (account peer encryption))
+(declare-function jabber-db-get-chat-encryption "jabber-db"
+                  (account peer))
 
 ;;
 
@@ -55,6 +61,7 @@ what kind of chat buffer is being created.")
 (defvar jabber-chatting-with)              ; jabber-chat.el
 (defvar jabber-chat-header-line-format)   ; jabber-chat.el
 (defvar jabber-group)                      ; jabber-muc.el
+(defvar jabber-muc-header-line-format)    ; jabber-muc.el
 (defvar jabber-httpupload--pending-url)    ; jabber-httpupload.el
 
 (defun jabber-chat-attach-file (filepath)
@@ -111,11 +118,28 @@ Possible values: `plaintext', `omemo'.  Set from
                  ('omemo 'jabber-chat-encryption-omemo)
                  (_ 'jabber-chat-encryption-plaintext)))))
 
+(defun jabber-chat--peer-jid ()
+  "Return the bare JID of the chat peer in this buffer.
+Works for both 1:1 chat (`jabber-chatting-with') and MUC (`jabber-group')."
+  (cond
+   ((bound-and-true-p jabber-chatting-with)
+    (jabber-jid-user jabber-chatting-with))
+   ((bound-and-true-p jabber-group)
+    jabber-group)))
+
+(defun jabber-chat-encryption--save (mode)
+  "Persist encryption MODE for the current chat buffer."
+  (when-let* ((jc jabber-buffer-connection)
+              (peer (jabber-chat--peer-jid)))
+    (jabber-db-set-chat-encryption
+     (jabber-connection-bare-jid jc) peer mode)))
+
 (defun jabber-chat-encryption-set-omemo ()
   "Set encryption to OMEMO for this chat buffer."
   (interactive)
   (require 'jabber-omemo)
   (setq jabber-chat-encryption 'omemo)
+  (jabber-chat-encryption--save 'omemo)
   (jabber-chat-encryption--update-header)
   (force-mode-line-update)
   (when (and jabber-buffer-connection jabber-chatting-with)
@@ -126,6 +150,7 @@ Possible values: `plaintext', `omemo'.  Set from
   "Set encryption to plaintext for this chat buffer."
   (interactive)
   (setq jabber-chat-encryption 'plaintext)
+  (jabber-chat-encryption--save 'plaintext)
   (jabber-chat-encryption--update-header)
   (force-mode-line-update))
 
@@ -196,7 +221,12 @@ EWOC-PP is the pretty-printer function for the message EWOC."
       (put-text-property (point-min) (point) 'rear-nonsticky t))
     (setq jabber-point-insert (point-marker)))
   (unless jabber-chat-encryption
-    (setq jabber-chat-encryption jabber-chat-default-encryption)
+    (let ((saved (when-let* ((peer (jabber-chat--peer-jid)))
+                   (jabber-db-get-chat-encryption
+                    (jabber-connection-bare-jid jabber-buffer-connection)
+                    peer))))
+      (setq jabber-chat-encryption
+            (or saved jabber-chat-default-encryption)))
     (when (eq jabber-chat-encryption 'omemo)
       (require 'jabber-omemo)))
   (jabber-chat-encryption--update-header))
@@ -242,7 +272,16 @@ otherwise regenerate the current buffer display."
      (lambda (buffer)
        (with-current-buffer buffer
          (ewoc-refresh jabber-chat-ewoc)
-         (setq header-line-format jabber-chat-header-line-format)
+         (setq header-line-format
+               (if (bound-and-true-p jabber-group)
+                   jabber-muc-header-line-format
+                 jabber-chat-header-line-format))
+         (when-let* ((peer (jabber-chat--peer-jid))
+                     (saved (jabber-db-get-chat-encryption
+                             (jabber-connection-bare-jid
+                              jabber-buffer-connection)
+                             peer)))
+           (setq jabber-chat-encryption saved))
          (jabber-chat-encryption--update-header)
          (force-mode-line-update)
          (forward-line)))

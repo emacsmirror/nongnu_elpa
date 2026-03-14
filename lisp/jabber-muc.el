@@ -298,12 +298,14 @@ JC is the Jabber connection."
   (with-current-buffer (get-buffer-create (jabber-muc-get-buffer group jc))
     (unless (eq major-mode 'jabber-chat-mode)
       (jabber-chat-mode)
+
+      (set (make-local-variable 'jabber-group) group)
+      (make-local-variable 'jabber-muc-topic)
+
       (jabber-chat-mode-setup jc #'jabber-chat-pp))
     ;; Make sure the connection variable is up to date.
     (setq jabber-buffer-connection jc)
 
-    (set (make-local-variable 'jabber-group) group)
-    (make-local-variable 'jabber-muc-topic)
     (setq jabber-send-function #'jabber-muc-send)
     (setq header-line-format jabber-muc-header-line-format)
 
