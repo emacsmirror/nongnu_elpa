@@ -89,12 +89,12 @@ Possible values: `plaintext', `omemo'.  Set from
   "Header-line string showing current encryption state.")
 
 (defface jabber-chat-encryption-omemo
-  '((t :foreground "green"))
+  '((t :inherit success))
   "Face for OMEMO encryption indicator in chat header."
   :group 'jabber-chat)
 
 (defface jabber-chat-encryption-plaintext
-  '((t :foreground "gray"))
+  '((t :inherit error))
   "Face for plaintext indicator in chat header."
   :group 'jabber-chat)
 
