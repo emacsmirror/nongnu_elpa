@@ -13,9 +13,12 @@ TESTS ?= tests/jabber-xml-tests.el tests/jabber-util-tests.el \
          tests/jabber-muc-tests.el tests/jabber-roster-tests.el \
          tests/jabber-chat-tests.el tests/jabber-db-tests.el
 
-build: compile
+build: compile module
 
-dev: compile lint test
+dev: compile module lint test
+
+module:
+	$(MAKE) -C src
 
 compile:
 	$(EMACS_CMD) -q -Q -L . -L lisp -L lisp/jabber-fallback-lib --batch \
@@ -52,4 +55,7 @@ test:
 clean-elc:
 	find . -name '*.elc' -delete
 
-clean: clean-elc
+clean-module:
+	$(MAKE) -C src clean
+
+clean: clean-elc clean-module
