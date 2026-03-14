@@ -534,29 +534,59 @@
       (jabber-bookmarks2--remove-from-cache 'fake-jc "room@c.example.com"))
     (should (eq t (gethash "user@example.com" jabber-bookmarks)))))
 
-;;; Group 9: Widget conversion round-trip
+;;; Group 9: Tabulated-list entries
 
-(ert-deftest jabber-bookmarks-test-widget-roundtrip ()
-  "plist -> widget -> plist preserves data."
-  (let* ((original '(:jid "room@c.example.com" :name "Room"
-                     :autojoin t :nick "Me" :password "pw"))
-         (widget (jabber-bookmarks--plist-to-widget original))
-         (back (jabber-bookmarks--widget-to-plist widget)))
-    (should (string= (plist-get back :jid) "room@c.example.com"))
-    (should (string= (plist-get back :name) "Room"))
-    (should (plist-get back :autojoin))
-    (should (string= (plist-get back :nick) "Me"))
-    (should (string= (plist-get back :password) "pw"))))
+(ert-deftest jabber-bookmarks-test-entries-full ()
+  "Entries builds correct vectors from cache."
+  (let ((jabber-bookmarks (make-hash-table :test 'equal)))
+    (puthash "user@example.com"
+             '((:jid "room@c.example.com" :name "Room"
+                :autojoin t :nick "Me" :password "secret"))
+             jabber-bookmarks)
+    (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+               (lambda (j) (jabber-bookmarks-test--bare-jid j))))
+      (with-temp-buffer
+        (setq-local jabber-buffer-connection
+                    (jabber-bookmarks-test--fake-jc))
+        (let ((entries (jabber-bookmarks--entries)))
+          (should (= 1 (length entries)))
+          (let ((entry (car entries)))
+            (should (string= (car entry) "room@c.example.com"))
+            (let ((cols (cadr entry)))
+              (should (string= (aref cols 0) "room@c.example.com"))
+              (should (string= (aref cols 1) "Room"))
+              (should (string= (aref cols 2) "true"))
+              (should (string= (aref cols 3) "Me"))
+              (should (string= (aref cols 4) "***")))))))))
 
-(ert-deftest jabber-bookmarks-test-widget-empty-fields ()
-  "Empty nick/password become nil in plist."
-  (let* ((widget '(conference "room@c.example.com" "" nil "" ""))
-         (plist (jabber-bookmarks--widget-to-plist widget)))
-    (should (string= (plist-get plist :jid) "room@c.example.com"))
-    (should-not (plist-get plist :name))
-    (should-not (plist-get plist :autojoin))
-    (should-not (plist-get plist :nick))
-    (should-not (plist-get plist :password))))
+(ert-deftest jabber-bookmarks-test-entries-minimal ()
+  "Entries handles missing optional fields."
+  (let ((jabber-bookmarks (make-hash-table :test 'equal)))
+    (puthash "user@example.com"
+             '((:jid "room@c.example.com"))
+             jabber-bookmarks)
+    (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+               (lambda (j) (jabber-bookmarks-test--bare-jid j))))
+      (with-temp-buffer
+        (setq-local jabber-buffer-connection
+                    (jabber-bookmarks-test--fake-jc))
+        (let* ((entries (jabber-bookmarks--entries))
+               (cols (cadr (car entries))))
+          (should (string= (aref cols 1) ""))
+          (should (string= (aref cols 2) "false"))
+          (should (string= (aref cols 3) ""))
+          (should (string= (aref cols 4) "")))))))
+
+(ert-deftest jabber-bookmarks-test-entries-empty ()
+  "Entries returns nil when cache is empty (t)."
+  (let ((jabber-bookmarks (make-hash-table :test 'equal)))
+    (puthash "user@example.com" t jabber-bookmarks)
+    (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+               (lambda (j) (jabber-bookmarks-test--bare-jid j))))
+      (with-temp-buffer
+        (setq-local jabber-buffer-connection
+                    (jabber-bookmarks-test--fake-jc))
+        (should-not (jabber-bookmarks--entries))))))
 
 (provide 'jabber-bookmarks-tests)
 

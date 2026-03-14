@@ -247,7 +247,7 @@ Trailing newlines are always removed, regardless of this variable."
     ("m"   "Jump to item" imenu)
     ("o"   "Toggle offline" jabber-roster-toggle-offline-display)]
    ["MUC & Presence"
-    ("j"   "Join groupchat" jabber-muc-join)
+    ("B"   "Bookmarks" jabber-edit-bookmarks)
     ("a"   "Send presence" jabber-send-presence)]
    ["Discovery"
     ("i"   "Disco items" jabber-get-disco-items)

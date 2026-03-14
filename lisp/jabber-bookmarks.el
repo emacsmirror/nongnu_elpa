@@ -23,8 +23,8 @@
 (require 'cl-lib)
 
 (require 'jabber-private)
-(require 'jabber-widget)
 (require 'jabber-pubsub)
+(require 'transient)
 
 (defconst jabber-bookmarks-xmlns "storage:bookmarks"
   "XEP-0048 bookmarks namespace.")
@@ -339,119 +339,194 @@ BOOKMARKS is a list of plists.  Converts to XEP-0048 XML format."
      callback t
      callback nil)))
 
+;;; Tabulated-list bookmark editor
+
+(defvar jabber-bookmarks-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map "a" #'jabber-bookmarks-add)
+    (define-key map "d" #'jabber-bookmarks-delete)
+    (define-key map "t" #'jabber-bookmarks-toggle-autojoin)
+    (define-key map "e" #'jabber-bookmarks-edit)
+    (define-key map "h" #'jabber-bookmarks-menu)
+    (define-key map "?" #'jabber-bookmarks-menu)
+    map)
+  "Keymap for `jabber-bookmarks-mode'.")
+
+(defun jabber-bookmarks--column-format ()
+  "Compute `tabulated-list-format' based on window width."
+  (let* ((w (- (window-width) (* 5 2))) ; subtract padding (5 cols * 2)
+         (jid-w      (floor (* w 0.35)))
+         (name-w     (floor (* w 0.20)))
+         (autojoin-w (floor (* w 0.10)))
+         (nick-w     (floor (* w 0.20)))
+         (password-w (- w jid-w name-w autojoin-w nick-w)))
+    (vector (list "JID" jid-w t)
+            (list "Name" name-w t)
+            (list "Autojoin" autojoin-w t)
+            (list "Nick" nick-w t)
+            (list "Password" password-w t))))
+
+(define-derived-mode jabber-bookmarks-mode tabulated-list-mode "Bookmarks"
+  "Major mode for displaying XMPP bookmarks."
+  (setq tabulated-list-format (jabber-bookmarks--column-format))
+  (setq tabulated-list-padding 2)
+  (tabulated-list-init-header)
+  (setq tabulated-list-entries #'jabber-bookmarks--entries)
+  (add-hook 'tabulated-list-revert-hook #'jabber-bookmarks--revert nil t))
+
+(defun jabber-bookmarks--entries ()
+  "Build tabulated-list entries from the bookmark cache."
+  (let ((cache (jabber-get-bookmarks-from-cache jabber-buffer-connection)))
+    (when (listp cache)
+      (mapcar (lambda (bm)
+                (list (plist-get bm :jid)
+                      (vector (or (plist-get bm :jid) "")
+                              (or (plist-get bm :name) "")
+                              (if (plist-get bm :autojoin) "true" "false")
+                              (or (plist-get bm :nick) "")
+                              (if (plist-get bm :password) "***" ""))))
+              cache))))
+
+(defun jabber-bookmarks--revert ()
+  "Re-fetch bookmarks from server before reverting."
+  (jabber-get-bookmarks
+   jabber-buffer-connection
+   (lambda (_jc _bookmarks)
+     (when-let* ((buf (get-buffer "*jabber-bookmarks*")))
+       (with-current-buffer buf
+         (setq tabulated-list-format (jabber-bookmarks--column-format))
+         (tabulated-list-init-header)
+         (tabulated-list-print t))))
+   t))
+
 ;;;###autoload
 (defun jabber-edit-bookmarks (jc)
-  "Create a buffer for editing bookmarks interactively.
-
+  "Display bookmarks in a tabulated list.
 JC is the Jabber connection."
   (interactive (list (jabber-read-account)))
   (jabber-get-bookmarks jc #'jabber-bookmarks--show-editor t))
 
-(defun jabber-bookmarks--plist-to-widget (plist)
-  "Convert a bookmark PLIST to the widget value format.
-Returns (conference JID NAME AUTOJOIN NICK PASSWORD)."
-  (list 'conference
-        (or (plist-get plist :jid) "")
-        (or (plist-get plist :name) "")
-        (not (not (plist-get plist :autojoin)))
-        (or (plist-get plist :nick) "")
-        (or (plist-get plist :password) "")))
+(defun jabber-bookmarks--show-editor (jc _bookmarks)
+  "Populate the bookmark editor buffer.
+JC is the Jabber connection."
+  (with-current-buffer (get-buffer-create "*jabber-bookmarks*")
+    (jabber-bookmarks-mode)
+    (setq jabber-buffer-connection jc)
+    (tabulated-list-print t)
+    (switch-to-buffer (current-buffer))))
 
-(defconst jabber-bookmarks--widget-spec
-  '(repeat
-    :tag "Bookmarks"
-    (list :tag "Conference"
-          (const :format "" conference)
-          (string :tag "JID")
-          (string :tag "Name")
-          (checkbox :tag "Autojoin" :format "%[%v%] Autojoin?\n")
-          (string :tag "Nick")
-          (string :tag "Password")))
-  "Widget type spec for the bookmark editor.")
+;;; Direct commands
 
-(defun jabber-bookmarks--maybe-insert-import-notice ()
-  "Insert variable import notice if local MUC variables are set."
-  (when (or (bound-and-true-p jabber-muc-autojoin)
-            (bound-and-true-p jabber-muc-default-nicknames))
-    (widget-insert
-     "The variables `jabber-muc-autojoin' and/or `jabber-muc-default-nicknames'\n"
-     "contain values.  They are only available to jabber.el on this machine.\n"
-     "You may want to import them into your bookmarks, to make them available\n"
-     "to any client on any machine.\n")
-    (widget-create 'push-button :notify 'jabber-bookmarks-import
-                   "Import values from variables")
-    (widget-insert "\n\n")))
+(defun jabber-bookmarks--get-bookmark-at-point ()
+  "Return the bookmark plist for the entry at point, or nil."
+  (when-let* ((jid (tabulated-list-get-id)))
+    (let ((cache (jabber-get-bookmarks-from-cache jabber-buffer-connection)))
+      (when (listp cache)
+        (cl-find jid cache
+                 :key (lambda (bm) (plist-get bm :jid))
+                 :test #'string=)))))
 
-(defun jabber-bookmarks--show-editor (jc bookmarks)
-  "Populate the bookmark editor buffer with BOOKMARKS.
-JC is the Jabber connection.  BOOKMARKS is a list of plists."
-  (let ((values (mapcar #'jabber-bookmarks--plist-to-widget bookmarks)))
-    (with-current-buffer (get-buffer-create "Edit bookmarks")
-      (jabber-init-widget-buffer nil)
-      (setq jabber-buffer-connection jc)
-      (widget-insert (propertize (concat "Edit bookmarks for "
-                                         (jabber-connection-bare-jid jc))
-                                 'face 'jabber-title-large)
-                     "\n\n")
-      (jabber-bookmarks--maybe-insert-import-notice)
-      (push (cons 'bookmarks
-                  (widget-create jabber-bookmarks--widget-spec :value values))
-            jabber-widget-alist)
-      (widget-insert "\n")
-      (widget-create 'push-button :notify 'jabber-bookmarks-submit "Submit")
-      (widget-setup)
-      (widget-minor-mode 1)
-      (switch-to-buffer (current-buffer))
-      (goto-char (point-min)))))
+(defun jabber-bookmarks-add (jid)
+  "Add a bookmark for JID with autojoin enabled."
+  (interactive "sRoom JID: ")
+  (let ((plist (list :jid jid :autojoin t)))
+    (jabber-bookmarks2--publish
+     jabber-buffer-connection plist
+     (lambda (jc _xml _closure)
+       (jabber-bookmarks2--update-cache jc plist)
+       (jabber-bookmarks2--maybe-join jc plist)
+       (jabber-bookmarks--refresh-buffer)
+       (message "Bookmark added: %s" jid)))))
 
-(defun jabber-bookmarks--widget-to-plist (entry)
-  "Convert a widget ENTRY to a bookmark plist.
-ENTRY is (conference JID NAME AUTOJOIN NICK PASSWORD)."
-  (pcase-let ((`(,_type ,jid ,name ,autojoin ,nick ,password) entry))
-    (list :jid jid
-          :name (unless (zerop (length name)) name)
-          :autojoin autojoin
-          :nick (unless (zerop (length nick)) nick)
-          :password (unless (zerop (length password)) password))))
+(defun jabber-bookmarks-delete ()
+  "Delete the bookmark at point."
+  (interactive)
+  (let ((jid (tabulated-list-get-id)))
+    (unless jid (user-error "No bookmark at point"))
+    (when (yes-or-no-p (format "Delete bookmark %s? " jid))
+      (jabber-bookmarks2--retract
+       jabber-buffer-connection jid
+       (lambda (jc _xml _closure)
+         (jabber-bookmarks2--remove-from-cache jc jid)
+         (jabber-bookmarks--refresh-buffer)
+         (message "Bookmark deleted: %s" jid))))))
 
-(defun jabber-bookmarks-submit (&rest _ignore)
-  "Save the bookmark editor contents to the server."
-  (let* ((raw (widget-value (cdr (assq 'bookmarks jabber-widget-alist))))
-         (plists (delq nil
-                       (mapcar (lambda (entry)
-                                 (when (eq (car entry) 'conference)
-                                   (jabber-bookmarks--widget-to-plist entry)))
-                               raw))))
-    (jabber-set-bookmarks
-     jabber-buffer-connection plists
-     (lambda (_jc ok)
-       (message "Storing bookmarks...%s" (if ok "done" "failed"))))))
+(defun jabber-bookmarks-toggle-autojoin ()
+  "Toggle autojoin for the bookmark at point."
+  (interactive)
+  (let ((bm (jabber-bookmarks--get-bookmark-at-point)))
+    (unless bm (user-error "No bookmark at point"))
+    (let* ((jid (plist-get bm :jid))
+           (new-autojoin (not (plist-get bm :autojoin)))
+           (new-plist (plist-put (copy-sequence bm) :autojoin new-autojoin))
+           (jc jabber-buffer-connection))
+      (jabber-bookmarks2--publish
+       jc new-plist
+       (lambda (jc _xml _closure)
+         (jabber-bookmarks2--update-cache jc new-plist)
+         (if new-autojoin
+             (jabber-bookmarks2--maybe-join jc new-plist)
+           (jabber-bookmarks2--maybe-leave jc jid))
+         (jabber-bookmarks--refresh-buffer)
+         (message "%s autojoin %s" jid (if new-autojoin "on" "off")))))))
 
-(defun jabber-bookmarks-import (&rest _ignore)
-  "Import `jabber-muc-autojoin' and `jabber-muc-default-nicknames' into the editor."
-  (let* ((value (widget-value (cdr (assq 'bookmarks jabber-widget-alist))))
-	 (conferences (mapcar
-		       #'cdr
-		       (cl-remove-if-not
-			(lambda (entry)
-			  (eq (car entry) 'conference))
-			value))))
-    (dolist (default-nickname jabber-muc-default-nicknames)
-      (pcase-let* ((`(,muc-jid . ,nick) default-nickname)
-	           (entry (assoc muc-jid conferences)))
-	(if entry
-	    (setf (nth 3 entry) nick)
-	  (setq entry (list muc-jid "" nil nick ""))
-	  (push entry conferences)
-	  (push (cons 'conference entry) value))))
-    (dolist (autojoin jabber-muc-autojoin)
-      (let ((entry (assoc autojoin conferences)))
-	(if entry
-	    (setf (nth 2 entry) t)
-	  (setq entry (list autojoin "" t "" ""))
-	  (push (cons 'conference entry) value))))
-    (widget-value-set (cdr (assq 'bookmarks jabber-widget-alist)) value)
-    (widget-setup)))
+(defun jabber-bookmarks--refresh-buffer ()
+  "Refresh the bookmarks buffer if it exists."
+  (when-let* ((buf (get-buffer "*jabber-bookmarks*")))
+    (with-current-buffer buf
+      (tabulated-list-print t))))
+
+;;; Transient editor
+
+(defun jabber-bookmarks-set-nick ()
+  "Change nick for the bookmark at point."
+  (interactive)
+  (jabber-bookmarks--set-field :nick "Nick"))
+
+(defun jabber-bookmarks-set-name ()
+  "Change name for the bookmark at point."
+  (interactive)
+  (jabber-bookmarks--set-field :name "Name"))
+
+(defun jabber-bookmarks-set-password ()
+  "Change password for the bookmark at point."
+  (interactive)
+  (jabber-bookmarks--set-field :password "Password"))
+
+(defun jabber-bookmarks--set-field (key prompt)
+  "Set field KEY of bookmark at point, prompting with PROMPT."
+  (let ((bm (jabber-bookmarks--get-bookmark-at-point)))
+    (unless bm (user-error "No bookmark at point"))
+    (let* ((old (or (plist-get bm key) ""))
+           (new (read-string (format "%s: " prompt) old))
+           (new-val (unless (string-empty-p new) new))
+           (new-plist (plist-put (copy-sequence bm) key new-val))
+           (jc jabber-buffer-connection))
+      (jabber-bookmarks2--publish
+       jc new-plist
+       (lambda (jc _xml _closure)
+         (jabber-bookmarks2--update-cache jc new-plist)
+         (jabber-bookmarks--refresh-buffer)
+         (message "%s %s set to %s" (plist-get bm :jid) prompt
+                  (or new-val "(empty)")))))))
+
+(transient-define-prefix jabber-bookmarks-edit ()
+  "Edit bookmark at point."
+  [:description
+   (lambda () (format "Edit: %s" (or (tabulated-list-get-id) "(none)")))
+   [("a" "Toggle autojoin" jabber-bookmarks-toggle-autojoin)
+    ("n" "Change nick" jabber-bookmarks-set-nick)
+    ("N" "Change name" jabber-bookmarks-set-name)
+    ("p" "Change password" jabber-bookmarks-set-password)]])
+
+(transient-define-prefix jabber-bookmarks-menu ()
+  "Bookmarks commands."
+  [["Bookmark"
+    ("a" "Add bookmark" jabber-bookmarks-add)
+    ("d" "Delete bookmark" jabber-bookmarks-delete)
+    ("t" "Toggle autojoin" jabber-bookmarks-toggle-autojoin)
+    ("e" "Edit bookmark" jabber-bookmarks-edit)
+    ("g" "Refresh" revert-buffer)]])
 
 (provide 'jabber-bookmarks)
 
