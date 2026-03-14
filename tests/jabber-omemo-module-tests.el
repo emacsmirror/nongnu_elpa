@@ -18,7 +18,14 @@
   (should (fboundp 'jabber-omemo--rotate-signed-pre-key))
   (should (fboundp 'jabber-omemo--refill-pre-keys))
   (should (fboundp 'jabber-omemo--encrypt-message))
-  (should (fboundp 'jabber-omemo--decrypt-message)))
+  (should (fboundp 'jabber-omemo--decrypt-message))
+  (should (fboundp 'jabber-omemo--make-session))
+  (should (fboundp 'jabber-omemo--initiate-session))
+  (should (fboundp 'jabber-omemo--serialize-session))
+  (should (fboundp 'jabber-omemo--deserialize-session))
+  (should (fboundp 'jabber-omemo--encrypt-key))
+  (should (fboundp 'jabber-omemo--decrypt-key))
+  (should (fboundp 'jabber-omemo--heartbeat)))
 
 ;;; Group 2: Store lifecycle
 
@@ -174,6 +181,203 @@
       (plist-get enc :iv)
       (plist-get enc :ciphertext))
      :type 'jabber-omemo-error)))
+
+;;; Group 6: Session lifecycle
+
+(ert-deftest jabber-omemo-module-test-initiate-session-returns-user-ptr ()
+  "initiate-session returns a user-ptr."
+  (let* ((alice-blob (jabber-omemo--setup-store))
+         (alice (jabber-omemo--deserialize-store alice-blob))
+         (bob-blob (jabber-omemo--setup-store))
+         (bob (jabber-omemo--deserialize-store bob-blob))
+         (bundle (jabber-omemo--get-bundle bob))
+         (pk (car (plist-get bundle :pre-keys)))
+         (session (jabber-omemo--initiate-session
+                   alice
+                   (plist-get bundle :signature)
+                   (plist-get bundle :signed-pre-key)
+                   (plist-get bundle :identity-key)
+                   (cdr pk)
+                   (plist-get bundle :signed-pre-key-id)
+                   (car pk))))
+    (should (user-ptrp session))))
+
+(ert-deftest jabber-omemo-module-test-serialize-session-returns-unibyte ()
+  "serialize-session returns a non-empty unibyte string."
+  (let* ((alice-blob (jabber-omemo--setup-store))
+         (alice (jabber-omemo--deserialize-store alice-blob))
+         (bob-blob (jabber-omemo--setup-store))
+         (bob (jabber-omemo--deserialize-store bob-blob))
+         (bundle (jabber-omemo--get-bundle bob))
+         (pk (car (plist-get bundle :pre-keys)))
+         (session (jabber-omemo--initiate-session
+                   alice
+                   (plist-get bundle :signature)
+                   (plist-get bundle :signed-pre-key)
+                   (plist-get bundle :identity-key)
+                   (cdr pk)
+                   (plist-get bundle :signed-pre-key-id)
+                   (car pk)))
+         (blob (jabber-omemo--serialize-session session)))
+    (should (stringp blob))
+    (should (not (multibyte-string-p blob)))
+    (should (> (length blob) 0))))
+
+(ert-deftest jabber-omemo-module-test-session-round-trip ()
+  "Serializing a deserialized session preserves the data."
+  (let* ((alice-blob (jabber-omemo--setup-store))
+         (alice (jabber-omemo--deserialize-store alice-blob))
+         (bob-blob (jabber-omemo--setup-store))
+         (bob (jabber-omemo--deserialize-store bob-blob))
+         (bundle (jabber-omemo--get-bundle bob))
+         (pk (car (plist-get bundle :pre-keys)))
+         (session (jabber-omemo--initiate-session
+                   alice
+                   (plist-get bundle :signature)
+                   (plist-get bundle :signed-pre-key)
+                   (plist-get bundle :identity-key)
+                   (cdr pk)
+                   (plist-get bundle :signed-pre-key-id)
+                   (car pk)))
+         (blob1 (jabber-omemo--serialize-session session))
+         (session2 (jabber-omemo--deserialize-session blob1))
+         (blob2 (jabber-omemo--serialize-session session2)))
+    (should (user-ptrp session2))
+    (should (string= blob1 blob2))))
+
+(ert-deftest jabber-omemo-module-test-initiate-session-bad-signature ()
+  "initiate-session with a bad signature signals an error."
+  (let* ((alice-blob (jabber-omemo--setup-store))
+         (alice (jabber-omemo--deserialize-store alice-blob))
+         (bob-blob (jabber-omemo--setup-store))
+         (bob (jabber-omemo--deserialize-store bob-blob))
+         (bundle (jabber-omemo--get-bundle bob))
+         (pk (car (plist-get bundle :pre-keys)))
+         (bad-sig (make-string 64 0)))
+    (should-error
+     (jabber-omemo--initiate-session
+      alice bad-sig
+      (plist-get bundle :signed-pre-key)
+      (plist-get bundle :identity-key)
+      (cdr pk)
+      (plist-get bundle :signed-pre-key-id)
+      (car pk))
+     :type 'jabber-omemo-error)))
+
+;;; Group 7: Key encrypt/decrypt round-trip
+
+(ert-deftest jabber-omemo-module-test-encrypt-key-returns-plist ()
+  "encrypt-key returns a plist with :data and :pre-key-p."
+  (let* ((alice-blob (jabber-omemo--setup-store))
+         (alice (jabber-omemo--deserialize-store alice-blob))
+         (bob-blob (jabber-omemo--setup-store))
+         (bob (jabber-omemo--deserialize-store bob-blob))
+         (bundle (jabber-omemo--get-bundle bob))
+         (pk (car (plist-get bundle :pre-keys)))
+         (session (jabber-omemo--initiate-session
+                   alice
+                   (plist-get bundle :signature)
+                   (plist-get bundle :signed-pre-key)
+                   (plist-get bundle :identity-key)
+                   (cdr pk)
+                   (plist-get bundle :signed-pre-key-id)
+                   (car pk)))
+         (test-key (make-string 32 ?A))
+         (result (jabber-omemo--encrypt-key session test-key)))
+    (should (plist-get result :data))
+    (should (plist-member result :pre-key-p))))
+
+(ert-deftest jabber-omemo-module-test-first-message-is-pre-key ()
+  "First encrypted key message has :pre-key-p = t."
+  (let* ((alice-blob (jabber-omemo--setup-store))
+         (alice (jabber-omemo--deserialize-store alice-blob))
+         (bob-blob (jabber-omemo--setup-store))
+         (bob (jabber-omemo--deserialize-store bob-blob))
+         (bundle (jabber-omemo--get-bundle bob))
+         (pk (car (plist-get bundle :pre-keys)))
+         (session (jabber-omemo--initiate-session
+                   alice
+                   (plist-get bundle :signature)
+                   (plist-get bundle :signed-pre-key)
+                   (plist-get bundle :identity-key)
+                   (cdr pk)
+                   (plist-get bundle :signed-pre-key-id)
+                   (car pk)))
+         (test-key (make-string 32 ?B))
+         (result (jabber-omemo--encrypt-key session test-key)))
+    (should (eq t (plist-get result :pre-key-p)))))
+
+(ert-deftest jabber-omemo-module-test-key-encrypt-decrypt-round-trip ()
+  "Full Alice/Bob key encrypt/decrypt round-trip."
+  (let* ((alice-blob (jabber-omemo--setup-store))
+         (alice (jabber-omemo--deserialize-store alice-blob))
+         (bob-blob (jabber-omemo--setup-store))
+         (bob (jabber-omemo--deserialize-store bob-blob))
+         (bundle (jabber-omemo--get-bundle bob))
+         (pk (car (plist-get bundle :pre-keys)))
+         ;; Alice initiates session with Bob's bundle
+         (alice-session (jabber-omemo--initiate-session
+                         alice
+                         (plist-get bundle :signature)
+                         (plist-get bundle :signed-pre-key)
+                         (plist-get bundle :identity-key)
+                         (cdr pk)
+                         (plist-get bundle :signed-pre-key-id)
+                         (car pk)))
+         ;; Alice encrypts a 32-byte key
+         (original-key (make-string 32 ?K))
+         (encrypted (jabber-omemo--encrypt-key alice-session original-key))
+         (enc-data (plist-get encrypted :data))
+         (is-prekey (plist-get encrypted :pre-key-p))
+         ;; Bob decrypts with a fresh (empty) session
+         (bob-session (jabber-omemo--make-session))
+         (decrypted (jabber-omemo--decrypt-key
+                     bob-session bob is-prekey enc-data)))
+    (should (string= original-key decrypted))))
+
+(ert-deftest jabber-omemo-module-test-consecutive-messages-are-pre-key ()
+  "Consecutive messages from initiator stay pre-key until reply."
+  (let* ((alice-blob (jabber-omemo--setup-store))
+         (alice (jabber-omemo--deserialize-store alice-blob))
+         (bob-blob (jabber-omemo--setup-store))
+         (bob (jabber-omemo--deserialize-store bob-blob))
+         (bundle (jabber-omemo--get-bundle bob))
+         (pk (car (plist-get bundle :pre-keys)))
+         (alice-session (jabber-omemo--initiate-session
+                         alice
+                         (plist-get bundle :signature)
+                         (plist-get bundle :signed-pre-key)
+                         (plist-get bundle :identity-key)
+                         (cdr pk)
+                         (plist-get bundle :signed-pre-key-id)
+                         (car pk)))
+         (key1 (make-string 32 ?A))
+         (enc1 (jabber-omemo--encrypt-key alice-session key1))
+         (key2 (make-string 32 ?B))
+         (enc2 (jabber-omemo--encrypt-key alice-session key2)))
+    ;; Both messages are pre-key since Bob hasn't replied yet
+    (should (eq t (plist-get enc1 :pre-key-p)))
+    (should (eq t (plist-get enc2 :pre-key-p)))))
+
+;;; Group 8: Heartbeat
+
+(ert-deftest jabber-omemo-module-test-heartbeat-nil-on-fresh-session ()
+  "heartbeat returns nil on a fresh session."
+  (let* ((alice-blob (jabber-omemo--setup-store))
+         (alice (jabber-omemo--deserialize-store alice-blob))
+         (bob-blob (jabber-omemo--setup-store))
+         (bob (jabber-omemo--deserialize-store bob-blob))
+         (bundle (jabber-omemo--get-bundle bob))
+         (pk (car (plist-get bundle :pre-keys)))
+         (session (jabber-omemo--initiate-session
+                   alice
+                   (plist-get bundle :signature)
+                   (plist-get bundle :signed-pre-key)
+                   (plist-get bundle :identity-key)
+                   (cdr pk)
+                   (plist-get bundle :signed-pre-key-id)
+                   (car pk))))
+    (should-not (jabber-omemo--heartbeat session alice))))
 
 (provide 'jabber-omemo-module-tests)
 ;;; jabber-omemo-module-tests.el ends here
