@@ -687,13 +687,13 @@ Returns modified XML-DATA with decrypted body, or nil on failure."
             xml-data)
         xml-data))))
 
-(defun jabber-omemo--decrypt-if-needed (jc xml-data)
-  "Advice overriding `jabber-chat--decrypt-if-needed'.
+(defun jabber-omemo--decrypt-if-needed (orig-fn jc xml-data)
+  "Around advice for `jabber-chat--decrypt-if-needed'.
 If XML-DATA contains an OMEMO <encrypted> element, decrypt it.
-Otherwise return XML-DATA unchanged."
+Otherwise delegate to ORIG-FN."
   (let ((parsed (jabber-omemo--parse-encrypted xml-data)))
     (if (null parsed)
-        xml-data
+        (funcall orig-fn jc xml-data)
       (condition-case err
           (jabber-omemo--decrypt-stanza jc xml-data parsed)
         (error
@@ -993,8 +993,8 @@ publishes our bundle, and pre-fetches sessions for open chat buffers."
      (add-hook 'jabber-post-connect-hooks #'jabber-omemo-on-connect)
      (add-hook 'jabber-pre-disconnect-hook #'jabber-omemo--on-disconnect)))
 
-(advice-add 'jabber-chat--decrypt-if-needed :override
-            #'jabber-omemo--decrypt-if-needed)
+(advice-add 'jabber-chat--decrypt-if-needed :around
+            #'jabber-omemo--decrypt-if-needed '((depth . 10)))
 
 (provide 'jabber-omemo)
 ;;; jabber-omemo.el ends here
