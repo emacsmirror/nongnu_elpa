@@ -484,16 +484,29 @@ and cache, and stores an undecided trust record (TOFU)."
                                    0)
     session-ptr))
 
+(defun jabber-omemo--load-device-list-from-db (account jid)
+  "Load cached device IDs for ACCOUNT + JID from the database.
+Returns a list of active device ID integers, or nil."
+  (let ((records (jabber-omemo-store-load-devices account jid)))
+    (mapcar (lambda (r) (plist-get r :device-id))
+            (cl-remove-if-not (lambda (r) (plist-get r :active)) records))))
+
 (defun jabber-omemo--ensure-sessions (jc jid callback)
   "Ensure sessions exist for all active devices of JID via JC.
-Fetches the device list (from cache or PubSub), then for each
-device lacking a session, fetches the bundle and establishes one.
+Checks in-memory cache, then DB, then PubSub for the device list.
+For each device lacking a session, fetches the bundle and establishes one.
 Calls (funcall CALLBACK sessions) when done, where sessions is
 a list of (DEVICE-ID . SESSION-PTR) for all active devices."
   (let* ((account (jabber-connection-bare-jid jc))
          (bare-jid (jabber-jid-user jid))
          (cache-key (jabber-omemo--device-list-key account bare-jid))
-         (cached-ids (gethash cache-key jabber-omemo--device-lists)))
+         (cached-ids (or (gethash cache-key jabber-omemo--device-lists)
+                         (let ((db-ids (jabber-omemo--load-device-list-from-db
+                                        account bare-jid)))
+                           (when db-ids
+                             (puthash cache-key db-ids
+                                      jabber-omemo--device-lists))
+                           db-ids))))
     (if cached-ids
         (jabber-omemo--ensure-sessions-for-ids jc bare-jid cached-ids callback)
       (jabber-omemo--fetch-device-list
@@ -848,11 +861,23 @@ Called when OMEMO is enabled in a chat buffer."
 (defun jabber-omemo-on-connect (jc)
   "Post-connect hook for OMEMO initialization.
 Loads or creates the store, ensures our device is listed,
-and publishes our bundle."
+publishes our bundle, and pre-fetches sessions for open chat buffers."
   (jabber-omemo--get-store jc)
   (jabber-omemo--get-device-id jc)
   (jabber-omemo--ensure-device-listed jc)
-  (jabber-omemo--publish-bundle jc))
+  (jabber-omemo--publish-bundle jc)
+  (jabber-omemo--prefetch-open-chats jc))
+
+(defun jabber-omemo--prefetch-open-chats (jc)
+  "Pre-fetch OMEMO sessions for all open OMEMO chat buffers on JC."
+  (dolist (buf (buffer-list))
+    (with-current-buffer buf
+      (when (and (eq major-mode 'jabber-chat-mode)
+                 (eq jabber-buffer-connection jc)
+                 (eq jabber-chat-encryption 'omemo)
+                 (bound-and-true-p jabber-chatting-with))
+        (jabber-omemo--prefetch-sessions
+         jc (jabber-jid-user jabber-chatting-with))))))
 
 (defun jabber-omemo--on-disconnect ()
   "Pre-disconnect hook.  Clear OMEMO in-memory caches."
