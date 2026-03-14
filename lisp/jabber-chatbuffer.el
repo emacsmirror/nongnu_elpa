@@ -21,6 +21,7 @@
 (require 'jabber-util)
 (require 'jabber-core)
 (require 'jabber-menu)
+(require 'transient)
 
 (defvar jabber-point-insert nil
   "Position where the message being composed starts.")
@@ -41,6 +42,9 @@ what kind of chat buffer is being created.")
 (declare-function jabber-muc-nick-completion-at-point "jabber-nick-completion.el" ())
 (declare-function jabber-httpupload--upload "jabber-httpupload"
                   (jc filepath callback))
+(declare-function jabber-omemo--prefetch-sessions "jabber-omemo"
+                  (jc jid))
+(declare-function jabber-omemo-fingerprints "jabber-omemo" ())
 
 ;;
 
@@ -70,6 +74,69 @@ before sending with RET."
          (setq jabber-httpupload--pending-url get-url)
          (message "Uploaded: %s (send with RET)" get-url))))))
 
+(defvar-local jabber-chat-encryption 'plaintext
+  "Encryption mode for this chat buffer.
+Possible values: `plaintext', `omemo'.  Future: `pgp'.")
+
+(defvar-local jabber-chat-encryption-message ""
+  "Header-line string showing current encryption state.")
+
+(defface jabber-chat-encryption-omemo
+  '((t :foreground "green"))
+  "Face for OMEMO encryption indicator in chat header."
+  :group 'jabber-chat)
+
+(defface jabber-chat-encryption-plaintext
+  '((t :foreground "gray"))
+  "Face for plaintext indicator in chat header."
+  :group 'jabber-chat)
+
+(defun jabber-chat-encryption--update-header ()
+  "Update `jabber-chat-encryption-message' from current state."
+  (setq jabber-chat-encryption-message
+        (propertize
+         (pcase jabber-chat-encryption
+           ('omemo "[OMEMO]")
+           (_ "[plaintext]"))
+         'face (pcase jabber-chat-encryption
+                 ('omemo 'jabber-chat-encryption-omemo)
+                 (_ 'jabber-chat-encryption-plaintext)))))
+
+(defun jabber-chat-encryption-set-omemo ()
+  "Set encryption to OMEMO for this chat buffer."
+  (interactive)
+  (setq jabber-chat-encryption 'omemo)
+  (jabber-chat-encryption--update-header)
+  (force-mode-line-update)
+  (when (and (bound-and-true-p jabber-buffer-connection)
+             (bound-and-true-p jabber-chatting-with))
+    (jabber-omemo--prefetch-sessions
+     jabber-buffer-connection jabber-chatting-with)))
+
+(defun jabber-chat-encryption-set-plaintext ()
+  "Set encryption to plaintext for this chat buffer."
+  (interactive)
+  (setq jabber-chat-encryption 'plaintext)
+  (jabber-chat-encryption--update-header)
+  (force-mode-line-update))
+
+(transient-define-prefix jabber-chat-encryption-menu ()
+  "Select encryption for this chat buffer."
+  [:description
+   (lambda () (format "Encryption (current: %s)" jabber-chat-encryption))
+   ("o" "OMEMO" jabber-chat-encryption-set-omemo)
+   ("p" "Plaintext" jabber-chat-encryption-set-plaintext)])
+
+(transient-define-prefix jabber-chat-operations-menu ()
+  "Chat buffer operations."
+  [["Encryption"
+    ("e" "Encryption..." jabber-chat-encryption-menu)
+    ("f" "Fingerprints" jabber-omemo-fingerprints)]
+   ["Files"
+    ("a" "Attach file" jabber-chat-attach-file)]
+   ["Buffer"
+    ("r" "Redisplay" jabber-chat-redisplay)]])
+
 ;; Spell check only what you're currently writing.
 (defun jabber-chat-mode-flyspell-verify ()
   "Return non-nil if point is in the composition area."
@@ -79,7 +146,9 @@ before sending with RET."
   :parent jabber-common-keymap
   "RET"     #'jabber-chat-buffer-send
   "TAB"     #'completion-at-point
-  "C-c C-a" #'jabber-chat-attach-file)
+  "C-c C-a" #'jabber-chat-attach-file
+  "C-c C-o" #'jabber-chat-operations-menu
+  "C-c C-e" #'jabber-chat-encryption-menu)
 
 (define-derived-mode jabber-chat-mode fundamental-mode "jabber-chat"
   "Major mode for Jabber chat buffers.
@@ -110,7 +179,8 @@ EWOC-PP is the pretty-printer function for the message EWOC."
     (let ((inhibit-read-only t))
       (put-text-property (point-min) (point) 'front-sticky t)
       (put-text-property (point-min) (point) 'rear-nonsticky t))
-    (setq jabber-point-insert (point-marker))))
+    (setq jabber-point-insert (point-marker)))
+  (jabber-chat-encryption--update-header))
 
 (defun jabber-chat-buffer-send ()
   (interactive)
