@@ -130,7 +130,7 @@ It can be sent and cancelled several times.")
 ;;; COMMON
 
 (defun jabber-handle-incoming-message-chatstates (jc xml-data)
-  (when-let ((buffer (get-buffer (jabber-chat-get-buffer
+  (when-let* ((buffer (get-buffer (jabber-chat-get-buffer
                                   (jabber-xml-get-attribute xml-data 'from) jc))))
     (with-current-buffer buffer
       (cond

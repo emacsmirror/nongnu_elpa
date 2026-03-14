@@ -287,7 +287,7 @@ Searches by buffer-local `jabber-chatting-with' variable."
     (cl-find bare (buffer-list)
              :test #'string=
              :key (lambda (buf)
-                    (when-let ((jid (buffer-local-value 'jabber-chatting-with buf)))
+                    (when-let* ((jid (buffer-local-value 'jabber-chatting-with buf)))
                       (jabber-jid-user jid))))))
 
 (defun jabber-chat-create-buffer (jc chat-with)

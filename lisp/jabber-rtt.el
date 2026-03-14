@@ -65,7 +65,7 @@
 ;;;###autoload
 (defun jabber-rtt-handle-message (jc xml-data)
   ;; We could support this for MUC as well, if useful.
-  (when-let (((not (jabber-muc-message-p xml-data)))
+  (when-let* (((not (jabber-muc-message-p xml-data)))
              (buffer (get-buffer (jabber-chat-get-buffer
                                   (jabber-xml-get-attribute xml-data 'from) jc))))
     (with-current-buffer buffer

@@ -164,7 +164,7 @@ and it hasn't been sent before."
 (add-to-list 'jabber-message-chain #'jabber-handle-incoming-message-events t)
 
 (defun jabber-handle-incoming-message-events (jc xml-data)
-  (when-let (((not (jabber-muc-message-p xml-data)))
+  (when-let* (((not (jabber-muc-message-p xml-data)))
              (buffer (get-buffer (jabber-chat-get-buffer
                                   (jabber-xml-get-attribute xml-data 'from) jc))))
     (with-current-buffer buffer
