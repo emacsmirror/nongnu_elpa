@@ -108,15 +108,6 @@ Values are lists of nickname strings.")
 (defvar jabber-muc-topic ""
   "The topic of the current MUC room.")
 
-(defun jabber-muc--truncate-topic ()
-  "Return `jabber-muc-topic' truncated to fit the header line.
-Reserves space for the room name, separators, and encryption indicator."
-  (let* ((max-width (max 10 (- (window-width) 30)))
-         (topic (replace-regexp-in-string "[\n\r]+" " " jabber-muc-topic)))
-    (if (<= (length topic) max-width)
-        topic
-      (concat (substring topic 0 (- max-width 1)) "\N{HORIZONTAL ELLIPSIS}"))))
-
 (defvar jabber-role-history ()
   "Keeps track of previously used roles.")
 
