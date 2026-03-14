@@ -134,7 +134,55 @@ CREATE TRIGGER IF NOT EXISTS message_au AFTER UPDATE ON message BEGIN
   INSERT INTO message_fts(message_fts, rowid, body)
     VALUES ('delete', old.id, old.body);
   INSERT INTO message_fts(rowid, body) VALUES (new.id, new.body);
-END"))
+END")
+  ;; OMEMO tables
+  (sqlite-execute db "\
+CREATE TABLE IF NOT EXISTS omemo_store (
+  account TEXT PRIMARY KEY,
+  store_blob BLOB NOT NULL)")
+  (sqlite-execute db "\
+CREATE TABLE IF NOT EXISTS omemo_sessions (
+  account TEXT NOT NULL,
+  jid TEXT NOT NULL,
+  device_id INTEGER NOT NULL,
+  session_blob BLOB NOT NULL,
+  PRIMARY KEY (account, jid, device_id))")
+  (sqlite-execute db "\
+CREATE TABLE IF NOT EXISTS omemo_trust (
+  account TEXT NOT NULL,
+  jid TEXT NOT NULL,
+  device_id INTEGER NOT NULL,
+  identity_key BLOB NOT NULL,
+  trust INTEGER DEFAULT 0,
+  first_seen INTEGER NOT NULL,
+  PRIMARY KEY (account, jid, device_id))")
+  (sqlite-execute db "\
+CREATE TABLE IF NOT EXISTS omemo_skipped_keys (
+  account TEXT NOT NULL,
+  jid TEXT NOT NULL,
+  device_id INTEGER NOT NULL,
+  dh_key BLOB NOT NULL,
+  message_number INTEGER NOT NULL,
+  message_key BLOB NOT NULL,
+  created_at INTEGER NOT NULL,
+  PRIMARY KEY (account, jid, device_id, dh_key, message_number))")
+  (sqlite-execute db "\
+CREATE TABLE IF NOT EXISTS omemo_devices (
+  account TEXT NOT NULL,
+  jid TEXT NOT NULL,
+  device_id INTEGER NOT NULL,
+  active INTEGER DEFAULT 1,
+  last_seen INTEGER NOT NULL,
+  PRIMARY KEY (account, jid, device_id))")
+  (sqlite-execute db "\
+CREATE INDEX IF NOT EXISTS idx_omemo_trust_jid
+  ON omemo_trust (account, jid)")
+  (sqlite-execute db "\
+CREATE INDEX IF NOT EXISTS idx_omemo_devices_jid
+  ON omemo_devices (account, jid)")
+  (sqlite-execute db "\
+CREATE INDEX IF NOT EXISTS idx_omemo_sessions_jid
+  ON omemo_sessions (account, jid)"))
 
 (defun jabber-db--migrate (db)
   "Check user_version and apply migrations to DB."
