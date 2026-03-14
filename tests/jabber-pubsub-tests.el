@@ -11,7 +11,7 @@
 
 (require 'jabber-pubsub)
 
-;;; ---- Group 1: publish-options helper ----
+;;; Group 1: publish-options helper
 
 (ert-deftest jabber-pubsub-test-publish-options-single ()
   "Single option produces correct XML structure."
@@ -52,7 +52,7 @@
     (should (string= (nth 2 value-elem)
                       "http://jabber.org/protocol/pubsub#publish-options"))))
 
-;;; ---- Group 2: event handler dispatch ----
+;;; Group 2: event handler dispatch
 
 (ert-deftest jabber-pubsub-test-dispatch-matching-node ()
   "Dispatches to registered handler for matching node."
@@ -121,7 +121,7 @@
     (should called-with)
     (should (string= (nth 1 called-with) "urn:xmpp:omemo:2:bundles"))))
 
-;;; ---- Group 3: IQ XML structure ----
+;;; Group 3: IQ XML structure
 
 (defvar jabber-pubsub-test--captured-args nil
   "Captured arguments from mocked `jabber-send-iq'.")
@@ -167,7 +167,7 @@
      (should pub-opts))))
 
 (ert-deftest jabber-pubsub-test-retract-iq-structure ()
-  "Retract builds correct IQ set."
+  "Retract builds correct IQ set without notify attribute."
   (jabber-pubsub-test-with-mock-iq
    (jabber-pubsub-retract 'fake-jc "pubsub.example.com" "mynode" "item1")
    (let* ((args jabber-pubsub-test--captured-args)
@@ -177,8 +177,20 @@
      (let ((retract (nth 2 query)))
        (should (eq (car retract) 'retract))
        (should (string= (cdr (assq 'node (cadr retract))) "mynode"))
+       (should-not (assq 'notify (cadr retract)))
        (let ((item (nth 2 retract)))
          (should (string= (cdr (assq 'id (cadr item))) "item1")))))))
+
+(ert-deftest jabber-pubsub-test-retract-with-notify ()
+  "Retract with NOTIFY adds notify=\"true\" attribute."
+  (jabber-pubsub-test-with-mock-iq
+   (jabber-pubsub-retract 'fake-jc "pubsub.example.com" "mynode" "item1"
+                          t)
+   (let* ((query (plist-get jabber-pubsub-test--captured-args :query))
+          (retract (nth 2 query)))
+     (should (string= (cdr (assq 'notify (cadr retract))) "true"))
+     (let ((item (nth 2 retract)))
+       (should (string= (cdr (assq 'id (cadr item))) "item1"))))))
 
 (ert-deftest jabber-pubsub-test-request-iq-structure ()
   "Request items builds correct IQ get."

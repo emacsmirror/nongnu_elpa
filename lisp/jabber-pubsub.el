@@ -79,12 +79,14 @@ called as (funcall cb JC XML-DATA CLOSURE-DATA)."
                     error-callback "pubsub publish")))
 
 (defun jabber-pubsub-retract (jc jid node item-id
-                                 &optional callback error-callback)
+                                 &optional notify callback error-callback)
   "Retract ITEM-ID from NODE on JID via JC.
+When NOTIFY is non-nil, add notify=\"true\" to the retract element.
 CALLBACK and ERROR-CALLBACK follow `jabber-send-iq' conventions."
   (jabber-send-iq jc jid "set"
                   `(pubsub ((xmlns . ,jabber-pubsub-xmlns))
-                           (retract ((node . ,node))
+                           (retract ((node . ,node)
+                                     ,@(when notify '((notify . "true"))))
                                     (item ((id . ,item-id)))))
                   callback "pubsub retract"
                   error-callback "pubsub retract"))

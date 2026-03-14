@@ -1020,8 +1020,7 @@ JC is the Jabber connection."
    jc
    (lambda (jc bookmarks)
      (dolist (bookmark bookmarks)
-       (setq bookmark (jabber-parse-conference-bookmark bookmark))
-       (when (and bookmark (plist-get bookmark :autojoin))
+       (when (plist-get bookmark :autojoin)
          (jabber-muc-join jc (plist-get bookmark :jid)
                           (or (plist-get bookmark :nick)
                               (plist-get (fsm-get-state-data jc) :username))))))))
