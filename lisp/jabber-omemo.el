@@ -32,15 +32,24 @@
 (require 'jabber-omemo-store)
 (require 'jabber-pubsub)
 (require 'jabber-xml)
+(require 'jabber-hints)
 
 (declare-function jabber-connection-bare-jid "jabber-util")
 (declare-function jabber-jid-user "jabber-util")
 (declare-function jabber-disco-advertise-feature "jabber-disco")
 (declare-function jabber-send-iq "jabber-iq")
+(declare-function jabber-send-sexp "jabber-core")
+(declare-function jabber-chat--msg-plist-from-stanza "jabber-chat")
+(declare-function jabber-maybe-print-rare-time "jabber-chat")
 
 (defvar jabber-post-connect-hooks)
 (defvar jabber-pre-disconnect-hook)
 (defvar jabber-pubsub-node-handlers)
+(defvar jabber-chat-send-hooks)
+(defvar jabber-chat-ewoc)
+(defvar jabber-chatting-with)
+(defvar jabber-chat-encryption)
+(defvar jabber-chat-printers)
 
 (unless module-file-suffix
   (error "jabber-omemo requires Emacs compiled with dynamic module support"))
@@ -201,6 +210,10 @@ Returns heartbeat message bytes or nil."
     ("pubsub#max_items" . "max")
     ("pubsub#access_model" . "open"))
   "Publish-options for OMEMO bundle PubSub nodes.")
+
+(defconst jabber-omemo-fallback-body
+  "I sent you an OMEMO encrypted message but your client doesn't seem to support that."
+  "Plaintext fallback body for non-OMEMO clients.")
 
 ;;; In-memory state
 
@@ -515,6 +528,321 @@ CALLBACK receives a list of (DEVICE-ID . SESSION-PTR)."
     (when (zerop pending)
       (funcall callback results))))
 
+;;; Message encryption XML
+
+(defun jabber-omemo--build-encrypted-xml (jc sessions enc-result)
+  "Build <encrypted> XML sexp for an OMEMO 0.3 message.
+JC is the Jabber connection (for our device ID).
+SESSIONS is a list of (DEVICE-ID . SESSION-PTR) for all recipients
+\(including our own other devices).
+ENC-RESULT is the plist from `jabber-omemo-encrypt-message'."
+  (let* ((our-sid (jabber-omemo--get-device-id jc))
+         (key (plist-get enc-result :key))
+         (iv (plist-get enc-result :iv))
+         (ciphertext (plist-get enc-result :ciphertext))
+         key-elements)
+    (dolist (entry sessions)
+      (let* ((did (car entry))
+             (session-ptr (cdr entry))
+             (encrypted-key (jabber-omemo-encrypt-key session-ptr key))
+             (data (plist-get encrypted-key :data))
+             (pre-key-p (plist-get encrypted-key :pre-key-p)))
+        (push `(key ((rid . ,(number-to-string did))
+                     ,@(when pre-key-p '((prekey . "true"))))
+                    ,(base64-encode-string data t))
+              key-elements)
+        (jabber-omemo--save-session
+         jc (jabber-jid-user (jabber-omemo--session-jid-for-did jc did))
+         did session-ptr)))
+    (jabber-omemo--persist-store jc)
+    `(encrypted ((xmlns . ,jabber-omemo-xmlns))
+                (header ((sid . ,(number-to-string our-sid)))
+                        ,@(nreverse key-elements)
+                        (iv () ,(base64-encode-string iv t)))
+                (payload () ,(base64-encode-string ciphertext t)))))
+
+(defun jabber-omemo--session-jid-for-did (jc device-id)
+  "Look up the JID associated with DEVICE-ID in the session cache for JC.
+Searches through `jabber-omemo--sessions' hash keys."
+  (let ((account (jabber-connection-bare-jid jc))
+        result)
+    (maphash (lambda (key _val)
+               (unless result
+                 (let* ((parts (split-string key "\0"))
+                        (acct (nth 0 parts))
+                        (jid (nth 1 parts))
+                        (did (string-to-number (nth 2 parts))))
+                   (when (and (string= acct account)
+                              (= did device-id))
+                     (setq result jid)))))
+             jabber-omemo--sessions)
+    result))
+
+;;; Message decryption XML
+
+(defun jabber-omemo--parse-encrypted (xml-data)
+  "Parse OMEMO <encrypted> element from XML-DATA.
+Returns plist (:sid INT :iv BYTES :payload BYTES :keys ALIST)
+where :keys is ((DEVICE-ID :data BYTES :pre-key-p BOOL) ...).
+Returns nil if no <encrypted> element."
+  (when-let* ((encrypted (jabber-xml-child-with-xmlns
+                          xml-data jabber-omemo-xmlns)))
+    (let* ((header (car (jabber-xml-get-children encrypted 'header)))
+           (sid (string-to-number
+                 (or (jabber-xml-get-attribute header 'sid) "0")))
+           (iv-el (car (jabber-xml-get-children header 'iv)))
+           (iv (base64-decode-string
+                (car (jabber-xml-node-children iv-el))))
+           (payload-el (car (jabber-xml-get-children encrypted 'payload)))
+           (payload (when payload-el
+                      (let ((text (car (jabber-xml-node-children payload-el))))
+                        (when (and text (not (string-empty-p text)))
+                          (base64-decode-string text)))))
+           keys)
+      (dolist (key-el (jabber-xml-get-children header 'key))
+        (let ((rid (string-to-number
+                    (or (jabber-xml-get-attribute key-el 'rid) "0")))
+              (pre-key-p (equal (jabber-xml-get-attribute key-el 'prekey)
+                                "true"))
+              (data (base64-decode-string
+                     (car (jabber-xml-node-children key-el)))))
+          (push (list rid :data data :pre-key-p pre-key-p) keys)))
+      (list :sid sid :iv iv :payload payload
+            :keys (nreverse keys)))))
+
+(defun jabber-omemo--persist-store (jc)
+  "Serialize and save the OMEMO store for JC to the database."
+  (let* ((account (jabber-connection-bare-jid jc))
+         (store-ptr (gethash account jabber-omemo--stores)))
+    (when store-ptr
+      (jabber-omemo-store-save account
+                               (jabber-omemo-serialize-store store-ptr)))))
+
+;;; Receive path
+
+(defun jabber-omemo--decrypt-stanza (jc xml-data parsed)
+  "Decrypt OMEMO message in XML-DATA using PARSED data.
+Returns modified XML-DATA with decrypted body, or nil on failure."
+  (let* ((our-did (jabber-omemo--get-device-id jc))
+         (account (jabber-connection-bare-jid jc))
+         (from (jabber-xml-get-attribute xml-data 'from))
+         (sender-jid (jabber-jid-user from))
+         (sender-did (plist-get parsed :sid))
+         (iv (plist-get parsed :iv))
+         (payload (plist-get parsed :payload))
+         (keys (plist-get parsed :keys))
+         (our-key-entry (cl-find our-did keys :key #'car)))
+    (unless our-key-entry
+      (user-error "OMEMO message not encrypted for our device %d" our-did))
+    (let* ((key-data (plist-get (cdr our-key-entry) :data))
+           (pre-key-p (plist-get (cdr our-key-entry) :pre-key-p))
+           (store-ptr (jabber-omemo--get-store jc))
+           (session-ptr (or (jabber-omemo--get-session jc sender-jid sender-did)
+                            (when pre-key-p
+                              (jabber-omemo-make-session))))
+           (decrypted-key (jabber-omemo-decrypt-key
+                           session-ptr store-ptr pre-key-p key-data)))
+      (jabber-omemo--save-session jc sender-jid sender-did session-ptr)
+      (jabber-omemo--persist-store jc)
+      (let ((trust (jabber-omemo-store-load-trust
+                    account sender-jid sender-did)))
+        (when (and trust (zerop (plist-get trust :trust)))
+          (jabber-omemo-store-set-trust
+           account sender-jid sender-did 1)))
+      (when pre-key-p
+        (when-let* ((hb (jabber-omemo-heartbeat session-ptr store-ptr)))
+          (jabber-omemo--send-heartbeat jc sender-jid sender-did hb)))
+      (if payload
+          (let* ((plaintext (jabber-omemo-decrypt-message
+                             decrypted-key iv payload))
+                 (text (decode-coding-string plaintext 'utf-8))
+                 (body-el (car (jabber-xml-get-children xml-data 'body))))
+            (if body-el
+                (setcar (cddr body-el) text)
+              (nconc xml-data (list `(body () ,text))))
+            xml-data)
+        xml-data))))
+
+(defun jabber-omemo--decrypt-if-needed (jc xml-data)
+  "Advice overriding `jabber-chat--decrypt-if-needed'.
+If XML-DATA contains an OMEMO <encrypted> element, decrypt it.
+Otherwise return XML-DATA unchanged."
+  (let ((parsed (jabber-omemo--parse-encrypted xml-data)))
+    (if (null parsed)
+        xml-data
+      (condition-case err
+          (jabber-omemo--decrypt-stanza jc xml-data parsed)
+        (error
+         (message "OMEMO decrypt failed: %s" (error-message-string err))
+         (let ((body-el (car (jabber-xml-get-children xml-data 'body))))
+           (if body-el
+               (setcar (cddr body-el) "[OMEMO: could not decrypt]")
+             (nconc xml-data (list '(body () "[OMEMO: could not decrypt]")))))
+         xml-data)))))
+
+(defun jabber-omemo--send-heartbeat (jc to device-id heartbeat-bytes)
+  "Send OMEMO heartbeat (empty encrypted message, no payload).
+JC is the connection.  TO is the recipient bare JID.
+DEVICE-ID is the recipient's device.  HEARTBEAT-BYTES is the
+encrypted key material to send."
+  (let* ((our-sid (jabber-omemo--get-device-id jc))
+         (iv (make-string 12 0))
+         (stanza `(message ((to . ,to)
+                            (type . "chat"))
+                           (encrypted ((xmlns . ,jabber-omemo-xmlns))
+                                      (header ((sid . ,(number-to-string our-sid)))
+                                              (key ((rid . ,(number-to-string device-id)))
+                                                   ,(base64-encode-string heartbeat-bytes t))
+                                              (iv () ,(base64-encode-string iv t))))
+                           ,(jabber-hints-store))))
+    (jabber-send-sexp jc stanza)))
+
+;;; Send path
+
+(defvar-local jabber-omemo--pending-messages nil
+  "Queue of messages awaiting session establishment.")
+
+(defun jabber-omemo--send-chat (jc body)
+  "Send BODY as OMEMO-encrypted message via JC.
+Must be called from a chat buffer with `jabber-chatting-with' set."
+  (let ((recipient (jabber-jid-user jabber-chatting-with)))
+    (jabber-omemo--ensure-sessions
+     jc recipient
+     (lambda (recipient-sessions)
+       (if (null recipient-sessions)
+           (message "OMEMO: no sessions for %s, cannot send" recipient)
+         (jabber-omemo--ensure-sessions
+          jc (jabber-connection-bare-jid jc)
+          (lambda (own-sessions)
+            (jabber-omemo--send-encrypted
+             jc body recipient
+             (append recipient-sessions own-sessions)))))))))
+
+(defun jabber-omemo--send-encrypted (jc body _recipient all-sessions)
+  "Build and send an OMEMO-encrypted stanza.
+JC is the connection.  BODY is the plaintext.  _RECIPIENT is the
+bare JID (unused; `jabber-chatting-with' is used for addressing).
+ALL-SESSIONS is a list of (DEVICE-ID . SESSION-PTR)
+for recipient + own other devices."
+  (let* ((plaintext (encode-coding-string body 'utf-8))
+         (enc-result (jabber-omemo-encrypt-message plaintext))
+         (encrypted-xml (jabber-omemo--build-encrypted-xml
+                         jc all-sessions enc-result))
+         (id (apply #'format "emacs-msg-%d.%d.%d" (current-time)))
+         (stanza `(message ((to . ,jabber-chatting-with)
+                            (type . "chat")
+                            (id . ,id))
+                           (body () ,jabber-omemo-fallback-body)
+                           ,encrypted-xml
+                           ,(jabber-hints-store))))
+    (dolist (hook jabber-chat-send-hooks)
+      (if (eq hook t)
+          (when (local-variable-p 'jabber-chat-send-hooks)
+            (dolist (global-hook (default-value 'jabber-chat-send-hooks))
+              (nconc stanza (funcall global-hook body id))))
+        (nconc stanza (funcall hook body id))))
+    (let ((msg-plist (jabber-chat--msg-plist-from-stanza stanza)))
+      (plist-put msg-plist :body body)
+      (when (run-hook-with-args-until-success 'jabber-chat-printers
+                                              msg-plist :local :printp)
+        (jabber-maybe-print-rare-time
+         (ewoc-enter-last jabber-chat-ewoc (list :local msg-plist)))))
+    (jabber-send-sexp jc stanza)))
+
+(defun jabber-omemo--prefetch-sessions (jc jid)
+  "Pre-fetch OMEMO sessions for JID via JC in the background.
+Called when OMEMO is enabled in a chat buffer."
+  (jabber-omemo--ensure-sessions jc jid #'ignore))
+
+;;; Trust and fingerprints
+
+(defun jabber-omemo--format-fingerprint (identity-key)
+  "Format IDENTITY-KEY as space-separated hex pairs."
+  (mapconcat (lambda (byte) (format "%02X" byte))
+             identity-key " "))
+
+(defun jabber-omemo--trust-label (level)
+  "Return a human-readable label for trust LEVEL."
+  (pcase level
+    (0 "undecided")
+    (1 "TOFU")
+    (2 "verified")
+    (-1 "UNTRUSTED")
+    (_ (format "unknown(%d)" level))))
+
+(defun jabber-omemo-fingerprints ()
+  "Display OMEMO fingerprints for the current chat peer."
+  (interactive)
+  (unless (bound-and-true-p jabber-chatting-with)
+    (user-error "Not in a chat buffer"))
+  (let* ((jc jabber-buffer-connection)
+         (account (jabber-connection-bare-jid jc))
+         (peer (jabber-jid-user jabber-chatting-with))
+         (records (jabber-omemo-store-all-trust account peer)))
+    (if (null records)
+        (message "No OMEMO fingerprints known for %s" peer)
+      (with-help-window "*OMEMO Fingerprints*"
+        (with-current-buffer "*OMEMO Fingerprints*"
+          (insert (format "OMEMO fingerprints for %s\n\n" peer))
+          (dolist (rec records)
+            (let ((did (plist-get rec :device-id))
+                  (ik (plist-get rec :identity-key))
+                  (trust (plist-get rec :trust))
+                  (first-seen (plist-get rec :first-seen)))
+              (insert (format "Device %d  [%s]\n"
+                              did (jabber-omemo--trust-label trust)))
+              (insert (format "  %s\n" (jabber-omemo--format-fingerprint ik)))
+              (when first-seen
+                (insert (format "  First seen: %s\n"
+                                (format-time-string "%Y-%m-%d %H:%M" first-seen))))
+              (insert "\n"))))))))
+
+(defun jabber-omemo-trust-device ()
+  "Mark an OMEMO device of the current peer as verified."
+  (interactive)
+  (unless (bound-and-true-p jabber-chatting-with)
+    (user-error "Not in a chat buffer"))
+  (let* ((jc jabber-buffer-connection)
+         (account (jabber-connection-bare-jid jc))
+         (peer (jabber-jid-user jabber-chatting-with))
+         (records (jabber-omemo-store-all-trust account peer)))
+    (unless records
+      (user-error "No OMEMO devices known for %s" peer))
+    (let* ((choices (mapcar (lambda (rec)
+                              (cons (format "%d [%s]"
+                                            (plist-get rec :device-id)
+                                            (jabber-omemo--trust-label
+                                             (plist-get rec :trust)))
+                                    (plist-get rec :device-id)))
+                            records))
+           (selected (completing-read "Trust device: " choices nil t))
+           (did (cdr (assoc selected choices))))
+      (jabber-omemo-store-set-trust account peer did 2)
+      (message "Device %d marked as verified" did))))
+
+(defun jabber-omemo-untrust-device ()
+  "Mark an OMEMO device of the current peer as untrusted."
+  (interactive)
+  (unless (bound-and-true-p jabber-chatting-with)
+    (user-error "Not in a chat buffer"))
+  (let* ((jc jabber-buffer-connection)
+         (account (jabber-connection-bare-jid jc))
+         (peer (jabber-jid-user jabber-chatting-with))
+         (records (jabber-omemo-store-all-trust account peer)))
+    (unless records
+      (user-error "No OMEMO devices known for %s" peer))
+    (let* ((choices (mapcar (lambda (rec)
+                              (cons (format "%d [%s]"
+                                            (plist-get rec :device-id)
+                                            (jabber-omemo--trust-label
+                                             (plist-get rec :trust)))
+                                    (plist-get rec :device-id)))
+                            records))
+           (selected (completing-read "Untrust device: " choices nil t))
+           (did (cdr (assoc selected choices))))
+      (jabber-omemo-store-set-trust account peer did -1)
+      (message "Device %d marked as untrusted" did))))
+
 ;;; Connect/disconnect hooks
 
 (defun jabber-omemo-on-connect (jc)
@@ -546,6 +874,9 @@ and publishes our bundle."
   '(progn
      (add-hook 'jabber-post-connect-hooks #'jabber-omemo-on-connect)
      (add-hook 'jabber-pre-disconnect-hook #'jabber-omemo--on-disconnect)))
+
+(advice-add 'jabber-chat--decrypt-if-needed :override
+            #'jabber-omemo--decrypt-if-needed)
 
 (provide 'jabber-omemo)
 ;;; jabber-omemo.el ends here
