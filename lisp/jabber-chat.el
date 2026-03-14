@@ -58,7 +58,7 @@ These fields are about your account:
 	   (propertize " "
 			      'display (get buddy 'avatar)))))
     (:eval (jabber-jid-displayname jabber-chatting-with))
-    "\t" (:eval (let ((buddy (jabber-jid-symbol jabber-chatting-with)))
+    " " (:eval (let ((buddy (jabber-jid-symbol jabber-chatting-with)))
 		  (propertize
 		   (or
 		    (cdr (assoc (get buddy 'show) jabber-presence-strings))
@@ -66,9 +66,10 @@ These fields are about your account:
 		   'face
 		   (or (cdr (assoc (get buddy 'show) jabber-presence-faces))
 		       'jabber-roster-user-online))))
-    "\t" (:eval (jabber-fix-status (get (jabber-jid-symbol jabber-chatting-with) 'status)))
-    "\t" jabber-events-message		;see jabber-events.el
-    "\t" jabber-chatstates-message)		;see jabber-chatstates.el
+    " " (:eval (jabber-fix-status (get (jabber-jid-symbol jabber-chatting-with) 'status)))
+    " " jabber-chat-encryption-message	;see jabber-chatbuffer.el
+    jabber-events-message		;see jabber-events.el
+    jabber-chatstates-message)		;see jabber-chatstates.el
   "The specification for the header line of chat buffers.
 
 The format is that of `mode-line-format' and `header-line-format'."
@@ -190,6 +191,7 @@ added to the outgoing message.")
 ;; Global reference declarations
 
 (declare-function jabber-compose "jabber-compose.el" (jc &optional recipient))
+(declare-function jabber-omemo--send-chat "jabber-omemo" (jc body))
 (declare-function jabber-muc-private-create-buffer "jabber-muc.el"
                   (jc group nickname))
 (declare-function jabber-muc-print-prompt "jabber-muc.el"
@@ -457,32 +459,34 @@ JC is the Jabber connection."
 JC is the Jabber connection.
 EXTRA-ELEMENTS, when non-nil, is a list of XML sexp elements to
 splice into the stanza after the body (e.g. OOB, hints)."
-  ;; Build the stanza...
-  (let* ((id (apply #'format "emacs-msg-%d.%d.%d" (current-time)))
-	 (stanza-to-send `(message
-			   ((to . ,jabber-chatting-with)
-			    (type . "chat")
-			    (id . ,id))
-			   (body () ,body)
-			   ,@extra-elements)))
-    ;; ...add additional elements...
-    ;; TODO: Once we require Emacs 24.1, use `run-hook-wrapped' instead.
-    ;; That way we don't need to eliminate the "local hook" functionality
-    ;; here.
-    (dolist (hook jabber-chat-send-hooks)
-      (if (eq hook t)
-	  ;; Local hook referring to global...
-	  (when (local-variable-p 'jabber-chat-send-hooks)
-	    (dolist (global-hook (default-value 'jabber-chat-send-hooks))
-	      (nconc stanza-to-send (funcall global-hook body id))))
-      (nconc stanza-to-send (funcall hook body id))))
-    ;; ...display it, if it would be displayed.
-    (let ((msg-plist (jabber-chat--msg-plist-from-stanza stanza-to-send)))
-      (when (run-hook-with-args-until-success 'jabber-chat-printers msg-plist :local :printp)
-        (jabber-maybe-print-rare-time
-         (ewoc-enter-last jabber-chat-ewoc (list :local msg-plist)))))
-    ;; ...and send it...
-    (jabber-send-sexp jc stanza-to-send)))
+  (if (eq jabber-chat-encryption 'omemo)
+      (jabber-omemo--send-chat jc body)
+    ;; Build the stanza...
+    (let* ((id (apply #'format "emacs-msg-%d.%d.%d" (current-time)))
+	   (stanza-to-send `(message
+			     ((to . ,jabber-chatting-with)
+			      (type . "chat")
+			      (id . ,id))
+			     (body () ,body)
+			     ,@extra-elements)))
+      ;; ...add additional elements...
+      ;; TODO: Once we require Emacs 24.1, use `run-hook-wrapped' instead.
+      ;; That way we don't need to eliminate the "local hook" functionality
+      ;; here.
+      (dolist (hook jabber-chat-send-hooks)
+	(if (eq hook t)
+	    ;; Local hook referring to global...
+	    (when (local-variable-p 'jabber-chat-send-hooks)
+	      (dolist (global-hook (default-value 'jabber-chat-send-hooks))
+		(nconc stanza-to-send (funcall global-hook body id))))
+	  (nconc stanza-to-send (funcall hook body id))))
+      ;; ...display it, if it would be displayed.
+      (let ((msg-plist (jabber-chat--msg-plist-from-stanza stanza-to-send)))
+	(when (run-hook-with-args-until-success 'jabber-chat-printers msg-plist :local :printp)
+          (jabber-maybe-print-rare-time
+           (ewoc-enter-last jabber-chat-ewoc (list :local msg-plist)))))
+      ;; ...and send it...
+      (jabber-send-sexp jc stanza-to-send))))
 
 (defun jabber-find-previous-visible-node (node)
   "Return first visible EWOC node preceding NODE.
