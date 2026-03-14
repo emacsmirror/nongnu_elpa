@@ -39,11 +39,14 @@
 (declare-function jabber-history-backlog "jabber-history.el"
                   (jid &optional before))
 (declare-function jabber-history-filename "jabber-history.el" (contact))
+(declare-function jabber-xml-child-with-xmlns "jabber-xml.el"
+                  (node xmlns))
 (defvar jabber-history-dir)             ; jabber-history.el
 (defvar jabber-use-global-history)      ; jabber-history.el
 (defvar jabber-global-history-filename) ; jabber-history.el
 (defvar jabber-chatting-with)           ; jabber-chat.el
 (defvar jabber-chat-send-hooks)        ; jabber-chat.el
+(defvar jabber-chat-encryption)        ; jabber-chatbuffer.el
 (defvar jabber-buffer-connection)       ; jabber-chatbuffer.el
 (defvar jabber-message-chain nil)       ; jabber-core.el
 (defvar jabber-post-connect-hooks nil) ; jabber-core.el
@@ -221,7 +224,8 @@ Return the database connection, or nil if storage is disabled."
 
 (defun jabber-db-store-message (account peer direction type body timestamp
                                         &optional resource stanza-id
-                                        server-id raw-xml oob-url oob-desc)
+                                        server-id raw-xml oob-url oob-desc
+                                        encrypted)
   "Store a message in the database.
 ACCOUNT is the bare JID of the local account.
 PEER is the bare JID of the contact or room.
@@ -234,7 +238,8 @@ Optional STANZA-ID is the XEP-0359 origin id.
 Optional SERVER-ID is the XEP-0359 server-assigned id.
 Optional RAW-XML is the full stanza as a string.
 Optional OOB-URL is the jabber:x:oob URL.
-Optional OOB-DESC is the jabber:x:oob description."
+Optional OOB-DESC is the jabber:x:oob description.
+Optional ENCRYPTED is non-nil if the message was OMEMO-encrypted."
   (when-let* ((db (jabber-db-ensure-open)))
     ;; Dedup by stanza_id if present
     (unless (and stanza-id
@@ -246,16 +251,18 @@ Optional OOB-DESC is the jabber:x:oob description."
        db
        "INSERT INTO message \
 (account, peer, resource, direction, type, body, timestamp, \
-stanza_id, server_id, raw_xml, oob_url, oob_desc) \
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+stanza_id, server_id, raw_xml, oob_url, oob_desc, encrypted) \
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
        (list account peer resource direction type body timestamp
-             stanza-id server-id raw-xml oob-url oob-desc)))))
+             stanza-id server-id raw-xml oob-url oob-desc
+             (if encrypted 1 0))))))
 
 ;;; Retrieval
 
 (defun jabber-db--row-to-plist (row)
   "Convert a database ROW to a message plist.
-ROW is (account peer direction body timestamp resource type oob_url oob_desc)."
+ROW is (account peer direction body timestamp resource type
+oob_url oob_desc encrypted)."
   (let* ((account (nth 0 row))
          (peer (nth 1 row))
          (direction (nth 2 row))
@@ -270,6 +277,7 @@ ROW is (account peer direction body timestamp resource type oob_url oob_desc)."
           :subject nil
           :timestamp (seconds-to-time timestamp)
           :delayed t
+          :encrypted (and (nth 9 row) (not (zerop (nth 9 row))))
           :direction direction
           :msg-type (nth 6 row)
           :oob-url (nth 7 row)
@@ -293,7 +301,7 @@ If nil, `jabber-backlog-days' is used to compute the cutoff."
            (rows (sqlite-select
                   db
                   "SELECT account, peer, direction, body, timestamp, resource, type, \
-oob_url, oob_desc \
+oob_url, oob_desc, encrypted \
 FROM message \
 WHERE account = ? AND peer = ? AND timestamp >= ? \
 ORDER BY timestamp DESC LIMIT ?"
@@ -415,7 +423,9 @@ XML-DATA is the parsed stanza."
                             (car (jabber-xml-get-children oob-x 'url))))))
            (oob-desc (when oob-x
                        (car (jabber-xml-node-children
-                             (car (jabber-xml-get-children oob-x 'desc)))))))
+                             (car (jabber-xml-get-children oob-x 'desc))))))
+           (encrypted (jabber-xml-child-with-xmlns
+                       xml-data "eu.siacs.conversations.axolotl")))
       (when (and from body)
         (jabber-db-store-message
          (jabber-connection-bare-jid jc)
@@ -427,7 +437,8 @@ XML-DATA is the parsed stanza."
          (jabber-jid-resource from)
          stanza-id
          nil nil
-         oob-url oob-desc)))))
+         oob-url oob-desc
+         encrypted)))))
 
 (defun jabber-db--outgoing-handler (body id)
   "Store outgoing chat message in the database.
@@ -441,7 +452,9 @@ Called from `jabber-chat-send-hooks'."
      "chat"
      body
      (floor (float-time))
-     nil id))
+     nil id
+     nil nil nil nil
+     (eq jabber-chat-encryption 'omemo)))
   nil)
 
 (defun jabber-db--store-outgoing (jc to body type)
@@ -516,7 +529,7 @@ files, depending on the value of `jabber-use-global-history'."
 
 ;;; Registration
 
-(add-to-list 'jabber-message-chain #'jabber-db--message-handler)
+(add-to-list 'jabber-message-chain #'jabber-db--message-handler t)
 (add-hook 'jabber-chat-send-hooks #'jabber-db--outgoing-handler)
 (add-hook 'jabber-post-connect-hooks #'jabber-db--on-connect)
 (add-hook 'jabber-pre-disconnect-hook #'jabber-db--on-disconnect)
