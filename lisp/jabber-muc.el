@@ -607,9 +607,6 @@ JC is the Jabber connection."
 		  #'jabber-process-data #'jabber-muc-render-config
 		  #'jabber-process-data "MUC configuration request failed"))
 
-(defalias 'jabber-groupchat-get-config #'jabber-muc-get-config
-  "Deprecated. See `jabber-muc-get-config' instead.")
-
 (defun jabber-muc-render-config (jc xml-data)
   "Render MUC configuration form.
 
@@ -638,9 +635,6 @@ obtained from `xml-parse-region'."
     (widget-setup)
     (widget-minor-mode 1))))
 
-(defalias 'jabber-groupchat-render-config #'jabber-muc-render-config
-  "Deprecated. See `jabber-muc-render-config' instead.")
-
 (defun jabber-muc-submit-config (&rest _ignore)
   "Submit MUC configuration form."
 
@@ -651,9 +645,6 @@ obtained from `xml-parse-region'."
 		  #'jabber-report-success "MUC configuration"
 		  #'jabber-report-success "MUC configuration"))
 
-(defalias 'jabber-groupchat-submit-config #'jabber-muc-submit-config
-  "Deprecated. See `jabber-muc-submit-config' instead.")
-
 (defun jabber-muc-cancel-config (&rest _ignore)
   "Cancel MUC configuration form."
 
@@ -662,9 +653,6 @@ obtained from `xml-parse-region'."
 		  `(query ((xmlns . ,jabber-muc-xmlns-owner))
 			  (x ((xmlns . ,jabber-xdata-xmlns) (type . "cancel"))))
 		  nil nil nil nil))
-
-(defalias 'jabber-groupchat-cancel-config #'jabber-muc-cancel-config
-  "Deprecated. See `jabber-muc-cancel-config' instead.")
 
 (add-to-list 'jabber-jid-muc-menu
 	     (cons "Join groupchat" 'jabber-muc-join))
@@ -689,9 +677,6 @@ JC is the Jabber connection."
     ;; to.
     (jabber-disco-get-info jc group nil #'jabber-muc-join-2
 			   (list group nickname popup))))
-
-(defalias 'jabber-groupchat-join #'jabber-muc-join
-  "Deprecated. Use `jabber-muc-join' instead.")
 
 ;;;###autoload
 (defun jabber-muc-switch (group)
@@ -754,9 +739,6 @@ Prompt with completion for joined rooms only."
 
 	(jabber-muc-join-3 jc group nickname password popup))))))
 
-(defalias 'jabber-groupchat-join-2 #'jabber-muc-join-2
-  "Deprecated. See `jabber-muc-join-2' instead.")
-
 (defun jabber-muc-join-3 (jc group nickname password popup)
 
   ;; Remember that this is a groupchat _before_ sending the stanza.
@@ -781,9 +763,6 @@ Prompt with completion for joined rooms only."
   (when popup
     (let ((buffer (jabber-muc-create-buffer jc group)))
       (switch-to-buffer buffer))))
-
-(defalias 'jabber-groupchat-join-3 #'jabber-muc-join-3
-  "Deprecated. See `jabber-muc-join-3' instead.")
 
 (defun jabber-muc-read-my-nickname (jc group &optional default)
   "Read nickname for joining GROUP.
@@ -818,9 +797,6 @@ JC is the Jabber connection."
     (jabber-send-sexp jc
 		      `(presence ((to . ,(format "%s/%s" group nick))
 				  (type . "unavailable"))))))
-
-(defalias 'jabber-groupchat-leave #'jabber-muc-leave
-  "Deprecated. Use `jabber-muc-leave' instead.")
 
 (add-to-list 'jabber-jid-muc-menu
 	     (cons "List participants" 'jabber-muc-names))
