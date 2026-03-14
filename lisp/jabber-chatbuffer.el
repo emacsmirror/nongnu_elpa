@@ -39,7 +39,8 @@ what kind of chat buffer is being created.")
 ;; Global reference declarations
 
 (declare-function jabber-muc-nick-completion-at-point "jabber-nick-completion.el" ())
-(declare-function jabber-httpupload-send-file "jabber-httpupload" (jc jid filepath))
+(declare-function jabber-httpupload--upload "jabber-httpupload"
+                  (jc filepath callback))
 
 ;;
 
@@ -49,17 +50,25 @@ what kind of chat buffer is being created.")
 
 (defvar jabber-chatting-with)              ; jabber-chat.el
 (defvar jabber-group)                      ; jabber-muc.el
+(defvar jabber-httpupload--pending-url)    ; jabber-httpupload.el
 
 (defun jabber-chat-attach-file (filepath)
-  "Send file at FILEPATH via HTTP Upload to the current chat recipient."
-  (interactive "fFile to send: ")
-  (let ((jid (or (and (boundp 'jabber-chatting-with) jabber-chatting-with)
-                 (and (boundp 'jabber-group) jabber-group))))
-    (unless jid
-      (error "No chat recipient in this buffer"))
-    (unless jabber-buffer-connection
-      (error "No active connection in this buffer"))
-    (jabber-httpupload-send-file jabber-buffer-connection jid filepath)))
+  "Upload FILEPATH and insert the URL into the composition area.
+The file is uploaded via HTTP Upload.  Once the upload finishes,
+the GET URL is inserted at point so you can preview and edit
+before sending with RET."
+  (interactive "fFile to upload: ")
+  (unless jabber-buffer-connection
+    (error "No active connection in this buffer"))
+  (let ((buffer (current-buffer)))
+    (jabber-httpupload--upload
+     jabber-buffer-connection filepath
+     (lambda (get-url)
+       (with-current-buffer buffer
+         (goto-char (point-max))
+         (insert get-url)
+         (setq jabber-httpupload--pending-url get-url)
+         (message "Uploaded: %s (send with RET)" get-url))))))
 
 ;; Spell check only what you're currently writing.
 (defun jabber-chat-mode-flyspell-verify ()
