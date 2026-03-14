@@ -413,5 +413,38 @@ All key material is base64-decoded to unibyte strings."
           :signed-pre-key-id spk-id
           :pre-keys (nreverse pre-keys))))
 
+;;; Bundle management
+
+(defun jabber-omemo--publish-bundle (jc)
+  "Publish our OMEMO bundle to PubSub via JC."
+  (let* ((store-ptr (jabber-omemo--get-store jc))
+         (device-id (jabber-omemo--get-device-id jc))
+         (node (concat jabber-omemo-bundles-node-prefix
+                       (number-to-string device-id))))
+    (jabber-pubsub-publish
+     jc nil node (number-to-string device-id)
+     (jabber-omemo--build-bundle-xml store-ptr)
+     jabber-omemo--bundle-publish-options)))
+
+(defun jabber-omemo--fetch-bundle (jc jid device-id callback)
+  "Fetch OMEMO bundle for JID's DEVICE-ID via JC.
+On success, parse and call (funcall CALLBACK bundle-plist)
+where bundle-plist has keys from `jabber-omemo--parse-bundle-xml'.
+On error, calls (funcall CALLBACK nil)."
+  (let ((node (concat jabber-omemo-bundles-node-prefix
+                      (number-to-string device-id))))
+    (jabber-pubsub-request
+     jc jid node
+     (lambda (_jc xml-data _closure)
+       (let* ((pubsub (car (jabber-xml-get-children xml-data 'pubsub)))
+              (items-node (car (jabber-xml-get-children pubsub 'items)))
+              (item (car (jabber-xml-get-children items-node 'item)))
+              (bundle-el (car (jabber-xml-get-children item 'bundle)))
+              (parsed (when bundle-el
+                        (jabber-omemo--parse-bundle-xml bundle-el))))
+         (funcall callback parsed)))
+     (lambda (_jc _xml-data _closure)
+       (funcall callback nil)))))
+
 (provide 'jabber-omemo)
 ;;; jabber-omemo.el ends here
