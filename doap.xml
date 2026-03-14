@@ -41,19 +41,19 @@
     </repository>
 
     <maintainer>
-        <foaf:Person>
-            <foaf:nick>wgreenhouse</foaf:nick>
-        </foaf:Person>
+      <foaf:Person>
+        <foaf:nick>wgreenhouse</foaf:nick>
+      </foaf:Person>
     </maintainer>
     <maintainer>
-        <foaf:Person>
-            <foaf:nick>cngimenez</foaf:nick>
-        </foaf:Person>
+      <foaf:Person>
+        <foaf:nick>cngimenez</foaf:nick>
+      </foaf:Person>
     </maintainer>
     <maintainer>
-        <foaf:Person>
-            <foaf:nick>contrapunctus</foaf:nick>
-        </foaf:Person>
+      <foaf:Person>
+        <foaf:nick>contrapunctus</foaf:nick>
+      </foaf:Person>
     </maintainer>
 
     <implements rdf:resource="https://datatracker.ietf.org/doc/rfc6120/"/>
@@ -67,11 +67,11 @@
 	<xmpp:status>partial</xmpp:status>
 	<xmpp:version>2.13.1</xmpp:version>
 	<xmpp:note>Forms in incoming messages are not interpreted.  See each specific
-protocol for whether forms are accepted in that context.
+	protocol for whether forms are accepted in that context.
 
-Cancel messages are probably not consistently generated when they
-should be.  This is partly a paradigm clash, as jabber.el doesn't use
-modal dialog boxes but buffers which can easily be buried.</xmpp:note>
+	Cancel messages are probably not consistently generated when they
+	should be.  This is partly a paradigm clash, as jabber.el doesn't use
+	modal dialog boxes but buffers which can easily be buried.</xmpp:note>
       </xmpp:SupportedXep>
     </implements>
     <implements>
@@ -101,7 +101,7 @@ modal dialog boxes but buffers which can easily be buried.</xmpp:note>
 	<xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0020.html"/>
 	<xmpp:status>complete</xmpp:status>
 	<xmpp:version>1.6.0</xmpp:version>
-	<xmpp:since>NEXT</xmpp:version>
+	<xmpp:since>NEXT</xmpp:since>
       </xmpp:SupportedXep>
     </implements>
     <implements>
@@ -109,7 +109,15 @@ modal dialog boxes but buffers which can easily be buried.</xmpp:note>
 	<xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0022.html"/>
 	<xmpp:status>complete</xmpp:status>
 	<xmpp:version>1.4</xmpp:version>
-	<xmpp:since>0.7</xmpp:version>
+	<xmpp:since>0.7</xmpp:since>
+      </xmpp:SupportedXep>
+    </implements>
+    <implements>
+      <xmpp:SupportedXep>
+        <xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0027.html"/>
+        <xmpp:status>complete</xmpp:status>
+        <xmpp:version>1.4</xmpp:version>
+        <xmpp:since>NEXT</xmpp:since>
       </xmpp:SupportedXep>
     </implements>
     <implements>
@@ -164,10 +172,28 @@ modal dialog boxes but buffers which can easily be buried.</xmpp:note>
     </implements>
     <implements>
       <xmpp:SupportedXep>
+        <xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0059.html"/>
+        <xmpp:status>partial</xmpp:status>
+        <xmpp:version>1.0</xmpp:version>
+        <xmpp:since>NEXT</xmpp:since>
+        <xmpp:note>Used internally by MAM pagination, not exposed as a standalone API.</xmpp:note>
+      </xmpp:SupportedXep>
+    </implements>
+    <implements>
+      <xmpp:SupportedXep>
+        <xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0060.html"/>
+        <xmpp:status>partial</xmpp:status>
+        <xmpp:version>1.26.0</xmpp:version>
+        <xmpp:since>NEXT</xmpp:since>
+        <xmpp:note>Publish, retrieve, subscribe, and delete.  Used for bookmarks (XEP-0402) and OpenPGP key distribution.</xmpp:note>
+      </xmpp:SupportedXep>
+    </implements>
+    <implements>
+      <xmpp:SupportedXep>
 	<xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0065.html"/>
 	<xmpp:status>partial</xmpp:status>
 	<xmpp:version>1.6.0</xmpp:version>
-	<xmpp:since>0.8.0</xmpp:version>
+	<xmpp:since>0.8.0</xmpp:since>
 	<xmpp:note>Currently jabber.el cannot act as a server, not even on on Emacsen that support server sockets (GNU Emacs 22 and up).</xmpp:note>
       </xmpp:SupportedXep>
     </implements>
@@ -275,7 +301,7 @@ modal dialog boxes but buffers which can easily be buried.</xmpp:note>
 	<xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0115.html"/>
 	<xmpp:status>complete</xmpp:status>
 	<xmpp:version>1.6.0</xmpp:version>
-	<xmpp:since>0.8.0</xmpp:version>
+	<xmpp:since>0.8.0</xmpp:since>
       </xmpp:SupportedXep>
     </implements>
     <implements>
@@ -297,7 +323,7 @@ modal dialog boxes but buffers which can easily be buried.</xmpp:note>
 	<xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0153.html"/>
 	<xmpp:status>complete</xmpp:status>
 	<xmpp:version>1.1.0</xmpp:version>
-	<xmpp:since>0.7.1</xmpp:version>
+	<xmpp:since>0.7.1</xmpp:since>
 	<xmpp:note>The pixel size limits on avatars are not enforced.</xmpp:note>
       </xmpp:SupportedXep>
     </implements>
@@ -349,10 +375,54 @@ modal dialog boxes but buffers which can easily be buried.</xmpp:note>
     </implements>
     <implements>
       <xmpp:SupportedXep>
+        <xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0313.html"/>
+        <xmpp:status>partial</xmpp:status>
+        <xmpp:version>1.1.0</xmpp:version>
+        <xmpp:since>NEXT</xmpp:since>
+        <xmpp:note>Query and paginated retrieval.  No preferences or metadata support.</xmpp:note>
+      </xmpp:SupportedXep>
+    </implements>
+    <implements>
+      <xmpp:SupportedXep>
+        <xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0334.html"/>
+        <xmpp:status>partial</xmpp:status>
+        <xmpp:version>0.4.0</xmpp:version>
+        <xmpp:since>NEXT</xmpp:since>
+        <xmpp:note>Element builders only, used by other modules to annotate outgoing stanzas.</xmpp:note>
+      </xmpp:SupportedXep>
+    </implements>
+    <implements>
+      <xmpp:SupportedXep>
+        <xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0359.html"/>
+        <xmpp:status>partial</xmpp:status>
+        <xmpp:version>0.7.0</xmpp:version>
+        <xmpp:since>NEXT</xmpp:since>
+        <xmpp:note>Origin-id generation on send, stanza-id parsing for MAM deduplication.</xmpp:note>
+      </xmpp:SupportedXep>
+    </implements>
+    <implements>
+      <xmpp:SupportedXep>
 	<xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0363.html"/>
 	<xmpp:status>complete</xmpp:status>
 	<xmpp:version>1.1.0</xmpp:version>
-	<xmpp:since>0.8.0</xmpp:version>
+	<xmpp:since>0.8.0</xmpp:since>
+      </xmpp:SupportedXep>
+    </implements>
+    <implements>
+      <xmpp:SupportedXep>
+        <xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0373.html"/>
+        <xmpp:status>partial</xmpp:status>
+        <xmpp:version>0.6.0</xmpp:version>
+        <xmpp:since>NEXT</xmpp:since>
+        <xmpp:note>1:1 signcrypt and MUC encrypt-only.  No signature verification on receive, no key fetch command.</xmpp:note>
+      </xmpp:SupportedXep>
+    </implements>
+    <implements>
+      <xmpp:SupportedXep>
+        <xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0402.html"/>
+        <xmpp:status>complete</xmpp:status>
+        <xmpp:version>1.1.3</xmpp:version>
+        <xmpp:since>NEXT</xmpp:since>
       </xmpp:SupportedXep>
     </implements>
 
@@ -365,7 +435,7 @@ modal dialog boxes but buffers which can easily be buried.</xmpp:note>
     <release>
       <Version>
 	<revision>0.8</revision>
-	<created>2009</revision>
+	<created>2009</created>
       </Version>
     </release>
   </Project>
