@@ -383,9 +383,8 @@ With a numeric arg, enable this display if arg is positive."
 	(add-hook 'jabber-presence-hooks
 		  #'jabber-activity-presence)
         (setq jabber-activity-idle-timer (run-with-idle-timer 2 t #'jabber-activity-clean))
-	;; XXX: reactivate
-	;; (add-hook 'jabber-post-connect-hooks
-;; 		  'jabber-activity-make-name-alist)
+	(add-hook 'jabber-post-connect-hooks
+		  #'jabber-activity-make-name-alist)
 	(add-hook 'kill-emacs-query-functions
 		  #'jabber-activity-kill-hook)
 	(add-to-list 'global-mode-string
@@ -422,9 +421,8 @@ With a numeric arg, enable this display if arg is positive."
       (remove-hook 'jabber-presence-hooks
 		   #'jabber-activity-presence)
       (ignore-errors (cancel-timer jabber-activity-idle-timer))
-      ;; XXX: reactivate
-;;       (remove-hook 'jabber-post-connect-hooks
-;; 		   'jabber-activity-make-name-alist)
+      (remove-hook 'jabber-post-connect-hooks
+		   #'jabber-activity-make-name-alist)
       (setq global-mode-string (delete '(t jabber-activity-mode-string)
 				       global-mode-string))
       (when (listp frame-title-format)
