@@ -301,6 +301,61 @@ Extracts <device id=\"N\"/> from the <list> element."
                      `(device ((id . ,(number-to-string id)))))
                    device-ids)))
 
+;;; Device list management
+
+(defun jabber-omemo--fetch-device-list (jc jid callback)
+  "Fetch the OMEMO device list for JID via connection JC.
+On success, parse and call (funcall CALLBACK device-id-list).
+Updates the in-memory cache and database."
+  (jabber-pubsub-request
+   jc jid jabber-omemo-devicelist-node
+   (lambda (jc xml-data _closure)
+     (let* ((pubsub (car (jabber-xml-get-children xml-data 'pubsub)))
+            (items-node (car (jabber-xml-get-children pubsub 'items)))
+            (items (jabber-xml-node-children items-node))
+            (ids (jabber-omemo--parse-device-list items))
+            (account (jabber-connection-bare-jid jc))
+            (bare-jid (jabber-jid-user jid)))
+       (puthash (jabber-omemo--device-list-key account bare-jid)
+                ids jabber-omemo--device-lists)
+       (dolist (id ids)
+         (jabber-omemo-store-save-device account bare-jid id))
+       (when callback
+         (funcall callback ids))))
+   (lambda (_jc _xml-data _closure)
+     (when callback
+       (funcall callback nil)))))
+
+(defun jabber-omemo--publish-device-list (jc device-ids)
+  "Publish DEVICE-IDS as our OMEMO device list via JC."
+  (jabber-pubsub-publish
+   jc nil jabber-omemo-devicelist-node "current"
+   (jabber-omemo--build-device-list-xml device-ids)
+   jabber-omemo--devicelist-publish-options))
+
+(defun jabber-omemo--ensure-device-listed (jc)
+  "Ensure our device ID is on our published device list via JC.
+Fetches the current list, adds our ID if missing, re-publishes."
+  (let ((our-id (jabber-omemo--get-device-id jc)))
+    (jabber-omemo--fetch-device-list
+     jc (jabber-connection-bare-jid jc)
+     (lambda (ids)
+       (unless (memq our-id ids)
+         (jabber-omemo--publish-device-list
+          jc (cons our-id (or ids '()))))))))
+
+(defun jabber-omemo--handle-device-list (jc from _node items)
+  "Handle incoming PubSub device list notification.
+JC is the connection, FROM is the sender JID, ITEMS is the
+list of child elements from the event."
+  (let* ((account (jabber-connection-bare-jid jc))
+         (bare-jid (jabber-jid-user from))
+         (ids (jabber-omemo--parse-device-list items)))
+    (puthash (jabber-omemo--device-list-key account bare-jid)
+             ids jabber-omemo--device-lists)
+    (dolist (id ids)
+      (jabber-omemo-store-save-device account bare-jid id))))
+
 ;;; Bundle XML helpers
 
 (defun jabber-omemo--build-bundle-xml (store-ptr)
