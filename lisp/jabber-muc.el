@@ -108,6 +108,15 @@ Values are lists of nickname strings.")
 (defvar jabber-muc-topic ""
   "The topic of the current MUC room.")
 
+(defun jabber-muc--truncate-topic ()
+  "Return `jabber-muc-topic' truncated to fit the header line.
+Reserves space for the room name, separators, and encryption indicator."
+  (let* ((max-width (max 10 (- (window-width) 30)))
+         (topic (replace-regexp-in-string "[\n\r]+" " " jabber-muc-topic)))
+    (if (<= (length topic) max-width)
+        topic
+      (concat (substring topic 0 (- max-width 1)) "\N{HORIZONTAL ELLIPSIS}"))))
+
 (defvar jabber-role-history ()
   "Keeps track of previously used roles.")
 
@@ -171,8 +180,7 @@ These fields are about your account:
 
 
 (defcustom jabber-muc-header-line-format
-  '(" " (:eval (jabber-jid-displayname jabber-group))
-    "\t" jabber-muc-topic
+  '(" " (:eval (propertize (jabber-jid-displayname jabber-group) 'face 'shadow))
     " " jabber-chat-encryption-message)	;see jabber-chatbuffer.el
   "The specification for the header line of MUC buffers.
 
@@ -245,9 +253,11 @@ The format is that of `mode-line-format' and `header-line-format'."
                   (timestamp delayed))
 (declare-function jabber-omemo--send-muc "jabber-omemo.el" (jc body))
 (declare-function jabber-openpgp--send-muc "jabber-openpgp.el" (jc body))
+(declare-function jabber-openpgp-legacy--send-muc "jabber-openpgp-legacy.el" (jc body))
 (declare-function jabber-chat--decrypt-if-needed "jabber-chat.el" (jc xml-data))
 (declare-function jabber-db-last-timestamp "jabber-db.el"
                   (account peer))
+(declare-function jabber-mam-muc-joined "jabber-mam.el" (jc group))
 (declare-function jabber-db-backlog "jabber-db.el"
                   (account peer &optional count start-time))
 (defvar jabber-silent-mode)             ; jabber.el
@@ -328,6 +338,11 @@ JC is the Jabber connection."
           (mapc #'jabber-chat-insert-backlog-entry backlog-entries)
           (jabber-chat-display-buffer-images))))
 
+    (when-let* ((win (get-buffer-window (current-buffer))))
+      (with-selected-window win
+        (goto-char jabber-point-insert)
+        (recenter -1)))
+
     (current-buffer)))
 
 ;;;###autoload
@@ -382,6 +397,9 @@ JC is the Jabber connection."
     ('openpgp
      (require 'jabber-openpgp)
      (jabber-openpgp--send-muc jc body))
+    ('openpgp-legacy
+     (require 'jabber-openpgp-legacy)
+     (jabber-openpgp-legacy--send-muc jc body))
     (_
      (jabber-send-sexp jc
                        `(message
@@ -1309,8 +1327,12 @@ X-MUC, ACTOR, REASON and OUR-NICKNAME come from the stanza."
   ;; ejabberd mod_irc) omit the 110 status code.
   (when (or (member jabber-muc-status-self-presence status-codes)
             (string= nickname our-nickname))
-    (jabber-muc-add-groupchat group nickname jc)
-    (puthash symbol nickname jabber-pending-groupchats))
+    (let ((was-joined (jabber-muc-joined-p group)))
+      (jabber-muc-add-groupchat group nickname jc)
+      (puthash symbol nickname jabber-pending-groupchats)
+      ;; Trigger MUC MAM catch-up on initial join (not nick change)
+      (unless was-joined
+        (jabber-mam-muc-joined jc group))))
   (let ((old-plist (jabber-muc-participant-plist group nickname))
         (new-plist (jabber-muc-parse-affiliation x-muc)))
     (jabber-muc-modify-participant group nickname new-plist)
