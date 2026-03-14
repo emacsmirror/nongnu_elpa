@@ -11,7 +11,7 @@
 
 (require 'jabber-disco)
 
-;;; ---- Group 1: jabber-caps--store-hash ----
+;;; Group 1: jabber-caps--store-hash
 
 (ert-deftest jabber-disco-test-store-hash-sets-caps-on-resource ()
   "Storing a caps hash sets the caps property on the resource plist."
@@ -53,7 +53,7 @@
       (should (equal (plist-get (cdr entry) 'caps)
                      '("sha-256" . "xyz"))))))
 
-;;; ---- Group 2: jabber-caps--query-if-needed ----
+;;; Group 2: jabber-caps--query-if-needed
 
 (ert-deftest jabber-disco-test-query-if-needed-cache-hit ()
   "On cache hit, disco info is copied to jabber-disco-info-cache."
@@ -120,7 +120,7 @@
       ;; A new IQ query should have been dispatched.
       (should iq-sent))))
 
-;;; ---- Group 3: jabber-process-caps-modern (integration) ----
+;;; Group 3: jabber-process-caps-modern (integration)
 
 (ert-deftest jabber-disco-test-process-caps-modern-unsupported-hash ()
   "When the hash algorithm is not in jabber-caps-hash-names, nothing happens."

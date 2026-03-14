@@ -21,7 +21,7 @@ ROOMS is an alist of (group . nickname)."
        (puthash (car r) (cons nil (cdr r)) jabber-muc--rooms))
      ,@body))
 
-;;; ---- Group 1: jabber-roster-sort-by-status ----
+;;; Group 1: jabber-roster-sort-by-status
 
 (ert-deftest jabber-test-roster-sort-by-status-online-vs-away ()
   "Online user sorts before away user."
@@ -50,7 +50,7 @@ ROOMS is an alist of (group . nickname)."
     (put b 'show "")
     (should (> (jabber-roster-sort-by-status a b) 0))))
 
-;;; ---- Group 2: jabber-roster-sort-by-displayname ----
+;;; Group 2: jabber-roster-sort-by-displayname
 
 (ert-deftest jabber-test-roster-sort-by-displayname-order ()
   "Alphabetical ordering by display name."
@@ -70,7 +70,7 @@ ROOMS is an alist of (group . nickname)."
     (put b 'name "Alice")
     (should (= (jabber-roster-sort-by-displayname a b) 0))))
 
-;;; ---- Group 3: jabber-roster-sort-by-group ----
+;;; Group 3: jabber-roster-sort-by-group
 
 (ert-deftest jabber-test-roster-sort-by-group-different ()
   "Different groups sort alphabetically."
@@ -96,7 +96,7 @@ ROOMS is an alist of (group . nickname)."
     (put b 'groups '("Work"))
     (should (< (jabber-roster-sort-by-group a b) 0))))
 
-;;; ---- Group 4: jabber-fix-status ----
+;;; Group 4: jabber-fix-status
 
 (ert-deftest jabber-test-fix-status-trailing-newlines ()
   "Trailing newlines are removed."
@@ -117,7 +117,7 @@ ROOMS is an alist of (group . nickname)."
   "Nil input returns nil."
   (should (null (jabber-fix-status nil))))
 
-;;; ---- Group 5: jabber-roster-filter-display ----
+;;; Group 5: jabber-roster-filter-display
 
 (ert-deftest jabber-test-roster-filter-show-offline ()
   "All buddies shown when jabber-show-offline-contacts is t."
@@ -143,7 +143,7 @@ ROOMS is an alist of (group . nickname)."
   (let ((jabber-show-offline-contacts t))
     (should (null (jabber-roster-filter-display nil)))))
 
-;;; ---- Group 6: jabber-roster-separator ----
+;;; Group 6: jabber-roster-separator
 
 (ert-deftest jabber-test-roster-separator-has-face ()
   "Separator string has jabber-separator face."
@@ -160,7 +160,7 @@ ROOMS is an alist of (group . nickname)."
   (let ((sep (jabber-roster-separator)))
     (should (>= (length sep) 1))))
 
-;;; ---- Group 7: jabber-roster-mode ----
+;;; Group 7: jabber-roster-mode
 
 (ert-deftest jabber-test-roster-mode-derived-from-special ()
   "jabber-roster-mode derives from special-mode."
@@ -200,7 +200,7 @@ ROOMS is an alist of (group . nickname)."
     (should (eq imenu-create-index-function
                 #'jabber-roster-imenu-create-index))))
 
-;;; ---- Group 8: jabber-roster-mode keymap ----
+;;; Group 8: jabber-roster-mode keymap
 
 (ert-deftest jabber-test-roster-keymap-delete-bindings ()
   "d, D, and C-k all bind to delete."
@@ -225,7 +225,7 @@ ROOMS is an alist of (group . nickname)."
   (should (eq (lookup-key jabber-roster-mode-map (kbd "C-c C-c"))
               #'jabber-chat-menu)))
 
-;;; ---- Group 9: Face definitions ----
+;;; Group 9: Face definitions
 
 (ert-deftest jabber-test-roster-faces-use-inherit ()
   "Modernized roster faces use :inherit."
@@ -247,7 +247,7 @@ ROOMS is an alist of (group . nickname)."
                (inherit (plist-get attrs :inherit)))
           (should (eq inherit expected-parent)))))))
 
-;;; ---- Group 10: jabber-roster-imenu-create-index ----
+;;; Group 10: jabber-roster-imenu-create-index
 
 (ert-deftest jabber-test-roster-imenu-contacts ()
   "Imenu indexes contact groups and JIDs."
@@ -284,7 +284,7 @@ ROOMS is an alist of (group . nickname)."
     (with-temp-buffer
       (should (null (jabber-roster-imenu-create-index))))))
 
-;;; ---- Group 11: Deferred refresh ----
+;;; Group 11: Deferred refresh
 
 (ert-deftest jabber-test-roster-needs-refresh-default-nil ()
   "Deferred refresh flag starts as nil."

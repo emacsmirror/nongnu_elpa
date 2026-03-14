@@ -4,7 +4,7 @@
 (require 'jabber-db)
 (require 'jabber-history)
 
-;;; ---- Test infrastructure ----
+;;; Test infrastructure
 
 (defmacro jabber-db-test-with-db (&rest body)
   "Run BODY with a fresh temp SQLite database.
@@ -24,7 +24,7 @@ and tears down on exit."
        (when (file-directory-p jabber-db-test--dir)
          (delete-directory jabber-db-test--dir t)))))
 
-;;; ---- Group 1: Schema and lifecycle ----
+;;; Group 1: Schema and lifecycle
 
 (ert-deftest jabber-db-test-ensure-open-creates-db ()
   "Opening the database creates the file and returns a connection."
@@ -70,7 +70,7 @@ and tears down on exit."
       (should (member "message_fts" tables))
       (should (member "chat_settings" tables)))))
 
-;;; ---- Group 2: Store and retrieve ----
+;;; Group 2: Store and retrieve
 
 (ert-deftest jabber-db-test-store-and-query ()
   "Storing a message and querying it back returns matching fields."
@@ -131,7 +131,7 @@ and tears down on exit."
       (let ((row (car (jabber-db-query "me@example.com" "friend@example.com"))))
         (should (string= body (plist-get row :body)))))))
 
-;;; ---- Group 3: Backlog format and ordering ----
+;;; Group 3: Backlog format and ordering
 
 (ert-deftest jabber-db-test-backlog-plist-format ()
   "Backlog entries are plists with :from, :body, :timestamp, :delayed, :direction, :msg-type."
@@ -227,7 +227,7 @@ and tears down on exit."
         (should (string= "Recent" (plist-get (nth 0 entries) :body)))
         (should (string= "Old" (plist-get (nth 1 entries) :body)))))))
 
-;;; ---- Group 4: FTS search ----
+;;; Group 4: FTS search
 
 (ert-deftest jabber-db-test-fts-search ()
   "Full-text search finds messages by keyword."
@@ -270,7 +270,7 @@ and tears down on exit."
        "Hello world" ts)
       (should (null (jabber-db-search "me@example.com" "xyzzynonexistent"))))))
 
-;;; ---- Group 5: Dedup and last-timestamp ----
+;;; Group 5: Dedup and last-timestamp
 
 (ert-deftest jabber-db-test-dedup-stanza-id ()
   "Inserting a message with a duplicate stanza_id is silently ignored."
@@ -312,7 +312,7 @@ and tears down on exit."
       (should (= now (jabber-db-last-timestamp
                       "me@example.com" "friend@example.com"))))))
 
-;;; ---- Group 6: Account isolation ----
+;;; Group 6: Account isolation
 
 (ert-deftest jabber-db-test-account-isolation ()
   "Messages from different accounts are isolated."
@@ -346,7 +346,7 @@ and tears down on exit."
         (should (= 1 (length alice-msgs)))
         (should (= 1 (length bob-msgs)))))))
 
-;;; ---- Group 7: Empty database ----
+;;; Group 7: Empty database
 
 (ert-deftest jabber-db-test-empty-backlog ()
   "Backlog returns nil on an empty database."
@@ -365,7 +365,7 @@ and tears down on exit."
     (should (null (jabber-db-last-timestamp
                    "me@example.com" "friend@example.com")))))
 
-;;; ---- Group 8: Query pagination ----
+;;; Group 8: Query pagination
 
 (ert-deftest jabber-db-test-query-pagination ()
   "Query with limit and offset returns correct page."
@@ -404,7 +404,7 @@ and tears down on exit."
         (should (= 1 (length rows)))
         (should (string= "During" (plist-get (car rows) :body)))))))
 
-;;; ---- Group 9: Data persistence across close/reopen ----
+;;; Group 9: Data persistence across close/reopen
 
 (ert-deftest jabber-db-test-persistence ()
   "Data survives close and reopen."
@@ -419,7 +419,7 @@ and tears down on exit."
         (should (= 1 (length rows)))
         (should (string= "Persistent message" (plist-get (car rows) :body)))))))
 
-;;; ---- Group 10: MUC backlog round-trip ----
+;;; Group 10: MUC backlog round-trip
 
 (ert-deftest jabber-db-test-muc-backlog-sender-has-nickname ()
   "MUC backlog sender includes room JID and nickname as resource."
@@ -484,7 +484,7 @@ and tears down on exit."
                    "Hello" (floor (float-time)))))
     (should (null (jabber-db-backlog "me@example.com" "friend@example.com")))))
 
-;;; ---- Group 11: Import from history ----
+;;; Group 11: Import from history
 
 (ert-deftest jabber-db-test-import-history ()
   "Importing from flat-file history populates the database."
@@ -524,7 +524,7 @@ and tears down on exit."
         (should (= 1 (length rows)))
         (should (string= "Global msg" (plist-get (car rows) :body)))))))
 
-;;; ---- Group 12: jabber-db--row-to-plist ----
+;;; Group 12: jabber-db--row-to-plist
 
 (ert-deftest jabber-db-test-row-to-plist-incoming-chat ()
   "Incoming chat message builds correct plist."
@@ -581,7 +581,7 @@ and tears down on exit."
          (plist (jabber-db--row-to-plist row)))
     (should-not (plist-get plist :encrypted))))
 
-;;; ---- Group 13: Chat settings (encryption persistence) ----
+;;; Group 13: Chat settings (encryption persistence)
 
 (ert-deftest jabber-db-test-chat-settings-table-exists ()
   "The chat_settings table is created by the schema."
@@ -671,7 +671,7 @@ and tears down on exit."
     (should (null (jabber-db-get-chat-encryption
                    "me@example.com" "alice@example.com")))))
 
-;;; ---- Group 14: Buffer encryption integration ----
+;;; Group 14: Buffer encryption integration
 ;;
 ;; These tests verify that jabber-chat-mode-setup loads encryption
 ;; from the DB when jabber-chatting-with / jabber-group is set

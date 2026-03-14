@@ -21,7 +21,7 @@ ROOMS is an alist of (group . nickname)."
        (puthash (car r) (cons nil (cdr r)) jabber-muc--rooms))
      ,@body))
 
-;;; ---- Group 1: jabber-muc-message-p ----
+;;; Group 1: jabber-muc-message-p
 
 (ert-deftest jabber-test-muc-message-p-groupchat ()
   "Groupchat type message is a MUC message."
@@ -60,7 +60,7 @@ ROOMS is an alist of (group . nickname)."
                    (reason nil "Join us"))))))
       (should (jabber-muc-message-p msg)))))
 
-;;; ---- Group 2: jabber-muc-sender-p ----
+;;; Group 2: jabber-muc-sender-p
 
 (ert-deftest jabber-test-muc-sender-p-full-jid ()
   "Full JID from active groupchat is a MUC sender."
@@ -79,7 +79,7 @@ ROOMS is an alist of (group . nickname)."
   (jabber-muc-test-with-rooms nil
     (should-not (jabber-muc-sender-p "room@conference.example.com/nick"))))
 
-;;; ---- Group 3: jabber-muc-private-message-p ----
+;;; Group 3: jabber-muc-private-message-p
 
 (ert-deftest jabber-test-muc-private-message-p-private ()
   "Private message from MUC participant returns non-nil."
@@ -99,7 +99,7 @@ ROOMS is an alist of (group . nickname)."
                  (body nil "Hello all"))))
       (should-not (jabber-muc-private-message-p msg)))))
 
-;;; ---- Group 4: jabber-muc-presence-p ----
+;;; Group 4: jabber-muc-presence-p
 
 (ert-deftest jabber-test-muc-presence-p-with-marker ()
   "Presence with muc#user namespace is MUC presence."
@@ -128,7 +128,7 @@ ROOMS is an alist of (group . nickname)."
                   (error ((type . "cancel"))))))
       (should (jabber-muc-presence-p pres)))))
 
-;;; ---- Group 5: jabber-muc accessor functions ----
+;;; Group 5: jabber-muc accessor functions
 
 (ert-deftest jabber-test-muc-join-set-and-nickname ()
   "jabber-muc-join-set stores room; jabber-muc-nickname retrieves nick."
@@ -197,7 +197,7 @@ ROOMS is an alist of (group . nickname)."
   (let ((jabber-muc--rooms (make-hash-table :test #'equal)))
     (should-not (jabber-muc-connection "unknown@example.com"))))
 
-;;; ---- Group 6: jabber-muc--classify-message ----
+;;; Group 6: jabber-muc--classify-message
 
 (ert-deftest jabber-test-muc-classify-message-error ()
   "Stanza with error child is classified as :muc-error."
@@ -242,7 +242,7 @@ ROOMS is an alist of (group . nickname)."
                   (jabber-muc--classify-message
                    "room@conference.example.com" "othernick" xml))))))
 
-;;; ---- Group 7: jabber-muc--history-message-p ----
+;;; Group 7: jabber-muc--history-message-p
 
 (ert-deftest jabber-test-muc-history-message-p-delay ()
   "Message with urn:xmpp:delay child is detected as history."
@@ -302,7 +302,7 @@ ROOMS is an alist of (group . nickname)."
                   (jabber-muc--classify-message
                    "room@conference.example.com" nil xml))))))
 
-;;; ---- Group 8: jabber-muc--format-affiliation-change ----
+;;; Group 8: jabber-muc--format-affiliation-change
 
 (ert-deftest jabber-test-muc-affiliation-promote-member-to-admin ()
   "Promoting member to admin reports promotion."
@@ -339,7 +339,7 @@ ROOMS is an alist of (group . nickname)."
   (should-not (jabber-muc--format-affiliation-change
                "eve" "admin" "outcast" "")))
 
-;;; ---- Group 9: jabber-muc--format-role-change ----
+;;; Group 9: jabber-muc--format-role-change
 
 (ert-deftest jabber-test-muc-role-change-to-moderator ()
   "Participant promoted to moderator reports grant."
@@ -371,7 +371,7 @@ ROOMS is an alist of (group . nickname)."
                     (jabber-muc--format-role-change
                      "eve" "visitor" "moderator" ""))))
 
-;;; ---- Group 10: jabber-muc-report-delta integration ----
+;;; Group 10: jabber-muc-report-delta integration
 
 (ert-deftest jabber-test-muc-report-delta-new-join ()
   "Nil old-plist produces an enters-room message."

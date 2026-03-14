@@ -26,7 +26,7 @@ Clears OMEMO in-memory caches and tears down on exit."
        (when (file-directory-p jabber-omemo-protocol-test--dir)
          (delete-directory jabber-omemo-protocol-test--dir t)))))
 
-;;; ---- Group 1: Device list XML ----
+;;; Group 1: Device list XML
 
 (ert-deftest jabber-omemo-protocol-test-parse-device-list ()
   "parse-device-list extracts device IDs from XML items."
@@ -67,7 +67,7 @@ Clears OMEMO in-memory caches and tears down on exit."
          (parsed (jabber-omemo--parse-device-list wrapped)))
     (should (equal ids parsed))))
 
-;;; ---- Group 2: Bundle XML ----
+;;; Group 2: Bundle XML
 
 (ert-deftest jabber-omemo-protocol-test-build-bundle-xml ()
   "build-bundle-xml produces valid sexp with base64 keys."
@@ -134,7 +134,7 @@ Clears OMEMO in-memory caches and tears down on exit."
       (dolist (pk (plist-get parsed :pre-keys))
         (should (= 33 (length (cdr pk))))))))
 
-;;; ---- Group 3: Device ID persistence ----
+;;; Group 3: Device ID persistence
 
 (ert-deftest jabber-omemo-protocol-test-device-id-roundtrip ()
   "save and load device ID round-trips."
@@ -154,7 +154,7 @@ Clears OMEMO in-memory caches and tears down on exit."
     (jabber-omemo-store-save-device-id "me@example.com" 2)
     (should (= 2 (jabber-omemo-store-load-device-id "me@example.com")))))
 
-;;; ---- Group 4: Store cache ----
+;;; Group 4: Store cache
 
 (ert-deftest jabber-omemo-protocol-test-get-store-creates-new ()
   "get-store creates new store on first call."
@@ -190,7 +190,7 @@ Clears OMEMO in-memory caches and tears down on exit."
             ;; Different ptr but loaded from same DB blob
             (should-not (eq ptr1 ptr2))))))))
 
-;;; ---- Group 5: Session establishment (integration) ----
+;;; Group 5: Session establishment (integration)
 
 (ert-deftest jabber-omemo-protocol-test-establish-session ()
   "establish-session creates and persists a session."

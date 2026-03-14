@@ -5,7 +5,7 @@
 
 (defvar jabber-jid-obarray (make-vector 127 0))
 
-;;; ---- Group 1: JID functions ----
+;;; Group 1: JID functions
 
 (ert-deftest jabber-test-jid-username-normal ()
   "Extract username from full JID."
@@ -78,7 +78,7 @@
     (let ((sym 'already-a-symbol))
       (should (eq (jabber-jid-symbol sym) sym)))))
 
-;;; ---- Group 2: time functions ----
+;;; Group 2: time functions
 
 (ert-deftest jabber-test-encode-time-format ()
   "Encode a known time value to XEP-0082 string."
@@ -111,7 +111,7 @@
          (encoded (jabber-encode-time parsed)))
     (should (string= encoded "2024-02-25T23:32:40Z"))))
 
-;;; ---- Group 3: IQ helpers ----
+;;; Group 3: IQ helpers
 
 (ert-deftest jabber-test-iq-query-normal ()
   "Extract query child from IQ stanza."
@@ -151,7 +151,7 @@
                (query ((xmlns . "jabber:iq:roster"))))))
     (should (string= (jabber-iq-xmlns iq) "jabber:iq:roster"))))
 
-;;; ---- Group 4: jabber-x-delay ----
+;;; Group 4: jabber-x-delay
 
 (ert-deftest jabber-test-x-delay-xep0203 ()
   "Parse XEP-0203 delay element."
@@ -170,7 +170,7 @@
   (let ((node '(body ((xmlns . "jabber:client")))))
     (should (null (jabber-x-delay node)))))
 
-;;; ---- Group 5: error parsing ----
+;;; Group 5: error parsing
 
 (ert-deftest jabber-test-parse-error-new-style ()
   "Parse new-style error with type and condition."
@@ -219,7 +219,7 @@
     (should (string-match-p "Host unknown" (jabber-parse-stream-error err)))
     (should (string-match-p "No such host" (jabber-parse-stream-error err)))))
 
-;;; ---- Group 6: other pure functions ----
+;;; Group 6: other pure functions
 
 (ert-deftest jabber-test-unhex ()
   "Decode hex-encoded UTF-8 string."

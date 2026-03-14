@@ -3,7 +3,7 @@
 (require 'ert)
 (require 'jabber-omemo-store)
 
-;;; ---- Test infrastructure ----
+;;; Test infrastructure
 
 (defmacro jabber-omemo-store-test-with-db (&rest body)
   "Run BODY with a fresh temp SQLite database for OMEMO tests.
@@ -21,7 +21,7 @@ Binds `jabber-db-path' to a temp file and tears down on exit."
        (when (file-directory-p jabber-omemo-store-test--dir)
          (delete-directory jabber-omemo-store-test--dir t)))))
 
-;;; ---- Group 1: Schema creation ----
+;;; Group 1: Schema creation
 
 (ert-deftest jabber-omemo-store-test-schema-creates-tables ()
   "Migration v2 creates all 5 OMEMO tables."
@@ -42,7 +42,7 @@ Binds `jabber-db-path' to a temp file and tears down on exit."
     (jabber-db--init-schema jabber-db--connection)
     (should t)))
 
-;;; ---- Group 2: Store blob CRUD ----
+;;; Group 2: Store blob CRUD
 
 (ert-deftest jabber-omemo-store-test-save-load-roundtrip ()
   "Save + load round-trips a unibyte blob."
@@ -72,7 +72,7 @@ Binds `jabber-db-path' to a temp file and tears down on exit."
     (jabber-omemo-store-delete "me@example.com")
     (should (null (jabber-omemo-store-load "me@example.com")))))
 
-;;; ---- Group 3: Trust CRUD ----
+;;; Group 3: Trust CRUD
 
 (ert-deftest jabber-omemo-store-test-trust-save-load-roundtrip ()
   "save-trust + load-trust round-trips."
@@ -157,7 +157,7 @@ Binds `jabber-db-path' to a temp file and tears down on exit."
                       :first-seen)))
           (should (= first after)))))))
 
-;;; ---- Group 4: Device list CRUD ----
+;;; Group 4: Device list CRUD
 
 (ert-deftest jabber-omemo-store-test-device-save-load-roundtrip ()
   "save-device + load-devices round-trips."
@@ -210,7 +210,7 @@ Binds `jabber-db-path' to a temp file and tears down on exit."
            (now (truncate (float-time))))
       (should (<= (abs (- ts now)) 2)))))
 
-;;; ---- Group 5: Session CRUD ----
+;;; Group 5: Session CRUD
 
 (ert-deftest jabber-omemo-store-test-session-save-load-roundtrip ()
   "save-session + load-session round-trips."
@@ -252,7 +252,7 @@ Binds `jabber-db-path' to a temp file and tears down on exit."
         (should (cl-find 42 all :key (lambda (p) (plist-get p :device-id))))
         (should (cl-find 99 all :key (lambda (p) (plist-get p :device-id))))))))
 
-;;; ---- Group 6: Skipped key CRUD ----
+;;; Group 6: Skipped key CRUD
 
 (ert-deftest jabber-omemo-store-test-skipped-key-save-load-roundtrip ()
   "save + load round-trips a skipped key."

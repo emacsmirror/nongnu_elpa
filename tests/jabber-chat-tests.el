@@ -7,7 +7,7 @@
 ;; dependencies to load in isolation.  Define it here for tests.
 (defvar jabber-muc-xmlns-user "http://jabber.org/protocol/muc#user")
 
-;;; ---- Group 1: jabber-chat--msg-plist-from-stanza ----
+;;; Group 1: jabber-chat--msg-plist-from-stanza
 
 (ert-deftest jabber-chat-test-plist-from-stanza-basic ()
   "Basic chat message produces correct plist keys."
@@ -104,7 +104,7 @@
          (plist (jabber-chat--msg-plist-from-stanza stanza)))
     (should-not (plist-get plist :xml-data))))
 
-;;; ---- Group 2: jabber-chat--oob-field ----
+;;; Group 2: jabber-chat--oob-field
 
 (ert-deftest jabber-chat-test-oob-field-url ()
   "Extract URL from OOB node."
@@ -123,7 +123,7 @@
   "Return nil when OOB node is nil."
   (should-not (jabber-chat--oob-field nil 'url)))
 
-;;; ---- Group 3: jabber-chat--has-muc-invite-p ----
+;;; Group 3: jabber-chat--has-muc-invite-p
 
 (ert-deftest jabber-chat-test-has-muc-invite-positive ()
   "Detect MUC invitation in stanza."
@@ -145,7 +145,7 @@
                      (status ((code . "110")))))))
     (should-not (jabber-chat--has-muc-invite-p stanza))))
 
-;;; ---- Group 4: jabber-chat-entry-time ----
+;;; Group 4: jabber-chat-entry-time
 
 (ert-deftest jabber-chat-test-entry-time-plist ()
   "Entry time from a msg-plist entry."
@@ -170,7 +170,7 @@
   (let ((entry (list :notice "some notice")))
     (should-not (jabber-chat-entry-time entry))))
 
-;;; ---- Group 5: jabber-chat--decrypt-if-needed ----
+;;; Group 5: jabber-chat--decrypt-if-needed
 
 (ert-deftest jabber-chat-test-decrypt-if-needed-returns-xml-unchanged ()
   "No-op decryption returns xml-data unchanged."

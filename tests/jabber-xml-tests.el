@@ -3,7 +3,7 @@
 (require 'ert)
 (require 'jabber-xml)
 
-;;; ---- Group 1: jabber-escape-xml / jabber-unescape-xml ----
+;;; Group 1: jabber-escape-xml / jabber-unescape-xml
 
 (ert-deftest jabber-test-escape-xml-special-chars ()
   "Escape ampersand, angle brackets, quotes and apostrophes."
@@ -41,7 +41,7 @@
     (should (string= (jabber-unescape-xml (jabber-escape-xml input))
                      input))))
 
-;;; ---- Group 2: jabber-sexp2xml ----
+;;; Group 2: jabber-sexp2xml
 
 (ert-deftest jabber-test-sexp2xml-self-closing ()
   "Self-closing tag with no children."
@@ -77,7 +77,7 @@
   (should (string= (jabber-sexp2xml '(a ((href . "a&b"))))
                    "<a href='a&amp;b'/>")))
 
-;;; ---- Group 3: node accessors ----
+;;; Group 3: node accessors
 
 (ert-deftest jabber-test-xml-node-name ()
   "Extract tag name from node."
@@ -102,7 +102,7 @@
   "Work around old xml.el bug where children are ((\"\"))."
   (should (null (jabber-xml-node-children '(tag nil (""))))))
 
-;;; ---- Group 4: jabber-xml-get-children ----
+;;; Group 4: jabber-xml-get-children
 
 (ert-deftest jabber-test-xml-get-children-found ()
   "Find children by tag name."
@@ -120,7 +120,7 @@
   (let ((node '(parent nil (item nil "a") (item nil "b"))))
     (should (= (length (jabber-xml-get-children node 'item)) 2))))
 
-;;; ---- Group 5: jabber-xml-get-attribute / jabber-xml-get-xmlns ----
+;;; Group 5: jabber-xml-get-attribute / jabber-xml-get-xmlns
 
 (ert-deftest jabber-test-xml-get-attribute-present ()
   "Get attribute value when present."
@@ -144,7 +144,7 @@
   "Return nil when xmlns not present."
   (should (null (jabber-xml-get-xmlns '(query nil)))))
 
-;;; ---- Group 6: jabber-xml-child-with-xmlns ----
+;;; Group 6: jabber-xml-child-with-xmlns
 
 (ert-deftest jabber-test-xml-child-with-xmlns-found ()
   "Find child element by xmlns."
@@ -169,7 +169,7 @@
   (let ((node '(body nil "just text")))
     (should-not (jabber-xml-child-with-xmlns node "some:ns"))))
 
-;;; ---- Group 7: jabber-xml-path ----
+;;; Group 7: jabber-xml-path
 
 
 (ert-deftest jabber-test-xml-path-symbol ()
@@ -204,7 +204,7 @@
   (let ((xml '(iq nil (query nil))))
     (should (null (jabber-xml-path xml '(error))))))
 
-;;; ---- Group 8: jabber-xml-skip-tag-forward ----
+;;; Group 8: jabber-xml-skip-tag-forward
 
 (ert-deftest jabber-test-skip-tag-forward-self-closing ()
   "Skip past a self-closing tag."
@@ -253,7 +253,7 @@
     (should-not (catch 'unfinished
                   (jabber-xml-skip-tag-forward)))))
 
-;;; ---- Group 9: jabber-xml-parse-next-stanza ----
+;;; Group 9: jabber-xml-parse-next-stanza
 
 (ert-deftest jabber-test-parse-next-stanza-complete ()
   "Parse a complete XML stanza."

@@ -10,7 +10,7 @@
 
 (require 'jabber-presence)
 
-;;; ---- Group 1: jabber--roster-valid-push-p ----
+;;; Group 1: jabber--roster-valid-push-p
 
 (ert-deftest jabber-presence-test-valid-push-nil-from ()
   "Absent from attribute is valid."
@@ -47,7 +47,7 @@
   (let ((state '(:username "alice" :server "example.com" :resource "emacs")))
     (should-not (jabber--roster-valid-push-p "alice@example.com/phone" state))))
 
-;;; ---- Group 2: jabber--roster-process-item ----
+;;; Group 2: jabber--roster-process-item
 
 (defmacro jabber-presence-test-with-obarray (&rest body)
   "Run BODY with a fresh `jabber-jid-obarray'."
@@ -144,7 +144,7 @@
       (should-not (get (cdr result) 'name))
       (should (equal (get (cdr result) 'subscription) "to")))))
 
-;;; ---- Group 3: jabber-presence--extract-metadata ----
+;;; Group 3: jabber-presence--extract-metadata
 
 (ert-deftest jabber-presence-test-extract-metadata-all-fields ()
   "All fields are extracted from a fully populated presence stanza."
@@ -186,7 +186,7 @@
          (result (jabber-presence--extract-metadata xml)))
     (should (equal (plist-get result :priority) -1))))
 
-;;; ---- Group 4: jabber-presence--update-resource ----
+;;; Group 4: jabber-presence--update-resource
 
 (ert-deftest jabber-presence-test-update-resource-normal-presence ()
   "Normal presence sets connected, show, status, priority on resource plist."

@@ -26,14 +26,14 @@ Clears OMEMO in-memory caches and tears down on exit."
        (when (file-directory-p jabber-omemo-message-test--dir)
          (delete-directory jabber-omemo-message-test--dir t)))))
 
-;;; ---- Group 1: Fallback body ----
+;;; Group 1: Fallback body
 
 (ert-deftest jabber-omemo-message-test-fallback-body ()
   "Fallback body constant is a non-empty string."
   (should (stringp jabber-omemo-fallback-body))
   (should (> (length jabber-omemo-fallback-body) 0)))
 
-;;; ---- Group 2: Parse encrypted XML ----
+;;; Group 2: Parse encrypted XML
 
 (ert-deftest jabber-omemo-message-test-parse-encrypted-basic ()
   "parse-encrypted extracts sid, iv, payload, and keys from XML."
@@ -87,7 +87,7 @@ Clears OMEMO in-memory caches and tears down on exit."
     (should-not (plist-get parsed :payload))
     (should (= 1 (length (plist-get parsed :keys))))))
 
-;;; ---- Group 3: Build encrypted XML ----
+;;; Group 3: Build encrypted XML
 
 (ert-deftest jabber-omemo-message-test-build-encrypted-structure ()
   "build-encrypted-xml produces correct sexp structure."
@@ -140,7 +140,7 @@ Clears OMEMO in-memory caches and tears down on exit."
               ;; Should have a payload
               (should (jabber-xml-get-children xml 'payload)))))))))
 
-;;; ---- Group 4: Decrypt-if-needed advice ----
+;;; Group 4: Decrypt-if-needed advice
 
 (ert-deftest jabber-omemo-message-test-decrypt-if-needed-passthrough ()
   "decrypt-if-needed passes non-OMEMO messages through unchanged."
@@ -181,7 +181,7 @@ Clears OMEMO in-memory caches and tears down on exit."
                           (car (jabber-xml-get-children result 'body))))))
           (should (string= "[OMEMO: could not decrypt]" body)))))))
 
-;;; ---- Group 5: Trust label formatting ----
+;;; Group 5: Trust label formatting
 
 (ert-deftest jabber-omemo-message-test-trust-labels ()
   "Trust labels map correctly."
@@ -190,7 +190,7 @@ Clears OMEMO in-memory caches and tears down on exit."
   (should (string= "verified" (jabber-omemo--trust-label 2)))
   (should (string= "UNTRUSTED" (jabber-omemo--trust-label -1))))
 
-;;; ---- Group 6: Fingerprint formatting ----
+;;; Group 6: Fingerprint formatting
 
 (ert-deftest jabber-omemo-message-test-format-fingerprint ()
   "format-fingerprint produces space-separated hex."
@@ -198,7 +198,7 @@ Clears OMEMO in-memory caches and tears down on exit."
     (should (string= "DE AD BE EF"
                       (jabber-omemo--format-fingerprint key)))))
 
-;;; ---- Group 7: Full encrypt/decrypt round-trip ----
+;;; Group 7: Full encrypt/decrypt round-trip
 
 (ert-deftest jabber-omemo-message-test-encrypt-decrypt-roundtrip ()
   "Encrypt and decrypt a message round-trips the plaintext."
