@@ -47,6 +47,8 @@ what kind of chat buffer is being created.")
                   (jc filepath callback))
 (declare-function jabber-omemo--prefetch-sessions "jabber-omemo"
                   (jc jid))
+(declare-function jabber-omemo--prefetch-muc-sessions "jabber-omemo"
+                  (jc group))
 (declare-function jabber-omemo-fingerprints "jabber-omemo" ())
 (declare-function jabber-connection-bare-jid "jabber-util" (jc))
 (declare-function jabber-jid-user "jabber-util" (jid))
@@ -149,9 +151,14 @@ Works for both 1:1 chat (`jabber-chatting-with') and MUC (`jabber-group')."
   (jabber-chat-encryption--save 'omemo)
   (jabber-chat-encryption--update-header)
   (force-mode-line-update)
-  (when (and jabber-buffer-connection jabber-chatting-with)
-    (jabber-omemo--prefetch-sessions
-     jabber-buffer-connection jabber-chatting-with)))
+  (when jabber-buffer-connection
+    (cond
+     ((bound-and-true-p jabber-chatting-with)
+      (jabber-omemo--prefetch-sessions
+       jabber-buffer-connection jabber-chatting-with))
+     ((bound-and-true-p jabber-group)
+      (jabber-omemo--prefetch-muc-sessions
+       jabber-buffer-connection jabber-group)))))
 
 (defun jabber-chat-encryption-set-plaintext ()
   "Set encryption to plaintext for this chat buffer."
@@ -233,7 +240,12 @@ EWOC-PP is the pretty-printer function for the message EWOC."
                     (jabber-connection-bare-jid jabber-buffer-connection)
                     peer))))
       (setq jabber-chat-encryption
-            (or saved jabber-chat-default-encryption)))
+            (or saved jabber-chat-default-encryption))
+      ;; MUC buffers default to plaintext until the user explicitly
+      ;; enables OMEMO, unless they previously saved a preference.
+      (when (bound-and-true-p jabber-group)
+        (unless saved
+          (setq jabber-chat-encryption 'plaintext))))
     (when (eq jabber-chat-encryption 'omemo)
       (require 'jabber-omemo)))
   (jabber-chat-encryption--update-header))

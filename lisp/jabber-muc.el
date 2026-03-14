@@ -243,6 +243,8 @@ The format is that of `mode-line-format' and `header-line-format'."
                   (timestamp nick face &optional plaintext-face encrypted))
 (declare-function jabber-chat--format-time "jabber-chat.el"
                   (timestamp delayed))
+(declare-function jabber-omemo--send-muc "jabber-omemo.el" (jc body))
+(declare-function jabber-chat--decrypt-if-needed "jabber-chat.el" (jc xml-data))
 (declare-function jabber-db-last-timestamp "jabber-db.el"
                   (account peer))
 (declare-function jabber-db-backlog "jabber-db.el"
@@ -254,6 +256,7 @@ The format is that of `mode-line-format' and `header-line-format'."
 (defvar jabber-buffer-connection)       ; jabber-chatbuffer.el
 (defvar jabber-chat-delayed-time-format) ; jabber-chat.el
 (defvar jabber-chat-delayed-time-format) ; jabber-chat.el
+(defvar jabber-chat-encryption)         ; jabber-chatbuffer.el
 (defvar jabber-chat-ewoc)               ; jabber-chatbuffer.el
 (defvar jabber-chat-printers)           ; jabber-chat.el
 (defvar jabber-chat-time-format)        ; jabber-chat.el
@@ -371,11 +374,15 @@ JC is the Jabber connection."
 JC is the Jabber connection."
   ;; There is no need to display the sent message in the buffer, as
   ;; we will get it back from the MUC server.
-  (jabber-send-sexp jc
-		    `(message
-		      ((to . ,jabber-group)
-		       (type . "groupchat"))
-		      (body () ,body))))
+  (if (eq jabber-chat-encryption 'omemo)
+      (progn
+        (require 'jabber-omemo)
+        (jabber-omemo--send-muc jc body))
+    (jabber-send-sexp jc
+                      `(message
+                        ((to . ,jabber-group)
+                         (type . "groupchat"))
+                        (body () ,body)))))
 
 (defun jabber-muc-add-groupchat (group nickname &optional jc)
   "Remember participating in GROUP under NICKNAME via JC."
@@ -1192,7 +1199,8 @@ messages."
 
 JC is the Jabber connection."
   (when (jabber-muc-message-p xml-data)
-    (let* ((from (jabber-xml-get-attribute xml-data 'from))
+    (let* ((xml-data (jabber-chat--decrypt-if-needed jc xml-data))
+           (from (jabber-xml-get-attribute xml-data 'from))
            (group (jabber-jid-user from))
            (nick (jabber-jid-resource from))
            (type (jabber-muc--classify-message group nick xml-data))

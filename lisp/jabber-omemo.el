@@ -52,6 +52,8 @@
 (defvar jabber-chatting-with)
 (defvar jabber-chat-encryption)
 (defvar jabber-chat-printers)
+(defvar jabber-group)
+(defvar jabber-muc-participants)
 
 (unless module-file-suffix
   (error "jabber-omemo requires Emacs compiled with dynamic module support"))
@@ -719,6 +721,37 @@ encrypted key material to send."
                            ,(jabber-hints-store))))
     (jabber-send-sexp jc stanza)))
 
+;;; MUC helpers
+
+(defun jabber-omemo--muc-participant-jids (_group participants)
+  "Return deduplicated list of bare JIDs for PARTICIPANTS.
+PARTICIPANTS is the alist from `jabber-muc-participants'.
+Entries without a real JID are excluded."
+  (let (jids)
+    (dolist (entry participants)
+      (when-let* ((full-jid (plist-get (cdr entry) 'jid))
+                  (bare (jabber-jid-user full-jid)))
+        (unless (member bare jids)
+          (push bare jids))))
+    (nreverse jids)))
+
+(defun jabber-omemo--ensure-sessions-multi (jc jids callback)
+  "Ensure OMEMO sessions for all JIDS via JC.
+Calls (funcall CALLBACK all-sessions) when done, where
+all-sessions is a list of (DEVICE-ID . SESSION-PTR)."
+  (if (null jids)
+      (funcall callback nil)
+    (let ((pending (length jids))
+          (all-sessions nil))
+      (dolist (jid jids)
+        (jabber-omemo--ensure-sessions
+         jc jid
+         (lambda (sessions)
+           (setq all-sessions (append sessions all-sessions))
+           (cl-decf pending)
+           (when (zerop pending)
+             (funcall callback all-sessions))))))))
+
 ;;; Send path
 
 (defvar-local jabber-omemo--pending-messages nil
@@ -771,10 +804,61 @@ for recipient + own other devices."
          (ewoc-enter-last jabber-chat-ewoc (list :local msg-plist)))))
     (jabber-send-sexp jc stanza)))
 
+(defun jabber-omemo--send-muc (jc body)
+  "Send BODY as OMEMO-encrypted groupchat message via JC.
+Must be called from a MUC buffer with `jabber-group' set."
+  (let* ((group jabber-group)
+         (participants (cdr (assoc group jabber-muc-participants)))
+         (bare-jids (jabber-omemo--muc-participant-jids group participants)))
+    (if (null bare-jids)
+        (user-error "OMEMO: no participant JIDs available (room may be anonymous)")
+      (jabber-omemo--ensure-sessions-multi
+       jc bare-jids
+       (lambda (all-sessions)
+         (jabber-omemo--ensure-sessions
+          jc (jabber-connection-bare-jid jc)
+          (lambda (own-sessions)
+            (jabber-omemo--send-encrypted-muc
+             jc body group
+             (append all-sessions own-sessions)))))))))
+
+(defun jabber-omemo--send-encrypted-muc (jc body group all-sessions)
+  "Build and send an OMEMO-encrypted MUC stanza.
+JC is the connection.  BODY is the plaintext.  GROUP is the room JID.
+ALL-SESSIONS is a list of (DEVICE-ID . SESSION-PTR) for all
+participants plus own other devices.
+No local echo: the MUC server mirrors the message back."
+  (let* ((plaintext (encode-coding-string body 'utf-8))
+         (enc-result (jabber-omemo-encrypt-message plaintext))
+         (encrypted-xml (jabber-omemo--build-encrypted-xml
+                         jc all-sessions enc-result))
+         (id (apply #'format "emacs-msg-%d.%d.%d" (current-time)))
+         (stanza `(message ((to . ,group)
+                            (type . "groupchat")
+                            (id . ,id))
+                           (body () ,jabber-omemo-fallback-body)
+                           ,encrypted-xml
+                           ,(jabber-hints-store))))
+    (dolist (hook jabber-chat-send-hooks)
+      (if (eq hook t)
+          (when (local-variable-p 'jabber-chat-send-hooks)
+            (dolist (global-hook (default-value 'jabber-chat-send-hooks))
+              (nconc stanza (funcall global-hook body id))))
+        (nconc stanza (funcall hook body id))))
+    (jabber-send-sexp jc stanza)))
+
 (defun jabber-omemo--prefetch-sessions (jc jid)
   "Pre-fetch OMEMO sessions for JID via JC in the background.
 Called when OMEMO is enabled in a chat buffer."
   (jabber-omemo--ensure-sessions jc jid #'ignore))
+
+(defun jabber-omemo--prefetch-muc-sessions (jc group)
+  "Pre-fetch OMEMO sessions for all participants in GROUP via JC.
+Called when OMEMO is enabled in a MUC buffer."
+  (let* ((participants (cdr (assoc group jabber-muc-participants)))
+         (bare-jids (jabber-omemo--muc-participant-jids group participants)))
+    (when bare-jids
+      (jabber-omemo--ensure-sessions-multi jc bare-jids #'ignore))))
 
 ;;; Trust and fingerprints
 
