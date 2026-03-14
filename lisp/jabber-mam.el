@@ -2,6 +2,7 @@
 
 ;; Copyright (C) 2026 Thanos Apollo
 
+;; Author: Thanos Apollo <public@thanosapollo.org>
 ;; Maintainer: Thanos Apollo <public@thanosapollo.org>
 
 ;; This file is part of emacs-jabber.
