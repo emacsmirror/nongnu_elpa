@@ -1,17 +1,11 @@
 *.elc
 *~
-/Makefile.in
-aclocal.m4
-config.log
-config.status
-configure
-elc-stamp
+\#*
 *.tar*
 *.zip
 jabber-autoloads.el
 /jabber-pkg.el
 jabber.info
-emacs-jabber.schemas
 .worktrees/
 src/*.so
 lisp/*.so
