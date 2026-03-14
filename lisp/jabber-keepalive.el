@@ -60,7 +60,7 @@
 
 (declare-function jabber-send-string "jabber-core.el" (jc string))
 (declare-function jabber-disconnect-one "jabber-core.el"
-                  (jc &optional dont-redisplay))
+                  (jc &optional dont-redisplay interactivep))
 (defvar jabber-connections)             ; jabber-core.el
 
 ;;

@@ -42,7 +42,7 @@ what kind of chat buffer is being created.")
 
 ;; Global reference declarations
 
-(declare-function jabber-muc-nick-completion-at-point "jabber-nick-completion.el" ())
+(declare-function jabber-muc-nick-completion-at-point "jabber-muc-nick-completion.el" ())
 (declare-function jabber-httpupload--upload "jabber-httpupload"
                   (jc filepath callback))
 (declare-function jabber-omemo--prefetch-sessions "jabber-omemo"

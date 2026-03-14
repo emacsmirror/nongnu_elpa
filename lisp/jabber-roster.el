@@ -216,8 +216,9 @@ Trailing newlines are always removed, regardless of this variable."
 (declare-function jabber-get-browse "jabber-browse.el"  (jc to))
 (declare-function jabber-get-disco-items "jabber-disco.el" (jc to &optional node))
 (declare-function jabber-get-disco-info "jabber-disco.el"
-                  (jc jid node callback closure-data &optional force))
-(declare-function jabber-send-presence "jabber-presence.el" (show status priority))
+                  (jc to &optional node))
+(declare-function jabber-send-presence "jabber-presence.el"
+                  (show status priority &optional jc))
 (declare-function jabber-muc-switch "jabber-muc.el" (group))
 (declare-function jabber-muc-get-buffer "jabber-muc.el" (group &optional jc))
 (declare-function jabber-send-subscription-request "jabber-presence.el" (jc to &optional request))

@@ -173,7 +173,7 @@ problems."
 (declare-function jabber-starttls-process-input "jabber-conn.el"
                   (fsm xml-data))
 (declare-function jabber-starttls-initiate "jabber-conn.el" (fsm))
-(declare-function jabber-mode-line-presence-update "jabber-modeline.el" ())
+(declare-function jabber-mode-line-presence-update "jabber-modeline.el" (&rest _))
 (defvar jabber-debug-keep-process-buffers) ; jabber.el
 (defvar jabber-silent-mode)             ; jabber.el
 (defvar jabber-account-list)            ; jabber.el
