@@ -209,6 +209,7 @@ added to the outgoing message.")
 (declare-function jabber-compose "jabber-compose.el" (jc &optional recipient))
 (declare-function jabber-omemo--send-chat "jabber-omemo" (jc body))
 (declare-function jabber-openpgp--send-chat "jabber-openpgp" (jc body))
+(declare-function jabber-openpgp-legacy--send-chat "jabber-openpgp-legacy" (jc body))
 (declare-function jabber-muc-private-create-buffer "jabber-muc.el"
                   (jc group nickname))
 (declare-function jabber-muc-print-prompt "jabber-muc.el"
@@ -347,6 +348,11 @@ JC is the Jabber connection."
 
     ;; Make sure the connection variable is up to date.
     (setq jabber-buffer-connection jc)
+
+    (when-let* ((win (get-buffer-window (current-buffer))))
+      (with-selected-window win
+        (goto-char jabber-point-insert)
+        (recenter -1)))
 
     (current-buffer)))
 
@@ -510,6 +516,8 @@ splice into the stanza after the body (e.g. OOB, hints)."
     ('omemo (jabber-omemo--send-chat jc body))
     ('openpgp (require 'jabber-openpgp)
               (jabber-openpgp--send-chat jc body))
+    ('openpgp-legacy (require 'jabber-openpgp-legacy)
+                     (jabber-openpgp-legacy--send-chat jc body))
     (_
      ;; Build the stanza...
      (let* ((id (apply #'format "emacs-msg-%d.%d.%d" (current-time)))

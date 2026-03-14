@@ -78,20 +78,23 @@ searching the keyring for a key with User ID \"xmpp:JID\"."
 
 (defun jabber-openpgp--our-key (jc)
   "Return the EPG key for JC's account.
-Look up the fingerprint in `jabber-openpgp-key-alist' first,
-then fall back to searching for \"xmpp:BARE-JID\" in the keyring."
+Lookup order:
+1. `jabber-openpgp-key-alist' (per-account fingerprint)
+2. `mml-secure-openpgp-signers' (Gnus/message signing key)
+3. Keyring search for \"xmpp:BARE-JID\" User ID"
   (let* ((bare-jid (jabber-connection-bare-jid jc))
-         (fingerprint (cdr (assoc bare-jid jabber-openpgp-key-alist))))
+         (ctx (epg-make-context 'OpenPGP))
+         (fingerprint
+          (or (cdr (assoc bare-jid jabber-openpgp-key-alist))
+              (car (bound-and-true-p mml-secure-openpgp-signers)))))
     (if fingerprint
-        (let ((keys (epg-list-keys (epg-make-context 'OpenPGP)
-                                   fingerprint 'secret)))
+        (let ((keys (epg-list-keys ctx fingerprint 'secret)))
           (or (car keys)
               (error "OpenPGP: no secret key for fingerprint %s" fingerprint)))
-      (let ((keys (epg-list-keys (epg-make-context 'OpenPGP)
-                                 (concat "xmpp:" bare-jid) 'secret)))
-        (or (car keys)
-            (error "OpenPGP: no key for %s; configure `jabber-openpgp-key-alist'"
-                   bare-jid))))))
+      (or (car (epg-list-keys ctx (concat "xmpp:" bare-jid) 'secret))
+          (car (epg-list-keys ctx bare-jid 'secret))
+          (error "OpenPGP: no key for %s; configure `jabber-openpgp-key-alist' or `mml-secure-openpgp-signers'"
+                 bare-jid)))))
 
 (defun jabber-openpgp--our-key-safe (jc)
   "Return the EPG key for JC, or nil if not configured."
@@ -105,19 +108,41 @@ then fall back to searching for \"xmpp:BARE-JID\" in the keyring."
            (car (epg-key-sub-key-list key)))))
 
 (defun jabber-openpgp--recipient-key (jid)
-  "Return EPG key for JID from the local keyring.
-Searches by fingerprint in `jabber-openpgp-key-alist', then by
-\"xmpp:JID\" User ID."
-  (let ((fingerprint (cdr (assoc jid jabber-openpgp-key-alist))))
+  "Return EPG key for JID from the local keyring, or nil.
+Lookup order:
+1. `jabber-openpgp-key-alist' (explicit fingerprint)
+2. Keyring search for \"xmpp:JID\"
+3. Keyring search for bare JID as-is (email-style UID)"
+  (let* ((ctx (epg-make-context 'OpenPGP))
+         (fingerprint (cdr (assoc jid jabber-openpgp-key-alist))))
     (if fingerprint
-        (let ((keys (epg-list-keys (epg-make-context 'OpenPGP)
-                                   fingerprint)))
-          (or (car keys)
-              (error "OpenPGP: no public key for %s (fp: %s)" jid fingerprint)))
-      (let ((keys (epg-list-keys (epg-make-context 'OpenPGP)
-                                 (concat "xmpp:" jid))))
-        (or (car keys)
-            (error "OpenPGP: no public key for %s" jid))))))
+        (car (epg-list-keys ctx fingerprint))
+      (or (car (epg-list-keys ctx (concat "xmpp:" jid)))
+          (car (epg-list-keys ctx jid))))))
+
+(defun jabber-openpgp--ensure-recipient-keys (jc jids callback)
+  "Ensure public keys for all JIDS are available, then call CALLBACK.
+For any JID whose key is missing locally, fetch it via PubSub.
+CALLBACK is called with no arguments once all keys are resolved.
+Signals an error (via `message') if any key remains unavailable."
+  (let* ((missing (cl-remove-if #'jabber-openpgp--recipient-key jids))
+         (remaining (length missing))
+         (failed nil))
+    (if (zerop remaining)
+        (funcall callback)
+      (message "OpenPGP: fetching %d key(s)..." remaining)
+      (dolist (jid missing)
+        (jabber-openpgp--fetch-key
+         jc jid
+         (lambda (key)
+           (unless key
+             (push jid failed))
+           (cl-decf remaining)
+           (when (zerop remaining)
+             (if failed
+                 (message "OpenPGP: could not fetch keys for: %s"
+                          (string-join failed ", "))
+               (funcall callback)))))))))
 
 ;;; EPG encrypt/decrypt
 
@@ -132,10 +157,13 @@ Searches by fingerprint in `jabber-openpgp-key-alist', then by
 (defun jabber-openpgp--encrypt (jc plaintext-xml recipient-jids &optional sign)
   "Encrypt PLAINTEXT-XML for RECIPIENT-JIDS via JC.
 When SIGN is non-nil, also sign with JC's key.
-Returns raw (non-armored) OpenPGP message bytes."
+Returns raw (non-armored) OpenPGP message bytes.
+All recipient keys must already be in the local keyring."
   (let* ((context (epg-make-context 'OpenPGP))
          (our-key (jabber-openpgp--our-key jc))
-         (recipients (mapcar #'jabber-openpgp--recipient-key
+         (recipients (mapcar (lambda (jid)
+                               (or (jabber-openpgp--recipient-key jid)
+                                   (error "OpenPGP: no public key for %s" jid)))
                              recipient-jids)))
     (setf (epg-context-armor context) nil)
     (when sign
@@ -202,8 +230,9 @@ Added to `jabber-post-connect-hooks'."
    jc jid jabber-openpgp-pubkeys-node
    (lambda (_jc xml-data _closure)
      (jabber-openpgp--handle-metadata-response jc jid xml-data callback))
-   (lambda (_jc _xml-data _closure)
-     (message "OpenPGP: failed to fetch metadata for %s" jid)
+   (lambda (_jc xml-data _closure)
+     (message "OpenPGP: failed to fetch metadata for %s: %s"
+              jid (jabber-sexp2xml xml-data))
      (funcall callback nil))))
 
 (defun jabber-openpgp--handle-metadata-response (jc jid xml-data callback)
@@ -295,9 +324,19 @@ Used for MUC where signing is optional."
 
 (defun jabber-openpgp--send-chat (jc body)
   "Send BODY as OpenPGP-encrypted chat message via JC.
-Must be called from a chat buffer with `jabber-chatting-with' set."
-  (let* ((recipient (jabber-jid-user jabber-chatting-with))
-         (inner-xml (jabber-openpgp--build-signcrypt-xml
+Must be called from a chat buffer with `jabber-chatting-with' set.
+Fetches missing recipient keys via PubSub before encrypting."
+  (let ((recipient (jabber-jid-user jabber-chatting-with))
+        (buffer (current-buffer)))
+    (jabber-openpgp--ensure-recipient-keys
+     jc (list recipient)
+     (lambda ()
+       (with-current-buffer buffer
+         (jabber-openpgp--send-chat-1 jc body recipient))))))
+
+(defun jabber-openpgp--send-chat-1 (jc body recipient)
+  "Internal: encrypt and send BODY to RECIPIENT via JC."
+  (let* ((inner-xml (jabber-openpgp--build-signcrypt-xml
                      (list recipient) body))
          (encrypted (jabber-openpgp--encrypt
                      jc inner-xml (list recipient) t))
@@ -340,24 +379,30 @@ Excludes entries without a real JID."
 
 (defun jabber-openpgp--send-muc (jc body)
   "Send BODY as OpenPGP-encrypted groupchat message via JC.
-Must be called from a MUC buffer with `jabber-group' set."
+Must be called from a MUC buffer with `jabber-group' set.
+Fetches missing recipient keys via PubSub before encrypting."
   (let* ((group jabber-group)
          (recipient-jids (jabber-openpgp--muc-participant-jids group))
          (our-jid (jabber-jid-user (jabber-connection-bare-jid jc)))
          (all-jids (if (member our-jid recipient-jids)
                        recipient-jids
-                     (cons our-jid recipient-jids))))
+                     (cons our-jid recipient-jids)))
+         (buffer (current-buffer)))
     (when (null recipient-jids)
       (user-error "OpenPGP: no participant JIDs available (room may be anonymous)"))
-    (let* ((inner-xml (jabber-openpgp--build-crypt-xml all-jids body))
-           (encrypted (jabber-openpgp--encrypt jc inner-xml all-jids))
-           (stanza `(message ((to . ,group)
-                              (type . "groupchat"))
-                             (openpgp ((xmlns . ,jabber-openpgp-xmlns))
-                                      ,(base64-encode-string encrypted t))
-                             (body () ,jabber-openpgp-fallback-body)
-                             ,(jabber-hints-store))))
-      (jabber-send-sexp jc stanza))))
+    (jabber-openpgp--ensure-recipient-keys
+     jc all-jids
+     (lambda ()
+       (with-current-buffer buffer
+         (let* ((inner-xml (jabber-openpgp--build-crypt-xml all-jids body))
+                (encrypted (jabber-openpgp--encrypt jc inner-xml all-jids))
+                (stanza `(message ((to . ,group)
+                                   (type . "groupchat"))
+                                  (openpgp ((xmlns . ,jabber-openpgp-xmlns))
+                                           ,(base64-encode-string encrypted t))
+                                  (body () ,jabber-openpgp-fallback-body)
+                                  ,(jabber-hints-store))))
+           (jabber-send-sexp jc stanza)))))))
 
 ;;; Receive path
 

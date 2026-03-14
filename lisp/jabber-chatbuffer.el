@@ -95,13 +95,14 @@ before sending with RET."
   "Default encryption mode for new chat buffers."
   :type '(choice (const :tag "OMEMO" omemo)
                  (const :tag "OpenPGP" openpgp)
+                 (const :tag "PGP (legacy)" openpgp-legacy)
                  (const :tag "Plaintext" plaintext))
   :group 'jabber-chat)
 
 (defvar-local jabber-chat-encryption nil
   "Encryption mode for this chat buffer.
-Possible values: `plaintext', `omemo', `openpgp'.  Set from
-`jabber-chat-default-encryption' on buffer creation.")
+Possible values: `plaintext', `omemo', `openpgp', `openpgp-legacy'.
+Set from `jabber-chat-default-encryption' on buffer creation.")
 
 (defvar-local jabber-chat-encryption-message ""
   "Header-line string showing current encryption state.")
@@ -117,6 +118,11 @@ Possible values: `plaintext', `omemo', `openpgp'.  Set from
   "Face for OpenPGP encryption indicator in chat header."
   :group 'jabber-chat)
 
+(defface jabber-chat-encryption-openpgp-legacy
+  '((t :inherit success))
+  "Face for legacy PGP encryption indicator in chat header."
+  :group 'jabber-chat)
+
 (defface jabber-chat-encryption-plaintext
   '((t :inherit error))
   "Face for plaintext indicator in chat header."
@@ -129,10 +135,12 @@ Possible values: `plaintext', `omemo', `openpgp'.  Set from
          (pcase jabber-chat-encryption
            ('omemo "[OMEMO]")
            ('openpgp "[OpenPGP]")
+           ('openpgp-legacy "[PGP]")
            (_ "[plaintext]"))
          'face (pcase jabber-chat-encryption
                  ('omemo 'jabber-chat-encryption-omemo)
                  ('openpgp 'jabber-chat-encryption-openpgp)
+                 ('openpgp-legacy 'jabber-chat-encryption-openpgp-legacy)
                  (_ 'jabber-chat-encryption-plaintext)))))
 
 (defun jabber-chat--peer-jid ()
@@ -177,6 +185,15 @@ Works for both 1:1 chat (`jabber-chatting-with') and MUC (`jabber-group')."
   (jabber-chat-encryption--update-header)
   (force-mode-line-update))
 
+(defun jabber-chat-encryption-set-openpgp-legacy ()
+  "Set encryption to legacy PGP (XEP-0027) for this chat buffer."
+  (interactive)
+  (require 'jabber-openpgp-legacy)
+  (setq jabber-chat-encryption 'openpgp-legacy)
+  (jabber-chat-encryption--save 'openpgp-legacy)
+  (jabber-chat-encryption--update-header)
+  (force-mode-line-update))
+
 (defun jabber-chat-encryption-set-plaintext ()
   "Set encryption to plaintext for this chat buffer."
   (interactive)
@@ -191,6 +208,7 @@ Works for both 1:1 chat (`jabber-chatting-with') and MUC (`jabber-group')."
    (lambda () (format "Encryption (current: %s)" jabber-chat-encryption))
    ("o" "OMEMO" jabber-chat-encryption-set-omemo)
    ("g" "OpenPGP" jabber-chat-encryption-set-openpgp)
+   ("l" "PGP (legacy)" jabber-chat-encryption-set-openpgp-legacy)
    ("p" "Plaintext" jabber-chat-encryption-set-plaintext)])
 
 (defun jabber-chat-show-fingerprints ()
@@ -302,7 +320,9 @@ EWOC-PP is the pretty-printer function for the message EWOC."
 (defun jabber-chat-redisplay (&optional all-chats)
   "Regenerate the EWOC text and header for one or more buffers.
 With prefix argument, regenerate all `jabber-chat-mode' buffers,
-otherwise regenerate the current buffer display."
+otherwise regenerate the current buffer display.
+Scrolls each buffer so the chat log is visible with the prompt
+line at the bottom of the window."
   (interactive "P")
   (let ((current-buffer (current-buffer)))
     (mapc
@@ -321,7 +341,10 @@ otherwise regenerate the current buffer display."
            (setq jabber-chat-encryption saved))
          (jabber-chat-encryption--update-header)
          (force-mode-line-update)
-         (forward-line)))
+         (when-let* ((win (get-buffer-window buffer)))
+           (with-selected-window win
+             (goto-char jabber-point-insert)
+             (recenter -1)))))
      (seq-filter
       (lambda (buffer)
         (with-current-buffer buffer
