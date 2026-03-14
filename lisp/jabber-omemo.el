@@ -96,6 +96,7 @@ Run from the emacs-jabber project root.")
 (declare-function jabber-omemo--encrypt-key "jabber-omemo-core")
 (declare-function jabber-omemo--decrypt-key "jabber-omemo-core")
 (declare-function jabber-omemo--heartbeat "jabber-omemo-core")
+(declare-function jabber-omemo--aesgcm-decrypt "jabber-omemo-core")
 
 ;; Public API
 
@@ -187,6 +188,12 @@ SESSION-PTR is the session to check.
 STORE-PTR is the local OMEMO store.
 Returns heartbeat message bytes or nil."
   (jabber-omemo--heartbeat session-ptr store-ptr))
+
+(defun jabber-omemo-aesgcm-decrypt (key iv ciphertext-with-tag)
+  "Decrypt CIPHERTEXT-WITH-TAG using AES-256-GCM.
+KEY is a 32-byte unibyte string, IV is a 12-byte unibyte string.
+The last 16 bytes of CIPHERTEXT-WITH-TAG are the GCM auth tag."
+  (jabber-omemo--aesgcm-decrypt key iv ciphertext-with-tag))
 
 ;;; Protocol constants
 

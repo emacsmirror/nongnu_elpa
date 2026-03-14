@@ -15,6 +15,8 @@
 #include <string.h>
 #include <sys/random.h>
 
+#include <mbedtls/gcm.h>
+
 #include "picomemo/omemo.h"
 
 int plugin_is_GPL_compatible;
@@ -698,6 +700,88 @@ F_heartbeat(emacs_env *env, ptrdiff_t nargs, emacs_value *args,
     return make_unibyte(env, msg.p, msg.n);
 }
 
+/*  jabber-omemo--aesgcm-decrypt  */
+
+static emacs_value
+F_aesgcm_decrypt(emacs_env *env, ptrdiff_t nargs, emacs_value *args,
+                 void *data)
+{
+    (void)nargs; (void)data;
+
+    /* Extract 32-byte key */
+    uint8_t key[33];
+    size_t keylen;
+    if (extract_unibyte(env, args[0], key, sizeof(key), &keylen))
+        return Qnil_v;
+    if (keylen != 32) {
+        signal_error(env, -1, "aesgcm key must be exactly 32 bytes");
+        return Qnil_v;
+    }
+
+    /* Extract 12-byte IV */
+    uint8_t iv[13];
+    size_t ivlen;
+    if (extract_unibyte(env, args[1], iv, sizeof(iv), &ivlen))
+        return Qnil_v;
+    if (ivlen != 12) {
+        signal_error(env, -1, "aesgcm IV must be exactly 12 bytes");
+        return Qnil_v;
+    }
+
+    /* Extract ciphertext + 16-byte GCM auth tag */
+    ptrdiff_t ct_raw = 0;
+    env->copy_string_contents(env, args[2], NULL, &ct_raw);
+    if (env->non_local_exit_check(env))
+        return Qnil_v;
+
+    uint8_t *ctbuf = malloc((size_t)ct_raw);
+    if (!ctbuf) {
+        signal_error(env, -1, "malloc failed");
+        return Qnil_v;
+    }
+    env->copy_string_contents(env, args[2], (char *)ctbuf, &ct_raw);
+    if (env->non_local_exit_check(env)) {
+        free(ctbuf);
+        return Qnil_v;
+    }
+    size_t total = (size_t)(ct_raw - 1);
+    if (total < 16) {
+        free(ctbuf);
+        signal_error(env, -1, "aesgcm ciphertext too short (need >= 16 bytes for tag)");
+        return Qnil_v;
+    }
+
+    size_t ct_len = total - 16;
+    const uint8_t *tag = ctbuf + ct_len;
+
+    uint8_t *plaintext = malloc(ct_len);
+    if (!plaintext) {
+        free(ctbuf);
+        signal_error(env, -1, "malloc failed");
+        return Qnil_v;
+    }
+
+    mbedtls_gcm_context ctx;
+    mbedtls_gcm_init(&ctx);
+    int rc = mbedtls_gcm_setkey(&ctx, MBEDTLS_CIPHER_ID_AES, key, 256);
+    if (!rc)
+        rc = mbedtls_gcm_auth_decrypt(&ctx, ct_len, iv, 12, NULL, 0,
+                                       tag, 16, ctbuf, plaintext);
+    mbedtls_gcm_free(&ctx);
+
+    if (rc) {
+        free(ctbuf);
+        free(plaintext);
+        signal_error(env, rc, "AES-256-GCM decryption failed");
+        return Qnil_v;
+    }
+
+    emacs_value result = make_unibyte(env, plaintext, ct_len);
+    free(ctbuf);
+    free(plaintext);
+    return result;
+}
+
 /*  Module init  */
 
 int
@@ -822,6 +906,13 @@ emacs_module_init(struct emacs_runtime *runtime)
           "SESSION-PTR is the session to check.\n"
           "STORE-PTR is the local OMEMO store.\n"
           "Returns heartbeat message bytes or nil.");
+
+    DEFUN("jabber-omemo--aesgcm-decrypt", F_aesgcm_decrypt, 3, 3,
+          "Decrypt ciphertext using AES-256-GCM (for aesgcm:// URLs).\n"
+          "KEY is a 32-byte unibyte string.\n"
+          "IV is a 12-byte unibyte string.\n"
+          "CIPHERTEXT-WITH-TAG has the 16-byte GCM auth tag appended.\n"
+          "Returns the decrypted plaintext as a unibyte string.");
 
 #undef DEFUN
 
