@@ -29,6 +29,18 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'jabber-omemo-store)
+(require 'jabber-pubsub)
+(require 'jabber-xml)
+
+(declare-function jabber-connection-bare-jid "jabber-util")
+(declare-function jabber-jid-user "jabber-util")
+(declare-function jabber-disco-advertise-feature "jabber-disco")
+(declare-function jabber-send-iq "jabber-iq")
+
+(defvar jabber-post-connect-hooks)
+(defvar jabber-pre-disconnect-hook)
+(defvar jabber-pubsub-node-handlers)
 
 (unless module-file-suffix
   (error "jabber-omemo requires Emacs compiled with dynamic module support"))
@@ -166,6 +178,185 @@ SESSION-PTR is the session to check.
 STORE-PTR is the local OMEMO store.
 Returns heartbeat message bytes or nil."
   (jabber-omemo--heartbeat session-ptr store-ptr))
+
+;;; Protocol constants
+
+(defconst jabber-omemo-xmlns "eu.siacs.conversations.axolotl"
+  "OMEMO 0.3 XML namespace.")
+
+(defconst jabber-omemo-devicelist-node
+  "eu.siacs.conversations.axolotl.devicelist"
+  "PubSub node for OMEMO device lists.")
+
+(defconst jabber-omemo-bundles-node-prefix
+  "eu.siacs.conversations.axolotl.bundles:"
+  "PubSub node prefix for OMEMO bundles (append device ID).")
+
+(defconst jabber-omemo--devicelist-publish-options
+  '(("pubsub#access_model" . "open"))
+  "Publish-options for the OMEMO device list PubSub node.")
+
+(defconst jabber-omemo--bundle-publish-options
+  '(("pubsub#persist_items" . "true")
+    ("pubsub#max_items" . "max")
+    ("pubsub#access_model" . "open"))
+  "Publish-options for OMEMO bundle PubSub nodes.")
+
+;;; In-memory state
+
+(defvar jabber-omemo--device-ids (make-hash-table :test 'equal)
+  "Cache of account -> device ID (integer).")
+
+(defvar jabber-omemo--stores (make-hash-table :test 'equal)
+  "Cache of account -> deserialized store user-ptr.")
+
+(defvar jabber-omemo--device-lists (make-hash-table :test 'equal)
+  "Cache of \"account\\0jid\" -> list of device ID integers.")
+
+(defvar jabber-omemo--sessions (make-hash-table :test 'equal)
+  "Cache of \"account\\0jid\\0device-id\" -> deserialized session user-ptr.")
+
+;;; Internal helpers
+
+(defun jabber-omemo--device-list-key (account jid)
+  "Return hash key for ACCOUNT and JID device list cache."
+  (concat account "\0" jid))
+
+(defun jabber-omemo--session-key (account jid device-id)
+  "Return hash key for ACCOUNT, JID, DEVICE-ID session cache."
+  (concat account "\0" jid "\0" (number-to-string device-id)))
+
+(defun jabber-omemo--generate-device-id ()
+  "Generate a random OMEMO device ID (1 to 2^31 - 1)."
+  (1+ (random (1- (ash 1 31)))))
+
+(defun jabber-omemo--get-store (jc)
+  "Load or create the OMEMO store for connection JC.
+Returns a deserialized store user-ptr, cached for future calls."
+  (let ((account (jabber-connection-bare-jid jc)))
+    (or (gethash account jabber-omemo--stores)
+        (let* ((blob (jabber-omemo-store-load account))
+               (store-ptr (if blob
+                              (jabber-omemo-deserialize-store blob)
+                            (let ((new-blob (jabber-omemo-setup-store)))
+                              (jabber-omemo-store-save account new-blob)
+                              (jabber-omemo-deserialize-store new-blob)))))
+          (puthash account store-ptr jabber-omemo--stores)
+          store-ptr))))
+
+(defun jabber-omemo--get-device-id (jc)
+  "Load or generate the OMEMO device ID for connection JC.
+Returns an integer, cached for future calls."
+  (let ((account (jabber-connection-bare-jid jc)))
+    (or (gethash account jabber-omemo--device-ids)
+        (let ((id (or (jabber-omemo-store-load-device-id account)
+                      (let ((new-id (jabber-omemo--generate-device-id)))
+                        (jabber-omemo-store-save-device-id account new-id)
+                        new-id))))
+          (puthash account id jabber-omemo--device-ids)
+          id))))
+
+(defun jabber-omemo--get-session (jc jid device-id)
+  "Load session for JID's DEVICE-ID via connection JC.
+Returns a deserialized session user-ptr, or nil."
+  (let* ((account (jabber-connection-bare-jid jc))
+         (key (jabber-omemo--session-key account jid device-id)))
+    (or (gethash key jabber-omemo--sessions)
+        (when-let* ((blob (jabber-omemo-store-load-session
+                           account jid device-id)))
+          (let ((session-ptr (jabber-omemo-deserialize-session blob)))
+            (puthash key session-ptr jabber-omemo--sessions)
+            session-ptr)))))
+
+(defun jabber-omemo--save-session (jc jid device-id session-ptr)
+  "Serialize and persist SESSION-PTR for JID's DEVICE-ID via JC.
+Updates both the database and in-memory cache."
+  (let* ((account (jabber-connection-bare-jid jc))
+         (key (jabber-omemo--session-key account jid device-id))
+         (blob (jabber-omemo-serialize-session session-ptr)))
+    (jabber-omemo-store-save-session account jid device-id blob)
+    (puthash key session-ptr jabber-omemo--sessions)))
+
+;;; Device list XML helpers
+
+(defun jabber-omemo--parse-device-list (items)
+  "Parse PubSub ITEMS into a list of device ID integers.
+ITEMS is a list of child elements from the PubSub <items> node.
+Extracts <device id=\"N\"/> from the <list> element."
+  (let (ids)
+    (dolist (item items)
+      (when (eq (jabber-xml-node-name item) 'item)
+        (let ((list-el (car (jabber-xml-get-children item 'list))))
+          (when list-el
+            (dolist (dev (jabber-xml-get-children list-el 'device))
+              (let ((id-str (jabber-xml-get-attribute dev 'id)))
+                (when id-str
+                  (push (string-to-number id-str) ids))))))))
+    (nreverse ids)))
+
+(defun jabber-omemo--build-device-list-xml (device-ids)
+  "Build XML sexp for a device list containing DEVICE-IDS."
+  `(list ((xmlns . ,jabber-omemo-xmlns))
+         ,@(mapcar (lambda (id)
+                     `(device ((id . ,(number-to-string id)))))
+                   device-ids)))
+
+;;; Bundle XML helpers
+
+(defun jabber-omemo--build-bundle-xml (store-ptr)
+  "Build XML sexp from STORE-PTR's bundle data.
+Calls `jabber-omemo-get-bundle' and base64-encodes all keys."
+  (let* ((bundle (jabber-omemo-get-bundle store-ptr))
+         (ik (plist-get bundle :identity-key))
+         (spk (plist-get bundle :signed-pre-key))
+         (spk-id (plist-get bundle :signed-pre-key-id))
+         (sig (plist-get bundle :signature))
+         (pre-keys (plist-get bundle :pre-keys)))
+    `(bundle ((xmlns . ,jabber-omemo-xmlns))
+             (signedPreKeyPublic
+              ((signedPreKeyId . ,(number-to-string spk-id)))
+              ,(base64-encode-string spk t))
+             (signedPreKeySignature ()
+              ,(base64-encode-string sig t))
+             (identityKey ()
+              ,(base64-encode-string ik t))
+             (prekeys ()
+              ,@(mapcar (lambda (pk)
+                          `(preKeyPublic
+                            ((preKeyId . ,(number-to-string (car pk))))
+                            ,(base64-encode-string (cdr pk) t)))
+                        pre-keys)))))
+
+(defun jabber-omemo--parse-bundle-xml (xml)
+  "Parse bundle XML into a plist for session initiation.
+XML is a <bundle> element sexp.  Returns
+  (:signature BYTES :signed-pre-key BYTES :identity-key BYTES
+   :signed-pre-key-id INT :pre-keys ((ID . BYTES) ...))
+All key material is base64-decoded to unibyte strings."
+  (let* ((spk-el (car (jabber-xml-get-children xml 'signedPreKeyPublic)))
+         (sig-el (car (jabber-xml-get-children xml 'signedPreKeySignature)))
+         (ik-el (car (jabber-xml-get-children xml 'identityKey)))
+         (pks-el (car (jabber-xml-get-children xml 'prekeys)))
+         (spk-id (string-to-number
+                  (or (jabber-xml-get-attribute spk-el 'signedPreKeyId) "0")))
+         (spk-data (base64-decode-string
+                    (car (jabber-xml-node-children spk-el))))
+         (sig-data (base64-decode-string
+                    (car (jabber-xml-node-children sig-el))))
+         (ik-data (base64-decode-string
+                   (car (jabber-xml-node-children ik-el))))
+         pre-keys)
+    (dolist (pk (jabber-xml-get-children pks-el 'preKeyPublic))
+      (let ((pk-id (string-to-number
+                    (or (jabber-xml-get-attribute pk 'preKeyId) "0")))
+            (pk-data (base64-decode-string
+                      (car (jabber-xml-node-children pk)))))
+        (push (cons pk-id pk-data) pre-keys)))
+    (list :signature sig-data
+          :signed-pre-key spk-data
+          :identity-key ik-data
+          :signed-pre-key-id spk-id
+          :pre-keys (nreverse pre-keys))))
 
 (provide 'jabber-omemo)
 ;;; jabber-omemo.el ends here
