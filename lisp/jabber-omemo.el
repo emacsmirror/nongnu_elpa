@@ -68,6 +68,13 @@ Run from the emacs-jabber project root.")
 (declare-function jabber-omemo--refill-pre-keys "jabber-omemo-core")
 (declare-function jabber-omemo--encrypt-message "jabber-omemo-core")
 (declare-function jabber-omemo--decrypt-message "jabber-omemo-core")
+(declare-function jabber-omemo--make-session "jabber-omemo-core")
+(declare-function jabber-omemo--initiate-session "jabber-omemo-core")
+(declare-function jabber-omemo--serialize-session "jabber-omemo-core")
+(declare-function jabber-omemo--deserialize-session "jabber-omemo-core")
+(declare-function jabber-omemo--encrypt-key "jabber-omemo-core")
+(declare-function jabber-omemo--decrypt-key "jabber-omemo-core")
+(declare-function jabber-omemo--heartbeat "jabber-omemo-core")
 
 ;; Public API
 
@@ -114,6 +121,51 @@ IV is a 12-byte unibyte string.
 CIPHERTEXT is the encrypted payload.
 Returns the plaintext as a unibyte string."
   (jabber-omemo--decrypt-message key iv ciphertext))
+
+(defun jabber-omemo-make-session ()
+  "Allocate an empty OMEMO session.
+Returns a session user-ptr; freed automatically by GC.
+Use for the receiving side of a pre-key message."
+  (jabber-omemo--make-session))
+
+(defun jabber-omemo-initiate-session (store-ptr sig spk ik pk spk-id pk-id)
+  "Initiate an OMEMO session with a remote device's bundle.
+STORE-PTR is the local OMEMO store.
+SIG is a 64-byte signature, SPK/IK/PK are 33-byte serialized keys.
+SPK-ID and PK-ID are integer key IDs.
+Returns a session user-ptr; freed automatically by GC."
+  (jabber-omemo--initiate-session store-ptr sig spk ik pk spk-id pk-id))
+
+(defun jabber-omemo-serialize-session (session-ptr)
+  "Serialize SESSION-PTR to a unibyte string."
+  (jabber-omemo--serialize-session session-ptr))
+
+(defun jabber-omemo-deserialize-session (blob)
+  "Deserialize BLOB into an OMEMO session object.
+Returns a session user-ptr; freed automatically by GC."
+  (jabber-omemo--deserialize-session blob))
+
+(defun jabber-omemo-encrypt-key (session-ptr key)
+  "Encrypt KEY for a recipient using SESSION-PTR.
+KEY is a unibyte string (the message encryption key).
+Returns a plist (:data BYTES :pre-key-p BOOL)."
+  (jabber-omemo--encrypt-key session-ptr key))
+
+(defun jabber-omemo-decrypt-key (session-ptr store-ptr pre-key-p msg)
+  "Decrypt an encrypted key message.
+SESSION-PTR is the session with the sender.
+STORE-PTR is the local OMEMO store.
+PRE-KEY-P is non-nil if this is a pre-key message.
+MSG is the encrypted key message as a unibyte string.
+Returns the decrypted key as a unibyte string."
+  (jabber-omemo--decrypt-key session-ptr store-ptr pre-key-p msg))
+
+(defun jabber-omemo-heartbeat (session-ptr store-ptr)
+  "Check if a heartbeat message is needed after decryption.
+SESSION-PTR is the session to check.
+STORE-PTR is the local OMEMO store.
+Returns heartbeat message bytes or nil."
+  (jabber-omemo--heartbeat session-ptr store-ptr))
 
 (provide 'jabber-omemo)
 ;;; jabber-omemo.el ends here
