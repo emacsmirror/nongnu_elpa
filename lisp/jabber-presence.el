@@ -26,6 +26,14 @@
 (require 'jabber-menu)
 (require 'ewoc)
 
+(defconst jabber-presence-show-alist
+  '(("Online" . "")
+    ("Away" . "away")
+    ("Extended Away" . "xa")
+    ("Do Not Disturb" . "dnd")
+    ("Free to Chat" . "chat"))
+  "Alist mapping human-readable labels to XMPP presence show values.")
+
 (defvar jabber-presence-element-functions nil
   "List of functions returning extra elements for <presence/> stanzas.
 Each function takes one argument, the connection, and returns a
@@ -372,14 +380,16 @@ Show status properties from highest-priority resource."
 (defun jabber-send-presence (show status priority)
   "Set presence for all accounts."
   (interactive
-   (list
-    (completing-read "show: " '("" "away" "xa" "dnd" "chat")
-		     nil t nil 'jabber-presence-history)
-    (jabber-read-with-input-method "status message: " *jabber-current-status*
-				   '*jabber-status-history*)
-    (read-string "priority: " (int-to-string (if *jabber-current-priority*
-						 *jabber-current-priority*
-					       jabber-default-priority)))))
+   (let* ((label (completing-read "Status: "
+                                  (mapcar #'car jabber-presence-show-alist)
+                                  nil t nil 'jabber-presence-history))
+          (show (cdr (assoc label jabber-presence-show-alist))))
+     (list show
+           (jabber-read-with-input-method "Status message: " *jabber-current-status*
+                                          '*jabber-status-history*)
+           (read-string "Priority: " (int-to-string (if *jabber-current-priority*
+                                                         *jabber-current-priority*
+                                                       jabber-default-priority))))))
 
   (setq *jabber-current-show* show *jabber-current-status* status)
   (setq *jabber-current-priority*
