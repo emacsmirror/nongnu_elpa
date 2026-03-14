@@ -51,7 +51,7 @@ These fields are about your account:
 %s   Your server"
   :type 'string)
 
-(defcustom jabber-chat-header-line-format
+(defvar jabber-chat-header-line-format
   '("" (jabber-chat-buffer-show-avatar
 	(:eval
 	 (let ((buddy (jabber-jid-symbol jabber-chatting-with)))
@@ -71,9 +71,7 @@ These fields are about your account:
     jabber-events-message		;see jabber-events.el
     jabber-chatstates-message)		;see jabber-chatstates.el
   "The specification for the header line of chat buffers.
-
-The format is that of `mode-line-format' and `header-line-format'."
-  :type 'sexp)
+The format is that of `mode-line-format' and `header-line-format'.")
 
 (defcustom jabber-chat-buffer-show-avatar t
   "Show avatars in header line of chat buffer?

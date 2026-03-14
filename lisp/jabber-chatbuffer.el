@@ -231,7 +231,7 @@ EWOC-PP is the pretty-printer function for the message EWOC."
         (switch-to-buffer jabber-buffer)
       (error "No jabber buffer found"))))
 (defun jabber-chat-redisplay (&optional all-chats)
-  "Regenerate the EWOC text for one or more buffers.
+  "Regenerate the EWOC text and header for one or more buffers.
 With prefix argument, regenerate all `jabber-chat-mode' buffers,
 otherwise regenerate the current buffer display."
   (interactive "P")
@@ -240,6 +240,8 @@ otherwise regenerate the current buffer display."
      (lambda (buffer)
        (with-current-buffer buffer
          (ewoc-refresh jabber-chat-ewoc)
+         (jabber-chat-encryption--update-header)
+         (force-mode-line-update)
          (forward-line)))
      (seq-filter
       (lambda (buffer)
