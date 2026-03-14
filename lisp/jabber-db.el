@@ -189,7 +189,13 @@ CREATE INDEX IF NOT EXISTS idx_omemo_sessions_jid
   (sqlite-execute db "\
 CREATE TABLE IF NOT EXISTS omemo_device_id (
   account TEXT PRIMARY KEY,
-  device_id INTEGER NOT NULL)"))
+  device_id INTEGER NOT NULL)")
+  (sqlite-execute db "\
+CREATE TABLE IF NOT EXISTS chat_settings (
+  account TEXT NOT NULL,
+  peer TEXT NOT NULL,
+  encryption TEXT DEFAULT 'default',
+  PRIMARY KEY (account, peer))"))
 
 (defun jabber-db--migrate (db)
   "Check user_version and apply migrations to DB."
@@ -219,6 +225,28 @@ Return the database connection, or nil if storage is disabled."
              (sqlitep jabber-db--connection))
     (sqlite-close jabber-db--connection)
     (setq jabber-db--connection nil)))
+
+;;; Chat settings
+
+(defun jabber-db-set-chat-encryption (account peer encryption)
+  "Store ENCRYPTION mode for ACCOUNT + PEER.
+ENCRYPTION is a symbol: `omemo', `plaintext', or `default'."
+  (when-let* ((db (jabber-db-ensure-open)))
+    (sqlite-execute db "\
+INSERT OR REPLACE INTO chat_settings (account, peer, encryption)
+  VALUES (?, ?, ?)"
+      (list account peer (symbol-name encryption)))))
+
+(defun jabber-db-get-chat-encryption (account peer)
+  "Load encryption mode for ACCOUNT + PEER.
+Returns a symbol (`omemo', `plaintext'), or nil if not set or `default'."
+  (when-let* ((db (jabber-db-ensure-open)))
+    (when-let* ((val (caar (sqlite-select db "\
+SELECT encryption FROM chat_settings
+  WHERE account = ? AND peer = ?"
+                            (list account peer)))))
+      (unless (string= val "default")
+        (intern val)))))
 
 ;;; Storage
 

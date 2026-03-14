@@ -67,7 +67,8 @@ and tears down on exit."
                           (sqlite-select jabber-db--connection
                             "SELECT name FROM sqlite_master WHERE type='table'"))))
       (should (member "message" tables))
-      (should (member "message_fts" tables)))))
+      (should (member "message_fts" tables))
+      (should (member "chat_settings" tables)))))
 
 ;;; ---- Group 2: Store and retrieve ----
 
@@ -523,7 +524,7 @@ and tears down on exit."
         (should (= 1 (length rows)))
         (should (string= "Global msg" (plist-get (car rows) :body)))))))
 
-;;; ---- Group 11: jabber-db--row-to-plist ----
+;;; ---- Group 12: jabber-db--row-to-plist ----
 
 (ert-deftest jabber-db-test-row-to-plist-incoming-chat ()
   "Incoming chat message builds correct plist."
@@ -565,6 +566,289 @@ and tears down on exit."
                 nil 1700000000 nil "chat"))
          (plist (jabber-db--row-to-plist row)))
     (should (string= "" (plist-get plist :body)))))
+
+(ert-deftest jabber-db-test-row-to-plist-encrypted-flag ()
+  "Encrypted flag is correctly converted to boolean."
+  (let* ((row '("me@example.com" "alice@example.com" "in"
+                "Secret" 1700000000 nil "chat" nil nil 1))
+         (plist (jabber-db--row-to-plist row)))
+    (should (eq t (plist-get plist :encrypted)))))
+
+(ert-deftest jabber-db-test-row-to-plist-not-encrypted ()
+  "Zero encrypted flag yields nil."
+  (let* ((row '("me@example.com" "alice@example.com" "in"
+                "Plain" 1700000000 nil "chat" nil nil 0))
+         (plist (jabber-db--row-to-plist row)))
+    (should-not (plist-get plist :encrypted))))
+
+;;; ---- Group 13: Chat settings (encryption persistence) ----
+
+(ert-deftest jabber-db-test-chat-settings-table-exists ()
+  "The chat_settings table is created by the schema."
+  (jabber-db-test-with-db
+    (let ((tables (mapcar #'car
+                          (sqlite-select jabber-db--connection
+                            "SELECT name FROM sqlite_master WHERE type='table'"))))
+      (should (member "chat_settings" tables)))))
+
+(ert-deftest jabber-db-test-set-and-get-encryption-omemo ()
+  "Storing OMEMO encryption and reading it back returns the symbol."
+  (jabber-db-test-with-db
+    (jabber-db-set-chat-encryption "me@example.com" "alice@example.com" 'omemo)
+    (should (eq 'omemo
+                (jabber-db-get-chat-encryption "me@example.com" "alice@example.com")))))
+
+(ert-deftest jabber-db-test-set-and-get-encryption-plaintext ()
+  "Storing plaintext encryption and reading it back returns the symbol."
+  (jabber-db-test-with-db
+    (jabber-db-set-chat-encryption "me@example.com" "alice@example.com" 'plaintext)
+    (should (eq 'plaintext
+                (jabber-db-get-chat-encryption "me@example.com" "alice@example.com")))))
+
+(ert-deftest jabber-db-test-get-encryption-default-returns-nil ()
+  "Storing `default' encryption returns nil from get."
+  (jabber-db-test-with-db
+    (jabber-db-set-chat-encryption "me@example.com" "alice@example.com" 'default)
+    (should (null (jabber-db-get-chat-encryption "me@example.com" "alice@example.com")))))
+
+(ert-deftest jabber-db-test-get-encryption-missing-returns-nil ()
+  "Querying encryption for an unknown peer returns nil."
+  (jabber-db-test-with-db
+    (should (null (jabber-db-get-chat-encryption "me@example.com" "nobody@example.com")))))
+
+(ert-deftest jabber-db-test-set-encryption-overwrites ()
+  "Setting encryption twice overwrites the previous value."
+  (jabber-db-test-with-db
+    (jabber-db-set-chat-encryption "me@example.com" "alice@example.com" 'omemo)
+    (jabber-db-set-chat-encryption "me@example.com" "alice@example.com" 'plaintext)
+    (should (eq 'plaintext
+                (jabber-db-get-chat-encryption "me@example.com" "alice@example.com")))))
+
+(ert-deftest jabber-db-test-chat-settings-account-isolation ()
+  "Encryption settings are isolated per account."
+  (jabber-db-test-with-db
+    (jabber-db-set-chat-encryption "alice@example.com" "bob@example.com" 'omemo)
+    (jabber-db-set-chat-encryption "carol@example.com" "bob@example.com" 'plaintext)
+    (should (eq 'omemo
+                (jabber-db-get-chat-encryption "alice@example.com" "bob@example.com")))
+    (should (eq 'plaintext
+                (jabber-db-get-chat-encryption "carol@example.com" "bob@example.com")))))
+
+(ert-deftest jabber-db-test-chat-settings-peer-isolation ()
+  "Encryption settings are isolated per peer."
+  (jabber-db-test-with-db
+    (jabber-db-set-chat-encryption "me@example.com" "alice@example.com" 'omemo)
+    (jabber-db-set-chat-encryption "me@example.com" "bob@example.com" 'plaintext)
+    (should (eq 'omemo
+                (jabber-db-get-chat-encryption "me@example.com" "alice@example.com")))
+    (should (eq 'plaintext
+                (jabber-db-get-chat-encryption "me@example.com" "bob@example.com")))))
+
+(ert-deftest jabber-db-test-chat-settings-persist-across-reopen ()
+  "Encryption settings survive close and reopen."
+  (jabber-db-test-with-db
+    (jabber-db-set-chat-encryption "me@example.com" "alice@example.com" 'omemo)
+    (jabber-db-close)
+    (jabber-db-ensure-open)
+    (should (eq 'omemo
+                (jabber-db-get-chat-encryption "me@example.com" "alice@example.com")))))
+
+(ert-deftest jabber-db-test-chat-settings-muc-peer ()
+  "Encryption settings work with MUC room JIDs."
+  (jabber-db-test-with-db
+    (jabber-db-set-chat-encryption
+     "me@example.com" "room@conference.example.com" 'plaintext)
+    (should (eq 'plaintext
+                (jabber-db-get-chat-encryption
+                 "me@example.com" "room@conference.example.com")))))
+
+(ert-deftest jabber-db-test-chat-settings-nil-path ()
+  "Chat settings no-op when jabber-db-path is nil."
+  (let ((jabber-db-path nil)
+        (jabber-db--connection nil))
+    (should (null (jabber-db-set-chat-encryption
+                   "me@example.com" "alice@example.com" 'omemo)))
+    (should (null (jabber-db-get-chat-encryption
+                   "me@example.com" "alice@example.com")))))
+
+;;; ---- Group 14: Buffer encryption integration ----
+;;
+;; These tests verify that jabber-chat-mode-setup loads encryption
+;; from the DB when jabber-chatting-with / jabber-group is set
+;; BEFORE the setup call (the bug was calling setup before setting
+;; the peer variable, so the DB lookup always returned nil).
+
+(require 'jabber-chatbuffer)
+(require 'fsm)
+
+(defun jabber-db-test--make-fake-jc (account)
+  "Create a fake connection symbol for ACCOUNT (user@server)."
+  (let ((jc (gensym "jabber-db-test-jc-"))
+        (parts (split-string account "@")))
+    (put jc :state-data (list :username (nth 0 parts)
+                              :server (nth 1 parts)))
+    jc))
+
+(defmacro jabber-db-test-with-chat-buffer (account peer &rest body)
+  "Run BODY in a temp chat buffer with fake connection for ACCOUNT talking to PEER.
+Sets up jabber-chatting-with before jabber-chat-mode-setup, mimicking
+the corrected jabber-chat-create-buffer order."
+  (declare (indent 2) (debug t))
+  `(jabber-db-test-with-db
+     (let* ((jc (jabber-db-test--make-fake-jc ,account))
+            (buf (generate-new-buffer " *test-chat*"))
+            (jabber-chat-default-encryption 'omemo)
+            (jabber-chatting-with nil))
+       (unwind-protect
+           (with-current-buffer buf
+             (jabber-chat-mode)
+             (set (make-local-variable 'jabber-chatting-with) ,peer)
+             (jabber-chat-mode-setup jc #'ignore)
+             ,@body)
+         (kill-buffer buf)))))
+
+(defmacro jabber-db-test-with-muc-buffer (account group &rest body)
+  "Run BODY in a temp MUC buffer with fake connection for ACCOUNT in GROUP.
+Sets up jabber-group before jabber-chat-mode-setup, mimicking
+the corrected jabber-muc-create-buffer order."
+  (declare (indent 2) (debug t))
+  `(jabber-db-test-with-db
+     (let* ((jc (jabber-db-test--make-fake-jc ,account))
+            (buf (generate-new-buffer " *test-muc*"))
+            (jabber-chat-default-encryption 'omemo)
+            (jabber-chatting-with nil))
+       (unwind-protect
+           (with-current-buffer buf
+             (jabber-chat-mode)
+             (set (make-local-variable 'jabber-group) ,group)
+             (jabber-chat-mode-setup jc #'ignore)
+             ,@body)
+         (kill-buffer buf)))))
+
+(ert-deftest jabber-db-test-chat-buffer-loads-encryption-from-db ()
+  "1:1 chat buffer loads saved encryption from DB on setup."
+  (jabber-db-test-with-chat-buffer "me@example.com" "alice@example.com"
+    (jabber-db-set-chat-encryption "me@example.com" "alice@example.com" 'plaintext)
+    ;; Reset and re-run setup to simulate fresh buffer
+    (setq jabber-chat-encryption nil)
+    (jabber-chat-mode-setup jc #'ignore)
+    (should (eq 'plaintext jabber-chat-encryption))))
+
+(ert-deftest jabber-db-test-chat-buffer-falls-back-to-default ()
+  "1:1 chat buffer uses default when no DB setting exists."
+  (jabber-db-test-with-chat-buffer "me@example.com" "bob@example.com"
+    (should (eq 'omemo jabber-chat-encryption))))
+
+(ert-deftest jabber-db-test-chat-buffer-default-plaintext ()
+  "1:1 chat buffer respects jabber-chat-default-encryption when set to plaintext."
+  (jabber-db-test-with-db
+    (let* ((jc (jabber-db-test--make-fake-jc "me@example.com"))
+           (buf (generate-new-buffer " *test-chat-plain*"))
+           (jabber-chat-default-encryption 'plaintext)
+           (jabber-chatting-with nil))
+      (unwind-protect
+          (with-current-buffer buf
+            (jabber-chat-mode)
+            (set (make-local-variable 'jabber-chatting-with) "carol@example.com")
+            (jabber-chat-mode-setup jc #'ignore)
+            (should (eq 'plaintext jabber-chat-encryption)))
+        (kill-buffer buf)))))
+
+(ert-deftest jabber-db-test-chat-buffer-db-overrides-default ()
+  "DB setting overrides jabber-chat-default-encryption."
+  (jabber-db-test-with-chat-buffer "me@example.com" "alice@example.com"
+    ;; Default is omemo, but DB says plaintext
+    (jabber-db-set-chat-encryption "me@example.com" "alice@example.com" 'plaintext)
+    (setq jabber-chat-encryption nil)
+    (jabber-chat-mode-setup jc #'ignore)
+    (should (eq 'plaintext jabber-chat-encryption))))
+
+(ert-deftest jabber-db-test-muc-buffer-loads-encryption-from-db ()
+  "MUC buffer loads saved encryption from DB on setup."
+  (jabber-db-test-with-db
+    (let* ((jc (jabber-db-test--make-fake-jc "me@example.com"))
+           (buf (generate-new-buffer " *test-muc-load*"))
+           (jabber-chat-default-encryption 'omemo)
+           (jabber-chatting-with nil))
+      ;; Store plaintext BEFORE creating the buffer
+      (jabber-db-set-chat-encryption "me@example.com" "room@conference.example.com" 'plaintext)
+      (unwind-protect
+          (with-current-buffer buf
+            (jabber-chat-mode)
+            (set (make-local-variable 'jabber-group) "room@conference.example.com")
+            (jabber-chat-mode-setup jc #'ignore)
+            (should (eq 'plaintext jabber-chat-encryption)))
+        (kill-buffer buf)))))
+
+(ert-deftest jabber-db-test-muc-buffer-falls-back-to-default ()
+  "MUC buffer uses default when no DB setting exists."
+  (jabber-db-test-with-muc-buffer "me@example.com" "room@conference.example.com"
+    (should (eq 'omemo jabber-chat-encryption))))
+
+(ert-deftest jabber-db-test-chat-buffer-without-peer-falls-back ()
+  "Buffer without jabber-chatting-with or jabber-group falls back to default."
+  (jabber-db-test-with-db
+    (let* ((jc (jabber-db-test--make-fake-jc "me@example.com"))
+           (buf (generate-new-buffer " *test-no-peer*"))
+           (jabber-chat-default-encryption 'omemo)
+           (jabber-chatting-with nil))
+      (unwind-protect
+          (with-current-buffer buf
+            (jabber-chat-mode)
+            ;; Deliberately not setting jabber-chatting-with or jabber-group
+            (jabber-chat-mode-setup jc #'ignore)
+            (should (eq 'omemo jabber-chat-encryption)))
+        (kill-buffer buf)))))
+
+(ert-deftest jabber-db-test-toggle-save-roundtrip ()
+  "Toggling encryption saves to DB and reloading a fresh buffer picks it up."
+  (jabber-db-test-with-db
+    (let* ((jc (jabber-db-test--make-fake-jc "me@example.com"))
+           (jabber-chat-default-encryption 'omemo)
+           (jabber-chatting-with nil))
+      ;; First buffer: toggle to plaintext
+      (let ((buf1 (generate-new-buffer " *test-toggle-1*")))
+        (unwind-protect
+            (with-current-buffer buf1
+              (jabber-chat-mode)
+              (set (make-local-variable 'jabber-chatting-with) "alice@example.com")
+              (jabber-chat-mode-setup jc #'ignore)
+              (should (eq 'omemo jabber-chat-encryption))
+              (jabber-chat-encryption-set-plaintext)
+              (should (eq 'plaintext jabber-chat-encryption)))
+          (kill-buffer buf1)))
+      ;; Second buffer: should load plaintext from DB
+      (let ((buf2 (generate-new-buffer " *test-toggle-2*")))
+        (unwind-protect
+            (with-current-buffer buf2
+              (jabber-chat-mode)
+              (set (make-local-variable 'jabber-chatting-with) "alice@example.com")
+              (jabber-chat-mode-setup jc #'ignore)
+              (should (eq 'plaintext jabber-chat-encryption)))
+          (kill-buffer buf2))))))
+
+(defvar jabber-chat-header-line-format)  ; jabber-chat.el
+
+(ert-deftest jabber-db-test-redisplay-reloads-encryption ()
+  "jabber-chat-redisplay reloads encryption from DB."
+  (jabber-db-test-with-db
+    (let* ((jc (jabber-db-test--make-fake-jc "me@example.com"))
+           (buf (generate-new-buffer " *test-redisplay*"))
+           (jabber-chat-default-encryption 'omemo)
+           (jabber-chatting-with nil)
+           (jabber-chat-header-line-format '("test")))
+      (unwind-protect
+          (with-current-buffer buf
+            (jabber-chat-mode)
+            (set (make-local-variable 'jabber-chatting-with) "alice@example.com")
+            (jabber-chat-mode-setup jc #'ignore)
+            (should (eq 'omemo jabber-chat-encryption))
+            ;; Simulate external DB change
+            (jabber-db-set-chat-encryption "me@example.com" "alice@example.com" 'plaintext)
+            ;; Redisplay should pick up the DB change
+            (jabber-chat-redisplay)
+            (should (eq 'plaintext jabber-chat-encryption)))
+        (kill-buffer buf)))))
 
 (provide 'jabber-db-tests)
 
