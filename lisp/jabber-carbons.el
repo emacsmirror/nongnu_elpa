@@ -63,8 +63,8 @@ JC is the Jabber connection."
                   nil
                   "set"
                   `(enable ((xmlns . ,jabber-carbons-xmlns)))
-                  #'jabber-carbon-success "Carbons feature enablement"
-                  #'jabber-carbon-failure "Carbons feature enablement"))
+                  #'jabber-carbon-success nil
+                  #'jabber-carbon-failure nil))
 
 ;;;###autoload
 (defun jabber-disable-carbons (jc)
@@ -77,9 +77,10 @@ JC is the Jabber connection."
                   "set"
                   `(disable ((xmlns . ,jabber-carbons-xmlns)))
                   (lambda (_jc _xml _ctx) (message "Carbons disabled"))
+                  nil
                   (lambda (_jc xml _ctx)
                     (message "Failed to disable carbons: %S" xml))
-                  "Carbons feature disablement"))
+                  nil))
 
 ;;;###autoload
 (defun jabber-carbons-maybe-enable (jc)
