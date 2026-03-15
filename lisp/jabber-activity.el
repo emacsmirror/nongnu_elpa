@@ -88,6 +88,12 @@ When set, names may use prefixes shorter than
   :type 'boolean
   :group 'jabber-activity)
 
+(defcustom jabber-activity-muc-prefix "#"
+  "String prepended to MUC names in the mode line.
+Set to an empty string to disable the prefix."
+  :type 'string
+  :group 'jabber-activity)
+
 (defcustom jabber-activity-make-strings #'jabber-activity-make-strings-shorten
   "Function which should return an alist of JID -> string when given a list of
 JIDs."
@@ -140,13 +146,25 @@ there are unread messages which otherwise would be lost."
   "List of regexps of banned JID"
   :type '(repeat string))
 
-(defface jabber-activity-face
-  '((t (:foreground "red" :weight bold)))
-  "The face for displaying jabber-activity-string in the mode line")
+(defface jabber-activity-chat-face
+  '((t :inherit font-lock-warning-face))
+  "Face for 1:1 chat activity in the mode line."
+  :group 'jabber-activity)
 
-(defface jabber-activity-personal-face
-  '((t (:foreground "blue" :weight bold)))
-  "The face for displaying personal jabber-activity-string in the mode line")
+(defface jabber-activity-mention-face
+  '((t :inherit font-lock-warning-face))
+  "Face for personal mentions (MUC highlight) in the mode line."
+  :group 'jabber-activity)
+
+(defface jabber-activity-muc-face
+  '((t :inherit font-lock-keyword-face))
+  "Face for MUC (groupchat) activity in the mode line."
+  :group 'jabber-activity)
+
+(define-obsolete-face-alias 'jabber-activity-face
+  'jabber-activity-chat-face "30.1")
+(define-obsolete-face-alias 'jabber-activity-personal-face
+  'jabber-activity-mention-face "30.1")
 
 (defvar jabber-activity-jids nil
   "A list of JIDs which have caused activity.")
@@ -310,10 +328,12 @@ MUC JIDs get a # prefix (not included in the shortening calculation)."
   (let* ((jid (car entry))
 	 (name (cdr entry))
 	 (mucp (jabber-muc-joined-p jid))
-	 (display (if mucp (concat "#" name) name))
-	 (face (if (member jid jabber-activity-personal-jids)
-		   'jabber-activity-personal-face
-		 'jabber-activity-face)))
+	 (display (if mucp (concat jabber-activity-muc-prefix name) name))
+	 (face (cond
+		((member jid jabber-activity-personal-jids)
+		 'jabber-activity-mention-face)
+		(mucp 'jabber-activity-muc-face)
+		(t 'jabber-activity-chat-face))))
     (propertize
      display
      'face face
