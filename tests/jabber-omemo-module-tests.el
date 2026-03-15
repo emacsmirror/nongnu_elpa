@@ -25,7 +25,9 @@
   (should (fboundp 'jabber-omemo--deserialize-session))
   (should (fboundp 'jabber-omemo--encrypt-key))
   (should (fboundp 'jabber-omemo--decrypt-key))
-  (should (fboundp 'jabber-omemo--heartbeat)))
+  (should (fboundp 'jabber-omemo--heartbeat))
+  (should (fboundp 'jabber-omemo--aesgcm-decrypt))
+  (should (fboundp 'jabber-omemo--aesgcm-encrypt)))
 
 ;;; Group 2: Store lifecycle
 
@@ -378,6 +380,59 @@
                    (plist-get bundle :signed-pre-key-id)
                    (car pk))))
     (should-not (jabber-omemo--heartbeat session alice))))
+
+;;; Group 9: aesgcm encrypt/decrypt (XEP-0454)
+
+(ert-deftest jabber-omemo-module-test-aesgcm-encrypt-returns-plist ()
+  "aesgcm-encrypt returns a plist with :key, :iv, :ciphertext."
+  (let ((result (jabber-omemo--aesgcm-encrypt "hello")))
+    (should (plist-get result :key))
+    (should (plist-get result :iv))
+    (should (plist-get result :ciphertext))))
+
+(ert-deftest jabber-omemo-module-test-aesgcm-encrypt-key-length ()
+  "aesgcm-encrypt returns a 32-byte key."
+  (let ((result (jabber-omemo--aesgcm-encrypt "test")))
+    (should (= 32 (length (plist-get result :key))))))
+
+(ert-deftest jabber-omemo-module-test-aesgcm-encrypt-iv-length ()
+  "aesgcm-encrypt returns a 12-byte IV."
+  (let ((result (jabber-omemo--aesgcm-encrypt "test")))
+    (should (= 12 (length (plist-get result :iv))))))
+
+(ert-deftest jabber-omemo-module-test-aesgcm-encrypt-ciphertext-length ()
+  "Ciphertext is plaintext length + 16 bytes for GCM tag."
+  (let* ((plaintext "hello world")
+         (result (jabber-omemo--aesgcm-encrypt plaintext)))
+    (should (= (+ (length plaintext) 16)
+               (length (plist-get result :ciphertext))))))
+
+(ert-deftest jabber-omemo-module-test-aesgcm-encrypt-decrypt-round-trip ()
+  "Encrypting then decrypting recovers the original plaintext."
+  (let* ((plaintext "The quick brown fox jumps over the lazy dog")
+         (enc (jabber-omemo--aesgcm-encrypt plaintext))
+         (dec (jabber-omemo--aesgcm-decrypt
+               (plist-get enc :key)
+               (plist-get enc :iv)
+               (plist-get enc :ciphertext))))
+    (should (string= plaintext dec))))
+
+(ert-deftest jabber-omemo-module-test-aesgcm-encrypt-binary-round-trip ()
+  "Encrypt/decrypt round-trip works for binary data."
+  (let* ((plaintext (make-string 256 0))
+         (_ (dotimes (i 256) (aset plaintext i i)))
+         (enc (jabber-omemo--aesgcm-encrypt plaintext))
+         (dec (jabber-omemo--aesgcm-decrypt
+               (plist-get enc :key)
+               (plist-get enc :iv)
+               (plist-get enc :ciphertext))))
+    (should (string= plaintext dec))))
+
+(ert-deftest jabber-omemo-module-test-aesgcm-encrypt-unique-keys ()
+  "Each call generates different keys."
+  (let ((r1 (jabber-omemo--aesgcm-encrypt "test"))
+        (r2 (jabber-omemo--aesgcm-encrypt "test")))
+    (should-not (string= (plist-get r1 :key) (plist-get r2 :key)))))
 
 (provide 'jabber-omemo-module-tests)
 ;;; jabber-omemo-module-tests.el ends here
