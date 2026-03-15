@@ -3,6 +3,7 @@
  *
  * Exposes OMEMO 0.3 (eu.siacs.conversations.axolotl) store lifecycle,
  * bundle extraction, key rotation, and message encrypt/decrypt to Elisp.
+ * Also provides AES-256-GCM encrypt/decrypt for XEP-0454 media sharing.
  *
  * Copyright 2026 Thanos Apollo
  * SPDX-License-Identifier: GPL-3.0-or-later
