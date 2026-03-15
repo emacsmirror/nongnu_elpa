@@ -198,7 +198,6 @@ connection fails."
 
 ;; SSL connection, we use openssl's s_client function for encryption
 ;; of the link
-;; TODO: make this configurable
 (defun jabber-ssl-connect (fsm server network-server port)
   "Connect via OpenSSL or GnuTLS to a Jabber Server.
 Send a message of the form (:connected CONNECTION) to FSM if
