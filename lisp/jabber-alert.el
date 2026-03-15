@@ -122,7 +122,7 @@ one of \"subscribe\", \"unsubscribe\", \"subscribed\" and
 	     jabber-presence-display
 	     jabber-presence-echo))
 
-(defvar jabber-presence-hooks '(jabber-presence-watch)
+(defvar jabber-presence-hooks nil
   "Internal hooks run when a user's presence changes.
 
 This hook works just like `jabber-alert-presence-hooks', except that
