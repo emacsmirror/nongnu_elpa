@@ -187,6 +187,7 @@ Invalidated when `jabber-activity-make-name-alist' rebuilds.")
 (declare-function jabber-muc-private-find-buffer "jabber-muc.el"
                   (group nickname))
 (declare-function jabber-muc-sender-p "jabber-muc.el" (jid))
+(declare-function jabber-muc-joined-p "jabber-muc.el" (group))
 (declare-function jabber-muc-looks-like-personal-p
                   "jabber-muc-nick-completion.el" (message &optional group))
 (defvar jabber-silent-mode)             ; jabber.el
@@ -304,13 +305,18 @@ an entry if needed."
 
 (defun jabber-activity--propertize-entry (entry)
   "Return a propertized mode-line string for ENTRY.
-ENTRY is a (JID . name) cons cell from `jabber-activity-lookup-name'."
-  (let ((jid (car entry)))
+ENTRY is a (JID . name) cons cell from `jabber-activity-lookup-name'.
+MUC JIDs get a # prefix (not included in the shortening calculation)."
+  (let* ((jid (car entry))
+	 (name (cdr entry))
+	 (mucp (jabber-muc-joined-p jid))
+	 (display (if mucp (concat "#" name) name))
+	 (face (if (member jid jabber-activity-personal-jids)
+		   'jabber-activity-personal-face
+		 'jabber-activity-face)))
     (propertize
-     (cdr entry)
-     'face (if (member jid jabber-activity-personal-jids)
-	       'jabber-activity-personal-face
-	     'jabber-activity-face)
+     display
+     'face face
      'jabber-modeline t
      'local-map (make-mode-line-mouse-map
 		 'mouse-1 (lambda ()

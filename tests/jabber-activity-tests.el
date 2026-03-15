@@ -31,6 +31,8 @@
   (defun jabber-chat-find-buffer (_jid) nil))
 (unless (fboundp 'jabber-muc-private-find-buffer)
   (defun jabber-muc-private-find-buffer (_group _nick) nil))
+(unless (fboundp 'jabber-muc-joined-p)
+  (defun jabber-muc-joined-p (_group) nil))
 (unless (fboundp 'jabber-muc-looks-like-personal-p)
   (defun jabber-muc-looks-like-personal-p (_msg &optional _group) nil))
 
