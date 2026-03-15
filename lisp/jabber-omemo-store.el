@@ -115,6 +115,14 @@ UPDATE omemo_trust SET trust = ?
   WHERE account = ? AND jid = ? AND device_id = ?"
       (list level account jid device-id))))
 
+(defun jabber-omemo-store-delete-trust (account jid device-id)
+  "Delete trust record for ACCOUNT, JID, DEVICE-ID."
+  (when-let* ((db (jabber-db-ensure-open)))
+    (sqlite-execute db "\
+DELETE FROM omemo_trust
+  WHERE account = ? AND jid = ? AND device_id = ?"
+      (list account jid device-id))))
+
 (defun jabber-omemo-store-all-trust (account jid)
   "List all trust records for ACCOUNT + JID.
 Returns a list of plists (:device-id INT :identity-key BLOB

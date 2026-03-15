@@ -36,6 +36,7 @@
 (require 'jabber-pubsub)
 (require 'jabber-xml)
 (require 'jabber-hints)
+(require 'jabber-omemo-trust)
 
 (declare-function jabber-connection-bare-jid "jabber-util")
 (declare-function jabber-jid-user "jabber-util")
@@ -897,77 +898,15 @@ Called when OMEMO is enabled in a MUC buffer."
     (_ (format "unknown(%d)" level))))
 
 (defun jabber-omemo-fingerprints ()
-  "Display OMEMO fingerprints for the current chat peer."
+  "Display OMEMO trust management for the current chat peer.
+Opens a tabulated-list buffer with interactive trust controls."
   (interactive)
   (unless (bound-and-true-p jabber-chatting-with)
     (user-error "Not in a chat buffer"))
-  (let* ((jc jabber-buffer-connection)
-         (account (jabber-connection-bare-jid jc))
-         (peer (jabber-jid-user jabber-chatting-with))
-         (records (jabber-omemo-store-all-trust account peer)))
-    (if (null records)
-        (message "No OMEMO fingerprints known for %s" peer)
-      (with-help-window "*OMEMO Fingerprints*"
-        (with-current-buffer "*OMEMO Fingerprints*"
-          (insert (format "OMEMO fingerprints for %s\n\n" peer))
-          (dolist (rec records)
-            (let ((did (plist-get rec :device-id))
-                  (ik (plist-get rec :identity-key))
-                  (trust (plist-get rec :trust))
-                  (first-seen (plist-get rec :first-seen)))
-              (insert (format "Device %d  [%s]\n"
-                              did (jabber-omemo--trust-label trust)))
-              (insert (format "  %s\n" (jabber-omemo--format-fingerprint ik)))
-              (when first-seen
-                (insert (format "  First seen: %s\n"
-                                (format-time-string "%Y-%m-%d %H:%M" first-seen))))
-              (insert "\n"))))))))
+  (jabber-omemo-show-trust jabber-buffer-connection jabber-chatting-with))
 
-(defun jabber-omemo-trust-device ()
-  "Mark an OMEMO device of the current peer as verified."
-  (interactive)
-  (unless (bound-and-true-p jabber-chatting-with)
-    (user-error "Not in a chat buffer"))
-  (let* ((jc jabber-buffer-connection)
-         (account (jabber-connection-bare-jid jc))
-         (peer (jabber-jid-user jabber-chatting-with))
-         (records (jabber-omemo-store-all-trust account peer)))
-    (unless records
-      (user-error "No OMEMO devices known for %s" peer))
-    (let* ((choices (mapcar (lambda (rec)
-                              (cons (format "%d [%s]"
-                                            (plist-get rec :device-id)
-                                            (jabber-omemo--trust-label
-                                             (plist-get rec :trust)))
-                                    (plist-get rec :device-id)))
-                            records))
-           (selected (completing-read "Trust device: " choices nil t))
-           (did (cdr (assoc selected choices))))
-      (jabber-omemo-store-set-trust account peer did 2)
-      (message "Device %d marked as verified" did))))
-
-(defun jabber-omemo-untrust-device ()
-  "Mark an OMEMO device of the current peer as untrusted."
-  (interactive)
-  (unless (bound-and-true-p jabber-chatting-with)
-    (user-error "Not in a chat buffer"))
-  (let* ((jc jabber-buffer-connection)
-         (account (jabber-connection-bare-jid jc))
-         (peer (jabber-jid-user jabber-chatting-with))
-         (records (jabber-omemo-store-all-trust account peer)))
-    (unless records
-      (user-error "No OMEMO devices known for %s" peer))
-    (let* ((choices (mapcar (lambda (rec)
-                              (cons (format "%d [%s]"
-                                            (plist-get rec :device-id)
-                                            (jabber-omemo--trust-label
-                                             (plist-get rec :trust)))
-                                    (plist-get rec :device-id)))
-                            records))
-           (selected (completing-read "Untrust device: " choices nil t))
-           (did (cdr (assoc selected choices))))
-      (jabber-omemo-store-set-trust account peer did -1)
-      (message "Device %d marked as untrusted" did))))
+(defalias 'jabber-omemo-trust-device #'jabber-omemo-fingerprints)
+(defalias 'jabber-omemo-untrust-device #'jabber-omemo-fingerprints)
 
 ;;; Connect/disconnect hooks
 
