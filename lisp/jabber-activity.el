@@ -270,32 +270,41 @@ Recomputes `jabber-activity-mode-string' and
 `jabber-activity-count-string' from `jabber-activity-jids'."
   (unless jabber-activity--updating
     (let ((jabber-activity--updating t))
-      (setq jabber-activity-mode-string
-	    (if jabber-activity-jids
-		(mapconcat
-		 (lambda (x)
-		   (let ((jump-to-jid (car x)))
-		     (propertize
-		      (cdr x)
-		      'face (if (member jump-to-jid jabber-activity-personal-jids)
-				'jabber-activity-personal-face
-			      'jabber-activity-face)
-		      'local-map (make-mode-line-mouse-map
-				  'mouse-1 (lambda ()
-					     (interactive "@")
-					     (jabber-activity-switch-to
-					      jump-to-jid)))
-		      'help-echo (concat "Jump to "
-					 (jabber-jid-displayname (car x))
-					 "'s buffer"))))
-		 (mapcar #'jabber-activity-lookup-name
-			 jabber-activity-jids)
-		 ",")
-	      ""))
-      (setq jabber-activity-count-string
-	    (number-to-string (length jabber-activity-jids)))
-      (force-mode-line-update 'all)
-      (run-hooks 'jabber-activity-update-hook))))
+      (let ((new-mode-string
+	     (if jabber-activity-jids
+		 (mapconcat
+		  (lambda (x)
+		    (let ((jump-to-jid (car x)))
+		      (propertize
+		       (cdr x)
+		       'face (if (member jump-to-jid jabber-activity-personal-jids)
+				 'jabber-activity-personal-face
+			       'jabber-activity-face)
+		       'local-map (make-mode-line-mouse-map
+				   'mouse-1 (lambda ()
+					      (interactive "@")
+					      (jabber-activity-switch-to
+					       jump-to-jid)))
+		       'help-echo (concat "Jump to "
+					  (jabber-jid-displayname (car x))
+					  "'s buffer"))))
+		  (mapcar #'jabber-activity-lookup-name
+			  jabber-activity-jids)
+		  ",")
+	       ""))
+	    (new-count-string
+	     (number-to-string (length jabber-activity-jids)))
+	    (changed nil))
+	(unless (equal-including-properties jabber-activity-mode-string
+					    new-mode-string)
+	  (setq jabber-activity-mode-string new-mode-string
+		changed t))
+	(unless (string= jabber-activity-count-string new-count-string)
+	  (setq jabber-activity-count-string new-count-string
+		changed t))
+	(when changed
+	  (force-mode-line-update 'all)
+	  (run-hooks 'jabber-activity-update-hook))))))
 
 ;;; Hooks
 
