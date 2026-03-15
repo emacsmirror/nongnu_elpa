@@ -225,7 +225,8 @@ Works for both 1:1 chat (`jabber-chatting-with') and MUC (`jabber-group')."
    ["Files"
     ("a" "Attach file" jabber-chat-attach-file)]
    ["Buffer"
-    ("r" "Redisplay" jabber-chat-redisplay)]])
+    ("r" "Redisplay" jabber-chat-redisplay)
+    ("R" "Redraw" jabber-chat-buffer-redraw)]])
 
 ;; Spell check only what you're currently writing.
 (defun jabber-chat-mode-flyspell-verify ()
@@ -285,6 +286,21 @@ EWOC-PP is the pretty-printer function for the message EWOC."
     (when (eq jabber-chat-encryption 'omemo)
       (require 'jabber-omemo)))
   (jabber-chat-encryption--update-header))
+
+(declare-function jabber-chat-create-buffer "jabber-chat" (jc chat-with))
+(declare-function jabber-muc-create-buffer "jabber-muc" (jc group))
+
+(defun jabber-chat-buffer-redraw ()
+  "Kill the current chat buffer and recreate it from the database."
+  (interactive)
+  (let ((jc jabber-buffer-connection)
+	(group (bound-and-true-p jabber-group))
+	(chat-with (bound-and-true-p jabber-chatting-with)))
+    (kill-buffer (current-buffer))
+    (switch-to-buffer
+     (if group
+	 (jabber-muc-create-buffer jc group)
+       (jabber-chat-create-buffer jc chat-with)))))
 
 (defun jabber-chat-buffer-send ()
   (interactive)
