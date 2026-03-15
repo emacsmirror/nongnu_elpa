@@ -206,7 +206,15 @@ CREATE TABLE IF NOT EXISTS chat_settings (
   (let ((version (caar (sqlite-select db "PRAGMA user_version"))))
     (when (< version 1)
       (jabber-db--init-schema db)
-      (sqlite-execute db "PRAGMA user_version=1"))))
+      (sqlite-execute db "PRAGMA user_version=1"))
+    (when (< version 2)
+      ;; Remove duplicate messages that lack stanza_id and server_id.
+      ;; These were created by MUC server history replayed on every join.
+      (sqlite-execute db "\
+DELETE FROM message WHERE id NOT IN (
+  SELECT MIN(id) FROM message
+  GROUP BY account, peer, timestamp, body, resource)")
+      (sqlite-execute db "PRAGMA user_version=2"))))
 
 (defun jabber-db-ensure-open ()
   "Open the SQLite database, creating it if needed.  Idempotent.
@@ -273,7 +281,7 @@ Optional OOB-URL is the jabber:x:oob URL.
 Optional OOB-DESC is the jabber:x:oob description.
 Optional ENCRYPTED is non-nil if the message was OMEMO-encrypted."
   (when-let* ((db (jabber-db-ensure-open)))
-    ;; Dedup by stanza_id or server_id if present
+    ;; Dedup by stanza_id or server_id if present, otherwise by content
     (unless (or (and stanza-id
                      (caar (sqlite-select
                             db
@@ -283,7 +291,15 @@ Optional ENCRYPTED is non-nil if the message was OMEMO-encrypted."
                      (caar (sqlite-select
                             db
                             "SELECT 1 FROM message WHERE server_id = ? LIMIT 1"
-                            (list server-id)))))
+                            (list server-id))))
+                ;; Fallback: content-based dedup for messages without IDs
+                ;; (e.g. MUC history replayed on every join)
+                (and (not stanza-id) (not server-id)
+                     (caar (sqlite-select
+                            db
+                            "SELECT 1 FROM message \
+WHERE account = ? AND peer = ? AND timestamp = ? AND body = ? LIMIT 1"
+                            (list account peer timestamp body)))))
       (sqlite-execute
        db
        "INSERT INTO message \
