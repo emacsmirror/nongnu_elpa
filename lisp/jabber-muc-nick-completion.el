@@ -182,7 +182,7 @@ Optional argument GROUP to look."
                      (if (= beg line-begin)
 			 (concat str jabber-muc-completion-delimiter)
 		       str))
-                   (jabber-muc-active-participants group))))
+                   (jabber-muc-nicknames))))
       (list beg (point)
             (lambda (str pred action)
               (if (eq action 'metadata)
