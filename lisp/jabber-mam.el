@@ -53,21 +53,23 @@
                            server-id raw-xml oob-url oob-desc
                            encrypted))
 (declare-function jabber-db-last-server-id "jabber-db" (account &optional peer))
+(declare-function jabber-db-ensure-open "jabber-db" ())
 (declare-function jabber-chat--decrypt-if-needed "jabber-chat" (jc xml-data))
 (declare-function jabber-chat-find-buffer "jabber-chat" (chat-with))
 (declare-function jabber-chat-insert-backlog-entry "jabber-chat" (msg-plist))
+(declare-function jabber-chat-display-buffer-images "jabber-chat" ())
+(declare-function jabber-db-backlog "jabber-db"
+                  (account peer &optional count start-time))
 (declare-function jabber-muc-find-buffer "jabber-muc" (group))
-(declare-function jabber-muc-message-p "jabber-muc" (message))
-(declare-function jabber-chat--msg-plist-from-stanza "jabber-chat"
-                  (xml-data &optional delayed))
-(declare-function jabber-maybe-print-rare-time "jabber-chat" (node))
-(declare-function ewoc-enter-last "ewoc" (ewoc data))
 (declare-function jabber-parse-time "jabber-util" (raw-time))
 (declare-function jabber-sexp2xml "jabber-xml" (sexp))
 
 (defvar jabber-message-chain)           ; jabber-core.el
 (defvar jabber-chat-ewoc)               ; jabber-chatbuffer.el
+(defvar jabber-buffer-connection)       ; jabber-chatbuffer.el
+(defvar jabber-point-insert)            ; jabber-chatbuffer.el
 (defvar jabber-chatting-with)           ; jabber-chat.el
+(defvar jabber-chat-earliest-backlog)   ; jabber-chat.el
 (defvar jabber-group)                   ; jabber-muc.el
 
 ;;; Constants
@@ -111,6 +113,15 @@ Set to nil to fetch the entire archive."
 (defvar jabber-mam--syncing nil
   "Non-nil while a MAM sync is in progress.
 Alist of (JC . QUERYID) for active queries.")
+
+(defvar jabber-mam--dirty-buffers nil
+  "Buffers that received MAM messages during sync.
+Accumulated during sync, drained by the post-sync redisplay FSM.")
+
+(defvar jabber-mam--tx-depth 0
+  "Reference count for the shared MAM transaction.
+BEGIN when 0->1, COMMIT when 1->0.  Allows concurrent MAM queries
+to share one SQLite transaction.")
 
 ;;; Query building
 
@@ -252,9 +263,9 @@ JC is the Jabber connection.  XML-DATA is the stanza."
          (jabber-jid-resource from)
          stanza-id archive-id nil
          oob-url oob-desc encrypted)
-        ;; Display in open buffer if it exists
-        (jabber-mam--maybe-display jc inner-msg peer direction
-                                   type timestamp))
+        ;; Don't display during sync.  Track the buffer for
+        ;; post-sync redisplay instead.
+        (jabber-mam--mark-dirty peer type))
       ;; Strip children so downstream handlers (jabber-process-chat,
       ;; jabber-muc-process-message, jabber-db--message-handler) see
       ;; an empty stanza and skip it.
@@ -272,30 +283,57 @@ JC is the Jabber connection.  XML-DATA is the stanza."
 
 (declare-function jabber-muc-nickname "jabber-muc" (group))
 
-(defun jabber-mam--maybe-display (_jc inner-msg peer direction type timestamp)
-  "Display a MAM result in an open chat buffer, if one exists.
-JC is the connection, INNER-MSG the forwarded message,
-PEER the bare JID, DIRECTION \"in\" or \"out\",
-TYPE the message type, TIMESTAMP the parsed time."
-  (let* ((groupchat-p (string= type "groupchat"))
-         (buffer (if groupchat-p
-                     (jabber-muc-find-buffer peer)
-                   (jabber-chat-find-buffer peer))))
-    (when buffer
-      (let ((msg-plist (jabber-chat--msg-plist-from-stanza inner-msg t)))
-        (when timestamp
-          (plist-put msg-plist :timestamp timestamp))
-        (plist-put msg-plist :direction direction)
-        (with-current-buffer buffer
-          (let ((node-type
-                 (cond
-                  ((and groupchat-p (string= direction "out")) :muc-local)
-                  (groupchat-p :muc-foreign)
-                  ((string= direction "out") :local)
-                  (t :foreign))))
-            (jabber-maybe-print-rare-time
-             (ewoc-enter-last jabber-chat-ewoc
-                              (list node-type msg-plist)))))))))
+(defun jabber-mam--mark-dirty (peer type)
+  "Record that PEER's buffer needs redisplay after sync.
+TYPE is the message type (\"groupchat\" for MUC)."
+  (let ((buffer (if (string= type "groupchat")
+                    (jabber-muc-find-buffer peer)
+                  (jabber-chat-find-buffer peer))))
+    (when (and buffer (not (memq buffer jabber-mam--dirty-buffers)))
+      (push buffer jabber-mam--dirty-buffers))))
+
+(defun jabber-mam--redisplay-next ()
+  "Reload the next dirty buffer from DB, then schedule the next one.
+Clears the ewoc and re-inserts backlog so MAM messages appear.
+Processes one buffer per timer callback so the event loop stays
+responsive between redraws."
+  (while (and jabber-mam--dirty-buffers
+              (not (buffer-live-p (car jabber-mam--dirty-buffers))))
+    (pop jabber-mam--dirty-buffers))
+  (when-let* ((buf (pop jabber-mam--dirty-buffers)))
+    (jabber-mam--reload-buffer buf)
+    (when jabber-mam--dirty-buffers
+      (run-with-timer 0.05 nil #'jabber-mam--redisplay-next))))
+
+(defun jabber-mam--reload-buffer (buffer)
+  "Clear BUFFER's ewoc and reload backlog from the database.
+This is needed after MAM sync because messages were stored to DB
+but never inserted into the ewoc."
+  (with-current-buffer buffer
+    (let ((inhibit-read-only t))
+      ;; Clear all ewoc nodes
+      (ewoc-filter jabber-chat-ewoc #'ignore)
+      ;; Reset backlog marker so full backlog loads
+      (setq jabber-chat-earliest-backlog nil)
+      ;; Reload from DB
+      (let* ((peer (or (bound-and-true-p jabber-chatting-with)
+                       (bound-and-true-p jabber-group)))
+             (backlog-entries
+              (when peer
+                (jabber-db-backlog
+                 (jabber-connection-bare-jid jabber-buffer-connection)
+                 (jabber-jid-user peer)))))
+        (when backlog-entries
+          (setq jabber-chat-earliest-backlog
+                (float-time (plist-get (car (last backlog-entries))
+                                       :timestamp)))
+          (mapc #'jabber-chat-insert-backlog-entry backlog-entries)
+          (jabber-chat-display-buffer-images)))
+      ;; Scroll to bottom
+      (when-let* ((win (get-buffer-window buffer)))
+        (with-selected-window win
+          (goto-char jabber-point-insert)
+          (recenter -1))))))
 
 ;;; Query and pagination
 
@@ -306,14 +344,33 @@ WITH and START are optional filters.
 TO is the query target; nil for user archive, a room JID for MUC MAM."
   (let ((queryid (or queryid (jabber-mam--make-queryid))))
     (push (cons jc queryid) jabber-mam--syncing)
-    (jabber-send-iq
-     jc to "set"
-     (jabber-mam--build-query queryid with start after-id
-                              jabber-mam-page-size)
-     #'jabber-mam--handle-fin
-     (list queryid with start to)
-     #'jabber-mam--handle-error
-     (list queryid to))))
+    ;; Open a shared transaction for concurrent MAM queries.
+    ;; COMMIT happens when the last active query finishes.
+    (when (zerop jabber-mam--tx-depth)
+      (setq jabber-mam--dirty-buffers nil)
+      (when-let* ((db (jabber-db-ensure-open)))
+        (sqlite-execute db "BEGIN")))
+    (cl-incf jabber-mam--tx-depth)
+    (condition-case err
+        (jabber-send-iq
+         jc to "set"
+         (jabber-mam--build-query queryid with start after-id
+                                  jabber-mam-page-size)
+         #'jabber-mam--handle-fin
+         (list queryid with start to)
+         #'jabber-mam--handle-error
+         (list queryid to))
+      (error
+       (when (> jabber-mam--tx-depth 0)
+         (cl-decf jabber-mam--tx-depth))
+       (when (zerop jabber-mam--tx-depth)
+         (when-let* ((db (jabber-db-ensure-open)))
+           (sqlite-execute db "COMMIT")))
+       (setq jabber-mam--syncing
+             (cl-remove queryid jabber-mam--syncing
+                        :key #'cdr :test #'string=))
+       (message "MAM: query failed to send: %s"
+                (error-message-string err))))))
 
 (defun jabber-mam--handle-fin (jc xml-data closure)
   "Handle the <fin> IQ result for a MAM query.
@@ -326,16 +383,28 @@ CLOSURE is (QUERYID WITH START TO)."
          (fin (jabber-mam--parse-fin xml-data))
          (complete (plist-get fin :complete))
          (last-id (plist-get fin :last)))
+    ;; Decrement transaction ref count; COMMIT when last query finishes.
+    (when (> jabber-mam--tx-depth 0)
+      (cl-decf jabber-mam--tx-depth))
+    (when (zerop jabber-mam--tx-depth)
+      (when-let* ((db (jabber-db-ensure-open)))
+        (sqlite-execute db "COMMIT")))
     ;; Remove from syncing list
     (setq jabber-mam--syncing
           (cl-remove queryid jabber-mam--syncing
                      :key #'cdr :test #'string=))
     (if (or complete (null last-id))
-        (message "MAM: sync complete%s"
-                 (if to (format " for %s" to)
-                   (if with (format " for %s" with) "")))
-      ;; More pages, continue
-      (jabber-mam--query jc last-id queryid with start to))))
+        (progn
+          (message "MAM: sync complete%s"
+                   (if to (format " for %s" to)
+                     (if with (format " for %s" with) "")))
+          ;; Redisplay affected buffers one at a time.
+          (when jabber-mam--dirty-buffers
+            (run-with-timer 0.05 nil #'jabber-mam--redisplay-next)))
+      ;; More pages: yield to the event loop for redisplay and input,
+      ;; then continue pagination.
+      (run-with-timer 0.1 nil #'jabber-mam--query
+                      jc last-id queryid with start to))))
 
 (defun jabber-mam--handle-error (jc xml-data closure)
   "Handle a MAM query error.
@@ -344,6 +413,12 @@ CLOSURE is (QUERYID TO).
 On item-not-found (stale sync point), falls back to time-based query."
   (let ((queryid (car closure))
         (to (cadr closure)))
+    ;; Decrement transaction ref count; COMMIT when last query finishes.
+    (when (> jabber-mam--tx-depth 0)
+      (cl-decf jabber-mam--tx-depth))
+    (when (zerop jabber-mam--tx-depth)
+      (when-let* ((db (jabber-db-ensure-open)))
+        (sqlite-execute db "COMMIT")))
     (setq jabber-mam--syncing
           (cl-remove queryid jabber-mam--syncing
                      :key #'cdr :test #'string=))
