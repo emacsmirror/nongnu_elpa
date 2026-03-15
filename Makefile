@@ -18,7 +18,7 @@ build: autoload compile module
 dev: autoload compile module lint test
 
 autoload:
-	$(EMACS_CMD) -q -Q --batch -L lisp -L lisp/jabber-fallback-lib \
+	$(EMACS_CMD) -q -Q --batch -L lisp \
 	--eval="(loaddefs-generate \"lisp\" \"lisp/jabber-autoloads.el\")"
 
 module:
@@ -29,7 +29,7 @@ else
 endif
 
 compile:
-	$(EMACS_CMD) -q -Q -L . -L lisp -L lisp/jabber-fallback-lib --batch \
+	$(EMACS_CMD) -q -Q -L . -L lisp --batch \
 	--eval="(setq print-length nil load-prefer-newer t)" \
 	-f batch-byte-compile lisp/*.el
 
@@ -56,7 +56,7 @@ lint-relint:
 lint: lint-check-declare lint-checkdoc lint-package-lint lint-relint
 
 test:
-	$(EMACS_CMD) -Q --batch -L lisp -L lisp/jabber-fallback-lib -L tests \
+	$(EMACS_CMD) -Q --batch -L lisp -L tests \
 	-l ert $(foreach t,$(TESTS),-l $(t)) \
 	-f ert-run-tests-batch-and-exit
 

@@ -59,7 +59,7 @@ Old resources
 :END:
 jabber.el requires GNU Emacs 27.1 or later.
 
-Two required libraries, =fsm.el= and =srv.el=, are present in [[file:lisp/jabber-fallback-lib/][lisp/jabber-fallback-lib/]].
+Two required libraries, =fsm.el= and =srv.el=, are installed automatically as package dependencies.
 
 ** Encrypted connections
 :PROPERTIES:
