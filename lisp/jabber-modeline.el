@@ -49,11 +49,15 @@
 ;;
 
 (defun jabber-mode-line-presence-update (&rest _)
-  (setq jabber-mode-line-presence (if (and jabber-connections (not *jabber-disconnecting*))
-				      (cdr (assoc *jabber-current-show* jabber-presence-strings))
-				    "Offline")))
+  "Update `jabber-mode-line-presence' from current connection state."
+  (let ((text (if (and jabber-connections (not *jabber-disconnecting*))
+		  (cdr (assoc *jabber-current-show* jabber-presence-strings))
+		"Offline")))
+    (setq jabber-mode-line-presence
+	  (propertize text 'jabber-modeline t))))
 
 (defun jabber-mode-line-count-contacts (&rest _ignore)
+  "Update `jabber-mode-line-contacts' with roster counts."
   (let ((count (list (cons "chat" 0)
 		     (cons "" 0)
 		     (cons "away" 0)
@@ -65,16 +69,27 @@
 	(when (assoc (get buddy 'show) count)
 	  (cl-incf (cdr (assoc (get buddy 'show) count))))))
     (setq jabber-mode-line-contacts
-	  (if jabber-mode-line-compact
-	      (format "(%d/%d/%d)"
-		      (+ (cdr (assoc "chat" count))
-			 (cdr (assoc "" count)))
-		      (+ (cdr (assoc "away" count))
-			 (cdr (assoc "xa" count))
-			 (cdr (assoc "dnd" count)))
-		      (cdr (assoc nil count)))
-	    (apply #'format "(%d/%d/%d/%d/%d/%d)"
-		   (mapcar #'cdr count))))))
+	  (propertize
+	   (if jabber-mode-line-compact
+	       (format "(%d/%d/%d)"
+		       (+ (cdr (assoc "chat" count))
+			  (cdr (assoc "" count)))
+		       (+ (cdr (assoc "away" count))
+			  (cdr (assoc "xa" count))
+			  (cdr (assoc "dnd" count)))
+		       (cdr (assoc nil count)))
+	     (apply #'format "(%d/%d/%d/%d/%d/%d)"
+		    (mapcar #'cdr count)))
+	   'jabber-modeline t))))
+
+(defun jabber-mode-line--add ()
+  "Install status indicator in `global-mode-string'."
+  (cl-pushnew 'jabber-mode-line-string global-mode-string :test #'eq))
+
+(defun jabber-mode-line--remove ()
+  "Remove status indicator from `global-mode-string'."
+  (setq global-mode-string
+	(delq 'jabber-mode-line-string global-mode-string)))
 
 (define-minor-mode jabber-mode-line-mode
   "Toggle display of Jabber status in mode lines.
@@ -82,32 +97,32 @@ Display consists of your own status, and six numbers
 meaning the number of chatty, online, away, xa, dnd
 and offline contacts, respectively."
   :global t
-  (setq jabber-mode-line-string "")
-  (or global-mode-string (setq global-mode-string '("")))
   (if jabber-mode-line-mode
       (progn
-	(add-to-list 'global-mode-string 'jabber-mode-line-string t)
-
-	(setq jabber-mode-line-string (list " "
-					    'jabber-mode-line-presence
-					    " "
-					    'jabber-mode-line-contacts))
-        (put 'jabber-mode-line-string 'risky-local-variable t)
-        (put 'jabber-mode-line-presence 'risky-local-variable t)
+	(setq jabber-mode-line-string
+	      (list (propertize " " 'jabber-modeline t)
+		    'jabber-mode-line-presence
+		    (propertize " " 'jabber-modeline t)
+		    'jabber-mode-line-contacts))
+	(put 'jabber-mode-line-string 'risky-local-variable t)
+	(put 'jabber-mode-line-presence 'risky-local-variable t)
 	(jabber-mode-line-presence-update)
 	(jabber-mode-line-count-contacts)
-        (add-hook 'jabber-send-presence
-                  #'jabber-mode-line-presence-update)
+	(jabber-mode-line--add)
+	(add-hook 'jabber-send-presence
+		  #'jabber-mode-line-presence-update)
 	(add-hook 'jabber-post-disconnect-hook
 		  #'jabber-mode-line-presence-update)
 	(add-hook 'jabber-presence-hooks
 		  #'jabber-mode-line-count-contacts))
+    (jabber-mode-line--remove)
+    (setq jabber-mode-line-string "")
     (remove-hook 'jabber-post-disconnect-hook
-                 #'jabber-mode-line-presence-update)
+		 #'jabber-mode-line-presence-update)
     (remove-hook 'jabber-send-presence
-                 #'jabber-mode-line-presence-update)
+		 #'jabber-mode-line-presence-update)
     (remove-hook 'jabber-presence-hooks
-	         #'jabber-mode-line-count-contacts)))
+		 #'jabber-mode-line-count-contacts)))
 
 (provide 'jabber-modeline)
 
