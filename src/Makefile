@@ -9,6 +9,9 @@ INSTALL_DIR = ../lisp
 
 all: $(INSTALL_DIR)/$(TARGET)
 
+picomemo/omemo.c:
+	git -C .. submodule update --init src/picomemo
+
 $(TARGET): $(SRCS) picomemo/omemo.h picomemo/hacl.h
 	$(CC) -shared $(CFLAGS) -o $@ $(SRCS) $(MBED_FLAGS)
 
