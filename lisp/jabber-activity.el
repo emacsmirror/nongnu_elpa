@@ -73,7 +73,7 @@ at least this long, when possible."
   :type 'number
   :group 'jabber-activity)
 
-(defcustom jabber-activity-shorten-cutoff nil
+(defcustom jabber-activity-shorten-cutoff 2
   "Maximum number of JIDs to display in the mode line.
 When non-nil and more JIDs are active than this number, only the
 first CUTOFF entries are shown followed by \", +N\"."
@@ -338,12 +338,13 @@ Recomputes `jabber-activity-mode-string' and
 	   (new-mode-string
 	    (if jabber-activity-jids
 		(concat
-		 (propertize "[" 'jabber-modeline t)
+		 (propertize "[" 'face 'shadow 'jabber-modeline t)
 		 (mapconcat #'jabber-activity--propertize-entry visible
-			    (propertize "," 'jabber-modeline t))
+			    (propertize "," 'face 'shadow 'jabber-modeline t))
 		 (when overflow
-		   (propertize (format ", +%d" overflow) 'jabber-modeline t))
-		 (propertize "]" 'jabber-modeline t))
+		   (propertize (format ", +%d" overflow)
+			       'face 'shadow 'jabber-modeline t))
+		 (propertize "]" 'face 'shadow 'jabber-modeline t))
 	      ""))
 	   (new-count-string (number-to-string total))
 	   (changed nil))
