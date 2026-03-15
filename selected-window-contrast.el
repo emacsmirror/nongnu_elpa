@@ -262,29 +262,44 @@ Used in `selected-window-contrast-mark-small-rectangle-temporary'.")
   "Mark a 2x2 rectangle around point for 1 sec, to hightlight WINDOW.
 Use `rectangle-mark-mode'.  Deactivate rectangle after 1 second or less."
   (interactive)
+  ;; (print (list "selected-window-contrast-mark-small-rectangle-temporary N1" window))
+  ;; (print (list "selected-window-contrast-mark-small-rectangle-temporary N2"
+  ;;              (window-buffer selected-window-contrast-prev-window)
+  ;;              (type-of selected-window-contrast-prev-window)
+  ;;              (window-minibuffer-p selected-window-contrast-prev-window)
+  ;;              ;; (and selected-window-contrast-prev-window ; check alive
+  ;;              ;;                    (window-buffer selected-window-contrast-prev-window) ; check alive
+  ;;              ;;                    (window-minibuffer-p selected-window-contrast-prev-window))
+  ;;              ))
   ;; (condition-case err
-      (when (and window
-                 (eq window (selected-window))
-                 (not (window-minibuffer-p window))
-                 (not (when selected-window-contrast-prev-window (window-minibuffer-p selected-window-contrast-prev-window))))
-        (unless (region-active-p)
-          ;; Enable rectangle selection.
-          (rectangle-mark-mode 1)
-          (rectangle-next-line selected-window-contrast-region-lines) ; 2
-          (rectangle-forward-char selected-window-contrast-region-width) ; 8
-          (rectangle-exchange-point-and-mark)
-          ;; Start timer to deactivate mark and rectangle mode.
-          (run-with-timer selected-window-contrast-region-timeout
-                          nil (lambda (buf)
-                                (with-current-buffer buf
-                                  (when (region-active-p)
-                                    ;; (exchange-point-and-mark)
-                                    (deactivate-mark))))
-                          (current-buffer))))
-    ;; save current window, because `previous-window' is not working.
-    (setq selected-window-contrast-prev-window (selected-window))
-    ;; (message "selected-window-contrast debug: %s" err))
-    )
+      ;; (progn
+        (when (and window
+                        ;; (window-valid-p window)
+                        (eq window (selected-window))
+                        (not (window-minibuffer-p window))
+                        (not (and selected-window-contrast-prev-window ; check alive
+                                  (window-buffer selected-window-contrast-prev-window) ; check alive
+                                  (window-minibuffer-p selected-window-contrast-prev-window))))
+               (unless (region-active-p)
+                 (let ((inhibit-message t) (message-log-max nil))
+                   ;; Enable rectangle selection.
+                   (rectangle-mark-mode 1)
+                   (rectangle-next-line selected-window-contrast-region-lines) ; 2
+                   (rectangle-forward-char selected-window-contrast-region-width) ; 8
+                   (rectangle-exchange-point-and-mark))
+                 ;; Start timer to deactivate mark and rectangle mode.
+                 (run-with-timer selected-window-contrast-region-timeout
+                                 nil (lambda (buf)
+                                       (with-current-buffer buf
+                                         (when (region-active-p)
+                                           (let ((inhibit-message t) (message-log-max nil))
+                                             ;; (exchange-point-and-mark)
+                                             (deactivate-mark)))))
+                                 (current-buffer))
+                 ))
+             ;; save current window, because `previous-window' is not working.
+             (setq selected-window-contrast-prev-window (selected-window)))
+    ;; (message "selected-window-contrast debug: %s" err)))
 
 (defun selected-window-contrast-highlight-selected-window-with-timeout ()
   "Highlight not selected windows with a different background color.
