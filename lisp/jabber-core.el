@@ -166,7 +166,6 @@ problems."
                   (jc xml-data closure-data))
 (declare-function jabber-initial-roster-failure "jabber-presence.el"
                   (jc xml-data _closure-data))
-(declare-function jabber-get-auth "jabber-logon.el" (jc to session-id))
 (declare-function jabber-get-register "jabber-register.el" (jc to))
 (declare-function jabber-get-connect-function "jabber-conn.el" (type))
 (declare-function jabber-get-send-function "jabber-conn.el" (type))
@@ -577,10 +576,9 @@ With double prefix argument, specify more connection details."
 			  :disconnection-expected t)))))
 
 (define-enter-state jabber-connection :legacy-auth
-  (fsm state-data)
-  (jabber-get-auth fsm (plist-get state-data :server)
-		   (plist-get state-data :session-id))
-  (list state-data nil))
+  (_fsm state-data)
+  (message "jabber: server requires non-SASL auth, which is no longer supported")
+  (list nil (plist-put state-data :disconnection-expected t)))
 
 (define-state jabber-connection :legacy-auth
   (fsm state-data event _callback)
@@ -607,7 +605,6 @@ With double prefix argument, specify more connection details."
 
     (:authentication-failure
      (jabber-uncache-password (jabber-connection-bare-jid fsm))
-     ;; jabber-logon has already displayed a message
      (list nil (plist-put state-data
 			  :disconnection-expected t)))
 

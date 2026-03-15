@@ -29,7 +29,6 @@
 
 (require 'jabber-widget)
 (require 'jabber-disco)
-(require 'jabber-muc-nick-coloring)
 
 ;; we need jabber-bookmarks for jabber-muc-autojoin (via
 ;; jabber-get-bookmarks and jabber-parse-conference-bookmark):
@@ -1100,12 +1099,8 @@ Return nil if X-MUC is nil."
 	 (jabber-chat--format-time timestamp delayed)
 	 (if dont-print-nick-p "" nick)
 	 (if local
-	     (if jabber-muc-colorize-local
-		 (list ':foreground (jabber-muc-nick-get-color nick))
-	       'jabber-chat-nick-plaintext)
-	   (if jabber-muc-colorize-foreign
-	       (list ':foreground (jabber-muc-nick-get-color nick))
-	     'jabber-chat-nick-foreign-plaintext)))
+	     'jabber-chat-nick-plaintext
+	   'jabber-chat-nick-foreign-plaintext))
       (jabber-muc-system-prompt))))
 
 (defun jabber-muc-private-print-prompt (msg)
