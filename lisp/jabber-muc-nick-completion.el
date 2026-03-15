@@ -167,34 +167,34 @@ Optional argument GROUP to look."
 
 (defun jabber-muc-nick-completion-at-point ()
   "Nick completion function for `completion-at-point'."
-  ;; largely cribbed from rcirc.el
+  (when (bound-and-true-p jabber-group)
     (let* ((completion-begin (max (line-beginning-position)
-				   (or jabber-point-insert (point-min))))
-	   (group jabber-group)
-	   (beg (save-excursion
-                  ;; On some networks it is common to message or
-                  ;; mention someone using @nick instead of just
-                  ;; nick.
-                  (if (re-search-backward "[[:space:]@]" completion-begin t)
-                      (1+ (point))
-                    completion-begin)))
+                                  (or jabber-point-insert (point-min))))
+           (group jabber-group)
+           (beg (save-excursion
+                  (skip-syntax-backward "^ " completion-begin)
+                  (point)))
+           (start-of-line-p (= beg completion-begin))
+           (nicks (jabber-muc-nicknames))
            (table (mapcar
                    (lambda (str)
-                     (if (= beg completion-begin)
-			 (concat str jabber-muc-completion-delimiter)
-		       str))
-                   (jabber-muc-nicknames))))
-      (list beg (point)
-            (lambda (str pred action)
-              (if (eq action 'metadata)
-                  `(metadata
-                    (display-sort-function . ,(lambda (nicks)
-                                               (jabber-sort-nicks
-						nicks group)))
-                  (cycle-sort-function . ,(lambda (nicks)
-                                               (jabber-sort-nicks
-						nicks group))))
-              (complete-with-action action table str pred))))))
+                     (if start-of-line-p
+                         (concat str jabber-muc-completion-delimiter)
+                       str))
+                   nicks))
+           (prefix (buffer-substring-no-properties beg (point))))
+      (when (cl-some (lambda (c) (string-prefix-p prefix c t)) table)
+        (list beg (point)
+              (lambda (str pred action)
+                (if (eq action 'metadata)
+                    `(metadata
+                      (display-sort-function
+                       . ,(lambda (nicks)
+                            (jabber-sort-nicks nicks group)))
+                      (cycle-sort-function
+                       . ,(lambda (nicks)
+                            (jabber-sort-nicks nicks group))))
+                  (complete-with-action action table str pred))))))))
 
 (add-hook 'jabber-muc-hooks #'jabber-muc-track-message-time)
 
