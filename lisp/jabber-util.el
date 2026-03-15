@@ -762,12 +762,11 @@ FN is applied to the node and not to the data itself."
   :group 'jabber)
 
 (defun jabber-separator ()
-  "Return a propertized separator string."
-  (let* ((win (or (get-buffer-window (current-buffer)) (selected-window)))
-         (width (max 1 (/ (window-body-width win) 3))))
-    (propertize (make-string width ?\s)
-                       'face 'jabber-separator)))
+  "Return a propertized separator string.
+Uses a `display' property so the separator adjusts to window
+width on redisplay."
+  (propertize " " 'display '(space :width text) 'face 'jabber-separator))
+
 
 (provide 'jabber-util)
-
 ;;; jabber-util.el ends here
