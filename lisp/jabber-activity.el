@@ -88,7 +88,7 @@ When set, names may use prefixes shorter than
   :type 'boolean
   :group 'jabber-activity)
 
-(defcustom jabber-activity-make-strings #'jabber-activity-make-strings-default
+(defcustom jabber-activity-make-strings #'jabber-activity-make-strings-shorten
   "Function which should return an alist of JID -> string when given a list of
 JIDs."
   :set #'(lambda (var val)
