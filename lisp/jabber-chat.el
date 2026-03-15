@@ -343,15 +343,15 @@ JC is the Jabber connection."
 		  (float-time (plist-get (car (last backlog-entries)) :timestamp)))
 	    ;; ewoc-enter-first with DESC input produces ascending display.
 	    (mapc #'jabber-chat-insert-backlog-entry backlog-entries)
-	    (jabber-chat-display-buffer-images)))))
+	    (jabber-chat-display-buffer-images))))
+
+      (when-let* ((win (get-buffer-window (current-buffer))))
+        (with-selected-window win
+          (goto-char jabber-point-insert)
+          (recenter -1))))
 
     ;; Make sure the connection variable is up to date.
     (setq jabber-buffer-connection jc)
-
-    (when-let* ((win (get-buffer-window (current-buffer))))
-      (with-selected-window win
-        (goto-char jabber-point-insert)
-        (recenter -1)))
 
     (current-buffer)))
 

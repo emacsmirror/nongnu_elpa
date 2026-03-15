@@ -309,29 +309,30 @@ JC is the Jabber connection."
       (set (make-local-variable 'jabber-group) group)
       (make-local-variable 'jabber-muc-topic)
 
-      (jabber-chat-mode-setup jc #'jabber-chat-pp))
+      (jabber-chat-mode-setup jc #'jabber-chat-pp)
+
+      (setq jabber-send-function #'jabber-muc-send)
+      (setq header-line-format jabber-muc-header-line-format)
+
+      (make-local-variable 'jabber-chat-earliest-backlog)
+      (when (null jabber-chat-earliest-backlog)
+        (let ((backlog-entries (jabber-db-backlog
+                                (jabber-connection-bare-jid jc)
+                                (jabber-jid-user group))))
+          (if (null backlog-entries)
+              (setq jabber-chat-earliest-backlog (float-time))
+            (setq jabber-chat-earliest-backlog
+                  (float-time (plist-get (car (last backlog-entries)) :timestamp)))
+            (mapc #'jabber-chat-insert-backlog-entry backlog-entries)
+            (jabber-chat-display-buffer-images))))
+
+      (when-let* ((win (get-buffer-window (current-buffer))))
+        (with-selected-window win
+          (goto-char jabber-point-insert)
+          (recenter -1))))
+
     ;; Make sure the connection variable is up to date.
     (setq jabber-buffer-connection jc)
-
-    (setq jabber-send-function #'jabber-muc-send)
-    (setq header-line-format jabber-muc-header-line-format)
-
-    (make-local-variable 'jabber-chat-earliest-backlog)
-    (when (null jabber-chat-earliest-backlog)
-      (let ((backlog-entries (jabber-db-backlog
-                              (jabber-connection-bare-jid jc)
-                              (jabber-jid-user group))))
-        (if (null backlog-entries)
-            (setq jabber-chat-earliest-backlog (float-time))
-          (setq jabber-chat-earliest-backlog
-                (float-time (plist-get (car (last backlog-entries)) :timestamp)))
-          (mapc #'jabber-chat-insert-backlog-entry backlog-entries)
-          (jabber-chat-display-buffer-images))))
-
-    (when-let* ((win (get-buffer-window (current-buffer))))
-      (with-selected-window win
-        (goto-char jabber-point-insert)
-        (recenter -1)))
 
     (current-buffer)))
 
