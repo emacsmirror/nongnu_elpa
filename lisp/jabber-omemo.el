@@ -1007,25 +1007,27 @@ When the current buffer has OMEMO active, encrypt the file with
 AES-256-GCM before uploading.  The CALLBACK receives an aesgcm://
 URL instead of an https:// URL."
   (if (eq jabber-chat-encryption 'omemo)
-      (let* ((plaintext (with-temp-buffer
-                          (set-buffer-multibyte nil)
-                          (insert-file-contents-literally filepath)
-                          (buffer-string)))
-             (enc (jabber-omemo-aesgcm-encrypt plaintext))
-             (key (plist-get enc :key))
-             (iv (plist-get enc :iv))
-             (ciphertext (plist-get enc :ciphertext))
-             (tmp (make-temp-file "jabber-aesgcm-" nil
-                                  (file-name-extension filepath t))))
-        (with-temp-file tmp
-          (set-buffer-multibyte nil)
-          (insert ciphertext))
-        (funcall orig-fn jc tmp
-                 (lambda (get-url)
-                   (ignore-errors (delete-file tmp))
-                   (funcall callback
-                            (jabber-omemo--build-aesgcm-url
-                             get-url iv key)))))
+      (condition-case err
+          (let* ((plaintext (with-temp-buffer
+                              (set-buffer-multibyte nil)
+                              (insert-file-contents-literally filepath)
+                              (buffer-string)))
+                 (enc (jabber-omemo-aesgcm-encrypt plaintext))
+                 (key (plist-get enc :key))
+                 (iv (plist-get enc :iv))
+                 (ciphertext (plist-get enc :ciphertext))
+                 (tmp (make-temp-file "jabber-aesgcm-" nil
+                                      (file-name-extension filepath t))))
+            (with-temp-file tmp
+              (set-buffer-multibyte nil)
+              (insert ciphertext))
+            (funcall orig-fn jc tmp
+                     (lambda (get-url)
+                       (ignore-errors (delete-file tmp))
+                       (funcall callback
+                                (jabber-omemo--build-aesgcm-url
+                                 get-url iv key)))))
+        (error (message "aesgcm: file encryption failed: %s" (error-message-string err))))
     (funcall orig-fn jc filepath callback)))
 
 (defun jabber-omemo--httpupload-send-url-around (orig-fn jc jid get-url)
