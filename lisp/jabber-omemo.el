@@ -102,6 +102,7 @@ Run from the emacs-jabber project root.")
 (declare-function jabber-omemo--decrypt-key "jabber-omemo-core")
 (declare-function jabber-omemo--heartbeat "jabber-omemo-core")
 (declare-function jabber-omemo--aesgcm-decrypt "jabber-omemo-core")
+(declare-function jabber-omemo--aesgcm-encrypt "jabber-omemo-core")
 
 ;; Public API
 
@@ -199,6 +200,22 @@ Returns heartbeat message bytes or nil."
 KEY is a 32-byte unibyte string, IV is a 12-byte unibyte string.
 The last 16 bytes of CIPHERTEXT-WITH-TAG are the GCM auth tag."
   (jabber-omemo--aesgcm-decrypt key iv ciphertext-with-tag))
+
+(defun jabber-omemo-aesgcm-encrypt (plaintext)
+  "Encrypt PLAINTEXT using AES-256-GCM for aesgcm:// media sharing.
+PLAINTEXT is a unibyte string.  Returns a plist
+\(:key KEY :iv IV :ciphertext CIPHERTEXT-WITH-TAG)."
+  (jabber-omemo--aesgcm-encrypt plaintext))
+
+(defun jabber-omemo--build-aesgcm-url (https-url iv key)
+  "Build an aesgcm:// URL from HTTPS-URL, IV, and KEY.
+IV is a 12-byte unibyte string, KEY is a 32-byte unibyte string.
+Returns a string like aesgcm://HOST/PATH#IVHEX_KEYHEX."
+  (let ((fragment (concat (encode-hex-string iv)
+                          (encode-hex-string key))))
+    (concat "aesgcm://"
+            (substring https-url (length "https://"))
+            "#" fragment)))
 
 ;;; Protocol constants
 
