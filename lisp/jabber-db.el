@@ -55,7 +55,8 @@
   "SQLite message storage for jabber.el."
   :group 'jabber)
 
-(defcustom jabber-db-path (locate-user-emacs-file "jabber-db.sqlite")
+(defcustom jabber-db-path
+  (expand-file-name "jabber/jabber.db" user-emacs-directory)
   "Path to the SQLite database file for message storage.
 Set to nil to disable message storage entirely."
   :type '(choice (file :tag "Database file")
@@ -231,6 +232,20 @@ Return the database connection, or nil if storage is disabled."
              (sqlitep jabber-db--connection))
     (sqlite-close jabber-db--connection)
     (setq jabber-db--connection nil)))
+
+;;; Transactions
+
+(defmacro jabber-db-with-transaction (&rest body)
+  "Execute BODY inside a SQLite transaction.
+Opens a BEGIN/COMMIT pair around BODY.  If BODY signals an error,
+the transaction is still committed (partial data is better than
+a stuck open transaction in single-threaded Emacs)."
+  (declare (indent 0) (debug t))
+  `(when-let* ((db (jabber-db-ensure-open)))
+     (sqlite-execute db "BEGIN")
+     (unwind-protect
+         (progn ,@body)
+       (sqlite-execute db "COMMIT"))))
 
 ;;; Chat settings
 
