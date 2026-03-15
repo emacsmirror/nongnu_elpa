@@ -26,7 +26,6 @@
 (require 'jabber-core)
 (require 'jabber-alert)
 (require 'jabber-chatbuffer)
-(require 'jabber-history)
 (require 'jabber-menu)                  ;we need jabber-jid-chat-menu
 (require 'ewoc)
 (require 'goto-addr)

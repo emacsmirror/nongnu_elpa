@@ -39,15 +39,9 @@
 (eval-when-compile (require 'cl-lib))
 
 ;; Global reference declarations
-(declare-function jabber-history-backlog "jabber-history.el"
-                  (jid &optional before))
-(declare-function jabber-history-filename "jabber-history.el" (contact))
 (declare-function jabber-xml-child-with-xmlns "jabber-xml.el"
                   (node xmlns))
 (declare-function jabber-muc-joined-p "jabber-muc" (group))
-(defvar jabber-history-dir)             ; jabber-history.el
-(defvar jabber-use-global-history)      ; jabber-history.el
-(defvar jabber-global-history-filename) ; jabber-history.el
 (defvar jabber-chatting-with)           ; jabber-chat.el
 (defvar jabber-chat-send-hooks)        ; jabber-chat.el
 (defvar jabber-chat-encryption)        ; jabber-chatbuffer.el
@@ -559,13 +553,39 @@ TYPE is the message type."
      (floor (float-time)))))
 
 ;;; History import
+;;
+;; One-time migration from the legacy flat-file history format
+;; (formerly in jabber-history.el) into the SQLite database.
+
+(defcustom jabber-history-dir
+  (locate-user-emacs-file "jabber-history" ".emacs-jabber")
+  "Base directory where per-contact history files are stored.
+Used only when `jabber-use-global-history' is nil."
+  :group 'jabber-db
+  :type 'directory)
+
+(defcustom jabber-global-history-filename
+  (locate-user-emacs-file "jabber-global-message-log"
+                          ".jabber_global_message_log")
+  "Global file where all messages are logged.
+Used when `jabber-use-global-history' is non-nil."
+  :group 'jabber-db
+  :type 'file)
+
+(defcustom jabber-use-global-history
+  (file-exists-p jabber-global-history-filename)
+  "Whether to use a global file for message history.
+If non-nil, `jabber-global-history-filename' is used, otherwise,
+messages are stored in per-user files under the
+`jabber-history-dir' directory."
+  :group 'jabber-db
+  :type 'boolean)
 
 (defun jabber-db-import-history ()
   "Import message history from flat files into the SQLite database.
 Reads from either the global history file or per-user history
 files, depending on the value of `jabber-use-global-history'."
   (interactive)
-  (require 'jabber-history)
   (jabber-db-ensure-open)
   (let ((files (if jabber-use-global-history
                    (when (file-readable-p jabber-global-history-filename)
