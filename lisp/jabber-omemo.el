@@ -44,6 +44,8 @@
 (declare-function jabber-send-sexp "jabber-core")
 (declare-function jabber-chat--msg-plist-from-stanza "jabber-chat")
 (declare-function jabber-maybe-print-rare-time "jabber-chat")
+(declare-function jabber-httpupload--upload "jabber-httpupload")
+(declare-function jabber-httpupload--send-url "jabber-httpupload")
 
 (defvar jabber-post-connect-hooks)
 (defvar jabber-pre-disconnect-hook)
@@ -997,6 +999,53 @@ publishes our bundle, and pre-fetches sessions for open chat buffers."
   (clrhash jabber-omemo--device-lists)
   (clrhash jabber-omemo--sessions))
 
+;;; XEP-0454: aesgcm file upload
+
+(defun jabber-omemo--httpupload-around (orig-fn jc filepath callback)
+  "Advice around `jabber-httpupload--upload' for aesgcm encryption.
+When the current buffer has OMEMO active, encrypt the file with
+AES-256-GCM before uploading.  The CALLBACK receives an aesgcm://
+URL instead of an https:// URL."
+  (if (eq jabber-chat-encryption 'omemo)
+      (let* ((plaintext (with-temp-buffer
+                          (set-buffer-multibyte nil)
+                          (insert-file-contents-literally filepath)
+                          (buffer-string)))
+             (enc (jabber-omemo-aesgcm-encrypt plaintext))
+             (key (plist-get enc :key))
+             (iv (plist-get enc :iv))
+             (ciphertext (plist-get enc :ciphertext))
+             (tmp (make-temp-file "jabber-aesgcm-" nil
+                                  (file-name-extension filepath t))))
+        (with-temp-file tmp
+          (set-buffer-multibyte nil)
+          (insert ciphertext))
+        (funcall orig-fn jc tmp
+                 (lambda (get-url)
+                   (ignore-errors (delete-file tmp))
+                   (funcall callback
+                            (jabber-omemo--build-aesgcm-url
+                             get-url iv key)))))
+    (funcall orig-fn jc filepath callback)))
+
+(defun jabber-omemo--httpupload-send-url-around (orig-fn jc jid get-url)
+  "Advice around `jabber-httpupload--send-url' for OMEMO.
+When GET-URL is an aesgcm:// URL, send it as an OMEMO-encrypted
+message instead of plaintext with OOB."
+  (if (string-prefix-p "aesgcm://" get-url)
+      (if (bound-and-true-p jabber-group)
+          (jabber-omemo--send-muc jc get-url)
+        (jabber-omemo--ensure-sessions
+         jc (jabber-jid-user jid)
+         (lambda (recipient-sessions)
+           (jabber-omemo--ensure-sessions
+            jc (jabber-connection-bare-jid jc)
+            (lambda (own-sessions)
+              (jabber-omemo--send-encrypted
+               jc get-url jid
+               (append recipient-sessions own-sessions)))))))
+    (funcall orig-fn jc jid get-url)))
+
 ;;; Disco and PubSub registration
 
 (jabber-disco-advertise-feature jabber-omemo-xmlns)
@@ -1009,6 +1058,12 @@ publishes our bundle, and pre-fetches sessions for open chat buffers."
 (with-eval-after-load "jabber-core"
   (add-hook 'jabber-post-connect-hooks #'jabber-omemo-on-connect)
   (add-hook 'jabber-pre-disconnect-hook #'jabber-omemo--on-disconnect))
+
+(advice-add 'jabber-httpupload--upload :around
+            #'jabber-omemo--httpupload-around)
+
+(advice-add 'jabber-httpupload--send-url :around
+            #'jabber-omemo--httpupload-send-url-around)
 
 (advice-add 'jabber-chat--decrypt-if-needed :around
             #'jabber-omemo--decrypt-if-needed '((depth . 10)))
