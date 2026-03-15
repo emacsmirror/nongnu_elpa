@@ -178,7 +178,7 @@
 	(jabber-activity--updating nil)
 	(jabber-activity-update-hook nil))
     (jabber-activity-mode-line-update)
-    (should (string-match-p ", \\+2\\'" jabber-activity-mode-string))
+    (should (string-match-p ", \\+2\\]\\'" jabber-activity-mode-string))
     (should (string= jabber-activity-count-string "4"))))
 
 (ert-deftest jabber-activity-test-no-cutoff ()

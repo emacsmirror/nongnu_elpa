@@ -270,15 +270,15 @@ Results are cached in `jabber-activity--shortened-names'."
       (jabber-muc-find-buffer jid)))
 
 (defun jabber-activity-show-p-default (jid)
-  "Return non-nil if JID should be hidden.
-A JID should be hidden when there is an invisible buffer for JID,
-and JID is not in `jabber-activity-banned'."
+  "Return non-nil if JID should be shown in the mode line.
+A JID is shown when it is not banned and its buffer (if any) is
+not currently visible."
   (let ((buffer (jabber-activity-find-buffer-name jid)))
-    (and (buffer-live-p buffer)
-	 (not (get-buffer-window buffer 'visible))
-         (not (cl-dolist (entry jabber-activity-banned)
-                (when (string-match entry jid)
-                  (cl-return t)))))))
+    (and (not (cl-dolist (entry jabber-activity-banned)
+               (when (string-match entry jid)
+                 (cl-return t))))
+	 (or (null buffer)
+	     (not (get-buffer-window buffer 'visible))))))
 
 (defun jabber-activity-make-name-alist (&optional _jc)
   "Rebuild `jabber-activity-name-alist' based on currently known JIDs."
@@ -337,9 +337,11 @@ Recomputes `jabber-activity-mode-string' and
 	   (new-mode-string
 	    (if jabber-activity-jids
 		(concat
+		 "["
 		 (mapconcat #'jabber-activity--propertize-entry visible ",")
 		 (when overflow
-		   (format ", +%d" overflow)))
+		   (format ", +%d" overflow))
+		 "]")
 	      ""))
 	   (new-count-string (number-to-string total))
 	   (changed nil))
