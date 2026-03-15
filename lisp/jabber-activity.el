@@ -43,6 +43,7 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'seq)
 (require 'jabber-core)
 (require 'jabber-util)
 
@@ -69,7 +70,23 @@ The default function returns the nick of the user."
   "Length of the strings returned by `jabber-activity-make-strings-shorten'.
 All strings returned by `jabber-activity-make-strings-shorten' will be
 at least this long, when possible."
-  :type 'number)
+  :type 'number
+  :group 'jabber-activity)
+
+(defcustom jabber-activity-shorten-cutoff nil
+  "Maximum number of JIDs to display in the mode line.
+When non-nil and more JIDs are active than this number, only the
+first CUTOFF entries are shown followed by \", +N\"."
+  :type '(choice (const :tag "No limit" nil)
+		 (integer :tag "Maximum entries"))
+  :group 'jabber-activity)
+
+(defcustom jabber-activity-shorten-aggressively nil
+  "If non-nil, shorten names more aggressively.
+When set, names may use prefixes shorter than
+`jabber-activity-shorten-minimum' as long as they remain unique."
+  :type 'boolean
+  :group 'jabber-activity)
 
 (defcustom jabber-activity-make-strings #'jabber-activity-make-strings-default
   "Function which should return an alist of JID -> string when given a list of
@@ -204,12 +221,17 @@ private MUC conversations, return the user's nickname."
 This is acquired by running `jabber-activity-make-string' on
 JIDS, and then shortening the names as much as possible such that
 all strings still are unique and at least
-`jabber-activity-shorten-minimum' long."
+`jabber-activity-shorten-minimum' long.
+When `jabber-activity-shorten-aggressively' is non-nil, the
+minimum length constraint is relaxed to 1."
   (let ((alist
 	 (sort (mapcar
-		#'(lambda (x) (cons x (funcall jabber-activity-make-string x)))
+		(lambda (x) (cons x (funcall jabber-activity-make-string x)))
 		jids)
-	       #'(lambda (x y) (string-lessp (cdr x) (cdr y))))))
+	       (lambda (x y) (string-lessp (cdr x) (cdr y)))))
+	(min-len (if jabber-activity-shorten-aggressively
+		     1
+		   jabber-activity-shorten-minimum)))
     (cl-loop
      for ((_prev-jid . prev) (cur-jid . cur) (_next-jid . next))
      on (cons nil alist)
@@ -220,7 +242,7 @@ all strings still are unique and at least
       (substring
        cur
        0 (min (length cur)
-	      (max jabber-activity-shorten-minimum
+	      (max min-len
 		   (1+ (jabber-activity-common-prefix cur prev))
 		   (1+ (jabber-activity-common-prefix cur next)))))))))
 
@@ -287,16 +309,23 @@ Recomputes `jabber-activity-mode-string' and
 `jabber-activity-count-string' from `jabber-activity-jids'."
   (unless jabber-activity--updating
     (let* ((jabber-activity--updating t)
+	   (entries (mapcar #'jabber-activity-lookup-name
+			    jabber-activity-jids))
+	   (total (length entries))
+	   (overflow (when (and jabber-activity-shorten-cutoff
+			       (> total jabber-activity-shorten-cutoff))
+		       (- total jabber-activity-shorten-cutoff)))
+	   (visible (if overflow
+			(seq-take entries jabber-activity-shorten-cutoff)
+		      entries))
 	   (new-mode-string
 	    (if jabber-activity-jids
-		(mapconcat
-		 #'jabber-activity--propertize-entry
-		 (mapcar #'jabber-activity-lookup-name
-			 jabber-activity-jids)
-		 ",")
+		(concat
+		 (mapconcat #'jabber-activity--propertize-entry visible ",")
+		 (when overflow
+		   (format ", +%d" overflow)))
 	      ""))
-	   (new-count-string
-	    (number-to-string (length jabber-activity-jids)))
+	   (new-count-string (number-to-string total))
 	   (changed nil))
       (unless (equal-including-properties jabber-activity-mode-string
 					  new-mode-string)
