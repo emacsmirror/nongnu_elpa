@@ -168,18 +168,19 @@ Optional argument GROUP to look."
 (defun jabber-muc-nick-completion-at-point ()
   "Nick completion function for `completion-at-point'."
   ;; largely cribbed from rcirc.el
-    (let* ((line-begin (line-beginning-position))
+    (let* ((completion-begin (max (line-beginning-position)
+				   (or jabber-point-insert (point-min))))
 	   (group jabber-group)
 	   (beg (save-excursion
                   ;; On some networks it is common to message or
                   ;; mention someone using @nick instead of just
                   ;; nick.
-                  (if (re-search-backward "[[:space:]@]" line-begin t)
+                  (if (re-search-backward "[[:space:]@]" completion-begin t)
                       (1+ (point))
-                    line-begin)))
+                    completion-begin)))
            (table (mapcar
                    (lambda (str)
-                     (if (= beg line-begin)
+                     (if (= beg completion-begin)
 			 (concat str jabber-muc-completion-delimiter)
 		       str))
                    (jabber-muc-nicknames))))
