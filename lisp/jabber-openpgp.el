@@ -340,7 +340,7 @@ Fetches missing recipient keys via PubSub before encrypting."
                      (list recipient) body))
          (encrypted (jabber-openpgp--encrypt
                      jc inner-xml (list recipient) t))
-         (id (apply #'format "emacs-msg-%d.%d.%d" (current-time)))
+         (id (format "emacs-msg-%.6f" (float-time)))
          (stanza `(message ((to . ,jabber-chatting-with)
                             (type . "chat")
                             (id . ,id))

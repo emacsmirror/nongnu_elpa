@@ -519,7 +519,7 @@ splice into the stanza after the body (e.g. OOB, hints)."
                      (jabber-openpgp-legacy--send-chat jc body))
     (_
      ;; Build the stanza...
-     (let* ((id (apply #'format "emacs-msg-%d.%d.%d" (current-time)))
+     (let* ((id (format "emacs-msg-%.6f" (float-time)))
 	    (stanza-to-send `(message
 			      ((to . ,jabber-chatting-with)
 			       (type . "chat")

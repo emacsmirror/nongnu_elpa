@@ -805,7 +805,7 @@ for recipient + own other devices."
          (enc-result (jabber-omemo-encrypt-message plaintext))
          (encrypted-xml (jabber-omemo--build-encrypted-xml
                          jc all-sessions enc-result))
-         (id (apply #'format "emacs-msg-%d.%d.%d" (current-time)))
+         (id (format "emacs-msg-%.6f" (float-time)))
          (stanza `(message ((to . ,jabber-chatting-with)
                             (type . "chat")
                             (id . ,id))
@@ -854,7 +854,7 @@ No local echo: the MUC server mirrors the message back."
          (enc-result (jabber-omemo-encrypt-message plaintext))
          (encrypted-xml (jabber-omemo--build-encrypted-xml
                          jc all-sessions enc-result))
-         (id (apply #'format "emacs-msg-%d.%d.%d" (current-time)))
+         (id (format "emacs-msg-%.6f" (float-time)))
          (stanza `(message ((to . ,group)
                             (type . "groupchat")
                             (id . ,id))
