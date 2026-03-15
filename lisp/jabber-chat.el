@@ -1004,7 +1004,7 @@ with the created image (or nil) followed by CBARGS."
                                           key iv encrypted)
                                        (error nil))))
                       (when plaintext
-                        (let ((img (create-image plaintext nil t)))
+                        (when-let* ((img (create-image plaintext nil t)))
                           (setf (image-property img :max-width)
                                 jabber-image-max-width)
                           (setf (image-property img :max-height)
