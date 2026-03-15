@@ -311,6 +311,7 @@ ENTRY is a (JID . name) cons cell from `jabber-activity-lookup-name'."
      'face (if (member jid jabber-activity-personal-jids)
 	       'jabber-activity-personal-face
 	     'jabber-activity-face)
+     'jabber-modeline t
      'local-map (make-mode-line-mouse-map
 		 'mouse-1 (lambda ()
 			    (interactive "@")
@@ -337,11 +338,12 @@ Recomputes `jabber-activity-mode-string' and
 	   (new-mode-string
 	    (if jabber-activity-jids
 		(concat
-		 "["
-		 (mapconcat #'jabber-activity--propertize-entry visible ",")
+		 (propertize "[" 'jabber-modeline t)
+		 (mapconcat #'jabber-activity--propertize-entry visible
+			    (propertize "," 'jabber-modeline t))
 		 (when overflow
-		   (format ", +%d" overflow))
-		 "]")
+		   (propertize (format ", +%d" overflow) 'jabber-modeline t))
+		 (propertize "]" 'jabber-modeline t))
 	      ""))
 	   (new-count-string (number-to-string total))
 	   (changed nil))
