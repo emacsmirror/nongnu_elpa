@@ -29,6 +29,9 @@
 (defvar *jabber-open-info-queries* nil
   "Alist of open query id and their callback functions.")
 
+(defvar jabber--iq-counter 0
+  "Monotonic counter for generating unique IQ stanza IDs.")
+
 (defvar jabber-iq-get-xmlns-alist nil
   "Mapping from XML namespace to handler for IQ GET requests.")
 
@@ -124,7 +127,7 @@ RESULT-ID is the id to be used for a response to a received iq message.
 The callback functions are called like this:
 \(funcall CALLBACK JC XML-DATA CLOSURE-DATA)
 with XML-DATA being the IQ stanza received in response. "
-  (let ((id (or result-id (apply #'format "emacs-iq-%d.%d.%d" (current-time)))))
+  (let ((id (or result-id (format "emacs-iq-%d" (cl-incf jabber--iq-counter)))))
     (if (or success-callback error-callback)
 	(setq *jabber-open-info-queries* (cons (list id
 						     (cons success-callback success-closure-data)
