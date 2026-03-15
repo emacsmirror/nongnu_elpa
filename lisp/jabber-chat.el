@@ -995,6 +995,7 @@ with the created image (or nil) followed by CBARGS."
          (let ((url-buffer (current-buffer))
                (image
                 (unless (plist-get status :error)
+                  (set-buffer-multibyte nil)
                   (goto-char (point-min))
                   (when (re-search-forward "\r?\n\r?\n" nil t)
                     (let* ((encrypted (buffer-substring-no-properties
@@ -1004,12 +1005,15 @@ with the created image (or nil) followed by CBARGS."
                                           key iv encrypted)
                                        (error nil))))
                       (when plaintext
-                        (when-let* ((img (create-image plaintext nil t)))
-                          (setf (image-property img :max-width)
-                                jabber-image-max-width)
-                          (setf (image-property img :max-height)
-                                jabber-image-max-height)
-                          img)))))))
+                        (let ((img (create-image plaintext nil t)))
+                          (if (null img)
+                              (message "aesgcm: failed to create image (%d bytes decrypted)"
+                                       (length plaintext))
+                            (setf (image-property img :max-width)
+                                  jabber-image-max-width)
+                            (setf (image-property img :max-height)
+                                  jabber-image-max-height)
+                            img))))))))
            (kill-buffer url-buffer)
            (apply cb image args)))
        (list (plist-get parsed :key) (plist-get parsed :iv)
