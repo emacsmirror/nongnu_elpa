@@ -145,26 +145,11 @@ It can be sent and cancelled several times.")
 
        (t
 	(let ((state
-	       (or
-		(let ((node
-		       (cl-find jabber-chatstates-xmlns
-			        (jabber-xml-node-children xml-data)
-			        :key #'(lambda (x) (jabber-xml-get-attribute x 'xmlns))
-			        :test #'string=)))
-		  (jabber-xml-node-name node))
-		(let ((node
-		       ;; XXX: this is how we interoperate with
-		       ;; Google Talk.  We should really use a
-		       ;; namespace-aware XML parser.
-		       (cl-find jabber-chatstates-xmlns
-			        (jabber-xml-node-children xml-data)
-			        :key #'(lambda (x) (jabber-xml-get-attribute x 'xmlns:cha))
-			        :test #'string=)))
-		  (when node
-		    ;; Strip the "cha:" prefix
-		    (let ((name (symbol-name (jabber-xml-node-name node))))
-		      (when (> (length name) 4)
-			(intern (substring name 4)))))))))
+	       (jabber-xml-node-name
+		(cl-find jabber-chatstates-xmlns
+			 (jabber-xml-node-children xml-data)
+			 :key (lambda (x) (jabber-xml-get-attribute x 'xmlns))
+			 :test #'string=))))
 	  ;; Set up hooks for composition notification
 	  (when (and jabber-chatstates-confirm state)
 	    (setq jabber-chatstates-requested t)
