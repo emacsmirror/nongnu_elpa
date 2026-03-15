@@ -174,6 +174,7 @@ problems."
                   (fsm xml-data))
 (declare-function jabber-starttls-initiate "jabber-conn.el" (fsm))
 (declare-function jabber-mode-line-presence-update "jabber-modeline.el" (&rest _))
+(declare-function jabber-get-bookmarks "jabber-bookmarks.el" (jc cont &optional refresh))
 (defvar jabber-debug-keep-process-buffers) ; jabber.el
 (defvar jabber-silent-mode)             ; jabber.el
 (defvar jabber-account-list)            ; jabber.el
@@ -770,6 +771,8 @@ With double prefix argument, specify more connection details."
 		  `(query ((xmlns . ,jabber-roster-xmlns)))
 		  #'jabber-process-roster 'initial
 		  #'jabber-initial-roster-failure nil)
+  ;; Prefetch bookmarks in parallel so jabber-muc-autojoin hits cache.
+  (jabber-get-bookmarks fsm #'ignore)
   (list (plist-put state-data :ever-session-established t) nil))
 
 (define-state jabber-connection :session-established
