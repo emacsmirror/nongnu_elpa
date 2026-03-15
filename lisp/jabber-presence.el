@@ -55,6 +55,7 @@ stanza.")
 (declare-function jabber-roster-update "jabber-roster.el"
                   (jc new-items changed-items deleted-items))
 (declare-function jabber-chat-create-buffer "jabber-chat.el" (jc chat-with))
+(declare-function jabber-chat-get-buffer "jabber-chat.el" (chat-with &optional jc))
 (declare-function jabber-muc-get-buffer "jabber-muc.el" (group &optional jc))
 (declare-function jabber-muc-process-presence "jabber-muc.el" (jc presence))
 (declare-function jabber-muc-presence-p "jabber-muc.el" (presence))
@@ -285,6 +286,8 @@ obtained from `xml-parse-region'."
       (jabber-muc-process-presence jc xml-data))
 
      (t
+      ;; Clean up any stale subscription request prompts for this JID.
+      (jabber-subscription--remove-stale jc from)
       ;; XXX: Think about what to do about out-of-roster presences.
       (let ((buddy (jabber-jid-symbol from)))
         (when (memq buddy roster)
@@ -332,10 +335,35 @@ JC is the Jabber connection."
   (message "Subscription declined")
   (jabber-subscription-reply "unsubscribed"))
 
+(defun jabber-subscription--remove-prompt ()
+  "Remove the subscription request EWOC node at point."
+  (when (bound-and-true-p jabber-chat-ewoc)
+    (let ((inhibit-read-only t)
+          (node (ewoc-locate jabber-chat-ewoc)))
+      (when (and node (eq :subscription-request (car (ewoc-data node))))
+        (ewoc-delete jabber-chat-ewoc node)))))
+
+(defun jabber-subscription--remove-stale (jc from)
+  "Remove all subscription request nodes from FROM's chat buffer.
+JC is the Jabber connection."
+  (when-let* ((buf (get-buffer (jabber-chat-get-buffer from jc))))
+    (with-current-buffer buf
+      (when (bound-and-true-p jabber-chat-ewoc)
+        (let ((inhibit-read-only t)
+              (node (ewoc-nth jabber-chat-ewoc 0))
+              to-delete)
+          (while node
+            (when (eq :subscription-request (car (ewoc-data node)))
+              (push node to-delete))
+            (setq node (ewoc-next jabber-chat-ewoc node)))
+          (dolist (n to-delete)
+            (ewoc-delete jabber-chat-ewoc n)))))))
+
 (defun jabber-subscription-reply (&rest types)
   (let ((to (jabber-jid-user jabber-chatting-with)))
     (dolist (type types)
-      (jabber-send-sexp jabber-buffer-connection `(presence ((to . ,to) (type . ,type)))))))
+      (jabber-send-sexp jabber-buffer-connection `(presence ((to . ,to) (type . ,type))))))
+  (jabber-subscription--remove-prompt))
 
 (defun jabber-prioritize-resources (buddy)
   "Set connected, show and status properties for BUDDY.
