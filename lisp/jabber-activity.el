@@ -172,6 +172,10 @@ It is called after `jabber-activity-mode-string' and
   "Non-nil while `jabber-activity-mode-line-update' is running.
 Prevents recursive calls from hooks triggered during an update.")
 
+(defvar jabber-activity--shortened-names (make-hash-table :test #'equal)
+  "Cache mapping sorted JID lists to shortened name alists.
+Invalidated when `jabber-activity-make-name-alist' rebuilds.")
+
 ;; Protect this variable from being set in Local variables etc.
 (put 'jabber-activity-mode-string 'risky-local-variable t)
 (put 'jabber-activity-count-string 'risky-local-variable t)
@@ -216,14 +220,10 @@ private MUC conversations, return the user's nickname."
 	;; Substrings, equal, nil, or empty ("")
 	len)))
 
-(defun jabber-activity-make-strings-shorten (jids)
-  "Return an alist of (JID . short-names).
-This is acquired by running `jabber-activity-make-string' on
-JIDS, and then shortening the names as much as possible such that
-all strings still are unique and at least
-`jabber-activity-shorten-minimum' long.
-When `jabber-activity-shorten-aggressively' is non-nil, the
-minimum length constraint is relaxed to 1."
+(defun jabber-activity--compute-shortening (jids)
+  "Compute shortened names for JIDS.
+Return an alist of (JID . short-name).  This is the uncached
+workhorse for `jabber-activity-make-strings-shorten'."
   (let ((alist
 	 (sort (mapcar
 		(lambda (x) (cons x (funcall jabber-activity-make-string x)))
@@ -245,6 +245,20 @@ minimum length constraint is relaxed to 1."
 	      (max min-len
 		   (1+ (jabber-activity-common-prefix cur prev))
 		   (1+ (jabber-activity-common-prefix cur next)))))))))
+
+(defun jabber-activity-make-strings-shorten (jids)
+  "Return an alist of (JID . short-names).
+This is acquired by running `jabber-activity-make-string' on
+JIDS, and then shortening the names as much as possible such that
+all strings still are unique and at least
+`jabber-activity-shorten-minimum' long.
+When `jabber-activity-shorten-aggressively' is non-nil, the
+minimum length constraint is relaxed to 1.
+Results are cached in `jabber-activity--shortened-names'."
+  (let ((key (sort (copy-sequence jids) #'string-lessp)))
+    (or (gethash key jabber-activity--shortened-names)
+	(puthash key (jabber-activity--compute-shortening jids)
+		 jabber-activity--shortened-names))))
 
 (defun jabber-activity-find-buffer-name (jid)
   "Find the buffer that messages from JID would use, or nil."
@@ -271,7 +285,8 @@ and JID is not in `jabber-activity-banned'."
   (let ((jids (or (mapcar #'car jabber-activity-name-alist)
 		  (mapcar #'symbol-name *jabber-roster*))))
     (setq jabber-activity-name-alist
-	  (funcall jabber-activity-make-strings jids))))
+	  (funcall jabber-activity-make-strings jids)))
+  (clrhash jabber-activity--shortened-names))
 
 (defun jabber-activity-lookup-name (jid)
   "Lookup JID in `jabber-activity-name-alist'.
@@ -284,6 +299,7 @@ an entry if needed."
 	  (setq jabber-activity-name-alist
 		(funcall jabber-activity-make-strings
 		         (cons jid (mapcar #'car jabber-activity-name-alist))))
+	  (clrhash jabber-activity--shortened-names)
 	  (jabber-activity-lookup-name jid)))))
 
 (defun jabber-activity--propertize-entry (entry)
