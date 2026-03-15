@@ -240,7 +240,7 @@ and JID is not in `jabber-activity-banned'."
                 (when (string-match entry jid)
                   (cl-return t)))))))
 
-(defun jabber-activity-make-name-alist ()
+(defun jabber-activity-make-name-alist (&optional _jc)
   "Rebuild `jabber-activity-name-alist' based on currently known JIDs."
   (let ((jids (or (mapcar #'car jabber-activity-name-alist)
 		  (mapcar #'symbol-name *jabber-roster*))))
