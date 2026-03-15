@@ -20,7 +20,7 @@
 ;; along with this program; if not, write to the Free Software
 ;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
-(require 'dbus nil t)
+(require 'dbus)
 (eval-when-compile (require 'jabber-alert))
 
 (defcustom jabber-libnotify-icon ""
@@ -51,14 +51,6 @@
                  (const :tag "Critical" "critical"))
   :group 'jabber-alerts)
 
-(defcustom jabber-libnotify-method (if (featurep 'dbus) 'dbus 'shell)
-  "Specifies the method for libnotify call.
-Dbus is faster but require emacs23+, use shell as a fallback."
-  ;; TODO: why the distinction now that jabber.el requires Emacs version 27.1?
-  :type '(choice (const :tag "Shell" shell)
-                 (const :tag "D-Bus" dbus))
-  :group 'jabber-alerts)
-
 (defvar jabber-libnotify-id 0)
 
 ;; Global reference declarations
@@ -79,31 +71,19 @@ Dbus is faster but require emacs23+, use shell as a fallback."
               (or title
                   (or jabber-libnotify-message-header " ")
                   text))))
-    ;; Possible errors include not finding the notify-send binary.
-    (condition-case nil
-        (cond
-         ((eq jabber-libnotify-method 'shell)
-          (let ((process-connection-type nil))
-            (start-process "notification" nil "notify-send"
-                           "-t" (format "%s" jabber-libnotify-timeout)
-                           "-i" (or jabber-libnotify-icon "\"\"")
-                           "-u" jabber-libnotify-urgency
-                           head body)))
-         ((eq jabber-libnotify-method 'dbus)
-          (dbus-call-method
-           :session                                 ; use the session (not system) bus
-           "org.freedesktop.Notifications"          ; service name
-           "/org/freedesktop/Notifications"         ; path name
-           "org.freedesktop.Notifications" "Notify" ; Method
-           jabber-libnotify-app
-           (jabber-libnotify-next-id)
-           jabber-libnotify-icon
-           ':string (encode-coding-string head 'utf-8)
-           ':string (encode-coding-string body 'utf-8)
-           '(:array)
-           '(:array :signature "{sv}")
-           ':int32 jabber-libnotify-timeout)))
-      (error nil))))
+    (dbus-call-method
+     :session                                 ; use the session (not system) bus
+     "org.freedesktop.Notifications"          ; service name
+     "/org/freedesktop/Notifications"         ; path name
+     "org.freedesktop.Notifications" "Notify" ; Method
+     jabber-libnotify-app
+     (jabber-libnotify-next-id)
+     jabber-libnotify-icon
+     ':string (encode-coding-string head 'utf-8)
+     ':string (encode-coding-string body 'utf-8)
+     '(:array)
+     '(:array :signature "{sv}")
+     ':int32 jabber-libnotify-timeout)))
 
 (define-jabber-alert libnotify "Show a message through the libnotify interface"
   'jabber-libnotify-message)
