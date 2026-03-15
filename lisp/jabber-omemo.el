@@ -1015,8 +1015,7 @@ URL instead of an https:// URL."
              (key (plist-get enc :key))
              (iv (plist-get enc :iv))
              (ciphertext (plist-get enc :ciphertext))
-             (tmp (make-temp-file "jabber-aesgcm-" nil
-                                  (file-name-extension filepath t))))
+             (tmp (make-temp-file "jabber-aesgcm-")))
         (with-temp-file tmp
           (set-buffer-multibyte nil)
           (insert ciphertext))

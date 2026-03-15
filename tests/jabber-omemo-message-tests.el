@@ -262,5 +262,24 @@ Clears OMEMO in-memory caches and tears down on exit."
     (should (string= key (plist-get parsed :key)))
     (should (string= "https://host/f.jpg" (plist-get parsed :https-url)))))
 
+(ert-deftest jabber-omemo-message-test-aesgcm-file-round-trip ()
+  "Encrypt file contents, build URL, parse URL, decrypt, compare."
+  (let* ((original "This is test file content with UTF-8: café")
+         (plaintext (encode-coding-string original 'utf-8))
+         (enc (jabber-omemo-aesgcm-encrypt plaintext))
+         (url (jabber-omemo--build-aesgcm-url
+               "https://upload.example.org/abc/test.txt"
+               (plist-get enc :iv)
+               (plist-get enc :key)))
+         (parsed (jabber-chat--parse-aesgcm-url url))
+         (decrypted (jabber-omemo-aesgcm-decrypt
+                     (plist-get parsed :key)
+                     (plist-get parsed :iv)
+                     (plist-get enc :ciphertext))))
+    (should (string= plaintext decrypted))
+    (should (string-prefix-p "aesgcm://" url))
+    (should (string= "https://upload.example.org/abc/test.txt"
+                      (plist-get parsed :https-url)))))
+
 (provide 'jabber-omemo-message-tests)
 ;;; jabber-omemo-message-tests.el ends here
