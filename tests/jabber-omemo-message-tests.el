@@ -2,6 +2,7 @@
 
 (require 'ert)
 (require 'jabber-omemo)
+(require 'jabber-chat)
 
 ;;; Test infrastructure
 
@@ -239,6 +240,27 @@ Clears OMEMO in-memory caches and tears down on exit."
                                    decrypted-key iv ciphertext))
                  (decrypted-text (decode-coding-string decrypted-bytes 'utf-8)))
             (should (string= plaintext decrypted-text))))))))
+
+;;; Group 8: aesgcm URL construction
+
+(ert-deftest jabber-omemo-message-test-build-aesgcm-url ()
+  "Build aesgcm:// URL from HTTPS URL, IV, and key."
+  (let* ((iv (decode-hex-string "8c3d050e9386ec173861778f"))
+         (key (decode-hex-string "68e9af38a97aaf82faa4063b4d0878a61261534410c8a84331eaac851759f587"))
+         (url (jabber-omemo--build-aesgcm-url
+               "https://download.example.org/file.jpg" iv key)))
+    (should (string= url "aesgcm://download.example.org/file.jpg#8c3d050e9386ec173861778f68e9af38a97aaf82faa4063b4d0878a61261534410c8a84331eaac851759f587"))))
+
+(ert-deftest jabber-omemo-message-test-aesgcm-url-round-trip ()
+  "Build URL then parse it back, recovering same IV and key."
+  (let* ((enc (jabber-omemo-aesgcm-encrypt (make-string 100 ?x)))
+         (iv (plist-get enc :iv))
+         (key (plist-get enc :key))
+         (url (jabber-omemo--build-aesgcm-url "https://host/f.jpg" iv key))
+         (parsed (jabber-chat--parse-aesgcm-url url)))
+    (should (string= iv (plist-get parsed :iv)))
+    (should (string= key (plist-get parsed :key)))
+    (should (string= "https://host/f.jpg" (plist-get parsed :https-url)))))
 
 (provide 'jabber-omemo-message-tests)
 ;;; jabber-omemo-message-tests.el ends here
