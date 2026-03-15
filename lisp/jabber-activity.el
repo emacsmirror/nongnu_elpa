@@ -151,6 +151,10 @@ there are unread messages which otherwise would be lost."
 It is called after `jabber-activity-mode-string' and
 `jabber-activity-count-string' are updated.")
 
+(defvar jabber-activity--updating nil
+  "Non-nil while `jabber-activity-mode-line-update' is running.
+Prevents recursive calls from hooks triggered during an update.")
+
 ;; Protect this variable from being set in Local variables etc.
 (put 'jabber-activity-mode-string 'risky-local-variable t)
 (put 'jabber-activity-count-string 'risky-local-variable t)
@@ -261,51 +265,48 @@ an entry if needed."
 	  (jabber-activity-lookup-name jid)))))
 
 (defun jabber-activity-mode-line-update ()
-  "Update the string shown in the mode line using `jabber-activity-make-string'.
-Update the string shown in the mode line using `jabber-activity-make-string'
-on JIDs where `jabber-activity-show-p'.  Optional not-nil GROUP mean that
-message come from MUC.
-Optional TEXT used with one-to-one or MUC chats and may be used to identify
-personal MUC message.
-Optional PRESENCE mean personal presence request or alert."
-  (setq jabber-activity-mode-string
-  	(if jabber-activity-jids
-	    (mapconcat
-	     (lambda (x)
-	       (let ((jump-to-jid (car x)))
-		 (propertize
-		  (cdr x)
-		  'face (if (member jump-to-jid jabber-activity-personal-jids)
-			    'jabber-activity-personal-face
-			  'jabber-activity-face)
-		  'local-map (make-mode-line-mouse-map
-			      'mouse-1 (lambda ()
-					 (interactive "@")
-					 (jabber-activity-switch-to
-					  jump-to-jid)))
-		  'help-echo (concat "Jump to "
-				     (jabber-jid-displayname (car x))
-				     "'s buffer"))))
-	     (mapcar #'jabber-activity-lookup-name
-		     jabber-activity-jids)
-	     ",")
-	  ""))
-  (setq jabber-activity-count-string
-	(number-to-string (length jabber-activity-jids)))
-  (force-mode-line-update 'all)
-  (run-hooks 'jabber-activity-update-hook))
+  "Update the string shown in the mode line.
+Recomputes `jabber-activity-mode-string' and
+`jabber-activity-count-string' from `jabber-activity-jids'."
+  (unless jabber-activity--updating
+    (let ((jabber-activity--updating t))
+      (setq jabber-activity-mode-string
+	    (if jabber-activity-jids
+		(mapconcat
+		 (lambda (x)
+		   (let ((jump-to-jid (car x)))
+		     (propertize
+		      (cdr x)
+		      'face (if (member jump-to-jid jabber-activity-personal-jids)
+				'jabber-activity-personal-face
+			      'jabber-activity-face)
+		      'local-map (make-mode-line-mouse-map
+				  'mouse-1 (lambda ()
+					     (interactive "@")
+					     (jabber-activity-switch-to
+					      jump-to-jid)))
+		      'help-echo (concat "Jump to "
+					 (jabber-jid-displayname (car x))
+					 "'s buffer"))))
+		 (mapcar #'jabber-activity-lookup-name
+			 jabber-activity-jids)
+		 ",")
+	      ""))
+      (setq jabber-activity-count-string
+	    (number-to-string (length jabber-activity-jids)))
+      (force-mode-line-update 'all)
+      (run-hooks 'jabber-activity-update-hook))))
 
 ;;; Hooks
 
 (defun jabber-activity-clean ()
-  "Remove JIDs where `jabber-activity-show-p' no longer is true"
+  "Remove JIDs where `jabber-activity-show-p' no longer is true."
   (setq jabber-activity-jids (cl-delete-if-not jabber-activity-show-p
 					       jabber-activity-jids))
   (setq jabber-activity-personal-jids
 	(cl-delete-if-not jabber-activity-show-p
-		       jabber-activity-personal-jids))
-  (ignore-errors
-    (jabber-activity-mode-line-update)))
+			  jabber-activity-personal-jids))
+  (jabber-activity-mode-line-update))
 
 (defun jabber-activity-add (from _buffer _text _proposed-alert)
   "Add a JID to mode line when `jabber-activity-show-p'."
