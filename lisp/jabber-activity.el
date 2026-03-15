@@ -376,6 +376,35 @@ back to the last non Jabber chat buffer used."
 	    (switch-to-buffer jabber-activity-last-buffer))
 	(message "No new activity"))))
 
+(defun jabber-activity--add-to-frame-title ()
+  "Add activity count to `frame-title-format' and `icon-title-format'."
+  (dolist (var '(frame-title-format icon-title-format))
+    (let ((fmt (symbol-value var)))
+      (unless (member jabber-activity-count-in-title-format fmt)
+	(if (equal (car-safe fmt) "")
+	    (set var (cons "" (cons jabber-activity-count-in-title-format
+				   (cdr fmt))))
+	  (set var (list "" jabber-activity-count-in-title-format fmt)))))))
+
+(defun jabber-activity--remove-from-frame-title ()
+  "Remove activity count from `frame-title-format' and `icon-title-format'."
+  (dolist (var '(frame-title-format icon-title-format))
+    (when (listp (symbol-value var))
+      (set var (delete jabber-activity-count-in-title-format
+		       (symbol-value var))))))
+
+(defun jabber-activity--add-to-mode-line ()
+  "Install activity indicators in `global-mode-string' and frame title."
+  (cl-pushnew '(t jabber-activity-mode-string) global-mode-string :test #'equal)
+  (when jabber-activity-count-in-title
+    (jabber-activity--add-to-frame-title)))
+
+(defun jabber-activity--remove-from-mode-line ()
+  "Remove activity indicators from `global-mode-string' and frame title."
+  (setq global-mode-string
+	(delete '(t jabber-activity-mode-string) global-mode-string))
+  (jabber-activity--remove-from-frame-title))
+
 ;;;###autoload
 (define-minor-mode jabber-activity-mode
   "Toggle display of activity in hidden jabber buffers in the mode line.
@@ -399,30 +428,7 @@ With a numeric arg, enable this display if arg is positive."
 		  #'jabber-activity-make-name-alist)
 	(add-hook 'kill-emacs-query-functions
 		  #'jabber-activity-kill-hook)
-	(add-to-list 'global-mode-string
-		     '(t jabber-activity-mode-string))
-	(when jabber-activity-count-in-title
-	  ;; Be careful not to override specific meanings of the
-	  ;; existing title format.  In particular, if the car is
-	  ;; a symbol, we can't just add our stuff at the beginning.
-	  ;; If the car is "", we should be safe.
-	  ;;
-	  ;; In my experience, sometimes the activity count gets
-	  ;; included twice in the title.  I'm not sure exactly why,
-	  ;; but it would be nice to replace the code below with
-	  ;; something cleaner.
-	  (if (equal (car-safe frame-title-format) "")
-	      (add-to-list 'frame-title-format
-			   jabber-activity-count-in-title-format)
-	    (setq frame-title-format (list ""
-					   jabber-activity-count-in-title-format
-					   frame-title-format)))
-	  (if (equal (car-safe icon-title-format) "")
-	      (add-to-list 'icon-title-format
-			 jabber-activity-count-in-title-format)
-	    (setq icon-title-format (list ""
-					    jabber-activity-count-in-title-format
-					    icon-title-format)))))
+	(jabber-activity--add-to-mode-line))
     (progn
       (remove-hook 'window-configuration-change-hook
 		   #'jabber-activity-clean)
@@ -436,16 +442,7 @@ With a numeric arg, enable this display if arg is positive."
 		   #'jabber-activity-clean)
       (remove-hook 'jabber-post-connect-hooks
 		   #'jabber-activity-make-name-alist)
-      (setq global-mode-string (delete '(t jabber-activity-mode-string)
-				       global-mode-string))
-      (when (listp frame-title-format)
-	(setq frame-title-format
-	      (delete jabber-activity-count-in-title-format
-		      frame-title-format)))
-      (when (listp icon-title-format)
-	(setq icon-title-format
-	      (delete jabber-activity-count-in-title-format
-		      icon-title-format))))))
+      (jabber-activity--remove-from-mode-line))))
 
 ;; XXX: define-minor-mode should probably do this for us, but it doesn't.
 (if jabber-activity-mode (jabber-activity-mode 1))
