@@ -2,7 +2,6 @@
 
 (require 'ert)
 (require 'jabber-db)
-(require 'jabber-history)
 
 ;;; Test infrastructure
 
@@ -50,7 +49,7 @@ and tears down on exit."
 (ert-deftest jabber-db-test-schema-version ()
   "The user_version pragma is set to 1 after initialization."
   (jabber-db-test-with-db
-    (should (= 1 (caar (sqlite-select jabber-db--connection
+    (should (= 2 (caar (sqlite-select jabber-db--connection
                                       "PRAGMA user_version"))))))
 
 (ert-deftest jabber-db-test-wal-mode ()
@@ -780,10 +779,10 @@ the corrected jabber-muc-create-buffer order."
             (should (eq 'plaintext jabber-chat-encryption)))
         (kill-buffer buf)))))
 
-(ert-deftest jabber-db-test-muc-buffer-falls-back-to-default ()
-  "MUC buffer uses default when no DB setting exists."
+(ert-deftest jabber-db-test-muc-buffer-falls-back-to-plaintext ()
+  "MUC buffer defaults to plaintext when no DB setting exists."
   (jabber-db-test-with-muc-buffer "me@example.com" "room@conference.example.com"
-    (should (eq 'omemo jabber-chat-encryption))))
+    (should (eq 'plaintext jabber-chat-encryption))))
 
 (ert-deftest jabber-db-test-chat-buffer-without-peer-falls-back ()
   "Buffer without jabber-chatting-with or jabber-group falls back to default."
