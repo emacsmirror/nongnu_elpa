@@ -1131,7 +1131,7 @@ When the image arrives the URL text is deleted and the image inserted."
   (save-excursion
     (let ((inhibit-read-only t)
           (limit (and (markerp jabber-point-insert) jabber-point-insert)))
-      (when jabber-chat-display-images
+      (when (and jabber-chat-display-images (display-graphic-p))
         (goto-char (point-min))
         (while (re-search-forward jabber-chat--image-url-re limit t)
           (unless (get-text-property (match-beginning 0) 'jabber-chat-image-url)
