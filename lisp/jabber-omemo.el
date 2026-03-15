@@ -390,6 +390,26 @@ Fetches the current list, adds our ID if missing, re-publishes."
          (jabber-omemo--publish-device-list
           jc (cons our-id (or ids '()))))))))
 
+(defun jabber-omemo--remove-device (jc device-id &optional callback)
+  "Remove DEVICE-ID from our published device list and delete its bundle.
+Fetches the current list, filters out DEVICE-ID, re-publishes,
+then deletes the bundle PubSub node.  Calls CALLBACK when done."
+  (jabber-omemo--fetch-device-list
+   jc (jabber-connection-bare-jid jc)
+   (lambda (ids)
+     (let ((new-ids (cl-remove device-id ids)))
+       (jabber-omemo--publish-device-list jc new-ids)
+       (message "OMEMO: republished device list without %d (%d -> %d devices)"
+                device-id (length ids) (length new-ids)))
+     (jabber-pubsub-delete-node
+      jc nil (concat jabber-omemo-bundles-node-prefix
+                     (number-to-string device-id))
+      (when callback
+        (lambda (_jc _xml _closure) (funcall callback)))
+      (lambda (_jc xml _closure)
+        (message "OMEMO: failed to delete bundle for %d: %s"
+                 device-id (jabber-xml-path xml '(error))))))))
+
 (defun jabber-omemo--handle-device-list (jc from _node items)
   "Handle incoming PubSub device list notification.
 JC is the connection, FROM is the sender JID, ITEMS is the

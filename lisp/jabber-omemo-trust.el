@@ -36,6 +36,12 @@
 (declare-function jabber-omemo--get-device-id "jabber-omemo")
 (declare-function jabber-omemo--get-store "jabber-omemo")
 (declare-function jabber-omemo-get-bundle "jabber-omemo")
+(declare-function jabber-omemo--fetch-device-list "jabber-omemo"
+                  (jc jid callback))
+(declare-function jabber-omemo--fetch-bundle "jabber-omemo"
+                  (jc jid device-id callback))
+(declare-function jabber-omemo--remove-device "jabber-omemo"
+                  (jc device-id &optional callback))
 (declare-function jabber-connection-bare-jid "jabber-util")
 (declare-function jabber-jid-user "jabber-util")
 (declare-function jabber-read-account "jabber-util")
@@ -59,6 +65,9 @@ Returns the key without the first byte, or as-is if shorter than 2 bytes."
 
 (defvar-local jabber-omemo-trust--peer nil
   "Bare JID of the peer for this trust buffer.")
+
+(defvar-local jabber-omemo-trust--fetched nil
+  "List of entries fetched from server bundles.")
 
 ;;; Mode
 
@@ -96,26 +105,54 @@ Returns the key without the first byte, or as-is if shorter than 2 bytes."
 
 ;;; Entries
 
+(defun jabber-omemo-trust--format-entry (rec)
+  "Format a single trust record REC as a tabulated-list entry."
+  (let ((did (plist-get rec :device-id))
+        (ik (plist-get rec :identity-key))
+        (trust (plist-get rec :trust))
+        (first-seen (plist-get rec :first-seen)))
+    (list did
+          (vector (number-to-string did)
+                  (if trust (jabber-omemo--trust-label trust) "self")
+                  (jabber-omemo--format-fingerprint
+                   (jabber-omemo-trust--strip-key-type ik))
+                  (if first-seen
+                      (format-time-string "%Y-%m-%d %H:%M" first-seen)
+                    "")))))
+
+(defun jabber-omemo-trust--own-device-entry ()
+  "Return an entry for the current device from the OMEMO store, or nil."
+  (when-let* ((jc jabber-omemo-trust--jc)
+              (own-jid (jabber-connection-bare-jid jc))
+              ((string= jabber-omemo-trust--peer own-jid))
+              (store (jabber-omemo--get-store jc))
+              (bundle (jabber-omemo-get-bundle store))
+              (did (jabber-omemo--get-device-id jc))
+              (ik (plist-get bundle :identity-key)))
+    (let* ((entry (jabber-omemo-trust--format-entry
+                    (list :device-id did :identity-key ik
+                          :trust nil :first-seen nil)))
+           (cols (cadr entry)))
+      (aset cols 0 (propertize (aref cols 0)
+                               'face 'jabber-chat-nick-encrypted))
+      entry)))
+
 (defun jabber-omemo-trust--entries ()
-  "Build tabulated-list entries from trust records."
+  "Build tabulated-list entries from trust records and fetched bundles."
   (let ((records (jabber-omemo-store-all-trust
                   jabber-omemo-trust--account
-                  jabber-omemo-trust--peer)))
-    (mapcar (lambda (rec)
-              (let ((did (plist-get rec :device-id))
-                    (ik (plist-get rec :identity-key))
-                    (trust (plist-get rec :trust))
-                    (first-seen (plist-get rec :first-seen)))
-                (list did
-                      (vector (number-to-string did)
-                              (jabber-omemo--trust-label trust)
-                              (jabber-omemo--format-fingerprint
-                               (jabber-omemo-trust--strip-key-type ik))
-                              (if first-seen
-                                  (format-time-string "%Y-%m-%d %H:%M"
-                                                      first-seen)
-                                "")))))
-            records)))
+                  jabber-omemo-trust--peer))
+        (seen (make-hash-table :test #'eql)))
+    (append
+     (when-let* ((own (jabber-omemo-trust--own-device-entry)))
+       (puthash (car own) t seen)
+       (list own))
+     (mapcar (lambda (rec)
+               (puthash (plist-get rec :device-id) t seen)
+               (jabber-omemo-trust--format-entry rec))
+             records)
+     (cl-remove-if (lambda (entry) (gethash (car entry) seen))
+                    jabber-omemo-trust--fetched))))
 
 ;;; Entry point
 
@@ -136,11 +173,69 @@ Returns the key without the first byte, or as-is if shorter than 2 bytes."
          (buf-name (format "*OMEMO trust: %s*" peer)))
     (with-current-buffer (get-buffer-create buf-name)
       (jabber-omemo-trust-mode)
-      (setq jabber-omemo-trust--jc jc)
-      (setq jabber-omemo-trust--account account)
-      (setq jabber-omemo-trust--peer peer)
+      (setq jabber-omemo-trust--jc jc
+            jabber-omemo-trust--account account
+            jabber-omemo-trust--peer peer
+            jabber-omemo-trust--fetched nil)
       (tabulated-list-print t)
-      (switch-to-buffer (current-buffer)))))
+      (switch-to-buffer (current-buffer)))
+    (jabber-omemo--fetch-device-list
+     jc peer
+     (lambda (device-ids)
+       (dolist (did device-ids)
+         (jabber-omemo--fetch-bundle
+          jc peer did
+          (let ((did did))
+            (lambda (bundle)
+              (when-let* ((ik (and bundle (plist-get bundle :identity-key)))
+                          (buf (get-buffer buf-name)))
+                (with-current-buffer buf
+                  (push (jabber-omemo-trust--format-entry
+                         (list :device-id did
+                               :identity-key ik
+                               :trust nil
+                               :first-seen nil))
+                        jabber-omemo-trust--fetched)
+                  (tabulated-list-print t)))))))))))
+
+;;;###autoload
+(defun jabber-omemo-show-fingerprints (jc)
+  "Display own OMEMO fingerprints across all devices for JC.
+Fetches the device list and bundles from the server."
+  (interactive (list (jabber-read-account)))
+  (let* ((own-jid (jabber-connection-bare-jid jc))
+         (buf-name (format "*OMEMO fingerprints: %s*" own-jid))
+         (our-did (jabber-omemo--get-device-id jc)))
+    (with-current-buffer (get-buffer-create buf-name)
+      (jabber-omemo-trust-mode)
+      (setq jabber-omemo-trust--jc jc
+            jabber-omemo-trust--account own-jid
+            jabber-omemo-trust--peer own-jid
+            jabber-omemo-trust--fetched nil)
+      (tabulated-list-print t)
+      (switch-to-buffer (current-buffer)))
+    (jabber-omemo--fetch-device-list
+     jc own-jid
+     (lambda (device-ids)
+       (dolist (did device-ids)
+         (unless (= did our-did)
+           (jabber-omemo--fetch-bundle
+            jc own-jid did
+            (let ((did did))
+              (lambda (bundle)
+                (when-let* ((ik (and bundle (plist-get bundle :identity-key)))
+                            (buf (get-buffer buf-name)))
+                  (with-current-buffer buf
+                    (let* ((entry (jabber-omemo-trust--format-entry
+                                    (list :device-id did
+                                          :identity-key ik
+                                          :trust nil
+                                          :first-seen nil)))
+                           (cols (cadr entry)))
+                      (aset cols 0 (propertize (aref cols 0)
+                                               'face 'jabber-chat-nick-foreign-encrypted))
+                      (push entry jabber-omemo-trust--fetched))
+                    (tabulated-list-print t))))))))))))
 
 ;;; Actions
 
@@ -167,17 +262,46 @@ Returns the key without the first byte, or as-is if shorter than 2 bytes."
     (tabulated-list-print t)
     (message "Device %d marked as untrusted" did)))
 
+(defun jabber-omemo-trust--own-peer-p ()
+  "Return non-nil if viewing our own fingerprints."
+  (and jabber-omemo-trust--jc
+       (string= jabber-omemo-trust--peer
+                (jabber-connection-bare-jid jabber-omemo-trust--jc))))
+
 (defun jabber-omemo-trust-delete ()
-  "Delete the device key and session at point."
+  "Delete the device key and session at point.
+When viewing own fingerprints, also remove the device from the
+server-side device list and delete its bundle PubSub node."
   (interactive)
   (let ((did (jabber-omemo-trust--device-at-point)))
-    (when (y-or-n-p (format "Delete key and session for device %d? " did))
-      (jabber-omemo-store-delete-trust jabber-omemo-trust--account
-                                       jabber-omemo-trust--peer did)
-      (jabber-omemo-store-delete-session jabber-omemo-trust--account
+    (if (jabber-omemo-trust--own-peer-p)
+        (let ((our-did (jabber-omemo--get-device-id jabber-omemo-trust--jc)))
+          (when (= did our-did)
+            (user-error "Cannot delete the current device"))
+          (when (y-or-n-p (format "Remove device %d from server and delete local data? " did))
+            (jabber-omemo-store-delete-trust jabber-omemo-trust--account
+                                             jabber-omemo-trust--peer did)
+            (jabber-omemo-store-delete-session jabber-omemo-trust--account
+                                               jabber-omemo-trust--peer did)
+            (setq jabber-omemo-trust--fetched
+                  (cl-remove-if (lambda (entry) (= (car entry) did))
+                                jabber-omemo-trust--fetched))
+            (jabber-omemo--remove-device
+             jabber-omemo-trust--jc did
+             (let ((buf (current-buffer)))
+               (lambda ()
+                 (when (buffer-live-p buf)
+                   (with-current-buffer buf
+                     (tabulated-list-print t))))))
+            (tabulated-list-print t)
+            (message "Device %d removed" did)))
+      (when (y-or-n-p (format "Delete key and session for device %d? " did))
+        (jabber-omemo-store-delete-trust jabber-omemo-trust--account
                                          jabber-omemo-trust--peer did)
-      (tabulated-list-print t)
-      (message "Device %d deleted" did))))
+        (jabber-omemo-store-delete-session jabber-omemo-trust--account
+                                           jabber-omemo-trust--peer did)
+        (tabulated-list-print t)
+        (message "Device %d deleted" did)))))
 
 ;;; Transient
 
@@ -197,6 +321,17 @@ Returns the key without the first byte, or as-is if shorter than 2 bytes."
     ("u" "Untrust" jabber-omemo-trust-set-untrusted)
     ("d" "Delete" jabber-omemo-trust-delete)
     ("g" "Refresh" revert-buffer)]])
+
+;;; Cleanup on disconnect
+
+(defun jabber-omemo-trust--kill-buffers ()
+  "Kill all OMEMO trust/fingerprint buffers."
+  (dolist (buf (buffer-list))
+    (when (eq (buffer-local-value 'major-mode buf) 'jabber-omemo-trust-mode)
+      (kill-buffer buf))))
+
+(with-eval-after-load "jabber-core"
+  (add-hook 'jabber-post-disconnect-hook #'jabber-omemo-trust--kill-buffers))
 
 (provide 'jabber-omemo-trust)
 ;;; jabber-omemo-trust.el ends here
