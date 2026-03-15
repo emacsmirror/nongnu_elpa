@@ -264,47 +264,50 @@ an entry if needed."
 		         (cons jid (mapcar #'car jabber-activity-name-alist))))
 	  (jabber-activity-lookup-name jid)))))
 
+(defun jabber-activity--propertize-entry (entry)
+  "Return a propertized mode-line string for ENTRY.
+ENTRY is a (JID . name) cons cell from `jabber-activity-lookup-name'."
+  (let ((jid (car entry)))
+    (propertize
+     (cdr entry)
+     'face (if (member jid jabber-activity-personal-jids)
+	       'jabber-activity-personal-face
+	     'jabber-activity-face)
+     'local-map (make-mode-line-mouse-map
+		 'mouse-1 (lambda ()
+			    (interactive "@")
+			    (jabber-activity-switch-to jid)))
+     'help-echo (concat "Jump to "
+			 (jabber-jid-displayname jid)
+			 "'s buffer"))))
+
 (defun jabber-activity-mode-line-update ()
   "Update the string shown in the mode line.
 Recomputes `jabber-activity-mode-string' and
 `jabber-activity-count-string' from `jabber-activity-jids'."
   (unless jabber-activity--updating
-    (let ((jabber-activity--updating t))
-      (let ((new-mode-string
-	     (if jabber-activity-jids
-		 (mapconcat
-		  (lambda (x)
-		    (let ((jump-to-jid (car x)))
-		      (propertize
-		       (cdr x)
-		       'face (if (member jump-to-jid jabber-activity-personal-jids)
-				 'jabber-activity-personal-face
-			       'jabber-activity-face)
-		       'local-map (make-mode-line-mouse-map
-				   'mouse-1 (lambda ()
-					      (interactive "@")
-					      (jabber-activity-switch-to
-					       jump-to-jid)))
-		       'help-echo (concat "Jump to "
-					  (jabber-jid-displayname (car x))
-					  "'s buffer"))))
-		  (mapcar #'jabber-activity-lookup-name
-			  jabber-activity-jids)
-		  ",")
-	       ""))
-	    (new-count-string
-	     (number-to-string (length jabber-activity-jids)))
-	    (changed nil))
-	(unless (equal-including-properties jabber-activity-mode-string
-					    new-mode-string)
-	  (setq jabber-activity-mode-string new-mode-string
-		changed t))
-	(unless (string= jabber-activity-count-string new-count-string)
-	  (setq jabber-activity-count-string new-count-string
-		changed t))
-	(when changed
-	  (force-mode-line-update 'all)
-	  (run-hooks 'jabber-activity-update-hook))))))
+    (let* ((jabber-activity--updating t)
+	   (new-mode-string
+	    (if jabber-activity-jids
+		(mapconcat
+		 #'jabber-activity--propertize-entry
+		 (mapcar #'jabber-activity-lookup-name
+			 jabber-activity-jids)
+		 ",")
+	      ""))
+	   (new-count-string
+	    (number-to-string (length jabber-activity-jids)))
+	   (changed nil))
+      (unless (equal-including-properties jabber-activity-mode-string
+					  new-mode-string)
+	(setq jabber-activity-mode-string new-mode-string
+	      changed t))
+      (unless (string= jabber-activity-count-string new-count-string)
+	(setq jabber-activity-count-string new-count-string
+	      changed t))
+      (when changed
+	(force-mode-line-update 'all)
+	(run-hooks 'jabber-activity-update-hook)))))
 
 ;;; Hooks
 
