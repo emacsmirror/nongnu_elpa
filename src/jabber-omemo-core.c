@@ -782,6 +782,83 @@ F_aesgcm_decrypt(emacs_env *env, ptrdiff_t nargs, emacs_value *args,
     return result;
 }
 
+/*  jabber-omemo--aesgcm-encrypt  */
+
+static emacs_value
+F_aesgcm_encrypt(emacs_env *env, ptrdiff_t nargs, emacs_value *args,
+                 void *data)
+{
+    (void)nargs; (void)data;
+
+    /* Extract plaintext */
+    ptrdiff_t pt_raw = 0;
+    env->copy_string_contents(env, args[0], NULL, &pt_raw);
+    if (env->non_local_exit_check(env))
+        return Qnil_v;
+
+    uint8_t *ptbuf = malloc((size_t)pt_raw);
+    if (!ptbuf) {
+        signal_error(env, -1, "malloc failed");
+        return Qnil_v;
+    }
+    env->copy_string_contents(env, args[0], (char *)ptbuf, &pt_raw);
+    if (env->non_local_exit_check(env)) {
+        free(ptbuf);
+        return Qnil_v;
+    }
+    size_t pt_len = (size_t)(pt_raw - 1);
+
+    /* Generate random 32-byte key and 12-byte IV */
+    uint8_t key[32];
+    uint8_t iv[12];
+    if (getrandom(key, sizeof(key), 0) != sizeof(key)) {
+        free(ptbuf);
+        signal_error(env, -1, "getrandom failed for key");
+        return Qnil_v;
+    }
+    if (getrandom(iv, sizeof(iv), 0) != sizeof(iv)) {
+        free(ptbuf);
+        signal_error(env, -1, "getrandom failed for IV");
+        return Qnil_v;
+    }
+
+    /* Allocate output: ciphertext + 16-byte GCM auth tag */
+    uint8_t *outbuf = malloc(pt_len + 16);
+    if (!outbuf) {
+        free(ptbuf);
+        signal_error(env, -1, "malloc failed");
+        return Qnil_v;
+    }
+
+    mbedtls_gcm_context ctx;
+    mbedtls_gcm_init(&ctx);
+    int rc = mbedtls_gcm_setkey(&ctx, MBEDTLS_CIPHER_ID_AES, key, 256);
+    if (!rc)
+        rc = mbedtls_gcm_crypt_and_tag(&ctx, MBEDTLS_GCM_ENCRYPT,
+                                        pt_len, iv, 12, NULL, 0,
+                                        ptbuf, outbuf, 16, outbuf + pt_len);
+    mbedtls_gcm_free(&ctx);
+    free(ptbuf);
+
+    if (rc) {
+        free(outbuf);
+        signal_error(env, rc, "AES-256-GCM encryption failed");
+        return Qnil_v;
+    }
+
+    emacs_value Qlist = env->intern(env, "list");
+    emacs_value plist_args[6];
+    plist_args[0] = Qkey;
+    plist_args[1] = make_unibyte(env, key, 32);
+    plist_args[2] = Qiv;
+    plist_args[3] = make_unibyte(env, iv, 12);
+    plist_args[4] = Qciphertext;
+    plist_args[5] = make_unibyte(env, outbuf, pt_len + 16);
+
+    free(outbuf);
+    return env->funcall(env, Qlist, 6, plist_args);
+}
+
 /*  Module init  */
 
 int
@@ -913,6 +990,13 @@ emacs_module_init(struct emacs_runtime *runtime)
           "IV is a 12-byte unibyte string.\n"
           "CIPHERTEXT-WITH-TAG has the 16-byte GCM auth tag appended.\n"
           "Returns the decrypted plaintext as a unibyte string.");
+
+    DEFUN("jabber-omemo--aesgcm-encrypt", F_aesgcm_encrypt, 1, 1,
+          "Encrypt PLAINTEXT using AES-256-GCM (for aesgcm:// URLs).\n"
+          "Generates a random 32-byte key and 12-byte IV internally.\n"
+          "Returns a plist (:key KEY :iv IV :ciphertext CT-WITH-TAG),\n"
+          "all unibyte strings.  The last 16 bytes of CT-WITH-TAG are\n"
+          "the GCM auth tag.");
 
 #undef DEFUN
 
