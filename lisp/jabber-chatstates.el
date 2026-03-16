@@ -45,12 +45,9 @@
   "Send notifications about chat states?"
   :type 'boolean)
 
-(defvar-local jabber-chatstates-requested 'first-time
-  "Whether or not chat states notification was requested.
-This is one of the following:
-first-time - send state in first stanza, then switch to nil
-t - send states
-nil - don't send states")
+(defvar-local jabber-chatstates-requested t
+  "Whether chat state notifications should be sent.
+Non-nil means send states, nil means don't.")
 
 (defvar-local jabber-chatstates-last-state nil
   "The last seen chat state.")
@@ -77,11 +74,7 @@ It can be sent and cancelled several times.")
 (defun jabber-chatstates-when-sending (_text _id)
   (jabber-chatstates-update-message)
   (jabber-chatstates-stop-timer)
-  (when (and jabber-chatstates-confirm jabber-chatstates-requested)
-    (when (eq jabber-chatstates-requested 'first-time)
-      ;; don't send more notifications until we know that the other
-      ;; side wants them.
-      (setq jabber-chatstates-requested nil))
+  (when jabber-chatstates-confirm
     (setq jabber-chatstates-composing-sent nil)
     `((active ((xmlns . ,jabber-chatstates-xmlns))))))
 
@@ -105,7 +98,7 @@ It can be sent and cancelled several times.")
 
 (defun jabber-chatstates-send-paused ()
   "Send a `paused' state notification."
-  (when (and jabber-chatstates-requested jabber-chatting-with)
+  (when (and jabber-chatstates-confirm jabber-chatting-with)
     (setq jabber-chatstates-composing-sent nil)
     (jabber-send-sexp-if-connected
      jabber-buffer-connection
@@ -119,7 +112,6 @@ It can be sent and cancelled several times.")
          (state (if composing-now 'composing 'active)))
     (when (and jabber-chatstates-confirm
                jabber-chatting-with
-	       jabber-chatstates-requested
                (not (eq composing-now jabber-chatstates-composing-sent)))
       (jabber-send-sexp-if-connected
        jabber-buffer-connection
