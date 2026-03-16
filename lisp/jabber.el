@@ -183,7 +183,6 @@ configure a Google Talk account like this:
 (require 'jabber-modeline)
 (require 'jabber-activity)
 (require 'jabber-vcard)
-(require 'jabber-events)
 (require 'jabber-chatstates)
 (require 'jabber-vcard-avatars)
 (require 'jabber-autoaway)
