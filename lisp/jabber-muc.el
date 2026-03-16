@@ -209,7 +209,6 @@ Fields available:
 (defcustom jabber-muc-private-header-line-format
   '(" " (:eval (jabber-jid-resource jabber-chatting-with))
     " in " (:eval (jabber-jid-displayname (jabber-jid-user jabber-chatting-with)))
-    "\t" jabber-events-message
     "\t" jabber-chatstates-message
     " " jabber-chat-encryption-message)	;see jabber-chatbuffer.el
   "The specification for the header line of private MUC chat buffers.
