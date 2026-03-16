@@ -767,6 +767,5 @@ Uses a `display' property so the separator adjusts to window
 width on redisplay."
   (propertize " " 'display '(space :width text) 'face 'jabber-separator))
 
-
 (provide 'jabber-util)
 ;;; jabber-util.el ends here

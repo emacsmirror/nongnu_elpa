@@ -27,19 +27,6 @@
 ;; Allows tracking messages from buddies using the global mode line
 ;; See (info "(jabber)Tracking activity")
 
-;;; TODO:
-
-;; - Make it possible to enable this mode using M-x customize
-;; - When Emacs is on another desktop, (get-buffer-window buf 'visible)
-;;   returns nil.  We need to know when the user selects the frame again
-;;   so we can remove the string from the mode line.  (Or just run
-;;   jabber-activity-clean often).
-;; - jabber-activity-switch-to needs a keybinding.  In which map?
-;; - Is there any need for having defcustom jabber-activity-make-string?
-;; - When there's activity in a buffer it would be nice with a hook which
-;;   does the opposite of bury-buffer, so switch-to-buffer will show that
-;;   buffer first.
-
 ;;; Code:
 
 (require 'cl-lib)
@@ -111,25 +98,13 @@ JIDs."
 
 (defcustom jabber-activity-count-in-title nil
   "If non-nil, display number of active JIDs in frame title."
-  :type 'boolean
-  :set #'(lambda (var val)
-	   (custom-set-default var val)
-	   (when (and (featurep 'jabber-activity)
-		      (bound-and-true-p jabber-activity-mode))
-	     (jabber-activity-mode -1)
-	     (jabber-activity-mode 1))))
+  :type 'boolean)
 
 (defcustom jabber-activity-count-in-title-format
   '(jabber-activity-jids ("[" jabber-activity-count-string "] "))
   "Format string used for displaying activity in frame titles.
 Same syntax as `mode-line-format'."
-  :type 'sexp
-  :set #'(lambda (var val)
-	   (if (not (and (featurep 'jabber-activity) (bound-and-true-p jabber-activity-mode)))
-	       (custom-set-default var val)
-	     (jabber-activity-mode -1)
-	     (custom-set-default var val)
-	     (jabber-activity-mode 1))))
+  :type 'sexp)
 
 (defcustom jabber-activity-show-p 'jabber-activity-show-p-default
   "Function that checks if the given JID should be shown on the mode line.
@@ -193,10 +168,6 @@ Prevents recursive calls from hooks triggered during an update.")
 (defvar jabber-activity--shortened-names (make-hash-table :test #'equal)
   "Cache mapping sorted JID lists to shortened name alists.
 Invalidated when `jabber-activity-make-name-alist' rebuilds.")
-
-;; Protect this variable from being set in Local variables etc.
-(put 'jabber-activity-mode-string 'risky-local-variable t)
-(put 'jabber-activity-count-string 'risky-local-variable t)
 
 ;; Global reference declarations
 
@@ -452,76 +423,51 @@ back to the last non Jabber chat buffer used."
 	    (switch-to-buffer jabber-activity-last-buffer))
 	(message "No new activity"))))
 
-(defun jabber-activity--add-to-frame-title ()
-  "Add activity count to `frame-title-format' and `icon-title-format'."
-  (dolist (var '(frame-title-format icon-title-format))
-    (let ((fmt (symbol-value var)))
-      (unless (member jabber-activity-count-in-title-format fmt)
-	(if (equal (car-safe fmt) "")
-	    (set var (cons "" (cons jabber-activity-count-in-title-format
-				   (cdr fmt))))
-	  (set var (list "" jabber-activity-count-in-title-format fmt)))))))
+;;; Disconnect cleanup
 
-(defun jabber-activity--remove-from-frame-title ()
-  "Remove activity count from `frame-title-format' and `icon-title-format'."
-  (dolist (var '(frame-title-format icon-title-format))
-    (when (listp (symbol-value var))
-      (set var (delete jabber-activity-count-in-title-format
-		       (symbol-value var))))))
+(defun jabber-activity--on-disconnect ()
+  "Clear activity tracking state on disconnect."
+  (setq jabber-activity-jids nil
+        jabber-activity-personal-jids nil)
+  (jabber-activity-mode-line-update))
 
-(defun jabber-activity--add-to-mode-line ()
-  "Install activity indicators in `global-mode-string' and frame title."
-  (cl-pushnew '(t jabber-activity-mode-string) global-mode-string :test #'equal)
-  (when jabber-activity-count-in-title
-    (jabber-activity--add-to-frame-title)))
+;;; Init/teardown for jabber-modeline-mode
 
-(defun jabber-activity--remove-from-mode-line ()
-  "Remove activity indicators from `global-mode-string' and frame title."
-  (setq global-mode-string
-	(delete '(t jabber-activity-mode-string) global-mode-string))
-  (jabber-activity--remove-from-frame-title))
+(defun jabber-activity--init ()
+  "Register activity tracking hooks.
+Called by `jabber-modeline-mode' when enabling."
+  (add-hook 'window-configuration-change-hook
+	    #'jabber-activity-clean)
+  (add-hook 'jabber-message-hooks
+	    #'jabber-activity-add)
+  (add-hook 'jabber-muc-hooks
+	    #'jabber-activity-add-muc)
+  (add-hook 'jabber-presence-hooks
+	    #'jabber-activity-presence)
+  (add-hook 'buffer-list-update-hook
+	    #'jabber-activity-clean)
+  (add-hook 'jabber-post-connect-hooks
+	    #'jabber-activity-make-name-alist)
+  (add-hook 'kill-emacs-query-functions
+	    #'jabber-activity-kill-hook))
 
-;;;###autoload
-(define-minor-mode jabber-activity-mode
-  "Toggle display of activity in hidden jabber buffers in the mode line.
-
-With a numeric arg, enable this display if arg is positive."
-  :global t
-  :init-value t
-  (if jabber-activity-mode
-      (progn
-	(add-hook 'window-configuration-change-hook
-		  #'jabber-activity-clean)
-	(add-hook 'jabber-message-hooks
-		  #'jabber-activity-add)
-	(add-hook 'jabber-muc-hooks
-		  #'jabber-activity-add-muc)
-	(add-hook 'jabber-presence-hooks
-		  #'jabber-activity-presence)
-	(add-hook 'buffer-list-update-hook
-		  #'jabber-activity-clean)
-	(add-hook 'jabber-post-connect-hooks
-		  #'jabber-activity-make-name-alist)
-	(add-hook 'kill-emacs-query-functions
-		  #'jabber-activity-kill-hook)
-	(jabber-activity--add-to-mode-line))
-    (progn
-      (remove-hook 'window-configuration-change-hook
-		   #'jabber-activity-clean)
-      (remove-hook 'jabber-message-hooks
-		   #'jabber-activity-add)
-      (remove-hook 'jabber-muc-hooks
-		   #'jabber-activity-add-muc)
-      (remove-hook 'jabber-presence-hooks
-		   #'jabber-activity-presence)
-      (remove-hook 'buffer-list-update-hook
-		   #'jabber-activity-clean)
-      (remove-hook 'jabber-post-connect-hooks
-		   #'jabber-activity-make-name-alist)
-      (jabber-activity--remove-from-mode-line))))
-
-;; XXX: define-minor-mode should probably do this for us, but it doesn't.
-(if jabber-activity-mode (jabber-activity-mode 1))
+(defun jabber-activity--teardown ()
+  "Unregister activity tracking hooks.
+Called by `jabber-modeline-mode' when disabling."
+  (remove-hook 'window-configuration-change-hook
+	       #'jabber-activity-clean)
+  (remove-hook 'jabber-message-hooks
+	       #'jabber-activity-add)
+  (remove-hook 'jabber-muc-hooks
+	       #'jabber-activity-add-muc)
+  (remove-hook 'jabber-presence-hooks
+	       #'jabber-activity-presence)
+  (remove-hook 'buffer-list-update-hook
+	       #'jabber-activity-clean)
+  (remove-hook 'jabber-post-connect-hooks
+	       #'jabber-activity-make-name-alist)
+  (remove-hook 'kill-emacs-query-functions
+	       #'jabber-activity-kill-hook))
 
 (provide 'jabber-activity)
 

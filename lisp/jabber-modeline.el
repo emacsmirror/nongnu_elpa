@@ -35,26 +35,57 @@
   "Count contacts in fewer categories for compact view."
   :type 'boolean)
 
-(defvar jabber-mode-line-string nil)
+(defcustom jabber-modeline-sections '(activity)
+  "Which sections to show in the mode line.
+Available sections: `presence', `contacts', `activity'."
+  :type '(set (const presence) (const contacts) (const activity))
+  :group 'jabber-mode-line)
 
-(defvar jabber-mode-line-presence nil)
-
-(defvar jabber-mode-line-contacts nil)
+(defvar jabber-mode-line-presence "")
+(defvar jabber-mode-line-contacts "")
 
 ;; Global reference declarations
 
 (defvar *jabber-current-show*)          ; jabber.el
 (defvar jabber-presence-strings)        ; jabber.el
 
+;; Activity variables (defined in jabber-activity.el)
+
+(declare-function jabber-activity--init "jabber-activity")
+(declare-function jabber-activity--teardown "jabber-activity")
+(declare-function jabber-activity--on-disconnect "jabber-activity")
+(defvar jabber-activity-mode-string)
+(defvar jabber-activity-count-in-title)
+(defvar jabber-activity-count-in-title-format)
+
 ;;
+
+(defconst jabber-modeline--eval-form
+  '(:eval (jabber-modeline--render))
+  "The `:eval' form added to `global-mode-string'.")
+
+(defun jabber-modeline--render ()
+  "Return the string to display in the mode line."
+  (let ((parts nil))
+    (when (and (memq 'activity jabber-modeline-sections)
+               (not (string-empty-p jabber-activity-mode-string)))
+      (push jabber-activity-mode-string parts))
+    (when (and (memq 'contacts jabber-modeline-sections)
+               (not (string-empty-p jabber-mode-line-contacts)))
+      (push jabber-mode-line-contacts parts))
+    (when (and (memq 'presence jabber-modeline-sections)
+               (not (string-empty-p jabber-mode-line-presence)))
+      (push jabber-mode-line-presence parts))
+    (if parts
+        (concat " " (string-join parts " "))
+      "")))
 
 (defun jabber-mode-line-presence-update (&rest _)
   "Update `jabber-mode-line-presence' from current connection state."
-  (let ((text (if (and jabber-connections (not *jabber-disconnecting*))
-		  (cdr (assoc *jabber-current-show* jabber-presence-strings))
-		"Offline")))
-    (setq jabber-mode-line-presence
-	  (propertize text 'jabber-modeline t))))
+  (setq jabber-mode-line-presence
+        (if (and jabber-connections (not *jabber-disconnecting*))
+            (cdr (assoc *jabber-current-show* jabber-presence-strings))
+          "Offline")))
 
 (defun jabber-mode-line-count-contacts (&rest _ignore)
   "Update `jabber-mode-line-contacts' with roster counts."
@@ -69,60 +100,92 @@
 	(when (assoc (get buddy 'show) count)
 	  (cl-incf (cdr (assoc (get buddy 'show) count))))))
     (setq jabber-mode-line-contacts
-	  (propertize
-	   (if jabber-mode-line-compact
-	       (format "(%d/%d/%d)"
-		       (+ (cdr (assoc "chat" count))
-			  (cdr (assoc "" count)))
-		       (+ (cdr (assoc "away" count))
-			  (cdr (assoc "xa" count))
-			  (cdr (assoc "dnd" count)))
-		       (cdr (assoc nil count)))
-	     (apply #'format "(%d/%d/%d/%d/%d/%d)"
-		    (mapcar #'cdr count)))
-	   'jabber-modeline t))))
+	  (if jabber-mode-line-compact
+	      (format "(%d/%d/%d)"
+		      (+ (cdr (assoc "chat" count))
+			 (cdr (assoc "" count)))
+		      (+ (cdr (assoc "away" count))
+			 (cdr (assoc "xa" count))
+			 (cdr (assoc "dnd" count)))
+		      (cdr (assoc nil count)))
+	    (apply #'format "(%d/%d/%d/%d/%d/%d)"
+		   (mapcar #'cdr count))))))
 
-(defun jabber-mode-line--add ()
-  "Install status indicator in `global-mode-string'."
-  (cl-pushnew 'jabber-mode-line-string global-mode-string :test #'eq))
+(defun jabber-modeline--add-to-frame-title ()
+  "Add activity count to `frame-title-format' and `icon-title-format'."
+  (dolist (var '(frame-title-format icon-title-format))
+    (let ((fmt (symbol-value var)))
+      (unless (member jabber-activity-count-in-title-format fmt)
+	(if (equal (car-safe fmt) "")
+	    (set var (cons "" (cons jabber-activity-count-in-title-format
+				   (cdr fmt))))
+	  (set var (list "" jabber-activity-count-in-title-format fmt)))))))
 
-(defun jabber-mode-line--remove ()
-  "Remove status indicator from `global-mode-string'."
-  (setq global-mode-string
-	(delq 'jabber-mode-line-string global-mode-string)))
+(defun jabber-modeline--remove-from-frame-title ()
+  "Remove activity count from `frame-title-format' and `icon-title-format'."
+  (dolist (var '(frame-title-format icon-title-format))
+    (when (listp (symbol-value var))
+      (set var (delete jabber-activity-count-in-title-format
+		       (symbol-value var))))))
 
-(define-minor-mode jabber-mode-line-mode
+(defun jabber-modeline--on-disconnect ()
+  "Clear all modeline state on disconnect."
+  (jabber-activity--on-disconnect)
+  (jabber-mode-line-presence-update))
+
+;;;###autoload
+(define-minor-mode jabber-modeline-mode
   "Toggle display of Jabber status in mode lines.
-Display consists of your own status, and six numbers
-meaning the number of chatty, online, away, xa, dnd
-and offline contacts, respectively."
+Which sections are shown is controlled by `jabber-modeline-sections'."
   :global t
-  (if jabber-mode-line-mode
+  (if jabber-modeline-mode
       (progn
-	(setq jabber-mode-line-string
-	      (list (propertize " " 'jabber-modeline t)
-		    'jabber-mode-line-presence
-		    (propertize " " 'jabber-modeline t)
-		    'jabber-mode-line-contacts))
-	(put 'jabber-mode-line-string 'risky-local-variable t)
-	(put 'jabber-mode-line-presence 'risky-local-variable t)
-	(jabber-mode-line-presence-update)
-	(jabber-mode-line-count-contacts)
-	(jabber-mode-line--add)
-	(add-hook 'jabber-send-presence
-		  #'jabber-mode-line-presence-update)
-	(add-hook 'jabber-post-disconnect-hook
-		  #'jabber-mode-line-presence-update)
-	(add-hook 'jabber-presence-hooks
-		  #'jabber-mode-line-count-contacts))
-    (jabber-mode-line--remove)
-    (setq jabber-mode-line-string "")
-    (remove-hook 'jabber-post-disconnect-hook
-		 #'jabber-mode-line-presence-update)
+        (unless global-mode-string
+          (setq global-mode-string '("")))
+        (jabber-mode-line-presence-update)
+        (jabber-mode-line-count-contacts)
+        (add-hook 'jabber-send-presence
+                  #'jabber-mode-line-presence-update)
+        (add-hook 'jabber-post-disconnect-hook
+                  #'jabber-mode-line-presence-update)
+        (add-hook 'jabber-presence-hooks
+                  #'jabber-mode-line-count-contacts)
+        (add-hook 'jabber-post-disconnect-hook
+                  #'jabber-modeline--on-disconnect)
+        (jabber-activity--init)
+        (when jabber-activity-count-in-title
+          (jabber-modeline--add-to-frame-title))
+        (add-to-list 'global-mode-string jabber-modeline--eval-form t))
+    (setq jabber-mode-line-presence ""
+          jabber-mode-line-contacts "")
     (remove-hook 'jabber-send-presence
-		 #'jabber-mode-line-presence-update)
+                 #'jabber-mode-line-presence-update)
+    (remove-hook 'jabber-post-disconnect-hook
+                 #'jabber-mode-line-presence-update)
     (remove-hook 'jabber-presence-hooks
-		 #'jabber-mode-line-count-contacts)))
+                 #'jabber-mode-line-count-contacts)
+    (remove-hook 'jabber-post-disconnect-hook
+                 #'jabber-modeline--on-disconnect)
+    (jabber-activity--teardown)
+    (jabber-modeline--remove-from-frame-title)
+    (setq global-mode-string
+          (delete jabber-modeline--eval-form global-mode-string))
+    (force-mode-line-update t)))
+
+;; Backward compatibility
+(defalias 'jabber-mode-line-mode #'jabber-modeline-mode)
+
+(defun jabber-activity-mode (&optional arg)
+  "Toggle the `activity' section in `jabber-modeline-sections'.
+With a positive ARG, ensure activity is shown.
+With a zero or negative ARG, remove activity."
+  (interactive "P")
+  (if (if arg (> (prefix-numeric-value arg) 0)
+        (not (memq 'activity jabber-modeline-sections)))
+      (cl-pushnew 'activity jabber-modeline-sections)
+    (setq jabber-modeline-sections
+          (delq 'activity jabber-modeline-sections)))
+  (force-mode-line-update t))
 
 (provide 'jabber-modeline)
 

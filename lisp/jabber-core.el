@@ -180,7 +180,7 @@ problems."
 (defvar jabber-xml-data)                ; jabber.el
 (defvar jabber-default-connection-type) ; jabber-conn.el
 (defvar jabber-connect-methods)         ; jabber-conn.el
-(defvar jabber-mode-line-mode)          ; jabber-modeline.el
+(defvar jabber-modeline-mode)           ; jabber-modeline.el
 (defvar jabber-roster-xmlns)           ; jabber-xml.el
 
 ;;
@@ -363,7 +363,7 @@ With double prefix argument, specify more connection details."
       ;; of connections.
       (setq jabber-connections
 	    (delq fsm jabber-connections))
-      (when jabber-mode-line-mode
+      (when jabber-modeline-mode
         (jabber-mode-line-presence-update))
       (jabber-roster--refresh)
       ;; And let the FSM sleep...
