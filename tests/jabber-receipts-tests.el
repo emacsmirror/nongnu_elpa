@@ -74,6 +74,83 @@
                  (body nil "hello"))))
     (should-not updated)))
 
+;;; Group 3: Sending receipts back
+
+(ert-deftest jabber-receipts-test-send-received-on-request ()
+  "Incoming message with <request/> triggers <received/> response."
+  (let ((sent-sexp nil))
+    (cl-letf (((symbol-function 'jabber-send-sexp-if-connected)
+               (lambda (_jc sexp) (setq sent-sexp sexp)))
+              ((symbol-function 'jabber-db-update-receipt) #'ignore)
+              ((symbol-function 'jabber-connection-bare-jid)
+               (lambda (_j) "me@example.com"))
+              ((symbol-function 'jabber-chat-get-buffer)
+               (lambda (_from &optional _jc) "*test-chat*")))
+      (let ((jabber-chat-send-receipts t))
+        (jabber-receipts--handle-message
+         'fake-jc
+         '(message ((from . "them@example.com") (id . "msg-100") (type . "chat"))
+                   (body nil "hello")
+                   (request ((xmlns . "urn:xmpp:receipts")))))))
+    (should sent-sexp)
+    ;; Verify it's a <received/> stanza
+    (should (eq 'message (car sent-sexp)))
+    (let ((children (cddr sent-sexp)))
+      (should (assq 'received children)))))
+
+(ert-deftest jabber-receipts-test-no-received-when-disabled ()
+  "No <received/> sent when jabber-chat-send-receipts is nil."
+  (let ((sent-sexp nil))
+    (cl-letf (((symbol-function 'jabber-send-sexp-if-connected)
+               (lambda (_jc sexp) (setq sent-sexp sexp)))
+              ((symbol-function 'jabber-db-update-receipt) #'ignore)
+              ((symbol-function 'jabber-connection-bare-jid)
+               (lambda (_j) "me@example.com"))
+              ((symbol-function 'jabber-chat-get-buffer)
+               (lambda (_from &optional _jc) "*test-chat*")))
+      (let ((jabber-chat-send-receipts nil))
+        (jabber-receipts--handle-message
+         'fake-jc
+         '(message ((from . "them@example.com") (id . "msg-100") (type . "chat"))
+                   (body nil "hello")
+                   (request ((xmlns . "urn:xmpp:receipts")))))))
+    (should-not sent-sexp)))
+
+(ert-deftest jabber-receipts-test-no-received-without-request ()
+  "No <received/> sent for messages without <request/> element."
+  (let ((sent-sexp nil))
+    (cl-letf (((symbol-function 'jabber-send-sexp-if-connected)
+               (lambda (_jc sexp) (setq sent-sexp sexp)))
+              ((symbol-function 'jabber-db-update-receipt) #'ignore)
+              ((symbol-function 'jabber-connection-bare-jid)
+               (lambda (_j) "me@example.com"))
+              ((symbol-function 'jabber-chat-get-buffer)
+               (lambda (_from &optional _jc) "*test-chat*")))
+      (let ((jabber-chat-send-receipts t))
+        (jabber-receipts--handle-message
+         'fake-jc
+         '(message ((from . "them@example.com") (id . "msg-100") (type . "chat"))
+                   (body nil "hello")))))
+    (should-not sent-sexp)))
+
+(ert-deftest jabber-receipts-test-markable-sets-pending-id ()
+  "Incoming markable message sets pending displayed ID."
+  (cl-letf (((symbol-function 'jabber-db-update-receipt) #'ignore)
+            ((symbol-function 'jabber-send-sexp-if-connected) #'ignore)
+            ((symbol-function 'jabber-connection-bare-jid)
+             (lambda (_j) "me@example.com"))
+            ((symbol-function 'jabber-chat-get-buffer)
+             (lambda (_from &optional _jc) (buffer-name))))
+    (with-temp-buffer
+      (setq-local jabber-receipts--pending-displayed-id nil)
+      (let ((jabber-chat-send-receipts t))
+        (jabber-receipts--handle-message
+         'fake-jc
+         `(message ((from . "them@example.com") (id . "msg-200") (type . "chat"))
+                   (body nil "hello")
+                   (markable ((xmlns . ,jabber-chat-markers-xmlns))))))
+      (should (equal "msg-200" jabber-receipts--pending-displayed-id)))))
+
 (provide 'jabber-receipts-tests)
 
 ;;; jabber-receipts-tests.el ends here

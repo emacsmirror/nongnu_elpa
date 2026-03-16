@@ -96,7 +96,29 @@ Added to `jabber-message-chain'."
                          xml-data jabber-chat-markers-xmlns))
                 ((eq (jabber-xml-node-name marker) 'displayed))
                 (ref-id (jabber-xml-get-attribute marker 'id)))
-      (jabber-receipts--update-status jc from ref-id "displayed_at"))))
+      (jabber-receipts--update-status jc from ref-id "displayed_at"))
+    ;; Send <received/> back if the message requests it
+    (let ((id (jabber-xml-get-attribute xml-data 'id)))
+      (when (and jabber-chat-send-receipts
+                 id
+                 (jabber-xml-get-children xml-data 'body)
+                 (or (jabber-xml-child-with-xmlns
+                      xml-data jabber-receipts-xmlns)
+                     (jabber-xml-child-with-xmlns
+                      xml-data jabber-chat-markers-xmlns)))
+        (jabber-send-sexp-if-connected
+         jc `(message ((to . ,from) (type . "chat"))
+                      (received ((xmlns . ,jabber-receipts-xmlns)
+                                 (id . ,id)))))))
+    ;; Track pending markable message for <displayed/> on visibility
+    (when-let* ((id (jabber-xml-get-attribute xml-data 'id))
+                ((jabber-xml-get-children xml-data 'body))
+                ((jabber-xml-child-with-xmlns
+                  xml-data jabber-chat-markers-xmlns)))
+      (when-let* ((buffer (get-buffer
+                           (jabber-chat-get-buffer from jc))))
+        (with-current-buffer buffer
+          (setq jabber-receipts--pending-displayed-id id))))))
 
 (defun jabber-receipts--update-status (jc from ref-id column)
   "Update receipt status for message REF-ID from FROM.
@@ -118,6 +140,24 @@ COLUMN is \"delivered_at\" or \"displayed_at\"."
     (force-mode-line-update)))
 
 (add-to-list 'jabber-message-chain #'jabber-receipts--handle-message t)
+
+;;; Display marker on buffer visibility
+
+(defun jabber-receipts--on-window-change ()
+  "Send displayed marker when chat buffer becomes visible."
+  (when (and jabber-chat-send-receipts
+             (derived-mode-p 'jabber-chat-mode)
+             jabber-receipts--pending-displayed-id
+             jabber-chatting-with
+             (get-buffer-window (current-buffer) 'visible))
+    (jabber-send-sexp-if-connected
+     jabber-buffer-connection
+     `(message ((to . ,jabber-chatting-with) (type . "chat"))
+               (displayed ((xmlns . ,jabber-chat-markers-xmlns)
+                           (id . ,jabber-receipts--pending-displayed-id)))))
+    (setq jabber-receipts--pending-displayed-id nil)))
+
+(add-hook 'window-configuration-change-hook #'jabber-receipts--on-window-change)
 
 (provide 'jabber-receipts)
 
