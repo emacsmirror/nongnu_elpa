@@ -64,6 +64,10 @@
 Values are a list of bookmark plists, or t if no bookmarks were found.
 nil means bookmarks have not been retrieved yet.")
 
+(defvar jabber-bookmarks--legacy-accounts (make-hash-table :test 'equal)
+  "Set of bare JIDs whose servers only support XEP-0049 legacy bookmarks.
+Non-nil value means the account fell back to legacy on last fetch.")
+
 ;;;###autoload
 (defun jabber-get-conference-data (jc conference-jid cont &optional key)
   "Get bookmark data for CONFERENCE-JID.
@@ -232,6 +236,7 @@ Parses items, updates cache, and calls CONT with the plist list."
          (items (jabber-xml-get-children items-node 'item))
          (plists (delq nil (mapcar #'jabber-bookmarks2--parse-item items)))
          (value (or plists t)))
+    (remhash (jabber-connection-bare-jid jc) jabber-bookmarks--legacy-accounts)
     (puthash (jabber-connection-bare-jid jc) value jabber-bookmarks)
     (funcall cont jc (when (listp value) value))))
 
@@ -254,6 +259,7 @@ Parses conference elements to plists, updates cache, calls CONT."
                                        (jabber-parse-conference-bookmark node)))
                                    children)))
          (value (or plists t)))
+    (puthash (jabber-connection-bare-jid jc) t jabber-bookmarks--legacy-accounts)
     (puthash (jabber-connection-bare-jid jc) value jabber-bookmarks)
     (funcall cont jc (when (listp value) value))))
 
@@ -263,6 +269,10 @@ Parses conference elements to plists, updates cache, calls CONT."
 If bookmarks have not yet been fetched by `jabber-get-bookmarks',
 return nil."
   (gethash (jabber-connection-bare-jid jc) jabber-bookmarks))
+
+(defun jabber-bookmarks--legacy-p (jc)
+  "Return non-nil if JC uses legacy XEP-0049 bookmarks."
+  (gethash (jabber-connection-bare-jid jc) jabber-bookmarks--legacy-accounts))
 
 (defun jabber-bookmarks2--publish (jc plist &optional callback error-callback)
   "Publish a single bookmark PLIST to PubSub via JC.
@@ -279,46 +289,61 @@ CALLBACK and ERROR-CALLBACK follow `jabber-send-iq' conventions."
   (jabber-pubsub-retract jc nil jabber-bookmarks2-xmlns room-jid
                          t callback error-callback))
 
+(defun jabber-bookmarks--save-all (jc callback)
+  "Write the full bookmark cache for JC via XEP-0049 Private XML Storage.
+CALLBACK is called with JC, nil, and nil (matching IQ callback arity)."
+  (let* ((my-jid (jabber-connection-bare-jid jc))
+         (bookmarks (let ((c (gethash my-jid jabber-bookmarks)))
+                      (when (listp c) c))))
+    (jabber-bookmarks--set-legacy
+     jc bookmarks
+     (lambda (jc _xml _closure)
+       (funcall callback jc nil nil)))))
+
 (defun jabber-set-bookmarks (jc new-bookmarks &optional callback)
   "Set bookmarks to NEW-BOOKMARKS, a list of bookmark plists.
 Diffs against cache: publishes added/changed, retracts removed.
-Falls back to XEP-0049 Private XML on PubSub error.
+For legacy accounts, writes via XEP-0049 Private XML Storage.
+For PubSub accounts, publishes per-item and falls back to XEP-0049
+on error.
 CALLBACK, if non-nil, is called with JC and t or nil on
 success or failure."
   (unless callback (setq callback #'ignore))
-  (let* ((my-jid (jabber-connection-bare-jid jc))
-         (old (let ((c (gethash my-jid jabber-bookmarks)))
-                (when (listp c) c)))
-         (old-jids (mapcar (lambda (bm) (plist-get bm :jid)) old))
-         (new-jids (mapcar (lambda (bm) (plist-get bm :jid)) new-bookmarks))
-         (to-retract (cl-set-difference old-jids new-jids :test #'string=))
-         (pending 0)
-         (failed nil))
-    ;; Track completions
-    (cl-flet ((done (_jc _xml _closure)
-                (cl-decf pending)
-                (when (zerop pending)
-                  (unless failed
-                    (puthash my-jid (or new-bookmarks t) jabber-bookmarks))
-                  (funcall callback jc (not failed))))
-              (fail (_jc _xml _closure)
-                (setq failed t)
-                (cl-decf pending)
-                (when (zerop pending)
-                  ;; Fall back to XEP-0049 bulk write
-                  (jabber-bookmarks--set-legacy jc new-bookmarks callback))))
-      ;; Publish each bookmark
-      (dolist (bm new-bookmarks)
-        (cl-incf pending)
-        (jabber-bookmarks2--publish jc bm #'done #'fail))
-      ;; Retract removed
-      (dolist (jid to-retract)
-        (cl-incf pending)
-        (jabber-bookmarks2--retract jc jid #'done #'fail))
-      ;; If nothing to do, succeed immediately
-      (when (zerop pending)
-        (puthash my-jid (or new-bookmarks t) jabber-bookmarks)
-        (funcall callback jc t)))))
+  (if (jabber-bookmarks--legacy-p jc)
+      (jabber-bookmarks--set-legacy jc new-bookmarks callback)
+    (let* ((my-jid (jabber-connection-bare-jid jc))
+           (old (let ((c (gethash my-jid jabber-bookmarks)))
+                  (when (listp c) c)))
+           (old-jids (mapcar (lambda (bm) (plist-get bm :jid)) old))
+           (new-jids (mapcar (lambda (bm) (plist-get bm :jid)) new-bookmarks))
+           (to-retract (cl-set-difference old-jids new-jids :test #'string=))
+           (pending 0)
+           (failed nil))
+      ;; Track completions
+      (cl-flet ((done (_jc _xml _closure)
+                  (cl-decf pending)
+                  (when (zerop pending)
+                    (unless failed
+                      (puthash my-jid (or new-bookmarks t) jabber-bookmarks))
+                    (funcall callback jc (not failed))))
+                (fail (_jc _xml _closure)
+                  (setq failed t)
+                  (cl-decf pending)
+                  (when (zerop pending)
+                    ;; Fall back to XEP-0049 bulk write
+                    (jabber-bookmarks--set-legacy jc new-bookmarks callback))))
+        ;; Publish each bookmark
+        (dolist (bm new-bookmarks)
+          (cl-incf pending)
+          (jabber-bookmarks2--publish jc bm #'done #'fail))
+        ;; Retract removed
+        (dolist (jid to-retract)
+          (cl-incf pending)
+          (jabber-bookmarks2--retract jc jid #'done #'fail))
+        ;; If nothing to do, succeed immediately
+        (when (zerop pending)
+          (puthash my-jid (or new-bookmarks t) jabber-bookmarks)
+          (funcall callback jc t))))))
 
 (defun jabber-bookmarks--set-legacy (jc bookmarks &optional callback)
   "Write BOOKMARKS via XEP-0049 Private XML Storage (legacy fallback).
@@ -432,27 +457,31 @@ JC is the Jabber connection."
 (defun jabber-bookmarks-add (jid)
   "Add a bookmark for JID with autojoin enabled."
   (interactive "sRoom JID: ")
-  (let ((plist (list :jid jid :autojoin t)))
-    (jabber-bookmarks2--publish
-     jabber-buffer-connection plist
-     (lambda (jc _xml _closure)
-       (jabber-bookmarks2--update-cache jc plist)
-       (jabber-bookmarks2--maybe-join jc plist)
-       (jabber-bookmarks--refresh-buffer)
-       (message "Bookmark added: %s" jid)))))
+  (let ((jc jabber-buffer-connection)
+        (plist (list :jid jid :autojoin t)))
+    (jabber-bookmarks2--update-cache jc plist)
+    (let ((done (lambda (jc _xml _closure)
+                  (jabber-bookmarks2--maybe-join jc plist)
+                  (jabber-bookmarks--refresh-buffer)
+                  (message "Bookmark added: %s" jid))))
+      (if (jabber-bookmarks--legacy-p jc)
+          (jabber-bookmarks--save-all jc done)
+        (jabber-bookmarks2--publish jc plist done)))))
 
 (defun jabber-bookmarks-delete ()
   "Delete the bookmark at point."
   (interactive)
-  (let ((jid (tabulated-list-get-id)))
+  (let ((jid (tabulated-list-get-id))
+        (jc jabber-buffer-connection))
     (unless jid (user-error "No bookmark at point"))
     (when (yes-or-no-p (format "Delete bookmark %s? " jid))
-      (jabber-bookmarks2--retract
-       jabber-buffer-connection jid
-       (lambda (jc _xml _closure)
-         (jabber-bookmarks2--remove-from-cache jc jid)
-         (jabber-bookmarks--refresh-buffer)
-         (message "Bookmark deleted: %s" jid))))))
+      (jabber-bookmarks2--remove-from-cache jc jid)
+      (let ((done (lambda (_jc _xml _closure)
+                    (jabber-bookmarks--refresh-buffer)
+                    (message "Bookmark deleted: %s" jid))))
+        (if (jabber-bookmarks--legacy-p jc)
+            (jabber-bookmarks--save-all jc done)
+          (jabber-bookmarks2--retract jc jid done))))))
 
 (defun jabber-bookmarks-toggle-autojoin ()
   "Toggle autojoin for the bookmark at point."
@@ -462,16 +491,17 @@ JC is the Jabber connection."
     (let* ((jid (plist-get bm :jid))
            (new-autojoin (not (plist-get bm :autojoin)))
            (new-plist (plist-put (copy-sequence bm) :autojoin new-autojoin))
-           (jc jabber-buffer-connection))
-      (jabber-bookmarks2--publish
-       jc new-plist
-       (lambda (jc _xml _closure)
-         (jabber-bookmarks2--update-cache jc new-plist)
-         (if new-autojoin
-             (jabber-bookmarks2--maybe-join jc new-plist)
-           (jabber-bookmarks2--maybe-leave jc jid))
-         (jabber-bookmarks--refresh-buffer)
-         (message "%s autojoin %s" jid (if new-autojoin "on" "off")))))))
+           (jc jabber-buffer-connection)
+           (done (lambda (jc _arg _extra)
+                   (if new-autojoin
+                       (jabber-bookmarks2--maybe-join jc new-plist)
+                     (jabber-bookmarks2--maybe-leave jc jid))
+                   (jabber-bookmarks--refresh-buffer)
+                   (message "%s autojoin %s" jid (if new-autojoin "on" "off")))))
+      (jabber-bookmarks2--update-cache jc new-plist)
+      (if (jabber-bookmarks--legacy-p jc)
+          (jabber-bookmarks--save-all jc done)
+        (jabber-bookmarks2--publish jc new-plist done)))))
 
 (defun jabber-bookmarks--refresh-buffer ()
   "Refresh the bookmarks buffer if it exists."
@@ -504,14 +534,15 @@ JC is the Jabber connection."
            (new (read-string (format "%s: " prompt) old))
            (new-val (unless (string-empty-p new) new))
            (new-plist (plist-put (copy-sequence bm) key new-val))
-           (jc jabber-buffer-connection))
-      (jabber-bookmarks2--publish
-       jc new-plist
-       (lambda (jc _xml _closure)
-         (jabber-bookmarks2--update-cache jc new-plist)
-         (jabber-bookmarks--refresh-buffer)
-         (message "%s %s set to %s" (plist-get bm :jid) prompt
-                  (or new-val "(empty)")))))))
+           (jc jabber-buffer-connection)
+           (done (lambda (_jc _arg _extra)
+                   (jabber-bookmarks--refresh-buffer)
+                   (message "%s %s set to %s" (plist-get bm :jid) prompt
+                            (or new-val "(empty)")))))
+      (jabber-bookmarks2--update-cache jc new-plist)
+      (if (jabber-bookmarks--legacy-p jc)
+          (jabber-bookmarks--save-all jc done)
+        (jabber-bookmarks2--publish jc new-plist done)))))
 
 (transient-define-prefix jabber-bookmarks-edit ()
   "Edit bookmark at point."

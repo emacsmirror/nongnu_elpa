@@ -208,6 +208,7 @@
 (ert-deftest jabber-bookmarks-test-handle-legacy ()
   "XEP-0049 storage response is parsed to plists and cached."
   (let ((jabber-bookmarks (make-hash-table :test 'equal))
+        (jabber-bookmarks--legacy-accounts (make-hash-table :test 'equal))
         (jc (jabber-bookmarks-test--fake-jc))
         (result nil))
     (cl-letf (((symbol-function 'jabber-connection-bare-jid)
@@ -587,6 +588,96 @@
         (setq-local jabber-buffer-connection
                     (jabber-bookmarks-test--fake-jc))
         (should-not (jabber-bookmarks--entries))))))
+
+;;; Group 10: Legacy account detection and write routing
+
+(ert-deftest jabber-bookmarks-test-legacy-flag-set-on-fallback ()
+  "Legacy flag is set when fetch falls back to XEP-0049."
+  (let ((jabber-bookmarks (make-hash-table :test 'equal))
+        (jabber-bookmarks--legacy-accounts (make-hash-table :test 'equal))
+        (jc (jabber-bookmarks-test--fake-jc)))
+    (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+               (lambda (j) (jabber-bookmarks-test--bare-jid j))))
+      (jabber-bookmarks--handle-legacy
+       jc
+       '(storage ((xmlns . "storage:bookmarks"))
+                 (conference ((jid . "room@c.example.com")
+                              (autojoin . "1"))))
+       #'ignore)
+      (should (jabber-bookmarks--legacy-p jc)))))
+
+(ert-deftest jabber-bookmarks-test-legacy-flag-cleared-on-pubsub ()
+  "Legacy flag is cleared when PubSub fetch succeeds."
+  (let ((jabber-bookmarks (make-hash-table :test 'equal))
+        (jabber-bookmarks--legacy-accounts (make-hash-table :test 'equal))
+        (jc (jabber-bookmarks-test--fake-jc)))
+    (puthash "user@example.com" t jabber-bookmarks--legacy-accounts)
+    (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+               (lambda (j) (jabber-bookmarks-test--bare-jid j))))
+      (jabber-bookmarks2--handle-fetch
+       jc
+       `(iq ((type . "result"))
+            (pubsub ((xmlns . ,jabber-pubsub-xmlns))
+                    (items ((node . ,jabber-bookmarks2-xmlns)))))
+       #'ignore)
+      (should-not (jabber-bookmarks--legacy-p jc)))))
+
+(ert-deftest jabber-bookmarks-test-set-uses-legacy-when-flagged ()
+  "jabber-set-bookmarks uses XEP-0049 when account is legacy."
+  (let ((jabber-bookmarks (make-hash-table :test 'equal))
+        (jabber-bookmarks--legacy-accounts (make-hash-table :test 'equal))
+        (legacy-called nil)
+        (pubsub-called nil))
+    (puthash "user@example.com" t jabber-bookmarks--legacy-accounts)
+    (puthash "user@example.com"
+             '((:jid "room@c.example.com" :name "Room"))
+             jabber-bookmarks)
+    (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+               (lambda (_j) "user@example.com"))
+              ((symbol-function 'jabber-bookmarks--set-legacy)
+               (lambda (_jc _bms &optional _cb)
+                 (setq legacy-called t)))
+              ((symbol-function 'jabber-bookmarks2--publish)
+               (lambda (&rest _) (setq pubsub-called t))))
+      (jabber-set-bookmarks
+       'fake-jc
+       '((:jid "room@c.example.com" :name "Room" :autojoin t))
+       #'ignore))
+    (should legacy-called)
+    (should-not pubsub-called)))
+
+(ert-deftest jabber-bookmarks-test-toggle-uses-legacy-when-flagged ()
+  "Toggle autojoin writes via legacy bulk save on legacy accounts."
+  (let ((jabber-bookmarks (make-hash-table :test 'equal))
+        (jabber-bookmarks--legacy-accounts (make-hash-table :test 'equal))
+        (legacy-called nil)
+        (pubsub-called nil))
+    (puthash "user@example.com" t jabber-bookmarks--legacy-accounts)
+    (puthash "user@example.com"
+             '((:jid "room@c.example.com" :name "Room" :autojoin nil))
+             jabber-bookmarks)
+    (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+               (lambda (_j) "user@example.com"))
+              ((symbol-function 'jabber-bookmarks--set-legacy)
+               (lambda (jc _bms &optional cb)
+                 (setq legacy-called t)
+                 (when cb (funcall cb jc nil t))))
+              ((symbol-function 'jabber-bookmarks2--publish)
+               (lambda (&rest _) (setq pubsub-called t)))
+              ((symbol-function 'jabber-muc-joined-p)
+               (lambda (_g) nil))
+              ((symbol-function 'jabber-muc-join)
+               (lambda (&rest _) nil))
+              ((symbol-function 'fsm-get-state-data)
+               (lambda (_jc) '(:username "user")))
+              ((symbol-function 'jabber-bookmarks--get-bookmark-at-point)
+               (lambda ()
+                 '(:jid "room@c.example.com" :name "Room" :autojoin nil))))
+      (with-temp-buffer
+        (setq-local jabber-buffer-connection 'fake-jc)
+        (jabber-bookmarks-toggle-autojoin)))
+    (should legacy-called)
+    (should-not pubsub-called)))
 
 (provide 'jabber-bookmarks-tests)
 
