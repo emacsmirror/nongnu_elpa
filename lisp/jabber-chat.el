@@ -231,6 +231,7 @@ added to the outgoing message.")
                   (jc to body type))
 (defvar jabber-group)                   ; jabber-muc.el
 (defvar jabber-muc-printers)            ; jabber-muc.el
+(defvar jabber-mam--syncing)            ; jabber-mam.el
 (defvar jabber-oob-xmlns)              ; jabber-xml.el
 (defvar jabber-carbons-xmlns)          ; jabber-carbons.el
 (defvar jabber-image-max-width)        ; jabber-image.el
@@ -508,11 +509,12 @@ _JC and _XML-DATA are reserved for future use by OMEMO."
       (jabber-maybe-print-rare-time
        (ewoc-enter-last jabber-chat-ewoc
                         (list (if error-p :error :foreign) msg-plist)))
-      (dolist (hook '(jabber-message-hooks jabber-alert-message-hooks))
-        (run-hook-with-args hook
-                            from (current-buffer) body-text
-                            (funcall jabber-alert-message-function
-                                     from (current-buffer) body-text))))))
+      (let ((inhibit-message (and jabber-mam--syncing t)))
+        (dolist (hook '(jabber-message-hooks jabber-alert-message-hooks))
+          (run-hook-with-args hook
+                              from (current-buffer) body-text
+                              (funcall jabber-alert-message-function
+                                       from (current-buffer) body-text)))))))
 
 (defun jabber-process-chat (jc xml-data)
   "If XML-DATA is a one-to-one chat message, handle it as such.

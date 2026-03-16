@@ -405,9 +405,10 @@ CLOSURE is (QUERYID WITH START TO)."
                      :key #'cdr :test #'string=))
     (if (or complete (null last-id))
         (progn
-          (message "MAM: sync complete%s"
-                   (if to (format " for %s" to)
-                     (if with (format " for %s" with) "")))
+          (let ((inhibit-message t))
+            (message "MAM: sync complete%s"
+                     (if to (format " for %s" to)
+                       (if with (format " for %s" with) ""))))
           ;; Redisplay affected buffers one at a time.
           (when jabber-mam--dirty-buffers
             (run-with-timer 0.05 nil #'jabber-mam--redisplay-next)))
@@ -436,8 +437,9 @@ On item-not-found (stale sync point), falls back to time-based query."
       (if (and error-el
                (car (jabber-xml-get-children error-el 'item-not-found)))
           (progn
-            (message "MAM: sync point expired%s, falling back to time-based query"
-                     (if to (format " for %s" to) ""))
+            (let ((inhibit-message t))
+              (message "MAM: sync point expired%s, falling back to time-based query"
+                       (if to (format " for %s" to) "")))
             (let ((start (when jabber-mam-catch-up-days
                            (format-time-string
                             "%Y-%m-%dT%H:%M:%SZ"

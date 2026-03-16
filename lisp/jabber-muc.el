@@ -253,6 +253,7 @@ The format is that of `mode-line-format' and `header-line-format'."
 (declare-function jabber-db-backlog "jabber-db.el"
                   (account peer &optional count start-time))
 (defvar jabber-silent-mode)             ; jabber.el
+(defvar jabber-mam--syncing)            ; jabber-mam.el
 (defvar jabber-message-chain)           ; jabber-core.el
 (defvar jabber-alert-muc-function)      ; jabber-alert.el
 (defvar jabber-body-printers)           ; jabber-chat.el
@@ -1174,12 +1175,13 @@ messages."
         ;; ...except if the message is part of history, in which
         ;; case we don't want an alert.
         (unless (jabber-muc--history-message-p xml-data)
-          (dolist (hook '(jabber-muc-hooks jabber-alert-muc-hooks))
-            (run-hook-with-args hook
-                                nick group (current-buffer) body-text
-                                (funcall jabber-alert-muc-function
-                                         nick group (current-buffer)
-                                         body-text))))))))
+          (let ((inhibit-message (and jabber-mam--syncing t)))
+            (dolist (hook '(jabber-muc-hooks jabber-alert-muc-hooks))
+              (run-hook-with-args hook
+                                  nick group (current-buffer) body-text
+                                  (funcall jabber-alert-muc-function
+                                           nick group (current-buffer)
+                                           body-text)))))))))
 
 (add-to-list 'jabber-message-chain #'jabber-muc-process-message)
 
