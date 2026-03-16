@@ -58,7 +58,11 @@ lint-relint:
 	--eval='(package-initialize)' --eval="(require 'relint)" \
 	-f 'relint-batch' "lisp"
 
-lint: lint-check-declare lint-checkdoc lint-package-lint lint-relint
+lint-test-compile:
+	$(EMACS_CMD) -q -Q --batch -L lisp -L tests \
+	-f batch-byte-compile tests/*.el
+
+lint: lint-check-declare lint-checkdoc lint-package-lint lint-relint lint-test-compile
 
 test:
 	$(EMACS_CMD) -Q --batch -L lisp -L tests \
