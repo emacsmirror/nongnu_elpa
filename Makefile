@@ -12,7 +12,8 @@ endif
 TESTS ?= tests/jabber-xml-tests.el tests/jabber-util-tests.el \
          tests/jabber-muc-tests.el tests/jabber-roster-tests.el \
          tests/jabber-chat-tests.el tests/jabber-db-tests.el \
-         tests/jabber-chatstates-tests.el
+         tests/jabber-chatstates-tests.el \
+         tests/jabber-receipts-tests.el
 
 all: build
 
