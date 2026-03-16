@@ -79,6 +79,46 @@ Added to `jabber-chat-send-hooks'."
 
 (add-hook 'jabber-chat-send-hooks #'jabber-receipts--send-hook)
 
+;;; Receive handler
+
+(defun jabber-receipts--handle-message (jc xml-data)
+  "Process incoming delivery receipts and chat markers.
+Added to `jabber-message-chain'."
+  (let ((from (jabber-xml-get-attribute xml-data 'from)))
+    ;; XEP-0184: <received xmlns='urn:xmpp:receipts' id='...'/>
+    (when-let* ((received (jabber-xml-child-with-xmlns
+                           xml-data jabber-receipts-xmlns))
+                ((eq (jabber-xml-node-name received) 'received))
+                (ref-id (jabber-xml-get-attribute received 'id)))
+      (jabber-receipts--update-status jc from ref-id "delivered_at"))
+    ;; XEP-0333: <displayed xmlns='urn:xmpp:chat-markers:0' id='...'/>
+    (when-let* ((marker (jabber-xml-child-with-xmlns
+                         xml-data jabber-chat-markers-xmlns))
+                ((eq (jabber-xml-node-name marker) 'displayed))
+                (ref-id (jabber-xml-get-attribute marker 'id)))
+      (jabber-receipts--update-status jc from ref-id "displayed_at"))))
+
+(defun jabber-receipts--update-status (jc from ref-id column)
+  "Update receipt status for message REF-ID from FROM.
+COLUMN is \"delivered_at\" or \"displayed_at\"."
+  (let ((timestamp (floor (float-time))))
+    (jabber-db-update-receipt ref-id column timestamp)
+    (when-let* ((buffer (get-buffer (jabber-chat-get-buffer from jc))))
+      (with-current-buffer buffer
+        (jabber-receipts--update-header-line column timestamp)))))
+
+(defun jabber-receipts--update-header-line (column timestamp)
+  "Update `jabber-chat-receipt-message' for COLUMN at TIMESTAMP."
+  (let* ((time-str (format-time-string "%H:%M" timestamp))
+         (is-seen (string= column "displayed_at"))
+         (label (if is-seen "seen" "delivered"))
+         (face (if is-seen 'jabber-chat-seen 'jabber-chat-delivered)))
+    (setq jabber-chat-receipt-message
+          (propertize (format " %s %s" label time-str) 'face face))
+    (force-mode-line-update)))
+
+(add-to-list 'jabber-message-chain #'jabber-receipts--handle-message t)
+
 (provide 'jabber-receipts)
 
 ;;; jabber-receipts.el ends here
