@@ -104,7 +104,6 @@ Set from `jabber-chat-default-encryption' on buffer creation.")
 
 (defvar-local jabber-chat-encryption-message ""
   "Header-line string showing current encryption state.")
-(put 'jabber-chat-encryption-message 'risky-local-variable t)
 
 (defface jabber-chat-encryption-omemo
   '((t :inherit success))

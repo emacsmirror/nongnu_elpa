@@ -71,7 +71,7 @@ These fields are about your account:
 		   (or (cdr (assoc (get buddy 'show) jabber-presence-faces))
 		       'jabber-roster-user-online))))
     " " (:eval (jabber-fix-status (get (jabber-jid-symbol jabber-chatting-with) 'status)))
-    " " jabber-chat-encryption-message	;see jabber-chatbuffer.el
+    " " (:eval jabber-chat-encryption-message)	;see jabber-chatbuffer.el
     jabber-chatstates-message		;see jabber-chatstates.el
     (:eval jabber-chat-receipt-message))	;see jabber-receipts.el
   "The specification for the header line of chat buffers.
