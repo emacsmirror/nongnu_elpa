@@ -150,9 +150,6 @@ With prefix argument, remove it."
                   (or (bound-and-true-p jabber-account-list)
                       (bound-and-true-p jabber-connections))))))
 
-(defvar jabber-jid-chat-menu nil
-  "Menu items for chat menu.")
-
 (defvar jabber-jid-info-menu nil
   "Menu item for info menu.")
 
@@ -180,7 +177,6 @@ With prefix argument, remove it."
 (declare-function jabber-connect-all "jabber-core.el" (&optional arg))
 (declare-function jabber-muc-switch "jabber-muc.el" (group))
 (declare-function jabber-compose "jabber-compose.el" (jc &optional recipient))
-(declare-function jabber-chat-display-more-backlog "jabber-chat.el" (how-many))
 (declare-function jabber-roster-change "jabber-presence.el" (jc jid name groups))
 (declare-function jabber-send-subscription-request "jabber-presence.el" (jc to &optional request))
 (declare-function jabber-roster-delete "jabber-presence.el" (jc jid))

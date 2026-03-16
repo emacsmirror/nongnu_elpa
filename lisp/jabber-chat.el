@@ -26,7 +26,6 @@
 (require 'jabber-core)
 (require 'jabber-alert)
 (require 'jabber-chatbuffer)
-(require 'jabber-menu)                  ;we need jabber-jid-chat-menu
 (require 'ewoc)
 (require 'goto-addr)
 (require 'url-parse)
@@ -412,9 +411,6 @@ Call CALLBACK with no arguments when all entries are inserted."
 			    #'jabber-chat--insert-backlog-chunked
 			    buffer rest callback)
 	  (when callback (funcall callback)))))))
-
-(add-to-list 'jabber-jid-chat-menu
-	     (cons "Display more context" 'jabber-chat-display-more-backlog))
 
 (defun jabber-chat-display-more-backlog (how-many)
   "Display more context.
@@ -1226,9 +1222,6 @@ exists when we set our keymap as its parent."
                                      jabber-chat-url-keymap))))))))))
 
 ;; jabber-compose is autoloaded in jabber.el
-(add-to-list 'jabber-jid-chat-menu
-	     (cons "Compose message" 'jabber-compose))
-
 (defun jabber-send-message (jc to subject body type)
   "Send a message tag to the server.
 JC is the Jabber connection."
@@ -1246,9 +1239,6 @@ JC is the Jabber connection."
                               ,(if (> (length body) 0)
                                    `(body () ,body))))
   (jabber-db--store-outgoing jc to body type))
-
-(add-to-list 'jabber-jid-chat-menu
-	     (cons "Start chat" 'jabber-chat-with))
 
 (defun jabber-chat-with (jc jid &optional other-window)
   "Open an empty chat window for chatting with JID.

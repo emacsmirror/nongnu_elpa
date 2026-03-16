@@ -53,6 +53,8 @@ what kind of chat buffer is being created.")
 (declare-function jabber-connection-bare-jid "jabber-util" (jc))
 (declare-function jabber-blocking-toggle-chat-peer "jabber-blocking" (jc))
 (declare-function jabber-jid-user "jabber-util" (jid))
+(declare-function jabber-chat-display-more-backlog "jabber-chat"
+                  (how-many))
 (declare-function jabber-db-set-chat-encryption "jabber-db"
                   (account peer encryption))
 (declare-function jabber-db-get-chat-encryption "jabber-db"
@@ -224,6 +226,7 @@ Works for both 1:1 chat (`jabber-chatting-with') and MUC (`jabber-group')."
    ["Contact"
     ("B" "Block/unblock user" jabber-blocking-toggle-chat-peer)]
    ["Buffer"
+    ("d" "Display more context" jabber-chat-display-more-backlog)
     ("r" "Redisplay" jabber-chat-redisplay)
     ("R" "Redraw" jabber-chat-buffer-redraw)]])
 
