@@ -200,10 +200,13 @@ Trailing newlines are always removed, regardless of this variable."
   "h"         #'jabber-roster-menu
   "o"         #'jabber-roster-toggle-offline-display
   "H"         #'jabber-roster-menu
-  "?"         #'jabber-roster-menu)
+  "?"         #'jabber-roster-menu
+  "f"         #'jabber-omemo-show-fingerprints)
 
 ;; Global reference declarations
 
+(declare-function jabber-omemo-show-fingerprints "jabber-omemo-trust.el"
+                  (jc))
 (declare-function jabber-muc-read-my-nickname "jabber-muc.el"
                   (jc group &optional default))
 (declare-function jabber-muc-join "jabber-muc.el"
@@ -257,7 +260,9 @@ Trailing newlines are always removed, regardless of this variable."
     ("i"   "Disco items" jabber-get-disco-items)
     ("I"   "Disco info" jabber-get-disco-info)
     ("b"   "Browse" jabber-get-browse)
-    ("v"   "Client version" jabber-get-version)]])
+    ("v"   "Client version" jabber-get-version)]
+   ["OMEMO"
+    ("f"   "Fingerprints" jabber-omemo-show-fingerprints)]])
 
 ;;
 
