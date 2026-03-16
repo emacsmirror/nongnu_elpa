@@ -82,8 +82,8 @@ Added to `jabber-chat-send-hooks'."
 ;;; Receive handler
 
 (defun jabber-receipts--handle-message (jc xml-data)
-  "Process incoming delivery receipts and chat markers.
-Added to `jabber-message-chain'."
+  "Process incoming delivery receipts and chat markers in XML-DATA.
+JC is the connection.  Added to `jabber-message-chain'."
   (let ((from (jabber-xml-get-attribute xml-data 'from)))
     ;; XEP-0184: <received xmlns='urn:xmpp:receipts' id='...'/>
     (when-let* ((received (jabber-xml-child-with-xmlns
@@ -121,7 +121,7 @@ Added to `jabber-message-chain'."
           (setq jabber-receipts--pending-displayed-id id))))))
 
 (defun jabber-receipts--update-status (jc from ref-id column)
-  "Update receipt status for message REF-ID from FROM.
+  "Update receipt status for message REF-ID from FROM on JC.
 COLUMN is \"delivered_at\" or \"displayed_at\"."
   (let ((timestamp (floor (float-time))))
     (jabber-db-update-receipt ref-id column timestamp)
@@ -158,6 +158,11 @@ COLUMN is \"delivered_at\" or \"displayed_at\"."
     (setq jabber-receipts--pending-displayed-id nil)))
 
 (add-hook 'window-configuration-change-hook #'jabber-receipts--on-window-change)
+
+;;; Disco feature advertisement
+
+(jabber-disco-advertise-feature jabber-receipts-xmlns)
+(jabber-disco-advertise-feature jabber-chat-markers-xmlns)
 
 (provide 'jabber-receipts)
 
