@@ -54,12 +54,12 @@ Incoming receipts are always processed regardless of this setting."
   :group 'jabber-receipts)
 
 (defface jabber-chat-delivered
-  '((t :inherit shadow))
+  '((t :inherit shadow :slant italic))
   "Face for delivery receipt status in header-line."
   :group 'jabber-receipts)
 
 (defface jabber-chat-seen
-  '((t :inherit success))
+  '((t :inherit success :slant italic))
   "Face for seen/displayed status in header-line."
   :group 'jabber-receipts)
 
