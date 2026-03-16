@@ -151,6 +151,26 @@
                    (markable ((xmlns . ,jabber-chat-markers-xmlns))))))
       (should (equal "msg-200" jabber-receipts--pending-displayed-id)))))
 
+;;; Group 4: Header-line update
+
+(ert-deftest jabber-receipts-test-header-line-delivered ()
+  "Header-line shows delivered with correct face."
+  (with-temp-buffer
+    (setq-local jabber-chat-receipt-message "")
+    (jabber-receipts--update-header-line "delivered_at" 1700000000)
+    (should (string-match-p "delivered" jabber-chat-receipt-message))
+    (should (eq 'jabber-chat-delivered
+                (get-text-property 0 'face jabber-chat-receipt-message)))))
+
+(ert-deftest jabber-receipts-test-header-line-seen ()
+  "Header-line shows seen with correct face."
+  (with-temp-buffer
+    (setq-local jabber-chat-receipt-message "")
+    (jabber-receipts--update-header-line "displayed_at" 1700000000)
+    (should (string-match-p "seen" jabber-chat-receipt-message))
+    (should (eq 'jabber-chat-seen
+                (get-text-property 0 'face jabber-chat-receipt-message)))))
+
 (provide 'jabber-receipts-tests)
 
 ;;; jabber-receipts-tests.el ends here
