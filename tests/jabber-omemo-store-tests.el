@@ -128,7 +128,7 @@ Binds `jabber-db-path' to a temp file and tears down on exit."
 (ert-deftest jabber-omemo-store-test-trust-levels ()
   "Trust levels: 0 (undecided), 1 (tofu), 2 (verified), -1 (untrusted)."
   (jabber-omemo-store-test-with-db
-    (let ((key (string-as-unibyte "k")))
+    (let ((key (encode-coding-string "k" 'raw-text)))
       (dolist (level '(0 1 2 -1))
         (jabber-omemo-store-save-trust "me@example.com" "peer@example.com"
                                        (+ 1000 level) key level))
