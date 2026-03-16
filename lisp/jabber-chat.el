@@ -357,7 +357,7 @@ JC is the Jabber connection."
 
     (current-buffer)))
 
-(defconst jabber-chat-backlog-chunk-size 30
+(defconst jabber-chat-backlog-chunk-size 100
   "Number of backlog entries to insert per timer tick.")
 
 (defun jabber-chat-insert-backlog-entry (msg-plist)
