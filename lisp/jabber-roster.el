@@ -52,7 +52,8 @@ These fields are available:
 %r   Name of this resource
 %s   Availability of resource as string (\"Online\", \"Away\" etc)
 %S   Status string specified by resource."
-  :type 'string)
+  :type 'string
+  :group 'jabber-roster)
 
 (defcustom jabber-roster-sort-functions
   '(jabber-roster-sort-by-status jabber-roster-sort-by-displayname)
@@ -65,12 +66,14 @@ These functions should take two roster items A and B, and return:
   :type 'hook
   :options '(jabber-roster-sort-by-status
 	     jabber-roster-sort-by-displayname
-	     jabber-roster-sort-by-group))
+	     jabber-roster-sort-by-group)
+  :group 'jabber-roster)
 
 (defcustom jabber-sort-order '("chat" "" "away" "dnd" "xa")
   "Sort by status in this order.  Anything not in list goes last.
 Offline is represented as nil."
-  :type '(repeat (restricted-sexp :match-alternatives (stringp nil))))
+  :type '(repeat (restricted-sexp :match-alternatives (stringp nil)))
+  :group 'jabber-roster)
 
 (defcustom jabber-show-resources 'sometimes
   "Show contacts' resources in roster?
@@ -81,11 +84,13 @@ sometimes Show resources when there are more than one
 always    Always show resources."
   :type '(radio (const :tag "Never" nil)
 		(const :tag "When more than one connected resource" sometimes)
-		(const :tag "Always" always)))
+		(const :tag "Always" always))
+  :group 'jabber-roster)
 
 (defcustom jabber-show-offline-contacts t
   "Show offline contacts in roster when non-nil."
-  :type 'boolean)
+  :type 'boolean
+  :group 'jabber-roster)
 
 (defcustom jabber-remove-newlines t
   "Remove newlines in status messages?
@@ -94,13 +99,15 @@ they are essential to status message poets.  Therefore, you get to
 choose the behaviour.
 
 Trailing newlines are always removed, regardless of this variable."
-  :type 'boolean)
+  :type 'boolean
+  :group 'jabber-roster)
 
 
 
 (defcustom jabber-roster-mode-hook nil
   "Hook run when entering Roster mode."
-  :type 'hook)
+  :type 'hook
+  :group 'jabber-roster)
 
 (defcustom jabber-roster-default-group-name "Ungrouped"
   "Default group name for buddies without groups."
@@ -113,11 +120,13 @@ Trailing newlines are always removed, regardless of this variable."
   :set (lambda (var val)
          (when (stringp val)
 	   (set-text-properties 0 (length val) nil val))
-         (custom-set-default var val)))
+         (custom-set-default var val))
+  :group 'jabber-roster)
 
 (defcustom jabber-roster-show-empty-group nil
   "Show empty groups in roster?"
-  :type 'boolean)
+  :type 'boolean
+  :group 'jabber-roster)
 
 (defface jabber-roster-user-online
   '((t :inherit success :weight bold))
@@ -172,7 +181,7 @@ Trailing newlines are always removed, regardless of this variable."
 (defun jabber-roster-separator ()
   "Return a propertized separator string for the roster buffer."
   (propertize (jabber-separator)
-                     'cursor-intangible t))
+	       'cursor-intangible t))
 
 (defvar jabber-roster-debug nil
   "Debug roster draw.")
@@ -229,6 +238,7 @@ Trailing newlines are always removed, regardless of this variable."
 (declare-function jabber-roster-delete-group-from-jids "jabber-presence.el" (jc jids group))
 (declare-function jabber-roster-edit-group-from-jids "jabber-presence.el" (jc jids group))
 (declare-function jabber-roster-change "jabber-presence.el" (jc jid name groups))
+(declare-function jabber-edit-bookmarks "jabber-bookmarks.el" (jc))
 (declare-function jabber-muc-joined-p "jabber-muc.el" (group))
 (declare-function jabber-muc-active-rooms "jabber-muc.el" ())
 (declare-function jabber-muc-nickname "jabber-muc.el" (group))
@@ -351,7 +361,7 @@ at point."
 
 (defun jabber-roster-delete-at-point ()
   "Delete at point from roster.
-Try to delete the group from all contaacs.
+Try to delete the group from all contacts.
 Delete a jid if there is no group at point."
   (interactive)
   (let ((group-at-point (get-text-property (point)
@@ -391,21 +401,21 @@ Eval `jabber-roster-change' is no group at point."
 (defun jabber-roster-roll-group (jc group-name &optional set)
   "Roll up/down group in roster.
 If optional SET is t, roll up group.
-If SET is nor t or nil, roll down group."
+If SET is non-nil and not t, roll down group.
+If SET is nil, toggle."
   (let* ((state-data (fsm-get-state-data jc))
 	 (roll-groups (plist-get state-data :roster-roll-groups))
-         (new-roll-groups (if (cl-find group-name roll-groups :test #'string=)
-                              ;; group is rolled up, roll it down if needed
-                              (if (or (not set) (and set (not (eq set t))))
-                                  (cl-remove-if-not (lambda (group-name-in-list)
-                                                      (not (string= group-name
-                                                                    group-name-in-list)))
-                                                    roll-groups)
-                                roll-groups)
-                            ;; group is rolled down, roll it up if needed
-                            (if (or (not set) (and set (eq set t)))
-                                (append roll-groups (list group-name))
-                              roll-groups))))
+	 (rolled-p (cl-find group-name roll-groups :test #'string=))
+	 (new-roll-groups
+	  (cond
+	   ;; Currently rolled up: unroll unless SET forces roll-up
+	   ((and rolled-p (not (eq set t)))
+	    (cl-remove group-name roll-groups :test #'string=))
+	   ;; Currently unrolled: roll up on toggle or explicit roll-up
+	   ((and (not rolled-p) (or (not set) (eq set t)))
+	    (cons group-name roll-groups))
+	   ;; No change needed
+	   (t roll-groups))))
     (unless (equal roll-groups new-roll-groups)
       (plist-put
        state-data :roster-roll-groups
@@ -478,23 +488,15 @@ JC is the Jabber connection."
 	 (buddies (plist-get state-data :roster))
 	 (all-groups '()))
     (dolist (buddy buddies)
-      (let ((groups (get buddy 'groups)))
-	(if groups
-	    (progn
-	      (dolist (group groups)
-		(progn
-		  (setq all-groups (append all-groups (list group)))
-		  (puthash group
-			   (append (gethash group hash)
-				   (list buddy))
-			   hash))))
-	  (progn
-	    (setq all-groups (append all-groups
-				     (list jabber-roster-default-group-name)))
-	    (puthash jabber-roster-default-group-name
-		     (append (gethash jabber-roster-default-group-name hash)
-			     (list buddy))
-		     hash)))))
+      (let ((groups (or (get buddy 'groups)
+			(list jabber-roster-default-group-name))))
+	(dolist (group groups)
+	  (push group all-groups)
+	  (puthash group
+		   (cons buddy (gethash group hash))
+		   hash))))
+    ;; Reverse hash values to restore buddy order within each group
+    (maphash (lambda (key val) (puthash key (nreverse val) hash)) hash)
 
     ;; remove duplicates name of group
     (setq all-groups (sort
@@ -596,10 +598,10 @@ To change this permanently, customize the `jabber-show-offline-contacts'."
 			       (plist-get (fsm-get-state-data jc) :server)))
 		     jabber-connections ", ")))
       (insert (propertize (concat "Connected"
-					 (unless (string= show "Online")
-					   (format " [%s]" show))
-					 ": " accounts)
-				 'face 'shadow)
+				  (unless (string= show "Online")
+				    (format " [%s]" show))
+				  ": " accounts)
+			  'face 'shadow)
 	      "\n" (jabber-roster-separator) "\n"))))
 
 (defun jabber-roster--merged-groups ()
@@ -651,7 +653,7 @@ sorted list and BUDDY-JC-MAP maps buddy names to connections."
 			 (group-name (car group))
 			 (buddy (cadr data))
 			 (jc (nth 2 data)))
-		    (jabber-display-roster-entry (or jc first-jc) group-name buddy)))
+		    (jabber-roster--display-entry (or jc first-jc) group-name buddy)))
 		""
 		(jabber-roster-separator))))
     (dolist (jc jabber-connections)
@@ -681,8 +683,8 @@ sorted list and BUDDY-JC-MAP maps buddy names to connections."
   (let ((rooms (sort (jabber-muc-active-rooms) #'string<)))
     (when rooms
       (insert (propertize "Groupchats"
-				 'face 'jabber-title-small
-				 'jabber-group "Groupchats")
+			  'face 'jabber-title-small
+			  'jabber-group "Groupchats")
 	      "\n")
       (dolist (room-jid rooms)
 	(let* ((nick (jabber-muc-nickname room-jid))
@@ -692,11 +694,11 @@ sorted list and BUDDY-JC-MAP maps buddy names to connections."
 	       (unread (member room-jid
 			       (bound-and-true-p jabber-activity-jids)))
 	       (room-part (propertize (format "  %s" room-name)
-					     'face (if unread
-						       'jabber-roster-unread
-						     'jabber-roster-groupchat)))
+				      'face (if unread
+						'jabber-roster-unread
+					      'jabber-roster-groupchat)))
 	       (nick-part (propertize (format " (%s)" nick)
-					     'face 'jabber-roster-groupchat-nick))
+				      'face 'jabber-roster-groupchat-nick))
 	       (line (concat room-part nick-part)))
 	  (add-text-properties 0 (length line)
 			       (list 'jabber-jid room-jid
@@ -724,12 +726,12 @@ sorted list and BUDDY-JC-MAP maps buddy names to connections."
     (with-current-buffer buffer
       (unless (eq major-mode 'jabber-roster-mode)
 	(jabber-roster-mode))
-      (let ((inhibit-read-only t)
-	    (current-line (line-number-at-pos))
-	    (current-column (current-column))
-	    (window (get-buffer-window buffer))
-	    (window-line (when (get-buffer-window buffer)
-			   (count-lines (window-start) (point)))))
+      (let* ((inhibit-read-only t)
+	     (current-line (line-number-at-pos))
+	     (current-column (current-column))
+	     (window (get-buffer-window buffer))
+	     (window-line (when window
+			    (count-lines (window-start) (point)))))
 	(erase-buffer)
 	(setq jabber-roster-ewoc nil)
 	(setq header-line-format
@@ -746,12 +748,42 @@ sorted list and BUDDY-JC-MAP maps buddy names to connections."
   "Switch to the roster buffer and refresh it."
   (interactive)
   (jabber-roster--refresh)
-  (sit-for 1)
   (pop-to-buffer-same-window jabber-roster-buffer)
   (when (called-interactively-p 'interactive)
     (message "Press %s for commands" (propertize "h" 'face 'help-key-binding))))
 
-(defun jabber-display-roster-entry (jc group-name buddy)
+(defun jabber-roster--format-resource (buddy resource jc)
+  "Return a propertized string for RESOURCE of BUDDY.
+JC is the Jabber connection."
+  (let* ((res-name (car resource))
+	 (res-data (cdr resource))
+	 (resource-str
+	  (format-spec jabber-resource-line-format
+		       (list
+			(cons ?c "*")
+			(cons ?n (if (> (length (get buddy 'name)) 0)
+				     (get buddy 'name)
+				   (symbol-name buddy)))
+			(cons ?j (symbol-name buddy))
+			(cons ?r (if (> (length res-name) 0) res-name "empty"))
+			(cons ?s (or (cdr (assoc (plist-get res-data 'show)
+						 jabber-presence-strings))
+				     (plist-get res-data 'show)))
+			(cons ?S (if (plist-get res-data 'status)
+				     (jabber-fix-status (plist-get res-data 'status))
+				   ""))
+			(cons ?p (number-to-string
+				  (plist-get res-data 'priority)))))))
+    (add-text-properties 0 (length resource-str)
+			 (list 'face (or (cdr (assoc (plist-get res-data 'show)
+						     jabber-presence-faces))
+					 'jabber-roster-user-online)
+			       'jabber-jid (format "%s/%s" (symbol-name buddy) res-name)
+			       'jabber-account jc)
+			 resource-str)
+    resource-str))
+
+(defun jabber-roster--display-entry (jc group-name buddy)
   "Format and insert a roster entry for BUDDY at point.
 BUDDY is a JID symbol. JC is the Jabber connection."
   (if buddy
@@ -778,51 +810,7 @@ BUDDY is a JID symbol. JC is the Jabber connection."
 		       (> (jabber-count-connected-resources buddy) 1)))
 	  (dolist (resource (get buddy 'resources))
 	    (when (plist-get (cdr resource) 'connected)
-	      (let ((resource-str (format-spec jabber-resource-line-format
-					       (list
-						(cons ?c "*")
-						(cons ?n (if (>
-							      (length
-							       (get buddy 'name)) 0)
-							     (get buddy 'name)
-							   (symbol-name buddy)))
-						(cons ?j (symbol-name buddy))
-						(cons ?r (if (>
-							      (length
-							       (car resource)) 0)
-							     (car resource)
-							   "empty"))
-						(cons ?s (or
-							  (cdr (assoc
-								(plist-get
-								 (cdr resource) 'show)
-								jabber-presence-strings))
-							  (plist-get
-							   (cdr resource) 'show)))
-						(cons ?S (if (plist-get
-							      (cdr resource) 'status)
-							     (jabber-fix-status
-							      (plist-get (cdr resource)
-									 'status))
-							   ""))
-						(cons ?p (number-to-string
-							  (plist-get (cdr resource)
-								     'priority)))))))
-		(add-text-properties 0
-				     (length resource-str)
-				     (list
-				      'face
-				      (or (cdr (assoc (plist-get
-						       (cdr resource)
-						       'show)
-						      jabber-presence-faces))
-					  'jabber-roster-user-online)
-				      'jabber-jid
-				      (format "%s/%s" (symbol-name buddy) (car resource))
-				      'jabber-account
-				      jc)
-				     resource-str)
-		(insert "\n" resource-str))))))
+	      (insert "\n" (jabber-roster--format-resource buddy resource jc))))))
     (let* ((group-name (or group-name
 			   jabber-roster-default-group-name))
 	    (line (concat "  " group-name)))
@@ -860,45 +848,35 @@ JC is the Jabber connection."
 
       ;; delete items
       (dolist (delete-this (append deleted-items changed-items))
-	(let ((jid (symbol-name delete-this)))
+	(when jabber-roster-debug
+	  (message "delete jid: %s" (symbol-name delete-this)))
+	(dolist (group (mapcar #'car all-groups))
 	  (when jabber-roster-debug
-	    (message (concat "delete jid: " jid)))
-	  (dolist (group (mapcar (lambda (g) (car g)) all-groups))
-	    (when jabber-roster-debug
-	      (message (concat "try to delete jid: " jid " from group " group)))
-	    (puthash group
-		     (delq delete-this (gethash group hash))
-		     hash))))
+	    (message "try to delete jid: %s from group %s"
+		     (symbol-name delete-this) group))
+	  (puthash group
+		   (delq delete-this (gethash group hash))
+		   hash)))
 
       ;; insert changed-items
       (dolist (insert-this (append changed-items new-items))
-	(let ((jid (symbol-name insert-this)))
+	(when jabber-roster-debug
+	  (message "insert jid: %s" (symbol-name insert-this)))
+	(dolist (group (or (get insert-this 'groups)
+			   (list jabber-roster-default-group-name)))
 	  (when jabber-roster-debug
-	    (message (concat "insert jid: " jid)))
-	  (dolist (group (or (get insert-this 'groups)
-			     (list jabber-roster-default-group-name)))
-	    (when jabber-roster-debug
-	      (message (concat "insert jid: " jid " to group " group)))
-	    (puthash group
-		     (append (gethash group hash)
-			     (list insert-this))
-		     hash)
-	    (setq all-groups (append all-groups (list (list group)))))))
+	    (message "insert jid: %s to group %s" (symbol-name insert-this) group))
+	  (puthash group
+		   (cons insert-this (gethash group hash))
+		   hash)
+	  (push (list group) all-groups)))
 
       (when jabber-roster-debug
 	(message "remove duplicates from new group"))
       (setq all-groups (sort
 			(cl-remove-duplicates all-groups
-					      :test (lambda (g1 g2)
-						      (let ((g1-name (car g1))
-							    (g2-name (car g2)))
-							(string= g1-name
-							         g2-name))))
-			(lambda (g1 g2)
-			  (let ((g1-name (car g1))
-				(g2-name (car g2)))
-			    (string< g1-name
-				     g2-name)))))
+					      :key #'car :test #'string=)
+			(lambda (a b) (string< (car a) (car b)))))
 
       (plist-put (fsm-get-state-data jc) :roster-groups all-groups))
 
@@ -1009,10 +987,6 @@ obtained from `xml-parse-region'."
 
 (add-hook 'window-state-change-hook #'jabber-roster--on-window-state-change)
 
-(defun jabber-roster--maybe-refresh-on-activity ()
-  "Refresh roster when activity changes, if the buffer exists."
-  (jabber-roster--refresh-if-visible))
-
 (defun jabber-roster--maybe-refresh-on-muc (_jc _xml-data)
   "Refresh roster when groupchat list changes."
   (unless (= (jabber-muc-generation) jabber-roster--last-muc-generation)
@@ -1021,7 +995,7 @@ obtained from `xml-parse-region'."
 
 (with-eval-after-load 'jabber-activity
   (add-hook 'jabber-activity-update-hook
-	    #'jabber-roster--maybe-refresh-on-activity))
+	    #'jabber-roster--refresh-if-visible))
 
 ;; MUC join/leave is signaled via presence stanzas, so we hook into
 ;; the presence chain.  The handler short-circuits via `equal' check
