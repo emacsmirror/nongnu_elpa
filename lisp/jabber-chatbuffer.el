@@ -51,6 +51,7 @@ what kind of chat buffer is being created.")
                   (jc group))
 (declare-function jabber-omemo-fingerprints "jabber-omemo" ())
 (declare-function jabber-connection-bare-jid "jabber-util" (jc))
+(declare-function jabber-blocking-toggle-chat-peer "jabber-blocking" (jc))
 (declare-function jabber-jid-user "jabber-util" (jid))
 (declare-function jabber-db-set-chat-encryption "jabber-db"
                   (account peer encryption))
@@ -221,6 +222,8 @@ Works for both 1:1 chat (`jabber-chatting-with') and MUC (`jabber-group')."
     ("f" "Fingerprints" jabber-chat-show-fingerprints)]
    ["Files"
     ("a" "Attach file" jabber-chat-attach-file)]
+   ["Contact"
+    ("B" "Block/unblock user" jabber-blocking-toggle-chat-peer)]
    ["Buffer"
     ("r" "Redisplay" jabber-chat-redisplay)
     ("R" "Redraw" jabber-chat-buffer-redraw)]])
