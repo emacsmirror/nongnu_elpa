@@ -32,7 +32,7 @@
 (require 'fsm)
 
 (require 'gnutls)
-(require 'srv)
+(require 'jabber-srv)
 
 (defconst jabber-tls-xmlns "urn:ietf:params:xml:ns:xmpp-tls"
   "RFC 6120 XMPP STARTTLS namespace.")
@@ -116,7 +116,7 @@ If we can't find SRV records, use standard defaults."
       (list (cons (or network-server server)
 		  (or port 5222)))
     (or (condition-case nil
-	    (srv-lookup (concat "_xmpp-client._tcp." server))
+	    (jabber-srv-lookup (concat "_xmpp-client._tcp." server))
 	  (error nil))
 	(list (cons server 5222)))))
 
