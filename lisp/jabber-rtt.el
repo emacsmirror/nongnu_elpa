@@ -45,7 +45,6 @@
 
 ;;;; Handling incoming events
 
-;;;###autoload
 (with-eval-after-load "jabber-disco"
   (jabber-disco-advertise-feature jabber-rtt-xmlns))
 
