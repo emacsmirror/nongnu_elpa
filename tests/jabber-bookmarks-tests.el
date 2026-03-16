@@ -272,7 +272,7 @@
   `(let ((jabber-bookmarks-test--iq-calls nil))
      (cl-letf (((symbol-function 'jabber-send-iq)
                 (lambda (jc to type query
-                         &optional success-cb success-data error-cb error-data
+                         &optional success-cb _success-data error-cb _error-data
                          &rest _)
                   (push (list :jc jc :to to :type type :query query
                               :success-cb success-cb :error-cb error-cb)
@@ -328,13 +328,13 @@
     (cl-letf (((symbol-function 'jabber-connection-bare-jid)
                (lambda (_j) "user@example.com"))
               ((symbol-function 'jabber-bookmarks2--publish)
-               (lambda (_jc plist &optional cb _ecb)
+               (lambda (jc plist &optional cb _ecb)
                  (push (plist-get plist :jid) published)
-                 (when cb (funcall cb _jc nil nil))))
+                 (when cb (funcall cb jc nil nil))))
               ((symbol-function 'jabber-bookmarks2--retract)
-               (lambda (_jc jid &optional cb _ecb)
+               (lambda (jc jid &optional cb _ecb)
                  (push jid retracted)
-                 (when cb (funcall cb _jc nil nil)))))
+                 (when cb (funcall cb jc nil nil)))))
       ;; New: keep room1, add room3, drop room2
       (jabber-set-bookmarks
        'fake-jc
@@ -364,9 +364,9 @@
     (cl-letf (((symbol-function 'jabber-connection-bare-jid)
                (lambda (_j) "user@example.com"))
               ((symbol-function 'jabber-bookmarks2--publish)
-               (lambda (_jc _plist &optional _cb ecb)
+               (lambda (jc _plist &optional _cb ecb)
                  ;; Simulate PubSub error
-                 (when ecb (funcall ecb _jc nil nil))))
+                 (when ecb (funcall ecb jc nil nil))))
               ((symbol-function 'jabber-bookmarks--set-legacy)
                (lambda (_jc _bms &optional _cb)
                  (setq legacy-called t))))
