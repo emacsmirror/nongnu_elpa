@@ -103,7 +103,9 @@ CREATE TABLE IF NOT EXISTS message (
   encrypted    INTEGER DEFAULT 0,
   raw_xml      TEXT,
   oob_url      TEXT,
-  oob_desc     TEXT
+  oob_desc     TEXT,
+  delivered_at INTEGER,
+  displayed_at INTEGER
 )")
   (sqlite-execute db "\
 CREATE INDEX IF NOT EXISTS idx_msg_peer_ts
@@ -199,17 +201,24 @@ CREATE TABLE IF NOT EXISTS chat_settings (
 (defun jabber-db--migrate (db)
   "Check user_version and apply migrations to DB."
   (let ((version (caar (sqlite-select db "PRAGMA user_version"))))
-    (when (< version 1)
+    (when (zerop version)
+      ;; Fresh database: create latest schema, skip intermediate migrations.
       (jabber-db--init-schema db)
-      (sqlite-execute db "PRAGMA user_version=1"))
+      (sqlite-execute db "PRAGMA user_version=3")
+      (setq version 3))
     (when (< version 2)
-      ;; Remove duplicate messages that lack stanza_id and server_id.
+      ;; v1->v2: Remove duplicate messages that lack stanza_id and server_id.
       ;; These were created by MUC server history replayed on every join.
       (sqlite-execute db "\
 DELETE FROM message WHERE id NOT IN (
   SELECT MIN(id) FROM message
   GROUP BY account, peer, timestamp, body, resource)")
-      (sqlite-execute db "PRAGMA user_version=2"))))
+      (sqlite-execute db "PRAGMA user_version=2"))
+    (when (< version 3)
+      ;; v2->v3: Add receipt timestamp columns for XEP-0184/XEP-0333.
+      (sqlite-execute db "ALTER TABLE message ADD COLUMN delivered_at INTEGER")
+      (sqlite-execute db "ALTER TABLE message ADD COLUMN displayed_at INTEGER")
+      (sqlite-execute db "PRAGMA user_version=3"))))
 
 (defun jabber-db-ensure-open ()
   "Open the SQLite database, creating it if needed.  Idempotent.
@@ -318,6 +327,18 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
        (list account peer resource direction type body timestamp
              stanza-id server-id raw-xml oob-url oob-desc
              (if encrypted 1 0))))))
+
+;;; Receipt updates
+
+(defun jabber-db-update-receipt (stanza-id column timestamp)
+  "Set COLUMN to TIMESTAMP for message with STANZA-ID.
+COLUMN is \"delivered_at\" or \"displayed_at\".
+The IS NULL guard prevents overwriting an earlier timestamp."
+  (when (and jabber-db--connection stanza-id)
+    (sqlite-execute jabber-db--connection
+                    (format "UPDATE message SET %s = ? WHERE stanza_id = ? AND %s IS NULL"
+                            column column)
+                    (list timestamp stanza-id))))
 
 ;;; Retrieval
 

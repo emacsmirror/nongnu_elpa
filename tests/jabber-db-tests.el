@@ -49,7 +49,7 @@ and tears down on exit."
 (ert-deftest jabber-db-test-schema-version ()
   "The user_version pragma is set to 1 after initialization."
   (jabber-db-test-with-db
-    (should (= 2 (caar (sqlite-select jabber-db--connection
+    (should (= 3 (caar (sqlite-select jabber-db--connection
                                       "PRAGMA user_version"))))))
 
 (ert-deftest jabber-db-test-wal-mode ()
@@ -848,6 +848,62 @@ the corrected jabber-muc-create-buffer order."
             (jabber-chat-redisplay)
             (should (eq 'plaintext jabber-chat-encryption)))
         (kill-buffer buf)))))
+
+;;; Group 15: Receipt columns and updates
+
+(ert-deftest jabber-db-test-receipt-columns ()
+  "Message table has delivered_at and displayed_at columns."
+  (jabber-db-test-with-db
+    (sqlite-execute jabber-db--connection
+                    "INSERT INTO message (account,peer,direction,timestamp)
+                     VALUES ('a','b','out',1)")
+    (let ((row (car (sqlite-select jabber-db--connection
+                     "SELECT delivered_at, displayed_at FROM message"))))
+      (should (equal row '(nil nil))))))
+
+(ert-deftest jabber-db-test-update-receipt-delivered ()
+  "Update delivered_at for a message by stanza_id."
+  (jabber-db-test-with-db
+    (jabber-db-store-message "me@example.com" "them@example.com"
+                             "out" "chat" "hello" 1000
+                             nil "msg-001")
+    (jabber-db-update-receipt "msg-001" "delivered_at" 1001)
+    (let ((row (car (sqlite-select jabber-db--connection
+                     "SELECT delivered_at FROM message WHERE stanza_id='msg-001'"))))
+      (should (equal row '(1001))))))
+
+(ert-deftest jabber-db-test-update-receipt-displayed ()
+  "Update displayed_at for a message by stanza_id."
+  (jabber-db-test-with-db
+    (jabber-db-store-message "me@example.com" "them@example.com"
+                             "out" "chat" "hello" 1000
+                             nil "msg-002")
+    (jabber-db-update-receipt "msg-002" "displayed_at" 1002)
+    (let ((row (car (sqlite-select jabber-db--connection
+                     "SELECT displayed_at FROM message WHERE stanza_id='msg-002'"))))
+      (should (equal row '(1002))))))
+
+(ert-deftest jabber-db-test-update-receipt-no-overwrite ()
+  "Duplicate receipt does not overwrite earlier timestamp."
+  (jabber-db-test-with-db
+    (jabber-db-store-message "me@example.com" "them@example.com"
+                             "out" "chat" "hello" 1000
+                             nil "msg-003")
+    (jabber-db-update-receipt "msg-003" "delivered_at" 1001)
+    (jabber-db-update-receipt "msg-003" "delivered_at" 9999)
+    (let ((row (car (sqlite-select jabber-db--connection
+                     "SELECT delivered_at FROM message WHERE stanza_id='msg-003'"))))
+      (should (equal row '(1001))))))
+
+(ert-deftest jabber-db-test-update-receipt-nil-stanza-id ()
+  "Update with nil stanza_id is a no-op."
+  (jabber-db-test-with-db
+    (jabber-db-store-message "me@example.com" "them@example.com"
+                             "out" "chat" "hello" 1000)
+    (jabber-db-update-receipt nil "delivered_at" 1001)
+    (let ((row (car (sqlite-select jabber-db--connection
+                     "SELECT delivered_at FROM message LIMIT 1"))))
+      (should (equal row '(nil))))))
 
 (provide 'jabber-db-tests)
 
