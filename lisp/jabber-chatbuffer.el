@@ -367,5 +367,20 @@ line at the bottom of the window."
       (buffer-list)))))
 
 
+;;; Cleanup on disconnect
+
+(defvar jabber-connections)             ; jabber-core.el
+
+(defun jabber-chatbuffer--kill-stale ()
+  "Kill chat buffers whose connection is no longer active."
+  (dolist (buf (buffer-list))
+    (when (buffer-local-value 'jabber-buffer-connection buf)
+      (unless (memq (buffer-local-value 'jabber-buffer-connection buf)
+                    jabber-connections)
+        (kill-buffer buf)))))
+
+(with-eval-after-load "jabber-core"
+  (add-hook 'jabber-post-disconnect-hook #'jabber-chatbuffer--kill-stale))
+
 (provide 'jabber-chatbuffer)
 ;;; jabber-chatbuffer.el ends here
