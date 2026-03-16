@@ -1,4 +1,4 @@
-.phony: all compile lint clean test
+.PHONY: all build clean install uninstall check test
 
 ifndef EMACS_CMD
 GUIX := $(shell command -v guix 2>/dev/null)
@@ -13,6 +13,8 @@ TESTS ?= tests/jabber-xml-tests.el tests/jabber-util-tests.el \
          tests/jabber-muc-tests.el tests/jabber-roster-tests.el \
          tests/jabber-chat-tests.el tests/jabber-db-tests.el
 
+all: build
+
 build: autoload compile module
 
 dev: autoload compile module lint test
@@ -22,13 +24,16 @@ autoload:
 	--eval="(loaddefs-generate \"lisp\" \"lisp/jabber-autoloads.el\")"
 
 module:
+	@if [ -z "$$(ls -A src/picomemo 2>/dev/null)" ]; then \
+	  git submodule update --init --recursive; \
+	fi
 ifdef GUIX
 	guix shell -m manifest.scm -- $(MAKE) -C src
 else
 	$(MAKE) -C src
 endif
 
-compile:
+compile: autoload
 	$(EMACS_CMD) -q -Q -L . -L lisp --batch \
 	--eval="(setq print-length nil load-prefer-newer t)" \
 	-f batch-byte-compile lisp/*.el
@@ -71,3 +76,18 @@ else
 endif
 
 clean: clean-elc clean-module
+
+prefix      ?= /usr/local
+datarootdir ?= $(prefix)/share
+lispdir     ?= $(datarootdir)/emacs/site-lisp/jabber
+
+check: test
+
+install: build
+	install -d $(DESTDIR)$(lispdir)
+	install -m 644 lisp/*.el $(DESTDIR)$(lispdir)/
+	-install -m 644 lisp/*.elc $(DESTDIR)$(lispdir)/
+	-install -m 755 lisp/jabber-omemo-core.so $(DESTDIR)$(lispdir)/
+
+uninstall:
+	rm -rf $(DESTDIR)$(lispdir)
