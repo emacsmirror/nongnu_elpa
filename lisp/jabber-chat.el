@@ -342,8 +342,10 @@ JC is the Jabber connection."
 	    (setq jabber-chat-earliest-backlog
 		  (float-time (plist-get (car (last backlog-entries)) :timestamp)))
 	    ;; ewoc-enter-first with DESC input produces ascending display.
-	    (mapc #'jabber-chat-insert-backlog-entry backlog-entries)
-	    (jabber-chat-display-buffer-images))))
+	    ;; Insert in chunks to keep the UI responsive.
+	    (jabber-chat--insert-backlog-chunked
+	     (current-buffer) backlog-entries
+	     #'jabber-chat-display-buffer-images))))
 
       (when-let* ((win (get-buffer-window (current-buffer))))
         (with-selected-window win
@@ -354,6 +356,9 @@ JC is the Jabber connection."
     (setq jabber-buffer-connection jc)
 
     (current-buffer)))
+
+(defconst jabber-chat-backlog-chunk-size 30
+  "Number of backlog entries to insert per timer tick.")
 
 (defun jabber-chat-insert-backlog-entry (msg-plist)
   "Insert backlog MSG-PLIST at beginning of buffer."
@@ -385,6 +390,28 @@ JC is the Jabber connection."
       (when jabber-print-rare-time
 	(ewoc-enter-first jabber-chat-ewoc (list :rare-time message-time))))))
 
+(defun jabber-chat--insert-backlog-chunked (buffer entries callback)
+  "Insert ENTRIES into BUFFER's ewoc in chunks to avoid blocking.
+Inserts `jabber-chat-backlog-chunk-size' entries per timer tick.
+Call CALLBACK with no arguments when all entries are inserted."
+  (if (or (null entries) (not (buffer-live-p buffer)))
+      (when callback
+	(when (buffer-live-p buffer)
+	  (with-current-buffer buffer
+	    (funcall callback))))
+    (with-current-buffer buffer
+      (let* ((inhibit-read-only t)
+	     (chunk (cl-subseq entries 0
+			       (min jabber-chat-backlog-chunk-size
+				    (length entries))))
+	     (rest (nthcdr (length chunk) entries)))
+	(mapc #'jabber-chat-insert-backlog-entry chunk)
+	(if rest
+	    (run-with-timer 0.1 nil
+			    #'jabber-chat--insert-backlog-chunked
+			    buffer rest callback)
+	  (when callback (funcall callback)))))))
+
 (add-to-list 'jabber-jid-chat-menu
 	     (cons "Display more context" 'jabber-chat-display-more-backlog))
 
@@ -404,10 +431,9 @@ Specify 0 to display all messages."
     (when backlog-entries
       (setq jabber-chat-earliest-backlog
 	    (float-time (plist-get (car (last backlog-entries)) :timestamp)))
-      (save-excursion
-	(goto-char (point-min))
-	(mapc #'jabber-chat-insert-backlog-entry backlog-entries))
-      (jabber-chat-display-buffer-images))))
+      (jabber-chat--insert-backlog-chunked
+       (current-buffer) backlog-entries
+       #'jabber-chat-display-buffer-images))))
 
 (add-to-list 'jabber-message-chain #'jabber-process-chat)
 

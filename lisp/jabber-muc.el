@@ -234,6 +234,8 @@ The format is that of `mode-line-format' and `header-line-format'."
 (declare-function jabber-chat-mode "jabber-chatbuffer.el" ())
 (declare-function jabber-chat-mode-setup "jabber-chatbuffer.el" (jc ewoc-pp))
 (declare-function jabber-chat-insert-backlog-entry "jabber-chat.el" (msg-plist))
+(declare-function jabber-chat--insert-backlog-chunked "jabber-chat.el"
+                  (buffer entries callback))
 (declare-function jabber-chat-display-buffer-images "jabber-chat.el" ())
 (declare-function jabber-chat--msg-plist-from-stanza "jabber-chat.el"
                   (xml-data &optional delayed))
@@ -323,8 +325,9 @@ JC is the Jabber connection."
               (setq jabber-chat-earliest-backlog (float-time))
             (setq jabber-chat-earliest-backlog
                   (float-time (plist-get (car (last backlog-entries)) :timestamp)))
-            (mapc #'jabber-chat-insert-backlog-entry backlog-entries)
-            (jabber-chat-display-buffer-images))))
+            (jabber-chat--insert-backlog-chunked
+             (current-buffer) backlog-entries
+             #'jabber-chat-display-buffer-images))))
 
       (when-let* ((win (get-buffer-window (current-buffer))))
         (with-selected-window win

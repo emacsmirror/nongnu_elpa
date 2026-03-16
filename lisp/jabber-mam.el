@@ -57,6 +57,8 @@
 (declare-function jabber-chat--decrypt-if-needed "jabber-chat" (jc xml-data))
 (declare-function jabber-chat-find-buffer "jabber-chat" (chat-with))
 (declare-function jabber-chat-insert-backlog-entry "jabber-chat" (msg-plist))
+(declare-function jabber-chat--insert-backlog-chunked "jabber-chat"
+                  (buffer entries callback))
 (declare-function jabber-chat-display-buffer-images "jabber-chat" ())
 (declare-function jabber-db-backlog "jabber-db"
                   (account peer &optional count start-time))
@@ -292,6 +294,14 @@ TYPE is the message type (\"groupchat\" for MUC)."
     (when (and buffer (not (memq buffer jabber-mam--dirty-buffers)))
       (push buffer jabber-mam--dirty-buffers))))
 
+(defun jabber-mam--scroll-to-bottom (buffer)
+  "Scroll BUFFER's window to the chat prompt if visible."
+  (when-let* ((win (and (buffer-live-p buffer)
+                        (get-buffer-window buffer))))
+    (with-selected-window win
+      (goto-char jabber-point-insert)
+      (recenter -1))))
+
 (defun jabber-mam--redisplay-next ()
   "Reload the next dirty buffer from DB, then schedule the next one.
 Clears the ewoc and re-inserts backlog so MAM messages appear.
@@ -323,17 +333,17 @@ but never inserted into the ewoc."
                 (jabber-db-backlog
                  (jabber-connection-bare-jid jabber-buffer-connection)
                  (jabber-jid-user peer)))))
-        (when backlog-entries
-          (setq jabber-chat-earliest-backlog
-                (float-time (plist-get (car (last backlog-entries))
-                                       :timestamp)))
-          (mapc #'jabber-chat-insert-backlog-entry backlog-entries)
-          (jabber-chat-display-buffer-images)))
-      ;; Scroll to bottom
-      (when-let* ((win (get-buffer-window buffer)))
-        (with-selected-window win
-          (goto-char jabber-point-insert)
-          (recenter -1))))))
+        (if backlog-entries
+            (progn
+              (setq jabber-chat-earliest-backlog
+                    (float-time (plist-get (car (last backlog-entries))
+                                           :timestamp)))
+              (jabber-chat--insert-backlog-chunked
+               buffer backlog-entries
+               (lambda ()
+                 (jabber-chat-display-buffer-images)
+                 (jabber-mam--scroll-to-bottom buffer))))
+          (jabber-mam--scroll-to-bottom buffer))))))
 
 ;;; Query and pagination
 
