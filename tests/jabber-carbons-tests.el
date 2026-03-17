@@ -25,20 +25,26 @@
 
 (require 'ert)
 (require 'jabber-chat)
+(require 'jabber-db)
 
 ;;; Test helpers
 
-(defun jabber-carbons-test--make-carbon (type from inner-from inner-to)
+(defun jabber-carbons-test--make-carbon (type from inner-from inner-to
+                                              &optional id body)
   "Build a carbon-wrapped message stanza.
 TYPE is `sent' or `received'.  FROM is the outer stanza's from.
-INNER-FROM and INNER-TO are attributes on the inner message."
-  `(message ((from . ,from) (type . "chat"))
-            (,type ((xmlns . "urn:xmpp:carbons:2"))
-                   (forwarded ((xmlns . "urn:xmpp:forward:0"))
-                              (message ((from . ,inner-from)
-                                        (to . ,inner-to)
-                                        (type . "chat"))
-                                       (body nil "Hello"))))))
+INNER-FROM and INNER-TO are attributes on the inner message.
+Optional ID is the inner message's stanza id.
+Optional BODY overrides the default \"Hello\"."
+  (let ((inner-attrs `((from . ,inner-from)
+                       (to . ,inner-to)
+                       (type . "chat"))))
+    (when id (push `(id . ,id) inner-attrs))
+    `(message ((from . ,from) (type . "chat"))
+              (,type ((xmlns . "urn:xmpp:carbons:2"))
+                     (forwarded ((xmlns . "urn:xmpp:forward:0"))
+                                (message ,inner-attrs
+                                         (body nil ,(or body "Hello"))))))))
 
 (defun jabber-carbons-test--make-plain-message (from to)
   "Build a plain (non-carbon) message stanza."
@@ -118,6 +124,91 @@ INNER-FROM and INNER-TO are attributes on the inner message."
         (should (equal (jabber-xml-get-attribute (car result) 'from)
                        "friend@example.com"))
         (should-not (cdr result))))))
+
+;;; Group 3: jabber-chat--store-carbon
+
+(defvar jabber-db-path)
+(defvar jabber-db--connection)
+(defvar jabber-backlog-days)
+(defvar jabber-backlog-number)
+(declare-function jabber-db-ensure-open "jabber-db" ())
+(declare-function jabber-db-close "jabber-db" ())
+
+(defmacro jabber-carbons-test-with-db (&rest body)
+  "Run BODY with a fresh temp SQLite database."
+  (declare (indent 0) (debug t))
+  `(let* ((jabber-carbons-test--dir (make-temp-file "jabber-carbons-test" t))
+          (jabber-db-path (expand-file-name "test.sqlite"
+                                            jabber-carbons-test--dir))
+          (jabber-db--connection nil)
+          (jabber-backlog-days 3.0)
+          (jabber-backlog-number 10))
+     (unwind-protect
+         (progn
+           (jabber-db-ensure-open)
+           ,@body)
+       (jabber-db-close)
+       (when (file-directory-p jabber-carbons-test--dir)
+         (delete-directory jabber-carbons-test--dir t)))))
+
+(ert-deftest jabber-chat-test-store-carbon-sent ()
+  "Sent carbon is stored with direction=out and peer=recipient."
+  (jabber-carbons-test-with-db
+    (let ((xml-data (jabber-carbons-test--make-carbon
+                     'sent "me@example.com" "me@example.com/phone"
+                     "friend@example.com" "msg-001" "Hi from phone")))
+      (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+                 (lambda (_jc) "me@example.com"))
+                ((symbol-function 'jabber-chat-create-buffer)
+                 (lambda (_jc _to) (generate-new-buffer " *test*"))))
+        (let* ((unwrapped (jabber-chat--unwrap-carbon 'fake-jc xml-data))
+               (inner (car unwrapped)))
+          (jabber-chat--store-carbon 'fake-jc inner)
+          (let ((row (car (sqlite-select
+                           jabber-db--connection
+                           "SELECT peer, direction, body FROM message"))))
+            (should row)
+            (should (equal (nth 0 row) "friend@example.com"))
+            (should (equal (nth 1 row) "out"))
+            (should (equal (nth 2 row) "Hi from phone"))))))))
+
+(ert-deftest jabber-chat-test-store-carbon-received ()
+  "Received carbon is stored with direction=in and peer=sender."
+  (jabber-carbons-test-with-db
+    (let ((xml-data (jabber-carbons-test--make-carbon
+                     'received "me@example.com" "friend@example.com/laptop"
+                     "me@example.com/emacs" "msg-002" "Hi from laptop")))
+      (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+                 (lambda (_jc) "me@example.com")))
+        (let* ((unwrapped (jabber-chat--unwrap-carbon 'fake-jc xml-data))
+               (inner (car unwrapped)))
+          (jabber-chat--store-carbon 'fake-jc inner)
+          (let ((row (car (sqlite-select
+                           jabber-db--connection
+                           "SELECT peer, direction, body FROM message"))))
+            (should row)
+            (should (equal (nth 0 row) "friend@example.com"))
+            (should (equal (nth 1 row) "in"))
+            (should (equal (nth 2 row) "Hi from laptop"))))))))
+
+(ert-deftest jabber-chat-test-store-carbon-dedup ()
+  "Duplicate carbon with same stanza-id is not stored twice."
+  (jabber-carbons-test-with-db
+    (let ((xml-data (jabber-carbons-test--make-carbon
+                     'sent "me@example.com" "me@example.com/phone"
+                     "friend@example.com" "msg-dup" "Hello")))
+      (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+                 (lambda (_jc) "me@example.com"))
+                ((symbol-function 'jabber-chat-create-buffer)
+                 (lambda (_jc _to) (generate-new-buffer " *test*"))))
+        (let* ((unwrapped (jabber-chat--unwrap-carbon 'fake-jc xml-data))
+               (inner (car unwrapped)))
+          (jabber-chat--store-carbon 'fake-jc inner)
+          (jabber-chat--store-carbon 'fake-jc inner)
+          (let ((count (caar (sqlite-select
+                              jabber-db--connection
+                              "SELECT COUNT(*) FROM message"))))
+            (should (= 1 count))))))))
 
 (provide 'jabber-carbons-tests)
 

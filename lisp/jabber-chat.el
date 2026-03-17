@@ -228,6 +228,11 @@ added to the outgoing message.")
                   (account peer &optional count start-time))
 (declare-function jabber-db--store-outgoing "jabber-db.el"
                   (jc to body type))
+(declare-function jabber-db-store-message "jabber-db.el"
+                  (account peer direction type body timestamp
+                           &optional resource stanza-id
+                           server-id raw-xml oob-url oob-desc
+                           encrypted))
 (defvar jabber-group)                   ; jabber-muc.el
 (defvar jabber-muc-printers)            ; jabber-muc.el
 (defvar jabber-mam--syncing)            ; jabber-mam.el
@@ -477,6 +482,36 @@ prevent forged carbons (CVE-2017-5589)."
               ('received
                (cons inner-msg nil)))))))))
 
+(defun jabber-chat--store-carbon (jc xml-data)
+  "Store a carbon-forwarded message in the database.
+JC is the Jabber connection.  XML-DATA is the inner (unwrapped,
+possibly decrypted) message stanza.
+Direction is determined by comparing the sender to our bare JID."
+  (let* ((from (jabber-xml-get-attribute xml-data 'from))
+         (to (jabber-xml-get-attribute xml-data 'to))
+         (body (car (jabber-xml-node-children
+                     (car (jabber-xml-get-children xml-data 'body)))))
+         (stanza-id (jabber-xml-get-attribute xml-data 'id))
+         (timestamp (jabber-message-timestamp xml-data))
+         (our-jid (jabber-connection-bare-jid jc))
+         (sent-p (string= (jabber-jid-user from) our-jid))
+         (direction (if sent-p "out" "in"))
+         (peer (jabber-jid-user (if sent-p to from)))
+         (encrypted (or (jabber-xml-child-with-xmlns
+                         xml-data "eu.siacs.conversations.axolotl")
+                        (jabber-xml-child-with-xmlns
+                         xml-data "jabber:x:encrypted")
+                        (jabber-xml-child-with-xmlns
+                         xml-data "urn:xmpp:openpgp:0"))))
+    (when (and peer body)
+      (jabber-db-store-message
+       our-jid peer direction "chat" body
+       (floor (float-time (or timestamp (current-time))))
+       (when from (jabber-jid-resource from))
+       stanza-id
+       nil nil nil nil
+       encrypted))))
+
 (defun jabber-chat--select-buffer (jc from &optional carbon-buffer)
   "Return the chat buffer for an incoming message from FROM.
 CARBON-BUFFER, if non-nil, is a buffer already created for a
@@ -517,11 +552,14 @@ _JC and _XML-DATA are reserved for future use by OMEMO."
 JC is the Jabber connection."
   (when (not (jabber-muc-message-p xml-data))
     (let* ((unwrapped (jabber-chat--unwrap-carbon jc xml-data))
+           (is-carbon (not (eq xml-data (car unwrapped))))
            (xml-data (jabber-chat--decrypt-if-needed jc (car unwrapped)))
            (carbon-buffer (cdr unwrapped))
            (from (jabber-xml-get-attribute xml-data 'from))
            (error-p (jabber-xml-get-children xml-data 'error))
            (msg-plist (jabber-chat--msg-plist-from-stanza xml-data)))
+      (when is-carbon
+        (jabber-chat--store-carbon jc xml-data))
       (when (or error-p
                 (run-hook-with-args-until-success 'jabber-chat-printers
                                                   msg-plist :foreign :printp))
