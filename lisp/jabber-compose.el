@@ -49,7 +49,7 @@ JC is the Jabber connection."
 			  "Jabber-Compose"
 			  (when recipient
 			    (format "-%s" (jabber-jid-displayname recipient))))))
-    (set (make-local-variable 'jabber-widget-alist) nil)
+    (setq-local jabber-widget-alist nil)
     (setq jabber-buffer-connection jc)
     (use-local-map widget-keymap)
 

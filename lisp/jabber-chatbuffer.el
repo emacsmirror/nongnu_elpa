@@ -62,7 +62,6 @@ what kind of chat buffer is being created.")
 
 ;;
 
-;;;###autoload
 (defvar-local jabber-buffer-connection nil
   "The connection used by this buffer.")
 
