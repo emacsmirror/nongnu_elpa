@@ -71,7 +71,7 @@ These fields are about your account:
 		       'jabber-roster-user-online))))
     " " (:eval (jabber-fix-status (get (jabber-jid-symbol jabber-chatting-with) 'status)))
     " " (:eval jabber-chat-encryption-message)	;see jabber-chatbuffer.el
-    jabber-chatstates-message		;see jabber-chatstates.el
+    (:eval jabber-chatstates-message)		;see jabber-chatstates.el
     (:eval jabber-chat-receipt-message))	;see jabber-receipts.el
   "The specification for the header line of chat buffers.
 The format is that of `mode-line-format' and `header-line-format'.")
