@@ -34,8 +34,6 @@
 
 ;; Global reference declarations
 
-(defvar jabber-jid-info-menu)           ; jabber-menu.el
-
 ;; Namespace constants
 
 (defconst jabber-time-xmlns "urn:xmpp:time"
@@ -48,8 +46,6 @@
   "XEP-0012 Last Activity namespace.")
 
 ;;
-
-(add-to-list 'jabber-jid-info-menu (cons "Request time" 'jabber-get-time))
 
 (defun jabber-get-time (jc to)
   "Request time.

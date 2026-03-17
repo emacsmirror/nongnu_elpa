@@ -38,8 +38,6 @@
 
 ;;
 
-(add-to-list 'jabber-jid-service-menu
-	     (cons "Search directory" 'jabber-get-search))
 (defun jabber-get-search (jc to)
   "Send IQ get request in namespace \"jabber:iq:search\".
 

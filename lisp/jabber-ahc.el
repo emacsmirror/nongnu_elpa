@@ -51,7 +51,6 @@ Use the function `jabber-ahc-add' to add a command to this list.")
 
 ;; Global reference declarations
 
-(defvar jabber-jid-info-menu)           ; jabber-menu.el
 (defvar jabber-buffer-connection)       ; jabber-chatbuffer.el
 (defvar jabber-xdata-xmlns)            ; jabber-xml.el
 
@@ -135,8 +134,6 @@ obtained from `xml-parse-region'."
 	(jabber-signal-error "Cancel" 'item-not-found)))))
 
 ;;; CLIENT
-(add-to-list 'jabber-jid-service-menu
-	     (cons "Request command list" 'jabber-ahc-get-list))
 (defun jabber-ahc-get-list (jc to)
   "Request list of ad-hoc commands.
 
@@ -146,8 +143,6 @@ JC is the Jabber connection."
 		     (jabber-read-jid-completing "Request command list from: " nil nil nil nil nil)))
   (jabber-get-disco-items jc to jabber-ahc-xmlns))
 
-(add-to-list 'jabber-jid-service-menu
-	     (cons "Execute command" 'jabber-ahc-execute-command))
 (defun jabber-ahc-execute-command (jc to node)
   "Execute ad-hoc command.
 

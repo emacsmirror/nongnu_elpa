@@ -44,8 +44,6 @@
 
 ;;
 
-(add-to-list 'jabber-jid-service-menu
-	     (cons "Register with service" 'jabber-get-register))
 (defun jabber-get-register (jc to)
   "Send IQ get request in namespace \"jabber:iq:register\".
 

@@ -171,7 +171,7 @@ These fields are about your account:
 
 (defcustom jabber-muc-header-line-format
   '(" " (:eval (propertize (jabber-jid-displayname jabber-group) 'face 'shadow))
-    " " jabber-chat-encryption-message)	;see jabber-chatbuffer.el
+    " " (:eval jabber-chat-encryption-message))	;see jabber-chatbuffer.el
   "The specification for the header line of MUC buffers.
 
 The format is that of `mode-line-format' and `header-line-format'."
@@ -209,8 +209,8 @@ Fields available:
 (defcustom jabber-muc-private-header-line-format
   '(" " (:eval (jabber-jid-resource jabber-chatting-with))
     " in " (:eval (jabber-jid-displayname (jabber-jid-user jabber-chatting-with)))
-    "\t" jabber-chatstates-message
-    " " jabber-chat-encryption-message)	;see jabber-chatbuffer.el
+    "\t" (:eval jabber-chatstates-message)
+    " " (:eval jabber-chat-encryption-message))	;see jabber-chatbuffer.el
   "The specification for the header line of private MUC chat buffers.
 
 The format is that of `mode-line-format' and `header-line-format'."
@@ -308,7 +308,7 @@ JC is the Jabber connection."
     (unless (eq major-mode 'jabber-chat-mode)
       (jabber-chat-mode)
 
-      (set (make-local-variable 'jabber-group) group)
+      (setq-local jabber-group group)
       (make-local-variable 'jabber-muc-topic)
 
       (jabber-chat-mode-setup jc #'jabber-chat-pp)
@@ -372,7 +372,7 @@ JC is the Jabber connection."
       (jabber-chat-mode)
       (jabber-chat-mode-setup jc #'jabber-chat-pp))
 
-    (set (make-local-variable 'jabber-chatting-with) (concat group "/" nickname))
+    (setq-local jabber-chatting-with (concat group "/" nickname))
     (setq jabber-send-function #'jabber-chat-send)
     (setq header-line-format jabber-muc-private-header-line-format)
 
@@ -575,8 +575,6 @@ JID; only provide completion as a guide."
       (error "Unknown group: %s" group))
     (completing-read prompt nicknames nil t nil 'jabber-muc-nickname-history)))
 
-(add-to-list 'jabber-jid-muc-menu
-             (cons "Request vcard" 'jabber-muc-vcard-get))
 
 ;;;###autoload
 (defun jabber-muc-vcard-get (jc group nickname)
@@ -605,8 +603,6 @@ JC is the Jabber connection."
 		  #'jabber-report-success "MUC instant configuration"
 		  #'jabber-report-success "MUC instant configuration"))
 
-(add-to-list 'jabber-jid-muc-menu
-   (cons "Configure groupchat" 'jabber-muc-get-config))
 
 (defun jabber-muc-get-config (jc group)
   "Ask for MUC configuration form.
@@ -666,8 +662,6 @@ obtained from `xml-parse-region'."
 			  (x ((xmlns . ,jabber-xdata-xmlns) (type . "cancel"))))
 		  nil nil nil nil))
 
-(add-to-list 'jabber-jid-muc-menu
-	     (cons "Join groupchat" 'jabber-muc-join))
 
 (defun jabber-muc-join (jc group nickname &optional popup)
   "Join a groupchat, or change nick.
@@ -791,13 +785,7 @@ JC is the Jabber connection."
 					   default-nickname)
 				   nil nil default-nickname))))
 
-(add-to-list 'jabber-jid-muc-menu
-	     (cons "Change nickname" 'jabber-muc-nick))
-
 (defalias 'jabber-muc-nick #'jabber-muc-join)
-
-(add-to-list 'jabber-jid-muc-menu
-	     (cons "Leave groupchat" 'jabber-muc-leave))
 
 (defun jabber-muc-leave (jc group)
   "Leave a groupchat.
@@ -810,8 +798,6 @@ JC is the Jabber connection."
 		      `(presence ((to . ,(format "%s/%s" group nick))
 				  (type . "unavailable"))))))
 
-(add-to-list 'jabber-jid-muc-menu
-	     (cons "List participants" 'jabber-muc-names))
 
 (defun jabber-muc-names ()
   "Print names, affiliations, and roles of participants in current buffer."
@@ -848,8 +834,6 @@ JC is the Jabber connection."
      (apply #'concat "\nVisitors:\n" (mapcar #'jabber-muc-format-names vlist))
      (apply #'concat "\nNones:\n" (mapcar #'jabber-muc-format-names nlist)))))
 
-(add-to-list 'jabber-jid-muc-menu
-	     (cons "Set topic" 'jabber-muc-set-topic))
 
 (defun jabber-muc-set-topic (jc group topic)
   "Set topic of GROUP to TOPIC.
@@ -873,8 +857,6 @@ obtained from `xml-parse-region'."
     (when (and new-topic (not body))
       (setq jabber-muc-topic new-topic))))
 
-(add-to-list 'jabber-jid-muc-menu
-	     (cons "Set role (kick, voice, op)" 'jabber-muc-set-role))
 
 (defun jabber-muc-set-role (jc group nickname role reason)
   "Set role of NICKNAME in GROUP to ROLE, specifying REASON.
@@ -896,8 +878,6 @@ JC is the Jabber connection."
 		    'jabber-report-success "Role change"
 		    'jabber-report-success "Role change")))
 
-(add-to-list 'jabber-jid-muc-menu
-	     (cons "Set affiliation (ban, member, admin)" 'jabber-muc-set-affiliation))
 
 (defun jabber-muc-set-affiliation (jc group nickname-or-jid nickname-p affiliation reason)
   "Set affiliation of NICKNAME-OR-JID in GROUP to AFFILIATION.
@@ -936,8 +916,6 @@ JC is the Jabber connection."
 		    'jabber-report-success "Affiliation change"
 		    'jabber-report-success "Affiliation change")))
 
-(add-to-list 'jabber-jid-muc-menu
-	     (cons "Invite someone to chatroom" 'jabber-muc-invite))
 
 (defun jabber-muc-invite (jc jid group reason)
   "Invite JID to GROUP, stating REASON.
@@ -1059,8 +1037,6 @@ include groupchat invites."
      (not (string= type "groupchat"))
      (jabber-muc-sender-p from))))
 
-(add-to-list 'jabber-jid-muc-menu
-	     (cons "Open private chat" 'jabber-muc-private))
 
 (defun jabber-muc-private (_jc group nickname)
   "Open private chat with NICKNAME in GROUP.

@@ -43,8 +43,6 @@ This value provides the version field of the XEP-0092 Service Discovery
 jabber:iq:version query response, when `jabber-version-show` is non
 `nil`.")
 
-(add-to-list 'jabber-jid-info-menu
-	     (cons "Request software version" 'jabber-get-version))
 (defun jabber-get-version (jc to)
   "Request software version.
 

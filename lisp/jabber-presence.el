@@ -65,26 +65,12 @@ stanza.")
 (defvar jabber-chatting-with)           ; jabber-chat.el
 (defvar jabber-buffer-connection)       ; jabber-chatbuffer.el
 (defvar jabber-chat-ewoc)               ; jabber-chatbuffer.el
-(defvar *jabber-current-priority*)      ; jabber.el
-(defvar jabber-default-priority)        ; jabber.el
 (defvar *jabber-current-show*)          ; jabber.el
-(defvar *jabber-current-status*)        ; jabber.el
-(defvar *jabber-current-priority*)      ; jabber.el
-(defvar *jabber-current-status*)        ; jabber.el
-(defvar *jabber-current-show*)          ; jabber.el
-(defvar *jabber-current-priority*)      ; jabber.el
-(defvar *jabber-current-show*)          ; jabber.el
-(defvar *jabber-current-status*)        ; jabber.el
-(defvar *jabber-current-status*)        ; jabber.el
-(defvar *jabber-current-priority*)      ; jabber.el
 (defvar *jabber-current-status*)        ; jabber.el
 (defvar *jabber-current-priority*)      ; jabber.el
 (defvar jabber-default-show)            ; jabber.el
 (defvar jabber-default-status)          ; jabber.el
 (defvar jabber-default-priority)        ; jabber.el
-(defvar *jabber-current-show*)          ; jabber.el
-(defvar *jabber-current-status*)        ; jabber.el
-(defvar *jabber-current-priority*)      ; jabber.el
 (defvar jabber-silent-mode)             ; jabber.el
 (defvar jabber-roster-xmlns)           ; jabber-xml.el
 
@@ -568,8 +554,6 @@ If JC is non-nil, send only for that connection."
 			    *jabber-current-priority* jc)
     (jabber-send-default-presence jc)))
 
-(add-to-list 'jabber-jid-roster-menu (cons "Send subscription request"
-					   'jabber-send-subscription-request))
 (defun jabber-send-subscription-request (jc to &optional request)
   "Send a subscription request to jid.
 Show him your request text, if specified.
@@ -588,8 +572,6 @@ JC is the Jabber connection."
 (defvar jabber-roster-group-history nil
   "History of entered roster groups.")
 
-(add-to-list 'jabber-jid-roster-menu
-	     (cons "Add/modify roster entry" 'jabber-roster-change))
 (defun jabber-roster-change (jc jid name groups)
   "Add or change a roster item.
 JC is the Jabber connection."
@@ -632,8 +614,6 @@ JC is the Jabber connection."
 		  #'jabber-report-success "Roster item change"
 		  #'jabber-report-success "Roster item change"))
 
-(add-to-list 'jabber-jid-roster-menu
-	     (cons "Delete roster entry" 'jabber-roster-delete))
 (defun jabber-roster-delete (jc jid)
   (interactive (list (jabber-read-account)
 		     (jabber-read-jid-completing "Delete from roster: ")))

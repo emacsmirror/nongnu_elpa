@@ -518,9 +518,6 @@ is classified as pc, otherwise console."
 	   `(feature ((var . ,featurename))))
        jabber-advertised-features)))
 
-(add-to-list 'jabber-jid-info-menu
-	     (cons "Send items disco query" 'jabber-get-disco-items))
-
 (defun jabber-get-disco-items (jc to &optional node)
   "Send a service discovery request for items.
 
@@ -538,8 +535,6 @@ NODE is an optional parameter specifying a particular node to request items for.
 		  #'jabber-process-data #'jabber-process-disco-items
 		  #'jabber-process-data "Item discovery failed"))
 
-(add-to-list 'jabber-jid-info-menu
-	     (cons "Send info disco query" 'jabber-get-disco-info))
 (defun jabber-get-disco-info (jc to &optional node)
   "Send a service discovery request for info.
 

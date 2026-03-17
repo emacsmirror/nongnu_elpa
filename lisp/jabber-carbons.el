@@ -50,9 +50,6 @@ devices, keeping conversations in sync across clients."
 (defun jabber-carbon-failure (_jc xml-data _context)
   (message "Carbons feature could not be enabled: %S" xml-data))
 
-(add-to-list 'jabber-jid-service-menu
-             (cons "Enable Carbons" 'jabber-enable-carbons))
-
 ;;;###autoload
 (defun jabber-enable-carbons (jc)
   "Send request to enable XEP-0280 Message Carbons.

@@ -40,8 +40,6 @@
 (defconst jabber-browse-xmlns "jabber:iq:browse"
   "XEP-0011 Jabber Browsing namespace.")
 
-(add-to-list 'jabber-jid-info-menu (cons "Send browse query" 'jabber-get-browse))
-
 (defun jabber-get-browse (jc to)
   "Send a browse infoquery request to someone.
 

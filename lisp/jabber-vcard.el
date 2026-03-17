@@ -265,9 +265,6 @@ The top node should be the `vCard' node."
 		       (TYPE () ,(avatar-mime-type jabber-vcard-photo))
 		       (BINVAL () ,(avatar-base64-data jabber-vcard-photo)))))))
 
-(add-to-list 'jabber-jid-info-menu
-	     (cons "Request vcard" 'jabber-vcard-get))
-
 (defun jabber-vcard-get (jc jid)
   "Request vcard from JID.
 

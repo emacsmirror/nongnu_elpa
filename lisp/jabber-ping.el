@@ -35,9 +35,6 @@
 
 ;;
 
-(add-to-list 'jabber-jid-info-menu
-	     (cons "Ping" 'jabber-ping))
-
 (defun jabber-ping-send (jc to process-func on-success on-error)
   "Send XEP-0199 ping IQ stanza.
 JC is connection to use, TO is full JID, PROCESS-FUNC is fucntion to call to

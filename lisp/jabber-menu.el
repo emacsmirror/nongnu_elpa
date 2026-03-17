@@ -150,18 +150,6 @@ With prefix argument, remove it."
                   (or (bound-and-true-p jabber-account-list)
                       (bound-and-true-p jabber-connections))))))
 
-(defvar jabber-jid-info-menu nil
-  "Menu item for info menu.")
-
-(defvar jabber-jid-roster-menu nil
-  "Menu items for roster menu.")
-
-(defvar jabber-jid-muc-menu nil
-  "Menu items for MUC menu.")
-
-(defvar jabber-jid-service-menu nil
-  "Menu items for service menu.")
-
 ;; Global reference declarations
 
 (declare-function jabber-send-presence "jabber-presence.el" (show status priority &optional jc))
