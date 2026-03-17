@@ -59,8 +59,8 @@ Binds `jabber-db-path' to a temp file and tears down on exit."
 (ert-deftest jabber-omemo-store-test-save-upsert ()
   "Save overwrites existing blob (upsert)."
   (jabber-omemo-store-test-with-db
-    (let ((blob1 (string-as-unibyte "first"))
-          (blob2 (string-as-unibyte "second")))
+    (let ((blob1 (encode-coding-string "first" 'raw-text))
+          (blob2 (encode-coding-string "second" 'raw-text)))
       (jabber-omemo-store-save "me@example.com" blob1)
       (jabber-omemo-store-save "me@example.com" blob2)
       (should (equal blob2 (jabber-omemo-store-load "me@example.com"))))))
@@ -68,7 +68,7 @@ Binds `jabber-db-path' to a temp file and tears down on exit."
 (ert-deftest jabber-omemo-store-test-delete ()
   "Delete removes the store record."
   (jabber-omemo-store-test-with-db
-    (jabber-omemo-store-save "me@example.com" (string-as-unibyte "data"))
+    (jabber-omemo-store-save "me@example.com" (encode-coding-string "data" 'raw-text))
     (jabber-omemo-store-delete "me@example.com")
     (should (null (jabber-omemo-store-load "me@example.com")))))
 
@@ -77,7 +77,7 @@ Binds `jabber-db-path' to a temp file and tears down on exit."
 (ert-deftest jabber-omemo-store-test-trust-save-load-roundtrip ()
   "save-trust + load-trust round-trips."
   (jabber-omemo-store-test-with-db
-    (let ((key (string-as-unibyte "identity-key-bytes")))
+    (let ((key (encode-coding-string "identity-key-bytes" 'raw-text)))
       (jabber-omemo-store-save-trust "me@example.com" "alice@example.com"
                                      12345 key 1)
       (let ((rec (jabber-omemo-store-load-trust "me@example.com"
@@ -96,7 +96,7 @@ Binds `jabber-db-path' to a temp file and tears down on exit."
 (ert-deftest jabber-omemo-store-test-set-trust-updates-level ()
   "set-trust updates level without changing identity-key or first-seen."
   (jabber-omemo-store-test-with-db
-    (let ((key (string-as-unibyte "key-data")))
+    (let ((key (encode-coding-string "key-data" 'raw-text)))
       (jabber-omemo-store-save-trust "me@example.com" "alice@example.com"
                                      100 key 0)
       (let ((orig (jabber-omemo-store-load-trust "me@example.com"
@@ -113,8 +113,8 @@ Binds `jabber-db-path' to a temp file and tears down on exit."
 (ert-deftest jabber-omemo-store-test-all-trust-multiple ()
   "all-trust returns multiple devices for same JID."
   (jabber-omemo-store-test-with-db
-    (let ((key1 (string-as-unibyte "key1"))
-          (key2 (string-as-unibyte "key2")))
+    (let ((key1 (encode-coding-string "key1" 'raw-text))
+          (key2 (encode-coding-string "key2" 'raw-text)))
       (jabber-omemo-store-save-trust "me@example.com" "alice@example.com"
                                      100 key1 1)
       (jabber-omemo-store-save-trust "me@example.com" "alice@example.com"
@@ -141,7 +141,7 @@ Binds `jabber-db-path' to a temp file and tears down on exit."
 (ert-deftest jabber-omemo-store-test-trust-upsert-preserves-first-seen ()
   "Upserting trust preserves the original first_seen."
   (jabber-omemo-store-test-with-db
-    (let ((key (string-as-unibyte "key-data")))
+    (let ((key (encode-coding-string "key-data" 'raw-text)))
       (jabber-omemo-store-save-trust "me@example.com" "alice@example.com"
                                      100 key 0)
       (let ((first (plist-get
@@ -215,7 +215,7 @@ Binds `jabber-db-path' to a temp file and tears down on exit."
 (ert-deftest jabber-omemo-store-test-session-save-load-roundtrip ()
   "save-session + load-session round-trips."
   (jabber-omemo-store-test-with-db
-    (let ((blob (string-as-unibyte "session-data\x00\x01")))
+    (let ((blob (encode-coding-string "session-data\x00\x01" 'raw-text)))
       (jabber-omemo-store-save-session "me@example.com" "alice@example.com"
                                        42 blob)
       (should (equal blob (jabber-omemo-store-load-session
@@ -230,7 +230,7 @@ Binds `jabber-db-path' to a temp file and tears down on exit."
 (ert-deftest jabber-omemo-store-test-session-delete ()
   "delete-session removes the session."
   (jabber-omemo-store-test-with-db
-    (let ((blob (string-as-unibyte "session")))
+    (let ((blob (encode-coding-string "session" 'raw-text)))
       (jabber-omemo-store-save-session "me@example.com" "alice@example.com"
                                        42 blob)
       (jabber-omemo-store-delete-session "me@example.com" "alice@example.com" 42)
@@ -240,8 +240,8 @@ Binds `jabber-db-path' to a temp file and tears down on exit."
 (ert-deftest jabber-omemo-store-test-session-all ()
   "all-sessions lists all devices for a peer."
   (jabber-omemo-store-test-with-db
-    (let ((b1 (string-as-unibyte "s1"))
-          (b2 (string-as-unibyte "s2")))
+    (let ((b1 (encode-coding-string "s1" 'raw-text))
+          (b2 (encode-coding-string "s2" 'raw-text)))
       (jabber-omemo-store-save-session "me@example.com" "alice@example.com"
                                        42 b1)
       (jabber-omemo-store-save-session "me@example.com" "alice@example.com"
@@ -257,8 +257,8 @@ Binds `jabber-db-path' to a temp file and tears down on exit."
 (ert-deftest jabber-omemo-store-test-skipped-key-save-load-roundtrip ()
   "save + load round-trips a skipped key."
   (jabber-omemo-store-test-with-db
-    (let ((dh (string-as-unibyte "dh-key-data"))
-          (mk (string-as-unibyte "msg-key-data")))
+    (let ((dh (encode-coding-string "dh-key-data" 'raw-text))
+          (mk (encode-coding-string "msg-key-data" 'raw-text)))
       (jabber-omemo-store-save-skipped-key "me@example.com" "alice@example.com"
                                             42 dh 7 mk)
       (should (equal mk (jabber-omemo-store-load-skipped-key
@@ -269,13 +269,13 @@ Binds `jabber-db-path' to a temp file and tears down on exit."
   (jabber-omemo-store-test-with-db
     (should (null (jabber-omemo-store-load-skipped-key
                    "me@example.com" "alice@example.com" 42
-                   (string-as-unibyte "x") 0)))))
+                   (encode-coding-string "x" 'raw-text) 0)))))
 
 (ert-deftest jabber-omemo-store-test-skipped-key-delete ()
   "delete removes a skipped key after use."
   (jabber-omemo-store-test-with-db
-    (let ((dh (string-as-unibyte "dh"))
-          (mk (string-as-unibyte "mk")))
+    (let ((dh (encode-coding-string "dh" 'raw-text))
+          (mk (encode-coding-string "mk" 'raw-text)))
       (jabber-omemo-store-save-skipped-key "me@example.com" "alice@example.com"
                                             42 dh 7 mk)
       (jabber-omemo-store-delete-skipped-key "me@example.com" "alice@example.com"
@@ -286,8 +286,8 @@ Binds `jabber-db-path' to a temp file and tears down on exit."
 (ert-deftest jabber-omemo-store-test-skipped-key-delete-old ()
   "delete-old-skipped-keys removes by age."
   (jabber-omemo-store-test-with-db
-    (let ((dh (string-as-unibyte "dh"))
-          (mk (string-as-unibyte "mk"))
+    (let ((dh (encode-coding-string "dh" 'raw-text))
+          (mk (encode-coding-string "mk" 'raw-text))
           (now (truncate (float-time))))
       ;; Insert an old key by directly using SQL
       (sqlite-execute jabber-db--connection "\

@@ -39,6 +39,28 @@
 (load (expand-file-name "../lisp/jabber-activity.el"
        (file-name-directory (or load-file-name buffer-file-name))))
 
+;; Declare dynamically-bound variables used in let-bindings below.
+(defvar jabber-activity-jids)
+(defvar jabber-activity-personal-jids)
+(defvar jabber-activity-mode-string)
+(defvar jabber-activity-count-string)
+(defvar jabber-activity--updating)
+(defvar jabber-activity-update-hook)
+(defvar jabber-activity-make-string)
+(defvar jabber-activity-make-strings)
+(defvar jabber-activity-shorten-minimum)
+(defvar jabber-activity-shorten-aggressively)
+(defvar jabber-activity--shortened-names)
+(defvar jabber-activity-shorten-cutoff)
+(defvar jabber-activity-name-alist)
+(defvar *jabber-roster*)
+
+;; Declare functions loaded at runtime via `load'.
+(declare-function jabber-activity-common-prefix "jabber-activity" (s1 s2))
+(declare-function jabber-activity-make-strings-shorten "jabber-activity" (jids))
+(declare-function jabber-activity-mode-line-update "jabber-activity" ())
+(declare-function jabber-activity-make-name-alist "jabber-activity" ())
+
 ;;; Group 1: jabber-activity-common-prefix
 
 (ert-deftest jabber-activity-test-common-prefix-basic ()

@@ -1,3 +1,5 @@
+;;; parse-date.el --- Tests for time parsing  -*- lexical-binding: t; -*-
+
 (require 'jabber-util)
 (require 'ert)
 

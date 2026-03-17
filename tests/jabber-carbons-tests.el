@@ -45,14 +45,6 @@ INNER-FROM and INNER-TO are attributes on the inner message."
   `(message ((from . ,from) (to . ,to) (type . "chat"))
             (body nil "Hello")))
 
-(defvar jabber-carbons-test--fake-jc-data
-  '(:username "me" :server "example.com" :resource "emacs")
-  "Fake connection state data for tests.")
-
-(defun jabber-carbons-test--make-fake-jc ()
-  "Return a mock JC object that `jabber-connection-bare-jid' can use."
-  (start-fsm 'jabber-carbons-test-fsm))
-
 ;;; Group 1: jabber-chat--extract-carbon
 
 (ert-deftest jabber-chat-test-extract-carbon-sent ()

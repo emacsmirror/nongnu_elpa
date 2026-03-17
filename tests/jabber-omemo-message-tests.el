@@ -150,7 +150,7 @@ Clears OMEMO in-memory caches and tears down on exit."
                             (body () "hello plain")))
         (jc (list :mock)))
     (should (eq xml-data
-                (jabber-omemo--decrypt-if-needed jc xml-data)))))
+                (jabber-omemo--decrypt-if-needed #'identity jc xml-data)))))
 
 (ert-deftest jabber-omemo-message-test-decrypt-if-needed-error ()
   "decrypt-if-needed replaces body on decrypt failure."
@@ -176,7 +176,7 @@ Clears OMEMO in-memory caches and tears down on exit."
                (lambda (_jc) nil))
               ((symbol-function 'jabber-omemo--get-session)
                (lambda (_jc _jid _did) nil)))
-      (let ((result (jabber-omemo--decrypt-if-needed jc xml-data)))
+      (let ((result (jabber-omemo--decrypt-if-needed #'identity jc xml-data)))
         (should result)
         (let ((body (car (jabber-xml-node-children
                           (car (jabber-xml-get-children result 'body))))))

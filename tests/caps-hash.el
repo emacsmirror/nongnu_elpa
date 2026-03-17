@@ -1,16 +1,7 @@
-;; Test disco hash against examples in XEP-0115  -*- lexical-binding: t; -*-
+;;; caps-hash.el --- Test disco hash against examples in XEP-0115  -*- lexical-binding: t; -*-
 
-(message "Let's go")
-(condition-case e
-    (require 'jabber-disco)
-  (error
-   (message "disco bad! %S" e)))
-(message "more")
-(condition-case e
-    (require 'jabber-widget)
-  (error
-   (message "bad! %S" e)))
-(message "done!")
+(require 'jabber-disco)
+(require 'jabber-widget)
 
 (let ((query
        (with-temp-buffer
