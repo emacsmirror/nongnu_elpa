@@ -215,6 +215,9 @@ PLAINTEXT is a unibyte string.  Returns a plist
   "Build an aesgcm:// URL from HTTPS-URL, IV, and KEY.
 IV is a 12-byte unibyte string, KEY is a 32-byte unibyte string.
 Returns a string like aesgcm://HOST/PATH#IVHEX_KEYHEX."
+  (unless (string-prefix-p "https://" https-url)
+    (error "Expected https:// URL, got: %s"
+           (substring https-url 0 (min 40 (length https-url)))))
   (let ((fragment (concat (encode-hex-string iv)
                           (encode-hex-string key))))
     (concat "aesgcm://"
@@ -963,10 +966,16 @@ publishes our bundle, and pre-fetches sessions for open chat buffers."
 
 (defun jabber-omemo--httpupload-around (orig-fn jc filepath callback)
   "Advice around `jabber-httpupload--upload' for aesgcm encryption.
-When the current buffer has OMEMO active, encrypt the file with
+When the current buffer has OMEMO active and the server's HTTP
+Upload capability is already discovered, encrypt the file with
 AES-256-GCM before uploading.  The CALLBACK receives an aesgcm://
-URL instead of an https:// URL."
-  (if (eq jabber-chat-encryption 'omemo)
+URL instead of an https:// URL.
+
+When OMEMO is active but support is not yet confirmed, pass through
+unmodified.  If orig-fn triggers discovery and recurses, the second
+call will find support and encrypt then, preventing double encryption."
+  (if (and (eq jabber-chat-encryption 'omemo)
+           (jabber-httpupload-server-has-support jc))
       (condition-case err
           (let* ((plaintext (with-temp-buffer
                               (set-buffer-multibyte nil)

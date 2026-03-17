@@ -281,5 +281,34 @@ Clears OMEMO in-memory caches and tears down on exit."
     (should (string= "https://upload.example.org/abc/test.txt"
                       (plist-get parsed :https-url)))))
 
+;;; Group 9: aesgcm upload advice re-entrance
+
+(ert-deftest jabber-omemo-message-test-build-aesgcm-url-rejects-non-https ()
+  "build-aesgcm-url signals error when given a non-https URL.
+This guards against the double-encryption bug where the advice
+re-enters and passes an aesgcm:// URL to the builder."
+  (let* ((iv (decode-hex-string "8c3d050e9386ec173861778f"))
+         (key (decode-hex-string "68e9af38a97aaf82faa4063b4d0878a61261534410c8a84331eaac851759f587")))
+    (should-error (jabber-omemo--build-aesgcm-url
+                   "aesgcm://host/path#oldfrag" iv key)
+                  :type 'error)))
+
+(ert-deftest jabber-omemo-message-test-httpupload-advice-skips-without-support ()
+  "OMEMO upload advice passes through when HTTP Upload support is unknown.
+Prevents double encryption from advice re-entrance via discover-and-upload."
+  (let ((jabber-chat-encryption 'omemo)
+        (jabber-httpupload-support nil)
+        (orig-called-with nil))
+    (cl-letf (((symbol-function 'jabber-httpupload-server-has-support)
+               (lambda (_jc) nil)))
+      (jabber-omemo--httpupload-around
+       (lambda (_jc filepath callback)
+         (setq orig-called-with (list filepath callback)))
+       'fake-jc "/tmp/test.png" #'identity))
+    ;; Should have passed through without encrypting
+    (should orig-called-with)
+    (should (equal (car orig-called-with) "/tmp/test.png"))
+    (should (eq (cadr orig-called-with) #'identity))))
+
 (provide 'jabber-omemo-message-tests)
 ;;; jabber-omemo-message-tests.el ends here
