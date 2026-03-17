@@ -281,5 +281,48 @@ Clears OMEMO in-memory caches and tears down on exit."
     (should (string= "https://upload.example.org/abc/test.txt"
                       (plist-get parsed :https-url)))))
 
+;;; Group 9: httpupload function variable integration
+
+(ert-deftest jabber-omemo-message-test-httpupload-transform-nil-without-omemo ()
+  "Transform returns nil when encryption is not OMEMO."
+  (let ((jabber-chat-encryption 'plaintext))
+    (should-not (jabber-omemo--httpupload-transform "/tmp/test.png" #'identity))))
+
+(ert-deftest jabber-omemo-message-test-httpupload-transform-encrypts-with-omemo ()
+  "Transform returns (filepath . callback) when OMEMO is active."
+  (let* ((tmp (make-temp-file "omemo-test-" nil ".txt"))
+         (jabber-chat-encryption 'omemo)
+         result)
+    (unwind-protect
+        (progn
+          (with-temp-file tmp (insert "test content"))
+          (setq result (jabber-omemo--httpupload-transform tmp #'identity))
+          (should (consp result))
+          (should (stringp (car result)))
+          (should (functionp (cdr result))))
+      (ignore-errors (delete-file tmp))
+      (when (and result (stringp (car result)))
+        (ignore-errors (delete-file (car result)))))))
+
+(ert-deftest jabber-omemo-message-test-httpupload-send-url-handles-aesgcm ()
+  "Send-url override returns non-nil for aesgcm:// URLs."
+  (cl-letf (((symbol-function 'jabber-omemo--ensure-sessions)
+             (lambda (_jc _jid callback) (funcall callback nil)))
+            ((symbol-function 'jabber-omemo--send-encrypted)
+             (lambda (&rest _) nil))
+            ((symbol-function 'jabber-connection-bare-jid)
+             (lambda (_jc) "me@example.com"))
+            ((symbol-function 'jabber-jid-user)
+             (lambda (jid) jid)))
+    (should (jabber-omemo--httpupload-send-url
+             'fake-jc "alice@example.com"
+             "aesgcm://host/file#abc123"))))
+
+(ert-deftest jabber-omemo-message-test-httpupload-send-url-skips-https ()
+  "Send-url override returns nil for https:// URLs."
+  (should-not (jabber-omemo--httpupload-send-url
+               'fake-jc "alice@example.com"
+               "https://host/file")))
+
 (provide 'jabber-omemo-message-tests)
 ;;; jabber-omemo-message-tests.el ends here
