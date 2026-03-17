@@ -64,6 +64,24 @@ CALLBACK-ARG) on success.  Return non-nil if the upload started."
   :group 'jabber-httpupload
   :type 'function)
 
+(defvar jabber-httpupload-pre-upload-transform nil
+  "When non-nil, a function to transform a file before upload.
+Called with (FILEPATH CALLBACK) inside `jabber-httpupload--upload'
+after HTTP Upload support is confirmed.  Must return
+\(TRANSFORMED-FILEPATH . WRAPPED-CALLBACK) to replace both, or nil
+to upload the original file unchanged.
+
+OMEMO sets this to encrypt the file and wrap the callback to build
+an aesgcm:// URL from the server's HTTPS get-url.")
+
+(defvar jabber-httpupload-send-url-function nil
+  "When non-nil, a function to override URL delivery.
+Called with (JC JID GET-URL) at the start of
+`jabber-httpupload--send-url'.  If it returns non-nil, the default
+plaintext+OOB send is skipped.
+
+OMEMO sets this to send aesgcm:// URLs as encrypted messages.")
+
 ;; Discovering support
 
 (defvar jabber-httpupload-support nil
@@ -193,7 +211,11 @@ On success, call (funcall CALLBACK get-url).
 If support has not been discovered yet, discover it first."
   (if (not (jabber-httpupload-server-has-support jc))
       (jabber-httpupload--discover-and-upload jc filepath callback)
-    (let* ((filepath (expand-file-name filepath))
+    (let* ((transform (and jabber-httpupload-pre-upload-transform
+                           (funcall jabber-httpupload-pre-upload-transform
+                                    filepath callback)))
+           (filepath (expand-file-name (if transform (car transform) filepath)))
+           (callback (if transform (cdr transform) callback))
            (size (file-attribute-size (file-attributes filepath)))
            (content-type
             (or (and-let* ((ext (file-name-extension filepath)))
@@ -245,8 +267,12 @@ deleted it), the pending state is cleared with no effect."
 
 (defun jabber-httpupload--send-url (jc jid get-url)
   "Send GET-URL to JID with OOB metadata.
-For groupchat, send directly.  For 1:1, use `jabber-chat-send'."
-  (if (jabber-muc-joined-p jid)
+For groupchat, send directly.  For 1:1, use `jabber-chat-send'.
+If `jabber-httpupload-send-url-function' is set and handles the URL,
+skip the default plaintext send."
+  (unless (and jabber-httpupload-send-url-function
+               (funcall jabber-httpupload-send-url-function jc jid get-url))
+    (if (jabber-muc-joined-p jid)
       (jabber-send-sexp jc
         `(message ((to . ,jid) (type . "groupchat"))
                   (body () ,get-url)
@@ -256,7 +282,7 @@ For groupchat, send directly.  For 1:1, use `jabber-chat-send'."
       (jabber-chat-send
        jc get-url
        (list `(x ((xmlns . ,jabber-oob-xmlns))
-                  (url () ,get-url)))))))
+                  (url () ,get-url))))))))
 
 ;; Interactive commands
 
