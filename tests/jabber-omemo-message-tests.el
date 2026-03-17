@@ -281,34 +281,56 @@ Clears OMEMO in-memory caches and tears down on exit."
     (should (string= "https://upload.example.org/abc/test.txt"
                       (plist-get parsed :https-url)))))
 
-;;; Group 9: aesgcm upload advice re-entrance
+;;; Group 9: aesgcm upload integration
 
 (ert-deftest jabber-omemo-message-test-build-aesgcm-url-rejects-non-https ()
-  "build-aesgcm-url signals error when given a non-https URL.
-This guards against the double-encryption bug where the advice
-re-enters and passes an aesgcm:// URL to the builder."
+  "build-aesgcm-url signals error when given a non-https URL."
   (let* ((iv (decode-hex-string "8c3d050e9386ec173861778f"))
          (key (decode-hex-string "68e9af38a97aaf82faa4063b4d0878a61261534410c8a84331eaac851759f587")))
     (should-error (jabber-omemo--build-aesgcm-url
                    "aesgcm://host/path#oldfrag" iv key)
                   :type 'error)))
 
-(ert-deftest jabber-omemo-message-test-httpupload-advice-skips-without-support ()
-  "OMEMO upload advice passes through when HTTP Upload support is unknown.
-Prevents double encryption from advice re-entrance via discover-and-upload."
-  (let ((jabber-chat-encryption 'omemo)
-        (jabber-httpupload-support nil)
-        (orig-called-with nil))
-    (cl-letf (((symbol-function 'jabber-httpupload-server-has-support)
-               (lambda (_jc) nil)))
-      (jabber-omemo--httpupload-around
-       (lambda (_jc filepath callback)
-         (setq orig-called-with (list filepath callback)))
-       'fake-jc "/tmp/test.png" #'identity))
-    ;; Should have passed through without encrypting
-    (should orig-called-with)
-    (should (equal (car orig-called-with) "/tmp/test.png"))
-    (should (eq (cadr orig-called-with) #'identity))))
+(ert-deftest jabber-omemo-message-test-httpupload-transform-nil-without-omemo ()
+  "Transform returns nil when encryption is not OMEMO."
+  (let ((jabber-chat-encryption 'plaintext))
+    (should-not (jabber-omemo--httpupload-transform "/tmp/test.png" #'identity))))
+
+(ert-deftest jabber-omemo-message-test-httpupload-transform-encrypts-with-omemo ()
+  "Transform returns (filepath . callback) when OMEMO is active."
+  (let* ((tmp (make-temp-file "omemo-test-" nil ".txt"))
+         (jabber-chat-encryption 'omemo)
+         result)
+    (unwind-protect
+        (progn
+          (with-temp-file tmp (insert "test content"))
+          (setq result (jabber-omemo--httpupload-transform tmp #'identity))
+          (should (consp result))
+          (should (stringp (car result)))
+          (should (functionp (cdr result))))
+      (ignore-errors (delete-file tmp))
+      (when (and result (stringp (car result)))
+        (ignore-errors (delete-file (car result)))))))
+
+(ert-deftest jabber-omemo-message-test-httpupload-send-url-handles-aesgcm ()
+  "Send-url override returns non-nil for aesgcm:// URLs."
+  (cl-letf (((symbol-function 'jabber-omemo--ensure-sessions)
+             (lambda (_jc _jid callback) (funcall callback nil)))
+            ((symbol-function 'jabber-omemo--send-encrypted)
+             (lambda (&rest _) nil))
+            ((symbol-function 'jabber-connection-bare-jid)
+             (lambda (_jc) "me@example.com"))
+            ((symbol-function 'jabber-jid-user)
+             (lambda (jid) jid)))
+    (should (jabber-omemo--httpupload-send-url
+             'fake-jc "alice@example.com"
+             "aesgcm://host/file#abc123"))))
+
+(ert-deftest jabber-omemo-message-test-httpupload-send-url-skips-https ()
+  "Send-url override returns nil for https:// URLs."
+  (should-not (jabber-omemo--httpupload-send-url
+               'fake-jc "alice@example.com"
+               "https://host/file")))
 
 (provide 'jabber-omemo-message-tests)
 ;;; jabber-omemo-message-tests.el ends here
