@@ -653,7 +653,7 @@ Note that it can be a list of values, one for each column."
          (mastodon-tl--enable-proportional-fonts nil)
          (beg (point)))
     ;; remove crazy table-cell face:
-    (face-remap-add-relative 'table-cell 'face 'highlight)
+    (face-remap-add-relative 'table-cell 'default)
     (apply insert-fun insert-args)
     (table-capture beg (point) "|" "\n" nil min-cell-width)
     ;; center our content by col:
