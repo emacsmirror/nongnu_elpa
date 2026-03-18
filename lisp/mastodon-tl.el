@@ -182,6 +182,7 @@ nil."
     (follow_request        . ("👤" . "+"))
     (severed_relationships . ("🔗" . "//"))
     (moderation_warning    . ("⚠" . "!!"))
+    (bot                   . ("🤖" . "[bot]"))
     (quote                 . (,(propertize "“" 'face
                                            '(t :inherit success :weight bold
                                                :height 1.8))))
@@ -808,7 +809,7 @@ The result is added as an attachments property to author-byline."
 
 (defun mastodon-tl--top-byline (toot)
   "Format a boost or reply top (action) byline for TOOT.
-If it is a self-reply, return 'continued thread'.
+If it is a self-reply, return \\='continued thread'.
 If it is a non-self-reply, return \\='in reply to $username'.
 If it is a boost, return \\='$username boosted'."
   (let ((reblog (alist-get 'reblog toot))
@@ -873,8 +874,6 @@ LETTER is a string, F for favourited, B for boosted, or K for bookmarked."
 (defun mastodon-tl--byline (toot &optional detailed-p
                                  domain base-toot group ts)
   "Generate (bottom) byline for TOOT.
-AUTHOR-BYLINE is a function for adding the author portion of
-the byline that takes one variable.
 DETAILED-P means display more detailed info. For now
 this just means displaying toot client.
 When DOMAIN, force inclusion of user's domain in their handle.
@@ -902,6 +901,7 @@ TS is a timestamp from the server, if any."
          (bookmarked (eq t (mastodon-tl--field 'bookmarked base-maybe)))
          (visibility (mastodon-tl--field 'visibility base-maybe))
          (account (alist-get 'account base-maybe))
+         (botp (eq t (map-nested-elt base-maybe '(account bot))))
          (avatar-url (alist-get 'avatar account))
          (edited-time (alist-get 'edited_at base-maybe))
          (edited-parsed (when edited-time (date-to-time edited-time))))
@@ -921,7 +921,9 @@ TS is a timestamp from the server, if any."
                 (mastodon-tl--symbol 'favourite)))
              (when bookmarked
                (mastodon-tl--format-faved-or-boosted-byline
-                (mastodon-tl--symbol 'bookmark))))
+                (mastodon-tl--symbol 'bookmark)))
+             (when botp
+               (concat (mastodon-tl--symbol 'bot) " ")))
      ;; we remove avatars from the byline also, so that they also do not
      ;; mess with `mastodon-tl-goto-next-item':
      (when (and mastodon-tl--show-avatars
@@ -1987,7 +1989,7 @@ TOOT is the data for the quoting toot."
             "\n" (mastodon-tl--quote-symbol-str) "\n"
             ;; author byline without horiz bar/stats:
             (concat
-             (mastodon-tl--byline-author quoted nil :domain :base)
+             (mastodon-tl--byline-author quoted nil nil :base)
              "\n"
              (propertize ;; buttonize quoted toot body
               ;; quoted text:

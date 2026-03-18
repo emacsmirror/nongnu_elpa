@@ -4,9 +4,7 @@
 #+TEXINFO_DIR_TITLE: Mastodon: (mastodon).
 #+TEXINFO_DIR_DESC: Client for fediverse services using the Mastodon API.
 
-@@html: <a href="https://elpa.nongnu.org/nongnu/mastodon.html"><img alt="ELPA" src="https://elpa.nongnu.org/nongnu/mastodon.svg"></a>@@
-
-@@html: <a href="https://melpa.org/#/mastodon"><img alt="MELPA" src="https://melpa.org/packages/mastodon-badge.svg"></a>@@
+@@html: <a href="https://elpa.nongnu.org/nongnu/mastodon.html"><img alt="ELPA" src="https://elpa.nongnu.org/nongnu/mastodon.svg"></a> <a href="https://melpa.org/#/mastodon"><img alt="MELPA" src="https://melpa.org/packages/mastodon-badge.svg"></a> <img src="https://img.shields.io/liberapay/patrons/martianh.svg?logo=liberapay">@@
 
 @@html: <a href="https://liberapay.com/martianh/donate"><img alt="Donate using Liberapay" src="https://liberapay.com/assets/widgets/donate.svg"></a>@@
 

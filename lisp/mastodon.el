@@ -6,7 +6,7 @@
 ;; Author: Johnson Denen <johnson.denen@gmail.com>
 ;;         Marty Hiatt <mousebot@disroot.org>
 ;; Maintainer: Marty Hiatt <mousebot@disroot.org>
-;; Version: 2.0.12
+;; Version: 2.0.13
 ;; Package-Requires: ((emacs "29.1") (persist "0.8") (tp "0.8"))
 ;; Homepage: https://codeberg.org/martianh/mastodon.el
 
@@ -631,7 +631,11 @@ Calls `mastodon-tl--get-buffer-type', which see."
                       '((url . mastodon--url-at-point))))
   ;; notifs timer
   (when mastodon-notifications-alerts
-    (mastodon-notifications--update-with-timer)))
+    (mastodon-notifications--update-with-timer))
+  ;; pretty table override bindings:
+  (add-hook 'table-cell-map-hook
+            #'mastodon-profile-table-cell-hook-fun
+            nil :local))
 
 ;;;###autoload
 (add-hook 'mastodon-mode-hook #'mastodon-mode-hook-fun)

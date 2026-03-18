@@ -41,6 +41,7 @@
 (eval-when-compile
   (require 'mastodon-tl))
 (require 'mastodon-widget)
+(require 'table)
 
 (autoload 'mastodon-auth--get-account-id "mastodon-auth")
 (autoload 'mastodon-auth--get-account-name "mastodon-auth.el")
@@ -85,6 +86,8 @@
 (autoload 'mastodon-tl--field-status "mastodon-tl")
 (autoload 'mastodon-toot--with-toot-item "mastodon-toot" nil nil 'macro)
 (autoload 'mastodon-tl--toot-or-base "mastodon-tl")
+(autoload 'mastodon-views--end-of-table "mastodon-views")
+(autoload 'mastodon-tl--buttonify-link "mastodon-tl")
 
 (defvar mastodon-active-user)
 (defvar mastodon-tl--horiz-bar)
@@ -607,18 +610,94 @@ FIELDS means provide a fields vector fetched by other means."
     (when fields
       (mastodon-tl--map-alist-vals-to-alist 'name 'value fields))))
 
-(defun mastodon-profile--fields-insert (fields)
-  "Format and insert field pairs (a.k.a profile metadata) in FIELDS."
-  (let* ((car-fields (mapcar #'car fields))
-         (left-width (apply #'max (mapcar #'length car-fields))))
-    (mapconcat (lambda (field)
-                 (mastodon-tl--render-text
-                  (concat
-                   (format "_ %s " (car field))
-                   (make-string (- (+ 1 left-width) (length (car field))) ?_)
-                   (format " :: %s" (cdr field)))
-                  field)) ; hack to make links tabstops
-               fields "")))
+(defun mastodon-profile--format-fields (fields)
+  "Format field pairs (a.k.a profile metadata) in FIELDS."
+  ;; prevent `mastodon-tl--render-text' from adding any newlines:
+  (let* ((mastodon-tl--no-fill-on-render t)
+         ;; render sans variable pitch:
+         ;; (mastodon-tl--enable-proportional-fonts nil)
+         ;; to set cell witdth right, we have to render any html first:
+         (rendered (mapcar (lambda (x)
+                             (cons
+                              (mastodon-tl--render-text (car x) x)
+                              (mastodon-tl--render-text  (cdr x) x)))
+                           fields))
+         (left-longest (apply #'max (mapcar #'length
+                                            (mapcar #'car rendered))))
+         (left-width (min 30 left-longest))
+         (right-longest (apply #'max (mapcar #'length
+                                             (mapcar #'cdr rendered))))
+         ;; some people have very long URLs in their entries, so we set a
+         ;; max of (- window-width left-width). that way, long cells will
+         ;; run over onto multiple lines when we enable
+         ;; `table-fixed-width-mode':
+         (right-width (min
+                       (if (> (frame-width) left-width)
+                           (- (frame-width) (+ 10 left-width))
+                         ;; bizarre fallback:
+                         (/ (frame-width) 3)) ;; 30)
+                       right-longest)))
+    (mastodon-profile--pretty-table
+     #'mastodon-profile--insert-fields
+     `(,(+ 2 left-width) ,(+ 2 right-width)) rendered)))
+
+(defun mastodon-profile--pretty-table (insert-fun &optional min-cell-width
+                                  &rest insert-args)
+  "Insert some data and make a pretty table of it with table.el.
+Call INSERT-FUN with INSERT-ARGS.
+MIN-CELL-WIDTH is for `table-capture'.
+Note that it can be a list of values, one for each column."
+  (let* ((mastodon-tl--no-fill-on-render t)
+         (table-cell-horizontal-chars
+          (if (char-displayable-p ?–) "–" "-"))
+         (mastodon-tl--enable-proportional-fonts nil)
+         (beg (point)))
+    ;; remove crazy table-cell face:
+    (face-remap-add-relative 'table-cell 'default)
+    (apply insert-fun insert-args)
+    (table-capture beg (point) "|" "\n" nil min-cell-width)
+    ;; center our content by col:
+    (let* ((cols (nth 4 (table-query-dimension))))
+      (dotimes (_x cols)
+        (table-justify-column 'center)
+        (table-forward-cell)))
+    ;; (table-release) ;; removes frame, but fixes links
+    (mastodon-views--end-of-table)
+    (table-fixed-width-mode 1)
+    ;; unfuck `table-fixed-width-mode' disastrous face handling:
+    (set-face-attribute 'table-cell nil :inverse-video nil)
+    (add-text-properties beg (point) '(face 'success))))
+
+(defun mastodon-profile-table-cell-hook-fun ()
+  "Hook function for `table-cell-map-hook'.
+We ensure we have our tab/click/RET bindings active for links."
+  (define-key table-cell-map
+              [remap table-forward-cell] #'mastodon-tl-next-tab-item)
+  (define-key table-cell-map
+              [remap table-backward-cell] #'mastodon-tl-previous-tab-item)
+  (define-key table-cell-map
+              [remap *table--cell-newline] #'mastodon-tl-do-link-action-at-point)
+  (define-key table-cell-map [mouse-2] #'mastodon-tl-do-link-action)
+  (define-key table-cell-map [follow-link] 'mouse-face))
+
+(defun mastodon-profile--insert-fields (fields)
+  "Insert profile metadata FIELDS, an alist.
+Format them so we can create a pretty table."
+  (insert
+   (mapconcat
+    (lambda (field)
+      (concat
+       (mastodon-profile--sane-field-str (car field))
+       " | "
+       (mastodon-profile--sane-field-str (cdr field))))
+    fields "\n")))
+
+(defun mastodon-profile--sane-field-str (str)
+  "In STR, replace | with / and trim spaces/newlines.
+We replace | because it is our pretty table's column delimiter."
+  (string-trim
+   (replace-regexp-in-string "|" "/" str)
+   "[ \n]"))
 
 (defun mastodon-profile--get-statuses-pinned (account)
   "Fetch the pinned toots for ACCOUNT."
@@ -668,6 +747,64 @@ DATA is an account data from a moved field in profile data."
         'mastodon-handle handle
         'help-echo (concat "Browse user profile of " handle))
        "\n\n"))))
+
+(defun mastodon-profile--insert-counts (toots followers following)
+  "Insert counts as a pretty table.
+TOOTS FOLLOWERS and FOLLOWING are each integers."
+  (let ((table-cell-horizontal-chars (if (char-displayable-p ?–)
+                                         "–"
+                                       "-"))
+        (toot-cell (concat " TOOTS: " (mastodon-tl--as-string toots)))
+        (followers-cell (concat "FOLLOWERS: "
+                                (mastodon-tl--as-string followers)))
+        (following-cell (concat "FOLLOWING: "
+                                (mastodon-tl--as-string following))))
+    (mastodon-profile--pretty-table
+     (lambda ()
+       (insert
+        (concat toot-cell " | " followers-cell " | " following-cell
+                "\n")))
+     `(,(+ 2 (length toot-cell)) ,(+ 2 (length followers-cell))
+       ,(+ 2 (length following-cell))))))
+
+(defun mastodon-profile--insert-joined (joined)
+  "Insert JOINED data as a pretty table."
+  (let ((join-str "Joined: ")
+        (date-str (mastodon-profile--format-joined-date-string joined)))
+    (mastodon-profile--pretty-table
+     (lambda () (insert join-str "|" date-str))
+     `(,(+ 2 (length join-str)) ,(+ 2 (length date-str))))))
+
+(defun mastodon-profile--insert-relationships (relationships)
+  "Insert RELATIONSHIPS data."
+  (let-alist relationships
+    ;; (sharkey has no relationships endpoint, returns 500.
+    ;; or poss it has a different endpoint?:)
+    (when .id
+      (let* ((followsp
+              (mastodon-profile--follows-p
+               (list .requested_by .following .followed_by .blocked_by)))
+             (rels (mastodon-profile--relationships-get .id))
+             (langs-filtered (when-let* ((langs (alist-get 'languages rels)))
+                               (concat " ("
+                                       (mapconcat #'identity langs " ")
+                                       ")")))
+             (fold-str (concat "FOLLOWED BY YOU |" langs-filtered))
+             (fols-str "FOLLOWS YOU |")
+             (req-str "REQUESTED TO FOLLOW YOU |")
+             (block-str "BLOCKS YOU |")
+             (str-list (cl-remove
+                        nil (list (when (eq .following t) fold-str)
+                                  (when (eq .followed_by t) fols-str)
+                                  (when (eq .requested_by t) req-str)
+                                  (when (eq .blocked_by t) block-str)))))
+        (when followsp
+          (mastodon-profile--pretty-table
+           (lambda ()
+             (insert
+              (apply #'concat str-list)))
+           (cl-loop for x in str-list
+                    collect (+ 2 (length x)))))))))
 
 (defun mastodon-profile--make-profile-buffer-for
     (account endpoint-type update-function
@@ -744,53 +881,18 @@ MAX-ID is a flag to include the max_id pagination parameter."
                (mastodon-profile--render-moved .moved))
              ;; profile note:
              (mastodon-tl--render-text .note account) ; account = tab-stops in profile
-             ;; meta fields:
-             (when fields
-               (concat "\n" (mastodon-tl--set-face
-                             (mastodon-profile--fields-insert fields)
-                             'success)))
-             "\n"
-             ;; Joined date:
-             (propertize
-              (mastodon-profile--format-joined-date-string .created_at)
-              'face 'success)
-             "\n\n")
-            'profile-json account)
-           ;; insert counts
-           (mastodon-tl--set-face
-            (concat " " mastodon-tl--horiz-bar "\n"
-                    " TOOTS: " (mastodon-tl--as-string .statuses_count) " | "
-                    "FOLLOWERS: " (mastodon-tl--as-string .followers_count) " | "
-                    "FOLLOWING: " (mastodon-tl--as-string .following_count) "\n"
-                    " " mastodon-tl--horiz-bar "\n\n")
-            'success)
-           ;; insert relationship (follows)
-           (let-alist relationships
-             (if (not .id)
-                 ;; sharkey has no relationships endpoint, returns 500.
-                 ;; or poss it has a different endpoint
-                 ""
-               (let* ((followsp (mastodon-profile--follows-p
-                                 (list .requested_by .following .followed_by .blocked_by)))
-                      (rels (mastodon-profile--relationships-get .id))
-                      (langs-filtered (if-let* ((langs (alist-get 'languages rels)))
-                                          (concat " ("
-                                                  (mapconcat #'identity langs " ")
-                                                  ")")
-                                        "")))
-                 (if followsp
-                     (mastodon-tl--set-face
-                      (concat (when (eq .following t)
-                                (format " | FOLLOWED BY YOU%s" langs-filtered))
-                              (when (eq .followed_by t)
-                                " | FOLLOWS YOU")
-                              (when (eq .requested_by t)
-                                " | REQUESTED TO FOLLOW YOU")
-                              (when (eq .blocked_by t)
-                                " | BLOCKS YOU")
-                              "\n\n")
-                      'success)
-                   ""))))) ; for insert call
+             "\n")
+            'profile-json account))
+          ;; Joined date:
+          (mastodon-profile--insert-joined .created_at)
+          ;; meta fields:
+          (when fields
+            (mastodon-profile--format-fields fields))
+          ;; insert counts
+          (mastodon-profile--insert-counts .statuses_count
+                                           .followers_count .following_count)
+          ;; insert relationship (follows)
+          (mastodon-profile--insert-relationships relationships)
           (mastodon-media--inline-images (point-min) (point))
           ;; widget items description
           (mastodon-widget--create
@@ -839,7 +941,7 @@ NO-REBLOGS, NO-REPLIES, ONLY-MEDIA and TAG."
   "Format a human-readable Joined string from timestamp JOINED.
 JOINED is the `created_at' field in profile account JSON, and of
 the format \"2000-01-31T00:00:00.000Z\"."
-  (format-time-string "Joined: %d %B %Y"
+  (format-time-string "%d %B %Y"
                       (parse-iso8601-time-string joined)))
 
 (defun mastodon-profile-get-toot-author (&optional max-id)
