@@ -352,6 +352,60 @@ OUR-NICK is our nickname; every 3rd message is from us."
       (dolist (buf jabber-mam--dirty-buffers)
         (when (buffer-live-p buf) (kill-buffer buf))))))
 
+;;; Group 8: jabber-mam-sync-buffer
+
+(ert-deftest jabber-mam-test-sync-buffer-not-connected ()
+  "Signal user-error when not connected."
+  (with-temp-buffer
+    (setq-local jabber-buffer-connection 'dead-jc)
+    (let ((jabber-connections nil))
+      (should-error (jabber-mam-sync-buffer) :type 'user-error))))
+
+(ert-deftest jabber-mam-test-sync-buffer-1to1-query-args ()
+  "1:1 sync queries user archive with peer filter."
+  (let ((captured-args nil))
+    (cl-letf (((symbol-function 'jabber-mam--query)
+               (lambda (&rest args) (setq captured-args args)))
+              ((symbol-function 'jabber-connection-bare-jid)
+               (lambda (_jc) "me@example.com"))
+              ((symbol-function 'jabber-db-last-server-id)
+               (lambda (_account _peer) "stanza-42")))
+      (with-temp-buffer
+        (let ((jabber-connections (list 'fake-jc)))
+          (setq-local jabber-buffer-connection 'fake-jc)
+          (setq-local jabber-chatting-with "friend@example.com")
+          (jabber-mam-sync-buffer)
+          ;; Args: jc after-id queryid with start to
+          (should (eq 'fake-jc (nth 0 captured-args)))
+          (should (equal "stanza-42" (nth 1 captured-args)))
+          (should-not (nth 2 captured-args))
+          (should (equal "friend@example.com" (nth 3 captured-args)))
+          (should-not (nth 4 captured-args))
+          (should-not (nth 5 captured-args)))))))
+
+(ert-deftest jabber-mam-test-sync-buffer-muc-query-args ()
+  "MUC sync queries room archive via to parameter."
+  (let ((captured-args nil))
+    (cl-letf (((symbol-function 'jabber-mam--query)
+               (lambda (&rest args) (setq captured-args args)))
+              ((symbol-function 'jabber-connection-bare-jid)
+               (lambda (_jc) "me@example.com"))
+              ((symbol-function 'jabber-db-last-server-id)
+               (lambda (_account _peer) "stanza-99")))
+      (with-temp-buffer
+        (let ((jabber-connections (list 'fake-jc)))
+          (setq-local jabber-buffer-connection 'fake-jc)
+          (setq-local jabber-group "room@conference.example.com")
+          (jabber-mam-sync-buffer)
+          ;; Args: jc after-id queryid with start to
+          (should (eq 'fake-jc (nth 0 captured-args)))
+          (should (equal "stanza-99" (nth 1 captured-args)))
+          (should-not (nth 2 captured-args))
+          (should-not (nth 3 captured-args))
+          (should-not (nth 4 captured-args))
+          (should (equal "room@conference.example.com"
+                         (nth 5 captured-args))))))))
+
 (provide 'jabber-mam-tests)
 
 ;;; jabber-mam-tests.el ends here

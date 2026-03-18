@@ -14,7 +14,8 @@ TESTS ?= tests/jabber-xml-tests.el tests/jabber-util-tests.el \
          tests/jabber-chat-tests.el tests/jabber-db-tests.el \
          tests/jabber-chatstates-tests.el \
          tests/jabber-receipts-tests.el \
-         tests/jabber-transient-tests.el
+         tests/jabber-transient-tests.el \
+         tests/jabber-mam-tests.el
 
 all: build
 

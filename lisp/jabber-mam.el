@@ -526,10 +526,12 @@ then redraws the buffer."
          (last-id (jabber-db-last-server-id account peer)))
     (message "MAM: syncing %s..." peer)
     (if group
-        ;; MUC: query room archive (to = room JID)
         (jabber-mam--query jc last-id nil nil nil group)
-      ;; 1:1: query user archive filtered by peer (with = peer JID)
-      (jabber-mam--query jc last-id nil peer nil nil))))
+      (jabber-mam--query jc last-id nil peer nil nil))
+    ;; Force redraw even when no new messages arrive, so the user
+    ;; sees any previously stored but undisplayed messages.
+    (unless (memq (current-buffer) jabber-mam--dirty-buffers)
+      (push (current-buffer) jabber-mam--dirty-buffers))))
 
 ;;; Registration
 
