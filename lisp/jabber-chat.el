@@ -432,6 +432,8 @@ When nil or 0, display all messages."
    (let ((input (read-string "How many more messages (empty for all)? ")))
      (list (if (string-empty-p input) nil
 	     (string-to-number input)))))
+  (when jabber-mam--syncing
+    (user-error "MAM sync already in progress"))
   (let* ((jc jabber-buffer-connection)
 	 (group (bound-and-true-p jabber-group))
 	 (chat-with (bound-and-true-p jabber-chatting-with))
