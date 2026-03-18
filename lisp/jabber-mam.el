@@ -512,6 +512,25 @@ JC is the Jabber connection.  Called from MUC self-presence handler."
          (jabber-mam--muc-catch-up jc (car closure-data))))
      (list group))))
 
+(defun jabber-mam-sync-buffer ()
+  "Fetch new messages from the server archive for this chat buffer.
+Queries MAM for the current peer, stores results in the database,
+then redraws the buffer."
+  (interactive)
+  (unless (memq jabber-buffer-connection jabber-connections)
+    (user-error "Not connected"))
+  (let* ((jc jabber-buffer-connection)
+         (group (bound-and-true-p jabber-group))
+         (peer (or group (bound-and-true-p jabber-chatting-with)))
+         (account (jabber-connection-bare-jid jc))
+         (last-id (jabber-db-last-server-id account peer)))
+    (message "MAM: syncing %s..." peer)
+    (if group
+        ;; MUC: query room archive (to = room JID)
+        (jabber-mam--query jc last-id nil nil nil group)
+      ;; 1:1: query user archive filtered by peer (with = peer JID)
+      (jabber-mam--query jc last-id nil peer nil nil))))
+
 ;;; Registration
 
 (jabber-disco-advertise-feature jabber-mam-xmlns)
