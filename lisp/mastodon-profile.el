@@ -642,15 +642,14 @@ FIELDS means provide a fields vector fetched by other means."
      `(,(+ 2 left-width) ,(+ 2 right-width)) rendered)))
 
 (defun mastodon-profile--pretty-table (insert-fun &optional min-cell-width
-                                                  &rest insert-args)
+                                  &rest insert-args)
   "Insert some data and make a pretty table of it with table.el.
 Call INSERT-FUN with INSERT-ARGS.
 MIN-CELL-WIDTH is for `table-capture'.
 Note that it can be a list of values, one for each column."
   (let* ((mastodon-tl--no-fill-on-render t)
-         (table-cell-horizontal-chars (if (char-displayable-p ?–)
-                                          "–"
-                                        "-"))
+         (table-cell-horizontal-chars
+          (if (char-displayable-p ?–) "–" "-"))
          (mastodon-tl--enable-proportional-fonts nil)
          (beg (point)))
     ;; remove crazy table-cell face:
