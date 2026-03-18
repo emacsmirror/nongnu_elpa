@@ -316,7 +316,7 @@ With double prefix argument, specify more connection details."
 		  (jabber-get-send-function connection-type)))
 
 	    (list :connecting
-		  (jabber-sm--init
+		  (jabber-sm--reset
 		   (list :send-function send-function
 			 ;; Save the JID we originally connected with.
 			 :original-jid (concat username "@" server)
@@ -521,16 +521,7 @@ With double prefix argument, specify more connection details."
 	 ;; features, but as a client we would only lose by doing
 	 ;; that.
 	 (list :register-account state-data))
-	;; SM resume attempt?
-	((and (plist-get state-data :sm-resuming)
-	      (jabber-xml-child-with-xmlns stanza jabber-sm-xmlns))
-	 (list :sm-resume (plist-put state-data :stream-features stanza)))
 	(t
-	 ;; If we were hoping to resume but the server doesn't offer SM
-	 ;; in this stream, fall back to normal auth.
-	 (when (plist-get state-data :sm-resuming)
-	   (jabber-muc-connection-closed (jabber-connection-bare-jid fsm))
-	   (setq state-data (jabber-sm--reset state-data)))
 	 (list :sasl-auth (plist-put state-data :stream-features stanza))))))
 
     (:do-disconnect
@@ -715,24 +706,51 @@ With double prefix argument, specify more connection details."
 	((eq (jabber-xml-node-name stanza) 'features)
 	 ;; Record stream features, discarding earlier data:
 	 (setq state-data (plist-put state-data :stream-features stanza))
-	 (if (jabber-xml-get-children stanza 'bind)
-	     (let ((handle-bind
-		    (lambda (jc xml-data success)
-		      (fsm-send jc (list
-				    (if success :bind-success :bind-failure)
-				    xml-data))))
-		   ;; So let's bind a resource.  We can either pick a resource ourselves,
-		   ;; or have the server pick one for us.
-		   (resource (plist-get state-data :resource)))
-	       (jabber-send-iq fsm nil "set"
-			       `(bind ((xmlns . ,jabber-bind-xmlns))
-				      ,@(when resource
-					  `((resource () ,resource))))
-			       handle-bind t
-			       handle-bind nil)
-	       (list :bind state-data))
+	 (cond
+	  ;; SM resume attempt (post-SASL, per XEP-0198 section 5)?
+	  ((and (plist-get state-data :sm-resuming)
+		(jabber-xml-child-with-xmlns stanza jabber-sm-xmlns))
+	   (list :sm-resume state-data))
+	  ;; SM resume was hoped for but server doesn't offer SM here.
+	  ((plist-get state-data :sm-resuming)
+	   (jabber-muc-connection-closed (jabber-connection-bare-jid fsm))
+	   (setq state-data (jabber-sm--reset state-data))
+	   (setq state-data (plist-put state-data :sm-resuming nil))
+	   ;; Fall through to normal bind.
+	   (if (jabber-xml-get-children stanza 'bind)
+	       (let ((handle-bind
+		      (lambda (jc xml-data success)
+			(fsm-send jc (list
+				      (if success :bind-success :bind-failure)
+				      xml-data))))
+		     (resource (plist-get state-data :resource)))
+		 (jabber-send-iq fsm nil "set"
+				 `(bind ((xmlns . ,jabber-bind-xmlns))
+					,@(when resource
+					    `((resource () ,resource))))
+				 handle-bind t
+				 handle-bind nil)
+		 (list :bind state-data))
+	     (message "Server doesn't permit resource binding")
+	     (list nil state-data)))
+	  ;; Normal bind flow.
+	  ((jabber-xml-get-children stanza 'bind)
+	   (let ((handle-bind
+		  (lambda (jc xml-data success)
+		    (fsm-send jc (list
+				  (if success :bind-success :bind-failure)
+				  xml-data))))
+		 (resource (plist-get state-data :resource)))
+	     (jabber-send-iq fsm nil "set"
+			     `(bind ((xmlns . ,jabber-bind-xmlns))
+				    ,@(when resource
+					`((resource () ,resource))))
+			     handle-bind t
+			     handle-bind nil)
+	     (list :bind state-data)))
+	  (t
 	   (message "Server doesn't permit resource binding")
-	   (list nil state-data)))
+	   (list nil state-data))))
 	(t
 	 (or
 	  (jabber-process-stream-error (cadr event) state-data)
@@ -874,18 +892,23 @@ With double prefix argument, specify more connection details."
 
 (define-enter-state jabber-connection :session-established
   (fsm state-data)
-  ;; On SM resume, the session was never lost; skip roster fetch and
-  ;; bookmark prefetch.
-  (unless (plist-get state-data :sm-resumed)
+  (if (plist-get state-data :sm-resumed)
+      ;; On SM resume, the session was never lost; skip roster fetch
+      ;; and bookmark prefetch.  Restart SM timer directly since
+      ;; post-connect hooks won't fire (they're triggered by roster
+      ;; fetch callback).
+      (progn
+	(when (plist-get state-data :sm-enabled)
+	  (setq state-data (jabber-sm--start-r-timer fsm state-data)))
+	(setq state-data (plist-put state-data :sm-resumed nil)))
+    ;; Normal connect: fetch roster (which triggers post-connect hooks
+    ;; from the roster callback) and prefetch bookmarks.
     (jabber-send-iq fsm nil
 		    "get"
 		    `(query ((xmlns . ,jabber-roster-xmlns)))
 		    #'jabber-process-roster 'initial
 		    #'jabber-initial-roster-failure nil)
-    ;; Prefetch bookmarks in parallel so jabber-muc-autojoin hits cache.
     (jabber-get-bookmarks fsm #'ignore))
-  ;; Clear the resumed flag so subsequent transitions behave normally.
-  (setq state-data (plist-put state-data :sm-resumed nil))
   (list (plist-put state-data :ever-session-established t) nil))
 
 (define-state jabber-connection :session-established

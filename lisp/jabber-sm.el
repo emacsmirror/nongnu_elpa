@@ -46,6 +46,7 @@
 (declare-function jabber-xml-child-with-xmlns "jabber-xml.el" (node xmlns))
 (declare-function jabber-sexp2xml "jabber-xml.el" (sexp))
 (defvar jabber-debug-log-xml)
+(defvar jabber-connections)
 
 (defconst jabber-sm-xmlns "urn:xmpp:sm:3"
   "XEP-0198 Stream Management namespace (version 3).")
@@ -133,10 +134,6 @@ Uses forward-distance heuristic: if delta(B,A) < 2^31, A <= B."
       (setq keys (cddr keys))))
   state-data)
 
-(defun jabber-sm--init (state-data)
-  "Return STATE-DATA with SM keys initialized (same as reset)."
-  (jabber-sm--reset state-data))
-
 ;;; Stream features check
 
 (defun jabber-sm--features-have-sm-p (state-data)
@@ -161,8 +158,8 @@ Return updated STATE-DATA."
       (setq state-data (plist-put state-data :sm-outbound-count count))
       (setq state-data
             (plist-put state-data :sm-outbound-queue
-                       (append (plist-get state-data :sm-outbound-queue)
-                               (list (cons count sexp)))))))
+                       (nconc (plist-get state-data :sm-outbound-queue)
+                              (list (cons count sexp)))))))
   state-data)
 
 (defun jabber-sm--count-inbound (state-data stanza)
@@ -205,8 +202,12 @@ Return updated STATE-DATA."
   "Process an incoming <a/> ack STANZA, pruning the outbound queue.
 Return updated STATE-DATA."
   (let* ((h (string-to-number (or (jabber-xml-get-attribute stanza 'h) "0")))
+         (sent (plist-get state-data :sm-outbound-count))
          (queue (plist-get state-data :sm-outbound-queue))
          (pruned (jabber-sm--prune-queue queue h)))
+    (when (not (jabber-sm--counter-<= h sent))
+      (message "SM warning: server acked more stanzas than sent (h=%d, sent=%d)"
+               h sent))
     (setq state-data (plist-put state-data :sm-last-acked h))
     (setq state-data (plist-put state-data :sm-outbound-queue pruned))
     state-data))
@@ -225,7 +226,7 @@ Return updated STATE-DATA."
   "Parse an <enabled/> STANZA.
 Return a plist (:id ID :resume RESUME :max MAX)."
   (list :id (jabber-xml-get-attribute stanza 'id)
-        :resume (equal (jabber-xml-get-attribute stanza 'resume) "true")
+        :resume (member (jabber-xml-get-attribute stanza 'resume) '("true" "1"))
         :max (let ((max-str (jabber-xml-get-attribute stanza 'max)))
                (when max-str (string-to-number max-str)))))
 
@@ -233,7 +234,11 @@ Return a plist (:id ID :resume RESUME :max MAX)."
   "Apply parsed ENABLED-INFO to STATE-DATA, enabling SM.
 Return updated STATE-DATA."
   (setq state-data (plist-put state-data :sm-enabled t))
-  (setq state-data (plist-put state-data :sm-id (plist-get enabled-info :id)))
+  ;; Only store session ID when the server actually granted resumption.
+  ;; Without this, an unexpected disconnect would attempt resume against
+  ;; a server that only supports acking, skipping MUC cleanup.
+  (when (plist-get enabled-info :resume)
+    (setq state-data (plist-put state-data :sm-id (plist-get enabled-info :id))))
   (when (plist-get enabled-info :max)
     (setq state-data (plist-put state-data :sm-resume-max
                                 (plist-get enabled-info :max))))
@@ -257,13 +262,20 @@ Return (UPDATED-STATE-DATA . STANZAS-TO-RESEND)."
 
 ;;; Periodic ack request timer
 
+(defun jabber-sm--r-timer-function (jc)
+  "Timer callback: send <r/> if JC is still connected."
+  (when (memq jc jabber-connections)
+    (condition-case nil
+        (jabber-sm--request-ack jc)
+      (error nil))))
+
 (defun jabber-sm--start-r-timer (jc state-data)
   "Start a periodic <r/> timer for connection JC.
 Return updated STATE-DATA with the timer stored."
   (jabber-sm--stop-r-timer state-data)
   (let ((timer (run-with-timer jabber-sm-request-interval
                                jabber-sm-request-interval
-                               #'jabber-sm--request-ack jc)))
+                               #'jabber-sm--r-timer-function jc)))
     (plist-put state-data :sm-r-timer timer)))
 
 (defun jabber-sm--stop-r-timer (state-data)

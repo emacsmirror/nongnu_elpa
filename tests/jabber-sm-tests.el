@@ -69,11 +69,6 @@
     ;; Non-SM keys preserved
     (should (equal (plist-get result :username) "test"))))
 
-(ert-deftest jabber-sm-test-init ()
-  "Init is identical to reset."
-  (let ((sd (list :username "test")))
-    (should (= (plist-get (jabber-sm--init sd) :sm-outbound-count) 0))))
-
 ;;; Features check
 
 (ert-deftest jabber-sm-test-features-have-sm ()
@@ -158,6 +153,7 @@
 (ert-deftest jabber-sm-test-process-ack ()
   "Processing <a/> prunes queue and updates last-acked."
   (let* ((sd (list :sm-enabled t
+                   :sm-outbound-count 3
                    :sm-outbound-queue (list (cons 1 'a) (cons 2 'b) (cons 3 'c))
                    :sm-last-acked 0))
          (ack '(a ((xmlns . "urn:xmpp:sm:3") (h . "2"))))
@@ -208,24 +204,49 @@
     (should (string-match-p "previd='session-123'" xml))))
 
 (ert-deftest jabber-sm-test-parse-enabled ()
-  "Parse <enabled/> stanza."
+  "Parse <enabled/> stanza with resume=true."
   (let ((info (jabber-sm--parse-enabled
                '(enabled ((xmlns . "urn:xmpp:sm:3")
                           (id . "abc-123")
                           (resume . "true")
                           (max . "300"))))))
     (should (equal (plist-get info :id) "abc-123"))
-    (should (eq (plist-get info :resume) t))
+    (should (plist-get info :resume))
     (should (= (plist-get info :max) 300))))
 
-(ert-deftest jabber-sm-test-apply-enabled ()
-  "Apply enabled info to state-data."
+(ert-deftest jabber-sm-test-parse-enabled-resume-1 ()
+  "Parse <enabled/> stanza with resume=1."
+  (let ((info (jabber-sm--parse-enabled
+               '(enabled ((xmlns . "urn:xmpp:sm:3")
+                          (id . "xyz")
+                          (resume . "1"))))))
+    (should (plist-get info :resume))))
+
+(ert-deftest jabber-sm-test-parse-enabled-no-resume ()
+  "Parse <enabled/> stanza without resume attribute."
+  (let ((info (jabber-sm--parse-enabled
+               '(enabled ((xmlns . "urn:xmpp:sm:3")
+                          (id . "xyz-456"))))))
+    (should (equal (plist-get info :id) "xyz-456"))
+    (should-not (plist-get info :resume))
+    (should-not (plist-get info :max))))
+
+(ert-deftest jabber-sm-test-apply-enabled-with-resume ()
+  "Apply enabled info with resume granted."
   (let* ((sd (list :sm-enabled nil :sm-id nil :sm-resume-max nil))
-         (info (list :id "abc" :resume t :max 300))
+         (info (list :id "abc" :resume '("true") :max 300))
          (result (jabber-sm--apply-enabled sd info)))
     (should (eq (plist-get result :sm-enabled) t))
     (should (equal (plist-get result :sm-id) "abc"))
     (should (= (plist-get result :sm-resume-max) 300))))
+
+(ert-deftest jabber-sm-test-apply-enabled-no-resume ()
+  "Apply enabled info without resume: sm-id stays nil."
+  (let* ((sd (list :sm-enabled nil :sm-id nil :sm-resume-max nil))
+         (info (list :id "abc" :resume nil :max nil))
+         (result (jabber-sm--apply-enabled sd info)))
+    (should (eq (plist-get result :sm-enabled) t))
+    (should-not (plist-get result :sm-id))))
 
 ;;; Resume handling
 
@@ -273,6 +294,33 @@
 (ert-deftest jabber-sm-test-make-request-xml ()
   "Request XML is well-formed."
   (should (string-match-p "<r xmlns=" (jabber-sm--make-request-xml))))
+
+;;; Queue operations across 2^32 boundary
+
+(ert-deftest jabber-sm-test-prune-queue-wraparound ()
+  "Prune works when counters span the 2^32 wraparound."
+  (let* ((near-max (- (expt 2 32) 1))
+         (queue (list (cons near-max 'a) (cons 0 'b) (cons 1 'c)))
+         (result (jabber-sm--prune-queue queue 0)))
+    ;; near-max and 0 are both <= 0 (with wraparound), so pruned
+    (should (= (length result) 1))
+    (should (= (caar result) 1))))
+
+;;; h-count validation
+
+(ert-deftest jabber-sm-test-process-ack-h-too-high ()
+  "Warning when server acks more stanzas than sent."
+  (let* ((sd (list :sm-enabled t
+                   :sm-outbound-count 3
+                   :sm-outbound-queue (list (cons 1 'a) (cons 2 'b) (cons 3 'c))
+                   :sm-last-acked 0))
+         (ack '(a ((xmlns . "urn:xmpp:sm:3") (h . "99"))))
+         (messages nil))
+    (cl-letf (((symbol-function 'message)
+               (lambda (fmt &rest args) (push (apply #'format fmt args) messages))))
+      (jabber-sm--process-ack sd ack))
+    (should (cl-some (lambda (m) (string-match-p "more stanzas than sent" m))
+                     messages))))
 
 (provide 'jabber-sm-tests)
 
