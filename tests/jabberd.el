@@ -6,7 +6,13 @@
 
 (require 'jabber)
 
-(defvar jabberd-stanza-handlers '(jabberd-sasl jabberd-iq)
+(defvar jabberd-sm-enabled nil
+  "Non-nil when SM has been enabled for the current test session.")
+
+(defvar jabberd-sm-session-id "jabberd-sm-session-1"
+  "The SM session ID assigned by the virtual server.")
+
+(defvar jabberd-stanza-handlers '(jabberd-sm jabberd-sasl jabberd-iq)
   "List of stanza handler hooks.
 These functions are called in order with two arguments, the
 client FSM and the stanza, until one function returns non-nil,
@@ -30,6 +36,7 @@ is a function to handle the request.  The function takes two
 arguments, the client FSM and the stanza.")
 
 (defun jabberd-connect ()
+  (setq jabberd-sm-enabled nil)
   (setq *jabber-virtual-server-function* #'jabberd-handle)
   (jabber-connect "romeo" "montague.net" nil nil "foo" nil nil 'virtual))
 
@@ -80,11 +87,12 @@ arguments, the client FSM and the stanza.")
 			  ;; of jabber.el permit us to send all
 			  ;; features at once, without caring about
 			  ;; which step we are at.
-			  (mechanisms 
+			  (mechanisms
 			   ((xmlns . "urn:ietf:params:xml:ns:xmpp-sasl"))
 			   (mechanism () "DIGEST-MD5"))
 			  (bind ((xmlns . "urn:ietf:params:xml:ns:xmpp-bind")))
-			  (session ((xmlns . "urn:ietf:params:xml:ns:xmpp-session")))))))
+			  (session ((xmlns . "urn:ietf:params:xml:ns:xmpp-session")))
+			  (sm ((xmlns . "urn:xmpp:sm:3")))))))
        (t
 	(run-hook-with-args-until-success 'jabberd-stanza-handlers fsm stanza))))))
 
@@ -136,5 +144,37 @@ arguments, the client FSM and the stanza.")
      `(iq ((type . "result") (id . ,id))
 	  (query ((xmlns . "jabber:iq:auth"))
 		 (username) (password) (digest) (resource))))))
+
+(defun jabberd-sm (fsm stanza)
+  "Handle SM stanzas from the client."
+  (let ((name (jabber-xml-node-name stanza))
+        (xmlns (jabber-xml-get-xmlns stanza)))
+    (when (equal xmlns "urn:xmpp:sm:3")
+      (cond
+       ((eq name 'enable)
+        (setq jabberd-sm-enabled t)
+        (jabberd-send fsm `(enabled ((xmlns . "urn:xmpp:sm:3")
+                                     (id . ,jabberd-sm-session-id)
+                                     (resume . "true")
+                                     (max . "300"))))
+        t)
+       ((eq name 'r)
+        ;; Server responds with <a h='0'/> (we haven't received stanzas)
+        (jabberd-send fsm '(a ((xmlns . "urn:xmpp:sm:3") (h . "0"))))
+        t)
+       ((eq name 'a)
+        ;; Client sent us an ack, nothing to do
+        t)
+       ((eq name 'resume)
+        (let ((previd (jabber-xml-get-attribute stanza 'previd)))
+          (if (and jabberd-sm-enabled
+                   (equal previd jabberd-sm-session-id))
+              (jabberd-send fsm `(resumed ((xmlns . "urn:xmpp:sm:3")
+                                           (h . ,(jabber-xml-get-attribute stanza 'h))
+                                           (previd . ,jabberd-sm-session-id))))
+            (jabberd-send fsm '(failed ((xmlns . "urn:xmpp:sm:3"))
+                                       (item-not-found
+                                        ((xmlns . "urn:ietf:params:xml:ns:xmpp-stanzas")))))))
+        t)))))
 
 (provide 'jabberd)
