@@ -52,6 +52,7 @@ what kind of chat buffer is being created.")
 (declare-function jabber-omemo-fingerprints "jabber-omemo" ())
 (declare-function jabber-connection-bare-jid "jabber-util" (jc))
 (declare-function jabber-blocking-toggle-chat-peer "jabber-blocking" (jc))
+(declare-function jabber-mam-sync-buffer "jabber-mam" ())
 (declare-function jabber-jid-user "jabber-util" (jid))
 (declare-function jabber-chat-display-more-backlog "jabber-chat"
                   (how-many))
@@ -227,7 +228,8 @@ Works for both 1:1 chat (`jabber-chatting-with') and MUC (`jabber-group')."
    ["Buffer"
     ("d" "Display more context" jabber-chat-display-more-backlog)
     ("r" "Redisplay" jabber-chat-redisplay)
-    ("R" "Redraw" jabber-chat-buffer-redraw)]])
+    ("R" "Redraw" jabber-chat-buffer-redraw)
+    ("S" "Sync & redraw" jabber-mam-sync-buffer)]])
 
 ;; Spell check only what you're currently writing.
 (defun jabber-chat-mode-flyspell-verify ()
