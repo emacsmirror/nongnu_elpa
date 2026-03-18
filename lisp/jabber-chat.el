@@ -233,9 +233,13 @@ added to the outgoing message.")
                            &optional resource stanza-id
                            server-id raw-xml oob-url oob-desc
                            encrypted))
+(declare-function jabber-mam-fetch-peer-history "jabber-mam"
+                  (jc peer &optional muc-p callback))
+(declare-function jabber-muc-find-buffer "jabber-muc" (group))
 (defvar jabber-group)                   ; jabber-muc.el
 (defvar jabber-muc-printers)            ; jabber-muc.el
 (defvar jabber-mam--syncing)            ; jabber-mam.el
+(defvar jabber-mam--dirty-buffers)      ; jabber-mam.el
 (defvar jabber-oob-xmlns)              ; jabber-xml.el
 (defvar jabber-carbons-xmlns)          ; jabber-carbons.el
 (defvar jabber-image-max-width)        ; jabber-image.el
@@ -418,24 +422,40 @@ Call CALLBACK with no arguments when all entries are inserted."
 	  (when callback (funcall callback)))))))
 
 (defun jabber-chat-display-more-backlog (how-many)
-  "Display more context.
-The HOW-MANY argument is number of messages.
-Specify 0 to display all messages."
-  (interactive "nHow many more messages (Specify 0 to display all)? ")
-  (let* ((inhibit-read-only t)
-	 (jabber-backlog-days nil)
-	 (jabber-backlog-number (if (= how-many 0) t how-many))
-	 (backlog-entries (jabber-db-backlog
-			   (jabber-connection-bare-jid jabber-buffer-connection)
-			   (jabber-jid-user (or jabber-chatting-with jabber-group))
-			   jabber-backlog-number
-			   jabber-chat-earliest-backlog)))
-    (when backlog-entries
-      (setq jabber-chat-earliest-backlog
-	    (float-time (plist-get (car (last backlog-entries)) :timestamp)))
-      (jabber-chat--insert-backlog-chunked
-       (current-buffer) backlog-entries
-       #'jabber-chat-display-buffer-images))))
+  "Display more context by fetching history from the server.
+Queries MAM for the peer's full archive, stores results in the
+database, then recreates the buffer.  MAM fetches in chunks so
+the UI stays responsive.
+HOW-MANY is the number of additional messages to show.
+When nil or 0, display all messages."
+  (interactive
+   (let ((input (read-string "How many more messages (empty for all)? ")))
+     (list (if (string-empty-p input) nil
+	     (string-to-number input)))))
+  (let* ((jc jabber-buffer-connection)
+	 (group (bound-and-true-p jabber-group))
+	 (chat-with (bound-and-true-p jabber-chatting-with))
+	 (peer (or group chat-with))
+	 (current-count (length (ewoc-collect
+				jabber-chat-ewoc
+				(lambda (data) (not (eq (car data) :rare-time))))))
+	 (target-count (if (or (null how-many) (zerop how-many)) t
+			 (+ current-count how-many))))
+    (message "Fetching history for %s..." peer)
+    (jabber-mam-fetch-peer-history
+     jc peer group
+     (lambda ()
+       (let ((jabber-backlog-days nil)
+	     (jabber-backlog-number target-count))
+	 (when-let* ((buf (if group
+			      (jabber-muc-find-buffer peer)
+			    (jabber-chat-find-buffer peer))))
+	   (kill-buffer buf))
+	 (switch-to-buffer
+	  (if group
+	      (jabber-muc-create-buffer jc peer)
+	    (jabber-chat-create-buffer jc chat-with)))
+	 (message "History loaded for %s" peer))))))
 
 (add-to-list 'jabber-message-chain #'jabber-process-chat)
 

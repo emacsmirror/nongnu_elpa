@@ -125,6 +125,10 @@ Accumulated during sync, drained by the post-sync redisplay FSM.")
 BEGIN when 0->1, COMMIT when 1->0.  Allows concurrent MAM queries
 to share one SQLite transaction.")
 
+(defvar jabber-mam--completion-callbacks nil
+  "Alist of (QUERYID . CALLBACK) for per-query completion hooks.
+CALLBACK is called with no arguments when the query finishes.")
+
 ;;; Query building
 
 (defun jabber-mam--make-queryid ()
@@ -409,6 +413,12 @@ CLOSURE is (QUERYID WITH START TO)."
             (message "MAM: sync complete%s"
                      (if to (format " for %s" to)
                        (if with (format " for %s" with) ""))))
+          ;; Fire per-query completion callback if registered.
+          (when-let* ((cb (assoc queryid jabber-mam--completion-callbacks
+                                 #'string=)))
+            (setq jabber-mam--completion-callbacks
+                  (delq cb jabber-mam--completion-callbacks))
+            (funcall (cdr cb)))
           ;; Redisplay affected buffers one at a time.
           (when jabber-mam--dirty-buffers
             (run-with-timer 0.05 nil #'jabber-mam--redisplay-next)))
@@ -447,6 +457,12 @@ On item-not-found (stale sync point), falls back to time-based query."
                                            (* jabber-mam-catch-up-days 86400))
                             t))))
               (jabber-mam--query jc nil nil nil start to)))
+        ;; Permanent error: fire completion callback so callers aren't stuck.
+        (when-let* ((cb (assoc queryid jabber-mam--completion-callbacks
+                               #'string=)))
+          (setq jabber-mam--completion-callbacks
+                (delq cb jabber-mam--completion-callbacks))
+          (funcall (cdr cb)))
         (message "MAM: query failed: %s"
                  (jabber-sexp2xml xml-data))))))
 
@@ -532,6 +548,20 @@ then redraws the buffer."
     ;; sees any previously stored but undisplayed messages.
     (unless (memq (current-buffer) jabber-mam--dirty-buffers)
       (push (current-buffer) jabber-mam--dirty-buffers))))
+
+;;; On-demand history fetch
+
+(defun jabber-mam-fetch-peer-history (jc peer &optional muc-p callback)
+  "Fetch full MAM history for PEER via JC.
+When MUC-P is non-nil, query the room archive (to=PEER).
+When CALLBACK is non-nil, call it with no arguments after the
+query completes (including all pagination)."
+  (let ((queryid (jabber-mam--make-queryid)))
+    (when callback
+      (push (cons queryid callback) jabber-mam--completion-callbacks))
+    (if muc-p
+        (jabber-mam--query jc nil queryid nil nil peer)
+      (jabber-mam--query jc nil queryid peer nil nil))))
 
 ;;; Registration
 
