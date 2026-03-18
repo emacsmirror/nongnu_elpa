@@ -103,7 +103,7 @@
   :type 'integer
   :group 'jabber)
 
-(defcustom jabber-mam-catch-up-days 7
+(defcustom jabber-mam-catch-up-days 3
   "Limit initial MAM catch-up to this many days back.
 Only used when no previous sync point exists (first sync).
 Set to nil to fetch the entire archive."
