@@ -1,0 +1,213 @@
+;;; jabber-chatbuffer-tests.el --- Tests for ewoc hash table API  -*- lexical-binding: t; -*-
+
+(require 'ert)
+(require 'ewoc)
+(require 'jabber-chatbuffer)
+(require 'jabber-chat)
+(require 'jabber-db)
+
+;; jabber-chat requires this via jabber-muc
+(defvar jabber-muc-xmlns-user "http://jabber.org/protocol/muc#user")
+
+;;; Test helpers
+
+(defmacro jabber-chatbuffer-test-with-ewoc (&rest body)
+  "Set up a temp buffer with a chat ewoc and hash table, then run BODY."
+  (declare (indent 0) (debug t))
+  `(with-temp-buffer
+     (let ((jabber-chat-ewoc (ewoc-create #'ignore nil nil 'nosep))
+           (jabber-chat--msg-nodes (make-hash-table :test 'equal)))
+       ,@body)))
+
+;;; Group 1: jabber-chat-ewoc-enter
+
+(ert-deftest jabber-chat-test-ewoc-enter-registers-id ()
+  "Inserting a message with :id registers it in the hash table."
+  (jabber-chatbuffer-test-with-ewoc
+    (let* ((msg (list :id "msg-001" :body "hello" :timestamp (current-time)))
+           (node (jabber-chat-ewoc-enter (list :local msg))))
+      (should node)
+      (should (eq node (gethash "msg-001" jabber-chat--msg-nodes))))))
+
+(ert-deftest jabber-chat-test-ewoc-enter-skips-nil-id ()
+  "Inserting a message without :id does not pollute the hash table."
+  (jabber-chatbuffer-test-with-ewoc
+    (let* ((msg (list :body "notice text" :timestamp (current-time)))
+           (node (jabber-chat-ewoc-enter (list :notice msg))))
+      (should node)
+      (should (zerop (hash-table-count jabber-chat--msg-nodes))))))
+
+(ert-deftest jabber-chat-test-ewoc-enter-notice-string ()
+  "Inserting a notice with string body does not error."
+  (jabber-chatbuffer-test-with-ewoc
+    (let ((node (jabber-chat-ewoc-enter (list :notice "Someone joined"
+                                              :time (current-time)))))
+      (should node)
+      (should (zerop (hash-table-count jabber-chat--msg-nodes))))))
+
+(ert-deftest jabber-chat-test-ewoc-enter-multiple-ids ()
+  "Multiple messages with distinct IDs are all registered."
+  (jabber-chatbuffer-test-with-ewoc
+    (dotimes (i 5)
+      (let ((msg (list :id (format "msg-%03d" i) :body "x"
+                       :timestamp (current-time))))
+        (jabber-chat-ewoc-enter (list :local msg))))
+    (should (= 5 (hash-table-count jabber-chat--msg-nodes)))
+    (should (gethash "msg-002" jabber-chat--msg-nodes))))
+
+;;; Group 2: jabber-chat-ewoc-find-by-id
+
+(ert-deftest jabber-chat-test-find-by-id-returns-node ()
+  "Looking up a registered ID returns the correct ewoc node."
+  (jabber-chatbuffer-test-with-ewoc
+    (let* ((msg (list :id "find-me" :body "test" :timestamp (current-time)))
+           (node (jabber-chat-ewoc-enter (list :foreign msg))))
+      (should (eq node (jabber-chat-ewoc-find-by-id "find-me"))))))
+
+(ert-deftest jabber-chat-test-find-by-id-returns-nil-for-missing ()
+  "Looking up a nonexistent ID returns nil."
+  (jabber-chatbuffer-test-with-ewoc
+    (should-not (jabber-chat-ewoc-find-by-id "no-such-id"))))
+
+(ert-deftest jabber-chat-test-find-by-id-nil-safe ()
+  "Looking up nil returns nil without error."
+  (jabber-chatbuffer-test-with-ewoc
+    (should-not (jabber-chat-ewoc-find-by-id nil))))
+
+;;; Group 3: In-place status update
+
+(ert-deftest jabber-chat-test-status-update-in-place ()
+  "Mutating :status on the shared plist is visible through the ewoc node."
+  (jabber-chatbuffer-test-with-ewoc
+    (let* ((msg (list :id "msg-upd" :body "hi" :status :sent
+                      :timestamp (current-time)))
+           (node (jabber-chat-ewoc-enter (list :local msg))))
+      ;; Simulate receipt arrival: mutate plist in place
+      (plist-put msg :status :delivered)
+      ;; The ewoc node shares the same plist object
+      (should (eq :delivered (plist-get (cadr (ewoc-data node)) :status))))))
+
+(ert-deftest jabber-chat-test-status-update-via-lookup ()
+  "Status update via find-by-id + plist-put works end-to-end."
+  (jabber-chatbuffer-test-with-ewoc
+    (let ((msg (list :id "msg-e2e" :body "test" :status :sent
+                     :timestamp (current-time))))
+      (jabber-chat-ewoc-enter (list :local msg))
+      ;; Look up and update
+      (when-let* ((node (jabber-chat-ewoc-find-by-id "msg-e2e")))
+        (plist-put (cadr (ewoc-data node)) :status :displayed))
+      ;; Verify the original plist was mutated (shared object)
+      (should (eq :displayed (plist-get msg :status))))))
+
+;;; Group 4: Hash table cleanup
+
+(ert-deftest jabber-chat-test-hash-cleanup-on-clear ()
+  "Clearing the hash table via clrhash removes all entries."
+  (jabber-chatbuffer-test-with-ewoc
+    (dotimes (i 3)
+      (let ((msg (list :id (format "clr-%d" i) :body "x"
+                       :timestamp (current-time))))
+        (jabber-chat-ewoc-enter (list :local msg))))
+    (should (= 3 (hash-table-count jabber-chat--msg-nodes)))
+    ;; Simulate what jabber-mam--reload-buffer does
+    (ewoc-filter jabber-chat-ewoc #'ignore)
+    (clrhash jabber-chat--msg-nodes)
+    (should (zerop (hash-table-count jabber-chat--msg-nodes)))))
+
+(ert-deftest jabber-chat-test-hash-remhash-on-delete ()
+  "Removing an entry via remhash drops that ID from the table."
+  (jabber-chatbuffer-test-with-ewoc
+    (let ((msg (list :id "del-me" :body "x" :timestamp (current-time))))
+      (jabber-chat-ewoc-enter (list :local msg)))
+    (should (gethash "del-me" jabber-chat--msg-nodes))
+    (remhash "del-me" jabber-chat--msg-nodes)
+    (should-not (gethash "del-me" jabber-chat--msg-nodes))))
+
+;;; Group 5: DB backlog includes stanza ID
+
+(ert-deftest jabber-db-test-backlog-includes-stanza-id ()
+  "Backlog entries from DB include :id from stanza_id column."
+  (skip-unless (fboundp 'sqlite-open))
+  (let* ((jabber-db-test--dir (make-temp-file "jabber-db-test" t))
+         (jabber-db-path (expand-file-name "test.sqlite" jabber-db-test--dir))
+         (jabber-db--connection nil)
+         (jabber-backlog-days 3.0)
+         (jabber-backlog-number 10))
+    (unwind-protect
+        (progn
+          (jabber-db-ensure-open)
+          ;; Insert a message with stanza_id
+          (sqlite-execute jabber-db--connection
+                          "INSERT INTO message (account, peer, direction, body, timestamp, stanza_id)
+                           VALUES (?, ?, ?, ?, ?, ?)"
+                          (list "me@example.com" "them@example.com" "out"
+                                "Hello" (floor (float-time)) "emacs-msg-1234"))
+          (let* ((entries (jabber-db-backlog "me@example.com" "them@example.com"))
+                 (entry (car entries)))
+            (should entry)
+            (should (equal "emacs-msg-1234" (plist-get entry :id)))))
+      (jabber-db-close)
+      (when (file-directory-p jabber-db-test--dir)
+        (delete-directory jabber-db-test--dir t)))))
+
+(ert-deftest jabber-db-test-backlog-status-from-receipts ()
+  "Backlog entries derive :status from delivered_at/displayed_at."
+  (skip-unless (fboundp 'sqlite-open))
+  (let* ((jabber-db-test--dir (make-temp-file "jabber-db-test" t))
+         (jabber-db-path (expand-file-name "test.sqlite" jabber-db-test--dir))
+         (jabber-db--connection nil)
+         (jabber-backlog-days 3.0)
+         (jabber-backlog-number 10)
+         (now (floor (float-time))))
+    (unwind-protect
+        (progn
+          (jabber-db-ensure-open)
+          ;; Sent, no receipt
+          (sqlite-execute jabber-db--connection
+                          "INSERT INTO message (account, peer, direction, body, timestamp, stanza_id)
+                           VALUES (?, ?, ?, ?, ?, ?)"
+                          (list "me@x.com" "them@x.com" "out" "a" now "id-sent"))
+          ;; Delivered
+          (sqlite-execute jabber-db--connection
+                          "INSERT INTO message (account, peer, direction, body, timestamp, stanza_id, delivered_at)
+                           VALUES (?, ?, ?, ?, ?, ?, ?)"
+                          (list "me@x.com" "them@x.com" "out" "b" now "id-del" now))
+          ;; Displayed
+          (sqlite-execute jabber-db--connection
+                          "INSERT INTO message (account, peer, direction, body, timestamp, stanza_id, delivered_at, displayed_at)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+                          (list "me@x.com" "them@x.com" "out" "c" now "id-disp" now now))
+          (let ((entries (jabber-db-backlog "me@x.com" "them@x.com")))
+            ;; Entries are DESC, reverse to get chronological
+            (let ((by-id (make-hash-table :test 'equal)))
+              (dolist (e entries)
+                (puthash (plist-get e :id) e by-id))
+              (should (eq :undelivered (plist-get (gethash "id-sent" by-id) :status)))
+              (should (eq :delivered (plist-get (gethash "id-del" by-id) :status)))
+              (should (eq :displayed (plist-get (gethash "id-disp" by-id) :status))))))
+      (jabber-db-close)
+      (when (file-directory-p jabber-db-test--dir)
+        (delete-directory jabber-db-test--dir t)))))
+
+;;; Group 6: :id in message plist from stanza
+
+(ert-deftest jabber-chat-test-build-msg-plist-includes-id ()
+  "jabber-chat--build-msg-plist extracts the stanza id attribute."
+  (let* ((stanza '(message ((from . "alice@example.com")
+                            (id . "emacs-msg-42")
+                            (type . "chat"))
+                           (body () "Hello")))
+         (plist (jabber-chat--msg-plist-from-stanza stanza)))
+    (should (equal "emacs-msg-42" (plist-get plist :id)))))
+
+(ert-deftest jabber-chat-test-build-msg-plist-nil-id ()
+  "jabber-chat--build-msg-plist returns nil :id when stanza has none."
+  (let* ((stanza '(message ((from . "alice@example.com")
+                            (type . "chat"))
+                           (body () "Hello")))
+         (plist (jabber-chat--msg-plist-from-stanza stanza)))
+    (should-not (plist-get plist :id))))
+
+(provide 'jabber-chatbuffer-tests)
+
+;;; jabber-chatbuffer-tests.el ends here
