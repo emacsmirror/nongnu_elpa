@@ -34,6 +34,7 @@
 ;; Global reference declarations
 
 (defvar jabber-chat-ewoc)               ; jabber-chatbuffer.el
+(defvar jabber-chat--msg-nodes)        ; jabber-chatbuffer.el
 
 ;;
 
@@ -59,6 +60,11 @@ get it, and then it just gets deleted."
                            (forward-line (- jabber-log-lines-to-keep))
                            (point))))))
       (while delete-before
+        (let* ((data (ewoc-data delete-before))
+               (msg (and (listp data) (listp (cadr data)) (cadr data)))
+               (id (and msg (plist-get msg :id))))
+          (when (and id jabber-chat--msg-nodes)
+            (remhash id jabber-chat--msg-nodes)))
         (setq delete-before
               (prog1
                   (ewoc-prev work-ewoc delete-before)

@@ -68,6 +68,7 @@
 
 (defvar jabber-message-chain)           ; jabber-core.el
 (defvar jabber-chat-ewoc)               ; jabber-chatbuffer.el
+(defvar jabber-chat--msg-nodes)        ; jabber-chatbuffer.el
 (defvar jabber-buffer-connection)       ; jabber-chatbuffer.el
 (defvar jabber-point-insert)            ; jabber-chatbuffer.el
 (defvar jabber-chatting-with)           ; jabber-chat.el
@@ -325,8 +326,10 @@ This is needed after MAM sync because messages were stored to DB
 but never inserted into the ewoc."
   (with-current-buffer buffer
     (let ((inhibit-read-only t))
-      ;; Clear all ewoc nodes
+      ;; Clear all ewoc nodes and stanza ID index
       (ewoc-filter jabber-chat-ewoc #'ignore)
+      (when jabber-chat--msg-nodes
+        (clrhash jabber-chat--msg-nodes))
       ;; Reset backlog marker so full backlog loads
       (setq jabber-chat-earliest-backlog nil)
       ;; Reload from DB
