@@ -248,6 +248,7 @@ The format is that of `mode-line-format' and `header-line-format'."
 (declare-function jabber-chat--format-time "jabber-chat.el"
                   (timestamp delayed))
 (declare-function jabber-omemo--send-muc "jabber-omemo.el" (jc body))
+(declare-function jabber-omemo--prefetch-sessions "jabber-omemo" (jc jid))
 (declare-function jabber-openpgp--send-muc "jabber-openpgp.el" (jc body))
 (declare-function jabber-openpgp-legacy--send-muc "jabber-openpgp-legacy.el" (jc body))
 (declare-function jabber-chat--decrypt-if-needed "jabber-chat.el" (jc xml-data))
@@ -626,48 +627,43 @@ JC is the Jabber connection."
 JC is the Jabber connection.
 XML-DATA is the parsed tree data from the stream (stanzas)
 obtained from `xml-parse-region'."
-
   (let ((query (jabber-iq-query xml-data))
 	xdata)
     (dolist (x (jabber-xml-get-children query 'x))
       (if (string= (jabber-xml-get-attribute x 'xmlns) jabber-xdata-xmlns)
 	  (setq xdata x)))
     (if (not xdata)
-	(insert "No configuration possible.\n")
-
-    (jabber-init-widget-buffer (jabber-xml-get-attribute xml-data 'from))
-    (setq jabber-buffer-connection jc)
-
-    (jabber-render-xdata-form xdata)
-
-    (widget-create 'push-button :notify #'jabber-muc-submit-config "Submit")
-    (widget-insert "\t")
-    (widget-create 'push-button :notify #'jabber-muc-cancel-config "Cancel")
-    (widget-insert "\n")
-
-    (widget-setup)
-    (widget-minor-mode 1))))
+	(message "No configuration possible.")
+      (save-window-excursion
+	(jabber-init-widget-buffer (jabber-xml-get-attribute xml-data 'from))
+	(setq jabber-buffer-connection jc)
+	(jabber-render-xdata-form xdata)
+	(widget-create 'push-button :notify #'jabber-muc-submit-config "Submit")
+	(widget-insert "\t")
+	(widget-create 'push-button :notify #'jabber-muc-cancel-config "Cancel")
+	(widget-insert "\n")
+	(widget-setup)
+	(widget-minor-mode 1)
+	(recursive-edit)))))
 
 (defun jabber-muc-submit-config (&rest _ignore)
   "Submit MUC configuration form."
-  (let ((buffer (current-buffer)))
-    (jabber-send-iq jabber-buffer-connection jabber-submit-to
-		    "set"
-		    `(query ((xmlns . ,jabber-muc-xmlns-owner))
-			    ,(jabber-parse-xdata-form))
-		    #'jabber-report-success "MUC configuration"
-		    #'jabber-report-success "MUC configuration")
-    (kill-buffer buffer)))
+  (jabber-send-iq jabber-buffer-connection jabber-submit-to
+		  "set"
+		  `(query ((xmlns . ,jabber-muc-xmlns-owner))
+			  ,(jabber-parse-xdata-form))
+		  #'jabber-report-success "MUC configuration"
+		  #'jabber-report-success "MUC configuration")
+  (exit-recursive-edit))
 
 (defun jabber-muc-cancel-config (&rest _ignore)
   "Cancel MUC configuration form."
-  (let ((buffer (current-buffer)))
-    (jabber-send-iq jabber-buffer-connection jabber-submit-to
-		    "set"
-		    `(query ((xmlns . ,jabber-muc-xmlns-owner))
-			    (x ((xmlns . ,jabber-xdata-xmlns) (type . "cancel"))))
-		    nil nil nil nil)
-    (kill-buffer buffer)))
+  (jabber-send-iq jabber-buffer-connection jabber-submit-to
+		  "set"
+		  `(query ((xmlns . ,jabber-muc-xmlns-owner))
+			  (x ((xmlns . ,jabber-xdata-xmlns) (type . "cancel"))))
+		  nil nil nil nil)
+  (exit-recursive-edit))
 
 
 (defun jabber-muc--validate-disco-result (result)
@@ -727,7 +723,8 @@ JC is the Jabber connection."
      (list account
            (read-string "New room JID: ")
            (jabber-muc-read-my-nickname account ""))))
-  (jabber-muc--send-join-presence jc group nickname nil t t))
+  (jabber-muc--send-join-presence jc group nickname nil t t)
+  (jabber-bookmarks--publish-one jc group nickname))
 
 ;;;###autoload
 (defun jabber-muc-switch (group)
@@ -837,7 +834,8 @@ JC is the Jabber connection."
     ;; send unavailable presence to our own nick in room
     (jabber-send-sexp jc
 		      `(presence ((to . ,(format "%s/%s" group nick))
-				  (type . "unavailable"))))))
+				  (type . "unavailable")))))
+  (jabber-bookmarks--retract-one jc group))
 
 
 (defun jabber-muc-names ()
@@ -1340,6 +1338,15 @@ X-MUC, ACTOR, REASON and OUR-NICKNAME come from the stanza."
          (old-plist (jabber-muc-participant-plist group nickname))
          (new-plist (jabber-muc-parse-affiliation x-muc)))
     (jabber-muc-modify-participant group nickname new-plist)
+    ;; Prefetch OMEMO sessions for newly-joining non-self participants.
+    (when (and (not self-p) (null old-plist))
+      (when-let* ((jid (plist-get new-plist 'jid))
+                  (bare (jabber-jid-user jid))
+                  (buf (jabber-muc-find-buffer group)))
+        (with-current-buffer buf
+          (when (and (eq jabber-chat-encryption 'omemo)
+                     (fboundp 'jabber-omemo--prefetch-sessions))
+            (jabber-omemo--prefetch-sessions jc bare)))))
     (let ((report (jabber-muc-report-delta nickname old-plist new-plist
                                            reason actor)))
       (when report

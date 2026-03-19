@@ -407,7 +407,9 @@ ROOMS is an alist of (group . nickname)."
     (cl-letf (((symbol-function 'jabber-muc--send-join-presence)
                (lambda (jc group nickname password popup &optional auto-configure)
                  (setq join-args
-                       (list jc group nickname password popup auto-configure)))))
+                       (list jc group nickname password popup auto-configure))))
+              ((symbol-function 'jabber-bookmarks--publish-one)
+               #'ignore))
       (jabber-muc-create 'fake-jc "room@conference.example.com" "mynick"))
     (should join-args)
     ;; auto-configure (6th) should be t
@@ -503,10 +505,140 @@ ROOMS is an alist of (group . nickname)."
     (cl-letf (((symbol-function 'jabber-muc--send-join-presence)
                (lambda (&rest _args) (setq join-called t)))
               ((symbol-function 'jabber-disco-get-info)
-               (lambda (&rest _args) (setq disco-called t))))
+               (lambda (&rest _args) (setq disco-called t)))
+              ((symbol-function 'jabber-bookmarks--publish-one)
+               #'ignore))
       (jabber-muc-create 'fake-jc "room@conference.example.com" "mynick"))
     (should join-called)
     (should-not disco-called)))
+
+;;; Group 14: OMEMO session prefetch on participant join
+
+(defun jabber-muc-test--make-fake-jc ()
+  "Return a fake connection object for testing."
+  'fake-jc)
+
+(ert-deftest jabber-muc-test-omemo-prefetch-on-participant-join ()
+  "OMEMO sessions are prefetched when a new participant with a real JID joins."
+  (let* ((jc (jabber-muc-test--make-fake-jc))
+         (group "room@conf.example.com")
+         (prefetch-calls nil)
+         (x-muc '(x ((xmlns . "http://jabber.org/protocol/muc#user"))
+                     (item ((affiliation . "member")
+                            (role . "participant")
+                            (jid . "alice@example.com/res")))))
+         (buf (generate-new-buffer " *test-muc-omemo*")))
+    (unwind-protect
+        (progn
+          (with-current-buffer buf
+            (setq-local jabber-chat-encryption 'omemo))
+          (cl-letf (((symbol-function 'jabber-muc-find-buffer) (lambda (_) buf))
+                    ((symbol-function 'jabber-omemo--prefetch-sessions)
+                     (lambda (_ jid) (push jid prefetch-calls)))
+                    ((symbol-function 'jabber-muc-participant-plist) (lambda (&rest _) nil))
+                    ((symbol-function 'jabber-muc-modify-participant) #'ignore)
+                    ((symbol-function 'jabber-muc-report-delta) (lambda (&rest _) nil))
+                    ((symbol-function 'jabber-muc-create-buffer) (lambda (&rest _) buf))
+                    ((symbol-function 'jabber-maybe-print-rare-time) #'ignore)
+                    ((symbol-function 'jabber-chat-ewoc-enter) #'ignore))
+            (jabber-muc--process-enter
+             jc group "alice"
+             (jabber-jid-symbol "room@conf.example.com/alice")
+             nil x-muc nil nil "me")
+            (should (member "alice@example.com" prefetch-calls))))
+      (kill-buffer buf))))
+
+(ert-deftest jabber-muc-test-no-omemo-prefetch-when-plaintext ()
+  "No OMEMO prefetch when the buffer uses plaintext encryption."
+  (let* ((jc (jabber-muc-test--make-fake-jc))
+         (group "room@conf.example.com")
+         (prefetch-calls nil)
+         (x-muc '(x ((xmlns . "http://jabber.org/protocol/muc#user"))
+                     (item ((affiliation . "member")
+                            (role . "participant")
+                            (jid . "alice@example.com/res")))))
+         (buf (generate-new-buffer " *test-muc-plain*")))
+    (unwind-protect
+        (progn
+          (with-current-buffer buf
+            (setq-local jabber-chat-encryption 'plaintext))
+          (cl-letf (((symbol-function 'jabber-muc-find-buffer) (lambda (_) buf))
+                    ((symbol-function 'jabber-omemo--prefetch-sessions)
+                     (lambda (_ jid) (push jid prefetch-calls)))
+                    ((symbol-function 'jabber-muc-participant-plist) (lambda (&rest _) nil))
+                    ((symbol-function 'jabber-muc-modify-participant) #'ignore)
+                    ((symbol-function 'jabber-muc-report-delta) (lambda (&rest _) nil))
+                    ((symbol-function 'jabber-muc-create-buffer) (lambda (&rest _) buf))
+                    ((symbol-function 'jabber-maybe-print-rare-time) #'ignore)
+                    ((symbol-function 'jabber-chat-ewoc-enter) #'ignore))
+            (jabber-muc--process-enter
+             jc group "alice"
+             (jabber-jid-symbol "room@conf.example.com/alice")
+             nil x-muc nil nil "me")
+            (should (null prefetch-calls))))
+      (kill-buffer buf))))
+
+(ert-deftest jabber-muc-test-no-omemo-prefetch-for-self ()
+  "OMEMO prefetch is not triggered for self-presence."
+  (let* ((jc (jabber-muc-test--make-fake-jc))
+         (group "room@conf.example.com")
+         (prefetch-calls nil)
+         (x-muc '(x ((xmlns . "http://jabber.org/protocol/muc#user"))
+                     (item ((affiliation . "member")
+                            (role . "participant")
+                            (jid . "me@example.com/res")))))
+         (buf (generate-new-buffer " *test-muc-self*")))
+    (unwind-protect
+        (progn
+          (with-current-buffer buf
+            (setq-local jabber-chat-encryption 'omemo))
+          (cl-letf (((symbol-function 'jabber-muc-find-buffer) (lambda (_) buf))
+                    ((symbol-function 'jabber-omemo--prefetch-sessions)
+                     (lambda (_ jid) (push jid prefetch-calls)))
+                    ((symbol-function 'jabber-muc-participant-plist) (lambda (&rest _) nil))
+                    ((symbol-function 'jabber-muc-modify-participant) #'ignore)
+                    ((symbol-function 'jabber-muc-report-delta) (lambda (&rest _) nil))
+                    ((symbol-function 'jabber-muc-create-buffer) (lambda (&rest _) buf))
+                    ((symbol-function 'jabber-maybe-print-rare-time) #'ignore)
+                    ((symbol-function 'jabber-chat-ewoc-enter) #'ignore)
+                    ((symbol-function 'jabber-muc-add-groupchat) #'ignore)
+                    ((symbol-function 'jabber-mam-muc-joined) #'ignore))
+            ;; "me" is self — status code 110 marks self-presence
+            (jabber-muc--process-enter
+             jc group "me"
+             (jabber-jid-symbol "room@conf.example.com/me")
+             (list jabber-muc-status-self-presence) x-muc nil nil "me")
+            (should (null prefetch-calls))))
+      (kill-buffer buf))))
+
+(ert-deftest jabber-muc-test-no-omemo-prefetch-without-real-jid ()
+  "No OMEMO prefetch when participant has no real JID (anonymous room)."
+  (let* ((jc (jabber-muc-test--make-fake-jc))
+         (group "room@conf.example.com")
+         (prefetch-calls nil)
+         ;; No jid attribute in item
+         (x-muc '(x ((xmlns . "http://jabber.org/protocol/muc#user"))
+                     (item ((affiliation . "member") (role . "participant")))))
+         (buf (generate-new-buffer " *test-muc-anon*")))
+    (unwind-protect
+        (progn
+          (with-current-buffer buf
+            (setq-local jabber-chat-encryption 'omemo))
+          (cl-letf (((symbol-function 'jabber-muc-find-buffer) (lambda (_) buf))
+                    ((symbol-function 'jabber-omemo--prefetch-sessions)
+                     (lambda (_ jid) (push jid prefetch-calls)))
+                    ((symbol-function 'jabber-muc-participant-plist) (lambda (&rest _) nil))
+                    ((symbol-function 'jabber-muc-modify-participant) #'ignore)
+                    ((symbol-function 'jabber-muc-report-delta) (lambda (&rest _) nil))
+                    ((symbol-function 'jabber-muc-create-buffer) (lambda (&rest _) buf))
+                    ((symbol-function 'jabber-maybe-print-rare-time) #'ignore)
+                    ((symbol-function 'jabber-chat-ewoc-enter) #'ignore))
+            (jabber-muc--process-enter
+             jc group "bob"
+             (jabber-jid-symbol "room@conf.example.com/bob")
+             nil x-muc nil nil "me")
+            (should (null prefetch-calls))))
+      (kill-buffer buf))))
 
 (provide 'jabber-muc-tests)
 ;;; jabber-muc-tests.el ends here
