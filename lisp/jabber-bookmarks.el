@@ -457,8 +457,13 @@ JC is the Jabber connection."
 (defun jabber-bookmarks-add (jid)
   "Add a bookmark for JID with autojoin enabled."
   (interactive "sRoom JID: ")
-  (let ((jc jabber-buffer-connection)
-        (plist (list :jid jid :autojoin t)))
+  (jabber-bookmarks--publish-one jabber-buffer-connection jid))
+
+(defun jabber-bookmarks--publish-one (jc jid &optional nick)
+  "Publish a bookmark for JID via JC.
+NICK, if non-nil, is stored in the bookmark."
+  (let ((plist (list :jid jid :autojoin t
+                     :nick (or nick (jabber-muc-nickname jid)))))
     (jabber-bookmarks2--update-cache jc plist)
     (let ((done (lambda (jc _xml _closure)
                   (jabber-bookmarks2--maybe-join jc plist)
@@ -467,6 +472,16 @@ JC is the Jabber connection."
       (if (jabber-bookmarks--legacy-p jc)
           (jabber-bookmarks--save-all jc done)
         (jabber-bookmarks2--publish jc plist done)))))
+
+(defun jabber-bookmarks--retract-one (jc jid)
+  "Remove bookmark for JID via JC."
+  (jabber-bookmarks2--remove-from-cache jc jid)
+  (let ((done (lambda (_jc _xml _closure)
+                (jabber-bookmarks--refresh-buffer)
+                (message "Bookmark removed: %s" jid))))
+    (if (jabber-bookmarks--legacy-p jc)
+        (jabber-bookmarks--save-all jc done)
+      (jabber-bookmarks2--retract jc jid done))))
 
 (defun jabber-bookmarks-delete ()
   "Delete the bookmark at point."
