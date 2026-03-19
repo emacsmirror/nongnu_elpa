@@ -2329,6 +2329,7 @@ FOLD means to fold it instead."
 
 ;; calqued off mastodon-alt.el:
 (defun mastodon-tl--toot-for-stats (&optional toot)
+  ;; FIXME: just use `mastodon-tl-toot-or-base'?
   "Return the TOOT on which we want to extract stats.
 If no TOOT is given, the one at point is considered."
   (let* ((original-toot (or toot (get-text-property (point) 'item-json)))
@@ -2353,9 +2354,16 @@ To disable showing the stats, customize
                                    'favourites-count .favourites_count))
            (boosts-prop (propertize (format "%s" .reblogs_count)
                                     'boosts-count .reblogs_count))
+           (quotes-prop (propertize (format "%s" .quotes_count)
+                                    'quotes-count .quotes_count))
            (faves (format "%s %s" faves-prop (mastodon-tl--symbol 'favourite)))
            (boosts (format "%s %s" boosts-prop (mastodon-tl--symbol 'boost)))
            (replies (format "%s %s" .replies_count (mastodon-tl--symbol 'reply)))
+           (quotes  (format "%s %s"
+                            (propertize (number-to-string .quotes_count)
+                                        'face 'mastodon-toot-docs-face)
+                            (propertize (mastodon-tl--symbol 'quote)
+                                        'face 'success)))
            (stats (concat
                    (propertize faves
                                'favourited-p (eq t .favourited)
@@ -2373,7 +2381,14 @@ To disable showing the stats, customize
                                'replies-field t
                                'replies-count .replies_count
                                'help-echo (format "%s replies" .replies_count)
-                               'face 'mastodon-toot-docs-face)))
+                               'face 'mastodon-toot-docs-face)
+                   (propertize " | " 'face 'mastodon-toot-docs-face)
+                   (propertize quotes
+                               'quotes-field t
+                               'quotes-count .quotes_count
+                               'help-echo (format "%s quotes" .quotes_count)
+                               ;; 'face 'mastodon-toot-docs-face
+                               )))
            (right-spacing
             (propertize " "
                         'display
