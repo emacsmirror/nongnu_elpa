@@ -739,18 +739,29 @@ Returns modified XML-DATA with decrypted body, or nil on failure."
   "Around advice for `jabber-chat--decrypt-if-needed'.
 If XML-DATA contains an OMEMO <encrypted> element, decrypt it.
 Otherwise delegate to ORIG-FN."
-  (let ((parsed (jabber-omemo--parse-encrypted xml-data)))
-    (if (null parsed)
-        (funcall orig-fn jc xml-data)
-      (condition-case err
-          (jabber-omemo--decrypt-stanza jc xml-data parsed)
-        (error
-         (message "OMEMO decrypt failed: %s" (error-message-string err))
-         (let ((body-el (car (jabber-xml-get-children xml-data 'body))))
-           (if body-el
-               (setcar (cddr body-el) "[OMEMO: could not decrypt]")
-             (nconc xml-data (list '(body () "[OMEMO: could not decrypt]")))))
-         xml-data)))))
+  ;; Own MUC echo: recover plaintext from cache to avoid decrypt failure.
+  (let* ((msg-id (jabber-xml-get-attribute xml-data 'id))
+         (cached (and msg-id (gethash msg-id jabber-omemo--sent-muc-plaintexts))))
+    (if cached
+        (progn
+          (remhash msg-id jabber-omemo--sent-muc-plaintexts)
+          (let ((body-el (car (jabber-xml-get-children xml-data 'body))))
+            (if body-el
+                (setcar (cddr body-el) cached)
+              (nconc xml-data (list `(body () ,cached)))))
+          xml-data)
+      (let ((parsed (jabber-omemo--parse-encrypted xml-data)))
+        (if (null parsed)
+            (funcall orig-fn jc xml-data)
+          (condition-case err
+              (jabber-omemo--decrypt-stanza jc xml-data parsed)
+            (error
+             (message "OMEMO decrypt failed: %s" (error-message-string err))
+             (let ((body-el (car (jabber-xml-get-children xml-data 'body))))
+               (if body-el
+                   (setcar (cddr body-el) "[OMEMO: could not decrypt]")
+                 (nconc xml-data (list '(body () "[OMEMO: could not decrypt]")))))
+             xml-data)))))))
 
 (defun jabber-omemo--send-heartbeat (jc to device-id heartbeat-bytes)
   "Send OMEMO heartbeat (empty encrypted message, no payload).
@@ -804,6 +815,11 @@ all-sessions is a list of (DEVICE-ID . SESSION-PTR)."
 
 (defvar-local jabber-omemo--pending-messages nil
   "Queue of messages awaiting session establishment.")
+
+(defvar jabber-omemo--sent-muc-plaintexts (make-hash-table :test #'equal)
+  "Cache of recently-sent OMEMO MUC message plaintexts.
+Keyed by message ID string.  Entries are consumed when the MUC
+server echo is received, so the cache is normally near-empty.")
 
 (defun jabber-omemo--send-chat (jc body)
   "Send BODY as OMEMO-encrypted message via JC.
@@ -882,6 +898,7 @@ No local echo: the MUC server mirrors the message back."
          (encrypted-xml (jabber-omemo--build-encrypted-xml
                          jc all-sessions enc-result))
          (id (format "emacs-msg-%.6f" (float-time)))
+         (_ (puthash id body jabber-omemo--sent-muc-plaintexts))
          (stanza `(message ((to . ,group)
                             (type . "groupchat")
                             (id . ,id))
