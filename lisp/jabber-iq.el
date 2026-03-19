@@ -186,7 +186,7 @@ obtained from `xml-parse-region'."
       (setq buffer-read-only nil)
       (goto-char (point-max))
 
-      (insert (propertize from 'face 'jabber-title-large)
+      (insert (propertize from 'face 'jabber-title)
 	      "\n\n")
 
       ;; Put point at beginning of data

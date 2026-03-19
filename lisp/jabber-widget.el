@@ -172,7 +172,7 @@ DEFAULTS takes precedence over values specified in the form."
 
   (let ((title (car (jabber-xml-node-children (car (jabber-xml-get-children x 'title))))))
     (if (stringp title)
-	(widget-insert (propertize title 'face 'jabber-title-medium) "\n\n")))
+	(widget-insert (propertize title 'face 'jabber-title) "\n\n")))
   (let ((instructions (car (jabber-xml-node-children (car (jabber-xml-get-children x 'instructions))))))
     (if (stringp instructions)
 	(widget-insert "Instructions: " instructions "\n\n")))
@@ -280,7 +280,7 @@ Return a list of strings, each of which to be included as cdata in a
   "Render search results in x:data form."
   (let ((title (car (jabber-xml-get-children xdata 'title))))
     (when title
-      (insert (propertize (car (jabber-xml-node-children title)) 'face 'jabber-title-medium) "\n")))
+      (insert (propertize (car (jabber-xml-node-children title)) 'face 'jabber-title) "\n")))
   (if (jabber-xml-get-children xdata 'reported)
       (jabber-render-xdata-search-results-multi xdata)
     (jabber-render-xdata-search-results-single xdata)))

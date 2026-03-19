@@ -69,7 +69,7 @@ JC is the Jabber connection."
                             (if (and category (> (length category) 0))
                                 category
                               name)))))
-    (propertize label 'face 'jabber-title-medium)))
+    (propertize label 'face 'jabber-title)))
 
 (defun jabber-browse--insert-item (jc item)
   "Insert a single browse result ITEM into the current buffer.

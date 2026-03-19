@@ -370,7 +370,7 @@ obtained from `xml-parse-region'."
       (when email-addresses
 	(insert "\n")
 	(insert (propertize "E-mail addresses:\n"
-				   'face 'jabber-title-medium))
+				   'face 'jabber-title))
 	(dolist (email email-addresses)
 	  (insert (mapconcat (lambda (type)
 			       (cdr (assq type jabber-vcard-email-types)))
@@ -382,7 +382,7 @@ obtained from `xml-parse-region'."
       (when phone-numbers
 	(insert "\n")
 	(insert (propertize "Phone numbers:\n"
-				   'face 'jabber-title-medium))
+				   'face 'jabber-title))
 	(dolist (number phone-numbers)
 	  (insert (mapconcat (lambda (type)
 			       (cdr (assq type jabber-vcard-phone-types)))
@@ -394,14 +394,14 @@ obtained from `xml-parse-region'."
       (when addresses
 	(insert "\n")
 	(insert (propertize "Addresses:\n"
-				   'face 'jabber-title-medium))
+				   'face 'jabber-title))
 	(dolist (address addresses)
 	  (insert (propertize
 		   (mapconcat (lambda (type)
 				(cdr (assq type jabber-vcard-address-types)))
 			      (car address)
 			      " ")
-		   'face 'jabber-title-small))
+		   'face 'jabber-title))
 	  (insert "\n")
 	  (dolist (address-field jabber-vcard-address-fields)
 	    (let ((field (assq (car address-field) address)))

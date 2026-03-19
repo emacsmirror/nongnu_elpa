@@ -570,7 +570,7 @@ obtained from `xml-parse-region'."
 	  (insert (propertize (if name
 					 name
 				       "Unnamed")
-				     'face 'jabber-title-medium)
+				     'face 'jabber-title)
 		  "\n\nCategory:\t" category "\n")
 	  (if type
 	      (insert "Type:\t\t" type "\n"))
@@ -601,7 +601,7 @@ obtained from `xml-parse-region'."
 	      (concat
 	       (propertize
 		(concat jid "\n" (if node (format "Node: %s\n" node)))
-		'face 'jabber-title-medium)
+		'face 'jabber-title)
 	       name "\n\n")
 	      'jabber-jid jid
 	      'jabber-account jc

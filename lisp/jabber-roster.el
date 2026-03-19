@@ -659,7 +659,7 @@ sorted list and BUDDY-JC-MAP maps buddy names to connections."
     (dolist (jc jabber-connections)
       (plist-put (fsm-get-state-data jc) :roster-ewoc ewoc))
     (insert (propertize "Contacts"
-                        'face 'jabber-title-small)
+                        'face 'jabber-title)
             "\n")
     (dolist (group-name (jabber-roster--merged-groups))
       (let* ((result (jabber-roster--group-buddies group-name))
@@ -683,7 +683,7 @@ sorted list and BUDDY-JC-MAP maps buddy names to connections."
   (let ((rooms (sort (jabber-muc-active-rooms) #'string<)))
     (when rooms
       (insert (propertize "Groupchats"
-			  'face 'jabber-title-small
+			  'face 'jabber-title
 			  'jabber-group "Groupchats")
 	      "\n")
       (dolist (room-jid rooms)
@@ -817,7 +817,7 @@ BUDDY is a JID symbol. JC is the Jabber connection."
       (add-text-properties 0
 			   (length line)
 			   (list
-			    'face 'jabber-title-small
+			    'face 'jabber-title
 			    'jabber-group group-name
 			    'jabber-account jc)
 			   line)

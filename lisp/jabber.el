@@ -211,20 +211,14 @@ configure a Google Talk account like this:
 (defgroup jabber-faces nil "Faces for displaying Jabber instant messaging."
   :group 'jabber)
 
-(defface jabber-title-small
-  '((t (:weight bold :width semi-expanded :height 1.0 :inherit variable-pitch)))
-  "Face for small titles."
+(defface jabber-title
+  '((t :inherit outline-3))
+  "Face for titles and section headings."
   :group 'jabber-faces)
 
-(defface jabber-title-medium
-  '((t (:weight bold :width expanded :height 1.4 :inherit variable-pitch)))
-  "Face for medium titles."
-  :group 'jabber-faces)
-
-(defface jabber-title-large
-  '((t (:weight bold :width ultra-expanded :height 1.8 :inherit variable-pitch)))
-  "Face for large titles."
-  :group 'jabber-faces)
+(define-obsolete-face-alias 'jabber-title-small 'jabber-title "0.10")
+(define-obsolete-face-alias 'jabber-title-medium 'jabber-title "0.10")
+(define-obsolete-face-alias 'jabber-title-large 'jabber-title "0.10")
 
 (defgroup jabber-debug nil "debugging options"
   :group 'jabber)

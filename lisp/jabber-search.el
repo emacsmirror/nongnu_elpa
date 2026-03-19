@@ -100,7 +100,7 @@ obtained from `xml-parse-region'."
     (if have-xdata
 	(jabber-render-xdata-search-results xdata)
 
-      (insert (propertize "Search results" 'face 'jabber-title-medium) "\n")
+      (insert (propertize "Search results" 'face 'jabber-title) "\n")
 
       (setq fields '((first . (label "First name" column 0))
 		     (last . (label "Last name" column 15))
