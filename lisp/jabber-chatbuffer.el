@@ -40,6 +40,10 @@ what kind of chat buffer is being created.")
 (defvar jabber-chat-ewoc nil
   "The ewoc showing the messages of this chat buffer.")
 
+(defvar-local jabber-chat--msg-nodes nil
+  "Hash table mapping stanza IDs to ewoc nodes.
+Enables O(1) lookup for in-place updates (receipts, corrections).")
+
 ;; Global reference declarations
 
 (declare-function jabber-muc-nick-completion-at-point "jabber-muc-nick-completion.el" ())
@@ -268,6 +272,7 @@ EWOC-PP is the pretty-printer function for the message EWOC."
   (unless jabber-chat-ewoc
     (setq jabber-chat-ewoc
           (ewoc-create ewoc-pp nil (concat (jabber-separator) "\n") 'nosep))
+    (setq jabber-chat--msg-nodes (make-hash-table :test 'equal))
     (goto-char (point-max))
     (put-text-property (point-min) (point) 'read-only t)
     (let ((inhibit-read-only t))
@@ -372,6 +377,25 @@ line at the bottom of the window."
                    (eq buffer current-buffer)))))
       (buffer-list)))))
 
+
+;;; Ewoc insertion and lookup API
+
+(defun jabber-chat-ewoc-enter (data)
+  "Insert DATA into the chat ewoc and register by stanza ID.
+DATA is (TYPE MSG-PLIST).  When the plist has a non-nil :id, the
+returned ewoc node is stored in `jabber-chat--msg-nodes' for O(1)
+lookup.  Returns the ewoc node."
+  (let ((node (ewoc-enter-last jabber-chat-ewoc data)))
+    (when-let* ((msg (cadr data))
+                ((listp msg))
+                (id (plist-get msg :id)))
+      (puthash id node jabber-chat--msg-nodes))
+    node))
+
+(defun jabber-chat-ewoc-find-by-id (stanza-id)
+  "Return the ewoc node for STANZA-ID, or nil."
+  (when (and stanza-id jabber-chat--msg-nodes)
+    (gethash stanza-id jabber-chat--msg-nodes)))
 
 ;;; Cleanup on disconnect
 
