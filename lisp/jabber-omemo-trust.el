@@ -76,13 +76,14 @@ Returns the key without the first byte, or as-is if shorter than 2 bytes."
   "t" #'jabber-omemo-trust-set-verified
   "u" #'jabber-omemo-trust-set-untrusted
   "d" #'jabber-omemo-trust-delete
+  "w" #'jabber-omemo-trust-copy-fingerprint
   "h" #'jabber-omemo-trust-menu
   "?" #'jabber-omemo-trust-menu)
 
 (defun jabber-omemo--list-format ()
   (let ((list-format `[("Device ID" ,(/ (window-width) 10))
 		       ("Trust" ,(/ (window-width) 10))
-		       ("Fingerprint" ,(/ (window-width) 5))
+		       ("Fingerprint" ,(/ (window-width) 3))
 		       ("First Seen" ,(/ (window-width) 10))]))
     list-format))
 
@@ -303,6 +304,14 @@ server-side device list and delete its bundle PubSub node."
         (tabulated-list-print t)
         (message "Device %d deleted" did)))))
 
+(defun jabber-omemo-trust-copy-fingerprint ()
+  "Copy the fingerprint of the device at point to the kill ring."
+  (interactive)
+  (jabber-omemo-trust--device-at-point)
+  (let ((fingerprint (aref (tabulated-list-get-entry) 2)))
+    (kill-new fingerprint)
+    (message "Copied: %s" fingerprint)))
+
 ;;; Transient
 
 (defun jabber-omemo-trust--menu-description ()
@@ -320,6 +329,7 @@ server-side device list and delete its bundle PubSub node."
    [("t" "Verify" jabber-omemo-trust-set-verified)
     ("u" "Untrust" jabber-omemo-trust-set-untrusted)
     ("d" "Delete" jabber-omemo-trust-delete)
+    ("w" "Copy fingerprint" jabber-omemo-trust-copy-fingerprint)
     ("g" "Refresh" revert-buffer)]])
 
 ;;; Cleanup on disconnect
