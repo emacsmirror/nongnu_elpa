@@ -27,12 +27,12 @@
 
     <license rdf:resource="https://unlicense.org/"/>
 
-    <programming-langauge>Emacs Lisp</programming-langauge>
+    <programming-language>Emacs Lisp</programming-language>
     <os>Linux</os>
     <os>Windows</os>
     <os>Android</os>
     <os>macOS</os>
-    <category rdf:resource="https://linkmauve.fr/ns/xmpp-doap#category-library"/>
+    <category rdf:resource="https://linkmauve.fr/ns/xmpp-doap#category-client"/>
 
     <repository>
       <GitRepository>
@@ -329,13 +329,6 @@
     </implements>
     <implements>
       <xmpp:SupportedXep>
-	<xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0199.html"/>
-	<xmpp:status>complete</xmpp:status>
-	<xmpp:version>2.0.1</xmpp:version>
-      </xmpp:SupportedXep>
-    </implements>
-    <implements>
-      <xmpp:SupportedXep>
         <xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0184.html"/>
         <xmpp:status>complete</xmpp:status>
         <xmpp:version>1.4.0</xmpp:version>
@@ -360,6 +353,13 @@
     </implements>
     <implements>
       <xmpp:SupportedXep>
+	<xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0199.html"/>
+	<xmpp:status>complete</xmpp:status>
+	<xmpp:version>2.0.1</xmpp:version>
+      </xmpp:SupportedXep>
+    </implements>
+    <implements>
+      <xmpp:SupportedXep>
         <xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0202.html"/>
         <xmpp:status>complete</xmpp:status>
         <xmpp:version>2.0</xmpp:version>
@@ -379,7 +379,7 @@
         <xmpp:status>partial</xmpp:status>
         <xmpp:version>1.0</xmpp:version>
         <xmpp:since>0.6.1</xmpp:since>
-        <xmpp:note>except XHTML-IM</xmpp:note>
+        <xmpp:note>Rendered in plain-text message bodies only.  /me in XHTML-IM messages is not handled.</xmpp:note>
       </xmpp:SupportedXep>
     </implements>
     <implements>
@@ -452,9 +452,43 @@
     </implements>
     <implements>
       <xmpp:SupportedXep>
+        <xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0384.html"/>
+        <xmpp:status>partial</xmpp:status>
+        <xmpp:version>0.2</xmpp:version>
+        <xmpp:since>NEXT</xmpp:since>
+        <xmpp:note>Implements OMEMO 0.3 (legacy eu.siacs.conversations.axolotl namespace, XEP-0384 v0.2).  1:1 chat complete.  MUC: send and receive in non-anonymous rooms; no affiliation list fetch for offline members.</xmpp:note>
+      </xmpp:SupportedXep>
+    </implements>
+    <implements>
+      <xmpp:SupportedXep>
         <xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0402.html"/>
         <xmpp:status>complete</xmpp:status>
         <xmpp:version>1.1.3</xmpp:version>
+        <xmpp:since>NEXT</xmpp:since>
+      </xmpp:SupportedXep>
+    </implements>
+    <implements>
+      <xmpp:SupportedXep>
+        <xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0424.html"/>
+        <xmpp:status>partial</xmpp:status>
+        <xmpp:version>0.4.2</xmpp:version>
+        <xmpp:since>NEXT</xmpp:since>
+        <xmpp:note>Received as part of XEP-0425 moderated retraction flow.  No standalone self-retraction.</xmpp:note>
+      </xmpp:SupportedXep>
+    </implements>
+    <implements>
+      <xmpp:SupportedXep>
+        <xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0425.html"/>
+        <xmpp:status>complete</xmpp:status>
+        <xmpp:version>0.3.0</xmpp:version>
+        <xmpp:since>NEXT</xmpp:since>
+      </xmpp:SupportedXep>
+    </implements>
+    <implements>
+      <xmpp:SupportedXep>
+        <xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0454.html"/>
+        <xmpp:status>complete</xmpp:status>
+        <xmpp:version>0.1.0</xmpp:version>
         <xmpp:since>NEXT</xmpp:since>
       </xmpp:SupportedXep>
     </implements>
