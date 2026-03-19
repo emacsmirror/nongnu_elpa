@@ -345,17 +345,21 @@ The IS NULL guard prevents overwriting an earlier timestamp."
 (defun jabber-db--row-to-plist (row)
   "Convert a database ROW to a message plist.
 ROW is (account peer direction body timestamp resource type
-oob_url oob_desc encrypted)."
+oob_url oob_desc encrypted stanza_id delivered_at displayed_at)."
   (let* ((account (nth 0 row))
          (peer (nth 1 row))
          (direction (nth 2 row))
          (body (nth 3 row))
          (timestamp (nth 4 row))
          (resource (nth 5 row))
+         (stanza-id (nth 10 row))
+         (delivered-at (nth 11 row))
+         (displayed-at (nth 12 row))
          (from (if (string= direction "in")
                    (if resource (concat peer "/" resource) peer)
                  account)))
-    (list :from from
+    (list :id stanza-id
+          :from from
           :body (or body "")
           :subject nil
           :timestamp (seconds-to-time timestamp)
@@ -365,7 +369,11 @@ oob_url oob_desc encrypted)."
           :msg-type (nth 6 row)
           :oob-url (nth 7 row)
           :oob-desc (nth 8 row)
-          :error-text nil)))
+          :error-text nil
+          :status (cond
+                   (displayed-at :displayed)
+                   (delivered-at :delivered)
+                   ((string= direction "out") :undelivered)))))
 
 (defun jabber-db-backlog (account peer &optional count start-time)
   "Return the last COUNT messages for PEER on ACCOUNT.
@@ -384,7 +392,7 @@ If nil, `jabber-backlog-days' is used to compute the cutoff."
            (rows (sqlite-select
                   db
                   "SELECT account, peer, direction, body, timestamp, resource, type, \
-oob_url, oob_desc, encrypted \
+oob_url, oob_desc, encrypted, stanza_id, delivered_at, displayed_at \
 FROM message \
 WHERE account = ? AND peer = ? AND timestamp >= ? \
 ORDER BY timestamp DESC LIMIT ?"

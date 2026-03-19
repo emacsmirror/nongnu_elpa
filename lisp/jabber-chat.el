@@ -389,15 +389,18 @@ JC is the Jabber connection."
 	 (node-data (list node-type msg-plist)))
 
     ;; Insert after existing rare timestamp?
-    (if (and jabber-print-rare-time
-	     (ewoc-nth jabber-chat-ewoc 0)
-	     (eq (car (ewoc-data (ewoc-nth jabber-chat-ewoc 0))) :rare-time)
-	     (not (jabber-rare-time-needed message-time (cadr (ewoc-data (ewoc-nth jabber-chat-ewoc 0))))))
-	(ewoc-enter-after jabber-chat-ewoc (ewoc-nth jabber-chat-ewoc 0) node-data)
-      ;; Insert first.
-      (ewoc-enter-first jabber-chat-ewoc node-data)
-      (when jabber-print-rare-time
-	(ewoc-enter-first jabber-chat-ewoc (list :rare-time message-time))))))
+    (let ((node
+           (if (and jabber-print-rare-time
+                    (ewoc-nth jabber-chat-ewoc 0)
+                    (eq (car (ewoc-data (ewoc-nth jabber-chat-ewoc 0))) :rare-time)
+                    (not (jabber-rare-time-needed message-time (cadr (ewoc-data (ewoc-nth jabber-chat-ewoc 0))))))
+               (ewoc-enter-after jabber-chat-ewoc (ewoc-nth jabber-chat-ewoc 0) node-data)
+             (let ((n (ewoc-enter-first jabber-chat-ewoc node-data)))
+               (when jabber-print-rare-time
+                 (ewoc-enter-first jabber-chat-ewoc (list :rare-time message-time)))
+               n))))
+      (when-let* ((id (plist-get msg-plist :id)))
+        (puthash id node jabber-chat--msg-nodes)))))
 
 (defun jabber-chat--insert-backlog-chunked (buffer entries callback)
   "Insert ENTRIES into BUFFER's ewoc in chunks to avoid blocking.
@@ -560,8 +563,8 @@ _JC and _XML-DATA are reserved for future use by OMEMO."
   (let ((body-text (plist-get msg-plist :body)))
     (with-current-buffer chat-buffer
       (jabber-maybe-print-rare-time
-       (ewoc-enter-last jabber-chat-ewoc
-                        (list (if error-p :error :foreign) msg-plist)))
+       (jabber-chat-ewoc-enter
+        (list (if error-p :error :foreign) msg-plist)))
       (let ((inhibit-message (and jabber-mam--syncing t)))
         (dolist (hook '(jabber-message-hooks jabber-alert-message-hooks))
           (run-hook-with-args hook
@@ -620,9 +623,10 @@ splice into the stanza after the body (e.g. OOB, hints)."
 	   (nconc stanza-to-send (funcall hook body id))))
        ;; ...display it, if it would be displayed.
        (let ((msg-plist (jabber-chat--msg-plist-from-stanza stanza-to-send)))
+         (plist-put msg-plist :status :sent)
 	 (when (run-hook-with-args-until-success 'jabber-chat-printers msg-plist :local :printp)
            (jabber-maybe-print-rare-time
-            (ewoc-enter-last jabber-chat-ewoc (list :local msg-plist)))))
+            (jabber-chat-ewoc-enter (list :local msg-plist)))))
        ;; ...and send it...
        (jabber-send-sexp jc stanza-to-send)))))
 
@@ -704,6 +708,7 @@ DELAYED marks the message as delayed unconditionally."
          (oob-x (jabber-xml-child-with-xmlns xml-data jabber-oob-xmlns))
          (error-node (car (jabber-xml-get-children xml-data 'error))))
     (list
+     :id (jabber-xml-get-attribute xml-data 'id)
      :from (jabber-xml-get-attribute xml-data 'from)
      :body (car (jabber-xml-node-children
                  (car (jabber-xml-get-children xml-data 'body))))
@@ -728,6 +733,20 @@ whether a delay element is present."
       (plist-put plist :xml-data xml-data))
     plist))
 
+(defun jabber-chat--insert-status-indicator (msg)
+  "Insert a receipt status indicator for outgoing MSG.
+Shows a dot for sent, check for delivered, green check for seen,
+or X for undelivered."
+  (when-let* ((status (plist-get msg :status)))
+    (let ((indicator
+           (pcase status
+             (:sent (propertize " \u00b7" 'face 'shadow))
+             (:delivered (propertize " \u2713" 'face 'shadow))
+             (:displayed (propertize " \u2713" 'face 'success))
+             (:undelivered (propertize " \u2717" 'face 'error)))))
+      (when indicator
+        (insert indicator)))))
+
 (defun jabber-chat-pp--local (data)
   "Render a locally sent message from DATA."
   (let* ((msg (cadr data))
@@ -736,6 +755,7 @@ whether a delay element is present."
     (jabber-chat-self-prompt msg (plist-get msg :timestamp)
                              (plist-get msg :delayed) /me-p)
     (run-hook-with-args 'jabber-chat-printers msg :local :insert)
+    (jabber-chat--insert-status-indicator msg)
     (insert "\n")))
 
 (defun jabber-chat-pp--foreign (data)
@@ -756,6 +776,7 @@ whether a delay element is present."
     (jabber-muc-print-prompt msg t /me-p)
     (mapc (lambda (f) (funcall f msg :muc-local :insert))
           (append jabber-muc-printers jabber-chat-printers))
+    (jabber-chat--insert-status-indicator msg)
     (insert "\n")))
 
 (defun jabber-chat-pp--muc-foreign (data)
