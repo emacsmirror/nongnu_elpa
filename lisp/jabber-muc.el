@@ -719,10 +719,17 @@ opens automatically.
 
 JC is the Jabber connection."
   (interactive
-   (let ((account (jabber-read-account)))
-     (list account
-           (read-string "New room JID: ")
-           (jabber-muc-read-my-nickname account ""))))
+   (let* ((account (jabber-read-account))
+          (servers (let (s)
+                     (maphash (lambda (room _)
+                                (let ((host (jabber-jid-server room)))
+                                  (unless (member host s) (push host s))))
+                              jabber-muc--rooms)
+                     (nreverse s)))
+          (server (completing-read "MUC server: " servers nil nil))
+          (name   (read-string "Room name: "))
+          (group  (concat name "@" server)))
+     (list account group (jabber-muc-read-my-nickname account ""))))
   (jabber-muc--send-join-presence jc group nickname nil t t)
   (jabber-bookmarks--publish-one jc group nickname))
 
