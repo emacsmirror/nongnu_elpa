@@ -53,10 +53,13 @@ Enables O(1) lookup for in-place updates (receipts, corrections).")
                   (jc jid))
 (declare-function jabber-omemo--prefetch-muc-sessions "jabber-omemo"
                   (jc group))
+(declare-function jabber-omemo--muc-participant-jids "jabber-omemo"
+                  (group participants))
 (declare-function jabber-omemo-fingerprints "jabber-omemo" ())
 (declare-function jabber-connection-bare-jid "jabber-util" (jc))
 (declare-function jabber-blocking-toggle-chat-peer "jabber-blocking" (jc))
 (declare-function jabber-mam-sync-buffer "jabber-mam" ())
+(declare-function jabber-moderation-retract "jabber-moderation" ())
 (declare-function jabber-jid-user "jabber-util" (jid))
 (declare-function jabber-chat-display-more-backlog "jabber-chat"
                   (how-many))
@@ -74,6 +77,7 @@ Enables O(1) lookup for in-place updates (receipts, corrections).")
 (defvar jabber-chat-header-line-format)   ; jabber-chat.el
 (defvar jabber-group)                      ; jabber-muc.el
 (defvar jabber-muc-header-line-format)    ; jabber-muc.el
+(defvar jabber-muc-participants)          ; jabber-muc.el
 (defvar jabber-httpupload--pending-url)    ; jabber-httpupload.el
 
 (defun jabber-chat-attach-file (filepath)
@@ -177,7 +181,12 @@ Works for both 1:1 chat (`jabber-chatting-with') and MUC (`jabber-group')."
        jabber-buffer-connection jabber-chatting-with))
      ((bound-and-true-p jabber-group)
       (jabber-omemo--prefetch-muc-sessions
-       jabber-buffer-connection jabber-group)))))
+       jabber-buffer-connection jabber-group))))
+  (when (and (bound-and-true-p jabber-group)
+             (null (jabber-omemo--muc-participant-jids
+                    jabber-group
+                    (cdr (assoc jabber-group jabber-muc-participants)))))
+    (message "OMEMO: no participant JIDs visible — room may be anonymous")))
 
 (defun jabber-chat-encryption-set-openpgp ()
   "Set encryption to OpenPGP for this chat buffer."
@@ -229,6 +238,9 @@ Works for both 1:1 chat (`jabber-chatting-with') and MUC (`jabber-group')."
     ("a" "Attach file" jabber-chat-attach-file)]
    ["Contact"
     ("B" "Block/unblock user" jabber-blocking-toggle-chat-peer)]
+   ["MUC"
+    ("m" "MUC operations..." jabber-muc-menu)
+    ("M" "Retract message at point" jabber-moderation-retract)]
    ["Buffer"
     ("d" "Display more context" jabber-chat-display-more-backlog)
     ("r" "Redisplay" jabber-chat-redisplay)
@@ -382,14 +394,16 @@ line at the bottom of the window."
 
 (defun jabber-chat-ewoc-enter (data)
   "Insert DATA into the chat ewoc and register by stanza ID.
-DATA is (TYPE MSG-PLIST).  When the plist has a non-nil :id, the
-returned ewoc node is stored in `jabber-chat--msg-nodes' for O(1)
-lookup.  Returns the ewoc node."
+DATA is (TYPE MSG-PLIST).  When the plist has a non-nil :id or
+:server-id, the returned ewoc node is stored in
+`jabber-chat--msg-nodes' for O(1) lookup.  Returns the ewoc node."
   (let ((node (ewoc-enter-last jabber-chat-ewoc data)))
     (when-let* ((msg (cadr data))
-                ((listp msg))
-                (id (plist-get msg :id)))
-      (puthash id node jabber-chat--msg-nodes))
+                ((listp msg)))
+      (when-let* ((id (plist-get msg :id)))
+        (puthash id node jabber-chat--msg-nodes))
+      (when-let* ((sid (plist-get msg :server-id)))
+        (puthash sid node jabber-chat--msg-nodes)))
     node))
 
 (defun jabber-chat-ewoc-find-by-id (stanza-id)

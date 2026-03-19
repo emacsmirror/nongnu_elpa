@@ -208,6 +208,44 @@
          (plist (jabber-chat--msg-plist-from-stanza stanza)))
     (should-not (plist-get plist :id))))
 
+;;; Group 7: OMEMO anonymous-room warning
+
+(ert-deftest jabber-chatbuffer-test-omemo-warns-anonymous-room ()
+  "Enabling OMEMO in a room with no visible JIDs emits a warning."
+  (let ((messages nil))
+    (with-temp-buffer
+      (setq-local jabber-group "room@conf.example.com")
+      (setq-local jabber-buffer-connection nil)
+      (cl-letf (((symbol-function 'jabber-chat-encryption--save) #'ignore)
+                ((symbol-function 'jabber-chat-encryption--update-header) #'ignore)
+                ((symbol-function 'require) #'ignore)
+                ((symbol-function 'force-mode-line-update) #'ignore)
+                ((symbol-function 'jabber-omemo--muc-participant-jids)
+                 (lambda (&rest _) nil))
+                ((symbol-function 'message)
+                 (lambda (fmt &rest args)
+                   (push (apply #'format fmt args) messages))))
+        (jabber-chat-encryption-set-omemo)
+        (should (cl-some (lambda (m) (string-match-p "anonymous" m)) messages))))))
+
+(ert-deftest jabber-chatbuffer-test-omemo-no-warning-when-jids-visible ()
+  "No warning when participant JIDs are available."
+  (let ((messages nil))
+    (with-temp-buffer
+      (setq-local jabber-group "room@conf.example.com")
+      (setq-local jabber-buffer-connection nil)
+      (cl-letf (((symbol-function 'jabber-chat-encryption--save) #'ignore)
+                ((symbol-function 'jabber-chat-encryption--update-header) #'ignore)
+                ((symbol-function 'require) #'ignore)
+                ((symbol-function 'force-mode-line-update) #'ignore)
+                ((symbol-function 'jabber-omemo--muc-participant-jids)
+                 (lambda (&rest _) (list "alice@example.com")))
+                ((symbol-function 'message)
+                 (lambda (fmt &rest args)
+                   (push (apply #'format fmt args) messages))))
+        (jabber-chat-encryption-set-omemo)
+        (should-not (cl-some (lambda (m) (string-match-p "anonymous" m)) messages))))))
+
 (provide 'jabber-chatbuffer-tests)
 
 ;;; jabber-chatbuffer-tests.el ends here
