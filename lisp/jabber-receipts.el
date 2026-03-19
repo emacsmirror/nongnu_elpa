@@ -35,6 +35,8 @@
 (require 'jabber-db)
 (require 'jabber-disco)
 
+(declare-function jabber-chat-ewoc-find-by-id "jabber-chatbuffer" (stanza-id))
+
 (defgroup jabber-receipts nil
   "Message delivery receipts (XEP-0184) and chat markers (XEP-0333)."
   :group 'jabber-chat)
@@ -123,11 +125,17 @@ JC is the connection.  Added to `jabber-message-chain'."
 (defun jabber-receipts--update-status (jc from ref-id column)
   "Update receipt status for message REF-ID from FROM on JC.
 COLUMN is \"delivered_at\" or \"displayed_at\"."
-  (let ((timestamp (floor (float-time))))
+  (let ((timestamp (floor (float-time)))
+        (status (if (string= column "displayed_at") :displayed :delivered)))
     (jabber-db-update-receipt ref-id column timestamp)
     (when-let* ((buffer (get-buffer (jabber-chat-get-buffer from jc))))
       (with-current-buffer buffer
-        (jabber-receipts--update-header-line column timestamp)))))
+        (jabber-receipts--update-header-line column timestamp)
+        (when-let* ((node (jabber-chat-ewoc-find-by-id ref-id)))
+          (let ((msg (cadr (ewoc-data node)))
+                (inhibit-read-only t))
+            (plist-put msg :status status)
+            (ewoc-invalidate jabber-chat-ewoc node)))))))
 
 (defun jabber-receipts--update-header-line (column timestamp)
   "Update `jabber-chat-receipt-message' for COLUMN at TIMESTAMP."
