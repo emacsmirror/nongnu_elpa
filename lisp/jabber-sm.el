@@ -65,6 +65,13 @@
   :type 'integer
   :group 'jabber-sm)
 
+(defcustom jabber-sm-ack-interval 50
+  "Send a proactive ack every this many inbound stanzas.
+When nil, only send acks in response to server <r/> requests."
+  :type '(choice (integer :tag "Stanzas between acks")
+                 (const :tag "Only on request" nil))
+  :group 'jabber-sm)
+
 ;;; Counter arithmetic (handles 2^32 wraparound per XEP-0198 section 5)
 
 (defconst jabber-sm--counter-max (expt 2 32)
@@ -162,15 +169,20 @@ Return updated STATE-DATA."
                               (list (cons count sexp)))))))
   state-data)
 
-(defun jabber-sm--count-inbound (state-data stanza)
+(defun jabber-sm--count-inbound (jc state-data stanza)
   "Increment inbound counter if SM is enabled and STANZA is countable.
+When `jabber-sm-ack-interval' is set, send a proactive <a/> every
+that many stanzas.  JC is the Jabber connection.
 Return updated STATE-DATA."
   (when (and (plist-get state-data :sm-enabled)
              (jabber-sm--stanza-p stanza))
-    (setq state-data
-          (plist-put state-data :sm-inbound-count
-                     (jabber-sm--inc-counter
-                      (plist-get state-data :sm-inbound-count)))))
+    (let ((count (jabber-sm--inc-counter
+                  (plist-get state-data :sm-inbound-count))))
+      (setq state-data
+            (plist-put state-data :sm-inbound-count count))
+      (when (and jabber-sm-ack-interval
+                 (zerop (mod count jabber-sm-ack-interval)))
+        (jabber-sm--send-ack jc state-data))))
   state-data)
 
 ;;; Ack send/receive

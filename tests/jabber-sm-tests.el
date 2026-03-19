@@ -127,15 +127,48 @@
   "Inbound stanza increments counter."
   (let* ((sd (list :sm-enabled t :sm-inbound-count 0))
          (msg '(message ((from . "bob@example.com")) (body () "hi")))
-         (result (jabber-sm--count-inbound sd msg)))
+         (result (jabber-sm--count-inbound nil sd msg)))
     (should (= (plist-get result :sm-inbound-count) 1))))
 
 (ert-deftest jabber-sm-test-count-inbound-disabled ()
   "No counting when SM is disabled."
   (let* ((sd (list :sm-enabled nil :sm-inbound-count 0))
          (msg '(message ((from . "bob@example.com")) (body () "hi")))
-         (result (jabber-sm--count-inbound sd msg)))
+         (result (jabber-sm--count-inbound nil sd msg)))
     (should (= (plist-get result :sm-inbound-count) 0))))
+
+(ert-deftest jabber-sm-test-proactive-ack ()
+  "Proactive ack is sent when inbound counter hits the interval."
+  (let* ((jabber-sm-ack-interval 3)
+         (sd (list :sm-enabled t :sm-inbound-count 2))
+         (msg '(message ((from . "bob@example.com")) (body () "hi")))
+         (ack-sent nil))
+    (cl-letf (((symbol-function 'jabber-sm--send-ack)
+               (lambda (_jc _sd) (setq ack-sent t))))
+      (jabber-sm--count-inbound 'fake-jc sd msg))
+    (should ack-sent)))
+
+(ert-deftest jabber-sm-test-proactive-ack-not-at-interval ()
+  "No proactive ack when counter is not at the interval boundary."
+  (let* ((jabber-sm-ack-interval 3)
+         (sd (list :sm-enabled t :sm-inbound-count 0))
+         (msg '(message ((from . "bob@example.com")) (body () "hi")))
+         (ack-sent nil))
+    (cl-letf (((symbol-function 'jabber-sm--send-ack)
+               (lambda (_jc _sd) (setq ack-sent t))))
+      (jabber-sm--count-inbound 'fake-jc sd msg))
+    (should-not ack-sent)))
+
+(ert-deftest jabber-sm-test-proactive-ack-disabled ()
+  "No proactive ack when jabber-sm-ack-interval is nil."
+  (let* ((jabber-sm-ack-interval nil)
+         (sd (list :sm-enabled t :sm-inbound-count 2))
+         (msg '(message ((from . "bob@example.com")) (body () "hi")))
+         (ack-sent nil))
+    (cl-letf (((symbol-function 'jabber-sm--send-ack)
+               (lambda (_jc _sd) (setq ack-sent t))))
+      (jabber-sm--count-inbound 'fake-jc sd msg))
+    (should-not ack-sent)))
 
 ;;; Queue pruning and ack processing
 

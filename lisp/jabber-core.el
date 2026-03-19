@@ -1105,7 +1105,7 @@ JC is the Jabber connection.
 XML-DATA is the parsed tree data from the stream (stanzas)
 obtained from `xml-parse-region'."
   ;; SM stanza counting (modifies state-data in place via plist-put).
-  (jabber-sm--count-inbound (fsm-get-state-data jc) xml-data)
+  (jabber-sm--count-inbound jc (fsm-get-state-data jc) xml-data)
   (let* ((jabber-xml-data xml-data)
          (tag (jabber-xml-node-name xml-data))
 	 (functions (eval (cdr (assq tag '((iq . jabber-iq-chain)
