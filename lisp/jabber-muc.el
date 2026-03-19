@@ -107,6 +107,10 @@ Values are lists of nickname strings.")
 (defvar jabber-muc-topic ""
   "The topic of the current MUC room.")
 
+(defvar-local jabber-muc--auto-configure nil
+  "When non-nil, automatically open the config form on room creation.
+Set by `jabber-muc-create' and consumed by `jabber-muc--enter-extra-notices'.")
+
 (defvar jabber-role-history ()
   "Keeps track of previously used roles.")
 
@@ -684,6 +688,23 @@ JC is the Jabber connection."
     ;; to.
     (jabber-disco-get-info jc group nil #'jabber-muc-join-2
 			   (list group nickname popup))))
+
+;;;###autoload
+(defun jabber-muc-create (jc group nickname)
+  "Create a new MUC room and open its configuration form.
+Send join presence to GROUP with NICKNAME.  When the server
+confirms creation (status 201), the room configuration form
+opens automatically.
+
+JC is the Jabber connection."
+  (interactive
+   (let ((account (jabber-read-account))
+         (group (jabber-read-jid-completing "New room JID: ")))
+     (list account group (jabber-muc-read-my-nickname account group))))
+  (let ((buffer (jabber-muc-create-buffer jc group)))
+    (with-current-buffer buffer
+      (setq jabber-muc--auto-configure t))
+    (jabber-muc-join-3 jc group nickname nil t)))
 
 ;;;###autoload
 (defun jabber-muc-switch (group)
@@ -1278,10 +1299,14 @@ NICKNAME is the entering user.  Assumes `jabber-chat-ewoc' is current."
            (concat "Your nick was changed to " nickname " by the server")
            :time (current-time))))
   (when (member jabber-muc-status-room-created status-codes)
-    (jabber-chat-ewoc-enter
-     (list :muc-notice
-           (jabber-muc--room-created-message)
-           :time (current-time)))))
+    (if jabber-muc--auto-configure
+        (progn
+          (setq jabber-muc--auto-configure nil)
+          (jabber-muc-get-config jabber-buffer-connection jabber-group))
+      (jabber-chat-ewoc-enter
+       (list :muc-notice
+             (jabber-muc--room-created-message)
+             :time (current-time))))))
 
 (defun jabber-muc--process-enter (jc group nickname symbol status-codes
                                      x-muc actor reason our-nickname)

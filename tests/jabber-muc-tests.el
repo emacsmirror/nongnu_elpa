@@ -399,5 +399,53 @@ ROOMS is an alist of (group . nickname)."
     (should (string= "nick has been granted moderator privileges"
                       (jabber-muc-report-delta "nick" old new nil nil)))))
 
+;;; Group 11: jabber-muc-create
+
+(ert-deftest jabber-test-muc-create-sets-auto-configure ()
+  "jabber-muc-create sets jabber-muc--auto-configure in the MUC buffer."
+  (let ((buf (generate-new-buffer " *test-muc-create*"))
+        (join-called nil))
+    (unwind-protect
+        (progn
+          (cl-letf (((symbol-function 'jabber-muc-create-buffer)
+                     (lambda (_jc _group) buf))
+                    ((symbol-function 'jabber-muc-join-3)
+                     (lambda (_jc _group _nick _pw _popup)
+                       (setq join-called t))))
+            (jabber-muc-create 'fake-jc "room@conference.example.com" "mynick"))
+          (should join-called)
+          (should (buffer-local-value 'jabber-muc--auto-configure buf)))
+      (kill-buffer buf))))
+
+(ert-deftest jabber-test-muc-auto-configure-opens-config ()
+  "Status 201 with auto-configure flag calls jabber-muc-get-config."
+  (let ((config-called nil)
+        (jabber-buffer-connection 'fake-jc)
+        (jabber-group "room@conference.example.com")
+        (jabber-muc--auto-configure t)
+        (jabber-chat-ewoc nil))
+    (cl-letf (((symbol-function 'jabber-muc-get-config)
+               (lambda (jc group)
+                 (setq config-called (cons jc group)))))
+      (jabber-muc--enter-extra-notices
+       "mynick" (list jabber-muc-status-room-created)))
+    (should (equal config-called '(fake-jc . "room@conference.example.com")))
+    (should-not jabber-muc--auto-configure)))
+
+(ert-deftest jabber-test-muc-auto-configure-off-shows-notice ()
+  "Status 201 without auto-configure flag inserts ewoc notice."
+  (let ((notice-entered nil)
+        (jabber-muc--auto-configure nil)
+        (jabber-chat-ewoc 'fake-ewoc))
+    (cl-letf (((symbol-function 'jabber-chat-ewoc-enter)
+               (lambda (data)
+                 (setq notice-entered data)))
+              ((symbol-function 'jabber-muc--room-created-message)
+               (lambda () "room created message")))
+      (jabber-muc--enter-extra-notices
+       "mynick" (list jabber-muc-status-room-created)))
+    (should notice-entered)
+    (should (eq :muc-notice (car notice-entered)))))
+
 (provide 'jabber-muc-tests)
 ;;; jabber-muc-tests.el ends here

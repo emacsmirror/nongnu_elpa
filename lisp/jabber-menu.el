@@ -176,6 +176,7 @@ With prefix argument, remove it."
 (declare-function jabber-get-time "jabber-time.el" (jc to))
 (declare-function jabber-vcard-get "jabber-vcard.el" (jc jid))
 (declare-function jabber-muc-join "jabber-muc.el" (jc group nickname &optional popup))
+(declare-function jabber-muc-create "jabber-muc.el" (jc group nickname))
 (declare-function jabber-muc-leave "jabber-muc.el" (jc group))
 (declare-function jabber-muc-nick "jabber-muc.el" (jc group nickname &optional popup))
 (declare-function jabber-muc-set-topic "jabber-muc.el" (jc group topic))
@@ -224,6 +225,7 @@ With prefix argument, remove it."
   "Jabber MUC commands."
   [["MUC"
     ("j" "Join" jabber-muc-join)
+    ("J" "Create room" jabber-muc-create)
     ("l" "Leave" jabber-muc-leave)
     ("n" "Change nick" jabber-muc-nick)
     ("t" "Set topic" jabber-muc-set-topic)
