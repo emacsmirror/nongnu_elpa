@@ -36,7 +36,9 @@
 ;;; Code:
 
 (require 'jabber-util)
-(eval-when-compile (require 'cl-lib))
+(eval-when-compile
+  (require 'cl-lib)
+  (require 'seq))
 
 ;; Global reference declarations
 (declare-function jabber-xml-child-with-xmlns "jabber-xml.el"
@@ -86,10 +88,8 @@ in the message history.")
 (defvar jabber-db--connection nil
   "Active SQLite database connection, or nil.")
 
-(defun jabber-db--init-schema (db)
-  "Initialize the database schema in DB."
-  (sqlite-execute db "\
-CREATE TABLE IF NOT EXISTS message (
+(defconst jabber-db--schema-ddl
+  '("CREATE TABLE IF NOT EXISTS message (
   id           INTEGER PRIMARY KEY,
   stanza_id    TEXT,
   server_id    TEXT,
@@ -105,63 +105,46 @@ CREATE TABLE IF NOT EXISTS message (
   oob_url      TEXT,
   oob_desc     TEXT,
   delivered_at INTEGER,
-  displayed_at INTEGER
-)")
-  (sqlite-execute db "\
-CREATE INDEX IF NOT EXISTS idx_msg_peer_ts
-  ON message(account, peer, timestamp)")
-  (sqlite-execute db "\
-CREATE INDEX IF NOT EXISTS idx_msg_stanza_id
-  ON message(stanza_id) WHERE stanza_id IS NOT NULL")
-  (sqlite-execute db "\
-CREATE INDEX IF NOT EXISTS idx_msg_server_id
-  ON message(server_id) WHERE server_id IS NOT NULL")
-  ;; FTS5 for full-text search
-  (sqlite-execute db "\
-CREATE VIRTUAL TABLE IF NOT EXISTS message_fts USING fts5(
-  body,
-  content='message',
-  content_rowid='id'
-)")
-  ;; Triggers to keep FTS in sync
-  (sqlite-execute db "\
-CREATE TRIGGER IF NOT EXISTS message_ai AFTER INSERT ON message BEGIN
+  displayed_at INTEGER,
+  retracted_by TEXT)"
+    "CREATE INDEX IF NOT EXISTS idx_msg_peer_ts
+  ON message(account, peer, timestamp)"
+    "CREATE INDEX IF NOT EXISTS idx_msg_stanza_id
+  ON message(stanza_id) WHERE stanza_id IS NOT NULL"
+    "CREATE INDEX IF NOT EXISTS idx_msg_server_id
+  ON message(server_id) WHERE server_id IS NOT NULL"
+    "CREATE VIRTUAL TABLE IF NOT EXISTS message_fts USING fts5(
+  body, content='message', content_rowid='id')"
+    "CREATE TRIGGER IF NOT EXISTS message_ai AFTER INSERT ON message BEGIN
   INSERT INTO message_fts(rowid, body) VALUES (new.id, new.body);
-END")
-  (sqlite-execute db "\
-CREATE TRIGGER IF NOT EXISTS message_ad AFTER DELETE ON message BEGIN
+END"
+    "CREATE TRIGGER IF NOT EXISTS message_ad AFTER DELETE ON message BEGIN
   INSERT INTO message_fts(message_fts, rowid, body)
     VALUES ('delete', old.id, old.body);
-END")
-  (sqlite-execute db "\
-CREATE TRIGGER IF NOT EXISTS message_au AFTER UPDATE ON message BEGIN
+END"
+    "CREATE TRIGGER IF NOT EXISTS message_au AFTER UPDATE ON message BEGIN
   INSERT INTO message_fts(message_fts, rowid, body)
     VALUES ('delete', old.id, old.body);
   INSERT INTO message_fts(rowid, body) VALUES (new.id, new.body);
-END")
-  ;; OMEMO tables
-  (sqlite-execute db "\
-CREATE TABLE IF NOT EXISTS omemo_store (
+END"
+    "CREATE TABLE IF NOT EXISTS omemo_store (
   account TEXT PRIMARY KEY,
-  store_blob BLOB NOT NULL)")
-  (sqlite-execute db "\
-CREATE TABLE IF NOT EXISTS omemo_sessions (
+  store_blob BLOB NOT NULL)"
+    "CREATE TABLE IF NOT EXISTS omemo_sessions (
   account TEXT NOT NULL,
   jid TEXT NOT NULL,
   device_id INTEGER NOT NULL,
   session_blob BLOB NOT NULL,
-  PRIMARY KEY (account, jid, device_id))")
-  (sqlite-execute db "\
-CREATE TABLE IF NOT EXISTS omemo_trust (
+  PRIMARY KEY (account, jid, device_id))"
+    "CREATE TABLE IF NOT EXISTS omemo_trust (
   account TEXT NOT NULL,
   jid TEXT NOT NULL,
   device_id INTEGER NOT NULL,
   identity_key BLOB NOT NULL,
   trust INTEGER DEFAULT 0,
   first_seen INTEGER NOT NULL,
-  PRIMARY KEY (account, jid, device_id))")
-  (sqlite-execute db "\
-CREATE TABLE IF NOT EXISTS omemo_skipped_keys (
+  PRIMARY KEY (account, jid, device_id))"
+    "CREATE TABLE IF NOT EXISTS omemo_skipped_keys (
   account TEXT NOT NULL,
   jid TEXT NOT NULL,
   device_id INTEGER NOT NULL,
@@ -169,34 +152,34 @@ CREATE TABLE IF NOT EXISTS omemo_skipped_keys (
   message_number INTEGER NOT NULL,
   message_key BLOB NOT NULL,
   created_at INTEGER NOT NULL,
-  PRIMARY KEY (account, jid, device_id, dh_key, message_number))")
-  (sqlite-execute db "\
-CREATE TABLE IF NOT EXISTS omemo_devices (
+  PRIMARY KEY (account, jid, device_id, dh_key, message_number))"
+    "CREATE TABLE IF NOT EXISTS omemo_devices (
   account TEXT NOT NULL,
   jid TEXT NOT NULL,
   device_id INTEGER NOT NULL,
   active INTEGER DEFAULT 1,
   last_seen INTEGER NOT NULL,
-  PRIMARY KEY (account, jid, device_id))")
-  (sqlite-execute db "\
-CREATE INDEX IF NOT EXISTS idx_omemo_trust_jid
-  ON omemo_trust (account, jid)")
-  (sqlite-execute db "\
-CREATE INDEX IF NOT EXISTS idx_omemo_devices_jid
-  ON omemo_devices (account, jid)")
-  (sqlite-execute db "\
-CREATE INDEX IF NOT EXISTS idx_omemo_sessions_jid
-  ON omemo_sessions (account, jid)")
-  (sqlite-execute db "\
-CREATE TABLE IF NOT EXISTS omemo_device_id (
+  PRIMARY KEY (account, jid, device_id))"
+    "CREATE INDEX IF NOT EXISTS idx_omemo_trust_jid
+  ON omemo_trust (account, jid)"
+    "CREATE INDEX IF NOT EXISTS idx_omemo_devices_jid
+  ON omemo_devices (account, jid)"
+    "CREATE INDEX IF NOT EXISTS idx_omemo_sessions_jid
+  ON omemo_sessions (account, jid)"
+    "CREATE TABLE IF NOT EXISTS omemo_device_id (
   account TEXT PRIMARY KEY,
-  device_id INTEGER NOT NULL)")
-  (sqlite-execute db "\
-CREATE TABLE IF NOT EXISTS chat_settings (
+  device_id INTEGER NOT NULL)"
+    "CREATE TABLE IF NOT EXISTS chat_settings (
   account TEXT NOT NULL,
   peer TEXT NOT NULL,
   encryption TEXT DEFAULT 'default',
-  PRIMARY KEY (account, peer))"))
+  PRIMARY KEY (account, peer))")
+  "DDL statements for the latest database schema.")
+
+(defun jabber-db--init-schema (db)
+  "Initialize the database schema in DB."
+  (dolist (ddl jabber-db--schema-ddl)
+    (sqlite-execute db ddl)))
 
 (defun jabber-db--migrate (db)
   "Check user_version and apply migrations to DB."
@@ -204,8 +187,8 @@ CREATE TABLE IF NOT EXISTS chat_settings (
     (when (zerop version)
       ;; Fresh database: create latest schema, skip intermediate migrations.
       (jabber-db--init-schema db)
-      (sqlite-execute db "PRAGMA user_version=3")
-      (setq version 3))
+      (sqlite-execute db "PRAGMA user_version=4")
+      (setq version 4))
     (when (< version 2)
       ;; v1->v2: Remove duplicate messages that lack stanza_id and server_id.
       ;; These were created by MUC server history replayed on every join.
@@ -218,7 +201,11 @@ DELETE FROM message WHERE id NOT IN (
       ;; v2->v3: Add receipt timestamp columns for XEP-0184/XEP-0333.
       (sqlite-execute db "ALTER TABLE message ADD COLUMN delivered_at INTEGER")
       (sqlite-execute db "ALTER TABLE message ADD COLUMN displayed_at INTEGER")
-      (sqlite-execute db "PRAGMA user_version=3"))))
+      (sqlite-execute db "PRAGMA user_version=3"))
+    (when (< version 4)
+      ;; v3->v4: Add retracted_by for XEP-0425 moderated retractions.
+      (sqlite-execute db "ALTER TABLE message ADD COLUMN retracted_by TEXT")
+      (sqlite-execute db "PRAGMA user_version=4"))))
 
 (defun jabber-db-ensure-open ()
   "Open the SQLite database, creating it if needed.  Idempotent.
@@ -340,40 +327,44 @@ The IS NULL guard prevents overwriting an earlier timestamp."
                             column column)
                     (list timestamp stanza-id))))
 
+(defun jabber-db-retract-message (server-id retracted-by)
+  "Mark the message with SERVER-ID as retracted by RETRACTED-BY."
+  (when (and jabber-db--connection server-id)
+    (sqlite-execute jabber-db--connection
+                    "UPDATE message SET retracted_by = ? WHERE server_id = ?"
+                    (list retracted-by server-id))))
+
 ;;; Retrieval
 
 (defun jabber-db--row-to-plist (row)
-  "Convert a database ROW to a message plist.
-ROW is (account peer direction body timestamp resource type
-oob_url oob_desc encrypted stanza_id delivered_at displayed_at)."
-  (let* ((account (nth 0 row))
-         (peer (nth 1 row))
-         (direction (nth 2 row))
-         (body (nth 3 row))
-         (timestamp (nth 4 row))
-         (resource (nth 5 row))
-         (stanza-id (nth 10 row))
-         (delivered-at (nth 11 row))
-         (displayed-at (nth 12 row))
-         (from (if (string= direction "in")
-                   (if resource (concat peer "/" resource) peer)
-                 account)))
-    (list :id stanza-id
-          :from from
-          :body (or body "")
-          :subject nil
-          :timestamp (seconds-to-time timestamp)
-          :delayed t
-          :encrypted (and (nth 9 row) (not (zerop (nth 9 row))))
-          :direction direction
-          :msg-type (nth 6 row)
-          :oob-url (nth 7 row)
-          :oob-desc (nth 8 row)
-          :error-text nil
-          :status (cond
-                   (displayed-at :displayed)
-                   (delivered-at :delivered)
-                   ((string= direction "out") :undelivered)))))
+  "Convert a backlog ROW to a message plist.
+ROW columns match the SELECT in `jabber-db-backlog'."
+  (seq-let (account peer direction body timestamp resource type
+            oob-url oob-desc encrypted stanza-id delivered-at
+            displayed-at server-id retracted-by)
+      row
+    (let ((from (if (string= direction "in")
+                    (if resource (concat peer "/" resource) peer)
+                  account)))
+      (list :id stanza-id
+            :server-id server-id
+            :from from
+            :body (or body "")
+            :subject nil
+            :timestamp (seconds-to-time timestamp)
+            :delayed t
+            :encrypted (and encrypted (not (zerop encrypted)))
+            :retracted (and retracted-by t)
+            :retracted-by retracted-by
+            :direction direction
+            :msg-type type
+            :oob-url oob-url
+            :oob-desc oob-desc
+            :error-text nil
+            :status (cond
+                     (displayed-at :displayed)
+                     (delivered-at :delivered)
+                     ((string= direction "out") :undelivered))))))
 
 (defun jabber-db-backlog (account peer &optional count start-time)
   "Return the last COUNT messages for PEER on ACCOUNT.
@@ -392,13 +383,34 @@ If nil, `jabber-backlog-days' is used to compute the cutoff."
            (rows (sqlite-select
                   db
                   "SELECT account, peer, direction, body, timestamp, resource, type, \
-oob_url, oob_desc, encrypted, stanza_id, delivered_at, displayed_at \
+oob_url, oob_desc, encrypted, stanza_id, delivered_at, displayed_at, \
+server_id, retracted_by \
 FROM message \
 WHERE account = ? AND peer = ? AND timestamp >= ? \
 ORDER BY timestamp DESC LIMIT ?"
                   (list account peer cutoff
                         (if (eq n t) -1 n)))))
       (mapcar #'jabber-db--row-to-plist rows))))
+
+(defun jabber-db--raw-row-to-plist (row)
+  "Convert a raw query ROW to a plist.
+ROW columns: id, stanza_id, server_id, account, peer, resource,
+direction, type, body, timestamp, encrypted, raw_xml."
+  (seq-let (id stanza-id server-id account peer resource
+            direction type body timestamp encrypted raw-xml)
+      row
+    (list :id id
+          :stanza-id stanza-id
+          :server-id server-id
+          :account account
+          :peer peer
+          :resource resource
+          :direction direction
+          :type type
+          :body body
+          :timestamp timestamp
+          :encrypted encrypted
+          :raw-xml raw-xml)))
 
 (defun jabber-db-query (account peer &optional start-time end-time limit offset)
   "Query messages for PEER on ACCOUNT with pagination.
@@ -420,20 +432,7 @@ FROM message \
 WHERE account = ? AND peer = ? AND timestamp >= ? AND timestamp <= ? \
 ORDER BY timestamp ASC LIMIT ? OFFSET ?"
                   (list account peer st et lim off))))
-      (mapcar (lambda (row)
-              (list :id (nth 0 row)
-                    :stanza-id (nth 1 row)
-                    :server-id (nth 2 row)
-                    :account (nth 3 row)
-                    :peer (nth 4 row)
-                    :resource (nth 5 row)
-                    :direction (nth 6 row)
-                    :type (nth 7 row)
-                    :body (nth 8 row)
-                    :timestamp (nth 9 row)
-                    :encrypted (nth 10 row)
-                    :raw-xml (nth 11 row)))
-            rows))))
+      (mapcar #'jabber-db--raw-row-to-plist rows))))
 
 (defun jabber-db-search (account query &optional peer limit)
   "Full-text search for QUERY in messages on ACCOUNT.
@@ -444,39 +443,26 @@ Returns matching messages as plists."
     (let* ((lim (or limit 50))
            (rows (if peer
                      (sqlite-select
-                    db
-                    "SELECT m.id, m.stanza_id, m.server_id, m.account, \
+                      db
+                      "SELECT m.id, m.stanza_id, m.server_id, m.account, \
 m.peer, m.resource, m.direction, m.type, m.body, m.timestamp, \
 m.encrypted, m.raw_xml \
 FROM message m \
 JOIN message_fts f ON f.rowid = m.id \
 WHERE f.body MATCH ? AND m.account = ? AND m.peer = ? \
 ORDER BY m.timestamp DESC LIMIT ?"
-                    (list query account peer lim))
-                 (sqlite-select
-                  db
-                  "SELECT m.id, m.stanza_id, m.server_id, m.account, \
+                      (list query account peer lim))
+                   (sqlite-select
+                    db
+                    "SELECT m.id, m.stanza_id, m.server_id, m.account, \
 m.peer, m.resource, m.direction, m.type, m.body, m.timestamp, \
 m.encrypted, m.raw_xml \
 FROM message m \
 JOIN message_fts f ON f.rowid = m.id \
 WHERE f.body MATCH ? AND m.account = ? \
 ORDER BY m.timestamp DESC LIMIT ?"
-                  (list query account lim)))))
-      (mapcar (lambda (row)
-                (list :id (nth 0 row)
-                      :stanza-id (nth 1 row)
-                      :server-id (nth 2 row)
-                      :account (nth 3 row)
-                      :peer (nth 4 row)
-                      :resource (nth 5 row)
-                      :direction (nth 6 row)
-                      :type (nth 7 row)
-                      :body (nth 8 row)
-                      :timestamp (nth 9 row)
-                      :encrypted (nth 10 row)
-                      :raw-xml (nth 11 row)))
-              rows))))
+                    (list query account lim)))))
+      (mapcar #'jabber-db--raw-row-to-plist rows))))
 
 (defun jabber-db-last-timestamp (account peer)
   "Return the latest stored timestamp for PEER on ACCOUNT.
