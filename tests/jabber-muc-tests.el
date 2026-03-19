@@ -402,20 +402,18 @@ ROOMS is an alist of (group . nickname)."
 ;;; Group 11: jabber-muc-create
 
 (ert-deftest jabber-test-muc-create-sets-auto-configure ()
-  "jabber-muc-create sets jabber-muc--auto-configure in the MUC buffer."
-  (let ((buf (generate-new-buffer " *test-muc-create*"))
-        (join-called nil))
-    (unwind-protect
-        (progn
-          (cl-letf (((symbol-function 'jabber-muc-create-buffer)
-                     (lambda (_jc _group) buf))
-                    ((symbol-function 'jabber-muc-join-3)
-                     (lambda (_jc _group _nick _pw _popup)
-                       (setq join-called t))))
-            (jabber-muc-create 'fake-jc "room@conference.example.com" "mynick"))
-          (should join-called)
-          (should (buffer-local-value 'jabber-muc--auto-configure buf)))
-      (kill-buffer buf))))
+  "jabber-muc-create sends join presence with auto-configure."
+  (let ((join-args nil))
+    (cl-letf (((symbol-function 'jabber-muc--send-join-presence)
+               (lambda (jc group nickname password popup &optional auto-configure)
+                 (setq join-args
+                       (list jc group nickname password popup auto-configure)))))
+      (jabber-muc-create 'fake-jc "room@conference.example.com" "mynick"))
+    (should join-args)
+    ;; auto-configure (6th) should be t
+    (should (nth 5 join-args))
+    ;; popup (5th) should be t
+    (should (nth 4 join-args))))
 
 (ert-deftest jabber-test-muc-auto-configure-opens-config ()
   "Status 201 with auto-configure flag calls jabber-muc-get-config."
@@ -446,6 +444,69 @@ ROOMS is an alist of (group . nickname)."
        "mynick" (list jabber-muc-status-room-created)))
     (should notice-entered)
     (should (eq :muc-notice (car notice-entered)))))
+
+;;; Group 12: jabber-muc--validate-disco-result
+
+(ert-deftest jabber-test-muc-validate-disco-ok ()
+  "Conference identity returns :ok status with features."
+  (let* ((identities (vector "Room" "conference" "text"))
+         (features '("http://jabber.org/protocol/muc" "muc_open"))
+         (result (list (list identities) features)))
+    (let ((v (jabber-muc--validate-disco-result result)))
+      (should (eq 'ok (plist-get v :status)))
+      (should (equal features (plist-get v :features))))))
+
+(ert-deftest jabber-test-muc-validate-disco-not-found ()
+  "Item-not-found error returns :not-found status."
+  (let ((result '(error ((type . "cancel"))
+                  (item-not-found ((xmlns . "urn:ietf:params:xml:ns:xmpp-stanzas"))))))
+    (cl-letf (((symbol-function 'jabber-error-condition)
+               (lambda (_r) 'item-not-found)))
+      (let ((v (jabber-muc--validate-disco-result result)))
+        (should (eq 'not-found (plist-get v :status)))))))
+
+(ert-deftest jabber-test-muc-validate-disco-not-conference ()
+  "Non-conference identity returns :not-conference status."
+  (let* ((identities (vector "Gateway" "gateway" "xmpp"))
+         (result (list (list identities) '("some-feature"))))
+    (let ((v (jabber-muc--validate-disco-result result)))
+      (should (eq 'not-conference (plist-get v :status))))))
+
+(ert-deftest jabber-test-muc-validate-disco-error ()
+  "Generic error returns :error status with message."
+  (let ((result '(error ((type . "cancel"))
+                  (forbidden ((xmlns . "urn:ietf:params:xml:ns:xmpp-stanzas"))))))
+    (cl-letf (((symbol-function 'jabber-error-condition)
+               (lambda (_r) 'forbidden))
+              ((symbol-function 'jabber-parse-error)
+               (lambda (_r) "Forbidden")))
+      (let ((v (jabber-muc--validate-disco-result result)))
+        (should (eq 'error (plist-get v :status)))
+        (should (string= "Forbidden" (plist-get v :error-msg)))))))
+
+(ert-deftest jabber-test-muc-validate-disco-no-disco ()
+  "Feature-not-implemented returns :no-disco status."
+  (let ((result '(error ((type . "cancel"))
+                  (feature-not-implemented
+                   ((xmlns . "urn:ietf:params:xml:ns:xmpp-stanzas"))))))
+    (cl-letf (((symbol-function 'jabber-error-condition)
+               (lambda (_r) 'feature-not-implemented)))
+      (let ((v (jabber-muc--validate-disco-result result)))
+        (should (eq 'no-disco (plist-get v :status)))))))
+
+;;; Group 13: jabber-muc-create skips disco
+
+(ert-deftest jabber-test-muc-create-skips-disco ()
+  "jabber-muc-create sends join presence directly without disco."
+  (let ((join-called nil)
+        (disco-called nil))
+    (cl-letf (((symbol-function 'jabber-muc--send-join-presence)
+               (lambda (&rest _args) (setq join-called t)))
+              ((symbol-function 'jabber-disco-get-info)
+               (lambda (&rest _args) (setq disco-called t))))
+      (jabber-muc-create 'fake-jc "room@conference.example.com" "mynick"))
+    (should join-called)
+    (should-not disco-called)))
 
 (provide 'jabber-muc-tests)
 ;;; jabber-muc-tests.el ends here

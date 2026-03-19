@@ -650,23 +650,53 @@ obtained from `xml-parse-region'."
 
 (defun jabber-muc-submit-config (&rest _ignore)
   "Submit MUC configuration form."
-
-  (jabber-send-iq jabber-buffer-connection jabber-submit-to
-		  "set"
-		  `(query ((xmlns . ,jabber-muc-xmlns-owner))
-			  ,(jabber-parse-xdata-form))
-		  #'jabber-report-success "MUC configuration"
-		  #'jabber-report-success "MUC configuration"))
+  (let ((buffer (current-buffer)))
+    (jabber-send-iq jabber-buffer-connection jabber-submit-to
+		    "set"
+		    `(query ((xmlns . ,jabber-muc-xmlns-owner))
+			    ,(jabber-parse-xdata-form))
+		    #'jabber-report-success "MUC configuration"
+		    #'jabber-report-success "MUC configuration")
+    (kill-buffer buffer)))
 
 (defun jabber-muc-cancel-config (&rest _ignore)
   "Cancel MUC configuration form."
+  (let ((buffer (current-buffer)))
+    (jabber-send-iq jabber-buffer-connection jabber-submit-to
+		    "set"
+		    `(query ((xmlns . ,jabber-muc-xmlns-owner))
+			    (x ((xmlns . ,jabber-xdata-xmlns) (type . "cancel"))))
+		    nil nil nil nil)
+    (kill-buffer buffer)))
 
-  (jabber-send-iq jabber-buffer-connection jabber-submit-to
-		  "set"
-		  `(query ((xmlns . ,jabber-muc-xmlns-owner))
-			  (x ((xmlns . ,jabber-xdata-xmlns) (type . "cancel"))))
-		  nil nil nil nil))
 
+(defun jabber-muc--validate-disco-result (result)
+  "Classify a disco#info RESULT for MUC join.
+Return a plist describing the outcome:
+  (:status ok :features FEATURES)       - valid MUC service
+  (:status not-found)                   - room not found (item-not-found)
+  (:status no-disco)                    - disco not supported (feature-not-implemented)
+  (:status not-conference)              - JID is not a conference service
+  (:status error :error-msg STRING)     - other error"
+  (let* ((identities (car result))
+         (features (cadr result))
+         (condition (when (eq identities 'error)
+                      (jabber-error-condition result))))
+    (cond
+     ((eq condition 'item-not-found)
+      '(:status not-found))
+     ((eq condition 'feature-not-implemented)
+      (list :status 'no-disco :features features))
+     (condition
+      (list :status 'error :error-msg (jabber-parse-error result)))
+     ((and (eq identities 'error) (not condition))
+      (list :status 'error :error-msg "Bad error stanza received"))
+     ((cl-find "conference" (if (sequencep identities) identities nil)
+               :key (lambda (i) (aref i 1))
+               :test #'string=)
+      (list :status 'ok :features features))
+     (t
+      '(:status not-conference)))))
 
 (defun jabber-muc-join (jc group nickname &optional popup)
   "Join a groupchat, or change nick.
@@ -678,15 +708,10 @@ JC is the Jabber connection."
    (let ((account (jabber-read-account))
 	 (group (jabber-read-jid-completing "group: ")))
      (list account group (jabber-muc-read-my-nickname account group) t)))
-
-  ;; If the user is already in the room, we don't need as many checks.
   (if (or (jabber-muc-joined-p group)
-	  ;; Or if the users asked us not to check disco info.
 	  jabber-muc-disable-disco-check)
-      (jabber-muc-join-3 jc group nickname nil popup)
-    ;; Else, send a disco request to find out what we are connecting
-    ;; to.
-    (jabber-disco-get-info jc group nil #'jabber-muc-join-2
+      (jabber-muc--send-join-presence jc group nickname nil popup)
+    (jabber-disco-get-info jc group nil #'jabber-muc--disco-callback
 			   (list group nickname popup))))
 
 ;;;###autoload
@@ -698,13 +723,11 @@ opens automatically.
 
 JC is the Jabber connection."
   (interactive
-   (let ((account (jabber-read-account))
-         (group (jabber-read-jid-completing "New room JID: ")))
-     (list account group (jabber-muc-read-my-nickname account group))))
-  (let ((buffer (jabber-muc-create-buffer jc group)))
-    (with-current-buffer buffer
-      (setq jabber-muc--auto-configure t))
-    (jabber-muc-join-3 jc group nickname nil t)))
+   (let ((account (jabber-read-account)))
+     (list account
+           (read-string "New room JID: ")
+           (jabber-muc-read-my-nickname account ""))))
+  (jabber-muc--send-join-presence jc group nickname nil t t))
 
 ;;;###autoload
 (defun jabber-muc-switch (group)
@@ -724,54 +747,45 @@ Prompt with completion for joined rooms only."
       (when (setq jc (or jc (car jabber-connections)))
         (switch-to-buffer (jabber-muc-create-buffer jc group))))))
 
-(defun jabber-muc-join-2 (jc closure result)
+(defun jabber-muc--disco-callback (jc closure result)
+  "Disco callback for MUC join.
+JC is the Jabber connection.  CLOSURE is (GROUP NICKNAME POPUP).
+RESULT is the disco#info result."
   (pcase-let ((`(,group ,nickname ,popup) closure))
-    (let* ( ;; Either success...
-	  (identities (car result))
-	  (features (cadr result))
-	  ;; ...or error
-	  (condition (when (eq identities 'error) (jabber-error-condition result))))
-      (cond
-       ;; Maybe the room doesn't exist yet.
-       ((eq condition 'item-not-found)
-	(unless (or jabber-silent-mode
-                    (y-or-n-p (format "%s doesn't exist.  Create it? "
-                                      (jabber-jid-displayname group))))
-	  (error "Non-existent groupchat")))
-
-       ;; Maybe the room doesn't support disco.
-       ((eq condition 'feature-not-implemented)
-	t				;whatever... we will ignore it later
-	)
-       ;; Maybe another error occurred. Report it to user
-       (condition
-	(message "Couldn't query groupchat: %s" (jabber-parse-error result)))
-
-       ;; Bad stanza? Without NS, for example
-       ((and (eq identities 'error) (not condition))
-        (message "Bad error stanza received")))
-
-      ;; Continue only if it is really chat room.  If there was an
-      ;; error, give the chat room the benefit of the doubt.  (Needed
-      ;; for ejabberd's mod_irc, for example)
-      (when (or condition
-                (cl-find "conference" (if (sequencep identities) identities nil)
-                         :key (lambda (i) (aref i 1))
-                         :test #'string=))
+    (let* ((v (jabber-muc--validate-disco-result result))
+           (status (plist-get v :status)))
+      (pcase status
+        ('not-found
+         (unless (or jabber-silent-mode
+                     (y-or-n-p (format "%s doesn't exist.  Create it? "
+                                       (jabber-jid-displayname group))))
+           (error "Non-existent groupchat")))
+        ('error
+         (message "Couldn't query groupchat: %s" (plist-get v :error-msg)))
+        ('not-conference
+         (message "%s is not a conference service" (jabber-jid-displayname group))))
+      (unless (eq status 'not-conference)
         (let ((password
-	     ;; Is the room password-protected?
-	     (when (member "muc_passwordprotected" features)
-	       (or
-		(jabber-get-conference-data jc group nil :password)
-		(read-passwd (format "Password for %s: " (jabber-jid-displayname group)))))))
+               (when (member "muc_passwordprotected" (plist-get v :features))
+                 (or
+                  (jabber-get-conference-data jc group nil :password)
+                  (read-passwd (format "Password for %s: "
+                                       (jabber-jid-displayname group)))))))
+          (jabber-muc--send-join-presence jc group nickname password popup))))))
 
-	(jabber-muc-join-3 jc group nickname password popup))))))
+(defalias 'jabber-muc-join-2 #'jabber-muc--disco-callback)
 
-(defun jabber-muc-join-3 (jc group nickname password popup)
+(defun jabber-muc--send-join-presence (jc group nickname password popup
+                                          &optional auto-configure)
+  "Send MUC join presence for GROUP with NICKNAME.
+PASSWORD is the room password, or nil.  When POPUP is non-nil,
+switch to the MUC buffer.  When AUTO-CONFIGURE is non-nil, set
+`jabber-muc--auto-configure' in the buffer so the config form
+opens on room creation.
 
+JC is the Jabber connection."
   ;; Remember that this is a groupchat _before_ sending the stanza.
   ;; The response might come quicker than you think.
-
   (puthash (jabber-jid-symbol group) nickname jabber-pending-groupchats)
 
   (jabber-send-sexp jc
@@ -790,7 +804,12 @@ Prompt with completion for joined rooms only."
   ;; wants the buffer to pop up right now.
   (when popup
     (let ((buffer (jabber-muc-create-buffer jc group)))
+      (when auto-configure
+        (with-current-buffer buffer
+          (setq jabber-muc--auto-configure t)))
       (switch-to-buffer buffer))))
+
+(defalias 'jabber-muc-join-3 #'jabber-muc--send-join-presence)
 
 (defun jabber-muc-read-my-nickname (jc group &optional default)
   "Read nickname for joining GROUP.
@@ -1141,13 +1160,8 @@ nickname in GROUP, or `:muc-foreign' otherwise."
   "Return non-nil if XML-DATA is a delayed (history) message.
 Checks for a child element with xmlns `urn:xmpp:delay' or
 `jabber:x:delay'."
-  (let ((children-namespaces
-         (mapcar (lambda (x)
-                   (when (listp x)
-                     (jabber-xml-get-attribute x 'xmlns)))
-                 (jabber-xml-node-children xml-data))))
-    (or (member jabber-delay-xmlns children-namespaces)
-        (member jabber-delay-legacy-xmlns children-namespaces))))
+  (or (jabber-xml-child-with-xmlns xml-data jabber-delay-xmlns)
+      (jabber-xml-child-with-xmlns xml-data jabber-delay-legacy-xmlns)))
 
 (defun jabber-muc--display-message (jc xml-data group nick type msg-plist)
   "Display a MUC message and conditionally run alert hooks.
@@ -1163,10 +1177,8 @@ messages."
       (jabber-muc-snarf-topic xml-data)
       ;; Call alert hooks only when something is output
       (when (or error-p
-                (let ((res nil))
-                  (while (and printers (not res))
-                    (setq res (funcall (pop printers) msg-plist type :printp)))
-                  res))
+                (cl-some (lambda (f) (funcall f msg-plist type :printp))
+                         printers))
         (jabber-maybe-print-rare-time
          (jabber-chat-ewoc-enter (list type msg-plist)))
         ;; ...except if the message is part of history, in which
@@ -1323,8 +1335,10 @@ X-MUC, ACTOR, REASON and OUR-NICKNAME come from the stanza."
       ;; Trigger MUC MAM catch-up on initial join (not nick change)
       (unless was-joined
         (jabber-mam-muc-joined jc group))))
-  (let ((old-plist (jabber-muc-participant-plist group nickname))
-        (new-plist (jabber-muc-parse-affiliation x-muc)))
+  (let* ((self-p (or (member jabber-muc-status-self-presence status-codes)
+                     (string= nickname our-nickname)))
+         (old-plist (jabber-muc-participant-plist group nickname))
+         (new-plist (jabber-muc-parse-affiliation x-muc)))
     (jabber-muc-modify-participant group nickname new-plist)
     (let ((report (jabber-muc-report-delta nickname old-plist new-plist
                                            reason actor)))
@@ -1333,8 +1347,12 @@ X-MUC, ACTOR, REASON and OUR-NICKNAME come from the stanza."
           (jabber-maybe-print-rare-time
            (jabber-chat-ewoc-enter
             (list :muc-notice report
-                  :time (current-time))))
-          (jabber-muc--enter-extra-notices nickname status-codes))))))
+                  :time (current-time)))))))
+    ;; Extra notices (status 201/210) fire for self-presence regardless
+    ;; of whether there was an affiliation delta report.
+    (when self-p
+      (with-current-buffer (jabber-muc-create-buffer jc group)
+        (jabber-muc--enter-extra-notices nickname status-codes)))))
 
 (defun jabber-muc-process-presence (jc presence)
   (let* ((from (jabber-xml-get-attribute presence 'from))
