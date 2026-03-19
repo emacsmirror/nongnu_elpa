@@ -34,6 +34,7 @@
 
 (declare-function jabber-chat-get-buffer "jabber-chat.el" (chat-with &optional jc))
 (declare-function jabber-muc-message-p "jabber-muc.el"(message))
+(declare-function jabber-chat-ewoc-enter "jabber-chatbuffer.el" (data))
 (defvar jabber-message-chain)           ; jabber-core.el
 (defvar jabber-chat-ewoc)               ; jabber-chatbuffer.el
 (defvar jabber-buffer-connection)       ; jabber-chatbuffer.el
@@ -83,7 +84,7 @@
 	 ((member event '("new" "reset"))
 	  (jabber-rtt--reset)
 	  (setq jabber-rtt-ewoc-node
-		(ewoc-enter-last jabber-chat-ewoc (list :notice "[typing...]"))
+		(jabber-chat-ewoc-enter (list :notice "[typing...]"))
 		jabber-rtt-last-seq (string-to-number seq)
 		jabber-rtt-message ""
 		jabber-rtt-pending-events nil)

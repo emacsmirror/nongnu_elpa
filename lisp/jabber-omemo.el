@@ -45,6 +45,7 @@
 (declare-function jabber-send-sexp "jabber-core")
 (declare-function jabber-chat--msg-plist-from-stanza "jabber-chat")
 (declare-function jabber-maybe-print-rare-time "jabber-chat")
+(declare-function jabber-chat-ewoc-enter "jabber-chatbuffer")
 (declare-function jabber-httpupload--upload "jabber-httpupload")
 (declare-function jabber-httpupload--send-url "jabber-httpupload")
 
@@ -845,10 +846,11 @@ for recipient + own other devices."
         (nconc stanza (funcall hook body id))))
     (let ((msg-plist (jabber-chat--msg-plist-from-stanza stanza)))
       (plist-put msg-plist :body body)
+      (plist-put msg-plist :status :sent)
       (when (run-hook-with-args-until-success 'jabber-chat-printers
                                               msg-plist :local :printp)
         (jabber-maybe-print-rare-time
-         (ewoc-enter-last jabber-chat-ewoc (list :local msg-plist)))))
+         (jabber-chat-ewoc-enter (list :local msg-plist)))))
     (jabber-send-sexp jc stanza)))
 
 (defun jabber-omemo--send-muc (jc body)

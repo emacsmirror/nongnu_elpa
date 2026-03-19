@@ -232,6 +232,7 @@ The format is that of `mode-line-format' and `header-line-format'."
 (declare-function jabber-chat-pp "jabber-chat.el" (data))
 (declare-function jabber-chat-mode "jabber-chatbuffer.el" ())
 (declare-function jabber-chat-mode-setup "jabber-chatbuffer.el" (jc ewoc-pp))
+(declare-function jabber-chat-ewoc-enter "jabber-chatbuffer.el" (data))
 (declare-function jabber-chat-insert-backlog-entry "jabber-chat.el" (msg-plist))
 (declare-function jabber-chat--insert-backlog-chunked "jabber-chat.el"
                   (buffer entries callback))
@@ -802,10 +803,10 @@ JC is the Jabber connection."
 (defun jabber-muc-names ()
   "Print names, affiliations, and roles of participants in current buffer."
   (interactive)
-  (ewoc-enter-last jabber-chat-ewoc (list :notice
-					  (jabber-muc-print-names
-					   (cdr (assoc jabber-group jabber-muc-participants)))
-					  :time (current-time))))
+  (jabber-chat-ewoc-enter (list :notice
+			       (jabber-muc-print-names
+				(cdr (assoc jabber-group jabber-muc-participants)))
+			       :time (current-time))))
 
 (defun jabber-muc-format-names (participant)
   "Format one participant name."
@@ -1146,7 +1147,7 @@ messages."
                     (setq res (funcall (pop printers) msg-plist type :printp)))
                   res))
         (jabber-maybe-print-rare-time
-         (ewoc-enter-last jabber-chat-ewoc (list type msg-plist)))
+         (jabber-chat-ewoc-enter (list type msg-plist)))
         ;; ...except if the message is part of history, in which
         ;; case we don't want an alert.
         (unless (jabber-muc--history-message-p xml-data)
@@ -1214,12 +1215,12 @@ STATUS-CODES, ERROR-NODE, ACTOR and REASON come from the stanza."
       (if buffer
           (with-current-buffer buffer
             (jabber-maybe-print-rare-time
-             (ewoc-enter-last jabber-chat-ewoc
-                              (list (if (string= type "error")
-                                        :muc-error
-                                      :muc-notice)
-                                    message
-                                    :time (current-time)))))
+             (jabber-chat-ewoc-enter
+              (list (if (string= type "error")
+                        :muc-error
+                      :muc-notice)
+                    message
+                    :time (current-time)))))
         (message "%s: %s" (jabber-jid-displayname group) message)))))
 
 (defun jabber-muc--process-other-leave (jc group nickname status-codes
@@ -1237,8 +1238,7 @@ come from the stanza."
     (jabber-muc-remove-participant group nickname)
     (with-current-buffer (jabber-muc-create-buffer jc group)
       (jabber-maybe-print-rare-time
-       (ewoc-enter-last
-        jabber-chat-ewoc
+       (jabber-chat-ewoc-enter
         (list :muc-notice
               (cond
                ((member jabber-muc-status-banned status-codes)
@@ -1273,14 +1273,12 @@ come from the stanza."
   "Insert extra ewoc notices for STATUS-CODES into the current MUC buffer.
 NICKNAME is the entering user.  Assumes `jabber-chat-ewoc' is current."
   (when (member jabber-muc-status-nick-modified status-codes)
-    (ewoc-enter-last
-     jabber-chat-ewoc
+    (jabber-chat-ewoc-enter
      (list :muc-notice
            (concat "Your nick was changed to " nickname " by the server")
            :time (current-time))))
   (when (member jabber-muc-status-room-created status-codes)
-    (ewoc-enter-last
-     jabber-chat-ewoc
+    (jabber-chat-ewoc-enter
      (list :muc-notice
            (jabber-muc--room-created-message)
            :time (current-time)))))
@@ -1308,8 +1306,7 @@ X-MUC, ACTOR, REASON and OUR-NICKNAME come from the stanza."
       (when report
         (with-current-buffer (jabber-muc-create-buffer jc group)
           (jabber-maybe-print-rare-time
-           (ewoc-enter-last
-            jabber-chat-ewoc
+           (jabber-chat-ewoc-enter
             (list :muc-notice report
                   :time (current-time))))
           (jabber-muc--enter-extra-notices nickname status-codes))))))

@@ -55,6 +55,7 @@ stanza.")
 (declare-function jabber-roster-update "jabber-roster.el"
                   (jc new-items changed-items deleted-items))
 (declare-function jabber-chat-create-buffer "jabber-chat.el" (jc chat-with))
+(declare-function jabber-chat-ewoc-enter "jabber-chatbuffer.el" (data))
 (declare-function jabber-chat-get-buffer "jabber-chat.el" (chat-with &optional jc))
 (declare-function jabber-muc-get-buffer "jabber-muc.el" (group &optional jc))
 (declare-function jabber-muc-process-presence "jabber-muc.el" (jc presence))
@@ -304,7 +305,7 @@ obtained from `xml-parse-region'."
   "Process an incoming subscription request.
 JC is the Jabber connection."
   (with-current-buffer (jabber-chat-create-buffer jc from)
-    (ewoc-enter-last jabber-chat-ewoc (list :subscription-request presence-status :time (current-time)))
+    (jabber-chat-ewoc-enter (list :subscription-request presence-status :time (current-time)))
 
     (dolist (hook '(jabber-presence-hooks jabber-alert-presence-hooks))
       (run-hook-with-args hook (jabber-jid-symbol from) nil "subscribe" presence-status (funcall jabber-alert-presence-message-function (jabber-jid-symbol from) nil "subscribe" presence-status)))))
