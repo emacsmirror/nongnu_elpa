@@ -97,8 +97,8 @@ Available sections: `presence', `contacts', `activity'."
 		     (cons nil 0))))
     (dolist (jc jabber-connections)
       (dolist (buddy (plist-get (fsm-get-state-data jc) :roster))
-	(when (assoc (get buddy 'show) count)
-	  (cl-incf (cdr (assoc (get buddy 'show) count))))))
+	(when-let* ((cell (assoc (get buddy 'show) count)))
+	  (cl-incf (cdr cell)))))
     (setq jabber-mode-line-contacts
 	  (if jabber-mode-line-compact
 	      (format "(%d/%d/%d)"

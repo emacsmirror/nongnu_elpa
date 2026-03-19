@@ -162,8 +162,9 @@ It is called after `jabber-activity-mode-string' and
 `jabber-activity-count-string' are updated.")
 
 (defvar jabber-activity--updating nil
-  "Non-nil while `jabber-activity-mode-line-update' is running.
-Prevents recursive calls from hooks triggered during an update.")
+  "Non-nil while activity code is running.
+Prevents recursive calls from `buffer-list-update-hook' and
+`window-configuration-change-hook' triggered during updates.")
 
 (defvar jabber-activity--shortened-names (make-hash-table :test #'equal)
   "Cache mapping sorted JID lists to shortened name alists.
@@ -360,12 +361,19 @@ Recomputes `jabber-activity-mode-string' and
 
 (defun jabber-activity-clean ()
   "Remove JIDs where `jabber-activity-show-p' no longer is true."
-  (setq jabber-activity-jids (cl-delete-if-not jabber-activity-show-p
-					       jabber-activity-jids))
-  (setq jabber-activity-personal-jids
-	(cl-delete-if-not jabber-activity-show-p
-			  jabber-activity-personal-jids))
-  (jabber-activity-mode-line-update))
+  (unless jabber-activity--updating
+    (let* ((jabber-activity--updating t)
+           (new-jids (cl-remove-if-not jabber-activity-show-p
+                                       jabber-activity-jids))
+           (new-personal (cl-remove-if-not jabber-activity-show-p
+                                           jabber-activity-personal-jids))
+           (changed (or (not (equal new-jids jabber-activity-jids))
+                        (not (equal new-personal jabber-activity-personal-jids)))))
+      (setq jabber-activity-jids new-jids
+            jabber-activity-personal-jids new-personal)
+      (when changed
+        (let ((jabber-activity--updating nil))
+          (jabber-activity-mode-line-update))))))
 
 (defun jabber-activity-add (from _buffer _text _proposed-alert)
   "Add a JID to mode line when `jabber-activity-show-p'."
@@ -444,8 +452,6 @@ Called by `jabber-modeline-mode' when enabling."
 	    #'jabber-activity-add-muc)
   (add-hook 'jabber-presence-hooks
 	    #'jabber-activity-presence)
-  (add-hook 'buffer-list-update-hook
-	    #'jabber-activity-clean)
   (add-hook 'jabber-post-connect-hooks
 	    #'jabber-activity-make-name-alist)
   (add-hook 'kill-emacs-query-functions
@@ -462,8 +468,6 @@ Called by `jabber-modeline-mode' when disabling."
 	       #'jabber-activity-add-muc)
   (remove-hook 'jabber-presence-hooks
 	       #'jabber-activity-presence)
-  (remove-hook 'buffer-list-update-hook
-	       #'jabber-activity-clean)
   (remove-hook 'jabber-post-connect-hooks
 	       #'jabber-activity-make-name-alist)
   (remove-hook 'kill-emacs-query-functions
