@@ -706,9 +706,11 @@ found."
 DELAYED marks the message as delayed unconditionally."
   (let* ((msg-timestamp (jabber-message-timestamp xml-data))
          (oob-x (jabber-xml-child-with-xmlns xml-data jabber-oob-xmlns))
-         (error-node (car (jabber-xml-get-children xml-data 'error))))
+         (error-node (car (jabber-xml-get-children xml-data 'error)))
+         (sid-el (jabber-xml-child-with-xmlns xml-data "urn:xmpp:sid:0")))
     (list
      :id (jabber-xml-get-attribute xml-data 'id)
+     :server-id (when sid-el (jabber-xml-get-attribute sid-el 'id))
      :from (jabber-xml-get-attribute xml-data 'from)
      :body (car (jabber-xml-node-children
                  (car (jabber-xml-get-children xml-data 'body))))
@@ -768,15 +770,30 @@ or X for undelivered."
     (run-hook-with-args 'jabber-chat-printers msg :foreign :insert)
     (insert "\n")))
 
+(defun jabber-chat--insert-tombstone (msg)
+  "Insert a retraction tombstone for MSG."
+  (let ((moderator (plist-get msg :retracted-by))
+        (reason (plist-get msg :retraction-reason)))
+    (when moderator
+      (setq moderator (or (jabber-jid-resource moderator) moderator)))
+    (insert (propertize
+             (concat "[Message retracted"
+                     (when moderator (concat " by: " moderator))
+                     (when reason (concat " reason: " reason))
+                     "]")
+             'face 'shadow))))
+
 (defun jabber-chat-pp--muc-local (data)
   "Render a locally sent MUC message from DATA."
   (let* ((msg (cadr data))
          (body (plist-get msg :body))
          (/me-p (and (stringp body) (string-prefix-p "/me " body))))
     (jabber-muc-print-prompt msg t /me-p)
-    (mapc (lambda (f) (funcall f msg :muc-local :insert))
-          (append jabber-muc-printers jabber-chat-printers))
-    (jabber-chat--insert-status-indicator msg)
+    (if (plist-get msg :retracted)
+        (jabber-chat--insert-tombstone msg)
+      (mapc (lambda (f) (funcall f msg :muc-local :insert))
+            (append jabber-muc-printers jabber-chat-printers))
+      (jabber-chat--insert-status-indicator msg))
     (insert "\n")))
 
 (defun jabber-chat-pp--muc-foreign (data)
@@ -785,8 +802,10 @@ or X for undelivered."
          (body (plist-get msg :body))
          (/me-p (and (stringp body) (string-prefix-p "/me " body))))
     (jabber-muc-print-prompt msg nil /me-p)
-    (mapc (lambda (f) (funcall f msg :muc-foreign :insert))
-          (append jabber-muc-printers jabber-chat-printers))
+    (if (plist-get msg :retracted)
+        (jabber-chat--insert-tombstone msg)
+      (mapc (lambda (f) (funcall f msg :muc-foreign :insert))
+            (append jabber-muc-printers jabber-chat-printers)))
     (insert "\n")))
 
 (defun jabber-chat-pp--error (data)
