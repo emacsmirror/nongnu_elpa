@@ -2363,7 +2363,7 @@ To disable showing the stats, customize
                             (propertize (number-to-string .quotes_count)
                                         'face 'mastodon-toot-docs-face)
                             (propertize (mastodon-tl--symbol 'quote)
-                                        'face 'success)))
+                                        'face '(:inherit success :box t))))
            (stats (concat
                    (propertize faves
                                'favourited-p (eq t .favourited)
