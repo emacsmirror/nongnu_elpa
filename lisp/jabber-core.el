@@ -105,6 +105,21 @@ The functions should accept one argument, the connection object."
 	     jabber-autoaway-start
 	     jabber-sm-maybe-start))
 
+(defcustom jabber-post-resume-hooks '(jabber-muc-self-ping-rooms
+				      jabber-mam-maybe-catchup
+				      jabber-whitespace-ping-start)
+  "Hooks run after successful SM stream resumption.
+These run instead of `jabber-post-connect-hooks' when the session
+was resumed rather than freshly established.  MAM catchup is needed
+because SM replay covers only a finite window of unacked stanzas.
+MUC self-ping verifies room membership survived the offline period.
+The functions should accept one argument, the connection object."
+  :type 'hook
+  :options '(jabber-muc-self-ping-rooms
+	     jabber-mam-maybe-catchup
+	     jabber-whitespace-ping-start)
+  :group 'jabber-core)
+
 (defcustom jabber-pre-disconnect-hook nil
   "*Hooks run just before voluntary disconnection.
 This might be due to failed authentication."
@@ -894,13 +909,14 @@ With double prefix argument, specify more connection details."
   (fsm state-data)
   (if (plist-get state-data :sm-resumed)
       ;; On SM resume, the session was never lost; skip roster fetch
-      ;; and bookmark prefetch.  Restart SM timer directly since
-      ;; post-connect hooks won't fire (they're triggered by roster
-      ;; fetch callback).
+      ;; and bookmark prefetch.  Run resume-specific hooks (MAM
+      ;; catchup, keepalive restart) since SM replay only covers a
+      ;; finite window of unacked stanzas.
       (progn
 	(when (plist-get state-data :sm-enabled)
 	  (setq state-data (jabber-sm--start-r-timer fsm state-data)))
-	(setq state-data (plist-put state-data :sm-resumed nil)))
+	(setq state-data (plist-put state-data :sm-resumed nil))
+	(run-hook-with-args 'jabber-post-resume-hooks fsm))
     ;; Normal connect: fetch roster (which triggers post-connect hooks
     ;; from the roster callback) and prefetch bookmarks.
     (jabber-send-iq fsm nil
