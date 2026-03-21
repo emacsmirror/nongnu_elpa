@@ -43,6 +43,7 @@
 (declare-function jabber-muc-find-buffer "jabber-muc" (group))
 (declare-function jabber-connection-bare-jid "jabber-util" (jc))
 (declare-function jabber-disco-advertise-feature "jabber-disco" (feature))
+(declare-function jabber-db-message-sender-by-stanza-id "jabber-db" (stanza-id))
 
 (defconst jabber-message-correct-xmlns "urn:xmpp:message-correct:0"
   "XML namespace for XEP-0308 Last Message Correction.")
@@ -70,23 +71,23 @@ MUC-P non-nil means full-JID comparison; otherwise bare-JID comparison."
 (defun jabber-message-correct--apply (replace-id new-body new-from muc-p buffer)
   "Apply correction REPLACE-ID with NEW-BODY sent by NEW-FROM.
 MUC-P non-nil for groupchat.  BUFFER is the chat buffer or nil.
-Always updates the DB.  Returns non-nil when the ewoc node was found."
-  (let (applied)
+Validates sender against the stored original message (via DB lookup)
+before writing.  If the original is not in the DB the correction is
+silently dropped.  Returns non-nil when the correction was accepted."
+  (when-let* ((original-from (jabber-db-message-sender-by-stanza-id replace-id))
+              ((jabber-message-correct--valid-sender-p original-from new-from muc-p)))
+    (jabber-db-correct-message replace-id new-body)
     (when buffer
       (with-current-buffer buffer
         (when-let* ((node (jabber-chat-ewoc-find-by-id replace-id))
                     (data (ewoc-data node))
-                    (msg  (cadr data))
-                    ((jabber-message-correct--valid-sender-p
-                      (plist-get msg :from) new-from muc-p)))
+                    (msg  (cadr data)))
           (setq msg (plist-put msg :body new-body))
           (setq msg (plist-put msg :edited t))
           (setcar (cdr data) msg)
           (let ((inhibit-read-only t))
-            (ewoc-invalidate jabber-chat-ewoc node))
-          (setq applied t))))
-    (jabber-db-correct-message replace-id new-body)
-    applied))
+            (ewoc-invalidate jabber-chat-ewoc node)))))
+    t))
 
 ;;; Inhibit DB storage of correction stanzas
 
@@ -125,26 +126,23 @@ Prompts with the existing body pre-filled."
     (let ((new-body (read-string "Correction: " last-body)))
       (when (string= new-body last-body)
         (user-error "No change"))
-      (let* ((data (ewoc-data last-node))
-             (msg  (cadr data)))
-        (setq msg (plist-put msg :body new-body))
-        (setq msg (plist-put msg :edited t))
-        (setcar (cdr data) msg)
-        (let ((inhibit-read-only t))
-          (ewoc-invalidate jabber-chat-ewoc last-node)))
-      (jabber-db-correct-message last-id new-body)
       (let* ((id    (format "emacs-msg-%.6f" (float-time)))
-             (muc-p (local-variable-p 'jabber-group))
+             (muc-p (bound-and-true-p jabber-group))
              (type  (if muc-p "groupchat" "chat"))
-             (to    (if muc-p
-                        (buffer-local-value 'jabber-group (current-buffer))
-                      (buffer-local-value 'jabber-chatting-with
-                                          (current-buffer)))))
+             (to    (if muc-p jabber-group jabber-chatting-with)))
         (jabber-send-sexp jabber-buffer-connection
                           `(message ((to . ,to) (type . ,type) (id . ,id))
                                     (body () ,new-body)
                                     (replace ((id . ,last-id)
-                                              (xmlns . ,jabber-message-correct-xmlns)))))))))
+                                              (xmlns . ,jabber-message-correct-xmlns)))))
+        (let* ((data (ewoc-data last-node))
+               (msg  (cadr data)))
+          (setq msg (plist-put msg :body new-body))
+          (setq msg (plist-put msg :edited t))
+          (setcar (cdr data) msg)
+          (let ((inhibit-read-only t))
+            (ewoc-invalidate jabber-chat-ewoc last-node)))
+        (jabber-db-correct-message last-id new-body)))))
 
 (provide 'jabber-message-correct)
 ;;; jabber-message-correct.el ends here

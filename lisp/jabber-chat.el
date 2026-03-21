@@ -590,14 +590,13 @@ JC is the Jabber connection."
       (when is-carbon
         (jabber-chat--store-carbon jc xml-data))
       (let ((replace-id (jabber-message-correct--replace-id xml-data)))
-        (if (and replace-id
-                 (jabber-message-correct--apply
-                  replace-id
-                  (plist-get msg-plist :body)
-                  from
-                  nil
-                  (jabber-chat-find-buffer from)))
-            nil
+        (if replace-id
+            (jabber-message-correct--apply
+             replace-id
+             (plist-get msg-plist :body)
+             from
+             nil
+             (jabber-chat-find-buffer from))
           (when (or error-p
                     (run-hook-with-args-until-success 'jabber-chat-printers
                                                       msg-plist :foreign :printp))
