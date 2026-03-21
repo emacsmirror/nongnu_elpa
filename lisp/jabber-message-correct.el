@@ -146,11 +146,5 @@ Prompts with the existing body pre-filled."
                                     (replace ((id . ,last-id)
                                               (xmlns . ,jabber-message-correct-xmlns)))))))))
 
-;;; Keybinding (chat and MUC share jabber-chat-mode-map)
-
-(with-eval-after-load 'jabber-chatbuffer
-  (define-key jabber-chat-mode-map (kbd "C-c C-e")
-    #'jabber-correct-last-message))
-
 (provide 'jabber-message-correct)
 ;;; jabber-message-correct.el ends here

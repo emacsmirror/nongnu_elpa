@@ -240,7 +240,8 @@ Works for both 1:1 chat (`jabber-chatting-with') and MUC (`jabber-group')."
     ("B" "Block/unblock user" jabber-blocking-toggle-chat-peer)]
    ["MUC"
     ("m" "MUC operations..." jabber-muc-menu)
-    ("M" "Retract message at point" jabber-moderation-retract)]
+    ("M" "Retract message at point" jabber-moderation-retract)
+    ("E" "Correct last message" jabber-correct-last-message)]
    ["Buffer"
     ("d" "Display more context" jabber-chat-display-more-backlog)
     ("r" "Redisplay" jabber-chat-redisplay)
