@@ -107,7 +107,8 @@ in the message history.")
   delivered_at INTEGER,
   displayed_at INTEGER,
   retracted_by TEXT,
-  retraction_reason TEXT)"
+  retraction_reason TEXT,
+  edited       INTEGER DEFAULT 0)"
     "CREATE INDEX IF NOT EXISTS idx_msg_peer_ts
   ON message(account, peer, timestamp)"
     "CREATE INDEX IF NOT EXISTS idx_msg_stanza_id
@@ -193,8 +194,8 @@ END"
       ;; blocks, set user_version=1 here, and update the schema-version test.
       ;; Alpha tester DBs should be deleted before upgrading to the release.
       (jabber-db--init-schema db)
-      (sqlite-execute db "PRAGMA user_version=5")
-      (setq version 5))
+      (sqlite-execute db "PRAGMA user_version=6")
+      (setq version 6))
     (when (< version 2)
       ;; v1->v2: Remove duplicate messages that lack stanza_id and server_id.
       ;; These were created by MUC server history replayed on every join.
@@ -215,7 +216,11 @@ DELETE FROM message WHERE id NOT IN (
     (when (< version 5)
       ;; v4->v5: Add retraction_reason for XEP-0425.
       (sqlite-execute db "ALTER TABLE message ADD COLUMN retraction_reason TEXT")
-      (sqlite-execute db "PRAGMA user_version=5"))))
+      (sqlite-execute db "PRAGMA user_version=5"))
+    (when (< version 6)
+      ;; v5->v6: Add edited flag for XEP-0308 message corrections.
+      (sqlite-execute db "ALTER TABLE message ADD COLUMN edited INTEGER DEFAULT 0")
+      (sqlite-execute db "PRAGMA user_version=6"))))
 
 (defun jabber-db-ensure-open ()
   "Open the SQLite database, creating it if needed.  Idempotent.
@@ -345,6 +350,13 @@ Optional REASON is the human-readable retraction reason string."
                     "UPDATE message SET retracted_by = ?, retraction_reason = ? WHERE server_id = ?"
                     (list retracted-by reason server-id))))
 
+(defun jabber-db-correct-message (stanza-id new-body)
+  "Replace body of message with STANZA-ID with NEW-BODY and mark as edited."
+  (when (and jabber-db--connection stanza-id)
+    (sqlite-execute jabber-db--connection
+                    "UPDATE message SET body = ?, edited = 1 WHERE stanza_id = ?"
+                    (list new-body stanza-id))))
+
 ;;; Retrieval
 
 (defun jabber-db--row-to-plist (row)
@@ -352,7 +364,7 @@ Optional REASON is the human-readable retraction reason string."
 ROW columns match the SELECT in `jabber-db-backlog'."
   (seq-let (account peer direction body timestamp resource type
             oob-url oob-desc encrypted stanza-id delivered-at
-            displayed-at server-id retracted-by retraction-reason)
+            displayed-at server-id retracted-by retraction-reason edited)
       row
     (let ((from (if (string= direction "in")
                     (if resource (concat peer "/" resource) peer)
@@ -368,6 +380,7 @@ ROW columns match the SELECT in `jabber-db-backlog'."
             :retracted (and retracted-by t)
             :retracted-by retracted-by
             :retraction-reason retraction-reason
+            :edited (and edited (not (zerop edited)))
             :direction direction
             :msg-type type
             :oob-url oob-url
@@ -396,7 +409,7 @@ If nil, `jabber-backlog-days' is used to compute the cutoff."
                   db
                   "SELECT account, peer, direction, body, timestamp, resource, type, \
 oob_url, oob_desc, encrypted, stanza_id, delivered_at, displayed_at, \
-server_id, retracted_by, retraction_reason \
+server_id, retracted_by, retraction_reason, edited \
 FROM message \
 WHERE account = ? AND peer = ? AND timestamp >= ? \
 ORDER BY timestamp DESC LIMIT ?"
