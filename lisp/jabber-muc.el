@@ -429,6 +429,35 @@ this JID.  Suitable to call when the connection is closed."
           (setq jabber-muc-participants
                 (delq whichparticipants jabber-muc-participants)))))))
 
+(defun jabber-muc--self-ping-failed (jc _xml-data closure-data)
+  "Handle failed MUC self-ping by rejoining.
+JC is the connection.  CLOSURE-DATA is (ROOM . NICK)."
+  (let ((room (car closure-data))
+        (nick (cdr closure-data)))
+    (message "MUC self-ping failed for %s, rejoining" room)
+    (jabber-muc-leave-remove room)
+    (jabber-muc--send-join-presence jc room nick nil nil)))
+
+(defun jabber-muc-self-ping-rooms (jc)
+  "Ping all joined MUC rooms via JC to verify membership.
+After SM resume, the MUC server may have kicked us while offline.
+Rooms that fail the self-ping are rejoined automatically.
+XEP-0410: MUC Self-Ping (Schroedingers Chat)."
+  (let ((bare-jid (jabber-connection-bare-jid jc)))
+    (dolist (room (jabber-muc-active-rooms))
+      (let ((room-jc (jabber-muc-connection room)))
+        (when (and room-jc (string= bare-jid (jabber-connection-bare-jid room-jc)))
+          (let* ((nick (jabber-muc-nickname room))
+                 (self-jid (format "%s/%s" room nick))
+                 (closure (cons room nick)))
+            (jabber-send-iq
+             jc self-jid "get"
+             '(ping ((xmlns . "urn:xmpp:ping")))
+             #'jabber-silent-process-data
+             (format "MUC self-ping: still in %s" room)
+             #'jabber-muc--self-ping-failed
+             closure)))))))
+
 (defun jabber-muc-participant-plist (group nickname)
   "Return plist associated with NICKNAME in GROUP.
 Return nil if nothing known about that combination."
