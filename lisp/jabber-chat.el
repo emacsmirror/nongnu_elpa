@@ -235,6 +235,10 @@ added to the outgoing message.")
                            encrypted))
 (declare-function jabber-mam-fetch-peer-history "jabber-mam"
                   (jc peer &optional muc-p callback))
+(declare-function jabber-message-correct--replace-id "jabber-message-correct"
+                  (xml-data))
+(declare-function jabber-message-correct--apply "jabber-message-correct"
+                  (replace-id new-body new-from muc-p buffer))
 (declare-function jabber-muc-find-buffer "jabber-muc" (group))
 (defvar jabber-group)                   ; jabber-muc.el
 (defvar jabber-muc-printers)            ; jabber-muc.el
@@ -585,13 +589,22 @@ JC is the Jabber connection."
            (msg-plist (jabber-chat--msg-plist-from-stanza xml-data)))
       (when is-carbon
         (jabber-chat--store-carbon jc xml-data))
-      (when (or error-p
-                (run-hook-with-args-until-success 'jabber-chat-printers
-                                                  msg-plist :foreign :printp))
-        (jabber-chat--display-message
-         jc xml-data
-         (jabber-chat--select-buffer jc from carbon-buffer)
-         error-p from msg-plist)))))
+      (let ((replace-id (jabber-message-correct--replace-id xml-data)))
+        (if (and replace-id
+                 (jabber-message-correct--apply
+                  replace-id
+                  (plist-get msg-plist :body)
+                  from
+                  nil
+                  (jabber-chat-find-buffer from)))
+            nil
+          (when (or error-p
+                    (run-hook-with-args-until-success 'jabber-chat-printers
+                                                      msg-plist :foreign :printp))
+            (jabber-chat--display-message
+             jc xml-data
+             (jabber-chat--select-buffer jc from carbon-buffer)
+             error-p from msg-plist)))))))
 
 (defun jabber-chat-send (jc body &optional extra-elements)
   "Send BODY through connection JC, and display it in chat buffer.
@@ -757,6 +770,8 @@ or X for undelivered."
     (jabber-chat-self-prompt msg (plist-get msg :timestamp)
                              (plist-get msg :delayed) /me-p)
     (run-hook-with-args 'jabber-chat-printers msg :local :insert)
+    (when (plist-get msg :edited)
+      (insert (propertize " (edited)" 'face 'shadow)))
     (jabber-chat--insert-status-indicator msg)
     (insert "\n")))
 
@@ -768,6 +783,8 @@ or X for undelivered."
     (jabber-chat-print-prompt msg (plist-get msg :timestamp)
                               (plist-get msg :delayed) /me-p)
     (run-hook-with-args 'jabber-chat-printers msg :foreign :insert)
+    (when (plist-get msg :edited)
+      (insert (propertize " (edited)" 'face 'shadow)))
     (insert "\n")))
 
 (defun jabber-chat--insert-tombstone (msg)
@@ -793,6 +810,8 @@ or X for undelivered."
         (jabber-chat--insert-tombstone msg)
       (mapc (lambda (f) (funcall f msg :muc-local :insert))
             (append jabber-muc-printers jabber-chat-printers))
+      (when (plist-get msg :edited)
+        (insert (propertize " (edited)" 'face 'shadow)))
       (jabber-chat--insert-status-indicator msg))
     (insert "\n")))
 
@@ -805,7 +824,9 @@ or X for undelivered."
     (if (plist-get msg :retracted)
         (jabber-chat--insert-tombstone msg)
       (mapc (lambda (f) (funcall f msg :muc-foreign :insert))
-            (append jabber-muc-printers jabber-chat-printers)))
+            (append jabber-muc-printers jabber-chat-printers))
+      (when (plist-get msg :edited)
+        (insert (propertize " (edited)" 'face 'shadow))))
     (insert "\n")))
 
 (defun jabber-chat-pp--error (data)

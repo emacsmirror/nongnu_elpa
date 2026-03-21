@@ -257,6 +257,10 @@ The format is that of `mode-line-format' and `header-line-format'."
 (declare-function jabber-mam-muc-joined "jabber-mam.el" (jc group))
 (declare-function jabber-db-backlog "jabber-db.el"
                   (account peer &optional count start-time))
+(declare-function jabber-message-correct--replace-id "jabber-message-correct"
+                  (xml-data))
+(declare-function jabber-message-correct--apply "jabber-message-correct"
+                  (replace-id new-body new-from muc-p buffer))
 (defvar jabber-silent-mode)             ; jabber.el
 (defvar jabber-mam--syncing)            ; jabber-mam.el
 (defvar jabber-message-chain)           ; jabber-core.el
@@ -1209,8 +1213,17 @@ JC is the Jabber connection."
            (group (jabber-jid-user from))
            (nick (jabber-jid-resource from))
            (type (jabber-muc--classify-message group nick xml-data))
-           (msg-plist (jabber-chat--msg-plist-from-stanza xml-data)))
-      (jabber-muc--display-message jc xml-data group nick type msg-plist))))
+           (msg-plist (jabber-chat--msg-plist-from-stanza xml-data))
+           (replace-id (jabber-message-correct--replace-id xml-data)))
+      (if (and replace-id
+               (jabber-message-correct--apply
+                replace-id
+                (plist-get msg-plist :body)
+                from
+                t
+                (jabber-muc-find-buffer group)))
+          nil
+        (jabber-muc--display-message jc xml-data group nick type msg-plist)))))
 
 (defun jabber-muc--format-actor-reason (actor reason)
   "Format optional \" by ACTOR\" / \" - \\='REASON\\='\" suffix."
