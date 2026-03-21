@@ -176,6 +176,7 @@ configure a Google Talk account like this:
 (require 'jabber-search)
 (require 'jabber-blocking)
 (require 'jabber-moderation)
+(require 'jabber-message-correct)
 (require 'jabber-browse)
 (require 'jabber-compose)
 (require 'jabber-muc)
