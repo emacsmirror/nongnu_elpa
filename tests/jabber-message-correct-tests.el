@@ -291,12 +291,8 @@ not jabber-message-correct--replace-id itself."
 (ert-deftest jabber-message-correct-test-delayed-stanza-skipped-by-muc-dispatch ()
   "jabber-muc-process-message must not apply corrections from delayed stanzas.
 Regression guard: a delayed correction arriving in MUC history replay
-must not mutate the DB or the ewoc.
-This test documents an UNIMPLEMENTED guard and will fail until it is added."
-  :expected-result :failed
-  ;; Once the fix lands (guard on jabber-muc--history-message-p before calling
-  ;; jabber-message-correct--apply in jabber-muc-process-message), this test
-  ;; must be changed to :expected-result :passed.
+must not mutate the DB or the ewoc."
+  :expected-result :passed
   (let ((apply-called nil)
         (stanza `(message ((from . "room@muc.example.com/alice")
                            (id . "corr-2")
@@ -319,11 +315,8 @@ This test documents an UNIMPLEMENTED guard and will fail until it is added."
 (ert-deftest jabber-message-correct-test-mam-syncing-skipped-by-chat-dispatch ()
   "jabber-process-chat must not apply corrections while jabber-mam--syncing is t.
 Regression guard: a MAM catch-up stanza carrying <replace> must not
-be treated as a live edit.
-This test documents an UNIMPLEMENTED guard and will fail until it is added."
-  :expected-result :failed
-  ;; Once the fix lands (guard on jabber-mam--syncing before calling
-  ;; jabber-message-correct--apply in jabber-process-chat), change to :passed.
+be treated as a live edit."
+  :expected-result :passed
   (let ((apply-called nil)
         (jabber-mam--syncing t)
         (stanza `(message ((from . "alice@example.com/phone")

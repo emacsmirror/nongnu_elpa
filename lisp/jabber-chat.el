@@ -590,7 +590,7 @@ JC is the Jabber connection."
       (when is-carbon
         (jabber-chat--store-carbon jc xml-data))
       (let ((replace-id (jabber-message-correct--replace-id xml-data)))
-        (if replace-id
+        (if (and replace-id (not jabber-mam--syncing))
             (jabber-message-correct--apply
              replace-id
              (plist-get msg-plist :body)

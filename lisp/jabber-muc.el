@@ -1215,7 +1215,7 @@ JC is the Jabber connection."
            (type (jabber-muc--classify-message group nick xml-data))
            (msg-plist (jabber-chat--msg-plist-from-stanza xml-data))
            (replace-id (jabber-message-correct--replace-id xml-data)))
-      (if replace-id
+      (if (and replace-id (not (jabber-muc--history-message-p xml-data)))
           (jabber-message-correct--apply
            replace-id
            (plist-get msg-plist :body)
