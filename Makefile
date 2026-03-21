@@ -17,7 +17,8 @@ TESTS ?= tests/jabber-xml-tests.el tests/jabber-util-tests.el \
          tests/jabber-receipts-tests.el \
          tests/jabber-transient-tests.el \
          tests/jabber-mam-tests.el \
-         tests/jabber-moderation-tests.el
+         tests/jabber-moderation-tests.el \
+         tests/jabber-sm-tests.el
 
 all: build
 

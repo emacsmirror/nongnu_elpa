@@ -933,6 +933,9 @@ With double prefix argument, specify more connection details."
 	 (setq state-data (jabber-sm--process-ack state-data stanza))
 	 (list :session-established state-data :keep))
 	(t
+	 ;; Only message/presence/iq stanzas reach here; <r/>/<a/> are
+	 ;; SM control elements and must not be counted (XEP-0198 §4).
+	 (setq state-data (jabber-sm--count-inbound fsm state-data stanza))
 	 (or
 	  (jabber-process-stream-error stanza state-data)
 	  (progn
@@ -1104,8 +1107,6 @@ DATA is any sexp."
 JC is the Jabber connection.
 XML-DATA is the parsed tree data from the stream (stanzas)
 obtained from `xml-parse-region'."
-  ;; SM stanza counting (modifies state-data in place via plist-put).
-  (jabber-sm--count-inbound jc (fsm-get-state-data jc) xml-data)
   (let* ((jabber-xml-data xml-data)
          (tag (jabber-xml-node-name xml-data))
 	 (functions (eval (cdr (assq tag '((iq . jabber-iq-chain)
