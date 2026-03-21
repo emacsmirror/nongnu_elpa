@@ -429,14 +429,33 @@ this JID.  Suitable to call when the connection is closed."
           (setq jabber-muc-participants
                 (delq whichparticipants jabber-muc-participants)))))))
 
-(defun jabber-muc--self-ping-failed (jc _xml-data closure-data)
-  "Handle failed MUC self-ping by rejoining.
-JC is the connection.  CLOSURE-DATA is (ROOM . NICK)."
-  (let ((room (car closure-data))
-        (nick (cdr closure-data)))
-    (message "MUC self-ping failed for %s, rejoining" room)
-    (jabber-muc-leave-remove room)
-    (jabber-muc--send-join-presence jc room nick nil nil)))
+(defun jabber-muc--self-ping-failed (jc xml-data closure-data)
+  "Handle failed MUC self-ping per XEP-0410 error classification.
+JC is the connection.  XML-DATA is the IQ error stanza.
+CLOSURE-DATA is (ROOM . NICK).
+
+Error conditions per XEP-0410:
+- service-unavailable, feature-not-implemented, item-not-found:
+  still joined (ping target doesn't support XEP-0199)
+- remote-server-not-found, remote-server-timeout:
+  undecided, treat as transient failure
+- any other error (e.g. not-acceptable): not joined, rejoin"
+  (let* ((room (car closure-data))
+         (nick (cdr closure-data))
+         (error-node (jabber-iq-error xml-data))
+         (condition (when error-node
+                      (jabber-error-condition error-node))))
+    (pcase condition
+      ((or 'service-unavailable 'feature-not-implemented 'item-not-found)
+       (message "MUC self-ping for %s: still joined (ping unsupported)" room))
+      ((or 'remote-server-not-found 'remote-server-timeout)
+       (message "MUC self-ping for %s: server unreachable, will retry" room))
+      (_
+       (message "MUC self-ping failed for %s (%s), rejoining"
+                room (or condition "unknown"))
+       (jabber-muc-remove-groupchat room)
+       (let ((password (jabber-get-conference-data jc room nil :password)))
+         (jabber-muc--send-join-presence jc room nick password nil))))))
 
 (defun jabber-muc-self-ping-rooms (jc)
   "Ping all joined MUC rooms via JC to verify membership.
@@ -447,16 +466,18 @@ XEP-0410: MUC Self-Ping (Schroedingers Chat)."
     (dolist (room (jabber-muc-active-rooms))
       (let ((room-jc (jabber-muc-connection room)))
         (when (and room-jc (string= bare-jid (jabber-connection-bare-jid room-jc)))
-          (let* ((nick (jabber-muc-nickname room))
-                 (self-jid (format "%s/%s" room nick))
-                 (closure (cons room nick)))
-            (jabber-send-iq
-             jc self-jid "get"
-             '(ping ((xmlns . "urn:xmpp:ping")))
-             #'jabber-silent-process-data
-             (format "MUC self-ping: still in %s" room)
-             #'jabber-muc--self-ping-failed
-             closure)))))))
+          (let ((nick (jabber-muc-nickname room)))
+            (if (not nick)
+                (message "MUC self-ping: no nick for %s, skipping" room)
+              (let ((self-jid (format "%s/%s" room nick))
+                    (closure (cons room nick)))
+                (jabber-send-iq
+                 jc self-jid "get"
+                 '(ping ((xmlns . "urn:xmpp:ping")))
+                 #'jabber-silent-process-data
+                 (format "MUC self-ping: still in %s" room)
+                 #'jabber-muc--self-ping-failed
+                 closure)))))))))
 
 (defun jabber-muc-participant-plist (group nickname)
   "Return plist associated with NICKNAME in GROUP.
