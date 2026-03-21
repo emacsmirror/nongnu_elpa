@@ -492,6 +492,15 @@
         <xmpp:since>NEXT</xmpp:since>
       </xmpp:SupportedXep>
     </implements>
+    <implements>
+      <xmpp:SupportedXep>
+        <xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0308.html"/>
+        <xmpp:version>1.2.0</xmpp:version>
+        <xmpp:status>complete</xmpp:status>
+        <xmpp:since>NEXT</xmpp:since>
+        <xmpp:note>MUC rejoin presence-tracking check not implemented (spec SHOULD).</xmpp:note>
+      </xmpp:SupportedXep>
+    </implements>
 
     <release>
       <Version>
