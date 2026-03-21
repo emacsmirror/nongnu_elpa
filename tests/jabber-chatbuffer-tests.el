@@ -246,6 +246,79 @@
         (jabber-chat-encryption-set-omemo)
         (should-not (cl-some (lambda (m) (string-match-p "anonymous" m)) messages))))))
 
+;;; Group 8: Buffer lookup registry
+
+(ert-deftest jabber-chatbuffer-test-registry-chat-find ()
+  "Register a temp buffer as a chat buffer; registry-get returns it."
+  (let ((jabber-chatbuffer--registry (make-hash-table :test #'equal)))
+    (with-temp-buffer
+      (setq-local jabber-chatting-with "alice@example.com")
+      (jabber-chatbuffer--registry-put 'chat "alice@example.com")
+      (should (eq (current-buffer)
+                  (jabber-chatbuffer--registry-get 'chat "alice@example.com"))))))
+
+(ert-deftest jabber-chatbuffer-test-registry-kill-removes-entry ()
+  "Killing the buffer removes its registry entry."
+  (let ((jabber-chatbuffer--registry (make-hash-table :test #'equal)))
+    (let ((buf (generate-new-buffer " *test-chat-registry*")))
+      (with-current-buffer buf
+        (setq-local jabber-chatting-with "bob@example.com")
+        (jabber-chatbuffer--registry-put 'chat "bob@example.com"))
+      (should (eq buf (jabber-chatbuffer--registry-get 'chat "bob@example.com")))
+      (kill-buffer buf)
+      ;; The kill-buffer-hook removed it; get now returns nil.
+      (should-not (jabber-chatbuffer--registry-get 'chat "bob@example.com")))))
+
+(ert-deftest jabber-chatbuffer-test-registry-no-collision ()
+  "MUC and chat buffers with the same bare JID do not collide."
+  (let ((jabber-chatbuffer--registry (make-hash-table :test #'equal)))
+    (let ((chat-buf (generate-new-buffer " *test-chat*"))
+          (muc-buf  (generate-new-buffer " *test-muc*")))
+      (unwind-protect
+          (progn
+            (with-current-buffer chat-buf
+              (setq-local jabber-chatting-with "room@conf.example.com")
+              (jabber-chatbuffer--registry-put 'chat "room@conf.example.com"))
+            (with-current-buffer muc-buf
+              (setq-local jabber-group "room@conf.example.com")
+              (jabber-chatbuffer--registry-put 'muc "room@conf.example.com"))
+            (should (eq chat-buf
+                        (jabber-chatbuffer--registry-get 'chat "room@conf.example.com")))
+            (should (eq muc-buf
+                        (jabber-chatbuffer--registry-get 'muc "room@conf.example.com"))))
+        (kill-buffer chat-buf)
+        (kill-buffer muc-buf)))))
+
+(ert-deftest jabber-chatbuffer-test-registry-muc-private ()
+  "MUC-private lookup by group+nick returns correct buffer."
+  (let ((jabber-chatbuffer--registry (make-hash-table :test #'equal)))
+    (let ((buf (generate-new-buffer " *test-muc-private*")))
+      (unwind-protect
+          (progn
+            (with-current-buffer buf
+              (setq-local jabber-chatting-with "room@conf.example.com/alice")
+              (jabber-chatbuffer--registry-put
+               'muc-private "room@conf.example.com/alice"))
+            (should (eq buf
+                        (jabber-chatbuffer--registry-get
+                         'muc-private "room@conf.example.com/alice"))))
+        (kill-buffer buf)))))
+
+(ert-deftest jabber-chatbuffer-test-registry-kill-full-jid-removes-bare-key ()
+  "kill-buffer-hook cleans up bare-JID key when chatting-with is a full JID."
+  (let ((jabber-chatbuffer--registry (make-hash-table :test #'equal)))
+    (let ((buf (generate-new-buffer " *test-chat-full-jid*")))
+      (with-current-buffer buf
+        ;; Registered with bare JID (as jabber-chat-create-buffer does).
+        (setq-local jabber-chatting-with "carol@example.com/phone")
+        (jabber-chatbuffer--registry-put 'chat "carol@example.com"))
+      ;; At this point the registry holds bare key.
+      (should (eq buf (jabber-chatbuffer--registry-get 'chat "carol@example.com")))
+      ;; jabber-chatting-with has a resource — kill-hook should still remove
+      ;; the bare-JID key because it normalises via jabber-jid-user.
+      (kill-buffer buf)
+      (should-not (jabber-chatbuffer--registry-get 'chat "carol@example.com")))))
+
 (provide 'jabber-chatbuffer-tests)
 
 ;;; jabber-chatbuffer-tests.el ends here

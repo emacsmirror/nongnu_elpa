@@ -19,7 +19,8 @@ TESTS ?= tests/jabber-xml-tests.el tests/jabber-util-tests.el \
          tests/jabber-mam-tests.el \
          tests/jabber-moderation-tests.el \
          tests/jabber-sm-tests.el \
-         tests/jabber-message-correct-tests.el
+         tests/jabber-message-correct-tests.el \
+         tests/jabber-modeline-tests.el
 
 all: build
 
