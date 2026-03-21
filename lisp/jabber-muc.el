@@ -237,6 +237,8 @@ The format is that of `mode-line-format' and `header-line-format'."
 (declare-function jabber-chat-mode "jabber-chatbuffer.el" ())
 (declare-function jabber-chat-mode-setup "jabber-chatbuffer.el" (jc ewoc-pp))
 (declare-function jabber-chat-ewoc-enter "jabber-chatbuffer.el" (data))
+(declare-function jabber-chatbuffer--registry-put "jabber-chatbuffer" (type key))
+(declare-function jabber-chatbuffer--registry-get "jabber-chatbuffer" (type key))
 (declare-function jabber-chat-insert-backlog-entry "jabber-chat.el" (msg-plist))
 (declare-function jabber-chat--insert-backlog-chunked "jabber-chat.el"
                   (buffer entries callback))
@@ -302,12 +304,8 @@ or `get-buffer-create'."
 		(cons ?s (if jc (plist-get (fsm-get-state-data jc) :server) "")))))
 
 (defun jabber-muc-find-buffer (group)
-  "Find an existing MUC buffer for GROUP, or nil.
-Searches by buffer-local `jabber-group' variable."
-  (cl-find group (buffer-list)
-           :test #'string=
-           :key (lambda (buf)
-                  (buffer-local-value 'jabber-group buf))))
+  "Find an existing MUC buffer for GROUP, or nil."
+  (jabber-chatbuffer--registry-get 'muc group))
 
 (defun jabber-muc-create-buffer (jc group)
   "Prepare a buffer for chatroom GROUP.
@@ -346,6 +344,7 @@ JC is the Jabber connection."
 
     ;; Make sure the connection variable is up to date.
     (setq jabber-buffer-connection jc)
+    (jabber-chatbuffer--registry-put 'muc group)
 
     (current-buffer)))
 
@@ -364,13 +363,8 @@ or `get-buffer-create'."
 		(cons ?s (if jc (plist-get (fsm-get-state-data jc) :server) "")))))
 
 (defun jabber-muc-private-find-buffer (group nickname)
-  "Find an existing private MUC buffer for NICKNAME in GROUP, or nil.
-Searches by buffer-local `jabber-chatting-with' variable."
-  (let ((full-jid (concat group "/" nickname)))
-    (cl-find full-jid (buffer-list)
-             :test #'string=
-             :key (lambda (buf)
-                    (buffer-local-value 'jabber-chatting-with buf)))))
+  "Find an existing MUC private buffer for GROUP/NICKNAME, or nil."
+  (jabber-chatbuffer--registry-get 'muc-private (format "%s/%s" group nickname)))
 
 (defun jabber-muc-private-create-buffer (jc group nickname)
   "Prepare a buffer for chatting with NICKNAME in GROUP.
@@ -383,6 +377,7 @@ JC is the Jabber connection."
       (jabber-chat-mode-setup jc #'jabber-chat-pp))
 
     (setq-local jabber-chatting-with (concat group "/" nickname))
+    (jabber-chatbuffer--registry-put 'muc-private (format "%s/%s" group nickname))
     (setq jabber-send-function #'jabber-chat-send)
     (setq header-line-format jabber-muc-private-header-line-format)
 
