@@ -49,7 +49,7 @@ and tears down on exit."
 (ert-deftest jabber-db-test-schema-version ()
   "The user_version pragma is set to 1 after initialization."
   (jabber-db-test-with-db
-    (should (= 4 (caar (sqlite-select jabber-db--connection
+    (should (= 5 (caar (sqlite-select jabber-db--connection
                                       "PRAGMA user_version"))))))
 
 (ert-deftest jabber-db-test-wal-mode ()
@@ -904,6 +904,40 @@ the corrected jabber-muc-create-buffer order."
     (let ((row (car (sqlite-select jabber-db--connection
                      "SELECT delivered_at FROM message LIMIT 1"))))
       (should (equal row '(nil))))))
+
+(ert-deftest jabber-db-test-retract-with-reason ()
+  "jabber-db-retract-message persists moderator and reason; backlog returns both."
+  (skip-unless (fboundp 'sqlite-open))
+  (let ((jabber-backlog-days 3.0)
+        (jabber-backlog-number 10)
+        (now (floor (float-time))))
+    (jabber-db-test-with-db
+      (jabber-db-store-message "me@x.com" "room@x.com"
+                               "in" "groupchat" "offensive" now
+                               nil nil "srv-retract-1")
+      (jabber-db-retract-message "srv-retract-1" "room@x.com/mod" "spam")
+      (let* ((entries (jabber-db-backlog "me@x.com" "room@x.com"))
+             (entry (car entries)))
+        (should entry)
+        (should (plist-get entry :retracted))
+        (should (equal "room@x.com/mod" (plist-get entry :retracted-by)))
+        (should (equal "spam" (plist-get entry :retraction-reason)))))))
+
+(ert-deftest jabber-db-test-retract-without-reason ()
+  "jabber-db-retract-message with no reason leaves :retraction-reason nil."
+  (skip-unless (fboundp 'sqlite-open))
+  (let ((jabber-backlog-days 3.0)
+        (jabber-backlog-number 10)
+        (now (floor (float-time))))
+    (jabber-db-test-with-db
+      (jabber-db-store-message "me@x.com" "room@x.com"
+                               "in" "groupchat" "msg" now
+                               nil nil "srv-retract-2")
+      (jabber-db-retract-message "srv-retract-2" "room@x.com/mod")
+      (let* ((entries (jabber-db-backlog "me@x.com" "room@x.com"))
+             (entry (car entries)))
+        (should (plist-get entry :retracted))
+        (should-not (plist-get entry :retraction-reason))))))
 
 (provide 'jabber-db-tests)
 

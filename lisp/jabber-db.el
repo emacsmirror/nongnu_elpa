@@ -106,7 +106,8 @@ in the message history.")
   oob_desc     TEXT,
   delivered_at INTEGER,
   displayed_at INTEGER,
-  retracted_by TEXT)"
+  retracted_by TEXT,
+  retraction_reason TEXT)"
     "CREATE INDEX IF NOT EXISTS idx_msg_peer_ts
   ON message(account, peer, timestamp)"
     "CREATE INDEX IF NOT EXISTS idx_msg_stanza_id
@@ -186,9 +187,14 @@ END"
   (let ((version (caar (sqlite-select db "PRAGMA user_version"))))
     (when (zerop version)
       ;; Fresh database: create latest schema, skip intermediate migrations.
+      ;; NOTE: for the v0.10.0 release, jabber-db.el is new (absent in v0.9.0),
+      ;; so there are no real-world user DBs to migrate.  At release time,
+      ;; collapse this entire migration chain: remove all (when (< version N))
+      ;; blocks, set user_version=1 here, and update the schema-version test.
+      ;; Alpha tester DBs should be deleted before upgrading to the release.
       (jabber-db--init-schema db)
-      (sqlite-execute db "PRAGMA user_version=4")
-      (setq version 4))
+      (sqlite-execute db "PRAGMA user_version=5")
+      (setq version 5))
     (when (< version 2)
       ;; v1->v2: Remove duplicate messages that lack stanza_id and server_id.
       ;; These were created by MUC server history replayed on every join.
@@ -205,7 +211,11 @@ DELETE FROM message WHERE id NOT IN (
     (when (< version 4)
       ;; v3->v4: Add retracted_by for XEP-0425 moderated retractions.
       (sqlite-execute db "ALTER TABLE message ADD COLUMN retracted_by TEXT")
-      (sqlite-execute db "PRAGMA user_version=4"))))
+      (sqlite-execute db "PRAGMA user_version=4"))
+    (when (< version 5)
+      ;; v4->v5: Add retraction_reason for XEP-0425.
+      (sqlite-execute db "ALTER TABLE message ADD COLUMN retraction_reason TEXT")
+      (sqlite-execute db "PRAGMA user_version=5"))))
 
 (defun jabber-db-ensure-open ()
   "Open the SQLite database, creating it if needed.  Idempotent.
@@ -327,12 +337,13 @@ The IS NULL guard prevents overwriting an earlier timestamp."
                             column column)
                     (list timestamp stanza-id))))
 
-(defun jabber-db-retract-message (server-id retracted-by)
-  "Mark the message with SERVER-ID as retracted by RETRACTED-BY."
+(defun jabber-db-retract-message (server-id retracted-by &optional reason)
+  "Mark the message with SERVER-ID as retracted by RETRACTED-BY.
+Optional REASON is the human-readable retraction reason string."
   (when (and jabber-db--connection server-id)
     (sqlite-execute jabber-db--connection
-                    "UPDATE message SET retracted_by = ? WHERE server_id = ?"
-                    (list retracted-by server-id))))
+                    "UPDATE message SET retracted_by = ?, retraction_reason = ? WHERE server_id = ?"
+                    (list retracted-by reason server-id))))
 
 ;;; Retrieval
 
@@ -341,7 +352,7 @@ The IS NULL guard prevents overwriting an earlier timestamp."
 ROW columns match the SELECT in `jabber-db-backlog'."
   (seq-let (account peer direction body timestamp resource type
             oob-url oob-desc encrypted stanza-id delivered-at
-            displayed-at server-id retracted-by)
+            displayed-at server-id retracted-by retraction-reason)
       row
     (let ((from (if (string= direction "in")
                     (if resource (concat peer "/" resource) peer)
@@ -356,6 +367,7 @@ ROW columns match the SELECT in `jabber-db-backlog'."
             :encrypted (and encrypted (not (zerop encrypted)))
             :retracted (and retracted-by t)
             :retracted-by retracted-by
+            :retraction-reason retraction-reason
             :direction direction
             :msg-type type
             :oob-url oob-url
@@ -384,7 +396,7 @@ If nil, `jabber-backlog-days' is used to compute the cutoff."
                   db
                   "SELECT account, peer, direction, body, timestamp, resource, type, \
 oob_url, oob_desc, encrypted, stanza_id, delivered_at, displayed_at, \
-server_id, retracted_by \
+server_id, retracted_by, retraction_reason \
 FROM message \
 WHERE account = ? AND peer = ? AND timestamp >= ? \
 ORDER BY timestamp DESC LIMIT ?"

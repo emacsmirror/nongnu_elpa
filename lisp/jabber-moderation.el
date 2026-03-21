@@ -41,9 +41,9 @@
 (declare-function jabber-chat-ewoc-find-by-id "jabber-chatbuffer" (stanza-id))
 (declare-function jabber-send-iq "jabber-iq"
                   (jc to type query success-callback success-closure-data
-                   error-callback error-closure-data))
+                   error-callback error-closure-data &optional result-id))
 (declare-function jabber-report-success "jabber-util" (_jc xml-data context))
-(declare-function jabber-db-retract-message "jabber-db" (server-id retracted-by))
+(declare-function jabber-db-retract-message "jabber-db" (server-id retracted-by &optional reason))
 
 (defvar jabber-message-chain)           ; jabber-core.el
 (defvar jabber-chat-ewoc)              ; jabber-chatbuffer.el
@@ -75,7 +75,7 @@ the original message in the MUC buffer and replace it with a tombstone."
            (reason-el (car (jabber-xml-get-children retract 'reason)))
            (reason (car (jabber-xml-node-children reason-el)))
            (buf (jabber-muc-find-buffer room)))
-      (jabber-db-retract-message stanza-id moderator)
+      (jabber-db-retract-message stanza-id moderator reason)
       (when buf
         (with-current-buffer buf
           (when-let* ((node (jabber-chat-ewoc-find-by-id stanza-id))
