@@ -292,7 +292,6 @@ not jabber-message-correct--replace-id itself."
   "jabber-muc-process-message must not apply corrections from delayed stanzas.
 Regression guard: a delayed correction arriving in MUC history replay
 must not mutate the DB or the ewoc."
-  :expected-result :passed
   (let ((apply-called nil)
         (stanza `(message ((from . "room@muc.example.com/alice")
                            (id . "corr-2")
@@ -313,12 +312,11 @@ must not mutate the DB or the ewoc."
     (should-not apply-called)))
 
 (ert-deftest jabber-message-correct-test-mam-syncing-skipped-by-chat-dispatch ()
-  "jabber-process-chat must not apply corrections while jabber-mam--syncing is t.
+  "jabber-process-chat must not apply corrections while jabber-mam--syncing is non-nil.
 Regression guard: a MAM catch-up stanza carrying <replace> must not
 be treated as a live edit."
-  :expected-result :passed
   (let ((apply-called nil)
-        (jabber-mam--syncing t)
+        (jabber-mam--syncing (list (cons 'fake-jc "queryid-test")))
         (stanza `(message ((from . "alice@example.com/phone")
                            (id . "corr-3")
                            (type . "chat"))
@@ -349,12 +347,13 @@ not the correction's stanza-id."
                      :body "orignal"
                      :timestamp (current-time))))
       (jabber-chat-ewoc-enter (list :local msg)))
-    ;; Simulate first correction arriving from DB (apply with valid sender)
+    ;; Simulate first correction arriving as a carbon from another own device.
+    ;; DB returns our account JID (direction=out); corrector is same bare JID.
     (cl-letf (((symbol-function 'jabber-db-message-sender-by-stanza-id)
-               (lambda (_id) "alice@example.com/phone"))
+               (lambda (_id) "me@example.com"))
               ((symbol-function 'jabber-db-correct-message) #'ignore))
       (jabber-message-correct--apply
-       "orig-chain-1" "original" "alice@example.com/phone" nil (current-buffer)))
+       "orig-chain-1" "original" "me@example.com/other-device" nil (current-buffer)))
     ;; After the apply the node's :id must still be the original id
     (let* ((node (jabber-chat-ewoc-find-by-id "orig-chain-1"))
            (msg (cadr (ewoc-data node))))
