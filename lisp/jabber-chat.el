@@ -318,14 +318,8 @@ or `get-buffer-create'."
 		(cons ?s (if jc (plist-get (fsm-get-state-data jc) :server) "")))))
 
 (defun jabber-chat-find-buffer (chat-with)
-  "Find an existing chat buffer for CHAT-WITH, or nil.
-Searches by buffer-local `jabber-chatting-with' variable."
-  (let ((bare (jabber-jid-user chat-with)))
-    (cl-find bare (buffer-list)
-             :test #'string=
-             :key (lambda (buf)
-                    (when-let* ((jid (buffer-local-value 'jabber-chatting-with buf)))
-                      (jabber-jid-user jid))))))
+  "Find an existing 1:1 chat buffer for CHAT-WITH, or nil."
+  (jabber-chatbuffer--registry-get 'chat (jabber-jid-user chat-with)))
 
 (defun jabber-chat-create-buffer (jc chat-with)
   "Prepare a buffer for chatting with CHAT-WITH.
@@ -337,6 +331,7 @@ JC is the Jabber connection."
 
       (make-local-variable 'jabber-chatting-with)
       (setq jabber-chatting-with chat-with)
+      (jabber-chatbuffer--registry-put 'chat (jabber-jid-user chat-with))
 
       (jabber-chat-mode-setup jc #'jabber-chat-pp)
       (setq jabber-send-function #'jabber-chat-send)
