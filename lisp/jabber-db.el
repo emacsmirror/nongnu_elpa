@@ -357,6 +357,22 @@ Optional REASON is the human-readable retraction reason string."
                     "UPDATE message SET body = ?, edited = 1 WHERE stanza_id = ?"
                     (list new-body stanza-id))))
 
+(defun jabber-db-message-sender-by-stanza-id (stanza-id)
+  "Return the from-JID of the stored message with STANZA-ID, or nil.
+For incoming messages returns the full sender JID (peer/resource or peer).
+For outgoing messages returns the account bare JID, enabling validation
+of carbon copies of corrections sent from another device."
+  (when (and jabber-db--connection stanza-id)
+    (when-let* ((row (car (sqlite-select
+                           jabber-db--connection
+                           "SELECT direction, peer, resource, account \
+FROM message WHERE stanza_id = ? LIMIT 1"
+                           (list stanza-id)))))
+      (seq-let (direction peer resource account) row
+        (if (string= direction "in")
+            (if resource (concat peer "/" resource) peer)
+          account)))))
+
 ;;; Retrieval
 
 (defun jabber-db--row-to-plist (row)
