@@ -87,8 +87,12 @@ Available sections: `presence', `contacts', `activity'."
             (cdr (assoc *jabber-current-show* jabber-presence-strings))
           "Offline")))
 
-(defun jabber-mode-line-count-contacts (&rest _ignore)
-  "Update `jabber-mode-line-contacts' with roster counts."
+(defvar jabber-mode-line--recount-timer nil
+  "Pending timer for a debounced `jabber-mode-line--do-count-contacts' call.")
+
+(defun jabber-mode-line--do-count-contacts ()
+  "Perform the actual O(roster) presence recount."
+  (setq jabber-mode-line--recount-timer nil)
   (let ((count (list (cons "chat" 0)
 		     (cons "" 0)
 		     (cons "away" 0)
@@ -109,7 +113,15 @@ Available sections: `presence', `contacts', `activity'."
 			 (cdr (assoc "dnd" count)))
 		      (cdr (assoc nil count)))
 	    (apply #'format "(%d/%d/%d/%d/%d/%d)"
-		   (mapcar #'cdr count))))))
+		   (mapcar #'cdr count))))
+    (force-mode-line-update t)))
+
+(defun jabber-mode-line-count-contacts (&rest _ignore)
+  "Schedule a debounced roster recount (coalesces rapid presence bursts)."
+  (when (timerp jabber-mode-line--recount-timer)
+    (cancel-timer jabber-mode-line--recount-timer))
+  (setq jabber-mode-line--recount-timer
+        (run-with-timer 0.1 nil #'jabber-mode-line--do-count-contacts)))
 
 (defun jabber-modeline--add-to-frame-title ()
   "Add activity count to `frame-title-format' and `icon-title-format'."
@@ -130,6 +142,10 @@ Available sections: `presence', `contacts', `activity'."
 
 (defun jabber-modeline--on-disconnect ()
   "Clear all modeline state on disconnect."
+  (when (timerp jabber-mode-line--recount-timer)
+    (cancel-timer jabber-mode-line--recount-timer)
+    (setq jabber-mode-line--recount-timer nil))
+  (jabber-mode-line--do-count-contacts)
   (jabber-activity--on-disconnect)
   (jabber-mode-line-presence-update))
 
@@ -156,6 +172,9 @@ Which sections are shown is controlled by `jabber-modeline-sections'."
         (when jabber-activity-count-in-title
           (jabber-modeline--add-to-frame-title))
         (add-to-list 'global-mode-string jabber-modeline--eval-form t))
+    (when (timerp jabber-mode-line--recount-timer)
+      (cancel-timer jabber-mode-line--recount-timer)
+      (setq jabber-mode-line--recount-timer nil))
     (setq jabber-mode-line-presence ""
           jabber-mode-line-contacts "")
     (remove-hook 'jabber-send-presence
