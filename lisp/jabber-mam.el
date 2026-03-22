@@ -566,6 +566,50 @@ query completes (including all pagination)."
         (jabber-mam--query jc nil queryid nil nil peer)
       (jabber-mam--query jc nil queryid peer nil nil))))
 
+;;; Disconnect cleanup
+
+(defun jabber-mam--cleanup-connection (jc)
+  "Clean up MAM state for connection JC.
+Called from `jabber-lost-connection-hooks' on involuntary disconnect."
+  (let ((jc-queries (cl-remove-if-not
+                     (lambda (entry) (eq (car entry) jc))
+                     jabber-mam--syncing)))
+    (when jc-queries
+      (setq jabber-mam--syncing
+            (cl-set-difference jabber-mam--syncing jc-queries))
+      (cl-decf jabber-mam--tx-depth (length jc-queries))
+      (when (< jabber-mam--tx-depth 0)
+        (setq jabber-mam--tx-depth 0))
+      (when (zerop jabber-mam--tx-depth)
+        (condition-case nil
+            (when-let* ((db (jabber-db-ensure-open)))
+              (sqlite-execute db "COMMIT"))
+          (error nil)))
+      ;; Remove leaked completion callbacks for this connection's queries.
+      (dolist (entry jc-queries)
+        (let ((cb (assoc (cdr entry) jabber-mam--completion-callbacks
+                         #'string=)))
+          (when cb
+            (setq jabber-mam--completion-callbacks
+                  (delq cb jabber-mam--completion-callbacks)))))
+      ;; Trigger redisplay for any dirty buffers accumulated so far.
+      (when jabber-mam--dirty-buffers
+        (run-with-timer 0.05 nil #'jabber-mam--redisplay-next)))))
+
+(defun jabber-mam--cleanup-all ()
+  "Clean up all MAM state on voluntary disconnect.
+Called from `jabber-pre-disconnect-hook'."
+  (when (> jabber-mam--tx-depth 0)
+    (condition-case nil
+        (when-let* ((db (jabber-db-ensure-open)))
+          (sqlite-execute db "COMMIT"))
+      (error nil)))
+  (setq jabber-mam--syncing nil
+        jabber-mam--tx-depth 0
+        jabber-mam--completion-callbacks nil)
+  (when jabber-mam--dirty-buffers
+    (run-with-timer 0.05 nil #'jabber-mam--redisplay-next)))
+
 ;;; Registration
 
 (jabber-disco-advertise-feature jabber-mam-xmlns)
@@ -575,7 +619,9 @@ query completes (including all pagination)."
 (add-to-list 'jabber-message-chain #'jabber-mam--process-message)
 
 (with-eval-after-load "jabber-core"
-  (add-hook 'jabber-post-connect-hooks #'jabber-mam-maybe-catchup))
+  (add-hook 'jabber-post-connect-hooks #'jabber-mam-maybe-catchup)
+  (add-hook 'jabber-pre-disconnect-hook #'jabber-mam--cleanup-all)
+  (add-hook 'jabber-lost-connection-hooks #'jabber-mam--cleanup-connection))
 
 (provide 'jabber-mam)
 ;;; jabber-mam.el ends here

@@ -406,6 +406,62 @@ OUR-NICK is our nickname; every 3rd message is from us."
           (should (equal "room@conference.example.com"
                          (nth 5 captured-args))))))))
 
+;;; Group 7: disconnect cleanup
+
+(ert-deftest jabber-mam-test-cleanup-all-commits-transaction ()
+  "cleanup-all commits open transaction and resets state."
+  (jabber-mam-test-with-db
+    (sqlite-execute (jabber-db-ensure-open) "BEGIN")
+    (let ((jabber-mam--tx-depth 2)
+          (jabber-mam--syncing '((jc1 . "q1") (jc2 . "q2")))
+          (jabber-mam--completion-callbacks '(("q1" . ignore) ("q2" . ignore)))
+          (jabber-mam--dirty-buffers nil))
+      (jabber-mam--cleanup-all)
+      (should (= 0 jabber-mam--tx-depth))
+      (should-not jabber-mam--syncing)
+      (should-not jabber-mam--completion-callbacks)
+      ;; Transaction was committed; verify we can write without error.
+      (sqlite-execute (jabber-db-ensure-open)
+                      "INSERT INTO message (account,peer,direction,type,body,timestamp) \
+VALUES ('a','b','in','chat','test',1)")
+      (should (caar (sqlite-select (jabber-db-ensure-open)
+                                   "SELECT 1 FROM message WHERE body='test'"))))))
+
+(ert-deftest jabber-mam-test-cleanup-connection-scoped ()
+  "cleanup-connection only removes entries for the given connection."
+  (jabber-mam-test-with-db
+    (sqlite-execute (jabber-db-ensure-open) "BEGIN")
+    (let ((jabber-mam--tx-depth 2)
+          (jabber-mam--syncing '((jc1 . "q1") (jc2 . "q2")))
+          (jabber-mam--completion-callbacks '(("q1" . ignore)))
+          (jabber-mam--dirty-buffers nil))
+      (jabber-mam--cleanup-connection 'jc1)
+      (should (= 1 jabber-mam--tx-depth))
+      (should (equal '((jc2 . "q2")) jabber-mam--syncing))
+      (should-not jabber-mam--completion-callbacks))))
+
+(ert-deftest jabber-mam-test-cleanup-triggers-redisplay ()
+  "cleanup-all schedules redisplay when dirty buffers exist."
+  (jabber-mam-test-with-db
+    (let ((jabber-mam--tx-depth 1)
+          (jabber-mam--syncing '((jc1 . "q1")))
+          (jabber-mam--completion-callbacks nil)
+          (jabber-mam--dirty-buffers (list (current-buffer)))
+          (timer-scheduled nil))
+      (cl-letf (((symbol-function 'run-with-timer)
+                 (lambda (&rest _) (setq timer-scheduled t))))
+        (jabber-mam--cleanup-all)
+        (should timer-scheduled)))))
+
+(ert-deftest jabber-mam-test-cleanup-all-noop-when-idle ()
+  "cleanup-all is safe to call with no active queries."
+  (let ((jabber-mam--tx-depth 0)
+        (jabber-mam--syncing nil)
+        (jabber-mam--completion-callbacks nil)
+        (jabber-mam--dirty-buffers nil))
+    (jabber-mam--cleanup-all)
+    (should (= 0 jabber-mam--tx-depth))))
+
 (provide 'jabber-mam-tests)
 
 ;;; jabber-mam-tests.el ends here
