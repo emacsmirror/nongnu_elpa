@@ -132,9 +132,14 @@ CALLBACK is called with no arguments when the query finishes.")
 
 ;;; Query building
 
+(defvar jabber-mam--queryid-counter 0
+  "Monotonic counter for unique MAM query IDs.")
+
 (defun jabber-mam--make-queryid ()
   "Generate a unique query ID for MAM."
-  (format "mam-%d" (floor (* 1000000 (float-time)))))
+  (format "mam-%d-%d"
+          (cl-incf jabber-mam--queryid-counter)
+          (floor (float-time))))
 
 (defun jabber-mam--build-query (queryid &optional with start after-id max)
   "Build a MAM <query> sexp.
