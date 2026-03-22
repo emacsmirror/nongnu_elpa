@@ -48,6 +48,10 @@
 (declare-function jabber-chat-ewoc-enter "jabber-chatbuffer")
 (declare-function jabber-httpupload--upload "jabber-httpupload")
 (declare-function jabber-httpupload--send-url "jabber-httpupload")
+(declare-function jabber-db--outgoing-handler "jabber-db" (body id))
+(declare-function jabber-chat-register-decrypt-handler "jabber-chat"
+  (id &rest props))
+(declare-function jabber-chat--set-body "jabber-chat" (xml-data text))
 
 (defvar jabber-post-connect-hooks)
 (defvar jabber-pre-disconnect-hook)
@@ -735,33 +739,29 @@ Returns modified XML-DATA with decrypted body, or nil on failure."
             xml-data)
         xml-data))))
 
-(defun jabber-omemo--decrypt-if-needed (orig-fn jc xml-data)
-  "Around advice for `jabber-chat--decrypt-if-needed'.
-If XML-DATA contains an OMEMO <encrypted> element, decrypt it.
-Otherwise delegate to ORIG-FN."
-  ;; Own MUC echo: recover plaintext from cache to avoid decrypt failure.
+(defun jabber-omemo--detect-encrypted (xml-data)
+  "Detect OMEMO encryption in XML-DATA.
+Returns a detection plist or nil.  Checks MUC echo cache first,
+then looks for <encrypted> element."
   (let* ((msg-id (jabber-xml-get-attribute xml-data 'id))
-         (cached (and msg-id (gethash msg-id jabber-omemo--sent-muc-plaintexts))))
-    (if cached
-        (progn
-          (remhash msg-id jabber-omemo--sent-muc-plaintexts)
-          (let ((body-el (car (jabber-xml-get-children xml-data 'body))))
-            (if body-el
-                (setcar (cddr body-el) cached)
-              (nconc xml-data (list `(body () ,cached)))))
-          xml-data)
-      (let ((parsed (jabber-omemo--parse-encrypted xml-data)))
-        (if (null parsed)
-            (funcall orig-fn jc xml-data)
-          (condition-case err
-              (jabber-omemo--decrypt-stanza jc xml-data parsed)
-            (error
-             (message "OMEMO decrypt failed: %s" (error-message-string err))
-             (let ((body-el (car (jabber-xml-get-children xml-data 'body))))
-               (if body-el
-                   (setcar (cddr body-el) "[OMEMO: could not decrypt]")
-                 (nconc xml-data (list '(body () "[OMEMO: could not decrypt]")))))
-             xml-data)))))))
+         (cached (and msg-id
+                      (gethash msg-id jabber-omemo--sent-muc-plaintexts))))
+    (cond
+     (cached
+      (remhash msg-id jabber-omemo--sent-muc-plaintexts)
+      (list :type 'muc-echo :cached cached))
+     (t
+      (when-let* ((parsed (jabber-omemo--parse-encrypted xml-data)))
+        (list :type 'omemo :parsed parsed))))))
+
+(defun jabber-omemo--decrypt-handler (jc xml-data detected)
+  "Decrypt OMEMO message.  DETECTED is the plist from detect."
+  (pcase (plist-get detected :type)
+    ('muc-echo
+     (jabber-chat--set-body xml-data (plist-get detected :cached))
+     xml-data)
+    ('omemo
+     (jabber-omemo--decrypt-stanza jc xml-data (plist-get detected :parsed)))))
 
 (defun jabber-omemo--send-heartbeat (jc to device-id heartbeat-bytes)
   "Send OMEMO heartbeat (empty encrypted message, no payload).
@@ -813,79 +813,132 @@ all-sessions is a list of (DEVICE-ID . SESSION-PTR)."
 
 ;;; Send path
 
-(defvar-local jabber-omemo--pending-messages nil
-  "Queue of messages awaiting session establishment.")
-
 (defvar jabber-omemo--sent-muc-plaintexts (make-hash-table :test #'equal)
   "Cache of recently-sent OMEMO MUC message plaintexts.
 Keyed by message ID string.  Entries are consumed when the MUC
 server echo is received, so the cache is normally near-empty.")
 
+(defun jabber-omemo--display-pending (buffer body id)
+  "Display BODY in BUFFER as a message with :sending status.
+ID is the stanza id.  Persists to DB immediately.
+Returns the ewoc node, or nil if BUFFER is dead."
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (let ((msg-plist (list :id id
+                             :body body
+                             :timestamp (current-time)
+                             :status :sending
+                             :encrypted t)))
+        (jabber-db--outgoing-handler body id)
+        (when (run-hook-with-args-until-success
+               'jabber-chat-printers msg-plist :local :printp)
+          (jabber-maybe-print-rare-time
+           (jabber-chat-ewoc-enter (list :local msg-plist))))))))
+
+(defun jabber-omemo--send-failed (buffer node body reason)
+  "Mark NODE as :undelivered and restore BODY to input area.
+BUFFER is the chat buffer.  REASON is shown via `message'."
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (when node
+        (plist-put (cadr (ewoc-data node)) :status :undelivered)
+        (ewoc-invalidate jabber-chat-ewoc node))
+      (goto-char (point-max))
+      (insert body)))
+  (message "%s" reason))
+
 (defun jabber-omemo--send-chat (jc body)
   "Send BODY as OMEMO-encrypted message via JC.
 Must be called from a chat buffer with `jabber-chatting-with' set."
-  (let ((recipient (jabber-jid-user jabber-chatting-with)))
+  (let* ((recipient (jabber-jid-user jabber-chatting-with))
+         (chat-with jabber-chatting-with)
+         (buffer (current-buffer))
+         (id (format "emacs-msg-%.6f" (float-time)))
+         (node (jabber-omemo--display-pending buffer body id)))
     (jabber-omemo--ensure-sessions
      jc recipient
      (lambda (recipient-sessions)
        (if (null recipient-sessions)
-           (message "OMEMO: no sessions for %s, cannot send" recipient)
+           (jabber-omemo--send-failed
+            buffer node body
+            (format "OMEMO: no sessions for %s, cannot send" recipient))
          (jabber-omemo--ensure-sessions
           jc (jabber-connection-bare-jid jc)
           (lambda (own-sessions)
             (jabber-omemo--send-encrypted
-             jc body recipient
-             (append recipient-sessions own-sessions)))))))))
+             jc body chat-with
+             (append recipient-sessions own-sessions)
+             buffer node id))))))))
 
-(defun jabber-omemo--send-encrypted (jc body _recipient all-sessions)
+(defun jabber-omemo--send-encrypted (jc body chat-with all-sessions
+                                        &optional buffer node id)
   "Build and send an OMEMO-encrypted stanza.
-JC is the connection.  BODY is the plaintext.  _RECIPIENT is the
-bare JID (unused; `jabber-chatting-with' is used for addressing).
-ALL-SESSIONS is a list of (DEVICE-ID . SESSION-PTR)
-for recipient + own other devices."
-  (let* ((plaintext (encode-coding-string body 'utf-8))
+JC is the connection.  BODY is the plaintext.  CHAT-WITH is the
+recipient full/bare JID for addressing.  ALL-SESSIONS is a list
+of (DEVICE-ID . SESSION-PTR) for recipient + own other devices.
+Optional BUFFER, NODE, ID support immediate display: when NODE is
+non-nil, update its status from :sending to :sent instead of
+inserting a new ewoc entry."
+  (let* ((chat-with (or chat-with jabber-chatting-with))
+         (id (or id (format "emacs-msg-%.6f" (float-time))))
+         (buffer (or buffer (current-buffer)))
+         (plaintext (encode-coding-string body 'utf-8))
          (enc-result (jabber-omemo-encrypt-message plaintext))
          (encrypted-xml (jabber-omemo--build-encrypted-xml
                          jc all-sessions enc-result))
-         (id (format "emacs-msg-%.6f" (float-time)))
-         (stanza `(message ((to . ,jabber-chatting-with)
+         (stanza `(message ((to . ,chat-with)
                             (type . "chat")
                             (id . ,id))
                            (body () ,jabber-omemo-fallback-body)
                            ,encrypted-xml
                            ,(jabber-hints-store))))
-    (dolist (hook jabber-chat-send-hooks)
-      (if (eq hook t)
-          (when (local-variable-p 'jabber-chat-send-hooks)
-            (dolist (global-hook (default-value 'jabber-chat-send-hooks))
-              (nconc stanza (funcall global-hook body id))))
-        (nconc stanza (funcall hook body id))))
-    (let ((msg-plist (jabber-chat--msg-plist-from-stanza stanza)))
-      (plist-put msg-plist :body body)
-      (plist-put msg-plist :status :sent)
-      (when (run-hook-with-args-until-success 'jabber-chat-printers
-                                              msg-plist :local :printp)
-        (jabber-maybe-print-rare-time
-         (jabber-chat-ewoc-enter (list :local msg-plist)))))
+    (when (buffer-live-p buffer)
+      (with-current-buffer buffer
+        (dolist (hook jabber-chat-send-hooks)
+          (if (eq hook t)
+              (when (local-variable-p 'jabber-chat-send-hooks)
+                (dolist (global-hook (default-value 'jabber-chat-send-hooks))
+                  (nconc stanza (funcall global-hook body id))))
+            (nconc stanza (funcall hook body id))))
+        (if node
+            (progn
+              (plist-put (cadr (ewoc-data node)) :status :sent)
+              (ewoc-invalidate jabber-chat-ewoc node))
+          (let ((msg-plist (jabber-chat--msg-plist-from-stanza stanza)))
+            (plist-put msg-plist :body body)
+            (plist-put msg-plist :status :sent)
+            (when (run-hook-with-args-until-success
+                   'jabber-chat-printers msg-plist :local :printp)
+              (jabber-maybe-print-rare-time
+               (jabber-chat-ewoc-enter (list :local msg-plist))))))))
     (jabber-send-sexp jc stanza)))
 
 (defun jabber-omemo--send-muc (jc body)
   "Send BODY as OMEMO-encrypted groupchat message via JC.
 Must be called from a MUC buffer with `jabber-group' set."
   (let* ((group jabber-group)
+         (buffer (current-buffer))
          (participants (cdr (assoc group jabber-muc-participants)))
          (bare-jids (jabber-omemo--muc-participant-jids group participants)))
     (if (null bare-jids)
-        (user-error "OMEMO: no participant JIDs available (room may be anonymous)")
+        (progn
+          (jabber-omemo--send-failed
+           buffer nil body
+           "OMEMO: no participant JIDs available (room may be anonymous)")
+          (user-error "OMEMO: no participant JIDs available (room may be anonymous)"))
       (jabber-omemo--ensure-sessions-multi
        jc bare-jids
        (lambda (all-sessions)
-         (jabber-omemo--ensure-sessions
-          jc (jabber-connection-bare-jid jc)
-          (lambda (own-sessions)
-            (jabber-omemo--send-encrypted-muc
-             jc body group
-             (append all-sessions own-sessions)))))))))
+         (if (null all-sessions)
+             (jabber-omemo--send-failed
+              buffer nil body
+              "OMEMO: no sessions for MUC participants, cannot send")
+           (jabber-omemo--ensure-sessions
+            jc (jabber-connection-bare-jid jc)
+            (lambda (own-sessions)
+              (jabber-omemo--send-encrypted-muc
+               jc body group
+               (append all-sessions own-sessions))))))))))
 
 (defun jabber-omemo--send-encrypted-muc (jc body group all-sessions)
   "Build and send an OMEMO-encrypted MUC stanza.
@@ -1050,8 +1103,12 @@ Returns non-nil if handled, nil to fall through to plaintext."
   (setq jabber-httpupload-send-url-function
         #'jabber-omemo--httpupload-send-url))
 
-(advice-add 'jabber-chat--decrypt-if-needed :around
-            #'jabber-omemo--decrypt-if-needed '((depth . 10)))
+(jabber-chat-register-decrypt-handler
+ 'omemo
+ :detect  #'jabber-omemo--detect-encrypted
+ :decrypt #'jabber-omemo--decrypt-handler
+ :priority 10
+ :error-label "OMEMO")
 
 (provide 'jabber-omemo)
 ;;; jabber-omemo.el ends here

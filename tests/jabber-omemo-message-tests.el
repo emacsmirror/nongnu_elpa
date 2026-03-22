@@ -141,46 +141,47 @@ Clears OMEMO in-memory caches and tears down on exit."
               ;; Should have a payload
               (should (jabber-xml-get-children xml 'payload)))))))))
 
-;;; Group 4: Decrypt-if-needed advice
+;;; Group 4: detect-encrypted
 
-(ert-deftest jabber-omemo-message-test-decrypt-if-needed-passthrough ()
-  "decrypt-if-needed passes non-OMEMO messages through unchanged."
-  (let ((xml-data '(message ((from . "alice@example.com")
-                             (type . "chat"))
-                            (body () "hello plain")))
-        (jc (list :mock)))
-    (should (eq xml-data
-                (jabber-omemo--decrypt-if-needed #'identity jc xml-data)))))
-
-(ert-deftest jabber-omemo-message-test-decrypt-if-needed-error ()
-  "decrypt-if-needed replaces body on decrypt failure."
+(ert-deftest jabber-omemo-message-test-detect-encrypted-returns-parsed ()
+  "detect-encrypted returns (:type omemo :parsed ...) for OMEMO stanza."
   (let* ((xml-data
           `(message ((from . "alice@example.com/phone")
                      (type . "chat"))
                     (body () "fallback")
                     (encrypted ((xmlns . "eu.siacs.conversations.axolotl"))
-                               (header ((sid . "999"))
-                                       (key ((rid . "1"))
-                                            ,(base64-encode-string "bad" t))
-                                       (iv () ,(base64-encode-string (make-string 12 0) t)))
-                               (payload () ,(base64-encode-string "bad" t)))))
-         (jc (list :mock)))
-    ;; Mock get-device-id to return 1 (so we find our key)
-    (cl-letf (((symbol-function 'jabber-omemo--get-device-id)
-               (lambda (_jc) 1))
-              ((symbol-function 'jabber-connection-bare-jid)
-               (lambda (_jc) "bob@example.com"))
-              ((symbol-function 'jabber-jid-user)
-               (lambda (jid) (car (split-string jid "/"))))
-              ((symbol-function 'jabber-omemo--get-store)
-               (lambda (_jc) nil))
-              ((symbol-function 'jabber-omemo--get-session)
-               (lambda (_jc _jid _did) nil)))
-      (let ((result (jabber-omemo--decrypt-if-needed #'identity jc xml-data)))
-        (should result)
-        (let ((body (car (jabber-xml-node-children
-                          (car (jabber-xml-get-children result 'body))))))
-          (should (string= "[OMEMO: could not decrypt]" body)))))))
+                               (header ((sid . "12345"))
+                                       (key ((rid . "67890") (prekey . "true"))
+                                            ,(base64-encode-string "key-data" t))
+                                       (iv () ,(base64-encode-string (make-string 12 ?x) t)))
+                               (payload () ,(base64-encode-string "ciphertext" t)))))
+         (result (jabber-omemo--detect-encrypted xml-data)))
+    (should result)
+    (should (eq 'omemo (plist-get result :type)))
+    (should (plist-get result :parsed))
+    (should (= 12345 (plist-get (plist-get result :parsed) :sid)))))
+
+(ert-deftest jabber-omemo-message-test-detect-encrypted-returns-nil-for-plain ()
+  "detect-encrypted returns nil for plain stanza."
+  (let ((xml-data '(message ((from . "alice@example.com")
+                             (type . "chat"))
+                            (body () "hello plain"))))
+    (should-not (jabber-omemo--detect-encrypted xml-data))))
+
+(ert-deftest jabber-omemo-message-test-detect-encrypted-muc-echo ()
+  "detect-encrypted returns muc-echo plist and consumes cache."
+  (let ((jabber-omemo--sent-muc-plaintexts (make-hash-table :test #'equal)))
+    (puthash "msg-001" "secret text" jabber-omemo--sent-muc-plaintexts)
+    (let* ((xml-data '(message ((from . "room@conf.example.com/me")
+                                (id . "msg-001")
+                                (type . "groupchat"))
+                               (body () "fallback")))
+           (result (jabber-omemo--detect-encrypted xml-data)))
+      (should result)
+      (should (eq 'muc-echo (plist-get result :type)))
+      (should (string= "secret text" (plist-get result :cached)))
+      ;; Cache entry consumed
+      (should-not (gethash "msg-001" jabber-omemo--sent-muc-plaintexts)))))
 
 ;;; Group 5: Trust label formatting
 
