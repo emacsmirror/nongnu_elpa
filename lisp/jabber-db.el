@@ -417,8 +417,7 @@ ROW columns match the SELECT in `jabber-db-backlog'."
             :error-text nil
             :status (cond
                      (displayed-at :displayed)
-                     (delivered-at :delivered)
-                     ((string= direction "out") :undelivered))))))
+                     (delivered-at :delivered))))))
 
 (defun jabber-db-backlog (account peer &optional count start-time)
   "Return the last COUNT messages for PEER on ACCOUNT.

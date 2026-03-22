@@ -182,7 +182,7 @@
             (let ((by-id (make-hash-table :test 'equal)))
               (dolist (e entries)
                 (puthash (plist-get e :id) e by-id))
-              (should (eq :undelivered (plist-get (gethash "id-sent" by-id) :status)))
+              (should-not (plist-get (gethash "id-sent" by-id) :status))
               (should (eq :delivered (plist-get (gethash "id-del" by-id) :status)))
               (should (eq :displayed (plist-get (gethash "id-disp" by-id) :status))))))
       (jabber-db-close)
