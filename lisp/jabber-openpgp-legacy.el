@@ -52,6 +52,9 @@
 (declare-function jabber-maybe-print-rare-time "jabber-chat" (node))
 (declare-function jabber-chat-ewoc-enter "jabber-chatbuffer" (data))
 (declare-function jabber-disco-advertise-feature "jabber-disco" (feature))
+(declare-function jabber-chat-register-decrypt-handler "jabber-chat"
+  (id &rest props))
+(declare-function jabber-chat--set-body "jabber-chat" (xml-data text))
 
 (defvar jabber-chatting-with)           ; jabber-chat.el
 (defvar jabber-group)                   ; jabber-muc.el
@@ -292,41 +295,33 @@ Must be called from a MUC buffer with `jabber-group' set."
 
 ;;; Message decryption (receive)
 
-(defun jabber-openpgp-legacy--decrypt-if-needed (orig-fn jc xml-data)
-  "Around advice for `jabber-chat--decrypt-if-needed'.
-If XML-DATA contains <x xmlns='jabber:x:encrypted'>, decrypt it.
-Otherwise delegate to ORIG-FN.  JC is the Jabber connection."
-  (let* ((x-el (jabber-xml-child-with-xmlns
-                xml-data jabber-openpgp-legacy-encrypted-xmlns))
-         (stripped (and x-el (car (jabber-xml-node-children x-el)))))
-    (if (not (stringp stripped))
-        (funcall orig-fn jc xml-data)
-      (condition-case err
-          (let* ((armored (jabber-openpgp-legacy--rearmor-message stripped))
-                 (ctx (epg-make-context 'OpenPGP))
-                 (plaintext (decode-coding-string
-                             (epg-decrypt-string ctx armored)
-                             'utf-8))
-                 (body-el (car (jabber-xml-get-children xml-data 'body))))
-            (if body-el
-                (setcar (cddr body-el) plaintext)
-              (nconc xml-data (list `(body () ,plaintext))))
-            xml-data)
-        (error
-         (message "XEP-0027 decrypt failed: %s" (error-message-string err))
-         (let ((body-el (car (jabber-xml-get-children xml-data 'body))))
-           (if body-el
-               (setcar (cddr body-el) "[PGP: could not decrypt]")
-             (nconc xml-data
-                    (list '(body () "[PGP: could not decrypt]")))))
-         xml-data)))))
+(defun jabber-openpgp-legacy--detect-encrypted (xml-data)
+  "Return stripped armor text from <x xmlns='jabber:x:encrypted'>, or nil."
+  (when-let* ((x-el (jabber-xml-child-with-xmlns
+                      xml-data jabber-openpgp-legacy-encrypted-xmlns))
+              (stripped (car (jabber-xml-node-children x-el))))
+    (and (stringp stripped) stripped)))
+
+(defun jabber-openpgp-legacy--decrypt-handler (_jc xml-data stripped)
+  "Decrypt XEP-0027 message.  STRIPPED is the base64-armored ciphertext."
+  (let* ((armored (jabber-openpgp-legacy--rearmor-message stripped))
+         (ctx (epg-make-context 'OpenPGP))
+         (plaintext (decode-coding-string
+                     (epg-decrypt-string ctx armored)
+                     'utf-8)))
+    (jabber-chat--set-body xml-data plaintext)
+    xml-data))
 
 ;;; Registration
 
 (jabber-disco-advertise-feature jabber-openpgp-legacy-signed-xmlns)
 
-(advice-add 'jabber-chat--decrypt-if-needed :around
-            #'jabber-openpgp-legacy--decrypt-if-needed '((depth . 30)))
+(jabber-chat-register-decrypt-handler
+ 'openpgp-legacy
+ :detect  #'jabber-openpgp-legacy--detect-encrypted
+ :decrypt #'jabber-openpgp-legacy--decrypt-handler
+ :priority 30
+ :error-label "PGP")
 
 (add-to-list 'jabber-presence-element-functions
              #'jabber-openpgp-legacy--sign-presence)
