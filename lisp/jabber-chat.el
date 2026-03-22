@@ -546,9 +546,18 @@ carbon-forwarded message.  JC is the Jabber connection."
     (or carbon-buffer
         (jabber-chat-create-buffer jc from))))
 
+(defvar jabber-chat--crypto-loaded nil
+  "Non-nil after crypto modules have been loaded.")
+
 (defun jabber-chat--decrypt-if-needed (_jc xml-data)
-  "Return XML-DATA, possibly decrypted.  No-op until OMEMO is loaded.
+  "Return XML-DATA, possibly decrypted.
+On first call, eagerly loads OMEMO and OpenPGP modules so their
+`:around' advice is installed before any stanza is processed.
 _JC is the Jabber connection, unused until OMEMO advises this function."
+  (unless jabber-chat--crypto-loaded
+    (condition-case nil (require 'jabber-omemo nil t) (error nil))
+    (condition-case nil (require 'jabber-openpgp nil t) (error nil))
+    (setq jabber-chat--crypto-loaded t))
   xml-data)
 
 (defun jabber-chat--display-message (_jc _xml-data chat-buffer
