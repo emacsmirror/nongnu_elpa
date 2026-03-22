@@ -23,6 +23,9 @@
        (when (file-directory-p jabber-mam-test--dir)
          (delete-directory jabber-mam-test--dir t)))))
 
+(defvar jabber-mam-test-queryid "test-query"
+  "Default query ID used in test MAM stanzas.")
+
 (defun jabber-mam-test--make-message (index &optional peer type)
   "Build a fake MAM result <message> stanza for message INDEX.
 PEER defaults to \"friend@example.com\".
@@ -44,6 +47,7 @@ TYPE defaults to \"chat\"."
     ;; Outer <message> with MAM <result> wrapping forwarded content
     `(message ((from . "me@example.com"))
               (result ((xmlns . ,jabber-mam-xmlns)
+                       (queryid . ,jabber-mam-test-queryid)
                        (id . ,archive-id))
                       (forwarded ((xmlns . ,jabber-mam-forward-xmlns))
                                  (delay ((xmlns . ,jabber-mam-delay-xmlns)
@@ -79,6 +83,7 @@ When COMPLETE is non-nil, mark the archive as fully consumed."
   (jabber-mam-test-with-db
     (let* ((jc (jabber-mam-test--make-fake-jc "me@example.com"))
            (count 3650)
+           (jabber-mam--syncing (list (cons jc jabber-mam-test-queryid)))
            (jabber-muc-participants nil)
            (start-time (float-time)))
       ;; Feed all messages through the process function inside a transaction
@@ -102,6 +107,7 @@ When COMPLETE is non-nil, mark the archive as fully consumed."
   (jabber-mam-test-with-db
     (let* ((jc (jabber-mam-test--make-fake-jc "me@example.com"))
            (count 3650)
+           (jabber-mam--syncing (list (cons jc jabber-mam-test-queryid)))
            (jabber-muc-participants nil))
       ;; First pass
       (jabber-db-with-transaction
@@ -126,6 +132,7 @@ When COMPLETE is non-nil, mark the archive as fully consumed."
   (jabber-mam-test-with-db
     (let* ((jc (jabber-mam-test--make-fake-jc "me@example.com"))
            (batch-count 500)
+           (jabber-mam--syncing (list (cons jc jabber-mam-test-queryid)))
            (jabber-muc-participants nil))
       ;; Batched: all in one transaction
       (let ((t1 (float-time)))
@@ -177,7 +184,7 @@ When COMPLETE is non-nil, mark the archive as fully consumed."
   (jabber-mam-test-with-db
     (let* ((jc (jabber-mam-test--make-fake-jc "me@example.com"))
            (jabber-mam--tx-depth 0)
-           (jabber-mam--syncing nil)
+           (jabber-mam--syncing (list (cons jc jabber-mam-test-queryid)))
            (jabber-mam--dirty-buffers nil)
            (jabber-muc-participants nil))
       ;; Simulate what jabber-mam--query does to the transaction
@@ -206,7 +213,8 @@ When COMPLETE is non-nil, mark the archive as fully consumed."
   (jabber-mam-test-with-db
     (let* ((jc (jabber-mam-test--make-fake-jc "me@example.com"))
            (jabber-mam--tx-depth 0)
-           (jabber-mam--syncing nil)
+           (jabber-mam--syncing (list (cons jc jabber-mam-test-queryid)
+                                      (cons jc "muc-query")))
            (jabber-mam--dirty-buffers nil)
            (jabber-muc--rooms (make-hash-table :test 'equal))
            (jabber-muc-participants nil))
@@ -271,6 +279,7 @@ OUR-NICK is our nickname; every 3rd message is from us."
          (from (concat room "/" nick)))
     `(message ((from . "me@example.com"))
               (result ((xmlns . ,jabber-mam-xmlns)
+                       (queryid . "muc-query")
                        (id . ,archive-id))
                       (forwarded ((xmlns . ,jabber-mam-forward-xmlns))
                                  (delay ((xmlns . ,jabber-mam-delay-xmlns)
@@ -288,6 +297,7 @@ OUR-NICK is our nickname; every 3rd message is from us."
   (jabber-mam-test-with-db
     (let* ((jc (jabber-mam-test--make-fake-jc "me@example.com"))
            (room "room@conference.example.com")
+           (jabber-mam--syncing (list (cons jc "muc-query")))
            (jabber-muc--rooms (make-hash-table :test 'equal))
            (jabber-muc-participants nil))
       (puthash room (cons jc "mynick") jabber-muc--rooms)
@@ -306,6 +316,7 @@ OUR-NICK is our nickname; every 3rd message is from us."
   (jabber-mam-test-with-db
     (let* ((jc (jabber-mam-test--make-fake-jc "me@example.com"))
            (room "room@conference.example.com")
+           (jabber-mam--syncing (list (cons jc "muc-query")))
            (jabber-muc--rooms (make-hash-table :test 'equal))
            (jabber-muc-participants
             `((,room ("mynick" . nil) ("otherperson" . nil)))))
@@ -468,7 +479,7 @@ VALUES ('a','b','in','chat','test',1)")
   "Body-bearing MAM result has children stripped after processing."
   (jabber-mam-test-with-db
     (let* ((jc (jabber-mam-test--make-fake-jc "me@example.com"))
-           (jabber-mam--syncing (list (cons jc "q1")))
+           (jabber-mam--syncing (list (cons jc jabber-mam-test-queryid)))
            (jabber-mam--tx-depth 1)
            (jabber-chat--crypto-loaded t)
            (stanza (jabber-mam-test--make-message 1)))
@@ -479,12 +490,13 @@ VALUES ('a','b','in','chat','test',1)")
   "Bodyless MAM result is unwrapped with original sender and MAM marker."
   (jabber-mam-test-with-db
     (let* ((jc (jabber-mam-test--make-fake-jc "me@example.com"))
-           (jabber-mam--syncing (list (cons jc "q1")))
+           (jabber-mam--syncing (list (cons jc jabber-mam-test-queryid)))
            (jabber-mam--tx-depth 1)
            (jabber-chat--crypto-loaded t)
            ;; Receipt stanza: no body, just a <received/> element
            (stanza `(message ((from . "me@example.com"))
                              (result ((xmlns . ,jabber-mam-xmlns)
+                                      (queryid . ,jabber-mam-test-queryid)
                                       (id . "archive-001"))
                                      (forwarded ((xmlns . ,jabber-mam-forward-xmlns))
                                                 (delay ((xmlns . ,jabber-mam-delay-xmlns)
@@ -502,6 +514,58 @@ VALUES ('a','b','in','chat','test',1)")
       (should (jabber-xml-get-attribute stanza 'jabber-mam--origin))
       ;; The receipt element should be a child
       (should (car (jabber-xml-get-children stanza 'received))))))
+
+;;; Group 9: query ID validation
+
+(ert-deftest jabber-mam-test-unknown-queryid-rejected ()
+  "MAM result with unknown queryid is not processed."
+  (jabber-mam-test-with-db
+    (let* ((jc (jabber-mam-test--make-fake-jc "me@example.com"))
+           (jabber-mam--syncing (list (cons jc "known-query")))
+           (jabber-mam--tx-depth 1)
+           (jabber-chat--crypto-loaded t)
+           ;; Build stanza with queryid that doesn't match
+           (stanza `(message ((from . "me@example.com"))
+                             (result ((xmlns . ,jabber-mam-xmlns)
+                                      (queryid . "unknown-query")
+                                      (id . "arch-1"))
+                                     (forwarded ((xmlns . ,jabber-mam-forward-xmlns))
+                                                (delay ((xmlns . ,jabber-mam-delay-xmlns)
+                                                        (stamp . "2025-01-01T00:00:00Z")))
+                                                (message ((from . "alice@example.com")
+                                                          (to . "me@example.com")
+                                                          (id . "s1"))
+                                                         (body () "secret")))))))
+      (jabber-mam--process-message jc stanza)
+      ;; Stanza should NOT have been stripped (not processed)
+      (should (cddr stanza))
+      ;; Message should NOT be in DB
+      (should-not (caar (sqlite-select (jabber-db-ensure-open)
+                                       "SELECT 1 FROM message WHERE stanza_id='s1'"))))))
+
+(ert-deftest jabber-mam-test-known-queryid-accepted ()
+  "MAM result with known queryid is processed normally."
+  (jabber-mam-test-with-db
+    (let* ((jc (jabber-mam-test--make-fake-jc "me@example.com"))
+           (jabber-mam--syncing (list (cons jc "known-query")))
+           (jabber-mam--tx-depth 1)
+           (jabber-chat--crypto-loaded t)
+           ;; Use the test helper but we need to add queryid
+           (stanza `(message ((from . "me@example.com"))
+                             (result ((xmlns . ,jabber-mam-xmlns)
+                                      (queryid . "known-query")
+                                      (id . "arch-2"))
+                                     (forwarded ((xmlns . ,jabber-mam-forward-xmlns))
+                                                (delay ((xmlns . ,jabber-mam-delay-xmlns)
+                                                        (stamp . "2025-01-01T00:00:00Z")))
+                                                (message ((from . "alice@example.com/res")
+                                                          (to . "me@example.com")
+                                                          (id . "s2"))
+                                                         (body () "hello")))))))
+      (jabber-mam--process-message jc stanza)
+      ;; Message should be in DB
+      (should (caar (sqlite-select (jabber-db-ensure-open)
+                                   "SELECT 1 FROM message WHERE stanza_id='s2'"))))))
 
 (provide 'jabber-mam-tests)
 
