@@ -364,7 +364,6 @@ TO is the query target; nil for user archive, a room JID for MUC MAM."
     ;; Open a shared transaction for concurrent MAM queries.
     ;; COMMIT happens when the last active query finishes.
     (when (zerop jabber-mam--tx-depth)
-      (setq jabber-mam--dirty-buffers nil)
       (when-let* ((db (jabber-db-ensure-open)))
         (sqlite-execute db "BEGIN")))
     (cl-incf jabber-mam--tx-depth)
