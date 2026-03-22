@@ -318,15 +318,10 @@ JC is the Jabber connection.  XML-DATA is the stanza."
         ;; sender JID and protocol elements.
         (jabber-mam--unwrap-into xml-data inner-msg)))))
 
-(defvar jabber-muc-participants)        ; jabber-muc.el
-
 (defun jabber-mam--our-muc-nick (room)
   "Return our nickname in ROOM, or nil."
-  (when-let* ((participants (cdr (assoc room jabber-muc-participants))))
-    ;; The room stores (nick . plist) entries; we stored our nick
-    ;; at join time via jabber-muc-join-set.
-    (require 'jabber-muc)
-    (ignore-errors (jabber-muc-nickname room))))
+  (require 'jabber-muc)
+  (jabber-muc-nickname room))
 
 (declare-function jabber-muc-nickname "jabber-muc" (group))
 
