@@ -257,6 +257,7 @@ The format is that of `mode-line-format' and `header-line-format'."
 (declare-function jabber-db-last-timestamp "jabber-db.el"
                   (account peer))
 (declare-function jabber-mam-muc-joined "jabber-mam.el" (jc group))
+(declare-function jabber-mam--cancel-muc-query "jabber-mam.el" (room))
 (declare-function jabber-db-backlog "jabber-db.el"
                   (account peer &optional count start-time))
 (declare-function jabber-message-correct--replace-id "jabber-message-correct"
@@ -413,6 +414,7 @@ JC is the Jabber connection."
 (defun jabber-muc-remove-groupchat (group)
   "Remove GROUP from internal bookkeeping."
   (jabber-muc-leave-remove group)
+  (jabber-mam--cancel-muc-query group)
   (let ((whichparticipants (assoc group jabber-muc-participants)))
     (setq jabber-muc-participants
 	  (delq whichparticipants jabber-muc-participants))))

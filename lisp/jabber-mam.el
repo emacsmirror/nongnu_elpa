@@ -130,6 +130,10 @@ to share one SQLite transaction.")
   "Alist of (QUERYID . CALLBACK) for per-query completion hooks.
 CALLBACK is called with no arguments when the query finishes.")
 
+(defvar jabber-mam--query-targets nil
+  "Alist of (QUERYID . TARGET) for active MAM queries.
+TARGET is a room JID for MUC MAM, or nil for 1:1 MAM.")
+
 ;;; Query building
 
 (defvar jabber-mam--queryid-counter 0
@@ -397,6 +401,8 @@ WITH and START are optional filters.
 TO is the query target; nil for user archive, a room JID for MUC MAM."
   (let ((queryid (or queryid (jabber-mam--make-queryid))))
     (push (cons jc queryid) jabber-mam--syncing)
+    (when to
+      (push (cons queryid to) jabber-mam--query-targets))
     ;; Open a shared transaction for concurrent MAM queries.
     ;; COMMIT happens when the last active query finishes.
     (when (zerop jabber-mam--tx-depth)
@@ -447,6 +453,10 @@ CLOSURE is (QUERYID WITH START TO)."
                      :key #'cdr :test #'string=))
     (if (or complete (null last-id))
         (progn
+          ;; Clean up query target tracking.
+          (setq jabber-mam--query-targets
+                (cl-remove queryid jabber-mam--query-targets
+                           :key #'car :test #'string=))
           (let ((inhibit-message t))
             (message "MAM: sync complete%s"
                      (if to (format " for %s" to)
@@ -481,6 +491,9 @@ On item-not-found (stale sync point), falls back to time-based query."
     (setq jabber-mam--syncing
           (cl-remove queryid jabber-mam--syncing
                      :key #'cdr :test #'string=))
+    (setq jabber-mam--query-targets
+          (cl-remove queryid jabber-mam--query-targets
+                     :key #'car :test #'string=))
     (let ((error-el (car (jabber-xml-get-children xml-data 'error))))
       (if (and error-el
                (car (jabber-xml-get-children error-el 'item-not-found)))
@@ -629,13 +642,16 @@ Called from `jabber-lost-connection-hooks' on involuntary disconnect."
             (when-let* ((db (jabber-db-ensure-open)))
               (sqlite-execute db "COMMIT"))
           (error nil)))
-      ;; Remove leaked completion callbacks for this connection's queries.
+      ;; Remove leaked completion callbacks and query targets.
       (dolist (entry jc-queries)
-        (let ((cb (assoc (cdr entry) jabber-mam--completion-callbacks
-                         #'string=)))
-          (when cb
+        (let ((qid (cdr entry)))
+          (when-let* ((cb (assoc qid jabber-mam--completion-callbacks
+                                 #'string=)))
             (setq jabber-mam--completion-callbacks
-                  (delq cb jabber-mam--completion-callbacks)))))
+                  (delq cb jabber-mam--completion-callbacks)))
+          (setq jabber-mam--query-targets
+                (cl-remove qid jabber-mam--query-targets
+                           :key #'car :test #'string=))))
       ;; Trigger redisplay for any dirty buffers accumulated so far.
       (when jabber-mam--dirty-buffers
         (run-with-timer 0.05 nil #'jabber-mam--redisplay-next)))))
@@ -650,9 +666,38 @@ Called from `jabber-pre-disconnect-hook'."
       (error nil)))
   (setq jabber-mam--syncing nil
         jabber-mam--tx-depth 0
-        jabber-mam--completion-callbacks nil)
+        jabber-mam--completion-callbacks nil
+        jabber-mam--query-targets nil)
   (when jabber-mam--dirty-buffers
     (run-with-timer 0.05 nil #'jabber-mam--redisplay-next)))
+
+;;; MUC query cancellation
+
+(defun jabber-mam--cancel-muc-query (room)
+  "Cancel any active MUC MAM query for ROOM.
+Removes the query from syncing state and decrements the transaction
+depth.  Called when leaving a room to stop wasting bandwidth."
+  (when-let* ((target-entry (cl-find room jabber-mam--query-targets
+                                     :key #'cdr :test #'string=)))
+    (let ((qid (car target-entry)))
+      (setq jabber-mam--syncing
+            (cl-remove qid jabber-mam--syncing
+                       :key #'cdr :test #'string=))
+      (setq jabber-mam--query-targets
+            (delq target-entry jabber-mam--query-targets))
+      (when-let* ((cb (assoc qid jabber-mam--completion-callbacks
+                             #'string=)))
+        (setq jabber-mam--completion-callbacks
+              (delq cb jabber-mam--completion-callbacks)))
+      (when (> jabber-mam--tx-depth 0)
+        (cl-decf jabber-mam--tx-depth))
+      (when (zerop jabber-mam--tx-depth)
+        (condition-case nil
+            (when-let* ((db (jabber-db-ensure-open)))
+              (sqlite-execute db "COMMIT"))
+          (error nil))
+        (when jabber-mam--dirty-buffers
+          (run-with-timer 0.05 nil #'jabber-mam--redisplay-next))))))
 
 ;;; Registration
 

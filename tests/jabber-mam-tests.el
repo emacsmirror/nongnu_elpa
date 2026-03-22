@@ -674,6 +674,37 @@ VALUES ('a','b','in','chat','test',1)")
         (should (caar (sqlite-select (jabber-db-ensure-open)
                                      "SELECT 1 FROM message WHERE stanza_id='muc-s1'")))))))
 
+;;; Group 12: MUC query cancellation
+
+(ert-deftest jabber-mam-test-cancel-muc-query ()
+  "Cancelling a MUC MAM query removes it from active state."
+  (jabber-mam-test-with-db
+    (sqlite-execute (jabber-db-ensure-open) "BEGIN")
+    (let* ((jc (jabber-mam-test--make-fake-jc "me@example.com"))
+           (room "room@conference.example.com")
+           (jabber-mam--tx-depth 1)
+           (jabber-mam--syncing (list (cons jc "muc-q1")))
+           (jabber-mam--query-targets (list (cons "muc-q1" room)))
+           (jabber-mam--completion-callbacks
+            (list (cons "muc-q1" #'ignore)))
+           (jabber-mam--dirty-buffers nil))
+      (jabber-mam--cancel-muc-query room)
+      (should (= 0 jabber-mam--tx-depth))
+      (should-not jabber-mam--syncing)
+      (should-not jabber-mam--query-targets)
+      (should-not jabber-mam--completion-callbacks))))
+
+(ert-deftest jabber-mam-test-cancel-muc-query-noop-for-unknown ()
+  "Cancelling a room with no active query is a no-op."
+  (let ((jabber-mam--tx-depth 1)
+        (jabber-mam--syncing (list (cons 'jc "q1")))
+        (jabber-mam--query-targets nil)
+        (jabber-mam--dirty-buffers nil))
+    (jabber-mam--cancel-muc-query "unknown@conference.example.com")
+    ;; State unchanged
+    (should (= 1 jabber-mam--tx-depth))
+    (should jabber-mam--syncing)))
+
 (provide 'jabber-mam-tests)
 
 ;;; jabber-mam-tests.el ends here
