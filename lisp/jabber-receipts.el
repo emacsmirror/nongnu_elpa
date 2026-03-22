@@ -36,6 +36,8 @@
 (require 'jabber-disco)
 
 (declare-function jabber-chat-ewoc-find-by-id "jabber-chatbuffer" (stanza-id))
+(declare-function jabber-jid-user "jabber-util" (jid))
+(defvar jabber-chat-ewoc)               ; jabber-chatbuffer.el
 
 (defgroup jabber-receipts nil
   "Message delivery receipts (XEP-0184) and chat markers (XEP-0333)."
@@ -135,7 +137,36 @@ COLUMN is \"delivered_at\" or \"displayed_at\"."
           (let ((msg (cadr (ewoc-data node)))
                 (inhibit-read-only t))
             (plist-put msg :status status)
-            (ewoc-invalidate jabber-chat-ewoc node)))))))
+            (ewoc-invalidate jabber-chat-ewoc node)
+            (when (string= column "displayed_at")
+              (jabber-receipts--cascade-displayed node)
+              (when-let* ((msg-ts (plist-get msg :timestamp)))
+                (jabber-db-cascade-displayed
+                 (jabber-connection-bare-jid jc)
+                 (jabber-jid-user from)
+                 timestamp
+                 (floor (float-time msg-ts)))))))))))
+
+(defun jabber-receipts--cascade-displayed (node)
+  "Walk backward from NODE, promoting :delivered nodes to :displayed.
+Per XEP-0333, a <displayed/> marker implies all prior messages were
+also seen.  Only promotes :local nodes whose :status is :delivered."
+  (let ((prev (ewoc-prev jabber-chat-ewoc node))
+        (inhibit-read-only t))
+    (while prev
+      (let* ((data (ewoc-data prev))
+             (type (car data))
+             (msg (cadr data)))
+        (cond
+         ((and (eq type :local)
+               (eq (plist-get msg :status) :delivered))
+          (plist-put msg :status :displayed)
+          (ewoc-invalidate jabber-chat-ewoc prev))
+         ((and (eq type :local)
+               (eq (plist-get msg :status) :displayed))
+          (setq prev nil))))              ; stop, already cascaded
+      (when prev
+        (setq prev (ewoc-prev jabber-chat-ewoc prev))))))
 
 (defun jabber-receipts--update-header-line (column timestamp)
   "Update `jabber-chat-receipt-message' for COLUMN at TIMESTAMP."

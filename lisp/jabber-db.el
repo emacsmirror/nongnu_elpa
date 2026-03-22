@@ -342,6 +342,19 @@ The IS NULL guard prevents overwriting an earlier timestamp."
                             column column)
                     (list timestamp stanza-id))))
 
+(defun jabber-db-cascade-displayed (account peer timestamp ref-timestamp)
+  "Mark all outgoing messages before REF-TIMESTAMP as displayed.
+ACCOUNT and PEER identify the conversation.  TIMESTAMP is the
+current time to store as displayed_at.  REF-TIMESTAMP is the
+timestamp of the referenced message.  Only updates messages with
+direction=out that have delivered_at set but displayed_at IS NULL."
+  (when jabber-db--connection
+    (sqlite-execute jabber-db--connection
+                    "UPDATE message SET displayed_at = ? \
+WHERE account = ? AND peer = ? AND direction = 'out' \
+AND timestamp <= ? AND delivered_at IS NOT NULL AND displayed_at IS NULL"
+                    (list timestamp account peer ref-timestamp))))
+
 (defun jabber-db-retract-message (server-id retracted-by &optional reason)
   "Mark the message with SERVER-ID as retracted by RETRACTED-BY.
 Optional REASON is the human-readable retraction reason string."

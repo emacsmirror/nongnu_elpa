@@ -2,6 +2,7 @@
 
 (require 'ert)
 (require 'jabber-receipts)
+(require 'jabber-db)
 
 ;;; Group 1: Send hook
 
@@ -170,6 +171,153 @@
     (should (string-match-p "seen" jabber-chat-receipt-message))
     (should (eq 'jabber-chat-seen
                 (get-text-property 0 'face jabber-chat-receipt-message)))))
+
+;;; Group 5: EWOC cascade
+
+(ert-deftest jabber-receipts-test-ewoc-cascade-promotes-delivered ()
+  "Cascade promotes all prior :delivered nodes to :displayed."
+  (with-temp-buffer
+    (let* ((jabber-chat-ewoc (ewoc-create #'ignore))
+           (m1 (list :local (list :id "m1" :status :delivered :timestamp (encode-time 0 0 10 1 1 2026))))
+           (m2 (list :local (list :id "m2" :status :delivered :timestamp (encode-time 0 1 10 1 1 2026))))
+           (m3 (list :local (list :id "m3" :status :displayed :timestamp (encode-time 0 2 10 1 1 2026))))
+           (_n1 (ewoc-enter-last jabber-chat-ewoc m1))
+           (_n2 (ewoc-enter-last jabber-chat-ewoc m2))
+           (n3 (ewoc-enter-last jabber-chat-ewoc m3)))
+      (let ((inhibit-read-only t))
+        (jabber-receipts--cascade-displayed n3))
+      (should (eq :displayed (plist-get (cadr m1) :status)))
+      (should (eq :displayed (plist-get (cadr m2) :status))))))
+
+(ert-deftest jabber-receipts-test-ewoc-cascade-stops-at-displayed ()
+  "Cascade stops walking when it hits an already-displayed node."
+  (with-temp-buffer
+    (let* ((jabber-chat-ewoc (ewoc-create #'ignore))
+           (m1 (list :local (list :id "m1" :status :delivered :timestamp (encode-time 0 0 10 1 1 2026))))
+           (m2 (list :local (list :id "m2" :status :displayed :timestamp (encode-time 0 1 10 1 1 2026))))
+           (m3 (list :local (list :id "m3" :status :delivered :timestamp (encode-time 0 2 10 1 1 2026))))
+           (m4 (list :local (list :id "m4" :status :displayed :timestamp (encode-time 0 3 10 1 1 2026))))
+           (_n1 (ewoc-enter-last jabber-chat-ewoc m1))
+           (_n2 (ewoc-enter-last jabber-chat-ewoc m2))
+           (_n3 (ewoc-enter-last jabber-chat-ewoc m3))
+           (n4 (ewoc-enter-last jabber-chat-ewoc m4)))
+      (let ((inhibit-read-only t))
+        (jabber-receipts--cascade-displayed n4))
+      ;; m3 promoted
+      (should (eq :displayed (plist-get (cadr m3) :status)))
+      ;; m2 was already displayed, stops there
+      (should (eq :displayed (plist-get (cadr m2) :status)))
+      ;; m1 NOT promoted (before the already-displayed m2)
+      (should (eq :delivered (plist-get (cadr m1) :status))))))
+
+(ert-deftest jabber-receipts-test-ewoc-cascade-skips-foreign ()
+  "Cascade skips :foreign nodes and only promotes :local ones."
+  (with-temp-buffer
+    (let* ((jabber-chat-ewoc (ewoc-create #'ignore))
+           (m1 (list :local (list :id "m1" :status :delivered :timestamp (encode-time 0 0 10 1 1 2026))))
+           (m2 (list :foreign (list :id "m2" :timestamp (encode-time 0 1 10 1 1 2026))))
+           (m3 (list :local (list :id "m3" :status :displayed :timestamp (encode-time 0 2 10 1 1 2026))))
+           (_n1 (ewoc-enter-last jabber-chat-ewoc m1))
+           (_n2 (ewoc-enter-last jabber-chat-ewoc m2))
+           (n3 (ewoc-enter-last jabber-chat-ewoc m3)))
+      (let ((inhibit-read-only t))
+        (jabber-receipts--cascade-displayed n3))
+      (should (eq :displayed (plist-get (cadr m1) :status)))
+      ;; foreign node untouched
+      (should-not (plist-get (cadr m2) :status)))))
+
+(ert-deftest jabber-receipts-test-ewoc-cascade-skips-sent ()
+  "Cascade does not promote :sent nodes (not yet delivered)."
+  (with-temp-buffer
+    (let* ((jabber-chat-ewoc (ewoc-create #'ignore))
+           (m1 (list :local (list :id "m1" :status :sent :timestamp (encode-time 0 0 10 1 1 2026))))
+           (m2 (list :local (list :id "m2" :status :delivered :timestamp (encode-time 0 1 10 1 1 2026))))
+           (m3 (list :local (list :id "m3" :status :displayed :timestamp (encode-time 0 2 10 1 1 2026))))
+           (_n1 (ewoc-enter-last jabber-chat-ewoc m1))
+           (_n2 (ewoc-enter-last jabber-chat-ewoc m2))
+           (n3 (ewoc-enter-last jabber-chat-ewoc m3)))
+      (let ((inhibit-read-only t))
+        (jabber-receipts--cascade-displayed n3))
+      (should (eq :displayed (plist-get (cadr m2) :status)))
+      ;; :sent stays :sent
+      (should (eq :sent (plist-get (cadr m1) :status))))))
+
+;;; Group 6: DB cascade
+
+(ert-deftest jabber-receipts-test-db-cascade-marks-all-delivered ()
+  "DB cascade marks all delivered outgoing messages as displayed."
+  (let* ((dir (make-temp-file "jabber-receipts-test" t))
+         (jabber-db-path (expand-file-name "test.sqlite" dir))
+         (jabber-db--connection nil)
+         (jabber-backlog-days 3.0)
+         (jabber-backlog-number 10))
+    (unwind-protect
+        (progn
+          (jabber-db-ensure-open)
+          ;; Store 3 outgoing messages
+          (jabber-db-store-message "me@example.com" "them@example.com"
+                                  "out" "chat" "msg1" 1000
+                                  nil "id-1" nil nil nil nil nil)
+          (jabber-db-store-message "me@example.com" "them@example.com"
+                                  "out" "chat" "msg2" 1001
+                                  nil "id-2" nil nil nil nil nil)
+          (jabber-db-store-message "me@example.com" "them@example.com"
+                                  "out" "chat" "msg3" 1002
+                                  nil "id-3" nil nil nil nil nil)
+          ;; Mark all as delivered
+          (jabber-db-update-receipt "id-1" "delivered_at" 1010)
+          (jabber-db-update-receipt "id-2" "delivered_at" 1011)
+          (jabber-db-update-receipt "id-3" "delivered_at" 1012)
+          ;; Cascade displayed from msg3
+          (jabber-db-cascade-displayed "me@example.com" "them@example.com"
+                                       2000 1002)
+          ;; All 3 should have displayed_at
+          (let ((rows (sqlite-select jabber-db--connection
+                                     "SELECT stanza_id, displayed_at FROM message ORDER BY timestamp")))
+            (should (= 3 (length rows)))
+            (should (= 2000 (cadr (nth 0 rows))))
+            (should (= 2000 (cadr (nth 1 rows))))
+            (should (= 2000 (cadr (nth 2 rows))))))
+      (jabber-db-close)
+      (when (file-directory-p dir)
+        (delete-directory dir t)))))
+
+(ert-deftest jabber-receipts-test-db-cascade-skips-undelivered ()
+  "DB cascade skips messages without delivered_at."
+  (let* ((dir (make-temp-file "jabber-receipts-test" t))
+         (jabber-db-path (expand-file-name "test.sqlite" dir))
+         (jabber-db--connection nil)
+         (jabber-backlog-days 3.0)
+         (jabber-backlog-number 10))
+    (unwind-protect
+        (progn
+          (jabber-db-ensure-open)
+          (jabber-db-store-message "me@example.com" "them@example.com"
+                                  "out" "chat" "msg1" 1000
+                                  nil "id-1" nil nil nil nil nil)
+          (jabber-db-store-message "me@example.com" "them@example.com"
+                                  "out" "chat" "msg2" 1001
+                                  nil "id-2" nil nil nil nil nil)
+          (jabber-db-store-message "me@example.com" "them@example.com"
+                                  "out" "chat" "msg3" 1002
+                                  nil "id-3" nil nil nil nil nil)
+          ;; Only mark msg1 and msg3 as delivered (msg2 undelivered)
+          (jabber-db-update-receipt "id-1" "delivered_at" 1010)
+          (jabber-db-update-receipt "id-3" "delivered_at" 1012)
+          ;; Cascade displayed from msg3
+          (jabber-db-cascade-displayed "me@example.com" "them@example.com"
+                                       2000 1002)
+          (let ((rows (sqlite-select jabber-db--connection
+                                     "SELECT stanza_id, displayed_at FROM message ORDER BY timestamp")))
+            ;; msg1 displayed (delivered + before ref-ts)
+            (should (= 2000 (cadr (nth 0 rows))))
+            ;; msg2 NOT displayed (not delivered)
+            (should (null (cadr (nth 1 rows))))
+            ;; msg3 displayed (delivered + at ref-ts)
+            (should (= 2000 (cadr (nth 2 rows))))))
+      (jabber-db-close)
+      (when (file-directory-p dir)
+        (delete-directory dir t)))))
 
 (provide 'jabber-receipts-tests)
 
