@@ -567,6 +567,78 @@ VALUES ('a','b','in','chat','test',1)")
       (should (caar (sqlite-select (jabber-db-ensure-open)
                                    "SELECT 1 FROM message WHERE stanza_id='s2'"))))))
 
+;;; Group 10: sender JID validation
+
+(ert-deftest jabber-mam-test-rejects-foreign-sender ()
+  "MAM result from a server other than ours is rejected."
+  (jabber-mam-test-with-db
+    (let* ((jc (jabber-mam-test--make-fake-jc "me@example.com"))
+           (jabber-mam--syncing (list (cons jc jabber-mam-test-queryid)))
+           (jabber-mam--tx-depth 1)
+           (jabber-chat--crypto-loaded t)
+           (jabber-muc--rooms (make-hash-table :test 'equal))
+           ;; Outer from is evil.com, not our bare JID
+           (stanza `(message ((from . "evil.com"))
+                             (result ((xmlns . ,jabber-mam-xmlns)
+                                      (queryid . ,jabber-mam-test-queryid)
+                                      (id . "arch-evil"))
+                                     (forwarded ((xmlns . ,jabber-mam-forward-xmlns))
+                                                (delay ((xmlns . ,jabber-mam-delay-xmlns)
+                                                        (stamp . "2025-01-01T00:00:00Z")))
+                                                (message ((from . "alice@legit.com/res")
+                                                          (to . "me@example.com")
+                                                          (id . "forged-1"))
+                                                         (body () "injected")))))))
+      (jabber-mam--process-message jc stanza)
+      ;; Stanza should NOT have been stripped
+      (should (cddr stanza))
+      ;; Message should NOT be in DB
+      (should-not (caar (sqlite-select (jabber-db-ensure-open)
+                                       "SELECT 1 FROM message WHERE stanza_id='forged-1'"))))))
+
+(ert-deftest jabber-mam-test-accepts-own-jid-sender ()
+  "MAM result from our own bare JID is accepted."
+  (jabber-mam-test-with-db
+    (let* ((jc (jabber-mam-test--make-fake-jc "me@example.com"))
+           (jabber-mam--syncing (list (cons jc jabber-mam-test-queryid)))
+           (jabber-mam--tx-depth 1)
+           (jabber-chat--crypto-loaded t)
+           ;; Normal 1:1 MAM result with from=our bare JID
+           (stanza (jabber-mam-test--make-message 5)))
+      (jabber-mam--process-message jc stanza)
+      ;; Message should be stored
+      (should (caar (sqlite-select (jabber-db-ensure-open)
+                                   "SELECT 1 FROM message WHERE stanza_id='stanza-000005'"))))))
+
+(ert-deftest jabber-mam-test-accepts-joined-muc-sender ()
+  "MAM result from a joined MUC room is accepted."
+  (jabber-mam-test-with-db
+    (let* ((jc (jabber-mam-test--make-fake-jc "me@example.com"))
+           (room "room@conference.example.com")
+           (jabber-mam--syncing (list (cons jc "muc-query")))
+           (jabber-mam--tx-depth 1)
+           (jabber-chat--crypto-loaded t)
+           (jabber-muc--rooms (make-hash-table :test 'equal))
+           (jabber-muc-participants nil))
+      (puthash room (cons jc "mynick") jabber-muc--rooms)
+      ;; MUC MAM: outer from is the room bare JID
+      (let ((stanza `(message ((from . ,room))
+                              (result ((xmlns . ,jabber-mam-xmlns)
+                                       (queryid . "muc-query")
+                                       (id . "muc-arch-1"))
+                                      (forwarded ((xmlns . ,jabber-mam-forward-xmlns))
+                                                 (delay ((xmlns . ,jabber-mam-delay-xmlns)
+                                                         (stamp . "2025-01-01T12:00:00Z")))
+                                                 (message ((from . ,(concat room "/otherperson"))
+                                                           (to . ,room)
+                                                           (type . "groupchat")
+                                                           (id . "muc-s1"))
+                                                          (body () "hello room")))))))
+        (jabber-mam--process-message jc stanza)
+        ;; Message should be stored
+        (should (caar (sqlite-select (jabber-db-ensure-open)
+                                     "SELECT 1 FROM message WHERE stanza_id='muc-s1'")))))))
+
 (provide 'jabber-mam-tests)
 
 ;;; jabber-mam-tests.el ends here

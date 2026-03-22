@@ -230,15 +230,29 @@ outgoing receipts.  Mutates OUTER in place."
   "Return non-nil if QUERYID is an active MAM query."
   (cl-find queryid jabber-mam--syncing :key #'cdr :test #'string=))
 
+(defun jabber-mam--valid-sender-p (jc from)
+  "Return non-nil if FROM is a valid MAM result sender for JC.
+Valid senders are our own bare JID (1:1 archive) or a joined MUC
+room (room archive)."
+  (when from
+    (let ((bare (jabber-jid-user from))
+          (our-jid (jabber-connection-bare-jid jc)))
+      (or (string= bare our-jid)
+          (jabber-muc-nickname bare)))))
+
 (defun jabber-mam--process-message (jc xml-data)
   "Handle a MAM result <message> from the message chain.
 JC is the Jabber connection.  XML-DATA is the stanza."
-  ;; Validate query ID against active queries to prevent spoofing.
+  ;; Validate query ID and sender JID against active queries.
   (when-let* ((result-el (jabber-xml-child-with-xmlns
                            xml-data jabber-mam-xmlns))
               (qid (jabber-xml-get-attribute result-el 'queryid))
               ((jabber-mam--active-query-p qid))
-              (parsed (jabber-mam--parse-result xml-data)))
+              (parsed (jabber-mam--parse-result xml-data))
+              ;; Sender must be our bare JID (1:1 archive) or a
+              ;; joined MUC room (room archive).
+              ((jabber-mam--valid-sender-p
+                jc (jabber-xml-get-attribute xml-data 'from))))
     (let* ((archive-id (nth 0 parsed))
            (stamp (nth 1 parsed))
            (inner-msg (nth 2 parsed))
