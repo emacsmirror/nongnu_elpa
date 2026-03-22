@@ -47,9 +47,9 @@ and tears down on exit."
       (should (sqlitep db)))))
 
 (ert-deftest jabber-db-test-schema-version ()
-  "The user_version pragma is set to 6 after initialization."
+  "The user_version pragma is set to 7 after initialization."
   (jabber-db-test-with-db
-    (should (= 6 (caar (sqlite-select jabber-db--connection
+    (should (= 7 (caar (sqlite-select jabber-db--connection
                                       "PRAGMA user_version"))))))
 
 (ert-deftest jabber-db-test-wal-mode ()
@@ -284,6 +284,21 @@ and tears down on exit."
       (let ((rows (jabber-db-query "me@example.com" "friend@example.com")))
         (should (= 1 (length rows)))
         (should (string= "First" (plist-get (car rows) :body)))))))
+
+(ert-deftest jabber-db-test-dedup-scoped-by-account ()
+  "Same stanza_id from different accounts are stored as separate messages."
+  (jabber-db-test-with-db
+    (let ((ts (floor (float-time))))
+      (jabber-db-store-message
+       "alice@example.com" "friend@example.com" "in" "chat"
+       "Alice got it" ts nil "shared-id-999")
+      (jabber-db-store-message
+       "bob@example.com" "friend@example.com" "in" "chat"
+       "Bob got it" (1+ ts) nil "shared-id-999")
+      ;; Both rows should exist
+      (let ((rows (sqlite-select jabber-db--connection
+                                 "SELECT account FROM message WHERE stanza_id='shared-id-999'")))
+        (should (= 2 (length rows)))))))
 
 (ert-deftest jabber-db-test-no-dedup-without-stanza-id ()
   "Messages without stanza_id are never deduped."

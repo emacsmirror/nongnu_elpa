@@ -112,9 +112,9 @@ in the message history.")
     "CREATE INDEX IF NOT EXISTS idx_msg_peer_ts
   ON message(account, peer, timestamp)"
     "CREATE INDEX IF NOT EXISTS idx_msg_stanza_id
-  ON message(stanza_id) WHERE stanza_id IS NOT NULL"
+  ON message(account, stanza_id) WHERE stanza_id IS NOT NULL"
     "CREATE INDEX IF NOT EXISTS idx_msg_server_id
-  ON message(server_id) WHERE server_id IS NOT NULL"
+  ON message(account, server_id) WHERE server_id IS NOT NULL"
     "CREATE VIRTUAL TABLE IF NOT EXISTS message_fts USING fts5(
   body, content='message', content_rowid='id')"
     "CREATE TRIGGER IF NOT EXISTS message_ai AFTER INSERT ON message BEGIN
@@ -194,8 +194,8 @@ END"
       ;; blocks, set user_version=1 here, and update the schema-version test.
       ;; Alpha tester DBs should be deleted before upgrading to the release.
       (jabber-db--init-schema db)
-      (sqlite-execute db "PRAGMA user_version=6")
-      (setq version 6))
+      (sqlite-execute db "PRAGMA user_version=7")
+      (setq version 7))
     (when (< version 2)
       ;; v1->v2: Remove duplicate messages that lack stanza_id and server_id.
       ;; These were created by MUC server history replayed on every join.
@@ -220,7 +220,18 @@ DELETE FROM message WHERE id NOT IN (
     (when (< version 6)
       ;; v5->v6: Add edited flag for XEP-0308 message corrections.
       (sqlite-execute db "ALTER TABLE message ADD COLUMN edited INTEGER DEFAULT 0")
-      (sqlite-execute db "PRAGMA user_version=6"))))
+      (sqlite-execute db "PRAGMA user_version=6"))
+    (when (< version 7)
+      ;; v6->v7: Scope dedup indexes by account.
+      (sqlite-execute db "DROP INDEX IF EXISTS idx_msg_stanza_id")
+      (sqlite-execute db "DROP INDEX IF EXISTS idx_msg_server_id")
+      (sqlite-execute db "\
+CREATE INDEX IF NOT EXISTS idx_msg_stanza_id \
+ON message(account, stanza_id) WHERE stanza_id IS NOT NULL")
+      (sqlite-execute db "\
+CREATE INDEX IF NOT EXISTS idx_msg_server_id \
+ON message(account, server_id) WHERE server_id IS NOT NULL")
+      (sqlite-execute db "PRAGMA user_version=7"))))
 
 (defun jabber-db-ensure-open ()
   "Open the SQLite database, creating it if needed.  Idempotent.
@@ -305,13 +316,15 @@ Optional ENCRYPTED is non-nil if the message was OMEMO-encrypted."
     (unless (or (and stanza-id
                      (caar (sqlite-select
                             db
-                            "SELECT 1 FROM message WHERE stanza_id = ? LIMIT 1"
-                            (list stanza-id))))
+                            "SELECT 1 FROM message \
+WHERE stanza_id = ? AND account = ? LIMIT 1"
+                            (list stanza-id account))))
                 (and server-id
                      (caar (sqlite-select
                             db
-                            "SELECT 1 FROM message WHERE server_id = ? LIMIT 1"
-                            (list server-id))))
+                            "SELECT 1 FROM message \
+WHERE server_id = ? AND account = ? LIMIT 1"
+                            (list server-id account))))
                 ;; Fallback: content-based dedup for messages without IDs
                 ;; (e.g. MUC history replayed on every join)
                 (and (not stanza-id) (not server-id)
