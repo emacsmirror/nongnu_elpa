@@ -1,4 +1,4 @@
-;;; selected-window-contrast.el --- Highlight by brightness of text and background   -*- lexical-binding: t -*-
+;;; selected-window-contrast.el --- Highlight window and cursor at switching  -*- lexical-binding: t -*-
 
 ;; Copyright (c) 2025 Anoncheg
 ;;
@@ -33,13 +33,13 @@
 ;;; Commentary:
 
 ;; Highlight selected window by adjusting contrast of text
-;;  "foreground" and background.
+;;  "foreground" and background with respect of current theme.
 ;; Working good if you switch themes frequently, contrast will be kept.
 ;; Also this works for modeline.
 ;; We also highligh cursor position, this may be disabled with
-;;  (setopt selected-window-contrast-region-flag nil) in .emacs
+;;  (setopt selected-window-contrast-cursor-flag nil) in .emacs
 ;;  or
-;;  M-x customize-variable RET selected-window-contrast-region-flag
+;;  M-x customize-variable RET selected-window-contrast-cursor-flag
 
 ;;;; Usage:
 
@@ -131,7 +131,7 @@ in [0-1] range."
                            :message "Contrast value must be between 0 and 1")
                  (const :tag "Don't change default contrast of theme." nil)))
 
-(defcustom selected-window-contrast-region-flag t
+(defcustom selected-window-contrast-cursor-flag t
   "Non-nil means enable highlighting cursor by region around it."
   :type 'boolean)
 
@@ -262,19 +262,7 @@ Used in `selected-window-contrast-mark-small-rectangle-temporary'.")
   "Mark a 2x2 rectangle around point for 1 sec, to hightlight WINDOW.
 Use `rectangle-mark-mode'.  Deactivate rectangle after 1 second or less."
   (interactive)
-  ;; (print (list "selected-window-contrast-mark-small-rectangle-temporary N1" window))
-  ;; (print (list "selected-window-contrast-mark-small-rectangle-temporary N2"
-  ;;              (window-buffer selected-window-contrast-prev-window)
-  ;;              (type-of selected-window-contrast-prev-window)
-  ;;              (window-minibuffer-p selected-window-contrast-prev-window)
-  ;;              ;; (and selected-window-contrast-prev-window ; check alive
-  ;;              ;;                    (window-buffer selected-window-contrast-prev-window) ; check alive
-  ;;              ;;                    (window-minibuffer-p selected-window-contrast-prev-window))
-  ;;              ))
-  ;; (condition-case err
-      ;; (progn
         (when (and window
-                        ;; (window-valid-p window)
                         (eq window (selected-window))
                         (not (window-minibuffer-p window))
                         (not (and selected-window-contrast-prev-window ; check alive
@@ -299,7 +287,6 @@ Use `rectangle-mark-mode'.  Deactivate rectangle after 1 second or less."
                  ))
              ;; save current window, because `previous-window' is not working.
              (setq selected-window-contrast-prev-window (selected-window)))
-    ;; (message "selected-window-contrast debug: %s" err)))
 
 (defun selected-window-contrast-highlight-selected-window-with-timeout ()
   "Highlight not selected windows with a different background color.
@@ -329,7 +316,7 @@ $ emacsclient -c ~/file"
       (when selected-window-contrast-flag
         (selected-window-contrast-change-window selected-window-contrast-bg-selected
                                                 selected-window-contrast-text-selected))
-      (if selected-window-contrast-region-flag
+      (if selected-window-contrast-cursor-flag
         (add-hook 'window-selection-change-functions
                   #'selected-window-contrast-mark-small-rectangle-temporary nil t)
         ;; else

@@ -6,10 +6,37 @@
 # selected-window-contrast - highlighter for current window.
 
 **Version 0.3**
-Emacs package, highlights the selected window by adjusting the brightness of the text and background. The changes are relative, so the functionality works correctly even if the theme is changed.
-Also highlights the cursor position optionally, and modeline highlighting is configured separately.
+Emacs package, highlights cursor position and selected window by adjusting the brightness of the text and background. The changes are relative, so the functionality works correctly even if the theme is changed.
 
-# Usage for selected window
+Able to highlights modeline - configured separately.
+
+# Installation from MELPA
+1) Add to `~/.emacs`
+
+```elisp
+(require 'package)
+(add-to-list 'package-archives '("melpa" . "https://melpa.org/packages/") t)
+(add-to-list 'package-archives '("melpa-stable" . "https://stable.melpa.org/packages/") t)
+(package-initialize)
+```
+
+2) Install via
+- by `M-x package-install RET selected-window-contrast RET`
+- or `M-x package-list-packages` and by clicking at it.
+
+# Installation from Github directly
+1) `git clone --depth 1 https://github.com/Anoncheg1/selected-window-contrast`
+
+2) Add to `~/.emacs`
+```elisp
+(require 'package)
+(add-to-list 'package-archives '("melpa" . "https://melpa.org/packages/"))
+(package-initialize)
+
+(add-to-list 'load-path "full_path_to_folder/selected-window-contrast")
+```
+
+# Configuration
 ```Elisp
 (add-to-list 'load-path "path_to/selected-window-contrast") ; optional
 (require 'selected-window-contrast)
@@ -21,11 +48,11 @@ Also highlights the cursor position optionally, and modeline highlighting is con
 (add-hook 'buffer-list-update-hook #'selected-window-contrast-highlight-selected-window)
 ```
 
-To disable highlighting window with rectangle around pointer use: `(setopt selected-window-contrast-region-flag nil)`
+To disable highlighting cursor position use: `(setopt selected-window-contrast-cursor-flag nil)`
 
 # Usage for modeline
 Dont require hook and configured statically.
-```Elisp
+```elisp
 (progn
   ;; - reset mode-line to default. (optional)
   (set-face-attribute 'mode-line-active nil
