@@ -43,6 +43,8 @@
                   (xml-data &optional delayed))
 (declare-function jabber-maybe-print-rare-time "jabber-chat" (node))
 (declare-function jabber-chat-ewoc-enter "jabber-chatbuffer" (data))
+(declare-function jabber-chat-register-decrypt-handler "jabber-chat"
+  (id &rest props))
 
 (defvar jabber-chatting-with)           ; jabber-chat.el
 (defvar jabber-group)                   ; jabber-muc.el
@@ -439,30 +441,16 @@ OPENPGP-EL is the <openpgp> child element."
           (nconc xml-data (list '(body () "[OpenPGP: empty payload]"))))))
     xml-data))
 
-(defun jabber-openpgp--decrypt-if-needed (orig-fn jc xml-data)
-  "Around advice for `jabber-chat--decrypt-if-needed'.
-If XML-DATA contains an <openpgp> element, decrypt it.
-Otherwise delegate to ORIG-FN."
-  (let ((openpgp-el (jabber-openpgp--parse-openpgp-element xml-data)))
-    (if (null openpgp-el)
-        (funcall orig-fn jc xml-data)
-      (condition-case err
-          (jabber-openpgp--decrypt-stanza jc xml-data openpgp-el)
-        (error
-         (message "OpenPGP decrypt failed: %s" (error-message-string err))
-         (let ((body-el (car (jabber-xml-get-children xml-data 'body))))
-           (if body-el
-               (setcar (cddr body-el) "[OpenPGP: could not decrypt]")
-             (nconc xml-data
-                    (list '(body () "[OpenPGP: could not decrypt]")))))
-         xml-data)))))
-
 ;;; Disco and hooks
 
 (jabber-disco-advertise-feature jabber-openpgp-xmlns)
 
-(advice-add 'jabber-chat--decrypt-if-needed :around
-            #'jabber-openpgp--decrypt-if-needed '((depth . 20)))
+(jabber-chat-register-decrypt-handler
+ 'openpgp
+ :detect  #'jabber-openpgp--parse-openpgp-element
+ :decrypt #'jabber-openpgp--decrypt-stanza
+ :priority 20
+ :error-label "OpenPGP")
 
 (with-eval-after-load "jabber-core"
   (add-hook 'jabber-post-connect-hooks #'jabber-openpgp-on-connect))
