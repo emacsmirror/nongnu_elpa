@@ -242,7 +242,7 @@ added to the outgoing message.")
 (declare-function jabber-muc-find-buffer "jabber-muc" (group))
 (defvar jabber-group)                   ; jabber-muc.el
 (defvar jabber-muc-printers)            ; jabber-muc.el
-(defvar jabber-mam--syncing)            ; jabber-mam.el
+(declare-function jabber-mam-syncing-p "jabber-mam" ())
 (defvar jabber-mam--dirty-buffers)      ; jabber-mam.el
 (defvar jabber-oob-xmlns)              ; jabber-xml.el
 (defvar jabber-carbons-xmlns)          ; jabber-carbons.el
@@ -434,7 +434,7 @@ When nil or 0, display all messages."
    (let ((input (read-string "How many more messages (empty for all)? ")))
      (list (if (string-empty-p input) nil
 	     (string-to-number input)))))
-  (when jabber-mam--syncing
+  (when (jabber-mam-syncing-p)
     (user-error "MAM sync already in progress"))
   (let* ((jc jabber-buffer-connection)
 	 (group (bound-and-true-p jabber-group))
@@ -646,7 +646,7 @@ _JC and _XML-DATA are reserved for future use by OMEMO."
       (jabber-maybe-print-rare-time
        (jabber-chat-ewoc-enter
         (list (if error-p :error :foreign) msg-plist)))
-      (let ((inhibit-message (and jabber-mam--syncing t)))
+      (let ((inhibit-message (jabber-mam-syncing-p)))
         (dolist (hook '(jabber-message-hooks jabber-alert-message-hooks))
           (run-hook-with-args hook
                               from (current-buffer) body-text
@@ -667,7 +667,7 @@ JC is the Jabber connection."
       (when is-carbon
         (jabber-chat--store-carbon jc xml-data))
       (let ((replace-id (jabber-message-correct--replace-id xml-data)))
-        (if (and replace-id (not jabber-mam--syncing))
+        (if (and replace-id (not (jabber-mam-syncing-p)))
             (jabber-message-correct--apply
              replace-id
              (plist-get msg-plist :body)

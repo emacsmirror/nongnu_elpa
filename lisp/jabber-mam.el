@@ -134,6 +134,12 @@ CALLBACK is called with no arguments when the query finishes.")
   "Alist of (QUERYID . TARGET) for active MAM queries.
 TARGET is a room JID for MUC MAM, or nil for 1:1 MAM.")
 
+;;; Public predicates
+
+(defun jabber-mam-syncing-p ()
+  "Return non-nil if any MAM sync is in progress."
+  (not (null jabber-mam--syncing)))
+
 ;;; Query building
 
 (defvar jabber-mam--queryid-counter 0
