@@ -621,6 +621,7 @@ JC is the Jabber connection."
   (unless jabber-chat--crypto-loaded
     (condition-case nil (require 'jabber-omemo nil t) (error nil))
     (condition-case nil (require 'jabber-openpgp nil t) (error nil))
+    (condition-case nil (require 'jabber-openpgp-legacy nil t) (error nil))
     (setq jabber-chat--crypto-loaded t))
   ;; First-match-wins: the dispatcher stops at the first handler whose
   ;; :detect returns non-nil, so re-entrancy guards are unnecessary.

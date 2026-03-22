@@ -754,10 +754,10 @@ then looks for <encrypted> element."
   "Decrypt OMEMO message.  DETECTED is the plist from detect."
   (pcase (plist-get detected :type)
     ('muc-echo
-     (jabber-chat--set-body xml-data (plist-get detected :cached))
-     xml-data)
+     (jabber-chat--set-body xml-data (plist-get detected :cached)))
     ('omemo
-     (jabber-omemo--decrypt-stanza jc xml-data (plist-get detected :parsed)))))
+     (jabber-omemo--decrypt-stanza jc xml-data (plist-get detected :parsed)))
+    (_ xml-data)))
 
 (defun jabber-omemo--send-heartbeat (jc to device-id heartbeat-bytes)
   "Send OMEMO heartbeat (empty encrypted message, no payload).
