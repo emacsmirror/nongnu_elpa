@@ -731,12 +731,8 @@ Returns modified XML-DATA with decrypted body, or nil on failure."
       (if payload
           (let* ((plaintext (jabber-omemo-decrypt-message
                              decrypted-key iv payload))
-                 (text (decode-coding-string plaintext 'utf-8))
-                 (body-el (car (jabber-xml-get-children xml-data 'body))))
-            (if body-el
-                (setcar (cddr body-el) text)
-              (nconc xml-data (list `(body () ,text))))
-            xml-data)
+                 (text (decode-coding-string plaintext 'utf-8)))
+            (jabber-chat--set-body xml-data text))
         xml-data))))
 
 (defun jabber-omemo--detect-encrypted (xml-data)

@@ -45,6 +45,7 @@
 (declare-function jabber-chat-ewoc-enter "jabber-chatbuffer" (data))
 (declare-function jabber-chat-register-decrypt-handler "jabber-chat"
   (id &rest props))
+(declare-function jabber-chat--set-body "jabber-chat" (xml-data text))
 
 (defvar jabber-chatting-with)           ; jabber-chat.el
 (defvar jabber-group)                   ; jabber-muc.el
@@ -430,16 +431,8 @@ OPENPGP-EL is the <openpgp> child element."
                          (car (jabber-xml-get-children payload 'body))))
          (body-text (and inner-body
                          (car (jabber-xml-node-children inner-body)))))
-    (if body-text
-        (let ((body-el (car (jabber-xml-get-children xml-data 'body))))
-          (if body-el
-              (setcar (cddr body-el) body-text)
-            (nconc xml-data (list `(body () ,body-text)))))
-      (let ((body-el (car (jabber-xml-get-children xml-data 'body))))
-        (if body-el
-            (setcar (cddr body-el) "[OpenPGP: empty payload]")
-          (nconc xml-data (list '(body () "[OpenPGP: empty payload]"))))))
-    xml-data))
+    (jabber-chat--set-body xml-data
+                          (or body-text "[OpenPGP: empty payload]"))))
 
 ;;; Disco and hooks
 
