@@ -546,6 +546,15 @@ carbon-forwarded message.  JC is the Jabber connection."
     (or carbon-buffer
         (jabber-chat-create-buffer jc from))))
 
+(defun jabber-chat--set-body (xml-data text)
+  "Replace or create the <body> child of XML-DATA with TEXT.
+Mutates XML-DATA in place and returns it."
+  (let ((body-el (car (jabber-xml-get-children xml-data 'body))))
+    (if body-el
+        (setcar (cddr body-el) text)
+      (nconc xml-data (list `(body () ,text)))))
+  xml-data)
+
 (defvar jabber-chat--crypto-loaded nil
   "Non-nil after crypto modules have been loaded.")
 
@@ -758,6 +767,7 @@ or X for undelivered."
   (when-let* ((status (plist-get msg :status)))
     (let ((indicator
            (pcase status
+             (:sending (propertize " \u00b7" 'face 'warning))
              (:sent (propertize " \u00b7" 'face 'shadow))
              (:delivered (propertize " \u2713" 'face 'shadow))
              (:displayed (propertize " \u2713" 'face 'success))

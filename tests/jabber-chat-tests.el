@@ -186,6 +186,26 @@
                           (url () "https://example.com/file.png")))))
     (should (eq xml (jabber-chat--decrypt-if-needed nil xml)))))
 
+;;; Group 6: jabber-chat--set-body
+
+(ert-deftest jabber-chat-test-set-body-replaces-existing ()
+  "set-body replaces existing <body> text."
+  (let ((xml '(message ((from . "alice@example.com"))
+                       (body () "old text"))))
+    (jabber-chat--set-body xml "new text")
+    (should (string= "new text"
+                      (car (jabber-xml-node-children
+                            (car (jabber-xml-get-children xml 'body))))))))
+
+(ert-deftest jabber-chat-test-set-body-creates-missing ()
+  "set-body appends <body> when none exists."
+  (let ((xml '(message ((from . "alice@example.com")))))
+    (jabber-chat--set-body xml "created")
+    (let ((body-el (car (jabber-xml-get-children xml 'body))))
+      (should body-el)
+      (should (string= "created"
+                        (car (jabber-xml-node-children body-el)))))))
+
 (provide 'jabber-chat-tests)
 
 ;;; jabber-chat-tests.el ends here
