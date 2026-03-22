@@ -101,10 +101,12 @@ JC is the connection.  Added to `jabber-message-chain'."
                 ((eq (jabber-xml-node-name marker) 'displayed))
                 (ref-id (jabber-xml-get-attribute marker 'id)))
       (jabber-receipts--update-status jc from ref-id "displayed_at"))
-    ;; Send <received/> back if the message requests it
+    ;; Send <received/> back if the message requests it.
+    ;; Skip MAM-replayed messages to avoid sending stale receipts.
     (let ((id (jabber-xml-get-attribute xml-data 'id)))
       (when (and jabber-chat-send-receipts
                  id
+                 (not (jabber-xml-get-attribute xml-data 'jabber-mam--origin))
                  (jabber-xml-get-children xml-data 'body)
                  (or (jabber-xml-child-with-xmlns
                       xml-data jabber-receipts-xmlns)
@@ -114,8 +116,10 @@ JC is the connection.  Added to `jabber-message-chain'."
          jc `(message ((to . ,from) (type . "chat"))
                       (received ((xmlns . ,jabber-receipts-xmlns)
                                  (id . ,id)))))))
-    ;; Track pending markable message for <displayed/> on visibility
+    ;; Track pending markable message for <displayed/> on visibility.
+    ;; Skip MAM-replayed messages.
     (when-let* ((id (jabber-xml-get-attribute xml-data 'id))
+                ((not (jabber-xml-get-attribute xml-data 'jabber-mam--origin)))
                 ((jabber-xml-get-children xml-data 'body))
                 ((jabber-xml-child-with-xmlns
                   xml-data jabber-chat-markers-xmlns)))
