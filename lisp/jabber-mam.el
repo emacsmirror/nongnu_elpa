@@ -213,6 +213,14 @@ Returns plist (:complete BOOL :first ID :last ID)."
 
 ;;; Message chain handler
 
+(defun jabber-mam--unwrap-into (outer inner)
+  "Replace OUTER stanza's attributes and children with INNER's.
+Marks the stanza as MAM-origin so downstream handlers can suppress
+outgoing receipts.  Mutates OUTER in place."
+  (setcar (cdr outer) (append (jabber-xml-node-attributes inner)
+                              '((jabber-mam--origin . "t"))))
+  (setcdr (cdr outer) (cddr inner)))
+
 (defun jabber-mam--process-message (jc xml-data)
   "Handle a MAM result <message> from the message chain.
 JC is the Jabber connection.  XML-DATA is the stanza."
@@ -263,20 +271,24 @@ JC is the Jabber connection.  XML-DATA is the stanza."
            (oob-desc (when oob-x
                        (car (jabber-xml-node-children
                              (car (jabber-xml-get-children oob-x 'desc)))))))
-      (when (and peer body)
-        (jabber-db-store-message
-         our-jid peer direction type body
-         (floor (float-time (or timestamp (current-time))))
-         (jabber-jid-resource from)
-         stanza-id archive-id nil
-         oob-url oob-desc encrypted)
-        ;; Don't display during sync.  Track the buffer for
-        ;; post-sync redisplay instead.
-        (jabber-mam--mark-dirty peer type))
-      ;; Strip children so downstream handlers (jabber-process-chat,
-      ;; jabber-muc-process-message, jabber-db--message-handler) see
-      ;; an empty stanza and skip it.
-      (setcdr (cdr xml-data) nil))))
+      (if (and peer body)
+          (progn
+            (jabber-db-store-message
+             our-jid peer direction type body
+             (floor (float-time (or timestamp (current-time))))
+             (jabber-jid-resource from)
+             stanza-id archive-id nil
+             oob-url oob-desc encrypted)
+            ;; Don't display during sync.  Track the buffer for
+            ;; post-sync redisplay instead.
+            (jabber-mam--mark-dirty peer type)
+            ;; Strip children so downstream handlers see an empty
+            ;; stanza and skip it.
+            (setcdr (cdr xml-data) nil))
+        ;; Bodyless MAM result (receipt, marker, chat state): unwrap
+        ;; the inner message so downstream handlers see the original
+        ;; sender JID and protocol elements.
+        (jabber-mam--unwrap-into xml-data inner-msg)))))
 
 (defvar jabber-muc-participants)        ; jabber-muc.el
 

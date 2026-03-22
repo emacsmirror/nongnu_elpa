@@ -462,6 +462,47 @@ VALUES ('a','b','in','chat','test',1)")
     (jabber-mam--cleanup-all)
     (should (= 0 jabber-mam--tx-depth))))
 
+;;; Group 8: stanza mutation guard
+
+(ert-deftest jabber-mam-test-body-stanza-stripped ()
+  "Body-bearing MAM result has children stripped after processing."
+  (jabber-mam-test-with-db
+    (let* ((jc (jabber-mam-test--make-fake-jc "me@example.com"))
+           (jabber-mam--syncing (list (cons jc "q1")))
+           (jabber-mam--tx-depth 1)
+           (jabber-chat--crypto-loaded t)
+           (stanza (jabber-mam-test--make-message 1)))
+      (jabber-mam--process-message jc stanza)
+      (should-not (cddr stanza)))))
+
+(ert-deftest jabber-mam-test-bodyless-stanza-unwrapped ()
+  "Bodyless MAM result is unwrapped with original sender and MAM marker."
+  (jabber-mam-test-with-db
+    (let* ((jc (jabber-mam-test--make-fake-jc "me@example.com"))
+           (jabber-mam--syncing (list (cons jc "q1")))
+           (jabber-mam--tx-depth 1)
+           (jabber-chat--crypto-loaded t)
+           ;; Receipt stanza: no body, just a <received/> element
+           (stanza `(message ((from . "me@example.com"))
+                             (result ((xmlns . ,jabber-mam-xmlns)
+                                      (id . "archive-001"))
+                                     (forwarded ((xmlns . ,jabber-mam-forward-xmlns))
+                                                (delay ((xmlns . ,jabber-mam-delay-xmlns)
+                                                        (stamp . "2025-01-01T00:00:00Z")))
+                                                (message ((from . "alice@example.com/res")
+                                                          (to . "me@example.com")
+                                                          (id . "receipt-1"))
+                                                         (received ((xmlns . "urn:xmpp:receipts")
+                                                                    (id . "msg-42")))))))))
+      (jabber-mam--process-message jc stanza)
+      ;; Outer stanza should now have inner message's from
+      (should (string= "alice@example.com/res"
+                        (jabber-xml-get-attribute stanza 'from)))
+      ;; MAM origin marker should be set
+      (should (jabber-xml-get-attribute stanza 'jabber-mam--origin))
+      ;; The receipt element should be a child
+      (should (car (jabber-xml-get-children stanza 'received))))))
+
 (provide 'jabber-mam-tests)
 
 ;;; jabber-mam-tests.el ends here
