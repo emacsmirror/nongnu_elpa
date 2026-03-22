@@ -828,8 +828,9 @@ Returns the ewoc node, or nil if BUFFER is dead."
         (jabber-db--outgoing-handler body id)
         (when (run-hook-with-args-until-success
                'jabber-chat-printers msg-plist :local :printp)
-          (jabber-maybe-print-rare-time
-           (jabber-chat-ewoc-enter (list :local msg-plist))))))))
+          (let ((node (jabber-chat-ewoc-enter (list :local msg-plist))))
+            (jabber-maybe-print-rare-time node)
+            node))))))
 
 (defun jabber-omemo--send-failed (buffer node body reason)
   "Mark NODE as :undelivered and restore BODY to input area.
