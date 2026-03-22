@@ -379,7 +379,8 @@ but never inserted into the ewoc."
               (when peer
                 (jabber-db-backlog
                  (jabber-connection-bare-jid jabber-buffer-connection)
-                 (jabber-jid-user peer)))))
+                 (jabber-jid-user peer)
+                 t))))
         (if backlog-entries
             (progn
               (setq jabber-chat-earliest-backlog
