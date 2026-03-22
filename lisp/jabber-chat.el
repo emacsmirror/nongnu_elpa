@@ -555,19 +555,82 @@ Mutates XML-DATA in place and returns it."
       (nconc xml-data (list `(body () ,text)))))
   xml-data)
 
+(defvar jabber-chat-decrypt-handlers nil
+  "Alist of registered decryption handlers.
+Each entry is (ID . PLIST) where PLIST has keys:
+  :detect    - function (XML-DATA) -> parsed-data or nil
+  :decrypt   - function (JC XML-DATA PARSED) -> XML-DATA (modified)
+  :priority  - integer, lower runs first (default 50)
+  :error-label - string for error body, e.g. \"OMEMO\"
+Handlers are tried in :priority order (ascending).
+The first whose :detect returns non-nil wins.")
+
+(defvar jabber-chat--sorted-decrypt-handlers-cache nil
+  "Cached sorted handler list.  Invalidated on register/unregister.")
+
+(defun jabber-chat-register-decrypt-handler (id &rest props)
+  "Register decryption handler ID with properties PROPS.
+ID is a symbol (e.g. `omemo', `openpgp', `openpgp-legacy').
+PROPS is a plist with keys :detect, :decrypt, :priority, :error-label.
+If ID is already registered, replace it."
+  (setq jabber-chat-decrypt-handlers
+        (assq-delete-all id jabber-chat-decrypt-handlers))
+  (push (cons id props) jabber-chat-decrypt-handlers)
+  (setq jabber-chat--sorted-decrypt-handlers-cache nil))
+
+(defun jabber-chat-unregister-decrypt-handler (id)
+  "Remove decryption handler ID."
+  (setq jabber-chat-decrypt-handlers
+        (assq-delete-all id jabber-chat-decrypt-handlers))
+  (setq jabber-chat--sorted-decrypt-handlers-cache nil))
+
+(defun jabber-chat--sorted-decrypt-handlers ()
+  "Return `jabber-chat-decrypt-handlers' sorted by :priority."
+  (or jabber-chat--sorted-decrypt-handlers-cache
+      (setq jabber-chat--sorted-decrypt-handlers-cache
+            (sort (copy-sequence jabber-chat-decrypt-handlers)
+                  (lambda (a b)
+                    (< (or (plist-get (cdr a) :priority) 50)
+                       (or (plist-get (cdr b) :priority) 50)))))))
+
+(defun jabber-chat--try-decrypt (jc xml-data parsed handler-props)
+  "Call the :decrypt function from HANDLER-PROPS with error handling.
+On success, return the (mutated) XML-DATA.  On error, replace the
+body with \"[LABEL: could not decrypt]\" and return XML-DATA."
+  (condition-case err
+      (funcall (plist-get handler-props :decrypt) jc xml-data parsed)
+    (error
+     (message "%s decrypt failed: %s"
+              (plist-get handler-props :error-label)
+              (error-message-string err))
+     (jabber-chat--set-body xml-data
+       (format "[%s: could not decrypt]"
+               (plist-get handler-props :error-label)))
+     xml-data)))
+
 (defvar jabber-chat--crypto-loaded nil
   "Non-nil after crypto modules have been loaded.")
 
-(defun jabber-chat--decrypt-if-needed (_jc xml-data)
-  "Return XML-DATA, possibly decrypted.
-On first call, eagerly loads OMEMO and OpenPGP modules so their
-`:around' advice is installed before any stanza is processed.
-_JC is the Jabber connection, unused until OMEMO advises this function."
+(defun jabber-chat--decrypt-if-needed (jc xml-data)
+  "Dispatch XML-DATA to the first matching decrypt handler.
+On first call, loads crypto modules so their handlers are registered.
+Tries handlers in :priority order.  Returns XML-DATA, possibly
+with its body replaced by decrypted plaintext (or an error
+placeholder).  Skips dispatch when XML-DATA has no `from' attribute.
+JC is the Jabber connection."
   (unless jabber-chat--crypto-loaded
     (condition-case nil (require 'jabber-omemo nil t) (error nil))
     (condition-case nil (require 'jabber-openpgp nil t) (error nil))
     (setq jabber-chat--crypto-loaded t))
-  xml-data)
+  ;; First-match-wins: the dispatcher stops at the first handler whose
+  ;; :detect returns non-nil, so re-entrancy guards are unnecessary.
+  (if (null (jabber-xml-get-attribute xml-data 'from))
+      xml-data
+    (cl-loop for (_id . props) in (jabber-chat--sorted-decrypt-handlers)
+             for parsed = (funcall (plist-get props :detect) xml-data)
+             when parsed
+             return (jabber-chat--try-decrypt jc xml-data parsed props)
+             finally return xml-data)))
 
 (defun jabber-chat--display-message (_jc _xml-data chat-buffer
                                     error-p from msg-plist)

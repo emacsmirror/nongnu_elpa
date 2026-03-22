@@ -206,6 +206,124 @@
       (should (string= "created"
                         (car (jabber-xml-node-children body-el)))))))
 
+;;; Group 7: decrypt handler dispatch
+
+(ert-deftest jabber-chat-test-register-decrypt-handler-adds-entry ()
+  "Register a handler, assert it appears in the alist."
+  (let ((jabber-chat-decrypt-handlers nil)
+        (jabber-chat--sorted-decrypt-handlers-cache nil))
+    (jabber-chat-register-decrypt-handler
+     'test-handler :detect #'ignore :decrypt #'ignore
+     :priority 10 :error-label "Test")
+    (should (assq 'test-handler jabber-chat-decrypt-handlers))))
+
+(ert-deftest jabber-chat-test-unregister-decrypt-handler-removes-entry ()
+  "Register then unregister, assert the alist is empty."
+  (let ((jabber-chat-decrypt-handlers nil)
+        (jabber-chat--sorted-decrypt-handlers-cache nil))
+    (jabber-chat-register-decrypt-handler
+     'test-handler :detect #'ignore :decrypt #'ignore
+     :priority 10 :error-label "Test")
+    (jabber-chat-unregister-decrypt-handler 'test-handler)
+    (should-not jabber-chat-decrypt-handlers)))
+
+(ert-deftest jabber-chat-test-register-decrypt-handler-replaces-existing ()
+  "Register a handler twice, assert only one entry with new priority."
+  (let ((jabber-chat-decrypt-handlers nil)
+        (jabber-chat--sorted-decrypt-handlers-cache nil))
+    (jabber-chat-register-decrypt-handler
+     'test-handler :detect #'ignore :decrypt #'ignore
+     :priority 10 :error-label "Test")
+    (jabber-chat-register-decrypt-handler
+     'test-handler :detect #'ignore :decrypt #'ignore
+     :priority 20 :error-label "Test")
+    (should (= 1 (length jabber-chat-decrypt-handlers)))
+    (should (= 20 (plist-get (cdr (assq 'test-handler
+                                         jabber-chat-decrypt-handlers))
+                              :priority)))))
+
+(ert-deftest jabber-chat-test-decrypt-dispatches-to-matching-handler ()
+  "Handler whose :detect matches gets its :decrypt called."
+  (let ((jabber-chat-decrypt-handlers nil)
+        (jabber-chat--sorted-decrypt-handlers-cache nil)
+        (jabber-chat--crypto-loaded t)
+        (called nil))
+    (jabber-chat-register-decrypt-handler
+     'test-handler
+     :detect (lambda (_xml) 'detected)
+     :decrypt (lambda (_jc xml _parsed) (setq called t) xml)
+     :priority 10
+     :error-label "Test")
+    (let ((xml '(message ((from . "alice@example.com"))
+                         (body () "hello"))))
+      (jabber-chat--decrypt-if-needed nil xml)
+      (should called))))
+
+(ert-deftest jabber-chat-test-decrypt-skips-non-matching-handler ()
+  "Handler whose :detect returns nil leaves xml-data unchanged."
+  (let ((jabber-chat-decrypt-handlers nil)
+        (jabber-chat--sorted-decrypt-handlers-cache nil)
+        (jabber-chat--crypto-loaded t))
+    (jabber-chat-register-decrypt-handler
+     'test-handler
+     :detect (lambda (_xml) nil)
+     :decrypt (lambda (_jc _xml _parsed) (error "Should not be called"))
+     :priority 10
+     :error-label "Test")
+    (let ((xml '(message ((from . "alice@example.com"))
+                         (body () "hello"))))
+      (should (eq xml (jabber-chat--decrypt-if-needed nil xml))))))
+
+(ert-deftest jabber-chat-test-decrypt-priority-order ()
+  "Lower-priority handler runs first when both match."
+  (let ((jabber-chat-decrypt-handlers nil)
+        (jabber-chat--sorted-decrypt-handlers-cache nil)
+        (jabber-chat--crypto-loaded t)
+        (winner nil))
+    (jabber-chat-register-decrypt-handler
+     'handler-20
+     :detect (lambda (_xml) 'detected)
+     :decrypt (lambda (_jc xml _parsed) (setq winner 20) xml)
+     :priority 20
+     :error-label "H20")
+    (jabber-chat-register-decrypt-handler
+     'handler-10
+     :detect (lambda (_xml) 'detected)
+     :decrypt (lambda (_jc xml _parsed) (setq winner 10) xml)
+     :priority 10
+     :error-label "H10")
+    (let ((xml '(message ((from . "alice@example.com"))
+                         (body () "hello"))))
+      (jabber-chat--decrypt-if-needed nil xml)
+      (should (= 10 winner)))))
+
+(ert-deftest jabber-chat-test-decrypt-error-replaces-body ()
+  "Handler that signals error gets body replaced with error label."
+  (let ((jabber-chat-decrypt-handlers nil)
+        (jabber-chat--sorted-decrypt-handlers-cache nil)
+        (jabber-chat--crypto-loaded t))
+    (jabber-chat-register-decrypt-handler
+     'test-handler
+     :detect (lambda (_xml) 'detected)
+     :decrypt (lambda (_jc _xml _parsed) (error "Decrypt boom"))
+     :priority 10
+     :error-label "BOOM")
+    (let ((xml '(message ((from . "alice@example.com"))
+                         (body () "fallback"))))
+      (jabber-chat--decrypt-if-needed nil xml)
+      (should (string= "[BOOM: could not decrypt]"
+                        (car (jabber-xml-node-children
+                              (car (jabber-xml-get-children xml 'body)))))))))
+
+(ert-deftest jabber-chat-test-decrypt-no-handlers-returns-unchanged ()
+  "With empty handler alist, xml-data passes through."
+  (let ((jabber-chat-decrypt-handlers nil)
+        (jabber-chat--sorted-decrypt-handlers-cache nil)
+        (jabber-chat--crypto-loaded t))
+    (let ((xml '(message ((from . "alice@example.com"))
+                         (body () "hello"))))
+      (should (eq xml (jabber-chat--decrypt-if-needed nil xml))))))
+
 (provide 'jabber-chat-tests)
 
 ;;; jabber-chat-tests.el ends here
