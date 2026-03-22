@@ -257,12 +257,13 @@ JC is the Jabber connection.  XML-DATA is the stanza."
            (stamp (nth 1 parsed))
            (inner-msg (nth 2 parsed))
            ;; Detect encryption before decryption modifies the stanza
-           (encrypted (or (jabber-xml-child-with-xmlns
-                           inner-msg "eu.siacs.conversations.axolotl")
-                          (jabber-xml-child-with-xmlns
-                           inner-msg "jabber:x:encrypted")
-                          (jabber-xml-child-with-xmlns
-                           inner-msg "urn:xmpp:openpgp:0")))
+           (encrypted (and (or (jabber-xml-child-with-xmlns
+                                inner-msg "eu.siacs.conversations.axolotl")
+                               (jabber-xml-child-with-xmlns
+                                inner-msg "jabber:x:encrypted")
+                               (jabber-xml-child-with-xmlns
+                                inner-msg "urn:xmpp:openpgp:0"))
+                           t))
            (inner-msg (jabber-chat--decrypt-if-needed jc inner-msg))
            (from (jabber-xml-get-attribute inner-msg 'from))
            (to (jabber-xml-get-attribute inner-msg 'to))

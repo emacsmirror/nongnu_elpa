@@ -586,12 +586,13 @@ XML-DATA is the parsed stanza."
            (oob-desc (when oob-x
                        (car (jabber-xml-node-children
                              (car (jabber-xml-get-children oob-x 'desc))))))
-           (encrypted (or (jabber-xml-child-with-xmlns
-                          xml-data "eu.siacs.conversations.axolotl")
-                         (jabber-xml-child-with-xmlns
-                          xml-data "jabber:x:encrypted")
-                         (jabber-xml-child-with-xmlns
-                          xml-data "urn:xmpp:openpgp:0"))))
+           (encrypted (and (or (jabber-xml-child-with-xmlns
+                               xml-data "eu.siacs.conversations.axolotl")
+                              (jabber-xml-child-with-xmlns
+                               xml-data "jabber:x:encrypted")
+                              (jabber-xml-child-with-xmlns
+                               xml-data "urn:xmpp:openpgp:0"))
+                          t)))
       (when (and from body)
         (jabber-db-store-message
          (jabber-connection-bare-jid jc)
