@@ -324,6 +324,22 @@
                          (body () "hello"))))
       (should (eq xml (jabber-chat--decrypt-if-needed nil xml))))))
 
+(ert-deftest jabber-chat-test-decrypt-skips-nil-from ()
+  "Stanza with no from attribute bypasses decrypt dispatch entirely."
+  (let ((jabber-chat--crypto-loaded t)
+        (called nil))
+    (jabber-chat-register-decrypt-handler
+     'test-nil-from
+     :detect  (lambda (_xml) (setq called t) nil)
+     :decrypt (lambda (_jc _xml _det) nil)
+     :priority 1
+     :error-label "test")
+    (unwind-protect
+        (let ((xml '(message () (body () "no from"))))
+          (should (eq xml (jabber-chat--decrypt-if-needed nil xml)))
+          (should-not called))
+      (jabber-chat-unregister-decrypt-handler 'test-nil-from))))
+
 (provide 'jabber-chat-tests)
 
 ;;; jabber-chat-tests.el ends here

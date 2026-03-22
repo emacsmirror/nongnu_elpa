@@ -319,6 +319,72 @@
       (kill-buffer buf)
       (should-not (jabber-chatbuffer--registry-get 'chat "carol@example.com")))))
 
+;;; Group 9: OMEMO immediate display status transitions
+
+(defmacro jabber-chatbuffer-test-with-rendering-ewoc (&rest body)
+  "Set up a temp buffer with a rendering chat ewoc, then run BODY.
+Uses `jabber-chat-pp' so status indicators are actually rendered."
+  (declare (indent 0) (debug t))
+  `(with-temp-buffer
+     (let ((jabber-chat-ewoc (ewoc-create #'jabber-chat-pp nil nil 'nosep))
+           (jabber-chat--msg-nodes (make-hash-table :test 'equal))
+           (jabber-chat-printers '(jabber-chat-print-body))
+           (jabber-chat-header-line-format nil)
+           (inhibit-read-only t))
+       (cl-letf (((symbol-function 'jabber-chat-self-prompt)
+                  (lambda (_msg _ts _delayed _/me-p) (insert "me: "))))
+         ,@body))))
+
+(ert-deftest jabber-chat-test-sending-status-renders-warning-dot ()
+  "A message with :sending status renders a warning-face dot."
+  (jabber-chatbuffer-test-with-rendering-ewoc
+    (let* ((msg (list :id "omemo-001" :body "secret"
+                      :status :sending :timestamp (current-time)))
+           (node (jabber-chat-ewoc-enter (list :local msg))))
+      (should node)
+      (goto-char (point-min))
+      (should (search-forward "\u00b7" nil t))
+      (should (eq 'warning (get-text-property (1- (point)) 'face))))))
+
+(ert-deftest jabber-chat-test-status-sending-to-sent ()
+  "Status :sending -> :sent updates the indicator face."
+  (jabber-chatbuffer-test-with-rendering-ewoc
+    (let* ((msg (list :id "omemo-002" :body "hello"
+                      :status :sending :timestamp (current-time)))
+           (node (jabber-chat-ewoc-enter (list :local msg))))
+      (plist-put (cadr (ewoc-data node)) :status :sent)
+      (ewoc-invalidate jabber-chat-ewoc node)
+      (goto-char (point-min))
+      (should (search-forward "\u00b7" nil t))
+      (should (eq 'shadow (get-text-property (1- (point)) 'face))))))
+
+(ert-deftest jabber-chat-test-status-sending-to-undelivered ()
+  "Status :sending -> :undelivered shows error-face X."
+  (jabber-chatbuffer-test-with-rendering-ewoc
+    (let* ((msg (list :id "omemo-003" :body "fail"
+                      :status :sending :timestamp (current-time)))
+           (node (jabber-chat-ewoc-enter (list :local msg))))
+      (plist-put (cadr (ewoc-data node)) :status :undelivered)
+      (ewoc-invalidate jabber-chat-ewoc node)
+      (goto-char (point-min))
+      (should (search-forward "\u2717" nil t))
+      (should (eq 'error (get-text-property (1- (point)) 'face))))))
+
+(ert-deftest jabber-chat-test-send-failed-restores-body ()
+  "jabber-omemo--send-failed restores body text to buffer input area."
+  (require 'jabber-omemo)
+  (jabber-chatbuffer-test-with-ewoc
+    (let* ((jabber-point-insert (point-marker))
+           (msg (list :id "omemo-004" :body "restore me"
+                      :status :sending :timestamp (current-time)))
+           (node (jabber-chat-ewoc-enter (list :local msg))))
+      (jabber-omemo--send-failed (current-buffer) node "restore me"
+                                 "OMEMO: test failure")
+      (should (string= "restore me"
+                        (buffer-substring jabber-point-insert (point-max))))
+      (should (eq :undelivered
+                  (plist-get (cadr (ewoc-data node)) :status))))))
+
 (provide 'jabber-chatbuffer-tests)
 
 ;;; jabber-chatbuffer-tests.el ends here
