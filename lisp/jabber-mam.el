@@ -488,13 +488,22 @@ On item-not-found (stale sync point), falls back to time-based query."
             (let ((inhibit-message t))
               (message "MAM: sync point expired%s, falling back to time-based query"
                        (if to (format " for %s" to) "")))
-            (let ((start (when jabber-mam-catch-up-days
-                           (format-time-string
-                            "%Y-%m-%dT%H:%M:%SZ"
-                            (time-subtract (current-time)
-                                           (* jabber-mam-catch-up-days 86400))
-                            t))))
-              (jabber-mam--query jc nil nil nil start to)))
+            ;; Transfer completion callback to the fallback query.
+            (let* ((old-cb (assoc queryid jabber-mam--completion-callbacks
+                                  #'string=))
+                   (new-queryid (jabber-mam--make-queryid))
+                   (start (when jabber-mam-catch-up-days
+                            (format-time-string
+                             "%Y-%m-%dT%H:%M:%SZ"
+                             (time-subtract (current-time)
+                                            (* jabber-mam-catch-up-days 86400))
+                             t))))
+              (when old-cb
+                (setq jabber-mam--completion-callbacks
+                      (delq old-cb jabber-mam--completion-callbacks))
+                (push (cons new-queryid (cdr old-cb))
+                      jabber-mam--completion-callbacks))
+              (jabber-mam--query jc nil new-queryid nil start to)))
         ;; Permanent error: fire completion callback so callers aren't stuck.
         (when-let* ((cb (assoc queryid jabber-mam--completion-callbacks
                                #'string=)))

@@ -567,7 +567,42 @@ VALUES ('a','b','in','chat','test',1)")
       (should (caar (sqlite-select (jabber-db-ensure-open)
                                    "SELECT 1 FROM message WHERE stanza_id='s2'"))))))
 
-;;; Group 10: sender JID validation
+;;; Group 10: error handler callback transfer
+
+(ert-deftest jabber-mam-test-error-callback-transferred ()
+  "item-not-found fallback transfers callback to new query."
+  (jabber-mam-test-with-db
+    (sqlite-execute (jabber-db-ensure-open) "BEGIN")
+    (let* ((jc (jabber-mam-test--make-fake-jc "me@example.com"))
+           (jabber-mam--tx-depth 1)
+           (jabber-mam--syncing (list (cons jc "old-q")))
+           (jabber-mam--dirty-buffers nil)
+           (callback-fired nil)
+           (jabber-mam--completion-callbacks
+            (list (cons "old-q" (lambda () (setq callback-fired t)))))
+           (captured-queryid nil))
+      ;; Mock jabber-mam--query to capture the new queryid
+      (cl-letf (((symbol-function 'jabber-mam--query)
+                 (lambda (_jc _after qid &rest _)
+                   (setq captured-queryid qid))))
+        ;; Simulate item-not-found error IQ
+        (jabber-mam--handle-error
+         jc
+         `(iq ((type . "error"))
+              (error () (item-not-found ())))
+         '("old-q" nil)))
+      ;; Old callback should be removed
+      (should-not (assoc "old-q" jabber-mam--completion-callbacks #'string=))
+      ;; New callback should be registered under the new queryid
+      (should captured-queryid)
+      (should (assoc captured-queryid jabber-mam--completion-callbacks
+                     #'string=))
+      ;; Fire it to confirm it's the same callback
+      (funcall (cdr (assoc captured-queryid jabber-mam--completion-callbacks
+                           #'string=)))
+      (should callback-fired))))
+
+;;; Group 11: sender JID validation
 
 (ert-deftest jabber-mam-test-rejects-foreign-sender ()
   "MAM result from a server other than ours is rejected."
