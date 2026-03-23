@@ -341,7 +341,8 @@ Examples:
 ;; MUC alert hooks
 (defun jabber-muc-default-message (nick group buffer _text)
   (when (or jabber-message-alert-same-buffer
-	    (not (memq (selected-window) (get-buffer-window-list buffer))))
+	    (not (and (buffer-live-p buffer)
+		      (memq (selected-window) (get-buffer-window-list buffer)))))
     (if nick
 	(when (or jabber-muc-alert-self
 		  (not (string= nick (jabber-muc-nickname group))))
@@ -356,17 +357,18 @@ Examples:
 
 (defun jabber-muc-display (_nick _group buffer _text title)
   "Display the buffer where a new message has arrived."
-  (when title
+  (when (and title (buffer-live-p buffer))
     (display-buffer buffer)))
 
 (defun jabber-muc-switch (_nick _group buffer _text title)
   "Switch to the buffer where a new message has arrived."
-  (when title
+  (when (and title (buffer-live-p buffer))
     (switch-to-buffer buffer)))
 
 (defun jabber-muc-scroll (_nick _group buffer _text _title)
   "Scroll buffer even if it is in an unselected window."
-  (jabber-message-scroll nil buffer nil nil))
+  (when (buffer-live-p buffer)
+    (jabber-message-scroll nil buffer nil nil)))
 
 ;; Presence alert hooks
 (defun jabber-presence-default-message (who oldstatus newstatus _statustext)
