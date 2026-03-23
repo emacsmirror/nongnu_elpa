@@ -345,17 +345,27 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
          (list account peer resource direction type body timestamp
                stanza-id server-id raw-xml oob-url oob-desc
                (if encrypted 1 0))))
-       ;; Replace failed-decrypt placeholder with real text.
-       ((and body
-             (not (string-match-p "\\`: could not decrypt\\]" body))
-             (memq dup-id-col '(stanza_id server_id)))
+       ;; Duplicate by server-side ID: normalize timestamp to the
+       ;; server's value so message order is consistent across
+       ;; devices.  Also replace failed-decrypt placeholders.
+       ((memq dup-id-col '(stanza_id server_id))
         (let ((id-val (if (eq dup-id-col 'stanza_id) stanza-id server-id)))
+          ;; Always normalize timestamp.
           (sqlite-execute
            db
-           (format "UPDATE message SET body = ?, oob_url = ?, oob_desc = ? \
-WHERE %s = ? AND account = ? AND body LIKE '%%: could not decrypt]'"
+           (format "UPDATE message SET timestamp = ? \
+WHERE %s = ? AND account = ?"
                    dup-id-col)
-           (list body oob-url oob-desc id-val account))))))))
+           (list timestamp id-val account))
+          ;; Replace failed-decrypt placeholder if new body is real text.
+          (when (and body
+                     (not (string-match-p "\\`: could not decrypt\\]" body)))
+            (sqlite-execute
+             db
+             (format "UPDATE message SET body = ?, oob_url = ?, oob_desc = ? \
+WHERE %s = ? AND account = ? AND body LIKE '%%: could not decrypt]'"
+                     dup-id-col)
+             (list body oob-url oob-desc id-val account)))))))))
 
 ;;; Receipt updates
 

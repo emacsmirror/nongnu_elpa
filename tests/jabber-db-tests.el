@@ -272,7 +272,7 @@ and tears down on exit."
 ;;; Group 5: Dedup and last-timestamp
 
 (ert-deftest jabber-db-test-dedup-stanza-id ()
-  "Inserting a message with a duplicate stanza_id is silently ignored."
+  "Duplicate stanza_id keeps one row with body preserved and timestamp updated."
   (jabber-db-test-with-db
     (let ((ts (floor (float-time))))
       (jabber-db-store-message
@@ -281,9 +281,11 @@ and tears down on exit."
       (jabber-db-store-message
        "me@example.com" "friend@example.com" "in" "chat"
        "Duplicate" (1+ ts) nil "dup-id-123")
-      (let ((rows (jabber-db-query "me@example.com" "friend@example.com")))
+      (let ((rows (sqlite-select (jabber-db-ensure-open)
+                   "SELECT body, timestamp FROM message WHERE stanza_id = 'dup-id-123'")))
         (should (= 1 (length rows)))
-        (should (string= "First" (plist-get (car rows) :body)))))))
+        (should (string= "First" (caar rows)))
+        (should (= (1+ ts) (cadar rows)))))))
 
 (ert-deftest jabber-db-test-dedup-scoped-by-account ()
   "Same stanza_id from different accounts are stored as separate messages."
@@ -1052,6 +1054,40 @@ the corrected jabber-muc-create-buffer order."
                                '("stanza-4"))))
       (should (= 1 (length rows)))
       (should (string= "original text" (caar rows))))))
+
+(ert-deftest jabber-db-test-store-normalizes-timestamp-on-dedup ()
+  "Re-storing a duplicate updates the timestamp to the server's value."
+  (jabber-db-test-with-db
+    ;; Store with local timestamp
+    (jabber-db-store-message "me@x.com" "friend@x.com" "in" "chat"
+                             "hello" 1700000099
+                             "res" "stanza-5" "srv-5")
+    ;; Re-store same message with server's authoritative timestamp
+    (jabber-db-store-message "me@x.com" "friend@x.com" "in" "chat"
+                             "hello" 1700000100
+                             "res" "stanza-5" "srv-5")
+    (let ((rows (sqlite-select (jabber-db-ensure-open)
+                               "SELECT timestamp FROM message WHERE stanza_id = ?"
+                               '("stanza-5"))))
+      (should (= 1 (length rows)))
+      (should (= 1700000100 (caar rows))))))
+
+(ert-deftest jabber-db-test-store-normalizes-timestamp-and-replaces-decrypt ()
+  "Failed-decrypt replacement also normalizes the timestamp."
+  (jabber-db-test-with-db
+    (jabber-db-store-message "me@x.com" "friend@x.com" "in" "chat"
+                             "[OMEMO: could not decrypt]" 1700000099
+                             "res" "stanza-6" "srv-6")
+    (jabber-db-store-message "me@x.com" "friend@x.com" "in" "chat"
+                             "decrypted" 1700000100
+                             "res" "stanza-6" "srv-6"
+                             nil nil nil t)
+    (let ((rows (sqlite-select (jabber-db-ensure-open)
+                               "SELECT body, timestamp FROM message WHERE stanza_id = ?"
+                               '("stanza-6"))))
+      (should (= 1 (length rows)))
+      (should (string= "decrypted" (caar rows)))
+      (should (= 1700000100 (cadar rows))))))
 
 (provide 'jabber-db-tests)
 
