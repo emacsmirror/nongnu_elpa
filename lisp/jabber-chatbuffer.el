@@ -58,7 +58,7 @@ Enables O(1) lookup for in-place updates (receipts, corrections).")
 (declare-function jabber-omemo-fingerprints "jabber-omemo" ())
 (declare-function jabber-connection-bare-jid "jabber-util" (jc))
 (declare-function jabber-blocking-toggle-chat-peer "jabber-blocking" (jc))
-(declare-function jabber-mam-sync-buffer "jabber-mam" ())
+(declare-function jabber-mam-sync-buffer "jabber-mam" (count))
 (declare-function jabber-moderation-retract "jabber-moderation" ())
 (declare-function jabber-jid-user "jabber-util" (jid))
 (declare-function jabber-chat-display-more-backlog "jabber-chat"
@@ -75,6 +75,7 @@ Enables O(1) lookup for in-place updates (receipts, corrections).")
 
 (defvar jabber-chatting-with)              ; jabber-chat.el
 (defvar jabber-chat-header-line-format)   ; jabber-chat.el
+(defvar jabber-chat-earliest-backlog)     ; jabber-chat.el
 (defvar jabber-group)                      ; jabber-muc.el
 (defvar jabber-muc-header-line-format)    ; jabber-muc.el
 (defvar jabber-muc-participants)          ; jabber-muc.el
@@ -348,6 +349,13 @@ EWOC-PP is the pretty-printer function for the message EWOC."
 
 (declare-function jabber-chat-create-buffer "jabber-chat" (jc chat-with))
 (declare-function jabber-muc-create-buffer "jabber-muc" (jc group))
+(declare-function jabber-db-backlog "jabber-db"
+                  (account peer &optional count start-time))
+(declare-function jabber-chat-insert-backlog-entry "jabber-chat"
+                  (msg-plist))
+(declare-function jabber-chat--insert-backlog-chunked "jabber-chat"
+                  (buffer entries callback))
+(declare-function jabber-chat-display-buffer-images "jabber-chat" ())
 
 (defun jabber-chat-buffer-redraw-noselect ()
   "Kill the current chat buffer and recreate it from the database.
@@ -364,6 +372,31 @@ Returns the new buffer without selecting it."
   "Kill the current chat buffer and recreate it from the database."
   (interactive)
   (switch-to-buffer (jabber-chat-buffer-redraw-noselect)))
+
+(defun jabber-chat-buffer-refresh ()
+  "Refresh the current chat buffer from the database without killing it.
+Clears the ewoc and reloads backlog entries in place."
+  (interactive)
+  (let ((inhibit-read-only t)
+        (node (ewoc-nth jabber-chat-ewoc 0)))
+    ;; Delete all ewoc nodes
+    (while node
+      (let ((next (ewoc-next jabber-chat-ewoc node)))
+        (ewoc-delete jabber-chat-ewoc node)
+        (setq node next)))
+    ;; Clear message ID tracking
+    (clrhash jabber-chat--msg-nodes)
+    ;; Reload from DB
+    (let* ((peer (jabber-chat--peer-jid))
+           (account (jabber-connection-bare-jid jabber-buffer-connection))
+           (entries (jabber-db-backlog account peer)))
+      (if (null entries)
+          (setq jabber-chat-earliest-backlog (float-time))
+        (setq jabber-chat-earliest-backlog
+              (float-time (plist-get (car (last entries)) :timestamp)))
+        (jabber-chat--insert-backlog-chunked
+         (current-buffer) entries
+         #'jabber-chat-display-buffer-images)))))
 
 (defun jabber-chat-buffer-send ()
   (interactive)
