@@ -312,36 +312,50 @@ Optional OOB-URL is the jabber:x:oob URL.
 Optional OOB-DESC is the jabber:x:oob description.
 Optional ENCRYPTED is non-nil if the message was OMEMO-encrypted."
   (when-let* ((db (jabber-db-ensure-open)))
-    ;; Dedup by stanza_id or server_id if present, otherwise by content
-    (unless (or (and stanza-id
-                     (caar (sqlite-select
-                            db
-                            "SELECT 1 FROM message \
+    (let ((dup-id-col
+           (cond
+            ((and stanza-id
+                  (caar (sqlite-select
+                         db "SELECT 1 FROM message \
 WHERE stanza_id = ? AND account = ? LIMIT 1"
-                            (list stanza-id account))))
-                (and server-id
-                     (caar (sqlite-select
-                            db
-                            "SELECT 1 FROM message \
+                         (list stanza-id account))))
+             'stanza_id)
+            ((and server-id
+                  (caar (sqlite-select
+                         db "SELECT 1 FROM message \
 WHERE server_id = ? AND account = ? LIMIT 1"
-                            (list server-id account))))
-                ;; Fallback: content-based dedup for messages without IDs
-                ;; (e.g. MUC history replayed on every join)
-                (and (not stanza-id) (not server-id)
-                     (caar (sqlite-select
-                            db
-                            "SELECT 1 FROM message \
+                         (list server-id account))))
+             'server_id)
+            ;; Fallback: content-based dedup for messages without IDs
+            ;; (e.g. MUC history replayed on every join)
+            ((and (not stanza-id) (not server-id)
+                  (caar (sqlite-select
+                         db "SELECT 1 FROM message \
 WHERE account = ? AND peer = ? AND timestamp = ? AND body = ? LIMIT 1"
-                            (list account peer timestamp body)))))
-      (sqlite-execute
-       db
-       "INSERT INTO message \
+                         (list account peer timestamp body))))
+             'content))))
+      (cond
+       ((null dup-id-col)
+        (sqlite-execute
+         db
+         "INSERT INTO message \
 (account, peer, resource, direction, type, body, timestamp, \
 stanza_id, server_id, raw_xml, oob_url, oob_desc, encrypted) \
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-       (list account peer resource direction type body timestamp
-             stanza-id server-id raw-xml oob-url oob-desc
-             (if encrypted 1 0))))))
+         (list account peer resource direction type body timestamp
+               stanza-id server-id raw-xml oob-url oob-desc
+               (if encrypted 1 0))))
+       ;; Replace failed-decrypt placeholder with real text.
+       ((and body
+             (not (string-match-p "\\`: could not decrypt\\]" body))
+             (memq dup-id-col '(stanza_id server_id)))
+        (let ((id-val (if (eq dup-id-col 'stanza_id) stanza-id server-id)))
+          (sqlite-execute
+           db
+           (format "UPDATE message SET body = ?, oob_url = ?, oob_desc = ? \
+WHERE %s = ? AND account = ? AND body LIKE '%%: could not decrypt]'"
+                   dup-id-col)
+           (list body oob-url oob-desc id-val account))))))))
 
 ;;; Receipt updates
 
@@ -382,6 +396,13 @@ Optional REASON is the human-readable retraction reason string."
     (sqlite-execute jabber-db--connection
                     "UPDATE message SET body = ?, edited = 1 WHERE stanza_id = ?"
                     (list new-body stanza-id))))
+
+(defun jabber-db-delete-peer-messages (account peer)
+  "Delete all messages for PEER on ACCOUNT."
+  (when-let* ((db (jabber-db-ensure-open)))
+    (sqlite-execute db
+      "DELETE FROM message WHERE account = ? AND peer = ?"
+      (list account peer))))
 
 (defun jabber-db-message-sender-by-stanza-id (stanza-id)
   "Return the from-JID of the stored message with STANZA-ID, or nil.

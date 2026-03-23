@@ -920,6 +920,36 @@ the corrected jabber-muc-create-buffer order."
                      "SELECT delivered_at FROM message LIMIT 1"))))
       (should (equal row '(nil))))))
 
+;;; Group 16: Delete peer messages
+
+(ert-deftest jabber-db-test-delete-peer-messages ()
+  "Deleting peer messages removes all rows for that account+peer."
+  (jabber-db-test-with-db
+    (let ((ts (- (floor (float-time)) 10)))
+      (jabber-db-store-message
+       "me@example.com" "alice@example.com" "in" "chat" "Hello" ts)
+      (jabber-db-store-message
+       "me@example.com" "alice@example.com" "out" "chat" "Hi" (1+ ts))
+      (jabber-db-store-message
+       "me@example.com" "bob@example.com" "in" "chat" "Hey" (+ ts 2))
+      ;; Delete alice's messages
+      (jabber-db-delete-peer-messages "me@example.com" "alice@example.com")
+      ;; Alice gone
+      (should (null (jabber-db-query "me@example.com" "alice@example.com")))
+      ;; Bob untouched
+      (let ((rows (jabber-db-query "me@example.com" "bob@example.com")))
+        (should (= 1 (length rows)))
+        (should (string= "Hey" (plist-get (car rows) :body)))))))
+
+(ert-deftest jabber-db-test-delete-peer-messages-empty ()
+  "Deleting from a nonexistent peer is a no-op."
+  (jabber-db-test-with-db
+    (jabber-db-delete-peer-messages "me@example.com" "nobody@example.com")
+    ;; No error, no rows affected
+    (should t)))
+
+;;; Group 17: Message retraction
+
 (ert-deftest jabber-db-test-retract-with-reason ()
   "jabber-db-retract-message persists moderator and reason; backlog returns both."
   (skip-unless (fboundp 'sqlite-open))
@@ -953,6 +983,75 @@ the corrected jabber-muc-create-buffer order."
              (entry (car entries)))
         (should (plist-get entry :retracted))
         (should-not (plist-get entry :retraction-reason))))))
+
+;;; Group: Failed-decrypt replacement
+
+(ert-deftest jabber-db-test-store-replaces-failed-decrypt-by-stanza-id ()
+  "Re-storing a message with real text replaces a decrypt-failure placeholder."
+  (jabber-db-test-with-db
+    ;; Store with failed-decrypt body
+    (jabber-db-store-message "me@x.com" "friend@x.com" "in" "chat"
+                             "[OMEMO: could not decrypt]" 1700000000
+                             "res" "stanza-1" "srv-1")
+    ;; Re-store same stanza-id with decrypted body
+    (jabber-db-store-message "me@x.com" "friend@x.com" "in" "chat"
+                             "hello there" 1700000000
+                             "res" "stanza-1" "srv-1"
+                             nil nil nil t)
+    ;; Should have exactly one row with the decrypted body
+    (let ((rows (sqlite-select (jabber-db-ensure-open)
+                               "SELECT body FROM message WHERE stanza_id = ?"
+                               '("stanza-1"))))
+      (should (= 1 (length rows)))
+      (should (string= "hello there" (caar rows))))))
+
+(ert-deftest jabber-db-test-store-replaces-failed-decrypt-by-server-id ()
+  "Re-storing by server-id replaces a decrypt-failure placeholder."
+  (jabber-db-test-with-db
+    (jabber-db-store-message "me@x.com" "friend@x.com" "in" "chat"
+                             "[OMEMO: could not decrypt]" 1700000000
+                             "res" nil "srv-2")
+    (jabber-db-store-message "me@x.com" "friend@x.com" "in" "chat"
+                             "decrypted text" 1700000000
+                             "res" nil "srv-2"
+                             nil nil nil t)
+    (let ((rows (sqlite-select (jabber-db-ensure-open)
+                               "SELECT body FROM message WHERE server_id = ?"
+                               '("srv-2"))))
+      (should (= 1 (length rows)))
+      (should (string= "decrypted text" (caar rows))))))
+
+(ert-deftest jabber-db-test-store-no-replace-when-still-undecryptable ()
+  "Re-storing with another failed-decrypt body does not update."
+  (jabber-db-test-with-db
+    (jabber-db-store-message "me@x.com" "friend@x.com" "in" "chat"
+                             "[OMEMO: could not decrypt]" 1700000000
+                             "res" "stanza-3" "srv-3")
+    (jabber-db-store-message "me@x.com" "friend@x.com" "in" "chat"
+                             "[OMEMO: could not decrypt]" 1700000000
+                             "res" "stanza-3" "srv-3")
+    ;; Still one row, body unchanged
+    (let ((rows (sqlite-select (jabber-db-ensure-open)
+                               "SELECT body FROM message WHERE stanza_id = ?"
+                               '("stanza-3"))))
+      (should (= 1 (length rows)))
+      (should (string= "[OMEMO: could not decrypt]" (caar rows))))))
+
+(ert-deftest jabber-db-test-store-no-replace-when-already-decrypted ()
+  "Re-storing does not overwrite an already-decrypted message."
+  (jabber-db-test-with-db
+    (jabber-db-store-message "me@x.com" "friend@x.com" "in" "chat"
+                             "original text" 1700000000
+                             "res" "stanza-4" "srv-4")
+    (jabber-db-store-message "me@x.com" "friend@x.com" "in" "chat"
+                             "different text" 1700000000
+                             "res" "stanza-4" "srv-4")
+    ;; Still one row, original body preserved
+    (let ((rows (sqlite-select (jabber-db-ensure-open)
+                               "SELECT body FROM message WHERE stanza_id = ?"
+                               '("stanza-4"))))
+      (should (= 1 (length rows)))
+      (should (string= "original text" (caar rows))))))
 
 (provide 'jabber-db-tests)
 
