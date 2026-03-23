@@ -349,17 +349,21 @@ EWOC-PP is the pretty-printer function for the message EWOC."
 (declare-function jabber-chat-create-buffer "jabber-chat" (jc chat-with))
 (declare-function jabber-muc-create-buffer "jabber-muc" (jc group))
 
-(defun jabber-chat-buffer-redraw ()
-  "Kill the current chat buffer and recreate it from the database."
-  (interactive)
+(defun jabber-chat-buffer-redraw-noselect ()
+  "Kill the current chat buffer and recreate it from the database.
+Returns the new buffer without selecting it."
   (let ((jc jabber-buffer-connection)
 	(group (bound-and-true-p jabber-group))
 	(chat-with (bound-and-true-p jabber-chatting-with)))
     (kill-buffer (current-buffer))
-    (switch-to-buffer
-     (if group
-	 (jabber-muc-create-buffer jc group)
-       (jabber-chat-create-buffer jc chat-with)))))
+    (if group
+	(jabber-muc-create-buffer jc group)
+      (jabber-chat-create-buffer jc chat-with))))
+
+(defun jabber-chat-buffer-redraw ()
+  "Kill the current chat buffer and recreate it from the database."
+  (interactive)
+  (switch-to-buffer (jabber-chat-buffer-redraw-noselect)))
 
 (defun jabber-chat-buffer-send ()
   (interactive)

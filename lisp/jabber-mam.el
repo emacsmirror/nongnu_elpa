@@ -56,23 +56,14 @@
 (declare-function jabber-db-ensure-open "jabber-db" ())
 (declare-function jabber-chat--decrypt-if-needed "jabber-chat" (jc xml-data))
 (declare-function jabber-chat-find-buffer "jabber-chat" (chat-with))
-(declare-function jabber-chat-insert-backlog-entry "jabber-chat" (msg-plist))
-(declare-function jabber-chat--insert-backlog-chunked "jabber-chat"
-                  (buffer entries callback))
-(declare-function jabber-chat-display-buffer-images "jabber-chat" ())
-(declare-function jabber-db-backlog "jabber-db"
-                  (account peer &optional count start-time))
+(declare-function jabber-chat-buffer-redraw-noselect "jabber-chatbuffer" ())
 (declare-function jabber-muc-find-buffer "jabber-muc" (group))
 (declare-function jabber-parse-time "jabber-util" (raw-time))
 (declare-function jabber-sexp2xml "jabber-xml" (sexp))
 
 (defvar jabber-message-chain)           ; jabber-core.el
-(defvar jabber-chat-ewoc)               ; jabber-chatbuffer.el
-(defvar jabber-chat--msg-nodes)        ; jabber-chatbuffer.el
 (defvar jabber-buffer-connection)       ; jabber-chatbuffer.el
-(defvar jabber-point-insert)            ; jabber-chatbuffer.el
 (defvar jabber-chatting-with)           ; jabber-chat.el
-(defvar jabber-chat-earliest-backlog)   ; jabber-chat.el
 (defvar jabber-group)                   ; jabber-muc.el
 
 ;;; Constants
@@ -117,9 +108,10 @@ Set to nil to fetch the entire archive."
   "Non-nil while a MAM sync is in progress.
 Alist of (JC . QUERYID) for active queries.")
 
-(defvar jabber-mam--dirty-buffers nil
-  "Buffers that received MAM messages during sync.
-Accumulated during sync, drained by the post-sync redisplay FSM.")
+(defvar jabber-mam--dirty-peers nil
+  "Peers that received MAM messages during sync.
+Alist of (PEER . TYPE) where TYPE is the message type string.
+Accumulated during sync, drained after COMMIT.")
 
 (defvar jabber-mam--tx-depth 0
   "Reference count for the shared MAM transaction.
@@ -339,65 +331,23 @@ JC is the Jabber connection.  XML-DATA is the stanza."
 (defun jabber-mam--mark-dirty (peer type)
   "Record that PEER's buffer needs redisplay after sync.
 TYPE is the message type (\"groupchat\" for MUC)."
-  (let ((buffer (if (string= type "groupchat")
-                    (jabber-muc-find-buffer peer)
-                  (jabber-chat-find-buffer peer))))
-    (when (and buffer (not (memq buffer jabber-mam--dirty-buffers)))
-      (push buffer jabber-mam--dirty-buffers))))
+  (unless (cl-find peer jabber-mam--dirty-peers :key #'car :test #'string=)
+    (push (cons peer type) jabber-mam--dirty-peers)))
 
-(defun jabber-mam--scroll-to-bottom (buffer)
-  "Scroll BUFFER's window to the chat prompt if visible."
-  (when-let* ((win (and (buffer-live-p buffer)
-                        (get-buffer-window buffer))))
-    (with-selected-window win
-      (goto-char jabber-point-insert)
-      (recenter -1))))
-
-(defun jabber-mam--redisplay-next ()
-  "Reload the next dirty buffer from DB, then schedule the next one.
-Clears the ewoc and re-inserts backlog so MAM messages appear.
-Processes one buffer per timer callback so the event loop stays
-responsive between redraws."
-  (while (and jabber-mam--dirty-buffers
-              (not (buffer-live-p (car jabber-mam--dirty-buffers))))
-    (pop jabber-mam--dirty-buffers))
-  (when-let* ((buf (pop jabber-mam--dirty-buffers)))
-    (jabber-mam--reload-buffer buf)
-    (when jabber-mam--dirty-buffers
-      (run-with-timer 0.05 nil #'jabber-mam--redisplay-next))))
-
-(defun jabber-mam--reload-buffer (buffer)
-  "Clear BUFFER's ewoc and reload backlog from the database.
-This is needed after MAM sync because messages were stored to DB
-but never inserted into the ewoc."
-  (with-current-buffer buffer
-    (let ((inhibit-read-only t))
-      ;; Clear all ewoc nodes and stanza ID index
-      (ewoc-filter jabber-chat-ewoc #'ignore)
-      (when jabber-chat--msg-nodes
-        (clrhash jabber-chat--msg-nodes))
-      ;; Reset backlog marker so full backlog loads
-      (setq jabber-chat-earliest-backlog nil)
-      ;; Reload from DB
-      (let* ((peer (or (bound-and-true-p jabber-chatting-with)
-                       (bound-and-true-p jabber-group)))
-             (backlog-entries
-              (when peer
-                (jabber-db-backlog
-                 (jabber-connection-bare-jid jabber-buffer-connection)
-                 (jabber-jid-user peer)
-                 t))))
-        (if backlog-entries
-            (progn
-              (setq jabber-chat-earliest-backlog
-                    (float-time (plist-get (car (last backlog-entries))
-                                           :timestamp)))
-              (jabber-chat--insert-backlog-chunked
-               buffer backlog-entries
-               (lambda ()
-                 (jabber-chat-display-buffer-images)
-                 (jabber-mam--scroll-to-bottom buffer))))
-          (jabber-mam--scroll-to-bottom buffer))))))
+(defun jabber-mam--redraw-dirty ()
+  "Redraw all chat buffers that received MAM messages during sync.
+Kills and recreates each buffer so it reloads from the database."
+  (let ((peers (prog1 jabber-mam--dirty-peers
+                 (setq jabber-mam--dirty-peers nil))))
+    (dolist (entry peers)
+      (let* ((peer (car entry))
+             (type (cdr entry))
+             (buffer (if (string= type "groupchat")
+                         (jabber-muc-find-buffer peer)
+                       (jabber-chat-find-buffer peer))))
+        (when (and buffer (buffer-live-p buffer))
+          (with-current-buffer buffer
+            (jabber-chat-buffer-redraw-noselect)))))))
 
 ;;; Query and pagination
 
@@ -474,9 +424,8 @@ CLOSURE is (QUERYID WITH START TO)."
             (setq jabber-mam--completion-callbacks
                   (delq cb jabber-mam--completion-callbacks))
             (funcall (cdr cb)))
-          ;; Redisplay affected buffers one at a time.
-          (when jabber-mam--dirty-buffers
-            (run-with-timer 0.05 nil #'jabber-mam--redisplay-next)))
+          ;; Redraw affected buffers from DB.
+          (jabber-mam--redraw-dirty))
       ;; More pages: yield to the event loop for redisplay and input,
       ;; then continue pagination.
       (run-with-timer 0.1 nil #'jabber-mam--query
@@ -608,13 +557,11 @@ then redraws the buffer."
          (account (jabber-connection-bare-jid jc))
          (last-id (jabber-db-last-server-id account peer)))
     (message "MAM: syncing %s..." peer)
+    ;; Mark dirty so buffer redraws even if zero new messages.
+    (jabber-mam--mark-dirty peer (if group "groupchat" "chat"))
     (if group
         (jabber-mam--query jc last-id nil nil nil group)
-      (jabber-mam--query jc last-id nil peer nil nil))
-    ;; Force redraw even when no new messages arrive, so the user
-    ;; sees any previously stored but undisplayed messages.
-    (unless (memq (current-buffer) jabber-mam--dirty-buffers)
-      (push (current-buffer) jabber-mam--dirty-buffers))))
+      (jabber-mam--query jc last-id nil peer nil nil))))
 
 ;;; On-demand history fetch
 
@@ -659,9 +606,8 @@ Called from `jabber-lost-connection-hooks' on involuntary disconnect."
           (setq jabber-mam--query-targets
                 (cl-remove qid jabber-mam--query-targets
                            :key #'car :test #'string=))))
-      ;; Trigger redisplay for any dirty buffers accumulated so far.
-      (when jabber-mam--dirty-buffers
-        (run-with-timer 0.05 nil #'jabber-mam--redisplay-next)))))
+      ;; Redraw affected buffers.
+      (jabber-mam--redraw-dirty))))
 
 (defun jabber-mam--cleanup-all ()
   "Clean up all MAM state on voluntary disconnect.
@@ -675,8 +621,7 @@ Called from `jabber-pre-disconnect-hook'."
         jabber-mam--tx-depth 0
         jabber-mam--completion-callbacks nil
         jabber-mam--query-targets nil)
-  (when jabber-mam--dirty-buffers
-    (run-with-timer 0.05 nil #'jabber-mam--redisplay-next)))
+  (jabber-mam--redraw-dirty))
 
 ;;; MUC query cancellation
 
@@ -703,8 +648,7 @@ depth.  Called when leaving a room to stop wasting bandwidth."
             (when-let* ((db (jabber-db-ensure-open)))
               (sqlite-execute db "COMMIT"))
           (error nil))
-        (when jabber-mam--dirty-buffers
-          (run-with-timer 0.05 nil #'jabber-mam--redisplay-next))))))
+        (jabber-mam--redraw-dirty)))))
 
 ;;; Registration
 
