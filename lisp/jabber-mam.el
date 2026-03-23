@@ -56,7 +56,7 @@
 (declare-function jabber-db-ensure-open "jabber-db" ())
 (declare-function jabber-chat--decrypt-if-needed "jabber-chat" (jc xml-data))
 (declare-function jabber-chat-find-buffer "jabber-chat" (chat-with))
-(declare-function jabber-chat-buffer-redraw-noselect "jabber-chatbuffer" ())
+(declare-function jabber-chat-buffer-refresh "jabber-chatbuffer" ())
 (declare-function jabber-muc-find-buffer "jabber-muc" (group))
 (declare-function jabber-parse-time "jabber-util" (raw-time))
 (declare-function jabber-sexp2xml "jabber-xml" (sexp))
@@ -65,6 +65,7 @@
 (defvar jabber-buffer-connection)       ; jabber-chatbuffer.el
 (defvar jabber-chatting-with)           ; jabber-chat.el
 (defvar jabber-group)                   ; jabber-muc.el
+(defvar jabber-backlog-number)          ; jabber-db.el
 
 ;;; Constants
 
@@ -122,6 +123,11 @@ to share one SQLite transaction.")
   "Alist of (QUERYID . CALLBACK) for per-query completion hooks.
 CALLBACK is called with no arguments when the query finishes.")
 
+(defvar jabber-mam--sync-received nil
+  "Alist of (QUERYID . PLIST) for sync-buffer reconciliation.
+PLIST keys: :ids (hash-table), :min-ts, :max-ts, :account, :peer.
+Populated during sync; consumed by `jabber-mam--reconcile-sync'.")
+
 (defvar jabber-mam--query-targets nil
   "Alist of (QUERYID . TARGET) for active MAM queries.
 TARGET is a room JID for MUC MAM, or nil for 1:1 MAM.")
@@ -143,12 +149,15 @@ TARGET is a room JID for MUC MAM, or nil for 1:1 MAM.")
           (cl-incf jabber-mam--queryid-counter)
           (floor (float-time))))
 
-(defun jabber-mam--build-query (queryid &optional with start after-id max)
+(defun jabber-mam--build-query (queryid &optional with start after-id max
+                                         before-id)
   "Build a MAM <query> sexp.
 QUERYID is echoed in results for correlation.
 WITH filters by JID, START is an XEP-0082 datetime string.
-AFTER-ID is an RSM cursor for pagination.
-MAX is the page size."
+AFTER-ID is an RSM cursor for forward pagination.
+MAX is the page size.
+BEFORE-ID is an RSM cursor for backward pagination; when t, emit
+an empty <before/> element (meaning \"last page\")."
   (let ((form-fields nil)
         (rsm-children nil))
     ;; Data form fields
@@ -170,6 +179,10 @@ MAX is the page size."
       (push `(max () ,(number-to-string max)) rsm-children))
     (when after-id
       (push `(after () ,after-id) rsm-children))
+    (when before-id
+      (if (eq before-id t)
+          (push '(before ()) rsm-children)
+        (push `(before () ,before-id) rsm-children)))
     (setq rsm-children (nreverse rsm-children))
     ;; Build query
     `(query ((xmlns . ,jabber-mam-xmlns)
@@ -303,13 +316,25 @@ JC is the Jabber connection.  XML-DATA is the stanza."
                        (car (jabber-xml-node-children
                              (car (jabber-xml-get-children oob-x 'desc)))))))
       (if (and peer body)
-          (progn
+          (let ((ts (floor (float-time (or timestamp (current-time))))))
             (jabber-db-store-message
-             our-jid peer direction type body
-             (floor (float-time (or timestamp (current-time))))
+             our-jid peer direction type body ts
              (jabber-jid-resource from)
              stanza-id archive-id nil
              oob-url oob-desc encrypted)
+            ;; Track IDs for sync-buffer reconciliation.
+            (when-let* ((sync-data
+                         (cdr (assoc qid jabber-mam--sync-received
+                                     #'string=)))
+                        (ids (plist-get sync-data :ids)))
+              (when archive-id (puthash archive-id t ids))
+              (when stanza-id (puthash stanza-id t ids))
+              (when (or (null (plist-get sync-data :min-ts))
+                        (< ts (plist-get sync-data :min-ts)))
+                (plist-put sync-data :min-ts ts))
+              (when (or (null (plist-get sync-data :max-ts))
+                        (> ts (plist-get sync-data :max-ts)))
+                (plist-put sync-data :max-ts ts)))
             ;; Don't display during sync.  Track the buffer for
             ;; post-sync redisplay instead.
             (jabber-mam--mark-dirty peer type)
@@ -335,8 +360,8 @@ TYPE is the message type (\"groupchat\" for MUC)."
     (push (cons peer type) jabber-mam--dirty-peers)))
 
 (defun jabber-mam--redraw-dirty ()
-  "Redraw all chat buffers that received MAM messages during sync.
-Kills and recreates each buffer so it reloads from the database."
+  "Refresh all chat buffers that received MAM messages during sync.
+Reloads each buffer's ewoc from the database in place."
   (let ((peers (prog1 jabber-mam--dirty-peers
                  (setq jabber-mam--dirty-peers nil))))
     (dolist (entry peers)
@@ -347,19 +372,26 @@ Kills and recreates each buffer so it reloads from the database."
                        (jabber-chat-find-buffer peer))))
         (when (and buffer (buffer-live-p buffer))
           (with-current-buffer buffer
-            (jabber-chat-buffer-redraw-noselect)))))))
+            (jabber-chat-buffer-refresh)))))))
 
 ;;; Query and pagination
 
-(defun jabber-mam--query (jc &optional after-id queryid with start to)
+(defun jabber-mam--query (jc &optional after-id queryid with start to
+                                  before-id max)
   "Send a MAM query via JC, paginating from AFTER-ID.
 QUERYID correlates results; generated if nil.
 WITH and START are optional filters.
-TO is the query target; nil for user archive, a room JID for MUC MAM."
-  (let ((queryid (or queryid (jabber-mam--make-queryid))))
+TO is the query target; nil for user archive, a room JID for MUC MAM.
+BEFORE-ID and MAX support backward pagination (last-page queries).
+When BEFORE-ID is non-nil, the query is one-shot (no forward pagination)."
+  (let ((queryid (or queryid (jabber-mam--make-queryid)))
+        (page-size (or max jabber-mam-page-size)))
     (push (cons jc queryid) jabber-mam--syncing)
     (when to
       (push (cons queryid to) jabber-mam--query-targets))
+    ;; Mark one-shot queries so handle-fin skips forward pagination.
+    (when before-id
+      (push (cons queryid 'one-shot) jabber-mam--query-targets))
     ;; Open a shared transaction for concurrent MAM queries.
     ;; COMMIT happens when the last active query finishes.
     (when (zerop jabber-mam--tx-depth)
@@ -370,7 +402,7 @@ TO is the query target; nil for user archive, a room JID for MUC MAM."
         (jabber-send-iq
          jc to "set"
          (jabber-mam--build-query queryid with start after-id
-                                  jabber-mam-page-size)
+                                  page-size before-id)
          #'jabber-mam--handle-fin
          (list queryid with start to)
          #'jabber-mam--handle-error
@@ -408,28 +440,33 @@ CLOSURE is (QUERYID WITH START TO)."
     (setq jabber-mam--syncing
           (cl-remove queryid jabber-mam--syncing
                      :key #'cdr :test #'string=))
-    (if (or complete (null last-id))
-        (progn
-          ;; Clean up query target tracking.
-          (setq jabber-mam--query-targets
-                (cl-remove queryid jabber-mam--query-targets
-                           :key #'car :test #'string=))
-          (let ((inhibit-message t))
-            (message "MAM: sync complete%s"
-                     (if to (format " for %s" to)
-                       (if with (format " for %s" with) ""))))
-          ;; Fire per-query completion callback if registered.
-          (when-let* ((cb (assoc queryid jabber-mam--completion-callbacks
-                                 #'string=)))
-            (setq jabber-mam--completion-callbacks
-                  (delq cb jabber-mam--completion-callbacks))
-            (funcall (cdr cb)))
-          ;; Redraw affected buffers from DB.
-          (jabber-mam--redraw-dirty))
-      ;; More pages: yield to the event loop for redisplay and input,
-      ;; then continue pagination.
-      (run-with-timer 0.1 nil #'jabber-mam--query
-                      jc last-id queryid with start to))))
+    (let ((one-shot-p (assoc queryid jabber-mam--query-targets
+                                   #'string=)))
+      ;; One-shot queries (before-id based) never paginate forward.
+      (setq one-shot-p (and one-shot-p
+                            (eq (cdr one-shot-p) 'one-shot)))
+      (if (or complete (null last-id) one-shot-p)
+          (progn
+            ;; Clean up query target tracking.
+            (setq jabber-mam--query-targets
+                  (cl-remove queryid jabber-mam--query-targets
+                             :key #'car :test #'string=))
+            (let ((inhibit-message t))
+              (message "MAM: sync complete%s"
+                       (if to (format " for %s" to)
+                         (if with (format " for %s" with) ""))))
+            ;; Fire per-query completion callback if registered.
+            (when-let* ((cb (assoc queryid jabber-mam--completion-callbacks
+                                   #'string=)))
+              (setq jabber-mam--completion-callbacks
+                    (delq cb jabber-mam--completion-callbacks))
+              (funcall (cdr cb)))
+            ;; Redraw affected buffers from DB.
+            (jabber-mam--redraw-dirty))
+        ;; More pages: yield to the event loop for redisplay and input,
+        ;; then continue pagination.
+        (run-with-timer 0.1 nil #'jabber-mam--query
+                        jc last-id queryid with start to)))))
 
 (defun jabber-mam--handle-error (jc xml-data closure)
   "Handle a MAM query error.
@@ -513,6 +550,36 @@ Added to `jabber-post-connect-hooks'."
          (jabber-mam--catch-up jc)))
      nil)))
 
+;;; 1:1 chat MAM catch-up
+
+(defun jabber-mam--chat-catch-up (jc peer)
+  "Sync missed messages for PEER via MAM.
+JC is the Jabber connection.  PEER is the bare JID."
+  (let* ((account (jabber-connection-bare-jid jc))
+         (last-id (jabber-db-last-server-id account peer)))
+    (if last-id
+        (jabber-mam--query jc last-id nil peer nil nil)
+      (let ((start (when jabber-mam-catch-up-days
+                     (format-time-string
+                      "%Y-%m-%dT%H:%M:%SZ"
+                      (time-subtract (current-time)
+                                     (* jabber-mam-catch-up-days 86400))
+                      t))))
+        (jabber-mam--query jc nil nil peer start nil)))))
+
+(defun jabber-mam-chat-opened (jc peer)
+  "Trigger 1:1 MAM catch-up when opening a chat with PEER.
+JC is the Jabber connection.  Called from `jabber-chat-create-buffer'."
+  (when jabber-mam-enable
+    (jabber-disco-get-info
+     jc (jabber-connection-bare-jid jc) nil
+     (lambda (jc closure-data result)
+       (when (and (listp result)
+                  (not (eq (car result) 'error))
+                  (member jabber-mam-xmlns (cadr result)))
+         (jabber-mam--chat-catch-up jc (car closure-data))))
+     (list peer))))
+
 ;;; MUC MAM catch-up
 
 (defun jabber-mam--muc-catch-up (jc group)
@@ -544,24 +611,78 @@ JC is the Jabber connection.  Called from MUC self-presence handler."
          (jabber-mam--muc-catch-up jc (car closure-data))))
      (list group))))
 
-(defun jabber-mam-sync-buffer ()
-  "Fetch new messages from the server archive for this chat buffer.
-Queries MAM for the current peer, stores results in the database,
-then redraws the buffer."
-  (interactive)
+(defun jabber-mam--reconcile-sync (queryid)
+  "Delete local messages not found in the remote archive for QUERYID.
+Uses the IDs and timestamp range accumulated during sync to find
+local messages that the server no longer has."
+  (when-let* ((entry (assoc queryid jabber-mam--sync-received #'string=)))
+    (let* ((data (cdr entry))
+           (ids (plist-get data :ids))
+           (min-ts (plist-get data :min-ts))
+           (max-ts (plist-get data :max-ts))
+           (account (plist-get data :account))
+           (peer (plist-get data :peer)))
+      (when (and min-ts max-ts (> (hash-table-count ids) 0))
+        (when-let* ((db (jabber-db-ensure-open)))
+          (let ((local-rows
+                 (sqlite-select db "\
+SELECT id, stanza_id, server_id FROM message \
+WHERE account = ? AND peer = ? AND timestamp BETWEEN ? AND ?"
+                                (list account peer min-ts max-ts)))
+                (deleted 0))
+            (dolist (row local-rows)
+              (let ((row-id (nth 0 row))
+                    (sid (nth 1 row))
+                    (svid (nth 2 row)))
+                ;; Only consider messages that have a server-side ID.
+                ;; Messages without IDs can't be compared.
+                (when (and (or sid svid)
+                           (not (and svid (gethash svid ids)))
+                           (not (and sid (gethash sid ids))))
+                  (sqlite-execute db "DELETE FROM message WHERE id = ?"
+                                  (list row-id))
+                  (cl-incf deleted))))
+            (when (> deleted 0)
+              (message "MAM: removed %d messages not found on server"
+                       deleted))))))
+    (setq jabber-mam--sync-received
+          (cl-remove queryid jabber-mam--sync-received
+                     :key #'car :test #'string=))))
+
+(defun jabber-mam-sync-buffer (count)
+  "Sync the last COUNT messages from the server archive for this buffer.
+Fetches recent messages using RSM backward pagination.  New messages
+are decrypted and stored; existing messages are preserved via dedup.
+Failed-decrypt placeholders are replaced if decryption now succeeds.
+Local messages in the synced time range whose IDs are not found on
+the server are deleted.  The buffer is refreshed in place after sync."
+  (interactive
+   (list (let ((input (read-string
+                       (format "Messages to sync (default %d): "
+                               jabber-backlog-number))))
+           (if (string-empty-p input) jabber-backlog-number
+             (string-to-number input)))))
   (unless (memq jabber-buffer-connection jabber-connections)
     (user-error "Not connected"))
   (let* ((jc jabber-buffer-connection)
          (group (bound-and-true-p jabber-group))
-         (peer (or group (bound-and-true-p jabber-chatting-with)))
+         (peer (or group
+                   (jabber-jid-user (bound-and-true-p jabber-chatting-with))))
          (account (jabber-connection-bare-jid jc))
-         (last-id (jabber-db-last-server-id account peer)))
-    (message "MAM: syncing %s..." peer)
-    ;; Mark dirty so buffer redraws even if zero new messages.
+         (muc-p (not (null group)))
+         (queryid (jabber-mam--make-queryid)))
+    ;; Register ID tracking for post-sync reconciliation.
+    (push (cons queryid (list :ids (make-hash-table :test #'equal)
+                              :min-ts nil :max-ts nil
+                              :account account :peer peer))
+          jabber-mam--sync-received)
+    (push (cons queryid (lambda () (jabber-mam--reconcile-sync queryid)))
+          jabber-mam--completion-callbacks)
     (jabber-mam--mark-dirty peer (if group "groupchat" "chat"))
-    (if group
-        (jabber-mam--query jc last-id nil nil nil group)
-      (jabber-mam--query jc last-id nil peer nil nil))))
+    (message "MAM: syncing last %d messages for %s..." count peer)
+    (if muc-p
+        (jabber-mam--query jc nil queryid nil nil peer t count)
+      (jabber-mam--query jc nil queryid peer nil nil t count))))
 
 ;;; On-demand history fetch
 
@@ -620,7 +741,8 @@ Called from `jabber-pre-disconnect-hook'."
   (setq jabber-mam--syncing nil
         jabber-mam--tx-depth 0
         jabber-mam--completion-callbacks nil
-        jabber-mam--query-targets nil)
+        jabber-mam--query-targets nil
+        jabber-mam--sync-received nil)
   (jabber-mam--redraw-dirty))
 
 ;;; MUC query cancellation

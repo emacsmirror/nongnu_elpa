@@ -243,6 +243,7 @@ added to the outgoing message.")
 (defvar jabber-group)                   ; jabber-muc.el
 (defvar jabber-muc-printers)            ; jabber-muc.el
 (declare-function jabber-mam-syncing-p "jabber-mam" ())
+(declare-function jabber-mam-chat-opened "jabber-mam" (jc peer))
 (defvar jabber-mam--dirty-buffers)      ; jabber-mam.el
 (defvar jabber-oob-xmlns)              ; jabber-xml.el
 (defvar jabber-carbons-xmlns)          ; jabber-carbons.el
@@ -354,6 +355,9 @@ JC is the Jabber connection."
 	    (jabber-chat--insert-backlog-chunked
 	     (current-buffer) backlog-entries
 	     #'jabber-chat-display-buffer-images))))
+
+      ;; Catch up missed 1:1 messages from MAM.
+      (jabber-mam-chat-opened jc (jabber-jid-user chat-with))
 
       (when-let* ((win (get-buffer-window (current-buffer))))
         (with-selected-window win
