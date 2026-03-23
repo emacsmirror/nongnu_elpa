@@ -175,7 +175,9 @@ These fields are about your account:
 
 (defcustom jabber-muc-header-line-format
   '(" " (:eval (propertize (jabber-jid-displayname jabber-group) 'face 'shadow))
-    " " (:eval jabber-chat-encryption-message))	;see jabber-chatbuffer.el
+    " " (:eval jabber-chat-encryption-message)	;see jabber-chatbuffer.el
+    (:eval (when jabber-chat-mam-syncing
+	     (propertize " [syncing]" 'face 'shadow))))
   "The specification for the header line of MUC buffers.
 
 The format is that of `mode-line-format' and `header-line-format'."

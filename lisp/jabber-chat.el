@@ -72,7 +72,9 @@ These fields are about your account:
     " " (:eval (jabber-fix-status (get (jabber-jid-symbol jabber-chatting-with) 'status)))
     " " (:eval jabber-chat-encryption-message)	;see jabber-chatbuffer.el
     (:eval jabber-chatstates-message)		;see jabber-chatstates.el
-    (:eval jabber-chat-receipt-message))	;see jabber-receipts.el
+    (:eval jabber-chat-receipt-message)	;see jabber-receipts.el
+    (:eval (when jabber-chat-mam-syncing
+	     (propertize " [syncing]" 'face 'shadow))))
   "The specification for the header line of chat buffers.
 The format is that of `mode-line-format' and `header-line-format'.")
 

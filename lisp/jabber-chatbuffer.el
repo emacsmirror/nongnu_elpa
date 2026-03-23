@@ -44,6 +44,9 @@ what kind of chat buffer is being created.")
   "Hash table mapping stanza IDs to ewoc nodes.
 Enables O(1) lookup for in-place updates (receipts, corrections).")
 
+(defvar-local jabber-chat-mam-syncing nil
+  "Non-nil while this buffer's peer has an active MAM sync.")
+
 ;; Global reference declarations
 
 (declare-function jabber-muc-nick-completion-at-point "jabber-muc-nick-completion.el" ())

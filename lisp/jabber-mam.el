@@ -66,6 +66,7 @@
 (defvar jabber-chatting-with)           ; jabber-chat.el
 (defvar jabber-group)                   ; jabber-muc.el
 (defvar jabber-backlog-number)          ; jabber-db.el
+(defvar jabber-chat-mam-syncing)       ; jabber-chatbuffer.el
 
 ;;; Constants
 
@@ -355,9 +356,17 @@ JC is the Jabber connection.  XML-DATA is the stanza."
 
 (defun jabber-mam--mark-dirty (peer type)
   "Record that PEER's buffer needs redisplay after sync.
-TYPE is the message type (\"groupchat\" for MUC)."
+TYPE is the message type (\"groupchat\" for MUC).
+Sets `jabber-chat-mam-syncing' in the buffer if it exists."
   (unless (cl-find peer jabber-mam--dirty-peers :key #'car :test #'string=)
-    (push (cons peer type) jabber-mam--dirty-peers)))
+    (push (cons peer type) jabber-mam--dirty-peers)
+    (when-let* ((buffer (if (string= type "groupchat")
+                            (jabber-muc-find-buffer peer)
+                          (jabber-chat-find-buffer peer)))
+                ((buffer-live-p buffer)))
+      (with-current-buffer buffer
+        (setq jabber-chat-mam-syncing t)
+        (force-mode-line-update)))))
 
 (defun jabber-mam--redraw-dirty ()
   "Refresh all chat buffers that received MAM messages during sync.
@@ -372,7 +381,9 @@ Reloads each buffer's ewoc from the database in place."
                        (jabber-chat-find-buffer peer))))
         (when (and buffer (buffer-live-p buffer))
           (with-current-buffer buffer
-            (jabber-chat-buffer-refresh)))))))
+            (setq jabber-chat-mam-syncing nil)
+            (jabber-chat-buffer-refresh)
+            (force-mode-line-update)))))))
 
 ;;; Query and pagination
 
