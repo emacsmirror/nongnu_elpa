@@ -258,35 +258,47 @@ or decrease contrast."
   "Saved current window, because `previous-window' is not working.
 Used in `selected-window-contrast-mark-small-rectangle-temporary'.")
 
+(defun selected-window-contrast--pre-command-hook ()
+  "For every key pressed, disable highlighing of pointer.
+Fix for case when we switch to buffer and do something fast while cursor
+ highlighted with rectangle."
+  (deactivate-mark)
+  (remove-hook 'pre-command-hook #'selected-window-contrast--pre-command-hook t))
+
 (defun selected-window-contrast-mark-small-rectangle-temporary (window)
   "Mark a 2x2 rectangle around point for 1 sec, to hightlight WINDOW.
 Use `rectangle-mark-mode'.  Deactivate rectangle after 1 second or less."
   (interactive)
-        (when (and window
-                        (eq window (selected-window))
-                        (not (window-minibuffer-p window))
-                        (not (and selected-window-contrast-prev-window ; check alive
-                                  (window-buffer selected-window-contrast-prev-window) ; check alive
-                                  (window-minibuffer-p selected-window-contrast-prev-window))))
-               (unless (region-active-p)
-                 (let ((inhibit-message t) (message-log-max nil))
-                   ;; Enable rectangle selection.
-                   (rectangle-mark-mode 1)
-                   (rectangle-next-line selected-window-contrast-region-lines) ; 2
-                   (rectangle-forward-char selected-window-contrast-region-width) ; 8
-                   (rectangle-exchange-point-and-mark))
-                 ;; Start timer to deactivate mark and rectangle mode.
-                 (run-with-timer selected-window-contrast-region-timeout
-                                 nil (lambda (buf)
-                                       (with-current-buffer buf
-                                         (when (region-active-p)
-                                           (let ((inhibit-message t) (message-log-max nil))
-                                             ;; (exchange-point-and-mark)
-                                             (deactivate-mark)))))
-                                 (current-buffer))
-                 ))
-             ;; save current window, because `previous-window' is not working.
-             (setq selected-window-contrast-prev-window (selected-window)))
+  (when (and window
+             (eq window (selected-window))
+             (not (window-minibuffer-p window))
+             (not (and selected-window-contrast-prev-window ; check alive
+                       (window-buffer selected-window-contrast-prev-window) ; check alive
+                       (window-minibuffer-p selected-window-contrast-prev-window))))
+    (unless (region-active-p)
+      (let ((inhibit-message t) (message-log-max nil))
+        ;; Enable rectangle selection.
+        (rectangle-mark-mode 1)
+        (rectangle-next-line selected-window-contrast-region-lines) ; 2
+        (rectangle-forward-char selected-window-contrast-region-width) ; 8
+        (rectangle-exchange-point-and-mark))
+
+      (add-hook 'pre-command-hook #'selected-window-contrast--pre-command-hook nil t)
+
+      ;; Start timer to deactivate mark and rectangle mode.
+      (run-with-timer selected-window-contrast-region-timeout
+                      nil (lambda (buf)
+                            (with-current-buffer buf
+                              (when (region-active-p)
+                                (let ((inhibit-message t) (message-log-max nil))
+                                  ;; (exchange-point-and-mark)
+                                  (deactivate-mark)
+                                  (remove-hook 'pre-command-hook #'selected-window-contrast--pre-command-hook t)
+                                  ))))
+                      (current-buffer))
+      ))
+  ;; save current window, because `previous-window' is not working.
+  (setq selected-window-contrast-prev-window (selected-window)))
 
 (defun selected-window-contrast-highlight-selected-window-with-timeout ()
   "Highlight not selected windows with a different background color.
