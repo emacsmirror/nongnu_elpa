@@ -356,21 +356,26 @@ JC is the Jabber connection.  XML-DATA is the stanza."
 
 (defun jabber-mam--mark-dirty (peer type)
   "Record that PEER's buffer needs redisplay after sync.
-TYPE is the message type (\"groupchat\" for MUC).
-Sets `jabber-chat-mam-syncing' in the buffer if it exists."
+TYPE is the message type (\"groupchat\" for MUC)."
   (unless (cl-find peer jabber-mam--dirty-peers :key #'car :test #'string=)
-    (push (cons peer type) jabber-mam--dirty-peers)
-    (when-let* ((buffer (if (string= type "groupchat")
-                            (jabber-muc-find-buffer peer)
-                          (jabber-chat-find-buffer peer)))
-                ((buffer-live-p buffer)))
-      (with-current-buffer buffer
-        (setq jabber-chat-mam-syncing t)
-        (force-mode-line-update)))))
+    (push (cons peer type) jabber-mam--dirty-peers)))
+
+(defun jabber-mam--clear-syncing-flag (peer type)
+  "Clear the syncing indicator in PEER's chat buffer.
+TYPE is \"groupchat\" for MUC or \"chat\" for 1:1."
+  (when-let* ((buffer (if (string= type "groupchat")
+                          (jabber-muc-find-buffer peer)
+                        (jabber-chat-find-buffer peer)))
+              ((buffer-live-p buffer)))
+    (with-current-buffer buffer
+      (setq jabber-chat-mam-syncing nil)
+      (force-mode-line-update))))
 
 (defun jabber-mam--redraw-dirty ()
   "Refresh all chat buffers that received MAM messages during sync.
-Reloads each buffer's ewoc from the database in place."
+Reloads each buffer's ewoc from the database in place.
+Does NOT manage `jabber-chat-mam-syncing'; that flag is controlled
+by per-query completion callbacks registered in the catch-up functions."
   (let ((peers (prog1 jabber-mam--dirty-peers
                  (setq jabber-mam--dirty-peers nil))))
     (dolist (entry peers)
@@ -381,9 +386,7 @@ Reloads each buffer's ewoc from the database in place."
                        (jabber-chat-find-buffer peer))))
         (when (and buffer (buffer-live-p buffer))
           (with-current-buffer buffer
-            (setq jabber-chat-mam-syncing nil)
-            (jabber-chat-buffer-refresh)
-            (force-mode-line-update)))))))
+            (jabber-chat-buffer-refresh)))))))
 
 ;;; Query and pagination
 
@@ -565,61 +568,90 @@ Added to `jabber-post-connect-hooks'."
 
 (defun jabber-mam--chat-catch-up (jc peer)
   "Sync missed messages for PEER via MAM.
-JC is the Jabber connection.  PEER is the bare JID."
+JC is the Jabber connection.  PEER is the bare JID.
+Registers a completion callback to clear the syncing indicator."
   (let* ((account (jabber-connection-bare-jid jc))
-         (last-id (jabber-db-last-server-id account peer)))
+         (last-id (jabber-db-last-server-id account peer))
+         (queryid (jabber-mam--make-queryid)))
+    (push (cons queryid
+                (lambda ()
+                  (jabber-mam--clear-syncing-flag peer "chat")))
+          jabber-mam--completion-callbacks)
     (if last-id
-        (jabber-mam--query jc last-id nil peer nil nil)
+        (jabber-mam--query jc last-id queryid peer nil nil)
       (let ((start (when jabber-mam-catch-up-days
                      (format-time-string
                       "%Y-%m-%dT%H:%M:%SZ"
                       (time-subtract (current-time)
                                      (* jabber-mam-catch-up-days 86400))
                       t))))
-        (jabber-mam--query jc nil nil peer start nil)))))
+        (jabber-mam--query jc nil queryid peer start nil)))))
 
 (defun jabber-mam-chat-opened (jc peer)
   "Trigger 1:1 MAM catch-up when opening a chat with PEER.
-JC is the Jabber connection.  Called from `jabber-chat-create-buffer'."
+JC is the Jabber connection.  Called from `jabber-chat-create-buffer'.
+Sets the syncing indicator immediately; clears it when the catch-up
+query completes (or when disco reveals MAM is not supported)."
   (when jabber-mam-enable
+    (when-let* ((buffer (jabber-chat-find-buffer peer))
+                ((buffer-live-p buffer)))
+      (with-current-buffer buffer
+        (setq jabber-chat-mam-syncing t)
+        (force-mode-line-update)))
     (jabber-disco-get-info
      jc (jabber-connection-bare-jid jc) nil
      (lambda (jc closure-data result)
-       (when (and (listp result)
+       (let ((peer (car closure-data)))
+         (if (and (listp result)
                   (not (eq (car result) 'error))
                   (member jabber-mam-xmlns (cadr result)))
-         (jabber-mam--chat-catch-up jc (car closure-data))))
+             (jabber-mam--chat-catch-up jc peer)
+           (jabber-mam--clear-syncing-flag peer "chat"))))
      (list peer))))
 
 ;;; MUC MAM catch-up
 
 (defun jabber-mam--muc-catch-up (jc group)
   "Sync missed messages for GROUP via MUC MAM.
-JC is the Jabber connection.  GROUP is the room bare JID."
+JC is the Jabber connection.  GROUP is the room bare JID.
+Registers a completion callback to clear the syncing indicator."
   (let* ((account (jabber-connection-bare-jid jc))
-         (last-id (jabber-db-last-server-id account group)))
+         (last-id (jabber-db-last-server-id account group))
+         (queryid (jabber-mam--make-queryid)))
+    (push (cons queryid
+                (lambda ()
+                  (jabber-mam--clear-syncing-flag group "groupchat")))
+          jabber-mam--completion-callbacks)
     (if last-id
-        (jabber-mam--query jc last-id nil nil nil group)
-      ;; First sync for this room: limit to N days back
+        (jabber-mam--query jc last-id queryid nil nil group)
       (let ((start (when jabber-mam-catch-up-days
                      (format-time-string
                       "%Y-%m-%dT%H:%M:%SZ"
                       (time-subtract (current-time)
                                      (* jabber-mam-catch-up-days 86400))
                       t))))
-        (jabber-mam--query jc nil nil nil start group)))))
+        (jabber-mam--query jc nil queryid nil start group)))))
 
 (defun jabber-mam-muc-joined (jc group)
   "Trigger MUC MAM catch-up after joining GROUP.
-JC is the Jabber connection.  Called from MUC self-presence handler."
+JC is the Jabber connection.  Called from MUC self-presence handler.
+Sets the syncing indicator immediately; clears it when the catch-up
+query completes (or when disco reveals MAM is not supported)."
   (when jabber-mam-enable
+    (when-let* ((buffer (jabber-muc-find-buffer group))
+                ((buffer-live-p buffer)))
+      (with-current-buffer buffer
+        (setq jabber-chat-mam-syncing t)
+        (force-mode-line-update)))
     (jabber-disco-get-info
      jc group nil
      (lambda (jc closure-data result)
-       (when (and (listp result)
+       (let ((group (car closure-data)))
+         (if (and (listp result)
                   (not (eq (car result) 'error))
                   (member jabber-mam-xmlns (cadr result)))
-         (jabber-mam--muc-catch-up jc (car closure-data))))
+             (jabber-mam--muc-catch-up jc group)
+           (jabber-mam--clear-syncing-flag group "groupchat"))))
      (list group))))
 
 (defun jabber-mam--reconcile-sync (queryid)
@@ -687,8 +719,14 @@ the server are deleted.  The buffer is refreshed in place after sync."
                               :min-ts nil :max-ts nil
                               :account account :peer peer))
           jabber-mam--sync-received)
-    (push (cons queryid (lambda () (jabber-mam--reconcile-sync queryid)))
-          jabber-mam--completion-callbacks)
+    (let ((type (if group "groupchat" "chat")))
+      (push (cons queryid
+                  (lambda ()
+                    (jabber-mam--reconcile-sync queryid)
+                    (jabber-mam--clear-syncing-flag peer type)))
+            jabber-mam--completion-callbacks))
+    (setq jabber-chat-mam-syncing t)
+    (force-mode-line-update)
     (jabber-mam--mark-dirty peer (if group "groupchat" "chat"))
     (message "MAM: syncing last %d messages for %s..." count peer)
     (if muc-p
@@ -728,13 +766,14 @@ Called from `jabber-lost-connection-hooks' on involuntary disconnect."
             (when-let* ((db (jabber-db-ensure-open)))
               (sqlite-execute db "COMMIT"))
           (error nil)))
-      ;; Remove leaked completion callbacks and query targets.
+      ;; Fire and remove leaked completion callbacks and query targets.
       (dolist (entry jc-queries)
         (let ((qid (cdr entry)))
           (when-let* ((cb (assoc qid jabber-mam--completion-callbacks
                                  #'string=)))
             (setq jabber-mam--completion-callbacks
-                  (delq cb jabber-mam--completion-callbacks)))
+                  (delq cb jabber-mam--completion-callbacks))
+            (ignore-errors (funcall (cdr cb))))
           (setq jabber-mam--query-targets
                 (cl-remove qid jabber-mam--query-targets
                            :key #'car :test #'string=))))
@@ -749,6 +788,9 @@ Called from `jabber-pre-disconnect-hook'."
         (when-let* ((db (jabber-db-ensure-open)))
           (sqlite-execute db "COMMIT"))
       (error nil)))
+  ;; Fire remaining completion callbacks to clear syncing flags.
+  (dolist (cb jabber-mam--completion-callbacks)
+    (ignore-errors (funcall (cdr cb))))
   (setq jabber-mam--syncing nil
         jabber-mam--tx-depth 0
         jabber-mam--completion-callbacks nil
@@ -773,7 +815,8 @@ depth.  Called when leaving a room to stop wasting bandwidth."
       (when-let* ((cb (assoc qid jabber-mam--completion-callbacks
                              #'string=)))
         (setq jabber-mam--completion-callbacks
-              (delq cb jabber-mam--completion-callbacks)))
+              (delq cb jabber-mam--completion-callbacks))
+        (ignore-errors (funcall (cdr cb))))
       (when (> jabber-mam--tx-depth 0)
         (cl-decf jabber-mam--tx-depth))
       (when (zerop jabber-mam--tx-depth)

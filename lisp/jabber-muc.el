@@ -243,7 +243,7 @@ The format is that of `mode-line-format' and `header-line-format'."
 (declare-function jabber-chatbuffer--registry-get "jabber-chatbuffer" (type key))
 (declare-function jabber-chat-insert-backlog-entry "jabber-chat.el" (msg-plist))
 (declare-function jabber-chat--insert-backlog-chunked "jabber-chat.el"
-                  (buffer entries callback))
+                  (buffer entries callback &optional generation))
 (declare-function jabber-chat-display-buffer-images "jabber-chat.el" ())
 (declare-function jabber-chat--msg-plist-from-stanza "jabber-chat.el"
                   (xml-data &optional delayed))
@@ -276,6 +276,7 @@ The format is that of `mode-line-format' and `header-line-format'."
 (defvar jabber-chat-delayed-time-format) ; jabber-chat.el
 (defvar jabber-chat-encryption)         ; jabber-chatbuffer.el
 (defvar jabber-chat-ewoc)               ; jabber-chatbuffer.el
+(defvar jabber-chat--backlog-generation) ; jabber-chatbuffer.el
 (defvar jabber-chat-printers)           ; jabber-chat.el
 (defvar jabber-chat-time-format)        ; jabber-chat.el
 (defvar jabber-connections)             ; jabber-core.el
@@ -336,9 +337,11 @@ JC is the Jabber connection."
               (setq jabber-chat-earliest-backlog (float-time))
             (setq jabber-chat-earliest-backlog
                   (float-time (plist-get (car (last backlog-entries)) :timestamp)))
+            (cl-incf jabber-chat--backlog-generation)
             (jabber-chat--insert-backlog-chunked
              (current-buffer) backlog-entries
-             #'jabber-chat-display-buffer-images))))
+             #'jabber-chat-display-buffer-images
+             jabber-chat--backlog-generation))))
 
       (when-let* ((win (get-buffer-window (current-buffer))))
         (with-selected-window win

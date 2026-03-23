@@ -47,6 +47,11 @@ Enables O(1) lookup for in-place updates (receipts, corrections).")
 (defvar-local jabber-chat-mam-syncing nil
   "Non-nil while this buffer's peer has an active MAM sync.")
 
+(defvar-local jabber-chat--backlog-generation 0
+  "Generation counter for chunked backlog inserts.
+Incremented before each new insert sequence so stale timers from a
+previous sequence detect the mismatch and stop.")
+
 ;; Global reference declarations
 
 (declare-function jabber-muc-nick-completion-at-point "jabber-muc-nick-completion.el" ())
@@ -357,7 +362,7 @@ EWOC-PP is the pretty-printer function for the message EWOC."
 (declare-function jabber-chat-insert-backlog-entry "jabber-chat"
                   (msg-plist))
 (declare-function jabber-chat--insert-backlog-chunked "jabber-chat"
-                  (buffer entries callback))
+                  (buffer entries callback &optional generation))
 (declare-function jabber-chat-display-buffer-images "jabber-chat" ())
 
 (defun jabber-chat-buffer-redraw-noselect ()
@@ -378,9 +383,12 @@ Returns the new buffer without selecting it."
 
 (defun jabber-chat-buffer-refresh ()
   "Refresh the current chat buffer from the database without killing it.
-Clears the ewoc and reloads backlog entries in place."
+Clears the ewoc and reloads backlog entries in place.  Cancels any
+in-progress chunked insert by bumping the generation counter."
   (interactive)
-  (let ((inhibit-read-only t)
+  (cl-incf jabber-chat--backlog-generation)
+  (let ((generation jabber-chat--backlog-generation)
+        (inhibit-read-only t)
         (node (ewoc-nth jabber-chat-ewoc 0)))
     ;; Delete all ewoc nodes
     (while node
@@ -399,7 +407,8 @@ Clears the ewoc and reloads backlog entries in place."
               (float-time (plist-get (car (last entries)) :timestamp)))
         (jabber-chat--insert-backlog-chunked
          (current-buffer) entries
-         #'jabber-chat-display-buffer-images)))))
+         #'jabber-chat-display-buffer-images
+         generation)))))
 
 (defun jabber-chat-buffer-send ()
   (interactive)

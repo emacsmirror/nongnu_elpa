@@ -354,9 +354,11 @@ JC is the Jabber connection."
 		  (float-time (plist-get (car (last backlog-entries)) :timestamp)))
 	    ;; ewoc-enter-first with DESC input produces ascending display.
 	    ;; Insert in chunks to keep the UI responsive.
+	    (cl-incf jabber-chat--backlog-generation)
 	    (jabber-chat--insert-backlog-chunked
 	     (current-buffer) backlog-entries
-	     #'jabber-chat-display-buffer-images))))
+	     #'jabber-chat-display-buffer-images
+	     jabber-chat--backlog-generation))))
 
       ;; Catch up missed 1:1 messages from MAM.
       (jabber-mam-chat-opened jc (jabber-jid-user chat-with))
@@ -407,15 +409,26 @@ JC is the Jabber connection."
       (when-let* ((id (plist-get msg-plist :id)))
         (puthash id node jabber-chat--msg-nodes)))))
 
-(defun jabber-chat--insert-backlog-chunked (buffer entries callback)
+(defun jabber-chat--insert-backlog-chunked (buffer entries callback
+                                                    &optional generation)
   "Insert ENTRIES into BUFFER's ewoc in chunks to avoid blocking.
 Inserts `jabber-chat-backlog-chunk-size' entries per timer tick.
-Call CALLBACK with no arguments when all entries are inserted."
-  (if (or (null entries) (not (buffer-live-p buffer)))
-      (when callback
-	(when (buffer-live-p buffer)
-	  (with-current-buffer buffer
-	    (funcall callback))))
+Call CALLBACK with no arguments when all entries are inserted.
+GENERATION, when non-nil, is checked against the buffer's
+`jabber-chat--backlog-generation'; a mismatch means a newer
+refresh has started and this insert sequence should abort."
+  (if (or (null entries) (not (buffer-live-p buffer))
+          (and generation
+               (not (eql generation
+                         (buffer-local-value
+                          'jabber-chat--backlog-generation buffer)))))
+      (when (and callback (buffer-live-p buffer)
+                 (or (null generation)
+                     (eql generation
+                          (buffer-local-value
+                           'jabber-chat--backlog-generation buffer))))
+        (with-current-buffer buffer
+          (funcall callback)))
     (with-current-buffer buffer
       (let* ((inhibit-read-only t)
 	     (chunk (cl-subseq entries 0
@@ -426,7 +439,7 @@ Call CALLBACK with no arguments when all entries are inserted."
 	(if rest
 	    (run-with-timer 0.1 nil
 			    #'jabber-chat--insert-backlog-chunked
-			    buffer rest callback)
+			    buffer rest callback generation)
 	  (when callback (funcall callback)))))))
 
 (defun jabber-chat-display-more-backlog (how-many)
