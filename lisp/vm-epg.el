@@ -37,7 +37,7 @@
 ;; "application/pgp-keys" or set them before loading vm-epg.
 ;; Otherwise public keys are not detected automatically.
 ;;
-;; To customize vm-epg use: M-x customize-group RET vm-pgg RET
+;; To customize vm-epg use: M-x customize-group RET vm-epg RET
 ;;
 ;; Displaying of messages in the PGP(/MIME) format will automatically trigger:
 ;;  * decryption of encrypted MIME parts
@@ -86,19 +86,15 @@
 (defvar vm-message-pointer)
 (defvar vm-presentation-buffer)
 (defvar vm-summary-buffer)
-(defvar vm-pgg-cleartext-state)
+(defvar vm-epg-cleartext-state)
 
 ;;; Custom group and faces
-;;
-;; We intentionally reuse the vm-pgg group and face names so that
-;; existing customizations continue to work when switching from
-;; vm-pgg.el to vm-epg.el.
 
-(defgroup vm-pgg nil
+(defgroup vm-epg nil
   "PGP and PGP/MIME support for VM."
   :group 'vm-ext)
 
-(defface vm-pgg-bad-signature
+(defface vm-epg-bad-signature
   '((((type tty) (class color))
      (:foreground "red" :bold t))
     (((type tty))
@@ -108,10 +104,10 @@
     (((background dark))
      (:foreground "red" :bold t)))
   "The face used to highlight bad signature messages."
-  :group 'vm-pgg
+  :group 'vm-epg
   :group 'faces)
 
-(defface vm-pgg-good-signature
+(defface vm-epg-good-signature
   '((((type tty) (class color))
      (:foreground "green" :bold t))
     (((type tty))
@@ -121,19 +117,19 @@
     (((background dark))
      (:foreground "green")))
   "The face used to highlight good signature messages."
-  :group 'vm-pgg
+  :group 'vm-epg
   :group 'faces)
 
-(defface vm-pgg-unknown-signature-type
+(defface vm-epg-unknown-signature-type
   '((((type tty) (class color))
      (:bold t))
     (((type tty))
      (:bold t)))
   "The face used to highlight unknown signature types."
-  :group 'vm-pgg
+  :group 'vm-epg
   :group 'faces)
 
-(defface vm-pgg-error
+(defface vm-epg-error
   '((((type tty) (class color))
      (:foreground "red" :bold t))
     (((type tty))
@@ -143,10 +139,10 @@
     (((background dark))
      (:foreground "red" :bold t)))
   "The face used to highlight error messages."
-  :group 'vm-pgg
+  :group 'vm-epg
   :group 'faces)
 
-(defface vm-pgg-bad-signature-modeline
+(defface vm-epg-bad-signature-modeline
   '((((type tty) (class color))
      (:inherit modeline :foreground "red" :bold t))
     (((type tty))
@@ -156,10 +152,10 @@
     (((background dark))
      (:inherit modeline :foreground "red" :bold t)))
   "The face used to highlight bad signature messages in the modeline."
-  :group 'vm-pgg
+  :group 'vm-epg
   :group 'faces)
 
-(defface vm-pgg-good-signature-modeline
+(defface vm-epg-good-signature-modeline
   '((((type tty) (class color))
      (:inherit modeline :foreground "green" :bold t))
     (((type tty))
@@ -169,19 +165,19 @@
     (((background dark))
      (:inherit modeline :foreground "green")))
   "The face used to highlight good signature messages in the modeline."
-  :group 'vm-pgg
+  :group 'vm-epg
   :group 'faces)
 
-(defface vm-pgg-unknown-signature-type-modeline
+(defface vm-epg-unknown-signature-type-modeline
   '((((type tty) (class color))
      (:inherit modeline :bold t))
     (((type tty))
      (:inherit modeline :bold t)))
   "The face used to highlight unknown signature types in the modeline."
-  :group 'vm-pgg
+  :group 'vm-epg
   :group 'faces)
 
-(defface vm-pgg-error-modeline
+(defface vm-epg-error-modeline
   '((((type tty) (class color))
      (:inherit modeline :foreground "red" :bold t))
     (((type tty))
@@ -191,39 +187,37 @@
     (((background dark))
      (:inherit modeline :foreground "red")))
   "The face used to highlight error messages in the modeline."
-  :group 'vm-pgg
+  :group 'vm-epg
   :group 'faces)
 
 ;;; Customizable variables
-;;
-;; Variable names match vm-pgg.el for backward compatibility.
 
-(defcustom vm-pgg-fetch-missing-keys t
+(defcustom vm-epg-fetch-missing-keys t
   "If t, fetch missing keys from a keyserver when verifying signatures."
-  :group 'vm-pgg
+  :group 'vm-epg
   :type 'boolean)
 
-(defcustom vm-pgg-auto-snarf t
+(defcustom vm-epg-auto-snarf t
   "If t, snarfing of keys will happen automatically."
-  :group 'vm-pgg
+  :group 'vm-epg
   :type 'boolean)
 
-(defcustom vm-pgg-auto-decrypt t
+(defcustom vm-epg-auto-decrypt t
   "If t, decrypting will happen automatically."
-  :group 'vm-pgg
+  :group 'vm-epg
   :type 'boolean)
 
-(defcustom vm-pgg-get-author-headers '("From:" "Sender:")
+(defcustom vm-epg-get-author-headers '("From:" "Sender:")
   "The list of headers used to identify the author of an outgoing message.
 The first address found in these headers is used to select the signing key.
 If nil, the default EPG signing key is used."
-  :group 'vm-pgg
+  :group 'vm-epg
   :type '(repeat string))
 
-(defcustom vm-pgg-sign-text-transfer-encoding 'quoted-printable
+(defcustom vm-epg-sign-text-transfer-encoding 'quoted-printable
   "The encoding used for signed MIME parts of type text.
 See `vm-epg-sign' for details."
-  :group 'vm-pgg
+  :group 'vm-epg
   :type '(choice (const quoted-printable) (const base64)))
 
 ;;; Compose minor mode
@@ -271,9 +265,9 @@ Switch mode on/off according to ARG.
 (defvar vm-epg-compose-mode-string " vm-epg"
   "String to put in mode line when `vm-epg-compose-mode' is active.")
 
-(defcustom vm-pgg-ask-function 'vm-epg-prompt-for-action
+(defcustom vm-epg-ask-function 'vm-epg-prompt-for-action
   "The function to use in `vm-epg-ask-hook'."
-  :group 'vm-pgg
+  :group 'vm-epg
   :type '(choice
           (const
            :tag "do nothing"
@@ -327,16 +321,16 @@ Switch mode on/off according to ARG.
       (setq headers (cdr headers)))
     recipients))
 
-(defvar vm-pgg-get-recipients-headers '("To:" "CC:" "BCC:")
+(defvar vm-epg-get-recipients-headers '("To:" "CC:" "BCC:")
   "The list of headers to get recipients from.")
 
 (defun vm-epg-get-recipients ()
   "Return a list of recipient email addresses."
-  (vm-epg-get-emails vm-pgg-get-recipients-headers))
+  (vm-epg-get-emails vm-epg-get-recipients-headers))
 
 (defun vm-epg-get-author ()
   "Return the email address of the message author."
-  (car (vm-epg-get-emails vm-pgg-get-author-headers)))
+  (car (vm-epg-get-emails vm-epg-get-author-headers)))
 
 ;;; TODO Ny funktion som behöver granskas extra
 (defun vm-epg-find-usable-key (keys usage)
@@ -413,70 +407,70 @@ Uses CONTEXT and `vm-epg-get-author' to identify the sender."
 
 ;;; Modeline state
 
-(defvar vm-pgg-state nil
+(defvar vm-epg-state nil
   "State of the currently viewed message.")
-(make-variable-buffer-local 'vm-pgg-state)
+(make-variable-buffer-local 'vm-epg-state)
 
-(defvar vm-pgg-state-message nil
-  "The message for `vm-pgg-state'.")
-(make-variable-buffer-local 'vm-pgg-state-message)
+(defvar vm-epg-state-message nil
+  "The message for `vm-epg-state'.")
+(make-variable-buffer-local 'vm-epg-state-message)
 
-(defvar vm-pgg-mode-line-items nil
+(defvar vm-epg-mode-line-items nil
   "An alist mapping states to modeline strings.")
 
-(if (not (member 'vm-pgg-state vm-mode-line-format))
-    (setq vm-mode-line-format (append '("" vm-pgg-state) vm-mode-line-format)))
+(if (not (member 'vm-epg-state vm-mode-line-format))
+    (setq vm-mode-line-format (append '("" vm-epg-state) vm-mode-line-format)))
 
-(defun vm-pgg-state-set (&rest states)
+(defun vm-epg-state-set (&rest states)
   "Set the message state displayed in the modeline according to STATES.
 If STATES is nil, clear it."
   (save-excursion
     (vm-select-folder-buffer-if-possible)
-    (when (not (equal (car vm-message-pointer) vm-pgg-state-message))
-      (setq vm-pgg-state-message (car vm-message-pointer))
-      (setq vm-pgg-state nil)
+    (when (not (equal (car vm-message-pointer) vm-epg-state-message))
+      (setq vm-epg-state-message (car vm-message-pointer))
+      (setq vm-epg-state nil)
       (when vm-presentation-buffer
         (with-current-buffer vm-presentation-buffer
-          (setq vm-pgg-state nil)))
+          (setq vm-epg-state nil)))
       (when vm-summary-buffer
         (with-current-buffer vm-summary-buffer
-          (setq vm-pgg-state nil))))
+          (setq vm-epg-state nil))))
     ;; add prefix
-    (if (and states (not vm-pgg-state))
-        (setq vm-pgg-state '("PGP:")))
+    (if (and states (not vm-epg-state))
+        (setq vm-epg-state '("PGP:")))
     ;; add new states
     (let (s)
       (while states
         (setq s (car states)
-              vm-pgg-state (append vm-pgg-state
-                                   (list (or (cdr (assoc s vm-pgg-mode-line-items))
+              vm-epg-state (append vm-epg-state
+                                   (list (or (cdr (assoc s vm-epg-mode-line-items))
                                              (format " %s" s))))
               states (cdr states))))
     ;; propagate state
-    (setq states vm-pgg-state)
+    (setq states vm-epg-state)
     (when vm-presentation-buffer
       (with-current-buffer vm-presentation-buffer
-        (setq vm-pgg-state states)))
+        (setq vm-epg-state states)))
     (when vm-summary-buffer
       (with-current-buffer vm-summary-buffer
-        (setq vm-pgg-state states)))))
+        (setq vm-epg-state states)))))
 
 ;;; Cleartext PGP handling
 
-(defvar vm-pgg-cleartext-begin-regexp
+(defvar vm-epg-cleartext-begin-regexp
   "^-----BEGIN PGP \\(\\(SIGNED \\)?MESSAGE\\|PUBLIC KEY BLOCK\\)-----$"
   "Regexp used to match PGP armor.")
 
-(defvar vm-pgg-cleartext-end-regexp
+(defvar vm-epg-cleartext-end-regexp
   "^-----END PGP %s-----$"
   "Regexp used to match PGP armor.")
 
-(defcustom vm-pgg-cleartext-search-limit 4096
+(defcustom vm-epg-cleartext-search-limit 4096
   "Number of bytes to search into the message for a PGP clear text armor."
   :type 'integer
-  :group 'vm-pgg)
+  :group 'vm-epg)
 
-;;; TODO definieras på annan plats i pgg
+;;; TODO definieras på annan plats i epg
 (defun vm-epg-make-presentation-copy ()
   "Make a presentation copy for cleartext PGP messages."
   (let* ((m (car vm-message-pointer))
@@ -512,14 +506,14 @@ If STATES is nil, clear it."
     (let ((buffer-read-only nil)
           (start (point))
           o)
-      (if (re-search-forward (format vm-pgg-cleartext-end-regexp
+      (if (re-search-forward (format vm-epg-cleartext-end-regexp
 				     ;; TODO Varför 1 här och 0 i pgg?
                                      (match-string 1))
                              (point-max) t)
           (delete-region start (match-end 0)))
       (insert label)
       (setq o (make-overlay start (point)))
-      (overlay-put o 'vm-pgg t)
+      (overlay-put o 'vm-epg t)
       (overlay-put o 'face vm-mime-button-face)
       (overlay-put o 'vm-button t)
       (overlay-put o 'mouse-face 'vm-mime-button-mouse-face)
@@ -528,52 +522,52 @@ If STATES is nil, clear it."
         (define-key keymap "\r" action)
         (overlay-put o 'local-map keymap)))))
 
-(defvar vm-pgg-cleartext-decoded nil
+(defvar vm-epg-cleartext-decoded nil
   "State of the cleartext message.")
-(make-variable-buffer-local 'vm-pgg-cleartext-decoded)
+(make-variable-buffer-local 'vm-epg-cleartext-decoded)
 
 (defun vm-epg-set-cleartext-decoded ()
   "Record that the current message has been decoded."
   (save-excursion
     (vm-select-folder-buffer)
-    (setq vm-pgg-cleartext-decoded (car vm-message-pointer))))
+    (setq vm-epg-cleartext-decoded (car vm-message-pointer))))
 
-(defun vm-pgg-cleartext-automode ()
+(defun vm-epg-cleartext-automode ()
   "Check for PGP ASCII armor and trigger automatic verification/decryption."
   (save-excursion
     (vm-select-folder-buffer-if-possible)
-    (if (equal vm-pgg-cleartext-decoded (car vm-message-pointer))
-        (setq vm-pgg-cleartext-decoded nil)
-      (setq vm-pgg-cleartext-decoded nil)
+    (if (equal vm-epg-cleartext-decoded (car vm-message-pointer))
+        (setq vm-epg-cleartext-decoded nil)
+      (setq vm-epg-cleartext-decoded nil)
       (if vm-presentation-buffer
           (set-buffer vm-presentation-buffer))
       (goto-char (point-min))
       (when (and (vm-mime-plain-message-p (car vm-message-pointer))
-                 (re-search-forward vm-pgg-cleartext-begin-regexp
-                                    (+ (point) vm-pgg-cleartext-search-limit)
+                 (re-search-forward vm-epg-cleartext-begin-regexp
+                                    (+ (point) vm-epg-cleartext-search-limit)
                                     t))
         (cond ((string= (match-string 1) "SIGNED MESSAGE")
                (vm-epg-set-cleartext-decoded)
                (vm-epg-cleartext-verify))
               ((string= (match-string 1) "MESSAGE")
                (vm-epg-set-cleartext-decoded)
-               (if vm-pgg-auto-decrypt
+               (if vm-epg-auto-decrypt
                    (vm-epg-cleartext-decrypt)
                  (vm-epg-cleartext-automode-button
                   "Decrypt PGP message\n"
                   (lambda ()
                     (interactive)
-                    (let ((vm-pgg-auto-decrypt t))
+                    (let ((vm-epg-auto-decrypt t))
                       (vm-epg-cleartext-decrypt))))))
               ((string= (match-string 1) "PUBLIC KEY BLOCK")
                (vm-epg-set-cleartext-decoded)
-               (if vm-pgg-auto-snarf
+               (if vm-epg-auto-snarf
                    (vm-epg-snarf-keys)
                  (vm-epg-cleartext-automode-button
                   "Snarf PGP key\n"
                   (lambda ()
                     (interactive)
-                    (let ((vm-pgg-auto-snarf t))
+                    (let ((vm-epg-auto-snarf t))
                       (vm-epg-snarf-keys))))))
               (t
                (error "This should never happen!")))))))
@@ -582,13 +576,13 @@ If STATES is nil, clear it."
             :after #'vm-epg--present-cleartext-automode)
 (defun vm-epg--present-cleartext-automode (&rest _)
   "Decode or check signature on clear text messages."
-  (vm-pgg-state-set)
-  (when (and vm-pgg-cleartext-decoded
-             (not (equal vm-pgg-cleartext-decoded (car vm-message-pointer))))
-    (setq vm-pgg-cleartext-decoded nil))
+  (vm-epg-state-set)
+  (when (and vm-epg-cleartext-decoded
+             (not (equal vm-epg-cleartext-decoded (car vm-message-pointer))))
+    (setq vm-epg-cleartext-decoded nil))
   (when (and (not (eq vm-system-state 'previewing))
              (not vm-mime-decoded))
-    (vm-pgg-cleartext-automode)))
+    (vm-epg-cleartext-automode)))
 
 (advice-add 'vm-scroll-forward :around #'vm-epg--scroll-cleartext-automode)
 (defun vm-epg--scroll-cleartext-automode (orig-fun &rest args)
@@ -598,10 +592,10 @@ If STATES is nil, clear it."
            (vm-select-folder-buffer-if-possible)
            vm-system-state)))
     (apply orig-fun args)
-    (vm-pgg-state-set)
+    (vm-epg-state-set)
     (when (and (eq vm-system-state-was 'previewing)
                (not vm-mime-decoded))
-      (vm-pgg-cleartext-automode))))
+      (vm-epg-cleartext-automode))))
 
 ;;; Cleartext cleanup
 ;;
@@ -641,22 +635,22 @@ If STATES is nil, clear it."
 			 ;; TODO Är tillägget med vm-epg-cleartext-output-face rätt eller en hallucination?
                          (or vm-epg-cleartext-output-face
                              (if (eq status 'error)
-                                 'vm-pgg-bad-signature
-                               'vm-pgg-good-signature))))))
+                                 'vm-epg-bad-signature
+                               'vm-epg-good-signature))))))
 
 (advice-add 'vm-mime-transfer-decode-region
             :around #'vm-epg--transfer-cleartext-automode)
 (defun vm-epg--transfer-cleartext-automode (orig-fun &optional layout
                                                       &rest args)
   "Decode or check signature on clear text message parts."
-  (let ((vm-pgg-part-start (point)))
+  (let ((vm-epg-part-start (point)))
     (apply orig-fun layout args)
     (when (and (vm-mime-text-type-layout-p layout)
-               (< vm-pgg-part-start (point)))
+               (< vm-epg-part-start (point)))
       (save-excursion
         (save-restriction
-          (narrow-to-region vm-pgg-part-start (point))
-          (vm-pgg-cleartext-automode)
+          (narrow-to-region vm-epg-part-start (point))
+          (vm-epg-cleartext-automode)
           (widen))))))
 
 (advice-add 'vm-mime-display-internal-text/plain
@@ -665,19 +659,19 @@ If STATES is nil, clear it."
   "Decode or check signature on clear text message parts.
 Faces would be lost if charset conversion happens after our work, so we do
 the cleanup here after verification/decoding."
-  (let ((vm-pgg-cleartext-state nil)
+  (let ((vm-epg-cleartext-state nil)
 	;; TODO Lokalt definierad version av globala variabler? Hallucination?
         (vm-epg-cleartext-output nil)
         (vm-epg-cleartext-output-face nil)
         (start (point))
         end)
     (let ((ret (apply orig-fun args)))
-      (when vm-pgg-cleartext-state
+      (when vm-epg-cleartext-state
         (setq end (point))
         (save-restriction
           (narrow-to-region start end)
           (goto-char (point-min))
-          (vm-epg-cleartext-cleanup vm-pgg-cleartext-state)
+          (vm-epg-cleartext-cleanup vm-epg-cleartext-state)
           (widen)))
       ret)))
 
@@ -771,26 +765,26 @@ the cleanup here after verification/decoding."
            (context (epg-make-context 'OpenPGP))
            (message-text (buffer-substring-no-properties (point) (point-max)))
            result status)
-      (when vm-pgg-fetch-missing-keys
+      (when vm-epg-fetch-missing-keys
         (setf (epg-context-armor context) t))
       (condition-case _err
           (epg-verify-string context message-text)
         (error nil))
       (setq result (epg-context-result-for context 'verify))
-      (vm-pgg-state-set 'signed)
+      (vm-epg-state-set 'signed)
       (setq status
             (if (and result
                      (eq (epg-signature-status (car result)) 'good))
                 'verified
               'error))
-      (vm-pgg-state-set status)
+      (vm-epg-state-set status)
       (setq vm-epg-cleartext-output (vm-epg-format-verify-result result))
       (setq vm-epg-cleartext-output-face
             (if (eq status 'verified)
-                'vm-pgg-good-signature
-              'vm-pgg-bad-signature))
-      (if (boundp 'vm-pgg-cleartext-state)
-          (setq vm-pgg-cleartext-state status)
+                'vm-epg-good-signature
+              'vm-epg-bad-signature))
+      (if (boundp 'vm-epg-cleartext-state)
+          (setq vm-epg-cleartext-state status)
         (vm-epg-cleartext-cleanup status)))))
 
 ;;;###autoload
@@ -816,17 +810,17 @@ the cleanup here after verification/decoding."
                      (match-end 0)))
     (setq cipher (buffer-substring-no-properties start end))
 
-    (vm-pgg-state-set 'encrypted)
+    (vm-epg-state-set 'encrypted)
 
     (condition-case err
         (setq plain (epg-decrypt-string (epg-make-context 'OpenPGP) cipher))
       (error
        (let ((buffer-read-only nil))
-         (vm-pgg-state-set 'error)
+         (vm-epg-state-set 'error)
          (goto-char start)
          (let ((msg (error-message-string err)))
            (insert msg)
-           (put-text-property start (point) 'face 'vm-pgg-error)))))
+           (put-text-property start (point) 'face 'vm-epg-error)))))
 
     (when plain
       ;; replace cipher with plaintext
@@ -877,10 +871,10 @@ the cleanup here after verification/decoding."
   (vm-select-folder-buffer)
   (when (not vm-epg-recursion)
     (setq vm-epg-mime-decoded vm-mime-decoded))
-  (setq vm-pgg-state-message nil)
-  (setq vm-pgg-state nil)
+  (setq vm-epg-state-message nil)
+  (setq vm-epg-state nil)
   (if (vm-mime-plain-message-p (car vm-message-pointer))
-      (if vm-pgg-cleartext-decoded
+      (if vm-epg-cleartext-decoded
           (vm-present-current-message))
     (let ((vm-epg-recursion t))
       (apply orig-fun args))))
@@ -889,7 +883,7 @@ the cleanup here after verification/decoding."
 
 (defun vm-epg-mime-decrypt (button)
   "Decrypt the MIME part associated with BUTTON."
-  (let ((vm-pgg-auto-decrypt t)
+  (let ((vm-epg-auto-decrypt t)
         (layout (copy-sequence (vm-extent-property button 'vm-mime-layout))))
     (vm-set-extent-property button 'vm-mime-disposable t)
     (vm-set-extent-property button 'vm-mime-layout layout)
@@ -900,7 +894,7 @@ the cleanup here after verification/decoding."
 ;;;###autoload
 (defun vm-mime-display-internal-multipart/encrypted (layout)
   "Display multipart/encrypted LAYOUT."
-  (vm-pgg-state-set 'encrypted)
+  (vm-epg-state-set 'encrypted)
   (let* ((part-list (vm-mm-layout-parts layout))
          (header (car part-list))
          (message (car (cdr part-list))))
@@ -912,7 +906,7 @@ the cleanup here after verification/decoding."
                      (vm-mime-types-match (car (vm-mm-layout-type message))
                                           "application/octet-stream")))
            (insert "Unknown multipart/encrypted format."))
-          ((not vm-pgg-auto-decrypt)
+          ((not vm-epg-auto-decrypt)
            (let ((buffer-read-only nil))
              (vm-mime-insert-button
               :caption
@@ -934,10 +928,10 @@ the cleanup here after verification/decoding."
              (condition-case err
                  (setq plain (epg-decrypt-string context cipher))
                (error
-                (vm-pgg-state-set 'error)
+                (vm-epg-state-set 'error)
                 (let ((start (point)))
                   (insert (error-message-string err))
-                  (put-text-property start (point) 'face 'vm-pgg-error))))
+                  (put-text-property start (point) 'face 'vm-epg-error))))
              (when plain
              (let* ((epg-buf (get-buffer-create " *vm-epg-decrypted*"))
                     parsed)
@@ -956,12 +950,12 @@ the cleanup here after verification/decoding."
                  (let ((sig (car verify-result)))
                    (if (eq (epg-signature-status sig) 'good)
                        (progn
-                         (vm-pgg-state-set 'signed 'verified)
+                         (vm-epg-state-set 'signed 'verified)
                          (let ((start (point)))
                            (insert "\n" (vm-epg-format-verify-result verify-result) "\n")
                            (put-text-property start (point) 'face
-                                              'vm-pgg-good-signature)))
-                     (vm-pgg-state-set 'signed 'error)))))
+                                              'vm-epg-good-signature)))
+                     (vm-epg-state-set 'signed 'error)))))
              t))))))
 
 ;;; MIME multipart/signed handler
@@ -969,7 +963,7 @@ the cleanup here after verification/decoding."
 ;;;###autoload
 (defun vm-mime-display-internal-multipart/signed (layout)
   "Display multipart/signed LAYOUT."
-  (vm-pgg-state-set 'signed)
+  (vm-epg-state-set 'signed)
   (let* ((part-list (vm-mm-layout-parts layout))
          (message (car part-list))
          (signature (car (cdr part-list)))
@@ -982,7 +976,7 @@ the cleanup here after verification/decoding."
                                           "application/pgp-signature")))
            ;; insert the message
            (vm-decode-mime-layout message)
-           (vm-pgg-state-set 'unknown)
+           (vm-epg-state-set 'unknown)
            (setq start (point))
            (insert
             (format
@@ -991,7 +985,7 @@ the cleanup here after verification/decoding."
            (setq end (point))
            (when signature
              (vm-decode-mime-layout signature))
-           (put-text-property start end 'face 'vm-pgg-unknown-signature-type)
+           (put-text-property start end 'face 'vm-epg-unknown-signature-type)
            t)
           (t
            ;; insert the message content
@@ -1026,16 +1020,16 @@ the cleanup here after verification/decoding."
                                 (eq (epg-signature-status (car status)) 'good))))
                  (if good
                      (progn
-                       (vm-pgg-state-set 'verified)
+                       (vm-epg-state-set 'verified)
                        (insert (vm-epg-format-verify-result status))
                        (vm-epg-crlf-cleanup start (point)))
-                   (vm-pgg-state-set 'error)
+                   (vm-epg-state-set 'error)
                    (insert (vm-epg-format-verify-result status)))
                  (setq end (point))
                  (put-text-property start end 'face
                                     (if good
-                                        'vm-pgg-good-signature
-                                      'vm-pgg-bad-signature)))))
+                                        'vm-epg-good-signature
+                                      'vm-epg-bad-signature)))))
            t))))
 
 ;;; application/pgp-keys handler
@@ -1050,7 +1044,7 @@ the cleanup here after verification/decoding."
 
 (defun vm-epg-mime-snarf-keys (button)
   "Import the keys from the MIME part associated with BUTTON."
-  (let ((vm-pgg-auto-snarf t)
+  (let ((vm-epg-auto-snarf t)
         (layout (copy-sequence (vm-extent-property button 'vm-mime-layout))))
     (vm-set-extent-property button 'vm-mime-disposable t)
     (vm-set-extent-property button 'vm-mime-layout layout)
@@ -1061,8 +1055,8 @@ the cleanup here after verification/decoding."
 ;;;###autoload
 (defun vm-mime-display-internal-application/pgp-keys (layout)
   "Import keys from LAYOUT and display the result."
-  (vm-pgg-state-set 'public-key)
-  (if vm-pgg-auto-snarf
+  (vm-epg-state-set 'public-key)
+  (if vm-epg-auto-snarf
       (let ((start (point)) end)
         (vm-mime-insert-mime-body layout)
         (setq end (point-marker))
@@ -1125,7 +1119,7 @@ the cleanup here after verification/decoding."
   "Attach your public key to a composition."
   (interactive)
   ;; TODO vm-pgg tittar efter pgg-default-user-id här
-  (let* ((author (or (and vm-pgg-get-author-headers (vm-epg-get-author))
+  (let* ((author (or (and vm-epg-get-author-headers (vm-epg-get-author))
                      (read-string "User ID: ")))
          (context (epg-make-context 'OpenPGP))
          (keys (epg-list-keys context author))
@@ -1160,7 +1154,7 @@ the cleanup here after verification/decoding."
 (defun vm-epg-insert-public-key ()
   "Insert your public key into the composition at point."
   (interactive)
-  (let* ((author (or (and vm-pgg-get-author-headers (vm-epg-get-author))
+  (let* ((author (or (and vm-epg-get-author-headers (vm-epg-get-author))
                      (read-string "User ID: ")))
          (context (epg-make-context 'OpenPGP))
          (keys (epg-list-keys context author)))
@@ -1239,7 +1233,7 @@ and `vm-mime-composition-armor-from-lines' is t."
 (defun vm-epg-sign-internal ()
   "Perform the PGP/MIME signing."
   (let ((vm-mime-8bit-text-transfer-encoding
-         vm-pgg-sign-text-transfer-encoding)
+         vm-epg-sign-text-transfer-encoding)
         (vm-mime-composition-armor-from-lines t))
     (vm-epg-prepare-composition))
 
@@ -1394,7 +1388,7 @@ and `vm-mime-composition-armor-from-lines' is t."
   "Ask whether to sign or encrypt outgoing messages with PGP/MIME.
 
 Add to `vm-mail-send-hook' to be asked each time you send a message.
-See `vm-pgg-ask-function' to determine which function is used.
+See `vm-epg-ask-function' to determine which function is used.
 
 This hook should be last in `vm-mail-send-hook' as signing depends on the
 message not being modified afterwards.  Add it like:
@@ -1408,7 +1402,7 @@ message not being modified afterwards.  Add it like:
     (describe-function 'vm-epg-ask-hook)
     (error "`vm-epg-ask-hook' must be the last hook in `vm-mail-send-hook'!"))
 
-  (let ((handler vm-pgg-ask-function)
+  (let ((handler vm-epg-ask-function)
         action)
     (when handler
       (setq action (if (fboundp handler)
