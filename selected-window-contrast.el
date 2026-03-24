@@ -9,7 +9,7 @@
 ;; URL: https://codeberg.org/Anoncheg/selected-window-contrast
 ;; Version: 0.3
 ;; Created: 11 dec 2024
-;; Package-Requires: ((emacs "25.1"))
+;; Package-Requires: ((emacs "26.1"))
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
 
 ;;; License
@@ -293,10 +293,8 @@ Use `rectangle-mark-mode'.  Deactivate rectangle after 1 second or less."
                                 (let ((inhibit-message t) (message-log-max nil))
                                   ;; (exchange-point-and-mark)
                                   (deactivate-mark)
-                                  (remove-hook 'pre-command-hook #'selected-window-contrast--pre-command-hook t)
-                                  ))))
-                      (current-buffer))
-      ))
+                                  (remove-hook 'pre-command-hook #'selected-window-contrast--pre-command-hook t)))))
+                      (current-buffer))))
   ;; save current window, because `previous-window' is not working.
   (setq selected-window-contrast-prev-window (selected-window)))
 
