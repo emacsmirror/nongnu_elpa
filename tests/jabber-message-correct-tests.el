@@ -312,11 +312,11 @@ must not mutate the DB or the ewoc."
     (should-not apply-called)))
 
 (ert-deftest jabber-message-correct-test-mam-syncing-skipped-by-chat-dispatch ()
-  "jabber-process-chat must not apply corrections while jabber-mam--syncing is non-nil.
+  "jabber-process-chat must not apply corrections while jabber-chat-mam-syncing is non-nil.
 Regression guard: a MAM catch-up stanza carrying <replace> must not
 be treated as a live edit."
   (let ((apply-called nil)
-        (jabber-mam--syncing (list (cons 'fake-jc "queryid-test")))
+        (jabber-chat-mam-syncing t)
         (stanza `(message ((from . "alice@example.com/phone")
                            (id . "corr-3")
                            (type . "chat"))
