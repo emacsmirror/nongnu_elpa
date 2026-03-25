@@ -339,13 +339,13 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
        ;; devices.  Also replace failed-decrypt placeholders.
        ((memq dup-id-col '(stanza_id server_id))
         (let ((id-val (if (eq dup-id-col 'stanza_id) stanza-id server-id)))
-          ;; Always normalize timestamp.
+          ;; Normalize timestamp only when it differs.
           (sqlite-execute
            db
            (format "UPDATE message SET timestamp = ? \
-WHERE %s = ? AND account = ?"
+WHERE %s = ? AND account = ? AND timestamp != ?"
                    dup-id-col)
-           (list timestamp id-val account))
+           (list timestamp id-val account timestamp))
           ;; Replace failed-decrypt placeholder if new body is real text.
           (when (and body
                      (not (string-match-p "\\`: could not decrypt\\]" body)))
