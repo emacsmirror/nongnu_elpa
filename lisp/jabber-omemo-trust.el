@@ -42,12 +42,17 @@
                   (jc jid device-id callback))
 (declare-function jabber-omemo--remove-device "jabber-omemo"
                   (jc device-id &optional callback))
+(declare-function jabber-omemo--device-list-key "jabber-omemo"
+                  (account jid))
+(declare-function jabber-omemo--prefetch-sessions "jabber-omemo"
+                  (jc jid))
 (declare-function jabber-connection-bare-jid "jabber-util")
 (declare-function jabber-jid-user "jabber-util")
 (declare-function jabber-read-account "jabber-util")
 
 (defvar jabber-chatting-with)
 (defvar jabber-buffer-connection)
+(defvar jabber-omemo--device-lists)
 
 (defun jabber-omemo-trust--strip-key-type (identity-key)
   "Strip the 0x05 Curve25519 type prefix from IDENTITY-KEY.
@@ -77,6 +82,7 @@ Returns the key without the first byte, or as-is if shorter than 2 bytes."
   "u" #'jabber-omemo-trust-set-untrusted
   "d" #'jabber-omemo-trust-delete
   "w" #'jabber-omemo-trust-copy-fingerprint
+  "G" #'jabber-omemo-trust-refresh
   "h" #'jabber-omemo-trust-menu
   "?" #'jabber-omemo-trust-menu)
 
@@ -313,6 +319,40 @@ server-side device list and delete its bundle PubSub node."
     (kill-new fingerprint)
     (message "Copied: %s" fingerprint)))
 
+(defun jabber-omemo-trust-refresh ()
+  "Re-fetch device list and bundles from the server.
+Clears the cached device list for the peer, then fetches fresh
+data from PubSub and updates the buffer."
+  (interactive)
+  (let ((jc jabber-omemo-trust--jc)
+        (peer jabber-omemo-trust--peer)
+        (account jabber-omemo-trust--account)
+        (buf (current-buffer)))
+    (remhash (jabber-omemo--device-list-key account peer)
+             jabber-omemo--device-lists)
+    (setq jabber-omemo-trust--fetched nil)
+    (tabulated-list-print t)
+    (jabber-omemo--fetch-device-list
+     jc peer
+     (lambda (device-ids)
+       (dolist (did device-ids)
+         (jabber-omemo--fetch-bundle
+          jc peer did
+          (let ((did did))
+            (lambda (bundle)
+              (when-let* ((ik (and bundle (plist-get bundle :identity-key)))
+                          ((buffer-live-p buf)))
+                (with-current-buffer buf
+                  (push (jabber-omemo-trust--format-entry
+                         (list :device-id did
+                               :identity-key ik
+                               :trust nil
+                               :first-seen nil))
+                        jabber-omemo-trust--fetched)
+                  (tabulated-list-print t)))))))
+       (jabber-omemo--prefetch-sessions jc peer)))
+    (message "Fetching devices for %s..." peer)))
+
 ;;; Transient
 
 (defun jabber-omemo-trust--menu-description ()
@@ -331,7 +371,8 @@ server-side device list and delete its bundle PubSub node."
     ("u" "Untrust" jabber-omemo-trust-set-untrusted)
     ("d" "Delete" jabber-omemo-trust-delete)
     ("w" "Copy fingerprint" jabber-omemo-trust-copy-fingerprint)
-    ("g" "Refresh" revert-buffer)]])
+    ("g" "Refresh" revert-buffer)
+    ("G" "Re-fetch from server" jabber-omemo-trust-refresh)]])
 
 ;;; Cleanup on disconnect
 
