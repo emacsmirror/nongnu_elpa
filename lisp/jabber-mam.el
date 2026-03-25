@@ -246,17 +246,23 @@ outgoing receipts.  Mutates OUTER in place."
   "Return non-nil if QUERYID is an active MAM query."
   (cl-find queryid jabber-mam--syncing :key #'cdr :test #'string=))
 
-(defun jabber-mam--valid-sender-p (jc from)
+(defun jabber-mam--valid-sender-p (jc from queryid)
   "Return non-nil if FROM is a valid MAM result sender for JC.
 Valid senders are our own bare JID (1:1 archive) or a joined MUC
-room (room archive).  A nil FROM is accepted because some servers
-omit the attribute when the message originates from the user's
-own archive."
-  (or (null from)
-      (let ((bare (jabber-jid-user from))
-            (our-jid (jabber-connection-bare-jid jc)))
-        (or (string= bare our-jid)
-            (jabber-muc-nickname bare)))))
+room (room archive).  A nil FROM is accepted only for own-archive
+queries (no MUC target) because some servers omit the attribute
+when the message originates from the user's own archive.
+QUERYID identifies the active query for target lookup."
+  (if (null from)
+      ;; Accept nil from only for own-archive queries.
+      ;; MUC queries always have a room JID in query-targets.
+      (let ((target (cdr (assoc queryid jabber-mam--query-targets
+                                #'string=))))
+        (or (null target) (eq target 'one-shot)))
+    (let ((bare (jabber-jid-user from))
+          (our-jid (jabber-connection-bare-jid jc)))
+      (or (string= bare our-jid)
+          (jabber-muc-nickname bare)))))
 
 (defun jabber-mam--process-message (jc xml-data)
   "Handle a MAM result <message> from the message chain.
@@ -270,7 +276,7 @@ JC is the Jabber connection.  XML-DATA is the stanza."
               ;; Sender must be our bare JID (1:1 archive) or a
               ;; joined MUC room (room archive).
               ((jabber-mam--valid-sender-p
-                jc (jabber-xml-get-attribute xml-data 'from))))
+                jc (jabber-xml-get-attribute xml-data 'from) qid)))
     (let* ((archive-id (nth 0 parsed))
            (stamp (nth 1 parsed))
            (inner-msg (nth 2 parsed))
@@ -775,7 +781,8 @@ Called from `jabber-lost-connection-hooks' on involuntary disconnect."
                                  #'string=)))
             (setq jabber-mam--completion-callbacks
                   (delq cb jabber-mam--completion-callbacks))
-            (ignore-errors (funcall (cdr cb))))
+            (condition-case err (funcall (cdr cb))
+              (error (message "MAM: cleanup callback error: %S" err))))
           (setq jabber-mam--query-targets
                 (cl-remove qid jabber-mam--query-targets
                            :key #'car :test #'string=))))
@@ -792,7 +799,8 @@ Called from `jabber-pre-disconnect-hook'."
       (error nil)))
   ;; Fire remaining completion callbacks to clear syncing flags.
   (dolist (cb jabber-mam--completion-callbacks)
-    (ignore-errors (funcall (cdr cb))))
+    (condition-case err (funcall (cdr cb))
+      (error (message "MAM: cleanup callback error: %S" err))))
   (setq jabber-mam--syncing nil
         jabber-mam--tx-depth 0
         jabber-mam--completion-callbacks nil
@@ -818,7 +826,8 @@ depth.  Called when leaving a room to stop wasting bandwidth."
                              #'string=)))
         (setq jabber-mam--completion-callbacks
               (delq cb jabber-mam--completion-callbacks))
-        (ignore-errors (funcall (cdr cb))))
+        (condition-case err (funcall (cdr cb))
+          (error (message "MAM: cleanup callback error: %S" err))))
       (when (> jabber-mam--tx-depth 0)
         (cl-decf jabber-mam--tx-depth))
       (when (zerop jabber-mam--tx-depth)
