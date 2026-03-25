@@ -183,40 +183,40 @@ END"
   (dolist (ddl jabber-db--schema-ddl)
     (sqlite-execute db ddl)))
 
-(defconst jabber-db--dev-version-max 99
-  "Upper bound of development schema versions.
-Versions 2 through this value are development-only and will never
-appear in a release.  When detected, the user is prompted to
-delete and recreate the database.")
+(defconst jabber-db--schema-version 1
+  "Current schema version.
+Bump this when adding migrations.  A database whose version
+exceeds this value is from a newer (or development) build and
+cannot be used; the user is prompted to delete it.")
 
-(defun jabber-db--handle-dev-schema (db)
-  "Detect development-era schema in DB and offer to reset.
-Returns non-nil if the database was reset and the caller should
+(defun jabber-db--handle-unknown-schema (db)
+  "Detect a schema newer than `jabber-db--schema-version' and offer to reset.
+Returns non-nil if the database was deleted and the caller should
 re-open it."
   (let ((version (caar (sqlite-select db "PRAGMA user_version"))))
-    (when (<= 2 version jabber-db--dev-version-max)
+    (when (> version jabber-db--schema-version)
       (sqlite-close db)
       (if (y-or-n-p
-           (format "Development database (schema v%d) detected at %s.\n\
-This database is incompatible with the release version.\n\
+           (format "Database schema v%d is newer than supported v%d at %s.\n\
 Delete it and start fresh? "
-                   version jabber-db-path))
+                   version jabber-db--schema-version jabber-db-path))
           (progn
             (delete-file jabber-db-path)
-            (message "Deleted development database %s" jabber-db-path)
+            (message "Deleted incompatible database %s" jabber-db-path)
             t)
-        (user-error "Cannot open development database (v%d); \
+        (user-error "Cannot open database (v%d > supported v%d); \
 delete %s manually to continue"
-                    version jabber-db-path)))))
+                    version jabber-db--schema-version jabber-db-path)))))
 
 (defun jabber-db--migrate (db)
   "Check user_version and apply migrations to DB."
   (let ((version (caar (sqlite-select db "PRAGMA user_version"))))
     (when (zerop version)
-      ;; Fresh database: create latest schema, set to v1.
       (jabber-db--init-schema db)
-      (sqlite-execute db "PRAGMA user_version=1")
-      (setq version 1))))
+      (sqlite-execute db
+                      (format "PRAGMA user_version=%d"
+                              jabber-db--schema-version))
+      (setq version jabber-db--schema-version))))
 
 (defun jabber-db-ensure-open ()
   "Open the SQLite database, creating it if needed.  Idempotent.
@@ -228,7 +228,7 @@ Return the database connection, or nil if storage is disabled."
         (unless (file-directory-p dir)
           (make-directory dir t)))
       (let ((db (sqlite-open jabber-db-path)))
-        (when (jabber-db--handle-dev-schema db)
+        (when (jabber-db--handle-unknown-schema db)
           ;; Database was deleted; re-open fresh.
           (setq db (sqlite-open jabber-db-path)))
         (setq jabber-db--connection db))
