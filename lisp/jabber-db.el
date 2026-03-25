@@ -183,55 +183,40 @@ END"
   (dolist (ddl jabber-db--schema-ddl)
     (sqlite-execute db ddl)))
 
+(defconst jabber-db--dev-version-max 99
+  "Upper bound of development schema versions.
+Versions 2 through this value are development-only and will never
+appear in a release.  When detected, the user is prompted to
+delete and recreate the database.")
+
+(defun jabber-db--handle-dev-schema (db)
+  "Detect development-era schema in DB and offer to reset.
+Returns non-nil if the database was reset and the caller should
+re-open it."
+  (let ((version (caar (sqlite-select db "PRAGMA user_version"))))
+    (when (<= 2 version jabber-db--dev-version-max)
+      (sqlite-close db)
+      (if (y-or-n-p
+           (format "Development database (schema v%d) detected at %s.\n\
+This database is incompatible with the release version.\n\
+Delete it and start fresh? "
+                   version jabber-db-path))
+          (progn
+            (delete-file jabber-db-path)
+            (message "Deleted development database %s" jabber-db-path)
+            t)
+        (user-error "Cannot open development database (v%d); \
+delete %s manually to continue"
+                    version jabber-db-path)))))
+
 (defun jabber-db--migrate (db)
   "Check user_version and apply migrations to DB."
   (let ((version (caar (sqlite-select db "PRAGMA user_version"))))
     (when (zerop version)
-      ;; Fresh database: create latest schema, skip intermediate migrations.
-      ;; NOTE: for the v0.10.0 release, jabber-db.el is new (absent in v0.9.0),
-      ;; so there are no real-world user DBs to migrate.  At release time,
-      ;; collapse this entire migration chain: remove all (when (< version N))
-      ;; blocks, set user_version=1 here, and update the schema-version test.
-      ;; Alpha tester DBs should be deleted before upgrading to the release.
+      ;; Fresh database: create latest schema, set to v1.
       (jabber-db--init-schema db)
-      (sqlite-execute db "PRAGMA user_version=7")
-      (setq version 7))
-    (when (< version 2)
-      ;; v1->v2: Remove duplicate messages that lack stanza_id and server_id.
-      ;; These were created by MUC server history replayed on every join.
-      (sqlite-execute db "\
-DELETE FROM message WHERE id NOT IN (
-  SELECT MIN(id) FROM message
-  GROUP BY account, peer, timestamp, body, resource)")
-      (sqlite-execute db "PRAGMA user_version=2"))
-    (when (< version 3)
-      ;; v2->v3: Add receipt timestamp columns for XEP-0184/XEP-0333.
-      (sqlite-execute db "ALTER TABLE message ADD COLUMN delivered_at INTEGER")
-      (sqlite-execute db "ALTER TABLE message ADD COLUMN displayed_at INTEGER")
-      (sqlite-execute db "PRAGMA user_version=3"))
-    (when (< version 4)
-      ;; v3->v4: Add retracted_by for XEP-0425 moderated retractions.
-      (sqlite-execute db "ALTER TABLE message ADD COLUMN retracted_by TEXT")
-      (sqlite-execute db "PRAGMA user_version=4"))
-    (when (< version 5)
-      ;; v4->v5: Add retraction_reason for XEP-0425.
-      (sqlite-execute db "ALTER TABLE message ADD COLUMN retraction_reason TEXT")
-      (sqlite-execute db "PRAGMA user_version=5"))
-    (when (< version 6)
-      ;; v5->v6: Add edited flag for XEP-0308 message corrections.
-      (sqlite-execute db "ALTER TABLE message ADD COLUMN edited INTEGER DEFAULT 0")
-      (sqlite-execute db "PRAGMA user_version=6"))
-    (when (< version 7)
-      ;; v6->v7: Scope dedup indexes by account.
-      (sqlite-execute db "DROP INDEX IF EXISTS idx_msg_stanza_id")
-      (sqlite-execute db "DROP INDEX IF EXISTS idx_msg_server_id")
-      (sqlite-execute db "\
-CREATE INDEX IF NOT EXISTS idx_msg_stanza_id \
-ON message(account, stanza_id) WHERE stanza_id IS NOT NULL")
-      (sqlite-execute db "\
-CREATE INDEX IF NOT EXISTS idx_msg_server_id \
-ON message(account, server_id) WHERE server_id IS NOT NULL")
-      (sqlite-execute db "PRAGMA user_version=7"))))
+      (sqlite-execute db "PRAGMA user_version=1")
+      (setq version 1))))
 
 (defun jabber-db-ensure-open ()
   "Open the SQLite database, creating it if needed.  Idempotent.
@@ -242,7 +227,11 @@ Return the database connection, or nil if storage is disabled."
       (let ((dir (file-name-directory jabber-db-path)))
         (unless (file-directory-p dir)
           (make-directory dir t)))
-      (setq jabber-db--connection (sqlite-open jabber-db-path))
+      (let ((db (sqlite-open jabber-db-path)))
+        (when (jabber-db--handle-dev-schema db)
+          ;; Database was deleted; re-open fresh.
+          (setq db (sqlite-open jabber-db-path)))
+        (setq jabber-db--connection db))
       (sqlite-execute jabber-db--connection "PRAGMA journal_mode=WAL")
       (sqlite-execute jabber-db--connection "PRAGMA synchronous=NORMAL")
       (jabber-db--migrate jabber-db--connection))

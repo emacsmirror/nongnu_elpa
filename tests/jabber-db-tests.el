@@ -47,9 +47,9 @@ and tears down on exit."
       (should (sqlitep db)))))
 
 (ert-deftest jabber-db-test-schema-version ()
-  "The user_version pragma is set to 7 after initialization."
+  "The user_version pragma is set to 1 after initialization."
   (jabber-db-test-with-db
-    (should (= 7 (caar (sqlite-select jabber-db--connection
+    (should (= 1 (caar (sqlite-select jabber-db--connection
                                       "PRAGMA user_version"))))))
 
 (ert-deftest jabber-db-test-wal-mode ()
