@@ -47,10 +47,11 @@ and tears down on exit."
       (should (sqlitep db)))))
 
 (ert-deftest jabber-db-test-schema-version ()
-  "The user_version pragma is set to 1 after initialization."
+  "The user_version pragma matches `jabber-db--schema-version'."
   (jabber-db-test-with-db
-    (should (= 1 (caar (sqlite-select jabber-db--connection
-                                      "PRAGMA user_version"))))))
+    (should (= jabber-db--schema-version
+               (caar (sqlite-select jabber-db--connection
+                                    "PRAGMA user_version"))))))
 
 (ert-deftest jabber-db-test-wal-mode ()
   "WAL journal mode is active."
