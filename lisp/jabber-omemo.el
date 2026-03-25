@@ -391,14 +391,72 @@ Updates the in-memory cache and database."
 
 (defun jabber-omemo--ensure-device-listed (jc)
   "Ensure our device ID is on our published device list via JC.
-Fetches the current list, adds our ID if missing, re-publishes."
+Fetches the current list, adds our ID if missing, re-publishes.
+When our ID was missing (new installation), also checks other
+listed devices for stale copies sharing our identity key and
+removes them."
   (let ((our-id (jabber-omemo--get-device-id jc)))
     (jabber-omemo--fetch-device-list
      jc (jabber-connection-bare-jid jc)
      (lambda (ids)
-       (unless (memq our-id ids)
+       (if (memq our-id ids)
+           ;; Already listed, nothing to do.
+           nil
          (jabber-omemo--publish-device-list
-          jc (cons our-id (or ids '()))))))))
+          jc (cons our-id (or ids '())))
+         ;; New installation: check for stale devices with our key.
+         (jabber-omemo--cleanup-stale-devices jc ids))))))
+
+(defun jabber-omemo--cleanup-stale-devices (jc other-ids)
+  "Remove devices from OTHER-IDS that share our identity key.
+JC is the Jabber connection.  Fetches the bundle for each device
+in OTHER-IDS, collects stale device IDs, then removes them all in
+a single device list republish to avoid race conditions."
+  (let* ((store (jabber-omemo--get-store jc))
+         (our-bundle (jabber-omemo-get-bundle store))
+         (our-ik (plist-get our-bundle :identity-key))
+         (own-jid (jabber-connection-bare-jid jc))
+         (remaining (length other-ids))
+         (stale nil))
+    (if (zerop remaining)
+        nil
+      (dolist (did other-ids)
+        (jabber-omemo--fetch-bundle
+         jc own-jid did
+         (let ((did did))
+           (lambda (bundle)
+             (when-let* ((ik (and bundle (plist-get bundle :identity-key)))
+                         ((string= ik our-ik)))
+               (push did stale))
+             (cl-decf remaining)
+             (when (zerop remaining)
+               (jabber-omemo--remove-stale-devices jc stale)))))))))
+
+
+(defun jabber-omemo--remove-stale-devices (jc stale-ids)
+  "Remove STALE-IDS from the device list and delete their bundles.
+JC is the Jabber connection.  Does a single fetch-filter-republish
+for all stale devices, then deletes each bundle node."
+  (when stale-ids
+    (message "OMEMO: removing %d stale device(s): %s"
+             (length stale-ids) stale-ids)
+    (jabber-omemo--fetch-device-list
+     jc (jabber-connection-bare-jid jc)
+     (lambda (ids)
+       (let ((new-ids (cl-remove-if (lambda (id) (memq id stale-ids)) ids)))
+         (jabber-omemo--publish-device-list jc new-ids)
+         (dolist (did stale-ids)
+           (jabber-omemo--delete-bundle-node jc did)))))))
+
+(defun jabber-omemo--delete-bundle-node (jc device-id)
+  "Delete the bundle PubSub node for DEVICE-ID via JC."
+  (jabber-pubsub-delete-node
+   jc nil
+   (concat jabber-omemo-bundles-node-prefix (number-to-string device-id))
+   nil
+   (lambda (_jc xml _closure)
+     (message "OMEMO: failed to delete bundle for %d: %s"
+              device-id (jabber-xml-path xml '(error))))))
 
 (defun jabber-omemo--remove-device (jc device-id &optional callback)
   "Remove DEVICE-ID from our published device list and delete its bundle.
@@ -986,6 +1044,7 @@ Called when OMEMO is enabled in a MUC buffer."
 (defun jabber-omemo--trust-label (level)
   "Return a human-readable label for trust LEVEL."
   (pcase level
+    ('nil "new")
     (0 "undecided")
     (1 "TOFU")
     (2 "verified")

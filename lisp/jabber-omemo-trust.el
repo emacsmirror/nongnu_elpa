@@ -114,7 +114,7 @@ Returns the key without the first byte, or as-is if shorter than 2 bytes."
         (first-seen (plist-get rec :first-seen)))
     (list did
           (vector (number-to-string did)
-                  (if trust (jabber-omemo--trust-label trust) "self")
+                  (jabber-omemo--trust-label trust)
                   (jabber-omemo--format-fingerprint
                    (jabber-omemo-trust--strip-key-type ik))
                   (if first-seen
@@ -136,6 +136,7 @@ Returns the key without the first byte, or as-is if shorter than 2 bytes."
            (cols (cadr entry)))
       (aset cols 0 (propertize (aref cols 0)
                                'face 'jabber-chat-nick-encrypted))
+      (aset cols 1 "self")
       entry)))
 
 (defun jabber-omemo-trust--entries ()

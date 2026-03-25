@@ -84,16 +84,26 @@ for the C module which expects unibyte."
   "Upsert trust record for ACCOUNT, JID, DEVICE-ID.
 IDENTITY-KEY is a unibyte blob.
 TRUST is 0=undecided, 1=tofu, 2=verified, -1=untrusted.
-Sets first_seen to current time on initial insert."
+Sets first_seen to current time on initial insert.
+Rejects the update if the device already has a different identity key."
   (when-let* ((db (jabber-db-ensure-open)))
-    (let ((now (truncate (float-time))))
-      (sqlite-execute db "\
+    (let ((existing (jabber-omemo-store--as-unibyte
+                     (caar (sqlite-select db "\
+SELECT identity_key FROM omemo_trust
+  WHERE account = ? AND jid = ? AND device_id = ?"
+                                         (list account jid device-id))))))
+      (if (and existing (not (equal existing identity-key)))
+          (display-warning 'jabber-omemo
+            (format "SECURITY: device %d for %s changed identity key! Rejecting."
+                    device-id jid)
+            :warning)
+        (let ((now (truncate (float-time))))
+          (sqlite-execute db "\
 INSERT INTO omemo_trust (account, jid, device_id, identity_key, trust, first_seen)
   VALUES (?, ?, ?, ?, ?, ?)
   ON CONFLICT (account, jid, device_id)
-  DO UPDATE SET identity_key = excluded.identity_key,
-                trust = excluded.trust"
-        (list account jid device-id identity-key trust now)))))
+  DO UPDATE SET trust = excluded.trust"
+            (list account jid device-id identity-key trust now)))))))
 
 (defun jabber-omemo-store-load-trust (account jid device-id)
   "Load trust record for ACCOUNT, JID, DEVICE-ID as a plist, or nil.
