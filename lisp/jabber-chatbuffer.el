@@ -275,8 +275,42 @@ Works for both 1:1 chat (`jabber-chatting-with') and MUC (`jabber-group')."
   (require 'jabber-omemo)
   (jabber-omemo-fingerprints))
 
+(defvar jabber-backlog-number)            ; jabber-db.el
+
+(transient-define-argument jabber-chat:-n ()
+  :description "Message count"
+  :class 'transient-option
+  :shortarg "-n"
+  :argument "-n"
+  :reader #'transient-read-number-N+)
+
+(defun jabber-chat--transient-msg-count ()
+  "Extract the message count from the current transient's -n argument.
+Return a positive integer, or nil if -n is unset or empty."
+  (let ((val (cl-some (lambda (a)
+                        (and (string-prefix-p "-n" a)
+                             (substring a 2)))
+                      (transient-args transient-current-command))))
+    (and val (not (string-empty-p val))
+         (let ((num (string-to-number val)))
+           (and (> num 0) num)))))
+
+(transient-define-suffix jabber-chat--display-more-backlog-suffix ()
+  "Display more context using the -n count from the transient."
+  :transient nil
+  (interactive)
+  (jabber-chat-display-more-backlog (jabber-chat--transient-msg-count)))
+
+(transient-define-suffix jabber-chat--mam-sync-buffer-suffix ()
+  "Sync & redraw using the -n count from the transient."
+  :transient nil
+  (interactive)
+  (jabber-mam-sync-buffer
+   (or (jabber-chat--transient-msg-count) jabber-backlog-number)))
+
 (transient-define-prefix jabber-chat-operations-menu ()
   "Chat buffer operations."
+  :value (lambda () (list (format "-n%d" jabber-backlog-number)))
   [["Encryption"
     ("e" "Encryption..." jabber-chat-encryption-menu)
     ("f" "Fingerprints" jabber-chat-show-fingerprints)]
@@ -290,10 +324,11 @@ Works for both 1:1 chat (`jabber-chatting-with') and MUC (`jabber-group')."
     ("m" "MUC operations..." jabber-muc-menu)
     ("M" "Retract message at point" jabber-moderation-retract)]
    ["Buffer"
-    ("d" "Display more context" jabber-chat-display-more-backlog)
+    ("-n" jabber-chat:-n)
+    ("d" "Display more context" jabber-chat--display-more-backlog-suffix)
     ("r" "Redisplay" jabber-chat-redisplay)
     ("R" "Redraw" jabber-chat-buffer-redraw)
-    ("S" "Sync & redraw" jabber-mam-sync-buffer)]])
+    ("S" "Sync & redraw" jabber-chat--mam-sync-buffer-suffix)]])
 
 ;; Spell check only what you're currently writing.
 (defun jabber-chat-mode-flyspell-verify ()
