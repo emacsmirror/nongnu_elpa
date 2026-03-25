@@ -246,7 +246,6 @@ added to the outgoing message.")
 (defvar jabber-muc-printers)            ; jabber-muc.el
 (declare-function jabber-mam-syncing-p "jabber-mam" ())
 (declare-function jabber-mam-chat-opened "jabber-mam" (jc peer))
-(defvar jabber-mam--dirty-buffers)      ; jabber-mam.el
 (defvar jabber-oob-xmlns)              ; jabber-xml.el
 (defvar jabber-carbons-xmlns)          ; jabber-carbons.el
 (defvar jabber-image-max-width)        ; jabber-image.el
@@ -665,7 +664,7 @@ _JC and _XML-DATA are reserved for future use by OMEMO."
       (jabber-maybe-print-rare-time
        (jabber-chat-ewoc-enter
         (list (if error-p :error :foreign) msg-plist)))
-      (let ((inhibit-message (jabber-mam-syncing-p)))
+      (let ((inhibit-message jabber-chat-mam-syncing))
         (dolist (hook '(jabber-message-hooks jabber-alert-message-hooks))
           (run-hook-with-args hook
                               from (current-buffer) body-text
@@ -686,7 +685,7 @@ JC is the Jabber connection."
       (when is-carbon
         (jabber-chat--store-carbon jc xml-data))
       (let ((replace-id (jabber-message-correct--replace-id xml-data)))
-        (if (and replace-id (not (jabber-mam-syncing-p)))
+        (if (and replace-id (not jabber-chat-mam-syncing))
             (jabber-message-correct--apply
              replace-id
              (plist-get msg-plist :body)

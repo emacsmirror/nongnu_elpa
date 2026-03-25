@@ -260,7 +260,6 @@ The format is that of `mode-line-format' and `header-line-format'."
                   (account peer))
 (declare-function jabber-mam-muc-joined "jabber-mam.el" (jc group))
 (declare-function jabber-mam--cancel-muc-query "jabber-mam.el" (room))
-(declare-function jabber-mam-syncing-p "jabber-mam.el" ())
 (declare-function jabber-db-backlog "jabber-db.el"
                   (account peer &optional count start-time))
 (declare-function jabber-message-correct--replace-id "jabber-message-correct"
@@ -1249,7 +1248,9 @@ messages."
     ;; Alert hooks run regardless of buffer existence, but not for
     ;; history messages.
     (unless (jabber-muc--history-message-p xml-data)
-      (let ((inhibit-message (jabber-mam-syncing-p)))
+      (let ((inhibit-message (and buffer (buffer-live-p buffer)
+                                    (buffer-local-value
+                                     'jabber-chat-mam-syncing buffer))))
         (dolist (hook '(jabber-muc-hooks jabber-alert-muc-hooks))
           (run-hook-with-args hook
                               nick group buffer body-text
