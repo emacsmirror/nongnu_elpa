@@ -1,4 +1,4 @@
-# bash-completion for Emacs [![test](https://github.com/szermatt/emacs-bash-completion/workflows/test/badge.svg)](https://github.com/szermatt/emacs-bash-completion/actions) [![melpa](https://melpa.org/packages/bash-completion-badge.svg)](https://melpa.org/#/bash-completion) [![melpa-stable](https://stable.melpa.org/packages/bash-completion-badge.svg)](https://stable.melpa.org/#/bash-completion)
+# bash-completion for Emacs [![test](https://github.com/szermatt/emacs-bash-completion/workflows/test/badge.svg)](https://github.com/szermatt/emacs-bash-completion/actions) [![melpa](https://melpa.org/packages/bash-completion-badge.svg)](https://melpa.org/#/bash-completion) [![melpa-stable](https://stable.melpa.org/packages/bash-completion-badge.svg)](https://stable.melpa.org/#/bash-completion) [![nongnu-elpa](https://elpa.nongnu.org/nongnu/bash-completion.svg)](https://elpa.nongnu.org/nongnu/bash-completion.html)
 
 
 bash-completion.el defines dynamic completion hooks for shell-mode
@@ -33,8 +33,9 @@ prompts nor in eshell mode.
 ## INSTALLATION
 
 Copy bash-completion.el into a directory that's on Emacs load-path.
-You can do that manually, or by installing it from
-[MELPA](https://melpa.org/#/getting-started).
+You can do that manually, or by installing it from [NonGNU
+ELPA](https://www.gnu.org/software/emacs/manual/html_node/efaq/Packages-that-do-not-come-with-Emacs.html#:~:text=The%20easiest%20way%20to%20add,to%20the%20Free%20Software%20Foundation.)
+or [MELPA](https://melpa.org/#/getting-started).
 
 ### Shell completion
 
@@ -53,7 +54,7 @@ For example:
           'bash-completion-dynamic-complete)
 ```
 
-or simpler, but forces you to load bash-completion at startup:
+or simpler, but loads `bash-completion.el` at startup:
 
 ```elisp
         (require 'bash-completion)
