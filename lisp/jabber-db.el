@@ -315,13 +315,13 @@ WHERE stanza_id = ? AND account = ? LIMIT 1"
 WHERE server_id = ? AND account = ? LIMIT 1"
                          (list server-id account))))
              'server_id)
-            ;; Fallback: content-based dedup for messages without IDs
-            ;; (e.g. MUC history replayed on every join)
-            ((and (not stanza-id) (not server-id)
-                  (caar (sqlite-select
-                         db "SELECT 1 FROM message \
+            ;; Content-based dedup: matches messages stored by the
+            ;; live handler (nil IDs) against MAM replays (with IDs),
+            ;; or MUC history replayed on every join.
+            ((caar (sqlite-select
+                    db "SELECT 1 FROM message \
 WHERE account = ? AND peer = ? AND timestamp = ? AND body = ? LIMIT 1"
-                         (list account peer timestamp body))))
+                    (list account peer timestamp body)))
              'content))))
       (cond
        ((null dup-id-col)
@@ -354,7 +354,17 @@ WHERE %s = ? AND account = ? AND timestamp != ?"
              (format "UPDATE message SET body = ?, oob_url = ?, oob_desc = ? \
 WHERE %s = ? AND account = ? AND body LIKE '%%: could not decrypt]'"
                      dup-id-col)
-             (list body oob-url oob-desc id-val account)))))))))
+             (list body oob-url oob-desc id-val account)))))
+       ;; Content match: upgrade a nil-ID row with server-assigned IDs.
+       ((eq dup-id-col 'content)
+        (when (or stanza-id server-id)
+          (sqlite-execute
+           db
+           "UPDATE message SET stanza_id = COALESCE(stanza_id, ?), \
+server_id = COALESCE(server_id, ?) \
+WHERE account = ? AND peer = ? AND timestamp = ? AND body = ? \
+AND stanza_id IS NULL AND server_id IS NULL"
+           (list stanza-id server-id account peer timestamp body))))))))
 
 ;;; Receipt updates
 
