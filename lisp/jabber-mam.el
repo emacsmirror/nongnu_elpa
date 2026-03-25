@@ -249,12 +249,14 @@ outgoing receipts.  Mutates OUTER in place."
 (defun jabber-mam--valid-sender-p (jc from)
   "Return non-nil if FROM is a valid MAM result sender for JC.
 Valid senders are our own bare JID (1:1 archive) or a joined MUC
-room (room archive)."
-  (when from
-    (let ((bare (jabber-jid-user from))
-          (our-jid (jabber-connection-bare-jid jc)))
-      (or (string= bare our-jid)
-          (jabber-muc-nickname bare)))))
+room (room archive).  A nil FROM is accepted because some servers
+omit the attribute when the message originates from the user's
+own archive."
+  (or (null from)
+      (let ((bare (jabber-jid-user from))
+            (our-jid (jabber-connection-bare-jid jc)))
+        (or (string= bare our-jid)
+            (jabber-muc-nickname bare)))))
 
 (defun jabber-mam--process-message (jc xml-data)
   "Handle a MAM result <message> from the message chain.
