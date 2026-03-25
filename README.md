@@ -34,7 +34,7 @@ prompts nor in eshell mode.
 
 Copy bash-completion.el into a directory that's on Emacs load-path.
 You can do that manually, or by installing it from [NonGNU
-ELPA](https://www.gnu.org/software/emacs/manual/html_node/efaq/Packages-that-do-not-come-with-Emacs.html#:~:text=The%20easiest%20way%20to%20add,to%20the%20Free%20Software%20Foundation.)
+ELPA](https://www.gnu.org/software/emacs/manual/html_node/efaq/Packages-that-do-not-come-with-Emacs.html)
 or [MELPA](https://melpa.org/#/getting-started).
 
 ### Shell completion
@@ -54,7 +54,7 @@ For example:
           'bash-completion-dynamic-complete)
 ```
 
-or simpler, but loads `bash-completion.el` at startup:
+or simpler, but loads `bash-completion.el` right away:
 
 ```elisp
         (require 'bash-completion)
