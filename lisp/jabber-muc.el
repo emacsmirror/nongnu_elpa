@@ -1240,9 +1240,14 @@ messages."
     (when buffer
       (with-current-buffer buffer
         (jabber-muc-snarf-topic xml-data)
-        (when (or error-p
-                  (cl-some (lambda (f) (funcall f msg-plist type :printp))
-                           printers))
+        ;; Skip ewoc insert for delayed (history) messages when
+        ;; backlog was already loaded from DB, to avoid duplicates.
+        ;; The DB handler stores them; backlog refresh will show them.
+        (when (and (or error-p
+                      (cl-some (lambda (f) (funcall f msg-plist type :printp))
+                               printers))
+                   (not (and (jabber-muc--history-message-p xml-data)
+                             jabber-chat-earliest-backlog)))
           (jabber-maybe-print-rare-time
            (jabber-chat-ewoc-enter (list type msg-plist))))))
     ;; Alert hooks run regardless of buffer existence, but not for
