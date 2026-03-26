@@ -159,8 +159,14 @@ Returns the key without the first byte, or as-is if shorter than 2 bytes."
                (puthash (plist-get rec :device-id) t seen)
                (jabber-omemo-trust--format-entry rec))
              records)
-     (cl-remove-if (lambda (entry) (gethash (car entry) seen))
-                    jabber-omemo-trust--fetched))))
+     ;; Deduplicate fetched entries: skip any device already seen
+     ;; from local trust records or from a previous fetched entry.
+     (let ((unique nil))
+       (dolist (entry jabber-omemo-trust--fetched)
+         (unless (gethash (car entry) seen)
+           (puthash (car entry) t seen)
+           (push entry unique)))
+       (nreverse unique)))))
 
 ;;; Entry point
 
@@ -197,6 +203,7 @@ Returns the key without the first byte, or as-is if shorter than 2 bytes."
             (lambda (bundle)
               (when-let* ((ik (and bundle (plist-get bundle :identity-key)))
                           (buf (get-buffer buf-name)))
+                (jabber-omemo-store-ensure-trust account peer did ik)
                 (with-current-buffer buf
                   (push (jabber-omemo-trust--format-entry
                          (list :device-id did
@@ -233,6 +240,7 @@ Fetches the device list and bundles from the server."
               (lambda (bundle)
                 (when-let* ((ik (and bundle (plist-get bundle :identity-key)))
                             (buf (get-buffer buf-name)))
+                  (jabber-omemo-store-ensure-trust own-jid own-jid did ik)
                   (with-current-buffer buf
                     (let* ((entry (jabber-omemo-trust--format-entry
                                     (list :device-id did
@@ -267,6 +275,8 @@ Fetches the device list and bundles from the server."
   (let ((did (jabber-omemo-trust--device-at-point)))
     (jabber-omemo-store-set-trust jabber-omemo-trust--account
                                   jabber-omemo-trust--peer did -1)
+    (jabber-omemo-store-delete-session jabber-omemo-trust--account
+                                       jabber-omemo-trust--peer did)
     (tabulated-list-print t)
     (message "Device %d marked as untrusted" did)))
 
@@ -342,6 +352,7 @@ data from PubSub and updates the buffer."
             (lambda (bundle)
               (when-let* ((ik (and bundle (plist-get bundle :identity-key)))
                           ((buffer-live-p buf)))
+                (jabber-omemo-store-ensure-trust account peer did ik)
                 (with-current-buffer buf
                   (push (jabber-omemo-trust--format-entry
                          (list :device-id did

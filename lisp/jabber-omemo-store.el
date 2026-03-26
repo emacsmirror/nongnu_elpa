@@ -105,6 +105,32 @@ INSERT INTO omemo_trust (account, jid, device_id, identity_key, trust, first_see
   DO UPDATE SET trust = excluded.trust"
             (list account jid device-id identity-key trust now)))))))
 
+(defun jabber-omemo-store-ensure-trust (account jid device-id identity-key)
+  "Ensure a trust record exists for ACCOUNT, JID, DEVICE-ID.
+Creates one with trust 0 (undecided) if none exists.
+If a record already exists, leaves it unchanged.
+Warns if the stored identity key differs from IDENTITY-KEY."
+  (when-let* ((db (jabber-db-ensure-open))
+              (identity-key identity-key))
+    (let ((existing (jabber-omemo-store--as-unibyte
+                     (caar (sqlite-select db "\
+SELECT identity_key FROM omemo_trust
+  WHERE account = ? AND jid = ? AND device_id = ?"
+                                         (list account jid device-id))))))
+      (cond
+       ((and existing (not (equal existing identity-key)))
+        (display-warning 'jabber-omemo
+          (format "SECURITY: device %d for %s changed identity key! Rejecting."
+                  device-id jid)
+          :warning))
+       (existing nil)
+       (t
+        (let ((now (truncate (float-time))))
+          (sqlite-execute db "\
+INSERT INTO omemo_trust (account, jid, device_id, identity_key, trust, first_seen)
+  VALUES (?, ?, ?, ?, 0, ?)"
+            (list account jid device-id identity-key now))))))))
+
 (defun jabber-omemo-store-load-trust (account jid device-id)
   "Load trust record for ACCOUNT, JID, DEVICE-ID as a plist, or nil.
 Returns (:identity-key BLOB :trust INT :first-seen INT)."
