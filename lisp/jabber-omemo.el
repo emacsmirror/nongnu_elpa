@@ -1159,6 +1159,7 @@ Opens a tabulated-list buffer with interactive trust controls."
 
 ;;; Connect/disconnect hooks
 
+;;;###autoload
 (defun jabber-omemo-on-connect (jc)
   "Post-connect hook for OMEMO initialization.
 Loads or creates the store, ensures our device is listed,
@@ -1180,6 +1181,7 @@ publishes our bundle, and pre-fetches sessions for open chat buffers."
         (jabber-omemo--prefetch-sessions
          jc (jabber-jid-user jabber-chatting-with))))))
 
+;;;###autoload
 (defun jabber-omemo--on-disconnect ()
   "Pre-disconnect hook.  Clear OMEMO in-memory caches."
   (clrhash jabber-omemo--device-ids)
@@ -1245,6 +1247,7 @@ Returns non-nil if handled, nil to fall through to plaintext."
               #'jabber-omemo--handle-device-list)
         jabber-pubsub-node-handlers))
 
+;;;###autoload
 (with-eval-after-load "jabber-core"
   (add-hook 'jabber-post-connect-hooks #'jabber-omemo-on-connect)
   (add-hook 'jabber-pre-disconnect-hook #'jabber-omemo--on-disconnect))
