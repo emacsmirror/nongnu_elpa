@@ -117,6 +117,7 @@ JC is the connection.  Added to `jabber-message-chain'."
                       (received ((xmlns . ,jabber-receipts-xmlns)
                                  (id . ,id)))))))
     ;; Track pending markable message for <displayed/> on visibility.
+    ;; If the buffer is already visible, send <displayed/> immediately.
     ;; Skip MAM-replayed messages.
     (when-let* ((id (jabber-xml-get-attribute xml-data 'id))
                 ((not (jabber-xml-get-attribute xml-data 'jabber-mam--origin)))
@@ -126,7 +127,15 @@ JC is the connection.  Added to `jabber-message-chain'."
       (when-let* ((buffer (get-buffer
                            (jabber-chat-get-buffer from jc))))
         (with-current-buffer buffer
-          (setq jabber-receipts--pending-displayed-id id))))))
+          (when jabber-chat-send-receipts
+            (if (get-buffer-window buffer 'visible)
+                (progn
+                  (jabber-send-sexp-if-connected
+                   jc `(message ((to . ,from) (type . "chat"))
+                                (displayed ((xmlns . ,jabber-chat-markers-xmlns)
+                                            (id . ,id)))))
+                  (setq jabber-receipts--pending-displayed-id nil))
+              (setq jabber-receipts--pending-displayed-id id))))))))
 
 (defun jabber-receipts--update-status (jc from ref-id column)
   "Update receipt status for message REF-ID from FROM on JC.
