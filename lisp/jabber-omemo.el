@@ -75,7 +75,7 @@
 (unless module-file-suffix
   (error "jabber-omemo requires Emacs compiled with dynamic module support"))
 
-(defvar jabber-omemo-build-command "make -C src"
+(defvar jabber-omemo-build-command "make module"
   "Shell command to build the jabber-omemo-core dynamic module.
 Run from the emacs-jabber project root.")
 
