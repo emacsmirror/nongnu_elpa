@@ -365,6 +365,14 @@ Extracts <device id=\"N\"/> from the <list> element."
 
 ;;; Device list management
 
+(defun jabber-omemo--deactivate-stale-devices (account jid current-ids)
+  "Mark devices for ACCOUNT+JID not in CURRENT-IDS as inactive."
+  (dolist (rec (jabber-omemo-store-load-devices account jid))
+    (let ((did (plist-get rec :device-id)))
+      (when (and (plist-get rec :active)
+                 (not (memq did current-ids)))
+        (jabber-omemo-store-set-device-active account jid did nil)))))
+
 (defun jabber-omemo--fetch-device-list (jc jid callback)
   "Fetch the OMEMO device list for JID via connection JC.
 On success, parse and call (funcall CALLBACK device-id-list).
@@ -382,6 +390,7 @@ Updates the in-memory cache and database."
                 ids jabber-omemo--device-lists)
        (dolist (id ids)
          (jabber-omemo-store-save-device account bare-jid id))
+       (jabber-omemo--deactivate-stale-devices account bare-jid ids)
        (when callback
          (funcall callback ids))))
    (lambda (_jc xml-data _closure)
@@ -542,7 +551,8 @@ missing from our device list, re-add and re-publish."
     (puthash (jabber-omemo--device-list-key account bare-jid)
              ids jabber-omemo--device-lists)
     (dolist (id ids)
-      (jabber-omemo-store-save-device account bare-jid id))))
+      (jabber-omemo-store-save-device account bare-jid id))
+    (jabber-omemo--deactivate-stale-devices account bare-jid ids)))
 
 ;;; Bundle XML helpers
 
