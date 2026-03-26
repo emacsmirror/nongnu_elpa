@@ -56,6 +56,9 @@
   (id &rest props))
 (declare-function jabber-chat--set-body "jabber-chat" (xml-data text))
 
+(defvar jabber-omemo--reconfigured-nodes (make-hash-table :test 'equal)
+  "Nodes already reconfigured this session to prevent retry loops.")
+
 (defvar jabber-post-connect-hooks)
 (defvar jabber-pre-disconnect-hook)
 (defvar jabber-pubsub-node-handlers)
@@ -396,9 +399,12 @@ and reconfigure the node.  Otherwise just warn.
 JC is the connection, NODE and ITEM-ID identify the item,
 PAYLOAD is the XML to publish, OPTIONS is the original
 publish-options alist, and XML-DATA is the error IQ stanza."
-  (let ((condition (jabber-error-condition (jabber-iq-error xml-data))))
+  (let* ((err (jabber-iq-error xml-data))
+         (condition (and err (jabber-error-condition err))))
     (if (eq condition 'conflict)
-        (progn
+        (if (gethash node jabber-omemo--reconfigured-nodes)
+            (warn "jabber-omemo: giving up on %s (already reconfigured)" label)
+          (puthash node t jabber-omemo--reconfigured-nodes)
           (message "OMEMO: publish-options conflict for %s, retrying" label)
           (jabber-pubsub-publish
            jc nil node item-id payload nil nil
@@ -408,11 +414,12 @@ publish-options alist, and XML-DATA is the error IQ stanza."
                           (jabber-iq-error xml-data2)))))
           (jabber-pubsub-configure-node
            jc nil node options nil
-           (lambda (_jc _xml-data2 _closure)
-             (message "OMEMO: failed to reconfigure %s node" label))))
+           (lambda (_jc xml-data2 _closure)
+             (warn "jabber-omemo: failed to reconfigure %s node: %s"
+                   label (jabber-parse-error
+                          (jabber-iq-error xml-data2))))))
       (warn "jabber-omemo: failed to publish %s: %s"
-            label (jabber-parse-error
-                   (jabber-iq-error xml-data))))))
+            label (if err (jabber-parse-error err) "unknown error")))))
 
 (defun jabber-omemo--publish-device-list (jc device-ids)
   "Publish DEVICE-IDS as our OMEMO device list via JC."
@@ -1140,7 +1147,8 @@ publishes our bundle, and pre-fetches sessions for open chat buffers."
   (clrhash jabber-omemo--device-ids)
   (clrhash jabber-omemo--stores)
   (clrhash jabber-omemo--device-lists)
-  (clrhash jabber-omemo--sessions))
+  (clrhash jabber-omemo--sessions)
+  (clrhash jabber-omemo--reconfigured-nodes))
 
 ;;; XEP-0454: aesgcm file upload
 
