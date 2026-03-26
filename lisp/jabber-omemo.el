@@ -874,7 +874,10 @@ Returns modified XML-DATA with decrypted body, or nil on failure."
                       account sender-jid sender-did)))
           (when (and trust (zerop (plist-get trust :trust)))
             (jabber-omemo-store-set-trust
-             account sender-jid sender-did 1)))
+             account sender-jid sender-did 1)
+            (message "%s auto-trusted device %d for %s (TOFU)"
+                     (propertize "OMEMO:" 'face 'warning)
+                     sender-did sender-jid)))
         (when-let* ((hb (jabber-omemo-heartbeat session-ptr store-ptr)))
           (jabber-omemo--send-heartbeat jc sender-jid sender-did hb))
         (when pre-key-p
