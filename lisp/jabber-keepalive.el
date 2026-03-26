@@ -81,7 +81,7 @@ for all accounts regardless of the argument."
     (jabber-keepalive-stop))
 
   (setq jabber-keepalive-timer
-	(run-with-timer 5
+	(run-with-timer jabber-keepalive-interval
 			jabber-keepalive-interval
 			#'jabber-keepalive-do))
   (add-hook 'jabber-post-disconnect-hook #'jabber-keepalive-stop))
@@ -163,8 +163,12 @@ accounts."
   (when jabber-whitespace-ping-timer
     (jabber-whitespace-ping-stop))
 
+  ;; Send one ping immediately to prevent servers with aggressive
+  ;; idle timeouts from dropping the connection before the first
+  ;; timer fires.
+  (jabber-whitespace-ping-do)
   (setq jabber-whitespace-ping-timer
-	(run-with-timer 5
+	(run-with-timer jabber-whitespace-ping-interval
 			jabber-whitespace-ping-interval
 			#'jabber-whitespace-ping-do))
   (add-hook 'jabber-post-disconnect-hook #'jabber-whitespace-ping-stop))
