@@ -1201,6 +1201,45 @@ before it's processed by other functions."
               :to-equal
               (list 23)))))
 
+(describe "before-all failure/pending propagation"
+  (it "marks child specs as pending when before-all signals buttercup-pending"
+    (with-local-buttercup
+      (let ((suite (describe "Suite with pending before-all"
+                     (before-all
+                       (signal 'buttercup-pending "not ready"))
+                     (it "spec one" (expect 1 :to-equal 1))
+                     (it "spec two" (expect 2 :to-equal 2)))))
+        (buttercup--run-suite suite)
+        (dolist (child (buttercup-suite-children suite))
+          (expect (buttercup-suite-or-spec-status child)
+                  :to-equal 'pending)))))
+
+  (it "marks child specs as failed when before-all errors"
+    (with-local-buttercup
+      (let ((suite (describe "Suite with failing before-all"
+                     (before-all
+                       (error "Setup failed"))
+                     (it "spec one" (expect 1 :to-equal 1)))))
+        (buttercup--run-suite suite)
+        (dolist (child (buttercup-suite-children suite))
+          (expect (buttercup-suite-or-spec-status child)
+                  :to-equal 'failed)))))
+
+  (it "propagates pending to nested suites"
+    (with-local-buttercup
+      (let ((suite (describe "Outer"
+                     (before-all
+                       (signal 'buttercup-pending "not ready"))
+                     (describe "Inner"
+                       (it "nested spec" (expect 1 :to-equal 1))))))
+        (buttercup--run-suite suite)
+        (let* ((inner (car (buttercup-suite-children suite)))
+               (spec (car (buttercup-suite-children inner))))
+          (expect (buttercup-suite-or-spec-status inner)
+                  :to-equal 'pending)
+          (expect (buttercup-suite-or-spec-status spec)
+                  :to-equal 'pending))))))
+
 (describe "The `after-all' macro"
   (it "expands to a function call"
     (expect (macroexpand '(after-all (+ 1 1)))
