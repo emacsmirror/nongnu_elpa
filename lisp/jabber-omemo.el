@@ -40,6 +40,9 @@
 
 (declare-function jabber-connection-bare-jid "jabber-util")
 (declare-function jabber-jid-user "jabber-util")
+(declare-function jabber-iq-error "jabber-util")
+(declare-function jabber-parse-error "jabber-util")
+(declare-function jabber-error-condition "jabber-util")
 (declare-function jabber-disco-advertise-feature "jabber-disco")
 (declare-function jabber-send-iq "jabber-iq")
 (declare-function jabber-send-sexp "jabber-core")
@@ -385,17 +388,45 @@ Updates the in-memory cache and database."
      (when callback
        (funcall callback nil)))))
 
+(defun jabber-omemo--handle-publish-conflict (jc node item-id payload
+                                                 options xml-data label)
+  "Handle a PubSub publish error for LABEL.
+If the error is a publish-options conflict, retry without options
+and reconfigure the node.  Otherwise just warn.
+JC is the connection, NODE and ITEM-ID identify the item,
+PAYLOAD is the XML to publish, OPTIONS is the original
+publish-options alist, and XML-DATA is the error IQ stanza."
+  (let ((condition (jabber-error-condition (jabber-iq-error xml-data))))
+    (if (eq condition 'conflict)
+        (progn
+          (message "OMEMO: publish-options conflict for %s, retrying" label)
+          (jabber-pubsub-publish
+           jc nil node item-id payload nil nil
+           (lambda (_jc xml-data2 _closure)
+             (warn "jabber-omemo: failed to publish %s (retry): %s"
+                   label (jabber-parse-error
+                          (jabber-iq-error xml-data2)))))
+          (jabber-pubsub-configure-node
+           jc nil node options nil
+           (lambda (_jc _xml-data2 _closure)
+             (message "OMEMO: failed to reconfigure %s node" label))))
+      (warn "jabber-omemo: failed to publish %s: %s"
+            label (jabber-parse-error
+                   (jabber-iq-error xml-data))))))
+
 (defun jabber-omemo--publish-device-list (jc device-ids)
   "Publish DEVICE-IDS as our OMEMO device list via JC."
-  (jabber-pubsub-publish
-   jc nil jabber-omemo-devicelist-node "current"
-   (jabber-omemo--build-device-list-xml device-ids)
-   jabber-omemo--devicelist-publish-options
-   nil
-   (lambda (_jc xml-data _closure)
-     (warn "jabber-omemo: failed to publish device list: %s"
-           (jabber-parse-error
-            (jabber-iq-error xml-data))))))
+  (let ((payload (jabber-omemo--build-device-list-xml device-ids))
+        (node jabber-omemo-devicelist-node))
+    (jabber-pubsub-publish
+     jc nil node "current" payload
+     jabber-omemo--devicelist-publish-options
+     nil
+     (lambda (_jc xml-data _closure)
+       (jabber-omemo--handle-publish-conflict
+        jc node "current" payload
+        jabber-omemo--devicelist-publish-options
+        xml-data "device list")))))
 
 (defun jabber-omemo--ensure-device-listed (jc)
   "Ensure our device ID is on our published device list via JC.
@@ -563,16 +594,17 @@ All key material is base64-decoded to unibyte strings."
          (device-id (jabber-omemo--get-device-id jc))
          (node (concat jabber-omemo-bundles-node-prefix
                        (number-to-string device-id))))
-    (jabber-pubsub-publish
-     jc nil node (number-to-string device-id)
-     (jabber-omemo--build-bundle-xml store-ptr)
-     jabber-omemo--bundle-publish-options
-     nil
-     (lambda (_jc xml-data _closure)
-       (warn "jabber-omemo: failed to publish bundle for device %d: %s"
-             device-id
-             (jabber-parse-error
-              (jabber-iq-error xml-data)))))))
+    (let ((payload (jabber-omemo--build-bundle-xml store-ptr))
+          (item-id (number-to-string device-id)))
+      (jabber-pubsub-publish
+       jc nil node item-id payload
+       jabber-omemo--bundle-publish-options
+       nil
+       (lambda (_jc xml-data _closure)
+         (jabber-omemo--handle-publish-conflict
+          jc node item-id payload
+          jabber-omemo--bundle-publish-options
+          xml-data (format "bundle for device %d" device-id)))))))
 
 (defun jabber-omemo--fetch-bundle (jc jid device-id callback)
   "Fetch OMEMO bundle for JID's DEVICE-ID via JC.
