@@ -654,21 +654,33 @@ Selects a random pre-key, initiates the session, saves to DB
 and cache, and stores an undecided trust record (TOFU)."
   (let* ((store-ptr (jabber-omemo--get-store jc))
          (pre-keys (plist-get bundle :pre-keys))
-         (pk (nth (random (length pre-keys)) pre-keys))
-         (session-ptr (jabber-omemo-initiate-session
-                       store-ptr
-                       (plist-get bundle :signature)
-                       (plist-get bundle :signed-pre-key)
-                       (plist-get bundle :identity-key)
-                       (cdr pk)
-                       (plist-get bundle :signed-pre-key-id)
-                       (car pk)))
-         (account (jabber-connection-bare-jid jc)))
-    (jabber-omemo--save-session jc jid device-id session-ptr)
-    (jabber-omemo-store-save-trust account jid device-id
-                                   (plist-get bundle :identity-key)
-                                   0)
-    session-ptr))
+         (signed-pre-key (plist-get bundle :signed-pre-key))
+         (identity-key (plist-get bundle :identity-key))
+         (signed-pre-key-id (plist-get bundle :signed-pre-key-id)))
+    (unless (and pre-keys signed-pre-key identity-key signed-pre-key-id)
+      (user-error "OMEMO: incomplete bundle for %s device %d (missing %s)"
+                  jid device-id
+                  (string-join
+                   (delq nil
+                         (list (unless pre-keys "pre-keys")
+                               (unless signed-pre-key "signed-pre-key")
+                               (unless identity-key "identity-key")
+                               (unless signed-pre-key-id "signed-pre-key-id")))
+                   ", ")))
+    (let* ((pk (nth (random (length pre-keys)) pre-keys))
+           (session-ptr (jabber-omemo-initiate-session
+                         store-ptr
+                         (plist-get bundle :signature)
+                         signed-pre-key
+                         identity-key
+                         (cdr pk)
+                         signed-pre-key-id
+                         (car pk)))
+           (account (jabber-connection-bare-jid jc)))
+      (jabber-omemo--save-session jc jid device-id session-ptr)
+      (jabber-omemo-store-save-trust account jid device-id
+                                     identity-key 0)
+      session-ptr)))
 
 (defun jabber-omemo--load-device-list-from-db (account jid)
   "Load cached device IDs for ACCOUNT + JID from the database.
@@ -825,38 +837,46 @@ Returns modified XML-DATA with decrypted body, or nil on failure."
   (let* ((our-did (jabber-omemo--get-device-id jc))
          (account (jabber-connection-bare-jid jc))
          (from (jabber-xml-get-attribute xml-data 'from))
-         (sender-jid (jabber-jid-user from))
-         (sender-did (plist-get parsed :sid))
-         (iv (plist-get parsed :iv))
-         (payload (plist-get parsed :payload))
-         (keys (plist-get parsed :keys))
-         (our-key-entry (cl-find our-did keys :key #'car)))
-    (unless our-key-entry
-      (user-error "OMEMO message not encrypted for our device %d" our-did))
-    (let* ((key-data (plist-get (cdr our-key-entry) :data))
-           (pre-key-p (plist-get (cdr our-key-entry) :pre-key-p))
-           (store-ptr (jabber-omemo--get-store jc))
-           (session-ptr (or (jabber-omemo--get-session jc sender-jid sender-did)
-                            (when pre-key-p
-                              (jabber-omemo-make-session))))
-           (decrypted-key (jabber-omemo-decrypt-key
-                           session-ptr store-ptr pre-key-p key-data)))
-      (jabber-omemo--save-session jc sender-jid sender-did session-ptr)
-      (jabber-omemo--persist-store jc)
-      (let ((trust (jabber-omemo-store-load-trust
-                    account sender-jid sender-did)))
-        (when (and trust (zerop (plist-get trust :trust)))
-          (jabber-omemo-store-set-trust
-           account sender-jid sender-did 1)))
-      (when pre-key-p
+         (sender-jid (and from (jabber-jid-user from))))
+    (if (not sender-jid)
+        (warn "OMEMO: ignoring encrypted message with no 'from' attribute")
+    (let* ((sender-did (plist-get parsed :sid))
+           (iv (plist-get parsed :iv))
+           (payload (plist-get parsed :payload))
+           (keys (plist-get parsed :keys))
+           (our-key-entry (cl-find our-did keys :key #'car)))
+      (unless our-key-entry
+        (user-error "OMEMO message not encrypted for our device %d" our-did))
+      (let* ((key-data (plist-get (cdr our-key-entry) :data))
+             (pre-key-p (plist-get (cdr our-key-entry) :pre-key-p))
+             (store-ptr (jabber-omemo--get-store jc))
+             (session-ptr (if pre-key-p
+                              (jabber-omemo-make-session)
+                            (or (jabber-omemo--get-session
+                                 jc sender-jid sender-did)
+                                (user-error "OMEMO: no session for %s device %d"
+                                            sender-jid sender-did))))
+             (decrypted-key (jabber-omemo-decrypt-key
+                             session-ptr store-ptr pre-key-p key-data)))
+        (jabber-omemo--save-session jc sender-jid sender-did session-ptr)
+        (jabber-omemo--persist-store jc)
+        (let ((trust (jabber-omemo-store-load-trust
+                      account sender-jid sender-did)))
+          (when (and trust (zerop (plist-get trust :trust)))
+            (jabber-omemo-store-set-trust
+             account sender-jid sender-did 1)))
         (when-let* ((hb (jabber-omemo-heartbeat session-ptr store-ptr)))
-          (jabber-omemo--send-heartbeat jc sender-jid sender-did hb)))
-      (if payload
-          (let* ((plaintext (jabber-omemo-decrypt-message
-                             decrypted-key iv payload))
-                 (text (decode-coding-string plaintext 'utf-8)))
-            (jabber-chat--set-body xml-data text))
-        xml-data))))
+          (jabber-omemo--send-heartbeat jc sender-jid sender-did hb))
+        (when pre-key-p
+          (jabber-omemo-refill-pre-keys store-ptr)
+          (jabber-omemo--persist-store jc)
+          (jabber-omemo--publish-bundle jc))
+        (if payload
+            (let* ((plaintext (jabber-omemo-decrypt-message
+                               decrypted-key iv payload))
+                   (text (decode-coding-string plaintext 'utf-8)))
+              (jabber-chat--set-body xml-data text))
+          xml-data))))))
 
 (defun jabber-omemo--detect-encrypted (xml-data)
   "Detect OMEMO encryption in XML-DATA.
