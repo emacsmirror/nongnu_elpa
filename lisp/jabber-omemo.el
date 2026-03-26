@@ -378,7 +378,10 @@ Updates the in-memory cache and database."
          (jabber-omemo-store-save-device account bare-jid id))
        (when callback
          (funcall callback ids))))
-   (lambda (_jc _xml-data _closure)
+   (lambda (_jc xml-data _closure)
+     (warn "jabber-omemo: failed to fetch device list for %s: %s"
+           jid (jabber-parse-error
+                (jabber-iq-error xml-data)))
      (when callback
        (funcall callback nil)))))
 
@@ -387,7 +390,12 @@ Updates the in-memory cache and database."
   (jabber-pubsub-publish
    jc nil jabber-omemo-devicelist-node "current"
    (jabber-omemo--build-device-list-xml device-ids)
-   jabber-omemo--devicelist-publish-options))
+   jabber-omemo--devicelist-publish-options
+   nil
+   (lambda (_jc xml-data _closure)
+     (warn "jabber-omemo: failed to publish device list: %s"
+           (jabber-parse-error
+            (jabber-iq-error xml-data))))))
 
 (defun jabber-omemo--ensure-device-listed (jc)
   "Ensure our device ID is on our published device list via JC.
@@ -558,7 +566,13 @@ All key material is base64-decoded to unibyte strings."
     (jabber-pubsub-publish
      jc nil node (number-to-string device-id)
      (jabber-omemo--build-bundle-xml store-ptr)
-     jabber-omemo--bundle-publish-options)))
+     jabber-omemo--bundle-publish-options
+     nil
+     (lambda (_jc xml-data _closure)
+       (warn "jabber-omemo: failed to publish bundle for device %d: %s"
+             device-id
+             (jabber-parse-error
+              (jabber-iq-error xml-data)))))))
 
 (defun jabber-omemo--fetch-bundle (jc jid device-id callback)
   "Fetch OMEMO bundle for JID's DEVICE-ID via JC.
@@ -577,7 +591,11 @@ On error, calls (funcall CALLBACK nil)."
               (parsed (when bundle-el
                         (jabber-omemo--parse-bundle-xml bundle-el))))
          (funcall callback parsed)))
-     (lambda (_jc _xml-data _closure)
+     (lambda (_jc xml-data _closure)
+       (warn "jabber-omemo: failed to fetch bundle for %s device %d: %s"
+             jid device-id
+             (jabber-parse-error
+              (jabber-iq-error xml-data)))
        (funcall callback nil)))))
 
 ;;; Session establishment
