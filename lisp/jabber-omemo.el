@@ -527,10 +527,18 @@ then deletes the bundle PubSub node.  Calls CALLBACK when done."
 (defun jabber-omemo--handle-device-list (jc from _node items)
   "Handle incoming PubSub device list notification.
 JC is the connection, FROM is the sender JID, ITEMS is the
-list of child elements from the event."
+list of child elements from the event.  When our own device is
+missing from our device list, re-add and re-publish."
   (let* ((account (jabber-connection-bare-jid jc))
          (bare-jid (jabber-jid-user from))
          (ids (jabber-omemo--parse-device-list items)))
+    (when (string= bare-jid account)
+      (let ((our-id (jabber-omemo--get-device-id jc)))
+        (unless (memq our-id ids)
+          (message "OMEMO: own device %d dropped from device list, re-adding"
+                   our-id)
+          (setq ids (cons our-id ids))
+          (jabber-omemo--publish-device-list jc ids))))
     (puthash (jabber-omemo--device-list-key account bare-jid)
              ids jabber-omemo--device-lists)
     (dolist (id ids)
