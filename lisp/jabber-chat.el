@@ -1256,8 +1256,10 @@ with the created image (or nil) followed by CBARGS."
                       (when plaintext
                         (let ((img (create-image plaintext nil t)))
                           (if (null img)
-                              (message "aesgcm: failed to create image (%d bytes decrypted)"
-                                       (length plaintext))
+                              (progn
+                                (message "aesgcm: failed to create image (%d bytes decrypted)"
+                                         (length plaintext))
+                                nil)
                             (setf (image-property img :max-width)
                                   jabber-image-max-width)
                             (setf (image-property img :max-height)
