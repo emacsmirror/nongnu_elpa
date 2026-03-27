@@ -32,12 +32,12 @@
 
 ;;; Commentary:
 
-;; Highlight selected window by adjusting contrast of text
-;;  "foreground" and background with respect of current theme.
-;; Working good if you switch themes frequently, contrast will be kept.
-;; Also this works for modeline.
-;; We also highligh cursor position, this may be disabled with
-;;  (setopt selected-window-contrast-cursor-flag nil) in .emacs
+;; Highlight the selected window by adjusting the contrast of the text
+;  foreground and background relative to the current theme. It works
+;  well if you switch themes frequently; contrast will be
+;  preserved. This also applies to the modeline.
+;; We also highlight the cursor position, which can be disabled with
+;; (setopt selected-window-contrast-cursor-flag nil) in .emacs.
 ;;  or
 ;;  M-x customize-variable RET selected-window-contrast-cursor-flag
 
@@ -75,18 +75,6 @@
 ;; - USDT (Tether TRX-TRON) address: TVoXfYMkVYLnQZV3mGZ6GvmumuBfGsZzsN
 ;; - TON (Telegram) address: UQC8rjJFCHQkfdp7KmCkTZCb5dGzLFYe2TzsiZpfsnyTFt9D
 
-;;;; Other packages:
-
-;; - Modern navigation in major modes https://github.com/Anoncheg1/firstly-search
-;; - Search with Chinese	https://github.com/Anoncheg1/pinyin-isearch
-;; - Ediff no 3-th window	https://github.com/Anoncheg1/ediffnw
-;; - Dired history		https://github.com/Anoncheg1/dired-hist
-;; - Copy link to clipboard	https://github.com/Anoncheg1/emacs-org-links
-;; - Solution for "callback hell"	https://github.com/Anoncheg1/emacs-async1
-;; - Restore buffer state	https://github.com/Anoncheg1/emacs-unmodified-buffer1
-;; - outline.el usage		https://github.com/Anoncheg1/emacs-outline-it
-;; - Call LLMs & AIfrom Org-mode block.  https://github.com/Anoncheg1/emacs-oai
-
 ;;; Code:
 
 ;; Touch: Global variables bound deep is not good, it is a type of the inversion of control.
@@ -95,15 +83,16 @@
 (require 'rect)
 
 (defgroup selected-window-contrast nil
- "Highlight by brightness of text and background."
- :group 'faces)
+  "Highlight by brightness of text and background."
+  :group 'faces)
 
 ;; - configurable:
 (defcustom selected-window-contrast-bg-selected nil
   "Non-nil used to set selected window background contrast in [0-1] range.
 Higher value increase contrast between text and background.
 This value change contrast of text regarding to background."
-  :type '(choice (restricted-sexp :match-alternatives
+  :type '(choice (restricted-sexp :tag "Contrast value"
+                                  :match-alternatives
                                   ((lambda (x) (and (numberp x) (<= 0 x 1))))
                                   :message "Contrast value must be between 0 and 1")
                  (const :tag "Don't change default contrast of theme." nil)))
@@ -113,20 +102,23 @@ This value change contrast of text regarding to background."
 in [0-1] range."
   :type '(choice
           (const :tag "Don't change default contrast of theme." nil)
-          (restricted-sexp :match-alternatives
+          (restricted-sexp :tag "Contrast value"
+                           :match-alternatives
                            ((lambda (x) (and (numberp x) (<= 0 x 1))))
                            :message "Contrast value must be between 0 and 1")))
 
 (defcustom selected-window-contrast-text-selected nil
   "Non-nil used to set not selected windows text contrast in [0-1] range."
-  :type '(choice (restricted-sexp :match-alternatives
+  :type '(choice (restricted-sexp :tag "Contrast value"
+                                  :match-alternatives
                                   ((lambda (x) (and (numberp x) (<= 0 x 1))))
                                   :message "Contrast value must be between 0 and 1")
                  (const :tag "Don't change default contrast of theme." nil)))
 
 (defcustom selected-window-contrast-text-others nil
   "Non-nil used to set not selected windows text contrast in [0-1] range."
-  :type '(choice (restricted-sexp :match-alternatives
+  :type '(choice (restricted-sexp :tag "Contrast value"
+                                  :match-alternatives
                            ((lambda (x) (and (numberp x) (<= 0 x 1))))
                            :message "Contrast value must be between 0 and 1")
                  (const :tag "Don't change default contrast of theme." nil)))
@@ -140,8 +132,13 @@ in [0-1] range."
   :type 'boolean)
 
 (defcustom selected-window-contrast-region-timeout 0.5
-  "Highlighting curson, second for which to show rectangle around."
-  :type 'float)
+  "Highlighting curson, second for which to show rectangle around.
+A float greater than 0."
+  :type 'float
+  :set (lambda (sym val)
+         (if (> val 0)
+             (set-default sym val)
+           (error "Value must be greater than 0"))))
 
 (defcustom selected-window-contrast-region-width 8
   "Highlighting curson, width in chars of rectangle."
@@ -179,7 +176,7 @@ Returns:
        (let* ((t-l (nth 2 text-hsl))
               (new-t-l (if (> t-l mid)
                            (+ mid (* text-mag (- 1.0 mid)))
-                         (- mid (* text-mag (- mid 0))))))
+                         (- mid (* text-mag mid)))))
          (apply #'color-hsl-to-rgb (list (nth 0 text-hsl) (nth 1 text-hsl) new-t-l))))
      (if (not bg-mag)
          (apply #'color-hsl-to-rgb bg-hsl)
@@ -187,7 +184,7 @@ Returns:
        (let* ((b-l (nth 2 bg-hsl))
               (new-b-l (if (> b-l mid)
                            (+ mid (* bg-mag (- 1.0 mid)))
-                         (- mid (* bg-mag (- mid 0))))))
+                         (- mid (* bg-mag mid)))))
          (apply #'color-hsl-to-rgb (list (nth 0 bg-hsl) (nth 1 bg-hsl) new-b-l)))))))
 
 (defun selected-window-contrast--rgb-to-hex (rgb &optional digits)
@@ -203,29 +200,29 @@ Works on both dark (light text/dark bg) and light (dark text/light bg) themes."
   (unless (or (when (and contrast-background
                          (or (not (numberp contrast-background))
                              (not (<= 0 contrast-background 1))))
-                (message "Contrast-background must be floats in [0,1]"))
+                (message "Contrast-background must be a number in [0,1]"))
               (when (and contrast-text
                          (or (not (numberp contrast-text))
                              (not (<= 0 contrast-text 1))))
-                (message "contrast-text must be floats in [0,1]")))
+                (message "contrast-text must be a number in [0,1]")))
     (let* ((current-colors (selected-window-contrast--get-current-colors))
            (new-colors (selected-window-contrast-adjust-contrast (nth 0 current-colors)
                                                                  (nth 1 current-colors)
                                                                  contrast-background
-                                                                 contrast-text)))
-      (let ((background-rgb (nth 1 new-colors))
-            (text-rgb (nth 0 new-colors)))
-        (if (and contrast-background contrast-text)
-            ;; :foreground (selected-window-contrast--rgb-to-hex text-rgb)
-            (buffer-face-set (list :foreground (selected-window-contrast--rgb-to-hex text-rgb)
-                                   :background (selected-window-contrast--rgb-to-hex background-rgb)))
-          ;; else
-          (when contrast-text
-            (buffer-face-set (list :foreground (selected-window-contrast--rgb-to-hex text-rgb)
-                                   :background (face-attribute 'default :background))))
-          (when contrast-background
-            (buffer-face-set (list :foreground (face-attribute 'default :foreground)
-                                   :background (selected-window-contrast--rgb-to-hex background-rgb)))))))))
+                                                                 contrast-text))
+           (background-rgb (nth 1 new-colors))
+           (text-rgb (nth 0 new-colors)))
+      (if (and contrast-background contrast-text)
+          ;; :foreground (selected-window-contrast--rgb-to-hex text-rgb)
+          (buffer-face-set (list :foreground (selected-window-contrast--rgb-to-hex text-rgb)
+                                 :background (selected-window-contrast--rgb-to-hex background-rgb)))
+        ;; else
+        (when contrast-text
+          (buffer-face-set (list :foreground (selected-window-contrast--rgb-to-hex text-rgb)
+                                 :background (face-attribute 'default :background))))
+        (when contrast-background
+          (buffer-face-set (list :foreground (face-attribute 'default :foreground)
+                                 :background (selected-window-contrast--rgb-to-hex background-rgb))))))))
 
 (defun selected-window-contrast-change-modeline (contrast-background contrast-text)
   "Adjust modeline brightness of text and background.
@@ -244,9 +241,9 @@ or decrease contrast."
         (message "backgound or foreground color is unspecified in active mode line.")
       ;; else
       (let* ((new-colors (selected-window-contrast-adjust-contrast fore
-                                               back
-                                               contrast-background
-                                               contrast-text))
+                                                                   back
+                                                                   contrast-background
+                                                                   contrast-text))
              (new-fore (apply #'selected-window-contrast--rgb-to-hex (nth 0 new-colors)))
              (new-back (apply #'selected-window-contrast--rgb-to-hex (nth 1 new-colors))))
         (set-face-attribute 'mode-line-active nil
@@ -314,6 +311,8 @@ $ emacsclient -c ~/file"
       (when selected-window-contrast-flag
         (walk-windows (lambda (w)
                         (unless (or (eq sw w)
+                                    ;; Here may be several windows with same buffer,
+                                    ;; to prevent double appling change.
                                     (eq cbn (buffer-name (window-buffer w))))
                           (with-selected-window w
                             (buffer-face-set 'default)
@@ -327,8 +326,8 @@ $ emacsclient -c ~/file"
         (selected-window-contrast-change-window selected-window-contrast-bg-selected
                                                 selected-window-contrast-text-selected))
       (if selected-window-contrast-cursor-flag
-        (add-hook 'window-selection-change-functions
-                  #'selected-window-contrast-mark-small-rectangle-temporary nil t)
+          (add-hook 'window-selection-change-functions
+                    #'selected-window-contrast-mark-small-rectangle-temporary nil t)
         ;; else
         (remove-hook 'window-selection-change-functions
                      #'selected-window-contrast-mark-small-rectangle-temporary t)))))
