@@ -139,6 +139,11 @@ configure a Google Talk account like this:
 				   (const :tag "Legacy SSL/TLS" ssl))))))
   :group 'jabber)
 
+(defcustom jabber-default-resource "emacs"
+  "Default resource for connections when the JID has no resource part."
+  :type 'string
+  :group 'jabber)
+
 (defcustom jabber-default-show ""
   "Default show state."
   :type '(choice (const :tag "Online" "")

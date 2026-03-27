@@ -195,6 +195,7 @@ problems."
 (defvar jabber-debug-keep-process-buffers) ; jabber.el
 (defvar jabber-silent-mode)             ; jabber.el
 (defvar jabber-account-list)            ; jabber.el
+(defvar jabber-default-resource)        ; jabber.el
 (defvar jabber-xml-data)                ; jabber.el
 (defvar jabber-default-connection-type) ; jabber-conn.el
 (defvar jabber-connect-methods)         ; jabber-conn.el
@@ -242,7 +243,7 @@ With many prefix arguments, one less is passed to `jabber-connect'."
 	      (jabber-connect
 	       (jabber-jid-username jid)
 	       (jabber-jid-server jid)
-	       (jabber-jid-resource jid)
+	       (or (jabber-jid-resource jid) jabber-default-resource)
 	       nil password network-server
 	       port connection-type)
 	      (setq connected-one t))))
@@ -302,7 +303,7 @@ With double prefix argument, specify more connection details."
 
      (list (jabber-jid-username jid)
 	   (jabber-jid-server jid)
-	   (jabber-jid-resource jid)
+	   (or (jabber-jid-resource jid) jabber-default-resource)
 	   registerp password network-server port connection-type)))
 
   (require 'jabber)
