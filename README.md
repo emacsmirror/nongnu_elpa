@@ -1,5 +1,5 @@
 # eldoc-mouse-nov
-Popup content of link of epub file for mouse hover when Emacs nov-mode is used.
+Preview content of link of epub file in popup for mouse hover when Emacs nov-mode is used.
 ### Demo Video
 <video src="https://github.com/user-attachments/assets/f4833969-14d9-4724-bafe-0e66384f84c8" controls></video>
 ### Installation
