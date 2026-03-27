@@ -3789,7 +3789,7 @@ NO-OWNER means don't display owner column (user repos view)."
             (updated-display
              (fedi--relative-time-description updated nil :brief))
             ;; just get first lang:
-            (lang (symbol-to-string
+            (lang (symbol-name
                    (caar (fj-get-languages .name .owner.username)))))
        `(nil ;; TODO: id
          [(,.name face fj-item-face
