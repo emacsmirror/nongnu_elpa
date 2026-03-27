@@ -1,10 +1,10 @@
-;;; eldoc-mouse-nov.el --- Popup link content for mouse hover -*- lexical-binding: t; -*-
+;;; eldoc-mouse-nov.el --- Preview epub link for mouse hover -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2025 Huang Feiyu
 
 ;; Author: Huang Feiyu <sibadake1@163.com>
 ;; Version: 0.1
-;; Package-Requires: ((emacs "27.1") (eldoc-mouse "3.0.2"))
+;; Package-Requires: ((emacs "27.1") (eldoc-mouse "3.0.2") (nov "0.5.0"))
 ;; Keywords: tools, epub, convenience, mouse, hover
 ;; URL: https://github.com/huangfeiyu/eldoc-mouse-nov
 ;; SPDX-License-Identifier: GPL-3.0-or-later
@@ -49,6 +49,7 @@
 ;;; Code:
 
 (require 'eldoc-mouse)
+(require 'nov)
 
 
 ;;;###autoload
