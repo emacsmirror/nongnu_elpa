@@ -931,40 +931,40 @@ JC is the Jabber connection."
   (jabber-bookmarks--retract-one jc group))
 
 
+(defvar-local jabber-muc-names--group nil
+  "Room JID for the current participants buffer.")
+
+(define-derived-mode jabber-muc-names-mode tabulated-list-mode
+  "MUC-Names"
+  "Major mode for displaying MUC participant lists."
+  (setq tabulated-list-format [("Nick" 20 t)
+                                ("Role" 12 t)
+                                ("Affiliation" 12 t)
+                                ("JID" 30 t)])
+  (tabulated-list-init-header))
+
 (defun jabber-muc-names ()
-  "Print names, affiliations, and roles of participants in current buffer."
+  "Display participants of the current room in a tabulated-list buffer."
   (interactive)
-  (jabber-chat-ewoc-enter (list :notice
-			       (jabber-muc-print-names
-				(cdr (assoc jabber-group jabber-muc-participants)))
-			       :time (current-time))))
-
-(defun jabber-muc-format-names (participant)
-  "Format one participant name."
-  (format-spec jabber-muc-print-names-format
-               (list
-                (cons ?n (car participant))
-                (cons ?a (plist-get (cdr participant) 'affiliation))
-                (cons ?j (or (plist-get (cdr participant) 'jid) "")))))
-
-(defun jabber-muc-print-names (participants)
-  "Format and return data in PARTICIPANTS."
-  (let ((mlist) (plist) (vlist) (nlist) dummy)
-    (mapc (lambda (x)
-            (let ((role (plist-get (cdr x) 'role)))
-              (cl-pushnew x (pcase role
-                              ("moderator"   mlist)
-                              ("participant" plist)
-                              ("visitor"     vlist)
-                              ("none"        nlist)
-                              (_ dummy))
-                          :test #'equal)))
-          participants)
-    (concat
-     (apply #'concat "\nModerators:\n" (mapcar #'jabber-muc-format-names mlist))
-     (apply #'concat "\nParticipants:\n" (mapcar #'jabber-muc-format-names plist))
-     (apply #'concat "\nVisitors:\n" (mapcar #'jabber-muc-format-names vlist))
-     (apply #'concat "\nNones:\n" (mapcar #'jabber-muc-format-names nlist)))))
+  (let* ((group jabber-group)
+         (participants (cdr (assoc group jabber-muc-participants)))
+         (buf (get-buffer-create (format "*MUC Participants: %s*"
+                                        (jabber-jid-displayname group)))))
+    (with-current-buffer buf
+      (jabber-muc-names-mode)
+      (setq jabber-muc-names--group group)
+      (setq tabulated-list-entries
+            (mapcar (lambda (p)
+                      (let ((nick (car p))
+                            (props (cdr p)))
+                        (list nick (vector
+                                    nick
+                                    (or (plist-get props 'role) "")
+                                    (or (plist-get props 'affiliation) "")
+                                    (or (plist-get props 'jid) "")))))
+                    participants))
+      (tabulated-list-print))
+    (display-buffer buf)))
 
 
 (defun jabber-muc-set-topic (jc group topic)
