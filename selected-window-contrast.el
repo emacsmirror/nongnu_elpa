@@ -4,7 +4,6 @@
 ;;
 ;; Maintainer: Anoncheg <vitalij@gmx.com>
 ;; Author: Anoncheg <vitalij@gmx.com>
-;;
 ;; Keywords:  color, windows, faces, buffer, background
 ;; URL: https://codeberg.org/Anoncheg/selected-window-contrast
 ;; Version: 0.4
