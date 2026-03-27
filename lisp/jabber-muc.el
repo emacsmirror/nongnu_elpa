@@ -275,6 +275,10 @@ The format is that of `mode-line-format' and `header-line-format'."
 (declare-function jabber-chat--decrypt-if-needed "jabber-chat.el" (jc xml-data))
 (declare-function jabber-db-last-timestamp "jabber-db.el"
                   (account peer))
+(declare-function jabber-db-get-chat-encryption "jabber-db.el"
+                  (account peer))
+(declare-function jabber-chat-encryption--update-header "jabber-chatbuffer.el"
+                  ())
 (declare-function jabber-mam-muc-joined "jabber-mam.el" (jc group))
 (declare-function jabber-mam--cancel-muc-query "jabber-mam.el" (room))
 (declare-function jabber-db-backlog "jabber-db.el"
@@ -397,7 +401,18 @@ JC is the Jabber connection."
   (with-current-buffer (get-buffer-create (jabber-muc-private-get-buffer group nickname jc))
     (unless (eq major-mode 'jabber-chat-mode)
       (jabber-chat-mode)
-      (jabber-chat-mode-setup jc #'jabber-chat-pp))
+      ;; Set jabber-chatting-with before mode-setup so the DB peer
+      ;; lookup uses the correct JID.
+      (setq-local jabber-chatting-with (concat group "/" nickname))
+      (jabber-chat-mode-setup jc #'jabber-chat-pp)
+      ;; MUC private messages are addressed to an occupant JID, not a
+      ;; real bare JID, so OMEMO/OpenPGP session setup cannot work.
+      ;; Default to plaintext like MUC buffers.
+      (unless (jabber-db-get-chat-encryption
+               (jabber-connection-bare-jid jc)
+               (jabber-jid-user jabber-chatting-with))
+        (setq jabber-chat-encryption 'plaintext)
+        (jabber-chat-encryption--update-header)))
 
     (setq-local jabber-chatting-with (concat group "/" nickname))
     (jabber-chatbuffer--registry-put 'muc-private (format "%s/%s" group nickname))

@@ -37,6 +37,10 @@
 
 (declare-function jabber-chat-ewoc-find-by-id "jabber-chatbuffer" (stanza-id))
 (declare-function jabber-jid-user "jabber-util" (jid))
+(declare-function jabber-jid-resource "jabber-util" (jid))
+(declare-function jabber-muc-joined-p "jabber-muc" (group))
+(declare-function jabber-muc-private-get-buffer "jabber-muc"
+                  (group nickname &optional jc))
 (defvar jabber-chat-ewoc)               ; jabber-chatbuffer.el
 
 (defgroup jabber-receipts nil
@@ -85,6 +89,16 @@ Added to `jabber-chat-send-hooks'."
 
 ;;; Receive handler
 
+(defun jabber-receipts--find-buffer (from jc)
+  "Find the chat buffer for FROM on connection JC.
+For MUC participant JIDs, look up the MUC private buffer.
+For regular JIDs, look up the 1:1 chat buffer."
+  (if (and (jabber-jid-resource from)
+           (jabber-muc-joined-p (jabber-jid-user from)))
+      (get-buffer (jabber-muc-private-get-buffer
+                   (jabber-jid-user from) (jabber-jid-resource from) jc))
+    (get-buffer (jabber-chat-get-buffer from jc))))
+
 (defun jabber-receipts--handle-message (jc xml-data)
   "Process incoming delivery receipts and chat markers in XML-DATA.
 JC is the connection.  Added to `jabber-message-chain'."
@@ -124,8 +138,7 @@ JC is the connection.  Added to `jabber-message-chain'."
                 ((jabber-xml-get-children xml-data 'body))
                 ((jabber-xml-child-with-xmlns
                   xml-data jabber-chat-markers-xmlns)))
-      (when-let* ((buffer (get-buffer
-                           (jabber-chat-get-buffer from jc))))
+      (when-let* ((buffer (jabber-receipts--find-buffer from jc)))
         (with-current-buffer buffer
           (when jabber-chat-send-receipts
             (if (get-buffer-window buffer 'visible)
@@ -143,7 +156,7 @@ COLUMN is \"delivered_at\" or \"displayed_at\"."
   (let ((timestamp (floor (float-time)))
         (status (if (string= column "displayed_at") :displayed :delivered)))
     (jabber-db-update-receipt ref-id column timestamp)
-    (when-let* ((buffer (get-buffer (jabber-chat-get-buffer from jc))))
+    (when-let* ((buffer (jabber-receipts--find-buffer from jc)))
       (with-current-buffer buffer
         (jabber-receipts--update-header-line column timestamp)
         (when-let* ((node (jabber-chat-ewoc-find-by-id ref-id)))
