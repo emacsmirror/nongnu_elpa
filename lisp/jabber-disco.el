@@ -128,7 +128,7 @@ nil, access is always granted.")
 
 (declare-function jabber-send-current-presence "jabber-presence.el"
                   (&optional jc))
-(declare-function jabber-xdata-formtype "jabber-widget.el" (x))
+(declare-function jabber-widget-xdata-formtype "jabber-widget.el" (x))
 (defvar jabber-presence-element-functions) ; jabber-presence.el
 
 ;;
@@ -320,7 +320,7 @@ VER is the version string of the CAPS."
 		     ;; Keep elements that are forms and have a FORM_TYPE,
 		     ;; according to XEP-0128.
 		     (and (string= (jabber-xml-get-xmlns x) jabber-xdata-xmlns)
-			  (jabber-xdata-formtype x)))
+			  (jabber-widget-xdata-formtype x)))
 		   maybe-forms)))
       ;; 2. Sort the service discovery identities [15] by category
       ;; and then by type and then by xml:lang (if it exists),
@@ -346,13 +346,13 @@ VER is the version string of the CAPS."
       ;; XEP-0128 data forms, sort the forms by the FORM_TYPE (i.e.,
       ;; by the XML character data of the <value/> element).
       (setq forms (sort forms (lambda (a b)
-				(string< (jabber-xdata-formtype a)
-					 (jabber-xdata-formtype b)))))
+				(string< (jabber-widget-xdata-formtype a)
+					 (jabber-widget-xdata-formtype b)))))
       ;; 7. For each extended service discovery information form:
       (dolist (form forms)
 	;; Append the XML character data of the FORM_TYPE field's
 	;; <value/> element, followed by the '<' character.
-	(insert (jabber-xdata-formtype form) "<")
+	(insert (jabber-widget-xdata-formtype form) "<")
 	;; Sort the fields by the value of the "var" attribute.
 	(let ((fields (sort (jabber-xml-get-children form 'field)
 			    (lambda (a b)

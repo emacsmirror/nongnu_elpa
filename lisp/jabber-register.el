@@ -82,29 +82,29 @@ obtained from `xml-parse-region'."
     (cond
      ((eq type 'register)
       ;; If there is no `from' attribute, we are registering with the server
-      (jabber-init-widget-buffer (or (jabber-xml-get-attribute xml-data 'from)
+      (jabber-widget-init-buffer (or (jabber-xml-get-attribute xml-data 'from)
 				     server)))
 
      ((eq type 'search)
       ;; no such thing here
-      (jabber-init-widget-buffer (jabber-xml-get-attribute xml-data 'from))))
+      (jabber-widget-init-buffer (jabber-xml-get-attribute xml-data 'from))))
 
     (setq jabber-buffer-connection jc)
 
-    (widget-insert (if (eq type 'register) "Register with " "Search ") jabber-submit-to "\n\n")
+    (widget-insert (if (eq type 'register) "Register with " "Search ") jabber-widget-submit-to "\n\n")
 
     (dolist (x (jabber-xml-get-children query 'x))
       (when (string= (jabber-xml-get-attribute x 'xmlns) jabber-xdata-xmlns)
 	(setq have-xdata t)
 	;; If the registration form obeys XEP-0068, we know
 	;; for sure how to put a default username in it.
-	(jabber-render-xdata-form x
+	(jabber-widget-render-xdata-form x
 				  (if (and register-account
-					   (string= (jabber-xdata-formtype x) jabber-register-xmlns))
+					   (string= (jabber-widget-xdata-formtype x) jabber-register-xmlns))
 				      (list (cons "username" username))
 				    nil))))
     (if (not have-xdata)
-	(jabber-render-register-form query
+	(jabber-widget-render-register-form query
 				     (when register-account
 				       username)))
 
@@ -124,19 +124,19 @@ obtained from `xml-parse-region'."
 	 (handler (if registerp
 		      #'jabber-process-register-secondtime
 		    #'jabber-report-success))
-	 (text (concat "Registration with " jabber-submit-to)))
-    (jabber-send-iq jabber-buffer-connection jabber-submit-to
+	 (text (concat "Registration with " jabber-widget-submit-to)))
+    (jabber-send-iq jabber-buffer-connection jabber-widget-submit-to
 		    "set"
 
 		    (cond
-		     ((eq jabber-form-type 'register)
+		     ((eq jabber-widget-form-type 'register)
 		      `(query ((xmlns . ,jabber-register-xmlns))
-			      ,@(jabber-parse-register-form)))
-		     ((eq jabber-form-type 'xdata)
+			      ,@(jabber-widget-parse-register-form)))
+		     ((eq jabber-widget-form-type 'xdata)
 		      `(query ((xmlns . ,jabber-register-xmlns))
-			      ,(jabber-parse-xdata-form)))
+			      ,(jabber-widget-parse-xdata-form)))
 		     (t
-		      (error "Unknown form type: %s" jabber-form-type)))
+		      (error "Unknown form type: %s" jabber-widget-form-type)))
 		    handler (if registerp 'success text)
 		    handler (if registerp 'failure text)))
 
@@ -160,8 +160,8 @@ obtained from `xml-parse-region'."
 (defun jabber-remove-register (&rest _ignore)
   "Cancel registration.  See `jabber-process-register-or-search'."
 
-  (if (or jabber-silent-mode (yes-or-no-p (concat "Are you sure that you want to cancel your registration to " jabber-submit-to "? ")))
-      (jabber-send-iq jabber-buffer-connection jabber-submit-to
+  (if (or jabber-silent-mode (yes-or-no-p (concat "Are you sure that you want to cancel your registration to " jabber-widget-submit-to "? ")))
+      (jabber-send-iq jabber-buffer-connection jabber-widget-submit-to
 		      "set"
 		      `(query ((xmlns . ,jabber-register-xmlns))
 			      (remove))

@@ -200,12 +200,12 @@ JC is the Jabber connection."
     (insert "\n")
 
     (when xdata
-      (jabber-init-widget-buffer from)
+      (jabber-widget-init-buffer from)
 
       (let ((formtype (jabber-xml-get-attribute xdata 'type)))
 	(if (string= formtype "result")
-	    (jabber-render-xdata-search-results xdata)
-	  (jabber-render-xdata-form xdata)
+	    (jabber-widget-render-xdata-search-results xdata)
+	  (jabber-widget-render-xdata-form xdata)
 
 	  (when (string= status "executing")
 	    (let ((button-titles
@@ -232,15 +232,15 @@ JC is the Jabber connection."
 (defun jabber-ahc-submit (action)
   "Submit Ad-Hoc Command."
 
-  (jabber-send-iq jabber-buffer-connection jabber-submit-to
+  (jabber-send-iq jabber-buffer-connection jabber-widget-submit-to
 		  "set"
 		  `(command ((xmlns . ,jabber-ahc-xmlns)
 			     (sessionid . ,jabber-ahc-sessionid)
 			     (node . ,jabber-ahc-node)
 			     (action . ,(symbol-name action)))
 			    ,(if (and (not (eq action 'cancel))
-				      (eq jabber-form-type 'xdata))
-				 (jabber-parse-xdata-form)))
+				      (eq jabber-widget-form-type 'xdata))
+				 (jabber-widget-parse-xdata-form)))
 
 		  #'jabber-process-data #'jabber-ahc-display
 		  #'jabber-process-data "Command execution failed"))

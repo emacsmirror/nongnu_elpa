@@ -60,19 +60,19 @@ JC is the Jabber connection."
 (defun jabber-submit-search (&rest _ignore)
   "Submit search.  See `jabber-process-register-or-search'."
 
-  (let ((text (concat "Search at " jabber-submit-to)))
-    (jabber-send-iq jabber-buffer-connection jabber-submit-to
+  (let ((text (concat "Search at " jabber-widget-submit-to)))
+    (jabber-send-iq jabber-buffer-connection jabber-widget-submit-to
 		    "set"
 
 		    (cond
-		     ((eq jabber-form-type 'register)
+		     ((eq jabber-widget-form-type 'register)
 		      `(query ((xmlns . ,jabber-search-xmlns))
-			      ,@(jabber-parse-register-form)))
-		     ((eq jabber-form-type 'xdata)
+			      ,@(jabber-widget-parse-register-form)))
+		     ((eq jabber-widget-form-type 'xdata)
 		      `(query ((xmlns . ,jabber-search-xmlns))
-			      ,(jabber-parse-xdata-form)))
+			      ,(jabber-widget-parse-xdata-form)))
 		     (t
-		      (error "Unknown form type: %s" jabber-form-type)))
+		      (error "Unknown form type: %s" jabber-widget-form-type)))
 		    #'jabber-process-data #'jabber-process-search-result
 		    #'jabber-report-success text))
 
@@ -98,7 +98,7 @@ obtained from `xml-parse-region'."
 	(setq xdata x)))
 
     (if have-xdata
-	(jabber-render-xdata-search-results xdata)
+	(jabber-widget-render-xdata-search-results xdata)
 
       (insert (propertize "Search results" 'face 'jabber-title) "\n")
 

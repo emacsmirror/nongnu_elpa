@@ -425,7 +425,7 @@ obtained from `xml-parse-region'."
   (let ((parsed (jabber-vcard-parse (jabber-iq-query xml-data)))
 	start-position)
     (with-current-buffer (get-buffer-create "Edit vcard")
-      (jabber-init-widget-buffer nil)
+      (jabber-widget-init-buffer nil)
 
       (setq jabber-buffer-connection jc)
 

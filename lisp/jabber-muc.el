@@ -690,9 +690,9 @@ obtained from `xml-parse-region'."
     (if (not xdata)
 	(message "No configuration possible.")
       (save-window-excursion
-	(jabber-init-widget-buffer (jabber-xml-get-attribute xml-data 'from))
+	(jabber-widget-init-buffer (jabber-xml-get-attribute xml-data 'from))
 	(setq jabber-buffer-connection jc)
-	(jabber-render-xdata-form xdata)
+	(jabber-widget-render-xdata-form xdata)
 	(widget-create 'push-button :notify #'jabber-muc-submit-config "Submit")
 	(widget-insert "\t")
 	(widget-create 'push-button :notify #'jabber-muc-cancel-config "Cancel")
@@ -703,17 +703,17 @@ obtained from `xml-parse-region'."
 
 (defun jabber-muc-submit-config (&rest _ignore)
   "Submit MUC configuration form."
-  (jabber-send-iq jabber-buffer-connection jabber-submit-to
+  (jabber-send-iq jabber-buffer-connection jabber-widget-submit-to
 		  "set"
 		  `(query ((xmlns . ,jabber-muc-xmlns-owner))
-			  ,(jabber-parse-xdata-form))
+			  ,(jabber-widget-parse-xdata-form))
 		  #'jabber-report-success "MUC configuration"
 		  #'jabber-report-success "MUC configuration")
   (exit-recursive-edit))
 
 (defun jabber-muc-cancel-config (&rest _ignore)
   "Cancel MUC configuration form."
-  (jabber-send-iq jabber-buffer-connection jabber-submit-to
+  (jabber-send-iq jabber-buffer-connection jabber-widget-submit-to
 		  "set"
 		  `(query ((xmlns . ,jabber-muc-xmlns-owner))
 			  (x ((xmlns . ,jabber-xdata-xmlns) (type . "cancel"))))
