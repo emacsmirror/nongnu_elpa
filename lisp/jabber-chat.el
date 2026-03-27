@@ -1071,26 +1071,28 @@ string entries like :notice/:muc-notice (with :time in cddr)."
     node))
 
 (defun jabber-maybe-print-rare-time (node)
-  "Print rare time before NODE, if appropriate."
-  (let* ((prev (ewoc-prev jabber-chat-ewoc node))
-	 (data (ewoc-data node))
-	 (prev-data (when prev (ewoc-data prev))))
-    (cl-flet ((entry-time (entry)
-		(pcase (car entry)
-		  (:rare-time (cadr entry))
-		  (_ (plist-get (cadr entry) :timestamp)))))
-      (when (and jabber-print-rare-time
-		 (or (null prev)
-		     (jabber-rare-time-needed (entry-time prev-data)
-					      (entry-time data))))
-        ;; When jabber-parse-time supports fraction seconds (optional
-        ;; with XEP-0082), jabber-chat-pp chokes on :rate-time ewoc
-        ;; elements.  Ensure that the timestamp is in lisp form,
-        ;; rather than (cons bignum . bignum).
-	(ewoc-enter-before jabber-chat-ewoc node
-			   (list :rare-time (time-convert
-                                             (entry-time data)
-                                             'list)))))))
+  "Print rare time before NODE, if appropriate.
+NODE may be nil (e.g. when a duplicate was suppressed)."
+  (when node
+    (let* ((prev (ewoc-prev jabber-chat-ewoc node))
+	   (data (ewoc-data node))
+	   (prev-data (when prev (ewoc-data prev))))
+      (cl-flet ((entry-time (entry)
+		  (pcase (car entry)
+		    (:rare-time (cadr entry))
+		    (_ (plist-get (cadr entry) :timestamp)))))
+        (when (and jabber-print-rare-time
+		   (or (null prev)
+		       (jabber-rare-time-needed (entry-time prev-data)
+						(entry-time data))))
+          ;; When jabber-parse-time supports fraction seconds (optional
+          ;; with XEP-0082), jabber-chat-pp chokes on :rate-time ewoc
+          ;; elements.  Ensure that the timestamp is in lisp form,
+          ;; rather than (cons bignum . bignum).
+	  (ewoc-enter-before jabber-chat-ewoc node
+			     (list :rare-time (time-convert
+                                               (entry-time data)
+                                               'list))))))))
 
 (defun jabber-chat--format-time (timestamp delayed)
   "Format TIMESTAMP for prompt display.

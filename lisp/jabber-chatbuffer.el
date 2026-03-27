@@ -517,15 +517,19 @@ line at the bottom of the window."
   "Insert DATA into the chat ewoc and register by stanza ID.
 DATA is (TYPE MSG-PLIST).  When the plist has a non-nil :id or
 :server-id, the returned ewoc node is stored in
-`jabber-chat--msg-nodes' for O(1) lookup.  Returns the ewoc node."
-  (let ((node (ewoc-enter-last jabber-chat-ewoc data)))
-    (when-let* ((msg (cadr data))
-                ((listp msg)))
-      (when-let* ((id (plist-get msg :id)))
-        (puthash id node jabber-chat--msg-nodes))
-      (when-let* ((sid (plist-get msg :server-id)))
-        (puthash sid node jabber-chat--msg-nodes)))
-    node))
+`jabber-chat--msg-nodes' for O(1) lookup.  Returns the ewoc node,
+or nil if the message was a duplicate."
+  (let* ((msg (cadr data))
+         (msg-p (listp msg))
+         (id (and msg-p (plist-get msg :id)))
+         (sid (and msg-p (plist-get msg :server-id))))
+    ;; Skip if this stanza ID is already displayed.
+    (unless (or (and id (gethash id jabber-chat--msg-nodes))
+                (and sid (gethash sid jabber-chat--msg-nodes)))
+      (let ((node (ewoc-enter-last jabber-chat-ewoc data)))
+        (when id (puthash id node jabber-chat--msg-nodes))
+        (when sid (puthash sid node jabber-chat--msg-nodes))
+        node))))
 
 (defun jabber-chat-ewoc-find-by-id (stanza-id)
   "Return the ewoc node for STANZA-ID, or nil."
