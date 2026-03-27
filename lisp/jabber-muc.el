@@ -477,6 +477,23 @@ Error conditions per XEP-0410:
        (let ((password (jabber-get-conference-data jc room nil :password)))
          (jabber-muc--send-join-presence jc room nick password nil))))))
 
+(defun jabber-muc--self-ping-one (jc group)
+  "Self-ping GROUP via JC to verify membership.
+On success, does nothing.  On failure, classifies the error per
+XEP-0410 and auto-rejoins if needed."
+  (let ((nick (jabber-muc-nickname group)))
+    (if (not nick)
+        (message "MUC self-ping: no nick for %s, skipping" group)
+      (let ((self-jid (format "%s/%s" group nick))
+            (closure (cons group nick)))
+        (jabber-send-iq
+         jc self-jid "get"
+         '(ping ((xmlns . "urn:xmpp:ping")))
+         #'jabber-silent-process-data
+         (format "MUC self-ping: still in %s" group)
+         #'jabber-muc--self-ping-failed
+         closure)))))
+
 (defun jabber-muc-self-ping-rooms (jc)
   "Ping all joined MUC rooms via JC to verify membership.
 After SM resume, the MUC server may have kicked us while offline.
@@ -486,18 +503,7 @@ XEP-0410: MUC Self-Ping (Schroedingers Chat)."
     (dolist (room (jabber-muc-active-rooms))
       (let ((room-jc (jabber-muc-connection room)))
         (when (and room-jc (string= bare-jid (jabber-connection-bare-jid room-jc)))
-          (let ((nick (jabber-muc-nickname room)))
-            (if (not nick)
-                (message "MUC self-ping: no nick for %s, skipping" room)
-              (let ((self-jid (format "%s/%s" room nick))
-                    (closure (cons room nick)))
-                (jabber-send-iq
-                 jc self-jid "get"
-                 '(ping ((xmlns . "urn:xmpp:ping")))
-                 #'jabber-silent-process-data
-                 (format "MUC self-ping: still in %s" room)
-                 #'jabber-muc--self-ping-failed
-                 closure)))))))))
+          (jabber-muc--self-ping-one jc room))))))
 
 (defun jabber-muc-self-ping-start (&optional _jc)
   "Start periodic MUC self-ping timer.
@@ -821,10 +827,11 @@ JC is the Jabber connection."
 	       (jabber-muc-read-my-nickname account group))
 	   t)))
   (cond
-   ;; Already joined: just open the buffer.
+   ;; Already joined: open buffer, verify membership in background.
    ((jabber-muc-joined-p group)
     (when popup
-      (switch-to-buffer (jabber-muc-create-buffer jc group))))
+      (switch-to-buffer (jabber-muc-create-buffer jc group)))
+    (jabber-muc--self-ping-one jc group))
    ;; Skip disco check if configured.
    (jabber-muc-disable-disco-check
     (jabber-muc--send-join-presence jc group nickname nil popup))
