@@ -179,7 +179,7 @@ With prefix argument, remove it."
 (declare-function jabber-muc-join "jabber-muc.el" (jc group nickname &optional popup))
 (declare-function jabber-muc-create "jabber-muc.el" (jc group nickname))
 (declare-function jabber-muc-leave "jabber-muc.el" (jc group))
-(declare-function jabber-muc-nick "jabber-muc.el" (jc group nickname &optional popup))
+(declare-function jabber-muc-nick "jabber-muc.el" (jc group nickname))
 (declare-function jabber-muc-set-topic "jabber-muc.el" (jc group topic))
 (declare-function jabber-muc-invite "jabber-muc.el" (jc jid group reason))
 (declare-function jabber-muc-names "jabber-muc.el" ())

@@ -1029,7 +1029,24 @@ JC is the Jabber connection."
 					   default-nickname)
 				   nil nil default-nickname))))
 
-(defalias 'jabber-muc-nick #'jabber-muc-join)
+;;;###autoload
+(defun jabber-muc-nick (jc group nickname)
+  "Change nickname in GROUP to NICKNAME.
+JC is the Jabber connection."
+  (interactive
+   (let* ((group (or (and (eq major-mode 'jabber-chat-mode)
+                          (bound-and-true-p jabber-group))
+                     (completing-read "Groupchat: "
+                                      (jabber-muc-active-rooms) nil t)))
+          (jc (or (jabber-muc-connection group)
+                  (jabber-read-account)))
+          (current (jabber-muc-nickname group jc))
+          (new-nick (read-string
+                     (format "New nickname (current: %s): " current)
+                     nil nil current)))
+     (list jc group new-nick)))
+  (jabber-send-sexp jc
+                    `(presence ((to . ,(format "%s/%s" group nickname))))))
 
 (defun jabber-muc-leave (jc group)
   "Leave a groupchat.
