@@ -39,8 +39,7 @@
 ;;     :hook (eglot-managed-mode emacs-lisp-mode nov-mode))
 ;; 
 ;;   (use-package eldoc-mouse-nov
-;;     :ensure nil
-;;     :load-path "/home/huang/git/eldoc-mouse-nov/"
+;;     :ensure t
 ;;     :after (eldoc-mouse)
 ;;     :hook (nov-mode))
 
