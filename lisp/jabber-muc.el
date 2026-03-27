@@ -229,6 +229,8 @@ The format is that of `mode-line-format' and `header-line-format'."
 (declare-function jabber-vcard-get "jabber-vcard.el" (jc jid))
 (declare-function jabber-parse-conference-bookmark "jabber-bookmarks.el"
                   (node))
+(declare-function jabber-get-bookmarks-from-cache "jabber-bookmarks"
+                  (jc))
 (declare-function jabber-send-sexp "jabber-core.el"  (jc sexp))
 (declare-function jabber-chat-send "jabber-chat.el"
                   (jc body &optional extra-elements))
@@ -749,21 +751,50 @@ Return a plist describing the outcome:
      (t
       '(:status not-conference)))))
 
+(defun jabber-muc--room-completions (jc)
+  "Return completion candidates for rooms available to JC.
+Includes joined rooms and bookmarked rooms for this connection."
+  (let ((rooms (make-hash-table :test #'equal)))
+    ;; Joined rooms for this connection
+    (maphash (lambda (group entry)
+               (when (eq (car entry) jc)
+                 (puthash group t rooms)))
+             jabber-muc--rooms)
+    ;; Bookmarked rooms
+    (let ((bookmarks (jabber-get-bookmarks-from-cache jc)))
+      (when (listp bookmarks)
+        (dolist (bm bookmarks)
+          (when-let* ((jid (plist-get bm :jid)))
+            (puthash jid t rooms)))))
+    (hash-table-keys rooms)))
+
 (defun jabber-muc-join (jc group nickname &optional popup)
   "Join a groupchat, or change nick.
-In interactive calls, or if POPUP is non-nil, switch to the
-groupchat buffer.
+When GROUP is already joined, just open the buffer without
+re-sending presence.  In interactive calls, or if POPUP is
+non-nil, switch to the groupchat buffer.
 
 JC is the Jabber connection."
   (interactive
-   (let ((account (jabber-read-account))
-	 (group (jabber-read-jid-completing "group: ")))
-     (list account group (jabber-muc-read-my-nickname account group) t)))
-  (if (or (jabber-muc-joined-p group)
-	  jabber-muc-disable-disco-check)
-      (jabber-muc--send-join-presence jc group nickname nil popup)
+   (let* ((account (jabber-read-account))
+	  (group (completing-read "Groupchat: "
+				  (jabber-muc--room-completions account)
+				  nil nil nil nil)))
+     (list account group
+	   (or (jabber-muc-nickname group)
+	       (jabber-muc-read-my-nickname account group))
+	   t)))
+  (cond
+   ;; Already joined: just open the buffer.
+   ((jabber-muc-joined-p group)
+    (when popup
+      (switch-to-buffer (jabber-muc-create-buffer jc group))))
+   ;; Skip disco check if configured.
+   (jabber-muc-disable-disco-check
+    (jabber-muc--send-join-presence jc group nickname nil popup))
+   (t
     (jabber-disco-get-info jc group nil #'jabber-muc--disco-callback
-			   (list group nickname popup))))
+			   (list group nickname popup)))))
 
 ;;;###autoload
 (defun jabber-muc-create (jc group nickname)

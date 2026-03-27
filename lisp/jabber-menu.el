@@ -163,7 +163,8 @@ With prefix argument, remove it."
 (declare-function jabber-roster "jabber-roster.el" ())
 (declare-function jabber-disconnect "jabber-core.el" (&optional arg interactivep))
 (declare-function jabber-connect-all "jabber-core.el" (&optional arg))
-(declare-function jabber-muc-switch "jabber-muc.el" (group))
+(declare-function jabber-muc-join "jabber-muc.el"
+                  (jc group nickname &optional popup))
 (declare-function jabber-compose "jabber-compose.el" (jc &optional recipient))
 (declare-function jabber-roster-change "jabber-presence.el" (jc jid name groups))
 (declare-function jabber-send-subscription-request "jabber-presence.el" (jc to &optional request))
@@ -279,7 +280,7 @@ With prefix argument, remove it."
   "C-x" #'jabber-send-xa-presence
   "C-p" #'jabber-send-presence
   "C-b" #'jabber-chat-buffer-switch
-  "C-m" #'jabber-muc-switch)
+  "C-m" #'jabber-muc-join)
 
 (define-key ctl-x-map "\C-j" jabber-global-keymap)
 
