@@ -1216,15 +1216,17 @@ duplication (e.g. HTTP Upload messages)."
   "Parse an aesgcm:// URL into a plist.
 Returns (:https-url URL :iv BYTES :key BYTES) or nil if URL is
 not a valid aesgcm:// URL.  The fragment must be 88 hex characters
-\(12-byte IV + 32-byte key)."
+\(12-byte IV + 32-byte key) or 96 hex characters (16-byte IV +
+32-byte key, used by some older clients)."
   (when (string-match
-         "\\`aesgcm://\\([^#]*\\)#\\([[:xdigit:]]\\{88\\}\\)\\'"
+         "\\`aesgcm://\\([^#]*\\)#\\([[:xdigit:]]\\{88\\}\\|[[:xdigit:]]\\{96\\}\\)\\'"
          url)
     (let* ((path (match-string 1 url))
            (hex (match-string 2 url))
            (bytes (decode-hex-string hex))
-           (iv (substring bytes 0 12))
-           (key (substring bytes 12 44)))
+           (key-len 32)
+           (iv (substring bytes 0 (- (length bytes) key-len)))
+           (key (substring bytes (- (length bytes) key-len))))
       (list :https-url (concat "https://" path)
             :iv iv
             :key key))))
@@ -1312,6 +1314,7 @@ For aesgcm:// URLs, fetches via HTTPS and decrypts with AES-256-GCM."
                  (kill-buffer url-buffer)
                  (message "Download failed: %s"
                           (plist-get status :error)))
+             (set-buffer-multibyte nil)
              (goto-char (point-min))
              (re-search-forward "\r?\n\r?\n" nil t)
              (let* ((encrypted (buffer-substring-no-properties
@@ -1445,8 +1448,8 @@ exists when we set our keymap as its parent."
                                      jabber-chat-url-keymap))))))))))
 
 (defconst jabber-chat--aesgcm-url-re
-  "aesgcm://[^ \t\n<>\"]+#[[:xdigit:]]\\{88\\}"
-  "Regexp matching aesgcm:// URLs with 88-hex-char fragment.")
+  "aesgcm://[^ \t\n<>\"#]+#\\(?:[[:xdigit:]]\\{88\\}\\|[[:xdigit:]]\\{96\\}\\)\\b"
+  "Regexp matching aesgcm:// URLs with 88 or 96-hex-char fragment.")
 
 (defun jabber-chat-mark-aesgcm-url (_msg _who mode)
   "Mark non-image aesgcm:// URLs with download keymap and link face.
@@ -1461,12 +1464,11 @@ Skips URLs already handled by the image scanner."
           (let ((beg (match-beginning 0))
                 (url-end (match-end 0))
                 (url (match-string-no-properties 0)))
-            (unless (or (get-text-property beg 'jabber-chat-image-url)
-                        (get-text-property beg 'jabber-chat-file-url)
+            (unless (or (get-text-property beg 'jabber-chat-file-url)
                         (jabber-chat--image-url-p url))
               (put-text-property beg url-end 'jabber-chat-file-url url)
               (put-text-property beg url-end 'keymap jabber-chat-url-keymap)
-              (put-text-property beg url-end 'face 'link))))))))
+              (add-face-text-property beg url-end 'link t))))))))
 
 ;; jabber-compose is autoloaded in jabber.el
 (defun jabber-send-message (jc to subject body type)
