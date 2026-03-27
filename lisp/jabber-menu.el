@@ -224,19 +224,21 @@ With prefix argument, remove it."
 ;;;###autoload
 (transient-define-prefix jabber-muc-menu ()
   "Jabber MUC commands."
-  [["MUC"
+  [["Room"
     ("j" "Join" jabber-muc-join)
     ("J" "Create room" jabber-muc-create)
     ("l" "Leave" jabber-muc-leave)
-    ("n" "Change nick" jabber-muc-nick)
     ("t" "Set topic" jabber-muc-set-topic)
+    ("c" "Configure" jabber-muc-get-config)]
+   ["Participants"
+    ("n" "Change nick" jabber-muc-nick)
     ("i" "Invite" jabber-muc-invite)
     ("w" "List participants" jabber-muc-names)
-    ("c" "Configure" jabber-muc-get-config)
-    ("r" "Set role" jabber-muc-set-role)
-    ("a" "Set affiliation" jabber-muc-set-affiliation)
     ("p" "Private chat" jabber-muc-private)
-    ("v" "Request vcard" jabber-muc-vcard-get)]])
+    ("v" "Request vcard" jabber-muc-vcard-get)]
+   ["Admin"
+    ("r" "Set role" jabber-muc-set-role)
+    ("a" "Set affiliation" jabber-muc-set-affiliation)]])
 
 ;;;###autoload
 (transient-define-prefix jabber-service-menu ()
