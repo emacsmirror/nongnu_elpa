@@ -1,8 +1,9 @@
 ;;; eldoc-mouse-nov.el --- Preview epub link for mouse hover -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2025 Huang Feiyu
+;; Copyright (C) 2025-2026 Huang Feiyu
 
 ;; Author: Huang Feiyu <sibadake1@163.com>
+;; Maintainer: Huang Feiyu <sibadake1@163.com>
 ;; Version: 0.1
 ;; Package-Requires: ((emacs "27.1") (eldoc-mouse "3.0.2") (nov "0.5.0"))
 ;; Keywords: tools, epub, convenience, mouse, hover
@@ -29,7 +30,6 @@
 ;; popup when the mouse hovers over a link.
 
 ;; To use, ensure `eldoc-mouse' is installed, then add the following:
-;;
 
 ;;   (use-package eldoc-mouse :ensure t
 ;;     ;; replace <f1> <f1> to a key you like, "C-h ." maybe.
@@ -50,6 +50,9 @@
 (require 'eldoc-mouse)
 (require 'nov)
 
+(defcustom eldoc-mouse-nov-retrieve-remote-content-timeout 5
+  "Timeout in seconds for retrieving remote content when hovering over a link in `nov-mode'."
+  :type 'natnum)
 
 ;;;###autoload
 (define-minor-mode eldoc-mouse-nov-mode
@@ -63,7 +66,7 @@
   "Enable eldoc-mouse-nov in buffers."
   (setq eldoc-mouse-bounds-of-thing-at-point-function
         (lambda ()
-          (let* ((pos (point))
+          (let ((pos (point))
                  (prop 'shr-url))
             (when (get-text-property pos prop)
               (cons (previous-single-property-change (1+ pos) prop nil (point-min))
@@ -77,9 +80,9 @@
 (defun eldoc-mouse-nov--eldoc-documentation-function (_cb)
   "The `eldoc-documentation-functions' implementation for nov mode."
   (let ((content (eldoc-mouse-nov--get-link-content-at-point)))
-    (when (and (stringp content)
-               (not (string-blank-p content)))
-      (string-trim content))))
+    (and (stringp content)
+         (not (string-blank-p content))
+	     (string-trim content))))
 
 (defun eldoc-mouse-nov--html-to-shr-text (html)
   "Convert HTML to simple text."
@@ -87,27 +90,25 @@
              (not (string-blank-p html)))
     (with-temp-buffer
       (insert html)
-      (let ((dom (libxml-parse-html-region (point-min) (point-max))))
+      (let ((dom (libxml-parse-html-region)))
         (erase-buffer)
         (shr-insert-document dom)
         (buffer-string)))))
 
 (defun eldoc-mouse-nov--get-link-content-at-point ()
   "Get the content of the link at cusor point."
-  (let ((url (get-text-property (point) 'shr-url)))
-    (when url
-      (if (nov-external-url-p url)
-          (with-current-buffer (url-retrieve-synchronously url t t 5)
-            (unwind-protect
-                (progn
-                  (goto-char (point-min))
-                  (re-search-forward "^$" nil t) ; Find first empty line after headers
-                  (forward-line 1)
-                  (let ((data (buffer-substring-no-properties (point) (point-max))))
-                    (eldoc-mouse-nov--html-to-shr-text data)))
-              (kill-buffer)))
-        (eldoc-mouse-nov--get-link-content (car (nov-url-filename-and-target url)))))
-    ))
+  (and-let* ((url (get-text-property (point) 'shr-url)))
+    (if (nov-external-url-p url)
+        (with-current-buffer (url-retrieve-synchronously url t t eldoc-mouse-nov-retrieve-remote-content-timeout)
+          (unwind-protect
+              (progn
+                (goto-char (point-min))
+                (re-search-forward "^$" nil t) ; Find first empty line after headers
+                (forward-line 1)
+                (let ((data (buffer-substring-no-properties (point) (point-max))))
+                  (eldoc-mouse-nov--html-to-shr-text data)))
+            (kill-buffer)))
+      (eldoc-mouse-nov--get-link-content (car (nov-url-filename-and-target url))))))
 
 (defun eldoc-mouse-nov--get-link-content (filename)
   "Retrieve text content from FILENAME."
