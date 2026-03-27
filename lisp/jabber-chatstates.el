@@ -28,11 +28,17 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'ewoc)
 (require 'jabber-core)
 (require 'jabber-chat)
 (require 'jabber-chatbuffer)
 (require 'jabber-disco)
 (require 'jabber-xml)
+
+(declare-function jabber-jid-displayname "jabber-util" (jid))
+
+(defvar jabber-chat-ewoc)               ; jabber-chatbuffer.el
+(defvar jabber-chatting-with)           ; jabber-chat.el
 
 (defgroup jabber-chatstates nil
   "Chat state notifications."
@@ -55,6 +61,9 @@ Non-nil means send states, nil means don't.")
 (defvar-local jabber-chatstates-message ""
   "Human-readable presentation of chat state information.")
 
+(defvar-local jabber-chatstates--ewoc-node nil
+  "Ewoc node for the typing indicator, or nil.")
+
 (defvar-local jabber-chatstates-composing-sent nil
   "Has composing notification been sent?
 It can be sent and cancelled several times.")
@@ -70,9 +79,30 @@ It can be sent and cancelled several times.")
             (format " (%s)" (symbol-name jabber-chatstates-last-state))
           "")))
 
+(defun jabber-chatstates--update-ewoc (state)
+  "Show or remove the typing indicator ewoc node for STATE."
+  (let ((inhibit-read-only t))
+    (if (eq state 'composing)
+        (unless jabber-chatstates--ewoc-node
+          (setq jabber-chatstates--ewoc-node
+                (jabber-chat-ewoc-enter
+                 (list :typing
+                       (format "%s is typing..."
+                               (jabber-jid-displayname jabber-chatting-with))))))
+      (when jabber-chatstates--ewoc-node
+        (ewoc-delete jabber-chat-ewoc jabber-chatstates--ewoc-node)
+        (setq jabber-chatstates--ewoc-node nil)))))
+
+(defun jabber-chatstates--clear-typing ()
+  "Remove the typing indicator ewoc node if present."
+  (when jabber-chatstates--ewoc-node
+    (let ((inhibit-read-only t))
+      (ewoc-delete jabber-chat-ewoc jabber-chatstates--ewoc-node)
+      (setq jabber-chatstates--ewoc-node nil))))
+
 (add-hook 'jabber-chat-send-hooks #'jabber-chatstates-when-sending)
 (defun jabber-chatstates-when-sending (_text _id)
-  (jabber-chatstates-update-message)
+  (jabber-chatstates--clear-typing)
   (jabber-chatstates-stop-timer)
   (when jabber-chatstates-confirm
     (setq jabber-chatstates-composing-sent nil)
@@ -148,7 +178,7 @@ It can be sent and cancelled several times.")
 	    (add-hook 'post-command-hook #'jabber-chatstates-after-change nil t))
 
 	  (setq jabber-chatstates-last-state state)
-	  (jabber-chatstates-update-message)))))))
+	  (jabber-chatstates--update-ewoc state)))))))
 
 ;; Add function last in chain, so a chat buffer is already created.
 (add-to-list 'jabber-message-chain #'jabber-handle-incoming-message-chatstates t)

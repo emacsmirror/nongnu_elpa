@@ -71,7 +71,6 @@ These fields are about your account:
 		       'jabber-roster-user-online))))
     " " (:eval (jabber-fix-status (get (jabber-jid-symbol jabber-chatting-with) 'status)))
     " " (:eval jabber-chat-encryption-message)	;see jabber-chatbuffer.el
-    (:eval jabber-chatstates-message)		;see jabber-chatstates.el
     (:eval jabber-chat-receipt-message)	;see jabber-receipts.el
     (:eval (when jabber-chat-mam-syncing
 	     (propertize " [syncing]" 'face 'shadow))))
@@ -246,6 +245,7 @@ added to the outgoing message.")
 (defvar jabber-muc-printers)            ; jabber-muc.el
 (declare-function jabber-mam-syncing-p "jabber-mam" ())
 (declare-function jabber-mam-chat-opened "jabber-mam" (jc peer))
+(declare-function jabber-chatstates--clear-typing "jabber-chatstates" ())
 (defvar jabber-oob-xmlns)              ; jabber-xml.el
 (defvar jabber-carbons-xmlns)          ; jabber-carbons.el
 (defvar jabber-image-max-width)        ; jabber-image.el
@@ -661,6 +661,7 @@ contains an error element.  FROM is the sender JID.
 _JC and _XML-DATA are reserved for future use by OMEMO."
   (let ((body-text (plist-get msg-plist :body)))
     (with-current-buffer chat-buffer
+      (jabber-chatstates--clear-typing)
       (jabber-maybe-print-rare-time
        (jabber-chat-ewoc-enter
         (list (if error-p :error :foreign) msg-plist)))
@@ -948,6 +949,10 @@ or X for undelivered."
     (jabber-chat-system-prompt (or timestamp (current-time)))
     (insert msg "\n")))
 
+(defun jabber-chat-pp--typing (data)
+  "Render a typing indicator from DATA."
+  (insert (propertize (cadr data) 'face 'shadow) "\n"))
+
 (defun jabber-chat-pp--muc-notice (data)
   "Render a MUC presence notice from DATA.
 Respects `jabber-muc-decorate-presence-patterns' for
@@ -1008,7 +1013,8 @@ remove its text to suppress consecutive duplicates."
     (:notice               . jabber-chat-pp--notice)
     (:muc-notice           . jabber-chat-pp--muc-notice)
     (:rare-time            . jabber-chat-pp--rare-time)
-    (:subscription-request . jabber-chat-pp--subscription-request))
+    (:subscription-request . jabber-chat-pp--subscription-request)
+    (:typing               . jabber-chat-pp--typing))
   "Alist mapping message types to their render functions.")
 
 (defun jabber-chat-pp (data)
