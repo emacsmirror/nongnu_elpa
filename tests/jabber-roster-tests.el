@@ -14,11 +14,12 @@
 
 (defmacro jabber-muc-test-with-rooms (rooms &rest body)
   "Run BODY with ROOMS as active groupchats.
-ROOMS is an alist of (group . nickname)."
+ROOMS is an alist of (group . nickname).  Each room gets a single
+entry with JC=nil."
   (declare (indent 1))
   `(let ((jabber-muc--rooms (make-hash-table :test #'equal)))
      (dolist (r ,rooms)
-       (puthash (car r) (cons nil (cdr r)) jabber-muc--rooms))
+       (puthash (car r) (list (cons nil (cdr r))) jabber-muc--rooms))
      ,@body))
 
 ;;; Group 1: jabber-roster-sort-by-status

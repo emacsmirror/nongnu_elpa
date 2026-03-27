@@ -218,7 +218,8 @@ files."
 (declare-function jabber-chat-send "jabber-chat.el"
                   (jc body &optional extra-elements))
 (declare-function jabber-muc-sender-p "jabber-muc.el" (jid))
-(declare-function jabber-muc-nickname "jabber-muc.el" (group))
+(declare-function jabber-muc-nickname "jabber-muc.el" (group &optional jc))
+(declare-function jabber-muc-our-nick-p "jabber-muc.el" (group nick))
 (defvar jabber-presence-strings)        ; jabber.el
 (defvar jabber-xml-data)                ; jabber.el
 (defvar jabber-roster-buffer)           ; jabber-core.el
@@ -345,7 +346,7 @@ Examples:
 		      (memq (selected-window) (get-buffer-window-list buffer)))))
     (if nick
 	(when (or jabber-muc-alert-self
-		  (not (string= nick (jabber-muc-nickname group))))
+		  (not (jabber-muc-our-nick-p group nick)))
 	  (format "Message from %s in %s" nick (jabber-jid-displayname
 						group)))
       (format "Message in %s" (jabber-jid-displayname group)))))

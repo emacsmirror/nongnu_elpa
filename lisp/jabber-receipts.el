@@ -38,7 +38,7 @@
 (declare-function jabber-chat-ewoc-find-by-id "jabber-chatbuffer" (stanza-id))
 (declare-function jabber-jid-user "jabber-util" (jid))
 (declare-function jabber-jid-resource "jabber-util" (jid))
-(declare-function jabber-muc-joined-p "jabber-muc" (group))
+(declare-function jabber-muc-joined-p "jabber-muc" (group &optional jc))
 (declare-function jabber-muc-private-get-buffer "jabber-muc"
                   (group nickname &optional jc))
 (defvar jabber-chat-ewoc)               ; jabber-chatbuffer.el

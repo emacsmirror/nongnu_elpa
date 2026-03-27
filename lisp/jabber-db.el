@@ -43,7 +43,7 @@
 ;; Global reference declarations
 (declare-function jabber-xml-child-with-xmlns "jabber-xml.el"
                   (node xmlns))
-(declare-function jabber-muc-joined-p "jabber-muc" (group))
+(declare-function jabber-muc-joined-p "jabber-muc" (group &optional jc))
 (defvar jabber-chatting-with)           ; jabber-chat.el
 (defvar jabber-chat-send-hooks)        ; jabber-chat.el
 (defvar jabber-chat-encryption)        ; jabber-chatbuffer.el

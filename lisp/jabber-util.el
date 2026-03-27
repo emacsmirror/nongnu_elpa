@@ -185,7 +185,7 @@ Also return non-nil if JID matches JC, modulo resource."
 	  (jabber-connection-bare-jid jc))
    (member (jabber-jid-user jid) (mapcar (lambda (x) (jabber-jid-user (car x))) jabber-account-list))))
 
-(declare-function jabber-muc-joined-p "jabber-muc.el" (group))
+(declare-function jabber-muc-joined-p "jabber-muc.el" (group &optional jc))
 (defun jabber-read-jid-completing (prompt &optional subset require-match default resource fulljids)
   "Read a jid out of the current roster from the minibuffer.
 If SUBSET is non-nil, it should be a list of symbols from which

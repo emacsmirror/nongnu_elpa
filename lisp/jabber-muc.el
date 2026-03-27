@@ -50,26 +50,45 @@
 
 (defvar jabber-muc--rooms (make-hash-table :test #'equal)
   "Internal hash table of active MUC rooms.
-Keys are group JID strings; values are (JC . NICKNAME) cons cells
-where JC is the Jabber connection object and NICKNAME is the
-user's nick in that room.")
+Keys are group JID strings; values are lists of (JC . NICKNAME)
+cons cells, one per connection that has joined the room.  This
+allows multiple accounts to be in the same room simultaneously.")
 
 (defvar jabber-muc--generation 0
   "Generation counter for `jabber-muc--rooms'.
 Incremented on every join/leave, enabling cheap change detection
 without copying the room list.")
 
-(defun jabber-muc-nickname (group)
-  "Return our nickname in GROUP, or nil."
-  (cdr (gethash group jabber-muc--rooms)))
+(defun jabber-muc-nickname (group &optional jc)
+  "Return our nickname in GROUP, or nil.
+If JC is given, return the nickname for that specific connection.
+Otherwise return the nickname from the first entry."
+  (let ((entries (gethash group jabber-muc--rooms)))
+    (if jc
+        (alist-get jc entries)
+      (cdar entries))))
 
 (defun jabber-muc-connection (group)
-  "Return the connection object for GROUP, or nil."
-  (car (gethash group jabber-muc--rooms)))
+  "Return a connection object for GROUP, or nil.
+When multiple accounts are in the same room, returns the first."
+  (caar (gethash group jabber-muc--rooms)))
 
-(defun jabber-muc-joined-p (group)
-  "Return non-nil if we are in GROUP."
-  (and (gethash group jabber-muc--rooms) t))
+(defun jabber-muc-joined-p (group &optional jc)
+  "Return non-nil if we are in GROUP.
+If JC is given, check whether that specific connection is in GROUP."
+  (let ((entries (gethash group jabber-muc--rooms)))
+    (if jc
+        (and (assq jc entries) t)
+      (and entries t))))
+
+(defun jabber-muc-our-nick-p (group nick)
+  "Return non-nil if NICK is our nickname in GROUP on any connection."
+  (let ((entries (gethash group jabber-muc--rooms)))
+    (cl-some (lambda (entry) (string= nick (cdr entry))) entries)))
+
+(defun jabber-muc-room-entries (group)
+  "Return list of (JC . NICKNAME) entries for GROUP."
+  (gethash group jabber-muc--rooms))
 
 (defun jabber-muc-active-rooms ()
   "Return list of joined room JIDs."
@@ -77,12 +96,24 @@ without copying the room list.")
 
 (defun jabber-muc-join-set (group jc nickname)
   "Record that we joined GROUP via JC with NICKNAME."
-  (puthash group (cons jc nickname) jabber-muc--rooms)
+  (let ((entries (gethash group jabber-muc--rooms)))
+    (if-let* ((existing (assq jc entries)))
+        (setcdr existing nickname)
+      (push (cons jc nickname) entries))
+    (puthash group entries jabber-muc--rooms))
   (cl-incf jabber-muc--generation))
 
-(defun jabber-muc-leave-remove (group)
-  "Remove GROUP from active rooms."
-  (remhash group jabber-muc--rooms)
+(defun jabber-muc-leave-remove (group &optional jc)
+  "Remove GROUP from active rooms.
+If JC is given, only remove that connection's entry; the room
+stays tracked if other connections remain in it."
+  (if jc
+      (let ((entries (gethash group jabber-muc--rooms)))
+        (setq entries (assq-delete-all jc entries))
+        (if entries
+            (puthash group entries jabber-muc--rooms)
+          (remhash group jabber-muc--rooms)))
+    (remhash group jabber-muc--rooms))
   (cl-incf jabber-muc--generation))
 
 (defun jabber-muc-generation ()
@@ -448,28 +479,40 @@ JC is the Jabber connection."
   "Remember participating in GROUP under NICKNAME via JC."
   (jabber-muc-join-set group jc nickname))
 
-(defun jabber-muc-remove-groupchat (group)
-  "Remove GROUP from internal bookkeeping."
-  (jabber-muc-leave-remove group)
+(defun jabber-muc-remove-groupchat (group &optional jc)
+  "Remove GROUP from internal bookkeeping.
+If JC is given, only remove that connection's entry."
+  (jabber-muc-leave-remove group jc)
   (jabber-mam--cancel-muc-query group)
-  (let ((whichparticipants (assoc group jabber-muc-participants)))
-    (setq jabber-muc-participants
-	  (delq whichparticipants jabber-muc-participants))))
+  ;; Only clear participants when no account remains in the room.
+  (unless (jabber-muc-joined-p group)
+    (let ((whichparticipants (assoc group jabber-muc-participants)))
+      (setq jabber-muc-participants
+	    (delq whichparticipants jabber-muc-participants)))))
 
 (defun jabber-muc-connection-closed (bare-jid)
   "Remove MUC data for BARE-JID, saving room list for reconnect.
 Forget all information about rooms that had been entered with
 this JID.  The room list is saved to `jabber-muc--rooms-before-disconnect'
-so non-bookmarked rooms can be rejoined on reconnect."
+so non-bookmarked rooms can be rejoined on reconnect.  When
+multiple accounts share a room, only the disconnecting account's
+entry is removed."
   (let (snapshot)
     (dolist (room (jabber-muc-active-rooms))
-      (let ((jc (jabber-muc-connection room)))
-        (when (and jc (string= bare-jid (jabber-connection-bare-jid jc)))
-          (push (cons room (jabber-muc-nickname room)) snapshot)
-          (jabber-muc-leave-remove room)
-          (let ((whichparticipants (assoc room jabber-muc-participants)))
-            (setq jabber-muc-participants
-                  (delq whichparticipants jabber-muc-participants))))))
+      (let* ((entries (jabber-muc-room-entries room))
+             (match (cl-find bare-jid entries
+                             :key (lambda (e)
+                                    (and (car e)
+                                         (jabber-connection-bare-jid (car e))))
+                             :test #'string=)))
+        (when match
+          (push (cons room (cdr match)) snapshot)
+          (jabber-muc-leave-remove room (car match))
+          ;; Only clear participants when no account remains in the room.
+          (unless (jabber-muc-joined-p room)
+            (let ((whichparticipants (assoc room jabber-muc-participants)))
+              (setq jabber-muc-participants
+                    (delq whichparticipants jabber-muc-participants)))))))
     (setq jabber-muc--rooms-before-disconnect snapshot)))
 
 (defun jabber-muc--self-ping-failed (jc xml-data closure-data)
@@ -496,7 +539,7 @@ Error conditions per XEP-0410:
       (_
        (message "MUC self-ping failed for %s (%s), rejoining"
                 room (or condition "unknown"))
-       (jabber-muc-remove-groupchat room)
+       (jabber-muc-remove-groupchat room jc)
        (let ((password (jabber-get-conference-data jc room nil :password)))
          (jabber-muc--send-join-presence jc room nick password nil))))))
 
@@ -504,7 +547,7 @@ Error conditions per XEP-0410:
   "Self-ping GROUP via JC to verify membership.
 On success, does nothing.  On failure, classifies the error per
 XEP-0410 and auto-rejoins if needed."
-  (let ((nick (jabber-muc-nickname group)))
+  (let ((nick (jabber-muc-nickname group jc)))
     (if (not nick)
         (message "MUC self-ping: no nick for %s, skipping" group)
       (let ((self-jid (format "%s/%s" group nick))
@@ -822,8 +865,8 @@ Return a plist describing the outcome:
 Includes joined rooms and bookmarked rooms for this connection."
   (let ((rooms (make-hash-table :test #'equal)))
     ;; Joined rooms for this connection
-    (maphash (lambda (group entry)
-               (when (eq (car entry) jc)
+    (maphash (lambda (group entries)
+               (when (assq jc entries)
                  (puthash group t rooms)))
              jabber-muc--rooms)
     ;; Bookmarked rooms
@@ -845,17 +888,17 @@ JC is the Jabber connection."
 	  (group (completing-read "Groupchat: "
 				  (jabber-muc--room-completions account)
 				  nil nil nil nil))
-          (joined (jabber-muc-joined-p group)))
-     (list (if joined (jabber-muc-connection group) account)
+          (joined (jabber-muc-joined-p group account)))
+     (list account
            group
            (if joined
-               (jabber-muc-nickname group)
-             (or (jabber-muc-nickname group)
+               (jabber-muc-nickname group account)
+             (or (jabber-muc-nickname group account)
                  (jabber-muc-read-my-nickname account group)))
            t)))
   (cond
    ;; Already joined: open buffer, verify membership in background.
-   ((jabber-muc-joined-p group)
+   ((jabber-muc-joined-p group jc)
     (when popup
       (switch-to-buffer (jabber-muc-create-buffer jc group)))
     (jabber-muc--self-ping-one jc group))
@@ -993,7 +1036,7 @@ JC is the Jabber connection."
 
 JC is the Jabber connection."
   (interactive (jabber-muc-argument-list))
-  (let ((nick (jabber-muc-nickname group)))
+  (let ((nick (jabber-muc-nickname group jc)))
     ;; send unavailable presence to our own nick in room
     (jabber-send-sexp jc
 		      `(presence ((to . ,(format "%s/%s" group nick))
@@ -1195,7 +1238,7 @@ Called after bookmark autojoin to recover non-bookmarked rooms."
   (dolist (room-nick jabber-muc--rooms-before-disconnect)
     (let ((room (car room-nick))
           (nick (cdr room-nick)))
-      (unless (jabber-muc-joined-p room)
+      (unless (jabber-muc-joined-p room jc)
         (let ((password (jabber-get-conference-data jc room nil :password)))
           (jabber-muc--send-join-presence jc room nick password nil)))))
   (setq jabber-muc--rooms-before-disconnect nil))
@@ -1318,15 +1361,16 @@ Return nil if X-MUC is nil."
    ""
    'jabber-chat-nick-system))
 
-(defun jabber-muc--classify-message (group nick xml-data)
+(defun jabber-muc--classify-message (jc group nick xml-data)
   "Return message type for a MUC stanza.
-GROUP is the room JID, NICK is the sender's room nickname, and
-XML-DATA is the parsed stanza.  Returns `:muc-error' if the stanza
-contains an error child, `:muc-local' if NICK matches our own
-nickname in GROUP, or `:muc-foreign' otherwise."
+JC is the connection that received the stanza.  GROUP is the room
+JID, NICK is the sender's room nickname, and XML-DATA is the
+parsed stanza.  Returns `:muc-error' if the stanza contains an
+error child, `:muc-local' if NICK matches our own nickname in
+GROUP on JC, or `:muc-foreign' otherwise."
   (cond
    ((jabber-xml-get-children xml-data 'error) :muc-error)
-   ((and nick (string= nick (jabber-muc-nickname group))) :muc-local)
+   ((and nick (string= nick (jabber-muc-nickname group jc))) :muc-local)
    (t :muc-foreign)))
 
 (defun jabber-muc--history-message-p (xml-data)
@@ -1387,7 +1431,7 @@ JC is the Jabber connection."
            (from (jabber-xml-get-attribute xml-data 'from))
            (group (jabber-jid-user from))
            (nick (jabber-jid-resource from))
-           (type (jabber-muc--classify-message group nick xml-data))
+           (type (jabber-muc--classify-message jc group nick xml-data))
            (msg-plist (jabber-chat--msg-plist-from-stanza xml-data))
            (replace-id (jabber-message-correct--replace-id xml-data)))
       (if (and replace-id (not (jabber-muc--history-message-p xml-data)))
@@ -1433,7 +1477,7 @@ STATUS-CODES, ERROR-NODE, ACTOR and REASON come from the stanza."
                    (t
                     "You have left the chatroom"))))
     (when leavingp
-      (jabber-muc-remove-groupchat group))
+      (jabber-muc-remove-groupchat group jc))
     ;; If there is no buffer for this groupchat, don't bother
     ;; creating one just to tell that user left the room.
     (let ((buffer (get-buffer (jabber-muc-get-buffer group jc))))
@@ -1522,7 +1566,7 @@ X-MUC, ACTOR, REASON and OUR-NICKNAME come from the stanza."
   ;; ejabberd mod_irc) omit the 110 status code.
   (when (or (member jabber-muc-status-self-presence status-codes)
             (string= nickname our-nickname))
-    (let ((was-joined (jabber-muc-joined-p group)))
+    (let ((was-joined (jabber-muc-joined-p group jc)))
       (jabber-muc-add-groupchat group nickname jc)
       (puthash symbol nickname jabber-pending-groupchats)
       ;; Trigger MUC MAM catch-up on initial join (not nick change)

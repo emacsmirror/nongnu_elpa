@@ -48,7 +48,8 @@
 (defvar jabber-muc-autojoin)            ; jabber-muc.el
 (defvar jabber-buffer-connection)       ; jabber-chatbuffer.el
 
-(declare-function jabber-muc-joined-p "jabber-muc" (group))
+(declare-function jabber-muc-joined-p "jabber-muc" (group &optional jc))
+(declare-function jabber-muc-nickname "jabber-muc" (group &optional jc))
 (declare-function jabber-muc-join "jabber-muc" (jc group nickname &optional popup))
 (declare-function jabber-muc-leave "jabber-muc" (jc group))
 (declare-function jabber-muc-get-buffer "jabber-muc" (group &optional jc))
@@ -170,14 +171,14 @@ Replaces any existing entry with the same :jid."
 (defun jabber-bookmarks2--maybe-join (jc bookmark)
   "Join the room in BOOKMARK if autojoin is set and not already joined."
   (let ((jid (plist-get bookmark :jid)))
-    (unless (jabber-muc-joined-p jid)
+    (unless (jabber-muc-joined-p jid jc)
       (jabber-muc-join jc jid
                        (or (plist-get bookmark :nick)
                            (plist-get (fsm-get-state-data jc) :username))))))
 
 (defun jabber-bookmarks2--maybe-leave (jc jid)
   "Leave room JID if currently joined, with a status message."
-  (when (jabber-muc-joined-p jid)
+  (when (jabber-muc-joined-p jid jc)
     (let ((buf (jabber-muc-get-buffer jid)))
       (when (buffer-live-p buf)
         (with-current-buffer buf
@@ -463,7 +464,7 @@ JC is the Jabber connection."
   "Publish a bookmark for JID via JC.
 NICK, if non-nil, is stored in the bookmark."
   (let ((plist (list :jid jid :autojoin t
-                     :nick (or nick (jabber-muc-nickname jid)))))
+                     :nick (or nick (jabber-muc-nickname jid jc)))))
     (jabber-bookmarks2--update-cache jc plist)
     (let ((done (lambda (jc _xml _closure)
                   (jabber-bookmarks2--maybe-join jc plist)

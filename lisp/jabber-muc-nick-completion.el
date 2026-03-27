@@ -63,7 +63,7 @@ Note that \":\" or alike not needed (it appended in other string)"
 
 ;; Global reference declarations
 
-(declare-function jabber-muc-nickname "jabber-muc.el" (group))
+(declare-function jabber-muc-nickname "jabber-muc.el" (group &optional jc))
 (defvar jabber-group)                   ; jabber-muc.el
 (defvar jabber-muc-default-nicknames)   ; jabber-muc.el
 (defvar jabber-muc-participants)        ; jabber-muc.el

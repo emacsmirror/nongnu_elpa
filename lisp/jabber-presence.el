@@ -62,7 +62,8 @@ stanza.")
 (declare-function jabber-muc-presence-p "jabber-muc.el" (presence))
 (declare-function jabber-muc-active-rooms "jabber-muc.el" ())
 (declare-function jabber-muc-connection "jabber-muc.el" (group))
-(declare-function jabber-muc-nickname "jabber-muc.el" (group))
+(declare-function jabber-muc-nickname "jabber-muc.el" (group &optional jc))
+(declare-function jabber-muc-room-entries "jabber-muc.el" (group))
 (defvar jabber-chatting-with)           ; jabber-chat.el
 (defvar jabber-buffer-connection)       ; jabber-chatbuffer.el
 (defvar jabber-chat-ewoc)               ; jabber-chatbuffer.el
@@ -430,15 +431,17 @@ When JC is nil, send for all connections."
         (push (cons c subelements) subelements-map)
 	(jabber-send-sexp-if-connected c `(presence () ,@subelements))))
 
-    ;; Then send presence to groupchats
+    ;; Then send presence to groupchats.  A room may have entries for
+    ;; multiple accounts, so iterate all (JC . NICK) pairs.
     (dolist (room (jabber-muc-active-rooms))
-      (let* ((room-jc (jabber-muc-connection room))
-	     (nick (jabber-muc-nickname room))
-	     (subelements (cdr (assq room-jc subelements-map))))
-	(when (and room-jc (or (null jc) (eq room-jc jc)))
-	  (jabber-send-sexp-if-connected
-	   room-jc `(presence ((to . ,(concat room "/" nick)))
-			      ,@subelements))))))
+      (dolist (entry (jabber-muc-room-entries room))
+	(let* ((room-jc (car entry))
+	       (nick (cdr entry))
+	       (subelements (cdr (assq room-jc subelements-map))))
+	  (when (and room-jc (or (null jc) (eq room-jc jc)))
+	    (jabber-send-sexp-if-connected
+	     room-jc `(presence ((to . ,(concat room "/" nick)))
+				,@subelements)))))))
 
   (jabber-roster--refresh)
   (run-hooks 'jabber-presence-sent-hooks))

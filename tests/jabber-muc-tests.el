@@ -14,11 +14,12 @@
 
 (defmacro jabber-muc-test-with-rooms (rooms &rest body)
   "Run BODY with ROOMS as active groupchats.
-ROOMS is an alist of (group . nickname)."
+ROOMS is an alist of (group . nickname).  Each room gets a single
+entry with JC=nil."
   (declare (indent 1))
   `(let ((jabber-muc--rooms (make-hash-table :test #'equal)))
      (dolist (r ,rooms)
-       (puthash (car r) (cons nil (cdr r)) jabber-muc--rooms))
+       (puthash (car r) (list (cons nil (cdr r))) jabber-muc--rooms))
      ,@body))
 
 ;;; Group 1: jabber-muc-message-p
@@ -207,7 +208,7 @@ ROOMS is an alist of (group . nickname)."
                           (type . "groupchat"))
                  (error ((type . "cancel"))))))
       (should (eq :muc-error
-                  (jabber-muc--classify-message
+                  (jabber-muc--classify-message nil
                    "room@conference.example.com" "othernick" xml))))))
 
 (ert-deftest jabber-test-muc-classify-message-local ()
@@ -218,7 +219,7 @@ ROOMS is an alist of (group . nickname)."
                           (type . "groupchat"))
                  (body nil "Hello"))))
       (should (eq :muc-local
-                  (jabber-muc--classify-message
+                  (jabber-muc--classify-message nil
                    "room@conference.example.com" "mynick" xml))))))
 
 (ert-deftest jabber-test-muc-classify-message-foreign ()
@@ -229,7 +230,7 @@ ROOMS is an alist of (group . nickname)."
                           (type . "groupchat"))
                  (body nil "Hello"))))
       (should (eq :muc-foreign
-                  (jabber-muc--classify-message
+                  (jabber-muc--classify-message nil
                    "room@conference.example.com" "othernick" xml))))))
 
 (ert-deftest jabber-test-muc-classify-message-uncached-room ()
@@ -239,7 +240,7 @@ ROOMS is an alist of (group . nickname)."
                           (type . "groupchat"))
                  (body nil "Hello"))))
       (should (eq :muc-foreign
-                  (jabber-muc--classify-message
+                  (jabber-muc--classify-message nil
                    "room@conference.example.com" "othernick" xml))))))
 
 ;;; Group 7: jabber-muc--history-message-p
@@ -288,7 +289,7 @@ ROOMS is an alist of (group . nickname)."
                           (type . "groupchat"))
                (error ((type . "cancel"))))))
       (should (eq :muc-error
-                  (jabber-muc--classify-message
+                  (jabber-muc--classify-message nil
                    "room@conference.example.com" "mynick" xml))))))
 
 (ert-deftest jabber-test-muc-classify-message-nil-nick ()
@@ -299,7 +300,7 @@ ROOMS is an alist of (group . nickname)."
                           (type . "groupchat"))
                (body nil "Room announcement"))))
       (should (eq :muc-foreign
-                  (jabber-muc--classify-message
+                  (jabber-muc--classify-message nil
                    "room@conference.example.com" nil xml))))))
 
 ;;; Group 8: jabber-muc--format-affiliation-change

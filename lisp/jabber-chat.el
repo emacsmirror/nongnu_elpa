@@ -219,7 +219,8 @@ added to the outgoing message.")
 (declare-function jabber-muc-message-p "jabber-muc.el"(message))
 (declare-function jabber-muc-sender-p "jabber-muc.el" (jid))
 (declare-function jabber-muc-private-message-p "jabber-muc.el" (message))
-(declare-function jabber-muc-nickname "jabber-muc.el" (group))
+(declare-function jabber-muc-nickname "jabber-muc.el" (group &optional jc))
+(declare-function jabber-muc-our-nick-p "jabber-muc.el" (group nick))
 (defvar jabber-muc-xmlns-user)
 (declare-function jabber-image-fetch "jabber-image" (url callback &rest cbargs))
 (declare-function jabber-omemo-aesgcm-decrypt "jabber-omemo"
@@ -387,8 +388,8 @@ JC is the Jabber connection."
 	 (node-type (cond
 		    ((string= msg-type "groupchat")
 		     (let ((nick (jabber-jid-resource (plist-get msg-plist :from))))
-		       (if (or (and nick (jabber-muc-nickname jabber-group)
-				    (string= nick (jabber-muc-nickname jabber-group)))
+		       (if (or (and nick
+				    (jabber-muc-our-nick-p jabber-group nick))
 			       (string= direction "out"))
 			   :muc-local
 			 :muc-foreign)))

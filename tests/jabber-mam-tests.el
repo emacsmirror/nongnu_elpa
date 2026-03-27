@@ -242,7 +242,7 @@ When COMPLETE is non-nil, mark the archive as fully consumed."
            (jabber-mam--dirty-peers nil)
            (jabber-muc--rooms (make-hash-table :test 'equal))
            (jabber-muc-participants nil))
-      (puthash "room@conference.example.com" (cons jc "mynick") jabber-muc--rooms)
+      (puthash "room@conference.example.com" (list (cons jc "mynick")) jabber-muc--rooms)
       ;; First query opens transaction
       (when (zerop jabber-mam--tx-depth)
         (when-let* ((db (jabber-db-ensure-open)))
@@ -324,7 +324,7 @@ OUR-NICK is our nickname; every 3rd message is from us."
            (jabber-mam--syncing (list (cons jc "muc-query")))
            (jabber-muc--rooms (make-hash-table :test 'equal))
            (jabber-muc-participants nil))
-      (puthash room (cons jc "mynick") jabber-muc--rooms)
+      (puthash room (list (cons jc "mynick")) jabber-muc--rooms)
       (jabber-db-with-transaction
         (dotimes (i 10)
           (jabber-mam--process-message
@@ -344,7 +344,7 @@ OUR-NICK is our nickname; every 3rd message is from us."
            (jabber-muc--rooms (make-hash-table :test 'equal))
            (jabber-muc-participants
             `((,room ("mynick" . nil) ("otherperson" . nil)))))
-      (puthash room (cons jc "mynick") jabber-muc--rooms)
+      (puthash room (list (cons jc "mynick")) jabber-muc--rooms)
       (jabber-db-with-transaction
         (jabber-mam--process-message
          jc (jabber-mam-test--make-muc-message 0 room "mynick"))  ; from us (idx%3=0)
@@ -826,7 +826,7 @@ VALUES ('a','b','in','chat','test',1)")
            (jabber-chat--crypto-loaded t)
            (jabber-muc--rooms (make-hash-table :test 'equal))
            (jabber-muc-participants nil))
-      (puthash room (cons jc "mynick") jabber-muc--rooms)
+      (puthash room (list (cons jc "mynick")) jabber-muc--rooms)
       ;; MUC MAM: outer from is the room bare JID
       (let ((stanza `(message ((from . ,room))
                               (result ((xmlns . ,jabber-mam-xmlns)

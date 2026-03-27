@@ -239,9 +239,9 @@ Trailing newlines are always removed, regardless of this variable."
 (declare-function jabber-roster-edit-group-from-jids "jabber-presence.el" (jc jids group))
 (declare-function jabber-roster-change "jabber-presence.el" (jc jid name groups))
 (declare-function jabber-edit-bookmarks "jabber-bookmarks.el" (jc))
-(declare-function jabber-muc-joined-p "jabber-muc.el" (group))
+(declare-function jabber-muc-joined-p "jabber-muc.el" (group &optional jc))
 (declare-function jabber-muc-active-rooms "jabber-muc.el" ())
-(declare-function jabber-muc-nickname "jabber-muc.el" (group))
+(declare-function jabber-muc-nickname "jabber-muc.el" (group &optional jc))
 (declare-function jabber-muc-connection "jabber-muc.el" (group))
 (declare-function jabber-muc-generation "jabber-muc.el" ())
 (defvar jabber-connections)             ; jabber-core.el

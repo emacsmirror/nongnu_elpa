@@ -360,11 +360,11 @@ JC is the Jabber connection.  XML-DATA is the stanza."
 Checks the current room nickname first, then falls back to
 comparing with the account username to handle nick changes."
   (require 'jabber-muc)
-  (or (and-let* ((my-nick (jabber-muc-nickname room)))
+  (or (and-let* ((my-nick (jabber-muc-nickname room jc)))
         (string= nick my-nick))
       (string= nick (plist-get (fsm-get-state-data jc) :username))))
 
-(declare-function jabber-muc-nickname "jabber-muc" (group))
+(declare-function jabber-muc-nickname "jabber-muc" (group &optional jc))
 
 (defun jabber-mam--mark-dirty (peer type)
   "Record that PEER's buffer needs redisplay after sync.
