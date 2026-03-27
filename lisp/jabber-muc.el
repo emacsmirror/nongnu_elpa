@@ -120,6 +120,10 @@ Set by `jabber-muc-create' and consumed by `jabber-muc--enter-extra-notices'.")
 (defvar jabber-muc-nickname-history ()
   "Keeps track of previously referred-to nicknames.")
 
+(defvar jabber-muc--rooms-before-disconnect nil
+  "Alist of (ROOM . NICK) saved before disconnect.
+Used to rejoin non-bookmarked rooms on reconnect.")
+
 ;;; MUC status codes (XEP-0045)
 (defconst jabber-muc-status-self-presence    "110")
 (defconst jabber-muc-status-room-created     "201")
@@ -438,16 +442,20 @@ JC is the Jabber connection."
 	  (delq whichparticipants jabber-muc-participants))))
 
 (defun jabber-muc-connection-closed (bare-jid)
-  "Remove MUC data for BARE-JID.
+  "Remove MUC data for BARE-JID, saving room list for reconnect.
 Forget all information about rooms that had been entered with
-this JID.  Suitable to call when the connection is closed."
-  (dolist (room (jabber-muc-active-rooms))
-    (let ((jc (jabber-muc-connection room)))
-      (when (and jc (string= bare-jid (jabber-connection-bare-jid jc)))
-        (jabber-muc-leave-remove room)
-        (let ((whichparticipants (assoc room jabber-muc-participants)))
-          (setq jabber-muc-participants
-                (delq whichparticipants jabber-muc-participants)))))))
+this JID.  The room list is saved to `jabber-muc--rooms-before-disconnect'
+so non-bookmarked rooms can be rejoined on reconnect."
+  (let (snapshot)
+    (dolist (room (jabber-muc-active-rooms))
+      (let ((jc (jabber-muc-connection room)))
+        (when (and jc (string= bare-jid (jabber-connection-bare-jid jc)))
+          (push (cons room (jabber-muc-nickname room)) snapshot)
+          (jabber-muc-leave-remove room)
+          (let ((whichparticipants (assoc room jabber-muc-participants)))
+            (setq jabber-muc-participants
+                  (delq whichparticipants jabber-muc-participants))))))
+    (setq jabber-muc--rooms-before-disconnect snapshot)))
 
 (defun jabber-muc--self-ping-failed (jc xml-data closure-data)
   "Handle failed MUC self-ping per XEP-0410 error classification.
@@ -1162,6 +1170,17 @@ Requires :xml-data key in MSG for raw stanza access."
 		  (insert-button "Decline" 'action action))))
 	    (cl-return t)))))))
 
+(defun jabber-muc--rejoin-snapshot (jc)
+  "Rejoin rooms from the pre-disconnect snapshot not already joined.
+Called after bookmark autojoin to recover non-bookmarked rooms."
+  (dolist (room-nick jabber-muc--rooms-before-disconnect)
+    (let ((room (car room-nick))
+          (nick (cdr room-nick)))
+      (unless (jabber-muc-joined-p room)
+        (let ((password (jabber-get-conference-data jc room nil :password)))
+          (jabber-muc--send-join-presence jc room nick password nil)))))
+  (setq jabber-muc--rooms-before-disconnect nil))
+
 (defun jabber-muc-autojoin (jc)
   "Join rooms specified in account bookmarks and global `jabber-muc-autojoin'.
 
@@ -1179,7 +1198,8 @@ JC is the Jabber connection."
        (when (plist-get bookmark :autojoin)
          (jabber-muc-join jc (plist-get bookmark :jid)
                           (or (plist-get bookmark :nick)
-                              (plist-get (fsm-get-state-data jc) :username))))))))
+                              (plist-get (fsm-get-state-data jc) :username)))))
+     (jabber-muc--rejoin-snapshot jc))))
 
 ;;;###autoload
 (defun jabber-muc-message-p (message)
