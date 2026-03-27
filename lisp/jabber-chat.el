@@ -171,6 +171,7 @@ rare time printed."
 			 jabber-chat-print-url
 			 jabber-chat-goto-address
 			 jabber-chat-mark-oob-attachment
+			 jabber-chat-mark-aesgcm-url
 			 jabber-chat--schedule-image-scan)
   "List of functions that may be able to print part of a message.
 Each function receives these arguments:
@@ -1442,6 +1443,30 @@ exists when we set our keymap as its parent."
                                       jabber-chat-url-keymap)
                   (put-text-property beg end 'keymap
                                      jabber-chat-url-keymap))))))))))
+
+(defconst jabber-chat--aesgcm-url-re
+  "aesgcm://[^ \t\n<>\"]+#[[:xdigit:]]\\{88\\}"
+  "Regexp matching aesgcm:// URLs with 88-hex-char fragment.")
+
+(defun jabber-chat-mark-aesgcm-url (_msg _who mode)
+  "Mark non-image aesgcm:// URLs with download keymap and link face.
+Skips URLs already handled by the image scanner."
+  (when (eql mode :insert)
+    (save-excursion
+      (let ((end (point))
+            (limit (max (- (point) 1000) (1+ (point-min))))
+            (inhibit-read-only t))
+        (goto-char limit)
+        (while (re-search-forward jabber-chat--aesgcm-url-re end t)
+          (let ((beg (match-beginning 0))
+                (url-end (match-end 0))
+                (url (match-string-no-properties 0)))
+            (unless (or (get-text-property beg 'jabber-chat-image-url)
+                        (get-text-property beg 'jabber-chat-file-url)
+                        (jabber-chat--image-url-p url))
+              (put-text-property beg url-end 'jabber-chat-file-url url)
+              (put-text-property beg url-end 'keymap jabber-chat-url-keymap)
+              (put-text-property beg url-end 'face 'link))))))))
 
 ;; jabber-compose is autoloaded in jabber.el
 (defun jabber-send-message (jc to subject body type)
