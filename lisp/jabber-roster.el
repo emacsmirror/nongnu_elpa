@@ -39,7 +39,7 @@
 
 
 
-(defcustom jabber-resource-line-format "     %r - %s (%S), priority %p"
+(defcustom jabber-resource-line-format "     %r - %s (%S)"
   "The format specification of resource lines in the roster display.
 These are displayed when `jabber-show-resources' permits it.
 
