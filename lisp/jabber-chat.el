@@ -1272,7 +1272,7 @@ with the created image (or nil) followed by CBARGS."
 
 (defun jabber-chat--image-url-p (url)
   "Return non-nil if URL looks like an image based on file extension."
-  (string-match-p "\\.\\(png\\|jpe?g\\|gif\\|webp\\|svg\\)\\(?:[?#].*\\)?$"
+  (string-match-p "\\.\\(png\\|jpe?g\\|gif\\|webp\\|svg\\|avif\\)\\(?:[?#].*\\)?$"
                   (downcase url)))
 
 (defvar jabber-chat-url-keymap
@@ -1370,7 +1370,7 @@ Added to `jabber-chat-printers' to trigger after each message."
                    (jabber-chat-display-buffer-images)))))))))
 
 (defconst jabber-chat--image-url-re
-  "\\(?:https?\\|aesgcm\\)://[^ \t\n<>\"]+\\.\\(png\\|jpe?g\\|gif\\|webp\\|svg\\)\\(?:[?#][^ \t\n<>\"]*\\)?"
+  "\\(?:https?\\|aesgcm\\)://[^ \t\n<>\"]+\\.\\(png\\|jpe?g\\|gif\\|webp\\|svg\\|avif\\)\\(?:[?#][^ \t\n<>\"]*\\)?"
   "Regexp matching HTTP(S) and aesgcm:// image URLs.")
 
 (defun jabber-chat-display-buffer-images ()
