@@ -386,9 +386,10 @@ JC is the Jabber connection."
 	 (msg-type (plist-get msg-plist :msg-type))
 	 (node-type (cond
 		    ((string= msg-type "groupchat")
-		     (let* ((nick (jabber-jid-resource (plist-get msg-plist :from)))
-			    (my-nick (jabber-muc-nickname jabber-group)))
-		       (if (and nick my-nick (string= nick my-nick))
+		     (let ((nick (jabber-jid-resource (plist-get msg-plist :from))))
+		       (if (or (and nick (jabber-muc-nickname jabber-group)
+				    (string= nick (jabber-muc-nickname jabber-group)))
+			       (string= direction "out"))
 			   :muc-local
 			 :muc-foreign)))
 		    ((string= direction "out") :local)

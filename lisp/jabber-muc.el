@@ -770,9 +770,8 @@ Includes joined rooms and bookmarked rooms for this connection."
 
 (defun jabber-muc-join (jc group nickname &optional popup)
   "Join a groupchat, or change nick.
-When GROUP is already joined, just open the buffer without
-re-sending presence.  In interactive calls, or if POPUP is
-non-nil, switch to the groupchat buffer.
+In interactive calls, or if POPUP is non-nil, switch to the
+groupchat buffer.
 
 JC is the Jabber connection."
   (interactive

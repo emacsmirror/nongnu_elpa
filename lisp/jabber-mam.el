@@ -298,11 +298,11 @@ JC is the Jabber connection.  XML-DATA is the stanza."
            (our-jid (jabber-connection-bare-jid jc))
            (groupchat-p (string= type "groupchat"))
            (direction (if groupchat-p
-                         (let* ((nick (jabber-jid-resource from))
-                                (room (jabber-jid-user from))
-                                (our-nick
-                                 (jabber-mam--our-muc-nick room)))
-                           (if (and nick our-nick (string= nick our-nick))
+                         (let ((nick (jabber-jid-resource from))
+                               (room (jabber-jid-user from)))
+                           (if (and nick
+                                    (jabber-mam--our-muc-nick-p
+                                     room nick jc))
                                "out" "in"))
                        (if (string= (jabber-jid-user from) our-jid)
                            "out" "in")))
@@ -355,10 +355,14 @@ JC is the Jabber connection.  XML-DATA is the stanza."
         ;; sender JID and protocol elements.
         (jabber-mam--unwrap-into xml-data inner-msg)))))
 
-(defun jabber-mam--our-muc-nick (room)
-  "Return our nickname in ROOM, or nil."
+(defun jabber-mam--our-muc-nick-p (room nick jc)
+  "Return non-nil if NICK in ROOM is us on connection JC.
+Checks the current room nickname first, then falls back to
+comparing with the account username to handle nick changes."
   (require 'jabber-muc)
-  (jabber-muc-nickname room))
+  (or (and-let* ((my-nick (jabber-muc-nickname room)))
+        (string= nick my-nick))
+      (string= nick (plist-get (fsm-get-state-data jc) :username))))
 
 (declare-function jabber-muc-nickname "jabber-muc" (group))
 
