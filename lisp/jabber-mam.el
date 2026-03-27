@@ -56,7 +56,7 @@
 (declare-function jabber-db-ensure-open "jabber-db" ())
 (declare-function jabber-chat--decrypt-if-needed "jabber-chat" (jc xml-data))
 (declare-function jabber-chat-find-buffer "jabber-chat" (chat-with))
-(declare-function jabber-chat-buffer-refresh "jabber-chatbuffer" ())
+(declare-function jabber-chat-buffer-refresh "jabber-chatbuffer" (&optional count))
 (declare-function jabber-muc-find-buffer "jabber-muc" (group))
 (declare-function jabber-parse-time "jabber-util" (raw-time))
 (declare-function jabber-sexp2xml "jabber-xml" (sexp))
