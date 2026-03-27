@@ -154,6 +154,17 @@ to join chat rooms on such servers, set this variable to t."
   :group 'jabber-chat
   :type 'boolean)
 
+(defcustom jabber-muc-self-ping-interval 180
+  "Seconds between periodic MUC self-pings.
+Set to 0 to disable.  When non-zero, all joined rooms are pinged
+at this interval to detect silent server-side drops.  Rooms that
+fail are automatically rejoined.  See XEP-0410."
+  :type 'natnum
+  :group 'jabber-chat)
+
+(defvar jabber-muc--self-ping-timer nil
+  "Timer for periodic MUC self-pings.")
+
 (defcustom jabber-groupchat-buffer-format "*#%n-%a*"
   "The format specification for the name of groupchat buffers.
 
@@ -281,6 +292,7 @@ The format is that of `mode-line-format' and `header-line-format'."
 (defvar jabber-chat-printers)           ; jabber-chat.el
 (defvar jabber-chat-time-format)        ; jabber-chat.el
 (defvar jabber-connections)             ; jabber-core.el
+(defvar jabber-post-disconnect-hook)   ; jabber-core.el
 (defvar jabber-send-function)           ; jabber-console.el
 (defvar jabber-xdata-xmlns)            ; jabber-xml.el
 (defvar jabber-delay-xmlns)            ; jabber-xml.el
@@ -486,6 +498,31 @@ XEP-0410: MUC Self-Ping (Schroedingers Chat)."
                  (format "MUC self-ping: still in %s" room)
                  #'jabber-muc--self-ping-failed
                  closure)))))))))
+
+(defun jabber-muc-self-ping-start (&optional _jc)
+  "Start periodic MUC self-ping timer.
+Pings all joined rooms on all connections every
+`jabber-muc-self-ping-interval' seconds.  Suitable for
+`jabber-post-connect-hooks'."
+  (jabber-muc-self-ping-stop)
+  (when (> jabber-muc-self-ping-interval 0)
+    (setq jabber-muc--self-ping-timer
+          (run-with-timer jabber-muc-self-ping-interval
+                          jabber-muc-self-ping-interval
+                          #'jabber-muc--self-ping-all-connections))
+    (add-hook 'jabber-post-disconnect-hook #'jabber-muc-self-ping-stop)))
+
+(defun jabber-muc-self-ping-stop ()
+  "Cancel periodic MUC self-ping timer."
+  (when jabber-muc--self-ping-timer
+    (cancel-timer jabber-muc--self-ping-timer)
+    (setq jabber-muc--self-ping-timer nil)))
+
+(defun jabber-muc--self-ping-all-connections ()
+  "Self-ping rooms on all active connections."
+  (dolist (jc jabber-connections)
+    (when (and jc (plist-get (fsm-get-state-data jc) :ever-session-established))
+      (jabber-muc-self-ping-rooms jc))))
 
 (defun jabber-muc-participant-plist (group nickname)
   "Return plist associated with NICKNAME in GROUP.

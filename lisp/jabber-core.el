@@ -90,6 +90,7 @@
 
 (defcustom jabber-post-connect-hooks '(jabber-send-current-presence
 				       jabber-muc-autojoin
+				       jabber-muc-self-ping-start
 				       jabber-whitespace-ping-start
 				       jabber-vcard-avatars-find-current
 				       jabber-carbons-maybe-enable
@@ -99,6 +100,7 @@ The functions should accept one argument, the connection object."
   :type 'hook
   :options '(jabber-send-current-presence
 	     jabber-muc-autojoin
+	     jabber-muc-self-ping-start
 	     jabber-whitespace-ping-start
 	     jabber-keepalive-start
 	     jabber-vcard-avatars-find-current
@@ -107,6 +109,7 @@ The functions should accept one argument, the connection object."
 
 (defcustom jabber-post-resume-hooks '(jabber-muc-self-ping-rooms
 				      jabber-mam-maybe-catchup
+				      jabber-muc-self-ping-start
 				      jabber-whitespace-ping-start)
   "Hooks run after successful SM stream resumption.
 These run instead of `jabber-post-connect-hooks' when the session
@@ -117,6 +120,7 @@ The functions should accept one argument, the connection object."
   :type 'hook
   :options '(jabber-muc-self-ping-rooms
 	     jabber-mam-maybe-catchup
+	     jabber-muc-self-ping-start
 	     jabber-whitespace-ping-start)
   :group 'jabber-core)
 
