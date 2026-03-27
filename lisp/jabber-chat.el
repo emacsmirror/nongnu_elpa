@@ -1272,9 +1272,31 @@ with the created image (or nil) followed by CBARGS."
        'silent
        'inhibit-cookies))))
 
+(defconst jabber-chat--image-extension-types
+  '(("png"  . png)
+    ("jpg"  . jpeg)
+    ("jpeg" . jpeg)
+    ("gif"  . gif)
+    ("webp" . webp)
+    ("svg"  . svg)
+    ("avif" . avif)
+    ("tiff" . tiff))
+  "Alist mapping file extensions to Emacs image type symbols.")
+
+(defun jabber-chat--supported-image-extensions ()
+  "Return file extensions whose image types Emacs can render."
+  (cl-loop for (ext . type) in jabber-chat--image-extension-types
+           when (image-type-available-p type)
+           collect ext))
+
+(defun jabber-chat--image-ext-regexp ()
+  "Return a regexp alternation matching supported image extensions."
+  (regexp-opt (jabber-chat--supported-image-extensions) t))
+
 (defun jabber-chat--image-url-p (url)
   "Return non-nil if URL looks like an image based on file extension."
-  (string-match-p "\\.\\(png\\|jpe?g\\|gif\\|webp\\|svg\\|avif\\)\\(?:[?#].*\\)?$"
+  (string-match-p (concat "\\." (jabber-chat--image-ext-regexp)
+                          "\\(?:[?#].*\\)?$")
                   (downcase url)))
 
 (defvar jabber-chat-url-keymap
@@ -1372,7 +1394,9 @@ Added to `jabber-chat-printers' to trigger after each message."
                    (jabber-chat-display-buffer-images)))))))))
 
 (defconst jabber-chat--image-url-re
-  "\\(?:https?\\|aesgcm\\)://[^ \t\n<>\"]+\\.\\(png\\|jpe?g\\|gif\\|webp\\|svg\\|avif\\)\\(?:[?#][^ \t\n<>\"]*\\)?"
+  (concat "\\(?:https?\\|aesgcm\\)://[^ \t\n<>\"]+"
+          "\\." (jabber-chat--image-ext-regexp)
+          "\\(?:[?#][^ \t\n<>\"]*\\)?")
   "Regexp matching HTTP(S) and aesgcm:// image URLs.")
 
 (defun jabber-chat-display-buffer-images ()
