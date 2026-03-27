@@ -47,7 +47,7 @@
 (declare-function jabber-chat-send "jabber-chat.el"
                   (jc body &optional extra-elements))
 (declare-function jabber-chat-create-buffer "jabber-chat.el" (jc chat-with))
-(declare-function jabber-muc-joined-p "jabber-muc.el" (group))
+(declare-function jabber-muc-joined-p "jabber-muc.el" (group &optional jc))
 (defvar jabber-oob-xmlns)              ; jabber-xml.el
 
 (defconst jabber-httpupload-xmlns "urn:xmpp:http:upload:0"
@@ -130,20 +130,39 @@ CALLBACK receives two arguments: the Jabber connection and the item vector."
 
 ;; Slot parsing
 
+(defun jabber-httpupload--sanitize-header (value)
+  "Strip newline characters from header VALUE per XEP-0363 Section 11."
+  (when value
+    (replace-regexp-in-string "[\r\n]" "" value)))
+
 (defun jabber-httpupload-parse-slot-answer (xml-data)
   "Parse PUT/GET URLs from a slot response XML-DATA.
-Return ((put-url . ((header-name . header-value) ...)) get-url)."
-  (let ((put (jabber-xml-path xml-data '(slot put)))
-        (get (jabber-xml-path xml-data '(slot get))))
+Return ((put-url . ((header-name . header-value) ...)) get-url).
+Header names are matched case-insensitively and newlines are
+stripped from both names and values per XEP-0363 Section 11."
+  (let* ((put (jabber-xml-path xml-data '(slot put)))
+         (get (jabber-xml-path xml-data '(slot get)))
+         (put-url (jabber-xml-get-attribute put 'url))
+         (get-url (jabber-xml-get-attribute get 'url)))
+    (unless (and put-url get-url)
+      (error "HTTP Upload: server returned incomplete slot (put=%s get=%s)"
+             put-url get-url))
+    (unless (and (string-prefix-p "https://" (downcase put-url))
+                 (string-prefix-p "https://" (downcase get-url)))
+      (error "HTTP Upload: server returned non-HTTPS URL (put=%s get=%s)"
+             put-url get-url))
     (list (cons
-           (jabber-xml-get-attribute put 'url)
+           put-url
            (cl-loop for header in (jabber-xml-get-children put 'header)
-                    for name = (jabber-xml-get-attribute header 'name)
-                    when (member name '("Authorization" "Cookie" "Expires"))
-                    for value = (car (jabber-xml-node-children header))
+                    for raw-name = (jabber-xml-get-attribute header 'name)
+                    for name = (jabber-httpupload--sanitize-header raw-name)
+                    when (member (downcase name)
+                                 '("authorization" "cookie" "expires"))
+                    for value = (jabber-httpupload--sanitize-header
+                                 (car (jabber-xml-node-children header)))
                     when value
                     collect (cons name value)))
-          (jabber-xml-get-attribute get 'url))))
+          get-url)))
 
 ;; Curl upload
 
@@ -162,7 +181,7 @@ certificates.  Return the process on success, nil if curl is not found."
   (when-let* ((curl-path (executable-find "curl")))
     (let ((buffer (get-buffer-create "*jabber-httpupload-curl*"))
           (command
-           `("--upload-file" ,filepath
+           `("--fail" "--upload-file" ,filepath
              ,@(cl-loop for (name . value) in headers
                         append (list "-H" (format "%s: %s" name value)))
              ,put-url)))
@@ -178,12 +197,15 @@ certificates.  Return the process on success, nil if curl is not found."
                     :buffer buffer
                     :command command
                     :sentinel (lambda (process event)
-                                (with-current-buffer (process-buffer process)
-                                  (let ((inhibit-read-only t))
-                                    (goto-char (point-max))
-                                    (insert (format "Sentinel: %S\n" event))))
-                                (when (string= event "finished\n")
-                                  (funcall callback callback-arg)))))))
+                                (when (buffer-live-p (process-buffer process))
+                                  (with-current-buffer (process-buffer process)
+                                    (let ((inhibit-read-only t))
+                                      (goto-char (point-max))
+                                      (insert (format "Sentinel: %S\n" event)))))
+                                (if (string= event "finished\n")
+                                    (funcall callback callback-arg)
+                                  (message "HTTP Upload failed: %s"
+                                           (string-trim event))))))))
 
 ;; Core upload pipeline
 
