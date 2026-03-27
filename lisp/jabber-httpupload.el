@@ -192,18 +192,21 @@ certificates.  Return the process on success, nil if curl is not found."
 On success, call (funcall CALLBACK get-url).
 Error if the server does not support HTTP Upload."
   (message "Discovering HTTP Upload support...")
-  (jabber-httpupload-apply-to-items
-   jc
-   (lambda (jc item)
-     (let ((iri (elt item 1)))
-       (jabber-disco-get-info
-        jc iri nil
-        (lambda (jc _data result)
-          (when (member jabber-httpupload-xmlns (nth 1 result))
-            (unless (assq jc jabber-httpupload-support)
-              (push (cons jc iri) jabber-httpupload-support))
-            (jabber-httpupload--upload jc filepath callback)))
-        nil)))))
+  (let ((done nil))
+    (jabber-httpupload-apply-to-items
+     jc
+     (lambda (jc item)
+       (let ((iri (elt item 1)))
+         (jabber-disco-get-info
+          jc iri nil
+          (lambda (jc _data result)
+            (when (and (not done)
+                       (member jabber-httpupload-xmlns (nth 1 result)))
+              (setq done t)
+              (unless (assq jc jabber-httpupload-support)
+                (push (cons jc iri) jabber-httpupload-support))
+              (jabber-httpupload--upload jc filepath callback)))
+          nil))))))
 
 (defun jabber-httpupload--upload (jc filepath callback)
   "Upload FILEPATH via HTTP Upload on JC.
