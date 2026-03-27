@@ -844,11 +844,15 @@ JC is the Jabber connection."
    (let* ((account (jabber-read-account))
 	  (group (completing-read "Groupchat: "
 				  (jabber-muc--room-completions account)
-				  nil nil nil nil)))
-     (list account group
-	   (or (jabber-muc-nickname group)
-	       (jabber-muc-read-my-nickname account group))
-	   t)))
+				  nil nil nil nil))
+          (joined (jabber-muc-joined-p group)))
+     (list (if joined (jabber-muc-connection group) account)
+           group
+           (if joined
+               (jabber-muc-nickname group)
+             (or (jabber-muc-nickname group)
+                 (jabber-muc-read-my-nickname account group)))
+           t)))
   (cond
    ;; Already joined: open buffer, verify membership in background.
    ((jabber-muc-joined-p group)
