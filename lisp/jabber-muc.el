@@ -326,6 +326,7 @@ The format is that of `mode-line-format' and `header-line-format'."
 (defvar jabber-chat-delayed-time-format) ; jabber-chat.el
 (defvar jabber-chat-delayed-time-format) ; jabber-chat.el
 (defvar jabber-chat-encryption)         ; jabber-chatbuffer.el
+(defvar jabber-chat-send-hooks)         ; jabber-chat.el
 (defvar jabber-chat-ewoc)               ; jabber-chatbuffer.el
 (defvar jabber-chat--backlog-generation) ; jabber-chatbuffer.el
 (defvar jabber-chat-printers)           ; jabber-chat.el
@@ -469,11 +470,19 @@ JC is the Jabber connection."
      (require 'jabber-openpgp-legacy)
      (jabber-openpgp-legacy--send-muc jc body))
     (_
-     (jabber-send-sexp jc
-                       `(message
-                         ((to . ,jabber-group)
-                          (type . "groupchat"))
-                         (body () ,body))))))
+     (let* ((id (format "emacs-msg-%.6f" (float-time)))
+            (stanza `(message
+                      ((to . ,jabber-group)
+                       (type . "groupchat")
+                       (id . ,id))
+                      (body () ,body))))
+       (dolist (hook jabber-chat-send-hooks)
+         (if (eq hook t)
+             (when (local-variable-p 'jabber-chat-send-hooks)
+               (dolist (global-hook (default-value 'jabber-chat-send-hooks))
+                 (nconc stanza (funcall global-hook body id))))
+           (nconc stanza (funcall hook body id))))
+       (jabber-send-sexp jc stanza)))))
 
 (defun jabber-muc-add-groupchat (group nickname &optional jc)
   "Remember participating in GROUP under NICKNAME via JC."
