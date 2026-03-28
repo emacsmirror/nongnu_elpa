@@ -239,6 +239,7 @@ PROC: process; OUTPUT: new output from PROC."
                target-file
                result-file
                typst-ts-watch-options))
+        (set-process-query-on-exit-flag process nil)
         (process-put process 'typst-ts-watch-session-key session-key)
         (set-process-filter process #'typst-ts-watch--process-filter)
         (set-process-sentinel process (typst-ts-watch--process-sentinel session-key))
