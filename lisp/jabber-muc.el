@@ -317,7 +317,7 @@ The format is that of `mode-line-format' and `header-line-format'."
 (declare-function jabber-mam-muc-joined "jabber-mam.el" (jc group))
 (declare-function jabber-mam--cancel-muc-query "jabber-mam.el" (room))
 (declare-function jabber-db-backlog "jabber-db.el"
-                  (account peer &optional count start-time))
+                  (account peer &optional count start-time resource))
 (declare-function jabber-message-correct--replace-id "jabber-message-correct"
                   (xml-data))
 (declare-function jabber-message-correct--apply "jabber-message-correct"
@@ -454,6 +454,21 @@ JC is the Jabber connection."
     (jabber-chatbuffer--registry-put 'muc-private (format "%s/%s" group nickname))
     (setq jabber-send-function #'jabber-chat-send)
     (setq header-line-format jabber-muc-private-header-line-format)
+
+    (make-local-variable 'jabber-chat-earliest-backlog)
+    (when (null jabber-chat-earliest-backlog)
+      (let ((backlog-entries (jabber-db-backlog
+                              (jabber-connection-bare-jid jc)
+                              group nil nil nickname)))
+        (if (null backlog-entries)
+            (setq jabber-chat-earliest-backlog (float-time))
+          (setq jabber-chat-earliest-backlog
+                (float-time (plist-get (car (last backlog-entries)) :timestamp)))
+          (cl-incf jabber-chat--backlog-generation)
+          (jabber-chat--insert-backlog-chunked
+           (current-buffer) backlog-entries
+           #'jabber-chat-display-buffer-images
+           jabber-chat--backlog-generation))))
 
     (current-buffer)))
 

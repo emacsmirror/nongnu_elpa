@@ -71,6 +71,7 @@ previous sequence detect the mismatch and stop.")
 (declare-function jabber-chat-reply "jabber-message-reply" ())
 (declare-function jabber-chat-cancel-reply "jabber-message-reply" ())
 (declare-function jabber-jid-user "jabber-util" (jid))
+(declare-function jabber-jid-resource "jabber-util" (jid))
 (declare-function jabber-db-set-chat-encryption "jabber-db"
                   (account peer encryption))
 (declare-function jabber-db-get-chat-encryption "jabber-db"
@@ -394,8 +395,9 @@ EWOC-PP is the pretty-printer function for the message EWOC."
 
 (declare-function jabber-chat-create-buffer "jabber-chat" (jc chat-with))
 (declare-function jabber-muc-create-buffer "jabber-muc" (jc group))
+(declare-function jabber-muc-sender-p "jabber-muc" (jid))
 (declare-function jabber-db-backlog "jabber-db"
-                  (account peer &optional count start-time))
+                  (account peer &optional count start-time resource))
 (declare-function jabber-chat-insert-backlog-entry "jabber-chat"
                   (msg-plist))
 (declare-function jabber-chat--insert-backlog-chunked "jabber-chat"
@@ -438,7 +440,11 @@ COUNT overrides `jabber-backlog-number' for this refresh."
     ;; Reload from DB
     (let* ((peer (jabber-chat--peer-jid))
            (account (jabber-connection-bare-jid jabber-buffer-connection))
-           (entries (jabber-db-backlog account peer count)))
+           (resource (when (and (bound-and-true-p jabber-chatting-with)
+                                (not (bound-and-true-p jabber-group))
+                                (jabber-muc-sender-p jabber-chatting-with))
+                       (jabber-jid-resource jabber-chatting-with)))
+           (entries (jabber-db-backlog account peer count nil resource)))
       (if (null entries)
           (setq jabber-chat-earliest-backlog (float-time))
         (setq jabber-chat-earliest-backlog

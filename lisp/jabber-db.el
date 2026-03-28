@@ -44,6 +44,7 @@
 (declare-function jabber-xml-child-with-xmlns "jabber-xml.el"
                   (node xmlns))
 (declare-function jabber-muc-joined-p "jabber-muc" (group &optional jc))
+(declare-function jabber-muc-sender-p "jabber-muc" (jid))
 (defvar jabber-chatting-with)           ; jabber-chat.el
 (defvar jabber-chat-send-hooks)        ; jabber-chat.el
 (defvar jabber-chat-encryption)        ; jabber-chatbuffer.el
@@ -462,13 +463,15 @@ ROW columns match the SELECT in `jabber-db-backlog'."
                      (displayed-at :displayed)
                      (delivered-at :delivered))))))
 
-(defun jabber-db-backlog (account peer &optional count start-time)
+(defun jabber-db-backlog (account peer &optional count start-time resource)
   "Return the last COUNT messages for PEER on ACCOUNT.
 Messages are returned as plists with keys :from, :body, :timestamp,
 :delayed, :direction, :msg-type, etc.
 COUNT defaults to `jabber-backlog-number'.
 START-TIME is a float-time; only messages after this time are returned.
-If nil, `jabber-backlog-days' is used to compute the cutoff."
+If nil, `jabber-backlog-days' is used to compute the cutoff.
+RESOURCE, when non-nil, filters to messages from that resource only.
+This is used for MUC private message buffers."
   (when-let* ((db (jabber-db-ensure-open)))
     (let* ((n (or count jabber-backlog-number))
            (cutoff (cond
@@ -476,16 +479,26 @@ If nil, `jabber-backlog-days' is used to compute the cutoff."
                     (jabber-backlog-days
                      (floor (- (float-time) (* jabber-backlog-days 86400.0))))
                     (t 0)))
-           (rows (sqlite-select
-                  db
+           (sql (if resource
+                    "SELECT account, peer, direction, body, timestamp, resource, type, \
+oob_url, oob_desc, encrypted, stanza_id, delivered_at, displayed_at, \
+server_id, retracted_by, retraction_reason, edited \
+FROM message \
+WHERE account = ? AND peer = ? AND type = 'chat' \
+AND resource = ? AND timestamp >= ? \
+ORDER BY timestamp DESC LIMIT ?"
                   "SELECT account, peer, direction, body, timestamp, resource, type, \
 oob_url, oob_desc, encrypted, stanza_id, delivered_at, displayed_at, \
 server_id, retracted_by, retraction_reason, edited \
 FROM message \
 WHERE account = ? AND peer = ? AND timestamp >= ? \
-ORDER BY timestamp DESC LIMIT ?"
-                  (list account peer cutoff
-                        (if (eq n t) -1 n)))))
+ORDER BY timestamp DESC LIMIT ?"))
+           (params (if resource
+                      (list account peer resource cutoff
+                            (if (eq n t) -1 n))
+                    (list account peer cutoff
+                          (if (eq n t) -1 n))))
+           (rows (sqlite-select db sql params)))
       (mapcar #'jabber-db--row-to-plist rows))))
 
 (defun jabber-db--raw-row-to-plist (row)
@@ -661,7 +674,9 @@ Called from `jabber-chat-send-hooks'."
      "chat"
      body
      (floor (float-time))
-     nil id
+     (when (jabber-muc-sender-p jabber-chatting-with)
+       (jabber-jid-resource jabber-chatting-with))
+     id
      nil nil nil nil
      (memq jabber-chat-encryption '(omemo openpgp openpgp-legacy))))
   nil)

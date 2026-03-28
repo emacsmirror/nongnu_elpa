@@ -230,7 +230,7 @@ added to the outgoing message.")
 (defvar jabber-backlog-days)
 (defvar jabber-backlog-number)
 (declare-function jabber-db-backlog "jabber-db.el"
-                  (account peer &optional count start-time))
+                  (account peer &optional count start-time resource))
 (declare-function jabber-db--store-outgoing "jabber-db.el"
                   (jc to body type))
 (declare-function jabber-db-store-message "jabber-db.el"
