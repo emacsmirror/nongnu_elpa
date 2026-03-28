@@ -56,6 +56,12 @@
   (id &rest props))
 (declare-function jabber-chat--set-body "jabber-chat" (xml-data text))
 
+(defcustom jabber-omemo-skipped-key-max-age (* 30 86400)
+  "Maximum age in seconds for OMEMO skipped message keys.
+Keys older than this are deleted on connect."
+  :type 'integer
+  :group 'jabber)
+
 (defvar jabber-omemo--reconfigured-nodes (make-hash-table :test 'equal)
   "Nodes already reconfigured this session to prevent retry loops.")
 
@@ -1183,7 +1189,10 @@ publishes our bundle, and pre-fetches sessions for open chat buffers."
   (jabber-omemo--get-device-id jc)
   (jabber-omemo--ensure-device-listed jc)
   (jabber-omemo--publish-bundle jc)
-  (jabber-omemo--prefetch-open-chats jc))
+  (jabber-omemo--prefetch-open-chats jc)
+  (jabber-omemo-store-delete-old-skipped-keys
+   (jabber-connection-bare-jid jc)
+   jabber-omemo-skipped-key-max-age))
 
 (defun jabber-omemo--prefetch-open-chats (jc)
   "Pre-fetch OMEMO sessions for all open OMEMO chat buffers on JC."
