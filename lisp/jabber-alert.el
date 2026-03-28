@@ -68,7 +68,7 @@ and show no message if it returns nil.  Other hooks do what they do
 every time."
   :type 'function)
 
-(defcustom jabber-alert-muc-hooks '(jabber-muc-echo jabber-muc-scroll)
+(defcustom jabber-alert-muc-hooks '(jabber-muc-echo-personal jabber-muc-scroll)
   "Hooks run when a new MUC message arrives.
 
 Arguments are NICK, GROUP, BUFFER, TEXT and TITLE.  NICK is the
@@ -76,14 +76,23 @@ nickname of the sender.  GROUP is the JID of the group.  BUFFER
 is the the buffer where the message can be read, and TEXT is the
 text of the message.  TITLE is the string returned by
 `jabber-alert-muc-function' for these arguments, so that hooks do
-not have to call it themselves."
+not have to call it themselves.
+
+The default uses `jabber-muc-echo-personal' so that only messages
+mentioning your nickname are echoed.  Use `jabber-muc-echo' instead
+to be notified of all MUC messages."
   :type 'hook
   :options '(jabber-muc-beep
 	     jabber-muc-wave
 	     jabber-muc-echo
 	     jabber-muc-switch
 	     jabber-muc-display
-	     jabber-muc-scroll))
+	     jabber-muc-scroll
+	     jabber-muc-beep-personal
+	     jabber-muc-wave-personal
+	     jabber-muc-echo-personal
+	     jabber-muc-switch-personal
+	     jabber-muc-display-personal))
 
 (defvar jabber-muc-hooks '()
   "Internal hooks run when a new MUC message arrives.
