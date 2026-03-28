@@ -207,6 +207,8 @@ added to the outgoing message.")
 ;; Global reference declarations
 
 (declare-function jabber-compose "jabber-compose.el" (jc &optional recipient))
+(declare-function jabber-message-reply--strip-fallback "jabber-message-reply"
+                  (body xml-data))
 (declare-function jabber-omemo--send-chat "jabber-omemo" (jc body))
 (declare-function jabber-openpgp--send-chat "jabber-openpgp" (jc body))
 (declare-function jabber-openpgp-legacy--send-chat "jabber-openpgp-legacy" (jc body))
@@ -818,13 +820,18 @@ DELAYED marks the message as delayed unconditionally."
   (let* ((msg-timestamp (jabber-message-timestamp xml-data))
          (oob-x (jabber-xml-child-with-xmlns xml-data jabber-oob-xmlns))
          (error-node (car (jabber-xml-get-children xml-data 'error)))
-         (sid-el (jabber-xml-child-with-xmlns xml-data "urn:xmpp:sid:0")))
+         (sid-el (jabber-xml-child-with-xmlns xml-data "urn:xmpp:sid:0"))
+         (reply-el (jabber-xml-child-with-xmlns xml-data "urn:xmpp:reply:0"))
+         (raw-body (car (jabber-xml-node-children
+                         (car (jabber-xml-get-children xml-data 'body)))))
+         (body (if reply-el
+                   (jabber-message-reply--strip-fallback raw-body xml-data)
+                 raw-body)))
     (list
      :id (jabber-xml-get-attribute xml-data 'id)
      :server-id (when sid-el (jabber-xml-get-attribute sid-el 'id))
      :from (jabber-xml-get-attribute xml-data 'from)
-     :body (car (jabber-xml-node-children
-                 (car (jabber-xml-get-children xml-data 'body))))
+     :body body
      :subject (car (jabber-xml-node-children
                     (car (jabber-xml-get-children xml-data 'subject))))
      :timestamp (or msg-timestamp (current-time))
@@ -835,7 +842,11 @@ DELAYED marks the message as delayed unconditionally."
      :oob-url (jabber-chat--oob-field oob-x 'url)
      :oob-desc (jabber-chat--oob-field oob-x 'desc)
      :error-text (when error-node
-                   (jabber-parse-error error-node)))))
+                   (jabber-parse-error error-node))
+     :reply-to-id (when reply-el
+                    (jabber-xml-get-attribute reply-el 'id))
+     :reply-to-jid (when reply-el
+                     (jabber-xml-get-attribute reply-el 'to)))))
 
 (defun jabber-chat--msg-plist-from-stanza (xml-data &optional delayed)
   "Extract display fields from XML-DATA into a message plist.
