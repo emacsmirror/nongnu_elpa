@@ -338,9 +338,15 @@ Return a positive integer, or nil if -n is unset or empty."
   "Return non-nil if point is in the composition area."
   (>= (point) jabber-point-insert))
 
+(defun jabber-chat-newline ()
+  "Insert a newline in the composition area without sending."
+  (interactive)
+  (insert "\n"))
+
 (defvar-keymap jabber-chat-mode-map
   :parent jabber-common-keymap
   "RET"     #'jabber-chat-buffer-send
+  "S-<return>"   #'jabber-chat-newline
   "TAB"     #'completion-at-point
   "C-c C-a" #'jabber-chat-attach-file
   "C-c C-o" #'jabber-chat-operations-menu
@@ -351,6 +357,8 @@ Return a positive integer, or nil if -n is unset or empty."
 (define-derived-mode jabber-chat-mode fundamental-mode "jabber-chat"
   "Major mode for Jabber chat buffers.
 \\{jabber-chat-mode-map}"
+  (visual-line-mode 1)
+  (setq-local word-wrap t)
   (display-line-numbers-mode 0)
   (put 'jabber-chat-mode 'flyspell-mode-predicate #'jabber-chat-mode-flyspell-verify))
 
