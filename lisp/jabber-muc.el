@@ -784,7 +784,7 @@ JID; only provide completion as a guide."
   (let ((nicknames (cdr (assoc group jabber-muc-participants))))
     (unless nicknames
       (error "Unknown group: %s" group))
-    (completing-read prompt nicknames nil t nil 'jabber-muc-nickname-history)))
+    (completing-read prompt nicknames nil nil nil 'jabber-muc-nickname-history)))
 
 
 ;;;###autoload
