@@ -1130,7 +1130,10 @@ When ENCRYPTED, `jabber-chat-encrypted-indicator' is prepended."
   "Print prompt for received message MSG."
   (let* ((from (plist-get msg :from))
          (timestamp (or timestamp (plist-get msg :timestamp)))
-         (nick (if dont-print-nick-p "" (jabber-jid-displayname from))))
+         (nick (if dont-print-nick-p ""
+                 (if (jabber-muc-sender-p from)
+                     (jabber-jid-resource from)
+                   (jabber-jid-displayname from)))))
     (jabber-chat--insert-prompt
      (jabber-chat--format-time timestamp delayed)
      nick
