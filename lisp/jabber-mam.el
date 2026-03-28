@@ -684,7 +684,8 @@ local messages that the server no longer has."
           (let ((local-rows
                  (sqlite-select db "\
 SELECT id, stanza_id, server_id FROM message \
-WHERE account = ? AND peer = ? AND timestamp BETWEEN ? AND ?"
+WHERE account = ? AND peer = ? AND timestamp BETWEEN ? AND ? \
+AND retracted_by IS NULL"
                                 (list account peer min-ts max-ts)))
                 (deleted 0))
             (dolist (row local-rows)
