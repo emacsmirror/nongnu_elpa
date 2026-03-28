@@ -68,6 +68,8 @@ previous sequence detect the mismatch and stop.")
 (declare-function jabber-blocking-toggle-chat-peer "jabber-blocking" (jc))
 (declare-function jabber-mam-sync-buffer "jabber-mam" (count))
 (declare-function jabber-moderation-retract "jabber-moderation" ())
+(declare-function jabber-chat-reply "jabber-message-reply" ())
+(declare-function jabber-chat-cancel-reply "jabber-message-reply" ())
 (declare-function jabber-jid-user "jabber-util" (jid))
 (declare-function jabber-db-set-chat-encryption "jabber-db"
                   (account peer encryption))
@@ -318,13 +320,14 @@ Return a positive integer, or nil if -n is unset or empty."
    ["Contact"
     ("B" "Block/unblock user" jabber-blocking-toggle-chat-peer)]
    ["Messages"
-    ("E" "Edit last message" jabber-correct-last-message)]
+    ("E" "Edit last message" jabber-correct-last-message)
+    ("r" "Reply to message" jabber-chat-reply)]
    ["MUC"
     ("m" "MUC operations..." jabber-muc-menu)
     ("M" "Retract message at point" jabber-moderation-retract)]
    ["Buffer"
     ("-n" jabber-chat:-n)
-    ("r" "Refresh" jabber-chat--refresh-suffix)
+    ("R" "Refresh" jabber-chat--refresh-suffix)
     ("S" "Sync & refresh" jabber-chat--mam-sync-buffer-suffix)]])
 
 ;; Spell check only what you're currently writing.
@@ -338,7 +341,9 @@ Return a positive integer, or nil if -n is unset or empty."
   "TAB"     #'completion-at-point
   "C-c C-a" #'jabber-chat-attach-file
   "C-c C-o" #'jabber-chat-operations-menu
-  "C-c C-e" #'jabber-chat-encryption-menu)
+  "C-c C-e" #'jabber-chat-encryption-menu
+  "C-c C-r" #'jabber-chat-reply
+  "C-c C-k" #'jabber-chat-cancel-reply)
 
 (define-derived-mode jabber-chat-mode fundamental-mode "jabber-chat"
   "Major mode for Jabber chat buffers.
