@@ -110,7 +110,7 @@ For regular JIDs, look up the 1:1 chat buffer."
 JC is the connection.  Added to `jabber-message-chain'."
   (let* ((from (jabber-xml-get-attribute xml-data 'from))
          (type (jabber-xml-get-attribute xml-data 'type))
-         (groupchat-p (string= type "groupchat")))
+         (groupchat-p (equal type "groupchat")))
     ;; Skip incoming receipt/marker processing for groupchat stanzas.
     ;; MUC markers require XEP-0359 stanza-id matching and per-occupant
     ;; tracking that we don't yet support; processing them could corrupt
@@ -121,6 +121,13 @@ JC is the connection.  Added to `jabber-message-chain'."
                              xml-data jabber-receipts-xmlns))
                   ((eq (jabber-xml-node-name received) 'received))
                   (ref-id (jabber-xml-get-attribute received 'id)))
+        (jabber-receipts--update-status jc from ref-id "delivered_at"))
+      ;; XEP-0333: <received xmlns='urn:xmpp:chat-markers:0' id='...'/>
+      ;; Some clients send XEP-0333 received instead of XEP-0184.
+      (when-let* ((marker (jabber-xml-child-with-xmlns
+                           xml-data jabber-chat-markers-xmlns))
+                  ((eq (jabber-xml-node-name marker) 'received))
+                  (ref-id (jabber-xml-get-attribute marker 'id)))
         (jabber-receipts--update-status jc from ref-id "delivered_at"))
       ;; XEP-0333: <displayed xmlns='urn:xmpp:chat-markers:0' id='...'/>
       (when-let* ((marker (jabber-xml-child-with-xmlns

@@ -353,6 +353,67 @@
       (when (file-directory-p dir)
         (delete-directory dir t)))))
 
+;;; Group 7: MUC guards and edge cases
+
+(ert-deftest jabber-receipts-test-groupchat-skips-receipt-processing ()
+  "Groupchat messages do not trigger receipt updates."
+  (let ((updated nil))
+    (cl-letf (((symbol-function 'jabber-db-update-receipt)
+               (lambda (&rest _args) (setq updated t)))
+              ((symbol-function 'jabber-connection-bare-jid)
+               (lambda (_j) "me@example.com")))
+      (jabber-receipts--handle-message
+       'fake-jc
+       '(message ((from . "room@conference.example.com/nick")
+                  (type . "groupchat"))
+                 (received ((xmlns . "urn:xmpp:receipts")
+                            (id . "msg-001"))))))
+    (should-not updated)))
+
+(ert-deftest jabber-receipts-test-nil-type-does-not-crash ()
+  "Messages without type attribute do not crash."
+  (let ((updated-id nil))
+    (cl-letf (((symbol-function 'jabber-db-update-receipt)
+               (lambda (_acct _peer id _col _ts)
+                 (setq updated-id id)))
+              ((symbol-function 'jabber-connection-bare-jid)
+               (lambda (_j) "me@example.com"))
+              ((symbol-function 'jabber-chat-get-buffer)
+               (lambda (_from &optional _jc) "*test-chat*")))
+      (jabber-receipts--handle-message
+       'fake-jc
+       '(message ((from . "them@example.com"))
+                 (received ((xmlns . "urn:xmpp:receipts")
+                            (id . "msg-nil-type"))))))
+    (should (equal updated-id "msg-nil-type"))))
+
+(ert-deftest jabber-receipts-test-xep0333-received-marker ()
+  "XEP-0333 <received/> marker updates delivered_at."
+  (let ((updated-id nil)
+        (updated-col nil))
+    (cl-letf (((symbol-function 'jabber-db-update-receipt)
+               (lambda (_acct _peer id col _ts)
+                 (setq updated-id id updated-col col)))
+              ((symbol-function 'jabber-connection-bare-jid)
+               (lambda (_j) "me@example.com"))
+              ((symbol-function 'jabber-chat-get-buffer)
+               (lambda (_from &optional _jc) "*test-chat*")))
+      (jabber-receipts--handle-message
+       'fake-jc
+       '(message ((from . "them@example.com") (type . "chat"))
+                 (received ((xmlns . "urn:xmpp:chat-markers:0")
+                            (id . "msg-333"))))))
+    (should (equal updated-id "msg-333"))
+    (should (equal updated-col "delivered_at"))))
+
+(ert-deftest jabber-receipts-test-send-hook-muc-no-request ()
+  "Send hook in MUC groupchat adds markable but no request."
+  (with-temp-buffer
+    (setq-local jabber-group "room@conference.example.com")
+    (let ((result (jabber-receipts--send-hook "hello" "msg-001")))
+      (should (assq 'markable result))
+      (should-not (assq 'request result)))))
+
 (provide 'jabber-receipts-tests)
 
 ;;; jabber-receipts-tests.el ends here
