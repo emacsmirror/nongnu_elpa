@@ -48,6 +48,9 @@
 (defconst jabber-muc-xmlns-admin "http://jabber.org/protocol/muc#admin"
   "XEP-0045 MUC admin namespace.")
 
+(defconst jabber-muc-xmlns-direct-invite "jabber:x:conference"
+  "XEP-0249 Direct MUC Invitations namespace.")
+
 (defvar jabber-muc--rooms (make-hash-table :test #'equal)
   "Internal hash table of active MUC rooms.
 Keys are group JID strings; values are lists of (JC . NICKNAME)
@@ -1201,6 +1204,7 @@ JC is the Jabber connection."
 
 (defun jabber-muc-invite (jc jid group reason)
   "Invite JID to GROUP, stating REASON.
+Uses XEP-0249 direct invitations.
 
 JC is the Jabber connection."
   (interactive
@@ -1213,11 +1217,11 @@ JC is the Jabber connection."
 	 (jabber-read-with-input-method "Reason: ")))
   (jabber-send-sexp
    jc
-   `(message ((to . ,group))
-	     (x ((xmlns . ,jabber-muc-xmlns-user))
-		(invite ((to . ,jid))
-			,(unless (zerop (length reason))
-			   `(reason nil ,reason)))))))
+   `(message ((to . ,jid))
+	     (x ((xmlns . ,jabber-muc-xmlns-direct-invite)
+		 (jid . ,group)
+		 ,@(unless (zerop (length reason))
+		     `((reason . ,reason))))))))
 
 (add-to-list 'jabber-body-printers 'jabber-muc-print-invite)
 
@@ -1226,6 +1230,7 @@ JC is the Jabber connection."
 Requires :xml-data key in MSG for raw stanza access."
   (when-let* ((xml-data (plist-get msg :xml-data)))
     (cl-dolist (x (jabber-xml-get-children xml-data 'x))
+      ;; Mediated invite (XEP-0045 s7.8.2)
       (when (string= (jabber-xml-get-attribute x 'xmlns) jabber-muc-xmlns-user)
         (let ((invitation (car (jabber-xml-get-children x 'invite))))
 	  (when invitation
@@ -1267,6 +1272,29 @@ Requires :xml-data key in MSG for raw stanza access."
 				,(unless (zerop (length reason))
 				   `(reason nil ,reason))))))))))
 		  (insert-button "Decline" 'action action))))
+	    (cl-return t))))
+      ;; Direct invite (XEP-0249)
+      (when (string= (jabber-xml-get-attribute x 'xmlns)
+		     jabber-muc-xmlns-direct-invite)
+	(let ((group (jabber-xml-get-attribute x 'jid))
+	      (inviter (jabber-xml-get-attribute xml-data 'from))
+	      (reason (jabber-xml-get-attribute x 'reason)))
+	  (when (and group (not (jabber-muc-joined-p group)))
+	    (when (eql mode :insert)
+	      (insert "You have been invited to MUC room "
+		      (jabber-jid-displayname group))
+	      (when inviter
+		(insert " by " (jabber-jid-displayname inviter)))
+	      (insert ".")
+	      (when (and reason (not (zerop (length reason))))
+		(insert "  Reason: " reason))
+	      (insert "\n\n")
+	      (let ((action
+		     (lambda (&rest _ignore) (interactive)
+		       (jabber-muc-join jabber-buffer-connection group
+					(jabber-muc-read-my-nickname
+					 jabber-buffer-connection group)))))
+		(insert-button "Accept" 'action action)))
 	    (cl-return t)))))))
 
 (defun jabber-muc--rejoin-snapshot (jc)
@@ -1314,7 +1342,10 @@ include groupchat invites."
      (string= type "groupchat")
      (and (string= type "error")
 	  (gethash (jabber-jid-symbol from) jabber-pending-groupchats))
-     (jabber-xml-path message `((,jabber-muc-xmlns-user . "x") invite)))))
+     (jabber-xml-path message `((,jabber-muc-xmlns-user . "x") invite))
+     ;; XEP-0249 direct invite
+     (jabber-xml-path message
+		      `((,jabber-muc-xmlns-direct-invite . "x"))))))
 
 ;;;###autoload
 (defun jabber-muc-sender-p (jid)
@@ -1674,5 +1705,7 @@ X-MUC, ACTOR, REASON and OUR-NICKNAME come from the stanza."
      (t
       (jabber-muc--process-enter jc group nickname symbol status-codes
                                  x-muc actor reason our-nickname)))))
+(jabber-disco-advertise-feature jabber-muc-xmlns-direct-invite)
+
 (provide 'jabber-muc)
 ;;; jabber-muc.el ends here.
