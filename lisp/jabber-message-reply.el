@@ -141,6 +141,17 @@ BODY is the message text.  Clears reply state after producing elements."
 (with-eval-after-load "jabber-chat"
   (add-hook 'jabber-chat-send-hooks #'jabber-message-reply--send-hook))
 
+;;; Helpers
+
+(defun jabber-message-reply--author-name (jid)
+  "Return a display name for JID.
+In MUC buffers the resource is the nickname, so prefer it.
+In 1:1 chat the resource is a device ID, so use the roster name."
+  (if (bound-and-true-p jabber-group)
+      (or (jabber-jid-resource jid)
+          (jabber-jid-displayname jid))
+    (jabber-jid-displayname jid)))
+
 ;;; Display printer
 
 (defun jabber-message-reply--print-context (msg _who mode)
@@ -154,11 +165,8 @@ MSG is the message plist.  MODE is :insert or :printp."
               (orig-msg (and node (cadr (ewoc-data node))))
               (orig-body (and orig-msg (plist-get orig-msg :body)))
               (orig-from (and orig-msg (plist-get orig-msg :from)))
-              (author (cond
-                       (orig-from
-                        (or (jabber-jid-resource orig-from)
-                            (jabber-jid-displayname orig-from)))
-                       (t nil)))
+              (author (and orig-from
+                          (jabber-message-reply--author-name orig-from)))
               (snippet (cond
                         ((and orig-body (> (length orig-body) 50))
                          (concat (substring orig-body 0 50) "..."))
@@ -191,10 +199,9 @@ Stores reply state and inserts fallback quote text at point-max."
     (unless id
       (user-error "No message ID at point"))
     (let* ((from (plist-get msg :from))
-           (author (cond
-                    (from (or (jabber-jid-resource from)
-                              (jabber-jid-displayname from)))
-                    (t "me")))
+           (author (if from
+                       (jabber-message-reply--author-name from)
+                     "me"))
            (body (or (plist-get msg :body) ""))
            (jid (or from ""))
            (fallback (jabber-message-reply--build-fallback-text author body)))
