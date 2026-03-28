@@ -641,5 +641,42 @@ entry with JC=nil."
             (should (null prefetch-calls))))
       (kill-buffer buf))))
 
+;;; Group 15: jabber-muc--merge-plist
+
+(ert-deftest jabber-test-muc-merge-plist-preserves-old-keys ()
+  "Old keys not present in new plist are preserved."
+  (let ((result (jabber-muc--merge-plist
+                 '(jid "alice@example.com" role "participant")
+                 '(role "moderator"))))
+    (should (string= "alice@example.com" (plist-get result 'jid)))
+    (should (string= "moderator" (plist-get result 'role)))))
+
+(ert-deftest jabber-test-muc-merge-plist-overwrites-shared-keys ()
+  "New values win on conflict."
+  (let ((result (jabber-muc--merge-plist
+                 '(role "participant" affiliation "member")
+                 '(role "moderator" affiliation "admin"))))
+    (should (string= "moderator" (plist-get result 'role)))
+    (should (string= "admin" (plist-get result 'affiliation)))))
+
+(ert-deftest jabber-test-muc-merge-plist-empty-old ()
+  "Nil old plist returns new plist unchanged."
+  (let ((result (jabber-muc--merge-plist nil '(role "participant"))))
+    (should (string= "participant" (plist-get result 'role)))))
+
+(ert-deftest jabber-test-muc-modify-participant-preserves-jid ()
+  "Presence update without jid keeps the previously known jid."
+  (let ((jabber-muc-participants nil))
+    ;; Initial presence with full info including jid
+    (jabber-muc-modify-participant "room@conf.example.com" "alice"
+                                  '(role "participant" affiliation "member"
+                                    jid "alice@example.com/res"))
+    ;; Subsequent presence (e.g. role change) without jid attribute
+    (jabber-muc-modify-participant "room@conf.example.com" "alice"
+                                  '(role "moderator" affiliation "member"))
+    (let ((plist (jabber-muc-participant-plist "room@conf.example.com" "alice")))
+      (should (string= "moderator" (plist-get plist 'role)))
+      (should (string= "alice@example.com/res" (plist-get plist 'jid))))))
+
 (provide 'jabber-muc-tests)
 ;;; jabber-muc-tests.el ends here
