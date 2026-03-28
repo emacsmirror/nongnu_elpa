@@ -678,5 +678,43 @@ entry with JC=nil."
       (should (string= "moderator" (plist-get plist 'role)))
       (should (string= "alice@example.com/res" (plist-get plist 'jid))))))
 
+;;; Group 16: XEP-0249 direct MUC invitations
+
+(ert-deftest jabber-test-muc-message-p-direct-invite ()
+  "XEP-0249 direct invite stanza is detected as a MUC message."
+  (let ((jabber-pending-groupchats (make-hash-table))
+        (jabber-jid-obarray (make-vector 127 0)))
+    (let ((msg '(message ((from . "alice@example.com/home"))
+               (x ((xmlns . "jabber:x:conference")
+                   (jid . "room@conference.example.com"))))))
+      (should (jabber-muc-message-p msg)))))
+
+(ert-deftest jabber-test-muc-print-invite-direct ()
+  "Direct invite renders with correct group and inviter."
+  (let ((jabber-muc--rooms (make-hash-table :test #'equal)))
+    (with-temp-buffer
+      (let ((msg (list :xml-data
+                       '(message ((from . "alice@example.com/home"))
+                         (x ((xmlns . "jabber:x:conference")
+                             (jid . "room@conference.example.com")))))))
+        (jabber-muc-print-invite msg nil :insert)
+        (let ((text (buffer-string)))
+          (should (string-match-p "room@conference.example.com" text))
+          (should (string-match-p "alice@example.com" text))
+          (should (string-match-p "Accept" text)))))))
+
+(ert-deftest jabber-test-muc-print-invite-direct-with-reason ()
+  "Direct invite with reason attribute displays the reason."
+  (let ((jabber-muc--rooms (make-hash-table :test #'equal)))
+    (with-temp-buffer
+      (let ((msg (list :xml-data
+                       '(message ((from . "alice@example.com/home"))
+                         (x ((xmlns . "jabber:x:conference")
+                             (jid . "room@conference.example.com")
+                             (reason . "Join our discussion")))))))
+        (jabber-muc-print-invite msg nil :insert)
+        (let ((text (buffer-string)))
+          (should (string-match-p "Join our discussion" text)))))))
+
 (provide 'jabber-muc-tests)
 ;;; jabber-muc-tests.el ends here
