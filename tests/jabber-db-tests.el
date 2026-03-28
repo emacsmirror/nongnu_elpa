@@ -1090,6 +1090,134 @@ the corrected jabber-muc-create-buffer order."
       (should (string= "decrypted" (caar rows)))
       (should (= 1700000100 (cadar rows))))))
 
+;;; Group: Schema v2 migration and constraints
+
+(defconst jabber-db-test--v1-ddl
+  '("CREATE TABLE IF NOT EXISTS message (
+  id           INTEGER PRIMARY KEY,
+  stanza_id    TEXT,
+  server_id    TEXT,
+  account      TEXT NOT NULL,
+  peer         TEXT NOT NULL,
+  resource     TEXT,
+  direction    TEXT NOT NULL,
+  type         TEXT,
+  body         TEXT,
+  timestamp    INTEGER NOT NULL,
+  encrypted    INTEGER DEFAULT 0,
+  raw_xml      TEXT,
+  oob_url      TEXT,
+  oob_desc     TEXT,
+  delivered_at INTEGER,
+  displayed_at INTEGER,
+  retracted_by TEXT,
+  retraction_reason TEXT,
+  edited       INTEGER DEFAULT 0)"
+    "CREATE INDEX IF NOT EXISTS idx_msg_peer_ts
+  ON message(account, peer, timestamp)"
+    "CREATE INDEX IF NOT EXISTS idx_msg_stanza_id
+  ON message(account, stanza_id) WHERE stanza_id IS NOT NULL"
+    "CREATE INDEX IF NOT EXISTS idx_msg_server_id
+  ON message(account, server_id) WHERE server_id IS NOT NULL")
+  "V1 schema DDL for migration tests.")
+
+(defmacro jabber-db-test-with-v1-db (&rest body)
+  "Run BODY with a v1 database (has raw_xml, no occupant_id)."
+  (declare (indent 0) (debug t))
+  `(let* ((jabber-db-test--dir (make-temp-file "jabber-db-test" t))
+          (jabber-db-path (expand-file-name "test.sqlite" jabber-db-test--dir))
+          (jabber-db--connection nil))
+     (unwind-protect
+         (let ((db (sqlite-open jabber-db-path)))
+           (dolist (ddl jabber-db-test--v1-ddl)
+             (sqlite-execute db ddl))
+           (sqlite-execute db "PRAGMA user_version=1")
+           (sqlite-close db)
+           ,@body)
+       (jabber-db-close)
+       (when (file-directory-p jabber-db-test--dir)
+         (delete-directory jabber-db-test--dir t)))))
+
+(ert-deftest jabber-db-test-v1-to-v2-migration ()
+  "Migrating from v1 adds occupant_id and drops raw_xml."
+  (skip-unless (fboundp 'sqlite-open))
+  (jabber-db-test-with-v1-db
+    ;; Insert a v1 row with raw_xml
+    (let ((db (sqlite-open jabber-db-path)))
+      (sqlite-execute db "\
+INSERT INTO message (account, peer, direction, type, body, timestamp, raw_xml)
+VALUES ('me@x.com', 'friend@x.com', 'in', 'chat', 'hello', 1000, '<msg/>')")
+      (sqlite-close db))
+    ;; Open via jabber-db which triggers migration
+    (jabber-db-ensure-open)
+    (let ((version (caar (sqlite-select jabber-db--connection "PRAGMA user_version"))))
+      (should (= 2 version)))
+    ;; occupant_id column exists (NULL for old rows)
+    (let ((rows (sqlite-select jabber-db--connection
+                               "SELECT occupant_id FROM message LIMIT 1")))
+      (should (= 1 (length rows)))
+      (should (null (caar rows))))
+    ;; raw_xml column is gone
+    (should-error
+     (sqlite-select jabber-db--connection
+                    "SELECT raw_xml FROM message LIMIT 1"))))
+
+(ert-deftest jabber-db-test-v1-migration-preserves-data ()
+  "Migrating from v1 preserves existing message data."
+  (skip-unless (fboundp 'sqlite-open))
+  (jabber-db-test-with-v1-db
+    (let ((db (sqlite-open jabber-db-path)))
+      (sqlite-execute db "\
+INSERT INTO message (account, peer, direction, type, body, timestamp, resource)
+VALUES ('me@x.com', 'friend@x.com', 'in', 'chat', 'preserved', 2000, 'laptop')")
+      (sqlite-close db))
+    (jabber-db-ensure-open)
+    (let ((row (car (sqlite-select jabber-db--connection
+                                   "SELECT body, resource FROM message LIMIT 1"))))
+      (should (string= "preserved" (nth 0 row)))
+      (should (string= "laptop" (nth 1 row))))))
+
+(ert-deftest jabber-db-test-check-direction-on-fresh-db ()
+  "CHECK constraint rejects invalid direction on fresh databases."
+  (skip-unless (fboundp 'sqlite-open))
+  (jabber-db-test-with-db
+    (should-error
+     (sqlite-execute jabber-db--connection
+                     "INSERT INTO message (account, peer, direction, type, body, timestamp)
+                      VALUES ('a', 'b', 'bad', 'chat', 'x', 1000)"))))
+
+(ert-deftest jabber-db-test-check-type-on-fresh-db ()
+  "CHECK constraint rejects invalid message type on fresh databases."
+  (skip-unless (fboundp 'sqlite-open))
+  (jabber-db-test-with-db
+    (should-error
+     (sqlite-execute jabber-db--connection
+                     "INSERT INTO message (account, peer, direction, type, body, timestamp)
+                      VALUES ('a', 'b', 'in', 'invalid', 'x', 1000)"))))
+
+(ert-deftest jabber-db-test-occupant-id-round-trip ()
+  "Storing and retrieving occupant_id works end-to-end."
+  (skip-unless (fboundp 'sqlite-open))
+  (jabber-db-test-with-db
+    (jabber-db-store-message "me@x.com" "room@x.com" "in" "groupchat"
+                             "hello" (floor (float-time))
+                             "nick" "sid-1" nil "occ-abc-123")
+    (let* ((rows (jabber-db-query "me@x.com" "room@x.com"))
+           (row (car rows)))
+      (should row)
+      (should (string= "occ-abc-123" (plist-get row :occupant-id))))))
+
+(ert-deftest jabber-db-test-occupant-id-nil-when-absent ()
+  "occupant_id is nil when not provided."
+  (skip-unless (fboundp 'sqlite-open))
+  (jabber-db-test-with-db
+    (jabber-db-store-message "me@x.com" "friend@x.com" "in" "chat"
+                             "hello" (floor (float-time)))
+    (let* ((rows (jabber-db-query "me@x.com" "friend@x.com"))
+           (row (car rows)))
+      (should row)
+      (should (null (plist-get row :occupant-id))))))
+
 (provide 'jabber-db-tests)
 
 ;;; jabber-db-tests.el ends here
