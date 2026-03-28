@@ -43,6 +43,7 @@
 ;; Global reference declarations
 (declare-function jabber-xml-child-with-xmlns "jabber-xml.el"
                   (node xmlns))
+(declare-function jabber-xml-get-attribute "jabber-xml.el" (node attribute))
 (declare-function jabber-muc-joined-p "jabber-muc" (group &optional jc))
 (declare-function jabber-muc-sender-p "jabber-muc" (jid))
 (defvar jabber-chatting-with)           ; jabber-chat.el
@@ -97,12 +98,12 @@ in the message history.")
   account      TEXT NOT NULL,
   peer         TEXT NOT NULL,
   resource     TEXT,
-  direction    TEXT NOT NULL,
-  type         TEXT,
+  occupant_id  TEXT,
+  direction    TEXT NOT NULL CHECK(direction IN ('in','out')),
+  type         TEXT CHECK(type IN ('chat','groupchat','headline')),
   body         TEXT,
   timestamp    INTEGER NOT NULL,
   encrypted    INTEGER DEFAULT 0,
-  raw_xml      TEXT,
   oob_url      TEXT,
   oob_desc     TEXT,
   delivered_at INTEGER,
@@ -116,6 +117,8 @@ in the message history.")
   ON message(account, stanza_id) WHERE stanza_id IS NOT NULL"
     "CREATE INDEX IF NOT EXISTS idx_msg_server_id
   ON message(account, server_id) WHERE server_id IS NOT NULL"
+    "CREATE INDEX IF NOT EXISTS idx_msg_occupant_id
+  ON message(account, peer, occupant_id) WHERE occupant_id IS NOT NULL"
     "CREATE VIRTUAL TABLE IF NOT EXISTS message_fts USING fts5(
   body, content='message', content_rowid='id')"
     "CREATE TRIGGER IF NOT EXISTS message_ai AFTER INSERT ON message BEGIN
@@ -184,7 +187,7 @@ END"
   (dolist (ddl jabber-db--schema-ddl)
     (sqlite-execute db ddl)))
 
-(defconst jabber-db--schema-version 1
+(defconst jabber-db--schema-version 2
   "Current schema version.
 Bump this when adding migrations.  A database whose version
 exceeds this value is from a newer (or development) build and
@@ -217,7 +220,15 @@ delete %s manually to continue"
       (sqlite-execute db
                       (format "PRAGMA user_version=%d"
                               jabber-db--schema-version))
-      (setq version jabber-db--schema-version))))
+      (setq version jabber-db--schema-version))
+    (when (= version 1)
+      (sqlite-execute db "ALTER TABLE message ADD COLUMN occupant_id TEXT")
+      (sqlite-execute db "ALTER TABLE message DROP COLUMN raw_xml")
+      (sqlite-execute db "\
+CREATE INDEX IF NOT EXISTS idx_msg_occupant_id
+  ON message(account, peer, occupant_id) WHERE occupant_id IS NOT NULL")
+      (sqlite-execute db "PRAGMA user_version=2")
+      (setq version 2))))
 
 (defun jabber-db-ensure-open ()
   "Open the SQLite database, creating it if needed.  Idempotent.
@@ -285,7 +296,7 @@ SELECT encryption FROM chat_settings
 
 (defun jabber-db-store-message (account peer direction type body timestamp
                                         &optional resource stanza-id
-                                        server-id raw-xml oob-url oob-desc
+                                        server-id occupant-id oob-url oob-desc
                                         encrypted)
   "Store a message in the database.
 ACCOUNT is the bare JID of the local account.
@@ -297,7 +308,7 @@ TIMESTAMP is a unix epoch integer.
 Optional RESOURCE is the sender resource.
 Optional STANZA-ID is the XEP-0359 origin id.
 Optional SERVER-ID is the XEP-0359 server-assigned id.
-Optional RAW-XML is the full stanza as a string.
+Optional OCCUPANT-ID is the XEP-0421 occupant id.
 Optional OOB-URL is the jabber:x:oob URL.
 Optional OOB-DESC is the jabber:x:oob description.
 Optional ENCRYPTED is non-nil if the message was OMEMO-encrypted."
@@ -329,11 +340,11 @@ WHERE account = ? AND peer = ? AND timestamp = ? AND body = ? LIMIT 1"
         (sqlite-execute
          db
          "INSERT INTO message \
-(account, peer, resource, direction, type, body, timestamp, \
-stanza_id, server_id, raw_xml, oob_url, oob_desc, encrypted) \
+(account, peer, resource, occupant_id, direction, type, body, timestamp, \
+stanza_id, server_id, oob_url, oob_desc, encrypted) \
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-         (list account peer resource direction type body timestamp
-               stanza-id server-id raw-xml oob-url oob-desc
+         (list account peer resource occupant-id direction type body timestamp
+               stanza-id server-id oob-url oob-desc
                (if encrypted 1 0))))
        ;; Duplicate by server-side ID: normalize timestamp to the
        ;; server's value so message order is consistent across
@@ -504,9 +515,9 @@ ORDER BY timestamp DESC LIMIT ?"))
 (defun jabber-db--raw-row-to-plist (row)
   "Convert a raw query ROW to a plist.
 ROW columns: id, stanza_id, server_id, account, peer, resource,
-direction, type, body, timestamp, encrypted, raw_xml."
+occupant_id, direction, type, body, timestamp, encrypted."
   (seq-let (id stanza-id server-id account peer resource
-            direction type body timestamp encrypted raw-xml)
+            occupant-id direction type body timestamp encrypted)
       row
     (list :id id
           :stanza-id stanza-id
@@ -514,18 +525,18 @@ direction, type, body, timestamp, encrypted, raw_xml."
           :account account
           :peer peer
           :resource resource
+          :occupant-id occupant-id
           :direction direction
           :type type
           :body body
           :timestamp timestamp
-          :encrypted encrypted
-          :raw-xml raw-xml)))
+          :encrypted encrypted)))
 
 (defun jabber-db-query (account peer &optional start-time end-time limit offset)
   "Query messages for PEER on ACCOUNT with pagination.
 Returns a list of plists with keys :id, :stanza-id, :server-id,
-:account, :peer, :resource, :direction, :type, :body, :timestamp,
-:encrypted, :raw-xml.
+:account, :peer, :resource, :occupant-id, :direction, :type, :body,
+:timestamp, :encrypted.
 START-TIME and END-TIME are unix epoch integers.
 LIMIT defaults to 50, OFFSET defaults to 0."
   (when-let* ((db (jabber-db-ensure-open)))
@@ -536,7 +547,7 @@ LIMIT defaults to 50, OFFSET defaults to 0."
            (rows (sqlite-select
                   db
                   "SELECT id, stanza_id, server_id, account, peer, resource, \
-direction, type, body, timestamp, encrypted, raw_xml \
+occupant_id, direction, type, body, timestamp, encrypted \
 FROM message \
 WHERE account = ? AND peer = ? AND timestamp >= ? AND timestamp <= ? \
 ORDER BY timestamp ASC LIMIT ? OFFSET ?"
@@ -554,8 +565,8 @@ Returns matching messages as plists."
                      (sqlite-select
                       db
                       "SELECT m.id, m.stanza_id, m.server_id, m.account, \
-m.peer, m.resource, m.direction, m.type, m.body, m.timestamp, \
-m.encrypted, m.raw_xml \
+m.peer, m.resource, m.occupant_id, m.direction, m.type, m.body, m.timestamp, \
+m.encrypted \
 FROM message m \
 JOIN message_fts f ON f.rowid = m.id \
 WHERE f.body MATCH ? AND m.account = ? AND m.peer = ? \
@@ -564,8 +575,8 @@ ORDER BY m.timestamp DESC LIMIT ?"
                    (sqlite-select
                     db
                     "SELECT m.id, m.stanza_id, m.server_id, m.account, \
-m.peer, m.resource, m.direction, m.type, m.body, m.timestamp, \
-m.encrypted, m.raw_xml \
+m.peer, m.resource, m.occupant_id, m.direction, m.type, m.body, m.timestamp, \
+m.encrypted \
 FROM message m \
 JOIN message_fts f ON f.rowid = m.id \
 WHERE f.body MATCH ? AND m.account = ? \
@@ -604,6 +615,11 @@ ORDER BY id DESC LIMIT 1"
              (list account))))))
 
 ;;; Message chain handlers
+
+(defun jabber-db--extract-occupant-id (xml-data)
+  "Extract XEP-0421 occupant-id from XML-DATA, or nil."
+  (jabber-xml-get-attribute
+   (jabber-xml-child-with-xmlns xml-data "urn:xmpp:occupant-id:0") 'id))
 
 (defun jabber-db--message-handler (jc xml-data)
   "Store incoming message in the database.
@@ -658,7 +674,8 @@ XML-DATA is the parsed stanza."
          (floor (float-time (or timestamp (current-time))))
          (jabber-jid-resource from)
          stanza-id
-         server-id nil
+         server-id
+         (jabber-db--extract-occupant-id xml-data)
          oob-url oob-desc
          encrypted)))))
 
