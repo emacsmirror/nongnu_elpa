@@ -349,24 +349,33 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
        ;; Duplicate by server-side ID: normalize timestamp to the
        ;; server's value so message order is consistent across
        ;; devices.  Also replace failed-decrypt placeholders.
+       ;; Skip updates entirely for retracted messages so MAM
+       ;; replays cannot undo a local retraction.
        ((memq dup-id-col '(stanza_id server_id))
-        (let ((id-val (if (eq dup-id-col 'stanza_id) stanza-id server-id)))
-          ;; Normalize timestamp only when it differs.
-          (sqlite-execute
-           db
-           (format "UPDATE message SET timestamp = ? \
-WHERE %s = ? AND account = ? AND timestamp != ?"
-                   dup-id-col)
-           (list timestamp id-val account timestamp))
-          ;; Replace failed-decrypt placeholder if new body is real text.
-          (when (and body
-                     (not (string-match-p "\\`: could not decrypt\\]" body)))
+        (let* ((id-val (if (eq dup-id-col 'stanza_id) stanza-id server-id))
+               (retracted (caar (sqlite-select
+                                 db
+                                 (format "SELECT 1 FROM message \
+WHERE %s = ? AND account = ? AND retracted_by IS NOT NULL LIMIT 1"
+                                         dup-id-col)
+                                 (list id-val account)))))
+          (unless retracted
+            ;; Normalize timestamp only when it differs.
             (sqlite-execute
              db
-             (format "UPDATE message SET body = ?, oob_url = ?, oob_desc = ? \
-WHERE %s = ? AND account = ? AND body LIKE '%%: could not decrypt]'"
+             (format "UPDATE message SET timestamp = ? \
+WHERE %s = ? AND account = ? AND timestamp != ?"
                      dup-id-col)
-             (list body oob-url oob-desc id-val account)))))
+             (list timestamp id-val account timestamp))
+            ;; Replace failed-decrypt placeholder if new body is real text.
+            (when (and body
+                       (not (string-match-p "\\`: could not decrypt\\]" body)))
+              (sqlite-execute
+               db
+               (format "UPDATE message SET body = ?, oob_url = ?, oob_desc = ? \
+WHERE %s = ? AND account = ? AND body LIKE '%%: could not decrypt]'"
+                       dup-id-col)
+               (list body oob-url oob-desc id-val account))))))
        ;; Content match: upgrade a nil-ID row with server-assigned IDs.
        ((eq dup-id-col 'content)
         (when (or stanza-id server-id)
@@ -410,6 +419,25 @@ Optional REASON is the human-readable retraction reason string."
     (sqlite-execute jabber-db--connection
                     "UPDATE message SET retracted_by = ?, retraction_reason = ? WHERE server_id = ?"
                     (list retracted-by reason server-id))))
+
+(defun jabber-db-occupant-id-by-server-id (server-id)
+  "Return the occupant-id for the message with SERVER-ID, or nil."
+  (when (and jabber-db--connection server-id)
+    (caar (sqlite-select jabber-db--connection
+                         "SELECT occupant_id FROM message \
+WHERE server_id = ? LIMIT 1"
+                         (list server-id)))))
+
+(defun jabber-db-server-ids-by-occupant-id (account peer occupant-id)
+  "Return server-ids for messages with OCCUPANT-ID in PEER on ACCOUNT.
+Only returns non-retracted messages that have a server-id."
+  (when-let* ((db (jabber-db-ensure-open)))
+    (mapcar #'car
+            (sqlite-select db
+                           "SELECT server_id FROM message \
+WHERE account = ? AND peer = ? AND occupant_id = ? \
+AND server_id IS NOT NULL AND retracted_by IS NULL"
+                           (list account peer occupant-id)))))
 
 (defun jabber-db-correct-message (stanza-id new-body)
   "Replace body of message with STANZA-ID with NEW-BODY and mark as edited."

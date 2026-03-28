@@ -1218,6 +1218,84 @@ VALUES ('me@x.com', 'friend@x.com', 'in', 'chat', 'preserved', 2000, 'laptop')")
       (should row)
       (should (null (plist-get row :occupant-id))))))
 
+;;; Group: server-ids-by-occupant-id
+
+(ert-deftest jabber-db-test-server-ids-by-occupant-id ()
+  "Returns correct server-ids for an occupant-id."
+  (jabber-db-test-with-db
+    (let ((now (floor (float-time))))
+      (jabber-db-store-message "me@x.com" "room@x.com" "in" "groupchat"
+                               "msg1" now "nick" nil "srv-a" "occ-1")
+      (jabber-db-store-message "me@x.com" "room@x.com" "in" "groupchat"
+                               "msg2" (1+ now) "nick" nil "srv-b" "occ-1")
+      (let ((ids (jabber-db-server-ids-by-occupant-id
+                  "me@x.com" "room@x.com" "occ-1")))
+        (should (= 2 (length ids)))
+        (should (member "srv-a" ids))
+        (should (member "srv-b" ids))))))
+
+(ert-deftest jabber-db-test-server-ids-by-occupant-id-excludes-retracted ()
+  "Already-retracted messages are excluded."
+  (jabber-db-test-with-db
+    (let ((now (floor (float-time))))
+      (jabber-db-store-message "me@x.com" "room@x.com" "in" "groupchat"
+                               "msg1" now "nick" nil "srv-c" "occ-2")
+      (jabber-db-store-message "me@x.com" "room@x.com" "in" "groupchat"
+                               "msg2" (1+ now) "nick" nil "srv-d" "occ-2")
+      (jabber-db-retract-message "srv-c" "room@x.com/mod" "spam")
+      (let ((ids (jabber-db-server-ids-by-occupant-id
+                  "me@x.com" "room@x.com" "occ-2")))
+        (should (= 1 (length ids)))
+        (should (string= "srv-d" (car ids)))))))
+
+(ert-deftest jabber-db-test-server-ids-by-occupant-id-excludes-nil-server-id ()
+  "Messages without server-id are excluded."
+  (jabber-db-test-with-db
+    (let ((now (floor (float-time))))
+      (jabber-db-store-message "me@x.com" "room@x.com" "in" "groupchat"
+                               "msg1" now "nick" nil "srv-e" "occ-3")
+      ;; Message with occupant-id but no server-id
+      (jabber-db-store-message "me@x.com" "room@x.com" "in" "groupchat"
+                               "msg2" (1+ now) "nick" nil nil "occ-3")
+      (let ((ids (jabber-db-server-ids-by-occupant-id
+                  "me@x.com" "room@x.com" "occ-3")))
+        (should (= 1 (length ids)))
+        (should (string= "srv-e" (car ids)))))))
+
+(ert-deftest jabber-db-test-server-ids-by-occupant-id-unknown ()
+  "Returns nil for an unknown occupant-id."
+  (jabber-db-test-with-db
+    (should (null (jabber-db-server-ids-by-occupant-id
+                   "me@x.com" "room@x.com" "nonexistent")))))
+
+(ert-deftest jabber-db-test-occupant-id-by-server-id ()
+  "Returns occupant-id for a known server-id."
+  (jabber-db-test-with-db
+    (jabber-db-store-message "me@x.com" "room@x.com" "in" "groupchat"
+                             "hello" (floor (float-time))
+                             "nick" nil "srv-occ-1" "occ-lookup")
+    (should (string= "occ-lookup"
+                      (jabber-db-occupant-id-by-server-id "srv-occ-1")))))
+
+(ert-deftest jabber-db-test-occupant-id-by-server-id-nil ()
+  "Returns nil for unknown server-id."
+  (jabber-db-test-with-db
+    (should (null (jabber-db-occupant-id-by-server-id "nonexistent")))))
+
+(ert-deftest jabber-db-test-store-preserves-retraction-on-dedup ()
+  "Re-storing a retracted message does not clear retracted_by."
+  (jabber-db-test-with-db
+    (jabber-db-store-message "me@x.com" "room@x.com" "in" "groupchat"
+                             "spam" 1000 "nick" nil "srv-pres-1")
+    (jabber-db-retract-message "srv-pres-1" "room@x.com/mod" "spam")
+    ;; MAM re-stores the same message
+    (jabber-db-store-message "me@x.com" "room@x.com" "in" "groupchat"
+                             "spam" 1000 "nick" nil "srv-pres-1")
+    (let ((row (car (sqlite-select jabber-db--connection
+                     "SELECT retracted_by FROM message WHERE server_id = ?"
+                     '("srv-pres-1")))))
+      (should (string= "room@x.com/mod" (car row))))))
+
 (provide 'jabber-db-tests)
 
 ;;; jabber-db-tests.el ends here
