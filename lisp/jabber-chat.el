@@ -1053,11 +1053,7 @@ Dispatches to a type-specific render function via
 `jabber-chat-pp-dispatch', then marks the region read-only."
   (let ((beg (point-marker))
         (type (car data)))
-    (setq jabber-chat--wrap-prefix-column nil)
     (funcall (alist-get type jabber-chat-pp-dispatch) data)
-    (when jabber-chat--wrap-prefix-column
-      (let ((prefix (make-string jabber-chat--wrap-prefix-column ?\s)))
-        (put-text-property beg (point) 'wrap-prefix prefix)))
     (put-text-property beg (point) 'read-only t)
     (put-text-property beg (point) 'front-sticky t)
     (put-text-property beg (point) 'rear-nonsticky t)
@@ -1134,10 +1130,6 @@ Use short format normally, long format when DELAYED."
                         jabber-chat-time-format)
                       timestamp))
 
-(defvar-local jabber-chat--wrap-prefix-column nil
-  "Column after the most recently inserted prompt.
-Used by `jabber-chat-pp' to set `wrap-prefix' on messages.")
-
 (defun jabber-chat--insert-prompt (timestamp nick face &optional plaintext-face encrypted)
   "Insert a chat prompt: TIMESTAMP <NICK> .
 NICK gets FACE when ENCRYPTED, PLAINTEXT-FACE otherwise.
@@ -1148,8 +1140,7 @@ When ENCRYPTED, `jabber-chat-encrypted-indicator' is prepended."
   (when (> (length nick) 0)
     (insert (propertize (format "<%s> " nick)
                         'face (if encrypted face (or plaintext-face face))
-                        'rear-nonsticky t)))
-  (setq jabber-chat--wrap-prefix-column (current-column)))
+                        'rear-nonsticky t))))
 
 (defun jabber-chat-print-prompt (msg timestamp delayed dont-print-nick-p)
   "Print prompt for received message MSG."
