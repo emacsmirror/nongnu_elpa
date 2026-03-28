@@ -935,10 +935,11 @@ JC is the Jabber connection."
                  (jabber-muc-read-my-nickname account group)))
            t)))
   (cond
-   ;; Already joined: open buffer, verify membership in background.
+   ;; Already joined: open buffer, sync and verify membership.
    ((jabber-muc-joined-p group jc)
     (when popup
       (switch-to-buffer (jabber-muc-create-buffer jc group)))
+    (jabber-mam-muc-joined jc group)
     (jabber-muc--self-ping-one jc group))
    ;; Skip disco check if configured.
    (jabber-muc-disable-disco-check
