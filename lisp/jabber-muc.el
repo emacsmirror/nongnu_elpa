@@ -301,6 +301,7 @@ The format is that of `mode-line-format' and `header-line-format'."
                   (timestamp delayed))
 (declare-function jabber-omemo--send-muc "jabber-omemo.el" (jc body))
 (declare-function jabber-omemo--prefetch-sessions "jabber-omemo" (jc jid))
+(declare-function jabber-omemo--prefetch-muc-sessions "jabber-omemo" (jc group))
 (declare-function jabber-openpgp--send-muc "jabber-openpgp.el" (jc body))
 (declare-function jabber-openpgp-legacy--send-muc "jabber-openpgp-legacy.el" (jc body))
 (declare-function jabber-chat--decrypt-if-needed "jabber-chat.el" (jc xml-data))
@@ -612,16 +613,26 @@ Return nil if nothing known about that combination."
     (when whichparticipants
       (cdr (assoc nickname whichparticipants)))))
 
+(defun jabber-muc--merge-plist (old new)
+  "Merge NEW plist into OLD, returning the result.
+Keys in NEW overwrite OLD.  Keys in OLD not present in NEW are preserved."
+  (let ((result (copy-sequence (or old '()))))
+    (cl-loop for (key val) on new by #'cddr
+             do (setq result (plist-put result key val)))
+    result))
+
 (defun jabber-muc-modify-participant (group nickname new-plist)
-  "Assign properties in NEW-PLIST to NICKNAME in GROUP."
+  "Assign properties in NEW-PLIST to NICKNAME in GROUP.
+Existing properties not present in NEW-PLIST are preserved."
   (let ((participants (assoc group jabber-muc-participants)))
     ;; either we have a list of participants already...
     (if participants
 	(let ((participant (assoc nickname participants)))
 	  ;; and maybe this participant is already in the list
 	  (if participant
-	      ;; if so, just update role, affiliation, etc.
-	      (setf (cdr participant) new-plist)
+	      ;; if so, merge to preserve keys like jid across updates
+	      (setf (cdr participant)
+		    (jabber-muc--merge-plist (cdr participant) new-plist))
 	    (push (cons nickname new-plist) (cdr participants))))
       ;; or we don't
       (push (cons group (list (cons nickname new-plist))) jabber-muc-participants))))
@@ -1625,7 +1636,10 @@ X-MUC, ACTOR, REASON and OUR-NICKNAME come from the stanza."
       ;; of whether there was an affiliation delta report.
       (when self-p
         (with-current-buffer buffer
-          (jabber-muc--enter-extra-notices nickname status-codes))))))
+          (jabber-muc--enter-extra-notices nickname status-codes)
+          (when (and (eq jabber-chat-encryption 'omemo)
+                     (fboundp 'jabber-omemo--prefetch-muc-sessions))
+            (jabber-omemo--prefetch-muc-sessions jc group)))))))
 
 (defun jabber-muc-process-presence (jc presence)
   (let* ((from (jabber-xml-get-attribute presence 'from))
