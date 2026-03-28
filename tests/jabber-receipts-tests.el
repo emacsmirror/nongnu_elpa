@@ -257,13 +257,13 @@
           ;; Store 3 outgoing messages
           (jabber-db-store-message "me@example.com" "them@example.com"
                                   "out" "chat" "msg1" 1000
-                                  nil "id-1" nil nil nil nil nil)
+                                  nil "id-1" )
           (jabber-db-store-message "me@example.com" "them@example.com"
                                   "out" "chat" "msg2" 1001
-                                  nil "id-2" nil nil nil nil nil)
+                                  nil "id-2" )
           (jabber-db-store-message "me@example.com" "them@example.com"
                                   "out" "chat" "msg3" 1002
-                                  nil "id-3" nil nil nil nil nil)
+                                  nil "id-3" )
           ;; Mark all as delivered
           (jabber-db-update-receipt "id-1" "delivered_at" 1010)
           (jabber-db-update-receipt "id-2" "delivered_at" 1011)
@@ -294,13 +294,13 @@
           (jabber-db-ensure-open)
           (jabber-db-store-message "me@example.com" "them@example.com"
                                   "out" "chat" "msg1" 1000
-                                  nil "id-1" nil nil nil nil nil)
+                                  nil "id-1" )
           (jabber-db-store-message "me@example.com" "them@example.com"
                                   "out" "chat" "msg2" 1001
-                                  nil "id-2" nil nil nil nil nil)
+                                  nil "id-2" )
           (jabber-db-store-message "me@example.com" "them@example.com"
                                   "out" "chat" "msg3" 1002
-                                  nil "id-3" nil nil nil nil nil)
+                                  nil "id-3" )
           ;; Only mark msg1 and msg3 as delivered (msg2 undelivered)
           (jabber-db-update-receipt "id-1" "delivered_at" 1010)
           (jabber-db-update-receipt "id-3" "delivered_at" 1012)

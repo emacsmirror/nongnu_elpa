@@ -545,7 +545,8 @@ and tears down on exit."
 
 (ert-deftest jabber-db-test-row-to-plist-incoming-chat ()
   "Incoming chat message builds correct plist."
-  (let* ((row '("me@example.com" "alice@example.com" "in"
+  ;;  id  account               peer                  dir  body     ts          resource  type
+  (let* ((row '(1 "me@example.com" "alice@example.com" "in"
                 "Hello!" 1700000000 "mobile" "chat"))
          (plist (jabber-db--row-to-plist row)))
     (should (string= "alice@example.com/mobile" (plist-get plist :from)))
@@ -557,21 +558,21 @@ and tears down on exit."
 
 (ert-deftest jabber-db-test-row-to-plist-incoming-no-resource ()
   "Incoming message without resource uses bare JID as :from."
-  (let* ((row '("me@example.com" "alice@example.com" "in"
+  (let* ((row '(2 "me@example.com" "alice@example.com" "in"
                 "Hi" 1700000000 nil "chat"))
          (plist (jabber-db--row-to-plist row)))
     (should (string= "alice@example.com" (plist-get plist :from)))))
 
 (ert-deftest jabber-db-test-row-to-plist-outgoing ()
   "Outgoing message uses account JID as :from."
-  (let* ((row '("me@example.com" "alice@example.com" "out"
+  (let* ((row '(3 "me@example.com" "alice@example.com" "out"
                 "Bye!" 1700000000 nil "chat"))
          (plist (jabber-db--row-to-plist row)))
     (should (string= "me@example.com" (plist-get plist :from)))))
 
 (ert-deftest jabber-db-test-row-to-plist-groupchat ()
   "Groupchat message has msg-type groupchat."
-  (let* ((row '("me@example.com" "room@conf.example.com" "in"
+  (let* ((row '(4 "me@example.com" "room@conf.example.com" "in"
                 "Hello room" 1700000000 "Alice" "groupchat"))
          (plist (jabber-db--row-to-plist row)))
     (should (string= "groupchat" (plist-get plist :msg-type)))
@@ -579,22 +580,23 @@ and tears down on exit."
 
 (ert-deftest jabber-db-test-row-to-plist-nil-body ()
   "Nil body is converted to empty string."
-  (let* ((row '("me@example.com" "alice@example.com" "in"
+  (let* ((row '(5 "me@example.com" "alice@example.com" "in"
                 nil 1700000000 nil "chat"))
          (plist (jabber-db--row-to-plist row)))
     (should (string= "" (plist-get plist :body)))))
 
 (ert-deftest jabber-db-test-row-to-plist-encrypted-flag ()
   "Encrypted flag is correctly converted to boolean."
-  (let* ((row '("me@example.com" "alice@example.com" "in"
-                "Secret" 1700000000 nil "chat" nil nil 1))
+  ;;  id  account               peer                  dir  body     ts          resource type encrypted
+  (let* ((row '(6 "me@example.com" "alice@example.com" "in"
+                "Secret" 1700000000 nil "chat" 1))
          (plist (jabber-db--row-to-plist row)))
     (should (eq t (plist-get plist :encrypted)))))
 
 (ert-deftest jabber-db-test-row-to-plist-not-encrypted ()
   "Zero encrypted flag yields nil."
-  (let* ((row '("me@example.com" "alice@example.com" "in"
-                "Plain" 1700000000 nil "chat" nil nil 0))
+  (let* ((row '(7 "me@example.com" "alice@example.com" "in"
+                "Plain" 1700000000 nil "chat" 0))
          (plist (jabber-db--row-to-plist row)))
     (should-not (plist-get plist :encrypted))))
 
@@ -1000,7 +1002,7 @@ the corrected jabber-muc-create-buffer order."
     (jabber-db-store-message "me@x.com" "friend@x.com" "in" "chat"
                              "hello there" 1700000000
                              "res" "stanza-1" "srv-1"
-                             nil nil nil t)
+                             nil nil t)
     ;; Should have exactly one row with the decrypted body
     (let ((rows (sqlite-select (jabber-db-ensure-open)
                                "SELECT body FROM message WHERE stanza_id = ?"
@@ -1017,7 +1019,7 @@ the corrected jabber-muc-create-buffer order."
     (jabber-db-store-message "me@x.com" "friend@x.com" "in" "chat"
                              "decrypted text" 1700000000
                              "res" nil "srv-2"
-                             nil nil nil t)
+                             nil nil t)
     (let ((rows (sqlite-select (jabber-db-ensure-open)
                                "SELECT body FROM message WHERE server_id = ?"
                                '("srv-2"))))
@@ -1082,7 +1084,7 @@ the corrected jabber-muc-create-buffer order."
     (jabber-db-store-message "me@x.com" "friend@x.com" "in" "chat"
                              "decrypted" 1700000100
                              "res" "stanza-6" "srv-6"
-                             nil nil nil t)
+                             nil nil t)
     (let ((rows (sqlite-select (jabber-db-ensure-open)
                                "SELECT body, timestamp FROM message WHERE stanza_id = ?"
                                '("stanza-6"))))
@@ -1139,7 +1141,7 @@ the corrected jabber-muc-create-buffer order."
          (delete-directory jabber-db-test--dir t)))))
 
 (ert-deftest jabber-db-test-v1-to-v2-migration ()
-  "Migrating from v1 adds occupant_id and drops raw_xml."
+  "Migrating from v1 adds occupant_id, drops raw_xml, and runs through v3."
   (skip-unless (fboundp 'sqlite-open))
   (jabber-db-test-with-v1-db
     ;; Insert a v1 row with raw_xml
@@ -1151,7 +1153,7 @@ VALUES ('me@x.com', 'friend@x.com', 'in', 'chat', 'hello', 1000, '<msg/>')")
     ;; Open via jabber-db which triggers migration
     (jabber-db-ensure-open)
     (let ((version (caar (sqlite-select jabber-db--connection "PRAGMA user_version"))))
-      (should (= 2 version)))
+      (should (= jabber-db--schema-version version)))
     ;; occupant_id column exists (NULL for old rows)
     (let ((rows (sqlite-select jabber-db--connection
                                "SELECT occupant_id FROM message LIMIT 1")))
@@ -1295,6 +1297,203 @@ VALUES ('me@x.com', 'friend@x.com', 'in', 'chat', 'preserved', 2000, 'laptop')")
                      "SELECT retracted_by FROM message WHERE server_id = ?"
                      '("srv-pres-1")))))
       (should (string= "room@x.com/mod" (car row))))))
+
+;;; Group: message_oob child table
+
+(ert-deftest jabber-db-test-oob-table-exists ()
+  "The message_oob table and index exist in fresh databases."
+  (jabber-db-test-with-db
+    (let ((tables (mapcar #'car
+                          (sqlite-select jabber-db--connection
+                            "SELECT name FROM sqlite_master WHERE type='table'"))))
+      (should (member "message_oob" tables)))
+    (let ((indexes (mapcar #'car
+                           (sqlite-select jabber-db--connection
+                             "SELECT name FROM sqlite_master WHERE type='index'"))))
+      (should (member "idx_oob_message_id" indexes)))))
+
+(ert-deftest jabber-db-test-store-single-oob ()
+  "Storing a message with one OOB entry creates a child row."
+  (jabber-db-test-with-db
+    (let ((ts (floor (float-time))))
+      (jabber-db-store-message
+       "me@example.com" "friend@example.com" "in" "chat"
+       "Check this out" ts nil "id-oob-1" nil nil
+       '(("https://example.com/file.pdf" . "A PDF")))
+      (let ((rows (sqlite-select jabber-db--connection
+                   "SELECT url, desc FROM message_oob")))
+        (should (= 1 (length rows)))
+        (should (string= "https://example.com/file.pdf" (caar rows)))
+        (should (string= "A PDF" (cadar rows)))))))
+
+(ert-deftest jabber-db-test-store-multiple-oob ()
+  "Storing a message with multiple OOB entries creates multiple child rows."
+  (jabber-db-test-with-db
+    (let ((ts (floor (float-time))))
+      (jabber-db-store-message
+       "me@example.com" "friend@example.com" "in" "chat"
+       "Attachments" ts nil "id-oob-multi" nil nil
+       '(("https://example.com/a.jpg" . "Photo A")
+         ("https://example.com/b.pdf" . nil)
+         ("https://example.com/c.mp3" . "Audio")))
+      (let ((rows (sqlite-select jabber-db--connection
+                   "SELECT url, desc FROM message_oob ORDER BY id")))
+        (should (= 3 (length rows)))
+        (should (string= "https://example.com/a.jpg" (car (nth 0 rows))))
+        (should (string= "Photo A" (cadr (nth 0 rows))))
+        (should (string= "https://example.com/b.pdf" (car (nth 1 rows))))
+        (should (null (cadr (nth 1 rows))))
+        (should (string= "https://example.com/c.mp3" (car (nth 2 rows))))))))
+
+(ert-deftest jabber-db-test-store-nil-oob ()
+  "Storing a message with nil OOB creates no child rows."
+  (jabber-db-test-with-db
+    (let ((ts (floor (float-time))))
+      (jabber-db-store-message
+       "me@example.com" "friend@example.com" "in" "chat"
+       "Plain text" ts nil "id-no-oob")
+      (let ((rows (sqlite-select jabber-db--connection
+                   "SELECT count(*) FROM message_oob")))
+        (should (= 0 (caar rows)))))))
+
+(ert-deftest jabber-db-test-backlog-oob-entries ()
+  "Backlog returns :oob-entries with correct data."
+  (jabber-db-test-with-db
+    (let ((ts (floor (float-time))))
+      (jabber-db-store-message
+       "me@example.com" "friend@example.com" "in" "chat"
+       "File" ts nil "id-back-oob" nil nil
+       '(("https://example.com/a.pdf" . "Doc A")
+         ("https://example.com/b.png" . nil)))
+      (let* ((entries (jabber-db-backlog "me@example.com" "friend@example.com"))
+             (entry (car entries))
+             (oob (plist-get entry :oob-entries)))
+        (should (= 2 (length oob)))
+        (should (string= "https://example.com/a.pdf" (caar oob)))
+        (should (string= "Doc A" (cdar oob)))
+        (should (string= "https://example.com/b.png" (car (cadr oob))))
+        (should (null (cdr (cadr oob))))))))
+
+(ert-deftest jabber-db-test-backlog-oob-compat ()
+  "Backlog sets :oob-url and :oob-desc from first entry for compat."
+  (jabber-db-test-with-db
+    (let ((ts (floor (float-time))))
+      (jabber-db-store-message
+       "me@example.com" "friend@example.com" "in" "chat"
+       "File" ts nil "id-compat-oob" nil nil
+       '(("https://example.com/first.pdf" . "First")
+         ("https://example.com/second.pdf" . "Second")))
+      (let* ((entries (jabber-db-backlog "me@example.com" "friend@example.com"))
+             (entry (car entries)))
+        (should (string= "https://example.com/first.pdf"
+                         (plist-get entry :oob-url)))
+        (should (string= "First" (plist-get entry :oob-desc)))))))
+
+(ert-deftest jabber-db-test-backlog-no-oob ()
+  "Backlog returns nil :oob-entries for messages without OOB."
+  (jabber-db-test-with-db
+    (let ((ts (floor (float-time))))
+      (jabber-db-store-message
+       "me@example.com" "friend@example.com" "in" "chat"
+       "Plain" ts nil "id-nooob")
+      (let* ((entries (jabber-db-backlog "me@example.com" "friend@example.com"))
+             (entry (car entries)))
+        (should (null (plist-get entry :oob-entries)))
+        (should (null (plist-get entry :oob-url)))))))
+
+(ert-deftest jabber-db-test-oob-cascade-delete ()
+  "Deleting a message cascades to message_oob rows."
+  (jabber-db-test-with-db
+    (let ((ts (floor (float-time))))
+      (jabber-db-store-message
+       "me@example.com" "peer@example.com" "in" "chat"
+       "File" ts nil "id-cascade" nil nil
+       '(("https://example.com/x.pdf" . "X")))
+      (jabber-db-delete-peer-messages "me@example.com" "peer@example.com")
+      (should (= 0 (caar (sqlite-select jabber-db--connection
+                           "SELECT count(*) FROM message_oob")))))))
+
+(ert-deftest jabber-db-test-migration-v2-to-v3 ()
+  "Migration v2->v3 moves OOB data to child table and drops old columns."
+  (let* ((jabber-db-test--dir (make-temp-file "jabber-db-test" t))
+         (jabber-db-path (expand-file-name "test.sqlite" jabber-db-test--dir))
+         (jabber-db--connection nil)
+         (jabber-backlog-days 3.0)
+         (jabber-backlog-number 10))
+    (unwind-protect
+        (progn
+          ;; Create a v2 database manually.
+          (let ((db (sqlite-open jabber-db-path)))
+            (sqlite-execute db "PRAGMA journal_mode=WAL")
+            (sqlite-execute db "\
+CREATE TABLE message (
+  id INTEGER PRIMARY KEY, account TEXT NOT NULL, peer TEXT NOT NULL,
+  resource TEXT, occupant_id TEXT,
+  direction TEXT NOT NULL, type TEXT, body TEXT,
+  timestamp INTEGER NOT NULL, stanza_id TEXT, server_id TEXT,
+  oob_url TEXT, oob_desc TEXT, encrypted INTEGER DEFAULT 0,
+  delivered_at INTEGER, displayed_at INTEGER,
+  retracted_by TEXT, retraction_reason TEXT, edited INTEGER DEFAULT 0)")
+            ;; Insert a message with OOB data.
+            (sqlite-execute db "\
+INSERT INTO message (account, peer, direction, type, body, timestamp,
+  stanza_id, oob_url, oob_desc)
+VALUES ('me@x.com', 'peer@x.com', 'in', 'chat', 'file', 1000,
+  'sid-1', 'https://example.com/f.pdf', 'A file')")
+            ;; Insert a message without OOB data.
+            (sqlite-execute db "\
+INSERT INTO message (account, peer, direction, type, body, timestamp,
+  stanza_id)
+VALUES ('me@x.com', 'peer@x.com', 'in', 'chat', 'text', 1001,
+  'sid-2')")
+            (sqlite-execute db "PRAGMA user_version=2")
+            (sqlite-close db))
+          ;; Open with migration.
+          (jabber-db-ensure-open)
+          ;; Check version is now 3.
+          (should (= 3 (caar (sqlite-select jabber-db--connection
+                                            "PRAGMA user_version"))))
+          ;; OOB data migrated to child table.
+          (let ((oob-rows (sqlite-select jabber-db--connection
+                           "SELECT url, desc FROM message_oob")))
+            (should (= 1 (length oob-rows)))
+            (should (string= "https://example.com/f.pdf" (caar oob-rows)))
+            (should (string= "A file" (cadar oob-rows))))
+          ;; Old columns should be gone.
+          (let ((cols (mapcar #'car
+                              (sqlite-select jabber-db--connection
+                                "SELECT name FROM pragma_table_info('message')"))))
+            (should-not (member "oob_url" cols))
+            (should-not (member "oob_desc" cols))))
+      (jabber-db-close)
+      (when (file-directory-p jabber-db-test--dir)
+        (delete-directory jabber-db-test--dir t)))))
+
+(ert-deftest jabber-db-test-oob-dedup-replacement ()
+  "Failed-decrypt replacement updates OOB entries."
+  (jabber-db-test-with-db
+    (let ((ts (floor (float-time))))
+      ;; Store with failed decrypt body and OOB.
+      (jabber-db-store-message
+       "me@example.com" "friend@example.com" "in" "chat"
+       "[me@example.com: could not decrypt]" ts nil "id-dec" nil nil
+       '(("https://old.com/x.pdf" . "Old")))
+      ;; Re-store with real body and new OOB entries.
+      (jabber-db-store-message
+       "me@example.com" "friend@example.com" "in" "chat"
+       "Decrypted text" ts nil "id-dec" nil nil
+       '(("https://new.com/a.pdf" . "New A")
+         ("https://new.com/b.pdf" . "New B")))
+      ;; Body should be updated.
+      (let ((body (caar (sqlite-select jabber-db--connection
+                         "SELECT body FROM message WHERE stanza_id = 'id-dec'"))))
+        (should (string= "Decrypted text" body)))
+      ;; OOB entries should be replaced.
+      (let ((oob (sqlite-select jabber-db--connection
+                  "SELECT url, desc FROM message_oob ORDER BY id")))
+        (should (= 2 (length oob)))
+        (should (string= "https://new.com/a.pdf" (car (nth 0 oob))))
+        (should (string= "https://new.com/b.pdf" (car (nth 1 oob))))))))
 
 (provide 'jabber-db-tests)
 

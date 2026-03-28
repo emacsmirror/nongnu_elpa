@@ -50,9 +50,10 @@
 (declare-function jabber-db-store-message "jabber-db"
                   (account peer direction type body timestamp
                            &optional resource stanza-id
-                           server-id occupant-id oob-url oob-desc
+                           server-id occupant-id oob-entries
                            encrypted))
 (declare-function jabber-db--extract-occupant-id "jabber-db" (xml-data))
+(declare-function jabber-db--extract-oob-entries "jabber-db" (xml-data))
 (declare-function jabber-db-last-server-id "jabber-db" (account &optional peer))
 (declare-function jabber-db-ensure-open "jabber-db" ())
 (declare-function jabber-chat--decrypt-if-needed "jabber-chat" (jc xml-data))
@@ -313,18 +314,7 @@ JC is the Jabber connection.  XML-DATA is the stanza."
                     (if (string= direction "out") to from))))
            (timestamp (and stamp (jabber-parse-time stamp)))
            ;; OOB
-           (oob-x (cl-find-if
-                    (lambda (x)
-                      (and (listp x)
-                           (string= (or (jabber-xml-get-attribute x 'xmlns) "")
-                                    "jabber:x:oob")))
-                    (jabber-xml-node-children inner-msg)))
-           (oob-url (when oob-x
-                      (car (jabber-xml-node-children
-                            (car (jabber-xml-get-children oob-x 'url))))))
-           (oob-desc (when oob-x
-                       (car (jabber-xml-node-children
-                             (car (jabber-xml-get-children oob-x 'desc)))))))
+           (oob-entries (jabber-db--extract-oob-entries inner-msg)))
       (if (and peer body)
           (let ((ts (floor (float-time (or timestamp (current-time))))))
             (jabber-db-store-message
@@ -332,7 +322,7 @@ JC is the Jabber connection.  XML-DATA is the stanza."
              (jabber-jid-resource from)
              stanza-id archive-id
              (jabber-db--extract-occupant-id inner-msg)
-             oob-url oob-desc encrypted)
+             oob-entries encrypted)
             ;; Track IDs for sync-buffer reconciliation.
             (when-let* ((sync-data
                          (cdr (assoc qid jabber-mam--sync-received

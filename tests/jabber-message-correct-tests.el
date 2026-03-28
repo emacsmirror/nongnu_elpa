@@ -104,7 +104,7 @@
     (jabber-db-store-message
      "me@example.com" "friend@example.com" "in" "chat"
      "Original body" (floor (float-time))
-     nil "stanza-abc" nil nil nil nil nil)
+     nil "stanza-abc")
     (jabber-db-correct-message "stanza-abc" "Corrected body")
     (let* ((rows (sqlite-select jabber-db--connection
                                 "SELECT body, edited FROM message \
@@ -119,7 +119,7 @@ WHERE stanza_id = 'stanza-abc'"))
     (let* ((ts (floor (float-time))))
       (jabber-db-store-message
        "me@example.com" "friend@example.com" "in" "chat"
-       "Hello" ts nil "stanza-edit-1" nil nil nil nil nil)
+       "Hello" ts nil "stanza-edit-1")
       (jabber-db-correct-message "stanza-edit-1" "Hello fixed")
       (let* ((rows (jabber-db-backlog "me@example.com" "friend@example.com"
                                       1 (- (float-time) 60)))
@@ -141,7 +141,7 @@ WHERE stanza_id = 'stanza-abc'"))
     (let* ((ts (floor (float-time))))
       (jabber-db-store-message
        "me@example.com" "friend@example.com" "in" "chat"
-       "Hello" ts nil "stanza-plain-1" nil nil nil nil nil)
+       "Hello" ts nil "stanza-plain-1")
       (let* ((rows (jabber-db-backlog "me@example.com" "friend@example.com"
                                       1 (- (float-time) 60)))
              (plist (car rows)))
@@ -397,7 +397,7 @@ jabber-correct-last-message must pick up the original id."
     (jabber-db-store-message
      "me@example.com" "friend@example.com" "in" "chat"
      "Original" (floor (float-time))
-     nil "stanza-nil-body" nil nil nil nil nil)
+     nil "stanza-nil-body")
     ;; Should not signal -- nil body is a valid (if odd) correction
     (jabber-db-correct-message "stanza-nil-body" nil)
     (let* ((rows (sqlite-select jabber-db--connection
@@ -457,7 +457,7 @@ against the account bare JID and accepted."
     (jabber-db-store-message
      "me@example.com" "alice@example.com" "out" "chat"
      "Sent by me" (floor (float-time))
-     nil "stanza-outgoing" nil nil nil nil nil)
+     nil "stanza-outgoing")
     ;; The lookup returns the account JID for outgoing messages
     (should (equal "me@example.com"
                    (jabber-db-message-sender-by-stanza-id "stanza-outgoing")))))

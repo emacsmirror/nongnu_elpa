@@ -104,8 +104,6 @@ in the message history.")
   body         TEXT,
   timestamp    INTEGER NOT NULL,
   encrypted    INTEGER DEFAULT 0,
-  oob_url      TEXT,
-  oob_desc     TEXT,
   delivered_at INTEGER,
   displayed_at INTEGER,
   retracted_by TEXT,
@@ -179,7 +177,14 @@ END"
   account TEXT NOT NULL,
   peer TEXT NOT NULL,
   encryption TEXT DEFAULT 'default',
-  PRIMARY KEY (account, peer))")
+  PRIMARY KEY (account, peer))"
+    "CREATE TABLE IF NOT EXISTS message_oob (
+  id         INTEGER PRIMARY KEY,
+  message_id INTEGER NOT NULL REFERENCES message(id) ON DELETE CASCADE,
+  url        TEXT NOT NULL,
+  desc       TEXT)"
+    "CREATE INDEX IF NOT EXISTS idx_oob_message_id
+  ON message_oob(message_id)")
   "DDL statements for the latest database schema.")
 
 (defun jabber-db--init-schema (db)
@@ -187,7 +192,7 @@ END"
   (dolist (ddl jabber-db--schema-ddl)
     (sqlite-execute db ddl)))
 
-(defconst jabber-db--schema-version 2
+(defconst jabber-db--schema-version 3
   "Current schema version.
 Bump this when adding migrations.  A database whose version
 exceeds this value is from a newer (or development) build and
@@ -228,7 +233,24 @@ delete %s manually to continue"
 CREATE INDEX IF NOT EXISTS idx_msg_occupant_id
   ON message(account, peer, occupant_id) WHERE occupant_id IS NOT NULL")
       (sqlite-execute db "PRAGMA user_version=2")
-      (setq version 2))))
+      (setq version 2))
+    (when (= version 2)
+      (sqlite-execute db "\
+CREATE TABLE IF NOT EXISTS message_oob (
+  id         INTEGER PRIMARY KEY,
+  message_id INTEGER NOT NULL REFERENCES message(id) ON DELETE CASCADE,
+  url        TEXT NOT NULL,
+  desc       TEXT)")
+      (sqlite-execute db "\
+CREATE INDEX IF NOT EXISTS idx_oob_message_id
+  ON message_oob(message_id)")
+      (sqlite-execute db "\
+INSERT INTO message_oob (message_id, url, desc)
+  SELECT id, oob_url, oob_desc FROM message WHERE oob_url IS NOT NULL")
+      (sqlite-execute db "ALTER TABLE message DROP COLUMN oob_url")
+      (sqlite-execute db "ALTER TABLE message DROP COLUMN oob_desc")
+      (sqlite-execute db "PRAGMA user_version=3")
+      (setq version 3))))
 
 (defun jabber-db-ensure-open ()
   "Open the SQLite database, creating it if needed.  Idempotent.
@@ -246,6 +268,7 @@ Return the database connection, or nil if storage is disabled."
         (setq jabber-db--connection db))
       (sqlite-execute jabber-db--connection "PRAGMA journal_mode=WAL")
       (sqlite-execute jabber-db--connection "PRAGMA synchronous=NORMAL")
+      (sqlite-execute jabber-db--connection "PRAGMA foreign_keys=ON")
       (jabber-db--migrate jabber-db--connection))
     jabber-db--connection))
 
@@ -296,7 +319,7 @@ SELECT encryption FROM chat_settings
 
 (defun jabber-db-store-message (account peer direction type body timestamp
                                         &optional resource stanza-id
-                                        server-id occupant-id oob-url oob-desc
+                                        server-id occupant-id oob-entries
                                         encrypted)
   "Store a message in the database.
 ACCOUNT is the bare JID of the local account.
@@ -309,8 +332,8 @@ Optional RESOURCE is the sender resource.
 Optional STANZA-ID is the XEP-0359 origin id.
 Optional SERVER-ID is the XEP-0359 server-assigned id.
 Optional OCCUPANT-ID is the XEP-0421 occupant id.
-Optional OOB-URL is the jabber:x:oob URL.
-Optional OOB-DESC is the jabber:x:oob description.
+Optional OOB-ENTRIES is a list of (URL . DESC) cons cells for
+jabber:x:oob elements.
 Optional ENCRYPTED is non-nil if the message was OMEMO-encrypted."
   (when-let* ((db (jabber-db-ensure-open)))
     (let ((dup-id-col
@@ -341,11 +364,17 @@ WHERE account = ? AND peer = ? AND timestamp = ? AND body = ? LIMIT 1"
          db
          "INSERT INTO message \
 (account, peer, resource, occupant_id, direction, type, body, timestamp, \
-stanza_id, server_id, oob_url, oob_desc, encrypted) \
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+stanza_id, server_id, encrypted) \
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
          (list account peer resource occupant-id direction type body timestamp
-               stanza-id server-id oob-url oob-desc
-               (if encrypted 1 0))))
+               stanza-id server-id (if encrypted 1 0)))
+        (when oob-entries
+          (let ((msg-id (caar (sqlite-select db "SELECT last_insert_rowid()"))))
+            (dolist (entry oob-entries)
+              (sqlite-execute
+               db
+               "INSERT INTO message_oob (message_id, url, desc) VALUES (?, ?, ?)"
+               (list msg-id (car entry) (cdr entry)))))))
        ;; Duplicate by server-side ID: normalize timestamp to the
        ;; server's value so message order is consistent across
        ;; devices.  Also replace failed-decrypt placeholders.
@@ -370,12 +399,27 @@ WHERE %s = ? AND account = ? AND timestamp != ?"
             ;; Replace failed-decrypt placeholder if new body is real text.
             (when (and body
                        (not (string-match-p "\\`: could not decrypt\\]" body)))
-              (sqlite-execute
-               db
-               (format "UPDATE message SET body = ?, oob_url = ?, oob_desc = ? \
-WHERE %s = ? AND account = ? AND body LIKE '%%: could not decrypt]'"
-                       dup-id-col)
-               (list body oob-url oob-desc id-val account))))))
+              (let ((msg-id
+                     (caar (sqlite-select
+                            db
+                            (format "SELECT id FROM message \
+WHERE %s = ? AND account = ? AND body LIKE '%%: could not decrypt]' LIMIT 1"
+                                    dup-id-col)
+                            (list id-val account)))))
+                (when msg-id
+                  (sqlite-execute
+                   db "UPDATE message SET body = ? WHERE id = ?"
+                   (list body msg-id))
+                  ;; Replace OOB entries for this message.
+                  (sqlite-execute
+                   db "DELETE FROM message_oob WHERE message_id = ?"
+                   (list msg-id))
+                  (dolist (entry oob-entries)
+                    (sqlite-execute
+                     db
+                     "INSERT INTO message_oob (message_id, url, desc) \
+VALUES (?, ?, ?)"
+                     (list msg-id (car entry) (cdr entry))))))))))
        ;; Content match: upgrade a nil-ID row with server-assigned IDs.
        ((eq dup-id-col 'content)
         (when (or stanza-id server-id)
@@ -473,15 +517,17 @@ FROM message WHERE stanza_id = ? LIMIT 1"
 
 (defun jabber-db--row-to-plist (row)
   "Convert a backlog ROW to a message plist.
-ROW columns match the SELECT in `jabber-db-backlog'."
-  (seq-let (account peer direction body timestamp resource type
-            oob-url oob-desc encrypted stanza-id delivered-at
+ROW columns match the SELECT in `jabber-db-backlog'.
+The :oob-entries key is populated later by `jabber-db--attach-oob-entries'."
+  (seq-let (id account peer direction body timestamp resource type
+            encrypted stanza-id delivered-at
             displayed-at server-id retracted-by retraction-reason edited)
       row
     (let ((from (if (string= direction "in")
                     (if resource (concat peer "/" resource) peer)
                   account)))
-      (list :id stanza-id
+      (list :db-id id
+            :id stanza-id
             :server-id server-id
             :from from
             :body (or body "")
@@ -495,12 +541,43 @@ ROW columns match the SELECT in `jabber-db-backlog'."
             :edited (and edited (not (zerop edited)))
             :direction direction
             :msg-type type
-            :oob-url oob-url
-            :oob-desc oob-desc
+            :oob-entries nil
+            :oob-url nil
+            :oob-desc nil
             :error-text nil
             :status (cond
                      (displayed-at :displayed)
                      (delivered-at :delivered))))))
+
+(defun jabber-db--attach-oob-entries (db plists)
+  "Batch-query OOB entries and attach to PLISTS.
+DB is the SQLite connection.  Each plist must have a :db-id key.
+Sets :oob-entries, :oob-url, and :oob-desc on each plist."
+  (when plists
+    (let* ((ids (cl-loop for p in plists
+                         for id = (plist-get p :db-id)
+                         when id collect id))
+           (oob-rows
+            (when ids
+              (sqlite-select
+               db
+               (format "SELECT message_id, url, desc FROM message_oob \
+WHERE message_id IN (%s) ORDER BY message_id, id"
+                       (mapconcat (lambda (id) (number-to-string id))
+                                  ids ",")))))
+           (grouped (make-hash-table :test #'eql)))
+      (dolist (row oob-rows)
+        (let ((msg-id (nth 0 row))
+              (url (nth 1 row))
+              (desc (nth 2 row)))
+          (push (cons url desc) (gethash msg-id grouped))))
+      (dolist (p plists)
+        (when-let* ((db-id (plist-get p :db-id)))
+          (let ((entries (nreverse (gethash db-id grouped))))
+            (plist-put p :oob-entries entries)
+            (plist-put p :oob-url (caar entries))
+            (plist-put p :oob-desc (cdar entries)))))))
+  plists)
 
 (defun jabber-db-backlog (account peer &optional count start-time resource)
   "Return the last COUNT messages for PEER on ACCOUNT.
@@ -518,27 +595,23 @@ This is used for MUC private message buffers."
                     (jabber-backlog-days
                      (floor (- (float-time) (* jabber-backlog-days 86400.0))))
                     (t 0)))
+           (base-cols "SELECT id, account, peer, direction, body, timestamp, \
+resource, type, encrypted, stanza_id, delivered_at, displayed_at, \
+server_id, retracted_by, retraction_reason, edited FROM message")
            (sql (if resource
-                    "SELECT account, peer, direction, body, timestamp, resource, type, \
-oob_url, oob_desc, encrypted, stanza_id, delivered_at, displayed_at, \
-server_id, retracted_by, retraction_reason, edited \
-FROM message \
-WHERE account = ? AND peer = ? AND type = 'chat' \
-AND resource = ? AND timestamp >= ? \
-ORDER BY timestamp DESC LIMIT ?"
-                  "SELECT account, peer, direction, body, timestamp, resource, type, \
-oob_url, oob_desc, encrypted, stanza_id, delivered_at, displayed_at, \
-server_id, retracted_by, retraction_reason, edited \
-FROM message \
-WHERE account = ? AND peer = ? AND timestamp >= ? \
-ORDER BY timestamp DESC LIMIT ?"))
+                    (concat base-cols " WHERE account = ? AND peer = ? \
+AND type = 'chat' AND resource = ? AND timestamp >= ? \
+ORDER BY timestamp DESC LIMIT ?")
+                  (concat base-cols " WHERE account = ? AND peer = ? \
+AND timestamp >= ? ORDER BY timestamp DESC LIMIT ?")))
            (params (if resource
                       (list account peer resource cutoff
                             (if (eq n t) -1 n))
                     (list account peer cutoff
                           (if (eq n t) -1 n))))
-           (rows (sqlite-select db sql params)))
-      (mapcar #'jabber-db--row-to-plist rows))))
+           (rows (sqlite-select db sql params))
+           (plists (mapcar #'jabber-db--row-to-plist rows)))
+      (jabber-db--attach-oob-entries db plists))))
 
 (defun jabber-db--raw-row-to-plist (row)
   "Convert a raw query ROW to a plist.
@@ -649,6 +722,22 @@ ORDER BY id DESC LIMIT 1"
   (jabber-xml-get-attribute
    (jabber-xml-child-with-xmlns xml-data "urn:xmpp:occupant-id:0") 'id))
 
+(defun jabber-db--extract-oob-entries (xml-data)
+  "Extract all jabber:x:oob entries from XML-DATA.
+Returns a list of (URL . DESC) cons cells, or nil."
+  (let (entries)
+    (dolist (child (jabber-xml-node-children xml-data))
+      (when (and (listp child)
+                 (string= (jabber-xml-get-attribute child 'xmlns)
+                          jabber-oob-xmlns))
+        (let ((url (car (jabber-xml-node-children
+                         (car (jabber-xml-get-children child 'url)))))
+              (desc (car (jabber-xml-node-children
+                          (car (jabber-xml-get-children child 'desc))))))
+          (when url
+            (push (cons url desc) entries)))))
+    (nreverse entries)))
+
 (defun jabber-db--message-handler (jc xml-data)
   "Store incoming message in the database.
 JC is the Jabber connection.
@@ -673,18 +762,7 @@ XML-DATA is the parsed stanza."
                                   (jabber-muc-joined-p
                                    (jabber-jid-user from))))))
               (jabber-xml-get-attribute sid-el 'id)))
-           (oob-x (cl-find-if
-                    (lambda (x)
-                      (and (listp x)
-                           (string= (jabber-xml-get-attribute x 'xmlns)
-                                    jabber-oob-xmlns)))
-                    (jabber-xml-node-children xml-data)))
-           (oob-url (when oob-x
-                      (car (jabber-xml-node-children
-                            (car (jabber-xml-get-children oob-x 'url))))))
-           (oob-desc (when oob-x
-                       (car (jabber-xml-node-children
-                             (car (jabber-xml-get-children oob-x 'desc))))))
+           (oob-entries (jabber-db--extract-oob-entries xml-data))
            (encrypted (and (or (jabber-xml-child-with-xmlns
                                xml-data "eu.siacs.conversations.axolotl")
                               (jabber-xml-child-with-xmlns
@@ -704,7 +782,7 @@ XML-DATA is the parsed stanza."
          stanza-id
          server-id
          (jabber-db--extract-occupant-id xml-data)
-         oob-url oob-desc
+         oob-entries
          encrypted)))))
 
 (defun jabber-db--outgoing-handler (body id)
@@ -722,7 +800,7 @@ Called from `jabber-chat-send-hooks'."
      (when (jabber-muc-sender-p jabber-chatting-with)
        (jabber-jid-resource jabber-chatting-with))
      id
-     nil nil nil nil
+     nil nil nil
      (memq jabber-chat-encryption '(omemo openpgp openpgp-legacy))))
   nil)
 

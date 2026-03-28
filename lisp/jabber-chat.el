@@ -236,7 +236,7 @@ added to the outgoing message.")
 (declare-function jabber-db-store-message "jabber-db.el"
                   (account peer direction type body timestamp
                            &optional resource stanza-id
-                           server-id occupant-id oob-url oob-desc
+                           server-id occupant-id oob-entries
                            encrypted))
 (declare-function jabber-db--extract-occupant-id "jabber-db.el" (xml-data))
 (declare-function jabber-mam-fetch-peer-history "jabber-mam"
@@ -557,7 +557,7 @@ Direction is determined by comparing the sender to our bare JID."
        (floor (float-time (or timestamp (current-time))))
        (when from (jabber-jid-resource from))
        stanza-id
-       nil (jabber-db--extract-occupant-id xml-data) nil nil
+       nil (jabber-db--extract-occupant-id xml-data) nil
        encrypted))))
 
 (defun jabber-chat--select-buffer (jc from &optional carbon-buffer)
@@ -809,6 +809,20 @@ found."
     (car (jabber-xml-node-children
           (car (jabber-xml-get-children oob-node child))))))
 
+(defun jabber-chat--extract-oob-entries (xml-data)
+  "Extract all jabber:x:oob entries from XML-DATA.
+Returns a list of (URL . DESC) cons cells, or nil."
+  (let (entries)
+    (dolist (child (jabber-xml-node-children xml-data))
+      (when (and (listp child)
+                 (string= (jabber-xml-get-attribute child 'xmlns)
+                          jabber-oob-xmlns))
+        (let ((url (jabber-chat--oob-field child 'url))
+              (desc (jabber-chat--oob-field child 'desc)))
+          (when url
+            (push (cons url desc) entries)))))
+    (nreverse entries)))
+
 (defun jabber-chat--has-muc-invite-p (xml-data)
   "Return non-nil if XML-DATA contains a MUC invitation."
   (let ((muc-x (jabber-xml-child-with-xmlns
@@ -819,7 +833,7 @@ found."
   "Build a message plist from the fields in XML-DATA.
 DELAYED marks the message as delayed unconditionally."
   (let* ((msg-timestamp (jabber-message-timestamp xml-data))
-         (oob-x (jabber-xml-child-with-xmlns xml-data jabber-oob-xmlns))
+         (oob-entries (jabber-chat--extract-oob-entries xml-data))
          (error-node (car (jabber-xml-get-children xml-data 'error)))
          (sid-el (jabber-xml-child-with-xmlns xml-data "urn:xmpp:sid:0"))
          (reply-el (jabber-xml-child-with-xmlns xml-data "urn:xmpp:reply:0"))
@@ -840,8 +854,9 @@ DELAYED marks the message as delayed unconditionally."
      :encrypted (and (jabber-xml-child-with-xmlns
                       xml-data "eu.siacs.conversations.axolotl")
                      t)
-     :oob-url (jabber-chat--oob-field oob-x 'url)
-     :oob-desc (jabber-chat--oob-field oob-x 'desc)
+     :oob-entries oob-entries
+     :oob-url (caar oob-entries)
+     :oob-desc (cdar oob-entries)
      :error-text (when error-node
                    (jabber-parse-error error-node))
      :reply-to-id (when reply-el
@@ -1216,20 +1231,26 @@ When ENCRYPTED, `jabber-chat-encrypted-indicator' is prepended."
       t)))
 
 (defun jabber-chat-print-url (msg _who mode)
-  "Print OOB URL from message plist MSG.
+  "Print OOB URLs from message plist MSG.
 Skips printing when the body already contains the URL to avoid
 duplication (e.g. HTTP Upload messages)."
-  (let ((url (plist-get msg :oob-url))
-        (body (plist-get msg :body)))
-    (when (and url (not (equal body url)))
-      (when (eql mode :insert)
-        (let ((desc (plist-get msg :oob-desc)))
-          (insert (format "\n%s%s<%s>"
-                          (propertize
-                           "URL: " 'face 'jabber-chat-nick-system)
-                          (if (stringp desc) (concat desc " ") "")
-                          url))))
-      t)))
+  (let ((entries (or (plist-get msg :oob-entries)
+                     (when-let* ((url (plist-get msg :oob-url)))
+                       (list (cons url (plist-get msg :oob-desc))))))
+        (body (plist-get msg :body))
+        (printed nil))
+    (dolist (entry entries)
+      (let ((url (car entry))
+            (desc (cdr entry)))
+        (when (and url (not (equal body url)))
+          (when (eql mode :insert)
+            (insert (format "\n%s%s<%s>"
+                            (propertize
+                             "URL: " 'face 'jabber-chat-nick-system)
+                            (if (stringp desc) (concat desc " ") "")
+                            url)))
+          (setq printed t))))
+    printed))
 
 (defun jabber-chat--parse-aesgcm-url (url)
   "Parse an aesgcm:// URL into a plist.
@@ -1473,24 +1494,25 @@ When the image arrives the URL text is deleted and the image inserted."
 Runs after `jabber-chat-goto-address' so the goto-address overlay
 exists when we set our keymap as its parent."
   (when (eql mode :insert)
-    (let ((oob-url (plist-get msg :oob-url)))
-      (when (and oob-url (not (jabber-chat--image-url-p oob-url)))
-        (save-excursion
-          (when (search-backward oob-url nil t)
-            (let ((beg (match-beginning 0))
-                  (end (match-end 0))
-                  (inhibit-read-only t))
-              (put-text-property beg end 'jabber-chat-file-url oob-url)
-              ;; goto-address places an overlay with its own keymap that
-              ;; shadows text-property keymaps.  Set ours as parent so
-              ;; RET falls through to jabber-chat-url-action-at-point.
-              (let ((ov (seq-find (lambda (o) (overlay-get o 'keymap))
-                                  (overlays-in beg end))))
-                (if ov
-                    (set-keymap-parent (overlay-get ov 'keymap)
-                                      jabber-chat-url-keymap)
-                  (put-text-property beg end 'keymap
-                                     jabber-chat-url-keymap))))))))))
+    (let ((entries (or (plist-get msg :oob-entries)
+                       (when-let* ((url (plist-get msg :oob-url)))
+                         (list (cons url nil))))))
+      (dolist (entry entries)
+        (let ((oob-url (car entry)))
+          (when (and oob-url (not (jabber-chat--image-url-p oob-url)))
+            (save-excursion
+              (when (search-backward oob-url nil t)
+                (let ((beg (match-beginning 0))
+                      (end (match-end 0))
+                      (inhibit-read-only t))
+                  (put-text-property beg end 'jabber-chat-file-url oob-url)
+                  (let ((ov (seq-find (lambda (o) (overlay-get o 'keymap))
+                                      (overlays-in beg end))))
+                    (if ov
+                        (set-keymap-parent (overlay-get ov 'keymap)
+                                          jabber-chat-url-keymap)
+                      (put-text-property beg end 'keymap
+                                         jabber-chat-url-keymap))))))))))))
 
 (defconst jabber-chat--aesgcm-url-re
   "aesgcm://[^ \t\n<>\"#]+#\\(?:[[:xdigit:]]\\{88\\}\\|[[:xdigit:]]\\{96\\}\\)\\b"
