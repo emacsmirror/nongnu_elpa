@@ -403,9 +403,9 @@ Updates the in-memory cache and database."
        (when callback
          (funcall callback ids))))
    (lambda (_jc xml-data _closure)
-     (warn "jabber-omemo: failed to fetch device list for %s: %s"
-           jid (jabber-parse-error
-                (jabber-iq-error xml-data)))
+     (message "jabber-omemo: failed to fetch device list for %s: %s"
+              jid (jabber-parse-error
+                   (jabber-iq-error xml-data)))
      (when callback
        (funcall callback nil)))))
 
