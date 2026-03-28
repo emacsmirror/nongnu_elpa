@@ -68,6 +68,7 @@ previous sequence detect the mismatch and stop.")
 (declare-function jabber-blocking-toggle-chat-peer "jabber-blocking" (jc))
 (declare-function jabber-mam-sync-buffer "jabber-mam" (count))
 (declare-function jabber-moderation-retract "jabber-moderation" ())
+(declare-function jabber-moderation-retract-by-occupant "jabber-moderation" ())
 (declare-function jabber-chat-reply "jabber-message-reply" ())
 (declare-function jabber-chat-cancel-reply "jabber-message-reply" ())
 (declare-function jabber-jid-user "jabber-util" (jid))
@@ -325,7 +326,8 @@ Return a positive integer, or nil if -n is unset or empty."
     ("r" "Reply to message" jabber-chat-reply)]
    ["MUC"
     ("m" "MUC operations..." jabber-muc-menu)
-    ("M" "Retract message at point" jabber-moderation-retract)]
+    ("M" "Retract message at point" jabber-moderation-retract)
+    ("X" "Retract all by occupant" jabber-moderation-retract-by-occupant)]
    ["Buffer"
     ("-n" jabber-chat:-n)
     ("R" "Refresh" jabber-chat--refresh-suffix)
