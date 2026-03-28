@@ -38,12 +38,16 @@
 (declare-function jabber-jid-user "jabber-util" (jid))
 (declare-function jabber-jid-resource "jabber-util" (jid))
 (declare-function jabber-muc-find-buffer "jabber-muc" (group))
+(declare-function jabber-muc-nickname "jabber-muc" (group &optional jc))
 (declare-function jabber-chat-ewoc-find-by-id "jabber-chatbuffer" (stanza-id))
 (declare-function jabber-send-iq "jabber-iq"
                   (jc to type query success-callback success-closure-data
                    error-callback error-closure-data &optional result-id))
 (declare-function jabber-report-success "jabber-util" (_jc xml-data context))
 (declare-function jabber-db-retract-message "jabber-db" (server-id retracted-by &optional reason))
+(declare-function jabber-db-occupant-id-by-server-id "jabber-db" (server-id))
+(declare-function jabber-db-server-ids-by-occupant-id "jabber-db" (account peer occupant-id))
+(declare-function jabber-connection-bare-jid "jabber-util" (jc))
 
 (defvar jabber-message-chain)           ; jabber-core.el
 (defvar jabber-chat-ewoc)              ; jabber-chatbuffer.el
@@ -71,26 +75,25 @@ the original message in the MUC buffer and replace it with a tombstone."
               ;; Only accept retractions from the MUC service itself
               ;; (bare room JID, no resource).
               ((not (jabber-jid-resource from))))
-    (let* ((moderator (jabber-xml-get-attribute moderated 'by))
+    (let* ((moderator
+             (or (jabber-xml-get-attribute moderated 'by)
+                 ;; Prosody sends the v0 <apply-to>/<moderated by="...">
+                 ;; with the moderator JID but omits it from the v1
+                 ;; <retract>/<moderated> element.  Fall back to v0.
+                 (when-let* ((apply-to (jabber-xml-child-with-xmlns
+                                        xml-data "urn:xmpp:fasten:0"))
+                             (mod-v0 (car (jabber-xml-get-children
+                                           apply-to 'moderated))))
+                   (jabber-xml-get-attribute mod-v0 'by))))
            (reason-el (car (jabber-xml-get-children retract 'reason)))
            (reason (car (jabber-xml-node-children reason-el)))
            (buf (jabber-muc-find-buffer room)))
-      (jabber-db-retract-message stanza-id moderator reason)
+      (when moderator
+        (jabber-db-retract-message stanza-id moderator reason))
       (when buf
         (with-current-buffer buf
-          (when-let* ((node (jabber-chat-ewoc-find-by-id stanza-id))
-                      (data (ewoc-data node))
-                      (msg (cadr data))
-                      ;; XEP-0425 §5 MUST: only process if the ID is the
-                      ;; server-assigned stanza-id (MUC-assigned via XEP-0359),
-                      ;; not a client-generated message id.
-                      ((equal stanza-id (plist-get msg :server-id))))
-            (setq msg (plist-put msg :retracted t))
-            (setq msg (plist-put msg :retracted-by moderator))
-            (setq msg (plist-put msg :retraction-reason reason))
-            (setcar (cdr data) msg)
-            (let ((inhibit-read-only t))
-              (ewoc-invalidate jabber-chat-ewoc node))))))
+          (jabber-moderation--mark-ewoc-retracted
+           stanza-id moderator reason))))
     t))
 
 (add-to-list 'jabber-message-chain #'jabber-moderation--handle-message)
@@ -99,6 +102,39 @@ the original message in the MUC buffer and replace it with a tombstone."
 ;; handle tombstones.  The moderate namespace is a MUC-service feature
 ;; and MUST NOT be advertised by clients.
 (jabber-disco-advertise-feature jabber-moderation-retract-xmlns)
+
+(defun jabber-moderation--mark-ewoc-retracted (server-id retracted-by reason)
+  "Mark the ewoc node with SERVER-ID as retracted in the current buffer.
+RETRACTED-BY and REASON are stored on the message plist."
+  (when-let* ((node (jabber-chat-ewoc-find-by-id server-id))
+              (data (ewoc-data node))
+              (msg (cadr data))
+              ((equal server-id (plist-get msg :server-id))))
+    (setq msg (plist-put msg :retracted t))
+    (setq msg (plist-put msg :retracted-by retracted-by))
+    (setq msg (plist-put msg :retraction-reason reason))
+    (setcar (cdr data) msg)
+    (let ((inhibit-read-only t))
+      (ewoc-invalidate jabber-chat-ewoc node))))
+
+(defun jabber-moderation--send-retract (jc room server-id &optional reason)
+  "Send a moderation IQ to retract SERVER-ID in ROOM on JC.
+Also marks the message as retracted locally in the DB and ewoc.
+Optional REASON is a human-readable string."
+  (let ((moderator (concat room "/" (jabber-muc-nickname room jc))))
+    (jabber-db-retract-message server-id moderator reason)
+    (when-let* ((buf (jabber-muc-find-buffer room)))
+      (with-current-buffer buf
+        (jabber-moderation--mark-ewoc-retracted server-id moderator reason))))
+  (jabber-send-iq
+   jc room "set"
+   `(moderate ((id . ,server-id)
+               (xmlns . ,jabber-moderation-xmlns))
+              (retract ((xmlns . ,jabber-moderation-retract-xmlns)))
+              ,@(when (and reason (not (string-empty-p reason)))
+                  `((reason () ,reason))))
+   #'jabber-report-success "Message retraction"
+   #'jabber-report-success "Message retraction"))
 
 (defun jabber-moderation-retract ()
   "Retract the MUC message at point via XEP-0425 moderation.
@@ -114,15 +150,39 @@ message under point.  Requires moderator privileges."
     (unless server-id
       (user-error "No server-assigned stanza ID on this message"))
     (let ((reason (read-string "Reason (empty for none): ")))
-      (jabber-send-iq
-       jabber-buffer-connection jabber-group "set"
-       `(moderate ((id . ,server-id)
-                   (xmlns . ,jabber-moderation-xmlns))
-                  (retract ((xmlns . ,jabber-moderation-retract-xmlns)))
-                  ,@(when (not (string-empty-p reason))
-                      `((reason () ,reason))))
-       #'jabber-report-success "Message retraction"
-       #'jabber-report-success "Message retraction"))))
+      (jabber-moderation--send-retract
+       jabber-buffer-connection jabber-group server-id reason))))
+
+(defun jabber-moderation-retract-by-occupant ()
+  "Retract all MUC messages from the occupant at point.
+Uses XEP-0421 occupant-id to find all messages, sends
+individual moderation IQs for each."
+  (interactive)
+  (unless (bound-and-true-p jabber-group)
+    (user-error "Not in a MUC buffer"))
+  (let* ((node (ewoc-locate jabber-chat-ewoc (point)))
+         (data (and node (ewoc-data node)))
+         (msg (and data (listp (cadr data)) (cadr data)))
+         (server-id (and msg (plist-get msg :server-id))))
+    (unless server-id
+      (user-error "No server-assigned stanza ID on this message"))
+    (let ((occupant-id (jabber-db-occupant-id-by-server-id server-id)))
+      (unless occupant-id
+        (user-error "No occupant-id for this message"))
+      (let* ((account (jabber-connection-bare-jid jabber-buffer-connection))
+             (ids (jabber-db-server-ids-by-occupant-id
+                   account jabber-group occupant-id))
+             (count (length ids)))
+        (unless ids
+          (user-error "No retractable messages for this occupant"))
+        (when (y-or-n-p (format "Retract %d message%s from this occupant? "
+                                count (if (= count 1) "" "s")))
+          (let ((reason (read-string "Reason (empty for none): ")))
+            (dolist (id ids)
+              (jabber-moderation--send-retract
+               jabber-buffer-connection jabber-group id reason))
+            (message "Sent %d retraction request%s"
+                     count (if (= count 1) "" "s"))))))))
 
 (provide 'jabber-moderation)
 ;;; jabber-moderation.el ends here
