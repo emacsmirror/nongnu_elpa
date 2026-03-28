@@ -399,7 +399,7 @@ EWOC-PP is the pretty-printer function for the message EWOC."
 (declare-function jabber-muc-create-buffer "jabber-muc" (jc group))
 (declare-function jabber-muc-sender-p "jabber-muc" (jid))
 (declare-function jabber-db-backlog "jabber-db"
-                  (account peer &optional count start-time resource))
+                  (account peer &optional count start-time resource msg-type))
 (declare-function jabber-chat-insert-backlog-entry "jabber-chat"
                   (msg-plist))
 (declare-function jabber-chat--insert-backlog-chunked "jabber-chat"
@@ -446,7 +446,11 @@ COUNT overrides `jabber-backlog-number' for this refresh."
                                 (not (bound-and-true-p jabber-group))
                                 (jabber-muc-sender-p jabber-chatting-with))
                        (jabber-jid-resource jabber-chatting-with)))
-           (entries (jabber-db-backlog account peer count nil resource)))
+           (msg-type (when (and (bound-and-true-p jabber-group)
+                                (not resource))
+                       "groupchat"))
+           (entries (jabber-db-backlog account peer count nil resource
+                                      msg-type)))
       (if (null entries)
           (setq jabber-chat-earliest-backlog (float-time))
         (setq jabber-chat-earliest-backlog

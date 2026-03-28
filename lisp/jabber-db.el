@@ -579,7 +579,8 @@ WHERE message_id IN (%s) ORDER BY message_id, id"
             (plist-put p :oob-desc (cdar entries)))))))
   plists)
 
-(defun jabber-db-backlog (account peer &optional count start-time resource)
+(defun jabber-db-backlog (account peer &optional count start-time resource
+                                  msg-type)
   "Return the last COUNT messages for PEER on ACCOUNT.
 Messages are returned as plists with keys :from, :body, :timestamp,
 :delayed, :direction, :msg-type, etc.
@@ -587,7 +588,9 @@ COUNT defaults to `jabber-backlog-number'.
 START-TIME is a float-time; only messages after this time are returned.
 If nil, `jabber-backlog-days' is used to compute the cutoff.
 RESOURCE, when non-nil, filters to messages from that resource only.
-This is used for MUC private message buffers."
+This is used for MUC private message buffers.
+MSG-TYPE, when non-nil, filters to messages of that type only
+\(e.g. \"groupchat\" for MUC buffers)."
   (when-let* ((db (jabber-db-ensure-open)))
     (let* ((n (or count jabber-backlog-number))
            (cutoff (cond
@@ -598,17 +601,28 @@ This is used for MUC private message buffers."
            (base-cols "SELECT id, account, peer, direction, body, timestamp, \
 resource, type, encrypted, stanza_id, delivered_at, displayed_at, \
 server_id, retracted_by, retraction_reason, edited FROM message")
-           (sql (if resource
-                    (concat base-cols " WHERE account = ? AND peer = ? \
-AND type = 'chat' AND resource = ? AND timestamp >= ? \
-ORDER BY timestamp DESC LIMIT ?")
+           (sql (cond
+                 (resource
                   (concat base-cols " WHERE account = ? AND peer = ? \
-AND timestamp >= ? ORDER BY timestamp DESC LIMIT ?")))
-           (params (if resource
-                      (list account peer resource cutoff
-                            (if (eq n t) -1 n))
-                    (list account peer cutoff
-                          (if (eq n t) -1 n))))
+AND type = 'chat' AND resource = ? AND timestamp >= ? \
+ORDER BY timestamp DESC LIMIT ?"))
+                 (msg-type
+                  (concat base-cols " WHERE account = ? AND peer = ? \
+AND type = ? AND timestamp >= ? \
+ORDER BY timestamp DESC LIMIT ?"))
+                 (t
+                  (concat base-cols " WHERE account = ? AND peer = ? \
+AND timestamp >= ? ORDER BY timestamp DESC LIMIT ?"))))
+           (params (cond
+                    (resource
+                     (list account peer resource cutoff
+                           (if (eq n t) -1 n)))
+                    (msg-type
+                     (list account peer msg-type cutoff
+                           (if (eq n t) -1 n)))
+                    (t
+                     (list account peer cutoff
+                           (if (eq n t) -1 n)))))
            (rows (sqlite-select db sql params))
            (plists (mapcar #'jabber-db--row-to-plist rows)))
       (jabber-db--attach-oob-entries db plists))))

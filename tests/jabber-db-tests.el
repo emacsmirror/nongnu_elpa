@@ -227,6 +227,29 @@ and tears down on exit."
         (should (string= "Recent" (plist-get (nth 0 entries) :body)))
         (should (string= "Old" (plist-get (nth 1 entries) :body)))))))
 
+(ert-deftest jabber-db-test-backlog-msg-type-filter ()
+  "Backlog with msg-type filters by message type."
+  (jabber-db-test-with-db
+    (let ((jabber-backlog-days 3.0)
+          (jabber-backlog-number 50)
+          (now (floor (float-time))))
+      (jabber-db-store-message "me@x.com" "room@x.com" "in" "groupchat"
+                               "group msg" now "alice")
+      (jabber-db-store-message "me@x.com" "room@x.com" "in" "chat"
+                               "private msg" (1+ now) "bob")
+      ;; Without filter, both messages returned.
+      (should (= 2 (length (jabber-db-backlog "me@x.com" "room@x.com"))))
+      ;; With groupchat filter, only group message returned.
+      (let ((entries (jabber-db-backlog "me@x.com" "room@x.com"
+                                        nil nil nil "groupchat")))
+        (should (= 1 (length entries)))
+        (should (string= "group msg" (plist-get (car entries) :body))))
+      ;; With chat filter, only private message returned.
+      (let ((entries (jabber-db-backlog "me@x.com" "room@x.com"
+                                        nil nil nil "chat")))
+        (should (= 1 (length entries)))
+        (should (string= "private msg" (plist-get (car entries) :body)))))))
+
 ;;; Group 4: FTS search
 
 (ert-deftest jabber-db-test-fts-search ()

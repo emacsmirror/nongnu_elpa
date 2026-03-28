@@ -317,7 +317,7 @@ The format is that of `mode-line-format' and `header-line-format'."
 (declare-function jabber-mam-muc-joined "jabber-mam.el" (jc group))
 (declare-function jabber-mam--cancel-muc-query "jabber-mam.el" (room))
 (declare-function jabber-db-backlog "jabber-db.el"
-                  (account peer &optional count start-time resource))
+                  (account peer &optional count start-time resource msg-type))
 (declare-function jabber-message-correct--replace-id "jabber-message-correct"
                   (xml-data))
 (declare-function jabber-message-correct--apply "jabber-message-correct"
@@ -389,7 +389,8 @@ JC is the Jabber connection."
       (when (null jabber-chat-earliest-backlog)
         (let ((backlog-entries (jabber-db-backlog
                                 (jabber-connection-bare-jid jc)
-                                (jabber-jid-user group))))
+                                (jabber-jid-user group)
+                                nil nil nil "groupchat")))
           (if (null backlog-entries)
               (setq jabber-chat-earliest-backlog (float-time))
             (setq jabber-chat-earliest-backlog
