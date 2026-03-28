@@ -433,15 +433,19 @@ AND stanza_id IS NULL AND server_id IS NULL"
 
 ;;; Receipt updates
 
-(defun jabber-db-update-receipt (stanza-id column timestamp)
-  "Set COLUMN to TIMESTAMP for message with STANZA-ID.
+(defun jabber-db-update-receipt (account peer stanza-id column timestamp)
+  "Set COLUMN to TIMESTAMP for outgoing message with STANZA-ID.
+ACCOUNT and PEER scope the update to prevent cross-conversation
+collision.  Only updates outgoing messages (direction=out).
 COLUMN is \"delivered_at\" or \"displayed_at\".
 The IS NULL guard prevents overwriting an earlier timestamp."
   (when (and jabber-db--connection stanza-id)
     (sqlite-execute jabber-db--connection
-                    (format "UPDATE message SET %s = ? WHERE stanza_id = ? AND %s IS NULL"
+                    (format "UPDATE message SET %s = ? \
+WHERE account = ? AND peer = ? AND stanza_id = ? \
+AND direction = 'out' AND %s IS NULL"
                             column column)
-                    (list timestamp stanza-id))))
+                    (list timestamp account peer stanza-id))))
 
 (defun jabber-db-cascade-displayed (account peer timestamp ref-timestamp)
   "Mark all outgoing messages before REF-TIMESTAMP as displayed.

@@ -81,9 +81,15 @@ Incoming receipts are always processed regardless of this setting."
 
 (defun jabber-receipts--send-hook (_body _id)
   "Add receipt request and markable elements to outgoing messages.
-Added to `jabber-chat-send-hooks'."
-  `((request ((xmlns . ,jabber-receipts-xmlns)))
-    (markable ((xmlns . ,jabber-chat-markers-xmlns)))))
+Added to `jabber-chat-send-hooks'.
+Per XEP-0184, receipt requests are NOT RECOMMENDED in MUC
+groupchat because every occupant would respond.  Chat markers
+\(XEP-0333) are fine in MUC."
+  (if (bound-and-true-p jabber-group)
+      ;; MUC groupchat: markable only, no receipt request.
+      `((markable ((xmlns . ,jabber-chat-markers-xmlns))))
+    `((request ((xmlns . ,jabber-receipts-xmlns)))
+      (markable ((xmlns . ,jabber-chat-markers-xmlns))))))
 
 (add-hook 'jabber-chat-send-hooks #'jabber-receipts--send-hook)
 
@@ -102,38 +108,46 @@ For regular JIDs, look up the 1:1 chat buffer."
 (defun jabber-receipts--handle-message (jc xml-data)
   "Process incoming delivery receipts and chat markers in XML-DATA.
 JC is the connection.  Added to `jabber-message-chain'."
-  (let ((from (jabber-xml-get-attribute xml-data 'from)))
-    ;; XEP-0184: <received xmlns='urn:xmpp:receipts' id='...'/>
-    (when-let* ((received (jabber-xml-child-with-xmlns
-                           xml-data jabber-receipts-xmlns))
-                ((eq (jabber-xml-node-name received) 'received))
-                (ref-id (jabber-xml-get-attribute received 'id)))
-      (jabber-receipts--update-status jc from ref-id "delivered_at"))
-    ;; XEP-0333: <displayed xmlns='urn:xmpp:chat-markers:0' id='...'/>
-    (when-let* ((marker (jabber-xml-child-with-xmlns
-                         xml-data jabber-chat-markers-xmlns))
-                ((eq (jabber-xml-node-name marker) 'displayed))
-                (ref-id (jabber-xml-get-attribute marker 'id)))
-      (jabber-receipts--update-status jc from ref-id "displayed_at"))
+  (let* ((from (jabber-xml-get-attribute xml-data 'from))
+         (type (jabber-xml-get-attribute xml-data 'type))
+         (groupchat-p (string= type "groupchat")))
+    ;; Skip incoming receipt/marker processing for groupchat stanzas.
+    ;; MUC markers require XEP-0359 stanza-id matching and per-occupant
+    ;; tracking that we don't yet support; processing them could corrupt
+    ;; 1:1 receipt state via ID collisions.
+    (unless groupchat-p
+      ;; XEP-0184: <received xmlns='urn:xmpp:receipts' id='...'/>
+      (when-let* ((received (jabber-xml-child-with-xmlns
+                             xml-data jabber-receipts-xmlns))
+                  ((eq (jabber-xml-node-name received) 'received))
+                  (ref-id (jabber-xml-get-attribute received 'id)))
+        (jabber-receipts--update-status jc from ref-id "delivered_at"))
+      ;; XEP-0333: <displayed xmlns='urn:xmpp:chat-markers:0' id='...'/>
+      (when-let* ((marker (jabber-xml-child-with-xmlns
+                           xml-data jabber-chat-markers-xmlns))
+                  ((eq (jabber-xml-node-name marker) 'displayed))
+                  (ref-id (jabber-xml-get-attribute marker 'id)))
+        (jabber-receipts--update-status jc from ref-id "displayed_at")))
     ;; Send <received/> back if the message requests it.
-    ;; Skip MAM-replayed messages to avoid sending stale receipts.
+    ;; Skip MAM-replayed messages and groupchat (per XEP-0184).
     (let ((id (jabber-xml-get-attribute xml-data 'id)))
       (when (and jabber-chat-send-receipts
                  id
+                 (not groupchat-p)
                  (not (jabber-xml-get-attribute xml-data 'jabber-mam--origin))
                  (jabber-xml-get-children xml-data 'body)
-                 (or (jabber-xml-child-with-xmlns
-                      xml-data jabber-receipts-xmlns)
-                     (jabber-xml-child-with-xmlns
-                      xml-data jabber-chat-markers-xmlns)))
+                 (let ((req (jabber-xml-child-with-xmlns
+                             xml-data jabber-receipts-xmlns)))
+                   (and req (eq (jabber-xml-node-name req) 'request))))
         (jabber-send-sexp-if-connected
          jc `(message ((to . ,from) (type . "chat"))
                       (received ((xmlns . ,jabber-receipts-xmlns)
                                  (id . ,id)))))))
     ;; Track pending markable message for <displayed/> on visibility.
     ;; If the buffer is already visible, send <displayed/> immediately.
-    ;; Skip MAM-replayed messages.
+    ;; Skip MAM-replayed messages and groupchat.
     (when-let* ((id (jabber-xml-get-attribute xml-data 'id))
+                ((not groupchat-p))
                 ((not (jabber-xml-get-attribute xml-data 'jabber-mam--origin)))
                 ((jabber-xml-get-children xml-data 'body))
                 ((jabber-xml-child-with-xmlns
@@ -150,28 +164,41 @@ JC is the connection.  Added to `jabber-message-chain'."
                   (setq jabber-receipts--pending-displayed-id nil))
               (setq jabber-receipts--pending-displayed-id id))))))))
 
+(defvar-local jabber-receipts--latest-displayed-ts 0
+  "Timestamp of the most recently displayed outgoing message.
+Used to enforce XEP-0333 forward-only rule: displayed markers
+referencing older messages are redundant and MUST be ignored.")
+
 (defun jabber-receipts--update-status (jc from ref-id column)
   "Update receipt status for message REF-ID from FROM on JC.
 COLUMN is \"delivered_at\" or \"displayed_at\"."
   (let ((timestamp (floor (float-time)))
+        (account (jabber-connection-bare-jid jc))
+        (peer (jabber-jid-user from))
         (status (if (string= column "displayed_at") :displayed :delivered)))
-    (jabber-db-update-receipt ref-id column timestamp)
+    (jabber-db-update-receipt account peer ref-id column timestamp)
     (when-let* ((buffer (jabber-receipts--find-buffer from jc)))
       (with-current-buffer buffer
-        (jabber-receipts--update-header-line column timestamp)
         (when-let* ((node (jabber-chat-ewoc-find-by-id ref-id)))
-          (let ((msg (cadr (ewoc-data node)))
-                (inhibit-read-only t))
-            (plist-put msg :status status)
-            (ewoc-invalidate jabber-chat-ewoc node)
-            (when (string= column "displayed_at")
-              (jabber-receipts--cascade-displayed node)
-              (when-let* ((msg-ts (plist-get msg :timestamp)))
-                (jabber-db-cascade-displayed
-                 (jabber-connection-bare-jid jc)
-                 (jabber-jid-user from)
-                 timestamp
-                 (floor (float-time msg-ts)))))))))))
+          (let* ((msg (cadr (ewoc-data node)))
+                 (msg-ts (plist-get msg :timestamp))
+                 (msg-epoch (and msg-ts (floor (float-time msg-ts))))
+                 (inhibit-read-only t))
+            ;; XEP-0333: displayed markers for older messages MUST be
+            ;; ignored (forward-only rule).
+            (when (or (not (string= column "displayed_at"))
+                      (not msg-epoch)
+                      (> msg-epoch jabber-receipts--latest-displayed-ts))
+              (plist-put msg :status status)
+              (ewoc-invalidate jabber-chat-ewoc node)
+              (jabber-receipts--update-header-line column timestamp)
+              (when (string= column "displayed_at")
+                (when msg-epoch
+                  (setq jabber-receipts--latest-displayed-ts msg-epoch))
+                (jabber-receipts--cascade-displayed node)
+                (when msg-epoch
+                  (jabber-db-cascade-displayed
+                   account peer timestamp msg-epoch))))))))))
 
 (defun jabber-receipts--cascade-displayed (node)
   "Walk backward from NODE, promoting :delivered nodes to :displayed.
@@ -195,14 +222,17 @@ also seen.  Only promotes :local nodes whose :status is :delivered."
         (setq prev (ewoc-prev jabber-chat-ewoc prev))))))
 
 (defun jabber-receipts--update-header-line (column timestamp)
-  "Update `jabber-chat-receipt-message' for COLUMN at TIMESTAMP."
+  "Update `jabber-chat-receipt-message' for COLUMN at TIMESTAMP.
+Does not downgrade from \"seen\" to \"delivered\"."
   (let* ((time-str (format-time-string "%H:%M" timestamp))
          (is-seen (string= column "displayed_at"))
          (label (if is-seen "seen" "delivered"))
          (face (if is-seen 'jabber-chat-seen 'jabber-chat-delivered)))
-    (setq jabber-chat-receipt-message
-          (propertize (format " %s %s" label time-str) 'face face))
-    (force-mode-line-update)))
+    (unless (and (not is-seen)
+                 (string-match-p "seen" jabber-chat-receipt-message))
+      (setq jabber-chat-receipt-message
+            (propertize (format " %s %s" label time-str) 'face face))
+      (force-mode-line-update))))
 
 (add-to-list 'jabber-message-chain #'jabber-receipts--handle-message t)
 

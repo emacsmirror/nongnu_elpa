@@ -29,7 +29,7 @@
   (let ((updated-id nil)
         (updated-col nil))
     (cl-letf (((symbol-function 'jabber-db-update-receipt)
-               (lambda (id col _ts)
+               (lambda (_acct _peer id col _ts)
                  (setq updated-id id updated-col col)))
               ((symbol-function 'jabber-connection-bare-jid)
                (lambda (_j) "me@example.com"))
@@ -48,7 +48,7 @@
   (let ((updated-id nil)
         (updated-col nil))
     (cl-letf (((symbol-function 'jabber-db-update-receipt)
-               (lambda (id col _ts)
+               (lambda (_acct _peer id col _ts)
                  (setq updated-id id updated-col col)))
               ((symbol-function 'jabber-connection-bare-jid)
                (lambda (_j) "me@example.com"))
@@ -66,7 +66,7 @@
   "Messages without receipt elements are ignored."
   (let ((updated nil))
     (cl-letf (((symbol-function 'jabber-db-update-receipt)
-               (lambda (&rest _) (setq updated t)))
+               (lambda (&rest _args) (setq updated t)))
               ((symbol-function 'jabber-connection-bare-jid)
                (lambda (_j) "me@example.com")))
       (jabber-receipts--handle-message
@@ -134,6 +134,24 @@
                    (body nil "hello")))))
     (should-not sent-sexp)))
 
+(ert-deftest jabber-receipts-test-no-received-for-markable-only ()
+  "No <received/> sent for messages with only <markable/> but no <request/>."
+  (let ((sent-sexp nil))
+    (cl-letf (((symbol-function 'jabber-send-sexp-if-connected)
+               (lambda (_jc sexp) (setq sent-sexp sexp)))
+              ((symbol-function 'jabber-db-update-receipt) #'ignore)
+              ((symbol-function 'jabber-connection-bare-jid)
+               (lambda (_j) "me@example.com"))
+              ((symbol-function 'jabber-chat-get-buffer)
+               (lambda (_from &optional _jc) "*test-chat*")))
+      (let ((jabber-chat-send-receipts t))
+        (jabber-receipts--handle-message
+         'fake-jc
+         `(message ((from . "them@example.com") (id . "msg-100") (type . "chat"))
+                   (body nil "hello")
+                   (markable ((xmlns . ,jabber-chat-markers-xmlns)))))))
+    (should-not sent-sexp)))
+
 (ert-deftest jabber-receipts-test-markable-sets-pending-id ()
   "Incoming markable message sets pending displayed ID."
   (cl-letf (((symbol-function 'jabber-db-update-receipt) #'ignore)
@@ -171,6 +189,17 @@
     (should (string-match-p "seen" jabber-chat-receipt-message))
     (should (eq 'jabber-chat-seen
                 (get-text-property 0 'face jabber-chat-receipt-message)))))
+
+(ert-deftest jabber-receipts-test-header-line-no-downgrade ()
+  "Header-line does not downgrade from seen to delivered."
+  (with-temp-buffer
+    (setq-local jabber-chat-receipt-message "")
+    (jabber-receipts--update-header-line "displayed_at" 1700000000)
+    (should (string-match-p "seen" jabber-chat-receipt-message))
+    ;; Now try to downgrade to delivered
+    (jabber-receipts--update-header-line "delivered_at" 1700000001)
+    (should (string-match-p "seen" jabber-chat-receipt-message))
+    (should-not (string-match-p "delivered" jabber-chat-receipt-message))))
 
 ;;; Group 5: EWOC cascade
 
@@ -265,9 +294,12 @@
                                   "out" "chat" "msg3" 1002
                                   nil "id-3" )
           ;; Mark all as delivered
-          (jabber-db-update-receipt "id-1" "delivered_at" 1010)
-          (jabber-db-update-receipt "id-2" "delivered_at" 1011)
-          (jabber-db-update-receipt "id-3" "delivered_at" 1012)
+          (jabber-db-update-receipt "me@example.com" "them@example.com"
+                                    "id-1" "delivered_at" 1010)
+          (jabber-db-update-receipt "me@example.com" "them@example.com"
+                                    "id-2" "delivered_at" 1011)
+          (jabber-db-update-receipt "me@example.com" "them@example.com"
+                                    "id-3" "delivered_at" 1012)
           ;; Cascade displayed from msg3
           (jabber-db-cascade-displayed "me@example.com" "them@example.com"
                                        2000 1002)
@@ -302,8 +334,10 @@
                                   "out" "chat" "msg3" 1002
                                   nil "id-3" )
           ;; Only mark msg1 and msg3 as delivered (msg2 undelivered)
-          (jabber-db-update-receipt "id-1" "delivered_at" 1010)
-          (jabber-db-update-receipt "id-3" "delivered_at" 1012)
+          (jabber-db-update-receipt "me@example.com" "them@example.com"
+                                    "id-1" "delivered_at" 1010)
+          (jabber-db-update-receipt "me@example.com" "them@example.com"
+                                    "id-3" "delivered_at" 1012)
           ;; Cascade displayed from msg3
           (jabber-db-cascade-displayed "me@example.com" "them@example.com"
                                        2000 1002)

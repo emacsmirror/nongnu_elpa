@@ -905,23 +905,25 @@ the corrected jabber-muc-create-buffer order."
       (should (equal row '(nil nil))))))
 
 (ert-deftest jabber-db-test-update-receipt-delivered ()
-  "Update delivered_at for a message by stanza_id."
+  "Update delivered_at for an outgoing message by stanza_id."
   (jabber-db-test-with-db
     (jabber-db-store-message "me@example.com" "them@example.com"
                              "out" "chat" "hello" 1000
                              nil "msg-001")
-    (jabber-db-update-receipt "msg-001" "delivered_at" 1001)
+    (jabber-db-update-receipt "me@example.com" "them@example.com"
+                              "msg-001" "delivered_at" 1001)
     (let ((row (car (sqlite-select jabber-db--connection
                      "SELECT delivered_at FROM message WHERE stanza_id='msg-001'"))))
       (should (equal row '(1001))))))
 
 (ert-deftest jabber-db-test-update-receipt-displayed ()
-  "Update displayed_at for a message by stanza_id."
+  "Update displayed_at for an outgoing message by stanza_id."
   (jabber-db-test-with-db
     (jabber-db-store-message "me@example.com" "them@example.com"
                              "out" "chat" "hello" 1000
                              nil "msg-002")
-    (jabber-db-update-receipt "msg-002" "displayed_at" 1002)
+    (jabber-db-update-receipt "me@example.com" "them@example.com"
+                              "msg-002" "displayed_at" 1002)
     (let ((row (car (sqlite-select jabber-db--connection
                      "SELECT displayed_at FROM message WHERE stanza_id='msg-002'"))))
       (should (equal row '(1002))))))
@@ -932,8 +934,10 @@ the corrected jabber-muc-create-buffer order."
     (jabber-db-store-message "me@example.com" "them@example.com"
                              "out" "chat" "hello" 1000
                              nil "msg-003")
-    (jabber-db-update-receipt "msg-003" "delivered_at" 1001)
-    (jabber-db-update-receipt "msg-003" "delivered_at" 9999)
+    (jabber-db-update-receipt "me@example.com" "them@example.com"
+                              "msg-003" "delivered_at" 1001)
+    (jabber-db-update-receipt "me@example.com" "them@example.com"
+                              "msg-003" "delivered_at" 9999)
     (let ((row (car (sqlite-select jabber-db--connection
                      "SELECT delivered_at FROM message WHERE stanza_id='msg-003'"))))
       (should (equal row '(1001))))))
@@ -943,10 +947,38 @@ the corrected jabber-muc-create-buffer order."
   (jabber-db-test-with-db
     (jabber-db-store-message "me@example.com" "them@example.com"
                              "out" "chat" "hello" 1000)
-    (jabber-db-update-receipt nil "delivered_at" 1001)
+    (jabber-db-update-receipt "me@example.com" "them@example.com"
+                              nil "delivered_at" 1001)
     (let ((row (car (sqlite-select jabber-db--connection
                      "SELECT delivered_at FROM message LIMIT 1"))))
       (should (equal row '(nil))))))
+
+(ert-deftest jabber-db-test-update-receipt-scoped-by-peer ()
+  "Receipt update only affects matching account+peer, not other conversations."
+  (jabber-db-test-with-db
+    (jabber-db-store-message "me@example.com" "alice@example.com"
+                             "out" "chat" "hi alice" 1000 nil "msg-same-id")
+    (jabber-db-store-message "me@example.com" "bob@example.com"
+                             "out" "chat" "hi bob" 1001 nil "msg-same-id")
+    (jabber-db-update-receipt "me@example.com" "alice@example.com"
+                              "msg-same-id" "delivered_at" 2000)
+    (let ((alice (caar (sqlite-select jabber-db--connection
+                        "SELECT delivered_at FROM message WHERE peer='alice@example.com'")))
+          (bob (caar (sqlite-select jabber-db--connection
+                      "SELECT delivered_at FROM message WHERE peer='bob@example.com'"))))
+      (should (equal alice 2000))
+      (should (null bob)))))
+
+(ert-deftest jabber-db-test-update-receipt-only-outgoing ()
+  "Receipt update only affects outgoing messages, not incoming."
+  (jabber-db-test-with-db
+    (jabber-db-store-message "me@example.com" "them@example.com"
+                             "in" "chat" "incoming" 1000 nil "msg-in")
+    (jabber-db-update-receipt "me@example.com" "them@example.com"
+                              "msg-in" "delivered_at" 2000)
+    (let ((row (caar (sqlite-select jabber-db--connection
+                      "SELECT delivered_at FROM message WHERE stanza_id='msg-in'"))))
+      (should (null row)))))
 
 ;;; Group 16: Delete peer messages
 
