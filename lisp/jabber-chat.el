@@ -236,8 +236,9 @@ added to the outgoing message.")
 (declare-function jabber-db-store-message "jabber-db.el"
                   (account peer direction type body timestamp
                            &optional resource stanza-id
-                           server-id raw-xml oob-url oob-desc
+                           server-id occupant-id oob-url oob-desc
                            encrypted))
+(declare-function jabber-db--extract-occupant-id "jabber-db.el" (xml-data))
 (declare-function jabber-mam-fetch-peer-history "jabber-mam"
                   (jc peer &optional muc-p callback))
 (declare-function jabber-message-correct--replace-id "jabber-message-correct"
@@ -556,7 +557,7 @@ Direction is determined by comparing the sender to our bare JID."
        (floor (float-time (or timestamp (current-time))))
        (when from (jabber-jid-resource from))
        stanza-id
-       nil nil nil nil
+       nil (jabber-db--extract-occupant-id xml-data) nil nil
        encrypted))))
 
 (defun jabber-chat--select-buffer (jc from &optional carbon-buffer)

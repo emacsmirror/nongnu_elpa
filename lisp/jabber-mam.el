@@ -50,8 +50,9 @@
 (declare-function jabber-db-store-message "jabber-db"
                   (account peer direction type body timestamp
                            &optional resource stanza-id
-                           server-id raw-xml oob-url oob-desc
+                           server-id occupant-id oob-url oob-desc
                            encrypted))
+(declare-function jabber-db--extract-occupant-id "jabber-db" (xml-data))
 (declare-function jabber-db-last-server-id "jabber-db" (account &optional peer))
 (declare-function jabber-db-ensure-open "jabber-db" ())
 (declare-function jabber-chat--decrypt-if-needed "jabber-chat" (jc xml-data))
@@ -329,7 +330,8 @@ JC is the Jabber connection.  XML-DATA is the stanza."
             (jabber-db-store-message
              our-jid peer direction type body ts
              (jabber-jid-resource from)
-             stanza-id archive-id nil
+             stanza-id archive-id
+             (jabber-db--extract-occupant-id inner-msg)
              oob-url oob-desc encrypted)
             ;; Track IDs for sync-buffer reconciliation.
             (when-let* ((sync-data
