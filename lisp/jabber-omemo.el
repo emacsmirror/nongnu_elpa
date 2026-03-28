@@ -71,6 +71,9 @@
 (defvar jabber-muc-participants)
 (defvar jabber-httpupload-pre-upload-transform)
 (defvar jabber-httpupload-send-url-function)
+(defvar jabber-message-reply--id)       ; jabber-message-reply.el
+(defvar jabber-message-reply--jid)      ; jabber-message-reply.el
+(defvar jabber-message-reply--fallback-length) ; jabber-message-reply.el
 
 (unless module-file-suffix
   (error "jabber-omemo requires Emacs compiled with dynamic module support"))
@@ -976,11 +979,20 @@ ID is the stanza id.  Persists to DB immediately.
 Returns the ewoc node, or nil if BUFFER is dead."
   (when (buffer-live-p buffer)
     (with-current-buffer buffer
-      (let ((msg-plist (list :id id
-                             :body body
-                             :timestamp (current-time)
-                             :status :sending
-                             :encrypted t)))
+      (let* ((reply-id (bound-and-true-p jabber-message-reply--id))
+             (reply-jid (bound-and-true-p jabber-message-reply--jid))
+             (fb-len (bound-and-true-p jabber-message-reply--fallback-length))
+             (display-body (if (and fb-len (> fb-len 0) (<= fb-len (length body)))
+                               (string-trim-left (substring body fb-len))
+                             body))
+             (msg-plist (list :id id
+                              :body display-body
+                              :timestamp (current-time)
+                              :status :sending
+                              :encrypted t)))
+        (when reply-id
+          (plist-put msg-plist :reply-to-id reply-id)
+          (plist-put msg-plist :reply-to-jid reply-jid))
         (jabber-db--outgoing-handler body id)
         (when (run-hook-with-args-until-success
                'jabber-chat-printers msg-plist :local :printp)
