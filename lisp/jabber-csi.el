@@ -62,8 +62,9 @@
            jc `(,state ((xmlns . ,jabber-csi-xmlns)))))))))
 
 (defun jabber-csi--focus-changed ()
-  "Hook for `after-focus-change-function'."
-  (jabber-csi--send-state))
+  "Hook for `after-focus-change-function'.
+Defers to a zero-delay timer to avoid running in a sensitive context."
+  (run-at-time 0 nil #'jabber-csi--send-state))
 
 (defun jabber-csi--on-connect (_jc)
   "Send current CSI state after connection.
