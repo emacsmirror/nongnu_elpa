@@ -120,15 +120,6 @@ If MIME-TYPE is not specified, try to find it from the image data."
                      (symbol-name detected)))))
     (make-avatar :mime-type type :sha1-sum sha1-sum :base64-data base64-data :bytes bytes)))
 
-;; XXX: This function is based on an outdated version of XEP-0084.
-;; (defun jabber-avatar-from-data-node (data-node)
-;;   "Construct an avatar structure from the given <data/> node."
-;;   (jabber-xml-let-attributes
-;;    (content-type id bytes height width) data-node
-;;    (let ((base64-data (car (jabber-xml-node-children data-node))))
-;;      (make-avatar :mime-type content-type :sha1-sum id :bytes bytes
-;; 		  :height height :width width :base64-data base64-data))))
-
 (defun jabber-avatar--line-height ()
   "Return the pixel height of a line, suitable for inline avatars."
   (frame-char-height))
