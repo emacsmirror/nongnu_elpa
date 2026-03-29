@@ -138,11 +138,11 @@ The functions are called with one argument: the connection object."
   "*Hooks run after disconnection."
   :type 'hook)
 
-(defcustom jabber-auto-reconnect nil
+(defcustom jabber-auto-reconnect t
   "Reconnect automatically after losing connection?
-This will be of limited use unless you have the password library
-installed, and have configured it to cache your password
-indefinitely.  See `password-cache' and `password-cache-expiry'."
+When non-nil, attempts to reconnect after an unexpected disconnection,
+using Stream Management resume when available.  Requires that your
+password is accessible via auth-source or cached in memory."
   :type 'boolean)
 
 (defcustom jabber-reconnect-delay 5
