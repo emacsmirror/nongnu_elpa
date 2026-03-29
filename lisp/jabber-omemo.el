@@ -761,12 +761,29 @@ CALLBACK receives a list of (DEVICE-ID . SESSION-PTR)."
 
 ;;; Message encryption XML
 
+(defun jabber-omemo--trusted-sessions (jc sessions)
+  "Filter SESSIONS to exclude devices marked untrusted via JC.
+SESSIONS is a list of (DEVICE-ID . SESSION-PTR).
+Returns the filtered list, dropping any device with trust = -1."
+  (let ((account (jabber-connection-bare-jid jc)))
+    (cl-remove-if
+     (lambda (entry)
+       (let* ((did (car entry))
+              (jid (jabber-omemo--session-jid-for-did jc did))
+              (trust-rec (and jid (jabber-omemo-store-load-trust
+                                   account jid did))))
+         (and trust-rec (= (plist-get trust-rec :trust) -1))))
+     sessions)))
+
 (defun jabber-omemo--build-encrypted-xml (jc sessions enc-result)
   "Build <encrypted> XML sexp for an OMEMO 0.3 message.
 JC is the Jabber connection (for our device ID).
 SESSIONS is a list of (DEVICE-ID . SESSION-PTR) for all recipients
 \(including our own other devices).
 ENC-RESULT is the plist from `jabber-omemo-encrypt-message'."
+  (setq sessions (jabber-omemo--trusted-sessions jc sessions))
+  (unless sessions
+    (user-error "OMEMO: no trusted devices for any recipient"))
   (let* ((our-sid (jabber-omemo--get-device-id jc))
          (key (plist-get enc-result :key))
          (iv (plist-get enc-result :iv))

@@ -333,5 +333,66 @@ Clears OMEMO in-memory caches and tears down on exit."
                'fake-jc "alice@example.com"
                "https://host/file")))
 
+;;; Group 10: Trust filtering
+
+(ert-deftest jabber-omemo-message-test-trusted-sessions-excludes-untrusted ()
+  "trusted-sessions drops devices with trust = -1."
+  (let ((sessions '((100 . fake-ptr-100) (200 . fake-ptr-200) (300 . fake-ptr-300))))
+    (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+               (lambda (_jc) "me@example.com"))
+              ((symbol-function 'jabber-omemo--session-jid-for-did)
+               (lambda (_jc did)
+                 (format "peer%d@example.com" did)))
+              ((symbol-function 'jabber-omemo-store-load-trust)
+               (lambda (_account _jid did)
+                 (pcase did
+                   (100 (list :identity-key "k1" :trust 1 :first-seen 0))
+                   (200 (list :identity-key "k2" :trust -1 :first-seen 0))
+                   (300 (list :identity-key "k3" :trust 2 :first-seen 0))))))
+      (let ((result (jabber-omemo--trusted-sessions 'fake-jc sessions)))
+        (should (= 2 (length result)))
+        (should (assq 100 result))
+        (should-not (assq 200 result))
+        (should (assq 300 result))))))
+
+(ert-deftest jabber-omemo-message-test-trusted-sessions-keeps-undecided ()
+  "trusted-sessions keeps devices with trust = 0 (undecided)."
+  (let ((sessions '((100 . fake-ptr-100))))
+    (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+               (lambda (_jc) "me@example.com"))
+              ((symbol-function 'jabber-omemo--session-jid-for-did)
+               (lambda (_jc _did) "peer@example.com"))
+              ((symbol-function 'jabber-omemo-store-load-trust)
+               (lambda (_account _jid _did)
+                 (list :identity-key "k" :trust 0 :first-seen 0))))
+      (let ((result (jabber-omemo--trusted-sessions 'fake-jc sessions)))
+        (should (= 1 (length result)))))))
+
+(ert-deftest jabber-omemo-message-test-trusted-sessions-keeps-no-trust-record ()
+  "trusted-sessions keeps devices with no trust record."
+  (let ((sessions '((100 . fake-ptr-100))))
+    (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+               (lambda (_jc) "me@example.com"))
+              ((symbol-function 'jabber-omemo--session-jid-for-did)
+               (lambda (_jc _did) "peer@example.com"))
+              ((symbol-function 'jabber-omemo-store-load-trust)
+               (lambda (_account _jid _did) nil)))
+      (let ((result (jabber-omemo--trusted-sessions 'fake-jc sessions)))
+        (should (= 1 (length result)))))))
+
+(ert-deftest jabber-omemo-message-test-build-encrypted-rejects-all-untrusted ()
+  "build-encrypted-xml signals error when all devices are untrusted."
+  (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+             (lambda (_jc) "me@example.com"))
+            ((symbol-function 'jabber-omemo--session-jid-for-did)
+             (lambda (_jc _did) "peer@example.com"))
+            ((symbol-function 'jabber-omemo-store-load-trust)
+             (lambda (_account _jid _did)
+               (list :identity-key "k" :trust -1 :first-seen 0))))
+    (should-error
+     (jabber-omemo--build-encrypted-xml
+      'fake-jc '((100 . fake-ptr)) '(:key "k" :iv "i" :ciphertext "c"))
+     :type 'user-error)))
+
 (provide 'jabber-omemo-message-tests)
 ;;; jabber-omemo-message-tests.el ends here
