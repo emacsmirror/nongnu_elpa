@@ -266,6 +266,27 @@ QUERYID identifies the active query for target lookup."
       (or (string= bare our-jid)
           (jabber-muc-nickname bare)))))
 
+(defun jabber-mam--classify-direction (jc from to type)
+  "Classify message direction and peer from MAM result fields.
+JC is the connection, FROM/TO are stanza JIDs, TYPE is message type.
+Return (DIRECTION . PEER) where DIRECTION is \"in\" or \"out\"."
+  (let* ((our-jid (jabber-connection-bare-jid jc))
+         (groupchat-p (string= type "groupchat"))
+         (direction (if groupchat-p
+                       (let ((nick (jabber-jid-resource from))
+                             (room (jabber-jid-user from)))
+                         (if (and nick
+                                  (jabber-mam--our-muc-nick-p
+                                   room nick jc))
+                             "out" "in"))
+                     (if (string= (jabber-jid-user from) our-jid)
+                         "out" "in")))
+         (peer (if groupchat-p
+                   (jabber-jid-user from)
+                 (jabber-jid-user
+                  (if (string= direction "out") to from)))))
+    (cons direction peer)))
+
 (defun jabber-mam--process-message (jc xml-data)
   "Handle a MAM result <message> from the message chain.
 JC is the Jabber connection.  XML-DATA is the stanza."
@@ -298,20 +319,9 @@ JC is the Jabber connection.  XML-DATA is the stanza."
            (body (and body-el (car (jabber-xml-node-children body-el))))
            (stanza-id (jabber-xml-get-attribute inner-msg 'id))
            (our-jid (jabber-connection-bare-jid jc))
-           (groupchat-p (string= type "groupchat"))
-           (direction (if groupchat-p
-                         (let ((nick (jabber-jid-resource from))
-                               (room (jabber-jid-user from)))
-                           (if (and nick
-                                    (jabber-mam--our-muc-nick-p
-                                     room nick jc))
-                               "out" "in"))
-                       (if (string= (jabber-jid-user from) our-jid)
-                           "out" "in")))
-           (peer (if groupchat-p
-                     (jabber-jid-user from)
-                   (jabber-jid-user
-                    (if (string= direction "out") to from))))
+           (dir-peer (jabber-mam--classify-direction jc from to type))
+           (direction (car dir-peer))
+           (peer (cdr dir-peer))
            (timestamp (and stamp (jabber-parse-time stamp)))
            ;; OOB
            (oob-entries (jabber-db--extract-oob-entries inner-msg)))
