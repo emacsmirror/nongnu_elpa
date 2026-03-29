@@ -21,9 +21,8 @@
 ;; the Free Software Foundation, Inc., 59 Temple Place - Suite 330,
 ;; Boston, MA 02111-1307, USA.
 
-;; TODO
-;; - Currently only active/composing notifications are /sent/ though all 5
-;;   notifications are handled on receipt.
+;; All five chat states (active, composing, paused, inactive, gone) are
+;; sent and received per XEP-0085.
 
 ;;; Code:
 
@@ -115,10 +114,15 @@ It can be sent and cancelled several times.")
 (defvar-local jabber-chatstates-paused-timer nil
   "Timer that counts down from `composing' state to `paused'.")
 
+(defvar-local jabber-chatstates-inactive-timer nil
+  "Timer that counts down from `paused' state to `inactive'.")
+
 (defun jabber-chatstates-stop-timer ()
-  "Stop the `paused' timer."
+  "Stop the `paused' and `inactive' timers."
   (when jabber-chatstates-paused-timer
-    (cancel-timer jabber-chatstates-paused-timer)))
+    (cancel-timer jabber-chatstates-paused-timer))
+  (when jabber-chatstates-inactive-timer
+    (cancel-timer jabber-chatstates-inactive-timer)))
 
 (defun jabber-chatstates-kick-timer ()
   "Start (or restart) the `paused' timer as approriate."
@@ -127,7 +131,7 @@ It can be sent and cancelled several times.")
         (run-with-timer 5 nil #'jabber-chatstates-send-paused)))
 
 (defun jabber-chatstates-send-paused ()
-  "Send a `paused' state notification."
+  "Send a `paused' state notification, then start the inactive timer."
   (when (and jabber-chatstates-confirm jabber-chatting-with)
     (setq jabber-chatstates-composing-sent nil)
     (jabber-send-sexp-if-connected
@@ -135,7 +139,31 @@ It can be sent and cancelled several times.")
      `(message
        ((to . ,jabber-chatting-with)
         (type . "chat"))
-       (paused ((xmlns . ,jabber-chatstates-xmlns)))))))
+       (paused ((xmlns . ,jabber-chatstates-xmlns)))))
+    (setq jabber-chatstates-inactive-timer
+          (run-with-timer 30 nil #'jabber-chatstates-send-inactive))))
+
+(defun jabber-chatstates-send-inactive ()
+  "Send an `inactive' state notification."
+  (when (and jabber-chatstates-confirm jabber-chatting-with)
+    (jabber-send-sexp-if-connected
+     jabber-buffer-connection
+     `(message
+       ((to . ,jabber-chatting-with)
+        (type . "chat"))
+       (inactive ((xmlns . ,jabber-chatstates-xmlns)))))))
+
+(defun jabber-chatstates-send-gone ()
+  "Send a `gone' state notification and cancel timers.
+Added to `kill-buffer-hook' in chat buffers."
+  (when (and jabber-chatstates-confirm jabber-chatting-with)
+    (jabber-chatstates-stop-timer)
+    (jabber-send-sexp-if-connected
+     jabber-buffer-connection
+     `(message
+       ((to . ,jabber-chatting-with)
+        (type . "chat"))
+       (gone ((xmlns . ,jabber-chatstates-xmlns)))))))
 
 (defun jabber-chatstates-after-change ()
   (let* ((composing-now (not (= (point-max) jabber-point-insert)))
@@ -175,7 +203,8 @@ It can be sent and cancelled several times.")
 	  ;; Set up hooks for composition notification
 	  (when (and jabber-chatstates-confirm state)
 	    (setq jabber-chatstates-requested t)
-	    (add-hook 'post-command-hook #'jabber-chatstates-after-change nil t))
+	    (add-hook 'post-command-hook #'jabber-chatstates-after-change nil t)
+	    (add-hook 'kill-buffer-hook #'jabber-chatstates-send-gone nil t))
 
 	  (setq jabber-chatstates-last-state state)
 	  (jabber-chatstates--update-ewoc state)))))))
