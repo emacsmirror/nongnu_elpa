@@ -36,6 +36,7 @@
 (require 'jabber-pubsub)
 (require 'jabber-xml)
 (require 'jabber-hints)
+(require 'jabber-eme)
 (require 'jabber-omemo-trust)
 
 (declare-function jabber-connection-bare-jid "jabber-util")
@@ -270,7 +271,7 @@ Returns a string like aesgcm://HOST/PATH#IVHEX_KEYHEX."
   "Publish-options for OMEMO bundle PubSub nodes.")
 
 (defconst jabber-omemo-fallback-body
-  "I sent you an OMEMO encrypted message but your client doesn't seem to support that."
+  "This message is encrypted with OMEMO and could not be displayed."
   "Plaintext fallback body for non-OMEMO clients.")
 
 ;;; In-memory state
@@ -1062,7 +1063,8 @@ inserting a new ewoc entry."
                             (id . ,id))
                            (body () ,jabber-omemo-fallback-body)
                            ,encrypted-xml
-                           ,(jabber-hints-store))))
+                           ,(jabber-hints-store)
+                           ,(jabber-eme-encryption jabber-omemo-xmlns "OMEMO"))))
     (when (buffer-live-p buffer)
       (with-current-buffer buffer
         (dolist (hook jabber-chat-send-hooks)
@@ -1128,7 +1130,8 @@ No local echo: the MUC server mirrors the message back."
                             (id . ,id))
                            (body () ,jabber-omemo-fallback-body)
                            ,encrypted-xml
-                           ,(jabber-hints-store))))
+                           ,(jabber-hints-store)
+                           ,(jabber-eme-encryption jabber-omemo-xmlns "OMEMO"))))
     (dolist (hook jabber-chat-send-hooks)
       (if (eq hook t)
           (when (local-variable-p 'jabber-chat-send-hooks)
