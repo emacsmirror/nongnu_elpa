@@ -51,8 +51,6 @@
 ;; byte-compile warnings. Moreover, it is common practice to define
 ;; variables before its usage.
 
-(defvar jabber-enable-legacy-features-p nil)
-
 ;; This was originally defined in jabber-core.el
 (defvar jabber-process-buffer " *-jabber-process-*"
   "The name of the process buffer.")
