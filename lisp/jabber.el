@@ -183,6 +183,7 @@ configure a Google Talk account like this:
 (require 'jabber-moderation)
 (require 'jabber-message-correct)
 (require 'jabber-message-reply)
+(require 'jabber-styling)
 (require 'jabber-browse)
 (require 'jabber-compose)
 (require 'jabber-muc)
