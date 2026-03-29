@@ -183,7 +183,9 @@ accounts."
 
 (defun jabber-whitespace-ping-do ()
   (dolist (c jabber-connections)
-    (ignore-errors (jabber-send-string c " "))))
+    (condition-case err
+        (jabber-send-string c " ")
+      (error (message "jabber-keepalive: whitespace ping failed: %s" err)))))
 
 (provide 'jabber-keepalive)
 

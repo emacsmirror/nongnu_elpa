@@ -1481,13 +1481,14 @@ When the image arrives the URL text is deleted and the image inserted."
 (defun jabber-chat-goto-address (_msg _who mode)
   "Call `goto-address' on the newly written text."
   (when (eq mode :insert)
-    (ignore-errors
-      (let ((end (point))
-	    (limit (max (- (point) 1000) (1+ (point-min)))))
-	;; We only need to fontify the text written since the last
-	;; prompt.  The prompt has a field property, so we can find it
-	;; using `field-beginning'.
-	(goto-address-fontify (field-beginning nil nil limit) end)))))
+    (condition-case err
+        (let ((end (point))
+	      (limit (max (- (point) 1000) (1+ (point-min)))))
+	  ;; We only need to fontify the text written since the last
+	  ;; prompt.  The prompt has a field property, so we can find it
+	  ;; using `field-beginning'.
+	  (goto-address-fontify (field-beginning nil nil limit) end))
+      (error (message "jabber-chat: goto-address-fontify failed: %s" err)))))
 
 (defun jabber-chat-mark-oob-attachment (msg _who mode)
   "Mark non-image OOB attachment URLs with download keymap.
