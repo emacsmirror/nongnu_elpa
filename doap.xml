@@ -245,10 +245,9 @@
     <implements>
       <xmpp:SupportedXep>
         <xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0085.html"/>
-        <xmpp:status>partial</xmpp:status>
+        <xmpp:status>complete</xmpp:status>
         <xmpp:version>2.1</xmpp:version>
         <xmpp:since>0.8</xmpp:since>
-	<xmpp:note>Currently only active/composing notifications are sent though all five notifications are handled on receipt.</xmpp:note>
       </xmpp:SupportedXep>
     </implements>
     <implements>
@@ -434,6 +433,14 @@
     </implements>
     <implements>
       <xmpp:SupportedXep>
+        <xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0352.html"/>
+        <xmpp:status>complete</xmpp:status>
+        <xmpp:version>1.1.0</xmpp:version>
+        <xmpp:since>NEXT</xmpp:since>
+      </xmpp:SupportedXep>
+    </implements>
+    <implements>
+      <xmpp:SupportedXep>
         <xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0359.html"/>
         <xmpp:status>partial</xmpp:status>
         <xmpp:version>0.7.0</xmpp:version>
@@ -456,6 +463,14 @@
         <xmpp:version>0.6.0</xmpp:version>
         <xmpp:since>NEXT</xmpp:since>
         <xmpp:note>1:1 signcrypt and MUC encrypt-only.  No signature verification on receive, no key fetch command.</xmpp:note>
+      </xmpp:SupportedXep>
+    </implements>
+    <implements>
+      <xmpp:SupportedXep>
+        <xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0380.html"/>
+        <xmpp:status>complete</xmpp:status>
+        <xmpp:version>0.4.0</xmpp:version>
+        <xmpp:since>NEXT</xmpp:since>
       </xmpp:SupportedXep>
     </implements>
     <implements>
