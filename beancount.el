@@ -70,6 +70,35 @@ complete the posting at point. The correct currency is determined
 from the open directive for the relevant account."
   :type 'boolean)
 
+(defgroup beancount-account-types nil
+  "Beancount account type root names."
+  :group 'beancount)
+
+(defcustom beancount-assets "Assets"
+  "Root name for Beancount asset accounts."
+  :type 'string
+  :group 'beancount-account-types)
+
+(defcustom beancount-liabilities "Liabilities"
+  "Root name for Beancount liabilities accounts."
+  :type 'string
+  :group 'beancount-account-types)
+
+(defcustom beancount-equity "Equity"
+  "Root name for Beancount equity accounts."
+  :type 'string
+  :group 'beancount-account-types)
+
+(defcustom beancount-income "Income"
+  "Root name for Beancount income accounts."
+  :type 'string
+  :group 'beancount-account-types)
+
+(defcustom beancount-expenses "Expenses"
+  "Root name for Beancount expenses accounts."
+  :type 'string
+  :group 'beancount-account-types)
+
 (defgroup beancount-faces nil "Beancount mode highlighting" :group 'beancount)
 
 (defface beancount-directive
@@ -182,7 +211,11 @@ _not_ followed by an account.")
   "Directive names that can appear at the beginning of a line.")
 
 (defconst beancount-account-categories
-  '("Assets" "Liabilities" "Equity" "Income" "Expenses"))
+  (list beancount-assets
+        beancount-liabilities
+        beancount-equity
+        beancount-income
+        beancount-expenses))
 
 (defconst beancount-tag-chars "[:alnum:]-_/.")
 
