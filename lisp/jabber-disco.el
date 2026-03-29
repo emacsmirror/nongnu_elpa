@@ -306,84 +306,72 @@ VER is the version string of the CAPS."
 	  ;; No, forget about it for now.
 	  (remhash key jabber-caps-cache))))))
 
+(defun jabber-caps--identity-string (identities)
+  "Build the identity portion of a caps verification string.
+IDENTITIES is a list of <identity> XML nodes.
+Return the concatenated sorted identity entries."
+  (mapconcat
+   (lambda (identity)
+     (jabber-xml-let-attributes (category type xml:lang name) identity
+       (concat category "/" type "/" xml:lang "/" name "<")))
+   (sort identities #'jabber-caps-identity-<)
+   ""))
+
+(defun jabber-caps--feature-string (features)
+  "Build the feature portion of a caps verification string.
+FEATURES is a list of feature var strings.
+Return the concatenated sorted feature entries."
+  (mapconcat (lambda (f) (concat f "<"))
+             (sort features #'string<)
+             ""))
+
+(defun jabber-caps--form-string (forms)
+  "Build the XEP-0128 data form portion of a caps verification string.
+FORMS is a list of <x> XML nodes (already filtered for FORM_TYPE).
+Return the concatenated sorted form entries."
+  (let ((sorted (sort forms (lambda (a b)
+                              (string< (jabber-widget-xdata-formtype a)
+                                       (jabber-widget-xdata-formtype b))))))
+    (mapconcat
+     (lambda (form)
+       (let ((fields (sort (jabber-xml-get-children form 'field)
+                           (lambda (a b)
+                             (string< (jabber-xml-get-attribute a 'var)
+                                      (jabber-xml-get-attribute b 'var))))))
+         (concat
+          (jabber-widget-xdata-formtype form) "<"
+          (mapconcat
+           (lambda (field)
+             (if (string= (jabber-xml-get-attribute field 'var) "FORM_TYPE")
+                 ""
+               (let ((values (sort (mapcar (lambda (v)
+                                             (car (jabber-xml-node-children v)))
+                                           (jabber-xml-get-children field 'value))
+                                   #'string<)))
+                 (concat (jabber-xml-get-attribute field 'var) "<"
+                         (mapconcat (lambda (v) (concat (or v "") "<"))
+                                    values "")))))
+           fields ""))))
+     sorted "")))
+
 (defun jabber-caps-ver-string (query hash)
   "Create an XEP-0115 version string for a QUERY node with a specified HASH."
   ;; XEP-0115, section 5.1
-  ;; 1. Initialize an empty string S.
-  (with-temp-buffer
-    (let* ((identities (jabber-xml-get-children query 'identity))
-	   (disco-features (mapcar (lambda (f) (jabber-xml-get-attribute f 'var))
-			     (jabber-xml-get-children query 'feature)))
-	   (maybe-forms (jabber-xml-get-children query 'x))
-	   (forms (cl-remove-if-not
-		   (lambda (x)
-		     ;; Keep elements that are forms and have a FORM_TYPE,
-		     ;; according to XEP-0128.
-		     (and (string= (jabber-xml-get-xmlns x) jabber-xdata-xmlns)
-			  (jabber-widget-xdata-formtype x)))
-		   maybe-forms)))
-      ;; 2. Sort the service discovery identities [15] by category
-      ;; and then by type and then by xml:lang (if it exists),
-      ;; formatted as CATEGORY '/' [TYPE] '/' [LANG] '/'
-      ;; [NAME]. [16] Note that each slash is included even if the
-      ;; LANG or NAME is not included (in accordance with XEP-0030,
-      ;; the category and type MUST be included.
-      (setq identities (sort identities #'jabber-caps-identity-<))
-      ;; 3. For each identity, append the 'category/type/lang/name' to
-      ;; S, followed by the '<' character.
-      (dolist (identity identities)
-	(jabber-xml-let-attributes (category type xml:lang name) identity
-	  ;; Use `concat' here instead of passing everything to
-	  ;; `insert', since `concat' tolerates nil values.
-	  (insert (concat category "/" type "/" xml:lang "/" name "<"))))
-      ;; 4. Sort the supported service discovery features. [17]
-      (setq disco-features (sort disco-features #'string<))
-      ;; 5. For each feature, append the feature to S, followed by the
-      ;; '<' character.
-      (dolist (f disco-features)
-	(insert f "<"))
-      ;; 6. If the service discovery information response includes
-      ;; XEP-0128 data forms, sort the forms by the FORM_TYPE (i.e.,
-      ;; by the XML character data of the <value/> element).
-      (setq forms (sort forms (lambda (a b)
-				(string< (jabber-widget-xdata-formtype a)
-					 (jabber-widget-xdata-formtype b)))))
-      ;; 7. For each extended service discovery information form:
-      (dolist (form forms)
-	;; Append the XML character data of the FORM_TYPE field's
-	;; <value/> element, followed by the '<' character.
-	(insert (jabber-widget-xdata-formtype form) "<")
-	;; Sort the fields by the value of the "var" attribute.
-	(let ((fields (sort (jabber-xml-get-children form 'field)
-			    (lambda (a b)
-			      (string< (jabber-xml-get-attribute a 'var)
-				       (jabber-xml-get-attribute b 'var))))))
-	  (dolist (field fields)
-	    ;; For each field other than FORM_TYPE:
-	    (unless (string= (jabber-xml-get-attribute field 'var) "FORM_TYPE")
-	      ;; Append the value of the "var" attribute, followed by the '<' character.
-	      (insert (jabber-xml-get-attribute field 'var) "<")
-	      ;; Sort values by the XML character data of the <value/> element.
-	      (let ((values (sort (mapcar (lambda (value)
-					    (car (jabber-xml-node-children value)))
-					  (jabber-xml-get-children field 'value))
-				  #'string<)))
-		;; For each <value/> element, append the XML character
-		;; data, followed by the '<' character.
-		(dolist (value values)
-		  (insert (or value "") "<"))))))))
-
-    ;; 8. Ensure that S is encoded according to the UTF-8 encoding
-    ;; (RFC 3269 [18]).
-    (let ((s (encode-coding-string (buffer-string) 'utf-8 t))
-	  (algorithm (cdr (assoc hash jabber-caps-hash-names))))
-      ;; 9. Compute the verification string by hashing S using the
-      ;; algorithm specified in the 'hash' attribute (e.g., SHA-1 as
-      ;; defined in RFC 3174 [19]). The hashed data MUST be generated
-      ;; with binary output and encoded using Base64 as specified in
-      ;; Section 4 of RFC 4648 [20] (note: the Base64 output MUST NOT
-      ;; include whitespace and MUST set padding bits to zero). [21]
-      (base64-encode-string (jabber-caps--secure-hash algorithm s) t))))
+  (let* ((identities (jabber-xml-get-children query 'identity))
+	 (features (mapcar (lambda (f) (jabber-xml-get-attribute f 'var))
+			    (jabber-xml-get-children query 'feature)))
+	 (forms (cl-remove-if-not
+		 (lambda (x)
+		   (and (string= (jabber-xml-get-xmlns x) jabber-xdata-xmlns)
+			(jabber-widget-xdata-formtype x)))
+		 (jabber-xml-get-children query 'x)))
+	 (s (encode-coding-string
+	     (concat (jabber-caps--identity-string identities)
+		     (jabber-caps--feature-string features)
+		     (jabber-caps--form-string forms))
+	     'utf-8 t))
+	 (algorithm (cdr (assoc hash jabber-caps-hash-names))))
+    (base64-encode-string (jabber-caps--secure-hash algorithm s) t)))
 
 (defun jabber-caps--secure-hash (algorithm string)
   "Compute and return a secure hash from STRING using ALGORITHM."
@@ -466,10 +454,9 @@ obtained from `xml-parse-region'."
   (let* ((to (jabber-xml-get-attribute xml-data 'from))
 	 (id (jabber-xml-get-attribute xml-data 'id))
 	 (xmlns (jabber-iq-xmlns xml-data))
-	 (which-alist (eval (cdr (assoc xmlns
-					(list
-					 (cons jabber-disco-xmlns-info 'jabber-disco-info-nodes)
-					 (cons jabber-disco-xmlns-items 'jabber-disco-items-nodes))))))
+	 (which-alist (cond
+		      ((string= xmlns jabber-disco-xmlns-info) jabber-disco-info-nodes)
+		      ((string= xmlns jabber-disco-xmlns-items) jabber-disco-items-nodes)))
 	 (node (or
 		(jabber-xml-get-attribute (jabber-iq-query xml-data) 'node)
 		""))
