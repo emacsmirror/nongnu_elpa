@@ -872,11 +872,11 @@ obtained from `xml-parse-region'."
 (defun jabber-muc--validate-disco-result (result)
   "Classify a disco#info RESULT for MUC join.
 Return a plist describing the outcome:
-  (:status ok :features FEATURES)       - valid MUC service
-  (:status not-found)                   - room not found (item-not-found)
-  (:status no-disco)                    - disco not supported (feature-not-implemented)
-  (:status not-conference)              - JID is not a conference service
-  (:status error :error-msg STRING)     - other error"
+  (:status ok :features FEATURES)  - valid MUC service
+  (:status not-found)              - item-not-found
+  (:status no-disco)               - feature-not-implemented
+  (:status not-conference)         - not a conference
+  (:status error :error-msg STR)   - other error"
   (let* ((identities (car result))
          (features (cadr result))
          (condition (when (eq identities 'error)
@@ -1463,9 +1463,9 @@ Checks for a child element with xmlns `urn:xmpp:delay' or
   (or (jabber-xml-child-with-xmlns xml-data jabber-delay-xmlns)
       (jabber-xml-child-with-xmlns xml-data jabber-delay-legacy-xmlns)))
 
-(defun jabber-muc--display-message (jc xml-data group nick type msg-plist)
+(defun jabber-muc--display-message (_jc xml-data group nick type msg-plist)
   "Display a MUC message and conditionally run alert hooks.
-Insert an EWOC entry into the MUC buffer for GROUP.  JC is the Jabber
+Insert an EWOC entry into the MUC buffer for GROUP.  _JC is the Jabber
 connection, XML-DATA the parsed stanza, NICK the sender nickname, TYPE
 one of `:muc-local', `:muc-foreign', or `:muc-error', and MSG-PLIST
 the message property list.  Alert hooks are skipped for history
@@ -1575,7 +1575,7 @@ STATUS-CODES, ERROR-NODE, ACTOR and REASON come from the stanza."
                     :time (current-time)))))
         (message "%s: %s" (jabber-jid-displayname group) message)))))
 
-(defun jabber-muc--process-other-leave (jc group nickname status-codes
+(defun jabber-muc--process-other-leave (_jc group nickname status-codes
                                            item actor reason)
   "Handle another participant leaving GROUP.
 NICKNAME is the departing user.  STATUS-CODES, ITEM, ACTOR and REASON

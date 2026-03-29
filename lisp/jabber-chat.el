@@ -245,6 +245,7 @@ added to the outgoing message.")
                   (xml-data))
 (declare-function jabber-message-correct--apply "jabber-message-correct"
                   (replace-id new-body new-from muc-p buffer))
+(declare-function jabber-muc-create-buffer "jabber-muc" (jc group))
 (declare-function jabber-muc-find-buffer "jabber-muc" (group))
 (defvar jabber-group)                   ; jabber-muc.el
 (defvar jabber-muc-printers)            ; jabber-muc.el

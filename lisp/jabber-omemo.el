@@ -901,6 +901,11 @@ Returns modified XML-DATA with decrypted body, or nil on failure."
               (jabber-chat--set-body xml-data text))
           xml-data))))))
 
+(defvar jabber-omemo--sent-muc-plaintexts (make-hash-table :test #'equal)
+  "Cache of recently-sent OMEMO MUC message plaintexts.
+Keyed by message ID string.  Entries are consumed when the MUC
+server echo is received, so the cache is normally near-empty.")
+
 (defun jabber-omemo--detect-encrypted (xml-data)
   "Detect OMEMO encryption in XML-DATA.
 Returns a detection plist or nil.  Checks MUC echo cache first,
@@ -974,11 +979,6 @@ all-sessions is a list of (DEVICE-ID . SESSION-PTR)."
              (funcall callback all-sessions))))))))
 
 ;;; Send path
-
-(defvar jabber-omemo--sent-muc-plaintexts (make-hash-table :test #'equal)
-  "Cache of recently-sent OMEMO MUC message plaintexts.
-Keyed by message ID string.  Entries are consumed when the MUC
-server echo is received, so the cache is normally near-empty.")
 
 (defun jabber-omemo--display-pending (buffer body id)
   "Display BODY in BUFFER as a message with :sending status.

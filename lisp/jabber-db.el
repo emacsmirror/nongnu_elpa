@@ -365,7 +365,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
          "INSERT INTO message_oob (message_id, url, desc) VALUES (?, ?, ?)"
          (list msg-id (car entry) (cdr entry)))))))
 
-(defun jabber-db--update-duplicate-ids (db account peer timestamp body
+(defun jabber-db--update-duplicate-ids (db account _peer timestamp body
                                            stanza-id server-id oob-entries
                                            dup-id-col)
   "Update an existing duplicate matched by DUP-ID-COL.
