@@ -32,6 +32,7 @@
 (require 'jabber-pubsub)
 (require 'jabber-xml)
 (require 'jabber-hints)
+(require 'jabber-eme)
 
 (eval-when-compile (require 'pcase))
 
@@ -65,7 +66,7 @@
   "PubSub node for OpenPGP public key metadata.")
 
 (defconst jabber-openpgp-fallback-body
-  "This message is encrypted with OpenPGP (XEP-0373)."
+  "This message is encrypted with OpenPGP and could not be displayed."
   "Fallback body for clients that don't support OpenPGP.")
 
 ;;; Customization
@@ -350,7 +351,8 @@ Fetches missing recipient keys via PubSub before encrypting."
                            (openpgp ((xmlns . ,jabber-openpgp-xmlns))
                                     ,(base64-encode-string encrypted t))
                            (body () ,jabber-openpgp-fallback-body)
-                           ,(jabber-hints-store))))
+                           ,(jabber-hints-store)
+                           ,(jabber-eme-encryption jabber-openpgp-xmlns "OpenPGP"))))
     (dolist (hook jabber-chat-send-hooks)
       (if (eq hook t)
           (when (local-variable-p 'jabber-chat-send-hooks)
@@ -405,7 +407,8 @@ Fetches missing recipient keys via PubSub before encrypting."
                                   (openpgp ((xmlns . ,jabber-openpgp-xmlns))
                                            ,(base64-encode-string encrypted t))
                                   (body () ,jabber-openpgp-fallback-body)
-                                  ,(jabber-hints-store))))
+                                  ,(jabber-hints-store)
+                                  ,(jabber-eme-encryption jabber-openpgp-xmlns "OpenPGP"))))
            (jabber-send-sexp jc stanza)))))))
 
 ;;; Receive path
