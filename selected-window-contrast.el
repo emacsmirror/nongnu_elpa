@@ -35,6 +35,7 @@
 ;  foreground and background relative to the current theme. It works
 ;  well if you switch themes frequently; contrast will be
 ;  preserved. This also applies to the modeline.
+;  Modeline and cursor highlighting - working in TTY.
 ;; We also highlight the cursor position, which can be disabled with
 ;; (setopt selected-window-contrast-cursor-flag nil) in .emacs.
 ;;  or
@@ -165,26 +166,30 @@ Arguments:
  TEXT-MAG (float in [0,1], optional): stretching of contrast for text.
 Returns:
  List: (NEW-TEXT-RGB NEW-BACKGROUND-RGB), each as (R G B) floats in [0,1]."
-  (let* ((text-hsl (apply #'color-rgb-to-hsl (color-name-to-rgb text-color)))
-         (bg-hsl   (apply #'color-rgb-to-hsl (color-name-to-rgb background-color)))
-         (mid 0.5))
-    (list
-     (if (not text-mag)
-         (apply #'color-hsl-to-rgb text-hsl)
-       ;; else
-       (let* ((t-l (nth 2 text-hsl))
-              (new-t-l (if (> t-l mid)
-                           (+ mid (* text-mag (- 1.0 mid)))
-                         (- mid (* text-mag mid)))))
-         (apply #'color-hsl-to-rgb (list (nth 0 text-hsl) (nth 1 text-hsl) new-t-l))))
-     (if (not bg-mag)
-         (apply #'color-hsl-to-rgb bg-hsl)
-       ;; else
-       (let* ((b-l (nth 2 bg-hsl))
-              (new-b-l (if (> b-l mid)
-                           (+ mid (* bg-mag (- 1.0 mid)))
-                         (- mid (* bg-mag mid)))))
-         (apply #'color-hsl-to-rgb (list (nth 0 bg-hsl) (nth 1 bg-hsl) new-b-l)))))))
+  (if-let ((text-rgb (color-name-to-rgb text-color))
+           (back-rgb (color-name-to-rgb background-color)))
+      (let* ((text-hsl (apply #'color-rgb-to-hsl text-rgb))
+             (bg-hsl   (apply #'color-rgb-to-hsl back-rgb))
+             (mid 0.5))
+        (list
+         (if (not text-mag)
+             (apply #'color-hsl-to-rgb text-hsl)
+           ;; else
+           (let* ((t-l (nth 2 text-hsl))
+                  (new-t-l (if (> t-l mid)
+                               (+ mid (* text-mag (- 1.0 mid)))
+                             (- mid (* text-mag mid)))))
+             (apply #'color-hsl-to-rgb (list (nth 0 text-hsl) (nth 1 text-hsl) new-t-l))))
+         (if (not bg-mag)
+             (apply #'color-hsl-to-rgb bg-hsl)
+           ;; else
+           (let* ((b-l (nth 2 bg-hsl))
+                  (new-b-l (if (> b-l mid)
+                               (+ mid (* bg-mag (- 1.0 mid)))
+                             (- mid (* bg-mag mid)))))
+             (apply #'color-hsl-to-rgb (list (nth 0 bg-hsl) (nth 1 bg-hsl) new-b-l))))))
+    ;; else
+    (message "Unable to recognize text-color or background-color")))
 
 (defun selected-window-contrast--rgb-to-hex (rgb &optional digits)
   "Convert normalized RGB list to hex string.
@@ -307,7 +312,8 @@ $ emacsclient -c ~/file"
         (sw (selected-window)))
     (when (/= (aref cbn 0) ?\s) ; ignore system buffers
       ;; - not selected:
-      (when selected-window-contrast-flag
+      (when (and selected-window-contrast-flag
+                 (display-graphic-p))
         (walk-windows (lambda (w)
                         (unless (or (eq sw w)
                                     ;; Here may be several windows with same buffer,
@@ -321,7 +327,8 @@ $ emacsclient -c ~/file"
                       -1)) ; -1 means to not include minibuffer
 
       ;; - selected:
-      (when selected-window-contrast-flag
+      (when (and selected-window-contrast-flag
+                 (display-graphic-p))
         (selected-window-contrast-change-window selected-window-contrast-bg-selected
                                                 selected-window-contrast-text-selected))
       (if selected-window-contrast-cursor-flag
