@@ -9,22 +9,36 @@ EMACS_CMD = emacs
 endif
 endif
 
-TESTS ?= tests/jabber-xml-tests.el tests/jabber-util-tests.el \
-         tests/jabber-muc-tests.el tests/jabber-roster-tests.el \
-         tests/jabber-chat-tests.el tests/jabber-chatbuffer-tests.el \
-         tests/jabber-db-tests.el \
+TESTS ?= tests/jabber-activity-tests.el \
+         tests/jabber-bookmarks-tests.el \
+         tests/jabber-carbons-tests.el \
+         tests/jabber-chatbuffer-tests.el \
          tests/jabber-chatstates-tests.el \
-         tests/jabber-receipts-tests.el \
-         tests/jabber-transient-tests.el \
+         tests/jabber-chat-tests.el \
+         tests/jabber-csi-tests.el \
+         tests/jabber-db-tests.el \
+         tests/jabber-disco-tests.el \
          tests/jabber-mam-tests.el \
-         tests/jabber-moderation-tests.el \
-         tests/jabber-sm-tests.el \
          tests/jabber-message-correct-tests.el \
          tests/jabber-message-reply-tests.el \
-         tests/jabber-styling-tests.el \
          tests/jabber-modeline-tests.el \
+         tests/jabber-moderation-tests.el \
+         tests/jabber-muc-tests.el \
+         tests/jabber-omemo-message-tests.el \
+         tests/jabber-omemo-module-tests.el \
+         tests/jabber-omemo-protocol-tests.el \
+         tests/jabber-omemo-store-tests.el \
+         tests/jabber-omemo-trust-tests.el \
          tests/jabber-openpgp-legacy-tests.el \
-         tests/jabber-csi-tests.el
+         tests/jabber-presence-tests.el \
+         tests/jabber-pubsub-tests.el \
+         tests/jabber-receipts-tests.el \
+         tests/jabber-roster-tests.el \
+         tests/jabber-sm-tests.el \
+         tests/jabber-styling-tests.el \
+         tests/jabber-transient-tests.el \
+         tests/jabber-util-tests.el \
+         tests/jabber-xml-tests.el
 
 all: build
 
@@ -78,9 +92,31 @@ lint-test-compile:
 lint: lint-check-declare lint-checkdoc lint-package-lint lint-relint lint-test-compile
 
 test:
-	$(EMACS_CMD) -Q --batch -L lisp -L tests \
-	-l ert $(foreach t,$(TESTS),-l $(t)) \
-	-f ert-run-tests-batch-and-exit
+	@passed=0; failed=0; total=0; failed_files=""; \
+	for t in $(TESTS); do \
+	  output=$$($(EMACS_CMD) -Q --batch -L lisp -L tests \
+	    -l ert -l $$t -f ert-run-tests-batch-and-exit 2>&1); \
+	  rc=$$?; \
+	  n=$$(echo "$$output" | grep -oP '^Ran \K[0-9]+'); \
+	  total=$$((total + n)); \
+	  if [ $$rc -ne 0 ]; then \
+	    failed=$$((failed + n)); \
+	    failed_files="$$failed_files $$t"; \
+	    printf "\033[31mFAIL\033[0m $$t ($$n tests)\n"; \
+	    echo "$$output" | grep '  FAILED'; \
+	  else \
+	    passed=$$((passed + n)); \
+	    printf "\033[32m  OK\033[0m $$t ($$n tests)\n"; \
+	  fi; \
+	done; \
+	echo ""; \
+	if [ $$failed -eq 0 ]; then \
+	  printf "\033[32m$$total tests, $$passed passed, 0 failed\033[0m\n"; \
+	else \
+	  printf "\033[31m$$total tests, $$passed passed, $$failed failed\033[0m\n"; \
+	  for f in $$failed_files; do echo "  $$f"; done; \
+	fi; \
+	[ $$failed -eq 0 ]
 
 clean-elc:
 	find . -name '*.elc' -delete

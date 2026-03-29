@@ -17,6 +17,7 @@
 (defvar jabber-muc-xmlns-user "http://jabber.org/protocol/muc#user")
 (require 'jabber-chat)
 (require 'jabber-muc)
+(require 'jabber-mam)
 
 ;;; Test helpers
 
@@ -328,6 +329,10 @@ be treated as a live edit."
                (lambda (_jc xml) (cons xml nil)))
               ((symbol-function 'jabber-chat--decrypt-if-needed)
                (lambda (_jc xml) xml))
+              ((symbol-function 'jabber-mam-chat-opened)
+               #'ignore)
+              ((symbol-function 'jabber-chat--display-message)
+               #'ignore)
               ((symbol-function 'jabber-message-correct--apply)
                (lambda (&rest _) (setq apply-called t))))
       (jabber-process-chat nil stanza))

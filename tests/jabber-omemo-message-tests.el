@@ -1,8 +1,8 @@
 ;;; jabber-omemo-message-tests.el --- ERT tests for OMEMO message encrypt/decrypt  -*- lexical-binding: t; -*-
 
 (require 'ert)
-(require 'jabber-omemo)
 (require 'jabber-chat)
+(require 'jabber-omemo)
 
 ;;; Test infrastructure
 

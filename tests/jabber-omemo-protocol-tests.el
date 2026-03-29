@@ -1,6 +1,7 @@
 ;;; jabber-omemo-protocol-tests.el --- ERT tests for OMEMO protocol logic  -*- lexical-binding: t; -*-
 
 (require 'ert)
+(require 'jabber-chat)
 (require 'jabber-omemo)
 
 ;;; Test infrastructure

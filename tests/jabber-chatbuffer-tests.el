@@ -8,6 +8,7 @@
 
 ;; jabber-chat requires this via jabber-muc
 (defvar jabber-muc-xmlns-user "http://jabber.org/protocol/muc#user")
+(defvar jabber-muc-participants nil)
 
 ;;; Test helpers
 
@@ -212,7 +213,8 @@
 
 (ert-deftest jabber-chatbuffer-test-omemo-warns-anonymous-room ()
   "Enabling OMEMO in a room with no visible JIDs emits a warning."
-  (let ((messages nil))
+  (let ((messages nil)
+        (jabber-muc-participants nil))
     (with-temp-buffer
       (setq-local jabber-group "room@conf.example.com")
       (setq-local jabber-buffer-connection nil)
@@ -230,7 +232,8 @@
 
 (ert-deftest jabber-chatbuffer-test-omemo-no-warning-when-jids-visible ()
   "No warning when participant JIDs are available."
-  (let ((messages nil))
+  (let ((messages nil)
+        (jabber-muc-participants nil))
     (with-temp-buffer
       (setq-local jabber-group "room@conf.example.com")
       (setq-local jabber-buffer-connection nil)

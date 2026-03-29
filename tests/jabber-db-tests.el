@@ -1,6 +1,7 @@
 ;;; jabber-db-tests.el --- Tests for jabber-db  -*- lexical-binding: t; -*-
 
 (require 'ert)
+(require 'jabber-chat)
 (require 'jabber-db)
 
 ;;; Test infrastructure

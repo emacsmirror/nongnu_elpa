@@ -10,6 +10,7 @@
 (defvar jabber-iq-chain nil)
 (defvar jabber-jid-obarray (make-vector 127 0))
 
+(require 'jabber-chatbuffer)
 (require 'jabber-muc)
 
 (defmacro jabber-muc-test-with-rooms (rooms &rest body)

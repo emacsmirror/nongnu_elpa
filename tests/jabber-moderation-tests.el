@@ -4,10 +4,8 @@
 (require 'ewoc)
 (require 'jabber-chatbuffer)
 (require 'jabber-chat)
+(require 'jabber-muc)
 (require 'jabber-moderation)
-
-;; jabber-chat requires this via jabber-muc
-(defvar jabber-muc-xmlns-user "http://jabber.org/protocol/muc#user")
 
 ;;; Test helpers
 
@@ -217,7 +215,9 @@
                  (lambda (_jc to type query &rest _rest)
                    (setq sent-iq (list :to to :type type :query query))))
                 ((symbol-function 'read-string)
-                 (lambda (&rest _) "test reason")))
+                 (lambda (&rest _) "test reason"))
+                ((symbol-function 'jabber-db-retract-message)
+                 #'ignore))
         (jabber-moderation-retract))
       (should (equal "room@muc.example.com" (plist-get sent-iq :to)))
       (should (equal "set" (plist-get sent-iq :type)))
