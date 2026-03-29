@@ -317,6 +317,111 @@ SELECT encryption FROM chat_settings
 
 ;;; Storage
 
+(defun jabber-db--detect-duplicate (db account peer timestamp body
+                                       stanza-id server-id)
+  "Check whether a message already exists in DB.
+Return a symbol indicating the match type: `stanza_id', `server_id',
+`content', or nil for no match."
+  (cond
+   ((and stanza-id
+         (caar (sqlite-select
+                db "SELECT 1 FROM message \
+WHERE stanza_id = ? AND account = ? LIMIT 1"
+                (list stanza-id account))))
+    'stanza_id)
+   ((and server-id
+         (caar (sqlite-select
+                db "SELECT 1 FROM message \
+WHERE server_id = ? AND account = ? LIMIT 1"
+                (list server-id account))))
+    'server_id)
+   ;; Content-based dedup: matches messages stored by the
+   ;; live handler (nil IDs) against MAM replays (with IDs),
+   ;; or MUC history replayed on every join.
+   ((caar (sqlite-select
+           db "SELECT 1 FROM message \
+WHERE account = ? AND peer = ? AND timestamp = ? AND body = ? LIMIT 1"
+           (list account peer timestamp body)))
+    'content)))
+
+(defun jabber-db--insert-message (db account peer resource occupant-id
+                                     direction type body timestamp
+                                     stanza-id server-id encrypted
+                                     oob-entries)
+  "Insert a new message row into DB and attach OOB entries."
+  (sqlite-execute
+   db
+   "INSERT INTO message \
+(account, peer, resource, occupant_id, direction, type, body, timestamp, \
+stanza_id, server_id, encrypted) \
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+   (list account peer resource occupant-id direction type body timestamp
+         stanza-id server-id (if encrypted 1 0)))
+  (when oob-entries
+    (let ((msg-id (caar (sqlite-select db "SELECT last_insert_rowid()"))))
+      (dolist (entry oob-entries)
+        (sqlite-execute
+         db
+         "INSERT INTO message_oob (message_id, url, desc) VALUES (?, ?, ?)"
+         (list msg-id (car entry) (cdr entry)))))))
+
+(defun jabber-db--update-duplicate-ids (db account peer timestamp body
+                                           stanza-id server-id oob-entries
+                                           dup-id-col)
+  "Update an existing duplicate matched by DUP-ID-COL.
+Normalizes timestamp and replaces failed-decrypt placeholders.
+Skips retracted messages to prevent MAM replays from undoing retractions."
+  (let* ((id-val (if (eq dup-id-col 'stanza_id) stanza-id server-id))
+         (retracted (caar (sqlite-select
+                           db
+                           (format "SELECT 1 FROM message \
+WHERE %s = ? AND account = ? AND retracted_by IS NOT NULL LIMIT 1"
+                                   dup-id-col)
+                           (list id-val account)))))
+    (unless retracted
+      ;; Normalize timestamp only when it differs.
+      (sqlite-execute
+       db
+       (format "UPDATE message SET timestamp = ? \
+WHERE %s = ? AND account = ? AND timestamp != ?"
+               dup-id-col)
+       (list timestamp id-val account timestamp))
+      ;; Replace failed-decrypt placeholder if new body is real text.
+      (when (and body
+                 (not (string-match-p "\\`: could not decrypt\\]" body)))
+        (let ((msg-id
+               (caar (sqlite-select
+                      db
+                      (format "SELECT id FROM message \
+WHERE %s = ? AND account = ? AND body LIKE '%%: could not decrypt]' LIMIT 1"
+                              dup-id-col)
+                      (list id-val account)))))
+          (when msg-id
+            (sqlite-execute
+             db "UPDATE message SET body = ? WHERE id = ?"
+             (list body msg-id))
+            (sqlite-execute
+             db "DELETE FROM message_oob WHERE message_id = ?"
+             (list msg-id))
+            (dolist (entry oob-entries)
+              (sqlite-execute
+               db
+               "INSERT INTO message_oob (message_id, url, desc) \
+VALUES (?, ?, ?)"
+               (list msg-id (car entry) (cdr entry))))))))))
+
+(defun jabber-db--upgrade-content-match (db account peer timestamp body
+                                            stanza-id server-id)
+  "Upgrade a content-matched row with server-assigned IDs."
+  (when (or stanza-id server-id)
+    (sqlite-execute
+     db
+     "UPDATE message SET stanza_id = COALESCE(stanza_id, ?), \
+server_id = COALESCE(server_id, ?) \
+WHERE account = ? AND peer = ? AND timestamp = ? AND body = ? \
+AND stanza_id IS NULL AND server_id IS NULL"
+     (list stanza-id server-id account peer timestamp body))))
+
 (defun jabber-db-store-message (account peer direction type body timestamp
                                         &optional resource stanza-id
                                         server-id occupant-id oob-entries
@@ -336,100 +441,20 @@ Optional OOB-ENTRIES is a list of (URL . DESC) cons cells for
 jabber:x:oob elements.
 Optional ENCRYPTED is non-nil if the message was OMEMO-encrypted."
   (when-let* ((db (jabber-db-ensure-open)))
-    (let ((dup-id-col
-           (cond
-            ((and stanza-id
-                  (caar (sqlite-select
-                         db "SELECT 1 FROM message \
-WHERE stanza_id = ? AND account = ? LIMIT 1"
-                         (list stanza-id account))))
-             'stanza_id)
-            ((and server-id
-                  (caar (sqlite-select
-                         db "SELECT 1 FROM message \
-WHERE server_id = ? AND account = ? LIMIT 1"
-                         (list server-id account))))
-             'server_id)
-            ;; Content-based dedup: matches messages stored by the
-            ;; live handler (nil IDs) against MAM replays (with IDs),
-            ;; or MUC history replayed on every join.
-            ((caar (sqlite-select
-                    db "SELECT 1 FROM message \
-WHERE account = ? AND peer = ? AND timestamp = ? AND body = ? LIMIT 1"
-                    (list account peer timestamp body)))
-             'content))))
-      (cond
-       ((null dup-id-col)
-        (sqlite-execute
-         db
-         "INSERT INTO message \
-(account, peer, resource, occupant_id, direction, type, body, timestamp, \
-stanza_id, server_id, encrypted) \
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-         (list account peer resource occupant-id direction type body timestamp
-               stanza-id server-id (if encrypted 1 0)))
-        (when oob-entries
-          (let ((msg-id (caar (sqlite-select db "SELECT last_insert_rowid()"))))
-            (dolist (entry oob-entries)
-              (sqlite-execute
-               db
-               "INSERT INTO message_oob (message_id, url, desc) VALUES (?, ?, ?)"
-               (list msg-id (car entry) (cdr entry)))))))
-       ;; Duplicate by server-side ID: normalize timestamp to the
-       ;; server's value so message order is consistent across
-       ;; devices.  Also replace failed-decrypt placeholders.
-       ;; Skip updates entirely for retracted messages so MAM
-       ;; replays cannot undo a local retraction.
-       ((memq dup-id-col '(stanza_id server_id))
-        (let* ((id-val (if (eq dup-id-col 'stanza_id) stanza-id server-id))
-               (retracted (caar (sqlite-select
-                                 db
-                                 (format "SELECT 1 FROM message \
-WHERE %s = ? AND account = ? AND retracted_by IS NOT NULL LIMIT 1"
-                                         dup-id-col)
-                                 (list id-val account)))))
-          (unless retracted
-            ;; Normalize timestamp only when it differs.
-            (sqlite-execute
-             db
-             (format "UPDATE message SET timestamp = ? \
-WHERE %s = ? AND account = ? AND timestamp != ?"
-                     dup-id-col)
-             (list timestamp id-val account timestamp))
-            ;; Replace failed-decrypt placeholder if new body is real text.
-            (when (and body
-                       (not (string-match-p "\\`: could not decrypt\\]" body)))
-              (let ((msg-id
-                     (caar (sqlite-select
-                            db
-                            (format "SELECT id FROM message \
-WHERE %s = ? AND account = ? AND body LIKE '%%: could not decrypt]' LIMIT 1"
-                                    dup-id-col)
-                            (list id-val account)))))
-                (when msg-id
-                  (sqlite-execute
-                   db "UPDATE message SET body = ? WHERE id = ?"
-                   (list body msg-id))
-                  ;; Replace OOB entries for this message.
-                  (sqlite-execute
-                   db "DELETE FROM message_oob WHERE message_id = ?"
-                   (list msg-id))
-                  (dolist (entry oob-entries)
-                    (sqlite-execute
-                     db
-                     "INSERT INTO message_oob (message_id, url, desc) \
-VALUES (?, ?, ?)"
-                     (list msg-id (car entry) (cdr entry))))))))))
-       ;; Content match: upgrade a nil-ID row with server-assigned IDs.
-       ((eq dup-id-col 'content)
-        (when (or stanza-id server-id)
-          (sqlite-execute
-           db
-           "UPDATE message SET stanza_id = COALESCE(stanza_id, ?), \
-server_id = COALESCE(server_id, ?) \
-WHERE account = ? AND peer = ? AND timestamp = ? AND body = ? \
-AND stanza_id IS NULL AND server_id IS NULL"
-           (list stanza-id server-id account peer timestamp body))))))))
+    (let ((dup-id-col (jabber-db--detect-duplicate
+                       db account peer timestamp body stanza-id server-id)))
+      (pcase dup-id-col
+        ('nil
+         (jabber-db--insert-message db account peer resource occupant-id
+                                   direction type body timestamp
+                                   stanza-id server-id encrypted oob-entries))
+        ((or 'stanza_id 'server_id)
+         (jabber-db--update-duplicate-ids db account peer timestamp body
+                                         stanza-id server-id oob-entries
+                                         dup-id-col))
+        ('content
+         (jabber-db--upgrade-content-match db account peer timestamp body
+                                          stanza-id server-id))))))
 
 ;;; Receipt updates
 
