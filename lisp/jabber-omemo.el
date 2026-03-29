@@ -80,7 +80,6 @@ Keys older than this are deleted on connect."
 (defvar jabber-httpupload-send-url-function)
 (defvar jabber-message-reply--id)       ; jabber-message-reply.el
 (defvar jabber-message-reply--jid)      ; jabber-message-reply.el
-(defvar jabber-message-reply--fallback-length) ; jabber-message-reply.el
 
 (unless module-file-suffix
   (error "jabber-omemo requires Emacs compiled with dynamic module support"))
@@ -1005,12 +1004,8 @@ Returns the ewoc node, or nil if BUFFER is dead."
     (with-current-buffer buffer
       (let* ((reply-id (bound-and-true-p jabber-message-reply--id))
              (reply-jid (bound-and-true-p jabber-message-reply--jid))
-             (fb-len (bound-and-true-p jabber-message-reply--fallback-length))
-             (display-body (if (and fb-len (> fb-len 0) (<= fb-len (length body)))
-                               (string-trim-left (substring body fb-len))
-                             body))
              (msg-plist (list :id id
-                              :body display-body
+                              :body body
                               :timestamp (current-time)
                               :status :sending
                               :encrypted t)))

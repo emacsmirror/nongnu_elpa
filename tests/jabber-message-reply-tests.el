@@ -32,66 +32,7 @@
   (let ((result (jabber-message-reply--build-fallback-text "Dave" nil)))
     (should (equal "> Dave:\n\n" result))))
 
-;;; Group 2: jabber-message-reply--strip-fallback
-
-(ert-deftest jabber-message-reply-test-strip-valid-offsets ()
-  "Strip fallback prefix using valid start/end offsets."
-  (let* ((body "> Anna:\n> We should bake a cake\nGreat idea!")
-         (end (number-to-string (length "> Anna:\n> We should bake a cake\n")))
-         (xml-data `(message ((id . "msg-2"))
-                             (body () ,body)
-                             (reply ((xmlns . "urn:xmpp:reply:0")
-                                     (to . "anna@example.com")
-                                     (id . "msg-1")))
-                             (fallback ((xmlns . "urn:xmpp:fallback:0")
-                                        (for . "urn:xmpp:reply:0"))
-                                       (body ((start . "0")
-                                              (end . ,end)))))))
-    (should (equal "Great idea!"
-                   (jabber-message-reply--strip-fallback body xml-data)))))
-
-(ert-deftest jabber-message-reply-test-strip-no-fallback-element ()
-  "No fallback element returns body unchanged."
-  (let ((body "> Anna:\n> Hello\nReply text")
-        (xml-data '(message ((id . "msg-3"))
-                            (body () "> Anna:\n> Hello\nReply text")
-                            (reply ((xmlns . "urn:xmpp:reply:0")
-                                    (to . "anna@example.com")
-                                    (id . "msg-1"))))))
-    (should (equal body (jabber-message-reply--strip-fallback body xml-data)))))
-
-(ert-deftest jabber-message-reply-test-strip-wrong-for-attr ()
-  "Fallback with wrong for attribute returns body unchanged."
-  (let ((body "> Quoted\nReply")
-        (xml-data '(message ((id . "msg-4"))
-                            (body () "> Quoted\nReply")
-                            (fallback ((xmlns . "urn:xmpp:fallback:0")
-                                       (for . "urn:xmpp:wrong:0"))
-                                      (body ((start . "0")
-                                             (end . "9")))))))
-    (should (equal body (jabber-message-reply--strip-fallback body xml-data)))))
-
-(ert-deftest jabber-message-reply-test-strip-bad-offsets ()
-  "Fallback with end > body length returns body unchanged."
-  (let ((body "Short")
-        (xml-data '(message ((id . "msg-5"))
-                            (body () "Short")
-                            (fallback ((xmlns . "urn:xmpp:fallback:0")
-                                       (for . "urn:xmpp:reply:0"))
-                                      (body ((start . "0")
-                                             (end . "100")))))))
-    (should (equal body (jabber-message-reply--strip-fallback body xml-data)))))
-
-(ert-deftest jabber-message-reply-test-strip-nil-body ()
-  "Nil body returns nil without error."
-  (let ((xml-data '(message ((id . "msg-6"))
-                            (fallback ((xmlns . "urn:xmpp:fallback:0")
-                                       (for . "urn:xmpp:reply:0"))
-                                      (body ((start . "0")
-                                             (end . "10")))))))
-    (should-not (jabber-message-reply--strip-fallback nil xml-data))))
-
-;;; Group 3: jabber-message-reply--select-id
+;;; Group 2: jabber-message-reply--select-id
 
 (ert-deftest jabber-message-reply-test-select-id-1to1 ()
   "In 1:1 chat, select :id."
@@ -116,7 +57,7 @@
   (let ((msg (list :id nil :server-id nil)))
     (should-not (jabber-message-reply--select-id msg nil))))
 
-;;; Group 4: jabber-message-reply--send-hook
+;;; Group 3: jabber-message-reply--send-hook
 
 (ert-deftest jabber-message-reply-test-send-hook-produces-elements ()
   "Send hook produces reply and fallback elements and clears state."

@@ -26,22 +26,21 @@
 ;; Adds reply-to-message support in chat buffers.  The user positions
 ;; point on a message, invokes `jabber-chat-reply', a quoted fallback
 ;; is inserted into the composition area, and on send the <reply> and
-;; <fallback> elements are added to the stanza.  Incoming replies get
-;; the fallback stripped for native display.
+;; <fallback> elements are added to the stanza.  The fallback text is
+;; kept in the displayed body as-is.
 
 ;;; Code:
 
 (require 'jabber-disco)
 (require 'jabber-xml)
 
-(declare-function jabber-chat-ewoc-find-by-id "jabber-chatbuffer"
-                  (stanza-id))
 (declare-function jabber-jid-displayname "jabber-util" (jid))
+(declare-function jabber-jid-username "jabber-util" (jid))
+(declare-function jabber-jid-user "jabber-util" (jid))
 (declare-function jabber-jid-resource "jabber-util" (jid))
 
 (defvar jabber-chat-ewoc)               ; jabber-chatbuffer.el
 (defvar jabber-chat-send-hooks)         ; jabber-chat.el
-(defvar jabber-chat-printers)           ; jabber-chat.el
 (defvar jabber-point-insert)            ; jabber-chatbuffer.el
 (defvar jabber-group)                   ; jabber-muc.el
 
@@ -75,35 +74,6 @@ Returns \"> Author:\\n> line1\\n> line2\\n\"."
                        lines
                        "\n")
             "\n")))
-
-(defun jabber-message-reply--strip-fallback (body xml-data)
-  "Strip the reply fallback prefix from BODY using XML-DATA.
-Looks for a <fallback> element with for=\"urn:xmpp:reply:0\" and
-extracts the <body start end/> offsets.  Returns the cleaned body,
-or BODY unchanged if no valid fallback element is found."
-  (if (null body)
-      body
-    (let* ((fallback-el (jabber-xml-child-with-xmlns
-                         xml-data jabber-message-reply-fallback-xmlns))
-           (for-attr (and fallback-el
-                         (jabber-xml-get-attribute fallback-el 'for))))
-      (if (not (and for-attr (string= for-attr jabber-message-reply-xmlns)))
-          body
-        (let* ((body-el (car (jabber-xml-get-children fallback-el 'body)))
-               (start (and body-el
-                           (jabber-xml-get-attribute body-el 'start)))
-               (end (and body-el
-                         (jabber-xml-get-attribute body-el 'end)))
-               (start-n (and start (string-to-number start)))
-               (end-n (and end (string-to-number end))))
-          (if (and start-n end-n
-                   (>= start-n 0)
-                   (<= end-n (length body))
-                   (< start-n end-n))
-              (string-trim-left
-               (concat (substring body 0 start-n)
-                       (substring body end-n)))
-            body))))))
 
 (defun jabber-message-reply--select-id (msg muc-p)
   "Select the appropriate message ID from MSG for a reply.
@@ -144,43 +114,14 @@ BODY is the message text.  Clears reply state after producing elements."
 ;;; Helpers
 
 (defun jabber-message-reply--author-name (jid)
-  "Return a display name for JID.
-In MUC buffers the resource is the nickname, so prefer it.
-In 1:1 chat the resource is a device ID, so use the roster name."
+  "Return a short display name for JID.
+In MUC buffers the resource is the nickname.
+In 1:1 chat, use the username part of the JID."
   (if (bound-and-true-p jabber-group)
       (or (jabber-jid-resource jid)
           (jabber-jid-displayname jid))
-    (jabber-jid-displayname jid)))
-
-;;; Display printer
-
-(defun jabber-message-reply--print-context (msg _who mode)
-  "Print reply context before the message body.
-MSG is the message plist.  MODE is :insert or :printp."
-  (when-let* ((reply-id (plist-get msg :reply-to-id)))
-    (pcase mode
-      (:printp t)
-      (:insert
-       (let* ((node (jabber-chat-ewoc-find-by-id reply-id))
-              (orig-msg (and node (cadr (ewoc-data node))))
-              (orig-body (and orig-msg (plist-get orig-msg :body)))
-              (orig-from (and orig-msg (plist-get orig-msg :from)))
-              (author (and orig-from
-                          (jabber-message-reply--author-name orig-from)))
-              (snippet (cond
-                        ((and orig-body (> (length orig-body) 50))
-                         (concat (substring orig-body 0 50) "..."))
-                        (orig-body orig-body)
-                        (t nil))))
-         (insert
-          (propertize
-           (if snippet
-               (format "> %s: \"%s\"\n" (or author "?") snippet)
-             "> [reply]\n")
-           'face 'shadow)))))))
-
-(with-eval-after-load "jabber-chat"
-  (add-to-list 'jabber-chat-printers #'jabber-message-reply--print-context))
+    (or (jabber-jid-username jid)
+        (jabber-jid-user jid))))
 
 ;;; Interactive commands
 

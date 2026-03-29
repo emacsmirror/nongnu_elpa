@@ -207,8 +207,6 @@ added to the outgoing message.")
 ;; Global reference declarations
 
 (declare-function jabber-compose "jabber-compose.el" (jc &optional recipient))
-(declare-function jabber-message-reply--strip-fallback "jabber-message-reply"
-                  (body xml-data))
 (declare-function jabber-omemo--send-chat "jabber-omemo" (jc body))
 (declare-function jabber-openpgp--send-chat "jabber-openpgp" (jc body))
 (declare-function jabber-openpgp-legacy--send-chat "jabber-openpgp-legacy" (jc body))
@@ -839,9 +837,7 @@ DELAYED marks the message as delayed unconditionally."
          (unstyled-el (jabber-xml-child-with-xmlns xml-data "urn:xmpp:styling:0"))
          (raw-body (car (jabber-xml-node-children
                          (car (jabber-xml-get-children xml-data 'body)))))
-         (body (if reply-el
-                   (jabber-message-reply--strip-fallback raw-body xml-data)
-                 raw-body)))
+         (body raw-body))
     (list
      :id (jabber-xml-get-attribute xml-data 'id)
      :server-id (when sid-el (jabber-xml-get-attribute sid-el 'id))
