@@ -368,10 +368,13 @@ EWOC-PP is the pretty-printer function for the message EWOC."
   (add-hook 'completion-at-point-functions #'jabber-muc-nick-completion-at-point nil t)
 
   (setq-local jabber-send-function nil)
-  (setq-local jabber-point-insert nil)
-  (setq-local jabber-chat-ewoc nil)
   (setq-local scroll-conservatively 5)
   (setq-local buffer-undo-list t)
+  ;; jabber-chat-ewoc and jabber-point-insert are conditionally set in
+  ;; the `unless' block below; make-local-variable is idempotent and
+  ;; preserves the existing value on repeated calls.
+  (make-local-variable 'jabber-point-insert)
+  (make-local-variable 'jabber-chat-ewoc)
   (setq jabber-buffer-connection jc)
 
   (unless jabber-chat-ewoc
