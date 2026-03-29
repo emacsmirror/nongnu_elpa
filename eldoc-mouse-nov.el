@@ -53,8 +53,8 @@
 (defcustom eldoc-mouse-nov-retrieve-remote-content-timeout 5
   "Timeout in seconds for retrieving remote content when hovering over a link in `nov-mode'.
 It could be a non-negative number or nil, nil means no timeout."
-  :type '(choice (const :tag "Disabled (nil)" nil)
-                 (number :tag "Value" :min 0)))
+  :type '(choice (const  :tag "Never time out" nil)
+                 (number :tag "Number of seconds")))
 
 ;;;###autoload
 (define-minor-mode eldoc-mouse-nov-mode
