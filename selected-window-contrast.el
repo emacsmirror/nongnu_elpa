@@ -166,30 +166,31 @@ Arguments:
  TEXT-MAG (float in [0,1], optional): stretching of contrast for text.
 Returns:
  List: (NEW-TEXT-RGB NEW-BACKGROUND-RGB), each as (R G B) floats in [0,1]."
-  (if-let ((text-rgb (color-name-to-rgb text-color))
-           (back-rgb (color-name-to-rgb background-color)))
-      (let* ((text-hsl (apply #'color-rgb-to-hsl text-rgb))
-             (bg-hsl   (apply #'color-rgb-to-hsl back-rgb))
-             (mid 0.5))
-        (list
-         (if (not text-mag)
-             (apply #'color-hsl-to-rgb text-hsl)
-           ;; else
-           (let* ((t-l (nth 2 text-hsl))
-                  (new-t-l (if (> t-l mid)
-                               (+ mid (* text-mag (- 1.0 mid)))
-                             (- mid (* text-mag mid)))))
-             (apply #'color-hsl-to-rgb (list (nth 0 text-hsl) (nth 1 text-hsl) new-t-l))))
-         (if (not bg-mag)
-             (apply #'color-hsl-to-rgb bg-hsl)
-           ;; else
-           (let* ((b-l (nth 2 bg-hsl))
-                  (new-b-l (if (> b-l mid)
-                               (+ mid (* bg-mag (- 1.0 mid)))
-                             (- mid (* bg-mag mid)))))
-             (apply #'color-hsl-to-rgb (list (nth 0 bg-hsl) (nth 1 bg-hsl) new-b-l))))))
-    ;; else
-    (message "Unable to recognize text-color or background-color")))
+  (let ((text-rgb (color-name-to-rgb text-color))
+        (back-rgb (color-name-to-rgb background-color)))
+    (if (and text-rgb back-rgb)
+        (let* ((text-hsl (apply #'color-rgb-to-hsl text-rgb))
+               (bg-hsl   (apply #'color-rgb-to-hsl back-rgb))
+               (mid 0.5))
+          (list
+           (if (not text-mag)
+               (apply #'color-hsl-to-rgb text-hsl)
+             ;; else
+             (let* ((t-l (nth 2 text-hsl))
+                    (new-t-l (if (> t-l mid)
+                                 (+ mid (* text-mag (- 1.0 mid)))
+                               (- mid (* text-mag mid)))))
+               (apply #'color-hsl-to-rgb (list (nth 0 text-hsl) (nth 1 text-hsl) new-t-l))))
+           (if (not bg-mag)
+               (apply #'color-hsl-to-rgb bg-hsl)
+             ;; else
+             (let* ((b-l (nth 2 bg-hsl))
+                    (new-b-l (if (> b-l mid)
+                                 (+ mid (* bg-mag (- 1.0 mid)))
+                               (- mid (* bg-mag mid)))))
+               (apply #'color-hsl-to-rgb (list (nth 0 bg-hsl) (nth 1 bg-hsl) new-b-l))))))
+      ;; else
+      (message "Unable to recognize text-color or background-color")))
 
 (defun selected-window-contrast--rgb-to-hex (rgb &optional digits)
   "Convert normalized RGB list to hex string.
