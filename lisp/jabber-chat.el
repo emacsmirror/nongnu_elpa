@@ -263,7 +263,7 @@ added to the outgoing message.")
   "Float-time of earliest backlog entry inserted into buffer.
 nil if no backlog has been inserted.")
 
-(defvar jaber-chat-much-presence-patterns-history nil
+(defvar jabber-chat-muc-presence-patterns-history nil
   "History values selected for `jabber-muc-decorate-presence-patterns'")
 
 (defface jabber-muc-presence-dim
@@ -783,7 +783,7 @@ clients)."
                           "MUC presence treatment: "
                           (mapcar #'car jabber-muc-decorate-presence-patterns-alist)
                           nil t nil
-                          'jaber-chat-much-presence-patterns-history)
+                          'jabber-chat-muc-presence-patterns-history)
                          jabber-muc-decorate-presence-patterns-alist))))
     (unless (equal patterns jabber-muc-decorate-presence-patterns)
       (if global
