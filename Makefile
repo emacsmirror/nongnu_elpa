@@ -23,7 +23,8 @@ TESTS ?= tests/jabber-xml-tests.el tests/jabber-util-tests.el \
          tests/jabber-message-reply-tests.el \
          tests/jabber-styling-tests.el \
          tests/jabber-modeline-tests.el \
-         tests/jabber-openpgp-legacy-tests.el
+         tests/jabber-openpgp-legacy-tests.el \
+         tests/jabber-csi-tests.el
 
 all: build
 

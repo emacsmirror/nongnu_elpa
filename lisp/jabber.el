@@ -195,6 +195,7 @@ configure a Google Talk account like this:
 (require 'jabber-activity)
 (require 'jabber-vcard)
 (require 'jabber-chatstates)
+(require 'jabber-csi)
 (require 'jabber-receipts)
 (require 'jabber-vcard-avatars)
 (require 'jabber-omemo-trust)
