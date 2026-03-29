@@ -337,15 +337,14 @@ JC is the Jabber connection."
     (unless (eq major-mode 'jabber-chat-mode)
       (jabber-chat-mode)
 
-      (make-local-variable 'jabber-chatting-with)
-      (setq jabber-chatting-with chat-with)
+      (setq-local jabber-chatting-with chat-with)
       (jabber-chatbuffer--registry-put 'chat (jabber-jid-user chat-with))
 
       (jabber-chat-mode-setup jc #'jabber-chat-pp)
       (setq jabber-send-function #'jabber-chat-send)
       (setq header-line-format jabber-chat-header-line-format)
 
-      (make-local-variable 'jabber-chat-earliest-backlog)
+      (setq-local jabber-chat-earliest-backlog nil)
 
       ;; insert backlog
       (when (null jabber-chat-earliest-backlog)
@@ -787,10 +786,9 @@ clients)."
                           'jaber-chat-much-presence-patterns-history)
                          jabber-muc-decorate-presence-patterns-alist))))
     (unless (equal patterns jabber-muc-decorate-presence-patterns)
-      (set (if global
-               'jabber-muc-decorate-presence-patterns
-             (make-local-variable 'jabber-muc-decorate-presence-patterns))
-           patterns)
+      (if global
+          (setq jabber-muc-decorate-presence-patterns patterns)
+        (setq-local jabber-muc-decorate-presence-patterns patterns))
       (jabber-chat-redisplay))))
 
 (defun jabber-chat-muc-presence-highlight (message)

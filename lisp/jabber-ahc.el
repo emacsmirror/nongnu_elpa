@@ -170,12 +170,9 @@ JC is the Jabber connection."
 	 xdata
 	 (inhibit-read-only t))
 
-    (make-local-variable 'jabber-ahc-sessionid)
-    (setq jabber-ahc-sessionid sessionid)
-    (make-local-variable 'jabber-ahc-node)
-    (setq jabber-ahc-node node)
-    (make-local-variable 'jabber-buffer-connection)
-    (setq jabber-buffer-connection jc)
+    (setq-local jabber-ahc-sessionid sessionid)
+    (setq-local jabber-ahc-node node)
+    (setq-local jabber-buffer-connection jc)
 
     (dolist (x (jabber-xml-get-children query 'x))
       (when (string= (jabber-xml-get-attribute x 'xmlns) jabber-xdata-xmlns)

@@ -378,14 +378,14 @@ JC is the Jabber connection."
       (jabber-chat-mode)
 
       (setq-local jabber-group group)
-      (make-local-variable 'jabber-muc-topic)
+      (setq-local jabber-muc-topic nil)
 
       (jabber-chat-mode-setup jc #'jabber-chat-pp)
 
       (setq jabber-send-function #'jabber-muc-send)
       (setq header-line-format jabber-muc-header-line-format)
 
-      (make-local-variable 'jabber-chat-earliest-backlog)
+      (setq-local jabber-chat-earliest-backlog nil)
       (when (null jabber-chat-earliest-backlog)
         (let ((backlog-entries (jabber-db-backlog
                                 (jabber-connection-bare-jid jc)
@@ -456,7 +456,7 @@ JC is the Jabber connection."
     (setq jabber-send-function #'jabber-chat-send)
     (setq header-line-format jabber-muc-private-header-line-format)
 
-    (make-local-variable 'jabber-chat-earliest-backlog)
+    (setq-local jabber-chat-earliest-backlog nil)
     (when (null jabber-chat-earliest-backlog)
       (let ((backlog-entries (jabber-db-backlog
                               (jabber-connection-bare-jid jc)

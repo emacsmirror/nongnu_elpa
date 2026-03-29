@@ -87,10 +87,8 @@
 
 (defun jabber-widget-init-buffer (submit-to)
   "Setup buffer-local variables for widgets."
-  (make-local-variable 'jabber-widget-alist)
-  (make-local-variable 'jabber-widget-submit-to)
-  (setq jabber-widget-alist nil)
-  (setq jabber-widget-submit-to submit-to)
+  (setq-local jabber-widget-alist nil)
+  (setq-local jabber-widget-submit-to submit-to)
   (setq buffer-read-only nil)
   ;; XXX: This is because data from other queries would otherwise be
   ;; appended to this buffer, which would fail since widget buffers
@@ -102,10 +100,8 @@
   "Display widgets from <query/> element in IQ register or search namespace.
 Display widgets from <query/> element in jabber:iq:{register,search} namespace.
 DEFAULT-USERNAME is the default value for the username field."
-  (make-local-variable 'jabber-widget-alist)
-  (setq jabber-widget-alist nil)
-  (make-local-variable 'jabber-widget-form-type)
-  (setq jabber-widget-form-type 'register)
+  (setq-local jabber-widget-alist nil)
+  (setq-local jabber-widget-form-type 'register)
 
   (if (jabber-xml-get-children query 'instructions)
       (widget-insert "Instructions: " (car (jabber-xml-node-children (car (jabber-xml-get-children query 'instructions)))) "\n"))
@@ -165,10 +161,8 @@ widgets of the current buffer."
   "Display widgets from <x/> element in jabber:x:data namespace.
 DEFAULTS is an alist associating variable names with default values.
 DEFAULTS takes precedence over values specified in the form."
-  (make-local-variable 'jabber-widget-alist)
-  (setq jabber-widget-alist nil)
-  (make-local-variable 'jabber-widget-form-type)
-  (setq jabber-widget-form-type 'xdata)
+  (setq-local jabber-widget-alist nil)
+  (setq-local jabber-widget-form-type 'xdata)
 
   (let ((title (car (jabber-xml-node-children (car (jabber-xml-get-children x 'title))))))
     (if (stringp title)

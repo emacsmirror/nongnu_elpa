@@ -122,12 +122,9 @@ what kind of chat buffer is being created.")
 
 (define-derived-mode jabber-console-mode sgml-mode "Jabber Console"
   "Major mode for debug XMPP protocol."
-  ;; Make sure to set this variable somewhere
-  (make-local-variable 'jabber-send-function)
-  (make-local-variable 'jabber-point-insert)
-  (make-local-variable 'jabber-console-ewoc)
-
-  (setq jabber-send-function #'jabber-console-send)
+  (setq-local jabber-send-function #'jabber-console-send)
+  (setq-local jabber-point-insert nil)
+  (setq-local jabber-console-ewoc nil)
 
   (unless jabber-console-ewoc
     (setq jabber-console-ewoc

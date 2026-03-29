@@ -365,17 +365,14 @@ Return a positive integer, or nil if -n is unset or empty."
 (defun jabber-chat-mode-setup (jc ewoc-pp)
   "Initialize chat buffer state for connection JC.
 EWOC-PP is the pretty-printer function for the message EWOC."
-  (make-local-variable 'jabber-send-function)
-  (make-local-variable 'scroll-conservatively)
-  (make-local-variable 'jabber-point-insert)
-  (make-local-variable 'jabber-chat-ewoc)
-  (make-local-variable 'buffer-undo-list)
-
   (add-hook 'completion-at-point-functions #'jabber-muc-nick-completion-at-point nil t)
 
-  (setq jabber-buffer-connection jc
-        scroll-conservatively 5
-        buffer-undo-list t)
+  (setq-local jabber-send-function nil)
+  (setq-local jabber-point-insert nil)
+  (setq-local jabber-chat-ewoc nil)
+  (setq-local scroll-conservatively 5)
+  (setq-local buffer-undo-list t)
+  (setq jabber-buffer-connection jc)
 
   (unless jabber-chat-ewoc
     (setq jabber-chat-ewoc
