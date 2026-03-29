@@ -709,47 +709,45 @@ are the corresponding presence fields.
 This function is only concerned with presence stanzas resulting
 in the user entering/staying in the room."
   ;; The keys in the plist are affiliation, role and jid.
-  (when (plist-get new-plist 'jid)
-    ;; nickname is only used for displaying, so we can modify it if we
-    ;; want to.
-    (setq nickname (concat nickname " <"
-			   (jabber-jid-user (plist-get new-plist 'jid))
-			   ">")))
-  (cond
-   ((null old-plist)
-    ;; User enters the room
-    (concat nickname " enters the room ("
-	    (plist-get new-plist 'role)
-	    (unless (string= (plist-get new-plist 'affiliation) "none")
-	      (concat ", " (plist-get new-plist 'affiliation)))
-	    ")"))
+  (let ((display-nick (if (plist-get new-plist 'jid)
+                         (concat nickname " <"
+                                 (jabber-jid-user (plist-get new-plist 'jid))
+                                 ">")
+                       nickname)))
+    (cond
+     ((null old-plist)
+      (concat display-nick " enters the room ("
+              (plist-get new-plist 'role)
+              (unless (string= (plist-get new-plist 'affiliation) "none")
+                (concat ", " (plist-get new-plist 'affiliation)))
+              ")"))
 
-   ;; If affiliation changes, the role change is usually the logical
-   ;; one, so don't report it separately.
-   ((not (string= (plist-get old-plist 'affiliation)
-		  (plist-get new-plist 'affiliation)))
-    (let ((actor-reason (concat (when actor
-				  (concat " by " actor))
-				(when reason
-				  (concat ": " reason)))))
-      (jabber-muc--format-affiliation-change
-       nickname
-       (plist-get old-plist 'affiliation)
-       (plist-get new-plist 'affiliation)
-       actor-reason)))
+     ;; If affiliation changes, the role change is usually the logical
+     ;; one, so don't report it separately.
+     ((not (string= (plist-get old-plist 'affiliation)
+                    (plist-get new-plist 'affiliation)))
+      (let ((actor-reason (concat (when actor
+                                    (concat " by " actor))
+                                  (when reason
+                                    (concat ": " reason)))))
+        (jabber-muc--format-affiliation-change
+         display-nick
+         (plist-get old-plist 'affiliation)
+         (plist-get new-plist 'affiliation)
+         actor-reason)))
 
-   ;; Role changes
-   ((not (string= (plist-get old-plist 'role)
-		  (plist-get new-plist 'role)))
-    (let ((actor-reason (concat (when actor
-				  (concat " by " actor))
-				(when reason
-				  (concat ": " reason)))))
-      (jabber-muc--format-role-change
-       nickname
-       (plist-get old-plist 'role)
-       (plist-get new-plist 'role)
-       actor-reason)))))
+     ;; Role changes
+     ((not (string= (plist-get old-plist 'role)
+                    (plist-get new-plist 'role)))
+      (let ((actor-reason (concat (when actor
+                                    (concat " by " actor))
+                                  (when reason
+                                    (concat ": " reason)))))
+        (jabber-muc--format-role-change
+         display-nick
+         (plist-get old-plist 'role)
+         (plist-get new-plist 'role)
+         actor-reason))))))
 
 (defun jabber-muc-remove-participant (group nickname)
   "Forget everything about NICKNAME in GROUP."
@@ -1689,7 +1687,11 @@ X-MUC, ACTOR, REASON and OUR-NICKNAME come from the stanza."
                      (fboundp 'jabber-omemo--prefetch-muc-sessions))
             (jabber-omemo--prefetch-muc-sessions jc group)))))))
 
-(defun jabber-muc-process-presence (jc presence)
+(defun jabber-muc--parse-presence (presence)
+  "Extract fields from a MUC PRESENCE stanza.
+Return a plist with keys :from, :type, :group, :nickname, :symbol,
+:our-nickname, :x-muc, :item, :actor, :reason, :error-node, :status-codes.
+Accesses `jabber-pending-groupchats' to determine our nickname."
   (let* ((from (jabber-xml-get-attribute presence 'from))
 	 (type (jabber-xml-get-attribute presence 'type))
 	 (x-muc (cl-find-if
@@ -1701,8 +1703,10 @@ X-MUC, ACTOR, REASON and OUR-NICKNAME come from the stanza."
 	 (symbol (jabber-jid-symbol from))
 	 (our-nickname (gethash symbol jabber-pending-groupchats))
 	 (item (car (jabber-xml-get-children x-muc 'item)))
-	 (actor (jabber-xml-get-attribute (car (jabber-xml-get-children item 'actor)) 'jid))
-	 (reason (car (jabber-xml-node-children (car (jabber-xml-get-children item 'reason)))))
+	 (actor (jabber-xml-get-attribute
+		 (car (jabber-xml-get-children item 'actor)) 'jid))
+	 (reason (car (jabber-xml-node-children
+		       (car (jabber-xml-get-children item 'reason)))))
 	 (error-node (car (jabber-xml-get-children presence 'error)))
 	 (status-codes (if error-node
 			   (list (jabber-xml-get-attribute error-node 'code))
@@ -1710,6 +1714,25 @@ X-MUC, ACTOR, REASON and OUR-NICKNAME come from the stanza."
 			  (lambda (status-element)
 			    (jabber-xml-get-attribute status-element 'code))
 			  (jabber-xml-get-children x-muc 'status)))))
+    (list :from from :type type :group group :nickname nickname
+	  :symbol symbol :our-nickname our-nickname :x-muc x-muc
+	  :item item :actor actor :reason reason
+	  :error-node error-node :status-codes status-codes)))
+
+(defun jabber-muc-process-presence (jc presence)
+  "Dispatch a MUC presence stanza to the appropriate handler."
+  (let* ((p (jabber-muc--parse-presence presence))
+	 (type (plist-get p :type))
+	 (group (plist-get p :group))
+	 (nickname (plist-get p :nickname))
+	 (symbol (plist-get p :symbol))
+	 (our-nickname (plist-get p :our-nickname))
+	 (x-muc (plist-get p :x-muc))
+	 (item (plist-get p :item))
+	 (actor (plist-get p :actor))
+	 (reason (plist-get p :reason))
+	 (error-node (plist-get p :error-node))
+	 (status-codes (plist-get p :status-codes)))
     (cond
      ((or (string= type "unavailable") (string= type "error"))
       (if (or (null nickname)
