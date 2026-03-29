@@ -1050,15 +1050,17 @@ DATA is any sexp."
   (when jabber-debug-log-xml
       (jabber-process-console fsm direction data)))
 
+(defvar jabber-core--filtering nil
+  "Re-entrance guard for `jabber-pre-filter'.")
+
 (defun jabber-pre-filter (process string fsm)
   (with-current-buffer (process-buffer process)
     ;; Append new data
     (goto-char (point-max))
     (insert string)
 
-    (defvar jabber-filtering)
-    (unless (boundp 'jabber-filtering)
-      (let (jabber-filtering)
+    (unless jabber-core--filtering
+      (let ((jabber-core--filtering t))
 	(jabber-filter process fsm)))))
 
 (defun jabber-filter (process fsm)
@@ -1130,9 +1132,10 @@ XML-DATA is the parsed tree data from the stream (stanzas)
 obtained from `xml-parse-region'."
   (let* ((jabber-xml-data xml-data)
          (tag (jabber-xml-node-name xml-data))
-	 (functions (eval (cdr (assq tag '((iq . jabber-iq-chain)
-					   (presence . jabber-presence-chain)
-					   (message . jabber-message-chain)))))))
+	 (functions (pcase tag
+		      ('iq jabber-iq-chain)
+		      ('presence jabber-presence-chain)
+		      ('message jabber-message-chain))))
     (dolist (f functions)
       (condition-case e
 	  (funcall f jc xml-data)
