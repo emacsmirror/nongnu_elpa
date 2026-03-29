@@ -837,6 +837,7 @@ DELAYED marks the message as delayed unconditionally."
          (error-node (car (jabber-xml-get-children xml-data 'error)))
          (sid-el (jabber-xml-child-with-xmlns xml-data "urn:xmpp:sid:0"))
          (reply-el (jabber-xml-child-with-xmlns xml-data "urn:xmpp:reply:0"))
+         (unstyled-el (jabber-xml-child-with-xmlns xml-data "urn:xmpp:styling:0"))
          (raw-body (car (jabber-xml-node-children
                          (car (jabber-xml-get-children xml-data 'body)))))
          (body (if reply-el
@@ -862,7 +863,8 @@ DELAYED marks the message as delayed unconditionally."
      :reply-to-id (when reply-el
                     (jabber-xml-get-attribute reply-el 'id))
      :reply-to-jid (when reply-el
-                     (jabber-xml-get-attribute reply-el 'to)))))
+                     (jabber-xml-get-attribute reply-el 'to))
+     :unstyled (and unstyled-el t))))
 
 (defun jabber-chat--msg-plist-from-stanza (xml-data &optional delayed)
   "Extract display fields from XML-DATA into a message plist.
@@ -1223,11 +1225,10 @@ When ENCRYPTED, `jabber-chat-encrypted-indicator' is prepended."
 			       " "
 			       action)
 		       'face 'jabber-chat-nick-system)))
-	  (insert (propertize
-		   body
-		   'face (pcase who
-			   ((or :foreign :muc-foreign) 'jabber-chat-text-foreign)
-			   ((or :local :muc-local) 'jabber-chat-text-local))))))
+	  (let ((face (pcase who
+		       ((or :foreign :muc-foreign) 'jabber-chat-text-foreign)
+		       ((or :local :muc-local) 'jabber-chat-text-local))))
+	    (insert (propertize body 'face face)))))
       t)))
 
 (defun jabber-chat-print-url (msg _who mode)
