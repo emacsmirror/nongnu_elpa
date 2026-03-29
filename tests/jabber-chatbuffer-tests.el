@@ -388,6 +388,90 @@ Uses `jabber-chat-pp' so status indicators are actually rendered."
       (should (eq :undelivered
                   (plist-get (cadr (ewoc-data node)) :status))))))
 
+;;; Group 10: jabber-chat-mode-setup ewoc idempotency
+
+(ert-deftest jabber-chatbuffer-test-mode-setup-preserves-ewoc-on-repeat ()
+  "Calling jabber-chat-mode-setup twice preserves the existing ewoc.
+The `make-local-variable' pattern for jabber-chat-ewoc and
+jabber-point-insert is critical: on reconnection the function is called
+again, and the ewoc created on the first call must survive."
+  (with-temp-buffer
+    (let ((jabber-chat-ewoc nil)
+          (jabber-chat--msg-nodes nil)
+          (jabber-point-insert nil)
+          (jabber-send-function nil)
+          (jabber-chat-encryption nil)
+          (jabber-chat-default-encryption 'plaintext)
+          (jabber-buffer-connection nil)
+          (jabber-chat-encryption-message ""))
+      ;; Stub out DB and connection helpers called by jabber-chat-mode-setup
+      (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+                 (lambda (_jc) "me@example.com"))
+                ((symbol-function 'jabber-db-get-chat-encryption)
+                 (lambda (&rest _) nil))
+                ((symbol-function 'jabber-muc-nick-completion-at-point)
+                 #'ignore))
+        ;; First call: creates the ewoc
+        (jabber-chat-mode-setup 'fake-jc #'ignore)
+        (let ((ewoc-1 jabber-chat-ewoc)
+              (marker-1 jabber-point-insert))
+          (should ewoc-1)
+          (should marker-1)
+          ;; Insert a message into the ewoc to verify identity later
+          (jabber-chat-ewoc-enter
+           (list :local (list :id "persist-me" :body "x"
+                              :timestamp (current-time))))
+          ;; Second call (simulates reconnection): ewoc must survive
+          (jabber-chat-mode-setup 'fake-jc-2 #'ignore)
+          (should (eq ewoc-1 jabber-chat-ewoc))
+          (should (eq marker-1 jabber-point-insert))
+          ;; The message inserted before the second call is still there
+          (should (gethash "persist-me" jabber-chat--msg-nodes)))))))
+
+(ert-deftest jabber-chatbuffer-test-mode-setup-creates-ewoc-on-first-call ()
+  "First call to jabber-chat-mode-setup creates a new ewoc and marker."
+  (with-temp-buffer
+    (let ((jabber-chat-ewoc nil)
+          (jabber-chat--msg-nodes nil)
+          (jabber-point-insert nil)
+          (jabber-send-function nil)
+          (jabber-chat-encryption nil)
+          (jabber-chat-default-encryption 'plaintext)
+          (jabber-buffer-connection nil)
+          (jabber-chat-encryption-message ""))
+      (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+                 (lambda (_jc) "me@example.com"))
+                ((symbol-function 'jabber-db-get-chat-encryption)
+                 (lambda (&rest _) nil))
+                ((symbol-function 'jabber-muc-nick-completion-at-point)
+                 #'ignore))
+        (jabber-chat-mode-setup 'fake-jc #'ignore)
+        (should jabber-chat-ewoc)
+        (should (markerp jabber-point-insert))
+        (should (hash-table-p jabber-chat--msg-nodes))))))
+
+(ert-deftest jabber-chatbuffer-test-mode-setup-updates-connection ()
+  "Second call to jabber-chat-mode-setup updates jabber-buffer-connection."
+  (with-temp-buffer
+    (let ((jabber-chat-ewoc nil)
+          (jabber-chat--msg-nodes nil)
+          (jabber-point-insert nil)
+          (jabber-send-function nil)
+          (jabber-chat-encryption nil)
+          (jabber-chat-default-encryption 'plaintext)
+          (jabber-buffer-connection nil)
+          (jabber-chat-encryption-message ""))
+      (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+                 (lambda (_jc) "me@example.com"))
+                ((symbol-function 'jabber-db-get-chat-encryption)
+                 (lambda (&rest _) nil))
+                ((symbol-function 'jabber-muc-nick-completion-at-point)
+                 #'ignore))
+        (jabber-chat-mode-setup 'jc-old #'ignore)
+        (should (eq 'jc-old jabber-buffer-connection))
+        (jabber-chat-mode-setup 'jc-new #'ignore)
+        (should (eq 'jc-new jabber-buffer-connection))))))
+
 (provide 'jabber-chatbuffer-tests)
 
 ;;; jabber-chatbuffer-tests.el ends here

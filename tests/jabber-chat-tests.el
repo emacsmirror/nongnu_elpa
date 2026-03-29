@@ -340,6 +340,49 @@
           (should-not called))
       (jabber-chat-unregister-decrypt-handler 'test-nil-from))))
 
+;;; Group 8: jabber-chat-goto-address error handling
+
+(ert-deftest jabber-chat-test-goto-address-logs-error-on-failure ()
+  "goto-address error is logged via message, not silently swallowed."
+  (let ((logged-messages nil))
+    (cl-letf (((symbol-function 'goto-address-fontify)
+               (lambda (&rest _) (error "Test fontify error")))
+              ((symbol-function 'message)
+               (lambda (fmt &rest args)
+                 (push (apply #'format fmt args) logged-messages))))
+      (with-temp-buffer
+        (insert "https://example.com some text")
+        (jabber-chat-goto-address nil nil :insert)
+        (should (cl-some
+                 (lambda (m)
+                   (string-match-p "goto-address-fontify failed" m))
+                 logged-messages))))))
+
+(ert-deftest jabber-chat-test-goto-address-succeeds-normally ()
+  "goto-address runs without error when fontify succeeds."
+  (with-temp-buffer
+    (insert "Visit https://example.com today")
+    ;; Should not signal an error
+    (jabber-chat-goto-address nil nil :insert)))
+
+(ert-deftest jabber-chat-test-goto-address-skips-non-insert-mode ()
+  "goto-address does nothing when mode is not :insert."
+  (let ((called nil))
+    (cl-letf (((symbol-function 'goto-address-fontify)
+               (lambda (&rest _) (setq called t))))
+      (with-temp-buffer
+        (insert "https://example.com")
+        (jabber-chat-goto-address nil nil :printp)
+        (should-not called)))))
+
+;;; Group 9: jabber-chat-muc-presence-patterns-history variable
+
+(ert-deftest jabber-chat-test-muc-presence-patterns-history-exists ()
+  "The correctly-named history variable exists and is nil by default."
+  (should (boundp 'jabber-chat-muc-presence-patterns-history))
+  ;; The old typo should not exist
+  (should-not (boundp 'jaber-chat-much-presence-patterns-history)))
+
 (provide 'jabber-chat-tests)
 
 ;;; jabber-chat-tests.el ends here
