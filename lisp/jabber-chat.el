@@ -204,6 +204,16 @@ message.
 The functions should return a list of XML nodes they want to be
 added to the outgoing message.")
 
+(defun jabber-chat--run-send-hooks (stanza body id)
+  "Run `jabber-chat-send-hooks' and nconc results onto STANZA.
+BODY and ID are passed to each hook function."
+  (dolist (hook jabber-chat-send-hooks)
+    (if (eq hook t)
+        (when (local-variable-p 'jabber-chat-send-hooks)
+          (dolist (global-hook (default-value 'jabber-chat-send-hooks))
+            (nconc stanza (funcall global-hook body id))))
+      (nconc stanza (funcall hook body id)))))
+
 ;; Global reference declarations
 
 (declare-function jabber-compose "jabber-compose.el" (jc &optional recipient))
@@ -727,13 +737,7 @@ splice into the stanza after the body (e.g. OOB, hints)."
 			      (body () ,body)
 			      ,@extra-elements)))
        ;; ...add additional elements...
-       (dolist (hook jabber-chat-send-hooks)
-	 (if (eq hook t)
-	     ;; Local hook referring to global...
-	     (when (local-variable-p 'jabber-chat-send-hooks)
-	       (dolist (global-hook (default-value 'jabber-chat-send-hooks))
-		 (nconc stanza-to-send (funcall global-hook body id))))
-	   (nconc stanza-to-send (funcall hook body id))))
+       (jabber-chat--run-send-hooks stanza-to-send body id)
        ;; ...display it, if it would be displayed.
        (let ((msg-plist (jabber-chat--msg-plist-from-stanza stanza-to-send)))
          (plist-put msg-plist :status :sent)

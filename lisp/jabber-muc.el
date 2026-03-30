@@ -281,6 +281,8 @@ The format is that of `mode-line-format' and `header-line-format'."
 (declare-function jabber-get-bookmarks-from-cache "jabber-bookmarks"
                   (jc))
 (declare-function jabber-send-sexp "jabber-core.el"  (jc sexp))
+(declare-function jabber-chat--run-send-hooks "jabber-chat.el"
+                  (stanza body id))
 (declare-function jabber-chat-send "jabber-chat.el"
                   (jc body &optional extra-elements))
 (declare-function jabber-send-message "jabber-chat.el"
@@ -496,12 +498,7 @@ JC is the Jabber connection."
                        (type . "groupchat")
                        (id . ,id))
                       (body () ,body))))
-       (dolist (hook jabber-chat-send-hooks)
-         (if (eq hook t)
-             (when (local-variable-p 'jabber-chat-send-hooks)
-               (dolist (global-hook (default-value 'jabber-chat-send-hooks))
-                 (nconc stanza (funcall global-hook body id))))
-           (nconc stanza (funcall hook body id))))
+       (jabber-chat--run-send-hooks stanza body id)
        (jabber-send-sexp jc stanza)))))
 
 (defun jabber-muc-add-groupchat (group nickname &optional jc)

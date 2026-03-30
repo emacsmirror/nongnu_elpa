@@ -40,6 +40,8 @@
 (declare-function jabber-jid-user "jabber-util" (jid))
 (declare-function jabber-disco-advertise-feature "jabber-disco" (feature))
 (declare-function jabber-send-sexp "jabber-core" (jc sexp))
+(declare-function jabber-chat--run-send-hooks "jabber-chat"
+                  (stanza body id))
 (declare-function jabber-chat--msg-plist-from-stanza "jabber-chat"
                   (xml-data &optional delayed))
 (declare-function jabber-maybe-print-rare-time "jabber-chat" (node))
@@ -353,12 +355,7 @@ Fetches missing recipient keys via PubSub before encrypting."
                            (body () ,jabber-openpgp-fallback-body)
                            ,(jabber-hints-store)
                            ,(jabber-eme-encryption jabber-openpgp-xmlns "OpenPGP"))))
-    (dolist (hook jabber-chat-send-hooks)
-      (if (eq hook t)
-          (when (local-variable-p 'jabber-chat-send-hooks)
-            (dolist (global-hook (default-value 'jabber-chat-send-hooks))
-              (nconc stanza (funcall global-hook body id))))
-        (nconc stanza (funcall hook body id))))
+    (jabber-chat--run-send-hooks stanza body id)
     (let ((msg-plist (jabber-chat--msg-plist-from-stanza stanza)))
       (plist-put msg-plist :body body)
       (plist-put msg-plist :status :sent)
