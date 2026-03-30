@@ -287,17 +287,6 @@ Return (DIRECTION . PEER) where DIRECTION is \"in\" or \"out\"."
                   (if (string= direction "out") to from)))))
     (cons direction peer)))
 
-(defun jabber-mam--detect-encryption (xml-data)
-  "Return non-nil if XML-DATA contains an encryption element.
-Checks for OMEMO, legacy OpenPGP, and OX namespaces."
-  (and (or (jabber-xml-child-with-xmlns
-            xml-data "eu.siacs.conversations.axolotl")
-           (jabber-xml-child-with-xmlns
-            xml-data "jabber:x:encrypted")
-           (jabber-xml-child-with-xmlns
-            xml-data "urn:xmpp:openpgp:0"))
-       t))
-
 (defun jabber-mam--extract-fields (jc inner-msg stamp)
   "Extract message fields from INNER-MSG for storage.
 JC is the connection.  STAMP is the MAM delay timestamp string.
@@ -350,7 +339,7 @@ JC is the Jabber connection.  XML-DATA is the stanza."
     (let* ((archive-id (nth 0 parsed))
            (stamp (nth 1 parsed))
            (inner-msg (nth 2 parsed))
-           (encrypted (jabber-mam--detect-encryption inner-msg))
+           (encrypted (jabber-xml-encrypted-p inner-msg))
            (inner-msg (jabber-chat--decrypt-if-needed jc inner-msg))
            (fields (jabber-mam--extract-fields jc inner-msg stamp))
            (peer (plist-get fields :peer))

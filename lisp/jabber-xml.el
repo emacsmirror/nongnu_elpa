@@ -204,6 +204,17 @@ Return nil if the attribute was not found."
       (setq children (cdr children)))
     result))
 
+(defun jabber-xml-encrypted-p (xml-data)
+  "Return non-nil if XML-DATA contains an encryption element.
+Checks for OMEMO, legacy OpenPGP, and OX namespaces."
+  (and (or (jabber-xml-child-with-xmlns
+            xml-data "eu.siacs.conversations.axolotl")
+           (jabber-xml-child-with-xmlns
+            xml-data "jabber:x:encrypted")
+           (jabber-xml-child-with-xmlns
+            xml-data "urn:xmpp:openpgp:0"))
+       t))
+
 (defun jabber-xml-path (xml-data path)
   "Find sub-node of XML-DATA according to PATH.
   PATH is a vaguely XPath-inspired list.  Each element can be:
