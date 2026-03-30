@@ -11,7 +11,7 @@ Preview content of link of epub file in popup for mouse hover when Emacs nov-mod
          ("<f1> <f1>" . eldoc-mouse-pop-doc-at-cursor))
   :hook (eglot-managed-mode emacs-lisp-mode nov-mode))
 ```
-2. configure `eldoc-mouse-nov`. Now eldoc-mouse-nov is available on (https://elpa.nongnu.org/nongnu/eldoc-mouse-nov.html)[NonGnu ELPA]
+2. configure `eldoc-mouse-nov`. Now eldoc-mouse-nov is available on [NonGnu ELPA](https://elpa.nongnu.org/nongnu/eldoc-mouse-nov.html)
 ``` elisp
 (use-package eldoc-mouse-nov
      :ensure t
