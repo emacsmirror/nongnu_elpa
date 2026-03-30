@@ -6,7 +6,7 @@
 ;; Author: Anoncheg <vitalij@gmx.com>
 ;; Keywords:  color, windows, faces, buffer, background
 ;; URL: https://codeberg.org/Anoncheg/selected-window-contrast
-;; Version: 0.4
+;; Version: 0.4.1
 ;; Created: 11 dec 2024
 ;; Package-Requires: ((emacs "26.1"))
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
@@ -301,12 +301,14 @@ Use `rectangle-mark-mode'.  Deactivate rectangle after 1 second or less."
   ;; save current window, because `previous-window' is not working.
   (setq selected-window-contrast-prev-window (selected-window)))
 
-(defun selected-window-contrast-highlight-selected-window-with-timeout ()
+(defun selected-window-contrast-highlight-selected-window-with-timeout (&optional timeout)
   "Highlight not selected windows with a different background color.
-Timeout 0.1 sec.
-For case of opening new frame with new buffer by call:
+With TIMEOUT 0.4 sec by default. This function is not used anywhere.
+For problem case when theme was not loaded of opening new frame with new
+ buffer by call:
 $ emacsclient -c ~/file"
-  (run-with-idle-timer 0.4 nil #'selected-window-contrast-highlight-selected-window))
+  (run-with-idle-timer (or timeout 0.4) nil
+                       #'selected-window-contrast-highlight-selected-window))
 
 (defun selected-window-contrast-highlight-selected-window ()
   "Highlight not selected windows with a different background color."
