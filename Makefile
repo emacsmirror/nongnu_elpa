@@ -1,4 +1,4 @@
-.PHONY: all build clean install uninstall check test
+.PHONY: all build clean install uninstall check test load
 
 ifndef EMACS_CMD
 GUIX := $(shell command -v guix 2>/dev/null)
@@ -117,6 +117,13 @@ test:
 	  for f in $$failed_files; do echo "  $$f"; done; \
 	fi; \
 	[ $$failed -eq 0 ]
+
+load: clean-elc
+	@for f in lisp/*.el; do \
+	  emacsclient --eval "(load-file \"$(CURDIR)/$$f\")" > /dev/null || \
+	    printf "\033[31mFAIL\033[0m $$f\n"; \
+	done
+	@printf "\033[32mLoaded all lisp/*.el into Emacs\033[0m\n"
 
 clean-elc:
 	find . -name '*.elc' -delete
