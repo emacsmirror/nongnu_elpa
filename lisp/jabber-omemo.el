@@ -1081,6 +1081,9 @@ inserting a new ewoc entry."
                            ,(jabber-eme-encryption jabber-omemo-xmlns "OMEMO"))))
     (when (buffer-live-p buffer)
       (with-current-buffer buffer
+        ;; Inline hook loop instead of jabber-chat--run-send-hooks:
+        ;; this runs from an async IQ callback where current buffer
+        ;; is not the chat buffer, so we need with-current-buffer.
         (dolist (hook jabber-chat-send-hooks)
           (if (eq hook t)
               (when (local-variable-p 'jabber-chat-send-hooks)
