@@ -134,7 +134,7 @@ JC is the Jabber connection."
   (let ((old-hash (gethash
 		   (jabber-connection-bare-jid jc)
 		   jabber-vcard-avatars-current-hash)))
-    (when (not (string= old-hash new-hash))
+    (unless (equal old-hash new-hash)
       (puthash (jabber-connection-bare-jid jc)
 	       new-hash jabber-vcard-avatars-current-hash)
       (jabber-send-current-presence jc))))
