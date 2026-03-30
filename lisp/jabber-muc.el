@@ -1500,7 +1500,8 @@ messages."
                                        nick group buffer
                                        body-text)))))))
 
-(add-to-list 'jabber-message-chain #'jabber-muc-process-message)
+(with-eval-after-load "jabber-core"
+  (jabber-chain-add 'jabber-message-chain #'jabber-muc-process-message))
 
 (defun jabber-muc-process-message (jc xml-data)
   "If XML-DATA is a groupchat message, handle it as such.

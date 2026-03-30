@@ -59,10 +59,7 @@
 
 (defvar-local jabber-rtt-timer nil)
 
-;; Add function last in chain, so a chat buffer is already created.
-;;;###autoload
-(with-eval-after-load "jabber-core"
-  (add-to-list 'jabber-message-chain #'jabber-rtt-handle-message t))
+(jabber-chain-add 'jabber-message-chain #'jabber-rtt-handle-message 50)
 
 ;;;###autoload
 (defun jabber-rtt-handle-message (jc xml-data)

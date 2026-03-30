@@ -253,7 +253,7 @@ Runs `jabber-presence-hooks' and `jabber-alert-presence-hooks'."
                                  newstatus
                                  status-message))))
 
-(add-to-list 'jabber-presence-chain 'jabber-process-presence)
+(jabber-chain-add 'jabber-presence-chain #'jabber-process-presence)
 (defun jabber-process-presence (jc xml-data)
   "Process incoming presence tags.
 

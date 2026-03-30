@@ -1000,9 +1000,9 @@ obtained from `xml-parse-region'."
 ;; MUC join/leave is signaled via presence stanzas, so we hook into
 ;; the presence chain.  The handler short-circuits via `equal' check
 ;; and only triggers a refresh when the groupchat list actually changes.
-(with-eval-after-load 'jabber-muc
-  (add-hook 'jabber-presence-chain
-	    #'jabber-roster--maybe-refresh-on-muc))
+(with-eval-after-load "jabber-core"
+  (jabber-chain-add 'jabber-presence-chain
+                    #'jabber-roster--maybe-refresh-on-muc 10))
 
 (provide 'jabber-roster)
 

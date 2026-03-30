@@ -51,7 +51,7 @@
 ;;; Respond to disco requests
 
 (with-eval-after-load "jabber-core"
-  (add-to-list 'jabber-presence-chain #'jabber-process-caps))
+  (jabber-chain-add 'jabber-presence-chain #'jabber-process-caps 10))
 
 (defvar jabber-caps-cache (make-hash-table :test 'equal))
 

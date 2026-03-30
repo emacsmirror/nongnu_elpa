@@ -493,7 +493,7 @@ When nil or 0, display all messages."
 	    (jabber-chat-create-buffer jc chat-with)))
 	 (message "History loaded for %s" peer))))))
 
-(add-to-list 'jabber-message-chain #'jabber-process-chat)
+(jabber-chain-add 'jabber-message-chain #'jabber-process-chat)
 
 (defun jabber-get-forwarded-message (xml-data)
   "Extract the inner message from a carbon-forwarded stanza.

@@ -96,7 +96,8 @@ the original message in the MUC buffer and replace it with a tombstone."
            stanza-id moderator reason))))
     t))
 
-(add-to-list 'jabber-message-chain #'jabber-moderation--handle-message)
+(with-eval-after-load "jabber-core"
+  (jabber-chain-add 'jabber-message-chain #'jabber-moderation--handle-message))
 
 ;; XEP-0424: clients SHOULD advertise retract support so senders know we
 ;; handle tombstones.  The moderate namespace is a MUC-service feature

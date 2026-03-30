@@ -209,8 +209,7 @@ Added to `kill-buffer-hook' in chat buffers."
 	  (setq jabber-chatstates-last-state state)
 	  (jabber-chatstates--update-ewoc state)))))))
 
-;; Add function last in chain, so a chat buffer is already created.
-(add-to-list 'jabber-message-chain #'jabber-handle-incoming-message-chatstates t)
+(jabber-chain-add 'jabber-message-chain #'jabber-handle-incoming-message-chatstates 50)
 
 (jabber-disco-advertise-feature jabber-chatstates-xmlns)
 

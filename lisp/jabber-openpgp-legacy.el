@@ -351,8 +351,9 @@ Must be called from a MUC buffer with `jabber-group' set."
 (add-to-list 'jabber-presence-element-functions
              #'jabber-openpgp-legacy--sign-presence)
 
-(add-to-list 'jabber-presence-chain
-             #'jabber-openpgp-legacy--process-presence)
+(with-eval-after-load "jabber-core"
+  (jabber-chain-add 'jabber-presence-chain
+                    #'jabber-openpgp-legacy--process-presence 30))
 
 (provide 'jabber-openpgp-legacy)
 ;;; jabber-openpgp-legacy.el ends here

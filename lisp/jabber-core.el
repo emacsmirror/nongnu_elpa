@@ -74,13 +74,26 @@
   "Non-nil if are we in the process of voluntary disconnection.")
 
 (defvar jabber-message-chain nil
-  "Incoming messages are sent to these functions, in order.")
+  "Incoming messages are sent to these functions, in order.
+Each entry is a cons (DEPTH . HANDLER).  Lower depth runs first.")
 
 (defvar jabber-iq-chain nil
-  "Incoming infoqueries are sent to these functions, in order.")
+  "Incoming infoqueries are sent to these functions, in order.
+Each entry is a cons (DEPTH . HANDLER).  Lower depth runs first.")
 
 (defvar jabber-presence-chain nil
-  "Incoming presence notifications are sent to these functions, in order.")
+  "Incoming presence notifications are sent to these functions, in order.
+Each entry is a cons (DEPTH . HANDLER).  Lower depth runs first.")
+
+;;;###autoload
+(defun jabber-chain-add (chain-var handler &optional depth)
+  "Add HANDLER to stanza processing chain CHAIN-VAR.
+DEPTH is numeric priority (default 0).  Lower runs first."
+  (let ((entry (cons (or depth 0) handler)))
+    (unless (cl-find handler (symbol-value chain-var) :key #'cdr)
+      (set chain-var
+           (sort (cons entry (symbol-value chain-var))
+                 (lambda (a b) (< (car a) (car b))))))))
 
 (defvar-local jabber-namespace-prefixes nil
   "XML namespace prefixes used for the current connection.")
@@ -1136,11 +1149,12 @@ obtained from `xml-parse-region'."
 		      ('iq jabber-iq-chain)
 		      ('presence jabber-presence-chain)
 		      ('message jabber-message-chain))))
-    (dolist (f functions)
-      (condition-case e
-	  (funcall f jc xml-data)
-	((debug error)
-	 (fsm-debug-output "Error %S while processing %S with function %s" e xml-data f))))))
+    (dolist (entry functions)
+      (let ((f (if (consp entry) (cdr entry) entry)))
+        (condition-case e
+	    (funcall f jc xml-data)
+	  ((debug error)
+	   (fsm-debug-output "Error %S while processing %S with function %s" e xml-data f)))))))
 
 (defun jabber-process-stream-error (xml-data state-data)
   "Process an incoming stream error.

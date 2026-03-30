@@ -241,7 +241,7 @@ Does not downgrade from \"seen\" to \"delivered\"."
             (propertize (format " %s %s" label time-str) 'face face))
       (force-mode-line-update))))
 
-(add-to-list 'jabber-message-chain #'jabber-receipts--handle-message t)
+(jabber-chain-add 'jabber-message-chain #'jabber-receipts--handle-message 50)
 
 ;;; Display marker on buffer visibility
 

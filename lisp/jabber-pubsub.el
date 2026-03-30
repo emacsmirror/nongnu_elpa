@@ -153,7 +153,7 @@ JC is the Jabber connection.  XML-DATA is the message stanza."
                    (jabber-xml-node-children items-or-purge)))))))
 
 (with-eval-after-load "jabber-core"
-  (add-to-list 'jabber-message-chain #'jabber-pubsub--process-event))
+  (jabber-chain-add 'jabber-message-chain #'jabber-pubsub--process-event))
 
 ;;; Disco advertisement
 

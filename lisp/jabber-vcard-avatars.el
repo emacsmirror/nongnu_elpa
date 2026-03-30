@@ -54,7 +54,8 @@
   "For each connection, SHA1 hash of current avatar.
 Keys are full JIDs.")
 
-(add-to-list 'jabber-presence-chain 'jabber-vcard-avatars-presence)
+(with-eval-after-load "jabber-core"
+  (jabber-chain-add 'jabber-presence-chain #'jabber-vcard-avatars-presence 20))
 (defun jabber-vcard-avatars-presence (jc xml-data)
   "Look for vCard avatar mark in <presence/> stanza.
 

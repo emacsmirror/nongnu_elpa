@@ -848,9 +848,8 @@ depth.  Called when leaving a room to stop wasting bandwidth."
 
 (jabber-disco-advertise-feature jabber-mam-xmlns)
 
-;; Add at front of message chain so MAM results are intercepted
-;; before jabber-process-chat and jabber-muc-process-message.
-(add-to-list 'jabber-message-chain #'jabber-mam--process-message)
+(with-eval-after-load "jabber-core"
+  (jabber-chain-add 'jabber-message-chain #'jabber-mam--process-message -10))
 
 (with-eval-after-load "jabber-core"
   (add-hook 'jabber-post-connect-hooks #'jabber-mam-maybe-catchup)
