@@ -240,22 +240,16 @@ or decrease contrast."
       (setq back (face-attribute 'default :background)))
     (when (eq fore 'unspecified)
       (setq fore (face-attribute 'default :foreground)))
-
-    (if (or (eq back 'unspecified)
-            (eq back 'unspecified-bg)
-            (eq fore 'unspecified))
-        (message "backgound or foreground color is unspecified in active mode line.")
-      ;; else
-      (let* ((new-colors (selected-window-contrast-adjust-contrast fore
-                                                                   back
-                                                                   contrast-background
-                                                                   contrast-text))
-             (new-fore (apply #'selected-window-contrast--rgb-to-hex (nth 0 new-colors)))
-             (new-back (apply #'selected-window-contrast--rgb-to-hex (nth 1 new-colors))))
-        (set-face-attribute 'mode-line-active nil
-                            :foreground new-fore
-                            :background new-back)
-        t))))
+    (when-let* ((new-colors (selected-window-contrast-adjust-contrast fore
+                                                                      back
+                                                                      contrast-background
+                                                                      contrast-text)) ; may return nil
+                (new-fore (apply #'selected-window-contrast--rgb-to-hex (nth 0 new-colors)))
+                (new-back (apply #'selected-window-contrast--rgb-to-hex (nth 1 new-colors))))
+      (set-face-attribute 'mode-line-active nil
+                          :foreground new-fore
+                          :background new-back)
+      t)))
 
 (defvar selected-window-contrast-prev-window nil
   "Saved current window, because `previous-window' is not working.
