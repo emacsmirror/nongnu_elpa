@@ -1,3 +1,4 @@
+[![NonGNU ELPA](https://elpa.nongnu.org/nongnu/eldoc-mouse-nov.svg)](https://elpa.nongnu.org/nongnu/eldoc-mouse-nov.html)
 # eldoc-mouse-nov
 Preview content of link of epub file in popup for mouse hover when Emacs nov-mode is used.
 ### Demo Video
@@ -10,17 +11,12 @@ Preview content of link of epub file in popup for mouse hover when Emacs nov-mod
          ("<f1> <f1>" . eldoc-mouse-pop-doc-at-cursor))
   :hook (eglot-managed-mode emacs-lisp-mode nov-mode))
 ```
-2. clone this repository.
-``` bash
-git clone https://github.com/huangfeiyu/eldoc-mouse-nov.git
-```
-3. configure `eldoc-mouse-nov`
+2. configure `eldoc-mouse-nov`. Now eldoc-mouse-nov is available on NonGnu ELPA
 ``` elisp
 (use-package eldoc-mouse-nov
-  :ensure nil
-  :load-path "/path/to/eldoc-mouse-nov/"
-  :after (eldoc-mouse)
-  :hook (nov-mode))
+     :ensure t
+     :after (eldoc-mouse)
+     :hook (nov-mode))
 ```
 ## Requirements
 
