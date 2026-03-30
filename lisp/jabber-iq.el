@@ -88,8 +88,8 @@ obtained from `xml-parse-region'."
 	  (string= type "error"))
       (let ((callback-cons (nth (cdr (assoc type '(("result" . 0)
 						   ("error" . 1)))) (cdr callback))))
-	(if (consp callback-cons)
-	    (funcall (car callback-cons) jc xml-data (cdr callback-cons))))
+	(when (and (consp callback-cons) (car callback-cons))
+	  (funcall (car callback-cons) jc xml-data (cdr callback-cons))))
       (setq *jabber-open-info-queries* (delq callback *jabber-open-info-queries*)))
 
      ;; if type is "get" or "set", correct action depends on namespace of request.

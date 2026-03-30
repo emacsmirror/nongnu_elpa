@@ -425,7 +425,7 @@ publish-options alist, and XML-DATA is the error IQ stanza."
           (puthash node t jabber-omemo--reconfigured-nodes)
           (message "OMEMO: publish-options conflict for %s, retrying" label)
           (jabber-pubsub-publish
-           jc nil node item-id payload nil nil
+           jc nil node item-id payload nil #'ignore
            (lambda (_jc xml-data2 _closure)
              (warn "jabber-omemo: failed to publish %s (retry): %s"
                    label (jabber-parse-error
@@ -446,7 +446,7 @@ publish-options alist, and XML-DATA is the error IQ stanza."
     (jabber-pubsub-publish
      jc nil node "current" payload
      jabber-omemo--devicelist-publish-options
-     nil
+     #'ignore
      (lambda (_jc xml-data _closure)
        (jabber-omemo--handle-publish-conflict
         jc node "current" payload
@@ -633,7 +633,7 @@ All key material is base64-decoded to unibyte strings."
       (jabber-pubsub-publish
        jc nil node item-id payload
        jabber-omemo--bundle-publish-options
-       nil
+       #'ignore
        (lambda (_jc xml-data _closure)
          (jabber-omemo--handle-publish-conflict
           jc node item-id payload

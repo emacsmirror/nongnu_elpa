@@ -584,8 +584,8 @@ XEP-0410 and auto-rejoins if needed."
         (jabber-send-iq
          jc self-jid "get"
          '(ping ((xmlns . "urn:xmpp:ping")))
-         #'jabber-silent-process-data
-         (format "MUC self-ping: still in %s" group)
+         #'ignore
+         nil
          #'jabber-muc--self-ping-failed
          closure)))))
 
