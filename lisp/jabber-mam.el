@@ -287,74 +287,89 @@ Return (DIRECTION . PEER) where DIRECTION is \"in\" or \"out\"."
                   (if (string= direction "out") to from)))))
     (cons direction peer)))
 
+(defun jabber-mam--detect-encryption (xml-data)
+  "Return non-nil if XML-DATA contains an encryption element.
+Checks for OMEMO, legacy OpenPGP, and OX namespaces."
+  (and (or (jabber-xml-child-with-xmlns
+            xml-data "eu.siacs.conversations.axolotl")
+           (jabber-xml-child-with-xmlns
+            xml-data "jabber:x:encrypted")
+           (jabber-xml-child-with-xmlns
+            xml-data "urn:xmpp:openpgp:0"))
+       t))
+
+(defun jabber-mam--extract-fields (jc inner-msg stamp)
+  "Extract message fields from INNER-MSG for storage.
+JC is the connection.  STAMP is the MAM delay timestamp string.
+Returns a plist with :from :to :type :body :stanza-id :our-jid
+:direction :peer :timestamp :oob-entries, or nil if direction
+cannot be determined."
+  (let* ((from (jabber-xml-get-attribute inner-msg 'from))
+         (to (jabber-xml-get-attribute inner-msg 'to))
+         (type (or (jabber-xml-get-attribute inner-msg 'type) "chat"))
+         (body-el (car (jabber-xml-get-children inner-msg 'body)))
+         (body (and body-el (car (jabber-xml-node-children body-el))))
+         (stanza-id (jabber-xml-get-attribute inner-msg 'id))
+         (our-jid (jabber-connection-bare-jid jc))
+         (dir-peer (jabber-mam--classify-direction jc from to type))
+         (direction (car dir-peer))
+         (peer (cdr dir-peer))
+         (timestamp (and stamp (jabber-parse-time stamp)))
+         (oob-entries (jabber-db--extract-oob-entries inner-msg)))
+    (list :from from :to to :type type :body body
+          :stanza-id stanza-id :our-jid our-jid
+          :direction direction :peer peer
+          :timestamp timestamp :oob-entries oob-entries)))
+
+(defun jabber-mam--track-sync-ids (qid archive-id stanza-id ts)
+  "Update sync-received tracking for query QID.
+ARCHIVE-ID and STANZA-ID are recorded as seen.  TS updates the
+min/max timestamp range."
+  (when-let* ((sync-data (cdr (assoc qid jabber-mam--sync-received
+                                      #'string=)))
+              (ids (plist-get sync-data :ids)))
+    (when archive-id (puthash archive-id t ids))
+    (when stanza-id (puthash stanza-id t ids))
+    (when (or (null (plist-get sync-data :min-ts))
+              (< ts (plist-get sync-data :min-ts)))
+      (plist-put sync-data :min-ts ts))
+    (when (or (null (plist-get sync-data :max-ts))
+              (> ts (plist-get sync-data :max-ts)))
+      (plist-put sync-data :max-ts ts))))
+
 (defun jabber-mam--process-message (jc xml-data)
   "Handle a MAM result <message> from the message chain.
 JC is the Jabber connection.  XML-DATA is the stanza."
-  ;; Validate query ID and sender JID against active queries.
   (when-let* ((result-el (jabber-xml-child-with-xmlns
                            xml-data jabber-mam-xmlns))
               (qid (jabber-xml-get-attribute result-el 'queryid))
               ((jabber-mam--active-query-p qid))
               (parsed (jabber-mam--parse-result xml-data))
-              ;; Sender must be our bare JID (1:1 archive) or a
-              ;; joined MUC room (room archive).
               ((jabber-mam--valid-sender-p
                 jc (jabber-xml-get-attribute xml-data 'from) qid)))
     (let* ((archive-id (nth 0 parsed))
            (stamp (nth 1 parsed))
            (inner-msg (nth 2 parsed))
-           ;; Detect encryption before decryption modifies the stanza
-           (encrypted (and (or (jabber-xml-child-with-xmlns
-                                inner-msg "eu.siacs.conversations.axolotl")
-                               (jabber-xml-child-with-xmlns
-                                inner-msg "jabber:x:encrypted")
-                               (jabber-xml-child-with-xmlns
-                                inner-msg "urn:xmpp:openpgp:0"))
-                           t))
+           (encrypted (jabber-mam--detect-encryption inner-msg))
            (inner-msg (jabber-chat--decrypt-if-needed jc inner-msg))
-           (from (jabber-xml-get-attribute inner-msg 'from))
-           (to (jabber-xml-get-attribute inner-msg 'to))
-           (type (or (jabber-xml-get-attribute inner-msg 'type) "chat"))
-           (body-el (car (jabber-xml-get-children inner-msg 'body)))
-           (body (and body-el (car (jabber-xml-node-children body-el))))
-           (stanza-id (jabber-xml-get-attribute inner-msg 'id))
-           (our-jid (jabber-connection-bare-jid jc))
-           (dir-peer (jabber-mam--classify-direction jc from to type))
-           (direction (car dir-peer))
-           (peer (cdr dir-peer))
-           (timestamp (and stamp (jabber-parse-time stamp)))
-           ;; OOB
-           (oob-entries (jabber-db--extract-oob-entries inner-msg)))
+           (fields (jabber-mam--extract-fields jc inner-msg stamp))
+           (peer (plist-get fields :peer))
+           (body (plist-get fields :body)))
       (if (and peer body)
-          (let ((ts (floor (float-time (or timestamp (current-time))))))
+          (let ((ts (floor (float-time
+                            (or (plist-get fields :timestamp)
+                                (current-time))))))
             (jabber-db-store-message
-             our-jid peer direction type body ts
-             (jabber-jid-resource from)
-             stanza-id archive-id
+             (plist-get fields :our-jid) peer
+             (plist-get fields :direction) (plist-get fields :type)
+             body ts (jabber-jid-resource (plist-get fields :from))
+             (plist-get fields :stanza-id) archive-id
              (jabber-db--extract-occupant-id inner-msg)
-             oob-entries encrypted)
-            ;; Track IDs for sync-buffer reconciliation.
-            (when-let* ((sync-data
-                         (cdr (assoc qid jabber-mam--sync-received
-                                     #'string=)))
-                        (ids (plist-get sync-data :ids)))
-              (when archive-id (puthash archive-id t ids))
-              (when stanza-id (puthash stanza-id t ids))
-              (when (or (null (plist-get sync-data :min-ts))
-                        (< ts (plist-get sync-data :min-ts)))
-                (plist-put sync-data :min-ts ts))
-              (when (or (null (plist-get sync-data :max-ts))
-                        (> ts (plist-get sync-data :max-ts)))
-                (plist-put sync-data :max-ts ts)))
-            ;; Don't display during sync.  Track the buffer for
-            ;; post-sync redisplay instead.
-            (jabber-mam--mark-dirty peer type)
-            ;; Strip children so downstream handlers see an empty
-            ;; stanza and skip it.
+             (plist-get fields :oob-entries) encrypted)
+            (jabber-mam--track-sync-ids qid archive-id
+                                        (plist-get fields :stanza-id) ts)
+            (jabber-mam--mark-dirty peer (plist-get fields :type))
             (setcdr (cdr xml-data) nil))
-        ;; Bodyless MAM result (receipt, marker, chat state): unwrap
-        ;; the inner message so downstream handlers see the original
-        ;; sender JID and protocol elements.
         (jabber-mam--unwrap-into xml-data inner-msg)))))
 
 (defun jabber-mam--our-muc-nick-p (room nick jc)

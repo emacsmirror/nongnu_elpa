@@ -46,6 +46,7 @@
 (declare-function jabber-xml-get-attribute "jabber-xml.el" (node attribute))
 (declare-function jabber-muc-joined-p "jabber-muc" (group &optional jc))
 (declare-function jabber-muc-sender-p "jabber-muc" (jid))
+(declare-function jabber-mam--detect-encryption "jabber-mam" (xml-data))
 (defvar jabber-chatting-with)           ; jabber-chat.el
 (defvar jabber-chat-send-hooks)        ; jabber-chat.el
 (defvar jabber-chat-encryption)        ; jabber-chatbuffer.el
@@ -807,13 +808,7 @@ XML-DATA is the parsed stanza."
                                    (jabber-jid-user from))))))
               (jabber-xml-get-attribute sid-el 'id)))
            (oob-entries (jabber-db--extract-oob-entries xml-data))
-           (encrypted (and (or (jabber-xml-child-with-xmlns
-                               xml-data "eu.siacs.conversations.axolotl")
-                              (jabber-xml-child-with-xmlns
-                               xml-data "jabber:x:encrypted")
-                              (jabber-xml-child-with-xmlns
-                               xml-data "urn:xmpp:openpgp:0"))
-                          t)))
+           (encrypted (jabber-mam--detect-encryption xml-data)))
       (when (and from body)
         (jabber-db-store-message
          (jabber-connection-bare-jid jc)

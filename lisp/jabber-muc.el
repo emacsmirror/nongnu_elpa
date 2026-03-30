@@ -1237,77 +1237,77 @@ JC is the Jabber connection."
 
 (add-to-list 'jabber-body-printers 'jabber-muc-print-invite)
 
+(defun jabber-muc--parse-mediated-invite (xml-data)
+  "Parse XEP-0045 mediated invite from XML-DATA.
+Return (GROUP INVITER REASON) or nil."
+  (cl-dolist (x (jabber-xml-get-children xml-data 'x))
+    (when (string= (jabber-xml-get-attribute x 'xmlns) jabber-muc-xmlns-user)
+      (when-let* ((invitation (car (jabber-xml-get-children x 'invite)))
+                  (group (jabber-xml-get-attribute xml-data 'from)))
+        (let ((inviter (jabber-xml-get-attribute invitation 'from))
+              (reason (car (jabber-xml-node-children
+                            (car (jabber-xml-get-children
+                                  invitation 'reason))))))
+          (cl-return (list group inviter reason)))))))
+
+(defun jabber-muc--parse-direct-invite (xml-data)
+  "Parse XEP-0249 direct invite from XML-DATA.
+Return (GROUP INVITER REASON) or nil."
+  (cl-dolist (x (jabber-xml-get-children xml-data 'x))
+    (when (string= (jabber-xml-get-attribute x 'xmlns)
+                   jabber-muc-xmlns-direct-invite)
+      (let ((group (jabber-xml-get-attribute x 'jid))
+            (inviter (jabber-xml-get-attribute xml-data 'from))
+            (reason (jabber-xml-get-attribute x 'reason)))
+        (when (and group (not (jabber-muc-joined-p group)))
+          (cl-return (list group inviter reason)))))))
+
+(defun jabber-muc--insert-invite (group inviter reason &optional mediated-p)
+  "Insert MUC invitation UI for GROUP from INVITER with REASON.
+When MEDIATED-P is non-nil, include a Decline button."
+  ;; XXX: password
+  (insert "You have been invited to MUC room "
+          (jabber-jid-displayname group))
+  (when inviter
+    (insert " by " (jabber-jid-displayname inviter)))
+  (insert ".")
+  (when (and reason (not (zerop (length reason))))
+    (insert "  Reason: " reason))
+  (insert "\n\n")
+  (let ((action (lambda (&rest _ignore) (interactive)
+                  (jabber-muc-join jabber-buffer-connection group
+                                  (jabber-muc-read-my-nickname
+                                   jabber-buffer-connection group)))))
+    (insert-button "Accept" 'action action))
+  (when mediated-p
+    (insert "\t")
+    (let ((action (lambda (&rest _ignore) (interactive)
+                    (let ((reason (jabber-read-with-input-method "Reason: ")))
+                      (jabber-send-sexp
+                       jabber-buffer-connection
+                       `(message
+                         ((to . ,group))
+                         (x ((xmlns . ,jabber-muc-xmlns-user))
+                            (decline
+                             ((to . ,inviter))
+                             ,(unless (zerop (length reason))
+                                `(reason nil ,reason))))))))))
+      (insert-button "Decline" 'action action))))
+
 (defun jabber-muc-print-invite (msg _who mode)
   "Print MUC invitation from message plist MSG.
 Requires :xml-data key in MSG for raw stanza access."
   (when-let* ((xml-data (plist-get msg :xml-data)))
-    (cl-dolist (x (jabber-xml-get-children xml-data 'x))
-      ;; Mediated invite (XEP-0045 s7.8.2)
-      (when (string= (jabber-xml-get-attribute x 'xmlns) jabber-muc-xmlns-user)
-        (let ((invitation (car (jabber-xml-get-children x 'invite))))
-	  (when invitation
-	    (when (eql mode :insert)
-	      (let ((group (jabber-xml-get-attribute xml-data 'from))
-		    (inviter (jabber-xml-get-attribute invitation 'from))
-		    (reason (car (jabber-xml-node-children (car (jabber-xml-get-children invitation 'reason))))))
-	        ;; XXX: password
-	        (insert "You have been invited to MUC room " (jabber-jid-displayname group))
-	        (when inviter
-		  (insert " by " (jabber-jid-displayname inviter)))
-	        (insert ".")
-	        (when reason
-		  (insert "  Reason: " reason))
-	        (insert "\n\n")
-
-	        (let ((action
-		       (lambda (&rest _ignore) (interactive)
-		         (jabber-muc-join jabber-buffer-connection group
-					  (jabber-muc-read-my-nickname
-					   jabber-buffer-connection group)))))
-		  (insert-button "Accept" 'action action))
-
-		(insert "\t")
-
-		(let ((action
-		       (lambda (&rest _ignore) (interactive)
-			 (let ((reason
-				(jabber-read-with-input-method
-				 "Reason: ")))
-			   (jabber-send-sexp
-			    jabber-buffer-connection
-			    `(message
-			      ((to . ,group))
-			      (x
-			       ((xmlns . ,jabber-muc-xmlns-user))
-			       (decline
-				((to . ,inviter))
-				,(unless (zerop (length reason))
-				   `(reason nil ,reason))))))))))
-		  (insert-button "Decline" 'action action))))
-	    (cl-return t))))
-      ;; Direct invite (XEP-0249)
-      (when (string= (jabber-xml-get-attribute x 'xmlns)
-		     jabber-muc-xmlns-direct-invite)
-	(let ((group (jabber-xml-get-attribute x 'jid))
-	      (inviter (jabber-xml-get-attribute xml-data 'from))
-	      (reason (jabber-xml-get-attribute x 'reason)))
-	  (when (and group (not (jabber-muc-joined-p group)))
-	    (when (eql mode :insert)
-	      (insert "You have been invited to MUC room "
-		      (jabber-jid-displayname group))
-	      (when inviter
-		(insert " by " (jabber-jid-displayname inviter)))
-	      (insert ".")
-	      (when (and reason (not (zerop (length reason))))
-		(insert "  Reason: " reason))
-	      (insert "\n\n")
-	      (let ((action
-		     (lambda (&rest _ignore) (interactive)
-		       (jabber-muc-join jabber-buffer-connection group
-					(jabber-muc-read-my-nickname
-					 jabber-buffer-connection group)))))
-		(insert-button "Accept" 'action action)))
-	    (cl-return t)))))))
+    (or (when-let* ((parsed (jabber-muc--parse-mediated-invite xml-data)))
+          (when (eql mode :insert)
+            (jabber-muc--insert-invite (nth 0 parsed) (nth 1 parsed)
+                                       (nth 2 parsed) t))
+          t)
+        (when-let* ((parsed (jabber-muc--parse-direct-invite xml-data)))
+          (when (eql mode :insert)
+            (jabber-muc--insert-invite (nth 0 parsed) (nth 1 parsed)
+                                       (nth 2 parsed)))
+          t))))
 
 (defun jabber-muc--rejoin-snapshot (jc)
   "Rejoin rooms from the pre-disconnect snapshot not already joined.
