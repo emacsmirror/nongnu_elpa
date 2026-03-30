@@ -907,30 +907,31 @@ files, depending on the value of `jabber-use-global-history'."
     (let ((progress (make-progress-reporter
                      "Importing history..." 0 (length files)))
           (file-idx 0))
-      (dolist (file files)
-        (when (file-readable-p file)
-          (with-temp-buffer
-            (let ((coding-system-for-read 'utf-8))
-              (insert-file-contents file))
-            (goto-char (point-min))
-            (while (not (eobp))
-              (condition-case nil
-                  (let* ((entry (read (current-buffer)))
-                         (time-str (aref entry 0))
-                         (direction (aref entry 1))
-                         (from (aref entry 2))
-                         (to (aref entry 3))
-                         (body (aref entry 4))
-                         (peer (if (string= from "me") to from))
-                         (timestamp (floor
-                                     (float-time
-                                      (jabber-parse-time time-str)))))
-                    (jabber-db-store-message
-                     "" peer direction "chat" body timestamp)
-                    (cl-incf count))
-                (error (forward-line 1))))))
-        (cl-incf file-idx)
-        (progress-reporter-update progress file-idx))
+      (jabber-db-with-transaction
+        (dolist (file files)
+          (when (file-readable-p file)
+            (with-temp-buffer
+              (let ((coding-system-for-read 'utf-8))
+                (insert-file-contents file))
+              (goto-char (point-min))
+              (while (not (eobp))
+                (condition-case nil
+                    (let* ((entry (read (current-buffer)))
+                           (time-str (aref entry 0))
+                           (direction (aref entry 1))
+                           (from (aref entry 2))
+                           (to (aref entry 3))
+                           (body (aref entry 4))
+                           (peer (if (string= from "me") to from))
+                           (timestamp (floor
+                                       (float-time
+                                        (jabber-parse-time time-str)))))
+                      (jabber-db-store-message
+                       "" peer direction "chat" body timestamp)
+                      (cl-incf count))
+                  (error (forward-line 1))))))
+          (cl-incf file-idx)
+          (progress-reporter-update progress file-idx)))
       (progress-reporter-done progress))
     (message "Imported %d messages into database" count)))
 
