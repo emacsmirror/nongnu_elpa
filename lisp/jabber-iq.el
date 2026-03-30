@@ -96,10 +96,9 @@ obtained from `xml-parse-region'."
      ((and (listp query)
 	   (or (string= type "get")
 	       (string= type "set")))
-      (let* ((which-alist (eval (cdr (assoc type
-					    (list
-					     (cons "get" 'jabber-iq-get-xmlns-alist)
-					     (cons "set" 'jabber-iq-set-xmlns-alist))))))
+      (let* ((which-alist (pcase type
+			     ("get" jabber-iq-get-xmlns-alist)
+			     ("set" jabber-iq-set-xmlns-alist)))
 	     (handler (cdr (assoc (jabber-xml-get-attribute query 'xmlns) which-alist))))
 	(if handler
 	    (condition-case error-var
