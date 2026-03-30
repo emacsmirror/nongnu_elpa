@@ -137,28 +137,56 @@ Returns only the base64 body and checksum, as required by XEP-0027."
 
 ;;; Signed presence (outgoing)
 
+(defvar jabber-openpgp-legacy--sign-cache nil
+  "Cache for presence signature: (STATUS KEY ELEMENTS).
+Avoids redundant GPG calls when signing the same status text.")
+
+(defvar jabber-openpgp-legacy--signing-in-progress nil
+  "Non-nil when GPG signing is in progress.
+`epg-wait-for-status' processes pending timers while waiting for
+GPG, which can trigger MUC joins that call this function again.
+This guard prevents the re-entrant nesting that causes
+`excessive-lisp-nesting'.")
+
 (defun jabber-openpgp-legacy--sign-presence (jc)
   "Return signed presence elements for JC.
 Added to `jabber-presence-element-functions'.
-Signs the current status text (or empty string) with our GPG key."
+Signs the current status text (or empty string) with our GPG key.
+Caches the result and guards against re-entrant GPG calls."
   (when jabber-openpgp-legacy-sign-presence
     (require 'jabber-openpgp)
     (when-let* ((key (jabber-openpgp--our-key-safe jc)))
-      (condition-case err
-          (let* ((status (or (bound-and-true-p *jabber-current-status*) ""))
-                 (ctx (epg-make-context 'OpenPGP))
-                 (_ (setf (epg-context-armor ctx) t))
-                 (_ (setf (epg-context-signers ctx) (list key)))
-                 (sig (epg-sign-string ctx
-                                       (encode-coding-string status 'utf-8)
-                                       'detached))
-                 (stripped (jabber-openpgp-legacy--strip-armor sig)))
-            (list `(x ((xmlns . ,jabber-openpgp-legacy-signed-xmlns))
-                      ,stripped)))
-        (error
-         (message "XEP-0027: signing presence failed: %s"
-                  (error-message-string err))
-         nil)))))
+      (let ((status (or (bound-and-true-p *jabber-current-status*) "")))
+        (cond
+         ;; Cache hit: same status and key, return cached elements.
+         ((and jabber-openpgp-legacy--sign-cache
+               (equal status (nth 0 jabber-openpgp-legacy--sign-cache))
+               (eq key (nth 1 jabber-openpgp-legacy--sign-cache)))
+          (nth 2 jabber-openpgp-legacy--sign-cache))
+         ;; Re-entrance: GPG is already running, skip signing.
+         ;; The MUC join presence will lack the signature this time;
+         ;; subsequent presence updates will use the cached result.
+         (jabber-openpgp-legacy--signing-in-progress nil)
+         ;; Normal case: sign, cache, and return.
+         (t
+          (condition-case err
+              (let ((jabber-openpgp-legacy--signing-in-progress t))
+                (let* ((ctx (epg-make-context 'OpenPGP))
+                       (_ (setf (epg-context-armor ctx) t))
+                       (_ (setf (epg-context-signers ctx) (list key)))
+                       (sig (epg-sign-string ctx
+                                             (encode-coding-string status 'utf-8)
+                                             'detached))
+                       (stripped (jabber-openpgp-legacy--strip-armor sig))
+                       (elements (list `(x ((xmlns . ,jabber-openpgp-legacy-signed-xmlns))
+                                           ,stripped))))
+                  (setq jabber-openpgp-legacy--sign-cache
+                        (list status key elements))
+                  elements))
+            (error
+             (message "XEP-0027: signing presence failed: %s"
+                      (error-message-string err))
+             nil))))))))
 
 ;;; Signed presence (incoming)
 
