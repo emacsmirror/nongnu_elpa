@@ -190,7 +190,8 @@ Returns:
                                (- mid (* bg-mag mid)))))
                (apply #'color-hsl-to-rgb (list (nth 0 bg-hsl) (nth 1 bg-hsl) new-b-l))))))
       ;; else
-      (message "Unable to recognize text-color: %s or background-color: %s" text-color background-color))))
+      (message "Unable to recognize text-color: %s or background-color: %s" text-color background-color)
+      nil)))
 
 (defun selected-window-contrast--rgb-to-hex (rgb &optional digits)
   "Convert normalized RGB list to hex string.
