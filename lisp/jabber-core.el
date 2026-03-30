@@ -88,12 +88,17 @@ Each entry is a cons (DEPTH . HANDLER).  Lower depth runs first.")
 ;;;###autoload
 (defun jabber-chain-add (chain-var handler &optional depth)
   "Add HANDLER to stanza processing chain CHAIN-VAR.
-DEPTH is numeric priority (default 0).  Lower runs first."
-  (let ((entry (cons (or depth 0) handler)))
-    (unless (cl-find handler (symbol-value chain-var) :key #'cdr)
+DEPTH is numeric priority (default 0).  Lower runs first.
+Tolerates bare function entries from old-style registrations."
+  (let ((entry (cons (or depth 0) handler))
+        (entry-depth (lambda (e) (if (consp e) (car e) 0)))
+        (entry-fn (lambda (e) (if (consp e) (cdr e) e))))
+    (unless (cl-find handler (symbol-value chain-var) :key entry-fn)
       (set chain-var
            (sort (cons entry (symbol-value chain-var))
-                 (lambda (a b) (< (car a) (car b))))))))
+                 (lambda (a b)
+                   (< (funcall entry-depth a)
+                      (funcall entry-depth b))))))))
 
 (defvar-local jabber-namespace-prefixes nil
   "XML namespace prefixes used for the current connection.")
