@@ -68,8 +68,8 @@
 (defun jabber-rtt-handle-message (jc xml-data)
   ;; We could support this for MUC as well, if useful.
   (when-let* (((not (jabber-muc-message-p xml-data)))
-             (buffer (get-buffer (jabber-chat-get-buffer
-                                  (jabber-xml-get-attribute xml-data 'from) jc))))
+             (from (jabber-xml-get-attribute xml-data 'from))
+             (buffer (get-buffer (jabber-chat-get-buffer from jc))))
     (with-current-buffer buffer
       (let* ((rtt (jabber-xml-path xml-data `((,jabber-rtt-xmlns . "rtt"))))
 	     (body (jabber-xml-path xml-data '(body)))

@@ -183,8 +183,8 @@ Added to `kill-buffer-hook' in chat buffers."
 ;;; COMMON
 
 (defun jabber-handle-incoming-message-chatstates (jc xml-data)
-  (when-let* ((buffer (get-buffer (jabber-chat-get-buffer
-                                  (jabber-xml-get-attribute xml-data 'from) jc))))
+  (when-let* ((from (jabber-xml-get-attribute xml-data 'from))
+             (buffer (get-buffer (jabber-chat-get-buffer from jc))))
     (with-current-buffer buffer
       (cond
        ;; If we get an error message, we shouldn't report any

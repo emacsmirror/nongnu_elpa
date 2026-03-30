@@ -785,9 +785,10 @@ Returns a list of (URL . DESC) cons cells, or nil."
   "Store incoming message in the database.
 JC is the Jabber connection.
 XML-DATA is the parsed stanza."
-  (unless (run-hook-with-args-until-success
-           'jabber-history-inhibit-received-message-functions
-           jc xml-data)
+  (unless (or (null (jabber-xml-get-attribute xml-data 'from))
+              (run-hook-with-args-until-success
+               'jabber-history-inhibit-received-message-functions
+               jc xml-data))
     (let* ((from (jabber-xml-get-attribute xml-data 'from))
            (body (car (jabber-xml-node-children
                        (car (jabber-xml-get-children xml-data 'body)))))

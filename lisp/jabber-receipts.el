@@ -111,11 +111,11 @@ JC is the connection.  Added to `jabber-message-chain'."
   (let* ((from (jabber-xml-get-attribute xml-data 'from))
          (type (jabber-xml-get-attribute xml-data 'type))
          (groupchat-p (equal type "groupchat")))
-    ;; Skip incoming receipt/marker processing for groupchat stanzas.
+    ;; Skip stanzas without a from attribute or groupchat stanzas.
     ;; MUC markers require XEP-0359 stanza-id matching and per-occupant
     ;; tracking that we don't yet support; processing them could corrupt
     ;; 1:1 receipt state via ID collisions.
-    (unless groupchat-p
+    (unless (or (null from) groupchat-p)
       ;; XEP-0184: <received xmlns='urn:xmpp:receipts' id='...'/>
       (when-let* ((received (jabber-xml-child-with-xmlns
                              xml-data jabber-receipts-xmlns))

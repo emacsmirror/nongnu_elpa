@@ -679,7 +679,8 @@ _JC and _XML-DATA are reserved for future use by OMEMO."
 (defun jabber-process-chat (jc xml-data)
   "If XML-DATA is a one-to-one chat message, handle it as such.
 JC is the Jabber connection."
-  (when (not (jabber-muc-message-p xml-data))
+  (when (and (not (jabber-muc-message-p xml-data))
+             (jabber-xml-get-attribute xml-data 'from))
     (let* ((unwrapped (jabber-chat--unwrap-carbon jc xml-data))
            (is-carbon (not (eq xml-data (car unwrapped))))
            (xml-data (jabber-chat--decrypt-if-needed jc (car unwrapped)))
