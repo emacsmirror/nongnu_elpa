@@ -59,7 +59,9 @@
 
 (defvar-local jabber-rtt-timer nil)
 
-(jabber-chain-add 'jabber-message-chain #'jabber-rtt-handle-message 50)
+;;;###autoload
+(with-eval-after-load "jabber-core"
+  (jabber-chain-add 'jabber-message-chain #'jabber-rtt-handle-message 50))
 
 ;;;###autoload
 (defun jabber-rtt-handle-message (jc xml-data)
