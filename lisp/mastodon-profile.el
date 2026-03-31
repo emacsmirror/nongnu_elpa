@@ -88,6 +88,7 @@
 (autoload 'mastodon-tl--toot-or-base "mastodon-tl")
 (autoload 'mastodon-views--end-of-table "mastodon-views")
 (autoload 'mastodon-tl--buttonify-link "mastodon-tl")
+(autoload 'mastodon-tl-read-handle-annotated "mastodon-tl")
 
 (defvar mastodon-active-user)
 (defvar mastodon-tl--horiz-bar)
@@ -96,6 +97,7 @@
 (defvar mastodon-toot--visibility)
 (defvar mastodon-toot--content-nsfw)
 (defvar mastodon-tl--timeline-posts-count)
+(defvar mastodon-group-notifications)
 
 (defvar-local mastodon-profile--account nil
   "The data for the account being described in the current profile buffer.")
@@ -970,12 +972,9 @@ IMG-TYPE is the JSON key from the account data."
     (if (and (not (mastodon-tl--profile-buffer-p))
              (not (mastodon-tl--property 'item-json :no-move)))
         (user-error "Looks like there's no toot or user at point?")
-      (let ((user-handles (mastodon-profile--extract-users-handles
-                           (mastodon-profile--item-json))))
-        (completing-read "View profile of user [choose or enter any handle]: "
-                         user-handles
-                         nil ; predicate
-                         'confirm)))))
+      (mastodon-tl-read-handle-annotated
+       (mastodon-profile--extract-users-handles (mastodon-profile--item-json))
+       "View profile of user [choose or enter any handle]: "))))
   (if (not (or ; own profile has no need for item-json test:
             (string= user-handle (mastodon-auth--get-account-name))
             (mastodon-tl--profile-buffer-p)
@@ -1048,10 +1047,18 @@ If the handle does not match a search return then retun NIL."
   "Return all user handles found in STATUS.
 These include the author, author of reblogged entries and any user mentioned."
   (when status
-    (let ((this-account (or (alist-get 'account status) ; status is a toot
+    (let ((this-account (or (alist-get 'account status) ; status is a toot/notif
                             status)) ; status is a user listing
 	  (mentions (mastodon-tl--field-status 'mentions status))
-	  (reblog (mastodon-tl--field-status 'reblog status)))
+	  (reblog (mastodon-tl--field-status 'reblog status))
+          (grouped (when mastodon-group-notifications
+                     ;; NB: looks like this only contains the grouped
+                     ;; notifs for the current notif, which is not
+                     ;; necessariliy all favers/boosters for a given item:
+                     (let ((accounts (mastodon-tl--property 'notification-accounts
+                                                            :nomove)))
+                       (cl-loop for x in accounts
+                                collect (alist-get 'acct x))))))
       (seq-remove
        (lambda (x) (string= x mastodon-active-user))
        (seq-filter #'stringp
@@ -1059,7 +1066,8 @@ These include the author, author of reblogged entries and any user mentioned."
                     (seq-concatenate
                      'list
                      (list (alist-get 'acct this-account))
-                     (mastodon-profile--extract-users-handles reblog)
+                     grouped
+                     (when reblog (mastodon-profile--extract-users-handles reblog))
                      (mastodon-tl--map-alist 'acct mentions))))))))
 
 (defun mastodon-profile--lookup-account-in-status (handle status)
