@@ -634,8 +634,8 @@ server_id, retracted_by, retraction_reason, edited FROM message")
            (sql (cond
                  (resource
                   (concat base-cols " WHERE account = ? AND peer = ? \
-AND type = 'chat' AND resource = ? AND timestamp >= ? \
-ORDER BY timestamp DESC LIMIT ?"))
+AND type = 'chat' AND (resource = ? OR direction = 'out') \
+AND timestamp >= ? ORDER BY timestamp DESC LIMIT ?"))
                  (msg-type
                   (concat base-cols " WHERE account = ? AND peer = ? \
 AND type = ? AND timestamp >= ? \
