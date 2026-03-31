@@ -66,6 +66,7 @@ previous sequence detect the mismatch and stop.")
 (declare-function jabber-omemo-fingerprints "jabber-omemo" ())
 (declare-function jabber-connection-bare-jid "jabber-util" (jc))
 (declare-function jabber-blocking-toggle-chat-peer "jabber-blocking" (jc))
+(declare-function jabber-get-info "jabber-info" (jc to))
 (declare-function jabber-roster-change "jabber-presence" (jc jid name groups))
 (declare-function jabber-roster-delete "jabber-presence" (jc jid))
 (declare-function jabber-mam-sync-buffer "jabber-mam" (count))
@@ -313,6 +314,13 @@ Return a positive integer, or nil if -n is unset or empty."
   (jabber-mam-sync-buffer
    (or (jabber-chat--transient-msg-count) jabber-backlog-number)))
 
+(defun jabber-chat-get-info ()
+  "Show version, disco info and ping for the current chat peer."
+  (interactive)
+  (unless (bound-and-true-p jabber-chatting-with)
+    (user-error "Not in a chat buffer"))
+  (jabber-get-info jabber-buffer-connection jabber-chatting-with))
+
 (defun jabber-chat-add-contact ()
   "Add the current chat peer to the roster."
   (interactive)
@@ -343,6 +351,7 @@ Return a positive integer, or nil if -n is unset or empty."
    ["Files"
     ("a" "Attach file" jabber-chat-attach-file)]
    ["Contact"
+    ("I" "Get info" jabber-chat-get-info)
     ("A" "Add contact" jabber-chat-add-contact)
     ("D" "Remove contact" jabber-chat-remove-contact)
     ("B" "Block/unblock user" jabber-blocking-toggle-chat-peer)]
