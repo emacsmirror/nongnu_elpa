@@ -360,23 +360,29 @@ SELECT identities, features FROM caps_cache
 ;;; Storage
 
 (defun jabber-db--detect-duplicate (db account peer timestamp body
-                                       stanza-id server-id)
+                                       stanza-id server-id &optional type)
   "Check whether a message already exists in DB.
 Return a symbol indicating the match type: `stanza_id', `server_id',
-`content', or nil for no match."
+`content', or nil for no match.
+Optional TYPE is the message type; stanza_id dedup is skipped for
+\"groupchat\" because MUC servers recycle short message IDs."
   (cond
-   ((and stanza-id
-         (caar (sqlite-select
-                db "SELECT 1 FROM message \
-WHERE stanza_id = ? AND account = ? LIMIT 1"
-                (list stanza-id account))))
-    'stanza_id)
+   ;; Server-assigned IDs (XEP-0359) are globally unique; check first.
    ((and server-id
          (caar (sqlite-select
                 db "SELECT 1 FROM message \
 WHERE server_id = ? AND account = ? LIMIT 1"
                 (list server-id account))))
     'server_id)
+   ;; Stanza IDs (origin-id or message id attr) can be recycled by
+   ;; MUC servers, so only use them for 1:1 chat dedup.
+   ((and stanza-id
+         (not (equal type "groupchat"))
+         (caar (sqlite-select
+                db "SELECT 1 FROM message \
+WHERE stanza_id = ? AND account = ? AND peer = ? LIMIT 1"
+                (list stanza-id account peer))))
+    'stanza_id)
    ;; Content-based dedup: matches messages stored by the
    ;; live handler (nil IDs) against MAM replays (with IDs),
    ;; or MUC history replayed on every join.
@@ -407,37 +413,45 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
          "INSERT INTO message_oob (message_id, url, desc) VALUES (?, ?, ?)"
          (list msg-id (car entry) (cdr entry)))))))
 
-(defun jabber-db--update-duplicate-ids (db account _peer timestamp body
+(defun jabber-db--update-duplicate-ids (db account peer timestamp body
                                            stanza-id server-id oob-entries
                                            dup-id-col)
   "Update an existing duplicate matched by DUP-ID-COL.
 Normalizes timestamp and replaces failed-decrypt placeholders.
-Skips retracted messages to prevent MAM replays from undoing retractions."
+Skips retracted messages to prevent MAM replays from undoing retractions.
+PEER is used for stanza_id scoping (stanza IDs can collide in MUC)."
   (let* ((id-val (if (eq dup-id-col 'stanza_id) stanza-id server-id))
+         ;; stanza_id needs peer scope; server_id is globally unique.
+         (where-clause (if (eq dup-id-col 'stanza_id)
+                           (format "%s = ? AND account = ? AND peer = ?"
+                                   dup-id-col)
+                         (format "%s = ? AND account = ?" dup-id-col)))
+         (where-params (if (eq dup-id-col 'stanza_id)
+                           (list id-val account peer)
+                         (list id-val account)))
          (retracted (caar (sqlite-select
                            db
-                           (format "SELECT 1 FROM message \
-WHERE %s = ? AND account = ? AND retracted_by IS NOT NULL LIMIT 1"
-                                   dup-id-col)
-                           (list id-val account)))))
+                           (format "SELECT 1 FROM message WHERE %s \
+AND retracted_by IS NOT NULL LIMIT 1"
+                                   where-clause)
+                           where-params))))
     (unless retracted
       ;; Normalize timestamp only when it differs.
       (sqlite-execute
        db
-       (format "UPDATE message SET timestamp = ? \
-WHERE %s = ? AND account = ? AND timestamp != ?"
-               dup-id-col)
-       (list timestamp id-val account timestamp))
+       (format "UPDATE message SET timestamp = ? WHERE %s AND timestamp != ?"
+               where-clause)
+       (append (list timestamp) where-params (list timestamp)))
       ;; Replace failed-decrypt placeholder if new body is real text.
       (when (and body
                  (not (string-match-p "\\`: could not decrypt\\]" body)))
         (let ((msg-id
                (caar (sqlite-select
                       db
-                      (format "SELECT id FROM message \
-WHERE %s = ? AND account = ? AND body LIKE '%%: could not decrypt]' LIMIT 1"
-                              dup-id-col)
-                      (list id-val account)))))
+                      (format "SELECT id FROM message WHERE %s \
+AND body LIKE '%%: could not decrypt]' LIMIT 1"
+                              where-clause)
+                      where-params))))
           (when msg-id
             (sqlite-execute
              db "UPDATE message SET body = ? WHERE id = ?"
@@ -484,7 +498,8 @@ jabber:x:oob elements.
 Optional ENCRYPTED is non-nil if the message was OMEMO-encrypted."
   (when-let* ((db (jabber-db-ensure-open)))
     (let ((dup-id-col (jabber-db--detect-duplicate
-                       db account peer timestamp body stanza-id server-id)))
+                       db account peer timestamp body stanza-id server-id
+                       type)))
       (pcase dup-id-col
         ('nil
          (jabber-db--insert-message db account peer resource occupant-id
@@ -594,9 +609,15 @@ The :oob-entries key is populated later by `jabber-db--attach-oob-entries'."
             encrypted stanza-id delivered-at
             displayed-at server-id retracted-by retraction-reason edited)
       row
-    (let ((from (if (string= direction "in")
-                    (if resource (concat peer "/" resource) peer)
-                  account)))
+    (let ((from (cond
+                 ;; Incoming: peer/resource (or just peer if no resource).
+                 ((string= direction "in")
+                  (if resource (concat peer "/" resource) peer))
+                 ;; Outgoing groupchat: peer/resource so the nick renders.
+                 ((and (equal type "groupchat") resource)
+                  (concat peer "/" resource))
+                 ;; Outgoing 1:1: account bare JID.
+                 (t account))))
       (list :db-id id
             :id stanza-id
             :server-id server-id
