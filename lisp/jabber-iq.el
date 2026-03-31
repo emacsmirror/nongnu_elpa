@@ -193,7 +193,9 @@ string, or nil (dumps raw XML)."
     (save-excursion
       (cond
        ((functionp closure-data)
-        (funcall closure-data jc xml-data))
+        (let ((result (funcall closure-data jc xml-data)))
+          (when (stringp result)
+            (insert result "\n\n"))))
        ((stringp closure-data)
         (insert closure-data ": "
                 (jabber-parse-error (jabber-iq-error xml-data)) "\n\n"))
