@@ -66,6 +66,8 @@ previous sequence detect the mismatch and stop.")
 (declare-function jabber-omemo-fingerprints "jabber-omemo" ())
 (declare-function jabber-connection-bare-jid "jabber-util" (jc))
 (declare-function jabber-blocking-toggle-chat-peer "jabber-blocking" (jc))
+(declare-function jabber-roster-change "jabber-presence" (jc jid name groups))
+(declare-function jabber-roster-delete "jabber-presence" (jc jid))
 (declare-function jabber-mam-sync-buffer "jabber-mam" (count))
 (declare-function jabber-moderation-retract "jabber-moderation" ())
 (declare-function jabber-moderation-retract-by-occupant "jabber-moderation" ())
@@ -311,6 +313,27 @@ Return a positive integer, or nil if -n is unset or empty."
   (jabber-mam-sync-buffer
    (or (jabber-chat--transient-msg-count) jabber-backlog-number)))
 
+(defun jabber-chat-add-contact ()
+  "Add the current chat peer to the roster."
+  (interactive)
+  (unless (bound-and-true-p jabber-chatting-with)
+    (user-error "Not in a chat buffer"))
+  (let* ((jid (jabber-jid-user jabber-chatting-with))
+         (sym (jabber-jid-symbol jid)))
+    (jabber-roster-change
+     jabber-buffer-connection sym
+     (read-string (format "Name for %s: " jid))
+     nil)))
+
+(defun jabber-chat-remove-contact ()
+  "Remove the current chat peer from the roster."
+  (interactive)
+  (unless (bound-and-true-p jabber-chatting-with)
+    (user-error "Not in a chat buffer"))
+  (let ((jid (jabber-jid-user jabber-chatting-with)))
+    (when (yes-or-no-p (format "Remove %s from roster? " jid))
+      (jabber-roster-delete jabber-buffer-connection jid))))
+
 (transient-define-prefix jabber-chat-operations-menu ()
   "Chat buffer operations."
   :value (lambda () (list (format "-n%d" jabber-backlog-number)))
@@ -320,6 +343,8 @@ Return a positive integer, or nil if -n is unset or empty."
    ["Files"
     ("a" "Attach file" jabber-chat-attach-file)]
    ["Contact"
+    ("A" "Add contact" jabber-chat-add-contact)
+    ("D" "Remove contact" jabber-chat-remove-contact)
     ("B" "Block/unblock user" jabber-blocking-toggle-chat-peer)]
    ["Messages"
     ("E" "Edit last message" jabber-correct-last-message)
