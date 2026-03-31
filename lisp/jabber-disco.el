@@ -77,7 +77,9 @@ XEP-0115 currently recommends SHA-1, but let's be future-proof.")
 (defvar jabber-disco-items-cache (make-hash-table :test 'equal))
 
 (defvar jabber-advertised-features
-  (list jabber-disco-xmlns-info)
+  (list jabber-disco-xmlns-info
+        jabber-disco-xmlns-items
+        jabber-caps-xmlns)
   "Features advertised on service discovery requests.
 
 Don't add your feature to this list directly.  Instead, call
