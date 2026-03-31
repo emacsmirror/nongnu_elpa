@@ -276,6 +276,10 @@ The format is that of `mode-line-format' and `header-line-format'."
 
 (declare-function jabber-presence-children "jabber-presence.el" (jc))
 (declare-function jabber-vcard-get "jabber-vcard.el" (jc jid))
+(declare-function jabber-get-version "jabber-version.el" (jc to))
+(declare-function jabber-get-disco-info "jabber-disco.el" (jc to &optional node))
+(declare-function jabber-ping-send "jabber-ping.el"
+                  (jc to process-func on-success on-error))
 (declare-function jabber-parse-conference-bookmark "jabber-bookmarks.el"
                   (node))
 (declare-function jabber-get-bookmarks-from-cache "jabber-bookmarks"
@@ -792,6 +796,38 @@ JC is the Jabber connection."
     (list (jabber-muc-read-nickname jabber-group "Nickname: "))))
     (let ((muc-name (format "%s/%s" group nickname)))
 	(jabber-vcard-get jc muc-name)))
+
+;;;###autoload
+(defun jabber-muc-get-version (jc group nickname)
+  "Request software version from NICKNAME in GROUP.
+
+JC is the Jabber connection."
+  (interactive
+   (jabber-muc-argument-list
+    (list (jabber-muc-read-nickname jabber-group "Nickname: "))))
+  (jabber-get-version jc (format "%s/%s" group nickname)))
+
+;;;###autoload
+(defun jabber-muc-get-disco-info (jc group nickname)
+  "Request disco info from NICKNAME in GROUP.
+
+JC is the Jabber connection."
+  (interactive
+   (jabber-muc-argument-list
+    (list (jabber-muc-read-nickname jabber-group "Nickname: "))))
+  (jabber-get-disco-info jc (format "%s/%s" group nickname)))
+
+;;;###autoload
+(defun jabber-muc-ping (jc group nickname)
+  "Ping NICKNAME in GROUP.
+
+JC is the Jabber connection."
+  (interactive
+   (jabber-muc-argument-list
+    (list (jabber-muc-read-nickname jabber-group "Nickname: "))))
+  (jabber-ping-send jc (format "%s/%s" group nickname)
+                    #'jabber-silent-process-data
+                    #'jabber-process-ping "Ping is unsupported"))
 
 (defun jabber-muc-instant-config (jc group)
   "Accept default configuration for GROUP.
