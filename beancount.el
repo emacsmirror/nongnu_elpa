@@ -70,10 +70,133 @@ complete the posting at point. The correct currency is determined
 from the open directive for the relevant account."
   :type 'boolean)
 
+;;; Account-type customization.
+
+;; Parsing primitives
+
+(defconst beancount-date-regexp "[0-9]\\{4\\}[-/][0-9]\\{2\\}[-/][0-9]\\{2\\}"
+  "A regular expression to match dates.")
+
+(defconst beancount-number-regexp "[-+]?[0-9]+\\(?:,[0-9]\\{3\\}\\)*\\(?:\\.[0-9]*\\)?"
+  "A regular expression to match decimal numbers.")
+
+(defconst beancount-currency-regexp "[A-Z][A-Z-_'.]*"
+  "A regular expression to match currencies.")
+
+(defconst beancount-tag-chars "[:alnum:]-_/.")
+
+(defconst beancount-account-chars "[:alnum:]-_:")
+
+(defconst beancount-flag-regexp
+  ;; Single character: Certain symbols plus uppercase letters.
+  ;; case-fold-search t will cause a single lowercase letter to match also.
+  "[!#%&*?A-Z]")
+
+;; Directive definitions
+
+(defconst beancount-directive-names
+  '("include"
+    "option"
+    "plugin"
+    "poptag"
+    "pushtag")
+  "Directive names that can appear at the beginning of a line.")
+
+(defconst beancount-account-directive-names
+  '("balance"
+    "close"
+    "document"
+    "note"
+    "open"
+    "pad")
+  "Directive names that can appear after a date and are followd by an account.")
+
+(defconst beancount-no-account-directive-names
+  '("commodity"
+    "event"
+    "price"
+    "query"
+    "txn")
+  "Directives with a date but without an account.
+
+List of directive names that can appear after a date and that are
+_not_ followed by an account.")
+
+(defconst beancount-timestamped-directive-names
+  (append beancount-account-directive-names
+          beancount-no-account-directive-names)
+  "Directive names that can appear after a date.")
+
+;; Directive regexps
+
+(defconst beancount-directive-regexp
+  (concat "^\\(" (regexp-opt beancount-directive-names) "\\) +"))
+
+(defconst beancount-timestamped-directive-regexp
+  (concat "^\\(" beancount-date-regexp "\\) +"
+          "\\(" (regexp-opt beancount-timestamped-directive-names) "\\) +"))
+
+;; Transaction and metadata regexps
+
+(defconst beancount-transaction-regexp
+  (concat "^\\(" beancount-date-regexp "\\) +"
+          "\\(\\(?:txn\\)\\|" beancount-flag-regexp "\\) +"
+          "\\(\".*\"\\)"))
+
+(defconst beancount-metadata-regexp
+  "^\\s-+\\([a-z][A-Za-z0-9_-]+:\\)\\s-+\\(.+\\)")
+
+;; Outline minor mode regexp
+
+(defconst beancount-outline-regexp
+  "\\(;;;+\\|\\*+\\)"
+  "A regular expression to match outline section headers.
+
+This is a grouping regular expression because the subexpression is used in
+determining the outline level in `beancount-outline-level'.")
+
+;; Dynamic regexps built by `beancount--build-regexps'
+
 (defvar beancount-account-categories nil
   "List of account-type root names.
 
-Its value is set by `beancount--build-regexps'")
+Value set by `beancount--build-regexps'.")
+
+(defvar beancount-account-regexp nil
+  "A regular expression to match account names.
+
+Value set by `beancount--build-regexps'.")
+
+(defvar beancount-posting-regexp nil
+  "A regular expression to match transaction postings.
+
+Value set by `beancount--build-regexps'.")
+
+(defvar beancount-balance-regexp nil
+  "A regular expression to match balance directives.
+
+The grouping in this regular expression matches the one in
+`beancount-posting-regexp' to be used in amount align machinery.
+See `beancount-align-number'.
+
+Value set by `beancount--build-regexps'.")
+
+(defvar beancount-open-directive-regexp nil
+  "A regular expression to match open directives.
+
+Value set by `beancount--build-regexps'.")
+
+(defvar beancount-xref-symbol-regexp
+  "Regular expression for all symbols recognised by the Xref backend.
+
+Value set by `beancount--build-regexps'.")
+
+(defvar beancount-font-lock-keywords nil
+  "Keywords to be used by Emacs font-locking.
+
+Value set by `beancount--build-regexps'.")
+
+;; Group, support functions and customizable variables
 
 (defgroup beancount-account-types nil
   "Beancount account type root names."
@@ -96,8 +219,55 @@ Its value is set by `beancount--build-regexps'")
                 beancount-liabilities
                 beancount-equity
                 beancount-income
-                beancount-expenses)))
-    (setq beancount-account-categories account-categories)))
+                beancount-expenses))
+         (account-regexp
+          (concat (regexp-opt account-categories)
+                  "\\(?::[[:upper:][:digit:]][[:alnum:]-_]*\\)+"))
+         (posting-regexp
+          (concat "^\\s-+"
+                  "\\(" account-regexp "\\)"
+                  "\\(?:\\s-+\\(\\(" beancount-number-regexp "\\)"
+                  "\\s-+\\(" beancount-currency-regexp "\\)\\)\\)?"))
+         (balance-regexp
+          (concat "^" beancount-date-regexp "\\s-+balance\\s-+"
+                  "\\(" account-regexp "\\)\\s-+"
+                  "\\(\\(" beancount-number-regexp "\\)\\s-+\\(" beancount-currency-regexp "\\)\\)"))
+         (open-directive-regexp
+          (concat "^\\(" beancount-date-regexp "\\) +"
+                  "\\(open\\) +"
+                  "\\(" account-regexp "\\)"))
+         (xref-symbol-regexp
+          (rx-to-string `(or (regexp ,account-regexp)
+                             (regexp ,(concat "#[" beancount-tag-chars "]+"))
+                             (regexp ,(concat "\\^[" beancount-tag-chars "]+")))))
+         (font-lock-keywords
+          `((,beancount-transaction-regexp (1 'beancount-date)
+                                           (2 (beancount-face-by-state (match-string 2)) t)
+                                           (3 (beancount-face-by-state (match-string 2)) t))
+            (,posting-regexp (1 'beancount-account)
+                             (2 'beancount-amount nil :lax))
+            (,beancount-metadata-regexp (1 'beancount-metadata)
+                                        (2 'beancount-metadata t))
+            (,beancount-directive-regexp (1 'beancount-directive))
+            (,beancount-timestamped-directive-regexp (1 'beancount-date)
+                                                     (2 'beancount-directive))
+            ;; Fontify section headers when composed with outline-minor-mode.
+            (,(concat "^\\(" beancount-outline-regexp "\\).*") (0 (beancount-outline-face)))
+            ;; Tags and links.
+            (,(concat "\\#[" beancount-tag-chars "]*") . 'beancount-tag)
+            (,(concat "\\^[" beancount-tag-chars "]*") . 'beancount-link)
+            ;; Accounts not covered by previous rules.
+            (,account-regexp . 'beancount-account)
+            ;; Number followed by currency not covered by previous rules.
+            (,(concat beancount-number-regexp "\\s-+" beancount-currency-regexp) . 'beancount-amount)
+            )))
+    (setq beancount-account-categories account-categories)
+    (setq beancount-account-regexp account-regexp)
+    (setq beancount-posting-regexp posting-regexp)
+    (setq beancount-balance-regexp balance-regexp)
+    (setq beancount-open-directive-regexp open-directive-regexp)
+    (setq beancount-xref-symbol-regexp xref-symbol-regexp)
+    (setq beancount-font-lock-keywords font-lock-keywords)))
 
 (defcustom beancount-assets "Assets"
   "Root name for Beancount asset accounts."
@@ -209,43 +379,6 @@ Its value is set by `beancount--build-regexps'")
   '((t :inherit outline-8))
   "Outline level 8.")
 
-(defconst beancount-account-directive-names
-  '("balance"
-    "close"
-    "document"
-    "note"
-    "open"
-    "pad")
-  "Directive names that can appear after a date and are followd by an account.")
-
-(defconst beancount-no-account-directive-names
-  '("commodity"
-    "event"
-    "price"
-    "query"
-    "txn")
-  "Directives with a date but without an account.
-
-List of directive names that can appear after a date and that are
-_not_ followed by an account.")
-
-(defconst beancount-timestamped-directive-names
-  (append beancount-account-directive-names
-          beancount-no-account-directive-names)
-  "Directive names that can appear after a date.")
-
-(defconst beancount-directive-names
-  '("include"
-    "option"
-    "plugin"
-    "poptag"
-    "pushtag")
-  "Directive names that can appear at the beginning of a line.")
-
-(defconst beancount-tag-chars "[:alnum:]-_/.")
-
-(defconst beancount-account-chars "[:alnum:]-_:")
-
 (defconst beancount-option-names
   ;; This list is kept in sync with the options defined in
   ;; beancount/parser/options.py.
@@ -278,69 +411,6 @@ _not_ followed by an account.")
     "title"
     "tolerance_multiplier"))
 
-(defconst beancount-date-regexp "[0-9]\\{4\\}[-/][0-9]\\{2\\}[-/][0-9]\\{2\\}"
-  "A regular expression to match dates.")
-
-(defconst beancount-account-regexp
-  (concat (regexp-opt beancount-account-categories)
-          "\\(?::[[:upper:][:digit:]][[:alnum:]-_]*\\)+")
-  "A regular expression to match account names.")
-
-(defconst beancount-number-regexp "[-+]?[0-9]+\\(?:,[0-9]\\{3\\}\\)*\\(?:\\.[0-9]*\\)?"
-  "A regular expression to match decimal numbers.")
-
-(defconst beancount-currency-regexp "[A-Z][A-Z-_'.]*"
-  "A regular expression to match currencies.")
-
-(defconst beancount-flag-regexp
-  ;; Single character: Certain symbols plus uppercase letters.
-  ;; case-fold-search t will cause a single lowercase letter to match also.
-  "[!#%&*?A-Z]")
-
-(defconst beancount-transaction-regexp
-  (concat "^\\(" beancount-date-regexp "\\) +"
-          "\\(\\(?:txn\\)\\|" beancount-flag-regexp "\\) +"
-          "\\(\".*\"\\)"))
-
-(defconst beancount-posting-regexp
-  (concat "^\\s-+"
-          "\\(" beancount-account-regexp "\\)"
-          "\\(?:\\s-+\\(\\(" beancount-number-regexp "\\)"
-          "\\s-+\\(" beancount-currency-regexp "\\)\\)\\)?"))
-
-(defconst beancount-balance-regexp
-  ;; The grouping in this regular expression matches the one in
-  ;; `beancount-posting-regexp' to be used in amount align
-  ;; machinery. See `beancount-align-number'.
-  (concat "^" beancount-date-regexp "\\s-+balance\\s-+"
-          "\\(" beancount-account-regexp "\\)\\s-+"
-          "\\(\\(" beancount-number-regexp "\\)\\s-+\\(" beancount-currency-regexp "\\)\\)"))
-
-(defconst beancount-directive-regexp
-  (concat "^\\(" (regexp-opt beancount-directive-names) "\\) +"))
-
-(defconst beancount-timestamped-directive-regexp
-  (concat "^\\(" beancount-date-regexp "\\) +"
-          "\\(" (regexp-opt beancount-timestamped-directive-names) "\\) +"))
-
-(defconst beancount-metadata-regexp
-  "^\\s-+\\([a-z][A-Za-z0-9_-]+:\\)\\s-+\\(.+\\)")
-
-(defconst beancount-open-directive-regexp
-  (concat "^\\(" beancount-date-regexp "\\) +"
-          "\\(open\\) +"
-          "\\(" beancount-account-regexp "\\)"))
-
-;; This is a grouping regular expression because the subexpression is
-;; used in determining the outline level in `beancount-outline-level'.
-(defvar beancount-outline-regexp "\\(;;;+\\|\\*+\\)")
-
-;; Regular expression for all symbols recognised by the Xref backend.
-(defconst beancount-xref-symbol-regexp
-  (rx-to-string `(or (regexp ,beancount-account-regexp)
-                     (regexp ,(concat "#[" beancount-tag-chars "]+"))
-                     (regexp ,(concat "\\^[" beancount-tag-chars "]+")))))
-
 (defun beancount-outline-level ()
   (let ((len (- (match-end 1) (match-beginning 1))))
     (if (string-equal (substring (match-string 1) 0 1) ";")
@@ -365,28 +435,6 @@ _not_ followed by an account.")
         (8 'beancount-outline-8)
         (otherwise nil))
     nil))
-
-(defvar beancount-font-lock-keywords
-  `((,beancount-transaction-regexp (1 'beancount-date)
-                                   (2 (beancount-face-by-state (match-string 2)) t)
-                                   (3 (beancount-face-by-state (match-string 2)) t))
-    (,beancount-posting-regexp (1 'beancount-account)
-                               (2 'beancount-amount nil :lax))
-    (,beancount-metadata-regexp (1 'beancount-metadata)
-                                (2 'beancount-metadata t))
-    (,beancount-directive-regexp (1 'beancount-directive))
-    (,beancount-timestamped-directive-regexp (1 'beancount-date)
-                                             (2 'beancount-directive))
-    ;; Fontify section headers when composed with outline-minor-mode.
-    (,(concat "^\\(" beancount-outline-regexp "\\).*") (0 (beancount-outline-face)))
-    ;; Tags and links.
-    (,(concat "\\#[" beancount-tag-chars "]*") . 'beancount-tag)
-    (,(concat "\\^[" beancount-tag-chars "]*") . 'beancount-link)
-    ;; Accounts not covered by previous rules.
-    (,beancount-account-regexp . 'beancount-account)
-    ;; Number followed by currency not covered by previous rules.
-    (,(concat beancount-number-regexp "\\s-+" beancount-currency-regexp) . 'beancount-amount)
-    ))
 
 (defun beancount-tab-dwim (&optional arg)
   (interactive "P")
