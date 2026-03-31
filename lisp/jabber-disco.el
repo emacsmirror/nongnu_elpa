@@ -554,13 +554,13 @@ obtained from `xml-parse-region'."
 	(let ((name (jabber-xml-get-attribute x 'name))
 	      (category (jabber-xml-get-attribute x 'category))
 	      (type (jabber-xml-get-attribute x 'type)))
-	  (insert (propertize (if name
-					 name
-				       "Unnamed")
+	  (insert (propertize (or name
+				       (concat category
+					       (when type (concat " (" type ")"))))
 				     'face 'jabber-title)
-		  "\n\nCategory:\t" category "\n")
-	  (if type
-	      (insert "Type:\t\t" type "\n"))
+		  "\n\n")
+	  (when type
+	    (insert "Type:\t\t" type "\n"))
 	  (insert "\n")))
        ((eq (jabber-xml-node-name x) 'feature)
 	(let ((var (jabber-xml-get-attribute x 'var)))
