@@ -68,7 +68,10 @@ These fields are available at this moment:
 
 (define-derived-mode jabber-browse-mode special-mode "jabber-browse"
   "Special mode."  ;; FIXME: Improve!
-  (setq buffer-read-only t))
+  (setq buffer-read-only t)
+  (setq-local outline-regexp "\\*+ ")
+  (setq-local outline-minor-mode-cycle t)
+  (outline-minor-mode 1))
 
 (with-eval-after-load "jabber-core"
   (jabber-chain-add 'jabber-iq-chain #'jabber-process-iq))

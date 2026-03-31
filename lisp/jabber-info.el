@@ -59,16 +59,37 @@
         (push (concat bare-jid "/" (car entry)) full-jids)))
     (nreverse full-jids)))
 
-(defun jabber-info--make-callback (target-jid)
-  "Return a callback that routes results to TARGET-JID's browse buffer."
-  (lambda (jc xml-data closure-data)
-    (with-current-buffer (jabber-browse--buffer target-jid)
-      (jabber-browse--insert jc xml-data closure-data))))
+(defun jabber-info--make-marker ()
+  "Return an advancing marker at point.
+The marker has insertion-type t so it advances past text
+inserted at its position."
+  (let ((m (point-marker)))
+    (set-marker-insertion-type m t)
+    m))
 
-(defun jabber-info--query-bare (jc bare-jid)
+(defun jabber-info--make-callback (marker)
+  "Return a callback that inserts results at MARKER position."
+  (lambda (jc xml-data closure-data)
+    (when (buffer-live-p (marker-buffer marker))
+      (with-current-buffer (marker-buffer marker)
+        (let ((inhibit-read-only t))
+          (goto-char marker)
+          (save-excursion
+            (cond
+             ((functionp closure-data)
+              (let ((result (funcall closure-data jc xml-data)))
+                (when (stringp result)
+                  (insert result "\n\n"))))
+             ((stringp closure-data)
+              (insert closure-data ": "
+                      (jabber-parse-error (jabber-iq-error xml-data)) "\n\n"))
+             (t
+              (insert (format "%S\n\n" xml-data))))))))))
+
+(defun jabber-info--query-bare (jc bare-jid marker)
   "Fire queries appropriate for a bare JID.
-Results are routed to BARE-JID's browse buffer."
-  (let ((cb (jabber-info--make-callback bare-jid)))
+Results are inserted at MARKER in its buffer."
+  (let ((cb (jabber-info--make-callback marker)))
     (jabber-send-iq jc bare-jid "get"
                     '(query ((xmlns . "http://jabber.org/protocol/disco#info")))
                     cb #'jabber-process-disco-info
@@ -78,10 +99,10 @@ Results are routed to BARE-JID's browse buffer."
                     cb #'jabber-process-last
                     cb "Last online request failed")))
 
-(defun jabber-info--query-resource (jc full-jid target-jid)
+(defun jabber-info--query-resource (jc full-jid marker)
   "Fire queries appropriate for FULL-JID.
-Results are routed to TARGET-JID's browse buffer."
-  (let ((cb (jabber-info--make-callback target-jid)))
+Results are inserted at MARKER in its buffer."
+  (let ((cb (jabber-info--make-callback marker)))
     (jabber-send-iq jc full-jid "get"
                     '(query ((xmlns . "jabber:iq:version")))
                     cb #'jabber-process-version
@@ -120,26 +141,36 @@ Results appear in the browse buffer for TO."
       (with-current-buffer buf
         (let ((inhibit-read-only t))
           (erase-buffer)
-          (insert (propertize bare 'face 'jabber-title) "\n\n")))
-      ;; Bare JID queries (account-level info)
-      (unless resource
-        (jabber-info--query-bare jc bare))
-      ;; Per-resource queries
-      (if full-jids
-          (dolist (full-jid full-jids)
-            (with-current-buffer buf
-              (let ((inhibit-read-only t))
+          (insert (propertize bare 'face 'jabber-title) "\n\n")
+          (if resource
+              (jabber-info--query-resource
+               jc to (jabber-info--make-marker))
+            ;; Build the full outline skeleton, then create markers.
+            (insert (propertize "* Account:" 'face 'jabber-title) "\n\n")
+            (let ((account-pos (point)))
+              (if full-jids
+                  (let ((resource-entries nil))
+                    (insert (propertize "* Clients:" 'face 'jabber-title)
+                            "\n\n")
+                    (dolist (full-jid full-jids)
+                      (insert (propertize
+                               (concat "** " (jabber-jid-resource full-jid)
+                                       ":")
+                               'face 'jabber-title)
+                              "\n\n")
+                      (push (cons full-jid (point)) resource-entries))
+                    ;; Create markers and fire queries.
+                    (goto-char account-pos)
+                    (jabber-info--query-bare
+                     jc bare (jabber-info--make-marker))
+                    (dolist (entry (nreverse resource-entries))
+                      (goto-char (cdr entry))
+                      (jabber-info--query-resource
+                       jc (car entry) (jabber-info--make-marker))))
+                (jabber-info--query-bare
+                 jc bare (jabber-info--make-marker))
                 (goto-char (point-max))
-                (insert (propertize (concat "Resource: "
-                                           (jabber-jid-resource full-jid))
-                                   'face 'jabber-title)
-                        "\n\n")))
-            (jabber-info--query-resource jc full-jid bare))
-        (unless resource
-          (with-current-buffer buf
-            (let ((inhibit-read-only t))
-              (goto-char (point-max))
-              (insert "No connected resources found.\n\n")))))
+                (insert "No connected resources found.\n\n"))))))
       (display-buffer buf))))
 
 ;;;###autoload
@@ -155,8 +186,9 @@ JC is the Jabber connection."
     (with-current-buffer buf
       (let ((inhibit-read-only t))
         (erase-buffer)
-        (insert (propertize full-jid 'face 'jabber-title) "\n\n")))
-    (jabber-info--query-resource jc full-jid full-jid)
+        (insert (propertize full-jid 'face 'jabber-title) "\n\n")
+        (jabber-info--query-resource
+         jc full-jid (jabber-info--make-marker))))
     (display-buffer buf)))
 
 (provide 'jabber-info)
