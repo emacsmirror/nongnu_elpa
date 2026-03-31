@@ -59,15 +59,17 @@ JC is the Jabber connection."
 ;; called by jabber-process-data
 (defun jabber-process-version (_jc xml-data)
   "Handle results from jabber:iq:version requests.
-
-JC is the Jabber connection.
-XML-DATA is the parsed tree data from the stream (stanzas)
-obtained from `xml-parse-region'."
+Return a formatted string with name, version, and OS."
   (let ((query (jabber-iq-query xml-data)))
-    (dolist (x '((name . "Name:\t\t") (version . "Version:\t") (os . "OS:\t\t")))
-      (let ((data (car (jabber-xml-node-children (car (jabber-xml-get-children query (car x)))))))
-	(when data
-	  (insert (cdr x) data "\n"))))))
+    (mapconcat
+     #'identity
+     (cl-loop for (tag . label) in '((name . "Name:\t\t")
+                                     (version . "Version:\t")
+                                     (os . "OS:\t\t"))
+              for data = (car (jabber-xml-node-children
+                               (car (jabber-xml-get-children query tag))))
+              when data collect (concat label data))
+     "\n")))
 
 (if jabber-version-show
     (and
