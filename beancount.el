@@ -70,34 +70,66 @@ complete the posting at point. The correct currency is determined
 from the open directive for the relevant account."
   :type 'boolean)
 
+(defvar beancount-account-categories nil
+  "List of account-type root names.
+
+Its value is set by `beancount--build-regexps'")
+
 (defgroup beancount-account-types nil
   "Beancount account type root names."
   :group 'beancount)
 
+(defun beancount--set-and-rebuild (symbol value)
+  "Set SYMBOL to VALUE and recompute regexps."
+  (set-default symbol value)
+  (when (cl-every #'boundp '(beancount-assets
+                             beancount-liabilities
+                             beancount-equity
+                             beancount-income
+                             beancount-expenses))
+    (beancount--build-regexps)))
+
+(defun beancount--build-regexps ()
+  "Compute account-type dependent regexps from current defcustom values."
+  (let* ((account-categories
+          (list beancount-assets
+                beancount-liabilities
+                beancount-equity
+                beancount-income
+                beancount-expenses)))
+    (setq beancount-account-categories account-categories)))
+
 (defcustom beancount-assets "Assets"
   "Root name for Beancount asset accounts."
   :type 'string
-  :group 'beancount-account-types)
+  :group 'beancount-account-types
+  :set #'beancount--set-and-rebuild)
 
 (defcustom beancount-liabilities "Liabilities"
   "Root name for Beancount liabilities accounts."
   :type 'string
-  :group 'beancount-account-types)
+  :group 'beancount-account-types
+  :set #'beancount--set-and-rebuild)
 
 (defcustom beancount-equity "Equity"
   "Root name for Beancount equity accounts."
   :type 'string
-  :group 'beancount-account-types)
+  :group 'beancount-account-types
+  :set #'beancount--set-and-rebuild)
 
 (defcustom beancount-income "Income"
   "Root name for Beancount income accounts."
   :type 'string
-  :group 'beancount-account-types)
+  :group 'beancount-account-types
+  :set #'beancount--set-and-rebuild)
 
 (defcustom beancount-expenses "Expenses"
   "Root name for Beancount expenses accounts."
   :type 'string
-  :group 'beancount-account-types)
+  :group 'beancount-account-types
+  :set #'beancount--set-and-rebuild)
+
+(beancount--build-regexps)
 
 (defgroup beancount-faces nil "Beancount mode highlighting" :group 'beancount)
 
@@ -209,13 +241,6 @@ _not_ followed by an account.")
     "poptag"
     "pushtag")
   "Directive names that can appear at the beginning of a line.")
-
-(defconst beancount-account-categories
-  (list beancount-assets
-        beancount-liabilities
-        beancount-equity
-        beancount-income
-        beancount-expenses))
 
 (defconst beancount-tag-chars "[:alnum:]-_/.")
 
