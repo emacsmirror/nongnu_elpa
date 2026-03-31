@@ -107,6 +107,7 @@
 (autoload 'mastodon-instance-data "mastodon")
 (autoload 'mastodon-create-poll "mastodon-transient")
 (autoload 'mastodon-tl--own-profile-buffer-p "mastodon-tl")
+(autoload 'mastodon-tl--thread-do "mastodon-tl")
 
 ;; for mastodon-toot-translate-toot-text
 (autoload 'mastodon-tl--content "mastodon-tl")
@@ -1645,7 +1646,46 @@ If TRANSIENT, we are called from a transient, so nil
       (when (or (not (string=  user-policy "unknown"))
                 (y-or-n-p "Quote permission unknown. Proceed?"))
         (mastodon-toot--compose-buffer nil nil nil nil nil
-                                       quote-id json visibility)))))
+                          quote-id json visibility)))))
+
+(defun mastodon-toot-jump-to-quoting ()
+  "Prompt for a toot quoting the toot at point and load it."
+  (interactive)
+  (mastodon-toot--with-toot-item
+   (let* ((json (mastodon-tl--toot-or-base
+                 (mastodon-tl--property 'item-json)))
+          (quotes (alist-get 'quotes_count json)))
+     (if (= 0 quotes)
+         (user-error "Item has no quotes?")
+       ;; with-toot-item fetches base id:
+       (let* ((data (mastodon-toot--get-quoting id))
+              (users (cl-loop for x in data
+                              collect (map-nested-elt x '(account acct))))
+              (completion-extra-properties
+               `(:annotation-function
+                 ,(lambda (cand)
+                    (let ((user (cl-find-if
+                                 (lambda (entry)
+                                   (string= cand
+                                            (map-nested-elt entry '(account acct))))
+                                 data)))
+                      (concat " "
+                              (map-nested-elt user '(account username)))))))
+              (choice (completing-read "Load quoting toot by:" users))
+              (choice-item (cl-find-if
+                            (lambda (x)
+                              (string= choice
+                                       (map-nested-elt x '(account acct))))
+                            data)))
+         (mastodon-tl--thread-do (alist-get 'id choice-item)))))))
+
+(defun mastodon-toot--get-quoting (id)
+  "Get statuses that quote item with ID."
+  ;; link header for paginating
+  ;; limit param default 20 max 40
+  (let ((endpoint (mastodon-http--api
+                   (format "statuses/%s/quotes" id))))
+    (mastodon-http--get-json endpoint)))
 
 
 ;;; SCHEDULE
