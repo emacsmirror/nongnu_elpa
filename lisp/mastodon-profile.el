@@ -88,6 +88,7 @@
 (autoload 'mastodon-tl--toot-or-base "mastodon-tl")
 (autoload 'mastodon-views--end-of-table "mastodon-views")
 (autoload 'mastodon-tl--buttonify-link "mastodon-tl")
+(autoload 'mastodon-tl-read-handle-annotated "mastodon-tl")
 
 (defvar mastodon-active-user)
 (defvar mastodon-tl--horiz-bar)
@@ -971,12 +972,9 @@ IMG-TYPE is the JSON key from the account data."
     (if (and (not (mastodon-tl--profile-buffer-p))
              (not (mastodon-tl--property 'item-json :no-move)))
         (user-error "Looks like there's no toot or user at point?")
-      (let ((user-handles (mastodon-profile--extract-users-handles
-                           (mastodon-profile--item-json))))
-        (completing-read "View profile of user [choose or enter any handle]: "
-                         user-handles
-                         nil ; predicate
-                         'confirm)))))
+      (mastodon-tl-read-handle-annotated
+       (mastodon-profile--extract-users-handles (mastodon-profile--item-json))
+       "View profile of user [choose or enter any handle]: "))))
   (if (not (or ; own profile has no need for item-json test:
             (string= user-handle (mastodon-auth--get-account-name))
             (mastodon-tl--profile-buffer-p)
