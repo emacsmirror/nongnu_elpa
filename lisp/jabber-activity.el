@@ -301,11 +301,22 @@ MUC JIDs get a # prefix (not included in the shortening calculation)."
 	 (name (cdr entry))
 	 (mucp (jabber-muc-joined-p jid))
 	 (display (if mucp (concat jabber-activity-muc-prefix name) name))
-	 (face (if mucp
-		   'jabber-activity-mention-face
-		 'jabber-activity-chat-face)))
+	 (face (cond
+		((member jid jabber-activity-personal-jids)
+		 'jabber-activity-mention-face)
+		(mucp 'jabber-activity-muc-face)
+		(t 'jabber-activity-chat-face))))
     (propertize display 'face face 'jabber-modeline t
                 'help-echo jid)))
+
+(defun jabber-activity--sort-jids (jids)
+  "Return JIDS sorted with personal mentions first."
+  (let (personal other)
+    (dolist (jid jids)
+      (if (member jid jabber-activity-personal-jids)
+          (push jid personal)
+        (push jid other)))
+    (nconc (nreverse personal) (nreverse other))))
 
 (defun jabber-activity-mode-line-update ()
   "Update the string shown in the mode line.
@@ -313,8 +324,8 @@ Recomputes `jabber-activity-mode-string' and
 `jabber-activity-count-string' from `jabber-activity-jids'."
   (unless jabber-activity--updating
     (let* ((jabber-activity--updating t)
-	   (entries (mapcar #'jabber-activity-lookup-name
-			    jabber-activity-jids))
+	   (sorted (jabber-activity--sort-jids jabber-activity-jids))
+	   (entries (mapcar #'jabber-activity-lookup-name sorted))
 	   (total (length entries))
 	   (overflow (when (and jabber-activity-shorten-cutoff
 			       (> total jabber-activity-shorten-cutoff))
@@ -372,11 +383,11 @@ Recomputes `jabber-activity-mode-string' and
     (jabber-activity-mode-line-update)))
 
 (defun jabber-activity-add-muc (_nick group _buffer text _proposed-alert)
-  "Add GROUP to mode line on personal mentions only."
-  (when (and (funcall jabber-activity-show-p group)
-             (jabber-muc-looks-like-personal-p text group))
+  "Add GROUP to mode line.  Track personal mentions separately."
+  (when (funcall jabber-activity-show-p group)
     (add-to-list 'jabber-activity-jids group)
-    (add-to-list 'jabber-activity-personal-jids group)
+    (when (jabber-muc-looks-like-personal-p text group)
+      (add-to-list 'jabber-activity-personal-jids group))
     (jabber-activity-mode-line-update)))
 
 (defun jabber-activity-presence (who _oldstatus newstatus _statustext _proposed-alert)
