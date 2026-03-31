@@ -452,10 +452,10 @@ ACTION is a symbol, either `favourite' or `boost.'"
                        (get-text-property (car byline-region) 'favourited-p)))
               (str-api (if boost-p "reblog" action-str))
               (action-str-api (mastodon-toot--str-negify str-api faved boosted
-                                                         action))
+                                            action))
               (action-pp (concat
                           (mastodon-toot--str-negify action-str faved boosted
-                                                     action)
+                                        action)
                           (if boost-p "ed" "d")))
               (remove-p (if boost-p boosted faved)))
          (mastodon-toot--action
@@ -544,7 +544,7 @@ SUBTRACT means we are un-favouriting or unboosting, so we decrement."
                                         (cdr byline-region)
                                         (list 'bookmarked-p (not bookmarked-p)))
                    (mastodon-toot--action-success bookmark-str
-                                                  byline-region bookmarked-p item-json)
+                                     byline-region bookmarked-p item-json)
                    (message "%s #%s" message id))))))))))
 
 (defun mastodon-toot-list-boosters ()
