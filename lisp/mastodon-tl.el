@@ -3083,35 +3083,61 @@ LANGS is the accumulated array param alist if we re-run recursively."
 (defun mastodon-tl--user-handles-get (action)
   "Get the list of user-handles for ACTION from the current toot."
   (mastodon-tl--do-if-item
-   (let ((user-handles
-          (cond
-           ((or ; follow suggests / search / foll requests compat:
-             (member (mastodon-tl--get-buffer-type)
-                     '( follow-suggestions search follow-requests
-                        ;; profile follows/followers but not statuses:
-                        profile-followers profile-following)))
-            ;; fetch 'item-json:
-            (list (alist-get 'acct
-                             (mastodon-tl--property 'item-json :no-move))))
-           ;; profile view, point in profile details, poss no toots
-           ;; needed for e.g. gup.pe groups which show no toots publically:
-           ((and (mastodon-tl--profile-buffer-p)
-                 (get-text-property (point) 'profile-json))
-            (list (alist-get 'acct
-                             (mastodon-profile--profile-json))))
-           ;; (grouped) notifications:
-           ((member (mastodon-tl--get-buffer-type) '(mentions notifications))
-            (append ;; those acting on item:
-             (cl-remove-duplicates
-              (cl-loop for a in (mastodon-tl--property
-                                 'notification-accounts :no-move)
-                       collect (alist-get 'acct a)))
-             ;; mentions in item:
-             (mastodon-profile--extract-users-handles
-              (mastodon-profile--item-json))))
-           (t
-            (mastodon-profile--extract-users-handles
-             (mastodon-profile--item-json))))))
+   (let* ((item-json (mastodon-profile--item-json))
+          (notif-accts (mastodon-tl--property 'notification-accounts :nomove))
+          (user-handles
+           (cond
+            ((or ; follow suggests / search / foll requests compat:
+              (member (mastodon-tl--get-buffer-type)
+                      '( follow-suggestions search follow-requests
+                         ;; profile follows/followers but not statuses:
+                         profile-followers profile-following)))
+             ;; fetch 'item-json:
+             (list (alist-get 'acct
+                              (mastodon-tl--property 'item-json :no-move))))
+            ;; profile view, point in profile details, poss no toots
+            ;; needed for e.g. gup.pe groups which show no toots publically:
+            ((and (mastodon-tl--profile-buffer-p)
+                  (get-text-property (point) 'profile-json))
+             (list (alist-get 'acct
+                              (mastodon-profile--profile-json))))
+            ;; (grouped) notifications:
+            ((member (mastodon-tl--get-buffer-type) '(mentions notifications))
+             (append ;; those acting on item:
+              (cl-remove-duplicates
+               (cl-loop for a in (mastodon-tl--property
+                                  'notification-accounts :no-move)
+                        collect (alist-get 'acct a)))
+              ;; mentions in item:
+              (mastodon-profile--extract-users-handles item-json)))
+            (t
+             (mastodon-profile--extract-users-handles item-json))))
+          (completion-extra-properties
+           `(:annotation-function
+             ,(lambda (cand)
+                (let ((user
+                       (or
+                        ;; mentions:
+                        (mastodon-tl-find-user cand
+                                    (alist-get 'mentions
+                                               (mastodon-tl--toot-or-base item-json)))
+                        ;; notifs:
+                        (mastodon-tl-find-user cand notif-accts)
+                        ;; booster/faver:
+                        (when (string= cand
+                                       (map-nested-elt item-json
+                                                       '(account acct)))
+                          (alist-get 'account item-json))
+                        ;; author:
+                        (let ((data (mastodon-tl--toot-or-base item-json)))
+                          (when (string= cand
+                                         (map-nested-elt data
+                                                         '(account acct)))
+                            (alist-get 'account data))))))
+                  (when user
+                    (concat " "
+                            (or (alist-get 'display_name user)
+                                (alist-get 'username user)))))))))
      (completing-read
       (cond ((or ; TODO: make this "enable/disable notifications"
               (string= action "disable")
@@ -3122,6 +3148,13 @@ LANGS is the accumulated array param alist if we re-run recursively."
             (t (format "Handle of user to %s: " action)))
       user-handles nil ; predicate
       'confirm))))
+
+(defun mastodon-tl-find-user (handle data)
+  "Find user with HANDLE in DATA."
+  (cl-find-if
+   (lambda (entry)
+     (string= handle (alist-get 'acct entry)))
+   data))
 
 (defun mastodon-tl--get-blocks-or-mutes-list (action)
   "Fetch the list of accounts for ACTION from the server.
