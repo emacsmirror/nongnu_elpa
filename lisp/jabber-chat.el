@@ -542,8 +542,11 @@ prevent forged carbons (CVE-2017-5589)."
   "Store a carbon-forwarded message in the database.
 JC is the Jabber connection.  XML-DATA is the inner (unwrapped,
 possibly decrypted) message stanza.
-Direction is determined by comparing the sender to our bare JID."
-  (let* ((from (jabber-xml-get-attribute xml-data 'from))
+Direction is determined by comparing the sender to our bare JID.
+Correction stanzas (XEP-0308) are skipped; the correction handler
+updates the original row instead."
+  (unless (jabber-message-correct--replace-id xml-data)
+    (let* ((from (jabber-xml-get-attribute xml-data 'from))
          (to (jabber-xml-get-attribute xml-data 'to))
          (body (car (jabber-xml-node-children
                      (car (jabber-xml-get-children xml-data 'body)))))
@@ -559,14 +562,14 @@ Direction is determined by comparing the sender to our bare JID."
                          xml-data "jabber:x:encrypted")
                         (jabber-xml-child-with-xmlns
                          xml-data "urn:xmpp:openpgp:0"))))
-    (when (and peer body)
-      (jabber-db-store-message
-       our-jid peer direction "chat" body
-       (floor (float-time (or timestamp (current-time))))
-       (when from (jabber-jid-resource from))
-       stanza-id
-       nil (jabber-db--extract-occupant-id xml-data) nil
-       encrypted))))
+      (when (and peer body)
+        (jabber-db-store-message
+         our-jid peer direction "chat" body
+         (floor (float-time (or timestamp (current-time))))
+         (when from (jabber-jid-resource from))
+         stanza-id
+         nil (jabber-db--extract-occupant-id xml-data) nil
+         encrypted)))))
 
 (defun jabber-chat--select-buffer (jc from &optional carbon-buffer)
   "Return the chat buffer for an incoming message from FROM.

@@ -61,6 +61,9 @@
 (declare-function jabber-chat-buffer-refresh "jabber-chatbuffer" (&optional count))
 (declare-function jabber-muc-find-buffer "jabber-muc" (group))
 (declare-function jabber-parse-time "jabber-util" (raw-time))
+(declare-function jabber-message-correct--replace-id "jabber-message-correct"
+                  (xml-data))
+(declare-function jabber-db-correct-message "jabber-db" (stanza-id new-body))
 (declare-function jabber-sexp2xml "jabber-xml" (sexp))
 
 (defvar jabber-message-chain)           ; jabber-core.el
@@ -345,16 +348,19 @@ JC is the Jabber connection.  XML-DATA is the stanza."
            (peer (plist-get fields :peer))
            (body (plist-get fields :body)))
       (if (and peer body)
-          (let ((ts (floor (float-time
-                            (or (plist-get fields :timestamp)
-                                (current-time))))))
-            (jabber-db-store-message
-             (plist-get fields :our-jid) peer
-             (plist-get fields :direction) (plist-get fields :type)
-             body ts (jabber-jid-resource (plist-get fields :from))
-             (plist-get fields :stanza-id) archive-id
-             (jabber-db--extract-occupant-id inner-msg)
-             (plist-get fields :oob-entries) encrypted)
+          (let* ((ts (floor (float-time
+                             (or (plist-get fields :timestamp)
+                                 (current-time)))))
+                 (replace-id (jabber-message-correct--replace-id inner-msg)))
+            (if replace-id
+                (jabber-db-correct-message replace-id body)
+              (jabber-db-store-message
+               (plist-get fields :our-jid) peer
+               (plist-get fields :direction) (plist-get fields :type)
+               body ts (jabber-jid-resource (plist-get fields :from))
+               (plist-get fields :stanza-id) archive-id
+               (jabber-db--extract-occupant-id inner-msg)
+               (plist-get fields :oob-entries) encrypted))
             (jabber-mam--track-sync-ids qid archive-id
                                         (plist-get fields :stanza-id) ts)
             (jabber-mam--mark-dirty peer (plist-get fields :type))
