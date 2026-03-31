@@ -2354,8 +2354,6 @@ To disable showing the stats, customize
                                    'favourites-count .favourites_count))
            (boosts-prop (propertize (format "%s" .reblogs_count)
                                     'boosts-count .reblogs_count))
-           (quotes-prop (propertize (format "%s" .quotes_count)
-                                    'quotes-count .quotes_count))
            (faves (format "%s %s" faves-prop (mastodon-tl--symbol 'favourite)))
            (boosts (format "%s %s" boosts-prop (mastodon-tl--symbol 'boost)))
            (replies (format "%s %s" .replies_count (mastodon-tl--symbol 'reply)))
