@@ -34,6 +34,10 @@
 
 ;; Global reference declarations
 
+(declare-function jabber-db-caps-store "jabber-db.el"
+                  (hash ver identities features))
+(declare-function jabber-db-caps-lookup "jabber-db.el" (hash ver))
+
 (defvar jabber-presence-chain)          ; jabber-core.el
 (defvar jabber-connections)             ; jabber-core.el
 (defvar jabber-xdata-xmlns)            ; jabber-xml.el
@@ -225,10 +229,14 @@ capabilities into `jabber-disco-info-cache' for JID."
 	(setf (car cache-entry) (float-time))
 	(request-disco-info)))
      ((null cache-entry)
-      ;; We know nothing about this hash.  Let's note the
-      ;; fact that we tried to get information about it.
-      (puthash key (list (float-time)) jabber-caps-cache)
-      (request-disco-info))
+      ;; Check persistent storage before querying the network.
+      (let ((db-entry (jabber-db-caps-lookup hash ver)))
+        (if db-entry
+            (progn
+              (puthash key db-entry jabber-caps-cache)
+              (puthash (cons jid nil) db-entry jabber-disco-info-cache))
+          (puthash key (list (float-time)) jabber-caps-cache)
+          (request-disco-info))))
      (t
       ;; We already know what this hash represents, so we
       ;; can cache info for this contact.
@@ -267,7 +275,9 @@ otherwise, it will try the next available option."
 	       (verification-string (jabber-caps-ver-string query hash)))
     (if (string= ver verification-string)
 	;; The hash is correct; save info.
-	(puthash key (jabber-disco-parse-info xml-data) jabber-caps-cache)
+	(let ((info (jabber-disco-parse-info xml-data)))
+	  (puthash key info jabber-caps-cache)
+	  (jabber-db-caps-store hash ver (car info) (cadr info)))
       ;; The hash is incorrect.
       (jabber-caps-try-next jc hash node ver))))
 
