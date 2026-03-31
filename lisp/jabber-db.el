@@ -185,7 +185,13 @@ END"
   url        TEXT NOT NULL,
   desc       TEXT)"
     "CREATE INDEX IF NOT EXISTS idx_oob_message_id
-  ON message_oob(message_id)")
+  ON message_oob(message_id)"
+    "CREATE TABLE IF NOT EXISTS caps_cache (
+  hash       TEXT NOT NULL,
+  ver        TEXT NOT NULL,
+  identities TEXT NOT NULL,
+  features   TEXT NOT NULL,
+  PRIMARY KEY (hash, ver))")
   "DDL statements for the latest database schema.")
 
 (defun jabber-db--init-schema (db)
@@ -193,7 +199,7 @@ END"
   (dolist (ddl jabber-db--schema-ddl)
     (sqlite-execute db ddl)))
 
-(defconst jabber-db--schema-version 3
+(defconst jabber-db--schema-version 4
   "Current schema version.
 Bump this when adding migrations.  A database whose version
 exceeds this value is from a newer (or development) build and
@@ -251,7 +257,17 @@ INSERT INTO message_oob (message_id, url, desc)
       (sqlite-execute db "ALTER TABLE message DROP COLUMN oob_url")
       (sqlite-execute db "ALTER TABLE message DROP COLUMN oob_desc")
       (sqlite-execute db "PRAGMA user_version=3")
-      (setq version 3))))
+      (setq version 3))
+    (when (= version 3)
+      (sqlite-execute db "\
+CREATE TABLE IF NOT EXISTS caps_cache (
+  hash       TEXT NOT NULL,
+  ver        TEXT NOT NULL,
+  identities TEXT NOT NULL,
+  features   TEXT NOT NULL,
+  PRIMARY KEY (hash, ver))")
+      (sqlite-execute db "PRAGMA user_version=4")
+      (setq version 4))))
 
 (defun jabber-db-ensure-open ()
   "Open the SQLite database, creating it if needed.  Idempotent.
@@ -315,6 +331,31 @@ SELECT encryption FROM chat_settings
                             (list account peer)))))
       (unless (string= val "default")
         (intern val)))))
+
+;;; Caps cache
+
+(defun jabber-db-caps-store (hash ver identities features)
+  "Persist a caps cache entry for HASH and VER.
+IDENTITIES is a list of vectors [name category type].
+FEATURES is a list of feature strings."
+  (when-let* ((db (jabber-db-ensure-open)))
+    (sqlite-execute db "\
+INSERT OR REPLACE INTO caps_cache (hash, ver, identities, features)
+  VALUES (?, ?, ?, ?)"
+                    (list hash ver
+                          (prin1-to-string identities)
+                          (prin1-to-string features)))))
+
+(defun jabber-db-caps-lookup (hash ver)
+  "Look up a caps cache entry for HASH and VER.
+Return (IDENTITIES FEATURES) or nil if not found."
+  (when-let* ((db (jabber-db-ensure-open)))
+    (when-let* ((row (car (sqlite-select db "\
+SELECT identities, features FROM caps_cache
+  WHERE hash = ? AND ver = ?"
+                                         (list hash ver)))))
+      (list (car (read-from-string (car row)))
+            (car (read-from-string (cadr row)))))))
 
 ;;; Storage
 
