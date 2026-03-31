@@ -174,6 +174,8 @@ With prefix argument, remove it."
 (declare-function jabber-get-browse "jabber-browse.el" (jc to))
 (declare-function jabber-get-version "jabber-version.el" (jc to))
 (declare-function jabber-ping "jabber-ping.el" (to))
+(declare-function jabber-get-info "jabber-info.el" (jc to))
+(declare-function jabber-muc-get-info "jabber-info.el" (jc group nickname))
 (declare-function jabber-get-time "jabber-time.el" (jc to))
 (declare-function jabber-vcard-get "jabber-vcard.el" (jc jid))
 (declare-function jabber-muc-create "jabber-muc.el" (jc group nickname))
@@ -212,8 +214,9 @@ With prefix argument, remove it."
 (transient-define-prefix jabber-info-menu ()
   "Jabber info/discovery commands."
   [["Discovery"
+    ("I" "Get info" jabber-get-info)
     ("i" "Disco items" jabber-get-disco-items)
-    ("I" "Disco info" jabber-get-disco-info)
+    ("d" "Disco info" jabber-get-disco-info)
     ("b" "Browse" jabber-get-browse)
     ("v" "Client version" jabber-get-version)
     ("p" "Ping" jabber-ping)
@@ -231,6 +234,7 @@ With prefix argument, remove it."
     ("c" "Configure" jabber-muc-get-config)]
    ["Participants"
     ("n" "Change nick" jabber-muc-nick)
+    ("I" "Get info" jabber-muc-get-info)
     ("i" "Invite" jabber-muc-invite)
     ("w" "List participants" jabber-muc-names)
     ("p" "Private chat" jabber-muc-private)
