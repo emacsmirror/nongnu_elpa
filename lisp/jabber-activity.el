@@ -301,22 +301,11 @@ MUC JIDs get a # prefix (not included in the shortening calculation)."
 	 (name (cdr entry))
 	 (mucp (jabber-muc-joined-p jid))
 	 (display (if mucp (concat jabber-activity-muc-prefix name) name))
-	 (face (cond
-		((member jid jabber-activity-personal-jids)
-		 'jabber-activity-mention-face)
-		(mucp 'jabber-activity-muc-face)
-		(t 'jabber-activity-chat-face))))
-    (propertize
-     display
-     'face face
-     'jabber-modeline t
-     'local-map (make-mode-line-mouse-map
-		 'mouse-1 (lambda ()
-			    (interactive "@")
-			    (jabber-activity-switch-to jid)))
-     'help-echo (concat "Jump to "
-			 (jabber-jid-displayname jid)
-			 "'s buffer"))))
+	 (face (if mucp
+		   'jabber-activity-mention-face
+		 'jabber-activity-chat-face)))
+    (propertize display 'face face 'jabber-modeline t
+                'help-echo jid)))
 
 (defun jabber-activity-mode-line-update ()
   "Update the string shown in the mode line.
@@ -383,11 +372,11 @@ Recomputes `jabber-activity-mode-string' and
     (jabber-activity-mode-line-update)))
 
 (defun jabber-activity-add-muc (_nick group _buffer text _proposed-alert)
-  "Add a JID to mode line when `jabber-activity-show-p'."
-  (when (funcall jabber-activity-show-p group)
+  "Add GROUP to mode line on personal mentions only."
+  (when (and (funcall jabber-activity-show-p group)
+             (jabber-muc-looks-like-personal-p text group))
     (add-to-list 'jabber-activity-jids group)
-    (when (jabber-muc-looks-like-personal-p text group)
-      (add-to-list 'jabber-activity-personal-jids group))
+    (add-to-list 'jabber-activity-personal-jids group)
     (jabber-activity-mode-line-update)))
 
 (defun jabber-activity-presence (who _oldstatus newstatus _statustext _proposed-alert)
@@ -414,22 +403,26 @@ when there are unread messages which otherwise would be lost, if
   "Last non-Jabber buffer used.")
 
 (defun jabber-activity-switch-to (&optional jid-param)
-  "If JID-PARAM is provided, switch to that buffer.
-If JID-PARAM is nil and there has been activity in another
-buffer, switch to that buffer. If no such buffer exists, switch
-back to the last non Jabber chat buffer used."
-    (interactive)
-    (if (or jid-param jabber-activity-jids)
-        (let ((jid (or jid-param (car jabber-activity-jids))))
-          (unless (eq major-mode 'jabber-chat-mode)
-            (setq jabber-activity-last-buffer (current-buffer)))
-          (switch-to-buffer (jabber-activity-find-buffer-name jid))
-          (jabber-activity-clean))
-      (if (eq major-mode 'jabber-chat-mode)
-	  ;; Switch back to the buffer used last
-	  (when (buffer-live-p jabber-activity-last-buffer)
-	    (switch-to-buffer jabber-activity-last-buffer))
-	(message "No new activity"))))
+  "Switch to the buffer for JID-PARAM, or the next active JID.
+If no activity, switch back to the last non-Jabber buffer."
+  (interactive)
+  (if (or jid-param jabber-activity-jids)
+      (let* ((jid (or jid-param (car jabber-activity-jids)))
+             (buf (jabber-activity-find-buffer-name jid)))
+        (unless (eq major-mode 'jabber-chat-mode)
+          (setq jabber-activity-last-buffer (current-buffer)))
+        (if buf
+            (switch-to-buffer buf)
+          (setq jabber-activity-jids (delete jid jabber-activity-jids)
+                jabber-activity-personal-jids
+                (delete jid jabber-activity-personal-jids))
+          (jabber-activity-mode-line-update)
+          (message "Buffer for %s no longer exists" jid))
+        (jabber-activity-clean))
+    (if (eq major-mode 'jabber-chat-mode)
+        (when (buffer-live-p jabber-activity-last-buffer)
+          (switch-to-buffer jabber-activity-last-buffer))
+      (message "No new activity"))))
 
 ;;; Disconnect cleanup
 
