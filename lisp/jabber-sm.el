@@ -267,6 +267,7 @@ Return (UPDATED-STATE-DATA . STANZAS-TO-RESEND)."
          (pruned (jabber-sm--prune-queue queue h))
          (to-resend (mapcar #'cdr pruned)))
     (setq state-data (plist-put state-data :sm-last-acked h))
+    (setq state-data (plist-put state-data :sm-outbound-count h))
     (setq state-data (plist-put state-data :sm-outbound-queue nil))
     (setq state-data (plist-put state-data :sm-resumed t))
     (setq state-data (plist-put state-data :sm-resuming nil))

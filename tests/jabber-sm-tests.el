@@ -299,6 +299,7 @@
          (result (jabber-sm--handle-resumed sd resumed)))
     ;; state-data updated
     (should (= (plist-get (car result) :sm-last-acked) 1))
+    (should (= (plist-get (car result) :sm-outbound-count) 1))
     (should (null (plist-get (car result) :sm-outbound-queue)))
     (should (eq (plist-get (car result) :sm-resumed) t))
     (should-not (plist-get (car result) :sm-resuming))
@@ -317,6 +318,34 @@
          (resumed '(resumed ((xmlns . "urn:xmpp:sm:3") (h . "5") (previd . "abc"))))
          (result (jabber-sm--handle-resumed sd resumed)))
     (should (null (cdr result)))))
+
+(ert-deftest jabber-sm-test-handle-resumed-counter-reset ()
+  "Outbound counter resets to server h, preventing drift on resend."
+  (let* ((msg-a '(message ((to . "a@x")) (body () "a")))
+         (msg-b '(message ((to . "b@x")) (body () "b")))
+         (msg-c '(message ((to . "c@x")) (body () "c")))
+         (sd (list :sm-enabled t
+                   :sm-outbound-count 10
+                   :sm-outbound-queue (list (cons 8 msg-a)
+                                            (cons 9 msg-b)
+                                            (cons 10 msg-c))
+                   :sm-last-acked 7
+                   :sm-resumed nil
+                   :sm-resuming t))
+         (resumed '(resumed ((xmlns . "urn:xmpp:sm:3") (h . "8") (previd . "s1"))))
+         (result (jabber-sm--handle-resumed sd resumed))
+         (new-sd (car result))
+         (to-resend (cdr result)))
+    ;; Counter must reset to server's h so resent stanzas start from 8
+    (should (= (plist-get new-sd :sm-outbound-count) 8))
+    ;; Two stanzas to resend (9 and 10 were unacked)
+    (should (= (length to-resend) 2))
+    ;; After resending, count-outbound increments from 8 to 9, 10
+    ;; rather than from 10 to 11, 12 (the old drift bug)
+    (let ((after-resend new-sd))
+      (dolist (sexp to-resend)
+        (setq after-resend (jabber-sm--count-outbound after-resend sexp)))
+      (should (= (plist-get after-resend :sm-outbound-count) 10)))))
 
 ;;; Ack XML generation
 
