@@ -542,33 +542,32 @@ items for."
 
 (defun jabber-process-disco-info (jc xml-data)
   "Handle results from info disco requests.
-
-JC is the Jabber connection.
-XML-DATA is the parsed tree data from the stream (stanzas)
-obtained from `xml-parse-region'."
-
-  (let ((beginning (point)))
-    (dolist (x (jabber-xml-node-children (jabber-iq-query xml-data)))
-      (cond
-       ((eq (jabber-xml-node-name x) 'identity)
-	(let ((name (jabber-xml-get-attribute x 'name))
-	      (category (jabber-xml-get-attribute x 'category))
-	      (type (jabber-xml-get-attribute x 'type)))
-	  (insert (propertize (or name
-				       (concat category
-					       (when type (concat " (" type ")"))))
-				     'face 'jabber-title)
-		  "\n\n")
-	  (when type
-	    (insert "Type:\t\t" type "\n"))
-	  (insert "\n")))
-       ((eq (jabber-xml-node-name x) 'feature)
-	(let ((var (jabber-xml-get-attribute x 'var)))
-	  (insert "Feature:\t" var "\n")))))
-    (put-text-property beginning (point)
-		       'jabber-jid (jabber-xml-get-attribute xml-data 'from))
-    (put-text-property beginning (point)
-		       'jabber-account jc)))
+Return a formatted string with identities and features."
+  (let ((result
+         (with-temp-buffer
+           (dolist (x (jabber-xml-node-children (jabber-iq-query xml-data)))
+             (cond
+              ((eq (jabber-xml-node-name x) 'identity)
+               (let ((name (jabber-xml-get-attribute x 'name))
+                     (category (jabber-xml-get-attribute x 'category))
+                     (type (jabber-xml-get-attribute x 'type)))
+                 (insert (propertize (or name
+                                        (concat category
+                                                (when type (concat " (" type ")"))))
+                                    'face 'jabber-title)
+                         "\n\n")
+                 (when type
+                   (insert "Type:\t\t" type "\n"))
+                 (insert "\n")))
+              ((eq (jabber-xml-node-name x) 'feature)
+               (let ((var (jabber-xml-get-attribute x 'var)))
+                 (insert "Feature:\t" var "\n")))))
+           (buffer-string))))
+    (when (length> result 0)
+      (put-text-property 0 (length result) 'jabber-jid
+                         (jabber-xml-get-attribute xml-data 'from) result)
+      (put-text-property 0 (length result) 'jabber-account jc result)
+      result)))
 
 (defun jabber-process-disco-items (jc xml-data)
   "Handle results from items disco requests.
