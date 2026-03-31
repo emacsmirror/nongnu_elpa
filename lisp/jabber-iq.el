@@ -49,13 +49,14 @@
 (defgroup jabber-browse nil "browse display options"
   :group 'jabber)
 
-(defcustom jabber-browse-buffer-format "*-jabber-browse:-%n-*"
+(defcustom jabber-browse-buffer-format "*browse:%n*"
   "The format specification for the name of browse buffers.
 
 These fields are available at this moment:
 
 %n   JID to browse"
-  :type 'string)
+  :type 'string
+  :group 'jabber-browse)
 
 ;; Global reference declarations
 
@@ -170,39 +171,50 @@ See section 9.3 of XMPP Core."
 			   ,text))
 	       ,@app-specific))))
 
+(defun jabber-browse--buffer (jid)
+  "Return the browse buffer for JID, creating it if needed.
+When newly created, insert a JID header line."
+  (let* ((name (format-spec jabber-browse-buffer-format
+                            (list (cons ?n jid))))
+         (buf (get-buffer-create name)))
+    (with-current-buffer buf
+      (unless (derived-mode-p 'jabber-browse-mode)
+        (jabber-browse-mode)
+        (let ((inhibit-read-only t))
+          (insert (propertize jid 'face 'jabber-title) "\n\n"))))
+    buf))
+
+(defun jabber-browse--insert (jc xml-data closure-data)
+  "Render CLOSURE-DATA into the current buffer at point-max.
+CLOSURE-DATA is a function (called with JC and XML-DATA), an error
+string, or nil (dumps raw XML)."
+  (let ((inhibit-read-only t))
+    (goto-char (point-max))
+    (save-excursion
+      (cond
+       ((functionp closure-data)
+        (funcall closure-data jc xml-data))
+       ((stringp closure-data)
+        (insert closure-data ": "
+                (jabber-parse-error (jabber-iq-error xml-data)) "\n\n"))
+       (t
+        (insert (format "%S\n\n" xml-data)))))))
+
 (defun jabber-process-data (jc xml-data closure-data)
   "Process random results from various requests.
 
 JC is the Jabber connection.
 XML-DATA is the parsed tree data from the stream (stanzas)
 obtained from `xml-parse-region'."
-  (let ((from (or (jabber-xml-get-attribute xml-data 'from) (plist-get (fsm-get-state-data jc) :server))))
-    (with-current-buffer (get-buffer-create (format-spec jabber-browse-buffer-format
-                                                         (list (cons ?n from))))
-      (if (not (eq major-mode 'jabber-browse-mode))
-	  (jabber-browse-mode))
-
-      (setq buffer-read-only nil)
-      (goto-char (point-max))
-
-      (insert (propertize from 'face 'jabber-title)
-	      "\n\n")
-
-      ;; Put point at beginning of data
-      (save-excursion
-	;; If closure-data is a function, call it.  If it is a string,
-	;; output it along with a description of the error.  For other
-	;; values (e.g. nil), just dump the XML.
-	(cond
-	 ((functionp closure-data)
-	  (funcall closure-data jc xml-data))
-	 ((stringp closure-data)
-	  (insert closure-data ": " (jabber-parse-error (jabber-iq-error xml-data)) "\n\n"))
-	 (t
-	  (insert (format "%S\n\n" xml-data))))
-
-	(dolist (hook '(jabber-info-message-hooks jabber-alert-info-message-hooks))
-	  (run-hook-with-args hook 'browse (current-buffer) (funcall jabber-alert-info-message-function 'browse (current-buffer))))))))
+  (let* ((from (or (jabber-xml-get-attribute xml-data 'from)
+                   (plist-get (fsm-get-state-data jc) :server)))
+         (buf (jabber-browse--buffer from)))
+    (with-current-buffer buf
+      (jabber-browse--insert jc xml-data closure-data)
+      (dolist (hook '(jabber-info-message-hooks jabber-alert-info-message-hooks))
+        (run-hook-with-args hook 'browse buf
+                            (funcall jabber-alert-info-message-function
+                                     'browse buf))))))
 
 (defun jabber-silent-process-data (jc xml-data closure-data)
   "Process random results from various requests to only alert hooks.
