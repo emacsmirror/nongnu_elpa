@@ -1,11 +1,19 @@
 CC = gcc
 CFLAGS += -fPIC -Wall -Wno-pointer-sign -Wno-unused-function -I.
-LDFLAGS += -Wl,--no-undefined
+
+UNAME := $(shell uname)
+ifeq ($(UNAME),Darwin)
+LDFLAGS += -dynamiclib -undefined dynamic_lookup
+SOEXT = .dylib
+else
+LDFLAGS += -shared -Wl,--no-undefined
+SOEXT = .so
+endif
 
 MBED_FLAGS ?= $(shell pkg-config --cflags --libs mbedcrypto 2>/dev/null)
 
 SRCS = jabber-omemo-core.c picomemo/omemo.c picomemo/hacl.c
-TARGET = jabber-omemo-core.so
+TARGET = jabber-omemo-core$(SOEXT)
 INSTALL_DIR = ../lisp
 
 all: $(INSTALL_DIR)/$(TARGET)
@@ -17,7 +25,7 @@ $(TARGET): $(SRCS) picomemo/omemo.h picomemo/hacl.h
 ifeq ($(MBED_FLAGS),)
 	$(error libmbedcrypto not found. Install libmbedtls-dev or set MBED_FLAGS manually)
 endif
-	$(CC) -shared $(CFLAGS) $(LDFLAGS) -o $@ $(SRCS) $(MBED_FLAGS)
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(SRCS) $(MBED_FLAGS)
 
 $(INSTALL_DIR)/$(TARGET): $(TARGET)
 	cp $< $@
