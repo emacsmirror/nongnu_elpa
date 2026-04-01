@@ -1350,15 +1350,35 @@ with the created image (or nil) followed by CBARGS."
     map)
   "Keymap active on inline images and downloadable URLs in chat buffers.")
 
+(defvar jabber-chat-last-download-directory nil
+  "Last directory used for file downloads this session.")
+
+(defun jabber-chat--download-default-directory ()
+  "Return the default directory for file downloads."
+  (or jabber-chat-last-download-directory default-directory))
+
+(defun jabber-chat--download-destination (url)
+  "Prompt for a save path for URL, returning the chosen filename."
+  (let* ((filename (file-name-nondirectory
+                    (url-filename (url-generic-parse-url url)))))
+    (read-file-name (format "Save %s to: " filename)
+                    (jabber-chat--download-default-directory)
+                    nil nil filename)))
+
+(defun jabber-chat--record-download-directory (dest)
+  "Remember the directory of DEST for future downloads."
+  (setq jabber-chat-last-download-directory
+        (file-name-directory dest)))
+
 (defun jabber-chat-url-action-at-point ()
-  "Act on the URL at point: download files, open images in EWW.
+  "Download the file or image URL at point.
 Handles aesgcm:// URLs by decrypting after download."
   (interactive)
-  (let ((file-url (get-text-property (point) 'jabber-chat-file-url))
-        (image-url (get-text-property (point) 'jabber-chat-image-url)))
-    (cond
-     (file-url (jabber-chat-download-url file-url))
-     (image-url (jabber-chat-download-url image-url)))))
+  (let ((url (or (get-text-property (point) 'jabber-chat-file-url)
+                 (get-text-property (point) 'jabber-chat-image-url))))
+    (unless url
+      (user-error "No downloadable URL at point"))
+    (jabber-chat-download-url url)))
 
 (defun jabber-chat-download-url (url)
   "Prompt to download URL to a local file.
@@ -1366,44 +1386,47 @@ For aesgcm:// URLs, fetches via HTTPS and decrypts with AES-256-GCM."
   (let* ((parsed (and (string-prefix-p "aesgcm://" url)
                       (jabber-chat--parse-aesgcm-url url)))
          (fetch-url (if parsed (plist-get parsed :https-url) url))
-         (filename (file-name-nondirectory
-                    (url-filename (url-generic-parse-url fetch-url))))
-         (dest (read-file-name (format "Save %s to: " filename)
-                               nil nil nil filename)))
-    (if (null parsed)
-        (progn
-          (url-copy-file url dest t)
-          (message "Downloaded %s" dest))
-      (url-queue-retrieve
-       fetch-url
-       (lambda (status dest-file key iv)
-         (let ((url-buffer (current-buffer)))
-           (if (plist-get status :error)
-               (progn
-                 (kill-buffer url-buffer)
-                 (message "Download failed: %s"
-                          (plist-get status :error)))
-             (set-buffer-multibyte nil)
-             (goto-char (point-min))
-             (re-search-forward "\r?\n\r?\n" nil t)
-             (let* ((encrypted (buffer-substring-no-properties
-                                (point) (point-max)))
-                    (plaintext (condition-case err
-                                   (jabber-omemo-aesgcm-decrypt
-                                    key iv encrypted)
-                                 (error
-                                  (message "Decryption failed: %s"
-                                           (error-message-string err))
-                                  nil))))
-               (kill-buffer url-buffer)
-               (when plaintext
-                 (with-temp-file dest-file
-                   (set-buffer-multibyte nil)
-                   (insert plaintext))
-                 (message "Downloaded and decrypted %s" dest-file))))))
-       (list dest (plist-get parsed :key) (plist-get parsed :iv))
-       'silent
-       'inhibit-cookies))))
+         (dest (jabber-chat--download-destination fetch-url)))
+    (jabber-chat--record-download-directory dest)
+    (if parsed
+        (jabber-chat--download-aesgcm fetch-url dest
+                                      (plist-get parsed :key)
+                                      (plist-get parsed :iv))
+      (url-copy-file fetch-url dest t)
+      (message "Downloaded %s" dest))))
+
+(defun jabber-chat--download-aesgcm (url dest key iv)
+  "Fetch URL, decrypt with KEY and IV, write to DEST."
+  (url-queue-retrieve
+   url
+   (lambda (status dest-file key iv)
+     (let ((url-buffer (current-buffer)))
+       (if (plist-get status :error)
+           (progn
+             (kill-buffer url-buffer)
+             (message "Download failed: %s"
+                      (plist-get status :error)))
+         (set-buffer-multibyte nil)
+         (goto-char (point-min))
+         (re-search-forward "\r?\n\r?\n" nil t)
+         (let* ((encrypted (buffer-substring-no-properties
+                            (point) (point-max)))
+                (plaintext (condition-case err
+                               (jabber-omemo-aesgcm-decrypt
+                                key iv encrypted)
+                             (error
+                              (message "Decryption failed: %s"
+                                       (error-message-string err))
+                              nil))))
+           (kill-buffer url-buffer)
+           (when plaintext
+             (with-temp-file dest-file
+               (set-buffer-multibyte nil)
+               (insert plaintext))
+             (message "Downloaded and decrypted %s" dest-file))))))
+   (list dest key iv)
+   'silent
+   'inhibit-cookies))
 
 (defun jabber-chat--replace-url-with-image (image beg end buffer)
   "Delete URL text between markers BEG and END, insert IMAGE.
