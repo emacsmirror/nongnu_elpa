@@ -308,6 +308,14 @@ return nil."
   "Return non-nil if JC uses legacy XEP-0049 bookmarks."
   (gethash (jabber-connection-bare-jid jc) jabber-bookmarks--legacy-accounts))
 
+(defun jabber-bookmarks--cache-snapshot (jc)
+  "Return the current bookmark cache value for JC."
+  (gethash (jabber-connection-bare-jid jc) jabber-bookmarks))
+
+(defun jabber-bookmarks--restore-cache (jc snapshot)
+  "Restore the bookmark cache for JC to SNAPSHOT."
+  (puthash (jabber-connection-bare-jid jc) snapshot jabber-bookmarks))
+
 (defun jabber-bookmarks2--publish (jc plist &optional callback error-callback)
   "Publish a single bookmark PLIST to PubSub via JC.
 CALLBACK and ERROR-CALLBACK follow `jabber-send-iq' conventions."
@@ -503,24 +511,51 @@ JC is the Jabber connection."
 NICK, if non-nil, is stored in the bookmark."
   (let ((plist (list :jid jid :autojoin t
                      :nick (or nick (jabber-muc-nickname jid jc)))))
-    (jabber-bookmarks2--update-cache jc plist)
-    (let ((done (lambda (jc _xml _closure)
-                  (jabber-bookmarks2--maybe-join jc plist)
+    (if (jabber-bookmarks--legacy-p jc)
+        (let ((snapshot (jabber-bookmarks--cache-snapshot jc)))
+          (jabber-bookmarks2--update-cache jc plist)
+          (jabber-bookmarks--save-all
+           jc (lambda (jc _xml success)
+                (if success
+                    (progn
+                      (jabber-bookmarks2--maybe-join jc plist)
+                      (jabber-bookmarks--refresh-buffer)
+                      (message "Bookmark added: %s" jid))
+                  (jabber-bookmarks--restore-cache jc snapshot)
                   (jabber-bookmarks--refresh-buffer)
-                  (message "Bookmark added: %s" jid))))
-      (if (jabber-bookmarks--legacy-p jc)
-          (jabber-bookmarks--save-all jc done)
-        (jabber-bookmarks2--publish jc plist done)))))
+                  (message "Failed to add bookmark: %s" jid)))))
+      (jabber-bookmarks2--publish
+       jc plist
+       (lambda (jc _xml _closure)
+         (jabber-bookmarks2--update-cache jc plist)
+         (jabber-bookmarks2--maybe-join jc plist)
+         (jabber-bookmarks--refresh-buffer)
+         (message "Bookmark added: %s" jid))
+       (lambda (_jc _xml _closure)
+         (message "Failed to add bookmark: %s" jid))))))
 
 (defun jabber-bookmarks--retract-one (jc jid)
   "Remove bookmark for JID via JC."
-  (jabber-bookmarks2--remove-from-cache jc jid)
-  (let ((done (lambda (_jc _xml _closure)
+  (if (jabber-bookmarks--legacy-p jc)
+      (let ((snapshot (jabber-bookmarks--cache-snapshot jc)))
+        (jabber-bookmarks2--remove-from-cache jc jid)
+        (jabber-bookmarks--save-all
+         jc (lambda (_jc _xml success)
+              (if success
+                  (progn
+                    (jabber-bookmarks--refresh-buffer)
+                    (message "Bookmark removed: %s" jid))
+                (jabber-bookmarks--restore-cache jc snapshot)
                 (jabber-bookmarks--refresh-buffer)
-                (message "Bookmark removed: %s" jid))))
-    (if (jabber-bookmarks--legacy-p jc)
-        (jabber-bookmarks--save-all jc done)
-      (jabber-bookmarks2--retract jc jid done))))
+                (message "Failed to remove bookmark: %s" jid)))))
+    (jabber-bookmarks2--retract
+     jc jid
+     (lambda (_jc _xml _closure)
+       (jabber-bookmarks2--remove-from-cache jc jid)
+       (jabber-bookmarks--refresh-buffer)
+       (message "Bookmark removed: %s" jid))
+     (lambda (_jc _xml _closure)
+       (message "Failed to remove bookmark: %s" jid)))))
 
 (defun jabber-bookmarks-delete ()
   "Delete the bookmark at point."
@@ -529,13 +564,7 @@ NICK, if non-nil, is stored in the bookmark."
         (jc jabber-buffer-connection))
     (unless jid (user-error "No bookmark at point"))
     (when (yes-or-no-p (format "Delete bookmark %s? " jid))
-      (jabber-bookmarks2--remove-from-cache jc jid)
-      (let ((done (lambda (_jc _xml _closure)
-                    (jabber-bookmarks--refresh-buffer)
-                    (message "Bookmark deleted: %s" jid))))
-        (if (jabber-bookmarks--legacy-p jc)
-            (jabber-bookmarks--save-all jc done)
-          (jabber-bookmarks2--retract jc jid done))))))
+      (jabber-bookmarks--retract-one jc jid))))
 
 (defun jabber-bookmarks-toggle-autojoin ()
   "Toggle autojoin for the bookmark at point."
@@ -546,16 +575,30 @@ NICK, if non-nil, is stored in the bookmark."
            (new-autojoin (not (plist-get bm :autojoin)))
            (new-plist (plist-put (copy-sequence bm) :autojoin new-autojoin))
            (jc jabber-buffer-connection)
-           (done (lambda (jc _arg _extra)
-                   (if new-autojoin
-                       (jabber-bookmarks2--maybe-join jc new-plist)
-                     (jabber-bookmarks2--maybe-leave jc jid))
-                   (jabber-bookmarks--refresh-buffer)
-                   (message "%s autojoin %s" jid (if new-autojoin "on" "off")))))
-      (jabber-bookmarks2--update-cache jc new-plist)
+           (on-success (lambda (jc)
+                         (if new-autojoin
+                             (jabber-bookmarks2--maybe-join jc new-plist)
+                           (jabber-bookmarks2--maybe-leave jc jid))
+                         (jabber-bookmarks--refresh-buffer)
+                         (message "%s autojoin %s" jid
+                                  (if new-autojoin "on" "off")))))
       (if (jabber-bookmarks--legacy-p jc)
-          (jabber-bookmarks--save-all jc done)
-        (jabber-bookmarks2--publish jc new-plist done)))))
+          (let ((snapshot (jabber-bookmarks--cache-snapshot jc)))
+            (jabber-bookmarks2--update-cache jc new-plist)
+            (jabber-bookmarks--save-all
+             jc (lambda (jc _xml success)
+                  (if success
+                      (funcall on-success jc)
+                    (jabber-bookmarks--restore-cache jc snapshot)
+                    (jabber-bookmarks--refresh-buffer)
+                    (message "Failed to toggle autojoin for %s" jid)))))
+        (jabber-bookmarks2--publish
+         jc new-plist
+         (lambda (jc _xml _closure)
+           (jabber-bookmarks2--update-cache jc new-plist)
+           (funcall on-success jc))
+         (lambda (_jc _xml _closure)
+           (message "Failed to toggle autojoin for %s" jid)))))))
 
 (defun jabber-bookmarks--refresh-buffer ()
   "Refresh the bookmarks buffer if it exists."
@@ -589,14 +632,28 @@ NICK, if non-nil, is stored in the bookmark."
            (new-val (unless (string-empty-p new) new))
            (new-plist (plist-put (copy-sequence bm) key new-val))
            (jc jabber-buffer-connection)
-           (done (lambda (_jc _arg _extra)
-                   (jabber-bookmarks--refresh-buffer)
-                   (message "%s %s set to %s" (plist-get bm :jid) prompt
-                            (or new-val "(empty)")))))
-      (jabber-bookmarks2--update-cache jc new-plist)
+           (jid (plist-get bm :jid))
+           (on-success (lambda ()
+                         (jabber-bookmarks--refresh-buffer)
+                         (message "%s %s set to %s" jid prompt
+                                  (or new-val "(empty)")))))
       (if (jabber-bookmarks--legacy-p jc)
-          (jabber-bookmarks--save-all jc done)
-        (jabber-bookmarks2--publish jc new-plist done)))))
+          (let ((snapshot (jabber-bookmarks--cache-snapshot jc)))
+            (jabber-bookmarks2--update-cache jc new-plist)
+            (jabber-bookmarks--save-all
+             jc (lambda (_jc _xml success)
+                  (if success
+                      (funcall on-success)
+                    (jabber-bookmarks--restore-cache jc snapshot)
+                    (jabber-bookmarks--refresh-buffer)
+                    (message "Failed to set %s for %s" prompt jid)))))
+        (jabber-bookmarks2--publish
+         jc new-plist
+         (lambda (_jc _xml _closure)
+           (jabber-bookmarks2--update-cache jc new-plist)
+           (funcall on-success))
+         (lambda (_jc _xml _closure)
+           (message "Failed to set %s for %s" prompt jid)))))))
 
 (transient-define-prefix jabber-bookmarks-edit ()
   "Edit bookmark at point."
