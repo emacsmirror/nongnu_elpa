@@ -240,9 +240,11 @@ FROM is the JID that sent the signed presence."
 
 ;;; Message encryption (send) - 1:1 chat
 
-(defun jabber-openpgp-legacy--send-chat (jc body)
+(defun jabber-openpgp-legacy--send-chat (jc body &optional extra-elements)
   "Send BODY as XEP-0027 encrypted message via JC.
-Must be called from a chat buffer with `jabber-chatting-with' set."
+Must be called from a chat buffer with `jabber-chatting-with' set.
+EXTRA-ELEMENTS are spliced into the stanza outside the encryption
+envelope."
   (require 'jabber-openpgp)
   (let* ((recipient (jabber-jid-user jabber-chatting-with))
          (key (jabber-openpgp--recipient-key recipient))
@@ -263,15 +265,17 @@ Must be called from a chat buffer with `jabber-chatting-with' set."
                              (body () ,jabber-openpgp-legacy-fallback-body)
                              (x ((xmlns . ,jabber-openpgp-legacy-encrypted-xmlns))
                                 ,stripped)
-                             ,(jabber-hints-store))))
+                             ,(jabber-hints-store)
+                             ,@extra-elements)))
       (jabber-chat--run-send-hooks stanza body id)
-      (let ((msg-plist (jabber-chat--msg-plist-from-stanza stanza)))
-        (plist-put msg-plist :body body)
-        (plist-put msg-plist :status :sent)
-        (when (run-hook-with-args-until-success 'jabber-chat-printers
-                                                msg-plist :local :printp)
-          (jabber-maybe-print-rare-time
-           (jabber-chat-ewoc-enter (list :local msg-plist)))))
+      (unless (assq 'replace extra-elements)
+        (let ((msg-plist (jabber-chat--msg-plist-from-stanza stanza)))
+          (plist-put msg-plist :body body)
+          (plist-put msg-plist :status :sent)
+          (when (run-hook-with-args-until-success 'jabber-chat-printers
+                                                  msg-plist :local :printp)
+            (jabber-maybe-print-rare-time
+             (jabber-chat-ewoc-enter (list :local msg-plist))))))
       (jabber-send-sexp jc stanza))))
 
 ;;; Message encryption (send) - MUC
@@ -289,9 +293,11 @@ Excludes entries without a real JID."
           (push bare jids))))
     (nreverse jids)))
 
-(defun jabber-openpgp-legacy--send-muc (jc body)
+(defun jabber-openpgp-legacy--send-muc (jc body &optional extra-elements)
   "Send BODY as XEP-0027 encrypted groupchat message via JC.
-Must be called from a MUC buffer with `jabber-group' set."
+Must be called from a MUC buffer with `jabber-group' set.
+EXTRA-ELEMENTS are spliced into the stanza outside the encryption
+envelope."
   (require 'jabber-openpgp)
   (let* ((group jabber-group)
          (recipient-jids (jabber-openpgp-legacy--muc-participant-jids group)))
@@ -315,7 +321,8 @@ Must be called from a MUC buffer with `jabber-group' set."
                              (body () ,jabber-openpgp-legacy-fallback-body)
                              (x ((xmlns . ,jabber-openpgp-legacy-encrypted-xmlns))
                                 ,stripped)
-                             ,(jabber-hints-store))))
+                             ,(jabber-hints-store)
+                             ,@extra-elements)))
       (jabber-send-sexp jc stanza))))
 
 ;;; Message decryption (receive)

@@ -1033,14 +1033,18 @@ BUFFER is the chat buffer.  REASON is shown via `message'."
       (insert body)))
   (message "%s" reason))
 
-(defun jabber-omemo--send-chat (jc body)
+(defun jabber-omemo--send-chat (jc body &optional extra-elements)
   "Send BODY as OMEMO-encrypted message via JC.
-Must be called from a chat buffer with `jabber-chatting-with' set."
+Must be called from a chat buffer with `jabber-chatting-with' set.
+EXTRA-ELEMENTS are spliced into the stanza outside the encryption
+envelope (e.g. XEP-0308 replace)."
   (let* ((recipient (jabber-jid-user jabber-chatting-with))
          (chat-with jabber-chatting-with)
-         (buffer (current-buffer))
+         (is-correction (assq 'replace extra-elements))
+         (buffer (if is-correction nil (current-buffer)))
          (id (format "emacs-msg-%.6f" (float-time)))
-         (node (jabber-omemo--display-pending buffer body id)))
+         (node (unless is-correction
+                 (jabber-omemo--display-pending (current-buffer) body id))))
     (jabber-omemo--ensure-sessions
      jc recipient
      (lambda (recipient-sessions)
@@ -1054,20 +1058,23 @@ Must be called from a chat buffer with `jabber-chatting-with' set."
             (jabber-omemo--send-encrypted
              jc body chat-with
              (append recipient-sessions own-sessions)
-             buffer node id))))))))
+             buffer node id extra-elements))))))))
 
 (defun jabber-omemo--send-encrypted (jc body chat-with all-sessions
-                                        &optional buffer node id)
+                                        &optional buffer node id
+                                        extra-elements)
   "Build and send an OMEMO-encrypted stanza.
 JC is the connection.  BODY is the plaintext.  CHAT-WITH is the
 recipient full/bare JID for addressing.  ALL-SESSIONS is a list
 of (DEVICE-ID . SESSION-PTR) for recipient + own other devices.
 Optional BUFFER, NODE, ID support immediate display: when NODE is
 non-nil, update its status from :sending to :sent instead of
-inserting a new ewoc entry."
+inserting a new ewoc entry.  EXTRA-ELEMENTS are spliced into the
+stanza outside the encryption envelope."
   (let* ((chat-with (or chat-with jabber-chatting-with))
          (id (or id (format "emacs-msg-%.6f" (float-time))))
-         (buffer (or buffer (current-buffer)))
+         (is-correction (assq 'replace extra-elements))
+         (buffer (or buffer (unless is-correction (current-buffer))))
          (plaintext (encode-coding-string body 'utf-8))
          (enc-result (jabber-omemo-encrypt-message plaintext))
          (encrypted-xml (jabber-omemo--build-encrypted-xml
@@ -1078,7 +1085,8 @@ inserting a new ewoc entry."
                            (body () ,jabber-omemo-fallback-body)
                            ,encrypted-xml
                            ,(jabber-hints-store)
-                           ,(jabber-eme-encryption jabber-omemo-xmlns "OMEMO"))))
+                           ,(jabber-eme-encryption jabber-omemo-xmlns "OMEMO")
+                           ,@extra-elements)))
     (when (buffer-live-p buffer)
       (with-current-buffer buffer
         ;; Inline hook loop instead of jabber-chat--run-send-hooks:
@@ -1103,9 +1111,11 @@ inserting a new ewoc entry."
                (jabber-chat-ewoc-enter (list :local msg-plist))))))))
     (jabber-send-sexp jc stanza)))
 
-(defun jabber-omemo--send-muc (jc body)
+(defun jabber-omemo--send-muc (jc body &optional extra-elements)
   "Send BODY as OMEMO-encrypted groupchat message via JC.
-Must be called from a MUC buffer with `jabber-group' set."
+Must be called from a MUC buffer with `jabber-group' set.
+EXTRA-ELEMENTS are spliced into the stanza outside the encryption
+envelope."
   (let* ((group jabber-group)
          (buffer (current-buffer))
          (participants (cdr (assoc group jabber-muc-participants)))
@@ -1128,13 +1138,16 @@ Must be called from a MUC buffer with `jabber-group' set."
             (lambda (own-sessions)
               (jabber-omemo--send-encrypted-muc
                jc body group
-               (append all-sessions own-sessions))))))))))
+               (append all-sessions own-sessions)
+               extra-elements)))))))))
 
-(defun jabber-omemo--send-encrypted-muc (jc body group all-sessions)
+(defun jabber-omemo--send-encrypted-muc (jc body group all-sessions
+                                             &optional extra-elements)
   "Build and send an OMEMO-encrypted MUC stanza.
 JC is the connection.  BODY is the plaintext.  GROUP is the room JID.
 ALL-SESSIONS is a list of (DEVICE-ID . SESSION-PTR) for all
-participants plus own other devices.
+participants plus own other devices.  EXTRA-ELEMENTS are spliced
+into the stanza outside the encryption envelope.
 No local echo: the MUC server mirrors the message back."
   (let* ((plaintext (encode-coding-string body 'utf-8))
          (enc-result (jabber-omemo-encrypt-message plaintext))
@@ -1148,7 +1161,8 @@ No local echo: the MUC server mirrors the message back."
                            (body () ,jabber-omemo-fallback-body)
                            ,encrypted-xml
                            ,(jabber-hints-store)
-                           ,(jabber-eme-encryption jabber-omemo-xmlns "OMEMO"))))
+                           ,(jabber-eme-encryption jabber-omemo-xmlns "OMEMO")
+                           ,@extra-elements)))
     (jabber-chat--run-send-hooks stanza body id)
     (jabber-send-sexp jc stanza)))
 

@@ -328,20 +328,24 @@ Used for MUC where signing is optional."
 
 ;;; Send path: 1:1 chat
 
-(defun jabber-openpgp--send-chat (jc body)
+(defun jabber-openpgp--send-chat (jc body &optional extra-elements)
   "Send BODY as OpenPGP-encrypted chat message via JC.
 Must be called from a chat buffer with `jabber-chatting-with' set.
-Fetches missing recipient keys via PubSub before encrypting."
+Fetches missing recipient keys via PubSub before encrypting.
+EXTRA-ELEMENTS are spliced into the stanza outside the encryption
+envelope."
   (let ((recipient (jabber-jid-user jabber-chatting-with))
         (buffer (current-buffer)))
     (jabber-openpgp--ensure-recipient-keys
      jc (list recipient)
      (lambda ()
        (with-current-buffer buffer
-         (jabber-openpgp--send-chat-1 jc body recipient))))))
+         (jabber-openpgp--send-chat-1 jc body recipient extra-elements))))))
 
-(defun jabber-openpgp--send-chat-1 (jc body recipient)
-  "Internal: encrypt and send BODY to RECIPIENT via JC."
+(defun jabber-openpgp--send-chat-1 (jc body recipient &optional extra-elements)
+  "Internal: encrypt and send BODY to RECIPIENT via JC.
+EXTRA-ELEMENTS are spliced into the stanza outside the encryption
+envelope."
   (let* ((inner-xml (jabber-openpgp--build-signcrypt-xml
                      (list recipient) body))
          (encrypted (jabber-openpgp--encrypt
@@ -354,15 +358,17 @@ Fetches missing recipient keys via PubSub before encrypting."
                                     ,(base64-encode-string encrypted t))
                            (body () ,jabber-openpgp-fallback-body)
                            ,(jabber-hints-store)
-                           ,(jabber-eme-encryption jabber-openpgp-xmlns "OpenPGP"))))
+                           ,(jabber-eme-encryption jabber-openpgp-xmlns "OpenPGP")
+                           ,@extra-elements)))
     (jabber-chat--run-send-hooks stanza body id)
-    (let ((msg-plist (jabber-chat--msg-plist-from-stanza stanza)))
-      (plist-put msg-plist :body body)
-      (plist-put msg-plist :status :sent)
-      (when (run-hook-with-args-until-success 'jabber-chat-printers
-                                              msg-plist :local :printp)
-        (jabber-maybe-print-rare-time
-         (jabber-chat-ewoc-enter (list :local msg-plist)))))
+    (unless (assq 'replace extra-elements)
+      (let ((msg-plist (jabber-chat--msg-plist-from-stanza stanza)))
+        (plist-put msg-plist :body body)
+        (plist-put msg-plist :status :sent)
+        (when (run-hook-with-args-until-success 'jabber-chat-printers
+                                                msg-plist :local :printp)
+          (jabber-maybe-print-rare-time
+           (jabber-chat-ewoc-enter (list :local msg-plist))))))
     (jabber-send-sexp jc stanza)))
 
 ;;; Send path: MUC
@@ -380,10 +386,12 @@ Excludes entries without a real JID."
           (push bare jids))))
     (nreverse jids)))
 
-(defun jabber-openpgp--send-muc (jc body)
+(defun jabber-openpgp--send-muc (jc body &optional extra-elements)
   "Send BODY as OpenPGP-encrypted groupchat message via JC.
 Must be called from a MUC buffer with `jabber-group' set.
-Fetches missing recipient keys via PubSub before encrypting."
+Fetches missing recipient keys via PubSub before encrypting.
+EXTRA-ELEMENTS are spliced into the stanza outside the encryption
+envelope."
   (let* ((group jabber-group)
          (recipient-jids (jabber-openpgp--muc-participant-jids group))
          (our-jid (jabber-jid-user (jabber-connection-bare-jid jc)))
@@ -405,7 +413,8 @@ Fetches missing recipient keys via PubSub before encrypting."
                                            ,(base64-encode-string encrypted t))
                                   (body () ,jabber-openpgp-fallback-body)
                                   ,(jabber-hints-store)
-                                  ,(jabber-eme-encryption jabber-openpgp-xmlns "OpenPGP"))))
+                                  ,(jabber-eme-encryption jabber-openpgp-xmlns "OpenPGP")
+                                  ,@extra-elements)))
            (jabber-send-sexp jc stanza)))))))
 
 ;;; Receive path

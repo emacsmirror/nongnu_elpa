@@ -217,9 +217,9 @@ BODY and ID are passed to each hook function."
 ;; Global reference declarations
 
 (declare-function jabber-compose "jabber-compose.el" (jc &optional recipient))
-(declare-function jabber-omemo--send-chat "jabber-omemo" (jc body))
-(declare-function jabber-openpgp--send-chat "jabber-openpgp" (jc body))
-(declare-function jabber-openpgp-legacy--send-chat "jabber-openpgp-legacy" (jc body))
+(declare-function jabber-omemo--send-chat "jabber-omemo" (jc body &optional extra-elements))
+(declare-function jabber-openpgp--send-chat "jabber-openpgp" (jc body &optional extra-elements))
+(declare-function jabber-openpgp-legacy--send-chat "jabber-openpgp-legacy" (jc body &optional extra-elements))
 (declare-function jabber-muc-private-create-buffer "jabber-muc.el"
                   (jc group nickname))
 (declare-function jabber-muc-print-prompt "jabber-muc.el"
@@ -725,11 +725,11 @@ JC is the Jabber connection.
 EXTRA-ELEMENTS, when non-nil, is a list of XML sexp elements to
 splice into the stanza after the body (e.g. OOB, hints)."
   (pcase jabber-chat-encryption
-    ('omemo (jabber-omemo--send-chat jc body))
+    ('omemo (jabber-omemo--send-chat jc body extra-elements))
     ('openpgp (require 'jabber-openpgp)
-              (jabber-openpgp--send-chat jc body))
+              (jabber-openpgp--send-chat jc body extra-elements))
     ('openpgp-legacy (require 'jabber-openpgp-legacy)
-                     (jabber-openpgp-legacy--send-chat jc body))
+                     (jabber-openpgp-legacy--send-chat jc body extra-elements))
     (_
      ;; Build the stanza...
      (let* ((id (format "emacs-msg-%.6f" (float-time)))
@@ -741,12 +741,13 @@ splice into the stanza after the body (e.g. OOB, hints)."
 			      ,@extra-elements)))
        ;; ...add additional elements...
        (jabber-chat--run-send-hooks stanza-to-send body id)
-       ;; ...display it, if it would be displayed.
-       (let ((msg-plist (jabber-chat--msg-plist-from-stanza stanza-to-send)))
-         (plist-put msg-plist :status :sent)
-	 (when (run-hook-with-args-until-success 'jabber-chat-printers msg-plist :local :printp)
-           (jabber-maybe-print-rare-time
-            (jabber-chat-ewoc-enter (list :local msg-plist)))))
+       ;; ...display it (skip for corrections, caller handles display).
+       (unless (assq 'replace extra-elements)
+         (let ((msg-plist (jabber-chat--msg-plist-from-stanza stanza-to-send)))
+           (plist-put msg-plist :status :sent)
+	   (when (run-hook-with-args-until-success 'jabber-chat-printers msg-plist :local :printp)
+             (jabber-maybe-print-rare-time
+              (jabber-chat-ewoc-enter (list :local msg-plist))))))
        ;; ...and send it...
        (jabber-send-sexp jc stanza-to-send)))))
 

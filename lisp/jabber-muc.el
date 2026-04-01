@@ -308,11 +308,11 @@ The format is that of `mode-line-format' and `header-line-format'."
                   (timestamp nick face &optional plaintext-face encrypted))
 (declare-function jabber-chat--format-time "jabber-chat.el"
                   (timestamp delayed))
-(declare-function jabber-omemo--send-muc "jabber-omemo.el" (jc body))
+(declare-function jabber-omemo--send-muc "jabber-omemo.el" (jc body &optional extra-elements))
 (declare-function jabber-omemo--prefetch-sessions "jabber-omemo" (jc jid))
 (declare-function jabber-omemo--prefetch-muc-sessions "jabber-omemo" (jc group))
-(declare-function jabber-openpgp--send-muc "jabber-openpgp.el" (jc body))
-(declare-function jabber-openpgp-legacy--send-muc "jabber-openpgp-legacy.el" (jc body))
+(declare-function jabber-openpgp--send-muc "jabber-openpgp.el" (jc body &optional extra-elements))
+(declare-function jabber-openpgp-legacy--send-muc "jabber-openpgp-legacy.el" (jc body &optional extra-elements))
 (declare-function jabber-chat--decrypt-if-needed "jabber-chat.el" (jc xml-data))
 (declare-function jabber-db-last-timestamp "jabber-db.el"
                   (account peer))
@@ -479,29 +479,32 @@ JC is the Jabber connection."
 
     (current-buffer)))
 
-(defun jabber-muc-send (jc body)
+(defun jabber-muc-send (jc body &optional extra-elements)
   "Send BODY to MUC room in current buffer.
 
-JC is the Jabber connection."
+JC is the Jabber connection.
+EXTRA-ELEMENTS, when non-nil, is a list of XML sexp elements to
+splice into the stanza after the body (e.g. XEP-0308 replace)."
   ;; There is no need to display the sent message in the buffer, as
   ;; we will get it back from the MUC server.
   (pcase jabber-chat-encryption
     ('omemo
      (require 'jabber-omemo)
-     (jabber-omemo--send-muc jc body))
+     (jabber-omemo--send-muc jc body extra-elements))
     ('openpgp
      (require 'jabber-openpgp)
-     (jabber-openpgp--send-muc jc body))
+     (jabber-openpgp--send-muc jc body extra-elements))
     ('openpgp-legacy
      (require 'jabber-openpgp-legacy)
-     (jabber-openpgp-legacy--send-muc jc body))
+     (jabber-openpgp-legacy--send-muc jc body extra-elements))
     (_
      (let* ((id (format "emacs-msg-%.6f" (float-time)))
             (stanza `(message
                       ((to . ,jabber-group)
                        (type . "groupchat")
                        (id . ,id))
-                      (body () ,body))))
+                      (body () ,body)
+                      ,@extra-elements)))
        (jabber-chat--run-send-hooks stanza body id)
        (jabber-send-sexp jc stanza)))))
 
