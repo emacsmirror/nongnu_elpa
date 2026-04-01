@@ -244,10 +244,13 @@ Parses items, updates cache, and calls CONT with the plist list."
 (defun jabber-bookmarks--get-legacy (jc cont)
   "Fetch bookmarks via XEP-0049 Private XML Storage (legacy fallback).
 Parses conference elements to plists and calls CONT."
-  (let ((callback (lambda (jc result)
-                    (jabber-bookmarks--handle-legacy jc result cont))))
-    (jabber-private-get jc 'storage jabber-bookmarks-xmlns
-                        callback callback)))
+  (jabber-private-get jc 'storage jabber-bookmarks-xmlns
+                      (lambda (jc result)
+                        (jabber-bookmarks--handle-legacy jc result cont))
+                      (lambda (jc _result)
+                        (message "jabber-bookmarks: legacy fetch failed for %s"
+                                 (jabber-connection-bare-jid jc))
+                        (funcall cont jc nil))))
 
 (defun jabber-bookmarks--handle-legacy (jc result cont)
   "Process an XEP-0049 storage response.
@@ -292,14 +295,14 @@ CALLBACK and ERROR-CALLBACK follow `jabber-send-iq' conventions."
 
 (defun jabber-bookmarks--save-all (jc callback)
   "Write the full bookmark cache for JC via XEP-0049 Private XML Storage.
-CALLBACK is called with JC, nil, and nil (matching IQ callback arity)."
+CALLBACK is called with JC, nil, and success flag (t or nil)."
   (let* ((my-jid (jabber-connection-bare-jid jc))
          (bookmarks (let ((c (gethash my-jid jabber-bookmarks)))
                       (when (listp c) c))))
     (jabber-bookmarks--set-legacy
      jc bookmarks
-     (lambda (jc _xml _closure)
-       (funcall callback jc nil nil)))))
+     (lambda (jc _xml success)
+       (funcall callback jc nil success)))))
 
 (defun jabber-set-bookmarks (jc new-bookmarks &optional callback)
   "Set bookmarks to NEW-BOOKMARKS, a list of bookmark plists.
@@ -348,7 +351,8 @@ success or failure."
 
 (defun jabber-bookmarks--set-legacy (jc bookmarks &optional callback)
   "Write BOOKMARKS via XEP-0049 Private XML Storage (legacy fallback).
-BOOKMARKS is a list of plists.  Converts to XEP-0048 XML format."
+BOOKMARKS is a list of plists.  Converts to XEP-0048 XML format.
+CALLBACK is called with JC, XML-DATA, and t on success or nil on failure."
   (unless callback (setq callback #'ignore))
   (let ((xml-elems
          (mapcar (lambda (bm)
@@ -366,7 +370,11 @@ BOOKMARKS is a list of plists.  Converts to XEP-0048 XML format."
      jc
      `(storage ((xmlns . ,jabber-bookmarks-xmlns)) ,@xml-elems)
      callback t
-     callback nil)))
+     (lambda (jc xml-data _closure)
+       (message "jabber-bookmarks: legacy write failed for %s"
+                (jabber-connection-bare-jid jc))
+       (funcall callback jc xml-data nil))
+     nil)))
 
 ;;; Tabulated-list bookmark editor
 
