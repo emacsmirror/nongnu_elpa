@@ -179,9 +179,9 @@ ACCOUNTS = (assets liabilities equity income expenses)"
 (ert-deftest beancount/account-categories-custom ()
   "Test that beancount-account-categories respects custom variable values."
   :tags '(account customization regress)
-  (beancount-with-custom-accounts ("資産" "التزامات" "Собственный капитал" "收入" "Despesas")
+  (beancount-with-custom-accounts ("Actif" "Passività" "Собственный-капитал" "Ingresos" "Koszty")
     (should (equal beancount-account-categories
-                   '("資産" "التزامات" "Собственный капитал" "收入" "Despesas")))))
+                   '("Actif" "Passività" "Собственный-капитал" "Ingresos" "Koszty")))))
 
 (ert-deftest beancount/indent-001 ()
   :tags '(indent regress)
