@@ -27,9 +27,10 @@
 
 (require 'notifications)
 
-(defcustom jabber-notifications-icon ""
-  "Icon to be used on the notification pop-up. Default is empty"
-  :type '(file :must-match t)
+(defcustom jabber-notifications-icon "emacs"
+  "Icon to be used on the notification pop-up.
+The default \"emacs\" is resolved by the system icon theme."
+  :type 'string
   :group 'jabber-alerts)
 
 (defcustom jabber-notifications-timeout nil
@@ -52,6 +53,16 @@
   :type '(choice (const :tag "Low" "low")
                  (const :tag "Normal" "normal")
                  (const :tag "Critical" "critical"))
+  :group 'jabber-alerts)
+
+(defcustom jabber-notifications-muc 'mentions
+  "When to show desktop notifications for MUC messages.
+`all' shows a notification for every MUC message, `mentions'
+only when the message looks like it is addressed to you, and
+nil disables MUC notifications entirely."
+  :type '(choice (const :tag "All messages" all)
+                 (const :tag "Mentions only" mentions)
+                 (const :tag "Disabled" nil))
   :group 'jabber-alerts)
 
 ;; Global reference declarations
@@ -79,15 +90,15 @@
      :timeout jabber-notifications-timeout)))
 
 (defun jabber-muc-notifications (nick group buffer text title)
-  "Show MUC message through the notifications.el interface"
-  (jabber-message-notifications group buffer (if nick (format "%s: %s" nick text) text) title)
-  )
-
-(defun jabber-muc-notifications-personal (nick group buffer text title)
-  "Show personal MUC message through the notifications.el interface"
-  (if (jabber-muc-looks-like-personal-p text group)
-      (jabber-muc-notifications nick group buffer text title))
-  )
+  "Show MUC message through the notifications.el interface.
+Controlled by `jabber-notifications-muc': notify for all messages,
+mentions only, or not at all."
+  (when (pcase jabber-notifications-muc
+          ('all t)
+          ('mentions (jabber-muc-looks-like-personal-p text group))
+          (_ nil))
+    (jabber-message-notifications
+     group buffer (if nick (format "%s: %s" nick text) text) title)))
 
   ;; jabber-*-notifications* requires "from" argument, so we cant use
   ;; define-jabber-alert/define-personal-jabber-alert here and do the
@@ -95,7 +106,6 @@
 
 (cl-pushnew 'jabber-message-notifications (get 'jabber-alert-message-hooks 'custom-options))
 (cl-pushnew 'jabber-muc-notifications (get 'jabber-alert-muc-hooks 'custom-options))
-(cl-pushnew 'jabber-muc-notifications-personal (get 'jabber-alert-muc-hooks 'custom-options))
 
 (provide 'jabber-notifications)
 

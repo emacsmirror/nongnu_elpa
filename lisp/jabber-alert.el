@@ -29,7 +29,8 @@
 (defgroup jabber-alerts nil "auditory and visual alerts for jabber events"
   :group 'jabber)
 
-(defcustom jabber-alert-message-hooks '(jabber-message-echo
+(defcustom jabber-alert-message-hooks '(jabber-message-notifications
+					jabber-message-echo
 					jabber-message-scroll)
   "Hooks run when a new message arrives.
 
@@ -68,7 +69,8 @@ and show no message if it returns nil.  Other hooks do what they do
 every time."
   :type 'function)
 
-(defcustom jabber-alert-muc-hooks '(jabber-muc-echo-personal jabber-muc-scroll)
+(defcustom jabber-alert-muc-hooks '(jabber-muc-notifications
+				    jabber-muc-echo-personal jabber-muc-scroll)
   "Hooks run when a new MUC message arrives.
 
 Arguments are NICK, GROUP, BUFFER, TEXT and TITLE.  NICK is the
