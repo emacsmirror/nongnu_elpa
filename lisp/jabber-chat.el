@@ -1352,12 +1352,22 @@ with the created image (or nil) followed by CBARGS."
     map)
   "Keymap active on inline images and downloadable URLs in chat buffers.")
 
+(defcustom jabber-chat-download-directory nil
+  "Default directory for file downloads.
+When nil, use the last download directory from this session or
+`default-directory'."
+  :type '(choice (const :tag "Last used or default-directory" nil)
+                 (directory :tag "Fixed directory"))
+  :group 'jabber-chat)
+
 (defvar jabber-chat-last-download-directory nil
   "Last directory used for file downloads this session.")
 
 (defun jabber-chat--download-default-directory ()
   "Return the default directory for file downloads."
-  (or jabber-chat-last-download-directory default-directory))
+  (or jabber-chat-download-directory
+      jabber-chat-last-download-directory
+      default-directory))
 
 (defun jabber-chat--download-destination (url)
   "Prompt for a save path for URL, returning the chosen filename."
