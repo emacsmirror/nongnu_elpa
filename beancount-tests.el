@@ -140,6 +140,49 @@ Return a list of substrings each followed by its face."
      "open"             beancount-directive
      "Assets:TD:TDB900" beancount-account)))
 
+;; Account-type customization
+
+(defun beancount-set-account-categories (assets liabilities equity income expenses)
+  "Set account defcustoms and trigger `:set' rebuilds via
+`customize-set-variable'."
+  (customize-set-variable 'beancount-assets assets)
+  (customize-set-variable 'beancount-liabilities liabilities)
+  (customize-set-variable 'beancount-equity equity)
+  (customize-set-variable 'beancount-income income)
+  (customize-set-variable 'beancount-expenses expenses))
+
+(defun beancount-reset-account-categories ()
+  "Reset account defcustoms to `:init-value' and trigger `:set' rebuilds via
+`custom-reevaluate-setting'."
+  (custom-reevaluate-setting 'beancount-assets)
+  (custom-reevaluate-setting 'beancount-liabilities)
+  (custom-reevaluate-setting 'beancount-equity)
+  (custom-reevaluate-setting 'beancount-income)
+  (custom-reevaluate-setting 'beancount-expenses))
+
+(defmacro beancount-with-custom-accounts (accounts &rest body)
+  "Set account categories to CATEGORIES, run BODY, then reset to default values.
+ACCOUNTS = (assets liabilities equity income expenses)"
+  (declare (indent 1))
+  `(unwind-protect
+       (progn
+         (beancount-set-account-categories ,@accounts)
+         ,@body)
+     (beancount-reset-account-categories)))
+
+(ert-deftest beancount/account-categories-defaults ()
+  "Test that beancount-account-categories uses default values."
+  :tags '(account customization regress)
+  (should (equal beancount-account-categories
+                 '("Assets" "Liabilities" "Equity" "Income" "Expenses"))))
+
+(ert-deftest beancount/account-categories-custom ()
+  "Test that beancount-account-categories respects custom variable values."
+  :tags '(account customization regress)
+  (beancount-with-custom-accounts ("資産" "التزامات" "Собственный капитал" "收入" "Despesas")
+    (should (equal beancount-account-categories
+                   '("資産" "التزامات" "Собственный капитал" "收入" "Despesas")))))
+
 (ert-deftest beancount/indent-001 ()
   :tags '(indent regress)
   (with-temp-buffer
