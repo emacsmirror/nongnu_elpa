@@ -183,6 +183,20 @@ ACCOUNTS = (assets liabilities equity income expenses)"
     (should (equal beancount-account-categories
                    '("Actif" "Passività" "Собственный-капитал" "Ingresos" "Koszty")))))
 
+(ert-deftest beancount/account-customization-regexps ()
+  :tags '(account customization regexp regress)
+  (beancount-with-custom-accounts ("Actif" "Passività" "Собственный-капитал" "Ingresos" "Koszty")
+    (should (string-match beancount-account-regexp
+                          "Actif:Foo"))
+    (should (string-match beancount-posting-regexp
+                          "  Passività:Foo 1.00 EUR"))
+    (should (string-match beancount-balance-regexp
+                          "2026-01-01 balance Собственный-капитал:Foo 100.00 RUB"))
+    (should (string-match beancount-open-directive-regexp
+                          "2026-01-01 open Ingresos:Foo"))
+    (should (string-match beancount-xref-symbol-regexp
+                          "Koszty:Bar"))))
+
 (ert-deftest beancount/indent-001 ()
   :tags '(indent regress)
   (with-temp-buffer
@@ -241,6 +255,141 @@ known option nmaes."
   Expenses:Test
 "))
     (should (equal beancount-accounts '("Assets:Checking" "Expenses:Test")))))
+
+(ert-deftest beancount/completion-custom-accounts-french ()
+  "Verify beancount-mode auto-completes accounts with French root names."
+  :tags '(completion customization regress)
+  (beancount-with-custom-accounts ("Actif" "Passif" "Capitaux-propres" "Produits" "Charges")
+    (with-temp-buffer
+      (insert "
+2026-01-01 * \"Example\"
+  Charges:Test    1.00 EUR
+  Actif:Checking
+
+2026-01-01 * \"Example\"
+  Charges:T
+")
+      (beancount-mode)
+      (forward-line -1)
+      (move-end-of-line 1)
+      (completion-at-point)
+      (should (equal (buffer-string) "
+2026-01-01 * \"Example\"
+  Charges:Test    1.00 EUR
+  Actif:Checking
+
+2026-01-01 * \"Example\"
+  Charges:Test
+"))
+      (should (equal beancount-accounts '("Actif:Checking" "Charges:Test"))))))
+
+(ert-deftest beancount/completion-custom-accounts-italian ()
+  "Verify beancount-mode auto-completes accounts with Italian root names."
+  :tags '(completion customization regress)
+  (beancount-with-custom-accounts ("Attività" "Passività" "Patrimonio-netto" "Ricavi" "Costi")
+    (with-temp-buffer
+      (insert "
+2026-01-01 * \"Example\"
+  Costi:Test    1.00 EUR
+  Attività:Checking
+
+2026-01-01 * \"Example\"
+  Costi:T
+")
+      (beancount-mode)
+      (forward-line -1)
+      (move-end-of-line 1)
+      (completion-at-point)
+      (should (equal (buffer-string) "
+2026-01-01 * \"Example\"
+  Costi:Test    1.00 EUR
+  Attività:Checking
+
+2026-01-01 * \"Example\"
+  Costi:Test
+"))
+      (should (equal beancount-accounts '("Attività:Checking" "Costi:Test"))))))
+
+(ert-deftest beancount/completion-custom-accounts-russian ()
+  "Verify beancount-mode auto-completes accounts with Russian root names."
+  :tags '(completion customization regress)
+  (beancount-with-custom-accounts ("Активы" "Обязательства" "Собственный-капитал" "Доходы" "Расходы")
+    (with-temp-buffer
+      (insert "
+2026-01-01 * \"Example\"
+  Расходы:Test    1.00 RUB
+  Активы:Checking
+
+2026-01-01 * \"Example\"
+  Расходы:T
+")
+      (beancount-mode)
+      (forward-line -1)
+      (move-end-of-line 1)
+      (completion-at-point)
+      (should (equal (buffer-string) "
+2026-01-01 * \"Example\"
+  Расходы:Test    1.00 RUB
+  Активы:Checking
+
+2026-01-01 * \"Example\"
+  Расходы:Test
+"))
+      (should (equal beancount-accounts '("Активы:Checking" "Расходы:Test"))))))
+
+(ert-deftest beancount/completion-custom-accounts-spanish ()
+  "Verify beancount-mode auto-completes accounts with Spanish root names."
+  :tags '(completion customization regress)
+  (beancount-with-custom-accounts ("Activos" "Pasivos" "Patrimonio-neto" "Ingresos" "Gastos")
+    (with-temp-buffer
+      (insert "
+2026-01-01 * \"Example\"
+  Gastos:Test    1.00 EUR
+  Activos:Checking
+
+2026-01-01 * \"Example\"
+  Gastos:T
+")
+      (beancount-mode)
+      (forward-line -1)
+      (move-end-of-line 1)
+      (completion-at-point)
+      (should (equal (buffer-string) "
+2026-01-01 * \"Example\"
+  Gastos:Test    1.00 EUR
+  Activos:Checking
+
+2026-01-01 * \"Example\"
+  Gastos:Test
+"))
+      (should (equal beancount-accounts '("Activos:Checking" "Gastos:Test"))))))
+
+(ert-deftest beancount/completion-custom-accounts-polish ()
+  "Verify beancount-mode auto-completes accounts with Polish root names."
+  :tags '(completion customization regress)
+  (beancount-with-custom-accounts ("Aktywa" "Pasywa" "Kapitał-własny" "Przychody" "Koszty")
+    (with-temp-buffer
+      (insert "
+2026-01-01 * \"Example\"
+  Koszty:Test    1.00 PLN
+  Aktywa:Checking
+
+2026-01-01 * \"Example\"
+  Koszty:T
+")
+      (beancount-mode)
+      (forward-line -1)
+      (move-end-of-line 1)
+      (completion-at-point)
+      (should (equal (buffer-string) "
+2026-01-01 * \"Example\"
+  Koszty:Test    1.00 PLN
+  Aktywa:Checking
+
+2026-01-01 * \"Example\"
+  Koszty:Test
+"))
+      (should (equal beancount-accounts '("Aktywa:Checking" "Koszty:Test"))))))
 
 (ert-deftest beancount/outline-001 ()
   :tags '(outline)
