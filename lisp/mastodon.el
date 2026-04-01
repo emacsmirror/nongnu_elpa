@@ -309,6 +309,7 @@ Also nil `mastodon-auth--token-alist'."
       (define-key map (kbd "a")    #'mastodon-toot-translate-toot-text))
     (define-key map (kbd ",")      #'mastodon-toot-list-favouriters)
     (define-key map (kbd ".")      #'mastodon-toot-list-boosters)
+    (define-key map (kbd "C-,")    #'mastodon-toot-jump-to-quoting)
     (define-key map (kbd ";")      #'mastodon-views-view-instance-description)
     (define-key map (kbd "M-;")    #'mastodon-tl-nodeinfo-for-toot)
     ;; override special mode binding

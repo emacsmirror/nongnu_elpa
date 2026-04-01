@@ -1045,7 +1045,7 @@ When FORCE, skip all checks and show an alert (for debugging)."
     (when (or force
               (and (> count 0)
                    (not mastodon-notifications-notify-shown)))
-      (if (not (require 'alert :noerror))
+      (if (not (require 'alert nil :noerror))
           (message "mastodon.el: new notifications %s" count)
         (alert (format "New notifications: <b>%s</b>" count)
                :title "mastodon.el"

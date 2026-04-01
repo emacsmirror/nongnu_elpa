@@ -3108,9 +3108,12 @@ Annotate the candidates with display name or user name."
                                                         '(account acct)))
                            (alist-get 'account data))))))
                  (when user
-                   (concat " "
-                           (or (alist-get 'display_name user)
-                               (alist-get 'username user)))))))))
+                   (concat
+                    (propertize " "
+                                'display '(space :align-to 40))
+                    (propertize (or (alist-get 'display_name user)
+                                    (alist-get 'username user))
+                                'face 'mastodon-display-name-face))))))))
     (completing-read prompt user-handles nil 'confirm)))
 
 (defun mastodon-tl--user-handles-get (action)
