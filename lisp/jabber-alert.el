@@ -29,8 +29,7 @@
 (defgroup jabber-alerts nil "auditory and visual alerts for jabber events"
   :group 'jabber)
 
-(defcustom jabber-alert-message-hooks '(jabber-message-notifications
-					jabber-message-echo
+(defcustom jabber-alert-message-hooks '(jabber-message-echo
 					jabber-message-scroll)
   "Hooks run when a new message arrives.
 
@@ -41,7 +40,9 @@ returned by `jabber-alert-message-function' for these arguments,
 so that hooks do not have to call it themselves.
 
 This hook is meant for user customization of message alerts.  For
-other uses, see `jabber-message-hooks'."
+other uses, see `jabber-message-hooks'.
+
+Desktop notifications are added by `jabber-notifications' when loaded."
   :type 'hook
   :options '(jabber-message-beep
 	     jabber-message-wave
@@ -69,8 +70,7 @@ and show no message if it returns nil.  Other hooks do what they do
 every time."
   :type 'function)
 
-(defcustom jabber-alert-muc-hooks '(jabber-muc-notifications
-				    jabber-muc-echo-personal jabber-muc-scroll)
+(defcustom jabber-alert-muc-hooks '(jabber-muc-echo-personal jabber-muc-scroll)
   "Hooks run when a new MUC message arrives.
 
 Arguments are NICK, GROUP, BUFFER, TEXT and TITLE.  NICK is the
@@ -82,7 +82,9 @@ not have to call it themselves.
 
 The default uses `jabber-muc-echo-personal' so that only messages
 mentioning your nickname are echoed.  Use `jabber-muc-echo' instead
-to be notified of all MUC messages."
+to be notified of all MUC messages.
+
+Desktop notifications are added by `jabber-notifications' when loaded."
   :type 'hook
   :options '(jabber-muc-beep
 	     jabber-muc-wave
@@ -305,7 +307,7 @@ Examples:
 	(format "Private message from %s in %s"
 		(jabber-jid-resource from)
 		(jabber-jid-displayname (jabber-jid-user from)))
-      (format "Message from %s" (jabber-jid-displayname from)))))
+      (format "%s:" (jabber-jid-displayname from)))))
 
 (defun jabber-message-wave (from _buffer _text title)
   "Play the wave file specified in `jabber-alert-message-wave'."

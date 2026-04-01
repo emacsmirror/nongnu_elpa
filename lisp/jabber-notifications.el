@@ -75,8 +75,9 @@ nil disables MUC notifications entirely."
 
 ;;
 
+;;;###autoload
 (defun jabber-message-notifications (from _buffer text title)
-  "Show a message through the notifications.el interface"
+  "Show a message through the notifications.el interface."
   (let
       ((body (or (jabber-escape-xml text) " "))
        (avatar-hash (get (jabber-jid-symbol from) 'avatar-hash)))
@@ -89,6 +90,7 @@ nil disables MUC notifications entirely."
      :category "jabber.message"
      :timeout jabber-notifications-timeout)))
 
+;;;###autoload
 (defun jabber-muc-notifications (nick group buffer text title)
   "Show MUC message through the notifications.el interface.
 Controlled by `jabber-notifications-muc': notify for all messages,
@@ -106,6 +108,9 @@ mentions only, or not at all."
 
 (cl-pushnew 'jabber-message-notifications (get 'jabber-alert-message-hooks 'custom-options))
 (cl-pushnew 'jabber-muc-notifications (get 'jabber-alert-muc-hooks 'custom-options))
+
+(add-hook 'jabber-alert-message-hooks #'jabber-message-notifications)
+(add-hook 'jabber-alert-muc-hooks #'jabber-muc-notifications)
 
 (provide 'jabber-notifications)
 
