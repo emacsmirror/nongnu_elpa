@@ -231,7 +231,7 @@ Trailing newlines are always removed, regardless of this variable."
                   (jc to &optional node))
 (declare-function jabber-send-presence "jabber-presence.el"
                   (show status priority &optional jc))
-(declare-function jabber-muc-switch "jabber-muc.el" (group))
+(declare-function jabber-muc-switch-to "jabber-muc.el" (group))
 (declare-function jabber-muc-get-buffer "jabber-muc.el" (group &optional jc))
 (declare-function jabber-send-subscription-request "jabber-presence.el" (jc to &optional request))
 (declare-function jabber-roster-delete-jid-at-point "jabber-presence.el" ())
@@ -320,7 +320,7 @@ point."
       (jabber-roster-roll-group account-at-point group-at-point))
      ;; Already-joined groupchat: switch directly to buffer.
      ((jabber-muc-joined-p jid-at-point)
-      (jabber-muc-switch jid-at-point))
+      (jabber-muc-switch-to jid-at-point))
      ;; Contact or other JID: disco-check to decide chat vs MUC join.
      ((and jid-at-point account-at-point)
       (let ((jc (jabber-roster--choose-account jid-at-point account-at-point)))

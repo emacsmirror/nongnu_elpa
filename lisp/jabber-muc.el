@@ -1009,7 +1009,7 @@ JC is the Jabber connection."
   (jabber-bookmarks--publish-one jc group nickname))
 
 ;;;###autoload
-(defun jabber-muc-switch (group)
+(defun jabber-muc-switch-to (group)
   "Switch to an active groupchat buffer.
 Prompt with completion for joined rooms only."
   (interactive
