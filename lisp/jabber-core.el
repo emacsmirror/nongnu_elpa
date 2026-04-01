@@ -25,21 +25,6 @@
 ;; along with this program; if not, write to the Free Software
 ;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
-;;; Commentary:
-;;
-;; Standards (probably) involved -
-;; 1. [RFC 6120] Extensible Messaging and Presence Protocol (XMPP): Core
-;;    https://datatracker.ietf.org/doc/rfc6120/
-;;
-;; 2. [RFC 7950] Use of Transport Layer Security (TLS) in the Extensible Messaging and Presence Protocol (XMPP)
-;;    https://datatracker.ietf.org/doc/rfc7590/
-;;
-;; 3. [RFC 6121] Extensible Messaging and Presence Protocol (XMPP): Instant Messaging and Presence
-;;    https://datatracker.ietf.org/doc/rfc6121/
-;;
-;; 4. [RFC 7622] Extensible Messaging and Presence Protocol (XMPP): Address Format
-;;    https://datatracker.ietf.org/doc/rfc7622/
-
 ;;; Code:
 
 (require 'cl-lib)
