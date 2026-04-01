@@ -10,6 +10,7 @@
 (defvar jabber-jid-obarray (make-vector 127 0))
 
 (require 'jabber-disco)
+(require 'jabber-db)
 
 ;;; Group 1: jabber-caps--store-hash
 

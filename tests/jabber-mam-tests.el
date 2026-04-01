@@ -6,6 +6,7 @@
 (require 'jabber-chat)
 (require 'jabber-muc)
 (require 'jabber-mam)
+(require 'jabber-message-correct)
 
 ;;; Test infrastructure
 

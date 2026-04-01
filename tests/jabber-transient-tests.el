@@ -2,6 +2,7 @@
 
 (require 'ert)
 (require 'jabber)
+(require 'jabber-autoloads)
 (require 'transient)
 
 ;;; Helpers

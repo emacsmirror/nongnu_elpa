@@ -26,6 +26,7 @@
 (require 'ert)
 (require 'jabber-chat)
 (require 'jabber-db)
+(require 'jabber-message-correct)
 
 ;;; Test helpers
 

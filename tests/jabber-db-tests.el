@@ -1469,8 +1469,8 @@ VALUES ('me@x.com', 'friend@x.com', 'in', 'chat', 'preserved', 2000, 'laptop')")
       (should (= 0 (caar (sqlite-select jabber-db--connection
                            "SELECT count(*) FROM message_oob")))))))
 
-(ert-deftest jabber-db-test-migration-v2-to-v3 ()
-  "Migration v2->v3 moves OOB data to child table and drops old columns."
+(ert-deftest jabber-db-test-migration-v2-to-v4 ()
+  "Migration v2->v4 applies the full chain: OOB child table, caps cache."
   (let* ((jabber-db-test--dir (make-temp-file "jabber-db-test" t))
          (jabber-db-path (expand-file-name "test.sqlite" jabber-db-test--dir))
          (jabber-db--connection nil)
@@ -1506,8 +1506,8 @@ VALUES ('me@x.com', 'peer@x.com', 'in', 'chat', 'text', 1001,
             (sqlite-close db))
           ;; Open with migration.
           (jabber-db-ensure-open)
-          ;; Check version is now 3.
-          (should (= 3 (caar (sqlite-select jabber-db--connection
+          ;; Check version is now 4 (full chain: v2->v3->v4).
+          (should (= 4 (caar (sqlite-select jabber-db--connection
                                             "PRAGMA user_version"))))
           ;; OOB data migrated to child table.
           (let ((oob-rows (sqlite-select jabber-db--connection
