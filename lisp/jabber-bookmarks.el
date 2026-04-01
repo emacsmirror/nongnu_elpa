@@ -197,20 +197,22 @@ Replaces any existing entry with the same :jid."
 (defun jabber-bookmarks2--handle-event (jc _from _node items)
   "Handle PubSub event notifications for bookmarks.
 JC is the connection.  ITEMS is the list of <item> and <retract>
-child elements from the event."
-  (dolist (child items)
-    (pcase (jabber-xml-node-name child)
-      ('item
-       (let ((bookmark (jabber-bookmarks2--parse-item child)))
-         (when bookmark
-           (jabber-bookmarks2--update-cache jc bookmark)
-           (if (plist-get bookmark :autojoin)
-               (jabber-bookmarks2--maybe-join jc bookmark)
-             (jabber-bookmarks2--maybe-leave jc (plist-get bookmark :jid))))))
-      ('retract
-       (let ((jid (jabber-xml-get-attribute child 'id)))
-         (jabber-bookmarks2--remove-from-cache jc jid)
-         (jabber-bookmarks2--maybe-leave jc jid))))))
+child elements from the event.
+Legacy accounts ignore these events."
+  (unless (jabber-bookmarks--legacy-p jc)
+    (dolist (child items)
+      (pcase (jabber-xml-node-name child)
+        ('item
+         (let ((bookmark (jabber-bookmarks2--parse-item child)))
+           (when bookmark
+             (jabber-bookmarks2--update-cache jc bookmark)
+             (if (plist-get bookmark :autojoin)
+                 (jabber-bookmarks2--maybe-join jc bookmark)
+               (jabber-bookmarks2--maybe-leave jc (plist-get bookmark :jid))))))
+        ('retract
+         (let ((jid (jabber-xml-get-attribute child 'id)))
+           (jabber-bookmarks2--remove-from-cache jc jid)
+           (jabber-bookmarks2--maybe-leave jc jid)))))))
 
 (with-eval-after-load "jabber-pubsub"
   (push (cons jabber-bookmarks2-xmlns
