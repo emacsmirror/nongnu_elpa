@@ -89,15 +89,14 @@ It can be sent and cancelled several times.")
                        (format "%s is typing..."
                                (jabber-jid-displayname jabber-chatting-with))))))
       (when jabber-chatstates--ewoc-node
-        (ewoc-delete jabber-chat-ewoc jabber-chatstates--ewoc-node)
+        (jabber-chat-ewoc-delete jabber-chatstates--ewoc-node)
         (setq jabber-chatstates--ewoc-node nil)))))
 
 (defun jabber-chatstates--clear-typing ()
   "Remove the typing indicator ewoc node if present."
   (when jabber-chatstates--ewoc-node
-    (let ((inhibit-read-only t))
-      (ewoc-delete jabber-chat-ewoc jabber-chatstates--ewoc-node)
-      (setq jabber-chatstates--ewoc-node nil))))
+    (jabber-chat-ewoc-delete jabber-chatstates--ewoc-node)
+    (setq jabber-chatstates--ewoc-node nil)))
 
 (add-hook 'jabber-chat-send-hooks #'jabber-chatstates-when-sending)
 (defun jabber-chatstates-when-sending (_text _id)

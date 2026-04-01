@@ -36,6 +36,7 @@
 (require 'jabber-disco)
 
 (declare-function jabber-chat-ewoc-find-by-id "jabber-chatbuffer" (stanza-id))
+(declare-function jabber-chat-ewoc-invalidate "jabber-chatbuffer" (node))
 (declare-function jabber-jid-user "jabber-util" (jid))
 (declare-function jabber-jid-resource "jabber-util" (jid))
 (declare-function jabber-muc-joined-p "jabber-muc" (group &optional jc))
@@ -197,7 +198,7 @@ COLUMN is \"delivered_at\" or \"displayed_at\"."
                       (not msg-epoch)
                       (> msg-epoch jabber-receipts--latest-displayed-ts))
               (plist-put msg :status status)
-              (ewoc-invalidate jabber-chat-ewoc node)
+              (jabber-chat-ewoc-invalidate node)
               (jabber-receipts--update-header-line column timestamp)
               (when (string= column "displayed_at")
                 (when msg-epoch
@@ -221,7 +222,7 @@ also seen.  Only promotes :local nodes whose :status is :delivered."
          ((and (eq type :local)
                (eq (plist-get msg :status) :delivered))
           (plist-put msg :status :displayed)
-          (ewoc-invalidate jabber-chat-ewoc prev))
+          (jabber-chat-ewoc-invalidate prev))
          ((and (eq type :local)
                (eq (plist-get msg :status) :displayed))
           (setq prev nil))))              ; stop, already cascaded

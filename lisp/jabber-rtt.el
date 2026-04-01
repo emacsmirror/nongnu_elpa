@@ -35,6 +35,8 @@
 (declare-function jabber-chat-get-buffer "jabber-chat.el" (chat-with &optional jc))
 (declare-function jabber-muc-message-p "jabber-muc.el"(message))
 (declare-function jabber-chat-ewoc-enter "jabber-chatbuffer.el" (data))
+(declare-function jabber-chat-ewoc-invalidate "jabber-chatbuffer" (node))
+(declare-function jabber-chat-ewoc-delete "jabber-chatbuffer" (node))
 (defvar jabber-message-chain)           ; jabber-core.el
 (defvar jabber-chat-ewoc)               ; jabber-chatbuffer.el
 (defvar jabber-buffer-connection)       ; jabber-chatbuffer.el
@@ -106,7 +108,7 @@
 
 (defun jabber-rtt--reset ()
   (when jabber-rtt-ewoc-node
-    (ewoc-delete jabber-chat-ewoc jabber-rtt-ewoc-node))
+    (jabber-chat-ewoc-delete jabber-rtt-ewoc-node))
   (when (timerp jabber-rtt-timer)
     (cancel-timer jabber-rtt-timer))
   (setq jabber-rtt-ewoc-node nil
@@ -140,8 +142,7 @@
 		     (car (jabber-xml-node-children action)))
 
 	       (ewoc-set-data jabber-rtt-ewoc-node (list :notice (concat "[typing...] " jabber-rtt-message)))
-	       (let ((inhibit-read-only t))
-		 (ewoc-invalidate jabber-chat-ewoc jabber-rtt-ewoc-node))))
+	       (jabber-chat-ewoc-invalidate jabber-rtt-ewoc-node)))
 	    ('e
 	     ;; erase text
 	     (let* ((p (jabber-xml-get-attribute action 'p))
@@ -157,8 +158,7 @@
 		     "")
 
 	       (ewoc-set-data jabber-rtt-ewoc-node (list :notice (concat "[typing...] " jabber-rtt-message)))
-	       (let ((inhibit-read-only t))
-		 (ewoc-invalidate jabber-chat-ewoc jabber-rtt-ewoc-node))))
+	       (jabber-chat-ewoc-invalidate jabber-rtt-ewoc-node)))
 	    ('w
 	     (setq jabber-rtt-timer
 		   (run-with-timer

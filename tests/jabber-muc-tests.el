@@ -604,7 +604,8 @@ entry with JC=nil."
                     ((symbol-function 'jabber-maybe-print-rare-time) #'ignore)
                     ((symbol-function 'jabber-chat-ewoc-enter) #'ignore)
                     ((symbol-function 'jabber-muc-add-groupchat) #'ignore)
-                    ((symbol-function 'jabber-mam-muc-joined) #'ignore))
+                    ((symbol-function 'jabber-mam-muc-joined) #'ignore)
+                    ((symbol-function 'jabber-bookmarks-auto-add-maybe) #'ignore))
             ;; "me" is self — status code 110 marks self-presence
             (jabber-muc--process-enter
              jc group "me"

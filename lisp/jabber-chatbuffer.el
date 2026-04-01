@@ -403,7 +403,6 @@ EWOC-PP is the pretty-printer function for the message EWOC."
 
   (setq-local jabber-send-function nil)
   (setq-local scroll-conservatively 5)
-  (setq-local buffer-undo-list t)
   ;; jabber-chat-ewoc and jabber-point-insert are conditionally set in
   ;; the `unless' block below; make-local-variable is idempotent and
   ;; preserves the existing value on repeated calls.
@@ -412,15 +411,16 @@ EWOC-PP is the pretty-printer function for the message EWOC."
   (setq jabber-buffer-connection jc)
 
   (unless jabber-chat-ewoc
-    (setq jabber-chat-ewoc
-          (ewoc-create ewoc-pp nil (concat (jabber-separator) "\n") 'nosep))
-    (setq jabber-chat--msg-nodes (make-hash-table :test 'equal))
-    (goto-char (point-max))
-    (put-text-property (point-min) (point) 'read-only t)
-    (let ((inhibit-read-only t))
-      (put-text-property (point-min) (point) 'front-sticky t)
-      (put-text-property (point-min) (point) 'rear-nonsticky t))
-    (setq jabber-point-insert (point-marker)))
+    (let ((buffer-undo-list t))
+      (setq jabber-chat-ewoc
+            (ewoc-create ewoc-pp nil (concat (jabber-separator) "\n") 'nosep))
+      (setq jabber-chat--msg-nodes (make-hash-table :test 'equal))
+      (goto-char (point-max))
+      (put-text-property (point-min) (point) 'read-only t)
+      (let ((inhibit-read-only t))
+        (put-text-property (point-min) (point) 'front-sticky t)
+        (put-text-property (point-min) (point) 'rear-nonsticky t))
+      (setq jabber-point-insert (point-marker))))
   (unless jabber-chat-encryption
     (let ((saved (when-let* ((peer (jabber-chat--peer-jid)))
                    (jabber-db-get-chat-encryption
@@ -472,6 +472,7 @@ COUNT overrides `jabber-backlog-number' for this refresh."
   (interactive)
   (cl-incf jabber-chat--backlog-generation)
   (let ((generation jabber-chat--backlog-generation)
+        (buffer-undo-list t)
         (inhibit-read-only t)
         (node (ewoc-nth jabber-chat-ewoc 0)))
     ;; Delete all ewoc nodes
@@ -544,7 +545,8 @@ line at the bottom of the window."
     (mapc
      (lambda (buffer)
        (with-current-buffer buffer
-         (ewoc-refresh jabber-chat-ewoc)
+         (let ((buffer-undo-list t))
+           (ewoc-refresh jabber-chat-ewoc))
          (setq header-line-format
                (if (bound-and-true-p jabber-group)
                    jabber-muc-header-line-format
@@ -570,7 +572,11 @@ line at the bottom of the window."
       (buffer-list)))))
 
 
-;;; Ewoc insertion and lookup API
+;;; Ewoc mutation API (undo-suppressed)
+;;
+;; All ewoc mutations in chat buffers go through these wrappers to
+;; keep the undo list clean.  Only the composition area (after
+;; `jabber-point-insert') records undo entries.
 
 (defun jabber-chat-ewoc-enter (data)
   "Insert DATA into the chat ewoc and register by stanza ID.
@@ -585,7 +591,8 @@ or nil if the message was a duplicate."
     ;; Skip if this stanza ID is already displayed.
     (unless (or (and id (gethash id jabber-chat--msg-nodes))
                 (and sid (gethash sid jabber-chat--msg-nodes)))
-      (let ((node (ewoc-enter-last jabber-chat-ewoc data)))
+      (let ((buffer-undo-list t)
+            (node (ewoc-enter-last jabber-chat-ewoc data)))
         (when id (puthash id node jabber-chat--msg-nodes))
         (when sid (puthash sid node jabber-chat--msg-nodes))
         node))))
@@ -594,6 +601,17 @@ or nil if the message was a duplicate."
   "Return the ewoc node for STANZA-ID, or nil."
   (when (and stanza-id jabber-chat--msg-nodes)
     (gethash stanza-id jabber-chat--msg-nodes)))
+
+(defun jabber-chat-ewoc-invalidate (node)
+  "Redraw ewoc NODE without recording undo."
+  (let ((buffer-undo-list t))
+    (ewoc-invalidate jabber-chat-ewoc node)))
+
+(defun jabber-chat-ewoc-delete (node)
+  "Delete ewoc NODE without recording undo."
+  (let ((buffer-undo-list t)
+        (inhibit-read-only t))
+    (ewoc-delete jabber-chat-ewoc node)))
 
 ;;; Cleanup on disconnect
 

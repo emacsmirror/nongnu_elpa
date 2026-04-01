@@ -443,7 +443,8 @@ refresh has started and this insert sequence should abort."
         (with-current-buffer buffer
           (funcall callback)))
     (with-current-buffer buffer
-      (let* ((inhibit-read-only t)
+      (let* ((buffer-undo-list t)
+             (inhibit-read-only t)
 	     (chunk (cl-subseq entries 0
 			       (min jabber-chat-backlog-chunk-size
 				    (length entries))))
@@ -1123,10 +1124,11 @@ NODE may be nil (e.g. when a duplicate was suppressed)."
           ;; with XEP-0082), jabber-chat-pp chokes on :rate-time ewoc
           ;; elements.  Ensure that the timestamp is in lisp form,
           ;; rather than (cons bignum . bignum).
-	  (ewoc-enter-before jabber-chat-ewoc node
-			     (list :rare-time (time-convert
-                                               (entry-time data)
-                                               'list))))))))
+	  (let ((buffer-undo-list t))
+            (ewoc-enter-before jabber-chat-ewoc node
+                               (list :rare-time (time-convert
+                                                 (entry-time data)
+                                                 'list)))))))))
 
 (defun jabber-chat--format-time (timestamp delayed)
   "Format TIMESTAMP for prompt display.

@@ -52,6 +52,7 @@
 (declare-function jabber-chat--msg-plist-from-stanza "jabber-chat")
 (declare-function jabber-maybe-print-rare-time "jabber-chat")
 (declare-function jabber-chat-ewoc-enter "jabber-chatbuffer")
+(declare-function jabber-chat-ewoc-invalidate "jabber-chatbuffer" (node))
 (declare-function jabber-httpupload--upload "jabber-httpupload")
 (declare-function jabber-httpupload--send-url "jabber-httpupload")
 (declare-function jabber-db--outgoing-handler "jabber-db" (body id))
@@ -1028,7 +1029,7 @@ BUFFER is the chat buffer.  REASON is shown via `message'."
     (with-current-buffer buffer
       (when node
         (plist-put (cadr (ewoc-data node)) :status :undelivered)
-        (ewoc-invalidate jabber-chat-ewoc node))
+        (jabber-chat-ewoc-invalidate node))
       (goto-char (point-max))
       (insert body)))
   (message "%s" reason))
@@ -1101,7 +1102,7 @@ stanza outside the encryption envelope."
         (if node
             (progn
               (plist-put (cadr (ewoc-data node)) :status :sent)
-              (ewoc-invalidate jabber-chat-ewoc node))
+              (jabber-chat-ewoc-invalidate node))
           (let ((msg-plist (jabber-chat--msg-plist-from-stanza stanza)))
             (plist-put msg-plist :body body)
             (plist-put msg-plist :status :sent)

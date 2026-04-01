@@ -94,8 +94,7 @@ dropped.  Returns non-nil when the correction was accepted."
             (setq msg (plist-put msg :body new-body))
             (setq msg (plist-put msg :edited t))
             (setcar (cdr data) msg)
-            (let ((inhibit-read-only t))
-              (ewoc-invalidate jabber-chat-ewoc node)))))
+            (jabber-chat-ewoc-invalidate node))))
       t))))
 
 ;;; Inhibit DB storage of correction stanzas
@@ -143,7 +142,7 @@ dropped.  Returns non-nil when the correction was accepted."
     (setq msg (plist-put msg :body new-body))
     (setq msg (plist-put msg :edited t))
     (setcar (cdr data) msg)
-    (let ((inhibit-read-only t))
+    (let ((buffer-undo-list t))
       (ewoc-invalidate ewoc node))))
 
 ;;; Interactive command

@@ -48,7 +48,8 @@ Note that this might interfere with
 `jabber-chat-display-more-backlog': you ask for more history, you
 get it, and then it just gets deleted."
   (interactive)
-    (let* ((inhibit-read-only t)
+    (let* ((buffer-undo-list t)
+           (inhibit-read-only t)
            (work-ewoc (if ewoc ewoc jabber-chat-ewoc))
           (delete-before
            ;; go back one node, to make this function "idempotent"

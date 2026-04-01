@@ -40,6 +40,7 @@
 (declare-function jabber-muc-find-buffer "jabber-muc" (group))
 (declare-function jabber-muc-nickname "jabber-muc" (group &optional jc))
 (declare-function jabber-chat-ewoc-find-by-id "jabber-chatbuffer" (stanza-id))
+(declare-function jabber-chat-ewoc-invalidate "jabber-chatbuffer" (node))
 (declare-function jabber-send-iq "jabber-iq"
                   (jc to type query success-callback success-closure-data
                    error-callback error-closure-data &optional result-id))
@@ -115,8 +116,7 @@ RETRACTED-BY and REASON are stored on the message plist."
     (setq msg (plist-put msg :retracted-by retracted-by))
     (setq msg (plist-put msg :retraction-reason reason))
     (setcar (cdr data) msg)
-    (let ((inhibit-read-only t))
-      (ewoc-invalidate jabber-chat-ewoc node))))
+    (jabber-chat-ewoc-invalidate node)))
 
 (defun jabber-moderation--send-retract (jc room server-id &optional reason)
   "Send a moderation IQ to retract SERVER-ID in ROOM on JC.
