@@ -556,7 +556,8 @@ updates the original row instead."
          (our-jid (jabber-connection-bare-jid jc))
          (sent-p (string= (jabber-jid-user from) our-jid))
          (direction (if sent-p "out" "in"))
-         (peer (jabber-jid-user (if sent-p to from)))
+         (peer-jid (if sent-p to from))
+         (peer (when peer-jid (jabber-jid-user peer-jid)))
          (encrypted (or (jabber-xml-child-with-xmlns
                          xml-data "eu.siacs.conversations.axolotl")
                         (jabber-xml-child-with-xmlns
