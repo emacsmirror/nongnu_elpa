@@ -322,6 +322,8 @@ The format is that of `mode-line-format' and `header-line-format'."
                   ())
 (declare-function jabber-mam-muc-joined "jabber-mam.el" (jc group))
 (declare-function jabber-mam--cancel-muc-query "jabber-mam.el" (room))
+(declare-function jabber-bookmarks-auto-add-maybe "jabber-bookmarks.el"
+                  (jc jid nick))
 (declare-function jabber-db-backlog "jabber-db.el"
                   (account peer &optional count start-time resource msg-type))
 (declare-function jabber-message-correct--replace-id "jabber-message-correct"
@@ -1691,7 +1693,8 @@ X-MUC, ACTOR, REASON and OUR-NICKNAME come from the stanza."
       (puthash symbol nickname jabber-pending-groupchats)
       ;; Trigger MUC MAM catch-up on initial join (not nick change)
       (unless was-joined
-        (jabber-mam-muc-joined jc group))))
+        (jabber-mam-muc-joined jc group)
+        (jabber-bookmarks-auto-add-maybe jc group nickname))))
   (let* ((self-p (or (member jabber-muc-status-self-presence status-codes)
                      (string= nickname our-nickname)))
          (old-plist (jabber-muc-participant-plist group nickname))

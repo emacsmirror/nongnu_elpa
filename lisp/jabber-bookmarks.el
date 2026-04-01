@@ -65,7 +65,13 @@
 ;; Disco feature: request PubSub notifications for bookmarks
 (jabber-disco-advertise-feature (concat jabber-bookmarks2-xmlns "+notify"))
 
-;;
+(defcustom jabber-bookmarks-auto-add t
+  "Whether to automatically bookmark rooms on join.
+When non-nil, joining a room automatically adds it to bookmarks
+with autojoin enabled, matching the behavior of Dino and
+Conversations."
+  :group 'jabber-chat
+  :type 'boolean)
 
 (defvar jabber-bookmarks (make-hash-table :test 'equal)
   "Mapping from bare JIDs to bookmark lists.
@@ -507,6 +513,17 @@ JC is the Jabber connection."
   "Add a bookmark for JID with autojoin enabled."
   (interactive "sRoom JID: ")
   (jabber-bookmarks--publish-one jabber-buffer-connection jid))
+
+(defun jabber-bookmarks-auto-add-maybe (jc jid nick)
+  "Bookmark JID with NICK if `jabber-bookmarks-auto-add' is enabled.
+Does nothing if JID is already bookmarked.  JC is the connection."
+  (when jabber-bookmarks-auto-add
+    (let ((cache (jabber-get-bookmarks-from-cache jc)))
+      (unless (and (listp cache)
+                   (cl-find jid cache
+                            :key (lambda (bm) (plist-get bm :jid))
+                            :test #'string=))
+        (jabber-bookmarks--publish-one jc jid nick)))))
 
 (defun jabber-bookmarks--publish-one (jc jid &optional nick)
   "Publish a bookmark for JID via JC.
