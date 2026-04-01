@@ -629,31 +629,37 @@ Calls `jabber-omemo-get-bundle' and base64-encodes all keys."
 XML is a <bundle> element sexp.  Returns
   (:signature BYTES :signed-pre-key BYTES :identity-key BYTES
    :signed-pre-key-id INT :pre-keys ((ID . BYTES) ...))
-All key material is base64-decoded to unibyte strings."
+All key material is base64-decoded to unibyte strings.
+Returns nil if any required element is missing or empty."
   (let* ((spk-el (car (jabber-xml-get-children xml 'signedPreKeyPublic)))
          (sig-el (car (jabber-xml-get-children xml 'signedPreKeySignature)))
          (ik-el (car (jabber-xml-get-children xml 'identityKey)))
          (pks-el (car (jabber-xml-get-children xml 'prekeys)))
-         (spk-id (string-to-number
-                  (or (jabber-xml-get-attribute spk-el 'signedPreKeyId) "0")))
-         (spk-data (base64-decode-string
-                    (car (jabber-xml-node-children spk-el))))
-         (sig-data (base64-decode-string
-                    (car (jabber-xml-node-children sig-el))))
-         (ik-data (base64-decode-string
-                   (car (jabber-xml-node-children ik-el))))
-         pre-keys)
-    (dolist (pk (jabber-xml-get-children pks-el 'preKeyPublic))
-      (let ((pk-id (string-to-number
-                    (or (jabber-xml-get-attribute pk 'preKeyId) "0")))
-            (pk-data (base64-decode-string
-                      (car (jabber-xml-node-children pk)))))
-        (push (cons pk-id pk-data) pre-keys)))
-    (list :signature sig-data
-          :signed-pre-key spk-data
-          :identity-key ik-data
-          :signed-pre-key-id spk-id
-          :pre-keys (nreverse pre-keys))))
+         (spk-text (car (jabber-xml-node-children spk-el)))
+         (sig-text (car (jabber-xml-node-children sig-el)))
+         (ik-text (car (jabber-xml-node-children ik-el))))
+    (if (not (and (stringp spk-text) (stringp sig-text) (stringp ik-text)))
+        (progn
+          (warn "jabber-omemo: malformed bundle XML (missing key data)")
+          nil)
+      (let ((spk-id (string-to-number
+                     (or (jabber-xml-get-attribute spk-el 'signedPreKeyId) "0")))
+            (spk-data (base64-decode-string spk-text))
+            (sig-data (base64-decode-string sig-text))
+            (ik-data (base64-decode-string ik-text))
+            pre-keys)
+        (dolist (pk (jabber-xml-get-children pks-el 'preKeyPublic))
+          (let ((pk-text (car (jabber-xml-node-children pk))))
+            (when (stringp pk-text)
+              (let ((pk-id (string-to-number
+                            (or (jabber-xml-get-attribute pk 'preKeyId) "0")))
+                    (pk-data (base64-decode-string pk-text)))
+                (push (cons pk-id pk-data) pre-keys)))))
+        (list :signature sig-data
+              :signed-pre-key spk-data
+              :identity-key ik-data
+              :signed-pre-key-id spk-id
+              :pre-keys (nreverse pre-keys))))))
 
 ;;; Bundle management
 
