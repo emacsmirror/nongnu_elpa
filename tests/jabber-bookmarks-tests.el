@@ -238,7 +238,7 @@
              jabber-bookmarks)
     (cl-letf (((symbol-function 'jabber-connection-bare-jid)
                (lambda (j) (jabber-bookmarks-test--bare-jid j)))
-              ((symbol-function 'jabber-pubsub-request)
+              ((symbol-function 'jabber-bookmarks--detect-and-fetch)
                (lambda (&rest _) (setq fetched t)))
               ((symbol-function 'run-with-timer)
                (lambda (_delay _repeat fn &rest args) (apply fn args))))

@@ -35,6 +35,9 @@
 (defconst jabber-bookmarks2-xmlns "urn:xmpp:bookmarks:1"
   "XEP-0402 Bookmarks 2 namespace.")
 
+(defconst jabber-bookmarks2-compat-xmlns "urn:xmpp:bookmarks:1#compat"
+  "XEP-0402 compat feature advertised in server disco.")
+
 (defconst jabber-bookmarks2--publish-options
   '(("pubsub#persist_items" . "true")
     ("pubsub#max_items" . "max")
@@ -48,6 +51,10 @@
 (defvar jabber-muc-autojoin)            ; jabber-muc.el
 (defvar jabber-buffer-connection)       ; jabber-chatbuffer.el
 
+(defvar jabber-pre-disconnect-hook)       ; jabber-core.el
+
+(declare-function jabber-disco-get-info "jabber-disco.el"
+                  (jc jid node callback closure-data &optional force))
 (declare-function jabber-muc-joined-p "jabber-muc" (group &optional jc))
 (declare-function jabber-muc-nickname "jabber-muc" (group &optional jc))
 (declare-function jabber-muc-join "jabber-muc" (jc group nickname &optional popup))
@@ -217,17 +224,40 @@ child elements from the event."
   "Retrieve bookmarks (if needed) and call CONT.
 Arguments to CONT are JC and a list of bookmark plists.
 CONT is called asynchronously.
-If REFRESH is non-nil, always fetch from server."
+If REFRESH is non-nil, always fetch from server and re-detect protocol."
   (let ((bookmarks (gethash (jabber-connection-bare-jid jc) jabber-bookmarks)))
     (if (and (not refresh) bookmarks)
         (run-with-timer 0 nil cont jc (when (listp bookmarks) bookmarks))
-      ;; Try XEP-0402 (PubSub) first, fall back to XEP-0049
-      (jabber-pubsub-request
-       jc nil jabber-bookmarks2-xmlns
-       (lambda (jc xml-data _closure)
-         (jabber-bookmarks2--handle-fetch jc xml-data cont))
-       (lambda (jc _xml-data _closure)
-         (jabber-bookmarks--get-legacy jc cont))))))
+      (jabber-bookmarks--detect-and-fetch jc cont refresh))))
+
+(defun jabber-bookmarks--detect-and-fetch (jc cont &optional refresh)
+  "Detect bookmark protocol via disco and fetch.
+Query bare JID for the `#compat' feature.  If present, use XEP-0402
+PubSub; otherwise fall back to XEP-0049 Private XML Storage.
+When REFRESH is non-nil, re-run disco detection."
+  (if (and (not refresh) (jabber-bookmarks--legacy-p jc))
+      (jabber-bookmarks--get-legacy jc cont)
+    (jabber-disco-get-info
+     jc (jabber-connection-bare-jid jc) nil
+     (lambda (jc _closure result)
+       (if (and (listp result)
+                (not (eq (car result) 'error))
+                (member jabber-bookmarks2-compat-xmlns (cadr result)))
+           (jabber-bookmarks2--fetch jc cont)
+         (jabber-bookmarks--get-legacy jc cont)))
+     nil)))
+
+(defun jabber-bookmarks2--fetch (jc cont)
+  "Fetch bookmarks via XEP-0402 PubSub.
+CONT is called with JC and the bookmark plist list.
+Falls back to legacy on PubSub error."
+  (jabber-pubsub-request
+   jc nil jabber-bookmarks2-xmlns
+   (lambda (jc xml-data _closure)
+     (jabber-bookmarks2--handle-fetch jc xml-data cont))
+   (lambda (jc _xml-data _closure)
+     (message "jabber-bookmarks: PubSub fetch error, falling back to legacy")
+     (jabber-bookmarks--get-legacy jc cont))))
 
 (defun jabber-bookmarks2--handle-fetch (jc xml-data cont)
   "Process a PubSub items response for XEP-0402 bookmarks.
@@ -585,6 +615,16 @@ NICK, if non-nil, is stored in the bookmark."
     ("t" "Toggle autojoin" jabber-bookmarks-toggle-autojoin)
     ("e" "Edit bookmark" jabber-bookmarks-edit)
     ("g" "Refresh" revert-buffer)]])
+
+;;; Disconnect cleanup
+
+(defun jabber-bookmarks--on-disconnect ()
+  "Pre-disconnect hook.  Clear bookmark caches."
+  (clrhash jabber-bookmarks)
+  (clrhash jabber-bookmarks--legacy-accounts))
+
+(with-eval-after-load "jabber-core"
+  (add-hook 'jabber-pre-disconnect-hook #'jabber-bookmarks--on-disconnect))
 
 (provide 'jabber-bookmarks)
 
