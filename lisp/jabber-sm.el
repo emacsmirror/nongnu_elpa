@@ -38,6 +38,7 @@
 
 (require 'cl-lib)
 
+(declare-function fsm-get-state-data "fsm" (fsm))
 (declare-function jabber-send-string "jabber-core.el" (jc string))
 (declare-function jabber-xml-node-name "jabber-xml.el" (node))
 (declare-function jabber-xml-get-attribute "jabber-xml.el" (node attribute))

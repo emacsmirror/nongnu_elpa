@@ -640,7 +640,7 @@ Returns nil if any required element is missing or empty."
          (ik-text (car (jabber-xml-node-children ik-el))))
     (if (not (and (stringp spk-text) (stringp sig-text) (stringp ik-text)))
         (progn
-          (warn "jabber-omemo: malformed bundle XML (missing key data)")
+          (message "jabber-omemo: malformed bundle XML (missing key data)")
           nil)
       (let ((spk-id (string-to-number
                      (or (jabber-xml-get-attribute spk-el 'signedPreKeyId) "0")))

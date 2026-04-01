@@ -54,6 +54,7 @@
 (declare-function jabber-maybe-print-rare-time "jabber-chat" (node))
 (declare-function jabber-chat-ewoc-enter "jabber-chatbuffer" (data))
 (declare-function jabber-disco-advertise-feature "jabber-disco" (feature))
+(declare-function jabber-chain-add "jabber-core" (chain-var handler &optional depth))
 (declare-function jabber-chat-register-decrypt-handler "jabber-chat"
   (id &rest props))
 (declare-function jabber-chat--set-body "jabber-chat" (xml-data text))
