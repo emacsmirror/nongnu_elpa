@@ -684,12 +684,13 @@ _JC and _XML-DATA are reserved for future use by OMEMO."
       (jabber-maybe-print-rare-time
        (jabber-chat-ewoc-enter
         (list (if error-p :error :foreign) msg-plist)))
-      (let ((inhibit-message jabber-chat-mam-syncing))
-        (dolist (hook '(jabber-message-hooks jabber-alert-message-hooks))
-          (run-hook-with-args hook
-                              from (current-buffer) body-text
-                              (funcall jabber-alert-message-function
-                                       from (current-buffer) body-text)))))))
+      (unless error-p
+        (let ((inhibit-message jabber-chat-mam-syncing))
+          (dolist (hook '(jabber-message-hooks jabber-alert-message-hooks))
+            (run-hook-with-args hook
+                                from (current-buffer) body-text
+                                (funcall jabber-alert-message-function
+                                         from (current-buffer) body-text))))))))
 
 (defun jabber-process-chat (jc xml-data)
   "If XML-DATA is a one-to-one chat message, handle it as such.
