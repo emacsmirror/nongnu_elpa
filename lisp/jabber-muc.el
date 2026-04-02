@@ -169,6 +169,22 @@ Rooms with fewer occupants join first.  COUNT is
 If a self-presence doesn't arrive within the timeout, advance
 to the next queued room.")
 
+(defvar jabber-muc--autojoin-pending nil
+  "Alist of (JC . ((GROUP . NICK) ...)) awaiting disco#items query.
+Rooms are moved from here into `jabber-muc--autojoin-queue' as
+disco results arrive.  Only `jabber-muc-autojoin-max-disco'
+queries are in-flight at once to avoid saturating the SM window.")
+
+(defvar jabber-muc--autojoin-disco-count nil
+  "Alist of (JC . COUNT) tracking in-flight disco#items queries.")
+
+(defcustom jabber-muc-autojoin-max-disco 5
+  "Maximum concurrent disco#items queries during autojoin.
+Limits how many disco queries are in-flight simultaneously to
+avoid saturating the SM back-pressure window."
+  :type 'natnum
+  :group 'jabber-muc)
+
 (defcustom jabber-muc-autojoin-timeout 10
   "Seconds to wait for a MUC self-presence before joining the next room.
 During staggered autojoin, if the server doesn't respond within
@@ -1415,7 +1431,12 @@ RESULT is a list of item vectors on success or an error node."
          (count (if (and (listp result) (eq (car result) 'error))
                     most-positive-fixnum
                   (length result))))
+    ;; Decrement in-flight disco counter.
+    (when-let* ((cell (assq jc jabber-muc--autojoin-disco-count)))
+      (cl-decf (cdr cell)))
     (jabber-muc--autojoin-insert jc count group nick)
+    ;; Fire more disco queries if slots are available.
+    (jabber-muc--autojoin-fire-pending jc)
     ;; Start draining if no join is currently in-flight.
     (unless jabber-muc--autojoin-timer
       (jabber-muc--autojoin-next jc))))
@@ -1468,44 +1489,70 @@ never responds.  Does nothing if the queue is empty."
   "Remove all autojoin queue entries for JC."
   (jabber-muc--autojoin-cancel-timer)
   (setq jabber-muc--autojoin-queue
-        (assq-delete-all jc jabber-muc--autojoin-queue)))
+        (assq-delete-all jc jabber-muc--autojoin-queue))
+  (setq jabber-muc--autojoin-pending
+        (assq-delete-all jc jabber-muc--autojoin-pending))
+  (setq jabber-muc--autojoin-disco-count
+        (assq-delete-all jc jabber-muc--autojoin-disco-count)))
 
 (defun jabber-muc--rejoin-snapshot (jc)
   "Rejoin rooms from the pre-disconnect snapshot not already joined.
 Called after bookmark autojoin to recover non-bookmarked rooms.
-Fires disco#items queries for prioritized ordering."
+Rooms are added to the pending disco list for batched querying."
   (dolist (room-nick jabber-muc--rooms-before-disconnect)
     (let ((room (car room-nick))
           (nick (cdr room-nick)))
       (unless (or (jabber-muc-joined-p room jc)
                   (jabber-muc--autojoin-queued-p jc room))
-        (jabber-disco-get-items jc room nil
-                                #'jabber-muc--autojoin-disco-callback
-                                (cons room nick)))))
+        (jabber-muc--autojoin-enqueue-pending jc room nick))))
   (setq jabber-muc--rooms-before-disconnect nil))
 
-(defun jabber-muc--autojoin-fire-disco (jc group nick)
-  "Fire a disco#items query for GROUP with NICK via JC.
-The result feeds into the prioritized autojoin queue."
-  (jabber-disco-get-items jc group nil
-                          #'jabber-muc--autojoin-disco-callback
-                          (cons group nick)))
+(defun jabber-muc--autojoin-enqueue-pending (jc group nick)
+  "Add (GROUP . NICK) to the pending disco list for JC."
+  (if-let* ((cell (assq jc jabber-muc--autojoin-pending)))
+      (setcdr cell (nconc (cdr cell) (list (cons group nick))))
+    (push (cons jc (list (cons group nick))) jabber-muc--autojoin-pending)))
+
+(defun jabber-muc--autojoin-fire-pending (jc)
+  "Fire disco#items queries for JC up to the concurrency limit.
+Moves rooms from `jabber-muc--autojoin-pending' into in-flight
+disco queries, respecting `jabber-muc-autojoin-max-disco'."
+  (let* ((count-cell (or (assq jc jabber-muc--autojoin-disco-count)
+                         (car (push (cons jc 0) jabber-muc--autojoin-disco-count))))
+         (pending-cell (assq jc jabber-muc--autojoin-pending)))
+    (while (and pending-cell
+                (cdr pending-cell)
+                (< (cdr count-cell) jabber-muc-autojoin-max-disco))
+      (let* ((room-nick (cadr pending-cell))
+             (group (car room-nick))
+             (nick (cdr room-nick)))
+        (setcdr pending-cell (cddr pending-cell))
+        (cl-incf (cdr count-cell))
+        (jabber-disco-get-items jc group nil
+                                #'jabber-muc--autojoin-disco-callback
+                                (cons group nick))))
+    ;; Clean up empty pending entry.
+    (unless (cdr pending-cell)
+      (setq jabber-muc--autojoin-pending
+            (assq-delete-all jc jabber-muc--autojoin-pending)))))
 
 (defun jabber-muc-autojoin (jc)
   "Join rooms specified in account bookmarks and global `jabber-muc-autojoin'.
-Fires disco#items queries for all rooms at once.  As results
-arrive, rooms are inserted into a priority queue ordered by
-occupant count (fewest first) and drained sequentially.
+Fires disco#items queries in batches (up to
+`jabber-muc-autojoin-max-disco' at a time).  As results arrive,
+rooms are inserted into a priority queue ordered by occupant
+count (fewest first) and drained sequentially.
 
 JC is the Jabber connection."
   (interactive (list (jabber-read-account)))
   (jabber-muc--autojoin-clear jc)
   (when (bound-and-true-p jabber-muc-autojoin)
     (dolist (group jabber-muc-autojoin)
-      (jabber-muc--autojoin-fire-disco
+      (jabber-muc--autojoin-enqueue-pending
        jc group
        (or (cdr (assoc group jabber-muc-default-nicknames))
            (plist-get (fsm-get-state-data jc) :username)))))
+  (jabber-muc--autojoin-fire-pending jc)
   (jabber-get-bookmarks
    jc
    (lambda (jc bookmarks)
@@ -1514,11 +1561,12 @@ JC is the Jabber connection."
          (let ((group (plist-get bookmark :jid)))
            (unless (or (jabber-muc-joined-p group jc)
                        (jabber-muc--autojoin-queued-p jc group))
-             (jabber-muc--autojoin-fire-disco
+             (jabber-muc--autojoin-enqueue-pending
               jc group
               (or (plist-get bookmark :nick)
                   (plist-get (fsm-get-state-data jc) :username)))))))
-     (jabber-muc--rejoin-snapshot jc))))
+     (jabber-muc--rejoin-snapshot jc)
+     (jabber-muc--autojoin-fire-pending jc))))
 
 ;;;###autoload
 (defun jabber-muc-message-p (message)
