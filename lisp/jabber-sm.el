@@ -73,6 +73,15 @@ When nil, only send acks in response to server <r/> requests."
                  (const :tag "Only on request" nil))
   :group 'jabber-sm)
 
+(defcustom jabber-sm-max-in-flight 10
+  "Maximum number of unacknowledged outbound stanzas before queuing.
+When the in-flight count reaches this limit, further stanzas are
+queued and drained as the server acknowledges previous ones.
+Set to nil to disable back-pressure (send everything immediately)."
+  :type '(choice (integer :tag "Max unacked stanzas")
+                 (const :tag "No limit" nil))
+  :group 'jabber-sm)
+
 ;;; Counter arithmetic (handles 2^32 wraparound per XEP-0198 section 5)
 
 (defconst jabber-sm--counter-max (expt 2 32)
@@ -128,6 +137,7 @@ Uses forward-distance heuristic: if delta(B,A) < 2^31, A <= B."
     :sm-outbound-count 0
     :sm-inbound-count 0
     :sm-outbound-queue nil
+    :sm-pending-queue nil
     :sm-last-acked 0
     :sm-resuming nil
     :sm-resumed nil
