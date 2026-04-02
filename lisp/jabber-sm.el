@@ -196,6 +196,30 @@ Return updated STATE-DATA."
         (jabber-sm--send-ack jc state-data))))
   state-data)
 
+;;; Back-pressure helpers
+
+(defun jabber-sm--in-flight-count (state-data)
+  "Return the number of unacknowledged outbound stanzas in STATE-DATA."
+  (jabber-sm--counter-delta (plist-get state-data :sm-outbound-count)
+                            (plist-get state-data :sm-last-acked)))
+
+(defun jabber-sm--should-queue-p (state-data sexp)
+  "Return non-nil if SEXP should be queued instead of sent immediately.
+True when SM is enabled, SEXP is a countable stanza, back-pressure
+is enabled, and the in-flight count has reached the cap."
+  (and jabber-sm-max-in-flight
+       (plist-get state-data :sm-enabled)
+       (jabber-sm--stanza-p sexp)
+       (>= (jabber-sm--in-flight-count state-data)
+            jabber-sm-max-in-flight)))
+
+(defun jabber-sm--enqueue-pending (state-data sexp)
+  "Append SEXP to the pending queue in STATE-DATA.
+Return updated STATE-DATA."
+  (plist-put state-data :sm-pending-queue
+             (nconc (plist-get state-data :sm-pending-queue)
+                    (list sexp))))
+
 ;;; Ack send/receive
 
 (defun jabber-sm--make-ack-xml (h)
