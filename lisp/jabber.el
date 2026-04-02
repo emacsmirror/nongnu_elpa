@@ -1,4 +1,4 @@
-;;; jabber.el --- A minimal Jabber client  -*- lexical-binding: t; -*-
+;;; jabber.el --- XMPP/Jabber client  -*- lexical-binding: t; -*-
 
 ;; Author: Magnus Henoch <mange@freemail.hu>
 ;; Maintainer: Thanos Apollo <public@thanosapollo.org>
