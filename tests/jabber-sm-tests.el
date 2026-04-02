@@ -438,15 +438,18 @@
                  sd '(r ((xmlns . "urn:xmpp:sm:3")))))))
 
 (ert-deftest jabber-sm-test-enqueue-pending ()
-  "Enqueue appends to pending queue in order."
+  "Enqueue appends to pending queue as (priority . sexp) pairs."
   (let* ((sd (list :sm-pending-queue nil))
          (msg1 '(message ((to . "a@b")) (body () "1")))
          (msg2 '(message ((to . "a@b")) (body () "2"))))
     (setq sd (jabber-sm--enqueue-pending sd msg1))
     (setq sd (jabber-sm--enqueue-pending sd msg2))
     (should (= (length (plist-get sd :sm-pending-queue)) 2))
-    (should (equal (car (plist-get sd :sm-pending-queue)) msg1))
-    (should (equal (cadr (plist-get sd :sm-pending-queue)) msg2))))
+    (should (equal (cdar (plist-get sd :sm-pending-queue)) msg1))
+    (should (equal (cdadr (plist-get sd :sm-pending-queue)) msg2))
+    ;; Both are messages, priority 0
+    (should (= (caar (plist-get sd :sm-pending-queue)) 0))
+    (should (= (caadr (plist-get sd :sm-pending-queue)) 0))))
 
 (ert-deftest jabber-sm-test-drain-pending-partial ()
   "Drain sends stanzas up to the cap, leaving the rest queued."
@@ -459,7 +462,9 @@
                    :sm-inbound-count 0
                    :sm-last-acked 0
                    :sm-outbound-queue nil
-                   :sm-pending-queue (list msg1 msg2 msg3)))
+                   :sm-pending-queue (list (cons 0 msg1)
+                                           (cons 0 msg2)
+                                           (cons 0 msg3))))
          (sent nil))
     (setq sd (jabber-sm--drain-pending
               'fake-jc sd
@@ -468,7 +473,7 @@
     (should (= (length sent) 2))
     ;; One remains in pending queue
     (should (= (length (plist-get sd :sm-pending-queue)) 1))
-    (should (equal (car (plist-get sd :sm-pending-queue)) msg3))
+    (should (equal (cdar (plist-get sd :sm-pending-queue)) msg3))
     ;; Outbound count incremented for sent stanzas
     (should (= (plist-get sd :sm-outbound-count) 2))))
 
@@ -489,9 +494,87 @@
 
 (ert-deftest jabber-sm-test-reset-clears-pending-queue ()
   "Reset clears the pending queue."
-  (let* ((sd (list :sm-enabled t :sm-pending-queue '(a b c)))
+  (let* ((sd (list :sm-enabled t :sm-pending-queue '((0 . a) (1 . b) (2 . c))))
          (result (jabber-sm--reset sd)))
     (should (null (plist-get result :sm-pending-queue)))))
+
+;;; Priority queue
+
+(ert-deftest jabber-sm-test-stanza-priority-message ()
+  "Messages have priority 0."
+  (should (= (jabber-sm--stanza-priority '(message ((to . "a@b")) (body () "hi"))) 0)))
+
+(ert-deftest jabber-sm-test-stanza-priority-iq ()
+  "IQs have priority 1."
+  (should (= (jabber-sm--stanza-priority '(iq ((type . "get") (id . "1")))) 1)))
+
+(ert-deftest jabber-sm-test-stanza-priority-presence ()
+  "Presence has priority 2."
+  (should (= (jabber-sm--stanza-priority '(presence ((to . "room@muc/nick")))) 2)))
+
+(ert-deftest jabber-sm-test-drain-pending-priority-order ()
+  "Drain sends messages before presence, preserving FIFO within class."
+  (let* ((jabber-sm-max-in-flight nil)
+         (pres1 '(presence ((to . "r1@muc/nick"))))
+         (msg1 '(message ((to . "a@b")) (body () "1")))
+         (pres2 '(presence ((to . "r2@muc/nick"))))
+         (iq1 '(iq ((type . "get") (id . "1"))))
+         (msg2 '(message ((to . "c@d")) (body () "2")))
+         (sd (list :sm-enabled t
+                   :sm-outbound-count 0
+                   :sm-inbound-count 0
+                   :sm-last-acked 0
+                   :sm-outbound-queue nil
+                   :sm-pending-queue (list (cons 2 pres1)
+                                           (cons 0 msg1)
+                                           (cons 2 pres2)
+                                           (cons 1 iq1)
+                                           (cons 0 msg2))))
+         (sent nil))
+    (setq sd (jabber-sm--drain-pending
+              'fake-jc sd
+              (lambda (_jc sexp) (push sexp sent))))
+    (setq sent (nreverse sent))
+    ;; Messages first (FIFO), then IQ, then presences (FIFO)
+    (should (= (length sent) 5))
+    (should (eq (car-safe (nth 0 sent)) 'message))
+    (should (eq (car-safe (nth 1 sent)) 'message))
+    (should (eq (car-safe (nth 2 sent)) 'iq))
+    (should (eq (car-safe (nth 3 sent)) 'presence))
+    (should (eq (car-safe (nth 4 sent)) 'presence))
+    ;; FIFO within messages
+    (should (equal (nth 0 sent) msg1))
+    (should (equal (nth 1 sent) msg2))
+    ;; FIFO within presence
+    (should (equal (nth 3 sent) pres1))
+    (should (equal (nth 4 sent) pres2))))
+
+(ert-deftest jabber-sm-test-drain-pending-priority-partial ()
+  "With a cap, messages drain first even if presence was enqueued first."
+  (let* ((jabber-sm-max-in-flight 2)
+         (pres1 '(presence ((to . "r1@muc/nick"))))
+         (msg1 '(message ((to . "a@b")) (body () "urgent")))
+         (pres2 '(presence ((to . "r2@muc/nick"))))
+         (sd (list :sm-enabled t
+                   :sm-outbound-count 0
+                   :sm-inbound-count 0
+                   :sm-last-acked 0
+                   :sm-outbound-queue nil
+                   :sm-pending-queue (list (cons 2 pres1)
+                                           (cons 0 msg1)
+                                           (cons 2 pres2))))
+         (sent nil))
+    (setq sd (jabber-sm--drain-pending
+              'fake-jc sd
+              (lambda (_jc sexp) (push sexp sent))))
+    (setq sent (nreverse sent))
+    ;; Message sent first, then one presence
+    (should (= (length sent) 2))
+    (should (equal (nth 0 sent) msg1))
+    (should (equal (nth 1 sent) pres1))
+    ;; One presence remains
+    (should (= (length (plist-get sd :sm-pending-queue)) 1))
+    (should (equal (cdar (plist-get sd :sm-pending-queue)) pres2))))
 
 (provide 'jabber-sm-tests)
 
