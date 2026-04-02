@@ -59,18 +59,15 @@
 When non-nil, send <received/> on message delivery and
 <displayed/> when a chat buffer becomes visible.
 Incoming receipts are always processed regardless of this setting."
-  :type 'boolean
-  :group 'jabber-receipts)
+  :type 'boolean)
 
 (defface jabber-chat-delivered
   '((t :inherit shadow :slant italic))
-  "Face for delivery receipt status in header-line."
-  :group 'jabber-receipts)
+  "Face for delivery receipt status in header-line.")
 
 (defface jabber-chat-seen
   '((t :inherit success :slant italic))
-  "Face for seen/displayed status in header-line."
-  :group 'jabber-receipts)
+  "Face for seen/displayed status in header-line.")
 
 (defvar-local jabber-chat-receipt-message ""
   "Header-line string showing receipt status for current chat.")

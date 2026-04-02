@@ -58,20 +58,17 @@
 
 (defcustom jabber-sm-enable t
   "If non-nil, negotiate Stream Management when the server supports it."
-  :type 'boolean
-  :group 'jabber-sm)
+  :type 'boolean)
 
 (defcustom jabber-sm-request-interval 30
   "Seconds between periodic ack requests."
-  :type 'integer
-  :group 'jabber-sm)
+  :type 'integer)
 
 (defcustom jabber-sm-ack-interval 50
   "Send a proactive ack every this many inbound stanzas.
 When nil, only send acks in response to server <r/> requests."
   :type '(choice (integer :tag "Stanzas between acks")
-                 (const :tag "Only on request" nil))
-  :group 'jabber-sm)
+                 (const :tag "Only on request" nil)))
 
 (defcustom jabber-sm-max-in-flight 40
   "Maximum number of unacknowledged outbound stanzas before queuing.
@@ -79,8 +76,7 @@ When the in-flight count reaches this limit, further stanzas are
 queued and drained as the server acknowledges previous ones.
 Set to nil to disable back-pressure (send everything immediately)."
   :type '(choice (integer :tag "Max unacked stanzas")
-                 (const :tag "No limit" nil))
-  :group 'jabber-sm)
+                 (const :tag "No limit" nil)))
 
 ;;; Counter arithmetic (handles 2^32 wraparound per XEP-0198 section 5)
 

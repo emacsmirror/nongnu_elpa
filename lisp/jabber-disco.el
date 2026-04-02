@@ -326,16 +326,14 @@ Return the concatenated sorted identity entries."
    (lambda (identity)
      (jabber-xml-let-attributes (category type xml:lang name) identity
        (concat category "/" type "/" xml:lang "/" name "<")))
-   (sort identities #'jabber-caps-identity-<)
-   ""))
+   (sort identities #'jabber-caps-identity-<)))
 
 (defun jabber-caps--feature-string (features)
   "Build the feature portion of a caps verification string.
 FEATURES is a list of feature var strings.
 Return the concatenated sorted feature entries."
   (mapconcat (lambda (f) (concat f "<"))
-             (sort features #'string<)
-             ""))
+             (sort features #'string<)))
 
 (defun jabber-caps--form-string (forms)
   "Build the XEP-0128 data form portion of a caps verification string.
@@ -362,9 +360,9 @@ Return the concatenated sorted form entries."
                                    #'string<)))
                  (concat (jabber-xml-get-attribute field 'var) "<"
                          (mapconcat (lambda (v) (concat (or v "") "<"))
-                                    values "")))))
-           fields ""))))
-     sorted "")))
+                                    values)))))
+           fields))))
+     sorted)))
 
 (defun jabber-caps-ver-string (query hash)
   "Create an XEP-0115 version string for a QUERY node with a specified HASH."

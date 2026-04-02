@@ -61,7 +61,6 @@
 Must accept (FILEPATH HEADERS PUT-URL CALLBACK CALLBACK-ARG
 &optional IGNORE-CERT-PROBLEMS) and call (funcall CALLBACK
 CALLBACK-ARG) on success.  Return non-nil if the upload started."
-  :group 'jabber-httpupload
   :type 'function)
 
 (defvar jabber-httpupload-pre-upload-transform nil

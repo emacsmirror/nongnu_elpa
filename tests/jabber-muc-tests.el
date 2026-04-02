@@ -871,7 +871,7 @@ entry with JC=nil."
          (jabber-jid-obarray (make-vector 127 0))
          (timer-scheduled nil))
     (cl-letf (((symbol-function 'run-with-timer)
-               (lambda (_secs _repeat fn &rest args)
+               (lambda (_secs _repeat fn &rest _args)
                  (when (eq fn #'jabber-muc--autojoin-next)
                    (setq timer-scheduled t))
                  'fake-timer))

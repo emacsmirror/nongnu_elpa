@@ -65,18 +65,15 @@
   "Path to the SQLite database file for message storage.
 Set to nil to disable message storage entirely."
   :type '(choice (file :tag "Database file")
-                 (const :tag "Disabled" nil))
-  :group 'jabber-db)
+                 (const :tag "Disabled" nil)))
 
 (defcustom jabber-backlog-days nil
   "Age limit on messages in chat buffer backlog, in days."
-  :group 'jabber-db
   :type '(choice (number :tag "Number of days")
                  (const :tag "No limit" nil)))
 
 (defcustom jabber-backlog-number 30
   "Maximum number of messages in chat buffer backlog."
-  :group 'jabber-db
   :type 'integer)
 
 (defvar jabber-history-inhibit-received-message-functions nil
@@ -927,7 +924,6 @@ TYPE is the message type."
   (locate-user-emacs-file "jabber-history" ".emacs-jabber")
   "Base directory where per-contact history files are stored.
 Used only when `jabber-use-global-history' is nil."
-  :group 'jabber-db
   :type 'directory)
 
 (defcustom jabber-global-history-filename
@@ -935,7 +931,6 @@ Used only when `jabber-use-global-history' is nil."
                           ".jabber_global_message_log")
   "Global file where all messages are logged.
 Used when `jabber-use-global-history' is non-nil."
-  :group 'jabber-db
   :type 'file)
 
 (defcustom jabber-use-global-history
@@ -944,7 +939,6 @@ Used when `jabber-use-global-history' is non-nil."
 If non-nil, `jabber-global-history-filename' is used, otherwise,
 messages are stored in per-user files under the
 `jabber-history-dir' directory."
-  :group 'jabber-db
   :type 'boolean)
 
 (defun jabber-db-import-history ()

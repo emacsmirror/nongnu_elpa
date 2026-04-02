@@ -56,8 +56,7 @@
 (defcustom jabber-avatar-cache-directory
   (expand-file-name "jabber/avatars" user-emacs-directory)
   "Directory to use for cached avatars."
-  :type 'directory
-  :group 'jabber-avatar)
+  :type 'directory)
 
 (defcustom jabber-avatar-verbose nil
   "Display messages about irregularities with other people's avatars."

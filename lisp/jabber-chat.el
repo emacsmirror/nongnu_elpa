@@ -111,56 +111,45 @@ rare time printed."
 
 (defcustom jabber-chat-display-images t
   "When non-nil, fetch and display image URLs inline in chat buffers."
-  :type 'boolean
-  :group 'jabber-chat)
+  :type 'boolean)
 
 (defface jabber-rare-time-face
   '((t :inherit font-lock-comment-face :underline t))
-  "Face for displaying rare time information."
-  :group 'jabber-chat)
+  "Face for displaying rare time information.")
 
 (defcustom jabber-chat-encrypted-indicator (propertize "[E]" 'face 'shadow)
   "String prepended to the timestamp of encrypted messages."
-  :type 'string
-  :group 'jabber-chat)
+  :type 'string)
 
 (defface jabber-chat-nick-encrypted
   '((t :inherit font-lock-constant-face))
-  "Face for own nick on encrypted messages."
-  :group 'jabber-chat)
+  "Face for own nick on encrypted messages.")
 
 (defface jabber-chat-nick-foreign-encrypted
   '((t :inherit font-lock-keyword-face :weight bold))
-  "Face for foreign nick on encrypted messages."
-  :group 'jabber-chat)
+  "Face for foreign nick on encrypted messages.")
 
 (defface jabber-chat-nick-plaintext
   '((t :inherit font-lock-warning-face :slant italic))
-  "Face for own nick on plaintext messages."
-  :group 'jabber-chat)
+  "Face for own nick on plaintext messages.")
 
 (defface jabber-chat-nick-foreign-plaintext
   '((t :inherit font-lock-keyword-face :slant italic))
-  "Face for foreign nick on plaintext messages."
-  :group 'jabber-chat)
+  "Face for foreign nick on plaintext messages.")
 
 (defface jabber-chat-nick-system
   '((t :inherit font-lock-constant-face :weight bold))
-  "Face for system and special messages."
-  :group 'jabber-chat)
+  "Face for system and special messages.")
 
 (defface jabber-chat-text-local '((t ()))
-  "Face used for text you write."
-  :group 'jabber-chat)
+  "Face used for text you write.")
 
 (defface jabber-chat-text-foreign '((t ()))
-  "Face used for text others write."
-  :group 'jabber-chat)
+  "Face used for text others write.")
 
 (defface jabber-chat-error
   '((t :inherit error))
-  "Face used for error messages."
-  :group 'jabber-chat)
+  "Face used for error messages.")
 
 ;;;###autoload
 (defvar jabber-chatting-with nil
@@ -276,8 +265,7 @@ nil if no backlog has been inserted.")
 
 (defface jabber-muc-presence-dim
   '((t :inherit shadow :slant italic))
-  "Face for diminished presence notifications."
-  :group 'jabber-chat)
+  "Face for diminished presence notifications.")
 
 (defcustom jabber-muc-decorate-presence-patterns-alist
   '(("Show enter/leave diminished"
@@ -1359,8 +1347,7 @@ with the created image (or nil) followed by CBARGS."
 When nil, use the last download directory from this session or
 `default-directory'."
   :type '(choice (const :tag "Last used or default-directory" nil)
-                 (directory :tag "Fixed directory"))
-  :group 'jabber-chat)
+                 (directory :tag "Fixed directory")))
 
 (defvar jabber-chat-last-download-directory nil
   "Last directory used for file downloads this session.")

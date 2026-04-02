@@ -55,8 +55,7 @@
 These fields are available at this moment:
 
 %n   JID to browse"
-  :type 'string
-  :group 'jabber-browse)
+  :type 'string)
 
 ;; Global reference declarations
 

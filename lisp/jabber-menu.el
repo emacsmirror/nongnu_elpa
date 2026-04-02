@@ -46,9 +46,9 @@
 
     (define-key map
       [jabber-menu-status jabber-menu-status-chat]
-      '(menu-item
+      `(menu-item
 	"Chatty"
-	(lambda ()
+	,(lambda ()
 	  (interactive)
 	  (jabber-send-presence "chat"
 				(jabber-read-with-input-method "status message: " *jabber-current-status* '*jabber-status-history*)
@@ -57,9 +57,9 @@
 			       (equal *jabber-current-show* "chat")))))
     (define-key map
       [jabber-menu-status jabber-menu-status-dnd]
-      '(menu-item
+      `(menu-item
 	"Do not Disturb"
-	(lambda ()
+	,(lambda ()
 	  (interactive)
 	  (jabber-send-presence "dnd"
 				(jabber-read-with-input-method "status message: " *jabber-current-status* '*jabber-status-history*)

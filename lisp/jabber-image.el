@@ -39,13 +39,11 @@
 
 (defcustom jabber-image-max-width 300
   "Maximum width in pixels for inline images."
-  :type 'integer
-  :group 'jabber-image)
+  :type 'integer)
 
 (defcustom jabber-image-max-height 300
   "Maximum height in pixels for inline images."
-  :type 'integer
-  :group 'jabber-image)
+  :type 'integer)
 
 (defun jabber-image--mime-to-type (mime-type)
   "Return an image type symbol for MIME-TYPE string, or nil."

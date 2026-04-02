@@ -57,29 +57,25 @@ The default function returns the nick of the user."
   "Length of the strings returned by `jabber-activity-make-strings-shorten'.
 All strings returned by `jabber-activity-make-strings-shorten' will be
 at least this long, when possible."
-  :type 'number
-  :group 'jabber-activity)
+  :type 'number)
 
 (defcustom jabber-activity-shorten-cutoff 2
   "Maximum number of JIDs to display in the mode line.
 When non-nil and more JIDs are active than this number, only the
 first CUTOFF entries are shown followed by \", +N\"."
   :type '(choice (const :tag "No limit" nil)
-		 (integer :tag "Maximum entries"))
-  :group 'jabber-activity)
+		 (integer :tag "Maximum entries")))
 
 (defcustom jabber-activity-shorten-aggressively nil
   "If non-nil, shorten names more aggressively.
 When set, names may use prefixes shorter than
 `jabber-activity-shorten-minimum' as long as they remain unique."
-  :type 'boolean
-  :group 'jabber-activity)
+  :type 'boolean)
 
 (defcustom jabber-activity-muc-prefix "#"
   "String prepended to MUC names in the mode line.
 Set to an empty string to disable the prefix."
-  :type 'string
-  :group 'jabber-activity)
+  :type 'string)
 
 (defcustom jabber-activity-make-strings #'jabber-activity-make-strings-shorten
   "Function which should return an alist of JID -> string when given a list of
@@ -123,18 +119,15 @@ there are unread messages which otherwise would be lost."
 
 (defface jabber-activity-chat-face
   '((t :inherit font-lock-warning-face))
-  "Face for 1:1 chat activity in the mode line."
-  :group 'jabber-activity)
+  "Face for 1:1 chat activity in the mode line.")
 
 (defface jabber-activity-mention-face
   '((t :inherit font-lock-warning-face))
-  "Face for personal mentions (MUC highlight) in the mode line."
-  :group 'jabber-activity)
+  "Face for personal mentions (MUC highlight) in the mode line.")
 
 (defface jabber-activity-muc-face
   '((t :inherit font-lock-keyword-face))
-  "Face for MUC (groupchat) activity in the mode line."
-  :group 'jabber-activity)
+  "Face for MUC (groupchat) activity in the mode line.")
 
 (define-obsolete-face-alias 'jabber-activity-face
   'jabber-activity-chat-face "30.1")

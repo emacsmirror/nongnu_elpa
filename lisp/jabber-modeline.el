@@ -38,8 +38,7 @@
 (defcustom jabber-modeline-sections '(activity)
   "Which sections to show in the mode line.
 Available sections: `presence', `contacts', `activity'."
-  :type '(set (const presence) (const contacts) (const activity))
-  :group 'jabber-mode-line)
+  :type '(set (const presence) (const contacts) (const activity)))
 
 (defvar jabber-mode-line-presence "")
 (defvar jabber-mode-line-contacts "")

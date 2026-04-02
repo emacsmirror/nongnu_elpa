@@ -48,8 +48,7 @@
 
 (defcustom jabber-styling-enable t
   "Whether to render XEP-0393 Message Styling in chat buffers."
-  :type 'boolean
-  :group 'jabber-styling)
+  :type 'boolean)
 
 (defconst jabber-styling-xmlns "urn:xmpp:styling:0"
   "XEP-0393 Message Styling namespace.")
@@ -57,28 +56,22 @@
 ;;; Faces
 
 (defface jabber-styling-bold '((t :inherit bold))
-  "Face for *bold* spans."
-  :group 'jabber-styling)
+  "Face for *bold* spans.")
 
 (defface jabber-styling-italic '((t :inherit italic))
-  "Face for _italic_ spans."
-  :group 'jabber-styling)
+  "Face for _italic_ spans.")
 
 (defface jabber-styling-strike '((t :strike-through t))
-  "Face for ~strikethrough~ spans."
-  :group 'jabber-styling)
+  "Face for ~strikethrough~ spans.")
 
 (defface jabber-styling-pre '((t :inherit font-lock-constant-face))
-  "Face for `preformatted` inline spans."
-  :group 'jabber-styling)
+  "Face for `preformatted` inline spans.")
 
 (defface jabber-styling-pre-block '((t :inherit font-lock-constant-face))
-  "Face for ```preformatted code blocks```."
-  :group 'jabber-styling)
+  "Face for ```preformatted code blocks```.")
 
 (defface jabber-styling-quote '((t :inherit shadow))
-  "Face for > block quotes."
-  :group 'jabber-styling)
+  "Face for > block quotes.")
 
 ;;; Pure parsing functions
 
@@ -314,10 +307,11 @@ applies styling to the inserted region."
 (with-eval-after-load "jabber-chat"
   (defvar jabber-body-printers)
   ;; Replace jabber-chat-normal-body with our styling-aware version
+  ;; FIXME: Yuck!
   (setq jabber-body-printers
         (mapcar (lambda (fn)
-                  (if (eq fn 'jabber-chat-normal-body)
-                      'jabber-styling--body-printer
+                  (if (eq fn #'jabber-chat-normal-body)
+                      #'jabber-styling--body-printer
                     fn))
                 jabber-body-printers)))
 

@@ -124,8 +124,7 @@ The functions should accept one argument, the connection object."
   :options '(jabber-muc-self-ping-rooms
 	     jabber-mam-maybe-catchup
 	     jabber-muc-self-ping-start
-	     jabber-whitespace-ping-start)
-  :group 'jabber-core)
+	     jabber-whitespace-ping-start))
 
 (defcustom jabber-pre-disconnect-hook nil
   "*Hooks run just before voluntary disconnection.

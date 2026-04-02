@@ -52,8 +52,7 @@ These fields are available:
 %r   Name of this resource
 %s   Availability of resource as string (\"Online\", \"Away\" etc)
 %S   Status string specified by resource."
-  :type 'string
-  :group 'jabber-roster)
+  :type 'string)
 
 (defcustom jabber-roster-sort-functions
   '(jabber-roster-sort-by-status jabber-roster-sort-by-displayname)
@@ -66,14 +65,12 @@ These functions should take two roster items A and B, and return:
   :type 'hook
   :options '(jabber-roster-sort-by-status
 	     jabber-roster-sort-by-displayname
-	     jabber-roster-sort-by-group)
-  :group 'jabber-roster)
+	     jabber-roster-sort-by-group))
 
 (defcustom jabber-sort-order '("chat" "" "away" "dnd" "xa")
   "Sort by status in this order.  Anything not in list goes last.
 Offline is represented as nil."
-  :type '(repeat (restricted-sexp :match-alternatives (stringp nil)))
-  :group 'jabber-roster)
+  :type '(repeat (restricted-sexp :match-alternatives (stringp nil))))
 
 (defcustom jabber-show-resources 'sometimes
   "Show contacts' resources in roster?
@@ -84,13 +81,11 @@ sometimes Show resources when there are more than one
 always    Always show resources."
   :type '(radio (const :tag "Never" nil)
 		(const :tag "When more than one connected resource" sometimes)
-		(const :tag "Always" always))
-  :group 'jabber-roster)
+		(const :tag "Always" always)))
 
 (defcustom jabber-show-offline-contacts t
   "Show offline contacts in roster when non-nil."
-  :type 'boolean
-  :group 'jabber-roster)
+  :type 'boolean)
 
 (defcustom jabber-remove-newlines t
   "Remove newlines in status messages?
@@ -99,15 +94,13 @@ they are essential to status message poets.  Therefore, you get to
 choose the behaviour.
 
 Trailing newlines are always removed, regardless of this variable."
-  :type 'boolean
-  :group 'jabber-roster)
+  :type 'boolean)
 
 
 
 (defcustom jabber-roster-mode-hook nil
   "Hook run when entering Roster mode."
-  :type 'hook
-  :group 'jabber-roster)
+  :type 'hook)
 
 (defcustom jabber-roster-default-group-name "Ungrouped"
   "Default group name for buddies without groups."
@@ -120,63 +113,51 @@ Trailing newlines are always removed, regardless of this variable."
   :set (lambda (var val)
          (when (stringp val)
 	   (set-text-properties 0 (length val) nil val))
-         (custom-set-default var val))
-  :group 'jabber-roster)
+         (custom-set-default var val)))
 
 (defcustom jabber-roster-show-empty-group nil
   "Show empty groups in roster?"
-  :type 'boolean
-  :group 'jabber-roster)
+  :type 'boolean)
 
 (defface jabber-roster-user-online
   '((t :inherit success :weight bold))
-  "Face for displaying online users."
-  :group 'jabber-roster)
+  "Face for displaying online users.")
 
 (defface jabber-roster-user-xa
   '((t :inherit shadow :slant italic))
-  "Face for displaying extended away users."
-  :group 'jabber-roster)
+  "Face for displaying extended away users.")
 
 (defface jabber-roster-user-dnd
   '((t :inherit error :weight bold))
-  "Face for displaying do not disturb users."
-  :group 'jabber-roster)
+  "Face for displaying do not disturb users.")
 
 (defface jabber-roster-user-away
   '((t :inherit warning :slant italic))
-  "Face for displaying away users."
-  :group 'jabber-roster)
+  "Face for displaying away users.")
 
 (defface jabber-roster-user-chatty
   '((t :inherit success :weight bold :slant italic))
-  "Face for displaying chatty users."
-  :group 'jabber-roster)
+  "Face for displaying chatty users.")
 
 (defface jabber-roster-user-error
   '((t :inherit error :slant italic))
-  "Face for displaying users sending presence errors."
-  :group 'jabber-roster)
+  "Face for displaying users sending presence errors.")
 
 (defface jabber-roster-user-offline
   '((t :inherit shadow :slant italic))
-  "Face for displaying offline users."
-  :group 'jabber-roster)
+  "Face for displaying offline users.")
 
 (defface jabber-roster-groupchat
   '((t :inherit font-lock-type-face))
-  "Face for groupchat room names in the roster buffer."
-  :group 'jabber-roster)
+  "Face for groupchat room names in the roster buffer.")
 
 (defface jabber-roster-groupchat-nick
   '((t :inherit shadow))
-  "Face for the user's nickname in groupchat roster entries."
-  :group 'jabber-roster)
+  "Face for the user's nickname in groupchat roster entries.")
 
 (defface jabber-roster-unread
   '((t :inherit font-lock-warning-face :weight bold))
-  "Face for roster entries with unread messages."
-  :group 'jabber-roster)
+  "Face for roster entries with unread messages.")
 
 (defun jabber-roster-separator ()
   "Return a propertized separator string for the roster buffer."

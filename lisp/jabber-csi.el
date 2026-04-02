@@ -41,8 +41,7 @@
 
 (defcustom jabber-csi-enable t
   "Send CSI active/inactive notifications to the server."
-  :type 'boolean
-  :group 'jabber-csi)
+  :type 'boolean)
 
 (defvar jabber-csi--last-state nil
   "Last CSI state sent: `active', `inactive', or nil.")
