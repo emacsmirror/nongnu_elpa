@@ -61,6 +61,8 @@
 (declare-function jabber-send-string "jabber-core.el" (jc string))
 (declare-function jabber-disconnect-one "jabber-core.el"
                   (jc &optional dont-redisplay interactivep))
+(declare-function fsm-get-state-data "fsm" (fsm))
+(declare-function fsm-send "fsm" (fsm event &optional callback))
 (defvar jabber-connections)             ; jabber-core.el
 
 ;;
@@ -183,9 +185,19 @@ accounts."
 
 (defun jabber-whitespace-ping-do ()
   (dolist (c jabber-connections)
-    (condition-case err
-        (jabber-send-string c " ")
-      (error (message "jabber-keepalive: whitespace ping failed: %s" err)))))
+    (let* ((state-data (fsm-get-state-data c))
+	   (connection (plist-get state-data :connection)))
+      (if (and connection (process-live-p connection))
+	  (condition-case err
+	      (jabber-send-string c " ")
+	    (error
+	     (message "jabber-keepalive: whitespace ping failed: %s" err)
+	     (fsm-send c :connection-dead)))
+	;; Connection process is dead but FSM didn't transition.
+	;; Only act when stuck in :session-established; other states
+	;; are transient and will resolve on their own.
+	(when (eq (get c :state) :session-established)
+	  (fsm-send c :connection-dead))))))
 
 (provide 'jabber-keepalive)
 
