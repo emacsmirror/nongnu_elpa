@@ -718,5 +718,98 @@ entry with JC=nil."
         (let ((text (buffer-string)))
           (should (string-match-p "Join our discussion" text)))))))
 
+;;; Group 17: stagger autojoin queue
+
+(ert-deftest jabber-muc-test-autojoin-enqueue-and-next ()
+  "Enqueuing rooms and popping them one at a time."
+  (let ((jabber-muc--autojoin-queue nil)
+        (joined nil))
+    (cl-letf (((symbol-function 'jabber-muc--send-join-presence)
+               (lambda (_jc group nick _pw _popup)
+                 (push (cons group nick) joined)))
+              ((symbol-function 'jabber-get-conference-data)
+               (lambda (&rest _) nil)))
+      (jabber-muc--autojoin-enqueue 'jc1
+                                    '(("room1@muc" . "nick1")
+                                      ("room2@muc" . "nick2")
+                                      ("room3@muc" . "nick3")))
+      ;; Queue has 3 rooms
+      (should (= (length (cdr (assq 'jc1 jabber-muc--autojoin-queue))) 3))
+      ;; Pop first
+      (jabber-muc--autojoin-next 'jc1)
+      (should (equal (car joined) '("room1@muc" . "nick1")))
+      (should (= (length (cdr (assq 'jc1 jabber-muc--autojoin-queue))) 2))
+      ;; Pop second
+      (jabber-muc--autojoin-next 'jc1)
+      (should (equal (car joined) '("room2@muc" . "nick2")))
+      ;; Pop third (last)
+      (jabber-muc--autojoin-next 'jc1)
+      (should (equal (car joined) '("room3@muc" . "nick3")))
+      ;; Queue entry removed after last pop
+      (should-not (assq 'jc1 jabber-muc--autojoin-queue))
+      ;; Extra pop is a no-op
+      (let ((count (length joined)))
+        (jabber-muc--autojoin-next 'jc1)
+        (should (= (length joined) count))))))
+
+(ert-deftest jabber-muc-test-autojoin-clear ()
+  "Clearing the queue removes all entries for a connection."
+  (let ((jabber-muc--autojoin-queue nil))
+    (jabber-muc--autojoin-enqueue 'jc1 '(("r1@muc" . "n1")))
+    (jabber-muc--autojoin-enqueue 'jc2 '(("r2@muc" . "n2")))
+    (jabber-muc--autojoin-clear 'jc1)
+    (should-not (assq 'jc1 jabber-muc--autojoin-queue))
+    ;; Other connection unaffected
+    (should (assq 'jc2 jabber-muc--autojoin-queue))))
+
+(ert-deftest jabber-muc-test-autojoin-queued-p ()
+  "Check if a room is already in the autojoin queue."
+  (let ((jabber-muc--autojoin-queue nil))
+    (jabber-muc--autojoin-enqueue 'jc1 '(("r1@muc" . "n1")))
+    (should (jabber-muc--autojoin-queued-p 'jc1 "r1@muc"))
+    (should-not (jabber-muc--autojoin-queued-p 'jc1 "r2@muc"))
+    (should-not (jabber-muc--autojoin-queued-p 'jc2 "r1@muc"))))
+
+(ert-deftest jabber-muc-test-autojoin-enqueue-appends ()
+  "Multiple enqueue calls append to existing queue."
+  (let ((jabber-muc--autojoin-queue nil))
+    (jabber-muc--autojoin-enqueue 'jc1 '(("r1@muc" . "n1")))
+    (jabber-muc--autojoin-enqueue 'jc1 '(("r2@muc" . "n2")))
+    (should (= (length (cdr (assq 'jc1 jabber-muc--autojoin-queue))) 2))))
+
+(ert-deftest jabber-muc-test-autojoin-next-empty-is-noop ()
+  "Calling next with no queue entries does nothing."
+  (let ((jabber-muc--autojoin-queue nil)
+        (joined nil))
+    (cl-letf (((symbol-function 'jabber-muc--send-join-presence)
+               (lambda (&rest _) (push t joined))))
+      (jabber-muc--autojoin-next 'jc1)
+      (should (null joined)))))
+
+(ert-deftest jabber-muc-test-process-enter-triggers-next ()
+  "Self-presence in process-enter triggers autojoin-next for initial join."
+  (let* ((jabber-muc--autojoin-queue nil)
+         (jabber-muc--rooms (make-hash-table :test #'equal))
+         (jabber-muc--generation 0)
+         (jabber-pending-groupchats (make-hash-table))
+         (jabber-jid-obarray (make-vector 127 0))
+         (next-called nil))
+    (cl-letf (((symbol-function 'jabber-muc--autojoin-next)
+               (lambda (_jc) (setq next-called t)))
+              ((symbol-function 'jabber-mam-muc-joined) #'ignore)
+              ((symbol-function 'jabber-bookmarks-auto-add-maybe) #'ignore)
+              ((symbol-function 'jabber-muc-participant-plist) (lambda (&rest _) nil))
+              ((symbol-function 'jabber-muc-modify-participant) #'ignore)
+              ((symbol-function 'jabber-muc-report-delta) (lambda (&rest _) nil))
+              ((symbol-function 'jabber-muc-find-buffer) (lambda (_) nil)))
+      (jabber-muc--process-enter
+       'fake-jc "room@muc" "me"
+       (jabber-jid-symbol "room@muc/me")
+       (list jabber-muc-status-self-presence)
+       '(x ((xmlns . "http://jabber.org/protocol/muc#user"))
+           (item ((affiliation . "member") (role . "participant"))))
+       nil nil "me"))
+    (should next-called)))
+
 (provide 'jabber-muc-tests)
 ;;; jabber-muc-tests.el ends here

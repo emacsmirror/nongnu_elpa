@@ -158,6 +158,10 @@ Set by `jabber-muc-create' and consumed by `jabber-muc--enter-extra-notices'.")
   "Alist of (ROOM . NICK) saved before disconnect.
 Used to rejoin non-bookmarked rooms on reconnect.")
 
+(defvar jabber-muc--autojoin-queue nil
+  "Alist of (JC . ((GROUP . NICK) ...)) for staggered MUC autojoin.
+Rooms are joined one at a time to avoid flooding the server.")
+
 ;;; MUC status codes (XEP-0045)
 (defconst jabber-muc-status-self-presence    "110")
 (defconst jabber-muc-status-room-created     "201")
@@ -542,6 +546,8 @@ entry is removed."
                              :test #'string=)))
         (when match
           (push (cons room (cdr match)) snapshot)
+          ;; Clear autojoin queue for this connection.
+          (jabber-muc--autojoin-clear (car match))
           (jabber-muc-leave-remove room (car match))
           ;; Only clear participants when no account remains in the room.
           (unless (jabber-muc-joined-p room)
@@ -1351,36 +1357,89 @@ Requires :xml-data key in MSG for raw stanza access."
                                        (nth 2 parsed)))
           t))))
 
+(defun jabber-muc--autojoin-enqueue (jc rooms)
+  "Append ROOMS to the autojoin queue for connection JC.
+ROOMS is a list of (GROUP . NICK) pairs."
+  (when rooms
+    (if-let* ((entry (assq jc jabber-muc--autojoin-queue)))
+        (setcdr entry (nconc (cdr entry) rooms))
+      (push (cons jc (copy-sequence rooms)) jabber-muc--autojoin-queue))))
+
+(defun jabber-muc--autojoin-next (jc)
+  "Join the next room in the autojoin queue for JC.
+Pops one entry and sends the join presence.  Does nothing if
+the queue is empty."
+  (when-let* ((entry (assq jc jabber-muc--autojoin-queue))
+              (rooms (cdr entry)))
+    (let* ((room-nick (pop rooms))
+           (group (car room-nick))
+           (nick (cdr room-nick))
+           (password (jabber-get-conference-data jc group nil :password)))
+      (setcdr entry rooms)
+      (unless rooms
+        (setq jabber-muc--autojoin-queue
+              (assq-delete-all jc jabber-muc--autojoin-queue)))
+      (jabber-muc--send-join-presence jc group nick password nil))))
+
+(defun jabber-muc--autojoin-queued-p (jc group)
+  "Return non-nil if GROUP is already in the autojoin queue for JC."
+  (when-let* ((entry (assq jc jabber-muc--autojoin-queue)))
+    (assoc group (cdr entry))))
+
+(defun jabber-muc--autojoin-clear (jc)
+  "Remove all autojoin queue entries for JC."
+  (setq jabber-muc--autojoin-queue
+        (assq-delete-all jc jabber-muc--autojoin-queue)))
+
 (defun jabber-muc--rejoin-snapshot (jc)
   "Rejoin rooms from the pre-disconnect snapshot not already joined.
-Called after bookmark autojoin to recover non-bookmarked rooms."
-  (dolist (room-nick jabber-muc--rooms-before-disconnect)
-    (let ((room (car room-nick))
-          (nick (cdr room-nick)))
-      (unless (jabber-muc-joined-p room jc)
-        (let ((password (jabber-get-conference-data jc room nil :password)))
-          (jabber-muc--send-join-presence jc room nick password nil)))))
+Called after bookmark autojoin to recover non-bookmarked rooms.
+Rooms are appended to the stagger queue."
+  (let ((rooms nil))
+    (dolist (room-nick jabber-muc--rooms-before-disconnect)
+      (let ((room (car room-nick))
+            (nick (cdr room-nick)))
+        (unless (or (jabber-muc-joined-p room jc)
+                    (jabber-muc--autojoin-queued-p jc room))
+          (push (cons room nick) rooms))))
+    (jabber-muc--autojoin-enqueue jc (nreverse rooms)))
   (setq jabber-muc--rooms-before-disconnect nil))
 
 (defun jabber-muc-autojoin (jc)
   "Join rooms specified in account bookmarks and global `jabber-muc-autojoin'.
+Rooms are joined one at a time via the stagger queue to avoid
+flooding the server with presence stanzas.
 
 JC is the Jabber connection."
   (interactive (list (jabber-read-account)))
+  (jabber-muc--autojoin-clear jc)
   (when (bound-and-true-p jabber-muc-autojoin)
-    (dolist (group jabber-muc-autojoin)
-      (jabber-muc-join jc group (or
-                                 (cdr (assoc group jabber-muc-default-nicknames))
-                                 (plist-get (fsm-get-state-data jc) :username)))))
+    (let ((rooms nil))
+      (dolist (group jabber-muc-autojoin)
+        (push (cons group
+                    (or (cdr (assoc group jabber-muc-default-nicknames))
+                        (plist-get (fsm-get-state-data jc) :username)))
+              rooms))
+      (jabber-muc--autojoin-enqueue jc (nreverse rooms))))
   (jabber-get-bookmarks
    jc
    (lambda (jc bookmarks)
-     (dolist (bookmark bookmarks)
-       (when (plist-get bookmark :autojoin)
-         (jabber-muc-join jc (plist-get bookmark :jid)
-                          (or (plist-get bookmark :nick)
-                              (plist-get (fsm-get-state-data jc) :username)))))
-     (jabber-muc--rejoin-snapshot jc))))
+     (let ((rooms nil))
+       (dolist (bookmark bookmarks)
+         (when (plist-get bookmark :autojoin)
+           (let ((group (plist-get bookmark :jid)))
+             (unless (or (jabber-muc-joined-p group jc)
+                         (jabber-muc--autojoin-queued-p jc group))
+               (push (cons group
+                           (or (plist-get bookmark :nick)
+                               (plist-get (fsm-get-state-data jc) :username)))
+                     rooms)))))
+       (jabber-muc--autojoin-enqueue jc (nreverse rooms)))
+     (jabber-muc--rejoin-snapshot jc)
+     (jabber-muc--autojoin-next jc)))
+  ;; Kick off the first join from the global-autojoin list immediately.
+  ;; Bookmark rooms will be appended and continue from the callback.
+  (jabber-muc--autojoin-next jc))
 
 ;;;###autoload
 (defun jabber-muc-message-p (message)
@@ -1613,7 +1672,10 @@ STATUS-CODES, ERROR-NODE, ACTOR and REASON come from the stanza."
                       :muc-notice)
                     message
                     :time (current-time)))))
-        (message "%s: %s" (jabber-jid-displayname group) message)))))
+        (message "%s: %s" (jabber-jid-displayname group) message)))
+    ;; Stagger: skip failed room and try the next one.
+    (when (string= type "error")
+      (jabber-muc--autojoin-next jc))))
 
 (defun jabber-muc--process-other-leave (_jc group nickname status-codes
                                            item actor reason)
@@ -1695,7 +1757,9 @@ X-MUC, ACTOR, REASON and OUR-NICKNAME come from the stanza."
       ;; Trigger MUC MAM catch-up on initial join (not nick change)
       (unless was-joined
         (jabber-mam-muc-joined jc group)
-        (jabber-bookmarks-auto-add-maybe jc group nickname))))
+        (jabber-bookmarks-auto-add-maybe jc group nickname)
+        ;; Stagger: join the next queued room now that this one succeeded.
+        (jabber-muc--autojoin-next jc))))
   (let* ((self-p (or (member jabber-muc-status-self-presence status-codes)
                      (string= nickname our-nickname)))
          (old-plist (jabber-muc-participant-plist group nickname))
