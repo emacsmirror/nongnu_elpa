@@ -998,6 +998,14 @@ With double prefix argument, specify more connection details."
      (jabber-send-sexp fsm (cdr event))
      (list :session-established state-data :keep))
 
+    (:connection-dead
+     ;; Connection process vanished without a proper FSM transition
+     ;; (e.g. race between stream error and sentinel).  Reconnect.
+     (unless (plist-get state-data :disconnection-reason)
+       (setq state-data (plist-put state-data :disconnection-reason
+				   "Connection process lost")))
+     (list nil state-data))
+
     (:do-disconnect
      (jabber-send-string fsm "</stream:stream>")
      (list nil (plist-put state-data
@@ -1171,17 +1179,29 @@ Return an fsm result list if it is."
 	    jabber-jid-obarray)
   (setq *jabber-roster* nil))
 
-(defun jabber-send-sexp (jc sexp)
-  "Send the xml corresponding to SEXP to connection JC."
+(defun jabber-send-sexp--immediate (jc sexp)
+  "Send SEXP to JC immediately, bypassing the back-pressure gate.
+Log the XML, send it (with a proactive <r/> for countable stanzas
+when SM is enabled), and update the outbound counter."
   (condition-case e
       (jabber-log-xml jc "sending" sexp)
     (error
      (ding)
      (message "Couldn't write XML log: %s" (error-message-string e))
      (sit-for 2)))
-  (jabber-send-string jc (jabber-sexp2xml sexp))
+  (let* ((xml (jabber-sexp2xml sexp))
+         (state-data (fsm-get-state-data jc))
+         (sm-countable (and (plist-get state-data :sm-enabled)
+                            (jabber-sm--stanza-p sexp))))
+    (if sm-countable
+        (jabber-send-string jc (concat xml (jabber-sm--make-request-xml)))
+      (jabber-send-string jc xml)))
   ;; SM stanza counting (modifies state-data in place via plist-put).
   (jabber-sm--count-outbound (fsm-get-state-data jc) sexp))
+
+(defun jabber-send-sexp (jc sexp)
+  "Send the xml corresponding to SEXP to connection JC."
+  (jabber-send-sexp--immediate jc sexp))
 
 (defun jabber-send-sexp-if-connected (jc sexp)
   "Send the stanza SEXP only if JC has established a session."
