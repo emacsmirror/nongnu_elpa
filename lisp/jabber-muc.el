@@ -1070,6 +1070,7 @@ JC is the Jabber connection."
   (jabber-send-sexp jc
 		    `(presence ((to . ,(format "%s/%s" group nickname)))
 			       (x ((xmlns . ,jabber-muc-xmlns))
+				  (history ((maxchars . "0")))
 				  ,@(when password
 				      `((password () ,password))))
 			       ,@(jabber-presence-children jc)))
