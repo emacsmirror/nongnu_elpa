@@ -1438,8 +1438,9 @@ RESULT is a list of item vectors on success or an error node."
     ;; Fire more disco queries if slots are available.
     (jabber-muc--autojoin-fire-pending jc)
     ;; Start draining if no join is currently in-flight.
+    ;; Defer via timer so Emacs can redisplay between joins.
     (unless jabber-muc--autojoin-timer
-      (jabber-muc--autojoin-next jc))))
+      (run-with-timer 0 nil #'jabber-muc--autojoin-next jc))))
 
 (defun jabber-muc--autojoin-dequeue (jc group)
   "Remove GROUP from the autojoin queue for JC if present."
@@ -1801,8 +1802,9 @@ STATUS-CODES, ERROR-NODE, ACTOR and REASON come from the stanza."
                     :time (current-time)))))
         (message "%s: %s" (jabber-jid-displayname group) message)))
     ;; Stagger: skip failed room and try the next one.
+    ;; Defer via timer so Emacs can redisplay between joins.
     (when (string= type "error")
-      (jabber-muc--autojoin-next jc))))
+      (run-with-timer 0 nil #'jabber-muc--autojoin-next jc))))
 
 (defun jabber-muc--process-other-leave (_jc group nickname status-codes
                                            item actor reason)
@@ -1886,7 +1888,8 @@ X-MUC, ACTOR, REASON and OUR-NICKNAME come from the stanza."
         (jabber-mam-muc-joined jc group)
         (jabber-bookmarks-auto-add-maybe jc group nickname)
         ;; Stagger: join the next queued room now that this one succeeded.
-        (jabber-muc--autojoin-next jc))))
+        ;; Defer via timer so Emacs can redisplay between joins.
+        (run-with-timer 0 nil #'jabber-muc--autojoin-next jc))))
   (let* ((self-p (or (member jabber-muc-status-self-presence status-codes)
                      (string= nickname our-nickname)))
          (old-plist (jabber-muc-participant-plist group nickname))

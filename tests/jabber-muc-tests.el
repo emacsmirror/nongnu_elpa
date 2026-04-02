@@ -767,20 +767,17 @@ entry with JC=nil."
   "Disco callback inserts room with occupant count."
   (let ((jabber-muc--autojoin-queue nil)
         (jabber-muc--autojoin-timer nil)
-        (joined nil))
-    (cl-letf (((symbol-function 'jabber-muc--send-join-presence)
-               (lambda (_jc group nick _pw _popup)
-                 (push (cons group nick) joined)))
-              ((symbol-function 'jabber-get-conference-data)
-               (lambda (&rest _) nil)))
-      ;; Simulate disco result with 3 occupants
-      (jabber-muc--autojoin-disco-callback
-       'jc1 '("room@muc" . "nick1")
-       '(["alice" "room@muc/alice" nil]
-         ["bob" "room@muc/bob" nil]
-         ["carol" "room@muc/carol" nil]))
-      ;; Should have started drain (no timer was running)
-      (should (equal (car joined) '("room@muc" . "nick1"))))))
+        (jabber-muc--autojoin-disco-count nil))
+    ;; Simulate disco result with 3 occupants
+    (jabber-muc--autojoin-disco-callback
+     'jc1 '("room@muc" . "nick1")
+     '(["alice" "room@muc/alice" nil]
+       ["bob" "room@muc/bob" nil]
+       ["carol" "room@muc/carol" nil]))
+    ;; Room should be in queue with count 3
+    (should (jabber-muc--autojoin-queued-p 'jc1 "room@muc"))
+    (let ((entry (car (cdr (assq 'jc1 jabber-muc--autojoin-queue)))))
+      (should (= (car entry) 3)))))
 
 (ert-deftest jabber-muc-test-autojoin-disco-callback-error ()
   "Disco error inserts room with most-positive-fixnum count."
@@ -864,17 +861,20 @@ entry with JC=nil."
       ;; But the room should be in the queue
       (should (jabber-muc--autojoin-queued-p 'jc1 "room@muc")))))
 
-(ert-deftest jabber-muc-test-process-enter-triggers-next ()
-  "Self-presence in process-enter triggers autojoin-next for initial join."
+(ert-deftest jabber-muc-test-process-enter-schedules-next ()
+  "Self-presence in process-enter schedules autojoin-next via timer."
   (let* ((jabber-muc--autojoin-queue nil)
          (jabber-muc--autojoin-timer nil)
          (jabber-muc--rooms (make-hash-table :test #'equal))
          (jabber-muc--generation 0)
          (jabber-pending-groupchats (make-hash-table))
          (jabber-jid-obarray (make-vector 127 0))
-         (next-called nil))
-    (cl-letf (((symbol-function 'jabber-muc--autojoin-next)
-               (lambda (_jc) (setq next-called t)))
+         (timer-scheduled nil))
+    (cl-letf (((symbol-function 'run-with-timer)
+               (lambda (_secs _repeat fn &rest args)
+                 (when (eq fn #'jabber-muc--autojoin-next)
+                   (setq timer-scheduled t))
+                 'fake-timer))
               ((symbol-function 'jabber-mam-muc-joined) #'ignore)
               ((symbol-function 'jabber-bookmarks-auto-add-maybe) #'ignore)
               ((symbol-function 'jabber-muc-participant-plist) (lambda (&rest _) nil))
@@ -888,7 +888,7 @@ entry with JC=nil."
        '(x ((xmlns . "http://jabber.org/protocol/muc#user"))
            (item ((affiliation . "member") (role . "participant"))))
        nil nil "me"))
-    (should next-called)))
+    (should timer-scheduled)))
 
 (provide 'jabber-muc-tests)
 ;;; jabber-muc-tests.el ends here
