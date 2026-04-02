@@ -412,6 +412,25 @@ by per-query completion callbacks registered in the catch-up functions."
           (with-current-buffer buffer
             (jabber-chat-buffer-refresh)))))))
 
+;;; Shared transaction management
+
+(defun jabber-mam--tx-begin ()
+  "Increment the MAM transaction ref count.
+BEGIN a SQLite transaction when transitioning from 0 to 1."
+  (when (zerop jabber-mam--tx-depth)
+    (when-let* ((db (jabber-db-ensure-open)))
+      (sqlite-execute db "BEGIN")))
+  (cl-incf jabber-mam--tx-depth))
+
+(defun jabber-mam--tx-end ()
+  "Decrement the MAM transaction ref count.
+COMMIT the SQLite transaction when transitioning from 1 to 0."
+  (when (> jabber-mam--tx-depth 0)
+    (cl-decf jabber-mam--tx-depth))
+  (when (zerop jabber-mam--tx-depth)
+    (when-let* ((db (jabber-db-ensure-open)))
+      (sqlite-execute db "COMMIT"))))
+
 ;;; Query and pagination
 
 (defun jabber-mam--query (jc &optional after-id queryid with start to
@@ -432,10 +451,7 @@ When BEFORE-ID is non-nil, the query is one-shot (no forward pagination)."
       (push (cons queryid 'one-shot) jabber-mam--query-targets))
     ;; Open a shared transaction for concurrent MAM queries.
     ;; COMMIT happens when the last active query finishes.
-    (when (zerop jabber-mam--tx-depth)
-      (when-let* ((db (jabber-db-ensure-open)))
-        (sqlite-execute db "BEGIN")))
-    (cl-incf jabber-mam--tx-depth)
+    (jabber-mam--tx-begin)
     (condition-case err
         (jabber-send-iq
          jc to "set"
@@ -446,11 +462,7 @@ When BEFORE-ID is non-nil, the query is one-shot (no forward pagination)."
          #'jabber-mam--handle-error
          (list queryid to))
       (error
-       (when (> jabber-mam--tx-depth 0)
-         (cl-decf jabber-mam--tx-depth))
-       (when (zerop jabber-mam--tx-depth)
-         (when-let* ((db (jabber-db-ensure-open)))
-           (sqlite-execute db "COMMIT")))
+       (jabber-mam--tx-end)
        (setq jabber-mam--syncing
              (cl-remove queryid jabber-mam--syncing
                         :key #'cdr :test #'string=))
@@ -468,12 +480,7 @@ CLOSURE is (QUERYID WITH START TO)."
          (fin (jabber-mam--parse-fin xml-data))
          (complete (plist-get fin :complete))
          (last-id (plist-get fin :last)))
-    ;; Decrement transaction ref count; COMMIT when last query finishes.
-    (when (> jabber-mam--tx-depth 0)
-      (cl-decf jabber-mam--tx-depth))
-    (when (zerop jabber-mam--tx-depth)
-      (when-let* ((db (jabber-db-ensure-open)))
-        (sqlite-execute db "COMMIT")))
+    (jabber-mam--tx-end)
     ;; Remove from syncing list
     (setq jabber-mam--syncing
           (cl-remove queryid jabber-mam--syncing
@@ -513,12 +520,7 @@ CLOSURE is (QUERYID TO).
 On item-not-found (stale sync point), falls back to time-based query."
   (let ((queryid (car closure))
         (to (cadr closure)))
-    ;; Decrement transaction ref count; COMMIT when last query finishes.
-    (when (> jabber-mam--tx-depth 0)
-      (cl-decf jabber-mam--tx-depth))
-    (when (zerop jabber-mam--tx-depth)
-      (when-let* ((db (jabber-db-ensure-open)))
-        (sqlite-execute db "COMMIT")))
+    (jabber-mam--tx-end)
     (setq jabber-mam--syncing
           (cl-remove queryid jabber-mam--syncing
                      :key #'cdr :test #'string=))
@@ -783,14 +785,10 @@ Called from `jabber-lost-connection-hooks' on involuntary disconnect."
     (when jc-queries
       (setq jabber-mam--syncing
             (cl-set-difference jabber-mam--syncing jc-queries))
-      (cl-decf jabber-mam--tx-depth (length jc-queries))
-      (when (< jabber-mam--tx-depth 0)
-        (setq jabber-mam--tx-depth 0))
-      (when (zerop jabber-mam--tx-depth)
-        (condition-case nil
-            (when-let* ((db (jabber-db-ensure-open)))
-              (sqlite-execute db "COMMIT"))
-          (error nil)))
+      (condition-case nil
+          (dotimes (_ (length jc-queries))
+            (jabber-mam--tx-end))
+        (error nil))
       ;; Fire and remove leaked completion callbacks and query targets.
       (dolist (entry jc-queries)
         (let ((qid (cdr entry)))
@@ -809,11 +807,10 @@ Called from `jabber-lost-connection-hooks' on involuntary disconnect."
 (defun jabber-mam--cleanup-all ()
   "Clean up all MAM state on voluntary disconnect.
 Called from `jabber-pre-disconnect-hook'."
-  (when (> jabber-mam--tx-depth 0)
-    (condition-case nil
-        (when-let* ((db (jabber-db-ensure-open)))
-          (sqlite-execute db "COMMIT"))
-      (error nil)))
+  (condition-case nil
+      (dotimes (_ jabber-mam--tx-depth)
+        (jabber-mam--tx-end))
+    (error nil))
   ;; Fire remaining completion callbacks to clear syncing flags.
   (dolist (cb jabber-mam--completion-callbacks)
     (condition-case err (funcall (cdr cb))
@@ -845,13 +842,10 @@ depth.  Called when leaving a room to stop wasting bandwidth."
               (delq cb jabber-mam--completion-callbacks))
         (condition-case err (funcall (cdr cb))
           (error (message "MAM: cleanup callback error: %S" err))))
-      (when (> jabber-mam--tx-depth 0)
-        (cl-decf jabber-mam--tx-depth))
+      (condition-case nil
+          (jabber-mam--tx-end)
+        (error nil))
       (when (zerop jabber-mam--tx-depth)
-        (condition-case nil
-            (when-let* ((db (jabber-db-ensure-open)))
-              (sqlite-execute db "COMMIT"))
-          (error nil))
         (jabber-mam--redraw-dirty)))))
 
 ;;; Registration
