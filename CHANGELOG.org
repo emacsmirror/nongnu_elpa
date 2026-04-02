@@ -3,9 +3,57 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [[https://keepachangelog.com/en/1.0.0/][Keep a Changelog]].
 
-* New features in jabber.el latest git
+* [0.10.0]
+#+date: 2026-04-02
+
+** Breaking changes
+- Minimum Emacs version raised to 29.1
+- Flat-file message history replaced with SQLite (~jabber-db.el~)
+- Many obsolete modules removed (see commit history for full list)
+
+** New XEP implementations
+- XEP-0060 Publish-Subscribe
+- XEP-0184 Delivery Receipts and XEP-0333 Chat Markers
+- XEP-0191 Blocking Command
+- XEP-0198 Stream Management with resume
+- XEP-0249 Direct MUC Invitations
+- XEP-0280 Message Carbons
+- XEP-0308 Last Message Correction
+- XEP-0313 Message Archive Management
+- XEP-0352 Client State Indication
+- XEP-0373 OpenPGP for XMPP
+- XEP-0384 OMEMO 0.3 encryption (requires native module build)
+- XEP-0393 Message Styling
+- XEP-0402 PEP Native Bookmarks
+- XEP-0410 MUC Self-Ping
+- XEP-0424/0425 Message Retraction and Moderation
+- XEP-0454 OMEMO Media Sharing
+- XEP-0461 Message Replies
+
+** Features
+- SQLite message storage with full-text search
+- Inline image display and encrypted media (aesgcm://)
+- Typing indicators, delivery receipts, and read markers in chat buffers
+- Encryption indicator in header line (OMEMO, OpenPGP, plaintext)
+- Message correction, reply, retraction
+- Stream Management with automatic resume on reconnect
+- Disco-prioritized MUC autojoin (smallest rooms first)
+- Room preservation and self-ping across reconnect
+- MUC notification filtering (~all~, ~mentions~, ~nil~)
+- OMEMO trust management UI and device management
+- Modernized roster display
+- Unified modeline with activity tracking
+- Auto-reconnect enabled by default
+
+** Security
+- [[https://www.cvedetails.com/cve/CVE-2017-5589/][CVE-2017-5589]]: Message Carbons validates sender JID to prevent
+  spoofed carbon copies
+- Receipt handling guards against MAM replay
+- OMEMO trust filtering at encrypt time
+
+* [0.9.0]
 :PROPERTIES:
-:CUSTOM_ID: new-features-jabberel-latest-git
+:CUSTOM_ID: v0.9.0
 :END:
 ** Enable carbons by default
 :PROPERTIES:
