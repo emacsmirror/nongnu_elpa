@@ -73,7 +73,7 @@ When nil, only send acks in response to server <r/> requests."
                  (const :tag "Only on request" nil))
   :group 'jabber-sm)
 
-(defcustom jabber-sm-max-in-flight 10
+(defcustom jabber-sm-max-in-flight 40
   "Maximum number of unacknowledged outbound stanzas before queuing.
 When the in-flight count reaches this limit, further stanzas are
 queued and drained as the server acknowledges previous ones.
@@ -213,27 +213,38 @@ is enabled, and the in-flight count has reached the cap."
        (>= (jabber-sm--in-flight-count state-data)
             jabber-sm-max-in-flight)))
 
+(defun jabber-sm--stanza-priority (sexp)
+  "Return priority for SEXP: 0 for message, 1 for iq, 2 for presence."
+  (pcase (jabber-xml-node-name sexp)
+    ('message 0)
+    ('iq 1)
+    (_ 2)))
+
 (defun jabber-sm--enqueue-pending (state-data sexp)
   "Append SEXP to the pending queue in STATE-DATA.
+Each entry is stored as (PRIORITY . SEXP) for priority-based drain.
 Return updated STATE-DATA."
   (plist-put state-data :sm-pending-queue
              (nconc (plist-get state-data :sm-pending-queue)
-                    (list sexp))))
+                    (list (cons (jabber-sm--stanza-priority sexp) sexp)))))
 
 (defun jabber-sm--drain-pending (jc state-data send-fn)
   "Send queued stanzas from pending queue up to the in-flight cap.
 JC is the connection.  STATE-DATA is the FSM plist.  SEND-FN is
 called with (JC SEXP) for each drained stanza and must bypass
 the back-pressure gate to avoid re-queuing.
+The queue is stable-sorted by priority before draining so messages
+go first, then IQs, then presence.  FIFO order is preserved
+within each priority class.
 Return updated STATE-DATA."
-  (let ((queue (plist-get state-data :sm-pending-queue)))
+  (let ((queue (sort (plist-get state-data :sm-pending-queue)
+                     (lambda (a b) (< (car a) (car b))))))
     (while (and queue
                 (or (null jabber-sm-max-in-flight)
                     (< (jabber-sm--in-flight-count state-data)
                        jabber-sm-max-in-flight)))
-      (let ((sexp (pop queue)))
+      (let ((sexp (cdr (pop queue))))
         (funcall send-fn jc sexp)
-        ;; count-outbound updates state-data in place via plist-put
         (setq state-data (jabber-sm--count-outbound state-data sexp))))
     (plist-put state-data :sm-pending-queue queue)))
 
