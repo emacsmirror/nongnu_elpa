@@ -102,12 +102,15 @@ mentions only, or not at all."
     (jabber-message-notifications
      group buffer (if nick (format "%s: %s" nick text) text) title)))
 
-  ;; jabber-*-notifications* requires "from" argument, so we cant use
-  ;; define-jabber-alert/define-personal-jabber-alert here and do the
-  ;; work by hand:
+;; jabber-*-notifications* requires "from" argument, so we cant use
+;; define-jabber-alert/define-personal-jabber-alert here and do the
+;; work by hand:
 
 (cl-pushnew 'jabber-message-notifications (get 'jabber-alert-message-hooks 'custom-options))
 (cl-pushnew 'jabber-muc-notifications (get 'jabber-alert-muc-hooks 'custom-options))
+
+(define-obsolete-function-alias 'jabber-muc-notifications-personal
+  #'jabber-muc-notifications "0.10.0")
 
 (add-hook 'jabber-alert-message-hooks #'jabber-message-notifications)
 (add-hook 'jabber-alert-muc-hooks #'jabber-muc-notifications)
