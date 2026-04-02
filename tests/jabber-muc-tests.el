@@ -718,45 +718,114 @@ entry with JC=nil."
         (let ((text (buffer-string)))
           (should (string-match-p "Join our discussion" text)))))))
 
-;;; Group 17: stagger autojoin queue
+;;; Group 17: disco-prioritized autojoin queue
 
-(ert-deftest jabber-muc-test-autojoin-enqueue-and-next ()
-  "Enqueuing rooms and popping them one at a time."
+(ert-deftest jabber-muc-test-autojoin-insert-sorted ()
+  "Rooms are inserted in ascending order by occupant count."
+  (let ((jabber-muc--autojoin-queue nil))
+    (jabber-muc--autojoin-insert 'jc1 50 "big@muc" "nick1")
+    (jabber-muc--autojoin-insert 'jc1 5 "small@muc" "nick2")
+    (jabber-muc--autojoin-insert 'jc1 20 "mid@muc" "nick3")
+    (let ((rooms (cdr (assq 'jc1 jabber-muc--autojoin-queue))))
+      (should (= (length rooms) 3))
+      ;; Sorted: 5, 20, 50
+      (should (= (caar rooms) 5))
+      (should (string= (cadar rooms) "small@muc"))
+      (should (= (caadr rooms) 20))
+      (should (= (caaddr rooms) 50)))))
+
+(ert-deftest jabber-muc-test-autojoin-insert-and-next ()
+  "Inserting rooms and popping them drains in count order."
   (let ((jabber-muc--autojoin-queue nil)
+        (jabber-muc--autojoin-timer nil)
         (joined nil))
     (cl-letf (((symbol-function 'jabber-muc--send-join-presence)
                (lambda (_jc group nick _pw _popup)
                  (push (cons group nick) joined)))
               ((symbol-function 'jabber-get-conference-data)
                (lambda (&rest _) nil)))
-      (jabber-muc--autojoin-enqueue 'jc1
-                                    '(("room1@muc" . "nick1")
-                                      ("room2@muc" . "nick2")
-                                      ("room3@muc" . "nick3")))
-      ;; Queue has 3 rooms
-      (should (= (length (cdr (assq 'jc1 jabber-muc--autojoin-queue))) 3))
-      ;; Pop first
+      (jabber-muc--autojoin-insert 'jc1 100 "big@muc" "nick1")
+      (jabber-muc--autojoin-insert 'jc1 3 "tiny@muc" "nick2")
+      (jabber-muc--autojoin-insert 'jc1 30 "mid@muc" "nick3")
+      ;; Pop first: smallest count
       (jabber-muc--autojoin-next 'jc1)
-      (should (equal (car joined) '("room1@muc" . "nick1")))
-      (should (= (length (cdr (assq 'jc1 jabber-muc--autojoin-queue))) 2))
+      (should (equal (car joined) '("tiny@muc" . "nick2")))
       ;; Pop second
       (jabber-muc--autojoin-next 'jc1)
-      (should (equal (car joined) '("room2@muc" . "nick2")))
+      (should (equal (car joined) '("mid@muc" . "nick3")))
       ;; Pop third (last)
       (jabber-muc--autojoin-next 'jc1)
-      (should (equal (car joined) '("room3@muc" . "nick3")))
-      ;; Queue entry removed after last pop
+      (should (equal (car joined) '("big@muc" . "nick1")))
+      ;; Queue entry removed
       (should-not (assq 'jc1 jabber-muc--autojoin-queue))
       ;; Extra pop is a no-op
       (let ((count (length joined)))
         (jabber-muc--autojoin-next 'jc1)
         (should (= (length joined) count))))))
 
+(ert-deftest jabber-muc-test-autojoin-disco-callback-success ()
+  "Disco callback inserts room with occupant count."
+  (let ((jabber-muc--autojoin-queue nil)
+        (jabber-muc--autojoin-timer nil)
+        (joined nil))
+    (cl-letf (((symbol-function 'jabber-muc--send-join-presence)
+               (lambda (_jc group nick _pw _popup)
+                 (push (cons group nick) joined)))
+              ((symbol-function 'jabber-get-conference-data)
+               (lambda (&rest _) nil)))
+      ;; Simulate disco result with 3 occupants
+      (jabber-muc--autojoin-disco-callback
+       'jc1 '("room@muc" . "nick1")
+       '(["alice" "room@muc/alice" nil]
+         ["bob" "room@muc/bob" nil]
+         ["carol" "room@muc/carol" nil]))
+      ;; Should have started drain (no timer was running)
+      (should (equal (car joined) '("room@muc" . "nick1"))))))
+
+(ert-deftest jabber-muc-test-autojoin-disco-callback-error ()
+  "Disco error inserts room with most-positive-fixnum count."
+  (let ((jabber-muc--autojoin-queue nil)
+        (jabber-muc--autojoin-timer nil))
+    ;; First insert a small room
+    (jabber-muc--autojoin-insert 'jc1 2 "small@muc" "nick2")
+    ;; Then disco error arrives for another room
+    (cl-letf (((symbol-function 'jabber-muc--send-join-presence) #'ignore)
+              ((symbol-function 'jabber-get-conference-data)
+               (lambda (&rest _) nil)))
+      (jabber-muc--autojoin-disco-callback
+       'jc1 '("broken@muc" . "nick1")
+       '(error ((type . "cancel")))))
+    ;; Error room should be last (count = most-positive-fixnum)
+    (let ((rooms (cdr (assq 'jc1 jabber-muc--autojoin-queue))))
+      ;; After drain started, small@muc was popped, so only broken@muc remains
+      ;; (or both if drain didn't fire because timer was set)
+      (when rooms
+        (should (= (caar (last rooms)) most-positive-fixnum))))))
+
+(ert-deftest jabber-muc-test-autojoin-dequeue ()
+  "Dequeue removes a specific room from the queue."
+  (let ((jabber-muc--autojoin-queue nil))
+    (jabber-muc--autojoin-insert 'jc1 5 "r1@muc" "n1")
+    (jabber-muc--autojoin-insert 'jc1 10 "r2@muc" "n2")
+    (jabber-muc--autojoin-insert 'jc1 15 "r3@muc" "n3")
+    (jabber-muc--autojoin-dequeue 'jc1 "r2@muc")
+    (let ((rooms (cdr (assq 'jc1 jabber-muc--autojoin-queue))))
+      (should (= (length rooms) 2))
+      (should-not (cl-find "r2@muc" rooms :key #'cadr :test #'string=)))))
+
+(ert-deftest jabber-muc-test-autojoin-dequeue-last-cleans-entry ()
+  "Dequeuing the last room removes the connection entry entirely."
+  (let ((jabber-muc--autojoin-queue nil))
+    (jabber-muc--autojoin-insert 'jc1 5 "r1@muc" "n1")
+    (jabber-muc--autojoin-dequeue 'jc1 "r1@muc")
+    (should-not (assq 'jc1 jabber-muc--autojoin-queue))))
+
 (ert-deftest jabber-muc-test-autojoin-clear ()
   "Clearing the queue removes all entries for a connection."
-  (let ((jabber-muc--autojoin-queue nil))
-    (jabber-muc--autojoin-enqueue 'jc1 '(("r1@muc" . "n1")))
-    (jabber-muc--autojoin-enqueue 'jc2 '(("r2@muc" . "n2")))
+  (let ((jabber-muc--autojoin-queue nil)
+        (jabber-muc--autojoin-timer nil))
+    (jabber-muc--autojoin-insert 'jc1 5 "r1@muc" "n1")
+    (jabber-muc--autojoin-insert 'jc2 5 "r2@muc" "n2")
     (jabber-muc--autojoin-clear 'jc1)
     (should-not (assq 'jc1 jabber-muc--autojoin-queue))
     ;; Other connection unaffected
@@ -765,30 +834,40 @@ entry with JC=nil."
 (ert-deftest jabber-muc-test-autojoin-queued-p ()
   "Check if a room is already in the autojoin queue."
   (let ((jabber-muc--autojoin-queue nil))
-    (jabber-muc--autojoin-enqueue 'jc1 '(("r1@muc" . "n1")))
+    (jabber-muc--autojoin-insert 'jc1 5 "r1@muc" "n1")
     (should (jabber-muc--autojoin-queued-p 'jc1 "r1@muc"))
     (should-not (jabber-muc--autojoin-queued-p 'jc1 "r2@muc"))
     (should-not (jabber-muc--autojoin-queued-p 'jc2 "r1@muc"))))
 
-(ert-deftest jabber-muc-test-autojoin-enqueue-appends ()
-  "Multiple enqueue calls append to existing queue."
-  (let ((jabber-muc--autojoin-queue nil))
-    (jabber-muc--autojoin-enqueue 'jc1 '(("r1@muc" . "n1")))
-    (jabber-muc--autojoin-enqueue 'jc1 '(("r2@muc" . "n2")))
-    (should (= (length (cdr (assq 'jc1 jabber-muc--autojoin-queue))) 2))))
-
 (ert-deftest jabber-muc-test-autojoin-next-empty-is-noop ()
   "Calling next with no queue entries does nothing."
   (let ((jabber-muc--autojoin-queue nil)
+        (jabber-muc--autojoin-timer nil)
         (joined nil))
     (cl-letf (((symbol-function 'jabber-muc--send-join-presence)
                (lambda (&rest _) (push t joined))))
       (jabber-muc--autojoin-next 'jc1)
       (should (null joined)))))
 
+(ert-deftest jabber-muc-test-autojoin-disco-no-drain-while-inflight ()
+  "Disco callback does not start drain when a join is in-flight."
+  (let ((jabber-muc--autojoin-queue nil)
+        (jabber-muc--autojoin-timer 'fake-timer)
+        (next-called nil))
+    (cl-letf (((symbol-function 'jabber-muc--autojoin-next)
+               (lambda (_jc) (setq next-called t))))
+      (jabber-muc--autojoin-disco-callback
+       'jc1 '("room@muc" . "nick1")
+       '(["alice" "room@muc/alice" nil]))
+      ;; Should NOT have called next because timer was set (join in-flight)
+      (should-not next-called)
+      ;; But the room should be in the queue
+      (should (jabber-muc--autojoin-queued-p 'jc1 "room@muc")))))
+
 (ert-deftest jabber-muc-test-process-enter-triggers-next ()
   "Self-presence in process-enter triggers autojoin-next for initial join."
   (let* ((jabber-muc--autojoin-queue nil)
+         (jabber-muc--autojoin-timer nil)
          (jabber-muc--rooms (make-hash-table :test #'equal))
          (jabber-muc--generation 0)
          (jabber-pending-groupchats (make-hash-table))

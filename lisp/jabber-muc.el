@@ -159,8 +159,22 @@ Set by `jabber-muc-create' and consumed by `jabber-muc--enter-extra-notices'.")
 Used to rejoin non-bookmarked rooms on reconnect.")
 
 (defvar jabber-muc--autojoin-queue nil
-  "Alist of (JC . ((GROUP . NICK) ...)) for staggered MUC autojoin.
-Rooms are joined one at a time to avoid flooding the server.")
+  "Alist of (JC . ((COUNT GROUP . NICK) ...)) for prioritized MUC autojoin.
+Each entry is sorted by COUNT (occupant count from disco#items).
+Rooms with fewer occupants join first.  COUNT is
+`most-positive-fixnum' for rooms whose disco query failed.")
+
+(defvar jabber-muc--autojoin-timer nil
+  "Timer for autojoin timeout fallback.
+If a self-presence doesn't arrive within the timeout, advance
+to the next queued room.")
+
+(defcustom jabber-muc-autojoin-timeout 10
+  "Seconds to wait for a MUC self-presence before joining the next room.
+During staggered autojoin, if the server doesn't respond within
+this many seconds, the room is skipped and the next one is tried."
+  :type 'integer
+  :group 'jabber-muc)
 
 ;;; MUC status codes (XEP-0045)
 (defconst jabber-muc-status-self-presence    "110")
@@ -282,6 +296,8 @@ The format is that of `mode-line-format' and `header-line-format'."
 (declare-function jabber-vcard-get "jabber-vcard.el" (jc jid))
 (declare-function jabber-get-version "jabber-version.el" (jc to))
 (declare-function jabber-get-disco-info "jabber-disco.el" (jc to &optional node))
+(declare-function jabber-disco-get-items "jabber-disco.el"
+                  (jc jid node callback closure-data &optional force))
 (declare-function jabber-ping-send "jabber-ping.el"
                   (jc to process-func on-success on-error))
 (declare-function jabber-parse-conference-bookmark "jabber-bookmarks.el"
@@ -977,6 +993,8 @@ JC is the Jabber connection."
              (or (jabber-muc-nickname group account)
                  (jabber-muc-read-my-nickname account group)))
            t)))
+  ;; Remove from autojoin queue to prevent double-join.
+  (jabber-muc--autojoin-dequeue jc group)
   (cond
    ;; Already joined: open buffer, sync and verify membership.
    ((jabber-muc-joined-p group jc)
@@ -1357,89 +1375,150 @@ Requires :xml-data key in MSG for raw stanza access."
                                        (nth 2 parsed)))
           t))))
 
-(defun jabber-muc--autojoin-enqueue (jc rooms)
-  "Append ROOMS to the autojoin queue for connection JC.
-ROOMS is a list of (GROUP . NICK) pairs."
-  (when rooms
-    (if-let* ((entry (assq jc jabber-muc--autojoin-queue)))
-        (setcdr entry (nconc (cdr entry) rooms))
-      (push (cons jc (copy-sequence rooms)) jabber-muc--autojoin-queue))))
+(defun jabber-muc--autojoin-insert (jc count group nick)
+  "Insert (COUNT GROUP . NICK) into the sorted autojoin queue for JC.
+The queue is kept sorted ascending by COUNT so rooms with fewer
+occupants are joined first."
+  (let* ((new-entry (cons count (cons group nick)))
+         (cell (assq jc jabber-muc--autojoin-queue)))
+    (if (not cell)
+        (push (cons jc (list new-entry)) jabber-muc--autojoin-queue)
+      (let ((rooms (cdr cell))
+            (inserted nil)
+            (prev nil))
+        (while (and rooms (not inserted))
+          (if (< count (caar rooms))
+              (progn
+                (if prev
+                    (setcdr prev (cons new-entry rooms))
+                  (setcdr cell (cons new-entry rooms)))
+                (setq inserted t))
+            (setq prev rooms
+                  rooms (cdr rooms))))
+        (unless inserted
+          (if prev
+              (setcdr prev (list new-entry))
+            (setcdr cell (list new-entry))))))))
+
+(defun jabber-muc--autojoin-cancel-timer ()
+  "Cancel the autojoin timeout timer if running."
+  (when (timerp jabber-muc--autojoin-timer)
+    (cancel-timer jabber-muc--autojoin-timer)
+    (setq jabber-muc--autojoin-timer nil)))
+
+(defun jabber-muc--autojoin-disco-callback (jc closure-data result)
+  "Disco#items callback for autojoin prioritization.
+JC is the connection.  CLOSURE-DATA is (GROUP . NICK).
+RESULT is a list of item vectors on success or an error node."
+  (let* ((group (car closure-data))
+         (nick (cdr closure-data))
+         (count (if (and (listp result) (eq (car result) 'error))
+                    most-positive-fixnum
+                  (length result))))
+    (jabber-muc--autojoin-insert jc count group nick)
+    ;; Start draining if no join is currently in-flight.
+    (unless jabber-muc--autojoin-timer
+      (jabber-muc--autojoin-next jc))))
+
+(defun jabber-muc--autojoin-dequeue (jc group)
+  "Remove GROUP from the autojoin queue for JC if present."
+  (when-let* ((cell (assq jc jabber-muc--autojoin-queue)))
+    (let ((rooms (cdr cell)))
+      (setcdr cell (cl-remove-if (lambda (entry) (string= group (cadr entry)))
+                                 rooms))
+      (unless (cdr cell)
+        (setq jabber-muc--autojoin-queue
+              (assq-delete-all jc jabber-muc--autojoin-queue))))))
+
+(defun jabber-muc--autojoin-timeout (jc)
+  "Timer callback: advance to the next room when self-presence times out."
+  (setq jabber-muc--autojoin-timer nil)
+  (when (memq jc jabber-connections)
+    (jabber-muc--autojoin-next jc)))
 
 (defun jabber-muc--autojoin-next (jc)
   "Join the next room in the autojoin queue for JC.
-Pops one entry and sends the join presence.  Does nothing if
-the queue is empty."
+Pops one entry (COUNT GROUP . NICK) and sends the join presence.
+Starts a timeout timer so the queue advances even if the server
+never responds.  Does nothing if the queue is empty."
+  (jabber-muc--autojoin-cancel-timer)
   (when-let* ((entry (assq jc jabber-muc--autojoin-queue))
               (rooms (cdr entry)))
-    (let* ((room-nick (pop rooms))
-           (group (car room-nick))
-           (nick (cdr room-nick))
+    (let* ((head (pop rooms))
+           (group (cadr head))
+           (nick (cddr head))
            (password (jabber-get-conference-data jc group nil :password)))
       (setcdr entry rooms)
       (unless rooms
         (setq jabber-muc--autojoin-queue
               (assq-delete-all jc jabber-muc--autojoin-queue)))
-      (jabber-muc--send-join-presence jc group nick password nil))))
+      (jabber-muc--send-join-presence jc group nick password nil)
+      ;; Start timeout: if no self-presence arrives, try next room.
+      (when (assq jc jabber-muc--autojoin-queue)
+        (setq jabber-muc--autojoin-timer
+              (run-with-timer jabber-muc-autojoin-timeout nil
+                             #'jabber-muc--autojoin-timeout jc))))))
 
 (defun jabber-muc--autojoin-queued-p (jc group)
   "Return non-nil if GROUP is already in the autojoin queue for JC."
   (when-let* ((entry (assq jc jabber-muc--autojoin-queue)))
-    (assoc group (cdr entry))))
+    (cl-find group (cdr entry) :key #'cadr :test #'string=)))
 
 (defun jabber-muc--autojoin-clear (jc)
   "Remove all autojoin queue entries for JC."
+  (jabber-muc--autojoin-cancel-timer)
   (setq jabber-muc--autojoin-queue
         (assq-delete-all jc jabber-muc--autojoin-queue)))
 
 (defun jabber-muc--rejoin-snapshot (jc)
   "Rejoin rooms from the pre-disconnect snapshot not already joined.
 Called after bookmark autojoin to recover non-bookmarked rooms.
-Rooms are appended to the stagger queue."
-  (let ((rooms nil))
-    (dolist (room-nick jabber-muc--rooms-before-disconnect)
-      (let ((room (car room-nick))
-            (nick (cdr room-nick)))
-        (unless (or (jabber-muc-joined-p room jc)
-                    (jabber-muc--autojoin-queued-p jc room))
-          (push (cons room nick) rooms))))
-    (jabber-muc--autojoin-enqueue jc (nreverse rooms)))
+Fires disco#items queries for prioritized ordering."
+  (dolist (room-nick jabber-muc--rooms-before-disconnect)
+    (let ((room (car room-nick))
+          (nick (cdr room-nick)))
+      (unless (or (jabber-muc-joined-p room jc)
+                  (jabber-muc--autojoin-queued-p jc room))
+        (jabber-disco-get-items jc room nil
+                                #'jabber-muc--autojoin-disco-callback
+                                (cons room nick)))))
   (setq jabber-muc--rooms-before-disconnect nil))
+
+(defun jabber-muc--autojoin-fire-disco (jc group nick)
+  "Fire a disco#items query for GROUP with NICK via JC.
+The result feeds into the prioritized autojoin queue."
+  (jabber-disco-get-items jc group nil
+                          #'jabber-muc--autojoin-disco-callback
+                          (cons group nick)))
 
 (defun jabber-muc-autojoin (jc)
   "Join rooms specified in account bookmarks and global `jabber-muc-autojoin'.
-Rooms are joined one at a time via the stagger queue to avoid
-flooding the server with presence stanzas.
+Fires disco#items queries for all rooms at once.  As results
+arrive, rooms are inserted into a priority queue ordered by
+occupant count (fewest first) and drained sequentially.
 
 JC is the Jabber connection."
   (interactive (list (jabber-read-account)))
   (jabber-muc--autojoin-clear jc)
   (when (bound-and-true-p jabber-muc-autojoin)
-    (let ((rooms nil))
-      (dolist (group jabber-muc-autojoin)
-        (push (cons group
-                    (or (cdr (assoc group jabber-muc-default-nicknames))
-                        (plist-get (fsm-get-state-data jc) :username)))
-              rooms))
-      (jabber-muc--autojoin-enqueue jc (nreverse rooms))))
+    (dolist (group jabber-muc-autojoin)
+      (jabber-muc--autojoin-fire-disco
+       jc group
+       (or (cdr (assoc group jabber-muc-default-nicknames))
+           (plist-get (fsm-get-state-data jc) :username)))))
   (jabber-get-bookmarks
    jc
    (lambda (jc bookmarks)
-     (let ((rooms nil))
-       (dolist (bookmark bookmarks)
-         (when (plist-get bookmark :autojoin)
-           (let ((group (plist-get bookmark :jid)))
-             (unless (or (jabber-muc-joined-p group jc)
-                         (jabber-muc--autojoin-queued-p jc group))
-               (push (cons group
-                           (or (plist-get bookmark :nick)
-                               (plist-get (fsm-get-state-data jc) :username)))
-                     rooms)))))
-       (jabber-muc--autojoin-enqueue jc (nreverse rooms)))
-     (jabber-muc--rejoin-snapshot jc)
-     (jabber-muc--autojoin-next jc)))
-  ;; Kick off the first join from the global-autojoin list immediately.
-  ;; Bookmark rooms will be appended and continue from the callback.
-  (jabber-muc--autojoin-next jc))
+     (dolist (bookmark bookmarks)
+       (when (plist-get bookmark :autojoin)
+         (let ((group (plist-get bookmark :jid)))
+           (unless (or (jabber-muc-joined-p group jc)
+                       (jabber-muc--autojoin-queued-p jc group))
+             (jabber-muc--autojoin-fire-disco
+              jc group
+              (or (plist-get bookmark :nick)
+                  (plist-get (fsm-get-state-data jc) :username)))))))
+     (jabber-muc--rejoin-snapshot jc))))
 
 ;;;###autoload
 (defun jabber-muc-message-p (message)
