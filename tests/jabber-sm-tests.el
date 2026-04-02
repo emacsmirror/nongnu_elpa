@@ -384,6 +384,115 @@
     (should (cl-some (lambda (m) (string-match-p "more stanzas than sent" m))
                      messages))))
 
+;;; Back-pressure
+
+(ert-deftest jabber-sm-test-in-flight-count-normal ()
+  "In-flight count is delta between outbound and last-acked."
+  (let ((sd (list :sm-outbound-count 7 :sm-last-acked 3)))
+    (should (= (jabber-sm--in-flight-count sd) 4))))
+
+(ert-deftest jabber-sm-test-in-flight-count-zero ()
+  "In-flight count is zero when fully acked."
+  (let ((sd (list :sm-outbound-count 5 :sm-last-acked 5)))
+    (should (= (jabber-sm--in-flight-count sd) 0))))
+
+(ert-deftest jabber-sm-test-in-flight-count-wraparound ()
+  "In-flight count handles 2^32 wraparound."
+  (let ((sd (list :sm-outbound-count 2
+                  :sm-last-acked (- (expt 2 32) 3))))
+    (should (= (jabber-sm--in-flight-count sd) 5))))
+
+(ert-deftest jabber-sm-test-should-queue-p-at-limit ()
+  "Should queue when in-flight equals the cap."
+  (let ((jabber-sm-max-in-flight 3)
+        (sd (list :sm-enabled t :sm-outbound-count 5 :sm-last-acked 2)))
+    (should (jabber-sm--should-queue-p
+             sd '(message ((to . "a@b")) (body () "hi"))))))
+
+(ert-deftest jabber-sm-test-should-queue-p-below-limit ()
+  "Should not queue when in-flight is below the cap."
+  (let ((jabber-sm-max-in-flight 10)
+        (sd (list :sm-enabled t :sm-outbound-count 5 :sm-last-acked 2)))
+    (should-not (jabber-sm--should-queue-p
+                 sd '(message ((to . "a@b")) (body () "hi"))))))
+
+(ert-deftest jabber-sm-test-should-queue-p-disabled ()
+  "Should not queue when back-pressure is disabled."
+  (let ((jabber-sm-max-in-flight nil)
+        (sd (list :sm-enabled t :sm-outbound-count 100 :sm-last-acked 0)))
+    (should-not (jabber-sm--should-queue-p
+                 sd '(message ((to . "a@b")) (body () "hi"))))))
+
+(ert-deftest jabber-sm-test-should-queue-p-sm-off ()
+  "Should not queue when SM is not enabled."
+  (let ((jabber-sm-max-in-flight 3)
+        (sd (list :sm-enabled nil :sm-outbound-count 5 :sm-last-acked 0)))
+    (should-not (jabber-sm--should-queue-p
+                 sd '(message ((to . "a@b")) (body () "hi"))))))
+
+(ert-deftest jabber-sm-test-should-queue-p-non-stanza ()
+  "Should not queue non-countable elements."
+  (let ((jabber-sm-max-in-flight 3)
+        (sd (list :sm-enabled t :sm-outbound-count 5 :sm-last-acked 2)))
+    (should-not (jabber-sm--should-queue-p
+                 sd '(r ((xmlns . "urn:xmpp:sm:3")))))))
+
+(ert-deftest jabber-sm-test-enqueue-pending ()
+  "Enqueue appends to pending queue in order."
+  (let* ((sd (list :sm-pending-queue nil))
+         (msg1 '(message ((to . "a@b")) (body () "1")))
+         (msg2 '(message ((to . "a@b")) (body () "2"))))
+    (setq sd (jabber-sm--enqueue-pending sd msg1))
+    (setq sd (jabber-sm--enqueue-pending sd msg2))
+    (should (= (length (plist-get sd :sm-pending-queue)) 2))
+    (should (equal (car (plist-get sd :sm-pending-queue)) msg1))
+    (should (equal (cadr (plist-get sd :sm-pending-queue)) msg2))))
+
+(ert-deftest jabber-sm-test-drain-pending-partial ()
+  "Drain sends stanzas up to the cap, leaving the rest queued."
+  (let* ((jabber-sm-max-in-flight 2)
+         (msg1 '(message ((to . "a@b")) (body () "1")))
+         (msg2 '(message ((to . "a@b")) (body () "2")))
+         (msg3 '(message ((to . "a@b")) (body () "3")))
+         (sd (list :sm-enabled t
+                   :sm-outbound-count 0
+                   :sm-inbound-count 0
+                   :sm-last-acked 0
+                   :sm-outbound-queue nil
+                   :sm-pending-queue (list msg1 msg2 msg3)))
+         (sent nil))
+    (setq sd (jabber-sm--drain-pending
+              'fake-jc sd
+              (lambda (_jc sexp) (push sexp sent))))
+    ;; Should have sent exactly 2 (the cap)
+    (should (= (length sent) 2))
+    ;; One remains in pending queue
+    (should (= (length (plist-get sd :sm-pending-queue)) 1))
+    (should (equal (car (plist-get sd :sm-pending-queue)) msg3))
+    ;; Outbound count incremented for sent stanzas
+    (should (= (plist-get sd :sm-outbound-count) 2))))
+
+(ert-deftest jabber-sm-test-drain-pending-empty ()
+  "Drain with empty queue is a no-op."
+  (let* ((jabber-sm-max-in-flight 10)
+         (sd (list :sm-enabled t
+                   :sm-outbound-count 0
+                   :sm-last-acked 0
+                   :sm-outbound-queue nil
+                   :sm-pending-queue nil))
+         (sent nil))
+    (setq sd (jabber-sm--drain-pending
+              'fake-jc sd
+              (lambda (_jc sexp) (push sexp sent))))
+    (should (null sent))
+    (should (null (plist-get sd :sm-pending-queue)))))
+
+(ert-deftest jabber-sm-test-reset-clears-pending-queue ()
+  "Reset clears the pending queue."
+  (let* ((sd (list :sm-enabled t :sm-pending-queue '(a b c)))
+         (result (jabber-sm--reset sd)))
+    (should (null (plist-get result :sm-pending-queue)))))
+
 (provide 'jabber-sm-tests)
 
 ;;; jabber-sm-tests.el ends here
