@@ -220,6 +220,23 @@ Return updated STATE-DATA."
              (nconc (plist-get state-data :sm-pending-queue)
                     (list sexp))))
 
+(defun jabber-sm--drain-pending (jc state-data send-fn)
+  "Send queued stanzas from pending queue up to the in-flight cap.
+JC is the connection.  STATE-DATA is the FSM plist.  SEND-FN is
+called with (JC SEXP) for each drained stanza and must bypass
+the back-pressure gate to avoid re-queuing.
+Return updated STATE-DATA."
+  (let ((queue (plist-get state-data :sm-pending-queue)))
+    (while (and queue
+                (or (null jabber-sm-max-in-flight)
+                    (< (jabber-sm--in-flight-count state-data)
+                       jabber-sm-max-in-flight)))
+      (let ((sexp (pop queue)))
+        (funcall send-fn jc sexp)
+        ;; count-outbound updates state-data in place via plist-put
+        (setq state-data (jabber-sm--count-outbound state-data sexp))))
+    (plist-put state-data :sm-pending-queue queue)))
+
 ;;; Ack send/receive
 
 (defun jabber-sm--make-ack-xml (h)
