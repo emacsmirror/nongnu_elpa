@@ -1200,8 +1200,13 @@ when SM is enabled), and update the outbound counter."
   (jabber-sm--count-outbound (fsm-get-state-data jc) sexp))
 
 (defun jabber-send-sexp (jc sexp)
-  "Send the xml corresponding to SEXP to connection JC."
-  (jabber-send-sexp--immediate jc sexp))
+  "Send the xml corresponding to SEXP to connection JC.
+When SM back-pressure is active and the in-flight limit is reached,
+queue the stanza for later delivery instead of sending immediately."
+  (let ((state-data (fsm-get-state-data jc)))
+    (if (jabber-sm--should-queue-p state-data sexp)
+        (jabber-sm--enqueue-pending state-data sexp)
+      (jabber-send-sexp--immediate jc sexp))))
 
 (defun jabber-send-sexp-if-connected (jc sexp)
   "Send the stanza SEXP only if JC has established a session."
