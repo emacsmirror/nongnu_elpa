@@ -36,6 +36,8 @@
 
 (defvar jabber-vcard-xmlns)             ; jabber-vcard.el
 
+(declare-function jabber-muc-presence-p "jabber-muc" (xml-data))
+
 (defconst jabber-vcard-update-xmlns "vcard-temp:x:update"
   "XEP-0153 vCard-based avatars namespace.")
 
@@ -62,9 +64,12 @@ Keys are full JIDs.")
 JC is the Jabber connection.
 XML-DATA is the parsed tree data from the stream (stanzas)
 obtained from `xml-parse-region'."
-  ;; Only look at ordinary presence
+  ;; Only look at ordinary, non-MUC presence.  MUC presences use
+  ;; occupant JIDs (room@server/nick) which are useless for vCard
+  ;; fetches, and a large room would flood the connection with IQs.
   (when (and jabber-vcard-avatars-retrieve
-	     (null (jabber-xml-get-attribute xml-data 'type)))
+	     (null (jabber-xml-get-attribute xml-data 'type))
+	     (not (jabber-muc-presence-p xml-data)))
     (let* ((from (jabber-jid-user (jabber-xml-get-attribute xml-data 'from)))
 	   (photo (jabber-xml-path xml-data `((,jabber-vcard-update-xmlns . "x") photo)))
 	   (sha1-hash (car (jabber-xml-node-children photo))))
