@@ -94,30 +94,19 @@ Keys older than this are deleted on connect."
   "Shell command to build the jabber-omemo-core dynamic module.
 Run from the emacs-jabber project root.")
 
-(defvar jabber-omemo--build-in-progress nil
-  "Non-nil while an async module build is running.")
-
 (defun jabber-omemo--build-module (project-root)
-  "Build the native module asynchronously from PROJECT-ROOT.
-When the build finishes, load the module and run
-`jabber-post-connect-hooks' on all active connections so OMEMO
-initializes."
-  (setq jabber-omemo--build-in-progress t)
-  (let* ((default-directory project-root)
-         (buf (get-buffer-create "*jabber-omemo-build*"))
-         (proc (start-process-shell-command
-                "jabber-omemo-build" buf jabber-omemo-build-command)))
-    (message "Building jabber-omemo-core module (async)...")
-    (set-process-sentinel
-     proc
-     (lambda (process _event)
-       (setq jabber-omemo--build-in-progress nil)
-       (if (zerop (process-exit-status process))
-           (progn
-             (require 'jabber-omemo-core)
-             (message "jabber-omemo-core module built and loaded."))
-         (pop-to-buffer (process-buffer process))
-         (message "Failed to build jabber-omemo-core module.  See *jabber-omemo-build*"))))))
+  "Build the native module synchronously from PROJECT-ROOT.
+Compiles picomemo via `jabber-omemo-build-command', then loads
+the resulting module.  Signals an error on build failure."
+  (let ((default-directory project-root)
+        (buf (get-buffer-create "*jabber-omemo-build*")))
+    (message "Building jabber-omemo-core module...")
+    (unless (zerop (call-process-shell-command
+                    jabber-omemo-build-command nil buf t))
+      (pop-to-buffer buf)
+      (error "Failed to build jabber-omemo-core module.  See *jabber-omemo-build*"))
+    (require 'jabber-omemo-core)
+    (message "jabber-omemo-core module built and loaded.")))
 
 (cl-eval-when (load eval)
   (unless (require 'jabber-omemo-core nil t)
@@ -129,20 +118,8 @@ initializes."
                (or noninteractive
                    (yes-or-no-p
                     "jabber-omemo-core module not found.  Build it now? ")))
-          (let ((project-root (file-name-directory
-                               (directory-file-name src-dir))))
-            (if noninteractive
-                ;; Batch mode: build synchronously.
-                (progn
-                  (message "Building jabber-omemo-core module...")
-                  (unless (zerop (call-process-shell-command
-                                  jabber-omemo-build-command nil
-                                  (get-buffer-create "*jabber-omemo-build*") t))
-                    (pop-to-buffer "*jabber-omemo-build*")
-                    (error "Failed to build jabber-omemo-core module"))
-                  (require 'jabber-omemo-core))
-              ;; Interactive: build async so Emacs doesn't freeze.
-              (jabber-omemo--build-module project-root)))
+          (jabber-omemo--build-module
+           (file-name-directory (directory-file-name src-dir)))
         (user-error "OMEMO support requires the jabber-omemo-core native module")))))
 
 ;; Declare internal C functions from the dynamic module for the byte-compiler.
