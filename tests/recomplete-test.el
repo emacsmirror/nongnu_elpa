@@ -142,17 +142,25 @@
 ;; ---------------------------------------------------------------------------
 ;; Test Cycling
 
+(defmacro with-recomplete-test (initial-buffer-text command &rest body)
+  "Run BODY in a buffer with INITIAL-BUFFER-TEXT, binding M-p to COMMAND.
+Messages are suppressed."
+  (declare (indent 2))
+  `(let ((buf (generate-new-buffer "recomplete-test")))
+     (switch-to-buffer buf)
+     (buffer-reset-text ,initial-buffer-text)
+     (let ((inhibit-message t))
+       (local-set-key (kbd "M-p") ,command)
+       ,@body)
+     (kill-buffer buf)))
+
 (ert-deftest dabbrev-cycling-single-line-display-nil ()
   "Dabbrev cycling should work when `recomplete-single-line-display' is nil.
 Without cycling, the second press tries to expand the already-expanded word
 which has no further expansions, causing an error."
-  (let ((buf (generate-new-buffer "recomplete-test")))
-    (switch-to-buffer buf)
-    (buffer-reset-text "unique_alpha unique_beta un")
+  (with-recomplete-test "unique_alpha unique_beta un" #'recomplete-dabbrev
     (goto-char (point-max))
-    (let ((recomplete-single-line-display nil)
-          (inhibit-message t))
-      (local-set-key (kbd "M-p") #'recomplete-dabbrev)
+    (let ((recomplete-single-line-display nil))
       ;; Press M-p twice to cycle to the second expansion.
       (simulate-input
         (kbd "M-p M-p"))
@@ -162,8 +170,39 @@ which has no further expansions, causing an error."
       (should
        (equal
         "unique_alpha unique_beta unique_alpha"
-        (buffer-substring-no-properties (point-min) (point-max)))))
-    (kill-buffer buf)))
+        (buffer-substring-no-properties (point-min) (point-max)))))))
+
+(ert-deftest case-style-first-result ()
+  "Pressing M-p once on a snake_case word should produce kebab-case."
+  (with-recomplete-test "hello_world" #'recomplete-case-style
+    (simulate-input
+      (kbd "M-p"))
+    (should (equal "hello-world" (buffer-substring-no-properties (point-min) (point-max))))))
+
+(ert-deftest case-style-symbol-first-result ()
+  "Pressing M-p on a kebab-case symbol in `emacs-lisp-mode' should produce PascalCase."
+  (with-recomplete-test "hello-world" #'recomplete-case-style-symbol
+    (emacs-lisp-mode)
+    (local-set-key (kbd "M-p") #'recomplete-case-style-symbol)
+    (simulate-input
+      (kbd "M-p"))
+    (should (equal "HelloWorld" (buffer-substring-no-properties (point-min) (point-max))))))
+
+(ert-deftest case-style-reverse-direction ()
+  "Pressing C-g between M-p presses should reverse the cycling direction."
+  (with-recomplete-test "hello_world" #'recomplete-case-style
+    ;; Rebind C-g so it sets `this-command' to `keyboard-quit'
+    ;; without actually signaling (which would abort the macro).
+    (local-set-key
+     (kbd "C-g")
+     (lambda ()
+       (interactive)
+       (setq this-command 'keyboard-quit)))
+    ;; M-p (forward to hello-world), C-g (reverse), M-p (backward to hello_world).
+    ;; Without reversal, M-p M-p would give HelloWorld.
+    (simulate-input
+      (kbd "M-p C-g M-p"))
+    (should (equal "hello_world" (buffer-substring-no-properties (point-min) (point-max))))))
 
 
 (provide 'recomplete-test)
