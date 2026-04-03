@@ -200,7 +200,8 @@ configure a Google Talk account like this:
 (require 'jabber-autoaway)
 (require 'jabber-time)
 (require 'jabber-truncate)
-(require 'jabber-notifications nil t)
+(when (featurep 'dbusbind)
+  (require 'jabber-notifications nil t))
 
 ;;;###autoload
 (defvar *jabber-current-status* nil

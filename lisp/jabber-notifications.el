@@ -75,22 +75,22 @@ nil disables MUC notifications entirely."
 
 ;;
 
-;;;###autoload
 (defun jabber-message-notifications (from _buffer text title)
   "Show a message through the notifications.el interface."
-  (let
-      ((body (or (jabber-escape-xml text) " "))
-       (avatar-hash (get (jabber-jid-symbol from) 'avatar-hash)))
-    (notifications-notify
-     :title title
-     :body body
-     :app-icon (or (and avatar-hash (jabber-avatar-find-cached avatar-hash))
-                   jabber-notifications-icon)
-     :app-name jabber-notifications-app
-     :category "jabber.message"
-     :timeout jabber-notifications-timeout)))
+  (let ((body (or (jabber-escape-xml text) " "))
+        (avatar-hash (get (jabber-jid-symbol from) 'avatar-hash)))
+    (condition-case err
+        (notifications-notify
+         :title title
+         :body body
+         :app-icon (or (and avatar-hash (jabber-avatar-find-cached avatar-hash))
+                       jabber-notifications-icon)
+         :app-name jabber-notifications-app
+         :category "jabber.message"
+         :timeout jabber-notifications-timeout)
+      (dbus-error
+       (message "jabber-notifications: D-Bus error: %s" (error-message-string err))))))
 
-;;;###autoload
 (defun jabber-muc-notifications (nick group buffer text title)
   "Show MUC message through the notifications.el interface.
 Controlled by `jabber-notifications-muc': notify for all messages,
