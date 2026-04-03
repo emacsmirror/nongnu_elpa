@@ -29,9 +29,12 @@
 
     <programming-language>Emacs Lisp</programming-language>
     <os>Linux</os>
-    <os>Windows</os>
-    <os>Android</os>
     <os>macOS</os>
+    <os>Windows</os>
+    <os>FreeBSD</os>
+    <os>OpenBSD</os>
+    <os>NetBSD</os>
+    <os>Android (Termux)</os>
     <category rdf:resource="https://linkmauve.fr/ns/xmpp-doap#category-client"/>
     <schema:logo rdf:resource="https://upload.wikimedia.org/wikipedia/commons/0/08/EmacsIcon.svg"/>
 
