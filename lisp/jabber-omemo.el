@@ -60,6 +60,14 @@
   (id &rest props))
 (declare-function jabber-chat--set-body "jabber-chat" (xml-data text))
 
+(defcustom jabber-omemo-enable t
+  "Whether to enable OMEMO encryption support.
+When nil, the native module is not loaded and OMEMO features are
+disabled.  Set to nil if you do not have the build toolchain to
+compile jabber-omemo-core."
+  :type 'boolean
+  :group 'jabber)
+
 (defcustom jabber-omemo-skipped-key-max-age (* 30 86400)
   "Maximum age in seconds for OMEMO skipped message keys.
 Keys older than this are deleted on connect."
@@ -112,21 +120,23 @@ the resulting module.  Signals an error on build failure."
   "Non-nil when the jabber-omemo-core native module is loaded.")
 
 (cl-eval-when (load eval)
-  (if (require 'jabber-omemo-core nil t)
-      (setq jabber-omemo--available t)
-    (let ((src-dir (expand-file-name
-                    "../src"
-                    (file-name-directory
-                     (or load-file-name buffer-file-name)))))
-      (if (and (file-exists-p (expand-file-name "jabber-omemo-core.c" src-dir))
-               (or noninteractive
-                   (yes-or-no-p
-                    "jabber-omemo-core module not found.  Build it now? ")))
-          (progn
-            (jabber-omemo--build-module
-             (file-name-directory (directory-file-name src-dir)))
-            (setq jabber-omemo--available t))
-        (message "OMEMO: native module not available, encryption disabled")))))
+  (if (not jabber-omemo-enable)
+      (message "OMEMO: disabled by jabber-omemo-enable")
+    (if (require 'jabber-omemo-core nil t)
+        (setq jabber-omemo--available t)
+      (let ((src-dir (expand-file-name
+                      "../src"
+                      (file-name-directory
+                       (or load-file-name buffer-file-name)))))
+        (if (and (file-exists-p (expand-file-name "jabber-omemo-core.c" src-dir))
+                 (or noninteractive
+                     (yes-or-no-p
+                      "jabber-omemo-core module not found.  Build it now? ")))
+            (progn
+              (jabber-omemo--build-module
+               (file-name-directory (directory-file-name src-dir)))
+              (setq jabber-omemo--available t))
+          (message "OMEMO: native module not available, encryption disabled"))))))
 
 ;; Declare internal C functions from the dynamic module for the byte-compiler.
 ;; "ext:" prefix tells check-declare to skip file verification.
