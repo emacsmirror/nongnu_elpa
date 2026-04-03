@@ -1236,5 +1236,35 @@ the given account."
       (let ((choice (completing-read "Show profile of user: " handles)))
         (mastodon-profile-show-user choice)))))
 
+;;; FEATURED TAGS
+
+(defun mastodon-profile-feature-tag ()
+  "Feature a tag on your profile."
+  (interactive)
+  (let* ((tag (read-string "Feature tag on your profile: "))
+         (endpoint (mastodon-http--api
+                    (format "/tags/%s/feature" tag)))
+         (resp (mastodon-http--post endpoint)))
+    (mastodon-http--triage
+     resp (lambda (resp)
+            (message "Tag #%s featured!" tag)))))
+
+(defun mastodon-profile--get-featured-tags (id)
+  "Get featured tags for user ID."
+  (let ((endpoint (mastodon-http--api
+                   (format "/accounts/%s/featured_tags" id))))
+    (mastodon-http--get-json endpoint)))
+
+(defun mastodon-profile-load-featured-tag ()
+  "Prompt for a featured tag, and load posts containing it.
+Only works when viewing a user's profile."
+  (interactive)
+  (let* ((data (mastodon-profile--profile-json))
+         (id (alist-get 'id data))
+         (tags (mastodon-profile--get-featured-tags id))
+         (choice (completing-read "View user's featured tag: "
+                                  (mastodon-tl--map-alist 'name tags))))
+    (mastodon-profile-open-statuses-tagged choice)))
+
 (provide 'mastodon-profile)
 ;;; mastodon-profile.el ends here
