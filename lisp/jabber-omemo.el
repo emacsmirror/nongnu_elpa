@@ -108,8 +108,12 @@ the resulting module.  Signals an error on build failure."
     (require 'jabber-omemo-core)
     (message "jabber-omemo-core module built and loaded.")))
 
+(defvar jabber-omemo--available nil
+  "Non-nil when the jabber-omemo-core native module is loaded.")
+
 (cl-eval-when (load eval)
-  (unless (require 'jabber-omemo-core nil t)
+  (if (require 'jabber-omemo-core nil t)
+      (setq jabber-omemo--available t)
     (let ((src-dir (expand-file-name
                     "../src"
                     (file-name-directory
@@ -118,9 +122,11 @@ the resulting module.  Signals an error on build failure."
                (or noninteractive
                    (yes-or-no-p
                     "jabber-omemo-core module not found.  Build it now? ")))
-          (jabber-omemo--build-module
-           (file-name-directory (directory-file-name src-dir)))
-        (user-error "OMEMO support requires the jabber-omemo-core native module")))))
+          (progn
+            (jabber-omemo--build-module
+             (file-name-directory (directory-file-name src-dir)))
+            (setq jabber-omemo--available t))
+        (message "OMEMO: native module not available, encryption disabled")))))
 
 ;; Declare internal C functions from the dynamic module for the byte-compiler.
 ;; "ext:" prefix tells check-declare to skip file verification.
@@ -1309,31 +1315,32 @@ Returns non-nil if handled, nil to fall through to plaintext."
 
 ;;; Disco and PubSub registration
 
-(jabber-disco-advertise-feature jabber-omemo-xmlns)
-(jabber-disco-advertise-feature (concat jabber-omemo-devicelist-node "+notify"))
+(when jabber-omemo--available
+  (jabber-disco-advertise-feature jabber-omemo-xmlns)
+  (jabber-disco-advertise-feature (concat jabber-omemo-devicelist-node "+notify"))
 
-(with-eval-after-load "jabber-pubsub"
-  (setf (alist-get jabber-omemo-devicelist-node jabber-pubsub-node-handlers
-                   nil nil #'equal)
-        #'jabber-omemo--handle-device-list))
+  (with-eval-after-load "jabber-pubsub"
+    (setf (alist-get jabber-omemo-devicelist-node jabber-pubsub-node-handlers
+                     nil nil #'equal)
+          #'jabber-omemo--handle-device-list))
 
-;;;###autoload
-(with-eval-after-load "jabber-core"
-  (add-hook 'jabber-post-connect-hooks #'jabber-omemo-on-connect)
-  (add-hook 'jabber-pre-disconnect-hook #'jabber-omemo--on-disconnect))
+  (with-eval-after-load "jabber-core"
+    (add-hook 'jabber-post-connect-hooks #'jabber-omemo-on-connect)
+    (add-hook 'jabber-pre-disconnect-hook #'jabber-omemo--on-disconnect))
 
-(with-eval-after-load "jabber-httpupload"
-  (setq jabber-httpupload-pre-upload-transform
-        #'jabber-omemo--httpupload-transform)
-  (setq jabber-httpupload-send-url-function
-        #'jabber-omemo--httpupload-send-url))
+  (with-eval-after-load "jabber-httpupload"
+    (setq jabber-httpupload-pre-upload-transform
+          #'jabber-omemo--httpupload-transform)
+    (setq jabber-httpupload-send-url-function
+          #'jabber-omemo--httpupload-send-url)))
 
-(jabber-chat-register-decrypt-handler
- 'omemo
- :detect  #'jabber-omemo--detect-encrypted
- :decrypt #'jabber-omemo--decrypt-handler
- :priority 10
- :error-label "OMEMO")
+(when jabber-omemo--available
+  (jabber-chat-register-decrypt-handler
+   'omemo
+   :detect  #'jabber-omemo--detect-encrypted
+   :decrypt #'jabber-omemo--decrypt-handler
+   :priority 10
+   :error-label "OMEMO"))
 
 (provide 'jabber-omemo)
 ;;; jabber-omemo.el ends here
