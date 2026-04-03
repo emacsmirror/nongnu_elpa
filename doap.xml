@@ -36,7 +36,7 @@
     <os>NetBSD</os>
     <os>Android (Termux)</os>
     <category rdf:resource="https://linkmauve.fr/ns/xmpp-doap#category-client"/>
-    <schema:logo rdf:resource="https://upload.wikimedia.org/wikipedia/commons/0/08/EmacsIcon.svg"/>
+    <schema:logo rdf:resource="https://thanosapollo.org/images/EmacsIcon.svg"/>
 
     <repository>
       <GitRepository>
