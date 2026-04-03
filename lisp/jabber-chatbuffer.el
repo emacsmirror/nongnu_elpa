@@ -221,6 +221,8 @@ Works for both 1:1 chat (`jabber-chatting-with') and MUC (`jabber-group')."
   "Set encryption to OMEMO for this chat buffer."
   (interactive)
   (require 'jabber-omemo)
+  (unless (bound-and-true-p jabber-omemo--available)
+    (user-error "OMEMO encryption requires the jabber-omemo-core native module"))
   (setq jabber-chat-encryption 'omemo)
   (jabber-chat-encryption--save 'omemo)
   (jabber-chat-encryption--update-header)
@@ -434,7 +436,9 @@ EWOC-PP is the pretty-printer function for the message EWOC."
         (unless saved
           (setq jabber-chat-encryption 'plaintext))))
     (when (eq jabber-chat-encryption 'omemo)
-      (require 'jabber-omemo)))
+      (require 'jabber-omemo nil t)
+      (unless (bound-and-true-p jabber-omemo--available)
+        (setq jabber-chat-encryption 'plaintext))))
   (jabber-chat-encryption--update-header))
 
 (declare-function jabber-chat-create-buffer "jabber-chat" (jc chat-with))
