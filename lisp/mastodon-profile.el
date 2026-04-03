@@ -1266,5 +1266,16 @@ Only works when viewing a user's profile."
                                   (mastodon-tl--map-alist 'name tags))))
     (mastodon-profile-open-statuses-tagged choice)))
 
+(defun mastodon-profile-own-featured-tags ()
+  "Display your own featured tags.
+Load a timeline of your own featured tags with
+`mastodon-profile-load-featured-tag'when viewing your profile."
+  (interactive)
+  ;; GET /api/v1/featured_tags
+  (let* ((endpoint (mastodon-http--api "featured_tags"))
+         (tags (mastodon-http--get-json endpoint)))
+    (message "%S"
+             (mastodon-tl--map-alist 'name tags))))
+
 (provide 'mastodon-profile)
 ;;; mastodon-profile.el ends here
