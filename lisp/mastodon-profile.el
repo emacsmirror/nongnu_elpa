@@ -162,7 +162,8 @@ NO-REBLOGS means do not display boosts in statuses.
 NO-REPLIES means to exlude replies.
 ONLY-MEDIA means show only posts containing attachments.
 TAG is a hashtag to restrict posts to.
-MAX-ID is a flag to include the max_id pagination parameter."
+MAX-ID is a flag to include the max_id pagination parameter.
+SKIP-PINNED means don't display pinned toots."
   (mastodon-profile--make-profile-buffer-for
    account "statuses" #'mastodon-tl--timeline no-reblogs nil
    no-replies only-media tag max-id skip-pinned))
@@ -238,7 +239,7 @@ If a PREFIX argument is provided, prompt for a view type and load."
     (user-error "Not in a mastodon profile")))
 
 (defun mastodon-profile-open-statuses-tagged (&optional tag)
-  "Prompt for a hashtag and display a profile with only statuses containing it."
+  "Prompt for a TAG and display a profile with statuses containing it."
   (interactive)
   (let ((tag (or tag (read-string "Statuses containing tag: "))))
     (if mastodon-profile--account
@@ -818,7 +819,8 @@ HEADERS means also fetch link headers for pagination.
 NO-REPLIES means to exlude replies.
 ONLY-MEDIA means show only posts containing attachments.
 TAG is a hashtag to restrict posts to.
-MAX-ID is a flag to include the max_id pagination parameter."
+MAX-ID is a flag to include the max_id pagination parameter.
+SKIP-PINNED means don't display pinned toots."
   (let-alist account
     (let* ((max-id-str (when max-id
                          (mastodon-tl--buffer-property 'max-id)))
@@ -1246,7 +1248,7 @@ the given account."
                     (format "/tags/%s/feature" tag)))
          (resp (mastodon-http--post endpoint)))
     (mastodon-http--triage
-     resp (lambda (resp)
+     resp (lambda (_resp)
             (message "Tag #%s featured!" tag)))))
 
 (defun mastodon-profile--get-featured-tags (id)
