@@ -221,9 +221,9 @@ Legacy accounts ignore these events."
            (jabber-bookmarks2--maybe-leave jc jid)))))))
 
 (with-eval-after-load "jabber-pubsub"
-  (push (cons jabber-bookmarks2-xmlns
-              #'jabber-bookmarks2--handle-event)
-        jabber-pubsub-node-handlers))
+  (setf (alist-get jabber-bookmarks2-xmlns jabber-pubsub-node-handlers
+                   nil nil #'equal)
+        #'jabber-bookmarks2--handle-event))
 
 ;;; Fetch bookmarks
 

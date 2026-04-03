@@ -1313,9 +1313,9 @@ Returns non-nil if handled, nil to fall through to plaintext."
 (jabber-disco-advertise-feature (concat jabber-omemo-devicelist-node "+notify"))
 
 (with-eval-after-load "jabber-pubsub"
-  (push (cons jabber-omemo-devicelist-node
-              #'jabber-omemo--handle-device-list)
-        jabber-pubsub-node-handlers))
+  (setf (alist-get jabber-omemo-devicelist-node jabber-pubsub-node-handlers
+                   nil nil #'equal)
+        #'jabber-omemo--handle-device-list))
 
 ;;;###autoload
 (with-eval-after-load "jabber-core"

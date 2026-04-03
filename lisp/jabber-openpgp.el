@@ -463,8 +463,13 @@ local GPG keyring."
          (fingerprint (and meta
                            (jabber-xml-get-attribute meta 'v4-fingerprint)))
          (jid (jabber-jid-user from)))
-    (if (null fingerprint)
-        (message "OpenPGP: key update from %s but no fingerprint in metadata" jid)
+    (cond
+     ((null fingerprint)
+      (message "OpenPGP: key update from %s but no fingerprint in metadata" jid))
+     ;; Skip fetch if we already have this key locally.
+     ((car (epg-list-keys (epg-make-context 'OpenPGP) fingerprint))
+      nil)
+     (t
       (message "OpenPGP: %s updated key %s, fetching..." jid fingerprint)
       (let ((node (concat jabber-openpgp-pubkeys-node ":" fingerprint)))
         (jabber-pubsub-request
@@ -478,12 +483,12 @@ local GPG keyring."
                 (message "OpenPGP: failed to import key for %s" jid)))))
          (lambda (_jc _xml-data _closure)
            (message "OpenPGP: failed to fetch key %s for %s"
-                    fingerprint jid)))))))
+                    fingerprint jid))))))))
 
 (with-eval-after-load "jabber-pubsub"
-  (push (cons jabber-openpgp-pubkeys-node
-              #'jabber-openpgp--handle-keys-event)
-        jabber-pubsub-node-handlers))
+  (setf (alist-get jabber-openpgp-pubkeys-node jabber-pubsub-node-handlers
+                   nil nil #'equal)
+        #'jabber-openpgp--handle-keys-event))
 
 (jabber-chat-register-decrypt-handler
  'openpgp
