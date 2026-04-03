@@ -630,7 +630,7 @@ step onto the next item)."
                  (recomplete--with-messages-as-list message-list
                    ;; Needed in case the operation does multiple undo pushes.
                    (with-undo-amalgamate
-                     (apply (symbol-function fn-symbol) (list cycle-index fn-cache))))))
+                     (funcall fn-symbol cycle-index fn-cache)))))
 
       (cond
        ((null result-choices)
