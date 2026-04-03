@@ -185,6 +185,75 @@ Also return non-nil if JID matches JC, modulo resource."
 	  (jabber-connection-bare-jid jc))
    (member (jabber-jid-user jid) (mapcar (lambda (x) (jabber-jid-user (car x))) jabber-account-list))))
 
+(defcustom jabber-jid-completion-display 'jid
+  "What to show as the primary completion candidate for JID prompts.
+Both modes match against JID and display name; this only controls
+which is shown as the candidate and which as the annotation.
+
+`jid'  shows JIDs with display names as annotations.
+`name' shows display names with JIDs as annotations.
+Contacts without a display name always show as bare JIDs."
+  :type '(choice (const :tag "JID (annotated with name)" jid)
+		 (const :tag "Display name (annotated with JID)" name))
+  :group 'jabber)
+
+(defun jabber--jid-completion-table (roster-items)
+  "Build a completion table from ROSTER-ITEMS.
+Returns an alist of (CANDIDATE . SYMBOL) pairs, where CANDIDATE
+is either a JID or display name depending on `jabber-jid-completion-display'."
+  (let ((use-names (eq jabber-jid-completion-display 'name)))
+    (mapcar (lambda (item)
+              (let ((jid (symbol-name item))
+                    (name (get item 'name)))
+                (cons (if (and use-names name) name jid) item)))
+            roster-items)))
+
+(defun jabber--jid-completion-with-metadata (table)
+  "Wrap TABLE as a completion table matching both JIDs and names.
+Candidates follow `jabber-jid-completion-display'; the other form
+is shown as an annotation.  Both are matchable regardless of mode."
+  (let ((alt-to-candidate (make-hash-table :test 'equal))
+        (use-names (eq jabber-jid-completion-display 'name)))
+    ;; Build reverse lookup: alternate form -> candidate string.
+    (dolist (entry table)
+      (let* ((candidate (car entry))
+             (sym (cdr entry))
+             (jid (symbol-name sym))
+             (name (get sym 'name))
+             (alt (if use-names jid name)))
+        (when (and alt (not (string= alt candidate)))
+          (puthash (downcase alt) candidate alt-to-candidate))))
+    (lambda (string pred action)
+      (cond
+       ((eq action 'metadata)
+        `(metadata
+          (annotation-function
+           . ,(lambda (candidate)
+                 (when-let* ((sym (cdr (assoc-string candidate table t))))
+                   (let* ((jid (symbol-name sym))
+                          (name (get sym 'name))
+                          (ann (if use-names jid name)))
+                     (when (and ann (not (string= ann candidate)))
+                       (propertize (concat "  " ann)
+                                   'face 'completions-annotations))))))))
+       ;; all-completions: match by candidate or alternate form.
+       ((eq action t)
+        (let ((matches (all-completions string table pred))
+              (down (downcase string)))
+          (maphash (lambda (alt candidate)
+                     (when (and (string-prefix-p down alt)
+                                (not (member candidate matches))
+                                (or (null pred) (funcall pred candidate)))
+                       (push candidate matches)))
+                   alt-to-candidate)
+          matches))
+       ;; test-completion: accept exact alternate form matches.
+       ((eq action 'lambda)
+        (or (test-completion string table pred)
+            (and (gethash (downcase string) alt-to-candidate) t)))
+       (t
+        (complete-with-action action table string pred))))))
+
 (declare-function jabber-muc-joined-p "jabber-muc.el" (group &optional jc))
 (defun jabber-read-jid-completing (prompt &optional subset require-match default resource fulljids)
   "Read a jid out of the current roster from the minibuffer.
@@ -200,38 +269,42 @@ full        Turn bare JIDs to full ones with highest-priority resource
 bare-or-muc Turn full JIDs to bare ones, except for in MUC
 
 If FULLJIDS is non-nil, complete jids with resources."
-  (let ((jid-at-point (or
-		       (and default
-			    ;; default can be either a symbol or a string
-			    (if (symbolp default)
-				(symbol-name default)
-			      default))
-                       (let* ((jid (get-text-property (point) 'jabber-jid))
-                              (res (get (jabber-jid-symbol jid) 'resource)))
-                         (when jid
-                           (if (and fulljids res (not (jabber-jid-resource jid)))
-                               (format "%s/%s" jid res)
-                             jid)))
-		       (bound-and-true-p jabber-chatting-with)
-		       (bound-and-true-p jabber-group)))
-	(completion-ignore-case t)
-	(jid-completion-table (mapcar #'(lambda (item)
-					  (cons (symbol-name item) item))
-				      (or subset (funcall (if fulljids
-                                                              'jabber-concat-rosters-full
-                                                            'jabber-concat-rosters)))))
-	chosen)
-    (dolist (item (or subset (jabber-concat-rosters)))
-      (if (get item 'name)
-	  (push (cons (get item 'name) item) jid-completion-table)))
-    ;; if the default is not in the allowed subset, it's not a good default
-    (if (and subset (not (assoc jid-at-point jid-completion-table)))
-	(setq jid-at-point nil))
+  (let* ((roster-items (or subset (funcall (if fulljids
+                                               'jabber-concat-rosters-full
+                                             'jabber-concat-rosters))))
+         (jid-completion-table (jabber--jid-completion-table roster-items))
+         (completion-ignore-case t)
+         (jid-at-point (or
+                        (and default
+                             (if (symbolp default)
+                                 (symbol-name default)
+                               default))
+                        (let* ((jid (get-text-property (point) 'jabber-jid))
+                               (res (get (jabber-jid-symbol jid) 'resource)))
+                          (when jid
+                            (if (and fulljids res (not (jabber-jid-resource jid)))
+                                (format "%s/%s" jid res)
+                              jid)))
+                        (bound-and-true-p jabber-chatting-with)
+                        (bound-and-true-p jabber-group)))
+         chosen)
+    ;; Convert default to display form when using name mode.
+    (when (and jid-at-point (eq jabber-jid-completion-display 'name))
+      (let ((sym (cdr (assoc-string jid-at-point jid-completion-table t))))
+        (unless sym
+          ;; Default is a JID but table has names; find by symbol.
+          (setq sym (jabber-jid-symbol jid-at-point)))
+        (when (and sym (get sym 'name))
+          (setq jid-at-point (get sym 'name)))))
+    ;; If the default is not in the allowed subset, it's not a good default.
+    (when (and subset (not (assoc jid-at-point jid-completion-table)))
+      (setq jid-at-point nil))
     (let ((input
 	   (completing-read (concat prompt
 				    (if jid-at-point
 					(format "(default %s) " jid-at-point)))
-			    jid-completion-table
+			    (jabber--jid-completion-with-metadata
+			     jid-completion-table)
 			    nil require-match nil 'jabber-jid-history jid-at-point)))
       (setq chosen
 	    (if (and input (assoc-string input jid-completion-table t))
