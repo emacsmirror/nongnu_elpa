@@ -3,6 +3,24 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [[https://keepachangelog.com/en/1.0.0/][Keep a Changelog]].
 
+* [0.10.1]
+#+date: 2026-04-03
+
+** New XEP implementations
+- XEP-0163 Personal Eventing Protocol
+- XEP-0368 SRV Records for XMPP over TLS (Direct TLS)
+
+** Features
+- Idle time support for Windows
+- Deduplicated JID completion with annotated candidates
+
+** Fixes
+- PubSub node handler duplicate registration on repeated loads
+- OpenPGP key refetch skipped when key already in local keyring
+
+** Compliance
+- Achieves Advanced Core compliance (XEP-0479 Compliance Suites 2023)
+
 * [0.10.0]
 #+date: 2026-04-02
 
