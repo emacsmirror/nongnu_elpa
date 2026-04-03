@@ -712,7 +712,8 @@ sorted list and BUDDY-JC-MAP maps buddy names to connections."
 	     (current-column (current-column))
 	     (window (get-buffer-window buffer))
 	     (window-line (when window
-			    (count-lines (window-start) (point)))))
+			    (count-lines (min (window-start window) (point))
+					 (max (window-start window) (point))))))
 	(erase-buffer)
 	(setq jabber-roster-ewoc nil)
 	(setq header-line-format
